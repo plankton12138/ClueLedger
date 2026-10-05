@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hastings-ai"
+version = "0.1.0"
+description = "A mystery-novel writing agent built on the tau agent harness."
+requires-python = ">=3.12"
+dependencies = [
+    "httpx[socks]>=0.27",
+    "pydantic>=2.11",
+]
+
+[dependency-groups]
+dev = [
+    "anyio>=4.0",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tau_ai", "src/tau_agent", "src/hastings"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["src/tau_coding"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["tau_ai", "tau_agent", "hastings"]
+
+# 以下为上游代码的环境差异豁免（tau_agent/tau_ai 零改动红线，见 phase-00 计划 T7）：
+# - storage.py 的 fcntl/msvcrt 平台分支在 Windows 上必然报 attr-defined/unused-ignore，
+#   上游 CI 在 Linux 不会触发；此处豁免在 Linux 为无操作。
+# - openai_codex.py 的 cast 在 mypy 2.4 改进的字面量收窄下被判冗余（上游 lock 在 2.1）。
+[[tool.mypy.overrides]]
+module = "tau_agent.session.storage"
+disable_error_code = ["attr-defined", "unused-ignore"]
+
+[[tool.mypy.overrides]]
+module = "tau_ai.openai_codex"
+disable_error_code = ["redundant-cast"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
