@@ -1,6 +1,6 @@
-# Muse：基于 Tau 的悬疑小说写作 Agent — 设计说明文档
+# Hastings：基于 Tau 的悬疑小说写作 Agent — 设计说明文档
 
-> 项目代号 **Muse**（可自行改名）。一句话定位：**把"编码 Agent 对代码仓库做的事"迁移到"写作 Agent 对小说工作区做的事"**——角色设定是数据模型，线索/伏笔是带状态的账本，章节正文是文件，文风模仿是 RAG 检索。
+> 项目名 **Hastings**（黑斯廷斯上尉，阿加莎·克里斯蒂笔下波洛的叙事者——"替侦探写下故事的人"）。一句话定位：**把"编码 Agent 对代码仓库做的事"迁移到"写作 Agent 对小说工作区做的事"**——角色设定是数据模型，线索/伏笔是带状态的账本，章节正文是文件，文风模仿是 RAG 检索。
 >
 > 双重目标：① 深度学习 Agent 开发（loop、tool use、事件流、RAG、评测）；② 产出一个可讲、可演示、可量化的简历项目。
 
@@ -33,7 +33,7 @@ tau_coding  coding 应用层：read/write/edit/bash 工具、CLI/TUI、skills、
 tau_ai      → 原样复用（0 改动，FakeProvider 兼做测试基建）
 tau_agent   → 原样复用为主（预计 <5% 改动；见 §5.4）
 tau_coding  → 废弃不用（CLI/OAuth/TUI 全是 coding 特化，改造成本 > 新写）
-muse（新建）→ 替代 tau_coding 的地位：小说工具集 + Story Bible + RAG + FastAPI 服务
+hastings（新建）→ 替代 tau_coding 的地位：小说工具集 + Story Bible + RAG + FastAPI 服务
 frontend    → 新建 React SPA，经 WebSocket 消费事件流，替代 TUI
 ```
 
@@ -98,7 +98,7 @@ stories/the-orient-express-case/
 
 编排方式：主 harness 的 `write_chapter` 工具执行完落盘后，服务层异步触发审计 harness（独立 session），报告经事件流推给前端，并作为 `ToolResultMessage` 注回主对话。不引入 LangGraph 之类的编排框架——用 Tau 原生的 harness 组合完成，代码量小且每一行都可解释（学习目的优先）。
 
-### 3.2 System Prompt 设计（muse 包内数据文件，参考 tau_coding/system_prompt.py 的组装方式）
+### 3.2 System Prompt 设计（hastings 包内数据文件，参考 tau_coding/system_prompt.py 的组装方式）
 
 分节组装（可测试、可 diff）：
 
@@ -249,7 +249,7 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 
 ### Level 5 — 端到端冒烟
 
-`uv run python -m muse.eval smoke`：固定 seed 任务"生成 3 章短篇"→ 全指标输出一份 Markdown 报告。演示和简历附件两用。
+`uv run python -m hastings.eval smoke`：固定 seed 任务"生成 3 章短篇"→ 全指标输出一份 Markdown 报告。演示和简历附件两用。
 
 ---
 
@@ -257,7 +257,7 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 
 | 阶段 | 内容 | 交付物/验收 |
 |---|---|---|
-| **P0 骨架** | pyproject（uv）、CI（ruff+mypy+pytest）、包结构：`src/muse/` 新建，tau_ai/tau_agent 保留，tau_coding 移出构建 | `uv run pytest` 绿；hello-world harness 用 FakeProvider 跑通 |
+| **P0 骨架** | pyproject（uv）、CI（ruff+mypy+pytest）、包结构：`src/hastings/` 新建，tau_ai/tau_agent 保留，tau_coding 移出构建 | `uv run pytest` 绿；hello-world harness 用 FakeProvider 跑通 |
 | **P1 最小闭环** | 命令行版：openai_compatible provider + 3 个工具（`bible_upsert/bible_query/write_chapter`）+ 打印渲染（复用 tau rendering/plain.py 思路） | 终端里完成"设定 2 个角色 → 写 1 章" |
 | **P2 Bible 完整化** | 五张账本 + 状态机 + `timeline_check` + `method_lock` + 全套单测 | 状态机/时间线测试全绿 |
 | **P3 Web 化** | FastAPI WebSocket 桥 + React 前端（对话流 + Bible 面板） | 浏览器完成 P1 同样流程；事件流逐条渲染 |
