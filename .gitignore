@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# 虚拟环境（uv）
+.venv/
+
+# 环境变量与密钥
+.env
+
+# 类型检查 / 测试缓存
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# 项目产物
+stories/
+.chroma/
+
+# 注意：uv.lock 不忽略，必须提交（CI 用 --locked 保证权威）
