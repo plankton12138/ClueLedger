@@ -74,3 +74,23 @@ def test_invalid_names_rejected(tmp_path: Path, bad_name: str) -> None:
         save_character(ws, Character(name=bad_name))
     with pytest.raises(InvalidEntityNameError):
         load_character(ws, bad_name)
+
+
+@pytest.mark.parametrize("reserved", ["CON", "nul", "Com1", "aux", "LPT2"])
+def test_windows_reserved_names_rejected(tmp_path: Path, reserved: str) -> None:
+    """R3 #3：保留设备名在任何大小写下都拒绝，避免写盘 OSError 让模型盲目重试。"""
+    ws = _ws(tmp_path)
+    with pytest.raises(InvalidEntityNameError, match="(?i)reserved"):
+        save_character(ws, Character(name=reserved))
+
+
+@pytest.mark.parametrize("bad_slug", ["../escape", "a/b", "a\\b", "dot.name", "..", ""])
+def test_invalid_slug_rejected(tmp_path: Path, bad_slug: str) -> None:
+    """R3 #2：slug 是目录名来源，与实体名同等穿越防护。"""
+    with pytest.raises(InvalidEntityNameError):
+        StoryWorkspace(root=tmp_path, slug=bad_slug)
+
+
+def test_valid_slug_accepted(tmp_path: Path) -> None:
+    ws = StoryWorkspace(root=tmp_path, slug="orient-express")
+    assert ws.story_dir == tmp_path / "orient-express"

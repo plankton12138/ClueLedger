@@ -20,6 +20,18 @@ from hastings.bible.models import Character
 # 斜杠、反斜杠等路径相关字符。
 _NAME_PATTERN = re.compile(r"^[A-Za-z0-9\u4e00-\u9fff][\w\u4e00-\u9fff -]{0,63}$")
 
+# Windows 保留设备名（大小写不敏感）；即便拼上 .yaml 后缀，写盘仍会 OSError。
+_WINDOWS_RESERVED = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+)
+
 
 class InvalidEntityNameError(ValueError):
     """实体名不合法（空、超长或含路径穿越字符）。"""
@@ -33,7 +45,19 @@ def validate_entity_name(name: str) -> str:
             "Use letters, digits, CJK characters, spaces or hyphens (no path separators)."
         )
         raise InvalidEntityNameError(msg)
+    if name.upper() in _WINDOWS_RESERVED:
+        msg = f"Reserved Windows device name: {name!r}. Please pick another name."
+        raise InvalidEntityNameError(msg)
     return name
+
+
+def validate_slug(slug: str) -> str:
+    """校验工作区 slug（目录名来源）；规则与实体名一致，杜绝路径穿越。"""
+    try:
+        return validate_entity_name(slug)
+    except InvalidEntityNameError as exc:
+        msg = f"Invalid story slug: {slug!r}（{exc}）。Slug 将成为目录名，禁含路径字符。"
+        raise InvalidEntityNameError(msg) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +71,9 @@ class StoryWorkspace:
 
     root: Path
     slug: str
+
+    def __post_init__(self) -> None:
+        validate_slug(self.slug)
 
     @property
     def story_dir(self) -> Path:
@@ -118,4 +145,5 @@ __all__ = [
     "load_character",
     "save_character",
     "validate_entity_name",
+    "validate_slug",
 ]
