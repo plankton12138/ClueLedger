@@ -41,6 +41,23 @@ def env_error(model_override: str | None = None) -> str | None:
     return ENV_HINT if missing else None
 
 
+def normalize_base_url() -> None:
+    """归一化 OPENAI_BASE_URL：留空则移除，让 tau 的官方默认端点生效。
+
+    .env.example 模板里 `OPENAI_BASE_URL=` 留空时，load_dotenv 会把空串写入
+    environ，而 tau 侧 ``environ.get(var, DEFAULT)`` 空串会覆盖默认值，
+    导致请求打到空地址报模糊错误（R3 评审 #1）。
+    """
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    if base_url is None:
+        return
+    stripped = base_url.strip()
+    if stripped:
+        os.environ["OPENAI_BASE_URL"] = stripped
+    else:
+        del os.environ["OPENAI_BASE_URL"]
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hastings",
@@ -60,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     load_dotenv()
+    normalize_base_url()
 
     error = env_error(args.model)
     if error is not None:
