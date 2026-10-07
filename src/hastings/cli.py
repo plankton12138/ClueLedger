@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+import yaml
+from pydantic import ValidationError
+
 from hastings.bible.models import Character
 from hastings.bible.store import StoryWorkspace, list_characters
 from hastings.prompts import build_system_prompt
@@ -141,7 +144,12 @@ async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: st
         if line in QUIT_COMMANDS:
             break
         if line == CHARACTERS_COMMAND:
-            print(format_characters(list_characters(workspace)))
+            try:
+                print(format_characters(list_characters(workspace)))
+            except (ValidationError, yaml.YAMLError, OSError) as exc:
+                # 手改的 YAML 可能损坏；工具路径有 agent loop 兜底，这里是唯一直读入口。
+                print(f"读取 Story Bible 失败：{exc}")
+                print(f"（请检查 {workspace.characters_dir} 下的 YAML 文件）")
             print()
             continue
         async for event in harness.prompt(line):
