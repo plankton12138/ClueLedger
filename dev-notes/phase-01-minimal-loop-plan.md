@@ -77,7 +77,13 @@
 
 ### T3 三个写作工具（`hastings/tools/`）
 
-`hastings/tools/errors.py` 定义 `ToolInputError(ValueError)`；两个工厂模块（闭包绑定 workspace，照 `create_read_tool_definition` 模式）：
+`hastings/tools/errors.py` 定义 `ToolInputError(ValueError)`；两个工厂模块（闭包绑定 workspace，照 `create_read_tool_definition` 模式）。
+
+三个工具各司其职，共同落实"工具是账本的守门人"设计（DESIGN.md §3.3）：
+
+- `bible_upsert` —— **唯一写入口**：角色设定只能经它校验后落盘，模型无法绕过工具直接写文件；校验失败时把字段级错误喂回模型，让它自我修正而非盲目重试；
+- `bible_query` —— **只读检索口**：动笔前核对既有设定的唯一途径，防止正文与 Bible 矛盾；查无结果返回引导性提示而非报错，避免模型陷入重试死循环；
+- `write_chapter` —— **正文出口**：章节号规范（chNN 零填充）、标题生成、覆盖保护都在这里强制执行——chapters/ 目录的格式一致性靠工具保证，不靠 prompt 自觉。
 
 | 工具 | 参数（JSON Schema） | 行为 | 关键约束 |
 |---|---|---|---|
