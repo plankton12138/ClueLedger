@@ -64,3 +64,4 @@ tests/               # pytest 测试
 2. 核心行为变更必须先写测试再写实现（参照 tau 上游做法）。
 3. 提交信息原子化：一次提交只做一件事（feature / fix / docs / refactor / cleanup）。
 4. 对 `tau_agent` / `tau_ai` 的任何改动，必须在 dev-notes 中记录动机，避免无记录漂移。
+5. 构建笔记须单独设「Agent 设计经验」专节（置于交付内容与关键决策之后、评审记录之前），以四透镜提炼本阶段的 agent 设计手法，代码级 debug 细节作辅助记录。四透镜：① 错误消息是喂给模型的 API（字段级定位原样透传；三要素=哪里错、为什么错、怎样算对）；② 硬约束放工具层，prompt 只负责解释世界；③ 泄压阀——区分「违规 / 空结果 / 环境故障」三情形；④ 可观测性是事件契约的一部分。样板：[phase-01-minimal-loop.md §3](dev-notes/phase-01-minimal-loop.md)。
