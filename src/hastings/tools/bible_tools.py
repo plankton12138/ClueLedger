@@ -149,6 +149,39 @@ def _check_timeline_participants(workspace: StoryWorkspace, data: Mapping[str, J
         )
 
 
+def _reject_locked_method_edit(name: str, existing: Method, data: Mapping[str, JSONValue]) -> None:
+    """locked 手法的 upsert 拦截（T4）：内容冻结，修改须先 method_unlock。
+
+    history 由 lock/unlock 工具维护，覆盖写时原样保留，不参与变化判定；
+    数据本身不合法时放行（让后续 pydantic 校验回喂更精确的字段错误）。
+    无内容变化时仅允许 locked（no-op）与 revealed（locked→revealed 是
+    唯一经 upsert 的出边）；locked→drafted 一律拒——这条边只归 unlock 工具。
+    """
+    try:
+        candidate = Method.model_validate(dict(data))
+    except ValidationError:
+        return
+    changed = sorted(
+        field
+        for field in Method.model_fields
+        if field not in ("status", "history")
+        and getattr(candidate, field) != getattr(existing, field)
+    )
+    # upsert 缺省 status = 保持现状态；data 显式给出的才参与边判定
+    requested = data.get("status")
+    status_after = requested if isinstance(requested, str) else existing.status
+    if changed or status_after not in ("locked", "revealed"):
+        fields = "、".join(changed) if changed else f"status={status_after}"
+        raise ToolInputError(
+            f"手法「{name}」处于 locked 状态，bible_upsert 拒绝修改：{fields}。"
+            "为什么错：locked 冻结手法内容，改任何字段（含退回 drafted）都必须先解锁，"
+            "locked→drafted 这条边只归 method_unlock 工具。"
+            "怎样算对：改内容先 method_unlock(name=..., reason=...)；"
+            f"若诡计已揭晓，用 bible_query 取回「{name}」全量数据，"
+            "把 data.status 设为 'revealed' 后整体重交（upsert 为覆盖写）。"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class _Spec:
     """单类实体的全部差异点：注册表消 if-else 的关键。"""
@@ -271,6 +304,8 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
 
         entities = list(spec.read_all(workspace))
         existing = next((e for e in entities if getattr(e, "name", None) == name), None)
+        if entity_type == "method" and isinstance(existing, Method) and existing.status == "locked":
+            _reject_locked_method_edit(name, existing, data)
 
         new_status: str | None = None
         if spec.status_field is not None:
@@ -305,6 +340,10 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
                 for error in exc.errors(include_url=False)
             )
             raise ToolInputError(f"{spec.label}数据不合法：{err_details}") from exc
+        if isinstance(model, Method):
+            # history 是 lock/unlock 工具的专属账目（T4）：upsert 覆盖写时
+            # 原样保留既有审计链，模型数据里的 history 键一律不采纳。
+            model.history = list(existing.history) if isinstance(existing, Method) else []
 
         if existing is not None:
             entities[entities.index(existing)] = model
