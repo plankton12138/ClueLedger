@@ -3,8 +3,9 @@
 账本快照进，冲突列表出——不读盘、不碰 workspace、不依赖 LLM，
 冲突判定是纯区间运算（D2）。三条规则：
 
-- R0 数据自检：day<1、时刻非 HH:MM、t_end<t_start（不支持跨零点）。
-  数据错误回喂而非环境故障；含 R0 的条目区间不可信，不参与 R1/R2；
+- R0 数据自检：day<1、时刻非 HH:MM、t_end<t_start（跨零点）或 t_end==t_start
+  （零长区间与任何时段恒不相交，会让 R1/R2 静默失效）。
+  数据错误回喂而非环境故障；含 R0 的条目/主张区间不可信，不参与 R1/R2；
 - R1 人物分身：同角色同 day 事件区间重叠（半开区间，相切不算）。
   缺时刻按全天 [00:00,24:00) 处理——迫使模型补全时刻消歧；
 - R2 不在场破绽（D3 方案 A）：alibi_claim 与该人物同 day 真实事件区间相交。
@@ -124,11 +125,26 @@ def _entry_data_conflicts(entry: TimelineEntry) -> list[TimelineConflict]:
                 entries=(entry.name,),
             )
         )
+    elif start is not None and end is not None and end == start:
+        conflicts.append(
+            TimelineConflict(
+                rule="R0",
+                message=(
+                    f"时间线事件「{entry.name}」数据非法：t_start 与 t_end 相等"
+                    f"（{entry.t_start}），区间为零长。"
+                    "为什么错：起止相等的区间不与任何时段相交，会让分身/不在场检测静默失效。"
+                    f"怎样算对：t_end 至少晚于 t_start 一分钟（如 {entry.t_start}-21:30）。"
+                ),
+                day=entry.day,
+                persons=(),
+                entries=(entry.name,),
+            )
+        )
     return conflicts
 
 
 def _claim_data_conflicts(method: Method, claim: AlibiClaim) -> list[TimelineConflict]:
-    """R0：不在场主张的数据自检（day / 时刻格式）。"""
+    """R0：不在场主张的数据自检（day / 时刻格式 / 跨零点 / 零长）。"""
     conflicts: list[TimelineConflict] = []
     who = f"手法「{method.name}」的不在场主张（{claim.person}）"
     if claim.day < 1:
@@ -161,6 +177,36 @@ def _claim_data_conflicts(method: Method, claim: AlibiClaim) -> list[TimelineCon
                     entries=(method.name,),
                 )
             )
+    start = _parse_hhmm(claim.t_start) if claim.t_start is not None else None
+    end = _parse_hhmm(claim.t_end) if claim.t_end is not None else None
+    if start is not None and end is not None and end < start:
+        conflicts.append(
+            TimelineConflict(
+                rule="R0",
+                message=(
+                    f"{who}数据非法：t_end({claim.t_end}) 早于 t_start({claim.t_start})。"
+                    "为什么错：不支持跨零点区间。"
+                    "怎样算对：跨零点主张拆成两条。"
+                ),
+                day=claim.day,
+                persons=(claim.person,),
+                entries=(method.name,),
+            )
+        )
+    elif start is not None and end is not None and end == start:
+        conflicts.append(
+            TimelineConflict(
+                rule="R0",
+                message=(
+                    f"{who}数据非法：t_start 与 t_end 相等（{claim.t_start}），区间为零长。"
+                    "为什么错：起止相等的区间不与任何时段相交，不在场破绽检测会静默失效。"
+                    f"怎样算对：t_end 至少晚于 t_start 一分钟（如 {claim.t_start}-21:30）。"
+                ),
+                day=claim.day,
+                persons=(claim.person,),
+                entries=(method.name,),
+            )
+        )
     return conflicts
 
 
@@ -204,9 +250,12 @@ def _check_doppelganger(entries: Sequence[TimelineEntry]) -> list[TimelineConfli
 
 
 def _check_alibi(
-    entries: Sequence[TimelineEntry], methods: Sequence[Method]
+    entries: Sequence[TimelineEntry], claims: Sequence[tuple[Method, AlibiClaim]]
 ) -> list[TimelineConflict]:
-    """R2（D3 方案 A）：不在场主张与该人物同 day 真实事件区间相交。"""
+    """R2（D3 方案 A）：不在场主张与该人物同 day 真实事件区间相交。
+
+    claims 是（方法, 主张）配对，由 check_timeline 过滤掉 R0 数据错误后传入。
+    """
     real: dict[tuple[str, int], list[tuple[TimelineEntry, tuple[int, int]]]] = {}
     for entry in entries:
         interval = _interval(entry.t_start, entry.t_end)
@@ -216,46 +265,59 @@ def _check_alibi(
             real.setdefault((person, entry.day), []).append((entry, interval))
 
     conflicts: list[TimelineConflict] = []
-    for method in methods:
-        for claim in method.alibi_claims:
-            claim_interval = _interval(claim.t_start, claim.t_end)
-            if claim_interval is None:  # 主张数据错误已在 R0 上报
+    for method, claim in claims:
+        claim_interval = _interval(claim.t_start, claim.t_end)
+        if claim_interval is None:  # 防御：正常流程已在 R0 过滤
+            continue
+        for event, event_interval in real.get((claim.person, claim.day), []):
+            if not _overlaps(claim_interval, event_interval):
                 continue
-            for event, event_interval in real.get((claim.person, claim.day), []):
-                if not _overlaps(claim_interval, event_interval):
-                    continue
-                conflicts.append(
-                    TimelineConflict(
-                        rule="R2",
-                        message=(
-                            f"不在场破绽：「{claim.person}」主张第 {claim.day} 天 "
-                            f"{_fmt_interval(claim.t_start, claim.t_end)} 不在现场"
-                            f"（手法「{method.name}」：{claim.claim or '未填写主张'}），"
-                            f"但真实时间线显示其参与了「{event.name}」"
-                            f"({_fmt_interval(event.t_start, event.t_end)})，区间相交。"
-                            "为什么错：不在场主张与已登记事件矛盾。"
-                            "怎样算对：修改主张的 day/时刻/内容，或调整事件时间——"
-                            "诡计依赖的不在场必须与时间线自洽。"
-                        ),
-                        day=claim.day,
-                        persons=(claim.person,),
-                        entries=(method.name, event.name),
-                    )
+            conflicts.append(
+                TimelineConflict(
+                    rule="R2",
+                    message=(
+                        f"不在场破绽：「{claim.person}」主张第 {claim.day} 天 "
+                        f"{_fmt_interval(claim.t_start, claim.t_end)} 不在现场"
+                        f"（手法「{method.name}」：{claim.claim or '未填写主张'}），"
+                        f"但真实时间线显示其参与了「{event.name}」"
+                        f"({_fmt_interval(event.t_start, event.t_end)})，区间相交。"
+                        "为什么错：不在场主张与已登记事件矛盾。"
+                        "怎样算对：修改主张的 day/时刻/内容，或调整事件时间——"
+                        "诡计依赖的不在场必须与时间线自洽。"
+                    ),
+                    day=claim.day,
+                    persons=(claim.person,),
+                    entries=(method.name, event.name),
                 )
+            )
     return conflicts
 
 
 def check_timeline(
     entries: Sequence[TimelineEntry], methods: Sequence[Method] = ()
 ) -> list[TimelineConflict]:
-    """对账本快照做全量冲突检测；干净时间线返回空列表。"""
+    """对账本快照做全量冲突检测；干净时间线返回空列表。
+
+    含 R0 数据错误的条目/主张只上报 R0，不参与 R1/R2（区间不可信）。
+    """
     conflicts: list[TimelineConflict] = []
-    conflicts.extend(c for e in entries for c in _entry_data_conflicts(e))
-    conflicts.extend(
-        c for m in methods for claim in m.alibi_claims for c in _claim_data_conflicts(m, claim)
-    )
-    conflicts.extend(_check_doppelganger(entries))
-    conflicts.extend(_check_alibi(entries, methods))
+    clean_entries: list[TimelineEntry] = []
+    for entry in entries:
+        data_conflicts = _entry_data_conflicts(entry)
+        conflicts.extend(data_conflicts)
+        if not data_conflicts:
+            clean_entries.append(entry)
+
+    valid_claims: list[tuple[Method, AlibiClaim]] = []
+    for method in methods:
+        for claim in method.alibi_claims:
+            data_conflicts = _claim_data_conflicts(method, claim)
+            conflicts.extend(data_conflicts)
+            if not data_conflicts:
+                valid_claims.append((method, claim))
+
+    conflicts.extend(_check_doppelganger(clean_entries))
+    conflicts.extend(_check_alibi(clean_entries, valid_claims))
     return conflicts
 
 

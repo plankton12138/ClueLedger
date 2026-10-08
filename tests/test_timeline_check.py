@@ -62,6 +62,25 @@ def test_r0_rejects_crossing_midnight() -> None:
     assert "跨零点" in conflicts[0].message
 
 
+def test_r0_rejects_zero_length_interval() -> None:
+    """t_start == t_end 是零长区间，与任何时段恒不相交，必须当作数据错误拒收。"""
+    conflicts = check_timeline([_entry("晚宴", 3, ["甲"], t_start="21:00", t_end="21:00")])
+
+    assert len(conflicts) == 1
+    assert conflicts[0].rule == "R0"
+    assert "零长" in conflicts[0].message
+    assert "21:00" in conflicts[0].message
+
+
+def test_r0_rejects_zero_length_alibi_claim() -> None:
+    method = _method("密室诡计", [_claim("乙", 3, t_start="21:00", t_end="21:00")])
+    conflicts = check_timeline([], [method])
+
+    assert len(conflicts) == 1
+    assert conflicts[0].rule == "R0"
+    assert "零长" in conflicts[0].message
+
+
 def test_r0_reports_alibi_claim_data_errors() -> None:
     method = _method("密室诡计", [_claim("乙", 0, t_start="25:00")])
     conflicts = check_timeline([], [method])
@@ -140,6 +159,30 @@ def test_r1_skips_entry_with_invalid_time() -> None:
     assert conflicts[0].rule == "R0"
 
 
+def test_r1_skips_entry_with_crossing_midnight_times() -> None:
+    """跨零点条目的倒挂区间不可信：与全天事件不得误报 R1（R3 #1）。"""
+    entries = [
+        _entry("守夜", 3, ["甲"], "23:00", "01:00"),
+        _entry("巡场", 3, ["甲"]),  # 缺时刻按全天处理，倒挂区间与全天必"相交"
+    ]
+    conflicts = check_timeline(entries)
+
+    assert len(conflicts) == 1
+    assert conflicts[0].rule == "R0"
+
+
+def test_r1_skips_entries_with_day_below_one() -> None:
+    """day<1 的条目同样不参与 R1：两条 day=0 事件重叠只各自报 R0。"""
+    entries = [
+        _entry("事件甲", 0, ["甲"], "18:00", "20:00"),
+        _entry("事件乙", 0, ["甲"], "19:00", "21:00"),
+    ]
+    conflicts = check_timeline(entries)
+
+    assert len(conflicts) == 2
+    assert all(c.rule == "R0" for c in conflicts)
+
+
 def test_r1_duplicate_participant_in_one_entry_no_self_conflict() -> None:
     entries = [_entry("晚宴", 3, ["甲", "甲"], "18:00", "20:00")]
     assert check_timeline(entries) == []
@@ -185,6 +228,16 @@ def test_r2_missing_claim_times_full_day() -> None:
 
     assert len(conflicts) == 1
     assert conflicts[0].rule == "R2"
+
+
+def test_r2_skips_claim_with_crossing_midnight_times() -> None:
+    """跨零点主张的倒挂区间不可信：不与真实事件判 R2（R3 #1）。"""
+    entries = [_entry("晚宴", 3, ["乙"], "18:00", "21:00")]
+    method = _method("密室诡计", [_claim("乙", 3, "23:00", "01:00")])
+    conflicts = check_timeline(entries, [method])
+
+    assert len(conflicts) == 1
+    assert conflicts[0].rule == "R0"
 
 
 # ---------- 干净账本 ----------
