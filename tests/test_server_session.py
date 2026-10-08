@@ -2,7 +2,7 @@
 
 协议无关核心：不 import fastapi，纯 asyncio + FakeProvider 剧本驱动。
 时序控制不用 sleep/竞态：prompt() 同步置位 is_running（harness 语义），
-steer/follow_up/cancel 经订阅 listener 在 agent_start 事件点确定性触发。
+steer/follow_up/cancel 经订阅 listener 在事件点确定性触发。
 """
 
 from collections.abc import AsyncIterator
@@ -11,68 +11,18 @@ from typing import Any
 
 import pytest
 
+from fake_scripts import assistant_stream, character_upsert, closing
 from hastings.bible.store import StoryWorkspace
 from hastings.prompts import build_system_prompt
 from hastings.server.hastings_session import HastingsSession
 from hastings.server.session import AgentBusyError
 from hastings.tools.bible_tools import create_bible_tools
-from tau_agent import AgentHarness, AgentHarnessConfig, AssistantMessage, ToolCall
+from tau_agent import AgentHarness, AgentHarnessConfig
 from tau_agent.events import AgentEvent
-from tau_agent.provider_events import (
-    AssistantDoneEvent,
-    AssistantStartEvent,
-    TextDeltaEvent,
-    TextEndEvent,
-    TextStartEvent,
-    ToolCallEndEvent,
-)
 from tau_ai import FakeProvider
 
-POIROT = {"name": "波洛", "identity": "比利时侦探"}
 STEER_TEXT = "记得他是比利时人"
 FOLLOW_UP_TEXT = "再补一条细节"
-
-
-def _assistant_stream(*, call: ToolCall | None, text: str, reason: str) -> list[Any]:
-    events: list[Any] = [AssistantStartEvent(partial=AssistantMessage(model="fake"))]
-    if text:
-        events.append(TextStartEvent(content_index=0, partial=AssistantMessage(model="fake")))
-        events.append(
-            TextDeltaEvent(
-                content_index=0,
-                delta=text,
-                partial=AssistantMessage(content=text, model="fake"),
-            )
-        )
-        events.append(
-            TextEndEvent(
-                content_index=0,
-                content=text,
-                partial=AssistantMessage(content=text, model="fake"),
-            )
-        )
-    if call is not None:
-        events.append(
-            ToolCallEndEvent(
-                content_index=1,
-                tool_call=call,
-                partial=AssistantMessage(content=[call], model="fake"),
-            )
-        )
-    message: AssistantMessage = (
-        AssistantMessage(content=[call], stop_reason="toolUse")
-        if call is not None
-        else AssistantMessage(content=text, stop_reason="stop")
-    )
-    events.append(AssistantDoneEvent(reason=reason, message=message))
-    return events
-
-
-def _upsert_turn(call_id: str = "call-s1") -> list[Any]:
-    upsert = ToolCall(
-        id=call_id, name="bible_upsert", arguments={"entity_type": "character", "data": POIROT}
-    )
-    return _assistant_stream(call=upsert, text="先建档。", reason="toolUse")
 
 
 @pytest.fixture
@@ -84,7 +34,16 @@ def _session(workspace: StoryWorkspace, *extra_turns: list[Any]) -> HastingsSess
     tools = create_bible_tools(workspace)
     harness = AgentHarness(
         AgentHarnessConfig(
-            provider=FakeProvider([_upsert_turn(), *extra_turns]),
+            provider=FakeProvider(
+                [
+                    assistant_stream(
+                        call=character_upsert("call-s1", "波洛", "比利时侦探"),
+                        text="先建档。",
+                        reason="toolUse",
+                    ),
+                    *extra_turns,
+                ]
+            ),
             model="fake",
             system=build_system_prompt(tools),
             tools=tools,
@@ -101,7 +60,7 @@ async def _drain(stream: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
 async def test_prompt_streams_events_and_running_lifecycle(
     workspace: StoryWorkspace,
 ) -> None:
-    session = _session(workspace, _assistant_stream(call=None, text="建档完成。", reason="stop"))
+    session = _session(workspace, closing("建档完成。"))
     assert session.is_running is False
     assert session.slug == "orient-express"
     assert session.model == "fake"
@@ -120,7 +79,7 @@ async def test_prompt_streams_events_and_running_lifecycle(
 async def test_prompt_while_running_raises_busy_with_guidance(
     workspace: StoryWorkspace,
 ) -> None:
-    session = _session(workspace, _assistant_stream(call=None, text="建档完成。", reason="stop"))
+    session = _session(workspace, closing("建档完成。"))
 
     stream = session.prompt("建一个角色")
     with pytest.raises(AgentBusyError) as exc_info:
@@ -138,7 +97,7 @@ async def test_prompt_while_running_raises_busy_with_guidance(
 async def test_steer_injects_message_into_running_flow(
     workspace: StoryWorkspace,
 ) -> None:
-    session = _session(workspace, _assistant_stream(call=None, text="建档完成。", reason="stop"))
+    session = _session(workspace, closing("建档完成。"))
 
     def on_start(event: AgentEvent) -> None:
         if event.type == "agent_start":
@@ -157,9 +116,8 @@ async def test_steer_injects_message_into_running_flow(
 async def test_follow_up_queues_chained_continuation(
     workspace: StoryWorkspace,
 ) -> None:
-    closing = _assistant_stream(call=None, text="建档完成。", reason="stop")
-    followup_reply = _assistant_stream(call=None, text="已补上怀表细节。", reason="stop")
-    session = _session(workspace, closing, followup_reply)
+    followup_reply = assistant_stream(call=None, text="已补上怀表细节。", reason="stop")
+    session = _session(workspace, closing("建档完成。"), followup_reply)
 
     def on_start(event: AgentEvent) -> None:
         if event.type == "agent_start":
@@ -178,8 +136,7 @@ async def test_follow_up_queues_chained_continuation(
 
 @pytest.mark.anyio
 async def test_cancel_aborts_pending_tool_execution(workspace: StoryWorkspace) -> None:
-    closing = _assistant_stream(call=None, text="建档完成。", reason="stop")
-    session = _session(workspace, closing)
+    session = _session(workspace, closing("建档完成。"))
 
     def on_tool_start(event: AgentEvent) -> None:
         if event.type == "tool_execution_start":
@@ -199,7 +156,7 @@ async def test_cancel_aborts_pending_tool_execution(workspace: StoryWorkspace) -
 
 @pytest.mark.anyio
 async def test_subscribe_fanout_and_unsubscribe(workspace: StoryWorkspace) -> None:
-    session = _session(workspace, _assistant_stream(call=None, text="建档完成。", reason="stop"))
+    session = _session(workspace, closing("建档完成。"))
     live: list[str] = []
     detached: list[str] = []
 

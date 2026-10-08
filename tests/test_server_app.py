@@ -17,7 +17,11 @@ from tau_agent.messages import AgentMessage
 
 
 class StubSession:
-    """最小 WritingSession 桩：HTTP/WS 测试通用的注入替身。"""
+    """最小 WritingSession 桩：HTTP/WS 测试通用的注入替身。
+
+    prompt 复刻 harness 的同步抛出契约（调用即抛 AgentBusyError，而非
+    async generator 迭代时才抛）——WS 层的 busy 翻译依赖该时序。
+    """
 
     slug: str = "orient-express"
     model: str = "fake"
@@ -39,8 +43,12 @@ class StubSession:
 
     def prompt(self, content: str) -> AsyncIterator[AgentEvent]:
         del content
-        raise AgentBusyError("stub 不会真的跑 prompt")
-        yield  # pragma: no cover — 让函数成为 async generator
+        raise AgentBusyError(
+            "prompt 被拒绝：stub 会话正忙。"
+            "为什么错：同一个故事会话同时只能运行一个写作流。"
+            "怎样算对：用 steer 在当前流中插话、用 follow_up 排队下一轮，"
+            "或先 abort 中止当前流。"
+        )
 
     def steer(self, content: str) -> None:
         del content

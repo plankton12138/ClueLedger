@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from hastings.server.session import WritingSession
+from hastings.server.ws import router as ws_router
 
 
 class HealthResponse(BaseModel):
@@ -24,6 +25,8 @@ class HealthResponse(BaseModel):
 
 def create_app(session: WritingSession) -> FastAPI:
     app = FastAPI(title="Hastings", version="0.1.0")
+    app.state.session = session
+    app.include_router(ws_router)
 
     @app.get("/api/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
