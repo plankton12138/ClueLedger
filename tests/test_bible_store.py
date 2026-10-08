@@ -5,7 +5,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from hastings.bible.models import Character
+from hastings.bible.models import (
+    AlibiClaim,
+    Character,
+    Clue,
+    Foreshadow,
+    Method,
+    TimelineEntry,
+)
 from hastings.bible.store import (
     InvalidEntityNameError,
     StoryWorkspace,
@@ -94,3 +101,38 @@ def test_invalid_slug_rejected(tmp_path: Path, bad_slug: str) -> None:
 def test_valid_slug_accepted(tmp_path: Path) -> None:
     ws = StoryWorkspace(root=tmp_path, slug="orient-express")
     assert ws.story_dir == tmp_path / "orient-express"
+
+
+def test_character_arc_defaults_to_flat() -> None:
+    """P1 旧工作区 YAML 无 arc 字段照常加载（验收标准 6，模型侧保证）。"""
+    assert Character(name="波洛").arc == "flat"
+
+
+def test_ledger_models_default_to_initial_status() -> None:
+    """各账本零参数新建即初始状态，与 state_machine.INITIAL_STATUS 对齐（D1）。"""
+    assert Clue(name="染血的信").status == "planned"
+    assert Foreshadow(name="停摆的挂钟").status == "planned"
+    assert Method(name="密室诡计").status == "drafted"
+
+
+def test_method_carries_alibi_claims_and_history() -> None:
+    """D3 方案 A：alibi_claims 结构化字段；history 记锁定/解锁（T4 落点）。"""
+    method = Method(
+        name="密室诡计",
+        alibi_claims=[
+            AlibiClaim(person="管家", day=3, t_start="21:00", t_end="23:00", claim="整晚下棋")
+        ],
+        history=[],
+    )
+
+    assert method.alibi_claims[0].person == "管家"
+    assert method.history == []
+
+
+def test_timeline_entry_structure() -> None:
+    """D2：结构化整数天 + 可选时钟；participants 缺省为空（D8 校验在工具层）。"""
+    entry = TimelineEntry(name="发现尸体", day=1, t_start="07:30", t_end="08:00", chapter="ch01")
+
+    assert entry.t_start == "07:30"
+    assert entry.participants == []
+    assert entry.note == ""
