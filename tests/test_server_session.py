@@ -1,0 +1,219 @@
+"""HastingsSession 服务层测试（P3 T2）。
+
+协议无关核心：不 import fastapi，纯 asyncio + FakeProvider 剧本驱动。
+时序控制不用 sleep/竞态：prompt() 同步置位 is_running（harness 语义），
+steer/follow_up/cancel 经订阅 listener 在 agent_start 事件点确定性触发。
+"""
+
+from collections.abc import AsyncIterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from hastings.bible.store import StoryWorkspace
+from hastings.prompts import build_system_prompt
+from hastings.server.hastings_session import HastingsSession
+from hastings.server.session import AgentBusyError
+from hastings.tools.bible_tools import create_bible_tools
+from tau_agent import AgentHarness, AgentHarnessConfig, AssistantMessage, ToolCall
+from tau_agent.events import AgentEvent
+from tau_agent.provider_events import (
+    AssistantDoneEvent,
+    AssistantStartEvent,
+    TextDeltaEvent,
+    TextEndEvent,
+    TextStartEvent,
+    ToolCallEndEvent,
+)
+from tau_ai import FakeProvider
+
+POIROT = {"name": "波洛", "identity": "比利时侦探"}
+STEER_TEXT = "记得他是比利时人"
+FOLLOW_UP_TEXT = "再补一条细节"
+
+
+def _assistant_stream(*, call: ToolCall | None, text: str, reason: str) -> list[Any]:
+    events: list[Any] = [AssistantStartEvent(partial=AssistantMessage(model="fake"))]
+    if text:
+        events.append(TextStartEvent(content_index=0, partial=AssistantMessage(model="fake")))
+        events.append(
+            TextDeltaEvent(
+                content_index=0,
+                delta=text,
+                partial=AssistantMessage(content=text, model="fake"),
+            )
+        )
+        events.append(
+            TextEndEvent(
+                content_index=0,
+                content=text,
+                partial=AssistantMessage(content=text, model="fake"),
+            )
+        )
+    if call is not None:
+        events.append(
+            ToolCallEndEvent(
+                content_index=1,
+                tool_call=call,
+                partial=AssistantMessage(content=[call], model="fake"),
+            )
+        )
+    message: AssistantMessage = (
+        AssistantMessage(content=[call], stop_reason="toolUse")
+        if call is not None
+        else AssistantMessage(content=text, stop_reason="stop")
+    )
+    events.append(AssistantDoneEvent(reason=reason, message=message))
+    return events
+
+
+def _upsert_turn(call_id: str = "call-s1") -> list[Any]:
+    upsert = ToolCall(
+        id=call_id, name="bible_upsert", arguments={"entity_type": "character", "data": POIROT}
+    )
+    return _assistant_stream(call=upsert, text="先建档。", reason="toolUse")
+
+
+@pytest.fixture
+def workspace(tmp_path: Path) -> StoryWorkspace:
+    return StoryWorkspace(root=tmp_path, slug="orient-express")
+
+
+def _session(workspace: StoryWorkspace, *extra_turns: list[Any]) -> HastingsSession:
+    tools = create_bible_tools(workspace)
+    harness = AgentHarness(
+        AgentHarnessConfig(
+            provider=FakeProvider([_upsert_turn(), *extra_turns]),
+            model="fake",
+            system=build_system_prompt(tools),
+            tools=tools,
+        )
+    )
+    return HastingsSession(harness=harness, workspace=workspace)
+
+
+async def _drain(stream: AsyncIterator[AgentEvent]) -> list[AgentEvent]:
+    return [event async for event in stream]
+
+
+@pytest.mark.anyio
+async def test_prompt_streams_events_and_running_lifecycle(
+    workspace: StoryWorkspace,
+) -> None:
+    session = _session(workspace, _assistant_stream(call=None, text="建档完成。", reason="stop"))
+    assert session.is_running is False
+    assert session.slug == "orient-express"
+    assert session.model == "fake"
+    assert session.tool_names == ("bible_upsert", "bible_query")
+
+    stream = session.prompt("建一个角色")
+    assert session.is_running is True  # prompt() 同步置位，无需等首个事件
+
+    events = await _drain(stream)
+    assert session.is_running is False
+    assert events[0].type == "agent_start"
+    assert events[-1].type == "agent_end"
+
+
+@pytest.mark.anyio
+async def test_prompt_while_running_raises_busy_with_guidance(
+    workspace: StoryWorkspace,
+) -> None:
+    session = _session(workspace, _assistant_stream(call=None, text="建档完成。", reason="stop"))
+
+    stream = session.prompt("建一个角色")
+    with pytest.raises(AgentBusyError) as exc_info:
+        session.prompt("再来一个")
+    message = str(exc_info.value)
+    # 三要素：哪里错（prompt 被拒）+ 为什么错（单流）+ 怎样算对（三个替代动作）
+    assert "被拒绝" in message
+    assert "同时只能" in message
+    assert "steer" in message and "follow_up" in message and "abort" in message
+
+    await _drain(stream)
+
+
+@pytest.mark.anyio
+async def test_steer_injects_message_into_running_flow(
+    workspace: StoryWorkspace,
+) -> None:
+    session = _session(workspace, _assistant_stream(call=None, text="建档完成。", reason="stop"))
+
+    def on_start(event: AgentEvent) -> None:
+        if event.type == "agent_start":
+            session.steer(STEER_TEXT)
+
+    unsubscribe = session.subscribe(on_start)
+    await _drain(session.prompt("建一个角色"))
+    unsubscribe()
+
+    user_messages = [m for m in session.messages if m.role == "user"]
+    assert len(user_messages) == 2  # 原 prompt + steer 插话
+    assert any(STEER_TEXT in m.text for m in user_messages)
+
+
+@pytest.mark.anyio
+async def test_follow_up_queues_chained_continuation(
+    workspace: StoryWorkspace,
+) -> None:
+    closing = _assistant_stream(call=None, text="建档完成。", reason="stop")
+    followup_reply = _assistant_stream(call=None, text="已补上怀表细节。", reason="stop")
+    session = _session(workspace, closing, followup_reply)
+
+    def on_start(event: AgentEvent) -> None:
+        if event.type == "agent_start":
+            session.follow_up(FOLLOW_UP_TEXT)
+
+    unsubscribe = session.subscribe(on_start)
+    events = await _drain(session.prompt("建一个角色"))
+    unsubscribe()
+
+    # 链式续跑发生在同一个 run 里：follow_up 轮结束后才发唯一的 agent_end
+    assert [e.type for e in events].count("agent_end") == 1
+    user_messages = [m for m in session.messages if m.role == "user"]
+    assert len(user_messages) == 2  # 原 prompt + follow_up 追加
+    assert "怀表" in session.messages[-1].text
+
+
+@pytest.mark.anyio
+async def test_cancel_aborts_pending_tool_execution(workspace: StoryWorkspace) -> None:
+    closing = _assistant_stream(call=None, text="建档完成。", reason="stop")
+    session = _session(workspace, closing)
+
+    def on_tool_start(event: AgentEvent) -> None:
+        if event.type == "tool_execution_start":
+            session.cancel()
+
+    unsubscribe = session.subscribe(on_tool_start)
+    await _drain(session.prompt("建一个角色"))
+    unsubscribe()
+
+    # 取消接线生效：信号在工具执行前被检查，该工具以 abort 错误收场
+    # （loop 语义：信号只在工具执行前检查，FakeProvider 不消费信号，故后续
+    # 回合照常跑——会话层只验证 cancel() 确实到达了当前 run 的 signal）
+    last_tool_result = next(m for m in reversed(session.messages) if m.role == "toolResult")
+    assert last_tool_result.is_error is True
+    assert "Operation aborted" in last_tool_result.text
+
+
+@pytest.mark.anyio
+async def test_subscribe_fanout_and_unsubscribe(workspace: StoryWorkspace) -> None:
+    session = _session(workspace, _assistant_stream(call=None, text="建档完成。", reason="stop"))
+    live: list[str] = []
+    detached: list[str] = []
+
+    def live_listener(event: AgentEvent) -> None:
+        live.append(event.type)
+
+    def detached_listener(event: AgentEvent) -> None:
+        detached.append(event.type)
+
+    unsubscribe_detached = session.subscribe(detached_listener)
+    unsubscribe_detached()
+    session.subscribe(live_listener)
+
+    await _drain(session.prompt("建一个角色"))
+
+    assert "agent_start" in live and "agent_end" in live
+    assert detached == []  # 退订后不再收到任何事件
