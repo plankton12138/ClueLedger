@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+from pydantic import BaseModel
 
 from hastings.bible.models import Character, Clue, Foreshadow, Method, TimelineEntry
 
@@ -139,9 +140,9 @@ def load_character(workspace: StoryWorkspace, name: str) -> Character | None:
     return Character.model_validate(raw)
 
 
-def character_to_yaml(character: Character) -> str:
-    """角色卡序列化为 YAML 文本（bible_query 的结果展示用）。"""
-    return yaml.safe_dump(character.model_dump(), allow_unicode=True, sort_keys=False)
+def model_to_yaml(entity: BaseModel) -> str:
+    """任意 Bible 实体序列化为 YAML 文本（bible_query 的结果展示用）。"""
+    return yaml.safe_dump(entity.model_dump(), allow_unicode=True, sort_keys=False)
 
 
 def list_characters(workspace: StoryWorkspace) -> list[Character]:
@@ -200,10 +201,10 @@ __all__ = [
     "LedgerFormatError",
     "StoryWorkspace",
     "character_path",
-    "character_to_yaml",
     "list_characters",
     "load_character",
     "load_ledger",
+    "model_to_yaml",
     "save_character",
     "save_ledger",
     "validate_entity_name",

@@ -1,34 +1,44 @@
-"""Bible 读写工具：bible_upsert / bible_query。
+"""Bible 读写工具：bible_upsert / bible_query（P2 五账本泛化）。
 
-工厂闭包模式（学 tau_coding 的 create_read_tool_definition，但不 import tau_coding）：
-工具经闭包绑定 StoryWorkspace；参数错误一律抛 ToolInputError，由 loop 转为
-工具错误结果喂回模型。
+实体注册表模式：entity_type → _Spec（模型/读写/摘要/跨账本校验），
+新增账本只加一处注册，杜绝 if-else 汤。硬约束（状态迁移、参与者建档）
+只在本工具层强制——store 纯读写、prompt 只解释世界；错误消息三要素
+（哪里错/为什么错/怎样算对）经 loop 原样喂回模型，助其自我修正。
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Final, cast
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from hastings.bible.models import Character
+from hastings.bible.models import Character, Clue, Foreshadow, Method, TimelineEntry
+from hastings.bible.state_machine import (
+    INITIAL_STATUS,
+    TRANSITIONS,
+    InvalidTransitionError,
+    validate_initial,
+    validate_transition,
+)
 from hastings.bible.store import (
     InvalidEntityNameError,
     StoryWorkspace,
-    character_to_yaml,
     list_characters,
-    load_character,
+    load_ledger,
+    model_to_yaml,
     save_character,
+    save_ledger,
 )
 from hastings.tools.errors import ToolInputError
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
 from tau_agent.types import JSONValue
 
-_UNSUPPORTED_ENTITY = (
-    "暂不支持 entity_type={!r}：当前仅支持 'character'"
-    "（clue/foreshadow/method/timeline 将在 Phase 2 提供）。"
-)
+type ReadAllFn = Callable[[StoryWorkspace], Sequence[BaseModel]]
+type WriteAllFn = Callable[[StoryWorkspace, Sequence[BaseModel]], None]
 
 
 def _require_str(arguments: Mapping[str, JSONValue], name: str) -> str:
@@ -38,21 +48,205 @@ def _require_str(arguments: Mapping[str, JSONValue], name: str) -> str:
     return value
 
 
-def _check_entity_type(arguments: Mapping[str, JSONValue]) -> None:
+def _character_read_all(workspace: StoryWorkspace) -> Sequence[BaseModel]:
+    return list_characters(workspace)
+
+
+def _character_write_all(workspace: StoryWorkspace, entities: Sequence[BaseModel]) -> None:
+    for entity in entities:
+        assert isinstance(entity, Character)
+        save_character(workspace, entity)
+
+
+def _make_ledger_ops[M: (Clue, Foreshadow, Method, TimelineEntry)](
+    path_getter: Callable[[StoryWorkspace], Path], model_cls: type[M]
+) -> tuple[ReadAllFn, WriteAllFn]:
+    """单文件账本的读写闭包：读整表、按 name 合并后整表覆盖写（D7）。"""
+
+    def read_all(workspace: StoryWorkspace) -> Sequence[BaseModel]:
+        return load_ledger(path_getter(workspace), model_cls)
+
+    def write_all(workspace: StoryWorkspace, entities: Sequence[BaseModel]) -> None:
+        save_ledger(path_getter(workspace), [e for e in entities if isinstance(e, model_cls)])
+
+    return read_all, write_all
+
+
+# --- 每账本摘要行（查询列表展示；带状态让模型对账不必查全文） ---
+
+
+def _summarize_character(entity: BaseModel) -> str:
+    assert isinstance(entity, Character)
+    parts = [entity.name]
+    if entity.identity:
+        parts.append(entity.identity)
+    if entity.motivation:
+        parts.append(f"动机：{entity.motivation}")
+    parts.append(f"弧光：{entity.arc}")
+    return " | ".join(parts)
+
+
+def _summarize_clue(entity: BaseModel) -> str:
+    assert isinstance(entity, Clue)
+    parts = [entity.name, entity.status]
+    if entity.chapter:
+        parts.append(f"出现 {entity.chapter}")
+    if entity.points_to:
+        parts.append(f"指向 {entity.points_to}")
+    if entity.is_red_herring:
+        parts.append("干扰项")
+    return " | ".join(parts)
+
+
+def _summarize_foreshadow(entity: BaseModel) -> str:
+    assert isinstance(entity, Foreshadow)
+    parts = [entity.name, entity.status]
+    if entity.plant_chapter:
+        parts.append(f"埋设 {entity.plant_chapter}")
+    if entity.expected_resolve_chapter:
+        parts.append(f"预计回收 {entity.expected_resolve_chapter}")
+    return " | ".join(parts)
+
+
+def _summarize_method(entity: BaseModel) -> str:
+    assert isinstance(entity, Method)
+    parts = [entity.name, entity.status]
+    if entity.requirements:
+        parts.append(f"前提 {len(entity.requirements)} 条")
+    if entity.alibi_claims:
+        parts.append(f"不在场主张 {len(entity.alibi_claims)} 条")
+    if entity.history:
+        parts.append(f"锁定历史 {len(entity.history)} 条")
+    return " | ".join(parts)
+
+
+def _summarize_timeline(entity: BaseModel) -> str:
+    assert isinstance(entity, TimelineEntry)
+    parts = [entity.name, f"第 {entity.day} 天"]
+    if entity.t_start:
+        parts.append(f"{entity.t_start}-{entity.t_end or '?'}")
+    if entity.chapter:
+        parts.append(f"见 {entity.chapter}")
+    if entity.participants:
+        parts.append(f"参与者：{'、'.join(entity.participants)}")
+    return " | ".join(parts)
+
+
+# --- 跨账本引用校验（D8：守门人职责） ---
+
+
+def _check_timeline_participants(workspace: StoryWorkspace, data: Mapping[str, JSONValue]) -> None:
+    participants = data.get("participants")
+    if not isinstance(participants, list):
+        return  # 缺省/类型问题交给 pydantic 字段校验回喂
+    known = {c.name for c in list_characters(workspace)}
+    missing = sorted({p for p in participants if isinstance(p, str) and p not in known})
+    if missing:
+        raise ToolInputError(
+            f"时间线参与者未建档：{'、'.join(missing)}。"
+            "为什么错：人物分身/不在场检测依赖参与者身份，participants 必须是已建档角色。"
+            "怎样算对：先用 bible_upsert(entity_type='character') 逐个建档，再登记该事件。"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _Spec:
+    """单类实体的全部差异点：注册表消 if-else 的关键。"""
+
+    label: str  # 中文名，用于渲染与错误消息
+    model_cls: type[BaseModel]
+    read_all: ReadAllFn
+    write_all: WriteAllFn
+    summarize: Callable[[BaseModel], str]
+    status_field: str | None  # character → "arc"，其余 → "status"；timeline 无状态机
+    cross_check: Callable[[StoryWorkspace, Mapping[str, JSONValue]], None] | None = None
+
+
+_clue_read, _clue_write = _make_ledger_ops(lambda ws: ws.clues_path, Clue)
+_foreshadow_read, _foreshadow_write = _make_ledger_ops(lambda ws: ws.foreshadows_path, Foreshadow)
+_method_read, _method_write = _make_ledger_ops(lambda ws: ws.method_path, Method)
+_timeline_read, _timeline_write = _make_ledger_ops(lambda ws: ws.timeline_path, TimelineEntry)
+
+_REGISTRY: Final[dict[str, _Spec]] = {
+    "character": _Spec(
+        label="角色",
+        model_cls=Character,
+        read_all=_character_read_all,
+        write_all=_character_write_all,
+        summarize=_summarize_character,
+        status_field="arc",
+    ),
+    "clue": _Spec(
+        label="线索",
+        model_cls=Clue,
+        read_all=_clue_read,
+        write_all=_clue_write,
+        summarize=_summarize_clue,
+        status_field="status",
+    ),
+    "foreshadow": _Spec(
+        label="伏笔",
+        model_cls=Foreshadow,
+        read_all=_foreshadow_read,
+        write_all=_foreshadow_write,
+        summarize=_summarize_foreshadow,
+        status_field="status",
+    ),
+    "method": _Spec(
+        label="手法",
+        model_cls=Method,
+        read_all=_method_read,
+        write_all=_method_write,
+        summarize=_summarize_method,
+        status_field="status",
+    ),
+    "timeline": _Spec(
+        label="时间线事件",
+        model_cls=TimelineEntry,
+        read_all=_timeline_read,
+        write_all=_timeline_write,
+        summarize=_summarize_timeline,
+        status_field=None,  # D1：事件只增改，无生命周期
+        cross_check=_check_timeline_participants,
+    ),
+}
+
+
+def _require_spec(arguments: Mapping[str, JSONValue]) -> tuple[str, _Spec]:
     entity_type = _require_str(arguments, "entity_type")
-    if entity_type != "character":
-        raise ToolInputError(_UNSUPPORTED_ENTITY.format(entity_type))
+    spec = _REGISTRY.get(entity_type)
+    if spec is None:
+        raise ToolInputError(
+            f"未知 entity_type={entity_type!r}：可选值 {'、'.join(sorted(_REGISTRY))}。"
+        )
+    return entity_type, spec
+
+
+# JSONValue 列表不变型：sorted 返回 list[str] 需显式收窄
+_ENTITY_ENUM: Final[list[JSONValue]] = cast("list[JSONValue]", sorted(_REGISTRY))
 
 
 def _upsert_render_call(arguments: Mapping[str, JSONValue]) -> str | None:
+    entity_type = arguments.get("entity_type")
+    spec = _REGISTRY.get(entity_type) if isinstance(entity_type, str) else None
+    label = spec.label if spec else "实体"
     data = arguments.get("data")
-    name = data.get("name") if isinstance(data, dict) else None
-    return f"写入角色 {name}" if isinstance(name, str) else "写入角色"
+    if not isinstance(data, dict):
+        return f"写入{label}"
+    name = data.get("name")
+    prefix = f"写入{label} {name}" if isinstance(name, str) else f"写入{label}"
+    status = data.get("status") if isinstance(data.get("status"), str) else data.get("arc")
+    return f"{prefix} → {status}" if isinstance(status, str) and status else prefix
 
 
 def _query_render_call(arguments: Mapping[str, JSONValue]) -> str | None:
+    entity_type = arguments.get("entity_type")
+    spec = _REGISTRY.get(entity_type) if isinstance(entity_type, str) else None
+    label = spec.label if spec else "实体"
     name = arguments.get("name")
-    return f"查询角色 {name}" if isinstance(name, str) and name else "列出全部角色"
+    if isinstance(name, str) and name:
+        return f"查询{label} {name}"
+    return f"列出全部{label}"
 
 
 def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
@@ -65,25 +259,69 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
         del tool_call_id, signal, on_update
-        _check_entity_type(arguments)
+        entity_type, spec = _require_spec(arguments)
         data = arguments.get("data")
         if not isinstance(data, dict):
-            raise ToolInputError("data 必须是角色字段对象（至少包含 name）")
+            raise ToolInputError(f"data 必须是{spec.label}字段对象（至少包含 name）")
+        name = data.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ToolInputError("data.name 必须是非空字符串")
+        if spec.cross_check is not None:
+            spec.cross_check(workspace, data)
+
+        entities = list(spec.read_all(workspace))
+        existing = next((e for e in entities if getattr(e, "name", None) == name), None)
+
+        new_status: str | None = None
+        if spec.status_field is not None:
+            field = spec.status_field
+            raw_new = data.get(field)
+            if raw_new is not None and not isinstance(raw_new, str):
+                legal = "、".join(sorted(TRANSITIONS[entity_type]))
+                raise ToolInputError(
+                    f"data.{field} 必须是字符串，收到 {type(raw_new).__name__}。"
+                    f"{spec.label} 的合法状态：{legal}。"
+                )
+            if existing is None:
+                new_status = raw_new if raw_new is not None else INITIAL_STATUS[entity_type]
+                try:
+                    validate_initial(entity_type, new_status)
+                except InvalidTransitionError as exc:
+                    raise ToolInputError(str(exc)) from exc
+            else:
+                old_status = str(getattr(existing, field))
+                new_status = raw_new if raw_new is not None else old_status
+                try:
+                    validate_transition(entity_type, old_status, new_status)
+                except InvalidTransitionError as exc:
+                    raise ToolInputError(str(exc)) from exc
+            data = {**data, field: new_status}
+
         try:
-            character = Character.model_validate(data)
+            model = spec.model_cls.model_validate(data)
         except ValidationError as exc:
-            details = "; ".join(
+            err_details = "; ".join(
                 f"{'.'.join(str(loc) for loc in error['loc'])}: {error['msg']}"
                 for error in exc.errors(include_url=False)
             )
-            raise ToolInputError(f"角色数据不合法：{details}") from exc
+            raise ToolInputError(f"{spec.label}数据不合法：{err_details}") from exc
+
+        if existing is not None:
+            entities[entities.index(existing)] = model
+        else:
+            entities.append(model)
         try:
-            path = save_character(workspace, character)
+            spec.write_all(workspace, entities)
         except InvalidEntityNameError as exc:
             raise ToolInputError(str(exc)) from exc
+
+        note = "" if new_status is None else f"（{spec.status_field}={new_status}）"
+        details: dict[str, JSONValue] = {"entity_type": entity_type, "name": name}
+        if new_status is not None and spec.status_field is not None:
+            details[spec.status_field] = new_status
         return AgentToolResult(
-            content=[TextContent(text=f"角色「{character.name}」已写入 {path}")],
-            details={"entity_type": "character", "name": character.name, "path": str(path)},
+            content=[TextContent(text=f"{spec.label}「{name}」已写入 Story Bible{note}")],
+            details=details,
         )
 
     async def query_execute(
@@ -93,69 +331,77 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
         del tool_call_id, signal, on_update
-        _check_entity_type(arguments)
+        entity_type, spec = _require_spec(arguments)
         name = arguments.get("name")
         if name is not None and not isinstance(name, str):
             raise ToolInputError("name 必须是字符串")
+        entities = list(spec.read_all(workspace))
+
         if isinstance(name, str) and name:
-            try:
-                character = load_character(workspace, name)
-            except InvalidEntityNameError as exc:
-                raise ToolInputError(str(exc)) from exc
-            if character is None:
+            found = next((e for e in entities if getattr(e, "name", None) == name), None)
+            if found is None:
+                # 泄压阀：查无结果是合法空结果，给引导性提示而非 error
                 return AgentToolResult(
                     content=[
                         TextContent(
                             text=(
-                                f"角色「{name}」不存在。可用 bible_upsert 创建，"
-                                "或不带 name 调用 bible_query 列出全部角色。"
+                                f"{spec.label}「{name}」不存在。可用 bible_upsert 创建，"
+                                f"或不带 name 调用 bible_query 列出全部{spec.label}。"
                             )
                         )
                     ],
                     details={"found": False, "name": name},
                 )
             return AgentToolResult(
-                content=[TextContent(text=character_to_yaml(character))],
-                details={"found": True, "character": character.model_dump()},
+                content=[TextContent(text=model_to_yaml(found))],
+                details={"found": True, entity_type: found.model_dump()},
             )
-        characters = list_characters(workspace)
-        if not characters:
+
+        if not entities:
             return AgentToolResult(
-                content=[TextContent(text="Story Bible 为空：还没有任何角色。")],
+                content=[TextContent(text=f"Story Bible 为空：还没有任何{spec.label}。")],
                 details={"count": 0, "names": []},
             )
-        lines = [f"Story Bible 中共 {len(characters)} 个角色："]
-        for c in characters:
-            parts = [c.name]
-            if c.identity:
-                parts.append(c.identity)
-            if c.motivation:
-                parts.append(f"动机：{c.motivation}")
-            lines.append("- " + " | ".join(parts))
+        lines = [f"Story Bible 中共 {len(entities)} 条{spec.label}："]
+        lines.extend(f"- {spec.summarize(e)}" for e in entities)
         return AgentToolResult(
             content=[TextContent(text="\n".join(lines))],
-            details={"count": len(characters), "names": [c.name for c in characters]},
+            details={
+                "count": len(entities),
+                "names": [str(getattr(e, "name", "")) for e in entities],
+            },
         )
 
     upsert = AgentTool(
         name="bible_upsert",
-        label="写入角色卡",
+        label="写入 Bible 实体",
         description=(
-            "把一张角色卡写入 Story Bible（YAML 落盘，同名覆盖）。"
-            "正文引用任何角色设定前，必须先用本工具落盘。"
+            "把一条实体写入 Story Bible（YAML 落盘，同名覆盖），"
+            "支持 character/clue/foreshadow/method/timeline 五类账本。"
+            "正文引用任何设定前，必须先用本工具落盘；状态只能沿合法迁移边推进。"
         ),
         parameters={
             "type": "object",
             "properties": {
                 "entity_type": {
                     "type": "string",
-                    "enum": ["character"],
-                    "description": "实体类型，当前仅支持 character",
+                    "enum": _ENTITY_ENUM,
+                    "description": (
+                        "实体类型：character 角色 / clue 线索 / foreshadow 伏笔 / "
+                        "method 手法 / timeline 时间线事件"
+                    ),
                 },
                 "data": {
                     "type": "object",
                     "description": (
-                        "角色字段：name 必填；identity/motivation/secret/relationships/notes 可选"
+                        "实体字段对象，name 必填。"
+                        "character：identity/motivation/secret/relationships/arc(状态)/notes；"
+                        "clue：content/chapter/points_to/is_red_herring/is_genuine/status；"
+                        "foreshadow：content/plant_chapter/plant_mode(explicit|hint|symbolic)"
+                        "/expected_resolve_chapter/status；"
+                        "method：description/time_window/requirements/"
+                        "alibi_claims[{person,day,t_start,t_end,claim}]/status；"
+                        "timeline：day(第几天)/t_start/t_end/chapter/participants/note（无状态字段）"
                     ),
                 },
             },
@@ -164,26 +410,29 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         },
         execute_fn=upsert_execute,
         prompt_guidelines=(
-            "任何角色设定必须先经 bible_upsert 落盘，再写进正文。",
-            "data 至少包含 name；同名再次调用视为更新。",
+            "任何设定必须先经 bible_upsert 落盘再写进正文；同名再次调用视为更新。",
+            "状态不可凭空跳级：新建即初始状态（角色 arc=flat；clue/foreshadow status=planned；"
+            "method status=drafted），被拒时按错误消息给出的合法去向修正。",
+            "timeline 的 participants 必须是已建档角色：先建角色，再登记事件。",
         ),
         render_call=_upsert_render_call,
     )
     query = AgentTool(
         name="bible_query",
-        label="查询角色卡",
+        label="查询 Bible 实体",
         description=(
-            "查询 Story Bible 中的角色卡：带 name 返回该角色完整 YAML；不带 name 返回全部角色摘要。"
+            "查询 Story Bible：带 name 返回该实体完整 YAML；"
+            "不带 name 返回该类账本摘要列表（含状态）。"
         ),
         parameters={
             "type": "object",
             "properties": {
                 "entity_type": {
                     "type": "string",
-                    "enum": ["character"],
-                    "description": "实体类型，当前仅支持 character",
+                    "enum": _ENTITY_ENUM,
+                    "description": "实体类型，与 bible_upsert 相同的五种",
                 },
-                "name": {"type": "string", "description": "角色名；缺省则列出全部"},
+                "name": {"type": "string", "description": "实体名；缺省则列出全部"},
             },
             "required": ["entity_type"],
             "additionalProperties": False,
