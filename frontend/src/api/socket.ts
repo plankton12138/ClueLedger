@@ -1,0 +1,183 @@
+/**
+ * WS 连接管理（P3 T8）：命令发送（自增 id + 响应配对 Promise）、连接后自动
+ * 拉取快照（get_state + get_messages）、断线状态上报。重连是显式动作——
+ * 不做自动重连风暴（计划 T8）；协议帧结构见同目录 types.ts。
+ *
+ * 错误原则与后端一致：响应 error 文案原样透传给调用方，不做人话翻译。
+ */
+
+import type {
+  AgentMessageWire,
+  CommandFrame,
+  CommandType,
+  EventFrame,
+  ServerFrame,
+} from "./types";
+import { isResponseFrame } from "./types";
+
+export type ConnectionStatus = "connecting" | "open" | "closed";
+
+/** get_state 响应的 data 载荷（对应 ws.py `_state_data`）。 */
+export interface AgentStateSnapshot {
+  slug: string;
+  model: string;
+  is_running: boolean;
+  tools: string[];
+}
+
+export interface SocketCallbacks {
+  onStatus?(status: ConnectionStatus): void;
+  onEvent?(event: EventFrame): void;
+  /** get_state + get_messages 都到齐后回调一次（连接建立时自动拉取）。 */
+  onSnapshot?(state: AgentStateSnapshot, messages: AgentMessageWire[]): void;
+  /** 连接层错误（发送失败、响应超时、坏帧、快照结构不符）。 */
+  onError?(message: string): void;
+}
+
+export interface CommandResult {
+  data?: Record<string, unknown>;
+}
+
+/** 开发态经 Vite proxy（/ws → ws://localhost:8000），协议随页面自适应。 */
+export function wsUrl(): string {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/ws`;
+}
+
+interface Pending {
+  command: CommandType;
+  resolve: (result: CommandResult) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+function parseState(data: Record<string, unknown> | undefined): AgentStateSnapshot {
+  const ok =
+    data !== undefined &&
+    typeof data["slug"] === "string" &&
+    typeof data["model"] === "string" &&
+    typeof data["is_running"] === "boolean" &&
+    Array.isArray(data["tools"]);
+  if (!ok) {
+    throw new Error(
+      `get_state 响应结构不符：期望含 slug/model/is_running/tools 字段的对象，` +
+        `收到 ${JSON.stringify(data)}。为什么错：服务端协议或版本可能不匹配。` +
+        `怎样算对：检查服务端 /ws 是否为 P3 协议后重连。`,
+    );
+  }
+  const d = data as Record<string, unknown>;
+  return {
+    slug: d["slug"] as string,
+    model: d["model"] as string,
+    is_running: d["is_running"] as boolean,
+    tools: (d["tools"] as unknown[]).map(String),
+  };
+}
+
+function parseMessages(data: Record<string, unknown> | undefined): AgentMessageWire[] {
+  if (data === undefined || !Array.isArray(data["messages"])) {
+    throw new Error(
+      `get_messages 响应结构不符：期望 { messages: [...] }，` +
+        `收到 ${JSON.stringify(data)}。怎样算对：检查服务端 /ws 协议后重连。`,
+    );
+  }
+  return data["messages"] as AgentMessageWire[];
+}
+
+export class AgentSocket {
+  private ws: WebSocket | null = null;
+  private nextId = 1;
+  private readonly pending = new Map<number, Pending>();
+
+  constructor(
+    private readonly url: string,
+    private readonly callbacks: SocketCallbacks = {},
+    private readonly timeoutMs = 15_000,
+  ) {}
+
+  connect(): void {
+    this.callbacks.onStatus?.("connecting");
+    const ws = new WebSocket(this.url);
+    this.ws = ws;
+    ws.onopen = () => {
+      this.callbacks.onStatus?.("open");
+      void this.loadSnapshot();
+    };
+    ws.onclose = () => this.callbacks.onStatus?.("closed");
+    ws.onerror = () =>
+      this.callbacks.onError?.("WebSocket 连接出错（服务未启动或地址不对）。怎样算对：确认服务已启动后点击重连。");
+    ws.onmessage = (ev: MessageEvent) => this.handleText(ev.data as string);
+  }
+
+  close(): void {
+    this.ws?.close();
+    this.ws = null;
+    for (const [id, entry] of this.pending) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error(`连接已关闭，命令 ${entry.command}（id=${id}）不再等待响应。`));
+    }
+    this.pending.clear();
+  }
+
+  /** 发送命令帧并等待同 id 响应帧；响应 error 文案随异常透传。 */
+  command(type: CommandType, message?: string): Promise<CommandResult> {
+    const ws = this.ws;
+    if (ws === null || ws.readyState !== WebSocket.OPEN) {
+      return Promise.reject(
+        new Error(
+          `命令 ${type} 无法发送：WebSocket 未连接（state=${ws?.readyState ?? "null"}）。` +
+            `怎样算对：等状态变为已连接后重试，或点击重连。`,
+        ),
+      );
+    }
+    const id = this.nextId++;
+    const frame: CommandFrame = message === undefined ? { id, type } : { id, type, message };
+    return new Promise<CommandResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(
+          new Error(
+            `命令 ${type}（id=${id}）等待响应超时（${this.timeoutMs}ms）。` +
+              `为什么错：服务端未在期限内回帧。怎样算对：检查服务是否存活后重试。`,
+          ),
+        );
+      }, this.timeoutMs);
+      this.pending.set(id, { command: type, resolve, reject, timer });
+      ws.send(JSON.stringify(frame));
+    });
+  }
+
+  private async loadSnapshot(): Promise<void> {
+    try {
+      const [stateRes, msgsRes] = await Promise.all([
+        this.command("get_state"),
+        this.command("get_messages"),
+      ]);
+      this.callbacks.onSnapshot?.(parseState(stateRes.data), parseMessages(msgsRes.data));
+    } catch (exc) {
+      this.callbacks.onError?.(exc instanceof Error ? exc.message : String(exc));
+    }
+  }
+
+  private handleText(text: string): void {
+    let frame: ServerFrame;
+    try {
+      frame = JSON.parse(text) as ServerFrame;
+    } catch {
+      this.callbacks.onError?.(`收到无法解析的帧：${text.slice(0, 200)}`);
+      return;
+    }
+    if (!isResponseFrame(frame)) {
+      this.callbacks.onEvent?.(frame as EventFrame);
+      return;
+    }
+    // 无法配对的响应（无 id / 未知 id / 超时后才到）只能忽略，不误配对
+    if (frame.id === undefined) return;
+    const entry = this.pending.get(frame.id as number);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    this.pending.delete(frame.id as number);
+    if (frame.success) entry.resolve({ data: frame.data });
+    else entry.reject(new Error(frame.error ?? `命令 ${entry.command} 失败（服务端未给出原因）。`));
+  }
+}
