@@ -5,10 +5,12 @@ create_app 只认 WritingSession 协议——测试用桩会话注入即可跑�
 """
 
 from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 from typing import Literal
 
 from fastapi.testclient import TestClient
 
+from hastings.bible.store import StoryWorkspace
 from hastings.server.app import create_app
 from hastings.server.session import AgentBusyError, WritingSession
 from tau_agent.events import AgentEvent
@@ -64,12 +66,13 @@ class StubSession:
         return lambda: None
 
 
-def _client(session: WritingSession) -> TestClient:
-    return TestClient(create_app(session))
+def _client(session: WritingSession, workspace: StoryWorkspace) -> TestClient:
+    return TestClient(create_app(session, workspace))
 
 
-def test_health_reports_session_state() -> None:
-    body = _client(StubSession()).get("/api/health").json()
+def test_health_reports_session_state(tmp_path: Path) -> None:
+    workspace = StoryWorkspace(root=tmp_path, slug="orient-express")
+    body = _client(StubSession(), workspace).get("/api/health").json()
     assert body == {
         "status": "ok",
         "story": "orient-express",
@@ -79,10 +82,11 @@ def test_health_reports_session_state() -> None:
     }
 
 
-def test_health_reflects_running_state() -> None:
+def test_health_reflects_running_state(tmp_path: Path) -> None:
     session = StubSession()
     session._running = True  # noqa: SLF001 — 测试桩内部状态，直接拨动
+    workspace = StoryWorkspace(root=tmp_path, slug="orient-express")
     body: dict[str, Literal["ok"] | str | bool | list[str]] = (
-        _client(session).get("/api/health").json()
+        _client(session, workspace).get("/api/health").json()
     )
     assert body["is_running"] is True

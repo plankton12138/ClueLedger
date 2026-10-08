@@ -51,7 +51,7 @@ def _app(workspace: StoryWorkspace, turns: list[list[Any]]) -> FastAPI:
             tools=tools,
         )
     )
-    return create_app(HastingsSession(harness=harness, workspace=workspace))
+    return create_app(HastingsSession(harness=harness, workspace=workspace), workspace)
 
 
 def _standard_app(workspace: StoryWorkspace) -> FastAPI:
@@ -128,8 +128,10 @@ def test_ws_prompt_streams_event_frames_with_alias_fidelity(
 # --- ② 命令语义：协议翻译用 StubSession 钉确定性 ---
 
 
-def test_ws_busy_rejected_with_error_frame_and_connection_survives() -> None:
-    with TestClient(create_app(StubSession())).websocket_connect("/ws") as ws:
+def test_ws_busy_rejected_with_error_frame_and_connection_survives(
+    workspace: StoryWorkspace,
+) -> None:
+    with TestClient(create_app(StubSession(), workspace)).websocket_connect("/ws") as ws:
         ws.send_json({"id": 5, "type": "prompt", "message": "再来一个"})
         error = ws.receive_json()
 
@@ -162,9 +164,11 @@ class RecordingSession(StubSession):
         self.followed_up.append(content)
 
 
-def test_ws_steer_and_follow_up_commands_reach_session() -> None:
+def test_ws_steer_and_follow_up_commands_reach_session(
+    workspace: StoryWorkspace,
+) -> None:
     session = RecordingSession()
-    with TestClient(create_app(session)).websocket_connect("/ws") as ws:
+    with TestClient(create_app(session, workspace)).websocket_connect("/ws") as ws:
         ws.send_json({"id": 2, "type": "steer", "message": STEER_TEXT})
         steer_response = ws.receive_json()
         assert steer_response == {
