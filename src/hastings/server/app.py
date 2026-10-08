@@ -29,6 +29,7 @@ class HealthResponse(BaseModel):
 def create_app(session: WritingSession, workspace: StoryWorkspace) -> FastAPI:
     app = FastAPI(title="Hastings", version="0.1.0")
     app.state.session = session
+    app.state.workspace = workspace  # 调试内省与入口测试用；路由经参数绑定
     app.include_router(create_rest_router(workspace=workspace, session=session))
     app.include_router(ws_router)
 
