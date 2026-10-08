@@ -9,12 +9,13 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from hastings.bible.models import Character
+from hastings.bible.models import Character, Clue, Foreshadow, Method, TimelineEntry
 
 # 首字符须为字母/数字/中文，其后允许词字符、中文、空格与连字符；禁点号、
 # 斜杠、反斜杠等路径相关字符。
@@ -64,8 +65,9 @@ def validate_slug(slug: str) -> str:
 class StoryWorkspace:
     """一个故事工作区的路径解析与目录管理。
 
-    布局（DESIGN.md §2.2）：
+    布局（DESIGN.md §2.2 + 计划 D7）：
         <root>/<slug>/bible/characters/*.yaml
+        <root>/<slug>/bible/{clues,foreshadows,method,timeline}.yaml
         <root>/<slug>/chapters/*.md
     """
 
@@ -90,6 +92,22 @@ class StoryWorkspace:
     @property
     def chapters_dir(self) -> Path:
         return self.story_dir / "chapters"
+
+    @property
+    def clues_path(self) -> Path:
+        return self.bible_dir / "clues.yaml"
+
+    @property
+    def foreshadows_path(self) -> Path:
+        return self.bible_dir / "foreshadows.yaml"
+
+    @property
+    def method_path(self) -> Path:
+        return self.bible_dir / "method.yaml"
+
+    @property
+    def timeline_path(self) -> Path:
+        return self.bible_dir / "timeline.yaml"
 
     def ensure_dirs(self) -> None:
         self.characters_dir.mkdir(parents=True, exist_ok=True)
@@ -136,14 +154,58 @@ def list_characters(workspace: StoryWorkspace) -> list[Character]:
     ]
 
 
+# --- P2 T2：单文件账本（D7：列表 + name 主键；upsert 合并逻辑在工具层） ---
+
+# 约束型类型参数：model_validate 返回 Self，load_ledger 调用点收窄为传入的模型类型。
+
+
+class LedgerFormatError(ValueError):
+    """账本文件根节点非列表等结构性损坏。
+
+    区别于"空账本"（合法状态，返回 []）与 pydantic 字段错误（原样上抛），
+    这是环境/数据故障，需要显式暴露给用户修复。
+    """
+
+
+def load_ledger[M: (Clue, Foreshadow, Method, TimelineEntry)](
+    path: Path, model_cls: type[M]
+) -> list[M]:
+    """读取单文件账本；缺文件或空文件视为空账本（P1 旧工作区兼容）。"""
+    if not path.exists():
+        return []
+    raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        msg = f"账本文件损坏（根节点应为 YAML 列表，实际为 {type(raw).__name__}）：{path}"
+        raise LedgerFormatError(msg)
+    return [model_cls.model_validate(item) for item in raw]
+
+
+def save_ledger[M: (Clue, Foreshadow, Method, TimelineEntry)](
+    path: Path, items: Sequence[M]
+) -> Path:
+    """整表覆盖写单文件账本，返回文件路径；自建父目录。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = [item.model_dump() for item in items]
+    path.write_text(
+        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return path
+
+
 __all__ = [
     "InvalidEntityNameError",
+    "LedgerFormatError",
     "StoryWorkspace",
     "character_path",
     "character_to_yaml",
     "list_characters",
     "load_character",
+    "load_ledger",
     "save_character",
+    "save_ledger",
     "validate_entity_name",
     "validate_slug",
 ]
