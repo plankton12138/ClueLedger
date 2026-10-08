@@ -24,10 +24,10 @@ from typing import cast
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
-
-from hastings.server.session import AgentBusyError, WritingSession
 from tau_agent.events import AgentEvent
 from tau_agent.types import JSONValue
+
+from hastings.server.session import AgentBusyError, WritingSession
 
 router = APIRouter()
 
@@ -94,7 +94,9 @@ class Connection:
         try:
             frame = CommandFrame.model_validate_json(raw)
         except ValidationError as exc:
-            await self._respond(command=None, frame_id=None, error=f"命令帧解析失败：{exc}")
+            await self._respond(
+                command=None, frame_id=None, error=f"命令帧解析失败：{exc}"
+            )
             return
         try:
             await self._dispatch(frame)
@@ -105,7 +107,9 @@ class Connection:
         match frame.type:
             case "prompt":
                 stream = self._session.prompt(_required_message(frame))
-                await self._respond(command=frame.type, frame_id=frame.id, data={"started": True})
+                await self._respond(
+                    command=frame.type, frame_id=frame.id, data={"started": True}
+                )
                 self._drain(stream)
             case "steer" | "follow_up":
                 message = _required_message(frame)
@@ -118,7 +122,9 @@ class Connection:
                 self._session.cancel()
                 await self._respond(command=frame.type, frame_id=frame.id)
             case "get_state":
-                await self._respond(command=frame.type, frame_id=frame.id, data=self._state_data())
+                await self._respond(
+                    command=frame.type, frame_id=frame.id, data=self._state_data()
+                )
             case "get_messages":
                 await self._respond(
                     command=frame.type,
