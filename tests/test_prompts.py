@@ -70,3 +70,15 @@ def test_system_prompt_is_deterministic() -> None:
     tools = [_tool("bible_query", "动笔前先 bible_query 核对既有设定。")]
 
     assert build_system_prompt(tools) == build_system_prompt(tools)
+
+
+def test_system_prompt_states_transition_and_lock_semantics() -> None:
+    """工作流程节（T7）：状态沿合法迁移边经工具变更 + 锁定/解锁一句话版。
+
+    细节语义在各工具的 prompt_guidelines 里，这里只做一句话提醒，不重复维护。
+    """
+    prompt = build_system_prompt()
+
+    assert "合法迁移边" in prompt
+    assert "method_lock" in prompt
+    assert "method_unlock" in prompt

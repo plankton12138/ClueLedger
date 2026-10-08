@@ -255,6 +255,21 @@ def _require_spec(arguments: Mapping[str, JSONValue]) -> tuple[str, _Spec]:
     return entity_type, spec
 
 
+# --- 直读入口复用（CLI /bible）：标签与摘要行的唯一事实源是本注册表 ---
+
+ENTITY_LABELS: Final[dict[str, str]] = {name: spec.label for name, spec in _REGISTRY.items()}
+
+_SUMMARIZERS: Final[dict[type[BaseModel], Callable[[BaseModel], str]]] = {
+    spec.model_cls: spec.summarize for spec in _REGISTRY.values()
+}
+
+
+def entity_summary(entity: BaseModel) -> str:
+    """按实体实际类型渲染单行摘要（bible_query 列表与 CLI /bible 共用）。"""
+    summarizer = _SUMMARIZERS.get(type(entity))
+    return summarizer(entity) if summarizer is not None else repr(entity)
+
+
 # JSONValue 列表不变型：sorted 返回 list[str] 需显式收窄
 _ENTITY_ENUM: Final[list[JSONValue]] = cast("list[JSONValue]", sorted(_REGISTRY))
 
@@ -483,4 +498,4 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
     return [upsert, query]
 
 
-__all__ = ["create_bible_tools"]
+__all__ = ["ENTITY_LABELS", "create_bible_tools", "entity_summary"]

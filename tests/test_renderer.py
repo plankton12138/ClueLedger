@@ -11,8 +11,9 @@ from typing import Any
 
 import pytest
 
-from hastings.bible.store import StoryWorkspace
-from hastings.cli import PlainRenderer
+from hastings.bible.models import Character, Clue, Method
+from hastings.bible.store import StoryWorkspace, save_character, save_ledger
+from hastings.cli import PlainRenderer, bible_command_output, create_writing_tools, format_bible
 from hastings.tools.chapter_tools import create_chapter_tools
 from tau_agent import (
     AgentHarness,
@@ -212,3 +213,72 @@ async def test_renderer_consumes_real_harness_event_stream(
     assert "第一章已落盘。" in out
     assert (workspace.chapters_dir / "ch01.md").exists()
     assert renderer.unhandled_event_types == ()
+
+
+# --- T7：/bible 直读命令（格式化 + 防崩 REPL） ---
+
+
+def _seeded_workspace(tmp_path: Any) -> StoryWorkspace:
+    workspace = StoryWorkspace(root=tmp_path, slug="bible-cli")
+    save_character(workspace, Character(name="沈砚", identity="退休警探"))
+    save_ledger(workspace.clues_path, [Clue(name="停摆的怀表", content="停在 21:47")])
+    save_ledger(workspace.method_path, [Method(name="怀表调时诡计", status="locked")])
+    return workspace
+
+
+def test_format_bible_overview_covers_all_five_ledgers(tmp_path: Any) -> None:
+    workspace = _seeded_workspace(tmp_path)
+
+    out = format_bible(workspace)
+
+    assert "角色账本共 1 条" in out
+    assert "- 沈砚 | 退休警探 | 弧光：flat" in out
+    assert "- 停摆的怀表 | planned" in out
+    assert "- 怀表调时诡计 | locked" in out
+    assert "伏笔账本为空" in out
+    assert "时间线事件账本为空" in out
+
+
+def test_format_bible_single_ledger(tmp_path: Any) -> None:
+    workspace = _seeded_workspace(tmp_path)
+
+    assert format_bible(workspace, "method") == "手法账本共 1 条：\n- 怀表调时诡计 | locked"
+
+
+def test_format_bible_unknown_type_lists_valid_values(tmp_path: Any) -> None:
+    workspace = _seeded_workspace(tmp_path)
+
+    out = format_bible(workspace, "spell")
+
+    assert "未知账本类型" in out
+    assert "character" in out
+    assert "foreshadow" in out
+
+
+def test_bible_command_output_survives_corrupt_yaml(tmp_path: Any) -> None:
+    """手改的 YAML 损坏时返回可读错误文本而非抛异常崩 REPL（沿用 R3 #4 模式）。"""
+    workspace = _seeded_workspace(tmp_path)
+    workspace.clues_path.write_text("::{ not yaml", encoding="utf-8")
+
+    out = bible_command_output(workspace, "clue")
+
+    assert out.startswith("读取 Story Bible 失败")
+    assert str(workspace.bible_dir) in out
+    # 其它账本不受损坏文件影响
+    assert "手法账本共 1 条" in bible_command_output(workspace, "method")
+
+
+def test_create_writing_tools_covers_ledger_lifecycle_tools(tmp_path: Any) -> None:
+    """真实端点工具集：五账本读写 + 锁定/解锁 + 时间线检测全注册。"""
+    workspace = _seeded_workspace(tmp_path)
+
+    names = {tool.name for tool in create_writing_tools(workspace)}
+
+    assert {
+        "bible_upsert",
+        "bible_query",
+        "write_chapter",
+        "method_lock",
+        "method_unlock",
+        "timeline_check",
+    } <= names

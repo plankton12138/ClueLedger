@@ -6,16 +6,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 
 import yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from hastings.bible.models import Character
-from hastings.bible.store import StoryWorkspace, list_characters
+from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
+from hastings.bible.store import (
+    LedgerFormatError,
+    StoryWorkspace,
+    list_characters,
+    load_ledger,
+)
 from hastings.prompts import build_system_prompt
-from hastings.tools.bible_tools import create_bible_tools
+from hastings.tools.bible_tools import ENTITY_LABELS, create_bible_tools, entity_summary
 from hastings.tools.chapter_tools import create_chapter_tools
+from hastings.tools.method_tools import create_method_tools
+from hastings.tools.timeline_tools import create_timeline_tools
 from tau_agent.events import (
     AgentEndEvent,
     AgentEvent,
@@ -35,7 +42,8 @@ from tau_agent.provider_events import TextDeltaEvent
 from tau_agent.tools import AgentTool
 
 QUIT_COMMANDS = frozenset({"/quit", "/exit", "/q"})
-CHARACTERS_COMMAND = "/characters"
+BIBLE_COMMAND = "/bible"
+_ALL_ENTITY_TYPES: tuple[str, ...] = tuple(ENTITY_LABELS)
 
 
 class PlainRenderer:
@@ -107,18 +115,56 @@ def build_harness(workspace: StoryWorkspace, provider: ModelProvider, model: str
 
 
 def create_writing_tools(workspace: StoryWorkspace) -> list[AgentTool]:
-    return create_bible_tools(workspace) + create_chapter_tools(workspace)
+    return (
+        create_bible_tools(workspace)
+        + create_chapter_tools(workspace)
+        + create_method_tools(workspace)
+        + create_timeline_tools(workspace)
+    )
 
 
-def format_characters(characters: list[Character]) -> str:
-    """``/characters`` 的输出格式。"""
-    if not characters:
-        return "Story Bible 为空：还没有任何角色。试着说「建立一个悬疑案的两位角色」。"
-    lines = [f"Story Bible 共 {len(characters)} 位角色："]
-    for character in characters:
-        detail = character.identity or character.motivation or "（暂无身份描述）"
-        lines.append(f"- {character.name}｜{detail}")
+def _ledger_entities(workspace: StoryWorkspace, entity_type: str) -> Sequence[BaseModel]:
+    """按账本类型直读实体（/bible 命令专用，绕过 agent loop）。"""
+    loaders: dict[str, Callable[[], Sequence[BaseModel]]] = {
+        "character": lambda: list_characters(workspace),
+        "clue": lambda: load_ledger(workspace.clues_path, Clue),
+        "foreshadow": lambda: load_ledger(workspace.foreshadows_path, Foreshadow),
+        "method": lambda: load_ledger(workspace.method_path, Method),
+        "timeline": lambda: load_ledger(workspace.timeline_path, TimelineEntry),
+    }
+    return loaders[entity_type]()
+
+
+def format_ledger(workspace: StoryWorkspace, entity_type: str) -> str:
+    """``/bible <type>`` 的输出：单账本摘要列表。"""
+    entities = _ledger_entities(workspace, entity_type)
+    label = ENTITY_LABELS[entity_type]
+    if not entities:
+        return f"{label}账本为空。"
+    lines = [f"{label}账本共 {len(entities)} 条："]
+    lines.extend(f"- {entity_summary(e)}" for e in entities)
     return "\n".join(lines)
+
+
+def format_bible(workspace: StoryWorkspace, entity_type: str | None = None) -> str:
+    """``/bible`` 的输出：缺省五账本总览，带 type 则只看该账本。"""
+    if entity_type is None:
+        return "\n".join(format_ledger(workspace, t) for t in _ALL_ENTITY_TYPES)
+    if entity_type not in _ALL_ENTITY_TYPES:
+        return f"未知账本类型：{entity_type}。可用值：{'、'.join(_ALL_ENTITY_TYPES)}。"
+    return format_ledger(workspace, entity_type)
+
+
+def bible_command_output(workspace: StoryWorkspace, arg: str) -> str:
+    """/bible 命令的完整输出。
+
+    直读入口是唯一绕过工具层碰 YAML 的地方：手改的文件可能损坏，
+    读取失败转成可读文本而不是抛异常崩 REPL（R3 #4 教训）。
+    """
+    try:
+        return format_bible(workspace, arg or None)
+    except (ValidationError, LedgerFormatError, yaml.YAMLError, OSError) as exc:
+        return f"读取 Story Bible 失败：{exc}\n（请检查 {workspace.bible_dir} 下的 YAML 文件）"
 
 
 async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: str) -> None:
@@ -130,7 +176,7 @@ async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: st
 
     print(f"案卷已打开：{workspace.story_dir}")
     print(f"模型：{model}｜工具：{'、'.join(tool.name for tool in tools)}")
-    print("输入 /characters 查看账本，/quit 收工。")
+    print("输入 /bible [type] 查看账本，/quit 收工。")
     print()
 
     while True:
@@ -143,13 +189,8 @@ async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: st
             continue
         if line in QUIT_COMMANDS:
             break
-        if line == CHARACTERS_COMMAND:
-            try:
-                print(format_characters(list_characters(workspace)))
-            except (ValidationError, yaml.YAMLError, OSError) as exc:
-                # 手改的 YAML 可能损坏；工具路径有 agent loop 兜底，这里是唯一直读入口。
-                print(f"读取 Story Bible 失败：{exc}")
-                print(f"（请检查 {workspace.characters_dir} 下的 YAML 文件）")
+        if line == BIBLE_COMMAND or line.startswith(BIBLE_COMMAND + " "):
+            print(bible_command_output(workspace, line[len(BIBLE_COMMAND) :].strip()))
             print()
             continue
         async for event in harness.prompt(line):
@@ -162,11 +203,13 @@ async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: st
 
 
 __all__ = [
-    "CHARACTERS_COMMAND",
+    "BIBLE_COMMAND",
     "QUIT_COMMANDS",
     "PlainRenderer",
+    "bible_command_output",
     "build_harness",
     "create_writing_tools",
-    "format_characters",
+    "format_bible",
+    "format_ledger",
     "run_repl",
 ]
