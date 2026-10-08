@@ -12,11 +12,13 @@ from typing import Any
 import pytest
 import yaml
 
-from hastings.bible.models import Character
-from hastings.bible.store import StoryWorkspace, list_characters
+from hastings.bible.models import Character, Clue, Foreshadow, Method
+from hastings.bible.store import StoryWorkspace, list_characters, load_ledger
 from hastings.prompts import build_system_prompt
 from hastings.tools.bible_tools import create_bible_tools
 from hastings.tools.chapter_tools import create_chapter_tools
+from hastings.tools.method_tools import create_method_tools
+from hastings.tools.timeline_tools import create_timeline_tools
 from tau_agent import (
     AgentHarness,
     AgentHarnessConfig,
@@ -242,3 +244,211 @@ async def test_first_message_start_is_user_prompt(harness: AgentHarness) -> None
     message_starts = [event for event in events if isinstance(event, MessageStartEvent)]
 
     assert message_starts[0].message.role == "user"
+
+
+# --- P2 T6：五账本全流程剧本 ---
+# 剧本照抄 P1 范式，只扩内容："建角色、登记线索与伏笔、起草手法并锁定，
+# 然后写第一章"，章后把伏笔对账为 planted，最后跑时间线检测收尾。
+
+
+FLOW_PROMPT = "建角色、登记线索与伏笔、起草手法并锁定，然后写第一章"
+FLOW_DETECTIVE = {"name": "沈砚", "identity": "退休警探", "secret": "十年前因怀表案引咎辞职"}
+FLOW_SUSPECT = {"name": "顾眉", "motivation": "掩盖十年前的挪用案"}
+FLOW_CLUE = {
+    "name": "停摆的怀表",
+    "content": "死者口袋里的怀表停在 21:47",
+    "chapter": "ch01",
+    "points_to": "顾眉",
+    "is_genuine": True,
+}
+FLOW_FORESHADOW = {
+    "name": "旅客名单缺页",
+    "content": "旅客名单被撕去了一页",
+    "plant_chapter": "ch01",
+    "plant_mode": "hint",
+    "expected_resolve_chapter": "ch05",
+}
+FLOW_METHOD = {
+    "name": "怀表调时诡计",
+    "description": "凶手提前拨停怀表，伪造死亡时刻",
+    "time_window": "第1天 21:00-23:00",
+    "requirements": ["怀表在死者上衣口袋", "凶手案发前接触过车厢"],
+    "alibi_claims": [
+        {
+            "person": "顾眉",
+            "day": 1,
+            "t_start": "21:00",
+            "t_end": "23:00",
+            "claim": "声称整晚在餐厅打牌",
+        }
+    ],
+}
+FLOW_LOCK_REASON = "诡计定稿，开写前冻结"
+FLOW_CHAPTER_TITLE = "雪夜停摆"
+FLOW_CHAPTER_BODY = "怀表停在二十一点四十七分。沈砚合上表盖：死亡时刻是被人拨出来的。"
+
+
+def _full_flow_provider() -> FakeProvider:
+    detective = ToolCall(
+        id="call-f1",
+        name="bible_upsert",
+        arguments={"entity_type": "character", "data": FLOW_DETECTIVE},
+    )
+    suspect = ToolCall(
+        id="call-f2",
+        name="bible_upsert",
+        arguments={"entity_type": "character", "data": FLOW_SUSPECT},
+    )
+    clue = ToolCall(
+        id="call-f3", name="bible_upsert", arguments={"entity_type": "clue", "data": FLOW_CLUE}
+    )
+    foreshadow = ToolCall(
+        id="call-f4",
+        name="bible_upsert",
+        arguments={"entity_type": "foreshadow", "data": FLOW_FORESHADOW},
+    )
+    method = ToolCall(
+        id="call-f5", name="bible_upsert", arguments={"entity_type": "method", "data": FLOW_METHOD}
+    )
+    lock = ToolCall(
+        id="call-f6",
+        name="method_lock",
+        arguments={"name": "怀表调时诡计", "chapter": "ch01", "reason": FLOW_LOCK_REASON},
+    )
+    write = ToolCall(
+        id="call-f7",
+        name="write_chapter",
+        arguments={"chapter": 1, "title": FLOW_CHAPTER_TITLE, "content": FLOW_CHAPTER_BODY},
+    )
+    planted = ToolCall(
+        id="call-f8",
+        name="bible_upsert",
+        # 章后对账：upsert 是覆盖写，必须全量回传，只把 status 推进为 planted
+        arguments={"entity_type": "foreshadow", "data": {**FLOW_FORESHADOW, "status": "planted"}},
+    )
+    check = ToolCall(id="call-f9", name="timeline_check", arguments={})
+    closing = (
+        "全流程完毕：角色建档，线索与伏笔登记，"
+        "手法已锁定，第一章落盘，伏笔对账为 planted，时间线自洽。"
+    )
+    return FakeProvider(
+        [
+            _assistant_stream(call=detective, text="先建侦探。", reason="toolUse"),
+            _assistant_stream(call=suspect, text="再建嫌疑人。", reason="toolUse"),
+            _assistant_stream(call=clue, text="登记线索。", reason="toolUse"),
+            _assistant_stream(call=foreshadow, text="登记伏笔。", reason="toolUse"),
+            _assistant_stream(call=method, text="起草手法。", reason="toolUse"),
+            _assistant_stream(call=lock, text="手法定稿，锁定。", reason="toolUse"),
+            _assistant_stream(call=write, text="动笔写第一章。", reason="toolUse"),
+            _assistant_stream(call=planted, text="章后对账：伏笔已埋。", reason="toolUse"),
+            _assistant_stream(call=check, text="跑一次时间线检测。", reason="toolUse"),
+            _assistant_stream(call=None, text=closing, reason="stop"),
+        ]
+    )
+
+
+@pytest.fixture
+def full_harness(workspace: StoryWorkspace) -> AgentHarness:
+    tools = (
+        create_bible_tools(workspace)
+        + create_chapter_tools(workspace)
+        + create_method_tools(workspace)
+        + create_timeline_tools(workspace)
+    )
+    return AgentHarness(
+        AgentHarnessConfig(
+            provider=_full_flow_provider(),
+            model="fake",
+            system=build_system_prompt(tools),
+            tools=tools,
+        )
+    )
+
+
+FLOW_TOOL_NAMES = [
+    "bible_upsert",
+    "bible_upsert",
+    "bible_upsert",
+    "bible_upsert",
+    "bible_upsert",
+    "method_lock",
+    "write_chapter",
+    "bible_upsert",
+    "timeline_check",
+]
+
+
+@pytest.mark.anyio
+async def test_full_flow_event_sequence(full_harness: AgentHarness) -> None:
+    events = [event async for event in full_harness.prompt(FLOW_PROMPT)]
+    types = [event.type for event in events]
+
+    # 十个模型回合：九个工具回合 + 一个总结回合
+    assert types[0] == "agent_start"
+    assert types[-1] == "agent_end"
+    assert types.count("turn_start") == 10
+    assert types.count("turn_end") == 10
+    assert types.count("tool_execution_start") == 9
+    assert types.count("tool_execution_end") == 9
+    assert types.count("message_start") == 10 + 9 + 1  # assistant + toolResult + user prompt
+
+    tool_names = [event.tool_name for event in events if isinstance(event, ToolExecutionEndEvent)]
+    assert tool_names == FLOW_TOOL_NAMES
+    assert all(not event.is_error for event in events if isinstance(event, ToolExecutionEndEvent))
+
+
+@pytest.mark.anyio
+async def test_full_flow_persists_ledgers(
+    full_harness: AgentHarness, workspace: StoryWorkspace
+) -> None:
+    async for _ in full_harness.prompt(FLOW_PROMPT):
+        pass
+
+    # 两张角色卡照旧落盘
+    assert [c.name for c in list_characters(workspace)] == ["沈砚", "顾眉"]
+
+    # 线索账本：初始状态 planned
+    clues = load_ledger(workspace.clues_path, Clue)
+    assert len(clues) == 1
+    assert clues[0].status == "planned"
+    assert clues[0].is_genuine is True
+
+    # 伏笔账本：章后对账迁移到 planted，且覆盖写后全量字段仍在
+    foreshadows = load_ledger(workspace.foreshadows_path, Foreshadow)
+    assert len(foreshadows) == 1
+    assert foreshadows[0].status == "planted"
+    assert foreshadows[0].content == FLOW_FORESHADOW["content"]
+    assert foreshadows[0].expected_resolve_chapter == "ch05"
+
+    # 手法账本：经 method_lock 迁移到 locked，history 含锁定审计记录
+    methods = load_ledger(workspace.method_path, Method)
+    assert len(methods) == 1
+    assert methods[0].status == "locked"
+    assert [(h.action, h.chapter) for h in methods[0].history] == [("locked", "ch01")]
+
+    # 一章正文
+    chapter = workspace.chapters_dir / "ch01.md"
+    assert chapter.exists()
+    assert chapter.read_text(encoding="utf-8").startswith(f"# 第1章 {FLOW_CHAPTER_TITLE}\n")
+
+    # timeline_check 只读检测，不落盘
+    assert not workspace.timeline_path.exists()
+
+
+@pytest.mark.anyio
+async def test_full_flow_message_history(full_harness: AgentHarness) -> None:
+    async for _ in full_harness.prompt(FLOW_PROMPT):
+        pass
+
+    assert [m.role for m in full_harness.messages] == [
+        "user",
+        *("assistant", "toolResult") * 9,
+        "assistant",
+    ]
+    results = [m for m in full_harness.messages if isinstance(m, ToolResultMessage)]
+    assert [r.tool_name for r in results] == FLOW_TOOL_NAMES
+    assert "手法「怀表调时诡计」已锁定" in results[5].text
+    assert "第1章已写入" in results[6].text
+    assert "status=planted" in results[7].text
+    assert "时间线自洽" in results[8].text
+    assert all(r.is_error is False for r in results)
