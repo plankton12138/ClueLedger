@@ -86,10 +86,10 @@ stories/the-orient-express-case/
 
 ### 3.1 总体形态：单 Agent + 工具 → 编排式双 Agent（演进路线）
 
-**阶段一（Phase 1–4）：单 Agent + 丰富工具。**
-完全贴合 Tau 架构：一个 `AgentHarness`，system prompt 定义"悬疑小说主编"角色，工具集承担全部结构化操作。理由：先吃透一个 loop 里工具调用、上下文管理、事件流的全部细节，再谈编排——这是学习路径的最优排序，也是 Tau 哲学（small layers beat magic）的要求。
+**阶段一（Phase 1–7）：单 Agent + 丰富工具。**
+完全贴合 Tau 架构：一个 `AgentHarness`，system prompt 定义"悬疑小说主编"角色，工具集承担全部结构化操作。理由：先吃透一个 loop 里工具调用、上下文管理、事件流的全部细节，再谈编排——这是学习路径的最优排序，也是 Tau 哲学（small layers beat magic）的要求。（P6 基础设施、P7 RAG 均在此形态内完成。）
 
-**阶段二（Phase 6）：引入"审计员"作为第二个 harness。**
+**阶段二（Phase 8）：引入"审计员"作为第二个 harness。**
 写作 Agent 与审计 Agent 分离，原因：
 
 1. **利益冲突**：让写作者自查伏笔回收等于让被告当法官；
@@ -152,7 +152,7 @@ stories/the-orient-express-case/
 |---|---|---|---|
 | 向量库 | **Chroma（嵌入式模式）** | 零运维、纯 Python、数据即文件，符合"可 inspect"哲学；单机语料量（百级场景 chunk）绰绰有余 | Qdrant（想练 Docker 时）、FAISS（更底层，不必要） |
 | Embedding | **BGE-M3（本地 sentence-transformers）** | 中英双语（阿婆原著+译本都覆盖）、免费、离线；1024 维 | API embedding（OpenAI/BGE-API）：省显存但依赖网络 |
-| Rerank | bge-reranker-base（可选，Phase 5 后期） | 学习完整 RAG 链路的进阶练习 | 无 |
+| Rerank | bge-reranker-base（可选，Phase 7 后期） | 学习完整 RAG 链路的进阶练习 | 无 |
 | 框架 | **不使用 LangChain/LlamaIndex** | 组件总共 200 行以内：chunk→embed→upsert→query。手写才能学会，简历上也更能讲清楚 | LlamaIndex（想对比时可做实验） |
 
 ### 4.3 检索策略（工具 `style_search` 的内部）
@@ -187,11 +187,12 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 
 ### 5.2 页面结构
 
-1. **对话流**（左侧）：消息 + 工具调用卡片（折叠式，渲染 `render_call` 文本）——对标 TUI 主区；
-2. **Story Bible 面板**（右侧 Tab）：角色/线索/伏笔/时间线的表格视图，伏笔条目按状态着色（未回收=红点）；
-3. **章节阅读器**（中央）：正文渲染 + 审计报告侧栏；
-4. **语料管理页**：上传、入库进度、风格档案展示；
-5. **调试视图**（隐藏彩蛋，学习/演示用）：原始事件流实时滚动。
+1. **对话流**（左侧，可折叠可调宽）：消息 + 工具调用卡片（折叠式，渲染 `render_call` 文本）——对标 TUI 主区；
+2. **Story Bible 面板**（右侧 Tab，可调宽）：角色/线索/伏笔/时间线的表格视图，伏笔条目按状态着色（未回收=红点）；P6 起增强——伏笔账本表格化（埋设/预计回收/风险列 + 筛选）、角色小传展开、关系图（React Flow + d3-force，懒加载）、数据概览统计卡；
+3. **章节阅读器/编辑器**（中央，P5 起正文居中）：正文渲染 + 编辑 + 对账同步；
+4. **事件流页**（P5 T6 起为一级导航入口；P6 升级）：原始事件帧 + 历史查询（events.jsonl 持久化）+ 分类过滤 + 运行概览 + 导出；
+5. **设置页**：写作语言（已交付）+ 模型接入（P6：服务级 config.yaml 多 provider 档案、热切模型、模型列表发现）；
+6. **语料管理页**（P7 预留）：上传、入库进度、风格档案展示。
 
 技术选型：React 18 + Vite + TypeScript + Tailwind；状态管理 Zustand（事件 reducer 场景极合适）。不引入 Next.js（无 SSR 需求）、不引入 UI 大库。
 
@@ -262,9 +263,11 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 | **P2 Bible 完整化** | 五张账本 + 状态机 + `timeline_check` + `method_lock` + 全套单测 | 状态机/时间线测试全绿 |
 | **P3 Web 化** | FastAPI WebSocket 桥 + React 前端（对话流 + Bible 面板） | 浏览器完成 P1 同样流程；事件流逐条渲染 |
 | **P4 实用化** | 会话持久化（session.jsonl）+ 正文读回（`read_chapter`/`list_chapters`）+ 多工作区（WorkspaceRegistry + slug 路由）。2026-10-09 完成，见 [phase-04-usability.md](phase-04-usability.md) | 杀进程重启会话恢复；CLI 重进续聊；双工作区隔离 |
-| **P5 RAG** | ingestion pipeline + `style_search`/`style_profile` + 语料管理页 | 上传阿婆作品集 → 写作时可检索、文风统计档案生效 |
-| **P6 审计员** | 独立审计 harness + `foreshadow_audit` + 对账指标 + 前端审计报告视图 | 每章自动生成审计 JSON |
-| **P7 评测与打磨** | eval harness（Level 3/4/5）+ golden set + 章节阅读器 + 导出 | 一份完整的自动评测报告 |
+| **P5 正文中心创作台** | 布局反转（三栏创作台，正文居中）+ 作者受管写端点（PUT + `.revisions` 归档 + 乐观并发）+ write_guard 人机互斥 + 对账同步管线（一处修订补齐账本与会话记忆两级上下文）。2026-10-09 完成，见 [phase-05-manuscript-center.md](phase-05-manuscript-center.md) | 手改正文 → 保存 → 自动对账；agent 写作中正文只读；人机互斥 |
+| **P6 基础设施** | 模型接入设置（服务级 config.yaml 多 provider 档案 + 同档案热切模型/跨档案重建会话 + 模型列表发现）+ 前端可用性（可调侧栏/伏笔账本表格化/角色小传/关系图/数据概览统计卡/全局搜索）+ 事件流持久化与历史查询（events.jsonl）+ 工作区导出 + ErrorBoundary。计划见 [phase-06-infra-plan.md](phase-06-infra-plan.md)；写作语言设置为本阶段先行完成的前置项 | 设置页换模型下轮生效；重启后事件流可回溯；侧栏可调且无重叠 |
+| **P7 RAG** | ingestion pipeline + `style_search`/`style_profile` + 语料管理页（原 P6，顺延） | 上传阿婆作品集 → 写作时可检索、文风统计档案生效 |
+| **P8 审计员** | 独立审计 harness + `foreshadow_audit` + 对账指标 + 前端审计报告视图（原 P7，顺延） | 每章自动生成审计 JSON |
+| **P9 评测与打磨** | eval harness（Level 3/4/5）+ golden set + 章节阅读器增强 + 导出打磨（原 P8，顺延；zip 导出已在 P6 先行落地） | 一份完整的自动评测报告 |
 
 每阶段完成后在 `dev-notes/` 留一篇构建笔记（沿用 Tau 的习惯，也是学习沉淀的直接证据）。
 
