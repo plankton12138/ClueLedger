@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 import zipfile
 from collections.abc import Callable
@@ -24,7 +25,7 @@ import httpx
 import yaml
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, SecretStr, ValidationError
 
 from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
 from hastings.bible.stats import compute_story_stats
@@ -38,7 +39,14 @@ from hastings.bible.store import (
 from hastings.events_store import CATEGORIES, EventStore, events_file
 from hastings.manuscript.diff import InvalidChapterFormat, validate_title_heading
 from hastings.manuscript.store import current_revision, save_chapter
-from hastings.server.provider_config import ProviderBook, env_fallback_config, mask_key
+from hastings.server.provider_config import (
+    ProviderBook,
+    ProviderProfile,
+    ServerConfig,
+    env_fallback_config,
+    mask_key,
+    save_server_config,
+)
 from hastings.server.registry import WorkspaceExistsError, WorkspaceRegistry
 from hastings.server.session import WritingSession
 from hastings.session_persist import session_file
@@ -271,6 +279,28 @@ class ProvidersResponse(BaseModel):
     providers: list[ProviderSummary]
 
 
+class ProviderUpsertRequest(BaseModel):
+    """档案新增/修改请求体（P7 T12）。
+
+    api_key 留空 = 修改时保留旧 key（前端只见尾 4 位，无法回传明文）；
+    新建时留空且无 api_key_env → 档案创建成功但标记缺 key（与文件格式
+    同一宽容度，available=False 由前端提示）。
+    """
+
+    base_url: str = Field(min_length=1)
+    api_key: str = ""
+    api_key_env: str = ""
+    default_model: str = ""
+
+
+class ProviderTestRequest(BaseModel):
+    """连通测试请求体（P7 T12）：未保存的表单值直接测试，不需要先落盘。"""
+
+    base_url: str = Field(min_length=1)
+    api_key: str = ""
+    api_key_env: str = ""
+
+
 class ModelsResponse(BaseModel):
     """模型发现结果（P6 D3）；空列表 = 合法空结果（前端指引手动输入）。"""
 
@@ -486,6 +516,141 @@ def create_rest_router(
                 profile.resolved_api_key(),
                 transport=model_transport,
             )
+        except ModelDiscoveryError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        return ModelsResponse(models=models)
+
+    def _summary(profile: ProviderProfile) -> ProviderSummary:
+        return ProviderSummary(
+            name=profile.name,
+            base_url=profile.base_url,
+            default_model=profile.default_model,
+            key_hint=mask_key(profile.resolved_api_key()),
+            available=profile.available,
+        )
+
+    def _persist_book(new_config: ServerConfig) -> None:
+        """写回 config.yaml + 换进程事实（P7 T12）。写盘失败 → 500 归因环境。"""
+        book = _book()
+        try:
+            save_server_config(new_config, book.config_path)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"config.yaml 写入失败（{book.config_path}）。"
+                    f"为什么错：文件系统错误——{exc}。"
+                    "怎样算对：确认目录可写（或以管理员身份运行）后重试。"
+                ),
+            ) from exc
+        book.update_config(new_config)
+
+    def _profiles_in_use() -> dict[str, list[str]]:
+        """扫描各工作区设置对档案名的引用（P7 T12 删除保护）。
+
+        损坏/不可读的设置按未引用处理——resolve 对缺失档案本就有引导回落
+        （宽容解析），误删的后果是回退引导端点而非中断，不因个别坏文件
+        卡死整个删除操作。
+        """
+        usage: dict[str, list[str]] = {}
+        for slug in registry.list_slugs():
+            workspace = StoryWorkspace(root=registry.root, slug=slug)
+            if not workspace.settings_path.exists():
+                continue
+            try:
+                current = load_settings(workspace)
+            except (ValidationError, SettingsFormatError, yaml.YAMLError, OSError):
+                continue
+            usage.setdefault(current.provider_profile, []).append(slug)
+        return usage
+
+    @router.put("/api/providers/{name}", response_model=ProviderSummary)
+    async def upsert_provider(name: str, body: ProviderUpsertRequest) -> ProviderSummary:
+        """档案新增/修改（P7 T12）：写回 config.yaml 并热更新进程目录。
+
+        修改时 api_key 留空 = 保留旧 key（明文不可回显，只能原值保留）；
+        其余字段按请求整体替换。会话侧不在此切换——工作区仍指向旧档案名
+        的设置等作者显式保存时才经 PUT settings 重建会话。
+        """
+        book = _book()
+        existing = book.profile(name)
+        if existing is None:
+            profile = ProviderProfile(
+                name=name,
+                base_url=body.base_url,
+                api_key=SecretStr(body.api_key),
+                api_key_env=body.api_key_env,
+                default_model=body.default_model,
+            )
+            others = list(book.config.providers)
+        else:
+            profile = ProviderProfile(
+                name=name,
+                base_url=body.base_url,
+                # key 只进不出：留空 = 沿用旧 key（前端只有尾 4 位）
+                api_key=SecretStr(body.api_key) if body.api_key else existing.api_key,
+                api_key_env=body.api_key_env,
+                default_model=body.default_model,
+            )
+            others = [p for p in book.config.providers if p.name != name]
+        _persist_book(ServerConfig(providers=[*others, profile]))
+        return _summary(profile)
+
+    @router.delete("/api/providers/{name}", status_code=204)
+    async def delete_provider(name: str) -> Response:
+        """删除档案（P7 T12）：引导档案/最后档案/被引用三种情形 409 拒删。"""
+        book = _book()
+        if book.profile(name) is None:
+            raise HTTPException(status_code=404, detail=f"provider 档案不存在：{name!r}。")
+        if name == book.boot_name:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"档案 {name!r} 是本服务的引导档案，不能删除。"
+                    "为什么错：引导档案是缺 key/坏配置时的兜底端点，删掉后无法回落。"
+                    "怎样算对：先在启动参数/--config 中更换引导档案，再删除它。"
+                ),
+            )
+        if len(book.config.providers) <= 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"档案 {name!r} 是最后一个档案，不能删除。"
+                    "为什么错：删掉后没有任何可用端点，服务无法装配会话。"
+                    "怎样算对：先添加另一个档案，再删除这一个。"
+                ),
+            )
+        in_use = _profiles_in_use().get(name)
+        if in_use:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"档案 {name!r} 正在被文章使用：{'、'.join(in_use)}。"
+                    "为什么错：删除后这些文章的会话将回退到引导档案，模型可能悄悄变更。"
+                    "怎样算对：先在对应文章的设置页换到其他档案，再删除。"
+                ),
+            )
+        remaining = [p for p in book.config.providers if p.name != name]
+        _persist_book(ServerConfig(providers=remaining))
+        return Response(status_code=204)
+
+    @router.post("/api/providers/test", response_model=ModelsResponse)
+    async def test_provider(body: ProviderTestRequest) -> ModelsResponse:
+        """未保存表单的连通测试（P7 T12）：key 解析 + discover_models 内核共用。"""
+        api_key = body.api_key
+        if not api_key and body.api_key_env:
+            api_key = os.environ.get(body.api_key_env, "")
+        if not api_key:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "连通测试缺少 API key。"
+                    "为什么错：直填 api_key 为空，且 api_key_env 引用的环境变量未设置。"
+                    "怎样算对：直填 key，或确认环境变量已在本服务进程中设置。"
+                ),
+            )
+        try:
+            models = await discover_models(body.base_url, api_key, transport=model_transport)
         except ModelDiscoveryError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
         return ModelsResponse(models=models)

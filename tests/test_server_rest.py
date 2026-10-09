@@ -264,6 +264,206 @@ def test_provider_models_network_error_returns_502(root: Path) -> None:
     assert "手动输入" in detail  # 泄压阀：给替代路径
 
 
+# --- providers CRUD（P7 T12）：UI 增删改档案，写回 config.yaml ---
+
+
+def _crud_client(root: Path, *profiles: ProviderProfile, boot_name: str = "default") -> TestClient:
+    """注入带 config_path 的 book：写回路径落在 tmp root，不污染仓库 cwd。"""
+    book = ProviderBook(
+        ServerConfig(providers=list(profiles)),
+        boot_name=boot_name,
+        boot_model="",
+        config_path=root / "config.yaml",
+    )
+    return TestClient(create_app(stub_registry(root), book=book))
+
+
+def test_upsert_provider_creates_and_persists(root: Path) -> None:
+    client = _crud_client(root, _DEFAULT_PROFILE)
+
+    response = client.put(
+        "/api/providers/openrouter",
+        json={
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "sk-openrouter-9999",
+            "api_key_env": "",
+            "default_model": "anthropic/claude-sonnet-4",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "openrouter"
+    assert body["key_hint"] == "…9999"  # key 只进不出：尾 4 位
+    assert body["available"] is True
+    # 落盘 config.yaml + 进程目录同步可见
+    config_text = (root / "config.yaml").read_text(encoding="utf-8")
+    assert "openrouter" in config_text
+    assert [p["name"] for p in client.get("/api/providers").json()["providers"]] == [
+        "default",
+        "openrouter",
+    ]
+
+
+def test_upsert_provider_update_with_blank_key_keeps_old_secret(root: Path) -> None:
+    """修改时 api_key 留空 = 保留旧 key（明文不可回显，只能原值保留）。"""
+    client = _crud_client(root, _DEFAULT_PROFILE, _DEEPSEEK_PROFILE)
+
+    response = client.put(
+        "/api/providers/deepseek",
+        json={"base_url": "https://api.deepseek.com/v2", "api_key": "", "default_model": "m2"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["key_hint"] == "…5678"  # 旧 key 尾 4 位
+    assert response.json()["base_url"] == "https://api.deepseek.com/v2"
+    config_text = (root / "config.yaml").read_text(encoding="utf-8")
+    assert "sk-deepseek-12345678" in config_text  # 旧 key 原样保留
+
+
+def test_upsert_provider_update_with_new_key_replaces_secret(root: Path) -> None:
+    client = _crud_client(root, _DEFAULT_PROFILE, _DEEPSEEK_PROFILE)
+
+    response = client.put(
+        "/api/providers/deepseek",
+        json={"base_url": "https://api.deepseek.com/v1", "api_key": "sk-new-99999999"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["key_hint"] == "…9999"
+    config_text = (root / "config.yaml").read_text(encoding="utf-8")
+    assert "sk-new-99999999" in config_text
+    assert "sk-deepseek-12345678" not in config_text
+
+
+def test_upsert_provider_blank_base_url_rejected(root: Path) -> None:
+    client = _crud_client(root, _DEFAULT_PROFILE)
+
+    response = client.put("/api/providers/ghost", json={"base_url": ""})
+
+    assert response.status_code == 422
+    assert "base_url" in response.json()["detail"][0]["loc"]
+
+
+def test_delete_provider_boot_profile_rejected(root: Path) -> None:
+    client = _crud_client(root, _DEFAULT_PROFILE, _DEEPSEEK_PROFILE)
+
+    response = client.delete("/api/providers/default")
+
+    assert response.status_code == 409
+    assert "引导档案" in response.json()["detail"]
+
+
+def test_delete_provider_last_profile_rejected(root: Path) -> None:
+    """引导档案不在列表（配置被改坏）时，删唯一档案撞「最后一个」保护。"""
+    client = _crud_client(root, _DEEPSEEK_PROFILE, boot_name="default")
+
+    response = client.delete("/api/providers/deepseek")
+
+    assert response.status_code == 409
+    assert "最后一个" in response.json()["detail"]
+
+
+def test_delete_provider_in_use_rejected_with_slugs(root: Path, workspace: StoryWorkspace) -> None:
+    save_settings(
+        workspace,
+        StorySettings(provider_profile="deepseek", writing_language="中文", model="m"),
+    )
+    client = _crud_client(root, _DEFAULT_PROFILE, _DEEPSEEK_PROFILE)
+
+    response = client.delete("/api/providers/deepseek")
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "deepseek" in detail
+    assert SLUG in detail
+
+
+def test_delete_provider_succeeds_and_persists(root: Path) -> None:
+    client = _crud_client(root, _DEFAULT_PROFILE, _DEEPSEEK_PROFILE)
+
+    response = client.delete("/api/providers/deepseek")
+
+    assert response.status_code == 204
+    assert [p["name"] for p in client.get("/api/providers").json()["providers"]] == ["default"]
+    config_text = (root / "config.yaml").read_text(encoding="utf-8")
+    assert "deepseek" not in config_text
+
+
+def test_delete_provider_unknown_returns_404(root: Path) -> None:
+    client = _crud_client(root, _DEFAULT_PROFILE)
+
+    assert client.delete("/api/providers/ghost").status_code == 404
+
+
+# --- providers/test：未保存表单的连通测试（P7 T12） ---
+
+
+def test_provider_test_returns_models(root: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer sk-inline-12345678"
+        return httpx.Response(200, json={"data": [{"id": "m1"}]})
+
+    client = TestClient(
+        create_app(
+            stub_registry(root),
+            book=ProviderBook(
+                ServerConfig(providers=[_DEFAULT_PROFILE]),
+                boot_name="default",
+                boot_model="",
+                config_path=root / "config.yaml",
+            ),
+            model_transport=httpx.MockTransport(handler),
+        )
+    )
+
+    body = client.post(
+        "/api/providers/test",
+        json={"base_url": "https://api.example.com/v1", "api_key": "sk-inline-12345678"},
+    ).json()
+
+    assert body == {"models": ["m1"]}
+
+
+def test_provider_test_resolves_env_key(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TEST_ENV_KEY", "sk-from-env-9999")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer sk-from-env-9999"
+        return httpx.Response(200, json={"data": []})
+
+    client = TestClient(
+        create_app(
+            stub_registry(root),
+            book=ProviderBook(
+                ServerConfig(providers=[_DEFAULT_PROFILE]),
+                boot_name="default",
+                boot_model="",
+                config_path=root / "config.yaml",
+            ),
+            model_transport=httpx.MockTransport(handler),
+        )
+    )
+
+    body = client.post(
+        "/api/providers/test",
+        json={"base_url": "https://api.example.com/v1", "api_key_env": "TEST_ENV_KEY"},
+    ).json()
+
+    assert body == {"models": []}  # 合法空结果：连通成功但端点无模型列表
+
+
+def test_provider_test_without_any_key_returns_422(root: Path) -> None:
+    client = _crud_client(root, _DEFAULT_PROFILE)
+
+    response = client.post("/api/providers/test", json={"base_url": "https://api.example.com/v1"})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "缺少 API key" in detail
+    assert "怎样算对" in detail
+
+
 # --- state：按 slug 解析 ---
 
 

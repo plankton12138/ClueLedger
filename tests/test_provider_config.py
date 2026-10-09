@@ -14,12 +14,15 @@ import pytest
 from pydantic import SecretStr
 
 from hastings.server.provider_config import (
+    ProviderBook,
     ProviderConfigError,
+    ProviderProfile,
     ServerConfig,
     build_provider,
     env_fallback_config,
     load_server_config,
     mask_key,
+    save_server_config,
 )
 
 CONFIG_YAML = """\
@@ -229,6 +232,77 @@ def test_unknown_root_field_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ProviderConfigError, match="unknown_root"):
         load_server_config(path)
+
+
+# --- 写回（P7 T12 档案 UI 化） ---
+
+
+def test_save_server_config_roundtrip_preserves_profiles(tmp_path: Path) -> None:
+    """写回 → 重读：字段逐值一致，key 明文落盘（文件存储边界与手写一致）。"""
+    config = ServerConfig(
+        providers=[
+            ProviderProfile(
+                name="deepseek",
+                base_url="https://api.deepseek.com/v1",
+                api_key="sk-direct-12345678",
+                default_model="deepseek-chat",
+            ),
+            ProviderProfile(
+                name="openrouter",
+                base_url="https://openrouter.ai/api/v1",
+                api_key_env="OPENROUTER_API_KEY",
+            ),
+        ]
+    )
+    path = tmp_path / "config.yaml"
+
+    save_server_config(config, path)
+    reloaded = load_server_config(path)
+
+    assert [p.name for p in reloaded.providers] == ["deepseek", "openrouter"]
+    assert reloaded.providers[0].resolved_api_key() == "sk-direct-12345678"
+    assert reloaded.providers[0].default_model == "deepseek-chat"
+    assert reloaded.providers[1].api_key_env == "OPENROUTER_API_KEY"
+    assert reloaded.providers[1].resolved_api_key() == ""  # env 未设置 → 空
+
+
+def test_save_server_config_empty_fields_tolerated_on_reload(tmp_path: Path) -> None:
+    """空 api_key / 空 default_model 写成空串，重读不炸（与手写文件同一宽容度）。"""
+    config = ServerConfig(
+        providers=[ProviderProfile(name="bare", base_url="https://api.example.com/v1")]
+    )
+    path = tmp_path / "config.yaml"
+
+    save_server_config(config, path)
+
+    reloaded = load_server_config(path)
+    assert reloaded.providers[0].available is False
+    assert reloaded.providers[0].default_model == ""
+
+
+def test_update_config_prunes_removed_instance_cache() -> None:
+    """update_config 换磁盘事实并清理已删档案的实例缓存（仍用档案保留）。"""
+    book = ProviderBook(
+        ServerConfig(providers=[_profile("keep"), _profile("gone")]),
+        boot_name="keep",
+        boot_model="",
+    )
+    book.provider("keep")
+    book.provider("gone")
+
+    book.update_config(ServerConfig(providers=[_profile("keep")]))
+
+    assert book.profile("gone") is None
+    with pytest.raises(ProviderConfigError, match="不存在"):
+        book.provider("gone")
+    # 仍用档案的实例缓存保留（同对象复用，httpx client 不重建）
+    assert book.provider("keep") is book.provider("keep")
+
+
+def _profile(name: str) -> ProviderProfile:
+    return ProviderProfile(
+        name=name, base_url=f"https://{name}.example.com/v1", api_key=f"sk-{name}-12345678"
+    )
 
 
 # --- provider 构造（T2 跨档案切换复用同一入口） ---

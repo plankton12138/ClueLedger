@@ -134,6 +134,31 @@ def _validation_error_message(path: Path, exc: ValidationError) -> str:
     )
 
 
+def save_server_config(config: ServerConfig, path: Path) -> Path:
+    """写回 config.yaml（P7 T12 档案 UI 化）：UI 增删改档案后落盘，重启仍生效。
+
+    api_key 以明文写入——文件存储格式本就支持直填 key（与手写 config.yaml
+    同一保密边界：key 安全性依赖文件系统权限，不依赖本函数）。空字段写成
+    空串（load 侧一律容忍空值）。写盘 OSError 上抛，由调用方归因环境故障。
+    """
+    payload = {
+        "providers": [
+            {
+                "name": profile.name,
+                "base_url": profile.base_url,
+                "api_key": profile.api_key.get_secret_value(),
+                "api_key_env": profile.api_key_env,
+                "default_model": profile.default_model,
+            }
+            for profile in config.providers
+        ]
+    }
+    header = "# 由设置页管理（P7 T12），也可手改；删掉本文件则回落 .env 单档案配置。\n"
+    text = header + yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
 def mask_key(key: str) -> str:
     """key 脱敏（尾 4 位）：key 只进不出，对外只给这个。"""
     if not key:
@@ -170,15 +195,28 @@ class ProviderBook:
     不重复建 client，也不需要在重建会话时关闭被共享的 provider）。
     """
 
-    def __init__(self, config: ServerConfig, *, boot_name: str, boot_model: str) -> None:
+    def __init__(
+        self,
+        config: ServerConfig,
+        *,
+        boot_name: str,
+        boot_model: str,
+        config_path: Path | None = None,
+    ) -> None:
         self._config = config
         self._boot_name = boot_name
         self._boot_model = boot_model
+        # 档案写回路径（P7 T12）：由 CLI --config 传入；None → 写默认路径。
+        self._config_path = config_path
         self._instances: dict[str, ModelProvider] = {}
 
     @property
     def config(self) -> ServerConfig:
         return self._config
+
+    @property
+    def config_path(self) -> Path:
+        return self._config_path or DEFAULT_CONFIG_PATH
 
     @property
     def boot_name(self) -> str:
@@ -190,6 +228,17 @@ class ProviderBook:
             if profile.name == name:
                 return profile
         return None
+
+    def update_config(self, new: ServerConfig) -> None:
+        """替换磁盘事实（P7 T12 UI 化）：换 config 并清理已删档案的实例缓存。
+
+        仍在用档案的 httpx client 缓存保留（跨档案来回切不重建连接）；
+        被删档案的缓存丢弃——下次按名取会抛三要素错，符合「档案已不存在」。
+        """
+        self._config = new
+        live = {profile.name for profile in new.providers}
+        for name in [name for name in self._instances if name not in live]:
+            del self._instances[name]
 
     def provider(self, name: str) -> ModelProvider:
         """按名取 provider 实例（缓存复用）；未知档案名抛三要素错。"""
@@ -248,4 +297,5 @@ __all__ = [
     "env_fallback_config",
     "load_server_config",
     "mask_key",
+    "save_server_config",
 ]

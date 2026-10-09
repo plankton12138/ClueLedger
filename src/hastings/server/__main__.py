@@ -114,7 +114,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # ProviderBook 是进程级端点目录（P6 D1/T2）：按档案名缓存 provider 实例，
     # 跨档案切换复用、无需关闭；boot_* 决定新工作区的引导端点与模型。
-    book = ProviderBook(server_config, boot_name=boot_profile_name, boot_model=boot_model)
+    # config_path（P7 T12）：设置页 UI 增删改档案后写回同一文件。
+    book = ProviderBook(
+        server_config,
+        boot_name=boot_profile_name,
+        boot_model=boot_model,
+        config_path=args.config,
+    )
     registry = WorkspaceRegistry(
         root=args.stories_root,
         session_factory=default_session_factory(book),
