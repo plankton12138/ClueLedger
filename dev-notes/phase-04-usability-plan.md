@@ -1,7 +1,7 @@
 # Phase 4 开发计划：实用化（会话持久化 + 正文记忆 + 多工作区）
 
 > **用户决策插入阶段**：暂缓 RAG 与审计/评测（原路线图 P4–P6 顺延为 P5–P7），优先把程序补到「日常可用状态」。
-> 状态：**待评审 / 待执行**。完成后另写 `phase-04-usability.md` 构建笔记。
+> 状态：**已完成并关闭**（2026-10-09，R5 验收通过，构建笔记见 [phase-04-usability.md](phase-04-usability.md)）。
 
 ## 0. 已核实的依赖事实（计划的输入）
 
@@ -126,14 +126,14 @@
 
 ## 5. DoD
 
-- [ ] Web：杀进程重启 + 刷新，对话流完整恢复
-- [ ] CLI：重进同 slug 会话续上
-- [ ] agent 可 read_chapter / list_chapters；guidelines 已引导使用时机
-- [ ] 双工作区并存、浏览器切换互不串数据、可新建
-- [ ] 坏 session.jsonl → 备份 + 指引；read 不存在章节 → is_error + 目录摘要
-- [ ] REST 契约变更已在构建笔记声明（无兼容层）
-- [ ] 七道门全绿；红线：内核 diff 为空、零 import tau_coding
-- [ ] 浏览器人工验收存档；构建笔记发布；R3 blocker 清零
+- [x] Web：杀进程重启 + 刷新，对话流完整恢复
+- [x] CLI：重进同 slug 会话续上
+- [x] agent 可 read_chapter / list_chapters；guidelines 已引导使用时机
+- [x] 双工作区并存、浏览器切换互不串数据、可新建
+- [x] 坏 session.jsonl → 备份 + 指引；read 不存在章节 → is_error + 目录摘要
+- [x] REST 契约变更已在构建笔记声明（无兼容层）
+- [x] 七道门全绿；红线：内核 diff 为空、零 import tau_coding
+- [x] 浏览器人工验收存档；构建笔记发布；R3 blocker 清零
 
 ## 6. 风险与对策
 
