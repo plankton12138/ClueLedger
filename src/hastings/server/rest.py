@@ -31,8 +31,16 @@ from hastings.bible.store import (
 )
 from hastings.manuscript.diff import InvalidChapterFormat, validate_title_heading
 from hastings.manuscript.store import current_revision, save_chapter
+from hastings.server.provider_config import ServerConfig, env_fallback_config, mask_key
 from hastings.server.registry import WorkspaceExistsError, WorkspaceRegistry
 from hastings.server.session import WritingSession
+from hastings.settings import (
+    WRITING_LANGUAGES,
+    SettingsFormatError,
+    StorySettings,
+    load_settings,
+    save_settings,
+)
 from hastings.tools.bible_tools import ENTITY_LABELS
 from tau_agent.types import JSONValue
 
@@ -142,6 +150,29 @@ class WorkspaceCreatedResponse(BaseModel):
     slug: str
 
 
+class SettingsResponse(BaseModel):
+    # REST 沿用 model_dump() 无别名口径 → wire 上是 snake_case
+    writing_language: str
+
+
+class SettingsUpdateRequest(BaseModel):
+    writing_language: str
+
+
+class ProviderSummary(BaseModel):
+    """档案目录条目（P6 D1）：key 只进不出，仅给尾 4 位提示。"""
+
+    name: str
+    base_url: str
+    default_model: str
+    key_hint: str
+    available: bool
+
+
+class ProvidersResponse(BaseModel):
+    providers: list[ProviderSummary]
+
+
 def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[BaseModel]:
     """复用 store 层 loader 读一类账本；数据故障 422、IO 故障 500。"""
     try:
@@ -170,7 +201,11 @@ def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[Base
         ) from exc
 
 
-def create_rest_router(*, registry: WorkspaceRegistry) -> APIRouter:
+def create_rest_router(
+    *,
+    registry: WorkspaceRegistry,
+    server_config: ServerConfig | None = None,
+) -> APIRouter:
     router = APIRouter()
 
     def _workspace(slug: str) -> StoryWorkspace:
@@ -194,6 +229,23 @@ def create_rest_router(*, registry: WorkspaceRegistry) -> APIRouter:
     @router.get("/api/workspaces", response_model=WorkspacesResponse)
     async def workspaces() -> WorkspacesResponse:
         return WorkspacesResponse(workspaces=registry.list_slugs())
+
+    @router.get("/api/providers", response_model=ProvidersResponse)
+    async def providers() -> ProvidersResponse:
+        """档案目录（P6 D1）：未注入时按 env 回落单档案计算（与启动装配同源）。"""
+        config = server_config if server_config is not None else env_fallback_config()
+        return ProvidersResponse(
+            providers=[
+                ProviderSummary(
+                    name=profile.name,
+                    base_url=profile.base_url,
+                    default_model=profile.default_model,
+                    key_hint=mask_key(profile.resolved_api_key()),
+                    available=profile.available,
+                )
+                for profile in config.providers
+            ]
+        )
 
     @router.post(
         "/api/workspaces",
@@ -429,6 +481,56 @@ def create_rest_router(*, registry: WorkspaceRegistry) -> APIRouter:
                 for hunk in saved.hunks
             ],
         )
+
+    def _read_settings(workspace: StoryWorkspace) -> SettingsResponse:
+        """读设置；缺失回落默认值，数据故障 422、IO 故障 500。"""
+        try:
+            current = load_settings(workspace)
+        except (ValidationError, SettingsFormatError, yaml.YAMLError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"设置文件读取失败（{workspace.settings_path.name}）。"
+                    f"为什么错：{exc}。"
+                    "怎样算对：修复或删除损坏的 settings.yaml 后重试，"
+                    f"（本设置对应 {workspace.settings_path}）。"
+                ),
+            ) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"设置文件读取失败：文件系统错误 {exc}。",
+            ) from exc
+        return SettingsResponse(writing_language=current.writing_language)
+
+    @router.get("/api/{slug}/settings", response_model=SettingsResponse)
+    async def get_settings(slug: str) -> SettingsResponse:
+        await _session(slug)
+        return _read_settings(_workspace(slug))
+
+    @router.put("/api/{slug}/settings", response_model=SettingsResponse)
+    async def update_settings(slug: str, body: SettingsUpdateRequest) -> SettingsResponse:
+        """切换写作语言（P6 D3/D4）：校验取值 → 落盘 → 会话热生效。"""
+        if body.writing_language not in WRITING_LANGUAGES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"写作语言取值不合法：{body.writing_language!r}。"
+                    "为什么错：本工作区只支持预设语言之一。"
+                    f"怎样算对：从 {'、'.join(WRITING_LANGUAGES)} 中选择一个。"
+                ),
+            )
+        session = await _session(slug)
+        workspace = _workspace(slug)
+        try:
+            save_settings(workspace, StorySettings(writing_language=body.writing_language))
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=(f"设置保存失败：文件系统错误 {exc}。怎样算对：确认工作区目录可写后重试。"),
+            ) from exc
+        session.apply_writing_language(body.writing_language)
+        return SettingsResponse(writing_language=body.writing_language)
 
     return router
 

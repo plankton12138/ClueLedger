@@ -73,15 +73,17 @@ class HastingsSession:
         """按 CLI 同款方式装配工具集、system prompt 与 harness。"""
         from hastings.cli import create_writing_tools
         from hastings.prompts import build_system_prompt
+        from hastings.settings import load_settings
 
         edit_marks = EditMarkRegistry()
         run_kind = RunKindGuard()
         tools = create_writing_tools(workspace, edit_marks=edit_marks, run_kind=run_kind)
+        language = load_settings(workspace).writing_language
         harness = AgentHarness(
             AgentHarnessConfig(
                 provider=provider,
                 model=model,
-                system=build_system_prompt(tools),
+                system=build_system_prompt(tools, language=language),
                 tools=tools,
             )
         )
@@ -135,6 +137,18 @@ class HastingsSession:
     async def resync_reconcile(self, chapter_id: str) -> bool:
         """手动重跑：复用该章最近一次保存的差异（对账失败重试 / 同步按钮）。"""
         return await self._reconcile.resync(chapter_id)
+
+    def apply_writing_language(self, language: str) -> None:
+        """切换写作语言并立即重建 system prompt（P6 D3）。
+
+        AgentHarnessConfig 是非 frozen dataclass，且 harness 每轮运行时才读
+        config.system——直接赋值即下一轮生效，无需重建会话（守住不改 tau 内核）。
+        """
+        from hastings.prompts import build_system_prompt
+
+        self._harness.config.system = build_system_prompt(
+            self._harness.config.tools, language=language
+        )
 
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
         return self._reconcile.subscribe(listener)

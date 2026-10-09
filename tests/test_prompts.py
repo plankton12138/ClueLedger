@@ -11,12 +11,15 @@ from hastings.bible.models import Character, TimelineEntry
 from hastings.bible.store import StoryWorkspace, save_character, save_ledger
 from hastings.manuscript.diff import DiffHunk, HunkKind
 from hastings.prompts import (
+    LANGUAGE_HEADING,
     ROLE_HEADING,
     TOOLS_HEADING,
     WORKFLOW_HEADING,
+    build_language_section,
     build_reconcile_message,
     build_system_prompt,
 )
+from hastings.settings import DEFAULT_WRITING_LANGUAGE
 from tau_agent import AgentTool, AgentToolResult
 from tau_agent.types import JSONValue
 
@@ -95,6 +98,43 @@ def test_system_prompt_explains_reconcile_protocol() -> None:
 
     assert "【手动修订同步】" in prompt
     assert "对账" in prompt
+
+
+# --- 写作语言节（P6，D2）：语言注入 + 默认中文不破既有断言 ---
+
+
+def test_system_prompt_defaults_to_chinese_language_section() -> None:
+    """缺省 language 走中文——既有调用不破，正文不会再顺着设定写成日语。"""
+    prompt = build_system_prompt()
+
+    assert LANGUAGE_HEADING in prompt
+    assert DEFAULT_WRITING_LANGUAGE in prompt
+
+
+def test_language_section_orders_after_role_before_workflow() -> None:
+    prompt = build_system_prompt()
+
+    assert prompt.index(ROLE_HEADING) < prompt.index(LANGUAGE_HEADING)
+    assert prompt.index(LANGUAGE_HEADING) < prompt.index(WORKFLOW_HEADING)
+
+
+def test_language_section_covers_all_outputs_and_decouples_setting() -> None:
+    """文案覆盖全部产出，并切断「设定在他国 ⇒ 用当地语言」的错误推断。"""
+    section = build_language_section("English")
+
+    assert "English" in section
+    assert "Story Bible" in section
+    assert "章节正文" in section
+    assert "对话回复" in section
+    assert "背景" in section  # 背景可设在任何国家
+    assert "叙事语言" in section
+
+
+def test_system_prompt_accepts_language_override() -> None:
+    prompt = build_system_prompt(language="日本語")
+
+    assert "日本語" in prompt
+    assert DEFAULT_WRITING_LANGUAGE not in prompt
 
 
 # --- 对账消息模板（P5 T4，D5/D6） ---

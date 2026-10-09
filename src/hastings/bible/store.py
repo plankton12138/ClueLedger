@@ -95,6 +95,11 @@ class StoryWorkspace:
         return self.story_dir / "chapters"
 
     @property
+    def settings_path(self) -> Path:
+        """工作区级设置文件（P6 写作语言）；缺文件按默认值处理。"""
+        return self.story_dir / "settings.yaml"
+
+    @property
     def clues_path(self) -> Path:
         return self.bible_dir / "clues.yaml"
 

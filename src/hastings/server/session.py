@@ -64,6 +64,10 @@ class WritingSession(Protocol):
         """
         ...
 
+    def apply_writing_language(self, language: str) -> None:
+        """切换写作语言并立即重建 system prompt（P6 D3；下一轮对话即生效）。"""
+        ...
+
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
         """订阅对账进度通知（ws 层翻成 notice 帧），返回退订函数。"""
         ...

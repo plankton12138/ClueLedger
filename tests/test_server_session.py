@@ -16,6 +16,7 @@ from hastings.bible.store import StoryWorkspace
 from hastings.prompts import build_system_prompt
 from hastings.server.hastings_session import HastingsSession
 from hastings.server.session import AgentBusyError
+from hastings.settings import StorySettings, save_settings
 from hastings.tools.bible_tools import create_bible_tools
 from tau_agent import AgentHarness, AgentHarnessConfig
 from tau_agent.events import AgentEvent
@@ -201,3 +202,26 @@ def test_direct_construction_gets_fresh_registry(workspace: StoryWorkspace) -> N
 
     assert session.edit_marks.mark_of("ch01") is None
     assert session.edit_marks.acquire("ch01").holder == "user"
+
+
+# ---------- 写作语言热生效（P6，D3） ----------
+
+
+def test_apply_writing_language_rebuilds_system_prompt(workspace: StoryWorkspace) -> None:
+    """改语言即重建 config.system——下一轮对话读到新 prompt，无需重建会话。"""
+    session = _session(workspace)
+    assert "中文" in session.harness.config.system
+
+    session.apply_writing_language("English")
+
+    assert "English" in session.harness.config.system
+    assert "中文" not in session.harness.config.system
+
+
+def test_from_workspace_reads_saved_language(workspace: StoryWorkspace) -> None:
+    """from_workspace 装配时读 settings.yaml 的写作语言注入 system prompt。"""
+    save_settings(workspace, StorySettings(writing_language="日本語"))
+
+    session = HastingsSession.from_workspace(workspace, provider=FakeProvider([]), model="fake")
+
+    assert "日本語" in session.harness.config.system

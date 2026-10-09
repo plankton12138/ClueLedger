@@ -21,6 +21,7 @@ from hastings.bible.store import (
 from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
 from hastings.prompts import build_system_prompt
 from hastings.session_persist import restore_and_attach
+from hastings.settings import load_settings
 from hastings.tools.bible_tools import ENTITY_LABELS, create_bible_tools, entity_summary
 from hastings.tools.chapter_tools import create_chapter_tools
 from hastings.tools.method_tools import create_method_tools
@@ -106,11 +107,12 @@ class PlainRenderer:
 def build_harness(workspace: StoryWorkspace, provider: ModelProvider, model: str) -> AgentHarness:
     """按工作区装配工具集、system prompt 与 harness。"""
     tools = create_writing_tools(workspace)
+    language = load_settings(workspace).writing_language
     return AgentHarness(
         AgentHarnessConfig(
             provider=provider,
             model=model,
-            system=build_system_prompt(tools),
+            system=build_system_prompt(tools, language=language),
             tools=tools,
         )
     )

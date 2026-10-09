@@ -1,0 +1,22 @@
+# Hastings 服务级 provider 档案模板——复制为 config.yaml 并填入真实值（config.yaml 已被 git 忽略）。
+#
+# 不配置本文件时回落 .env 单档案（name="default"，P1 起的现状）：
+#   OPENAI_API_KEY / OPENAI_BASE_URL / HASTINGS_MODEL
+#
+# P6 起可在设置页按工作区切换档案与模型（跨档案切换会重建会话，对话历史自动恢复）。
+
+providers:
+  # 档案名：设置页展示、工作区设置引用（必须唯一）
+  - name: deepseek
+    base_url: https://api.deepseek.com/v1
+    # key 二选一：直填（本地单用户工具，可接受）……
+    api_key: sk-xxxxxxxxxxxxxxxx
+    # ……或引用环境变量（直填优先于 env 引用）
+    # api_key_env: DEEPSEEK_API_KEY
+    # 默认模型：工作区未指定模型时使用
+    default_model: deepseek-chat
+
+  - name: openrouter
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    default_model: anthropic/claude-sonnet-4

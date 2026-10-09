@@ -20,6 +20,8 @@ from hastings.bible.models import Character, Clue, TimelineEntry
 from hastings.bible.store import StoryWorkspace, save_character, save_ledger
 from hastings.manuscript.diff import DiffHunk
 from hastings.server.app import create_app
+from hastings.server.provider_config import ProviderProfile, ServerConfig
+from hastings.settings import StorySettings, load_settings, save_settings
 from test_server_app import StubSession, stub_registry
 
 SLUG = "orient-express"
@@ -82,6 +84,63 @@ def test_rest_create_workspace_invalid_slug_returns_422(root: Path, bad_slug: st
     assert response.status_code == 422
     assert "slug 不合法" in response.json()["detail"]
     assert not (root / "escape").exists()
+
+
+# --- providers：档案目录（P6 D1，key 只进不出） ---
+
+
+def test_rest_providers_lists_profiles_with_masked_keys(root: Path) -> None:
+    server_config = ServerConfig(
+        providers=[
+            ProviderProfile(
+                name="deepseek",
+                base_url="https://api.deepseek.com/v1",
+                api_key="sk-direct-12345678",
+                default_model="deepseek-chat",
+            ),
+            ProviderProfile(name="nokey", base_url="https://api.example.com/v1"),
+        ]
+    )
+    client = TestClient(create_app(stub_registry(root), server_config=server_config))
+
+    body = client.get("/api/providers").json()
+
+    assert body == {
+        "providers": [
+            {
+                "name": "deepseek",
+                "base_url": "https://api.deepseek.com/v1",
+                "default_model": "deepseek-chat",
+                "key_hint": "…5678",
+                "available": True,
+            },
+            {
+                "name": "nokey",
+                "base_url": "https://api.example.com/v1",
+                "default_model": "",
+                "key_hint": "",
+                "available": False,
+            },
+        ]
+    }
+    # key 只进不出：完整 key 不得出现在任何响应里
+    assert "sk-direct-12345678" not in client.get("/api/providers").text
+
+
+def test_rest_providers_without_config_falls_back_to_env(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """未注入 server_config → env 回落单档案（与启动装配同源）。"""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-key-123456")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.example.com/v1")
+    monkeypatch.setenv("HASTINGS_MODEL", "env-model")
+    client = TestClient(create_app(stub_registry(root)))
+
+    body = client.get("/api/providers").json()
+
+    assert [p["name"] for p in body["providers"]] == ["default"]
+    assert body["providers"][0]["available"] is True
+    assert body["providers"][0]["key_hint"] == "…3456"  # 尾 4 位
 
 
 # --- state：按 slug 解析 ---
@@ -531,3 +590,76 @@ def test_put_save_noop_diff_skips_reconcile(workspace: StoryWorkspace) -> None:
 
     assert response.status_code == 200
     assert session.requests == []
+
+
+# --- GET/PUT settings：写作语言（P6，D1/D3/D4） ---
+
+
+def test_get_settings_defaults_to_chinese_for_legacy_workspace(
+    workspace: StoryWorkspace,
+) -> None:
+    """旧工作区无 settings.yaml → 默认中文（配置资源非正文写路径）。"""
+    response = _client(workspace.root).get(f"/api/{SLUG}/settings")
+
+    assert response.status_code == 200
+    assert response.json() == {"writing_language": "中文"}
+    assert not workspace.settings_path.exists()  # 读不落盘
+
+
+def test_get_settings_reads_saved_value(workspace: StoryWorkspace) -> None:
+    save_settings(workspace, StorySettings(writing_language="English"))
+
+    response = _client(workspace.root).get(f"/api/{SLUG}/settings")
+
+    assert response.json() == {"writing_language": "English"}
+
+
+def test_get_settings_corrupt_yaml_returns_422_with_path(
+    workspace: StoryWorkspace,
+) -> None:
+    workspace.ensure_dirs()
+    workspace.settings_path.write_text("- 只是列表\n", encoding="utf-8")
+
+    response = _client(workspace.root).get(f"/api/{SLUG}/settings")
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "settings.yaml" in detail
+    assert "怎样算对" in detail
+
+
+def test_put_settings_persists_and_hot_applies(workspace: StoryWorkspace) -> None:
+    """PUT 校验 → 落盘 → 会话热生效（apply_writing_language 被调用）。"""
+    session = StubSession()
+    client = _client_with_session(workspace.root, session)
+
+    response = client.put(
+        f"/api/{SLUG}/settings",
+        json={"writing_language": "日本語"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"writing_language": "日本語"}
+    assert load_settings(workspace).writing_language == "日本語"
+    assert session.applied_languages == ["日本語"]
+
+
+def test_put_settings_invalid_returns_422_three_elements(
+    workspace: StoryWorkspace,
+) -> None:
+    """非法取值不在预设集内 → 422 三要素，未落盘、未热生效。"""
+    session = StubSession()
+    client = _client_with_session(workspace.root, session)
+
+    response = client.put(
+        f"/api/{SLUG}/settings",
+        json={"writing_language": "Klingon"},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "写作语言取值不合法" in detail
+    assert "为什么错" in detail
+    assert "怎样算对" in detail
+    assert not workspace.settings_path.exists()
+    assert session.applied_languages == []

@@ -1,10 +1,13 @@
-"""``python -m hastings.server`` Web 服务入口（P4 多工作区化）。
+"""``python -m hastings.server`` Web 服务入口（P4 多工作区化，P6 D1 多档案）。
 
 与 CLI 入口（hastings.__main__）共享 env 处理——load_dotenv、
 normalize_base_url、env_error 零复制复用；装配链 provider →
 default_session_factory → WorkspaceRegistry → create_app → uvicorn.run。
 不再绑定单一 slug：stories/ 下所有工作区（含运行中新建的）都经
 registry 按 slug 懒装配、各自恢复会话历史。
+
+P6 D1：config.yaml 存在时为权威配置（第一个有 key 的档案作为启动
+档案，.env 不再必需）；缺失/为空则回落 env 单档案（P1 现状，零破坏）。
 """
 
 from __future__ import annotations
@@ -20,6 +23,12 @@ from dotenv import load_dotenv
 from hastings.__main__ import DEFAULT_STORIES_ROOT, env_error, normalize_base_url
 from hastings.server.app import create_app
 from hastings.server.hastings_session import default_session_factory
+from hastings.server.provider_config import (
+    DEFAULT_CONFIG_PATH,
+    ProviderConfigError,
+    build_provider,
+    load_server_config,
+)
 from hastings.server.registry import WorkspaceRegistry
 
 DEFAULT_HOST = "127.0.0.1"
@@ -42,12 +51,18 @@ def build_parser() -> argparse.ArgumentParser:
         prog="hastings-server",
         description="案卷 Hastings：悬疑小说写作 Agent 的 Web 服务入口（多工作区）",
     )
-    parser.add_argument("--model", default=None, help="覆盖 HASTINGS_MODEL")
+    parser.add_argument("--model", default=None, help="覆盖启动档案的 default_model")
     parser.add_argument(
         "--stories-root",
         type=Path,
         default=DEFAULT_STORIES_ROOT,
         help="故事工作区根目录（默认 ./stories）",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="服务级 provider 档案配置（默认 ./config.yaml；缺失回落 .env）",
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="监听端口（默认 8000）")
@@ -59,25 +74,58 @@ def main(argv: Sequence[str] | None = None) -> int:
     load_dotenv()
     normalize_base_url()
 
-    error = env_error(args.model)
-    if error is not None:
-        print(error)
+    try:
+        server_config = load_server_config(args.config)
+    except ProviderConfigError as exc:
+        print(exc)
         return 1
 
-    from tau_ai.env import openai_compatible_config_from_env
-    from tau_ai.openai_compatible import OpenAICompatibleProvider
+    if args.config.exists():
+        # config.yaml 权威：第一个有 key 的档案作为启动档案（.env 不再必需）
+        profile = next((p for p in server_config.providers if p.available), None)
+        if profile is None:
+            print(
+                f"config.yaml 中没有可用档案（{args.config}）。"
+                "为什么错：所有档案都缺 api_key / api_key_env，"
+                "或引用的环境变量为空。"
+                "怎样算对：为至少一个档案直填 api_key，"
+                "或用 api_key_env 引用已设置的环境变量。"
+            )
+            return 1
+        model = args.model or profile.default_model
+        if not model:
+            print(
+                f"启动档案 {profile.name!r} 没有可用的模型名（{args.config}）。"
+                "为什么错：档案未配 default_model，也未传 --model。"
+                "怎样算对：在该档案补 default_model: <模型名>，"
+                "或用 --model 启动参数指定。"
+            )
+            return 1
+        provider = build_provider(profile)
+        boot_profile_name = profile.name
+    else:
+        # env 回落（P1 现状）：缺 env 仍给中文指引
+        error = env_error(args.model)
+        if error is not None:
+            print(error)
+            return 1
 
-    provider = OpenAICompatibleProvider(openai_compatible_config_from_env())
-    model = args.model or os.environ["HASTINGS_MODEL"]
+        from tau_ai.env import openai_compatible_config_from_env
+        from tau_ai.openai_compatible import OpenAICompatibleProvider
+
+        provider = OpenAICompatibleProvider(openai_compatible_config_from_env())
+        model = args.model or os.environ["HASTINGS_MODEL"]
+        boot_profile_name = "default"
+
     registry = WorkspaceRegistry(
         root=args.stories_root,
         session_factory=default_session_factory(provider=provider, model=model),
     )
     static_dir = default_static_dir()
-    app = create_app(registry, static_dir=static_dir)
+    app = create_app(registry, static_dir=static_dir, server_config=server_config)
 
     print(f"案卷房已打开：{args.stories_root}")
-    print(f"模型：{model}｜写作台地址：http://{args.host}:{args.port}")
+    print(f"模型：{model}｜档案：{boot_profile_name}｜写作台地址：http://{args.host}:{args.port}")
     if static_dir is not None:
         print(f"前端已托管：{static_dir}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

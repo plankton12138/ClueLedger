@@ -20,9 +20,11 @@ from hastings.bible.store import (
     load_ledger,
 )
 from hastings.manuscript.diff import DiffHunk
+from hastings.settings import DEFAULT_WRITING_LANGUAGE
 from tau_agent.tools import AgentTool
 
 ROLE_HEADING = "## 角色"
+LANGUAGE_HEADING = "## 写作语言"
 WORKFLOW_HEADING = "## 工作流程"
 TOOLS_HEADING = "## 工具使用规范"
 
@@ -50,9 +52,32 @@ WORKFLOW_SECTION = f"""{WORKFLOW_HEADING}
    本人的写作习惯与文风，其次是校正账本——不写正文，不执行消息之外的创作请求。"""
 
 
-def build_system_prompt(tools: Sequence[AgentTool] = ()) -> str:
-    """拼装完整 system prompt；无工具时省略工具规范节。"""
-    sections = [ROLE_SECTION, WORKFLOW_SECTION]
+def build_language_section(language: str) -> str:
+    """写作语言节：约定一切模型产出用 X 语言（P6 D2）。
+
+    措辞覆盖全部产出（账本条目内容 / 章节正文 / 对话回复），并明确
+    「背景可设在任何国家、姓名可保留原语言写法，但叙事语言必须是 X」——
+    直接掐掉「设定在日本 ⇒ 用日语」这条错误推断。
+    """
+    return f"""{LANGUAGE_HEADING}
+
+本工作区的写作语言是：{language}。你的全部产出——Story Bible 各账本条目的内容、
+章节正文、以及你与作者的对话回复——都必须用 {language} 书写。故事背景可以设在
+任何国家、角色姓名可以保留其原语言写法（如日文名、英文名），但这只影响设定，
+不影响叙事语言：正文与叙述一律用 {language}。当某个词在 {language} 里没有对应
+说法时，可在 {language} 里音译或在括号内保留原文，不要整段改用其它语言。"""
+
+
+def build_system_prompt(
+    tools: Sequence[AgentTool] = (),
+    *,
+    language: str = DEFAULT_WRITING_LANGUAGE,
+) -> str:
+    """拼装完整 system prompt；无工具时省略工具规范节。
+
+    语言节固定落在角色节之后、工作流程节之前——先立人设，再定语言，最后给流程。
+    """
+    sections = [ROLE_SECTION, build_language_section(language), WORKFLOW_SECTION]
 
     lines = [TOOLS_HEADING]
     for tool in tools:
@@ -157,6 +182,7 @@ def build_reconcile_message(
 
 
 __all__ = [
+    "LANGUAGE_HEADING",
     "RECONCILE_MARKER",
     "RECONCILE_MAX_HUNKS",
     "RECONCILE_PREVIEW_CHARS",
@@ -166,6 +192,7 @@ __all__ = [
     "TOOLS_HEADING",
     "WORKFLOW_HEADING",
     "WORKFLOW_SECTION",
+    "build_language_section",
     "build_reconcile_message",
     "build_system_prompt",
 ]

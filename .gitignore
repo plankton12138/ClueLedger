@@ -11,6 +11,11 @@ dist/
 
 # 环境变量与密钥
 .env
+config.yaml
+
+# 编辑器 / 工具本地目录
+.trae/
+.vscode/
 
 # 类型检查 / 测试缓存
 .mypy_cache/

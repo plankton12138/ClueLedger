@@ -43,6 +43,7 @@ class StubSession:
         self._running = False
         self._edit_marks = EditMarkRegistry()
         self.resync_calls: list[str] = []
+        self.applied_languages: list[str] = []
 
     @property
     def edit_marks(self) -> EditMarkRegistry:
@@ -85,6 +86,10 @@ class StubSession:
         """默认可重跑（记录调用章 id）；失败路径由子类覆盖。"""
         self.resync_calls.append(chapter_id)
         return True
+
+    def apply_writing_language(self, language: str) -> None:
+        """记录切换调用（P6）；真实会话在此重建 system prompt。"""
+        self.applied_languages.append(language)
 
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
         del listener

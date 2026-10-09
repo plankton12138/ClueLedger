@@ -13,6 +13,7 @@ import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
 import DebugView from "./components/DebugView";
 import ManuscriptPanel from "./components/ManuscriptPanel";
+import SettingsPanel from "./components/SettingsPanel";
 import type { CommandType } from "./api/types";
 import type { ConnectionStatus } from "./api/socket";
 import { useChatStore } from "./state/store";
@@ -30,10 +31,11 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
   closed: "bg-overdue",
 };
 
-/** 顶部导航项：创作台 / 事件流（DebugView 一级入口）/ 置灰预留。 */
+/** 顶部导航项：创作台 / 事件流（DebugView 一级入口）/ 设置 / 置灰预留。 */
 const NAV_ITEMS = [
   { key: "studio", label: "✒ 创作台", soon: false },
   { key: "events", label: "▤ 事件流", soon: false },
+  { key: "settings", label: "⚙ 设置", soon: false },
   { key: "corpus", label: "册 语料库", soon: true },
   { key: "audit", label: "◎ 审计中心", soon: true },
 ] as const;
@@ -114,7 +116,7 @@ export default function App() {
   const snapshot = useChatStore((s) => s.snapshot);
   const slug = useChatStore((s) => s.slug);
   const workspaces = useChatStore((s) => s.workspaces);
-  const [view, setView] = useState<"studio" | "events">("studio");
+  const [view, setView] = useState<"studio" | "events" | "settings">("studio");
   const [showCreate, setShowCreate] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
 
@@ -172,7 +174,8 @@ export default function App() {
           {NAV_ITEMS.map((item) => {
             const active =
               (item.key === "studio" && view === "studio") ||
-              (item.key === "events" && view === "events");
+              (item.key === "events" && view === "events") ||
+              (item.key === "settings" && view === "settings");
             if (item.soon) {
               return (
                 <span
@@ -193,6 +196,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   if (item.key === "events") setView("events");
+                  else if (item.key === "settings") setView("settings");
                   else setView("studio");
                 }}
                 className={`rounded border px-3.5 py-1.5 text-[13px] transition-colors ${
@@ -289,6 +293,10 @@ export default function App() {
       {view === "events" ? (
         <main className="flex min-h-0 flex-1 flex-col border-t border-line">
           <DebugView />
+        </main>
+      ) : view === "settings" ? (
+        <main className="flex min-h-0 flex-1 flex-col border-t border-line">
+          <SettingsPanel />
         </main>
       ) : slug === null || slugInvalid ? (
         <main className="flex flex-1 items-center justify-center">

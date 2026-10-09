@@ -11,10 +11,12 @@ import {
   fetchBible,
   fetchChapter,
   fetchChapters,
+  fetchSettings,
   fetchWorkspaces,
   refetchTargets,
   releaseEditMark,
   saveChapter,
+  saveSettings,
 } from "./rest";
 
 function toolEnd(toolName: string, _args: Record<string, unknown>, isError = false): ToolExecutionEndEventFrame {
@@ -261,5 +263,55 @@ describe("edit-mark 锁端点（P5 T5）", () => {
       vi.fn(async () => new Response(JSON.stringify({ detail: "章节 ch09 不存在。" }), { status: 404 })),
     );
     await expect(acquireEditMark("demo", "ch09")).rejects.toThrow("章节 ch09 不存在");
+  });
+});
+
+// ---------- 工作区设置（P6）：fetch 客户端剧本 ----------
+
+describe("settings API（P6）", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function jsonResponse(payload: unknown, status = 200): Response {
+    return new Response(JSON.stringify(payload), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  it("fetchSettings GET /api/{slug}/settings 并返回写作语言", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({ writing_language: "中文" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchSettings("story a")).resolves.toBe("中文");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/story%20a/settings");
+  });
+
+  it("fetchSettings 结构不符 → 报错并附服务端响应原文", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ nope: true })));
+    await expect(fetchSettings("demo")).rejects.toThrow("结构不符");
+  });
+
+  it("saveSettings PUT，body 为 { writing_language }（snake_case）", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("PUT");
+      expect(init?.body).toBe(JSON.stringify({ writing_language: "English" }));
+      return jsonResponse({ writing_language: "English" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(saveSettings("demo", "English")).resolves.toBe("English");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/demo/settings");
+  });
+
+  it("saveSettings 422（非法取值）→ detail 三要素文案原样透出", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({ detail: "写作语言取值不合法：'Klingon'。怎样算对：从 … 中选择一个。" }, 422),
+      ),
+    );
+    await expect(saveSettings("demo", "Klingon")).rejects.toThrow("写作语言取值不合法");
   });
 });

@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from hastings.server.provider_config import ServerConfig
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.rest import create_rest_router
 from hastings.server.ws import router as ws_router
@@ -26,14 +27,16 @@ class HealthResponse(BaseModel):
 def create_app(
     registry: WorkspaceRegistry,
     static_dir: Path | None = None,
+    server_config: ServerConfig | None = None,
 ) -> FastAPI:
     """装配应用；``static_dir`` 存在时托管前端 build 产物（P3 T9）。
 
     挂载在路由之后——/api 与 /ws 优先匹配，静态文件只兜底其余路径。
+    ``server_config``（P6 D1）缺省时 /api/providers 按 env 回落单档案计算。
     """
     app = FastAPI(title="Hastings", version="0.1.0")
     app.state.registry = registry  # WS 路由与测试内省用；REST 路由经参数绑定
-    app.include_router(create_rest_router(registry=registry))
+    app.include_router(create_rest_router(registry=registry, server_config=server_config))
     app.include_router(ws_router)
 
     @app.get("/api/health", response_model=HealthResponse)

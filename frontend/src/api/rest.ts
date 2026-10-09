@@ -269,6 +269,54 @@ export async function releaseEditMark(slug: string, chapterId: string): Promise<
   }
 }
 
+// ---------- 工作区设置（P6）：写作语言读写（snake_case 口径） ----------
+
+/** 预设写作语言；缺省中文，取值非法服务端 422 三要素。 */
+export const WRITING_LANGUAGES = ["中文", "English", "日本語"] as const;
+
+export type WritingLanguage = (typeof WRITING_LANGUAGES)[number];
+
+export interface SettingsResponse {
+  writing_language: string;
+}
+
+function parseSettings(body: unknown): SettingsResponse {
+  if (
+    body === null ||
+    typeof body !== "object" ||
+    typeof (body as { writing_language?: unknown }).writing_language !== "string"
+  ) {
+    throw new Error(
+      `设置响应结构不符：期望 { writing_language: string }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return body as SettingsResponse;
+}
+
+/** GET /api/{slug}/settings → 当前写作语言；旧工作区无文件时服务端回落默认。 */
+export async function fetchSettings(slug: string): Promise<string> {
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/settings`);
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(`设置读取失败：${await errorDetail(res)}`);
+  }
+  return parseSettings(body).writing_language;
+}
+
+/** PUT /api/{slug}/settings → 落盘并热生效；422（非法取值）/500（IO）detail 原样透出。 */
+export async function saveSettings(slug: string, writingLanguage: string): Promise<string> {
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ writing_language: writingLanguage }),
+  });
+  if (!res.ok) {
+    throw new Error(`设置保存失败：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  return parseSettings(body).writing_language;
+}
+
 // ---------- D7 refetch 规则（纯函数，呈现策略而非业务校验） ----------
 
 /**
