@@ -28,6 +28,7 @@ from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, SecretStr, ValidationError
 
+from hastings.bible.audit import AuditRatio, build_audit_report
 from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
 from hastings.bible.stats import compute_story_stats
 from hastings.bible.store import (
@@ -415,6 +416,46 @@ class StyleProfileResponse(BaseModel):
     dialogue_ratio: float
     sentence_buckets: dict[str, int]
     warnings: list[str]
+
+
+class AuditRatioResponse(BaseModel):
+    """二元比率指标（D7）：count 语义随指标——回收数 / 公平呈现数。"""
+
+    rate: float
+    count: int
+    total: int
+
+
+class AuditConsistencyResponse(BaseModel):
+    """人物一致性（结构代理）：1 - 冲突数/时间线条目数；空时间线为 null。"""
+
+    rate: float
+    conflicts: int
+    entries: int
+
+
+class AuditCheckItemResponse(BaseModel):
+    """一条检查结果：message 三要素；anchor_* 喂「定位问题章节」。"""
+
+    rule: str
+    severity: Literal["error", "warn"]
+    message: str
+    anchor_chapter: str | None = None
+    anchor_name: str | None = None
+
+
+class AuditReportResponse(BaseModel):
+    """单章确定性审计报告（P7 T8，D7）：纯派生无新存储。
+
+    口径诚实：三指标是结构代理非语义判断——「人物一致性 96%」的准确读法
+    是「时间线区间冲突密度低」；语义级检查移交 P9。
+    """
+
+    chapter_id: str
+    foreshadow_recovery: AuditRatioResponse
+    clue_fairness: AuditRatioResponse
+    character_consistency: AuditConsistencyResponse | None
+    checks: list[AuditCheckItemResponse]
 
 
 def build_export_zip(workspace: StoryWorkspace) -> bytes:
@@ -869,6 +910,79 @@ def create_rest_router(
             clue_total=data.clue_total,
             clue_red_herring=data.clue_red_herring,
             clue_red_herring_ratio=data.clue_red_herring_ratio,
+        )
+
+    @router.get("/api/{slug}/audit/{chapter_id}", response_model=AuditReportResponse)
+    async def audit_chapter(slug: str, chapter_id: str) -> AuditReportResponse:
+        """单章确定性审计报告（P7 T8，计划 D7）：纯派生、无新存储。
+
+        _session 守门 + 章节 404 沿用 chapter 端点惯例；账本损坏 422、
+        IO 故障 500——与 stats 端点同出口。空账本/空清单为合法空结果。
+        """
+        await _session(slug)
+        workspace = _workspace(slug)
+        if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"章节 id 不合法：{chapter_id!r}。"
+                    "为什么错：id 只允许字母、数字、连字符与下划线。"
+                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
+                ),
+            )
+        if not (workspace.chapters_dir / f"{chapter_id}.md").exists():
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"章节 {chapter_id} 不存在。"
+                    "为什么错：审计报告只对已有章节有意义。"
+                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
+                ),
+            )
+        try:
+            report = build_audit_report(workspace, chapter_id)
+        except (ValidationError, LedgerFormatError, yaml.YAMLError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"审计报告生成失败（{slug}/{chapter_id}）。"
+                    f"为什么错：{exc}。"
+                    "怎样算对：修复或删除损坏的 YAML 文件后重试。"
+                ),
+            ) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"审计报告生成失败（{slug}/{chapter_id}）：文件系统错误 {exc}。",
+            ) from exc
+
+        def _ratio(item: AuditRatio) -> AuditRatioResponse:
+            return AuditRatioResponse(rate=item.rate, count=item.count, total=item.total)
+
+        consistency = (
+            AuditConsistencyResponse(
+                rate=report.character_consistency.rate,
+                conflicts=report.character_consistency.conflicts,
+                entries=report.character_consistency.entries,
+            )
+            if report.character_consistency is not None
+            else None
+        )
+        return AuditReportResponse(
+            chapter_id=report.chapter_id,
+            foreshadow_recovery=_ratio(report.foreshadow_recovery),
+            clue_fairness=_ratio(report.clue_fairness),
+            character_consistency=consistency,
+            checks=[
+                AuditCheckItemResponse(
+                    rule=item.rule,
+                    severity=item.severity,
+                    message=item.message,
+                    anchor_chapter=item.anchor_chapter,
+                    anchor_name=item.anchor_name,
+                )
+                for item in report.checks
+            ],
         )
 
     @router.get("/api/{slug}/chapters", response_model=ChaptersResponse)
