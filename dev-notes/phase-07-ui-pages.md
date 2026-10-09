@@ -1,0 +1,193 @@
+# Phase 7 构建笔记：界面重塑与功能页面（原型对齐）
+
+> 对应 [phase-07-ui-pages-plan.md](phase-07-ui-pages-plan.md)，2026-10-09 完成。
+> 结论：**P7 九条 DoD 逐项验收通过**（R5 关闭确认待用户）。
+> 用户决策背景：前端布局粗糙、原型中的功能页面缺失——本阶段对齐 `submission/product-prototype/`
+> 五张原型图（p1 创作台 / p2 账本全页 / p3 审计中心 / p4 语料库 / p5 事件流），重组顶栏；
+> 三项已确认决策：① 语料库文风档案先行（向量检索留 P8）；② 审计中心确定性 v1（语义审计移交 P9）；
+> ③ 视觉令牌级对齐（不引入背景大图）。
+
+## 1. 交付内容
+
+实施顺序说明：T12–T16（用户插入任务）实际先于 T4–T10 实施——「模型来源自主选择 + 文章管理页」
+是日常使用的前置体验，插队交付；计划文档以 `b1c28bc` 追加 T12–T14，T15/T16 动机见 §2.10。
+
+| 交付 | 提交 | 说明 |
+|---|---|---|
+| P7 计划 + 路线顺延 | `d7e21dd` | D1–D9 决策 + T1–T14 分解 + 九条 DoD；DESIGN.md §8 路线表 P7=RAG→P8、P8=审计员→P9、P9=评测→P10 顺延落位 |
+| T1 顶栏重组 + 视图骨架 | `53ace55` | 三段式（品牌｜主导航｜搜索+状态徽章）+ 五导航项转正 + view 扩容（corpus/audit/ledger） |
+| T2 共享视觉组件 | `b245bae` | RingStat 提取（BiblePanel 改消费）+ Histogram 新建（纯 SVG 六桶直方图） |
+| fix 创作台输入框溢出 | `9959034` | textarea 补 min-w-0 + 侧栏容器 overflow-hidden（长文本/长 URL 撑破布局） |
+| T3 创作台 polish | `f19d8a4` | 工具调用卡片化 + ChapterPaper 提取（羊皮纸阅读态共用）+ 章节字数徽注 + 概览卡升级双环 |
+| 计划追加 T12–T14 | `b1c28bc` | 用户插入任务入册（模型接入 UI 化 + 文章管理页） |
+| T12 provider 档案 CRUD | `7065a48` | `PUT/DELETE /api/providers/{name}`（upsert + 409 三保护）+ `POST /api/providers/test` 连通测试 + config.yaml 写回 |
+| T13 删除工作区 | `33b76aa` | `DELETE /api/workspaces/{slug}?confirm=`（confirm 守门 + running 409） |
+| T14 文章管理页 + 文案清扫 | `c0c910f` | ArticlesPage（列表/新建/切换/导出/删除）+ 顶栏撤工作区下拉 + 「案卷」→「文章」全局清扫（标识符不改） |
+| T15 provider 内建目录 | `0ddbdcc` | `provider_catalog.py` 七家静态目录 + `GET /api/provider-catalog`（纯公开数据，无密钥字段） |
+| T16 登录式档案管理 | `2b55a2a` | 设置页登录式表单（内建目录预填 + 自定义路径），对齐 tau `/login` 体验内核 |
+| T4 事件流对齐 | `5410743` | 徽章五类配色（violet token 新增）+ 运行概览卡（状态环 + 四指标）+ 平均延迟帧对派生 |
+| T5 账本全页 | `a13594c` | LedgerPage（章节进度横条 + 工具行筛选排序 + 全宽表格 + 回收环/风险卡/关系图右栏）+ ledgerShared 共享模块 + BiblePanel「⤢ 展开」入口 |
+| T6 语料库后端 | `f93c065` | `rag/style_profile.py` 纯函数 + `rag/corpus_store.py` + `/api/corpus` 四端点 + `--corpus-root` CLI（python-multipart 依赖，动机见 §2.6） |
+| T7 语料库前端 | `5416bd4` | CorpusPage（拖拽上传/列表删除/文风档案：直方图+对话占比环+指标卡）+ P8/P9 置灰区 |
+| T8 审计后端 | `213ca8e` | `bible/audit.py` 纯派生聚合（三指标 + 四条确定性检查）+ `GET /api/{slug}/audit/{chapter_id}` |
+| T9 审计中心前端 | `1a27064` | AuditPage（章节阅读 + 三指标环 + 检查清单 + 定位跳转 + steer 修订建议） |
+| T10 设置页 polish | `327ddfc` | D9 分节卡片（写作语言/模型接入/工作区信息三卡），交互零变更 |
+| 构建笔记 + DoD 验收 | 本笔记 | 四透镜专节 + 九条 DoD 逐项对照 + 七道门复跑 |
+
+## 2. 关键决策（D1–D9 落地记录 + 插入任务）
+
+### D1 视图结构：五导航项 + 账本全页下钻
+
+- `View` 扩容为六态：studio / articles / corpus / audit / events / settings + ledger（不进导航，从创作台账本面板「展开 ⤢」下钻，LedgerPage 提供「‹ 返回创作台」）；
+- 账本全页保持「详情页形态」而非一级入口——与原型 p2 一致，且避免顶栏拥挤回潮；
+- ComingSoonPage 随 audit/corpus 转正删除（视图收口唯一，无占位残留）。
+
+### D2 顶栏三段式重组
+
+- 左段品牌区（徽标 + 双行标题）｜中段主导航六项｜右段（全局搜索 + 状态徽章 + 重连）；
+- **状态徽章合并**：连接点 + 「写作中」脉动同徽章变体呈现，替代原先两处并排；工作区管理收进「文章」页（T14），顶栏不再散落下拉/新建/导出三件套；
+- 模型名移入设置页「模型接入」卡（T16 后为登录式表单）。
+
+### D3 共享视觉组件：两处以上真实复用才提取
+
+- `RingStat`：从 BiblePanel 内部 RecoveryRing 提取参数化（size/rate/label + P7 T4 增 `center` 覆写），四处消费（账本概览/事件流状态环/审计三环/语料对话占比）；
+- `Histogram`：纯 SVG 六桶直方图，语料句长分布专用；
+- `ChapterPaper`：羊皮纸阅读态（标题/饰线/段落/首字下沉/页脚导航）提取，ManuscriptPanel 与 AuditPage 左栏共用——**编辑态与 diff 态不共享**（只有阅读态是稳定契约）；
+- 徽章类小组件不建抽象层（避免过早抽象，沿用现有 Chip 模式）。
+
+### D4 创作台 polish（p1 对齐）
+
+- **工具调用卡片化**：单行摘要升级为卡片——工具名 + 运行状态 + 结束后 details 摘要列表；复用既有 `tool_execution_start/end` 帧数据，**零事件契约变更**（AgentToolResult.details 的结构化数据终于有了结构化消费面）；
+- 正文羊皮纸补章节字数徽注；账本概览卡升级双环（回收率 + 线索公平性），数据全来自 stats，零新端点。
+
+### D5 账本全页 LedgerPage：共享模块防双源漂移
+
+- BiblePanel 与 LedgerPage 双消费账本列定义/风险配色/筛选排序——提取 `ledgerShared.tsx` 单点定义（`COLUMNS`/`RiskCell`/`FORESHADOW_STATUS_LABELS` + `ledgerRows` 筛选排序纯函数），防止两处 UI 对同一账本口径漂移；
+- 章节进度横条纯展示不可点（点击选章是正文面板职责，避免双处管理选中态）；右栏风险卡「定位」走 P6 既有 `navigate({kind:"chapter"})` 机制，零新跳转机制；
+- 状态独立：进入时按当前 slug 重拉，不与右栏共享 state（避免双源同步问题）。
+
+### D6 语料库：作者级资产 + 文风档案先行
+
+- **存储**：服务级 `corpus/`（`--corpus-root` CLI，默认与 stories/ 平级）——语料是作者级资产跨工作区共享，放 workspace 内会误导「每个故事重新上传」；
+- `python-multipart` 新增依赖动机：FastAPI multipart 表单解析的官方标准依赖，无替代方案（与「依赖最小化」的张力记录在案）；
+- `rag/style_profile.py` 纯函数（零 LLM 零向量库）：分句（连续标点合并）、六桶句长、对话占比（引号计入分母）、空行分段、去空白字数（与 stats 同口径）；
+- **泄压阀分层**：非法扩展名/路径穿越 → 422 三要素；同名上传 → 409（覆盖走显式 DELETE）；目录缺失 → 合法空结果；单文件 UnicodeDecodeError → 跳过 + warnings 进响应（合法但部分不可读 ≠ 环境故障）；OSError → 500 归因环境；
+- 前端置灰区明确标注「P8/P9 接入」——能力边界可见，不做假占位。
+
+### D7 审计中心：确定性 v1 + 口径诚实
+
+- `GET /api/{slug}/audit/{chapter_id}` 纯派生无新存储：三指标（伏笔回收率 / 线索公平性 / 人物一致性）+ 四条固定顺序检查（timeline_conflict / foreshadow_overdue / clue_planting / method_state），检查项 message 全三要素 + 确定性章节锚点；
+- **口径诚实标注三处一致**（audit.py docstring + REST 响应模型 + AuditPage 页头）：三指标是**结构代理非语义判断**——「人物一致性 96%」的准确读法是「时间线区间冲突密度低」；语义层移交 P9；
+- 「生成修订建议」：前端 `buildRevisionRequest` 纯函数把非 pass 项组装成一条 steer 消息经现有 WS 命令发送（运行中 steer / 空闲 prompt，App 层按 `running` 选路）——**零新后端机制**，修订指令进对话流可追溯。
+
+### D8 事件流对齐：徽章五类 + 平均延迟的账本镜像口径
+
+- 徽章五类配色：消息=蓝（planned）、工具执行=绿（planted）、工具返回=紫（新 token `violet #8B7EC8`）、notice/审计=金（gold）、错误/契约外=红（overdue）——未知事件红色契约延续（显式上报不静默吞）；
+- **平均延迟只按历史帧对计算**：实时 WS 帧无服务端时间戳，在 reducer 存 arrival 时间会破坏纯函数性且扩大改动面——遵循计划字面口径：`avgToolLatencyMs` 纯函数按可见行内 start→end 帧对均值，实时行不参与、刷新后补齐，UI 脚注标注口径；
+- 既有功能（历史合并/过滤计数/行展开/导出/自动滚动）零回退，vitest 既有用例未动。
+
+### D9 设置页分节卡片
+
+- 三卡：写作语言 / 模型接入 / 工作区信息（slug、章节数镜像、事件账本导出）——容器样式重构，**交互零变更**（保存按钮仍服务「语言+档案+模型」三字段整体保存，拆字段保存属过度设计，不做）。
+
+### 2.10 插入任务 T12–T16：模型接入 UI 化与文章管理
+
+- **T12 provider CRUD**：`PUT /api/providers/{name}` upsert（修改时 key 留空 = 保留旧 key）+ DELETE（运行中/最后可用档案/不存在 → 409/409/404 三保护）+ `POST /api/providers/test`（未保存表单直测，与 models 端点共用连通内核）；写回 `save_server_config`；config.yaml 已在 .gitignore；
+- **T13 删除工作区**：`?confirm={slug}` 显式守门（防误删）+ running 409 三要素；
+- **T14 文章管理页**：独立页面承载文章增删切换（用户约定：不放右上角下拉）；「案卷」→「文章」全局文案清扫（标识符不改）；无文章时默认落文章页引导新建；
+- **T15 内建目录**（`provider_catalog.py`）：七家 provider（DeepSeek/智谱/Kimi/百炼/OpenAI/OpenRouter/硅基流动）静态预填 base_url/models/default_model/api_key_env/key_url——纯公开数据无密钥，**刻意瘦身**：只保留 Hastings 用得到的字段（OpenAI 兼容 + /models 发现），不含 tau 目录的 thinking/cost/context_window；
+- **T16 登录式档案管理**：设置页表单对齐 tau `/login` 体验内核——点选内建目录 → 贴 key 两步即用；自定义 provider 走手填路径（`catalog_entry` 返回 None 即降级）。
+
+## 3. Agent 设计经验（四透镜）
+
+> P7 是界面阶段，但出现了两条新的「喂模型」路径（审计修订建议 steer、错误 detail 透传），
+> 四透镜的落点是「界面也是模型交互面」——UI 组装的东西最终进对话流喂给模型。
+
+### 3.1 错误消息是喂给模型的 API——UI 组装的修订指令也要三要素
+
+- **审计修订建议是本阶段最重要的「喂模型」设计**：`buildRevisionRequest(chapterId, checks)` 把非 pass 项组装成 steer 消息——每条带 `[错误/警告]` 定级 + rule + anchor 章节 + message 三要素，**原样透传不做「人话翻译」**；作者在审计页看到的清单与模型收到的逐字一致，两边的纠错上下文是同一份；
+- REST detail 透传原则延续：语料上传 422（「哪里错/为什么错/怎样算对」）、档案 409 三保护文案、连通测试失败归因——前端一律原样渲染，不二次包装；
+- 反面守住：审计检查 message 在后端 `audit.py` 就写成三要素（含锚定章节），而不是前端拼装——错误消息的生产点越靠近数据，越不容易在流转中丢失字段。
+
+### 3.2 硬约束放工具层——确定性口径在后端算，前端只渲染
+
+- 审计四规则 + 三指标全部在后端 `audit.py` 纯函数强制，前端不重算任何口径——同一份报告 REST 可复现（未来 P9 落盘审计 JSON 也用它），前端只是渲染器；
+- 语料文件名校验复用 slug 同款路径安全规则 + basename 二次兜底——**安全不变量在工具层强制**，前端扩展名过滤只是体验优化不是防线；
+- 红线延续：本阶段新增端点全是只读派生（audit/stats 镜像）或语料文件管理，agent 业务写路径仍只有 write_guard 守门的 PUT chapters/{id} 一条。
+
+### 3.3 泄压阀三情形——「合法但部分不可读」是本阶段的新形态
+
+| 情形 | 落点 | 行为 |
+|---|---|---|
+| 参数违规 | 语料扩展名非法/路径穿越、审计章 404、档案名冲突、运行中删除工作区 | 422/404/409 三要素 |
+| 合法但空结果 | corpus 目录缺失、空账本审计、模型列表为空 | 200 空态 + 指明下一步（「先让 agent 登记账本」） |
+| 环境故障 | 语料 OSError、连通测试网络错 | 500 归因环境 |
+
+新形态：**「合法但部分不可读」**——单文件 UnicodeDecodeError 不 500 整体，跳过 + warnings 进响应。这既不是违规也不是空结果：整体请求合法、局部数据坏。泄压方向是「降级 + 告警字段」，让调用方知情而非静默丢——与 P4 落盘 OSError 的 stderr 告警同构，只是告警通道从 stderr 换成了响应体。
+
+### 3.4 可观测性是事件契约的一部分——指标口径的诚实标注
+
+- 徽章五类配色让事件流的「读者视角」分级：一眼区分消息/工具执行/工具返回/审计/错误；未知事件红色契约从 P6 延续，事件契约演进时不会被静默吞；
+- **平均延迟的口径诚实**：实时帧无时间戳，若偷偷用客户端 arrival 时间会得到「看似精确实则错误」的数字——选择「只算历史帧对 + UI 标注可见窗口口径 + 无帧对显示 —」，**宁可显示口径受限的准确数字，不显示无口径的精确数字**；
+- **结构代理指标的诚实标注**：审计三指标在 docstring/REST 模型/UI 三处标注「结构代理非语义判断」——指标被误读比没有指标更糟，这是本阶段最重要的一课。
+
+## 4. 踩过的坑
+
+1. **frozen+slots dataclass 没有 `__dict__`**。REST 层 `CorpusFileInfoResponse(**f.__dict__)` 直接 AttributeError——slots 类字段存在 slot 描述符里。修法：`dataclasses.asdict()`。教训记在「边界转换」：wire 模型与领域模型的转换点要用官方序列化通道，别假设内存布局。
+2. **测试口径先行钉住实现，不如「口径注释钉住双方」**。style_profile 三处测试期望值与实现不符（dialogue_ratio 引号计入分母、total_chars 去空白含标点），修正时改的是测试期望——但真正的修法是把口径写进 docstring（引号计入分母、与 stats 同款口径），让测试与实现共同引用同一句口径声明，避免下次「改测试还是改实现」的拉锯。
+3. **Starlette 路径参数先解码后匹配**。`DELETE /api/corpus/..%2Fevil` 不触发路由（解码后非单段，路由根本不匹配），想测「路径穿越被拒」拿不到 422——改用 `bad.id`（点号不合法）构造合法单段但校验失败的输入。教训：测防护要在「能到达校验层」的输入空间里构造，路由层会先吃掉一部分恶意形态（这本身也是一层防护，但测试得绕过它测目标层）。
+4. **`save_chapter` 是受管更新语义**。测试播种章节时调它报 FileNotFoundError（要求章节已存在）——受管写入口有自己的前置条件，测试播种应直接 `write_text` 落盘，绕过受管通道（测的是读侧派生逻辑，不是写侧守门）。
+5. **前端 store 字段名凭记忆写错**。`s.is_running` 实为 `s.running`——跨阶段引用他人组件的状态切片时先看 store 定义，命名约定（running/connectionError 等）不跨项目迁移。
+6. **侧栏压缩布局回潮**（延续 P7 T3 fix 经验）：任何新增列/卡都要带 min-w-0 + truncate 约束族——布局挤压不是某个组件的 bug，是 flex 子项默认 min-width:auto 的系统性后果，新组件按约定预防性加约束。
+
+## 5. 验证输出存档（七道门 + 红线，T10 复跑全绿）
+
+```text
+uv run ruff check .          → All checks passed!
+uv run ruff format --check . → 142 files already formatted
+uv run mypy                  → Success: no issues found in 75 source files
+uv run pytest                → 483 passed（本阶段新增 style_profile 20 / corpus_api 7 / audit 8 等剧本）
+npx tsc --noEmit             → 通过（零输出）
+npm run build                → vite 构建成功；RelationGraph 懒加载 chunk 197 kB 独立，主包 259 kB
+npx vitest run               → 196 passed（19 files；ledgerShared / CorpusPage / AuditPage 纯函数剧本等）
+```
+
+红线三项：
+
+```text
+tau_ai / tau_agent：逐 .py SHA-256 对比上游 C:\Projects\Agent\tau → diff 0 个（36 文件全同）
+hastings / tau_ai / tau_agent：tau_coding 零 import（命中全在 tau_coding 包自身，不参与构建）
+REST 写入口仅守门管道：PUT settings、PUT chapters/{id}（write_guard）、PUT/DELETE edit-mark、
+POST/DELETE workspaces（confirm 守门）、PUT/DELETE providers、POST corpus——后三者是配置/资产
+管理写路径，不触碰 agent 业务写路径（对话流/账本/正文仍只经既有守门入口）
+```
+
+## 6. DoD 对照（计划 §1 九条）
+
+- [x] **① 顶栏**：三段式六导航项（创作台/文章/语料库/审计中心/事件流/设置，文章管理按 T14 约定独立成页）；工作区管理收进文章页；模型名移设置页；构建产物实测无溢出
+- [x] **② 创作台 polish**：工具卡片化（工具名+状态+details 摘要）；羊皮纸含饰线/首字下沉/页脚导航/字数徽注；概览卡双环
+- [x] **③ 账本全页**：BiblePanel「⤢ 展开」进入；章节进度横条 + 搜索/状态/风险筛选/排序 + 全宽表格 + 右栏三件（回收大环/风险卡定位/关系图懒加载）；返回不丢状态（独立重拉）
+- [x] **④ 语料库**：拖拽/点选上传 .txt/.md（非法扩展名 422 三要素）、列表、删除带确认、文风档案（Histogram + 对话占比 RingStat + 三指标卡）；语义指标与向量索引置灰标注 P8/P9
+- [x] **⑤ 审计中心**：选章 → 三指标环 + 检查清单（severity 配色/锚点）+「定位」跳转 +「生成修订建议」steer 组装（buildRevisionRequest 纯函数 + 剧本测试）
+- [x] **⑥ 事件流对齐**：徽章五类配色（violet token）+ 运行概览卡（状态环/总数/工具数/平均延迟/错误数）；既有功能零回退（vitest 既有用例未动）
+- [x] **⑦ 设置页**：分节三卡（写作语言/模型接入/工作区信息），模型接入含登录式表单（T16）
+- [x] **⑧ 红线 + 七道门**：§5 全绿（tau 内核 diff 0、零 import tau_coding、写入口清点见 §5）
+- [x] **⑨ 文档**：DESIGN.md §8 顺延 + P8/P9/P10 移交注记（`d7e21dd` 落位）；构建笔记含四透镜专节（本节 §3）
+
+## 7. 已知留白（转入后续阶段）
+
+- 语料 `chars` 字段惰性（列表只报 size，字数在档案面板才算）——大量文件场景的列表字数展示留给 P8 摄入管线顺带解决；
+- 平均延迟在窗口截断时偏低（口径已标注「可见窗口内」）——精确延迟归 P8+ 服务端 ts 贯通后再议；
+- 审计 v1 四条确定性规则，无落盘（audits/*.json）、无语义层——移交 P9（移交清单见计划 §5）；
+- 语料向量索引区置灰——移交 P8（Chroma + BGE-M3）；
+- T15 内建目录为静态数据，模型名会随厂商迭代过时——手动输入模型名兜底，动态目录（models.dev）不在本阶段假设内；
+- 语料仅 .txt/.md，DOCX/PDF 解析需新依赖，按计划非目标排除；
+- 审计「人物一致性」在空时间线时整体置 None（不可计算）——空工作区第一 二章的审计体验偏弱，随 P9 语义审计一并改善。
+
+## 8. 评审记录
+
+P7 未设独立 R 轮代码评审（沿用 P6 模式：任务分解 T1–T16，质量把关由七道门 + 红线三项 + DoD 九条逐项验收承担）。实施中的两处用户驱动修正已落提交：创作台输入框溢出（`9959034`）、对账定位调整（P5 范畴回溯修订）不属本阶段。T10 以「七道门复跑 + 红线核验」完成 DoD 验收（§5/§6），无 blocker。
+
+## 9. R5 验收
+
+待用户确认后补记（DoD 九条已按 §6 逐项对照通过，关闭动作 = 本笔记以 `docs(p7)` 提交）。
