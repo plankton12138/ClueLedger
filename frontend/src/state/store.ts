@@ -29,9 +29,15 @@ export const useChatStore = create<ChatStore>()((set) => ({
   handleEvent: (event) => set((s) => applyEvent(s, event)),
   loadSnapshot: (state, messages) =>
     set((s) => ({
-      ...applyMessages(s, messages),
+      // 快照是全量事实：重置到初态后重放（R3 问题1——重连时追加会把历史渲染两遍）；
+      // 快照拉取与实时事件之间仅毫秒级窗口，P3 单用户可接受。契约外事件类型报告
+      // 跨连接保留（调试视图的证据不随重连丢失）。
+      ...applyMessages(
+        { ...initialUiState, unhandledEventTypes: s.unhandledEventTypes },
+        messages,
+      ),
       snapshot: state,
-      // 页面加载时 agent 可能已在写作中——快照的 is_running 是唯一事实来源
-      running: s.running || state.is_running,
+      // 快照的 is_running 是唯一事实来源（R3 问题2——stale true 不得经 || 短路覆盖）
+      running: state.is_running,
     })),
 }));

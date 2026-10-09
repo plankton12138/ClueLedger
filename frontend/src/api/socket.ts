@@ -103,18 +103,32 @@ export class AgentSocket {
       this.callbacks.onStatus?.("open");
       void this.loadSnapshot();
     };
-    ws.onclose = () => this.callbacks.onStatus?.("closed");
+    ws.onclose = () => {
+      this.callbacks.onStatus?.("closed");
+      // 被动断线（服务重启/网络中断）同样清理未决命令（R3 问题3）——
+      // 否则在途命令悬挂至超时且误报「响应超时」，归因违反错误三要素
+      this.failPending("连接已断开");
+    };
     ws.onerror = () =>
       this.callbacks.onError?.("WebSocket 连接出错（服务未启动或地址不对）。怎样算对：确认服务已启动后点击重连。");
     ws.onmessage = (ev: MessageEvent) => this.handleText(ev.data as string);
   }
 
   close(): void {
+    // 先清未决再关连接：保证主动关闭的 reject 归因「连接已关闭」，
+    // 不被 onclose 的「连接已断开」抢先（FakeWebSocket 同步回调时尤甚）
+    this.failPending("连接已关闭");
     this.ws?.close();
     this.ws = null;
+  }
+
+  /** 清空未决命令并 reject：主动 close 与被动断线共用（R3 问题3）。 */
+  private failPending(headline: string): void {
     for (const [id, entry] of this.pending) {
       clearTimeout(entry.timer);
-      entry.reject(new Error(`连接已关闭，命令 ${entry.command}（id=${id}）不再等待响应。`));
+      entry.reject(
+        new Error(`${headline}，命令 ${entry.command}（id=${id}）不再等待响应。怎样算对：重连后重试。`),
+      );
     }
     this.pending.clear();
   }

@@ -121,6 +121,15 @@ describe("AgentSocket 连接生命周期", () => {
     expect(statuses[statuses.length - 1]).toBe("closed");
     await expect(agent.command("abort")).rejects.toThrow("未连接");
   });
+
+  it("被动断线：在途命令立即 reject 且归因断线（R3 问题3，非误报超时）", async () => {
+    const { agent, ws } = makeSocket();
+    ws.simulateOpen();
+    const p = agent.command("abort");
+    ws.readyState = FakeWebSocket.CLOSED;
+    ws.onclose?.(); // 模拟服务重启/网络中断——非 agent.close() 主动关闭
+    await expect(p).rejects.toThrow("连接已断开");
+  });
 });
 
 describe("快照回填", () => {
