@@ -22,6 +22,13 @@ import {
 import { useChatStore } from "../state/store";
 import { clueFairness } from "../state/clueFairness";
 import RingStat from "./RingStat";
+import {
+  COLUMNS,
+  FORESHADOW_STATUS_LABELS,
+  RiskCell,
+  cellText,
+  foreshadowDot,
+} from "./ledgerShared";
 
 /** 关系图（T10）懒加载：React Flow + d3-force 不进创作台首屏包。 */
 const RelationGraph = lazy(() => import("./RelationGraph"));
@@ -42,63 +49,6 @@ function initialLedgers(): Record<BibleType, LedgerState> {
     timeline: empty(),
   };
 }
-
-const COLUMNS: Record<BibleType, Array<{ key: string; label: string }>> = {
-  character: [
-    { key: "name", label: "名字" },
-    { key: "identity", label: "身份" },
-    { key: "motivation", label: "动机" },
-    { key: "secret", label: "秘密" },
-    { key: "arc", label: "弧光" },
-  ],
-  clue: [
-    { key: "name", label: "名字" },
-    { key: "chapter", label: "章节" },
-    { key: "points_to", label: "指向" },
-    { key: "is_red_herring", label: "红鲱鱼" },
-    { key: "status", label: "状态" },
-  ],
-  foreshadow: [
-    { key: "name", label: "名字" },
-    { key: "plant_chapter", label: "埋设章" },
-    { key: "plant_mode", label: "方式" },
-    { key: "expected_resolve_chapter", label: "预计回收" },
-    { key: "status", label: "状态" },
-    { key: "risk", label: "风险" },
-  ],
-  method: [
-    { key: "name", label: "名字" },
-    { key: "time_window", label: "时间窗" },
-    { key: "status", label: "状态" },
-  ],
-  timeline: [
-    { key: "name", label: "事件" },
-    { key: "day", label: "第几天" },
-    { key: "t_start", label: "开始" },
-    { key: "t_end", label: "结束" },
-    { key: "participants", label: "参与人" },
-  ],
-};
-
-function cellText(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (Array.isArray(value)) return value.length > 0 ? value.map(String).join("、") : "—";
-  if (typeof value === "boolean") return value ? "是" : "否";
-  return String(value);
-}
-
-/** 伏笔生命周期着色：未回收（非 resolved）红点，已回收绿点。 */
-function foreshadowDot(status: unknown): string {
-  return status === "resolved" ? "bg-planted" : "bg-overdue";
-}
-
-/** 伏笔状态分布中文标签与语义色（统计卡 chips）。 */
-const FORESHADOW_STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  planned: { label: "已计划", color: "text-planned" },
-  planted: { label: "已埋设", color: "text-planted" },
-  echoed: { label: "已呼应", color: "text-gold-soft" },
-  resolved: { label: "已回收", color: "text-recovered" },
-};
 
 /** 回收率环已提取为共享 RingStat（P7 T2，D3）：本组件消费默认形态（36px 回收绿）。 */
 
@@ -164,58 +114,9 @@ function CharacterBio({
   );
 }
 
-/** 风险语义色（T8）：逾期红 / 临近暗金 / 正常绿，与账本生命周期色系同源。 */
-const RISK_META: Record<string, { label: string; chip: string }> = {
-  overdue: { label: "逾期", chip: "border-overdue/60 text-overdue" },
-  near: { label: "临近", chip: "border-gold/60 text-gold" },
-  normal: { label: "正常", chip: "border-planted/60 text-planted" },
-};
+/** 风险语义色与 RiskCell、伏笔状态标签、章节号解析已提取至 ledgerShared（P7 T5，D5）。 */
 
-/** 从章节 id（ch03）提取章号；非 chNN 形态返回 null（进度条不可判定）。 */
-function parseChapterNumber(chapterId: string): number | null {
-  const match = /^ch(\d+)$/i.exec(chapterId.trim());
-  return match === null ? null : Number(match[1]);
-}
-
-/**
- * 风险单元格（T8）：风险 chip + 章节进度条。
- * 进度 = 当前最新章节 / 预计回收章（超过 100% 即逾期）；统计未就绪或
- * 预计回收不可解析时进度显示「—」（合法空结果，不报错）。
- */
-function RiskCell({
-  risk,
-  latest,
-  expected,
-}: {
-  risk: string;
-  latest: number;
-  expected: string;
-}) {
-  const meta = RISK_META[risk] ?? { label: "—", chip: "border-line text-paper/50" };
-  const expectedNum = parseChapterNumber(expected);
-  const hasProgress = latest > 0 && expectedNum !== null;
-  const pct = hasProgress ? Math.min(100, Math.round((latest / expectedNum) * 100)) : 0;
-  return (
-    <div className="min-w-[4.5rem]">
-      <span className={`inline-block border px-1.5 py-px text-[10px] ${meta.chip}`}>
-        {meta.label}
-      </span>
-      <div className="mt-1 flex items-center gap-1">
-        <div className="h-1 w-12 bg-line">
-          <div
-            className={`h-1 ${risk === "overdue" ? "bg-overdue" : "bg-recovered"}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <span className="text-[10px] text-paper/50">
-          {hasProgress ? `${latest}/${expectedNum} 章` : "—"}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-export default function BiblePanel() {
+export default function BiblePanel({ onExpand }: { onExpand?: () => void }) {
   const [active, setActive] = useState<BibleType>("character");
   const [ledgers, setLedgers] = useState<Record<BibleType, LedgerState>>(initialLedgers);
   const [stats, setStats] = useState<{ loading: boolean; error: string | null; data: StoryStatsWire | null }>({
@@ -325,6 +226,20 @@ export default function BiblePanel() {
       : ledger.entities;
   return (
     <div className="flex h-full flex-col">
+      {/* 全页入口（P7 T5，D5）：标题栏「展开 ⤢」下钻账本全页（LedgerPage）。 */}
+      {onExpand !== undefined && (
+        <div className="flex flex-none items-center justify-between border-b border-line px-3 py-1.5">
+          <span className="text-[10px] tracking-[0.2em] text-gold-soft/70">故事账本</span>
+          <button
+            type="button"
+            onClick={onExpand}
+            title="展开为全页视图"
+            className="border border-line px-1.5 py-0.5 text-[10px] text-paper/60 transition-colors hover:border-gold/60 hover:text-gold"
+          >
+            ⤢ 展开
+          </button>
+        </div>
+      )}
       <div className="flex flex-wrap gap-1 border-b border-line px-3 py-2">
         {BIBLE_TYPES.map((t) => (
           <button

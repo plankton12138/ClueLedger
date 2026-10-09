@@ -16,6 +16,7 @@ import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
 import EventStreamView from "./components/EventStreamView";
 import ErrorBoundary from "./components/ErrorBoundary";
+import LedgerPage from "./components/LedgerPage";
 import ManuscriptPanel from "./components/ManuscriptPanel";
 import SearchBox from "./components/SearchBox";
 import SettingsPanel from "./components/SettingsPanel";
@@ -297,10 +298,9 @@ export default function App() {
           note="确定性审计报告在本阶段后续任务转正（选章 → 三指标环 + 检查清单 + 定位问题章节）。"
         />
       ) : view === "ledger" ? (
-        <ComingSoonPage
-          title="账本全页"
-          note="从创作台账本面板「展开」进入的全页视图，随后续任务转正。"
-        />
+        <ErrorBoundary label="账本全页">
+          <LedgerPage onBack={() => setView("studio")} />
+        </ErrorBoundary>
       ) : view === "articles" || slug === null || slugInvalid ? (
         <ErrorBoundary label="文章">
           <ArticlesPage onSwitch={switchTo} onEnter={() => setView("studio")} />
@@ -379,7 +379,7 @@ export default function App() {
             style={{ width: bibleWidth }}
           >
             <ErrorBoundary label="账本">
-              <BiblePanel />
+              <BiblePanel onExpand={() => setView("ledger")} />
             </ErrorBoundary>
           </aside>
           {/* 窄屏（<xl）账本抽屉覆盖层（D6）：信息密度高不整栏丢弃；定宽渲染，无 Splitter。 */}
@@ -404,7 +404,7 @@ export default function App() {
                 </div>
                 <div className="min-h-0 flex-1">
                   <ErrorBoundary label="账本">
-                    <BiblePanel />
+                    <BiblePanel onExpand={() => setView("ledger")} />
                   </ErrorBoundary>
                 </div>
               </aside>
