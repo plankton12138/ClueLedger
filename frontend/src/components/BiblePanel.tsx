@@ -8,7 +8,7 @@
  * 可读错误就地展示。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { EventFrame } from "../api/types";
 import {
   BIBLE_LABELS,
@@ -20,6 +20,9 @@ import {
   type StoryStatsWire,
 } from "../api/rest";
 import { useChatStore } from "../state/store";
+
+/** 关系图（T10）懒加载：React Flow + d3-force 不进创作台首屏包。 */
+const RelationGraph = lazy(() => import("./RelationGraph"));
 
 interface LedgerState {
   loading: boolean;
@@ -138,6 +141,61 @@ const ARC_META: Record<string, { label: string; cls: string }> = {
   transformed: { label: "蜕变", cls: "border-recovered/60 text-recovered" },
 };
 
+/** 角色小传字段（T9 卡片 / T10 关系图联动共用）：动机 / 秘密（折叠）/ 关系 / 备注。 */
+function CharacterBio({
+  entity,
+  secretShown,
+  onRevealSecret,
+}: {
+  entity: Record<string, unknown>;
+  secretShown: boolean;
+  onRevealSecret: () => void;
+}) {
+  const relationships = Array.isArray(entity["relationships"])
+    ? (entity["relationships"] as string[]).join("；")
+    : "";
+  return (
+    <div className="space-y-1.5 text-xs leading-relaxed text-paper/80">
+      {String(entity["motivation"] ?? "") !== "" && (
+        <p>
+          <span className="text-gold-soft">动机：</span>
+          {String(entity["motivation"])}
+        </p>
+      )}
+      {String(entity["secret"] ?? "") !== "" && (
+        <div>
+          {secretShown ? (
+            <p>
+              <span className="text-gold-soft">秘密：</span>
+              {String(entity["secret"])}
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={onRevealSecret}
+              className="border border-line px-1.5 py-px text-[10px] text-paper/60 transition-colors hover:border-gold/60 hover:text-gold"
+            >
+              查看秘密 ▸
+            </button>
+          )}
+        </div>
+      )}
+      {relationships !== "" && (
+        <p>
+          <span className="text-gold-soft">关系：</span>
+          {relationships}
+        </p>
+      )}
+      {String(entity["notes"] ?? "") !== "" && (
+        <p>
+          <span className="text-gold-soft">备注：</span>
+          {String(entity["notes"])}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** 风险语义色（T8）：逾期红 / 临近暗金 / 正常绿，与账本生命周期色系同源。 */
 const RISK_META: Record<string, { label: string; chip: string }> = {
   overdue: { label: "逾期", chip: "border-overdue/60 text-overdue" },
@@ -202,6 +260,10 @@ export default function BiblePanel() {
   // 角色小传（T9）：单开手风琴；秘密默认折叠，点开显式查看——防作者被剧透的仪式感。
   const [openName, setOpenName] = useState<string | null>(null);
   const [secretShown, setSecretShown] = useState(false);
+  // 关系图（T10）：角色 Tab 视图切换（列表/关系图）+ 点节点联动右侧小传。
+  const [charView, setCharView] = useState<"list" | "graph">("list");
+  const [graphSelected, setGraphSelected] = useState<string | null>(null);
+  const [graphSecretShown, setGraphSecretShown] = useState(false);
   const slug = useChatStore((s) => s.slug);
 
   const load = useCallback(async (workspaceSlug: string, type: BibleType) => {
@@ -305,6 +367,24 @@ export default function BiblePanel() {
             ))}
           </select>
         )}
+        {active === "character" && ledger.entities.length > 0 && (
+          <div className="ml-auto flex gap-1">
+            {(["list", "graph"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setCharView(v)}
+                className={`border px-2 py-0.5 text-xs transition-colors ${
+                  charView === v
+                    ? "border-gold bg-gold/15 text-gold"
+                    : "border-line text-gold-soft hover:border-gold/50"
+                }`}
+              >
+                {v === "list" ? "列表" : "关系图"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
         {ledger.error && (
@@ -322,13 +402,50 @@ export default function BiblePanel() {
         )}
         {rows.length > 0 &&
           (active === "character" ? (
+            charView === "graph" ? (
+              <div className="flex min-h-0 flex-col">
+                <div className="flex min-h-0 flex-1">
+                  <div className="min-h-0 flex-1">
+                    <Suspense
+                      fallback={
+                        <p className="p-4 text-xs text-paper/40">关系图加载中…</p>
+                      }
+                    >
+                      <RelationGraph
+                        characters={ledger.entities}
+                        selected={graphSelected}
+                        onSelect={(name) => setGraphSelected(name)}
+                      />
+                    </Suspense>
+                  </div>
+                  {graphSelected !== null && (
+                    <aside className="w-56 flex-none overflow-auto border-l border-line px-3 py-2">
+                      {(() => {
+                        const entity = ledger.entities.find(
+                          (e) => String(e["name"]) === graphSelected,
+                        );
+                        return entity !== undefined ? (
+                          <>
+                            <div className="mb-2 border-b border-line/60 pb-1 text-sm text-paper">
+                              {graphSelected}
+                            </div>
+                            <CharacterBio
+                              entity={entity}
+                              secretShown={graphSecretShown}
+                              onRevealSecret={() => setGraphSecretShown(true)}
+                            />
+                          </>
+                        ) : null;
+                      })()}
+                    </aside>
+                  )}
+                </div>
+              </div>
+            ) : (
             <div className="space-y-2">
               {rows.map((c) => {
                 const name = String(c["name"] ?? "");
                 const isOpen = openName === name;
-                const relationships = Array.isArray(c["relationships"])
-                  ? (c["relationships"] as string[]).join("；")
-                  : "";
                 return (
                   <div key={name} className="border border-line/50 px-2.5 py-2">
                     <button
@@ -360,52 +477,19 @@ export default function BiblePanel() {
                       </div>
                     </button>
                     {isOpen && (
-                      <div className="mt-2 space-y-1.5 text-xs leading-relaxed text-paper/80">
-                        {String(c["motivation"] ?? "") !== "" && (
-                          <p>
-                            <span className="text-gold-soft">动机：</span>
-                            {String(c["motivation"])}
-                          </p>
-                        )}
-                        {String(c["secret"] ?? "") !== "" && (
-                          <div>
-                            {secretShown ? (
-                              <p>
-                                <span className="text-gold-soft">秘密：</span>
-                                {String(c["secret"])}
-                              </p>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSecretShown(true);
-                                }}
-                                className="border border-line px-1.5 py-px text-[10px] text-paper/60 transition-colors hover:border-gold/60 hover:text-gold"
-                              >
-                                查看秘密 ▸
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        {relationships !== "" && (
-                          <p>
-                            <span className="text-gold-soft">关系：</span>
-                            {relationships}
-                          </p>
-                        )}
-                        {String(c["notes"] ?? "") !== "" && (
-                          <p>
-                            <span className="text-gold-soft">备注：</span>
-                            {String(c["notes"])}
-                          </p>
-                        )}
+                      <div className="mt-2">
+                        <CharacterBio
+                          entity={c}
+                          secretShown={secretShown}
+                          onRevealSecret={() => setSecretShown(true)}
+                        />
                       </div>
                     )}
                   </div>
                 );
               })}
             </div>
+            )
           ) : (
           <table className="w-full text-left text-xs">
             <thead>
