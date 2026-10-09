@@ -336,8 +336,11 @@ def test_ws_abort_command_and_cancel_signal(workspace: StoryWorkspace) -> None:
 def test_ws_second_connection_receives_full_stream_via_listener(
     workspace: StoryWorkspace,
 ) -> None:
-    client = TestClient(_standard_app(workspace))
-    with client.websocket_connect(WS_URL) as a, client.websocket_connect(WS_URL) as b:
+    with (
+        TestClient(_standard_app(workspace)) as client,
+        client.websocket_connect(WS_URL) as a,
+        client.websocket_connect(WS_URL) as b,
+    ):
         a.send_json({"id": 1, "type": "prompt", "message": "建一个角色"})
         assert a.receive_json()["success"] is True
 
@@ -403,9 +406,11 @@ def test_ws_events_do_not_leak_across_workspaces(tmp_path: Path) -> None:
         tmp_path,
         {"story-a": "甲故事独有收尾。", "story-b": "乙故事独有收尾。"},
     )
-    client = TestClient(app)
-
-    with client.websocket_connect("/ws/story-a") as a, client.websocket_connect("/ws/story-b") as b:
+    with (
+        TestClient(app) as client,
+        client.websocket_connect("/ws/story-a") as a,
+        client.websocket_connect("/ws/story-b") as b,
+    ):
         a.send_json({"id": 1, "type": "prompt", "message": "写甲"})
         assert a.receive_json()["success"] is True
         frames_a = _read_until(a, "agent_end")

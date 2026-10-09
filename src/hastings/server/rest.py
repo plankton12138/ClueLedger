@@ -30,6 +30,7 @@ from hastings.bible.store import (
     list_characters,
     load_ledger,
 )
+from hastings.events_store import CATEGORIES, EventStore, events_file
 from hastings.manuscript.diff import InvalidChapterFormat, validate_title_heading
 from hastings.manuscript.store import current_revision, save_chapter
 from hastings.server.provider_config import ProviderBook, env_fallback_config, mask_key
@@ -53,6 +54,9 @@ _CHAPTER_ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}"
 
 # 模型发现请求超时（P6 D3）：够慢端点响应，又不至于挂死页面。
 _MODEL_DISCOVERY_TIMEOUT_SECONDS: Final[float] = 10.0
+
+# 事件流分页单页上限（P6 D5）：防止一次拉满历史把浏览器拖垮。
+_EVENT_LIMIT_MAX: Final[int] = 1000
 
 
 class ModelDiscoveryError(Exception):
@@ -265,6 +269,22 @@ class ModelsResponse(BaseModel):
     """模型发现结果（P6 D3）；空列表 = 合法空结果（前端指引手动输入）。"""
 
     models: list[str]
+
+
+class EventRecordResponse(BaseModel):
+    """一条持久化事件（P6 D4）：ts/seq/type 为索引列，data 为事件帧原文。"""
+
+    ts: str
+    seq: int
+    type: str
+    data: dict[str, JSONValue]
+
+
+class EventsResponse(BaseModel):
+    """事件流分页结果（P6 D5）：倒序（新→旧），has_more 指示可继续向上翻页。"""
+
+    events: list[EventRecordResponse]
+    has_more: bool
 
 
 def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[BaseModel]:
@@ -626,6 +646,47 @@ def create_rest_router(
                 )
                 for hunk in saved.hunks
             ],
+        )
+
+    @router.get("/api/{slug}/events", response_model=EventsResponse)
+    async def events(
+        slug: str,
+        limit: int = 200,
+        before_seq: int | None = None,
+        category: str | None = None,
+    ) -> EventsResponse:
+        """事件流历史查询（P6 D4/D5）：倒序分页（seq 游标）+ 分类过滤。
+
+        读的是 events.jsonl（可观测性账本，与 session.jsonl 无关）；空账本
+        是合法空结果（新工作区尚无事件）→ 200 空列表。
+        """
+        if limit < 1 or limit > _EVENT_LIMIT_MAX:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"事件流分页参数不合法：limit={limit}。"
+                    "为什么错：单页条数须在 1 与 1000 之间。"
+                    "怎样算对：把 limit 调到该区间内再请求。"
+                ),
+            )
+        if category is not None and category not in CATEGORIES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"事件流分类不合法：{category!r}。"
+                    "为什么错：分类只接受预设取值。"
+                    f"怎样算对：从 {'、'.join(CATEGORIES)} 中选择，或不传 category 取全部。"
+                ),
+            )
+        await _session(slug)
+        store = EventStore(events_file(_workspace(slug)))
+        page = await store.read(limit=limit, before_seq=before_seq, category=category)
+        return EventsResponse(
+            events=[
+                EventRecordResponse(ts=r.ts, seq=r.seq, type=r.type, data=r.data)
+                for r in page.records
+            ],
+            has_more=page.has_more,
         )
 
     def _read_settings(workspace: StoryWorkspace) -> SettingsResponse:

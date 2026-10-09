@@ -14,10 +14,11 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from typing import TYPE_CHECKING
 
 from hastings.bible.store import StoryWorkspace
+from hastings.events_store import EventStore, events_file
 from hastings.manuscript.diff import DiffHunk
 from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
 from hastings.server.provider_config import ProviderBook
-from hastings.server.reconcile import NoticeListener, ReconcileQueue
+from hastings.server.reconcile import NoticeListener, ReconcileNotice, ReconcileQueue
 from hastings.server.registry import SessionFactory
 from hastings.server.session import AgentBusyError, WritingSession
 from hastings.settings import DEFAULT_PROVIDER_PROFILE
@@ -25,6 +26,7 @@ from tau_agent.events import AgentEvent
 from tau_agent.harness import AgentHarness, AgentHarnessConfig, EventListener
 from tau_agent.messages import AgentMessage
 from tau_agent.provider import ModelProvider
+from tau_agent.types import JSONValue
 
 BUSY_MESSAGE = (
     "prompt 被拒绝：当前有写作流正在进行。"
@@ -65,6 +67,11 @@ class HastingsSession:
             run_kind=self._run_kind,
             debounce_seconds=reconcile_debounce,
         )
+        # 事件持久化（P6 T4，D4）：events.jsonl 是全量事件帧的可观测性账本，
+        # 与 session.jsonl（会话记忆）职责分离；构造时挂载，CLI/Web 共用同一单点。
+        self._events = EventStore(events_file(workspace))
+        self._unsubscribe_events = harness.subscribe(self._persist_event)
+        self._unsubscribe_notice_events = self._reconcile.subscribe(self._persist_notice)
 
     @classmethod
     def from_workspace(
@@ -141,6 +148,29 @@ class HastingsSession:
     @property
     def run_kind(self) -> RunKindGuard:
         return self._run_kind
+
+    @property
+    def events(self) -> EventStore:
+        """events.jsonl 账本（P6 T4）：只读分页由 REST 端点直读，此处暴露供接线/测试。"""
+        return self._events
+
+    async def _persist_event(self, event: AgentEvent) -> None:
+        """事件流持久化 listener（P6 T4）：message_update 是流式中间态，不入库。"""
+        if event.type == "message_update":
+            return
+        await self._events.append_event(event)
+
+    async def _persist_notice(self, notice: ReconcileNotice) -> None:
+        """对账进度通知落进事件流（可观测性账本记全貌，含对账三态）。"""
+        payload: dict[str, JSONValue] = {
+            "kind": notice.kind,
+            "chapter": notice.chapter,
+            "hunks": notice.hunks,
+            "updates": notice.updates,
+        }
+        if notice.status is not None:
+            payload["status"] = notice.status
+        await self._events.append("notice", payload)
 
     async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
         await self._reconcile.enqueue(chapter_id, hunks)

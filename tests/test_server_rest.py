@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from hastings.bible.models import Character, Clue, TimelineEntry
 from hastings.bible.store import StoryWorkspace, save_character, save_ledger
+from hastings.events_store import events_file
 from hastings.manuscript.diff import DiffHunk
 from hastings.server.app import create_app
 from hastings.server.provider_config import ProviderBook, ProviderProfile, ServerConfig
@@ -958,3 +959,75 @@ def test_put_settings_while_running_returns_409(workspace: StoryWorkspace) -> No
     assert "怎样算对" in detail
     assert not workspace.settings_path.exists()
     assert session.applied_models == []
+
+
+# --- GET events：事件流历史查询（P6 T4/D5） ---
+
+
+def _write_events(workspace: StoryWorkspace, records: list[dict[str, object]]) -> None:
+    workspace.ensure_dirs()
+    lines = [json.dumps(record, ensure_ascii=False) for record in records]
+    events_file(workspace).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _event(seq: int, event_type: str, data: dict[str, object] | None = None) -> dict[str, object]:
+    return {"ts": "2026-10-09T00:00:00+00:00", "seq": seq, "type": event_type, "data": data or {}}
+
+
+def test_rest_events_paged_newest_first(workspace: StoryWorkspace) -> None:
+    _write_events(workspace, [_event(i, "agent_start") for i in (1, 2, 3)])
+
+    body = _client(workspace.root).get(f"/api/{SLUG}/events?limit=2").json()
+
+    assert [event["seq"] for event in body["events"]] == [3, 2]
+    assert body["has_more"] is True
+
+    older = _client(workspace.root).get(f"/api/{SLUG}/events?limit=2&before_seq=2").json()
+    assert [event["seq"] for event in older["events"]] == [1]
+    assert older["has_more"] is False
+
+
+def test_rest_events_empty_is_ok(workspace: StoryWorkspace) -> None:
+    """新工作区无 events.jsonl：合法空结果 → 200 空列表。"""
+    assert _client(workspace.root).get(f"/api/{SLUG}/events").json() == {
+        "events": [],
+        "has_more": False,
+    }
+
+
+def test_rest_events_category_filter(workspace: StoryWorkspace) -> None:
+    _write_events(
+        workspace,
+        [
+            _event(1, "message_start"),
+            _event(2, "tool_execution_start", {"toolName": "bible_upsert"}),
+            _event(3, "tool_execution_end", {"isError": True}),
+            _event(4, "agent_end"),
+        ],
+    )
+
+    client = _client(workspace.root)
+
+    def types_for(category: str) -> list[str]:
+        body = client.get(f"/api/{SLUG}/events?category={category}").json()
+        return [event["type"] for event in body["events"]]
+
+    assert types_for("message") == ["message_start"]
+    assert types_for("error") == ["tool_execution_end"]
+
+
+@pytest.mark.parametrize("query", ["limit=0", "limit=5000"])
+def test_rest_events_bad_limit_returns_422(workspace: StoryWorkspace, query: str) -> None:
+    response = _client(workspace.root).get(f"/api/{SLUG}/events?{query}")
+
+    assert response.status_code == 422
+    assert "分页参数不合法" in response.json()["detail"]
+
+
+def test_rest_events_bad_category_returns_422(workspace: StoryWorkspace) -> None:
+    response = _client(workspace.root).get(f"/api/{SLUG}/events?category=nope")
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "分类不合法" in detail
+    assert "怎样算对" in detail

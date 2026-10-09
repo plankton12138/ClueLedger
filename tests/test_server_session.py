@@ -225,3 +225,22 @@ def test_from_workspace_reads_saved_language(workspace: StoryWorkspace) -> None:
     session = HastingsSession.from_workspace(workspace, provider=FakeProvider([]), model="fake")
 
     assert "日本語" in session.harness.config.system
+
+
+# ---------- 事件持久化（P6 T4，D4）：events.jsonl 构造时挂载 ----------
+
+
+@pytest.mark.anyio
+async def test_session_persists_events_to_jsonl(workspace: StoryWorkspace) -> None:
+    """构造即挂载：一次 prompt 的全量事件落进 events.jsonl，流式中间态不入库。"""
+    from hastings.events_store import events_file
+
+    session = _session(workspace, closing("建档完成。"))
+    await _drain(session.prompt("建一个角色"))
+
+    assert events_file(workspace).exists()
+    types = [record.type for record in (await session.events.read(limit=1000)).records]
+    assert "agent_start" in types
+    assert "agent_end" in types
+    assert "tool_execution_end" in types
+    assert "message_update" not in types  # 流式中间态刻意裁剪
