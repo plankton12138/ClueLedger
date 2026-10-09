@@ -1,7 +1,7 @@
 /**
  * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转，P5 T6 事件流一级入口）：
  * 顶部导航切主视图——创作台（左主编对话可折叠 + 中正文羊皮纸 + 右故事账本）/
- * 事件流（DebugView 占满主区）；语料库·审计中心置灰预留。工作区语义（计划 D5）：
+ * 事件流（EventStreamView 占满主区）；语料库·审计中心置灰预留。工作区语义（计划 D5）：
  * 切换 = socket 重连 ws/{slug} + REST 前缀换 slug，不整页刷新；选中 slug 经 ?w=
  * 记入地址（replaceState），刷新后不丢。
  */
@@ -11,7 +11,7 @@ import { createWorkspace, fetchWorkspaces } from "./api/rest";
 import BiblePanel from "./components/BiblePanel";
 import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
-import DebugView from "./components/DebugView";
+import EventStreamView from "./components/EventStreamView";
 import ManuscriptPanel from "./components/ManuscriptPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import type { CommandType } from "./api/types";
@@ -31,7 +31,7 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
   closed: "bg-overdue",
 };
 
-/** 顶部导航项：创作台 / 事件流（DebugView 一级入口）/ 设置 / 置灰预留。 */
+/** 顶部导航项：创作台 / 事件流（EventStreamView 一级入口）/ 设置 / 置灰预留。 */
 const NAV_ITEMS = [
   { key: "studio", label: "✒ 创作台", soon: false },
   { key: "events", label: "▤ 事件流", soon: false },
@@ -292,7 +292,7 @@ export default function App() {
 
       {view === "events" ? (
         <main className="flex min-h-0 flex-1 flex-col border-t border-line">
-          <DebugView />
+          <EventStreamView />
         </main>
       ) : view === "settings" ? (
         <main className="flex min-h-0 flex-1 flex-col border-t border-line">

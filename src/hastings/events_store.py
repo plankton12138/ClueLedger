@@ -84,10 +84,16 @@ class EventRecord:
 
 @dataclass(frozen=True, slots=True)
 class EventPage:
-    """一页倒序事件（新 → 旧）与是否还有更早的分页信号。"""
+    """一页倒序事件（新 → 旧）、分页信号与整账统计（P6 D5 运行概览数据源）。
+
+    ``total``/``counts`` 描述**整份文件**（不受分页与 category 过滤影响）——
+    概览与分类 Tab 计数展示的是账本本身，不是当前页。
+    """
 
     records: tuple[EventRecord, ...]
     has_more: bool
+    total: int
+    counts: dict[str, int]
 
 
 def events_file(workspace: StoryWorkspace) -> Path:
@@ -168,8 +174,16 @@ class EventStore:
         before_seq: int | None = None,
         category: str | None = None,
     ) -> EventPage:
-        """倒序分页读取：seq < before_seq 的帧、按 category 过滤、取最新 limit 条。"""
+        """倒序分页读取：seq < before_seq 的帧、按 category 过滤、取最新 limit 条。
+
+        统计（total/counts）总是对整份文件计算——读路径本就全量扫一遍，
+        概览计数顺带产出，不引入第二份存储。
+        """
         records = await asyncio.to_thread(self._read_all)
+        counts: dict[str, int] = {}
+        for record in records:
+            key = categorize(record.type, record.data)
+            counts[key] = counts.get(key, 0) + 1
         selected = [
             record
             for record in records
@@ -177,7 +191,12 @@ class EventStore:
             and (category is None or categorize(record.type, record.data) == category)
         ]
         selected.sort(key=lambda record: record.seq, reverse=True)
-        return EventPage(records=tuple(selected[:limit]), has_more=len(selected) > limit)
+        return EventPage(
+            records=tuple(selected[:limit]),
+            has_more=len(selected) > limit,
+            total=len(records),
+            counts=counts,
+        )
 
     def _read_all(self) -> list[EventRecord]:
         if not self._path.exists():

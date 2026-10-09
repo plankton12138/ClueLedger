@@ -71,6 +71,12 @@ interface ChatStore extends UiState {
   manuscript: ManuscriptState;
   /** 对账完成卡片（append-only；随快照重放清空）。 */
   syncCards: SyncCardEntry[];
+  /**
+   * 全部 notice 帧（append-only；P6 T5 事件流页实时尾数据源）。
+   * 与 events.jsonl 的 notice 记录同源——事件流页据此把实时对账进度
+   * 并入账本镜像；随快照重放与工作区切换清空。
+   */
+  noticeLog: NoticeFrame[];
   setSlug(slug: string): void;
   setWorkspaces(slugs: string[]): void;
   setStatus(status: ConnectionStatus): void;
@@ -115,6 +121,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
   snapshot: null,
   manuscript: initialManuscript,
   syncCards: [],
+  noticeLog: [],
   // 切换工作区：slug 变更驱动 useAgentSocket 重连；旧工作区的事件帧/条目
   // 由 loadSnapshot 的「重置后重放」语义在新快照到达时整体更替（计划 D5）。
   // manuscript 随切换立即重置（P5 D7：工作区切换不残留上一案的章节草稿）。
@@ -122,7 +129,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
     set((s) =>
       s.slug === slug
         ? { slug }
-        : { slug, manuscript: initialManuscript, syncCards: [] },
+        : { slug, manuscript: initialManuscript, syncCards: [], noticeLog: [] },
     ),
   setWorkspaces: (workspaces) => set({ workspaces }),
   setStatus: (status) => set({ status }),
@@ -142,6 +149,8 @@ export const useChatStore = create<ChatStore>()((set) => ({
       running: state.is_running,
       // 对账卡片属对话流叙事，随快照重放一并清空（与 items 同生命周期）
       syncCards: [],
+      // notice 账随快照重放清空（事件流页的实时尾归零，历史由 REST 接管）
+      noticeLog: [],
       // manuscript 不随 loadSnapshot 重置（CP1 修正）：重连/重放是同一工作区的
       // 会话状态更替，正文与未保存草稿必须保留（断线重连丢草稿不可接受）；
       // 重置点唯一在 setSlug（换工作区）。重连后的章节列表新鲜度由
@@ -231,21 +240,22 @@ export const useChatStore = create<ChatStore>()((set) => ({
   applyNotice: (notice) =>
     set((s) => {
       const syncState = nextSyncState(notice);
+      const noticeLog = [...s.noticeLog, notice];
       if (syncState === null) {
         // 契约外 notice kind：与 reducer 的未知事件同一条口子，显式上报不静默吞
-        return reportUnhandled(s, `notice:${String(notice.kind)}`);
+        return { ...reportUnhandled(s, `notice:${String(notice.kind)}`), noticeLog };
       }
       // 工具栏徽标只反映「当前打开的章」——别章的对账不打扰本篇编辑（卡片仍照记）
       const forCurrent = s.manuscript.chapterId === notice.chapter;
       const manuscript = forCurrent ? { ...s.manuscript, syncState } : s.manuscript;
-      if (notice.kind !== "sync_end") return { manuscript };
+      if (notice.kind !== "sync_end") return { manuscript, noticeLog };
       const card: SyncCardEntry = {
         chapter: notice.chapter,
         hunks: notice.hunks,
         updates: notice.updates,
         status: notice.status === "failed" ? "failed" : "done",
       };
-      return { manuscript, syncCards: [...s.syncCards, card] };
+      return { manuscript, noticeLog, syncCards: [...s.syncCards, card] };
     }),
   resetManuscript: () => set({ manuscript: initialManuscript }),
 }));

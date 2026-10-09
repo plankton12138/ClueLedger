@@ -20,6 +20,7 @@ from typing import Final, Literal
 import httpx
 import yaml
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
@@ -281,10 +282,16 @@ class EventRecordResponse(BaseModel):
 
 
 class EventsResponse(BaseModel):
-    """事件流分页结果（P6 D5）：倒序（新→旧），has_more 指示可继续向上翻页。"""
+    """事件流分页结果（P6 D5）：倒序（新→旧），has_more 指示可继续向上翻页。
+
+    ``total``/``counts`` 是整份账本的统计（不受分页/过滤影响），喂运行概览
+    与分类 Tab 徽标。
+    """
 
     events: list[EventRecordResponse]
     has_more: bool
+    total: int
+    counts: dict[str, int]
 
 
 def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[BaseModel]:
@@ -687,6 +694,32 @@ def create_rest_router(
                 for r in page.records
             ],
             has_more=page.has_more,
+            total=page.total,
+            counts=page.counts,
+        )
+
+    @router.get("/api/{slug}/events/export")
+    async def export_events(slug: str) -> FileResponse:
+        """导出完整事件账本（P6 D5）：events.jsonl 原样下载（NDJSON 附件）。
+
+        服务端流式回文件、不整载内存；尚无账本（新工作区从未运行）→ 404
+        三要素，不回空文件冒充成功。
+        """
+        await _session(slug)
+        path = events_file(_workspace(slug))
+        if not path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"工作区 {slug} 尚无事件历史可导出。"
+                    "为什么错：events.jsonl 还未生成（新工作区或从未运行过写作流）。"
+                    "怎样算对：先运行一次对话/写作流产生事件，再点导出。"
+                ),
+            )
+        return FileResponse(
+            path,
+            media_type="application/x-ndjson",
+            filename=f"hastings-{slug}-events.jsonl",
         )
 
     def _read_settings(workspace: StoryWorkspace) -> SettingsResponse:

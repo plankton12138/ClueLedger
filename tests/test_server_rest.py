@@ -981,10 +981,13 @@ def test_rest_events_paged_newest_first(workspace: StoryWorkspace) -> None:
 
     assert [event["seq"] for event in body["events"]] == [3, 2]
     assert body["has_more"] is True
+    assert body["total"] == 3  # 统计不受分页影响
+    assert body["counts"] == {"other": 3}
 
     older = _client(workspace.root).get(f"/api/{SLUG}/events?limit=2&before_seq=2").json()
     assert [event["seq"] for event in older["events"]] == [1]
     assert older["has_more"] is False
+    assert older["total"] == 3
 
 
 def test_rest_events_empty_is_ok(workspace: StoryWorkspace) -> None:
@@ -992,6 +995,8 @@ def test_rest_events_empty_is_ok(workspace: StoryWorkspace) -> None:
     assert _client(workspace.root).get(f"/api/{SLUG}/events").json() == {
         "events": [],
         "has_more": False,
+        "total": 0,
+        "counts": {},
     }
 
 
@@ -1014,6 +1019,36 @@ def test_rest_events_category_filter(workspace: StoryWorkspace) -> None:
 
     assert types_for("message") == ["message_start"]
     assert types_for("error") == ["tool_execution_end"]
+
+    # 分类计数是整账口径，不随 category 过滤变化（前端 Tab 徽标数据源）
+    counts = client.get(f"/api/{SLUG}/events").json()["counts"]
+    assert counts == {"message": 1, "tool": 1, "error": 1, "other": 1}
+
+
+# --- GET events/export：事件账本导出（P6 T5/D5） ---
+
+
+def test_rest_events_export_downloads_jsonl(workspace: StoryWorkspace) -> None:
+    _write_events(workspace, [_event(1, "agent_start"), _event(2, "agent_end")])
+
+    response = _client(workspace.root).get(f"/api/{SLUG}/events/export")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert "attachment" in response.headers["content-disposition"]
+    assert f"hastings-{SLUG}-events.jsonl" in response.headers["content-disposition"]
+    lines = [json.loads(line) for line in response.text.splitlines()]
+    assert [line["seq"] for line in lines] == [1, 2]  # 原样下载，不做倒序重排
+
+
+def test_rest_events_export_without_history_returns_404(workspace: StoryWorkspace) -> None:
+    response = _client(workspace.root).get(f"/api/{SLUG}/events/export")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "尚无事件历史" in detail
+    assert "为什么错" in detail
+    assert "怎样算对" in detail
 
 
 @pytest.mark.parametrize("query", ["limit=0", "limit=5000"])

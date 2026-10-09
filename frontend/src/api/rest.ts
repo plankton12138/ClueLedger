@@ -381,6 +381,64 @@ export async function fetchProviderModels(name: string): Promise<string[]> {
   return models.map(String);
 }
 
+// ---------- 事件流历史（P6 T5，对应 rest.py events 端点，D4/D5） ----------
+
+/** 一条持久化事件：ts/seq/type 为索引列，data 为帧原文（与 WS 帧同形）。 */
+export interface EventRecordWire {
+  ts: string;
+  seq: number;
+  type: string;
+  data: Record<string, unknown>;
+}
+
+/** 事件流分页结果：events 倒序（新→旧）；total/counts 是整账统计。 */
+export interface EventsPageWire {
+  events: EventRecordWire[];
+  has_more: boolean;
+  total: number;
+  counts: Record<string, number>;
+}
+
+/** 事件流查询参数：beforeSeq 向上翻页游标；category 服务端过滤。 */
+export interface EventsQuery {
+  limit?: number;
+  beforeSeq?: number;
+  category?: "message" | "tool" | "error";
+}
+
+/**
+ * GET /api/{slug}/events → 倒序分页 + 分类过滤 + 整账统计。
+ * 422（limit/category 越界）detail 原样透出；空账本是合法空结果。
+ */
+export async function fetchEvents(slug: string, query: EventsQuery = {}): Promise<EventsPageWire> {
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.beforeSeq !== undefined) params.set("before_seq", String(query.beforeSeq));
+  if (query.category !== undefined) params.set("category", query.category);
+  const qs = params.toString();
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/events${qs === "" ? "" : `?${qs}`}`);
+  if (!res.ok) {
+    throw new Error(`事件历史读取失败：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const record = body as Record<string, unknown> | null;
+  if (
+    record === null ||
+    typeof record !== "object" ||
+    !Array.isArray(record.events) ||
+    typeof record.has_more !== "boolean" ||
+    typeof record.total !== "number" ||
+    record.counts === null ||
+    typeof record.counts !== "object"
+  ) {
+    throw new Error(
+      `事件历史响应结构不符：期望 { events, has_more, total, counts }，` +
+        `收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return body as EventsPageWire;
+}
+
 // ---------- D7 refetch 规则（纯函数，呈现策略而非业务校验） ----------
 
 /**
