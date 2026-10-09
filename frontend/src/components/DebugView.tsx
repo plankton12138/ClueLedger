@@ -1,5 +1,6 @@
 /**
- * 调试视图（P3 T9）：原始事件帧滚动 + 类型徽章 + 过滤 + 未知事件高亮。
+ * 事件流视图（P3 T9 调试视图，P5 T6 升级为导航一级入口）：原始事件帧滚动 +
+ * 类型徽章 + 过滤 + 未知事件高亮。仅重排与样式对齐，功能不增强。
  * 可观测性是事件契约的一部分（四透镜之四）：未知事件显式上报，不静默吞。
  */
 
@@ -23,24 +24,24 @@ export default function DebugView() {
 
   return (
     <div className="flex h-full flex-col bg-ink">
-      <div className="flex items-center gap-3 border-b border-line px-3 py-2">
-        <span className="text-xs text-gold-soft">事件流调试</span>
-        <span className="text-xs text-paper/40">
+      <div className="flex flex-none items-center gap-3 border-b border-line bg-ink-soft/50 px-4 py-2">
+        <span className="font-serif text-sm font-bold text-gold">事件流</span>
+        <span className="text-xs text-paper/45">
           {eventLog.length} 帧{running ? " · 运行中" : ""}
         </span>
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="按类型过滤…"
-          className="ml-auto w-40 border border-line bg-ink-soft px-2 py-0.5 font-mono text-xs text-paper placeholder:text-paper/30 focus:border-gold focus:outline-none"
+          className="ml-auto w-44 border border-line bg-ink-soft px-2 py-0.5 font-mono text-xs text-paper placeholder:text-paper/30 focus:border-gold focus:outline-none"
         />
       </div>
       {unhandled.length > 0 && (
-        <div className="border-b border-overdue/50 bg-overdue/10 px-3 py-1.5 text-xs leading-relaxed text-overdue">
+        <div className="border-b border-overdue/50 bg-overdue/10 px-4 py-1.5 text-xs leading-relaxed text-overdue">
           契约外事件类型（显式上报）：{unhandled.join("、")}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1 font-mono text-xs">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-1 font-mono text-xs">
         {rows.length === 0 && (
           <p className="mt-6 text-center text-paper/30">暂无事件帧——连接后发一条指令即可看到原始流。</p>
         )}

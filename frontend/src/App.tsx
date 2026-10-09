@@ -1,8 +1,9 @@
 /**
- * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转）：顶部导航（创作台/事件流/
- * 语料库·审计中心置灰预留）+ 左主编对话（可折叠）+ 中正文（羊皮纸，页面中心）+
- * 右故事账本。工作区语义（计划 D5）：切换 = socket 重连 ws/{slug} + REST 前缀换
- * slug，不整页刷新；选中 slug 经 ?w= 记入地址（replaceState），刷新后不丢。
+ * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转，P5 T6 事件流一级入口）：
+ * 顶部导航切主视图——创作台（左主编对话可折叠 + 中正文羊皮纸 + 右故事账本）/
+ * 事件流（DebugView 占满主区）；语料库·审计中心置灰预留。工作区语义（计划 D5）：
+ * 切换 = socket 重连 ws/{slug} + REST 前缀换 slug，不整页刷新；选中 slug 经 ?w=
+ * 记入地址（replaceState），刷新后不丢。
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -29,7 +30,7 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
   closed: "bg-overdue",
 };
 
-/** 顶部导航项：创作台（本阶段）/ 事件流（调试视图一级入口）/ 置灰预留。 */
+/** 顶部导航项：创作台 / 事件流（DebugView 一级入口）/ 置灰预留。 */
 const NAV_ITEMS = [
   { key: "studio", label: "✒ 创作台", soon: false },
   { key: "events", label: "▤ 事件流", soon: false },
@@ -113,7 +114,7 @@ export default function App() {
   const snapshot = useChatStore((s) => s.snapshot);
   const slug = useChatStore((s) => s.slug);
   const workspaces = useChatStore((s) => s.workspaces);
-  const [showDebug, setShowDebug] = useState(false);
+  const [view, setView] = useState<"studio" | "events">("studio");
   const [showCreate, setShowCreate] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
 
@@ -170,7 +171,8 @@ export default function App() {
         <nav className="ml-3 flex gap-1">
           {NAV_ITEMS.map((item) => {
             const active =
-              (item.key === "studio" && !showDebug) || (item.key === "events" && showDebug);
+              (item.key === "studio" && view === "studio") ||
+              (item.key === "events" && view === "events");
             if (item.soon) {
               return (
                 <span
@@ -190,8 +192,8 @@ export default function App() {
                 key={item.key}
                 type="button"
                 onClick={() => {
-                  if (item.key === "events") setShowDebug((v) => !v);
-                  else setShowDebug(false);
+                  if (item.key === "events") setView("events");
+                  else setView("studio");
                 }}
                 className={`rounded border px-3.5 py-1.5 text-[13px] transition-colors ${
                   active
@@ -284,7 +286,11 @@ export default function App() {
         </div>
       )}
 
-      {slug === null || slugInvalid ? (
+      {view === "events" ? (
+        <main className="flex min-h-0 flex-1 flex-col border-t border-line">
+          <DebugView />
+        </main>
+      ) : slug === null || slugInvalid ? (
         <main className="flex flex-1 items-center justify-center">
           <div className="max-w-md text-center">
             <h2 className="font-serif text-2xl font-bold text-gold">
@@ -339,12 +345,6 @@ export default function App() {
             <BiblePanel />
           </aside>
         </main>
-      )}
-
-      {showDebug && (
-        <section className="h-64 shrink-0 border-t border-line">
-          <DebugView />
-        </section>
       )}
     </div>
   );
