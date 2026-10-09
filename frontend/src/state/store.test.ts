@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AgentMessageWire } from "../api/types";
 import { initialUiState } from "./reducer";
-import { useChatStore } from "./store";
+import { initialManuscript, useChatStore } from "./store";
 
 const SNAP_STATE = { slug: "demo", model: "fake", is_running: false, tools: [] };
 
@@ -80,5 +80,88 @@ describe("工作区切片（P4 T6）", () => {
   it("setWorkspaces 保存列表", () => {
     useChatStore.getState().setWorkspaces(["story-a", "story-b"]);
     expect(useChatStore.getState().workspaces).toEqual(["story-a", "story-b"]);
+  });
+});
+
+// ---------- manuscript 切片（P5 T1）：章节切换加载 / 竞态防护 / 工作区重置 ----------
+
+function openChapter(id: string, content: string): void {
+  useChatStore.getState().selectChapter(id);
+  useChatStore.getState().chapterLoaded(id, content);
+}
+
+describe("manuscript 切片（P5 T1）", () => {
+  beforeEach(() => useChatStore.setState({ manuscript: initialManuscript }));
+
+  it("selectChapter 进入 loading；chapterLoaded 落内容", () => {
+    useChatStore.setState({ manuscript: { ...initialManuscript, chapterIds: ["ch01"] } });
+    useChatStore.getState().selectChapter("ch01");
+    expect(useChatStore.getState().manuscript.loading).toBe(true);
+    useChatStore.getState().chapterLoaded("ch01", "# 第1章 开端\n\n正文。");
+    const ms = useChatStore.getState().manuscript;
+    expect(ms.content).toBe("# 第1章 开端\n\n正文。");
+    expect(ms.loading).toBe(false);
+    expect(ms.error).toBeNull();
+  });
+
+  it("chapterFailed 记录错误并退出 loading", () => {
+    useChatStore.getState().selectChapter("ch02");
+    useChatStore.getState().chapterFailed("ch02", "章节读取失败：HTTP 404");
+    const ms = useChatStore.getState().manuscript;
+    expect(ms.error).toBe("章节读取失败：HTTP 404");
+    expect(ms.loading).toBe(false);
+    expect(ms.content).toBeNull();
+  });
+
+  it("竞态防护：晚到的旧章响应被丢弃，不覆盖已切换的新章", () => {
+    openChapter("ch01", "第一章正文");
+    useChatStore.getState().selectChapter("ch02");
+    // ch01 的响应在切换后才返回
+    useChatStore.getState().chapterLoaded("ch01", "迟到的第一章正文");
+    const ms = useChatStore.getState().manuscript;
+    expect(ms.chapterId).toBe("ch02");
+    expect(ms.content).toBeNull(); // ch02 尚未返回，loading 保持
+    expect(ms.loading).toBe(true);
+  });
+
+  it("失败响应同样按 id 比对：旧章的失败不污染新章", () => {
+    useChatStore.getState().selectChapter("ch01");
+    useChatStore.getState().selectChapter("ch02");
+    useChatStore.getState().chapterFailed("ch01", "旧章错误");
+    expect(useChatStore.getState().manuscript.error).toBeNull();
+  });
+
+  it("工作区切换（setSlug 到新 slug）→ manuscript 整体重置（草稿/章节不残留）", () => {
+    useChatStore.setState({ slug: "story-a" });
+    useChatStore.setState({
+      manuscript: {
+        chapterIds: ["ch01", "ch02"],
+        chapterId: "ch01",
+        content: "旧案卷正文",
+        loading: false,
+        error: null,
+      },
+    });
+    useChatStore.getState().setSlug("story-b");
+    expect(useChatStore.getState().manuscript).toEqual(initialManuscript);
+  });
+
+  it("loadSnapshot（重连/重放）→ manuscript 保留（同工作区重连不丢正文与草稿；重置点唯一在 setSlug）", () => {
+    openChapter("ch01", "正文");
+    expect(useChatStore.getState().manuscript.content).not.toBeNull();
+    useChatStore.getState().loadSnapshot(
+      { slug: "demo", model: "fake", is_running: false, tools: [] },
+      [],
+    );
+    const ms = useChatStore.getState().manuscript;
+    expect(ms.chapterId).toBe("ch01");
+    expect(ms.content).toBe("正文");
+  });
+
+  it("setSlug 同 slug 不重置（重复设置无害）", () => {
+    useChatStore.setState({ slug: "story-a" });
+    openChapter("ch01", "正文");
+    useChatStore.getState().setSlug("story-a");
+    expect(useChatStore.getState().manuscript.content).toBe("正文");
   });
 });

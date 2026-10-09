@@ -127,6 +127,57 @@ export async function createWorkspace(slug: string): Promise<void> {
   }
 }
 
+// ---------- 章节面（P5 T1）：列表 + 单章正文（只读；写入口 T2 另加 PUT） ----------
+
+export interface ChaptersResponse {
+  chapters: string[];
+}
+
+export interface ChapterResponse {
+  id: string;
+  content: string;
+}
+
+/** GET /api/{slug}/chapters → 章节 id 列表（服务端已按文件名排序）；空工作区 → 空数组。 */
+export async function fetchChapters(slug: string): Promise<string[]> {
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/chapters`);
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(`章节列表读取失败：HTTP ${res.status}`);
+  }
+  if (
+    body === null ||
+    typeof body !== "object" ||
+    !Array.isArray((body as { chapters?: unknown }).chapters)
+  ) {
+    throw new Error(
+      `章节列表响应结构不符：期望 { chapters: string[] }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return (body as { chapters: unknown[] }).chapters.map(String);
+}
+
+/** GET /api/{slug}/chapters/{id} → 章节正文；404/422 detail 原样透出。 */
+export async function fetchChapter(slug: string, chapterId: string): Promise<string> {
+  const res = await fetch(
+    `/api/${encodeURIComponent(slug)}/chapters/${encodeURIComponent(chapterId)}`,
+  );
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    const detail =
+      body !== null && typeof body === "object" && "detail" in body
+        ? String((body as { detail: unknown }).detail)
+        : `HTTP ${res.status}`;
+    throw new Error(`章节 ${chapterId} 读取失败：${detail}`);
+  }
+  if (body === null || typeof body !== "object" || typeof (body as { content?: unknown }).content !== "string") {
+    throw new Error(
+      `章节响应结构不符：期望 { id, content }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return (body as { content: string }).content;
+}
+
 // ---------- D7 refetch 规则（纯函数，呈现策略而非业务校验） ----------
 
 /**

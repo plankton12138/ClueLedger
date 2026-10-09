@@ -1,10 +1,8 @@
 /**
- * 主页面（P3 T8/T9，P4 T6 多工作区）：头部工作区切换器（下拉 + 新建）+
- * 连接状态条 + 左对话流 + 右故事账本面板 + 底部调试视图开关。
- *
- * 工作区语义（计划 D5）：切换 = socket 重连 ws/{slug} + REST 前缀换 slug，
- * 不整页刷新；选中 slug 经 ?w= 记入地址（replaceState），刷新后不丢。
- * 快照「重置后重放」消化切换时的状态更替——上一工作区的事件帧不残留。
+ * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转）：顶部导航（创作台/事件流/
+ * 语料库·审计中心置灰预留）+ 左主编对话（可折叠）+ 中正文（羊皮纸，页面中心）+
+ * 右故事账本。工作区语义（计划 D5）：切换 = socket 重连 ws/{slug} + REST 前缀换
+ * slug，不整页刷新；选中 slug 经 ?w= 记入地址（replaceState），刷新后不丢。
  */
 
 import { useEffect, useState } from "react";
@@ -13,6 +11,7 @@ import BiblePanel from "./components/BiblePanel";
 import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
 import DebugView from "./components/DebugView";
+import ManuscriptPanel from "./components/ManuscriptPanel";
 import type { CommandType } from "./api/types";
 import type { ConnectionStatus } from "./api/socket";
 import { useChatStore } from "./state/store";
@@ -29,6 +28,14 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
   open: "bg-planted",
   closed: "bg-overdue",
 };
+
+/** 顶部导航项：创作台（本阶段）/ 事件流（调试视图一级入口）/ 置灰预留。 */
+const NAV_ITEMS = [
+  { key: "studio", label: "✒ 创作台", soon: false },
+  { key: "events", label: "▤ 事件流", soon: false },
+  { key: "corpus", label: "册 语料库", soon: true },
+  { key: "audit", label: "◎ 审计中心", soon: true },
+] as const;
 
 /** 选中工作区写进 ?w=（replaceState 不触发导航），刷新后恢复选择。 */
 function switchTo(slug: string): void {
@@ -108,6 +115,7 @@ export default function App() {
   const workspaces = useChatStore((s) => s.workspaces);
   const [showDebug, setShowDebug] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
 
   // 启动：拉工作区列表并恢复/选择工作区（失败走顶部错误条，可重试）。
   useEffect(() => {
@@ -134,11 +142,55 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-4 border-b border-line px-6 py-3">
-        <h1 className="font-serif text-xl font-bold text-gold">黑斯廷斯备忘录</h1>
-        <p className="hidden text-xs text-gold-soft/60 sm:block">
-          Hastings&rsquo; Memo · 会记账的悬疑小说 AI 主编
-        </p>
+      <header className="flex flex-none items-center gap-5 border-b border-line bg-gradient-to-b from-ink-soft/90 to-ink/60 px-5 py-0" style={{ height: 52 }}>
+        <div className="flex items-center gap-2.5">
+          <div className="grid h-[30px] w-[30px] place-items-center rounded-full border border-gold font-serif text-sm font-bold text-gold">
+            赫
+          </div>
+          <div className="leading-tight">
+            <div className="font-serif text-base font-bold tracking-widest text-gold">黑斯廷斯备忘录</div>
+            <div className="text-[10px] tracking-[0.2em] text-gold-soft/65">
+              HASTINGS&rsquo; MEMO · 让好故事更接近真相
+            </div>
+          </div>
+        </div>
+        <nav className="ml-3 flex gap-1">
+          {NAV_ITEMS.map((item) => {
+            const active =
+              (item.key === "studio" && !showDebug) || (item.key === "events" && showDebug);
+            if (item.soon) {
+              return (
+                <span
+                  key={item.key}
+                  className="cursor-not-allowed rounded px-3.5 py-1.5 text-[13px] text-paper opacity-30"
+                  title="后续阶段开放"
+                >
+                  {item.label}
+                  <small className="ml-1 text-[9px] text-gold-soft">
+                    {item.key === "corpus" ? "P6" : "后续"}
+                  </small>
+                </span>
+              );
+            }
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => {
+                  if (item.key === "events") setShowDebug((v) => !v);
+                  else setShowDebug(false);
+                }}
+                className={`rounded border px-3.5 py-1.5 text-[13px] transition-colors ${
+                  active
+                    ? "border-line bg-gold/10 text-gold"
+                    : "border-transparent text-paper/75 hover:text-gold"
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
         <div className="ml-auto flex items-center gap-3 text-xs text-paper/60">
           <select
             aria-label="工作区"
@@ -188,15 +240,6 @@ export default function App() {
               重连
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setShowDebug((v) => !v)}
-            className={`border px-2 py-0.5 transition-colors ${
-              showDebug ? "border-gold bg-gold/15 text-gold" : "border-line hover:border-gold/50"
-            }`}
-          >
-            调试
-          </button>
         </div>
       </header>
 
@@ -246,14 +289,40 @@ export default function App() {
         </main>
       ) : (
         <main className="flex min-h-0 flex-1">
-          <section className="flex min-w-0 flex-1 flex-col border-r border-line">
-            <ChatStream />
-            <Composer
-              sendCommand={(type: CommandType, message: string) => sendCommand(type, message)}
-              abort={() => sendCommand("abort")}
-            />
-          </section>
-          <aside className="hidden w-80 shrink-0 flex-col overflow-hidden border-l-0 lg:flex">
+          {chatCollapsed ? (
+            <button
+              type="button"
+              onClick={() => setChatCollapsed(false)}
+              aria-label="展开对话"
+              className="flex w-7 flex-none flex-col items-center gap-2 border-r border-line bg-ink-soft/35 py-3 text-[10px] tracking-widest text-gold-soft transition-colors hover:text-gold"
+              style={{ writingMode: "vertical-rl" }}
+            >
+              主编对话
+            </button>
+          ) : (
+            <aside className="relative flex w-[300px] flex-none flex-col border-r border-line bg-ink-soft/35">
+              <button
+                type="button"
+                onClick={() => setChatCollapsed(true)}
+                aria-label="折叠对话"
+                title="折叠对话"
+                className="absolute right-1.5 top-1.5 z-10 border border-line bg-ink px-1.5 py-0.5 text-[10px] text-paper/50 transition-colors hover:text-gold"
+              >
+                ‹
+              </button>
+              <section className="flex min-h-0 flex-1 flex-col">
+                <ChatStream />
+                <Composer
+                  sendCommand={(type: CommandType, message: string) =>
+                    sendCommand(type, message)
+                  }
+                  abort={() => sendCommand("abort")}
+                />
+              </section>
+            </aside>
+          )}
+          <ManuscriptPanel />
+          <aside className="hidden w-[340px] flex-none flex-col overflow-hidden border-l border-line bg-ink-soft/35 lg:flex">
             <BiblePanel />
           </aside>
         </main>

@@ -9,6 +9,27 @@ import type { AgentStateSnapshot, ConnectionStatus } from "../api/socket";
 import type { AgentMessageWire, EventFrame } from "../api/types";
 import { applyEvent, applyMessages, initialUiState, type UiState } from "./reducer";
 
+/**
+ * manuscript 切片（P5 T1，D7 的阅读态子集；T5 扩展 draft/saveState/syncState/diff）。
+ * content 是 REST 读回的 baseline；竞态防护在 chapterLoaded——晚到的旧章响应
+ * 不得覆盖已切换的新章（按 id 比对后丢弃）。
+ */
+export interface ManuscriptState {
+  chapterIds: string[];
+  chapterId: string | null;
+  content: string | null;
+  loading: boolean;
+  error: string | null;
+}
+
+export const initialManuscript: ManuscriptState = {
+  chapterIds: [],
+  chapterId: null,
+  content: null,
+  loading: false,
+  error: null,
+};
+
 interface ChatStore extends UiState {
   /** 当前工作区 slug（P4 T6）；null = 尚未选定（启动引导/新建第一个工作区）。 */
   slug: string | null;
@@ -16,12 +37,18 @@ interface ChatStore extends UiState {
   status: ConnectionStatus;
   connectionError: string | null;
   snapshot: AgentStateSnapshot | null;
+  manuscript: ManuscriptState;
   setSlug(slug: string): void;
   setWorkspaces(slugs: string[]): void;
   setStatus(status: ConnectionStatus): void;
   setConnectionError(message: string | null): void;
   handleEvent(event: EventFrame): void;
   loadSnapshot(state: AgentStateSnapshot, messages: AgentMessageWire[]): void;
+  setChapters(ids: string[]): void;
+  selectChapter(id: string): void;
+  chapterLoaded(id: string, content: string): void;
+  chapterFailed(id: string, message: string): void;
+  resetManuscript(): void;
 }
 
 export const useChatStore = create<ChatStore>()((set) => ({
@@ -31,9 +58,12 @@ export const useChatStore = create<ChatStore>()((set) => ({
   status: "closed",
   connectionError: null,
   snapshot: null,
+  manuscript: initialManuscript,
   // 切换工作区：slug 变更驱动 useAgentSocket 重连；旧工作区的事件帧/条目
   // 由 loadSnapshot 的「重置后重放」语义在新快照到达时整体更替（计划 D5）。
-  setSlug: (slug) => set({ slug }),
+  // manuscript 随切换立即重置（P5 D7：工作区切换不残留上一案的章节草稿）。
+  setSlug: (slug) =>
+    set((s) => ({ slug, manuscript: s.slug === slug ? s.manuscript : initialManuscript })),
   setWorkspaces: (workspaces) => set({ workspaces }),
   setStatus: (status) => set({ status }),
   setConnectionError: (connectionError) => set({ connectionError }),
@@ -50,5 +80,27 @@ export const useChatStore = create<ChatStore>()((set) => ({
       snapshot: state,
       // 快照的 is_running 是唯一事实来源（R3 问题2——stale true 不得经 || 短路覆盖）
       running: state.is_running,
+      // manuscript 不随 loadSnapshot 重置（CP1 修正）：重连/重放是同一工作区的
+      // 会话状态更替，正文与未保存草稿必须保留（断线重连丢草稿不可接受）；
+      // 重置点唯一在 setSlug（换工作区）。重连后的章节列表新鲜度由
+      // ManuscriptPanel 对连接状态的 refetch 负责。
     })),
+  setChapters: (chapterIds) => set((s) => ({ manuscript: { ...s.manuscript, chapterIds } })),
+  selectChapter: (id) =>
+    set((s) => ({
+      manuscript: { ...s.manuscript, chapterId: id, content: null, loading: true, error: null },
+    })),
+  chapterLoaded: (id, content) =>
+    set((s) =>
+      s.manuscript.chapterId !== id
+        ? s // 竞态防护：响应返回前用户已切走 → 丢弃
+        : { manuscript: { ...s.manuscript, content, loading: false, error: null } },
+    ),
+  chapterFailed: (id, message) =>
+    set((s) =>
+      s.manuscript.chapterId !== id
+        ? s
+        : { manuscript: { ...s.manuscript, loading: false, error: message } },
+    ),
+  resetManuscript: () => set({ manuscript: initialManuscript }),
 }));

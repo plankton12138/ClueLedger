@@ -16,6 +16,25 @@ describe("Digital Noir 设计令牌", () => {
     expect(theme.colors.overdue).toMatch(/^#[0-9A-F]{6}$/i); // 逾期：红
   });
 
+  it("P5：伏笔生命周期第四色已回收 = 暗金（与主色同源的语义别名）", () => {
+    expect(theme.colors.recovered).toBe("#C8A84D");
+  });
+
+  it("P5：parchment 系纸面令牌（暗色环境中的唯一浅色面）", () => {
+    expect(theme.colors.parchment).toBe("#F2ECD9"); // 纸面底色
+    expect(theme.colors.parchmentInk).toBe("#2B2417"); // 纸面墨色
+    expect(theme.colors.parchmentMute).toMatch(/^#[0-9A-F]{6}$/i); // 次级墨色
+    expect(theme.colors.parchmentLine).toMatch(/^#[0-9A-F]{6}$/i); // 纸面分隔线
+    // 纸面亮度必须显著高于页面底色（浅色面在深色环境中即为视觉焦点）
+    const lum = (hex: string): number => {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return r + g + b;
+    };
+    expect(lum(theme.colors.parchment)).toBeGreaterThan(lum(theme.colors.ink) * 4);
+  });
+
   it("底色是深靛蓝系（亮度足够暗，保证暗色主题）", () => {
     const ink = theme.colors.ink;
     const r = parseInt(ink.slice(1, 3), 16);
