@@ -56,6 +56,14 @@ class WritingSession(Protocol):
         """保存成功后请求对账（P5 D5；空 hunks 为 no-op）。"""
         ...
 
+    async def resync_reconcile(self, chapter_id: str) -> bool:
+        """手动重跑最近一次修订的对账（P5 T5 重试/「同步上下文」按钮）。
+
+        返回 False 表示该章没有可重跑的修订（尚无保存记录）——调用方
+        据此给出「先保存一次」的三要素指引用。
+        """
+        ...
+
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
         """订阅对账进度通知（ws 层翻成 notice 帧），返回退订函数。"""
         ...

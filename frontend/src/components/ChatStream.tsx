@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatItem, ToolCardStatus } from "../state/reducer";
 import { useChatStore } from "../state/store";
+import SyncCard from "./SyncCard";
 
 const TOOL_STATUS_CLASS: Record<ToolCardStatus, string> = {
   running: "bg-planned",
@@ -109,17 +110,23 @@ function ItemView({ item }: { item: ChatItem }) {
   }
 }
 
-export default function ChatStream() {
+export default function ChatStream({
+  onRetrySync,
+}: {
+  /** 对账失败卡片的重试回调（经 WS sync 命令手动重跑）。 */
+  onRetrySync?: (chapter: string) => void;
+} = {}) {
   const items = useChatStore((s) => s.items);
+  const syncCards = useChatStore((s) => s.syncCards);
   const assistantBuffer = useChatStore((s) => s.assistantBuffer);
   const thinkingBuffer = useChatStore((s) => s.thinkingBuffer);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [items, assistantBuffer, thinkingBuffer]);
+  }, [items, syncCards, assistantBuffer, thinkingBuffer]);
 
-  const empty = items.length === 0 && !assistantBuffer && !thinkingBuffer;
+  const empty = items.length === 0 && syncCards.length === 0 && !assistantBuffer && !thinkingBuffer;
   return (
     <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
       {empty && (
@@ -129,6 +136,9 @@ export default function ChatStream() {
       )}
       {items.map((item, i) => (
         <ItemView key={i} item={item} />
+      ))}
+      {syncCards.map((card, i) => (
+        <SyncCard key={`sync-${i}`} entry={card} onRetry={onRetrySync} />
       ))}
       {thinkingBuffer && (
         <div className="max-w-[85%] border-l-2 border-line px-4 py-2">

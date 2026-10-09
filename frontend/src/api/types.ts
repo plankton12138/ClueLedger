@@ -317,6 +317,7 @@ export const COMMAND_TYPES = [
   "abort",
   "get_state",
   "get_messages",
+  "sync",
 ] as const;
 
 export type CommandType = (typeof COMMAND_TYPES)[number];
@@ -326,6 +327,8 @@ export interface CommandFrame {
   id: number | string;
   type: CommandType;
   message?: string;
+  /** sync 命令（P5 T5）专用：目标章节 id，手动重跑该章最近一次修订的对账。 */
+  chapter?: string;
 }
 
 /** 服务端 → 客户端响应帧（请求-响应配对靠 id 回显）。 */

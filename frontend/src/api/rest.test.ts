@@ -5,7 +5,17 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventFrame, ToolExecutionEndEventFrame } from "./types";
-import { createWorkspace, fetchBible, fetchChapter, fetchChapters, fetchWorkspaces, refetchTargets } from "./rest";
+import {
+  acquireEditMark,
+  createWorkspace,
+  fetchBible,
+  fetchChapter,
+  fetchChapters,
+  fetchWorkspaces,
+  refetchTargets,
+  releaseEditMark,
+  saveChapter,
+} from "./rest";
 
 function toolEnd(toolName: string, _args: Record<string, unknown>, isError = false): ToolExecutionEndEventFrame {
   void _args; // end 帧不带 args（args 只在 start/update 上），保留形参以贴近调用现场
@@ -159,5 +169,97 @@ describe("chapter API（P5 T1）", () => {
       vi.fn(async () => jsonResponse({ detail: "章节 ch09 不存在。为什么错：…" }, 404)),
     );
     await expect(fetchChapter("demo", "ch09")).rejects.toThrow("章节 ch09 不存在");
+  });
+});
+
+// ---------- 受管写端点 + 作者草稿锁（P5 T5）：fetch 客户端剧本 ----------
+
+describe("saveChapter API（P5 T5）", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function jsonResponse(payload: unknown, status = 200): Response {
+    return new Response(JSON.stringify(payload), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  it("PUT /api/{slug}/chapters/{id}，body 为 { content, baseRevision }（camelCase）", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("PUT");
+      expect(init?.body).toBe(JSON.stringify({ content: "# 第3章\n\n改后。", baseRevision: 2 }));
+      return jsonResponse({
+        id: "ch03",
+        revision: 3,
+        diff: [
+          { kind: "modified", oldIndex: 1, newIndex: 1, oldText: "旧段", newText: "新段" },
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const saved = await saveChapter("demo", "ch03", "# 第3章\n\n改后。", 2);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/demo/chapters/ch03");
+    expect(saved.revision).toBe(3);
+    expect(saved.diff[0]?.kind).toBe("modified");
+    expect(saved.diff[0]?.newText).toBe("新段");
+  });
+
+  it("空 diff 是合法结果（无变更正常返回，不是错误）", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ id: "ch03", revision: 2, diff: [] })));
+    const saved = await saveChapter("demo", "ch03", "同上一版", 2);
+    expect(saved.diff).toEqual([]);
+  });
+
+  it("409（乐观并发/写作流冲突）→ detail 三要素文案原样透出", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          { detail: "章节 ch03 已被其他页面更新（当前 revision=5…）。怎样算对：重新 GET 该章节…" },
+          409,
+        ),
+      ),
+    );
+    await expect(saveChapter("demo", "ch03", "内容", 2)).rejects.toThrow("已被其他页面更新");
+  });
+
+  it("响应结构不符 → 报错并附服务端响应原文", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ nope: true })));
+    await expect(saveChapter("demo", "ch03", "内容", 2)).rejects.toThrow("结构不符");
+  });
+});
+
+describe("edit-mark 锁端点（P5 T5）", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("acquireEditMark PUT .../edit-mark", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("PUT");
+      return new Response(JSON.stringify({ chapterId: "ch03", holder: "user", ts: 1 }), {
+        status: 200,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(acquireEditMark("demo", "ch03")).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/demo/chapters/ch03/edit-mark");
+  });
+
+  it("releaseEditMark DELETE .../edit-mark", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("DELETE");
+      return new Response(JSON.stringify({ chapterId: "ch03", released: true }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(releaseEditMark("demo", "ch03")).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/demo/chapters/ch03/edit-mark");
+  });
+
+  it("加锁失败（404 章节不存在）→ detail 原样透出", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ detail: "章节 ch09 不存在。" }), { status: 404 })),
+    );
+    await expect(acquireEditMark("demo", "ch09")).rejects.toThrow("章节 ch09 不存在");
   });
 });

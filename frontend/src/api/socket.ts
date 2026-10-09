@@ -137,7 +137,7 @@ export class AgentSocket {
   }
 
   /** 发送命令帧并等待同 id 响应帧；响应 error 文案随异常透传。 */
-  command(type: CommandType, message?: string): Promise<CommandResult> {
+  command(type: CommandType, message?: string, chapter?: string): Promise<CommandResult> {
     const ws = this.ws;
     if (ws === null || ws.readyState !== WebSocket.OPEN) {
       return Promise.reject(
@@ -148,7 +148,10 @@ export class AgentSocket {
       );
     }
     const id = this.nextId++;
-    const frame: CommandFrame = message === undefined ? { id, type } : { id, type, message };
+    // 只写实际携带的字段：prompt/steer/follow_up 用 message，sync 用 chapter。
+    const frame: CommandFrame = { id, type };
+    if (message !== undefined) frame.message = message;
+    if (chapter !== undefined) frame.chapter = chapter;
     return new Promise<CommandResult>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);

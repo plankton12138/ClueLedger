@@ -228,4 +228,32 @@ describe("命令发送与响应配对", () => {
     ws.receive({ type: "response", command: "abort", success: true, id: 99 }); // 未知 id
     await expect(p).resolves.toEqual({ data: { wrong: true } });
   });
+
+  it("sync 命令携带 chapter 字段（不复用 message）", async () => {
+    const { agent, ws } = makeSocket();
+    ws.simulateOpen();
+    void agent.command("sync", undefined, "ch03");
+    const frames = ws.sentFrames();
+    expect(frames[frames.length - 1]).toEqual({ id: 3, type: "sync", chapter: "ch03" });
+  });
+});
+
+describe("notice 帧分流（P5 T5）", () => {
+  it("notice 帧进 onNotice，不进 onEvent（与 agent 事件分流）", () => {
+    const notices: unknown[] = [];
+    const { ws, events } = makeSocket({ onNotice: (n) => notices.push(n) });
+    ws.simulateOpen();
+    ws.receive({
+      type: "notice",
+      kind: "sync_end",
+      chapter: "ch03",
+      hunks: 2,
+      updates: 1,
+      status: "done",
+    });
+    expect(notices).toEqual([
+      { type: "notice", kind: "sync_end", chapter: "ch03", hunks: 2, updates: 1, status: "done" },
+    ]);
+    expect(events).toEqual([]);
+  });
 });

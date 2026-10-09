@@ -11,7 +11,7 @@ import { useChatStore } from "./store";
 
 export function useAgentSocket(): {
   reconnect(): void;
-  sendCommand(type: CommandType, message?: string): Promise<void>;
+  sendCommand(type: CommandType, message?: string, chapter?: string): Promise<void>;
 } {
   const socketRef = useRef<AgentSocket | null>(null);
   const slug = useChatStore((s) => s.slug);
@@ -22,6 +22,8 @@ export function useAgentSocket(): {
     const socket = new AgentSocket(wsUrl(workspaceSlug), {
       onStatus: (status) => useChatStore.getState().setStatus(status),
       onEvent: (event) => useChatStore.getState().handleEvent(event),
+      // 对账通知（P5 T5）：驱动 toolbar 徽标与对话流同步卡片
+      onNotice: (notice) => useChatStore.getState().applyNotice(notice),
       onSnapshot: (state, messages) => useChatStore.getState().loadSnapshot(state, messages),
       onError: (message) => useChatStore.getState().setConnectionError(message),
     });
@@ -38,11 +40,15 @@ export function useAgentSocket(): {
     };
   }, [connect, slug]);
 
-  const sendCommand = useCallback(async (type: CommandType, message?: string) => {
-    const socket = socketRef.current;
-    if (socket === null) throw new Error("连接未初始化。怎样算对：等页面加载完成或点击重连后重试。");
-    await socket.command(type, message);
-  }, []);
+  const sendCommand = useCallback(
+    async (type: CommandType, message?: string, chapter?: string) => {
+      const socket = socketRef.current;
+      if (socket === null)
+        throw new Error("连接未初始化。怎样算对：等页面加载完成或点击重连后重试。");
+      await socket.command(type, message, chapter);
+    },
+    [],
+  );
 
   return { reconnect: () => { if (slug !== null) connect(slug); }, sendCommand };
 }

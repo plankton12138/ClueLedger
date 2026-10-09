@@ -203,6 +203,60 @@ def test_ws_steer_and_follow_up_commands_reach_session(
     assert session.followed_up == [FOLLOW_UP_TEXT]
 
 
+# --- sync 命令（P5 T5）：手动重跑对账 ---
+
+
+class UnresyncableSession(StubSession):
+    """无可重跑修订的桩：resync_reconcile 恒 False（走失败指引分支）。"""
+
+    async def resync_reconcile(self, chapter_id: str) -> bool:
+        del chapter_id
+        return False
+
+
+def test_ws_sync_command_triggers_resync_with_chapter(workspace: StoryWorkspace) -> None:
+    session = StubSession()
+    app = create_app(_registry_with_session(workspace.root, session))
+    with TestClient(app).websocket_connect(WS_URL) as ws:
+        ws.send_json({"id": 4, "type": "sync", "chapter": "ch03"})
+        response = ws.receive_json()
+
+    assert response == {
+        "type": "response",
+        "command": "sync",
+        "success": True,
+        "id": 4,
+        "data": {"chapter": "ch03"},
+    }
+    assert session.resync_calls == ["ch03"]
+
+
+def test_ws_sync_command_reports_missing_chapter(workspace: StoryWorkspace) -> None:
+    app = create_app(_registry_with_session(workspace.root, StubSession()))
+    with TestClient(app).websocket_connect(WS_URL) as ws:
+        ws.send_json({"id": 5, "type": "sync"})
+        error = ws.receive_json()
+
+    assert error["type"] == "response"
+    assert error["command"] == "sync"
+    assert error["success"] is False
+    assert error["id"] == 5
+    assert "chapter 字段缺失" in error["error"]  # 哪里错
+    assert "为什么错" in error["error"]
+    assert "怎样算对" in error["error"]
+
+
+def test_ws_sync_command_reports_no_revision_to_replay(workspace: StoryWorkspace) -> None:
+    app = create_app(_registry_with_session(workspace.root, UnresyncableSession()))
+    with TestClient(app).websocket_connect(WS_URL) as ws:
+        ws.send_json({"id": 6, "type": "sync", "chapter": "ch03"})
+        error = ws.receive_json()
+
+    assert error["success"] is False
+    assert "没有可重跑的对账修订" in error["error"]  # 哪里错
+    assert "先" in error["error"] and "保存一次" in error["error"]  # 怎样算对
+
+
 def test_ws_get_messages_restores_history_after_reconnect(
     workspace: StoryWorkspace,
 ) -> None:

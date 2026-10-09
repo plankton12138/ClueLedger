@@ -124,6 +124,10 @@ class FakeLoopSession:
     async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
         del chapter_id, hunks
 
+    async def resync_reconcile(self, chapter_id: str) -> bool:
+        del chapter_id
+        return True
+
 
 def _make_queue(
     tmp_path: Path,

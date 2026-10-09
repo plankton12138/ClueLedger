@@ -127,7 +127,7 @@ export async function createWorkspace(slug: string): Promise<void> {
   }
 }
 
-// ---------- 章节面（P5 T1）：列表 + 单章正文（只读；写入口 T2 另加 PUT） ----------
+// ---------- 章节面（P5 T1）：列表 + 单章正文（只读） ----------
 
 export interface ChaptersResponse {
   chapters: string[];
@@ -137,6 +137,31 @@ export interface ChapterResponse {
   id: string;
   content: string;
   revision: number;
+}
+
+/** 段落级变更（D3 wire camelCase：oldIndex/newIndex/oldText/newText）。 */
+export type DiffKind = "added" | "removed" | "modified";
+
+export interface DiffHunkWire {
+  kind: DiffKind;
+  oldIndex: number | null;
+  newIndex: number | null;
+  oldText: string;
+  newText: string;
+}
+
+export interface ChapterSavedResponse {
+  id: string;
+  revision: number;
+  diff: DiffHunkWire[];
+}
+
+/** 从非 2xx 响应体抽 detail（FastAPI 错误统一挂 detail 字段）。 */
+async function errorDetail(res: Response): Promise<string> {
+  const body: unknown = await res.json().catch(() => null);
+  return body !== null && typeof body === "object" && "detail" in body
+    ? String((body as { detail: unknown }).detail)
+    : `HTTP ${res.status}`;
 }
 
 /** GET /api/{slug}/chapters → 章节 id 列表（服务端已按文件名排序）；空工作区 → 空数组。 */
@@ -182,6 +207,66 @@ export async function fetchChapter(slug: string, chapterId: string): Promise<Cha
     );
   }
   return body as ChapterResponse;
+}
+
+// ---------- 受管写端点 + 作者草稿锁（P5 T2/T3 契约，T5 前端接线） ----------
+
+/**
+ * PUT /api/{slug}/chapters/{id}：作者受管写端点（D3 管线）。
+ * 409（写作流冲突 / revision 过期）、422（标题格式）、404（章节不存在）、
+ * 500（IO）的 detail 文案原样透出——泄压阀三情形的归因由服务端给出。
+ */
+export async function saveChapter(
+  slug: string,
+  chapterId: string,
+  content: string,
+  baseRevision: number,
+): Promise<ChapterSavedResponse> {
+  const res = await fetch(
+    `/api/${encodeURIComponent(slug)}/chapters/${encodeURIComponent(chapterId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, baseRevision }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`章节 ${chapterId} 保存失败：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  if (
+    body === null ||
+    typeof body !== "object" ||
+    typeof (body as { revision?: unknown }).revision !== "number" ||
+    !Array.isArray((body as { diff?: unknown }).diff)
+  ) {
+    throw new Error(
+      `章节保存响应结构不符：期望 { id, revision, diff[] }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return body as ChapterSavedResponse;
+}
+
+/** PUT .../edit-mark：作者开始编辑 → 加草稿锁（D4 幂等）；失败 detail 原样透出。 */
+export async function acquireEditMark(slug: string, chapterId: string): Promise<void> {
+  const res = await fetch(
+    `/api/${encodeURIComponent(slug)}/chapters/${encodeURIComponent(chapterId)}/edit-mark`,
+    { method: "PUT" },
+  );
+  if (!res.ok) {
+    throw new Error(`章节 ${chapterId} 加锁失败：${await errorDetail(res)}`);
+  }
+}
+
+/** DELETE .../edit-mark：放弃草稿 → 释放锁（D4 幂等）。 */
+export async function releaseEditMark(slug: string, chapterId: string): Promise<void> {
+  const res = await fetch(
+    `/api/${encodeURIComponent(slug)}/chapters/${encodeURIComponent(chapterId)}/edit-mark`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    throw new Error(`章节 ${chapterId} 释放锁失败：${await errorDetail(res)}`);
+  }
 }
 
 // ---------- D7 refetch 规则（纯函数，呈现策略而非业务校验） ----------

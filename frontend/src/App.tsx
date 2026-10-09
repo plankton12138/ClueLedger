@@ -5,7 +5,7 @@
  * slug，不整页刷新；选中 slug 经 ?w= 记入地址（replaceState），刷新后不丢。
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createWorkspace, fetchWorkspaces } from "./api/rest";
 import BiblePanel from "./components/BiblePanel";
 import ChatStream from "./components/ChatStream";
@@ -139,6 +139,19 @@ export default function App() {
   }
 
   const slugInvalid = slug !== null && !workspaces.includes(slug);
+
+  // 手动重跑对账（P5 T5）：WS sync 命令，复用该章最近一次保存的差异。
+  // 服务端拒绝（尚无保存章节等）时 error 文案原样进连接错误条（三要素透传）。
+  const retrySync = useCallback(
+    (chapter: string) => {
+      void sendCommand("sync", undefined, chapter).catch((exc: unknown) =>
+        useChatStore
+          .getState()
+          .setConnectionError(exc instanceof Error ? exc.message : String(exc)),
+      );
+    },
+    [sendCommand],
+  );
 
   return (
     <div className="flex h-screen flex-col">
@@ -311,7 +324,7 @@ export default function App() {
                 ‹
               </button>
               <section className="flex min-h-0 flex-1 flex-col">
-                <ChatStream />
+                <ChatStream onRetrySync={retrySync} />
                 <Composer
                   sendCommand={(type: CommandType, message: string) =>
                     sendCommand(type, message)
@@ -321,7 +334,7 @@ export default function App() {
               </section>
             </aside>
           )}
-          <ManuscriptPanel />
+          <ManuscriptPanel onSyncChapter={retrySync} />
           <aside className="hidden w-[340px] flex-none flex-col overflow-hidden border-l border-line bg-ink-soft/35 lg:flex">
             <BiblePanel />
           </aside>

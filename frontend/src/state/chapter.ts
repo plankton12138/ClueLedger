@@ -34,3 +34,9 @@ export function splitParagraphs(body: string): string[] {
 export function countChars(text: string): number {
   return text.replace(/\s/g, "").length;
 }
+
+/** ch03 → 3；非 chNN 命名的章节 id 原样展示（工具栏/卡片共用）。 */
+export function chapterNumber(id: string): string {
+  const match = /^ch(\d+)$/.exec(id);
+  return match !== null ? String(Number(match[1])) : id;
+}

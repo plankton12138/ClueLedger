@@ -4,6 +4,7 @@
 
 - 客户端 → 服务端（命令帧）：
   ``{"id": 1, "type": "prompt|steer|follow_up|abort|get_state|get_messages", "message"?: str}``
+  以及 P5 T5 的 ``{"id": 1, "type": "sync", "chapter": "ch03"}``（手动重跑对账）。
 - 服务端 → 客户端（事件帧）：AgentEvent 原样 JSON（``model_dump(by_alias=True)``）；
 - 服务端 → 客户端（响应帧）：
   ``{"type": "response", "command", "success", "id"?, "data"? / "error"?}``
@@ -39,15 +40,28 @@ from tau_agent.types import JSONValue
 
 router = APIRouter()
 
-AVAILABLE_COMMANDS = ("prompt", "steer", "follow_up", "abort", "get_state", "get_messages")
+AVAILABLE_COMMANDS = (
+    "prompt",
+    "steer",
+    "follow_up",
+    "abort",
+    "get_state",
+    "get_messages",
+    "sync",
+)
 
 
 class CommandFrame(BaseModel):
-    """客户端命令帧；字段校验错误经 pydantic loc 原样进 error 帧。"""
+    """客户端命令帧；字段校验错误经 pydantic loc 原样进 error 帧。
+
+    ``chapter`` 只被 sync 命令使用（P5 T5 手动重跑对账：以章节 id 为目标，
+    复用该章最近一次保存的差异）。其余命令不读它。
+    """
 
     id: int | str | None = None
     type: str
     message: str | None = None
+    chapter: str | None = None
 
 
 def _wire(model: BaseModel) -> dict[str, JSONValue]:
@@ -156,6 +170,8 @@ class Connection:
                     frame_id=frame.id,
                     data={"messages": [_wire(m) for m in self._session.messages]},
                 )
+            case "sync":
+                await self._resync(frame)
             case _:
                 raise ValueError(
                     f"未知命令：{frame.type}。"
@@ -173,6 +189,27 @@ class Connection:
         task = asyncio.create_task(run(), name="ws-prompt-drain")
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+
+    async def _resync(self, frame: CommandFrame) -> None:
+        """sync 命令（P5 T5）：手动重跑某章最近一次修订的对账。
+
+        复用队列保存的差异——不重新读盘、不重新 diff；重跑以正常 notice
+        序列（queued→start→end）反馈，与自动对账同一条可观测通道。
+        """
+        chapter = frame.chapter
+        if chapter is None or not chapter.strip():
+            raise ValueError(
+                "sync 命令的 chapter 字段缺失或为空。"
+                "为什么错：手动重跑对账必须指定目标章节。"
+                '怎样算对：{"id": 1, "type": "sync", "chapter": "ch03"}'
+            )
+        if not await self._session.resync_reconcile(chapter):
+            raise ValueError(
+                f"章节 {chapter} 没有可重跑的对账修订。"
+                "为什么错：该章尚无经保存端点提交过的修改（或修订已过期）。"
+                "怎样算对：先在正文编辑器中保存一次修改，再点重新同步。"
+            )
+        await self._respond(command=frame.type, frame_id=frame.id, data={"chapter": chapter})
 
     def _state_data(self) -> dict[str, JSONValue]:
         return {

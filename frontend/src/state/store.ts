@@ -5,20 +5,39 @@
  */
 
 import { create } from "zustand";
+import type { DiffHunkWire } from "../api/rest";
 import type { AgentStateSnapshot, ConnectionStatus } from "../api/socket";
-import type { AgentMessageWire, EventFrame } from "../api/types";
+import type { AgentMessageWire, EventFrame, NoticeFrame } from "../api/types";
 import { applyEvent, applyMessages, initialUiState, type UiState } from "./reducer";
 
+export type ManuscriptMode = "read" | "edit" | "diff";
+export type SaveState = "clean" | "dirty" | "saving" | "error";
+export type SyncState = "idle" | "queued" | "syncing" | "done" | "failed";
+
+/** 一则对账完成卡片（对话流呈现，notice 驱动，P5 T5）。 */
+export interface SyncCardEntry {
+  chapter: string;
+  hunks: number;
+  updates: number;
+  status: "done" | "failed";
+}
+
 /**
- * manuscript 切片（P5 T1 阅读态 + T2 revision；T5 扩展 draft/saveState/syncState/diff）。
- * content 是 REST 读回的 baseline；revision 随正文一起读回，为 T5 乐观并发垫底。
+ * manuscript 切片（P5 D7）：正文成为页面中心后的编辑状态机。
+ * baseline 是 REST 读回的已保存版本；draft 是编辑缓冲（dirty = draft !== baseline）；
+ * revision 为乐观并发垫底；saveState/syncState/diff 驱动工具栏徽标与对账视图。
  * 竞态防护在 chapterLoaded——晚到的旧章响应不得覆盖已切换的新章（按 id 比对后丢弃）。
  */
 export interface ManuscriptState {
   chapterIds: string[];
   chapterId: string | null;
-  content: string | null;
+  baseline: string | null;
+  draft: string | null;
   revision: number | null;
+  mode: ManuscriptMode;
+  saveState: SaveState;
+  syncState: SyncState;
+  diff: DiffHunkWire[] | null;
   loading: boolean;
   error: string | null;
 }
@@ -26,11 +45,21 @@ export interface ManuscriptState {
 export const initialManuscript: ManuscriptState = {
   chapterIds: [],
   chapterId: null,
-  content: null,
+  baseline: null,
+  draft: null,
   revision: null,
+  mode: "read",
+  saveState: "clean",
+  syncState: "idle",
+  diff: null,
   loading: false,
   error: null,
 };
+
+/** 选中/载入章节时复位编辑态（保留列表中已有章节 id 由调用方另行设置）。 */
+function freshManuscript(ms: ManuscriptState, patch: Partial<ManuscriptState>): ManuscriptState {
+  return { ...ms, ...patch };
+}
 
 interface ChatStore extends UiState {
   /** 当前工作区 slug（P4 T6）；null = 尚未选定（启动引导/新建第一个工作区）。 */
@@ -40,6 +69,8 @@ interface ChatStore extends UiState {
   connectionError: string | null;
   snapshot: AgentStateSnapshot | null;
   manuscript: ManuscriptState;
+  /** 对账完成卡片（append-only；随快照重放清空）。 */
+  syncCards: SyncCardEntry[];
   setSlug(slug: string): void;
   setWorkspaces(slugs: string[]): void;
   setStatus(status: ConnectionStatus): void;
@@ -50,7 +81,26 @@ interface ChatStore extends UiState {
   selectChapter(id: string): void;
   chapterLoaded(id: string, content: string, revision: number): void;
   chapterFailed(id: string, message: string): void;
+  setMode(mode: ManuscriptMode): void;
+  setDraft(text: string): void;
+  saveStart(): void;
+  saveFailed(message: string): void;
+  applySaved(revision: number, diff: DiffHunkWire[]): void;
+  discardDraft(): void;
+  applyNotice(notice: NoticeFrame): void;
   resetManuscript(): void;
+}
+
+/** notice 序列 → 目标 syncState（queued → syncing → done/failed）。 */
+function nextSyncState(notice: NoticeFrame): SyncState {
+  switch (notice.kind) {
+    case "sync_queued":
+      return "queued";
+    case "sync_start":
+      return "syncing";
+    case "sync_end":
+      return notice.status === "failed" ? "failed" : "done";
+  }
 }
 
 export const useChatStore = create<ChatStore>()((set) => ({
@@ -61,11 +111,16 @@ export const useChatStore = create<ChatStore>()((set) => ({
   connectionError: null,
   snapshot: null,
   manuscript: initialManuscript,
+  syncCards: [],
   // 切换工作区：slug 变更驱动 useAgentSocket 重连；旧工作区的事件帧/条目
   // 由 loadSnapshot 的「重置后重放」语义在新快照到达时整体更替（计划 D5）。
   // manuscript 随切换立即重置（P5 D7：工作区切换不残留上一案的章节草稿）。
   setSlug: (slug) =>
-    set((s) => ({ slug, manuscript: s.slug === slug ? s.manuscript : initialManuscript })),
+    set((s) =>
+      s.slug === slug
+        ? { slug }
+        : { slug, manuscript: initialManuscript, syncCards: [] },
+    ),
   setWorkspaces: (workspaces) => set({ workspaces }),
   setStatus: (status) => set({ status }),
   setConnectionError: (connectionError) => set({ connectionError }),
@@ -82,6 +137,8 @@ export const useChatStore = create<ChatStore>()((set) => ({
       snapshot: state,
       // 快照的 is_running 是唯一事实来源（R3 问题2——stale true 不得经 || 短路覆盖）
       running: state.is_running,
+      // 对账卡片属对话流叙事，随快照重放一并清空（与 items 同生命周期）
+      syncCards: [],
       // manuscript 不随 loadSnapshot 重置（CP1 修正）：重连/重放是同一工作区的
       // 会话状态更替，正文与未保存草稿必须保留（断线重连丢草稿不可接受）；
       // 重置点唯一在 setSlug（换工作区）。重连后的章节列表新鲜度由
@@ -90,21 +147,35 @@ export const useChatStore = create<ChatStore>()((set) => ({
   setChapters: (chapterIds) => set((s) => ({ manuscript: { ...s.manuscript, chapterIds } })),
   selectChapter: (id) =>
     set((s) => ({
-      manuscript: {
-        ...s.manuscript,
+      manuscript: freshManuscript(s.manuscript, {
         chapterId: id,
-        content: null,
+        baseline: null,
+        draft: null,
         revision: null,
+        mode: "read",
+        saveState: "clean",
+        syncState: "idle",
+        diff: null,
         loading: true,
         error: null,
-      },
+      }),
     })),
   chapterLoaded: (id, content, revision) =>
     set((s) =>
       s.manuscript.chapterId !== id
         ? s // 竞态防护：响应返回前用户已切走 → 丢弃
         : {
-            manuscript: { ...s.manuscript, content, revision, loading: false, error: null },
+            manuscript: freshManuscript(s.manuscript, {
+              baseline: content,
+              draft: content,
+              revision,
+              mode: "read",
+              saveState: "clean",
+              syncState: "idle",
+              diff: null,
+              loading: false,
+              error: null,
+            }),
           },
     ),
   chapterFailed: (id, message) =>
@@ -113,5 +184,57 @@ export const useChatStore = create<ChatStore>()((set) => ({
         ? s
         : { manuscript: { ...s.manuscript, loading: false, error: message } },
     ),
+  setMode: (mode) => set((s) => ({ manuscript: { ...s.manuscript, mode } })),
+  setDraft: (text) =>
+    set((s) => ({
+      manuscript: {
+        ...s.manuscript,
+        draft: text,
+        // dirty 是派生量：草稿与 baseline 一致即回 clean（放弃/手动改回均适用）
+        saveState: text === s.manuscript.baseline ? "clean" : "dirty",
+      },
+    })),
+  saveStart: () =>
+    set((s) => ({ manuscript: { ...s.manuscript, saveState: "saving", error: null } })),
+  saveFailed: (message) =>
+    set((s) => ({ manuscript: { ...s.manuscript, saveState: "error", error: message } })),
+  applySaved: (revision, diff) =>
+    set((s) => ({
+      manuscript: freshManuscript(s.manuscript, {
+        // 显式保存：draft 成为新的 baseline；有变更则进 diff 视图
+        baseline: s.manuscript.draft,
+        revision,
+        saveState: "clean",
+        diff: diff.length > 0 ? diff : null,
+        mode: diff.length > 0 ? "diff" : "read",
+        error: null,
+      }),
+    })),
+  discardDraft: () =>
+    set((s) => ({
+      manuscript: freshManuscript(s.manuscript, {
+        draft: s.manuscript.baseline,
+        saveState: "clean",
+        diff: null,
+        mode: "read",
+        error: null,
+      }),
+    })),
+  applyNotice: (notice) =>
+    set((s) => {
+      // 工具栏徽标只反映「当前打开的章」——别章的对账不打扰本篇编辑（卡片仍照记）
+      const forCurrent = s.manuscript.chapterId === notice.chapter;
+      const manuscript = forCurrent
+        ? { ...s.manuscript, syncState: nextSyncState(notice) }
+        : s.manuscript;
+      if (notice.kind !== "sync_end") return { manuscript };
+      const card: SyncCardEntry = {
+        chapter: notice.chapter,
+        hunks: notice.hunks,
+        updates: notice.updates,
+        status: notice.status === "failed" ? "failed" : "done",
+      };
+      return { manuscript, syncCards: [...s.syncCards, card] };
+    }),
   resetManuscript: () => set({ manuscript: initialManuscript }),
 }));

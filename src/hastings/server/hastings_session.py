@@ -132,6 +132,10 @@ class HastingsSession:
     async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
         await self._reconcile.enqueue(chapter_id, hunks)
 
+    async def resync_reconcile(self, chapter_id: str) -> bool:
+        """手动重跑：复用该章最近一次保存的差异（对账失败重试 / 同步按钮）。"""
+        return await self._reconcile.resync(chapter_id)
+
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
         return self._reconcile.subscribe(listener)
 

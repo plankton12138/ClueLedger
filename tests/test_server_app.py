@@ -42,6 +42,7 @@ class StubSession:
     def __init__(self) -> None:
         self._running = False
         self._edit_marks = EditMarkRegistry()
+        self.resync_calls: list[str] = []
 
     @property
     def edit_marks(self) -> EditMarkRegistry:
@@ -79,6 +80,11 @@ class StubSession:
 
     async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
         del chapter_id, hunks
+
+    async def resync_reconcile(self, chapter_id: str) -> bool:
+        """默认可重跑（记录调用章 id）；失败路径由子类覆盖。"""
+        self.resync_calls.append(chapter_id)
+        return True
 
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
         del listener
