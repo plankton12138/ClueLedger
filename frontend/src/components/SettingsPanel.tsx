@@ -14,15 +14,18 @@ import { useEffect, useState } from "react";
 import {
   WRITING_LANGUAGES,
   deleteProvider,
+  fetchProviderCatalog,
   fetchProviderModels,
   fetchProviders,
   fetchSettings,
   saveSettings,
   testProvider,
   upsertProvider,
+  type CatalogEntry,
   type ProviderSummary,
   type SettingsResponse,
 } from "../api/rest";
+import { emptyLoginForm, hostOf, prefillLoginForm } from "../state/providerLogin";
 import { useChatStore } from "../state/store";
 
 type Feedback = { kind: "ok" | "error"; text: string } | null;
@@ -277,20 +280,12 @@ export default function SettingsPanel() {
   );
 }
 
-/** 档案表单空值（api_key 恒空起填：明文不可回显，留空 = 修改时保留旧 key）。 */
-function emptyForm(): {
-  name: string;
-  base_url: string;
-  api_key: string;
-  api_key_env: string;
-  default_model: string;
-} {
-  return { name: "", base_url: "", api_key: "", api_key_env: "", default_model: "" };
-}
-
 /**
- * 档案管理卡（P7 T14）：列表（编辑/删除）+ 新建/编辑表单 + 测试连接。
- * 服务端三要素 detail（409 三保护、422、500）原样透出，不做本地人话翻译。
+ * 档案管理卡（P7 T14，P7c T16 登录式改造）：目录选卡 → 只填 key → 保存即用。
+ * 「＋ 登录新模型」打开内建目录（懒加载 GET /api/provider-catalog），点卡片
+ * 预填表单（base_url/models/env 变量名来自目录，仍可编辑）；「自定义…」卡保留
+ * 原全量表单。既有列表的编辑/删除不动；服务端三要素 detail（409 三保护、422、
+ * 500）原样透出，不做本地人话翻译。
  */
 function ProviderAdminCard({
   providers,
@@ -303,16 +298,41 @@ function ProviderAdminCard({
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm());
+  const [form, setForm] = useState(emptyLoginForm());
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  // 目录视图（P7c T16）：懒加载一次；点卡片预填表单或走自定义。
+  const [picking, setPicking] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
-  function startCreate(): void {
-    setEditing(null);
-    setForm(emptyForm());
+  async function openCatalog(): Promise<void> {
+    setPicking(true);
+    setOpen(false);
     setFeedback(null);
+    if (catalog !== null || catalogError !== null) return;
+    try {
+      setCatalog(await fetchProviderCatalog());
+    } catch (exc) {
+      setCatalogError(exc instanceof Error ? exc.message : String(exc));
+    }
+  }
+
+  function startFromEntry(entry: CatalogEntry): void {
+    setEditing(null);
+    setForm(prefillLoginForm(entry, providers.map((p) => p.name)));
+    setFeedback(null);
+    setPicking(false);
+    setOpen(true);
+  }
+
+  function startCustom(): void {
+    setEditing(null);
+    setForm(emptyLoginForm());
+    setFeedback(null);
+    setPicking(false);
     setOpen(true);
   }
 
@@ -409,16 +429,61 @@ function ProviderAdminCard({
         <h2 className="font-serif text-lg font-bold text-gold">档案管理</h2>
         <button
           type="button"
-          onClick={startCreate}
+          onClick={() => void openCatalog()}
           className="flex-none border border-gold/60 px-3 py-1 text-xs text-gold transition-colors hover:bg-gold/15"
         >
-          ＋ 新建档案
+          ＋ 登录新模型
         </button>
       </div>
       <p className="mt-2 text-[11px] leading-relaxed text-paper/40">
-        模型来源写在服务级 config.yaml（启动目录），保存即写回并在本服务热生效；key
+        从目录选择模型来源，填入 API key 即可使用；配置写在服务级 config.yaml，key
         只在服务端使用，前端只见尾 4 位。
       </p>
+
+      {picking && (
+        <div className="mt-4 border border-line bg-ink p-4">
+          <p className="text-xs text-gold-soft">选择模型来源（点击后只需填入 API key）</p>
+          {catalogError !== null && (
+            <p className="mt-2 text-xs leading-relaxed text-overdue">{catalogError}</p>
+          )}
+          {catalog === null ? (
+            <p className="mt-3 text-xs text-paper/50">目录加载中…</p>
+          ) : (
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {catalog.map((e) => (
+                <button
+                  key={e.name}
+                  type="button"
+                  onClick={() => startFromEntry(e)}
+                  className="border border-line p-3 text-left transition-colors hover:border-gold/60"
+                >
+                  <span className="block truncate text-sm text-paper">{e.display_name}</span>
+                  <span className="mt-1 block truncate text-[11px] text-paper/40">
+                    {hostOf(e.base_url)} · {e.models.length} 个模型
+                  </span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={startCustom}
+                className="border border-dashed border-line p-3 text-left transition-colors hover:border-gold/60"
+              >
+                <span className="block text-sm text-paper/75">＋ 自定义…</span>
+                <span className="mt-1 block text-[11px] text-paper/40">
+                  手填 base_url 与模型名
+                </span>
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setPicking(false)}
+            className="mt-3 border border-line px-3 py-1 text-xs text-paper/60 transition-colors hover:text-paper"
+          >
+            取消
+          </button>
+        </div>
+      )}
 
       <ul className="mt-3 divide-y divide-line/60">
         {providers.map((p) => (
@@ -460,7 +525,7 @@ function ProviderAdminCard({
       {open && (
         <div className="mt-4 border border-line bg-ink p-4">
           <p className="text-xs text-gold-soft">
-            {editing === null ? "新建档案" : `编辑档案「${editing}」`}
+            {editing === null ? "登录新模型" : `编辑档案「${editing}」`}
           </p>
           <label htmlFor="provider-form-name" className="mt-3 block text-xs text-paper/60">
             档案名（唯一标识，工作区设置按名引用）

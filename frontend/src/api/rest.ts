@@ -456,6 +456,33 @@ export async function fetchProviderModels(name: string): Promise<string[]> {
 
 // ---------- provider 档案 CRUD（P7 T12/T14）：设置页增删改 + 连通测试 ----------
 
+/** 内建 provider 目录条目（P7c T15/T16）：登录式接入的预填数据，纯公开信息。 */
+export interface CatalogEntry {
+  name: string;
+  display_name: string;
+  base_url: string;
+  default_model: string;
+  models: string[];
+  api_key_env: string;
+  key_url: string;
+}
+
+/** GET /api/provider-catalog → 内建目录（静态数据，无任何密钥字段）。 */
+export async function fetchProviderCatalog(): Promise<CatalogEntry[]> {
+  const res = await fetch("/api/provider-catalog");
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(`目录读取失败：HTTP ${res.status}`);
+  }
+  const catalog = (body as { catalog?: unknown } | null)?.catalog;
+  if (!Array.isArray(catalog)) {
+    throw new Error(
+      `目录响应结构不符：期望 { catalog: [] }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return catalog as CatalogEntry[];
+}
+
 /** 档案新增/修改请求体（P7 T12）：api_key 留空 = 修改时保留旧 key。 */
 export interface ProviderUpsert {
   base_url: string;
