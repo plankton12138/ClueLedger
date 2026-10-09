@@ -209,6 +209,31 @@ async def test_abort_repair_messages_are_persisted(
 
 
 @pytest.mark.anyio
+async def test_persist_io_failure_warns_and_does_not_kill_stream(
+    make_harness: Callable[[], AgentHarness],
+    session_path: Path,
+    capsys: Any,
+) -> None:
+    """落盘 IO 故障（OSError）→ stderr 中文告警，写作流不中断（R3-⑥ 泄压阀）。"""
+
+    class BrokenStorage:
+        async def append(self, entry: MessageEntry) -> None:
+            raise OSError("disk full")
+
+    harness = make_harness()
+    attach_session_storage(harness, BrokenStorage())  # type: ignore[arg-type]
+    async for _ in harness.prompt("创建角色波洛"):
+        pass
+
+    # 写作流正常走完（FakeProvider 两回合都在），告警三要素上屏
+    assert len(harness.messages) > 0
+    err = capsys.readouterr().err
+    assert "落盘失败" in err
+    assert "disk full" in err
+    assert "怎样算对" in err
+
+
+@pytest.mark.anyio
 async def test_restore_and_attach_survives_restart_and_keeps_appending(
     tmp_path: Path, make_harness: Callable[[], AgentHarness]
 ) -> None:

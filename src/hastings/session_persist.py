@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,11 +71,23 @@ async def load_session_messages(session_path: Path) -> SessionLoad:
 
 
 def attach_session_storage(harness: AgentHarness, storage: SessionStorage) -> Callable[[], None]:
-    """订阅 harness 事件流，把定稿消息 append 进 storage；返回退订函数。"""
+    """订阅 harness 事件流，把定稿消息 append 进 storage；返回退订函数。
+
+    泄压阀（R3-⑥）：磁盘/锁故障（OSError）只告警不传播——持久化是事件流的
+    消费者，不能反过来杀死写作流；故障显式上屏（stderr），会话继续。
+    """
 
     async def _persist(event: AgentEvent) -> None:
         if isinstance(event, MessageEndEvent):
-            await storage.append(MessageEntry(message=event.message))
+            try:
+                await storage.append(MessageEntry(message=event.message))
+            except OSError as exc:
+                print(
+                    "[session] 会话落盘失败，写作继续但历史不完整。"
+                    f"为什么错：{exc}。"
+                    "怎样算对：检查磁盘空间/文件占用后重启服务恢复。",
+                    file=sys.stderr,
+                )
 
     return harness.subscribe(_persist)
 
