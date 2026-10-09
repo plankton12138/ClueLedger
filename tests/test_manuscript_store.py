@@ -5,7 +5,8 @@
 - 变更保存：旧版先落 .revisions/<id>/NNN.md + NNN.json（ts/hunks/stats），
   后写主文件，返回新 revision 与 hunks；编号连续；
 - 空 diff 是合法 no-op：不归档、不写盘、revision 不变；
-- 归档阶段失败（.revisions 被文件占位）→ OSError 抛出且主文件未动。
+- 归档阶段失败（.revisions 被文件占位）→ OSError 抛出且主文件未动；
+- 写盘阶段失败（tmp 路径被占位）→ 主文件保持原样（原子替换，不留半写）。
 """
 
 import json
@@ -144,5 +145,23 @@ def test_save_archive_failure_leaves_main_file_untouched(workspace: StoryWorkspa
         _save(workspace, "# 第3章\n\n写不进去的新内容。\n")
 
     # 主文件未动（先归档后写主文件的顺序保证）
+    assert main_path.stat().st_mtime_ns == mtime_before
+    assert main_path.read_text(encoding="utf-8") == content_before
+
+
+def test_save_atomic_replace_failure_leaves_main_file_untouched(
+    workspace: StoryWorkspace,
+) -> None:
+    # R3-⑦：主文件写入改为原子替换（tmp 写 + rename）。让 tmp 路径被目录占位，
+    # write_text 必抛 OSError，验证主文件保持原样、不出现半写状态。
+    (workspace.chapters_dir / f"{CHAPTER_ID}.md.tmp").mkdir()
+    main_path = workspace.chapters_dir / f"{CHAPTER_ID}.md"
+    mtime_before = main_path.stat().st_mtime_ns
+    content_before = main_path.read_text(encoding="utf-8")
+
+    with pytest.raises(OSError):
+        _save(workspace, "# 第3章\n\n写不进去的新内容。\n")
+
+    # 主文件未被半写内容污染（原子替换保证）
     assert main_path.stat().st_mtime_ns == mtime_before
     assert main_path.read_text(encoding="utf-8") == content_before

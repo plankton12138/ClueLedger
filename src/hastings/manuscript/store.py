@@ -6,11 +6,13 @@
 
 1. 读主文件旧版、算段落 hunk；空 diff 为合法 no-op（不归档、不 bump）；
 2. 归档先落 JSON 后落 MD（编号以 MD 计数，中途失败重试可自愈）；
-3. 归档全部成功后才写主文件——归档阶段任何异常，主文件都不动。
+3. 归档全部成功后才写主文件，且以临时文件 + ``os.replace`` 原子替换——
+   归档或覆盖任一步失败，主文件都保持原样（作者可直接重试）。
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from collections.abc import Callable
@@ -55,7 +57,7 @@ def save_chapter(
     """受管保存：归档旧版后写入新正文。
 
     章节不存在 → FileNotFoundError（REST 转 404）；
-    归档阶段 IO 故障 → OSError 原样上抛，主文件未动（REST 转 500）。
+    任何一步 IO 故障 → OSError 原样上抛，主文件保持原样（REST 转 500）。
     """
     path = workspace.chapters_dir / f"{chapter_id}.md"
     old = path.read_text(encoding="utf-8")
@@ -80,8 +82,25 @@ def save_chapter(
         encoding="utf-8",
     )
     (directory / f"{stem}.md").write_text(old, encoding="utf-8")
-    path.write_text(content, encoding="utf-8")
+    _replace_atomically(path, content)
     return SavedChapter(revision=revision + 1, hunks=hunks)
+
+
+def _replace_atomically(path: Path, content: str) -> None:
+    """主文件原子覆盖：先写同目录临时文件再 replace。
+
+    ``Path.write_text`` 直接覆盖会先 truncate——中途 OSError 会留下空文件或
+    半截正文。改为临时文件 + ``os.replace``（同目录同卷即原子）：失败时主文件
+    保持原样，旧版也已在 .revisions 归档，作者可直接重试保存（R3-⑦）。
+    """
+    tmp = path.with_name(f"{path.name}.tmp")
+    try:
+        tmp.write_text(content, encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
 
 
 __all__ = [

@@ -81,7 +81,8 @@ function flushBuffers(s: UiState): UiState {
   return { ...s, items, assistantBuffer: "", thinkingBuffer: "" };
 }
 
-function reportUnhandled(s: UiState, type: string): UiState {
+/** 契约外事件上报（去重）；reducer 与 store（notice 帧）共用同一口子。 */
+export function reportUnhandled(s: UiState, type: string): UiState {
   return {
     ...s,
     unhandledEventTypes: s.unhandledEventTypes.includes(type)

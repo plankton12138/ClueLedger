@@ -134,6 +134,7 @@ def _make_queue(
     session: FakeLoopSession | None = None,
     *,
     debounce: float = 0.01,
+    retry: float = 0.01,
 ) -> tuple[ReconcileQueue, FakeLoopSession, RunKindGuard]:
     run_kind = RunKindGuard()
     session = session if session is not None else FakeLoopSession(run_kind)
@@ -143,6 +144,7 @@ def _make_queue(
         workspace=workspace,
         run_kind=run_kind,
         debounce_seconds=debounce,
+        retry_interval=retry,
     )
     return queue, session, run_kind
 
@@ -196,6 +198,43 @@ async def test_busy_session_defers_until_agent_end(tmp_path: Path) -> None:
 
     assert len(session.prompts) == 1
     assert "[修改] 段1：新" in session.prompts[0]
+
+
+@pytest.mark.anyio
+async def test_pump_retries_when_agent_end_lands_while_still_busy(tmp_path: Path) -> None:
+    """R3-⑤：agent_end 在置闲前投递（真实 harness 时序）时，泵等闲重试。
+
+    仅有 agent_end 一次起泵是不够的——泵可能正是在 agent_end 之后才被调度，
+    彼时 is_running 仍为真，此后不再有任何事件。这里就让 agent_end 在置忙状态
+    下投递、且之后不再发任何事件，验证泵会自行等闲并跑完。
+    """
+    queue, session, _ = _make_queue(tmp_path)
+    session._running = True  # 模拟用户写作流进行中
+    await queue.enqueue("ch03", [_hunk("modified", "旧", "新", 1, 1)])
+    await asyncio.sleep(0.03)
+
+    # agent_end 投递时仍置忙（对齐 harness finally 时序：生成器耗尽才置闲）
+    await session.emit(AgentEndEvent(messages=[]))
+    await asyncio.sleep(0.03)
+    assert session.prompts == []  # 此刻仍忙，让位
+
+    session._running = False  # 写作流结束：此后不会再有任何事件
+    await asyncio.sleep(0.06)
+
+    assert len(session.prompts) == 1  # 等闲重试补跑，队列未停滞
+    assert "[修改] 段1：新" in session.prompts[0]
+
+
+@pytest.mark.anyio
+async def test_resync_cancels_pending_debounce(tmp_path: Path) -> None:
+    """R3-⑥：手动重跑取消同章 debounce，同一修订不被对账两遍。"""
+    queue, session, _ = _make_queue(tmp_path, debounce=0.05)
+
+    await queue.enqueue("ch03", [_hunk("modified", "旧", "新", 1, 1)])
+    assert await queue.resync("ch03") is True  # debounce 生效前手动重跑
+    await asyncio.sleep(0.12)  # 超过 debounce 窗口
+
+    assert len(session.prompts) == 1  # 定时器已被取消，不追加第二轮
 
 
 @pytest.mark.anyio

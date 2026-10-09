@@ -75,16 +75,19 @@ class ReconcileQueue:
         run_kind: RunKindGuard,
         *,
         debounce_seconds: float = 3.0,
+        retry_interval: float = 0.05,
     ) -> None:
         self._session = session
         self._workspace = workspace
         self._run_kind = run_kind
         self._debounce_seconds = debounce_seconds
+        self._retry_interval = retry_interval
         self._pending: dict[str, ReconcileRequest] = {}
         self._timers: dict[str, asyncio.Task[None]] = {}
         self._ready: deque[ReconcileRequest] = deque()
         self._last: dict[str, ReconcileRequest] = {}
         self._pump_task: asyncio.Task[None] | None = None
+        self._retry_task: asyncio.Task[None] | None = None
         self._listeners: list[NoticeListener] = []
         # 运行期计数：bible_* 工具成功调用数（sync_end.updates 的来源）
         self._in_run = False
@@ -120,10 +123,18 @@ class ReconcileQueue:
         )
 
     async def resync(self, chapter_id: str) -> bool:
-        """手动重跑（对账失败重试 / 「同步上下文」按钮）：复用最近一次保存的差异。"""
+        """手动重跑（对账失败重试 / 「同步上下文」按钮）：复用最近一次保存的差异。
+
+        先取消同章 debounce 定时器并清 `_pending`（R3-⑥）：否则几秒前刚保存的
+        修订会经定时器再入队一次，同一差异被对账两遍、账本被动重复校正。
+        """
         request = self._last.get(chapter_id)
         if request is None:
             return False
+        timer = self._timers.pop(chapter_id, None)
+        if timer is not None:
+            timer.cancel()
+        self._pending.pop(chapter_id, None)
         self._ready.append(request)
         self._kick()
         return True
@@ -131,6 +142,9 @@ class ReconcileQueue:
     def close(self) -> None:
         """会话废弃时解绑事件订阅（registry 生命周期钩子，当前测试直接调）。"""
         self._unsubscribe()
+        if self._retry_task is not None:
+            self._retry_task.cancel()
+            self._retry_task = None
 
     # --- 内部：事件面 ---
 
@@ -156,13 +170,29 @@ class ReconcileQueue:
     def _kick(self) -> None:
         if self._pump_task is None or self._pump_task.done():
             self._pump_task = asyncio.create_task(self._pump())
-            self._pump_task.add_done_callback(self._log_pump_crash)
+            self._pump_task.add_done_callback(self._log_crash("对账泵"))
 
     async def _pump(self) -> None:
         while self._ready:
             if self._session.is_running:
-                return  # 用户对话优先：让位，等下一次 agent_end 再起泵
+                # 让位：请求留在队列里不丢。不能只依赖「下一次 agent_end」再起泵
+                # ——agent_end 可能正是在本泵被调度之前投递的（彼时 is_running 仍
+                # 为真），此后不再有任何事件，队列会永久停滞（R3-⑤）。会话协议
+                # 没有「运行结束」信号，只能轮询等闲：一次布尔判断的开销可忽略，
+                # 且请求不丢、无重复提交。
+                self._schedule_retry()
+                return
             await self._run_one(self._ready.popleft())
+
+    def _schedule_retry(self) -> None:
+        if self._retry_task is None or self._retry_task.done():
+            self._retry_task = asyncio.create_task(self._retry_when_idle())
+            self._retry_task.add_done_callback(self._log_crash("对账等闲重试"))
+
+    async def _retry_when_idle(self) -> None:
+        while self._session.is_running:
+            await asyncio.sleep(self._retry_interval)
+        self._kick()
 
     async def _debounce_fire(self, chapter_id: str) -> None:
         await asyncio.sleep(self._debounce_seconds)
@@ -221,13 +251,17 @@ class ReconcileQueue:
                 await result
 
     @staticmethod
-    def _log_pump_crash(task: asyncio.Task[None]) -> None:
-        if task.cancelled():
-            return
-        exc = task.exception()
-        if exc is not None:
-            # 泵是 fire-and-forget 任务：异常必须显式暴露，不静默吞
-            print(f"[reconcile] 对账泵异常退出：{exc}", file=sys.stderr)
+    def _log_crash(label: str) -> Callable[[asyncio.Task[None]], None]:
+        """fire-and-forget 任务的异常出口：必须显式暴露，不静默吞。"""
+
+        def log(task: asyncio.Task[None]) -> None:
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc is not None:
+                print(f"[reconcile] {label}异常退出：{exc}", file=sys.stderr)
+
+        return log
 
 
 __all__ = [

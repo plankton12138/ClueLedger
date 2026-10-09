@@ -136,6 +136,12 @@ describe("manuscript 切片（P5 T1 + T2 revision）", () => {
     expect(useChatStore.getState().manuscript.error).toBeNull();
   });
 
+  it("setManuscriptError 不受 id 竞态守卫影响：未选章时的列表错误也能显示（R3-③）", () => {
+    useChatStore.setState({ manuscript: initialManuscript });
+    useChatStore.getState().setManuscriptError("章节列表读取失败：HTTP 500");
+    expect(useChatStore.getState().manuscript.error).toBe("章节列表读取失败：HTTP 500");
+  });
+
   it("工作区切换（setSlug 到新 slug）→ manuscript 整体重置（草稿/章节不残留）", () => {
     useChatStore.setState({ slug: "story-a" });
     useChatStore.setState({
@@ -187,12 +193,12 @@ describe("manuscript 编辑状态机（P5 T5）", () => {
     expect(useChatStore.getState().manuscript.saveState).toBe("clean");
   });
 
-  it("saveStart → saving；applySaved → draft 成为 baseline、clean、进 diff 视图", () => {
+  it("saveStart → saving；applySaved → 提交文本成为 baseline、clean、进 diff 视图", () => {
     openChapter("ch03", "# 第3章\n\n原文。");
     useChatStore.getState().setDraft("# 第3章\n\n改后。");
     useChatStore.getState().saveStart();
     expect(useChatStore.getState().manuscript.saveState).toBe("saving");
-    useChatStore.getState().applySaved(4, HUNKS);
+    useChatStore.getState().applySaved(4, HUNKS, "# 第3章\n\n改后。");
     const ms = useChatStore.getState().manuscript;
     expect(ms.baseline).toBe("# 第3章\n\n改后。");
     expect(ms.revision).toBe(4);
@@ -201,9 +207,19 @@ describe("manuscript 编辑状态机（P5 T5）", () => {
     expect(ms.mode).toBe("diff");
   });
 
+  it("applySaved 的 baseline 是「提交给服务端的文本」而非当前 draft（R3-②）", () => {
+    openChapter("ch03", "# 第3章\n\n原文。");
+    useChatStore.getState().setDraft("# 第3章\n\n提交版。");
+    useChatStore.getState().saveStart();
+    // 模拟保存往返期间 draft 又被改（晚到的响应不得追认这段新输入）
+    useChatStore.getState().setDraft("# 第3章\n\n提交版。\n\n往返期新写的一段。");
+    useChatStore.getState().applySaved(2, HUNKS, "# 第3章\n\n提交版。");
+    expect(useChatStore.getState().manuscript.baseline).toBe("# 第3章\n\n提交版。");
+  });
+
   it("applySaved 空 diff → 不算变更，退回阅读（无变更正常结果，非错误）", () => {
     openChapter("ch03", "# 第3章\n\n原文。");
-    useChatStore.getState().applySaved(1, []);
+    useChatStore.getState().applySaved(1, [], "# 第3章\n\n改后。");
     const ms = useChatStore.getState().manuscript;
     expect(ms.diff).toBeNull();
     expect(ms.mode).toBe("read");
@@ -288,5 +304,17 @@ describe("applyNotice 对账迁移与同步卡片（P5 T5）", () => {
 
     useChatStore.getState().loadSnapshot(SNAP_STATE, []);
     expect(useChatStore.getState().syncCards).toHaveLength(0);
+  });
+
+  it("契约外 notice kind → 进 unhandledEventTypes，不静默吞（R3-④）", () => {
+    openChapter("ch03", "# 第3章\n\n原文。");
+    useChatStore.setState({ unhandledEventTypes: [] });
+    // 服务端协议演进出的新 kind：前端必须显式上报而非把 undefined 写进 syncState
+    useChatStore
+      .getState()
+      .applyNotice(notice({ kind: "sync_progress" as NoticeFrame["kind"] }));
+
+    expect(useChatStore.getState().unhandledEventTypes).toEqual(["notice:sync_progress"]);
+    expect(useChatStore.getState().manuscript.syncState).toBe("idle");
   });
 });

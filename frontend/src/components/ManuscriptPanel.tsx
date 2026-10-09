@@ -9,11 +9,12 @@
  * （与 BiblePanel 同一哲学：前端不跑业务逻辑）。
  */
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { DiffHunkWire } from "../api/rest";
 import { acquireEditMark, fetchChapter, fetchChapters, releaseEditMark, saveChapter } from "../api/rest";
 import { chapterNumber, countChars, parseChapterHeading, splitParagraphs } from "../state/chapter";
 import { inlineDiff } from "../state/diff";
+import { nextEditLock, type EditLockRef } from "../state/editLock";
 import { useChatStore, type ManuscriptMode } from "../state/store";
 
 const MODES: { key: ManuscriptMode; label: string }[] = [
@@ -85,10 +86,29 @@ export default function ManuscriptPanel({
   const chapterFailed = useChatStore((s) => s.chapterFailed);
   const setMode = useChatStore((s) => s.setMode);
   const setDraft = useChatStore((s) => s.setDraft);
+  const setManuscriptError = useChatStore((s) => s.setManuscriptError);
   const saveStart = useChatStore((s) => s.saveStart);
   const saveFailed = useChatStore((s) => s.saveFailed);
   const applySaved = useChatStore((s) => s.applySaved);
   const discardDraft = useChatStore((s) => s.discardDraft);
+
+  // 作者草稿锁的持有者（纯逻辑在 state/editLock.ts，这里只负责发 REST）。
+  const lockRef = useRef<EditLockRef | null>(null);
+
+  // 加锁后若不归还，agent 对该章的 write_chapter 会被长期拒绝（R3-①）：
+  // 切章节、切工作区、退出编辑态（保存/放弃）都必须释放——纯函数决定该释放谁。
+  useEffect(() => {
+    const { release, held } = nextEditLock(lockRef.current, {
+      slug,
+      chapterId: ms.chapterId,
+      mode: ms.mode,
+    });
+    lockRef.current = held;
+    if (release !== null) {
+      // 释放是幂等的；失败无害（进程重启自然清空）——不打扰作者
+      void releaseEditMark(release.slug, release.chapterId).catch(() => undefined);
+    }
+  }, [slug, ms.chapterId, ms.mode]);
 
   // 章节目录拉取：已选章不在新目录（空工作区/外部删章）时自动选第一章；
   // 已选章仍存在则保留选中（重连 refetch 不得打断阅读位置）。
@@ -102,10 +122,12 @@ export default function ManuscriptPanel({
           selectChapter(ids[0] as string);
         }
       } catch (exc) {
-        chapterFailed(useChatStore.getState().manuscript.chapterId ?? "", String(exc));
+        // 列表拉取失败与「当前章正文」无关，不经 chapterFailed 的 id 竞态守卫
+        // （未选章时守卫会把错误整条吞掉，R3-③）
+        setManuscriptError(String(exc));
       }
     },
-    [setChapters, selectChapter, chapterFailed],
+    [setChapters, selectChapter, setManuscriptError],
   );
 
   useEffect(() => {
@@ -154,10 +176,13 @@ export default function ManuscriptPanel({
     if (current.draft === null || current.revision === null) return;
     if (current.saveState === "saving") return;
     if (current.draft === current.baseline) return; // 无变更：不发请求（空 diff 是合法 no-op）
+    const submitted = current.draft; // 提交快照：保存期间的新输入不得被当作已保存
     saveStart();
     try {
-      const saved = await saveChapter(slug, current.chapterId, current.draft, current.revision);
-      applySaved(saved.revision, saved.diff);
+      const saved = await saveChapter(slug, current.chapterId, submitted, current.revision);
+      // 服务端保存成功即释放草稿锁 → 本地引用同步清空，避免随后的 effect 重复释放
+      lockRef.current = null;
+      applySaved(saved.revision, saved.diff, submitted);
     } catch (exc) {
       saveFailed(exc instanceof Error ? exc.message : String(exc));
     }
@@ -165,6 +190,7 @@ export default function ManuscriptPanel({
 
   const doDiscard = useCallback(() => {
     const current = useChatStore.getState().manuscript;
+    lockRef.current = null; // 下面已显式释放，effect 不必再来一次
     discardDraft();
     if (slug !== null && current.chapterId !== null) {
       // 释放锁是幂等的；失败无害（进程重启自然清空）——不打扰作者
@@ -316,7 +342,9 @@ export default function ManuscriptPanel({
               <textarea
                 aria-label="正文编辑"
                 value={ms.draft ?? ""}
-                readOnly={editLocked}
+                // 保存往返期间冻结输入（R3-②）：否则这段新输入会被晚到的保存响应
+                // 追认为已落盘（saveState 转 clean 而内容其实没提交过）
+                readOnly={editLocked || ms.saveState === "saving"}
                 onChange={(e) => setDraft(e.target.value)}
                 spellCheck={false}
                 className="min-h-[380px] w-full resize-y whitespace-pre-wrap border-0 bg-transparent font-serif text-[15px] leading-[2.0] text-parchment-ink outline-none"

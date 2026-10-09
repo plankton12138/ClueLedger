@@ -402,7 +402,8 @@ def create_rest_router(*, registry: WorkspaceRegistry) -> APIRouter:
                 status_code=500,
                 detail=(
                     f"章节 {chapter_id} 保存失败：文件系统错误 {exc}。"
-                    "主文件未受影响（归档先于写入）；修复后可直接重试保存。"
+                    "旧版已归档至 .revisions/；主文件未受影响"
+                    "（归档先于写入、覆盖为原子替换），修复后可直接重试保存。"
                 ),
             ) from exc
 
