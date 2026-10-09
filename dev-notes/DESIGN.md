@@ -264,7 +264,7 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 | **P3 Web 化** | FastAPI WebSocket 桥 + React 前端（对话流 + Bible 面板） | 浏览器完成 P1 同样流程；事件流逐条渲染 |
 | **P4 实用化** | 会话持久化（session.jsonl）+ 正文读回（`read_chapter`/`list_chapters`）+ 多工作区（WorkspaceRegistry + slug 路由）。2026-10-09 完成，见 [phase-04-usability.md](phase-04-usability.md) | 杀进程重启会话恢复；CLI 重进续聊；双工作区隔离 |
 | **P5 正文中心创作台** | 布局反转（三栏创作台，正文居中）+ 作者受管写端点（PUT + `.revisions` 归档 + 乐观并发）+ write_guard 人机互斥 + 对账同步管线（一处修订补齐账本与会话记忆两级上下文）。2026-10-09 完成，见 [phase-05-manuscript-center.md](phase-05-manuscript-center.md) | 手改正文 → 保存 → 自动对账；agent 写作中正文只读；人机互斥 |
-| **P6 基础设施** | 模型接入设置（服务级 config.yaml 多 provider 档案 + 同档案热切模型/跨档案重建会话 + 模型列表发现）+ 前端可用性（可调侧栏/伏笔账本表格化/角色小传/关系图/数据概览统计卡/全局搜索）+ 事件流持久化与历史查询（events.jsonl）+ 工作区导出 + ErrorBoundary。计划见 [phase-06-infra-plan.md](phase-06-infra-plan.md)；写作语言设置为本阶段先行完成的前置项 | 设置页换模型下轮生效；重启后事件流可回溯；侧栏可调且无重叠 |
+| **P6 基础设施** | 模型接入设置（服务级 config.yaml 多 provider 档案 + 同档案热切模型/跨档案重建会话 + 模型列表发现）+ 前端可用性（可调侧栏/伏笔账本表格化/角色小传/关系图/数据概览统计卡/全局搜索）+ 事件流持久化与历史查询（events.jsonl）+ 工作区导出 + ErrorBoundary。2026-10-09 完成，见 [phase-06-infra.md](phase-06-infra.md)；计划见 [phase-06-infra-plan.md](phase-06-infra-plan.md)；写作语言设置为本阶段先行完成的前置项 | 设置页换模型下轮生效；重启后事件流可回溯；侧栏可调且无重叠 |
 | **P7 RAG** | ingestion pipeline + `style_search`/`style_profile` + 语料管理页（原 P6，顺延） | 上传阿婆作品集 → 写作时可检索、文风统计档案生效 |
 | **P8 审计员** | 独立审计 harness + `foreshadow_audit` + 对账指标 + 前端审计报告视图（原 P7，顺延） | 每章自动生成审计 JSON |
 | **P9 评测与打磨** | eval harness（Level 3/4/5）+ golden set + 章节阅读器增强 + 导出打磨（原 P8，顺延；zip 导出已在 P6 先行落地） | 一份完整的自动评测报告 |
