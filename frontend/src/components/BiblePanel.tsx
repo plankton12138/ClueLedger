@@ -175,18 +175,24 @@ export default function BiblePanel() {
             <tbody>
               {ledger.entities.map((entity, i) => (
                 <tr key={i} className="border-b border-line/40 align-top text-paper/80">
-                  {columns.map((c) => (
-                    <td key={c.key} className="px-1.5 py-1.5">
-                      {active === "foreshadow" && c.key === "name" && (
-                        <span
-                          className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${foreshadowDot(
-                            entity["status"],
-                          )}`}
-                        />
-                      )}
-                      {cellText(entity[c.key])}
-                    </td>
-                  ))}
+                  {columns.map((c) => {
+                    const text = cellText(entity[c.key]);
+                    return (
+                      <td key={c.key} className="px-1.5 py-1.5">
+                        {active === "foreshadow" && c.key === "name" && (
+                          <span
+                            className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${foreshadowDot(
+                              entity["status"],
+                            )}`}
+                          />
+                        )}
+                        {/* 长内容截断（D6 布局不变量），悬停 title 看全文；容器 overflow-auto 兜底。 */}
+                        <span className="inline-block max-w-[9rem] truncate align-middle" title={text}>
+                          {text}
+                        </span>
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>

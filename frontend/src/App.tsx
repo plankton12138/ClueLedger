@@ -1,9 +1,9 @@
 /**
- * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转，P5 T6 事件流一级入口）：
- * 顶部导航切主视图——创作台（左主编对话可折叠 + 中正文羊皮纸 + 右故事账本）/
- * 事件流（EventStreamView 占满主区）；语料库·审计中心置灰预留。工作区语义（计划 D5）：
- * 切换 = socket 重连 ws/{slug} + REST 前缀换 slug，不整页刷新；选中 slug 经 ?w=
- * 记入地址（replaceState），刷新后不丢。
+ * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转，P5 T6 事件流一级入口，P6 T6 可调侧栏）：
+ * 顶部导航切主视图——创作台（左主编对话可折叠可拖宽 + 中正文羊皮纸 + 右故事账本可拖宽，
+ * 窄屏账本走抽屉覆盖层）/ 事件流（EventStreamView 占满主区）；语料库·审计中心置灰预留。
+ * 工作区语义（计划 D5）：切换 = socket 重连 ws/{slug} + REST 前缀换 slug，不整页刷新；
+ * 选中 slug 经 ?w= 记入地址（replaceState），刷新后不丢。
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -14,6 +14,7 @@ import Composer from "./components/Composer";
 import EventStreamView from "./components/EventStreamView";
 import ManuscriptPanel from "./components/ManuscriptPanel";
 import SettingsPanel from "./components/SettingsPanel";
+import Splitter, { loadStoredWidth } from "./components/Splitter";
 import type { CommandType } from "./api/types";
 import type { ConnectionStatus } from "./api/socket";
 import { useChatStore } from "./state/store";
@@ -47,6 +48,12 @@ function switchTo(slug: string): void {
   url.searchParams.set("w", slug);
   history.replaceState(null, "", url);
 }
+
+/** 侧栏宽度常量（P6 T6，D6）：默认值 + localStorage key 按面板命名。 */
+const CHAT_DEFAULT_WIDTH = 300;
+const BIBLE_DEFAULT_WIDTH = 340;
+const CHAT_WIDTH_KEY = "hastings.panel.chatWidth";
+const BIBLE_WIDTH_KEY = "hastings.panel.bibleWidth";
 
 /** 拉工作区列表并初始化选择：?w= 优先，其次第一个；空列表留给引导页。 */
 async function bootWorkspaces(): Promise<void> {
@@ -119,6 +126,14 @@ export default function App() {
   const [view, setView] = useState<"studio" | "events" | "settings">("studio");
   const [showCreate, setShowCreate] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
+  // 可调侧栏（P6 T6）：宽度惰性读档（损坏回落默认），窄屏账本走抽屉覆盖层。
+  const [chatWidth, setChatWidth] = useState(() =>
+    loadStoredWidth(CHAT_WIDTH_KEY, CHAT_DEFAULT_WIDTH),
+  );
+  const [bibleWidth, setBibleWidth] = useState(() =>
+    loadStoredWidth(BIBLE_WIDTH_KEY, BIBLE_DEFAULT_WIDTH),
+  );
+  const [bibleDrawerOpen, setBibleDrawerOpen] = useState(false);
 
   // 启动：拉工作区列表并恢复/选择工作区（失败走顶部错误条，可重试）。
   useEffect(() => {
@@ -211,6 +226,13 @@ export default function App() {
           })}
         </nav>
         <div className="ml-auto flex items-center gap-3 text-xs text-paper/60">
+          <button
+            type="button"
+            onClick={() => setBibleDrawerOpen(true)}
+            className="border border-line px-2 py-0.5 transition-colors hover:border-gold/50 xl:hidden"
+          >
+            ▤ 账本
+          </button>
           <select
             aria-label="工作区"
             value={slug ?? ""}
@@ -315,7 +337,7 @@ export default function App() {
           </div>
         </main>
       ) : (
-        <main className="flex min-h-0 flex-1">
+        <main className="relative flex min-h-0 flex-1">
           {chatCollapsed ? (
             <button
               type="button"
@@ -327,31 +349,80 @@ export default function App() {
               主编对话
             </button>
           ) : (
-            <aside className="relative flex w-[300px] flex-none flex-col border-r border-line bg-ink-soft/35">
-              <button
-                type="button"
-                onClick={() => setChatCollapsed(true)}
-                aria-label="折叠对话"
-                title="折叠对话"
-                className="absolute right-1.5 top-1.5 z-10 border border-line bg-ink px-1.5 py-0.5 text-[10px] text-paper/50 transition-colors hover:text-gold"
+            <>
+              <aside
+                className="relative flex flex-none flex-col bg-ink-soft/35"
+                style={{ width: chatWidth }}
               >
-                ‹
-              </button>
-              <section className="flex min-h-0 flex-1 flex-col">
-                <ChatStream onRetrySync={retrySync} />
-                <Composer
-                  sendCommand={(type: CommandType, message: string) =>
-                    sendCommand(type, message)
-                  }
-                  abort={() => sendCommand("abort")}
-                />
-              </section>
-            </aside>
+                <button
+                  type="button"
+                  onClick={() => setChatCollapsed(true)}
+                  aria-label="折叠对话"
+                  title="折叠对话"
+                  className="absolute right-1.5 top-1.5 z-10 border border-line bg-ink px-1.5 py-0.5 text-[10px] text-paper/50 transition-colors hover:text-gold"
+                >
+                  ‹
+                </button>
+                <section className="flex min-h-0 flex-1 flex-col">
+                  <ChatStream onRetrySync={retrySync} />
+                  <Composer
+                    sendCommand={(type: CommandType, message: string) =>
+                      sendCommand(type, message)
+                    }
+                    abort={() => sendCommand("abort")}
+                  />
+                </section>
+              </aside>
+              <Splitter
+                side="left"
+                width={chatWidth}
+                onWidthChange={setChatWidth}
+                defaultWidth={CHAT_DEFAULT_WIDTH}
+                storageKey={CHAT_WIDTH_KEY}
+              />
+            </>
           )}
           <ManuscriptPanel onSyncChapter={retrySync} />
-          <aside className="hidden w-[340px] flex-none flex-col overflow-hidden border-l border-line bg-ink-soft/35 lg:flex">
+          <Splitter
+            side="right"
+            width={bibleWidth}
+            onWidthChange={setBibleWidth}
+            defaultWidth={BIBLE_DEFAULT_WIDTH}
+            storageKey={BIBLE_WIDTH_KEY}
+            className="hidden xl:block"
+          />
+          <aside
+            className="hidden flex-none flex-col overflow-hidden bg-ink-soft/35 xl:flex"
+            style={{ width: bibleWidth }}
+          >
             <BiblePanel />
           </aside>
+          {/* 窄屏（<xl）账本抽屉覆盖层（D6）：信息密度高不整栏丢弃；定宽渲染，无 Splitter。 */}
+          {bibleDrawerOpen && (
+            <div className="fixed inset-0 z-40 xl:hidden">
+              <div
+                className="absolute inset-0 bg-ink/70"
+                onClick={() => setBibleDrawerOpen(false)}
+                aria-hidden="true"
+              />
+              <aside className="absolute inset-y-0 right-0 flex w-80 max-w-[85vw] flex-col border-l border-line bg-ink">
+                <div className="flex flex-none items-center justify-between border-b border-line px-3 py-2">
+                  <span className="text-xs tracking-widest text-gold-soft">故事账本</span>
+                  <button
+                    type="button"
+                    onClick={() => setBibleDrawerOpen(false)}
+                    aria-label="关闭账本"
+                    className="border border-line px-1.5 text-xs text-paper/60 transition-colors hover:text-gold"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1">
+                  <BiblePanel />
+                </div>
+              </aside>
+            </div>
+          )}
         </main>
       )}
     </div>

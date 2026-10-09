@@ -223,7 +223,7 @@ export default function ManuscriptPanel({
   const editLocked = running;
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col">
+    <section className="flex min-w-0 flex-1 flex-col xl:min-w-[320px]">
       <div className="flex flex-none items-center gap-3 border-b border-line bg-ink-soft/50 px-4 py-2">
         <select
           aria-label="章节"
