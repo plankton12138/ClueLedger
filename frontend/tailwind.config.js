@@ -16,6 +16,7 @@ export default {
         planted: theme.colors.planted,
         recovered: theme.colors.recovered,
         overdue: theme.colors.overdue,
+        violet: theme.colors.violet,
         parchment: theme.colors.parchment,
         "parchment-soft": theme.colors.parchmentSoft,
         "parchment-ink": theme.colors.parchmentInk,

@@ -7,7 +7,9 @@
 import { describe, expect, it } from "vitest";
 import type { EventFrame, NoticeFrame } from "./types";
 import {
+  avgToolLatencyMs,
   categorize,
+  formatLatencyMs,
   formatTs,
   indexedEvent,
   indexedNotice,
@@ -20,6 +22,16 @@ import {
 /** 历史记录。data 按真实落盘口径传入：agent 事件含 type，notice 不含。 */
 function record(seq: number, type: string, data: Record<string, unknown>): EventRecordWire {
   return { ts: "2026-10-09T00:00:00+00:00", seq, type, data };
+}
+
+/** 带自定义时间戳的历史行（平均延迟配对用）。 */
+function timedRow(
+  seq: number,
+  type: string,
+  iso: string,
+  data: Record<string, unknown>,
+): EventRecordWire {
+  return { ts: iso, seq, type, data };
 }
 
 describe("categorize", () => {
@@ -142,5 +154,77 @@ describe("formatTs", () => {
     const formatted = formatTs("2026-10-09T00:00:00+00:00");
     expect(formatted).toMatch(/^\d{2}:\d{2}:\d{2}$/);
     expect(formatTs("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("avgToolLatencyMs（P7 T4 计划 D8）", () => {
+  const start = (seq: number, id: string, iso: string): EventRecordWire =>
+    timedRow(seq, "tool_execution_start", iso, { type: "tool_execution_start", toolCallId: id });
+  const end = (seq: number, id: string, iso: string, isError = false): EventRecordWire =>
+    timedRow(seq, "tool_execution_end", iso, {
+      type: "tool_execution_end",
+      toolCallId: id,
+      isError,
+    });
+
+  it("同 toolCallId 的 start→end 帧对取时长均值", () => {
+    const rows = mergeEventRows(
+      [
+        start(1, "c1", "2026-10-09T00:00:00+00:00"),
+        end(2, "c1", "2026-10-09T00:00:01+00:00"), // 1000 ms
+        start(3, "c2", "2026-10-09T00:00:00+00:00"),
+        end(4, "c2", "2026-10-09T00:00:03+00:00"), // 3000 ms
+      ],
+      [],
+      [],
+    );
+    expect(avgToolLatencyMs(rows)).toBe(2000);
+  });
+
+  it("实时行（ts=null）与无帧对时不参与：返回 null（UI 显示「—」）", () => {
+    const live = [indexedEvent(0, { type: "tool_execution_start", toolCallId: "c1" } as EventFrame)];
+    expect(avgToolLatencyMs(mergeEventRows([], [], live))).toBeNull();
+    expect(avgToolLatencyMs([])).toBeNull();
+    // 只有 start 没有 end：无帧对
+    const onlyStart = mergeEventRows([start(1, "c1", "2026-10-09T00:00:00+00:00")], [], []);
+    expect(avgToolLatencyMs(onlyStart)).toBeNull();
+  });
+
+  it("toolCallId 缺失或时间戳非法的行跳过，不影响其余配对", () => {
+    const rows = mergeEventRows(
+      [
+        timedRow(1, "tool_execution_start", "2026-10-09T00:00:00+00:00", { type: "tool_execution_start" }),
+        end(2, "c1", "2026-10-09T00:00:02+00:00"), // 无 start：跳过
+        start(3, "c2", "2026-10-09T00:00:00+00:00"),
+        timedRow(4, "tool_execution_end", "bad-ts", { type: "tool_execution_end", toolCallId: "c2" }), // 非法 ts：跳过
+        start(5, "c3", "2026-10-09T00:00:00+00:00"),
+        end(6, "c3", "2026-10-09T00:00:01.500+00:00"), // 1500 ms
+      ],
+      [],
+      [],
+    );
+    expect(avgToolLatencyMs(rows)).toBe(1500);
+  });
+
+  it("isError 的 end 照常配对；end 早于 start 的畸形对不计入", () => {
+    const rows = mergeEventRows(
+      [
+        start(1, "c1", "2026-10-09T00:00:00+00:00"),
+        end(2, "c1", "2026-10-09T00:00:00.800+00:00", true), // 800 ms（失败工具也计延迟）
+        start(3, "c2", "2026-10-09T00:00:05+00:00"),
+        end(4, "c2", "2026-10-09T00:00:04+00:00"), // end < start：丢弃
+      ],
+      [],
+      [],
+    );
+    expect(avgToolLatencyMs(rows)).toBe(800);
+  });
+});
+
+describe("formatLatencyMs", () => {
+  it("≥1 s 显示秒（一位小数），否则毫秒取整", () => {
+    expect(formatLatencyMs(320)).toBe("320 ms");
+    expect(formatLatencyMs(1500)).toBe("1.5 s");
+    expect(formatLatencyMs(1234.6)).toBe("1.2 s");
   });
 });

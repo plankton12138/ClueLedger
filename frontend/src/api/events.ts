@@ -149,3 +149,39 @@ export function formatTs(ts: string): string {
   if (Number.isNaN(date.getTime())) return ts;
   return date.toLocaleTimeString("zh-CN", { hour12: false });
 }
+
+/**
+ * 平均工具延迟 ms（P7 T4，计划 D8）：可见行内 tool_execution_start → end
+ * 按 toolCallId 配对的时长均值。实时行 ts=null（账本镜像无服务端时间戳）
+ * 不参与配对——刷新后历史行补齐，无任何可配对帧时返回 null（UI 显示「—」）。
+ */
+export function avgToolLatencyMs(rows: EventRow[]): number | null {
+  const starts = new Map<string, number>();
+  let sum = 0;
+  let paired = 0;
+  for (const row of rows) {
+    if (row.ts === null) continue;
+    if (row.type !== "tool_execution_start" && row.type !== "tool_execution_end") continue;
+    const id = row.frame["toolCallId"];
+    if (typeof id !== "string") continue;
+    const at = Date.parse(row.ts);
+    if (Number.isNaN(at)) continue;
+    if (row.type === "tool_execution_start") {
+      starts.set(id, at);
+      continue;
+    }
+    const start = starts.get(id);
+    if (start === undefined) continue;
+    starts.delete(id);
+    if (at >= start) {
+      sum += at - start;
+      paired += 1;
+    }
+  }
+  return paired > 0 ? sum / paired : null;
+}
+
+/** 延迟文案：≥1 s 显示秒（一位小数），否则毫秒取整。 */
+export function formatLatencyMs(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`;
+}

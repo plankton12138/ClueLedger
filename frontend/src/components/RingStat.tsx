@@ -34,9 +34,17 @@ interface RingStatProps {
   label?: string;
   /** 填充弧的 Tailwind 色类（currentColor 机制）；默认账本回收绿。 */
   color?: string;
+  /** 环心文字覆写（P7 T4 状态环显示状态词）；默认百分比。 */
+  center?: string;
 }
 
-export default function RingStat({ rate, size = 36, label = "进度", color = "text-recovered" }: RingStatProps) {
+export default function RingStat({
+  rate,
+  size = 36,
+  label = "进度",
+  color = "text-recovered",
+  center,
+}: RingStatProps) {
   const pct = ringPct(rate);
   const r = (size * 14) / 36;
   const strokeWidth = (size * 3) / 36;
@@ -58,7 +66,7 @@ export default function RingStat({ rate, size = 36, label = "进度", color = "t
         transform={`rotate(-90 ${c} ${c})`}
       />
       <text x={c} y={c + strokeWidth} textAnchor="middle" fontSize={fontSize} className="fill-paper">
-        {pct}%
+        {center ?? `${pct}%`}
       </text>
     </svg>
   );

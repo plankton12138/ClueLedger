@@ -20,6 +20,10 @@ describe("Digital Noir 设计令牌", () => {
     expect(theme.colors.recovered).toBe("#C8A84D");
   });
 
+  it("P7 T4：事件流工具返回徽章 violet 令牌（计划 D8）", () => {
+    expect(theme.colors.violet).toBe("#8B7EC8");
+  });
+
   it("P5：parchment 系纸面令牌（暗色环境中的唯一浅色面）", () => {
     expect(theme.colors.parchment).toBe("#F2ECD9"); // 纸面底色
     expect(theme.colors.parchmentInk).toBe("#2B2417"); // 纸面墨色

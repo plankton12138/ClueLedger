@@ -1,9 +1,13 @@
 /**
- * 事件流页（P6 T5，计划 D5）：events.jsonl 历史（REST）+ WS 实时帧的账本镜像。
+ * 事件流页（P6 T5，计划 D5；P7 T4 对齐计划 D8）：events.jsonl 历史（REST）
+ * + WS 实时帧的账本镜像。
  *
- * - 左主区：时间 / 类型徽章 / 内容摘要，点击行展开完整 JSON；契约外类型红色
- *   高亮（可观测性是事件契约的一部分——未知事件显式上报，不静默吞）；
- * - 右侧栏「运行概览」：整账统计（total/counts 来自 REST）+ 连接/运行状态；
+ * - 左主区：时间 / 类型徽章 / 内容摘要，点击行展开完整 JSON。徽章五类配色：
+ *   消息开始/结束=蓝、工具执行=绿、工具返回=紫（violet）、审计/notice=金、
+ *   错误/契约外=红（可观测性是事件契约的一部分——未知事件显式上报，不静默吞）；
+ * - 右侧栏「运行概览」：会话状态环（连接/运行二态换色）+ 四指标卡
+ *   （事件总数/工具调用/平均延迟/错误数）；平均延迟 = 可见行内
+ *   tool_execution_start→end 帧对均值（api/events.ts avgToolLatencyMs 纯函数）；
  * - 合并边界：发起 fetch 前记录窗口下沿、响应落地时定格上沿；窗口内帧按
  *   指纹去重（可能与历史重叠），窗口后帧无条件追加（必然晚于服务端读盘）。
  *   规则实现在 api/events.ts mergeEventRows（纯函数，vitest 钉住）。
@@ -12,7 +16,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  avgToolLatencyMs,
   categorize,
+  formatLatencyMs,
   formatTs,
   indexedEvent,
   indexedNotice,
@@ -24,6 +30,7 @@ import {
 import { fetchEvents } from "../api/rest";
 import type { ConnectionStatus } from "../api/socket";
 import { useChatStore } from "../state/store";
+import RingStat from "./RingStat";
 
 const PAGE_SIZE = 200;
 
@@ -42,10 +49,21 @@ const STATUS_LABEL: Record<ConnectionStatus, string> = {
   closed: "已断开",
 };
 
+/** 状态环三态：运行绿满环 / 已连接蓝满环 / 连接中金半环 / 断开红空环。 */
+const STATUS_RING: Record<ConnectionStatus, { rate: number; color: string }> = {
+  connecting: { rate: 0.5, color: "text-gold-soft" },
+  open: { rate: 1, color: "text-planned" },
+  closed: { rate: 0, color: "text-overdue" },
+};
+
+/** 徽章五类配色（计划 D8）：按事件类型定位，isError 与契约外压到红色。 */
 function categoryBadge(type: string, frame: Record<string, unknown>): string {
   if (!isKnownEvent(type)) return "border-overdue bg-overdue/10 text-overdue";
   if (categorize(type, frame) === "error") return "border-overdue/60 text-overdue";
-  if (type === "notice") return "border-planned/60 text-planned";
+  if (type === "notice") return "border-gold/60 text-gold";
+  if (type === "message_start" || type === "message_end") return "border-planned/60 text-planned";
+  if (type === "tool_execution_end") return "border-violet/60 text-violet";
+  if (type.startsWith("tool_execution")) return "border-planted/60 text-planted";
   return "border-line text-gold-soft";
 }
 
@@ -147,6 +165,10 @@ export default function EventStreamView() {
     return filter === "all" ? merged : merged.filter((row) => categorize(row.type, row.frame) === filter);
     // 窗口 ref 的读值变化总伴随 setRecords/setState 触发重算，无需列入依赖
   }, [records, eventLog, noticeLog, filter]);
+
+  // 平均延迟按可见行派生（随过滤联动）：实时行无服务端时间戳不参与，
+  // 刷新后历史行补齐（计划 D8 的账本镜像口径）。
+  const latency = useMemo(() => avgToolLatencyMs(rows), [rows]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -260,43 +282,55 @@ export default function EventStreamView() {
           })}
         </div>
       </section>
-      <aside className="w-60 flex-none border-l border-line bg-ink-soft/35 px-4 py-3 text-xs leading-relaxed">
+      <aside className="w-60 flex-none overflow-hidden border-l border-line bg-ink-soft/35 px-4 py-3 text-xs leading-relaxed">
         <h3 className="mb-2 font-serif text-sm font-bold text-gold">运行概览</h3>
-        <dl className="space-y-1.5 text-paper/60">
-          <div className="flex justify-between gap-2">
-            <dt>事件总数</dt>
-            <dd className="font-mono text-paper">{total}</dd>
+        <div className="flex items-center gap-3">
+          <RingStat
+            rate={running && status === "open" ? 1 : STATUS_RING[status].rate}
+            size={48}
+            label="会话状态"
+            color={running && status === "open" ? "text-planted" : STATUS_RING[status].color}
+            center={running && status === "open" ? "运行中" : STATUS_LABEL[status]}
+          />
+          <div className="min-w-0">
+            <div className="text-paper/50">会话状态</div>
+            <div className="whitespace-nowrap text-paper">
+              {running && status === "open" ? "写作流运行中" : STATUS_LABEL[status]}
+            </div>
           </div>
-          <div className="flex justify-between gap-2">
-            <dt>工具调用</dt>
-            <dd className="font-mono text-paper">{counts["tool"] ?? 0}</dd>
-          </div>
-          <div className="flex justify-between gap-2">
-            <dt>错误</dt>
-            <dd className={`font-mono ${(counts["error"] ?? 0) > 0 ? "text-overdue" : "text-paper"}`}>
-              {counts["error"] ?? 0}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-2">
-            <dt>当前模型</dt>
-            <dd className="max-w-28 truncate font-mono text-paper" title={snapshot?.model}>
-              {snapshot?.model ?? "—"}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-2">
-            <dt>连接</dt>
-            <dd className="text-paper">{STATUS_LABEL[status]}</dd>
-          </div>
-          <div className="flex justify-between gap-2">
-            <dt>写作流</dt>
-            <dd className={running ? "text-planned" : "text-paper"}>{running ? "运行中" : "空闲"}</dd>
-          </div>
-        </dl>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <MetricCard label="事件总数" value={total} />
+          <MetricCard label="工具调用" value={counts["tool"] ?? 0} />
+          <MetricCard label="平均延迟" value={latency === null ? "—" : formatLatencyMs(latency)} />
+          <MetricCard
+            label="错误数"
+            value={counts["error"] ?? 0}
+            tone={(counts["error"] ?? 0) > 0 ? "text-overdue" : "text-paper"}
+          />
+        </div>
+        <div className="mt-2 flex justify-between gap-2 border-t border-line pt-2">
+          <span className="min-w-0 shrink-0 text-paper/50">当前模型</span>
+          <span className="min-w-0 truncate font-mono text-paper" title={snapshot?.model}>
+            {snapshot?.model ?? "—"}
+          </span>
+        </div>
         <p className="mt-3 border-t border-line pt-2 text-[10px] leading-relaxed text-paper/35">
           历史来自 events.jsonl（重启不丢）；实时帧在取数窗口后无缝追加。
-          「加载更早」按 seq 游标向上翻页。
+          「加载更早」按 seq 游标向上翻页。平均延迟按可见行的历史帧对计算，
+          实时帧刷新后补齐。
         </p>
       </aside>
+    </div>
+  );
+}
+
+/** 四指标卡（P7 T4 计划 D8）：标签 + 等宽值，压缩时 truncate 兜底。 */
+function MetricCard({ label, value, tone = "text-paper" }: { label: string; value: string | number; tone?: string }) {
+  return (
+    <div className="min-w-0 border border-line bg-ink-soft/60 px-2 py-1.5">
+      <div className="truncate whitespace-nowrap text-[10px] text-paper/40">{label}</div>
+      <div className={`truncate whitespace-nowrap font-mono text-sm ${tone}`}>{value}</div>
     </div>
   );
 }
