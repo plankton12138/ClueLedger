@@ -1,10 +1,13 @@
 /**
- * 对话流（P3 T8）：消息气泡、工具卡片（折叠单行摘要，计划 D8）、错误卡片、
- * 流式 buffer 实时区。数据全部来自 store，本组件不跑任何 Agent 逻辑。
+ * 对话流（P3 T8，P7 T3 工具卡片化）：消息气泡、工具卡片（头部=工具名+状态；
+ * 完成后直接展示 details 摘要行，展开看原始参数/结果——复用既有
+ * ToolExecutionStart/End 帧数据，零事件契约变更）、错误卡片、流式 buffer。
+ * 数据全部来自 store，本组件不跑任何 Agent 逻辑。
  */
 
 import { useEffect, useRef, useState } from "react";
 import type { ChatItem, ToolCardStatus } from "../state/reducer";
+import { toolDetailLines } from "../state/toolSummary";
 import { useChatStore } from "../state/store";
 import SyncCard from "./SyncCard";
 
@@ -12,6 +15,18 @@ const TOOL_STATUS_CLASS: Record<ToolCardStatus, string> = {
   running: "bg-planned",
   ok: "bg-planted",
   error: "bg-overdue",
+};
+
+const TOOL_STATUS_LABEL: Record<ToolCardStatus, string> = {
+  running: "运行中",
+  ok: "完成",
+  error: "失败",
+};
+
+const TOOL_STATUS_TEXT: Record<ToolCardStatus, string> = {
+  running: "text-planned",
+  ok: "text-planted",
+  error: "text-overdue",
 };
 
 function truncate(text: string, max = 120): string {
@@ -29,6 +44,8 @@ type ToolItem = Extract<ChatItem, { kind: "tool" }>;
 function ToolCard({ item }: { item: ToolItem }) {
   const [open, setOpen] = useState(false);
   const summary = firstLine(item.resultText) || truncate(JSON.stringify(item.args), 60);
+  // 完成后的 details 摘要行（D4）：不展开也能看到字段级结果；无 details 时不渲染。
+  const detailLines = item.status === "ok" ? toolDetailLines(item.resultDetails) : [];
   return (
     <div className="max-w-[90%] border border-line bg-ink-soft/60">
       <button
@@ -42,9 +59,32 @@ function ToolCard({ item }: { item: ToolItem }) {
           }`}
         />
         <span className="font-mono text-xs text-gold">{item.toolName}</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-paper/50">{summary}</span>
-        <span className="shrink-0 text-xs text-paper/30">{open ? "收起" : "展开"}</span>
+        <span className={`shrink-0 text-[10px] ${TOOL_STATUS_TEXT[item.status]}`}>
+          {TOOL_STATUS_LABEL[item.status]}
+        </span>
+        <span className="ml-auto shrink-0 text-xs text-paper/30">{open ? "收起" : "详情"}</span>
       </button>
+      {(item.status === "ok" || item.status === "error") && (
+        <div className="border-t border-line/60 px-3 py-1.5 text-xs">
+          {detailLines.length > 0 ? (
+            <ul className="space-y-0.5">
+              {detailLines.map((line) => (
+                <li key={line.label} className="flex gap-2">
+                  <span className="shrink-0 text-gold-soft">{line.label}</span>
+                  <span className="min-w-0 flex-1 break-all text-paper/70">{line.value}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={item.status === "error" ? "text-overdue" : "text-paper/50"}>
+              {summary || "（无文本结果）"}
+            </p>
+          )}
+        </div>
+      )}
+      {item.status === "running" && (
+        <p className="border-t border-line/60 px-3 py-1.5 text-xs text-paper/40">执行中…</p>
+      )}
       {open && (
         <div className="space-y-2 border-t border-line px-3 py-2 text-xs">
           <div>
@@ -78,7 +118,7 @@ function ItemView({ item }: { item: ChatItem }) {
     case "user":
       return (
         <div className="flex justify-end">
-          <div className="max-w-[85%] whitespace-pre-wrap border border-planned/40 bg-planned/10 px-4 py-2 text-sm text-paper">
+          <div className="max-w-[85%] whitespace-pre-wrap break-words border border-planned/40 bg-planned/10 px-4 py-2 text-sm text-paper">
             {item.text}
           </div>
         </div>
@@ -86,14 +126,14 @@ function ItemView({ item }: { item: ChatItem }) {
     case "assistant":
       return (
         <div className="max-w-[85%] border-l-2 border-gold bg-ink-soft px-4 py-2">
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-paper">{item.text}</p>
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-paper">{item.text}</p>
         </div>
       );
     case "thinking":
       return (
         <div className="max-w-[85%] border-l-2 border-line px-4 py-2">
           <p className="text-xs text-gold-soft/70">思路</p>
-          <p className="mt-1 whitespace-pre-wrap text-xs italic leading-relaxed text-paper/50">
+          <p className="mt-1 whitespace-pre-wrap break-words text-xs italic leading-relaxed text-paper/50">
             {item.text}
           </p>
         </div>
@@ -143,12 +183,12 @@ export default function ChatStream({
       {thinkingBuffer && (
         <div className="max-w-[85%] border-l-2 border-line px-4 py-2">
           <p className="text-xs text-gold-soft/70">思路（流式中）</p>
-          <p className="mt-1 whitespace-pre-wrap text-xs italic text-paper/50">{thinkingBuffer}</p>
+          <p className="mt-1 whitespace-pre-wrap break-words text-xs italic text-paper/50">{thinkingBuffer}</p>
         </div>
       )}
       {assistantBuffer && (
         <div className="max-w-[85%] border-l-2 border-gold bg-ink-soft px-4 py-2">
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-paper">
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-paper">
             {assistantBuffer}
             <span className="animate-pulse text-gold">▍</span>
           </p>

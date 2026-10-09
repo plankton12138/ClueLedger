@@ -20,6 +20,7 @@ import {
   type StoryStatsWire,
 } from "../api/rest";
 import { useChatStore } from "../state/store";
+import { clueFairness } from "../state/clueFairness";
 import RingStat from "./RingStat";
 
 /** 关系图（T10）懒加载：React Flow + d3-force 不进创作台首屏包。 */
@@ -311,6 +312,9 @@ export default function BiblePanel() {
 
   const ledger = ledgers[active];
   const columns = COLUMNS[active];
+  // 线索公平环（P7 T3，D4）：与审计中心（T8，D7）同口径——非红鲱鱼已呈现占比；
+  // 数据来自面板已加载的线索账本实体，零新端点。空账本/未加载 → null（显示「—」）。
+  const fairness = clueFairness(ledgers.clue.entities);
   // T8：风险按名 join stats 派生列表（后端算前端展示，D7）；筛选仅伏笔 Tab。
   const riskByName = new Map(
     (stats.data?.foreshadow_risks ?? []).map((r) => [r.name, r.risk]),
@@ -389,7 +393,7 @@ export default function BiblePanel() {
             charView === "graph" ? (
               <div className="flex min-h-0 flex-col">
                 <div className="flex min-h-0 flex-1">
-                  <div className="min-h-0 flex-1">
+                  <div className="min-h-0 min-w-0 flex-1">
                     <Suspense
                       fallback={
                         <p className="p-4 text-xs text-paper/40">关系图加载中…</p>
@@ -403,7 +407,7 @@ export default function BiblePanel() {
                     </Suspense>
                   </div>
                   {graphSelected !== null && (
-                    <aside className="w-56 flex-none overflow-auto border-l border-line px-3 py-2">
+                    <aside className="w-56 max-w-[65%] flex-none overflow-auto border-l border-line px-3 py-2">
                       {(() => {
                         const entity = ledger.entities.find(
                           (e) => String(e["name"]) === graphSelected,
@@ -449,20 +453,22 @@ export default function BiblePanel() {
                       }}
                       className="w-full text-left"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="text-paper">{name}</span>
-                        <span className="truncate text-[10px] text-paper/50">
+                      <div className="flex min-w-0 items-center gap-2">
+                        {/* 人名禁逐字换行（P7 拖拽审查）：overflow-hidden 使 min-width 归零，
+                            收缩时省略号收场而非中文竖排；身份列 flex-1 吃剩余宽度。 */}
+                        <span className="min-w-0 truncate text-paper">{name}</span>
+                        <span className="min-w-0 flex-1 truncate text-[10px] text-paper/50">
                           {String(c["identity"] ?? "")}
                         </span>
                         {(() => {
                           const arc = ARC_META[String(c["arc"] ?? "")];
                           return arc !== undefined ? (
-                            <span className={`border px-1 py-px text-[10px] ${arc.cls}`}>
+                            <span className={`shrink-0 border px-1 py-px text-[10px] ${arc.cls}`}>
                               {arc.label}
                             </span>
                           ) : null;
                         })()}
-                        <span className="ml-auto text-paper/40">{isOpen ? "▾" : "▸"}</span>
+                        <span className="ml-auto shrink-0 text-paper/40">{isOpen ? "▾" : "▸"}</span>
                       </div>
                     </button>
                     {isOpen && (
@@ -484,7 +490,7 @@ export default function BiblePanel() {
             <thead>
               <tr className="border-b border-line text-gold-soft">
                 {columns.map((c) => (
-                  <th key={c.key} className="px-1.5 py-1 font-normal">
+                  <th key={c.key} className="whitespace-nowrap px-1.5 py-1 font-normal">
                     {c.label}
                   </th>
                 ))}
@@ -534,7 +540,7 @@ export default function BiblePanel() {
           </table>
           ))}
       </div>
-      {/* 账本底部统计卡（P6 T7，D7）：伏笔回收率环 + 状态分布 + 逾期数 + 章节规模。 */}
+      {/* 账本底部概览卡（P6 T7 → P7 T3 升级）：伏笔回收环 + 线索公平环 + 状态分布 + 逾期风险行。 */}
       <div className="flex-none border-t border-line px-3 py-2">
         {stats.error ? (
           <p className="text-xs leading-relaxed text-overdue">{stats.error}</p>
@@ -543,14 +549,39 @@ export default function BiblePanel() {
             {stats.loading ? "统计读取中…" : "暂无统计数据"}
           </p>
         ) : (
-          <div className="flex items-center gap-4 text-xs">
-            <div className="flex items-center gap-1.5">
-              <RingStat rate={stats.data.foreshadow_recovery_rate} label="伏笔回收率" />
-              <div className="leading-tight">
-                <div className="text-gold-soft">伏笔回收</div>
-                <div className="text-paper/70">
-                  {stats.data.foreshadow_resolved}/{stats.data.foreshadow_total}
+          <div className="space-y-1.5 text-xs">
+            {/* 环块 shrink-0（P7 拖拽审查）：文字说明禁逐字换行；放不下整行换行而非竖排。 */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <div className="flex shrink-0 items-center gap-1.5">
+                <RingStat rate={stats.data.foreshadow_recovery_rate} label="伏笔回收率" />
+                <div className="whitespace-nowrap leading-tight">
+                  <div className="text-gold-soft">伏笔回收</div>
+                  <div className="text-paper/70">
+                    {stats.data.foreshadow_resolved}/{stats.data.foreshadow_total}
+                  </div>
                 </div>
+              </div>
+              {fairness === null ? (
+                <div className="shrink-0 whitespace-nowrap leading-tight" title="线索账本暂空或未加载">
+                  <div className="text-gold-soft/60">线索公平</div>
+                  <div className="text-paper/40">—</div>
+                </div>
+              ) : (
+                <div
+                  className="flex shrink-0 items-center gap-1.5"
+                  title="非红鲱鱼线索中已呈现占比（与审计中心同口径）"
+                >
+                  <RingStat rate={fairness.rate} label="线索公平性" color="text-gold" />
+                  <div className="whitespace-nowrap leading-tight">
+                    <div className="text-gold-soft">线索公平</div>
+                    <div className="text-paper/70">
+                      {fairness.presented}/{fairness.total}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="ml-auto whitespace-nowrap text-right leading-tight text-paper/50">
+                {stats.data.chapters} 章 · {stats.data.total_chars.toLocaleString("zh-CN")} 字
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -566,14 +597,17 @@ export default function BiblePanel() {
                 );
               })}
             </div>
-            <div className="ml-auto text-right leading-tight">
-              <div className={stats.data.overdue_foreshadows.length > 0 ? "text-overdue" : "text-paper/70"}>
-                逾期 {stats.data.overdue_foreshadows.length}
-              </div>
-              <div className="text-paper/50">
-                {stats.data.chapters} 章 · {stats.data.total_chars.toLocaleString("zh-CN")} 字
-              </div>
-            </div>
+            {stats.data.overdue_foreshadows.length > 0 ? (
+              <p
+                className="truncate text-overdue"
+                title={stats.data.overdue_foreshadows.map((f) => f.name).join("、")}
+              >
+                ⚠ 逾期 {stats.data.overdue_foreshadows.length}：
+                {stats.data.overdue_foreshadows.map((f) => f.name).join("、")}
+              </p>
+            ) : (
+              <p className="text-planted/80">✓ 无逾期伏笔</p>
+            )}
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 /**
- * 正文面板（P5 T1 阅读态 + T5 三态创作台，计划 D1/D2/D7）。
- * 正文是页面中心——羊皮纸承载，三态可切换：
+ * 正文面板（P5 T1 阅读态 + T5 三态创作台，计划 D1/D2/D7；P7 T3 纸面提取）。
+ * 正文是页面中心——羊皮纸（ChapterPaper 共享组件）承载，三态可切换：
  * - 阅读（设计稿 A）：首行缩进 / 首字下沉 + 章节切换 / 字数 / 上一章·下一章；
  * - 编辑（设计稿 B）：纯 textarea（不做富文本），dirty 徽标 + 显式保存（⌘S）/ 放弃；
  *   agent 写作中置只读并横幅提示（互斥的前端半边，服务端半边见 D4）；
@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { DiffHunkWire } from "../api/rest";
 import { acquireEditMark, fetchChapter, fetchChapters, releaseEditMark, saveChapter } from "../api/rest";
+import ChapterPaper from "./ChapterPaper";
 import { chapterNumber, countChars, parseChapterHeading, splitParagraphs } from "../state/chapter";
 import { inlineDiff } from "../state/diff";
 import { nextEditLock, type EditLockRef } from "../state/editLock";
@@ -325,29 +326,30 @@ export default function ManuscriptPanel({
         )}
 
         {parsed !== null && (
-          <article className="relative mx-auto w-full max-w-[680px] rounded bg-parchment px-[52px] pt-10 pb-7 text-parchment-ink shadow-[0_12px_40px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.4)]">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute left-[52px] right-[52px] top-[26px] h-px bg-gradient-to-r from-transparent via-parchment-line to-transparent"
-            />
-            {ms.mode === "edit" && (
-              <div className="mb-4 rounded border border-overdue/40 bg-overdue/10 px-3 py-1.5 text-center text-xs text-overdue">
-                {editLocked
-                  ? "✎ Agent 写作中 · 本章正文暂不可编辑（写作完成后自动解锁）"
-                  : "✎ 作者编辑中 · 本章对 Agent 写入已锁定（write_chapter 将被拒绝）"}
-              </div>
-            )}
-            <h2 className="text-center font-serif text-2xl font-bold tracking-[0.25em]">
-              {parsed.title !== null
+          <ChapterPaper
+            title={
+              parsed.title !== null
                 ? parsed.title
                 : ms.chapterId !== null
                   ? `第${chapterNumber(ms.chapterId)}章`
-                  : ""}
-            </h2>
-            <div aria-hidden className="mt-2.5 mb-6 text-center text-gold tracking-[0.6em]">
-              ❖ ─── ✦ ─── ❖
-            </div>
-
+                  : ""
+            }
+            chars={chars}
+            chapterNo={ms.chapterId !== null ? chapterNumber(ms.chapterId) : "—"}
+            total={ms.chapterIds.length}
+            onPrev={prev !== null ? () => selectChapter(prev) : undefined}
+            onNext={next !== null ? () => selectChapter(next) : undefined}
+            paragraphs={paragraphs}
+            banner={
+              ms.mode === "edit" ? (
+                <div className="mb-4 rounded border border-overdue/40 bg-overdue/10 px-3 py-1.5 text-center text-xs text-overdue">
+                  {editLocked
+                    ? "✎ Agent 写作中 · 本章正文暂不可编辑（写作完成后自动解锁）"
+                    : "✎ 作者编辑中 · 本章对 Agent 写入已锁定（write_chapter 将被拒绝）"}
+                </div>
+              ) : undefined
+            }
+          >
             {ms.mode === "edit" ? (
               <textarea
                 aria-label="正文编辑"
@@ -368,48 +370,8 @@ export default function ManuscriptPanel({
                   对账视图：{ms.diff.length} 处段落变更 · 段内高亮 = 字符级差异 · 右侧账本面板联动更新 →
                 </p>
               </div>
-            ) : (
-              <div className="text-justify font-serif text-[15px] leading-[2.0]">
-                {paragraphs.map((p, i) =>
-                  i === 0 ? (
-                    <p key={i} className="mb-[1.35em]">
-                      <span className="float-left pt-2 pr-2.5 font-serif text-[58px] font-bold leading-none">
-                        {p.slice(0, 1)}
-                      </span>
-                      {p.slice(1)}
-                    </p>
-                  ) : (
-                    <p key={i} className="mb-[1.35em] indent-[2em]">
-                      {p}
-                    </p>
-                  ),
-                )}
-              </div>
-            )}
-
-            <footer className="mt-auto flex items-center border-t border-parchment-line pt-4 text-xs text-parchment-mute">
-              <button
-                type="button"
-                disabled={prev === null}
-                onClick={() => prev !== null && selectChapter(prev)}
-                className="transition-colors hover:text-parchment-ink disabled:opacity-30"
-              >
-                ← 上一章
-              </button>
-              <span className="ml-auto text-parchment-ink">
-                <b className="font-semibold">{ms.chapterId !== null ? chapterNumber(ms.chapterId) : "—"}</b>{" "}
-                / {ms.chapterIds.length}
-              </span>
-              <button
-                type="button"
-                disabled={next === null}
-                onClick={() => next !== null && selectChapter(next)}
-                className="ml-auto transition-colors hover:text-parchment-ink disabled:opacity-30"
-              >
-                下一章 →
-              </button>
-            </footer>
-          </article>
+            ) : null}
+          </ChapterPaper>
         )}
       </div>
     </section>
