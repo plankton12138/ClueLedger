@@ -149,9 +149,7 @@ async def test_cancel_aborts_pending_tool_execution(workspace: StoryWorkspace) -
     # 取消接线生效：信号在工具执行前被检查，该工具以 abort 错误收场
     # （loop 语义：信号只在工具执行前检查，FakeProvider 不消费信号，故后续
     # 回合照常跑——会话层只验证 cancel() 确实到达了当前 run 的 signal）
-    last_tool_result = next(
-        m for m in reversed(session.messages) if m.role == "toolResult"
-    )
+    last_tool_result = next(m for m in reversed(session.messages) if m.role == "toolResult")
     assert last_tool_result.is_error is True
     assert "Operation aborted" in last_tool_result.text
 
