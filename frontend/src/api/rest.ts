@@ -712,6 +712,63 @@ export async function fetchStyleProfile(): Promise<StyleProfileWire> {
   return body as StyleProfileWire;
 }
 
+// ---------- 审计中心（P7 T8/T9，D7）：单章确定性审计报告 ----------
+
+/** 二元比率指标：count 语义随指标——回收数 / 公平呈现数。 */
+export interface AuditRatioWire {
+  rate: number;
+  count: number;
+  total: number;
+}
+
+/** 人物一致性（结构代理）：1 - 冲突数/时间线条目数；空时间线为 null。 */
+export interface AuditConsistencyWire {
+  rate: number;
+  conflicts: number;
+  entries: number;
+}
+
+/** 一条检查结果：message 三要素；anchor_* 喂「定位问题章节」。 */
+export interface AuditCheckWire {
+  rule: string;
+  severity: "error" | "warn";
+  message: string;
+  anchor_chapter: string | null;
+  anchor_name: string | null;
+}
+
+/** 单章审计报告（纯派生无新存储）；三指标是结构代理非语义判断。 */
+export interface AuditReportWire {
+  chapter_id: string;
+  foreshadow_recovery: AuditRatioWire;
+  clue_fairness: AuditRatioWire;
+  character_consistency: AuditConsistencyWire | null;
+  checks: AuditCheckWire[];
+}
+
+/** GET /api/{slug}/audit/{chapterId}：404（章不存在）/ 422（id 不合法/账本损坏）。 */
+export async function fetchAudit(slug: string, chapterId: string): Promise<AuditReportWire> {
+  const res = await fetch(`/api/${slug}/audit/${encodeURIComponent(chapterId)}`);
+  if (!res.ok) {
+    throw new Error(`审计报告读取失败（${chapterId}）：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const record = body as Record<string, unknown> | null;
+  if (
+    record === null ||
+    typeof record !== "object" ||
+    typeof record.chapter_id !== "string" ||
+    !Array.isArray(record.checks) ||
+    record.foreshadow_recovery === null ||
+    typeof record.foreshadow_recovery !== "object"
+  ) {
+    throw new Error(
+      `审计报告响应结构不符：期望 { chapter_id, checks, ... }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return body as AuditReportWire;
+}
+
 // ---------- D7 refetch 规则（纯函数，呈现策略而非业务校验） ----------
 
 /**

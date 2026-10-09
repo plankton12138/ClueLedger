@@ -16,6 +16,7 @@ import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
 import EventStreamView from "./components/EventStreamView";
 import ErrorBoundary from "./components/ErrorBoundary";
+import AuditPage from "./components/AuditPage";
 import CorpusPage from "./components/CorpusPage";
 import LedgerPage from "./components/LedgerPage";
 import ManuscriptPanel from "./components/ManuscriptPanel";
@@ -54,18 +55,6 @@ const NAV_ITEMS: Array<{ key: View; label: string }> = [
   { key: "events", label: "▤ 事件流" },
   { key: "settings", label: "⚙ 设置" },
 ];
-
-/** 阶段占位页（T7/T9/T5 转正前兜底）：合法空态，不报错不置灰。 */
-function ComingSoonPage({ title, note }: { title: string; note: string }) {
-  return (
-    <main className="flex flex-1 items-center justify-center border-t border-line">
-      <div className="max-w-md text-center">
-        <h2 className="font-serif text-2xl font-bold text-gold">{title}</h2>
-        <p className="mt-2 text-xs leading-relaxed text-paper/50">{note}</p>
-      </div>
-    </main>
-  );
-}
 
 /** 选中工作区写进 ?w=（replaceState 不触发导航），刷新后恢复选择。 */
 function switchTo(slug: string): void {
@@ -293,10 +282,9 @@ export default function App() {
           <CorpusPage />
         </ErrorBoundary>
       ) : view === "audit" ? (
-        <ComingSoonPage
-          title="审计中心"
-          note="确定性审计报告在本阶段后续任务转正（选章 → 三指标环 + 检查清单 + 定位问题章节）。"
-        />
+        <ErrorBoundary label="审计中心">
+          <AuditPage onSteer={(message) => sendCommand(running ? "steer" : "prompt", message)} />
+        </ErrorBoundary>
       ) : view === "ledger" ? (
         <ErrorBoundary label="账本全页">
           <LedgerPage onBack={() => setView("studio")} />
