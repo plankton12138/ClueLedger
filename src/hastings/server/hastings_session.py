@@ -10,11 +10,13 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from typing import TYPE_CHECKING
 
 from hastings.bible.store import StoryWorkspace
-from hastings.manuscript.write_guard import EditMarkRegistry
+from hastings.manuscript.diff import DiffHunk
+from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
+from hastings.server.reconcile import NoticeListener, ReconcileQueue
 from hastings.server.registry import SessionFactory
 from hastings.server.session import AgentBusyError, WritingSession
 from tau_agent.events import AgentEvent
@@ -37,6 +39,9 @@ class HastingsSession:
         harness: AgentHarness,
         workspace: StoryWorkspace,
         edit_marks: EditMarkRegistry | None = None,
+        run_kind: RunKindGuard | None = None,
+        *,
+        reconcile_debounce: float = 3.0,
     ) -> None:
         self._harness = harness
         self._workspace = workspace
@@ -44,17 +49,34 @@ class HastingsSession:
         # write_chapter（agent 侧守门）；REST 锁端点与 PUT 保存经本属性读写。
         # 直接构造（无实参）得到空注册表——CLI 等单 agent 场景锁永不触发。
         self._edit_marks = edit_marks if edit_marks is not None else EditMarkRegistry()
+        # 运行类别守卫（P5 T4，D4 末条）：from_workspace 把同一实例闭包进
+        # write_chapter——对账轮期间模型写正文被工具层拒绝。
+        self._run_kind = run_kind if run_kind is not None else RunKindGuard()
+        # 对账队列（P5 T4，D5）：订阅 harness 事件流等空闲，出队即以紧凑
+        # 消息 prompt 同一 harness——会话记忆/持久化/事件流零成本复用。
+        self._reconcile = ReconcileQueue(
+            session=self,
+            workspace=workspace,
+            run_kind=self._run_kind,
+            debounce_seconds=reconcile_debounce,
+        )
 
     @classmethod
     def from_workspace(
-        cls, workspace: StoryWorkspace, provider: ModelProvider, model: str
+        cls,
+        workspace: StoryWorkspace,
+        provider: ModelProvider,
+        model: str,
+        *,
+        reconcile_debounce: float = 3.0,
     ) -> HastingsSession:
         """按 CLI 同款方式装配工具集、system prompt 与 harness。"""
         from hastings.cli import create_writing_tools
         from hastings.prompts import build_system_prompt
 
         edit_marks = EditMarkRegistry()
-        tools = create_writing_tools(workspace, edit_marks=edit_marks)
+        run_kind = RunKindGuard()
+        tools = create_writing_tools(workspace, edit_marks=edit_marks, run_kind=run_kind)
         harness = AgentHarness(
             AgentHarnessConfig(
                 provider=provider,
@@ -63,7 +85,13 @@ class HastingsSession:
                 tools=tools,
             )
         )
-        return cls(harness=harness, workspace=workspace, edit_marks=edit_marks)
+        return cls(
+            harness=harness,
+            workspace=workspace,
+            edit_marks=edit_marks,
+            run_kind=run_kind,
+            reconcile_debounce=reconcile_debounce,
+        )
 
     @property
     def workspace(self) -> StoryWorkspace:
@@ -96,6 +124,16 @@ class HastingsSession:
     @property
     def edit_marks(self) -> EditMarkRegistry:
         return self._edit_marks
+
+    @property
+    def run_kind(self) -> RunKindGuard:
+        return self._run_kind
+
+    async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
+        await self._reconcile.enqueue(chapter_id, hunks)
+
+    def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
+        return self._reconcile.subscribe(listener)
 
     def prompt(self, content: str) -> AsyncIterator[AgentEvent]:
         if self._harness.is_running:

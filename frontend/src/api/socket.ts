@@ -11,9 +11,10 @@ import type {
   CommandFrame,
   CommandType,
   EventFrame,
+  NoticeFrame,
   ServerFrame,
 } from "./types";
-import { isResponseFrame } from "./types";
+import { isNoticeFrame, isResponseFrame } from "./types";
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 
@@ -28,6 +29,8 @@ export interface AgentStateSnapshot {
 export interface SocketCallbacks {
   onStatus?(status: ConnectionStatus): void;
   onEvent?(event: EventFrame): void;
+  /** 对账进度通知（P5 T4）：与 agent 事件分流，未注册时安静丢弃。 */
+  onNotice?(notice: NoticeFrame): void;
   /** get_state + get_messages 都到齐后回调一次（连接建立时自动拉取）。 */
   onSnapshot?(state: AgentStateSnapshot, messages: AgentMessageWire[]): void;
   /** 连接层错误（发送失败、响应超时、坏帧、快照结构不符）。 */
@@ -179,6 +182,10 @@ export class AgentSocket {
       frame = JSON.parse(text) as ServerFrame;
     } catch {
       this.callbacks.onError?.(`收到无法解析的帧：${text.slice(0, 200)}`);
+      return;
+    }
+    if (isNoticeFrame(frame)) {
+      this.callbacks.onNotice?.(frame);
       return;
     }
     if (!isResponseFrame(frame)) {

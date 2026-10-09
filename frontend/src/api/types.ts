@@ -338,14 +338,32 @@ export interface ResponseFrame {
   error?: string;
 }
 
+// ---------- 对账通知帧（P5 T4，hastings 协议层加法扩展，ws.py 同步） ----------
+
+export type NoticeKind = "sync_queued" | "sync_start" | "sync_end";
+
+/** 对账进度：保存成功后 queued → start → end（failed 时 UI 出重试）。 */
+export interface NoticeFrame {
+  type: "notice";
+  kind: NoticeKind;
+  chapter: string;
+  hunks: number;
+  updates: number;
+  status?: "done" | "failed";
+}
+
 /** 服务端 → 客户端事件帧。 */
 export type EventFrame = AgentEventFrame;
 
 /** 服务端 → 客户端所有帧的收窄前形态。 */
-export type ServerFrame = EventFrame | ResponseFrame;
+export type ServerFrame = EventFrame | ResponseFrame | NoticeFrame;
 
 export function isResponseFrame(frame: ServerFrame): frame is ResponseFrame {
   return frame.type === "response";
+}
+
+export function isNoticeFrame(frame: ServerFrame): frame is NoticeFrame {
+  return frame.type === "notice";
 }
 
 // ---------- 文本提取辅助（对应 messages.py 的 .text property） ----------

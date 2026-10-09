@@ -7,13 +7,18 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
-from typing import Protocol
+from collections.abc import AsyncIterator, Callable, Sequence
+from typing import TYPE_CHECKING, Protocol
 
+from hastings.manuscript.diff import DiffHunk
 from hastings.manuscript.write_guard import EditMarkRegistry
 from tau_agent.events import AgentEvent
 from tau_agent.harness import EventListener
 from tau_agent.messages import AgentMessage
+
+if TYPE_CHECKING:
+    # 运行时不导入——reconcile.py 反向依赖本模块的 AgentBusyError，防循环
+    from hastings.server.reconcile import NoticeListener
 
 
 class AgentBusyError(RuntimeError):
@@ -45,6 +50,14 @@ class WritingSession(Protocol):
     @property
     def edit_marks(self) -> EditMarkRegistry:
         """作者草稿锁注册表（P5 D4 人机互斥的共享状态，双侧守门读它）。"""
+        ...
+
+    async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
+        """保存成功后请求对账（P5 D5；空 hunks 为 no-op）。"""
+        ...
+
+    def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
+        """订阅对账进度通知（ws 层翻成 notice 帧），返回退订函数。"""
         ...
 
     def prompt(self, content: str) -> AsyncIterator[AgentEvent]:

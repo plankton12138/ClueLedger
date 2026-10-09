@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from hastings.bible.store import StoryWorkspace
-from hastings.manuscript.write_guard import EditMarkRegistry
+from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
 from hastings.tools.chapter_tools import create_chapter_tools
 from hastings.tools.errors import ToolInputError
 from tau_agent import AgentTool
@@ -249,3 +249,48 @@ async def test_other_chapters_not_blocked_by_mark(
     await write.execute("call-1", {"chapter": 4, "content": "第四章不受影响。"})
 
     assert (workspace.chapters_dir / "ch04.md").exists()
+
+
+# ---------- run_kind 守卫（P5 T4，D4 末条）：对账轮禁止写正文 ----------
+
+
+@pytest.mark.anyio
+async def test_write_blocked_during_reconcile_run(workspace: StoryWorkspace) -> None:
+    """对账运行中 write_chapter 被拒——硬约束在工具层，force 也无例外。"""
+    run_kind = RunKindGuard()
+    run_kind.begin("reconcile")
+    (write,) = create_chapter_tools(workspace, run_kind=run_kind)[:1]
+
+    with pytest.raises(ToolInputError) as exc_info:
+        await write.execute("call-1", {"chapter": 3, "content": "对账时偷改稿。", "force": True})
+
+    message = str(exc_info.value)
+    assert "对账运行进行中" in message  # 哪里错
+    assert "为什么错" in message  # 正文只经由作者的手或显式写作流变更
+    assert "怎样算对" in message  # 只落账，不写正文
+    assert not (workspace.chapters_dir / "ch03.md").exists()
+
+
+@pytest.mark.anyio
+async def test_write_allowed_again_after_reconcile_ends(workspace: StoryWorkspace) -> None:
+    """守卫生命周期：对账结束（end）后恢复可写；user 类别也不拦。"""
+    run_kind = RunKindGuard()
+    run_kind.begin("reconcile")
+    tools = create_chapter_tools(workspace, run_kind=run_kind)
+    run_kind.end()
+
+    await tools[0].execute("call-1", {"chapter": 3, "content": "对账已结束。", "force": True})
+
+    assert (workspace.chapters_dir / "ch03.md").exists()
+
+
+@pytest.mark.anyio
+async def test_user_run_kind_does_not_block_write(workspace: StoryWorkspace) -> None:
+    """run_kind="user"（普通写作流）不触发对账守门。"""
+    run_kind = RunKindGuard()
+    run_kind.begin("user")
+    (write,) = create_chapter_tools(workspace, run_kind=run_kind)[:1]
+
+    await write.execute("call-1", {"chapter": 3, "content": "正常写作流。"})
+
+    assert (workspace.chapters_dir / "ch03.md").exists()

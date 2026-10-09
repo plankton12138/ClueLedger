@@ -6,14 +6,16 @@ health 是全局探活：只报 status，不绑定具体工作区（工作区状
 /api/{slug}/state）。
 """
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from hastings.bible.store import StoryWorkspace
+from hastings.manuscript.diff import DiffHunk
 from hastings.manuscript.write_guard import EditMarkRegistry
 from hastings.server.app import create_app
+from hastings.server.reconcile import NoticeListener
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.session import AgentBusyError, WritingSession
 from tau_agent.events import AgentEvent
@@ -72,6 +74,13 @@ class StubSession:
         self._running = False
 
     def subscribe(self, listener: EventListener) -> Callable[[], None]:
+        del listener
+        return lambda: None
+
+    async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
+        del chapter_id, hunks
+
+    def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
         del listener
         return lambda: None
 

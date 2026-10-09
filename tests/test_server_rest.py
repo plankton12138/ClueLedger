@@ -10,6 +10,7 @@ PUT chapters/{id}（归档 + 锁 + 乐观并发）；POST /api/workspaces 只是
 """
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from hastings.bible.models import Character, Clue, TimelineEntry
 from hastings.bible.store import StoryWorkspace, save_character, save_ledger
+from hastings.manuscript.diff import DiffHunk
 from hastings.server.app import create_app
 from test_server_app import StubSession, stub_registry
 
@@ -462,3 +464,70 @@ def test_put_save_releases_edit_mark(workspace: StoryWorkspace) -> None:
 
     assert response.status_code == 200
     assert session.edit_marks.mark_of("ch03") is None
+
+
+# --- PUT 自动入队对账（P5 T4，D5）：sync 开关 + 空 diff no-op ---
+
+
+class _ReconcileRecordingSession(StubSession):
+    """记录 request_reconcile 调用的桩：钉住 PUT → 对账队列的接线。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[tuple[str, list[DiffHunk]]] = []
+
+    async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
+        self.requests.append((chapter_id, list(hunks)))
+
+
+def test_put_save_with_changes_enqueues_reconcile(workspace: StoryWorkspace) -> None:
+    _seed_chapter(workspace)
+    session = _ReconcileRecordingSession()
+    client = _client_with_session(workspace.root, session)
+
+    response = client.put(
+        f"/api/{SLUG}/chapters/ch03",
+        json={"content": "# 第3章\n\n火车在十点零七分抵达。\n", "baseRevision": 1},
+    )
+
+    assert response.status_code == 200
+    assert len(session.requests) == 1
+    chapter_id, hunks = session.requests[0]
+    assert chapter_id == "ch03"
+    assert [(h.kind, h.new_text) for h in hunks] == [("modified", "火车在十点零七分抵达。")]
+
+
+def test_put_save_sync_false_skips_reconcile(workspace: StoryWorkspace) -> None:
+    """sync=false 只存不同步：正文落盘、归档照常，对账队列不见请求。"""
+    _seed_chapter(workspace)
+    session = _ReconcileRecordingSession()
+    client = _client_with_session(workspace.root, session)
+
+    response = client.put(
+        f"/api/{SLUG}/chapters/ch03",
+        json={
+            "content": "# 第3章\n\n火车在十点零七分抵达。\n",
+            "baseRevision": 1,
+            "sync": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["revision"] == 2
+    assert session.requests == []
+
+
+def test_put_save_noop_diff_skips_reconcile(workspace: StoryWorkspace) -> None:
+    """空 diff 是合法 no-op：无可对账，不入队不通知。"""
+    _seed_chapter(workspace)
+    original = (workspace.chapters_dir / "ch03.md").read_text(encoding="utf-8")
+    session = _ReconcileRecordingSession()
+    client = _client_with_session(workspace.root, session)
+
+    response = client.put(
+        f"/api/{SLUG}/chapters/ch03",
+        json={"content": original, "baseRevision": 1},
+    )
+
+    assert response.status_code == 200
+    assert session.requests == []

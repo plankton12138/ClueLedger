@@ -409,6 +409,11 @@ def create_rest_router(*, registry: WorkspaceRegistry) -> APIRouter:
         # D4 锁生命周期：保存成功即释放作者草稿锁（agent 随后可写该章）
         session.edit_marks.release(chapter_id)
 
+        # D5：保存成功且实际有变更 → 自动入队对账（同章 debounce 合并）；
+        # sync=false 只存不同步；空 diff 已在上面走 no-op，不触发对账。
+        if body.sync and saved.hunks:
+            await session.request_reconcile(chapter_id, saved.hunks)
+
         return ChapterSavedResponse(
             id=chapter_id,
             revision=saved.revision,

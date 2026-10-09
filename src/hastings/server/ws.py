@@ -12,6 +12,11 @@
 连接在内，所有连接都只经 listener 收事件（多标签页天然同步）；命令分发侧
 仅 drain 消费 prompt 流以驱动 loop，不重复投递。写锁串行化每连接帧序。
 错误帧延续三要素：哪里错、为什么错、怎样算对。
+
+notice 帧（P5 T4，计划 D5）：对账进度的 hastings 协议层加法扩展——
+``{"type": "notice", "kind": "sync_queued|sync_start|sync_end", "chapter",
+"hunks", "updates", "status"?}``；tau 事件帧契约本身不动。所有连接同样经
+listener 订阅收到（前端凭 notice 把运行窗口标记为「对账中」并渲染同步卡片）。
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 
 from hastings.bible.store import InvalidEntityNameError
+from hastings.server.reconcile import ReconcileNotice
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.session import AgentBusyError, WritingSession
 from tau_agent.events import AgentEvent
@@ -67,10 +73,12 @@ class Connection:
         self._send_lock = asyncio.Lock()
         self._tasks: set[asyncio.Task[None]] = set()
         self._unsubscribe: Callable[[], None] | None = None
+        self._unsubscribe_notice: Callable[[], None] | None = None
 
     async def serve(self) -> None:
         """订阅事件流并循环处理命令帧，直到客户端断开（正常生命周期，非错误）。"""
         self._unsubscribe = self._session.subscribe(self._on_event)
+        self._unsubscribe_notice = self._session.subscribe_notice(self._on_notice)
         try:
             while True:
                 raw = await self._ws.receive_text()
@@ -80,17 +88,38 @@ class Connection:
         finally:
             if self._unsubscribe is not None:
                 self._unsubscribe()
+            if self._unsubscribe_notice is not None:
+                self._unsubscribe_notice()
 
     async def _on_event(self, event: AgentEvent) -> None:
         """listener：把事件帧推给本连接（所有连接统一走这条投递路径）。"""
+        await self._push(_wire(event))
+
+    async def _on_notice(self, notice: ReconcileNotice) -> None:
+        """listener：把对账进度翻成 notice 帧（hastings 协议层加法扩展）。"""
+        payload: dict[str, JSONValue] = {
+            "type": "notice",
+            "kind": notice.kind,
+            "chapter": notice.chapter,
+            "hunks": notice.hunks,
+            "updates": notice.updates,
+        }
+        if notice.status is not None:
+            payload["status"] = notice.status
+        await self._push(payload)
+
+    async def _push(self, frame: Mapping[str, JSONValue]) -> None:
         try:
-            await self._send(_wire(event))
+            await self._send(frame)
         except Exception as exc:  # noqa: BLE001 — 死连接不再投递
             # 可观测性兜底：投递失败打到服务端控制台，不静默吞
-            print(f"[ws] 事件投递失败，连接已退订：{exc}", file=sys.stderr)
+            print(f"[ws] 帧投递失败，连接已退订：{exc}", file=sys.stderr)
             if self._unsubscribe is not None:
                 self._unsubscribe()
                 self._unsubscribe = None
+            if self._unsubscribe_notice is not None:
+                self._unsubscribe_notice()
+                self._unsubscribe_notice = None
 
     async def _dispatch_text(self, raw: str) -> None:
         try:

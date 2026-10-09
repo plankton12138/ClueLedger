@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from typing import cast
 
 from hastings.bible.store import StoryWorkspace
-from hastings.manuscript.write_guard import EditMarkRegistry
+from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
 from hastings.tools.errors import ToolInputError
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
@@ -61,12 +61,16 @@ def _available_chapters(workspace: StoryWorkspace) -> list[int]:
 
 
 def create_chapter_tools(
-    workspace: StoryWorkspace, edit_marks: EditMarkRegistry | None = None
+    workspace: StoryWorkspace,
+    edit_marks: EditMarkRegistry | None = None,
+    run_kind: RunKindGuard | None = None,
 ) -> list[AgentTool]:
     """创建绑定 workspace 的 write_chapter / read_chapter / list_chapters 工具。
 
     edit_marks 是作者草稿锁注册表（P5 D4）：传入 session 持有的实例即接通
     双侧守门；缺省给空注册表（CLI 等单 agent 场景锁永不触发）。
+    run_kind 是运行类别守卫（P5 T4，D4 末条）：reconcile 期间 write_chapter
+    被拒——模型不得在对账时替作者改稿；缺省 None 即不设此守门。
     """
     marks = edit_marks if edit_marks is not None else EditMarkRegistry()
 
@@ -94,6 +98,17 @@ def create_chapter_tools(
                 f"第{chapter}章正在被作者手动编辑。"
                 "为什么错：覆盖会丢弃作者未保存的草稿。"
                 "怎样算对：等待作者保存或放弃后再写，或提示作者。"
+            )
+
+        # D4 末条守门：对账运行期间模型不得替作者改稿——正文只经由
+        # 作者的手或显式写作流变更；对账轮的职责只是让账本与正文一致。
+        if run_kind is not None and run_kind.kind == "reconcile":
+            raise ToolInputError(
+                f"对账运行进行中，第{chapter}章写入被拒。"
+                "为什么错：正文只经由作者的手或显式写作流变更；"
+                "对账轮的任务是让账本与正文一致，不是修改正文。"
+                "怎样算对：不调用 write_chapter，只处理对账消息列出的"
+                "变更段，用 bible_upsert 把叙事影响落进账本。"
             )
 
         workspace.ensure_dirs()
