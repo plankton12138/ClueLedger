@@ -17,11 +17,13 @@ key 只进不出：ProviderProfile.api_key 用 SecretStr（repr/日志不泄露�
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
+from tau_agent.provider import ModelProvider
 from tau_ai.env import DEFAULT_OPENAI_COMPATIBLE_BASE_URL, OpenAICompatibleConfig
 from tau_ai.openai_compatible import OpenAICompatibleProvider
 
@@ -151,10 +153,96 @@ def build_provider(profile: ProviderProfile) -> OpenAICompatibleProvider:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedProvider:
+    """一次会话装配所需的端点事实：生效档案名 + 生效模型 + provider 实例。"""
+
+    profile_name: str
+    model: str
+    provider: ModelProvider
+
+
+class ProviderBook:
+    """档案目录的运行时视图（P6 T2）：按名复用 provider 实例 + 解析生效档案。
+
+    与 ServerConfig 的分工：ServerConfig 是磁盘事实（Pydantic 校验），
+    ProviderBook 是进程事实（httpx client 按档案名缓存复用——跨档案来回切
+    不重复建 client，也不需要在重建会话时关闭被共享的 provider）。
+    """
+
+    def __init__(self, config: ServerConfig, *, boot_name: str, boot_model: str) -> None:
+        self._config = config
+        self._boot_name = boot_name
+        self._boot_model = boot_model
+        self._instances: dict[str, ModelProvider] = {}
+
+    @property
+    def config(self) -> ServerConfig:
+        return self._config
+
+    @property
+    def boot_name(self) -> str:
+        return self._boot_name
+
+    def profile(self, name: str) -> ProviderProfile | None:
+        """严格查找（PUT settings 校验用）；未知档案名返回 None。"""
+        for profile in self._config.providers:
+            if profile.name == name:
+                return profile
+        return None
+
+    def provider(self, name: str) -> ModelProvider:
+        """按名取 provider 实例（缓存复用）；未知档案名抛三要素错。"""
+        cached = self._instances.get(name)
+        if cached is not None:
+            return cached
+        profile = self.profile(name)
+        if profile is None:
+            msg = (
+                f"provider 档案不存在：{name!r}。"
+                "为什么错：档案名不在服务级 config.yaml 的 providers 列表中。"
+                "怎样算对：GET /api/providers 查看可用档案名。"
+            )
+            raise ProviderConfigError(msg)
+        instance = build_provider(profile)
+        self._instances[name] = instance
+        return instance
+
+    def resolve(self, profile_name: str, model_override: str) -> ResolvedProvider:
+        """装配路径的宽容解析：未知或缺 key 的档案回落引导档案（重启后仍可用）。
+
+        模型优先级：工作区设置 > 引导档案的引导模型（CLI --model / env）>
+        档案 default_model。引导模型对引导档案优先，使 ``--model`` 覆盖
+        config.yaml 里该档案的 default_model（CLI 优先于文件）。
+        """
+        profile = self.profile(profile_name)
+        if profile is None or not profile.available:
+            profile = self.profile(self._boot_name)
+        if profile is None:  # 引导档案也找不到（config.yaml 被改坏）
+            msg = (
+                f"引导档案不存在：{self._boot_name!r}。"
+                "为什么错：工作区设置的档案与服务级配置均无法解析出可用端点。"
+                "怎样算对：检查 config.yaml 的 providers 列表（或删除它回落 .env）。"
+            )
+            raise ProviderConfigError(msg)
+        model = model_override
+        if not model and profile.name == self._boot_name:
+            model = self._boot_model
+        if not model:
+            model = profile.default_model
+        return ResolvedProvider(
+            profile_name=profile.name,
+            model=model,
+            provider=self.provider(profile.name),
+        )
+
+
 __all__ = [
     "DEFAULT_CONFIG_PATH",
+    "ProviderBook",
     "ProviderConfigError",
     "ProviderProfile",
+    "ResolvedProvider",
     "ServerConfig",
     "build_provider",
     "env_fallback_config",

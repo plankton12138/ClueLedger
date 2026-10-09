@@ -1,6 +1,7 @@
-"""工作区级设置（P6 写作语言）。
+"""工作区级设置（P6 写作语言 + 模型端点档案）。
 
-一处事实源：可配置的写作语言预设与默认值、读写 stories/<slug>/settings.yaml。
+一处事实源：可配置的写作语言预设与默认值、provider 档案名与模型名，
+读写 stories/<slug>/settings.yaml。
 缺文件/空文件视为默认值（向后兼容 P1 起的旧工作区）；根节点非映射等结构性
 损坏抛 SettingsFormatError——与"空设置"（合法状态）区分开，属数据故障。
 
@@ -22,6 +23,9 @@ from hastings.bible.store import StoryWorkspace
 WRITING_LANGUAGES: Final[tuple[str, ...]] = ("中文", "English", "日本語")
 DEFAULT_WRITING_LANGUAGE: Final[str] = "中文"
 
+# 默认 provider 档案名（与 config.yaml 缺失时的 env 回落档案同名）。
+DEFAULT_PROVIDER_PROFILE: Final[str] = "default"
+
 
 class SettingsFormatError(ValueError):
     """settings.yaml 根节点非映射等结构性损坏。
@@ -32,9 +36,15 @@ class SettingsFormatError(ValueError):
 
 
 class StorySettings(BaseModel):
-    """一个工作区的可配置项（当前仅写作语言一项，不预留其它结构）。"""
+    """一个工作区的可配置项：写作语言 + 模型端点档案 + 模型名（P6 T2）。
+
+    ``provider_profile`` 指向服务级 config.yaml 的档案名（D1）；
+    ``model`` 为空表示取该档案的 default_model。
+    """
 
     writing_language: str = DEFAULT_WRITING_LANGUAGE
+    provider_profile: str = DEFAULT_PROVIDER_PROFILE
+    model: str = ""
 
 
 def load_settings(workspace: StoryWorkspace) -> StorySettings:
@@ -63,6 +73,7 @@ def save_settings(workspace: StoryWorkspace, settings: StorySettings) -> Path:
 
 
 __all__ = [
+    "DEFAULT_PROVIDER_PROFILE",
     "DEFAULT_WRITING_LANGUAGE",
     "WRITING_LANGUAGES",
     "SettingsFormatError",

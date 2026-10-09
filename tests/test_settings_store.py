@@ -48,7 +48,11 @@ def test_save_then_load_roundtrip(workspace: StoryWorkspace) -> None:
     assert workspace.settings_path.exists()
     assert load_settings(workspace).writing_language == "English"
     raw = yaml.safe_load(workspace.settings_path.read_text(encoding="utf-8"))
-    assert raw == {"writing_language": "English"}
+    assert raw == {
+        "writing_language": "English",
+        "provider_profile": "default",
+        "model": "",
+    }
 
 
 def test_load_settings_non_mapping_root_raises(workspace: StoryWorkspace) -> None:

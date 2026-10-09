@@ -39,6 +39,11 @@ class WritingSession(Protocol):
     def model(self) -> str: ...
 
     @property
+    def provider_profile(self) -> str:
+        """当前会话所用 provider 档案名（P6 T2；跨档案切换的判定依据）。"""
+        ...
+
+    @property
     def is_running(self) -> bool: ...
 
     @property
@@ -66,6 +71,10 @@ class WritingSession(Protocol):
 
     def apply_writing_language(self, language: str) -> None:
         """切换写作语言并立即重建 system prompt（P6 D3；下一轮对话即生效）。"""
+        ...
+
+    def apply_model(self, model: str) -> None:
+        """同档案热切换模型（P6 D2；下一轮对话即生效，不重建会话）。"""
         ...
 
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:

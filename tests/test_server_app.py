@@ -34,6 +34,7 @@ class StubSession:
 
     slug: str = DEFAULT_SLUG
     model: str = "fake"
+    provider_profile: str = "default"
 
     @property
     def is_running(self) -> bool:
@@ -44,6 +45,7 @@ class StubSession:
         self._edit_marks = EditMarkRegistry()
         self.resync_calls: list[str] = []
         self.applied_languages: list[str] = []
+        self.applied_models: list[str] = []
 
     @property
     def edit_marks(self) -> EditMarkRegistry:
@@ -90,6 +92,10 @@ class StubSession:
     def apply_writing_language(self, language: str) -> None:
         """记录切换调用（P6）；真实会话在此重建 system prompt。"""
         self.applied_languages.append(language)
+
+    def apply_model(self, model: str) -> None:
+        """记录同档案热切换调用（P6 T2）；真实会话在此赋值 config.model。"""
+        self.applied_models.append(model)
 
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
         del listener

@@ -68,6 +68,23 @@ class WorkspaceRegistry:
             self._sessions[slug] = await self._factory(workspace)
             return self._sessions[slug]
 
+    async def rebuild(self, slug: str) -> WritingSession:
+        """按当前工厂重新装配 slug 的会话（P6 T2 跨档案切换）。
+
+        工厂每次调用都从磁盘读取工作区设置并解析 provider 档案，因此「落盘
+        新档案 → 重跑工厂」即得到新 provider 的新会话（对话历史由工厂
+        restore_and_attach 从 session.jsonl 恢复）。provider 实例由
+        ProviderBook 按档案名缓存复用，此处只需丢弃旧会话引用、无需关闭。
+        调用方负责运行态检查（is_running → 409）——registry 不读会话状态。
+        """
+        workspace = StoryWorkspace(root=self._root, slug=slug)
+        lock = self._locks.setdefault(slug, asyncio.Lock())
+        async with lock:
+            self._sessions.pop(slug, None)
+            workspace.ensure_dirs()
+            self._sessions[slug] = await self._factory(workspace)
+            return self._sessions[slug]
+
     def create_workspace(self, slug: str) -> StoryWorkspace:
         """新建工作区并落盘建目录；撞名或 slug 不合法抛错。"""
         workspace = StoryWorkspace(root=self._root, slug=slug)

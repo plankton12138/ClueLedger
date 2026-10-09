@@ -13,6 +13,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,12 +21,27 @@ from hastings.bible.models import Character, Clue, TimelineEntry
 from hastings.bible.store import StoryWorkspace, save_character, save_ledger
 from hastings.manuscript.diff import DiffHunk
 from hastings.server.app import create_app
-from hastings.server.provider_config import ProviderProfile, ServerConfig
+from hastings.server.provider_config import ProviderBook, ProviderProfile, ServerConfig
+from hastings.server.registry import WorkspaceRegistry
 from hastings.settings import StorySettings, load_settings, save_settings
 from test_server_app import StubSession, stub_registry
 
 SLUG = "orient-express"
 BIBLE_TYPES = ("character", "clue", "foreshadow", "method", "timeline")
+
+# 确定性档案（模块级只读复用）：default 为引导档案，deepseek 供跨档案切换用。
+_DEFAULT_PROFILE = ProviderProfile(
+    name="default",
+    base_url="https://api.example.com/v1",
+    api_key="sk-default-12345678",
+    default_model="story-model",
+)
+_DEEPSEEK_PROFILE = ProviderProfile(
+    name="deepseek",
+    base_url="https://api.deepseek.com/v1",
+    api_key="sk-deepseek-12345678",
+    default_model="deepseek-chat",
+)
 
 
 @pytest.fixture
@@ -40,6 +56,14 @@ def workspace(root: Path) -> StoryWorkspace:
 
 def _client(root: Path) -> TestClient:
     return TestClient(create_app(stub_registry(root)))
+
+
+def _book(
+    *profiles: ProviderProfile, boot_name: str = "default", boot_model: str = ""
+) -> ProviderBook:
+    return ProviderBook(
+        ServerConfig(providers=list(profiles)), boot_name=boot_name, boot_model=boot_model
+    )
 
 
 # --- workspaces：列表 + 新建（唯一写 REST，资源创建） ---
@@ -101,7 +125,9 @@ def test_rest_providers_lists_profiles_with_masked_keys(root: Path) -> None:
             ProviderProfile(name="nokey", base_url="https://api.example.com/v1"),
         ]
     )
-    client = TestClient(create_app(stub_registry(root), server_config=server_config))
+    client = TestClient(
+        create_app(stub_registry(root), book=_book(*server_config.providers, boot_name="deepseek"))
+    )
 
     body = client.get("/api/providers").json()
 
@@ -141,6 +167,97 @@ def test_rest_providers_without_config_falls_back_to_env(
     assert [p["name"] for p in body["providers"]] == ["default"]
     assert body["providers"][0]["available"] is True
     assert body["providers"][0]["key_hint"] == "…3456"  # 尾 4 位
+
+
+# --- providers/{name}/models：模型发现（P6 T2，D3） ---
+
+
+def _models_client(
+    root: Path, transport: httpx.AsyncBaseTransport, *, book: ProviderBook
+) -> TestClient:
+    return TestClient(create_app(stub_registry(root), book=book, model_transport=transport))
+
+
+def test_provider_models_returns_candidate_list(root: Path) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"data": [{"id": "story-model"}, {"id": "deepseek-chat"}]})
+
+    client = _models_client(root, httpx.MockTransport(handler), book=_book(_DEEPSEEK_PROFILE))
+
+    body = client.get("/api/providers/deepseek/models").json()
+
+    assert body == {"models": ["story-model", "deepseek-chat"]}
+    # 直连标准的 {base_url}/models，并带上 Bearer key
+    assert seen[0].url.path == "/v1/models"
+    assert seen[0].headers["authorization"] == "Bearer sk-deepseek-12345678"
+
+
+def test_provider_models_unknown_profile_returns_404(root: Path) -> None:
+    client = _models_client(
+        root, httpx.MockTransport(lambda _: httpx.Response(200)), book=_book(_DEFAULT_PROFILE)
+    )
+
+    response = client.get("/api/providers/ghost/models")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "档案不存在" in detail
+    assert "为什么错" in detail
+    assert "怎样算对" in detail
+
+
+def test_provider_models_without_key_returns_422(root: Path) -> None:
+    client = _models_client(
+        root,
+        httpx.MockTransport(lambda _: httpx.Response(200)),
+        book=_book(ProviderProfile(name="nokey", base_url="https://api.example.com/v1")),
+    )
+
+    response = client.get("/api/providers/nokey/models")
+
+    assert response.status_code == 422
+    assert "缺少 API key" in response.json()["detail"]
+
+
+def test_provider_models_unauthorized_returns_422(root: Path) -> None:
+    client = _models_client(
+        root, httpx.MockTransport(lambda _: httpx.Response(401)), book=_book(_DEEPSEEK_PROFILE)
+    )
+
+    response = client.get("/api/providers/deepseek/models")
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "API key 无效" in detail
+    assert "为什么错" in detail
+
+
+def test_provider_models_empty_list_is_ok(root: Path) -> None:
+    """合法但空（端点无模型）：200 + 空列表，指引前端手动输入。"""
+    client = _models_client(
+        root,
+        httpx.MockTransport(lambda _: httpx.Response(200, json={"data": []})),
+        book=_book(_DEEPSEEK_PROFILE),
+    )
+
+    assert client.get("/api/providers/deepseek/models").json() == {"models": []}
+
+
+def test_provider_models_network_error_returns_502(root: Path) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom")
+
+    client = _models_client(root, httpx.MockTransport(handler), book=_book(_DEEPSEEK_PROFILE))
+
+    response = client.get("/api/providers/deepseek/models")
+
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert "环境故障" in detail
+    assert "手动输入" in detail  # 泄压阀：给替代路径
 
 
 # --- state：按 slug 解析 ---
@@ -592,26 +709,48 @@ def test_put_save_noop_diff_skips_reconcile(workspace: StoryWorkspace) -> None:
     assert session.requests == []
 
 
-# --- GET/PUT settings：写作语言（P6，D1/D3/D4） ---
+# --- GET/PUT settings：写作语言 + 模型切换（P6，D1/D2/D3/D4） ---
 
 
-def test_get_settings_defaults_to_chinese_for_legacy_workspace(
-    workspace: StoryWorkspace,
-) -> None:
-    """旧工作区无 settings.yaml → 默认中文（配置资源非正文写路径）。"""
-    response = _client(workspace.root).get(f"/api/{SLUG}/settings")
+def _settings_client(
+    root: Path,
+    *,
+    session: StubSession | None = None,
+    book: ProviderBook | None = None,
+) -> TestClient:
+    return TestClient(create_app(stub_registry(root, session=session), book=book))
+
+
+def test_get_settings_defaults_for_legacy_workspace(workspace: StoryWorkspace) -> None:
+    """旧工作区无 settings.yaml → 默认值；返回生效档案/模型（配置资源非正文写路径）。"""
+    response = _settings_client(workspace.root, book=_book(_DEFAULT_PROFILE)).get(
+        f"/api/{SLUG}/settings"
+    )
 
     assert response.status_code == 200
-    assert response.json() == {"writing_language": "中文"}
+    assert response.json() == {
+        "writing_language": "中文",
+        "provider_profile": "default",
+        "model": "story-model",  # 空 model 解析到档案 default_model
+    }
     assert not workspace.settings_path.exists()  # 读不落盘
 
 
 def test_get_settings_reads_saved_value(workspace: StoryWorkspace) -> None:
-    save_settings(workspace, StorySettings(writing_language="English"))
+    save_settings(
+        workspace,
+        StorySettings(writing_language="English", provider_profile="deepseek"),
+    )
 
-    response = _client(workspace.root).get(f"/api/{SLUG}/settings")
+    response = _settings_client(
+        workspace.root, book=_book(_DEFAULT_PROFILE, _DEEPSEEK_PROFILE)
+    ).get(f"/api/{SLUG}/settings")
 
-    assert response.json() == {"writing_language": "English"}
+    assert response.json() == {
+        "writing_language": "English",
+        "provider_profile": "deepseek",
+        "model": "deepseek-chat",
+    }
 
 
 def test_get_settings_corrupt_yaml_returns_422_with_path(
@@ -620,7 +759,9 @@ def test_get_settings_corrupt_yaml_returns_422_with_path(
     workspace.ensure_dirs()
     workspace.settings_path.write_text("- 只是列表\n", encoding="utf-8")
 
-    response = _client(workspace.root).get(f"/api/{SLUG}/settings")
+    response = _settings_client(workspace.root, book=_book(_DEFAULT_PROFILE)).get(
+        f"/api/{SLUG}/settings"
+    )
 
     assert response.status_code == 422
     detail = response.json()["detail"]
@@ -628,20 +769,99 @@ def test_get_settings_corrupt_yaml_returns_422_with_path(
     assert "怎样算对" in detail
 
 
-def test_put_settings_persists_and_hot_applies(workspace: StoryWorkspace) -> None:
-    """PUT 校验 → 落盘 → 会话热生效（apply_writing_language 被调用）。"""
+def test_put_settings_same_profile_hot_swaps_model(workspace: StoryWorkspace) -> None:
+    """同档案换模型：热切（apply_model），不重建会话；写作语言一并热生效。"""
     session = StubSession()
-    client = _client_with_session(workspace.root, session)
+    client = _settings_client(workspace.root, session=session, book=_book(_DEFAULT_PROFILE))
 
     response = client.put(
         f"/api/{SLUG}/settings",
-        json={"writing_language": "日本語"},
+        json={"writing_language": "日本語", "model": "story-model-2"},
     )
 
     assert response.status_code == 200
-    assert response.json() == {"writing_language": "日本語"}
-    assert load_settings(workspace).writing_language == "日本語"
+    assert response.json() == {
+        "writing_language": "日本語",
+        "provider_profile": "default",
+        "model": "story-model-2",
+    }
+    saved = load_settings(workspace)
+    assert saved.writing_language == "日本語"
+    assert saved.model == "story-model-2"
     assert session.applied_languages == ["日本語"]
+    assert session.applied_models == ["story-model-2"]
+
+
+def test_put_settings_partial_update_keeps_current_profile(workspace: StoryWorkspace) -> None:
+    """局部更新：只传 writing_language，档案/模型保持当前值（不回落空）。"""
+    save_settings(workspace, StorySettings(provider_profile="deepseek", model="deepseek-chat"))
+    session = StubSession()
+    session.provider_profile = "deepseek"
+    client = _settings_client(
+        workspace.root, session=session, book=_book(_DEFAULT_PROFILE, _DEEPSEEK_PROFILE)
+    )
+
+    response = client.put(f"/api/{SLUG}/settings", json={"writing_language": "English"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "writing_language": "English",
+        "provider_profile": "deepseek",
+        "model": "deepseek-chat",
+    }
+
+
+def test_put_settings_cross_profile_rebuilds_session(workspace: StoryWorkspace) -> None:
+    """跨档案切换：落盘 → registry.rebuild（新 provider/新 harness，对话恢复）。"""
+    created: list[StubSession] = []
+
+    async def factory(_: StoryWorkspace) -> StubSession:
+        session = StubSession()
+        created.append(session)
+        return session
+
+    registry = WorkspaceRegistry(root=workspace.root, session_factory=factory)
+    client = TestClient(create_app(registry, book=_book(_DEFAULT_PROFILE, _DEEPSEEK_PROFILE)))
+    client.get(f"/api/{SLUG}/state")  # 首次装配
+    assert len(created) == 1
+
+    response = client.put(
+        f"/api/{SLUG}/settings",
+        json={"writing_language": "中文", "provider_profile": "deepseek", "model": "deepseek-chat"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "writing_language": "中文",
+        "provider_profile": "deepseek",
+        "model": "deepseek-chat",
+    }
+    assert len(created) == 2  # 跨档案触发重建
+    assert load_settings(workspace).provider_profile == "deepseek"
+
+
+def test_put_settings_same_profile_does_not_rebuild(workspace: StoryWorkspace) -> None:
+    """同档案换模型不触发 registry.rebuild（原地热切）。"""
+    created: list[StubSession] = []
+
+    async def factory(_: StoryWorkspace) -> StubSession:
+        session = StubSession()
+        created.append(session)
+        return session
+
+    registry = WorkspaceRegistry(root=workspace.root, session_factory=factory)
+    client = TestClient(create_app(registry, book=_book(_DEFAULT_PROFILE)))
+    client.get(f"/api/{SLUG}/state")
+    assert len(created) == 1
+
+    response = client.put(
+        f"/api/{SLUG}/settings",
+        json={"writing_language": "中文", "provider_profile": "default", "model": "story-model-2"},
+    )
+
+    assert response.status_code == 200
+    assert len(created) == 1  # 未重建
+    assert created[0].applied_models == ["story-model-2"]
 
 
 def test_put_settings_invalid_returns_422_three_elements(
@@ -649,7 +869,7 @@ def test_put_settings_invalid_returns_422_three_elements(
 ) -> None:
     """非法取值不在预设集内 → 422 三要素，未落盘、未热生效。"""
     session = StubSession()
-    client = _client_with_session(workspace.root, session)
+    client = _settings_client(workspace.root, session=session, book=_book(_DEFAULT_PROFILE))
 
     response = client.put(
         f"/api/{SLUG}/settings",
@@ -663,3 +883,78 @@ def test_put_settings_invalid_returns_422_three_elements(
     assert "怎样算对" in detail
     assert not workspace.settings_path.exists()
     assert session.applied_languages == []
+
+
+def test_put_settings_unknown_profile_returns_422(workspace: StoryWorkspace) -> None:
+    session = StubSession()
+    client = _settings_client(
+        workspace.root, session=session, book=_book(_DEFAULT_PROFILE, _DEEPSEEK_PROFILE)
+    )
+
+    response = client.put(
+        f"/api/{SLUG}/settings",
+        json={"writing_language": "中文", "provider_profile": "ghost"},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "档案不存在" in detail
+    assert "default、deepseek" in detail  # 列出可用档案
+    assert not workspace.settings_path.exists()
+    assert session.applied_models == []
+
+
+def test_put_settings_profile_without_key_returns_422(workspace: StoryWorkspace) -> None:
+    keyless = ProviderProfile(
+        name="nokey", base_url="https://api.example.com/v1", default_model="m"
+    )
+    client = _settings_client(workspace.root, book=_book(_DEFAULT_PROFILE, keyless))
+
+    response = client.put(
+        f"/api/{SLUG}/settings",
+        json={"writing_language": "中文", "provider_profile": "nokey"},
+    )
+
+    assert response.status_code == 422
+    assert "缺少 API key" in response.json()["detail"]
+
+
+def test_put_settings_no_model_resolvable_returns_422(workspace: StoryWorkspace) -> None:
+    """档案可用但既无 default_model 也未传 model → 422 三要素，不落盘。"""
+    nomodel = ProviderProfile(
+        name="nomodel", base_url="https://api.example.com/v1", api_key="sk-x-12345678"
+    )
+    session = StubSession()
+    client = _settings_client(
+        workspace.root, session=session, book=_book(_DEFAULT_PROFILE, nomodel)
+    )
+
+    response = client.put(
+        f"/api/{SLUG}/settings",
+        json={"writing_language": "中文", "provider_profile": "nomodel"},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "没有可用的模型名" in detail
+    assert "为什么错" in detail
+    assert not workspace.settings_path.exists()
+
+
+def test_put_settings_while_running_returns_409(workspace: StoryWorkspace) -> None:
+    """写作流进行中切换 → 409 三要素；未落盘、未热生效。"""
+    session = _RunningSession()
+    client = _settings_client(workspace.root, session=session, book=_book(_DEFAULT_PROFILE))
+
+    response = client.put(
+        f"/api/{SLUG}/settings",
+        json={"writing_language": "English", "model": "story-model-2"},
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "写作流" in detail
+    assert "为什么错" in detail
+    assert "怎样算对" in detail
+    assert not workspace.settings_path.exists()
+    assert session.applied_models == []

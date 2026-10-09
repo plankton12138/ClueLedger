@@ -16,9 +16,11 @@ from typing import TYPE_CHECKING
 from hastings.bible.store import StoryWorkspace
 from hastings.manuscript.diff import DiffHunk
 from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
+from hastings.server.provider_config import ProviderBook
 from hastings.server.reconcile import NoticeListener, ReconcileQueue
 from hastings.server.registry import SessionFactory
 from hastings.server.session import AgentBusyError, WritingSession
+from hastings.settings import DEFAULT_PROVIDER_PROFILE
 from tau_agent.events import AgentEvent
 from tau_agent.harness import AgentHarness, AgentHarnessConfig, EventListener
 from tau_agent.messages import AgentMessage
@@ -42,9 +44,12 @@ class HastingsSession:
         run_kind: RunKindGuard | None = None,
         *,
         reconcile_debounce: float = 3.0,
+        profile_name: str = DEFAULT_PROVIDER_PROFILE,
     ) -> None:
         self._harness = harness
         self._workspace = workspace
+        # 当前 provider 档案名（P6 T2）：跨档案切换的判定依据（同档案换模型热切）。
+        self._profile_name = profile_name
         # 作者草稿锁注册表（P5 D4）：from_workspace 会把同一实例闭包进
         # write_chapter（agent 侧守门）；REST 锁端点与 PUT 保存经本属性读写。
         # 直接构造（无实参）得到空注册表——CLI 等单 agent 场景锁永不触发。
@@ -69,6 +74,7 @@ class HastingsSession:
         model: str,
         *,
         reconcile_debounce: float = 3.0,
+        profile_name: str = DEFAULT_PROVIDER_PROFILE,
     ) -> HastingsSession:
         """按 CLI 同款方式装配工具集、system prompt 与 harness。"""
         from hastings.cli import create_writing_tools
@@ -93,6 +99,7 @@ class HastingsSession:
             edit_marks=edit_marks,
             run_kind=run_kind,
             reconcile_debounce=reconcile_debounce,
+            profile_name=profile_name,
         )
 
     @property
@@ -110,6 +117,10 @@ class HastingsSession:
     @property
     def model(self) -> str:
         return self._harness.config.model
+
+    @property
+    def provider_profile(self) -> str:
+        return self._profile_name
 
     @property
     def is_running(self) -> bool:
@@ -150,6 +161,13 @@ class HastingsSession:
             self._harness.config.tools, language=language
         )
 
+    def apply_model(self, model: str) -> None:
+        """同档案热切换模型（P6 D2，与 apply_writing_language 同一手法）。
+
+        config.model 每轮运行时读取，直接赋值即下一轮生效；对话历史原地保留。
+        """
+        self._harness.config.model = model
+
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
         return self._reconcile.subscribe(listener)
 
@@ -178,17 +196,27 @@ if TYPE_CHECKING:
         return session
 
 
-def default_session_factory(provider: ModelProvider, model: str) -> SessionFactory:
-    """server 入口的默认装配工厂（P4 D1/D4）：建 harness + 恢复历史会话 + 挂持久化。
+def default_session_factory(book: ProviderBook) -> SessionFactory:
+    """server 入口的默认装配工厂（P4 D1/D4，P6 T2 档案解析）。
 
     registry 只管生命周期；本工厂负责"一个 slug 怎么变成可用会话"——
-    会话历史从 stories/<slug>/session.jsonl 回放，新消息经 message_end 落盘。
+    按工作区设置解析 provider 档案与模型（未知或缺 key 的档案回落引导档案，
+    服务重启后仍能打开），会话历史从 stories/<slug>/session.jsonl 回放，
+    新消息经 message_end 落盘。
     """
 
     async def factory(workspace: StoryWorkspace) -> WritingSession:
         from hastings.session_persist import restore_and_attach
+        from hastings.settings import load_settings
 
-        session = HastingsSession.from_workspace(workspace, provider=provider, model=model)
+        settings = load_settings(workspace)
+        resolved = book.resolve(settings.provider_profile, settings.model)
+        session = HastingsSession.from_workspace(
+            workspace,
+            provider=resolved.provider,
+            model=resolved.model,
+            profile_name=resolved.profile_name,
+        )
         await restore_and_attach(workspace, session.harness, on_warning=print)
         return session
 

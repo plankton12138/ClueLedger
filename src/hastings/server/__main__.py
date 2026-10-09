@@ -1,13 +1,14 @@
 """``python -m hastings.server`` Web 服务入口（P4 多工作区化，P6 D1 多档案）。
 
 与 CLI 入口（hastings.__main__）共享 env 处理——load_dotenv、
-normalize_base_url、env_error 零复制复用；装配链 provider →
+normalize_base_url、env_error 零复制复用；装配链 ProviderBook →
 default_session_factory → WorkspaceRegistry → create_app → uvicorn.run。
 不再绑定单一 slug：stories/ 下所有工作区（含运行中新建的）都经
 registry 按 slug 懒装配、各自恢复会话历史。
 
-P6 D1：config.yaml 存在时为权威配置（第一个有 key 的档案作为启动
-档案，.env 不再必需）；缺失/为空则回落 env 单档案（P1 现状，零破坏）。
+P6 D1：config.yaml 存在时为权威配置（第一个有 key 的档案作为引导档案，
+.env 不再必需）；缺失/为空则回落 env 单档案（P1 现状，零破坏）。引导档案
+与 --model 折进 ProviderBook（进程级端点目录），供各工作区按设置解析。
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ from hastings.server.app import create_app
 from hastings.server.hastings_session import default_session_factory
 from hastings.server.provider_config import (
     DEFAULT_CONFIG_PATH,
+    ProviderBook,
     ProviderConfigError,
-    build_provider,
     load_server_config,
 )
 from hastings.server.registry import WorkspaceRegistry
@@ -81,7 +82,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     if args.config.exists():
-        # config.yaml 权威：第一个有 key 的档案作为启动档案（.env 不再必需）
+        # config.yaml 权威：第一个有 key 的档案作为引导档案（.env 不再必需）
         profile = next((p for p in server_config.providers if p.available), None)
         if profile is None:
             print(
@@ -92,40 +93,39 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "或用 api_key_env 引用已设置的环境变量。"
             )
             return 1
-        model = args.model or profile.default_model
-        if not model:
+        boot_profile_name = profile.name
+        boot_model = args.model or profile.default_model
+        if not boot_model:
             print(
-                f"启动档案 {profile.name!r} 没有可用的模型名（{args.config}）。"
+                f"引导档案 {profile.name!r} 没有可用的模型名（{args.config}）。"
                 "为什么错：档案未配 default_model，也未传 --model。"
                 "怎样算对：在该档案补 default_model: <模型名>，"
                 "或用 --model 启动参数指定。"
             )
             return 1
-        provider = build_provider(profile)
-        boot_profile_name = profile.name
     else:
         # env 回落（P1 现状）：缺 env 仍给中文指引
         error = env_error(args.model)
         if error is not None:
             print(error)
             return 1
-
-        from tau_ai.env import openai_compatible_config_from_env
-        from tau_ai.openai_compatible import OpenAICompatibleProvider
-
-        provider = OpenAICompatibleProvider(openai_compatible_config_from_env())
-        model = args.model or os.environ["HASTINGS_MODEL"]
         boot_profile_name = "default"
+        boot_model = args.model or os.environ["HASTINGS_MODEL"]
 
+    # ProviderBook 是进程级端点目录（P6 D1/T2）：按档案名缓存 provider 实例，
+    # 跨档案切换复用、无需关闭；boot_* 决定新工作区的引导端点与模型。
+    book = ProviderBook(server_config, boot_name=boot_profile_name, boot_model=boot_model)
     registry = WorkspaceRegistry(
         root=args.stories_root,
-        session_factory=default_session_factory(provider=provider, model=model),
+        session_factory=default_session_factory(book),
     )
     static_dir = default_static_dir()
-    app = create_app(registry, static_dir=static_dir, server_config=server_config)
+    app = create_app(registry, static_dir=static_dir, book=book)
 
     print(f"案卷房已打开：{args.stories_root}")
-    print(f"模型：{model}｜档案：{boot_profile_name}｜写作台地址：http://{args.host}:{args.port}")
+    print(
+        f"模型：{boot_model}｜档案：{boot_profile_name}｜写作台地址：http://{args.host}:{args.port}"
+    )
     if static_dir is not None:
         print(f"前端已托管：{static_dir}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

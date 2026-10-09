@@ -17,6 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final, Literal
 
+import httpx
 import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, ValidationError
@@ -31,10 +32,11 @@ from hastings.bible.store import (
 )
 from hastings.manuscript.diff import InvalidChapterFormat, validate_title_heading
 from hastings.manuscript.store import current_revision, save_chapter
-from hastings.server.provider_config import ServerConfig, env_fallback_config, mask_key
+from hastings.server.provider_config import ProviderBook, env_fallback_config, mask_key
 from hastings.server.registry import WorkspaceExistsError, WorkspaceRegistry
 from hastings.server.session import WritingSession
 from hastings.settings import (
+    DEFAULT_PROVIDER_PROFILE,
     WRITING_LANGUAGES,
     SettingsFormatError,
     StorySettings,
@@ -48,6 +50,86 @@ BibleType = Literal["character", "clue", "foreshadow", "method", "timeline"]
 
 # 章节文件名（去 .md）即 id：只允许字母数字、连字符与下划线，杜绝路径穿越。
 _CHAPTER_ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}"
+
+# 模型发现请求超时（P6 D3）：够慢端点响应，又不至于挂死页面。
+_MODEL_DISCOVERY_TIMEOUT_SECONDS: Final[float] = 10.0
+
+
+class ModelDiscoveryError(Exception):
+    """模型发现失败（P6 D3）：携带拟采用的 HTTP 状态码与三要素文案。"""
+
+    def __init__(self, *, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+async def discover_models(
+    base_url: str,
+    api_key: str,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> list[str]:
+    """直连 OpenAI 兼容 ``{base_url}/models`` 拉候选模型（P6 D3）。
+
+    该端点兼任「测试连接」：通 = key/网络/base_url 全链路可用。
+    泄压阀三情形：401/403 → key 无效（422，配置可修正）；网络/上游故障 → 502
+    环境故障归因；成功（含空列表）→ 返回列表（空列表指引手动输入）。
+    """
+    url = f"{base_url.rstrip('/')}/models"
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        async with httpx.AsyncClient(
+            timeout=_MODEL_DISCOVERY_TIMEOUT_SECONDS, transport=transport
+        ) as client:
+            response = await client.get(url, headers=headers)
+    except httpx.HTTPError as exc:
+        raise ModelDiscoveryError(
+            status_code=502,
+            detail=(
+                f"拉取模型列表失败（{url}）。"
+                f"为什么错：环境故障——{exc}。"
+                "怎样算对：确认网络连通且 base_url 可达后重试；"
+                "也可以不拉列表，直接在设置页手动输入模型名。"
+            ),
+        ) from exc
+
+    if response.status_code in (401, 403):
+        raise ModelDiscoveryError(
+            status_code=422,
+            detail=(
+                f"拉取模型列表被拒绝（HTTP {response.status_code}）。"
+                "为什么错：API key 无效或无权访问该端点。"
+                "怎样算对：检查 config.yaml 中该档案的 api_key / api_key_env 后重试。"
+            ),
+        )
+    if response.status_code >= 400:
+        raise ModelDiscoveryError(
+            status_code=502,
+            detail=(
+                f"拉取模型列表失败（HTTP {response.status_code}）。"
+                f"为什么错：上游端点返回了 {response.status_code}。"
+                "怎样算对：确认 base_url 指向 OpenAI 兼容端点（通常以 /v1 结尾）后重试。"
+            ),
+        )
+    try:
+        payload: object = response.json()
+    except ValueError as exc:
+        raise ModelDiscoveryError(
+            status_code=502,
+            detail=(
+                f"拉取模型列表失败（{url}）。"
+                "为什么错：响应不是合法 JSON，端点可能不是 OpenAI 兼容接口。"
+                "怎样算对：检查 base_url，或改用手动输入模型名。"
+            ),
+        ) from exc
+
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list):
+        return []  # 合法但空结果：不报错，指引手动输入
+    return [
+        item["id"] for item in data if isinstance(item, dict) and isinstance(item.get("id"), str)
+    ]
 
 
 def _ledger_reader[M: (Clue, Foreshadow, Method, TimelineEntry)](
@@ -153,10 +235,16 @@ class WorkspaceCreatedResponse(BaseModel):
 class SettingsResponse(BaseModel):
     # REST 沿用 model_dump() 无别名口径 → wire 上是 snake_case
     writing_language: str
+    provider_profile: str
+    model: str
 
 
 class SettingsUpdateRequest(BaseModel):
+    """设置局部更新（P6 T2）：未提供的字段保持当前值。"""
+
     writing_language: str
+    provider_profile: str | None = None
+    model: str | None = None
 
 
 class ProviderSummary(BaseModel):
@@ -171,6 +259,12 @@ class ProviderSummary(BaseModel):
 
 class ProvidersResponse(BaseModel):
     providers: list[ProviderSummary]
+
+
+class ModelsResponse(BaseModel):
+    """模型发现结果（P6 D3）；空列表 = 合法空结果（前端指引手动输入）。"""
+
+    models: list[str]
 
 
 def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[BaseModel]:
@@ -204,9 +298,28 @@ def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[Base
 def create_rest_router(
     *,
     registry: WorkspaceRegistry,
-    server_config: ServerConfig | None = None,
+    book: ProviderBook | None = None,
+    model_transport: httpx.AsyncBaseTransport | None = None,
 ) -> APIRouter:
+    """装配 REST 路由（P6 T2：``book`` 提供档案目录与跨档案重建工厂）。
+
+    ``book`` 缺省时按 env 回落单档案新建（测试 / 纯 API 模式；与启动装配同源）。
+    ``model_transport`` 仅供测试注入 MockTransport，生产为 None（走真实网络）。
+    """
     router = APIRouter()
+    fallback_book: ProviderBook | None = None
+
+    def _book() -> ProviderBook:
+        nonlocal fallback_book
+        if book is not None:
+            return book
+        if fallback_book is None:
+            fallback_book = ProviderBook(
+                env_fallback_config(),
+                boot_name=DEFAULT_PROVIDER_PROFILE,
+                boot_model="",
+            )
+        return fallback_book
 
     def _workspace(slug: str) -> StoryWorkspace:
         # get_or_create 已过校验；这里只做路径解析（构造即校验，双保险）
@@ -232,8 +345,7 @@ def create_rest_router(
 
     @router.get("/api/providers", response_model=ProvidersResponse)
     async def providers() -> ProvidersResponse:
-        """档案目录（P6 D1）：未注入时按 env 回落单档案计算（与启动装配同源）。"""
-        config = server_config if server_config is not None else env_fallback_config()
+        """档案目录（P6 D1）：未注入 book 时按 env 回落单档案计算（与启动装配同源）。"""
         return ProvidersResponse(
             providers=[
                 ProviderSummary(
@@ -243,9 +355,43 @@ def create_rest_router(
                     key_hint=mask_key(profile.resolved_api_key()),
                     available=profile.available,
                 )
-                for profile in config.providers
+                for profile in _book().config.providers
             ]
         )
+
+    @router.get("/api/providers/{name}/models", response_model=ModelsResponse)
+    async def provider_models(name: str) -> ModelsResponse:
+        """拉取档案的候选模型（P6 D3）；兼作连通测试。"""
+        profile = _book().profile(name)
+        if profile is None:
+            available = "、".join(p.name for p in _book().config.providers) or "（当前无档案）"
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"provider 档案不存在：{name!r}。"
+                    "为什么错：档案名不在服务级 config.yaml 的 providers 列表中。"
+                    f"怎样算对：从 {available} 中选择一个档案名。"
+                ),
+            )
+        if not profile.available:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"档案 {name!r} 缺少 API key。"
+                    "为什么错：api_key 与 api_key_env 都为空，或引用的环境变量未设置。"
+                    "怎样算对：在 config.yaml 对应档案直填 api_key，"
+                    "或用 api_key_env 引用已设置的环境变量。"
+                ),
+            )
+        try:
+            models = await discover_models(
+                profile.base_url,
+                profile.resolved_api_key(),
+                transport=model_transport,
+            )
+        except ModelDiscoveryError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        return ModelsResponse(models=models)
 
     @router.post(
         "/api/workspaces",
@@ -483,7 +629,12 @@ def create_rest_router(
         )
 
     def _read_settings(workspace: StoryWorkspace) -> SettingsResponse:
-        """读设置；缺失回落默认值，数据故障 422、IO 故障 500。"""
+        """读设置并返回生效值（P6 T2：档案/模型经 ProviderBook 宽容解析）。
+
+        缺失回落默认值，数据故障 422、IO 故障 500。返回的是「会话实际会用
+        的端点与模型」——与 default_session_factory 同一解析函数，至于磁盘
+        上存的是哪条档案/哪个模型名不在此暴露（provider_profile 名称已给）。
+        """
         try:
             current = load_settings(workspace)
         except (ValidationError, SettingsFormatError, yaml.YAMLError) as exc:
@@ -501,7 +652,12 @@ def create_rest_router(
                 status_code=500,
                 detail=f"设置文件读取失败：文件系统错误 {exc}。",
             ) from exc
-        return SettingsResponse(writing_language=current.writing_language)
+        resolved = _book().resolve(current.provider_profile, current.model)
+        return SettingsResponse(
+            writing_language=current.writing_language,
+            provider_profile=resolved.profile_name,
+            model=resolved.model,
+        )
 
     @router.get("/api/{slug}/settings", response_model=SettingsResponse)
     async def get_settings(slug: str) -> SettingsResponse:
@@ -510,7 +666,12 @@ def create_rest_router(
 
     @router.put("/api/{slug}/settings", response_model=SettingsResponse)
     async def update_settings(slug: str, body: SettingsUpdateRequest) -> SettingsResponse:
-        """切换写作语言（P6 D3/D4）：校验取值 → 落盘 → 会话热生效。"""
+        """局部更新设置（P6 T2）：校验 → 落盘 → 会话生效。
+
+        同档案换模型 = 热切（config.model 赋值，对话历史原地保留）；换档案 =
+        registry.rebuild（新 provider → 新 harness，对话经 session.jsonl 恢复）。
+        未提供的 provider_profile / model 保持当前值（局部更新语义）。
+        """
         if body.writing_language not in WRITING_LANGUAGES:
             raise HTTPException(
                 status_code=422,
@@ -523,14 +684,101 @@ def create_rest_router(
         session = await _session(slug)
         workspace = _workspace(slug)
         try:
-            save_settings(workspace, StorySettings(writing_language=body.writing_language))
+            current = load_settings(workspace)
+        except (ValidationError, SettingsFormatError, yaml.YAMLError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"设置文件读取失败（{workspace.settings_path.name}）。"
+                    f"为什么错：{exc}。"
+                    "怎样算对：修复或删除损坏的 settings.yaml 后重试。"
+                ),
+            ) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"设置文件读取失败：文件系统错误 {exc}。",
+            ) from exc
+
+        target_profile = (
+            body.provider_profile if body.provider_profile is not None else current.provider_profile
+        )
+        requested_model = body.model if body.model is not None else current.model
+
+        book = _book()
+        profile = book.profile(target_profile)
+        if profile is None:
+            available = "、".join(p.name for p in book.config.providers) or "（当前无档案）"
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"provider 档案不存在：{target_profile!r}。"
+                    "为什么错：档案名不在服务级 config.yaml 的 providers 列表中。"
+                    f"怎样算对：从 {available} 中选择一个档案名。"
+                ),
+            )
+        if not profile.available:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"档案 {target_profile!r} 缺少 API key。"
+                    "为什么错：api_key 与 api_key_env 都为空，或引用的环境变量未设置。"
+                    "怎样算对：在 config.yaml 对应档案直填 api_key，"
+                    "或用 api_key_env 引用已设置的环境变量。"
+                ),
+            )
+
+        resolved = book.resolve(target_profile, requested_model)
+        if not resolved.model:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"档案 {target_profile!r} 没有可用的模型名。"
+                    "为什么错：请求未提供 model，档案也未配 default_model。"
+                    "怎样算对：在设置页填写模型名（可先用拉取模型列表），"
+                    "或为该档案补 default_model。"
+                ),
+            )
+
+        if session.is_running:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"切换模型被拒：工作区 {slug} 有写作流进行中。"
+                    "为什么错：切换会替换当前会话，进行中的流会被打断。"
+                    "怎样算对：等待写作流结束（状态条消失）后再切换。"
+                ),
+            )
+
+        # 落盘 requested_model（空串 = 「取档案 default_model」的语义，不固化生效值）
+        try:
+            save_settings(
+                workspace,
+                StorySettings(
+                    writing_language=body.writing_language,
+                    provider_profile=target_profile,
+                    model=requested_model,
+                ),
+            )
         except OSError as exc:
             raise HTTPException(
                 status_code=500,
                 detail=(f"设置保存失败：文件系统错误 {exc}。怎样算对：确认工作区目录可写后重试。"),
             ) from exc
-        session.apply_writing_language(body.writing_language)
-        return SettingsResponse(writing_language=body.writing_language)
+
+        if target_profile != session.provider_profile:
+            # 跨档案：需新 provider 实例 → registry 重装配（工厂重读磁盘设置、
+            # restore_and_attach 恢复对话；system prompt 亦按新设置重建）
+            await registry.rebuild(slug)
+        else:
+            session.apply_writing_language(body.writing_language)
+            session.apply_model(resolved.model)
+
+        return SettingsResponse(
+            writing_language=body.writing_language,
+            provider_profile=target_profile,
+            model=resolved.model,
+        )
 
     return router
 
