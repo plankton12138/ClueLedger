@@ -15,7 +15,7 @@ from hastings.cli import run_repl
 
 DEFAULT_STORIES_ROOT = Path("stories")
 
-ENV_HINT = """没有配置好模型端点，案卷还打不开。请照着下面的清单准备 .env：
+ENV_HINT = """没有配置好模型端点，文章还打不开。请照着下面的清单准备 .env：
 
 1. 把 .env.example 复制为 .env（.env 不会被提交到仓库）
 2. 填入 OPENAI_API_KEY —— 任意 OpenAI 兼容端点的 key
@@ -61,7 +61,7 @@ def normalize_base_url() -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hastings",
-        description="案卷 Hastings：悬疑小说写作 Agent 的命令行入口",
+        description="Hastings：悬疑小说写作 Agent 的命令行入口",
     )
     parser.add_argument("slug", help="故事标识，例如 orient-express")
     parser.add_argument("--model", default=None, help="覆盖 HASTINGS_MODEL")

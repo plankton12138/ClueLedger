@@ -1,15 +1,16 @@
 /**
- * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转，P6 T6 可调侧栏，P7 T1 顶栏三段式）：
- * 顶栏 = 品牌区｜主导航五项｜右段（全局搜索 + 案卷菜单 + 状态徽章 + 重连）。
+ * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转，P6 T6 可调侧栏，P7 T1/T14 顶栏三段式）：
+ * 顶栏 = 品牌区｜主导航六项｜右段（全局搜索 + 当前文章徽标 + 状态徽章 + 重连）。
  * 主视图：创作台（左主编对话可折叠可拖宽 + 中正文羊皮纸 + 右故事账本可拖宽，
- * 窄屏账本走抽屉覆盖层，把手在创作台右缘）/ 语料库 / 审计中心（占位，T7/T9 转正）/
+ * 窄屏账本走抽屉覆盖层，把手在创作台右缘）/ 文章管理 / 语料库 / 审计中心（占位，T7/T9 转正）/
  * 事件流 / 设置；账本全页（ledger）从创作台下钻进入（T5）。工作区语义（P4 计划 D5）：
  * 切换 = socket 重连 ws/{slug} + REST 前缀换 slug，不整页刷新；选中 slug 经 ?w=
- * 记入地址（replaceState），刷新后不丢。
+ * 记入地址（replaceState），刷新后不丢。文章的增删切换在「文章」页管理（T14）。
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { createWorkspace, fetchWorkspaces } from "./api/rest";
+import { fetchWorkspaces } from "./api/rest";
+import ArticlesPage from "./components/ArticlesPage";
 import BiblePanel from "./components/BiblePanel";
 import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
@@ -19,7 +20,6 @@ import ManuscriptPanel from "./components/ManuscriptPanel";
 import SearchBox from "./components/SearchBox";
 import SettingsPanel from "./components/SettingsPanel";
 import Splitter, { loadStoredWidth } from "./components/Splitter";
-import WorkspaceMenu from "./components/WorkspaceMenu";
 import type { CommandType } from "./api/types";
 import type { ConnectionStatus } from "./api/socket";
 import { useChatStore } from "./state/store";
@@ -38,14 +38,15 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
 };
 
 /**
- * 主视图类型（P7 D1）：导航五项 + 账本全页详情（ledger 不进导航，
+ * 主视图类型（P7 D1，T14 扩容）：导航六项 + 账本全页详情（ledger 不进导航，
  * 从创作台账本面板「展开」下钻，T5 接线；先入骨架保证视图收口唯一）。
  */
-type View = "studio" | "corpus" | "audit" | "events" | "settings" | "ledger";
+type View = "studio" | "articles" | "corpus" | "audit" | "events" | "settings" | "ledger";
 
-/** 顶部主导航（P7 D1）：对齐原型顺序，置灰占位项全部转正（页面 T7/T9 落地）。 */
+/** 顶部主导航（P7 D1/T14）：创作台 | 文章 | 语料库 | 审计中心 | 事件流 | 设置。 */
 const NAV_ITEMS: Array<{ key: View; label: string }> = [
   { key: "studio", label: "✒ 创作台" },
+  { key: "articles", label: "✎ 文章" },
   { key: "corpus", label: "册 语料库" },
   { key: "audit", label: "◎ 审计中心" },
   { key: "events", label: "▤ 事件流" },
@@ -78,64 +79,23 @@ const BIBLE_DEFAULT_WIDTH = 340;
 const CHAT_WIDTH_KEY = "hastings.panel.chatWidth";
 const BIBLE_WIDTH_KEY = "hastings.panel.bibleWidth";
 
-/** 拉工作区列表并初始化选择：?w= 优先，其次第一个；空列表留给引导页。 */
-async function bootWorkspaces(): Promise<void> {
+/**
+ * 拉工作区列表并初始化选择：?w= 优先，其次第一个；无任何文章 → 返回 true，
+ * 由 App 落到「文章」页引导新建（T14）。
+ */
+async function bootWorkspaces(): Promise<boolean> {
   const slugs = await fetchWorkspaces();
   useChatStore.getState().setWorkspaces(slugs);
   const fromUrl = new URLSearchParams(location.search).get("w");
   if (fromUrl !== null && slugs.includes(fromUrl)) {
     switchTo(fromUrl);
-  } else if (slugs.length > 0) {
+    return false;
+  }
+  if (slugs.length > 0) {
     switchTo(slugs[0] as string);
+    return false;
   }
-}
-
-function CreateWorkspaceForm({ onCreated }: { onCreated: (slug: string) => void }) {
-  const [slug, setSlug] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(): Promise<void> {
-    const trimmed = slug.trim();
-    if (trimmed === "" || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await createWorkspace(trimmed);
-      onCreated(trimmed);
-    } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="w-80">
-      <label htmlFor="workspace-slug" className="mb-2 block text-xs text-gold-soft">
-        故事标识（slug，将成为目录名：字母、数字、中文或连字符）
-      </label>
-      <input
-        id="workspace-slug"
-        value={slug}
-        onChange={(e) => setSlug(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") void submit();
-        }}
-        placeholder="orient-express"
-        className="w-full border border-line bg-transparent px-2 py-1.5 text-sm text-paper placeholder:text-paper/30 focus:border-gold/60 focus:outline-none"
-      />
-      {error && <p className="mt-2 text-xs leading-relaxed text-overdue">{error}</p>}
-      <button
-        type="button"
-        onClick={() => void submit()}
-        disabled={busy || slug.trim() === ""}
-        className="mt-3 w-full border border-gold/60 px-3 py-1.5 text-sm text-gold transition-colors hover:bg-gold/15 disabled:opacity-40"
-      >
-        {busy ? "创建中…" : "打开新案卷"}
-      </button>
-    </div>
-  );
+  return true;
 }
 
 export default function App() {
@@ -147,7 +107,6 @@ export default function App() {
   const workspaces = useChatStore((s) => s.workspaces);
   const nav = useChatStore((s) => s.nav);
   const [view, setView] = useState<View>("studio");
-  const [showCreate, setShowCreate] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   // 可调侧栏（P6 T6）：宽度惰性读档（损坏回落默认），窄屏账本走抽屉覆盖层。
   const [chatWidth, setChatWidth] = useState(() =>
@@ -158,15 +117,20 @@ export default function App() {
   );
   const [bibleDrawerOpen, setBibleDrawerOpen] = useState(false);
 
-  // 启动：拉工作区列表并恢复/选择工作区（失败走顶部错误条，可重试）。
+  // 启动：拉工作区列表并恢复/选择工作区（失败走顶部错误条，可重试）；
+  // 无任何文章 → 直接落到「文章」页引导新建（T14）。
   useEffect(() => {
-    bootWorkspaces().catch((exc: unknown) =>
-      useChatStore
-        .getState()
-        .setConnectionError(
-          `${exc instanceof Error ? exc.message : String(exc)} 怎样算对：确认服务已启动后刷新页面。`,
-        ),
-    );
+    bootWorkspaces()
+      .then((empty) => {
+        if (empty) setView("articles");
+      })
+      .catch((exc: unknown) =>
+        useChatStore
+          .getState()
+          .setConnectionError(
+            `${exc instanceof Error ? exc.message : String(exc)} 怎样算对：确认服务已启动后刷新页面。`,
+          ),
+      );
   }, []);
 
   // 全局搜索跳转（P6 T11）：正文与账本都在创作台视图，命中一律切回；
@@ -178,16 +142,6 @@ export default function App() {
       setBibleDrawerOpen(true);
     }
   }, [nav]);
-
-  async function handleCreated(created: string): Promise<void> {
-    setShowCreate(false);
-    try {
-      useChatStore.getState().setWorkspaces(await fetchWorkspaces());
-    } catch {
-      // 列表刷新失败不阻塞切换——下拉内容稍后由下次启动/新建补齐
-    }
-    switchTo(created);
-  }
 
   const slugInvalid = slug !== null && !workspaces.includes(slug);
 
@@ -252,10 +206,19 @@ export default function App() {
           <div className="hidden min-w-0 sm:block">
             <SearchBox />
           </div>
-          <WorkspaceMenu
-            onSwitch={switchTo}
-            onCreate={() => setShowCreate((v) => !v)}
-          />
+          {/* 当前文章只读徽标（T14）：管理动作收进「文章」页，此处只作指向。 */}
+          <button
+            type="button"
+            onClick={() => setView("articles")}
+            title="文章管理"
+            className={`max-w-44 border px-2 py-0.5 transition-colors ${
+              view === "articles"
+                ? "border-gold/60 text-gold"
+                : "border-line text-paper/75 hover:border-gold/50"
+            }`}
+          >
+            <span className="block truncate">{slug ?? "未选择文章"}</span>
+          </button>
           {/* 状态徽章（D2）：连接点 + 文案合并为一枚；写作中（连接正常且 run 进行）
               同一枚徽章换色脉动，替代原先两处并排。 */}
           {(() => {
@@ -296,24 +259,18 @@ export default function App() {
             type="button"
             onClick={() => {
               useChatStore.getState().setConnectionError(null);
-              bootWorkspaces().catch((exc: unknown) =>
-                useChatStore.getState().setConnectionError(String(exc)),
-              );
+              bootWorkspaces()
+                .then((empty) => {
+                  if (empty) setView("articles");
+                })
+                .catch((exc: unknown) =>
+                  useChatStore.getState().setConnectionError(String(exc)),
+                );
             }}
             className="shrink-0 border border-overdue/60 px-2 py-0.5 text-overdue transition-colors hover:bg-overdue/10"
           >
             重试
           </button>
-        </div>
-      )}
-
-      {showCreate && (
-        <div className="flex items-start justify-end border-b border-line px-6 py-4">
-          <div className="border border-line bg-ink p-4">
-            <CreateWorkspaceForm
-              onCreated={(created) => void handleCreated(created)}
-            />
-          </div>
         </div>
       )}
 
@@ -344,22 +301,10 @@ export default function App() {
           title="账本全页"
           note="从创作台账本面板「展开」进入的全页视图，随后续任务转正。"
         />
-      ) : slug === null || slugInvalid ? (
-        <main className="flex flex-1 items-center justify-center">
-          <div className="max-w-md text-center">
-            <h2 className="font-serif text-2xl font-bold text-gold">
-              {slugInvalid ? "案卷不在架上" : "案卷房空空如也"}
-            </h2>
-            <p className="mt-2 text-xs leading-relaxed text-paper/50">
-              {slugInvalid
-                ? "地址里的工作区不存在（可能已被移动）。从右上角案卷菜单选一本，或新建一本。"
-                : "还没有任何故事工作区。打开第一本案卷，开始你的悬疑连载。"}
-            </p>
-            <div className="mt-6 flex justify-center">
-              <CreateWorkspaceForm onCreated={(created) => void handleCreated(created)} />
-            </div>
-          </div>
-        </main>
+      ) : view === "articles" || slug === null || slugInvalid ? (
+        <ErrorBoundary label="文章">
+          <ArticlesPage onSwitch={switchTo} onEnter={() => setView("studio")} />
+        </ErrorBoundary>
       ) : (
         <main className="relative flex min-h-0 flex-1">
           {/* 窄屏账本抽屉把手（P7 D2）：从顶栏移入创作台，右缘中部抽屉拉手形态。 */}

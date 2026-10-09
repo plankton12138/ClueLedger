@@ -185,6 +185,21 @@ export async function createWorkspace(slug: string): Promise<void> {
   }
 }
 
+/**
+ * DELETE /api/workspaces/{slug}?confirm={slug}（P7 T13/T14）：整目录删除，不可恢复。
+ * 422（confirm 不一致 / slug 不合法）、404（不存在）、409（写作流运行中）、
+ * 500（IO）detail 原样透出——泄压阀三情形归因由服务端给出。
+ */
+export async function deleteWorkspace(slug: string): Promise<void> {
+  const res = await fetch(
+    `/api/workspaces/${encodeURIComponent(slug)}?confirm=${encodeURIComponent(slug)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    throw new Error(`工作区 ${slug} 删除失败：${await errorDetail(res)}`);
+  }
+}
+
 // ---------- 章节面（P5 T1）：列表 + 单章正文（只读） ----------
 
 export interface ChaptersResponse {
@@ -434,6 +449,84 @@ export async function fetchProviderModels(name: string): Promise<string[]> {
   if (!Array.isArray(models)) {
     throw new Error(
       `模型列表响应结构不符：期望 { models: string[] }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return models.map(String);
+}
+
+// ---------- provider 档案 CRUD（P7 T12/T14）：设置页增删改 + 连通测试 ----------
+
+/** 档案新增/修改请求体（P7 T12）：api_key 留空 = 修改时保留旧 key。 */
+export interface ProviderUpsert {
+  base_url: string;
+  api_key: string;
+  api_key_env: string;
+  default_model: string;
+}
+
+/**
+ * PUT /api/providers/{name} → upsert（存在即修改，否则新建）。
+ * 422（base_url 空）/ 500（config.yaml 写盘失败）detail 原样透出。
+ */
+export async function upsertProvider(name: string, body: ProviderUpsert): Promise<ProviderSummary> {
+  const res = await fetch(`/api/providers/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`档案 ${name} 保存失败：${await errorDetail(res)}`);
+  }
+  const json: unknown = await res.json().catch(() => null);
+  const record = json as Record<string, unknown> | null;
+  if (
+    record === null ||
+    typeof record !== "object" ||
+    typeof record.name !== "string" ||
+    typeof record.base_url !== "string" ||
+    typeof record.available !== "boolean"
+  ) {
+    throw new Error(
+      `档案保存响应结构不符：期望 ProviderSummary，收到 ${JSON.stringify(json)}。`,
+    );
+  }
+  return json as ProviderSummary;
+}
+
+/**
+ * DELETE /api/providers/{name}：404（不存在）/ 409（引导档案 / 最后档案 /
+ * 被文章引用）detail 原样透出——三保护文案由服务端给出。
+ */
+export async function deleteProvider(name: string): Promise<void> {
+  const res = await fetch(`/api/providers/${encodeURIComponent(name)}`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(await errorDetail(res));
+  }
+}
+
+/**
+ * POST /api/providers/test：未保存表单的连通测试（P7 T12）。
+ * 422（缺 key / key 无效）、502（网络/上游故障）detail 原样透出；
+ * 空数组为合法空结果（手动输入模型名）。
+ */
+export async function testProvider(body: {
+  base_url: string;
+  api_key: string;
+  api_key_env: string;
+}): Promise<string[]> {
+  const res = await fetch("/api/providers/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(await errorDetail(res));
+  }
+  const json: unknown = await res.json().catch(() => null);
+  const models = (json as { models?: unknown } | null)?.models;
+  if (!Array.isArray(models)) {
+    throw new Error(
+      `连通测试响应结构不符：期望 { models: string[] }，收到 ${JSON.stringify(json)}。`,
     );
   }
   return models.map(String);

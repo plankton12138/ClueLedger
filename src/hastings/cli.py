@@ -183,7 +183,7 @@ async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: st
     workspace.ensure_dirs()
     await restore_and_attach(workspace, harness, on_warning=print)
 
-    print(f"案卷已打开：{workspace.story_dir}")
+    print(f"文章已打开：{workspace.story_dir}")
     print(f"模型：{model}｜工具：{'、'.join(tool.name for tool in tools)}")
     print("输入 /bible [type] 查看账本，/quit 收工。")
     print()

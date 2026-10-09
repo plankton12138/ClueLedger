@@ -30,7 +30,7 @@ describe("nextEditLock", () => {
     });
   });
 
-  it("编辑态下切换工作区（同章名不同案卷）：旧锁释放，改持新案卷的锁", () => {
+  it("编辑态下切换工作区（同章名不同文章）：旧锁释放，改持新文章的锁", () => {
     expect(nextEditLock(ch01, { slug: "story-b", chapterId: "ch01", mode: "edit" })).toEqual({
       release: ch01,
       held: { slug: "story-b", chapterId: "ch01" },

@@ -72,7 +72,7 @@ describe("loadSnapshot running 语义（R3 问题2：卡 true）", () => {
 
 describe("工作区切片（P4 T6）", () => {
   it("setSlug 记录当前工作区；切换不改写事件流（由快照重放整体更替）", () => {
-    useChatStore.setState({ items: [{ kind: "user", text: "旧案卷的发言" }] });
+    useChatStore.setState({ items: [{ kind: "user", text: "旧文章的发言" }] });
     useChatStore.getState().setSlug("story-a");
     expect(useChatStore.getState().slug).toBe("story-a");
     useChatStore.getState().setSlug("story-b");
@@ -149,8 +149,8 @@ describe("manuscript 切片（P5 T1 + T2 revision）", () => {
         ...initialManuscript,
         chapterIds: ["ch01", "ch02"],
         chapterId: "ch01",
-        baseline: "旧案卷正文",
-        draft: "旧案卷正文改",
+        baseline: "旧文章正文",
+        draft: "旧文章正文改",
         revision: 2,
       },
     });

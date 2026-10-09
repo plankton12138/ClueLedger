@@ -320,7 +320,7 @@ export default function ManuscriptPanel({
         {!ms.loading && parsed === null && ms.error === null && (
           <p className="mt-10 text-center text-xs text-paper/40">
             {ms.chapterIds.length === 0
-              ? "本案卷还没有章节（在左侧与 AI 主编讨论，或让它动笔写第一章）。"
+              ? "这篇文章还没有章节（在左侧与 AI 主编讨论，或让它动笔写第一章）。"
               : "从上方选择一章开始阅读。"}
           </p>
         )}

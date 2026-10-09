@@ -155,7 +155,7 @@ export default function SearchBox() {
           if (e.key === "Enter" && hits.length > 0) jump(hits[0] as SearchHit);
         }}
         disabled={slug === null}
-        placeholder={slug === null ? "选择案卷后搜索" : "搜索章节、角色、线索、伏笔…"}
+        placeholder={slug === null ? "选择文章后搜索" : "搜索章节、角色、线索、伏笔…"}
         aria-label="全局搜索"
         className="w-full border border-line bg-transparent px-2 py-1 text-xs text-paper placeholder:text-paper/30 focus:border-gold/60 focus:outline-none disabled:opacity-40"
       />

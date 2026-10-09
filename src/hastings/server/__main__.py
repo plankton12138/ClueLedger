@@ -50,7 +50,7 @@ def default_static_dir() -> Path | None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hastings-server",
-        description="案卷 Hastings：悬疑小说写作 Agent 的 Web 服务入口（多工作区）",
+        description="Hastings：悬疑小说写作 Agent 的 Web 服务入口（多工作区）",
     )
     parser.add_argument("--model", default=None, help="覆盖启动档案的 default_model")
     parser.add_argument(
@@ -128,7 +128,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     static_dir = default_static_dir()
     app = create_app(registry, static_dir=static_dir, book=book)
 
-    print(f"案卷房已打开：{args.stories_root}")
+    print(f"文章目录已打开：{args.stories_root}")
     print(
         f"模型：{boot_model}｜档案：{boot_profile_name}｜写作台地址：http://{args.host}:{args.port}"
     )
