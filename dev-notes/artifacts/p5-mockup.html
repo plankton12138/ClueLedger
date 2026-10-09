@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P5 设计稿 · 正文中心创作台（黑斯廷斯备忘录）</title>
+<style>
+  /* ============ 设计令牌（与 frontend/src/theme.ts 对齐 + P5 新增） ============ */
+  :root {
+    --ink: #0E1428;            /* 页面底色：深邃靛蓝 */
+    --ink-soft: #151D38;       /* 卡片 / 面板底色 */
+    --line: #2A3555;           /* 分隔线 / 描边 */
+    --gold: #C8A84D;           /* 暗金主色 */
+    --gold-soft: #D4B896;      /* 淡金（次级文本） */
+    --paper: #E0DCC8;          /* 羊皮纸浅灰（暗底上的正文色） */
+    --planned: #5B8DEF;        /* 已计划：蓝 */
+    --planted: #4CAF7D;        /* 已埋设：绿（diff 新增亦复用） */
+    --overdue: #E05252;        /* 逾期：红（diff 删除亦复用） */
+    --recovered: #C8A84D;      /* P5 新增：已回收 = 暗金（与主色同源） */
+    /* P5 新增：羊皮纸面（正文承载面） */
+    --parchment: #F2ECD9;
+    --parchment-soft: #EAE2CB;
+    --parchment-ink: #2B2417;  /* 纸面墨色 */
+    --parchment-mute: #8A7D5E; /* 纸面次要墨色 */
+    --parchment-line: #D9CFB2; /* 纸面分隔线 */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background:
+      radial-gradient(1200px 500px at 85% -10%, rgba(91,141,239,.06), transparent 60%),
+      radial-gradient(900px 420px at 8% -6%, rgba(200,168,77,.07), transparent 55%),
+      var(--ink);
+    color: var(--paper);
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 13px; line-height: 1.6;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .serif { font-family: "Noto Serif SC", "Songti SC", SimSun, Georgia, serif; }
+
+  /* ============ 顶部导航 ============ */
+  .topbar {
+    display: flex; align-items: center; gap: 20px;
+    padding: 0 20px; height: 52px; flex: none;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(21,29,56,.9), rgba(14,20,40,.6));
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 30px; height: 30px; border: 1px solid var(--gold); border-radius: 50%;
+    display: grid; place-items: center; color: var(--gold);
+    font-size: 14px; font-weight: 700; letter-spacing: 0;
+  }
+  .brand-name { font-size: 16px; font-weight: 700; color: var(--gold); letter-spacing: 1px; }
+  .brand-sub { font-size: 10px; color: var(--gold-soft); opacity: .65; letter-spacing: 2px; }
+  .nav { display: flex; gap: 4px; margin-left: 12px; }
+  .nav a {
+    padding: 6px 14px; border-radius: 4px; text-decoration: none;
+    color: var(--paper); opacity: .75; font-size: 13px; border: 1px solid transparent;
+  }
+  .nav a.active {
+    color: var(--gold); opacity: 1; border-color: var(--line);
+    background: rgba(200,168,77,.08);
+  }
+  .nav a.soon { opacity: .3; cursor: not-allowed; }
+  .nav a.soon small { font-size: 9px; margin-left: 4px; color: var(--gold-soft); }
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 12px; }
+  .ws-select {
+    background: transparent; color: var(--paper); border: 1px solid var(--line);
+    padding: 3px 8px; border-radius: 3px; font-size: 12px;
+  }
+  .conn { display: flex; align-items: center; gap: 6px; color: var(--paper); opacity: .7; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--planted); box-shadow: 0 0 6px var(--planted); }
+
+  /* ============ 三栏主布局 ============ */
+  .layout { flex: 1; min-height: 0; display: flex; }
+
+  /* ---- 面板通用 ---- */
+  .panel { display: flex; flex-direction: column; min-height: 0; }
+  .panel-head {
+    flex: none; padding: 10px 14px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .panel-title { font-size: 14px; font-weight: 700; color: var(--gold); }
+  .panel-sub { font-size: 11px; color: var(--paper); opacity: .45; }
+
+  /* ---- 左栏：主编对话 ---- */
+  .chat-col { width: 300px; flex: none; border-right: 1px solid var(--line); background: rgba(21,29,56,.35); }
+  .chat-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { display: flex; flex-direction: column; gap: 3px; }
+  .msg-meta { font-size: 10px; color: var(--paper); opacity: .4; display: flex; gap: 6px; }
+  .msg-meta b { color: var(--gold-soft); font-weight: 600; }
+  .bubble {
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px;
+    font-size: 12.5px; line-height: 1.7; background: var(--ink-soft);
+  }
+  .msg.user .bubble { background: rgba(91,141,239,.10); border-color: rgba(91,141,239,.35); }
+  .toolcard { border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 6px; background: var(--ink-soft); overflow: hidden; }
+  .toolcard-head { display: flex; align-items: center; gap: 8px; padding: 7px 11px; font-size: 12px; }
+  .toolcard-head .tname { color: var(--gold); font-weight: 600; }
+  .toolcard-head .ttime { margin-left: auto; font-size: 10px; opacity: .4; }
+  .toolcard-items { padding: 2px 11px 9px; display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--paper); opacity: .85; }
+  .toolcard-items .ok::before { content: "✓"; color: var(--planted); margin-right: 6px; font-weight: 700; }
+  .toolcard-items .run::before { content: "◐"; color: var(--planned); margin-right: 6px; }
+  /* 对账卡片（state-sync 出现） */
+  .synccard { border: 1px solid rgba(200,168,77,.45); border-radius: 8px; background: rgba(200,168,77,.07); padding: 10px 12px; display: none; }
+  .synccard h4 { font-size: 12.5px; color: var(--gold); display: flex; align-items: center; gap: 7px; }
+  .synccard .rows { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; }
+  .synccard .rows .r { display: flex; gap: 7px; align-items: baseline; }
+  .synccard .rows .r::before { content: "▸"; color: var(--gold-soft); opacity: .7; }
+  .synccard .rows .r b { color: var(--gold-soft); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .chip {
+    font-size: 10px; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--gold-soft); background: rgba(42,53,85,.4);
+  }
+  .composer { flex: none; border-top: 1px solid var(--line); padding: 10px 12px; }
+  .composer-box {
+    border: 1px solid var(--line); border-radius: 6px; background: var(--ink-soft);
+    padding: 8px 10px; font-size: 12px; color: var(--paper); opacity: .5; min-height: 38px;
+  }
+  .composer-hint { margin-top: 6px; font-size: 10px; color: var(--paper); opacity: .35; display: flex; justify-content: space-between; }
+
+  /* ---- 中栏：正文（主角） ---- */
+  .ms-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .ms-toolbar {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; border-bottom: 1px solid var(--line); background: rgba(21,29,56,.5);
+  }
+  .ms-toolbar .chap {
+    background: transparent; color: var(--paper); border: 1px solid var(--line);
+    padding: 3px 8px; border-radius: 3px; font-size: 12.5px; max-width: 220px;
+  }
+  .wordcount { font-size: 11px; color: var(--paper); opacity: .5; }
+  .wordcount b { color: var(--gold-soft); font-weight: 600; }
+  .toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .mode-switch { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .mode-switch span { padding: 3px 12px; font-size: 11.5px; color: var(--paper); opacity: .55; cursor: pointer; }
+  .mode-switch span.on { background: rgba(200,168,77,.15); color: var(--gold); opacity: 1; }
+  .btn {
+    border: 1px solid var(--line); background: transparent; color: var(--paper);
+    padding: 3px 12px; border-radius: 4px; font-size: 11.5px; cursor: pointer;
+  }
+  .btn.gold { border-color: rgba(200,168,77,.6); color: var(--gold); }
+  .btn.gold:hover { background: rgba(200,168,77,.12); }
+  .btn.ghost { opacity: .6; }
+  .state-chip { font-size: 10.5px; padding: 2px 9px; border-radius: 999px; border: 1px solid; }
+  .state-chip.dirty { color: var(--overdue); border-color: rgba(224,82,82,.5); background: rgba(224,82,82,.08); }
+  .state-chip.syncing { color: var(--planned); border-color: rgba(91,141,239,.5); background: rgba(91,141,239,.08); }
+  .state-chip.synced { color: var(--planted); border-color: rgba(76,175,125,.5); background: rgba(76,175,125,.08); }
+
+  .paper-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 24px; display: flex; justify-content: center; }
+  .paper {
+    width: 100%; max-width: 680px; background: var(--parchment); color: var(--parchment-ink);
+    border-radius: 4px; box-shadow: 0 12px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.4);
+    padding: 40px 52px 28px; position: relative;
+    display: flex; flex-direction: column;
+  }
+  .paper::before { /* 纸面顶部装饰细线 */
+    content: ""; position: absolute; top: 26px; left: 52px; right: 52px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--parchment-line) 20%, var(--parchment-line) 80%, transparent);
+  }
+  .paper-title { text-align: center; font-size: 24px; font-weight: 700; letter-spacing: 6px; }
+  .paper-orn { text-align: center; color: var(--gold); margin: 10px 0 24px; font-size: 13px; letter-spacing: 8px; }
+  .paper-body { font-family: "Noto Serif SC", "Songti SC", SimSun, Georgia, serif; font-size: 15px; line-height: 2.0; text-align: justify; }
+  .paper-body p { margin-bottom: 1.35em; text-indent: 2em; position: relative; }
+  .paper-body p.no-indent { text-indent: 0; }
+  .dropcap {
+    float: left; font-size: 58px; line-height: 1; padding: 8px 10px 0 0;
+    color: var(--parchment-ink); font-weight: 700;
+  }
+  .paper-foot {
+    margin-top: auto; padding-top: 18px; border-top: 1px solid var(--parchment-line);
+    display: flex; align-items: center; font-size: 12px; color: var(--parchment-mute);
+  }
+  .paper-foot .toc { cursor: pointer; }
+  .paper-foot .pager { margin-left: auto; display: flex; gap: 14px; align-items: center; }
+  .paper-foot .pager b { color: var(--parchment-ink); font-weight: 600; }
+  .paper-foot .pager span.cur { color: var(--parchment-ink); }
+
+  /* 编辑态：纸面即编辑器（#diff-view 由 JS 独立控制，不参与本规则） */
+  body:not(.state-read) .paper-body.read-only:not(#diff-view) { display: none; }
+  body.state-read .paper-body.edit-only { display: none; }
+  body.state-sync .paper-body.edit-only { display: none; }
+  .editable {
+    font-family: "Noto Serif SC", "Songti SC", SimSun, Georgia, serif;
+    font-size: 15px; line-height: 2.0; color: var(--parchment-ink);
+    outline: none; text-align: justify; min-height: 380px; white-space: pre-wrap;
+  }
+  .caret-demo { display: inline-block; width: 2px; height: 1.1em; background: var(--gold); vertical-align: -0.15em; animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .edit-banner {
+    display: none; margin: 0 0 14px; padding: 7px 14px; border-radius: 4px; font-size: 12px;
+    color: var(--overdue); background: rgba(224,82,82,.08); border: 1px solid rgba(224,82,82,.4);
+    text-align: center; letter-spacing: .5px;
+  }
+  body:not(.state-read) .edit-banner { display: block; }
+
+  /* 对账态：diff 呈现 */
+  .diff-add  { background: rgba(76,175,125,.22); border-bottom: 1px solid rgba(76,175,125,.7);  color: #1d5c3e; text-decoration: none; }
+  .diff-del  { background: rgba(224,82,82,.16);  border-bottom: 1px solid rgba(224,82,82,.6);   color: #8a3a3a; text-decoration: line-through; }
+  p.diff-block-add  { background: rgba(76,175,125,.10);  box-shadow: inset 3px 0 0 var(--planted);  border-radius: 2px; }
+  p.diff-block-del  { background: rgba(224,82,82,.08);   box-shadow: inset 3px 0 0 var(--overdue); border-radius: 2px; }
+  p.diff-block-mod  { background: rgba(200,168,77,.10);  box-shadow: inset 3px 0 0 var(--gold);    border-radius: 2px; }
+  .diff-tag {
+    position: absolute; right: -46px; top: 2px; font-size: 10px; padding: 0 7px; border-radius: 3px;
+    font-family: "Noto Sans SC", sans-serif; letter-spacing: 1px;
+  }
+  .diff-tag.add { color: var(--planted); border: 1px solid rgba(76,175,125,.5); }
+  .diff-tag.del { color: var(--overdue); border: 1px solid rgba(224,82,82,.5); }
+  .diff-tag.mod { color: var(--gold);    border: 1px solid rgba(200,168,77,.5); }
+  body:not(.state-sync) .diff-tag { display: none; }
+
+  /* ---- 右栏：故事账本 ---- */
+  .bible-col { width: 340px; flex: none; border-left: 1px solid var(--line); background: rgba(21,29,56,.35); }
+  .bible-tabs { display: flex; border-bottom: 1px solid var(--line); flex: none; }
+  .bible-tabs span { flex: 1; text-align: center; padding: 8px 0; font-size: 12px; color: var(--paper); opacity: .5; cursor: pointer; border-bottom: 2px solid transparent; }
+  .bible-tabs span.on { color: var(--gold); opacity: 1; border-bottom-color: var(--gold); }
+  .ledger { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .lrow { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--ink-soft); display: flex; gap: 10px; align-items: flex-start; }
+  .lrow .idx { font-size: 11px; color: var(--gold-soft); opacity: .7; padding-top: 2px; }
+  .lrow .main { flex: 1; min-width: 0; }
+  .lrow .name { font-size: 12.5px; color: var(--paper); font-weight: 600; }
+  .lrow .desc { font-size: 11px; color: var(--paper); opacity: .5; margin-top: 2px; line-height: 1.55; }
+  .badge { flex: none; font-size: 10px; padding: 1px 8px; border-radius: 3px; border: 1px solid; margin-top: 2px; }
+  .badge.planned   { color: var(--planned);  border-color: rgba(91,141,239,.5);  background: rgba(91,141,239,.08); }
+  .badge.planted   { color: var(--planted);  border-color: rgba(76,175,125,.5);  background: rgba(76,175,125,.08); }
+  .badge.recovered { color: var(--recovered); border-color: rgba(200,168,77,.5); background: rgba(200,168,77,.08); }
+  .badge.overdue   { color: var(--overdue);  border-color: rgba(224,82,82,.5);   background: rgba(224,82,82,.08); }
+  .badge.fresh     { color: var(--planted); border-color: rgba(76,175,125,.7); background: rgba(76,175,125,.15); box-shadow: 0 0 8px rgba(76,175,125,.25); }
+  .stats { flex: none; border-top: 1px solid var(--line); padding: 10px 14px 12px; display: flex; gap: 10px; }
+  .stat { flex: 1; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--ink-soft); }
+  .stat .k { font-size: 10px; color: var(--paper); opacity: .5; }
+  .stat .v { font-size: 18px; font-weight: 700; color: var(--gold); margin-top: 2px; }
+  .stat .v.warn { color: var(--overdue); font-size: 14px; padding-top: 3px; }
+  /* 对账更新明细（state-sync） */
+  .recon-report { display: none; flex: none; border-top: 1px solid rgba(200,168,77,.4); background: rgba(200,168,77,.05); padding: 10px 14px; }
+  .recon-report h5 { font-size: 11.5px; color: var(--gold); display: flex; gap: 7px; align-items: center; }
+  .recon-report .rows { margin-top: 7px; display: flex; flex-direction: column; gap: 5px; font-size: 11px; }
+  .recon-report .rows .r { display: flex; gap: 7px; align-items: baseline; line-height: 1.55; }
+  .recon-report .rows .r i { font-style: normal; flex: none; font-size: 10px; padding: 0 6px; border-radius: 3px; border: 1px solid; }
+  .recon-report .rows .r i.up { color: var(--planted); border-color: rgba(76,175,125,.5); }
+  .recon-report .rows .r i.new { color: var(--planned); border-color: rgba(91,141,239,.5); }
+  .recon-report .rows .r i.nop { color: var(--paper); opacity: .45; border-color: var(--line); }
+  .recon-report .rows .r span { color: var(--paper); opacity: .8; }
+  body.state-sync .recon-report { display: block; }
+  body.state-sync .synccard { display: block; }
+  body.state-sync .hide-on-sync { display: none; }
+
+  /* ============ 状态切换器（设计稿演示用） ============ */
+  .demo-bar {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 0; z-index: 50;
+    border: 1px solid var(--line); border-radius: 8px; background: rgba(14,20,40,.92);
+    box-shadow: 0 8px 30px rgba(0,0,0,.5); overflow: hidden; backdrop-filter: blur(6px);
+  }
+  .demo-bar .lbl { padding: 0 12px; font-size: 10px; color: var(--gold-soft); opacity: .7; letter-spacing: 1px; border-right: 1px solid var(--line); }
+  .demo-bar button {
+    appearance: none; border: none; background: transparent; color: var(--paper);
+    padding: 9px 16px; font-size: 12px; cursor: pointer; opacity: .6; font-family: inherit;
+  }
+  .demo-bar button.on { background: rgba(200,168,77,.15); color: var(--gold); opacity: 1; }
+  .demo-bar button + button { border-left: 1px solid var(--line); }
+  .explain {
+    position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); z-index: 49;
+    font-size: 11px; color: var(--gold-soft); background: rgba(14,20,40,.85);
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 16px; opacity: .85;
+  }
+</style>
+</head>
+<body class="state-read">
+
+  <!-- ═══════════ 顶部导航 ═══════════ -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark serif">赫</div>
+      <div>
+        <div class="brand-name serif">黑斯廷斯备忘录</div>
+        <div class="brand-sub">HASTINGS' MEMO · 让好故事更接近真相</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a class="active" href="#">✒ 创作台</a>
+      <a href="#">▤ 事件流</a>
+      <a class="soon" href="#">册 语料库<small>P6</small></a>
+      <a class="soon" href="#">◎ 审计中心<small>后续</small></a>
+    </nav>
+    <div class="topbar-right">
+      <select class="ws-select"><option>雪夜庄园凶杀案</option><option>东方快车续篇</option></select>
+      <span class="conn"><span class="dot"></span>已连接</span>
+    </div>
+  </header>
+
+  <!-- ═══════════ 三栏主体：对话 · 正文（中心） · 账本 ═══════════ -->
+  <main class="layout">
+
+    <!-- ── 左栏：主编对话（可折叠） ── -->
+    <aside class="panel chat-col">
+      <div class="panel-head">
+        <span class="panel-title">主编对话</span>
+        <span class="panel-sub">与 AI 主编讨论情节 · 修订背景在此留痕</span>
+      </div>
+      <div class="chat-body">
+        <div class="msg user">
+          <div class="msg-meta"><b>我</b><span>14:20</span></div>
+          <div class="bubble">第三章的雪夜氛围不错，但我觉得"傍晚"太早了，雪夜应该是深夜。另外我想加一个细节：庄园的座钟多敲了一声。</div>
+        </div>
+        <div class="msg agent">
+          <div class="msg-meta"><b>黑斯廷斯</b><span>14:21</span></div>
+          <div class="bubble">好判断。"多敲一声的座钟"可以成为一条新线索，与停摆的怀表形成呼应。你直接在正文里改即可——保存后我会自动对账，把时间线和线索账本更新到与正文一致。</div>
+        </div>
+        <div class="toolcard">
+          <div class="toolcard-head"><span class="tname">🔎 线索一致性检查</span><span class="ttime">14:21</span></div>
+          <div class="toolcard-items">
+            <div class="ok">检索关键线索</div>
+            <div class="ok">比对时间线</div>
+            <div class="ok">检查逻辑一致性</div>
+          </div>
+        </div>
+        <!-- 对账卡片：仅同步态显示 -->
+        <div class="msg agent">
+          <div class="synccard">
+            <h4>◈ 对账完成 · 第3章《雪夜来客》</h4>
+            <div class="rows">
+              <div class="r"><span>检查 <b>3</b> 处段落变更，账本更新 <b>2</b> 处、确认无影响 <b>1</b> 处</span></div>
+              <div class="r"><span>时间线 T-07：钟声时刻 <b>21:47 → 22:07</b>（已更新）</span></div>
+              <div class="r"><span>新增线索 <b>「多敲一声的座钟」</b>，与 F-03 煤炉痕迹无冲突</span></div>
+            </div>
+            <div class="chips"><span class="chip">read_chapter</span><span class="chip">timeline_check</span><span class="chip">bible_upsert ×2</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="composer">
+        <div class="composer-box">输入你的想法，或让 AI 主帮分析…</div>
+        <div class="composer-hint"><span>Shift + Enter 换行</span><span>Enter 发送</span></div>
+      </div>
+    </aside>
+
+    <!-- ── 中栏：正文（页面中心） ── -->
+    <section class="panel ms-col">
+      <div class="ms-toolbar">
+        <select class="chap serif"><option>第三章 · 雪夜来客</option><option>第二章 · 封锁的雪</option><option>第四章 · 谁在敲门</option></select>
+        <span class="wordcount">字数 <b id="wc">2,348</b></span>
+        <div class="toolbar-right">
+          <span class="state-chip dirty" id="save-chip" style="display:none">● 未保存</span>
+          <span class="state-chip syncing" id="sync-chip" style="display:none">◌ 对账中…</span>
+          <span class="state-chip synced" id="synced-chip" style="display:none">✓ 已同步 14:26</span>
+          <button class="btn ghost" id="btn-discard" style="display:none">放弃</button>
+          <button class="btn gold" id="btn-save" style="display:none">保存 ⌘S</button>
+          <div class="mode-switch">
+            <span id="mode-read" class="on">阅读</span><span id="mode-edit">编辑</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="paper-wrap">
+        <article class="paper">
+          <div class="edit-banner">✎ 作者编辑中 · 本章对 Agent 写入已锁定（写 chapter 03 的工具调用将被拒绝）</div>
+          <h2 class="paper-title serif">第三章 · 雪夜来客</h2>
+          <div class="paper-orn">❖ ─── ✦ ─── ❖</div>
+
+          <!-- 阅读态正文 -->
+          <div class="paper-body read-only">
+            <p class="no-indent"><span class="dropcap">雪</span>下得比傍晚时更大了。庄园的石阶早已被白雪覆盖，只留下几处模糊的脚印，在月光下显得格外清晰。艾琳推开厚重的橡木门，一股寒意裹挟着雪气涌入，客厅里的壁炉火光摇曳，映出几道拉长的影子。</p>
+            <p>"你来了。"管家低声说道，声音里带着一丝疲惫。</p>
+            <p>艾琳点点头，目光落在桌上的怀表上。表盘的指针停在九点四十七分，仿佛时间也在这一刻凝固。她拾起怀表，指尖触到冰冷的金属，心中不由生出一丝疑问：在这样的雪夜，究竟是谁，打破了这份沉寂？</p>
+            <p>窗外，风雪依旧，远处传来教堂的钟声，沉闷而悠长。而在这座与世隔绝的庄园里，真相，或许正随着某位不速之客的到来，悄然浮出水面。</p>
+          </div>
+
+          <!-- 编辑态正文（草稿示意：两处已改） -->
+          <div class="paper-body edit-only">
+            <div class="editable">雪下得比<span style="background:rgba(200,168,77,.25);outline:1px dashed rgba(200,168,77,.6)">午夜</span>时更大了。庄园的石阶早已被白雪覆盖，只留下几处模糊的脚印，在月光下显得格外清晰。艾琳推开厚重的橡木门，一股寒意裹挟着雪气涌入，客厅里的壁炉火光摇曳，映出几道拉长的影子。
+
+"你来了。"管家低声说道，声音里带着一丝疲惫。
+
+艾琳点点头，目光落在桌上的怀表上。表盘的指针停在十点零七分，仿佛时间也在这一刻凝固。她拾起怀表，指尖触到冰冷的金属，心中不由生出一丝疑问：在这样的雪夜，究竟是谁，打破了这份沉寂？<span class="caret-demo"></span>
+
+窗外，风雪依旧，远处传来教堂的钟声，沉闷而悠长。而在这座与世隔绝的庄园里，真相，或许正随着某位不速之客的到来，悄然浮出水面。</div>
+          </div>
+
+          <!-- 对账态正文：diff 视图 -->
+          <div class="paper-body read-only" style="display:none" id="diff-view">
+            <p class="diff-block-mod no-indent"><span class="diff-tag mod">修改</span><span class="dropcap">雪</span>下得比<del class="diff-del">傍晚</del><ins class="diff-add">午夜</ins>时更大了。庄园的石阶早已被白雪覆盖，只留下几处模糊的脚印，在月光下显得格外清晰。艾琳推开厚重的橡木门，一股寒意裹挟着雪气涌入，客厅里的壁炉火光摇曳，映出几道拉长的影子。</p>
+            <p class="diff-block-del"><span class="diff-tag del">删除</span><del class="diff-del">"你来了。"管家低声说道，声音里带着一丝疲惫。</del></p>
+            <p class="diff-block-mod"><span class="diff-tag mod">修改</span>艾琳点点头，目光落在桌上的怀表上。表盘的指针停在<del class="diff-del">九点四十七分</del><ins class="diff-add">十点零七分</ins>，仿佛时间也在这一刻凝固。她拾起怀表，指尖触到冰冷的金属，心中不由生出一丝疑问：在这样的雪夜，究竟是谁，打破了这份沉寂？</p>
+            <p>窗外，风雪依旧，远处传来教堂的钟声，沉闷而悠长。而在这座与世隔绝的庄园里，真相，或许正随着某位不速之客的到来，悄然浮出水面。</p>
+            <div style="margin-top:14px;padding-top:10px;border-top:1px dashed var(--parchment-line);font-size:11px;color:var(--parchment-mute);font-family:'Noto Sans SC',sans-serif;text-indent:0">
+              对账视图：3 处段落变更 · 段内高亮 = 字符级差异 · 右侧账本面板显示联动更新 →
+            </div>
+          </div>
+
+          <footer class="paper-foot">
+            <span class="toc">☰ 章节列表</span>
+            <div class="pager"><span>← 上一章</span><span class="cur"><b>3</b> / 12</span><span>下一章 →</span></div>
+          </footer>
+        </article>
+      </div>
+    </section>
+
+    <!-- ── 右栏：故事账本 ── -->
+    <aside class="panel bible-col">
+      <div class="panel-head">
+        <span class="panel-title">故事账本</span>
+        <span class="panel-sub">与正文保持一致 · 对账自动更新</span>
+      </div>
+      <div class="bible-tabs">
+        <span>角色</span><span>线索</span><span class="on">伏笔</span><span>诡计</span><span>时间线</span>
+      </div>
+      <div class="ledger">
+        <div class="lrow"><span class="idx">1</span>
+          <div class="main"><div class="name">停摆的怀表</div><div class="desc">停在十点零七分的银质怀表，暗示时间异常。</div></div>
+          <span class="badge planted">已埋设</span>
+        </div>
+        <div class="lrow"><span class="idx">2</span>
+          <div class="main"><div class="name">封锁上的雪</div><div class="desc">信封封蜡残留雪花，与庄园外的雪质一致。</div></div>
+          <span class="badge planted">已埋设</span>
+        </div>
+        <div class="lrow"><span class="idx">3</span>
+          <div class="main"><div class="name">煤炉痕迹</div><div class="desc">壁炉里发现可疑的煤灰痕迹，可能来自生人的靴子。</div></div>
+          <span class="badge recovered">已回收</span>
+        </div>
+        <div class="lrow"><span class="idx">4</span>
+          <div class="main"><div class="name">管家的证词</div><div class="desc">称十点后才听到脚步声，但时间存在矛盾。</div></div>
+          <span class="badge overdue">逾期</span>
+        </div>
+        <div class="lrow hide-on-sync"><span class="idx">5</span>
+          <div class="main"><div class="name">医者的便会</div><div class="desc">没有署名的便条，字迹与管家相似。</div></div>
+          <span class="badge planned">已计划</span>
+        </div>
+        <!-- 对账后新增线索行（state-sync 才显示） -->
+        <div class="lrow" style="display:none" id="new-clue-row">
+          <span class="idx">6</span>
+          <div class="main"><div class="name">多敲一声的座钟</div><div class="desc">座钟敲了十一下——比标准钟声多了一声，来客的暗号？</div></div>
+          <span class="badge fresh">新登记</span>
+        </div>
+      </div>
+      <!-- 对账更新明细（state-sync） -->
+      <div class="recon-report">
+        <h5>◈ 本次对账更新（第3章 · 14:26）</h5>
+        <div class="rows">
+          <div class="r"><i class="up">更新</i><span>时间线 T-07 · 教堂钟声 <b>21:47 → 22:07</b>（与正文 22:07 对齐）</span></div>
+          <div class="r"><i class="new">登记</i><span>线索 +1 · 「多敲一声的座钟」（首次出现：第3章末段）</span></div>
+          <div class="r"><i class="nop">无影响</i><span>伏笔 F-03「煤炉痕迹」——删除段落与该伏笔无关</span></div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="k">伏笔回收率</div><div class="v">82%</div></div>
+        <div class="stat"><div class="k">公平线索覆盖</div><div class="v">91%</div></div>
+        <div class="stat"><div class="k">一致性风险</div><div class="v warn">发现 1 项</div></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ═══════════ 设计稿演示切换器 ═══════════ -->
+  <div class="explain" id="explain">状态 A · 阅读模式 —— 正文是页面中心，羊皮纸承载，对话与账本分列两侧</div>
+  <div class="demo-bar">
+    <span class="lbl">设计稿状态</span>
+    <button class="on" data-state="state-read">A 阅读模式</button>
+    <button data-state="state-edit">B 编辑中（未保存）</button>
+    <button data-state="state-sync">C 保存后 · 对账同步</button>
+  </div>
+
+<script>
+  // 设计稿演示逻辑：三态切换（真实实现中这些状态由 store 的 manuscript 切片驱动）
+  const explains = {
+    "state-read": "状态 A · 阅读模式 —— 正文是页面中心，羊皮纸承载，对话与账本分列两侧",
+    "state-edit": "状态 B · 编辑中 —— Agent 对本章写入已锁定；显式保存（⌘S），不做自动保存；保存意图 = 一次修订",
+    "state-sync": "状态 C · 对账同步 —— 保存后自动排队：diff(段落级) → 对账 prompt 进同一会话 → bible_* 工具落账 → 账本面板联动刷新",
+  };
+  document.querySelectorAll(".demo-bar button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".demo-bar button").forEach((b) => b.classList.remove("on"));
+      btn.classList.add("on");
+      const s = btn.dataset.state;
+      document.body.className = s;
+      document.getElementById("explain").textContent = explains[s];
+      // 各状态的界面元素可见性
+      const read = s === "state-read", edit = s === "state-edit", sync = s === "state-sync";
+      document.getElementById("btn-save").style.display = edit ? "" : "none";
+      document.getElementById("btn-discard").style.display = edit ? "" : "none";
+      document.getElementById("save-chip").style.display = edit ? "" : "none";
+      document.getElementById("sync-chip").style.display = sync ? "" : "none";
+      document.getElementById("synced-chip").style.display = sync ? "" : "none";
+      document.getElementById("wc").textContent = edit ? "2,351" : "2,348";
+      document.getElementById("diff-view").style.display = sync ? "" : "none";
+      document.getElementById("new-clue-row").style.display = sync ? "" : "none";
+      // 阅读态正文与 diff 视图互斥
+      document.querySelector(".paper-body.read-only:not(#diff-view)").style.display =
+        read ? "" : "none";
+    });
+  });
+</script>
+</body>
+</html>
