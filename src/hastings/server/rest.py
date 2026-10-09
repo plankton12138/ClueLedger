@@ -303,6 +303,13 @@ class ForeshadowOverdueResponse(BaseModel):
     expected_resolve_chapter: str
 
 
+class ForeshadowRiskItemResponse(BaseModel):
+    """逐条伏笔风险（P6 T8）：名字 + 派生风险（overdue/near/normal）。"""
+
+    name: str
+    risk: str
+
+
 class StatsResponse(BaseModel):
     """全工作区统计（P6 T7，D7）：纯派生聚合，前端统计卡数据源。
 
@@ -318,6 +325,7 @@ class StatsResponse(BaseModel):
     foreshadow_resolved: int
     foreshadow_recovery_rate: float
     overdue_foreshadows: list[ForeshadowOverdueResponse]
+    foreshadow_risks: list[ForeshadowRiskItemResponse]
     clue_counts: dict[str, int]
     clue_total: int
     clue_red_herring: int
@@ -529,6 +537,10 @@ def create_rest_router(
                     expected_resolve_chapter=item.expected_resolve_chapter,
                 )
                 for item in data.overdue_foreshadows
+            ],
+            foreshadow_risks=[
+                ForeshadowRiskItemResponse(name=item.name, risk=item.risk)
+                for item in data.foreshadow_risks
             ],
             clue_counts=data.clue_counts,
             clue_total=data.clue_total,

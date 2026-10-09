@@ -59,6 +59,7 @@ const COLUMNS: Record<BibleType, Array<{ key: string; label: string }>> = {
     { key: "plant_mode", label: "方式" },
     { key: "expected_resolve_chapter", label: "预计回收" },
     { key: "status", label: "状态" },
+    { key: "risk", label: "风险" },
   ],
   method: [
     { key: "name", label: "名字" },
@@ -130,6 +131,57 @@ function RecoveryRing({ rate }: { rate: number }) {
   );
 }
 
+/** 风险语义色（T8）：逾期红 / 临近暗金 / 正常绿，与账本生命周期色系同源。 */
+const RISK_META: Record<string, { label: string; chip: string }> = {
+  overdue: { label: "逾期", chip: "border-overdue/60 text-overdue" },
+  near: { label: "临近", chip: "border-gold/60 text-gold" },
+  normal: { label: "正常", chip: "border-planted/60 text-planted" },
+};
+
+/** 从章节 id（ch03）提取章号；非 chNN 形态返回 null（进度条不可判定）。 */
+function parseChapterNumber(chapterId: string): number | null {
+  const match = /^ch(\d+)$/i.exec(chapterId.trim());
+  return match === null ? null : Number(match[1]);
+}
+
+/**
+ * 风险单元格（T8）：风险 chip + 章节进度条。
+ * 进度 = 当前最新章节 / 预计回收章（超过 100% 即逾期）；统计未就绪或
+ * 预计回收不可解析时进度显示「—」（合法空结果，不报错）。
+ */
+function RiskCell({
+  risk,
+  latest,
+  expected,
+}: {
+  risk: string;
+  latest: number;
+  expected: string;
+}) {
+  const meta = RISK_META[risk] ?? { label: "—", chip: "border-line text-paper/50" };
+  const expectedNum = parseChapterNumber(expected);
+  const hasProgress = latest > 0 && expectedNum !== null;
+  const pct = hasProgress ? Math.min(100, Math.round((latest / expectedNum) * 100)) : 0;
+  return (
+    <div className="min-w-[4.5rem]">
+      <span className={`inline-block border px-1.5 py-px text-[10px] ${meta.chip}`}>
+        {meta.label}
+      </span>
+      <div className="mt-1 flex items-center gap-1">
+        <div className="h-1 w-12 bg-line">
+          <div
+            className={`h-1 ${risk === "overdue" ? "bg-overdue" : "bg-recovered"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className="text-[10px] text-paper/50">
+          {hasProgress ? `${latest}/${expectedNum} 章` : "—"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function BiblePanel() {
   const [active, setActive] = useState<BibleType>("character");
   const [ledgers, setLedgers] = useState<Record<BibleType, LedgerState>>(initialLedgers);
@@ -138,6 +190,8 @@ export default function BiblePanel() {
     error: null,
     data: null,
   });
+  // 伏笔状态筛选（T8）：all = 不过滤；仅伏笔 Tab 渲染筛选器。
+  const [fsFilter, setFsFilter] = useState<string>("all");
   const slug = useChatStore((s) => s.slug);
 
   const load = useCallback(async (workspaceSlug: string, type: BibleType) => {
@@ -201,6 +255,14 @@ export default function BiblePanel() {
 
   const ledger = ledgers[active];
   const columns = COLUMNS[active];
+  // T8：风险按名 join stats 派生列表（后端算前端展示，D7）；筛选仅伏笔 Tab。
+  const riskByName = new Map(
+    (stats.data?.foreshadow_risks ?? []).map((r) => [r.name, r.risk]),
+  );
+  const rows =
+    active === "foreshadow" && fsFilter !== "all"
+      ? ledger.entities.filter((e) => e["status"] === fsFilter)
+      : ledger.entities;
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap gap-1 border-b border-line px-3 py-2">
@@ -218,6 +280,21 @@ export default function BiblePanel() {
             {BIBLE_LABELS[t]}
           </button>
         ))}
+        {active === "foreshadow" && ledger.entities.length > 0 && (
+          <select
+            aria-label="伏笔状态筛选"
+            value={fsFilter}
+            onChange={(e) => setFsFilter(e.target.value)}
+            className="ml-auto border border-line bg-transparent px-1.5 py-0.5 text-xs text-paper focus:border-gold/60 focus:outline-none"
+          >
+            <option value="all" className="bg-ink">全部</option>
+            {Object.entries(FORESHADOW_STATUS_LABELS).map(([status, meta]) => (
+              <option key={status} value={status} className="bg-ink">
+                {meta.label}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
         {ledger.error && (
@@ -230,7 +307,10 @@ export default function BiblePanel() {
             {ledger.loading ? "读取中…" : "该账本暂无条目（用 bible_upsert 工具登记）。"}
           </p>
         )}
-        {ledger.entities.length > 0 && (
+        {!ledger.error && ledger.entities.length > 0 && rows.length === 0 && (
+          <p className="mt-6 text-center text-xs text-paper/40">该筛选下暂无条目。</p>
+        )}
+        {rows.length > 0 && (
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-line text-gold-soft">
@@ -242,9 +322,21 @@ export default function BiblePanel() {
               </tr>
             </thead>
             <tbody>
-              {ledger.entities.map((entity, i) => (
+              {rows.map((entity, i) => (
                 <tr key={i} className="border-b border-line/40 align-top text-paper/80">
                   {columns.map((c) => {
+                    // 风险列（T8）：由 stats 派生列表 join 渲染，不走 entity[c.key]。
+                    if (active === "foreshadow" && c.key === "risk") {
+                      return (
+                        <td key={c.key} className="px-1.5 py-1.5">
+                          <RiskCell
+                            risk={riskByName.get(String(entity["name"])) ?? ""}
+                            latest={stats.data?.latest_chapter ?? 0}
+                            expected={String(entity["expected_resolve_chapter"] ?? "")}
+                          />
+                        </td>
+                      );
+                    }
                     const text = cellText(entity[c.key]);
                     return (
                       <td key={c.key} className="px-1.5 py-1.5">

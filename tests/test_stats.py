@@ -130,6 +130,12 @@ def test_stats_aggregates_foreshadow_and_clue(tmp_path: Path) -> None:
     assert stats.foreshadow_recovery_rate == 1 / 3
     assert [o.name for o in stats.overdue_foreshadows] == ["伏笔丙"]
     assert stats.overdue_foreshadows[0].expected_resolve_chapter == "ch01"
+    # 逐条风险（T8 表格数据源）：已回收正常 / 临近（ch03-2=1）/ 逾期（ch01≤2）
+    assert [(r.name, r.risk) for r in stats.foreshadow_risks] == [
+        ("伏笔甲", "normal"),
+        ("伏笔乙", "near"),
+        ("伏笔丙", "overdue"),
+    ]
     assert stats.clue_total == 3
     assert stats.clue_counts == {"discovered": 1, "planted": 2}
     assert stats.clue_red_herring == 2

@@ -65,6 +65,14 @@ class ForeshadowOverdue:
 
 
 @dataclass(frozen=True, slots=True)
+class ForeshadowRiskItem:
+    """逐条伏笔风险（T8 表格风险列数据源）：名字 + 派生风险（逾期/临近/正常）。"""
+
+    name: str
+    risk: ForeshadowRisk
+
+
+@dataclass(frozen=True, slots=True)
 class StoryStats:
     """全工作区统计（纯派生）；字段语义见 D7 与前端统计卡。"""
 
@@ -76,6 +84,7 @@ class StoryStats:
     foreshadow_resolved: int
     foreshadow_recovery_rate: float
     overdue_foreshadows: list[ForeshadowOverdue]
+    foreshadow_risks: list[ForeshadowRiskItem]
     clue_counts: dict[str, int]
     clue_total: int
     clue_red_herring: int
@@ -114,6 +123,7 @@ def compute_story_stats(workspace: StoryWorkspace) -> StoryStats:
         for f in foreshadows
         if foreshadow_risk(f, latest) == "overdue"
     ]
+    risks = [ForeshadowRiskItem(name=f.name, risk=foreshadow_risk(f, latest)) for f in foreshadows]
     clue_counts = cast(dict[str, int], Counter(c.status for c in clues))
     clue_total = len(clues)
     clue_red_herring = sum(1 for c in clues if c.is_red_herring)
@@ -135,6 +145,7 @@ def compute_story_stats(workspace: StoryWorkspace) -> StoryStats:
             foreshadow_resolved / foreshadow_total if foreshadow_total else 0.0
         ),
         overdue_foreshadows=overdue,
+        foreshadow_risks=risks,
         clue_counts=clue_counts,
         clue_total=clue_total,
         clue_red_herring=clue_red_herring,
@@ -144,6 +155,7 @@ def compute_story_stats(workspace: StoryWorkspace) -> StoryStats:
 
 __all__ = [
     "ForeshadowOverdue",
+    "ForeshadowRiskItem",
     "ForeshadowRisk",
     "StoryStats",
     "compute_story_stats",

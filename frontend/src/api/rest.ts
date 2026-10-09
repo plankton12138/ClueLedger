@@ -101,6 +101,12 @@ export interface ForeshadowOverdueWire {
   expected_resolve_chapter: string;
 }
 
+/** 逐条伏笔风险（T8 表格风险列数据源）：overdue/near/normal。 */
+export interface ForeshadowRiskItemWire {
+  name: string;
+  risk: "overdue" | "near" | "normal";
+}
+
 /** 全工作区统计（纯派生，snake_case 口径）：统计卡数据源。 */
 export interface StoryStatsWire {
   chapters: number;
@@ -111,6 +117,7 @@ export interface StoryStatsWire {
   foreshadow_resolved: number;
   foreshadow_recovery_rate: number;
   overdue_foreshadows: ForeshadowOverdueWire[];
+  foreshadow_risks: ForeshadowRiskItemWire[];
   clue_counts: Record<string, number>;
   clue_total: number;
   clue_red_herring: number;
@@ -132,7 +139,8 @@ export async function fetchStats(slug: string): Promise<StoryStatsWire> {
     typeof record.total_chars !== "number" ||
     typeof record.foreshadow_total !== "number" ||
     typeof record.foreshadow_recovery_rate !== "number" ||
-    !Array.isArray(record.overdue_foreshadows)
+    !Array.isArray(record.overdue_foreshadows) ||
+    !Array.isArray(record.foreshadow_risks)
   ) {
     throw new Error(
       `账本统计响应结构不符：期望 { chapters, total_chars, foreshadow_*, overdue_foreshadows, ... }，` +
