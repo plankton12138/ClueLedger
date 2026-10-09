@@ -677,6 +677,56 @@ def create_rest_router(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return WorkspaceCreatedResponse(slug=body.slug)
 
+    @router.delete("/api/workspaces/{slug}", status_code=204)
+    async def delete_workspace(slug: str, confirm: str = "") -> Response:
+        """删除工作区（P7 T13）：整目录移除，不可恢复。
+
+        泄压阀：confirm 不等 slug → 422（防误删守门）；slug 不合法 → 422；
+        未创建 → 404；写作流运行中 → 409；rmtree IO 故障 → 500 归因环境。
+        """
+        if confirm != slug:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "删除被拒：confirm 参数与 slug 不一致。"
+                    f"为什么错：删除不可恢复，需显式确认——query 传 confirm={slug}。"
+                    "怎样算对：前端弹确认框后把工作区 slug 原样回传。"
+                ),
+            )
+        try:
+            workspace = _workspace(slug)  # 构造即校验 slug
+        except InvalidEntityNameError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"slug 不合法：{slug!r}。"
+                    f"为什么错：{exc}。"
+                    "怎样算对：slug 只允许字母、数字、中文、空格或连字符"
+                    "（如 orient-express）；先 GET /api/workspaces 查看可用工作区。"
+                ),
+            ) from exc
+        if not workspace.story_dir.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"工作区不存在：{slug}。"
+                    "为什么错：stories 根目录下没有该 slug 对应的目录。"
+                    "怎样算对：先 GET /api/workspaces 查看可用工作区。"
+                ),
+            )
+        session = registry.peek(slug)
+        if session is not None and session.is_running:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"删除被拒：工作区 {slug} 有写作流进行中。"
+                    "为什么错：删除会移除正在被写工作流读写的目录。"
+                    "怎样算对：先等写作流结束（或停止本轮生成）再删除。"
+                ),
+            )
+        registry.delete(slug)
+        return Response(status_code=204)
+
     @router.get("/api/{slug}/state", response_model=StateResponse)
     async def state(slug: str) -> StateResponse:
         session = await _session(slug)

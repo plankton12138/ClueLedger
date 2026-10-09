@@ -1311,3 +1311,74 @@ def test_rest_export_empty_workspace_is_ok(workspace: StoryWorkspace) -> None:
     assert response.status_code == 200
     names = zipfile.ZipFile(io.BytesIO(response.content)).namelist()
     assert names == []
+
+
+# --- DELETE /api/workspaces/{slug}：工作区删除（P7 T13） ---
+
+
+def test_rest_delete_workspace_removes_directory(root: Path) -> None:
+    (root / SLUG).mkdir()
+    (root / SLUG / "bible").mkdir()
+    (root / SLUG / "bible" / "characters.yaml").write_text("x", encoding="utf-8")
+
+    response = _client(root).delete(f"/api/workspaces/{SLUG}?confirm={SLUG}")
+
+    assert response.status_code == 204
+    assert not (root / SLUG).exists()
+    assert [s for s in _client(root).get("/api/workspaces").json()["workspaces"]] == []
+
+
+def test_rest_delete_workspace_confirm_mismatch_returns_422(root: Path) -> None:
+    (root / SLUG).mkdir()
+
+    response = _client(root).delete(f"/api/workspaces/{SLUG}?confirm=wrong-slug")
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "confirm" in detail
+    assert "为什么错" in detail
+    assert "怎样算对" in detail
+    assert (root / SLUG).exists()  # 未被误删
+
+
+def test_rest_delete_workspace_unknown_returns_404(root: Path) -> None:
+    response = _client(root).delete(f"/api/workspaces/{SLUG}?confirm={SLUG}")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "工作区不存在" in detail
+    assert "怎样算对" in detail
+
+
+@pytest.mark.parametrize("bad_slug", ["CON", "bad.name"])
+def test_rest_delete_workspace_invalid_slug_returns_422(root: Path, bad_slug: str) -> None:
+    """路径参数只能承载合法 URL 片段，非法 slug 用保留名/含点字符覆盖。"""
+    response = _client(root).delete(f"/api/workspaces/{bad_slug}?confirm={bad_slug}")
+
+    assert response.status_code == 422
+    assert "slug 不合法" in response.json()["detail"]
+    assert not (root / "escape").exists()
+
+
+def test_rest_delete_workspace_while_running_returns_409(root: Path) -> None:
+    """运行中删除 → 409；先 GET state 预热装配会话（ensure_dirs 顺带建目录）。"""
+    client = TestClient(create_app(stub_registry(root, session=_RunningSession())))
+    client.get(f"/api/{SLUG}/state")  # 触发 get_or_create 装配 + 建目录
+
+    response = client.delete(f"/api/workspaces/{SLUG}?confirm={SLUG}")
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "写作流" in detail
+    assert "为什么错" in detail
+    assert "怎样算对" in detail
+    assert (root / SLUG).exists()
+
+
+def test_rest_delete_workspace_not_assembled_skips_running_check(root: Path) -> None:
+    """未装配过会话（peek 为 None）→ 不可能运行中，直接放行删除。"""
+    (root / SLUG).mkdir()
+
+    response = _client(root).delete(f"/api/workspaces/{SLUG}?confirm={SLUG}")
+
+    assert response.status_code == 204

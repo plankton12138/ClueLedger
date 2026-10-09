@@ -14,6 +14,7 @@ slug 是目录名来源，全部入口过 P2 的 validate_slug 穿越防护闸�
 from __future__ import annotations
 
 import asyncio
+import shutil
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -112,3 +113,21 @@ class WorkspaceRegistry:
                 continue
             slugs.append(path.name)
         return slugs
+
+    def peek(self, slug: str) -> WritingSession | None:
+        """已装配会话（不触发装配，P7 T13）：删除前的 running 检查专用。
+
+        未装配过 → None（不可能在运行：会话在运行态必然已装配）。
+        """
+        return self._sessions.get(slug)
+
+    def delete(self, slug: str) -> None:
+        """删除工作区（P7 T13）：丢会话/锁缓存 + 整目录移除。
+
+        调用方（REST 层）负责 confirm 校验、存在性 404 与 running 409；
+        这里只保证缓存不悬空。rmtree OSError 上抛，由调用方归因环境故障。
+        """
+        workspace = StoryWorkspace(root=self._root, slug=slug)  # 构造即校验 slug
+        self._sessions.pop(slug, None)
+        self._locks.pop(slug, None)
+        shutil.rmtree(workspace.story_dir)
