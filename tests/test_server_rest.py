@@ -114,6 +114,34 @@ def test_rest_create_workspace_invalid_slug_returns_422(root: Path, bad_slug: st
     assert not (root / "escape").exists()
 
 
+# --- provider-catalog：内建目录（P7c T15） ---
+
+
+def test_rest_provider_catalog_lists_builtin_entries(root: Path) -> None:
+    body = _client(root).get("/api/provider-catalog").json()
+
+    catalog = body["catalog"]
+    names = [e["name"] for e in catalog]
+    assert "deepseek" in names
+    deepseek = catalog[names.index("deepseek")]
+    assert deepseek["display_name"] == "DeepSeek"
+    assert deepseek["base_url"].startswith("https://")
+    assert deepseek["default_model"] in deepseek["models"]
+    assert deepseek["api_key_env"] == "DEEPSEEK_API_KEY"
+    assert deepseek["key_url"].startswith("https://")
+
+
+def test_rest_provider_catalog_leaks_no_key_fields(root: Path) -> None:
+    """目录是纯数据：响应不得出现密钥承载字段（key 只进不出红线）。
+
+    api_key_env 是合法字段（env 变量名，非密钥），用带引号的 JSON 键匹配避误伤。
+    """
+    text = _client(root).get("/api/provider-catalog").text
+
+    assert '"api_key"' not in text
+    assert "key_hint" not in text
+
+
 # --- providers：档案目录（P6 D1，key 只进不出） ---
 
 

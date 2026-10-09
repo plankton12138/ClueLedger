@@ -39,6 +39,7 @@ from hastings.bible.store import (
 from hastings.events_store import CATEGORIES, EventStore, events_file
 from hastings.manuscript.diff import InvalidChapterFormat, validate_title_heading
 from hastings.manuscript.store import current_revision, save_chapter
+from hastings.provider_catalog import PROVIDER_CATALOG
 from hastings.server.provider_config import (
     ProviderBook,
     ProviderProfile,
@@ -279,6 +280,22 @@ class ProvidersResponse(BaseModel):
     providers: list[ProviderSummary]
 
 
+class CatalogEntrySummary(BaseModel):
+    """内建目录条目（P7c T15）：纯公开信息，不含任何密钥字段。"""
+
+    name: str
+    display_name: str
+    base_url: str
+    default_model: str
+    models: list[str]
+    api_key_env: str
+    key_url: str
+
+
+class CatalogResponse(BaseModel):
+    catalog: list[CatalogEntrySummary]
+
+
 class ProviderUpsertRequest(BaseModel):
     """档案新增/修改请求体（P7 T12）。
 
@@ -469,6 +486,28 @@ def create_rest_router(
     @router.get("/api/workspaces", response_model=WorkspacesResponse)
     async def workspaces() -> WorkspacesResponse:
         return WorkspacesResponse(workspaces=registry.list_slugs())
+
+    @router.get("/api/provider-catalog", response_model=CatalogResponse)
+    async def provider_catalog() -> CatalogResponse:
+        """内建 provider 目录（P7c T15）：登录式模型接入的预填数据。
+
+        纯静态数据、无任何密钥字段——目录条目只含公开信息（base_url/候选模型/
+        env 变量名/key 申请页），key 由用户填入后走 PUT /api/providers/{name}。
+        """
+        return CatalogResponse(
+            catalog=[
+                CatalogEntrySummary(
+                    name=entry.name,
+                    display_name=entry.display_name,
+                    base_url=entry.base_url,
+                    default_model=entry.default_model,
+                    models=list(entry.models),
+                    api_key_env=entry.api_key_env,
+                    key_url=entry.key_url,
+                )
+                for entry in PROVIDER_CATALOG
+            ]
+        )
 
     @router.get("/api/providers", response_model=ProvidersResponse)
     async def providers() -> ProvidersResponse:
