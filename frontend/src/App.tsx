@@ -1,9 +1,11 @@
 /**
- * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转，P5 T6 事件流一级入口，P6 T6 可调侧栏）：
- * 顶部导航切主视图——创作台（左主编对话可折叠可拖宽 + 中正文羊皮纸 + 右故事账本可拖宽，
- * 窄屏账本走抽屉覆盖层）/ 事件流（EventStreamView 占满主区）；语料库·审计中心置灰预留。
- * 工作区语义（计划 D5）：切换 = socket 重连 ws/{slug} + REST 前缀换 slug，不整页刷新；
- * 选中 slug 经 ?w= 记入地址（replaceState），刷新后不丢。
+ * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转，P6 T6 可调侧栏，P7 T1 顶栏三段式）：
+ * 顶栏 = 品牌区｜主导航五项｜右段（全局搜索 + 案卷菜单 + 状态徽章 + 重连）。
+ * 主视图：创作台（左主编对话可折叠可拖宽 + 中正文羊皮纸 + 右故事账本可拖宽，
+ * 窄屏账本走抽屉覆盖层，把手在创作台右缘）/ 语料库 / 审计中心（占位，T7/T9 转正）/
+ * 事件流 / 设置；账本全页（ledger）从创作台下钻进入（T5）。工作区语义（P4 计划 D5）：
+ * 切换 = socket 重连 ws/{slug} + REST 前缀换 slug，不整页刷新；选中 slug 经 ?w=
+ * 记入地址（replaceState），刷新后不丢。
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -17,6 +19,7 @@ import ManuscriptPanel from "./components/ManuscriptPanel";
 import SearchBox from "./components/SearchBox";
 import SettingsPanel from "./components/SettingsPanel";
 import Splitter, { loadStoredWidth } from "./components/Splitter";
+import WorkspaceMenu from "./components/WorkspaceMenu";
 import type { CommandType } from "./api/types";
 import type { ConnectionStatus } from "./api/socket";
 import { useChatStore } from "./state/store";
@@ -34,14 +37,32 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
   closed: "bg-overdue",
 };
 
-/** 顶部导航项：创作台 / 事件流（EventStreamView 一级入口）/ 设置 / 置灰预留。 */
-const NAV_ITEMS = [
-  { key: "studio", label: "✒ 创作台", soon: false },
-  { key: "events", label: "▤ 事件流", soon: false },
-  { key: "settings", label: "⚙ 设置", soon: false },
-  { key: "corpus", label: "册 语料库", soon: true },
-  { key: "audit", label: "◎ 审计中心", soon: true },
-] as const;
+/**
+ * 主视图类型（P7 D1）：导航五项 + 账本全页详情（ledger 不进导航，
+ * 从创作台账本面板「展开」下钻，T5 接线；先入骨架保证视图收口唯一）。
+ */
+type View = "studio" | "corpus" | "audit" | "events" | "settings" | "ledger";
+
+/** 顶部主导航（P7 D1）：对齐原型顺序，置灰占位项全部转正（页面 T7/T9 落地）。 */
+const NAV_ITEMS: Array<{ key: View; label: string }> = [
+  { key: "studio", label: "✒ 创作台" },
+  { key: "corpus", label: "册 语料库" },
+  { key: "audit", label: "◎ 审计中心" },
+  { key: "events", label: "▤ 事件流" },
+  { key: "settings", label: "⚙ 设置" },
+];
+
+/** 阶段占位页（T7/T9/T5 转正前兜底）：合法空态，不报错不置灰。 */
+function ComingSoonPage({ title, note }: { title: string; note: string }) {
+  return (
+    <main className="flex flex-1 items-center justify-center border-t border-line">
+      <div className="max-w-md text-center">
+        <h2 className="font-serif text-2xl font-bold text-gold">{title}</h2>
+        <p className="mt-2 text-xs leading-relaxed text-paper/50">{note}</p>
+      </div>
+    </main>
+  );
+}
 
 /** 选中工作区写进 ?w=（replaceState 不触发导航），刷新后恢复选择。 */
 function switchTo(slug: string): void {
@@ -122,11 +143,10 @@ export default function App() {
   const status = useChatStore((s) => s.status);
   const connectionError = useChatStore((s) => s.connectionError);
   const running = useChatStore((s) => s.running);
-  const snapshot = useChatStore((s) => s.snapshot);
   const slug = useChatStore((s) => s.slug);
   const workspaces = useChatStore((s) => s.workspaces);
   const nav = useChatStore((s) => s.nav);
-  const [view, setView] = useState<"studio" | "events" | "settings">("studio");
+  const [view, setView] = useState<View>("studio");
   const [showCreate, setShowCreate] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   // 可调侧栏（P6 T6）：宽度惰性读档（损坏回落默认），窄屏账本走抽屉覆盖层。
@@ -186,115 +206,77 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="flex flex-none items-center gap-5 border-b border-line bg-gradient-to-b from-ink-soft/90 to-ink/60 px-5 py-0" style={{ height: 52 }}>
-        <div className="flex items-center gap-2.5">
+      {/* 顶栏三段式（P7 D2）：左品牌｜中主导航（窄屏折叠为下拉）｜右段操作区。 */}
+      <header className="flex flex-none items-center gap-4 border-b border-line bg-gradient-to-b from-ink-soft/90 to-ink/60 px-5 py-0" style={{ height: 52 }}>
+        <div className="flex flex-none items-center gap-2.5">
           <div className="grid h-[30px] w-[30px] place-items-center rounded-full border border-gold font-serif text-sm font-bold text-gold">
             赫
           </div>
-          <div className="leading-tight">
+          <div className="hidden leading-tight lg:block">
             <div className="font-serif text-base font-bold tracking-widest text-gold">黑斯廷斯备忘录</div>
             <div className="text-[10px] tracking-[0.2em] text-gold-soft/65">
               HASTINGS&rsquo; MEMO · 让好故事更接近真相
             </div>
           </div>
         </div>
-        <nav className="ml-3 flex gap-1">
-          {NAV_ITEMS.map((item) => {
-            const active =
-              (item.key === "studio" && view === "studio") ||
-              (item.key === "events" && view === "events") ||
-              (item.key === "settings" && view === "settings");
-            if (item.soon) {
-              return (
-                <span
-                  key={item.key}
-                  className="cursor-not-allowed rounded px-3.5 py-1.5 text-[13px] text-paper opacity-30"
-                  title="后续阶段开放"
-                >
-                  {item.label}
-                  <small className="ml-1 text-[9px] text-gold-soft">
-                    {item.key === "corpus" ? "P6" : "后续"}
-                  </small>
-                </span>
-              );
-            }
+        <nav className="hidden min-w-0 flex-1 justify-center gap-1 md:flex">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setView(item.key)}
+              className={`rounded border px-3.5 py-1.5 text-[13px] transition-colors ${
+                view === item.key
+                  ? "border-line bg-gold/10 text-gold"
+                  : "border-transparent text-paper/75 hover:text-gold"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        {/* 窄屏（<md）导航折叠为下拉——同一 view 状态，只是呈现收窄（D2 布局不变量）。 */}
+        <select
+          aria-label="页面导航"
+          value={view}
+          onChange={(e) => setView(e.target.value as View)}
+          className="mx-auto border border-line bg-transparent px-1.5 py-1 text-xs text-paper focus:border-gold/60 focus:outline-none md:hidden"
+        >
+          {NAV_ITEMS.map((item) => (
+            <option key={item.key} value={item.key}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <div className="ml-auto flex flex-none items-center gap-2.5 text-xs text-paper/60">
+          <div className="hidden min-w-0 sm:block">
+            <SearchBox />
+          </div>
+          <WorkspaceMenu
+            onSwitch={switchTo}
+            onCreate={() => setShowCreate((v) => !v)}
+          />
+          {/* 状态徽章（D2）：连接点 + 文案合并为一枚；写作中（连接正常且 run 进行）
+              同一枚徽章换色脉动，替代原先两处并排。 */}
+          {(() => {
+            const writing = running && status === "open";
             return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => {
-                  if (item.key === "events") setView("events");
-                  else if (item.key === "settings") setView("settings");
-                  else setView("studio");
-                }}
-                className={`rounded border px-3.5 py-1.5 text-[13px] transition-colors ${
-                  active
-                    ? "border-line bg-gold/10 text-gold"
-                    : "border-transparent text-paper/75 hover:text-gold"
+              <span
+                className={`flex items-center gap-1.5 border px-2 py-0.5 ${
+                  writing ? "border-planned/50 text-planned" : "border-line text-paper/60"
                 }`}
               >
-                {item.label}
-              </button>
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    writing
+                      ? "bg-planned animate-pulse"
+                      : `${STATUS_DOT[status]}${status !== "open" ? " animate-pulse" : ""}`
+                  }`}
+                />
+                {writing ? "写作中" : STATUS_LABEL[status]}
+              </span>
             );
-          })}
-        </nav>
-        <SearchBox />
-        <div className="ml-auto flex items-center gap-3 text-xs text-paper/60">
-          <button
-            type="button"
-            onClick={() => setBibleDrawerOpen(true)}
-            className="border border-line px-2 py-0.5 transition-colors hover:border-gold/50 xl:hidden"
-          >
-            ▤ 账本
-          </button>
-          <select
-            aria-label="工作区"
-            value={slug ?? ""}
-            onChange={(e) => switchTo(e.target.value)}
-            className="max-w-40 border border-line bg-transparent px-1.5 py-0.5 text-xs text-paper focus:border-gold/60 focus:outline-none"
-          >
-            {slug === null && <option value="">选择案卷…</option>}
-            {slug !== null && !workspaces.includes(slug) && (
-              <option value={slug}>{slug}</option>
-            )}
-            {workspaces.map((w) => (
-              <option key={w} value={w}>
-                {w}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => setShowCreate((v) => !v)}
-            className={`border px-2 py-0.5 transition-colors ${
-              showCreate ? "border-gold bg-gold/15 text-gold" : "border-line hover:border-gold/50"
-            }`}
-          >
-            新建案卷
-          </button>
-          {slug !== null && (
-            <a
-              href={`/api/${encodeURIComponent(slug)}/export`}
-              title="导出工作区全量备份（zip：账本/正文/设置/会话/事件）"
-              className="border border-line px-2 py-0.5 transition-colors hover:border-gold/50"
-            >
-              导出
-            </a>
-          )}
-          {snapshot && (
-            <span className="hidden font-mono md:inline">{snapshot.model}</span>
-          )}
-          {running && (
-            <span className="border border-planned/50 px-2 py-0.5 text-planned">写作中</span>
-          )}
-          <span className="flex items-center gap-1.5">
-            <span
-              className={`h-2 w-2 rounded-full ${STATUS_DOT[status]} ${
-                status !== "open" ? "animate-pulse" : ""
-              }`}
-            />
-            {STATUS_LABEL[status]}
-          </span>
+          })()}
           {status === "closed" && (
             <button
               type="button"
@@ -347,6 +329,21 @@ export default function App() {
         <main className="flex min-h-0 flex-1 flex-col border-t border-line">
           <SettingsPanel />
         </main>
+      ) : view === "corpus" ? (
+        <ComingSoonPage
+          title="语料库"
+          note="文风档案与语料管理在本阶段后续任务转正（上传 .txt/.md → 句长直方图 / 对话占比等文风档案）。"
+        />
+      ) : view === "audit" ? (
+        <ComingSoonPage
+          title="审计中心"
+          note="确定性审计报告在本阶段后续任务转正（选章 → 三指标环 + 检查清单 + 定位问题章节）。"
+        />
+      ) : view === "ledger" ? (
+        <ComingSoonPage
+          title="账本全页"
+          note="从创作台账本面板「展开」进入的全页视图，随后续任务转正。"
+        />
       ) : slug === null || slugInvalid ? (
         <main className="flex flex-1 items-center justify-center">
           <div className="max-w-md text-center">
@@ -355,7 +352,7 @@ export default function App() {
             </h2>
             <p className="mt-2 text-xs leading-relaxed text-paper/50">
               {slugInvalid
-                ? "地址里的工作区不存在（可能已被移动）。从上方下拉选一本，或新建一本。"
+                ? "地址里的工作区不存在（可能已被移动）。从右上角案卷菜单选一本，或新建一本。"
                 : "还没有任何故事工作区。打开第一本案卷，开始你的悬疑连载。"}
             </p>
             <div className="mt-6 flex justify-center">
@@ -365,6 +362,16 @@ export default function App() {
         </main>
       ) : (
         <main className="relative flex min-h-0 flex-1">
+          {/* 窄屏账本抽屉把手（P7 D2）：从顶栏移入创作台，右缘中部抽屉拉手形态。 */}
+          <button
+            type="button"
+            onClick={() => setBibleDrawerOpen(true)}
+            aria-label="打开账本"
+            className="fixed right-0 top-1/2 z-30 -translate-y-1/2 border border-r-0 border-line bg-ink-soft/90 px-0.5 py-3 text-[10px] tracking-widest text-gold-soft transition-colors hover:text-gold xl:hidden"
+            style={{ writingMode: "vertical-rl" }}
+          >
+            账本
+          </button>
           {chatCollapsed ? (
             <button
               type="button"
