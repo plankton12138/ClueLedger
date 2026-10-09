@@ -8,7 +8,7 @@
  * 可读错误就地展示。
  */
 
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { EventFrame } from "../api/types";
 import {
   BIBLE_LABELS,
@@ -265,6 +265,11 @@ export default function BiblePanel() {
   const [graphSelected, setGraphSelected] = useState<string | null>(null);
   const [graphSecretShown, setGraphSecretShown] = useState(false);
   const slug = useChatStore((s) => s.slug);
+  // 全局搜索跳转（P6 T11）：命中行短暂高亮（约 2.4s 后自动熄灭，不留残影）。
+  const nav = useChatStore((s) => s.nav);
+  const clearNav = useChatStore((s) => s.clearNav);
+  const [highlightName, setHighlightName] = useState<string | null>(null);
+  const highlightTimer = useRef<number | null>(null);
 
   const load = useCallback(async (workspaceSlug: string, type: BibleType) => {
     setLedgers((s) => ({ ...s, [type]: { ...s[type], loading: true, error: null } }));
@@ -324,6 +329,18 @@ export default function BiblePanel() {
       if (targets.size > 0) void loadStats(workspaceSlug); // 账本有变动 → 统计重派生
     });
   }, [load, loadStats]);
+
+  // 全局搜索跳转（P6 T11）：账本命中 → 切对应 Tab + 高亮目标行（自动熄灭）。
+  // 角色命中额外切回列表视图（关系图视图无行可高亮）。消费完即 clearNav。
+  useEffect(() => {
+    if (nav === null || nav.kind !== "bible") return;
+    setActive(nav.type);
+    if (nav.type === "character") setCharView("list");
+    setHighlightName(nav.name);
+    if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
+    highlightTimer.current = window.setTimeout(() => setHighlightName(null), 2400);
+    clearNav();
+  }, [nav, clearNav]);
 
   const ledger = ledgers[active];
   const columns = COLUMNS[active];
@@ -447,7 +464,12 @@ export default function BiblePanel() {
                 const name = String(c["name"] ?? "");
                 const isOpen = openName === name;
                 return (
-                  <div key={name} className="border border-line/50 px-2.5 py-2">
+                  <div
+                    key={name}
+                    className={`border px-2.5 py-2 ${
+                      highlightName === name ? "border-gold bg-gold/10" : "border-line/50"
+                    }`}
+                  >
                     <button
                       type="button"
                       onClick={() => {
@@ -503,7 +525,12 @@ export default function BiblePanel() {
             </thead>
             <tbody>
               {rows.map((entity, i) => (
-                <tr key={i} className="border-b border-line/40 align-top text-paper/80">
+                <tr
+                  key={i}
+                  className={`border-b border-line/40 align-top ${
+                    highlightName === String(entity["name"]) ? "bg-gold/10" : "text-paper/80"
+                  }`}
+                >
                   {columns.map((c) => {
                     // 风险列（T8）：由 stats 派生列表 join 渲染，不走 entity[c.key]。
                     if (active === "foreshadow" && c.key === "risk") {

@@ -23,6 +23,14 @@ export interface SyncCardEntry {
 }
 
 /**
+ * 跨面板跳转请求（P6 T11 全局搜索，D9）：搜索框写，目标面板消费后清除。
+ * chapter → 创作台定位章节；bible → 切对应账本 Tab + 高亮目标行。
+ */
+export type SearchNav =
+  | { kind: "chapter"; chapterId: string }
+  | { kind: "bible"; type: "character" | "clue" | "foreshadow"; name: string };
+
+/**
  * manuscript 切片（P5 D7）：正文成为页面中心后的编辑状态机。
  * baseline 是 REST 读回的已保存版本；draft 是编辑缓冲（dirty = draft !== baseline）；
  * revision 为乐观并发垫底；saveState/syncState/diff 驱动工具栏徽标与对账视图。
@@ -71,12 +79,13 @@ interface ChatStore extends UiState {
   manuscript: ManuscriptState;
   /** 对账完成卡片（append-only；随快照重放清空）。 */
   syncCards: SyncCardEntry[];
-  /**
-   * 全部 notice 帧（append-only；P6 T5 事件流页实时尾数据源）。
+  /** 全部 notice 帧（append-only；P6 T5 事件流页实时尾数据源）。
    * 与 events.jsonl 的 notice 记录同源——事件流页据此把实时对账进度
    * 并入账本镜像；随快照重放与工作区切换清空。
    */
   noticeLog: NoticeFrame[];
+  /** 跨面板跳转请求（P6 T11）；面板消费后 clearNav，不留残影。 */
+  nav: SearchNav | null;
   setSlug(slug: string): void;
   setWorkspaces(slugs: string[]): void;
   setStatus(status: ConnectionStatus): void;
@@ -96,6 +105,9 @@ interface ChatStore extends UiState {
   discardDraft(): void;
   applyNotice(notice: NoticeFrame): void;
   resetManuscript(): void;
+  /** 写入跳转请求（搜索框）；目标面板消费后 clearNav。 */
+  navigate(nav: SearchNav): void;
+  clearNav(): void;
 }
 
 /** notice 序列 → 目标 syncState（queued → syncing → done/failed）；契约外 kind → null。 */
@@ -122,14 +134,16 @@ export const useChatStore = create<ChatStore>()((set) => ({
   manuscript: initialManuscript,
   syncCards: [],
   noticeLog: [],
+  nav: null,
   // 切换工作区：slug 变更驱动 useAgentSocket 重连；旧工作区的事件帧/条目
   // 由 loadSnapshot 的「重置后重放」语义在新快照到达时整体更替（计划 D5）。
-  // manuscript 随切换立即重置（P5 D7：工作区切换不残留上一案的章节草稿）。
+  // manuscript 随切换立即重置（P5 D7：工作区切换不残留上一案的章节草稿）；
+  // 跳转请求也随切换清空（旧案的搜索命中不得跳到新工作区）。
   setSlug: (slug) =>
     set((s) =>
       s.slug === slug
         ? { slug }
-        : { slug, manuscript: initialManuscript, syncCards: [], noticeLog: [] },
+        : { slug, manuscript: initialManuscript, syncCards: [], noticeLog: [], nav: null },
     ),
   setWorkspaces: (workspaces) => set({ workspaces }),
   setStatus: (status) => set({ status }),
@@ -258,4 +272,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
       return { manuscript, noticeLog, syncCards: [...s.syncCards, card] };
     }),
   resetManuscript: () => set({ manuscript: initialManuscript }),
+  // 搜索跳转（P6 T11）：只写不读——目标面板按 kind 各取所需后 clearNav。
+  navigate: (nav) => set({ nav }),
+  clearNav: () => set({ nav: null }),
 }));

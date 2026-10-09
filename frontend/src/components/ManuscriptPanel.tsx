@@ -82,6 +82,8 @@ export default function ManuscriptPanel({
   const ms = useChatStore((s) => s.manuscript);
   const setChapters = useChatStore((s) => s.setChapters);
   const selectChapter = useChatStore((s) => s.selectChapter);
+  const nav = useChatStore((s) => s.nav);
+  const clearNav = useChatStore((s) => s.clearNav);
   const chapterLoaded = useChatStore((s) => s.chapterLoaded);
   const chapterFailed = useChatStore((s) => s.chapterFailed);
   const setMode = useChatStore((s) => s.setMode);
@@ -156,6 +158,14 @@ export default function ManuscriptPanel({
       alive = false;
     };
   }, [slug, ms.chapterId, chapterLoaded, chapterFailed]);
+
+  // 全局搜索跳转（P6 T11）：章节命中 → 定位该章；已是当前章则不重复拉正文。
+  // 消费完即 clearNav（跳转是一次性的，不留残影）。选中章触发上方 effect 拉正文。
+  useEffect(() => {
+    if (nav === null || nav.kind !== "chapter") return;
+    if (nav.chapterId !== ms.chapterId) selectChapter(nav.chapterId);
+    clearNav();
+  }, [nav, ms.chapterId, selectChapter, clearNav]);
 
   // --- REST 编排：加锁 / 保存 / 放弃（store 只存状态，本组件只调度） ---
 

@@ -13,6 +13,7 @@ import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
 import EventStreamView from "./components/EventStreamView";
 import ManuscriptPanel from "./components/ManuscriptPanel";
+import SearchBox from "./components/SearchBox";
 import SettingsPanel from "./components/SettingsPanel";
 import Splitter, { loadStoredWidth } from "./components/Splitter";
 import type { CommandType } from "./api/types";
@@ -123,6 +124,7 @@ export default function App() {
   const snapshot = useChatStore((s) => s.snapshot);
   const slug = useChatStore((s) => s.slug);
   const workspaces = useChatStore((s) => s.workspaces);
+  const nav = useChatStore((s) => s.nav);
   const [view, setView] = useState<"studio" | "events" | "settings">("studio");
   const [showCreate, setShowCreate] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
@@ -145,6 +147,16 @@ export default function App() {
         ),
     );
   }, []);
+
+  // 全局搜索跳转（P6 T11）：正文与账本都在创作台视图，命中一律切回；
+  // 窄屏（<xl 账本走抽屉覆盖层）时顺带打开抽屉，xl 及以上账本面板常驻无需处理。
+  useEffect(() => {
+    if (nav === null) return;
+    setView("studio");
+    if (nav.kind === "bible" && !window.matchMedia("(min-width: 1280px)").matches) {
+      setBibleDrawerOpen(true);
+    }
+  }, [nav]);
 
   async function handleCreated(created: string): Promise<void> {
     setShowCreate(false);
@@ -225,6 +237,7 @@ export default function App() {
             );
           })}
         </nav>
+        <SearchBox />
         <div className="ml-auto flex items-center gap-3 text-xs text-paper/60">
           <button
             type="button"
