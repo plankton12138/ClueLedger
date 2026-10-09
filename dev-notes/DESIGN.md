@@ -86,10 +86,10 @@ stories/the-orient-express-case/
 
 ### 3.1 总体形态：单 Agent + 工具 → 编排式双 Agent（演进路线）
 
-**阶段一（Phase 1–3）：单 Agent + 丰富工具。**
+**阶段一（Phase 1–4）：单 Agent + 丰富工具。**
 完全贴合 Tau 架构：一个 `AgentHarness`，system prompt 定义"悬疑小说主编"角色，工具集承担全部结构化操作。理由：先吃透一个 loop 里工具调用、上下文管理、事件流的全部细节，再谈编排——这是学习路径的最优排序，也是 Tau 哲学（small layers beat magic）的要求。
 
-**阶段二（Phase 5）：引入"审计员"作为第二个 harness。**
+**阶段二（Phase 6）：引入"审计员"作为第二个 harness。**
 写作 Agent 与审计 Agent 分离，原因：
 
 1. **利益冲突**：让写作者自查伏笔回收等于让被告当法官；
@@ -152,7 +152,7 @@ stories/the-orient-express-case/
 |---|---|---|---|
 | 向量库 | **Chroma（嵌入式模式）** | 零运维、纯 Python、数据即文件，符合"可 inspect"哲学；单机语料量（百级场景 chunk）绰绰有余 | Qdrant（想练 Docker 时）、FAISS（更底层，不必要） |
 | Embedding | **BGE-M3（本地 sentence-transformers）** | 中英双语（阿婆原著+译本都覆盖）、免费、离线；1024 维 | API embedding（OpenAI/BGE-API）：省显存但依赖网络 |
-| Rerank | bge-reranker-base（可选，Phase 4 后期） | 学习完整 RAG 链路的进阶练习 | 无 |
+| Rerank | bge-reranker-base（可选，Phase 5 后期） | 学习完整 RAG 链路的进阶练习 | 无 |
 | 框架 | **不使用 LangChain/LlamaIndex** | 组件总共 200 行以内：chunk→embed→upsert→query。手写才能学会，简历上也更能讲清楚 | LlamaIndex（想对比时可做实验） |
 
 ### 4.3 检索策略（工具 `style_search` 的内部）
@@ -261,9 +261,10 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 | **P1 最小闭环** | 命令行版：openai_compatible provider + 3 个工具（`bible_upsert/bible_query/write_chapter`）+ 打印渲染（复用 tau rendering/plain.py 思路） | 终端里完成"设定 2 个角色 → 写 1 章" |
 | **P2 Bible 完整化** | 五张账本 + 状态机 + `timeline_check` + `method_lock` + 全套单测 | 状态机/时间线测试全绿 |
 | **P3 Web 化** | FastAPI WebSocket 桥 + React 前端（对话流 + Bible 面板） | 浏览器完成 P1 同样流程；事件流逐条渲染 |
-| **P4 RAG** | ingestion pipeline + `style_search`/`style_profile` + 语料管理页 | 上传阿婆作品集 → 写作时可检索、文风统计档案生效 |
-| **P5 审计员** | 独立审计 harness + `foreshadow_audit` + 对账指标 + 前端审计报告视图 | 每章自动生成审计 JSON |
-| **P6 评测与打磨** | eval harness（Level 3/4/5）+ golden set + 章节阅读器 + 导出 | 一份完整的自动评测报告 |
+| **P4 实用化** | 会话持久化（session.jsonl）+ 正文读回（`read_chapter`/`list_chapters`）+ 多工作区（WorkspaceRegistry + slug 路由）。2026-10-09 完成，见 [phase-04-usability.md](phase-04-usability.md) | 杀进程重启会话恢复；CLI 重进续聊；双工作区隔离 |
+| **P5 RAG** | ingestion pipeline + `style_search`/`style_profile` + 语料管理页 | 上传阿婆作品集 → 写作时可检索、文风统计档案生效 |
+| **P6 审计员** | 独立审计 harness + `foreshadow_audit` + 对账指标 + 前端审计报告视图 | 每章自动生成审计 JSON |
+| **P7 评测与打磨** | eval harness（Level 3/4/5）+ golden set + 章节阅读器 + 导出 | 一份完整的自动评测报告 |
 
 每阶段完成后在 `dev-notes/` 留一篇构建笔记（沿用 Tau 的习惯，也是学习沉淀的直接证据）。
 
