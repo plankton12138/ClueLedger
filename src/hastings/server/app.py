@@ -1,8 +1,8 @@
-"""FastAPI 应用工厂（P3 T1）。
+"""FastAPI 应用工厂（P4 T4 多工作区化）。
 
-装配点：T1 只有 health；T3 挂 WS 事件桥路由，T4 挂 REST 只读面路由。
-工厂依赖 WritingSession 协议 + StoryWorkspace（REST 读账本/正文）——
-换任何会话实现（含测试桩）都不动 HTTP 层。
+装配点：工厂只认 WorkspaceRegistry——REST 与 WS 路由均按 slug 参数从
+registry 解析会话；/api/health 是全局探活（不绑定具体工作区）。
+换任何注册表实现（含测试桩工厂）都不动 HTTP 层。
 """
 
 from __future__ import annotations
@@ -14,44 +14,31 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from hastings.bible.store import StoryWorkspace
+from hastings.server.registry import WorkspaceRegistry
 from hastings.server.rest import create_rest_router
-from hastings.server.session import WritingSession
 from hastings.server.ws import router as ws_router
 
 
 class HealthResponse(BaseModel):
     status: Literal["ok"]
-    story: str
-    model: str
-    is_running: bool
-    tools: list[str]
 
 
 def create_app(
-    session: WritingSession,
-    workspace: StoryWorkspace,
+    registry: WorkspaceRegistry,
     static_dir: Path | None = None,
 ) -> FastAPI:
-    """装配应用；``static_dir`` 存在时托管前端 build 产物（T9）。
+    """装配应用；``static_dir`` 存在时托管前端 build 产物（P3 T9）。
 
     挂载在路由之后——/api 与 /ws 优先匹配，静态文件只兜底其余路径。
     """
     app = FastAPI(title="Hastings", version="0.1.0")
-    app.state.session = session
-    app.state.workspace = workspace  # 调试内省与入口测试用；路由经参数绑定
-    app.include_router(create_rest_router(workspace=workspace, session=session))
+    app.state.registry = registry  # WS 路由与测试内省用；REST 路由经参数绑定
+    app.include_router(create_rest_router(registry=registry))
     app.include_router(ws_router)
 
     @app.get("/api/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
-        return HealthResponse(
-            status="ok",
-            story=session.slug,
-            model=session.model,
-            is_running=session.is_running,
-            tools=list(session.tool_names),
-        )
+        return HealthResponse(status="ok")
 
     if static_dir is not None and static_dir.is_dir():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="spa")

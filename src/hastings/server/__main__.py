@@ -1,14 +1,15 @@
-"""``python -m hastings.server <story-slug>`` Web 服务入口（P3 T5）。
+"""``python -m hastings.server`` Web 服务入口（P4 多工作区化）。
 
 与 CLI 入口（hastings.__main__）共享 env 处理——load_dotenv、
-normalize_base_url、env_error 零复制复用；装配链 workspace →
-HastingsSession → create_app → uvicorn.run。
+normalize_base_url、env_error 零复制复用；装配链 provider →
+default_session_factory → WorkspaceRegistry → create_app → uvicorn.run。
+不再绑定单一 slug：stories/ 下所有工作区（含运行中新建的）都经
+registry 按 slug 懒装配、各自恢复会话历史。
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -17,10 +18,9 @@ import uvicorn
 from dotenv import load_dotenv
 
 from hastings.__main__ import DEFAULT_STORIES_ROOT, env_error, normalize_base_url
-from hastings.bible.store import StoryWorkspace
 from hastings.server.app import create_app
-from hastings.server.hastings_session import HastingsSession
-from hastings.session_persist import restore_and_attach
+from hastings.server.hastings_session import default_session_factory
+from hastings.server.registry import WorkspaceRegistry
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -40,9 +40,8 @@ def default_static_dir() -> Path | None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hastings-server",
-        description="案卷 Hastings：悬疑小说写作 Agent 的 Web 服务入口",
+        description="案卷 Hastings：悬疑小说写作 Agent 的 Web 服务入口（多工作区）",
     )
-    parser.add_argument("slug", help="故事标识，例如 orient-express")
     parser.add_argument("--model", default=None, help="覆盖 HASTINGS_MODEL")
     parser.add_argument(
         "--stories-root",
@@ -69,14 +68,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     from tau_ai.openai_compatible import OpenAICompatibleProvider
 
     provider = OpenAICompatibleProvider(openai_compatible_config_from_env())
-    workspace = StoryWorkspace(root=args.stories_root, slug=args.slug)
     model = args.model or os.environ["HASTINGS_MODEL"]
-    session = HastingsSession.from_workspace(workspace, provider=provider, model=model)
-    asyncio.run(restore_and_attach(workspace, session.harness, on_warning=print))
+    registry = WorkspaceRegistry(
+        root=args.stories_root,
+        session_factory=default_session_factory(provider=provider, model=model),
+    )
     static_dir = default_static_dir()
-    app = create_app(session, workspace, static_dir=static_dir)
+    app = create_app(registry, static_dir=static_dir)
 
-    print(f"案卷已打开：{workspace.story_dir}")
+    print(f"案卷房已打开：{args.stories_root}")
     print(f"模型：{model}｜写作台地址：http://{args.host}:{args.port}")
     if static_dir is not None:
         print(f"前端已托管：{static_dir}")

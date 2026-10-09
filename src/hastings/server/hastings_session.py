@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING
 
 from hastings.bible.store import StoryWorkspace
+from hastings.server.registry import SessionFactory
 from hastings.server.session import AgentBusyError, WritingSession
 from tau_agent.events import AgentEvent
 from tau_agent.harness import AgentHarness, AgentHarnessConfig, EventListener
@@ -106,4 +107,21 @@ if TYPE_CHECKING:
         return session
 
 
-__all__ = ["BUSY_MESSAGE", "HastingsSession"]
+def default_session_factory(provider: ModelProvider, model: str) -> SessionFactory:
+    """server 入口的默认装配工厂（P4 D1/D4）：建 harness + 恢复历史会话 + 挂持久化。
+
+    registry 只管生命周期；本工厂负责"一个 slug 怎么变成可用会话"——
+    会话历史从 stories/<slug>/session.jsonl 回放，新消息经 message_end 落盘。
+    """
+
+    async def factory(workspace: StoryWorkspace) -> WritingSession:
+        from hastings.session_persist import restore_and_attach
+
+        session = HastingsSession.from_workspace(workspace, provider=provider, model=model)
+        await restore_and_attach(workspace, session.harness, on_warning=print)
+        return session
+
+    return factory
+
+
+__all__ = ["BUSY_MESSAGE", "HastingsSession", "default_session_factory"]

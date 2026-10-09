@@ -1,11 +1,12 @@
-"""REST 只读面（P3 T4，计划 D6）：state / bible / chapters 三组端点。
+"""REST 只读面（P4 T4 slug 化，计划 D4）：workspaces + state / bible / chapters。
 
-零写入口——写路径唯一在工具层（P2 守门人原则，不容 HTTP 绕过）。
+零写入口——唯一例外 POST /api/workspaces 是资源创建（建目录），不碰业务
+数据（P2 守门人原则照旧：写路径在工具层，不容 HTTP 绕过）。
 泄压阀三情形在 HTTP 层的落点：
-- 参数违规（未知账本类型、坏章节 id）→ 422/404 + 可读指引；
-- 合法但空（空账本、无章节）→ 200 空数组，不是错误；
-- 数据故障（YAML 语法坏/根节点结构坏/字段不合法）→ 422 + 路径指引；
-  环境故障（IO）→ 500 带归因（R3 清单），不与数据故障混谈。
+- 参数违规（坏 slug、未知账本类型、坏章节 id）→ 422/404 + 可读指引；
+- 合法但空（空账本、无章节、无工作区）→ 200 空数组，不是错误；
+- 撞名新建（409）、数据故障（YAML 坏）→ 422 + 路径指引；
+  环境故障（IO）→ 500 带归因，不与数据故障混谈。
 """
 
 from __future__ import annotations
@@ -21,11 +22,13 @@ from pydantic import BaseModel, ValidationError
 
 from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
 from hastings.bible.store import (
+    InvalidEntityNameError,
     LedgerFormatError,
     StoryWorkspace,
     list_characters,
     load_ledger,
 )
+from hastings.server.registry import WorkspaceExistsError, WorkspaceRegistry
 from hastings.server.session import WritingSession
 from hastings.tools.bible_tools import ENTITY_LABELS
 from tau_agent.types import JSONValue
@@ -87,6 +90,18 @@ class ChapterResponse(BaseModel):
     content: str
 
 
+class WorkspacesResponse(BaseModel):
+    workspaces: list[str]
+
+
+class WorkspaceCreateRequest(BaseModel):
+    slug: str
+
+
+class WorkspaceCreatedResponse(BaseModel):
+    slug: str
+
+
 def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[BaseModel]:
     """复用 store 层 loader 读一类账本；数据故障 422、IO 故障 500。"""
     try:
@@ -115,11 +130,56 @@ def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[Base
         ) from exc
 
 
-def create_rest_router(*, workspace: StoryWorkspace, session: WritingSession) -> APIRouter:
+def create_rest_router(*, registry: WorkspaceRegistry) -> APIRouter:
     router = APIRouter()
 
-    @router.get("/api/state", response_model=StateResponse)
-    async def state() -> StateResponse:
+    def _workspace(slug: str) -> StoryWorkspace:
+        # get_or_create 已过校验；这里只做路径解析（构造即校验，双保险）
+        return StoryWorkspace(root=registry.root, slug=slug)
+
+    async def _session(slug: str) -> WritingSession:
+        try:
+            return await registry.get_or_create(slug)
+        except InvalidEntityNameError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"slug 不合法：{slug!r}。"
+                    f"为什么错：{exc}。"
+                    "怎样算对：slug 只允许字母、数字、中文、空格或连字符"
+                    "（如 orient-express）；先 GET /api/workspaces 查看可用工作区。"
+                ),
+            ) from exc
+
+    @router.get("/api/workspaces", response_model=WorkspacesResponse)
+    async def workspaces() -> WorkspacesResponse:
+        return WorkspacesResponse(workspaces=registry.list_slugs())
+
+    @router.post(
+        "/api/workspaces",
+        response_model=WorkspaceCreatedResponse,
+        status_code=201,
+    )
+    async def create_workspace(body: WorkspaceCreateRequest) -> WorkspaceCreatedResponse:
+        try:
+            registry.create_workspace(body.slug)
+        except InvalidEntityNameError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"slug 不合法：{body.slug!r}。"
+                    f"为什么错：{exc}。"
+                    "怎样算对：slug 只允许字母、数字、中文、空格或连字符"
+                    "（如 orient-express）。"
+                ),
+            ) from exc
+        except WorkspaceExistsError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return WorkspaceCreatedResponse(slug=body.slug)
+
+    @router.get("/api/{slug}/state", response_model=StateResponse)
+    async def state(slug: str) -> StateResponse:
+        session = await _session(slug)
         return StateResponse(
             slug=session.slug,
             model=session.model,
@@ -128,33 +188,38 @@ def create_rest_router(*, workspace: StoryWorkspace, session: WritingSession) ->
             bible_types=sorted(ENTITY_LABELS),
         )
 
-    @router.get("/api/bible/{entity_type}", response_model=BibleResponse)
-    async def bible(entity_type: BibleType) -> BibleResponse:
-        entities = _read_ledger(workspace, entity_type)
+    @router.get("/api/{slug}/bible/{entity_type}", response_model=BibleResponse)
+    async def bible(slug: str, entity_type: BibleType) -> BibleResponse:
+        await _session(slug)
+        entities = _read_ledger(_workspace(slug), entity_type)
         return BibleResponse(
             entity_type=entity_type,
             count=len(entities),
             entities=[entity.model_dump() for entity in entities],
         )
 
-    @router.get("/api/chapters", response_model=ChaptersResponse)
-    async def chapters() -> ChaptersResponse:
+    @router.get("/api/{slug}/chapters", response_model=ChaptersResponse)
+    async def chapters(slug: str) -> ChaptersResponse:
+        await _session(slug)
+        workspace = _workspace(slug)
         if not workspace.chapters_dir.exists():
             return ChaptersResponse(chapters=[])  # 空章节是合法空结果
         ids = sorted(path.stem for path in workspace.chapters_dir.glob("*.md"))
         return ChaptersResponse(chapters=ids)
 
-    @router.get("/api/chapters/{chapter_id}", response_model=ChapterResponse)
-    async def chapter(chapter_id: str) -> ChapterResponse:
+    @router.get("/api/{slug}/chapters/{chapter_id}", response_model=ChapterResponse)
+    async def chapter(slug: str, chapter_id: str) -> ChapterResponse:
+        await _session(slug)
         if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
             raise HTTPException(
                 status_code=422,
                 detail=(
                     f"章节 id 不合法：{chapter_id!r}。"
                     "为什么错：id 只允许字母、数字、连字符与下划线。"
-                    "怎样算对：先 GET /api/chapters 查看可用章节 id。"
+                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
                 ),
             )
+        workspace = _workspace(slug)
         path = workspace.chapters_dir / f"{chapter_id}.md"
         try:
             content = path.read_text(encoding="utf-8")
@@ -174,7 +239,7 @@ def create_rest_router(*, workspace: StoryWorkspace, session: WritingSession) ->
                 detail=(
                     f"章节 {chapter_id} 不存在。"
                     f"为什么错：{hint}。"
-                    "怎样算对：先 GET /api/chapters 列出可用章节 id。"
+                    f"怎样算对：先 GET /api/{slug}/chapters 列出可用章节 id。"
                 ),
             ) from exc
         except OSError as exc:

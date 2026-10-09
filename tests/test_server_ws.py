@@ -1,4 +1,4 @@
-"""WebSocket 事件桥测试（P3 T3，CP1 核心交付）。
+"""WebSocket 事件桥测试（P3 T3，P4 T5 slug 化）。
 
 三层断言：
 ① 帧协议——响应帧/事件帧结构、id 配对、assistantMessageEvent 别名保真
@@ -25,20 +25,33 @@ from hastings.bible.store import StoryWorkspace
 from hastings.prompts import build_system_prompt
 from hastings.server.app import create_app
 from hastings.server.hastings_session import HastingsSession
-from hastings.server.session import AgentBusyError
+from hastings.server.registry import WorkspaceRegistry
+from hastings.server.session import AgentBusyError, WritingSession
 from hastings.tools.bible_tools import create_bible_tools
 from tau_agent import AgentHarness, AgentHarnessConfig
 from tau_agent.events import AgentEvent
 from tau_ai import FakeProvider
 from test_server_app import StubSession
 
+SLUG = "orient-express"
+WS_URL = f"/ws/{SLUG}"
 STEER_TEXT = "记得他是比利时人"
 FOLLOW_UP_TEXT = "再补一条细节"
 
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> StoryWorkspace:
-    return StoryWorkspace(root=tmp_path, slug="orient-express")
+    return StoryWorkspace(root=tmp_path, slug=SLUG)
+
+
+def _registry_with_session(root: Path, session: WritingSession) -> WorkspaceRegistry:
+    """桩工厂注册表：任何 slug 都装配到指定会话实例。"""
+
+    async def factory(ws: StoryWorkspace) -> WritingSession:
+        del ws
+        return session
+
+    return WorkspaceRegistry(root=root, session_factory=factory)
 
 
 def _app(workspace: StoryWorkspace, turns: list[list[Any]]) -> FastAPI:
@@ -51,7 +64,8 @@ def _app(workspace: StoryWorkspace, turns: list[list[Any]]) -> FastAPI:
             tools=tools,
         )
     )
-    return create_app(HastingsSession(harness=harness, workspace=workspace), workspace)
+    session = HastingsSession(harness=harness, workspace=workspace)
+    return create_app(_registry_with_session(workspace.root, session))
 
 
 def _standard_app(workspace: StoryWorkspace) -> FastAPI:
@@ -92,7 +106,7 @@ def _prompt_and_wait_done(ws: Any, message: str = "建一个角色") -> list[Any
 def test_ws_prompt_streams_event_frames_with_alias_fidelity(
     workspace: StoryWorkspace,
 ) -> None:
-    with TestClient(_standard_app(workspace)).websocket_connect("/ws") as ws:
+    with TestClient(_standard_app(workspace)).websocket_connect(WS_URL) as ws:
         ws.send_json({"id": 7, "type": "prompt", "message": "建一个角色"})
         first = ws.receive_json()
         assert first == {
@@ -131,7 +145,8 @@ def test_ws_prompt_streams_event_frames_with_alias_fidelity(
 def test_ws_busy_rejected_with_error_frame_and_connection_survives(
     workspace: StoryWorkspace,
 ) -> None:
-    with TestClient(create_app(StubSession(), workspace)).websocket_connect("/ws") as ws:
+    app = create_app(_registry_with_session(workspace.root, StubSession()))
+    with TestClient(app).websocket_connect(WS_URL) as ws:
         ws.send_json({"id": 5, "type": "prompt", "message": "再来一个"})
         error = ws.receive_json()
 
@@ -168,7 +183,8 @@ def test_ws_steer_and_follow_up_commands_reach_session(
     workspace: StoryWorkspace,
 ) -> None:
     session = RecordingSession()
-    with TestClient(create_app(session, workspace)).websocket_connect("/ws") as ws:
+    app = create_app(_registry_with_session(workspace.root, session))
+    with TestClient(app).websocket_connect(WS_URL) as ws:
         ws.send_json({"id": 2, "type": "steer", "message": STEER_TEXT})
         steer_response = ws.receive_json()
         assert steer_response == {
@@ -191,11 +207,11 @@ def test_ws_get_messages_restores_history_after_reconnect(
     workspace: StoryWorkspace,
 ) -> None:
     client = TestClient(_standard_app(workspace))
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(WS_URL) as ws:
         _prompt_and_wait_done(ws)
 
     # 模拟浏览器刷新：新连接拉历史快照
-    with client.websocket_connect("/ws") as fresh:
+    with client.websocket_connect(WS_URL) as fresh:
         fresh.send_json({"type": "get_messages"})
         snapshot = fresh.receive_json()
     assert snapshot["success"] is True
@@ -213,8 +229,26 @@ def test_ws_get_messages_restores_history_after_reconnect(
 
 
 def test_ws_abort_command_and_cancel_signal(workspace: StoryWorkspace) -> None:
-    app = _standard_app(workspace)
-    session: HastingsSession = app.state.session
+    tools = create_bible_tools(workspace)
+    harness = AgentHarness(
+        AgentHarnessConfig(
+            provider=FakeProvider(
+                [
+                    assistant_stream(
+                        call=character_upsert("call-w1", "波洛", "比利时侦探"),
+                        text="先建档。",
+                        reason="toolUse",
+                    ),
+                    closing("建档完成。"),
+                ]
+            ),
+            model="fake",
+            system=build_system_prompt(tools),
+            tools=tools,
+        )
+    )
+    session = HastingsSession(harness=harness, workspace=workspace)
+    app = create_app(_registry_with_session(workspace.root, session))
 
     # 服务端 listener 在工具启动点确定性触发 cancel（FakeProvider 瞬发，
     # 从测试线程发 abort 存在竞态；abort 命令接线在 run 结束后单独验证）
@@ -223,7 +257,7 @@ def test_ws_abort_command_and_cancel_signal(workspace: StoryWorkspace) -> None:
             session.cancel()
 
     unsubscribe = session.subscribe(cancel_on_tool_start)
-    with TestClient(app).websocket_connect("/ws") as ws:
+    with TestClient(app).websocket_connect(WS_URL) as ws:
         frames = _prompt_and_wait_done(ws)
         ends = [f for f in frames if f["type"] == "tool_execution_end"]
         assert len(ends) == 1
@@ -249,7 +283,7 @@ def test_ws_second_connection_receives_full_stream_via_listener(
     workspace: StoryWorkspace,
 ) -> None:
     client = TestClient(_standard_app(workspace))
-    with client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b:
+    with client.websocket_connect(WS_URL) as a, client.websocket_connect(WS_URL) as b:
         a.send_json({"id": 1, "type": "prompt", "message": "建一个角色"})
         assert a.receive_json()["success"] is True
 
@@ -267,7 +301,7 @@ def test_ws_second_connection_receives_full_stream_via_listener(
 def test_ws_unknown_command_and_missing_message_and_bad_json(
     workspace: StoryWorkspace,
 ) -> None:
-    with TestClient(_standard_app(workspace)).websocket_connect("/ws") as ws:
+    with TestClient(_standard_app(workspace)).websocket_connect(WS_URL) as ws:
         ws.send_json({"type": "teleport"})
         error = ws.receive_json()
         assert error["success"] is False

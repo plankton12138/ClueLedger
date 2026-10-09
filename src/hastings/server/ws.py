@@ -25,6 +25,8 @@ from typing import cast
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 
+from hastings.bible.store import InvalidEntityNameError
+from hastings.server.registry import WorkspaceRegistry
 from hastings.server.session import AgentBusyError, WritingSession
 from tau_agent.events import AgentEvent
 from tau_agent.types import JSONValue
@@ -178,9 +180,16 @@ class Connection:
             await self._ws.send_text(text)
 
 
-@router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket) -> None:
-    session: WritingSession = cast(WritingSession, websocket.app.state.session)
+@router.websocket("/ws/{slug}")
+async def websocket_endpoint(websocket: WebSocket, slug: str) -> None:
+    """按路径 slug 从 registry 解析会话（P4 T5）；坏 slug 拒绝连接不装配。"""
+    registry: WorkspaceRegistry = websocket.app.state.registry
+    try:
+        session = await registry.get_or_create(slug)
+    except InvalidEntityNameError:
+        await websocket.accept()
+        await websocket.close(code=1008, reason=f"slug 不合法：{slug}")
+        return
     await websocket.accept()
     await Connection(websocket, session).serve()
 
