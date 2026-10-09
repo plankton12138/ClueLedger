@@ -18,6 +18,7 @@ from hastings.bible.store import (
     list_characters,
     load_ledger,
 )
+from hastings.manuscript.write_guard import EditMarkRegistry
 from hastings.prompts import build_system_prompt
 from hastings.session_persist import restore_and_attach
 from hastings.tools.bible_tools import ENTITY_LABELS, create_bible_tools, entity_summary
@@ -115,10 +116,12 @@ def build_harness(workspace: StoryWorkspace, provider: ModelProvider, model: str
     )
 
 
-def create_writing_tools(workspace: StoryWorkspace) -> list[AgentTool]:
+def create_writing_tools(
+    workspace: StoryWorkspace, edit_marks: EditMarkRegistry | None = None
+) -> list[AgentTool]:
     return (
         create_bible_tools(workspace)
-        + create_chapter_tools(workspace)
+        + create_chapter_tools(workspace, edit_marks=edit_marks)
         + create_method_tools(workspace)
         + create_timeline_tools(workspace)
     )

@@ -394,3 +394,71 @@ def test_put_chapter_io_failure_returns_500_with_attribution(
     assert "文件系统错误" in detail
     assert "主文件未受影响" in detail
     assert main_path.read_text(encoding="utf-8") == content_before
+
+
+# --- edit-mark：作者草稿锁（P5 T3，D4） ---
+
+
+def _client_with_session(root: Path, session: StubSession) -> TestClient:
+    return TestClient(create_app(stub_registry(root, session=session)))
+
+
+def test_acquire_edit_mark_locks_chapter_for_user(workspace: StoryWorkspace) -> None:
+    _seed_chapter(workspace)
+    session = StubSession()
+    client = _client_with_session(workspace.root, session)
+
+    response = client.put(f"/api/{SLUG}/chapters/ch03/edit-mark")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["chapterId"] == "ch03"
+    assert body["holder"] == "user"
+    assert isinstance(body["ts"], float)
+    assert session.edit_marks.mark_of("ch03") is not None
+
+
+def test_acquire_edit_mark_missing_chapter_returns_404(workspace: StoryWorkspace) -> None:
+    response = _client(workspace.root).put(f"/api/{SLUG}/chapters/ch99/edit-mark")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "ch99" in detail
+    assert "怎样算对" in detail
+
+
+def test_acquire_edit_mark_bad_id_returns_422(workspace: StoryWorkspace) -> None:
+    response = _client(workspace.root).put(f"/api/{SLUG}/chapters/坏 名/edit-mark")
+
+    assert response.status_code == 422
+    assert "章节 id" in response.json()["detail"]
+
+
+def test_release_edit_mark_is_idempotent(workspace: StoryWorkspace) -> None:
+    session = StubSession()
+    client = _client_with_session(workspace.root, session)
+    session.edit_marks.acquire("ch03")
+
+    first = client.delete(f"/api/{SLUG}/chapters/ch03/edit-mark")
+    second = client.delete(f"/api/{SLUG}/chapters/ch03/edit-mark")
+
+    assert first.status_code == 200
+    assert first.json() == {"chapterId": "ch03", "released": True}
+    assert second.json() == {"chapterId": "ch03", "released": False}  # 幂等：未持锁无害
+    assert session.edit_marks.mark_of("ch03") is None
+
+
+def test_put_save_releases_edit_mark(workspace: StoryWorkspace) -> None:
+    """锁生命周期：保存成功即释放（agent 随后可写该章）。"""
+    _seed_chapter(workspace)
+    session = StubSession()
+    client = _client_with_session(workspace.root, session)
+    session.edit_marks.acquire("ch03")
+
+    response = client.put(
+        f"/api/{SLUG}/chapters/ch03",
+        json={"content": "# 第3章\n\n火车在十点零七分抵达。\n", "baseRevision": 1},
+    )
+
+    assert response.status_code == 200
+    assert session.edit_marks.mark_of("ch03") is None

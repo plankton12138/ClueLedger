@@ -118,6 +118,18 @@ class ChapterSavedResponse(BaseModel):
     diff: list[DiffHunkResponse]
 
 
+class EditMarkResponse(BaseModel):
+    # D4：作者草稿锁加锁结果（wire 上 camelCase，与章节端点同形）
+    chapter_id: str = Field(serialization_alias="chapterId")
+    holder: str
+    ts: float
+
+
+class EditMarkReleaseResponse(BaseModel):
+    chapter_id: str = Field(serialization_alias="chapterId")
+    released: bool
+
+
 class WorkspacesResponse(BaseModel):
     workspaces: list[str]
 
@@ -281,6 +293,50 @@ def create_rest_router(*, registry: WorkspaceRegistry) -> APIRouter:
             revision=current_revision(workspace, chapter_id),
         )
 
+    @router.put("/api/{slug}/chapters/{chapter_id}/edit-mark", response_model=EditMarkResponse)
+    async def acquire_edit_mark(chapter_id: str, slug: str) -> EditMarkResponse:
+        """作者开始编辑：加草稿锁（P5 D4）。幂等——重复加锁覆盖旧 mark。"""
+        if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"章节 id 不合法：{chapter_id!r}。"
+                    "为什么错：id 只允许字母、数字、连字符与下划线。"
+                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
+                ),
+            )
+        session = await _session(slug)
+        if not (_workspace(slug).chapters_dir / f"{chapter_id}.md").exists():
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"章节 {chapter_id} 不存在。"
+                    "为什么错：编辑锁只对已有章节有意义。"
+                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
+                ),
+            )
+        mark = session.edit_marks.acquire(chapter_id)
+        return EditMarkResponse(chapter_id=mark.chapter_id, holder=mark.holder, ts=mark.ts)
+
+    @router.delete(
+        "/api/{slug}/chapters/{chapter_id}/edit-mark",
+        response_model=EditMarkReleaseResponse,
+    )
+    async def release_edit_mark(chapter_id: str, slug: str) -> EditMarkReleaseResponse:
+        """作者放弃草稿：释放锁（幂等，未持锁无害）。"""
+        if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"章节 id 不合法：{chapter_id!r}。"
+                    "为什么错：id 只允许字母、数字、连字符与下划线。"
+                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
+                ),
+            )
+        session = await _session(slug)
+        released = session.edit_marks.release(chapter_id)
+        return EditMarkReleaseResponse(chapter_id=chapter_id, released=released)
+
     @router.put("/api/{slug}/chapters/{chapter_id}", response_model=ChapterSavedResponse)
     async def update_chapter(
         chapter_id: str,
@@ -304,7 +360,8 @@ def create_rest_router(*, registry: WorkspaceRegistry) -> APIRouter:
 
         session = await _session(slug)
         if session.is_running:
-            # D4 HTTP 侧守门（EditMark 注册表在 T3，运行态检查 T2 先落）
+            # D4 HTTP 侧守门：写作流进行中作者不得保存
+            # （EditMark 是另一半——挡 agent 写作者有草稿的章，在工具层）
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -348,6 +405,9 @@ def create_rest_router(*, registry: WorkspaceRegistry) -> APIRouter:
                     "主文件未受影响（归档先于写入）；修复后可直接重试保存。"
                 ),
             ) from exc
+
+        # D4 锁生命周期：保存成功即释放作者草稿锁（agent 随后可写该章）
+        session.edit_marks.release(chapter_id)
 
         return ChapterSavedResponse(
             id=chapter_id,

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from hastings.bible.store import StoryWorkspace
+from hastings.manuscript.write_guard import EditMarkRegistry
 from hastings.tools.chapter_tools import create_chapter_tools
 from hastings.tools.errors import ToolInputError
 from tau_agent import AgentTool
@@ -199,3 +200,52 @@ def test_list_render_call(list_chapters: AgentTool) -> None:
     render = list_chapters.render_call
     assert render is not None
     assert render({}) == "列出章节目录"
+
+
+# ---------- write_guard（P5 T3，D4）：作者草稿锁挡 agent 写入 ----------
+
+
+@pytest.mark.anyio
+async def test_write_blocked_by_author_mark_even_with_force(
+    workspace: StoryWorkspace,
+) -> None:
+    """作者锁 3 章 → write_chapter(force=true) 也被拒，错误含三要素且未触盘。"""
+    marks = EditMarkRegistry()
+    marks.acquire("ch03")
+    (write,) = create_chapter_tools(workspace, edit_marks=marks)[:1]
+
+    with pytest.raises(ToolInputError) as exc_info:
+        await write.execute("call-1", {"chapter": 3, "content": "抢写。", "force": True})
+
+    message = str(exc_info.value)
+    assert "第3章正在被作者手动编辑" in message  # 哪里错
+    assert "为什么错" in message  # 覆盖会丢弃作者未保存的草稿
+    assert "怎样算对" in message  # 等待保存或放弃
+    assert not (workspace.chapters_dir / "ch03.md").exists()
+
+
+@pytest.mark.anyio
+async def test_write_unblocked_after_mark_release(workspace: StoryWorkspace) -> None:
+    """锁生命周期：作者保存/放弃释放后，agent 恢复可写。"""
+    marks = EditMarkRegistry()
+    marks.acquire("ch03")
+    tools = create_chapter_tools(workspace, edit_marks=marks)
+    marks.release("ch03")
+
+    await tools[0].execute("call-1", {"chapter": 3, "content": "接手续写。", "force": True})
+
+    assert (workspace.chapters_dir / "ch03.md").exists()
+
+
+@pytest.mark.anyio
+async def test_other_chapters_not_blocked_by_mark(
+    workspace: StoryWorkspace,
+) -> None:
+    """锁按章隔离：ch03 被锁不影响 ch04 落笔。"""
+    marks = EditMarkRegistry()
+    marks.acquire("ch03")
+    (write,) = create_chapter_tools(workspace, edit_marks=marks)[:1]
+
+    await write.execute("call-1", {"chapter": 4, "content": "第四章不受影响。"})
+
+    assert (workspace.chapters_dir / "ch04.md").exists()

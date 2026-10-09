@@ -14,6 +14,7 @@ import yaml
 
 from hastings.bible.models import Character, Clue, Foreshadow, Method
 from hastings.bible.store import StoryWorkspace, list_characters, load_ledger
+from hastings.manuscript.write_guard import EditMarkRegistry
 from hastings.prompts import build_system_prompt
 from hastings.tools.bible_tools import create_bible_tools
 from hastings.tools.chapter_tools import create_chapter_tools
@@ -517,3 +518,51 @@ async def test_full_flow_message_history(full_harness: AgentHarness) -> None:
     assert "status=planted" in results[7].text
     assert "时间线自洽" in results[8].text
     assert all(r.is_error is False for r in results)
+
+
+# --- P5 T3（D4）：作者草稿锁 → write_chapter is_error 喂回模型 ---
+
+
+def _locked_chapter_provider() -> FakeProvider:
+    """剧本：agent 试图抢写被作者锁定的第 3 章 → 被拒 → 收尾。"""
+    write = ToolCall(
+        id="call-g1",
+        name="write_chapter",
+        arguments={"chapter": 3, "title": "抢写", "content": "趁作者没保存改掉这段。"},
+    )
+    return FakeProvider(
+        [
+            _assistant_stream(call=write, text="我把第3章改成十点零七分。", reason="toolUse"),
+            _assistant_stream(
+                call=None, text="第3章正被作者手动编辑，等作者保存或放弃后我再动笔。", reason="stop"
+            ),
+        ]
+    )
+
+
+@pytest.mark.anyio
+async def test_write_chapter_rejected_while_author_holds_mark(tmp_path: Path) -> None:
+    """作者锁 3 章 → write_chapter(force=true) is_error，三要素文案喂回模型。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="orient-express")
+    marks = EditMarkRegistry()
+    marks.acquire("ch03")
+    tools = create_bible_tools(workspace) + create_chapter_tools(workspace, edit_marks=marks)
+    harness = AgentHarness(
+        AgentHarnessConfig(
+            provider=_locked_chapter_provider(),
+            model="fake",
+            system=build_system_prompt(tools),
+            tools=tools,
+        )
+    )
+
+    events = [event async for event in harness.prompt("把第3章的时间改成十点零七分")]
+
+    ends = [event for event in events if isinstance(event, ToolExecutionEndEvent)]
+    assert [e.tool_name for e in ends] == ["write_chapter"]
+    assert ends[0].is_error is True
+    assert "第3章正在被作者手动编辑" in ends[0].result.text
+    assert "为什么错" in ends[0].result.text
+    assert "怎样算对" in ends[0].result.text
+    # 作者锁下正文未被篡改
+    assert not (workspace.chapters_dir / "ch03.md").exists()

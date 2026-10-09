@@ -174,3 +174,30 @@ async def test_subscribe_fanout_and_unsubscribe(workspace: StoryWorkspace) -> No
 
     assert "agent_start" in live and "agent_end" in live
     assert detached == []  # 退订后不再收到任何事件
+
+
+# ---------- edit_marks 接线（P5 T3，D4）：session 注册表与工具闭包共享 ----------
+
+
+@pytest.mark.anyio
+async def test_from_workspace_wires_edit_marks_into_chapter_tools(
+    workspace: StoryWorkspace,
+) -> None:
+    """from_workspace 装配的 write_chapter 与 session.edit_marks 是同一注册表。"""
+    from hastings.tools.errors import ToolInputError
+
+    session = HastingsSession.from_workspace(workspace, provider=FakeProvider([]), model="fake")
+    write_tool = next(t for t in session.harness.config.tools if t.name == "write_chapter")
+
+    session.edit_marks.acquire("ch02")
+
+    with pytest.raises(ToolInputError, match="正在被作者手动编辑"):
+        await write_tool.execute("call-1", {"chapter": 2, "content": "抢写。"})
+
+
+def test_direct_construction_gets_fresh_registry(workspace: StoryWorkspace) -> None:
+    """直接构造（无注册表实参）得到空注册表——CLI 等单 agent 场景锁永不触发。"""
+    session = _session(workspace)
+
+    assert session.edit_marks.mark_of("ch01") is None
+    assert session.edit_marks.acquire("ch01").holder == "user"

@@ -1,7 +1,8 @@
 """章节写作工具：write_chapter / read_chapter / list_chapters。
 
 write_chapter 落盘 chapters/chNN.md（两位数零填充），章节标题由工具生成；
-已存在时须 force=true 才覆盖，防止模型误改写旧稿。
+已存在时须 force=true 才覆盖，防止模型误改写旧稿；作者草稿锁（P5 D4）
+优先于 force——作者有未保存草稿的章，模型不得写（硬约束在工具层）。
 read_chapter / list_chapters（P4 T3）是只读回通道：正文写完不等于记忆——
 agent 必须能读回原文，长期记忆才从「账本摘要」扩到「原文细节」。
 """
@@ -13,6 +14,7 @@ from collections.abc import Mapping
 from typing import cast
 
 from hastings.bible.store import StoryWorkspace
+from hastings.manuscript.write_guard import EditMarkRegistry
 from hastings.tools.errors import ToolInputError
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
@@ -58,8 +60,15 @@ def _available_chapters(workspace: StoryWorkspace) -> list[int]:
     return sorted(numbers)
 
 
-def create_chapter_tools(workspace: StoryWorkspace) -> list[AgentTool]:
-    """创建绑定 workspace 的 write_chapter / read_chapter / list_chapters 工具。"""
+def create_chapter_tools(
+    workspace: StoryWorkspace, edit_marks: EditMarkRegistry | None = None
+) -> list[AgentTool]:
+    """创建绑定 workspace 的 write_chapter / read_chapter / list_chapters 工具。
+
+    edit_marks 是作者草稿锁注册表（P5 D4）：传入 session 持有的实例即接通
+    双侧守门；缺省给空注册表（CLI 等单 agent 场景锁永不触发）。
+    """
+    marks = edit_marks if edit_marks is not None else EditMarkRegistry()
 
     async def execute_write(
         tool_call_id: str,
@@ -78,6 +87,14 @@ def create_chapter_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         force = arguments.get("force", False)
         if not isinstance(force, bool):
             raise ToolInputError("force 必须是布尔值")
+
+        # D4 agent 侧守门：作者草稿优先，force 也不得越过（硬约束在工具层）
+        if marks.mark_of(f"ch{chapter:02d}") is not None:
+            raise ToolInputError(
+                f"第{chapter}章正在被作者手动编辑。"
+                "为什么错：覆盖会丢弃作者未保存的草稿。"
+                "怎样算对：等待作者保存或放弃后再写，或提示作者。"
+            )
 
         workspace.ensure_dirs()
         path = workspace.chapters_dir / f"ch{chapter:02d}.md"

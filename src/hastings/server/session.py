@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from typing import Protocol
 
+from hastings.manuscript.write_guard import EditMarkRegistry
 from tau_agent.events import AgentEvent
 from tau_agent.harness import EventListener
 from tau_agent.messages import AgentMessage
@@ -40,6 +41,11 @@ class WritingSession(Protocol):
 
     @property
     def messages(self) -> tuple[AgentMessage, ...]: ...
+
+    @property
+    def edit_marks(self) -> EditMarkRegistry:
+        """作者草稿锁注册表（P5 D4 人机互斥的共享状态，双侧守门读它）。"""
+        ...
 
     def prompt(self, content: str) -> AsyncIterator[AgentEvent]:
         """开始一轮新的 prompt 流；已有流在跑时抛 AgentBusyError。"""

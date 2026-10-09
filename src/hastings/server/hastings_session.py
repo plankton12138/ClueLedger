@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING
 
 from hastings.bible.store import StoryWorkspace
+from hastings.manuscript.write_guard import EditMarkRegistry
 from hastings.server.registry import SessionFactory
 from hastings.server.session import AgentBusyError, WritingSession
 from tau_agent.events import AgentEvent
@@ -31,9 +32,18 @@ BUSY_MESSAGE = (
 class HastingsSession:
     """WritingSession 的标准实现：绑定一个 StoryWorkspace 与一个 AgentHarness。"""
 
-    def __init__(self, harness: AgentHarness, workspace: StoryWorkspace) -> None:
+    def __init__(
+        self,
+        harness: AgentHarness,
+        workspace: StoryWorkspace,
+        edit_marks: EditMarkRegistry | None = None,
+    ) -> None:
         self._harness = harness
         self._workspace = workspace
+        # 作者草稿锁注册表（P5 D4）：from_workspace 会把同一实例闭包进
+        # write_chapter（agent 侧守门）；REST 锁端点与 PUT 保存经本属性读写。
+        # 直接构造（无实参）得到空注册表——CLI 等单 agent 场景锁永不触发。
+        self._edit_marks = edit_marks if edit_marks is not None else EditMarkRegistry()
 
     @classmethod
     def from_workspace(
@@ -43,7 +53,8 @@ class HastingsSession:
         from hastings.cli import create_writing_tools
         from hastings.prompts import build_system_prompt
 
-        tools = create_writing_tools(workspace)
+        edit_marks = EditMarkRegistry()
+        tools = create_writing_tools(workspace, edit_marks=edit_marks)
         harness = AgentHarness(
             AgentHarnessConfig(
                 provider=provider,
@@ -52,7 +63,7 @@ class HastingsSession:
                 tools=tools,
             )
         )
-        return cls(harness=harness, workspace=workspace)
+        return cls(harness=harness, workspace=workspace, edit_marks=edit_marks)
 
     @property
     def workspace(self) -> StoryWorkspace:
@@ -81,6 +92,10 @@ class HastingsSession:
     @property
     def messages(self) -> tuple[AgentMessage, ...]:
         return self._harness.messages
+
+    @property
+    def edit_marks(self) -> EditMarkRegistry:
+        return self._edit_marks
 
     def prompt(self, content: str) -> AsyncIterator[AgentEvent]:
         if self._harness.is_running:

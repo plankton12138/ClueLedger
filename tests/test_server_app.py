@@ -12,6 +12,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from hastings.bible.store import StoryWorkspace
+from hastings.manuscript.write_guard import EditMarkRegistry
 from hastings.server.app import create_app
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.session import AgentBusyError, WritingSession
@@ -38,6 +39,11 @@ class StubSession:
 
     def __init__(self) -> None:
         self._running = False
+        self._edit_marks = EditMarkRegistry()
+
+    @property
+    def edit_marks(self) -> EditMarkRegistry:
+        return self._edit_marks
 
     @property
     def tool_names(self) -> tuple[str, ...]:
