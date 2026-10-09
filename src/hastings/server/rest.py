@@ -12,15 +12,18 @@
 
 from __future__ import annotations
 
+import io
 import re
+import zipfile
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 from typing import Final, Literal
 
 import httpx
 import yaml
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
@@ -38,6 +41,7 @@ from hastings.manuscript.store import current_revision, save_chapter
 from hastings.server.provider_config import ProviderBook, env_fallback_config, mask_key
 from hastings.server.registry import WorkspaceExistsError, WorkspaceRegistry
 from hastings.server.session import WritingSession
+from hastings.session_persist import session_file
 from hastings.settings import (
     DEFAULT_PROVIDER_PROFILE,
     WRITING_LANGUAGES,
@@ -330,6 +334,34 @@ class StatsResponse(BaseModel):
     clue_total: int
     clue_red_herring: int
     clue_red_herring_ratio: float
+
+
+def build_export_zip(workspace: StoryWorkspace) -> bytes:
+    """工作区全量导出（P6 D10）：zip 字节流（内存构造，单工作区文件量可接受）。
+
+    内容：bible/*（角色卡 + 单文件账本）、chapters/*.md（**不含** .revisions
+    归档——体积考量，已知限制）、settings.yaml、session.jsonl、events.jsonl。
+    缺失文件跳过（新工作区导出是合法空结果，不是错误）；IO 故障上抛由调用方归因。
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        if workspace.bible_dir.exists():
+            for path in sorted(workspace.bible_dir.rglob("*")):
+                if path.is_file():
+                    zf.write(path, path.relative_to(workspace.story_dir).as_posix())
+        # glob("*.md") 只命中章节文件，.revisions 子目录天然排除（D10 体积考量）
+        if workspace.chapters_dir.exists():
+            for path in sorted(workspace.chapters_dir.glob("*.md")):
+                zf.write(path, path.relative_to(workspace.story_dir).as_posix())
+        for path, arcname in (
+            (workspace.settings_path, "settings.yaml"),
+            (session_file(workspace), "session.jsonl"),
+            (events_file(workspace), "events.jsonl"),
+        ):
+            if path.exists():
+                zf.write(path, arcname)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[BaseModel]:
@@ -805,6 +837,28 @@ def create_rest_router(
             path,
             media_type="application/x-ndjson",
             filename=f"hastings-{slug}-events.jsonl",
+        )
+
+    @router.get("/api/{slug}/export")
+    async def export_workspace(slug: str) -> Response:
+        """导出工作区全量备份（P6 D10）：zip 流附件。
+
+        bible/*、chapters/*.md（不含 .revisions）、settings.yaml、session.jsonl、
+        events.jsonl；缺文件跳过，空工作区可导出（合法空结果）。IO 故障 → 500 归因。
+        """
+        await _session(slug)
+        try:
+            data = build_export_zip(_workspace(slug))
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"工作区导出失败（{slug}）：文件系统错误 {exc}。",
+            ) from exc
+        filename = f"hastings-{slug}-{date.today():%Y%m%d}.zip"
+        return Response(
+            data,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     def _read_settings(workspace: StoryWorkspace) -> SettingsResponse:

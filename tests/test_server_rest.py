@@ -9,7 +9,9 @@
 PUT chapters/{id}（归档 + 锁 + 乐观并发）；POST /api/workspaces 只是资源创建。
 """
 
+import io
 import json
+import zipfile
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -24,6 +26,7 @@ from hastings.manuscript.diff import DiffHunk
 from hastings.server.app import create_app
 from hastings.server.provider_config import ProviderBook, ProviderProfile, ServerConfig
 from hastings.server.registry import WorkspaceRegistry
+from hastings.session_persist import session_file
 from hastings.settings import StorySettings, load_settings, save_settings
 from test_server_app import StubSession, stub_registry
 
@@ -1066,3 +1069,45 @@ def test_rest_events_bad_category_returns_422(workspace: StoryWorkspace) -> None
     detail = response.json()["detail"]
     assert "分类不合法" in detail
     assert "怎样算对" in detail
+
+
+# --- GET export：工作区全量备份（P6 D10） ---
+
+
+def test_rest_export_zip_contains_workspace_files(workspace: StoryWorkspace) -> None:
+    """zip 内容清单：bible/*、chapters/*.md、settings/session.jsonl，不含 .revisions。"""
+    workspace.ensure_dirs()
+    save_character(workspace, Character(name="陆远", identity="侦探"))
+    save_ledger(workspace.clues_path, [Clue(name="车票", content="北上的车票")])
+    (workspace.chapters_dir / "ch01.md").write_text("# 第1章 夜车\n\n雪落无声。", encoding="utf-8")
+    # 归档目录（.revisions）——不应出现在导出 zip（D10 体积考量，已知限制）
+    revision_dir = workspace.chapters_dir / ".revisions" / "ch01"
+    revision_dir.mkdir(parents=True)
+    (revision_dir / "1.md").write_text("旧稿", encoding="utf-8")
+    save_settings(workspace, StorySettings(writing_language="中文"))
+    session_file(workspace).write_text('{"kind":"message_end"}\n', encoding="utf-8")
+
+    response = _client(workspace.root).get(f"/api/{SLUG}/export")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert f"hastings-{SLUG}-" in response.headers["content-disposition"]
+    assert "attachment" in response.headers["content-disposition"]
+    names = set(zipfile.ZipFile(io.BytesIO(response.content)).namelist())
+    assert "bible/characters/陆远.yaml" in names
+    assert "bible/clues.yaml" in names
+    assert "chapters/ch01.md" in names
+    assert "settings.yaml" in names
+    assert "session.jsonl" in names
+    assert not any(".revisions" in name for name in names)
+
+
+def test_rest_export_empty_workspace_is_ok(workspace: StoryWorkspace) -> None:
+    """新工作区（目录空、无任何文件）：合法空结果 → 200 空 zip，不是错误。"""
+    workspace.ensure_dirs()
+
+    response = _client(workspace.root).get(f"/api/{SLUG}/export")
+
+    assert response.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(response.content)).namelist()
+    assert names == []

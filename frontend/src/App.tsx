@@ -12,6 +12,7 @@ import BiblePanel from "./components/BiblePanel";
 import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
 import EventStreamView from "./components/EventStreamView";
+import ErrorBoundary from "./components/ErrorBoundary";
 import ManuscriptPanel from "./components/ManuscriptPanel";
 import SearchBox from "./components/SearchBox";
 import SettingsPanel from "./components/SettingsPanel";
@@ -271,6 +272,15 @@ export default function App() {
           >
             新建案卷
           </button>
+          {slug !== null && (
+            <a
+              href={`/api/${encodeURIComponent(slug)}/export`}
+              title="导出工作区全量备份（zip：账本/正文/设置/会话/事件）"
+              className="border border-line px-2 py-0.5 transition-colors hover:border-gold/50"
+            >
+              导出
+            </a>
+          )}
           {snapshot && (
             <span className="hidden font-mono md:inline">{snapshot.model}</span>
           )}
@@ -325,9 +335,13 @@ export default function App() {
         </div>
       )}
 
-      {view === "events" ? (
+      {/* 顶层错误边界（D10）：一个面板崩不拖垮整个应用——顶部导航与其余视图不受影响。 */}
+      <ErrorBoundary label="页面">
+        {view === "events" ? (
         <main className="flex min-h-0 flex-1 flex-col border-t border-line">
-          <EventStreamView />
+          <ErrorBoundary label="事件流">
+            <EventStreamView />
+          </ErrorBoundary>
         </main>
       ) : view === "settings" ? (
         <main className="flex min-h-0 flex-1 flex-col border-t border-line">
@@ -377,7 +391,9 @@ export default function App() {
                   ‹
                 </button>
                 <section className="flex min-h-0 flex-1 flex-col">
-                  <ChatStream onRetrySync={retrySync} />
+                  <ErrorBoundary label="对话">
+                    <ChatStream onRetrySync={retrySync} />
+                  </ErrorBoundary>
                   <Composer
                     sendCommand={(type: CommandType, message: string) =>
                       sendCommand(type, message)
@@ -395,7 +411,9 @@ export default function App() {
               />
             </>
           )}
-          <ManuscriptPanel onSyncChapter={retrySync} />
+          <ErrorBoundary label="正文">
+            <ManuscriptPanel onSyncChapter={retrySync} />
+          </ErrorBoundary>
           <Splitter
             side="right"
             width={bibleWidth}
@@ -408,7 +426,9 @@ export default function App() {
             className="hidden flex-none flex-col overflow-hidden bg-ink-soft/35 xl:flex"
             style={{ width: bibleWidth }}
           >
-            <BiblePanel />
+            <ErrorBoundary label="账本">
+              <BiblePanel />
+            </ErrorBoundary>
           </aside>
           {/* 窄屏（<xl）账本抽屉覆盖层（D6）：信息密度高不整栏丢弃；定宽渲染，无 Splitter。 */}
           {bibleDrawerOpen && (
@@ -431,13 +451,16 @@ export default function App() {
                   </button>
                 </div>
                 <div className="min-h-0 flex-1">
-                  <BiblePanel />
+                  <ErrorBoundary label="账本">
+                    <BiblePanel />
+                  </ErrorBoundary>
                 </div>
               </aside>
             </div>
           )}
         </main>
       )}
+      </ErrorBoundary>
     </div>
   );
 }
