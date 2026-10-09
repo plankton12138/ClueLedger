@@ -10,10 +10,11 @@
  * 失败文案原样展示（服务端三要素 detail 透传）。
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   WRITING_LANGUAGES,
   deleteProvider,
+  fetchChapters,
   fetchProviderCatalog,
   fetchProviderModels,
   fetchProviders,
@@ -42,15 +43,25 @@ export default function SettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  // 工作区信息卡（P7 T10，D9）：章节数镜像（纯展示）。
+  const [chapterCount, setChapterCount] = useState<number | null>(null);
 
   // 切换工作区即重新载入：清旧状态，拉当前设置与档案目录。
   useEffect(() => {
     setFeedback(null);
     setSettings(null);
     setModels([]);
+    setChapterCount(null);
     if (slug === null) return;
     setLoading(true);
     let cancelled = false;
+    fetchChapters(slug)
+      .then((list) => {
+        if (!cancelled) setChapterCount(list.length);
+      })
+      .catch(() => {
+        if (!cancelled) setChapterCount(null); // 纯展示镜像：拉不到显示「—」
+      });
     Promise.all([fetchSettings(slug), fetchProviders()])
       .then(([current, catalog]) => {
         if (cancelled) return;
@@ -146,15 +157,36 @@ export default function SettingsPanel() {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="mx-auto flex max-w-xl flex-col gap-6">
-      <div className="border border-line bg-ink-soft/35 p-5">
-        <h2 className="font-serif text-lg font-bold text-gold">模型接入</h2>
-        <p className="mt-2 text-xs leading-relaxed text-paper/60">
-          端点档案来自服务级 config.yaml（`python -m hastings.server` 启动目录），API key
-          仅在服务端使用、前端只见尾 4 位提示。同档案换模型下一轮对话即生效；换档案会重建会话，
-          但对话历史保留。
-        </p>
+      {/* D9 分节卡片（T10）：写作语言 / 模型接入 / 工作区信息——容器重构，交互零变更 */}
+      {/* （保存按钮与反馈仍服务于「语言+档案+模型」三字段的整体保存）。 */}
+      <SectionCard
+        title="写作语言"
+        note="约定模型产出（账本条目、章节正文、对话回复）使用的语言；故事背景可设在任何国家，角色姓名可保留原写法，但叙事语言由这里决定。"
+      >
+        <select
+          id="writing-language"
+          value={language}
+          disabled={busy}
+          onChange={(e) => setLanguage(e.target.value)}
+          className="w-56 border border-line bg-transparent px-2 py-1.5 text-sm text-paper focus:border-gold/60 focus:outline-none disabled:opacity-40"
+        >
+          {loading && <option value="">载入中…</option>}
+          {!loading && language !== "" && !(WRITING_LANGUAGES as readonly string[]).includes(language) && (
+            <option value={language}>{language}</option>
+          )}
+          {WRITING_LANGUAGES.map((lang) => (
+            <option key={lang} value={lang}>
+              {lang}
+            </option>
+          ))}
+        </select>
+      </SectionCard>
 
-        <label htmlFor="provider-profile" className="mt-5 block text-xs text-gold-soft">
+      <SectionCard
+        title="模型接入"
+        note="端点档案来自服务级 config.yaml（`python -m hastings.server` 启动目录），API key 仅在服务端使用、前端只见尾 4 位提示。同档案换模型下一轮对话即生效；换档案会重建会话，但对话历史保留。"
+      >
+        <label htmlFor="provider-profile" className="block text-xs text-gold-soft">
           端点档案
         </label>
         <select
@@ -220,31 +252,6 @@ export default function SettingsPanel() {
           </p>
         )}
 
-        <label htmlFor="writing-language" className="mt-4 block text-xs text-gold-soft">
-          写作语言
-        </label>
-        <select
-          id="writing-language"
-          value={language}
-          disabled={busy}
-          onChange={(e) => setLanguage(e.target.value)}
-          className="mt-2 w-56 border border-line bg-transparent px-2 py-1.5 text-sm text-paper focus:border-gold/60 focus:outline-none disabled:opacity-40"
-        >
-          {loading && <option value="">载入中…</option>}
-          {!loading && language !== "" && !(WRITING_LANGUAGES as readonly string[]).includes(language) && (
-            <option value={language}>{language}</option>
-          )}
-          {WRITING_LANGUAGES.map((lang) => (
-            <option key={lang} value={lang}>
-              {lang}
-            </option>
-          ))}
-        </select>
-        <p className="mt-1.5 text-[11px] leading-relaxed text-paper/40">
-          约定模型产出（账本条目、章节正文、对话回复）使用的语言；故事背景可设在任何国家，
-          角色姓名可保留原写法，但叙事语言由这里决定。
-        </p>
-
         <div className="mt-6 flex items-center gap-3">
           <button
             type="button"
@@ -268,7 +275,36 @@ export default function SettingsPanel() {
             {feedback.text}
           </p>
         )}
-      </div>
+      </SectionCard>
+
+      <SectionCard title="工作区信息" note="当前文章的基础信息（只读镜像）。">
+        <dl className="space-y-2 text-xs">
+          <div className="flex justify-between gap-2">
+            <dt className="text-paper/50">文章 slug</dt>
+            <dd className="min-w-0 truncate font-mono text-paper" title={slug ?? undefined}>
+              {slug ?? "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt className="text-paper/50">章节数</dt>
+            <dd className="font-mono text-paper">{chapterCount ?? "—"}</dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt className="text-paper/50">事件账本导出</dt>
+            <dd>
+              {slug !== null && (
+                <a
+                  href={`/api/${encodeURIComponent(slug)}/events/export`}
+                  download
+                  className="border border-line px-2 py-0.5 text-paper/70 transition-colors hover:border-gold/50 hover:text-gold"
+                >
+                  导出 JSONL
+                </a>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </SectionCard>
 
       <ProviderAdminCard
         providers={providers}
@@ -277,6 +313,27 @@ export default function SettingsPanel() {
       />
       </div>
     </div>
+  );
+}
+
+/** 分节卡容器（P7 T10，D9）：标题 + 说明 + 内容，样式统一零交互。 */
+function SectionCard({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  note?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="border border-line bg-ink-soft/35 p-5">
+      <h2 className="font-serif text-lg font-bold text-gold">{title}</h2>
+      {note !== undefined && (
+        <p className="mt-2 text-xs leading-relaxed text-paper/60">{note}</p>
+      )}
+      <div className={note !== undefined ? "mt-4" : "mt-3"}>{children}</div>
+    </section>
   );
 }
 
