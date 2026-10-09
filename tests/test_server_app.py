@@ -90,3 +90,24 @@ def test_health_reflects_running_state(tmp_path: Path) -> None:
         _client(session, workspace).get("/api/health").json()
     )
     assert body["is_running"] is True
+
+
+def test_serves_spa_dist_when_present(tmp_path: Path) -> None:
+    """T9：前端 build 产物经 StaticFiles 托管；/api 优先于静态挂载。"""
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html>hastings</html>", encoding="utf-8")
+    (dist / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
+    workspace = StoryWorkspace(root=tmp_path, slug="orient-express")
+    client = TestClient(create_app(StubSession(), workspace, static_dir=dist))
+    assert client.get("/").text == "<html>hastings</html>"
+    assert client.get("/assets/app.js").text == "console.log(1)"
+    assert client.get("/api/health").status_code == 200
+
+
+def test_without_static_dir_root_is_404(tmp_path: Path) -> None:
+    """static_dir 缺省（目录不存在或未传）时根路径 404，API 照常。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="orient-express")
+    client = TestClient(create_app(StubSession(), workspace))
+    assert client.get("/").status_code == 404
+    assert client.get("/api/health").status_code == 200

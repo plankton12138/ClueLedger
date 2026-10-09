@@ -7,9 +7,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from hastings.bible.store import StoryWorkspace
@@ -26,7 +28,15 @@ class HealthResponse(BaseModel):
     tools: list[str]
 
 
-def create_app(session: WritingSession, workspace: StoryWorkspace) -> FastAPI:
+def create_app(
+    session: WritingSession,
+    workspace: StoryWorkspace,
+    static_dir: Path | None = None,
+) -> FastAPI:
+    """装配应用；``static_dir`` 存在时托管前端 build 产物（T9）。
+
+    挂载在路由之后——/api 与 /ws 优先匹配，静态文件只兜底其余路径。
+    """
     app = FastAPI(title="Hastings", version="0.1.0")
     app.state.session = session
     app.state.workspace = workspace  # 调试内省与入口测试用；路由经参数绑定
@@ -42,6 +52,9 @@ def create_app(session: WritingSession, workspace: StoryWorkspace) -> FastAPI:
             is_running=session.is_running,
             tools=list(session.tool_names),
         )
+
+    if static_dir is not None and static_dir.is_dir():
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="spa")
 
     return app
 

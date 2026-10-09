@@ -24,6 +24,17 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 
 
+def find_static_dir(root: Path) -> Path | None:
+    """前端 build 产物目录（<root>/frontend/dist）；不存在则不托管（纯 API 模式）。"""
+    candidate = root / "frontend" / "dist"
+    return candidate if candidate.is_dir() else None
+
+
+def default_static_dir() -> Path | None:
+    """以仓库根为基准的 dist 探测（src/hastings/server/__main__.py → 上溯 3 级）。"""
+    return find_static_dir(Path(__file__).resolve().parents[3])
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hastings-server",
@@ -59,10 +70,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     workspace = StoryWorkspace(root=args.stories_root, slug=args.slug)
     model = args.model or os.environ["HASTINGS_MODEL"]
     session = HastingsSession.from_workspace(workspace, provider=provider, model=model)
-    app = create_app(session, workspace)
+    static_dir = default_static_dir()
+    app = create_app(session, workspace, static_dir=static_dir)
 
     print(f"案卷已打开：{workspace.story_dir}")
     print(f"模型：{model}｜写作台地址：http://{args.host}:{args.port}")
+    if static_dir is not None:
+        print(f"前端已托管：{static_dir}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 

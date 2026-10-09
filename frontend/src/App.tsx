@@ -1,11 +1,14 @@
 /**
- * 主页面（P3 T8）：头部状态条（连接状态 / 写作中 / slug·model）+ 左对话流 +
- * 右故事账本占位（T9 填充 BiblePanel）。断线时显示重连入口——手动重连，
- * 不做自动重连风暴（计划 T8）。
+ * 主页面（P3 T8/T9）：头部状态条（连接状态 / 写作中 / slug·model）+ 左对话流 +
+ * 右故事账本面板（五账本 Tab）+ 底部调试视图开关。断线时显示重连入口——
+ * 手动重连，不做自动重连风暴（计划 T8）。
  */
 
+import { useState } from "react";
+import BiblePanel from "./components/BiblePanel";
 import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
+import DebugView from "./components/DebugView";
 import type { CommandType } from "./api/types";
 import type { ConnectionStatus } from "./api/socket";
 import { useChatStore } from "./state/store";
@@ -29,6 +32,7 @@ export default function App() {
   const connectionError = useChatStore((s) => s.connectionError);
   const running = useChatStore((s) => s.running);
   const snapshot = useChatStore((s) => s.snapshot);
+  const [showDebug, setShowDebug] = useState(false);
 
   return (
     <div className="flex h-screen flex-col">
@@ -63,6 +67,15 @@ export default function App() {
               重连
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setShowDebug((v) => !v)}
+            className={`border px-2 py-0.5 transition-colors ${
+              showDebug ? "border-gold bg-gold/15 text-gold" : "border-line hover:border-gold/50"
+            }`}
+          >
+            调试
+          </button>
         </div>
       </header>
 
@@ -87,13 +100,16 @@ export default function App() {
             abort={() => sendCommand("abort")}
           />
         </section>
-        <aside className="hidden w-80 shrink-0 overflow-y-auto p-4 lg:block">
-          <h2 className="font-serif text-base text-gold">故事账本</h2>
-          <p className="mt-2 text-xs leading-relaxed text-paper/40">
-            五账本面板在 T9 接入（/api/bible 只读面已就绪）。
-          </p>
+        <aside className="hidden w-80 shrink-0 flex-col overflow-hidden border-l-0 lg:flex">
+          <BiblePanel />
         </aside>
       </main>
+
+      {showDebug && (
+        <section className="h-64 shrink-0 border-t border-line">
+          <DebugView />
+        </section>
+      )}
     </div>
   );
 }

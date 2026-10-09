@@ -33,6 +33,14 @@ def test_parser_defaults_and_overrides() -> None:
     assert args.model == "glm-4-plus"
 
 
+def test_find_static_dir(tmp_path: Path) -> None:
+    """dist 存在则托管、不存在则 None（纯 API 模式）。"""
+    assert server_main.find_static_dir(tmp_path) is None
+    dist = tmp_path / "frontend" / "dist"
+    dist.mkdir(parents=True)
+    assert server_main.find_static_dir(tmp_path) == dist
+
+
 @pytest.fixture
 def clean_env(monkeypatch: MonkeyPatch) -> Iterator[None]:
     """隔离 .env 注入：打桩 load_dotenv 并清空相关变量。"""
