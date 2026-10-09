@@ -124,4 +124,14 @@ P1/P2 的错误回喂对象是 LLM，P3 多了一类读者：**浏览器**。同
 
 ## 8. R3 代码评审记录
 
-待评审（P3 全量 diff 已就绪，评审发起后回填结论）。
+**评审范围**：f55b9be^..HEAD（P3 全量，3930 行 / 32 文件），2026-10-09。双验证者独立复核，3 个问题全部 2/2 确认：
+
+| # | 问题 | 严重度 | 修复 |
+|---|---|---|---|
+| 1 | 手动重连后对话流重复：loadSnapshot 经 applyMessages 纯追加到已有 items，无重置机制 | major | loadSnapshot 重置到 initialUiState 后重放快照（unhandledEventTypes 跨连接保留）；StrictMode 双挂载经验证不触发（socket 在 CONNECTING 即被关） |
+| 2 | running 卡 true：`s.running \|\| state.is_running` 使 stale true 短路，与「快照是唯一事实来源」注释矛盾，断线错过 agent_end 后永久运行中形态 | major | 改为 `running: state.is_running` |
+| 3 | 被动断线后 pending 命令悬挂 15s 且误报「响应超时」（主动 close 有清理、onclose 没有） | minor | 抽出 failPending 共用；close() 先清未决再关连接（保证主动关闭归因不被 onclose 抢先） |
+
+**评审中排除的候选**（证据不足）：REST 章节 id 校验不一致（write_chapter 固定生成 chNN.md）；双连接瞬发 prompt 竞态（harness.prompt_message 同步置 _running=True，harness.py L148-150）；空闲 steer 语义（入队下轮消费，与上游 rpc.py 一致）。
+
+**修复验证**：新增 store.test.ts（4 剧本）+ socket 被动断线剧本；前端 36 测试全绿，tsc+build 通过。后端零改动。
