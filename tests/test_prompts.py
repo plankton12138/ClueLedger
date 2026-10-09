@@ -111,13 +111,25 @@ def _hunk(
 
 
 def test_reconcile_message_starts_with_marker_and_role(tmp_path: Path) -> None:
-    """协议标记开头（D6 识别锚点）+ 台账管理员角色校准为模板首句。"""
+    """协议标记开头（D6 识别锚点）+ 风格观察者/台账校对角色校准为模板首句。"""
     workspace = StoryWorkspace(root=tmp_path, slug="demo")
     message = build_reconcile_message(workspace, "ch03", [_hunk("modified", "旧段", "新段", 1, 1)])
 
     assert message.startswith("【手动修订同步】第3章已被作者直接修改。")
-    assert "台账管理员" in message
+    assert "风格观察者" in message
+    assert "习得作者本人的" in message
     assert "不调用任何写正文的工具" in message
+
+
+def test_reconcile_message_puts_style_learning_first(tmp_path: Path) -> None:
+    """对账定位（P5 T7 用户澄清）：首要习得作者文风，其次校正账本。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="demo")
+    message = build_reconcile_message(workspace, "ch03", [_hunk("modified", "旧段", "新段", 1, 1)])
+
+    assert "文风取向" in message
+    assert "风格参照" in message
+    assert "风格要点" in message
+    assert "校正受影响的账本条目" in message
 
 
 def test_reconcile_message_lists_hunk_previews(tmp_path: Path) -> None:
