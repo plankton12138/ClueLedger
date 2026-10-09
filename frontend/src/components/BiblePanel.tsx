@@ -1,9 +1,11 @@
 /**
- * 故事账本面板（P3 T9，计划 D7/D9）：五账本 Tab 表格 + 伏笔未回收红点。
+ * 故事账本面板（P3 T9，计划 D7/D9；P6 T7 账本底部统计卡）：五账本 Tab 表格 +
+ * 伏笔未回收红点 + 全工作区统计（回收率环/状态分布/逾期数）。
  *
- * 数据流：初始走 GET /api/bible/{type}；收到写工具成功的 ToolExecutionEndEvent
- * 后按 refetchTargets 精准刷新。面板是呈现层——不校验 Bible 内容（数据正确性
- * 仍由工具层守门），损坏 YAML 的 422 可读错误就地展示。
+ * 数据流：初始走 GET /api/bible/{type} 与 GET /api/{slug}/stats；收到写工具
+ * 成功的 ToolExecutionEndEvent 后按 refetchTargets 精准刷新账本与统计。面板是
+ * 呈现层——不校验 Bible 内容（数据正确性仍由工具层守门），损坏 YAML 的 422
+ * 可读错误就地展示。
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -12,8 +14,10 @@ import {
   BIBLE_LABELS,
   BIBLE_TYPES,
   fetchBible,
+  fetchStats,
   refetchTargets,
   type BibleType,
+  type StoryStatsWire,
 } from "../api/rest";
 import { useChatStore } from "../state/store";
 
@@ -82,9 +86,58 @@ function foreshadowDot(status: unknown): string {
   return status === "resolved" ? "bg-planted" : "bg-overdue";
 }
 
+/** 伏笔状态分布中文标签与语义色（统计卡 chips）。 */
+const FORESHADOW_STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  planned: { label: "已计划", color: "text-planned" },
+  planted: { label: "已埋设", color: "text-planted" },
+  echoed: { label: "已呼应", color: "text-gold-soft" },
+  resolved: { label: "已回收", color: "text-recovered" },
+};
+
+/** 回收率环：SVG 弧长按 rate 填充（rate=0 空环，rate=1 满环）。 */
+function RecoveryRing({ rate }: { rate: number }) {
+  const pct = Math.round(rate * 100);
+  const r = 14;
+  const circumference = 2 * Math.PI * r;
+  const filled = Math.min(1, Math.max(0, rate));
+  return (
+    <svg width="36" height="36" viewBox="0 0 36 36" aria-label={`伏笔回收率 ${pct}%`}>
+      <circle
+        cx="18"
+        cy="18"
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        className="text-line"
+        strokeWidth="3"
+      />
+      <circle
+        cx="18"
+        cy="18"
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        className="text-recovered"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeDasharray={`${(circumference * filled).toFixed(1)} ${circumference.toFixed(1)}`}
+        transform="rotate(-90 18 18)"
+      />
+      <text x="18" y="21" textAnchor="middle" fontSize="8" className="fill-paper">
+        {pct}%
+      </text>
+    </svg>
+  );
+}
+
 export default function BiblePanel() {
   const [active, setActive] = useState<BibleType>("character");
   const [ledgers, setLedgers] = useState<Record<BibleType, LedgerState>>(initialLedgers);
+  const [stats, setStats] = useState<{ loading: boolean; error: string | null; data: StoryStatsWire | null }>({
+    loading: false,
+    error: null,
+    data: null,
+  });
   const slug = useChatStore((s) => s.slug);
 
   const load = useCallback(async (workspaceSlug: string, type: BibleType) => {
@@ -107,13 +160,28 @@ export default function BiblePanel() {
     }
   }, []);
 
-  // 工作区切换（slug 变更）→ 五账本全部重拉：面板数据只属于当前 slug。
+  const loadStats = useCallback(async (workspaceSlug: string) => {
+    setStats((s) => ({ ...s, loading: true, error: null }));
+    try {
+      const data = await fetchStats(workspaceSlug);
+      setStats({ loading: false, error: null, data });
+    } catch (exc) {
+      setStats({
+        loading: false,
+        error: exc instanceof Error ? exc.message : String(exc),
+        data: null,
+      });
+    }
+  }, []);
+
+  // 工作区切换（slug 变更）→ 五账本全部重拉 + 统计：面板数据只属于当前 slug。
   useEffect(() => {
     if (slug === null) return;
     for (const t of BIBLE_TYPES) void load(slug, t);
-  }, [load, slug]);
+    void loadStats(slug);
+  }, [load, loadStats, slug]);
 
-  // D7 refetch：事件流里写工具成功 → 按映射精准刷新对应账本。
+  // D7 refetch：事件流里写工具成功 → 按映射精准刷新对应账本与统计。
   // end 帧不带 args，先从 start 帧养 toolCallId → args 查表。
   useEffect(() => {
     const argsByCallId = new Map<string, Record<string, unknown>>();
@@ -127,8 +195,9 @@ export default function BiblePanel() {
         for (const t of refetchTargets(e, (id) => argsByCallId.get(id))) targets.add(t);
       }
       for (const t of targets) void load(workspaceSlug, t);
+      if (targets.size > 0) void loadStats(workspaceSlug); // 账本有变动 → 统计重派生
     });
-  }, [load]);
+  }, [load, loadStats]);
 
   const ledger = ledgers[active];
   const columns = COLUMNS[active];
@@ -197,6 +266,49 @@ export default function BiblePanel() {
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+      {/* 账本底部统计卡（P6 T7，D7）：伏笔回收率环 + 状态分布 + 逾期数 + 章节规模。 */}
+      <div className="flex-none border-t border-line px-3 py-2">
+        {stats.error ? (
+          <p className="text-xs leading-relaxed text-overdue">{stats.error}</p>
+        ) : stats.data === null ? (
+          <p className="text-xs text-paper/40">
+            {stats.loading ? "统计读取中…" : "暂无统计数据"}
+          </p>
+        ) : (
+          <div className="flex items-center gap-4 text-xs">
+            <div className="flex items-center gap-1.5">
+              <RecoveryRing rate={stats.data.foreshadow_recovery_rate} />
+              <div className="leading-tight">
+                <div className="text-gold-soft">伏笔回收</div>
+                <div className="text-paper/70">
+                  {stats.data.foreshadow_resolved}/{stats.data.foreshadow_total}
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              {Object.entries(stats.data.foreshadow_counts).map(([status, count]) => {
+                const meta = FORESHADOW_STATUS_LABELS[status] ?? {
+                  label: status,
+                  color: "text-paper/50",
+                };
+                return (
+                  <span key={status} className={`${meta.color}`}>
+                    {meta.label} {count}
+                  </span>
+                );
+              })}
+            </div>
+            <div className="ml-auto text-right leading-tight">
+              <div className={stats.data.overdue_foreshadows.length > 0 ? "text-overdue" : "text-paper/70"}>
+                逾期 {stats.data.overdue_foreshadows.length}
+              </div>
+              <div className="text-paper/50">
+                {stats.data.chapters} 章 · {stats.data.total_chars.toLocaleString("zh-CN")} 字
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

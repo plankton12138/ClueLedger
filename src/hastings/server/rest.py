@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
+from hastings.bible.stats import compute_story_stats
 from hastings.bible.store import (
     InvalidEntityNameError,
     LedgerFormatError,
@@ -294,6 +295,35 @@ class EventsResponse(BaseModel):
     counts: dict[str, int]
 
 
+class ForeshadowOverdueResponse(BaseModel):
+    """逾期伏笔条目（P6 D7）：名字 + 埋设/预计回收两章锚点。"""
+
+    name: str
+    plant_chapter: str
+    expected_resolve_chapter: str
+
+
+class StatsResponse(BaseModel):
+    """全工作区统计（P6 T7，D7）：纯派生聚合，前端统计卡数据源。
+
+    风险派生（逾期/临近/正常）由 stats.py 后端算出、前端只展示——
+    T8 伏笔表格的风险列直接复用同一套纯函数，不引入第二份数据源。
+    """
+
+    chapters: int
+    total_chars: int
+    latest_chapter: int
+    foreshadow_counts: dict[str, int]
+    foreshadow_total: int
+    foreshadow_resolved: int
+    foreshadow_recovery_rate: float
+    overdue_foreshadows: list[ForeshadowOverdueResponse]
+    clue_counts: dict[str, int]
+    clue_total: int
+    clue_red_herring: int
+    clue_red_herring_ratio: float
+
+
 def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[BaseModel]:
     """复用 store 层 loader 读一类账本；数据故障 422、IO 故障 500。"""
     try:
@@ -461,6 +491,49 @@ def create_rest_router(
             entity_type=entity_type,
             count=len(entities),
             entities=[entity.model_dump() for entity in entities],
+        )
+
+    @router.get("/api/{slug}/stats", response_model=StatsResponse)
+    async def stats(slug: str) -> StatsResponse:
+        """全工作区统计（纯派生）。账本损坏 422、IO 故障 500——与 bible 端点同出口。"""
+        await _session(slug)
+        workspace = _workspace(slug)
+        try:
+            data = compute_story_stats(workspace)
+        except (ValidationError, LedgerFormatError, yaml.YAMLError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"账本统计失败（{slug}）。"
+                    f"为什么错：{exc}。"
+                    "怎样算对：修复或删除损坏的 YAML 文件后重试。"
+                ),
+            ) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"账本统计失败（{slug}）：文件系统错误 {exc}。",
+            ) from exc
+        return StatsResponse(
+            chapters=data.chapters,
+            total_chars=data.total_chars,
+            latest_chapter=data.latest_chapter,
+            foreshadow_counts=data.foreshadow_counts,
+            foreshadow_total=data.foreshadow_total,
+            foreshadow_resolved=data.foreshadow_resolved,
+            foreshadow_recovery_rate=data.foreshadow_recovery_rate,
+            overdue_foreshadows=[
+                ForeshadowOverdueResponse(
+                    name=item.name,
+                    plant_chapter=item.plant_chapter,
+                    expected_resolve_chapter=item.expected_resolve_chapter,
+                )
+                for item in data.overdue_foreshadows
+            ],
+            clue_counts=data.clue_counts,
+            clue_total=data.clue_total,
+            clue_red_herring=data.clue_red_herring,
+            clue_red_herring_ratio=data.clue_red_herring_ratio,
         )
 
     @router.get("/api/{slug}/chapters", response_model=ChaptersResponse)

@@ -92,6 +92,56 @@ export async function fetchBible(slug: string, type: BibleType): Promise<BibleRe
   return body as BibleResponse;
 }
 
+// ---------- 故事账本统计（P6 T7，对应 rest.py stats 端点，D7） ----------
+
+/** 逾期伏笔条目：名字 + 埋设/预计回收两章锚点。 */
+export interface ForeshadowOverdueWire {
+  name: string;
+  plant_chapter: string;
+  expected_resolve_chapter: string;
+}
+
+/** 全工作区统计（纯派生，snake_case 口径）：统计卡数据源。 */
+export interface StoryStatsWire {
+  chapters: number;
+  total_chars: number;
+  latest_chapter: number;
+  foreshadow_counts: Record<string, number>;
+  foreshadow_total: number;
+  foreshadow_resolved: number;
+  foreshadow_recovery_rate: number;
+  overdue_foreshadows: ForeshadowOverdueWire[];
+  clue_counts: Record<string, number>;
+  clue_total: number;
+  clue_red_herring: number;
+  clue_red_herring_ratio: number;
+}
+
+/** GET /api/{slug}/stats → 账本统计；422（账本损坏）/500（IO）detail 原样透出。 */
+export async function fetchStats(slug: string): Promise<StoryStatsWire> {
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/stats`);
+  if (!res.ok) {
+    throw new Error(`账本统计读取失败：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const record = body as Record<string, unknown> | null;
+  if (
+    record === null ||
+    typeof record !== "object" ||
+    typeof record.chapters !== "number" ||
+    typeof record.total_chars !== "number" ||
+    typeof record.foreshadow_total !== "number" ||
+    typeof record.foreshadow_recovery_rate !== "number" ||
+    !Array.isArray(record.overdue_foreshadows)
+  ) {
+    throw new Error(
+      `账本统计响应结构不符：期望 { chapters, total_chars, foreshadow_*, overdue_foreshadows, ... }，` +
+        `收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return body as StoryStatsWire;
+}
+
 // ---------- 工作区面（P4 T6）：列表 + 新建（唯一写 REST，资源创建） ----------
 
 /** GET /api/workspaces → 已有工作区 slug 列表（服务端已按目录名排序）。 */
