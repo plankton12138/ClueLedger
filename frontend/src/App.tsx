@@ -16,6 +16,7 @@ import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
 import EventStreamView from "./components/EventStreamView";
 import ErrorBoundary from "./components/ErrorBoundary";
+import CorpusPage from "./components/CorpusPage";
 import LedgerPage from "./components/LedgerPage";
 import ManuscriptPanel from "./components/ManuscriptPanel";
 import SearchBox from "./components/SearchBox";
@@ -288,10 +289,9 @@ export default function App() {
           <SettingsPanel />
         </main>
       ) : view === "corpus" ? (
-        <ComingSoonPage
-          title="语料库"
-          note="文风档案与语料管理在本阶段后续任务转正（上传 .txt/.md → 句长直方图 / 对话占比等文风档案）。"
-        />
+        <ErrorBoundary label="语料库">
+          <CorpusPage />
+        </ErrorBoundary>
       ) : view === "audit" ? (
         <ComingSoonPage
           title="审计中心"

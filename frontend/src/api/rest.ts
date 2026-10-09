@@ -617,6 +617,101 @@ export async function fetchEvents(slug: string, query: EventsQuery = {}): Promis
   return body as EventsPageWire;
 }
 
+// ---------- 语料库（P7 T6/T7，D6）：作者级文风语料，路径无 slug ----------
+
+/** 语料文件条目：chars 惰性（列表只报 size，字数走 style-profile）。 */
+export interface CorpusFileInfoWire {
+  name: string;
+  size_bytes: number;
+  chars: number | null;
+  uploaded_at: string;
+}
+
+/** 全语料聚合文风档案（确定性统计，零 LLM）；warnings 为逐文件读码告警。 */
+export interface StyleProfileWire {
+  total_chars: number;
+  sentence_count: number;
+  avg_sentence_length: number;
+  paragraph_count: number;
+  avg_paragraph_length: number;
+  dialogue_ratio: number;
+  sentence_buckets: Record<string, number>;
+  warnings: string[];
+}
+
+/** GET /api/corpus → 语料清单（按文件名排序）；空库为合法空结果。 */
+export async function fetchCorpus(): Promise<CorpusFileInfoWire[]> {
+  const res = await fetch("/api/corpus");
+  if (!res.ok) {
+    throw new Error(`语料清单读取失败：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const files = (body as { files?: unknown } | null)?.files;
+  if (!Array.isArray(files)) {
+    throw new Error(
+      `语料清单响应结构不符：期望 { files: [] }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return files as CorpusFileInfoWire[];
+}
+
+/**
+ * POST /api/corpus（multipart）：v1 仅 .txt/.md；422（坏后缀/空文件）、
+ * 409（同名）detail 三要素原样透出——覆盖须先显式 DELETE。
+ */
+export async function uploadCorpus(file: File): Promise<CorpusFileInfoWire> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/corpus", { method: "POST", body: form });
+  if (!res.ok) {
+    throw new Error(`语料上传失败（${file.name}）：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  if (
+    body === null ||
+    typeof body !== "object" ||
+    typeof (body as { name?: unknown }).name !== "string"
+  ) {
+    throw new Error(
+      `语料上传响应结构不符：期望 { name, size_bytes, ... }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return body as CorpusFileInfoWire;
+}
+
+/** DELETE /api/corpus/{name}：404（不存在）/ 422（名字不合法）detail 原样透出。 */
+export async function deleteCorpus(name: string): Promise<void> {
+  const res = await fetch(`/api/corpus/${encodeURIComponent(name)}`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`语料 ${name} 删除失败：${await errorDetail(res)}`);
+  }
+}
+
+/** GET /api/corpus/style-profile → 聚合档案；空语料 = 全零合法空结果。 */
+export async function fetchStyleProfile(): Promise<StyleProfileWire> {
+  const res = await fetch("/api/corpus/style-profile");
+  if (!res.ok) {
+    throw new Error(`文风档案读取失败：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const record = body as Record<string, unknown> | null;
+  if (
+    record === null ||
+    typeof record !== "object" ||
+    typeof record.total_chars !== "number" ||
+    typeof record.dialogue_ratio !== "number" ||
+    record.sentence_buckets === null ||
+    typeof record.sentence_buckets !== "object" ||
+    !Array.isArray(record.warnings)
+  ) {
+    throw new Error(
+      `文风档案响应结构不符：期望 { total_chars, dialogue_ratio, sentence_buckets, warnings, ... }，` +
+        `收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return body as StyleProfileWire;
+}
+
 // ---------- D7 refetch 规则（纯函数，呈现策略而非业务校验） ----------
 
 /**
