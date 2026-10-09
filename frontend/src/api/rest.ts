@@ -269,52 +269,116 @@ export async function releaseEditMark(slug: string, chapterId: string): Promise<
   }
 }
 
-// ---------- 工作区设置（P6）：写作语言读写（snake_case 口径） ----------
+// ---------- 工作区设置（P6 T2/T3）：写作语言 + 模型端点档案（snake_case 口径） ----------
 
 /** 预设写作语言；缺省中文，取值非法服务端 422 三要素。 */
 export const WRITING_LANGUAGES = ["中文", "English", "日本語"] as const;
 
 export type WritingLanguage = (typeof WRITING_LANGUAGES)[number];
 
+/** GET/PUT settings 响应：写作语言 + 生效档案 + 生效模型（P6 T2）。 */
 export interface SettingsResponse {
   writing_language: string;
+  provider_profile: string;
+  model: string;
+}
+
+/** 设置局部更新请求：writing_language 必填，档案/模型缺省则保持当前值。 */
+export interface SettingsUpdate {
+  writing_language: string;
+  provider_profile: string;
+  model: string;
 }
 
 function parseSettings(body: unknown): SettingsResponse {
+  const record = body as Record<string, unknown> | null;
   if (
-    body === null ||
-    typeof body !== "object" ||
-    typeof (body as { writing_language?: unknown }).writing_language !== "string"
+    record === null ||
+    typeof record !== "object" ||
+    typeof record.writing_language !== "string" ||
+    typeof record.provider_profile !== "string" ||
+    typeof record.model !== "string"
   ) {
     throw new Error(
-      `设置响应结构不符：期望 { writing_language: string }，收到 ${JSON.stringify(body)}。`,
+      `设置响应结构不符：期望 { writing_language, provider_profile, model }，` +
+        `收到 ${JSON.stringify(body)}。`,
     );
   }
   return body as SettingsResponse;
 }
 
-/** GET /api/{slug}/settings → 当前写作语言；旧工作区无文件时服务端回落默认。 */
-export async function fetchSettings(slug: string): Promise<string> {
+/** GET /api/{slug}/settings → 当前设置（含生效档案与模型）；旧工作区回落默认。 */
+export async function fetchSettings(slug: string): Promise<SettingsResponse> {
   const res = await fetch(`/api/${encodeURIComponent(slug)}/settings`);
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     throw new Error(`设置读取失败：${await errorDetail(res)}`);
   }
-  return parseSettings(body).writing_language;
+  return parseSettings(body);
 }
 
-/** PUT /api/{slug}/settings → 落盘并热生效；422（非法取值）/500（IO）detail 原样透出。 */
-export async function saveSettings(slug: string, writingLanguage: string): Promise<string> {
+/**
+ * PUT /api/{slug}/settings → 落盘并生效；422（非法取值/未知档案/缺 key/无模型）、
+ * 409（写作流进行中）、500（IO）detail 原样透出——泄压阀三情形归因由服务端给出。
+ */
+export async function saveSettings(slug: string, update: SettingsUpdate): Promise<SettingsResponse> {
   const res = await fetch(`/api/${encodeURIComponent(slug)}/settings`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ writing_language: writingLanguage }),
+    body: JSON.stringify(update),
   });
   if (!res.ok) {
     throw new Error(`设置保存失败：${await errorDetail(res)}`);
   }
   const body: unknown = await res.json().catch(() => null);
-  return parseSettings(body).writing_language;
+  return parseSettings(body);
+}
+
+// ---------- provider 档案目录 + 模型发现（P6 T2/T3）：key 只进不出 ----------
+
+/** 档案目录条目：key 仅尾 4 位提示（服务端已脱敏，前端永不接触完整 key）。 */
+export interface ProviderSummary {
+  name: string;
+  base_url: string;
+  default_model: string;
+  key_hint: string;
+  available: boolean;
+}
+
+/** GET /api/providers → 服务级档案目录（config.yaml 或 env 回落单档案）。 */
+export async function fetchProviders(): Promise<ProviderSummary[]> {
+  const res = await fetch("/api/providers");
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(`档案目录读取失败：HTTP ${res.status}`);
+  }
+  const providers = (body as { providers?: unknown } | null)?.providers;
+  if (!Array.isArray(providers)) {
+    throw new Error(
+      `档案目录响应结构不符：期望 { providers: [] }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return providers as ProviderSummary[];
+}
+
+/**
+ * GET /api/providers/{name}/models → 拉取候选模型（兼作连通测试：通即 key/网络/
+ * base_url 全链路可用）。失败 detail 原样透出；空数组为合法空结果（手动输入）。
+ */
+export async function fetchProviderModels(name: string): Promise<string[]> {
+  const res = await fetch(`/api/providers/${encodeURIComponent(name)}/models`);
+  if (!res.ok) {
+    // 先判失败再读 body——errorDetail 自身消费 response body，不可二次读取。
+    throw new Error(await errorDetail(res));
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const models = (body as { models?: unknown } | null)?.models;
+  if (!Array.isArray(models)) {
+    throw new Error(
+      `模型列表响应结构不符：期望 { models: string[] }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return models.map(String);
 }
 
 // ---------- D7 refetch 规则（纯函数，呈现策略而非业务校验） ----------

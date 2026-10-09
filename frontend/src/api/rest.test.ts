@@ -11,6 +11,8 @@ import {
   fetchBible,
   fetchChapter,
   fetchChapters,
+  fetchProviderModels,
+  fetchProviders,
   fetchSettings,
   fetchWorkspaces,
   refetchTargets,
@@ -268,7 +270,7 @@ describe("edit-mark 锁端点（P5 T5）", () => {
 
 // ---------- 工作区设置（P6）：fetch 客户端剧本 ----------
 
-describe("settings API（P6）", () => {
+describe("settings API（P6 T2/T3）", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   function jsonResponse(payload: unknown, status = 200): Response {
@@ -278,13 +280,17 @@ describe("settings API（P6）", () => {
     });
   }
 
-  it("fetchSettings GET /api/{slug}/settings 并返回写作语言", async () => {
+  it("fetchSettings GET /api/{slug}/settings 并返回生效设置", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
-      jsonResponse({ writing_language: "中文" }),
+      jsonResponse({ writing_language: "中文", provider_profile: "default", model: "story-model" }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(fetchSettings("story a")).resolves.toBe("中文");
+    await expect(fetchSettings("story a")).resolves.toEqual({
+      writing_language: "中文",
+      provider_profile: "default",
+      model: "story-model",
+    });
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/story%20a/settings");
   });
 
@@ -293,15 +299,16 @@ describe("settings API（P6）", () => {
     await expect(fetchSettings("demo")).rejects.toThrow("结构不符");
   });
 
-  it("saveSettings PUT，body 为 { writing_language }（snake_case）", async () => {
+  it("saveSettings PUT，body 为三字段（snake_case）", async () => {
+    const update = { writing_language: "English", provider_profile: "deepseek", model: "deepseek-chat" };
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.method).toBe("PUT");
-      expect(init?.body).toBe(JSON.stringify({ writing_language: "English" }));
-      return jsonResponse({ writing_language: "English" });
+      expect(init?.body).toBe(JSON.stringify(update));
+      return jsonResponse(update);
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(saveSettings("demo", "English")).resolves.toBe("English");
+    await expect(saveSettings("demo", update)).resolves.toEqual(update);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/demo/settings");
   });
 
@@ -312,6 +319,74 @@ describe("settings API（P6）", () => {
         jsonResponse({ detail: "写作语言取值不合法：'Klingon'。怎样算对：从 … 中选择一个。" }, 422),
       ),
     );
-    await expect(saveSettings("demo", "Klingon")).rejects.toThrow("写作语言取值不合法");
+    await expect(
+      saveSettings("demo", { writing_language: "Klingon", provider_profile: "default", model: "m" }),
+    ).rejects.toThrow("写作语言取值不合法");
+  });
+
+  it("saveSettings 409（写作流进行中）→ detail 原样透出", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ detail: "切换模型被拒：有写作流进行中。怎样算对：等它结束。" }, 409)),
+    );
+    await expect(
+      saveSettings("demo", { writing_language: "中文", provider_profile: "dee", model: "m" }),
+    ).rejects.toThrow("写作流进行中");
+  });
+});
+
+describe("providers API（P6 T2/T3：档案目录 + 模型发现）", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function jsonResponse(payload: unknown, status = 200): Response {
+    return new Response(JSON.stringify(payload), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  it("fetchProviders GET /api/providers 并返回档案目录", async () => {
+    const providers = [
+      {
+        name: "deepseek",
+        base_url: "https://api.deepseek.com/v1",
+        default_model: "deepseek-chat",
+        key_hint: "…5678",
+        available: true,
+      },
+    ];
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => jsonResponse({ providers }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchProviders()).resolves.toEqual(providers);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/providers");
+  });
+
+  it("fetchProviders 结构不符 → 报错", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ providers: "nope" })));
+    await expect(fetchProviders()).rejects.toThrow("结构不符");
+  });
+
+  it("fetchProviderModels 返回候选列表（含 slug 编码）", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({ models: ["m1", "m2"] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchProviderModels("deep/seek")).resolves.toEqual(["m1", "m2"]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/providers/deep%2Fseek/models");
+  });
+
+  it("fetchProviderModels 空列表是合法空结果（不报错）", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ models: [] })));
+    await expect(fetchProviderModels("nokey")).resolves.toEqual([]);
+  });
+
+  it("fetchProviderModels 422/502 → detail 三要素原样透出", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ detail: "拉取模型列表被拒绝。为什么错：API key 无效。" }, 422)),
+    );
+    await expect(fetchProviderModels("deepseek")).rejects.toThrow("API key 无效");
   });
 });
