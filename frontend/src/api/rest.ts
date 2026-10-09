@@ -136,6 +136,7 @@ export interface ChaptersResponse {
 export interface ChapterResponse {
   id: string;
   content: string;
+  revision: number;
 }
 
 /** GET /api/{slug}/chapters → 章节 id 列表（服务端已按文件名排序）；空工作区 → 空数组。 */
@@ -157,8 +158,8 @@ export async function fetchChapters(slug: string): Promise<string[]> {
   return (body as { chapters: unknown[] }).chapters.map(String);
 }
 
-/** GET /api/{slug}/chapters/{id} → 章节正文；404/422 detail 原样透出。 */
-export async function fetchChapter(slug: string, chapterId: string): Promise<string> {
+/** GET /api/{slug}/chapters/{id} → 章节正文与当前 revision；404/422 detail 原样透出。 */
+export async function fetchChapter(slug: string, chapterId: string): Promise<ChapterResponse> {
   const res = await fetch(
     `/api/${encodeURIComponent(slug)}/chapters/${encodeURIComponent(chapterId)}`,
   );
@@ -170,12 +171,17 @@ export async function fetchChapter(slug: string, chapterId: string): Promise<str
         : `HTTP ${res.status}`;
     throw new Error(`章节 ${chapterId} 读取失败：${detail}`);
   }
-  if (body === null || typeof body !== "object" || typeof (body as { content?: unknown }).content !== "string") {
+  if (
+    body === null ||
+    typeof body !== "object" ||
+    typeof (body as { content?: unknown }).content !== "string" ||
+    typeof (body as { revision?: unknown }).revision !== "number"
+  ) {
     throw new Error(
-      `章节响应结构不符：期望 { id, content }，收到 ${JSON.stringify(body)}。`,
+      `章节响应结构不符：期望 { id, content, revision }，收到 ${JSON.stringify(body)}。`,
     );
   }
-  return (body as { content: string }).content;
+  return body as ChapterResponse;
 }
 
 // ---------- D7 refetch 规则（纯函数，呈现策略而非业务校验） ----------

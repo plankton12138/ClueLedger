@@ -85,21 +85,23 @@ describe("工作区切片（P4 T6）", () => {
 
 // ---------- manuscript 切片（P5 T1）：章节切换加载 / 竞态防护 / 工作区重置 ----------
 
-function openChapter(id: string, content: string): void {
+function openChapter(id: string, content: string, revision = 1): void {
   useChatStore.getState().selectChapter(id);
-  useChatStore.getState().chapterLoaded(id, content);
+  useChatStore.getState().chapterLoaded(id, content, revision);
 }
 
-describe("manuscript 切片（P5 T1）", () => {
+describe("manuscript 切片（P5 T1 + T2 revision）", () => {
   beforeEach(() => useChatStore.setState({ manuscript: initialManuscript }));
 
-  it("selectChapter 进入 loading；chapterLoaded 落内容", () => {
+  it("selectChapter 进入 loading；chapterLoaded 落内容与 revision", () => {
     useChatStore.setState({ manuscript: { ...initialManuscript, chapterIds: ["ch01"] } });
     useChatStore.getState().selectChapter("ch01");
     expect(useChatStore.getState().manuscript.loading).toBe(true);
-    useChatStore.getState().chapterLoaded("ch01", "# 第1章 开端\n\n正文。");
+    expect(useChatStore.getState().manuscript.revision).toBeNull();
+    useChatStore.getState().chapterLoaded("ch01", "# 第1章 开端\n\n正文。", 3);
     const ms = useChatStore.getState().manuscript;
     expect(ms.content).toBe("# 第1章 开端\n\n正文。");
+    expect(ms.revision).toBe(3);
     expect(ms.loading).toBe(false);
     expect(ms.error).toBeNull();
   });
@@ -117,7 +119,7 @@ describe("manuscript 切片（P5 T1）", () => {
     openChapter("ch01", "第一章正文");
     useChatStore.getState().selectChapter("ch02");
     // ch01 的响应在切换后才返回
-    useChatStore.getState().chapterLoaded("ch01", "迟到的第一章正文");
+    useChatStore.getState().chapterLoaded("ch01", "迟到的第一章正文", 1);
     const ms = useChatStore.getState().manuscript;
     expect(ms.chapterId).toBe("ch02");
     expect(ms.content).toBeNull(); // ch02 尚未返回，loading 保持
@@ -138,6 +140,7 @@ describe("manuscript 切片（P5 T1）", () => {
         chapterIds: ["ch01", "ch02"],
         chapterId: "ch01",
         content: "旧案卷正文",
+        revision: 2,
         loading: false,
         error: null,
       },

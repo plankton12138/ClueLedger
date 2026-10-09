@@ -1,12 +1,15 @@
-"""REST 只读面测试（P3 T4，P4 T4 slug 化）：workspaces / state / bible / chapters。
+"""REST 面测试（P3 T4，P4 T4 slug 化，P5 T2 受管写端点）。
 
 泄压阀三情形逐条钉住：
-- 参数违规（坏 slug、未知账本类型、坏章节 id）→ 422 + 怎样算对；
-- 合法但空（空账本、无章节、无工作区）→ 200 空数组，不是错误；
-- 撞名新建 → 409；数据故障（损坏 YAML）→ 422 + 路径指引。
-零写入口：唯一 POST 是 /api/workspaces（资源创建，不碰业务数据）。
+- 参数违规（坏 slug、未知账本类型、坏章节 id、坏标题）→ 422 + 怎样算对；
+- 合法但空（空账本、无章节、无工作区、空 diff no-op）→ 200，不是错误；
+- 撞名新建 / 过期提交 / 写作流冲突 → 409；数据故障（损坏 YAML）→ 422；
+  环境故障（IO）→ 500 带归因。
+红线（D3 演进）：写路径必须经守门管道——业务写入口仅有
+PUT chapters/{id}（归档 + 锁 + 乐观并发）；POST /api/workspaces 只是资源创建。
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -15,7 +18,7 @@ from fastapi.testclient import TestClient
 from hastings.bible.models import Character, Clue, TimelineEntry
 from hastings.bible.store import StoryWorkspace, save_character, save_ledger
 from hastings.server.app import create_app
-from test_server_app import stub_registry
+from test_server_app import StubSession, stub_registry
 
 SLUG = "orient-express"
 BIBLE_TYPES = ("character", "clue", "foreshadow", "method", "timeline")
@@ -203,6 +206,7 @@ def test_rest_chapters_list_and_detail(workspace: StoryWorkspace) -> None:
     assert client.get(f"/api/{SLUG}/chapters/ch01").json() == {
         "id": "ch01",
         "content": body,
+        "revision": 1,
     }
 
 
@@ -225,3 +229,168 @@ def test_rest_chapter_bad_id_returns_422(workspace: StoryWorkspace) -> None:
 
     assert response.status_code == 422
     assert "章节 id" in response.json()["detail"]
+
+
+# --- PUT chapters/{id}：受管写端点（P5 T2，D3/D4） ---
+
+
+class _RunningSession(StubSession):
+    """is_running 恒真的会话：写作流冲突场景。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._running = True
+
+
+def _seed_chapter(workspace: StoryWorkspace, chapter_id: str = "ch03") -> None:
+    workspace.ensure_dirs()
+    (workspace.chapters_dir / f"{chapter_id}.md").write_text(
+        "# 第3章\n\n火车在九点四十七分抵达。\n", encoding="utf-8"
+    )
+
+
+def test_put_chapter_saves_archives_and_returns_revision_diff(
+    workspace: StoryWorkspace,
+) -> None:
+    _seed_chapter(workspace)
+    new_content = "# 第3章\n\n火车在十点零七分抵达。\n"
+
+    response = _client(workspace.root).put(
+        f"/api/{SLUG}/chapters/ch03",
+        json={"content": new_content, "baseRevision": 1},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "ch03"
+    assert body["revision"] == 2
+    assert body["diff"] == [
+        {
+            "kind": "modified",
+            "oldIndex": 1,
+            "newIndex": 1,
+            "oldText": "火车在九点四十七分抵达。",
+            "newText": "火车在十点零七分抵达。",
+        },
+    ]
+    # 主文件与归档均落盘
+    assert (workspace.chapters_dir / "ch03.md").read_text(encoding="utf-8") == new_content
+    archive_dir = workspace.chapters_dir / ".revisions" / "ch03"
+    assert (archive_dir / "001.md").exists()
+    metadata = json.loads((archive_dir / "001.json").read_text(encoding="utf-8"))
+    assert metadata["hunks"][0]["old_index"] == 1
+
+
+def test_put_chapter_identical_content_is_noop(workspace: StoryWorkspace) -> None:
+    _seed_chapter(workspace)
+    original = (workspace.chapters_dir / "ch03.md").read_text(encoding="utf-8")
+
+    response = _client(workspace.root).put(
+        f"/api/{SLUG}/chapters/ch03",
+        json={"content": original, "baseRevision": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "ch03", "revision": 1, "diff": []}
+    assert not (workspace.chapters_dir / ".revisions").exists()
+
+
+def test_put_chapter_bad_id_returns_422(workspace: StoryWorkspace) -> None:
+    response = _client(workspace.root).put(
+        f"/api/{SLUG}/chapters/坏 名",
+        json={"content": "# 第1章\n\n正文。", "baseRevision": 1},
+    )
+
+    assert response.status_code == 422
+    assert "章节 id" in response.json()["detail"]
+
+
+def test_put_chapter_bad_title_returns_422_with_three_elements(
+    workspace: StoryWorkspace,
+) -> None:
+    _seed_chapter(workspace)
+
+    response = _client(workspace.root).put(
+        f"/api/{SLUG}/chapters/ch03",
+        json={"content": "没有标题行的正文。", "baseRevision": 1},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "首行" in detail
+    assert "为什么错" in detail
+    assert "怎样算对" in detail
+
+
+def test_put_chapter_missing_returns_404_with_guidance(workspace: StoryWorkspace) -> None:
+    workspace.ensure_dirs()
+
+    response = _client(workspace.root).put(
+        f"/api/{SLUG}/chapters/ch09",
+        json={"content": "# 第9章\n\n正文。", "baseRevision": 1},
+    )
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "ch09" in detail
+    assert f"/api/{SLUG}/chapters" in detail
+
+
+def test_put_chapter_stale_revision_returns_409_with_guidance(
+    workspace: StoryWorkspace,
+) -> None:
+    _seed_chapter(workspace)
+
+    response = _client(workspace.root).put(
+        f"/api/{SLUG}/chapters/ch03",
+        json={"content": "# 第3章\n\n过期提交。\n", "baseRevision": 7},
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "revision" in detail
+    assert "为什么错" in detail
+    assert "怎样算对" in detail
+    # 冲突提交未触盘
+    assert "十点零七分" not in (workspace.chapters_dir / "ch03.md").read_text(encoding="utf-8")
+
+
+def test_put_chapter_while_agent_running_returns_409(
+    workspace: StoryWorkspace,
+) -> None:
+    _seed_chapter(workspace)
+    client = TestClient(create_app(stub_registry(workspace.root, session=_RunningSession())))
+
+    response = client.put(
+        f"/api/{SLUG}/chapters/ch03",
+        json={"content": "# 第3章\n\n抢写。\n", "baseRevision": 1},
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "写作流" in detail
+    assert "为什么错" in detail
+    assert "怎样算对" in detail
+    # 锁未建、文件未动（运行态检查先于归档）
+    assert "抢写" not in (workspace.chapters_dir / "ch03.md").read_text(encoding="utf-8")
+
+
+def test_put_chapter_io_failure_returns_500_with_attribution(
+    workspace: StoryWorkspace,
+) -> None:
+    _seed_chapter(workspace)
+    # .revisions 被普通文件占位：归档必失败，主文件保持不动
+    (workspace.chapters_dir / ".revisions").write_text("占位", encoding="utf-8")
+    main_path = workspace.chapters_dir / "ch03.md"
+    content_before = main_path.read_text(encoding="utf-8")
+
+    response = _client(workspace.root).put(
+        f"/api/{SLUG}/chapters/ch03",
+        json={"content": "# 第3章\n\n新内容。\n", "baseRevision": 1},
+    )
+
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert "文件系统错误" in detail
+    assert "主文件未受影响" in detail
+    assert main_path.read_text(encoding="utf-8") == content_before

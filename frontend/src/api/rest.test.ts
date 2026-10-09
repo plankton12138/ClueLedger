@@ -139,13 +139,17 @@ describe("chapter API（P5 T1）", () => {
     await expect(fetchChapters("empty")).resolves.toEqual([]);
   });
 
-  it("fetchChapter GET /api/{slug}/chapters/{id} 返回正文", async () => {
+  it("fetchChapter GET /api/{slug}/chapters/{id} 返回正文与 revision", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
-      jsonResponse({ id: "ch03", content: "# 第3章\n\n正文。" }),
+      jsonResponse({ id: "ch03", content: "# 第3章\n\n正文。", revision: 2 }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(fetchChapter("demo", "ch03")).resolves.toBe("# 第3章\n\n正文。");
+    await expect(fetchChapter("demo", "ch03")).resolves.toEqual({
+      id: "ch03",
+      content: "# 第3章\n\n正文。",
+      revision: 2,
+    });
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/demo/chapters/ch03");
   });
 

@@ -10,14 +10,15 @@ import type { AgentMessageWire, EventFrame } from "../api/types";
 import { applyEvent, applyMessages, initialUiState, type UiState } from "./reducer";
 
 /**
- * manuscript 切片（P5 T1，D7 的阅读态子集；T5 扩展 draft/saveState/syncState/diff）。
- * content 是 REST 读回的 baseline；竞态防护在 chapterLoaded——晚到的旧章响应
- * 不得覆盖已切换的新章（按 id 比对后丢弃）。
+ * manuscript 切片（P5 T1 阅读态 + T2 revision；T5 扩展 draft/saveState/syncState/diff）。
+ * content 是 REST 读回的 baseline；revision 随正文一起读回，为 T5 乐观并发垫底。
+ * 竞态防护在 chapterLoaded——晚到的旧章响应不得覆盖已切换的新章（按 id 比对后丢弃）。
  */
 export interface ManuscriptState {
   chapterIds: string[];
   chapterId: string | null;
   content: string | null;
+  revision: number | null;
   loading: boolean;
   error: string | null;
 }
@@ -26,6 +27,7 @@ export const initialManuscript: ManuscriptState = {
   chapterIds: [],
   chapterId: null,
   content: null,
+  revision: null,
   loading: false,
   error: null,
 };
@@ -46,7 +48,7 @@ interface ChatStore extends UiState {
   loadSnapshot(state: AgentStateSnapshot, messages: AgentMessageWire[]): void;
   setChapters(ids: string[]): void;
   selectChapter(id: string): void;
-  chapterLoaded(id: string, content: string): void;
+  chapterLoaded(id: string, content: string, revision: number): void;
   chapterFailed(id: string, message: string): void;
   resetManuscript(): void;
 }
@@ -88,13 +90,22 @@ export const useChatStore = create<ChatStore>()((set) => ({
   setChapters: (chapterIds) => set((s) => ({ manuscript: { ...s.manuscript, chapterIds } })),
   selectChapter: (id) =>
     set((s) => ({
-      manuscript: { ...s.manuscript, chapterId: id, content: null, loading: true, error: null },
+      manuscript: {
+        ...s.manuscript,
+        chapterId: id,
+        content: null,
+        revision: null,
+        loading: true,
+        error: null,
+      },
     })),
-  chapterLoaded: (id, content) =>
+  chapterLoaded: (id, content, revision) =>
     set((s) =>
       s.manuscript.chapterId !== id
         ? s // 竞态防护：响应返回前用户已切走 → 丢弃
-        : { manuscript: { ...s.manuscript, content, loading: false, error: null } },
+        : {
+            manuscript: { ...s.manuscript, content, revision, loading: false, error: null },
+          },
     ),
   chapterFailed: (id, message) =>
     set((s) =>

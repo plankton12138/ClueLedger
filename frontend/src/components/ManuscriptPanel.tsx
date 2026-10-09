@@ -64,8 +64,8 @@ export default function ManuscriptPanel() {
     if (slug === null || chapterId === null) return;
     let alive = true;
     void fetchChapter(slug, chapterId)
-      .then((text) => {
-        if (alive) chapterLoaded(chapterId, text);
+      .then((chapter) => {
+        if (alive) chapterLoaded(chapterId, chapter.content, chapter.revision);
       })
       .catch((exc: unknown) => {
         if (alive) chapterFailed(chapterId, exc instanceof Error ? exc.message : String(exc));

@@ -1,11 +1,12 @@
-"""REST 只读面（P4 T4 slug 化，计划 D4）：workspaces + state / bible / chapters。
+"""REST 面（P4 T4 slug 化，P5 T2 受管写端点，计划 D3）。
 
-零写入口——唯一例外 POST /api/workspaces 是资源创建（建目录），不碰业务
-数据（P2 守门人原则照旧：写路径在工具层，不容 HTTP 绕过）。
+红线措辞演进（D3）：写路径必须经守门管道——agent 走工具层，作者走
+受管写端点 PUT chapters/{id}（归档 + 运行态检查 + 乐观并发，与工具层
+共享同一套不变量）。POST /api/workspaces 只是资源创建（建目录）。
 泄压阀三情形在 HTTP 层的落点：
-- 参数违规（坏 slug、未知账本类型、坏章节 id）→ 422/404 + 可读指引；
-- 合法但空（空账本、无章节、无工作区）→ 200 空数组，不是错误；
-- 撞名新建（409）、数据故障（YAML 坏）→ 422 + 路径指引；
+- 参数违规（坏 slug、未知账本类型、坏章节 id、坏标题）→ 422/404 + 可读指引；
+- 合法但空（空账本、无章节、无工作区、空 diff no-op）→ 200，不是错误；
+- 撞名新建 / 过期提交 / 写作流冲突（409）、数据故障（YAML 坏 → 422）；
   环境故障（IO）→ 500 带归因，不与数据故障混谈。
 """
 
@@ -18,7 +19,7 @@ from typing import Final, Literal
 
 import yaml
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
 from hastings.bible.store import (
@@ -28,6 +29,8 @@ from hastings.bible.store import (
     list_characters,
     load_ledger,
 )
+from hastings.manuscript.diff import InvalidChapterFormat, validate_title_heading
+from hastings.manuscript.store import current_revision, save_chapter
 from hastings.server.registry import WorkspaceExistsError, WorkspaceRegistry
 from hastings.server.session import WritingSession
 from hastings.tools.bible_tools import ENTITY_LABELS
@@ -88,6 +91,31 @@ class ChaptersResponse(BaseModel):
 class ChapterResponse(BaseModel):
     id: str
     content: str
+    revision: int
+
+
+class ChapterUpdateRequest(BaseModel):
+    # D3：请求体为 {content, baseRevision}——validation alias 收 camelCase
+    content: str
+    base_revision: int = Field(validation_alias="baseRevision")
+    # 对账接线（D5）：T4 消费；T2 只接收（sync=false 只存不同步）
+    sync: bool = True
+
+
+class DiffHunkResponse(BaseModel):
+    # D3 契约：hunk 字段经别名在 wire 上是 camelCase（与 WS 帧同形，
+    # 前端 diff 视图一套类型消费）
+    kind: str
+    old_index: int | None = Field(serialization_alias="oldIndex")
+    new_index: int | None = Field(serialization_alias="newIndex")
+    old_text: str = Field(serialization_alias="oldText")
+    new_text: str = Field(serialization_alias="newText")
+
+
+class ChapterSavedResponse(BaseModel):
+    id: str
+    revision: int
+    diff: list[DiffHunkResponse]
 
 
 class WorkspacesResponse(BaseModel):
@@ -247,7 +275,94 @@ def create_rest_router(*, registry: WorkspaceRegistry) -> APIRouter:
                 status_code=500,
                 detail=f"章节读取失败：文件系统错误 {exc}。",
             ) from exc
-        return ChapterResponse(id=chapter_id, content=content)
+        return ChapterResponse(
+            id=chapter_id,
+            content=content,
+            revision=current_revision(workspace, chapter_id),
+        )
+
+    @router.put("/api/{slug}/chapters/{chapter_id}", response_model=ChapterSavedResponse)
+    async def update_chapter(
+        chapter_id: str,
+        body: ChapterUpdateRequest,
+        slug: str,
+    ) -> ChapterSavedResponse:
+        """作者受管写端点（D3 管线，顺序固定）。"""
+        if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"章节 id 不合法：{chapter_id!r}。"
+                    "为什么错：id 只允许字母、数字、连字符与下划线。"
+                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
+                ),
+            )
+        try:
+            validate_title_heading(body.content)
+        except InvalidChapterFormat as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        session = await _session(slug)
+        if session.is_running:
+            # D4 HTTP 侧守门（EditMark 注册表在 T3，运行态检查 T2 先落）
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"章节 {chapter_id} 保存被拒：agent 写作流进行中。"
+                    "为什么错：并发写同一文件会产生交叠版本。"
+                    "怎样算对：等待写作流结束（状态条消失）后再保存。"
+                ),
+            )
+
+        workspace = _workspace(slug)
+        revision = current_revision(workspace, chapter_id)
+        if body.base_revision != revision:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"章节 {chapter_id} 已被其他页面更新"
+                    f"（当前 revision={revision}，本次提交基于 "
+                    f"revision={body.base_revision}）。"
+                    "为什么错：继续保存会覆盖那份更新。"
+                    "怎样算对：重新 GET 该章节，把改动合并到最新版本后再保存。"
+                ),
+            )
+
+        try:
+            saved = save_chapter(workspace, chapter_id, body.content)
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"章节 {chapter_id} 不存在。"
+                    "为什么错：受管写端点只保存已有章节，不负责创建新章。"
+                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用 id，"
+                    "新章节请让 agent 用 write_chapter 落盘。"
+                ),
+            ) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"章节 {chapter_id} 保存失败：文件系统错误 {exc}。"
+                    "主文件未受影响（归档先于写入）；修复后可直接重试保存。"
+                ),
+            ) from exc
+
+        return ChapterSavedResponse(
+            id=chapter_id,
+            revision=saved.revision,
+            diff=[
+                DiffHunkResponse(
+                    kind=hunk.kind,
+                    old_index=hunk.old_index,
+                    new_index=hunk.new_index,
+                    old_text=hunk.old_text,
+                    new_text=hunk.new_text,
+                )
+                for hunk in saved.hunks
+            ],
+        )
 
     return router
 
