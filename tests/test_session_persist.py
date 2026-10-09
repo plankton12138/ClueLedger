@@ -18,6 +18,8 @@ from hastings.session_persist import (
     attach_session_storage,
     load_session_messages,
     quarantine_session_file,
+    restore_and_attach,
+    session_file,
 )
 from hastings.tools.bible_tools import create_bible_tools
 from tau_agent import AgentHarness, AgentHarnessConfig, AssistantMessage, ToolCall, UserMessage
@@ -168,3 +170,52 @@ async def test_message_end_subscription_off_switch(
 def test_message_end_event_has_message_field() -> None:
     event = MessageEndEvent(message=UserMessage(content="x"))
     assert event.message.content == "x"
+
+
+# ---------- T2：restore_and_attach 组合接线（CLI 与 server 共用） ----------
+
+
+@pytest.mark.anyio
+async def test_restore_and_attach_survives_restart_and_keeps_appending(
+    tmp_path: Path, make_harness: Callable[[], AgentHarness]
+) -> None:
+    workspace = StoryWorkspace(root=tmp_path, slug="orient-express")
+
+    # 第一轮：空会话启动 → 跑两回合 → 退出
+    first = make_harness()
+    await restore_and_attach(workspace, first)
+    async for _ in first.prompt("创建角色波洛"):
+        pass
+    count_after_first = len(first.messages)
+    assert count_after_first > 0
+
+    # 第二轮（模拟重启）：消息恢复一致，且新对话继续追加进同一份 jsonl
+    second = make_harness()
+    await restore_and_attach(workspace, second)
+    assert second.messages == first.messages
+    async for _ in second.prompt("继续核对账本"):
+        pass
+
+    reloaded = await load_session_messages(session_file(workspace))
+    assert len(reloaded.messages) > count_after_first
+    assert reloaded.messages == second.messages
+
+
+@pytest.mark.anyio
+async def test_restore_and_attach_surfaces_corruption_warning(
+    tmp_path: Path, make_harness: Callable[[], AgentHarness]
+) -> None:
+    workspace = StoryWorkspace(root=tmp_path, slug="orient-express")
+    workspace.ensure_dirs()
+    session_file(workspace).write_text("broken\n", encoding="utf-8")
+    warnings: list[str] = []
+    harness = make_harness()
+    await restore_and_attach(workspace, harness, on_warning=warnings.append)
+    assert len(warnings) == 1
+    assert "备份" in warnings[0]
+    assert harness.messages == ()
+    # 告警之后 attach 仍然生效——以空会话继续正常写作
+    async for _ in harness.prompt("创建角色波洛"):
+        pass
+    reloaded = await load_session_messages(session_file(workspace))
+    assert len(reloaded.messages) == len(harness.messages)

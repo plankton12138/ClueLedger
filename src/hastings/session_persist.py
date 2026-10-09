@@ -16,6 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from hastings.bible.store import StoryWorkspace
 from tau_agent.events import AgentEvent, MessageEndEvent
 from tau_agent.harness import AgentHarness
 from tau_agent.messages import AgentMessage
@@ -27,6 +28,8 @@ __all__ = [
     "attach_session_storage",
     "load_session_messages",
     "quarantine_session_file",
+    "restore_and_attach",
+    "session_file",
 ]
 
 
@@ -74,3 +77,27 @@ def attach_session_storage(harness: AgentHarness, storage: SessionStorage) -> Ca
             await storage.append(MessageEntry(message=event.message))
 
     return harness.subscribe(_persist)
+
+
+def session_file(workspace: StoryWorkspace) -> Path:
+    """故事会话文件：``stories/<slug>/session.jsonl``——与 Bible、章节同目录（D1）。"""
+    return workspace.story_dir / "session.jsonl"
+
+
+async def restore_and_attach(
+    workspace: StoryWorkspace,
+    harness: AgentHarness,
+    *,
+    on_warning: Callable[[str], None] | None = None,
+) -> None:
+    """一次性接线（CLI 与 server 共用，P4 T2）：恢复历史消息并挂上持久化。
+
+    坏文件走 D2 泄压阀：备份 + on_warning 中文告警 + 空会话继续——attach 不受影响，
+    本轮写作照常落盘。
+    """
+    result = await load_session_messages(session_file(workspace))
+    if result.warning is not None and on_warning is not None:
+        on_warning(result.warning)
+    if result.messages:
+        harness.replace_messages(result.messages)
+    attach_session_storage(harness, JsonlSessionStorage(session_file(workspace)))

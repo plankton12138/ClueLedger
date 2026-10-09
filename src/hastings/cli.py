@@ -19,6 +19,7 @@ from hastings.bible.store import (
     load_ledger,
 )
 from hastings.prompts import build_system_prompt
+from hastings.session_persist import restore_and_attach
 from hastings.tools.bible_tools import ENTITY_LABELS, create_bible_tools, entity_summary
 from hastings.tools.chapter_tools import create_chapter_tools
 from hastings.tools.method_tools import create_method_tools
@@ -173,6 +174,7 @@ async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: st
     harness = build_harness(workspace, provider, model)
     renderer = PlainRenderer({tool.name: tool for tool in tools})
     workspace.ensure_dirs()
+    await restore_and_attach(workspace, harness, on_warning=print)
 
     print(f"案卷已打开：{workspace.story_dir}")
     print(f"模型：{model}｜工具：{'、'.join(tool.name for tool in tools)}")

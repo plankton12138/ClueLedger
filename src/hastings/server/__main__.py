@@ -8,6 +8,7 @@ HastingsSession → create_app → uvicorn.run。
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -19,6 +20,7 @@ from hastings.__main__ import DEFAULT_STORIES_ROOT, env_error, normalize_base_ur
 from hastings.bible.store import StoryWorkspace
 from hastings.server.app import create_app
 from hastings.server.hastings_session import HastingsSession
+from hastings.session_persist import restore_and_attach
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -70,6 +72,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     workspace = StoryWorkspace(root=args.stories_root, slug=args.slug)
     model = args.model or os.environ["HASTINGS_MODEL"]
     session = HastingsSession.from_workspace(workspace, provider=provider, model=model)
+    asyncio.run(restore_and_attach(workspace, session.harness, on_warning=print))
     static_dir = default_static_dir()
     app = create_app(session, workspace, static_dir=static_dir)
 
