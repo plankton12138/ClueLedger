@@ -57,9 +57,9 @@ export default function Composer({ sendCommand, abort }: ComposerProps) {
   const buttonBase =
     "px-4 py-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40";
   return (
-    <div className="border-t border-line bg-ink-soft/40 px-6 py-3">
+    <div className="min-w-0 border-t border-line bg-ink-soft/40 px-6 py-3">
       {error && (
-        <p className="mb-2 border border-overdue/50 bg-overdue/10 px-3 py-1.5 text-xs leading-relaxed text-paper">
+        <p className="mb-2 break-all border border-overdue/50 bg-overdue/10 px-3 py-1.5 text-xs leading-relaxed text-paper">
           {error}
         </p>
       )}
@@ -72,7 +72,7 @@ export default function Composer({ sendCommand, abort }: ComposerProps) {
           placeholder={
             running ? "主编正在写作——可插话（steer）或排队追问（follow_up）" : "给主编下达指令…"
           }
-          className="flex-1 resize-none border border-line bg-ink px-3 py-2 text-sm text-paper placeholder:text-paper/30 focus:border-gold focus:outline-none"
+          className="min-w-0 flex-1 resize-none border border-line bg-ink px-3 py-2 text-sm text-paper placeholder:text-paper/30 focus:border-gold focus:outline-none"
         />
         <div className="flex flex-col items-end gap-2">
           <div className="flex gap-2">

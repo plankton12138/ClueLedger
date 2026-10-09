@@ -385,7 +385,7 @@ export default function App() {
           ) : (
             <>
               <aside
-                className="relative flex flex-none flex-col bg-ink-soft/35"
+                className="relative flex min-w-0 flex-none flex-col overflow-hidden bg-ink-soft/35"
                 style={{ width: chatWidth }}
               >
                 <button
@@ -397,7 +397,7 @@ export default function App() {
                 >
                   ‹
                 </button>
-                <section className="flex min-h-0 flex-1 flex-col">
+                <section className="flex min-h-0 min-w-0 flex-1 flex-col">
                   <ErrorBoundary label="对话">
                     <ChatStream onRetrySync={retrySync} />
                   </ErrorBoundary>
