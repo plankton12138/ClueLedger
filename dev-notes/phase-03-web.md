@@ -1,7 +1,7 @@
 # Phase 3 构建笔记：Web 化（FastAPI WebSocket 桥 + React 前端）
 
 > 对应 [phase-03-web-plan.md](phase-03-web-plan.md)（T1–T11 全部完成）。
-> 状态：**已交付，待 R3 代码评审 / R5 阶段关闭**。
+> 状态：**R3 blocker 清零，R5 验收通过（13/13），P3 正式关闭，可进入 P4。**
 
 ## 1. 交付内容
 
@@ -135,3 +135,27 @@ P1/P2 的错误回喂对象是 LLM，P3 多了一类读者：**浏览器**。同
 **评审中排除的候选**（证据不足）：REST 章节 id 校验不一致（write_chapter 固定生成 chNN.md）；双连接瞬发 prompt 竞态（harness.prompt_message 同步置 _running=True，harness.py L148-150）；空闲 steer 语义（入队下轮消费，与上游 rpc.py 一致）。
 
 **修复验证**：新增 store.test.ts（4 剧本）+ socket 被动断线剧本；前端 36 测试全绿，tsc+build 通过。后端零改动。
+
+## 9. R5 验收：DoD 逐条打勾（2026-10-09）
+
+对照 [phase-03-web-plan.md §5](phase-03-web-plan.md) 13 条清单，逐条证据：
+
+| # | DoD | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 后端依赖仅 +fastapi +uvicorn；前端依赖隔离 | ✅（带修正项） | pyproject 实增 +fastapi +uvicorn +**websockets**——第三个是 T10 验收发现的 WS 必需实现（D1 误裁修正，§4 坑 1），非越界扩张；前端依赖全在 frontend/package.json，pyproject 零前端依赖 |
+| 2 | WS 集成测试全绿（别名保真/配对/busy/steer/follow_up/abort） | ✅ | test_server_ws.py 全绿（212 passed 之内）；`assistantMessageEvent` 别名有专门断言 |
+| 3 | get_messages 快照刷新后完整恢复 | ✅ | 真实端点验收页面加载即恢复全历史；store.test.ts 钉住快照重置重放语义 |
+| 4 | REST 三组端点；损坏 YAML→422；空账本→空数组 | ✅ | test_server_rest.py；验收 curl 佐证（character count=2 / chapters ["ch01"]） |
+| 5 | 流式渲染/工具卡片折叠/错误卡片/三态 Composer+abort | ✅ | 验收步骤 4–8：bible_upsert/write_chapter 卡片「完成」、流式渲染、运行中形态切换正常 |
+| 6 | Bible 五账本 Tab + 伏笔红点 + 精准 refetch | ✅ | 验收 DOM 读取：角色 2 条自动 refetch 出现；时间线/伏笔/手法 Tab 切换正常；红点逻辑就位 |
+| 7 | 调试视图事件帧滚动 + 未识别事件高亮 | ✅ | 验收步骤 10：102 帧滚动 + 类型徽章 + 过滤框；reducer 测试覆盖 unhandled 上报 |
+| 8 | reducer vitest 全绿；前端三门入 CI | ✅ | vitest 36 passed（reducer 13）；**本次补 CI frontend job**（tsc/vitest/build 三步，ci.yml） |
+| 9 | Python 四门全绿；mypy strict 无新增豁免 | ✅ | 最终复跑：ruff check PASS / format 104 files / mypy 60 files 零 issue / pytest 212 passed；server/ 内 grep `type: ignore` 零命中 |
+| 10 | 红线：tau_ai/tau_agent diff 为空；零 import tau_coding | ✅ | T10 核查（--no-index 对 C:\Projects\Agent\tau 排除 pycache 为空；grep 仅 2 处文档字符串注明来源） |
+| 11 | 真实端点浏览器 P1 同流程 + 存档 | ✅（按 T10-3 合规留白） | deepseek-flash 完成 2 角色→ch01；截图工具不可用，transcript+DOM+REST 证据替代（[p3-acceptance.md](artifacts/p3-acceptance.md)） |
+| 12 | R3 评审完成，blocker 清零 | ✅ | 3 问题（2 major + 1 minor）双验证确认后全部修复（17ebfd7），36 测试全绿 |
+| 13 | 构建笔记发布 | ✅ | 本文档（本节即 R5 结论） |
+
+**R5 结论：13/13 通过（2 条带说明：websockets 修正项、截图合规留白），P3 正式关闭，允许进入 P4（RAG 语料库）。**
+
+R1–R4 执行情况：R1 每笔提交前七道门全绿；R2 红线 T10 核查通过；R3 双验证者评审闭环（§8）；R4 CP1（WS 协议逐字段测试钉住）/ CP2（T9 提交时七门全绿+浏览器联调）达成。
