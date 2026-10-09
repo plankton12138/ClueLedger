@@ -176,6 +176,39 @@ def test_message_end_event_has_message_field() -> None:
 
 
 @pytest.mark.anyio
+async def test_abort_repair_messages_are_persisted(
+    make_harness: Callable[[], AgentHarness], session_path: Path
+) -> None:
+    """abort 后 harness 合成的 toolResult + repair 消息同样走 message_end → 落盘
+    （计划风险表第 2 行：message_end 之外的定稿路径不得漏记）。"""
+    from tau_agent.events import ToolExecutionStartEvent
+
+    harness = make_harness()
+
+    def cancel_on_tool_start(event: Any) -> None:
+        if isinstance(event, ToolExecutionStartEvent):
+            harness.cancel()
+
+    unsubscribe = harness.subscribe(cancel_on_tool_start)
+    attach_session_storage(harness, JsonlSessionStorage(session_path))
+    async for _ in harness.prompt("创建角色波洛"):
+        pass
+    unsubscribe()
+
+    # 中止后：user → assistant(toolUse) → toolResult(错误) → repair assistant
+    roles = [m.role for m in harness.messages]
+    assert roles[0] == "user"
+    assert "toolResult" in roles
+    assert roles[-1] == "assistant"  # repair 定稿消息存在，不是停在半截 toolResult
+    aborted = [m for m in harness.messages if m.role == "toolResult"]
+    assert any("aborted" in str(m.content).lower() for m in aborted)
+
+    # 且全部进 jsonl（与 harness 内存一致，重启可回放）
+    entries = await JsonlSessionStorage(session_path).read_all()
+    assert [e.message for e in entries] == list(harness.messages)
+
+
+@pytest.mark.anyio
 async def test_restore_and_attach_survives_restart_and_keeps_appending(
     tmp_path: Path, make_harness: Callable[[], AgentHarness]
 ) -> None:
