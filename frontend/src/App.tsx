@@ -1,10 +1,14 @@
 /**
- * 主页面（P3 T8/T9）：头部状态条（连接状态 / 写作中 / slug·model）+ 左对话流 +
- * 右故事账本面板（五账本 Tab）+ 底部调试视图开关。断线时显示重连入口——
- * 手动重连，不做自动重连风暴（计划 T8）。
+ * 主页面（P3 T8/T9，P4 T6 多工作区）：头部工作区切换器（下拉 + 新建）+
+ * 连接状态条 + 左对话流 + 右故事账本面板 + 底部调试视图开关。
+ *
+ * 工作区语义（计划 D5）：切换 = socket 重连 ws/{slug} + REST 前缀换 slug，
+ * 不整页刷新；选中 slug 经 ?w= 记入地址（replaceState），刷新后不丢。
+ * 快照「重置后重放」消化切换时的状态更替——上一工作区的事件帧不残留。
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createWorkspace, fetchWorkspaces } from "./api/rest";
 import BiblePanel from "./components/BiblePanel";
 import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
@@ -26,13 +30,107 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
   closed: "bg-overdue",
 };
 
+/** 选中工作区写进 ?w=（replaceState 不触发导航），刷新后恢复选择。 */
+function switchTo(slug: string): void {
+  useChatStore.getState().setSlug(slug);
+  const url = new URL(location.href);
+  url.searchParams.set("w", slug);
+  history.replaceState(null, "", url);
+}
+
+/** 拉工作区列表并初始化选择：?w= 优先，其次第一个；空列表留给引导页。 */
+async function bootWorkspaces(): Promise<void> {
+  const slugs = await fetchWorkspaces();
+  useChatStore.getState().setWorkspaces(slugs);
+  const fromUrl = new URLSearchParams(location.search).get("w");
+  if (fromUrl !== null && slugs.includes(fromUrl)) {
+    switchTo(fromUrl);
+  } else if (slugs.length > 0) {
+    switchTo(slugs[0] as string);
+  }
+}
+
+function CreateWorkspaceForm({ onCreated }: { onCreated: (slug: string) => void }) {
+  const [slug, setSlug] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(): Promise<void> {
+    const trimmed = slug.trim();
+    if (trimmed === "" || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createWorkspace(trimmed);
+      onCreated(trimmed);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : String(exc));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="w-80">
+      <label htmlFor="workspace-slug" className="mb-2 block text-xs text-gold-soft">
+        故事标识（slug，将成为目录名：字母、数字、中文或连字符）
+      </label>
+      <input
+        id="workspace-slug"
+        value={slug}
+        onChange={(e) => setSlug(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void submit();
+        }}
+        placeholder="orient-express"
+        className="w-full border border-line bg-transparent px-2 py-1.5 text-sm text-paper placeholder:text-paper/30 focus:border-gold/60 focus:outline-none"
+      />
+      {error && <p className="mt-2 text-xs leading-relaxed text-overdue">{error}</p>}
+      <button
+        type="button"
+        onClick={() => void submit()}
+        disabled={busy || slug.trim() === ""}
+        className="mt-3 w-full border border-gold/60 px-3 py-1.5 text-sm text-gold transition-colors hover:bg-gold/15 disabled:opacity-40"
+      >
+        {busy ? "创建中…" : "打开新案卷"}
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const { reconnect, sendCommand } = useAgentSocket();
   const status = useChatStore((s) => s.status);
   const connectionError = useChatStore((s) => s.connectionError);
   const running = useChatStore((s) => s.running);
   const snapshot = useChatStore((s) => s.snapshot);
+  const slug = useChatStore((s) => s.slug);
+  const workspaces = useChatStore((s) => s.workspaces);
   const [showDebug, setShowDebug] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+
+  // 启动：拉工作区列表并恢复/选择工作区（失败走顶部错误条，可重试）。
+  useEffect(() => {
+    bootWorkspaces().catch((exc: unknown) =>
+      useChatStore
+        .getState()
+        .setConnectionError(
+          `${exc instanceof Error ? exc.message : String(exc)} 怎样算对：确认服务已启动后刷新页面。`,
+        ),
+    );
+  }, []);
+
+  async function handleCreated(created: string): Promise<void> {
+    setShowCreate(false);
+    try {
+      useChatStore.getState().setWorkspaces(await fetchWorkspaces());
+    } catch {
+      // 列表刷新失败不阻塞切换——下拉内容稍后由下次启动/新建补齐
+    }
+    switchTo(created);
+  }
+
+  const slugInvalid = slug !== null && !workspaces.includes(slug);
 
   return (
     <div className="flex h-screen flex-col">
@@ -42,10 +140,33 @@ export default function App() {
           Hastings&rsquo; Memo · 会记账的悬疑小说 AI 主编
         </p>
         <div className="ml-auto flex items-center gap-3 text-xs text-paper/60">
+          <select
+            aria-label="工作区"
+            value={slug ?? ""}
+            onChange={(e) => switchTo(e.target.value)}
+            className="max-w-40 border border-line bg-transparent px-1.5 py-0.5 text-xs text-paper focus:border-gold/60 focus:outline-none"
+          >
+            {slug === null && <option value="">选择案卷…</option>}
+            {slug !== null && !workspaces.includes(slug) && (
+              <option value={slug}>{slug}</option>
+            )}
+            {workspaces.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setShowCreate((v) => !v)}
+            className={`border px-2 py-0.5 transition-colors ${
+              showCreate ? "border-gold bg-gold/15 text-gold" : "border-line hover:border-gold/50"
+            }`}
+          >
+            新建案卷
+          </button>
           {snapshot && (
-            <span className="hidden font-mono md:inline">
-              {snapshot.slug} · {snapshot.model}
-            </span>
+            <span className="hidden font-mono md:inline">{snapshot.model}</span>
           )}
           {running && (
             <span className="border border-planned/50 px-2 py-0.5 text-planned">写作中</span>
@@ -84,26 +205,59 @@ export default function App() {
           <span className="min-w-0 flex-1">{connectionError}</span>
           <button
             type="button"
-            onClick={reconnect}
+            onClick={() => {
+              useChatStore.getState().setConnectionError(null);
+              bootWorkspaces().catch((exc: unknown) =>
+                useChatStore.getState().setConnectionError(String(exc)),
+              );
+            }}
             className="shrink-0 border border-overdue/60 px-2 py-0.5 text-overdue transition-colors hover:bg-overdue/10"
           >
-            重连
+            重试
           </button>
         </div>
       )}
 
-      <main className="flex min-h-0 flex-1">
-        <section className="flex min-w-0 flex-1 flex-col border-r border-line">
-          <ChatStream />
-          <Composer
-            sendCommand={(type: CommandType, message: string) => sendCommand(type, message)}
-            abort={() => sendCommand("abort")}
-          />
-        </section>
-        <aside className="hidden w-80 shrink-0 flex-col overflow-hidden border-l-0 lg:flex">
-          <BiblePanel />
-        </aside>
-      </main>
+      {showCreate && (
+        <div className="flex items-start justify-end border-b border-line px-6 py-4">
+          <div className="border border-line bg-ink p-4">
+            <CreateWorkspaceForm
+              onCreated={(created) => void handleCreated(created)}
+            />
+          </div>
+        </div>
+      )}
+
+      {slug === null || slugInvalid ? (
+        <main className="flex flex-1 items-center justify-center">
+          <div className="max-w-md text-center">
+            <h2 className="font-serif text-2xl font-bold text-gold">
+              {slugInvalid ? "案卷不在架上" : "案卷房空空如也"}
+            </h2>
+            <p className="mt-2 text-xs leading-relaxed text-paper/50">
+              {slugInvalid
+                ? "地址里的工作区不存在（可能已被移动）。从上方下拉选一本，或新建一本。"
+                : "还没有任何故事工作区。打开第一本案卷，开始你的悬疑连载。"}
+            </p>
+            <div className="mt-6 flex justify-center">
+              <CreateWorkspaceForm onCreated={(created) => void handleCreated(created)} />
+            </div>
+          </div>
+        </main>
+      ) : (
+        <main className="flex min-h-0 flex-1">
+          <section className="flex min-w-0 flex-1 flex-col border-r border-line">
+            <ChatStream />
+            <Composer
+              sendCommand={(type: CommandType, message: string) => sendCommand(type, message)}
+              abort={() => sendCommand("abort")}
+            />
+          </section>
+          <aside className="hidden w-80 shrink-0 flex-col overflow-hidden border-l-0 lg:flex">
+            <BiblePanel />
+          </aside>
+        </main>
+      )}
 
       {showDebug && (
         <section className="h-64 shrink-0 border-t border-line">

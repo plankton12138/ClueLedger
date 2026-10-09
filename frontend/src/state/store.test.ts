@@ -23,6 +23,8 @@ const HISTORY: AgentMessageWire[] = [
 beforeEach(() =>
   useChatStore.setState({
     ...initialUiState,
+    slug: null,
+    workspaces: [],
     status: "closed",
     connectionError: null,
     snapshot: null,
@@ -61,5 +63,22 @@ describe("loadSnapshot running 语义（R3 问题2：卡 true）", () => {
   it("快照 is_running=true 恢复写作中（页面加载时 agent 已在写作）", () => {
     useChatStore.getState().loadSnapshot({ ...SNAP_STATE, is_running: true }, []);
     expect(useChatStore.getState().running).toBe(true);
+  });
+});
+
+describe("工作区切片（P4 T6）", () => {
+  it("setSlug 记录当前工作区；切换不改写事件流（由快照重放整体更替）", () => {
+    useChatStore.setState({ items: [{ kind: "user", text: "旧案卷的发言" }] });
+    useChatStore.getState().setSlug("story-a");
+    expect(useChatStore.getState().slug).toBe("story-a");
+    useChatStore.getState().setSlug("story-b");
+    expect(useChatStore.getState().slug).toBe("story-b");
+    // 切换瞬间旧条目仍在——待新连接快照到达后由 loadSnapshot 重置（见上组测试）
+    expect(useChatStore.getState().items).toHaveLength(1);
+  });
+
+  it("setWorkspaces 保存列表", () => {
+    useChatStore.getState().setWorkspaces(["story-a", "story-b"]);
+    expect(useChatStore.getState().workspaces).toEqual(["story-a", "story-b"]);
   });
 });

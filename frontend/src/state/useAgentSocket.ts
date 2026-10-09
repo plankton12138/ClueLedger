@@ -1,5 +1,6 @@
 /**
- * 连接生命周期 hook（P3 T8）：挂载即连、卸载即断；回调解耦到 zustand store。
+ * 连接生命周期 hook（P3 T8，P4 T6 多工作区）：slug 变更即重连——先关旧连接
+ * 再连新 slug，快照「重置后重放」语义消化工作区切换的状态更替（计划 D5）。
  * 重连是显式动作（reconnect 返回给 UI），不做自动重连风暴。
  */
 
@@ -13,11 +14,12 @@ export function useAgentSocket(): {
   sendCommand(type: CommandType, message?: string): Promise<void>;
 } {
   const socketRef = useRef<AgentSocket | null>(null);
+  const slug = useChatStore((s) => s.slug);
 
-  const connect = useCallback(() => {
+  const connect = useCallback((workspaceSlug: string) => {
     useChatStore.getState().setConnectionError(null);
     socketRef.current?.close();
-    const socket = new AgentSocket(wsUrl(), {
+    const socket = new AgentSocket(wsUrl(workspaceSlug), {
       onStatus: (status) => useChatStore.getState().setStatus(status),
       onEvent: (event) => useChatStore.getState().handleEvent(event),
       onSnapshot: (state, messages) => useChatStore.getState().loadSnapshot(state, messages),
@@ -28,12 +30,13 @@ export function useAgentSocket(): {
   }, []);
 
   useEffect(() => {
-    connect();
+    if (slug === null) return;
+    connect(slug);
     return () => {
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [connect]);
+  }, [connect, slug]);
 
   const sendCommand = useCallback(async (type: CommandType, message?: string) => {
     const socket = socketRef.current;
@@ -41,5 +44,5 @@ export function useAgentSocket(): {
     await socket.command(type, message);
   }, []);
 
-  return { reconnect: connect, sendCommand };
+  return { reconnect: () => { if (slug !== null) connect(slug); }, sendCommand };
 }

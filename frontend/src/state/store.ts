@@ -10,9 +10,14 @@ import type { AgentMessageWire, EventFrame } from "../api/types";
 import { applyEvent, applyMessages, initialUiState, type UiState } from "./reducer";
 
 interface ChatStore extends UiState {
+  /** 当前工作区 slug（P4 T6）；null = 尚未选定（启动引导/新建第一个工作区）。 */
+  slug: string | null;
+  workspaces: string[];
   status: ConnectionStatus;
   connectionError: string | null;
   snapshot: AgentStateSnapshot | null;
+  setSlug(slug: string): void;
+  setWorkspaces(slugs: string[]): void;
   setStatus(status: ConnectionStatus): void;
   setConnectionError(message: string | null): void;
   handleEvent(event: EventFrame): void;
@@ -21,9 +26,15 @@ interface ChatStore extends UiState {
 
 export const useChatStore = create<ChatStore>()((set) => ({
   ...initialUiState,
+  slug: null,
+  workspaces: [],
   status: "closed",
   connectionError: null,
   snapshot: null,
+  // 切换工作区：slug 变更驱动 useAgentSocket 重连；旧工作区的事件帧/条目
+  // 由 loadSnapshot 的「重置后重放」语义在新快照到达时整体更替（计划 D5）。
+  setSlug: (slug) => set({ slug }),
+  setWorkspaces: (workspaces) => set({ workspaces }),
   setStatus: (status) => set({ status }),
   setConnectionError: (connectionError) => set({ connectionError }),
   handleEvent: (event) => set((s) => applyEvent(s, event)),

@@ -3,9 +3,9 @@
  * 呈现策略纯函数——「事件进、刷新目标出」，与 reducer 同一测试哲学。
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventFrame, ToolExecutionEndEventFrame } from "./types";
-import { refetchTargets } from "./rest";
+import { createWorkspace, fetchBible, fetchWorkspaces, refetchTargets } from "./rest";
 
 function toolEnd(toolName: string, _args: Record<string, unknown>, isError = false): ToolExecutionEndEventFrame {
   void _args; // end 帧不带 args（args 只在 start/update 上），保留形参以贴近调用现场
@@ -48,5 +48,66 @@ describe("refetchTargets", () => {
       args: {},
     };
     expect(refetchTargets(start, argsOf)).toEqual([]);
+  });
+});
+
+// ---------- 工作区面（P4 T6）：fetch 客户端剧本（stub 掉传输层） ----------
+
+describe("workspace API（P4 T6）", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function jsonResponse(payload: unknown, status = 200): Response {
+    return new Response(JSON.stringify(payload), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  it("fetchWorkspaces GET /api/workspaces 并返回 slug 列表", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({ workspaces: ["story-a", "story-b"] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchWorkspaces()).resolves.toEqual(["story-a", "story-b"]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/workspaces");
+  });
+
+  it("fetchWorkspaces 结构不符 → 报错并给出服务端响应原文", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ nope: true })));
+    await expect(fetchWorkspaces()).rejects.toThrow("结构不符");
+  });
+
+  it("createWorkspace POST /api/workspaces，body 为 { slug }", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(JSON.stringify({ slug: "fresh-story" }));
+      return jsonResponse({ slug: "fresh-story" }, 201);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createWorkspace("fresh-story")).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/workspaces");
+  });
+
+  it("createWorkspace 失败（422/409）→ detail 文案原样透出", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ detail: "slug 不合法：'CON'。…" }, 422)),
+    );
+    await expect(createWorkspace("CON")).rejects.toThrow("slug 不合法");
+  });
+
+  it("fetchBible 请求 /api/{slug}/bible/{type}", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({ entity_type: "clue", count: 0, entities: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const body = await fetchBible("orient express", "clue");
+    expect(body.count).toBe(0);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `/api/${encodeURIComponent("orient express")}/bible/clue`,
+    );
   });
 });

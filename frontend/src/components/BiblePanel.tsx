@@ -85,11 +85,12 @@ function foreshadowDot(status: unknown): string {
 export default function BiblePanel() {
   const [active, setActive] = useState<BibleType>("character");
   const [ledgers, setLedgers] = useState<Record<BibleType, LedgerState>>(initialLedgers);
+  const slug = useChatStore((s) => s.slug);
 
-  const load = useCallback(async (type: BibleType) => {
+  const load = useCallback(async (workspaceSlug: string, type: BibleType) => {
     setLedgers((s) => ({ ...s, [type]: { ...s[type], loading: true, error: null } }));
     try {
-      const body = await fetchBible(type);
+      const body = await fetchBible(workspaceSlug, type);
       setLedgers((s) => ({
         ...s,
         [type]: { loading: false, error: null, entities: body.entities },
@@ -106,9 +107,11 @@ export default function BiblePanel() {
     }
   }, []);
 
+  // 工作区切换（slug 变更）→ 五账本全部重拉：面板数据只属于当前 slug。
   useEffect(() => {
-    for (const t of BIBLE_TYPES) void load(t);
-  }, [load]);
+    if (slug === null) return;
+    for (const t of BIBLE_TYPES) void load(slug, t);
+  }, [load, slug]);
 
   // D7 refetch：事件流里写工具成功 → 按映射精准刷新对应账本。
   // end 帧不带 args，先从 start 帧养 toolCallId → args 查表。
@@ -116,12 +119,14 @@ export default function BiblePanel() {
     const argsByCallId = new Map<string, Record<string, unknown>>();
     return useChatStore.subscribe((state, prev) => {
       if (state.eventLog.length <= prev.eventLog.length) return;
+      const workspaceSlug = state.slug;
+      if (workspaceSlug === null) return;
       const targets = new Set<BibleType>();
       for (const e of state.eventLog.slice(prev.eventLog.length) as EventFrame[]) {
         if (e.type === "tool_execution_start") argsByCallId.set(e.toolCallId, e.args);
         for (const t of refetchTargets(e, (id) => argsByCallId.get(id))) targets.add(t);
       }
-      for (const t of targets) void load(t);
+      for (const t of targets) void load(workspaceSlug, t);
     });
   }, [load]);
 

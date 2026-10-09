@@ -79,8 +79,8 @@ export interface TimelineEntity {
 }
 
 /** 读取一类账本；422（损坏 YAML 等）的 detail 文案原样透出。 */
-export async function fetchBible(type: BibleType): Promise<BibleResponse> {
-  const res = await fetch(`/api/bible/${type}`);
+export async function fetchBible(slug: string, type: BibleType): Promise<BibleResponse> {
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/bible/${type}`);
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     const detail =
@@ -90,6 +90,41 @@ export async function fetchBible(type: BibleType): Promise<BibleResponse> {
     throw new Error(`账本 ${type} 读取失败：${detail}`);
   }
   return body as BibleResponse;
+}
+
+// ---------- 工作区面（P4 T6）：列表 + 新建（唯一写 REST，资源创建） ----------
+
+/** GET /api/workspaces → 已有工作区 slug 列表（服务端已按目录名排序）。 */
+export async function fetchWorkspaces(): Promise<string[]> {
+  const res = await fetch("/api/workspaces");
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(`工作区列表读取失败：HTTP ${res.status}`);
+  }
+  if (body === null || typeof body !== "object" || !Array.isArray((body as { workspaces?: unknown }).workspaces)) {
+    throw new Error(
+      `工作区列表响应结构不符：期望 { workspaces: string[] }，收到 ${JSON.stringify(body)}。` +
+        `怎样算对：确认服务端为 P4 多工作区版本。`,
+    );
+  }
+  return (body as { workspaces: unknown[] }).workspaces.map(String);
+}
+
+/** POST /api/workspaces 新建工作区；422（slug 不合法）/ 409（撞名）detail 原样透出。 */
+export async function createWorkspace(slug: string): Promise<void> {
+  const res = await fetch("/api/workspaces", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slug }),
+  });
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    const detail =
+      body !== null && typeof body === "object" && "detail" in body
+        ? String((body as { detail: unknown }).detail)
+        : `HTTP ${res.status}`;
+    throw new Error(detail);
+  }
 }
 
 // ---------- D7 refetch 规则（纯函数，呈现策略而非业务校验） ----------

@@ -39,9 +39,9 @@ export interface CommandResult {
 }
 
 /** 开发态经 Vite proxy（/ws → ws://localhost:8000），协议随页面自适应。 */
-export function wsUrl(): string {
+export function wsUrl(slug: string): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/ws`;
+  return `${proto}//${location.host}/ws/${encodeURIComponent(slug)}`;
 }
 
 interface Pending {
