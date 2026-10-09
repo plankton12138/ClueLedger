@@ -122,6 +122,71 @@ def harness(workspace: StoryWorkspace) -> AgentHarness:
     )
 
 
+def _reread_provider() -> FakeProvider:
+    """P4 T3 集成剧本：读回第 1 章原文 → 写第 2 章（读回通道进 agent loop）。"""
+    read = ToolCall(id="call-1", name="read_chapter", arguments={"chapter": 1})
+    write = ToolCall(
+        id="call-2",
+        name="write_chapter",
+        arguments={"chapter": 2, "title": "第二夜", "content": "夜更深了。"},
+    )
+
+    def tool_turn(call: ToolCall) -> list[Any]:
+        return [
+            AssistantStartEvent(partial=AssistantMessage(model="fake")),
+            ToolCallEndEvent(
+                content_index=1, tool_call=call, partial=AssistantMessage(model="fake")
+            ),
+            AssistantDoneEvent(
+                reason="toolUse", message=AssistantMessage(content=[call], stop_reason="toolUse")
+            ),
+        ]
+
+    closing = AssistantDoneEvent(
+        reason="stop", message=AssistantMessage(content="第二章已落笔。", stop_reason="stop")
+    )
+    return FakeProvider(
+        [
+            tool_turn(read),
+            tool_turn(write),
+            [AssistantStartEvent(partial=AssistantMessage(model="fake")), closing],
+        ]
+    )
+
+
+@pytest.mark.anyio
+async def test_writing_loop_rereads_chapter_before_next(tmp_path: Path) -> None:
+    """读回通道：第 1 章正文经 read_chapter 回到上下文，第 2 章衔接落盘。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="orient-express")
+    tools = create_bible_tools(workspace) + create_chapter_tools(workspace)
+    reread_harness = AgentHarness(
+        AgentHarnessConfig(
+            provider=_reread_provider(),
+            model="fake",
+            system=build_system_prompt(tools),
+            tools=tools,
+        )
+    )
+
+    # 前置：第 1 章已存在
+    workspace.ensure_dirs()
+    (workspace.chapters_dir / "ch01.md").write_text(
+        "# 第1章 雪封之夜\n\n雪从午夜开始落。\n", encoding="utf-8"
+    )
+
+    events = [event async for event in reread_harness.prompt("核对第1章后写第2章")]
+
+    tool_ends = [e for e in events if isinstance(e, ToolExecutionEndEvent)]
+    assert [e.tool_name for e in tool_ends] == ["read_chapter", "write_chapter"]
+    # read_chapter 的结果正文回到 agent 上下文（toolResult 消息可见原文）
+    read_result = tool_ends[0]
+    assert "雪从午夜开始落" in read_result.result.text
+    assert not read_result.is_error
+    # 第 2 章落盘，第 1 章未被改动
+    assert "夜更深了" in (workspace.chapters_dir / "ch02.md").read_text(encoding="utf-8")
+    assert "雪从午夜开始落" in (workspace.chapters_dir / "ch01.md").read_text(encoding="utf-8")
+
+
 @pytest.mark.anyio
 async def test_writing_loop_event_sequence(harness: AgentHarness) -> None:
     events = [event async for event in harness.prompt(PROMPT)]

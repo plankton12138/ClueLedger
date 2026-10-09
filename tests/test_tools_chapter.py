@@ -1,4 +1,4 @@
-"""write_chapter 工具单测：落盘格式 + 参数约束 + 覆盖保护。"""
+"""write_chapter / read_chapter / list_chapters 工具单测：落盘格式 + 参数约束 + 覆盖保护 + 读回。"""
 
 from pathlib import Path
 
@@ -18,6 +18,16 @@ def workspace(tmp_path: Path) -> StoryWorkspace:
 @pytest.fixture
 def write_chapter(workspace: StoryWorkspace) -> AgentTool:
     return create_chapter_tools(workspace)[0]
+
+
+@pytest.fixture
+def read_chapter(workspace: StoryWorkspace) -> AgentTool:
+    return create_chapter_tools(workspace)[1]
+
+
+@pytest.fixture
+def list_chapters(workspace: StoryWorkspace) -> AgentTool:
+    return create_chapter_tools(workspace)[2]
 
 
 @pytest.mark.anyio
@@ -94,3 +104,98 @@ def test_render_call(write_chapter: AgentTool) -> None:
     assert render is not None
     assert render({"chapter": 1, "content": "abc"}) == "写入第1章（3 字）"
     assert render({"chapter": 2}) == "写入第2章（0 字）"
+
+
+# ---------- read_chapter（P4 T3：正文读回） ----------
+
+
+@pytest.mark.anyio
+async def test_read_returns_full_text(
+    write_chapter: AgentTool, read_chapter: AgentTool, workspace: StoryWorkspace
+) -> None:
+    await write_chapter.execute(
+        "call-1", {"chapter": 1, "title": "雪封之夜", "content": "雪落无声。"}
+    )
+    result = await read_chapter.execute("call-2", {"chapter": 1})
+
+    assert "雪落无声。" in result.text
+    assert result.details == {
+        "path": str(workspace.chapters_dir / "ch01.md"),
+        "chapter": 1,
+        "chars": len("# 第1章 雪封之夜\n\n雪落无声。\n"),
+    }
+
+
+@pytest.mark.anyio
+async def test_read_missing_chapter_lists_available(
+    write_chapter: AgentTool, read_chapter: AgentTool
+) -> None:
+    await write_chapter.execute("call-1", {"chapter": 1, "content": "初章"})
+    with pytest.raises(ToolInputError, match="第3章尚未写作.*可用章节：1"):
+        await read_chapter.execute("call-2", {"chapter": 3})
+
+
+@pytest.mark.anyio
+async def test_read_missing_chapter_when_empty(read_chapter: AgentTool) -> None:
+    with pytest.raises(ToolInputError, match="尚未写作.*还没有任何章节.*write_chapter"):
+        await read_chapter.execute("call-1", {"chapter": 1})
+
+
+@pytest.mark.anyio
+async def test_read_rejects_invalid_chapter(read_chapter: AgentTool) -> None:
+    with pytest.raises(ToolInputError, match="整数"):
+        await read_chapter.execute("call-1", {"chapter": "1"})
+    with pytest.raises(ToolInputError, match="整数"):
+        await read_chapter.execute("call-1", {"chapter": True})
+    with pytest.raises(ToolInputError, match="≥1"):
+        await read_chapter.execute("call-1", {"chapter": 0})
+
+
+def test_read_render_call(read_chapter: AgentTool) -> None:
+    render = read_chapter.render_call
+    assert render is not None
+    assert render({"chapter": 3}) == "读取第3章"
+
+
+# ---------- list_chapters（P4 T3：目录概览） ----------
+
+
+@pytest.mark.anyio
+async def test_list_empty_chapters(list_chapters: AgentTool) -> None:
+    result = await list_chapters.execute("call-1", {})
+
+    assert "还没有任何章节" in result.text
+    assert result.details == {"chapters": []}
+
+
+@pytest.mark.anyio
+async def test_list_chapters_sorted_with_titles(
+    write_chapter: AgentTool, list_chapters: AgentTool
+) -> None:
+    await write_chapter.execute("call-1", {"chapter": 2, "content": "第二章"})
+    await write_chapter.execute("call-2", {"chapter": 1, "title": "雪封之夜", "content": "第一章"})
+    result = await list_chapters.execute("call-3", {})
+
+    assert "共 2 章" in result.text
+    chapters = result.details["chapters"]
+    assert [c["chapter"] for c in chapters] == [1, 2]
+    assert chapters[0]["title"] == "雪封之夜"
+    assert chapters[1]["title"] is None
+    assert all(c["chars"] > 0 for c in chapters)
+
+
+@pytest.mark.anyio
+async def test_list_ignores_foreign_files(
+    list_chapters: AgentTool, workspace: StoryWorkspace
+) -> None:
+    workspace.ensure_dirs()
+    (workspace.chapters_dir / "notes.md").write_text("随手记", encoding="utf-8")
+    result = await list_chapters.execute("call-1", {})
+
+    assert "还没有任何章节" in result.text
+
+
+def test_list_render_call(list_chapters: AgentTool) -> None:
+    render = list_chapters.render_call
+    assert render is not None
+    assert render({}) == "列出章节目录"
