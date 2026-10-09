@@ -318,6 +318,77 @@ def test_ws_unknown_command_and_missing_message_and_bad_json(
         assert "命令帧解析失败" in error["error"]
 
 
+# --- ④ 多工作区：/ws/{slug} 按 slug 隔离（P4 T5） ---
+
+
+def _multi_workspace_app(root: Path, closing_text_by_slug: dict[str, str]) -> FastAPI:
+    """一个 app 服务多个 slug：每 slug 独立 FakeProvider 会话（互不共享状态）。"""
+    sessions: dict[str, HastingsSession] = {}
+    for slug, text in closing_text_by_slug.items():
+        ws = StoryWorkspace(root=root, slug=slug)
+        tools = create_bible_tools(ws)
+        harness = AgentHarness(
+            AgentHarnessConfig(
+                provider=FakeProvider([closing(text)]),
+                model="fake",
+                system=build_system_prompt(tools),
+                tools=tools,
+            )
+        )
+        sessions[slug] = HastingsSession(harness=harness, workspace=ws)
+
+    async def factory(workspace: StoryWorkspace) -> WritingSession:
+        return sessions[workspace.slug]
+
+    return create_app(WorkspaceRegistry(root=root, session_factory=factory))
+
+
+def test_ws_events_do_not_leak_across_workspaces(tmp_path: Path) -> None:
+    """双工作区事件隔离：A 的剧情事件不出现在 B 的连接里（计划 D4）。"""
+    app = _multi_workspace_app(
+        tmp_path,
+        {"story-a": "甲故事独有收尾。", "story-b": "乙故事独有收尾。"},
+    )
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/story-a") as a, client.websocket_connect("/ws/story-b") as b:
+        a.send_json({"id": 1, "type": "prompt", "message": "写甲"})
+        assert a.receive_json()["success"] is True
+        frames_a = _read_until(a, "agent_end")
+
+        b.send_json({"id": 1, "type": "prompt", "message": "写乙"})
+        assert b.receive_json()["success"] is True
+        frames_b = _read_until(b, "agent_end")
+
+    texts_a = "".join(
+        f["assistantMessageEvent"]["delta"]
+        for f in frames_a
+        if f["type"] == "message_update"
+        and f.get("assistantMessageEvent", {}).get("type") == "text_delta"
+    )
+    texts_b = "".join(
+        f["assistantMessageEvent"]["delta"]
+        for f in frames_b
+        if f["type"] == "message_update"
+        and f.get("assistantMessageEvent", {}).get("type") == "text_delta"
+    )
+    assert "甲故事独有收尾" in texts_a
+    assert "甲故事独有收尾" not in texts_b
+    assert "乙故事独有收尾" in texts_b
+    assert "乙故事独有收尾" not in texts_a
+
+
+def test_ws_invalid_slug_rejects_connection_without_assembling(
+    workspace: StoryWorkspace,
+) -> None:
+    """坏 slug（穿越/保留名）→ 连接被服务端关闭，不装配会话不留目录。"""
+    from fastapi import WebSocketDisconnect
+
+    client = TestClient(create_app(_registry_with_session(workspace.root, StubSession())))
+    with pytest.raises(WebSocketDisconnect), client.websocket_connect("/ws/CON") as ws:
+        ws.receive_json()
+
+
 # --- 桩契约：busy 必须在 prompt() 调用时同步抛出 ---
 
 
