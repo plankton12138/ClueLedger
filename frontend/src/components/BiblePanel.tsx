@@ -20,6 +20,7 @@ import {
   type StoryStatsWire,
 } from "../api/rest";
 import { useChatStore } from "../state/store";
+import RingStat from "./RingStat";
 
 /** 关系图（T10）懒加载：React Flow + d3-force 不进创作台首屏包。 */
 const RelationGraph = lazy(() => import("./RelationGraph"));
@@ -98,41 +99,7 @@ const FORESHADOW_STATUS_LABELS: Record<string, { label: string; color: string }>
   resolved: { label: "已回收", color: "text-recovered" },
 };
 
-/** 回收率环：SVG 弧长按 rate 填充（rate=0 空环，rate=1 满环）。 */
-function RecoveryRing({ rate }: { rate: number }) {
-  const pct = Math.round(rate * 100);
-  const r = 14;
-  const circumference = 2 * Math.PI * r;
-  const filled = Math.min(1, Math.max(0, rate));
-  return (
-    <svg width="36" height="36" viewBox="0 0 36 36" aria-label={`伏笔回收率 ${pct}%`}>
-      <circle
-        cx="18"
-        cy="18"
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        className="text-line"
-        strokeWidth="3"
-      />
-      <circle
-        cx="18"
-        cy="18"
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        className="text-recovered"
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeDasharray={`${(circumference * filled).toFixed(1)} ${circumference.toFixed(1)}`}
-        transform="rotate(-90 18 18)"
-      />
-      <text x="18" y="21" textAnchor="middle" fontSize="8" className="fill-paper">
-        {pct}%
-      </text>
-    </svg>
-  );
-}
+/** 回收率环已提取为共享 RingStat（P7 T2，D3）：本组件消费默认形态（36px 回收绿）。 */
 
 /** 弧光徽章（T9）：平 / 成长 / 蜕变三阶段，与状态机 TRANSITIONS 同源。 */
 const ARC_META: Record<string, { label: string; cls: string }> = {
@@ -578,7 +545,7 @@ export default function BiblePanel() {
         ) : (
           <div className="flex items-center gap-4 text-xs">
             <div className="flex items-center gap-1.5">
-              <RecoveryRing rate={stats.data.foreshadow_recovery_rate} />
+              <RingStat rate={stats.data.foreshadow_recovery_rate} label="伏笔回收率" />
               <div className="leading-tight">
                 <div className="text-gold-soft">伏笔回收</div>
                 <div className="text-paper/70">
