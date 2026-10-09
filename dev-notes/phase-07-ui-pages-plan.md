@@ -151,8 +151,11 @@ AuditReport:
 | T8 | 审计后端 | bible/audit.py 聚合纯函数 + `GET audit/{chapter_id}` | 新 bible/audit.py、rest.py |
 | T9 | 审计中心前端 | AuditPage（章节阅读 + 报告 + 定位 + steer 修订建议） | 新 AuditPage.tsx、App.tsx、rest.ts |
 | T10 | 设置页 polish + 文档归位 | D9 分节卡片 + DESIGN.md 顺延复核 + 构建笔记（含四透镜） | SettingsPanel.tsx、dev-notes/ |
+| T12 | provider 档案 CRUD（用户插入） | `ProviderBook.update_config` + `save_server_config` 写回 + `PUT/DELETE /api/providers/{name}` + `POST /api/providers/test`（连通测试内核与 models 端点共用）+ .gitignore 核查 config.yaml | provider_config.py、rest.py |
+| T13 | 删除工作区（用户插入） | `DELETE /api/workspaces/{slug}?confirm=` + registry.delete + running 409 | rest.py、registry |
+| T14 | 文章管理页 + 设置页档案管理（用户插入） | ArticlesPage（列表/新建/切换/导出/删除）+ 顶栏撤工作区下拉 + 设置页档案增删改表单 + 测试连接 + 「案卷」→「文章」文案清扫（标识符不改） | 新 ArticlesPage.tsx、App.tsx、SettingsPanel.tsx、rest.ts |
 
-依赖顺序：T1→T2→T3/T4（共享组件先行）；T2→T5（RingStat 复用）；T6→T7；T8→T9；T7/T9 依赖 T1 的导航转正；T10 收尾。T5/T6/T8 相互独立可并行。
+依赖顺序：T1→T2→T3/T4（共享组件先行）；T2→T5（RingStat 复用）；T6→T7；T8→T9；T7/T9 依赖 T1 的导航转正；T12→T14（设置页档案管理依赖 CRUD 端点）；T13 与 T12 并行；T10 收尾（合并记录 T12-T14 动机）。T5/T6/T8 相互独立可并行。
 
 ## 4. 测试与质量门
 
