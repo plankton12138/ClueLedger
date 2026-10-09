@@ -131,6 +131,13 @@ function RecoveryRing({ rate }: { rate: number }) {
   );
 }
 
+/** 弧光徽章（T9）：平 / 成长 / 蜕变三阶段，与状态机 TRANSITIONS 同源。 */
+const ARC_META: Record<string, { label: string; cls: string }> = {
+  flat: { label: "平", cls: "border-line text-paper/50" },
+  developing: { label: "成长", cls: "border-gold/60 text-gold" },
+  transformed: { label: "蜕变", cls: "border-recovered/60 text-recovered" },
+};
+
 /** 风险语义色（T8）：逾期红 / 临近暗金 / 正常绿，与账本生命周期色系同源。 */
 const RISK_META: Record<string, { label: string; chip: string }> = {
   overdue: { label: "逾期", chip: "border-overdue/60 text-overdue" },
@@ -192,6 +199,9 @@ export default function BiblePanel() {
   });
   // 伏笔状态筛选（T8）：all = 不过滤；仅伏笔 Tab 渲染筛选器。
   const [fsFilter, setFsFilter] = useState<string>("all");
+  // 角色小传（T9）：单开手风琴；秘密默认折叠，点开显式查看——防作者被剧透的仪式感。
+  const [openName, setOpenName] = useState<string | null>(null);
+  const [secretShown, setSecretShown] = useState(false);
   const slug = useChatStore((s) => s.slug);
 
   const load = useCallback(async (workspaceSlug: string, type: BibleType) => {
@@ -310,7 +320,93 @@ export default function BiblePanel() {
         {!ledger.error && ledger.entities.length > 0 && rows.length === 0 && (
           <p className="mt-6 text-center text-xs text-paper/40">该筛选下暂无条目。</p>
         )}
-        {rows.length > 0 && (
+        {rows.length > 0 &&
+          (active === "character" ? (
+            <div className="space-y-2">
+              {rows.map((c) => {
+                const name = String(c["name"] ?? "");
+                const isOpen = openName === name;
+                const relationships = Array.isArray(c["relationships"])
+                  ? (c["relationships"] as string[]).join("；")
+                  : "";
+                return (
+                  <div key={name} className="border border-line/50 px-2.5 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (openName === name) {
+                          setOpenName(null);
+                        } else {
+                          setOpenName(name);
+                          setSecretShown(false); // 每次展开重置：秘密需再次显式点开
+                        }
+                      }}
+                      className="w-full text-left"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-paper">{name}</span>
+                        <span className="truncate text-[10px] text-paper/50">
+                          {String(c["identity"] ?? "")}
+                        </span>
+                        {(() => {
+                          const arc = ARC_META[String(c["arc"] ?? "")];
+                          return arc !== undefined ? (
+                            <span className={`border px-1 py-px text-[10px] ${arc.cls}`}>
+                              {arc.label}
+                            </span>
+                          ) : null;
+                        })()}
+                        <span className="ml-auto text-paper/40">{isOpen ? "▾" : "▸"}</span>
+                      </div>
+                    </button>
+                    {isOpen && (
+                      <div className="mt-2 space-y-1.5 text-xs leading-relaxed text-paper/80">
+                        {String(c["motivation"] ?? "") !== "" && (
+                          <p>
+                            <span className="text-gold-soft">动机：</span>
+                            {String(c["motivation"])}
+                          </p>
+                        )}
+                        {String(c["secret"] ?? "") !== "" && (
+                          <div>
+                            {secretShown ? (
+                              <p>
+                                <span className="text-gold-soft">秘密：</span>
+                                {String(c["secret"])}
+                              </p>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSecretShown(true);
+                                }}
+                                className="border border-line px-1.5 py-px text-[10px] text-paper/60 transition-colors hover:border-gold/60 hover:text-gold"
+                              >
+                                查看秘密 ▸
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {relationships !== "" && (
+                          <p>
+                            <span className="text-gold-soft">关系：</span>
+                            {relationships}
+                          </p>
+                        )}
+                        {String(c["notes"] ?? "") !== "" && (
+                          <p>
+                            <span className="text-gold-soft">备注：</span>
+                            {String(c["notes"])}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-line text-gold-soft">
@@ -358,7 +454,7 @@ export default function BiblePanel() {
               ))}
             </tbody>
           </table>
-        )}
+          ))}
       </div>
       {/* 账本底部统计卡（P6 T7，D7）：伏笔回收率环 + 状态分布 + 逾期数 + 章节规模。 */}
       <div className="flex-none border-t border-line px-3 py-2">
