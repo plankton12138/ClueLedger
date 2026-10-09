@@ -17,13 +17,14 @@ import os
 import re
 import zipfile
 from collections.abc import Callable
+from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 from typing import Final, Literal
 
 import httpx
 import yaml
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, SecretStr, ValidationError
 
@@ -40,6 +41,13 @@ from hastings.events_store import CATEGORIES, EventStore, events_file
 from hastings.manuscript.diff import InvalidChapterFormat, validate_title_heading
 from hastings.manuscript.store import current_revision, save_chapter
 from hastings.provider_catalog import PROVIDER_CATALOG
+from hastings.rag.corpus_store import (
+    CorpusExistsError,
+    CorpusNameError,
+    CorpusNotFoundError,
+    CorpusStore,
+)
+from hastings.rag.style_profile import build_style_profile
 from hastings.server.provider_config import (
     ProviderBook,
     ProviderProfile,
@@ -383,6 +391,32 @@ class StatsResponse(BaseModel):
     clue_red_herring_ratio: float
 
 
+class CorpusFileInfoResponse(BaseModel):
+    """语料文件条目（D6）：chars 惰性——列表只报 size，字数走 style-profile。"""
+
+    name: str
+    size_bytes: int
+    chars: int | None
+    uploaded_at: str
+
+
+class CorpusListResponse(BaseModel):
+    files: list[CorpusFileInfoResponse]
+
+
+class StyleProfileResponse(BaseModel):
+    """全语料聚合档案（D6）：确定性统计，零 LLM；warnings 为逐文件读码告警。"""
+
+    total_chars: int
+    sentence_count: int
+    avg_sentence_length: float
+    paragraph_count: int
+    avg_paragraph_length: float
+    dialogue_ratio: float
+    sentence_buckets: dict[str, int]
+    warnings: list[str]
+
+
 def build_export_zip(workspace: StoryWorkspace) -> bytes:
     """工作区全量导出（P6 D10）：zip 字节流（内存构造，单工作区文件量可接受）。
 
@@ -444,13 +478,16 @@ def create_rest_router(
     registry: WorkspaceRegistry,
     book: ProviderBook | None = None,
     model_transport: httpx.AsyncBaseTransport | None = None,
+    corpus_root: Path | None = None,
 ) -> APIRouter:
     """装配 REST 路由（P6 T2：``book`` 提供档案目录与跨档案重建工厂）。
 
     ``book`` 缺省时按 env 回落单档案新建（测试 / 纯 API 模式；与启动装配同源）。
     ``model_transport`` 仅供测试注入 MockTransport，生产为 None（走真实网络）。
+    ``corpus_root`` 语料目录（P7 T6，D6）：缺省 ./corpus（服务级，与 stories/ 平级）。
     """
     router = APIRouter()
+    corpus = CorpusStore(root=corpus_root if corpus_root is not None else Path("./corpus"))
     fallback_book: ProviderBook | None = None
 
     def _book() -> ProviderBook:
@@ -1265,6 +1302,97 @@ def create_rest_router(
             writing_language=body.writing_language,
             provider_profile=target_profile,
             model=resolved.model,
+        )
+
+    # ---- 语料库端点三件套 + 文风档案（P7 T6，计划 D6）----
+    # 语料是作者级资产：路径无 slug，文件名即主键，服务级 corpus/ 目录。
+    # 泄压阀分层：名字不合法 422 / 同名 409 / 不存在 404 / 盘故障 500 /
+    # 单文件读码失败进 warnings（合法但部分不可读，不 500）。
+
+    @router.get("/api/corpus", response_model=CorpusListResponse)
+    async def list_corpus() -> CorpusListResponse:
+        try:
+            files = corpus.list_files()
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"语料列表读取失败：文件系统错误 {exc}。",
+            ) from exc
+        return CorpusListResponse(files=[CorpusFileInfoResponse(**asdict(f)) for f in files])
+
+    @router.post("/api/corpus", status_code=201, response_model=CorpusFileInfoResponse)
+    async def upload_corpus(file: UploadFile) -> CorpusFileInfoResponse:
+        """上传语料（multipart）：v1 仅 .txt/.md；同名 409（覆盖走显式 DELETE）。"""
+        if file.filename is None or file.filename.strip() == "":
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "语料上传缺少文件名。"
+                    "为什么错：multipart 的 filename 字段为空。"
+                    "怎样算对：以 .txt 或 .md 文件重新上传。"
+                ),
+            )
+        name = file.filename
+        data = await file.read()
+        if len(data) == 0:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"语料为空文件：{name!r}。"
+                    "为什么错：文件 0 字节，无法作为文风语料。"
+                    "怎样算对：上传包含正文文本的 .txt/.md 文件。"
+                ),
+            )
+        try:
+            info = corpus.save(name, data)
+        except CorpusNameError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except CorpusExistsError as exc:
+            raise HTTPException(status_code=409, detail=str(exc.args[0])) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"语料写入失败（{name}）：文件系统错误 {exc}。",
+            ) from exc
+        finally:
+            await file.close()
+        return CorpusFileInfoResponse(**asdict(info))
+
+    @router.delete("/api/corpus/{name}", status_code=204)
+    async def delete_corpus(name: str) -> Response:
+        try:
+            corpus.delete(name)
+        except CorpusNameError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except CorpusNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"语料删除失败（{name}）：文件系统错误 {exc}。",
+            ) from exc
+        return Response(status_code=204)
+
+    @router.get("/api/corpus/style-profile", response_model=StyleProfileResponse)
+    async def corpus_style_profile() -> StyleProfileResponse:
+        """全语料聚合文风档案（D6）：确定性统计。空语料 = 全零合法空结果。"""
+        try:
+            texts, warnings = corpus.load_all()
+            profile = build_style_profile(texts)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"语料读取失败（文风档案）：文件系统错误 {exc}。",
+            ) from exc
+        return StyleProfileResponse(
+            total_chars=profile.total_chars,
+            sentence_count=profile.sentence_count,
+            avg_sentence_length=profile.avg_sentence_length,
+            paragraph_count=profile.paragraph_count,
+            avg_paragraph_length=profile.avg_paragraph_length,
+            dialogue_ratio=profile.dialogue_ratio,
+            sentence_buckets=profile.sentence_buckets,
+            warnings=warnings,
         )
 
     return router

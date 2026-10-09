@@ -30,6 +30,7 @@ def create_app(
     static_dir: Path | None = None,
     book: ProviderBook | None = None,
     model_transport: httpx.AsyncBaseTransport | None = None,
+    corpus_root: Path | None = None,
 ) -> FastAPI:
     """装配应用；``static_dir`` 存在时托管前端 build 产物（P3 T9）。
 
@@ -37,11 +38,17 @@ def create_app(
     ``book``（P6 T2）提供档案目录与跨档案重建的端点解析；缺省时 REST 层按
     env 回落单档案惰性新建（测试 / 纯 API 模式）。``model_transport`` 仅供
     测试注入 MockTransport（模型发现走真实网络时为 None）。
+    ``corpus_root``（P7 T6）语料目录，缺省 ./corpus（服务级，作者级资产）。
     """
     app = FastAPI(title="Hastings", version="0.1.0")
     app.state.registry = registry  # WS 路由与测试内省用；REST 路由经参数绑定
     app.include_router(
-        create_rest_router(registry=registry, book=book, model_transport=model_transport)
+        create_rest_router(
+            registry=registry,
+            book=book,
+            model_transport=model_transport,
+            corpus_root=corpus_root,
+        )
     )
     app.include_router(ws_router)
 

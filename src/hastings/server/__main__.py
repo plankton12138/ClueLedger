@@ -65,6 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_CONFIG_PATH,
         help="服务级 provider 档案配置（默认 ./config.yaml；缺失回落 .env）",
     )
+    parser.add_argument(
+        "--corpus-root",
+        type=Path,
+        default=Path("./corpus"),
+        help="语料库目录（P7 T6，默认 ./corpus；作者级资产，与 stories/ 平级）",
+    )
     parser.add_argument("--host", default=DEFAULT_HOST, help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="监听端口（默认 8000）")
     return parser
@@ -126,9 +132,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         session_factory=default_session_factory(book),
     )
     static_dir = default_static_dir()
-    app = create_app(registry, static_dir=static_dir, book=book)
+    app = create_app(registry, static_dir=static_dir, book=book, corpus_root=args.corpus_root)
 
     print(f"文章目录已打开：{args.stories_root}")
+    print(f"语料库目录：{args.corpus_root}")
     print(
         f"模型：{boot_model}｜档案：{boot_profile_name}｜写作台地址：http://{args.host}:{args.port}"
     )
