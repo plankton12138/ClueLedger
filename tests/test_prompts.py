@@ -20,6 +20,7 @@ from hastings.bible.story_state import StoryDoc
 from hastings.manuscript.diff import DiffHunk, HunkKind
 from hastings.prompts import (
     LANGUAGE_HEADING,
+    OPTIONS_MARKER,
     ROLE_HEADING,
     STATUS_HEADING,
     TOOLS_HEADING,
@@ -248,7 +249,7 @@ def test_system_prompt_without_workspace_has_no_status_section() -> None:
 
 
 def test_workflow_states_intake_protocol() -> None:
-    """intake 协议：三段式理解输出，禁止未确认先建账/写正文，一次 ≤5 问。"""
+    """intake 协议：三段式理解输出，禁止未确认先建账/写正文，每轮 1–2 问。"""
     section = WORKFLOW_SECTION
 
     assert "intake" in section
@@ -256,12 +257,64 @@ def test_workflow_states_intake_protocol() -> None:
     for dimension in ("核心诡计", "人物群像", "结构", "结局", "文风"):
         assert dimension in section
     assert "缺口清单" in section
-    assert "5 个" in section  # 一次最多 5 个问题
+    assert "1–2 个" in section  # 每轮只问 1–2 个
+    assert "多轮对话" in section  # 其余缺口多轮补齐
+    assert "5 个" not in section
     assert "禁止" in section
     assert "等作者答复" in section
-    # 想法有限 → 给候选方案（创意思路是职责，拍板不是）
+    # 想法有限 → 候选方案走【选项】标记协议
     assert "候选方案" in section
-    assert "取舍" in section
+    assert OPTIONS_MARKER in section
+    assert "候选方案输出协议" in section
+
+
+# --- 对话详略协议（P9 T1，D2）：结论先行/分条/≤300 字，交付物不受限 ---
+
+
+def test_workflow_states_dialogue_style_protocol() -> None:
+    """对话风格节：答疑汇报结论先行、分条、默认 ≤300 字。"""
+    section = WORKFLOW_SECTION
+
+    assert "对话风格" in section
+    assert "结论先行" in section
+    assert "300 字" in section
+
+
+def test_workflow_exempts_structured_deliverables_from_word_limit() -> None:
+    """结构化交付物不受字数限制，但仍须分条有重点。"""
+    section = WORKFLOW_SECTION
+
+    assert "结构化交付物" in section
+    assert "不受 300 字限制" in section
+    assert "Bible 总览" in section
+    assert "缺口清单" in section
+
+
+# --- 候选方案标记协议（P9 T1，D3）：尾部标记块 + 格式 + few-shot ---
+
+
+def test_options_marker_constant() -> None:
+    """协议标记常量：前后端靠同一文本锚点识别。"""
+    assert OPTIONS_MARKER == "【选项】"
+
+
+def test_workflow_options_protocol_specifies_trailing_block_and_format() -> None:
+    """选项块必须在消息最末尾，选项键 A./B.，取舍说明用 —— 分隔。"""
+    section = WORKFLOW_SECTION
+
+    assert "最末尾" in section
+    assert "A. <方案名> —— " in section
+    assert "B. <方案名> —— " in section
+    assert "连续大写字母" in section
+
+
+def test_workflow_options_protocol_includes_few_shot_example() -> None:
+    """few-shot 样例钉死格式（毒杀/钝器两选项）。"""
+    section = WORKFLOW_SECTION
+
+    assert "格式样例" in section
+    assert "A. 毒杀 —— " in section
+    assert "B. 钝器击打 —— " in section
 
 
 def test_workflow_states_bible_drafting_protocol() -> None:
