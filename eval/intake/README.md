@@ -12,7 +12,7 @@
 | [B1-long-brief.md](B1-long-brief.md) | 超长完整构想 + 开篇即授权产出：协议顺序 vs 作者指令冲突 | 1 轮 |
 | [B2-minimal.md](B2-minimal.md) | 极简一句话：想法有限→候选方案，不编造、不拍板 | 1 轮 |
 | [B3-contradiction.md](B3-contradiction.md) | 内在矛盾构想：指出矛盾 + 消解选项，不擅自裁决 | 1 轮 |
-| [B4-rollback.md](B4-rollback.md) | 确认后推翻设定：story_stage rollback 回退边 | 1 轮（接 A 组 slug） |
+| [B4-rollback.md](B4-rollback.md) | 确认后推翻设定：story_stage rollback 回退边 | 4 轮（独立流程，自带前置） |
 
 ## C 组：经典小说基准用例（原文精细度压测）
 

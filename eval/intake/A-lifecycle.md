@@ -67,5 +67,3 @@
 2. 「没想法」维度 100% 给出候选方案而非拍板；
 3. 全程无 `[tool error]`（除非刻意测阶段门）；
 4. 走查后 `stories/<slug>/` 的 `bible/*.yaml`、`story.yaml`（stage/stage_history）与对话一致。
-
-> 本用例跑完的 slug 保留，供 [B4-rollback.md](B4-rollback.md) 使用。
