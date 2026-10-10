@@ -47,6 +47,27 @@ def default_static_dir() -> Path | None:
     return find_static_dir(Path(__file__).resolve().parents[3])
 
 
+def resolve_config_path(config: Path | None, config_dir: Path | None) -> Path:
+    """provider 档案路径解析（P9 T9，D10）：--config > --config-dir/config.yaml > 默认。"""
+    if config is not None and config_dir is not None:
+        raise ValueError(
+            "--config 与 --config-dir 只能传一个。为什么错：两个参数同时给出会产生"
+            "歧义。怎样算对：只保留其中一个。"
+        )
+    if config is not None:
+        return config
+    if config_dir is not None:
+        return config_dir / "config.yaml"
+    return DEFAULT_CONFIG_PATH
+
+
+def resolve_static_dir(static_dir: Path | None) -> Path | None:
+    """前端目录解析（P9 T9，D7）：显式 --static-dir 优先，缺省走仓库探测。"""
+    if static_dir is not None:
+        return static_dir
+    return default_static_dir()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hastings-server",
@@ -62,8 +83,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--config",
         type=Path,
-        default=DEFAULT_CONFIG_PATH,
+        default=None,
         help="服务级 provider 档案配置（默认 ./config.yaml；缺失回落 .env）",
+    )
+    parser.add_argument(
+        "--config-dir",
+        type=Path,
+        default=None,
+        help="provider 档案目录（P9 T9）：取该目录下 config.yaml；与 --config 互斥",
+    )
+    parser.add_argument(
+        "--static-dir",
+        type=Path,
+        default=None,
+        help="前端 build 产物目录（P9 T9，桌面 sidecar 用）；缺省自动探测 frontend/dist",
     )
     parser.add_argument(
         "--corpus-root",
@@ -78,21 +111,35 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    try:
+        config_path = resolve_config_path(args.config, args.config_dir)
+    except ValueError as exc:
+        print(exc)
+        return 2
+    static_dir = resolve_static_dir(args.static_dir)
+    if static_dir is not None and not static_dir.is_dir():
+        # 显式目录缺失属环境故障（区别于「不传=自动探测」），fail fast 三要素。
+        print(
+            f"前端目录不存在：{static_dir}。为什么错：--static-dir 指向的目录不存在。"
+            "怎样算对：先构建前端（frontend/ 下 npm run build），或移除该参数走自动探测。"
+        )
+        return 1
+
     load_dotenv()
     normalize_base_url()
 
     try:
-        server_config = load_server_config(args.config)
+        server_config = load_server_config(config_path)
     except ProviderConfigError as exc:
         print(exc)
         return 1
 
-    if args.config.exists():
+    if config_path.exists():
         # config.yaml 权威：第一个有 key 的档案作为引导档案（.env 不再必需）
         profile = next((p for p in server_config.providers if p.available), None)
         if profile is None:
             print(
-                f"config.yaml 中没有可用档案（{args.config}）。"
+                f"config.yaml 中没有可用档案（{config_path}）。"
                 "为什么错：所有档案都缺 api_key / api_key_env，"
                 "或引用的环境变量为空。"
                 "怎样算对：为至少一个档案直填 api_key，"
@@ -125,13 +172,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         server_config,
         boot_name=boot_profile_name,
         boot_model=boot_model,
-        config_path=args.config,
+        config_path=config_path,
     )
     registry = WorkspaceRegistry(
         root=args.stories_root,
         session_factory=default_session_factory(book),
     )
-    static_dir = default_static_dir()
     app = create_app(registry, static_dir=static_dir, book=book, corpus_root=args.corpus_root)
 
     print(f"文章目录已打开：{args.stories_root}")

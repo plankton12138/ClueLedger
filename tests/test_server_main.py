@@ -37,7 +37,10 @@ def test_parser_defaults_and_overrides() -> None:
     assert args.port == 8000
     assert args.model is None
     assert args.stories_root is not None
-    assert args.config is not None
+    # P9 T9：config/static/config-dir 缺省均为 None，由 main 内解析
+    assert args.config is None
+    assert args.config_dir is None
+    assert args.static_dir is None
 
     args = server_main.build_parser().parse_args(
         ["--port", "9000", "--host", "0.0.0.0", "--model", "glm-4-plus", "--config", "my.yaml"]
@@ -46,6 +49,29 @@ def test_parser_defaults_and_overrides() -> None:
     assert args.port == 9000
     assert args.model == "glm-4-plus"
     assert args.config == Path("my.yaml")
+
+
+def test_parser_config_dir_and_static_dir() -> None:
+    """P9 T9：桌面参数 --config-dir / --static-dir。"""
+    args = server_main.build_parser().parse_args(["--config-dir", "cfgdir", "--static-dir", "dist"])
+    assert args.config_dir == Path("cfgdir")
+    assert args.static_dir == Path("dist")
+
+
+def test_resolve_config_path(tmp_path: Path) -> None:
+    """config 路径解析：--config > --config-dir/config.yaml > 默认 ./config.yaml。"""
+    assert server_main.resolve_config_path(None, None) == server_main.DEFAULT_CONFIG_PATH
+    assert server_main.resolve_config_path(Path("x.yaml"), None) == Path("x.yaml")
+    assert server_main.resolve_config_path(None, tmp_path) == tmp_path / "config.yaml"
+    with pytest.raises(ValueError, match="只能传一个"):
+        server_main.resolve_config_path(Path("x.yaml"), tmp_path)
+
+
+def test_resolve_static_dir(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    """static 解析：显式目录优先；缺省走仓库探测；探测不到为 None。"""
+    assert server_main.resolve_static_dir(tmp_path) == tmp_path
+    monkeypatch.setattr(server_main, "default_static_dir", lambda: None)
+    assert server_main.resolve_static_dir(None) is None
 
 
 def test_find_static_dir(tmp_path: Any) -> None:
@@ -197,6 +223,82 @@ def test_main_exits_when_boot_profile_lacks_model(
     out = capsys.readouterr().out
     assert "没有可用的模型名" in out
     assert "default_model" in out
+
+
+def test_main_boots_with_config_dir_and_static_dir(
+    clean_env: None, monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    """P9 T9：--config-dir 提供档案、--static-dir 托管前端产物。"""
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(CONFIG_YAML, encoding="utf-8")
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text(
+        "<!doctype html><title>HastingsShell</title>", encoding="utf-8"
+    )
+
+    calls: list[FastAPI] = []
+    monkeypatch.setattr(server_main.uvicorn, "run", lambda app, **k: calls.append(app))
+
+    exit_code = server_main.main(
+        [
+            "--config-dir",
+            str(config_dir),
+            "--static-dir",
+            str(dist),
+            "--stories-root",
+            str(tmp_path),
+        ]
+    )
+
+    assert exit_code == 0
+    from fastapi.testclient import TestClient
+
+    client = TestClient(calls[0])
+    assert "HastingsShell" in client.get("/").text
+    # API 仍优先于静态挂载
+    assert client.get("/api/health").json() == {"status": "ok"}
+
+
+def test_main_exits_when_config_and_config_dir_both_given(
+    clean_env: None, monkeypatch: MonkeyPatch, tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    """两参数互斥：退出码非 0 且给出口径。"""
+    monkeypatch.setattr(server_main.uvicorn, "run", lambda *a, **k: None)
+    exit_code = server_main.main(
+        [
+            "--config",
+            "a.yaml",
+            "--config-dir",
+            str(tmp_path),
+            "--stories-root",
+            str(tmp_path),
+        ]
+    )
+    assert exit_code == 2
+    assert "只能传一个" in capsys.readouterr().out
+
+
+def test_main_exits_when_static_dir_missing(
+    clean_env: None, monkeypatch: MonkeyPatch, tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    """显式 static 目录不存在：环境故障口径退出，不静默退化为纯 API。"""
+    monkeypatch.setattr(server_main.uvicorn, "run", lambda *a, **k: None)
+    exit_code = server_main.main(
+        [
+            "--config",
+            str(tmp_path / "absent.yaml"),
+            "--static-dir",
+            str(tmp_path / "nope"),
+            "--stories-root",
+            str(tmp_path),
+        ]
+    )
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "前端目录不存在" in out
+    assert "怎样算对" in out
 
 
 def test_main_exits_with_three_element_message_on_corrupt_config(
