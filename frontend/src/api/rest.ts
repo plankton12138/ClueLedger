@@ -559,6 +559,61 @@ export async function testProvider(body: {
   return models.map(String);
 }
 
+// ---------- 工作区生命周期快照（P8 T7，D8）：顶栏阶段徽章数据源 ----------
+
+/** 一次阶段迁移留痕（story.yaml stage_history 镜像）。 */
+export interface StageTransitionWire {
+  from_stage: string;
+  to_stage: string;
+  reason: string;
+  at: string;
+}
+
+/** 六账本计数快照（methods_locked 供完备度展示）。 */
+export interface StoryCountsWire {
+  characters: number;
+  clues: number;
+  foreshadows: number;
+  methods: number;
+  methods_locked: number;
+  outlines: number;
+}
+
+/** GET /api/{slug}/story 响应：chapters.written/planned 供 n/m 进度。 */
+export interface StoryWire {
+  slug: string;
+  stage: string;
+  stage_history: StageTransitionWire[];
+  counts: StoryCountsWire;
+  chapters: { written: number; planned: number };
+}
+
+/** 纯只读派生；story.yaml 的写路径只有 story_stage 工具（REST 不暴露写口）。 */
+export async function fetchStory(slug: string): Promise<StoryWire> {
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/story`);
+  if (!res.ok) {
+    throw new Error(`工作区状态读取失败：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const record = body as Record<string, unknown> | null;
+  if (
+    record === null ||
+    typeof record !== "object" ||
+    typeof record.stage !== "string" ||
+    !Array.isArray(record.stage_history) ||
+    record.counts === null ||
+    typeof record.counts !== "object" ||
+    record.chapters === null ||
+    typeof record.chapters !== "object"
+  ) {
+    throw new Error(
+      `工作区状态响应结构不符：期望 { slug, stage, stage_history, counts, chapters }，` +
+        `收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return body as StoryWire;
+}
+
 // ---------- 事件流历史（P6 T5，对应 rest.py events 端点，D4/D5） ----------
 
 /** 一条持久化事件：ts/seq/type 为索引列，data 为帧原文（与 WS 帧同形）。 */

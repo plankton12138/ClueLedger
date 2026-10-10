@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, SecretStr, ValidationError
 
 from hastings.bible.audit import AuditRatio, build_audit_report
-from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
+from hastings.bible.models import Clue, Foreshadow, Method, OutlineEntry, TimelineEntry
 from hastings.bible.stats import compute_story_stats
 from hastings.bible.store import (
     InvalidEntityNameError,
@@ -37,6 +37,7 @@ from hastings.bible.store import (
     StoryWorkspace,
     list_characters,
     load_ledger,
+    load_story_doc,
 )
 from hastings.events_store import CATEGORIES, EventStore, events_file
 from hastings.manuscript.diff import InvalidChapterFormat, validate_title_heading
@@ -390,6 +391,46 @@ class StatsResponse(BaseModel):
     clue_total: int
     clue_red_herring: int
     clue_red_herring_ratio: float
+
+
+class StageTransitionResponse(BaseModel):
+    """一次阶段迁移留痕（story.yaml stage_history 列表项镜像）。"""
+
+    from_stage: str
+    to_stage: str
+    reason: str
+    at: str
+
+
+class StoryCountsResponse(BaseModel):
+    """六账本计数快照（methods_locked 供完备度与确认门缺口展示）。"""
+
+    characters: int
+    clues: int
+    foreshadows: int
+    methods: int
+    methods_locked: int
+    outlines: int
+
+
+class StoryChaptersResponse(BaseModel):
+    """章节进度：written=已落盘正文数，planned=章纲条数（前端 n/m 进度）。"""
+
+    written: int
+    planned: int
+
+
+class StoryResponse(BaseModel):
+    """工作区生命周期快照（P8 T7，D8）：顶栏阶段徽章 + 章节进度的数据源。
+
+    纯只读派生零新存储；story.yaml 的写路径只有 story_stage 工具（红线）。
+    """
+
+    slug: str
+    stage: str
+    stage_history: list[StageTransitionResponse]
+    counts: StoryCountsResponse
+    chapters: StoryChaptersResponse
 
 
 class CorpusFileInfoResponse(BaseModel):
@@ -910,6 +951,55 @@ def create_rest_router(
             clue_total=data.clue_total,
             clue_red_herring=data.clue_red_herring,
             clue_red_herring_ratio=data.clue_red_herring_ratio,
+        )
+
+    @router.get("/api/{slug}/story", response_model=StoryResponse)
+    async def story(slug: str) -> StoryResponse:
+        """工作区生命周期快照（P8 T7，D8）：纯只读派生零新存储。
+
+        _session 守门 + stats 复用，账本损坏 422、IO 故障 500——与 stats
+        端点同出口；story.yaml 的写路径只有 story_stage 工具（REST 不暴露写口）。
+        """
+        await _session(slug)
+        workspace = _workspace(slug)
+        try:
+            doc = load_story_doc(workspace)
+            data = compute_story_stats(workspace)
+            characters = len(list_characters(workspace))
+            methods = load_ledger(workspace.method_path, Method)
+            outlines = load_ledger(workspace.outline_path, OutlineEntry)
+        except (ValidationError, LedgerFormatError, yaml.YAMLError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"工作区状态读取失败（{slug}）。"
+                    f"为什么错：{exc}。"
+                    "怎样算对：修复或删除损坏的 YAML 文件后重试。"
+                ),
+            ) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"工作区状态读取失败（{slug}）：文件系统错误 {exc}。",
+            ) from exc
+        return StoryResponse(
+            slug=slug,
+            stage=doc.stage,
+            stage_history=[
+                StageTransitionResponse(
+                    from_stage=t.from_stage, to_stage=t.to_stage, reason=t.reason, at=t.at
+                )
+                for t in doc.stage_history
+            ],
+            counts=StoryCountsResponse(
+                characters=characters,
+                clues=data.clue_total,
+                foreshadows=data.foreshadow_total,
+                methods=len(methods),
+                methods_locked=sum(1 for m in methods if m.status == "locked"),
+                outlines=len(outlines),
+            ),
+            chapters=StoryChaptersResponse(written=data.chapters, planned=len(outlines)),
         )
 
     @router.get("/api/{slug}/audit/{chapter_id}", response_model=AuditReportResponse)

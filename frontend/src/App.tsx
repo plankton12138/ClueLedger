@@ -9,7 +9,8 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { fetchWorkspaces } from "./api/rest";
+import { fetchStory, fetchWorkspaces } from "./api/rest";
+import type { StoryWire } from "./api/rest";
 import ArticlesPage from "./components/ArticlesPage";
 import BiblePanel from "./components/BiblePanel";
 import ChatStream from "./components/ChatStream";
@@ -26,6 +27,7 @@ import Splitter, { loadStoredWidth } from "./components/Splitter";
 import type { CommandType } from "./api/types";
 import type { ConnectionStatus } from "./api/socket";
 import { useChatStore } from "./state/store";
+import { chapterProgress, ledgerSummary, stageMeta } from "./state/story";
 import { useAgentSocket } from "./state/useAgentSocket";
 
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
@@ -107,6 +109,8 @@ export default function App() {
     loadStoredWidth(BIBLE_WIDTH_KEY, BIBLE_DEFAULT_WIDTH),
   );
   const [bibleDrawerOpen, setBibleDrawerOpen] = useState(false);
+  // 生命周期快照（P8 T7，D7）：顶栏阶段徽章 + 章节进度；连接时 + 每次 run 结束 refetch。
+  const [story, setStory] = useState<StoryWire | null>(null);
 
   // 启动：拉工作区列表并恢复/选择工作区（失败走顶部错误条，可重试）；
   // 无任何文章 → 直接落到「文章」页引导新建（T14）。
@@ -123,6 +127,26 @@ export default function App() {
           ),
       );
   }, []);
+
+  // 生命周期快照拉取（P8 T7）：slug 变化（切换文章）与 running 翻转（run 结束）时
+  // refetch；读取失败降级隐藏徽章——顶栏状态不阻断创作（与状态注入同一泄压哲学）。
+  useEffect(() => {
+    if (slug === null) {
+      setStory(null);
+      return;
+    }
+    let alive = true;
+    fetchStory(slug)
+      .then((s) => {
+        if (alive) setStory(s);
+      })
+      .catch(() => {
+        if (alive) setStory(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [slug, running]);
 
   // 全局搜索跳转（P6 T11）：正文与账本都在创作台视图，命中一律切回；
   // 窄屏（<xl 账本走抽屉覆盖层）时顺带打开抽屉，xl 及以上账本面板常驻无需处理。
@@ -210,6 +234,19 @@ export default function App() {
           >
             <span className="block truncate">{slug ?? "未选择文章"}</span>
           </button>
+          {/* 阶段徽章 + 章节进度（P8 T7，D7）：数据来自 GET /api/{slug}/story，
+              完备度速览收进 title——顶栏保持一行的信息密度约束。 */}
+          {story && (
+            <span
+              title={ledgerSummary(story.counts)}
+              className={`hidden items-center gap-2 border px-2 py-0.5 md:flex ${stageMeta(story.stage).className}`}
+            >
+              <span className="whitespace-nowrap">{stageMeta(story.stage).label}</span>
+              <span className="whitespace-nowrap text-paper/45">
+                {chapterProgress(story.chapters)}
+              </span>
+            </span>
+          )}
           {/* 状态徽章（D2）：连接点 + 文案合并为一枚；写作中（连接正常且 run 进行）
               同一枚徽章换色脉动，替代原先两处并排。 */}
           {(() => {

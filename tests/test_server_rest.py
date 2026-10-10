@@ -19,8 +19,9 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from hastings.bible.models import Character, Clue, TimelineEntry
-from hastings.bible.store import StoryWorkspace, save_character, save_ledger
+from hastings.bible.models import Character, Clue, Method, OutlineEntry, TimelineEntry
+from hastings.bible.store import StoryWorkspace, save_character, save_ledger, save_story_doc
+from hastings.bible.story_state import StageTransition, StoryDoc
 from hastings.events_store import events_file
 from hastings.manuscript.diff import DiffHunk
 from hastings.server.app import create_app
@@ -596,6 +597,76 @@ def test_rest_bible_invalid_entity_fields_return_422(
 
     assert response.status_code == 422
     assert "characters" in response.json()["detail"]
+
+
+# --- story：生命周期快照（P8 T7，D8）；写路径只有 story_stage 工具 ---
+
+
+def test_rest_story_reports_stage_counts_and_chapters(workspace: StoryWorkspace) -> None:
+    workspace.ensure_dirs()
+    save_character(workspace, Character(name="波洛", identity="比利时侦探"))
+    save_character(workspace, Character(name="黑斯廷斯", identity="叙事者"))
+    save_ledger(workspace.method_path, [Method(name="毒杀诡计", status="locked")])
+    save_ledger(workspace.outline_path, [OutlineEntry(name="案发之夜", chapter=1)])
+    save_story_doc(
+        workspace,
+        StoryDoc(
+            slug=SLUG,
+            stage="writing",
+            stage_history=[
+                StageTransition(
+                    from_stage="bible_confirmed",
+                    to_stage="writing",
+                    reason="作者确认 Bible",
+                    at="2026-10-10T00:00:00",
+                )
+            ],
+        ),
+    )
+
+    body = _client(workspace.root).get(f"/api/{SLUG}/story").json()
+
+    assert body["slug"] == SLUG
+    assert body["stage"] == "writing"
+    assert body["counts"] == {
+        "characters": 2,
+        "clues": 0,
+        "foreshadows": 0,
+        "methods": 1,
+        "methods_locked": 1,
+        "outlines": 1,
+    }
+    assert body["chapters"] == {"written": 0, "planned": 1}
+    assert body["stage_history"] == [
+        {
+            "from_stage": "bible_confirmed",
+            "to_stage": "writing",
+            "reason": "作者确认 Bible",
+            "at": "2026-10-10T00:00:00",
+        }
+    ]
+
+
+def test_rest_story_defaults_to_intake_for_legacy_workspace(
+    workspace: StoryWorkspace,
+) -> None:
+    """旧工作区无 story.yaml 按 intake 兜底读取（D1），全零计数是合法空结果。"""
+    body = _client(workspace.root).get(f"/api/{SLUG}/story").json()
+
+    assert body["stage"] == "intake"
+    assert body["stage_history"] == []
+    assert body["counts"]["characters"] == 0
+    assert body["chapters"] == {"written": 0, "planned": 0}
+
+
+def test_rest_story_corrupt_ledger_returns_422(workspace: StoryWorkspace) -> None:
+    workspace.ensure_dirs()
+    workspace.outline_path.write_text(": [broken", encoding="utf-8")
+
+    response = _client(workspace.root).get(f"/api/{SLUG}/story")
+
+    assert response.status_code == 422
+    assert "怎样算对" in response.json()["detail"]
 
 
 # --- chapters：列表 + 原文（阅读器数据源） ---

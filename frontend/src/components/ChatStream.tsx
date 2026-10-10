@@ -5,7 +5,9 @@
  * 数据全部来自 store，本组件不跑任何 Agent 逻辑。
  */
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatItem, ToolCardStatus } from "../state/reducer";
 import { toolDetailLines } from "../state/toolSummary";
 import { useChatStore } from "../state/store";
@@ -113,6 +115,39 @@ function ToolCard({ item }: { item: ToolItem }) {
   );
 }
 
+/**
+ * Agent 消息 Markdown 渲染（P8 T7，D7）：react-markdown + remark-gfm——
+ * GFM 表格是缺口清单/对比表的刚需；组件纯函数无副作用，流式增量安全。
+ * 样式走任意变体（无 typography 插件依赖）；memo 化降低长对话重渲成本。
+ */
+const MD_CLASS =
+  "min-w-0 break-words text-sm leading-relaxed text-paper " +
+  "[&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:text-base [&_h1]:font-bold " +
+  "[&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-sm [&_h2]:font-bold " +
+  "[&_h3]:mb-1 [&_h3]:mt-1.5 [&_h3]:text-sm [&_h3]:font-semibold " +
+  "[&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-0.5 " +
+  "[&_blockquote]:border-l-2 [&_blockquote]:border-line [&_blockquote]:pl-3 [&_blockquote]:text-paper/70 " +
+  "[&_code]:rounded [&_code]:bg-ink [&_code]:px-1 [&_code]:font-mono [&_code]:text-xs " +
+  "[&_pre]:overflow-x-auto [&_pre]:bg-ink [&_pre]:p-2 [&_pre]:text-xs " +
+  "[&_table]:w-full [&_table]:border-collapse [&_table]:text-xs " +
+  "[&_th]:border [&_th]:border-line [&_th]:bg-ink/60 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left " +
+  "[&_td]:border [&_td]:border-line [&_td]:px-2 [&_td]:py-1";
+
+const AgentMarkdown = memo(function AgentMarkdown({ text }: { text: string }) {
+  return (
+    <div className={MD_CLASS}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+    </div>
+  );
+});
+
+/** Agent 消息头部标签（D7 区分度）：与用户消息的右对齐异色底形成对照。 */
+function AgentLabel() {
+  return (
+    <p className="mb-1 font-mono text-[10px] tracking-widest text-gold-soft/70">HASTINGS</p>
+  );
+}
+
 function ItemView({ item }: { item: ChatItem }) {
   switch (item.kind) {
     case "user":
@@ -126,7 +161,8 @@ function ItemView({ item }: { item: ChatItem }) {
     case "assistant":
       return (
         <div className="max-w-[85%] border-l-2 border-gold bg-ink-soft px-4 py-2">
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-paper">{item.text}</p>
+          <AgentLabel />
+          <AgentMarkdown text={item.text} />
         </div>
       );
     case "thinking":
@@ -188,10 +224,11 @@ export default function ChatStream({
       )}
       {assistantBuffer && (
         <div className="max-w-[85%] border-l-2 border-gold bg-ink-soft px-4 py-2">
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-paper">
-            {assistantBuffer}
+          <AgentLabel />
+          <div className={MD_CLASS}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{assistantBuffer}</ReactMarkdown>
             <span className="animate-pulse text-gold">▍</span>
-          </p>
+          </div>
         </div>
       )}
       <div ref={bottomRef} />
