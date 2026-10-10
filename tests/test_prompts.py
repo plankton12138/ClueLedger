@@ -285,6 +285,34 @@ def test_workflow_states_writing_protocol_anchors_outline_reading() -> None:
     assert "落盘" in section
 
 
+# --- 走查修复（F3/F5）：账本修改的阶段语义 + intake 缺口锚点 ---
+
+
+def test_workflow_states_ledger_edits_allowed_in_every_stage() -> None:
+    """F3（B4 走查）：bible_upsert 任何阶段可用——阶段门只限制写正文，不限制账本
+    修改；写作/修订期更正设定直接改账本，不换阶段绕行。属协议解释，不动迁移表。
+    """
+    section = WORKFLOW_SECTION
+
+    assert "阶段门只限制" in section
+    assert "bible_upsert" in section
+    assert "不需要换阶段" in section
+
+
+def test_workflow_forbids_premature_ledger_writes_justified_by_gates() -> None:
+    """F5（B1 走查）：后续阶段的门约束不构成本阶段提前落账的理由。"""
+    section = WORKFLOW_SECTION
+
+    assert "提前落账" in section
+
+
+def test_intake_gap_anchors_include_character_backstory() -> None:
+    """F5（B1 走查）：intake 缺口清单锚点补「人物身世与往事」维度。"""
+    section = WORKFLOW_SECTION
+
+    assert "人物身世与往事" in section
+
+
 def test_workflow_keeps_reconcile_protocol_in_every_stage() -> None:
     """对账协议原样保留，且作用于任何阶段。"""
     assert "【手动修订同步】" in WORKFLOW_SECTION

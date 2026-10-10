@@ -504,16 +504,21 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
                 "data": {
                     "type": "object",
                     "description": (
-                        "实体字段对象，name 必填。"
-                        "character：identity/motivation/secret/relationships/arc(状态)/notes；"
-                        "clue：content/chapter/points_to/is_red_herring/is_genuine/status；"
-                        "foreshadow：content/plant_chapter/plant_mode(explicit|hint|symbolic)"
-                        "/expected_resolve_chapter/status；"
-                        "method：description/time_window/requirements/"
-                        "alibi_claims[{person,day,t_start,t_end,claim}]/status；"
-                        "timeline：day(第几天)/t_start/t_end/chapter/participants/note（无状态字段）；"
-                        "outline：chapter(章号,工具层校验唯一)/act/beats[]/"
-                        "plant_plans[](拟埋伏笔名)/end_hook/status(planned|written|revised)"
+                        "实体字段对象，name 必填（六类实体都要求非空 name，包括 timeline）。"
+                        "类型形状——character：identity/motivation/secret/notes 为字符串，"
+                        'relationships 为字符串列表（每项如"名字: 关系"）；'
+                        "clue：content/chapter/points_to 为字符串，"
+                        "is_red_herring/is_genuine 为布尔；"
+                        "foreshadow：content/plant_chapter/expected_resolve_chapter 为字符串，"
+                        "plant_mode(explicit|hint|symbolic)；"
+                        "method：description/time_window 为字符串，requirements 为字符串列表，"
+                        "alibi_claims 为对象列表[{person,day,t_start,t_end,claim}]；"
+                        "timeline：day 为整数(第几天)，t_start/t_end/chapter/note 为字符串，"
+                        "participants 为已建档角色名的字符串列表；"
+                        "outline：chapter 为整数(章号,工具层校验唯一)，act/end_hook 为字符串，"
+                        "beats/plant_plans 为字符串列表。"
+                        "状态字段：character arc(flat|developed|resolved)；"
+                        "clue/foreshadow/outline status(初始 planned)；method status(初始 drafted)"
                     ),
                 },
             },
@@ -525,6 +530,10 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
             "任何设定必须先经 bible_upsert 落盘再写进正文；同名再次调用视为更新。",
             "状态不可凭空跳级：新建即初始状态（角色 arc=flat；clue/foreshadow/outline "
             "status=planned；method status=drafted），被拒时按错误消息给出的合法去向修正。",
+            'bible_upsert 最小正确示例：{"entity_type": "character", "data": '
+            '{"name": "宫泽", "identity": "退休刑警", "relationships": '
+            '["宫泽惠: 妹妹"]}}——relationships/requirements/participants/beats 都是'
+            "字符串列表，不要传成单个字符串；每条实体（含 timeline）都必须带非空 name。",
             "timeline 的 participants 必须是已建档角色：先建角色，再登记事件。",
             "outline 章号唯一且章号≥1：每章一条章纲（name 可用本章标题），"
             "beats 列本章节拍、plant_plans 列本章拟埋伏笔名（须与伏笔账本对齐）、"

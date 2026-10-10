@@ -34,6 +34,44 @@ async def _call(tool: AgentTool, arguments: Mapping[str, JSONValue]) -> object:
 # ---------- bible_upsert ----------
 
 
+# --- schema 自描述（F1 走查修复）：描述带类型形状 + 最小正确示例 ---
+#
+# 走查发现模型对同一 schema 错误原样重试 7-16 次才改行为（relationships 传成
+# 字符串 ×7、requirements ×1、timeline 缺 name ×16）。缓解手段：类型形状直接
+# 写进参数描述，最小正确示例进 prompt_guidelines——让模型在首次调用前就看到对的样子。
+
+
+def test_upsert_data_description_documents_list_field_shapes(
+    tools: dict[str, AgentTool],
+) -> None:
+    data_desc = tools["bible_upsert"].parameters["properties"]["data"]["description"]
+
+    assert "字符串列表" in data_desc
+    assert "relationships" in data_desc
+    assert "requirements" in data_desc
+    assert "participants" in data_desc
+
+
+def test_upsert_data_description_requires_name_for_all_entities(
+    tools: dict[str, AgentTool],
+) -> None:
+    """name 必填须覆盖全部六类实体——timeline ×16 缺 name 报错的根因锚点。"""
+    data_desc = tools["bible_upsert"].parameters["properties"]["data"]["description"]
+
+    assert "name" in data_desc
+    assert "timeline" in data_desc
+    assert "必填" in data_desc
+
+
+def test_upsert_guidelines_carry_minimal_correct_example(
+    tools: dict[str, AgentTool],
+) -> None:
+    guidelines = "\n".join(tools["bible_upsert"].prompt_guidelines)
+
+    assert "示例" in guidelines
+    assert "字符串列表" in guidelines  # 列表字段别传成字符串的最小提醒
+
+
 @pytest.mark.anyio
 async def test_upsert_saves_character_file(
     tools: dict[str, AgentTool], workspace: StoryWorkspace
