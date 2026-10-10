@@ -259,6 +259,9 @@ def test_workflow_states_intake_protocol() -> None:
     assert "5 个" in section  # 一次最多 5 个问题
     assert "禁止" in section
     assert "等作者答复" in section
+    # 想法有限 → 给候选方案（创意思路是职责，拍板不是）
+    assert "候选方案" in section
+    assert "取舍" in section
 
 
 def test_workflow_states_bible_drafting_protocol() -> None:
