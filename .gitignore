@@ -27,3 +27,6 @@ stories/
 .chroma/
 
 # 注意：uv.lock 不忽略，必须提交（CI 用 --locked 保证权威）
+
+# 原著版权文本不入库：仅提交抽取出走查基准源的三篇 txt
+eval/assets/*.epub
