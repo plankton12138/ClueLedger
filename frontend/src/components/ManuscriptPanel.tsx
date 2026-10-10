@@ -235,12 +235,12 @@ export default function ManuscriptPanel({
 
   return (
     <section className="flex min-w-0 flex-1 flex-col xl:min-w-[320px]">
-      <div className="flex flex-none items-center gap-3 border-b border-line bg-ink-soft/50 px-4 py-2">
+      <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line bg-ink-soft/50 px-3 py-2 sm:px-4">
         <select
           aria-label="章节"
           value={ms.chapterId ?? ""}
           onChange={(e) => selectChapter(e.target.value)}
-          className="max-w-56 border border-line bg-transparent px-1.5 py-0.5 font-serif text-sm text-paper focus:border-gold/60 focus:outline-none"
+          className="min-w-0 max-w-40 border border-line bg-transparent px-1.5 py-0.5 font-serif text-sm text-paper focus:border-gold/60 focus:outline-none sm:max-w-56"
         >
           {ms.chapterId === null && <option value="">选择章节…</option>}
           {ms.chapterIds.map((id) => (
@@ -250,11 +250,11 @@ export default function ManuscriptPanel({
           ))}
         </select>
         {shownText !== null && (
-          <span className="text-xs text-paper/50">
+          <span className="hidden text-xs text-paper/50 min-[430px]:inline">
             字数 <b className="font-semibold text-gold-soft">{chars.toLocaleString()}</b>
           </span>
         )}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex min-w-0 items-center gap-2">
           {ms.saveState === "dirty" && <Chip tone="dirty">● 未保存</Chip>}
           {ms.saveState === "saving" && <Chip tone="busy">保存中…</Chip>}
           {syncing && <Chip tone="busy">◌ 对账中…</Chip>}
