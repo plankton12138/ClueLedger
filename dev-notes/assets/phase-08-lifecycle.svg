@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 272" width="720" height="272" role="img" aria-label="Hastings 创作生命周期状态机">
+  <!-- P8 引导式生命周期：主干流程与工具层硬门（配套 dev-notes/phase-08-guided-lifecycle-plan.md） -->
+  <defs>
+    <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 L7 4 L1 7 Z" fill="#78716c"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="720" height="272" fill="#ffffff"/>
+  <text x="360" y="26" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="600" fill="#1c1917">创作生命周期：引导 → 确认 → 产出 → 维护</text>
+
+  <!-- 主干节点 -->
+  <rect x="75" y="46" width="150" height="64" rx="10" fill="#ffffff" stroke="#e7e5e4" stroke-width="1.5"/>
+  <text x="150" y="74" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#1c1917">构想接收</text>
+  <text x="150" y="94" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#78716c">摘要 · 缺口 · 提问</text>
+
+  <rect x="285" y="46" width="150" height="64" rx="10" fill="#ffffff" stroke="#e7e5e4" stroke-width="1.5"/>
+  <text x="360" y="74" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#1c1917">Bible 起草</text>
+  <text x="360" y="94" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#78716c">五账本 + 章纲落盘</text>
+
+  <rect x="495" y="46" width="150" height="64" rx="10" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+  <text x="570" y="74" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#15803d">作者确认</text>
+  <text x="570" y="94" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#78716c">硬门：未确认禁写</text>
+
+  <rect x="75" y="166" width="150" height="64" rx="10" fill="#ffffff" stroke="#e7e5e4" stroke-width="1.5"/>
+  <text x="150" y="194" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#1c1917">逐章写作</text>
+  <text x="150" y="214" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#78716c">预检 · 落盘 · 审计</text>
+
+  <rect x="285" y="166" width="150" height="64" rx="10" fill="#ffffff" stroke="#e7e5e4" stroke-width="1.5"/>
+  <text x="360" y="194" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#1c1917">维护修订</text>
+  <text x="360" y="214" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#78716c">对账 · 回收 · 终稿</text>
+
+  <!-- 迁移边 -->
+  <path d="M 227 78 L 281 78" fill="none" stroke="#78716c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr)"/>
+  <path d="M 437 78 L 491 78" fill="none" stroke="#78716c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr)"/>
+  <path d="M 570 112 L 570 138 L 150 138 L 150 162" fill="none" stroke="#78716c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr)"/>
+  <path d="M 227 198 L 281 198" fill="none" stroke="#78716c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr)"/>
+
+  <!-- 回退边（虚线）：bible_confirmed → bible_drafting -->
+  <path d="M 570 46 L 570 35 L 360 35 L 360 44" fill="none" stroke="#a8a29e" stroke-width="1.2" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arr)"/>
+
+  <text x="360" y="258" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#78716c">write_chapter 工具层预检：阶段未过「作者确认」即拒绝，错误消息含三要素</text>
+</svg>
