@@ -24,6 +24,7 @@ from hastings.prompts import (
     STATUS_HEADING,
     TOOLS_HEADING,
     WORKFLOW_HEADING,
+    WORKFLOW_SECTION,
     build_language_section,
     build_reconcile_message,
     build_system_prompt,
@@ -241,6 +242,51 @@ def test_system_prompt_without_workspace_has_no_status_section() -> None:
     prompt = build_system_prompt()
 
     assert STATUS_HEADING not in prompt
+
+
+# --- 阶段感知工作流程（P8 T6，D6）：prompt 讲协议，门在工具层 ---
+
+
+def test_workflow_states_intake_protocol() -> None:
+    """intake 协议：三段式理解输出，禁止未确认先建账/写正文，一次 ≤5 问。"""
+    section = WORKFLOW_SECTION
+
+    assert "intake" in section
+    assert "五维理解摘要" in section
+    for dimension in ("核心诡计", "人物群像", "结构", "结局", "文风"):
+        assert dimension in section
+    assert "缺口清单" in section
+    assert "5 个" in section  # 一次最多 5 个问题
+    assert "禁止" in section
+    assert "等作者答复" in section
+
+
+def test_workflow_states_bible_drafting_protocol() -> None:
+    """bible_drafting 协议：建账顺序固定 + 总览确认三类点 + 确认后 story_stage 推进。"""
+    section = WORKFLOW_SECTION
+
+    assert "建账顺序固定" in section
+    assert "人物 → 手法 → 线索与伏笔 → 时间线 → 章纲" in section
+    assert "Bible 总览" in section
+    assert "三类点" in section
+    assert "story_stage" in section
+    assert "未经确认" in section
+
+
+def test_workflow_states_writing_protocol_anchors_outline_reading() -> None:
+    """writing 协议：动笔前读章纲与设定，写完报告落盘与迁移（原第 6 条保留）。"""
+    section = WORKFLOW_SECTION
+
+    assert "动笔前先读该章章纲" in section
+    assert "简要报告" in section
+    assert "落盘" in section
+
+
+def test_workflow_keeps_reconcile_protocol_in_every_stage() -> None:
+    """对账协议原样保留，且作用于任何阶段。"""
+    assert "【手动修订同步】" in WORKFLOW_SECTION
+    assert "对账" in WORKFLOW_SECTION
+    assert "任何阶段" in WORKFLOW_SECTION
 
 
 # --- 对账消息模板（P5 T4，D5/D6） ---
