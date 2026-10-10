@@ -1,4 +1,4 @@
-"""五账本状态机：迁移表、初始状态与校验（P2 T1，计划 D1）。
+"""账本状态机：迁移表、初始状态与校验（P2 T1，计划 D1；P8 T3 增 outline）。
 
 约定：
 - 未列出的迁移一律拒绝；timeline 无状态机（事件只增改，无生命周期）；
@@ -15,6 +15,7 @@ INITIAL_STATUS: Final[dict[str, str]] = {
     "clue": "planned",
     "foreshadow": "planned",
     "method": "drafted",
+    "outline": "planned",
 }
 
 # 全部允许边（D1 迁移表）；空列表 = 终态。未列出的边一律拒绝。
@@ -43,6 +44,13 @@ TRANSITIONS: Final[dict[str, dict[str, list[str]]]] = {
         "locked": ["revealed", "drafted"],
         "revealed": [],
     },
+    # outline 章纲（P8 T3，计划 D3）：written/revised 由 write_chapter 落盘
+    # 自动推进（T4），作者手动改回 planned 不设边——正文是 SSOT。
+    "outline": {
+        "planned": ["written"],
+        "written": ["revised"],
+        "revised": [],
+    },
 }
 
 
@@ -52,10 +60,6 @@ class InvalidTransitionError(ValueError):
     agent loop 会把异常消息转为 is_error=True 的工具结果喂回模型
     （tau_agent/loop.py），文案必须保持三要素让模型可自我修正。
     """
-
-
-def _known_types() -> str:
-    return "、".join(sorted(TRANSITIONS))
 
 
 def validate_transition(entity_type: str, old: str, new: str) -> None:
@@ -69,7 +73,7 @@ def validate_transition(entity_type: str, old: str, new: str) -> None:
         hint = (
             "timeline 无状态机，事件只增改，无需状态迁移"
             if entity_type == "timeline"
-            else f"状态机只覆盖 {_known_types()} 四类账本"
+            else f"状态机只覆盖 {'、'.join(sorted(TRANSITIONS))}"
         )
         raise InvalidTransitionError(
             f"{entity_type} 状态迁移被拒：{old} → {new}。为什么错：{hint}。"
@@ -105,7 +109,7 @@ def validate_initial(entity_type: str, status: str) -> None:
         hint = (
             "timeline 无状态机，新建事件不涉及状态"
             if entity_type == "timeline"
-            else f"状态机只覆盖 {_known_types()} 四类账本"
+            else f"状态机只覆盖 {'、'.join(sorted(TRANSITIONS))}"
         )
         raise InvalidTransitionError(
             f"{entity_type} 新建被拒：status={status!r}。为什么错：{hint}。"

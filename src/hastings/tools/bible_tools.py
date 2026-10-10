@@ -1,9 +1,9 @@
-"""Bible 读写工具：bible_upsert / bible_query（P2 五账本泛化）。
+"""Bible 读写工具：bible_upsert / bible_query（P2 五账本 + P8 outline 泛化）。
 
 实体注册表模式：entity_type → _Spec（模型/读写/摘要/跨账本校验），
-新增账本只加一处注册，杜绝 if-else 汤。硬约束（状态迁移、参与者建档）
-只在本工具层强制——store 纯读写、prompt 只解释世界；错误消息三要素
-（哪里错/为什么错/怎样算对）经 loop 原样喂回模型，助其自我修正。
+新增账本只加一处注册，杜绝 if-else 汤。硬约束（状态迁移、参与者建档、
+章号唯一）只在本工具层强制——store 纯读写、prompt 只解释世界；错误消息
+三要素（哪里错/为什么错/怎样算对）经 loop 原样喂回模型，助其自我修正。
 """
 
 from __future__ import annotations
@@ -15,7 +15,14 @@ from typing import Final, cast
 
 from pydantic import BaseModel, ValidationError
 
-from hastings.bible.models import Character, Clue, Foreshadow, Method, TimelineEntry
+from hastings.bible.models import (
+    Character,
+    Clue,
+    Foreshadow,
+    Method,
+    OutlineEntry,
+    TimelineEntry,
+)
 from hastings.bible.state_machine import (
     INITIAL_STATUS,
     TRANSITIONS,
@@ -58,7 +65,7 @@ def _character_write_all(workspace: StoryWorkspace, entities: Sequence[BaseModel
         save_character(workspace, entity)
 
 
-def _make_ledger_ops[M: (Clue, Foreshadow, Method, TimelineEntry)](
+def _make_ledger_ops[M: (Clue, Foreshadow, Method, OutlineEntry, TimelineEntry)](
     path_getter: Callable[[StoryWorkspace], Path], model_cls: type[M]
 ) -> tuple[ReadAllFn, WriteAllFn]:
     """单文件账本的读写闭包：读整表、按 name 合并后整表覆盖写（D7）。"""
@@ -132,6 +139,20 @@ def _summarize_timeline(entity: BaseModel) -> str:
     return " | ".join(parts)
 
 
+def _summarize_outline(entity: BaseModel) -> str:
+    assert isinstance(entity, OutlineEntry)
+    parts = [entity.name, f"ch{entity.chapter}", entity.status]
+    if entity.act:
+        parts.append(entity.act)
+    if entity.beats:
+        parts.append(f"节拍 {len(entity.beats)} 拍")
+    if entity.plant_plans:
+        parts.append(f"拟埋伏笔：{'、'.join(entity.plant_plans)}")
+    if entity.end_hook:
+        parts.append(f"章末钩：{entity.end_hook}")
+    return " | ".join(parts)
+
+
 # --- 跨账本引用校验（D8：守门人职责） ---
 
 
@@ -146,6 +167,31 @@ def _check_timeline_participants(workspace: StoryWorkspace, data: Mapping[str, J
             f"时间线参与者未建档：{'、'.join(missing)}。"
             "为什么错：人物分身/不在场检测依赖参与者身份，participants 必须是已建档角色。"
             "怎样算对：先用 bible_upsert(entity_type='character') 逐个建档，再登记该事件。"
+        )
+
+
+def _check_outline_chapter_unique(workspace: StoryWorkspace, data: Mapping[str, JSONValue]) -> None:
+    """章号唯一性（P8 T3，计划 D3）：name 之外的第二主键，工具层强制。
+
+    同章号两条章纲 = 写作目标歧义，upsert 直接拒绝；同名条目保持自身
+    章号（覆盖更新）或改到空位（重排）均放行。chapter 缺失/类型不对时
+    放行，交给 pydantic 字段校验回喂更精确的字段错误。
+    """
+    chapter = data.get("chapter")
+    if not isinstance(chapter, int) or isinstance(chapter, bool):
+        return
+    name = data.get("name")
+    entries = load_ledger(workspace.outline_path, OutlineEntry)
+    conflict = next(
+        (e for e in entries if e.chapter == chapter and e.name != name),
+        None,
+    )
+    if conflict is not None:
+        raise ToolInputError(
+            f"章纲「{conflict.name}」已占用章号 {chapter}，章号必须唯一。"
+            f"为什么错：同一章号两条章纲会让 write_chapter 的写作目标产生歧义。"
+            "怎样算对：新章纲改用未占用的章号；若确属重排，先把"
+            f"「{conflict.name}」的 chapter 改到其他章号（upsert 同名覆盖）。"
         )
 
 
@@ -199,6 +245,7 @@ _clue_read, _clue_write = _make_ledger_ops(lambda ws: ws.clues_path, Clue)
 _foreshadow_read, _foreshadow_write = _make_ledger_ops(lambda ws: ws.foreshadows_path, Foreshadow)
 _method_read, _method_write = _make_ledger_ops(lambda ws: ws.method_path, Method)
 _timeline_read, _timeline_write = _make_ledger_ops(lambda ws: ws.timeline_path, TimelineEntry)
+_outline_read, _outline_write = _make_ledger_ops(lambda ws: ws.outline_path, OutlineEntry)
 
 _REGISTRY: Final[dict[str, _Spec]] = {
     "character": _Spec(
@@ -241,6 +288,15 @@ _REGISTRY: Final[dict[str, _Spec]] = {
         summarize=_summarize_timeline,
         status_field=None,  # D1：事件只增改，无生命周期
         cross_check=_check_timeline_participants,
+    ),
+    "outline": _Spec(
+        label="章纲",
+        model_cls=OutlineEntry,
+        read_all=_outline_read,
+        write_all=_outline_write,
+        summarize=_summarize_outline,
+        status_field="status",
+        cross_check=_check_outline_chapter_unique,
     ),
 }
 
@@ -431,7 +487,7 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         label="写入 Bible 实体",
         description=(
             "把一条实体写入 Story Bible（YAML 落盘，同名覆盖），"
-            "支持 character/clue/foreshadow/method/timeline 五类账本。"
+            "支持 character/clue/foreshadow/method/timeline/outline 六类账本。"
             "正文引用任何设定前，必须先用本工具落盘；状态只能沿合法迁移边推进。"
         ),
         parameters={
@@ -442,7 +498,7 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
                     "enum": _ENTITY_ENUM,
                     "description": (
                         "实体类型：character 角色 / clue 线索 / foreshadow 伏笔 / "
-                        "method 手法 / timeline 时间线事件"
+                        "method 手法 / timeline 时间线事件 / outline 章纲"
                     ),
                 },
                 "data": {
@@ -455,7 +511,9 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
                         "/expected_resolve_chapter/status；"
                         "method：description/time_window/requirements/"
                         "alibi_claims[{person,day,t_start,t_end,claim}]/status；"
-                        "timeline：day(第几天)/t_start/t_end/chapter/participants/note（无状态字段）"
+                        "timeline：day(第几天)/t_start/t_end/chapter/participants/note（无状态字段）；"
+                        "outline：chapter(章号,工具层校验唯一)/act/beats[]/"
+                        "plant_plans[](拟埋伏笔名)/end_hook/status(planned|written|revised)"
                     ),
                 },
             },
@@ -465,9 +523,12 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         execute_fn=upsert_execute,
         prompt_guidelines=(
             "任何设定必须先经 bible_upsert 落盘再写进正文；同名再次调用视为更新。",
-            "状态不可凭空跳级：新建即初始状态（角色 arc=flat；clue/foreshadow status=planned；"
-            "method status=drafted），被拒时按错误消息给出的合法去向修正。",
+            "状态不可凭空跳级：新建即初始状态（角色 arc=flat；clue/foreshadow/outline "
+            "status=planned；method status=drafted），被拒时按错误消息给出的合法去向修正。",
             "timeline 的 participants 必须是已建档角色：先建角色，再登记事件。",
+            "outline 章号唯一且章号≥1：每章一条章纲（name 可用本章标题），"
+            "beats 列本章节拍、plant_plans 列本章拟埋伏笔名（须与伏笔账本对齐）、"
+            "end_hook 列章末悬念；写作前先 query 本章章纲。",
         ),
         render_call=_upsert_render_call,
     )
@@ -484,7 +545,7 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
                 "entity_type": {
                     "type": "string",
                     "enum": _ENTITY_ENUM,
-                    "description": "实体类型，与 bible_upsert 相同的五种",
+                    "description": "实体类型，与 bible_upsert 相同的六种",
                 },
                 "name": {"type": "string", "description": "实体名；缺省则列出全部"},
             },

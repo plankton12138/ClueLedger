@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import cast
 
-from hastings.bible.models import Method
+from hastings.bible.models import Method, OutlineEntry
 from hastings.bible.store import (
     StoryWorkspace,
     list_characters,
@@ -51,17 +51,14 @@ def _require_str(arguments: Mapping[str, JSONValue], key: str) -> str:
 
 
 def _derive_prereqs(workspace: StoryWorkspace) -> StagePrereqs:
-    """从工作区实况派生确认门计数（纯读，不落盘）。
-
-    章纲账本（outline，P8 T3）落地后在此接入计数；当前恒为 0，
-    确认门因此天然要求 T3 完成——阶段顺序即约束。
-    """
+    """从工作区实况派生确认门计数（纯读，不落盘）。"""
     methods = load_ledger(workspace.method_path, Method)
+    outlines = load_ledger(workspace.outline_path, OutlineEntry)
     return StagePrereqs(
         characters=len(list_characters(workspace)),
         methods=len(methods),
         methods_locked=sum(1 for m in methods if m.status == "locked"),
-        outlines=0,  # P8 T3 接线点
+        outlines=len(outlines),
     )
 
 

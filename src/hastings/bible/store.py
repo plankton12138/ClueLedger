@@ -16,7 +16,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel
 
-from hastings.bible.models import Character, Clue, Foreshadow, Method, TimelineEntry
+from hastings.bible.models import Character, Clue, Foreshadow, Method, OutlineEntry, TimelineEntry
 from hastings.bible.story_state import StoryDoc
 
 # 首字符须为字母/数字/中文，其后允许词字符、中文、空格与连字符；禁点号、
@@ -121,6 +121,11 @@ class StoryWorkspace:
     def timeline_path(self) -> Path:
         return self.bible_dir / "timeline.yaml"
 
+    @property
+    def outline_path(self) -> Path:
+        """章纲账本（P8 T3，计划 D3）：outlines.yaml 列表项。"""
+        return self.bible_dir / "outlines.yaml"
+
     def ensure_dirs(self) -> None:
         self.characters_dir.mkdir(parents=True, exist_ok=True)
         self.chapters_dir.mkdir(parents=True, exist_ok=True)
@@ -179,7 +184,7 @@ class LedgerFormatError(ValueError):
     """
 
 
-def load_ledger[M: (Clue, Foreshadow, Method, TimelineEntry)](
+def load_ledger[M: (Clue, Foreshadow, Method, OutlineEntry, TimelineEntry)](
     path: Path, model_cls: type[M]
 ) -> list[M]:
     """读取单文件账本；缺文件或空文件视为空账本（P1 旧工作区兼容）。"""
@@ -194,7 +199,7 @@ def load_ledger[M: (Clue, Foreshadow, Method, TimelineEntry)](
     return [model_cls.model_validate(item) for item in raw]
 
 
-def save_ledger[M: (Clue, Foreshadow, Method, TimelineEntry)](
+def save_ledger[M: (Clue, Foreshadow, Method, OutlineEntry, TimelineEntry)](
     path: Path, items: Sequence[M]
 ) -> Path:
     """整表覆盖写单文件账本，返回文件路径；自建父目录。"""

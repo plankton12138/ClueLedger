@@ -1,7 +1,8 @@
-"""Story Bible 实体 schema（Pydantic，P2 五账本）。
+"""Story Bible 实体 schema（Pydantic，P2 五账本 + P8 第六账本 outline）。
 
 P1 只有 Character；P2 扩为五账本：character（+弧光状态机）、clue、
-foreshadow、method（含 alibi_claims，计划 D3）、timeline（无状态机，D1/D2）。
+foreshadow、method（含 alibi_claims，计划 D3）、timeline（无状态机，D1/D2）；
+P8 T3 增 outline 章纲账本（D3：长篇的分页记忆，章号唯一由工具层校验）。
 状态字段的默认值须与 state_machine.INITIAL_STATUS 一致——强制不变量在
 工具层校验（validate_initial / validate_transition），模型默认值只是让
 合法路径零参数可用。
@@ -16,6 +17,7 @@ ArcStatus = Literal["flat", "developing", "transformed"]
 ClueStatus = Literal["planned", "planted", "discovered", "interpreted", "resolved"]
 ForeshadowStatus = Literal["planned", "planted", "echoed", "resolved"]
 MethodStatus = Literal["drafted", "locked", "revealed"]
+OutlineStatus = Literal["planned", "written", "revised"]
 PlantMode = Literal["explicit", "hint", "symbolic"]
 
 
@@ -101,6 +103,23 @@ class TimelineEntry(BaseModel):
     note: str = ""  # 相对时间原文（"三天后"），day 为换算结果
 
 
+class OutlineEntry(BaseModel):
+    """章纲（P8 T3，计划 D3）：outlines.yaml 列表项，长篇的分页记忆。
+
+    name 为主键（注册表同款约定）；chapter 是工具层校验的唯一第二键
+    （同章号两章纲=写作目标歧义，upsert 拒绝）；写正文前 read 章纲，
+    write_chapter 落盘后自动推进 status（T4）。
+    """
+
+    name: str = Field(min_length=1, max_length=64)
+    chapter: int = Field(ge=1)  # 章号，工具层校验唯一
+    act: str = ""  # 所属幕，如 "第二幕"
+    beats: list[str] = Field(default_factory=list)  # 本章节拍
+    plant_plans: list[str] = Field(default_factory=list)  # 计划埋设的伏笔名（T4 预检用）
+    end_hook: str = ""  # 章末钩子
+    status: OutlineStatus = "planned"
+
+
 __all__ = [
     "AlibiClaim",
     "ArcStatus",
@@ -112,6 +131,8 @@ __all__ = [
     "Method",
     "MethodHistoryEntry",
     "MethodStatus",
+    "OutlineEntry",
+    "OutlineStatus",
     "PlantMode",
     "TimelineEntry",
 ]

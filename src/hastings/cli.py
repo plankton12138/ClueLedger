@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping, Sequence
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
+from hastings.bible.models import Clue, Foreshadow, Method, OutlineEntry, TimelineEntry
 from hastings.bible.store import (
     LedgerFormatError,
     StoryWorkspace,
@@ -141,6 +141,7 @@ def _ledger_entities(workspace: StoryWorkspace, entity_type: str) -> Sequence[Ba
         "foreshadow": lambda: load_ledger(workspace.foreshadows_path, Foreshadow),
         "method": lambda: load_ledger(workspace.method_path, Method),
         "timeline": lambda: load_ledger(workspace.timeline_path, TimelineEntry),
+        "outline": lambda: load_ledger(workspace.outline_path, OutlineEntry),
     }
     return loaders[entity_type]()
 
@@ -157,7 +158,7 @@ def format_ledger(workspace: StoryWorkspace, entity_type: str) -> str:
 
 
 def format_bible(workspace: StoryWorkspace, entity_type: str | None = None) -> str:
-    """``/bible`` 的输出：缺省五账本总览，带 type 则只看该账本。"""
+    """``/bible`` 的输出：缺省六账本总览，带 type 则只看该账本。"""
     if entity_type is None:
         return "\n".join(format_ledger(workspace, t) for t in _ALL_ENTITY_TYPES)
     if entity_type not in _ALL_ENTITY_TYPES:

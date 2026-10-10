@@ -226,7 +226,7 @@ def _seeded_workspace(tmp_path: Any) -> StoryWorkspace:
     return workspace
 
 
-def test_format_bible_overview_covers_all_five_ledgers(tmp_path: Any) -> None:
+def test_format_bible_overview_covers_all_six_ledgers(tmp_path: Any) -> None:
     workspace = _seeded_workspace(tmp_path)
 
     out = format_bible(workspace)
@@ -237,6 +237,7 @@ def test_format_bible_overview_covers_all_five_ledgers(tmp_path: Any) -> None:
     assert "- 怀表调时诡计 | locked" in out
     assert "伏笔账本为空" in out
     assert "时间线事件账本为空" in out
+    assert "章纲账本为空" in out
 
 
 def test_format_bible_single_ledger(tmp_path: Any) -> None:

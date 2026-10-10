@@ -502,7 +502,7 @@ def test_rest_state_reports_session_and_bible_types(root: Path) -> None:
         "model": "fake",
         "is_running": False,
         "tools": ["bible_upsert", "write_chapter"],
-        "bible_types": ["character", "clue", "foreshadow", "method", "timeline"],
+        "bible_types": ["character", "clue", "foreshadow", "method", "outline", "timeline"],
     }
 
 
