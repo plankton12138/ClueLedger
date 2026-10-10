@@ -11,8 +11,10 @@ import remarkGfm from "remark-gfm";
 import type { ChatItem, ToolCardStatus } from "../state/reducer";
 import { toolDetailLines } from "../state/toolSummary";
 import { useChatStore } from "../state/store";
+import ActionButton from "./ActionButton";
 import SyncCard from "./SyncCard";
 import ThinkingCard from "./ThinkingCard";
+import { shouldShowThinkingPlaceholder, stageSuggestions } from "./stageSuggestions";
 
 const TOOL_STATUS_CLASS: Record<ToolCardStatus, string> = {
   running: "bg-planned",
@@ -182,14 +184,21 @@ function ItemView({ item }: { item: ChatItem }) {
 
 export default function ChatStream({
   onRetrySync,
+  stage = null,
+  onSendPrompt,
 }: {
   /** 对账失败卡片的重试回调（经 WS sync 命令手动重跑）。 */
   onRetrySync?: (chapter: string) => void;
+  /** 当前文章阶段（空态建议按钮数据源；null/未知 → 兜底 intake 建议）。 */
+  stage?: string | null;
+  /** 建议按钮点击回调（App 按 running 选 prompt/steer 命令）。 */
+  onSendPrompt?: (message: string) => void;
 } = {}) {
   const items = useChatStore((s) => s.items);
   const syncCards = useChatStore((s) => s.syncCards);
   const assistantBuffer = useChatStore((s) => s.assistantBuffer);
   const thinkingBuffer = useChatStore((s) => s.thinkingBuffer);
+  const running = useChatStore((s) => s.running);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -197,12 +206,29 @@ export default function ChatStream({
   }, [items, syncCards, assistantBuffer, thinkingBuffer]);
 
   const empty = items.length === 0 && syncCards.length === 0 && !assistantBuffer && !thinkingBuffer;
+  const hasRunningTool = items.some((it) => it.kind === "tool" && it.status === "running");
+  const thinkingPlaceholder = shouldShowThinkingPlaceholder({
+    running,
+    assistantBuffer,
+    thinkingBuffer,
+    hasRunningTool,
+  });
   return (
     <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
       {empty && (
-        <p className="mt-24 text-center text-sm text-paper/40">
-          向主编下达第一个指令——先建两个角色档案，再写第一章。
-        </p>
+        <div className="mt-20 flex flex-col items-center gap-3">
+          <p className="text-sm text-paper/40">还没有对话——可以这样开始：</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {stageSuggestions(stage ?? "").map((suggestion) => (
+              <ActionButton
+                key={suggestion.label}
+                label={suggestion.label}
+                onClick={() => onSendPrompt?.(suggestion.prompt)}
+              />
+            ))}
+          </div>
+          <p className="text-xs text-paper/30">也可以直接在下方输入框下达指令</p>
+        </div>
       )}
       {items.map((item, i) => (
         <ItemView key={i} item={item} />
@@ -219,6 +245,9 @@ export default function ChatStream({
             <span className="animate-pulse text-gold">▍</span>
           </div>
         </div>
+      )}
+      {thinkingPlaceholder && (
+        <p className="animate-pulse text-xs italic text-gold-soft/60">正在思考…</p>
       )}
       <div ref={bottomRef} />
     </div>

@@ -369,7 +369,17 @@ export default function App() {
                 </button>
                 <section className="flex min-h-0 min-w-0 flex-1 flex-col">
                   <ErrorBoundary label="对话">
-                    <ChatStream onRetrySync={retrySync} />
+                    <ChatStream
+                      onRetrySync={retrySync}
+                      stage={story?.stage ?? null}
+                      onSendPrompt={(message) =>
+                        sendCommand(running ? "steer" : "prompt", message).catch((exc: unknown) =>
+                          useChatStore
+                            .getState()
+                            .setConnectionError(exc instanceof Error ? exc.message : String(exc)),
+                        )
+                      }
+                    />
                   </ErrorBoundary>
                   <Composer
                     sendCommand={(type: CommandType, message: string) =>
