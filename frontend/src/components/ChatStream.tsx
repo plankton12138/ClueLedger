@@ -14,6 +14,7 @@ import { useChatStore } from "../state/store";
 import ActionButton from "./ActionButton";
 import SyncCard from "./SyncCard";
 import ThinkingCard from "./ThinkingCard";
+import { optionReply, parseOptions } from "./options";
 import { shouldShowThinkingPlaceholder, stageSuggestions } from "./stageSuggestions";
 
 const TOOL_STATUS_CLASS: Record<ToolCardStatus, string> = {
@@ -151,7 +152,14 @@ function AgentLabel() {
   );
 }
 
-function ItemView({ item }: { item: ChatItem }) {
+function ItemView({
+  item,
+  onSelectOption,
+}: {
+  item: ChatItem;
+  /** 选项按钮点击回调（发送「我选 X：方案名」）。 */
+  onSelectOption?: (message: string) => void;
+}) {
   switch (item.kind) {
     case "user":
       return (
@@ -161,13 +169,27 @@ function ItemView({ item }: { item: ChatItem }) {
           </div>
         </div>
       );
-    case "assistant":
+    case "assistant": {
+      const parsed = parseOptions(item.text);
       return (
         <div className="max-w-[85%] border-l-2 border-gold bg-ink-soft px-4 py-2">
           <AgentLabel />
-          <AgentMarkdown text={item.text} />
+          {parsed.body && <AgentMarkdown text={parsed.body} />}
+          {parsed.options && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {parsed.options.map((option) => (
+                <ActionButton
+                  key={option.key}
+                  label={`${option.key}. ${option.label}`}
+                  title={option.note || undefined}
+                  onClick={() => onSelectOption?.(optionReply(option))}
+                />
+              ))}
+            </div>
+          )}
         </div>
       );
+    }
     case "thinking":
       return <ThinkingCard text={item.text} />;
     case "tool":
@@ -231,7 +253,7 @@ export default function ChatStream({
         </div>
       )}
       {items.map((item, i) => (
-        <ItemView key={i} item={item} />
+        <ItemView key={i} item={item} onSelectOption={onSendPrompt} />
       ))}
       {syncCards.map((card, i) => (
         <SyncCard key={`sync-${i}`} entry={card} onRetry={onRetrySync} />
