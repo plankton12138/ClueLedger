@@ -20,9 +20,12 @@ from hastings.bible.store import (
     list_characters,
     load_character,
     load_ledger,
+    load_story_doc,
     save_character,
     save_ledger,
+    save_story_doc,
 )
+from hastings.bible.story_state import StageTransition, StoryDoc
 
 
 def _ws(tmp_path: Path) -> StoryWorkspace:
@@ -236,3 +239,60 @@ def test_p1_workspace_with_only_characters_dir_opens(tmp_path: Path) -> None:
     assert load_ledger(ws.method_path, Method) == []
     assert load_ledger(ws.foreshadows_path, Foreshadow) == []
     assert load_ledger(ws.timeline_path, TimelineEntry) == []
+
+
+# --- P8 T1b：story.yaml 生命周期存储（计划 D1） ---
+
+
+def test_story_doc_load_missing_defaults_to_intake(tmp_path: Path) -> None:
+    """缺 story.yaml（P7 及更早旧工作区）按 intake 兜底，不强制迁移。"""
+    ws = _ws(tmp_path)
+    doc = load_story_doc(ws)
+
+    assert doc.slug == "demo"
+    assert doc.stage == "intake"
+    assert doc.stage_history == []
+
+
+def test_story_doc_roundtrip_keeps_history(tmp_path: Path) -> None:
+    """保存/读取往返一致；YAML 键用 from/to（计划 D1 约定），at 留痕。"""
+    ws = _ws(tmp_path)
+    doc = StoryDoc(
+        slug="demo",
+        stage="bible_drafting",
+        stage_history=[
+            StageTransition.model_validate(
+                {
+                    "from": "intake",
+                    "to": "bible_drafting",
+                    "reason": "作者交付完整构想",
+                    "at": "2026-10-10T22:00:00",
+                }
+            )
+        ],
+    )
+
+    path = save_story_doc(ws, doc)
+
+    assert path == ws.story_path
+    assert "from:" in path.read_text(encoding="utf-8")  # YAML 键是 from/to
+    assert load_story_doc(ws) == doc
+
+
+def test_story_doc_invalid_stage_rejected(tmp_path: Path) -> None:
+    """stage 只接受六阶段字面量；手改坏值显式报错（泄压阀：数据故障≠静默兜底）。"""
+    ws = _ws(tmp_path)
+    ws.story_dir.mkdir(parents=True)
+    ws.story_path.write_text("slug: demo\nstage: archived\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError):
+        load_story_doc(ws)
+
+
+def test_story_doc_save_creates_story_dir(tmp_path: Path) -> None:
+    ws = _ws(tmp_path)
+
+    save_story_doc(ws, StoryDoc(slug="demo"))
+
+    assert ws.story_path.exists()
+    assert load_story_doc(ws).stage == "intake"

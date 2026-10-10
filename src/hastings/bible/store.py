@@ -17,6 +17,7 @@ import yaml
 from pydantic import BaseModel
 
 from hastings.bible.models import Character, Clue, Foreshadow, Method, TimelineEntry
+from hastings.bible.story_state import StoryDoc
 
 # 首字符须为字母/数字/中文，其后允许词字符、中文、空格与连字符；禁点号、
 # 斜杠、反斜杠等路径相关字符。
@@ -98,6 +99,11 @@ class StoryWorkspace:
     def settings_path(self) -> Path:
         """工作区级设置文件（P6 写作语言）；缺文件按默认值处理。"""
         return self.story_dir / "settings.yaml"
+
+    @property
+    def story_path(self) -> Path:
+        """工作区生命周期文件（P8 T1，计划 D1）；缺文件按 intake 兜底。"""
+        return self.story_dir / "story.yaml"
 
     @property
     def clues_path(self) -> Path:
@@ -201,6 +207,30 @@ def save_ledger[M: (Clue, Foreshadow, Method, TimelineEntry)](
     return path
 
 
+# --- P8 T1b：story.yaml 生命周期（D1：唯一写入口是 story_stage 工具，REST 无写口） ---
+
+
+def load_story_doc(workspace: StoryWorkspace) -> StoryDoc:
+    """读取 story.yaml；缺文件（含 P7 及更早的旧工作区）按 intake 兜底——
+    不强制迁移旧数据，首次经 story_stage 推进时自然落盘。"""
+    path = workspace.story_path
+    if not path.exists():
+        return StoryDoc(slug=workspace.slug)
+    raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return StoryDoc.model_validate(raw)
+
+
+def save_story_doc(workspace: StoryWorkspace, doc: StoryDoc) -> Path:
+    """整文件覆盖写 story.yaml，返回文件路径；自建父目录。"""
+    workspace.story_dir.mkdir(parents=True, exist_ok=True)
+    path = workspace.story_path
+    path.write_text(
+        yaml.safe_dump(doc.model_dump(by_alias=True), allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return path
+
+
 __all__ = [
     "InvalidEntityNameError",
     "LedgerFormatError",
@@ -209,9 +239,11 @@ __all__ = [
     "list_characters",
     "load_character",
     "load_ledger",
+    "load_story_doc",
     "model_to_yaml",
     "save_character",
     "save_ledger",
+    "save_story_doc",
     "validate_entity_name",
     "validate_slug",
 ]
