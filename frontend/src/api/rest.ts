@@ -6,6 +6,7 @@
  */
 
 import type { EventFrame } from "./types";
+import { parsePullFrame, parsePullLines, type PullFrame } from "../state/ollama";
 
 export type BibleType = "character" | "clue" | "foreshadow" | "method" | "timeline";
 
@@ -198,6 +199,25 @@ export async function deleteWorkspace(slug: string): Promise<void> {
   if (!res.ok) {
     throw new Error(`工作区 ${slug} 删除失败：${await errorDetail(res)}`);
   }
+}
+
+/**
+ * POST /api/{slug}/session/reset（P9 D4）：旧会话归档后重建空会话。
+ * 返回归档文件名（null = 原会话从未落盘）；running 时服务端 409。
+ */
+export async function resetSession(slug: string): Promise<{ archived: string | null }> {
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/session/reset`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(`开新会话失败：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json();
+  if (body === null || typeof body !== "object" || !("archived" in body)) {
+    throw new Error(`开新会话响应结构不符：收到 ${JSON.stringify(body)}。`);
+  }
+  const archived = (body as { archived: unknown }).archived;
+  return { archived: typeof archived === "string" ? archived : null };
 }
 
 // ---------- 章节面（P5 T1）：列表 + 单章正文（只读） ----------
@@ -416,6 +436,8 @@ export interface ProviderSummary {
   default_model: string;
   key_hint: string;
   available: boolean;
+  /** 免密端点（本地模型如 Ollama）：无 key 也可用，提示文案随之区分。 */
+  no_auth: boolean;
 }
 
 /** GET /api/providers → 服务级档案目录（config.yaml 或 env 回落单档案）。 */
@@ -489,6 +511,8 @@ export interface ProviderUpsert {
   api_key: string;
   api_key_env: string;
   default_model: string;
+  /** 免密端点（本地模型如 Ollama）：true 时档案无 key 也算可用。 */
+  no_auth?: boolean;
 }
 
 /**
@@ -842,4 +866,148 @@ export function refetchTargets(
   }
   if (event.toolName === "method_lock" || event.toolName === "method_unlock") return ["method"];
   return [];
+}
+
+// ---------- Ollama 本地模型（D11）：检测 / 目录 / 已装 / 下载流 / 删除 ----------
+
+/** Ollama 三态检测（status 恒 200——不可达是结果数据不是错误）。 */
+export interface OllamaStatusWire {
+  state: "running" | "installed_not_running" | "not_installed";
+  version: string;
+  base_url: string;
+  install_url: string;
+}
+
+/** 预置推荐模型清单条目（纯公开信息，服务端管理）。 */
+export interface OllamaCatalogEntryWire {
+  name: string;
+  params: string;
+  size_label: string;
+  note: string;
+}
+
+/** 一个已安装模型。 */
+export interface OllamaModelInfoWire {
+  name: string;
+  size_bytes: number;
+}
+
+/** GET /api/ollama/status → 三态检测结果。 */
+export async function fetchOllamaStatus(): Promise<OllamaStatusWire> {
+  const res = await fetch("/api/ollama/status");
+  if (!res.ok) {
+    throw new Error(`Ollama 状态检测失败：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const record = body as Record<string, unknown> | null;
+  if (
+    record === null ||
+    typeof record !== "object" ||
+    typeof record.state !== "string" ||
+    typeof record.version !== "string" ||
+    typeof record.base_url !== "string" ||
+    typeof record.install_url !== "string"
+  ) {
+    throw new Error(
+      `Ollama 状态响应结构不符：期望 { state, version, base_url, install_url }，` +
+        `收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return body as OllamaStatusWire;
+}
+
+/** GET /api/ollama/catalog → 预置推荐清单（静态数据）。 */
+export async function fetchOllamaCatalog(): Promise<OllamaCatalogEntryWire[]> {
+  const res = await fetch("/api/ollama/catalog");
+  if (!res.ok) {
+    throw new Error(`预置模型清单读取失败：${await errorDetail(res)}`);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const catalog = (body as { catalog?: unknown } | null)?.catalog;
+  if (!Array.isArray(catalog)) {
+    throw new Error(
+      `预置清单响应结构不符：期望 { catalog: [] }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return catalog as OllamaCatalogEntryWire[];
+}
+
+/** GET /api/ollama/models → 已装模型列表；502（Ollama 不可达）detail 原样透出。 */
+export async function fetchOllamaModels(): Promise<OllamaModelInfoWire[]> {
+  const res = await fetch("/api/ollama/models");
+  if (!res.ok) {
+    throw new Error(await errorDetail(res));
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const models = (body as { models?: unknown } | null)?.models;
+  if (!Array.isArray(models)) {
+    throw new Error(
+      `已装模型列表响应结构不符：期望 { models: [] }，收到 ${JSON.stringify(body)}。`,
+    );
+  }
+  return models as OllamaModelInfoWire[];
+}
+
+/**
+ * POST /api/ollama/pull → 读流式 NDJSON 进度，逐帧回调 onFrame（仅进度帧）；
+ * error 帧与「流未送达 success 终帧」抛错（三要素文案服务端给出）。
+ * signal 供取消——断开后 Ollama 侧继续下载，重发同一 pull 幂等续传。
+ */
+export async function pullOllamaModel(
+  model: string,
+  onFrame: (frame: PullFrame) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch("/api/ollama/pull", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(await errorDetail(res));
+  }
+  if (!res.body) {
+    throw new Error(`下载流不可读：${model}。为什么错：浏览器未返回响应体流。`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let succeeded = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const parsed = parsePullLines(buffer, decoder.decode(value, { stream: true }));
+    buffer = parsed.buffer;
+    for (const line of parsed.lines) {
+      const frame = parsePullFrame(line);
+      if (frame === null) continue;
+      if (frame.error !== undefined) {
+        throw new Error(frame.error);
+      }
+      if (frame.status === "success") succeeded = true;
+      onFrame(frame);
+    }
+  }
+  if (buffer.trim() !== "") {
+    const frame = parsePullFrame(buffer);
+    if (frame !== null && frame.error === undefined) onFrame(frame);
+  }
+  if (!succeeded) {
+    throw new Error(
+      `模型 ${model} 下载流意外中断。` +
+        "为什么错：连接在送达完成帧之前断开。" +
+        "怎样算对：重新点击下载——pull 支持断点续传，已下载部分不会丢失。",
+    );
+  }
+}
+
+/** DELETE /api/ollama/models/{name}：404（未装）/ 502（上游故障）detail 原样透出。 */
+export async function deleteOllamaModel(name: string): Promise<void> {
+  const res = await fetch(`/api/ollama/models/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error(`模型 ${name} 删除失败：${await errorDetail(res)}`);
+  }
 }

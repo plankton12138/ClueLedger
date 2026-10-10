@@ -13,6 +13,7 @@ import { fetchStory, fetchWorkspaces } from "./api/rest";
 import type { StoryWire } from "./api/rest";
 import ArticlesPage from "./components/ArticlesPage";
 import BiblePanel from "./components/BiblePanel";
+import ChatHeader from "./components/ChatHeader";
 import ChatStream from "./components/ChatStream";
 import Composer from "./components/Composer";
 import EventStreamView from "./components/EventStreamView";
@@ -368,6 +369,7 @@ export default function App() {
                   ‹
                 </button>
                 <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <ChatHeader slug={slug} running={running} onResetDone={reconnect} />
                   <ErrorBoundary label="对话">
                     <ChatStream
                       onRetrySync={retrySync}
