@@ -227,6 +227,32 @@ def test_from_workspace_reads_saved_language(workspace: StoryWorkspace) -> None:
     assert "日本語" in session.harness.config.system
 
 
+# ---------- 状态注入（P8 T5，B1）：每轮 prompt 前刷新 system ----------
+
+
+@pytest.mark.anyio
+async def test_prompt_refreshes_workspace_status_into_system(
+    workspace: StoryWorkspace,
+) -> None:
+    """B1：prompt() 委托前刷新 config.system——阶段推进下一轮即被感知。
+
+    from_workspace 装配时就带 workspace 注入（区别于语言节只在切换时重建），
+    之后每次 prompt 入口重算；工作区文件变化不需要重建会话。
+    """
+    from hastings.bible.store import save_story_doc
+    from hastings.bible.story_state import StoryDoc
+
+    session = HastingsSession.from_workspace(
+        workspace, provider=FakeProvider([closing("好的。")]), model="fake"
+    )
+    assert "阶段：intake" in session.harness.config.system
+
+    save_story_doc(workspace, StoryDoc(slug=workspace.slug, stage="writing"))
+    await _drain(session.prompt("开始写第一章"))
+
+    assert "阶段：writing" in session.harness.config.system
+
+
 # ---------- 事件持久化（P6 T4，D4）：events.jsonl 构造时挂载 ----------
 
 

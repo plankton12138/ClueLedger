@@ -96,7 +96,7 @@ class HastingsSession:
             AgentHarnessConfig(
                 provider=provider,
                 model=model,
-                system=build_system_prompt(tools, language=language),
+                system=build_system_prompt(tools, language=language, workspace=workspace),
                 tools=tools,
             )
         )
@@ -188,7 +188,24 @@ class HastingsSession:
         from hastings.prompts import build_system_prompt
 
         self._harness.config.system = build_system_prompt(
-            self._harness.config.tools, language=language
+            self._harness.config.tools, language=language, workspace=self._workspace
+        )
+
+    def _refresh_system(self) -> None:
+        """每轮 prompt 前刷新 system（P8 T5，B1）：状态注入的唯一刷新点。
+
+        config.system 每轮运行时才被 harness 读取（P6 D3 手法），prompt 入口
+        重算即把 story.yaml 阶段与账本实况注入下一轮；语言也从 settings 现读。
+        运行中不刷新——prompt 入口本就有 busy 防护，与「运行中 system 不变」
+        同语义；reconcile 队列经 session.prompt 同入口，自动获得同一刷新。
+        """
+        from hastings.prompts import build_system_prompt
+        from hastings.settings import load_settings
+
+        self._harness.config.system = build_system_prompt(
+            self._harness.config.tools,
+            language=load_settings(self._workspace).writing_language,
+            workspace=self._workspace,
         )
 
     def apply_model(self, model: str) -> None:
@@ -204,6 +221,7 @@ class HastingsSession:
     def prompt(self, content: str) -> AsyncIterator[AgentEvent]:
         if self._harness.is_running:
             raise AgentBusyError(BUSY_MESSAGE)
+        self._refresh_system()
         return self._harness.prompt(content)
 
     def steer(self, content: str) -> None:

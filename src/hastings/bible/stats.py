@@ -11,13 +11,23 @@ T8 伏笔表格的风险列直接复用 ``foreshadow_risk`` 纯函数。
 from __future__ import annotations
 
 import re
+import sys
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal, cast
 
-from hastings.bible.models import Clue, Foreshadow
-from hastings.bible.store import StoryWorkspace, load_ledger
+import yaml
+from pydantic import ValidationError
+
+from hastings.bible.models import Clue, Foreshadow, Method, OutlineEntry
+from hastings.bible.store import (
+    LedgerFormatError,
+    StoryWorkspace,
+    list_characters,
+    load_ledger,
+    load_story_doc,
+)
 
 type ForeshadowRisk = Literal["overdue", "near", "normal"]
 
@@ -153,11 +163,55 @@ def compute_story_stats(workspace: StoryWorkspace) -> StoryStats:
     )
 
 
+def build_workspace_status(workspace: StoryWorkspace) -> str | None:
+    """「当前工作区状态」注入节正文（P8 T5，D5）：只陈述事实，不解释怎么做事。
+
+    数据源 = story.yaml + compute_story_stats + 角色/手法/章纲账本（单一
+    数据源，P6 D7 延续）。协议归 system prompt 的工作流程节（D6），本函数
+    只给快照——阶段、各账本计数、method 锁定态、逾期伏笔数、章节进度与
+    章纲缺口（下一条未建章号）。
+
+    泄压阀（P5 OSError 教训）：任一读取失败 → stderr 三要素告警并返回
+    None，调用方跳过该节——状态注入失败不阻断写作流。
+    """
+    try:
+        stats = compute_story_stats(workspace)
+        stage = load_story_doc(workspace).stage
+        characters = len(list_characters(workspace))
+        methods = load_ledger(workspace.method_path, Method)
+        outlines = load_ledger(workspace.outline_path, OutlineEntry)
+    except (ValidationError, LedgerFormatError, yaml.YAMLError, OSError) as exc:
+        print(
+            f"[hastings] 工作区状态注入被跳过（{workspace.slug}）。"
+            f"为什么错：{type(exc).__name__}: {exc}。"
+            "怎样算对：修复对应 YAML/文件后，该节会在下一轮 prompt 自动恢复；"
+            "写作流不受影响。",
+            file=sys.stderr,
+        )
+        return None
+
+    if not methods:
+        method_label = "手法 0"
+    elif all(m.status == "locked" for m in methods):
+        method_label = f"手法 {len(methods)}（已锁定）"
+    else:
+        method_label = f"手法 {len(methods)}（未锁定）"
+
+    gap = f"ch{max(o.chapter for o in outlines) + 1} 起未建" if outlines else "全部未建"
+    return (
+        f"阶段：{stage} ｜ 角色 {characters} · 线索 {stats.clue_total} · "
+        f"伏笔 {stats.foreshadow_total}（逾期 {len(stats.overdue_foreshadows)}）· "
+        f"{method_label} · 章纲 {len(outlines)} 条\n"
+        f"已写章节：{stats.chapters} ｜ 章纲未覆盖：{gap}"
+    )
+
+
 __all__ = [
     "ForeshadowOverdue",
     "ForeshadowRiskItem",
     "ForeshadowRisk",
     "StoryStats",
+    "build_workspace_status",
     "compute_story_stats",
     "foreshadow_risk",
     "latest_chapter_number",

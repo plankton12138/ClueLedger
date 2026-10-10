@@ -7,12 +7,21 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from hastings.bible.models import Character, TimelineEntry
-from hastings.bible.store import StoryWorkspace, save_character, save_ledger
+from hastings.bible.models import (
+    Character,
+    Foreshadow,
+    Method,
+    OutlineEntry,
+    TimelineEntry,
+)
+from hastings.bible.stats import build_workspace_status
+from hastings.bible.store import StoryWorkspace, save_character, save_ledger, save_story_doc
+from hastings.bible.story_state import StoryDoc
 from hastings.manuscript.diff import DiffHunk, HunkKind
 from hastings.prompts import (
     LANGUAGE_HEADING,
     ROLE_HEADING,
+    STATUS_HEADING,
     TOOLS_HEADING,
     WORKFLOW_HEADING,
     build_language_section,
@@ -135,6 +144,103 @@ def test_system_prompt_accepts_language_override() -> None:
 
     assert "日本語" in prompt
     assert DEFAULT_WRITING_LANGUAGE not in prompt
+
+
+# --- 状态注入节（P8 T5，D5）：只陈述事实（阶段/计数/缺口），不解释怎么做事 ---
+
+
+def _seed_writing_workspace(tmp_path: Path) -> StoryWorkspace:
+    """写作中工作区快照：2 角色 / 1 已锁手法 / 2 章纲 / 1 逾期伏笔 / 1 章正文。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="demo")
+    workspace.ensure_dirs()
+    save_character(workspace, Character(name="波洛", identity="侦探"))
+    save_character(workspace, Character(name="黑斯廷斯", identity="叙事者"))
+    save_ledger(workspace.method_path, [Method(name="毒杀诡计", status="locked")])
+    save_ledger(
+        workspace.outline_path,
+        [OutlineEntry(name="案发之夜", chapter=1), OutlineEntry(name="封路", chapter=2)],
+    )
+    save_ledger(
+        workspace.foreshadows_path,
+        [Foreshadow(name="保温瓶", expected_resolve_chapter="ch01", status="planted")],
+    )
+    (workspace.chapters_dir / "ch01.md").write_text("# 第1章\n\n正文。\n", encoding="utf-8")
+    save_story_doc(workspace, StoryDoc(slug="demo", stage="writing"))
+    return workspace
+
+
+def test_status_body_empty_workspace_reports_intake_and_zeros(tmp_path: Path) -> None:
+    """空工作区（旧数据/新开工）按 intake 兜底，计数全零是合法快照。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="demo")
+
+    body = build_workspace_status(workspace)
+
+    assert body is not None
+    assert "阶段：intake" in body
+    assert "角色 0" in body
+    assert "伏笔 0（逾期 0）" in body
+    assert "手法 0" in body
+    assert "章纲 0 条" in body
+    assert "已写章节：0" in body
+    assert "章纲未覆盖：全部未建" in body
+
+
+def test_status_body_writing_workspace_reports_counts_and_gap(tmp_path: Path) -> None:
+    """写作中快照：阶段 + 各账本计数 + 逾期数 + 章纲缺口（下一条未建章号）。"""
+    workspace = _seed_writing_workspace(tmp_path)
+
+    body = build_workspace_status(workspace)
+
+    assert body is not None
+    assert "阶段：writing" in body
+    assert "角色 2" in body
+    assert "伏笔 1（逾期 1）" in body
+    assert "手法 1（已锁定）" in body
+    assert "章纲 2 条" in body
+    assert "已写章节：1" in body
+    assert "章纲未覆盖：ch3 起未建" in body
+
+
+def test_status_body_flags_unlocked_method(tmp_path: Path) -> None:
+    """手法未锁定要显式标出——这是模型该先 method_lock 的事实信号。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="demo")
+    workspace.ensure_dirs()
+    save_ledger(workspace.method_path, [Method(name="毒杀诡计", status="drafted")])
+
+    body = build_workspace_status(workspace)
+
+    assert "手法 1（未锁定）" in body
+
+
+def test_status_body_degrades_on_corrupt_ledger_with_stderr(tmp_path: Path, capsys: Any) -> None:
+    """泄压阀（P5 OSError 教训）：账本损坏 → 返回 None + stderr 三要素，不抛异常。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="demo")
+    workspace.bible_dir.mkdir(parents=True)
+    workspace.method_path.write_text("::: 不是列表 :::\n", encoding="utf-8")
+
+    assert build_workspace_status(workspace) is None
+    err = capsys.readouterr().err
+    assert "状态" in err
+    assert "为什么错" in err
+    assert "怎样算对" in err
+
+
+def test_system_prompt_orders_status_between_language_and_workflow(tmp_path: Path) -> None:
+    """注入节位置（D5）：语言节之后、工作流程之前——先事实后协议。"""
+    workspace = _seed_writing_workspace(tmp_path)
+
+    prompt = build_system_prompt(workspace=workspace)
+
+    assert STATUS_HEADING in prompt
+    assert prompt.index(LANGUAGE_HEADING) < prompt.index(STATUS_HEADING)
+    assert prompt.index(STATUS_HEADING) < prompt.index(WORKFLOW_HEADING)
+
+
+def test_system_prompt_without_workspace_has_no_status_section() -> None:
+    """不传 workspace 不注入——既有调用点（CLI/测试）零破坏。"""
+    prompt = build_system_prompt()
+
+    assert STATUS_HEADING not in prompt
 
 
 # --- 对账消息模板（P5 T4，D5/D6） ---

@@ -13,6 +13,7 @@ import yaml
 from pydantic import ValidationError
 
 from hastings.bible.models import Clue, Foreshadow, Method, TimelineEntry
+from hastings.bible.stats import build_workspace_status
 from hastings.bible.store import (
     LedgerFormatError,
     StoryWorkspace,
@@ -25,6 +26,7 @@ from tau_agent.tools import AgentTool
 
 ROLE_HEADING = "## 角色"
 LANGUAGE_HEADING = "## 写作语言"
+STATUS_HEADING = "## 当前工作区状态"
 WORKFLOW_HEADING = "## 工作流程"
 TOOLS_HEADING = "## 工具使用规范"
 
@@ -72,12 +74,23 @@ def build_system_prompt(
     tools: Sequence[AgentTool] = (),
     *,
     language: str = DEFAULT_WRITING_LANGUAGE,
+    workspace: StoryWorkspace | None = None,
 ) -> str:
     """拼装完整 system prompt；无工具时省略工具规范节。
 
     语言节固定落在角色节之后、工作流程节之前——先立人设，再定语言，最后给流程。
+    传入 workspace 时在语言节之后注入「当前工作区状态」节（P8 T5，D5/B1）：
+    只陈述事实（阶段/计数/缺口），协议归工作流程节——职责分离。状态读取
+    失败时跳过该节（stats 层 stderr 三要素告警），不阻断写作流。
     """
-    sections = [ROLE_SECTION, build_language_section(language), WORKFLOW_SECTION]
+    sections = [ROLE_SECTION, build_language_section(language)]
+
+    if workspace is not None:
+        status = build_workspace_status(workspace)
+        if status is not None:
+            sections.append(f"{STATUS_HEADING}\n\n{status}")
+
+    sections.append(WORKFLOW_SECTION)
 
     lines = [TOOLS_HEADING]
     for tool in tools:
@@ -189,6 +202,7 @@ __all__ = [
     "RECONCILE_ROLE_LINE",
     "ROLE_HEADING",
     "ROLE_SECTION",
+    "STATUS_HEADING",
     "TOOLS_HEADING",
     "WORKFLOW_HEADING",
     "WORKFLOW_SECTION",
