@@ -11,8 +11,14 @@ from typing import Any
 
 import pytest
 
-from hastings.bible.models import Character, Clue, Method
-from hastings.bible.store import StoryWorkspace, save_character, save_ledger
+from hastings.bible.models import Character, Clue, Method, OutlineEntry
+from hastings.bible.store import (
+    StoryWorkspace,
+    save_character,
+    save_ledger,
+    save_story_doc,
+)
+from hastings.bible.story_state import StoryDoc
 from hastings.cli import PlainRenderer, bible_command_output, create_writing_tools, format_bible
 from hastings.tools.chapter_tools import create_chapter_tools
 from tau_agent import (
@@ -162,6 +168,10 @@ async def test_renderer_consumes_real_harness_event_stream(
 ) -> None:
     """端到端：FakeProvider 事件流 → harness → 渲染器 → stdout。"""
     workspace = StoryWorkspace(root=tmp_path, slug="demo")
+    # P8 T4 预检：write_chapter 须 writing 态 + 章纲 + 角色
+    save_story_doc(workspace, StoryDoc(slug=workspace.slug, stage="writing"))
+    save_character(workspace, Character(name="波洛", identity="比利时侦探"))
+    save_ledger(workspace.outline_path, [OutlineEntry(name="第1章", chapter=1)])
     tools = create_chapter_tools(workspace)
     by_name: Mapping[str, AgentTool] = {tool.name: tool for tool in tools}
     call = ToolCall(

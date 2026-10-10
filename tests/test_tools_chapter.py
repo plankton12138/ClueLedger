@@ -1,19 +1,44 @@
-"""write_chapter / read_chapter / list_chapters 工具单测：落盘格式 + 参数约束 + 覆盖保护 + 读回。"""
+"""write_chapter / read_chapter / list_chapters 工具单测：落盘格式 + 参数约束 + 覆盖保护 + 读回。
+
+P8 T4 起 write_chapter 带生命周期硬门：本文件的 workspace fixture 统一预置
+writing 态（story.yaml + 章纲 ch1/ch2/ch3/ch4/ch12 + 一个角色）；预检本身的
+拒绝路径与自动推进在 test_tools_chapter_precheck.py 专项覆盖。
+"""
 
 from pathlib import Path
 
 import pytest
 
-from hastings.bible.store import StoryWorkspace
+from hastings.bible.models import Character, OutlineEntry
+from hastings.bible.store import (
+    StoryWorkspace,
+    save_character,
+    save_ledger,
+    save_story_doc,
+)
+from hastings.bible.story_state import StoryDoc
 from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
 from hastings.tools.chapter_tools import create_chapter_tools
 from hastings.tools.errors import ToolInputError
 from tau_agent import AgentTool
 
+_SEEDED_CHAPTERS = (1, 2, 3, 4, 12)
+
+
+def _seed_writing_stage(workspace: StoryWorkspace) -> None:
+    save_story_doc(workspace, StoryDoc(slug=workspace.slug, stage="writing"))
+    save_character(workspace, Character(name="波洛", identity="比利时侦探"))
+    save_ledger(
+        workspace.outline_path,
+        [OutlineEntry(name=f"第{n}章", chapter=n) for n in _SEEDED_CHAPTERS],
+    )
+
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> StoryWorkspace:
-    return StoryWorkspace(root=tmp_path / "stories", slug="demo")
+    ws = StoryWorkspace(root=tmp_path / "stories", slug="demo")
+    _seed_writing_stage(ws)
+    return ws
 
 
 @pytest.fixture
@@ -43,7 +68,12 @@ async def test_writes_chapter_with_title(
     assert path.exists()
     assert path.read_text(encoding="utf-8") == "# 第1章 列车上的尸体\n\n雪落无声。\n\n灯灭了。\n"
     assert "ch01.md" in result.text
-    assert result.details == {"path": str(path), "chapter": 1, "force": False}
+    assert result.details == {
+        "path": str(path),
+        "chapter": 1,
+        "force": False,
+        "outline_status": "written",
+    }
 
 
 @pytest.mark.anyio
@@ -98,6 +128,7 @@ async def test_overwrite_with_force(write_chapter: AgentTool, workspace: StoryWo
 
     assert "改稿" in (workspace.chapters_dir / "ch01.md").read_text(encoding="utf-8")
     assert isinstance(result.details, dict) and result.details["force"] is True
+    assert result.details["outline_status"] == "revised"  # force 重写 = 修订轮
 
 
 def test_render_call(write_chapter: AgentTool) -> None:

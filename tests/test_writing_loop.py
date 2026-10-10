@@ -12,8 +12,16 @@ from typing import Any
 import pytest
 import yaml
 
-from hastings.bible.models import Character, Clue, Foreshadow, Method
-from hastings.bible.store import StoryWorkspace, list_characters, load_ledger
+from hastings.bible.models import Character, Clue, Foreshadow, Method, OutlineEntry
+from hastings.bible.store import (
+    StoryWorkspace,
+    list_characters,
+    load_ledger,
+    save_character,
+    save_ledger,
+    save_story_doc,
+)
+from hastings.bible.story_state import StoryDoc
 from hastings.manuscript.write_guard import EditMarkRegistry
 from hastings.prompts import build_system_prompt
 from hastings.tools.bible_tools import create_bible_tools
@@ -105,9 +113,31 @@ def _scripted_provider() -> FakeProvider:
     )
 
 
+def _seed_writing(
+    workspace: StoryWorkspace,
+    *,
+    chapters: tuple[int, ...] = (1,),
+    characters: bool = False,
+) -> None:
+    """P8 T4 起 write_chapter 有阶段门/章纲门/角色门：预置 writing 态工作区。
+
+    角色默认不 seed——主剧本由模型经 bible_upsert 建档（预检在 write 时点检）。
+    """
+    save_story_doc(workspace, StoryDoc(slug=workspace.slug, stage="writing"))
+    save_ledger(
+        workspace.outline_path,
+        [OutlineEntry(name=f"第{n}章", chapter=n) for n in chapters],
+    )
+    if characters:
+        save_character(workspace, Character(name="波洛", identity="比利时侦探"))
+        save_character(workspace, Character(name="奎勒", identity="列车乘务长"))
+
+
 @pytest.fixture
 def workspace(tmp_path: Path) -> StoryWorkspace:
-    return StoryWorkspace(root=tmp_path, slug="orient-express")
+    ws = StoryWorkspace(root=tmp_path, slug="orient-express")
+    _seed_writing(ws)
+    return ws
 
 
 @pytest.fixture
@@ -169,7 +199,8 @@ async def test_writing_loop_rereads_chapter_before_next(tmp_path: Path) -> None:
         )
     )
 
-    # 前置：第 1 章已存在
+    # 前置：第 1 章已存在；P8 T4 预检要求 writing 态 + 章纲 ch2 + 角色
+    _seed_writing(workspace, chapters=(1, 2), characters=True)
     workspace.ensure_dirs()
     (workspace.chapters_dir / "ch01.md").write_text(
         "# 第1章 雪封之夜\n\n雪从午夜开始落。\n", encoding="utf-8"

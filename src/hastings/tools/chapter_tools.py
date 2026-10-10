@@ -5,6 +5,12 @@ write_chapter 落盘 chapters/chNN.md（两位数零填充），章节标题由�
 优先于 force——作者有未保存草稿的章，模型不得写（硬约束在工具层）。
 read_chapter / list_chapters（P4 T3）是只读回通道：正文写完不等于记忆——
 agent 必须能读回原文，长期记忆才从「账本摘要」扩到「原文细节」。
+
+P8 T4（计划 D3/D4）：write_chapter 是生命周期硬门——分级预检在草稿锁 /
+run_kind 守卫之后、落盘之前执行，error（阶段门 / 章不在 outline / 无角色）
+三要素拒绝，warning（method 未 locked / plant_plans 悬空）进 details 供前端
+展示；落盘后自动推进该章 outline 状态（planned→written，force 覆盖
+written→revised）——正文与章纲状态由工具层自动对账，模型不必记这回事。
 """
 
 from __future__ import annotations
@@ -13,7 +19,14 @@ import re
 from collections.abc import Mapping
 from typing import cast
 
-from hastings.bible.store import StoryWorkspace
+from hastings.bible.models import Foreshadow, Method, OutlineEntry
+from hastings.bible.store import (
+    StoryWorkspace,
+    list_characters,
+    load_ledger,
+    load_story_doc,
+    save_ledger,
+)
 from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
 from hastings.tools.errors import ToolInputError
 from tau_agent.messages import TextContent
@@ -21,6 +34,8 @@ from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, T
 from tau_agent.types import JSONValue
 
 _CHAPTER_NAME = re.compile(r"^ch(\d+)\.md$")
+
+_WRITING_STAGES = ("writing", "revising")
 
 
 def _render_call(arguments: Mapping[str, JSONValue]) -> str | None:
@@ -58,6 +73,100 @@ def _available_chapters(workspace: StoryWorkspace) -> list[int]:
         if (match := _CHAPTER_NAME.match(path.name))
     ]
     return sorted(numbers)
+
+
+# --- P8 T4 分级预检（D4）：error 阻断三要素拒绝，warning 不阻断进 details ---
+
+
+def _reject_wrong_stage(stage: str, chapter: int) -> ToolInputError:
+    return ToolInputError(
+        f"当前阶段是 {stage}，第{chapter}章写入被拒。"
+        "为什么错：正文写作只在 writing/revising 阶段开放；"
+        "intake/bible_drafting 阶段的工作是把设定建齐并经作者确认，"
+        "现在动笔会写出没有 Bible 约束的正文。"
+        "怎样算对：Bible 总览经作者明确确认后，用 "
+        "story_stage(action='advance', reason=...) 推进到 writing 再动笔。"
+    )
+
+
+def _reject_missing_outline(chapter: int) -> ToolInputError:
+    return ToolInputError(
+        f"第{chapter}章不在章纲账本中，写入被拒。"
+        "为什么错：章纲是长篇的分页记忆，每章动笔前须有章纲锚定节拍与伏笔计划。"
+        f"怎样算对：先 bible_upsert(entity_type='outline', data={{name: 本章标题, "
+        f"chapter: {chapter}, beats: [...]}}) 建章纲，再写正文；"
+        "正文落盘后章纲状态会自动推进。"
+    )
+
+
+def _reject_no_characters(chapter: int) -> ToolInputError:
+    return ToolInputError(
+        f"工作区没有任何角色档案，第{chapter}章写入被拒。"
+        "为什么错：角色未建档不开写——人物是所有线索、动机与不在场证明的载体，"
+        "没有角色卡的正文无法与 Bible 对账。"
+        "怎样算对：先 bible_upsert(entity_type='character', data={name: ..., "
+        "identity: ...}) 逐个建档，再动笔。"
+    )
+
+
+def _run_prechecks(
+    workspace: StoryWorkspace, chapter: int
+) -> tuple[list[OutlineEntry], OutlineEntry, list[str]]:
+    """分级预检（D4）：返回章纲整表、目标条目与 warning 列表；error 直接抛出。
+
+    顺序即优先级：阶段门（外层）→ 章纲门 → 角色门 → warning 收集。
+    整表随条目一并返回（落盘后推进状态复用同一列表，避免二次读盘）。
+    """
+    stage = load_story_doc(workspace).stage
+    if stage not in _WRITING_STAGES:
+        raise _reject_wrong_stage(stage, chapter)
+
+    outlines = load_ledger(workspace.outline_path, OutlineEntry)
+    entry = next((e for e in outlines if e.chapter == chapter), None)
+    if entry is None:
+        raise _reject_missing_outline(chapter)
+
+    if not list_characters(workspace):
+        raise _reject_no_characters(chapter)
+
+    warnings: list[str] = []
+    methods = load_ledger(workspace.method_path, Method)
+    if methods:
+        locked = sum(1 for m in methods if m.status == "locked")
+        if locked < len(methods):
+            warnings.append(
+                f"手法未全部锁定（{locked}/{len(methods)}）：诡计未冻结时写的正文"
+                "可能与最终手法矛盾，建议先 method_lock。"
+            )
+    foreshadows = {f.name: f for f in load_ledger(workspace.foreshadows_path, Foreshadow)}
+    for name in entry.plant_plans:
+        foreshadow = foreshadows.get(name)
+        if foreshadow is None:
+            warnings.append(
+                f"伏笔「{name}」未建档：章纲计划埋设但伏笔账本没有该条目，"
+                "写完后无法对账，建议先 bible_upsert(entity_type='foreshadow')。"
+            )
+        elif foreshadow.status == "planned":
+            warnings.append(
+                f"伏笔「{name}」仍为 planned：本章埋设后记得用 bible_upsert 把状态推进到 planted。"
+            )
+    return outlines, entry, warnings
+
+
+def _advance_outline(
+    workspace: StoryWorkspace, outlines: list[OutlineEntry], entry: OutlineEntry, force: bool
+) -> str:
+    """落盘后推进该章 outline 状态（D3）：正文是 SSOT，工具层自动对账。
+
+    planned→written（首写）；force 覆盖 written→revised（修订轮）；
+    revised 保持。返回推进后的状态。
+    """
+    if entry.status == "planned":
+        entry.status = "written"
+    elif force and entry.status == "written":
+        entry.status = "revised"
+    save_ledger(workspace.outline_path, outlines)
+    return entry.status
 
 
 def create_chapter_tools(
@@ -111,6 +220,9 @@ def create_chapter_tools(
                 "变更段，用 bible_upsert 把叙事影响落进账本。"
             )
 
+        # P8 T4 分级预检（D4）：error 阻断，warning 进 details 不阻断
+        outlines, outline_entry, precheck_warnings = _run_prechecks(workspace, chapter)
+
         workspace.ensure_dirs()
         path = workspace.chapters_dir / f"ch{chapter:02d}.md"
         if path.exists() and not force:
@@ -119,9 +231,18 @@ def create_chapter_tools(
         if isinstance(title, str) and title.strip():
             heading += f" {title.strip()}"
         path.write_text(f"{heading}\n\n{content.rstrip()}\n", encoding="utf-8")
+        outline_status = _advance_outline(workspace, outlines, outline_entry, force)
+        details: dict[str, JSONValue] = {
+            "path": str(path),
+            "chapter": chapter,
+            "force": force,
+            "outline_status": outline_status,
+        }
+        if precheck_warnings:
+            details["precheck_warnings"] = cast("JSONValue", precheck_warnings)
         return AgentToolResult(
             content=[TextContent(text=f"第{chapter}章已写入 {path}（{len(content)} 字）")],
-            details={"path": str(path), "chapter": chapter, "force": force},
+            details=details,
         )
 
     async def execute_read(
@@ -189,6 +310,9 @@ def create_chapter_tools(
             label="写入章节",
             description=(
                 "把一章正文写入 chapters/chNN.md（NN 为两位数章节号）。"
+                "仅在 writing/revising 阶段开放，且该章须已有章纲（outline）、"
+                "工作区已有角色档案；落盘后自动推进该章章纲状态"
+                "（planned→written，force 重写→revised）。"
                 "文件已存在时须 force=true 才覆盖。"
             ),
             parameters={
@@ -204,9 +328,12 @@ def create_chapter_tools(
             },
             execute_fn=execute_write,
             prompt_guidelines=(
-                "写章节前，确认出场角色都已用 bible_upsert 落盘。",
+                "写章节前，先用 bible_query(entity_type='outline') 核对本章章纲"
+                "与相关设定，确认出场角色都已建档。",
                 "写新章（非第 1 章）前，先用 read_chapter 读上一章的结尾，保持情节衔接。",
                 "回收伏笔或引用旧情节前，先 read_chapter 核对相关章节的原文细节。",
+                "result 的 precheck_warnings 是写作注意项（伏笔未建档/手法未锁定等），"
+                "落盘后按提示用 bible_upsert 对账。",
                 "content 只写纯正文（Markdown），章节标题由工具自动生成。",
             ),
             render_call=_render_call,
