@@ -74,10 +74,10 @@ export default function ChapterPaper({
       <ReadBody paragraphs={paragraphs} />
     ) : null;
   return (
-    <article className="relative mx-auto w-full max-w-[680px] rounded bg-parchment px-[52px] pt-10 pb-7 text-parchment-ink shadow-[0_12px_40px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.4)]">
+    <article className="relative mx-auto w-full max-w-[680px] rounded bg-parchment px-6 pt-10 pb-7 text-parchment-ink shadow-[0_12px_40px_rgba(0,0,0,0.5),0_2px_8px_rgba(0,0,0,0.4)] lg:px-[52px]">
       <div
         aria-hidden
-        className="pointer-events-none absolute left-[52px] right-[52px] top-[26px] h-px bg-gradient-to-r from-transparent via-parchment-line to-transparent"
+        className="pointer-events-none absolute left-6 right-6 top-[26px] h-px bg-gradient-to-r from-transparent via-parchment-line to-transparent lg:left-[52px] lg:right-[52px]"
       />
       {/* 右上角章内字数徽注（D4）：分隔线右端点之外，不与标题争位。 */}
       <span className="absolute right-4 top-[9px] text-[10px] text-parchment-mute">

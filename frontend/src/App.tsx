@@ -27,6 +27,7 @@ import SettingsPanel from "./components/SettingsPanel";
 import Splitter, { loadStoredWidth } from "./components/Splitter";
 import type { CommandType } from "./api/types";
 import type { ConnectionStatus } from "./api/socket";
+import { BREAKPOINTS } from "./layout";
 import { useChatStore } from "./state/store";
 import { chapterProgress, ledgerSummary, stageMeta } from "./state/story";
 import { useAgentSocket } from "./state/useAgentSocket";
@@ -92,6 +93,40 @@ async function bootWorkspaces(): Promise<boolean> {
   return true;
 }
 
+/**
+ * 对话面板内容（P9 T8，D6）：lg+ 常驻栏与 <lg 抽屉共用一份接线，
+ * ChatHeader/对话流/输入笼三件套只在此处维护。
+ */
+function ChatPanel({
+  slug,
+  running,
+  onResetDone,
+  stage,
+  onRetrySync,
+  onSendPrompt,
+  onComposerCommand,
+  onAbort,
+}: {
+  slug: string;
+  running: boolean;
+  onResetDone: () => void;
+  stage: string | null;
+  onRetrySync: (chapter: string) => void;
+  onSendPrompt: (message: string) => void;
+  onComposerCommand: (type: CommandType, message: string) => Promise<void>;
+  onAbort: () => Promise<void>;
+}) {
+  return (
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <ChatHeader slug={slug} running={running} onResetDone={onResetDone} />
+      <ErrorBoundary label="对话">
+        <ChatStream onRetrySync={onRetrySync} stage={stage} onSendPrompt={onSendPrompt} />
+      </ErrorBoundary>
+      <Composer sendCommand={onComposerCommand} abort={onAbort} />
+    </section>
+  );
+}
+
 export default function App() {
   const { reconnect, sendCommand } = useAgentSocket();
   const status = useChatStore((s) => s.status);
@@ -110,8 +145,20 @@ export default function App() {
     loadStoredWidth(BIBLE_WIDTH_KEY, BIBLE_DEFAULT_WIDTH),
   );
   const [bibleDrawerOpen, setBibleDrawerOpen] = useState(false);
+  const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   // 生命周期快照（P8 T7，D7）：顶栏阶段徽章 + 章节进度；连接时 + 每次 run 结束 refetch。
   const [story, setStory] = useState<StoryWire | null>(null);
+  // 布局断点事实源（P9 T8，D6）：lg=1024 常驻监听；<lg 对话强制抽屉形态，
+  // 忽略 chatCollapsed 与 Splitter。初值与 layout.ts 断点值同源。
+  const [isWide, setIsWide] = useState(() =>
+    window.matchMedia(`(min-width: ${BREAKPOINTS.lg}px)`).matches,
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(`(min-width: ${BREAKPOINTS.lg}px)`);
+    const onChange = () => setIsWide(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
 
   // 启动：拉工作区列表并恢复/选择工作区（失败走顶部错误条，可重试）；
   // 无任何文章 → 直接落到「文章」页引导新建（T14）。
@@ -172,6 +219,19 @@ export default function App() {
       );
     },
     [sendCommand],
+  );
+
+  // 对话发送统一出口（P9 T8 抽出）：idle 走 prompt、运行中走 steer；
+  // 服务端拒绝文案原样进连接错误条。
+  const sendPrompt = useCallback(
+    (message: string) => {
+      void sendCommand(running ? "steer" : "prompt", message).catch((exc: unknown) =>
+        useChatStore
+          .getState()
+          .setConnectionError(exc instanceof Error ? exc.message : String(exc)),
+      );
+    },
+    [running, sendCommand],
   );
 
   return (
@@ -343,62 +403,66 @@ export default function App() {
           >
             账本
           </button>
-          {chatCollapsed ? (
+          {/* <lg 对话左缘抽屉把手（P9 T8，D6）：与账本把手对称，正文唯一常驻。 */}
+          {!isWide && (
             <button
               type="button"
-              onClick={() => setChatCollapsed(false)}
-              aria-label="展开对话"
-              className="flex w-7 flex-none flex-col items-center gap-2 border-r border-line bg-ink-soft/35 py-3 text-[10px] tracking-widest text-gold-soft transition-colors hover:text-gold"
+              onClick={() => setChatDrawerOpen(true)}
+              aria-label="打开对话"
+              className="fixed left-0 top-1/2 z-30 -translate-y-1/2 border border-l-0 border-line bg-ink-soft/90 px-0.5 py-3 text-[10px] tracking-widest text-gold-soft transition-colors hover:text-gold"
               style={{ writingMode: "vertical-rl" }}
             >
               主编对话
             </button>
-          ) : (
-            <>
-              <aside
-                className="relative flex min-w-0 flex-none flex-col overflow-hidden bg-ink-soft/35"
-                style={{ width: chatWidth }}
+          )}
+          {isWide && (
+            chatCollapsed ? (
+              <button
+                type="button"
+                onClick={() => setChatCollapsed(false)}
+                aria-label="展开对话"
+                className="flex w-7 flex-none flex-col items-center gap-2 border-r border-line bg-ink-soft/35 py-3 text-[10px] tracking-widest text-gold-soft transition-colors hover:text-gold"
+                style={{ writingMode: "vertical-rl" }}
               >
-                <button
-                  type="button"
-                  onClick={() => setChatCollapsed(true)}
-                  aria-label="折叠对话"
-                  title="折叠对话"
-                  className="absolute right-1.5 top-1.5 z-10 border border-line bg-ink px-1.5 py-0.5 text-[10px] text-paper/50 transition-colors hover:text-gold"
+                主编对话
+              </button>
+            ) : (
+              <>
+                <aside
+                  className="relative flex min-w-0 flex-none flex-col overflow-hidden bg-ink-soft/35"
+                  style={{ width: chatWidth }}
                 >
-                  ‹
-                </button>
-                <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  <ChatHeader slug={slug} running={running} onResetDone={reconnect} />
-                  <ErrorBoundary label="对话">
-                    <ChatStream
-                      onRetrySync={retrySync}
-                      stage={story?.stage ?? null}
-                      onSendPrompt={(message) =>
-                        sendCommand(running ? "steer" : "prompt", message).catch((exc: unknown) =>
-                          useChatStore
-                            .getState()
-                            .setConnectionError(exc instanceof Error ? exc.message : String(exc)),
-                        )
-                      }
-                    />
-                  </ErrorBoundary>
-                  <Composer
-                    sendCommand={(type: CommandType, message: string) =>
+                  <button
+                    type="button"
+                    onClick={() => setChatCollapsed(true)}
+                    aria-label="折叠对话"
+                    title="折叠对话"
+                    className="absolute right-1.5 top-1.5 z-10 border border-line bg-ink px-1.5 py-0.5 text-[10px] text-paper/50 transition-colors hover:text-gold"
+                  >
+                    ‹
+                  </button>
+                  <ChatPanel
+                    slug={slug}
+                    running={running}
+                    onResetDone={reconnect}
+                    stage={story?.stage ?? null}
+                    onRetrySync={retrySync}
+                    onSendPrompt={sendPrompt}
+                    onComposerCommand={(type: CommandType, message: string) =>
                       sendCommand(type, message)
                     }
-                    abort={() => sendCommand("abort")}
+                    onAbort={() => sendCommand("abort")}
                   />
-                </section>
-              </aside>
-              <Splitter
-                side="left"
-                width={chatWidth}
-                onWidthChange={setChatWidth}
-                defaultWidth={CHAT_DEFAULT_WIDTH}
-                storageKey={CHAT_WIDTH_KEY}
-              />
-            </>
+                </aside>
+                <Splitter
+                  side="left"
+                  width={chatWidth}
+                  onWidthChange={setChatWidth}
+                  defaultWidth={CHAT_DEFAULT_WIDTH}
+                  storageKey={CHAT_WIDTH_KEY}
+                />
+              </>
+            )
           )}
           <ErrorBoundary label="正文">
             <ManuscriptPanel onSyncChapter={retrySync} />
@@ -444,6 +508,42 @@ export default function App() {
                     <BiblePanel onExpand={() => setView("ledger")} />
                   </ErrorBoundary>
                 </div>
+              </aside>
+            </div>
+          )}
+          {/* <lg 对话抽屉覆盖层（P9 T8，D6）：左缘 fixed overlay，w-80 定宽，
+              遮罩/× 关闭；ChatPanel 与常驻栏共用。 */}
+          {chatDrawerOpen && !isWide && (
+            <div className="fixed inset-0 z-40">
+              <div
+                className="absolute inset-0 bg-ink/70"
+                onClick={() => setChatDrawerOpen(false)}
+                aria-hidden="true"
+              />
+              <aside className="absolute inset-y-0 left-0 flex w-80 max-w-[85vw] flex-col border-r border-line bg-ink">
+                <div className="flex flex-none items-center justify-between border-b border-line px-3 py-2">
+                  <span className="text-xs tracking-widest text-gold-soft">主编对话</span>
+                  <button
+                    type="button"
+                    onClick={() => setChatDrawerOpen(false)}
+                    aria-label="关闭对话"
+                    className="border border-line px-1.5 text-xs text-paper/60 transition-colors hover:text-gold"
+                  >
+                    ×
+                  </button>
+                </div>
+                <ChatPanel
+                  slug={slug}
+                  running={running}
+                  onResetDone={reconnect}
+                  stage={story?.stage ?? null}
+                  onRetrySync={retrySync}
+                  onSendPrompt={sendPrompt}
+                  onComposerCommand={(type: CommandType, message: string) =>
+                    sendCommand(type, message)
+                  }
+                  onAbort={() => sendCommand("abort")}
+                />
               </aside>
             </div>
           )}
