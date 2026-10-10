@@ -25,6 +25,7 @@ from hastings.settings import load_settings
 from hastings.tools.bible_tools import ENTITY_LABELS, create_bible_tools, entity_summary
 from hastings.tools.chapter_tools import create_chapter_tools
 from hastings.tools.method_tools import create_method_tools
+from hastings.tools.story_tools import create_story_tools
 from hastings.tools.timeline_tools import create_timeline_tools
 from tau_agent.events import (
     AgentEndEvent,
@@ -128,6 +129,7 @@ def create_writing_tools(
         + create_chapter_tools(workspace, edit_marks=edit_marks, run_kind=run_kind)
         + create_method_tools(workspace)
         + create_timeline_tools(workspace)
+        + create_story_tools(workspace)
     )
 
 
