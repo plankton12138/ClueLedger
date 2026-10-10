@@ -11,8 +11,9 @@ PUT chapters/{id}（归档 + 锁 + 乐观并发）；POST /api/workspaces 只是
 
 import io
 import json
+import re
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import httpx
@@ -172,6 +173,7 @@ def test_rest_providers_lists_profiles_with_masked_keys(root: Path) -> None:
                 "default_model": "deepseek-chat",
                 "key_hint": "…5678",
                 "available": True,
+                "no_auth": False,
             },
             {
                 "name": "nokey",
@@ -179,6 +181,7 @@ def test_rest_providers_lists_profiles_with_masked_keys(root: Path) -> None:
                 "default_model": "",
                 "key_hint": "",
                 "available": False,
+                "no_auth": False,
             },
         ]
     }
@@ -1481,3 +1484,103 @@ def test_rest_delete_workspace_not_assembled_skips_running_check(root: Path) -> 
     response = _client(root).delete(f"/api/workspaces/{SLUG}?confirm={SLUG}")
 
     assert response.status_code == 204
+
+
+# --- POST /api/{slug}/session/reset（P9 T5，D4）：归档 + 留痕 + 重建 ---
+
+
+def _counting_registry(root: Path) -> tuple[WorkspaceRegistry, Callable[[], int]]:
+    """工厂调用计数注册表（验证 reset 后发生 rebuild 重装配）。"""
+    calls = 0
+
+    async def factory(workspace: StoryWorkspace) -> StubSession:
+        nonlocal calls
+        del workspace
+        calls += 1
+        return StubSession()
+
+    return WorkspaceRegistry(root=root, session_factory=factory), lambda: calls
+
+
+def test_reset_session_archives_file_logs_and_rebuilds(root: Path) -> None:
+    workspace = StoryWorkspace(root=root, slug=SLUG)
+    workspace.ensure_dirs()
+    session_path = session_file(workspace)
+    session_path.write_text("旧会话", encoding="utf-8")
+    chapter = workspace.chapters_dir / "ch01.md"
+    chapter.write_text("# 第1章\n\n正文。\n", encoding="utf-8")
+
+    registry, factory_calls = _counting_registry(root)
+    response = TestClient(create_app(registry)).post(f"/api/{SLUG}/session/reset")
+
+    assert response.status_code == 200
+    archived_name = response.json()["archived"]
+    assert re.fullmatch(r"session-\d{8}-\d{6}\.jsonl", archived_name) is not None
+    # 原会话已删、归档内容保留
+    assert not session_path.exists()
+    assert (workspace.story_dir / archived_name).read_text(encoding="utf-8") == "旧会话"
+    # 正文不动
+    assert chapter.read_text(encoding="utf-8") == "# 第1章\n\n正文。\n"
+    # get_or_create 一次 + rebuild 一次
+    assert factory_calls() == 2
+    # reset 留痕进 events.jsonl
+    records = [
+        json.loads(line) for line in events_file(workspace).read_text(encoding="utf-8").splitlines()
+    ]
+    reset_records = [record for record in records if record["type"] == "session_reset"]
+    assert len(reset_records) == 1
+    assert reset_records[0]["data"]["archived"] == archived_name
+
+
+def test_reset_session_without_file_succeeds_archived_null(root: Path) -> None:
+    """会话从未落盘：archived=null，仍留痕、仍重建。"""
+    response = _client(root).post(f"/api/{SLUG}/session/reset")
+
+    assert response.status_code == 200
+    assert response.json() == {"slug": SLUG, "archived": None}
+    workspace = StoryWorkspace(root=root, slug=SLUG)
+    records = [
+        json.loads(line) for line in events_file(workspace).read_text(encoding="utf-8").splitlines()
+    ]
+    assert any(
+        record["type"] == "session_reset" and record["data"]["archived"] is None
+        for record in records
+    )
+
+
+def test_reset_session_while_running_returns_409(root: Path) -> None:
+    """running → 409；会话文件原样保留、不留 reset 痕迹。"""
+    workspace = StoryWorkspace(root=root, slug=SLUG)
+    workspace.ensure_dirs()
+    session_file(workspace).write_text("旧会话", encoding="utf-8")
+    client = TestClient(create_app(stub_registry(root, session=_RunningSession())))
+    client.get(f"/api/{SLUG}/state")  # 预热装配
+
+    response = client.post(f"/api/{SLUG}/session/reset")
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "写作流进行中" in detail
+    assert "为什么错" in detail
+    assert "怎样算对" in detail
+    # 文件未动、归档未发生
+    assert session_file(workspace).read_text(encoding="utf-8") == "旧会话"
+    assert list(workspace.story_dir.glob("session-*.jsonl")) == []
+
+
+def test_reset_session_io_failure_returns_500(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """归档 OSError → 500 归因环境；旧会话文件不动。"""
+    workspace = StoryWorkspace(root=root, slug=SLUG)
+    workspace.ensure_dirs()
+    session_file(workspace).write_text("旧会话", encoding="utf-8")
+
+    def raising(_path: Path) -> Path:
+        raise OSError("disk gone")
+
+    monkeypatch.setattr("hastings.server.rest.archive_session_file", raising)
+
+    response = _client(root).post(f"/api/{SLUG}/session/reset")
+
+    assert response.status_code == 500
+    assert "文件系统错误" in response.json()["detail"]
+    assert session_file(workspace).exists()

@@ -12,9 +12,11 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from hastings.bible.store import StoryWorkspace
@@ -26,6 +28,7 @@ from tau_agent.session.jsonl import SessionJsonlError
 
 __all__ = [
     "SessionLoad",
+    "archive_session_file",
     "attach_session_storage",
     "load_session_messages",
     "quarantine_session_file",
@@ -49,6 +52,26 @@ def quarantine_session_file(session_path: Path) -> Path | None:
     backup = session_path.with_name(f"{session_path.name}.bad-{session_path.stat().st_mtime_ns}")
     session_path.rename(backup)
     return backup
+
+
+def archive_session_file(session_path: Path) -> Path | None:
+    """会话文件复制为时间戳副本后删除原文件（P9 D4 reset 专用）。
+
+    语义：归档保留（磁盘可找回），原会话随后经 registry.rebuild 重装配为空会话。
+    先复制后删除——复制失败原文件不动；同名归档（同秒内多次 reset）追加序号。
+    文件不存在（会话从未落盘）→ noop，调用方照常重装配。
+    """
+    if not session_path.exists():
+        return None
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = session_path.with_name(f"session-{stamp}.jsonl")
+    counter = 1
+    while target.exists():
+        target = session_path.with_name(f"session-{stamp}-{counter}.jsonl")
+        counter += 1
+    shutil.copy2(session_path, target)
+    session_path.unlink()
+    return target
 
 
 async def load_session_messages(session_path: Path) -> SessionLoad:

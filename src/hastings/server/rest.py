@@ -13,10 +13,11 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import zipfile
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
@@ -25,7 +26,7 @@ from typing import Final, Literal
 import httpx
 import yaml
 from fastapi import APIRouter, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, SecretStr, ValidationError
 
 from hastings.bible.audit import AuditRatio, build_audit_report
@@ -50,6 +51,13 @@ from hastings.rag.corpus_store import (
     CorpusStore,
 )
 from hastings.rag.style_profile import build_style_profile
+from hastings.server.ollama import (
+    OLLAMA_INSTALL_URL,
+    OLLAMA_MODEL_CATALOG,
+    OllamaClient,
+    OllamaError,
+    is_valid_model_name,
+)
 from hastings.server.provider_config import (
     ProviderBook,
     ProviderProfile,
@@ -60,7 +68,7 @@ from hastings.server.provider_config import (
 )
 from hastings.server.registry import WorkspaceExistsError, WorkspaceRegistry
 from hastings.server.session import WritingSession
-from hastings.session_persist import session_file
+from hastings.session_persist import archive_session_file, session_file
 from hastings.settings import (
     DEFAULT_PROVIDER_PROFILE,
     WRITING_LANGUAGES,
@@ -261,6 +269,13 @@ class WorkspaceCreatedResponse(BaseModel):
     slug: str
 
 
+class SessionResetResponse(BaseModel):
+    """新会话结果（P9 D4）：归档文件名（null = 原会话从未落盘）。"""
+
+    slug: str
+    archived: str | None
+
+
 class SettingsResponse(BaseModel):
     # REST 沿用 model_dump() 无别名口径 → wire 上是 snake_case
     writing_language: str
@@ -284,6 +299,7 @@ class ProviderSummary(BaseModel):
     default_model: str
     key_hint: str
     available: bool
+    no_auth: bool = False
 
 
 class ProvidersResponse(BaseModel):
@@ -318,6 +334,8 @@ class ProviderUpsertRequest(BaseModel):
     api_key: str = ""
     api_key_env: str = ""
     default_model: str = ""
+    # 免密端点（本地模型如 Ollama）：true 时档案无 key 也算可用
+    no_auth: bool = False
 
 
 class ProviderTestRequest(BaseModel):
@@ -326,6 +344,43 @@ class ProviderTestRequest(BaseModel):
     base_url: str = Field(min_length=1)
     api_key: str = ""
     api_key_env: str = ""
+
+
+class OllamaStatusResponse(BaseModel):
+    """Ollama 三态检测结果（本地模型，D11）：不可达是结果数据非错误，恒 200。"""
+
+    state: Literal["running", "installed_not_running", "not_installed"]
+    version: str
+    base_url: str
+    install_url: str
+
+
+class OllamaCatalogEntryResponse(BaseModel):
+    """预置清单条目：一键下载卡片的展示数据（纯公开信息，服务端管理）。"""
+
+    name: str
+    params: str
+    size_label: str
+    note: str
+
+
+class OllamaCatalogResponse(BaseModel):
+    catalog: list[OllamaCatalogEntryResponse]
+
+
+class OllamaModelInfoResponse(BaseModel):
+    """一个已安装模型：/api/tags 的 name + size。"""
+
+    name: str
+    size_bytes: int
+
+
+class OllamaModelsResponse(BaseModel):
+    models: list[OllamaModelInfoResponse]
+
+
+class OllamaPullRequest(BaseModel):
+    model: str
 
 
 class ModelsResponse(BaseModel):
@@ -561,15 +616,19 @@ def create_rest_router(
     book: ProviderBook | None = None,
     model_transport: httpx.AsyncBaseTransport | None = None,
     corpus_root: Path | None = None,
+    ollama_transport: httpx.AsyncBaseTransport | None = None,
+    installed_probe: Callable[[], bool] | None = None,
 ) -> APIRouter:
     """装配 REST 路由（P6 T2：``book`` 提供档案目录与跨档案重建工厂）。
 
     ``book`` 缺省时按 env 回落单档案新建（测试 / 纯 API 模式；与启动装配同源）。
     ``model_transport`` 仅供测试注入 MockTransport，生产为 None（走真实网络）。
     ``corpus_root`` 语料目录（P7 T6，D6）：缺省 ./corpus（服务级，与 stories/ 平级）。
+    ``ollama_transport``（本地模型）与 ``installed_probe`` 仅供测试注入，生产为 None。
     """
     router = APIRouter()
     corpus = CorpusStore(root=corpus_root if corpus_root is not None else Path("./corpus"))
+    ollama = OllamaClient(transport=ollama_transport)
     fallback_book: ProviderBook | None = None
 
     def _book() -> ProviderBook:
@@ -639,6 +698,7 @@ def create_rest_router(
                     default_model=profile.default_model,
                     key_hint=mask_key(profile.resolved_api_key()),
                     available=profile.available,
+                    no_auth=profile.no_auth,
                 )
                 for profile in _book().config.providers
             ]
@@ -685,6 +745,7 @@ def create_rest_router(
             default_model=profile.default_model,
             key_hint=mask_key(profile.resolved_api_key()),
             available=profile.available,
+            no_auth=profile.no_auth,
         )
 
     def _persist_book(new_config: ServerConfig) -> None:
@@ -739,6 +800,7 @@ def create_rest_router(
                 api_key=SecretStr(body.api_key),
                 api_key_env=body.api_key_env,
                 default_model=body.default_model,
+                no_auth=body.no_auth,
             )
             others = list(book.config.providers)
         else:
@@ -749,6 +811,7 @@ def create_rest_router(
                 api_key=SecretStr(body.api_key) if body.api_key else existing.api_key,
                 api_key_env=body.api_key_env,
                 default_model=body.default_model,
+                no_auth=body.no_auth,
             )
             others = [p for p in book.config.providers if p.name != name]
         _persist_book(ServerConfig(providers=[*others, profile]))
@@ -812,6 +875,104 @@ def create_rest_router(
         except ModelDiscoveryError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
         return ModelsResponse(models=models)
+
+    # ---- Ollama 本地模型（D11）：检测 / 目录 / 已装 / 下载流 / 删除 ----
+    # 服务级关注点，不绑定 slug；进度走流式 NDJSON 响应（fetch + ReadableStream
+    # 消费、AbortController 可取消），不挂 /ws/{slug} 会话通道。
+    # 泄压阀：模型名不合法 422 / Ollama 不可达与上游故障 502 / 未装 404；
+    # status 恒 200（三态是结果数据不是错误）。
+
+    @router.get("/api/ollama/status", response_model=OllamaStatusResponse)
+    async def ollama_status() -> OllamaStatusResponse:
+        state, version = await ollama.detect(installed_probe)
+        return OllamaStatusResponse(
+            state=state,
+            version=version,
+            base_url=ollama.base_url,
+            install_url=OLLAMA_INSTALL_URL,
+        )
+
+    @router.get("/api/ollama/catalog", response_model=OllamaCatalogResponse)
+    async def ollama_catalog() -> OllamaCatalogResponse:
+        """预置推荐模型清单（纯静态数据，Qwen 小杯系列）。"""
+        return OllamaCatalogResponse(
+            catalog=[
+                OllamaCatalogEntryResponse(
+                    name=preset.name,
+                    params=preset.params,
+                    size_label=preset.size_label,
+                    note=preset.note,
+                )
+                for preset in OLLAMA_MODEL_CATALOG
+            ]
+        )
+
+    @router.get("/api/ollama/models", response_model=OllamaModelsResponse)
+    async def ollama_models() -> OllamaModelsResponse:
+        try:
+            models = await ollama.tags()
+        except OllamaError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        return OllamaModelsResponse(
+            models=[OllamaModelInfoResponse(name=m.name, size_bytes=m.size_bytes) for m in models]
+        )
+
+    @router.post("/api/ollama/pull")
+    async def ollama_pull(body: OllamaPullRequest) -> StreamingResponse:
+        """一键下载模型：转发 Ollama /api/pull 的 NDJSON 进度流。
+
+        帧口径（归一化后）：``{"status": str, "completed"?: int, "total"?: int}``，
+        终帧为 Ollama 原生 ``{"status": "success"}``；中途 Ollama 报错则补一帧
+        ``{"error": <三要素>}`` 后结束流。下载在 Ollama 侧继续——前端断开后
+        重新发起同一 pull 即幂等续传。
+        """
+        name = body.model.strip()
+        if not is_valid_model_name(name):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"模型名不合法：{body.model!r}。"
+                    "为什么错：Ollama 模型名只允许字母数字开头，"
+                    "可含 . _ / - 与 :tag（如 qwen3:4b、llama3.2）。"
+                    "怎样算对：到 ollama.com/library 查准确模型名后重试。"
+                ),
+            )
+        try:
+            await ollama.version()  # 开流前先探活：连不上归 502 而非断流
+        except OllamaError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+        async def frames() -> AsyncIterator[str]:
+            try:
+                async for progress in ollama.pull(name):
+                    frame: dict[str, JSONValue] = {"status": progress.status}
+                    if progress.completed is not None:
+                        frame["completed"] = progress.completed
+                    if progress.total is not None:
+                        frame["total"] = progress.total
+                    yield json.dumps(frame, ensure_ascii=False) + "\n"
+            except OllamaError as exc:
+                yield json.dumps({"error": exc.detail}, ensure_ascii=False) + "\n"
+
+        return StreamingResponse(frames(), media_type="application/x-ndjson")
+
+    @router.delete("/api/ollama/models/{name}", status_code=204)
+    async def ollama_delete(name: str) -> Response:
+        if not is_valid_model_name(name):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"模型名不合法：{name!r}。"
+                    "为什么错：Ollama 模型名只允许字母数字开头，"
+                    "可含 . _ / - 与 :tag。"
+                    "怎样算对：用 GET /api/ollama/models 列出的模型名原样请求。"
+                ),
+            )
+        try:
+            await ollama.delete_model(name)
+        except OllamaError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        return Response(status_code=204)
 
     @router.post(
         "/api/workspaces",
@@ -884,6 +1045,42 @@ def create_rest_router(
             )
         registry.delete(slug)
         return Response(status_code=204)
+
+    @router.post("/api/{slug}/session/reset", response_model=SessionResetResponse)
+    async def reset_session(slug: str) -> SessionResetResponse:
+        """开新会话（P9 D4）：归档旧 session.jsonl + registry.rebuild 空会话。
+
+        正文 / 账本 / events.jsonl 不动（reset 本身在此留痕一条 session_reset）；
+        running → 409；归档 IO 故障 → 500（先复制后删除，旧文件不受影响）。
+        """
+        session = await _session(slug)  # 守门：slug 校验 + 确保装配
+        if session.is_running:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"开新会话被拒：工作区 {slug} 有写作流进行中。"
+                    "为什么错：归档进行中的会话会打断本轮生成。"
+                    "怎样算对：先等写作流结束（或中止本轮生成）再开新会话。"
+                ),
+            )
+        workspace = _workspace(slug)
+        try:
+            archived = archive_session_file(session_file(workspace))
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"会话归档失败（{slug}）：文件系统错误 {exc}。"
+                    "旧会话文件未受影响（归档先复制后删除），修复磁盘后可重试。"
+                ),
+            ) from exc
+
+        archived_name = archived.name if archived is not None else None
+        event_store = EventStore(events_file(workspace))
+        await event_store.append("session_reset", {"archived": archived_name})
+
+        await registry.rebuild(slug)
+        return SessionResetResponse(slug=slug, archived=archived_name)
 
     @router.get("/api/{slug}/state", response_model=StateResponse)
     async def state(slug: str) -> StateResponse:

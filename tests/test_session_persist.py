@@ -4,9 +4,12 @@ JsonlSessionStorage 是 tau 现成组件，本模块验证三件事：
 ① Windows + asyncio 下文件锁探路（append/read_all 最小闭环）；
 ② attach 后 message_end 事件落盘、load 后消息历史一致（含 user 消息）；
 ③ 坏文件泄压阀：改名备份 + 中文指引，不静默丢。
+P9 T5 追加 archive_session_file 归档语义测试。
 """
 
+import re
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +18,7 @@ import pytest
 from hastings.bible.store import StoryWorkspace
 from hastings.prompts import build_system_prompt
 from hastings.session_persist import (
+    archive_session_file,
     attach_session_storage,
     load_session_messages,
     quarantine_session_file,
@@ -80,6 +84,47 @@ def make_harness(tmp_path: Path) -> Callable[[], AgentHarness]:
         )
 
     return factory
+
+
+# --- archive_session_file（P9 T5，D4）：归档保留、原文件删除、撞名加序号 ---
+
+
+def test_archive_session_file_returns_none_when_missing(session_path: Path) -> None:
+    assert archive_session_file(session_path) is None
+
+
+def test_archive_session_file_copies_content_then_removes_original(session_path: Path) -> None:
+    session_path.write_text("旧会话内容", encoding="utf-8")
+
+    archived = archive_session_file(session_path)
+
+    assert archived is not None
+    assert re.fullmatch(r"session-\d{8}-\d{6}\.jsonl", archived.name) is not None
+    assert archived.read_text(encoding="utf-8") == "旧会话内容"
+    assert not session_path.exists()
+
+
+def test_archive_session_file_same_second_collision_gets_suffix(
+    session_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同秒内两次归档：第二份加 -1 序号，两份内容各自保留。"""
+
+    class FrozenDateTime:
+        @classmethod
+        def now(cls) -> datetime:
+            return datetime(2026, 1, 2, 3, 4, 5)
+
+    monkeypatch.setattr("hastings.session_persist.datetime", FrozenDateTime)
+
+    session_path.write_text("第一版", encoding="utf-8")
+    first = archive_session_file(session_path)
+    assert first is not None and first.name == "session-20260102-030405.jsonl"
+
+    session_path.write_text("第二版", encoding="utf-8")
+    second = archive_session_file(session_path)
+    assert second is not None and second.name == "session-20260102-030405-1.jsonl"
+    assert first.read_text(encoding="utf-8") == "第一版"
+    assert second.read_text(encoding="utf-8") == "第二版"
 
 
 @pytest.mark.anyio
