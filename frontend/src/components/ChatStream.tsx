@@ -12,6 +12,7 @@ import type { ChatItem, ToolCardStatus } from "../state/reducer";
 import { toolDetailLines } from "../state/toolSummary";
 import { useChatStore } from "../state/store";
 import SyncCard from "./SyncCard";
+import ThinkingCard from "./ThinkingCard";
 
 const TOOL_STATUS_CLASS: Record<ToolCardStatus, string> = {
   running: "bg-planned",
@@ -166,14 +167,7 @@ function ItemView({ item }: { item: ChatItem }) {
         </div>
       );
     case "thinking":
-      return (
-        <div className="max-w-[85%] border-l-2 border-line px-4 py-2">
-          <p className="text-xs text-gold-soft/70">思路</p>
-          <p className="mt-1 whitespace-pre-wrap break-words text-xs italic leading-relaxed text-paper/50">
-            {item.text}
-          </p>
-        </div>
-      );
+      return <ThinkingCard text={item.text} />;
     case "tool":
       return <ToolCard item={item} />;
     case "error":
@@ -216,12 +210,7 @@ export default function ChatStream({
       {syncCards.map((card, i) => (
         <SyncCard key={`sync-${i}`} entry={card} onRetry={onRetrySync} />
       ))}
-      {thinkingBuffer && (
-        <div className="max-w-[85%] border-l-2 border-line px-4 py-2">
-          <p className="text-xs text-gold-soft/70">思路（流式中）</p>
-          <p className="mt-1 whitespace-pre-wrap break-words text-xs italic text-paper/50">{thinkingBuffer}</p>
-        </div>
-      )}
+      {thinkingBuffer && <ThinkingCard text={thinkingBuffer} streaming />}
       {assistantBuffer && (
         <div className="max-w-[85%] border-l-2 border-gold bg-ink-soft px-4 py-2">
           <AgentLabel />
