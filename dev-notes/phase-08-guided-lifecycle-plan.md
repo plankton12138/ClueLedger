@@ -3,7 +3,7 @@
 > **立项动机**：agent「看不出可用性」——收到完整故事构想后该做什么无人表达：静态 system prompt 不区分工作区阶段，"先 Bible 后正文"只是软约束（write_chapter 无任何预检），outline 章纲账本在 DESIGN §2.2 有规划但未实现，长构想的分解结果（角色小传/线索/时间线）无引导产生。本阶段把「引导 → 确认 → 产出 → 维护」做成系统表达：程序为骨（阶段门/预检/状态注入，70%），提示词为肉（intake 协议，30%）。
 > **用户三项已确认决策**：① P7 收尾后新开 P8「引导式生命周期」，RAG 顺延为 P9；② 状态注入采用 B1（每轮 prompt 前刷新 system，非消息前缀）；③ 接受引入 `react-markdown` 前端依赖。
 > **编号顺延**：RAG（原 P8）→ P9、审计员（原 P9）→ P10、评测（原 P10）→ P11（沿用 P6/P7 顺延先例）。
-> 状态：**已立项，待 P7 收尾后开工**。
+> 状态：**已关闭（2026-10-11）**——T1–T7 全部交付，DoD 八条验收通过，构建笔记见 [phase-08-guided-lifecycle.md](phase-08-guided-lifecycle.md)（含四透镜专节与已知留白）。
 
 本阶段骨架一图——生命周期状态机与工具层硬门（虚线为回退边，绿色为关键硬门）：
 
@@ -161,3 +161,11 @@ WORKFLOW_SECTION 重写为阶段感知协议（配合 D5 注入，prompt 不描�
 | react-markdown 流式渲染性能（长回复频繁重渲） | 组件 memo + 段落级渲染；vitest 长文本用例兜底 |
 | intake 协议被强模型「热心」突破（不等确认就建账） | 门在工具层：未确认阶段 bible_upsert 不拦（建账合法）但 write_chapter 拦——intake 协议违规的代价被限制在「多建了账」而非「写飞了正文」；构建笔记四透镜复盘此边界 |
 | outline 自动推进与作者手改冲突 | 正文是 SSOT（P5 既定）：作者手改经 reconcile 流，outline 状态由下次 write/对账校正 |
+
+## 6. 验收记录（2026-10-11）
+
+- **任务交付**：T1–T7 原子提交 `4a1d0f9` / `245f3cb` / `6585b6a` / `7887066` / `8115457` / `c106ba3` / `612a19b`，逐任务测试先行、七道门全绿后提交；
+- **DoD 八条**：全部通过（逐条证据见 [phase-08-guided-lifecycle.md §6](phase-08-guided-lifecycle.md)）；
+- **质量门复跑**（T7 后）：pytest 573 passed、ruff check/format 0 errors、mypy 77 files clean、tsc 0 errors、vitest 201 passed、build 12.4s、tau 内核 diff 空、零 import tau_coding；
+- **决策落地**：D1–D8 全部按计划落地；唯一偏离——状态汇总函数从计划的 `story_state.py` 改落 `stats.py`（循环导入，见构建笔记 §4）；
+- **已知留白**：真 LLM intake 冒烟走查（P9 前补）、确认交互卡 UI 化、outline 幕级视图、story.yaml 人工编辑入口（构建笔记 §7）。
