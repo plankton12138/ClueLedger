@@ -29,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,6 +47,7 @@ __all__ = [
     "EventStore",
     "categorize",
     "events_file",
+    "make_event_persister",
 ]
 
 EventCategory = Literal["message", "tool", "error"]
@@ -94,6 +95,21 @@ class EventPage:
     has_more: bool
     total: int
     counts: dict[str, int]
+
+
+def make_event_persister(store: EventStore) -> Callable[[AgentEvent], Awaitable[None]]:
+    """事件持久化 listener 工厂（F4）：CLI 与 Web 共用同一入库策略。
+
+    策略单点：``message_update`` 是流式中间态（逐 token delta），不入库；
+    其余全帧落盘。返回 async callable，harness.subscribe 直接可挂。
+    """
+
+    async def persist(event: AgentEvent) -> None:
+        if event.type == "message_update":
+            return
+        await store.append_event(event)
+
+    return persist
 
 
 def events_file(workspace: StoryWorkspace) -> Path:

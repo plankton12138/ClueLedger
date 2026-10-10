@@ -18,6 +18,7 @@ from hastings.bible.store import (
     list_characters,
     load_ledger,
 )
+from hastings.events_store import EventStore, events_file, make_event_persister
 from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
 from hastings.prompts import build_system_prompt
 from hastings.session_persist import restore_and_attach
@@ -106,15 +107,16 @@ class PlainRenderer:
 
 
 def build_harness(workspace: StoryWorkspace, provider: ModelProvider, model: str) -> AgentHarness:
-    """按工作区装配工具集、system prompt 与 harness。
+    """按工作区装配工具集、system prompt、事件账本与 harness。
 
     system 与 HastingsSession.from_workspace 对齐：workspace 传入状态注入
     （P8 T5 补齐）——CLI 冒烟观察到的模型行为必须与 Web 端同链路，否则
-    「intake 协议遵循度」等走查结论不可信。
+    「intake 协议遵循度」等走查结论不可信。事件持久化同理（F4）：在装配点
+    挂 events.jsonl，run_repl 与 eval driver 一处接线两端生效。
     """
     tools = create_writing_tools(workspace)
     language = load_settings(workspace).writing_language
-    return AgentHarness(
+    harness = AgentHarness(
         AgentHarnessConfig(
             provider=provider,
             model=model,
@@ -122,6 +124,8 @@ def build_harness(workspace: StoryWorkspace, provider: ModelProvider, model: str
             tools=tools,
         )
     )
+    harness.subscribe(make_event_persister(EventStore(events_file(workspace))))
+    return harness
 
 
 def create_writing_tools(

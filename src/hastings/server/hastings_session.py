@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from typing import TYPE_CHECKING
 
 from hastings.bible.store import StoryWorkspace
-from hastings.events_store import EventStore, events_file
+from hastings.events_store import EventStore, events_file, make_event_persister
 from hastings.manuscript.diff import DiffHunk
 from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
 from hastings.server.provider_config import ProviderBook
@@ -68,9 +68,10 @@ class HastingsSession:
             debounce_seconds=reconcile_debounce,
         )
         # 事件持久化（P6 T4，D4）：events.jsonl 是全量事件帧的可观测性账本，
-        # 与 session.jsonl（会话记忆）职责分离；构造时挂载，CLI/Web 共用同一单点。
+        # 与 session.jsonl（会话记忆）职责分离；构造时挂载，CLI/Web 共用同一单点
+        # （F4 起入库策略收敛到 make_event_persister）。
         self._events = EventStore(events_file(workspace))
-        self._unsubscribe_events = harness.subscribe(self._persist_event)
+        self._unsubscribe_events = harness.subscribe(make_event_persister(self._events))
         self._unsubscribe_notice_events = self._reconcile.subscribe(self._persist_notice)
 
     @classmethod
@@ -153,12 +154,6 @@ class HastingsSession:
     def events(self) -> EventStore:
         """events.jsonl 账本（P6 T4）：只读分页由 REST 端点直读，此处暴露供接线/测试。"""
         return self._events
-
-    async def _persist_event(self, event: AgentEvent) -> None:
-        """事件流持久化 listener（P6 T4）：message_update 是流式中间态，不入库。"""
-        if event.type == "message_update":
-            return
-        await self._events.append_event(event)
 
     async def _persist_notice(self, notice: ReconcileNotice) -> None:
         """对账进度通知落进事件流（可观测性账本记全貌，含对账三态）。"""
