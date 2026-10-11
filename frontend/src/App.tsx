@@ -8,6 +8,7 @@
  * 记入地址（replaceState），刷新后不丢。文章的增删切换在「文章」页管理（T14）。
  */
 
+import { Feather, Library, PenLine, ScrollText, Settings, Target, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { fetchStory, fetchWorkspaces } from "./api/rest";
 import type { StoryWire } from "./api/rest";
@@ -55,13 +56,13 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
 type View = "studio" | "articles" | "corpus" | "audit" | "events" | "settings" | "ledger";
 
 /** 顶部主导航（P7 D1/T14）：创作台 | 文章 | 语料库 | 审计中心 | 事件流 | 设置。 */
-const NAV_ITEMS: Array<{ key: View; label: string }> = [
-  { key: "studio", label: "✒ 创作台" },
-  { key: "articles", label: "✎ 文章" },
-  { key: "corpus", label: "册 语料库" },
-  { key: "audit", label: "◎ 审计中心" },
-  { key: "events", label: "▤ 事件流" },
-  { key: "settings", label: "⚙ 设置" },
+const NAV_ITEMS: Array<{ key: View; label: string; Icon: LucideIcon }> = [
+  { key: "studio", label: "创作台", Icon: Feather },
+  { key: "articles", label: "文章", Icon: PenLine },
+  { key: "corpus", label: "语料库", Icon: Library },
+  { key: "audit", label: "审计中心", Icon: Target },
+  { key: "events", label: "事件流", Icon: ScrollText },
+  { key: "settings", label: "设置", Icon: Settings },
 ];
 
 /** 选中工作区写进 ?w=（replaceState 不触发导航），刷新后恢复选择。 */
@@ -265,6 +266,7 @@ export default function App() {
                   : "border border-transparent text-paper/75 hover:bg-transparent hover:text-gold"
               }`}
             >
+              <item.Icon className="h-3.5 w-3.5" aria-hidden="true" />
               {item.label}
             </Button>
           ))}
