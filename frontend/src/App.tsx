@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchStory, fetchWorkspaces } from "./api/rest";
 import type { StoryWire } from "./api/rest";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import ArticlesPage from "./components/ArticlesPage";
 import BiblePanel from "./components/BiblePanel";
@@ -268,18 +269,18 @@ export default function App() {
           ))}
         </nav>
         {/* 窄屏（<md）导航折叠为下拉——同一 view 状态，只是呈现收窄（D2 布局不变量）。 */}
-        <select
-          aria-label="页面导航"
-          value={view}
-          onChange={(e) => setView(e.target.value as View)}
-          className="mx-auto border border-line bg-transparent px-1.5 py-1 text-xs text-paper focus:border-gold/60 focus:outline-none md:hidden"
-        >
-          {NAV_ITEMS.map((item) => (
-            <option key={item.key} value={item.key}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+        <Select value={view} onValueChange={(v) => setView(v as View)}>
+          <SelectTrigger aria-label="页面导航" className="mx-auto px-1.5 py-1 text-xs md:hidden">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {NAV_ITEMS.map((item) => (
+              <SelectItem key={item.key} value={item.key}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="ml-auto flex flex-none items-center gap-2.5 text-xs text-paper/60">
           <div className="hidden min-w-0 sm:block">
             <SearchBox />

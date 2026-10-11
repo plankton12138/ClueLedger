@@ -14,6 +14,7 @@ import type { DiffHunkWire } from "../api/rest";
 import { acquireEditMark, fetchChapter, fetchChapters, releaseEditMark, saveChapter } from "../api/rest";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ChapterPaper from "./ChapterPaper";
 import { chapterNumber, countChars, parseChapterHeading, splitParagraphs } from "../state/chapter";
 import { inlineDiff } from "../state/diff";
@@ -221,19 +222,24 @@ export default function ManuscriptPanel({
   return (
     <section className="flex min-w-0 flex-1 flex-col xl:min-w-[320px]">
       <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line bg-ink-soft/50 px-3 py-2 sm:px-4">
-        <select
-          aria-label="章节"
-          value={ms.chapterId ?? ""}
-          onChange={(e) => selectChapter(e.target.value)}
-          className="min-w-0 max-w-40 border border-line bg-transparent px-1.5 py-0.5 font-serif text-sm text-paper focus:border-gold/60 focus:outline-none sm:max-w-56"
+        <Select
+          value={ms.chapterId ?? undefined}
+          onValueChange={(v) => selectChapter(v)}
         >
-          {ms.chapterId === null && <option value="">选择章节…</option>}
-          {ms.chapterIds.map((id) => (
-            <option key={id} value={id}>
-              第{chapterNumber(id)}章
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            aria-label="章节"
+            className="max-w-40 min-w-0 px-1.5 py-0.5 font-serif text-sm sm:max-w-56"
+          >
+            <SelectValue placeholder="选择章节…" />
+          </SelectTrigger>
+          <SelectContent>
+            {ms.chapterIds.map((id) => (
+              <SelectItem key={id} value={id}>
+                第{chapterNumber(id)}章
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {shownText !== null && (
           <span className="hidden text-xs text-paper/50 min-[430px]:inline">
             字数 <b className="font-semibold text-gold-soft">{chars.toLocaleString()}</b>

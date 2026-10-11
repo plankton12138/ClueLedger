@@ -20,6 +20,7 @@ import {
   type StoryStatsWire,
 } from "../api/rest";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useChatStore } from "../state/store";
 import { clueFairness } from "../state/clueFairness";
 import RingStat from "./RingStat";
@@ -257,19 +258,22 @@ export default function BiblePanel({ onExpand }: { onExpand?: () => void }) {
           </Button>
         ))}
         {active === "foreshadow" && ledger.entities.length > 0 && (
-          <select
-            aria-label="伏笔状态筛选"
-            value={fsFilter}
-            onChange={(e) => setFsFilter(e.target.value)}
-            className="ml-auto border border-line bg-transparent px-1.5 py-0.5 text-xs text-paper focus:border-gold/60 focus:outline-none"
-          >
-            <option value="all" className="bg-ink">全部</option>
-            {Object.entries(FORESHADOW_STATUS_LABELS).map(([status, meta]) => (
-              <option key={status} value={status} className="bg-ink">
-                {meta.label}
-              </option>
-            ))}
-          </select>
+          <Select value={fsFilter} onValueChange={setFsFilter}>
+            <SelectTrigger
+              aria-label="伏笔状态筛选"
+              className="ml-auto px-1.5 py-0.5 text-xs"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部</SelectItem>
+              {Object.entries(FORESHADOW_STATUS_LABELS).map(([status, meta]) => (
+                <SelectItem key={status} value={status}>
+                  {meta.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
         {active === "character" && ledger.entities.length > 0 && (
           <div className="ml-auto flex gap-1">
