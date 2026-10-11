@@ -77,3 +77,63 @@ jobs:
 
       - name: Run tests
         run: npx vitest run
+
+  e2e:
+    permissions:
+      contents: read
+    name: Web E2E (Playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      # E2E 驱动器跑在仓库根（python -m tests.e2e_server），需先装 Python 依赖
+      - name: Install Python dependencies
+        run: uv sync --dev --locked
+        working-directory: .
+
+      # SHA pin 待补：setup-node 的 commit SHA 需从官方仓库核实后固定
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # SHA pin 待补：cache/upload-artifact 同 setup-node，需从官方仓库核实后固定
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      # CI 模式下 webServer 自动 npm run build + 起 tests.e2e_server（端口 8931）
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: frontend/test-results/
+          retention-days: 7
