@@ -15,7 +15,6 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -178,19 +177,17 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
                         ⇩ 导出
                       </a>
                     </Button>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setConfirmSlug(w);
-                          setConfirmInput("");
-                          setError(null);
-                        }}
-                        className="h-auto flex-none px-2 py-0.5 text-xs text-paper/75 hover:border-overdue/60 hover:bg-transparent hover:text-overdue"
-                      >
-                        删除
-                      </Button>
-                    </AlertDialogTrigger>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setConfirmSlug(w);
+                        setConfirmInput("");
+                        setError(null);
+                      }}
+                      className="h-auto flex-none px-2 py-0.5 text-xs text-paper/75 hover:border-overdue/60 hover:bg-transparent hover:text-overdue"
+                    >
+                      删除
+                    </Button>
                   </div>
                 </li>
               ))}
