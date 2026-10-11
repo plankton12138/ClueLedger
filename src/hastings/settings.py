@@ -26,6 +26,10 @@ DEFAULT_WRITING_LANGUAGE: Final[str] = "中文"
 # 默认 provider 档案名（与 config.yaml 缺失时的 env 回落档案同名）。
 DEFAULT_PROVIDER_PROFILE: Final[str] = "default"
 
+# 上下文窗口（token，P10 D8/L9）：压缩触发阈值 = 本值 − reserve（16k）。
+# 缺省 128k 对齐云端常用窗口；本地小窗口（如 32k）在 settings.yaml 显式下调。
+DEFAULT_CONTEXT_WINDOW_TOKENS: Final[int] = 128_000
+
 
 class SettingsFormatError(ValueError):
     """settings.yaml 根节点非映射等结构性损坏。
@@ -45,6 +49,7 @@ class StorySettings(BaseModel):
     writing_language: str = DEFAULT_WRITING_LANGUAGE
     provider_profile: str = DEFAULT_PROVIDER_PROFILE
     model: str = ""
+    context_window_tokens: int = DEFAULT_CONTEXT_WINDOW_TOKENS
 
 
 def load_settings(workspace: StoryWorkspace) -> StorySettings:
@@ -73,6 +78,7 @@ def save_settings(workspace: StoryWorkspace, settings: StorySettings) -> Path:
 
 
 __all__ = [
+    "DEFAULT_CONTEXT_WINDOW_TOKENS",
     "DEFAULT_PROVIDER_PROFILE",
     "DEFAULT_WRITING_LANGUAGE",
     "WRITING_LANGUAGES",

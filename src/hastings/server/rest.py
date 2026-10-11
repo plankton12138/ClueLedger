@@ -68,7 +68,17 @@ from hastings.server.provider_config import (
 )
 from hastings.server.registry import WorkspaceExistsError, WorkspaceRegistry
 from hastings.server.session import WritingSession
-from hastings.session_persist import archive_session_file, session_file
+from hastings.session_persist import session_file
+from hastings.session_store import (
+    SessionMeta,
+    SessionNotFoundError,
+    activate_session,
+    active_session_id,
+    create_session,
+    delete_session,
+    list_sessions,
+    rename_session,
+)
 from hastings.settings import (
     DEFAULT_PROVIDER_PROFILE,
     WRITING_LANGUAGES,
@@ -269,10 +279,56 @@ class WorkspaceCreatedResponse(BaseModel):
     slug: str
 
 
-class SessionResetResponse(BaseModel):
-    """新会话结果（P9 D4）：归档文件名（null = 原会话从未落盘）。"""
+class SessionSummary(BaseModel):
+    """一条会话的元数据（P10 T14，D13）：列表项与新建/切换/重命名结果同形。"""
+
+    id: str
+    title: str
+    created_at: str
+    last_active: str
+    message_count: int
+    active: bool
+
+
+class SessionsResponse(BaseModel):
+    """会话列表（P10 T14）：平铺会话 + 当前活跃 id。"""
+
+    sessions: list[SessionSummary]
+    active_id: str
+
+
+class SessionCreateRequest(BaseModel):
+    """新建会话（P10 T14）：标题可选，缺省由服务端生成。"""
+
+    title: str | None = None
+
+
+class SessionRenameRequest(BaseModel):
+    """重命名会话（P10 T14）。"""
+
+    title: str
+
+
+class SessionActionResponse(BaseModel):
+    """切换/删除会话结果（P10 T14）：返回新的活跃 id（删除活跃会话时会变）。"""
 
     slug: str
+    active_id: str
+
+
+class SessionCompactResponse(BaseModel):
+    """手动压缩结果（P10 T13，D12）：与 CompactionResult 同形，供前端提示。
+
+    ``compacted=False`` 且 ``reason="nothing_to_strip"`` 是合法空结果
+    （泄压阀三情形之「合法但空」）——前端提示「无需压缩」而非报错。
+    """
+
+    compacted: bool
+    reason: str
+    tokens_before: int
+    tokens_after: int
+    stripped_chapters: list[int]
+    summarized: bool
     archived: str | None
 
 
@@ -1046,41 +1102,126 @@ def create_rest_router(
         registry.delete(slug)
         return Response(status_code=204)
 
-    @router.post("/api/{slug}/session/reset", response_model=SessionResetResponse)
-    async def reset_session(slug: str) -> SessionResetResponse:
-        """开新会话（P9 D4）：归档旧 session.jsonl + registry.rebuild 空会话。
+    def _session_summary(meta: SessionMeta, active: str) -> SessionSummary:
+        return SessionSummary(
+            id=meta.id,
+            title=meta.title,
+            created_at=meta.created_at,
+            last_active=meta.last_active,
+            message_count=meta.message_count,
+            active=meta.id == active,
+        )
 
-        正文 / 账本 / events.jsonl 不动（reset 本身在此留痕一条 session_reset）；
-        running → 409；归档 IO 故障 → 500（先复制后删除，旧文件不受影响）。
+    def _session_summaries(workspace: StoryWorkspace) -> SessionsResponse:
+        active = active_session_id(workspace)
+        return SessionsResponse(
+            active_id=active,
+            sessions=[_session_summary(meta, active) for meta in list_sessions(workspace)],
+        )
+
+    def _reject_while_running(session: WritingSession, slug: str, action: str, why: str) -> None:
+        if session.is_running:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{action}被拒：工作区 {slug} 有写作流进行中。"
+                    f"为什么错：{why}"
+                    "怎样算对：先等写作流结束（或中止本轮生成）再操作会话。"
+                ),
+            )
+
+    @router.get("/api/{slug}/sessions", response_model=SessionsResponse)
+    async def sessions(slug: str) -> SessionsResponse:
+        """会话列表（P10 T14，D13）：平铺会话 + 当前活跃 id。"""
+        await _session(slug)  # 守门：slug 校验 + 确保装配
+        return _session_summaries(_workspace(slug))
+
+    @router.post("/api/{slug}/sessions", response_model=SessionSummary)
+    async def create_story_session(
+        slug: str, body: SessionCreateRequest | None = None
+    ) -> SessionSummary:
+        """新建会话并设为活跃（P10 T14）：旧会话保留在列表可回看；running → 409。
+
+        收编原 ``/session/reset``——不再归档丢弃，而是并列保留（D13）。
+        """
+        session = await _session(slug)
+        _reject_while_running(
+            session, slug, "新建会话", "新建活跃会话会替换本轮生成读取的消息序列。"
+        )
+        workspace = _workspace(slug)
+        meta = create_session(workspace, title=body.title if body is not None else None)
+        await registry.rebuild(slug)
+        return _session_summary(meta, meta.id)
+
+    @router.post("/api/{slug}/sessions/{session_id}/activate", response_model=SessionSummary)
+    async def activate_story_session(slug: str, session_id: str) -> SessionSummary:
+        """切换活跃会话（P10 T14）：前端切换后重连 WS 快照重放；running → 409。"""
+        session = await _session(slug)
+        _reject_while_running(
+            session, slug, "切换会话", "切换活跃会话会替换本轮生成读取的消息序列。"
+        )
+        workspace = _workspace(slug)
+        try:
+            meta = activate_session(workspace, session_id)
+        except SessionNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        await registry.rebuild(slug)
+        return _session_summary(meta, meta.id)
+
+    @router.delete("/api/{slug}/sessions/{session_id}", response_model=SessionActionResponse)
+    async def delete_story_session(slug: str, session_id: str) -> SessionActionResponse:
+        """删除会话（P10 T14）：删活跃会话自动切到最近活跃/新建空会话；running → 409。"""
+        session = await _session(slug)
+        _reject_while_running(session, slug, "删除会话", "删除活跃会话会打断本轮生成。")
+        workspace = _workspace(slug)
+        try:
+            active = delete_session(workspace, session_id)
+        except SessionNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        await registry.rebuild(slug)
+        return SessionActionResponse(slug=slug, active_id=active)
+
+    @router.patch("/api/{slug}/sessions/{session_id}", response_model=SessionSummary)
+    async def rename_story_session(
+        slug: str, session_id: str, body: SessionRenameRequest
+    ) -> SessionSummary:
+        """重命名会话（P10 T14）：只改元数据，不重装配（活跃消息不变）。"""
+        await _session(slug)  # 守门：slug 校验 + 确保装配
+        workspace = _workspace(slug)
+        try:
+            meta = rename_session(workspace, session_id, body.title)
+        except SessionNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return _session_summary(meta, active_session_id(workspace))
+
+    @router.post("/api/{slug}/session/compact", response_model=SessionCompactResponse)
+    async def compact_session(slug: str) -> SessionCompactResponse:
+        """手动压缩上下文（P10 T13，D12）：走 D8 同一两档原语，绕过阈值。
+
+        running → 409（文案对齐 reset）；无可剥离内容 → 正常返回
+        ``compacted=false``（合法空结果，前端提示「无需压缩」）。压缩留痕
+        ``session_compact`` 事件由 D8 原语负责，本端点不重复记账。
         """
         session = await _session(slug)  # 守门：slug 校验 + 确保装配
         if session.is_running:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"开新会话被拒：工作区 {slug} 有写作流进行中。"
-                    "为什么错：归档进行中的会话会打断本轮生成。"
-                    "怎样算对：先等写作流结束（或中止本轮生成）再开新会话。"
+                    f"压缩被拒：工作区 {slug} 有写作流进行中。"
+                    "为什么错：压缩会替换正在被本轮生成读取的消息序列。"
+                    "怎样算对：先等写作流结束（或中止本轮生成）再压缩上下文。"
                 ),
             )
-        workspace = _workspace(slug)
-        try:
-            archived = archive_session_file(session_file(workspace))
-        except OSError as exc:
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    f"会话归档失败（{slug}）：文件系统错误 {exc}。"
-                    "旧会话文件未受影响（归档先复制后删除），修复磁盘后可重试。"
-                ),
-            ) from exc
-
-        archived_name = archived.name if archived is not None else None
-        event_store = EventStore(events_file(workspace))
-        await event_store.append("session_reset", {"archived": archived_name})
-
-        await registry.rebuild(slug)
-        return SessionResetResponse(slug=slug, archived=archived_name)
+        result = await session.compact_context()
+        return SessionCompactResponse(
+            compacted=result.compacted,
+            reason=result.reason,
+            tokens_before=result.tokens_before,
+            tokens_after=result.tokens_after,
+            stripped_chapters=list(result.stripped_chapters),
+            summarized=result.summarized,
+            archived=result.archived,
+        )
 
     @router.get("/api/{slug}/state", response_model=StateResponse)
     async def state(slug: str) -> StateResponse:

@@ -10,7 +10,13 @@ import type { AgentMessageWire, NoticeFrame } from "../api/types";
 import { initialUiState } from "./reducer";
 import { initialManuscript, useChatStore } from "./store";
 
-const SNAP_STATE = { slug: "demo", model: "fake", is_running: false, tools: [] };
+const SNAP_STATE = {
+  slug: "demo",
+  model: "fake",
+  is_running: false,
+  tools: [],
+  contextUsage: null,
+};
 
 const HISTORY: AgentMessageWire[] = [
   { role: "user", content: "建角色", timestamp: 1 },
@@ -32,6 +38,7 @@ beforeEach(() =>
     snapshot: null,
     manuscript: initialManuscript,
     syncCards: [],
+    tokenUsage: null,
   }),
 );
 
@@ -162,7 +169,7 @@ describe("manuscript 切片（P5 T1 + T2 revision）", () => {
     openChapter("ch01", "正文");
     expect(useChatStore.getState().manuscript.baseline).not.toBeNull();
     useChatStore.getState().loadSnapshot(
-      { slug: "demo", model: "fake", is_running: false, tools: [] },
+      { slug: "demo", model: "fake", is_running: false, tools: [], contextUsage: null },
       [],
     );
     const ms = useChatStore.getState().manuscript;
@@ -316,5 +323,36 @@ describe("applyNotice 对账迁移与同步卡片（P5 T5）", () => {
 
     expect(useChatStore.getState().unhandledEventTypes).toEqual(["notice:sync_progress"]);
     expect(useChatStore.getState().manuscript.syncState).toBe("idle");
+  });
+});
+
+describe("上下文占用（P10 T12，D11）", () => {
+  const USAGE = {
+    input: 10,
+    output: 4,
+    total: 14,
+    cache_read: 0,
+    cache_write: 0,
+    context_tokens: 1200,
+    window_tokens: 128_000,
+    source: "chars" as const,
+  };
+
+  it("loadSnapshot 用 get_state.contextUsage 初始化占用", () => {
+    useChatStore.getState().loadSnapshot({ ...SNAP_STATE, contextUsage: USAGE }, []);
+    expect(useChatStore.getState().tokenUsage).toEqual(USAGE);
+  });
+
+  it("applyTokenUsage 帧到达即覆盖（占用是即时真值，非累加）", () => {
+    useChatStore.getState().loadSnapshot({ ...SNAP_STATE, contextUsage: USAGE }, []);
+    const next = { ...USAGE, context_tokens: 6000 };
+    useChatStore.getState().applyTokenUsage(next);
+    expect(useChatStore.getState().tokenUsage).toEqual(next);
+  });
+
+  it("切换工作区清空占用（不残留上一案的上下文）", () => {
+    useChatStore.setState({ slug: "story-a", tokenUsage: USAGE });
+    useChatStore.getState().setSlug("story-b");
+    expect(useChatStore.getState().tokenUsage).toBeNull();
   });
 });

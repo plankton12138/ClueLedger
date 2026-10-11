@@ -12,6 +12,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from hastings.bible.store import StoryWorkspace
+from hastings.context_manager import CompactionResult, TokenUsage
 from hastings.manuscript.diff import DiffHunk
 from hastings.manuscript.write_guard import EditMarkRegistry
 from hastings.server.app import create_app
@@ -96,6 +97,18 @@ class StubSession:
     def apply_model(self, model: str) -> None:
         """记录同档案热切换调用（P6 T2）；真实会话在此赋值 config.model。"""
         self.applied_models.append(model)
+
+    async def auto_compact(self) -> CompactionResult:
+        """WS prompt 前的自动压缩钩子（P10 T8）；桩返回未压缩结果。"""
+        return CompactionResult(False, "below_threshold", 0, 0)
+
+    def context_usage(self) -> TokenUsage:
+        """上下文占用快照（P10 T12）；桩给固定窗口，占用为 0。"""
+        return TokenUsage(context_tokens=0, window_tokens=128_000)
+
+    async def compact_context(self) -> CompactionResult:
+        """手动压缩（P10 T13）；桩返回「无需压缩」合法空结果。"""
+        return CompactionResult(False, "nothing_to_strip", 0, 0)
 
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
         del listener

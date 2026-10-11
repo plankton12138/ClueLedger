@@ -44,6 +44,9 @@ class ProviderProfile(BaseModel):
     api_key: SecretStr = SecretStr("")
     api_key_env: str = ""
     default_model: str = ""
+    # 免密端点（本地模型如 Ollama）：无 key 也可用；OpenAICompatibleProvider
+    # 空 key 本就不发 Authorization 头。
+    no_auth: bool = False
 
     def resolved_api_key(self) -> str:
         """解析实际 key：直填优先于 env 引用（D1）。两者皆空 → 空串。"""
@@ -56,8 +59,8 @@ class ProviderProfile(BaseModel):
 
     @property
     def available(self) -> bool:
-        """启动/切换的可用性 = 能解析出非空 key。"""
-        return bool(self.resolved_api_key())
+        """启动/切换的可用性 = 免密端点，或能解析出非空 key。"""
+        return self.no_auth or bool(self.resolved_api_key())
 
 
 class ServerConfig(BaseModel):
@@ -149,6 +152,8 @@ def save_server_config(config: ServerConfig, path: Path) -> Path:
                 "api_key": profile.api_key.get_secret_value(),
                 "api_key_env": profile.api_key_env,
                 "default_model": profile.default_model,
+                # 免密字段按需写入：False 不落盘，旧文件格式零扰动
+                **({"no_auth": True} if profile.no_auth else {}),
             }
             for profile in config.providers
         ]
@@ -170,10 +175,14 @@ def mask_key(key: str) -> str:
 
 def build_provider(profile: ProviderProfile) -> OpenAICompatibleProvider:
     """由档案构造 provider 实例（跨档案切换/启动装配共用；T2 复用）。"""
+    key = profile.resolved_api_key()
     return OpenAICompatibleProvider(
         OpenAICompatibleConfig(
-            api_key=profile.resolved_api_key(),
+            api_key=key,
             base_url=profile.base_url.rstrip("/"),
+            # 免密档案（Ollama 等）：空 key 不能发 `Authorization: Bearer `——
+            # httpx 会以 Illegal header value 拒绝该请求。
+            omit_authorization_header=profile.no_auth and not key,
         )
     )
 

@@ -35,10 +35,12 @@ from hastings.bible.store import (
     StoryWorkspace,
     list_characters,
     load_ledger,
+    load_story_doc,
     model_to_yaml,
     save_character,
     save_ledger,
 )
+from hastings.bible.story_state import intake_write_rejection
 from hastings.tools.errors import ToolInputError
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
@@ -46,6 +48,26 @@ from tau_agent.types import JSONValue
 
 type ReadAllFn = Callable[[StoryWorkspace], Sequence[BaseModel]]
 type WriteAllFn = Callable[[StoryWorkspace, Sequence[BaseModel]], None]
+
+
+# 参数校验错误的最小正确示例（P10 T5，D4/L3）：schema description 是第一 API、
+# 错误消息是第二 API——弱模型对同一 schema 错误原样重试 7-16 次才改行为（F1），
+# 双通道冗余是刚需。仅覆盖压测实中的高频字段（name 空 / alibi day / requirements），
+# 不求全类型；未覆盖实体的类型错误不硬塞示例（避免牛头不对马嘴）。
+_NAME_EXAMPLE: Final = 'name 是账本主键（如角色 "宫泽健一"、章纲 "ch01"）'
+_EXAMPLES: Final[dict[str, str]] = {
+    "outline": 'data.name 是章纲主键，取 chNN 形态（如 "ch01"），chapter 字段才是章号',
+    "method": (
+        'alibi_claims 的 day 是整数天数（如 1）、t_start/t_end 是 "HH:MM" 字符串'
+        '（如 "18:00"），requirements 是字符串列表（如 ["需停电"]）'
+    ),
+}
+
+
+def _validation_example_note(entity_type: str) -> str:
+    """字段校验错误时按实体类型追加最小示例；未覆盖类型不追加。"""
+    example = _EXAMPLES.get(entity_type)
+    return f"怎样算对（最小示例）：{example}。" if example else ""
 
 
 def _require_str(arguments: Mapping[str, JSONValue], name: str) -> str:
@@ -301,6 +323,20 @@ _REGISTRY: Final[dict[str, _Spec]] = {
 }
 
 
+def reject_intake_write(workspace: StoryWorkspace) -> None:
+    """L2 数据面写门（P10 D1）：story.yaml 存在且显式 stage=intake 时拒绝建账。
+
+    bible_upsert 与 method_lock/method_unlock 共用（一处判定全写路径生效）。
+    旧工作区 story.yaml 不存在时放行——load_story_doc 兜底读出的 intake 不代表
+    真实状态，按项目「不强制迁移旧数据」原则不拦（stderr 不告警，合法场景）。
+    """
+    if not workspace.story_path.exists():
+        return
+    message = intake_write_rejection(load_story_doc(workspace).stage)
+    if message is not None:
+        raise ToolInputError(message)
+
+
 def _require_spec(arguments: Mapping[str, JSONValue]) -> tuple[str, _Spec]:
     entity_type = _require_str(arguments, "entity_type")
     spec = _REGISTRY.get(entity_type)
@@ -363,13 +399,18 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
         del tool_call_id, signal, on_update
+        reject_intake_write(workspace)  # L2 数据面写门：intake 阶段拒绝建账
         entity_type, spec = _require_spec(arguments)
         data = arguments.get("data")
         if not isinstance(data, dict):
             raise ToolInputError(f"data 必须是{spec.label}字段对象（至少包含 name）")
         name = data.get("name")
         if not isinstance(name, str) or not name.strip():
-            raise ToolInputError("data.name 必须是非空字符串")
+            raise ToolInputError(
+                "data.name 必须是非空字符串。"
+                f"为什么错：{spec.label}以 name 为主键，缺失或非法会导致无法落盘/覆盖歧义。"
+                f"怎样算对：{_NAME_EXAMPLE}。"
+            )
         if spec.cross_check is not None:
             spec.cross_check(workspace, data)
 
@@ -410,7 +451,9 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
                 f"{'.'.join(str(loc) for loc in error['loc'])}: {error['msg']}"
                 for error in exc.errors(include_url=False)
             )
-            raise ToolInputError(f"{spec.label}数据不合法：{err_details}") from exc
+            raise ToolInputError(
+                f"{spec.label}数据不合法：{err_details}。{_validation_example_note(entity_type)}"
+            ) from exc
         if isinstance(model, Method):
             # history 是 lock/unlock 工具的专属账目（T4）：upsert 覆盖写时
             # 原样保留既有审计链，模型数据里的 history 键一律不采纳。
@@ -518,7 +561,11 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
                         "outline：chapter 为整数(章号,工具层校验唯一)，act/end_hook 为字符串，"
                         "beats/plant_plans 为字符串列表。"
                         "状态字段：character arc(flat|developed|resolved)；"
-                        "clue/foreshadow/outline status(初始 planned)；method status(初始 drafted)"
+                        "clue/foreshadow/outline status(初始 planned)；"
+                        "method status(初始 drafted)。"
+                        '示例：outline 的 name 取 chNN 形态（如 "ch01"）、chapter 才是整数章号；'
+                        "method 的 alibi_claims 为对象列表，day 是整数、t_start/t_end 是 "
+                        '"HH:MM"，requirements 是字符串列表。'
                     ),
                 },
             },
@@ -568,4 +615,4 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
     return [upsert, query]
 
 
-__all__ = ["ENTITY_LABELS", "create_bible_tools", "entity_summary"]
+__all__ = ["ENTITY_LABELS", "create_bible_tools", "entity_summary", "reject_intake_write"]

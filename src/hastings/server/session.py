@@ -18,6 +18,7 @@ from tau_agent.messages import AgentMessage
 
 if TYPE_CHECKING:
     # 运行时不导入——reconcile.py 反向依赖本模块的 AgentBusyError，防循环
+    from hastings.context_manager import CompactionResult, TokenUsage
     from hastings.server.reconcile import NoticeListener
 
 
@@ -75,6 +76,29 @@ class WritingSession(Protocol):
 
     def apply_model(self, model: str) -> None:
         """同档案热切换模型（P6 D2；下一轮对话即生效，不重建会话）。"""
+        ...
+
+    async def auto_compact(self) -> CompactionResult:
+        """prompt 前自动两档压缩（P10 T8；超阈值才动，运行中早返回）。
+
+        同步侧的 ``refresh_system_prompt`` 会顺带做第一档内存剥离，故此处的
+        异步两档多数情形为 no-op——保留它统一 REST/CLI/WS 的压缩入口口径。
+        """
+        ...
+
+    def context_usage(self) -> TokenUsage:
+        """当前上下文占用快照（P10 T12，D11）：get_state 与 token_usage 帧共用。
+
+        走唯一计数源 ``count_context_tokens``——与压缩触发、事件留痕同源。
+        """
+        ...
+
+    async def compact_context(self) -> CompactionResult:
+        """手动两档压缩（P10 T13，D12）：绕过阈值直接调用 D8 同一原语。
+
+        无可剥离内容 → 返回 ``reason="nothing_to_strip"``（合法空结果）；
+        运行中 → 返回 ``reason="running"``（REST 侧另有 409 前置守卫）。
+        """
         ...
 
     def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:

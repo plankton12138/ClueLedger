@@ -1,11 +1,15 @@
 /**
- * 对话面板头部（P9 T6，D4）：「新会话」入口 + 模态防误触确认（ui/AlertDialog）。
- * 确认风格对齐文章删除：说明后果（旧对话归档保留、正文/账本不动）+
- * 显式确认键；写作中按钮禁用（服务端另有 409 硬守卫）。
+ * 对话面板头部（P9 T6，D4）：会话选择器入口（P10 T14，D13 收编原「新会话」）。
+ * 会话的列出/新建/切换/重命名/删除下沉到 SessionSelector（Popover + 确认框）；
+ * 写作中按钮禁用（服务端另有 409 硬守卫）。
+ * P10 T13（D12）追加「压缩上下文」按钮：同一确认模式，走同一两档压缩原语。
  */
 
 import { useState } from "react";
-import { resetSession } from "../api/rest";
+import { compactSession } from "../api/rest";
+import { useChatStore } from "../state/store";
+import { formatContextUsage } from "./contextUsage";
+import SessionSelector from "./SessionSelector";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,69 +25,96 @@ import { Button } from "@/components/ui/button";
 export default function ChatHeader({
   slug,
   running,
-  onResetDone,
+  onSessionChanged,
+  onCompacted,
 }: {
   slug: string;
   running: boolean;
-  /** reset 成功后回调（App 触发 WS 重连，快照重放得到空会话）。 */
-  onResetDone: () => void;
+  /** 切换/新建/删除活跃会话后回调（App 触发 WS 重连，快照重放得到新会话）。 */
+  onSessionChanged: () => void;
+  /** 压缩成功后回调（同样重连，快照重放得到压缩后的消息序列）。 */
+  onCompacted: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [compactOpen, setCompactOpen] = useState(false);
+  const [compactBusy, setCompactBusy] = useState(false);
+  const [compactError, setCompactError] = useState<string | null>(null);
+  const [compactNotice, setCompactNotice] = useState<string | null>(null);
+  // 上下文占用（P10 T12，D11）：get_state 初值 + 每轮 token_usage 帧刷新
+  const tokenUsage = useChatStore((s) => s.tokenUsage);
 
-  const handleReset = async () => {
-    setBusy(true);
-    setError(null);
+  const handleCompact = async () => {
+    setCompactBusy(true);
+    setCompactError(null);
+    setCompactNotice(null);
     try {
-      await resetSession(slug);
-      setOpen(false);
-      onResetDone();
+      const result = await compactSession(slug);
+      if (result.compacted) {
+        setCompactOpen(false);
+        onCompacted();
+      } else {
+        // 合法空结果：不是错误，提示「无需压缩」并留在对话框内。
+        setCompactNotice("当前上下文无需压缩。怎样算对：继续写作即可，超阈值时会自动压缩。");
+      }
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
+      setCompactError(exc instanceof Error ? exc.message : String(exc));
     } finally {
-      setBusy(false);
+      setCompactBusy(false);
     }
   };
 
   return (
     <div className="flex flex-none items-center justify-between gap-2 border-b border-line bg-ink-soft/60 px-3 py-1.5">
-      <span className="truncate text-xs tracking-widest text-gold-soft">主编对话</span>
+      <span className="flex-none truncate text-xs tracking-widest text-gold-soft">主编对话</span>
+      <SessionSelector key={slug} slug={slug} running={running} onSessionChanged={onSessionChanged} />
+      {tokenUsage && (
+        <span
+          className="min-w-0 flex-1 truncate text-right text-[10px] tabular-nums text-paper/40"
+          title={formatContextUsage(tokenUsage)}
+        >
+          {formatContextUsage(tokenUsage)}
+        </span>
+      )}
       <AlertDialog
-        open={open}
+        open={compactOpen}
         onOpenChange={(next) => {
-          if (busy) return;
-          setOpen(next);
-          if (!next) setError(null);
+          if (compactBusy) return;
+          setCompactOpen(next);
+          if (!next) {
+            setCompactError(null);
+            setCompactNotice(null);
+          }
         }}
       >
         <AlertDialogTrigger asChild>
           <Button
             variant="outline"
             disabled={running}
-            title={running ? "写作中不可开新会话" : "归档当前对话并开新会话"}
+            title={running ? "写作中不可压缩上下文" : "剥离旧章正文参数并生成前情摘要"}
             className="h-auto flex-none px-2 py-0.5 text-[11px] text-paper/70 hover:border-gold/60 hover:bg-transparent hover:text-gold"
           >
-            新会话
+            压缩上下文
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
-          <AlertDialogTitle>开新会话？</AlertDialogTitle>
+          <AlertDialogTitle>压缩上下文？</AlertDialogTitle>
           <AlertDialogDescription>
-            开新会话后，旧对话将归档保留在磁盘（可找回），
+            压缩会剥离较旧章节的正文参数并生成前情摘要，以回收上下文窗口。
             <span className="text-gold-soft">正文与故事账本不受影响</span>。
-            {running && <span className="text-overdue">写作中不可开新会话。</span>}
+            {running && <span className="text-overdue">写作中不可压缩上下文。</span>}
           </AlertDialogDescription>
-          {error && <p className="mt-1.5 break-all text-xs text-overdue">{error}</p>}
+          {compactError && (
+            <p className="mt-1.5 break-all text-xs text-overdue">{compactError}</p>
+          )}
+          {compactNotice && <p className="mt-1.5 text-xs text-paper/70">{compactNotice}</p>}
           <AlertDialogFooter>
             <AlertDialogAction
-              disabled={busy || running}
-              onClick={() => void handleReset()}
+              disabled={compactBusy || running}
+              onClick={() => void handleCompact()}
               className="border-gold/60 text-gold hover:bg-gold/10 hover:text-gold"
             >
-              {busy ? "归档中…" : "确认开新会话"}
+              {compactBusy ? "压缩中…" : "确认压缩"}
             </AlertDialogAction>
-            <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={compactBusy}>取消</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

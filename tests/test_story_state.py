@@ -11,6 +11,7 @@ from hastings.bible.story_state import (
     STAGES,
     InvalidStageTransitionError,
     StagePrereqs,
+    intake_write_rejection,
     validate_transition,
 )
 
@@ -113,3 +114,24 @@ def test_prereqs_model_rejects_negative() -> None:
 def test_rollback_ignores_prereqs() -> None:
     """回退是作者驱动，不做账本前置检查（空账本也可推翻设定重来）。"""
     validate_transition("bible_confirmed", "bible_drafting", prereqs=StagePrereqs())
+
+
+# --- P10 T1（D1/L2）：intake 数据面写门纯判定 ---
+
+
+def test_intake_write_rejection_blocks_intake() -> None:
+    """intake 阶段返回三要素拒绝文案（含逃生门）。"""
+    message = intake_write_rejection("intake")
+    assert message is not None
+    assert "intake" in message  # 哪里错
+    assert "为什么错" in message
+    assert "怎样算对" in message
+    assert "story_stage" in message  # 逃生门：作者明确要求建账时先推进
+
+
+@pytest.mark.parametrize(
+    "stage",
+    ["bible_drafting", "bible_confirmed", "writing", "revising", "complete"],
+)
+def test_intake_write_rejection_allows_other_stages(stage: str) -> None:
+    assert intake_write_rejection(stage) is None

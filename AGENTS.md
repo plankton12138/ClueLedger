@@ -49,7 +49,7 @@ src/
 └── hastings/        # 本项目应用层（新建；模块导航见 src/hastings/README.md）
     ├── bible/       # 账本域：数据模型/状态机/六阶段生命周期/派生统计/审计
     ├── tools/       # 小说写作工具集（硬约束所在层）
-    ├── manuscript/  # 正文 SSOT 与保存不变量（段落 diff/revision 归档/write_guard）
+    ├── manuscript/  # 正文 SSOT 与保存不变量（段落 diff/revision 归档/write_guard/写作守门 guards）
     ├── rag/         # 语料与文风（style_profile/corpus_store）
     ├── server/      # FastAPI REST + WebSocket 服务与会话装配
     └── eval/        # 评测 harness（占位）

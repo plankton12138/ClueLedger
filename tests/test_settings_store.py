@@ -52,6 +52,7 @@ def test_save_then_load_roundtrip(workspace: StoryWorkspace) -> None:
         "writing_language": "English",
         "provider_profile": "default",
         "model": "",
+        "context_window_tokens": 128_000,
     }
 
 

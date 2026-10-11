@@ -10,7 +10,9 @@ from hastings.bible.store import (
     StoryWorkspace,
     list_characters,
     load_ledger,
+    save_story_doc,
 )
+from hastings.bible.story_state import StoryDoc
 from hastings.tools.bible_tools import create_bible_tools
 from hastings.tools.errors import ToolInputError
 from tau_agent import AgentTool
@@ -407,3 +409,130 @@ def test_query_render_call(tools: dict[str, AgentTool]) -> None:
     assert render is not None
     assert render({"entity_type": "character", "name": "波洛"}) == "查询角色 波洛"
     assert render({"entity_type": "clue"}) == "列出全部线索"
+
+
+# ---------- P10 T1（D1/L2）：intake 数据面写门 ----------
+
+
+@pytest.mark.anyio
+async def test_upsert_rejected_in_intake_stage(
+    tools: dict[str, AgentTool], workspace: StoryWorkspace
+) -> None:
+    """story.yaml 显式 intake 时建账被拒，三要素含逃生门（story_stage）。"""
+    save_story_doc(workspace, StoryDoc(slug=workspace.slug, stage="intake"))
+
+    with pytest.raises(ToolInputError, match="intake") as exc_info:
+        await _call(
+            tools["bible_upsert"],
+            {"entity_type": "character", "data": {"name": "波洛", "identity": "侦探"}},
+        )
+    message = str(exc_info.value)
+    assert "为什么错" in message and "怎样算对" in message
+    assert "story_stage" in message  # 逃生门
+    # 未落盘
+    assert list_characters(workspace) == []
+
+
+@pytest.mark.anyio
+async def test_upsert_allowed_after_advance_to_bible_drafting(
+    tools: dict[str, AgentTool], workspace: StoryWorkspace
+) -> None:
+    save_story_doc(workspace, StoryDoc(slug=workspace.slug, stage="bible_drafting"))
+
+    result = await _call(
+        tools["bible_upsert"],
+        {"entity_type": "character", "data": {"name": "波洛", "identity": "侦探"}},
+    )
+    assert "波洛" in result.text
+
+
+@pytest.mark.anyio
+async def test_upsert_allowed_when_story_yaml_absent(
+    tools: dict[str, AgentTool], workspace: StoryWorkspace
+) -> None:
+    """旧工作区（story.yaml 不存在）不拦——不强制迁移旧数据。"""
+    assert not workspace.story_path.exists()
+
+    result = await _call(
+        tools["bible_upsert"],
+        {"entity_type": "character", "data": {"name": "波洛", "identity": "侦探"}},
+    )
+    assert "波洛" in result.text
+
+
+# ---------- P10 T5（D4/L3）：参数校验错误按实体类型附最小正确示例 ----------
+#
+# 弱模型对同一 schema 错误原样重试 7-16 次才改行为（F1）。schema description 是
+# 第一 API、错误消息是第二 API——双通道冗余对弱模型是刚需。名空用通用主键示例，
+# 字段类型错误按实体类型附专属示例（outline 的 chapter/name、method 的 alibi/requirements）。
+
+
+@pytest.mark.anyio
+async def test_upsert_missing_name_error_carries_key_example(
+    tools: dict[str, AgentTool],
+) -> None:
+    with pytest.raises(ToolInputError) as exc_info:
+        await _call(tools["bible_upsert"], {"entity_type": "character", "data": {}})
+
+    message = str(exc_info.value)
+    assert "name" in message
+    assert "账本主键" in message
+    assert "ch01" in message  # 主键形态示例
+    assert "怎样算对" in message
+
+
+@pytest.mark.anyio
+async def test_upsert_method_alibi_type_error_carries_example(
+    tools: dict[str, AgentTool],
+) -> None:
+    """alibi_claims.day 传成字符串（压测高频）→ 错误消息附 method 字段示例。"""
+    with pytest.raises(ToolInputError) as exc_info:
+        await _call(
+            tools["bible_upsert"],
+            {
+                "entity_type": "method",
+                "data": {"name": "密室诡计", "alibi_claims": [{"person": "键一", "day": "一"}]},
+            },
+        )
+
+    message = str(exc_info.value)
+    assert "整数天数" in message
+    assert "18:00" in message  # t_start/t_end 形态示例
+
+
+@pytest.mark.anyio
+async def test_upsert_method_requirements_type_error_carries_example(
+    tools: dict[str, AgentTool],
+) -> None:
+    """requirements 传成字符串（压测高频）→ method 示例指明是字符串列表。"""
+    with pytest.raises(ToolInputError) as exc_info:
+        await _call(
+            tools["bible_upsert"],
+            {"entity_type": "method", "data": {"name": "密室诡计", "requirements": "需停电"}},
+        )
+
+    assert "字符串列表" in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_upsert_outline_type_error_carries_chapter_example(
+    tools: dict[str, AgentTool],
+) -> None:
+    """outline.chapter 传成 "ch01" → 错误消息附 outline 主键/章号示例。"""
+    with pytest.raises(ToolInputError) as exc_info:
+        await _call(
+            tools["bible_upsert"],
+            {"entity_type": "outline", "data": {"name": "案发之夜", "chapter": "ch01"}},
+        )
+
+    message = str(exc_info.value)
+    assert "chNN" in message
+    assert "章号" in message
+
+
+def test_upsert_data_description_appends_example_line(tools: dict[str, AgentTool]) -> None:
+    """schema description 尾部追加一行示例——第一 API 与错误消息（第二 API）冗余。"""
+    data_desc = tools["bible_upsert"].parameters["properties"]["data"]["description"]
+
+    assert "示例：" in data_desc
+    assert "chNN" in data_desc

@@ -25,6 +25,7 @@ from hastings.session_persist import (
     restore_and_attach,
     session_file,
 )
+from hastings.session_store import activate_session, active_session_id, create_session
 from hastings.tools.bible_tools import create_bible_tools
 from tau_agent import AgentHarness, AgentHarnessConfig, AssistantMessage, ToolCall, UserMessage
 from tau_agent.events import MessageEndEvent
@@ -322,3 +323,33 @@ async def test_restore_and_attach_surfaces_corruption_warning(
         pass
     reloaded = await load_session_messages(session_file(workspace))
     assert len(reloaded.messages) == len(harness.messages)
+
+
+@pytest.mark.anyio
+async def test_restore_and_attach_switches_active_session(
+    tmp_path: Path, make_harness: Callable[[], AgentHarness]
+) -> None:
+    """切换活跃会话：re-attach 换文件换历史，空会话不残留旧消息，旧会话保留可回看。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="orient-express")
+    workspace.ensure_dirs()
+    first = make_harness()
+    unsubscribe = await restore_and_attach(workspace, first)
+    async for _ in first.prompt("创建角色波洛"):
+        pass
+    assert len(first.messages) > 0
+    first_messages = first.messages
+    first_id = active_session_id(workspace)
+
+    created = create_session(workspace)
+    unsubscribe()  # 断开旧会话的存储/索引订阅
+    second = make_harness()
+    unsubscribe = await restore_and_attach(workspace, second)
+    assert second.messages == ()  # 空会话：不得残留上一会话历史
+
+    # 切回首会话：历史恢复（旧会话文件仍在）
+    activate_session(workspace, first_id)
+    unsubscribe()
+    third = make_harness()
+    await restore_and_attach(workspace, third)
+    assert third.messages == first_messages
+    assert created.id != first_id

@@ -29,6 +29,7 @@ import {
 import { emptyLoginForm, hostOf, prefillLoginForm } from "../state/providerLogin";
 import { useChatStore } from "../state/store";
 import { Button } from "@/components/ui/button";
+import LocalModelCard from "./LocalModelCard";
 
 type Feedback = { kind: "ok" | "error"; text: string } | null;
 
@@ -216,7 +217,11 @@ export default function SettingsPanel() {
         {selected && (
           <p className="mt-1.5 text-[11px] text-paper/40">
             {selected.base_url}
-            {selected.key_hint ? `　key ${selected.key_hint}` : "　未配置 key"}
+            {selected.key_hint
+              ? `　key ${selected.key_hint}`
+              : selected.no_auth
+                ? "　本地端点（免密）"
+                : "　未配置 key"}
           </p>
         )}
 
@@ -312,6 +317,21 @@ export default function SettingsPanel() {
         currentProfile={profile}
         onProvidersChanged={(list) => setProviders(list)}
       />
+
+      <LocalModelCard
+        slug={slug}
+        writingLanguage={language}
+        onProvidersChanged={async () => setProviders(await fetchProviders())}
+        onModelSwitched={(switchedProfile, switchedModel) => {
+          setProfile(switchedProfile);
+          setModel(switchedModel);
+          setSettings((prev) =>
+            prev === null
+              ? prev
+              : { ...prev, provider_profile: switchedProfile, model: switchedModel },
+          );
+        }}
+      />
       </div>
     </div>
   );
@@ -402,6 +422,7 @@ function ProviderAdminCard({
       api_key: "",
       api_key_env: "",
       default_model: p.default_model,
+      no_auth: p.no_auth, // 编辑免密档案时保留 no_auth，否则保存会把它降级成缺 key
     });
     setFeedback(null);
     setOpen(true);
@@ -444,6 +465,7 @@ function ProviderAdminCard({
         api_key: form.api_key,
         api_key_env: form.api_key_env.trim(),
         default_model: form.default_model.trim(),
+        no_auth: form.no_auth,
       });
       await refresh();
       setOpen(false);
@@ -559,7 +581,11 @@ function ProviderAdminCard({
               {p.base_url}
             </span>
             <span className="flex-none text-[11px] text-paper/45">
-              {p.key_hint === "" ? "未配 key" : `key ${p.key_hint}`}
+              {p.key_hint === ""
+                ? p.no_auth
+                  ? "本地免密"
+                  : "未配 key"
+                : `key ${p.key_hint}`}
             </span>
             <Button
               variant="outline"

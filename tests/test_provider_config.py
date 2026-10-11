@@ -328,3 +328,70 @@ def test_build_provider_uses_profile_endpoint_and_key(
 
     assert provider._config.base_url == "https://openrouter.ai/api/v1"  # 尾斜杠剥掉
     assert provider._config.api_key == "sk-from-env-9999"
+
+
+# --- no_auth 免密端点（本地模型如 Ollama，D11） ---
+
+
+def test_no_auth_profile_available_without_key() -> None:
+    profile = ProviderProfile(name="ollama", base_url="http://localhost:11434/v1", no_auth=True)
+
+    assert profile.available is True
+    assert profile.resolved_api_key() == ""
+
+
+def test_keyless_profile_without_no_auth_unavailable() -> None:
+    profile = ProviderProfile(name="broken", base_url="https://api.example.com/v1")
+
+    assert profile.available is False
+
+
+def test_no_auth_round_trip_through_yaml(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    config = ServerConfig(
+        providers=[
+            ProviderProfile(
+                name="ollama",
+                base_url="http://localhost:11434/v1",
+                default_model="qwen3:4b",
+                no_auth=True,
+            )
+        ]
+    )
+
+    save_server_config(config, path)
+    loaded = load_server_config(path)
+
+    assert loaded.providers[0].no_auth is True
+    assert loaded.providers[0].available is True
+
+
+def test_no_auth_false_not_written_to_disk(tmp_path: Path) -> None:
+    """no_auth=False 不落盘——旧 config.yaml 格式零扰动。"""
+    path = tmp_path / "config.yaml"
+
+    save_server_config(ServerConfig(providers=[_profile("deepseek")]), path)
+
+    assert "no_auth" not in path.read_text(encoding="utf-8")
+
+
+def test_no_auth_provider_omits_authorization_header() -> None:
+    """空 key 的免密档案不构造 Authorization 头——httpx 会以
+    Illegal header value b'Bearer ' 拒绝空 Bearer 值的请求。"""
+    provider = build_provider(
+        ProviderProfile(name="ollama", base_url="http://localhost:11434/v1", no_auth=True)
+    )
+
+    assert provider._config.omit_authorization_header is True
+
+
+def test_keyed_provider_keeps_authorization_header() -> None:
+    provider = build_provider(
+        ProviderProfile(
+            name="deepseek",
+            base_url="https://api.deepseek.com/v1",
+            api_key="sk-direct-12345678",
+        )
+    )
+
+    assert provider._config.omit_authorization_header is False

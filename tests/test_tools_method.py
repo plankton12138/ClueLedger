@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 from hastings.bible.models import Method
-from hastings.bible.store import StoryWorkspace, load_ledger
+from hastings.bible.store import StoryWorkspace, load_ledger, save_story_doc
+from hastings.bible.story_state import StoryDoc
 from hastings.tools.bible_tools import create_bible_tools
 from hastings.tools.errors import ToolInputError
 from hastings.tools.method_tools import create_method_tools
@@ -277,3 +278,27 @@ async def test_full_chain_lock_edit_unlock_relock_reveal(
     assert method.description == "撬锁入室"
     assert [h.action for h in method.history] == ["locked", "unlocked", "locked"]
     assert [h.chapter for h in method.history] == ["ch01", "", "ch02"]
+
+
+# ---------- P10 T1（D1/L2）：intake 数据面写门 ----------
+
+
+@pytest.mark.anyio
+async def test_lock_and_unlock_rejected_in_intake_stage(
+    tools: dict[str, AgentTool], workspace: StoryWorkspace
+) -> None:
+    """intake 阶段 lock/unlock 均被拒（数据面写门），三要素含逃生门。"""
+    # 先在 bible_drafting 下建一条手法，再回落到 intake 模拟抢跑场景
+    save_story_doc(workspace, StoryDoc(slug=workspace.slug, stage="bible_drafting"))
+    await _draft_method(tools)
+    save_story_doc(workspace, StoryDoc(slug=workspace.slug, stage="intake"))
+
+    with pytest.raises(ToolInputError, match="intake") as lock_exc:
+        await _call(tools["method_lock"], {"name": "密室诡计", "chapter": "ch01", "reason": "定稿"})
+    assert "story_stage" in str(lock_exc.value)
+
+    # 未落盘：状态仍 drafted
+    assert _load_single(workspace).status == "drafted"
+
+    with pytest.raises(ToolInputError, match="intake"):
+        await _call(tools["method_unlock"], {"name": "密室诡计", "reason": "改设定"})

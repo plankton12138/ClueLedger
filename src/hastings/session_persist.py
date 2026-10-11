@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from hastings.bible.store import StoryWorkspace
+from hastings.session_store import active_session_id, active_session_path, touch_session
 from tau_agent.events import AgentEvent, MessageEndEvent
 from tau_agent.harness import AgentHarness
 from tau_agent.messages import AgentMessage
@@ -29,6 +30,7 @@ from tau_agent.session.jsonl import SessionJsonlError
 __all__ = [
     "SessionLoad",
     "archive_session_file",
+    "attach_session_index",
     "attach_session_storage",
     "load_session_messages",
     "quarantine_session_file",
@@ -116,8 +118,39 @@ def attach_session_storage(harness: AgentHarness, storage: SessionStorage) -> Ca
 
 
 def session_file(workspace: StoryWorkspace) -> Path:
-    """故事会话文件：``stories/<slug>/session.jsonl``——与 Bible、章节同目录（D1）。"""
-    return workspace.story_dir / "session.jsonl"
+    """当前**活跃会话**的文件路径（P10 D13 后语义变更）。
+
+    指向 ``stories/<slug>/sessions/<active_id>.jsonl``；解析会触发旧单会话格式
+    的迁移与索引初始化（见 :mod:`hastings.session_store`）。REST/CLI/压缩导出
+    都经此解析，切换活跃会话即换文件。
+    """
+    return active_session_path(workspace)
+
+
+def attach_session_index(
+    harness: AgentHarness,
+    workspace: StoryWorkspace,
+    session_id: str,
+) -> Callable[[], None]:
+    """订阅 message_end，把活跃会话的 last_active / message_count 记进索引。
+
+    索引刷新是观测性的账：IO 故障只告警不传播（持久化只是事件流的消费者，
+    不能反杀写作流）。返回退订函数。
+    """
+
+    async def _touch(event: AgentEvent) -> None:
+        if isinstance(event, MessageEndEvent):
+            try:
+                touch_session(workspace, session_id)
+            except OSError as exc:
+                print(
+                    "[sessions] 会话索引刷新失败，写作继续但列表信息可能滞后。"
+                    f"为什么错：{exc}。"
+                    "怎样算对：检查磁盘空间/文件占用；会话本身已正常落盘。",
+                    file=sys.stderr,
+                )
+
+    return harness.subscribe(_touch)
 
 
 async def restore_and_attach(
@@ -125,15 +158,27 @@ async def restore_and_attach(
     harness: AgentHarness,
     *,
     on_warning: Callable[[str], None] | None = None,
-) -> None:
-    """一次性接线（CLI 与 server 共用，P4 T2）：恢复历史消息并挂上持久化。
+) -> Callable[[], None]:
+    """一次性接线（CLI 与 server 共用，P4 T2）：恢复活跃会话消息并挂上持久化。
 
-    坏文件走 D2 泄压阀：备份 + on_warning 中文告警 + 空会话继续——attach 不受影响，
-    本轮写作照常落盘。
+    恢复的是**当前活跃会话**（session_store 解析，含旧格式迁移）；切换会话后
+    重新调用即换文件换历史。坏文件走 D2 泄压阀：备份 + on_warning 中文告警 +
+    空会话继续——attach 不受影响，本轮写作照常落盘。
+
+    返回退订函数（存储订阅 + 索引订阅一并解除）：CLI 切换会话时先退订旧的再接线新的。
     """
-    result = await load_session_messages(session_file(workspace))
+    path = session_file(workspace)
+    session_id = active_session_id(workspace)
+    result = await load_session_messages(path)
     if result.warning is not None and on_warning is not None:
         on_warning(result.warning)
-    if result.messages:
-        harness.replace_messages(result.messages)
-    attach_session_storage(harness, JsonlSessionStorage(session_file(workspace)))
+    # 无条件替换（含空会话）：切换会话时旧历史必须清掉，不能残留上一会话的消息
+    harness.replace_messages(result.messages)
+    unsubscribe_storage = attach_session_storage(harness, JsonlSessionStorage(path))
+    unsubscribe_touch = attach_session_index(harness, workspace, session_id)
+
+    def unsubscribe() -> None:
+        unsubscribe_storage()
+        unsubscribe_touch()
+
+    return unsubscribe

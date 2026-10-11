@@ -7,7 +7,7 @@
 import { create } from "zustand";
 import type { DiffHunkWire } from "../api/rest";
 import type { AgentStateSnapshot, ConnectionStatus } from "../api/socket";
-import type { AgentMessageWire, EventFrame, NoticeFrame } from "../api/types";
+import type { AgentMessageWire, EventFrame, NoticeFrame, TokenUsagePayload } from "../api/types";
 import { applyEvent, applyMessages, initialUiState, reportUnhandled, type UiState } from "./reducer";
 
 export type ManuscriptMode = "read" | "edit" | "diff";
@@ -86,6 +86,8 @@ interface ChatStore extends UiState {
   noticeLog: NoticeFrame[];
   /** 跨面板跳转请求（P6 T11）；面板消费后 clearNav，不留残影。 */
   nav: SearchNav | null;
+  /** 上下文占用（P10 T12，D11）：get_state 初值 + 每轮 token_usage 帧刷新。 */
+  tokenUsage: TokenUsagePayload | null;
   setSlug(slug: string): void;
   setWorkspaces(slugs: string[]): void;
   setStatus(status: ConnectionStatus): void;
@@ -104,6 +106,7 @@ interface ChatStore extends UiState {
   applySaved(revision: number, diff: DiffHunkWire[], savedText: string): void;
   discardDraft(): void;
   applyNotice(notice: NoticeFrame): void;
+  applyTokenUsage(usage: TokenUsagePayload): void;
   resetManuscript(): void;
   /** 写入跳转请求（搜索框）；目标面板消费后 clearNav。 */
   navigate(nav: SearchNav): void;
@@ -135,6 +138,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
   syncCards: [],
   noticeLog: [],
   nav: null,
+  tokenUsage: null,
   // 切换工作区：slug 变更驱动 useAgentSocket 重连；旧工作区的事件帧/条目
   // 由 loadSnapshot 的「重置后重放」语义在新快照到达时整体更替（计划 D5）。
   // manuscript 随切换立即重置（P5 D7：工作区切换不残留上一案的章节草稿）；
@@ -143,7 +147,14 @@ export const useChatStore = create<ChatStore>()((set) => ({
     set((s) =>
       s.slug === slug
         ? { slug }
-        : { slug, manuscript: initialManuscript, syncCards: [], noticeLog: [], nav: null },
+        : {
+            slug,
+            manuscript: initialManuscript,
+            syncCards: [],
+            noticeLog: [],
+            nav: null,
+            tokenUsage: null,
+          },
     ),
   setWorkspaces: (workspaces) => set({ workspaces }),
   setStatus: (status) => set({ status }),
@@ -161,6 +172,9 @@ export const useChatStore = create<ChatStore>()((set) => ({
       snapshot: state,
       // 快照的 is_running 是唯一事实来源（R3 问题2——stale true 不得经 || 短路覆盖）
       running: state.is_running,
+      // 上下文占用随快照重置（P10 D11）：get_state.contextUsage 是连接时的真值，
+      // 后续由每轮 token_usage 帧刷新——同一份数据，重置后重放语义保持一致。
+      tokenUsage: state.contextUsage,
       // 对账卡片属对话流叙事，随快照重放一并清空（与 items 同生命周期）
       syncCards: [],
       // notice 账随快照重放清空（事件流页的实时尾归零，历史由 REST 接管）
@@ -272,6 +286,8 @@ export const useChatStore = create<ChatStore>()((set) => ({
       return { manuscript, noticeLog, syncCards: [...s.syncCards, card] };
     }),
   resetManuscript: () => set({ manuscript: initialManuscript }),
+  // 上下文占用更新（P10 T12，D11）：token_usage 帧到达即覆盖——占用是即时真值，非累加
+  applyTokenUsage: (usage) => set({ tokenUsage: usage }),
   // 搜索跳转（P6 T11）：只写不读——目标面板按 kind 各取所需后 clearNav。
   navigate: (nav) => set({ nav }),
   clearNav: () => set({ nav: null }),

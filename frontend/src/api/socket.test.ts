@@ -90,6 +90,16 @@ const STATE_DATA = {
   model: "fake-model",
   is_running: false,
   tools: ["bible_upsert", "write_chapter"],
+  context_usage: {
+    input: 10,
+    output: 4,
+    total: 14,
+    cache_read: 0,
+    cache_write: 0,
+    context_tokens: 1200,
+    window_tokens: 128_000,
+    source: "chars",
+  },
 };
 
 /** onSnapshot 在响应 resolve 后的微任务链里触发，断言前先排空队列。 */
@@ -150,7 +160,9 @@ describe("快照回填", () => {
     });
     await flush();
     expect(snapshots).toHaveLength(1);
-    expect(snapshots[0].state).toEqual(STATE_DATA);
+    const state = snapshots[0].state as { slug: string; contextUsage: unknown };
+    expect(state.slug).toBe(STATE_DATA.slug);
+    expect(state.contextUsage).toEqual(STATE_DATA.context_usage);
     expect(snapshots[0].messages).toEqual([{ role: "user", content: "建角色", timestamp: 5 }]);
   });
 
@@ -253,6 +265,39 @@ describe("notice 帧分流（P5 T5）", () => {
     });
     expect(notices).toEqual([
       { type: "notice", kind: "sync_end", chapter: "ch03", hunks: 2, updates: 1, status: "done" },
+    ]);
+    expect(events).toEqual([]);
+  });
+});
+
+describe("token_usage 帧分流（P10 T12，D11）", () => {
+  it("token_usage 帧进 onTokenUsage，不进 onEvent（与 agent 事件分流）", () => {
+    const usages: unknown[] = [];
+    const { ws, events } = makeSocket({ onTokenUsage: (u) => usages.push(u) });
+    ws.simulateOpen();
+    ws.receive({
+      type: "token_usage",
+      input: 10,
+      output: 4,
+      total: 14,
+      cache_read: 0,
+      cache_write: 0,
+      context_tokens: 1200,
+      window_tokens: 128_000,
+      source: "chars",
+    });
+    expect(usages).toEqual([
+      {
+        type: "token_usage",
+        input: 10,
+        output: 4,
+        total: 14,
+        cache_read: 0,
+        cache_write: 0,
+        context_tokens: 1200,
+        window_tokens: 128_000,
+        source: "chars",
+      },
     ]);
     expect(events).toEqual([]);
   });

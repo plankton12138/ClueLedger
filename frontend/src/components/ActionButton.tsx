@@ -11,16 +11,19 @@ export default function ActionButton({
   onClick,
   title,
   disabled = false,
+  active = false,
 }: {
   label: string;
   onClick: () => void;
   /** 悬停补充（选项按钮用来显示取舍说明）。 */
   title?: string;
   disabled?: boolean;
+  /** 选中态（P10 D10 多维度组内单选）：实心高亮以示当前选择。 */
+  active?: boolean;
 }) {
   return (
     <Button
-      variant="soft"
+      variant={active ? "default" : "soft"}
       onClick={onClick}
       title={title}
       disabled={disabled}

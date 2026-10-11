@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 
 from fake_scripts import assistant_stream, character_upsert, closing
 from hastings.bible.store import StoryWorkspace
+from hastings.events_store import events_file
 from hastings.prompts import build_system_prompt
 from hastings.server.app import create_app
 from hastings.server.hastings_session import HastingsSession
@@ -137,6 +138,49 @@ def test_ws_prompt_streams_event_frames_with_alias_fidelity(
     ]
     assert deltas, "应存在 text_delta 流式更新帧"
     assert deltas[0]["assistantMessageEvent"]["delta"] == "先建档。"
+
+
+# --- token 用量帧（P10 T12，D11）：agent_end 前补一帧 + 落 events.jsonl ---
+
+
+def test_ws_emits_token_usage_frame_before_agent_end(workspace: StoryWorkspace) -> None:
+    with TestClient(_standard_app(workspace)).websocket_connect(WS_URL) as ws:
+        frames = _prompt_and_wait_done(ws)
+
+    assert frames[-1]["type"] == "agent_end"  # 读到 agent_end 即本轮帧尽
+    usage = frames[-2]
+    assert usage["type"] == "token_usage"
+    assert usage["window_tokens"] == 128_000
+    assert usage["context_tokens"] > 0  # system prompt + 消息字符兜底估算
+    assert set(usage) >= {
+        "input",
+        "output",
+        "total",
+        "cache_read",
+        "cache_write",
+        "context_tokens",
+        "window_tokens",
+        "source",
+    }
+
+
+def test_ws_records_token_usage_event_after_run(workspace: StoryWorkspace) -> None:
+    with TestClient(_standard_app(workspace)).websocket_connect(WS_URL) as ws:
+        _prompt_and_wait_done(ws)
+
+    lines = events_file(workspace).read_text(encoding="utf-8").splitlines()
+    assert any('"type":"token_usage"' in line for line in lines)
+
+
+def test_ws_get_state_includes_context_usage(workspace: StoryWorkspace) -> None:
+    app = create_app(_registry_with_session(workspace.root, StubSession()))
+    with TestClient(app).websocket_connect(WS_URL) as ws:
+        ws.send_json({"id": 1, "type": "get_state"})
+        state = ws.receive_json()
+
+    data = state["data"]
+    assert data["context_usage"]["window_tokens"] == 128_000
+    assert data["context_usage"]["context_tokens"] == 0
 
 
 # --- ② 命令语义：协议翻译用 StubSession 钉确定性 ---

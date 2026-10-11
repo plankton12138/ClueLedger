@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from hastings.bible.models import (
     Character,
     Foreshadow,
@@ -19,6 +21,7 @@ from hastings.bible.store import StoryWorkspace, save_character, save_ledger, sa
 from hastings.bible.story_state import StoryDoc
 from hastings.manuscript.diff import DiffHunk, HunkKind
 from hastings.prompts import (
+    CONFIRM_MARKER,
     LANGUAGE_HEADING,
     OPTIONS_MARKER,
     ROLE_HEADING,
@@ -29,10 +32,13 @@ from hastings.prompts import (
     build_language_section,
     build_reconcile_message,
     build_system_prompt,
+    refresh_system_prompt,
 )
 from hastings.settings import DEFAULT_WRITING_LANGUAGE
-from tau_agent import AgentTool, AgentToolResult
+from tau_agent import AgentHarness, AgentHarnessConfig, AgentTool, AgentToolResult, AssistantMessage
+from tau_agent.provider_events import AssistantDoneEvent, AssistantStartEvent
 from tau_agent.types import JSONValue
+from tau_ai import FakeProvider
 
 
 def _tool(name: str, *guidelines: str) -> AgentTool:
@@ -317,6 +323,59 @@ def test_workflow_options_protocol_includes_few_shot_example() -> None:
     assert "B. 钝器击打 —— " in section
 
 
+def test_workflow_options_protocol_single_decision_point() -> None:
+    """D5 收敛：默认一次只问一个决策点，多维度留待后续轮次。"""
+    section = WORKFLOW_SECTION
+
+    assert "一次只问一个决策点" in section
+    assert "选影响最大的一个先问" in section
+
+
+def test_workflow_options_protocol_rejects_format_variants() -> None:
+    """D5 反例：标记带标题前缀 / 块内穿插维度标题行 / 全角冒号分隔均渲染失败。"""
+    section = WORKFLOW_SECTION
+
+    assert "### 【选项】" in section  # 标题前缀反例
+    assert "**章纲划分**" in section  # 块内维度标题行反例
+    assert "全角冒号" in section
+
+
+def test_workflow_options_protocol_allows_dimension_blocks() -> None:
+    """D10：允许多维度的【选项：<维度>】块，每块键各自从 A 起、连着排在末尾。"""
+    section = WORKFLOW_SECTION
+
+    assert "【选项：<维度>】" in section
+    assert "每维度单独成块" in section
+    assert "各自从 A 起" in section
+
+
+# --- 作者确认标记协议（P10 T10，D9）：尾部确认块 + 格式 + 适用场合 ---
+
+
+def test_confirm_marker_constant() -> None:
+    """确认标记常量：前后端靠同一文本锚点识别。"""
+    assert CONFIRM_MARKER == "【确认】"
+
+
+def test_workflow_confirm_protocol_specifies_trailing_block_and_fields() -> None:
+    """确认块必须在消息最末尾，含待确认/确认后/暂不三字段。"""
+    section = WORKFLOW_SECTION
+
+    assert "作者确认输出协议" in section
+    assert "最末尾" in section
+    assert "待确认：" in section
+    assert "确认后：" in section
+    assert "暂不：" in section
+
+
+def test_workflow_confirm_protocol_states_when_required() -> None:
+    """适用场合明确：Bible 建账完成后、推进阶段之前；硬约束仍归 story_stage。"""
+    section = WORKFLOW_SECTION
+
+    assert "Bible 建账完成后" in section
+    assert "story_stage 工具把门" in section
+
+
 def test_workflow_states_bible_drafting_protocol() -> None:
     """bible_drafting 协议：建账顺序固定 + 总览确认三类点 + 确认后 story_stage 推进。"""
     section = WORKFLOW_SECTION
@@ -463,3 +522,67 @@ def test_reconcile_message_degrades_when_ledger_unreadable(tmp_path: Path) -> No
     message = build_reconcile_message(workspace, "ch03", [_hunk("modified", "旧", "新", 1, 1)])
 
     assert "账本条目读取失败" in message
+
+
+# --- 刷新点共享（P10 T2，D6/L7）：三端单一事实源 ---
+
+
+def _stop_turn(text: str) -> list[Any]:
+    message = AssistantMessage(content=text, stop_reason="stop")
+    return [
+        AssistantStartEvent(partial=AssistantMessage(model="fake")),
+        AssistantDoneEvent(reason="stop", message=message),
+    ]
+
+
+def test_refresh_system_prompt_rebuilds_with_latest_status(tmp_path: Path) -> None:
+    """直接调用即把工作区实况写回 config.system（状态注入唯一刷新点）。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="demo")
+    harness = AgentHarness(
+        AgentHarnessConfig(
+            provider=FakeProvider([_stop_turn("ok")]),
+            model="fake",
+            system=build_system_prompt(workspace=workspace),
+            tools=[],
+        )
+    )
+    assert "角色 0" in harness.config.system
+
+    save_character(workspace, Character(name="波洛", identity="侦探"))
+    save_character(workspace, Character(name="黑斯廷斯", identity="叙事者"))
+    save_story_doc(workspace, StoryDoc(slug="demo", stage="writing"))
+
+    refresh_system_prompt(harness, workspace)
+
+    assert "角色 2" in harness.config.system
+    assert "阶段：writing" in harness.config.system
+
+
+@pytest.mark.anyio
+async def test_refresh_injects_latest_status_into_second_round_request(tmp_path: Path) -> None:
+    """两轮对话：轮间建账 + refresh → 第二轮请求的 system 含更新后的计数。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="demo")
+    provider = FakeProvider([_stop_turn("第一轮"), _stop_turn("第二轮")])
+    harness = AgentHarness(
+        AgentHarnessConfig(
+            provider=provider,
+            model="fake",
+            system=build_system_prompt(workspace=workspace),
+            tools=[],
+        )
+    )
+
+    async for _ in harness.prompt("第一轮提问"):
+        pass
+    # 轮间建账（模拟工具落盘）+ 刷新
+    save_character(workspace, Character(name="波洛", identity="侦探"))
+    save_character(workspace, Character(name="黑斯廷斯", identity="叙事者"))
+    refresh_system_prompt(harness, workspace)
+    async for _ in harness.prompt("第二轮提问"):
+        pass
+
+    assert len(provider.calls) == 2
+    first_system = provider.calls[0][1]
+    second_system = provider.calls[1][1]
+    assert "角色 2" not in first_system  # 建账前
+    assert "角色 2" in second_system  # 建账后刷新生效

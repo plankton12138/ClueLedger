@@ -358,8 +358,31 @@ export interface NoticeFrame {
 /** 服务端 → 客户端事件帧。 */
 export type EventFrame = AgentEventFrame;
 
+// ---------- token 用量帧（P10 T12，D11，hastings 协议层加法扩展，ws.py 同步） ----------
+
+/**
+ * 上下文占用与最近一轮 usage（对应 context_manager.TokenUsage.to_payload）。
+ * ``context_tokens`` 是当前上下文体积，``window_tokens`` 是窗口上限；两者的
+ * 比值即对话头显示的占用率。``source`` 记录计数分层来源（usage 锚定 / 字符兜底）。
+ */
+export interface TokenUsagePayload {
+  input: number;
+  output: number;
+  total: number;
+  cache_read: number;
+  cache_write: number;
+  context_tokens: number;
+  window_tokens: number;
+  source: "provider_usage" | "chars";
+}
+
+/** 每轮 agent_end 前推一帧；get_state 的 context_usage 载荷同形（无 type）。 */
+export interface TokenUsageFrame extends TokenUsagePayload {
+  type: "token_usage";
+}
+
 /** 服务端 → 客户端所有帧的收窄前形态。 */
-export type ServerFrame = EventFrame | ResponseFrame | NoticeFrame;
+export type ServerFrame = EventFrame | ResponseFrame | NoticeFrame | TokenUsageFrame;
 
 export function isResponseFrame(frame: ServerFrame): frame is ResponseFrame {
   return frame.type === "response";
@@ -367,6 +390,10 @@ export function isResponseFrame(frame: ServerFrame): frame is ResponseFrame {
 
 export function isNoticeFrame(frame: ServerFrame): frame is NoticeFrame {
   return frame.type === "notice";
+}
+
+export function isTokenUsageFrame(frame: ServerFrame): frame is TokenUsageFrame {
+  return frame.type === "token_usage";
 }
 
 // ---------- 文本提取辅助（对应 messages.py 的 .text property） ----------

@@ -18,10 +18,20 @@ from hastings.bible.store import (
     list_characters,
     load_ledger,
 )
+from hastings.context_manager import compact_context
 from hastings.events_store import EventStore, events_file, make_event_persister
+from hastings.manuscript.guards import attach_guards
+from hastings.manuscript.prose_guard import warn_empty_chapters
 from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
-from hastings.prompts import build_system_prompt
+from hastings.prompts import build_system_prompt, refresh_system_prompt
 from hastings.session_persist import restore_and_attach
+from hastings.session_store import (
+    SessionNotFoundError,
+    activate_session,
+    active_session_id,
+    create_session,
+    list_sessions,
+)
 from hastings.settings import load_settings
 from hastings.tools.bible_tools import ENTITY_LABELS, create_bible_tools, entity_summary
 from hastings.tools.chapter_tools import create_chapter_tools
@@ -48,6 +58,10 @@ from tau_agent.tools import AgentTool
 
 QUIT_COMMANDS = frozenset({"/quit", "/exit", "/q"})
 BIBLE_COMMAND = "/bible"
+COMPACT_COMMAND = "/compact"
+SESSIONS_COMMAND = "/sessions"
+SESSION_COMMAND = "/session"
+NEW_COMMAND = "/new"
 _ALL_ENTITY_TYPES: tuple[str, ...] = tuple(ENTITY_LABELS)
 
 
@@ -125,6 +139,7 @@ def build_harness(workspace: StoryWorkspace, provider: ModelProvider, model: str
         )
     )
     harness.subscribe(make_event_persister(EventStore(events_file(workspace))))
+    attach_guards(harness, workspace)
     return harness
 
 
@@ -187,18 +202,62 @@ def bible_command_output(workspace: StoryWorkspace, arg: str) -> str:
         return f"读取 Story Bible 失败：{exc}\n（请检查 {workspace.bible_dir} 下的 YAML 文件）"
 
 
+async def compact_command_output(harness: AgentHarness, workspace: StoryWorkspace) -> str:
+    """/compact 命令输出（P10 T13，D12）：手动两档压缩（绕过阈值）。
+
+    无可压缩空间 → 「无需压缩」正常文本（合法空结果）；不抛异常崩 REPL。
+    """
+    result = await compact_context(harness, workspace, manual=True)
+    if result.compacted:
+        parts: list[str] = []
+        if result.stripped_chapters:
+            parts.append(f"剥离 {len(result.stripped_chapters)} 章正文参数")
+        if result.summarized:
+            parts.append("生成前情摘要")
+        detail = "、".join(parts) if parts else "压缩完成"
+        archived = f"（已归档 {result.archived}）" if result.archived else ""
+        return (
+            f"已压缩上下文：{detail}，"
+            f"{result.tokens_before} → {result.tokens_after} token{archived}。"
+        )
+    if result.reason == "nothing_to_strip":
+        return "当前上下文无需压缩。怎样算对：继续写作即可，超阈值时会自动压缩。"
+    if result.reason == "running":
+        return "压缩被拒：有写作流进行中。怎样算对：等本轮结束后再执行 /compact。"
+    return f"未压缩（原因：{result.reason}）。"
+
+
+def format_sessions(workspace: StoryWorkspace) -> str:
+    """``/sessions`` 的输出：会话列表，星号标记当前活跃会话。"""
+    active = active_session_id(workspace)
+    metas = list_sessions(workspace)
+    lines = [f"会话共 {len(metas)} 个（* 为当前活跃）："]
+    for meta in metas:
+        marker = "*" if meta.id == active else " "
+        lines.append(f"{marker} {meta.id}  {meta.title}（{meta.message_count} 条）")
+    return "\n".join(lines)
+
+
 async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: str) -> None:
     """终端 REPL：输入一句话，Agent 通过工具改故事工作区。"""
     tools = create_writing_tools(workspace)
     harness = build_harness(workspace, provider, model)
     renderer = PlainRenderer({tool.name: tool for tool in tools})
     workspace.ensure_dirs()
-    await restore_and_attach(workspace, harness, on_warning=print)
+    unsubscribe = await restore_and_attach(workspace, harness, on_warning=print)
 
     print(f"文章已打开：{workspace.story_dir}")
     print(f"模型：{model}｜工具：{'、'.join(tool.name for tool in tools)}")
-    print("输入 /bible [type] 查看账本，/quit 收工。")
+    print(
+        "输入 /bible [type] 查看账本，/compact 压缩上下文，"
+        "/sessions 列出会话，/session <id> 切换，/new 新建，/quit 收工。"
+    )
     print()
+
+    async def rebind() -> Callable[[], None]:
+        """退订旧会话存储/索引订阅，重新接线到当前活跃会话。"""
+        unsubscribe()
+        return await restore_and_attach(workspace, harness, on_warning=print)
 
     while True:
         try:
@@ -214,23 +273,59 @@ async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: st
             print(bible_command_output(workspace, line[len(BIBLE_COMMAND) :].strip()))
             print()
             continue
+        if line == COMPACT_COMMAND:
+            print(await compact_command_output(harness, workspace))
+            print()
+            continue
+        if line == SESSIONS_COMMAND:
+            print(format_sessions(workspace))
+            print()
+            continue
+        if line.startswith(SESSION_COMMAND + " "):
+            target = line[len(SESSION_COMMAND) + 1 :].strip()
+            try:
+                meta = activate_session(workspace, target)
+            except SessionNotFoundError as exc:
+                print(exc)
+                print()
+                continue
+            unsubscribe = await rebind()
+            print(f"已切换到会话 {meta.id}（{meta.title}）。")
+            print()
+            continue
+        if line == NEW_COMMAND:
+            meta = create_session(workspace)
+            unsubscribe = await rebind()
+            print(f"已新建会话 {meta.id}（{meta.title}）。")
+            print()
+            continue
+
+        await compact_context(harness, workspace)  # L9：prompt 前两档压缩（超阈值才动）
+        refresh_system_prompt(harness, workspace)  # L7：每轮 prompt 前注入最新状态
         async for event in harness.prompt(line):
             renderer.handle(event)
         print()
 
     if renderer.unhandled_event_types:
         print(f"（有 {len(renderer.unhandled_event_types)} 类事件未渲染，属调试信息）")
+    warn_empty_chapters(workspace)  # D2 第 3 层：写作期空稿观测信号
     print("故事已合上。")
 
 
 __all__ = [
     "BIBLE_COMMAND",
+    "COMPACT_COMMAND",
+    "NEW_COMMAND",
     "QUIT_COMMANDS",
+    "SESSION_COMMAND",
+    "SESSIONS_COMMAND",
     "PlainRenderer",
     "bible_command_output",
     "build_harness",
+    "compact_command_output",
     "create_writing_tools",
     "format_bible",
     "format_ledger",
+    "format_sessions",
     "run_repl",
 ]

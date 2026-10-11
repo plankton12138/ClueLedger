@@ -116,6 +116,26 @@ def _confirmation_gap(prereqs: StagePrereqs) -> list[str]:
     return gaps
 
 
+def intake_write_rejection(stage: str) -> str | None:
+    """数据面写门的纯判定（P10 D1/L2）：stage=intake 时禁止建账。
+
+    返回拒绝文案（三要素含逃生门），非 intake 返回 None。
+    只管数据面（bible_upsert / method_lock|unlock）：intake 是构想接收阶段，
+    设定未经作者确认不得落盘；控制面（story_stage advance）不在此拦——抢跑的
+    实际危害是「未经确认落盘」，advance 本身零数据写入且留痕可审计。
+    旧工作区（story.yaml 不存在）由调用方在存在性层面放行。
+    """
+    if stage != "intake":
+        return None
+    return (
+        "写入被拒：当前阶段是 intake。"
+        "为什么错：intake 是构想接收阶段，设定未经作者确认不得落盘。"
+        "怎样算对：先完成 intake 三段式（五维摘要→缺口清单→关键问题）"
+        "并经作者确认，用 story_stage 推进到 bible_drafting 后再写入；"
+        "若作者已明确要求开始建账，直接推进即可。"
+    )
+
+
 def validate_transition(
     stage: str,
     target: str,

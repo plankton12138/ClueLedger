@@ -7,7 +7,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventFrame, ToolExecutionEndEventFrame } from "./types";
 import {
   acquireEditMark,
+  activateSession,
+  createSession,
   createWorkspace,
+  deleteSession,
   fetchBible,
   fetchChapter,
   fetchChapters,
@@ -15,8 +18,10 @@ import {
   fetchProviders,
   fetchSettings,
   fetchWorkspaces,
+  listSessions,
   refetchTargets,
   releaseEditMark,
+  renameSession,
   saveChapter,
   saveSettings,
 } from "./rest";
@@ -122,6 +127,124 @@ describe("workspace API（P4 T6）", () => {
     expect(body.count).toBe(0);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       `/api/${encodeURIComponent("orient express")}/bible/clue`,
+    );
+  });
+});
+
+// ---------- 会话面（P10 T14，D13）：列表/新建/切换/删除/重命名 ----------
+
+describe("session API（P10 T14）", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function jsonResponse(payload: unknown, status = 200): Response {
+    return new Response(JSON.stringify(payload), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const summary = {
+    id: "session-20260101-000000-abcd",
+    title: "会话",
+    created_at: "2026-01-01T00:00:00",
+    last_active: "2026-01-01T00:00:00",
+    message_count: 0,
+    active: true,
+  };
+
+  it("listSessions GET /api/{slug}/sessions 返回列表与活跃 id", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({ sessions: [summary], active_id: summary.id }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const body = await listSessions("story a");
+    expect(body.active_id).toBe(summary.id);
+    expect(body.sessions[0]?.title).toBe("会话");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/story%20a/sessions");
+  });
+
+  it("createSession POST，无 title 时 body 为 {}（照常设置 Content-Type）", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe("{}");
+      return jsonResponse(summary);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createSession("demo")).resolves.toEqual(summary);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/demo/sessions");
+  });
+
+  it("createSession 带 title → body 为 { title }", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.body).toBe(JSON.stringify({ title: "序章草稿" }));
+      return jsonResponse(summary);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createSession("demo", "序章草稿");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/demo/sessions");
+  });
+
+  it("activateSession POST .../{id}/activate", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("POST");
+      return jsonResponse(summary);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(activateSession("demo", "session-20260101-000000-abcd")).resolves.toEqual(
+      summary,
+    );
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/demo/sessions/session-20260101-000000-abcd/activate",
+    );
+  });
+
+  it("deleteSession DELETE .../{id}，返回新的活跃 id", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("DELETE");
+      return jsonResponse({ slug: "demo", active_id: "session-20260102-000000-ef01" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteSession("demo", "session-20260101-000000-abcd")).resolves.toEqual({
+      slug: "demo",
+      active_id: "session-20260102-000000-ef01",
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/demo/sessions/session-20260101-000000-abcd");
+  });
+
+  it("renameSession PATCH，body 为 { title }", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("PATCH");
+      expect(init?.body).toBe(JSON.stringify({ title: "新名字" }));
+      return jsonResponse({ ...summary, title: "新名字" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(renameSession("demo", summary.id, "新名字")).resolves.toMatchObject({
+      title: "新名字",
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/demo/sessions/session-20260101-000000-abcd");
+  });
+
+  it("running 409 → detail 文案原样透出（切换/新建/删除同一口径）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ detail: "切换会话被拒：有写作流进行中。怎样算对：等它结束。" }, 409)),
+    );
+    await expect(activateSession("demo", summary.id)).rejects.toThrow("写作流进行中");
+  });
+
+  it("会话不存在 404 → detail 原样透出", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ detail: "会话 session-… 不存在。" }, 404)),
+    );
+    await expect(deleteSession("demo", "session-20260101-000000-abcd")).rejects.toThrow(
+      "不存在",
     );
   });
 });

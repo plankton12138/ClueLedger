@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncIterator, Callable, Sequence
 from typing import TYPE_CHECKING
 
@@ -73,6 +74,9 @@ class HastingsSession:
         self._events = EventStore(events_file(workspace))
         self._unsubscribe_events = harness.subscribe(make_event_persister(self._events))
         self._unsubscribe_notice_events = self._reconcile.subscribe(self._persist_notice)
+        # token 用量落账（P10 T12，D11）：每轮 agent_end 记一条 token_usage 事件，
+        # 与压缩触发、前端占用共用唯一计数源（context_usage 同一函数）。
+        self._unsubscribe_token_events = harness.subscribe(self._on_agent_end)
 
     @classmethod
     def from_workspace(
@@ -86,6 +90,7 @@ class HastingsSession:
     ) -> HastingsSession:
         """按 CLI 同款方式装配工具集、system prompt 与 harness。"""
         from hastings.cli import create_writing_tools
+        from hastings.manuscript.guards import attach_guards
         from hastings.prompts import build_system_prompt
         from hastings.settings import load_settings
 
@@ -101,6 +106,7 @@ class HastingsSession:
                 tools=tools,
             )
         )
+        attach_guards(harness, workspace)
         return cls(
             harness=harness,
             workspace=workspace,
@@ -155,6 +161,36 @@ class HastingsSession:
         """events.jsonl 账本（P6 T4）：只读分页由 REST 端点直读，此处暴露供接线/测试。"""
         return self._events
 
+    def context_usage(self) -> TokenUsage:
+        """当前上下文占用快照（P10 D11）：唯一计数源 count_context_tokens 的封装。
+
+        与 events.jsonl 的 token_usage 事件、压缩触发同源；get_state 与
+        每轮 token_usage 推送帧都读它，保证单一事实源。
+        """
+        from hastings.context_manager import build_token_usage
+
+        return build_token_usage(self._harness, self._workspace)
+
+    async def _on_agent_end(self, event: AgentEvent) -> None:
+        """每轮 agent_end 落一条 token_usage 事件（D11）：可观测性的账。
+
+        落账失败绝不能反杀写作流（持久化只是事件流的消费者）——除了
+        EventStore 内部的 OSError 兜底，这里再兜一层 settings/计数异常。
+        """
+        if event.type != "agent_end":
+            return
+        from hastings.context_manager import record_token_usage
+
+        try:
+            await record_token_usage(self._events, self._harness, self._workspace)
+        except Exception as exc:  # noqa: BLE001 — 观测失败不断流（四透镜③）
+            print(
+                "[token] 本轮 token 用量落账失败，写作继续但用量账不完整。"
+                f"为什么错：{exc}。"
+                "怎样算对：检查 settings.yaml 与磁盘状态；下一轮会重新记录。",
+                file=sys.stderr,
+            )
+
     async def _persist_notice(self, notice: ReconcileNotice) -> None:
         """对账进度通知落进事件流（可观测性账本记全貌，含对账三态）。"""
         payload: dict[str, JSONValue] = {
@@ -189,19 +225,14 @@ class HastingsSession:
     def _refresh_system(self) -> None:
         """每轮 prompt 前刷新 system（P8 T5，B1）：状态注入的唯一刷新点。
 
-        config.system 每轮运行时才被 harness 读取（P6 D3 手法），prompt 入口
-        重算即把 story.yaml 阶段与账本实况注入下一轮；语言也从 settings 现读。
-        运行中不刷新——prompt 入口本就有 busy 防护，与「运行中 system 不变」
-        同语义；reconcile 队列经 session.prompt 同入口，自动获得同一刷新。
+        委托 ``prompts.refresh_system_prompt``（P10 D6/L7 三端共享单一事实源）：
+        prompt 入口重算即把 story.yaml 阶段与账本实况注入下一轮。运行中不刷新——
+        prompt 入口本就有 busy 防护，与「运行中 system 不变」同语义；reconcile
+        队列经 session.prompt 同入口，自动获得同一刷新。
         """
-        from hastings.prompts import build_system_prompt
-        from hastings.settings import load_settings
+        from hastings.prompts import refresh_system_prompt
 
-        self._harness.config.system = build_system_prompt(
-            self._harness.config.tools,
-            language=load_settings(self._workspace).writing_language,
-            workspace=self._workspace,
-        )
+        refresh_system_prompt(self._harness, self._workspace)
 
     def apply_model(self, model: str) -> None:
         """同档案热切换模型（P6 D2，与 apply_writing_language 同一手法）。
@@ -219,6 +250,27 @@ class HastingsSession:
         self._refresh_system()
         return self._harness.prompt(content)
 
+    async def auto_compact(self) -> CompactionResult:
+        """prompt 入口的两档自动压缩（P10 D8/L9）：超阈值才动，摘要失败不进流。
+
+        ``prompt`` 是同步返回迭代器的签名（WS/reconcile 依赖），故压缩在此独立成
+        async 方法，由 WS prompt 入口 await——与 cli/driver 在 prompt 前调
+        ``compact_context`` 同一语义（先压缩后刷新，refresh 的同步剥离自然 noop）。
+        """
+        from hastings.context_manager import compact_context
+
+        return await compact_context(self._harness, self._workspace, manual=False)
+
+    async def compact_context(self) -> CompactionResult:
+        """手动压缩（P10 T13，D12）：绕过阈值走同一两档原语（含归档重写、事件留痕）。
+
+        与 ``auto_compact`` 共用实现与持久化，手动路径不新增分支——差别仅在
+        ``manual=True`` 跳过阈值判断（作者主动回收上下文，即使未超阈值也尽力压缩）。
+        """
+        from hastings.context_manager import compact_context as run_compaction
+
+        return await run_compaction(self._harness, self._workspace, manual=True)
+
     def steer(self, content: str) -> None:
         self._harness.steer(content)
 
@@ -234,6 +286,7 @@ class HastingsSession:
 
 # 静态结构自检：实现与 WritingSession 协议漂移时 mypy strict 即报错
 if TYPE_CHECKING:
+    from hastings.context_manager import CompactionResult, TokenUsage
 
     def _conforms(session: HastingsSession) -> WritingSession:
         return session

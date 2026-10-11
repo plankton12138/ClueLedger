@@ -13,8 +13,10 @@ import type {
   EventFrame,
   NoticeFrame,
   ServerFrame,
+  TokenUsageFrame,
+  TokenUsagePayload,
 } from "./types";
-import { isNoticeFrame, isResponseFrame } from "./types";
+import { isNoticeFrame, isResponseFrame, isTokenUsageFrame } from "./types";
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 
@@ -24,6 +26,8 @@ export interface AgentStateSnapshot {
   model: string;
   is_running: boolean;
   tools: string[];
+  /** 连接时即已知的上下文占用（P10 T12，D11）；老服务端缺该字段时为 null。 */
+  contextUsage: TokenUsagePayload | null;
 }
 
 export interface SocketCallbacks {
@@ -31,6 +35,8 @@ export interface SocketCallbacks {
   onEvent?(event: EventFrame): void;
   /** 对账进度通知（P5 T4）：与 agent 事件分流，未注册时安静丢弃。 */
   onNotice?(notice: NoticeFrame): void;
+  /** token 用量帧（P10 T12，D11）：每轮 agent_end 前推一帧，驱动对话头占用显示。 */
+  onTokenUsage?(usage: TokenUsageFrame): void;
   /** get_state + get_messages 都到齐后回调一次（连接建立时自动拉取）。 */
   onSnapshot?(state: AgentStateSnapshot, messages: AgentMessageWire[]): void;
   /** 连接层错误（发送失败、响应超时、坏帧、快照结构不符）。 */
@@ -74,6 +80,24 @@ function parseState(data: Record<string, unknown> | undefined): AgentStateSnapsh
     model: d["model"] as string,
     is_running: d["is_running"] as boolean,
     tools: (d["tools"] as unknown[]).map(String),
+    contextUsage: parseTokenUsage(d["context_usage"]),
+  };
+}
+
+/** context_usage 载荷宽容解析：缺字段/坏值回落 0（协议演进不崩首屏）。 */
+function parseTokenUsage(raw: unknown): TokenUsagePayload | null {
+  if (raw === null || raw === undefined || typeof raw !== "object") return null;
+  const d = raw as Record<string, unknown>;
+  const num = (key: string): number => (typeof d[key] === "number" ? (d[key] as number) : 0);
+  return {
+    input: num("input"),
+    output: num("output"),
+    total: num("total"),
+    cache_read: num("cache_read"),
+    cache_write: num("cache_write"),
+    context_tokens: num("context_tokens"),
+    window_tokens: num("window_tokens"),
+    source: d["source"] === "provider_usage" ? "provider_usage" : "chars",
   };
 }
 
@@ -189,6 +213,10 @@ export class AgentSocket {
     }
     if (isNoticeFrame(frame)) {
       this.callbacks.onNotice?.(frame);
+      return;
+    }
+    if (isTokenUsageFrame(frame)) {
+      this.callbacks.onTokenUsage?.(frame);
       return;
     }
     if (!isResponseFrame(frame)) {

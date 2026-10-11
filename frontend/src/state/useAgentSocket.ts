@@ -24,6 +24,8 @@ export function useAgentSocket(): {
       onEvent: (event) => useChatStore.getState().handleEvent(event),
       // 对账通知（P5 T5）：驱动 toolbar 徽标与对话流同步卡片
       onNotice: (notice) => useChatStore.getState().applyNotice(notice),
+      // token 用量帧（P10 T12，D11）：驱动对话头上下文占用显示
+      onTokenUsage: (usage) => useChatStore.getState().applyTokenUsage(usage),
       onSnapshot: (state, messages) => useChatStore.getState().loadSnapshot(state, messages),
       onError: (message) => useChatStore.getState().setConnectionError(message),
     });

@@ -105,7 +105,8 @@ async function bootWorkspaces(): Promise<boolean> {
 function ChatPanel({
   slug,
   running,
-  onResetDone,
+  onSessionChanged,
+  onCompacted,
   stage,
   onRetrySync,
   onSendPrompt,
@@ -114,7 +115,8 @@ function ChatPanel({
 }: {
   slug: string;
   running: boolean;
-  onResetDone: () => void;
+  onSessionChanged: () => void;
+  onCompacted: () => void;
   stage: string | null;
   onRetrySync: (chapter: string) => void;
   onSendPrompt: (message: string) => void;
@@ -123,7 +125,12 @@ function ChatPanel({
 }) {
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <ChatHeader slug={slug} running={running} onResetDone={onResetDone} />
+      <ChatHeader
+        slug={slug}
+        running={running}
+        onSessionChanged={onSessionChanged}
+        onCompacted={onCompacted}
+      />
       <ErrorBoundary label="对话">
         <ChatStream onRetrySync={onRetrySync} stage={stage} onSendPrompt={onSendPrompt} />
       </ErrorBoundary>
@@ -458,7 +465,8 @@ export default function App() {
                   <ChatPanel
                     slug={slug}
                     running={running}
-                    onResetDone={reconnect}
+                    onSessionChanged={reconnect}
+                    onCompacted={reconnect}
                     stage={story?.stage ?? null}
                     onRetrySync={retrySync}
                     onSendPrompt={sendPrompt}
@@ -522,7 +530,8 @@ export default function App() {
               <ChatPanel
                 slug={slug}
                 running={running}
-                onResetDone={reconnect}
+                onSessionChanged={reconnect}
+                onCompacted={reconnect}
                 stage={story?.stage ?? null}
                 onRetrySync={retrySync}
                 onSendPrompt={sendPrompt}

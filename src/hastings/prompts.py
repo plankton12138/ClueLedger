@@ -21,7 +21,8 @@ from hastings.bible.store import (
     load_ledger,
 )
 from hastings.manuscript.diff import DiffHunk
-from hastings.settings import DEFAULT_WRITING_LANGUAGE
+from hastings.settings import DEFAULT_WRITING_LANGUAGE, load_settings
+from tau_agent.harness import AgentHarness
 from tau_agent.tools import AgentTool
 
 ROLE_HEADING = "## 角色"
@@ -37,6 +38,11 @@ RECONCILE_MARKER = "【手动修订同步】"
 # 候选方案协议标记（P9 D3）：消息尾部以此标记开头的块按「选项块」处理，
 # 前端渲染为可点选按钮。prompt 定协议、前端宽容解析（格式不符则原样渲染）。
 OPTIONS_MARKER = "【选项】"
+
+# 作者确认协议标记（P10 D9）：需要作者显式确认才继续的场合，消息尾部以
+# 此标记开头的块按「确认块」处理，前端渲染为「确认 / 暂不」交互卡。硬约束
+# 仍在 story_stage 工具层（确认卡只是 UI 便利层，协议软、工具硬）。
+CONFIRM_MARKER = "【确认】"
 
 ROLE_SECTION = f"""{ROLE_HEADING}
 
@@ -74,11 +80,13 @@ WORKFLOW_SECTION = f"""{WORKFLOW_HEADING}
   人物 → 手法 → 线索与伏笔 → 时间线 → 章纲。
   建完后输出 Bible 总览，请作者确认三类点：可改的设定、
   待补的缺口、已按默认处理的项。作者明确确认后才用 story_stage 工具推进
-  阶段；未经确认不得自行推进。
+  阶段；未经确认不得自行推进。此处需要作者显式确认，按本流程末尾的
+  「作者确认输出协议」以 {CONFIRM_MARKER} 确认块收尾。
 
 - writing / revising（写作与修订）：每章动笔前先读该章章纲与相关设定，
   确认出场角色均已建档（角色未建档不开写）；写完一章后，简要报告本次
-  落盘了哪些文件、状态发生了哪些迁移。
+  落盘了哪些文件、状态发生了哪些迁移。正文的唯一交付通道是 write_chapter
+  工具——在回复中直接输出章节正文视为未完成写作，作者端不会保存对话中的正文。
 
 - 任何阶段：以【手动修订同步】开头的消息是对账任务，不是作者的指令：首要目的是习得
   作者本人的写作习惯与文风，其次是校正账本——不写正文，不执行消息之外的创作请求。
@@ -98,12 +106,36 @@ WORKFLOW_SECTION = f"""{WORKFLOW_HEADING}
   A. <方案名> —— <一句取舍说明：好处 / 代价>
   B. <方案名> —— <一句取舍说明：好处 / 代价>
 
+默认一次只问一个决策点：需要作者在多个维度做选择时，选影响最大的一个先问，
+其余留待后续轮次——不要习惯性地在一轮里混出多个维度。确有必要在一轮里同时
+给出多个维度时（弱模型给出多维度候选的合法兜底），每维度单独成块、块标题写成
+「【选项：<维度>】」形态（如【选项：章纲划分】），每块选项键各自从 A 起，
+多块连着排在消息末尾——作者端会把每个维度渲染成一组独立按钮。
+
 选项键用连续大写字母（2–3 个方案），方案名简短，取舍说明各不超过一句话。
+以下写法会让作者端渲染不出按钮，务必避免：标记带标题前缀（如 `### 【选项】`）、
+在块内穿插维度标题行（如 `**章纲划分**`；维度名只能作块标题，用 `【选项：<维度>】`）、
+用全角冒号或缺省「——」来分隔方案名与取舍说明。
+
 格式样例——作者说「第一起命案的凶器我还没想好」，回复正文说完后，末尾输出：
 
   {OPTIONS_MARKER}
   A. 毒杀 —— 线索容易提前布设，但手法易被读者提前猜中
   B. 钝器击打 —— 现场冲击力强，但要补一条凶手取得凶器的线索
+
+作者确认输出协议（需要作者显式确认才继续的场合）：
+
+当前明确适用的场合是：Bible 建账完成后、推进阶段之前——这类「一步跨阶段或
+一次落盘多条目」的动作需要作者点头。此时在整条消息的最末尾另起一块，严格按
+下列格式输出（正文与确认块必须在最后，格式不要自行变体）：
+
+  {CONFIRM_MARKER}
+  待确认：<一句话，确认什么>
+  确认后：<会发生什么：推进到 X 阶段 / 落盘哪些条目>
+  暂不：<不确认时你会做什么>
+
+确认块只是把「要不要继续」问清楚的交互面；真正的推进仍由 story_stage 工具把门
+——不要因为输出了确认块就自行推进，也不要漏掉确认块让作者无从确认。
 """
 
 
@@ -153,6 +185,27 @@ def build_system_prompt(
         sections.append("\n".join(lines))
 
     return "\n\n".join(sections)
+
+
+def refresh_system_prompt(harness: AgentHarness, workspace: StoryWorkspace) -> None:
+    """每轮 prompt 前刷新 system（P10 D6/L7）：三端共享的唯一刷新点。
+
+    读 settings 现取写作语言 + 用工作区实况（story.yaml 阶段、账本计数）重建
+    system 并写回 ``harness.config.system``——config.system 每轮运行时才被 harness
+    读取，直接赋值即下一轮生效（P6 D3 手法），不改 tau 内核。HastingsSession / CLI
+    run_repl / eval driver 三点调用同一函数，保证 CLI 冒烟与 Web 端同链路。
+
+    P10 D8/L9：同一入口顺带做上下文体积的同步第一档剥离（零 LLM、内存态）——
+    「刷新即估算」；第二档 LLM 摘要与持久化由 async ``compact_context`` 在 prompt
+    入口完成（先压缩后刷新时此处自然 noop）。
+    """
+    from hastings.context_manager import strip_oversized_context
+
+    language = load_settings(workspace).writing_language
+    harness.config.system = build_system_prompt(
+        harness.config.tools, language=language, workspace=workspace
+    )
+    strip_oversized_context(harness, workspace)
 
 
 # --- 对账消息模板（P5 T4，计划 D5/D6）：一处修订，两级上下文的粘合层 ---
@@ -248,6 +301,7 @@ def build_reconcile_message(
 
 
 __all__ = [
+    "CONFIRM_MARKER",
     "LANGUAGE_HEADING",
     "OPTIONS_MARKER",
     "RECONCILE_MARKER",
@@ -263,4 +317,5 @@ __all__ = [
     "build_language_section",
     "build_reconcile_message",
     "build_system_prompt",
+    "refresh_system_prompt",
 ]

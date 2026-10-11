@@ -34,6 +34,7 @@ describe("prefillLoginForm", () => {
       api_key: "",
       api_key_env: "DEEPSEEK_API_KEY",
       default_model: "deepseek-chat",
+      no_auth: false,
     });
   });
 });
@@ -46,6 +47,7 @@ describe("emptyLoginForm", () => {
       api_key: "",
       api_key_env: "",
       default_model: "",
+      no_auth: false,
     });
   });
 });

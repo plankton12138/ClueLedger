@@ -14,6 +14,8 @@ export interface ProviderLoginForm {
   api_key: string;
   api_key_env: string;
   default_model: string;
+  /** 免密端点（本地模型如 Ollama）：编辑既有档案时保留其 no_auth 值。 */
+  no_auth: boolean;
 }
 
 /**
@@ -40,12 +42,20 @@ export function prefillLoginForm(
     api_key: "",
     api_key_env: entry.api_key_env,
     default_model: entry.default_model,
+    no_auth: false,
   };
 }
 
 /** 自定义 provider：全空表单（原「新建档案」路径，D5 不丢能力）。 */
 export function emptyLoginForm(): ProviderLoginForm {
-  return { name: "", base_url: "", api_key: "", api_key_env: "", default_model: "" };
+  return {
+    name: "",
+    base_url: "",
+    api_key: "",
+    api_key_env: "",
+    default_model: "",
+    no_auth: false,
+  };
 }
 
 /** base_url → 域名展示（目录卡片副标题）；解析失败原样返回。 */

@@ -13,9 +13,17 @@ import { toolDetailLines } from "../state/toolSummary";
 import { useChatStore } from "../state/store";
 import { Button } from "@/components/ui/button";
 import ActionButton from "./ActionButton";
+import ConfirmCard from "./ConfirmCard";
 import SyncCard from "./SyncCard";
 import ThinkingCard from "./ThinkingCard";
-import { optionReply, parseOptions } from "./options";
+import { parseConfirm } from "./confirm";
+import {
+  multiOptionReply,
+  optionReply,
+  parseOptions,
+  type ChatOption,
+  type ParsedOptionsGroup,
+} from "./options";
 import { shouldShowThinkingPlaceholder, stageSuggestions } from "./stageSuggestions";
 
 const TOOL_STATUS_CLASS: Record<ToolCardStatus, string> = {
@@ -153,6 +161,70 @@ function AgentLabel() {
   );
 }
 
+/**
+ * 选项按钮组（P9 T4，P10 T11/D10 多维度升级）：单组沿用即时发送（零交互变更）；
+ * 多组时每组维度小标题 + 组内单选（本地暂存选中）+「提交选择」一次性发送合并回复。
+ */
+function OptionsBlock({
+  groups,
+  onSend,
+}: {
+  groups: ParsedOptionsGroup[];
+  onSend?: (message: string) => void;
+}) {
+  const [selected, setSelected] = useState<(ChatOption | null)[]>(() =>
+    groups.map(() => null),
+  );
+
+  if (groups.length === 1) {
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {groups[0].options.map((option) => (
+          <ActionButton
+            key={option.key}
+            label={`${option.key}. ${option.label}`}
+            title={option.note || undefined}
+            onClick={() => onSend?.(optionReply(option))}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const allSelected = selected.every((choice) => choice !== null);
+  return (
+    <div className="mt-2 space-y-3">
+      {groups.map((group, groupIndex) => (
+        <div key={groupIndex}>
+          {group.dimension && (
+            <p className="mb-1 text-xs text-gold-soft">{group.dimension}</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {group.options.map((option) => (
+              <ActionButton
+                key={option.key}
+                label={`${option.key}. ${option.label}`}
+                title={option.note || undefined}
+                active={selected[groupIndex]?.key === option.key}
+                onClick={() =>
+                  setSelected((prev) =>
+                    prev.map((choice, i) => (i === groupIndex ? option : choice)),
+                  )
+                }
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+      <ActionButton
+        label="提交选择"
+        disabled={!allSelected}
+        onClick={() => onSend?.(multiOptionReply(groups, selected))}
+      />
+    </div>
+  );
+}
+
 function ItemView({
   item,
   onSelectOption,
@@ -171,22 +243,27 @@ function ItemView({
         </div>
       );
     case "assistant": {
+      const confirm = parseConfirm(item.text);
+      if (confirm.confirm !== null) {
+        return (
+          <div className="max-w-[85%] border-l-2 border-gold bg-ink-soft px-4 py-2">
+            <AgentLabel />
+            {confirm.body && <AgentMarkdown text={confirm.body} />}
+            <ConfirmCard confirm={confirm.confirm} onRespond={onSelectOption} />
+          </div>
+        );
+      }
       const parsed = parseOptions(item.text);
       return (
         <div className="max-w-[85%] border-l-2 border-gold bg-ink-soft px-4 py-2">
           <AgentLabel />
           {parsed.body && <AgentMarkdown text={parsed.body} />}
-          {parsed.options && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {parsed.options.map((option) => (
-                <ActionButton
-                  key={option.key}
-                  label={`${option.key}. ${option.label}`}
-                  title={option.note || undefined}
-                  onClick={() => onSelectOption?.(optionReply(option))}
-                />
-              ))}
-            </div>
+          {parsed.groups && <OptionsBlock groups={parsed.groups} onSend={onSelectOption} />}
+          {parsed.malformed && (
+            <p className="mt-2 text-xs text-paper/40">候选方案格式异常，已按原文展示</p>
+          )}
+          {confirm.malformed && (
+            <p className="mt-2 text-xs text-paper/40">确认卡格式异常，已按原文展示</p>
           )}
         </div>
       );

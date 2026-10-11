@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 
 from hastings.bible.models import Method, MethodHistoryEntry
 from hastings.bible.store import StoryWorkspace, load_ledger, save_ledger
-from hastings.tools.bible_tools import _require_str
+from hastings.tools.bible_tools import _require_str, reject_intake_write
 from hastings.tools.errors import ToolInputError
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
@@ -64,6 +64,7 @@ def create_method_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
         del tool_call_id, signal, on_update
+        reject_intake_write(workspace)  # L2 数据面写门：intake 阶段拒绝锁手法
         name = _require_str(arguments, "name")
         chapter = _require_str(arguments, "chapter")
         reason = _require_str(arguments, "reason")
@@ -106,6 +107,7 @@ def create_method_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
         del tool_call_id, signal, on_update
+        reject_intake_write(workspace)  # L2 数据面写门：intake 阶段拒绝解手法
         name = _require_str(arguments, "name")
         reason = _require_str(arguments, "reason")
         methods = _load_methods(workspace)

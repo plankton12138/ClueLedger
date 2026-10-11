@@ -18,6 +18,11 @@ notice 帧（P5 T4，计划 D5）：对账进度的 hastings 协议层加法扩�
 ``{"type": "notice", "kind": "sync_queued|sync_start|sync_end", "chapter",
 "hunks", "updates", "status"?}``；tau 事件帧契约本身不动。所有连接同样经
 listener 订阅收到（前端凭 notice 把运行窗口标记为「对账中」并渲染同步卡片）。
+
+token_usage 帧（P10 T12，计划 D11）：上下文占用的 hastings 协议层加法扩展——
+``{"type": "token_usage", "input", "output", "total", "cache_read",
+"cache_write", "context_tokens", "window_tokens", "source"}``；每轮 agent_end
+前推一帧（前端对话头刷新占用），get_state 的 ``context_usage`` 载荷同形。
 """
 
 from __future__ import annotations
@@ -106,7 +111,14 @@ class Connection:
                 self._unsubscribe_notice()
 
     async def _on_event(self, event: AgentEvent) -> None:
-        """listener：把事件帧推给本连接（所有连接统一走这条投递路径）。"""
+        """listener：把事件帧推给本连接（所有连接统一走这条投递路径）。
+
+        轮末在 agent_end 之前补一帧 token_usage（P10 T12，D11）——前端对话头
+        据此刷新上下文占用；放在 agent_end 前保证「读到 agent_end 即本轮帧尽」，
+        与既有测试/消费者的边界口径一致。
+        """
+        if event.type == "agent_end":
+            await self._push({"type": "token_usage", **self._usage_payload()})
         await self._push(_wire(event))
 
     async def _on_notice(self, notice: ReconcileNotice) -> None:
@@ -149,6 +161,7 @@ class Connection:
     async def _dispatch(self, frame: CommandFrame) -> None:
         match frame.type:
             case "prompt":
+                await self._session.auto_compact()  # L9：prompt 前两档自动压缩
                 stream = self._session.prompt(_required_message(frame))
                 await self._respond(command=frame.type, frame_id=frame.id, data={"started": True})
                 self._drain(stream)
@@ -211,12 +224,18 @@ class Connection:
             )
         await self._respond(command=frame.type, frame_id=frame.id, data={"chapter": chapter})
 
+    def _usage_payload(self) -> dict[str, JSONValue]:
+        """当前上下文占用载荷（D11）：token_usage 帧与 get_state 共用同一扁平结构。"""
+        return cast("dict[str, JSONValue]", self._session.context_usage().to_payload())
+
     def _state_data(self) -> dict[str, JSONValue]:
         return {
             "slug": self._session.slug,
             "model": self._session.model,
             "is_running": self._session.is_running,
             "tools": list(self._session.tool_names),
+            # 首屏/重连即拿到占用（D11）：不等下一轮 agent_end，对话头立即有值
+            "context_usage": self._usage_payload(),
         }
 
     async def _respond(

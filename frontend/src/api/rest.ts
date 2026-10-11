@@ -201,23 +201,128 @@ export async function deleteWorkspace(slug: string): Promise<void> {
   }
 }
 
+// ---------- 会话面（P10 T14，D13）：列表/新建/切换/删除/重命名 ----------
+
+/** 一条会话的元数据（snake_case，与 rest.py SessionSummary 同形）。 */
+export interface SessionSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  last_active: string;
+  message_count: number;
+  active: boolean;
+}
+
+export interface SessionsResponse {
+  sessions: SessionSummary[];
+  active_id: string;
+}
+
+/** GET /api/{slug}/sessions（P10 D13）：平铺会话列表 + 当前活跃 id。 */
+export async function listSessions(slug: string): Promise<SessionsResponse> {
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/sessions`);
+  if (!res.ok) {
+    throw new Error(`读取会话列表失败：${await errorDetail(res)}`);
+  }
+  return (await res.json()) as SessionsResponse;
+}
+
 /**
- * POST /api/{slug}/session/reset（P9 D4）：旧会话归档后重建空会话。
- * 返回归档文件名（null = 原会话从未落盘）；running 时服务端 409。
+ * POST /api/{slug}/sessions（P10 D13）：新建会话并设为活跃；running → 409。
+ * 旧会话保留在列表可回看（收编原 reset 的「开新会话」语义）。
  */
-export async function resetSession(slug: string): Promise<{ archived: string | null }> {
-  const res = await fetch(`/api/${encodeURIComponent(slug)}/session/reset`, {
+export async function createSession(slug: string, title?: string): Promise<SessionSummary> {
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(title ? { title } : {}),
+  });
+  if (!res.ok) {
+    throw new Error(`新建会话失败：${await errorDetail(res)}`);
+  }
+  return (await res.json()) as SessionSummary;
+}
+
+/** POST /api/{slug}/sessions/{id}/activate（P10 D13）：切换活跃会话；running → 409。 */
+export async function activateSession(slug: string, sessionId: string): Promise<SessionSummary> {
+  const res = await fetch(
+    `/api/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(sessionId)}/activate`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    throw new Error(`切换会话失败：${await errorDetail(res)}`);
+  }
+  return (await res.json()) as SessionSummary;
+}
+
+/** DELETE /api/{slug}/sessions/{id}（P10 D13）：删除会话，返回新的活跃 id。 */
+export async function deleteSession(
+  slug: string,
+  sessionId: string,
+): Promise<{ slug: string; active_id: string }> {
+  const res = await fetch(
+    `/api/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(sessionId)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    throw new Error(`删除会话失败：${await errorDetail(res)}`);
+  }
+  return (await res.json()) as { slug: string; active_id: string };
+}
+
+/** PATCH /api/{slug}/sessions/{id}（P10 D13）：重命名会话（只改元数据）。 */
+export async function renameSession(
+  slug: string,
+  sessionId: string,
+  title: string,
+): Promise<SessionSummary> {
+  const res = await fetch(
+    `/api/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(sessionId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`重命名会话失败：${await errorDetail(res)}`);
+  }
+  return (await res.json()) as SessionSummary;
+}
+
+// ---------- 手动压缩上下文（P10 T13，D12，对应 rest.py session/compact） ----------
+
+/** 压缩统计（snake_case 口径，与 CompactionResult 同形）。 */
+export interface SessionCompactResponse {
+  compacted: boolean;
+  reason: string;
+  tokens_before: number;
+  tokens_after: number;
+  stripped_chapters: number[];
+  summarized: boolean;
+  archived: string | null;
+}
+
+/**
+ * POST /api/{slug}/session/compact（P10 D12）：绕过阈值手动压缩当前会话。
+ * running → 409；无可剥离内容 → 200 且 `compacted=false`（合法空结果，非错误）。
+ */
+export async function compactSession(slug: string): Promise<SessionCompactResponse> {
+  const res = await fetch(`/api/${encodeURIComponent(slug)}/session/compact`, {
     method: "POST",
   });
   if (!res.ok) {
-    throw new Error(`开新会话失败：${await errorDetail(res)}`);
+    throw new Error(`压缩上下文失败：${await errorDetail(res)}`);
   }
   const body: unknown = await res.json();
-  if (body === null || typeof body !== "object" || !("archived" in body)) {
-    throw new Error(`开新会话响应结构不符：收到 ${JSON.stringify(body)}。`);
+  if (
+    body === null ||
+    typeof body !== "object" ||
+    typeof (body as { compacted?: unknown }).compacted !== "boolean"
+  ) {
+    throw new Error(`压缩响应结构不符：期望 { compacted, reason, ... }，收到 ${JSON.stringify(body)}。`);
   }
-  const archived = (body as { archived: unknown }).archived;
-  return { archived: typeof archived === "string" ? archived : null };
+  return body as SessionCompactResponse;
 }
 
 // ---------- 章节面（P5 T1）：列表 + 单章正文（只读） ----------
