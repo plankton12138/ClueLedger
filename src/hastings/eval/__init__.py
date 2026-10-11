@@ -1,1 +1,1 @@
-"""评测 harness：golden 任务与指标（P5 交付）。"""
+"""评测 harness 占位：golden 任务与指标（P13 待交付）。"""
