@@ -7,6 +7,16 @@
 
 import { useState } from "react";
 import { createWorkspace, deleteWorkspace, fetchWorkspaces } from "../api/rest";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { useChatStore } from "../state/store";
 
@@ -70,7 +80,7 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
   const slug = useChatStore((s) => s.slug);
   const workspaces = useChatStore((s) => s.workspaces);
   const [showCreate, setShowCreate] = useState(false);
-  // 内联删除确认：confirmSlug = 待确认的文章；输入其 slug 才亮「确认删除」。
+  // 模态删除确认：confirmSlug = 待确认的文章；输入其 slug 才亮「确认删除」。
   const [confirmSlug, setConfirmSlug] = useState<string | null>(null);
   const [confirmInput, setConfirmInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -167,53 +177,61 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
                         ⇩ 导出
                       </a>
                     </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setConfirmSlug(w);
-                        setConfirmInput("");
-                        setError(null);
-                      }}
-                      className="h-auto flex-none px-2 py-0.5 text-xs text-paper/75 hover:border-overdue/60 hover:bg-transparent hover:text-overdue"
-                    >
-                      删除
-                    </Button>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setConfirmSlug(w);
+                          setConfirmInput("");
+                          setError(null);
+                        }}
+                        className="h-auto flex-none px-2 py-0.5 text-xs text-paper/75 hover:border-overdue/60 hover:bg-transparent hover:text-overdue"
+                      >
+                        删除
+                      </Button>
+                    </AlertDialogTrigger>
                   </div>
-                  {confirmSlug === w && (
-                    <div className="mt-2 border border-overdue/40 bg-overdue/5 p-3">
-                      <p className="text-xs leading-relaxed text-paper/70">
-                        删除会整目录移除该文章（账本、正文、会话），不可恢复。输入{" "}
-                        <span className="text-overdue">{w}</span> 以确认：
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <input
-                          value={confirmInput}
-                          onChange={(e) => setConfirmInput(e.target.value)}
-                          placeholder={w}
-                          className="min-w-0 flex-1 border border-line bg-transparent px-2 py-1 text-sm text-paper placeholder:text-paper/30 focus:border-overdue/60 focus:outline-none"
-                        />
-                        <Button
-                          variant="outline"
-                          disabled={confirmInput !== w || busy}
-                          onClick={() => void handleDelete(w)}
-                          className="h-auto flex-none border-overdue/60 px-3 py-1 text-xs text-overdue hover:bg-overdue/10 hover:text-overdue"
-                        >
-                          {busy ? "删除中…" : "确认删除"}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => setConfirmSlug(null)}
-                          className="h-auto flex-none px-3 py-1 text-xs text-paper/60 hover:bg-transparent hover:text-paper"
-                        >
-                          取消
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 </li>
               ))}
             </ul>
           )}
+
+          <AlertDialog
+            open={confirmSlug !== null}
+            onOpenChange={(next) => {
+              // busy 中拦截关闭请求（Radix 在 Action 点击后必发 close）：
+              // 失败时错误要留在弹窗内；成功路径由 handleDelete 自行收口。
+              if (!next && busy) return;
+              if (!next) setConfirmSlug(null);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogTitle>删除文章「{confirmSlug ?? ""}」？</AlertDialogTitle>
+              <AlertDialogDescription>
+                删除会整目录移除该文章（账本、正文、会话），不可恢复。输入{" "}
+                <span className="text-overdue">{confirmSlug ?? ""}</span> 以确认：
+              </AlertDialogDescription>
+              <input
+                value={confirmInput}
+                onChange={(e) => setConfirmInput(e.target.value)}
+                placeholder={confirmSlug ?? ""}
+                className="mt-2 w-full border border-line bg-transparent px-2 py-1 text-sm text-paper placeholder:text-paper/30 focus:border-overdue/60 focus:outline-none"
+              />
+              {error && <p className="mt-1.5 break-all text-xs text-overdue">{error}</p>}
+              <AlertDialogFooter>
+                <AlertDialogAction
+                  disabled={confirmInput !== confirmSlug || busy}
+                  onClick={() => confirmSlug !== null && void handleDelete(confirmSlug)}
+                  className="border-overdue/60 text-overdue hover:bg-overdue/10 hover:text-overdue"
+                >
+                  {busy ? "删除中…" : "确认删除"}
+                </AlertDialogAction>
+                <AlertDialogCancel disabled={busy} onClick={() => setConfirmSlug(null)}>
+                  取消
+                </AlertDialogCancel>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {error && (
             <p className="mt-3 text-xs leading-relaxed text-overdue">{error}</p>
