@@ -3,6 +3,8 @@
 > 项目名 **Hastings**（黑斯廷斯上尉，阿加莎·克里斯蒂笔下波洛的叙事者——"替侦探写下故事的人"）。一句话定位：**把"编码 Agent 对代码仓库做的事"迁移到"写作 Agent 对小说工作区做的事"**——角色设定是数据模型，线索/伏笔是带状态的账本，章节正文是文件，文风模仿是 RAG 检索。
 >
 > 双重目标：① 深度学习 Agent 开发（loop、tool use、事件流、RAG、评测）；② 产出一个可讲、可演示、可量化的简历项目。
+>
+> **阅读说明（AI/协作者必读）**：未显式标注的章节为**设计态**——立项时的设计意图，与实现存在演进差异（保留对比价值，不改写）；标注 **as-built** 的块为**实际交付现状**（截至 P9 + 前端组件库改造，P10 工具层加固已立项待执行）。查当前实现优先看 as-built 块与 [README](README.md) 路由表。
 
 ---
 
@@ -63,6 +65,8 @@ frontend    → 新建 React SPA，经 WebSocket 消费事件流，替代 TUI
 | 伏笔 Foreshadow | 内容、埋设章节/方式（明示/暗示/象征）、预计回收章节 | `planned → planted → echoed → resolved`（终稿前必须全部 resolved） |
 | 时间线 Timeline | 事件、绝对/相对时间、参与者、与正文段落的双向引用 | 冲突检测（同一人物同时在两地等） |
 
+**as-built 注**：实际交付**六账本**——上表五概念外，章纲 outline 于 P8 独立成第六账本（「长篇分页记忆」，与六阶段状态机同期交付）；当前存储契约见 [modules/bible-store.md](modules/bible-store.md)。
+
 **存储形态：文件制工作区**（与 coding agent 操作代码库同构，天然可 inspect、可 git、可工具化）：
 
 ```text
@@ -80,14 +84,84 @@ stories/the-orient-express-case/
     └── ch01.json                # 每章审计报告（含伏笔/线索状态快照）
 ```
 
+### 2.3 工作区生命周期（六阶段状态机，P8 交付）
+
+工作区阶段记录在 `story.yaml`，`story_stage` 工具是**唯一写入口**（模型无法绕开工具直改 YAML）：
+
+- **advance / rollback 均须 `reason`**，每次迁移连同模型自述写入 `stage_history`（可审计）；
+- 推进到 `bible_confirmed` 前过**确认门硬校验**（角色≥2、手法全锁定、章纲≥1）——工具层强制，不靠 prompt 自觉；
+- `write_chapter` 仅在 `writing` / `revising` 阶段放行（阶段预检）。
+
+```mermaid
+stateDiagram-v2
+    intake --> bible_drafting : advance（reason 留痕）
+    bible_drafting --> bible_confirmed : advance · 确认门硬校验
+    bible_confirmed --> writing : advance
+    writing --> revising : advance
+    revising --> complete : advance
+    writing --> complete : advance（target=complete 显式完结）
+    bible_confirmed --> bible_drafting : rollback（作者推翻）
+    revising --> writing : rollback（返工）
+    complete --> revising : rollback（终稿重开）
+```
+
+确认门计数口径：`角色≥2` 指非草稿角色数；`手法全锁` 指方法账本每条均处于 `locked` 及之后状态；`章纲≥1` 指 outline 账本至少一条有效章纲。
+
 ---
 
 ## 3. Agent 设计
 
+**As-built 架构总览**（截至 P9 + 前端组件库改造；P10 工具层加固已立项待执行。与下文设计态描述互补）：hastings 是 tau 内核之上的**薄应用层**——装配（工具注册、system prompt、事件订阅）与落盘（Bible/正文/审计）全部在 `src/hastings` 完成，`tau_agent` / `tau_ai` 零改动。**事件流是内核与所有下游的唯一契约**：`harness.subscribe` 将 `AgentEvent` 流 fan-out 给四类差异化消费者——PlainRenderer（CLI/eval 渲染，未识别事件显式记录不静默吞）、WS 桥（前端 JSON 帧）、`events.jsonl` 帧级审计账本（滤 `message_update` 流式增量）、`session.jsonl` 会话持久化（挂 `message_end` 只记定稿消息）。
+
+```mermaid
+flowchart TB
+    CLI["CLI REPL"]
+    WEB["Web 前端（WS 帧）"]
+
+    subgraph app["hastings 应用层"]
+        SESSION["HastingsSession<br/>busy 防护 · 每轮 _refresh_system 重建 system<br/>Registry 按 slug 缓存 / ReconcileQueue 防抖"]
+    end
+
+    subgraph kernel["tau_agent 内核（0 改动）"]
+        HARNESS["AgentHarness<br/>agent loop · steering / follow_up 队列"]
+        PROV["tau_ai Provider"]
+    end
+
+    subgraph toolsg["工具层（硬约束所在）"]
+        TOOLS["bible_upsert · bible_query · write_chapter · read_chapter<br/>method_lock · timeline_check · story_stage"]
+    end
+
+    subgraph disk["StoryWorkspace · 磁盘 SSOT"]
+        BIBLE["bible/*.yaml · story.yaml"]
+        CHAP["chapters/*.md（+ .revisions 归档）"]
+    end
+
+    subgraph consumers["事件流订阅者（harness.subscribe fan-out）"]
+        R["PlainRenderer<br/>CLI / eval 渲染"]
+        WS["WS 桥<br/>前端 JSON 帧"]
+        EV["events.jsonl<br/>事件账本（滤流式增量）"]
+        SJ["session.jsonl<br/>会话历史（只记定稿）"]
+    end
+
+    CLI -->|prompt| SESSION
+    WEB -->|prompt / steer / reconcile| SESSION
+    SESSION -->|harness.prompt| HARNESS
+    HARNESS <-->|LLM 流式调用| PROV
+    HARNESS -->|tool_calls| TOOLS
+    TOOLS --> BIBLE
+    TOOLS --> CHAP
+    HARNESS -. 事件流 .-> R
+    HARNESS -. 事件流 .-> WS
+    HARNESS -. 事件流 .-> EV
+    HARNESS -. 事件流 .-> SJ
+```
+
+上下文管理依托「靠架构省 token」而非压缩：状态全量外置磁盘（SSOT），每轮 system prompt 注入 `build_workspace_status` 生成的**工作区状态快照**（阶段、账本计数、锁定态、逾期伏笔、章纲缺口，只陈述事实）；`read_chapter` 按需精准 refetch；对账消息 hunk 预览上限 20 条×40 字符；文风档案（P7 确定性统计版）供风格参照，向量检索（`style_search`）顺延未交付。注意：截至 P9 **未接线内核的 CompactionEntry 压缩原语**（`tau_coding/context_window.py` 有完整参考实现）——短篇够用，长篇（50+ 章）存在窗口溢出风险，是后续改进项。
+
 ### 3.1 总体形态：单 Agent + 工具 → 编排式双 Agent（演进路线）
 
 **阶段一（Phase 1–10）：单 Agent + 丰富工具。**
-完全贴合 Tau 架构：一个 `AgentHarness`，system prompt 定义"悬疑小说主编"角色，工具集承担全部结构化操作。理由：先吃透一个 loop 里工具调用、上下文管理、事件流的全部细节，再谈编排——这是学习路径的最优排序，也是 Tau 哲学（small layers beat magic）的要求。（P6 基础设施、P7 界面重塑、P8 引导式生命周期、P9 体验修补与桌面化、P10 RAG 均在此形态内完成。）
+完全贴合 Tau 架构：一个 `AgentHarness`，system prompt 定义"悬疑小说主编"角色，工具集承担全部结构化操作。理由：先吃透一个 loop 里工具调用、上下文管理、事件流的全部细节，再谈编排——这是学习路径的最优排序，也是 Tau 哲学（small layers beat magic）的要求。（P6 基础设施、P7 界面重塑、P8 引导式生命周期、P9 体验修补与桌面化均在此形态内完成；后续 P10 工具层加固亦在此形态内，RAG 顺延。）
 
 **阶段二（Phase 11）：引入"审计员"作为第二个 harness。**
 写作 Agent 与审计 Agent 分离，原因：
@@ -122,6 +196,8 @@ stories/the-orient-express-case/
 | `revise_chapter` | 章节号、修订指令、片段定位 | 带原文 diff 的修订 |
 | `style_search` | 情绪/场景/叙事意图标签 | RAG 检索范文片段（§4.3），返回原文 + 出处 |
 | `style_profile` | 无 | 当前风格档案：统计特征 + 高频手法清单，供 agent 自查 |
+
+**as-built 注**：上表为设计态。实际交付工具集：`bible_upsert` / `bible_query` / `write_chapter` / `read_chapter` / `method_lock` / `method_unlock` / `timeline_check` / `story_stage`（与 §3 as-built 架构图一致，契约见 [modules/writing-tools.md](modules/writing-tools.md)）。主要差异：`revise_chapter` 并入 `write_chapter`（覆盖写入 + `.revisions` 归档）；`foreshadow_audit` / `style_search` 未独立交付（对账由 reconcile 管线与审计中心确定性检查承担，向量检索顺延）；`read_chapter`（P4）与 `story_stage`（P8）为实施中新增。
 
 设计原则（学习要点）：**工具是"账本的守门人"而不是"函数合集"**——状态机校验、锁定机制、对账逻辑都在工具层强制执行，LLM 只能通过工具触碰数据，这正是"用工程约束补 LLM 可靠性"的典型手法。
 
@@ -193,9 +269,12 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 3. **章节阅读器/编辑器**（中央，P5 起正文居中）：正文渲染 + 编辑 + 对账同步；
 4. **事件流页**（P5 T6 起为一级导航入口；P6 升级）：原始事件帧 + 历史查询（events.jsonl 持久化）+ 分类过滤 + 运行概览 + 导出；
 5. **设置页**：写作语言（已交付）+ 模型接入（P6：服务级 config.yaml 多 provider 档案、热切模型、模型列表发现）；
-6. **语料管理页**（P7 落地文风档案先行版本）：上传 .txt/.md、文件列表、确定性 style_profile 统计（句长分布/对话占比/平均句长）；向量入库进度区 P10 转正。
+6. **语料管理页**（P7 落地文风档案先行版本）：上传 .txt/.md、文件列表、确定性 style_profile 统计（句长分布/对话占比/平均句长）；向量入库进度区待 RAG 阶段转正。
+7. **文章管理页**（P7 T14）：文章列表/新建/切换/导出/删除——独立一级页面承载，不放顶栏下拉（用户约定）。
 
 技术选型：React 18 + Vite + TypeScript + Tailwind；状态管理 Zustand（事件 reducer 场景极合适）。不引入 Next.js（无 SSR 需求）、不引入 UI 大库。
+
+**as-built 注**：「不引入 UI 大库」被后续显式决策推翻——前端组件库改造阶段引入 Radix UI + lucide 图标（见 [frontend-ui-foundation.md](frontend-ui-foundation.md)）；一级导航页现为：文章管理（ArticlesPage）/ 账本（LedgerPage）/ 审计（AuditPage）/ 语料（CorpusPage）。
 
 ---
 
@@ -260,19 +339,21 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 
 | 阶段 | 内容 | 交付物/验收 |
 |---|---|---|
-| **P0 骨架** | pyproject（uv）、CI（ruff+mypy+pytest）、包结构：`src/hastings/` 新建，tau_ai/tau_agent 保留，tau_coding 移出构建 | `uv run pytest` 绿；hello-world harness 用 FakeProvider 跑通 |
-| **P1 最小闭环** | 命令行版：openai_compatible provider + 3 个工具（`bible_upsert/bible_query/write_chapter`）+ 打印渲染（复用 tau rendering/plain.py 思路） | 终端里完成"设定 2 个角色 → 写 1 章" |
-| **P2 Bible 完整化** | 五张账本 + 状态机 + `timeline_check` + `method_lock` + 全套单测 | 状态机/时间线测试全绿 |
-| **P3 Web 化** | FastAPI WebSocket 桥 + React 前端（对话流 + Bible 面板） | 浏览器完成 P1 同样流程；事件流逐条渲染 |
+| **P0 骨架** | pyproject（uv）、CI（ruff+mypy+pytest）、包结构：`src/hastings/` 新建，tau_ai/tau_agent 保留，tau_coding 移出构建。已完成，见 [phase-00-skeleton.md](phase-00-skeleton.md) | `uv run pytest` 绿；hello-world harness 用 FakeProvider 跑通 |
+| **P1 最小闭环** | 命令行版：openai_compatible provider + 3 个工具（`bible_upsert/bible_query/write_chapter`）+ 打印渲染（复用 tau rendering/plain.py 思路）。已完成，见 [phase-01-minimal-loop.md](phase-01-minimal-loop.md) | 终端里完成"设定 2 个角色 → 写 1 章" |
+| **P2 Bible 完整化** | 五张账本 + 状态机 + `timeline_check` + `method_lock` + 全套单测。已完成，见 [phase-02-five-ledgers.md](phase-02-five-ledgers.md) | 状态机/时间线测试全绿 |
+| **P3 Web 化** | FastAPI WebSocket 桥 + React 前端（对话流 + Bible 面板）。已完成，见 [phase-03-web.md](phase-03-web.md) | 浏览器完成 P1 同样流程；事件流逐条渲染 |
 | **P4 实用化** | 会话持久化（session.jsonl）+ 正文读回（`read_chapter`/`list_chapters`）+ 多工作区（WorkspaceRegistry + slug 路由）。2026-10-09 完成，见 [phase-04-usability.md](phase-04-usability.md) | 杀进程重启会话恢复；CLI 重进续聊；双工作区隔离 |
 | **P5 正文中心创作台** | 布局反转（三栏创作台，正文居中）+ 作者受管写端点（PUT + `.revisions` 归档 + 乐观并发）+ write_guard 人机互斥 + 对账同步管线（一处修订补齐账本与会话记忆两级上下文）。2026-10-09 完成，见 [phase-05-manuscript-center.md](phase-05-manuscript-center.md) | 手改正文 → 保存 → 自动对账；agent 写作中正文只读；人机互斥 |
 | **P6 基础设施** | 模型接入设置（服务级 config.yaml 多 provider 档案 + 同档案热切模型/跨档案重建会话 + 模型列表发现）+ 前端可用性（可调侧栏/伏笔账本表格化/角色小传/关系图/数据概览统计卡/全局搜索）+ 事件流持久化与历史查询（events.jsonl）+ 工作区导出 + ErrorBoundary。2026-10-09 完成，见 [phase-06-infra.md](phase-06-infra.md)；计划见 [phase-06-infra-plan.md](phase-06-infra-plan.md)；写作语言设置为本阶段先行完成的前置项 | 设置页换模型下轮生效；重启后事件流可回溯；侧栏可调且无重叠 |
 | **P7 界面重塑与功能页面** | 原型对齐（`submission/product-prototype/` 五图）：顶栏三段式重组 + 语料库（文风档案先行：上传/存储/确定性 style_profile 统计，向量检索留 P10）+ 审计中心（确定性检查 v1：timeline_check/伏笔逾期/线索前置/手法状态四规则 + 三指标环，零 LLM 零落盘）+ 账本全页 + 事件流/设置页 polish。2026-10-09 完成，见 [phase-07-ui-pages.md](phase-07-ui-pages.md)；计划见 [phase-07-ui-pages-plan.md](phase-07-ui-pages-plan.md) | 五导航页齐备；顶栏 1440 无溢出；语料上传出文风档案；审计选章出报告且「定位/生成修订建议」可用 |
 | **P8 引导式生命周期** | 工作区生命周期状态机（story.yaml：intake → bible_drafting → bible_confirmed → writing → revising → complete，story_stage 工具 + write_chapter 阶段门）+ outline 第六账本与分级预检（章纲 = 长篇分页记忆，正文落盘自动推进章纲状态）+ 状态注入（每轮 prompt 前刷新 system 的工作区状态节）+ intake 协议（理解摘要/缺口清单/≤5 问，未确认禁写）+ 前端 MD 渲染与消息区分 + 阶段进度徽章。2026-10-10 立项、2026-10-11 完成，见 [phase-08-guided-lifecycle.md](phase-08-guided-lifecycle.md)；计划见 [phase-08-guided-lifecycle-plan.md](phase-08-guided-lifecycle-plan.md) | 万字构想粘贴 → 首轮只引导不产出；未过确认 write_chapter 被拒（三要素）；agent 消息 MD 渲染；顶栏可见阶段与进度 |
-| **P9 体验修补与桌面化** | 走查驱动的可用性修补（思考内容默认折叠、对话详略协议 + intake 提问收紧、`【选项】`候选按钮承接、新会话归档重建、等待占位与空态快捷操作）+ 响应式抽屉化（<1024px 对话栏抽屉、横向溢出修复、羊皮纸窄屏降级）+ Electron 桌面化（PyInstaller sidecar + 动态端口 + %APPDATA% 数据目录 + electron-builder 安装包；后端 `--static-dir` 直供静态产物，前端零改动接入）。2026-10-11 立项，计划见 [phase-09-ux-desktop-plan.md](phase-09-ux-desktop-plan.md) | 安装包启动自动拉起后端、退出无残留；480px 无横向滚动可用；思考内容默认折叠；同一文章可开新会话（旧会话归档可找回） |
-| **P10 RAG** | ingestion pipeline + `style_search`/`style_profile` 向量化（Chroma + BGE-M3）+ 语料库页向量索引区转正（上传/文风统计已在 P7 落地） | 上传阿婆作品集 → 写作时可检索、文风示例注入生效 |
-| **P11 审计员** | 独立审计 harness + `foreshadow_audit` 工具 + LLM 语义审计（嫌疑人知情范围一致性、关键信息提前展示检测——P7 交付的四条确定性规则之外的语义层）+ 语义指标（核心文风标签/线索密度/叙事节奏）+ 审计报告落盘 audits/*.json（P7 审计中心视图为确定性 v1，本阶段扩为「确定性 + 语义」两段） | 每章自动生成审计 JSON；语义检查清单上线 |
-| **P12 评测与打磨** | eval harness（Level 3/4/5）+ golden set + 章节阅读器增强 + 导出打磨（zip 导出已在 P6 先行落地） | 一份完整的自动评测报告 |
+| **P9 体验修补与桌面化** | 走查驱动的可用性修补（思考内容默认折叠、对话详略协议 + intake 提问收紧、`【选项】`候选按钮承接、新会话归档重建、等待占位与空态快捷操作）+ 响应式抽屉化（<1024px 对话栏抽屉、横向溢出修复、羊皮纸窄屏降级）+ Electron 桌面化（PyInstaller sidecar + 动态端口 + %APPDATA% 数据目录 + electron-builder 安装包；后端 `--static-dir` 直供静态产物，前端零改动接入）。2026-10-11 完成（安装包冒烟通过），构建笔记见 [phase-09-ux-desktop.md](phase-09-ux-desktop.md)；计划见 [phase-09-ux-desktop-plan.md](phase-09-ux-desktop-plan.md) | 安装包启动自动拉起后端、退出无残留；480px 无横向滚动可用；思考内容默认折叠；同一文章可开新会话（旧会话归档可找回） |
+| **— 前端组件库改造**（P9 收口后插入） | 基础组件迁移 Radix UI + lucide、清除 headless 自绘样式。2026-10-11 完成，见 [frontend-ui-foundation.md](frontend-ui-foundation.md) | 七道 CI 门全绿；gzip 增量守住 <80KB 预算 |
+| **P10 工具层加固** | 弱模型压测驱动的硬门收口：L1 正文交付硬门 / L2 intake 阶段门 / L7 状态注入 CLI 刷新点 / L3 错误消息示例 / L8 driver 空产物可观测 / L5 选项块协议 / L9 长篇上下文兜底。**已立项待执行（2026-10-11）**，计划见 [phase-10-hardening-plan.md](phase-10-hardening-plan.md) | 压测双臂复跑 harness 臂成稿 >0 章；弱模型下软协议成立 |
+| **P11 RAG**（顺延，原 P10） | ingestion pipeline + `style_search`/`style_profile` 向量化（Chroma + BGE-M3）+ 语料库页向量索引区转正（上传/文风统计已在 P7 落地） | 上传阿婆作品集 → 写作时可检索、文风示例注入生效 |
+| **P12 审计员**（顺延，原 P11） | 独立审计 harness + `foreshadow_audit` 工具 + LLM 语义审计（嫌疑人知情范围一致性、关键信息提前展示检测——P7 交付的四条确定性规则之外的语义层）+ 语义指标（核心文风标签/线索密度/叙事节奏）+ 审计报告落盘 audits/*.json（P7 审计中心视图为确定性 v1，本阶段扩为「确定性 + 语义」两段） | 每章自动生成审计 JSON；语义检查清单上线 |
+| **P13 评测与打磨**（顺延，原 P12） | eval harness（Level 3/4/5）+ golden set + 章节阅读器增强 + 导出打磨（zip 导出已在 P6 先行落地） | 一份完整的自动评测报告 |
 
 每阶段完成后在 `dev-notes/` 留一篇构建笔记（沿用 Tau 的习惯，也是学习沉淀的直接证据）。
 
