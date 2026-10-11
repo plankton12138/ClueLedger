@@ -256,7 +256,7 @@ export default function App() {
               key={item.key}
               variant={view === item.key ? "outline" : "ghost"}
               onClick={() => setView(item.key)}
-              className={`rounded px-3.5 py-1.5 text-[13px] ${
+              className={`h-auto shrink whitespace-normal rounded px-3.5 py-1.5 text-[13px] ${
                 view === item.key
                   ? "border-line bg-gold/10 text-gold hover:bg-gold/10"
                   : "border border-transparent text-paper/75 hover:bg-transparent hover:text-gold"
