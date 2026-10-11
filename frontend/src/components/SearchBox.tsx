@@ -21,6 +21,7 @@ import {
 } from "../state/search";
 import { useChatStore } from "../state/store";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 
 interface SearchIndex {
@@ -143,8 +144,7 @@ export default function SearchBox() {
     >
       <PopoverAnchor asChild>
         <div className="relative w-52 min-w-0">
-          <input
-            type="text"
+          <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={handleFocus}
@@ -154,7 +154,6 @@ export default function SearchBox() {
             disabled={slug === null}
             placeholder={slug === null ? "选择文章后搜索" : "搜索章节、角色、线索、伏笔…"}
             aria-label="全局搜索"
-            className="w-full border border-line bg-transparent px-2 py-1 text-xs text-paper placeholder:text-paper/30 focus:border-gold/60 focus:outline-none disabled:opacity-40"
           />
         </div>
       </PopoverAnchor>

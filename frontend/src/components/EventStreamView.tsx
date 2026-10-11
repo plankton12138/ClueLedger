@@ -31,6 +31,7 @@ import { fetchEvents } from "../api/rest";
 import type { ConnectionStatus } from "../api/socket";
 import { useChatStore } from "../state/store";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import RingStat from "./RingStat";
 
 const PAGE_SIZE = 200;
@@ -205,11 +206,10 @@ export default function EventStreamView() {
             ))}
           </nav>
           <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs text-paper/60">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={autoScroll}
-              onChange={(e) => setAutoScroll(e.target.checked)}
-              className="accent-gold"
+              onCheckedChange={(v) => setAutoScroll(v === true)}
+              aria-label="自动滚动"
             />
             自动滚动
           </label>

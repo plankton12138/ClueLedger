@@ -26,6 +26,8 @@ import {
 } from "../api/rest";
 import { useChatStore } from "../state/store";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import RingStat from "./RingStat";
 import {
   COLUMNS,
@@ -176,42 +178,41 @@ export default function LedgerPage({ onBack }: { onBack: () => void }) {
                 {BIBLE_LABELS[t]}
               </Button>
             ))}
-            <input
-              type="text"
+            <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="本地过滤…"
               aria-label="账本条目过滤"
-              className="ml-auto w-36 border border-line bg-transparent px-2 py-0.5 text-xs text-paper placeholder:text-paper/30 focus:border-gold/60 focus:outline-none"
+              className="ml-auto w-36 py-0.5"
             />
             {active === "foreshadow" && (
               <>
-                <select
-                  aria-label="伏笔状态筛选"
-                  value={fsFilter}
-                  onChange={(e) => setFsFilter(e.target.value)}
-                  className="border border-line bg-transparent px-1.5 py-0.5 text-xs text-paper focus:border-gold/60 focus:outline-none"
-                >
-                  <option value="all" className="bg-ink">全部状态</option>
-                  {Object.entries(FORESHADOW_STATUS_LABELS).map(([status, meta]) => (
-                    <option key={status} value={status} className="bg-ink">
-                      {meta.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  aria-label="伏笔风险筛选"
-                  value={riskFilter}
-                  onChange={(e) => setRiskFilter(e.target.value)}
-                  className="border border-line bg-transparent px-1.5 py-0.5 text-xs text-paper focus:border-gold/60 focus:outline-none"
-                >
-                  <option value="all" className="bg-ink">全部风险</option>
-                  {Object.entries(RISK_META).map(([risk, meta]) => (
-                    <option key={risk} value={risk} className="bg-ink">
-                      {meta.label}
-                    </option>
-                  ))}
-                </select>
+                <Select value={fsFilter} onValueChange={setFsFilter}>
+                  <SelectTrigger aria-label="伏笔状态筛选" className="px-1.5 py-0.5 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部状态</SelectItem>
+                    {Object.entries(FORESHADOW_STATUS_LABELS).map(([status, meta]) => (
+                      <SelectItem key={status} value={status}>
+                        {meta.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={riskFilter} onValueChange={setRiskFilter}>
+                  <SelectTrigger aria-label="伏笔风险筛选" className="px-1.5 py-0.5 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部风险</SelectItem>
+                    {Object.entries(RISK_META).map(([risk, meta]) => (
+                      <SelectItem key={risk} value={risk}>
+                        {meta.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button
                   variant="outline"
                   onClick={() => setSortKey((k) => (k === "plant" ? "resolve" : "plant"))}

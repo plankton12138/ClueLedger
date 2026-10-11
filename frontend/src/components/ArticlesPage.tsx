@@ -18,6 +18,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useChatStore } from "../state/store";
 
 interface Props {
@@ -53,7 +54,7 @@ function CreateWorkspaceForm({ onCreated }: { onCreated: (slug: string) => void 
       <label htmlFor="workspace-slug" className="mb-2 block text-xs text-gold-soft">
         故事标识（slug，将成为目录名：字母、数字、中文或连字符）
       </label>
-      <input
+      <Input
         id="workspace-slug"
         value={slug}
         onChange={(e) => setSlug(e.target.value)}
@@ -61,7 +62,7 @@ function CreateWorkspaceForm({ onCreated }: { onCreated: (slug: string) => void 
           if (e.key === "Enter") void submit();
         }}
         placeholder="orient-express"
-        className="w-full border border-line bg-transparent px-2 py-1.5 text-sm text-paper placeholder:text-paper/30 focus:border-gold/60 focus:outline-none"
+        className="py-1.5 text-sm"
       />
       {error && <p className="mt-2 text-xs leading-relaxed text-overdue">{error}</p>}
       <Button
@@ -211,11 +212,11 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
                 删除会整目录移除该文章（账本、正文、会话），不可恢复。输入{" "}
                 <span className="text-overdue">{confirmSlug ?? ""}</span> 以确认：
               </AlertDialogDescription>
-              <input
+              <Input
                 value={confirmInput}
                 onChange={(e) => setConfirmInput(e.target.value)}
                 placeholder={confirmSlug ?? ""}
-                className="mt-2 w-full border border-line bg-transparent px-2 py-1 text-sm text-paper placeholder:text-paper/30 focus:border-overdue/60 focus:outline-none"
+                className="mt-2 focus:border-overdue/60"
               />
               {error && <p className="mt-1.5 break-all text-xs text-overdue">{error}</p>}
               <AlertDialogFooter>

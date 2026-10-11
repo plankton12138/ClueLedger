@@ -7,6 +7,7 @@
 import { useState, type KeyboardEvent } from "react";
 import type { CommandType } from "../api/types";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { useChatStore } from "../state/store";
 
 interface ComposerProps {
@@ -63,7 +64,7 @@ export default function Composer({ sendCommand, abort }: ComposerProps) {
         </p>
       )}
       <div className="flex items-end gap-2">
-        <textarea
+        <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
@@ -71,7 +72,7 @@ export default function Composer({ sendCommand, abort }: ComposerProps) {
           placeholder={
             running ? "主编正在写作——可插话（steer）或排队追问（follow_up）" : "给主编下达指令…"
           }
-          className="min-w-0 flex-1 resize-none border border-line bg-ink px-3 py-2 text-sm text-paper placeholder:text-paper/30 focus:border-gold focus:outline-none"
+          className="min-w-0 flex-1 resize-none"
         />
         <div className="flex flex-col items-end gap-2">
           <div className="flex gap-2">
