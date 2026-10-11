@@ -1,7 +1,7 @@
 # Phase 0 开发计划：项目骨架（Skeleton）
 
 > 对应 [DESIGN.md](DESIGN.md) §8 路线图 P0 行。
-> 状态：**待评审 / 待执行**。完成后另写 `phase-00-skeleton.md` 构建笔记。
+> 状态：**✅ 已收口**，构建笔记见 [phase-00-skeleton.md](phase-00-skeleton.md)。
 
 ## 0. 已核实的依赖事实（计划的输入）
 

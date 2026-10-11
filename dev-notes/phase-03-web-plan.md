@@ -1,7 +1,7 @@
 # Phase 3 开发计划：Web 化（FastAPI WebSocket 桥 + React 前端）
 
 > 对应 [DESIGN.md](DESIGN.md) §8 路线图 **P3 Web 化** 行。
-> 状态：**待评审 / 待执行**。完成后另写 `phase-03-web.md` 构建笔记。
+> 状态：**✅ 已收口**，构建笔记见 [phase-03-web.md](phase-03-web.md)。
 
 ## 0. 已核实的依赖事实（计划的输入）
 
@@ -179,7 +179,7 @@ P3 不接 `JsonlSessionStorage`。理由：服务进程存活期间 `harness.mes
 - `api/socket.ts`：连接管理、命令发送（自增 id + 响应配对 Promise）、断线提示与手动重连按钮（不做自动重连风暴）；
 - 连接建立 → 发 `get_state` + `get_messages`（快照直接喂 reducer）；
 - `ChatStream.tsx`（消息气泡、工具卡片折叠、错误卡片）、`Composer.tsx`（三态发送 + abort）；
-- 样式按"案卷/档案"暗色主题从简（Tailwind 原子类，不引组件库）。
+- 样式按"文章/档案"暗色主题从简（Tailwind 原子类，不引组件库）。
 
 ### T9 Bible 面板 + 调试视图 → CP2
 

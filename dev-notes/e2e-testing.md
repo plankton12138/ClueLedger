@@ -2,6 +2,7 @@
 
 > 方案：[e2e-test-plan.md](e2e-test-plan.md)。E1→E4 全部落地，E5（J7-J8 P2 旅程）留白。
 > 提交：f2e5fb2（E1 基建）→ aeb9c17 + 1be80d5（E2 + 文章页崩溃修复）→ b650dc5（E3）→ aa076af（E4 CI）。
+> 关键词：e2e、Playwright、单进程真服务、FakeProvider 剧本、CI 第八道门。
 
 ## 1. 交付内容
 

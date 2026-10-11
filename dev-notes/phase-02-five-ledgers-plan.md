@@ -1,7 +1,7 @@
 # Phase 2 开发计划：五账本全量与状态机
 
 > 对应 [DESIGN.md](DESIGN.md) §8 路线图 **P2 Bible 完整化** 行。
-> 状态：**待评审 / 待执行**。完成后另写 `phase-02-five-ledgers.md` 构建笔记。
+> 状态：**✅ 已收口**，构建笔记见 [phase-02-five-ledgers.md](phase-02-five-ledgers.md)。
 
 ## 0. 已核实的依赖事实（计划的输入）
 

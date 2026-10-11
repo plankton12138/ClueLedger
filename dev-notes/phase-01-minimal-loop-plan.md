@@ -1,7 +1,7 @@
 # Phase 1 开发计划：最小闭环（CLI 版写作 Agent）
 
 > 对应 [DESIGN.md](DESIGN.md) §8 路线图 **P1 最小闭环** 行。
-> 状态：**待评审 / 待执行**。完成后另写 `phase-01-minimal-loop.md` 构建笔记。
+> 状态：**✅ 已收口**，构建笔记见 [phase-01-minimal-loop.md](phase-01-minimal-loop.md)。
 
 ## 0. 已核实的依赖事实（计划的输入）
 
