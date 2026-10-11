@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { DiffHunkWire } from "../api/rest";
 import { acquireEditMark, fetchChapter, fetchChapters, releaseEditMark, saveChapter } from "../api/rest";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import ChapterPaper from "./ChapterPaper";
 import { chapterNumber, countChars, parseChapterHeading, splitParagraphs } from "../state/chapter";
@@ -24,23 +25,6 @@ const MODES: { key: ManuscriptMode; label: string }[] = [
   { key: "edit", label: "编辑" },
   { key: "diff", label: "对账" },
 ];
-
-type ChipTone = "dirty" | "busy" | "ok" | "warn";
-
-const CHIP_CLASS: Record<ChipTone, string> = {
-  dirty: "text-overdue border-overdue/50 bg-overdue/10",
-  busy: "text-planned border-planned/50 bg-planned/10",
-  ok: "text-planted border-planted/50 bg-planted/10",
-  warn: "text-overdue border-overdue/50 bg-overdue/10",
-};
-
-function Chip({ tone, children }: { tone: ChipTone; children: string }) {
-  return (
-    <span className={`rounded-full border px-2.5 py-0.5 text-[10.5px] ${CHIP_CLASS[tone]}`}>
-      {children}
-    </span>
-  );
-}
 
 /** 单段落 diff 块：新增绿 / 删除红 / 修改金（段级色条 + 段内字符高亮）。 */
 function DiffParagraph({ hunk }: { hunk: DiffHunkWire }) {
@@ -256,11 +240,11 @@ export default function ManuscriptPanel({
           </span>
         )}
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          {ms.saveState === "dirty" && <Chip tone="dirty">● 未保存</Chip>}
-          {ms.saveState === "saving" && <Chip tone="busy">保存中…</Chip>}
-          {syncing && <Chip tone="busy">◌ 对账中…</Chip>}
-          {ms.syncState === "done" && <Chip tone="ok">✓ 已同步</Chip>}
-          {ms.syncState === "failed" && <Chip tone="warn">⚠ 对账失败</Chip>}
+          {ms.saveState === "dirty" && <Badge variant="danger">● 未保存</Badge>}
+          {ms.saveState === "saving" && <Badge variant="info">保存中…</Badge>}
+          {syncing && <Badge variant="info">◌ 对账中…</Badge>}
+          {ms.syncState === "done" && <Badge variant="success">✓ 已同步</Badge>}
+          {ms.syncState === "failed" && <Badge variant="danger">⚠ 对账失败</Badge>}
           {ms.mode === "edit" && (
             <>
               <Button
