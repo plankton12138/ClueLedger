@@ -11,3 +11,10 @@
     @apply bg-ink text-paper font-sans antialiased;
   }
 }
+
+@layer components {
+  /* ui/ 可聚焦原语统一焦点环：语义金色，替代浏览器默认 outline。 */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/70;
+  }
+}

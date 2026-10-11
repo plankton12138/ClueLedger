@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -5,6 +6,11 @@ import { defineConfig } from "vitest/config";
 // uv run python -m hastings.server 启动的 FastAPI 服务（默认 8000）。
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   server: {
     proxy: {
       "/api": "http://localhost:8000",
