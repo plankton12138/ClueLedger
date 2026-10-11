@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hastings · 后端未运行</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #141210;
+        color: #e8e0d0;
+        font-family:
+          "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+      main {
+        display: flex;
+        height: 100%;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 40px;
+        text-align: center;
+      }
+      h1 {
+        margin: 0;
+        font-family: Georgia, "SimSun", serif;
+        font-size: 22px;
+        letter-spacing: 0.2em;
+        color: #c9a85c;
+      }
+      p {
+        margin: 0;
+        max-width: 520px;
+        font-size: 13px;
+        line-height: 1.8;
+        color: rgba(232, 224, 208, 0.65);
+      }
+      code {
+        color: #d98b6b;
+      }
+      button {
+        margin-top: 8px;
+        border: 1px solid rgba(201, 168, 92, 0.6);
+        background: rgba(201, 168, 92, 0.12);
+        color: #c9a85c;
+        padding: 8px 22px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: rgba(201, 168, 92, 0.22);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>写作台暂时无法打开</h1>
+      <p id="reason">本地写作后端已退出。</p>
+      <p>你可以尝试重启后端；若反复出现，请检查端口与数据目录后重新打开应用。</p>
+      <button type="button" id="restart">重启写作台</button>
+    </main>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const given = params.get("reason");
+      if (given) {
+        document.getElementById("reason").textContent = given;
+      }
+      document.getElementById("restart").addEventListener("click", () => {
+        window.hastings
+          .restart()
+          .catch((err) => {
+            document.getElementById("reason").textContent =
+              "重启失败：" + (err && err.message ? err.message : String(err));
+          });
+      });
+      if (window.hastings && window.hastings.onSidecarExit) {
+        window.hastings.onSidecarExit((code) => {
+          document.getElementById("reason").textContent =
+            "本地写作后端意外退出（退出码 " + (code === null ? "未知" : code) + "）。";
+        });
+      }
+    </script>
+  </body>
+</html>

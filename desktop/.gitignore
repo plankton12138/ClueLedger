@@ -1,0 +1,2 @@
+node_modules/
+# dist/ 已由仓库根 .gitignore 的 dist/ 规则覆盖
