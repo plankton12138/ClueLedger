@@ -21,6 +21,7 @@ import {
 } from "../api/rest";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useChatStore } from "../state/store";
 import { clueFairness } from "../state/clueFairness";
 import RingStat from "./RingStat";
@@ -242,58 +243,44 @@ export default function BiblePanel({ onExpand }: { onExpand?: () => void }) {
           </Button>
         </div>
       )}
-      <div className="flex flex-wrap gap-1 border-b border-line px-3 py-2">
-        {BIBLE_TYPES.map((t) => (
-          <Button
-            key={t}
-            variant="outline"
-            onClick={() => setActive(t)}
-            className={`h-auto px-2 py-0.5 text-xs ${
-              active === t
-                ? "border-gold bg-gold/15 text-gold hover:bg-gold/15 hover:text-gold"
-                : "text-gold-soft hover:border-gold/50 hover:bg-transparent"
-            }`}
-          >
-            {BIBLE_LABELS[t]}
-          </Button>
-        ))}
-        {active === "foreshadow" && ledger.entities.length > 0 && (
-          <Select value={fsFilter} onValueChange={setFsFilter}>
-            <SelectTrigger
-              aria-label="伏笔状态筛选"
-              className="ml-auto px-1.5 py-0.5 text-xs"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              {Object.entries(FORESHADOW_STATUS_LABELS).map(([status, meta]) => (
-                <SelectItem key={status} value={status}>
-                  {meta.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        {active === "character" && ledger.entities.length > 0 && (
-          <div className="ml-auto flex gap-1">
-            {(["list", "graph"] as const).map((v) => (
-              <Button
-                key={v}
-                variant="outline"
-                onClick={() => setCharView(v)}
-                className={`h-auto px-2 py-0.5 text-xs ${
-                  charView === v
-                    ? "border-gold bg-gold/15 text-gold hover:bg-gold/15 hover:text-gold"
-                    : "text-gold-soft hover:border-gold/50 hover:bg-transparent"
-                }`}
+      <Tabs value={active} onValueChange={(v) => setActive(v as BibleType)}>
+        <TabsList className="flex flex-wrap gap-1 border-b border-line px-3 py-2">
+          {BIBLE_TYPES.map((t) => (
+            <TabsTrigger key={t} value={t}>
+              {BIBLE_LABELS[t]}
+            </TabsTrigger>
+          ))}
+          {active === "foreshadow" && ledger.entities.length > 0 && (
+            <Select value={fsFilter} onValueChange={setFsFilter}>
+              <SelectTrigger
+                aria-label="伏笔状态筛选"
+                className="ml-auto px-1.5 py-0.5 text-xs"
               >
-                {v === "list" ? "列表" : "关系图"}
-              </Button>
-            ))}
-          </div>
-        )}
-      </div>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部</SelectItem>
+                {Object.entries(FORESHADOW_STATUS_LABELS).map(([status, meta]) => (
+                  <SelectItem key={status} value={status}>
+                    {meta.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {active === "character" && ledger.entities.length > 0 && (
+            <Tabs
+              value={charView}
+              onValueChange={(v) => setCharView(v as "list" | "graph")}
+            >
+              <TabsList className="ml-auto gap-1">
+                <TabsTrigger value="list">列表</TabsTrigger>
+                <TabsTrigger value="graph">关系图</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+        </TabsList>
+      </Tabs>
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
         {ledger.error && (
           <p className="mb-2 border border-overdue/50 bg-overdue/10 px-2 py-1.5 text-xs leading-relaxed text-paper">
