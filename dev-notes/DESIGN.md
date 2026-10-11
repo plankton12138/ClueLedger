@@ -86,10 +86,10 @@ stories/the-orient-express-case/
 
 ### 3.1 总体形态：单 Agent + 工具 → 编排式双 Agent（演进路线）
 
-**阶段一（Phase 1–8）：单 Agent + 丰富工具。**
-完全贴合 Tau 架构：一个 `AgentHarness`，system prompt 定义"悬疑小说主编"角色，工具集承担全部结构化操作。理由：先吃透一个 loop 里工具调用、上下文管理、事件流的全部细节，再谈编排——这是学习路径的最优排序，也是 Tau 哲学（small layers beat magic）的要求。（P6 基础设施、P7 界面重塑、P8 引导式生命周期、P9 RAG 均在此形态内完成。）
+**阶段一（Phase 1–10）：单 Agent + 丰富工具。**
+完全贴合 Tau 架构：一个 `AgentHarness`，system prompt 定义"悬疑小说主编"角色，工具集承担全部结构化操作。理由：先吃透一个 loop 里工具调用、上下文管理、事件流的全部细节，再谈编排——这是学习路径的最优排序，也是 Tau 哲学（small layers beat magic）的要求。（P6 基础设施、P7 界面重塑、P8 引导式生命周期、P9 体验修补与桌面化、P10 RAG 均在此形态内完成。）
 
-**阶段二（Phase 10）：引入"审计员"作为第二个 harness。**
+**阶段二（Phase 11）：引入"审计员"作为第二个 harness。**
 写作 Agent 与审计 Agent 分离，原因：
 
 1. **利益冲突**：让写作者自查伏笔回收等于让被告当法官；
@@ -152,7 +152,7 @@ stories/the-orient-express-case/
 |---|---|---|---|
 | 向量库 | **Chroma（嵌入式模式）** | 零运维、纯 Python、数据即文件，符合"可 inspect"哲学；单机语料量（百级场景 chunk）绰绰有余 | Qdrant（想练 Docker 时）、FAISS（更底层，不必要） |
 | Embedding | **BGE-M3（本地 sentence-transformers）** | 中英双语（阿婆原著+译本都覆盖）、免费、离线；1024 维 | API embedding（OpenAI/BGE-API）：省显存但依赖网络 |
-| Rerank | bge-reranker-base（可选，P9 后期） | 学习完整 RAG 链路的进阶练习 | 无 |
+| Rerank | bge-reranker-base（可选，P10 后期） | 学习完整 RAG 链路的进阶练习 | 无 |
 | 框架 | **不使用 LangChain/LlamaIndex** | 组件总共 200 行以内：chunk→embed→upsert→query。手写才能学会，简历上也更能讲清楚 | LlamaIndex（想对比时可做实验） |
 
 ### 4.3 检索策略（工具 `style_search` 的内部）
@@ -184,6 +184,7 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 - **FastAPI 只做三件事**：① 会话/工作区的 REST CRUD；② WebSocket 事件桥（把 `harness.subscribe()` 的事件逐条 JSON 化推送，收 prompt/steer/cancel 命令——协议照抄 `tau_coding/rpc.py` 的命令语义）；③ 文件上传触发 ingestion。
 - **前端不跑任何 Agent 逻辑**，与 TUI 完全同构：都是事件的消费者。这是 Tau 架构红利的直接兑现。
 - 事件→UI 状态的映射参考 `tau_coding/tui/adapter.py` 的写法，在 TS 侧写一个等价的 reducer。
+- **交付形态（P9 起）**：桌面应用优先——Electron 壳拉起 PyInstaller 打包的后端 sidecar（动态端口、数据落 `%APPDATA%/Hastings`），生产态后端经 `--static-dir` 直供前端静态产物（同源无 CORS）；Web dev 形态（Vite dev server + `uv run` 后端）保留为开发期形态。
 
 ### 5.2 页面结构
 
@@ -192,7 +193,7 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 3. **章节阅读器/编辑器**（中央，P5 起正文居中）：正文渲染 + 编辑 + 对账同步；
 4. **事件流页**（P5 T6 起为一级导航入口；P6 升级）：原始事件帧 + 历史查询（events.jsonl 持久化）+ 分类过滤 + 运行概览 + 导出；
 5. **设置页**：写作语言（已交付）+ 模型接入（P6：服务级 config.yaml 多 provider 档案、热切模型、模型列表发现）；
-6. **语料管理页**（P7 落地文风档案先行版本）：上传 .txt/.md、文件列表、确定性 style_profile 统计（句长分布/对话占比/平均句长）；向量入库进度区 P9 转正。
+6. **语料管理页**（P7 落地文风档案先行版本）：上传 .txt/.md、文件列表、确定性 style_profile 统计（句长分布/对话占比/平均句长）；向量入库进度区 P10 转正。
 
 技术选型：React 18 + Vite + TypeScript + Tailwind；状态管理 Zustand（事件 reducer 场景极合适）。不引入 Next.js（无 SSR 需求）、不引入 UI 大库。
 
@@ -207,6 +208,7 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 | Provider | tau_ai（OpenAI 兼容端点优先） | 国内可用任意兼容端点（DeepSeek/GLM/Qwen）；本地小模型用已有的 llama.cpp 扩展路径 |
 | Web 框架 | FastAPI + uvicorn | 原生 async（harness 是 async 迭代器）、WebSocket 一等公民 |
 | 前端 | React + Vite + TS + Zustand + Tailwind | 主流、轻、简历通用度最高 |
+| 桌面壳 | Electron + electron-builder（后端 PyInstaller sidecar） | P9 引入：桌面分发形态，后端单 exe 随包、动态端口拉起 |
 | RAG | Chroma + BGE-M3 + 手写 pipeline | 见 §4.2 |
 | 数据格式 | YAML（Bible）+ Markdown（正文）+ JSON（审计/事件） | 人类可读可 git，与"文件制工作区"匹配 |
 | 测试/评测 | pytest + tau FakeProvider + 自研 eval harness | 见 §7 |
@@ -265,11 +267,12 @@ React SPA (Vite + TS)  ←WebSocket(SSE 降级)→  FastAPI  →  AgentHarness  
 | **P4 实用化** | 会话持久化（session.jsonl）+ 正文读回（`read_chapter`/`list_chapters`）+ 多工作区（WorkspaceRegistry + slug 路由）。2026-10-09 完成，见 [phase-04-usability.md](phase-04-usability.md) | 杀进程重启会话恢复；CLI 重进续聊；双工作区隔离 |
 | **P5 正文中心创作台** | 布局反转（三栏创作台，正文居中）+ 作者受管写端点（PUT + `.revisions` 归档 + 乐观并发）+ write_guard 人机互斥 + 对账同步管线（一处修订补齐账本与会话记忆两级上下文）。2026-10-09 完成，见 [phase-05-manuscript-center.md](phase-05-manuscript-center.md) | 手改正文 → 保存 → 自动对账；agent 写作中正文只读；人机互斥 |
 | **P6 基础设施** | 模型接入设置（服务级 config.yaml 多 provider 档案 + 同档案热切模型/跨档案重建会话 + 模型列表发现）+ 前端可用性（可调侧栏/伏笔账本表格化/角色小传/关系图/数据概览统计卡/全局搜索）+ 事件流持久化与历史查询（events.jsonl）+ 工作区导出 + ErrorBoundary。2026-10-09 完成，见 [phase-06-infra.md](phase-06-infra.md)；计划见 [phase-06-infra-plan.md](phase-06-infra-plan.md)；写作语言设置为本阶段先行完成的前置项 | 设置页换模型下轮生效；重启后事件流可回溯；侧栏可调且无重叠 |
-| **P7 界面重塑与功能页面** | 原型对齐（`submission/product-prototype/` 五图）：顶栏三段式重组 + 语料库（文风档案先行：上传/存储/确定性 style_profile 统计，向量检索留 P9）+ 审计中心（确定性检查 v1：timeline_check/伏笔逾期/线索前置/手法状态四规则 + 三指标环，零 LLM 零落盘）+ 账本全页 + 事件流/设置页 polish。2026-10-09 立项，计划见 [phase-07-ui-pages-plan.md](phase-07-ui-pages-plan.md) | 五导航页齐备；顶栏 1440 无溢出；语料上传出文风档案；审计选章出报告且「定位/生成修订建议」可用 |
-| **P8 引导式生命周期** | 工作区生命周期状态机（story.yaml：intake → bible_drafting → bible_confirmed → writing → revising → complete，story_stage 工具 + write_chapter 阶段门）+ outline 第六账本与分级预检（章纲 = 长篇分页记忆，正文落盘自动推进章纲状态）+ 状态注入（每轮 prompt 前刷新 system 的工作区状态节）+ intake 协议（理解摘要/缺口清单/≤5 问，未确认禁写）+ 前端 MD 渲染与消息区分 + 阶段进度徽章。2026-10-10 立项，计划见 [phase-08-guided-lifecycle-plan.md](phase-08-guided-lifecycle-plan.md) | 万字构想粘贴 → 首轮只引导不产出；未过确认 write_chapter 被拒（三要素）；agent 消息 MD 渲染；顶栏可见阶段与进度 |
-| **P9 RAG** | ingestion pipeline + `style_search`/`style_profile` 向量化（Chroma + BGE-M3）+ 语料库页向量索引区转正（上传/文风统计已在 P7 落地） | 上传阿婆作品集 → 写作时可检索、文风示例注入生效 |
-| **P10 审计员** | 独立审计 harness + `foreshadow_audit` 工具 + LLM 语义审计（嫌疑人知情范围一致性、关键信息提前展示检测——P7 交付的四条确定性规则之外的语义层）+ 语义指标（核心文风标签/线索密度/叙事节奏）+ 审计报告落盘 audits/*.json（P7 审计中心视图为确定性 v1，本阶段扩为「确定性 + 语义」两段） | 每章自动生成审计 JSON；语义检查清单上线 |
-| **P11 评测与打磨** | eval harness（Level 3/4/5）+ golden set + 章节阅读器增强 + 导出打磨（zip 导出已在 P6 先行落地） | 一份完整的自动评测报告 |
+| **P7 界面重塑与功能页面** | 原型对齐（`submission/product-prototype/` 五图）：顶栏三段式重组 + 语料库（文风档案先行：上传/存储/确定性 style_profile 统计，向量检索留 P10）+ 审计中心（确定性检查 v1：timeline_check/伏笔逾期/线索前置/手法状态四规则 + 三指标环，零 LLM 零落盘）+ 账本全页 + 事件流/设置页 polish。2026-10-09 完成，见 [phase-07-ui-pages.md](phase-07-ui-pages.md)；计划见 [phase-07-ui-pages-plan.md](phase-07-ui-pages-plan.md) | 五导航页齐备；顶栏 1440 无溢出；语料上传出文风档案；审计选章出报告且「定位/生成修订建议」可用 |
+| **P8 引导式生命周期** | 工作区生命周期状态机（story.yaml：intake → bible_drafting → bible_confirmed → writing → revising → complete，story_stage 工具 + write_chapter 阶段门）+ outline 第六账本与分级预检（章纲 = 长篇分页记忆，正文落盘自动推进章纲状态）+ 状态注入（每轮 prompt 前刷新 system 的工作区状态节）+ intake 协议（理解摘要/缺口清单/≤5 问，未确认禁写）+ 前端 MD 渲染与消息区分 + 阶段进度徽章。2026-10-10 立项、2026-10-11 完成，见 [phase-08-guided-lifecycle.md](phase-08-guided-lifecycle.md)；计划见 [phase-08-guided-lifecycle-plan.md](phase-08-guided-lifecycle-plan.md) | 万字构想粘贴 → 首轮只引导不产出；未过确认 write_chapter 被拒（三要素）；agent 消息 MD 渲染；顶栏可见阶段与进度 |
+| **P9 体验修补与桌面化** | 走查驱动的可用性修补（思考内容默认折叠、对话详略协议 + intake 提问收紧、`【选项】`候选按钮承接、新会话归档重建、等待占位与空态快捷操作）+ 响应式抽屉化（<1024px 对话栏抽屉、横向溢出修复、羊皮纸窄屏降级）+ Electron 桌面化（PyInstaller sidecar + 动态端口 + %APPDATA% 数据目录 + electron-builder 安装包；后端 `--static-dir` 直供静态产物，前端零改动接入）。2026-10-11 立项，计划见 [phase-09-ux-desktop-plan.md](phase-09-ux-desktop-plan.md) | 安装包启动自动拉起后端、退出无残留；480px 无横向滚动可用；思考内容默认折叠；同一文章可开新会话（旧会话归档可找回） |
+| **P10 RAG** | ingestion pipeline + `style_search`/`style_profile` 向量化（Chroma + BGE-M3）+ 语料库页向量索引区转正（上传/文风统计已在 P7 落地） | 上传阿婆作品集 → 写作时可检索、文风示例注入生效 |
+| **P11 审计员** | 独立审计 harness + `foreshadow_audit` 工具 + LLM 语义审计（嫌疑人知情范围一致性、关键信息提前展示检测——P7 交付的四条确定性规则之外的语义层）+ 语义指标（核心文风标签/线索密度/叙事节奏）+ 审计报告落盘 audits/*.json（P7 审计中心视图为确定性 v1，本阶段扩为「确定性 + 语义」两段） | 每章自动生成审计 JSON；语义检查清单上线 |
+| **P12 评测与打磨** | eval harness（Level 3/4/5）+ golden set + 章节阅读器增强 + 导出打磨（zip 导出已在 P6 先行落地） | 一份完整的自动评测报告 |
 
 每阶段完成后在 `dev-notes/` 留一篇构建笔记（沿用 Tau 的习惯，也是学习沉淀的直接证据）。
 
