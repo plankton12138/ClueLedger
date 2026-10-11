@@ -4,6 +4,7 @@
  * （经 WS sync 命令手动重跑，复用最近一次保存的差异）。
  */
 
+import { Button } from "@/components/ui/button";
 import { chapterNumber } from "../state/chapter";
 import type { SyncCardEntry } from "../state/store";
 
@@ -34,13 +35,13 @@ export default function SyncCard({
             正文与账本未受影响；可手动重跑对账。
           </span>
           {onRetry && (
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={() => onRetry(entry.chapter)}
-              className="shrink-0 border border-overdue/60 px-2 py-0.5 text-[11px] text-overdue transition-colors hover:bg-overdue/10"
+              className="h-auto shrink-0 border-overdue/60 px-2 py-0.5 text-[11px] text-overdue hover:bg-overdue/10 hover:text-overdue"
             >
               重新同步
-            </button>
+            </Button>
           )}
         </div>
       )}

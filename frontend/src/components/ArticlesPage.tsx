@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import { createWorkspace, deleteWorkspace, fetchWorkspaces } from "../api/rest";
+import { Button } from "@/components/ui/button";
 import { useChatStore } from "../state/store";
 
 interface Props {
@@ -53,14 +54,14 @@ function CreateWorkspaceForm({ onCreated }: { onCreated: (slug: string) => void 
         className="w-full border border-line bg-transparent px-2 py-1.5 text-sm text-paper placeholder:text-paper/30 focus:border-gold/60 focus:outline-none"
       />
       {error && <p className="mt-2 text-xs leading-relaxed text-overdue">{error}</p>}
-      <button
-        type="button"
+      <Button
+        variant="outline"
         onClick={() => void submit()}
         disabled={busy || slug.trim() === ""}
-        className="mt-3 w-full border border-gold/60 px-3 py-1.5 text-sm text-gold transition-colors hover:bg-gold/15 disabled:opacity-40"
+        className="mt-3 h-auto w-full border-gold/60 px-3 py-1.5 text-sm text-gold hover:bg-gold/15 hover:text-gold"
       >
         {busy ? "创建中…" : "打开新文章"}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -112,13 +113,13 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
         <div className="border border-line bg-ink-soft/35 p-5">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-serif text-lg font-bold text-gold">文章</h2>
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={() => setShowCreate((v) => !v)}
-              className="flex-none border border-gold/60 px-3 py-1 text-xs text-gold transition-colors hover:bg-gold/15"
+              className="h-auto flex-none border-gold/60 px-3 py-1 text-xs text-gold hover:bg-gold/15 hover:text-gold"
             >
               ＋ 新建文章
-            </button>
+            </Button>
           </div>
 
           {showCreate && (
@@ -147,35 +148,36 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
                       {w === slug && <span className="ml-2 text-[11px] text-gold-soft">当前</span>}
                     </span>
                     {w !== slug && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
                         onClick={() => {
                           onSwitch(w);
                           onEnter();
                         }}
-                        className="flex-none border border-line px-2 py-0.5 text-xs text-paper/75 transition-colors hover:text-gold"
+                        className="h-auto flex-none px-2 py-0.5 text-xs text-paper/75 hover:bg-transparent hover:text-gold"
                       >
                         进入
-                      </button>
+                      </Button>
                     )}
-                    <a
-                      href={`/api/${encodeURIComponent(w)}/export`}
-                      title="导出全量备份（zip：账本/正文/设置/会话/事件）"
-                      className="flex-none border border-line px-2 py-0.5 text-xs text-paper/75 transition-colors hover:text-gold"
-                    >
-                      ⇩ 导出
-                    </a>
-                    <button
-                      type="button"
+                    <Button asChild variant="outline" className="h-auto flex-none px-2 py-0.5 text-xs text-paper/75 hover:bg-transparent hover:text-gold">
+                      <a
+                        href={`/api/${encodeURIComponent(w)}/export`}
+                        title="导出全量备份（zip：账本/正文/设置/会话/事件）"
+                      >
+                        ⇩ 导出
+                      </a>
+                    </Button>
+                    <Button
+                      variant="outline"
                       onClick={() => {
                         setConfirmSlug(w);
                         setConfirmInput("");
                         setError(null);
                       }}
-                      className="flex-none border border-line px-2 py-0.5 text-xs text-paper/75 transition-colors hover:border-overdue/60 hover:text-overdue"
+                      className="h-auto flex-none px-2 py-0.5 text-xs text-paper/75 hover:border-overdue/60 hover:bg-transparent hover:text-overdue"
                     >
                       删除
-                    </button>
+                    </Button>
                   </div>
                   {confirmSlug === w && (
                     <div className="mt-2 border border-overdue/40 bg-overdue/5 p-3">
@@ -190,21 +192,21 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
                           placeholder={w}
                           className="min-w-0 flex-1 border border-line bg-transparent px-2 py-1 text-sm text-paper placeholder:text-paper/30 focus:border-overdue/60 focus:outline-none"
                         />
-                        <button
-                          type="button"
+                        <Button
+                          variant="outline"
                           disabled={confirmInput !== w || busy}
                           onClick={() => void handleDelete(w)}
-                          className="flex-none border border-overdue/60 px-3 py-1 text-xs text-overdue transition-colors hover:bg-overdue/10 disabled:opacity-40"
+                          className="h-auto flex-none border-overdue/60 px-3 py-1 text-xs text-overdue hover:bg-overdue/10 hover:text-overdue"
                         >
                           {busy ? "删除中…" : "确认删除"}
-                        </button>
-                        <button
-                          type="button"
+                        </Button>
+                        <Button
+                          variant="outline"
                           onClick={() => setConfirmSlug(null)}
-                          className="flex-none border border-line px-3 py-1 text-xs text-paper/60 transition-colors hover:text-paper"
+                          className="h-auto flex-none px-3 py-1 text-xs text-paper/60 hover:bg-transparent hover:text-paper"
                         >
                           取消
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   )}

@@ -23,6 +23,7 @@ import {
 } from "../api/rest";
 import { chapterNumber, countChars, parseChapterHeading, splitParagraphs } from "../state/chapter";
 import { useChatStore } from "../state/store";
+import { Button } from "@/components/ui/button";
 import ChapterPaper from "./ChapterPaper";
 import RingStat from "./RingStat";
 
@@ -215,15 +216,15 @@ export default function AuditPage({ onSteer }: { onSteer: (message: string) => P
                 {checks.length === 0 && report !== null && (
                   <span className="text-planted">✓ 全部通过</span>
                 )}
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
                   disabled={sending || report === null || checks.length === 0}
                   onClick={() => void sendRevision()}
-                  className="ml-auto border border-line px-2 py-0.5 text-[10px] text-gold-soft transition-colors hover:border-gold/60 hover:text-gold disabled:opacity-40"
+                  className="ml-auto h-auto px-2 py-0.5 text-[10px] text-gold-soft hover:border-gold/60 hover:bg-transparent hover:text-gold"
                   title={running ? "运行中：以插话（steer）发送" : "空闲：以指令（prompt）发送"}
                 >
                   {sending ? "发送中…" : "生成修订建议 →"}
-                </button>
+                </Button>
               </div>
               {actionMessage !== null && (
                 <p className="mb-2 whitespace-pre-wrap border border-line bg-ink-soft/60 px-2 py-1.5 text-paper/80">
@@ -256,14 +257,14 @@ export default function AuditPage({ onSteer }: { onSteer: (message: string) => P
                           {c.anchor_name !== null ? ` · ${c.anchor_name}` : ""}
                         </span>
                         {c.anchor_chapter !== null && (
-                          <button
-                            type="button"
+                          <Button
+                            variant="outline"
                             onClick={() => navigate({ kind: "chapter", chapterId: c.anchor_chapter as string })}
-                            className="ml-auto shrink-0 border border-line px-1.5 py-px text-[10px] text-paper/60 transition-colors hover:border-gold/60 hover:text-gold"
+                            className="ml-auto h-auto shrink-0 px-1.5 py-px text-[10px] text-paper/60 hover:border-gold/60 hover:bg-transparent hover:text-gold"
                             title={`定位到 ${c.anchor_chapter}（回到创作台正文）`}
                           >
                             定位
-                          </button>
+                          </Button>
                         )}
                       </div>
                       <p className="whitespace-pre-wrap text-paper/75">{c.message}</p>

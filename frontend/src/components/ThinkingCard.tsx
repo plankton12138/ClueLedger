@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 
 /** 字数口径：非空白字符数（空白不是思考内容，避免换行/空格把字数撑大）。 */
 export function thinkingCharCount(text: string): number {
@@ -50,25 +51,25 @@ export default function ThinkingCard({
     <div className="max-w-[85%] border-l-2 border-line px-4 py-2">
       {open ? (
         <>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => setOpen(false)}
-            className="text-xs italic text-gold-soft/70 hover:text-gold-soft"
+            className="h-auto p-0 text-xs italic text-gold-soft/70 hover:bg-transparent hover:text-gold-soft"
           >
             {`◈ 思路 · ${chars} 字 · 收起`}
-          </button>
+          </Button>
           <p className="mt-1 whitespace-pre-wrap break-words text-xs italic leading-relaxed text-paper/50">
             {text}
           </p>
         </>
       ) : (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           onClick={() => setOpen(true)}
-          className="text-xs italic text-gold-soft/70 hover:text-gold-soft"
+          className="h-auto p-0 text-xs italic text-gold-soft/70 hover:bg-transparent hover:text-gold-soft"
         >
           {thinkingCollapsedLabel(chars)}
-        </button>
+        </Button>
       )}
     </div>
   );

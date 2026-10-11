@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { resetSession } from "../api/rest";
+import { Button } from "@/components/ui/button";
 
 type Mode = "idle" | "confirm" | "busy";
 
@@ -45,25 +46,27 @@ export default function ChatHeader({
         </p>
         {error && <p className="mt-1.5 break-all text-xs text-overdue">{error}</p>}
         <div className="mt-2 flex items-center gap-2">
-          <button
-            type="button"
+          <Button
+            size="sm"
+            variant="outline"
             disabled={mode === "busy" || running}
             onClick={() => void handleReset()}
-            className="border border-gold/60 px-2.5 py-1 text-xs text-gold transition-colors hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-40"
+            className="h-auto border-gold/60 px-2.5 py-1 text-xs text-gold hover:bg-gold/10 hover:text-gold"
           >
             {mode === "busy" ? "归档中…" : "确认开新会话"}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             disabled={mode === "busy"}
             onClick={() => {
               setMode("idle");
               setError(null);
             }}
-            className="border border-line px-2.5 py-1 text-xs text-paper/60 transition-colors hover:text-paper"
+            className="h-auto px-2.5 py-1 text-xs text-paper/60 hover:bg-transparent hover:text-paper"
           >
             取消
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -72,15 +75,15 @@ export default function ChatHeader({
   return (
     <div className="flex flex-none items-center justify-between gap-2 border-b border-line bg-ink-soft/60 px-3 py-1.5">
       <span className="truncate text-xs tracking-widest text-gold-soft">主编对话</span>
-      <button
-        type="button"
+      <Button
+        variant="outline"
         disabled={running}
         title={running ? "写作中不可开新会话" : "归档当前对话并开新会话"}
         onClick={() => setMode("confirm")}
-        className="flex-none border border-line px-2 py-0.5 text-[11px] text-paper/70 transition-colors hover:border-gold/60 hover:text-gold disabled:cursor-not-allowed disabled:opacity-40"
+        className="h-auto flex-none px-2 py-0.5 text-[11px] text-paper/70 hover:border-gold/60 hover:bg-transparent hover:text-gold"
       >
         新会话
-      </button>
+      </Button>
     </div>
   );
 }

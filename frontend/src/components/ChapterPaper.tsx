@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 
 /** 菱形饰线（D4 统一组件）：章节标题下的分隔纹样，羊皮纸语汇。 */
 export function OrnamentDivider() {
@@ -88,25 +89,25 @@ export default function ChapterPaper({
       <OrnamentDivider />
       {body}
       <footer className="mt-auto flex items-center border-t border-parchment-line pt-4 text-xs text-parchment-mute">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           disabled={onPrev === undefined}
           onClick={onPrev}
-          className="transition-colors hover:text-parchment-ink disabled:opacity-30"
+          className="h-auto p-0 text-xs text-parchment-mute hover:bg-transparent hover:text-parchment-ink"
         >
           ← 上一章
-        </button>
+        </Button>
         <span className="ml-auto text-parchment-ink">
           <b className="font-semibold">{chapterNo}</b> / {total}
         </span>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           disabled={onNext === undefined}
           onClick={onNext}
-          className="ml-auto transition-colors hover:text-parchment-ink disabled:opacity-30"
+          className="ml-auto h-auto p-0 text-xs text-parchment-mute hover:bg-transparent hover:text-parchment-ink"
         >
           下一章 →
-        </button>
+        </Button>
       </footer>
     </article>
   );

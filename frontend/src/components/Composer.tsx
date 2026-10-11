@@ -6,6 +6,7 @@
 
 import { useState, type KeyboardEvent } from "react";
 import type { CommandType } from "../api/types";
+import { Button } from "@/components/ui/button";
 import { useChatStore } from "../state/store";
 
 interface ComposerProps {
@@ -54,8 +55,6 @@ export default function Composer({ sendCommand, abort }: ComposerProps) {
     }
   };
 
-  const buttonBase =
-    "px-4 py-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40";
   return (
     <div className="min-w-0 border-t border-line bg-ink-soft/40 px-6 py-3">
       {error && (
@@ -76,34 +75,34 @@ export default function Composer({ sendCommand, abort }: ComposerProps) {
         />
         <div className="flex flex-col items-end gap-2">
           <div className="flex gap-2">
-            <button
-              type="button"
+            <Button
+              variant="outline"
               disabled={!text.trim() || busy}
               onClick={() => void submit(running ? "steer" : "prompt")}
-              className={`${buttonBase} border border-gold bg-gold/15 text-gold hover:bg-gold/25`}
+              className="border-gold bg-gold/15 text-gold hover:bg-gold/25 hover:text-gold"
             >
               {running ? "插话" : "发送"}
-            </button>
+            </Button>
             {running && (
-              <button
-                type="button"
+              <Button
+                variant="outline"
                 disabled={!text.trim() || busy}
                 onClick={() => void submit("follow_up")}
-                className={`${buttonBase} border border-line text-gold-soft hover:border-gold/50`}
+                className="text-gold-soft hover:border-gold/50 hover:bg-transparent hover:text-gold-soft"
               >
                 追问
-              </button>
+              </Button>
             )}
           </div>
           {running && (
-            <button
-              type="button"
+            <Button
+              variant="outline"
               disabled={busy}
               onClick={() => void onAbort()}
-              className="border border-overdue/60 px-4 py-1.5 text-xs text-overdue transition-colors hover:bg-overdue/10 disabled:cursor-not-allowed disabled:opacity-40"
+              className="h-auto border-overdue/60 px-4 py-1.5 text-xs text-overdue hover:bg-overdue/10 hover:text-overdue"
             >
               中止写作
-            </button>
+            </Button>
           )}
         </div>
       </div>

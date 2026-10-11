@@ -28,6 +28,7 @@ import {
 } from "../api/rest";
 import { emptyLoginForm, hostOf, prefillLoginForm } from "../state/providerLogin";
 import { useChatStore } from "../state/store";
+import { Button } from "@/components/ui/button";
 
 type Feedback = { kind: "ok" | "error"; text: string } | null;
 
@@ -237,14 +238,14 @@ export default function SettingsPanel() {
               <option key={m} value={m} />
             ))}
           </datalist>
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={() => void pullModels()}
             disabled={busy || fetching || profile === "" || selected?.available === false}
-            className="shrink-0 border border-line px-3 py-1.5 text-sm text-paper/75 transition-colors hover:border-gold/50 hover:text-gold disabled:opacity-40"
+            className="h-auto shrink-0 px-3 py-1.5 text-sm text-paper/75 hover:border-gold/50 hover:bg-transparent hover:text-gold"
           >
             {fetching ? "拉取中…" : "拉取模型列表"}
-          </button>
+          </Button>
         </div>
         {selected?.available === false && (
           <p className="mt-1.5 text-[11px] text-overdue">
@@ -253,14 +254,14 @@ export default function SettingsPanel() {
         )}
 
         <div className="mt-6 flex items-center gap-3">
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={() => void save()}
             disabled={busy || settings === null}
-            className="border border-gold/60 px-4 py-1.5 text-sm text-gold transition-colors hover:bg-gold/15 disabled:opacity-40"
+            className="h-auto border-gold/60 px-4 py-1.5 text-sm text-gold hover:bg-gold/15 hover:text-gold"
           >
             {saving ? "保存中…" : "保存设置"}
-          </button>
+          </Button>
           <span className="text-[11px] text-paper/40">
             {settings ? `当前生效模型：${settings.model}` : ""}
           </span>
@@ -484,13 +485,13 @@ function ProviderAdminCard({
     <div className="border border-line bg-ink-soft/35 p-5">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-serif text-lg font-bold text-gold">档案管理</h2>
-        <button
-          type="button"
+        <Button
+          variant="outline"
           onClick={() => void openCatalog()}
-          className="flex-none border border-gold/60 px-3 py-1 text-xs text-gold transition-colors hover:bg-gold/15"
+          className="h-auto flex-none border-gold/60 px-3 py-1 text-xs text-gold hover:bg-gold/15 hover:text-gold"
         >
           ＋ 登录新模型
-        </button>
+        </Button>
       </div>
       <p className="mt-2 text-[11px] leading-relaxed text-paper/40">
         从目录选择模型来源，填入 API key 即可使用；配置写在服务级 config.yaml，key
@@ -508,37 +509,37 @@ function ProviderAdminCard({
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {catalog.map((e) => (
-                <button
+                <Button
                   key={e.name}
-                  type="button"
+                  variant="outline"
                   onClick={() => startFromEntry(e)}
-                  className="border border-line p-3 text-left transition-colors hover:border-gold/60"
+                  className="h-auto w-full justify-start rounded-none p-3 text-left hover:border-gold/60 hover:bg-transparent"
                 >
                   <span className="block truncate text-sm text-paper">{e.display_name}</span>
                   <span className="mt-1 block truncate text-[11px] text-paper/40">
                     {hostOf(e.base_url)} · {e.models.length} 个模型
                   </span>
-                </button>
+                </Button>
               ))}
-              <button
-                type="button"
+              <Button
+                variant="outline"
                 onClick={startCustom}
-                className="border border-dashed border-line p-3 text-left transition-colors hover:border-gold/60"
+                className="h-auto w-full justify-start rounded-none border-dashed p-3 text-left hover:border-gold/60 hover:bg-transparent"
               >
                 <span className="block text-sm text-paper/75">＋ 自定义…</span>
                 <span className="mt-1 block text-[11px] text-paper/40">
                   手填 base_url 与模型名
                 </span>
-              </button>
+              </Button>
             </div>
           )}
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={() => setPicking(false)}
-            className="mt-3 border border-line px-3 py-1 text-xs text-paper/60 transition-colors hover:text-paper"
+            className="mt-3 h-auto px-3 py-1 text-xs text-paper/60 hover:bg-transparent hover:text-paper"
           >
             取消
-          </button>
+          </Button>
         </div>
       )}
 
@@ -560,21 +561,21 @@ function ProviderAdminCard({
             <span className="flex-none text-[11px] text-paper/45">
               {p.key_hint === "" ? "未配 key" : `key ${p.key_hint}`}
             </span>
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={() => startEdit(p)}
-              className="flex-none border border-line px-2 py-0.5 text-xs text-paper/75 transition-colors hover:text-gold"
+              className="h-auto flex-none px-2 py-0.5 text-xs text-paper/75 hover:bg-transparent hover:text-gold"
             >
               编辑
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="outline"
               disabled={deleting !== null}
               onClick={() => void remove(p.name)}
-              className="flex-none border border-line px-2 py-0.5 text-xs text-paper/75 transition-colors hover:border-overdue/60 hover:text-overdue disabled:opacity-40"
+              className="h-auto flex-none px-2 py-0.5 text-xs text-paper/75 hover:border-overdue/60 hover:bg-transparent hover:text-overdue"
             >
               {deleting === p.name ? "删除中…" : "删除"}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
@@ -638,33 +639,33 @@ function ProviderAdminCard({
             className={`mt-1.5 ${inputCls}`}
           />
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={() => void runTest()}
               disabled={testing || busy || form.base_url.trim() === ""}
-              className="border border-line px-3 py-1.5 text-xs text-paper/75 transition-colors hover:border-gold/50 hover:text-gold disabled:opacity-40"
+              className="h-auto px-3 py-1.5 text-xs text-paper/75 hover:border-gold/50 hover:bg-transparent hover:text-gold"
             >
               {testing ? "测试中…" : "测试连接"}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => void save()}
               disabled={
                 busy ||
                 (editing === null && form.name.trim() === "") ||
                 form.base_url.trim() === ""
               }
-              className="border border-gold/60 px-4 py-1.5 text-xs text-gold transition-colors hover:bg-gold/15 disabled:opacity-40"
+              className="h-auto border-gold/60 px-4 py-1.5 text-xs text-gold hover:bg-gold/15 hover:text-gold"
             >
               {busy ? "保存中…" : "保存"}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => setOpen(false)}
-              className="border border-line px-3 py-1.5 text-xs text-paper/60 transition-colors hover:text-paper"
+              className="h-auto px-3 py-1.5 text-xs text-paper/60 hover:bg-transparent hover:text-paper"
             >
               取消
-            </button>
+            </Button>
           </div>
         </div>
       )}

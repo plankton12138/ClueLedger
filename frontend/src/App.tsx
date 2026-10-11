@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchStory, fetchWorkspaces } from "./api/rest";
 import type { StoryWire } from "./api/rest";
+import { Button } from "@/components/ui/button";
 import ArticlesPage from "./components/ArticlesPage";
 import BiblePanel from "./components/BiblePanel";
 import ChatHeader from "./components/ChatHeader";
@@ -251,18 +252,18 @@ export default function App() {
         </div>
         <nav className="hidden min-w-0 flex-1 justify-center gap-1 md:flex">
           {NAV_ITEMS.map((item) => (
-            <button
+            <Button
               key={item.key}
-              type="button"
+              variant={view === item.key ? "outline" : "ghost"}
               onClick={() => setView(item.key)}
-              className={`rounded border px-3.5 py-1.5 text-[13px] transition-colors ${
+              className={`rounded px-3.5 py-1.5 text-[13px] ${
                 view === item.key
-                  ? "border-line bg-gold/10 text-gold"
-                  : "border-transparent text-paper/75 hover:text-gold"
+                  ? "border-line bg-gold/10 text-gold hover:bg-gold/10"
+                  : "border border-transparent text-paper/75 hover:bg-transparent hover:text-gold"
               }`}
             >
               {item.label}
-            </button>
+            </Button>
           ))}
         </nav>
         {/* 窄屏（<md）导航折叠为下拉——同一 view 状态，只是呈现收窄（D2 布局不变量）。 */}
@@ -283,18 +284,18 @@ export default function App() {
             <SearchBox />
           </div>
           {/* 当前文章只读徽标（T14）：管理动作收进「文章」页，此处只作指向。 */}
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={() => setView("articles")}
             title="文章管理"
-            className={`max-w-44 border px-2 py-0.5 transition-colors ${
+            className={`h-auto max-w-44 px-2 py-0.5 text-xs ${
               view === "articles"
-                ? "border-gold/60 text-gold"
-                : "border-line text-paper/75 hover:border-gold/50"
+                ? "border-gold/60 text-gold hover:bg-transparent"
+                : "text-paper/75 hover:border-gold/50 hover:bg-transparent"
             }`}
           >
             <span className="block truncate">{slug ?? "未选择文章"}</span>
-          </button>
+          </Button>
           {/* 阶段徽章 + 章节进度（P8 T7，D7）：数据来自 GET /api/{slug}/story，
               完备度速览收进 title——顶栏保持一行的信息密度约束。 */}
           {story && (
@@ -330,13 +331,13 @@ export default function App() {
             );
           })()}
           {status === "closed" && (
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={reconnect}
-              className="border border-line px-2 py-0.5 transition-colors hover:border-gold/50"
+              className="h-auto px-2 py-0.5 text-xs hover:border-gold/50 hover:bg-transparent"
             >
               重连
-            </button>
+            </Button>
           )}
         </div>
       </header>
@@ -344,8 +345,8 @@ export default function App() {
       {connectionError && (
         <div className="flex items-center gap-3 border-b border-overdue/40 bg-overdue/10 px-6 py-2 text-xs text-paper">
           <span className="min-w-0 flex-1">{connectionError}</span>
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={() => {
               useChatStore.getState().setConnectionError(null);
               bootWorkspaces()
@@ -356,10 +357,10 @@ export default function App() {
                   useChatStore.getState().setConnectionError(String(exc)),
                 );
             }}
-            className="shrink-0 border border-overdue/60 px-2 py-0.5 text-overdue transition-colors hover:bg-overdue/10"
+            className="h-auto shrink-0 border-overdue/60 px-2 py-0.5 text-xs text-overdue hover:bg-overdue/10 hover:text-overdue"
           >
             重试
-          </button>
+          </Button>
         </div>
       )}
 
@@ -394,53 +395,53 @@ export default function App() {
       ) : (
         <main className="relative flex min-h-0 flex-1">
           {/* 窄屏账本抽屉把手（P7 D2）：从顶栏移入创作台，右缘中部抽屉拉手形态。 */}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => setBibleDrawerOpen(true)}
             aria-label="打开账本"
-            className="fixed right-0 top-1/2 z-30 -translate-y-1/2 border border-r-0 border-line bg-ink-soft/90 px-0.5 py-3 text-[10px] tracking-widest text-gold-soft transition-colors hover:text-gold xl:hidden"
+            className="fixed right-0 top-1/2 z-30 h-auto -translate-y-1/2 rounded-none border border-r-0 border-line bg-ink-soft/90 px-0.5 py-3 text-[10px] tracking-widest text-gold-soft hover:bg-ink-soft/90 hover:text-gold xl:hidden"
             style={{ writingMode: "vertical-rl" }}
           >
             账本
-          </button>
+          </Button>
           {/* <lg 对话左缘抽屉把手（P9 T8，D6）：与账本把手对称，正文唯一常驻。 */}
           {!isWide && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               onClick={() => setChatDrawerOpen(true)}
               aria-label="打开对话"
-              className="fixed left-0 top-1/2 z-30 -translate-y-1/2 border border-l-0 border-line bg-ink-soft/90 px-0.5 py-3 text-[10px] tracking-widest text-gold-soft transition-colors hover:text-gold"
+              className="fixed left-0 top-1/2 z-30 h-auto -translate-y-1/2 rounded-none border border-l-0 border-line bg-ink-soft/90 px-0.5 py-3 text-[10px] tracking-widest text-gold-soft hover:bg-ink-soft/90 hover:text-gold"
               style={{ writingMode: "vertical-rl" }}
             >
               主编对话
-            </button>
+            </Button>
           )}
           {isWide && (
             chatCollapsed ? (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 onClick={() => setChatCollapsed(false)}
                 aria-label="展开对话"
-                className="flex w-7 flex-none flex-col items-center gap-2 border-r border-line bg-ink-soft/35 py-3 text-[10px] tracking-widest text-gold-soft transition-colors hover:text-gold"
+                className="h-auto w-7 flex-none flex-col gap-2 rounded-none border-r border-line bg-ink-soft/35 py-3 text-[10px] tracking-widest text-gold-soft hover:bg-ink-soft/35 hover:text-gold"
                 style={{ writingMode: "vertical-rl" }}
               >
                 主编对话
-              </button>
+              </Button>
             ) : (
               <>
                 <aside
                   className="relative flex min-w-0 flex-none flex-col overflow-hidden bg-ink-soft/35"
                   style={{ width: chatWidth }}
                 >
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
                     onClick={() => setChatCollapsed(true)}
                     aria-label="折叠对话"
                     title="折叠对话"
-                    className="absolute right-1.5 top-1.5 z-10 border border-line bg-ink px-1.5 py-0.5 text-[10px] text-paper/50 transition-colors hover:text-gold"
+                    className="absolute right-1.5 top-1.5 z-10 h-auto border border-line bg-ink px-1.5 py-0.5 text-[10px] text-paper/50 hover:bg-ink hover:text-gold"
                   >
                     ‹
-                  </button>
+                  </Button>
                   <ChatPanel
                     slug={slug}
                     running={running}
@@ -494,14 +495,14 @@ export default function App() {
               <aside className="absolute inset-y-0 right-0 flex w-80 max-w-[85vw] flex-col border-l border-line bg-ink">
                 <div className="flex flex-none items-center justify-between border-b border-line px-3 py-2">
                   <span className="text-xs tracking-widest text-gold-soft">故事账本</span>
-                  <button
-                    type="button"
+                  <Button
+                    variant="outline"
                     onClick={() => setBibleDrawerOpen(false)}
                     aria-label="关闭账本"
-                    className="border border-line px-1.5 text-xs text-paper/60 transition-colors hover:text-gold"
+                    className="h-auto px-1.5 py-0.5 text-xs text-paper/60 hover:bg-transparent hover:text-gold"
                   >
                     ×
-                  </button>
+                  </Button>
                 </div>
                 <div className="min-h-0 flex-1">
                   <ErrorBoundary label="账本">
@@ -523,14 +524,14 @@ export default function App() {
               <aside className="absolute inset-y-0 left-0 flex w-80 max-w-[85vw] flex-col border-r border-line bg-ink">
                 <div className="flex flex-none items-center justify-between border-b border-line px-3 py-2">
                   <span className="text-xs tracking-widest text-gold-soft">主编对话</span>
-                  <button
-                    type="button"
+                  <Button
+                    variant="outline"
                     onClick={() => setChatDrawerOpen(false)}
                     aria-label="关闭对话"
-                    className="border border-line px-1.5 text-xs text-paper/60 transition-colors hover:text-gold"
+                    className="h-auto px-1.5 py-0.5 text-xs text-paper/60 hover:bg-transparent hover:text-gold"
                   >
                     ×
-                  </button>
+                  </Button>
                 </div>
                 <ChatPanel
                   slug={slug}

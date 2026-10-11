@@ -11,6 +11,7 @@ import remarkGfm from "remark-gfm";
 import type { ChatItem, ToolCardStatus } from "../state/reducer";
 import { toolDetailLines } from "../state/toolSummary";
 import { useChatStore } from "../state/store";
+import { Button } from "@/components/ui/button";
 import ActionButton from "./ActionButton";
 import SyncCard from "./SyncCard";
 import ThinkingCard from "./ThinkingCard";
@@ -54,10 +55,10 @@ function ToolCard({ item }: { item: ToolItem }) {
   const detailLines = item.status === "ok" ? toolDetailLines(item.resultDetails) : [];
   return (
     <div className="max-w-[90%] border border-line bg-ink-soft/60">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+        className="h-auto w-full justify-start gap-2 rounded-none px-3 py-2 text-left hover:bg-transparent"
       >
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${TOOL_STATUS_CLASS[item.status]} ${
@@ -69,7 +70,7 @@ function ToolCard({ item }: { item: ToolItem }) {
           {TOOL_STATUS_LABEL[item.status]}
         </span>
         <span className="ml-auto shrink-0 text-xs text-paper/30">{open ? "收起" : "详情"}</span>
-      </button>
+      </Button>
       {(item.status === "ok" || item.status === "error") && (
         <div className="border-t border-line/60 px-3 py-1.5 text-xs">
           {detailLines.length > 0 ? (

@@ -25,6 +25,7 @@ import {
   type StoryStatsWire,
 } from "../api/rest";
 import { useChatStore } from "../state/store";
+import { Button } from "@/components/ui/button";
 import RingStat from "./RingStat";
 import {
   COLUMNS,
@@ -129,13 +130,13 @@ export default function LedgerPage({ onBack }: { onBack: () => void }) {
       <div className="flex flex-none items-center gap-3 border-b border-line bg-ink-soft/50 px-4 py-2">
         <h2 className="font-serif text-sm font-bold text-gold">故事账本</h2>
         <span className="min-w-0 truncate text-xs text-paper/45">{slug ?? "—"}</span>
-        <button
-          type="button"
+        <Button
+          variant="outline"
           onClick={onBack}
-          className="ml-auto border border-line px-2 py-0.5 text-xs text-paper/70 transition-colors hover:border-gold/50 hover:text-gold"
+          className="ml-auto h-auto px-2 py-0.5 text-xs text-paper/70 hover:border-gold/50 hover:bg-transparent hover:text-gold"
         >
           ‹ 返回创作台
-        </button>
+        </Button>
       </div>
       {/* 章节进度横条：纯展示不可点，当前选中章高亮（D5）。 */}
       <div className="flex flex-none flex-wrap items-center gap-1.5 border-b border-line px-4 py-1.5 text-xs">
@@ -162,18 +163,18 @@ export default function LedgerPage({ onBack }: { onBack: () => void }) {
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex flex-none flex-wrap items-center gap-2 border-b border-line px-4 py-2">
             {BIBLE_TYPES.map((t) => (
-              <button
+              <Button
                 key={t}
-                type="button"
+                variant="outline"
                 onClick={() => setActive(t)}
-                className={`border px-2 py-0.5 text-xs transition-colors ${
+                className={`h-auto px-2 py-0.5 text-xs ${
                   active === t
-                    ? "border-gold bg-gold/15 text-gold"
-                    : "border-line text-gold-soft hover:border-gold/50"
+                    ? "border-gold bg-gold/15 text-gold hover:bg-gold/15 hover:text-gold"
+                    : "text-gold-soft hover:border-gold/50 hover:bg-transparent"
                 }`}
               >
                 {BIBLE_LABELS[t]}
-              </button>
+              </Button>
             ))}
             <input
               type="text"
@@ -211,14 +212,14 @@ export default function LedgerPage({ onBack }: { onBack: () => void }) {
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
                   onClick={() => setSortKey((k) => (k === "plant" ? "resolve" : "plant"))}
                   title="切换排序键"
-                  className="border border-line px-2 py-0.5 text-xs text-paper/70 transition-colors hover:border-gold/50 hover:text-gold"
+                  className="h-auto px-2 py-0.5 text-xs text-paper/70 hover:border-gold/50 hover:bg-transparent hover:text-gold"
                 >
                   排序：{sortKey === "plant" ? "埋设章" : "预计回收章"}
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -348,14 +349,14 @@ export default function LedgerPage({ onBack }: { onBack: () => void }) {
                       <span className="whitespace-nowrap text-[10px] text-paper/45">
                         应于 {f.expected_resolve_chapter || "—"} 回收
                       </span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
                         onClick={() => navigate({ kind: "chapter", chapterId: anchor })}
-                        className="shrink-0 border border-line px-1.5 py-px text-[10px] text-paper/60 transition-colors hover:border-gold/60 hover:text-gold"
+                        className="h-auto shrink-0 px-1.5 py-px text-[10px] text-paper/60 hover:border-gold/60 hover:bg-transparent hover:text-gold"
                         title={`定位到 ${anchor}（回到创作台正文）`}
                       >
                         定位
-                      </button>
+                      </Button>
                     </li>
                   );
                 })}

@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { DiffHunkWire } from "../api/rest";
 import { acquireEditMark, fetchChapter, fetchChapters, releaseEditMark, saveChapter } from "../api/rest";
+import { Button } from "@/components/ui/button";
 import ChapterPaper from "./ChapterPaper";
 import { chapterNumber, countChars, parseChapterHeading, splitParagraphs } from "../state/chapter";
 import { inlineDiff } from "../state/diff";
@@ -262,48 +263,50 @@ export default function ManuscriptPanel({
           {ms.syncState === "failed" && <Chip tone="warn">⚠ 对账失败</Chip>}
           {ms.mode === "edit" && (
             <>
-              <button
-                type="button"
+              <Button
+                variant="outline"
                 onClick={doDiscard}
-                className="border border-line px-2.5 py-0.5 text-[11.5px] text-paper/60 transition-colors hover:text-paper"
+                className="h-auto px-2.5 py-0.5 text-[11.5px] text-paper/60 hover:bg-transparent hover:text-paper"
               >
                 放弃
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => void doSave()}
                 disabled={ms.saveState !== "dirty"}
-                className="border border-gold/60 px-2.5 py-0.5 text-[11.5px] text-gold transition-colors hover:bg-gold/15 disabled:opacity-40"
+                className="h-auto border-gold/60 px-2.5 py-0.5 text-[11.5px] text-gold hover:bg-gold/15 hover:text-gold"
               >
                 保存 ⌘S
-              </button>
+              </Button>
             </>
           )}
           {ms.diff !== null && onSyncChapter && (
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={() => ms.chapterId !== null && onSyncChapter(ms.chapterId)}
-              className="border border-line px-2.5 py-0.5 text-[11.5px] text-paper/60 transition-colors hover:text-paper"
+              className="h-auto px-2.5 py-0.5 text-[11.5px] text-paper/60 hover:bg-transparent hover:text-paper"
             >
               重新同步
-            </button>
+            </Button>
           )}
           <div className="flex overflow-hidden rounded border border-line">
             {MODES.map((m) => {
               const active = ms.mode === m.key;
               const disabled = m.key === "diff" ? ms.diff === null : m.key === "edit" && editLocked;
               return (
-                <button
+                <Button
                   key={m.key}
-                  type="button"
+                  variant="ghost"
                   disabled={disabled}
                   onClick={() => (m.key === "edit" ? enterEdit() : setMode(m.key))}
-                  className={`px-3 py-0.5 text-[11.5px] transition-colors disabled:opacity-30 ${
-                    active ? "bg-gold/15 text-gold" : "text-paper/55 hover:text-gold"
+                  className={`h-auto rounded-none px-3 py-0.5 text-[11.5px] hover:bg-transparent ${
+                    active
+                      ? "bg-gold/15 text-gold hover:text-gold"
+                      : "text-paper/55 hover:text-gold"
                   }`}
                 >
                   {m.label}
-                </button>
+                </Button>
               );
             })}
           </div>

@@ -30,6 +30,7 @@ import {
 import { fetchEvents } from "../api/rest";
 import type { ConnectionStatus } from "../api/socket";
 import { useChatStore } from "../state/store";
+import { Button } from "@/components/ui/button";
 import RingStat from "./RingStat";
 
 const PAGE_SIZE = 200;
@@ -188,19 +189,19 @@ export default function EventStreamView() {
           <span className="text-xs text-paper/45">账本共 {total} 帧</span>
           <nav className="flex gap-1">
             {FILTERS.map((item) => (
-              <button
+              <Button
                 key={item.key}
-                type="button"
+                variant="outline"
                 onClick={() => setFilter(item.key)}
-                className={`border px-2 py-0.5 text-xs transition-colors ${
+                className={`h-auto px-2 py-0.5 text-xs ${
                   filter === item.key
-                    ? "border-gold/60 bg-gold/10 text-gold"
-                    : "border-transparent text-paper/60 hover:text-gold"
+                    ? "border-gold/60 bg-gold/10 text-gold hover:bg-gold/10 hover:text-gold"
+                    : "border-transparent text-paper/60 hover:border-transparent hover:bg-transparent hover:text-gold"
                 }`}
               >
                 {item.label}
                 <small className="ml-1 text-paper/40">{countOf(item.key)}</small>
-              </button>
+              </Button>
             ))}
           </nav>
           <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs text-paper/60">
@@ -221,14 +222,14 @@ export default function EventStreamView() {
               导出账本
             </a>
           )}
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={() => void load("older")}
             disabled={!hasMore || loading}
-            className="border border-line px-2 py-0.5 text-xs text-paper/70 transition-colors hover:border-gold/50 hover:text-gold disabled:opacity-30"
+            className="h-auto px-2 py-0.5 text-xs text-paper/70 hover:border-gold/50 hover:bg-transparent hover:text-gold disabled:opacity-30"
           >
             加载更早
-          </button>
+          </Button>
         </div>
         {unhandled.length > 0 && (
           <div className="border-b border-overdue/50 bg-overdue/10 px-4 py-1.5 text-xs leading-relaxed text-overdue">
@@ -238,13 +239,13 @@ export default function EventStreamView() {
         {error && (
           <div className="border-b border-overdue/40 bg-overdue/10 px-4 py-2 text-xs leading-relaxed text-overdue">
             {error}
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={() => void load("reset")}
-              className="ml-2 border border-overdue/60 px-1.5 py-0.5 text-overdue transition-colors hover:bg-overdue/10"
+              className="ml-2 h-auto border-overdue/60 px-1.5 py-0.5 text-overdue hover:bg-overdue/10 hover:text-overdue"
             >
               重试
-            </button>
+            </Button>
           </div>
         )}
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-1 font-mono text-xs">
@@ -257,10 +258,10 @@ export default function EventStreamView() {
             const isOpen = expanded === row.key;
             return (
               <div key={row.key} className="border-b border-line/30 py-1">
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   onClick={() => setExpanded(isOpen ? null : row.key)}
-                  className="flex w-full items-center gap-2 text-left"
+                  className="h-auto w-full justify-start rounded-none px-0 py-0 text-left hover:bg-transparent"
                 >
                   <span className="w-16 shrink-0 text-paper/30">
                     {row.ts === null ? "实时" : formatTs(row.ts)}
@@ -271,7 +272,7 @@ export default function EventStreamView() {
                   <span className="min-w-0 flex-1 truncate text-paper/50">
                     {summarize(row.type, row.frame)}
                   </span>
-                </button>
+                </Button>
                 {isOpen && (
                   <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all border border-line bg-ink-soft p-2 text-paper/70">
                     {JSON.stringify(row.frame, null, 2)}

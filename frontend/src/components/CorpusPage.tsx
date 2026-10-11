@@ -20,6 +20,7 @@ import {
   type CorpusFileInfoWire,
   type StyleProfileWire,
 } from "../api/rest";
+import { Button } from "@/components/ui/button";
 import Histogram, { type HistogramBucket } from "./Histogram";
 import RingStat from "./RingStat";
 
@@ -141,14 +142,14 @@ export default function CorpusPage() {
             }`}
           >
             <p className="text-xs text-paper/70">拖拽 .txt / .md 文件到此处</p>
-            <button
-              type="button"
+            <Button
+              variant="outline"
               disabled={busy}
               onClick={() => inputRef.current?.click()}
-              className="border border-line px-2 py-0.5 text-xs text-gold-soft transition-colors hover:border-gold/60 hover:text-gold disabled:opacity-40"
+              className="h-auto px-2 py-0.5 text-xs text-gold-soft hover:border-gold/60 hover:bg-transparent hover:text-gold"
             >
               {busy ? "上传中…" : "或点选文件上传"}
-            </button>
+            </Button>
             <input
               ref={inputRef}
               type="file"
@@ -189,14 +190,14 @@ export default function CorpusPage() {
                 <span className="whitespace-nowrap font-mono text-[10px] text-paper/45">
                   {formatBytes(f.size_bytes)} · {f.uploaded_at.slice(0, 10)}
                 </span>
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
                   onClick={() => void remove(f.name)}
-                  className="shrink-0 border border-line px-1.5 py-px text-[10px] text-paper/60 transition-colors hover:border-overdue/60 hover:text-overdue"
+                  className="h-auto shrink-0 px-1.5 py-px text-[10px] text-paper/60 hover:border-overdue/60 hover:bg-transparent hover:text-overdue"
                   title="删除语料"
                 >
                   删除
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

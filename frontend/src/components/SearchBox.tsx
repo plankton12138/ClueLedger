@@ -20,6 +20,7 @@ import {
   type SearchKind,
 } from "../state/search";
 import { useChatStore } from "../state/store";
+import { Button } from "@/components/ui/button";
 
 interface SearchIndex {
   slug: string;
@@ -34,17 +35,17 @@ function HitGroup({ kind, hits, onJump }: { kind: SearchKind; hits: SearchHit[];
         {SEARCH_GROUP_LABELS[kind]}
       </div>
       {hits.map((hit, i) => (
-        <button
+        <Button
           key={`${hit.doc.name}-${i}`}
-          type="button"
+          variant="ghost"
           onClick={() => onJump(hit)}
-          className="block w-full px-3 py-1.5 text-left transition-colors hover:bg-gold/10"
+          className="h-auto w-full justify-start rounded-none px-3 py-1.5 text-left hover:bg-gold/10"
         >
           <span className="text-xs text-paper">{hit.doc.name}</span>
           {hit.snippet !== "" && (
             <span className="ml-2 text-[10px] text-paper/45">{hit.snippet}</span>
           )}
-        </button>
+        </Button>
       ))}
     </div>
   );

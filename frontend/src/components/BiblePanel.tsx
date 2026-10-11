@@ -19,6 +19,7 @@ import {
   type BibleType,
   type StoryStatsWire,
 } from "../api/rest";
+import { Button } from "@/components/ui/button";
 import { useChatStore } from "../state/store";
 import { clueFairness } from "../state/clueFairness";
 import RingStat from "./RingStat";
@@ -88,13 +89,13 @@ function CharacterBio({
               {String(entity["secret"])}
             </p>
           ) : (
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={onRevealSecret}
-              className="border border-line px-1.5 py-px text-[10px] text-paper/60 transition-colors hover:border-gold/60 hover:text-gold"
+              className="h-auto px-1.5 py-px text-[10px] text-paper/60 hover:bg-transparent hover:text-gold"
             >
               查看秘密 ▸
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -230,30 +231,30 @@ export default function BiblePanel({ onExpand }: { onExpand?: () => void }) {
       {onExpand !== undefined && (
         <div className="flex flex-none items-center justify-between border-b border-line px-3 py-1.5">
           <span className="text-[10px] tracking-[0.2em] text-gold-soft/70">故事账本</span>
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={onExpand}
             title="展开为全页视图"
-            className="border border-line px-1.5 py-0.5 text-[10px] text-paper/60 transition-colors hover:border-gold/60 hover:text-gold"
+            className="h-auto px-1.5 py-0.5 text-[10px] text-paper/60 hover:bg-transparent hover:text-gold"
           >
             ⤢ 展开
-          </button>
+          </Button>
         </div>
       )}
       <div className="flex flex-wrap gap-1 border-b border-line px-3 py-2">
         {BIBLE_TYPES.map((t) => (
-          <button
+          <Button
             key={t}
-            type="button"
+            variant="outline"
             onClick={() => setActive(t)}
-            className={`border px-2 py-0.5 text-xs transition-colors ${
+            className={`h-auto px-2 py-0.5 text-xs ${
               active === t
-                ? "border-gold bg-gold/15 text-gold"
-                : "border-line text-gold-soft hover:border-gold/50"
+                ? "border-gold bg-gold/15 text-gold hover:bg-gold/15 hover:text-gold"
+                : "text-gold-soft hover:border-gold/50 hover:bg-transparent"
             }`}
           >
             {BIBLE_LABELS[t]}
-          </button>
+          </Button>
         ))}
         {active === "foreshadow" && ledger.entities.length > 0 && (
           <select
@@ -273,18 +274,18 @@ export default function BiblePanel({ onExpand }: { onExpand?: () => void }) {
         {active === "character" && ledger.entities.length > 0 && (
           <div className="ml-auto flex gap-1">
             {(["list", "graph"] as const).map((v) => (
-              <button
+              <Button
                 key={v}
-                type="button"
+                variant="outline"
                 onClick={() => setCharView(v)}
-                className={`border px-2 py-0.5 text-xs transition-colors ${
+                className={`h-auto px-2 py-0.5 text-xs ${
                   charView === v
-                    ? "border-gold bg-gold/15 text-gold"
-                    : "border-line text-gold-soft hover:border-gold/50"
+                    ? "border-gold bg-gold/15 text-gold hover:bg-gold/15 hover:text-gold"
+                    : "text-gold-soft hover:border-gold/50 hover:bg-transparent"
                 }`}
               >
                 {v === "list" ? "列表" : "关系图"}
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -356,8 +357,8 @@ export default function BiblePanel({ onExpand }: { onExpand?: () => void }) {
                       highlightName === name ? "border-gold bg-gold/10" : "border-line/50"
                     }`}
                   >
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
                       onClick={() => {
                         if (openName === name) {
                           setOpenName(null);
@@ -366,7 +367,7 @@ export default function BiblePanel({ onExpand }: { onExpand?: () => void }) {
                           setSecretShown(false); // 每次展开重置：秘密需再次显式点开
                         }
                       }}
-                      className="w-full text-left"
+                      className="h-auto w-full justify-start rounded-none px-0 py-0 text-left hover:bg-transparent"
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         {/* 人名禁逐字换行（P7 拖拽审查）：overflow-hidden 使 min-width 归零，
@@ -385,7 +386,7 @@ export default function BiblePanel({ onExpand }: { onExpand?: () => void }) {
                         })()}
                         <span className="ml-auto shrink-0 text-paper/40">{isOpen ? "▾" : "▸"}</span>
                       </div>
-                    </button>
+                    </Button>
                     {isOpen && (
                       <div className="mt-2">
                         <CharacterBio
