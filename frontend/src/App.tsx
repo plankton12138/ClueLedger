@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchStory, fetchWorkspaces } from "./api/rest";
 import type { StoryWire } from "./api/rest";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import ArticlesPage from "./components/ArticlesPage";
 import BiblePanel from "./components/BiblePanel";
 import ChatHeader from "./components/ChatHeader";
@@ -484,70 +485,42 @@ export default function App() {
               <BiblePanel onExpand={() => setView("ledger")} />
             </ErrorBoundary>
           </aside>
-          {/* 窄屏（<xl）账本抽屉覆盖层（D6）：信息密度高不整栏丢弃；定宽渲染，无 Splitter。 */}
-          {bibleDrawerOpen && (
-            <div className="fixed inset-0 z-40 xl:hidden">
-              <div
-                className="absolute inset-0 bg-ink/70"
-                onClick={() => setBibleDrawerOpen(false)}
-                aria-hidden="true"
+          {/* 窄屏（<xl）账本抽屉（D6）：Radix Sheet 承担遮罩/Esc/焦点陷阱；
+              定宽渲染无 Splitter，把手在上面 fixed 按钮处。 */}
+          <Sheet open={bibleDrawerOpen} onOpenChange={setBibleDrawerOpen}>
+            <SheetContent side="right" className="xl:hidden">
+              <SheetHeader>
+                <SheetTitle>故事账本</SheetTitle>
+                <SheetClose aria-label="关闭账本">×</SheetClose>
+              </SheetHeader>
+              <div className="min-h-0 flex-1">
+                <ErrorBoundary label="账本">
+                  <BiblePanel onExpand={() => setView("ledger")} />
+                </ErrorBoundary>
+              </div>
+            </SheetContent>
+          </Sheet>
+          {/* <lg 对话抽屉（P9 T8，D6）：左缘 Sheet，ChatPanel 与常驻栏共用。 */}
+          <Sheet open={chatDrawerOpen && !isWide} onOpenChange={setChatDrawerOpen}>
+            <SheetContent side="left">
+              <SheetHeader>
+                <SheetTitle>主编对话</SheetTitle>
+                <SheetClose aria-label="关闭对话">×</SheetClose>
+              </SheetHeader>
+              <ChatPanel
+                slug={slug}
+                running={running}
+                onResetDone={reconnect}
+                stage={story?.stage ?? null}
+                onRetrySync={retrySync}
+                onSendPrompt={sendPrompt}
+                onComposerCommand={(type: CommandType, message: string) =>
+                  sendCommand(type, message)
+                }
+                onAbort={() => sendCommand("abort")}
               />
-              <aside className="absolute inset-y-0 right-0 flex w-80 max-w-[85vw] flex-col border-l border-line bg-ink">
-                <div className="flex flex-none items-center justify-between border-b border-line px-3 py-2">
-                  <span className="text-xs tracking-widest text-gold-soft">故事账本</span>
-                  <Button
-                    variant="outline"
-                    onClick={() => setBibleDrawerOpen(false)}
-                    aria-label="关闭账本"
-                    className="h-auto px-1.5 py-0.5 text-xs text-paper/60 hover:bg-transparent hover:text-gold"
-                  >
-                    ×
-                  </Button>
-                </div>
-                <div className="min-h-0 flex-1">
-                  <ErrorBoundary label="账本">
-                    <BiblePanel onExpand={() => setView("ledger")} />
-                  </ErrorBoundary>
-                </div>
-              </aside>
-            </div>
-          )}
-          {/* <lg 对话抽屉覆盖层（P9 T8，D6）：左缘 fixed overlay，w-80 定宽，
-              遮罩/× 关闭；ChatPanel 与常驻栏共用。 */}
-          {chatDrawerOpen && !isWide && (
-            <div className="fixed inset-0 z-40">
-              <div
-                className="absolute inset-0 bg-ink/70"
-                onClick={() => setChatDrawerOpen(false)}
-                aria-hidden="true"
-              />
-              <aside className="absolute inset-y-0 left-0 flex w-80 max-w-[85vw] flex-col border-r border-line bg-ink">
-                <div className="flex flex-none items-center justify-between border-b border-line px-3 py-2">
-                  <span className="text-xs tracking-widest text-gold-soft">主编对话</span>
-                  <Button
-                    variant="outline"
-                    onClick={() => setChatDrawerOpen(false)}
-                    aria-label="关闭对话"
-                    className="h-auto px-1.5 py-0.5 text-xs text-paper/60 hover:bg-transparent hover:text-gold"
-                  >
-                    ×
-                  </Button>
-                </div>
-                <ChatPanel
-                  slug={slug}
-                  running={running}
-                  onResetDone={reconnect}
-                  stage={story?.stage ?? null}
-                  onRetrySync={retrySync}
-                  onSendPrompt={sendPrompt}
-                  onComposerCommand={(type: CommandType, message: string) =>
-                    sendCommand(type, message)
-                  }
-                  onAbort={() => sendCommand("abort")}
-                />
-              </aside>
-            </div>
-          )}
+            </SheetContent>
+          </Sheet>
         </main>
       )}
       </ErrorBoundary>
