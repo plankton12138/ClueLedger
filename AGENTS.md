@@ -46,15 +46,15 @@ src/
 ├── tau_ai/          # 上游 provider 层（0 改动）
 ├── tau_agent/       # 上游 agent 内核（<5% 改动，改动须记录）
 ├── tau_coding/      # 上游 coding 应用层（保留参考，不参与构建）
-└── hastings/        # 本项目应用层（新建）
-    ├── __init__.py
-    ├── bible/       # Story Bible 数据模型与状态机
-    ├── tools/       # 小说写作工具集（bible_query, write_chapter, ...）
-    ├── rag/         # RAG pipeline（ingest, search, style_profile）
-    ├── server/      # FastAPI WebSocket 服务
-    └── eval/        # 评测 harness
+└── hastings/        # 本项目应用层（新建；模块导航见 src/hastings/README.md）
+    ├── bible/       # 账本域：数据模型/状态机/六阶段生命周期/派生统计/审计
+    ├── tools/       # 小说写作工具集（硬约束所在层）
+    ├── manuscript/  # 正文 SSOT 与保存不变量（段落 diff/revision 归档/write_guard）
+    ├── rag/         # 语料与文风（style_profile/corpus_store）
+    ├── server/      # FastAPI REST + WebSocket 服务与会话装配
+    └── eval/        # 评测 harness（占位）
 frontend/            # React SPA（Vite + TS）
-dev-notes/           # 设计文档 + 阶段构建笔记
+dev-notes/           # 设计文档 + 阶段构建笔记（导航见 dev-notes/README.md）
 tests/               # pytest 测试
 ```
 
@@ -66,3 +66,4 @@ tests/               # pytest 测试
 4. 对 `tau_agent` / `tau_ai` 的任何改动，必须在 dev-notes 中记录动机，避免无记录漂移。
 5. 构建笔记须单独设「Agent 设计经验」专节（置于交付内容与关键决策之后、评审记录之前），以四透镜提炼本阶段的 agent 设计手法，代码级 debug 细节作辅助记录。四透镜：① 错误消息是喂给模型的 API（字段级定位原样透传；三要素=哪里错、为什么错、怎样算对）；② 硬约束放工具层，prompt 只负责解释世界；③ 泄压阀——区分「违规 / 空结果 / 环境故障」三情形；④ 可观测性是事件契约的一部分。样板：[phase-01-minimal-loop.md §3](dev-notes/phase-01-minimal-loop.md)。
 6. 真模型手册走查用例统一放仓库根 `eval/` 目录（如 `eval/intake/`），一个测试点一个文件，README 收判定口径与索引；目录导航与跑法见 [eval/README.md](eval/README.md)——`driver.py` 是统一驱动入口，`specs/` 收对照实验 spec，`runs/<日期>/` 只归档 driver/spec/报告（`*.log` 不入库），runs 内历史 driver 勿当作可执行入口。C 组（经典原著基准，对照实验：harness 臂 vs bare 臂量增益）输入须防训练数据污染：不用原书书名/人名/地名/标志性原句，委托书按真实用户口吻只给核心前提与偏好（人物、手法、线索留给系统发展）；金标准保留原书人名仅供评判者对照；spec 委托书与 intake 用例文件严格同文。
+7. 文档查找统一走导航层，不逐个翻文件：dev-notes 侧见 [dev-notes/README.md](dev-notes/README.md)「查什么→去哪」路由表（含阶段一行索引）；模块级见 [src/hastings/README.md](src/hastings/README.md)。读长期文档须区分三类：**设计态**（DESIGN.md 未标 as-built 的章节，保留演进对比价值，勿当现状）、**as-built**（显式标注块，反映实际交付）、**历史记录**（`*-plan.md` 为立项时冻结的只读计划、`dev-notes/artifacts/` 为验收转录）。
