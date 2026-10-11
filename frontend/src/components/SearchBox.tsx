@@ -7,7 +7,7 @@
  * Tab + 高亮目标行（ManuscriptPanel / BiblePanel 各自消费后 clearNav）。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchBible, fetchChapter, fetchChapters } from "../api/rest";
 import {
   buildChapterDoc,
@@ -21,6 +21,7 @@ import {
 } from "../state/search";
 import { useChatStore } from "../state/store";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 
 interface SearchIndex {
   slug: string;
@@ -60,7 +61,6 @@ export default function SearchBox() {
   const [index, setIndex] = useState<SearchIndex | null>(null);
   const [indexState, setIndexState] = useState<"idle" | "loading" | "error">("idle");
   const [indexError, setIndexError] = useState<string | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
 
   // 索引构建（懒触发：首次聚焦时）：章节列表 + 各章正文 + 三类账本，Promise.all 并行。
   // 失败（账本损坏 422 / IO）→ 错误文案进下拉（三要素透传），不阻塞输入框继续打字。
@@ -116,17 +116,7 @@ export default function SearchBox() {
     }
   }
 
-  // 点击下拉外 → 收起（mousedown 先于 blur，用 contains 判定）。
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current !== null && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  // 外点关闭/Esc 由 Radix Popover 白拿（受控 onOpenChange 收口）。
 
   // 跳转：章节 → studio 定位章节；账本 → studio 切对应 Tab + 高亮行。跳完收起并清空。
   function jump(hit: SearchHit): void {
@@ -145,39 +135,45 @@ export default function SearchBox() {
   const showDropdown = open && debounced !== "";
 
   return (
-    <div ref={rootRef} className="relative w-52 min-w-0">
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onFocus={handleFocus}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") setOpen(false);
-          if (e.key === "Enter" && hits.length > 0) jump(hits[0] as SearchHit);
-        }}
-        disabled={slug === null}
-        placeholder={slug === null ? "选择文章后搜索" : "搜索章节、角色、线索、伏笔…"}
-        aria-label="全局搜索"
-        className="w-full border border-line bg-transparent px-2 py-1 text-xs text-paper placeholder:text-paper/30 focus:border-gold/60 focus:outline-none disabled:opacity-40"
-      />
-      {showDropdown && (
-        <div className="absolute top-full left-0 z-50 mt-1 max-h-80 w-[22rem] overflow-auto border border-line bg-ink shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
-          {indexState === "loading" ? (
-            <p className="px-3 py-2 text-xs text-paper/40">索引构建中…</p>
-          ) : indexState === "error" ? (
-            <p className="px-3 py-2 text-xs leading-relaxed text-overdue">{indexError}</p>
-          ) : hits.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-paper/40">无匹配结果</p>
-          ) : (
-            SEARCH_GROUP_ORDER.map((kind) => {
-              const group = hits.filter((h) => h.doc.kind === kind);
-              return group.length === 0 ? null : (
-                <HitGroup key={kind} kind={kind} hits={group} onJump={jump} />
-              );
-            })
-          )}
+    <Popover
+      open={showDropdown}
+      onOpenChange={(next) => {
+        if (!next) setOpen(false);
+      }}
+    >
+      <PopoverAnchor asChild>
+        <div className="relative w-52 min-w-0">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={handleFocus}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && hits.length > 0) jump(hits[0] as SearchHit);
+            }}
+            disabled={slug === null}
+            placeholder={slug === null ? "选择文章后搜索" : "搜索章节、角色、线索、伏笔…"}
+            aria-label="全局搜索"
+            className="w-full border border-line bg-transparent px-2 py-1 text-xs text-paper placeholder:text-paper/30 focus:border-gold/60 focus:outline-none disabled:opacity-40"
+          />
         </div>
-      )}
-    </div>
+      </PopoverAnchor>
+      <PopoverContent className="w-[22rem]">
+        {indexState === "loading" ? (
+          <p className="px-3 py-2 text-xs text-paper/40">索引构建中…</p>
+        ) : indexState === "error" ? (
+          <p className="px-3 py-2 text-xs leading-relaxed text-overdue">{indexError}</p>
+        ) : hits.length === 0 ? (
+          <p className="px-3 py-2 text-xs text-paper/40">无匹配结果</p>
+        ) : (
+          SEARCH_GROUP_ORDER.map((kind) => {
+            const group = hits.filter((h) => h.doc.kind === kind);
+            return group.length === 0 ? null : (
+              <HitGroup key={kind} kind={kind} hits={group} onJump={jump} />
+            );
+          })
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
