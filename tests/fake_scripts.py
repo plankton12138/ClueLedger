@@ -67,3 +67,12 @@ def character_upsert(call_id: str, name: str, identity: str) -> ToolCall:
         name="bible_upsert",
         arguments={"entity_type": "character", "data": {"name": name, "identity": identity}},
     )
+
+
+def chapter_write(call_id: str, chapter: int, title: str, content: str) -> ToolCall:
+    """write_chapter 的工具调用（force 覆盖，供 E2E write 剧本复放）。"""
+    return ToolCall(
+        id=call_id,
+        name="write_chapter",
+        arguments={"chapter": chapter, "title": title, "content": content, "force": True},
+    )
