@@ -254,26 +254,28 @@ export default function App() {
             </div>
           </div>
         </div>
-        <nav className="hidden min-w-0 flex-1 justify-center gap-1 md:flex">
+        {/* 导航内联展示门槛取 xl（P2 复盘）：lucide 图标加入后按钮变宽，
+            md~xl 中间带会把按钮压到逐字竖排；<xl 统一折叠为下拉。 */}
+        <nav className="hidden min-w-0 flex-1 justify-center gap-0.5 xl:flex">
           {NAV_ITEMS.map((item) => (
             <Button
               key={item.key}
               variant={view === item.key ? "outline" : "ghost"}
               onClick={() => setView(item.key)}
-              className={`h-auto shrink whitespace-normal rounded px-3.5 py-1.5 text-[13px] ${
+              className={`h-auto min-w-[58px] shrink gap-1 whitespace-normal rounded px-1.5 py-1.5 text-[13px] ${
                 view === item.key
                   ? "border-line bg-gold/10 text-gold hover:bg-gold/10"
                   : "border border-transparent text-paper/75 hover:bg-transparent hover:text-gold"
               }`}
             >
-              <item.Icon className="h-3.5 w-3.5" aria-hidden="true" />
+              <item.Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               {item.label}
             </Button>
           ))}
         </nav>
-        {/* 窄屏（<md）导航折叠为下拉——同一 view 状态，只是呈现收窄（D2 布局不变量）。 */}
+        {/* 窄屏（<xl）导航折叠为下拉——同一 view 状态，只是呈现收窄（D2 布局不变量）。 */}
         <Select value={view} onValueChange={(v) => setView(v as View)}>
-          <SelectTrigger aria-label="页面导航" className="mx-auto px-1.5 py-1 text-xs md:hidden">
+          <SelectTrigger aria-label="页面导航" className="mx-auto px-1.5 py-1 text-xs xl:hidden">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
