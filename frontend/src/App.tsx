@@ -14,6 +14,7 @@ import type { StoryWire } from "./api/rest";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ArticlesPage from "./components/ArticlesPage";
 import BiblePanel from "./components/BiblePanel";
 import ChatHeader from "./components/ChatHeader";
@@ -435,15 +436,21 @@ export default function App() {
                   className="relative flex min-w-0 flex-none flex-col overflow-hidden bg-ink-soft/35"
                   style={{ width: chatWidth }}
                 >
-                  <Button
-                    variant="ghost"
-                    onClick={() => setChatCollapsed(true)}
-                    aria-label="折叠对话"
-                    title="折叠对话"
-                    className="absolute right-1.5 top-1.5 z-10 h-auto border border-line bg-ink px-1.5 py-0.5 text-[10px] text-paper/50 hover:bg-ink hover:text-gold"
-                  >
-                    ‹
-                  </Button>
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          onClick={() => setChatCollapsed(true)}
+                          aria-label="折叠对话"
+                          className="absolute right-1.5 top-1.5 z-10 h-auto border border-line bg-ink px-1.5 py-0.5 text-[10px] text-paper/50 hover:bg-ink hover:text-gold"
+                        >
+                          ‹
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>折叠对话</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                   <ChatPanel
                     slug={slug}
                     running={running}
