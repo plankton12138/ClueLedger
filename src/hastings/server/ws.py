@@ -55,6 +55,12 @@ AVAILABLE_COMMANDS = (
     "sync",
 )
 
+STALE_SESSION_MESSAGE = (
+    "当前会话已在其他页面切换或重建。"
+    "为什么错：此连接仍绑定旧的 Agent 会话，继续发送会产生脱离当前会话列表的记录。"
+    "怎样算对：页面会重新连接并加载当前会话；如未自动恢复，请点击重连后重试。"
+)
+
 
 class CommandFrame(BaseModel):
     """客户端命令帧；字段校验错误经 pydantic loc 原样进 error 帧。
@@ -86,9 +92,16 @@ def _required_message(frame: CommandFrame) -> str:
 class Connection:
     """一条 WebSocket 连接：写锁串行化 + listener 生命周期 + drain 任务。"""
 
-    def __init__(self, websocket: WebSocket, session: WritingSession) -> None:
+    def __init__(
+        self,
+        websocket: WebSocket,
+        session: WritingSession,
+        *,
+        is_current: Callable[[], bool] | None = None,
+    ) -> None:
         self._ws = websocket
         self._session = session
+        self._is_current = is_current if is_current is not None else lambda: True
         self._send_lock = asyncio.Lock()
         self._tasks: set[asyncio.Task[None]] = set()
         self._unsubscribe: Callable[[], None] | None = None
@@ -153,15 +166,27 @@ class Connection:
         except ValidationError as exc:
             await self._respond(command=None, frame_id=None, error=f"命令帧解析失败：{exc}")
             return
+        if not await self._reject_stale_session(frame):
+            return
         try:
             await self._dispatch(frame)
         except (AgentBusyError, ValueError) as exc:
             await self._respond(command=frame.type, frame_id=frame.id, error=str(exc))
 
+    async def _reject_stale_session(self, frame: CommandFrame) -> bool:
+        """陈旧连接只收到重连指引，不能再驱动已从 registry 移除的 harness。"""
+        if self._is_current():
+            return True
+        await self._respond(command=frame.type, frame_id=frame.id, error=STALE_SESSION_MESSAGE)
+        await self._ws.close(code=1012, reason="会话已切换，请重新连接")
+        return False
+
     async def _dispatch(self, frame: CommandFrame) -> None:
         match frame.type:
             case "prompt":
                 await self._session.auto_compact()  # L9：prompt 前两档自动压缩
+                if not await self._reject_stale_session(frame):
+                    return
                 stream = self._session.prompt(_required_message(frame))
                 await self._respond(command=frame.type, frame_id=frame.id, data={"started": True})
                 self._drain(stream)
@@ -276,7 +301,17 @@ async def websocket_endpoint(websocket: WebSocket, slug: str) -> None:
         await websocket.close(code=1008, reason=f"slug 不合法：{slug}")
         return
     await websocket.accept()
-    await Connection(websocket, session).serve()
+    await Connection(
+        websocket,
+        session,
+        is_current=lambda: registry.is_current(slug, session),
+    ).serve()
 
 
-__all__ = ["AVAILABLE_COMMANDS", "CommandFrame", "Connection", "router"]
+__all__ = [
+    "AVAILABLE_COMMANDS",
+    "STALE_SESSION_MESSAGE",
+    "CommandFrame",
+    "Connection",
+    "router",
+]

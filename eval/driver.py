@@ -73,8 +73,8 @@ async def run_harness_case(case: dict[str, Any], args: argparse.Namespace, model
             print(f"\n===== {case['case']} ｜ 轮次 {i} =====")
             print(f"[user]\n{text}")
             print("\n[agent]")
-            await compact_context(harness, workspace)  # L9：每轮 prompt 前两档压缩
             refresh_system_prompt(harness, workspace)  # L7：每轮 prompt 前注入最新状态
+            await compact_context(harness, workspace)  # L9：刷新后两档压缩
             async for event in harness.prompt(text):
                 renderer.handle(event)
         print(f"\n===== 结束（未渲染事件类型：{renderer.unhandled_event_types or '无'}）=====")

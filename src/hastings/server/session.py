@@ -48,6 +48,11 @@ class WritingSession(Protocol):
     def is_running(self) -> bool: ...
 
     @property
+    def is_compacting(self) -> bool:
+        """上下文压缩正在等待摘要或写回会话文件。"""
+        ...
+
+    @property
     def tool_names(self) -> tuple[str, ...]: ...
 
     @property
@@ -81,8 +86,8 @@ class WritingSession(Protocol):
     async def auto_compact(self) -> CompactionResult:
         """prompt 前自动两档压缩（P10 T8；超阈值才动，运行中早返回）。
 
-        同步侧的 ``refresh_system_prompt`` 会顺带做第一档内存剥离，故此处的
-        异步两档多数情形为 no-op——保留它统一 REST/CLI/WS 的压缩入口口径。
+        先刷新 system，再执行会持久化的两档压缩，避免只修改内存导致重启后
+        上下文重新膨胀。
         """
         ...
 

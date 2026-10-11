@@ -3,7 +3,7 @@
 分层：① 估算器纯函数（中文换算 / usage 锚定 / 字符 fallback / 阈值）；
 ② 第一档剥离纯函数（keep-window 边界 / tool_call_id 配对 / 结果消息不动）；
 ③ 两档压缩端到端（摘要成功 → 替换 + 归档 + 事件；摘要失败 → 泄压阀）；
-④ 同步剥离 strip_oversized_context（内存态、不落盘）。
+④ 压缩持久化与会话切换隔离。
 """
 
 from __future__ import annotations
@@ -27,10 +27,10 @@ from hastings.context_manager import (
     provider_context_tokens,
     record_token_usage,
     strip_chapter_args,
-    strip_oversized_context,
 )
 from hastings.events_store import EventStore, events_file
 from hastings.session_persist import load_session_messages, session_file
+from hastings.session_store import create_session, session_path
 from hastings.settings import StorySettings, save_settings
 from tau_agent import AgentHarness, AgentHarnessConfig, AssistantMessage
 from tau_agent.messages import (
@@ -320,27 +320,35 @@ async def test_compact_summarizes_persists_and_archives(tmp_path: Path) -> None:
     assert any(record.type == "session_compact" for record in page.records)
 
 
-# ---------- ④ 同步剥离（刷新点内存态，不落盘） ----------
+# ---------- ④ 会话切换隔离 ----------
 
 
-def test_strip_oversized_context_strips_in_memory(tmp_path: Path) -> None:
+@pytest.mark.anyio
+async def test_compaction_keeps_writing_to_the_session_captured_at_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """摘要等待期间切换活跃会话，压缩结果仍只能写回原会话。"""
     workspace = _workspace(tmp_path, window=20_000)
-    content = "正" * 50_000  # 约 25000 token，超过 keep-window 20000
-    harness = _harness((_write_message(3, content),))
+    workspace.ensure_dirs()
+    original_path = session_file(workspace)
+    original = UserMessage(content="原会话")
+    original_path.write_text(entry_to_json_line(MessageEntry(message=original)), encoding="utf-8")
 
-    assert strip_oversized_context(harness, workspace) is True
+    switched_path: Path | None = None
 
-    after = harness.messages[0]
-    assert isinstance(after, AssistantMessage)
-    call = after.tool_calls[0]
-    assert call.id == "c1"
-    assert call.arguments["content"] != content
-    assert "已落盘" in str(call.arguments["content"])
-    assert not session_file(workspace).exists()  # 同步剥离不落盘
+    async def switch_session(*_args: object) -> str:
+        nonlocal switched_path
+        switched = create_session(workspace)
+        switched_path = session_path(workspace, switched.id)
+        return "## 作品与阶段\n[已切换会话]"
 
+    monkeypatch.setattr("hastings.context_manager._summarize", switch_session)
+    harness = _harness((UserMessage(content="正" * 8000),))
 
-def test_strip_oversized_context_silent_below_threshold(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path, window=128_000)
-    harness = _harness((UserMessage(content="短"),))
+    result = await compact_context(harness, workspace)
 
-    assert strip_oversized_context(harness, workspace) is False
+    assert result.compacted is True
+    assert switched_path is not None
+    restored = await load_session_messages(original_path)
+    assert restored.messages == harness.messages
+    assert not switched_path.exists()

@@ -77,6 +77,20 @@ def test_get_or_create_concurrent_first_visit_assembles_once(tmp_path: Path) -> 
     assert a is b
 
 
+def test_rebuild_marks_old_session_as_stale(tmp_path: Path) -> None:
+    """重建后，旧 WebSocket 持有的 session 不再被视为当前实例。"""
+    registry = _registry(tmp_path)
+
+    first = asyncio.run(registry.get_or_create("orient-express"))
+    assert registry.is_current("orient-express", first)
+
+    rebuilt = asyncio.run(registry.rebuild("orient-express"))
+
+    assert rebuilt is not first
+    assert not registry.is_current("orient-express", first)
+    assert registry.is_current("orient-express", rebuilt)
+
+
 # --- slug 防护：穿越与保留名（P2 闸门复用） ---
 
 

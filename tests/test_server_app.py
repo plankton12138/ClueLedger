@@ -41,6 +41,10 @@ class StubSession:
     def is_running(self) -> bool:
         return self._running
 
+    @property
+    def is_compacting(self) -> bool:
+        return False
+
     def __init__(self) -> None:
         self._running = False
         self._edit_marks = EditMarkRegistry()

@@ -300,8 +300,8 @@ async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: st
             print()
             continue
 
-        await compact_context(harness, workspace)  # L9：prompt 前两档压缩（超阈值才动）
         refresh_system_prompt(harness, workspace)  # L7：每轮 prompt 前注入最新状态
+        await compact_context(harness, workspace)  # L9：刷新后两档压缩（超阈值才动）
         async for event in harness.prompt(line):
             renderer.handle(event)
         print()

@@ -86,6 +86,15 @@ class WorkspaceRegistry:
             self._sessions[slug] = await self._factory(workspace)
             return self._sessions[slug]
 
+    def is_current(self, slug: str, session: WritingSession) -> bool:
+        """返回会话是否仍是该工作区的当前实例。
+
+        WebSocket 在握手时会捕获一个 session；设置切换或会话切换后 registry 会
+        重建实例。连接在派发下一条命令前用本方法拒绝陈旧实例，避免旧连接继续
+        往已切换或已删除的会话文件写入消息。
+        """
+        return self._sessions.get(slug) is session
+
     def create_workspace(self, slug: str) -> StoryWorkspace:
         """新建工作区并落盘建目录；撞名或 slug 不合法抛错。"""
         workspace = StoryWorkspace(root=self._root, slug=slug)

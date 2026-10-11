@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final, cast
 
 from hastings.bible.store import StoryWorkspace
@@ -441,42 +442,18 @@ def _warn_summary_failed(exc: Exception) -> None:
     )
 
 
-def _persist_compacted(workspace: StoryWorkspace, messages: tuple[AgentMessage, ...]) -> str | None:
+def _persist_compacted(path: Path, messages: tuple[AgentMessage, ...]) -> str | None:
     """归档旧 session.jsonl 并以压缩后消息全量重写；返回归档文件名。
 
     同步重写（不占 asyncio 锁）：压缩发生在 prompt 入口、无并发消息落盘；沿用
     ``entry_to_json_line`` 保持与 ``JsonlSessionStorage`` 同格式。
     """
-    archived = archive_session_file(session_file(workspace))
-    path = session_file(workspace)
+    archived = archive_session_file(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for message in messages:
             handle.write(entry_to_json_line(MessageEntry(message=message)))
     return archived.name if archived is not None else None
-
-
-def strip_oversized_context(harness: AgentHarness, workspace: StoryWorkspace) -> bool:
-    """刷新点的同步第一档剥离（零 LLM、不落盘）：超阈值时替换正文参数，返回是否剥离。
-
-    与 async ``compact_context`` 分工：此处只做确定性剥离的**内存**兜底（供每轮
-    刷新入口调用，含对账等未接异步压缩的路径）；持久化与第二档摘要由
-    ``compact_context`` 在 prompt 入口完成——先压缩后刷新时本函数自然 noop。
-    """
-    threshold = compaction_threshold(load_settings(workspace).context_window_tokens)
-    if threshold is None:
-        return False
-    messages = harness.messages
-    usage = count_context_tokens(
-        system=harness.config.system, messages=messages, tools=tuple(harness.config.tools)
-    )
-    if usage.total_tokens <= threshold:
-        return False
-    strip = strip_chapter_args(messages)
-    if not strip.stripped_chapters:
-        return False
-    harness.replace_messages(strip.messages)
-    return True
 
 
 async def compact_context(
@@ -495,6 +472,9 @@ async def compact_context(
         # 运行中替换消息会撕裂正在进行的工具链——与 reset/切换的 running 拒绝同语义。
         return CompactionResult(False, "running", 0, 0)
 
+    # 压缩可能等待摘要 provider；路径必须在等待前固定，不能在完成后重读“当前
+    # 活跃会话”，否则会话切换会让旧 harness 覆盖新会话的历史。
+    target_session_path = session_file(workspace)
     messages = harness.messages
     system = harness.config.system
     tools = tuple(harness.config.tools)
@@ -532,7 +512,7 @@ async def compact_context(
 
     harness.replace_messages(new_messages)
     try:
-        archived = _persist_compacted(workspace, new_messages)
+        archived = _persist_compacted(target_session_path, new_messages)
     except OSError as exc:
         archived = None
         print(
@@ -588,5 +568,4 @@ __all__ = [
     "record_token_usage",
     "serialize_messages_for_compaction",
     "strip_chapter_args",
-    "strip_oversized_context",
 ]

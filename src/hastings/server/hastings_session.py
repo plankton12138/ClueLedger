@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from collections.abc import AsyncIterator, Callable, Sequence
 from typing import TYPE_CHECKING
@@ -35,6 +36,12 @@ BUSY_MESSAGE = (
     "怎样算对：用 steer 在当前流中插话、用 follow_up 排队下一轮，或先 abort 中止当前流。"
 )
 
+COMPACTING_MESSAGE = (
+    "prompt 被拒绝：当前正在压缩上下文。"
+    "为什么错：压缩会替换会话消息，期间启动写作流会读到不完整的上下文。"
+    "怎样算对：等待压缩完成后再发送；压缩失败会保留原会话，可直接重试。"
+)
+
 
 class HastingsSession:
     """WritingSession 的标准实现：绑定一个 StoryWorkspace 与一个 AgentHarness。"""
@@ -53,6 +60,7 @@ class HastingsSession:
         self._workspace = workspace
         # 当前 provider 档案名（P6 T2）：跨档案切换的判定依据（同档案换模型热切）。
         self._profile_name = profile_name
+        self._compaction_lock = asyncio.Lock()
         # 作者草稿锁注册表（P5 D4）：from_workspace 会把同一实例闭包进
         # write_chapter（agent 侧守门）；REST 锁端点与 PUT 保存经本属性读写。
         # 直接构造（无实参）得到空注册表——CLI 等单 agent 场景锁永不触发。
@@ -139,6 +147,10 @@ class HastingsSession:
     @property
     def is_running(self) -> bool:
         return self._harness.is_running
+
+    @property
+    def is_compacting(self) -> bool:
+        return self._compaction_lock.locked()
 
     @property
     def tool_names(self) -> tuple[str, ...]:
@@ -247,6 +259,8 @@ class HastingsSession:
     def prompt(self, content: str) -> AsyncIterator[AgentEvent]:
         if self._harness.is_running:
             raise AgentBusyError(BUSY_MESSAGE)
+        if self.is_compacting:
+            raise AgentBusyError(COMPACTING_MESSAGE)
         self._refresh_system()
         return self._harness.prompt(content)
 
@@ -254,12 +268,14 @@ class HastingsSession:
         """prompt 入口的两档自动压缩（P10 D8/L9）：超阈值才动，摘要失败不进流。
 
         ``prompt`` 是同步返回迭代器的签名（WS/reconcile 依赖），故压缩在此独立成
-        async 方法，由 WS prompt 入口 await——与 cli/driver 在 prompt 前调
-        ``compact_context`` 同一语义（先压缩后刷新，refresh 的同步剥离自然 noop）。
+        async 方法，由 WS prompt 入口 await。刷新 system 后再压缩，保证任何正文
+        剥离都经会话文件持久化；同一会话的压缩串行，避免并发摘要覆盖彼此结果。
         """
         from hastings.context_manager import compact_context
 
-        return await compact_context(self._harness, self._workspace, manual=False)
+        async with self._compaction_lock:
+            self._refresh_system()
+            return await compact_context(self._harness, self._workspace, manual=False)
 
     async def compact_context(self) -> CompactionResult:
         """手动压缩（P10 T13，D12）：绕过阈值走同一两档原语（含归档重写、事件留痕）。
@@ -269,7 +285,9 @@ class HastingsSession:
         """
         from hastings.context_manager import compact_context as run_compaction
 
-        return await run_compaction(self._harness, self._workspace, manual=True)
+        async with self._compaction_lock:
+            self._refresh_system()
+            return await run_compaction(self._harness, self._workspace, manual=True)
 
     def steer(self, content: str) -> None:
         self._harness.steer(content)
@@ -319,4 +337,4 @@ def default_session_factory(book: ProviderBook) -> SessionFactory:
     return factory
 
 
-__all__ = ["BUSY_MESSAGE", "HastingsSession", "default_session_factory"]
+__all__ = ["BUSY_MESSAGE", "COMPACTING_MESSAGE", "HastingsSession", "default_session_factory"]

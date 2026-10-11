@@ -195,17 +195,13 @@ def refresh_system_prompt(harness: AgentHarness, workspace: StoryWorkspace) -> N
     读取，直接赋值即下一轮生效（P6 D3 手法），不改 tau 内核。HastingsSession / CLI
     run_repl / eval driver 三点调用同一函数，保证 CLI 冒烟与 Web 端同链路。
 
-    P10 D8/L9：同一入口顺带做上下文体积的同步第一档剥离（零 LLM、内存态）——
-    「刷新即估算」；第二档 LLM 摘要与持久化由 async ``compact_context`` 在 prompt
-    入口完成（先压缩后刷新时此处自然 noop）。
+    上下文压缩由 prompt 入口在刷新后统一执行，确保正文剥离与会话文件持久化
+    同步完成；本函数只负责重建 system，不在内存中单独改写消息历史。
     """
-    from hastings.context_manager import strip_oversized_context
-
     language = load_settings(workspace).writing_language
     harness.config.system = build_system_prompt(
         harness.config.tools, language=language, workspace=workspace
     )
-    strip_oversized_context(harness, workspace)
 
 
 # --- 对账消息模板（P5 T4，计划 D5/D6）：一处修订，两级上下文的粘合层 ---

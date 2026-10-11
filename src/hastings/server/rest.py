@@ -1090,13 +1090,13 @@ def create_rest_router(
                 ),
             )
         session = registry.peek(slug)
-        if session is not None and session.is_running:
+        if session is not None and (session.is_running or session.is_compacting):
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"删除被拒：工作区 {slug} 有写作流进行中。"
-                    "为什么错：删除会移除正在被写工作流读写的目录。"
-                    "怎样算对：先等写作流结束（或停止本轮生成）再删除。"
+                    f"删除被拒：工作区 {slug} 有写作流进行中，或有上下文压缩进行中。"
+                    "为什么错：删除会移除仍被当前会话读写的目录。"
+                    "怎样算对：先等写作或压缩结束（或停止本轮生成）再删除。"
                 ),
             )
         registry.delete(slug)
@@ -1120,13 +1120,13 @@ def create_rest_router(
         )
 
     def _reject_while_running(session: WritingSession, slug: str, action: str, why: str) -> None:
-        if session.is_running:
+        if session.is_running or session.is_compacting:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"{action}被拒：工作区 {slug} 有写作流进行中。"
+                    f"{action}被拒：工作区 {slug} 有写作流进行中，或有上下文压缩进行中。"
                     f"为什么错：{why}"
-                    "怎样算对：先等写作流结束（或中止本轮生成）再操作会话。"
+                    "怎样算对：先等写作或压缩结束（或中止本轮生成）再操作会话。"
                 ),
             )
 
@@ -1203,13 +1203,13 @@ def create_rest_router(
         ``session_compact`` 事件由 D8 原语负责，本端点不重复记账。
         """
         session = await _session(slug)  # 守门：slug 校验 + 确保装配
-        if session.is_running:
+        if session.is_running or session.is_compacting:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"压缩被拒：工作区 {slug} 有写作流进行中。"
-                    "为什么错：压缩会替换正在被本轮生成读取的消息序列。"
-                    "怎样算对：先等写作流结束（或中止本轮生成）再压缩上下文。"
+                    f"压缩被拒：工作区 {slug} 有写作流进行中，或另一项压缩进行中。"
+                    "为什么错：并发压缩或写作会读取不一致的消息序列。"
+                    "怎样算对：先等当前写作或压缩结束（或中止本轮生成）再压缩上下文。"
                 ),
             )
         result = await session.compact_context()
@@ -1534,7 +1534,7 @@ def create_rest_router(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         session = await _session(slug)
-        if session.is_running:
+        if session.is_running or session.is_compacting:
             # D4 HTTP 侧守门：写作流进行中作者不得保存
             # （EditMark 是另一半——挡 agent 写作者有草稿的章，在工具层）
             raise HTTPException(
@@ -1810,9 +1810,9 @@ def create_rest_router(
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"切换模型被拒：工作区 {slug} 有写作流进行中。"
-                    "为什么错：切换会替换当前会话，进行中的流会被打断。"
-                    "怎样算对：等待写作流结束（状态条消失）后再切换。"
+                    f"切换模型被拒：工作区 {slug} 有写作流进行中，或有上下文压缩进行中。"
+                    "为什么错：切换会替换当前会话，进行中的操作会被打断。"
+                    "怎样算对：等待写作或压缩结束（状态条消失）后再切换。"
                 ),
             )
 
