@@ -2,18 +2,11 @@
 
 > 日期：2026-10-10 ～ 2026-10-11 ｜ 计划：[phase-08-guided-lifecycle-plan.md](phase-08-guided-lifecycle-plan.md)
 > 一句话：把「一个工作区从构想接收到终稿维护」的全生命周期做成系统可表达、工具层可强制的形态——程序为骨（阶段门/预检/状态注入），提示词为肉（intake 协议）。
+> 关键词：六阶段状态机、story_stage、确认门、outline 第六账本、状态注入、intake 协议。
 
 ## 1. 交付内容
 
-| 任务 | 提交 | 内容 |
-|---|---|---|
-| T1 | `4a1d0f9` | `story.yaml` 生命周期：六阶段迁移表（`bible/story_state.py` 纯函数）+ `StoryDoc` 读写（旧工作区 intake 兜底）+ `store.story_path` + session 接线 |
-| T2 | `245f3cb` | `story_stage` 工具：advance/rollback + reason 必填 + 迁移留痕；确认门前置条件由 `_derive_prereqs` 从账本实况派生 |
-| T3 | `6585b6a` | outline 第六账本：`OutlineEntry` + 章号唯一校验，经注册表三处注册泛化读写；确认门 outline 计数接线 |
-| T4 | `7887066` | `write_chapter` 阶段门 + 分级预检（error：阶段/章纲缺失/无角色；warning：method 未锁、plant_plans 伏笔状态）+ outline 落盘自动推进（planned→written，force→revised） |
-| T5 | `8115457` | 状态注入 B1：`build_workspace_status` 纯函数 + system prompt「当前工作区状态」节 + `HastingsSession.prompt()` 委托前 `_refresh_system()` |
-| T6 | `c106ba3` | WORKFLOW_SECTION 重写为阶段感知协议：intake 三段式（五维摘要/缺口清单/≤5 问）、bible_drafting 建账顺序与三类点确认、writing 章纲锚定 |
-| T7 | `612a19b` | REST `GET /api/{slug}/story` + ChatStream react-markdown/remark-gfm 渲染 + 顶栏阶段徽章（六态配色）+ 章节进度 n/m |
+交付链（T1–T7 每项一提交）：`4a1d0f9`（T1 story.yaml 六阶段迁移表 + StoryDoc）/ `245f3cb`（T2 story_stage 工具：advance/rollback + reason + 确认门派生）→ `6585b6a`（T3 outline 第六账本 + 章号唯一校验）→ `7887066`（T4 write_chapter 阶段门 + 分级预检 + outline 自动推进）→ `8115457`（T5 状态注入 B1：build_workspace_status + _refresh_system）→ `c106ba3`（T6 WORKFLOW_SECTION 阶段感知协议）→ `612a19b`（T7 REST story 端点 + MD 渲染 + 阶段徽章）。
 
 测试规模：后端 573 passed（P8 新增约 90 条），前端 vitest 201 passed（新增 19 条）。
 
@@ -77,13 +70,17 @@ intake 协议（D6）在 prompt 里写「禁止建账、禁止写正文」，但
 
 预检 warning 进 `details["precheck_warnings"]` 而非新事件类型——前端工具卡的 details 摘要行零改动展示，事件契约零变更；story_stage 每次迁移留痕进 story.yaml（who/when/why），生命周期有了可审计的时间线；story 端点纯只读派生，不给系统增加第二个事实源。可观测性不是加日志，是把观察点设计进既有契约。
 
-## 4. 踩过的坑
+## 4. 评审记录
+
+- 2026-10-11：用户授权一次性完成 T5–T7 与收尾；本笔记自评七道门全绿、DoD 八条逐项过；R5 验收待用户复核。
+
+## 5. 踩过的坑
 
 1. **循环导入：状态汇总函数不能放 story_state.py**——store.py 顶部就 `from ... story_state import StoryDoc`，story_state 反向导入 store 即循环；且该模块宪章是纯迁移表。修正：放 stats.py（store 的下游，且「不引入第二份数据源」约定本来就归它管）。计划阶段没画导入方向图，实现时才发现——**给新模块定职责时先画 import DAG**。
 2. **注册表输出按 name 排序**——泛化摘要与 bible_types 的测试断言两次被排序打脸（T3），期望值从「书写顺序」改为「排序后顺序」。教训：断言派生数据顺序前，先确认数据源有没有隐式排序。
 3. **计划文档的任务表把 T5 函数归属写错**（story_state.py）——计划里「已核实的依赖事实」表格没覆盖新函数与既有模块的导入关系。后续计划表增加「新代码放哪」列时须先跑一遍导入方向推演。
 
-## 5. 验证输出存档（七道门 + 红线，T7 后复跑全绿）
+## 6. 验证输出存档（七道门 + 红线，T7 后复跑全绿）
 
 | 门 | 结果 |
 |---|---|
@@ -96,7 +93,7 @@ intake 协议（D6）在 prompt 里写「禁止建账、禁止写正文」，但
 | tau 内核 diff | 空（82bdb68..HEAD，src/tau_agent、src/tau_ai 零改动） |
 | 零 import tau_coding | ✓（仅注释提及设计出处） |
 
-## 6. DoD 对照（计划 §1 八条）
+## 7. DoD 对照（计划 §1 八条）
 
 | # | 验收标准 | 结论 |
 |---|---|---|
@@ -107,16 +104,12 @@ intake 协议（D6）在 prompt 里写「禁止建账、禁止写正文」，但
 | 5 | 状态注入 B1：prompt 前刷新 + 两快照 + 降级泄压阀 | ✓ T5（test_prompts / test_server_session） |
 | 6 | intake 协议：三段式 + 建账顺序 + 三类点确认 | ✓ T6（test_prompts 5 条协议断言） |
 | 7 | 前端：MD 渲染 + 消息区分 + story 端点 + 阶段徽章 | ✓ T7（vitest 201 + build 全绿） |
-| 8 | 红线：tau diff 空 / 零 tau_coding / 写入口唯一 / 七道门全绿 / DESIGN §8 顺延 / 四透镜专节 | ✓ 本节 + §5，§8 顺延见立项提交 `38e8940` |
+| 8 | 红线：tau diff 空 / 零 tau_coding / 写入口唯一 / 七道门全绿 / DESIGN §8 顺延 / 四透镜专节 | ✓ 本节 + §6，§8 顺延见立项提交 `38e8940` |
 
-## 7. 已知留白（转入后续阶段）
+## 8. 已知留白（转入后续阶段）
 
 - **真 LLM intake 冒烟走查未做**：协议文本有确定性测试钉死，但强模型实际遵循度（三段式是否输出、是否抢跑建账）需真模型走查——留待 P9 开工前用 CLI 跑一遍测试构想；
 - MD 流式渲染只做了组件 memo，段落级增量渲染未做——超长回复流式期仍整段重渲，卡顿出现时再优化；
 - 作者确认结构化交互卡、intake 问卷 UI 化 → 后续 UI 打磨阶段（计划 §4 移交清单）；
 - outline 幕级汇总视图 → P10/P11；
 - story.yaml 人工编辑入口 → 有真实诉求再立项。
-
-## 8. 评审记录
-
-- 2026-10-11：用户授权一次性完成 T5–T7 与收尾；本笔记自评七道门全绿、DoD 八条逐项过；R5 验收待用户复核。

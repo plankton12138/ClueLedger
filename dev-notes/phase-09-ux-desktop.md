@@ -2,25 +2,11 @@
 
 > 对应计划：[phase-09-ux-desktop-plan.md](phase-09-ux-desktop-plan.md)
 > 周期：2026-10-10 ~ 2026-10-11。任务 T1–T11 全部交付，DoD 八条逐条验收（见 §7）。
+> 关键词：体验修补、选项协议、新会话、响应式抽屉、Electron 壳、PyInstaller/NSIS 打包。
 
 ## 1. 交付内容
 
-M1 交互修补（Web 端）→ M2 响应式 → M3 桌面化，11 个任务 + 1 个打包 spike，12 次原子提交：
-
-| 任务 | 提交 | 内容 |
-|---|---|---|
-| T1 | `9d42712` | prompt 对话详略协议（结论先行/分条/答疑 ≤300 字）+ intake 收紧每轮 1–2 问 + `【选项】` 标记协议（含 few-shot） |
-| T2 | `73b71e2` | ThinkingCard：历史/流式/中断三处思考内容默认折叠为单行摘要，流式期也不刷屏 |
-| T3 | `809a5da` | 「正在思考…」首字等待占位（条件纯函数）+ 空会话按 story stage 的建议指令按钮 |
-| T4 | `2bcbb65` | `parseOptions` 解析消息尾部 `【选项】` 块 → 可点按钮，点击发送「我选 X：<文案>」 |
-| T5 | `8282f39` | `POST /api/{slug}/session/reset`：归档 session.jsonl 为时间戳副本、running 409、events.jsonl 留痕 |
-| T6 | `2458b97` | 对话面板头部新会话入口 + 内联防误触确认 + reset 后 WS 重连快照重放 |
-| T7 | `01b079d` | 横向溢出修复：ManuscriptPanel 头部 flex-wrap、select min-w-0、`html,body overflow-x-hidden` 兜底 |
-| T8 | `22076bc` | <lg 对话栏抽屉化（抽出 ChatPanel 与 lg+ 常驻栏共用）+ 羊皮纸 px-6/lg:px-[52px] + [layout.ts](../frontend/src/layout.ts) 断点事实源 |
-| T9 | `8af32a9` | 后端桌面参数：`--static-dir`（挂 StaticFiles html=True）、`--config-dir`、与 `--config` 互斥、路径不存在三要素报错 |
-| deps | `5379fd5` | pyinstaller 入 dev 依赖组 |
-| T10 | `d4fa696` | Electron 骨架：动态端口 → spawn sidecar → 健康检查 → 加载；崩溃切错误页 + IPC 重启；before-quit taskkill /T 清树 |
-| T11 | `5d7436a` | PyInstaller spec（5 个 hidden imports）+ electron-builder NSIS 配置 + 首跑数据目录自建 + app.setName 修正 |
+交付链（M1→M2→M3，12 次原子提交）：`9d42712`（T1 对话详略协议 + `【选项】` 标记）/ `2bcbb65`（T4 parseOptions 解析）→ `73b71e2`（T2 ThinkingCard 折叠）→ `809a5da`（T3 首字等待占位 + stage 建议按钮）→ `8282f39`（T5 session/reset 归档 + 留痕）→ `2458b97`（T6 新会话入口 + 重连快照重放）→ `01b079d`（T7 横向溢出修复）→ `22076bc`（T8 <lg 对话栏抽屉化 + layout.ts 断点事实源）→ `8af32a9`（T9 后端桌面参数 --static-dir/--config-dir）→ `5379fd5`（pyinstaller 入 dev 依赖）→ `d4fa696`（T10 Electron 骨架：动态端口 spawn sidecar + 崩溃错误页 + IPC 重启）→ `5d7436a`（T11 PyInstaller spec + electron-builder NSIS）。
 
 产物（不入库，gitignore）：
 

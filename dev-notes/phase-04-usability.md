@@ -3,20 +3,11 @@
 > 对应 [phase-04-usability-plan.md](phase-04-usability-plan.md)，2026-10-09 完成并关闭。
 > 结论：**R3 评审 blocker 清零，R5 验收通过，P4 正式关闭**；原路线图 P4–P6（RAG/审计/评测）顺延为 P5–P7。
 > 用户决策背景：暂缓 RAG，优先把程序补到「日常可用状态」——重启不丢稿、agent 读得回自己写的正文、多故事并存。
+> 关键词：会话持久化、read_chapter、多工作区、WorkspaceRegistry、坏文件检疫
 
 ## 1. 交付内容
 
-| 交付 | 提交 | 说明 |
-|---|---|---|
-| P4 计划 | `0aa7a08` | 三短板目标 + D1–D6 决策 + T1–T8 / R1–R5 |
-| T1 持久化桥 | `f1239c2` | `session_persist.py`：`message_end` → `MessageEntry` → `JsonlSessionStorage.append`；坏文件检疫改名 + 中文指引 |
-| T2 入口接线 | `9797b65` | CLI 与 server 共用 `restore_and_attach`（一次恢复 + 挂载），长期记忆不是 Web 特性 |
-| T3 正文读回 | `8fc0591` | `read_chapter` / `list_chapters` 只读工具 + guidelines 引导时机 + 集成剧本（读回第 1 章再写第 2 章）→ **CP1** |
-| T4 多工作区 | `7ff66f0` | `WorkspaceRegistry` 懒装配 + REST/WS 路由 slug 化（破坏性，无兼容层） |
-| T5 WS 隔离 | `e52b735` | 双工作区事件隔离剧本 + 坏 slug accept-then-1008 拒连 |
-| T6 前端切换 | `38c3c4c` | 工作区下拉 + 新建对话框 + `?w=` 参数持久化，切换 = 换 slug 重连 → **CP2** |
-| R3 修复 ×2 | `d36fafe` `19a53b4` | repair 消息落盘回归钉；落盘 IO 故障告警不杀写作流 |
-| 验收存档 | `19a53b4` | [artifacts/p4-acceptance.md](artifacts/p4-acceptance.md) |
+提交：`0aa7a08`（P4 计划，D1–D6 决策 + T1–T8 / R1–R5）→ `f1239c2`（T1 持久化桥 `session_persist.py`，坏文件检疫改名 + 中文指引）→ `9797b65`（T2 入口接线 `restore_and_attach`，CLI 与 server 共用）→ `8fc0591`（T3 `read_chapter`/`list_chapters` 只读工具 + guidelines 引导时机 → **CP1**）→ `7ff66f0`（T4 `WorkspaceRegistry` 懒装配 + REST/WS 路由 slug 化，破坏性无兼容层）→ `e52b735`（T5 WS 双工作区事件隔离 + 坏 slug accept-then-1008 拒连）→ `38c3c4c`（T6 前端工作区下拉/新建/`?w=` 切换 → **CP2**）→ `d36fafe`、`19a53b4`（R3 修复×2：repair 落盘回归钉；落盘 IO 故障告警不杀写作流）→ `19a53b4`（验收存档 [artifacts/p4-acceptance.md](artifacts/p4-acceptance.md)）。
 
 ## 2. 关键决策（D1–D6 落锤）
 
@@ -95,56 +86,7 @@ store 加 `slug` 字段；`useEffect` 依赖变更先 close 旧 socket 再连新
   单元测试钉住文案（「备份」「怎样算对」），验收时管道缓冲没刷出也不影响契约存在；
 - registry 对非法 slug 的拒绝路径全程可见：REST 422 带 `loc` 语义、WS 1008 带关闭码——每一层都「说话」而不是吞。
 
-## 4. 踩过的坑
-
-1. **httpx 客户端归一化穿越路径**：想用 `/api/../escape/state` 打应用闸门验证 422，httpx 把它（含 `%2E%2E`）归一化后发出 → 404。防护测试改用 Windows 保留名 `CON` 钉应用层；注释注明「客户端归一化本身也是一层防护」——测的不是 httpx，是 FastAPI 路由匹配不到时我们的闸门还挡不挡。
-2. **`git add -A` 误提交**：`.vscode/settings.json` 和 `submission/*.png` 混进 T4 提交 → `reset --soft` 后按文件名重提。结论照旧：原子提交按文件 add，不用 `-A`。
-3. **WS 隔离测试 `KeyError: 'delta'`**：`assistantMessageEvent` 是多类型联合（text_delta 只是其一），过滤时按 `.get("type") == "text_delta"` 判别，不能假定字段总在。
-4. **tsc TS2493**：`vi.fn(async () => ...)` 的空签名让 `mock.calls[0]?.[0]` 推导为空元组 → mock 函数显式标注参数类型。
-5. **告警没出现在服务日志**：`print` 经服务进程管道缓冲未即时刷出——非缺陷，文案由单元测试钉住，验收记录注明（后续可考虑 stderr + flush，本阶段不动）。
-6. **浏览器自动化工具不可用**：本会话环境无 browser_* 工具 → 按 P3 T10 同款许可路径降级为 REST/WS 客户端 transcript + 落盘文件 + 服务日志三重证据。
-
-## 5. 验证输出存档（R3-⑥ 修复后复跑，全绿）
-
-```text
-uv run ruff check .        → All checks passed!
-uv run ruff format --check → 110 files already formatted
-uv run mypy                → Success: no issues found in 62 source files（零豁免）
-uv run pytest              → 258 passed（P3 基线 212 + 本阶段新增 46）
-npm run build（含 tsc）     → ✓ built in 834ms（167.72 kB）
-npx vitest run             → 43 passed（P3 基线 31 + 本阶段新增 12）
-```
-
-T7 红线（逐 .py SHA-256 对比上游 `C:\Projects\Agent\tau`）：
-
-```text
-tau_ai / tau_agent : 36 个 .py 逐字节一致，差异 0 个
-hastings           : tau_coding 零 import（仅 2 处 docstring 提及设计出处）
-REST 写入口         : grep @router.post 仅 1 处 = POST /api/workspaces（资源创建）
-```
-
-## 6. DoD 对照（计划 §5）
-
-| DoD | 证据 |
-|---|---|
-| Web：杀进程重启 + 刷新，对话流完整恢复 | [p4-acceptance.md §1](artifacts/p4-acceptance.md)：6 条消息回放，roles 序列一致 |
-| CLI：重进同 slug 会话续上 | §2：零工具答出「波洛（比利时侦探）」 |
-| read_chapter / list_chapters + guidelines | §3 + 集成剧本（读回第 1 章再写第 2 章） |
-| 双工作区并存、隔离、可新建 | §4：b 为 0 消息；落盘目录物理隔离 |
-| 坏文件检疫 + read 泄压阀 | §5：`session.jsonl.bad-1791511553719844700`；is_error + 目录摘要（测试钉） |
-| REST 契约变更声明 | acceptance 末节逐条列出（无兼容层） |
-| 七道门全绿；红线 | §5/§6 存档（本笔记） |
-| 验收存档；构建笔记；R3 blocker 清零 | p4-acceptance.md + 本笔记 + R3 blocker 空 |
-
-## 7. 已知留白（转入后续阶段）
-
-- **session.jsonl 无限增长**：无 compaction（单故事量级小，P5+ 评估）；
-- **GET 惰性装配建目录**：`get_or_create` 会 `ensure_dirs()`，与「REST 业务数据零写入口」的字面表述有出入——
-  业务数据（Bible/正文/会话）仍零写入口，建目录是资源装配副作用，计划 D4 的明确取舍（R3 评审提出，记为设计决策）；
-- `model_change` entry 记录但不消费；`parent_id` 树分支留空（P6 审计员阶段评估）；
-- 无鉴权/多用户（localhost 形态）；工作区无删除/归档。
-
-## 8. R3 代码评审记录（独立子代理全量 diff）
+## 4. 评审记录（R3 独立子代理全量 diff）
 
 重点清单①–⑤全部通过：① storage 文件锁与 asyncio 兼容（Windows 探路用例先行）② message_end 外无漏记路径
 （repair 消息补回归钉）③ registry 并发首访原子（gather 断言同实例）④ slug 注入面全防护（构造即校验 + CON 钉）
@@ -155,10 +97,42 @@ REST 写入口         : grep @router.post 仅 1 处 = POST /api/workspaces（�
 | # | 级别 | 问题 | 处置 |
 |---|---|---|---|
 | ⑥ | 中 | `_persist` 裸奔：磁盘满/锁超时抛 OSError 会杀死整轮写作流 | try/except + stderr 三要素告警，写作继续但历史不完整；泄压阀测试钉住（`19a53b4`） |
-| — | 低 | GET 惰性装配建目录与「零写入口」注释出入 | 设计取舍（计划 D4 明确），记入留白 §7 |
+| — | 低 | GET 惰性装配建目录与「零写入口」注释出入 | 设计取舍（计划 D4 明确），记入留白 §8 |
 
-## 9. R5 验收：DoD 逐条打勾（2026-10-09）
+## 5. 踩过的坑
 
-计划 §5 八条全部通过（证据见 §6 对照表与 [p4-acceptance.md](artifacts/p4-acceptance.md)），
-七道门复跑全绿（本笔记 §5），红线三项零违例。**P4 正式关闭，可进入 P5（RAG 语料库）**；
+1. **httpx 客户端归一化穿越路径**：想用 `/api/../escape/state` 打应用闸门验证 422，httpx 把它（含 `%2E%2E`）归一化后发出 → 404。防护测试改用 Windows 保留名 `CON` 钉应用层；注释注明「客户端归一化本身也是一层防护」——测的不是 httpx，是 FastAPI 路由匹配不到时我们的闸门还挡不挡。
+2. **`git add -A` 误提交**：`.vscode/settings.json` 和 `submission/*.png` 混进 T4 提交 → `reset --soft` 后按文件名重提。结论照旧：原子提交按文件 add，不用 `-A`。
+3. **WS 隔离测试 `KeyError: 'delta'`**：`assistantMessageEvent` 是多类型联合（text_delta 只是其一），过滤时按 `.get("type") == "text_delta"` 判别，不能假定字段总在。
+4. **tsc TS2493**：`vi.fn(async () => ...)` 的空签名让 `mock.calls[0]?.[0]` 推导为空元组 → mock 函数显式标注参数类型。
+5. **告警没出现在服务日志**：`print` 经服务进程管道缓冲未即时刷出——非缺陷，文案由单元测试钉住，验收记录注明（后续可考虑 stderr + flush，本阶段不动）。
+6. **浏览器自动化工具不可用**：本会话环境无 browser_* 工具 → 按 P3 T10 同款许可路径降级为 REST/WS 客户端 transcript + 落盘文件 + 服务日志三重证据。
+
+## 6. 验证输出存档（R3-⑥ 修复后复跑，全绿）
+
+七道门全绿：pytest 258 通过（P3 基线 212 + 新增 46）、vitest 43 通过（基线 31 + 新增 12）、ruff / format / mypy（62 文件零豁免）/ tsc+build 全过。T7 红线（逐 .py SHA-256 对比上游 `C:\Projects\Agent\tau`）零违例：tau_ai / tau_agent 36 个 .py 逐字节一致；hastings 对 tau_coding 零 import（仅 2 处 docstring 提及设计出处）；REST 写入口仅 POST /api/workspaces（资源创建）。
+
+## 7. DoD 对照（计划 §5）
+
+| DoD | 证据 |
+|---|---|
+| Web：杀进程重启 + 刷新，对话流完整恢复 | [p4-acceptance.md §1](artifacts/p4-acceptance.md)：6 条消息回放，roles 序列一致 |
+| CLI：重进同 slug 会话续上 | §2：零工具答出「波洛（比利时侦探）」 |
+| read_chapter / list_chapters + guidelines | §3 + 集成剧本（读回第 1 章再写第 2 章） |
+| 双工作区并存、隔离、可新建 | §4：b 为 0 消息；落盘目录物理隔离 |
+| 坏文件检疫 + read 泄压阀 | §5：`session.jsonl.bad-1791511553719844700`；is_error + 目录摘要（测试钉） |
+| REST 契约变更声明 | acceptance 末节逐条列出（无兼容层） |
+| 七道门全绿；红线 | 本笔记 §6 存档 |
+| 验收存档；构建笔记；R3 blocker 清零 | p4-acceptance.md + 本笔记 + R3 blocker 空 |
+
+R5 验收（2026-10-09）：计划 §5 八条全部通过（证据见上表与 [p4-acceptance.md](artifacts/p4-acceptance.md)），
+七道门复跑全绿（本笔记 §6），红线三项零违例。**P4 正式关闭，可进入 P5（RAG 语料库）**；
 开工时先写 phase-05-rag-plan.md，核实 Chroma + BGE-M3 在 Windows 上的安装性。
+
+## 8. 已知留白（转入后续阶段）
+
+- **session.jsonl 无限增长**：无 compaction（单故事量级小，P5+ 评估）；
+- **GET 惰性装配建目录**：`get_or_create` 会 `ensure_dirs()`，与「REST 业务数据零写入口」的字面表述有出入——
+  业务数据（Bible/正文/会话）仍零写入口，建目录是资源装配副作用，计划 D4 的明确取舍（R3 评审提出，记为设计决策）；
+- `model_change` entry 记录但不消费；`parent_id` 树分支留空（P6 审计员阶段评估）；
+- 无鉴权/多用户（localhost 形态）；工作区无删除/归档。

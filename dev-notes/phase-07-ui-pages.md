@@ -6,33 +6,14 @@
 > 五张原型图（p1 创作台 / p2 账本全页 / p3 审计中心 / p4 语料库 / p5 事件流），重组顶栏；
 > 三项已确认决策：① 语料库文风档案先行（向量检索留 P8）；② 审计中心确定性 v1（语义审计移交 P9）；
 > ③ 视觉令牌级对齐（不引入背景大图）。
+> 关键词：界面重塑、五原型对齐、LedgerPage、CorpusPage、AuditPage、Radix 视觉令牌。
 
 ## 1. 交付内容
 
 实施顺序说明：T12–T16（用户插入任务）实际先于 T4–T10 实施——「模型来源自主选择 + 文章管理页」
 是日常使用的前置体验，插队交付；计划文档以 `b1c28bc` 追加 T12–T14，T15/T16 动机见 §2.10。
 
-| 交付 | 提交 | 说明 |
-|---|---|---|
-| P7 计划 + 路线顺延 | `d7e21dd` | D1–D9 决策 + T1–T14 分解 + 九条 DoD；DESIGN.md §8 路线表 P7=RAG→P8、P8=审计员→P9、P9=评测→P10 顺延落位 |
-| T1 顶栏重组 + 视图骨架 | `53ace55` | 三段式（品牌｜主导航｜搜索+状态徽章）+ 五导航项转正 + view 扩容（corpus/audit/ledger） |
-| T2 共享视觉组件 | `b245bae` | RingStat 提取（BiblePanel 改消费）+ Histogram 新建（纯 SVG 六桶直方图） |
-| fix 创作台输入框溢出 | `9959034` | textarea 补 min-w-0 + 侧栏容器 overflow-hidden（长文本/长 URL 撑破布局） |
-| T3 创作台 polish | `f19d8a4` | 工具调用卡片化 + ChapterPaper 提取（羊皮纸阅读态共用）+ 章节字数徽注 + 概览卡升级双环 |
-| 计划追加 T12–T14 | `b1c28bc` | 用户插入任务入册（模型接入 UI 化 + 文章管理页） |
-| T12 provider 档案 CRUD | `7065a48` | `PUT/DELETE /api/providers/{name}`（upsert + 409 三保护）+ `POST /api/providers/test` 连通测试 + config.yaml 写回 |
-| T13 删除工作区 | `33b76aa` | `DELETE /api/workspaces/{slug}?confirm=`（confirm 守门 + running 409） |
-| T14 文章管理页 + 文案清扫 | `c0c910f` | ArticlesPage（列表/新建/切换/导出/删除）+ 顶栏撤工作区下拉 + 「案卷」→「文章」全局清扫（标识符不改） |
-| T15 provider 内建目录 | `0ddbdcc` | `provider_catalog.py` 七家静态目录 + `GET /api/provider-catalog`（纯公开数据，无密钥字段） |
-| T16 登录式档案管理 | `2b55a2a` | 设置页登录式表单（内建目录预填 + 自定义路径），对齐 tau `/login` 体验内核 |
-| T4 事件流对齐 | `5410743` | 徽章五类配色（violet token 新增）+ 运行概览卡（状态环 + 四指标）+ 平均延迟帧对派生 |
-| T5 账本全页 | `a13594c` | LedgerPage（章节进度横条 + 工具行筛选排序 + 全宽表格 + 回收环/风险卡/关系图右栏）+ ledgerShared 共享模块 + BiblePanel「⤢ 展开」入口 |
-| T6 语料库后端 | `f93c065` | `rag/style_profile.py` 纯函数 + `rag/corpus_store.py` + `/api/corpus` 四端点 + `--corpus-root` CLI（python-multipart 依赖，动机见 §2.6） |
-| T7 语料库前端 | `5416bd4` | CorpusPage（拖拽上传/列表删除/文风档案：直方图+对话占比环+指标卡）+ P8/P9 置灰区 |
-| T8 审计后端 | `213ca8e` | `bible/audit.py` 纯派生聚合（三指标 + 四条确定性检查）+ `GET /api/{slug}/audit/{chapter_id}` |
-| T9 审计中心前端 | `1a27064` | AuditPage（章节阅读 + 三指标环 + 检查清单 + 定位跳转 + steer 修订建议） |
-| T10 设置页 polish | `327ddfc` | D9 分节卡片（写作语言/模型接入/工作区信息三卡），交互零变更 |
-| 构建笔记 + DoD 验收 | 本笔记 | 四透镜专节 + 九条 DoD 逐项对照 + 七道门复跑 |
+交付链（每项一个原子提交，按实施顺序）：`d7e21dd`（P7 计划 + DESIGN §8 顺延）→ `53ace55`（T1 顶栏重组 + 视图骨架）→ `b245bae`（T2 RingStat 提取 / Histogram 新建）→ `9959034`（创作台输入框溢出 fix）→ `f19d8a4`（T3 创作台 polish：工具卡片化 + ChapterPaper + 双环）→ `b1c28bc`（计划追加 T12–T14）→ `7065a48`（T12 provider 档案 CRUD + 连通测试）→ `33b76aa`（T13 删除工作区，confirm 守门）→ `c0c910f`（T14 文章管理页 + 「案卷」→「文章」清扫）→ `0ddbdcc`（T15 provider 内建目录）→ `2b55a2a`（T16 登录式档案管理）→ `5410743`（T4 事件流对齐：徽章五类 + 概览卡）→ `a13594c`（T5 账本全页 LedgerPage + ledgerShared）→ `f93c065`（T6 语料库后端）→ `5416bd4`（T7 语料库前端 CorpusPage）→ `213ca8e`（T8 审计后端 audit.py）→ `1a27064`（T9 审计中心前端 AuditPage）→ `327ddfc`（T10 设置页 polish）；构建笔记即本文件（四透镜专节 + 九条 DoD 对照 + 七道门复跑）。
 
 ## 2. 关键决策（D1–D9 落地记录 + 插入任务）
 
@@ -131,7 +112,11 @@
 - **平均延迟的口径诚实**：实时帧无时间戳，若偷偷用客户端 arrival 时间会得到「看似精确实则错误」的数字——选择「只算历史帧对 + UI 标注可见窗口口径 + 无帧对显示 —」，**宁可显示口径受限的准确数字，不显示无口径的精确数字**；
 - **结构代理指标的诚实标注**：审计三指标在 docstring/REST 模型/UI 三处标注「结构代理非语义判断」——指标被误读比没有指标更糟，这是本阶段最重要的一课。
 
-## 4. 踩过的坑
+## 4. 评审记录
+
+P7 未设独立 R 轮代码评审（沿用 P6 模式：任务分解 T1–T16，质量把关由七道门 + 红线三项 + DoD 九条逐项验收承担）。实施中的两处用户驱动修正已落提交：创作台输入框溢出（`9959034`）、对账定位调整（P5 范畴回溯修订）不属本阶段。T10 以「七道门复跑 + 红线核验」完成 DoD 验收，无 blocker。
+
+## 5. 踩过的坑
 
 1. **frozen+slots dataclass 没有 `__dict__`**。REST 层 `CorpusFileInfoResponse(**f.__dict__)` 直接 AttributeError——slots 类字段存在 slot 描述符里。修法：`dataclasses.asdict()`。教训记在「边界转换」：wire 模型与领域模型的转换点要用官方序列化通道，别假设内存布局。
 2. **测试口径先行钉住实现，不如「口径注释钉住双方」**。style_profile 三处测试期望值与实现不符（dialogue_ratio 引号计入分母、total_chars 去空白含标点），修正时改的是测试期望——但真正的修法是把口径写进 docstring（引号计入分母、与 stats 同款口径），让测试与实现共同引用同一句口径声明，避免下次「改测试还是改实现」的拉锯。
@@ -140,39 +125,11 @@
 5. **前端 store 字段名凭记忆写错**。`s.is_running` 实为 `s.running`——跨阶段引用他人组件的状态切片时先看 store 定义，命名约定（running/connectionError 等）不跨项目迁移。
 6. **侧栏压缩布局回潮**（延续 P7 T3 fix 经验）：任何新增列/卡都要带 min-w-0 + truncate 约束族——布局挤压不是某个组件的 bug，是 flex 子项默认 min-width:auto 的系统性后果，新组件按约定预防性加约束。
 
-## 5. 验证输出存档（七道门 + 红线，T10 复跑全绿）
+## 6. 验证输出存档（七道门 + 红线，T10 复跑全绿）
 
-```text
-uv run ruff check .          → All checks passed!
-uv run ruff format --check . → 142 files already formatted
-uv run mypy                  → Success: no issues found in 75 source files
-uv run pytest                → 483 passed（本阶段新增 style_profile 20 / corpus_api 7 / audit 8 等剧本）
-npx tsc --noEmit             → 通过（零输出）
-npm run build                → vite 构建成功；RelationGraph 懒加载 chunk 197 kB 独立，主包 259 kB
-npx vitest run               → 196 passed（19 files；ledgerShared / CorpusPage / AuditPage 纯函数剧本等）
-```
+七道门全绿：ruff check / format（142 文件已格式化）、mypy（75 源文件无问题）、pytest 483 passed（新增 style_profile 20 / corpus_api 7 / audit 8 等剧本）、tsc --noEmit 零输出、vite build 成功（RelationGraph 懒加载 chunk 197 kB 独立，主包 259 kB）、vitest 196 passed（19 files）。
 
-红线三项：
-
-```text
-tau_ai / tau_agent：逐 .py SHA-256 对比上游 C:\Projects\Agent\tau → diff 0 个（36 文件全同）
-hastings / tau_ai / tau_agent：tau_coding 零 import（命中全在 tau_coding 包自身，不参与构建）
-REST 写入口仅守门管道：PUT settings、PUT chapters/{id}（write_guard）、PUT/DELETE edit-mark、
-POST/DELETE workspaces（confirm 守门）、PUT/DELETE providers、POST corpus——后三者是配置/资产
-管理写路径，不触碰 agent 业务写路径（对话流/账本/正文仍只经既有守门入口）
-```
-
-## 6. DoD 对照（计划 §1 九条）
-
-- [x] **① 顶栏**：三段式六导航项（创作台/文章/语料库/审计中心/事件流/设置，文章管理按 T14 约定独立成页）；工作区管理收进文章页；模型名移设置页；构建产物实测无溢出
-- [x] **② 创作台 polish**：工具卡片化（工具名+状态+details 摘要）；羊皮纸含饰线/首字下沉/页脚导航/字数徽注；概览卡双环
-- [x] **③ 账本全页**：BiblePanel「⤢ 展开」进入；章节进度横条 + 搜索/状态/风险筛选/排序 + 全宽表格 + 右栏三件（回收大环/风险卡定位/关系图懒加载）；返回不丢状态（独立重拉）
-- [x] **④ 语料库**：拖拽/点选上传 .txt/.md（非法扩展名 422 三要素）、列表、删除带确认、文风档案（Histogram + 对话占比 RingStat + 三指标卡）；语义指标与向量索引置灰标注 P8/P9
-- [x] **⑤ 审计中心**：选章 → 三指标环 + 检查清单（severity 配色/锚点）+「定位」跳转 +「生成修订建议」steer 组装（buildRevisionRequest 纯函数 + 剧本测试）
-- [x] **⑥ 事件流对齐**：徽章五类配色（violet token）+ 运行概览卡（状态环/总数/工具数/平均延迟/错误数）；既有功能零回退（vitest 既有用例未动）
-- [x] **⑦ 设置页**：分节三卡（写作语言/模型接入/工作区信息），模型接入含登录式表单（T16）
-- [x] **⑧ 红线 + 七道门**：§5 全绿（tau 内核 diff 0、零 import tau_coding、写入口清点见 §5）
-- [x] **⑨ 文档**：DESIGN.md §8 顺延 + P8/P9/P10 移交注记（`d7e21dd` 落位）；构建笔记含四透镜专节（本节 §3）
+红线三项核验通过：① tau_ai / tau_agent 逐 .py SHA-256 对比上游 diff 0（36 文件全同）；② hastings 对 tau_coding 零 import；③ REST 写入口仅守门管道——PUT settings、PUT chapters/{id}（write_guard）、PUT/DELETE edit-mark、POST/DELETE workspaces（confirm 守门）、PUT/DELETE providers、POST corpus 均为配置/资产管理写路径，不触碰 agent 业务写路径（对话流/账本/正文仍只经既有守门入口）。
 
 ## 7. 已知留白（转入后续阶段）
 
@@ -184,11 +141,7 @@ POST/DELETE workspaces（confirm 守门）、PUT/DELETE providers、POST corpus�
 - 语料仅 .txt/.md，DOCX/PDF 解析需新依赖，按计划非目标排除；
 - 审计「人物一致性」在空时间线时整体置 None（不可计算）——空工作区第一 二章的审计体验偏弱，随 P9 语义审计一并改善。
 
-## 8. 评审记录
-
-P7 未设独立 R 轮代码评审（沿用 P6 模式：任务分解 T1–T16，质量把关由七道门 + 红线三项 + DoD 九条逐项验收承担）。实施中的两处用户驱动修正已落提交：创作台输入框溢出（`9959034`）、对账定位调整（P5 范畴回溯修订）不属本阶段。T10 以「七道门复跑 + 红线核验」完成 DoD 验收（§5/§6），无 blocker。
-
-## 9. R5 验收：DoD 逐条打勾（2026-10-10）
+## 8. DoD 验收（R5，2026-10-10）
 
 浏览器实测（dev server @ `http://127.0.0.1:8000`，工作区 demo-story）+ 七道门 + 红线核验三轨：
 
@@ -199,7 +152,7 @@ P7 未设独立 R 轮代码评审（沿用 P6 模式：任务分解 T1–T16，�
 - ⑤ 事件流 **PASS（浏览器）**：事件行列表（时间/徽章/摘要）+ 运行概览卡（状态环 + 四指标卡）无溢出无报错；
 - ⑥ 设置页 **PASS（浏览器）**：写作语言/模型接入（登录式表单）/工作区信息三卡完整；
 - ⑦ 文章页 **PASS（浏览器 + REST）**：列表与 `GET /api/workspaces` 逐条一致，新建/切换/导出/删除入口齐备。走查首轮报「snowstorm-house 缺失」经核实为前提失效——该工作区系 T13 删除功能测试中清理的历史数据，非本阶段缺陷；
-- ⑧ 红线 + 七道门 **PASS**：§5 全绿（tau 内核 SHA-256 diff 0、零 import tau_coding、写入口清点符合约定）；
+- ⑧ 红线 + 七道门 **PASS**：§6 全绿（tau 内核 SHA-256 diff 0、零 import tau_coding、写入口清点符合约定）；
 - ⑨ 文档 **PASS**：DESIGN.md 顺延注记（`d7e21dd`）+ 本笔记（`2c1a019`）。
 
 **P7 正式关闭**（2026-10-10），可进入 P8（RAG 语料库）；开工时先写 `phase-08-rag-plan.md`，核实 Chroma + BGE-M3 在 Windows 上的安装性。

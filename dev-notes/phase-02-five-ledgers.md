@@ -2,6 +2,7 @@
 
 > 对应 [DESIGN.md](DESIGN.md) §8 路线图 **P2 Bible 完整化** 行；计划见 [phase-02-five-ledgers-plan.md](phase-02-five-ledgers-plan.md)。
 > 状态：**已完成（R3 blocker 清零，R5 结论见 §7）**。执行记录：T1 `c7fb011` / T2 `58c17a7` / T3 `96819e9` / T4 `12aa63b` / T5 `e1917a5` / T6 `7b87e6d` / T7 `2d33003` / R3 修复 `49d84d9`。
+> 关键词：五账本、状态机、手法锁定、时间线检测、泛型账本存储
 
 ## 1. 交付内容
 
@@ -52,7 +53,7 @@ R3 #1 从反面印证了同一条原则：含 R0 数据错误的条目若继续�
 - `timeline_check` 结果同时服务两类读者：文本行喂模型（含三要素），`details` 留结构化数据给 P3 前端（`conflict_count` + 每条 `rule/day/persons/entries/message`）；
 - 每个工具都有 `render_call` 单行摘要（"锁定手法 怀表调时诡计"），用户在终端获得对齐感而不被参数淹没。
 
-## 4. R3 代码评审记录（TRAE-code-review + 双验证者复核）
+## 4. 评审记录
 
 六项关注清单（计划 §4-R3）全部通过：状态校验仅在工具层、错误消息三要素、`/bible` 防崩、details 结构化、D5 零带入；区间运算发现两处边界缺口，双验证者均确认（2/2 高置信），当轮修复：
 
@@ -69,21 +70,7 @@ R3 #1 从反面印证了同一条原则：含 R0 数据错误的条目若继续�
 
 ## 6. 验证输出存档
 
-四道质量门（`49d84d9` 后复跑）：
-
-```text
-uv run ruff check .          → All checks passed!
-uv run ruff format --check . → 88 files already formatted
-uv run mypy                  → Success: no issues found in 54 source files
-uv run pytest -q             → 179 passed in 1.70s
-```
-
-架构红线（P2 全程 `c7fb011..49d84d9`）：
-
-```text
-git diff <P2起点>..HEAD -- src/tau_ai src/tau_agent pyproject.toml uv.lock  → 空（内核与依赖零改动）
-grep tau_coding src/hastings tests                                          → 仅 cli.py docstring 提及设计来源，零 import
-```
+四道质量门（`49d84d9` 后复跑）全绿：ruff/format 无告警，mypy strict（54 source files）零 issue，pytest 179 passed。架构红线（P2 全程 `c7fb011..49d84d9`）：tau_ai / tau_agent 与 pyproject.toml / uv.lock 零 diff；hastings 零 import tau_coding（仅 cli.py docstring 提及设计来源）。
 
 ## 7. DoD 对照（计划 §5）
 

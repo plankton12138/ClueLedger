@@ -4,21 +4,11 @@
 > 结论：**R3 评审 7 项全数修复，R5 验收通过，P5 正式关闭**；原路线图 P5–P7（RAG/审计/评测）顺延为 P6–P8。
 > 用户决策背景：参考 submission 五张产品原型，把「对话为主」的界面反转为「正文为主」的创作台——作者可直接改正文，
 > 改完由 agent 对比差异并同步上下文。**正文从此是事实的最高法院**。
+> 关键词：三栏创作台、正文 SSOT、write_guard、对账同步、notice 帧
 
 ## 1. 交付内容
 
-| 交付 | 提交 | 说明 |
-|---|---|---|
-| P5 计划 + 设计稿 | `78078c0` | 三态创作台设计稿 + D1–D8 决策 + T1–T8 / R1–R5 |
-| T1 三栏创作台 | `938adba` | theme 扩展 + App.tsx 三栏 + 导航条 + `ManuscriptPanel` 阅读模式 → **CP1** |
-| T2 受管写端点 | `221b2cb` | `PUT chapters/{id}`：段落级 diff + `.revisions` 归档 + 乐观并发 409 + 泄压阀三情形 |
-| T3 write_guard | `4534f3f` | `EditMark` 注册表 + agent/HTTP 双侧守门（同一模块） |
-| T4 对账管线 | `327c3a4` | 对账队列（debounce/等空闲/用户优先）+ 紧凑消息 + `run_kind` 守卫 + `notice` 帧 → **CP2** |
-| T5 前端同步 UI | `e13da51` | 编辑器 + 保存/放弃/⌘S + diff 视图 + 同步卡片 + 手动重跑 |
-| T6 事件流入口 | `3df1b01` | DebugView 迁入导航「事件流」，仅重排不增强 |
-| T7 验收存档 | `bdc5105` | 七门 + 红线 + 真实浏览器验收 → [artifacts/p5-acceptance.md](artifacts/p5-acceptance.md) |
-| 对账定位澄清 | `f2a0a4b` | 首要目的＝习得作者文风，账本校正降为次要（用户澄清后的 prompt 校准） |
-| R3 修复 ×7 | `d440041` | 草稿锁生命周期 / 保存竞态 / 对账泵停滞等 7 项（见 §8） |
+提交：`78078c0`（P5 计划 + 三态创作台设计稿，D1–D8 决策 + T1–T8 / R1–R5）→ `938adba`（T1 三栏创作台 + `ManuscriptPanel` 阅读模式 → **CP1**）→ `221b2cb`（T2 受管写端点 `PUT chapters/{id}`：段落级 diff + `.revisions` 归档 + 乐观并发 409 + 泄压阀三情形）→ `4534f3f`（T3 `write_guard`：`EditMark` 注册表 + agent/HTTP 双侧守门）→ `327c3a4`（T4 对账管线：debounce/等空闲/用户优先 + `run_kind` 守卫 + `notice` 帧 → **CP2**）→ `e13da51`（T5 前端同步 UI：编辑器 + diff 视图 + 同步卡片 + 手动重跑）→ `3df1b01`（T6 事件流入口迁入导航，仅重排不增强）→ `bdc5105`（T7 验收存档 [artifacts/p5-acceptance.md](artifacts/p5-acceptance.md)）→ `f2a0a4b`（对账定位澄清：首要目的＝习得作者文风，账本校正降为次要）→ `d440041`（R3 修复×7，见 §4 评审记录）。
 
 ## 2. 关键决策（D1–D8 落锤）
 
@@ -122,61 +112,7 @@ prompt（D6 契约）只解释世界：对账消息为何开头、首要是习�
   `unhandledEventTypes`（R3-④），跨连接保留——协议演进出的新 kind 不会被静默吞掉，调试视图留着证据；
 - `ToolResultMessage.details` 结构化数据仍留给前端/审计（同一事件流服务两类读者：人看卡片、机器看 details）。
 
-## 4. 踩过的坑
-
-1. **交接总结与代码库实际状态不符**：上一会话交接声称 T2–T7 已完成，但 git 与代码库只有 T1 一笔提交，
-   T2–T8 实际未开始。**教训**：接手时以 `git log` + 代码实况为准，交接总结只作线索——这是本阶段最大的流程教训。
-2. **TestClient 每请求独立事件循环**：PUT 循环上创建的 debounce 定时任务随请求结束被连带取消，`sync_end` 永不到达。
-   修法是 `with client:`（长驻 portal，HTTP 与 WS 复用同一循环，对齐 uvicorn 生产拓扑）。
-3. **对账泵「等闲重试」**（R3-⑤）：`agent_end` 在 harness 置闲**前**投递，泵任务被延后调度时仍见 `is_running=True` → return，
-   此后无任何事件 → 队列永久停滞。会话协议没有「运行结束」信号，只能轮询等闲。这是一类**纯事件驱动会漏掉的边界**。
-4. **实体名匹配剧本**：对账消息按变更段文本对五账本实体名做匹配——测试用真实实体名而非占位串，否则匹配恒空、测不到位。
-5. **陈旧 dev server 伪装成业务报错**（验收发现）：运行中的进程早于 T2/T5 启动，缺新路由 → `PUT edit-mark` 返回 405（静态托管兜底）。
-   教训：涉及后端契约新增的阶段验收，**重启服务 + 核对 openapi 路由**应列入验收清单前置步骤。
-
-## 5. 验证输出存档（R3 修复后复跑，全绿）
-
-```text
-uv run ruff check .        → All checks passed!
-uv run ruff format --check → 122 files already formatted
-uv run mypy                → Success: no issues found in 67 source files（零豁免）
-uv run pytest              → 337 passed
-npm run build（含 tsc）     → ✓ built in 1.13s（49 modules，184.87 kB）
-npx vitest run             → 99 passed（8 files）
-```
-
-红线（`git diff` + grep 复核）：
-
-```text
-tau_agent / tau_ai : git diff --stat 空，逐字节与上游一致，差异 0 个
-hastings           : tau_coding 零 import（仅 ws.py / cli.py 2 处 docstring 提及设计出处）
-REST 内容写入口     : 正文写端点有且仅有 PUT /api/{slug}/chapters/{id}（守门管线）
-                     另计：POST /api/workspaces（资源创建）、PUT/DELETE edit-mark（锁，非内容）
-工作区运行数据      : stories/ 不入库（git status 仅 ?? .vscode/）
-```
-
-## 6. DoD 对照（计划 §5）
-
-| DoD | 证据 |
-|---|---|
-| 三栏创作台：正文居中阅读模式 | [p5-acceptance.md §1](artifacts/p5-acceptance.md)：三栏快照 + 羊皮纸渲染（891 字） |
-| 编辑模式：dirty 徽标、显式保存落盘、放弃草稿 | §2：Ctrl+S 保存成功 + §3 归档证据；放弃走 vitest/store 剧本 |
-| 保存后自动对账 + 手动重跑 | §3：卡片 `对账中… → ✓ 已同步`，账本 `t_end 00:50 → 01:07`；重跑走 ws/socket 单测 |
-| 互斥：写作中只读 + is_error 三要素 | §4：真实写作流中「编辑」页签 disabled；服务端 409 由 T3 单测钉住 |
-| 泄压阀：空 diff / 失败重试 / 过期 409 | §5：pytest（rest/ws/reconcile）+ vitest（store/socket）剧本钉住 |
-| 红线 | 本笔记 §5（含 D3 措辞演进声明） |
-| 七道门全绿 | 本笔记 §5 |
-| 验收存档 + 构建笔记 + R3 blocker 清零 | p5-acceptance.md + 本笔记 + §8 七项修复 |
-
-## 7. 已知留白（转入后续阶段）
-
-- **无版本回滚 UI**：`.revisions` 归档已先落盘，消费界面（历史对比/回滚）留待后续；
-- **段落移动识别为 del+add**：不做 moved 检测，大段重排会产生较多 hunk（记录为已知限制）；
-- **对账账本变更无一键撤销**：明细卡片事后可审，撤销能力留审计员阶段；
-- **无段落移动 / 无自动保存**：设计取舍（D2 显式保存边界）；
-- **单用户锁假设**：`EditMark` 内存态不持久化，不做锁超时抢占、不做跨进程锁。
-
-## 8. R3 代码评审记录（独立子代理全量 diff）
+## 4. 评审记录（R3 独立子代理全量 diff）
 
 范围 `bff623b..f2a0a4b`（51 文件，8 新增模块）。计划 §4 七项清单逐条查验：①守门/async 竞态 ✅；
 ②归档失败主文件未动 ✅；③队列竞争 ✅；④notice 未知路径 → 见 #4；⑤切工作区草稿残留 ✅（但残留服务端锁 → #1）；
@@ -192,8 +128,43 @@ REST 内容写入口     : 正文写端点有且仅有 PUT /api/{slug}/chapters/
 | ⑥ | 中 | `resync` 不清同章 debounce → 同一修订被对账两遍 | `resync` 先 `cancel` 定时器并清 `_pending`；新增用例 |
 | ⑦ | 低 | 主文件 `write_text` 直接覆盖会先 truncate，中途 OSError 留半截；500 文案归因失实 | 改 `tmp + replace` 原子替换；500 文案说明「归档先于写入、覆盖为原子替换」；新增用例 |
 
-## 9. R5 验收：DoD 逐条打勾（2026-10-09）
+## 5. 踩过的坑
 
-计划 §5 八条全部通过（证据见 §6 对照表与 [p5-acceptance.md](artifacts/p5-acceptance.md)），
-七道门复跑全绿（本笔记 §5），红线四项零违例，R3 七项修复复跑无回归。**P5 正式关闭，可进入 P6（RAG 语料库）**；
+1. **交接总结与代码库实际状态不符**：上一会话交接声称 T2–T7 已完成，但 git 与代码库只有 T1 一笔提交，
+   T2–T8 实际未开始。**教训**：接手时以 `git log` + 代码实况为准，交接总结只作线索——这是本阶段最大的流程教训。
+2. **TestClient 每请求独立事件循环**：PUT 循环上创建的 debounce 定时任务随请求结束被连带取消，`sync_end` 永不到达。
+   修法是 `with client:`（长驻 portal，HTTP 与 WS 复用同一循环，对齐 uvicorn 生产拓扑）。
+3. **对账泵「等闲重试」**（R3-⑤）：`agent_end` 在 harness 置闲**前**投递，泵任务被延后调度时仍见 `is_running=True` → return，
+   此后无任何事件 → 队列永久停滞。会话协议没有「运行结束」信号，只能轮询等闲。这是一类**纯事件驱动会漏掉的边界**。
+4. **实体名匹配剧本**：对账消息按变更段文本对五账本实体名做匹配——测试用真实实体名而非占位串，否则匹配恒空、测不到位。
+5. **陈旧 dev server 伪装成业务报错**（验收发现）：运行中的进程早于 T2/T5 启动，缺新路由 → `PUT edit-mark` 返回 405（静态托管兜底）。
+   教训：涉及后端契约新增的阶段验收，**重启服务 + 核对 openapi 路由**应列入验收清单前置步骤。
+
+## 6. 验证输出存档（R3 修复后复跑，全绿）
+
+七道门全绿：pytest 337 通过、vitest 99 通过（8 文件）、ruff / format / mypy（67 文件零豁免）/ tsc+build 全过。红线（`git diff` + grep 复核）零违例：tau_agent / tau_ai 与上游逐字节一致（diff 0）；hastings 对 tau_coding 零 import（仅 ws.py / cli.py 2 处 docstring 提及设计出处）；正文写端点有且仅有 `PUT /api/{slug}/chapters/{id}`（守门管线，另计 POST workspaces 资源创建、PUT/DELETE edit-mark 锁，非内容）；stories/ 运行数据不入库（git status 仅 ?? .vscode/）。
+
+## 7. DoD 对照（计划 §5）
+
+| DoD | 证据 |
+|---|---|
+| 三栏创作台：正文居中阅读模式 | [p5-acceptance.md §1](artifacts/p5-acceptance.md)：三栏快照 + 羊皮纸渲染（891 字） |
+| 编辑模式：dirty 徽标、显式保存落盘、放弃草稿 | §2：Ctrl+S 保存成功 + §3 归档证据；放弃走 vitest/store 剧本 |
+| 保存后自动对账 + 手动重跑 | §3：卡片 `对账中… → ✓ 已同步`，账本 `t_end 00:50 → 01:07`；重跑走 ws/socket 单测 |
+| 互斥：写作中只读 + is_error 三要素 | §4：真实写作流中「编辑」页签 disabled；服务端 409 由 T3 单测钉住 |
+| 泄压阀：空 diff / 失败重试 / 过期 409 | §5：pytest（rest/ws/reconcile）+ vitest（store/socket）剧本钉住 |
+| 红线 | 本笔记 §6（含 D3 措辞演进声明） |
+| 七道门全绿 | 本笔记 §6 |
+| 验收存档 + 构建笔记 + R3 blocker 清零 | p5-acceptance.md + 本笔记 + §4 七项修复 |
+
+R5 验收（2026-10-09）：计划 §5 八条全部通过（证据见上表与 [p5-acceptance.md](artifacts/p5-acceptance.md)），
+七道门复跑全绿（本笔记 §6），红线四项零违例，R3 七项修复复跑无回归。**P5 正式关闭，可进入 P6（RAG 语料库）**；
 开工时先写 `phase-06-rag-plan.md`，核实 Chroma + BGE-M3 在 Windows 上的安装性。
+
+## 8. 已知留白（转入后续阶段）
+
+- **无版本回滚 UI**：`.revisions` 归档已先落盘，消费界面（历史对比/回滚）留待后续；
+- **段落移动识别为 del+add**：不做 moved 检测，大段重排会产生较多 hunk（记录为已知限制）；
+- **对账账本变更无一键撤销**：明细卡片事后可审，撤销能力留审计员阶段；
+- **无段落移动 / 无自动保存**：设计取舍（D2 显式保存边界）；
+- **单用户锁假设**：`EditMark` 内存态不持久化，不做锁超时抢占、不做跨进程锁。

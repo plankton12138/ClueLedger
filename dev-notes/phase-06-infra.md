@@ -4,25 +4,11 @@
 > 结论：**P6 DoD 八条逐项验收通过，P6 正式关闭**；原路线图 P6–P8（RAG/审计/评测）顺延为 P7–P9。
 > 用户决策背景：把「能用的原型」升级为「顺手的工具」——设置页可换 LLM（免改 env 重启）、界面信息密度对齐产品原型
 > （伏笔账本表格 / 角色小传 / 关系图 / 可调布局）、Agent 行为全过程可回溯（事件流持久化 + 历史查询 + 导出）。
+> 关键词：模型接入、事件流持久化、可调布局、伏笔账本表格、角色关系图、全局搜索
 
 ## 1. 交付内容
 
-| 交付 | 提交 | 说明 |
-|---|---|---|
-| P6 计划 | `a049a57`（含于前置提交） | D1–D11 决策 + T1–T13 分解 + 八条 DoD |
-| 写作语言（前置项）+ T1 | `9fa6290` | settings 扩展 `writing_language` + 服务级 `config.yaml` 多 provider 档案（provider_config.py）+ `GET /api/providers`（key 脱敏尾 4 位）+ env 回落 |
-| T2 模型切换后端 | `1de8842` | settings 扩展 `provider_profile`/`model` + 同档案热切 + `registry.rebuild`（跨档案重建并恢复会话）+ `GET providers/{name}/models`（三情形泄压） |
-| T3 设置页前端 | `90110ef` | 档案/模型选择 + 拉取模型列表 + 换档案确认（提示会话重建） |
-| T4 事件持久化 | `46d381d` | `events.jsonl`（ts/seq/type/data，seq 重启续号）+ OSError 泄压阀 + 类别/分页查询 REST |
-| T5 事件流页升级 | `3452ebd` | EventStreamView 替换 DebugView：REST 历史 + WS 实时合并、概览、分类过滤、导出 |
-| T6 可调侧栏 | `aa01ea9` | 零依赖 Splitter（双侧拖宽 + localStorage 持久化 + 双击重置）+ 窄屏右栏抽屉 + 断点修正（lg→xl） |
-| T7 stats + 统计卡 | `1816e03` | `GET /api/{slug}/stats`（纯派生）+ 账本统计卡（回收率环/状态分布/逾期数） |
-| T8 伏笔账本表格 | `a222dd0` | 表格视图（条目/埋设/预计回收/状态/风险）+ 状态筛选 + 章节进度条 |
-| T9 角色小传 | `3af63f8` | 卡片列表 + 展开小传（秘密默认折叠）+ 弧光徽章 |
-| T10 角色关系图 | `a892582` | `@xyflow/react` + `d3-force`（唯一新增前端依赖）+ relationships 解析 + 节点联动小传 + 懒加载 |
-| T11 全局搜索 | `66d4b3f` | 顶部搜索框 + 本地索引（search.ts 纯函数）+ 分组跳转 + 目标行高亮 |
-| T12 导出 + ErrorBoundary | `936df5b` | zip 全量导出（不含 .revisions）+ 五重 ErrorBoundary（顶层 + 对话/正文/账本×2/事件流） |
-| T13 文档归位 + 验收 | 本笔记 | DESIGN.md 路线顺延（前提交已落）、导航角标核验、构建笔记、DoD 八条验收 |
+P6 计划 `a049a57`（含于前置提交；D1–D11 决策 + T1–T13 分解 + 八条 DoD）。提交：`9fa6290`（写作语言前置项 + T1 provider 档案：settings `writing_language` + 服务级 `config.yaml` 多档案 + `GET /api/providers` key 脱敏 + env 回落）→ `1de8842`（T2 模型切换后端：同档案热切 + `registry.rebuild` 跨档案重建 + 模型发现端点）→ `90110ef`（T3 设置页前端：档案/模型选择 + 换档案确认）→ `46d381d`（T4 事件持久化：`events.jsonl` seq 续号 + OSError 泄压阀 + 类别/分页查询 REST）→ `3452ebd`（T5 事件流页升级：REST 历史 + WS 实时合并 + 分类过滤 + 导出）→ `aa01ea9`（T6 可调侧栏：零依赖 Splitter + 断点修正 lg→xl）→ `1816e03`（T7 stats 端点 + 账本统计卡）→ `a222dd0`（T8 伏笔账本表格 + 状态筛选）→ `3af63f8`（T9 角色小传卡片）→ `a892582`（T10 角色关系图：@xyflow/react + d3-force）→ `66d4b3f`（T11 全局搜索本地索引）→ `936df5b`（T12 zip 导出 + 五重 ErrorBoundary）；T13 文档归位 + DoD 八条验收即本笔记。
 
 ## 2. 关键决策（D1–D11 落地记录）
 
@@ -62,7 +48,7 @@
 
 - 自建零依赖 `Splitter`：pointer events 拖拽、min 220px / max 480px 钳制、双击重置默认宽、宽度写 localStorage（按面板命名）；
 - **断点修正（T6 实测教训）**：`<lg`（≥1024px）在 1280 视口下仍放不下右栏，横向溢出 → 抽屉切换断点改为 `<xl`；抽屉态（<xl）禁用 Splitter，宽度仅作用于宽屏态，避免拖拽与抽屉交互冲突；
-- 布局不变量：中栏正文 `min-width` 保底 + `flex-1`；账本表格容器 `overflow-x-auto`；长名称 `truncate`；1280/1440/1920 三档视口逐一过（验收 §6）。
+- 布局不变量：中栏正文 `min-width` 保底 + `flex-1`；账本表格容器 `overflow-x-auto`；长名称 `truncate`；1280/1440/1920 三档视口逐一过（验收 §7）。
 
 ### D7 伏笔账本增强：表格 + 筛选 + 风险派生 + 统计端点
 
@@ -134,45 +120,39 @@ P1 验证过「字段级定位 + 三要素」是模型能一次修正的关键�
 - `seq` 单调游标是整个可观测性管线的「事件契约键」：重启续号、REST 倒序分页、前端 WS 合并去重，三处共用同一把尺；
 - 未知事件红色高亮契约从 DebugView 原样延续到 EventStreamView——事件契约演进时不会被「静默吞掉」。
 
-## 4. 踩过的坑
+## 4. 评审记录
 
-1. **T6 断点修正：lg → xl**。原按 `<lg`（≥1024px）切抽屉，1280 视口实测右栏仍放不下、出现横向溢出。修正：抽屉断点改 `<xl`（≥1280px 才开始拖宽模式），且抽屉态禁用 Splitter，避免两种交互打架；修正后 1280/1440/1920 三档逐一过（验收 §6）。
+P6 计划未设独立 R 轮代码评审（任务分解仅 T1–T13，质量把关由七道门 + 红线三项 + DoD 八条逐项验收承担）。
+T13 以「测试/代码证据 + 浏览器实测」双轨完成 DoD 验收（见 §7），七道门与红线复跑全绿，无 blocker。
+
+## 5. 踩过的坑
+
+1. **T6 断点修正：lg → xl**。原按 `<lg`（≥1024px）切抽屉，1280 视口实测右栏仍放不下、出现横向溢出。修正：抽屉断点改 `<xl`（≥1280px 才开始拖宽模式），且抽屉态禁用 Splitter，避免两种交互打架；修正后 1280/1440/1920 三档逐一过（验收 §7）。
 2. **前端测试基建：纯函数优先**。项目 vitest 为 node 环境零 DOM，Splitter 的交互逻辑（钳制/重置/持久化键）抽成纯函数 + 少量 jsdom pointer 剧本即可覆盖；避免为组件测试引入复杂浏览器模拟，保持测试基建轻量（前端 12 个测试文件全部 node 环境跑通）。
 3. **前端依赖最小化的张力**。@xyflow/react + d3-force 是本阶段唯一新增前端依赖（用户已决策，D8）；懒加载隔离首屏成本（独立 chunk 197 kB / gzip 65 kB 不进主包）；动机记录于 D8，不破坏「依赖最小化」约定。
 
-## 5. 验证输出存档（七道门 + 红线，T13 复跑全绿）
+## 6. 验证输出存档（七道门 + 红线，T13 复跑全绿）
 
-```text
-uv run ruff check .          → All checks passed!
-uv run ruff format --check . → 132 files already formatted
-uv run mypy                  → Success: no issues found in 71 source files
-uv run pytest                → 422 passed（本阶段新增 events/provider_config/stats 等剧本）
-npx tsc --noEmit             → 通过（含于 npm run build 前序）
-npm run build                → vite 构建成功，247 modules；RelationGraph 独立懒加载 chunk
-npx vitest run               → 154 passed（12 files；Splitter 13 / search 13 / relations 7 / events 12 / rest 30）
-```
+七道门全绿：pytest 422 通过、vitest 154 通过（12 文件）、ruff / format / mypy（71 文件）/ tsc / build（247 modules，RelationGraph 独立懒加载 chunk）全过。红线三项零违例：tau_ai / tau_agent 逐 .py SHA-256 对比上游 `C:\Projects\Agent\tau`，diff 0 个；tau_coding 零 import（仅 hastings 2 处 docstring 提及设计出处）；REST 写入口仅守门管道（PUT settings、PUT chapters/{id}、PUT/DELETE edit-mark、POST workspaces）——P6 T2 rebuild 只重装配会话，不新增业务写路径。
 
-红线三项：
+## 7. R5 验收：DoD 逐条打勾（2026-10-09）
 
-```text
-tau_ai / tau_agent：逐 .py SHA-256 对比上游 C:\Projects\Agent\tau → diff 0 个
-hastings / tau_ai / tau_agent：tau_coding 零 import（仅 hastings 2 处 docstring 提及设计出处）
-REST 写入口仅守门管道：PUT settings（校验）、PUT chapters/{id}（write_guard）、PUT/DELETE edit-mark、
-POST workspaces（slug 校验）——P6 T2 rebuild 只重装配会话，不新增业务写路径
-```
+浏览器实测（dev server @ `http://127.0.0.1:8000`，env 回落档案「default」，工作区 `snowstorm-house`）+ 单测 + REST 证据三轨：
 
-## 6. DoD 对照（计划 §1 八条）
+- ① 模型接入 **PASS（浏览器）**：设置页展示档案「default」，key 显示为脱敏尾 4 位（…114a）；DOM 全文检查无 `sk-` 开头完整 key；切换模型可下拉选择/手动输入；热切测试（`state.model` 更新且消息历史在）、rebuild 恢复对话、运行中切换 409；
+- ② 模型发现 **PASS（浏览器 + 单测）**：点「拉取模型列表」→「连接成功，拉取到 2 个候选模型」；httpx MockTransport 三情形（成功/401/网络错）+ 空列表合法空结果由单测覆盖；
+- ③ 事件流 **PASS（单测 + REST）**：`GET /api/snowstorm-house/events` 返回 200 空列表（该工作区早于 T4 无 events.jsonl——合法空结果）；持久化（seq 单调 + 重启续号）、类别过滤、倒序分页、导出由 `test_events_store.py`（11 项）+ REST 分页测试覆盖；
+- ④ 可调布局 **PASS（浏览器 + 单测）**：1280 视口三栏 300/628/340 无重叠无横向滚动条；1440/1920 无横向溢出、中栏自适应。拖拽钳制（min 220 / max 480）、双击重置、localStorage 持久化由 `Splitter.test.ts`（13 项）覆盖——浏览器直接改 `style.width` 绕过 pointer 处理器钳制属无效验证方法，按 P3 先例以单测 + DOM 证据替代；窄屏抽屉（<xl）为预期设计：浏览器代理在极小视口下左面板自动进抽屉态，恰好印证断点逻辑；
+- ⑤ 账本增强 **PASS（REST + 单测）**：`GET stats` 返回 10 伏笔/10 线索（4 干扰项，占比 0.4）、风险派生 10×normal（当前章节数 0，无逾期——符合规则边界）；`GET bible/foreshadow` 10 条含埋设/预计回收/状态字段（表格五列数据源）；逾期/临近派生边界（恰好等于当前章 / 无 expected / 空账本）由 `test_stats.py`（11 项）覆盖；
+- ⑥ 角色小传与关系图 **PASS（浏览器 + REST + 单测）**：`GET bible/character` 13 角色，relationships 样例（「堂島 響：轟の元部下 / 氷室と顔見知り」）；解析规则（「已注册角色名」前缀匹配 → 边，未匹配原样列出）由 `relations.test.ts`（7 项）覆盖——「轟の元部下」等非前缀条目即「未连线关系」泄压阀的输入；小传卡片/秘密折叠、节点点选联动小传浏览器实测；
+- ⑦ 配套项 **PASS（单测 + REST）**：全局搜索索引/分组/跳转目标由 `search.test.ts`（13 项）覆盖；zip 导出（不含 .revisions、空工作区可导出）与 ErrorBoundary 捕获渲染由后端/前端单测覆盖；
+- ⑧ 红线 + 七道门 **PASS**：§6 全绿。
 
-- [x] **① 模型接入**：设置页可切换档案与模型；热切测试（`state.model` 更新且消息历史在）、rebuild 恢复对话、运行中切换 409；key 脱敏尾 4 位，前端 DOM 无完整 key（浏览器实测见 §9）
-- [x] **② 模型发现**：httpx MockTransport 三情形（成功/401/网络错）+ 空列表合法空结果，测试全绿；实测 `GET providers/{name}/models` 返回真实模型列表
-- [x] **③ 事件流**：events.jsonl 落盘（seq 单调 + 重启续号）、类别过滤 + 倒序分页、导出下载；服务重启后历史仍在（events_store 测试 + REST 分页测试）
-- [x] **④ 可调布局**：Splitter 钳制/双击重置/持久化（13 单测）；1280/1440/1920 三档视口无重叠、无横向溢出（浏览器实测见 §9）
-- [x] **⑤ 账本增强**：stats 派生规则边界测试（恰好等于当前章 / 无 expected / 空账本）+ 伏笔表格/筛选/风险列/回收环
-- [x] **⑥ 角色小传与关系图**：关系解析规则 7 单测 + 小传卡片/秘密折叠；节点点选联动小传浏览器实测（见 §9）
-- [x] **⑦ 配套项**：全局搜索（索引纯函数 13 单测 + 分组跳转高亮）、zip 导出（不含 .revisions、空工作区可导出）、ErrorBoundary 捕获渲染
-- [x] **⑧ 红线 + 七道门**：本节 §5 全绿
+> 浏览器实测截图留白说明：设置页/模型发现/三档视口为真实浏览器证据；拖拽、抽屉、伏笔表格、关系图、搜索的截图因浏览器自动化环境限制（步骤预算上限 + 极小视口触发抽屉态遮挡面板 Tab）未能完成，按 P3 T10-3 先例以「单测 + DOM/REST 证据」替代——相关逻辑均有纯函数/后端单测钉死。
 
-## 7. 已知留白（转入后续阶段）
+**P6 正式关闭**，可进入 P7（RAG 语料库）；开工时先写 `phase-07-rag-plan.md`，核实 Chroma + BGE-M3 在 Windows 上的安装性。
+
+## 8. 已知留白（转入后续阶段）
 
 - `events.jsonl` 无限增长：无轮转与清理策略，导出后可手动删——轮转留给 P8 审计员（消费量大时再议）；
 - `config.yaml` 明文 key：本地单用户 + .gitignore + 脱敏出参；多用户/远程部署不在本阶段假设内；
@@ -180,25 +160,3 @@ POST workspaces（slug 校验）——P6 T2 rebuild 只重装配会话，不新�
 - `relationships` 自由文本解析只匹配「已注册角色名」前缀，未匹配条目原样列出（不硬解析、不静默丢）；
 - 全局搜索为前端本地索引：单工作区百级条目绰绰有余，正文超量时降级「仅标题搜索」——服务端语义搜索归 P7 RAG；
 - 关系图为懒加载独立 chunk（197 kB / gzip 65 kB）：首屏已隔离，后续可评估图标压缩。
-
-## 8. 评审记录
-
-P6 计划未设独立 R 轮代码评审（任务分解仅 T1–T13，质量把关由七道门 + 红线三项 + DoD 八条逐项验收承担）。
-T13 以「测试/代码证据 + 浏览器实测」双轨完成 DoD 验收（见 §9），七道门与红线复跑全绿，无 blocker。
-
-## 9. R5 验收：DoD 逐条打勾（2026-10-09）
-
-浏览器实测（dev server @ `http://127.0.0.1:8000`，env 回落档案「default」，工作区 `snowstorm-house`）+ 单测 + REST 证据三轨：
-
-- ① 模型接入 **PASS（浏览器）**：设置页展示档案「default」，key 显示为脱敏尾 4 位（…114a）；DOM 全文检查无 `sk-` 开头完整 key；切换模型可下拉选择/手动输入；
-- ② 模型发现 **PASS（浏览器 + 单测）**：点「拉取模型列表」→「连接成功，拉取到 2 个候选模型」；httpx MockTransport 三情形（成功/401/网络错）+ 空列表合法空结果由单测覆盖；
-- ③ 事件流 **PASS（单测 + REST）**：`GET /api/snowstorm-house/events` 返回 200 空列表（该工作区早于 T4 无 events.jsonl——合法空结果）；持久化（seq 单调 + 重启续号）、类别过滤、倒序分页、导出由 `test_events_store.py`（11 项）+ REST 分页测试覆盖；
-- ④ 可调布局 **PASS（浏览器 + 单测）**：1280 视口三栏 300/628/340 无重叠无横向滚动条；1440/1920 无横向溢出、中栏自适应。拖拽钳制（min 220 / max 480）、双击重置、localStorage 持久化由 `Splitter.test.ts`（13 项）覆盖——浏览器直接改 `style.width` 绕过 pointer 处理器钳制属无效验证方法，按 P3 先例以单测 + DOM 证据替代；窄屏抽屉（<xl）为预期设计：浏览器代理在极小视口下左面板自动进抽屉态，恰好印证断点逻辑；
-- ⑤ 账本增强 **PASS（REST + 单测）**：`GET stats` 返回 10 伏笔/10 线索（4 干扰项，占比 0.4）、风险派生 10×normal（当前章节数 0，无逾期——符合规则边界）；`GET bible/foreshadow` 10 条含埋设/预计回收/状态字段（表格五列数据源）；逾期/临近派生边界由 `test_stats.py`（11 项）覆盖；
-- ⑥ 角色小传与关系图 **PASS（REST + 单测）**：`GET bible/character` 13 角色，relationships 样例（「堂島 響：轟の元部下 / 氷室と顔見知り」）；解析规则（「已注册角色名」前缀匹配 → 边，未匹配原样列出）由 `relations.test.ts`（7 项）覆盖——「轟の元部下」等非前缀条目即「未连线关系」泄压阀的输入；
-- ⑦ 配套项 **PASS（单测 + REST）**：全局搜索索引/分组/跳转目标由 `search.test.ts`（13 项）覆盖；zip 导出（不含 .revisions、空工作区可导出）与 ErrorBoundary 捕获渲染由后端/前端单测覆盖；
-- ⑧ 红线 + 七道门 **PASS**：§5 全绿。
-
-> 浏览器实测截图留白说明：设置页/模型发现/三档视口为真实浏览器证据；拖拽、抽屉、伏笔表格、关系图、搜索的截图因浏览器自动化环境限制（步骤预算上限 + 极小视口触发抽屉态遮挡面板 Tab）未能完成，按 P3 T10-3 先例以「单测 + DOM/REST 证据」替代——相关逻辑均有纯函数/后端单测钉死。
-
-**P6 正式关闭**，可进入 P7（RAG 语料库）；开工时先写 `phase-07-rag-plan.md`，核实 Chroma + BGE-M3 在 Windows 上的安装性。

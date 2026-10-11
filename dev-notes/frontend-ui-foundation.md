@@ -5,26 +5,11 @@
 > shadcn/ui 模式（Radix 无头原语 + CVA + Tailwind，组件源码复制进 `frontend/src/components/ui/`），
 > 保持暗墨+金视觉与 `theme.ts` 单一事实源。后端零改动、`state/`/`api/` 零改动、WS/REST 契约零改动、
 > `tau_agent`/`tau_ai` 零改动。
+> 关键词：shadcn/ui、Radix、lucide、组件原语迁移、主题桥接、暗墨+金视觉。
 
 ## 1. 交付内容
 
-13 个原子提交，每原语一提交：
-
-| 提交 | 内容 |
-|---|---|
-| `c000016` | P0 地基：依赖（Radix 按需 10 包 + CVA + clsx + tailwind-merge + tailwindcss-animate + lucide-react）、`@/` 路径别名、tailwind.config 语义色桥接（shadcn 语义名直接映射 theme.ts 色值）、`lib/utils.ts`（cn）、`ui/button.tsx` + `ui/badge.tsx` |
-| `71b7fce` | P1-1 Button 全站替换（69 处裸 `<button>` 清零，ActionButton 收敛为 soft 封装） |
-| `07e1d39` | P1-1 fix：顶栏导航 Button 补 `h-auto/shrink/whitespace-normal`，还原裸按钮 UA 默认压缩折行 |
-| `7690f6b` | P1-2 Badge：ManuscriptPanel 本地 Chip/CHIP_CLASS 删除，五状态徽章映射语义变体 |
-| `28b2434` | P1-3 AlertDialog：ChatHeader 新会话确认 + ArticlesPage 删文章确认（保留输 slug 才亮键） |
-| `5d5646f` | P1-4 Sheet：账本右抽屉 + 对话左抽屉（P9 T8 手写 overlay 退役），Esc/遮罩/焦点陷阱移交 Radix |
-| `c90cd0d` | P1-5 Select：App 窄屏导航、ManuscriptPanel 章节、BiblePanel 伏笔筛选（弹层 `bg-surface` 暗底令牌；SettingsPanel 留 ollama WIP） |
-| `9a9d535` | P1-6 Tabs：BiblePanel 五账本 + 角色 list/graph（方向键/aria 白拿） |
-| `ef2cc9d` | P1-7 Popover：SearchBox 浮层移交 Radix（防抖/索引/分组渲染不动） |
-| `1a88768` | P1-8 Tooltip：折叠对话把手等图标按钮的 `title=` 替换 |
-| `869c991` | P1-9 表单族：Input/Textarea/Checkbox 接入 7 处，LedgerPage 双筛选补 Select |
-| `fac8215` | P2 lucide：顶栏导航 Unicode 图标迁 lucide（语义标记字符 ◈✎▸▾●✓ 与 ThinkingCard 测试锁定文案保留） |
-| `6db32cf` | P2 fix：导航图标化后的中间带布局修复（内联门槛提至 xl，1280+ 单行） |
+交付链（13 个原子提交，每原语一提交）：`c000016`（P0 地基：Radix 按需 10 包 + CVA/clsx/tailwind-merge + `@/` 别名 + tailwind 语义色桥接 + `lib/utils.ts` + ui/button/badge）→ `71b7fce`（P1-1 Button 全站替换，69 处裸 button 清零）→ `07e1d39`（P1-1 fix：顶栏导航 Button 补压缩折行样式）→ `7690f6b`（P1-2 Badge：Chip/CHIP_CLASS 退役）→ `28b2434`（P1-3 AlertDialog：新会话确认 + 删文章确认）→ `5d5646f`（P1-4 Sheet：账本右抽屉 + 对话左抽屉）→ `c90cd0d`（P1-5 Select：窄屏导航/章节/伏笔筛选）→ `9a9d535`（P1-6 Tabs：五账本 + 角色 list/graph）→ `ef2cc9d`（P1-7 Popover：SearchBox 浮层）→ `1a88768`（P1-8 Tooltip：图标按钮）→ `869c991`（P1-9 表单族：Input/Textarea/Checkbox + LedgerPage 双筛选 Select）→ `fac8215`（P2 lucide：顶栏导航图标迁移）→ `6db32cf`（P2 fix：导航图标化后中间带布局修复，内联门槛提至 xl）。
 
 `ui/` 原语清单：button、badge、alert-dialog、sheet、select、tabs、popover、tooltip、input、textarea、checkbox（scroll-area/switch/label/dialog 未落地，见 §7 留白）。
 

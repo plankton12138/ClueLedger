@@ -2,19 +2,11 @@
 
 > 对应 [phase-01-minimal-loop-plan.md](phase-01-minimal-loop-plan.md)，2026-10-07 完成并关闭。
 > 结论：**R3 评审 blocker 清零，R5 验收通过，P1 正式关闭，可进入 P2。**
+> 关键词：最小闭环、CLI 写作 Agent、Bible 工具、错误回喂、FakeProvider 剧本测试
 
 ## 1. 交付内容
 
-| 交付 | 提交 | 说明 |
-|---|---|---|
-| P1 计划 | `7fee1a0` | 任务分解 T1–T8 + 评审方案 R1–R5 |
-| T1 依赖 | `c385022` | pyyaml / python-dotenv / types-PyYAML + `.env.example` |
-| T2 存储层 | `8fcc79a` | `Character` 模型 + `StoryWorkspace` YAML 读写（实体名 slug 校验防穿越） |
-| T3 工具 | `b7384a2` | `bible_upsert` / `bible_query` / `write_chapter`（测试先行，字段级错误回喂） |
-| T4 prompt | `c400388` | 角色/工作流程/工具规范三节，工具 guidelines 单一事实源 |
-| T5 CLI | `a0070ca` | REPL + `PlainRenderer`（流式文本 + 工具摘要行，未知事件显式上报） |
-| T6 集成测试 | `339d53c` | FakeProvider 全剧本：事件序列 + 落盘文件 + 消息历史三层断言 |
-| R3 修复 | `d08aeb8` `48215cf` `9e41ef8` | 空端点归一化 / slug+保留名防护 / REPL 直读兜底 |
+提交：`7fee1a0`（P1 计划，任务分解 T1–T8 + 评审方案 R1–R5）→ `c385022`（pyyaml / python-dotenv / types-PyYAML + `.env.example`）→ `8fcc79a`（`Character` 模型 + `StoryWorkspace` YAML 读写，实体名 slug 校验防穿越）→ `b7384a2`（`bible_upsert` / `bible_query` / `write_chapter`，测试先行、字段级错误回喂）→ `c400388`（角色/工作流程/工具规范三节 prompt，工具 guidelines 单一事实源）→ `a0070ca`（REPL + `PlainRenderer`，流式文本 + 工具摘要行、未知事件显式上报）→ `339d53c`（FakeProvider 全剧本集成测试：事件序列 + 落盘文件 + 消息历史三层断言）→ R3 修复 `d08aeb8` / `48215cf` / `9e41ef8`（空端点归一化 / slug+保留名防护 / REPL 直读兜底）。
 
 ## 2. 关键决策
 
@@ -79,7 +71,7 @@
 - `AgentToolResult.details` 携带结构化数据（路径、计数、found 标志），终端渲染只用 text，
   结构化数据留给 P3 前端与审计——同一事件流服务两类读者。
 
-## 4. R3 代码评审记录（TRAE-code-review 双验证者）
+## 4. 评审记录
 
 计划 §3-R3 五项重点清单全部通过：① 集成测试三层契约 ② Schema↔Pydantic 字段一一对应 ③ 写盘入口穿越防护全覆盖 ④ 未知事件显式上报 ⑤ 依赖与 D1–D3 一致。
 
@@ -103,27 +95,9 @@
 
 ## 6. 验证输出存档
 
-四道质量门（R3 修复后复跑，全绿）：
+四道质量门（R3 修复后复跑）全绿：ruff/format 无告警，mypy strict 零豁免（50 source files），pytest 71 passed（P0 基线 1 + 本阶段新增 70）。T7 红线（逐 .py SHA-256 对比上游）：tau_ai / tau_agent 逐字节一致（差异 0），hastings 零 import tau_coding。
 
-```text
-uv run ruff check .        → All checks passed!
-uv run ruff format --check → 78 files already formatted
-uv run mypy                → Success: no issues found in 50 source files（hastings 零豁免）
-uv run pytest              → 71 passed（P0 基线 1 + 本阶段新增 70）
-```
-
-T7 红线（逐 .py SHA-256 对比上游 `C:\Projects\Agent\tau`）：
-
-```text
-tau_ai / tau_agent : 全部 .py 逐字节一致，差异 0 个
-hastings           : tau_coding 零 import（grep 仅 2 处 docstring 提及设计出处）
-```
-
-真实端点人工验收（DeepSeek `deepseek-v4-pro`，2026-10-07）：
-
-- 命令：`uv run python -m hastings demo-story`，REPL 内完成「密室案 2 角色 → 1 章」；
-- 验收标准 4/4 通过，产物 `stories/demo-story/`（2 张角色 YAML + `ch01.md`《门从里面锁着》1430 字）；
-- 完整 transcript 与标准对照见 [artifacts/p1-acceptance-transcript.md](artifacts/p1-acceptance-transcript.md)。
+真实端点人工验收（DeepSeek `deepseek-v4-pro`，2026-10-07）：`uv run python -m hastings demo-story` REPL 内完成「密室案 2 角色 → 1 章」，验收标准 4/4 通过，产物 `stories/demo-story/`（2 张角色 YAML + `ch01.md`《门从里面锁着》1430 字）。完整转录见 [artifacts/p1-acceptance-transcript.md](artifacts/p1-acceptance-transcript.md)。
 
 ## 7. DoD 对照（计划 §4）
 
