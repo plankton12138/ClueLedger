@@ -15,12 +15,16 @@
 
 import { app, BrowserWindow, ipcMain } from "electron";
 import { execFile, spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
 type SidecarHandle = { pid: number; stop: () => Promise<void> };
 
 const HEALTH_TIMEOUT_MS = 30_000;
+
+// 决定 userData 为 %APPDATA%/Hastings（D10），必须在 ready 与任何 getPath 前调用。
+app.setName("Hastings");
 
 let win: BrowserWindow | null = null;
 let sidecar: SidecarHandle | null = null;
@@ -148,6 +152,11 @@ async function boot(): Promise<void> {
   }
 
   currentPort = await pickPort();
+  // 数据目录落 %APPDATA%/Hastings（D10）：启动前确保存在，
+  // stories 首建文章才会级联创建，corpus 由语料功能直接读取需预先就位。
+  mkdirSync(userDataPath("stories"), { recursive: true });
+  mkdirSync(userDataPath("corpus"), { recursive: true });
+  mkdirSync(userDataPath("config"), { recursive: true });
   startSidecar(currentPort);
   try {
     await waitHealthy(currentPort);

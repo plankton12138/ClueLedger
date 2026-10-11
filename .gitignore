@@ -25,6 +25,7 @@ config.yaml
 # 项目产物
 stories/
 .chroma/
+build-resources/
 
 # 注意：uv.lock 不忽略，必须提交（CI 用 --locked 保证权威）
 
