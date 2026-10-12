@@ -9,6 +9,14 @@
   L299-L303 ``if blocked:`` 与 demo_agent_flow.py 的 ``(False, None)`` 放行），
   loop 生成 ``_error_result`` 作为工具结果喂回模型，拒绝即纠偏。
 
+计数只认「成功落盘」（P10 复跑修正，H6）：早期实现把计数写进
+``before_tool_call``（先加后判），被拒的 advance（目标非法 / 确认门未过）
+同样吃掉本回合配额——模型按错误消息改正 target 后的合法重试反被误拦。
+现改为订阅 ``ToolExecutionStartEvent`` 记录意图、``ToolExecutionEndEvent``
+判定 ``is_error is False``（工具真正落盘）才递增，`推进过一次` 的语义
+精确对齐「落盘过一次」。（loop.py 保证 start 事件先于 ``before_tool_call``
+派发给订阅者，end 事件携 ``is_error``。）
+
 一次推进应对应一次作者确认，连续推进会让作者失去确认点。rollback 不限次：
 作者驱动推翻设定的合法高频操作。
 """
@@ -17,7 +25,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from tau_agent.events import AgentEvent, AgentStartEvent
+from tau_agent.events import (
+    AgentEvent,
+    AgentStartEvent,
+    ToolExecutionEndEvent,
+    ToolExecutionStartEvent,
+)
 from tau_agent.messages import ToolCall
 
 MAX_ADVANCES_PER_PROMPT = 1
@@ -31,29 +44,44 @@ REJECTION = (
 
 
 class StageAdvanceGuard:
-    """本回合 advance 计数器：AgentStartEvent 重置 + before_tool_call 限次。"""
+    """本回合 advance 计数器：AgentStartEvent 重置 + 成功落盘才计数 + 边界限次。
+
+    ``before_tool_call`` 只做阈值判定（不递增）；计数改由事件流驱动：start
+    事件登记待判的 advance 调用，end 事件按 ``is_error`` 决定是否计入。
+    这样「被工具拒绝的 advance」不消耗配额，模型的合法重试仍可放行。
+    """
 
     def __init__(self, *, max_advances: int = MAX_ADVANCES_PER_PROMPT) -> None:
         self._max = max_advances
         self._advances = 0
+        self._pending: set[str] = set()
 
     def on_event(self, event: AgentEvent) -> None:
         if isinstance(event, AgentStartEvent):
             self._advances = 0
+            self._pending.clear()
+            return
+        if isinstance(event, ToolExecutionStartEvent):
+            if _is_stage_advance(event.tool_name, event.args):
+                self._pending.add(event.tool_call_id)
+            return
+        if isinstance(event, ToolExecutionEndEvent):
+            was_pending = event.tool_call_id in self._pending
+            self._pending.discard(event.tool_call_id)
+            if was_pending and not event.is_error:
+                self._advances += 1
 
     async def before_tool_call(self, call: ToolCall) -> tuple[bool, str | None]:
-        if not _is_stage_advance(call):
+        if not _is_stage_advance(call.name, call.arguments):
             return False, None
         if self._advances >= self._max:
             return True, REJECTION
-        self._advances += 1
         return False, None
 
 
-def _is_stage_advance(call: ToolCall) -> bool:
-    if call.name != "story_stage":
+def _is_stage_advance(name: str, arguments: object) -> bool:
+    if name != "story_stage":
         return False
-    arguments = call.arguments
     return isinstance(arguments, Mapping) and arguments.get("action") == "advance"
 
 
