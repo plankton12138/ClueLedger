@@ -72,6 +72,8 @@ P8 立了「门是硬约束（工具层）、推进是协议（prompt）」的�
 
 **回归**：长篇压力用例（连续 `write_chapter` 剧本触发第一档剥离并断言估算下降）与四情形压缩泄压阀（成功/空/摘要失败/running）见 `tests/test_context_manager.py`；intake 门 / 回合规速 / 刷新点 / 错误示例 / 选项协议等分别见 `tests/test_story_state.py`、`test_advance_guard.py`、`test_prose_guard.py`、`test_prompts.py`、`test_cli.py`、`test_session_store.py`、前端 `confirm.test.ts`/`options.test.ts`/`rest.test.ts`/`SessionSelector.test.ts`。
 
+**D3 回合规速守卫修正（H6，2026-10-12 本地复跑）**：D3 初版把计数写在 `before_tool_call`（先加后判），被工具拒绝的 advance（目标越级 / 确认门未过）同样吃掉本回合唯一配额——模型按 H2 单值提示改正 `target` 后的**合法重试反被误拦**，阶段卡死。修正为事件流驱动计数：`before_tool_call` 只判阈值不计数，订阅 `ToolExecutionStartEvent`（携 `args`）登记意图、`ToolExecutionEndEvent`（`is_error is False`）才递增——「推进过一次」精确对齐「落盘过一次」。零内核改动（loop 保证 start 事件先于钩子派发）。回归见 `test_advance_guard.py` 的 `test_rejected_advance_does_not_consume_quota` 与 `test_rejected_then_valid_advance_succeeds_in_same_prompt`（复现 c1v6-h 轮次 3 失败模式）。详见 [复跑报告](../eval/runs/2026-10-12-local-rerun2/report-rerun2.md)。
+
 **七道质量门**：pytest 738 passed；ruff check All passed；ruff format 192 files already formatted；mypy 83 files Success；前端 tsc + vite build 通过（主 chunk 600.27kB / gzip 189.57kB）；vitest 286 passed。
 
 ## 5. 评审记录
