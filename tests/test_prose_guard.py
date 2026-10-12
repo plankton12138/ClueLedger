@@ -1,8 +1,8 @@
-"""正文直出泄压阀测试（P10 T3，D2/L1）。
+"""正文直出泄压阀测试（P10 T3，D2/L1；2026-10-12 阶段解耦）。
 
 三层：① ProseLeakGuard 判定（触发 / 同回合一次 / AgentStartEvent 重置 /
-非写作阶段不触发 / 短文本不触发 / 标题正则变体）；② attach_guards 装配后经
-FakeProvider 事件流端到端注入纠偏消息；③ warn_empty_chapters 观测信号。
+任意阶段触发 / 短文本不触发 / 标题正则变体含整行粗体）；② attach_guards 装配后
+经 FakeProvider 事件流端到端注入纠偏消息；③ warn_empty_chapters 观测信号。
 """
 
 from pathlib import Path
@@ -24,7 +24,7 @@ from tau_agent.messages import UserMessage
 from tau_agent.provider_events import AssistantDoneEvent, AssistantStartEvent
 from tau_ai import FakeProvider
 
-_BODY = "夜色里雨声不断。" * 120  # 非空白字符 960 > 600
+_BODY = "夜色里雨声不断。" * 120  # 非空白字符 960 > 阈值
 _LONG = f"# 第1章 案发之夜\n\n{_BODY}"
 
 
@@ -87,8 +87,11 @@ def test_agent_start_resets_per_turn_flag(tmp_path: Path) -> None:
     assert len(harness.queued_messages.steering) == 2
 
 
-@pytest.mark.parametrize("stage", ["intake", "bible_drafting", "bible_confirmed", "complete"])
-def test_does_not_trigger_outside_writing_stages(tmp_path: Path, stage: str) -> None:
+@pytest.mark.parametrize(
+    "stage", ["intake", "bible_drafting", "bible_confirmed", "writing", "revising", "complete"]
+)
+def test_triggers_in_every_stage(tmp_path: Path, stage: str) -> None:
+    """正文交付不变量在各阶段都成立——正文直出在 intake 抢跑时同样触发。"""
     workspace = _workspace(tmp_path, stage)
     harness = _harness()
     guard = ProseLeakGuard(workspace, harness)
@@ -96,7 +99,7 @@ def test_does_not_trigger_outside_writing_stages(tmp_path: Path, stage: str) -> 
     guard.on_event(AgentStartEvent())
     guard.on_event(_end(_LONG))
 
-    assert harness.queued_messages.steering == ()
+    assert len(harness.queued_messages.steering) == 1
 
 
 def test_does_not_trigger_on_short_text(tmp_path: Path) -> None:
@@ -121,7 +124,7 @@ def test_does_not_trigger_without_chapter_title(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "title",
-    ["# 第1章", "## 第12章", "# ch01", "### ch3", "# 《雾雨山庄》"],
+    ["# 第1章", "## 第12章", "# ch01", "### ch3", "# 《雾雨山庄》", "**暴风雨夜的铜刀**"],
 )
 def test_title_regex_variants_trigger(tmp_path: Path, title: str) -> None:
     harness = _harness()
@@ -129,6 +132,28 @@ def test_title_regex_variants_trigger(tmp_path: Path, title: str) -> None:
 
     guard.on_event(AgentStartEvent())
     guard.on_event(_end(f"{title}\n\n{_BODY}"))
+
+    assert len(harness.queued_messages.steering) == 1
+
+
+def test_bold_inline_label_is_not_a_title(tmp_path: Path) -> None:
+    """整行粗体才算标题：``**手法定稿**：…``（粗体后有正文）不触发。"""
+    harness = _harness()
+    guard = ProseLeakGuard(_workspace(tmp_path, "writing"), harness)
+
+    guard.on_event(AgentStartEvent())
+    guard.on_event(_end(f"**手法定稿**：铜刀作为凶器。\n\n{_BODY}"))
+
+    assert harness.queued_messages.steering == ()
+
+
+def test_medium_length_prose_triggers_at_lowered_threshold(tmp_path: Path) -> None:
+    """阈值下调到 400：C1 压测实际漏报的 ~505 字正文应被捕获。"""
+    harness = _harness()
+    guard = ProseLeakGuard(_workspace(tmp_path, "intake"), harness)
+
+    guard.on_event(AgentStartEvent())
+    guard.on_event(_end(f"**暴风雨夜的铜刀**\n\n{'雨声敲窗。' * 100}"))
 
     assert len(harness.queued_messages.steering) == 1
 

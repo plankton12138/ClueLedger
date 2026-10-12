@@ -17,7 +17,10 @@ from tau_agent.types import JSONValue
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> StoryWorkspace:
-    return StoryWorkspace(root=tmp_path / "stories", slug="demo")
+    workspace = StoryWorkspace(root=tmp_path / "stories", slug="demo")
+    # 非 intake 阶段（写路径可用）：intake 写门专项测试自行覆写为 intake。
+    save_story_doc(workspace, StoryDoc(slug="demo", stage="bible_drafting"))
+    return workspace
 
 
 @pytest.fixture

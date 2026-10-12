@@ -11,7 +11,8 @@ from hastings.bible.state_machine import (
     validate_initial,
     validate_transition,
 )
-from hastings.bible.store import StoryWorkspace, load_ledger
+from hastings.bible.store import StoryWorkspace, load_ledger, save_story_doc
+from hastings.bible.story_state import StoryDoc
 from hastings.tools.bible_tools import create_bible_tools
 from hastings.tools.errors import ToolInputError
 from hastings.tools.method_tools import create_method_tools
@@ -22,7 +23,10 @@ from tau_agent.types import JSONValue
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> StoryWorkspace:
-    return StoryWorkspace(root=tmp_path / "stories", slug="demo")
+    workspace = StoryWorkspace(root=tmp_path / "stories", slug="demo")
+    # 非 intake 阶段（写路径可用）：章纲经 bible_upsert 落盘，受 intake 写门约束。
+    save_story_doc(workspace, StoryDoc(slug="demo", stage="bible_drafting"))
+    return workspace
 
 
 @pytest.fixture

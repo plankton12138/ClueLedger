@@ -21,7 +21,10 @@ from tau_agent.types import JSONValue
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> StoryWorkspace:
-    return StoryWorkspace(root=tmp_path / "stories", slug="demo")
+    workspace = StoryWorkspace(root=tmp_path / "stories", slug="demo")
+    # 非 intake 阶段（写路径可用）：intake 写门见文件末专项测试。
+    save_story_doc(workspace, StoryDoc(slug="demo", stage="bible_drafting"))
+    return workspace
 
 
 @pytest.fixture
@@ -447,14 +450,30 @@ async def test_upsert_allowed_after_advance_to_bible_drafting(
 
 
 @pytest.mark.anyio
-async def test_upsert_allowed_when_story_yaml_absent(
-    tools: dict[str, AgentTool], workspace: StoryWorkspace
-) -> None:
-    """旧工作区（story.yaml 不存在）不拦——不强制迁移旧数据。"""
-    assert not workspace.story_path.exists()
+async def test_upsert_rejected_in_fresh_workspace_without_story_yaml(tmp_path: Path) -> None:
+    """全新工作区（无 story.yaml、账本为空）按 intake 处理——首轮抢跑建账必被拒（H1）。"""
+    fresh = StoryWorkspace(root=tmp_path / "fresh", slug="demo")
+    fresh_tools = {tool.name: tool for tool in create_bible_tools(fresh)}
+    assert not fresh.story_path.exists()
+
+    with pytest.raises(ToolInputError, match="intake"):
+        await _call(
+            fresh_tools["bible_upsert"],
+            {"entity_type": "character", "data": {"name": "波洛", "identity": "侦探"}},
+        )
+    assert list_characters(fresh) == []
+
+
+@pytest.mark.anyio
+async def test_upsert_allowed_for_legacy_workspace_without_story_yaml(tmp_path: Path) -> None:
+    """旧工作区（无 story.yaml 但有账本内容）放行——不强制迁移旧数据。"""
+    legacy = StoryWorkspace(root=tmp_path / "legacy", slug="demo")
+    legacy.ensure_dirs()
+    (legacy.characters_dir / "polo.yaml").write_text("name: 波洛\n", encoding="utf-8")
+    legacy_tools = {tool.name: tool for tool in create_bible_tools(legacy)}
 
     result = await _call(
-        tools["bible_upsert"],
+        legacy_tools["bible_upsert"],
         {"entity_type": "character", "data": {"name": "波洛", "identity": "侦探"}},
     )
     assert "波洛" in result.text

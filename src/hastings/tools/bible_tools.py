@@ -324,17 +324,34 @@ _REGISTRY: Final[dict[str, _Spec]] = {
 
 
 def reject_intake_write(workspace: StoryWorkspace) -> None:
-    """L2 数据面写门（P10 D1）：story.yaml 存在且显式 stage=intake 时拒绝建账。
+    """L2 数据面写门（P10 D1）：intake 阶段拒绝建账。
 
     bible_upsert 与 method_lock/method_unlock 共用（一处判定全写路径生效）。
-    旧工作区 story.yaml 不存在时放行——load_story_doc 兜底读出的 intake 不代表
-    真实状态，按项目「不强制迁移旧数据」原则不拦（stderr 不告警，合法场景）。
+    全新工作区（story.yaml 未落盘且账本为空）按 intake 处理——门必须在此生效，
+    否则首轮抢跑建账恰好绕过；仅「旧工作区」（story.yaml 缺失但已有账本内容）
+    放行，遵循「不强制迁移旧数据」。
     """
-    if not workspace.story_path.exists():
+    if not workspace.story_path.exists() and _has_ledger_content(workspace):
         return
     message = intake_write_rejection(load_story_doc(workspace).stage)
     if message is not None:
         raise ToolInputError(message)
+
+
+def _has_ledger_content(workspace: StoryWorkspace) -> bool:
+    """账本内容判定：无 story.yaml 的旧工作区据此与全新空工作区区分。"""
+    if any(workspace.characters_dir.glob("*.yaml")):
+        return True
+    ledger_paths = (
+        workspace.clues_path,
+        workspace.foreshadows_path,
+        workspace.method_path,
+        workspace.timeline_path,
+        workspace.outline_path,
+    )
+    if any(path.exists() for path in ledger_paths):
+        return True
+    return any(workspace.chapters_dir.glob("*.md"))
 
 
 def _require_spec(arguments: Mapping[str, JSONValue]) -> tuple[str, _Spec]:

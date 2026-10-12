@@ -6,15 +6,19 @@
 - 第 1 层（软，prompts.WORKFLOW_SECTION）：明示「正文唯一交付通道是
   write_chapter」；
 - 第 2 层（本模块 ``ProseLeakGuard``，半硬）：订阅 ``MessageEndEvent``，
-  writing/revising 阶段的 assistant 长文本（非空白字符 > 阈值）命中章节标题
-  正则时，``harness.steer`` 注入纠偏消息 + stderr 三要素告警；同回合至多一次
-  （``AgentStartEvent`` 重置）——纯文本收尾时纠偏消息留队下一轮生效（可接受）；
+  **任意阶段**的 assistant 长文本（非空白字符 > 阈值）命中章节标题特征时，
+  ``harness.steer`` 注入纠偏消息 + stderr 三要素告警；同回合至多一次
+  （``AgentStartEvent`` 重置）——纯文本收尾时纠偏消息留队下一轮生效（可接受）。
+  不按阶段门控：弱模型压测（C1-qwen3-32k，2026-10-12）里正文直出发生在
+  intake 抢跑（模型始终未推进到 writing，故 writing 门控永不生效），
+  正文交付不变量（唯一通道 write_chapter）在各阶段都成立；
 - 第 3 层（观测，``warn_empty_chapters``）：CLI/driver 在 prompt 循环结束处
   检查 writing/revising 且 chapters/ 为空则 stderr 提示，不阻断退出码。
 
 阈值与正则是策略不是约束（模块常量便于测试调整）。误报成本 = 一条可忽略的
-提醒，漏报成本 = 空稿，故阈值取宽松值（600 字）偏向捕获。纠偏消息带逃生门
-（「如为讨论性文字请忽略」），防道歉-重试循环（四透镜③）。
+提醒，漏报成本 = 空稿，故阈值取宽松值（400 字）偏向捕获，标题特征兼容弱模型
+的 ``**粗体**`` 单行标题。纠偏消息带逃生门（「如为讨论性文字请忽略」），
+防道歉-重试循环（四透镜③）。
 """
 
 from __future__ import annotations
@@ -28,12 +32,15 @@ from tau_agent.events import AgentEvent, AgentStartEvent, MessageEndEvent
 from tau_agent.harness import AgentHarness
 from tau_agent.messages import AssistantMessage
 
-PROSE_MIN_CHARS: Final = 600
+PROSE_MIN_CHARS: Final = 400
 _WRITING_STAGES: Final = ("writing", "revising")
 
-# 章节标题特征：Markdown 标题 + 「第 N 章 / chNN」编号，或书名标题《…》。
+# 章节标题特征：Markdown 标题 + 「第 N 章 / chNN」编号，书名标题《…》，
+# 或整行粗体标题（``**标题**`` 独占一行）——弱模型常用后者排版。
 _CHAPTER_TITLE_RE: Final = re.compile(
-    r"^#{1,3}\s*(?:ch\d+|第[一二三四五六七八九十百\d]+章)|^#\s*《.+》",
+    r"^#{1,3}\s*(?:ch\d+|第[一二三四五六七八九十百\d]+章)"
+    r"|^#\s*《.+》"
+    r"|^\*\*[^*\n]+?\*\*\s*$",
     re.MULTILINE,
 )
 
@@ -61,7 +68,7 @@ def _warn_stderr(stage: str, text: str) -> None:
 
 
 class ProseLeakGuard:
-    """写作阶段正文直出检测器：AgentStartEvent 重置 + MessageEndEvent 判定。"""
+    """正文直出检测器（任意阶段）：AgentStartEvent 重置 + MessageEndEvent 判定。"""
 
     def __init__(
         self,
@@ -84,15 +91,14 @@ class ProseLeakGuard:
         message = event.message
         if not isinstance(message, AssistantMessage):
             return
-        if load_story_doc(self._workspace).stage not in _WRITING_STAGES:
-            return
         text = message.text
         if _non_whitespace_len(text) <= self._min_chars:
             return
         if _CHAPTER_TITLE_RE.search(text) is None:
             return
         self._fired = True
-        _warn_stderr(load_story_doc(self._workspace).stage, text)
+        stage = load_story_doc(self._workspace).stage
+        _warn_stderr(stage, text)
         self._harness.steer(CORRECTION)
 
 
