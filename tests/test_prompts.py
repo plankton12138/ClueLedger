@@ -376,6 +376,14 @@ def test_workflow_confirm_protocol_states_when_required() -> None:
     assert "story_stage 工具把门" in section
 
 
+def test_workflow_confirm_protocol_forbids_repeating_block_after_yes() -> None:
+    """确认块非终点：作者肯定后须自行 story_stage 推进，且被拒后立即照抄重试（H4/H2）。"""
+    section = WORKFLOW_SECTION
+
+    assert "不得再次输出同一个确认块" in section
+    assert "立即重试" in section
+
+
 def test_workflow_states_bible_drafting_protocol() -> None:
     """bible_drafting 协议：建账顺序固定 + 总览确认三类点 + 确认后 story_stage 推进。"""
     section = WORKFLOW_SECTION

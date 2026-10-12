@@ -76,10 +76,19 @@ def _resolve_target(action: str, stage: str, target: str | None) -> str:
             )
         return allowed[0]
     if target not in allowed:
+        # 单值指令（H2）：弱模型对「从合法边中选」的枚举式纠偏不执行
+        # （C1-qwen3-32k，2026-10-12：被拒后不照抄、不重试）。改为直接给出
+        # 本次该用的 target，让纠偏从「枚举里挑」变成「照抄这一步」。
+        hint = (
+            f"怎样算对：阶段必须一步一格推进，本次请把 target 改为 {allowed[0]!r} 后重试"
+            f"（{stage} 的合法去向：{'、'.join(allowed)}）。"
+            if allowed
+            else f"怎样算对：{stage} 没有 {action} 去向，请先核对当前阶段。"
+        )
         raise ToolInputError(
             f"参数错误：action={action} 时 target={target!r} 不是 {stage} 的合法去向。"
             "为什么错：迁移表没有登记这条边（或方向与 action 不符）。"
-            f"怎样算对：从合法边中选：{'、'.join(allowed) or '（无）'}。"
+            f"{hint}"
         )
     return target
 

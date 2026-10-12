@@ -76,6 +76,22 @@ async def test_advance_self_loop_rejected(tool: AgentTool) -> None:
 
 
 @pytest.mark.anyio
+async def test_advance_skipping_stage_gives_single_value_target(
+    tool: AgentTool, workspace: StoryWorkspace
+) -> None:
+    """跳段被拒时给单值指令（照抄下一步），而非仅枚举合法边（H2）。"""
+    _set_stage(workspace, "bible_drafting")
+
+    with pytest.raises(ToolInputError) as exc_info:
+        await _call(tool, {"action": "advance", "target": "writing", "reason": "跳段"})
+
+    message = str(exc_info.value)
+    assert "怎样算对" in message
+    assert "一步一格" in message
+    assert "'bible_confirmed'" in message  # 本次该照抄的 target
+
+
+@pytest.mark.anyio
 async def test_advance_message_keeps_three_elements(tool: AgentTool) -> None:
     """非法迁移的错误消息三要素原样喂回模型（哪里错/为什么错/怎样算对）。"""
     with pytest.raises(ToolInputError) as exc_info:
