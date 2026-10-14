@@ -183,9 +183,7 @@ class MemoryTxn:
         self._data.artifacts[artifact.id.value] = artifact
 
     def insert_revision(self, revision: Revision) -> None:
-        self._data.revisions[revision.id.value] = replace(
-            revision, content=_deep(revision.content)
-        )
+        self._data.revisions[revision.id.value] = replace(revision, content=_deep(revision.content))
 
     def insert_relation(self, row: RelationRevision) -> None:
         self._data.relations[row.id] = replace(row, metadata=_deep(row.metadata))

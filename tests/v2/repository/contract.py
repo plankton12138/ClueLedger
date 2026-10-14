@@ -601,7 +601,6 @@ def check_concurrent_commit_single_winner(env: ContractEnv) -> None:
 
 def check_history_immutable_to_caller(env: ContractEnv) -> None:
     project = _new_project(env)
-    branch = _svc(env).get_branch(project.id, "main")
     aid = ArtifactId(f"art_{project.id.value}_ch1")
 
     content: dict[str, Any] = {"title": "第一章", "lines": ["初稿"], "meta": {"mood": "雾"}}
@@ -627,7 +626,7 @@ def check_history_immutable_to_caller(env: ContractEnv) -> None:
 
 def check_normalized_value_roundtrip(env: ContractEnv) -> None:
     """datetime/tuple 等值在双后端读回同一种规范领域值。"""
-    from datetime import UTC, datetime, timedelta, timezone
+    from datetime import datetime, timedelta, timezone
 
     project = _new_project(env)
     branch = _svc(env).get_branch(project.id, "main")
@@ -699,7 +698,10 @@ def check_idempotency_fingerprint(env: ContractEnv) -> None:
             summary="指纹幂等",
             changes=(
                 ArtifactChange(
-                    artifact_id=aid, content=content, kind="chapter", old_revision_id=old_revision_id
+                    artifact_id=aid,
+                    content=content,
+                    kind="chapter",
+                    old_revision_id=old_revision_id,
                 ),
             ),
         )

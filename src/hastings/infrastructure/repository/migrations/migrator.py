@@ -22,8 +22,7 @@ _MIGRATION_STEPS: dict[int, tuple[str, ...]] = {
     1: (
         # v2：幂等记录带请求指纹——同键不同内容的重放显式冲突，
         # 不再静默返回旧结果。旧行指纹置空，重放时按冲突拒绝（无法验证内容）。
-        "ALTER TABLE idempotency_records"
-        " ADD COLUMN request_fingerprint TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE idempotency_records ADD COLUMN request_fingerprint TEXT NOT NULL DEFAULT ''",
     ),
     2: (
         # v3：关系行带请求内序号——SQL 不保证行返回顺序，同一 Commit 内

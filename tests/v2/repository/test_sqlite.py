@@ -145,9 +145,7 @@ def test_v1_database_upgrades_to_v2_with_fingerprint_column(tmp_path: object) ->
 
         migrate(conn)
         assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        columns = {
-            r[1] for r in conn.execute("PRAGMA table_info(idempotency_records)").fetchall()
-        }
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(idempotency_records)").fetchall()}
         assert "request_fingerprint" in columns
         # 旧数据仍在，指纹为空（无法验证请求内容 → 重放时按冲突拒绝）
         row = conn.execute(

@@ -2,17 +2,18 @@
 
 提交固定顺序（modules/repository-kernel.md §4，写入点依次编号）：
 
-1. 规范化输入（canonical JSON 校验 + 稳定哈希）；
-2. 幂等重放检查（同键返回原结果，不产生重复 Revision 或事件）；
+1. 规范化输入（normalize_json 规范值树 + 稳定哈希）；
+2. 幂等重放检查（同键同指纹返回原结果，同键不同指纹抛
+   REPO_IDEMPOTENCY_CONFLICT，不产生重复 Revision 或事件）；
 3. 开事务；
 4. head / branch version 检查（乐观并发，不变量 3）；
 5. lease 验证（owner + version + 未过期）；
 6. 基础快照有效 revision 检查（不变量 5）与 no-op 检测（合法空结果）；
-7. 写不可变 Revision 与 RelationRevision；
+7. 写不可变 Revision 与 RelationRevision（含 Commit 内 position 序号）；
 8. 写 Commit 与 CommitEntries；
 9. 移动 Branch head（存储层复查 version）；
 10. 写 Outbox 事件（与 Commit 同事务，ADR-007）；
-11. 记录幂等键；事务提交。
+11. 记录幂等键（含请求指纹）；事务提交。
 
 任何写点抛出异常都由存储事务整体回滚——内存实现靠快照还原、SQLite 靠
 ROLLBACK，契约测试对两个后端用同一套故障注入证明无半提交。
@@ -67,6 +68,7 @@ from hastings.domain.repository.requests import (
     CommitRequest,
     CreateBranchRequest,
     MoveBranchRequest,
+    RelationChange,
 )
 from hastings.domain.repository.results import COMMITTED, NO_CHANGE, CommitResult
 from hastings.domain.repository.serialization import content_hash, normalize_json
@@ -233,13 +235,13 @@ class CommitService:
                         "合并为单条变更；一个对象在一次提交里只有一个新版本",
                     )
                 seen.add(aid)
-                record = txn.get_artifact_record(aid)
-                if record is not None:
-                    if record.project_id != request.project_id:
+                existing = txn.get_artifact_record(aid)
+                if existing is not None:
+                    if existing.project_id != request.project_id:
                         raise _violation(
                             ec.REPO_INTEGRITY_ERROR,
                             where,
-                            f"Artifact {aid.value} 属于项目 {record.project_id.value}，"
+                            f"Artifact {aid.value} 属于项目 {existing.project_id.value}，"
                             f"不能提交到 {request.project_id.value}",
                             "跨项目对象必须各自提交；如需引用请用关系边",
                         )
@@ -280,7 +282,7 @@ class CommitService:
                             created_at=now,
                         )
                     )
-                old_id = change.old_revision_id if record is not None else None
+                old_id = change.old_revision_id if existing is not None else None
                 new_rev = Revision(
                     id=RevisionId(self._ids.new_id("rev")),
                     artifact_id=aid,
@@ -721,8 +723,8 @@ class CommitService:
         normalized = replace(
             request,
             changes=tuple(norm_changes),
-            relations=norm_relations,
-            events=norm_events,
+            relations=tuple(norm_relations),
+            events=tuple(norm_events),
         )
         return normalized, prepared
 
