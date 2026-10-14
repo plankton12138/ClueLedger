@@ -722,6 +722,48 @@ def check_idempotency_fingerprint(env: ContractEnv) -> None:
     assert second.is_committed
 
 
+def check_relation_order_within_commit(env: ContractEnv) -> None:
+    """同一 Commit 内关系操作顺序必须持久化：快照按请求顺序折叠。"""
+    project = _new_project(env)
+    branch = _svc(env).get_branch(project.id, "main")
+    ra = ArtifactId(f"art_{project.id.value}_ra")
+    rb = ArtifactId(f"art_{project.id.value}_rb")
+    rc = ArtifactId(f"art_{project.id.value}_rc")
+    result = _svc(env).commit(
+        CommitRequest(
+            project_id=project.id,
+            branch_id=branch.id,
+            expected_head=None,
+            actor=SYSTEM_ACTOR,
+            idempotency_key="relorder-1",
+            summary="三条关系按固定顺序",
+            changes=(
+                ArtifactChange(artifact_id=ra, content={"n": "a"}, kind="chapter"),
+                ArtifactChange(artifact_id=rb, content={"n": "b"}, kind="chapter"),
+                ArtifactChange(artifact_id=rc, content={"n": "c"}, kind="chapter"),
+            ),
+            relations=(
+                RelationChange(
+                    action=RELATION_ACTION_ADD, source=ra, relation_type="links", target=rb
+                ),
+                RelationChange(
+                    action=RELATION_ACTION_ADD, source=ra, relation_type="links", target=rc
+                ),
+                RelationChange(
+                    action=RELATION_ACTION_ADD, source=rb, relation_type="links", target=rc
+                ),
+            ),
+        )
+    )
+    assert result.is_committed
+    snapshot = _svc(env).get_snapshot(project.id, result.commit_id)
+    keys = [(r.source.value, r.target.value) for r in snapshot.relations]
+    assert keys == [(ra.value, rb.value), (ra.value, rc.value), (rb.value, rc.value)]
+    # 幂等重放不改变顺序
+    snapshot2 = _svc(env).get_snapshot(project.id, result.commit_id)
+    assert [(r.source.value, r.target.value) for r in snapshot2.relations] == keys
+
+
 # ----------------------------------------------------------------------
 # 汇总：契约测试入口
 # ----------------------------------------------------------------------
@@ -744,4 +786,5 @@ ALL_CHECKS: tuple[Callable[[ContractEnv], None], ...] = (
     check_normalized_value_roundtrip,
     check_non_string_dict_keys_rejected,
     check_idempotency_fingerprint,
+    check_relation_order_within_commit,
 )

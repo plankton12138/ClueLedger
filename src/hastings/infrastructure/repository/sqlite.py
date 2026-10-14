@@ -210,8 +210,9 @@ class SqliteTxn:
         order = {c.value: i for i, c in enumerate(commit_ids)}
         placeholders = ",".join("?" * len(commit_ids))
         rows = self._conn.execute(
-            f"SELECT id, commit_id, action, source, relation_type, target, metadata"
-            f" FROM relation_revisions WHERE commit_id IN ({placeholders})",
+            f"SELECT id, commit_id, action, source, relation_type, target, metadata, position"
+            f" FROM relation_revisions WHERE commit_id IN ({placeholders})"
+            f" ORDER BY position",
             [c.value for c in commit_ids],
         ).fetchall()
         parsed = [
@@ -223,9 +224,11 @@ class SqliteTxn:
                 relation_type=r[4],
                 target=ArtifactId(r[5]),
                 metadata=dict(json.loads(r[6])),
+                position=r[7],
             )
             for r in rows
         ]
+        # 稳定排序：同 Commit 内保持 position 序，跨 Commit 按链序
         parsed.sort(key=lambda r: order[r.commit_id.value])
         return tuple(parsed)
 
@@ -348,7 +351,7 @@ class SqliteTxn:
     def insert_relation(self, row: RelationRevision) -> None:
         self._conn.execute(
             "INSERT INTO relation_revisions (id, commit_id, action, source, relation_type,"
-            " target, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " target, metadata, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 row.id,
                 row.commit_id.value,
@@ -357,6 +360,7 @@ class SqliteTxn:
                 row.relation_type,
                 row.target.value,
                 canonical_json(row.metadata),
+                row.position,
             ),
         )
 

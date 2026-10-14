@@ -11,7 +11,7 @@ from __future__ import annotations
 
 __all__ = ["SCHEMA_VERSION", "SCHEMA_SQL"]
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 CREATE TABLE projects (
@@ -83,7 +83,8 @@ CREATE TABLE relation_revisions (
     source TEXT NOT NULL REFERENCES artifacts(id),
     relation_type TEXT NOT NULL,
     target TEXT NOT NULL REFERENCES artifacts(id),
-    metadata TEXT NOT NULL
+    metadata TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_relations_commit ON relation_revisions(commit_id);
 

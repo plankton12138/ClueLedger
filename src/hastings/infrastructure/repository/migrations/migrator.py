@@ -25,6 +25,11 @@ _MIGRATION_STEPS: dict[int, tuple[str, ...]] = {
         "ALTER TABLE idempotency_records"
         " ADD COLUMN request_fingerprint TEXT NOT NULL DEFAULT ''",
     ),
+    2: (
+        # v3：关系行带请求内序号——SQL 不保证行返回顺序，同一 Commit 内
+        # 多条关系的折叠顺序必须显式持久化。旧行序号 0（单行 Commit 无影响）。
+        "ALTER TABLE relation_revisions ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
+    ),
 }
 
 _TOO_NEW_WHY = (

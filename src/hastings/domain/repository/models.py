@@ -110,7 +110,11 @@ class Branch:
 
 @dataclass(frozen=True, slots=True)
 class RelationRevision:
-    """版本化关系边；由哪个 Commit 以 add/remove 写入，快照按序折叠。"""
+    """版本化关系边；由哪个 Commit 以 add/remove 写入，快照按序折叠。
+
+    position 是该边在写入 Commit 的请求中的序号：SQL 不保证行返回顺序，
+    同一 Commit 内多条关系的顺序必须显式持久化。
+    """
 
     id: str
     commit_id: CommitId
@@ -119,6 +123,7 @@ class RelationRevision:
     relation_type: str
     target: ArtifactId
     metadata: dict[str, Any] = field(default_factory=dict)
+    position: int = 0
 
     def __post_init__(self) -> None:
         if self.action not in (RELATION_ACTION_ADD, RELATION_ACTION_REMOVE):

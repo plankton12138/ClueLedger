@@ -123,13 +123,19 @@ def test_v1_database_upgrades_to_v2_with_fingerprint_column(tmp_path: object) ->
     db = Path(str(tmp_path)) / "legacy.sqlite3"
     conn = sqlite3.connect(str(db))
     try:
-        # 最小 v1 形状库：只有迁移步会触碰的表
+        # 最小 v1 形状库：包含各升级步会触碰的表
         conn.execute(
             "CREATE TABLE idempotency_records ("
             " project_id TEXT NOT NULL, key TEXT NOT NULL, commit_id TEXT NOT NULL,"
             " new_head TEXT NOT NULL, sequence INTEGER NOT NULL,"
             " changed_artifact_ids TEXT NOT NULL, no_change_reason TEXT,"
             " PRIMARY KEY (project_id, key))"
+        )
+        conn.execute(
+            "CREATE TABLE relation_revisions ("
+            " id TEXT PRIMARY KEY, commit_id TEXT NOT NULL, action TEXT NOT NULL,"
+            " source TEXT NOT NULL, relation_type TEXT NOT NULL, target TEXT NOT NULL,"
+            " metadata TEXT NOT NULL)"
         )
         conn.execute(
             "INSERT INTO idempotency_records VALUES ('p1', 'k1', 'cmt_1', 'cmt_1', 1, '[]', NULL)"
@@ -150,5 +156,39 @@ def test_v1_database_upgrades_to_v2_with_fingerprint_column(tmp_path: object) ->
         ).fetchone()
         assert row == ("cmt_1", "")
         migrate(conn)  # 已是当前版本：幂等
+    finally:
+        conn.close()
+
+
+def test_v2_database_upgrades_to_v3_with_position_column(tmp_path: object) -> None:
+    """v2 旧库迁移后 relation_revisions 带 position 列，旧数据可读。"""
+    import sqlite3
+
+    from hastings.infrastructure.repository.migrations.migrator import migrate
+    from hastings.infrastructure.repository.schema import SCHEMA_VERSION
+
+    db = Path(str(tmp_path)) / "legacy-v2.sqlite3"
+    conn = sqlite3.connect(str(db))
+    try:
+        # 最小 v2 形状库：只有迁移步会触碰的表
+        conn.execute(
+            "CREATE TABLE relation_revisions ("
+            " id TEXT PRIMARY KEY, commit_id TEXT NOT NULL, action TEXT NOT NULL,"
+            " source TEXT NOT NULL, relation_type TEXT NOT NULL, target TEXT NOT NULL,"
+            " metadata TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO relation_revisions"
+            " VALUES ('rel_1', 'cmt_1', 'add', 'a', 'links', 'b', '{}')"
+        )
+        conn.execute("PRAGMA user_version = 2")
+        conn.commit()
+
+        migrate(conn)
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(relation_revisions)").fetchall()}
+        assert "position" in columns
+        row = conn.execute("SELECT id, position FROM relation_revisions").fetchone()
+        assert row == ("rel_1", 0)
     finally:
         conn.close()

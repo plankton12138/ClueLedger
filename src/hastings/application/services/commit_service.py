@@ -331,8 +331,9 @@ class CommitService:
                             "先创建对象（同一提交即可），或使用已存在的 artifact ID",
                         )
             txn.insert_commit(commit, entries)
-            # 关系行引用 commit_id，必须在 Commit 落库之后写入
-            for rel in request.relations:
+            # 关系行引用 commit_id，必须在 Commit 落库之后写入；
+            # position 固化请求内顺序（SQL 不保证行返回顺序）
+            for position, rel in enumerate(request.relations):
                 txn.insert_relation(
                     RelationRevision(
                         id=self._ids.new_id("rel"),
@@ -342,6 +343,7 @@ class CommitService:
                         relation_type=rel.relation_type,
                         target=rel.target,
                         metadata=dict(rel.metadata),
+                        position=position,
                     )
                 )
             # (9) 移动 Branch head
