@@ -1,8 +1,13 @@
 # Phase 12 计划：版本化 Repository 与统一提交
 
-> 状态：待执行。
+> 状态：**已完成（2026-10-14）**。构建笔记：[phase-12-repository-kernel.md](../phase-12-repository-kernel.md)；as-built 规格：[modules/repository-kernel.md](../modules/repository-kernel.md)。
 > 依赖：Phase 11 完成。
 > 目标：交付不懂小说业务、但能可靠保存版本、分支、提交、关系、Lease 和 Outbox 的仓库内核。
+>
+> **验收结论**：契约 13 项 × 双后端全绿；7 写点故障注入证明无半提交；八步验收场景双后端复跑通过；pytest 906 passed、ruff / mypy strict 全绿。
+> **决策落地**：端口收窄只变具体不改名 ✅；no-op 检测移入事务内（消除 TOCTOU，docstring 已说明，语义不变）✅；Lease 版本跨 release 单调递增防 ABA ✅；Outbox sequence 由提交时分配（发布器只消费）✅；新增不变量 11（关系端点必须存在，FK 背书）✅。
+> **已知留白**：单进程 RLock 串行化（跨进程/分布式不在范围）；no_change 幂等记录不落库；Publisher 无内建退避重试；事件类型仅 3 种生命周期事件，业务事件留给 Phase 13/14；inspection 仅覆盖 SQLite。
+> **偏离记录**：T12.8 的「REST/CLI 只读调试入口或测试工具」按「测试工具」口径交付（inspection.py 结构化报告 + SqliteRepository.backup_to），未接 CLI 子命令——V1 CLI 是写作 REPL，仓库调试入口等有真实消费者（Phase 13+）再挂。
 
 ## 1. 开始条件
 

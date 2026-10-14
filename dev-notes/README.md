@@ -21,6 +21,7 @@
 ## 当前入口
 
 - 当前目标设计：[v2/DESIGN.md](v2/DESIGN.md)
-- 当前实施计划：[v2/plans/phase-12-repository-kernel-plan.md](v2/plans/phase-12-repository-kernel-plan.md)（Phase 11 架构基线已完成）
+- 当前实施计划：[v2/plans/phase-12-repository-kernel-plan.md](v2/plans/phase-12-repository-kernel-plan.md)（已完成，待立项 Phase 13）
+- 仓库内核 as-built：[v2/modules/repository-kernel.md](v2/modules/repository-kernel.md) + 构建笔记 [v2/phase-12-repository-kernel.md](v2/phase-12-repository-kernel.md)
 - 当前代码导航：[../src/hastings/README.md](../src/hastings/README.md)
 - 当前 V1 工具契约：[v1/modules/writing-tools.md](v1/modules/writing-tools.md)

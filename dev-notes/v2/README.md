@@ -29,7 +29,7 @@
 | 产品目标、整体架构、核心流程 | [DESIGN.md](DESIGN.md) |
 | 模块依赖、公开契约和不变量 | [modules/README.md](modules/README.md) |
 | 全部重建阶段、依赖和里程碑 | [plans/README.md](plans/README.md) |
-| 当前应该执行哪个阶段 | [plans/phase-12-repository-kernel-plan.md](plans/phase-12-repository-kernel-plan.md) |
+| 最近完成阶段（as-built） | [phase-12-repository-kernel.md](phase-12-repository-kernel.md)（仓库内核；模块 as-built 见 [modules/repository-kernel.md](modules/repository-kernel.md)） |
 | 旧系统如何迁移 | [DESIGN.md §11](DESIGN.md#11-旧系统迁移边界) |
 
 ## 3. V2 核心词汇
