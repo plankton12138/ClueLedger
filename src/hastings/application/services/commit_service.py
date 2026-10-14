@@ -24,6 +24,7 @@ no-op 检测放在事务内 head 检查之后：与「检测先于开事务」�
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from hastings.application.errors import ViolationError
@@ -68,7 +69,7 @@ from hastings.domain.repository.requests import (
     MoveBranchRequest,
 )
 from hastings.domain.repository.results import COMMITTED, NO_CHANGE, CommitResult
-from hastings.domain.repository.serialization import content_hash
+from hastings.domain.repository.serialization import content_hash, normalize_json
 from hastings.domain.repository.snapshot import (
     fold_effective_relations,
     fold_effective_revisions,
@@ -128,7 +129,7 @@ class CommitService:
 
     def commit(self, request: CommitRequest) -> CommitResult:
         where = f"commit({request.branch_id.value})"
-        prepared = self._normalize(request, where)
+        request, prepared = self._normalize(request, where)
         now = self._storage.now()
         with self._storage.transaction() as txn:
             # (2) 幂等重放
@@ -611,12 +612,16 @@ class CommitService:
 
     def _normalize(
         self, request: CommitRequest, where: str
-    ) -> list[tuple[ArtifactChange, ContentHash]]:
-        """规范化输入：内容必须可规范序列化，哈希在此固定；关系与事件校验。"""
+    ) -> tuple[CommitRequest, list[tuple[ArtifactChange, ContentHash]]]:
+        """规范化输入：内容/关系/事件全部换成规范值树（与调用者零共享），
+        哈希在此固定；返回规范化请求与逐对象摘要，供提交全程使用。
+        """
+        norm_changes: list[ArtifactChange] = []
         prepared: list[tuple[ArtifactChange, ContentHash]] = []
         for change in request.changes:
             try:
                 digest = ContentHash(content_hash(change.content))
+                content = normalize_json(change.content)
             except (TypeError, ValueError) as exc:
                 raise _violation(
                     ec.REPO_INVALID_CHANGE,
@@ -626,7 +631,10 @@ class CommitService:
                     "datetime 带时区、不允许 NaN/Inf",
                     cause=str(exc),
                 ) from exc
-            prepared.append((change, digest))
+            norm = replace(change, content=content)
+            norm_changes.append(norm)
+            prepared.append((norm, digest))
+        norm_relations: list[RelationChange] = []
         for rel in request.relations:
             if rel.action not in (RELATION_ACTION_ADD, RELATION_ACTION_REMOVE):
                 raise _violation(
@@ -636,6 +644,7 @@ class CommitService:
                     "新增边用 add，撤销边用 remove",
                 )
             try:
+                metadata = normalize_json(rel.metadata)
                 content_hash(rel.metadata)
             except (TypeError, ValueError) as exc:
                 raise _violation(
@@ -644,9 +653,12 @@ class CommitService:
                     f"关系 metadata 无法规范序列化：{exc}",
                     "metadata 必须是 JSON 兼容结构",
                 ) from exc
+            norm_relations.append(replace(rel, metadata=metadata))
+        norm_events: list[tuple[str, dict[str, Any]]] = []
         try:
             for event_type, payload in request.events:
                 content_hash({"type": event_type, "payload": payload})
+                norm_events.append((event_type, normalize_json(payload)))
         except (TypeError, ValueError) as exc:
             raise _violation(
                 ec.REPO_INVALID_CHANGE,
@@ -654,7 +666,13 @@ class CommitService:
                 f"待发布事件无法规范序列化：{exc}",
                 "事件 payload 必须是 JSON 兼容结构",
             ) from exc
-        return prepared
+        normalized = replace(
+            request,
+            changes=tuple(norm_changes),
+            relations=norm_relations,
+            events=norm_events,
+        )
+        return normalized, prepared
 
     def _verify_lease(
         self,

@@ -595,6 +595,94 @@ def check_concurrent_commit_single_winner(env: ContractEnv) -> None:
 
 
 # ----------------------------------------------------------------------
+# 16. 历史不可被调用者改写（内存后端引用别名 / 双后端同构）
+# ----------------------------------------------------------------------
+
+
+def check_history_immutable_to_caller(env: ContractEnv) -> None:
+    project = _new_project(env)
+    branch = _svc(env).get_branch(project.id, "main")
+    aid = ArtifactId(f"art_{project.id.value}_ch1")
+
+    content: dict[str, Any] = {"title": "第一章", "lines": ["初稿"], "meta": {"mood": "雾"}}
+    result = _first_commit(env, project, content=content)
+    assert result.is_committed
+
+    # 调用者提交后修改原对象（含嵌套），历史不得被改写
+    content["lines"].append("MUTATED")
+    content["meta"]["mood"] = "MUTATED"
+    view = _svc(env).get_artifact(aid, result.commit_id)
+    assert view.revision is not None
+    assert view.revision.content == {"title": "第一章", "lines": ["初稿"], "meta": {"mood": "雾"}}
+
+    # 修改读取返回值，历史同样不得被改写
+    view.revision.content["lines"].append("CALLER-MUTATED")
+    reread = _svc(env).get_artifact(aid, result.commit_id)
+    assert reread.revision is not None
+    assert reread.revision.content["lines"] == ["初稿"]
+    snapshot = _svc(env).get_snapshot(project.id, result.commit_id)
+    assert snapshot.artifacts[aid].revision is not None
+    assert snapshot.artifacts[aid].revision.content["lines"] == ["初稿"]
+
+
+def check_normalized_value_roundtrip(env: ContractEnv) -> None:
+    """datetime/tuple 等值在双后端读回同一种规范领域值。"""
+    from datetime import UTC, datetime, timedelta, timezone
+
+    project = _new_project(env)
+    branch = _svc(env).get_branch(project.id, "main")
+    aid = ArtifactId(f"art_{project.id.value}_ev")
+    content = {
+        "when": datetime(2026, 10, 14, 17, 0, 0, tzinfo=timezone(timedelta(hours=9))),
+        "pair": ("x", "y"),
+    }
+    result = _svc(env).commit(
+        CommitRequest(
+            project_id=project.id,
+            branch_id=branch.id,
+            expected_head=None,
+            actor=SYSTEM_ACTOR,
+            idempotency_key="norm-1",
+            summary="规范化值往返",
+            changes=(ArtifactChange(artifact_id=aid, content=content, kind="event"),),
+        )
+    )
+    assert result.is_committed
+    view = _svc(env).get_artifact(aid, result.commit_id)
+    assert view.revision is not None
+    # 双后端一致：datetime → UTC ISO 字符串，tuple → list
+    assert view.revision.content == {
+        "when": "2026-10-14T08:00:00+00:00",
+        "pair": ["x", "y"],
+    }
+    # 与调用者原对象零共享：修改原 tuple 容器不影响历史
+    view2 = _svc(env).get_artifact(aid, result.commit_id)
+    assert view2.revision is not None
+    assert view2.revision.content["pair"] == ["x", "y"]
+
+
+def check_non_string_dict_keys_rejected(env: ContractEnv) -> None:
+    project = _new_project(env)
+    branch = _svc(env).get_branch(project.id, "main")
+    aid = ArtifactId(f"art_{project.id.value}_badkeys")
+    with pytest.raises(ViolationError) as err:
+        _svc(env).commit(
+            CommitRequest(
+                project_id=project.id,
+                branch_id=branch.id,
+                expected_head=None,
+                actor=SYSTEM_ACTOR,
+                idempotency_key="badkeys-1",
+                summary="非字符串键",
+                changes=(
+                    ArtifactChange(artifact_id=aid, content={1: "first", "1": "second"}, kind="x"),
+                ),
+            )
+        )
+    assert err.value.code == ec.REPO_INVALID_CHANGE
+
+
+# ----------------------------------------------------------------------
 # 汇总：契约测试入口
 # ----------------------------------------------------------------------
 
@@ -612,4 +700,7 @@ ALL_CHECKS: tuple[Callable[[ContractEnv], None], ...] = (
     check_commit_and_outbox,
     check_reopen_preserves_state,
     check_concurrent_commit_single_winner,
+    check_history_immutable_to_caller,
+    check_normalized_value_roundtrip,
+    check_non_string_dict_keys_rejected,
 )

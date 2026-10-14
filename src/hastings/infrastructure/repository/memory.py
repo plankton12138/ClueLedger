@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -45,6 +46,16 @@ if TYPE_CHECKING:
     pass
 
 __all__ = ["MemoryRepository", "MemoryStorage", "build_memory_repository"]
+
+
+def _deep[T](value: T) -> T:
+    """深拷贝 JSON 值树：内存后端不保存/不交出与调用者共享的引用。
+
+    SQLite 每次写入经序列化、读取经反序列化，天然隔离；内存实现必须
+    显式做同一件事，否则 Revision 历史会被调用者改写（违反不变量 1），
+    且双后端契约测试失去同构性。
+    """
+    return copy.deepcopy(value)
 
 
 def _violation(code: str, where: str, why: str, fix: str, **details: Any) -> ViolationError:
@@ -137,10 +148,13 @@ class MemoryTxn:
         order = {cid.value: i for i, cid in enumerate(commit_ids)}
         rows = [r for r in self._data.relations.values() if r.commit_id.value in order]
         rows.sort(key=lambda r: order[r.commit_id.value])
-        return tuple(rows)
+        return tuple(replace(r, metadata=_deep(r.metadata)) for r in rows)
 
     def get_revision(self, revision_id: RevisionId) -> Revision | None:
-        return self._data.revisions.get(revision_id.value)
+        rev = self._data.revisions.get(revision_id.value)
+        if rev is None:
+            return None
+        return replace(rev, content=_deep(rev.content))
 
     def get_idempotent_result(self, project_id: ProjectId, key: str) -> CommitResult | None:
         return self._data.idempotency.get((project_id.value, key))
@@ -167,10 +181,12 @@ class MemoryTxn:
         self._data.artifacts[artifact.id.value] = artifact
 
     def insert_revision(self, revision: Revision) -> None:
-        self._data.revisions[revision.id.value] = revision
+        self._data.revisions[revision.id.value] = replace(
+            revision, content=_deep(revision.content)
+        )
 
     def insert_relation(self, row: RelationRevision) -> None:
-        self._data.relations[row.id] = row
+        self._data.relations[row.id] = replace(row, metadata=_deep(row.metadata))
 
     def insert_commit(self, commit: Commit, entries: tuple[CommitEntry, ...]) -> None:
         self._data.commits[commit.id.value] = commit
@@ -196,7 +212,7 @@ class MemoryTxn:
 
     def append_outbox_events(self, events: tuple[OutboxEvent, ...]) -> None:
         for event in events:
-            self._data.outbox[event.id] = event
+            self._data.outbox[event.id] = replace(event, payload=_deep(event.payload))
 
     def put_idempotent_result(self, project_id: ProjectId, key: str, result: CommitResult) -> None:
         self._data.idempotency[(project_id.value, key)] = result
@@ -378,7 +394,7 @@ class MemoryRepository:
             "project_id": event.project_id.value,
             "sequence": event.sequence,
             "type": event.type,
-            "payload": dict(event.payload),
+            "payload": _deep(event.payload),
         }
 
 
