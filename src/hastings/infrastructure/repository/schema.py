@@ -11,7 +11,7 @@ from __future__ import annotations
 
 __all__ = ["SCHEMA_VERSION", "SCHEMA_SQL"]
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 CREATE TABLE projects (
@@ -115,6 +115,7 @@ CREATE TABLE idempotency_records (
     sequence INTEGER NOT NULL,
     changed_artifact_ids TEXT NOT NULL,
     no_change_reason TEXT,
+    request_fingerprint TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (project_id, key)
 );
 """

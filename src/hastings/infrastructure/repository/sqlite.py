@@ -247,10 +247,12 @@ class SqliteTxn:
             created_at=_dt(row[7]),
         )
 
-    def get_idempotent_result(self, project_id: ProjectId, key: str) -> CommitResult | None:
+    def get_idempotent_result(
+        self, project_id: ProjectId, key: str
+    ) -> tuple[str, CommitResult] | None:
         row = self._conn.execute(
-            "SELECT commit_id, new_head, sequence, changed_artifact_ids, no_change_reason"
-            " FROM idempotency_records WHERE project_id = ? AND key = ?",
+            "SELECT commit_id, new_head, sequence, changed_artifact_ids, no_change_reason,"
+            " request_fingerprint FROM idempotency_records WHERE project_id = ? AND key = ?",
             (project_id.value, key),
         ).fetchone()
         if row is None:
@@ -258,13 +260,16 @@ class SqliteTxn:
         if row[4] is not None:  # no_change 记录（当前不落库，防御性读取）
             from hastings.domain.repository.results import NO_CHANGE
 
-            return CommitResult(status=NO_CHANGE, no_change_reason=row[4])
-        return CommitResult(
-            status=COMMITTED,
-            commit_id=CommitId(row[0]),
-            new_head=CommitId(row[1]),
-            sequence=row[2],
-            changed_artifact_ids=tuple(ArtifactId(a) for a in json.loads(row[3])),
+            return (row[5] or "", CommitResult(status=NO_CHANGE, no_change_reason=row[4]))
+        return (
+            row[5] or "",
+            CommitResult(
+                status=COMMITTED,
+                commit_id=CommitId(row[0]),
+                new_head=CommitId(row[1]),
+                sequence=row[2],
+                changed_artifact_ids=tuple(ArtifactId(a) for a in json.loads(row[3])),
+            ),
         )
 
     def get_lease(self, resource_key: str) -> Lease | None:
@@ -418,12 +423,15 @@ class SqliteTxn:
                 ),
             )
 
-    def put_idempotent_result(self, project_id: ProjectId, key: str, result: CommitResult) -> None:
+    def put_idempotent_result(
+        self, project_id: ProjectId, key: str, fingerprint: str, result: CommitResult
+    ) -> None:
         if not result.is_committed or result.commit_id is None or result.new_head is None:
             return  # no_change 不产生 Commit，也不记幂等键
         self._conn.execute(
             "INSERT INTO idempotency_records (project_id, key, commit_id, new_head, sequence,"
-            " changed_artifact_ids, no_change_reason) VALUES (?, ?, ?, ?, ?, ?, NULL)",
+            " changed_artifact_ids, no_change_reason, request_fingerprint)"
+            " VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
             (
                 project_id.value,
                 key,
@@ -431,6 +439,7 @@ class SqliteTxn:
                 result.new_head.value,
                 result.sequence or 0,
                 canonical_json([a.value for a in result.changed_artifact_ids]),
+                fingerprint,
             ),
         )
 

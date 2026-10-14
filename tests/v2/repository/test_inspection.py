@@ -83,7 +83,9 @@ def test_inspect_empty_db(tmp_path: Path) -> None:
     migrate(conn)
     report = inspect_sqlite(conn)
     assert report.ok
-    assert report.schema_version == 1
+    from hastings.infrastructure.repository.schema import SCHEMA_VERSION
+
+    assert report.schema_version == SCHEMA_VERSION
     assert report.projects == ()
     assert report.integrity_problems == ()
     conn.close()
@@ -93,7 +95,9 @@ def test_inspect_populated_db(tmp_path: Path) -> None:
     db_path = _make_populated_db(tmp_path)
     report = inspect_repository(db_path)
     assert report.ok, report.integrity_problems
-    assert report.schema_version == 1
+    from hastings.infrastructure.repository.schema import SCHEMA_VERSION as _SV
+
+    assert report.schema_version == _SV
     assert len(report.projects) == 1
     project = report.projects[0]
     assert project.name == "winter-manor"

@@ -682,6 +682,46 @@ def check_non_string_dict_keys_rejected(env: ContractEnv) -> None:
     assert err.value.code == ec.REPO_INVALID_CHANGE
 
 
+def check_idempotency_fingerprint(env: ContractEnv) -> None:
+    """同键不同内容的请求必须显式冲突，不得静默返回旧结果。"""
+    project = _new_project(env)
+    aid = ArtifactId(f"art_{project.id.value}_fp")
+
+    def make(
+        content: dict[str, Any], key: str, head: Any, old_revision_id: Any = None
+    ) -> CommitRequest:
+        return CommitRequest(
+            project_id=project.id,
+            branch_id=_svc(env).get_branch(project.id, "main").id,
+            expected_head=head,
+            actor=SYSTEM_ACTOR,
+            idempotency_key=key,
+            summary="指纹幂等",
+            changes=(
+                ArtifactChange(
+                    artifact_id=aid, content=content, kind="chapter", old_revision_id=old_revision_id
+                ),
+            ),
+        )
+
+    first = _svc(env).commit(make({"v": 1}, "same", None))
+    assert first.is_committed
+    # 同键同请求 → 重放原结果（不产生新 Revision/Commit）
+    retry = _svc(env).commit(make({"v": 1}, "same", first.commit_id))
+    assert retry == first
+    # 同键不同请求 → REPO_IDEMPOTENCY_CONFLICT，仓库内容不被改写
+    with pytest.raises(HastingsError) as err:
+        _svc(env).commit(make({"v": 2}, "same", first.commit_id))
+    assert err.value.code == ec.REPO_IDEMPOTENCY_CONFLICT
+    assert err.value.details["original_commit_id"] == first.commit_id.value
+    view = _svc(env).get_artifact(aid, first.commit_id)
+    assert view.revision is not None and view.revision.content == {"v": 1}
+    # fix 指引可执行：换新键、带有效 old_revision 后提交成功
+    eff_rev_id = view.revision.id
+    second = _svc(env).commit(make({"v": 2}, "same-2", first.commit_id, eff_rev_id))
+    assert second.is_committed
+
+
 # ----------------------------------------------------------------------
 # 汇总：契约测试入口
 # ----------------------------------------------------------------------
@@ -703,4 +743,5 @@ ALL_CHECKS: tuple[Callable[[ContractEnv], None], ...] = (
     check_history_immutable_to_caller,
     check_normalized_value_roundtrip,
     check_non_string_dict_keys_rejected,
+    check_idempotency_fingerprint,
 )

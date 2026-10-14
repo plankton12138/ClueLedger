@@ -106,3 +106,49 @@ def test_foreign_keys_are_enforced(tmp_path: object) -> None:
     conn = repo._storage.connection
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     repo.close()
+
+
+# ----------------------------------------------------------------------
+# schema v1 → v2 升级路径：idempotency_records 加请求指纹列
+# ----------------------------------------------------------------------
+
+
+def test_v1_database_upgrades_to_v2_with_fingerprint_column(tmp_path: object) -> None:
+    """v1 旧库迁移后指纹列存在、旧数据可读、旧行指纹按冲突拒绝（防御）。"""
+    import sqlite3
+
+    from hastings.infrastructure.repository.migrations.migrator import migrate
+    from hastings.infrastructure.repository.schema import SCHEMA_VERSION
+
+    db = Path(str(tmp_path)) / "legacy.sqlite3"
+    conn = sqlite3.connect(str(db))
+    try:
+        # 最小 v1 形状库：只有迁移步会触碰的表
+        conn.execute(
+            "CREATE TABLE idempotency_records ("
+            " project_id TEXT NOT NULL, key TEXT NOT NULL, commit_id TEXT NOT NULL,"
+            " new_head TEXT NOT NULL, sequence INTEGER NOT NULL,"
+            " changed_artifact_ids TEXT NOT NULL, no_change_reason TEXT,"
+            " PRIMARY KEY (project_id, key))"
+        )
+        conn.execute(
+            "INSERT INTO idempotency_records VALUES ('p1', 'k1', 'cmt_1', 'cmt_1', 1, '[]', NULL)"
+        )
+        conn.execute("PRAGMA user_version = 1")
+        conn.commit()
+
+        migrate(conn)
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+        columns = {
+            r[1] for r in conn.execute("PRAGMA table_info(idempotency_records)").fetchall()
+        }
+        assert "request_fingerprint" in columns
+        # 旧数据仍在，指纹为空（无法验证请求内容 → 重放时按冲突拒绝）
+        row = conn.execute(
+            "SELECT commit_id, request_fingerprint FROM idempotency_records"
+            " WHERE project_id='p1' AND key='k1'"
+        ).fetchone()
+        assert row == ("cmt_1", "")
+        migrate(conn)  # 已是当前版本：幂等
+    finally:
+        conn.close()

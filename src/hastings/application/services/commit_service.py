@@ -94,6 +94,39 @@ def _id_str(value: Any) -> str | None:
     return value.value if value is not None else None
 
 
+def _request_fingerprint(request: CommitRequest) -> ContentHash:
+    """幂等请求指纹：「写什么」的稳定哈希，不含「凭据」字段。
+
+    参与：project/branch/actor/summary/changes(artifact_id+content+kind)/
+    relations/events。排除三类并发执行凭据——expected_head、old_revision_id、
+    required_leases：它们是提交时刻的乐观并发条件，同一逻辑操作的重放天然
+    可能携带前进后的凭据（如 restore 重放时基础版本已变成上次 restore 的
+    结果），进指纹会把合法重放误判为冲突。
+    """
+    payload = {
+        "project_id": request.project_id.value,
+        "branch_id": request.branch_id.value,
+        "actor": [request.actor.kind, request.actor.id],
+        "summary": request.summary,
+        "changes": [
+            {"artifact_id": c.artifact_id.value, "content": c.content, "kind": c.kind}
+            for c in request.changes
+        ],
+        "relations": [
+            {
+                "action": r.action,
+                "source": r.source.value,
+                "relation_type": r.relation_type,
+                "target": r.target.value,
+                "metadata": r.metadata,
+            }
+            for r in request.relations
+        ],
+        "events": [[t, p] for t, p in request.events],
+    }
+    return ContentHash(content_hash(payload))
+
+
 class CommitService:
     """实现 RepositoryReader + CommitRepository；驱动任意 RepositoryStorage。"""
 
@@ -132,9 +165,24 @@ class CommitService:
         request, prepared = self._normalize(request, where)
         now = self._storage.now()
         with self._storage.transaction() as txn:
-            # (2) 幂等重放
-            replay = txn.get_idempotent_result(request.project_id, request.idempotency_key)
-            if replay is not None:
+            # (2) 幂等重放：同键必须同指纹——不同内容复用旧键显式冲突，
+            #     不静默返回旧结果（否则调用者误以为新修改已生效）
+            fingerprint = _request_fingerprint(request)
+            record = txn.get_idempotent_result(request.project_id, request.idempotency_key)
+            if record is not None:
+                stored_fingerprint, replay = record
+                if stored_fingerprint != fingerprint.value:
+                    original = replay.commit_id.value if replay.commit_id else None
+                    raise _violation(
+                        ec.REPO_IDEMPOTENCY_CONFLICT,
+                        where,
+                        f"幂等键 {request.idempotency_key!r} 已被不同内容的请求使用"
+                        f"（原 Commit {original}）",
+                        "为本次新操作生成新的 idempotency_key；"
+                        "同一个键只用于同一逻辑操作的全部重试",
+                        key=request.idempotency_key,
+                        original_commit_id=original,
+                    )
                 return replay
             # (3)(4) 项目 / 分支 / head 检查
             if txn.get_project(request.project_id) is None:
@@ -318,7 +366,9 @@ class CommitService:
                 sequence=commit.sequence,
                 changed_artifact_ids=tuple(changed_ids),
             )
-            txn.put_idempotent_result(request.project_id, request.idempotency_key, result)
+            txn.put_idempotent_result(
+                request.project_id, request.idempotency_key, fingerprint.value, result
+            )
         return result
 
     def create_branch(self, request: CreateBranchRequest) -> Branch:

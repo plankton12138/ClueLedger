@@ -66,8 +66,10 @@ class FaultTxn:
         self._inner.append_outbox_events(events)
         self._maybe_fault("append_outbox_events")
 
-    def put_idempotent_result(self, project_id: Any, key: str, result: Any) -> None:
-        self._inner.put_idempotent_result(project_id, key, result)
+    def put_idempotent_result(
+        self, project_id: Any, key: str, fingerprint: str, result: Any
+    ) -> None:
+        self._inner.put_idempotent_result(project_id, key, fingerprint, result)
         self._maybe_fault("put_idempotent_result")
 
 
@@ -145,9 +147,11 @@ class _RecordingTxn:
         self._calls.append("append_outbox_events")
         self._inner.append_outbox_events(events)
 
-    def put_idempotent_result(self, project_id: Any, key: str, result: Any) -> None:
+    def put_idempotent_result(
+        self, project_id: Any, key: str, fingerprint: str, result: Any
+    ) -> None:
         self._calls.append("put_idempotent_result")
-        self._inner.put_idempotent_result(project_id, key, result)
+        self._inner.put_idempotent_result(project_id, key, fingerprint, result)
 
 
 def _setup_project(env: ContractEnv) -> Any:

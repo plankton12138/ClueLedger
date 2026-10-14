@@ -1,4 +1,9 @@
-"""迁移器（Phase 12 T12.3）：空库创建、已知版本放行、未知较新版本拒绝打开。"""
+"""迁移器（Phase 12 T12.3，收口修订）：空库建表、分步升级、过新版本拒绝打开。
+
+升级路径是版本号存在的意义：schema 演化不再意味着「旧库作废重建」。
+每步迁移声明为「从版本 N 升到 N+1 的 SQL 序列」，逐步提交并推进
+user_version——中途崩溃时库停在某个一致版本，重开续跑即可。
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,16 @@ __all__ = ["SCHEMA_VERSION_UNKNOWN", "migrate", "read_schema_version"]
 
 # 有表但 user_version=0：版本标记丢失，版本不可判定
 SCHEMA_VERSION_UNKNOWN = 0
+
+# 升级步：键 N 表示「把版本 N 的库升到 N+1」；新版本先在这里登记，再改 schema.py
+_MIGRATION_STEPS: dict[int, tuple[str, ...]] = {
+    1: (
+        # v2：幂等记录带请求指纹——同键不同内容的重放显式冲突，
+        # 不再静默返回旧结果。旧行指纹置空，重放时按冲突拒绝（无法验证内容）。
+        "ALTER TABLE idempotency_records"
+        " ADD COLUMN request_fingerprint TEXT NOT NULL DEFAULT ''",
+    ),
+}
 
 _TOO_NEW_WHY = (
     f"数据库 schema 版本 {SCHEMA_VERSION} 比当前程序支持的更新，降级打开可能损坏数据，已拒绝"
@@ -27,7 +42,7 @@ def read_schema_version(conn: sqlite3.Connection) -> int:
 
 
 def migrate(conn: sqlite3.Connection) -> None:
-    """把空库建到当前版本；版本不符时按三要素拒绝（计划 T12.3）。"""
+    """空库建到当前版本；旧库分步升级；版本不符时按三要素拒绝。"""
     current = read_schema_version(conn)
     if current == SCHEMA_VERSION:
         return
@@ -54,10 +69,20 @@ def migrate(conn: sqlite3.Connection) -> None:
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
         return
-    raise EnvironmentFailure(
-        code="REPO_SCHEMA_UNKNOWN",
-        where="sqlite migrate",
-        why=f"数据库 schema 版本 {current} 已过时且无升级路径",
-        fix=_TOO_NEW_FIX,
-        details={"db_version": current, "supported": SCHEMA_VERSION},
-    )
+    # 0 < current < SCHEMA_VERSION：按注册的升级步逐版本推进，每步独立提交
+    version = current
+    while version < SCHEMA_VERSION:
+        step = _MIGRATION_STEPS.get(version)
+        if step is None:
+            raise EnvironmentFailure(
+                code="REPO_SCHEMA_UNKNOWN",
+                where="sqlite migrate",
+                why=f"数据库 schema 版本 {version} 没有已登记的升级路径",
+                fix=_TOO_NEW_FIX,
+                details={"db_version": version, "supported": SCHEMA_VERSION},
+            )
+        for statement in step:
+            conn.execute(statement)
+        version += 1
+        conn.execute(f"PRAGMA user_version = {version}")
+        conn.commit()

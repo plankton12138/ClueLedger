@@ -74,7 +74,7 @@ class _MemoryData:
     branches: dict[str, Branch] = field(default_factory=dict)
     relations: dict[str, RelationRevision] = field(default_factory=dict)
     outbox: dict[str, OutboxEvent] = field(default_factory=dict)
-    idempotency: dict[tuple[str, str], CommitResult] = field(default_factory=dict)
+    idempotency: dict[tuple[str, str], tuple[str, CommitResult]] = field(default_factory=dict)
     leases: dict[str, Lease] = field(default_factory=dict)
 
     def clone(self) -> _MemoryData:
@@ -156,7 +156,9 @@ class MemoryTxn:
             return None
         return replace(rev, content=_deep(rev.content))
 
-    def get_idempotent_result(self, project_id: ProjectId, key: str) -> CommitResult | None:
+    def get_idempotent_result(
+        self, project_id: ProjectId, key: str
+    ) -> tuple[str, CommitResult] | None:
         return self._data.idempotency.get((project_id.value, key))
 
     def get_lease(self, resource_key: str) -> Lease | None:
@@ -214,8 +216,10 @@ class MemoryTxn:
         for event in events:
             self._data.outbox[event.id] = replace(event, payload=_deep(event.payload))
 
-    def put_idempotent_result(self, project_id: ProjectId, key: str, result: CommitResult) -> None:
-        self._data.idempotency[(project_id.value, key)] = result
+    def put_idempotent_result(
+        self, project_id: ProjectId, key: str, fingerprint: str, result: CommitResult
+    ) -> None:
+        self._data.idempotency[(project_id.value, key)] = (fingerprint, result)
 
 
 class MemoryStorage:

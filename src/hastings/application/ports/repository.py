@@ -145,7 +145,16 @@ class RepositoryTxn(Protocol):
         self, commit_ids: tuple[CommitId, ...]
     ) -> tuple[RelationRevision, ...]: ...
     def get_revision(self, revision_id: RevisionId) -> Revision | None: ...
-    def get_idempotent_result(self, project_id: ProjectId, key: str) -> CommitResult | None: ...
+
+    def get_idempotent_result(
+        self, project_id: ProjectId, key: str
+    ) -> tuple[str, CommitResult] | None:
+        """返回 ``(请求指纹, 结果)``；键不存在返回 None。
+
+        指纹比对由 CommitService 负责：同键不同指纹必须显式冲突，
+        不得静默返回旧结果。
+        """
+
     def get_lease(self, resource_key: str) -> Lease | None: ...
     def next_sequence(self, project_id: ProjectId) -> int: ...
     def next_outbox_sequence(self, project_id: ProjectId) -> int: ...
@@ -163,7 +172,7 @@ class RepositoryTxn(Protocol):
     def append_outbox_events(self, events: tuple[OutboxEvent, ...]) -> None: ...
 
     def put_idempotent_result(
-        self, project_id: ProjectId, key: str, result: CommitResult
+        self, project_id: ProjectId, key: str, fingerprint: str, result: CommitResult
     ) -> None: ...
 
 
