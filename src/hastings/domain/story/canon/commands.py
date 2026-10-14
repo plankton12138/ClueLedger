@@ -14,12 +14,11 @@ Commit Service。
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any
 
-from hastings.domain.repository.ids import ArtifactId, RevisionId
-from hastings.domain.repository.requests import ArtifactChange, RelationChange
+from hastings.domain.repository.requests import RelationChange
 from hastings.domain.story import error_codes as ec
 from hastings.domain.story import kinds
 from hastings.domain.story.canon.models import (
@@ -39,6 +38,14 @@ from hastings.domain.story.changes import (
 from hastings.domain.story.errors import violation
 from hastings.domain.story.mystery.models import KNOWLEDGE_MODES, KnowledgeState
 from hastings.domain.story.narrative.models import Beat
+from hastings.domain.story.refs import (
+    NewId,
+    check_revision,
+    create_change,
+    new_artifact_id,
+    require_ref,
+    revise_change,
+)
 from hastings.domain.story.schema import require_str
 
 __all__ = [
@@ -52,9 +59,6 @@ __all__ = [
     "supersede_canon_fact",
 ]
 
-# new_id：由 kind 生成一个未被占用的新 ArtifactId（application 侧接 IdGenerator 端口）
-NewId = Callable[[str], str]
-
 # 驱动情节走向的角色：其目标构成 motivates 边；其余角色不驱动
 _DRIVING_ROLES = frozenset(("protagonist", "antagonist", "accomplice"))
 
@@ -62,41 +66,8 @@ _FACT_KINDS = (kinds.KIND_TRUTH_FACT, kinds.KIND_MYSTERY_TRUTH)
 
 
 # --------------------------------------------------------------------------
-# 内部助手
+# 命令私有助手
 # --------------------------------------------------------------------------
-def _require_ref(
-    catalog: StoryCatalog, artifact_id: str, allowed: tuple[str, ...], *, cmd: str, field: str
-) -> StoryEntry:
-    """引用必须存在且类型正确；否则给出带字段定位的三要素错误。"""
-    where = f"{cmd}.{field}"
-    entry = catalog.require(artifact_id, where=where)
-    if entry.kind not in allowed:
-        raise violation(
-            ec.STORY_INVALID_COMMAND,
-            where,
-            f"{artifact_id!r} 的类型是 {entry.kind!r}，不能作为 {field} 引用",
-            f"{field} 期望类型 {sorted(allowed)}；确认是否引用了错误对象",
-            artifact_id=artifact_id,
-            kind=entry.kind,
-            expected=list(allowed),
-        )
-    return entry
-
-
-def _check_revision(
-    entry: StoryEntry, expected_revision: str | None, *, cmd: str, field: str = "expected_revision"
-) -> None:
-    if expected_revision is not None and expected_revision != entry.revision_id:
-        raise violation(
-            ec.STORY_STALE_REVISION,
-            f"{cmd}.{field}",
-            f"基础 Revision {expected_revision!r} 已过期，当前为 {entry.revision_id!r}",
-            "重新读取最新 Revision 后再提交；勿基于旧版本覆盖他人的修改",
-            expected=expected_revision,
-            current=entry.revision_id,
-        )
-
-
 def _ensure_role(role: str, *, cmd: str) -> None:
     if role not in CHARACTER_ROLES:
         raise violation(
@@ -107,34 +78,6 @@ def _ensure_role(role: str, *, cmd: str) -> None:
             role=role,
             allowed=sorted(CHARACTER_ROLES),
         )
-
-
-def _new_id_for(catalog: StoryCatalog, new_id: NewId, kind: str, *, cmd: str) -> str:
-    artifact_id = new_id(kind)
-    if catalog.get(artifact_id) is not None:
-        raise violation(
-            ec.STORY_DUPLICATE_ID,
-            f"{cmd}.id",
-            f"生成的 ID {artifact_id!r} 已存在，不能覆盖既有对象",
-            "换一个未被占用的 ID；创建与替代都必须产生新身份，不得复用",
-            artifact_id=artifact_id,
-        )
-    return artifact_id
-
-
-def _create_change(artifact_id: str, kind: str, content: dict[str, Any]) -> ArtifactChange:
-    return ArtifactChange(
-        artifact_id=ArtifactId(artifact_id), content=content, old_revision_id=None, kind=kind
-    )
-
-
-def _revise_change(entry: StoryEntry, content: dict[str, Any]) -> ArtifactChange:
-    return ArtifactChange(
-        artifact_id=ArtifactId(entry.artifact_id),
-        content=content,
-        old_revision_id=RevisionId(entry.revision_id),
-        kind=None,
-    )
 
 
 def _character_dependents(catalog: StoryCatalog, character_id: str) -> tuple[StoryEntry, ...]:
@@ -175,8 +118,8 @@ def create_character(
         role=role,
         traits=tuple(traits),
     )
-    artifact_id = _new_id_for(catalog, new_id, kinds.KIND_CHARACTER, cmd="CreateCharacter")
-    change = _create_change(artifact_id, kinds.KIND_CHARACTER, model.to_content())
+    artifact_id = new_artifact_id(catalog, new_id, kinds.KIND_CHARACTER, cmd="CreateCharacter")
+    change = create_change(artifact_id, kinds.KIND_CHARACTER, model.to_content())
     return DomainChange(
         artifact_changes=(change,), summary=f"新建角色 {model.name}（{artifact_id}）"
     )
@@ -198,10 +141,10 @@ def revise_character(
     traits: Iterable[str] | None = None,
 ) -> DomainChange:
     """部分修改角色：只覆盖显式提供的字段，未提供字段保持不变（不变量 2）。"""
-    entry = _require_ref(
+    entry = require_ref(
         catalog, character_id, (kinds.KIND_CHARACTER,), cmd="ReviseCharacter", field="character_id"
     )
-    _check_revision(entry, expected_revision, cmd="ReviseCharacter")
+    check_revision(entry, expected_revision, cmd="ReviseCharacter")
 
     updates: dict[str, Any] = {}
     if name is not None:
@@ -227,7 +170,7 @@ def revise_character(
     if content == entry.content:
         return DomainChange(summary=f"角色 {character_id} 内容未变化（合法空结果）")
     return DomainChange(
-        artifact_changes=(_revise_change(entry, content),),
+        artifact_changes=(revise_change(entry, content),),
         summary=f"修订角色 {merged.name}（{character_id}）",
     )
 
@@ -241,14 +184,14 @@ def change_character_role(
     expected_revision: str | None = None,
 ) -> DomainChange:
     """改变角色在故事中的作用；同步维护 motivates 边并产生影响种子。"""
-    entry = _require_ref(
+    entry = require_ref(
         catalog,
         character_id,
         (kinds.KIND_CHARACTER,),
         cmd="ChangeCharacterRole",
         field="character_id",
     )
-    _check_revision(entry, expected_revision, cmd="ChangeCharacterRole")
+    check_revision(entry, expected_revision, cmd="ChangeCharacterRole")
     _ensure_role(role, cmd="ChangeCharacterRole")
 
     current = Character.from_content(entry.content)
@@ -279,7 +222,7 @@ def change_character_role(
         for dependent in dependents
     )
     return DomainChange(
-        artifact_changes=(_revise_change(entry, content),),
+        artifact_changes=(revise_change(entry, content),),
         relation_changes=relations,
         impact_seeds=seeds,
         summary=f"角色 {character_id} 作用改为 {role}（影响 {len(dependents)} 个节拍）",
@@ -298,12 +241,12 @@ def define_mystery_truth(
     true_timeline: Iterable[str] = (),
 ) -> DomainChange:
     """建立案件真相：凶手、协助者、时间线引用必须有效。"""
-    _require_ref(
+    require_ref(
         catalog, culprit_id, (kinds.KIND_CHARACTER,), cmd="DefineMysteryTruth", field="culprit_id"
     )
     accomplices = tuple(accomplice_ids)
     for accomplice_id in accomplices:
-        _require_ref(
+        require_ref(
             catalog,
             accomplice_id,
             (kinds.KIND_CHARACTER,),
@@ -312,7 +255,7 @@ def define_mystery_truth(
         )
     timeline = tuple(true_timeline)
     for event_id in timeline:
-        _require_ref(
+        require_ref(
             catalog,
             event_id,
             (kinds.KIND_TIMELINE_EVENT,),
@@ -328,8 +271,10 @@ def define_mystery_truth(
         accomplice_ids=accomplices,
         true_timeline=timeline,
     )
-    artifact_id = _new_id_for(catalog, new_id, kinds.KIND_MYSTERY_TRUTH, cmd="DefineMysteryTruth")
-    change = _create_change(artifact_id, kinds.KIND_MYSTERY_TRUTH, model.to_content())
+    artifact_id = new_artifact_id(
+        catalog, new_id, kinds.KIND_MYSTERY_TRUTH, cmd="DefineMysteryTruth"
+    )
+    change = create_change(artifact_id, kinds.KIND_MYSTERY_TRUTH, model.to_content())
     return DomainChange(artifact_changes=(change,), summary=f"建立案件真相（{artifact_id}）")
 
 
@@ -347,10 +292,10 @@ def plan_clue(
     statement = require_str(statement, field="statement", where="canon.clue")
     facts = tuple(points_to)
     for fact_id in facts:
-        _require_ref(catalog, fact_id, _FACT_KINDS, cmd="PlanClue", field="points_to")
+        require_ref(catalog, fact_id, _FACT_KINDS, cmd="PlanClue", field="points_to")
     plan = tuple(disclosure_plan)
     for beat_id in plan:
-        _require_ref(catalog, beat_id, (kinds.KIND_BEAT,), cmd="PlanClue", field="disclosure_plan")
+        require_ref(catalog, beat_id, (kinds.KIND_BEAT,), cmd="PlanClue", field="disclosure_plan")
 
     model = Clue(
         statement=statement,
@@ -359,8 +304,8 @@ def plan_clue(
         necessity=necessity,
         disclosure_plan=plan,
     )
-    artifact_id = _new_id_for(catalog, new_id, kinds.KIND_CLUE, cmd="PlanClue")
-    change = _create_change(artifact_id, kinds.KIND_CLUE, model.to_content())
+    artifact_id = new_artifact_id(catalog, new_id, kinds.KIND_CLUE, cmd="PlanClue")
+    change = create_change(artifact_id, kinds.KIND_CLUE, model.to_content())
     relations = tuple(
         RelationSpec(
             action="add",
@@ -394,8 +339,8 @@ def plan_red_herring(
         basis=require_str(basis, field="basis", where="canon.red_herring"),
         resolution=resolution,
     )
-    artifact_id = _new_id_for(catalog, new_id, kinds.KIND_RED_HERRING, cmd="PlanRedHerring")
-    change = _create_change(artifact_id, kinds.KIND_RED_HERRING, model.to_content())
+    artifact_id = new_artifact_id(catalog, new_id, kinds.KIND_RED_HERRING, cmd="PlanRedHerring")
+    change = create_change(artifact_id, kinds.KIND_RED_HERRING, model.to_content())
     return DomainChange(
         artifact_changes=(change,),
         summary=f"规划误导 {model.false_explanation!r}（{artifact_id}）",
@@ -417,14 +362,14 @@ def record_knowledge_change(
     提前知情（knows 早于真相揭示）由确定性规则判定（T13.5），此处只忠实记录
     作者意图；misbelieves 是合法认知，不在此处拦截。
     """
-    _require_ref(
+    require_ref(
         catalog,
         character_id,
         (kinds.KIND_CHARACTER,),
         cmd="RecordKnowledgeChange",
         field="character_id",
     )
-    _require_ref(
+    require_ref(
         catalog, fact_id, (kinds.KIND_TRUTH_FACT,), cmd="RecordKnowledgeChange", field="fact_id"
     )
     if mode not in KNOWLEDGE_MODES:
@@ -437,15 +382,17 @@ def record_knowledge_change(
             allowed=sorted(KNOWLEDGE_MODES),
         )
     if at_beat_id is not None:
-        _require_ref(
+        require_ref(
             catalog, at_beat_id, (kinds.KIND_BEAT,), cmd="RecordKnowledgeChange", field="at_beat_id"
         )
 
     model = KnowledgeState(
         character_id=character_id, fact_id=fact_id, mode=mode, at_beat_id=at_beat_id, note=note
     )
-    artifact_id = _new_id_for(catalog, new_id, kinds.KIND_KNOWLEDGE, cmd="RecordKnowledgeChange")
-    change = _create_change(artifact_id, kinds.KIND_KNOWLEDGE, model.to_content())
+    artifact_id = new_artifact_id(
+        catalog, new_id, kinds.KIND_KNOWLEDGE, cmd="RecordKnowledgeChange"
+    )
+    change = create_change(artifact_id, kinds.KIND_KNOWLEDGE, model.to_content())
     relations: tuple[RelationChange, ...] = ()
     if at_beat_id is not None:
         relations = (
@@ -487,8 +434,8 @@ def supersede_canon_fact(
             artifact_id=old_id,
             kind=old.kind,
         )
-    artifact_id = _new_id_for(catalog, new_id, old.kind, cmd="SupersedeCanonFact")
-    change = _create_change(artifact_id, old.kind, dict(content))
+    artifact_id = new_artifact_id(catalog, new_id, old.kind, cmd="SupersedeCanonFact")
+    change = create_change(artifact_id, old.kind, dict(content))
     relation = RelationSpec(
         action="add",
         source=artifact_id,
