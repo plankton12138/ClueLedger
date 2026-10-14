@@ -1,6 +1,6 @@
 # Phase 13 计划：Canon、Narrative Plan 与悬疑事实模型
 
-> 状态：待执行。
+> 状态：已完成（2026-10-14），含外部 review 收口。构建笔记：[../phase-13-story-domain.md](../phase-13-story-domain.md)；as-built 规格：[../modules/story-domain.md](../modules/story-domain.md)。
 > 依赖：Phase 12 完成。
 > 目标：用稳定 ID、意图明确的命令和显式依赖表示故事事实与叙事结构，替代通用 Bible upsert 的目标能力。
 

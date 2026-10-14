@@ -44,8 +44,8 @@ flowchart LR
 
 | 文档 | 模块 | 主要问题 | 状态 |
 |---|---|---|---|
-| [repository-kernel.md](repository-kernel.md) | 版本化仓库内核 | 怎样保存、提交、分支、回滚和发布事件 | target / Phase 12 |
-| [story-domain.md](story-domain.md) | Canon 与叙事领域 | 怎样表达故事事实、结构和悬疑公平性 | target / Phase 13 |
+| [repository-kernel.md](repository-kernel.md) | 版本化仓库内核 | 怎样保存、提交、分支、回滚和发布事件 | as-built / Phase 12 |
+| [story-domain.md](story-domain.md) | Canon 与叙事领域 | 怎样表达故事事实、结构和悬疑公平性 | as-built / Phase 13 |
 | [manuscript-author-model.md](manuscript-author-model.md) | 正文与作者模型 | 怎样保护人工正文并从修改中学习 | target / Phase 14 |
 | [change-impact.md](change-impact.md) | 影响分析与系统修复 | 怎样把早期变化传播到结构和正文 | target / Phase 15 |
 | [guard-authorization.md](guard-authorization.md) | 命令、守卫与授权 | 哪些工具可见、谁能改什么、何时可提交 | target / Phase 12–15 |

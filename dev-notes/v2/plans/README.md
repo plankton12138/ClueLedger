@@ -1,6 +1,6 @@
 # Hastings V2 重建计划总览
 
-> 计划状态：Phase 11、12 已完成（Phase 12 含外部 review 收口：规范值冻结、幂等指纹、去重时机、关系顺序、schema v3）；下一阶段为 Phase 13。
+> 计划状态：Phase 11、12、13 已完成（Phase 12 含外部 review 收口：规范值冻结、幂等指纹、去重时机、关系顺序、schema v3；Phase 13 含外部 review 收口：应用层幂等重放、架构版本真实路由、依赖边补全）；下一阶段为 Phase 14。
 > 原则：每个阶段产生可运行、可验证、可回退的纵向切片；后续阶段不得通过临时直写绕开前一阶段的契约。
 
 ## 1. 阶段依赖
@@ -24,7 +24,7 @@ Phase 13 和 Phase 14 在 Phase 12 后可以并行开发，但共享同一 Repos
 |---|---|---|---|
 | P11 | 冻结架构、依赖和迁移基线 | V2 文档评审、现状清单、包依赖测试 | [phase-11-architecture-baseline-plan.md](phase-11-architecture-baseline-plan.md) |
 | P12 | 建立版本化 Repository 与统一提交 | 内存/SQLite 契约测试、冲突/幂等/Outbox 证明 | [phase-12-repository-kernel-plan.md](phase-12-repository-kernel-plan.md) |
-| P13 | 建立 Canon、Narrative Plan 和悬疑三层事实 | 领域命令、不变量、Story Snapshot | [phase-13-story-domain-plan.md](phase-13-story-domain-plan.md) |
+| P13 | 建立 Canon、Narrative Plan 和悬疑三层事实 | 领域命令、不变量、五个查询投影、V1 dry-run、§7 误解决策闭环 ✅ 已完成 | [phase-13-story-domain-plan.md](phase-13-story-domain-plan.md) |
 | P14 | 统一人工正文版本并建立作者模型 | 人工保存闭环、Patch hunk、偏好证据 | [phase-14-manuscript-author-model-plan.md](phase-14-manuscript-author-model-plan.md) |
 | P15 | 完成影响分析、修订分支和差异审阅 | 角色作用变化贯穿 Canon→Plan→正文 | [phase-15-change-impact-plan.md](phase-15-change-impact-plan.md) |
 | P16 | 接入无状态 Agent、任务上下文和持久 Job | Draft/Repair/Audit/Style 四条工作流 | [phase-16-agent-workflows-plan.md](phase-16-agent-workflows-plan.md) |

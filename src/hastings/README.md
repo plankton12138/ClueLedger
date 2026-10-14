@@ -11,7 +11,7 @@ tau 内核之上的**薄应用层**：装配（工具注册、system prompt、�
 | `manuscript/` | 正文 SSOT 与保存不变量：段落 diff、revision 归档、write_guard 守门、写作守门（正文直出纠偏 / 回合规速） | store / diff / write_guard / guards / prose_guard / advance_guard |
 | `server/` | FastAPI REST + WebSocket 桥、会话装配、工作区注册表、对账队列 | app / ws / rest / hastings_session / session / registry / reconcile |
 | `rag/` | 语料与文风：确定性文风档案 + 语料库存储（向量检索待交付） | style_profile / corpus_store |
-| V2 五层 `domain/ application/ agents/ infrastructure/ interfaces/` | V2 重建（Phase 11–）：端口 Protocol、错误信封、仓库内核（CommitService + 内存/SQLite 双后端 + inspection） | application/ports/、application/services/commit_service.py、infrastructure/repository/；as-built 见 [dev-notes/v2/modules/repository-kernel.md](../../dev-notes/v2/modules/repository-kernel.md) |
+| V2 五层 `domain/ application/ agents/ infrastructure/ interfaces/` | V2 重建（Phase 11–）：端口 Protocol、错误信封、仓库内核（CommitService + 内存/SQLite 双后端 + inspection）、Story 领域（Canon/叙事/悬疑命令 + 投影 + V1 dry-run 映射器） | application/ports/、application/services/commit_service.py、domain/story/、interfaces/importers/v1_story_mapper.py；as-built 见 [dev-notes/v2/modules/repository-kernel.md](../../dev-notes/v2/modules/repository-kernel.md) 与 [dev-notes/v2/modules/story-domain.md](../../dev-notes/v2/modules/story-domain.md) |
 | `eval/` | 评测 harness 占位（P13 待交付） | — |
 | 顶层模块 | CLI 与渲染、system prompt 组装、会话/事件持久化、多会话索引、上下文管理、设置、provider 目录 | cli / prompts / session_persist / session_store / events_store / context_manager / settings / provider_catalog |
 
