@@ -10,7 +10,11 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from hastings.domain.repository.serialization import canonical_json, content_hash
+from hastings.domain.repository.serialization import (
+    canonical_json,
+    content_hash,
+    normalize_json,
+)
 
 
 def test_key_order_does_not_change_hash() -> None:
@@ -60,3 +64,47 @@ def test_list_order_is_significant() -> None:
 def test_unsupported_type_rejected() -> None:
     with pytest.raises(TypeError):
         canonical_json({1, 2})
+
+
+# ----------------------------------------------------------------------
+# normalize_json：规范值树（Phase 12 收口）
+# ----------------------------------------------------------------------
+
+
+def test_normalize_returns_new_tree_without_shared_references() -> None:
+    inner = {"a": 1}
+    value = {"outer": inner, "items": [inner]}
+    normalized = normalize_json(value)
+    assert normalized == {"outer": {"a": 1}, "items": [{"a": 1}]}
+    # 修改原对象不得影响规范值树
+    inner["a"] = 999
+    assert normalized["outer"] == {"a": 1}
+    # 修改规范值树也不得影响原对象
+    normalized["items"][0]["a"] = 777
+    assert inner["a"] == 999
+
+
+def test_normalize_datetime_and_tuple() -> None:
+    dt = datetime(2026, 10, 14, 17, 0, 0, tzinfo=timezone(timedelta(hours=9)))
+    normalized = normalize_json({"when": dt, "pair": ("x", "y")})
+    assert normalized["when"] == "2026-10-14T08:00:00+00:00"
+    assert normalized["pair"] == ["x", "y"]
+    assert isinstance(normalized["pair"], list)
+
+
+@pytest.mark.parametrize("bad", [{1: "a"}, {"ok": 1, 2: "b"}, {("t",): "v"}])
+def test_non_string_dict_keys_rejected(bad: object) -> None:
+    with pytest.raises(ValueError):
+        normalize_json(bad)
+
+
+def test_non_string_keys_never_collide_in_hash() -> None:
+    # 曾经 {1: "first", "1": "second"} 与 {"1": "second"} 产生同一哈希（内容丢失）
+    with pytest.raises(ValueError):
+        content_hash({1: "first", "1": "second"})
+    assert content_hash({"1": "second"}) == content_hash({"1": "second"})
+
+
+def test_normalize_key_order_is_sorted() -> None:
+    normalized = normalize_json({"b": 1, "a": 2})
+    assert list(normalized) == ["a", "b"]
