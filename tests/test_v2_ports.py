@@ -28,6 +28,24 @@ from hastings.application.ports import (
     JobStore,
     RepositoryReader,
 )
+from hastings.domain.repository.ids import ArtifactId, CommitId, ProjectId, Scope
+from hastings.domain.repository.models import (
+    ArtifactView,
+    Branch,
+    Project,
+    RepositoryDiff,
+    Snapshot,
+)
+from hastings.domain.repository.requests import (
+    ArtifactQuery,
+    CommitRequest,
+    CreateBranchRequest,
+    MoveBranchRequest,
+)
+from hastings.domain.repository.results import CommitResult
+
+# B008：frozen dataclass 单例作缺省值，避免函数调用默认参数
+_DEFAULT_SCOPE = Scope()
 
 EXPECTED_PORTS = (
     Clock,
@@ -63,26 +81,47 @@ def test_fakes_implement_all_ports() -> None:
             return f"{prefix}_1"
 
     class FakeReader:
-        def get_snapshot(self, project_id: str, commit_id: str) -> dict[str, object]:
-            return {}
+        """Phase 12 收窄后的签名：领域值对象进、领域模型出。"""
 
-        def get_artifact(self, artifact_id: str, at_commit_id: str) -> dict[str, object]:
-            return {}
+        def get_project(self, project_id: ProjectId) -> Project | None:
+            return None
 
-        def diff(self, before_commit_id: str, after_commit_id: str) -> dict[str, object]:
-            return {}
+        def get_branch(self, project_id: ProjectId, name: str) -> Branch | None:
+            return None
+
+        def get_snapshot(self, project_id: ProjectId, commit_id: CommitId) -> Snapshot:
+            raise NotImplementedError
+
+        def get_artifact(
+            self, artifact_id: ArtifactId, at_commit_id: CommitId
+        ) -> ArtifactView | None:
+            return None
+
+        def list_artifacts(
+            self, query: ArtifactQuery, at_commit_id: CommitId
+        ) -> list[ArtifactView]:
+            return []
+
+        def diff(
+            self,
+            before_commit_id: CommitId,
+            after_commit_id: CommitId,
+            scope: Scope = _DEFAULT_SCOPE,
+        ) -> RepositoryDiff:
+            raise NotImplementedError
 
     class FakeCommitRepository:
-        def commit(self, request: dict[str, object]) -> dict[str, object]:
-            return {}
+        def create_project(self, name: str) -> Project:
+            raise NotImplementedError
 
-        def create_branch(self, project_id: str, name: str, at_commit_id: str) -> dict[str, object]:
-            return {}
+        def commit(self, request: CommitRequest) -> CommitResult:
+            raise NotImplementedError
 
-        def move_branch(
-            self, branch_id: str, new_head_commit_id: str, expected_version: int
-        ) -> dict[str, object]:
-            return {}
+        def create_branch(self, request: CreateBranchRequest) -> Branch:
+            raise NotImplementedError
+
+        def move_branch(self, request: MoveBranchRequest) -> Branch:
+            raise NotImplementedError
 
     class FakeAgentRunner:
         async def run(

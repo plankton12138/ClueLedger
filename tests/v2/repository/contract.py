@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from conftest import AGENT_ACTOR, SYSTEM_ACTOR, ContractEnv
 
 from hastings.application.errors import HastingsError, ViolationError
 from hastings.domain.repository import error_codes as ec
@@ -29,7 +30,6 @@ from hastings.domain.repository.requests import (
     CreateBranchRequest,
     RelationChange,
 )
-from conftest import AGENT_ACTOR, SYSTEM_ACTOR, ContractEnv
 
 CHAPTER_ONE = {"title": "第一章 雾中来客", "body": "雾从海湾漫上来。"}
 CHAPTER_ONE_REVISED = {"title": "第一章 雾中来客", "body": "雾从海湾漫上来，灯先灭了。"}
@@ -114,8 +114,9 @@ def check_head_conflict(env: ContractEnv) -> None:
         actor=AGENT_ACTOR,
         idempotency_key="stale-1",
         summary="基于过期 head 的提交",
-        changes=(ArtifactChange(artifact_id=aid, content=CHAPTER_ONE_REVISED,
-                                old_revision_id=None),),
+        changes=(
+            ArtifactChange(artifact_id=aid, content=CHAPTER_ONE_REVISED, old_revision_id=None),
+        ),
     )
     with pytest.raises(HastingsError) as err:
         _svc(env).commit(stale)
@@ -148,23 +149,32 @@ def check_multi_artifact_atomic(env: ContractEnv) -> None:
         summary="两个章节加一条伏笔关系",
         changes=(
             ArtifactChange(artifact_id=ch1, content=CHAPTER_ONE, kind="chapter"),
-            ArtifactChange(artifact_id=ch2, content={"title": "第二章", "body": "信在抽屉里。"},
-                           kind="chapter"),
+            ArtifactChange(
+                artifact_id=ch2, content={"title": "第二章", "body": "信在抽屉里。"}, kind="chapter"
+            ),
+            ArtifactChange(
+                artifact_id=foreshadow, content={"note": "信封上的火漆"}, kind="foreshadow"
+            ),
         ),
         relations=(
-            RelationChange(action=RELATION_ACTION_ADD, source=ch1,
-                           relation_type="foreshadows", target=foreshadow),
-            RelationChange(action=RELATION_ACTION_ADD, source=foreshadow,
-                           relation_type="hidden_in", target=ch2),
+            RelationChange(
+                action=RELATION_ACTION_ADD,
+                source=ch1,
+                relation_type="foreshadows",
+                target=foreshadow,
+            ),
+            RelationChange(
+                action=RELATION_ACTION_ADD, source=foreshadow, relation_type="hidden_in", target=ch2
+            ),
         ),
     )
     result = _svc(env).commit(request)
     assert result.is_committed
 
     snapshot = _svc(env).get_snapshot(project.id, result.commit_id)
-    assert set(snapshot.artifacts) == {ch1, ch2}
+    assert set(snapshot.artifacts) == {ch1, ch2, foreshadow}
     assert len(snapshot.relations) == 2
-    # 关系可以在同一提交里指向新建对象
+    # 关系可以在同一提交里指向同一提交创建的对象
     assert any(r.source == foreshadow for r in snapshot.relations)
 
 
@@ -213,8 +223,9 @@ def check_no_op(env: ContractEnv) -> None:
         actor=AGENT_ACTOR,
         idempotency_key="noop-1",
         summary="重复写入相同内容",
-        changes=(ArtifactChange(artifact_id=aid, content=CHAPTER_ONE,
-                                old_revision_id=revision.id),),
+        changes=(
+            ArtifactChange(artifact_id=aid, content=CHAPTER_ONE, old_revision_id=revision.id),
+        ),
     )
     result = _svc(env).commit(same)
     assert result.is_no_change
@@ -281,8 +292,11 @@ def check_branch_fork_and_diff(env: ContractEnv) -> None:
         actor=AGENT_ACTOR,
         idempotency_key="rewrite-1",
         summary="重写第一章",
-        changes=(ArtifactChange(artifact_id=aid, content=CHAPTER_ONE_REVISED,
-                                old_revision_id=old_rev.id),),
+        changes=(
+            ArtifactChange(
+                artifact_id=aid, content=CHAPTER_ONE_REVISED, old_revision_id=old_rev.id
+            ),
+        ),
     )
     second = _svc(env).commit(request)
     assert second.is_committed
@@ -301,8 +315,7 @@ def check_branch_fork_and_diff(env: ContractEnv) -> None:
 
     with pytest.raises(ViolationError) as err:
         _svc(env).create_branch(
-            CreateBranchRequest(project_id=project.id, name="rewrite",
-                                at_commit_id=first.commit_id)
+            CreateBranchRequest(project_id=project.id, name="rewrite", at_commit_id=first.commit_id)
         )
     assert err.value.code == err_codes.REPO_BRANCH_EXISTS
 
@@ -331,8 +344,11 @@ def check_restore_as_new_commit(env: ContractEnv) -> None:
         actor=AGENT_ACTOR,
         idempotency_key="rev-1",
         summary="修改第一章",
-        changes=(ArtifactChange(artifact_id=aid, content=CHAPTER_ONE_REVISED,
-                                old_revision_id=old_rev.id),),
+        changes=(
+            ArtifactChange(
+                artifact_id=aid, content=CHAPTER_ONE_REVISED, old_revision_id=old_rev.id
+            ),
+        ),
     )
     second = _svc(env).commit(revise)
     assert second.is_committed
@@ -361,9 +377,7 @@ def check_restore_as_new_commit(env: ContractEnv) -> None:
     from hastings.domain.repository import error_codes as err_codes
 
     with pytest.raises(ViolationError) as err:
-        _svc(env).move_branch(
-            _move_request(branch.id, first.commit_id, version=4)
-        )
+        _svc(env).move_branch(_move_request(branch.id, first.commit_id, version=4))
     assert err.value.code == err_codes.REPO_BRANCH_MOVE_BACKWARD
 
 
@@ -383,7 +397,8 @@ def _move_request(branch_id: Any, new_head: Any, version: int) -> Any:
 def check_relation_revision(env: ContractEnv) -> None:
     project = _new_project(env)
     branch = _svc(env).get_branch(project.id, "main")
-    ch1, clue = ArtifactId(f"art_{project.id.value}_ch1"), ArtifactId(f"art_{project.id.value}_clue")
+    ch1 = ArtifactId(f"art_{project.id.value}_ch1")
+    clue = ArtifactId(f"art_{project.id.value}_clue")
     result = _svc(env).commit(
         CommitRequest(
             project_id=project.id,
@@ -397,9 +412,13 @@ def check_relation_revision(env: ContractEnv) -> None:
                 ArtifactChange(artifact_id=clue, content={"name": "烧毁的信"}, kind="clue"),
             ),
             relations=(
-                RelationChange(action=RELATION_ACTION_ADD, source=ch1,
-                               relation_type="introduces", target=clue,
-                               metadata={"note": "首次出场"}),
+                RelationChange(
+                    action=RELATION_ACTION_ADD,
+                    source=ch1,
+                    relation_type="introduces",
+                    target=clue,
+                    metadata={"note": "首次出场"},
+                ),
             ),
         )
     )
@@ -420,17 +439,27 @@ def check_relation_revision(env: ContractEnv) -> None:
             summary="补一条又撤销",
             changes=(),
             relations=(
-                RelationChange(action=RELATION_ACTION_ADD, source=clue,
-                               relation_type="points_to", target=ch1),
-                RelationChange(action=RELATION_ACTION_REMOVE, source=clue,
-                               relation_type="points_to", target=ch1),
+                RelationChange(
+                    action=RELATION_ACTION_ADD, source=clue, relation_type="points_to", target=ch1
+                ),
+                RelationChange(
+                    action=RELATION_ACTION_REMOVE,
+                    source=clue,
+                    relation_type="points_to",
+                    target=ch1,
+                ),
             ),
         )
     )
     assert result2.is_committed
     snapshot2 = _svc(env).get_snapshot(project.id, result2.commit_id)
     keys = {(r.source.value, r.relation_type, r.target.value) for r in snapshot2.relations}
-    assert ("art_%s_clue" % project.id.value, "points_to", "art_%s_ch1" % project.id.value) not in keys
+    removed_key = (
+        f"art_{project.id.value}_clue",
+        "points_to",
+        f"art_{project.id.value}_ch1",
+    )
+    assert removed_key not in keys
     # 原有边仍在
     assert any(r.relation_type == "introduces" for r in snapshot2.relations)
 
@@ -486,7 +515,9 @@ def check_commit_and_outbox(env: ContractEnv) -> None:
     # payload 不含完整正文
     raw = str(events)
     assert "正文" * 100 not in raw
-    assert all("content_hash" in e["payload"] for e in events if e["type"] == "artifact.revision.created")
+    assert all(
+        "content_hash" in e["payload"] for e in events if e["type"] == "artifact.revision.created"
+    )
     # 标记发布后不再出现在 pending
     asyncio.run(env.repo.mark_published(str(events[0]["id"])))
     remaining = asyncio.run(env.repo.pending(project.id.value, limit=100))
@@ -539,9 +570,13 @@ def check_concurrent_commit_single_winner(env: ContractEnv) -> None:
             actor=AGENT_ACTOR,
             idempotency_key=f"race-{tag}",
             summary=f"竞争提交 {tag}",
-            changes=(ArtifactChange(artifact_id=aid,
-                                    content={"title": "t", "body": f"版本 {tag}"},
-                                    old_revision_id=old_rev.id),),
+            changes=(
+                ArtifactChange(
+                    artifact_id=aid,
+                    content={"title": "t", "body": f"版本 {tag}"},
+                    old_revision_id=old_rev.id,
+                ),
+            ),
         )
         try:
             results.append(_svc(env).commit(request))

@@ -8,18 +8,26 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 from hastings.application.errors import ViolationError
 from hastings.application.ports.clock import Clock
 from hastings.application.ports.ids import IdGenerator
 from hastings.application.services.commit_service import CommitService
 from hastings.domain.repository import error_codes as ec
-from hastings.domain.repository.ids import ArtifactId, BranchId, CommitId, JobId, ProjectId, RevisionId
+from hastings.domain.repository.ids import (
+    ArtifactId,
+    BranchId,
+    CommitId,
+    JobId,
+    ProjectId,
+    RevisionId,
+)
 from hastings.domain.repository.models import (
     Artifact,
     Branch,
@@ -29,16 +37,12 @@ from hastings.domain.repository.models import (
     OutboxEvent,
     Project,
     RelationRevision,
-    RepositoryDiff,
     Revision,
-    Snapshot,
 )
-from hastings.domain.repository.requests import CommitRequest
 from hastings.domain.repository.results import CommitResult
-from hastings.domain.repository.snapshot import fold_effective_relations, fold_effective_revisions
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    pass
 
 __all__ = ["MemoryRepository", "MemoryStorage", "build_memory_repository"]
 
@@ -125,10 +129,7 @@ class MemoryTxn:
     def entries_for_commits(
         self, commit_ids: tuple[CommitId, ...]
     ) -> dict[CommitId, tuple[CommitEntry, ...]]:
-        return {
-            cid: tuple(self._data.entries.get(cid.value, ()))
-            for cid in commit_ids
-        }
+        return {cid: tuple(self._data.entries.get(cid.value, ())) for cid in commit_ids}
 
     def relation_rows_for_commits(
         self, commit_ids: tuple[CommitId, ...]
@@ -148,19 +149,11 @@ class MemoryTxn:
         return self._data.leases.get(resource_key)
 
     def next_sequence(self, project_id: ProjectId) -> int:
-        seqs = [
-            c.sequence
-            for c in self._data.commits.values()
-            if c.project_id == project_id
-        ]
+        seqs = [c.sequence for c in self._data.commits.values() if c.project_id == project_id]
         return max(seqs, default=0) + 1
 
     def next_outbox_sequence(self, project_id: ProjectId) -> int:
-        seqs = [
-            e.sequence
-            for e in self._data.outbox.values()
-            if e.project_id == project_id
-        ]
+        seqs = [e.sequence for e in self._data.outbox.values() if e.project_id == project_id]
         return max(seqs, default=0) + 1
 
     # ---- 写 ----
@@ -205,9 +198,7 @@ class MemoryTxn:
         for event in events:
             self._data.outbox[event.id] = event
 
-    def put_idempotent_result(
-        self, project_id: ProjectId, key: str, result: CommitResult
-    ) -> None:
+    def put_idempotent_result(self, project_id: ProjectId, key: str, result: CommitResult) -> None:
         self._data.idempotency[(project_id.value, key)] = result
 
 
@@ -276,7 +267,11 @@ class MemoryRepository:
                     f"到期时间 {existing.expires_at.isoformat()}",
                     "等待租约到期或由持有者释放后再 acquire",
                 )
-            if existing is not None and not existing.is_expired(now) and existing.owner_job_id == owner_job_id:
+            if (
+                existing is not None
+                and not existing.is_expired(now)
+                and existing.owner_job_id == owner_job_id
+            ):
                 return existing  # 同 owner 重复 acquire：幂等返回现有租约
             lease = Lease(
                 resource_key=resource_key,
@@ -310,7 +305,11 @@ class MemoryRepository:
                     self._lease_state_reason(current, lease, now),
                     "重新 acquire 获取新租约后继续工作",
                 )
-            renewed = replace(current, expires_at=now + timedelta(seconds=ttl_seconds), version=current.version + 1)
+            renewed = replace(
+                current,
+                expires_at=now + timedelta(seconds=ttl_seconds),
+                version=current.version + 1,
+            )
             self._storage.data.leases[lease.resource_key] = renewed
         return renewed
 
@@ -369,9 +368,7 @@ class MemoryRepository:
         with self._storage.lock():
             event = self._storage.data.outbox.get(event_id)
             if event is not None and event.published_at is None:
-                self._storage.data.outbox[event_id] = replace(
-                    event, published_at=self._clock.now()
-                )
+                self._storage.data.outbox[event_id] = replace(event, published_at=self._clock.now())
 
     @staticmethod
     def _event_dict(event: OutboxEvent) -> dict[str, object]:

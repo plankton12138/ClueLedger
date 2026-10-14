@@ -18,6 +18,7 @@ from typing import Protocol, runtime_checkable
 
 from hastings.domain.repository.ids import (
     ArtifactId,
+    BranchId,
     CommitId,
     JobId,
     ProjectId,
@@ -54,6 +55,9 @@ __all__ = [
     "RepositoryTxn",
 ]
 
+# diff 的缺省作用域（frozen dataclass，共享实例安全；避免 B008 函数调用默认值）
+DEFAULT_SCOPE = Scope()
+
 
 @runtime_checkable
 class RepositoryReader(Protocol):
@@ -68,9 +72,7 @@ class RepositoryReader(Protocol):
     def get_snapshot(self, project_id: ProjectId, commit_id: CommitId) -> Snapshot:
         """读取某 Commit 下的项目快照；commit 不存在或跨项目即违规。"""
 
-    def get_artifact(
-        self, artifact_id: ArtifactId, at_commit_id: CommitId
-    ) -> ArtifactView | None:
+    def get_artifact(self, artifact_id: ArtifactId, at_commit_id: CommitId) -> ArtifactView | None:
         """读取某 Artifact 在指定 Commit 的版本视图；该提交尚未引入时返回 None。"""
 
     def list_artifacts(self, query: ArtifactQuery, at_commit_id: CommitId) -> list[ArtifactView]:
@@ -80,7 +82,7 @@ class RepositoryReader(Protocol):
         self,
         before_commit_id: CommitId,
         after_commit_id: CommitId,
-        scope: Scope = Scope(),
+        scope: Scope = DEFAULT_SCOPE,
     ) -> RepositoryDiff:
         """比较两个 Commit 间的 Artifact 与关系差异（两提交必须同项目）。"""
 
@@ -135,6 +137,7 @@ class RepositoryTxn(Protocol):
     def get_commit(self, commit_id: CommitId) -> Commit | None: ...
     def commit_chain(self, commit_id: CommitId) -> tuple[Commit, ...]:
         """返回 root→commit 的链（沿 parent_ids[0] 回溯）；commit 必须存在。"""
+
     def entries_for_commits(
         self, commit_ids: tuple[CommitId, ...]
     ) -> dict[CommitId, tuple[CommitEntry, ...]]: ...
@@ -158,7 +161,10 @@ class RepositoryTxn(Protocol):
         self, branch_id: BranchId, new_head: CommitId, expected_version: int
     ) -> None: ...
     def append_outbox_events(self, events: tuple[OutboxEvent, ...]) -> None: ...
-    def put_idempotent_result(self, project_id: ProjectId, key: str, result: CommitResult) -> None: ...
+
+    def put_idempotent_result(
+        self, project_id: ProjectId, key: str, result: CommitResult
+    ) -> None: ...
 
 
 @runtime_checkable

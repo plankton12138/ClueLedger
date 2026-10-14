@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 __all__ = ["canonical_json", "content_hash"]
@@ -31,8 +31,7 @@ def _canon(value: Any) -> Any:
     if isinstance(value, float):
         if not math.isfinite(value):
             raise ValueError(
-                f"浮点值 {value!r} 无法规范序列化（NaN/Inf 不允许；"
-                "请在上游改用可稳定表示的值）"
+                f"浮点值 {value!r} 无法规范序列化（NaN/Inf 不允许；请在上游改用可稳定表示的值）"
             )
         return value
     if isinstance(value, datetime):
@@ -41,7 +40,7 @@ def _canon(value: Any) -> Any:
                 f"datetime {value!r} 不带时区（为什么错：naive 时间在不同环境下语义漂移；"
                 "怎样算对：一律使用带时区 UTC 的 datetime）"
             )
-        return value.astimezone(timezone.utc).isoformat()
+        return value.astimezone(UTC).isoformat()
     if isinstance(value, dict):
         return {str(k): _canon(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
     if isinstance(value, (list, tuple)):

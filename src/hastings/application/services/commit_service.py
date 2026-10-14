@@ -28,7 +28,11 @@ from typing import Any
 
 from hastings.application.errors import ViolationError
 from hastings.application.ports.ids import IdGenerator
-from hastings.application.ports.repository import RepositoryStorage, RepositoryTxn
+from hastings.application.ports.repository import (
+    DEFAULT_SCOPE,
+    RepositoryStorage,
+    RepositoryTxn,
+)
 from hastings.domain.repository import error_codes as ec
 from hastings.domain.repository.ids import (
     Actor,
@@ -227,9 +231,7 @@ class CommitService:
                             created_at=now,
                         )
                     )
-                old_id = (
-                    change.old_revision_id if record is not None else None
-                )
+                old_id = change.old_revision_id if record is not None else None
                 new_rev = Revision(
                     id=RevisionId(self._ids.new_id("rev")),
                     artifact_id=aid,
@@ -271,6 +273,17 @@ class CommitService:
                 for change, rev, old_id in writes
             )
             for rel in request.relations:
+                for endpoint in (rel.source, rel.target):
+                    if endpoint not in seen and txn.get_artifact_record(endpoint) is None:
+                        raise _violation(
+                            ec.REPO_INVALID_CHANGE,
+                            where,
+                            f"关系端点 {endpoint.value} 既不在本次提交中，也不是已有对象",
+                            "先创建对象（同一提交即可），或使用已存在的 artifact ID",
+                        )
+            txn.insert_commit(commit, entries)
+            # 关系行引用 commit_id，必须在 Commit 落库之后写入
+            for rel in request.relations:
                 txn.insert_relation(
                     RelationRevision(
                         id=self._ids.new_id("rel"),
@@ -282,7 +295,6 @@ class CommitService:
                         metadata=dict(rel.metadata),
                     )
                 )
-            txn.insert_commit(commit, entries)
             # (9) 移动 Branch head
             new_version = branch.version + 1
             txn.set_branch_head(branch.id, commit.id, branch.version)
@@ -419,9 +431,7 @@ class CommitService:
                 )
             chain = txn.commit_chain(commit_id)
             chain_ids = tuple(c.id for c in chain)
-            effective = fold_effective_revisions(
-                chain, txn.entries_for_commits(chain_ids)
-            )
+            effective = fold_effective_revisions(chain, txn.entries_for_commits(chain_ids))
             views: dict[ArtifactId, ArtifactView] = {}
             for record in txn.artifacts_of_project(project_id):
                 rev_id = effective.get(record.id)
@@ -432,9 +442,7 @@ class CommitService:
             project_id=project_id, commit_id=commit_id, artifacts=views, relations=relations
         )
 
-    def get_artifact(
-        self, artifact_id: ArtifactId, at_commit_id: CommitId
-    ) -> ArtifactView | None:
+    def get_artifact(self, artifact_id: ArtifactId, at_commit_id: CommitId) -> ArtifactView | None:
         with self._storage.transaction() as txn:
             commit = txn.get_commit(at_commit_id)
             if commit is None:
@@ -449,9 +457,9 @@ class CommitService:
                 return None
             chain = txn.commit_chain(at_commit_id)
             chain_ids = tuple(c.id for c in chain)
-            rev_id = fold_effective_revisions(
-                chain, txn.entries_for_commits(chain_ids)
-            ).get(artifact_id)
+            rev_id = fold_effective_revisions(chain, txn.entries_for_commits(chain_ids)).get(
+                artifact_id
+            )
             revision = txn.get_revision(rev_id) if rev_id else None
         return ArtifactView(artifact=record, revision=revision)
 
@@ -464,9 +472,7 @@ class CommitService:
                 )
             chain = txn.commit_chain(at_commit_id)
             chain_ids = tuple(c.id for c in chain)
-            effective = fold_effective_revisions(
-                chain, txn.entries_for_commits(chain_ids)
-            )
+            effective = fold_effective_revisions(chain, txn.entries_for_commits(chain_ids))
             views: list[ArtifactView] = []
             for record in txn.artifacts_of_project(commit.project_id):
                 if query.kind is not None and record.kind != query.kind:
@@ -481,7 +487,7 @@ class CommitService:
         self,
         before_commit_id: CommitId,
         after_commit_id: CommitId,
-        scope: Scope = Scope(),
+        scope: Scope = DEFAULT_SCOPE,
     ) -> RepositoryDiff:
         with self._storage.transaction() as txn:
             before = txn.get_commit(before_commit_id)
@@ -661,7 +667,12 @@ class CommitService:
     ) -> None:
         lease = txn.get_lease(resource_key)
         expired = lease is not None and lease.is_expired(now)
-        if lease is None or lease.owner_job_id.value != owner or lease.version != version or expired:
+        if (
+            lease is None
+            or lease.owner_job_id.value != owner
+            or lease.version != version
+            or expired
+        ):
             state = (
                 "不存在"
                 if lease is None
@@ -679,8 +690,12 @@ class CommitService:
     def _require_commit(self, txn: RepositoryTxn, commit_id: CommitId) -> Commit:
         commit = txn.get_commit(commit_id)
         if commit is None:
-            raise _not_found(ec.REPO_COMMIT_NOT_FOUND, f"get_snapshot({commit_id.value})",
-                             f"Commit {commit_id.value}", "")
+            raise _not_found(
+                ec.REPO_COMMIT_NOT_FOUND,
+                f"get_snapshot({commit_id.value})",
+                f"Commit {commit_id.value}",
+                "",
+            )
         return commit
 
     def _build_events(
