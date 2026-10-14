@@ -133,9 +133,7 @@ def test_create_beat_success(make_catalog: MakeCatalog, next_id: Callable[[str],
     assert change.artifact_changes[0].content["purpose"] == "建立谜面"
 
 
-def test_create_beat_unknown_pov(
-    make_catalog: MakeCatalog, next_id: Callable[[str], str]
-) -> None:
+def test_create_beat_unknown_pov(make_catalog: MakeCatalog, next_id: Callable[[str], str]) -> None:
     catalog = make_catalog([_node("art_sc1", kinds.KIND_SCENE, parent_id=None)])
     with pytest.raises(StoryViolation) as exc:
         commands.create_beat(catalog, next_id, parent_id="art_sc1", pov_character_id="art_none")
@@ -240,9 +238,7 @@ def test_move_beat_order_collision(
     assert exc.value.code == ec.STORY_INVALID_COMMAND
 
 
-def test_move_beat_unknown_beat(
-    make_catalog: MakeCatalog, next_id: Callable[[str], str]
-) -> None:
+def test_move_beat_unknown_beat(make_catalog: MakeCatalog, next_id: Callable[[str], str]) -> None:
     with pytest.raises(StoryViolation) as exc:
         commands.move_beat(make_catalog([]), next_id, beat_id="art_none")
     assert exc.value.code == ec.STORY_UNKNOWN_ARTIFACT
@@ -253,17 +249,13 @@ def test_revise_beat_purpose_success(
     make_catalog: MakeCatalog, next_id: Callable[[str], str]
 ) -> None:
     catalog = make_catalog([_beat("art_b1", purpose="旧作用", title="发现")])
-    change = commands.revise_beat_purpose(
-        catalog, next_id, beat_id="art_b1", purpose="新作用"
-    )
+    change = commands.revise_beat_purpose(catalog, next_id, beat_id="art_b1", purpose="新作用")
     assert change.artifact_changes[0].content["purpose"] == "新作用"
     assert change.artifact_changes[0].content["title"] == "发现"  # 未提供字段保留
     assert {s.target_id for s in change.impact_seeds} == {"art_b1"}
 
 
-def test_revise_beat_purpose_noop(
-    make_catalog: MakeCatalog, next_id: Callable[[str], str]
-) -> None:
+def test_revise_beat_purpose_noop(make_catalog: MakeCatalog, next_id: Callable[[str], str]) -> None:
     catalog = make_catalog([_beat("art_b1", purpose="同作用")])
     change = commands.revise_beat_purpose(catalog, next_id, beat_id="art_b1", purpose="同作用")
     assert change.is_empty()
