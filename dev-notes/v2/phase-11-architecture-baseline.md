@@ -68,3 +68,15 @@
 
 - 自查：计划 §7 验收证据逐项核对——ADR 链接有效、违规 fixture 证明测试有效、manifest 校验通过、全量测试无新增失败、`git diff -- src/hastings` 仅含包骨架与端口/错误（未动 hastings.tools 与旧模块）、无数据库/业务路由/旧数据变化。
 - 未决问题：无阻塞项；§6 留白已移交 Phase 12。
+- 外部评审（GPT）收口意见三条，均有效，已落地（见 §8）。
+
+## 8. 评审收口（2026-10-14，外部评审意见）
+
+主体结论「不需要推翻」被采纳；三条收口意见逐条落实为一个补丁提交：
+
+1. **EventOutbox 边界**：原端口含通用 `append`，应用层可绕过提交事务追加事件——恰好复刻 ADR-007 要消灭的「数据已写入但事件丢失」双写窗口。修订为发布器消费视角（`pending(project_id, limit)` / `mark_published`），事件写入唯一入口是 `CommitRepository.commit`；无 Commit 的任务进度走 JobStore 通道。测试固化 `not hasattr(EventOutbox, "append")`。
+2. **依赖扫描漏检**：`import hastings.application.ports.repository as r; r.CommitRepository` 的属性式引用绕过了 from-import 名单检查。规则本意是「agents 不持有写端口」，不是「不许用某种 import 语法」——补 AST Name/Attribute 使用点扫描，并在故意违规树中固化该形态。
+3. **fixture 验证补强**：原校验只保证字节级（哈希/记录数），Phase 12 导入器若因源数据违反约束而失败将无法归因。补两个测试：领域不变量（角色/线索主键唯一、章纲章号唯一、时间线与不在场证明引用已建档角色、阶段史从 intake 开始）与事件日志结构（JSONL 逐行可解析、seq 从 1 连续递增、`message_update` 不落盘——V1 刻意裁剪的契约）。
+
+四透镜复盘补一句：三条意见其实都在说同一件事——**契约的边界必须闭合到「做不到」而不是「不应该」**。append 从端口消失、属性式引用被扫描器封死、fixture 内容被不变量约束，都是把口头约定降级为不可表达的状态。
+

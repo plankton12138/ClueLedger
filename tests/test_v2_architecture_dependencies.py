@@ -36,15 +36,15 @@ _DOMAIN_FORBIDDEN: tuple[str, ...] = (
 )
 
 
-def _qualified_imports(file: Path, hastings_root: Path) -> list[tuple[str, tuple[str, ...]]]:
-    """解析一个 .py 文件，返回 (导入目标全名, from-import 的名字列表)。
+def _qualified_imports(
+    tree: ast.Module, rel_parents: list[str]
+) -> list[tuple[str, tuple[str, ...]]]:
+    """解析一个已 parse 的模块，返回 (导入目标全名, from-import 的名字列表)。
 
-    相对导入按文件在 hastings 包内的位置解析为绝对名；
+    ``rel_parents`` 为文件相对 hastings 包根的父目录段，例如
+    ["domain", "story"]；相对导入据此解析为绝对名。
     名字列表对 ``import x`` 形式为空元组。
-    真实 src 树以 src/hastings 为包根；临时违规树以扫描根为包根。
     """
-    tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
-    rel_parents = list(file.parent.relative_to(hastings_root).parts)
     base = ["hastings", *rel_parents]
 
     results: list[tuple[str, tuple[str, ...]]] = []
@@ -80,7 +80,9 @@ def scan_violations(hastings_root: Path) -> list[str]:
             continue
         for file in sorted(pkg_dir.rglob("*.py")):
             rel = file.relative_to(hastings_root).as_posix()
-            for target, names in _qualified_imports(file, hastings_root):
+            tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+            rel_parents = list(file.parent.relative_to(hastings_root).parts)
+            for target, names in _qualified_imports(tree, rel_parents):
                 if pkg == "domain" and (hit := _prefix_match(target, _DOMAIN_FORBIDDEN)):
                     violations.append(f"{rel}: domain 依赖了 {hit}")
                 if pkg == "interfaces" and _prefix_match(target, ("hastings.infrastructure",)):
@@ -96,7 +98,22 @@ def scan_violations(hastings_root: Path) -> list[str]:
                     violations.append(f"{rel}: agents import 了 CommitRepository 写端口")
                 if _prefix_match(target, ("hastings.tools",)):
                     violations.append(f"{rel}: V2 包 import 了旧写入口 hastings.tools")
+            # 评审收口：import 形式之外的属性式引用（import x as r; r.CommitRepository、
+            # from hastings.application import ports; ports.CommitRepository）同样封禁——
+            # 规则是「不持有写端口」，不是「不许用某种 import 语法」。
+            if pkg == "agents" and _references_write_port(tree):
+                violations.append(f"{rel}: agents 引用了 CommitRepository 写端口（属性式）")
     return violations
+
+
+def _references_write_port(tree: ast.Module) -> bool:
+    """检测 AST 中对 CommitRepository 的表达式级引用（Name / Attribute）。"""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == "CommitRepository":
+            return True
+        if isinstance(node, ast.Attribute) and node.attr == "CommitRepository":
+            return True
+    return False
 
 
 def test_v2_packages_exist() -> None:
@@ -130,6 +147,14 @@ def test_deliberate_violations_are_detected(tmp_path: Path) -> None:
         tmp_path / "agents" / "evil.py",
         "from hastings.application.ports.repository import CommitRepository\n",
     )
+    # 评审收口补的漏检形态：import as 别名 + 属性访问，绕过 from-import 名单
+    _write(
+        tmp_path / "agents" / "indirect.py",
+        "import hastings.application.ports.repository as repo\n"
+        "\n\n"
+        "def f() -> object:\n"
+        "    return repo.CommitRepository\n",
+    )
     _write(tmp_path / "agents" / "clean.py", "from hastings.application.ports import AgentRunner\n")
 
     violations = scan_violations(tmp_path)
@@ -139,6 +164,7 @@ def test_deliberate_violations_are_detected(tmp_path: Path) -> None:
     assert any("domain/evil.py" in v and "tau_agent" in v for v in violations)
     assert any("interfaces/evil.py" in v and "infrastructure" in v for v in violations)
     assert any("agents/evil.py" in v and "CommitRepository" in v for v in violations)
+    assert any("agents/indirect.py" in v and "CommitRepository" in v for v in violations)
     # clean 文件与相对导入不得误报
     assert not any("clean.py" in v for v in violations)
 

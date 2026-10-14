@@ -106,3 +106,69 @@ def test_fixture_loads_through_v1_stores() -> None:
 
     assert current_revision(workspace, "ch01") == 2  # 1 次归档 + 主文件
     assert current_revision(workspace, "ch02") == 1
+
+
+def test_fixture_satisfies_v1_domain_invariants() -> None:
+    """评审收口：fixture 不只是字节快照，其内容必须满足 V1 领域不变量。
+
+    迁移测试会把 fixture 喂给 V2 导入器；若源数据本身违反主键/引用约束，
+    导入失败将无法区分是导入器的错还是数据的错。
+    """
+    workspace = StoryWorkspace(root=FIXTURE_ROOT.parent, slug=SLUG)
+
+    characters = list_characters(workspace)
+    character_names = {c.name for c in characters}
+    assert len(character_names) == len(characters), "角色主键不唯一"
+
+    clues = load_ledger(workspace.clues_path, Clue)
+    assert len({c.name for c in clues}) == len(clues), "线索 name 主键不唯一"
+
+    outlines = load_ledger(workspace.outline_path, OutlineEntry)
+    chapters = [o.chapter for o in outlines]
+    assert len(set(chapters)) == len(chapters), "章纲 chapter 编号不唯一"
+
+    timeline = load_ledger(workspace.timeline_path, TimelineEntry)
+    for entry in timeline:
+        unknown = set(entry.participants) - character_names
+        assert not unknown, f"时间线引用了未建档角色：{unknown}"
+
+    methods = load_ledger(workspace.method_path, Method)
+    for method in methods:
+        alibi_persons = {claim.person for claim in method.alibi_claims}
+        unknown = alibi_persons - character_names
+        assert not unknown, f"手法不在场证明引用了未建档角色：{unknown}"
+
+    doc = load_story_doc(workspace)
+    assert doc.stage_history[0].from_stage == "intake", "阶段史必须从 intake 开始"
+
+
+def test_event_and_session_logs_are_wellformed() -> None:
+    """评审收口：JSONL 逐行可解析且事件结构满足 V1 事件契约。
+
+    Phase 12 导入器要按 seq 重放事件；seq 断裂或乱序会让「导入失败原因」
+    无法归因。message_update 在 V1 中被刻意裁剪（不落盘），出现即为契约漂移。
+    """
+    import json
+
+    events = [
+        json.loads(line)
+        for line in (FIXTURE_ROOT / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert events, "事件日志为空"
+    for i, event in enumerate(events, start=1):
+        assert set(event) == {"ts", "seq", "type", "data"}, f"第 {i} 行字段不符：{set(event)}"
+        assert event["seq"] == i, f"事件 seq 断裂：第 {i} 行 seq={event['seq']}"
+        assert event["type"] != "message_update", "message_update 不应落盘（V1 刻意裁剪）"
+
+    session_log = FIXTURE_ROOT / "sessions" / "session-20261001-120000-ab12.jsonl"
+    for line in session_log.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        message = json.loads(line)
+        assert set(message) == {"role", "content"}
+
+    revision_meta = json.loads(
+        (FIXTURE_ROOT / "chapters" / ".revisions" / "ch01" / "001.json").read_text(encoding="utf-8")
+    )
+    assert set(revision_meta) == {"ts", "hunks", "stats"}

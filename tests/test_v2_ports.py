@@ -101,12 +101,7 @@ def test_fakes_implement_all_ports() -> None:
             return None
 
     class FakeOutbox:
-        async def append(
-            self, event_type: str, payload: dict[str, object], commit_id: str | None
-        ) -> str:
-            return "evt_1"
-
-        async def pending(self, limit: int) -> list[dict[str, object]]:
+        async def pending(self, project_id: str, limit: int) -> list[dict[str, object]]:
             return []
 
         async def mark_published(self, event_id: str) -> None:
@@ -119,6 +114,15 @@ def test_fakes_implement_all_ports() -> None:
     _assert_implements(FakeAgentRunner(), AgentRunner)
     _assert_implements(FakeJobStore(), JobStore)
     _assert_implements(FakeOutbox(), EventOutbox)
+
+
+def test_event_outbox_has_no_append_entry() -> None:
+    """边界固化（评审收口）：Outbox 端口只暴露消费侧方法。
+
+    事件写入唯一入口是 CommitRepository.commit（ADR-007）；端口若提供
+    通用 append，应用层就能绕过提交事务追加事件，重新制造双写窗口。
+    """
+    assert not hasattr(EventOutbox, "append")
 
 
 class TestErrorEnvelope:
