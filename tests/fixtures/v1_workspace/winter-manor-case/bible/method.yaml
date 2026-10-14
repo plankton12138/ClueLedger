@@ -1,0 +1,19 @@
+- name: 书房密室伪装
+  description: 利用停电十分钟伪造反锁，制造死者独处假象
+  time_window: 第3天晚 21:50-22:20
+  requirements:
+    - 凶手持有书房备用钥匙
+    - 停电由配电室手动拉闸，需熟悉山庄线路
+    - 挂钟拨至 22:17 并以烟头灼烧表壳误导死亡时间
+  alibi_claims:
+    - person: 早坂慎一
+      day: 3
+      t_start: "21:00"
+      t_end: "23:00"
+      claim: 声称整晚在厨房清点酒窖存货
+  history:
+    - action: locked
+      chapter: ""
+      reason: 手法与线索链闭合，提交作者确认后锁定
+      timestamp: "2026-09-30T20:05:00"
+  status: locked

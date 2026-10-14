@@ -1,0 +1,5 @@
+{"ts": "2026-10-01T12:00:01+00:00", "seq": 1, "type": "agent_start", "data": {"session_id": "session-20261001-120000-ab12"}}
+{"ts": "2026-10-01T12:00:05+00:00", "seq": 2, "type": "tool_execution_start", "data": {"tool": "foreshadow_upsert", "input": {"name": "失踪的书房钥匙"}}}
+{"ts": "2026-10-01T12:00:06+00:00", "seq": 3, "type": "tool_execution_end", "data": {"tool": "foreshadow_upsert", "isError": false}}
+{"ts": "2026-10-01T12:00:08+00:00", "seq": 4, "type": "message_end", "data": {"role": "assistant", "content": "已记入伏笔账本：「失踪的书房钥匙」。"}}
+{"ts": "2026-10-03T22:10:00+00:00", "seq": 5, "type": "notice", "data": {"level": "warn", "text": "timeline R2：早坂慎一 22:00-23:00 证词缺口"}}

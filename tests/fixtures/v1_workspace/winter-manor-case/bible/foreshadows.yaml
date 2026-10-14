@@ -1,0 +1,12 @@
+- name: 失踪的书房钥匙
+  content: 管家声称书房钥匙三年前已丢失，但锁芯无换过痕迹
+  plant_chapter: ch01
+  plant_mode: hint
+  expected_resolve_chapter: ch05
+  status: planted
+- name: 死者修订中的遗嘱
+  content: 死者书桌上有约见律师的新便条，日期是案发次日
+  plant_chapter: ch02
+  plant_mode: explicit
+  expected_resolve_chapter: ch06
+  status: planted

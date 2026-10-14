@@ -1,0 +1,26 @@
+- name: 死者书房会客
+  day: 3
+  t_start: "21:30"
+  t_end: "21:50"
+  chapter: ch01
+  participants:
+    - 早坂慎一
+  note: 死者约管家谈修缮预算
+- name: 全庄停电
+  day: 3
+  t_start: "21:50"
+  t_end: "22:00"
+  chapter: ch02
+  participants:
+    - 桐生绫
+    - 早坂慎一
+    - 雾岛千鹤
+  note: 十分钟后恢复，众人各自回到房间
+- name: 发现遗体
+  day: 4
+  t_start: "07:40"
+  chapter: ch03
+  participants:
+    - 桐生绫
+    - 雾岛千鹤
+  note: 千鹤敲门无应答，绫破门而入

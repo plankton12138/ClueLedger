@@ -1,0 +1,23 @@
+{
+  "description": "V1 旧工作区基准 fixture（Phase 11 T11.3）。纯测试数据，非任何用户真实项目；作为 Phase 12–17 迁移测试与迁移报告的对照基线。sha256 为 UTF-8 文件字节哈希；records 口径见 tests/test_v1_workspace_fixture.py 的 RECORD_COUNTERS。",
+  "slug": "winter-manor-case",
+  "files": [
+    { "path": "story.yaml", "type": "story", "records": 1, "sha256": "588de4d2bfd3413cea3da37c47a42acac7cd1845abd72c674a9aca1a4aa43877" },
+    { "path": "bible/characters/桐生绫.yaml", "type": "character", "records": 1, "sha256": "d67708613b6a47d7b5eb071370005f955744e307016cb33bda0a3b0bf3136a9f" },
+    { "path": "bible/characters/早坂慎一.yaml", "type": "character", "records": 1, "sha256": "0334d9a8f979c230d9ed865b8d54bc7a5aaa186e6e9a075260b19a7abb18930b" },
+    { "path": "bible/characters/雾岛千鹤.yaml", "type": "character", "records": 1, "sha256": "3dd19ba4da0307a961318c976621f7b6a9a0b5624236e4c5306480e20a7faa69" },
+    { "path": "bible/clues.yaml", "type": "clue", "records": 3, "sha256": "273b806b4a441f090a1821435d4980b4c419c3d425120fc8c6572aa2e74805c7" },
+    { "path": "bible/foreshadows.yaml", "type": "foreshadow", "records": 2, "sha256": "0e7643b942b550a78fb3d2ba43f118563ac519d9fe31eeaf3b91d94d6da510af" },
+    { "path": "bible/method.yaml", "type": "method", "records": 1, "sha256": "45dd26b7c1313b70b4a47dd747751265174c9333680d06d85f19b2ee3d324089" },
+    { "path": "bible/timeline.yaml", "type": "timeline", "records": 3, "sha256": "57b11a638acd5958235f13571943eca3333829ade36ca7623bc780acea066379" },
+    { "path": "bible/outlines.yaml", "type": "outline", "records": 3, "sha256": "1486c61a534d55d063ec689ec5aea4a5fbc46087cc5b2af7d6bf8db51715a480" },
+    { "path": "chapters/ch01.md", "type": "chapter", "records": 1, "sha256": "bb3860457c92d27d4e0715f5ce1acf1e41f5573a67c84d2197dba2702e084cbb" },
+    { "path": "chapters/ch02.md", "type": "chapter", "records": 1, "sha256": "35d5f2fdd0ae54734a77800c5f0f5a952c07b9b744254c6cce4d7972a11bedba" },
+    { "path": "chapters/ch03.md", "type": "chapter", "records": 1, "sha256": "07b037fe9d05b565bd0d9b9e08c64449d414096dcc675ce31cd967817d21abe0" },
+    { "path": "chapters/.revisions/ch01/001.md", "type": "revision_md", "records": 1, "sha256": "27bd99367a32e2c00ff25bf5149c379aec38fbfd426f438e99dc63d62e71b0c3" },
+    { "path": "chapters/.revisions/ch01/001.json", "type": "revision_meta", "records": 1, "sha256": "685156120cdc9a841630808117dc2ce3eaa7f816f3fe240a86fe6d5be9e7ebf3" },
+    { "path": "sessions.json", "type": "session_index", "records": 1, "sha256": "158777b5deb7fd6061e3c714f15936b9e9eedc7dcb69dd29ba4f62b3a045db08" },
+    { "path": "sessions/session-20261001-120000-ab12.jsonl", "type": "session_log", "records": 2, "sha256": "2ef47ee3c2966bcc69d83762804282a230321dd4be0734db53a0f42861f1c230" },
+    { "path": "events.jsonl", "type": "events", "records": 5, "sha256": "0a5bb9fdf5bd126514e671aac9aa6d3828bff4d7d5e7d43f8cb4220ad59883bd" }
+  ]
+}
