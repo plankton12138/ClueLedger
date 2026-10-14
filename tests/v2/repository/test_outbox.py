@@ -125,3 +125,33 @@ def test_publisher_failure_keeps_event_pending(repo_env: Any) -> None:
     published = asyncio.run(publisher.publish_pending(project.id.value))
     assert published == 6
     assert asyncio.run(repo.pending(project.id.value, 100)) == []
+
+
+def test_handler_failure_is_retried_not_swallowed(repo_env: Any) -> None:
+    """handler 失败后不得记入 seen：事件保持 pending，重投时 handler 再次执行。"""
+    repo, project = repo_env
+    calls: list[str] = []
+    state = {"fail": True}
+
+    async def flaky_handler(event: Any) -> None:
+        event_id = str(event["id"])
+        calls.append(event_id)
+        if state["fail"]:
+            raise RuntimeError("业务副作用失败")
+
+    sink = DeduplicatingSink(handler=flaky_handler)
+    publisher = OutboxPublisher(repo, sink)
+
+    with pytest.raises(RuntimeError, match="业务副作用失败"):
+        asyncio.run(publisher.publish_pending(project.id.value))
+    assert len(calls) == 1  # 第一个事件 handler 失败，发布即停
+    assert not sink.seen_event_ids  # 失败的事件未记账，不会在重试时被吞
+    assert sink.effects == []
+
+    state["fail"] = False
+    published = asyncio.run(publisher.publish_pending(project.id.value))
+    assert published == 6
+    # handler 对每个事件恰好执行一次：失败的那次被重试，成功的不重复
+    assert len(calls) == 7
+    assert len(sink.effects) == 6
+    assert asyncio.run(repo.pending(project.id.value, 100)) == []

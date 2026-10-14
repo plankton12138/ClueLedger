@@ -50,7 +50,15 @@ class OutboxPublisher:
 
 
 class DeduplicatingSink:
-    """按 event_id 去重的参考消费端：重复投递只产生一次业务效果。"""
+    """按 event_id 去重的参考消费端：重复投递只产生一次业务效果。
+
+    记账时机：handler 成功返回后才写入 ``seen_event_ids`` 与 ``effects``——
+    若在调用前记账，handler 失败的事件会在重试时被去重拦截、永不执行，
+    随后又被 Publisher 标记为已发布，事件被静默丢失。
+
+    这是**参考实现**：内存 seen 集合进程重启即失效。生产消费端必须把
+    「业务副作用」与「event_id 已消费记录」放进同一事务，才能证明可靠去重。
+    """
 
     def __init__(
         self,
@@ -64,7 +72,7 @@ class DeduplicatingSink:
         event_id = str(event["id"])
         if event_id in self.seen_event_ids:
             return  # 重复投递：不产生业务效果
+        if self._handler is not None:
+            await self._handler(event)  # 失败则不入账，事件保持待发布待重试
         self.seen_event_ids.add(event_id)
         self.effects.append(event)
-        if self._handler is not None:
-            await self._handler(event)
