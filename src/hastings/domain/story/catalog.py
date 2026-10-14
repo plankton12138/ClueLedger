@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from hastings.domain.repository.models import Snapshot
+from hastings.domain.repository.models import RelationRevision, Snapshot
 from hastings.domain.story import error_codes as ec
 from hastings.domain.story import kinds
 from hastings.domain.story.canon.models import (
@@ -110,10 +110,15 @@ class StoryEntry:
 
 @dataclass(frozen=True, slots=True)
 class StoryCatalog:
-    """某 Commit 的故事目录（只读）。commit_id 为 None 表示空目录。"""
+    """某 Commit 的故事目录（只读）。commit_id 为 None 表示空目录。
+
+    ``relations`` 保留该 Commit 的依赖边（如 ``supersedes``），供查询投影
+    排除被替代的旧事实；命令层不据此写入。
+    """
 
     commit_id: str | None
     entries: tuple[StoryEntry, ...]
+    relations: tuple[RelationRevision, ...] = ()
 
     # ------------------------------------------------------------------
     # 构造与查询
@@ -135,7 +140,11 @@ class StoryCatalog:
                 )
             )
         entries.sort(key=lambda e: e.artifact_id)
-        return cls(commit_id=snapshot.commit_id.value, entries=tuple(entries))
+        return cls(
+            commit_id=snapshot.commit_id.value,
+            entries=tuple(entries),
+            relations=snapshot.relations,
+        )
 
     def by_kind(self, kind: str) -> tuple[StoryEntry, ...]:
         return tuple(e for e in self.entries if e.kind == kind)

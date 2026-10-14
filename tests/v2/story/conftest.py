@@ -16,7 +16,13 @@ from hastings.domain.repository.ids import (
     ProjectId,
     RevisionId,
 )
-from hastings.domain.repository.models import Artifact, ArtifactView, Revision, Snapshot
+from hastings.domain.repository.models import (
+    Artifact,
+    ArtifactView,
+    RelationRevision,
+    Revision,
+    Snapshot,
+)
 from hastings.domain.repository.serialization import content_hash
 from hastings.domain.story.catalog import StoryCatalog
 
@@ -29,6 +35,7 @@ def build_snapshot(
     *,
     commit_id: str = "cmt_1",
     project_id: ProjectId = PROJECT_ID,
+    relations: tuple[RelationRevision, ...] = (),
 ) -> Snapshot:
     """把 (artifact_id, kind, content) 列表构造成带 Revision 的 Snapshot。"""
     artifacts: dict[ArtifactId, ArtifactView] = {}
@@ -51,7 +58,7 @@ def build_snapshot(
         project_id=project_id,
         commit_id=CommitId(commit_id),
         artifacts=artifacts,
-        relations=(),
+        relations=relations,
     )
 
 
@@ -59,8 +66,11 @@ def build_catalog(
     entries: list[tuple[str, str, dict[str, Any]]],
     *,
     commit_id: str = "cmt_1",
+    relations: tuple[RelationRevision, ...] = (),
 ) -> StoryCatalog:
-    return StoryCatalog.from_snapshot(build_snapshot(entries, commit_id=commit_id))
+    return StoryCatalog.from_snapshot(
+        build_snapshot(entries, commit_id=commit_id, relations=relations)
+    )
 
 
 @pytest.fixture
