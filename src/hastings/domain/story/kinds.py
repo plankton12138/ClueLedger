@@ -68,6 +68,8 @@ REL_PAYS_OFF = "pays_off"
 REL_REQUIRES = "requires"
 REL_RENDERS = "renders"
 REL_MENTIONS = "mentions"
+# 替代关系：新事实 → 被替代的旧事实；旧事实保留，查询据此排除已替代项（不变量 3）
+REL_SUPERSEDES = "supersedes"
 
 STORY_RELATION_TYPES = frozenset(
     (
@@ -80,5 +82,6 @@ STORY_RELATION_TYPES = frozenset(
         REL_REQUIRES,
         REL_RENDERS,
         REL_MENTIONS,
+        REL_SUPERSEDES,
     )
 )
