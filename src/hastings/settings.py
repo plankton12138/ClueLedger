@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
 
@@ -18,6 +19,10 @@ import yaml
 from pydantic import BaseModel
 
 from hastings.bible.store import StoryWorkspace
+from hastings.interfaces.architecture_version import (
+    ArchitectureVersion,
+    resolve_architecture_version,
+)
 
 # 预设写作语言；模型产出的账本条目 / 正文 / 对话回复一律用该语言。
 WRITING_LANGUAGES: Final[tuple[str, ...]] = ("中文", "English", "日本語")
@@ -50,6 +55,24 @@ class StorySettings(BaseModel):
     provider_profile: str = DEFAULT_PROVIDER_PROFILE
     model: str = ""
     context_window_tokens: int = DEFAULT_CONTEXT_WINDOW_TOKENS
+
+
+def workspace_architecture_version(workspace: StoryWorkspace) -> ArchitectureVersion:
+    """读取工作区项目元数据并解析架构版本（ADR §2.2 的「项目解析这一处」）。
+
+    settings.yaml 是本项目唯一的项目级元数据承载处：``architecture_version: v2``
+    把该项目路由到 V2 装配（domain handler 写路径、bible_upsert 拒绝桩）；缺键、
+    缺文件或取值非法一律回退 v1，与「缺文件按兜底值」的既有惯例一致。
+
+    读取（I/O）收敛在本模块，解析（纯函数）委托给
+    ``hastings.interfaces.architecture_version``——两处装配点（CLI 与 Web 会话）
+    因此共用同一判定，而不是各自判 flag。
+    """
+    path = workspace.settings_path
+    if not path.exists():
+        return resolve_architecture_version(None)
+    raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return resolve_architecture_version(raw if isinstance(raw, Mapping) else None)
 
 
 def load_settings(workspace: StoryWorkspace) -> StorySettings:
@@ -86,4 +109,5 @@ __all__ = [
     "StorySettings",
     "load_settings",
     "save_settings",
+    "workspace_architecture_version",
 ]

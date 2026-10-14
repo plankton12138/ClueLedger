@@ -43,8 +43,55 @@ from hastings.bible.store import (
 from hastings.bible.story_state import intake_write_rejection
 from hastings.tools.errors import ToolInputError
 from tau_agent.messages import TextContent
-from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
+from tau_agent.tools import (
+    AgentTool,
+    AgentToolResult,
+    ToolCancellationToken,
+    ToolExecutor,
+    ToolUpdateCallback,
+)
 from tau_agent.types import JSONValue
+
+# V2 项目路由版本字面量（决策：dev-notes/v2/decisions/architecture-version-routing.md）。
+# 工具层不 import interfaces 解析点，避免依赖方向倒置；调用方传解析后的字符串即可。
+_V2 = "v2"
+_V2_UPSERT_REJECTION = (
+    "bible_upsert 在 V2 项目中不可用（本项目 architecture_version=v2）。"
+    "为什么错：V2 项目只允许经领域命令与 Commit Service 写入，通用账本 upsert 会绕过"
+    "版本检查、依赖边与领域不变量，破坏迁移期的单一写路径。"
+    "怎样算对：改用 V2 故事命令（意图明确的领域命令，如建角色/线索/手法）；"
+    "需要读旧账本时用 bible_query。"
+)
+
+# V2 项目的工具说明（P2 收口）：仅替换 execute_fn 不够——若 description 与
+# prompt_guidelines 仍要求「必须先经 bible_upsert 落盘」，模型会被提示调用一个
+# 必然拒绝的工具，陷入「提示要求调用 / 工具固定拒绝」的循环。说明必须与
+# 执行函数同源：V2 明确宣告该工具不可用并指向真正可用的读入口（bible_query）。
+_V2_UPSERT_DESCRIPTION = (
+    "（V2 项目不可用）本工具在 V2 项目中已停用：V2 项目只允许经领域命令与 "
+    "Commit Service 写入，通用账本 upsert 会绕过版本检查、依赖边与领域不变量。"
+    "调用它只会得到带修正指引的拒绝错误；读取旧账本请用 bible_query。"
+)
+_V2_UPSERT_GUIDELINES = (
+    "本项目 architecture_version=v2：不要用 bible_upsert 写入任何设定"
+    "（调用必被拒绝）；需要核对既有设定时用 bible_query 读取。",
+)
+
+
+async def _v2_upsert_execute(
+    tool_call_id: str,
+    arguments: Mapping[str, JSONValue],
+    signal: ToolCancellationToken | None = None,
+    on_update: ToolUpdateCallback | None = None,
+) -> AgentToolResult:
+    """V2 项目的写路径拒绝桩：与 reject_intake_write 同构的「一处判定」数据面写门。
+
+    保留同名工具而不省略，是为了让越界调用显式失败并给出修正指引
+    （四透镜①②），而不是退化成「未知工具」的静默混乱。
+    """
+    del tool_call_id, arguments, signal, on_update
+    raise ToolInputError(_V2_UPSERT_REJECTION)
+
 
 type ReadAllFn = Callable[[StoryWorkspace], Sequence[BaseModel]]
 type WriteAllFn = Callable[[StoryWorkspace, Sequence[BaseModel]], None]
@@ -406,8 +453,14 @@ def _query_render_call(arguments: Mapping[str, JSONValue]) -> str | None:
     return f"列出全部{label}"
 
 
-def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
-    """创建绑定 workspace 的 bible_upsert / bible_query 工具。"""
+def create_bible_tools(
+    workspace: StoryWorkspace, *, architecture_version: str = "v1"
+) -> list[AgentTool]:
+    """创建绑定 workspace 的 bible_upsert / bible_query 工具。
+
+    ``architecture_version="v2"``（V2 项目）时写工具被替换为拒绝桩，读工具
+    ``bible_query`` 保留（迁移期仍需读旧账本）。缺省 ``"v1"`` 保持 V1 行为不变。
+    """
 
     async def upsert_execute(
         tool_call_id: str,
@@ -542,13 +595,21 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
             },
         )
 
+    upsert_execute_fn: ToolExecutor = upsert_execute
+    if architecture_version == _V2:
+        upsert_execute_fn = _v2_upsert_execute
+
     upsert = AgentTool(
         name="bible_upsert",
         label="写入 Bible 实体",
         description=(
-            "把一条实体写入 Story Bible（YAML 落盘，同名覆盖），"
-            "支持 character/clue/foreshadow/method/timeline/outline 六类账本。"
-            "正文引用任何设定前，必须先用本工具落盘；状态只能沿合法迁移边推进。"
+            _V2_UPSERT_DESCRIPTION
+            if architecture_version == _V2
+            else (
+                "把一条实体写入 Story Bible（YAML 落盘，同名覆盖），"
+                "支持 character/clue/foreshadow/method/timeline/outline 六类账本。"
+                "正文引用任何设定前，必须先用本工具落盘；状态只能沿合法迁移边推进。"
+            )
         ),
         parameters={
             "type": "object",
@@ -589,19 +650,23 @@ def create_bible_tools(workspace: StoryWorkspace) -> list[AgentTool]:
             "required": ["entity_type", "data"],
             "additionalProperties": False,
         },
-        execute_fn=upsert_execute,
+        execute_fn=upsert_execute_fn,
         prompt_guidelines=(
-            "任何设定必须先经 bible_upsert 落盘再写进正文；同名再次调用视为更新。",
-            "状态不可凭空跳级：新建即初始状态（角色 arc=flat；clue/foreshadow/outline "
-            "status=planned；method status=drafted），被拒时按错误消息给出的合法去向修正。",
-            'bible_upsert 最小正确示例：{"entity_type": "character", "data": '
-            '{"name": "宫泽", "identity": "退休刑警", "relationships": '
-            '["宫泽惠: 妹妹"]}}——relationships/requirements/participants/beats 都是'
-            "字符串列表，不要传成单个字符串；每条实体（含 timeline）都必须带非空 name。",
-            "timeline 的 participants 必须是已建档角色：先建角色，再登记事件。",
-            "outline 章号唯一且章号≥1：每章一条章纲（name 可用本章标题），"
-            "beats 列本章节拍、plant_plans 列本章拟埋伏笔名（须与伏笔账本对齐）、"
-            "end_hook 列章末悬念；写作前先 query 本章章纲。",
+            _V2_UPSERT_GUIDELINES
+            if architecture_version == _V2
+            else (
+                "任何设定必须先经 bible_upsert 落盘再写进正文；同名再次调用视为更新。",
+                "状态不可凭空跳级：新建即初始状态（角色 arc=flat；clue/foreshadow/outline "
+                "status=planned；method status=drafted），被拒时按错误消息给出的合法去向修正。",
+                'bible_upsert 最小正确示例：{"entity_type": "character", "data": '
+                '{"name": "宫泽", "identity": "退休刑警", "relationships": '
+                '["宫泽惠: 妹妹"]}}——relationships/requirements/participants/beats 都是'
+                "字符串列表，不要传成单个字符串；每条实体（含 timeline）都必须带非空 name。",
+                "timeline 的 participants 必须是已建档角色：先建角色，再登记事件。",
+                "outline 章号唯一且章号≥1：每章一条章纲（name 可用本章标题），"
+                "beats 列本章节拍、plant_plans 列本章拟埋伏笔名（须与伏笔账本对齐）、"
+                "end_hook 列章末悬念；写作前先 query 本章章纲。",
+            )
         ),
         render_call=_upsert_render_call,
     )

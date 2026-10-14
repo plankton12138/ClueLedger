@@ -32,7 +32,7 @@ from hastings.session_store import (
     create_session,
     list_sessions,
 )
-from hastings.settings import load_settings
+from hastings.settings import load_settings, workspace_architecture_version
 from hastings.tools.bible_tools import ENTITY_LABELS, create_bible_tools, entity_summary
 from hastings.tools.chapter_tools import create_chapter_tools
 from hastings.tools.method_tools import create_method_tools
@@ -128,7 +128,11 @@ def build_harness(workspace: StoryWorkspace, provider: ModelProvider, model: str
     「intake 协议遵循度」等走查结论不可信。事件持久化同理（F4）：在装配点
     挂 events.jsonl，run_repl 与 eval driver 一处接线两端生效。
     """
-    tools = create_writing_tools(workspace)
+    # 项目级架构版本在这一处解析并传入工具集：V2 项目装配拒绝桩，V1 行为不变
+    # （ADR architecture-version-routing §2.2：「项目解析」是唯一判定点）。
+    tools = create_writing_tools(
+        workspace, architecture_version=workspace_architecture_version(workspace)
+    )
     language = load_settings(workspace).writing_language
     harness = AgentHarness(
         AgentHarnessConfig(
@@ -147,9 +151,13 @@ def create_writing_tools(
     workspace: StoryWorkspace,
     edit_marks: EditMarkRegistry | None = None,
     run_kind: RunKindGuard | None = None,
+    *,
+    architecture_version: str = "v1",
 ) -> list[AgentTool]:
+    """装配写作工具集；``architecture_version="v2"`` 时 bible_upsert 被拒绝桩替换
+    （V2 项目不可走通用账本写路径，缺省 ``"v1"`` 保持 V1 行为不变）。"""
     return (
-        create_bible_tools(workspace)
+        create_bible_tools(workspace, architecture_version=architecture_version)
         + create_chapter_tools(workspace, edit_marks=edit_marks, run_kind=run_kind)
         + create_method_tools(workspace)
         + create_timeline_tools(workspace)

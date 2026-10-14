@@ -13,12 +13,18 @@ import pytest
 
 from hastings.domain.story import error_codes as ec
 from hastings.domain.story import kinds
-from hastings.domain.story.canon.models import Character, Foreshadow
+from hastings.domain.story.canon.models import Character, Foreshadow, WorldRule
 from hastings.domain.story.catalog import StoryCatalog
 from hastings.domain.story.errors import StoryViolation
 from hastings.domain.story.mystery.models import TruthFact
 from hastings.domain.story.narrative import commands
-from hastings.domain.story.narrative.models import Beat, DisclosureSpec, NarrativeNode
+from hastings.domain.story.narrative.models import (
+    STATE_KNOWLEDGE,
+    Beat,
+    DisclosureSpec,
+    NarrativeNode,
+    StateChange,
+)
 
 MakeCatalog = Callable[..., StoryCatalog]
 
@@ -187,6 +193,78 @@ def test_create_beat_unknown_setup_ref(
     with pytest.raises(StoryViolation) as exc:
         commands.create_beat(catalog, next_id, parent_id="art_sc1", setups=("art_none",))
     assert exc.value.code == ec.STORY_UNKNOWN_ARTIFACT
+
+
+def test_create_beat_emits_constrains_and_changes_state_edges(
+    make_catalog: MakeCatalog, next_id: Callable[[str], str]
+) -> None:
+    """依赖图必须覆盖 constraints 与内联 state_changes（T13.10 评审补全）。"""
+    catalog = make_catalog(
+        [
+            _node("art_sc1", kinds.KIND_SCENE, parent_id=None),
+            _char("art_c1", "绫辻"),
+            (
+                "art_rule1",
+                kinds.KIND_WORLD_RULE,
+                WorldRule(rule="雪夜封馆，无人可离").to_content(),
+            ),
+        ]
+    )
+    change = commands.create_beat(
+        catalog,
+        next_id,
+        parent_id="art_sc1",
+        title="封馆",
+        constraints=("art_rule1",),
+        state_changes=(StateChange(kind=STATE_KNOWLEDGE, value="suspects", character_id="art_c1"),),
+    )
+    by_type: dict[str, list] = {}
+    for rel in change.relation_changes:
+        by_type.setdefault(rel.relation_type, []).append(rel)
+    new_id = change.artifact_changes[0].artifact_id.value
+
+    constrains = by_type[kinds.REL_CONSTRAINS]
+    assert len(constrains) == 1
+    # 世界规则是主动方：source=规则、target=本次新建的 Beat（与 modules §4 同向）
+    assert constrains[0].source.value == "art_rule1"
+    assert constrains[0].target.value == new_id
+
+    changes_state = by_type[kinds.REL_CHANGES_STATE]
+    assert len(changes_state) == 1
+    assert changes_state[0].source.value == new_id
+    assert changes_state[0].target.value == "art_c1"
+    assert changes_state[0].metadata["kind"] == STATE_KNOWLEDGE
+
+
+def test_create_beat_unknown_constraint_ref(
+    make_catalog: MakeCatalog, next_id: Callable[[str], str]
+) -> None:
+    catalog = make_catalog([_node("art_sc1", kinds.KIND_SCENE, parent_id=None)])
+    with pytest.raises(StoryViolation) as exc:
+        commands.create_beat(catalog, next_id, parent_id="art_sc1", constraints=("art_none",))
+    assert exc.value.code == ec.STORY_UNKNOWN_ARTIFACT
+    assert exc.value.where.endswith("constraints")
+
+
+def test_create_beat_materializes_iterable_arguments(
+    make_catalog: MakeCatalog, next_id: Callable[[str], str]
+) -> None:
+    """生成器参数只消费一次：校验循环不得耗尽后续写入要用的迭代器。"""
+    catalog = make_catalog(
+        [_node("art_sc1", kinds.KIND_SCENE, parent_id=None), _char("art_c1", "绫辻")]
+    )
+    change = commands.create_beat(
+        catalog,
+        next_id,
+        parent_id="art_sc1",
+        participants=iter(["art_c1"]),
+        state_changes=iter(
+            [StateChange(kind=STATE_KNOWLEDGE, value="knows", character_id="art_c1")]
+        ),
+    )
+    content = change.artifact_changes[0].content
+    assert content["participants"] == ["art_c1"]
+    assert content["state_changes"][0]["character_id"] == "art_c1"
 
 
 # --- MoveBeat ---------------------------------------------------------------

@@ -100,11 +100,18 @@ class HastingsSession:
         from hastings.cli import create_writing_tools
         from hastings.manuscript.guards import attach_guards
         from hastings.prompts import build_system_prompt
-        from hastings.settings import load_settings
+        from hastings.settings import load_settings, workspace_architecture_version
 
         edit_marks = EditMarkRegistry()
         run_kind = RunKindGuard()
-        tools = create_writing_tools(workspace, edit_marks=edit_marks, run_kind=run_kind)
+        # 与 CLI build_harness 同款：项目架构版本在这一处解析并传入，V2 项目装配
+        # 拒绝桩。缺 settings.yaml → v1，V1 行为不变（ADR §2.2）。
+        tools = create_writing_tools(
+            workspace,
+            edit_marks=edit_marks,
+            run_kind=run_kind,
+            architecture_version=workspace_architecture_version(workspace),
+        )
         language = load_settings(workspace).writing_language
         harness = AgentHarness(
             AgentHarnessConfig(
