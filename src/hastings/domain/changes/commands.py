@@ -8,6 +8,7 @@ prompt 只负责解释世界（四透镜②）。
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from hastings.domain.changes import error_codes as ec
@@ -26,10 +27,22 @@ from hastings.domain.changes.models import (
     SeedChange,
     TransitionRecord,
 )
+from hastings.domain.changes.planning import (
+    EVENT_REVISION_PLAN_RECORDED,
+    RevisionPlan,
+    execution_order,
+    find_item_cycle,
+)
 from hastings.domain.repository.ids import Actor, ArtifactId, RevisionId
 from hastings.domain.repository.requests import ArtifactChange
 
-__all__ = ["NewId", "advance_change_set", "open_change_set", "record_impact_analysis"]
+__all__ = [
+    "NewId",
+    "advance_change_set",
+    "open_change_set",
+    "record_impact_analysis",
+    "record_revision_plan",
+]
 
 NewId = Any  # callable[[str], str]；由 handler 注入（领域不依赖端口）
 
@@ -343,6 +356,207 @@ def record_impact_analysis(
         artifact_changes=tuple(changes),
         events=tuple(events),
         summary=summary,
+    )
+
+
+def record_revision_plan(
+    catalog: ChangesCatalog,
+    new_id: NewId,
+    *,
+    change_set_id: str,
+    plan: RevisionPlan,
+    actor: Actor,
+    at: Any,
+    reason: str = "生成修订计划",
+) -> ChangeSetChange:
+    """登记修订计划：写计划 Artifact（同一变更集重算时复用同一 Artifact）。
+
+    硬约束（四透镜②）：计划绑定变更集与基础 Commit（不变量 1）；影响项
+    必须被步骤覆盖或显式移出（不变量 4，must_fix 无处安放即拒绝）；步级与
+    项级依赖都必须无环（不变量 5，输出最小环路径）。与已落库版本逐字段
+    一致的重复提交在命令层拒绝——幂等重放由工作流在提交前拦截。
+    """
+    entry = catalog.require_change_set(change_set_id, where="changes.record_plan")
+    model: ChangeSet = entry.model()
+    where = f"changes.record_plan({change_set_id})"
+    if model.status not in (st.CHANGE_ANALYZED, st.CHANGE_REVIEW):
+        raise violation(
+            ec.CHANGES_INVALID_TRANSITION,
+            where,
+            f"只有 analyzed/review 状态能登记修订计划，当前是 {model.status!r}",
+            "计划在分析完成后初建（analyzed）或部分接受后重算（review）；"
+            "opened 状态请先执行影响分析",
+            status=model.status,
+        )
+    if plan.change_set_id != change_set_id:
+        raise violation(
+            ec.CHANGES_INVALID_COMMAND,
+            where,
+            f"计划的 change_set_id {plan.change_set_id!r} 与目标 {change_set_id!r} 不一致",
+            "计划必须由该变更集的报告生成；跨变更集复用计划请新建",
+            plan_change_set_id=plan.change_set_id,
+        )
+    if plan.base_commit_id != model.base_commit_id:
+        raise violation(
+            ec.CHANGES_INVALID_COMMAND,
+            where,
+            f"计划绑定的 base_commit_id {plan.base_commit_id!r} 与变更集的"
+            f" {model.base_commit_id!r} 不一致（不变量 1）",
+            "在变更集的 base_commit_id 快照上重新分析并重建计划",
+            plan_base=plan.base_commit_id,
+            expected=model.base_commit_id,
+        )
+    report = _find_report(catalog, change_set_id)
+    if report is None:
+        raise violation(
+            ec.CHANGES_INVALID_COMMAND,
+            where,
+            "找不到该变更集的影响报告，无法核对计划的覆盖范围",
+            "先执行影响分析（报告落库）再制定计划",
+            change_set_id=change_set_id,
+        )
+    _require_coverage(plan, report, where)
+    item_cycle = find_item_cycle(plan, report)
+    if item_cycle is not None:
+        raise violation(
+            ec.CHANGES_PLAN_CYCLE,
+            where,
+            f"计划存在项级依赖环：{' → '.join((*item_cycle, item_cycle[0]))}",
+            "同层互指环在步投影中不可见；用 accept_plan_risk 接受其中一项或调整范围化解",
+            cycle=list(item_cycle),
+        )
+    execution_order(plan)  # 步级环：由 planning 抛出（含最小环路径与化解手段）
+
+    changes: list[ArtifactChange] = []
+    existing = next(
+        (
+            e
+            for e in catalog.by_kind(kinds.KIND_REVISION_PLAN)
+            if isinstance(e.model(), RevisionPlan) and e.model().change_set_id == change_set_id
+        ),
+        None,
+    )
+    if existing is not None:
+        existing_model: RevisionPlan = existing.model()
+        if _plan_body(existing_model) == _plan_body(plan):
+            raise violation(
+                ec.CHANGES_INVALID_COMMAND,
+                where,
+                "计划内容与已落库版本完全一致（重复提交）",
+                "幂等重放应由调用方在提交前比对；确需新版本请先用"
+                " split_step/set_step_scope/accept_plan_risk 修改计划",
+                plan_id=existing.artifact_id,
+            )
+        plan_id = existing.artifact_id
+        old_revision: RevisionId | None = RevisionId(existing.revision_id)
+    else:
+        plan_id = _unique_plan_id(catalog, new_id)
+        old_revision = None
+    stamped = replace(plan, plan_id=plan_id)
+    changes.append(
+        ArtifactChange(
+            artifact_id=ArtifactId(plan_id),
+            content=stamped.to_content(),
+            old_revision_id=old_revision,
+            kind=kinds.KIND_REVISION_PLAN,
+        )
+    )
+    return ChangeSetChange(
+        artifact_changes=tuple(changes),
+        events=(
+            (
+                EVENT_REVISION_PLAN_RECORDED,
+                {
+                    "change_set_id": change_set_id,
+                    "plan_id": plan_id,
+                    "step_count": len(stamped.steps),
+                    "unassigned_count": len(stamped.unassigned),
+                    "by": f"{actor.kind}:{actor.id}",
+                },
+            ),
+        ),
+        summary=(
+            f"变更集 {change_set_id} 修订计划：{len(stamped.steps)} 步"
+            f"（移出 {len(stamped.unassigned)} 项）"
+        ),
+    )
+
+
+def _plan_body(plan: RevisionPlan) -> Any:
+    """计划的结构内容（不含 plan_id 身份），用于幂等重放比对。"""
+    return (plan.steps, plan.unassigned, plan.constraints, plan.risk_acceptances)
+
+
+def _find_report(catalog: ChangesCatalog, change_set_id: str) -> ImpactReport | None:
+    entry = next(
+        (
+            e
+            for e in catalog.by_kind(kinds.KIND_IMPACT_REPORT)
+            if isinstance(e.model(), ImpactReport) and e.model().change_set_id == change_set_id
+        ),
+        None,
+    )
+    return entry.model() if entry is not None else None
+
+
+def _require_coverage(plan: RevisionPlan, report: ImpactReport, where: str) -> None:
+    """每个影响项必须被步骤覆盖或显式移出，不能静默消失（不变量 4）。"""
+    covered = [i for s in plan.steps for i in s.item_indexes]
+    excluded = [e.item_index for e in plan.unassigned]
+    seen = covered + excluded
+    if len(set(seen)) != len(seen):
+        raise violation(
+            ec.CHANGES_INVALID_COMMAND,
+            where,
+            "影响项同时出现在步骤与移出清单（或重复出现）",
+            "每项只能处于一种状态：被某个步骤覆盖，或显式移出（unassigned）",
+            duplicates=sorted(i for i in seen if seen.count(i) > 1)[:10],
+        )
+    missing = sorted(set(range(len(report.items))) - set(seen))
+    if not missing:
+        for step in plan.steps:
+            if not step.target_artifact_ids:
+                raise violation(
+                    ec.CHANGES_INVALID_COMMAND,
+                    where,
+                    f"步骤 {step.step_id!r} 没有任何目标对象",
+                    "空步骤请删除（拆组/调整范围不会产生空步骤）",
+                    step_id=step.step_id,
+                )
+            unknown = [d for d in step.depends_on if plan.step_of(d) is None]
+            if unknown:
+                raise violation(
+                    ec.CHANGES_INVALID_COMMAND,
+                    where,
+                    f"步骤 {step.step_id!r} 依赖不存在的步骤 {unknown}",
+                    "depends_on 只能引用计划内已有的 step_id",
+                    step_id=step.step_id,
+                    unknown=unknown,
+                )
+        return
+    must_fix_missing = [i for i in missing if report.items[i].severity == "must_fix"]
+    detail = f"其中 must_fix {len(must_fix_missing)} 项；" if must_fix_missing else ""
+    raise violation(
+        ec.CHANGES_INVALID_COMMAND,
+        where,
+        f"{len(missing)} 个影响项没有进入任何步骤也未显式移出（{detail}如 {missing[:5]}）",
+        "每项必须被某个步骤覆盖，或经 set_step_scope/accept_plan_risk 显式移出"
+        "（must_fix 不能静默消失，不变量 4）",
+        missing=missing[:10],
+    )
+
+
+def _unique_plan_id(catalog: ChangesCatalog, new_id: NewId) -> str:
+    """生成目录内唯一的计划 Artifact ID（防御生成器冲突，上限 1000 次）。"""
+    for _ in range(1000):
+        candidate: str = new_id("plan")
+        if catalog.get(candidate) is None:
+            return candidate
+    raise violation(
+        ec.CHANGES_INVALID_COMMAND,
+        "changes.record_plan",
+        "连续 1000 次生成的计划 ID 都已存在",
+        "检查 IdGenerator 是否配置正确（应产出递增唯一 ID）",
     )
 
 

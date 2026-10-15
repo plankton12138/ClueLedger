@@ -59,7 +59,7 @@ from hastings.domain.repository import error_codes as repo_ec
 from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId
 from hastings.domain.repository.models import Snapshot
 
-__all__ = ["AnalyzeChangeImpact", "AnalyzeIntent", "AnalyzeResult"]
+__all__ = ["AnalyzeChangeImpact", "AnalyzeIntent", "AnalyzeResult", "read_change_state"]
 
 # analyzed 走幂等重放；opened/analyzing/review/executing 走正常分析
 _PRECHECK_FIX: dict[str, str] = {
@@ -68,6 +68,51 @@ _PRECHECK_FIX: dict[str, str] = {
     st.CHANGE_COMMITTED: "变更集已提交（终态不可迁移）；对新的修改请新建 ChangeSet",
     st.CHANGE_ABANDONED: "变更集已放弃（终态不可迁移）；对新的修改请新建 ChangeSet",
 }
+
+
+def read_change_state(
+    reader: RepositoryReader,
+    project_id: ProjectId,
+    change_set_id: str,
+    *,
+    branch_name: str = "main",
+    where: str = "changes",
+) -> tuple[ChangesCatalog, ChangeSet]:
+    """读分支 head 上的变更目录并定位 ChangeSet（分析/计划工作流共用）。
+
+    前置拒绝（四透镜①「机制前置展示」）：分支不存在、head 为空、变更集
+    未知都在入口处失败，不让调用方先跑一遍重活再挨拒。
+    """
+    branch = reader.get_branch(project_id, branch_name)
+    if branch is None:
+        raise ViolationError(
+            code=repo_ec.REPO_BRANCH_NOT_FOUND,
+            where=f"{where}({project_id.value})",
+            why=f"项目 {project_id.value} 下没有名为 {branch_name!r} 的分支",
+            fix="先用 create_project 建立项目与 main 分支，再执行影响分析",
+            details={"project_id": project_id.value, "branch_name": branch_name},
+        )
+    head = branch.head_commit_id
+    if head is None:
+        raise ViolationError(
+            code=ec.CHANGES_UNKNOWN_CHANGE_SET,
+            where=f"{where}({change_set_id})",
+            why="项目还没有任何提交，当前 head 为空",
+            fix="先播种对象与关系（提交），再 open_change_set 并分析",
+            details={"project_id": project_id.value, "head": None},
+        )
+    catalog = ChangesCatalog.from_snapshot(reader.get_snapshot(project_id, head))
+    entry = catalog.get(change_set_id)
+    if entry is None or entry.kind != kinds.KIND_CHANGE_SET:
+        raise ViolationError(
+            code=ec.CHANGES_UNKNOWN_CHANGE_SET,
+            where=f"{where}({change_set_id})",
+            why=f"变更集 {change_set_id!r} 在当前 head 上不存在",
+            fix="改用 open_change_set 返回的 change_set_id（先查变更中心列表）",
+            details={"change_set_id": change_set_id, "head": head.value},
+        )
+    model: ChangeSet = entry.model()
+    return catalog, model
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,36 +224,13 @@ class AnalyzeChangeImpact:
     # 内部
     # ------------------------------------------------------------------
     def _read_state(self, intent: AnalyzeIntent) -> tuple[ChangesCatalog, ChangeSet]:
-        branch = self._reader.get_branch(intent.project_id, self._branch_name)
-        if branch is None:
-            raise ViolationError(
-                code=repo_ec.REPO_BRANCH_NOT_FOUND,
-                where=f"changes.analyze({intent.project_id.value})",
-                why=f"项目 {intent.project_id.value} 下没有名为 {self._branch_name!r} 的分支",
-                fix="先用 create_project 建立项目与 main 分支，再执行影响分析",
-                details={"project_id": intent.project_id.value, "branch_name": self._branch_name},
-            )
-        head = branch.head_commit_id
-        if head is None:
-            raise ViolationError(
-                code=ec.CHANGES_UNKNOWN_CHANGE_SET,
-                where=f"changes.analyze({intent.change_set_id})",
-                why="项目还没有任何提交，当前 head 为空",
-                fix="先播种对象与关系（提交），再 open_change_set 并分析",
-                details={"project_id": intent.project_id.value, "head": None},
-            )
-        catalog = ChangesCatalog.from_snapshot(self._reader.get_snapshot(intent.project_id, head))
-        entry = catalog.get(intent.change_set_id)
-        if entry is None or entry.kind != kinds.KIND_CHANGE_SET:
-            raise ViolationError(
-                code=ec.CHANGES_UNKNOWN_CHANGE_SET,
-                where=f"changes.analyze({intent.change_set_id})",
-                why=f"变更集 {intent.change_set_id!r} 在当前 head 上不存在",
-                fix="改用 open_change_set 返回的 change_set_id（先查变更中心列表）",
-                details={"change_set_id": intent.change_set_id, "head": head.value},
-            )
-        model: ChangeSet = entry.model()
-        return catalog, model
+        return read_change_state(
+            self._reader,
+            intent.project_id,
+            intent.change_set_id,
+            branch_name=self._branch_name,
+            where="changes.analyze",
+        )
 
     def _advance_analyzing(self, intent: AnalyzeIntent) -> ChangeSetCommandResult:
         return self._handler.execute(

@@ -8,8 +8,10 @@ CHANGES_PREFIX = "changes."
 KIND_CHANGE_SET = "changes.change_set"
 # ImpactReport：某次影响分析的结果（绑定 ChangeSet 与基础 Commit）
 KIND_IMPACT_REPORT = "changes.impact_report"
+# RevisionPlan：依据报告生成的四层修订计划（绑定同一 base Commit）
+KIND_REVISION_PLAN = "changes.revision_plan"
 
-CHANGES_KINDS = (KIND_CHANGE_SET, KIND_IMPACT_REPORT)
+CHANGES_KINDS = (KIND_CHANGE_SET, KIND_IMPACT_REPORT, KIND_REVISION_PLAN)
 
 
 def is_changes_kind(kind: str) -> bool:

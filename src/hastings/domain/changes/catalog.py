@@ -14,6 +14,7 @@ from hastings.domain.changes.error_codes import CHANGES_UNKNOWN_CHANGE_SET
 from hastings.domain.changes.errors import violation
 from hastings.domain.changes.impact import ImpactReport
 from hastings.domain.changes.models import ChangeSet
+from hastings.domain.changes.planning import RevisionPlan
 from hastings.domain.repository.models import Snapshot
 
 __all__ = ["ChangeEntry", "ChangesCatalog", "decode"]
@@ -25,6 +26,8 @@ def decode(kind: str, content: dict[str, Any]) -> Any:
         return ChangeSet.from_content(content)
     if kind == kinds.KIND_IMPACT_REPORT:
         return ImpactReport.from_content(content)
+    if kind == kinds.KIND_REVISION_PLAN:
+        return RevisionPlan.from_content(content)
     return content
 
 
