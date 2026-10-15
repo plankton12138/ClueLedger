@@ -27,6 +27,8 @@ uv run python eval/driver.py --spec eval/specs/c1-v2.json --out-dir eval/runs/<�
 # C2/C3 换对应 spec；CP2 盲评按 eval/intake/C-v2-scoring.md 执行
 ```
 
+**harness 臂口径（协议预算决策，2026-10-12）**：4 轮脚本对照时 harness 臂须加 `--max-advances 3`——阶段链 intake→bible_drafting→bible_confirmed→writing 需 3 次推进，产品默认「每回合至多 1 次」在 4 轮预算内结构上装不下（见 runs/2026-10-12-local-rerun2 报告 §3.1）。bare 臂不受影响；每轮报告须记录实际使用的 `--max-advances` 值以保证口径可追溯；产品端（CLI/Web）默认值保持 1 不变。
+
 ### A/B 组 · 协议走查（手工粘贴，量 intake 协议遵循度）
 
 ```powershell

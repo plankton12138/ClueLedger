@@ -28,8 +28,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--spec", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
-    parser.add_argument("--stories-root", type=Path, default=Path("stories"))
+    parser.add_argument(
+        "--stories-root", type=Path, default=None, help="工作区根目录（缺省为仓库根下 stories/）"
+    )
     parser.add_argument("--model", default=None, help="覆盖 HASTINGS_MODEL")
+    parser.add_argument(
+        "--max-advances",
+        type=int,
+        default=1,
+        help="harness 臂每回合至多 N 次成功推进（产品默认 1；"
+        "C 组 4 轮脚本对照须显式传 3 以装下 3 格阶段链，口径随报告归档）",
+    )
     parser.add_argument(
         "--arm",
         choices=["harness", "bare"],
@@ -61,7 +70,7 @@ async def run_harness_case(case: dict[str, Any], args: argparse.Namespace, model
     provider = OpenAICompatibleProvider(openai_compatible_config_from_env())
     workspace = StoryWorkspace(root=args.stories_root, slug=case["slug"])
     tools = create_writing_tools(workspace)
-    harness = build_harness(workspace, provider, model)
+    harness = build_harness(workspace, provider, model, max_advances_per_prompt=args.max_advances)
     workspace.ensure_dirs()
     renderer = PlainRenderer({tool.name: tool for tool in tools})
     await restore_and_attach(workspace, harness, on_warning=lambda w: print(w, file=sys.stderr))
@@ -147,10 +156,25 @@ async def run_case(case: dict[str, Any], args: argparse.Namespace, model: str) -
             await run_harness_case(sampled, args, model)
 
 
+def find_repo_root() -> Path:
+    """从脚本位置向上定位仓库根（含 pyproject.toml 的目录）。
+
+    勿用 cwd：从仓库外启动时 .env 会落空、stories 会写错位置；
+    “可从任意目录运行”的承诺须由脚本自身位置兜底。
+    """
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "pyproject.toml").is_file():
+            return candidate
+    print("未定位到仓库根（向上未找到 pyproject.toml）", file=sys.stderr)
+    raise SystemExit(1)
+
+
 async def main() -> None:
     args = parse_args()
-    # 脚本可从任意目录运行，显式按 cwd 定位仓库根 .env
-    load_dotenv(dotenv_path=Path.cwd() / ".env")
+    repo_root = find_repo_root()
+    if args.stories_root is None:
+        args.stories_root = repo_root / "stories"
+    load_dotenv(dotenv_path=repo_root / ".env")
     model = args.model or os.environ.get("HASTINGS_MODEL", "")
     if not model:
         print("缺少 HASTINGS_MODEL", file=sys.stderr)

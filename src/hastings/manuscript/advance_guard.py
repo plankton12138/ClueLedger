@@ -43,6 +43,16 @@ REJECTION = (
 )
 
 
+def _rejection_for(max_advances: int) -> str:
+    """放宽上限（评测口径）时的拒绝文案：三要素结构不变，数字如实。"""
+    return (
+        f"story_stage advance 被拒：本回合已成功推进 {max_advances} 次，达到本回合上限。"
+        "为什么错：单回合推进次数有上限，防止作者在连续推进中失去确认点。"
+        "怎样算对：bible_confirmed 等确认点应停留等待作者下一条消息；"
+        "若作者确已要求连推，等作者回复后再推进。"
+    )
+
+
 class StageAdvanceGuard:
     """本回合 advance 计数器：AgentStartEvent 重置 + 成功落盘才计数 + 边界限次。
 
@@ -53,6 +63,9 @@ class StageAdvanceGuard:
 
     def __init__(self, *, max_advances: int = MAX_ADVANCES_PER_PROMPT) -> None:
         self._max = max_advances
+        self._rejection = (
+            REJECTION if max_advances == MAX_ADVANCES_PER_PROMPT else _rejection_for(max_advances)
+        )
         self._advances = 0
         self._pending: set[str] = set()
 
@@ -75,7 +88,7 @@ class StageAdvanceGuard:
         if not _is_stage_advance(call.name, call.arguments):
             return False, None
         if self._advances >= self._max:
-            return True, REJECTION
+            return True, self._rejection
         return False, None
 
 

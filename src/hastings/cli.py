@@ -120,13 +120,21 @@ class PlainRenderer:
         return f" {rendered}" if rendered else ""
 
 
-def build_harness(workspace: StoryWorkspace, provider: ModelProvider, model: str) -> AgentHarness:
+def build_harness(
+    workspace: StoryWorkspace,
+    provider: ModelProvider,
+    model: str,
+    max_advances_per_prompt: int | None = None,
+) -> AgentHarness:
     """按工作区装配工具集、system prompt、事件账本与 harness。
 
     system 与 HastingsSession.from_workspace 对齐：workspace 传入状态注入
     （P8 T5 补齐）——CLI 冒烟观察到的模型行为必须与 Web 端同链路，否则
     「intake 协议遵循度」等走查结论不可信。事件持久化同理（F4）：在装配点
     挂 events.jsonl，run_repl 与 eval driver 一处接线两端生效。
+
+    ``max_advances_per_prompt``：评测口径放宽回合规速用（缺省 None 保持
+    产品语义——每回合至多一次成功推进）；eval driver 传值须随运行归档。
     """
     # 项目级架构版本在这一处解析并传入工具集：V2 项目装配拒绝桩，V1 行为不变
     # （ADR architecture-version-routing §2.2：「项目解析」是唯一判定点）。
@@ -143,7 +151,10 @@ def build_harness(workspace: StoryWorkspace, provider: ModelProvider, model: str
         )
     )
     harness.subscribe(make_event_persister(EventStore(events_file(workspace))))
-    attach_guards(harness, workspace)
+    if max_advances_per_prompt is None:
+        attach_guards(harness, workspace)
+    else:
+        attach_guards(harness, workspace, max_advances=max_advances_per_prompt)
     return harness
 
 

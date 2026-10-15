@@ -229,3 +229,77 @@ def test_rejection_constant_is_three_elements() -> None:
     assert "被拒" in REJECTION
     assert "为什么错" in REJECTION
     assert "怎样算对" in REJECTION
+
+
+@pytest.mark.anyio
+async def test_relaxed_limit_allows_configured_advances() -> None:
+    """评测口径放宽（协议预算决策）：max_advances=3 时第 3 次仍放行、第 4 次被拒，
+    拒绝文案如实报出放宽后的上限数字。"""
+    guard = StageAdvanceGuard(max_advances=3)
+    guard.on_event(AgentStartEvent())
+    for i in range(3):
+        call = _advance(f"第{i + 1}次")
+        assert await guard.before_tool_call(call) == (False, None)
+        for event in _tool_events(call, is_error=False):
+            guard.on_event(event)
+    blocked, message = await guard.before_tool_call(_advance("第4次"))
+    assert blocked is True
+    assert "已成功推进 3 次" in message
+    assert "为什么错" in message and "怎样算对" in message
+
+
+@pytest.mark.anyio
+async def test_attach_guards_passes_relaxed_limit(tmp_path: Path) -> None:
+    """装配透传：attach_guards(max_advances=3) 返回的守卫按放宽上限拦截。"""
+    from hastings.manuscript.guards import attach_guards
+
+    workspace = StoryWorkspace(root=tmp_path, slug="demo")
+    harness = AgentHarness(
+        AgentHarnessConfig(provider=FakeProvider([]), model="fake", system="", tools=[])
+    )
+    guard = attach_guards(harness, workspace, max_advances=3)
+    guard.on_event(AgentStartEvent())
+    for i in range(3):
+        call = _advance(f"第{i + 1}次")
+        assert await guard.before_tool_call(call) == (False, None)
+        for event in _tool_events(call, is_error=False):
+            guard.on_event(event)
+    blocked, _ = await guard.before_tool_call(_advance("第4次"))
+    assert blocked is True
+
+
+@pytest.mark.anyio
+async def test_three_stage_chain_in_single_prompt_with_relaxed_limit(tmp_path: Path) -> None:
+    """端到端（评测口径）：max_advances=3 时单回合可连推 intake→bible_drafting→
+    bible_confirmed→writing，第 4 次被守卫拒。前置（手法锁定+章纲）先由 store 层补齐。"""
+    from hastings.manuscript.advance_guard import StageAdvanceGuard as _Guard
+    from hastings.tools.story_tools import create_story_tools as _create
+
+    workspace = StoryWorkspace(root=tmp_path, slug="demo")
+    workspace.ensure_dirs()
+    save_character(workspace, Character(name="波洛", identity="侦探"))
+    save_character(workspace, Character(name="黑斯廷斯", identity="叙事者"))
+    save_ledger(workspace.method_path, [Method(name="毒杀诡计", status="locked")])
+    save_ledger(workspace.outline_path, [OutlineEntry(name="案发之夜", chapter=1)])
+    tool = _create(workspace)[0]
+    provider = FakeProvider(
+        [
+            _turn(_advance("第一格"), "推进一格。", "toolUse"),
+            _turn(_advance("第二格"), "推进两格。", "toolUse"),
+            _turn(_advance("第三格"), "推进三格。", "toolUse"),
+            _turn(_advance("第四格"), "超限推进。", "toolUse"),
+            _turn(None, "完成。", "stop"),
+        ]
+    )
+    harness = AgentHarness(
+        AgentHarnessConfig(provider=provider, model="fake", system="", tools=[tool])
+    )
+    guard = _Guard(max_advances=3)
+    harness.subscribe(guard.on_event)
+    harness.config.before_tool_call = guard.before_tool_call
+
+    events = [event async for event in harness.prompt("一口气推进到写作阶段")]
+    ends = [event for event in events if isinstance(event, ToolExecutionEndEvent)]
+    assert [e.is_error for e in ends] == [False, False, False, True]
+    assert load_story_doc(workspace).stage == "writing"
+    assert "已成功推进 3 次" in ends[3].result.text
