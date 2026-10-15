@@ -536,7 +536,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
                 where=f"v2.export({project_id})",
                 why="项目还没有任何提交，没有可导出的内容",
                 fix="先导入或创建章节，再导出",
-                project_id=project_id,
+                details={"project_id": project_id},
             )
         package = export_commit(runtime.service, pid, target)
         filename = f"export-{package.package_hash[:12]}.zip"

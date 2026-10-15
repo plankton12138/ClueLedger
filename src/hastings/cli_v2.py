@@ -135,7 +135,8 @@ def v2_bible_output(
         )
 
     types = [entity_type] if entity_type is not None else list(V2_LEDGER_KINDS)
-    lines = [f"V2 项目 {project_value}（commit {catalog.commit_id[:12]}…）："]
+    commit_label = (catalog.commit_id or "无提交")[:12]
+    lines = [f"V2 项目 {project_value}（commit {commit_label}…）："]
     for ledger_type in types:
         section, _ids = _ledger_lines(catalog, ledger_type)
         lines.append(section)

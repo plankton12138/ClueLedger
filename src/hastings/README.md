@@ -21,7 +21,7 @@ Phase 15 的 V2 变更闭环见 [change-impact.md](../../dev-notes/v2/modules/ch
 
 Phase 16 的无状态工作者与持久任务见 [orchestration-context.md](../../dev-notes/v2/modules/orchestration-context.md)：`agents/{schemas,roles,coordinator}.py`、`application/contexts/`、`application/workflows/{agent_workflows,worker_job}.py` 与 `infrastructure/agents/tau_runner.py`。Job/事件在 `infrastructure/jobs.py`，API 在 `interfaces/api/agents.py`；界面入口为“变更中心→规划与生成任务”（`AgentWorkbench.tsx`），服务生命周期负责恢复与派发。真模型评测入口为根目录 [eval/v2](../../eval/v2/README.md)，不使用旧 Hastings 工具。
 
-Phase 17（进行中）的旧工作区迁移见 [phase-17-migration-cleanup.md](../../dev-notes/v2/phase-17-migration-cleanup.md)：`interfaces/importers/v1_workspace_importer.py`（`scan_v1_workspace` / `V1WorkspaceImporter.apply` / `validate`），旧写路径 gating 在 `tools/architecture_gate.py`，证明测试在 `tests/v2/migration/`。
+Phase 17 的旧工作区迁移与链路切换见 [phase-17-migration-cleanup.md](../../dev-notes/v2/phase-17-migration-cleanup.md)：导入器 `interfaces/importers/v1_workspace_importer.py`（`scan_v1_workspace` / `V1WorkspaceImporter.apply` / `validate`），旧写路径 gating 在 `tools/architecture_gate.py`，证明测试在 `tests/v2/migration/`；迁移产品流在 `server/v2_migration.py`（slug 面 status/dry-run/apply，映射落盘 `settings.py` 的 `v2_project_id`/`v2_db_path`），V2 事件通道在 `server/v2_ws.py`（按 sequence 补齐），CLI 的 V2 读路径在 `cli_v2.py`，导出器在 `interfaces/exporters/v2_package_exporter.py`（可读备份包 + manifest 哈希 + 重导入往返）。
 
 | 想了解 | 入口 |
 |---|---|

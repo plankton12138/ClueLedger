@@ -192,21 +192,21 @@ def export_commit(
             }
         )
 
-    for entry in _story_entries(snapshot):
-        directory = _BIBLE_DIRS.get(entry["kind"])
+    for story_entry in _story_entries(snapshot):
+        directory = _BIBLE_DIRS.get(story_entry["kind"])
         if directory is None:
             raise _violation(
                 where=f"v2.export({project_id.value})",
-                why=f"故事对象 kind {entry['kind']!r} 未登记导出目录",
+                why=f"故事对象 kind {story_entry['kind']!r} 未登记导出目录",
                 fix="在 v2_package_exporter._BIBLE_DIRS 显式登记该 kind 后重试",
-                kind=entry["kind"],
+                kind=story_entry["kind"],
             )
-        path = f"bible/{directory}/{entry['artifact_id']}.yaml"
+        path = f"bible/{directory}/{story_entry['artifact_id']}.yaml"
         payload = _yaml_bytes(
             {
-                "artifact_id": entry["artifact_id"],
-                "kind": entry["kind"],
-                "content": entry["content"],
+                "artifact_id": story_entry["artifact_id"],
+                "kind": story_entry["kind"],
+                "content": story_entry["content"],
             }
         )
         files[path] = payload
@@ -214,8 +214,8 @@ def export_commit(
             {
                 "path": path,
                 "sha256": _file_hash(payload),
-                "kind": entry["kind"],
-                "artifact_id": entry["artifact_id"],
+                "kind": story_entry["kind"],
+                "artifact_id": story_entry["artifact_id"],
             }
         )
 
@@ -326,7 +326,7 @@ def verify_package(files: dict[str, bytes]) -> dict[str, Any]:
             fix="检查包来源；重导出后再试",
         )
     try:
-        manifest = json.loads(manifest_raw)
+        manifest: dict[str, Any] = json.loads(manifest_raw)
     except json.JSONDecodeError as exc:
         raise _violation(
             where="v2.export.verify",
@@ -371,7 +371,7 @@ def verify_package(files: dict[str, bytes]) -> dict[str, Any]:
 
 def _chapter_unit_ids_closure(entry: dict[str, Any]) -> Any:
     """按 manifest 登记的段落清单回放 unit_id：重导入保持段落身份不变。"""
-    queue = [unit["unit_id"] for unit in entry["units"]]
+    queue: list[str] = [str(unit["unit_id"]) for unit in entry["units"]]
 
     def new_id(kind: str) -> str:
         del kind
