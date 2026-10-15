@@ -107,7 +107,11 @@ class EdgeHop:
 
 @dataclass(frozen=True, slots=True)
 class ImpactItem:
-    """一个受影响对象：完整因果路径 + 分级 + 状态（§2 ImpactItem）。"""
+    """一个受影响对象：完整因果路径 + 分级 + 状态（§2 ImpactItem）。
+
+    ``mentioned_artifact_id`` 仅语义补充项（T15.3 mentions）使用：记录
+    段落提到的是哪个对象——target 是段落，这里是被引用者，二者都要可回溯。
+    """
 
     target_artifact_id: str
     severity: str
@@ -117,6 +121,7 @@ class ImpactItem:
     status: str = ITEM_OPEN
     confidence: float = 1.0  # 确定性遍历 = 1.0；语义补充 < 1.0（T15.3）
     text_unit_id: str | None = None
+    mentioned_artifact_id: str | None = None
 
     def to_content(self) -> dict[str, Any]:
         return {
@@ -128,6 +133,7 @@ class ImpactItem:
             "status": self.status,
             "confidence": self.confidence,
             "text_unit_id": self.text_unit_id,
+            "mentioned_artifact_id": self.mentioned_artifact_id,
         }
 
     @classmethod
@@ -141,6 +147,7 @@ class ImpactItem:
             status=str(content.get("status", ITEM_OPEN)),
             confidence=float(content.get("confidence", 1.0)),
             text_unit_id=content.get("text_unit_id"),
+            mentioned_artifact_id=content.get("mentioned_artifact_id"),
         )
 
 
@@ -170,7 +177,10 @@ class TruncatedEntry:
 
 @dataclass(frozen=True, slots=True)
 class ImpactStats:
-    """分析统计：visited 证明与截断计数（§4.2「输出分析统计」）。"""
+    """分析统计：visited 证明与截断计数（§4.2「输出分析统计」）。
+
+    mention_* 字段来自第二阶段正文引用扫描（T15.3）；纯确定性遍历时为 0。
+    """
 
     seed_count: int = 0
     nodes_visited: int = 0
@@ -178,6 +188,9 @@ class ImpactStats:
     cycles_skipped: int = 0
     truncated_count: int = 0
     item_count: int = 0
+    mention_units_scanned: int = 0
+    mention_hits: int = 0
+    mention_skipped_covered: int = 0
 
     def to_content(self) -> dict[str, Any]:
         return {
@@ -187,6 +200,9 @@ class ImpactStats:
             "cycles_skipped": self.cycles_skipped,
             "truncated_count": self.truncated_count,
             "item_count": self.item_count,
+            "mention_units_scanned": self.mention_units_scanned,
+            "mention_hits": self.mention_hits,
+            "mention_skipped_covered": self.mention_skipped_covered,
         }
 
     @classmethod
@@ -198,6 +214,9 @@ class ImpactStats:
             cycles_skipped=int(content.get("cycles_skipped", 0)),
             truncated_count=int(content.get("truncated_count", 0)),
             item_count=int(content.get("item_count", 0)),
+            mention_units_scanned=int(content.get("mention_units_scanned", 0)),
+            mention_hits=int(content.get("mention_hits", 0)),
+            mention_skipped_covered=int(content.get("mention_skipped_covered", 0)),
         )
 
 

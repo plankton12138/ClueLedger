@@ -1,13 +1,16 @@
-"""影响分析工作流（Phase 15 T15.2）：确定性遍历的应用层编排。
+"""影响分析工作流（Phase 15 T15.2/T15.3）：两阶段分析的应用层编排。
 
-编排四步（模块文档 §4 两阶段分析的第一阶段）：
+编排五步（模块文档 §4.1 两阶段分析）：
 1. 读取变更集并前置检查状态——快速失败，不让调用方先跑一遍遍历再挨拒
    （四透镜①「机制前置展示」）；
 2. opened → 先推进 analyzing（迁移与结果落库分两次提交，各自幂等可重试；
    若在两步之间崩溃，重试时状态已是 analyzing，直接走记录步恢复）；
-3. 在变更集绑定的 base_commit_id 快照上构建关系图并执行确定性遍历——
-   报告绑定基础版本（不变量 1），head 前移后 ``is_stale`` 可判定；
-4. 经领域命令 ``record_impact_analysis`` 落库：首次分析同提交转入 analyzed；
+3. 在变更集绑定的 base_commit_id 快照上执行**确定性遍历**——报告绑定
+   基础版本（不变量 1），head 前移后 ``is_stale`` 可判定；
+4. **正文引用补充**（T15.3）：扫描活动段落的字面 mentions，追加带
+   confidence 的语义项——确定性已覆盖的段落跳过（renders 等结构信号
+   优先），低置信降为 review，永不 must_fix；
+5. 经领域命令 ``record_impact_analysis`` 落库：首次分析同提交转入 analyzed；
    review/executing 的重算只替换报告 Revision，不改变状态。
 
 状态裁决（有意的状态机语义扩展，记入构建笔记）：analyzed 状态重复 analyze
@@ -19,6 +22,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from hastings.application.errors import ViolationError
 from hastings.application.handlers.change_commands import (
@@ -33,10 +37,27 @@ from hastings.domain.changes import kinds
 from hastings.domain.changes import status as st
 from hastings.domain.changes.catalog import ChangesCatalog
 from hastings.domain.changes.commands import advance_change_set, record_impact_analysis
-from hastings.domain.changes.impact import ImpactReport, RelationGraph, traverse_impact
+from hastings.domain.changes.impact import (
+    ImpactItem,
+    ImpactReport,
+    ImpactStats,
+    RelationGraph,
+    TruncatedEntry,
+    traverse_impact,
+)
+from hastings.domain.changes.mentions import (
+    MentionCandidate,
+    MentionScanStats,
+    TextUnitRef,
+    scan_text_mentions,
+)
 from hastings.domain.changes.models import ChangeSet
+from hastings.domain.manuscript import kinds as ms_kinds
+from hastings.domain.manuscript.catalog import ManuscriptCatalog
+from hastings.domain.manuscript.models import TextUnit
 from hastings.domain.repository import error_codes as repo_ec
-from hastings.domain.repository.ids import Actor, CommitId, ProjectId
+from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId
+from hastings.domain.repository.models import Snapshot
 
 __all__ = ["AnalyzeChangeImpact", "AnalyzeIntent", "AnalyzeResult"]
 
@@ -64,6 +85,7 @@ class AnalyzeResult:
 
     ``commit_id`` 为本次记录提交；幂等重放（analyzed 状态重复调用）为 None。
     ``truncated_count`` 单列：界面上「没查到」与「查到但被截断」必须可区分。
+    ``mention_hits`` 为第二阶段正文引用补充的项数（含低置信 review 项）。
     """
 
     change_set_id: str
@@ -72,6 +94,7 @@ class AnalyzeResult:
     item_count: int
     truncated_count: int
     commit_id: str | None
+    mention_hits: int = 0
 
 
 class AnalyzeChangeImpact:
@@ -107,8 +130,35 @@ class AnalyzeChangeImpact:
             )
         if model.status == st.CHANGE_OPENED:
             self._advance_analyzing(intent)
-        report = self._traverse(model, intent)
-        record = self._record(model, report, intent)
+        snapshot = self._reader.get_snapshot(intent.project_id, CommitId(model.base_commit_id))
+        deterministic = traverse_impact(
+            RelationGraph.from_snapshot(snapshot),
+            tuple(seed.artifact_id for seed in model.seed_changes),
+            scope=model.scope,
+            kind_of=self._kind_of(snapshot),
+        )
+        mention_items, mention_extra, scan_stats = self._scan_mentions(
+            model, snapshot, deterministic
+        )
+        merged = ImpactReport(
+            report_id="",
+            change_set_id="",
+            base_commit_id="",
+            items=(*deterministic.items, *mention_items),
+            truncated=(*deterministic.truncated, *mention_extra),
+            stats=ImpactStats(
+                seed_count=deterministic.stats.seed_count,
+                nodes_visited=deterministic.stats.nodes_visited,
+                paths_explored=deterministic.stats.paths_explored,
+                cycles_skipped=deterministic.stats.cycles_skipped,
+                truncated_count=len(deterministic.truncated) + len(mention_extra),
+                item_count=len(deterministic.items) + len(mention_items),
+                mention_units_scanned=scan_stats.unit_count,
+                mention_hits=scan_stats.hit_count,
+                mention_skipped_covered=scan_stats.skipped_covered,
+            ),
+        )
+        record = self._record(model, merged, intent)
         final = self._read_state(intent)[1]
         report_change = next(
             (c for c in record.change.artifact_changes if c.kind == kinds.KIND_IMPACT_REPORT),
@@ -119,9 +169,10 @@ class AnalyzeChangeImpact:
             change_set_id=intent.change_set_id,
             report_id=report_change.artifact_id.value,
             status=final.status,
-            item_count=report.stats.item_count,
-            truncated_count=report.stats.truncated_count,
+            item_count=merged.stats.item_count,
+            truncated_count=merged.stats.truncated_count,
             commit_id=record.commit_id,
+            mention_hits=merged.stats.mention_hits,
         )
 
     # ------------------------------------------------------------------
@@ -174,15 +225,73 @@ class AnalyzeChangeImpact:
             summary=f"变更集 {intent.change_set_id} 开始影响分析",
         )
 
-    def _traverse(self, model: ChangeSet, intent: AnalyzeIntent) -> ImpactReport:
-        """在 base 快照上建图遍历；节点→kind 解析器由快照提供（scope.kinds 生效）。"""
-        snapshot = self._reader.get_snapshot(intent.project_id, CommitId(model.base_commit_id))
-        graph = RelationGraph.from_snapshot(snapshot)
-        kind_of = {
+    def _kind_of(self, snapshot: Snapshot) -> Any:
+        """节点→kind 解析器：scope.kinds 白名单与正文 scope 过滤共用。"""
+        return {
             view.artifact.id.value: view.artifact.kind for view in snapshot.artifacts.values()
-        }
-        seeds = tuple(seed.artifact_id for seed in model.seed_changes)
-        return traverse_impact(graph, seeds, scope=model.scope, kind_of=kind_of.get)
+        }.get
+
+    def _scan_mentions(
+        self, model: ChangeSet, snapshot: Snapshot, deterministic: ImpactReport
+    ) -> tuple[tuple[ImpactItem, ...], tuple[TruncatedEntry, ...], MentionScanStats]:
+        """正文引用补充（第二阶段）：候选从种子对象投影，段落取活动 TextUnit。
+
+        scope 过滤与确定性遍历同规则（roots/kinds 白名单），被过滤段落记
+        TruncatedEntry——「没扫」与「扫不到」可区分（四透镜③）。
+        """
+        candidates = tuple(
+            MentionCandidate(
+                artifact_id=seed.artifact_id, aliases=self._aliases_of(snapshot, seed.artifact_id)
+            )
+            for seed in model.seed_changes
+        )
+        candidates = tuple(c for c in candidates if c.aliases)
+        covered = frozenset(item.target_artifact_id for item in deterministic.items)
+        kind_of = self._kind_of(snapshot)
+        catalog = ManuscriptCatalog.from_snapshot(snapshot)
+        units: list[TextUnitRef] = []
+        truncated: list[TruncatedEntry] = []
+        for entry in catalog.by_kind(ms_kinds.KIND_TEXT_UNIT):
+            kind = kind_of(entry.artifact_id) or ""
+            in_scope, reason = self._unit_in_scope(model, entry.artifact_id, kind)
+            if not in_scope:
+                truncated.append(
+                    TruncatedEntry(
+                        artifact_id=entry.artifact_id, relation_type="mentions", reason=reason
+                    )
+                )
+                continue
+            unit: TextUnit = entry.model()
+            if not unit.is_active:
+                continue  # 已删除段落不参与扫描；不计截断（是明确的无须检查）
+            units.append(TextUnitRef(text_unit_id=entry.artifact_id, text=unit.text))
+        result = scan_text_mentions(candidates, tuple(units), covered_ids=covered)
+        return result.items, tuple(truncated), result.stats
+
+    @staticmethod
+    def _unit_in_scope(model: ChangeSet, unit_id: str, kind: str) -> tuple[bool, str]:
+        scope = model.scope
+        if scope.roots and unit_id not in scope.roots:
+            return False, f"scope.roots 白名单不含 {unit_id}"
+        if scope.kinds and kind not in scope.kinds:
+            return False, f"scope.kinds 白名单不含 {kind}"
+        return True, ""
+
+    @staticmethod
+    def _aliases_of(snapshot: Snapshot, artifact_id: str) -> tuple[str, ...]:
+        """从对象内容投影名称别名：name + aliases；无名称候选不参与扫描。"""
+        view = snapshot.artifacts.get(ArtifactId(artifact_id))
+        if view is None or view.revision is None:
+            return ()
+        content = view.revision.content
+        names: list[str] = []
+        name = content.get("name")
+        if isinstance(name, str) and name.strip():
+            names.append(name)
+        raw_aliases = content.get("aliases")
+        if isinstance(raw_aliases, (list, tuple)):
+            names.extend(a for a in raw_aliases if isinstance(a, str) and a.strip())
+        return tuple(dict.fromkeys(names))  # 去重保序
 
     def _record(
         self, model: ChangeSet, report: ImpactReport, intent: AnalyzeIntent

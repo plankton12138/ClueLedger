@@ -20,6 +20,7 @@ from hastings.domain.changes import status as st
 from hastings.domain.changes.catalog import ChangesCatalog
 from hastings.domain.changes.impact import ImpactReport
 from hastings.domain.changes.models import ChangeScope, SeedChange
+from hastings.domain.manuscript.models import TextUnit
 from hastings.domain.repository.ids import ArtifactId, CommitId
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest, RelationChange
 
@@ -264,3 +265,123 @@ def test_scope_kinds_truncation_recorded_in_report(changes_env: Any) -> None:
     assert [t.artifact_id for t in report.truncated] == ["art_c"]
     assert "scope.kinds" in report.truncated[0].reason
     assert report.stats.truncated_count == 1
+
+
+# ---------------------------------------------------------------------------
+# T15.3 正文引用补充（两阶段分析的第二阶段）
+# ---------------------------------------------------------------------------
+def _unit(unit_id: str, text: str, *, state: str = "active") -> ArtifactChange:
+    content = TextUnit(unit_id=unit_id, chapter_id="ch1", text=text, state=state).to_content()
+    return ArtifactChange(
+        artifact_id=ArtifactId(unit_id), content=content, kind="manuscript.text_unit"
+    )
+
+
+def _seed_with_text(env: Any, *, name: str) -> tuple[Any, str]:
+    """播种角色（name）→ beat 链 + 渲染段落/普通段落/已删除段落。"""
+    project = env.handler.create_project("冬馆")
+    branch = env.service.get_branch(project.id, "main")
+    env.service.commit(
+        CommitRequest(
+            project_id=project.id,
+            branch_id=branch.id,
+            expected_head=branch.head_commit_id,
+            actor=AUTHOR,
+            idempotency_key="seed-text-1",
+            summary="播种角色链与正文段落",
+            changes=(
+                ArtifactChange(
+                    artifact_id=ArtifactId("art_kirishima"),
+                    content={"name": name, "role": "antagonist"},
+                    kind="story.character",
+                ),
+                ArtifactChange(
+                    artifact_id=ArtifactId("art_beat1"),
+                    content={"name": "beat1"},
+                    kind="story.plot_beat",
+                ),
+                ArtifactChange(
+                    artifact_id=ArtifactId("art_beat2"),
+                    content={"name": "beat2"},
+                    kind="story.plot_beat",
+                ),
+                _unit("tu_rendered", f"{name}把怀表放回口袋。"),
+                _unit("tu_plain", f"门外传来脚步声，{name}没有回头。"),
+                _unit("tu_deleted", f"{name}的旧稿段落。", state="deleted"),
+            ),
+            relations=(
+                RelationChange(
+                    action="add",
+                    source=ArtifactId("art_kirishima"),
+                    relation_type="motivates",
+                    target=ArtifactId("art_beat1"),
+                ),
+                RelationChange(
+                    action="add",
+                    source=ArtifactId("art_beat1"),
+                    relation_type="motivates",
+                    target=ArtifactId("art_beat2"),
+                ),
+                RelationChange(
+                    action="add",
+                    source=ArtifactId("art_beat2"),
+                    relation_type="renders",
+                    target=ArtifactId("tu_rendered"),
+                ),
+            ),
+        )
+    )
+    head = head_of(env, project.id)
+    assert head is not None
+    return project, head
+
+
+def test_mention_scan_appended_after_deterministic(changes_env: Any) -> None:
+    """renders 优先：被渲染段落只有结构项；普通段落追加 mention 项；删除段落不扫。"""
+    env = changes_env
+    project, head = _seed_with_text(env, name="雾岛彻")
+    cs_id = _open(env, project, head, seed="art_kirishima")
+
+    result = _workflow(env).analyze(AnalyzeIntent(project.id, cs_id, "analyze-1"))
+
+    assert result.status == st.CHANGE_ANALYZED
+    assert result.mention_hits == 1
+    report: ImpactReport = _catalog(env, project).get(result.report_id).model()
+    items = {i.target_artifact_id: i for i in report.items}
+    # 确定性：b、c 沿 motivates；tu_rendered 沿 renders（must_fix，结构必然）
+    assert items["art_beat1"].severity == "should_fix"
+    assert items["tu_rendered"].severity == "must_fix"
+    assert items["tu_rendered"].confidence == 1.0
+    # renders 已覆盖 tu_rendered：语义观察不重复计项
+    assert sum(1 for i in report.items if i.target_artifact_id == "tu_rendered") == 1
+    # tu_plain 只有 mentions 项：should_fix、置信 0.9、source 是段落自身
+    assert items["tu_plain"].severity == "should_fix"
+    assert items["tu_plain"].confidence == 0.9
+    assert items["tu_plain"].text_unit_id == "tu_plain"
+    assert items["tu_plain"].mentioned_artifact_id == "art_kirishima"  # 被引用者可回溯
+    assert "雾岛彻" in items["tu_plain"].reason
+    # tu_deleted 已删除：明确无须检查，不计截断
+    assert "tu_deleted" not in items
+    assert all(t.artifact_id != "tu_deleted" for t in report.truncated)
+    assert report.stats.mention_units_scanned == 2
+    assert report.stats.mention_skipped_covered == 1
+    assert report.stats.item_count == 4
+
+
+def test_low_confidence_mention_is_review_in_workflow(changes_env: Any) -> None:
+    """单字名：低置信 mention 在完整工作流中仍降为 review。"""
+    env = changes_env
+    project, head = _seed_with_text(env, name="岚")
+    cs_id = _open(env, project, head, seed="art_kirishima")
+
+    result = _workflow(env).analyze(AnalyzeIntent(project.id, cs_id, "analyze-1"))
+
+    report: ImpactReport = _catalog(env, project).get(result.report_id).model()
+    by_target = {i.target_artifact_id: i for i in report.items if i.text_unit_id}
+    plain = by_target["tu_plain"]
+    assert plain.severity == "review"
+    assert plain.confidence == 0.5
+    # 单字名同样命中已渲染段落文本，但 renders 结构项优先，语义项被跳过
+    assert [i for i in report.items if i.target_artifact_id == "tu_rendered"][
+        0
+    ].severity == "must_fix"
