@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from hastings.server.provider_config import ProviderBook
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.rest import create_rest_router
+from hastings.server.v2 import V2Runtime, create_v2_router, register_v2_error_handlers
 from hastings.server.ws import router as ws_router
 
 
@@ -34,6 +35,7 @@ def create_app(
     corpus_root: Path | None = None,
     ollama_transport: httpx.AsyncBaseTransport | None = None,
     installed_probe: Callable[[], bool] | None = None,
+    v2_runtime: V2Runtime | None = None,
 ) -> FastAPI:
     """装配应用；``static_dir`` 存在时托管前端 build 产物（P3 T9）。
 
@@ -61,6 +63,11 @@ def create_app(
     @app.get("/api/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
         return HealthResponse(status="ok")
+
+    if v2_runtime is not None:
+        # V2 REST 面与 V1 共存（T14.8）：独立前缀 /api/v2，错误信封独立注册
+        app.include_router(create_v2_router(v2_runtime))
+        register_v2_error_handlers(app)
 
     if static_dir is not None and static_dir.is_dir():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="spa")
