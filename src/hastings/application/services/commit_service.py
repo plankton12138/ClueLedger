@@ -136,6 +136,17 @@ class CommitService:
         self._storage = storage
         self._ids = ids
 
+    def find_commit_result(self, project_id: ProjectId, key: str) -> CommitResult | None:
+        with self._storage.transaction() as txn:
+            record = txn.get_idempotent_result(project_id, key)
+            return record[1] if record else None
+
+    def commit_history(self, project_id: ProjectId, at_commit_id: CommitId) -> tuple[Commit, ...]:
+        # get_snapshot 先验证版本存在且属于本项目，再暴露受限历史查询。
+        self.get_snapshot(project_id, at_commit_id)
+        with self._storage.transaction() as txn:
+            return txn.commit_chain(at_commit_id)
+
     # ------------------------------------------------------------------
     # 写路径
     # ------------------------------------------------------------------

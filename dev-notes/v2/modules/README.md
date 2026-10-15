@@ -47,10 +47,10 @@ flowchart LR
 | [repository-kernel.md](repository-kernel.md) | 版本化仓库内核 | 怎样保存、提交、分支、回滚和发布事件 | as-built / Phase 12 |
 | [story-domain.md](story-domain.md) | Canon 与叙事领域 | 怎样表达故事事实、结构和悬疑公平性 | as-built / Phase 13 |
 | [manuscript-author-model.md](manuscript-author-model.md) | 正文与作者模型 | 怎样保护人工正文并从修改中学习 | as-built / Phase 14（§0 as-built 摘要，§2–§9 为 target） |
-| [change-impact.md](change-impact.md) | 影响分析与系统修复 | 怎样把早期变化传播到结构和正文 | target / Phase 15 |
-| [guard-authorization.md](guard-authorization.md) | 命令、守卫与授权 | 哪些工具可见、谁能改什么、何时可提交 | target / Phase 12–15 |
-| [orchestration-context.md](orchestration-context.md) | Agent 编排与上下文 | 怎样让不同工作者在有限上下文中协作 | target / Phase 16 |
-| [interfaces-observability.md](interfaces-observability.md) | API、事件和可观测性 | 怎样连接 UI、后台任务、导入导出并保持可恢复 | target / Phase 12–17 |
+| [change-impact.md](change-impact.md) | 影响分析与系统修复 | 怎样把早期变化传播到结构和正文 | as-built / Phase 15 |
+| [guard-authorization.md](guard-authorization.md) | 命令、守卫与授权 | 哪些工具可见、谁能改什么、何时可提交 | Phase 12–16 具体守卫/Capability 已交付；Phase 17 V2 项目旧写工具 gating（拒绝桩）已交付；通用框架仍为 target |
+| [orchestration-context.md](orchestration-context.md) | Agent 编排与上下文 | 怎样让不同工作者在有限上下文中协作 | as-built / Phase 16 |
+| [interfaces-observability.md](interfaces-observability.md) | API、事件和可观测性 | 怎样连接 UI、后台任务、导入导出并保持可恢复 | Phase 16 Job/API 已交付；Phase 17 导入器与旧写路径 gating 已交付；界面迁移/导出为 target |
 
 ## 4. 跨模块共同约束
 

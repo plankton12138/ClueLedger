@@ -165,14 +165,20 @@ def create_writing_tools(
     *,
     architecture_version: str = "v1",
 ) -> list[AgentTool]:
-    """装配写作工具集；``architecture_version="v2"`` 时 bible_upsert 被拒绝桩替换
-    （V2 项目不可走通用账本写路径，缺省 ``"v1"`` 保持 V1 行为不变）。"""
+    """装配写作工具集；``architecture_version="v2"`` 时旧通用写工具（bible_upsert、
+    write_chapter、method_lock/unlock、story_stage）全部替换为拒绝桩——V2 项目只经
+    领域命令与 Commit Service 写入（T17.6）；只读工具保持可用。缺省 ``"v1"`` 行为不变。"""
     return (
         create_bible_tools(workspace, architecture_version=architecture_version)
-        + create_chapter_tools(workspace, edit_marks=edit_marks, run_kind=run_kind)
-        + create_method_tools(workspace)
+        + create_chapter_tools(
+            workspace,
+            edit_marks=edit_marks,
+            run_kind=run_kind,
+            architecture_version=architecture_version,
+        )
+        + create_method_tools(workspace, architecture_version=architecture_version)
         + create_timeline_tools(workspace)
-        + create_story_tools(workspace)
+        + create_story_tools(workspace, architecture_version=architecture_version)
     )
 
 

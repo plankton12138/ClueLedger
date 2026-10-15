@@ -1,0 +1,1 @@
+{"role":"reviser","instruction":"只把当前目标段落中“非常缓慢地”删去，保留其余内容、身份与依赖字段。使用 patches，带原 base_revision_id；不得修改其他段落。","expected_kind":"manuscript_patch"}

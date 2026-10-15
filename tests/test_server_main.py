@@ -51,6 +51,12 @@ def test_parser_defaults_and_overrides() -> None:
     assert args.config == Path("my.yaml")
 
 
+def test_parser_explicit_v2_repository() -> None:
+    assert server_main.build_parser().parse_args([]).v2_db is None
+    args = server_main.build_parser().parse_args(["--v2-db", "work/v2.sqlite"])
+    assert args.v2_db == Path("work/v2.sqlite")
+
+
 def test_parser_config_dir_and_static_dir() -> None:
     """P9 T9：桌面参数 --config-dir / --static-dir。"""
     args = server_main.build_parser().parse_args(["--config-dir", "cfgdir", "--static-dir", "dist"])

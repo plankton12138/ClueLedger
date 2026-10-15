@@ -21,7 +21,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from hastings.application.errors import ViolationError
@@ -32,6 +32,7 @@ from hastings.application.handlers.change_commands import (
 )
 from hastings.application.ports.clock import Clock
 from hastings.application.ports.repository import RepositoryReader
+from hastings.application.ports.semantic_impact import SemanticImpact
 from hastings.domain.changes import error_codes as ec
 from hastings.domain.changes import kinds
 from hastings.domain.changes import status as st
@@ -52,6 +53,7 @@ from hastings.domain.changes.mentions import (
     scan_text_mentions,
 )
 from hastings.domain.changes.models import ChangeSet
+from hastings.domain.changes.scope import expand_scope
 from hastings.domain.manuscript import kinds as ms_kinds
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
 from hastings.domain.manuscript.models import TextUnit
@@ -153,12 +155,14 @@ class AnalyzeChangeImpact:
         actor: Actor,
         *,
         branch_name: str = "main",
+        semantic: SemanticImpact | None = None,
     ) -> None:
         self._handler = handler
         self._reader = reader
         self._clock = clock
         self._actor = actor
         self._branch_name = branch_name
+        self._semantic = semantic
 
     def analyze(self, intent: AnalyzeIntent) -> AnalyzeResult:
         catalog, model = self._read_state(intent)
@@ -176,20 +180,61 @@ class AnalyzeChangeImpact:
         if model.status == st.CHANGE_OPENED:
             self._advance_analyzing(intent)
         snapshot = self._reader.get_snapshot(intent.project_id, CommitId(model.base_commit_id))
+        analysis_model = replace(model, scope=expand_scope(model.scope, snapshot))
         deterministic = traverse_impact(
             RelationGraph.from_snapshot(snapshot),
             tuple(seed.artifact_id for seed in model.seed_changes),
-            scope=model.scope,
+            scope=analysis_model.scope,
             kind_of=self._kind_of(snapshot),
         )
         mention_items, mention_extra, scan_stats = self._scan_mentions(
-            model, snapshot, deterministic
+            analysis_model, snapshot, deterministic
         )
+        seed_items = tuple(
+            ImpactItem(s.artifact_id, "must_fix", "intent", (), s.reason or model.intent)
+            for s in model.seed_changes
+            if s.proposed_content is not None
+        )
+        semantic_items: tuple[ImpactItem, ...] = ()
+        coverage = "deterministic"
+        warnings: tuple[str, ...] = ()
+        if self._semantic is not None:
+            try:
+                additions = self._semantic(
+                    {
+                        "base_commit_id": model.base_commit_id,
+                        "intent": model.intent,
+                        "seed_changes": [s.to_content() for s in model.seed_changes],
+                    }
+                )
+                semantic_items = tuple(
+                    replace(
+                        i,
+                        severity="review" if i.confidence < 0.8 else "should_fix",
+                        status="open",
+                        path=(),
+                    )
+                    for i in additions
+                    if ArtifactId(i.target_artifact_id) in snapshot.artifacts
+                    and self._unit_in_scope(
+                        analysis_model,
+                        i.target_artifact_id,
+                        self._kind_of(snapshot)(i.target_artifact_id),
+                    )[0]
+                )
+                coverage = "semantic_supplemented"
+            except Exception as exc:
+                coverage, warnings = (
+                    "deterministic_only",
+                    (f"语义补充失败：{type(exc).__name__}: {exc}",),
+                )
         merged = ImpactReport(
             report_id="",
             change_set_id="",
             base_commit_id="",
-            items=(*deterministic.items, *mention_items),
+            items=(*seed_items, *deterministic.items, *mention_items, *semantic_items),
+            coverage=coverage,
+            warnings=warnings,
             truncated=(*deterministic.truncated, *mention_extra),
             stats=ImpactStats(
                 seed_count=deterministic.stats.seed_count,
@@ -197,7 +242,10 @@ class AnalyzeChangeImpact:
                 paths_explored=deterministic.stats.paths_explored,
                 cycles_skipped=deterministic.stats.cycles_skipped,
                 truncated_count=len(deterministic.truncated) + len(mention_extra),
-                item_count=len(deterministic.items) + len(mention_items),
+                item_count=len(seed_items)
+                + len(deterministic.items)
+                + len(mention_items)
+                + len(semantic_items),
                 mention_units_scanned=scan_stats.unit_count,
                 mention_hits=scan_stats.hit_count,
                 mention_skipped_covered=scan_stats.skipped_covered,

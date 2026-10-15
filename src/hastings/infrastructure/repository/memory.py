@@ -368,6 +368,16 @@ class MemoryRepository:
         return "租约状态不匹配"
 
     # EventOutbox（消费侧）----
+    async def pending_projects(self) -> list[str]:
+        with self._storage.lock():
+            return sorted(
+                {
+                    e.project_id.value
+                    for e in self._storage.data.outbox.values()
+                    if e.published_at is None
+                }
+            )
+
     async def pending(self, project_id: str, limit: int) -> list[dict[str, object]]:
         await asyncio.sleep(0)
         with self._storage.lock():

@@ -26,12 +26,14 @@ from typing import Any
 
 import uvicorn
 from tests.fake_scripts import assistant_stream, chapter_write, character_upsert, closing
+from tests.v2.agents.scenario import ScenarioRunner
 
 from hastings.bible.store import StoryWorkspace
 from hastings.server.app import create_app
 from hastings.server.hastings_session import HastingsSession
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.session import WritingSession
+from hastings.server.v2 import V2Runtime
 from tau_agent import AgentHarness, AgentHarnessConfig
 from tau_ai import FakeProvider
 
@@ -220,7 +222,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     StoryWorkspace(root=stories_root, slug=PRECREATE_SLUG).ensure_dirs()
     seed_writing_workspace(stories_root)
     registry = WorkspaceRegistry(root=stories_root, session_factory=make_session_factory())
-    app = create_app(registry, static_dir=args.static_dir, corpus_root=corpus_root)
+    v2_runtime = V2Runtime.sqlite(str(stories_root / "v2.sqlite"))
+    v2_runtime.configure_agent_runner(ScenarioRunner(v2_runtime.service))
+    app = create_app(
+        registry,
+        static_dir=args.static_dir,
+        corpus_root=corpus_root,
+        v2_runtime=v2_runtime,
+    )
     print(f"E2E 服务已就绪：http://{args.host}:{args.port}（文章目录：{stories_root}）")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0

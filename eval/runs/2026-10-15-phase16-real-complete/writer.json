@@ -1,0 +1,277 @@
+{
+  "case": "writer.json",
+  "role": "writer",
+  "model": "deepseek-flash",
+  "passed": true,
+  "reason": "角色约束与应用守卫通过",
+  "state": "waiting",
+  "context": {
+    "context_id": "a7d9d719dc2fc9125aa5958f2262213ab44a69e0285d638d4972e520867d1ec8",
+    "task_kind": "writer",
+    "project_id": "prj_8242cb3baa90490f",
+    "repository_commit_id": "cmt_261dd8e229d34654",
+    "target_ids": [
+      "prj_8242cb3baa90490f:beat"
+    ],
+    "selected_inputs": [
+      {
+        "artifact_id": "prj_8242cb3baa90490f:beat",
+        "revision_id": "rev_b262c6b4ada04219",
+        "kind": "narrative.beat",
+        "reason": "任务目标，必须保留",
+        "content": {
+          "beat_id": "prj_8242cb3baa90490f:beat",
+          "constraints": [],
+          "depends_on": [],
+          "order_key": "",
+          "parent_id": "prj_8242cb3baa90490f:scene",
+          "participants": [
+            "prj_8242cb3baa90490f:helper"
+          ],
+          "payoffs": [],
+          "pov_character_id": "",
+          "preconditions": [],
+          "purpose": "递出怀表，只展示指针停在3点",
+          "reader_disclosures": [],
+          "schema_version": 1,
+          "setups": [],
+          "state_changes": [],
+          "title": "怀表停走"
+        }
+      },
+      {
+        "artifact_id": "prj_8242cb3baa90490f:helper",
+        "revision_id": "rev_d2823209e9324135",
+        "kind": "story.character",
+        "reason": "目标的第 1 跳显式依赖",
+        "content": {
+          "arc": "",
+          "goal": "帮助侦探调查",
+          "identity": "",
+          "name": "林岚",
+          "need": "",
+          "role": "protagonist",
+          "schema_version": 1,
+          "secret": "",
+          "traits": []
+        }
+      },
+      {
+        "artifact_id": "prj_8242cb3baa90490f:nchapter",
+        "revision_id": "rev_12f57d2b4c094cc5",
+        "kind": "narrative.chapter",
+        "reason": "目标的第 2 跳显式依赖",
+        "content": {
+          "kind": "narrative.chapter",
+          "node_id": "prj_8242cb3baa90490f:nchapter",
+          "order_key": "",
+          "parent_id": "prj_8242cb3baa90490f:arc",
+          "schema_version": 1,
+          "title": "nchapter"
+        }
+      },
+      {
+        "artifact_id": "prj_8242cb3baa90490f:scene",
+        "revision_id": "rev_39630f7e59404898",
+        "kind": "narrative.scene",
+        "reason": "目标的第 1 跳显式依赖",
+        "content": {
+          "kind": "narrative.scene",
+          "node_id": "prj_8242cb3baa90490f:scene",
+          "order_key": "",
+          "parent_id": "prj_8242cb3baa90490f:nchapter",
+          "schema_version": 1,
+          "title": "scene"
+        }
+      },
+      {
+        "artifact_id": "prj_8242cb3baa90490f:unit",
+        "revision_id": "rev_b183cb2c02514c26",
+        "kind": "manuscript.text_unit",
+        "reason": "目标的第 1 跳显式依赖",
+        "content": {
+          "chapter_id": "prj_8242cb3baa90490f:chapter",
+          "derived_from": [],
+          "origin": "import",
+          "scene_id": null,
+          "schema_version": 1,
+          "state": "active",
+          "text": "林岚非常缓慢地递出怀表。侦探早已知道林岚调慢怀表，指针停在3点。",
+          "unit_id": "prj_8242cb3baa90490f:unit"
+        }
+      }
+    ],
+    "author_preferences": [],
+    "author_examples": [],
+    "constraints": [
+      "输出仅为候选；作者审批与 Commit 才表示项目变化",
+      "只为 prj_8242cb3baa90490f:new-chapter 返回整章 text；不修改 Canon，缺失事实应澄清"
+    ],
+    "omissions": [],
+    "instruction": "按已接受节拍写约100字正文：林岚把停走的怀表递给侦探，侦探只疑惑，不知道真相。只能观察指针停在三点；不能揭露林岚调慢怀表。用 chapter_id + text 提交候选，不改 Canon。",
+    "evidence": {
+      "chapter_id": "prj_8242cb3baa90490f:new-chapter",
+      "beat_states": [
+        {
+          "beat_id": "prj_8242cb3baa90490f:beat",
+          "enter": {
+            "commit_id": "cmt_261dd8e229d34654",
+            "at_beat_id": "prj_8242cb3baa90490f:beat",
+            "truths": [],
+            "knowledge": [],
+            "relationships": [],
+            "custom": [],
+            "disclosures": [],
+            "warnings": []
+          },
+          "leave": {
+            "commit_id": "cmt_261dd8e229d34654",
+            "at_beat_id": "prj_8242cb3baa90490f:beat",
+            "truths": [],
+            "knowledge": [],
+            "relationships": [],
+            "custom": [],
+            "disclosures": [],
+            "warnings": []
+          }
+        }
+      ]
+    },
+    "token_budget": 16000,
+    "estimated_tokens": 3698,
+    "capability": {
+      "role": "writer",
+      "project_id": "prj_8242cb3baa90490f",
+      "base_commit_id": "cmt_261dd8e229d34654",
+      "readable_ids": [
+        "prj_8242cb3baa90490f:beat",
+        "prj_8242cb3baa90490f:helper",
+        "prj_8242cb3baa90490f:nchapter",
+        "prj_8242cb3baa90490f:scene",
+        "prj_8242cb3baa90490f:unit"
+      ],
+      "writable_ids": [
+        "prj_8242cb3baa90490f:new-chapter"
+      ],
+      "allowed_tools": [
+        "artifact_read",
+        "artifact_search",
+        "author_profile_read",
+        "manuscript_patch_propose"
+      ],
+      "creation_kinds": [],
+      "creation_prefix": "prj_8242cb3baa90490f:",
+      "max_new_artifacts": 12
+    }
+  },
+  "output": {
+    "kind": "manuscript_patch",
+    "base_commit_id": "cmt_261dd8e229d34654",
+    "patches": [],
+    "chapter_id": "prj_8242cb3baa90490f:new-chapter",
+    "text": "林岚把怀表递过去。表壳在灯下泛着旧铜色的光，他捏得很稳，像递出一件与自己无关的东西。侦探接过，翻来覆去看了两遍，又凑近耳边听——没有滴答声。指针斜斜地钉在表盘上，不偏不倚，停在三点整。\n\n\"坏了？\"侦探抬眼看他，眉心拧起一道浅纹。\n\n林岚垂下眼睛，没有回答。\n\n侦探又低头盯着那两根静止的针，像在算它究竟停了多少时候，可指尖敲了敲表背，什么也没敲出来。窗外一阵风过，灯影晃了晃。他把表还回来，疑惑仍挂在脸上。",
+    "rationale": "按已接受节拍 prj_8242cb3baa90490f:beat 撰写：林岚递出停走的怀表，侦探只能观察到指针停在三点并感到疑惑，文中不涉及林岚调慢怀表的真相。仅为 prj_8242cb3baa90490f:new-chapter 的正文候选，不改动 Canon。"
+  },
+  "events": [
+    {
+      "job_id": "job_363b55b58c23402d80ff31278c9b55ad",
+      "sequence": 1,
+      "type": "job.queued",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "queued"
+      }
+    },
+    {
+      "job_id": "job_363b55b58c23402d80ff31278c9b55ad",
+      "sequence": 2,
+      "type": "job.running",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_363b55b58c23402d80ff31278c9b55ad",
+      "sequence": 3,
+      "type": "job.lease_acquired",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_363b55b58c23402d80ff31278c9b55ad",
+      "sequence": 4,
+      "type": "agent.started",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "role": "writer"
+      }
+    },
+    {
+      "job_id": "job_363b55b58c23402d80ff31278c9b55ad",
+      "sequence": 5,
+      "type": "agent.tool_execution_start",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "manuscript_patch_propose"
+      }
+    },
+    {
+      "job_id": "job_363b55b58c23402d80ff31278c9b55ad",
+      "sequence": 6,
+      "type": "agent.output.proposed",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "kind": "manuscript_patch"
+      }
+    },
+    {
+      "job_id": "job_363b55b58c23402d80ff31278c9b55ad",
+      "sequence": 7,
+      "type": "agent.tool_execution_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "manuscript_patch_propose"
+      }
+    },
+    {
+      "job_id": "job_363b55b58c23402d80ff31278c9b55ad",
+      "sequence": 8,
+      "type": "agent.turn_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": null
+      }
+    },
+    {
+      "job_id": "job_363b55b58c23402d80ff31278c9b55ad",
+      "sequence": 9,
+      "type": "agent.output.proposed",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_363b55b58c23402d80ff31278c9b55ad",
+      "sequence": 10,
+      "type": "job.waiting",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "waiting"
+      }
+    }
+  ]
+}

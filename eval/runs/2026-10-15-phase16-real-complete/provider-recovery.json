@@ -1,0 +1,158 @@
+{
+  "role": "provider_recovery",
+  "real_text_received": true,
+  "first_state": "retryable_failed",
+  "final_state": "waiting",
+  "same_job_id": true,
+  "same_context_id": true,
+  "output": {
+    "kind": "story_proposal",
+    "base_commit_id": "cmt_b3d9bc75d9194fd0",
+    "items": [],
+    "intent_kind": "draft",
+    "rationale": "请求为明确的一章创作意图，按 draft 用例执行。现有节拍 prj_fdbd5459843c4b0a:beat（怀表停走）要求递出怀表并只展示指针停在3点；既有段落 prj_fdbd5459843c4b0a:unit 当前文本已直接写出“侦探早已知道林岚调慢怀表”，与节拍“只展示指针停在3点”的限定相冲突，需要在起草阶段由作者裁定如何调整。作为协作主编仅选择用例，不产出正文，故 items 为空，候选保持 proposed。"
+  },
+  "events": [
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 1,
+      "type": "job.queued",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "queued"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 2,
+      "type": "job.running",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 3,
+      "type": "job.lease_acquired",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 4,
+      "type": "agent.started",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "role": "coordinator"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 5,
+      "type": "job.retryable_failed",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "retryable_failed"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 6,
+      "type": "job.running",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 7,
+      "type": "job.lease_acquired",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 8,
+      "type": "agent.started",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "role": "coordinator"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 9,
+      "type": "agent.tool_execution_start",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "change_open"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 10,
+      "type": "agent.output.proposed",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "kind": "story_proposal"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 11,
+      "type": "agent.tool_execution_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "change_open"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 12,
+      "type": "agent.turn_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": null
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 13,
+      "type": "agent.output.proposed",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_6701a4740ec64279888f464382032766",
+      "sequence": 14,
+      "type": "job.waiting",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "waiting"
+      }
+    }
+  ],
+  "passed": true
+}

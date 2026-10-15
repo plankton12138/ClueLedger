@@ -5,6 +5,8 @@
 > 提交引擎：`hastings.application.services.commit_service.py`（单一算法，驱动内存与 SQLite 双后端）。
 > 构建过程与设计复盘见 [phase-12-repository-kernel.md](../phase-12-repository-kernel.md)。
 
+Phase 15 补充只读端口 `find_commit_result(project_id, key)` 与 `commit_history(project_id, at_commit_id)`：前者从原子幂等结果恢复已提交步骤，后者返回验证项目归属后的 first-parent 历史，用于定位真实修复 Commit。Changes handler 将命令指纹/领域结果作为 `changes.command_result` 与业务变化同 Commit 保存，支持跨实例和重启重放，不修改仓库表结构。
+
 ## 1. 职责
 
 Repository Kernel 为所有小说资产提供统一的版本语义。它回答：

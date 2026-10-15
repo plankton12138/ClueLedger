@@ -7,9 +7,10 @@ Lease 不在本端口——它属于仓库（repository-kernel.md §3），Phase
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Protocol, runtime_checkable
+from datetime import datetime
+from typing import Any, Protocol, runtime_checkable
 
-__all__ = ["JobStore"]
+__all__ = ["JobStore", "PersistentJobs"]
 
 
 @runtime_checkable
@@ -24,3 +25,35 @@ class JobStore(Protocol):
 
     async def get(self, job_id: str) -> Mapping[str, object] | None:
         """按 id 读取任务状态；不存在返回 None（合法空结果，非异常）。"""
+
+
+class PersistentJobs(JobStore, Protocol):
+    async def record_analysis(self, job_id: str, result: Mapping[str, object]) -> None: ...
+    async def get(self, job_id: str) -> dict[str, Any] | None: ...
+    async def claim(
+        self, job_id: str, owner: str, *, now: datetime, ttl: float
+    ) -> dict[str, Any]: ...
+    async def checkpoint(
+        self, job_id: str, generation: int, output: Mapping[str, object]
+    ) -> None: ...
+    async def finish(
+        self,
+        job_id: str,
+        generation: int,
+        state: str,
+        output: Mapping[str, object],
+        *,
+        retry_at: datetime | None = None,
+    ) -> dict[str, Any]: ...
+    async def cancel(self, job_id: str) -> dict[str, Any]: ...
+    async def recover(self, now: datetime) -> int: ...
+    async def list_jobs(self, project_id: str | None = None) -> list[dict[str, Any]]: ...
+    async def events(self, job_id: str, after: int = 0) -> list[dict[str, Any]]: ...
+    async def append_event(
+        self, job_id: str, generation: int, event: Mapping[str, object]
+    ) -> None: ...
+    async def renew(self, job_id: str, generation: int, expires_at: datetime) -> None: ...
+    async def bind_lease(
+        self, job_id: str, generation: int, lease: Mapping[str, object]
+    ) -> None: ...
+    async def resolve(self, job_id: str, generation: int, result: Mapping[str, object]) -> None: ...

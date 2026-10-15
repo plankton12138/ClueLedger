@@ -1,0 +1,187 @@
+{
+  "case": "coordinator.json",
+  "role": "coordinator",
+  "model": "deepseek-flash",
+  "passed": true,
+  "reason": "角色约束与应用守卫通过",
+  "state": "waiting",
+  "context": {
+    "context_id": "07555e7c84ed4345e5d0243c3b488219d082d2a858c440071217fe37d537d83c",
+    "task_kind": "coordinator",
+    "project_id": "prj_899ed2271cf645b8",
+    "repository_commit_id": "cmt_de13bfa03b8c453c",
+    "target_ids": [
+      "prj_899ed2271cf645b8:beat",
+      "prj_899ed2271cf645b8:unit"
+    ],
+    "selected_inputs": [
+      {
+        "artifact_id": "prj_899ed2271cf645b8:beat",
+        "revision_id": "rev_ec93641be865452b",
+        "kind": "narrative.beat",
+        "reason": "任务目标，必须保留",
+        "content": {
+          "beat_id": "prj_899ed2271cf645b8:beat",
+          "constraints": [],
+          "depends_on": [],
+          "order_key": "",
+          "parent_id": "prj_899ed2271cf645b8:scene",
+          "participants": [
+            "prj_899ed2271cf645b8:helper"
+          ],
+          "payoffs": [],
+          "pov_character_id": "",
+          "preconditions": [],
+          "purpose": "递出怀表，只展示指针停在3点",
+          "reader_disclosures": [],
+          "schema_version": 1,
+          "setups": [],
+          "state_changes": [],
+          "title": "怀表停走"
+        }
+      },
+      {
+        "artifact_id": "prj_899ed2271cf645b8:unit",
+        "revision_id": "rev_a9b3d2d290ad401f",
+        "kind": "manuscript.text_unit",
+        "reason": "任务目标，必须保留",
+        "content": {
+          "chapter_id": "prj_899ed2271cf645b8:chapter",
+          "derived_from": [],
+          "origin": "import",
+          "scene_id": null,
+          "schema_version": 1,
+          "state": "active",
+          "text": "林岚非常缓慢地递出怀表。侦探早已知道林岚调慢怀表，指针停在3点。",
+          "unit_id": "prj_899ed2271cf645b8:unit"
+        }
+      },
+      {
+        "artifact_id": "prj_899ed2271cf645b8:outside",
+        "revision_id": "rev_1b8a8896d7c64c77",
+        "kind": "manuscript.text_unit",
+        "reason": "相邻段落窗口",
+        "content": {
+          "chapter_id": "prj_899ed2271cf645b8:chapter",
+          "derived_from": [],
+          "origin": "import",
+          "scene_id": null,
+          "schema_version": 1,
+          "state": "active",
+          "text": "窗外落着细雨。",
+          "unit_id": "prj_899ed2271cf645b8:outside"
+        }
+      }
+    ],
+    "author_preferences": [],
+    "author_examples": [],
+    "constraints": [
+      "输出仅为候选；作者审批与 Commit 才表示项目变化"
+    ],
+    "omissions": [],
+    "instruction": "请按已接受节拍生成下一章。只选择 draft 用例，先建立待作者审阅的候选，不能替作者批准或声称已提交。",
+    "evidence": {},
+    "token_budget": 16000,
+    "estimated_tokens": 2405,
+    "capability": {
+      "role": "coordinator",
+      "project_id": "prj_899ed2271cf645b8",
+      "base_commit_id": "cmt_de13bfa03b8c453c",
+      "readable_ids": [
+        "prj_899ed2271cf645b8:beat",
+        "prj_899ed2271cf645b8:outside",
+        "prj_899ed2271cf645b8:unit"
+      ],
+      "writable_ids": [],
+      "allowed_tools": [
+        "workspace_snapshot",
+        "artifact_read",
+        "artifact_search",
+        "change_read",
+        "change_open"
+      ],
+      "creation_kinds": [],
+      "creation_prefix": "prj_899ed2271cf645b8:",
+      "max_new_artifacts": 12
+    }
+  },
+  "output": {
+    "kind": "story_proposal",
+    "base_commit_id": "cmt_de13bfa03b8c453c",
+    "items": [],
+    "intent_kind": "draft",
+    "rationale": "请求明确为“按已接受节拍生成下一章”，属于 draft 意图：由正文写作角色依据节拍 prj_899ed2271cf645b8:beat（怀表停走：递出怀表，只展示指针停在3点）与相邻段落窗口（prj_899ed2271cf645b8:unit、prj_899ed2271cf645b8:outside）产出下一章候选。协调者不亲自生成正文，且写权限为空，故不在此提交任何候选条目，仅登记 draft 用例并交由作者审阅后由写作角色产出。注意：现有 unit 已包含“侦探早已知道林岚调慢怀表”这一信息，与节拍“只展示指针停在3点”的展示范围存在张力，请写作时保持节拍约束。"
+  },
+  "events": [
+    {
+      "job_id": "job_e450f5a6acc74f90af5da2b88b649613",
+      "sequence": 1,
+      "type": "job.queued",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "queued"
+      }
+    },
+    {
+      "job_id": "job_e450f5a6acc74f90af5da2b88b649613",
+      "sequence": 2,
+      "type": "job.running",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_e450f5a6acc74f90af5da2b88b649613",
+      "sequence": 3,
+      "type": "job.lease_acquired",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_e450f5a6acc74f90af5da2b88b649613",
+      "sequence": 4,
+      "type": "agent.started",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "role": "coordinator"
+      }
+    },
+    {
+      "job_id": "job_e450f5a6acc74f90af5da2b88b649613",
+      "sequence": 5,
+      "type": "agent.turn_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": null
+      }
+    },
+    {
+      "job_id": "job_e450f5a6acc74f90af5da2b88b649613",
+      "sequence": 6,
+      "type": "agent.output.proposed",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_e450f5a6acc74f90af5da2b88b649613",
+      "sequence": 7,
+      "type": "job.waiting",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "waiting"
+      }
+    }
+  ]
+}

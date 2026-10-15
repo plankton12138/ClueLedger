@@ -198,6 +198,48 @@ def test_receipt_content_roundtrip() -> None:
     assert ApprovalReceipt.from_content(receipt.to_content()) == receipt
 
 
+def test_receipt_expiry_uses_command_clock(changes_env: Any) -> None:
+    from hastings.domain.changes.commands import advance_change_set
+
+    env = changes_env
+    project, cs_id, _base = _ready(env)
+    receipt_id = _receipt_id(issue_receipt(env, project.id, cs_id, key="expiry"))
+    env.clock.advance(3601)
+    command = change_set_command(
+        advance_change_set,
+        change_set_id=cs_id,
+        target=st.CHANGE_APPROVED,
+        approval_ref=receipt_id,
+        actor=AUTHOR,
+        at=env.clock.now(),
+        reason="作者批准",
+    )
+    with pytest.raises(ViolationError) as error:
+        run_command(env, project.id, command, key="expired-approve")
+    assert error.value.code == "CHANGES_RECEIPT_EXPIRED"
+
+
+def test_approval_rejects_story_changed_after_analysis(changes_env: Any) -> None:
+    env = changes_env
+    project, cs_id, _base = _ready(env)
+    branch = env.service.get_branch(project.id, "main")
+    view = env.service.get_artifact(ArtifactId("art_a"), branch.head_commit_id)
+    env.service.commit(
+        CommitRequest(
+            project.id,
+            branch.id,
+            branch.head_commit_id,
+            AUTHOR,
+            "concurrent-edit",
+            "修改故事事实",
+            changes=(ArtifactChange(ArtifactId("art_a"), {"name": "changed"}, view.revision.id),),
+        )
+    )
+    with pytest.raises(ViolationError) as error:
+        issue_receipt(env, project.id, cs_id, key="stale")
+    assert error.value.code == "CHANGES_BASE_STALE"
+
+
 def test_receipt_rejects_unknown_status() -> None:
     with pytest.raises(ChangesViolation):
         ApprovalReceipt(

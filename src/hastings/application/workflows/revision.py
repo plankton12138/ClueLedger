@@ -27,7 +27,8 @@ Stale 语义的边界（有意设计，记入构建笔记）：报告/计划的�
 from __future__ import annotations
 
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Any
 
 from hastings.application.errors import ViolationError
@@ -43,7 +44,7 @@ from hastings.application.workflows.change_analysis import read_change_state
 from hastings.domain.changes import error_codes as ec
 from hastings.domain.changes import kinds
 from hastings.domain.changes import status as st
-from hastings.domain.changes.commands import advance_change_set, record_execution
+from hastings.domain.changes.commands import record_execution, start_execution
 from hastings.domain.changes.errors import ChangesViolation
 from hastings.domain.changes.execution import (
     EVENT_STEP_COMMITTED,
@@ -62,11 +63,14 @@ from hastings.domain.changes.execution import (
 )
 from hastings.domain.changes.impact import ImpactReport
 from hastings.domain.changes.models import ChangeSet
+from hastings.domain.changes.patch_guard import validate_content_patch
 from hastings.domain.changes.planning import RevisionPlan, execution_order
+from hastings.domain.changes.receipt import confirm_fingerprint
 from hastings.domain.repository import error_codes as repo_ec
 from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, JobId, ProjectId, RevisionId
 from hastings.domain.repository.models import Snapshot
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest, CreateBranchRequest
+from hastings.domain.repository.serialization import content_hash
 
 __all__ = ["ExecuteIntent", "ExecuteRevisionPlan", "ExecutionResult"]
 
@@ -134,9 +138,78 @@ class ExecuteRevisionPlan:
     def execute(self, intent: ExecuteIntent, worker: RevisionWorker) -> ExecutionResult:
         where = f"changes.execute({intent.change_set_id})"
         catalog, model = self._read_state(intent)
+        marker = catalog.get(f"execution-job:{intent.change_set_id}")
+        key = (
+            marker.content["operation_key"]
+            if marker
+            and model.status
+            in (st.CHANGE_EXECUTING, st.CHANGE_REVIEW, st.CHANGE_FAILED, st.CHANGE_COMMITTED)
+            else f"revision:{intent.change_set_id}:{intent.idempotency_key}"
+        )
+        intent = replace(intent, idempotency_key=key)
+        completed = self._reader.find_commit_result(
+            intent.project_id, f"{intent.idempotency_key}:record"
+        )
+        if completed is not None and completed.commit_id is not None:
+            snapshot = self._reader.get_snapshot(intent.project_id, completed.commit_id)
+            envelope_id = (
+                f"command:{content_hash([intent.project_id.value, 'main', f'{key}:record'])}"
+            )
+            envelope = snapshot.artifacts.get(ArtifactId(envelope_id))
+            record_ids = (
+                {
+                    c["artifact_id"]["value"]
+                    for c in envelope.revision.content["change"]["artifact_changes"]
+                    if c["kind"] == kinds.KIND_EXECUTION_RECORD
+                }
+                if envelope and envelope.revision
+                else set()
+            )
+            for view in snapshot.artifacts.values():
+                if (
+                    view.revision
+                    and view.artifact.kind == kinds.KIND_EXECUTION_RECORD
+                    and view.revision.content["change_set_id"] == intent.change_set_id
+                    and (not record_ids or view.artifact.id.value in record_ids)
+                ):
+                    record = ExecutionRecord.from_content(view.revision.content)
+                    return ExecutionResult(
+                        intent.change_set_id,
+                        record.job_id,
+                        record.branch_name,
+                        RESULT_EXECUTED if record.outcome == OUTCOME_COMPLETED else RESULT_FAILED,
+                        record.steps,
+                        completed.commit_id.value,
+                        record.error_code,
+                        record.error_message,
+                    )
         resume = self._precheck(model, where)
 
         plan = self._require_plan(catalog, model, where)
+        report = self._require_report(catalog, intent.change_set_id, where)
+        receipts = [
+            e.model()
+            for e in catalog.by_kind(kinds.KIND_APPROVAL_RECEIPT)
+            if e.content.get("change_set_id") == intent.change_set_id
+        ]
+        if not receipts or receipts[0].fingerprint != confirm_fingerprint(model, report, plan):
+            raise ViolationError(
+                code=ec.CHANGES_RECEIPT_STALE,
+                where=where,
+                why="已批准的计划、范围或报告发生漂移",
+                fix="由作者重新确认最新计划后再执行",
+            )
+        if (
+            not resume
+            and receipts[0].expires_at
+            and self._clock.now() >= datetime.fromisoformat(receipts[0].expires_at)
+        ):
+            raise ViolationError(
+                code="CHANGES_RECEIPT_EXPIRED",
+                where=where,
+                why="批准凭证已到期，尚未开始的执行不再有效",
+                fix="由作者在新变更集中重新批准执行",
+            )
         order = execution_order(plan)  # 成环即拒绝（计划登记时已防，此处防御性兜底）
         branch_name = f"{self._branch_prefix}/{intent.change_set_id}"
         if not order:
@@ -168,10 +241,10 @@ class ExecuteRevisionPlan:
                 key=intent.idempotency_key,
             )
 
-        branch = self._ensure_branch(intent, model, branch_name)
-        report = self._require_report(catalog, intent.change_set_id, where)
         steps: list[StepRecord] = []
         try:
+            branch = self._ensure_branch(intent, model, branch_name)
+            report = self._require_report(catalog, intent.change_set_id, where)
             for step_id in order:
                 step = plan.step_of(step_id)
                 assert step is not None  # execution_order 只返回计划内的步
@@ -330,6 +403,15 @@ class ExecuteRevisionPlan:
         idempotency_key: str,
     ) -> StepRecord:
         where = f"changes.execute.step({step.step_id})"
+        previous = self._reader.find_commit_result(
+            intent.project_id, f"{idempotency_key}:step:{step.step_id}"
+        )
+        if previous is not None and previous.commit_id is not None:
+            return StepRecord(
+                step_id=step.step_id,
+                outcome=STEP_EXECUTED,
+                commit_id=previous.commit_id.value,
+            )
         head = self._reader.get_branch(intent.project_id, branch.name)
         if head is None or head.head_commit_id is None:
             raise ViolationError(
@@ -371,6 +453,14 @@ class ExecuteRevisionPlan:
                     old_revision_id=RevisionId(view.revision.id.value),
                 )
             )
+            try:
+                validate_content_patch(
+                    view.artifact.kind, dict(view.revision.content), unit.content
+                )
+            except ChangesViolation as exc:
+                raise ViolationError(
+                    code=exc.code, where=exc.where, why=exc.why, fix=exc.fix, details=exc.details
+                ) from exc
         result = self._committer.commit(
             CommitRequest(
                 project_id=intent.project_id,
@@ -458,12 +548,11 @@ class ExecuteRevisionPlan:
     def _advance_executing(self, intent: ExecuteIntent) -> None:
         self._handler.execute(
             change_set_command(
-                advance_change_set,
+                start_execution,
                 change_set_id=intent.change_set_id,
-                target=st.CHANGE_EXECUTING,
+                operation_key=intent.idempotency_key,
                 actor=self._actor,
                 at=self._clock.now(),
-                reason="开始执行修订计划",
             ),
             project_id=intent.project_id,
             idempotency_key=f"{intent.idempotency_key}:start",

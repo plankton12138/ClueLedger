@@ -1,9 +1,10 @@
 # Hastings V2 文档入口
 
-> 状态：**目标架构已立项，代码尚未迁移**。
+> 状态：**Phase 11–16 已完成（2026-10-15）；Phase 17 进行中**（旧工作区导入与旧写路径 gating 已交付，界面/CLI 切换与旧代码删除未完成）。
 > 本目录描述 Hastings 下一版的目标形态；当前已经运行的系统仍以
 > [`src/hastings/README.md`](../../src/hastings/README.md) 和旧版
 > [`dev-notes/v1/DESIGN.md`](../v1/DESIGN.md) 的 as-built 标注为准。
+> V2 的领域与工作流已有独立实现；Web 服务通过 `--v2-db` 选择性启用；旧工作区导入器已可 dry-run / 幂等导入 / 校验。
 
 ## 1. 文档权威顺序
 
@@ -29,8 +30,8 @@
 | 产品目标、整体架构、核心流程 | [DESIGN.md](DESIGN.md) |
 | 模块依赖、公开契约和不变量 | [modules/README.md](modules/README.md) |
 | 全部重建阶段、依赖和里程碑 | [plans/README.md](plans/README.md) |
-| 最近完成阶段（as-built） | [phase-14-manuscript-author-model.md](phase-14-manuscript-author-model.md)（正文版本与作者模型；模块 as-built 见 [modules/manuscript-author-model.md](modules/manuscript-author-model.md)）。上一阶段：[phase-13-story-domain.md](phase-13-story-domain.md)（Story 领域内核） |
-| 旧系统如何迁移 | [DESIGN.md §11](DESIGN.md#11-旧系统迁移边界) |
+| 最近阶段（进行中） | [phase-17-migration-cleanup.md](phase-17-migration-cleanup.md)（旧工作区导入：扫描/幂等导入/校验与旧写路径不可达证明；界面切换与删除未交付）；上一阶段：[phase-16-agent-workflows.md](phase-16-agent-workflows.md)（六角色、任务上下文、持久 Job 与真模型走查） |
+| 旧系统如何迁移 | [DESIGN.md §11](DESIGN.md#11-旧系统迁移边界)；导入器实现见 [modules/interfaces-observability.md §0.1](modules/interfaces-observability.md) |
 
 ## 3. V2 核心词汇
 
@@ -77,6 +78,8 @@ dev-notes/v2/
 ├── phase-11-architecture-baseline.md  # Phase 11 构建笔记
 ├── phase-12-repository-kernel.md      # Phase 12 构建笔记
 ├── phase-13-story-domain.md           # Phase 13 构建笔记
-└── phase-14-manuscript-author-model.md  # Phase 14 构建笔记
+├── phase-14-manuscript-author-model.md  # Phase 14 构建笔记
+├── phase-15-change-impact.md          # Phase 15 构建笔记
+├── phase-16-agent-workflows.md       # Phase 16 构建笔记
+└── phase-17-migration-cleanup.md     # Phase 17 构建笔记（进行中）
 ```
-

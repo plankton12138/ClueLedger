@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 from hastings.bible.models import Method, MethodHistoryEntry
 from hastings.bible.store import StoryWorkspace, load_ledger, save_ledger
+from hastings.tools.architecture_gate import is_v2, refuse_tool, v2_write_rejection
 from hastings.tools.bible_tools import _require_str, reject_intake_write
 from hastings.tools.errors import ToolInputError
 from tau_agent.messages import TextContent
@@ -54,8 +55,14 @@ def _unlock_render_call(arguments: Mapping[str, JSONValue]) -> str | None:
     return f"解锁手法 {name}" if isinstance(name, str) else "解锁手法"
 
 
-def create_method_tools(workspace: StoryWorkspace) -> list[AgentTool]:
-    """创建绑定 workspace 的 method_lock / method_unlock 工具。"""
+def create_method_tools(
+    workspace: StoryWorkspace, *, architecture_version: str = "v1"
+) -> list[AgentTool]:
+    """创建绑定 workspace 的 method_lock / method_unlock 工具。
+
+    ``architecture_version="v2"`` 时两者都被替换为拒绝桩（T17.6）：手法冻结是
+    V1 账本状态，V2 项目的手法以 MysteryTruth 领域对象表达，不经工具层写盘。
+    """
 
     async def lock_execute(
         tool_call_id: str,
@@ -182,7 +189,20 @@ def create_method_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         ),
         render_call=_unlock_render_call,
     )
-    return [lock, unlock]
+    tools = [lock, unlock]
+    if is_v2(architecture_version):
+        return [
+            refuse_tool(
+                tool,
+                rejection=v2_write_rejection(
+                    tool.name,
+                    alternative="手法内容请在 V2 项目内以 MysteryTruth 领域对象提交"
+                    "（真凶/手法/时间窗为结构化字段），状态变更随 Commit 版本化。",
+                ),
+            )
+            for tool in tools
+        ]
+    return tools
 
 
 __all__ = ["create_method_tools"]

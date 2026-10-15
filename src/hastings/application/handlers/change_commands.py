@@ -5,14 +5,14 @@
 领域 ``ChangesViolation`` 转应用信封 → 组装 CommitRequest 交 Commit Service
 （事件与 Commit 同事务落盘，ADR-007）。
 
-已知留白：重放表在 handler 实例内（进程内），跨进程持久化的幂等重放依赖
-Commit Service 的内容级幂等（与 Story/Manuscript handler 相同）。
+Phase 15：命令指纹与领域结果随业务变化同 Commit 保存为 command_result，
+跨实例重试读取原结果，不重新执行命令或分配 ID；实例缓存仅用于合法空结果。
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import partial
 
 from hastings.application.errors import ViolationError
@@ -24,9 +24,9 @@ from hastings.domain.changes.commands import NewId
 from hastings.domain.changes.errors import ChangesViolation
 from hastings.domain.changes.models import ChangeSetChange
 from hastings.domain.repository import error_codes as repo_ec
-from hastings.domain.repository.ids import Actor, CommitId, ProjectId
+from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId, RevisionId
 from hastings.domain.repository.models import Project
-from hastings.domain.repository.requests import CommitRequest
+from hastings.domain.repository.requests import ArtifactChange, CommitRequest
 from hastings.domain.repository.results import COMMITTED, NO_CHANGE, CommitResult
 from hastings.domain.repository.serialization import content_hash
 
@@ -63,7 +63,7 @@ def change_set_command(
 
 def _intent_fingerprint(command: ChangeSetCommand) -> str:
     """命令意图指纹：命令身份 + 规范化意图（repr 归一、键排序）。"""
-    intent = {key: repr(value) for key, value in sorted(command.intent.items())}
+    intent = {key: repr(value) for key, value in sorted(command.intent.items()) if key != "at"}
     return content_hash({"name": command.name, "intent": intent})
 
 
@@ -131,6 +131,39 @@ class ChangeSetCommandHandler:
         """
         fingerprint = _intent_fingerprint(command)
         replay_key = (project_id.value, idempotency_key)
+        result_id = (
+            f"command:{content_hash([project_id.value, self._branch_name, idempotency_key])}"
+        )
+        persisted = self._reader.find_commit_result(project_id, idempotency_key)
+        if persisted is not None and persisted.commit_id is not None:
+            view = self._reader.get_artifact(ArtifactId(result_id), persisted.commit_id)
+            if (
+                view is None
+                or view.revision is None
+                or view.revision.content["fingerprint"] != fingerprint
+            ):
+                raise ViolationError(
+                    code=ec.CHANGES_INVALID_COMMAND,
+                    where="changes.replay",
+                    why="该请求键已用于其他命令或不同意图",
+                    fix="重试保留原意图；新操作使用新请求键",
+                )
+            saved = view.revision.content
+            body = saved["change"]
+            change = ChangeSetChange(
+                artifact_changes=tuple(
+                    ArtifactChange(
+                        ArtifactId(c["artifact_id"]["value"]),
+                        c["content"],
+                        RevisionId(c["old_revision_id"]["value"]) if c["old_revision_id"] else None,
+                        c["kind"],
+                    )
+                    for c in body["artifact_changes"]
+                ),
+                events=tuple((e[0], e[1]) for e in body["events"]),
+                summary=body["summary"],
+            )
+            return ChangeSetCommandResult(persisted.status, saved["summary"], change, persisted)
         recorded = self._replays.get(replay_key)
         if recorded is not None:
             stored_fingerprint, stored_result = recorded
@@ -174,6 +207,35 @@ class ChangeSetCommandHandler:
         head = branch.head_commit_id
         catalog = self._catalog_at(project_id, head)
         change = self._run(command, catalog)
+        result_digest = content_hash([project_id.value, self._branch_name, idempotency_key])
+        result_artifact_id = f"command:{result_digest}"
+        if command.name == "issue_approval_receipt" or (
+            command.name == "advance_change_set" and command.intent.get("target") == "approved"
+        ):
+            cs_id = str(command.intent["change_set_id"])
+            has_work = any(
+                e.content.get("change_set_id") == cs_id and e.content.get("items")
+                for e in catalog.by_kind("changes.impact_report")
+            )
+            if has_work and head is not None:
+                base = catalog.require_change_set(cs_id, where="changes.approval").content[
+                    "base_commit_id"
+                ]
+                delta = self._reader.diff(CommitId(base), head)
+                if (
+                    any(
+                        d.kind.startswith(("story.", "narrative.", "manuscript."))
+                        for d in delta.artifact_changes
+                    )
+                    or delta.relations_added
+                    or delta.relations_removed
+                ):
+                    raise ViolationError(
+                        code=ec.CHANGES_BASE_STALE,
+                        where="changes.approval",
+                        why="分析后故事内容或依赖关系已变化，旧报告不能授权执行",
+                        fix="在最新 Commit 上建立变更集并重新分析、批准",
+                    )
         if change.is_empty():
             return ChangeSetCommandResult(status=NO_CHANGE, summary=summary, change=change)
         result = self._committer.commit(
@@ -184,7 +246,18 @@ class ChangeSetCommandHandler:
                 actor=self._actor,
                 idempotency_key=idempotency_key,
                 summary=summary,
-                changes=change.artifact_changes,
+                changes=(
+                    *change.artifact_changes,
+                    ArtifactChange(
+                        ArtifactId(result_artifact_id),
+                        {
+                            "fingerprint": _intent_fingerprint(command),
+                            "summary": summary,
+                            "change": asdict(change),
+                        },
+                        kind="changes.command_result",
+                    ),
+                ),
                 events=change.events,
             )
         )

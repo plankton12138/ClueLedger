@@ -1,0 +1,372 @@
+{
+  "case": "planner.json",
+  "role": "planner",
+  "model": "deepseek-flash",
+  "passed": true,
+  "reason": "角色约束与应用守卫通过",
+  "state": "waiting",
+  "context": {
+    "context_id": "7cdf2b6c7b4c55abb1bfe26d9947e09e99de445479d3917982f257f391845f58",
+    "task_kind": "planner",
+    "project_id": "prj_b428ff7acf8b415d",
+    "repository_commit_id": "cmt_25b58af8d5c447f9",
+    "target_ids": [
+      "prj_b428ff7acf8b415d:helper"
+    ],
+    "selected_inputs": [
+      {
+        "artifact_id": "prj_b428ff7acf8b415d:helper",
+        "revision_id": "rev_cd8c2d3b5e8b4014",
+        "kind": "story.character",
+        "reason": "任务目标，必须保留",
+        "content": {
+          "arc": "",
+          "goal": "帮助侦探调查",
+          "identity": "",
+          "name": "林岚",
+          "need": "",
+          "role": "protagonist",
+          "schema_version": 1,
+          "secret": "",
+          "traits": []
+        }
+      },
+      {
+        "artifact_id": "prj_b428ff7acf8b415d:beat",
+        "revision_id": "rev_3bb41fe1dcc5401f",
+        "kind": "narrative.beat",
+        "reason": "目标的第 1 跳显式依赖",
+        "content": {
+          "beat_id": "prj_b428ff7acf8b415d:beat",
+          "constraints": [],
+          "depends_on": [],
+          "order_key": "",
+          "parent_id": "prj_b428ff7acf8b415d:scene",
+          "participants": [
+            "prj_b428ff7acf8b415d:helper"
+          ],
+          "payoffs": [],
+          "pov_character_id": "",
+          "preconditions": [],
+          "purpose": "递出怀表，只展示指针停在3点",
+          "reader_disclosures": [],
+          "schema_version": 1,
+          "setups": [],
+          "state_changes": [],
+          "title": "怀表停走"
+        }
+      },
+      {
+        "artifact_id": "prj_b428ff7acf8b415d:scene",
+        "revision_id": "rev_8a5a33488fdc4a4c",
+        "kind": "narrative.scene",
+        "reason": "目标的第 2 跳显式依赖",
+        "content": {
+          "kind": "narrative.scene",
+          "node_id": "prj_b428ff7acf8b415d:scene",
+          "order_key": "",
+          "parent_id": "prj_b428ff7acf8b415d:nchapter",
+          "schema_version": 1,
+          "title": "scene"
+        }
+      },
+      {
+        "artifact_id": "prj_b428ff7acf8b415d:unit",
+        "revision_id": "rev_588cd3c661a34fbd",
+        "kind": "manuscript.text_unit",
+        "reason": "目标的第 2 跳显式依赖",
+        "content": {
+          "chapter_id": "prj_b428ff7acf8b415d:chapter",
+          "derived_from": [],
+          "origin": "import",
+          "scene_id": null,
+          "schema_version": 1,
+          "state": "active",
+          "text": "林岚非常缓慢地递出怀表。侦探早已知道林岚调慢怀表，指针停在3点。",
+          "unit_id": "prj_b428ff7acf8b415d:unit"
+        }
+      }
+    ],
+    "author_preferences": [],
+    "author_examples": [],
+    "constraints": [
+      "输出仅为候选；作者审批与 Commit 才表示项目变化",
+      "新对象 ID 使用 prj_b428ff7acf8b415d: 前缀。items 按父级和引用依赖顺序排列，所有事实保持 proposed"
+    ],
+    "omissions": [],
+    "instruction": "为怀表谜案新增一个尚待作者接受的证人角色，只提出一个 story.character 候选。角色名周禾，role=witness，identity=钟表匠。不得修改已确认人物。",
+    "evidence": {
+      "planning_forms": {
+        "story.character": {
+          "name": "必填姓名",
+          "role": "support|protagonist|antagonist|accomplice|witness",
+          "identity": "身份",
+          "goal": "目标",
+          "traits": []
+        },
+        "narrative.series": {
+          "title": "系列名"
+        },
+        "narrative.book": {
+          "title": "书名",
+          "parent_id": "已有或本批次较前的 series 对象 ID"
+        },
+        "narrative.arc": {
+          "title": "幕名",
+          "parent_id": "book ID"
+        },
+        "narrative.chapter": {
+          "title": "章名",
+          "parent_id": "arc ID"
+        },
+        "narrative.scene": {
+          "title": "场景名",
+          "parent_id": "chapter ID"
+        },
+        "narrative.beat": {
+          "parent_id": "scene ID",
+          "title": "节拍名",
+          "purpose": "目的",
+          "pov_character_id": "已有角色 ID 或空",
+          "participants": [],
+          "constraints": []
+        },
+        "story.clue": {
+          "statement": "必填线索表述",
+          "source": "来源",
+          "points_to": [],
+          "necessity": false,
+          "disclosure_plan": []
+        },
+        "story.red_herring": {
+          "false_explanation": "必填错误解释",
+          "basis": "必填误导依据",
+          "resolution": "揭穿方式"
+        },
+        "story.mystery_truth": {
+          "culprit_id": "必填且已存在的角色 ID",
+          "motive": "动机",
+          "method": "手法",
+          "cover_up": "掩饰",
+          "accomplice_ids": [],
+          "true_timeline": []
+        }
+      }
+    },
+    "token_budget": 16000,
+    "estimated_tokens": 4099,
+    "capability": {
+      "role": "planner",
+      "project_id": "prj_b428ff7acf8b415d",
+      "base_commit_id": "cmt_25b58af8d5c447f9",
+      "readable_ids": [
+        "prj_b428ff7acf8b415d:beat",
+        "prj_b428ff7acf8b415d:helper",
+        "prj_b428ff7acf8b415d:scene",
+        "prj_b428ff7acf8b415d:unit"
+      ],
+      "writable_ids": [],
+      "allowed_tools": [
+        "workspace_snapshot",
+        "artifact_read",
+        "artifact_search",
+        "dependency_trace",
+        "canon_patch_propose",
+        "plan_patch_propose"
+      ],
+      "creation_kinds": [
+        "story.character",
+        "story.mystery_truth",
+        "story.clue",
+        "story.red_herring",
+        "narrative.series",
+        "narrative.book",
+        "narrative.arc",
+        "narrative.chapter",
+        "narrative.scene",
+        "narrative.beat"
+      ],
+      "creation_prefix": "prj_b428ff7acf8b415d:",
+      "max_new_artifacts": 12
+    }
+  },
+  "output": {
+    "kind": "story_proposal",
+    "base_commit_id": "cmt_25b58af8d5c447f9",
+    "items": [
+      {
+        "artifact_id": "prj_b428ff7acf8b415d:zhouhe",
+        "kind": "story.character",
+        "content": {
+          "schema_version": 1,
+          "name": "周禾",
+          "role": "witness",
+          "identity": "钟表匠",
+          "goal": "协助侦探核实怀表的走时状况",
+          "traits": [
+            "熟悉钟表机械",
+            "谨慎"
+          ],
+          "arc": "",
+          "need": "",
+          "secret": ""
+        },
+        "status": "proposed"
+      }
+    ],
+    "intent_kind": "plan",
+    "rationale": "任务要求新增一个尚待作者接受的证人角色，且不得改动已确认人物（helper 林岚保持原样）。工作区快照与检索均未发现已有 周禾 或同名钟表匠角色，故只提出一个 story.character 候选：周禾，role=witness，identity=钟表匠。name/role/identity 按指令给定；goal 与 traits 为依据 existing beat（递出怀表，指针停在3点）与 unit 文本给出的最小可核证方向，全部保持 proposed，等待作者审批。"
+  },
+  "events": [
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 1,
+      "type": "job.queued",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "queued"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 2,
+      "type": "job.running",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 3,
+      "type": "job.lease_acquired",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 4,
+      "type": "agent.started",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "role": "planner"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 5,
+      "type": "agent.tool_execution_start",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "workspace_snapshot"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 6,
+      "type": "agent.tool_execution_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "workspace_snapshot"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 7,
+      "type": "agent.tool_execution_start",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "artifact_search"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 8,
+      "type": "agent.tool_execution_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "artifact_search"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 9,
+      "type": "agent.turn_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": null
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 10,
+      "type": "agent.tool_execution_start",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "plan_patch_propose"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 11,
+      "type": "agent.output.proposed",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "kind": "story_proposal"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 12,
+      "type": "agent.tool_execution_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "plan_patch_propose"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 13,
+      "type": "agent.turn_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": null
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 14,
+      "type": "agent.output.proposed",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_2650a774590148be888d15d5563aa146",
+      "sequence": 15,
+      "type": "job.waiting",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "waiting"
+      }
+    }
+  ]
+}

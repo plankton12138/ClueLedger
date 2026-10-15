@@ -90,11 +90,24 @@ def load_settings(workspace: StoryWorkspace) -> StorySettings:
 
 
 def save_settings(workspace: StoryWorkspace, settings: StorySettings) -> Path:
-    """整表覆盖写设置文件，返回文件路径；自建父目录。"""
+    """整表覆盖写设置文件，返回文件路径；自建父目录。
+
+    ``settings.yaml`` 同时承载**项目级元数据**（如 ``architecture_version``），
+    它们不属于 ``StorySettings`` 的字段。整表覆盖若直接 dump 模型会把元数据抹掉——
+    一次普通的「切换写作语言」会静默把 V2 项目降级回 V1 路由，使旧写路径门失效
+    （Phase 17 T17.6 补验收发现）。因此先读回既有映射、只覆盖模型字段，保留未知键。
+    """
     workspace.ensure_dirs()
     path = workspace.settings_path
+    preserved: dict[str, object] = {}
+    if path.exists():
+        raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            fields = set(StorySettings.model_fields)
+            preserved = {key: value for key, value in raw.items() if key not in fields}
+    payload = {**preserved, **settings.model_dump()}
     path.write_text(
-        yaml.safe_dump(settings.model_dump(), allow_unicode=True, sort_keys=False),
+        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
     return path

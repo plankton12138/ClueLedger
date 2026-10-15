@@ -1,7 +1,17 @@
 # Orchestration & Context：Agent 编排和任务上下文
 
-> 状态：target，计划在 Phase 16 交付。
+> 状态：as-built / Phase 16（2026-10-15）；本页 §0 说明实际入口与取舍，下文保留架构契约。
 > 目标包：`hastings.application.workflows`、`hastings.application.contexts`、`hastings.agents`。
+
+## 0. Phase 16 已交付入口
+
+- `agents/{schemas,roles,coordinator}.py`：六角色、严格输出与意图选择；`infrastructure/agents/tau_runner.py`：每次新建 Harness，角色工具白名单与 Capability 取交集，只做查询/提案。共享应用守卫在 `application/guards_worker_output.py`，替换 AgentRunner 也不能绕过范围、Revision 与 quote 检查。
+- `application/contexts/__init__.py`：四类绑定角色的 Builder 复用确定性选择；按依赖、结构父级、段落和前一节拍窗口选资料。Draft 携带进入/离开状态及认知/披露，Repair 携带种子、步骤、影响路径和审批；偏好按章节作用域解析，正反例仅保存有效引用。预算采用保守 UTF-8 字节上界，保留版本、授权、错误与作者指令，裁剪留下可读回的 omissions。
+- `application/workflows/agent_workflows.py`：规划接受、草稿接受、分支修复、语义审计与真实编辑观察。模型输出都是候选；正文/设定由作者接受形成 Commit，分析结果只写审计或作者模型元数据。
+- `application/workflows/worker_job.py` 与 `infrastructure/jobs.py`：SQLite Job/事件、检查点、Lease、取消代际与有界退避。状态实际名称为 `waiting`；澄清与提案都等待作者处理，不保留私有模型会话。
+- `server/v2.py` 生命周期恢复过期任务、扫描 Outbox 并补交分析元数据。取消后的迟到结果不能发布；已完成模型输出在恢复时可直接重放，不重复调模型。
+
+实际 Context 头见 `domain/worker.py`：包含 `capability`、`author_examples` 与 `evidence`；输出 Schema 由适配器按角色注入，不把浮动时间写入选择哈希。事件当前通过持久游标查询和 UI 轮询消费。详细取舍、真模型和闭环证据见 [Phase 16 构建笔记](../phase-16-agent-workflows.md)。
 
 ## 1. 职责
 

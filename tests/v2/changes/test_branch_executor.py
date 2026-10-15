@@ -493,3 +493,33 @@ def test_duplicate_proposal_targets_rejected(changes_env: Any) -> None:
     assert "art_b" in result.error_message
     model = _catalog(env, project).require_change_set(cs_id, where="test").model()
     assert model.status == st.CHANGE_FAILED
+
+
+def test_interrupted_execution_resumes_without_rerunning_committed_step(changes_env: Any) -> None:
+    env = changes_env
+    project, _base, cs_id = _approved(env)
+
+    def crash(context: Any) -> None:
+        if context.step_id == "step_manuscript":
+            raise KeyboardInterrupt("process interrupted")
+
+    with pytest.raises(KeyboardInterrupt):
+        _executor(env).execute(
+            ExecuteIntent(project.id, cs_id, "resume"),
+            FakeWorker(patches=_full_patches(), on_propose=crash),
+        )
+    env.clock.advance(1000)
+    worker = FakeWorker(patches=_full_patches())
+    result = _executor(env).execute(ExecuteIntent(project.id, cs_id, "new-client-request"), worker)
+    assert result.status == "executed"
+    assert [context.step_id for context in worker.seen] == ["step_manuscript"]
+
+
+def test_expired_approval_cannot_start_execution(changes_env: Any) -> None:
+    env = changes_env
+    project, _base, cs_id = _approved(env)
+    env.clock.advance(3601)
+    with pytest.raises(ViolationError) as error:
+        _executor(env).execute(ExecuteIntent(project.id, cs_id, "late"), FakeWorker())
+    assert error.value.code == "CHANGES_RECEIPT_EXPIRED"
+    assert env.service.get_branch(project.id, f"revision/{cs_id}") is None

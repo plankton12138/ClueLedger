@@ -16,14 +16,17 @@ V2 领域与应用层在此之前的全部出口都是测试；本模块是第�
 - **保存不等待后台任务**（评审 #3 的 HTTP 面）：保存端点只返回 Commit 结果；分析
   调度由 ``dispatch_pending`` / 后台发布循环驱动，JobStore 故障不影响保存响应。
 
-已知留白：JobStore 为进程内实现；发布循环未接入服务生命周期（本阶段只提供
-``dispatch_pending`` 驱动点，供测试与后续 lifespan 接线）。
+Phase 16：JobStore 与任务事件使用 SQLite；服务生命周期恢复 Job、发现待发布的
+项目 Outbox、派发真实编辑观察并补交分析元数据。独立 V2 Worker 只返回候选。
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
+from datetime import datetime, timedelta
 from typing import Any, cast
 
 from fastapi import APIRouter, FastAPI, Request
@@ -31,17 +34,28 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from hastings.application.errors import HastingsError, ResultCategory, ViolationError
+from hastings.application.handlers.change_commands import ChangeSetCommandHandler
 from hastings.application.handlers.manuscript_commands import (
     ManuscriptCommandHandler,
     manuscript_command,
 )
+from hastings.application.ports.agents import AgentRunner
 from hastings.application.ports.events import EventOutbox
 from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.manuscript import ManuscriptQueries
+from hastings.application.workflows.agent_workflows import AgentWorkflows
 from hastings.application.workflows.analysis_dispatch import AnalysisDispatcher
+from hastings.application.workflows.audit import AuditWorkflow
+from hastings.application.workflows.change_analysis import AnalyzeChangeImpact
 from hastings.application.workflows.manual_edit import CommitManualEdit, ManualEditIntent
+from hastings.application.workflows.plan_revision import PlanRevision
 from hastings.application.workflows.restore_version import RestoreChapterVersion, RestoreIntent
+from hastings.application.workflows.review import ReviewRevision
+from hastings.application.workflows.revision import ExecuteRevisionPlan
+from hastings.application.workflows.rewrite import RewriteWorkflow
+from hastings.application.workflows.worker_job import WorkerJobRunner
 from hastings.domain.author_model.errors import AuthorModelViolation
+from hastings.domain.changes.errors import ChangesViolation
 from hastings.domain.manuscript import error_codes as ms_ec
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
 from hastings.domain.manuscript.commands import import_chapter as import_chapter_command
@@ -50,11 +64,15 @@ from hastings.domain.manuscript.models import Chapter
 from hastings.domain.manuscript.operations import operation_from_content
 from hastings.domain.repository import error_codes as repo_ec
 from hastings.domain.repository.ids import Actor, CommitId, ProjectId
+from hastings.domain.story.errors import StoryViolation
 from hastings.infrastructure.events.outbox import OutboxPublisher
-from hastings.infrastructure.jobs import MemoryJobStore
+from hastings.infrastructure.jobs import SqliteJobStore
 from hastings.infrastructure.repository.memory import MemoryRepository, build_memory_repository
 from hastings.infrastructure.repository.sqlite import SqliteRepository, build_sqlite_repository
 from hastings.infrastructure.runtime import SystemClock, UuidIdGenerator
+from hastings.interfaces.api.agents import create_agents_router
+from hastings.interfaces.api.changes import create_changes_router
+from hastings.server.v2_agents import ConfiguredV2Runner
 
 __all__ = ["V2Runtime", "build_v2_app", "create_v2_router", "register_v2_error_handlers"]
 
@@ -80,18 +98,155 @@ class V2Runtime:
             repo = build_sqlite_repository(db_path, clock, ids)
         self._repo = repo
         self.service = repo.service
+        self.clock, self.ids = clock, ids
+        author = Actor(kind="human", id="author")
+        self.changes = ChangeSetCommandHandler(self.service, self.service, ids, author)
+        self.change_analysis = AnalyzeChangeImpact(self.changes, self.service, clock, author)
+        self.change_planner = PlanRevision(self.changes, self.service, clock, author)
+        self.revision = ExecuteRevisionPlan(
+            self.changes,
+            self.service,
+            self.service,
+            repo,
+            ids,
+            clock,
+            Actor(kind="agent", id="revision_worker"),
+        )
+        self.review = ReviewRevision(self.service, self.service, clock, author)
+        self.audit = AuditWorkflow(self.service, self.service, clock, author)
+        self.rewrite = RewriteWorkflow(self.service, self.service, repo, ids, clock, author)
         self.handler = ManuscriptCommandHandler(
             self.service, self.service, ids, Actor(kind="human", id="author")
         )
         self.workflow = CommitManualEdit(self.handler)
         self.queries = ManuscriptQueries(self.service)
         self.author_queries = AuthorProfileQueries(self.service)
-        self.jobs = MemoryJobStore()
+        self.jobs = SqliteJobStore(db_path or ":memory:")
+        self.configure_agent_runner(ConfiguredV2Runner(self.service))
+        self._worker_enabled = False
+        self._active_jobs: dict[str, asyncio.Task[None]] = {}
+        self._wake_projects: set[str] = set()
         self.dispatcher = AnalysisDispatcher(self.jobs)
         self.restore = RestoreChapterVersion(self.handler, self.service)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(cast("EventOutbox", repo), self.dispatcher)
+
+    def configure_agent_runner(self, runner: AgentRunner) -> None:
+        self.worker = WorkerJobRunner(self.jobs, runner, self._repo, self.ids, self.clock)
+        self.agent_workflows = AgentWorkflows(
+            self.service, self.service, self.worker, self.ids, self.clock
+        )
+
+    async def wake_workers(self, project_id: str) -> None:
+        self._wake_projects.add(project_id)
+
+    async def prepare_analysis_jobs(self) -> None:
+        for job in await self.jobs.list_jobs():
+            if job["job_type"] != "manuscript.analysis" or job["state"] not in (
+                "queued",
+                "retryable_failed",
+            ):
+                continue
+            if job["retry_at"] and datetime.fromisoformat(job["retry_at"]) > self.clock.now():
+                continue
+            claimed = await self.jobs.claim(
+                job["job_id"], "analysis-dispatch", now=self.clock.now(), ttl=30
+            )
+            try:
+                payload = job["payload"]
+                pid = ProjectId(payload["project_id"])
+                after = CommitId(payload["commit_id"])
+                history = self.service.commit_history(pid, after)
+                commit = next(c for c in history if c.id == after)
+                if commit.parent_ids and commit.actor.kind == "human":
+                    await self.agent_workflows.style(
+                        pid,
+                        commit.parent_ids[0].value,
+                        after.value,
+                        payload["chapter_id"],
+                        f"{job['job_id']}:observer",
+                    )
+                await self.jobs.finish(
+                    job["job_id"],
+                    claimed["generation"],
+                    "completed",
+                    {"kind": "no_result", "reason": "已派发真实编辑观察或没有前后版本"},
+                )
+            except (ValueError, HastingsError, OSError) as exc:
+                violation = isinstance(exc, (ValueError, ViolationError))
+                retry = not violation and claimed["attempts"] < 3
+                await self.jobs.finish(
+                    job["job_id"],
+                    claimed["generation"],
+                    "retryable_failed" if retry else "terminal_failed",
+                    {
+                        "kind": "worker_failure",
+                        "category": "violation" if violation else "environment",
+                        "reason": str(exc),
+                        "errors": [],
+                        "raw_outputs": [],
+                    },
+                    retry_at=self.clock.now() + timedelta(seconds=2 ** claimed["attempts"])
+                    if retry
+                    else None,
+                )
+
+    async def _execute_job(self, job_id: str) -> None:
+        try:
+            result = await self.worker.execute(job_id)
+            if result["state"] == "completed" and result["job_type"] in (
+                "auditor",
+                "style_observer",
+            ):
+                analysis = await self.agent_workflows.apply_analysis(job_id)
+                await self.jobs.record_analysis(job_id, analysis)
+        except (HastingsError, ValueError, OSError) as exc:
+            # 分析提交故障保留结果待重放；不丢掉已完成的 Worker 输出。
+            self.last_worker_error = f"{type(exc).__name__}: {exc}"
+
+    async def worker_loop(self) -> None:
+        self._worker_enabled = True
+        try:
+            while True:
+                await self.jobs.recover(self.clock.now())
+                self._wake_projects.update(await self._repo.pending_projects())
+                for project in tuple(self._wake_projects):
+                    try:
+                        await self.publisher.publish_pending(project)
+                    except (HastingsError, OSError):
+                        continue
+                    self._wake_projects.discard(project)
+                await self.prepare_analysis_jobs()
+                self._active_jobs = {jid: t for jid, t in self._active_jobs.items() if not t.done()}
+                for job in await self.jobs.list_jobs():
+                    analysis_pending = (
+                        job["state"] == "completed"
+                        and job["job_type"] in ("auditor", "style_observer")
+                        and not job.get("analysis")
+                    )
+                    due = (
+                        not job["retry_at"]
+                        or datetime.fromisoformat(job["retry_at"]) <= self.clock.now()
+                    )
+                    if (
+                        (job["state"] in ("queued", "retryable_failed") or analysis_pending)
+                        and job["job_type"] != "manuscript.analysis"
+                        and due
+                        and job["job_id"] not in self._active_jobs
+                        and len(self._active_jobs) < 2
+                    ):
+                        self._active_jobs[job["job_id"]] = asyncio.create_task(
+                            self._execute_job(job["job_id"])
+                        )
+                await asyncio.sleep(0.3)
+        finally:
+            self._worker_enabled = False
+            for task in self._active_jobs.values():
+                task.cancel()
+            for task in self._active_jobs.values():
+                with suppress(asyncio.CancelledError):
+                    await task
 
     @classmethod
     def memory(cls) -> V2Runtime:
@@ -190,7 +345,17 @@ def _chapter_payload_from(catalog: ManuscriptCatalog, chapter_id: str) -> dict[s
 # 路由
 # ---------------------------------------------------------------------------
 def create_v2_router(runtime: V2Runtime) -> APIRouter:
-    router = APIRouter(prefix="/api/v2", tags=["v2"])
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        task = asyncio.create_task(runtime.worker_loop())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+    router = APIRouter(prefix="/api/v2", tags=["v2"], lifespan=lifespan)
 
     @router.post("/projects")
     def create_project(req: ProjectCreateRequest) -> dict[str, Any]:
@@ -270,6 +435,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             expected_chapter_base=req.expected_chapter_base,
         )
         result = await runtime.workflow.save(intent)
+        await runtime.wake_workers(project_id)
         head = runtime.head(ProjectId(project_id))
         chapter_base = result.edit.change.chapter_base_after
         if not chapter_base and head is not None:
@@ -351,6 +517,8 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             "observations": [asdict(o) for o in evidence],
         }
 
+    router.include_router(create_changes_router(runtime))
+    router.include_router(create_agents_router(runtime))
     return router
 
 
@@ -379,6 +547,29 @@ def _status_for(error: HastingsError) -> int:
 
 
 def register_v2_error_handlers(app: FastAPI) -> None:
+    @app.exception_handler(ValueError)
+    async def worker_input_handler(request: Request, exc: ValueError) -> JSONResponse:
+        del request
+        error = ViolationError(
+            code="AGENT_INVALID_INPUT",
+            where="agent.request",
+            why=str(exc),
+            fix="按任务约束修正输入或重新生成候选",
+        )
+        return JSONResponse(status_code=400, content={"error": _error_body(error)})
+
+    @app.exception_handler(StoryViolation)
+    async def story_violation_handler(request: Request, exc: StoryViolation) -> JSONResponse:
+        return _violation_response(exc)
+
+    @app.exception_handler(ChangesViolation)
+    async def changes_violation_handler(request: Request, exc: ChangesViolation) -> JSONResponse:
+        del request
+        error = ViolationError(
+            code=exc.code, where=exc.where, why=exc.why, fix=exc.fix, details=exc.details
+        )
+        return JSONResponse(status_code=_status_for(error), content={"error": _error_body(error)})
+
     @app.exception_handler(HastingsError)
     async def hastings_error_handler(request: Request, exc: HastingsError) -> JSONResponse:
         del request
@@ -398,7 +589,7 @@ def register_v2_error_handlers(app: FastAPI) -> None:
 
 
 def _as_violation(
-    exc: ManuscriptViolation | AuthorModelViolation,
+    exc: ManuscriptViolation | AuthorModelViolation | StoryViolation,
 ) -> ViolationError:
     """边界转换：领域违规 → 应用错误信封（四要素原样透传，与 handler 同构）。"""
     return ViolationError(
@@ -406,7 +597,9 @@ def _as_violation(
     )
 
 
-def _violation_response(exc: ManuscriptViolation | AuthorModelViolation) -> JSONResponse:
+def _violation_response(
+    exc: ManuscriptViolation | AuthorModelViolation | StoryViolation,
+) -> JSONResponse:
     envelope = _as_violation(exc)
     return JSONResponse(status_code=_status_for(envelope), content={"error": _error_body(envelope)})
 

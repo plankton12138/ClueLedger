@@ -1,0 +1,2751 @@
+{
+  "project_id": "prj_8f2f909541f84b6b",
+  "trace": [
+    {
+      "route": "/agent-jobs",
+      "response": {
+        "job_id": "job_97451dee957a4d09be7d7134cb5d2241",
+        "job_type": "planner",
+        "payload": {
+          "project_id": "prj_8f2f909541f84b6b",
+          "idempotency_key": "planner",
+          "context": {
+            "context_id": "67aac626de692042aab28a8bc899419d1456938ed4b624ea23b0df08e178a86b",
+            "task_kind": "planner",
+            "project_id": "prj_8f2f909541f84b6b",
+            "repository_commit_id": "cmt_38eb04cda8864c1c",
+            "target_ids": [],
+            "selected_inputs": [],
+            "author_preferences": [],
+            "author_examples": [],
+            "constraints": [
+              "输出仅为候选；作者审批与 Commit 才表示项目变化",
+              "新对象 ID 使用 prj_8f2f909541f84b6b: 前缀。items 按父级和引用依赖顺序排列，所有事实保持 proposed"
+            ],
+            "omissions": [],
+            "instruction": "怀表谜案",
+            "evidence": {
+              "planning_forms": {
+                "story.character": {
+                  "name": "必填姓名",
+                  "role": "support|protagonist|antagonist|accomplice|witness",
+                  "identity": "身份",
+                  "goal": "目标",
+                  "traits": []
+                },
+                "narrative.series": {
+                  "title": "系列名"
+                },
+                "narrative.book": {
+                  "title": "书名",
+                  "parent_id": "已有或本批次较前的 series 对象 ID"
+                },
+                "narrative.arc": {
+                  "title": "幕名",
+                  "parent_id": "book ID"
+                },
+                "narrative.chapter": {
+                  "title": "章名",
+                  "parent_id": "arc ID"
+                },
+                "narrative.scene": {
+                  "title": "场景名",
+                  "parent_id": "chapter ID"
+                },
+                "narrative.beat": {
+                  "parent_id": "scene ID",
+                  "title": "节拍名",
+                  "purpose": "目的",
+                  "pov_character_id": "已有角色 ID 或空",
+                  "participants": [],
+                  "constraints": []
+                },
+                "story.clue": {
+                  "statement": "必填线索表述",
+                  "source": "来源",
+                  "points_to": [],
+                  "necessity": false,
+                  "disclosure_plan": []
+                },
+                "story.red_herring": {
+                  "false_explanation": "必填错误解释",
+                  "basis": "必填误导依据",
+                  "resolution": "揭穿方式"
+                },
+                "story.mystery_truth": {
+                  "culprit_id": "必填且已存在的角色 ID",
+                  "motive": "动机",
+                  "method": "手法",
+                  "cover_up": "掩饰",
+                  "accomplice_ids": [],
+                  "true_timeline": []
+                }
+              }
+            },
+            "token_budget": 16000,
+            "estimated_tokens": 2186,
+            "capability": {
+              "role": "planner",
+              "project_id": "prj_8f2f909541f84b6b",
+              "base_commit_id": "cmt_38eb04cda8864c1c",
+              "readable_ids": [],
+              "writable_ids": [],
+              "allowed_tools": [
+                "workspace_snapshot",
+                "artifact_read",
+                "artifact_search",
+                "dependency_trace",
+                "canon_patch_propose",
+                "plan_patch_propose"
+              ],
+              "creation_kinds": [
+                "story.character",
+                "story.mystery_truth",
+                "story.clue",
+                "story.red_herring",
+                "narrative.series",
+                "narrative.book",
+                "narrative.arc",
+                "narrative.chapter",
+                "narrative.scene",
+                "narrative.beat"
+              ],
+              "creation_prefix": "prj_8f2f909541f84b6b:",
+              "max_new_artifacts": 12
+            }
+          }
+        },
+        "state": "queued",
+        "fingerprint": "89444ff28f701afe605d3f70fa5eedb743c98ab2a91b6e5b18ce62b1bafb6908",
+        "generation": 0,
+        "attempts": 0,
+        "checkpoint": null,
+        "output": null,
+        "retry": null,
+        "lease_expires_at": null,
+        "retry_at": null
+      }
+    },
+    {
+      "route": "/agent-jobs/job_97451dee957a4d09be7d7134cb5d2241/run",
+      "response": {
+        "job_id": "job_97451dee957a4d09be7d7134cb5d2241",
+        "job_type": "planner",
+        "payload": {
+          "project_id": "prj_8f2f909541f84b6b",
+          "idempotency_key": "planner",
+          "context": {
+            "context_id": "67aac626de692042aab28a8bc899419d1456938ed4b624ea23b0df08e178a86b",
+            "task_kind": "planner",
+            "project_id": "prj_8f2f909541f84b6b",
+            "repository_commit_id": "cmt_38eb04cda8864c1c",
+            "target_ids": [],
+            "selected_inputs": [],
+            "author_preferences": [],
+            "author_examples": [],
+            "constraints": [
+              "输出仅为候选；作者审批与 Commit 才表示项目变化",
+              "新对象 ID 使用 prj_8f2f909541f84b6b: 前缀。items 按父级和引用依赖顺序排列，所有事实保持 proposed"
+            ],
+            "omissions": [],
+            "instruction": "怀表谜案",
+            "evidence": {
+              "planning_forms": {
+                "story.character": {
+                  "name": "必填姓名",
+                  "role": "support|protagonist|antagonist|accomplice|witness",
+                  "identity": "身份",
+                  "goal": "目标",
+                  "traits": []
+                },
+                "narrative.series": {
+                  "title": "系列名"
+                },
+                "narrative.book": {
+                  "title": "书名",
+                  "parent_id": "已有或本批次较前的 series 对象 ID"
+                },
+                "narrative.arc": {
+                  "title": "幕名",
+                  "parent_id": "book ID"
+                },
+                "narrative.chapter": {
+                  "title": "章名",
+                  "parent_id": "arc ID"
+                },
+                "narrative.scene": {
+                  "title": "场景名",
+                  "parent_id": "chapter ID"
+                },
+                "narrative.beat": {
+                  "parent_id": "scene ID",
+                  "title": "节拍名",
+                  "purpose": "目的",
+                  "pov_character_id": "已有角色 ID 或空",
+                  "participants": [],
+                  "constraints": []
+                },
+                "story.clue": {
+                  "statement": "必填线索表述",
+                  "source": "来源",
+                  "points_to": [],
+                  "necessity": false,
+                  "disclosure_plan": []
+                },
+                "story.red_herring": {
+                  "false_explanation": "必填错误解释",
+                  "basis": "必填误导依据",
+                  "resolution": "揭穿方式"
+                },
+                "story.mystery_truth": {
+                  "culprit_id": "必填且已存在的角色 ID",
+                  "motive": "动机",
+                  "method": "手法",
+                  "cover_up": "掩饰",
+                  "accomplice_ids": [],
+                  "true_timeline": []
+                }
+              }
+            },
+            "token_budget": 16000,
+            "estimated_tokens": 2186,
+            "capability": {
+              "role": "planner",
+              "project_id": "prj_8f2f909541f84b6b",
+              "base_commit_id": "cmt_38eb04cda8864c1c",
+              "readable_ids": [],
+              "writable_ids": [],
+              "allowed_tools": [
+                "workspace_snapshot",
+                "artifact_read",
+                "artifact_search",
+                "dependency_trace",
+                "canon_patch_propose",
+                "plan_patch_propose"
+              ],
+              "creation_kinds": [
+                "story.character",
+                "story.mystery_truth",
+                "story.clue",
+                "story.red_herring",
+                "narrative.series",
+                "narrative.book",
+                "narrative.arc",
+                "narrative.chapter",
+                "narrative.scene",
+                "narrative.beat"
+              ],
+              "creation_prefix": "prj_8f2f909541f84b6b:",
+              "max_new_artifacts": 12
+            }
+          }
+        },
+        "state": "waiting",
+        "fingerprint": "89444ff28f701afe605d3f70fa5eedb743c98ab2a91b6e5b18ce62b1bafb6908",
+        "generation": 1,
+        "attempts": 1,
+        "checkpoint": {
+          "kind": "story_proposal",
+          "base_commit_id": "cmt_38eb04cda8864c1c",
+          "items": [
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:helper",
+              "kind": "story.character",
+              "content": {
+                "name": "林岚",
+                "role": "protagonist",
+                "goal": "帮助侦探"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:series",
+              "kind": "narrative.series",
+              "content": {
+                "title": "series"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:book",
+              "kind": "narrative.book",
+              "content": {
+                "title": "book",
+                "parent_id": "prj_8f2f909541f84b6b:series"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:arc",
+              "kind": "narrative.arc",
+              "content": {
+                "title": "arc",
+                "parent_id": "prj_8f2f909541f84b6b:book"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:chapter",
+              "kind": "narrative.chapter",
+              "content": {
+                "title": "chapter",
+                "parent_id": "prj_8f2f909541f84b6b:arc"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:scene",
+              "kind": "narrative.scene",
+              "content": {
+                "title": "scene",
+                "parent_id": "prj_8f2f909541f84b6b:chapter"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:beat",
+              "kind": "narrative.beat",
+              "content": {
+                "parent_id": "prj_8f2f909541f84b6b:scene",
+                "title": "递出怀表",
+                "purpose": "林岚协助调查",
+                "pov_character_id": "prj_8f2f909541f84b6b:helper",
+                "participants": [
+                  "prj_8f2f909541f84b6b:helper"
+                ]
+              },
+              "status": "proposed"
+            }
+          ],
+          "intent_kind": "plan",
+          "rationale": ""
+        },
+        "output": {
+          "kind": "story_proposal",
+          "base_commit_id": "cmt_38eb04cda8864c1c",
+          "items": [
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:helper",
+              "kind": "story.character",
+              "content": {
+                "name": "林岚",
+                "role": "protagonist",
+                "goal": "帮助侦探"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:series",
+              "kind": "narrative.series",
+              "content": {
+                "title": "series"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:book",
+              "kind": "narrative.book",
+              "content": {
+                "title": "book",
+                "parent_id": "prj_8f2f909541f84b6b:series"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:arc",
+              "kind": "narrative.arc",
+              "content": {
+                "title": "arc",
+                "parent_id": "prj_8f2f909541f84b6b:book"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:chapter",
+              "kind": "narrative.chapter",
+              "content": {
+                "title": "chapter",
+                "parent_id": "prj_8f2f909541f84b6b:arc"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:scene",
+              "kind": "narrative.scene",
+              "content": {
+                "title": "scene",
+                "parent_id": "prj_8f2f909541f84b6b:chapter"
+              },
+              "status": "proposed"
+            },
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:beat",
+              "kind": "narrative.beat",
+              "content": {
+                "parent_id": "prj_8f2f909541f84b6b:scene",
+                "title": "递出怀表",
+                "purpose": "林岚协助调查",
+                "pov_character_id": "prj_8f2f909541f84b6b:helper",
+                "participants": [
+                  "prj_8f2f909541f84b6b:helper"
+                ]
+              },
+              "status": "proposed"
+            }
+          ],
+          "intent_kind": "plan",
+          "rationale": ""
+        },
+        "retry": null,
+        "lease_expires_at": "2026-10-15T08:00:56.859214+00:00",
+        "retry_at": null,
+        "owner": "run_95345f988c6f4d78",
+        "repository_lease": {
+          "resource_key": "worker-job:job_97451dee957a4d09be7d7134cb5d2241",
+          "owner": "run_95345f988c6f4d78",
+          "version": 1,
+          "expires_at": "2026-10-15T08:00:56.863976+00:00"
+        }
+      }
+    },
+    {
+      "route": "/agent-jobs/job_97451dee957a4d09be7d7134cb5d2241/accept",
+      "response": {
+        "job_id": "job_97451dee957a4d09be7d7134cb5d2241",
+        "status": "accepted",
+        "context_id": "67aac626de692042aab28a8bc899419d1456938ed4b624ea23b0df08e178a86b",
+        "commit_id": "cmt_b551c08b219f4618"
+      }
+    },
+    {
+      "route": "/agent-jobs",
+      "response": {
+        "job_id": "job_4acca0200cba468097c1a45433e4566c",
+        "job_type": "writer",
+        "payload": {
+          "project_id": "prj_8f2f909541f84b6b",
+          "idempotency_key": "writer",
+          "context": {
+            "context_id": "e98ed11634e6319dacfa63d2daed49cd9fd84c838029400e471689cd90db9293",
+            "task_kind": "writer",
+            "project_id": "prj_8f2f909541f84b6b",
+            "repository_commit_id": "cmt_b551c08b219f4618",
+            "target_ids": [
+              "prj_8f2f909541f84b6b:beat"
+            ],
+            "selected_inputs": [
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:beat",
+                "revision_id": "rev_62f2b53bd90f4e7b",
+                "kind": "narrative.beat",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "beat_id": "prj_8f2f909541f84b6b:beat",
+                  "constraints": [],
+                  "depends_on": [],
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:scene",
+                  "participants": [
+                    "prj_8f2f909541f84b6b:helper"
+                  ],
+                  "payoffs": [],
+                  "pov_character_id": "prj_8f2f909541f84b6b:helper",
+                  "preconditions": [],
+                  "purpose": "林岚协助调查",
+                  "reader_disclosures": [],
+                  "schema_version": 1,
+                  "setups": [],
+                  "state_changes": [],
+                  "title": "递出怀表"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:chapter",
+                "revision_id": "rev_c8ec1e79a3e644f1",
+                "kind": "narrative.chapter",
+                "reason": "目标的第 2 跳显式依赖",
+                "content": {
+                  "kind": "narrative.chapter",
+                  "node_id": "prj_8f2f909541f84b6b:chapter",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:arc",
+                  "schema_version": 1,
+                  "title": "chapter"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:helper",
+                "revision_id": "rev_0e65057e9cab43ce",
+                "kind": "story.character",
+                "reason": "目标的第 1 跳显式依赖",
+                "content": {
+                  "arc": "",
+                  "goal": "帮助侦探",
+                  "identity": "",
+                  "name": "林岚",
+                  "need": "",
+                  "role": "protagonist",
+                  "schema_version": 1,
+                  "secret": "",
+                  "traits": []
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:scene",
+                "revision_id": "rev_7df7ae58d0e34035",
+                "kind": "narrative.scene",
+                "reason": "目标的第 1 跳显式依赖",
+                "content": {
+                  "kind": "narrative.scene",
+                  "node_id": "prj_8f2f909541f84b6b:scene",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:chapter",
+                  "schema_version": 1,
+                  "title": "scene"
+                }
+              }
+            ],
+            "author_preferences": [],
+            "author_examples": [],
+            "constraints": [
+              "输出仅为候选；作者审批与 Commit 才表示项目变化",
+              "只为 prj_8f2f909541f84b6b:draft 返回整章 text；不修改 Canon，缺失事实应澄清"
+            ],
+            "omissions": [],
+            "instruction": "怀表谜案",
+            "evidence": {
+              "chapter_id": "prj_8f2f909541f84b6b:draft",
+              "beat_states": [
+                {
+                  "beat_id": "prj_8f2f909541f84b6b:beat",
+                  "enter": {
+                    "commit_id": "cmt_b551c08b219f4618",
+                    "at_beat_id": "prj_8f2f909541f84b6b:beat",
+                    "truths": [],
+                    "knowledge": [],
+                    "relationships": [],
+                    "custom": [],
+                    "disclosures": [],
+                    "warnings": []
+                  },
+                  "leave": {
+                    "commit_id": "cmt_b551c08b219f4618",
+                    "at_beat_id": "prj_8f2f909541f84b6b:beat",
+                    "truths": [],
+                    "knowledge": [],
+                    "relationships": [],
+                    "custom": [],
+                    "disclosures": [],
+                    "warnings": []
+                  }
+                }
+              ]
+            },
+            "token_budget": 16000,
+            "estimated_tokens": 2987,
+            "capability": {
+              "role": "writer",
+              "project_id": "prj_8f2f909541f84b6b",
+              "base_commit_id": "cmt_b551c08b219f4618",
+              "readable_ids": [
+                "prj_8f2f909541f84b6b:beat",
+                "prj_8f2f909541f84b6b:chapter",
+                "prj_8f2f909541f84b6b:helper",
+                "prj_8f2f909541f84b6b:scene"
+              ],
+              "writable_ids": [
+                "prj_8f2f909541f84b6b:draft"
+              ],
+              "allowed_tools": [
+                "artifact_read",
+                "artifact_search",
+                "author_profile_read",
+                "manuscript_patch_propose"
+              ],
+              "creation_kinds": [],
+              "creation_prefix": "prj_8f2f909541f84b6b:",
+              "max_new_artifacts": 12
+            }
+          }
+        },
+        "state": "queued",
+        "fingerprint": "335edd35603fbd86f90a2a1ff7ebc2986497ee40a06cfee4956212a449ee4a8e",
+        "generation": 0,
+        "attempts": 0,
+        "checkpoint": null,
+        "output": null,
+        "retry": null,
+        "lease_expires_at": null,
+        "retry_at": null
+      }
+    },
+    {
+      "route": "/agent-jobs/job_4acca0200cba468097c1a45433e4566c/run",
+      "response": {
+        "job_id": "job_4acca0200cba468097c1a45433e4566c",
+        "job_type": "writer",
+        "payload": {
+          "project_id": "prj_8f2f909541f84b6b",
+          "idempotency_key": "writer",
+          "context": {
+            "context_id": "e98ed11634e6319dacfa63d2daed49cd9fd84c838029400e471689cd90db9293",
+            "task_kind": "writer",
+            "project_id": "prj_8f2f909541f84b6b",
+            "repository_commit_id": "cmt_b551c08b219f4618",
+            "target_ids": [
+              "prj_8f2f909541f84b6b:beat"
+            ],
+            "selected_inputs": [
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:beat",
+                "revision_id": "rev_62f2b53bd90f4e7b",
+                "kind": "narrative.beat",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "beat_id": "prj_8f2f909541f84b6b:beat",
+                  "constraints": [],
+                  "depends_on": [],
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:scene",
+                  "participants": [
+                    "prj_8f2f909541f84b6b:helper"
+                  ],
+                  "payoffs": [],
+                  "pov_character_id": "prj_8f2f909541f84b6b:helper",
+                  "preconditions": [],
+                  "purpose": "林岚协助调查",
+                  "reader_disclosures": [],
+                  "schema_version": 1,
+                  "setups": [],
+                  "state_changes": [],
+                  "title": "递出怀表"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:chapter",
+                "revision_id": "rev_c8ec1e79a3e644f1",
+                "kind": "narrative.chapter",
+                "reason": "目标的第 2 跳显式依赖",
+                "content": {
+                  "kind": "narrative.chapter",
+                  "node_id": "prj_8f2f909541f84b6b:chapter",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:arc",
+                  "schema_version": 1,
+                  "title": "chapter"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:helper",
+                "revision_id": "rev_0e65057e9cab43ce",
+                "kind": "story.character",
+                "reason": "目标的第 1 跳显式依赖",
+                "content": {
+                  "arc": "",
+                  "goal": "帮助侦探",
+                  "identity": "",
+                  "name": "林岚",
+                  "need": "",
+                  "role": "protagonist",
+                  "schema_version": 1,
+                  "secret": "",
+                  "traits": []
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:scene",
+                "revision_id": "rev_7df7ae58d0e34035",
+                "kind": "narrative.scene",
+                "reason": "目标的第 1 跳显式依赖",
+                "content": {
+                  "kind": "narrative.scene",
+                  "node_id": "prj_8f2f909541f84b6b:scene",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:chapter",
+                  "schema_version": 1,
+                  "title": "scene"
+                }
+              }
+            ],
+            "author_preferences": [],
+            "author_examples": [],
+            "constraints": [
+              "输出仅为候选；作者审批与 Commit 才表示项目变化",
+              "只为 prj_8f2f909541f84b6b:draft 返回整章 text；不修改 Canon，缺失事实应澄清"
+            ],
+            "omissions": [],
+            "instruction": "怀表谜案",
+            "evidence": {
+              "chapter_id": "prj_8f2f909541f84b6b:draft",
+              "beat_states": [
+                {
+                  "beat_id": "prj_8f2f909541f84b6b:beat",
+                  "enter": {
+                    "commit_id": "cmt_b551c08b219f4618",
+                    "at_beat_id": "prj_8f2f909541f84b6b:beat",
+                    "truths": [],
+                    "knowledge": [],
+                    "relationships": [],
+                    "custom": [],
+                    "disclosures": [],
+                    "warnings": []
+                  },
+                  "leave": {
+                    "commit_id": "cmt_b551c08b219f4618",
+                    "at_beat_id": "prj_8f2f909541f84b6b:beat",
+                    "truths": [],
+                    "knowledge": [],
+                    "relationships": [],
+                    "custom": [],
+                    "disclosures": [],
+                    "warnings": []
+                  }
+                }
+              ]
+            },
+            "token_budget": 16000,
+            "estimated_tokens": 2987,
+            "capability": {
+              "role": "writer",
+              "project_id": "prj_8f2f909541f84b6b",
+              "base_commit_id": "cmt_b551c08b219f4618",
+              "readable_ids": [
+                "prj_8f2f909541f84b6b:beat",
+                "prj_8f2f909541f84b6b:chapter",
+                "prj_8f2f909541f84b6b:helper",
+                "prj_8f2f909541f84b6b:scene"
+              ],
+              "writable_ids": [
+                "prj_8f2f909541f84b6b:draft"
+              ],
+              "allowed_tools": [
+                "artifact_read",
+                "artifact_search",
+                "author_profile_read",
+                "manuscript_patch_propose"
+              ],
+              "creation_kinds": [],
+              "creation_prefix": "prj_8f2f909541f84b6b:",
+              "max_new_artifacts": 12
+            }
+          }
+        },
+        "state": "waiting",
+        "fingerprint": "335edd35603fbd86f90a2a1ff7ebc2986497ee40a06cfee4956212a449ee4a8e",
+        "generation": 1,
+        "attempts": 1,
+        "checkpoint": {
+          "kind": "manuscript_patch",
+          "base_commit_id": "cmt_b551c08b219f4618",
+          "patches": [],
+          "chapter_id": "prj_8f2f909541f84b6b:draft",
+          "text": "林岚非常缓慢地递出怀表。\n\n他仍然信任这位协助者。",
+          "rationale": ""
+        },
+        "output": {
+          "kind": "manuscript_patch",
+          "base_commit_id": "cmt_b551c08b219f4618",
+          "patches": [],
+          "chapter_id": "prj_8f2f909541f84b6b:draft",
+          "text": "林岚非常缓慢地递出怀表。\n\n他仍然信任这位协助者。",
+          "rationale": ""
+        },
+        "retry": null,
+        "lease_expires_at": "2026-10-15T08:00:56.928413+00:00",
+        "retry_at": null,
+        "owner": "run_35693dbdcaf74859",
+        "repository_lease": {
+          "resource_key": "worker-job:job_4acca0200cba468097c1a45433e4566c",
+          "owner": "run_35693dbdcaf74859",
+          "version": 1,
+          "expires_at": "2026-10-15T08:00:56.929417+00:00"
+        }
+      }
+    },
+    {
+      "route": "/agent-jobs/job_4acca0200cba468097c1a45433e4566c/accept",
+      "response": {
+        "job_id": "job_4acca0200cba468097c1a45433e4566c",
+        "status": "accepted",
+        "context_id": "e98ed11634e6319dacfa63d2daed49cd9fd84c838029400e471689cd90db9293",
+        "commit_id": "cmt_80d84d54ef274066"
+      }
+    },
+    {
+      "route": "/chapters/prj_8f2f909541f84b6b:draft/save",
+      "response": {
+        "status": "committed",
+        "commit_id": "cmt_5ad823baa96744e2",
+        "new_head": "cmt_5ad823baa96744e2",
+        "summary": "保存正文",
+        "warnings": [],
+        "chapter_base": "b587e17b207af215f7cb5a12ef03714a421c1a15652e34a43fd360af31fbe1d1"
+      }
+    },
+    {
+      "route": "/agent-jobs",
+      "response": {
+        "job_id": "job_e6c132aea2c74e04bf586ddc3af404bb",
+        "job_type": "style_observer",
+        "payload": {
+          "project_id": "prj_8f2f909541f84b6b",
+          "idempotency_key": "style_observer",
+          "context": {
+            "context_id": "c0081f79ec414273b719d5e297cc1847fbe69ee955537d8c80627101bb607d08",
+            "task_kind": "style_observer",
+            "project_id": "prj_8f2f909541f84b6b",
+            "repository_commit_id": "cmt_5ad823baa96744e2",
+            "target_ids": [
+              "tu_e13e4f155e964ae8"
+            ],
+            "selected_inputs": [
+              {
+                "artifact_id": "tu_e13e4f155e964ae8",
+                "revision_id": "rev_50c34fe1190a4045",
+                "kind": "manuscript.text_unit",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "derived_from": [],
+                  "origin": "import",
+                  "scene_id": null,
+                  "schema_version": 1,
+                  "state": "active",
+                  "text": "林岚递出怀表。",
+                  "unit_id": "tu_e13e4f155e964ae8"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:beat",
+                "revision_id": "rev_62f2b53bd90f4e7b",
+                "kind": "narrative.beat",
+                "reason": "目标的第 1 跳显式依赖",
+                "content": {
+                  "beat_id": "prj_8f2f909541f84b6b:beat",
+                  "constraints": [],
+                  "depends_on": [],
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:scene",
+                  "participants": [
+                    "prj_8f2f909541f84b6b:helper"
+                  ],
+                  "payoffs": [],
+                  "pov_character_id": "prj_8f2f909541f84b6b:helper",
+                  "preconditions": [],
+                  "purpose": "林岚协助调查",
+                  "reader_disclosures": [],
+                  "schema_version": 1,
+                  "setups": [],
+                  "state_changes": [],
+                  "title": "递出怀表"
+                }
+              },
+              {
+                "artifact_id": "tu_9ff1fd4ef11d4d98",
+                "revision_id": "rev_a39e4935355346b8",
+                "kind": "manuscript.text_unit",
+                "reason": "相邻段落窗口",
+                "content": {
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "derived_from": [],
+                  "origin": "import",
+                  "scene_id": null,
+                  "schema_version": 1,
+                  "state": "active",
+                  "text": "他仍然信任这位协助者。",
+                  "unit_id": "tu_9ff1fd4ef11d4d98"
+                }
+              }
+            ],
+            "author_preferences": [],
+            "author_examples": [],
+            "constraints": [
+              "输出仅为候选；作者审批与 Commit 才表示项目变化",
+              "只能观察真实人工 diff；事实、格式、错字不构成文风，不能激活偏好"
+            ],
+            "omissions": [],
+            "instruction": "",
+            "evidence": {
+              "before_commit_id": "cmt_80d84d54ef274066",
+              "chapter_id": "prj_8f2f909541f84b6b:draft",
+              "edits": [
+                {
+                  "schema_version": 1,
+                  "unit_id": "tu_e13e4f155e964ae8",
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "operation": "replace",
+                  "before": "林岚非常缓慢地递出怀表。",
+                  "after": "林岚递出怀表。",
+                  "note": ""
+                }
+              ]
+            },
+            "token_budget": 16000,
+            "estimated_tokens": 2507,
+            "capability": {
+              "role": "style_observer",
+              "project_id": "prj_8f2f909541f84b6b",
+              "base_commit_id": "cmt_5ad823baa96744e2",
+              "readable_ids": [
+                "prj_8f2f909541f84b6b:beat",
+                "tu_9ff1fd4ef11d4d98",
+                "tu_e13e4f155e964ae8"
+              ],
+              "writable_ids": [],
+              "allowed_tools": [
+                "repository_diff",
+                "author_profile_read",
+                "observation_propose"
+              ],
+              "creation_kinds": [],
+              "creation_prefix": "prj_8f2f909541f84b6b:",
+              "max_new_artifacts": 12
+            }
+          }
+        },
+        "state": "queued",
+        "fingerprint": "9c6ee0ec8891a12d25d049ff28a7412bc15f77f0804068fe5fb3dc9522d73b36",
+        "generation": 0,
+        "attempts": 0,
+        "checkpoint": null,
+        "output": null,
+        "retry": null,
+        "lease_expires_at": null,
+        "retry_at": null
+      }
+    },
+    {
+      "route": "/agent-jobs/job_e6c132aea2c74e04bf586ddc3af404bb/run",
+      "response": {
+        "job_id": "job_e6c132aea2c74e04bf586ddc3af404bb",
+        "job_type": "style_observer",
+        "payload": {
+          "project_id": "prj_8f2f909541f84b6b",
+          "idempotency_key": "style_observer",
+          "context": {
+            "context_id": "c0081f79ec414273b719d5e297cc1847fbe69ee955537d8c80627101bb607d08",
+            "task_kind": "style_observer",
+            "project_id": "prj_8f2f909541f84b6b",
+            "repository_commit_id": "cmt_5ad823baa96744e2",
+            "target_ids": [
+              "tu_e13e4f155e964ae8"
+            ],
+            "selected_inputs": [
+              {
+                "artifact_id": "tu_e13e4f155e964ae8",
+                "revision_id": "rev_50c34fe1190a4045",
+                "kind": "manuscript.text_unit",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "derived_from": [],
+                  "origin": "import",
+                  "scene_id": null,
+                  "schema_version": 1,
+                  "state": "active",
+                  "text": "林岚递出怀表。",
+                  "unit_id": "tu_e13e4f155e964ae8"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:beat",
+                "revision_id": "rev_62f2b53bd90f4e7b",
+                "kind": "narrative.beat",
+                "reason": "目标的第 1 跳显式依赖",
+                "content": {
+                  "beat_id": "prj_8f2f909541f84b6b:beat",
+                  "constraints": [],
+                  "depends_on": [],
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:scene",
+                  "participants": [
+                    "prj_8f2f909541f84b6b:helper"
+                  ],
+                  "payoffs": [],
+                  "pov_character_id": "prj_8f2f909541f84b6b:helper",
+                  "preconditions": [],
+                  "purpose": "林岚协助调查",
+                  "reader_disclosures": [],
+                  "schema_version": 1,
+                  "setups": [],
+                  "state_changes": [],
+                  "title": "递出怀表"
+                }
+              },
+              {
+                "artifact_id": "tu_9ff1fd4ef11d4d98",
+                "revision_id": "rev_a39e4935355346b8",
+                "kind": "manuscript.text_unit",
+                "reason": "相邻段落窗口",
+                "content": {
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "derived_from": [],
+                  "origin": "import",
+                  "scene_id": null,
+                  "schema_version": 1,
+                  "state": "active",
+                  "text": "他仍然信任这位协助者。",
+                  "unit_id": "tu_9ff1fd4ef11d4d98"
+                }
+              }
+            ],
+            "author_preferences": [],
+            "author_examples": [],
+            "constraints": [
+              "输出仅为候选；作者审批与 Commit 才表示项目变化",
+              "只能观察真实人工 diff；事实、格式、错字不构成文风，不能激活偏好"
+            ],
+            "omissions": [],
+            "instruction": "",
+            "evidence": {
+              "before_commit_id": "cmt_80d84d54ef274066",
+              "chapter_id": "prj_8f2f909541f84b6b:draft",
+              "edits": [
+                {
+                  "schema_version": 1,
+                  "unit_id": "tu_e13e4f155e964ae8",
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "operation": "replace",
+                  "before": "林岚非常缓慢地递出怀表。",
+                  "after": "林岚递出怀表。",
+                  "note": ""
+                }
+              ]
+            },
+            "token_budget": 16000,
+            "estimated_tokens": 2507,
+            "capability": {
+              "role": "style_observer",
+              "project_id": "prj_8f2f909541f84b6b",
+              "base_commit_id": "cmt_5ad823baa96744e2",
+              "readable_ids": [
+                "prj_8f2f909541f84b6b:beat",
+                "tu_9ff1fd4ef11d4d98",
+                "tu_e13e4f155e964ae8"
+              ],
+              "writable_ids": [],
+              "allowed_tools": [
+                "repository_diff",
+                "author_profile_read",
+                "observation_propose"
+              ],
+              "creation_kinds": [],
+              "creation_prefix": "prj_8f2f909541f84b6b:",
+              "max_new_artifacts": 12
+            }
+          }
+        },
+        "state": "completed",
+        "fingerprint": "9c6ee0ec8891a12d25d049ff28a7412bc15f77f0804068fe5fb3dc9522d73b36",
+        "generation": 1,
+        "attempts": 1,
+        "checkpoint": {
+          "kind": "observation_set",
+          "base_commit_id": "cmt_5ad823baa96744e2",
+          "observations": [
+            {
+              "unit_id": "tu_e13e4f155e964ae8",
+              "category": "style",
+              "statement": "作者倾向精简修饰语",
+              "confidence": 0.95
+            }
+          ]
+        },
+        "output": {
+          "kind": "observation_set",
+          "base_commit_id": "cmt_5ad823baa96744e2",
+          "observations": [
+            {
+              "unit_id": "tu_e13e4f155e964ae8",
+              "category": "style",
+              "statement": "作者倾向精简修饰语",
+              "confidence": 0.95
+            }
+          ]
+        },
+        "retry": null,
+        "lease_expires_at": "2026-10-15T08:00:56.996838+00:00",
+        "retry_at": null,
+        "owner": "run_f73be91a23d44e5c",
+        "repository_lease": {
+          "resource_key": "worker-job:job_e6c132aea2c74e04bf586ddc3af404bb",
+          "owner": "run_f73be91a23d44e5c",
+          "version": 1,
+          "expires_at": "2026-10-15T08:00:56.996838+00:00"
+        },
+        "analysis": {
+          "status": "recorded",
+          "commit_id": "cmt_ab8f9be669d74c67"
+        }
+      }
+    },
+    {
+      "route": "/changes",
+      "response": {
+        "schema_version": 1,
+        "change_set_id": "art_952bd9e632164584",
+        "intent": "林岚从协助者改为操纵者",
+        "source": "manual",
+        "base_commit_id": "cmt_ab8f9be669d74c67",
+        "seed_changes": [
+          {
+            "artifact_id": "prj_8f2f909541f84b6b:helper",
+            "field": "",
+            "reason": "",
+            "proposed_content": {
+              "arc": "",
+              "goal": "帮助侦探",
+              "identity": "",
+              "name": "林岚",
+              "need": "",
+              "role": "antagonist",
+              "schema_version": 1,
+              "secret": "",
+              "traits": []
+            }
+          }
+        ],
+        "scope": {
+          "kinds": [],
+          "roots": [],
+          "max_hops": null
+        },
+        "status": "opened",
+        "history": [
+          {
+            "from_status": "",
+            "to_status": "opened",
+            "actor_kind": "human",
+            "actor_id": "author",
+            "at": "2026-10-15T07:57:57.056626+00:00",
+            "reason": "林岚从协助者改为操纵者",
+            "base_commit_id": "cmt_ab8f9be669d74c67",
+            "approval_ref": "",
+            "commit_id": ""
+          }
+        ]
+      }
+    },
+    {
+      "route": "/changes/art_952bd9e632164584/analyze",
+      "response": {
+        "change_set_id": "art_952bd9e632164584",
+        "report_id": "art_6ebfbfe137774b30",
+        "status": "analyzed",
+        "item_count": 4,
+        "truncated_count": 0,
+        "commit_id": "cmt_3998b6a2bebb4053",
+        "mention_hits": 0
+      }
+    },
+    {
+      "route": "/changes/art_952bd9e632164584/plan",
+      "response": {
+        "head_commit_id": "cmt_09c5a3c5906c40e7",
+        "change_set": {
+          "base_commit_id": "cmt_ab8f9be669d74c67",
+          "change_set_id": "art_952bd9e632164584",
+          "history": [
+            {
+              "actor_id": "author",
+              "actor_kind": "human",
+              "approval_ref": "",
+              "at": "2026-10-15T07:57:57.056626+00:00",
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "commit_id": "",
+              "from_status": "",
+              "reason": "林岚从协助者改为操纵者",
+              "to_status": "opened"
+            },
+            {
+              "actor_id": "author",
+              "actor_kind": "human",
+              "approval_ref": "",
+              "at": "2026-10-15T07:57:57.065729+00:00",
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "commit_id": "",
+              "from_status": "opened",
+              "reason": "开始影响分析",
+              "to_status": "analyzing"
+            },
+            {
+              "actor_id": "author",
+              "actor_kind": "human",
+              "approval_ref": "",
+              "at": "2026-10-15T07:57:57.072050+00:00",
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "commit_id": "",
+              "from_status": "analyzing",
+              "reason": "影响分析完成",
+              "to_status": "analyzed"
+            }
+          ],
+          "intent": "林岚从协助者改为操纵者",
+          "schema_version": 1,
+          "scope": {
+            "kinds": [],
+            "max_hops": null,
+            "roots": []
+          },
+          "seed_changes": [
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:helper",
+              "field": "",
+              "proposed_content": {
+                "arc": "",
+                "goal": "帮助侦探",
+                "identity": "",
+                "name": "林岚",
+                "need": "",
+                "role": "antagonist",
+                "schema_version": 1,
+                "secret": "",
+                "traits": []
+              },
+              "reason": ""
+            }
+          ],
+          "source": "manual",
+          "status": "analyzed"
+        },
+        "objects": [
+          {
+            "artifact_id": "art_6ebfbfe137774b30",
+            "kind": "changes.impact_report",
+            "content": {
+              "analyzed_by": "human:author",
+              "at": "2026-10-15T07:57:57.072050+00:00",
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "change_set_id": "art_952bd9e632164584",
+              "coverage": "deterministic",
+              "items": [
+                {
+                  "confidence": 1.0,
+                  "impact_kind": "intent",
+                  "mentioned_artifact_id": null,
+                  "path": [],
+                  "reason": "林岚从协助者改为操纵者",
+                  "severity": "must_fix",
+                  "status": "open",
+                  "target_artifact_id": "prj_8f2f909541f84b6b:helper",
+                  "text_unit_id": null
+                },
+                {
+                  "confidence": 1.0,
+                  "impact_kind": "motivation",
+                  "mentioned_artifact_id": null,
+                  "path": [
+                    {
+                      "edge_id": "rel_ad799df92a844a8c",
+                      "relation_type": "motivates",
+                      "source": "prj_8f2f909541f84b6b:helper",
+                      "target": "prj_8f2f909541f84b6b:beat"
+                    }
+                  ],
+                  "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat",
+                  "severity": "should_fix",
+                  "status": "open",
+                  "target_artifact_id": "prj_8f2f909541f84b6b:beat",
+                  "text_unit_id": null
+                },
+                {
+                  "confidence": 1.0,
+                  "impact_kind": "contradiction",
+                  "mentioned_artifact_id": null,
+                  "path": [
+                    {
+                      "edge_id": "rel_ad799df92a844a8c",
+                      "relation_type": "motivates",
+                      "source": "prj_8f2f909541f84b6b:helper",
+                      "target": "prj_8f2f909541f84b6b:beat"
+                    },
+                    {
+                      "edge_id": "rel_e08be58116b74602",
+                      "relation_type": "renders",
+                      "source": "prj_8f2f909541f84b6b:beat",
+                      "target": "tu_9ff1fd4ef11d4d98"
+                    }
+                  ],
+                  "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat -> renders:tu_9ff1fd4ef11d4d98",
+                  "severity": "must_fix",
+                  "status": "open",
+                  "target_artifact_id": "tu_9ff1fd4ef11d4d98",
+                  "text_unit_id": null
+                },
+                {
+                  "confidence": 1.0,
+                  "impact_kind": "contradiction",
+                  "mentioned_artifact_id": null,
+                  "path": [
+                    {
+                      "edge_id": "rel_ad799df92a844a8c",
+                      "relation_type": "motivates",
+                      "source": "prj_8f2f909541f84b6b:helper",
+                      "target": "prj_8f2f909541f84b6b:beat"
+                    },
+                    {
+                      "edge_id": "rel_1ad0f00d48314b73",
+                      "relation_type": "renders",
+                      "source": "prj_8f2f909541f84b6b:beat",
+                      "target": "tu_e13e4f155e964ae8"
+                    }
+                  ],
+                  "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat -> renders:tu_e13e4f155e964ae8",
+                  "severity": "must_fix",
+                  "status": "open",
+                  "target_artifact_id": "tu_e13e4f155e964ae8",
+                  "text_unit_id": null
+                }
+              ],
+              "report_id": "art_6ebfbfe137774b30",
+              "stats": {
+                "cycles_skipped": 0,
+                "item_count": 4,
+                "mention_hits": 0,
+                "mention_skipped_covered": 2,
+                "mention_units_scanned": 2,
+                "nodes_visited": 4,
+                "paths_explored": 3,
+                "seed_count": 1,
+                "truncated_count": 0
+              },
+              "truncated": [],
+              "warnings": []
+            }
+          },
+          {
+            "artifact_id": "art_952bd9e632164584",
+            "kind": "changes.change_set",
+            "content": {
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "change_set_id": "art_952bd9e632164584",
+              "history": [
+                {
+                  "actor_id": "author",
+                  "actor_kind": "human",
+                  "approval_ref": "",
+                  "at": "2026-10-15T07:57:57.056626+00:00",
+                  "base_commit_id": "cmt_ab8f9be669d74c67",
+                  "commit_id": "",
+                  "from_status": "",
+                  "reason": "林岚从协助者改为操纵者",
+                  "to_status": "opened"
+                },
+                {
+                  "actor_id": "author",
+                  "actor_kind": "human",
+                  "approval_ref": "",
+                  "at": "2026-10-15T07:57:57.065729+00:00",
+                  "base_commit_id": "cmt_ab8f9be669d74c67",
+                  "commit_id": "",
+                  "from_status": "opened",
+                  "reason": "开始影响分析",
+                  "to_status": "analyzing"
+                },
+                {
+                  "actor_id": "author",
+                  "actor_kind": "human",
+                  "approval_ref": "",
+                  "at": "2026-10-15T07:57:57.072050+00:00",
+                  "base_commit_id": "cmt_ab8f9be669d74c67",
+                  "commit_id": "",
+                  "from_status": "analyzing",
+                  "reason": "影响分析完成",
+                  "to_status": "analyzed"
+                }
+              ],
+              "intent": "林岚从协助者改为操纵者",
+              "schema_version": 1,
+              "scope": {
+                "kinds": [],
+                "max_hops": null,
+                "roots": []
+              },
+              "seed_changes": [
+                {
+                  "artifact_id": "prj_8f2f909541f84b6b:helper",
+                  "field": "",
+                  "proposed_content": {
+                    "arc": "",
+                    "goal": "帮助侦探",
+                    "identity": "",
+                    "name": "林岚",
+                    "need": "",
+                    "role": "antagonist",
+                    "schema_version": 1,
+                    "secret": "",
+                    "traits": []
+                  },
+                  "reason": ""
+                }
+              ],
+              "source": "manual",
+              "status": "analyzed"
+            }
+          },
+          {
+            "artifact_id": "art_c87d91444dcc40a0",
+            "kind": "changes.revision_plan",
+            "content": {
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "change_set_id": "art_952bd9e632164584",
+              "constraints": [
+                {
+                  "after": "prj_8f2f909541f84b6b:beat",
+                  "before": "prj_8f2f909541f84b6b:helper",
+                  "item_index": 1
+                },
+                {
+                  "after": "tu_9ff1fd4ef11d4d98",
+                  "before": "prj_8f2f909541f84b6b:beat",
+                  "item_index": 2
+                },
+                {
+                  "after": "tu_e13e4f155e964ae8",
+                  "before": "prj_8f2f909541f84b6b:beat",
+                  "item_index": 3
+                }
+              ],
+              "plan_id": "art_c87d91444dcc40a0",
+              "risk_acceptances": [],
+              "steps": [
+                {
+                  "depends_on": [],
+                  "item_indexes": [
+                    0
+                  ],
+                  "layer": "canon",
+                  "step_id": "step_canon",
+                  "target_artifact_ids": [
+                    "prj_8f2f909541f84b6b:helper"
+                  ],
+                  "title": "Canon 真相与规则（1 个对象）"
+                },
+                {
+                  "depends_on": [
+                    "step_canon"
+                  ],
+                  "item_indexes": [
+                    1
+                  ],
+                  "layer": "plan",
+                  "step_id": "step_plan",
+                  "target_artifact_ids": [
+                    "prj_8f2f909541f84b6b:beat"
+                  ],
+                  "title": "叙事计划与角色认知（1 个对象）"
+                },
+                {
+                  "depends_on": [
+                    "step_plan"
+                  ],
+                  "item_indexes": [
+                    2,
+                    3
+                  ],
+                  "layer": "manuscript",
+                  "step_id": "step_manuscript",
+                  "target_artifact_ids": [
+                    "tu_9ff1fd4ef11d4d98",
+                    "tu_e13e4f155e964ae8"
+                  ],
+                  "title": "正文（2 个对象）"
+                }
+              ],
+              "unassigned": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "route": "/changes/art_952bd9e632164584/approve",
+      "response": {
+        "head_commit_id": "cmt_f03c208ee4a74d55",
+        "change_set": {
+          "base_commit_id": "cmt_ab8f9be669d74c67",
+          "change_set_id": "art_952bd9e632164584",
+          "history": [
+            {
+              "actor_id": "author",
+              "actor_kind": "human",
+              "approval_ref": "",
+              "at": "2026-10-15T07:57:57.056626+00:00",
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "commit_id": "",
+              "from_status": "",
+              "reason": "林岚从协助者改为操纵者",
+              "to_status": "opened"
+            },
+            {
+              "actor_id": "author",
+              "actor_kind": "human",
+              "approval_ref": "",
+              "at": "2026-10-15T07:57:57.065729+00:00",
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "commit_id": "",
+              "from_status": "opened",
+              "reason": "开始影响分析",
+              "to_status": "analyzing"
+            },
+            {
+              "actor_id": "author",
+              "actor_kind": "human",
+              "approval_ref": "",
+              "at": "2026-10-15T07:57:57.072050+00:00",
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "commit_id": "",
+              "from_status": "analyzing",
+              "reason": "影响分析完成",
+              "to_status": "analyzed"
+            },
+            {
+              "actor_id": "author",
+              "actor_kind": "human",
+              "approval_ref": "art_ed8aa9be08b148d5",
+              "at": "2026-10-15T07:57:57.109227+00:00",
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "commit_id": "",
+              "from_status": "analyzed",
+              "reason": "作者批准执行计划",
+              "to_status": "approved"
+            }
+          ],
+          "intent": "林岚从协助者改为操纵者",
+          "schema_version": 1,
+          "scope": {
+            "kinds": [],
+            "max_hops": null,
+            "roots": []
+          },
+          "seed_changes": [
+            {
+              "artifact_id": "prj_8f2f909541f84b6b:helper",
+              "field": "",
+              "proposed_content": {
+                "arc": "",
+                "goal": "帮助侦探",
+                "identity": "",
+                "name": "林岚",
+                "need": "",
+                "role": "antagonist",
+                "schema_version": 1,
+                "secret": "",
+                "traits": []
+              },
+              "reason": ""
+            }
+          ],
+          "source": "manual",
+          "status": "approved"
+        },
+        "objects": [
+          {
+            "artifact_id": "art_6ebfbfe137774b30",
+            "kind": "changes.impact_report",
+            "content": {
+              "analyzed_by": "human:author",
+              "at": "2026-10-15T07:57:57.072050+00:00",
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "change_set_id": "art_952bd9e632164584",
+              "coverage": "deterministic",
+              "items": [
+                {
+                  "confidence": 1.0,
+                  "impact_kind": "intent",
+                  "mentioned_artifact_id": null,
+                  "path": [],
+                  "reason": "林岚从协助者改为操纵者",
+                  "severity": "must_fix",
+                  "status": "open",
+                  "target_artifact_id": "prj_8f2f909541f84b6b:helper",
+                  "text_unit_id": null
+                },
+                {
+                  "confidence": 1.0,
+                  "impact_kind": "motivation",
+                  "mentioned_artifact_id": null,
+                  "path": [
+                    {
+                      "edge_id": "rel_ad799df92a844a8c",
+                      "relation_type": "motivates",
+                      "source": "prj_8f2f909541f84b6b:helper",
+                      "target": "prj_8f2f909541f84b6b:beat"
+                    }
+                  ],
+                  "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat",
+                  "severity": "should_fix",
+                  "status": "open",
+                  "target_artifact_id": "prj_8f2f909541f84b6b:beat",
+                  "text_unit_id": null
+                },
+                {
+                  "confidence": 1.0,
+                  "impact_kind": "contradiction",
+                  "mentioned_artifact_id": null,
+                  "path": [
+                    {
+                      "edge_id": "rel_ad799df92a844a8c",
+                      "relation_type": "motivates",
+                      "source": "prj_8f2f909541f84b6b:helper",
+                      "target": "prj_8f2f909541f84b6b:beat"
+                    },
+                    {
+                      "edge_id": "rel_e08be58116b74602",
+                      "relation_type": "renders",
+                      "source": "prj_8f2f909541f84b6b:beat",
+                      "target": "tu_9ff1fd4ef11d4d98"
+                    }
+                  ],
+                  "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat -> renders:tu_9ff1fd4ef11d4d98",
+                  "severity": "must_fix",
+                  "status": "open",
+                  "target_artifact_id": "tu_9ff1fd4ef11d4d98",
+                  "text_unit_id": null
+                },
+                {
+                  "confidence": 1.0,
+                  "impact_kind": "contradiction",
+                  "mentioned_artifact_id": null,
+                  "path": [
+                    {
+                      "edge_id": "rel_ad799df92a844a8c",
+                      "relation_type": "motivates",
+                      "source": "prj_8f2f909541f84b6b:helper",
+                      "target": "prj_8f2f909541f84b6b:beat"
+                    },
+                    {
+                      "edge_id": "rel_1ad0f00d48314b73",
+                      "relation_type": "renders",
+                      "source": "prj_8f2f909541f84b6b:beat",
+                      "target": "tu_e13e4f155e964ae8"
+                    }
+                  ],
+                  "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat -> renders:tu_e13e4f155e964ae8",
+                  "severity": "must_fix",
+                  "status": "open",
+                  "target_artifact_id": "tu_e13e4f155e964ae8",
+                  "text_unit_id": null
+                }
+              ],
+              "report_id": "art_6ebfbfe137774b30",
+              "stats": {
+                "cycles_skipped": 0,
+                "item_count": 4,
+                "mention_hits": 0,
+                "mention_skipped_covered": 2,
+                "mention_units_scanned": 2,
+                "nodes_visited": 4,
+                "paths_explored": 3,
+                "seed_count": 1,
+                "truncated_count": 0
+              },
+              "truncated": [],
+              "warnings": []
+            }
+          },
+          {
+            "artifact_id": "art_952bd9e632164584",
+            "kind": "changes.change_set",
+            "content": {
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "change_set_id": "art_952bd9e632164584",
+              "history": [
+                {
+                  "actor_id": "author",
+                  "actor_kind": "human",
+                  "approval_ref": "",
+                  "at": "2026-10-15T07:57:57.056626+00:00",
+                  "base_commit_id": "cmt_ab8f9be669d74c67",
+                  "commit_id": "",
+                  "from_status": "",
+                  "reason": "林岚从协助者改为操纵者",
+                  "to_status": "opened"
+                },
+                {
+                  "actor_id": "author",
+                  "actor_kind": "human",
+                  "approval_ref": "",
+                  "at": "2026-10-15T07:57:57.065729+00:00",
+                  "base_commit_id": "cmt_ab8f9be669d74c67",
+                  "commit_id": "",
+                  "from_status": "opened",
+                  "reason": "开始影响分析",
+                  "to_status": "analyzing"
+                },
+                {
+                  "actor_id": "author",
+                  "actor_kind": "human",
+                  "approval_ref": "",
+                  "at": "2026-10-15T07:57:57.072050+00:00",
+                  "base_commit_id": "cmt_ab8f9be669d74c67",
+                  "commit_id": "",
+                  "from_status": "analyzing",
+                  "reason": "影响分析完成",
+                  "to_status": "analyzed"
+                },
+                {
+                  "actor_id": "author",
+                  "actor_kind": "human",
+                  "approval_ref": "art_ed8aa9be08b148d5",
+                  "at": "2026-10-15T07:57:57.109227+00:00",
+                  "base_commit_id": "cmt_ab8f9be669d74c67",
+                  "commit_id": "",
+                  "from_status": "analyzed",
+                  "reason": "作者批准执行计划",
+                  "to_status": "approved"
+                }
+              ],
+              "intent": "林岚从协助者改为操纵者",
+              "schema_version": 1,
+              "scope": {
+                "kinds": [],
+                "max_hops": null,
+                "roots": []
+              },
+              "seed_changes": [
+                {
+                  "artifact_id": "prj_8f2f909541f84b6b:helper",
+                  "field": "",
+                  "proposed_content": {
+                    "arc": "",
+                    "goal": "帮助侦探",
+                    "identity": "",
+                    "name": "林岚",
+                    "need": "",
+                    "role": "antagonist",
+                    "schema_version": 1,
+                    "secret": "",
+                    "traits": []
+                  },
+                  "reason": ""
+                }
+              ],
+              "source": "manual",
+              "status": "approved"
+            }
+          },
+          {
+            "artifact_id": "art_c87d91444dcc40a0",
+            "kind": "changes.revision_plan",
+            "content": {
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "change_set_id": "art_952bd9e632164584",
+              "constraints": [
+                {
+                  "after": "prj_8f2f909541f84b6b:beat",
+                  "before": "prj_8f2f909541f84b6b:helper",
+                  "item_index": 1
+                },
+                {
+                  "after": "tu_9ff1fd4ef11d4d98",
+                  "before": "prj_8f2f909541f84b6b:beat",
+                  "item_index": 2
+                },
+                {
+                  "after": "tu_e13e4f155e964ae8",
+                  "before": "prj_8f2f909541f84b6b:beat",
+                  "item_index": 3
+                }
+              ],
+              "plan_id": "art_c87d91444dcc40a0",
+              "risk_acceptances": [],
+              "steps": [
+                {
+                  "depends_on": [],
+                  "item_indexes": [
+                    0
+                  ],
+                  "layer": "canon",
+                  "step_id": "step_canon",
+                  "target_artifact_ids": [
+                    "prj_8f2f909541f84b6b:helper"
+                  ],
+                  "title": "Canon 真相与规则（1 个对象）"
+                },
+                {
+                  "depends_on": [
+                    "step_canon"
+                  ],
+                  "item_indexes": [
+                    1
+                  ],
+                  "layer": "plan",
+                  "step_id": "step_plan",
+                  "target_artifact_ids": [
+                    "prj_8f2f909541f84b6b:beat"
+                  ],
+                  "title": "叙事计划与角色认知（1 个对象）"
+                },
+                {
+                  "depends_on": [
+                    "step_plan"
+                  ],
+                  "item_indexes": [
+                    2,
+                    3
+                  ],
+                  "layer": "manuscript",
+                  "step_id": "step_manuscript",
+                  "target_artifact_ids": [
+                    "tu_9ff1fd4ef11d4d98",
+                    "tu_e13e4f155e964ae8"
+                  ],
+                  "title": "正文（2 个对象）"
+                }
+              ],
+              "unassigned": []
+            }
+          },
+          {
+            "artifact_id": "art_ed8aa9be08b148d5",
+            "kind": "changes.approval_receipt",
+            "content": {
+              "base_commit_id": "cmt_ab8f9be669d74c67",
+              "brief": {
+                "base_commit_id": "cmt_ab8f9be669d74c67",
+                "intent": "林岚从协助者改为操纵者",
+                "item_count": 4,
+                "must_fix_targets": [
+                  "prj_8f2f909541f84b6b:helper",
+                  "tu_9ff1fd4ef11d4d98",
+                  "tu_e13e4f155e964ae8"
+                ],
+                "review_count": 0,
+                "risk_count": 0,
+                "scope": {
+                  "kinds": [],
+                  "max_hops": null,
+                  "roots": []
+                },
+                "should_fix_count": 1,
+                "step_count": 3,
+                "target_count": 4,
+                "unassigned_count": 0
+              },
+              "change_set_id": "art_952bd9e632164584",
+              "expires_at": "2026-10-15T08:57:57.102687+00:00",
+              "fingerprint": "318a83aa0d002eb9d87b485469f96f593896a13bbca5fe6ffea0f2032983e797",
+              "issued_at": "2026-10-15T07:57:57.102687+00:00",
+              "issued_by": "human:author",
+              "receipt_id": "art_ed8aa9be08b148d5",
+              "resolved_at": "2026-10-15T07:57:57.109227+00:00",
+              "resolved_reason": "作者批准执行计划",
+              "schema_version": 1,
+              "status": "consumed"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "route": "/changes/art_952bd9e632164584/execute-agent",
+      "response": {
+        "change_set_id": "art_952bd9e632164584",
+        "job_id": "job_ce9bb08f72474fbb",
+        "branch_name": "revision/art_952bd9e632164584",
+        "status": "executed",
+        "steps": [
+          {
+            "step_id": "step_canon",
+            "outcome": "executed",
+            "commit_id": "cmt_4a1710bddbcf4706",
+            "note": ""
+          },
+          {
+            "step_id": "step_plan",
+            "outcome": "executed",
+            "commit_id": "cmt_ddab2f6c55aa4262",
+            "note": ""
+          },
+          {
+            "step_id": "step_manuscript",
+            "outcome": "executed",
+            "commit_id": "cmt_7df71cbf89744298",
+            "note": ""
+          }
+        ],
+        "commit_id": "cmt_4d5028fd77cd40fb",
+        "error_code": "",
+        "error_message": ""
+      }
+    },
+    {
+      "route": "/changes/art_952bd9e632164584/review",
+      "response": {
+        "patch_set_id": "patchset:art_952bd9e632164584",
+        "change_set_id": "art_952bd9e632164584",
+        "base_commit_id": "cmt_ab8f9be669d74c67",
+        "branch_commit_id": "cmt_7df71cbf89744298",
+        "hunks": [
+          {
+            "artifact_id": "prj_8f2f909541f84b6b:beat",
+            "field": "purpose",
+            "old": "林岚协助调查",
+            "new": "林岚诱导调查方向",
+            "old_exists": true,
+            "new_exists": true,
+            "text": false,
+            "hunk_id": "1ec30dfcfe3f595578bd95593bb0e9971332fcfccc00068a3a515aab67a107d2"
+          },
+          {
+            "artifact_id": "prj_8f2f909541f84b6b:helper",
+            "field": "role",
+            "old": "protagonist",
+            "new": "antagonist",
+            "old_exists": true,
+            "new_exists": true,
+            "text": false,
+            "hunk_id": "094ff393358e0aba199e24b25faf925a04576d35157522b3bcfe886b11a4702f"
+          },
+          {
+            "artifact_id": "tu_9ff1fd4ef11d4d98",
+            "field": "text",
+            "start": 0,
+            "end": 1,
+            "old": [
+              "他仍然信任这位协助者。"
+            ],
+            "new": [
+              "他开始怀疑林岚递来的怀表。"
+            ],
+            "text": true,
+            "hunk_id": "1119f0100486b3df3d4738d5c25f59d769df1b2e4c8fa6ce2f83fde893169a02"
+          },
+          {
+            "artifact_id": "tu_e13e4f155e964ae8",
+            "field": "text",
+            "start": 0,
+            "end": 1,
+            "old": [
+              "林岚递出怀表。"
+            ],
+            "new": [
+              "他开始怀疑林岚递来的怀表。"
+            ],
+            "text": true,
+            "hunk_id": "30adf504aa8093f9e7b692bf7ff4afec3da2ae51ea84c3c675c8e0cb607db190"
+          }
+        ],
+        "bases": {
+          "prj_8f2f909541f84b6b:beat": {
+            "beat_id": "prj_8f2f909541f84b6b:beat",
+            "constraints": [],
+            "depends_on": [],
+            "order_key": "",
+            "parent_id": "prj_8f2f909541f84b6b:scene",
+            "participants": [
+              "prj_8f2f909541f84b6b:helper"
+            ],
+            "payoffs": [],
+            "pov_character_id": "prj_8f2f909541f84b6b:helper",
+            "preconditions": [],
+            "purpose": "林岚协助调查",
+            "reader_disclosures": [],
+            "schema_version": 1,
+            "setups": [],
+            "state_changes": [],
+            "title": "递出怀表"
+          },
+          "prj_8f2f909541f84b6b:helper": {
+            "arc": "",
+            "goal": "帮助侦探",
+            "identity": "",
+            "name": "林岚",
+            "need": "",
+            "role": "protagonist",
+            "schema_version": 1,
+            "secret": "",
+            "traits": []
+          },
+          "tu_9ff1fd4ef11d4d98": {
+            "chapter_id": "prj_8f2f909541f84b6b:draft",
+            "derived_from": [],
+            "origin": "import",
+            "scene_id": null,
+            "schema_version": 1,
+            "state": "active",
+            "text": "他仍然信任这位协助者。",
+            "unit_id": "tu_9ff1fd4ef11d4d98"
+          },
+          "tu_e13e4f155e964ae8": {
+            "chapter_id": "prj_8f2f909541f84b6b:draft",
+            "derived_from": [],
+            "origin": "import",
+            "scene_id": null,
+            "schema_version": 1,
+            "state": "active",
+            "text": "林岚递出怀表。",
+            "unit_id": "tu_e13e4f155e964ae8"
+          }
+        },
+        "status": "review"
+      }
+    },
+    {
+      "route": "/changes/art_952bd9e632164584/merge",
+      "response": {
+        "change_set_id": "art_952bd9e632164584",
+        "status": "committed",
+        "fingerprint": "0110ae35a6d919e03108ae9bd0879eda3480e55cfb53bcfc85fe955d7850bdcf",
+        "selected": [
+          "1ec30dfcfe3f595578bd95593bb0e9971332fcfccc00068a3a515aab67a107d2",
+          "094ff393358e0aba199e24b25faf925a04576d35157522b3bcfe886b11a4702f",
+          "30adf504aa8093f9e7b692bf7ff4afec3da2ae51ea84c3c675c8e0cb607db190"
+        ],
+        "risks": {},
+        "items": [
+          {
+            "target_artifact_id": "prj_8f2f909541f84b6b:helper",
+            "severity": "must_fix",
+            "impact_kind": "intent",
+            "path": [],
+            "reason": "林岚从协助者改为操纵者",
+            "status": "resolved",
+            "confidence": 1.0,
+            "text_unit_id": null,
+            "mentioned_artifact_id": null
+          },
+          {
+            "target_artifact_id": "prj_8f2f909541f84b6b:beat",
+            "severity": "should_fix",
+            "impact_kind": "motivation",
+            "path": [
+              {
+                "source": "prj_8f2f909541f84b6b:helper",
+                "relation_type": "motivates",
+                "target": "prj_8f2f909541f84b6b:beat",
+                "edge_id": "rel_ad799df92a844a8c"
+              }
+            ],
+            "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat",
+            "status": "resolved",
+            "confidence": 1.0,
+            "text_unit_id": null,
+            "mentioned_artifact_id": null
+          },
+          {
+            "target_artifact_id": "tu_9ff1fd4ef11d4d98",
+            "severity": "must_fix",
+            "impact_kind": "contradiction",
+            "path": [
+              {
+                "source": "prj_8f2f909541f84b6b:helper",
+                "relation_type": "motivates",
+                "target": "prj_8f2f909541f84b6b:beat",
+                "edge_id": "rel_ad799df92a844a8c"
+              },
+              {
+                "source": "prj_8f2f909541f84b6b:beat",
+                "relation_type": "renders",
+                "target": "tu_9ff1fd4ef11d4d98",
+                "edge_id": "rel_e08be58116b74602"
+              }
+            ],
+            "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat -> renders:tu_9ff1fd4ef11d4d98",
+            "status": "open",
+            "confidence": 1.0,
+            "text_unit_id": null,
+            "mentioned_artifact_id": null
+          },
+          {
+            "target_artifact_id": "tu_e13e4f155e964ae8",
+            "severity": "must_fix",
+            "impact_kind": "contradiction",
+            "path": [
+              {
+                "source": "prj_8f2f909541f84b6b:helper",
+                "relation_type": "motivates",
+                "target": "prj_8f2f909541f84b6b:beat",
+                "edge_id": "rel_ad799df92a844a8c"
+              },
+              {
+                "source": "prj_8f2f909541f84b6b:beat",
+                "relation_type": "renders",
+                "target": "tu_e13e4f155e964ae8",
+                "edge_id": "rel_1ad0f00d48314b73"
+              }
+            ],
+            "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat -> renders:tu_e13e4f155e964ae8",
+            "status": "resolved",
+            "confidence": 1.0,
+            "text_unit_id": null,
+            "mentioned_artifact_id": null
+          }
+        ],
+        "base_commit_id": "cmt_ab8f9be669d74c67",
+        "branch_commit_id": "cmt_7df71cbf89744298"
+      }
+    },
+    {
+      "route": "/agent-jobs",
+      "response": {
+        "job_id": "job_9c3a480d4ac34f04a5b4e7c6984abb1e",
+        "job_type": "auditor",
+        "payload": {
+          "project_id": "prj_8f2f909541f84b6b",
+          "idempotency_key": "auditor",
+          "context": {
+            "context_id": "e0abe80f00022bfeb6bd1462a3eec6658bfa42336e8968923e88c5feea95bb56",
+            "task_kind": "auditor",
+            "project_id": "prj_8f2f909541f84b6b",
+            "repository_commit_id": "cmt_1d26f5aa4da44d7c",
+            "target_ids": [
+              "prj_8f2f909541f84b6b:arc",
+              "prj_8f2f909541f84b6b:beat",
+              "prj_8f2f909541f84b6b:book",
+              "prj_8f2f909541f84b6b:chapter",
+              "prj_8f2f909541f84b6b:draft",
+              "prj_8f2f909541f84b6b:helper",
+              "prj_8f2f909541f84b6b:scene",
+              "prj_8f2f909541f84b6b:series",
+              "tu_9ff1fd4ef11d4d98",
+              "tu_e13e4f155e964ae8"
+            ],
+            "selected_inputs": [
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:arc",
+                "revision_id": "rev_f1889733b0a64f3a",
+                "kind": "narrative.arc",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "kind": "narrative.arc",
+                  "node_id": "prj_8f2f909541f84b6b:arc",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:book",
+                  "schema_version": 1,
+                  "title": "arc"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:beat",
+                "revision_id": "rev_ef573f735f654a50",
+                "kind": "narrative.beat",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "beat_id": "prj_8f2f909541f84b6b:beat",
+                  "constraints": [],
+                  "depends_on": [],
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:scene",
+                  "participants": [
+                    "prj_8f2f909541f84b6b:helper"
+                  ],
+                  "payoffs": [],
+                  "pov_character_id": "prj_8f2f909541f84b6b:helper",
+                  "preconditions": [],
+                  "purpose": "林岚诱导调查方向",
+                  "reader_disclosures": [],
+                  "schema_version": 1,
+                  "setups": [],
+                  "state_changes": [],
+                  "title": "递出怀表"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:book",
+                "revision_id": "rev_eab21979ecf2464b",
+                "kind": "narrative.book",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "kind": "narrative.book",
+                  "node_id": "prj_8f2f909541f84b6b:book",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:series",
+                  "schema_version": 1,
+                  "title": "book"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:chapter",
+                "revision_id": "rev_c8ec1e79a3e644f1",
+                "kind": "narrative.chapter",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "kind": "narrative.chapter",
+                  "node_id": "prj_8f2f909541f84b6b:chapter",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:arc",
+                  "schema_version": 1,
+                  "title": "chapter"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:draft",
+                "revision_id": "rev_d25c6c7127a44070",
+                "kind": "manuscript.chapter",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "narrative_chapter_id": null,
+                  "order_key": "0001",
+                  "schema_version": 1,
+                  "text_unit_ids": [
+                    "tu_e13e4f155e964ae8",
+                    "tu_9ff1fd4ef11d4d98"
+                  ],
+                  "title": "怀表谜案"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:helper",
+                "revision_id": "rev_a364835b7e334562",
+                "kind": "story.character",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "arc": "",
+                  "goal": "帮助侦探",
+                  "identity": "",
+                  "name": "林岚",
+                  "need": "",
+                  "role": "antagonist",
+                  "schema_version": 1,
+                  "secret": "",
+                  "traits": []
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:scene",
+                "revision_id": "rev_7df7ae58d0e34035",
+                "kind": "narrative.scene",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "kind": "narrative.scene",
+                  "node_id": "prj_8f2f909541f84b6b:scene",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:chapter",
+                  "schema_version": 1,
+                  "title": "scene"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:series",
+                "revision_id": "rev_5a6f6b193d3548ed",
+                "kind": "narrative.series",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "kind": "narrative.series",
+                  "node_id": "prj_8f2f909541f84b6b:series",
+                  "order_key": "",
+                  "parent_id": null,
+                  "schema_version": 1,
+                  "title": "series"
+                }
+              },
+              {
+                "artifact_id": "tu_9ff1fd4ef11d4d98",
+                "revision_id": "rev_a39e4935355346b8",
+                "kind": "manuscript.text_unit",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "derived_from": [],
+                  "origin": "import",
+                  "scene_id": null,
+                  "schema_version": 1,
+                  "state": "active",
+                  "text": "他仍然信任这位协助者。",
+                  "unit_id": "tu_9ff1fd4ef11d4d98"
+                }
+              },
+              {
+                "artifact_id": "tu_e13e4f155e964ae8",
+                "revision_id": "rev_b8ee16d2f7f14894",
+                "kind": "manuscript.text_unit",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "derived_from": [],
+                  "origin": "import",
+                  "scene_id": null,
+                  "schema_version": 1,
+                  "state": "active",
+                  "text": "他开始怀疑林岚递来的怀表。",
+                  "unit_id": "tu_e13e4f155e964ae8"
+                }
+              }
+            ],
+            "author_preferences": [],
+            "author_examples": [],
+            "constraints": [
+              "输出仅为候选；作者审批与 Commit 才表示项目变化",
+              "只返回带原文和对象定位的 Finding；泛泛评价写 editorial_notes"
+            ],
+            "omissions": [],
+            "instruction": "",
+            "evidence": {
+              "deterministic_findings": []
+            },
+            "token_budget": 16000,
+            "estimated_tokens": 4886,
+            "capability": {
+              "role": "auditor",
+              "project_id": "prj_8f2f909541f84b6b",
+              "base_commit_id": "cmt_1d26f5aa4da44d7c",
+              "readable_ids": [
+                "prj_8f2f909541f84b6b:arc",
+                "prj_8f2f909541f84b6b:beat",
+                "prj_8f2f909541f84b6b:book",
+                "prj_8f2f909541f84b6b:chapter",
+                "prj_8f2f909541f84b6b:draft",
+                "prj_8f2f909541f84b6b:helper",
+                "prj_8f2f909541f84b6b:scene",
+                "prj_8f2f909541f84b6b:series",
+                "tu_9ff1fd4ef11d4d98",
+                "tu_e13e4f155e964ae8"
+              ],
+              "writable_ids": [],
+              "allowed_tools": [
+                "artifact_read",
+                "artifact_search",
+                "dependency_trace",
+                "audit_read"
+              ],
+              "creation_kinds": [],
+              "creation_prefix": "prj_8f2f909541f84b6b:",
+              "max_new_artifacts": 12
+            }
+          }
+        },
+        "state": "queued",
+        "fingerprint": "84d3671e82eb1e9d5fe6e09316d41ad53c992abdc39b237d44e4fe4c2bc0c5bd",
+        "generation": 0,
+        "attempts": 0,
+        "checkpoint": null,
+        "output": null,
+        "retry": null,
+        "lease_expires_at": null,
+        "retry_at": null
+      }
+    },
+    {
+      "route": "/agent-jobs/job_9c3a480d4ac34f04a5b4e7c6984abb1e/run",
+      "response": {
+        "job_id": "job_9c3a480d4ac34f04a5b4e7c6984abb1e",
+        "job_type": "auditor",
+        "payload": {
+          "project_id": "prj_8f2f909541f84b6b",
+          "idempotency_key": "auditor",
+          "context": {
+            "context_id": "e0abe80f00022bfeb6bd1462a3eec6658bfa42336e8968923e88c5feea95bb56",
+            "task_kind": "auditor",
+            "project_id": "prj_8f2f909541f84b6b",
+            "repository_commit_id": "cmt_1d26f5aa4da44d7c",
+            "target_ids": [
+              "prj_8f2f909541f84b6b:arc",
+              "prj_8f2f909541f84b6b:beat",
+              "prj_8f2f909541f84b6b:book",
+              "prj_8f2f909541f84b6b:chapter",
+              "prj_8f2f909541f84b6b:draft",
+              "prj_8f2f909541f84b6b:helper",
+              "prj_8f2f909541f84b6b:scene",
+              "prj_8f2f909541f84b6b:series",
+              "tu_9ff1fd4ef11d4d98",
+              "tu_e13e4f155e964ae8"
+            ],
+            "selected_inputs": [
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:arc",
+                "revision_id": "rev_f1889733b0a64f3a",
+                "kind": "narrative.arc",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "kind": "narrative.arc",
+                  "node_id": "prj_8f2f909541f84b6b:arc",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:book",
+                  "schema_version": 1,
+                  "title": "arc"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:beat",
+                "revision_id": "rev_ef573f735f654a50",
+                "kind": "narrative.beat",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "beat_id": "prj_8f2f909541f84b6b:beat",
+                  "constraints": [],
+                  "depends_on": [],
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:scene",
+                  "participants": [
+                    "prj_8f2f909541f84b6b:helper"
+                  ],
+                  "payoffs": [],
+                  "pov_character_id": "prj_8f2f909541f84b6b:helper",
+                  "preconditions": [],
+                  "purpose": "林岚诱导调查方向",
+                  "reader_disclosures": [],
+                  "schema_version": 1,
+                  "setups": [],
+                  "state_changes": [],
+                  "title": "递出怀表"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:book",
+                "revision_id": "rev_eab21979ecf2464b",
+                "kind": "narrative.book",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "kind": "narrative.book",
+                  "node_id": "prj_8f2f909541f84b6b:book",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:series",
+                  "schema_version": 1,
+                  "title": "book"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:chapter",
+                "revision_id": "rev_c8ec1e79a3e644f1",
+                "kind": "narrative.chapter",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "kind": "narrative.chapter",
+                  "node_id": "prj_8f2f909541f84b6b:chapter",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:arc",
+                  "schema_version": 1,
+                  "title": "chapter"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:draft",
+                "revision_id": "rev_d25c6c7127a44070",
+                "kind": "manuscript.chapter",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "narrative_chapter_id": null,
+                  "order_key": "0001",
+                  "schema_version": 1,
+                  "text_unit_ids": [
+                    "tu_e13e4f155e964ae8",
+                    "tu_9ff1fd4ef11d4d98"
+                  ],
+                  "title": "怀表谜案"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:helper",
+                "revision_id": "rev_a364835b7e334562",
+                "kind": "story.character",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "arc": "",
+                  "goal": "帮助侦探",
+                  "identity": "",
+                  "name": "林岚",
+                  "need": "",
+                  "role": "antagonist",
+                  "schema_version": 1,
+                  "secret": "",
+                  "traits": []
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:scene",
+                "revision_id": "rev_7df7ae58d0e34035",
+                "kind": "narrative.scene",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "kind": "narrative.scene",
+                  "node_id": "prj_8f2f909541f84b6b:scene",
+                  "order_key": "",
+                  "parent_id": "prj_8f2f909541f84b6b:chapter",
+                  "schema_version": 1,
+                  "title": "scene"
+                }
+              },
+              {
+                "artifact_id": "prj_8f2f909541f84b6b:series",
+                "revision_id": "rev_5a6f6b193d3548ed",
+                "kind": "narrative.series",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "kind": "narrative.series",
+                  "node_id": "prj_8f2f909541f84b6b:series",
+                  "order_key": "",
+                  "parent_id": null,
+                  "schema_version": 1,
+                  "title": "series"
+                }
+              },
+              {
+                "artifact_id": "tu_9ff1fd4ef11d4d98",
+                "revision_id": "rev_a39e4935355346b8",
+                "kind": "manuscript.text_unit",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "derived_from": [],
+                  "origin": "import",
+                  "scene_id": null,
+                  "schema_version": 1,
+                  "state": "active",
+                  "text": "他仍然信任这位协助者。",
+                  "unit_id": "tu_9ff1fd4ef11d4d98"
+                }
+              },
+              {
+                "artifact_id": "tu_e13e4f155e964ae8",
+                "revision_id": "rev_b8ee16d2f7f14894",
+                "kind": "manuscript.text_unit",
+                "reason": "任务目标，必须保留",
+                "content": {
+                  "chapter_id": "prj_8f2f909541f84b6b:draft",
+                  "derived_from": [],
+                  "origin": "import",
+                  "scene_id": null,
+                  "schema_version": 1,
+                  "state": "active",
+                  "text": "他开始怀疑林岚递来的怀表。",
+                  "unit_id": "tu_e13e4f155e964ae8"
+                }
+              }
+            ],
+            "author_preferences": [],
+            "author_examples": [],
+            "constraints": [
+              "输出仅为候选；作者审批与 Commit 才表示项目变化",
+              "只返回带原文和对象定位的 Finding；泛泛评价写 editorial_notes"
+            ],
+            "omissions": [],
+            "instruction": "",
+            "evidence": {
+              "deterministic_findings": []
+            },
+            "token_budget": 16000,
+            "estimated_tokens": 4886,
+            "capability": {
+              "role": "auditor",
+              "project_id": "prj_8f2f909541f84b6b",
+              "base_commit_id": "cmt_1d26f5aa4da44d7c",
+              "readable_ids": [
+                "prj_8f2f909541f84b6b:arc",
+                "prj_8f2f909541f84b6b:beat",
+                "prj_8f2f909541f84b6b:book",
+                "prj_8f2f909541f84b6b:chapter",
+                "prj_8f2f909541f84b6b:draft",
+                "prj_8f2f909541f84b6b:helper",
+                "prj_8f2f909541f84b6b:scene",
+                "prj_8f2f909541f84b6b:series",
+                "tu_9ff1fd4ef11d4d98",
+                "tu_e13e4f155e964ae8"
+              ],
+              "writable_ids": [],
+              "allowed_tools": [
+                "artifact_read",
+                "artifact_search",
+                "dependency_trace",
+                "audit_read"
+              ],
+              "creation_kinds": [],
+              "creation_prefix": "prj_8f2f909541f84b6b:",
+              "max_new_artifacts": 12
+            }
+          }
+        },
+        "state": "completed",
+        "fingerprint": "84d3671e82eb1e9d5fe6e09316d41ad53c992abdc39b237d44e4fe4c2bc0c5bd",
+        "generation": 1,
+        "attempts": 1,
+        "checkpoint": {
+          "kind": "finding_set",
+          "base_commit_id": "cmt_1d26f5aa4da44d7c",
+          "findings": [
+            {
+              "artifact_ids": [
+                "tu_9ff1fd4ef11d4d98"
+              ],
+              "quote": "他仍然信任这位协助者。",
+              "reason": "需核对人物动机与角色变化",
+              "suggestion": "保留为作者复核项"
+            }
+          ],
+          "editorial_notes": [
+            "叙事节奏留给作者判断"
+          ]
+        },
+        "output": {
+          "kind": "finding_set",
+          "base_commit_id": "cmt_1d26f5aa4da44d7c",
+          "findings": [
+            {
+              "artifact_ids": [
+                "tu_9ff1fd4ef11d4d98"
+              ],
+              "quote": "他仍然信任这位协助者。",
+              "reason": "需核对人物动机与角色变化",
+              "suggestion": "保留为作者复核项"
+            }
+          ],
+          "editorial_notes": [
+            "叙事节奏留给作者判断"
+          ]
+        },
+        "retry": null,
+        "lease_expires_at": "2026-10-15T08:00:57.375759+00:00",
+        "retry_at": null,
+        "owner": "run_9ea19f50d99c4fed",
+        "repository_lease": {
+          "resource_key": "worker-job:job_9c3a480d4ac34f04a5b4e7c6984abb1e",
+          "owner": "run_9ea19f50d99c4fed",
+          "version": 1,
+          "expires_at": "2026-10-15T08:00:57.375759+00:00"
+        },
+        "analysis": {
+          "status": "recorded",
+          "commit_id": "cmt_8d587061610344ad"
+        }
+      }
+    }
+  ],
+  "worker_calls": [
+    {
+      "role": "planner",
+      "context_id": "67aac626de692042aab28a8bc899419d1456938ed4b624ea23b0df08e178a86b",
+      "provider_calls": 1,
+      "output_kind": "story_proposal"
+    },
+    {
+      "role": "writer",
+      "context_id": "e98ed11634e6319dacfa63d2daed49cd9fd84c838029400e471689cd90db9293",
+      "provider_calls": 1,
+      "output_kind": "manuscript_patch"
+    },
+    {
+      "role": "style_observer",
+      "context_id": "c0081f79ec414273b719d5e297cc1847fbe69ee955537d8c80627101bb607d08",
+      "provider_calls": 1,
+      "output_kind": "observation_set"
+    },
+    {
+      "role": "reviser",
+      "context_id": "d46cbf2776f24054672f8618a1d526db47e54c10b55822d0973cd3a7193b2d2d",
+      "provider_calls": 2,
+      "output_kind": "manuscript_patch"
+    },
+    {
+      "role": "reviser",
+      "context_id": "82236dacefcb603efd4fe2861c5f573393bc626e4c73150d6ad78b6da04f8ad5",
+      "provider_calls": 1,
+      "output_kind": "manuscript_patch"
+    },
+    {
+      "role": "reviser",
+      "context_id": "fb5a1fdd0532534ac9fbc956fa8f27ecdcf9963aa320a8d068cc625c946c269c",
+      "provider_calls": 1,
+      "output_kind": "manuscript_patch"
+    },
+    {
+      "role": "auditor",
+      "context_id": "e0abe80f00022bfeb6bd1462a3eec6658bfa42336e8968923e88c5feea95bb56",
+      "provider_calls": 1,
+      "output_kind": "finding_set"
+    }
+  ],
+  "merge": {
+    "change_set_id": "art_952bd9e632164584",
+    "status": "committed",
+    "fingerprint": "0110ae35a6d919e03108ae9bd0879eda3480e55cfb53bcfc85fe955d7850bdcf",
+    "selected": [
+      "1ec30dfcfe3f595578bd95593bb0e9971332fcfccc00068a3a515aab67a107d2",
+      "094ff393358e0aba199e24b25faf925a04576d35157522b3bcfe886b11a4702f",
+      "30adf504aa8093f9e7b692bf7ff4afec3da2ae51ea84c3c675c8e0cb607db190"
+    ],
+    "risks": {},
+    "items": [
+      {
+        "target_artifact_id": "prj_8f2f909541f84b6b:helper",
+        "severity": "must_fix",
+        "impact_kind": "intent",
+        "path": [],
+        "reason": "林岚从协助者改为操纵者",
+        "status": "resolved",
+        "confidence": 1.0,
+        "text_unit_id": null,
+        "mentioned_artifact_id": null
+      },
+      {
+        "target_artifact_id": "prj_8f2f909541f84b6b:beat",
+        "severity": "should_fix",
+        "impact_kind": "motivation",
+        "path": [
+          {
+            "source": "prj_8f2f909541f84b6b:helper",
+            "relation_type": "motivates",
+            "target": "prj_8f2f909541f84b6b:beat",
+            "edge_id": "rel_ad799df92a844a8c"
+          }
+        ],
+        "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat",
+        "status": "resolved",
+        "confidence": 1.0,
+        "text_unit_id": null,
+        "mentioned_artifact_id": null
+      },
+      {
+        "target_artifact_id": "tu_9ff1fd4ef11d4d98",
+        "severity": "must_fix",
+        "impact_kind": "contradiction",
+        "path": [
+          {
+            "source": "prj_8f2f909541f84b6b:helper",
+            "relation_type": "motivates",
+            "target": "prj_8f2f909541f84b6b:beat",
+            "edge_id": "rel_ad799df92a844a8c"
+          },
+          {
+            "source": "prj_8f2f909541f84b6b:beat",
+            "relation_type": "renders",
+            "target": "tu_9ff1fd4ef11d4d98",
+            "edge_id": "rel_e08be58116b74602"
+          }
+        ],
+        "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat -> renders:tu_9ff1fd4ef11d4d98",
+        "status": "open",
+        "confidence": 1.0,
+        "text_unit_id": null,
+        "mentioned_artifact_id": null
+      },
+      {
+        "target_artifact_id": "tu_e13e4f155e964ae8",
+        "severity": "must_fix",
+        "impact_kind": "contradiction",
+        "path": [
+          {
+            "source": "prj_8f2f909541f84b6b:helper",
+            "relation_type": "motivates",
+            "target": "prj_8f2f909541f84b6b:beat",
+            "edge_id": "rel_ad799df92a844a8c"
+          },
+          {
+            "source": "prj_8f2f909541f84b6b:beat",
+            "relation_type": "renders",
+            "target": "tu_e13e4f155e964ae8",
+            "edge_id": "rel_1ad0f00d48314b73"
+          }
+        ],
+        "reason": "种子 prj_8f2f909541f84b6b:helper 经依赖链传播：motivates:prj_8f2f909541f84b6b:beat -> renders:tu_e13e4f155e964ae8",
+        "status": "resolved",
+        "confidence": 1.0,
+        "text_unit_id": null,
+        "mentioned_artifact_id": null
+      }
+    ],
+    "base_commit_id": "cmt_ab8f9be669d74c67",
+    "branch_commit_id": "cmt_7df71cbf89744298"
+  },
+  "checks": {
+    "new_project": true,
+    "author_review": true,
+    "style_candidate": true,
+    "out_of_scope_corrected_once": true,
+    "partial_merge": true,
+    "localized_audit": true,
+    "restart": true
+  }
+}

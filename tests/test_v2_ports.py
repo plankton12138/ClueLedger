@@ -32,6 +32,7 @@ from hastings.domain.repository.ids import ArtifactId, CommitId, ProjectId, Scop
 from hastings.domain.repository.models import (
     ArtifactView,
     Branch,
+    Commit,
     Project,
     RepositoryDiff,
     Snapshot,
@@ -85,6 +86,14 @@ def test_fakes_implement_all_ports() -> None:
 
         def get_project(self, project_id: ProjectId) -> Project | None:
             return None
+
+        def find_commit_result(self, project_id: ProjectId, key: str) -> CommitResult | None:
+            return None
+
+        def commit_history(
+            self, project_id: ProjectId, at_commit_id: CommitId
+        ) -> tuple[Commit, ...]:
+            return ()
 
         def get_branch(self, project_id: ProjectId, name: str) -> Branch | None:
             return None

@@ -232,6 +232,8 @@ class ImpactReport:
     stats: ImpactStats = field(default_factory=ImpactStats)
     analyzed_by: str = ""
     at: str = ""
+    coverage: str = "deterministic"
+    warnings: tuple[str, ...] = ()
 
     def is_stale(self, head_commit_id: str) -> bool:
         """head 前移后报告过期，不能直接执行（不变量 2）。"""
@@ -247,11 +249,15 @@ class ImpactReport:
             "stats": self.stats.to_content(),
             "analyzed_by": self.analyzed_by,
             "at": self.at,
+            "coverage": self.coverage,
+            "warnings": list(self.warnings),
         }
 
     @classmethod
     def from_content(cls, content: dict[str, Any]) -> ImpactReport:
         return cls(
+            coverage=str(content.get("coverage", "deterministic")),
+            warnings=tuple(content.get("warnings", ())),
             report_id=str(content.get("report_id", "")),
             change_set_id=str(content.get("change_set_id", "")),
             base_commit_id=str(content.get("base_commit_id", "")),

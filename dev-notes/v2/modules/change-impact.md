@@ -1,7 +1,25 @@
 # Change & Impact：影响分析与系统修复
 
-> 状态：target，计划在 Phase 15 交付。
+> 状态：as-built / Phase 15（2026-10-15）。§0 为实际交付；后续章节保留总体契约。
 > 目标包：`hastings.domain.changes`、`hastings.application.workflows.revision`。
+
+## 0. Phase 15 实际交付
+
+已交付 ChangeSet/ImpactReport/RevisionPlan/ApprovalReceipt/ExecutionRecord/PatchSet/Finding、依赖与正文引用分析、修订分支、逐字段/正文行块审阅、选中内容原子合并、残余影响重算、四类确定性审计，以及可中止/恢复/比较/放弃的章节分组重写。证据与取舍见 [Phase 15 构建笔记](../phase-15-change-impact.md)。
+
+- 应用入口：`AnalyzeChangeImpact`、`PlanRevision`、`ExecuteRevisionPlan`、`ReviewRevision`、`AuditWorkflow`、`RewriteWorkflow`。
+- `SeedChange.proposed_content` 携带期望新内容，种子本身进入 Canon 修订步骤；仅有变化意图时也可只分析下游影响。
+- 普通 roots 为对象白名单；章节/Arc/Book roots 展开为所含结构、认知及 TextUnit，Canon 作为共享事实保留。截断信息进入报告。
+- 语义补充为可注入 Callable 端口，默认只运行确定性与字面 mentions。低置信项仅 review；失败通过 coverage/warnings 表达。
+- 凭证一小时内可批准并启动，绑定种子、base、scope、报告、计划；批准消费一次，已启动任务仍可恢复。故事内容变化阻止签发/批准，执行或审阅时计划漂移也会拒绝。
+- 执行步骤和命令结果可从仓库恢复，客户端换请求键不重跑已提交步骤。main 可以记录工作流元数据，接受时才写入修订正文。
+- PatchSet 冻结分支头和旧内容，支持行块/字段选择。人工改过同一字段即冲突；选择、状态、风险及重算报告同 Commit。committed 不表示全部影响已解决。
+- 内容 Patch 禁止改变身份、归属和依赖字段；此类变化继续走领域命令。完整接受某对象的补丁表示该影响已处理，独立审计仍能报告实际冲突。
+- Finding 引用检查版本；只有可验证的相关内容修复 Commit 才能标 fixed，元数据提交和重复审计不能关闭问题。
+- 重写按章在独立分支执行，锁定单元不进入 Worker；当前控制面为应用用例和 HTTP，正式采用重写稿的产品交互后续再做。
+- `/api/v2/projects/{id}/changes` 及 analyze/plan/approve/execute/review/merge 子路由、audit、rewrites 提供最小出口；前端「变更中心」已接通。`--v2-db` 显式开启服务。
+
+本阶段用 FakeWorker/人工候选验收管线；真实模型、持久后台调度和任务上下文属 Phase 16。V1 数据与写链不迁移，不修改 Tau 上游。
 
 ## 1. 职责
 

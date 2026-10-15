@@ -17,6 +17,7 @@ import argparse
 import os
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TypedDict
 
 import uvicorn
 from dotenv import load_dotenv
@@ -32,6 +33,12 @@ from hastings.server.provider_config import (
     load_server_config,
 )
 from hastings.server.registry import WorkspaceRegistry
+from hastings.server.v2 import V2Runtime
+
+
+class V2Options(TypedDict, total=False):
+    v2_runtime: V2Runtime
+
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -104,6 +111,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("./corpus"),
         help="语料库目录（P7 T6，默认 ./corpus；作者级资产，与 stories/ 平级）",
+    )
+    parser.add_argument(
+        "--v2-db",
+        type=Path,
+        default=None,
+        help="启用 V2 变更中心，指定独立仓库数据库路径；不迁移旧工作区",
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="监听端口（默认 8000）")
@@ -187,7 +200,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         root=args.stories_root,
         session_factory=default_session_factory(book),
     )
-    app = create_app(registry, static_dir=static_dir, book=book, corpus_root=args.corpus_root)
+    app_options: V2Options = {}
+    if args.v2_db is not None:
+        args.v2_db.parent.mkdir(parents=True, exist_ok=True)
+        app_options["v2_runtime"] = V2Runtime.sqlite(str(args.v2_db))
+    app = create_app(
+        registry, static_dir=static_dir, book=book, corpus_root=args.corpus_root, **app_options
+    )
 
     print(f"文章目录已打开：{args.stories_root}")
     print(f"语料库目录：{args.corpus_root}")

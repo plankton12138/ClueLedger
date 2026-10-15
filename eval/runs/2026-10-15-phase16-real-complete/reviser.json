@@ -1,0 +1,289 @@
+{
+  "case": "reviser.json",
+  "role": "reviser",
+  "model": "deepseek-flash",
+  "passed": true,
+  "reason": "角色约束与应用守卫通过",
+  "state": "waiting",
+  "context": {
+    "context_id": "7d3325e1c90b07d94dfec55aea9740024b272bb8cf9926531cc457d3315788b9",
+    "task_kind": "reviser",
+    "project_id": "prj_bdcddc5112f047cd",
+    "repository_commit_id": "cmt_c1fc67b68f50494a",
+    "target_ids": [
+      "prj_bdcddc5112f047cd:unit"
+    ],
+    "selected_inputs": [
+      {
+        "artifact_id": "prj_bdcddc5112f047cd:unit",
+        "revision_id": "rev_3763264171154133",
+        "kind": "manuscript.text_unit",
+        "reason": "任务目标，必须保留",
+        "content": {
+          "chapter_id": "prj_bdcddc5112f047cd:chapter",
+          "derived_from": [],
+          "origin": "import",
+          "scene_id": null,
+          "schema_version": 1,
+          "state": "active",
+          "text": "林岚非常缓慢地递出怀表。侦探早已知道林岚调慢怀表，指针停在3点。",
+          "unit_id": "prj_bdcddc5112f047cd:unit"
+        }
+      },
+      {
+        "artifact_id": "prj_bdcddc5112f047cd:beat",
+        "revision_id": "rev_30cd314375f9400d",
+        "kind": "narrative.beat",
+        "reason": "目标的第 1 跳显式依赖",
+        "content": {
+          "beat_id": "prj_bdcddc5112f047cd:beat",
+          "constraints": [],
+          "depends_on": [],
+          "order_key": "",
+          "parent_id": "prj_bdcddc5112f047cd:scene",
+          "participants": [
+            "prj_bdcddc5112f047cd:helper"
+          ],
+          "payoffs": [],
+          "pov_character_id": "",
+          "preconditions": [],
+          "purpose": "递出怀表，只展示指针停在3点",
+          "reader_disclosures": [],
+          "schema_version": 1,
+          "setups": [],
+          "state_changes": [],
+          "title": "怀表停走"
+        }
+      },
+      {
+        "artifact_id": "prj_bdcddc5112f047cd:outside",
+        "revision_id": "rev_88abcee225e341e3",
+        "kind": "manuscript.text_unit",
+        "reason": "相邻段落窗口",
+        "content": {
+          "chapter_id": "prj_bdcddc5112f047cd:chapter",
+          "derived_from": [],
+          "origin": "import",
+          "scene_id": null,
+          "schema_version": 1,
+          "state": "active",
+          "text": "窗外落着细雨。",
+          "unit_id": "prj_bdcddc5112f047cd:outside"
+        }
+      }
+    ],
+    "author_preferences": [],
+    "author_examples": [],
+    "constraints": [
+      "输出仅为候选；作者审批与 Commit 才表示项目变化"
+    ],
+    "omissions": [],
+    "instruction": "只把当前目标段落中“非常缓慢地”删去，保留其余内容、身份与依赖字段。使用 patches，带原 base_revision_id；不得修改其他段落。",
+    "evidence": {
+      "approval": {
+        "target_ids": [
+          "prj_bdcddc5112f047cd:unit"
+        ],
+        "source": "评测中人工指定的修订范围"
+      }
+    },
+    "token_budget": 16000,
+    "estimated_tokens": 2586,
+    "capability": {
+      "role": "reviser",
+      "project_id": "prj_bdcddc5112f047cd",
+      "base_commit_id": "cmt_c1fc67b68f50494a",
+      "readable_ids": [
+        "prj_bdcddc5112f047cd:beat",
+        "prj_bdcddc5112f047cd:outside",
+        "prj_bdcddc5112f047cd:unit"
+      ],
+      "writable_ids": [
+        "prj_bdcddc5112f047cd:unit"
+      ],
+      "allowed_tools": [
+        "artifact_read",
+        "repository_diff",
+        "dependency_trace",
+        "change_read",
+        "canon_patch_propose",
+        "plan_patch_propose",
+        "manuscript_patch_propose"
+      ],
+      "creation_kinds": [],
+      "creation_prefix": "prj_bdcddc5112f047cd:",
+      "max_new_artifacts": 12
+    }
+  },
+  "output": {
+    "kind": "manuscript_patch",
+    "base_commit_id": "cmt_c1fc67b68f50494a",
+    "patches": [
+      {
+        "artifact_id": "prj_bdcddc5112f047cd:unit",
+        "base_revision_id": "rev_3763264171154133",
+        "content": {
+          "chapter_id": "prj_bdcddc5112f047cd:chapter",
+          "derived_from": [],
+          "origin": "import",
+          "scene_id": null,
+          "schema_version": 1,
+          "state": "active",
+          "text": "林岚递出怀表。侦探早已知道林岚调慢怀表，指针停在3点。",
+          "unit_id": "prj_bdcddc5112f047cd:unit"
+        }
+      }
+    ],
+    "chapter_id": null,
+    "text": null,
+    "rationale": "仅删除目标段落中的“非常缓慢地”，其余文字与身份字段（chapter_id、derived_from、origin、scene_id、schema_version、state、unit_id）原样保留；未触碰其他段落。"
+  },
+  "events": [
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 1,
+      "type": "job.queued",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "queued"
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 2,
+      "type": "job.running",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 3,
+      "type": "job.lease_acquired",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 4,
+      "type": "agent.started",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "role": "reviser"
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 5,
+      "type": "agent.tool_execution_start",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "manuscript_patch_propose"
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 6,
+      "type": "agent.schema_correction",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "attempt": 1,
+        "error": {
+          "code": "WORKER_OUTPUT_INVALID",
+          "where": "output",
+          "why": "output.chapter_id 不在 ['prj_bdcddc5112f047cd:unit']；不得扩大写作范围",
+          "expected": "使用当前角色 Schema 和固定版本；无结果用 no_result"
+        }
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 7,
+      "type": "agent.tool_execution_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "manuscript_patch_propose"
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 8,
+      "type": "agent.turn_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": null
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 9,
+      "type": "agent.tool_execution_start",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "manuscript_patch_propose"
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 10,
+      "type": "agent.output.proposed",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "kind": "manuscript_patch"
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 11,
+      "type": "agent.tool_execution_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": "manuscript_patch_propose"
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 12,
+      "type": "agent.turn_end",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "tool": null
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 13,
+      "type": "agent.output.proposed",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "running"
+      }
+    },
+    {
+      "job_id": "job_2c235f12a0584236b8db24cd6230017c",
+      "sequence": 14,
+      "type": "job.waiting",
+      "commit_id": null,
+      "project_sequence": null,
+      "payload": {
+        "state": "waiting"
+      }
+    }
+  ]
+}

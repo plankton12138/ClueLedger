@@ -3,6 +3,10 @@
 > 状态：target，基础能力 Phase 12 交付，领域命令随 Phase 13–15 扩充。
 > 目标包：`hastings.application.commands`、`hastings.application.guards`、`hastings.application.authorization`。
 
+## 0. Phase 15 已交付边界
+
+变更工作流的作者凭证、一次消费、撤销、期限、base/scope/种子/计划/报告指纹、Lease、提案范围、Schema 与身份保护已交付。实现位于 `domain/changes/{receipt,commands,execution,patch_guard}.py`、Changes handler 与修订/审阅用例，未拆成独立通用框架。作者签发与合并使用受信任应用用例，Worker 只返回 Proposal。Phase 16 已接通角色与 Capability 工具交集、固定版本读回、结构化候选、一次纠正及共享应用守卫；审计只读、Observer 不能激活偏好，详见 [编排与上下文 §0](orchestration-context.md)。见 [Phase 15 构建笔记](../phase-15-change-impact.md)。
+
 ## 1. 职责
 
 Command Gateway 是所有领域写入的唯一入口。它把“模型调用了工具”与“项目状态真的改变”分开：工具只能提交命令或 Proposal；Gateway 决定该请求在当前版本、范围、授权和领域规则下能否形成 Commit。
@@ -158,4 +162,3 @@ Agent 没有 `approval_grant`、`approval_revoke` 或任意 SQL/文件写工具�
 - 幂等重试返回原 Commit；
 - 环境错误保持 Job 可重试；
 - 每种错误都有 where/why/expected。
-

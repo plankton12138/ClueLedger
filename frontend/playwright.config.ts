@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+const port = Number(process.env.HASTINGS_E2E_PORT ?? "8931");
+
 /**
  * E2E 配置（dev-notes/v1/e2e-test-plan.md §4.2）：单进程真服务——webServer 先 build
  * 前端再起 uv 驱动器（tests/e2e_server.py，API + 静态托管同进程，端口 8931）。
@@ -13,13 +15,13 @@ export default defineConfig({
   retries: 0,
   timeout: 30_000,
   use: {
-    baseURL: "http://127.0.0.1:8931",
+    baseURL: `http://127.0.0.1:${port}`,
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npm run build && uv run --directory .. python -m tests.e2e_server --port 8931",
-    url: "http://127.0.0.1:8931/api/health",
-    reuseExistingServer: !process.env.CI,
+    command: `npm run build && uv run --directory .. python -m tests.e2e_server --port ${port}`,
+    url: `http://127.0.0.1:${port}/api/health`,
+    reuseExistingServer: !process.env.CI && !process.env.HASTINGS_E2E_PORT,
     timeout: 120_000,
   },
 });

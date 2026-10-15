@@ -28,6 +28,7 @@ from hastings.bible.store import (
     save_ledger,
 )
 from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
+from hastings.tools.architecture_gate import is_v2, refuse_tool, v2_write_rejection
 from hastings.tools.errors import ToolInputError
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
@@ -173,6 +174,8 @@ def create_chapter_tools(
     workspace: StoryWorkspace,
     edit_marks: EditMarkRegistry | None = None,
     run_kind: RunKindGuard | None = None,
+    *,
+    architecture_version: str = "v1",
 ) -> list[AgentTool]:
     """创建绑定 workspace 的 write_chapter / read_chapter / list_chapters 工具。
 
@@ -180,6 +183,8 @@ def create_chapter_tools(
     双侧守门；缺省给空注册表（CLI 等单 agent 场景锁永不触发）。
     run_kind 是运行类别守卫（P5 T4，D4 末条）：reconcile 期间 write_chapter
     被拒——模型不得在对账时替作者改稿；缺省 None 即不设此守门。
+    ``architecture_version="v2"`` 时 write_chapter 被替换为拒绝桩（T17.6）：
+    V2 项目只经领域命令与 Commit Service 写正文，不再直写 chapters/*.md。
     """
     marks = edit_marks if edit_marks is not None else EditMarkRegistry()
 
@@ -304,69 +309,91 @@ def create_chapter_tools(
             details={"chapters": cast("JSONValue", entries)},
         )
 
+    return _gate_v2(
+        [
+            AgentTool(
+                name="write_chapter",
+                label="写入章节",
+                description=(
+                    "把一章正文写入 chapters/chNN.md（NN 为两位数章节号）。"
+                    "仅在 writing/revising 阶段开放，且该章须已有章纲（outline）、"
+                    "工作区已有角色档案；落盘后自动推进该章章纲状态"
+                    "（planned→written，force 重写→revised）。"
+                    "文件已存在时须 force=true 才覆盖。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "chapter": {"type": "integer", "minimum": 1, "description": "章节号（≥1）"},
+                        "title": {"type": "string", "description": "章节标题（可选）"},
+                        "content": {"type": "string", "description": "章节正文（Markdown）"},
+                        "force": {"type": "boolean", "description": "已存在时是否覆盖"},
+                    },
+                    "required": ["chapter", "content"],
+                    "additionalProperties": False,
+                },
+                execute_fn=execute_write,
+                prompt_guidelines=(
+                    "写章节前，先用 bible_query(entity_type='outline') 核对本章章纲"
+                    "与相关设定，确认出场角色都已建档。",
+                    "写新章（非第 1 章）前，先用 read_chapter 读上一章的结尾，保持情节衔接。",
+                    "回收伏笔或引用旧情节前，先 read_chapter 核对相关章节的原文细节。",
+                    "result 的 precheck_warnings 是写作注意项（伏笔未建档/手法未锁定等），"
+                    "落盘后按提示用 bible_upsert 对账。",
+                    "content 只写纯正文（Markdown），章节标题由工具自动生成。",
+                ),
+                render_call=_render_call,
+            ),
+            AgentTool(
+                name="read_chapter",
+                label="读取章节",
+                description=(
+                    "读回 chapters/chNN.md 的完整正文（只读）。章节不存在时会报错并附可用章节列表。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "chapter": {"type": "integer", "minimum": 1, "description": "章节号（≥1）"}
+                    },
+                    "required": ["chapter"],
+                    "additionalProperties": False,
+                },
+                execute_fn=execute_read,
+                prompt_guidelines=(
+                    "续写、回收伏笔、核对时间线细节前使用；不确定有哪些章时先 list_chapters。",
+                ),
+                render_call=_render_read,
+            ),
+            AgentTool(
+                name="list_chapters",
+                label="章节目录",
+                description="列出已写章节的目录（章节号、标题、字数，只读）。",
+                parameters={"type": "object", "properties": {}, "additionalProperties": False},
+                execute_fn=execute_list,
+                prompt_guidelines=("规划章节结构、判断当前进度时使用；无参数直接调用。",),
+                render_call=_render_list,
+            ),
+        ],
+        architecture_version,
+    )
+
+
+def _gate_v2(tools: list[AgentTool], architecture_version: str) -> list[AgentTool]:
+    """V2 项目下把 write_chapter 换为拒绝桩，其余（只读）工具原样保留。"""
+    if not is_v2(architecture_version):
+        return tools
     return [
-        AgentTool(
-            name="write_chapter",
-            label="写入章节",
-            description=(
-                "把一章正文写入 chapters/chNN.md（NN 为两位数章节号）。"
-                "仅在 writing/revising 阶段开放，且该章须已有章纲（outline）、"
-                "工作区已有角色档案；落盘后自动推进该章章纲状态"
-                "（planned→written，force 重写→revised）。"
-                "文件已存在时须 force=true 才覆盖。"
+        refuse_tool(
+            tool,
+            rejection=v2_write_rejection(
+                "write_chapter",
+                alternative="正文改动请经 V2 保存用例（/api/v2 .../chapters/{id}/save）提交，"
+                "由 Commit Service 与守卫统一落库并保留版本历史。",
             ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "chapter": {"type": "integer", "minimum": 1, "description": "章节号（≥1）"},
-                    "title": {"type": "string", "description": "章节标题（可选）"},
-                    "content": {"type": "string", "description": "章节正文（Markdown）"},
-                    "force": {"type": "boolean", "description": "已存在时是否覆盖"},
-                },
-                "required": ["chapter", "content"],
-                "additionalProperties": False,
-            },
-            execute_fn=execute_write,
-            prompt_guidelines=(
-                "写章节前，先用 bible_query(entity_type='outline') 核对本章章纲"
-                "与相关设定，确认出场角色都已建档。",
-                "写新章（非第 1 章）前，先用 read_chapter 读上一章的结尾，保持情节衔接。",
-                "回收伏笔或引用旧情节前，先 read_chapter 核对相关章节的原文细节。",
-                "result 的 precheck_warnings 是写作注意项（伏笔未建档/手法未锁定等），"
-                "落盘后按提示用 bible_upsert 对账。",
-                "content 只写纯正文（Markdown），章节标题由工具自动生成。",
-            ),
-            render_call=_render_call,
-        ),
-        AgentTool(
-            name="read_chapter",
-            label="读取章节",
-            description=(
-                "读回 chapters/chNN.md 的完整正文（只读）。章节不存在时会报错并附可用章节列表。"
-            ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "chapter": {"type": "integer", "minimum": 1, "description": "章节号（≥1）"}
-                },
-                "required": ["chapter"],
-                "additionalProperties": False,
-            },
-            execute_fn=execute_read,
-            prompt_guidelines=(
-                "续写、回收伏笔、核对时间线细节前使用；不确定有哪些章时先 list_chapters。",
-            ),
-            render_call=_render_read,
-        ),
-        AgentTool(
-            name="list_chapters",
-            label="章节目录",
-            description="列出已写章节的目录（章节号、标题、字数，只读）。",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-            execute_fn=execute_list,
-            prompt_guidelines=("规划章节结构、判断当前进度时使用；无参数直接调用。",),
-            render_call=_render_list,
-        ),
+        )
+        if tool.name == "write_chapter"
+        else tool
+        for tool in tools
     ]
 
 

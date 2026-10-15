@@ -1,7 +1,37 @@
 # Interfaces & Observability：API、事件、任务与导入导出
 
-> 状态：target，骨架随 Phase 12 建立，Phase 17 完成界面迁移。
+> 状态：Phase 16 的 Job/API/最小界面已交付（见 §0）；Phase 17 的旧工作区导入与旧写路径 gating 已交付（见 §0.1），界面全面迁移与导出仍为 target。
 > 目标包：`hastings.interfaces`、`hastings.infrastructure.events`、`hastings.infrastructure.jobs`。
+
+## 0. Phase 16 as-built
+
+API 实际前缀为 `/api/v2/projects/{project_id}`，入口 `interfaces/api/agents.py`：
+| 资源 | 用途 |
+|---|---|
+| `GET /story`、`POST /coordinate` | 当前故事对象与明确用例选择；不代签审批 |
+| `GET/POST /agent-jobs` | 持久任务列表/提交；显式请求键与可选上下文预算 |
+| `GET /agent-jobs/{id}`、`GET /agent-jobs/{id}/events?after=N` | 状态/候选及独立单调事件流 |
+| `POST /agent-jobs/{id}/run`、`/cancel`、`/accept` | 运行/取消/作者接受；接受要求 expected_head |
+| `POST /changes/{id}/execute-agent` | 使用已批准步骤驱动 Reviser，不给模型执行与审批工具 |
+
+服务生命周期自动执行排队/退避任务，启动扫描未发布 Outbox，恢复检查点，并补交分析元数据。SQLite Job 表与 repository 表在同一数据库文件内，分别维护执行事实与项目事实；Job 事件的 `commit_id/project_sequence` 始终为空，不冒充业务提交事件。接受及分析 Commit 证明放在对应结果里。记录 `after` 游标可跨重启续读。
+
+前端入口为“变更中心→规划与生成任务”，支持空项目、规划/正文审阅、人工保存、任务状态/事件、取消/重试与审计；批准后的修复仍在变更中心审阅。当前进度采用轮询，未新增会话式 WebSocket Agent。V1 界面和工具保持其原项目边界。下文资源清单及导出接口仍是后续架构目标；证据见 [Phase 16](../phase-16-agent-workflows.md)。
+
+## 0.1 Phase 17 已交付：旧工作区导入（部分）
+
+导入器实际落在 `interfaces/importers/v1_workspace_importer.py`，是 §7「导入」的 as-built 实现：
+
+| 能力 | 实现 |
+|---|---|
+| 扫描（T17.1） | `scan_v1_workspace`：逐文件归类 `mapped/legacy/ambiguous/ignored/error`；`run_id` = 源 manifest hash；报告含 `ok` 判定与 `unexplained` 检查 |
+| 幂等导入（T17.2） | `V1WorkspaceImporter.apply`：幂等键 `v1-import:{schema}:{manifest hash}`，经 Commit Service 单次原子提交，附 `v1.workspace.imported` 事件；只写空项目；源变化须重新 dry-run |
+| 校验（T17.3） | `V1WorkspaceImporter.validate`：对象数、章节数、每章规范化正文哈希、悬空 ID、旧 revision 保留、运行记录归档 |
+| 不可达证明（T17.6） | 工具层：`tools/architecture_gate.py`（V2 项目旧写工具为拒绝桩）；HTTP 层：`server/rest.py::_reject_v2_legacy_write`（V2 项目的旧章节保存/草稿锁端点 409 拒绝）。证明见 `tests/v2/migration/test_legacy_write_unreachable.py`（独立 V2 应用/工具/模块面）与 `tests/test_v2_write_gate.py`（真实装配的行为面） |
+
+旧账本的逐字段映射仍由 `v1_story_mapper.py`（Phase 13）承担；导入器复用其报告，不重复实现。正文经领域命令 `import_chapter` 生成，但 `new_id` 换为确定性闭包以保证可复现。章正文范围由单一枚举 `_chapter_files`（仅 `chapters/` 顶层 `*.md`）统一扫描、导入与校验三者；嵌套结构显式报 error。
+
+**本模块其余 target 未变**：§2 资源清单、§4 完整事件分类、§6 各前端投影、以及导出（manifest + 内容哈希）仍属未交付目标。证据见 [Phase 17](../phase-17-migration-cleanup.md)。
 
 ## 1. 职责
 

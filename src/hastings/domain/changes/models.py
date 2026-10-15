@@ -63,9 +63,15 @@ class SeedChange:
     artifact_id: str
     field: str = ""
     reason: str = ""
+    proposed_content: dict[str, Any] | None = None
 
     def to_content(self) -> dict[str, Any]:
-        return {"artifact_id": self.artifact_id, "field": self.field, "reason": self.reason}
+        return {
+            "artifact_id": self.artifact_id,
+            "field": self.field,
+            "reason": self.reason,
+            "proposed_content": self.proposed_content,
+        }
 
     @classmethod
     def from_content(cls, content: dict[str, Any]) -> SeedChange:
@@ -73,6 +79,7 @@ class SeedChange:
             artifact_id=str(content.get("artifact_id", "")),
             field=str(content.get("field", "")),
             reason=str(content.get("reason", "")),
+            proposed_content=content.get("proposed_content"),
         )
 
 

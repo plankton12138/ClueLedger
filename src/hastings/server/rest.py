@@ -86,6 +86,7 @@ from hastings.settings import (
     StorySettings,
     load_settings,
     save_settings,
+    workspace_architecture_version,
 )
 from hastings.tools.bible_tools import ENTITY_LABELS
 from tau_agent.types import JSONValue
@@ -702,6 +703,30 @@ def create_rest_router(
     def _workspace(slug: str) -> StoryWorkspace:
         # get_or_create 已过校验；这里只做路径解析（构造即校验，双保险）
         return StoryWorkspace(root=registry.root, slug=slug)
+
+    def _reject_v2_legacy_write(slug: str, *, action: str) -> None:
+        """V1 写端点的项目架构门（Phase 17 T17.6）。
+
+        ``architecture_version: v2`` 的项目只允许经领域命令与 Commit Service 写入；
+        旧 REST 写端点（章节保存、草稿锁）会绕过版本检查与依赖边，直接落盘 Markdown。
+        工具层已有拒绝桩，但 REST 是独立路径，必须在 HTTP 装配处一并阻断，否则
+        「V2 项目旧写入口不可达」不成立（评审 P1）。
+
+        判定点复用 ``workspace_architecture_version``（ADR §2.2 的单一项目解析），
+        不在此处另设 flag。
+        """
+        if workspace_architecture_version(_workspace(slug)) != "v2":
+            return
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{action}被拒：项目 {slug!r} 声明 architecture_version=v2。"
+                "为什么错：V2 项目只允许经领域命令与 Commit Service 写入，"
+                "旧 REST 写端点会绕过版本检查、依赖边与领域不变量（V1 工作区文件被直接改写）。"
+                "怎样算对：改用 V2 接口（POST /api/v2/projects/{project_id}/chapters/{id}/save），"
+                "或把该项目移除 v2 标记后再用 V1 链路。"
+            ),
+        )
 
     async def _session(slug: str) -> WritingSession:
         try:
@@ -1471,6 +1496,7 @@ def create_rest_router(
     @router.put("/api/{slug}/chapters/{chapter_id}/edit-mark", response_model=EditMarkResponse)
     async def acquire_edit_mark(chapter_id: str, slug: str) -> EditMarkResponse:
         """作者开始编辑：加草稿锁（P5 D4）。幂等——重复加锁覆盖旧 mark。"""
+        _reject_v2_legacy_write(slug, action="加草稿锁")
         if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
             raise HTTPException(
                 status_code=422,
@@ -1499,6 +1525,7 @@ def create_rest_router(
     )
     async def release_edit_mark(chapter_id: str, slug: str) -> EditMarkReleaseResponse:
         """作者放弃草稿：释放锁（幂等，未持锁无害）。"""
+        _reject_v2_legacy_write(slug, action="释放草稿锁")
         if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
             raise HTTPException(
                 status_code=422,
@@ -1519,6 +1546,7 @@ def create_rest_router(
         slug: str,
     ) -> ChapterSavedResponse:
         """作者受管写端点（D3 管线，顺序固定）。"""
+        _reject_v2_legacy_write(slug, action="章节保存")
         if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
             raise HTTPException(
                 status_code=422,

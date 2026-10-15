@@ -1,0 +1,1 @@
+{"role":"planner","instruction":"为怀表谜案新增一个尚待作者接受的证人角色，只提出一个 story.character 候选。角色名周禾，role=witness，identity=钟表匠。不得修改已确认人物。","expected_kind":"story_proposal"}

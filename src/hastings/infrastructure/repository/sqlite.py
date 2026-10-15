@@ -660,6 +660,16 @@ class SqliteRepository:
         return f"租约版本已前进（当前 {version}，请求 {lease.version}）"
 
     # EventOutbox（消费侧）----
+    async def pending_projects(self) -> list[str]:
+        with self._storage.lock():
+            return [
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT DISTINCT project_id FROM outbox_events "
+                    "WHERE published_at IS NULL ORDER BY project_id"
+                )
+            ]
+
     async def pending(self, project_id: str, limit: int) -> list[dict[str, object]]:
         return await asyncio.to_thread(self._pending_sync, project_id, limit)
 

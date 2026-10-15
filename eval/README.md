@@ -16,6 +16,10 @@ eval/
 
 ## 快速开始
 
+### V2 · 六角色与持久工作流（Phase 16）
+
+V2 独立走查入口为 [v2/README.md](v2/README.md)，一角色一用例；运行 `uv run python eval/v2/driver.py --out eval/runs/<日期>-phase16 --interruption` 可验证真实 Provider 与同一 Job 断线恢复。完整应用闭环使用 FakeProvider 另行回放，最近 [验收报告与转录](runs/2026-10-15-phase16-real-complete/README.md) 同时保留两类证据。以下 C/A/B 组仍服务 V1 协议对照。
+
 **前置**：仓库根 `.env` 配好 provider（含 `HASTINGS_MODEL`）；每条用例换新 slug 保证从 intake 阶段开始。
 
 ### C 组 · 对照实验（driver 驱动，量 harness 增益）

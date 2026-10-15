@@ -1,0 +1,50 @@
+[
+  {
+    "role": "auditor",
+    "model": "deepseek-flash",
+    "passed": true,
+    "state": "completed",
+    "reason": "角色约束与应用守卫通过"
+  },
+  {
+    "role": "coordinator",
+    "model": "deepseek-flash",
+    "passed": true,
+    "state": "waiting",
+    "reason": "角色约束与应用守卫通过"
+  },
+  {
+    "role": "planner",
+    "model": "deepseek-flash",
+    "passed": true,
+    "state": "waiting",
+    "reason": "角色约束与应用守卫通过"
+  },
+  {
+    "role": "reviser",
+    "model": "deepseek-flash",
+    "passed": true,
+    "state": "waiting",
+    "reason": "角色约束与应用守卫通过"
+  },
+  {
+    "role": "style_observer",
+    "model": "deepseek-flash",
+    "passed": true,
+    "state": "completed",
+    "reason": "角色约束与应用守卫通过"
+  },
+  {
+    "role": "writer",
+    "model": "deepseek-flash",
+    "passed": true,
+    "state": "waiting",
+    "reason": "角色约束与应用守卫通过"
+  },
+  {
+    "role": "provider_recovery",
+    "passed": true,
+    "first_state": "retryable_failed",
+    "final_state": "waiting"
+  }
+]

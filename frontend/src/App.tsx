@@ -8,7 +8,7 @@
  * 记入地址（replaceState），刷新后不丢。文章的增删切换在「文章」页管理（T14）。
  */
 
-import { Feather, Library, PenLine, ScrollText, Settings, Target, type LucideIcon } from "lucide-react";
+import { Feather, GitBranch, Library, PenLine, ScrollText, Settings, Target, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { fetchStory, fetchWorkspaces } from "./api/rest";
 import type { StoryWire } from "./api/rest";
@@ -25,6 +25,7 @@ import EventStreamView from "./components/EventStreamView";
 import ErrorBoundary from "./components/ErrorBoundary";
 import AuditPage from "./components/AuditPage";
 import CorpusPage from "./components/CorpusPage";
+import ChangeCenter from "./components/ChangeCenter";
 import LedgerPage from "./components/LedgerPage";
 import ManuscriptPanel from "./components/ManuscriptPanel";
 import SearchBox from "./components/SearchBox";
@@ -53,7 +54,7 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
  * 主视图类型（P7 D1，T14 扩容）：导航六项 + 账本全页详情（ledger 不进导航，
  * 从创作台账本面板「展开」下钻，T5 接线；先入骨架保证视图收口唯一）。
  */
-type View = "studio" | "articles" | "corpus" | "audit" | "events" | "settings" | "ledger";
+type View = "studio" | "articles" | "corpus" | "audit" | "events" | "settings" | "ledger" | "changes";
 
 /** 顶部主导航（P7 D1/T14）：创作台 | 文章 | 语料库 | 审计中心 | 事件流 | 设置。 */
 const NAV_ITEMS: Array<{ key: View; label: string; Icon: LucideIcon }> = [
@@ -61,6 +62,7 @@ const NAV_ITEMS: Array<{ key: View; label: string; Icon: LucideIcon }> = [
   { key: "articles", label: "文章", Icon: PenLine },
   { key: "corpus", label: "语料库", Icon: Library },
   { key: "audit", label: "审计中心", Icon: Target },
+  { key: "changes", label: "变更中心", Icon: GitBranch },
   { key: "events", label: "事件流", Icon: ScrollText },
   { key: "settings", label: "设置", Icon: Settings },
 ];
@@ -268,16 +270,18 @@ export default function App() {
           {NAV_ITEMS.map((item) => (
             <Button
               key={item.key}
+              aria-label={item.label}
+              title={item.label}
               variant={view === item.key ? "outline" : "ghost"}
               onClick={() => setView(item.key)}
-              className={`h-auto min-w-[58px] shrink gap-1 whitespace-normal rounded px-1.5 py-1.5 text-[13px] ${
+              className={`h-auto min-w-8 shrink-0 gap-1 whitespace-nowrap rounded px-1.5 py-1.5 text-[13px] ${
                 view === item.key
                   ? "border-line bg-gold/10 text-gold hover:bg-gold/10"
                   : "border border-transparent text-paper/75 hover:bg-transparent hover:text-gold"
               }`}
             >
               <item.Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {item.label}
+              <span className="hidden 2xl:inline">{item.label}</span>
             </Button>
           ))}
         </nav>
@@ -391,7 +395,7 @@ export default function App() {
 
       {/* 顶层错误边界（D10）：一个面板崩不拖垮整个应用——顶部导航与其余视图不受影响。 */}
       <ErrorBoundary label="页面">
-        {view === "events" ? (
+        {view === "changes" ? <ChangeCenter /> : view === "events" ? (
         <main className="flex min-h-0 flex-1 flex-col border-t border-line">
           <ErrorBoundary label="事件流">
             <EventStreamView />

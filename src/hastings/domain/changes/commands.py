@@ -9,6 +9,7 @@ prompt 只负责解释世界（四透镜②）。
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import timedelta
 from typing import Any
 
 from hastings.domain.changes import error_codes as ec
@@ -220,7 +221,9 @@ def advance_change_set(
                 receipt_change_set_id=receipt.change_set_id,
             )
         fingerprint_now = _approval_fingerprint(catalog, model, where)
-        require_consumable(receipt, change_set=model, fingerprint=fingerprint_now, where=where)
+        require_consumable(
+            receipt, change_set=model, fingerprint=fingerprint_now, where=where, at=at
+        )
     if target == st.CHANGE_COMMITTED and not commit_id:
         raise violation(
             ec.CHANGES_INVALID_COMMAND,
@@ -358,6 +361,8 @@ def record_impact_analysis(
         items=report.items,
         truncated=report.truncated,
         stats=report.stats,
+        coverage=report.coverage,
+        warnings=report.warnings,
         analyzed_by=f"{actor.kind}:{actor.id}",
         at=_iso(at),
     )
@@ -631,6 +636,7 @@ def issue_approval_receipt(
         status=RECEIPT_ACTIVE,
         issued_by=f"{actor.kind}:{actor.id}",
         issued_at=_iso(at),
+        expires_at=_iso(at + timedelta(hours=1)),
     )
     return ChangeSetChange(
         artifact_changes=(
@@ -880,6 +886,35 @@ def _require_non_empty(value: str, field_name: str, where: str) -> str:
 def _iso(at: Any) -> str:
     """时间统一存 ISO-8601 字符串（内容是 JSON 兼容数据）。"""
     return at.isoformat() if hasattr(at, "isoformat") else str(at)
+
+
+def start_execution(
+    catalog: ChangesCatalog,
+    new_id: NewId,
+    *,
+    change_set_id: str,
+    operation_key: str,
+    actor: Actor,
+    at: Any,
+) -> ChangeSetChange:
+    change = advance_change_set(
+        catalog,
+        new_id,
+        change_set_id=change_set_id,
+        target=st.CHANGE_EXECUTING,
+        actor=actor,
+        at=at,
+        reason="开始执行已批准修订计划",
+    )
+    marker_id = f"execution-job:{change_set_id}"
+    old = catalog.get(marker_id)
+    marker = ArtifactChange(
+        ArtifactId(marker_id),
+        {"change_set_id": change_set_id, "operation_key": operation_key},
+        RevisionId(old.revision_id) if old else None,
+        "changes.execution_job",
+    )
+    return ChangeSetChange((*change.artifact_changes, marker), change.events, change.summary)
 
 
 def record_execution(

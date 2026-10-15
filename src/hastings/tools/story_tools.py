@@ -27,6 +27,7 @@ from hastings.bible.story_state import (
     StoryStage,
     validate_transition,
 )
+from hastings.tools.architecture_gate import is_v2, refuse_tool, v2_write_rejection
 from hastings.tools.errors import ToolInputError
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
@@ -100,8 +101,14 @@ def _render_story_stage(arguments: Mapping[str, JSONValue]) -> str | None:
     return f"{verb}阶段 → {target}" if isinstance(target, str) else f"{verb}阶段"
 
 
-def create_story_tools(workspace: StoryWorkspace) -> list[AgentTool]:
-    """创建绑定 workspace 的 story_stage 工具。"""
+def create_story_tools(
+    workspace: StoryWorkspace, *, architecture_version: str = "v1"
+) -> list[AgentTool]:
+    """创建绑定 workspace 的 story_stage 工具。
+
+    ``architecture_version="v2"`` 时被替换为拒绝桩（T17.6）：V2 不再用全局阶段
+    作为写入授权；项目里程碑只用于导航，各类对象各有自己的状态。
+    """
 
     async def execute(
         tool_call_id: str,
@@ -198,6 +205,17 @@ def create_story_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         ),
         render_call=_render_story_stage,
     )
+    if is_v2(architecture_version):
+        return [
+            refuse_tool(
+                tool,
+                rejection=v2_write_rejection(
+                    "story_stage",
+                    alternative="V2 项目不用全局阶段做写入授权；项目里程碑仅供导航，"
+                    "写入由各领域命令在自己对象的状态上完成。",
+                ),
+            )
+        ]
     return [tool]
 
 

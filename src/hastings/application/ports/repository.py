@@ -66,6 +66,12 @@ class RepositoryReader(Protocol):
     def get_project(self, project_id: ProjectId) -> Project | None:
         """读取项目；不存在返回 None（合法空结果，非异常）。"""
 
+    def find_commit_result(self, project_id: ProjectId, key: str) -> CommitResult | None:
+        """读取已原子提交的操作结果，供工作流在重启后跳过已提交步骤。"""
+
+    def commit_history(self, project_id: ProjectId, at_commit_id: CommitId) -> tuple[Commit, ...]:
+        """读取所选版本的 first-parent 历史，用于精确关联修复证据。"""
+
     def get_branch(self, project_id: ProjectId, name: str) -> Branch | None:
         """按项目与分支名读取分支；不存在返回 None。"""
 

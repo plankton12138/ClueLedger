@@ -1,6 +1,6 @@
 # Hastings V2 重建计划总览
 
-> 计划状态：Phase 11、12、13 已完成（Phase 12 含外部 review 收口：规范值冻结、幂等指纹、去重时机、关系顺序、schema v3；Phase 13 含外部 review 收口：应用层幂等重放、架构版本真实路由、依赖边补全）；下一阶段为 Phase 14。
+> 计划状态：Phase 11–16 已完成（2026-10-15）；Phase 17 进行中（导入器与旧写路径 gating 已交付，界面/CLI 切换与旧代码删除未完成）。
 > 原则：每个阶段产生可运行、可验证、可回退的纵向切片；后续阶段不得通过临时直写绕开前一阶段的契约。
 
 ## 1. 阶段依赖
@@ -26,9 +26,9 @@ Phase 13 和 Phase 14 在 Phase 12 后可以并行开发，但共享同一 Repos
 | P12 | 建立版本化 Repository 与统一提交 | 内存/SQLite 契约测试、冲突/幂等/Outbox 证明 | [phase-12-repository-kernel-plan.md](phase-12-repository-kernel-plan.md) |
 | P13 | 建立 Canon、Narrative Plan 和悬疑三层事实 | 领域命令、不变量、五个查询投影、V1 dry-run、§7 误解决策闭环 ✅ 已完成 | [phase-13-story-domain-plan.md](phase-13-story-domain-plan.md) |
 | P14 | 统一人工正文版本并建立作者模型 | 人工保存闭环、Patch hunk、偏好证据 | [phase-14-manuscript-author-model-plan.md](phase-14-manuscript-author-model-plan.md) |
-| P15 | 完成影响分析、修订分支和差异审阅 | 角色作用变化贯穿 Canon→Plan→正文 | [phase-15-change-impact-plan.md](phase-15-change-impact-plan.md) |
-| P16 | 接入无状态 Agent、任务上下文和持久 Job | Draft/Repair/Audit/Style 四条工作流 | [phase-16-agent-workflows-plan.md](phase-16-agent-workflows-plan.md) |
-| P17 | 导入旧工作区、迁移 UI、退出旧写链路 | 迁移报告、端到端验收、旧写入口不可达 | [phase-17-migration-cleanup-plan.md](phase-17-migration-cleanup-plan.md) |
+| P15 | 完成影响分析、修订分支和差异审阅 | 角色作用变化贯穿 Canon→Plan→正文，三章/部分接受/审计/重启 ✅ 已完成 | [phase-15-change-impact-plan.md](phase-15-change-impact-plan.md) |
+| P16 | 接入无状态 Agent、任务上下文和持久 Job | 四条工作流、六角色真模型、持久恢复与新项目闭环 ✅ 已完成 | [phase-16-agent-workflows-plan.md](phase-16-agent-workflows-plan.md) |
+| P17 | 导入旧工作区、迁移 UI、退出旧写链路 | 迁移报告、端到端验收、旧写入口不可达 → 导入器/校验/不可达证明已交付；界面与删除未完成 ⏳ 进行中 | [phase-17-migration-cleanup-plan.md](phase-17-migration-cleanup-plan.md) |
 
 ## 3. 每阶段统一执行协议
 
@@ -84,4 +84,3 @@ Phase 13 和 Phase 14 在 Phase 12 后可以并行开发，但共享同一 Repos
 8. 作者模型从人工修改中提出一个有证据的文风候选，作者撤销后不再使用；
 9. 重启应用，版本、Job、审批和事件顺序保持一致；
 10. 导出指定 Commit，再导入到新项目并核对内容哈希。
-

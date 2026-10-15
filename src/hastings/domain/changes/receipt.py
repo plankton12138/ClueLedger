@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import Any
 
 from hastings.domain.changes import error_codes as ec
@@ -69,6 +70,7 @@ def confirm_fingerprint(change_set: ChangeSet, report: ImpactReport, plan: Revis
         plan_body.pop(identity, None)
     payload = {
         "intent": change_set.intent,
+        "seed_changes": [s.to_content() for s in change_set.seed_changes],
         "base_commit_id": change_set.base_commit_id,
         "scope": change_set.scope.to_content(),
         "report": {
@@ -118,6 +120,7 @@ class ApprovalReceipt:
     status: str = RECEIPT_ACTIVE
     issued_by: str = ""
     issued_at: str = ""
+    expires_at: str = ""
     resolved_at: str = ""
     resolved_reason: str = ""
     schema_version: int = SCHEMA_VERSION
@@ -143,6 +146,7 @@ class ApprovalReceipt:
             "status": self.status,
             "issued_by": self.issued_by,
             "issued_at": self.issued_at,
+            "expires_at": self.expires_at,
             "resolved_at": self.resolved_at,
             "resolved_reason": self.resolved_reason,
         }
@@ -158,6 +162,7 @@ class ApprovalReceipt:
             status=str(content.get("status", RECEIPT_ACTIVE)),
             issued_by=str(content.get("issued_by", "")),
             issued_at=str(content.get("issued_at", "")),
+            expires_at=str(content.get("expires_at", "")),
             resolved_at=str(content.get("resolved_at", "")),
             resolved_reason=str(content.get("resolved_reason", "")),
             schema_version=int(content.get("schema_version", SCHEMA_VERSION)),
@@ -175,8 +180,16 @@ def require_consumable(
     change_set: ChangeSet,
     fingerprint: str,
     where: str,
+    at: datetime | None = None,
 ) -> None:
     """凭证可用于批准的完整校验链；每种失效情形都有独立错误码与下一步指引。"""
+    if receipt.expires_at and at is not None and at >= datetime.fromisoformat(receipt.expires_at):
+        raise violation(
+            "CHANGES_RECEIPT_EXPIRED",
+            where,
+            f"批准凭证已于 {receipt.expires_at} 到期",
+            "由作者撤销旧凭证，重新审阅并签发后再批准",
+        )
     if receipt.change_set_id != change_set.change_set_id:
         raise violation(
             ec.CHANGES_RECEIPT_INVALID,
