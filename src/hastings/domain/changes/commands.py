@@ -16,6 +16,15 @@ from hastings.domain.changes import kinds
 from hastings.domain.changes import status as st
 from hastings.domain.changes.catalog import ChangeEntry, ChangesCatalog
 from hastings.domain.changes.errors import violation
+from hastings.domain.changes.execution import (
+    EVENT_EXECUTION_RECORDED,
+    OUTCOME_COMPLETED,
+    OUTCOME_FAILED,
+    OUTCOMES,
+    STEP_OUTCOMES,
+    ExecutionRecord,
+    StepRecord,
+)
 from hastings.domain.changes.impact import ImpactReport
 from hastings.domain.changes.models import (
     EVENT_CHANGE_SET_OPENED,
@@ -54,6 +63,7 @@ __all__ = [
     "advance_change_set",
     "issue_approval_receipt",
     "open_change_set",
+    "record_execution",
     "record_impact_analysis",
     "record_revision_plan",
     "revoke_approval_receipt",
@@ -870,3 +880,163 @@ def _require_non_empty(value: str, field_name: str, where: str) -> str:
 def _iso(at: Any) -> str:
     """时间统一存 ISO-8601 字符串（内容是 JSON 兼容数据）。"""
     return at.isoformat() if hasattr(at, "isoformat") else str(at)
+
+
+def record_execution(
+    catalog: ChangesCatalog,
+    new_id: NewId,
+    *,
+    change_set_id: str,
+    job_id: str,
+    branch_name: str,
+    base_commit_id: str,
+    outcome: str,
+    steps: tuple[StepRecord, ...],
+    actor: Actor,
+    at: Any,
+    error_code: str = "",
+    error_message: str = "",
+) -> ChangeSetChange:
+    """登记一次执行尝试并推进状态：完成 → review；失败 → failed（同提交）。
+
+    前置：变更集必须处于 executing（执行工作流先推进再干活）。失败必须
+    携带错误码与消息——「为什么失败」是恢复的起点，留空即拒绝（四透镜①）。
+    每次尝试一条记录（不复用 Artifact）：尝试本身就是可审计事件。
+    """
+    where = f"changes.record_execution({change_set_id})"
+    entry = catalog.require_change_set(change_set_id, where="changes.record_execution")
+    model: ChangeSet = entry.model()
+    if model.status != st.CHANGE_EXECUTING:
+        raise violation(
+            ec.CHANGES_INVALID_TRANSITION,
+            where,
+            f"只有 executing 状态能登记执行结果，当前是 {model.status!r}",
+            "执行工作流先推进 approved → executing 再干活；review 状态的结果请走差异审阅与合并",
+            status=model.status,
+        )
+    if outcome not in OUTCOMES:
+        raise violation(
+            ec.CHANGES_INVALID_COMMAND,
+            where,
+            f"执行结局只能是 {sorted(OUTCOMES)}，收到 {outcome!r}",
+            "执行工作流按步骤结果汇总结局；单步结局见 STEP_OUTCOMES",
+            outcome=outcome,
+        )
+    if base_commit_id != model.base_commit_id:
+        raise violation(
+            ec.CHANGES_BASE_STALE,
+            where,
+            f"执行绑定的基础 Commit {base_commit_id!r} 与变更集的 {model.base_commit_id!r} 不一致",
+            "报告/计划/执行都绑定同一基础版本（不变量 1）；回到该版本重新分析、计划并取得作者批准",
+            base_commit_id=base_commit_id,
+            expected=model.base_commit_id,
+        )
+    seen_steps: set[str] = set()
+    for step in steps:
+        if not step.step_id:
+            raise violation(
+                ec.CHANGES_INVALID_COMMAND,
+                where,
+                "执行记录里有步骤缺少 step_id",
+                "每条步骤记录必须携带计划中的 step_id",
+            )
+        if step.step_id in seen_steps:
+            raise violation(
+                ec.CHANGES_INVALID_COMMAND,
+                where,
+                f"步骤 {step.step_id!r} 在执行记录里出现多次",
+                "每步只记录一条结果；重试请在新的执行尝试里进行",
+                step_id=step.step_id,
+            )
+        seen_steps.add(step.step_id)
+        if step.outcome not in STEP_OUTCOMES:
+            raise violation(
+                ec.CHANGES_INVALID_COMMAND,
+                where,
+                f"步骤 {step.step_id!r} 的结局 {step.outcome!r} 非法",
+                f"单步结局必须是 {sorted(STEP_OUTCOMES)} 之一",
+                step_id=step.step_id,
+                outcome=step.outcome,
+            )
+    if outcome == OUTCOME_FAILED and (not error_code or not error_message):
+        raise violation(
+            ec.CHANGES_INVALID_COMMAND,
+            where,
+            "失败的执行必须携带错误码与错误消息（当前为空）",
+            "把失败归因写进记录：哪里错、为什么错、怎样恢复——这是重启的起点",
+        )
+
+    execution_id = _unique_artifact_id(catalog, new_id)
+    record = ExecutionRecord(
+        execution_id=execution_id,
+        change_set_id=change_set_id,
+        job_id=job_id,
+        branch_name=branch_name,
+        base_commit_id=base_commit_id,
+        outcome=outcome,
+        steps=steps,
+        error_code=error_code,
+        error_message=error_message,
+        executed_by=f"{actor.kind}:{actor.id}",
+        at=_iso(at),
+    )
+    target = st.CHANGE_REVIEW if outcome == OUTCOME_COMPLETED else st.CHANGE_FAILED
+    st.require_transition(model.status, target, where=where)
+    transition = TransitionRecord(
+        from_status=model.status,
+        to_status=target,
+        actor_kind=actor.kind,
+        actor_id=actor.id,
+        at=_iso(at),
+        reason=(
+            f"执行完成（{branch_name}，{len(steps)} 步）"
+            if outcome == OUTCOME_COMPLETED
+            else f"执行失败：{error_message}"
+        ),
+        base_commit_id=model.base_commit_id,
+    )
+    updated = ChangeSet(
+        change_set_id=model.change_set_id,
+        intent=model.intent,
+        source=model.source,
+        base_commit_id=model.base_commit_id,
+        status=target,
+        history=(*model.history, transition),
+        seed_changes=model.seed_changes,
+        scope=model.scope,
+        schema_version=model.schema_version,
+    )
+    return ChangeSetChange(
+        artifact_changes=(
+            ArtifactChange(
+                artifact_id=ArtifactId(execution_id),
+                content=record.to_content(),
+                kind=kinds.KIND_EXECUTION_RECORD,
+            ),
+            ArtifactChange(
+                artifact_id=ArtifactId(change_set_id),
+                content=updated.to_content(),
+                old_revision_id=RevisionId(entry.revision_id),
+            ),
+        ),
+        events=(
+            (
+                EVENT_EXECUTION_RECORDED,
+                {
+                    "change_set_id": change_set_id,
+                    "execution_id": execution_id,
+                    "job_id": job_id,
+                    "outcome": outcome,
+                },
+            ),
+            (
+                EVENT_CHANGE_SET_TRANSITIONED,
+                {"change_set_id": change_set_id, "from": model.status, "to": target},
+            ),
+        ),
+        summary=(
+            f"ChangeSet {change_set_id} 执行完成（{branch_name}，{len(steps)} 步）"
+            if outcome == OUTCOME_COMPLETED
+            else f"ChangeSet {change_set_id} 执行失败：{error_message}"
+        ),
+    )

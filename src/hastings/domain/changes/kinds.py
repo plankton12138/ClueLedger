@@ -12,8 +12,16 @@ KIND_IMPACT_REPORT = "changes.impact_report"
 KIND_REVISION_PLAN = "changes.revision_plan"
 # ApprovalReceipt：作者批准的机器凭证（绑定 base/scope/报告/计划指纹）
 KIND_APPROVAL_RECEIPT = "changes.approval_receipt"
+# ExecutionRecord：一次修订执行尝试的 Job 状态（每次尝试一条，含失败留痕）
+KIND_EXECUTION_RECORD = "changes.execution"
 
-CHANGES_KINDS = (KIND_CHANGE_SET, KIND_IMPACT_REPORT, KIND_REVISION_PLAN, KIND_APPROVAL_RECEIPT)
+CHANGES_KINDS = (
+    KIND_CHANGE_SET,
+    KIND_IMPACT_REPORT,
+    KIND_REVISION_PLAN,
+    KIND_APPROVAL_RECEIPT,
+    KIND_EXECUTION_RECORD,
+)
 
 
 def is_changes_kind(kind: str) -> bool:

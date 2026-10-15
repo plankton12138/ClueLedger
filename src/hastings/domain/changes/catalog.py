@@ -12,6 +12,7 @@ from typing import Any
 from hastings.domain.changes import kinds
 from hastings.domain.changes.error_codes import CHANGES_UNKNOWN_CHANGE_SET
 from hastings.domain.changes.errors import violation
+from hastings.domain.changes.execution import ExecutionRecord
 from hastings.domain.changes.impact import ImpactReport
 from hastings.domain.changes.models import ChangeSet
 from hastings.domain.changes.planning import RevisionPlan
@@ -31,6 +32,8 @@ def decode(kind: str, content: dict[str, Any]) -> Any:
         return RevisionPlan.from_content(content)
     if kind == kinds.KIND_APPROVAL_RECEIPT:
         return ApprovalReceipt.from_content(content)
+    if kind == kinds.KIND_EXECUTION_RECORD:
+        return ExecutionRecord.from_content(content)
     return content
 
 
