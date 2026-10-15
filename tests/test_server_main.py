@@ -92,15 +92,27 @@ def clean_env(monkeypatch: MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def test_main_exits_with_env_hint_when_env_missing(
-    clean_env: None, capsys: CaptureFixture[str], tmp_path: Path
+def test_main_boots_unconfigured_with_env_hint_when_env_missing(
+    clean_env: None,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
-    exit_code = server_main.main(["--config", str(tmp_path / "absent.yaml")])
+    """空启动：无 config.yaml 且 env 全缺（首次使用原貌）——env 指引转为告警，服务照起。"""
+    calls: list[FastAPI] = []
+    monkeypatch.setattr(server_main.uvicorn, "run", lambda app, **k: calls.append(app))
 
-    assert exit_code == 1
+    exit_code = server_main.main(
+        ["--config", str(tmp_path / "absent.yaml"), "--stories-root", str(tmp_path)]
+    )
+
+    assert exit_code == 0
+    assert calls, "首次空启动服务应照常拉起"
     out = capsys.readouterr().out
-    assert "OPENAI_API_KEY" in out  # 中文指引：缺哪个变量、怎样配置
+    assert "OPENAI_API_KEY" in out  # env 指引：缺哪个变量、怎样配置
     assert ".env" in out
+    assert "未配置模式" in out
+    assert "模型：未配置" in out
 
 
 def test_main_boots_uvicorn_with_registry_app(
@@ -185,10 +197,12 @@ def test_main_boots_from_config_yaml_first_available_profile(
     assert state["model"] == "deepseek-chat"
 
 
-def test_main_exits_when_no_profile_has_key(
+def test_main_boots_unconfigured_when_no_profile_has_key(
     clean_env: None, monkeypatch: MonkeyPatch, tmp_path: Path, capsys: CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(server_main.uvicorn, "run", lambda *a, **k: None)
+    """空启动：config.yaml 档案都缺 key 时服务照起（未配置模式），设置页配置后再对话。"""
+    calls: list[FastAPI] = []
+    monkeypatch.setattr(server_main.uvicorn, "run", lambda app, **k: calls.append(app))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         "providers:\n  - name: nokey\n    base_url: https://api.example.com/v1\n",
@@ -197,17 +211,20 @@ def test_main_exits_when_no_profile_has_key(
 
     exit_code = server_main.main(["--config", str(config_path), "--stories-root", str(tmp_path)])
 
-    assert exit_code == 1
+    assert exit_code == 0
+    assert calls, "服务应照常启动"
     out = capsys.readouterr().out
-    assert "没有可用档案" in out
-    assert "为什么错" in out
+    assert "未配置模式" in out
     assert "怎样算对" in out
+    assert "模型：未配置" in out
 
 
-def test_main_exits_when_boot_profile_lacks_model(
+def test_main_boots_unconfigured_when_boot_profile_lacks_model(
     clean_env: None, monkeypatch: MonkeyPatch, tmp_path: Path, capsys: CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(server_main.uvicorn, "run", lambda *a, **k: None)
+    """空启动：引导档案有 key 但没配 default_model——服务照起，告警给指引。"""
+    calls: list[FastAPI] = []
+    monkeypatch.setattr(server_main.uvicorn, "run", lambda app, **k: calls.append(app))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         "providers:\n"
@@ -219,10 +236,12 @@ def test_main_exits_when_boot_profile_lacks_model(
 
     exit_code = server_main.main(["--config", str(config_path), "--stories-root", str(tmp_path)])
 
-    assert exit_code == 1
+    assert exit_code == 0
+    assert calls, "服务应照常启动"
     out = capsys.readouterr().out
-    assert "没有可用的模型名" in out
-    assert "default_model" in out
+    assert "没有配置模型名" in out
+    assert "未配置模式" in out
+    assert "--model" in out
 
 
 def test_main_boots_with_config_dir_and_static_dir(

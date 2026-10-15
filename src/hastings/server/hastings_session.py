@@ -42,6 +42,12 @@ COMPACTING_MESSAGE = (
     "怎样算对：等待压缩完成后再发送；压缩失败会保留原会话，可直接重试。"
 )
 
+MODEL_NOT_CONFIGURED_MESSAGE = (
+    "prompt 被拒绝：当前会话没有配置模型。"
+    "为什么错：服务以空模式启动（档案未配 default_model，也未传 --model）。"
+    "怎样算对：在设置页选择档案并填写模型名（可先拉取模型列表），或用 --model 重启服务。"
+)
+
 
 class HastingsSession:
     """WritingSession 的标准实现：绑定一个 StoryWorkspace 与一个 AgentHarness。"""
@@ -264,6 +270,9 @@ class HastingsSession:
         return self._reconcile.subscribe(listener)
 
     def prompt(self, content: str) -> AsyncIterator[AgentEvent]:
+        if not self._harness.config.model:
+            # 空启动（未配置模型）：打 API 只会得到模糊的上游错误，fail fast 三要素。
+            raise AgentBusyError(MODEL_NOT_CONFIGURED_MESSAGE)
         if self._harness.is_running:
             raise AgentBusyError(BUSY_MESSAGE)
         if self.is_compacting:

@@ -28,6 +28,7 @@ from hastings.server.provider_config import (
     DEFAULT_CONFIG_PATH,
     ProviderBook,
     ProviderConfigError,
+    env_fallback_config,
     load_server_config,
 )
 from hastings.server.registry import WorkspaceRegistry
@@ -135,35 +136,43 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     if config_path.exists():
-        # config.yaml 权威：第一个有 key 的档案作为引导档案（.env 不再必需）
+        # config.yaml 权威：第一个有 key 的档案作为引导档案（.env 不再必需）。
+        # 空启动（首次使用无任何配置）：服务照起，用户在设置页配置后再对话——
+        # 未配置的会话在 prompt 时 fail fast（MODEL_NOT_CONFIGURED_MESSAGE）。
+        if not server_config.providers:
+            print(
+                f"config.yaml 没有任何档案（{config_path}），回落 env 单档案。"
+                "为什么错：providers 列表为空，没有可解析的端点。"
+                "怎样算对：在设置页添加档案（写回本文件），或删除本文件回落 .env。"
+            )
+            server_config = env_fallback_config()
         profile = next((p for p in server_config.providers if p.available), None)
         if profile is None:
+            fallback = server_config.providers[0]
+            boot_profile_name = fallback.name
+            boot_model = args.model or fallback.default_model
             print(
-                f"config.yaml 中没有可用档案（{config_path}）。"
-                "为什么错：所有档案都缺 api_key / api_key_env，"
-                "或引用的环境变量为空。"
-                "怎样算对：为至少一个档案直填 api_key，"
-                "或用 api_key_env 引用已设置的环境变量。"
+                "当前没有可用档案（所有档案都缺 api_key / api_key_env，"
+                "或引用的环境变量为空），服务以未配置模式启动。"
+                "怎样算对：在设置页为档案配置密钥与模型名后即可对话。"
             )
-            return 1
-        boot_profile_name = profile.name
-        boot_model = args.model or profile.default_model
-        if not boot_model:
-            print(
-                f"引导档案 {profile.name!r} 没有可用的模型名（{args.config}）。"
-                "为什么错：档案未配 default_model，也未传 --model。"
-                "怎样算对：在该档案补 default_model: <模型名>，"
-                "或用 --model 启动参数指定。"
-            )
-            return 1
+        else:
+            boot_profile_name = profile.name
+            boot_model = args.model or profile.default_model
+            if not boot_model:
+                print(
+                    f"引导档案 {profile.name!r} 没有配置模型名（{config_path}），"
+                    "服务以未配置模式启动。"
+                    "怎样算对：在设置页为该档案填写模型名（可先拉取模型列表），"
+                    "或用 --model 启动参数指定。"
+                )
     else:
-        # env 回落（P1 现状）：缺 env 仍给中文指引
+        # env 回落（P1 现状）：缺 env 不再拒绝启动——空启动，设置页配置后再对话
         error = env_error(args.model)
         if error is not None:
-            print(error)
-            return 1
+            print(f"{error}服务仍将启动（未配置模式）：在设置页配置档案与模型后即可对话。")
         boot_profile_name = "default"
-        boot_model = args.model or os.environ["HASTINGS_MODEL"]
+        boot_model = args.model or os.environ.get("HASTINGS_MODEL", "")
 
     # ProviderBook 是进程级端点目录（P6 D1/T2）：按档案名缓存 provider 实例，
     # 跨档案切换复用、无需关闭；boot_* 决定新工作区的引导端点与模型。
@@ -182,8 +191,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(f"文章目录已打开：{args.stories_root}")
     print(f"语料库目录：{args.corpus_root}")
+    model_display = boot_model or "未配置（在设置页配置模型后即可对话）"
     print(
-        f"模型：{boot_model}｜档案：{boot_profile_name}｜写作台地址：http://{args.host}:{args.port}"
+        f"模型：{model_display}｜档案：{boot_profile_name}｜写作台地址：http://{args.host}:{args.port}"
     )
     if static_dir is not None:
         print(f"前端已托管：{static_dir}")

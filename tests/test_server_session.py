@@ -77,6 +77,31 @@ async def test_prompt_streams_events_and_running_lifecycle(
 
 
 @pytest.mark.anyio
+async def test_prompt_without_model_raises_configured_guidance(
+    workspace: StoryWorkspace,
+) -> None:
+    """空启动（未配置模型）：prompt fail fast 三要素，不打上游 API。"""
+    tools = create_bible_tools(workspace)
+    harness = AgentHarness(
+        AgentHarnessConfig(
+            provider=FakeProvider([]),
+            model="",  # 空启动：引导档案无 default_model
+            system=build_system_prompt(tools),
+            tools=tools,
+        )
+    )
+    session = HastingsSession(harness=harness, workspace=workspace)
+
+    with pytest.raises(AgentBusyError) as exc_info:
+        session.prompt("建一个角色")
+
+    message = str(exc_info.value)
+    assert "没有配置模型" in message
+    assert "空模式" in message
+    assert "设置页" in message and "--model" in message
+
+
+@pytest.mark.anyio
 async def test_prompt_while_running_raises_busy_with_guidance(
     workspace: StoryWorkspace,
 ) -> None:
