@@ -40,6 +40,7 @@ from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.workflows.analysis_dispatch import AnalysisDispatcher
 from hastings.application.workflows.manual_edit import CommitManualEdit, ManualEditIntent
+from hastings.application.workflows.restore_version import RestoreChapterVersion, RestoreIntent
 from hastings.domain.author_model.errors import AuthorModelViolation
 from hastings.domain.manuscript import error_codes as ms_ec
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
@@ -87,6 +88,7 @@ class V2Runtime:
         self.author_queries = AuthorProfileQueries(self.service)
         self.jobs = MemoryJobStore()
         self.dispatcher = AnalysisDispatcher(self.jobs)
+        self.restore = RestoreChapterVersion(self.handler, self.service)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(cast("EventOutbox", repo), self.dispatcher)
@@ -143,6 +145,12 @@ class SaveChapterRequest(BaseModel):
     full_text: str | None = None
     expected_chapter_base: str | None = None
     summary: str = "保存正文"
+
+
+class RestoreChapterRequest(BaseModel):
+    idempotency_key: str
+    source_commit_id: str
+    expected_chapter_base: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +280,34 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             "new_head": result.new_head,
             "summary": result.edit.summary,
             "warnings": list(result.warnings),
+            "chapter_base": chapter_base,
+        }
+
+    @router.post("/projects/{project_id}/chapters/{chapter_id}/restore")
+    def restore_chapter(
+        project_id: str, chapter_id: str, req: RestoreChapterRequest
+    ) -> dict[str, Any]:
+        """把章恢复到历史 Commit 的版本：恢复本身是一次新 Commit（不重写历史）。"""
+        result = runtime.restore.restore(
+            RestoreIntent(
+                project_id=ProjectId(project_id),
+                chapter_id=chapter_id,
+                source_commit_id=CommitId(req.source_commit_id),
+                idempotency_key=req.idempotency_key,
+                expected_chapter_base=req.expected_chapter_base,
+            )
+        )
+        head = runtime.head(ProjectId(project_id))
+        chapter_base = (
+            runtime.queries.chapter_base(ProjectId(project_id), head, chapter_id)
+            if head is not None
+            else ""
+        )
+        return {
+            "status": result.status,
+            "commit_id": result.commit_id,
+            "new_head": result.new_head,
+            "summary": result.summary,
             "chapter_base": chapter_base,
         }
 

@@ -332,6 +332,57 @@ class TestAuthorModelQueries:
 
 
 # ---------------------------------------------------------------------------
+# 恢复为新 Commit（验收 9 的 HTTP 面）
+# ---------------------------------------------------------------------------
+class TestRestoreEndpoint:
+    def test_restore_reverts_to_source_commit_as_new_commit(self) -> None:
+        runtime = V2Runtime.memory()
+        app = build_v2_app(runtime)
+        with TestClient(app) as c:
+            project_id = _create_project(c)
+            first_commit = _import_chapter(c, project_id)
+            chapter_id = c.get(f"/api/v2/projects/{project_id}/manuscript").json()["chapters"][0][
+                "chapter_id"
+            ]
+            saved = c.post(
+                f"/api/v2/projects/{project_id}/chapters/{chapter_id}/save",
+                json={"idempotency_key": "save-1", "full_text": "第一段。\n\n大改。\n\n第三段。"},
+            )
+            assert saved.json()["status"] == "committed"
+
+            restored = c.post(
+                f"/api/v2/projects/{project_id}/chapters/{chapter_id}/restore",
+                json={"idempotency_key": "restore-1", "source_commit_id": first_commit},
+            )
+            assert restored.status_code == 200, restored.text
+            body = restored.json()
+            assert body["status"] == "committed"
+            assert body["commit_id"] != first_commit
+
+            after = c.get(f"/api/v2/projects/{project_id}/chapters/{chapter_id}").json()
+            assert "第二段。" in after["text"] and "大改" not in after["text"]
+
+    def test_restore_with_chapter_missing_at_source_returns_404(self) -> None:
+        runtime = V2Runtime.memory()
+        app = build_v2_app(runtime)
+        with TestClient(app) as c:
+            project_id = _create_project(c)
+            first_commit = _import_chapter(c, project_id)
+            # 第二个 commit 引入新章；恢复「新章」到没有它的首 Commit 应 404
+            second = c.post(
+                f"/api/v2/projects/{project_id}/chapters/import",
+                json={"idempotency_key": "import-2", "title": "第二章", "text": "新章内容。"},
+            )
+            new_chapter_id = str(second.json()["chapter_id"])
+            response = c.post(
+                f"/api/v2/projects/{project_id}/chapters/{new_chapter_id}/restore",
+                json={"idempotency_key": "restore-x", "source_commit_id": first_commit},
+            )
+            assert response.status_code == 404, response.text
+            assert response.json()["error"]["code"] == "MANUSCRIPT_UNKNOWN_CHAPTER"
+
+
+# ---------------------------------------------------------------------------
 # 保存 → Outbox → 分析任务调度（消费者接线）
 # ---------------------------------------------------------------------------
 class TestAnalysisDispatchWiring:
