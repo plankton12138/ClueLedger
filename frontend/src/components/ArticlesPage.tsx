@@ -7,6 +7,8 @@
 
 import { useState } from "react";
 import { createWorkspace, deleteWorkspace, fetchWorkspaces } from "../api/rest";
+import { fetchMigrationStatus, type MigrationStatus } from "../api/v2migration";
+import MigrationPanel from "./MigrationPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -80,11 +82,32 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
   const slug = useChatStore((s) => s.slug);
   const workspaces = useChatStore((s) => s.workspaces);
   const [showCreate, setShowCreate] = useState(false);
+  // 迁移面（T17.4）：逐工作区迁移状态 + 当前展开迁移面板的文章。
+  const [statuses, setStatuses] = useState<Record<string, MigrationStatus>>({});
+  const [migratingSlug, setMigratingSlug] = useState<string | null>(null);
   // 模态删除确认：confirmSlug = 待确认的文章；输入其 slug 才亮「确认删除」。
   const [confirmSlug, setConfirmSlug] = useState<string | null>(null);
   const [confirmInput, setConfirmInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function refreshStatuses(): Promise<void> {
+    const list = useChatStore.getState().workspaces;
+    const entries = await Promise.all(
+      list.map(async (name) => {
+        try {
+          return [name, await fetchMigrationStatus(name)] as const;
+        } catch {
+          return null; // 状态读取失败不阻塞列表展示（下次进入重试）
+        }
+      }),
+    );
+    const next: Record<string, MigrationStatus> = {};
+    for (const entry of entries) {
+      if (entry !== null) next[entry[0]] = entry[1];
+    }
+    setStatuses(next);
+  }
 
   async function handleCreate(created: string): Promise<void> {
     setShowCreate(false);
@@ -93,6 +116,7 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
     } catch {
       // 列表刷新失败不阻塞切换——下次启动/新建会补齐
     }
+    void refreshStatuses();
     onSwitch(created);
     onEnter();
   }
@@ -115,6 +139,13 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  // 首次进入页面与工作区列表变化时拉取迁移状态（N 为个位数，逐个读可接受）。
+  const [statusLoaded, setStatusLoaded] = useState(false);
+  if (!statusLoaded && workspaces.length > 0) {
+    setStatusLoaded(true);
+    void refreshStatuses();
   }
 
   return (
@@ -157,6 +188,23 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
                       {w}
                       {w === slug && <span className="ml-2 text-[11px] text-gold-soft">当前</span>}
                     </span>
+                    {statuses[w]?.migrated && (
+                      <span
+                        className="flex-none border border-gold/40 px-1.5 py-0.5 text-[10px] text-gold-soft"
+                        title={`已迁移到 V2 项目 ${statuses[w]?.v2_project_id ?? ""}；写作请进创作台`}
+                      >
+                        V2
+                      </span>
+                    )}
+                    {!statuses[w]?.migrated && (
+                      <Button
+                        variant="outline"
+                        onClick={() => setMigratingSlug((cur) => (cur === w ? null : w))}
+                        className="h-auto flex-none px-2 py-0.5 text-xs text-paper/75 hover:bg-transparent hover:text-gold"
+                      >
+                        {migratingSlug === w ? "收起迁移" : "迁移 V2"}
+                      </Button>
+                    )}
                     {w !== slug && (
                       <Button
                         variant="outline"
@@ -189,6 +237,17 @@ export default function ArticlesPage({ onSwitch, onEnter }: Props) {
                       删除
                     </Button>
                   </div>
+                  {migratingSlug === w && (
+                    <div className="mt-2">
+                      <MigrationPanel
+                        slug={w}
+                        onMigrated={() => {
+                          setMigratingSlug(null);
+                          void refreshStatuses();
+                        }}
+                      />
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

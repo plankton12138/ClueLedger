@@ -73,6 +73,15 @@ export default function ChangeCenter() {
     <form className="mb-5 flex gap-2" onSubmit={e => { e.preventDefault(); setDetail(null); void perform(list); }}>
       <label>项目 <input className={inputClass} value={project} disabled={busy} onChange={e => { setProject(e.target.value); setDetail(null); setChanges([]); setAudit(null); }} required placeholder="选择已有 V2 项目的编号" /></label>
       <Button type="submit" disabled={busy || !project}>载入变更</Button>
+      {project !== "" && (
+        <a
+          href={`/api/v2/projects/${encodeURIComponent(project)}/export`}
+          title="从当前 Commit 导出可读备份包（Markdown/YAML/JSON + manifest 哈希）"
+          className="flex h-8 items-center border border-gold/60 px-2 text-xs text-gold hover:bg-gold/15"
+        >
+          ⇩ 导出备份
+        </a>
+      )}
     </form>
     {error && <p role="alert" className="mb-4 border border-overdue p-3 text-overdue">{error}</p>}
     <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
