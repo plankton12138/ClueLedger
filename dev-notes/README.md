@@ -21,8 +21,9 @@
 ## 当前入口
 
 - 当前目标设计：[v2/DESIGN.md](v2/DESIGN.md)
-- 当前实施计划：[v2/plans/phase-14-manuscript-author-model-plan.md](v2/plans/phase-14-manuscript-author-model-plan.md)（Phase 11–13 已完成，下一阶段 Phase 14）
-- 最近完成阶段 as-built：Story 领域内核 [v2/modules/story-domain.md](v2/modules/story-domain.md) + 构建笔记 [v2/phase-13-story-domain.md](v2/phase-13-story-domain.md)
+- 当前实施计划：Phase 14 已完成（2026-10-15），下一阶段待立项（候选：[v2/plans/phase-15-change-impact-plan.md](v2/plans/phase-15-change-impact-plan.md)）
+- 最近完成阶段 as-built：正文版本与作者模型 [v2/modules/manuscript-author-model.md](v2/modules/manuscript-author-model.md) + 构建笔记 [v2/phase-14-manuscript-author-model.md](v2/phase-14-manuscript-author-model.md)
+- 上一阶段 as-built：Story 领域内核 [v2/modules/story-domain.md](v2/modules/story-domain.md) + 构建笔记 [v2/phase-13-story-domain.md](v2/phase-13-story-domain.md)
 - 仓库内核 as-built：[v2/modules/repository-kernel.md](v2/modules/repository-kernel.md) + 构建笔记 [v2/phase-12-repository-kernel.md](v2/phase-12-repository-kernel.md)
 - 当前代码导航：[../src/hastings/README.md](../src/hastings/README.md)
 - 当前 V1 工具契约：[v1/modules/writing-tools.md](v1/modules/writing-tools.md)

@@ -1,7 +1,21 @@
 # Manuscript 与 Author Model
 
-> 状态：target，计划在 Phase 14 交付。
-> 目标包：`hastings.domain.manuscript`、`hastings.domain.author_model`、对应 application workflows。
+> 状态：**as-built**（Phase 14 已交付，2026-10-15）。构建笔记见 [../phase-14-manuscript-author-model.md](../phase-14-manuscript-author-model.md)。
+> 实际包：`hastings.domain.manuscript`、`hastings.domain.author_model`、`hastings.application.workflows`（manual_edit / analysis_dispatch / author_learning / restore_version）、`hastings.server.v2`（REST 面）。
+> 关键词：TextUnit、Edit Operation、Patch Proposal、逐 hunk 接受、章基础（内容哈希）、保存与分析解耦、Outbox 补偿、Author Observation、Preference Hypothesis、Author Example、V2 REST。
+> 下文 §2–§9 为立项时的 target 设计，保留演进对比价值；与 as-built 的命名差异以本块为准。
+
+## 0. as-built 摘要（Phase 14 交付）
+
+- **正文**：`Manuscript → Chapter → TextUnit`（段落级，顺序由章的 `text_unit_ids` 显式持有）。章基础 = 活动段落有序 `(unit_id, 文本)` 的内容哈希（`catalog.content_base`），读投影与命令应用后状态同源；乐观冲突返回 `MANUSCRIPT_BASE_CONFLICT` + 期望/实际基础。
+- **Edit Operation**：`insert / replace / delete / split / merge / move`（`operations.py`）；导入整章按确定性段落切分；完整文本保存由服务器 diff 规范化为操作。
+- **Agent Patch**：`ManuscriptPatchProposal`（hunk 状态 pending/accepted/rejected）经 `propose_patch` 登记、`accept_patch_hunks` 逐块接受（`applied_base` 记回提案）、`reject_patch` 拒绝；提案无法直接提交正文。
+- **人工保存**：`CommitManualEdit.save` 只提交即返回；分析调度由持久化 Outbox 消费者（`AnalysisDispatcher`）承担，按 event_id 去重、失败重投补偿。
+- **作者模型对象**（命名与 target 的差异）：`PreferenceHypothesis`（字段 `category`/`statement`/`scope_kind`+`scope_target`/`status` ∈ candidate/active/revoked/`origin` ∈ explicit/induced/`evidence` 为 Commit ID 元组）；`AuthorObservation`（内嵌 `EditSample` + `Classification`）；`AuthorExample`（引用-only + 软删除，极性 positive/negative）。全部是普通 Artifact，随 Commit 持久化。
+- **激活规则**（`rules.py`）：规则优先分类管线；置信度门槛为可注入策略参数，低置信保持 candidate；风格方向聚合区分相反证据；scope 具体度优先（global < project < arc < chapter）；revoke 封锁自动复活。
+- **历史恢复**：`RestoreChapterVersion` 读源 Commit 章文本 → 当前 head 上一次 `save_full_text` 提交（恢复 = 新 Commit，不重写历史）。
+- **REST 面**（`/api/v2`，仅后端）：`POST /projects`、`POST /projects/{pid}/chapters/import`、`GET .../manuscript`、`GET .../chapters/{cid}`、`POST .../chapters/{cid}/save`、`POST .../chapters/{cid}/restore`、`GET .../author-model/{preferences,observations}`、`GET .../author-model/preferences/{pid}/evidence`。错误信封 `{error: {code, category, where, why, fix, details}}`，状态码按 code 分类（`*_CONFLICT`→409、`*_NOT_FOUND`/`UNKNOWN*`→404、环境→503、其余违规→400）。
+- **留白**：JobStore 进程内、发布循环未接 lifespan、消费者只建任务不执行、版本历史列表端点与作者模型写端点未做（等 UI 阶段）、正文与 Story 关联（Phase 15）。
 
 ## 1. 职责
 

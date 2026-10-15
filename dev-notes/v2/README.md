@@ -29,7 +29,7 @@
 | 产品目标、整体架构、核心流程 | [DESIGN.md](DESIGN.md) |
 | 模块依赖、公开契约和不变量 | [modules/README.md](modules/README.md) |
 | 全部重建阶段、依赖和里程碑 | [plans/README.md](plans/README.md) |
-| 最近完成阶段（as-built） | [phase-13-story-domain.md](phase-13-story-domain.md)（Story 领域内核；模块 as-built 见 [modules/story-domain.md](modules/story-domain.md)）。上一阶段：[phase-12-repository-kernel.md](phase-12-repository-kernel.md)（仓库内核） |
+| 最近完成阶段（as-built） | [phase-14-manuscript-author-model.md](phase-14-manuscript-author-model.md)（正文版本与作者模型；模块 as-built 见 [modules/manuscript-author-model.md](modules/manuscript-author-model.md)）。上一阶段：[phase-13-story-domain.md](phase-13-story-domain.md)（Story 领域内核） |
 | 旧系统如何迁移 | [DESIGN.md §11](DESIGN.md#11-旧系统迁移边界) |
 
 ## 3. V2 核心词汇
@@ -76,6 +76,7 @@ dev-notes/v2/
 ├── plans/                        # Phase 11–17 详细实施计划
 ├── phase-11-architecture-baseline.md  # Phase 11 构建笔记
 ├── phase-12-repository-kernel.md      # Phase 12 构建笔记
-└── phase-13-story-domain.md           # Phase 13 构建笔记
+├── phase-13-story-domain.md           # Phase 13 构建笔记
+└── phase-14-manuscript-author-model.md  # Phase 14 构建笔记
 ```
 

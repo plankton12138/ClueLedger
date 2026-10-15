@@ -9,9 +9,9 @@ tau 内核之上的**薄应用层**：装配（工具注册、system prompt、�
 | `bible/` | 账本域：数据模型与状态机、工作区六阶段生命周期、派生统计与审计、时间线检测 | models / store / state_machine / story_state / stats / audit / timeline_check |
 | `tools/` | 小说写作工具集（**硬约束所在层**）：账本读写、正文、手法锁、时间线、阶段机 | bible_tools / chapter_tools / method_tools / timeline_tools / story_tools / errors |
 | `manuscript/` | 正文 SSOT 与保存不变量：段落 diff、revision 归档、write_guard 守门、写作守门（正文直出纠偏 / 回合规速） | store / diff / write_guard / guards / prose_guard / advance_guard |
-| `server/` | FastAPI REST + WebSocket 桥、会话装配、工作区注册表、对账队列 | app / ws / rest / hastings_session / session / registry / reconcile |
+| `server/` | FastAPI REST + WebSocket 桥、会话装配、工作区注册表、对账队列；V2 REST 面（`/api/v2`，正文保存/恢复与作者模型查询） | app / ws / rest / hastings_session / session / registry / reconcile / v2 |
 | `rag/` | 语料与文风：确定性文风档案 + 语料库存储（向量检索待交付） | style_profile / corpus_store |
-| V2 五层 `domain/ application/ agents/ infrastructure/ interfaces/` | V2 重建（Phase 11–）：端口 Protocol、错误信封、仓库内核（CommitService + 内存/SQLite 双后端 + inspection）、Story 领域（Canon/叙事/悬疑命令 + 投影 + V1 dry-run 映射器） | application/ports/、application/services/commit_service.py、domain/story/、interfaces/importers/v1_story_mapper.py；as-built 见 [dev-notes/v2/modules/repository-kernel.md](../../dev-notes/v2/modules/repository-kernel.md) 与 [dev-notes/v2/modules/story-domain.md](../../dev-notes/v2/modules/story-domain.md) |
+| V2 五层 `domain/ application/ agents/ infrastructure/ interfaces/` | V2 重建（Phase 11–）：端口 Protocol、错误信封、仓库内核（CommitService + 内存/SQLite 双后端 + inspection）、Story 领域（Canon/叙事/悬疑命令 + 投影 + V1 dry-run 映射器）、正文与作者模型（Edit Operation / Patch / 逐 hunk 接受 / 偏好激活 / 保存与分析解耦 / 历史恢复） | application/ports/、application/services/commit_service.py、domain/story/、domain/manuscript/、domain/author_model/、infrastructure/repository/、infrastructure/events/、interfaces/importers/v1_story_mapper.py、server/v2.py；as-built 见 [dev-notes/v2/modules/repository-kernel.md](../../dev-notes/v2/modules/repository-kernel.md)、[dev-notes/v2/modules/story-domain.md](../../dev-notes/v2/modules/story-domain.md) 与 [dev-notes/v2/modules/manuscript-author-model.md](../../dev-notes/v2/modules/manuscript-author-model.md) |
 | `eval/` | 评测 harness 占位（P13 待交付） | — |
 | 顶层模块 | CLI 与渲染、system prompt 组装、会话/事件持久化、多会话索引、上下文管理、设置、provider 目录 | cli / prompts / session_persist / session_store / events_store / context_manager / settings / provider_catalog |
 

@@ -1,6 +1,6 @@
 # Phase 14 计划：正文版本、人工编辑与作者模型
 
-> 状态：待执行。
+> 状态：已完成（2026-10-15）。构建笔记：[../phase-14-manuscript-author-model.md](../phase-14-manuscript-author-model.md)；模块 as-built：[../modules/manuscript-author-model.md](../modules/manuscript-author-model.md)。
 > 依赖：Phase 12 完成；与 Phase 13 可并行，但正文关联 Story ID 的集成验收需等待 Phase 13。
 > 目标：把人工编辑变成可靠的版本提交，并以异步、可解释的方式从修改中建立作者模型。
 
