@@ -24,7 +24,19 @@ from hastings.domain.changes.models import ChangeSet
 from hastings.domain.repository.ids import Actor, CommitId, ProjectId
 from hastings.domain.repository.results import COMMITTED
 
-from .conftest import AUTHOR, ChangesEnv, head_of, make_open_command
+from .conftest import (
+    AUTHOR,
+    ChangesEnv,
+    head_of,
+    issue_receipt,
+    make_open_command,
+    plan_of,
+    record_empty_report,
+    record_projection_plan,
+    report_of,
+)
+from .conftest import catalog_of as _catalog_of
+from .conftest import change_set_of as _cs_of
 
 _OPEN_AT = datetime(2026, 10, 15, 12, 0, 0, tzinfo=UTC)
 _ADVANCE_AT = datetime(2026, 10, 15, 12, 5, 0, tzinfo=UTC)
@@ -88,14 +100,31 @@ _key_counter = iter(range(1000, 9999))
 
 
 def _walk_to(env: ChangesEnv, project_id: str, change_set_id: str, targets: list[str]) -> None:
-    """依次推进（每个目标一个独立幂等键），失败时报出目标便于定位。"""
+    """依次推进（每个目标一个独立幂等键），失败时报出目标便于定位。
+
+    T15.5 起批准必须携带真实凭证：首次到达 ANALYZED 改为「登记空报告」
+    （同提交自动转入 analyzed，历史形状不变）；APPROVED 前补齐计划并签发
+    凭证（仅当状态确为 analyzed 时——非法迁移测试依赖状态机先行拒绝）。
+    """
     for target in targets:
+        key = f"k{next(_key_counter)}"
+        if target == st.CHANGE_ANALYZED and report_of(env, project_id, change_set_id) is None:
+            result = record_empty_report(env, project_id, change_set_id, key=key)
+            assert result.is_committed, "登记影响报告失败"
+            continue
         kwargs: dict[str, object] = {}
         if target == st.CHANGE_APPROVED:
-            kwargs["approval_ref"] = "rcpt_author_1"
+            model = _cs_of(env, project_id, change_set_id)
+            if model.status == st.CHANGE_ANALYZED:
+                if plan_of(env, project_id, change_set_id) is None:
+                    planned = record_projection_plan(env, project_id, change_set_id, key=key)
+                    assert planned.is_committed, "登记修订计划失败"
+                    key = f"k{next(_key_counter)}"
+                rcpt = issue_receipt(env, project_id, change_set_id, key=f"k{next(_key_counter)}")
+                assert rcpt.is_committed, "签发批准凭证失败"
+                kwargs["approval_ref"] = rcpt.change.artifact_changes[0].artifact_id.value
         if target == st.CHANGE_COMMITTED:
             kwargs["commit_id"] = "cmt_result_1"
-        key = f"k{next(_key_counter)}"
         result = _advance(env, project_id, change_set_id, target, key, **kwargs)
         assert result.is_committed, f"推进到 {target} 失败"
 
@@ -183,7 +212,9 @@ class TestLegalPath:
         assert last.commit_id == "cmt_result_1"  # 提交迁移记录产生结果的 Commit
         assert last.approval_ref == ""  # 非批准迁移不带凭证
         approved = model.history[3]
-        assert approved.approval_ref == "rcpt_author_1"  # 批准凭证入历史
+        # 批准凭证入历史：引用指向目录中真实的 approval_receipt Artifact
+        entry = _catalog_of(changes_env, project_id).get(approved.approval_ref)
+        assert entry is not None and entry.kind == "changes.approval_receipt"
         for record in model.history:
             assert record.at and record.reason and record.base_commit_id  # 审计四件套齐全
 

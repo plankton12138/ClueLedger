@@ -24,7 +24,15 @@ from hastings.domain.manuscript.models import TextUnit
 from hastings.domain.repository.ids import ArtifactId, CommitId
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest, RelationChange
 
-from .conftest import AUTHOR, head_of, make_advance_command, make_open_command, run_command
+from .conftest import (
+    AUTHOR,
+    head_of,
+    issue_receipt,
+    make_advance_command,
+    make_open_command,
+    record_projection_plan,
+    run_command,
+)
 
 
 def _seed_chain(env: Any, *, kind_overrides: dict[str, str] | None = None) -> tuple[Any, str]:
@@ -88,6 +96,14 @@ def _workflow(env: Any) -> AnalyzeChangeImpact:
     return AnalyzeChangeImpact(env.handler, env.service, env.clock, AUTHOR)
 
 
+def _approve_with_receipt(env: Any, project: Any, cs_id: str) -> str:
+    """T15.5 批准前置：补齐计划并签发凭证，返回凭证 ID。"""
+    record_projection_plan(env, project.id, cs_id, key=f"plan-{cs_id}")
+    rcpt = issue_receipt(env, project.id, cs_id, key=f"rcpt-{cs_id}")
+    assert rcpt.is_committed
+    return rcpt.change.artifact_changes[0].artifact_id.value
+
+
 def _catalog(env: Any, project: Any) -> ChangesCatalog:
     head = head_of(env, project.id)
     assert head is not None
@@ -144,7 +160,7 @@ def test_recompute_in_review_reuses_report_artifact(changes_env: Any) -> None:
     first = workflow.analyze(AnalyzeIntent(project.id, cs_id, "analyze-1"))
 
     for target, extra, key in (
-        (st.CHANGE_APPROVED, {"approval_ref": "receipt-1"}, "w1"),
+        (st.CHANGE_APPROVED, {"approval_ref": _approve_with_receipt(env, project, cs_id)}, "w1"),
         (st.CHANGE_EXECUTING, {}, "w2"),
         (st.CHANGE_REVIEW, {}, "w3"),
     ):
@@ -228,18 +244,19 @@ def test_analyze_rejected_in_approved_state(changes_env: Any) -> None:
     env = changes_env
     project, head = _seed_chain(env)
     cs_id = _open(env, project, head)
-    run_command(env, project.id, make_advance_command(st.CHANGE_ANALYZING)(cs_id), key="w1")
-    run_command(env, project.id, make_advance_command(st.CHANGE_ANALYZED)(cs_id), key="w2")
+    workflow = _workflow(env)
+    workflow.analyze(AnalyzeIntent(project.id, cs_id, "analyze-1"))  # 报告落库，转入 analyzed
+    ref = _approve_with_receipt(env, project, cs_id)
     run_command(
         env,
         project.id,
-        make_advance_command(st.CHANGE_APPROVED, approval_ref="receipt-1")(cs_id),
+        make_advance_command(st.CHANGE_APPROVED, approval_ref=ref)(cs_id),
         key="w3",
     )
     head_before = head_of(env, project.id)
 
     with pytest.raises(ViolationError) as exc:
-        _workflow(env).analyze(AnalyzeIntent(project.id, cs_id, "analyze-1"))
+        workflow.analyze(AnalyzeIntent(project.id, cs_id, "analyze-2"))
 
     assert exc.value.code == ec.CHANGES_INVALID_TRANSITION
     assert "executing" in exc.value.fix  # 指向重算时机

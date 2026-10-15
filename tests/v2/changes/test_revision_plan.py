@@ -45,7 +45,14 @@ from hastings.domain.changes.planning import (
 from hastings.domain.repository.ids import ArtifactId, CommitId
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest, RelationChange
 
-from .conftest import AUTHOR, head_of, make_advance_command, make_open_command, run_command
+from .conftest import (
+    AUTHOR,
+    head_of,
+    issue_receipt,
+    make_advance_command,
+    make_open_command,
+    run_command,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -547,10 +554,16 @@ def test_plan_rejected_in_approved(changes_env: Any) -> None:
     project, head = _seed_chain(env)
     cs_id = _open(env, project, head)
     _analyzed(env, project, cs_id)
+    catalog = _catalog(env, project)
+    report = next(e for e in catalog.by_kind(kinds.KIND_IMPACT_REPORT)).model()
+    _record_plan(env, project, cs_id, build_revision_plan(report), "plan-1")
+    rcpt = issue_receipt(env, project.id, cs_id, key="rcpt-1")
+    assert rcpt.is_committed
+    ref = rcpt.change.artifact_changes[0].artifact_id.value
     run_command(
         env,
         project.id,
-        make_advance_command(st.CHANGE_APPROVED, approval_ref="receipt-1")(cs_id),
+        make_advance_command(st.CHANGE_APPROVED, approval_ref=ref)(cs_id),
         key="w1",
     )
 

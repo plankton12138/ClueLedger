@@ -14,7 +14,7 @@ from typing import Any
 from hastings.domain.changes import error_codes as ec
 from hastings.domain.changes import kinds
 from hastings.domain.changes import status as st
-from hastings.domain.changes.catalog import ChangesCatalog
+from hastings.domain.changes.catalog import ChangeEntry, ChangesCatalog
 from hastings.domain.changes.errors import violation
 from hastings.domain.changes.impact import ImpactReport
 from hastings.domain.changes.models import (
@@ -33,15 +33,30 @@ from hastings.domain.changes.planning import (
     execution_order,
     find_item_cycle,
 )
+from hastings.domain.changes.receipt import (
+    EVENT_RECEIPT_CONSUMED,
+    EVENT_RECEIPT_ISSUED,
+    EVENT_RECEIPT_REVOKED,
+    RECEIPT_ACTIVE,
+    RECEIPT_CONSUMED,
+    RECEIPT_REVOKED,
+    ApprovalReceipt,
+    confirm_brief,
+    confirm_fingerprint,
+    mark_receipt,
+    require_consumable,
+)
 from hastings.domain.repository.ids import Actor, ArtifactId, RevisionId
 from hastings.domain.repository.requests import ArtifactChange
 
 __all__ = [
     "NewId",
     "advance_change_set",
+    "issue_approval_receipt",
     "open_change_set",
     "record_impact_analysis",
     "record_revision_plan",
+    "revoke_approval_receipt",
 ]
 
 NewId = Any  # callable[[str], str]；由 handler 注入（领域不依赖端口）
@@ -154,6 +169,8 @@ def advance_change_set(
     st.require_transition(model.status, target, where=where)
 
     # 目标专属规则（硬约束，缺失即拒绝）
+    receipt: ApprovalReceipt | None = None
+    receipt_entry: ChangeEntry | None = None
     if target == st.CHANGE_APPROVED:
         if actor.kind != "human":
             raise violation(
@@ -172,6 +189,28 @@ def advance_change_set(
                 "先经作者授权流程取得 Approval Receipt，再携带 receipt 引用批准",
                 change_set_id=change_set_id,
             )
+        receipt_entry = catalog.get(approval_ref)
+        if receipt_entry is None or receipt_entry.kind != kinds.KIND_APPROVAL_RECEIPT:
+            raise violation(
+                ec.CHANGES_RECEIPT_INVALID,
+                where,
+                f"approval_ref {approval_ref!r} 不指向已签发的批准凭证",
+                "先由作者签发批准凭证（issue_approval_receipt），再携带其凭证 ID 批准",
+                approval_ref=approval_ref,
+            )
+        receipt = receipt_entry.model()
+        if receipt.change_set_id != change_set_id:
+            raise violation(
+                ec.CHANGES_RECEIPT_INVALID,
+                where,
+                f"凭证 {approval_ref!r} 属于变更集 {receipt.change_set_id!r}，"
+                f"不能用于变更集 {change_set_id!r}",
+                "每个变更集使用自己签发的凭证；跨变更集复用一律拒绝",
+                approval_ref=approval_ref,
+                receipt_change_set_id=receipt.change_set_id,
+            )
+        fingerprint_now = _approval_fingerprint(catalog, model, where)
+        require_consumable(receipt, change_set=model, fingerprint=fingerprint_now, where=where)
     if target == st.CHANGE_COMMITTED and not commit_id:
         raise violation(
             ec.CHANGES_INVALID_COMMAND,
@@ -203,21 +242,46 @@ def advance_change_set(
         scope=model.scope,
         schema_version=model.schema_version,
     )
-    return ChangeSetChange(
-        artifact_changes=(
+    changes: list[ArtifactChange] = [
+        ArtifactChange(
+            artifact_id=ArtifactId(change_set_id),
+            content=updated.to_content(),
+            old_revision_id=RevisionId(entry.revision_id),
+        ),
+    ]
+    events: list[tuple[str, dict[str, Any]]] = [
+        (
+            EVENT_CHANGE_SET_TRANSITIONED,
+            {"change_set_id": change_set_id, "from": model.status, "to": target},
+        ),
+    ]
+    summary = f"ChangeSet {change_set_id}：{model.status} → {target}（{reason}）"
+    if target == st.CHANGE_APPROVED and receipt is not None and receipt_entry is not None:
+        # 批准即消费：同提交内原子生效，一次批准只授权一次执行（T15.5）
+        resolved = mark_receipt(receipt, RECEIPT_CONSUMED, at=_iso(at), note=reason)
+        changes.append(
             ArtifactChange(
-                artifact_id=ArtifactId(change_set_id),
-                content=updated.to_content(),
-                old_revision_id=RevisionId(entry.revision_id),
-            ),
-        ),
-        events=(
+                artifact_id=ArtifactId(approval_ref),
+                content=resolved.to_content(),
+                old_revision_id=RevisionId(receipt_entry.revision_id),
+                kind=kinds.KIND_APPROVAL_RECEIPT,
+            )
+        )
+        events.append(
             (
-                EVENT_CHANGE_SET_TRANSITIONED,
-                {"change_set_id": change_set_id, "from": model.status, "to": target},
-            ),
-        ),
-        summary=f"ChangeSet {change_set_id}：{model.status} → {target}（{reason}）",
+                EVENT_RECEIPT_CONSUMED,
+                {
+                    "change_set_id": change_set_id,
+                    "receipt_id": approval_ref,
+                    "by": f"{actor.kind}:{actor.id}",
+                },
+            )
+        )
+        summary = f"{summary}；凭证 {approval_ref} 已消费"
+    return ChangeSetChange(
+        artifact_changes=tuple(changes),
+        events=tuple(events),
+        summary=summary,
     )
 
 
@@ -479,6 +543,223 @@ def record_revision_plan(
             f"变更集 {change_set_id} 修订计划：{len(stamped.steps)} 步"
             f"（移出 {len(stamped.unassigned)} 项）"
         ),
+    )
+
+
+def issue_approval_receipt(
+    catalog: ChangesCatalog,
+    new_id: NewId,
+    *,
+    change_set_id: str,
+    actor: Actor,
+    at: Any,
+    reason: str = "作者确认修订计划",
+) -> ChangeSetChange:
+    """签发批准凭证：把作者确认的内容（指纹 + 展示简报）固化为 Artifact。
+
+    硬约束（四透镜②）：只有作者（human）能签发；只有 analyzed 状态能签发
+    （此时报告与计划都已落库，确认页有据可依）；已有 active 凭证时拒绝重复
+    签发。消费/撤销后的重新签发复用同一 Artifact（新 Revision），历史可回溯。
+    """
+    where = f"changes.issue_receipt({change_set_id})"
+    entry = catalog.require_change_set(change_set_id, where=where)
+    model: ChangeSet = entry.model()
+    if actor.kind != "human":
+        raise violation(
+            ec.CHANGES_APPROVAL_REQUIRED,
+            where,
+            f"批准凭证只能由作者签发（actor.kind=human），收到 {actor.kind!r}",
+            "Agent 不能为自己的计划签发批准；由作者在确认页审阅后签发",
+            actor_kind=actor.kind,
+            actor_id=actor.id,
+        )
+    if model.status != st.CHANGE_ANALYZED:
+        raise violation(
+            ec.CHANGES_INVALID_TRANSITION,
+            where,
+            f"只有 analyzed 状态能签发批准凭证，当前是 {model.status!r}",
+            "先完成影响分析（报告落库自动转入 analyzed），再进入作者确认",
+            status=model.status,
+        )
+    report = _find_report(catalog, change_set_id)
+    if report is None:
+        raise violation(
+            ec.CHANGES_INVALID_COMMAND,
+            where,
+            "找不到该变更集的影响报告，作者确认没有依据",
+            "先执行影响分析（报告落库），再签发批准凭证",
+            change_set_id=change_set_id,
+        )
+    plan = _find_plan(catalog, change_set_id)
+    if plan is None:
+        raise violation(
+            ec.CHANGES_INVALID_COMMAND,
+            where,
+            "找不到该变更集的修订计划，作者确认缺少执行范围",
+            "先生成并落库修订计划，再签发批准凭证",
+            change_set_id=change_set_id,
+        )
+    existing = _find_receipt_entry(catalog, change_set_id)
+    if existing is not None and existing.model().status == RECEIPT_ACTIVE:
+        raise violation(
+            ec.CHANGES_INVALID_COMMAND,
+            where,
+            f"该变更集已有 active 凭证 {existing.artifact_id!r}",
+            "直接引用该凭证批准；计划或范围变化使凭证失效后，先 revoke_approval_receipt 再重新签发",
+            receipt_id=existing.artifact_id,
+        )
+    if existing is not None:
+        receipt_id = existing.artifact_id
+    else:
+        receipt_id = _unique_receipt_id(catalog, new_id)
+    receipt = ApprovalReceipt(
+        receipt_id=receipt_id,
+        change_set_id=change_set_id,
+        base_commit_id=model.base_commit_id,
+        fingerprint=confirm_fingerprint(model, report, plan),
+        brief=confirm_brief(model, report, plan),
+        status=RECEIPT_ACTIVE,
+        issued_by=f"{actor.kind}:{actor.id}",
+        issued_at=_iso(at),
+    )
+    return ChangeSetChange(
+        artifact_changes=(
+            ArtifactChange(
+                artifact_id=ArtifactId(receipt_id),
+                content=receipt.to_content(),
+                old_revision_id=RevisionId(existing.revision_id) if existing is not None else None,
+                kind=kinds.KIND_APPROVAL_RECEIPT,
+            ),
+        ),
+        events=(
+            (
+                EVENT_RECEIPT_ISSUED,
+                {
+                    "change_set_id": change_set_id,
+                    "receipt_id": receipt_id,
+                    "by": f"{actor.kind}:{actor.id}",
+                },
+            ),
+        ),
+        summary=f"变更集 {change_set_id} 签发批准凭证 {receipt_id}（{len(plan.steps)} 步）",
+    )
+
+
+def revoke_approval_receipt(
+    catalog: ChangesCatalog,
+    new_id: NewId,
+    *,
+    change_set_id: str,
+    actor: Actor,
+    at: Any,
+    reason: str,
+) -> ChangeSetChange:
+    """撤销 active 凭证：作者反悔的正规出口，撤销后凭证永久失效。"""
+    del new_id  # 撤销复用既有 Artifact，不创建新对象
+    where = f"changes.revoke_receipt({change_set_id})"
+    catalog.require_change_set(change_set_id, where=where)
+    if actor.kind != "human":
+        raise violation(
+            ec.CHANGES_APPROVAL_REQUIRED,
+            where,
+            f"凭证撤销只能由作者操作（actor.kind=human），收到 {actor.kind!r}",
+            "Agent 不能撤销作者的批准；由作者在确认页撤销",
+            actor_kind=actor.kind,
+            actor_id=actor.id,
+        )
+    entry = _find_receipt_entry(catalog, change_set_id)
+    current = "不存在" if entry is None else entry.model().status
+    if entry is None or entry.model().status != RECEIPT_ACTIVE:
+        raise violation(
+            ec.CHANGES_INVALID_COMMAND,
+            where,
+            f"没有可撤销的 active 凭证（当前：{current}）",
+            "只有 active 凭证可撤销；如需继续执行请重新签发",
+            change_set_id=change_set_id,
+            receipt_status=current,
+        )
+    receipt = mark_receipt(entry.model(), RECEIPT_REVOKED, at=_iso(at), note=reason)
+    return ChangeSetChange(
+        artifact_changes=(
+            ArtifactChange(
+                artifact_id=ArtifactId(entry.artifact_id),
+                content=receipt.to_content(),
+                old_revision_id=RevisionId(entry.revision_id),
+                kind=kinds.KIND_APPROVAL_RECEIPT,
+            ),
+        ),
+        events=(
+            (
+                EVENT_RECEIPT_REVOKED,
+                {
+                    "change_set_id": change_set_id,
+                    "receipt_id": entry.artifact_id,
+                    "by": f"{actor.kind}:{actor.id}",
+                    "reason": reason,
+                },
+            ),
+        ),
+        summary=f"变更集 {change_set_id} 撤销批准凭证 {entry.artifact_id}",
+    )
+
+
+def _approval_fingerprint(catalog: ChangesCatalog, change_set: ChangeSet, where: str) -> str:
+    """按目录当前内容重算确认指纹；报告或计划缺失按凭证过期处理。"""
+    report = _find_report(catalog, change_set.change_set_id)
+    if report is None:
+        raise violation(
+            ec.CHANGES_RECEIPT_STALE,
+            where,
+            "批准依据的影响报告已不存在",
+            "重新执行影响分析并重新签发批准凭证",
+            change_set_id=change_set.change_set_id,
+        )
+    plan = _find_plan(catalog, change_set.change_set_id)
+    if plan is None:
+        raise violation(
+            ec.CHANGES_RECEIPT_STALE,
+            where,
+            "批准依据的修订计划已不存在",
+            "重新生成修订计划并重新签发批准凭证",
+            change_set_id=change_set.change_set_id,
+        )
+    return confirm_fingerprint(change_set, report, plan)
+
+
+def _find_plan(catalog: ChangesCatalog, change_set_id: str) -> RevisionPlan | None:
+    entry = next(
+        (
+            e
+            for e in catalog.by_kind(kinds.KIND_REVISION_PLAN)
+            if isinstance(e.model(), RevisionPlan) and e.model().change_set_id == change_set_id
+        ),
+        None,
+    )
+    return entry.model() if entry is not None else None
+
+
+def _find_receipt_entry(catalog: ChangesCatalog, change_set_id: str) -> ChangeEntry | None:
+    return next(
+        (
+            e
+            for e in catalog.by_kind(kinds.KIND_APPROVAL_RECEIPT)
+            if isinstance(e.model(), ApprovalReceipt) and e.model().change_set_id == change_set_id
+        ),
+        None,
+    )
+
+
+def _unique_receipt_id(catalog: ChangesCatalog, new_id: NewId) -> str:
+    """生成目录内唯一的凭证 Artifact ID（防御生成器冲突，上限 1000 次）。"""
+    for _ in range(1000):
+        candidate: str = new_id("rcpt")
+        if catalog.get(candidate) is None:
+            return candidate
+    raise violation(
+        ec.CHANGES_INVALID_COMMAND,
+        "changes.issue_receipt",
+        "连续 1000 次生成的凭证 ID 都已存在",
+        "检查 IdGenerator 是否配置正确（应产出递增唯一 ID）",
     )
 
 

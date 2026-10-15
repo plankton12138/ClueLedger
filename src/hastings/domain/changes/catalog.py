@@ -15,6 +15,7 @@ from hastings.domain.changes.errors import violation
 from hastings.domain.changes.impact import ImpactReport
 from hastings.domain.changes.models import ChangeSet
 from hastings.domain.changes.planning import RevisionPlan
+from hastings.domain.changes.receipt import ApprovalReceipt
 from hastings.domain.repository.models import Snapshot
 
 __all__ = ["ChangeEntry", "ChangesCatalog", "decode"]
@@ -28,6 +29,8 @@ def decode(kind: str, content: dict[str, Any]) -> Any:
         return ImpactReport.from_content(content)
     if kind == kinds.KIND_REVISION_PLAN:
         return RevisionPlan.from_content(content)
+    if kind == kinds.KIND_APPROVAL_RECEIPT:
+        return ApprovalReceipt.from_content(content)
     return content
 
 
