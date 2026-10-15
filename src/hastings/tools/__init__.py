@@ -1,1 +1,1 @@
-"""小说写作工具集（硬约束所在层）：账本读写、正文、手法锁、时间线检测、阶段机 story_stage。"""
+"""V1 存留工具集（只读）：bible_query、read_chapter/list_chapters、timeline_check。"""

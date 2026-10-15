@@ -14,7 +14,7 @@ test("J4 账本切换与搜索跳转", async ({ page }) => {
   // 五账本 Tabs 依次切换：角色账本有两条预置角色，其余空账本出空态文案
   for (const emptyTab of ["线索", "伏笔", "手法", "时间线"]) {
     await page.getByRole("tab", { name: emptyTab }).click();
-    await expect(page.getByText("该账本暂无条目（用 bible_upsert 工具登记）。")).toBeVisible();
+    await expect(page.getByText("该账本暂无条目。")).toBeVisible();
   }
   await page.getByRole("tab", { name: "角色" }).click();
   await expect(page.getByRole("button", { name: /艾琳/ })).toBeVisible();

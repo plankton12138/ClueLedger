@@ -110,7 +110,6 @@ function ChatPanel({
   onSessionChanged,
   onCompacted,
   stage,
-  onRetrySync,
   onSendPrompt,
   onComposerCommand,
   onAbort,
@@ -120,7 +119,6 @@ function ChatPanel({
   onSessionChanged: () => void;
   onCompacted: () => void;
   stage: string | null;
-  onRetrySync: (chapter: string) => void;
   onSendPrompt: (message: string) => void;
   onComposerCommand: (type: CommandType, message: string) => Promise<void>;
   onAbort: () => Promise<void>;
@@ -134,7 +132,7 @@ function ChatPanel({
         onCompacted={onCompacted}
       />
       <ErrorBoundary label="对话">
-        <ChatStream onRetrySync={onRetrySync} stage={stage} onSendPrompt={onSendPrompt} />
+        <ChatStream stage={stage} onSendPrompt={onSendPrompt} />
       </ErrorBoundary>
       <Composer sendCommand={onComposerCommand} abort={onAbort} />
     </section>
@@ -222,19 +220,6 @@ export default function App() {
   }, [nav]);
 
   const slugInvalid = slug !== null && !workspaces.includes(slug);
-
-  // 手动重跑对账（P5 T5）：WS sync 命令，复用该章最近一次保存的差异。
-  // 服务端拒绝（尚无保存章节等）时 error 文案原样进连接错误条（三要素透传）。
-  const retrySync = useCallback(
-    (chapter: string) => {
-      void sendCommand("sync", undefined, chapter).catch((exc: unknown) =>
-        useChatStore
-          .getState()
-          .setConnectionError(exc instanceof Error ? exc.message : String(exc)),
-      );
-    },
-    [sendCommand],
-  );
 
   // 对话发送统一出口（P9 T8 抽出）：idle 走 prompt、运行中走 steer；
   // 服务端拒绝文案原样进连接错误条。
@@ -483,7 +468,6 @@ export default function App() {
                     onSessionChanged={reconnect}
                     onCompacted={reconnect}
                     stage={story?.stage ?? null}
-                    onRetrySync={retrySync}
                     onSendPrompt={sendPrompt}
                     onComposerCommand={(type: CommandType, message: string) =>
                       sendCommand(type, message)
@@ -502,7 +486,7 @@ export default function App() {
             )
           )}
           <ErrorBoundary label="正文">
-            <ManuscriptPanel onSyncChapter={retrySync} />
+            <ManuscriptPanel />
           </ErrorBoundary>
           <Splitter
             side="right"
@@ -548,7 +532,6 @@ export default function App() {
                 onSessionChanged={reconnect}
                 onCompacted={reconnect}
                 stage={story?.stage ?? null}
-                onRetrySync={retrySync}
                 onSendPrompt={sendPrompt}
                 onComposerCommand={(type: CommandType, message: string) =>
                   sendCommand(type, message)

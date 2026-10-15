@@ -137,8 +137,8 @@ def create_timeline_tools(workspace: StoryWorkspace) -> list[AgentTool]:
         },
         execute_fn=check_execute,
         prompt_guidelines=(
-            "每写完一章后跑一次 timeline_check 对账；报出的冲突先用 bible_upsert "
-            "修正时间线或主张，再重跑确认归零。",
+            "核对时间线时先跑一次 timeline_check；报出的冲突如需修正，"
+            "在 V2 项目经领域命令改时间线或主张，再重跑确认归零。",
         ),
         render_call=_render_call,
     )

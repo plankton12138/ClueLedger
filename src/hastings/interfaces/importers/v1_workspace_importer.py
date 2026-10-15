@@ -304,9 +304,7 @@ def _is_runtime_record(rel: str) -> bool:
     而非固定清单。"""
     if rel in _IGNORED_FILES:
         return True
-    if rel.startswith("sessions/") and (
-        rel.endswith(".jsonl") or rel.endswith(".lock")
-    ):
+    if rel.startswith("sessions/") and (rel.endswith(".jsonl") or rel.endswith(".lock")):
         return True
     # 根级压缩归档：session-<stamp>.jsonl（压缩归档命名见 session_store）
     return rel.startswith("session-") and rel.endswith(".jsonl")

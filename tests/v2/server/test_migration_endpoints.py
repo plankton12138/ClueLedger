@@ -163,4 +163,4 @@ def test_apply_is_replay_safe_but_repeat_migration_refused(env) -> None:
         f"/api/{SLUG}/chapters/{Path(chapter['path']).stem}",
         json={"content": "绕过 V2 的直接写入", "baseRevision": 1},
     )
-    assert blocked.status_code == 409, "旧写路径必须被拒（迁移后禁止再走 V1 写）"
+    assert blocked.status_code in (404, 405), "旧写端点已整体下线（V1 弃用），不再可达"

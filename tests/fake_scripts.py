@@ -60,19 +60,19 @@ def closing(text: str) -> list[Any]:
     return assistant_stream(call=None, text=text, reason="stop")
 
 
-def character_upsert(call_id: str, name: str, identity: str) -> ToolCall:
-    """bible_upsert 角色卡的工具调用。"""
+def character_lookup(call_id: str, name: str) -> ToolCall:
+    """bible_query 查角色的工具调用（只读剧本；V1 写工具已退役）。"""
     return ToolCall(
         id=call_id,
-        name="bible_upsert",
-        arguments={"entity_type": "character", "data": {"name": name, "identity": identity}},
+        name="bible_query",
+        arguments={"entity_type": "character", "name": name},
     )
 
 
-def chapter_write(call_id: str, chapter: int, title: str, content: str) -> ToolCall:
-    """write_chapter 的工具调用（force 覆盖，供 E2E write 剧本复放）。"""
+def chapter_read(call_id: str, chapter: int) -> ToolCall:
+    """read_chapter 的工具调用（只读剧本；V1 写工具已退役）。"""
     return ToolCall(
         id=call_id,
-        name="write_chapter",
-        arguments={"chapter": chapter, "title": title, "content": content, "force": True},
+        name="read_chapter",
+        arguments={"chapter": chapter},
     )

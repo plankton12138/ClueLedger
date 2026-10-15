@@ -20,7 +20,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fake_scripts import assistant_stream, character_upsert, closing
+from fake_scripts import assistant_stream, character_lookup, closing
 from hastings.bible.store import StoryWorkspace
 from hastings.events_store import events_file
 from hastings.prompts import build_system_prompt
@@ -30,7 +30,6 @@ from hastings.server.registry import WorkspaceRegistry
 from hastings.server.session import AgentBusyError, WritingSession
 from hastings.tools.bible_tools import create_bible_tools
 from tau_agent import AgentHarness, AgentHarnessConfig
-from tau_agent.events import AgentEvent
 from tau_ai import FakeProvider
 from test_server_app import StubSession
 
@@ -74,7 +73,7 @@ def _standard_app(workspace: StoryWorkspace) -> FastAPI:
         workspace,
         [
             assistant_stream(
-                call=character_upsert("call-w1", "波洛", "比利时侦探"),
+                call=character_lookup("call-w1", "波洛"),
                 text="先建档。",
                 reason="toolUse",
             ),
@@ -245,133 +244,6 @@ def test_ws_steer_and_follow_up_commands_reach_session(
 
     assert session.steered == [STEER_TEXT]
     assert session.followed_up == [FOLLOW_UP_TEXT]
-
-
-# --- sync 命令（P5 T5）：手动重跑对账 ---
-
-
-class UnresyncableSession(StubSession):
-    """无可重跑修订的桩：resync_reconcile 恒 False（走失败指引分支）。"""
-
-    async def resync_reconcile(self, chapter_id: str) -> bool:
-        del chapter_id
-        return False
-
-
-def test_ws_sync_command_triggers_resync_with_chapter(workspace: StoryWorkspace) -> None:
-    session = StubSession()
-    app = create_app(_registry_with_session(workspace.root, session))
-    with TestClient(app).websocket_connect(WS_URL) as ws:
-        ws.send_json({"id": 4, "type": "sync", "chapter": "ch03"})
-        response = ws.receive_json()
-
-    assert response == {
-        "type": "response",
-        "command": "sync",
-        "success": True,
-        "id": 4,
-        "data": {"chapter": "ch03"},
-    }
-    assert session.resync_calls == ["ch03"]
-
-
-def test_ws_sync_command_reports_missing_chapter(workspace: StoryWorkspace) -> None:
-    app = create_app(_registry_with_session(workspace.root, StubSession()))
-    with TestClient(app).websocket_connect(WS_URL) as ws:
-        ws.send_json({"id": 5, "type": "sync"})
-        error = ws.receive_json()
-
-    assert error["type"] == "response"
-    assert error["command"] == "sync"
-    assert error["success"] is False
-    assert error["id"] == 5
-    assert "chapter 字段缺失" in error["error"]  # 哪里错
-    assert "为什么错" in error["error"]
-    assert "怎样算对" in error["error"]
-
-
-def test_ws_sync_command_reports_no_revision_to_replay(workspace: StoryWorkspace) -> None:
-    app = create_app(_registry_with_session(workspace.root, UnresyncableSession()))
-    with TestClient(app).websocket_connect(WS_URL) as ws:
-        ws.send_json({"id": 6, "type": "sync", "chapter": "ch03"})
-        error = ws.receive_json()
-
-    assert error["success"] is False
-    assert "没有可重跑的对账修订" in error["error"]  # 哪里错
-    assert "先" in error["error"] and "保存一次" in error["error"]  # 怎样算对
-
-
-def test_ws_get_messages_restores_history_after_reconnect(
-    workspace: StoryWorkspace,
-) -> None:
-    client = TestClient(_standard_app(workspace))
-    with client.websocket_connect(WS_URL) as ws:
-        _prompt_and_wait_done(ws)
-
-    # 模拟浏览器刷新：新连接拉历史快照
-    with client.websocket_connect(WS_URL) as fresh:
-        fresh.send_json({"type": "get_messages"})
-        snapshot = fresh.receive_json()
-    assert snapshot["success"] is True
-    messages = snapshot["data"]["messages"]
-    assert [m["role"] for m in messages] == [
-        "user",
-        "assistant",
-        "toolResult",
-        "assistant",
-    ]
-    # user 消息的 content 经 wire 序列化是纯字符串（str 形态 UserContent）
-    assert messages[0]["content"] == "建一个角色"
-    # 收尾 assistant 的文本在 block 列表里
-    assert messages[-1]["content"][0]["text"] == "建档完成。"
-
-
-def test_ws_abort_command_and_cancel_signal(workspace: StoryWorkspace) -> None:
-    tools = create_bible_tools(workspace)
-    harness = AgentHarness(
-        AgentHarnessConfig(
-            provider=FakeProvider(
-                [
-                    assistant_stream(
-                        call=character_upsert("call-w1", "波洛", "比利时侦探"),
-                        text="先建档。",
-                        reason="toolUse",
-                    ),
-                    closing("建档完成。"),
-                ]
-            ),
-            model="fake",
-            system=build_system_prompt(tools),
-            tools=tools,
-        )
-    )
-    session = HastingsSession(harness=harness, workspace=workspace)
-    app = create_app(_registry_with_session(workspace.root, session))
-
-    # 服务端 listener 在工具启动点确定性触发 cancel（FakeProvider 瞬发，
-    # 从测试线程发 abort 存在竞态；abort 命令接线在 run 结束后单独验证）
-    def cancel_on_tool_start(event: AgentEvent) -> None:
-        if event.type == "tool_execution_start":
-            session.cancel()
-
-    unsubscribe = session.subscribe(cancel_on_tool_start)
-    with TestClient(app).websocket_connect(WS_URL) as ws:
-        frames = _prompt_and_wait_done(ws)
-        ends = [f for f in frames if f["type"] == "tool_execution_end"]
-        assert len(ends) == 1
-        assert ends[0]["isError"] is True
-        assert "Operation aborted" in ends[0]["result"]["content"][0]["text"]
-
-        # abort 命令接线：run 结束后仍可调用，成功响应（幂等 no-op）
-        ws.send_json({"id": 9, "type": "abort"})
-        response = ws.receive_json()
-        assert response == {
-            "type": "response",
-            "command": "abort",
-            "success": True,
-            "id": 9,
-        }
-    unsubscribe()
 
 
 # --- ③ 多连接：listener fan-out ---

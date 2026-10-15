@@ -4,7 +4,6 @@
 
 - 客户端 → 服务端（命令帧）：
   ``{"id": 1, "type": "prompt|steer|follow_up|abort|get_state|get_messages", "message"?: str}``
-  以及 P5 T5 的 ``{"id": 1, "type": "sync", "chapter": "ch03"}``（手动重跑对账）。
 - 服务端 → 客户端（事件帧）：AgentEvent 原样 JSON（``model_dump(by_alias=True)``）；
 - 服务端 → 客户端（响应帧）：
   ``{"type": "response", "command", "success", "id"?, "data"? / "error"?}``
@@ -13,11 +12,6 @@
 连接在内，所有连接都只经 listener 收事件（多标签页天然同步）；命令分发侧
 仅 drain 消费 prompt 流以驱动 loop，不重复投递。写锁串行化每连接帧序。
 错误帧延续三要素：哪里错、为什么错、怎样算对。
-
-notice 帧（P5 T4，计划 D5）：对账进度的 hastings 协议层加法扩展——
-``{"type": "notice", "kind": "sync_queued|sync_start|sync_end", "chapter",
-"hunks", "updates", "status"?}``；tau 事件帧契约本身不动。所有连接同样经
-listener 订阅收到（前端凭 notice 把运行窗口标记为「对账中」并渲染同步卡片）。
 
 token_usage 帧（P10 T12，计划 D11）：上下文占用的 hastings 协议层加法扩展——
 ``{"type": "token_usage", "input", "output", "total", "cache_read",
@@ -37,7 +31,6 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 
 from hastings.bible.store import InvalidEntityNameError
-from hastings.server.reconcile import ReconcileNotice
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.session import AgentBusyError, WritingSession
 from tau_agent.events import AgentEvent
@@ -52,7 +45,6 @@ AVAILABLE_COMMANDS = (
     "abort",
     "get_state",
     "get_messages",
-    "sync",
 )
 
 STALE_SESSION_MESSAGE = (
@@ -63,16 +55,11 @@ STALE_SESSION_MESSAGE = (
 
 
 class CommandFrame(BaseModel):
-    """客户端命令帧；字段校验错误经 pydantic loc 原样进 error 帧。
-
-    ``chapter`` 只被 sync 命令使用（P5 T5 手动重跑对账：以章节 id 为目标，
-    复用该章最近一次保存的差异）。其余命令不读它。
-    """
+    """客户端命令帧；字段校验错误经 pydantic loc 原样进 error 帧。"""
 
     id: int | str | None = None
     type: str
     message: str | None = None
-    chapter: str | None = None
 
 
 def _wire(model: BaseModel) -> dict[str, JSONValue]:
@@ -105,12 +92,10 @@ class Connection:
         self._send_lock = asyncio.Lock()
         self._tasks: set[asyncio.Task[None]] = set()
         self._unsubscribe: Callable[[], None] | None = None
-        self._unsubscribe_notice: Callable[[], None] | None = None
 
     async def serve(self) -> None:
         """订阅事件流并循环处理命令帧，直到客户端断开（正常生命周期，非错误）。"""
         self._unsubscribe = self._session.subscribe(self._on_event)
-        self._unsubscribe_notice = self._session.subscribe_notice(self._on_notice)
         try:
             while True:
                 raw = await self._ws.receive_text()
@@ -120,8 +105,6 @@ class Connection:
         finally:
             if self._unsubscribe is not None:
                 self._unsubscribe()
-            if self._unsubscribe_notice is not None:
-                self._unsubscribe_notice()
 
     async def _on_event(self, event: AgentEvent) -> None:
         """listener：把事件帧推给本连接（所有连接统一走这条投递路径）。
@@ -134,19 +117,6 @@ class Connection:
             await self._push({"type": "token_usage", **self._usage_payload()})
         await self._push(_wire(event))
 
-    async def _on_notice(self, notice: ReconcileNotice) -> None:
-        """listener：把对账进度翻成 notice 帧（hastings 协议层加法扩展）。"""
-        payload: dict[str, JSONValue] = {
-            "type": "notice",
-            "kind": notice.kind,
-            "chapter": notice.chapter,
-            "hunks": notice.hunks,
-            "updates": notice.updates,
-        }
-        if notice.status is not None:
-            payload["status"] = notice.status
-        await self._push(payload)
-
     async def _push(self, frame: Mapping[str, JSONValue]) -> None:
         try:
             await self._send(frame)
@@ -156,9 +126,6 @@ class Connection:
             if self._unsubscribe is not None:
                 self._unsubscribe()
                 self._unsubscribe = None
-            if self._unsubscribe_notice is not None:
-                self._unsubscribe_notice()
-                self._unsubscribe_notice = None
 
     async def _dispatch_text(self, raw: str) -> None:
         try:
@@ -208,8 +175,6 @@ class Connection:
                     frame_id=frame.id,
                     data={"messages": [_wire(m) for m in self._session.messages]},
                 )
-            case "sync":
-                await self._resync(frame)
             case _:
                 raise ValueError(
                     f"未知命令：{frame.type}。"
@@ -227,27 +192,6 @@ class Connection:
         task = asyncio.create_task(run(), name="ws-prompt-drain")
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
-
-    async def _resync(self, frame: CommandFrame) -> None:
-        """sync 命令（P5 T5）：手动重跑某章最近一次修订的对账。
-
-        复用队列保存的差异——不重新读盘、不重新 diff；重跑以正常 notice
-        序列（queued→start→end）反馈，与自动对账同一条可观测通道。
-        """
-        chapter = frame.chapter
-        if chapter is None or not chapter.strip():
-            raise ValueError(
-                "sync 命令的 chapter 字段缺失或为空。"
-                "为什么错：手动重跑对账必须指定目标章节。"
-                '怎样算对：{"id": 1, "type": "sync", "chapter": "ch03"}'
-            )
-        if not await self._session.resync_reconcile(chapter):
-            raise ValueError(
-                f"章节 {chapter} 没有可重跑的对账修订。"
-                "为什么错：该章尚无经保存端点提交过的修改（或修订已过期）。"
-                "怎样算对：先在正文编辑器中保存一次修改，再点重新同步。"
-            )
-        await self._respond(command=frame.type, frame_id=frame.id, data={"chapter": chapter})
 
     def _usage_payload(self) -> dict[str, JSONValue]:
         """当前上下文占用载荷（D11）：token_usage 帧与 get_state 共用同一扁平结构。"""

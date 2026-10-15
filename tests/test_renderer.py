@@ -11,14 +11,12 @@ from typing import Any
 
 import pytest
 
-from hastings.bible.models import Character, Clue, Method, OutlineEntry
+from hastings.bible.models import Character, Clue, Method
 from hastings.bible.store import (
     StoryWorkspace,
     save_character,
     save_ledger,
-    save_story_doc,
 )
-from hastings.bible.story_state import StoryDoc
 from hastings.cli import PlainRenderer, bible_command_output, create_writing_tools, format_bible
 from hastings.tools.chapter_tools import create_chapter_tools
 from tau_agent import (
@@ -94,12 +92,12 @@ def test_renderer_prints_tool_line_with_render_call(
     renderer.handle(
         ToolExecutionStartEvent(
             tool_call_id="call-1",
-            tool_name="write_chapter",
-            args={"chapter": 3, "content": "正文", "force": False},
+            tool_name="read_chapter",
+            args={"chapter": 3},
         )
     )
 
-    assert capsys.readouterr().out == "[tool] write_chapter 写入第3章（2 字）\n"
+    assert capsys.readouterr().out == "[tool] read_chapter 读取第3章\n"
 
 
 def test_renderer_falls_back_to_tool_name_without_renderer(
@@ -168,22 +166,19 @@ async def test_renderer_consumes_real_harness_event_stream(
 ) -> None:
     """端到端：FakeProvider 事件流 → harness → 渲染器 → stdout。"""
     workspace = StoryWorkspace(root=tmp_path, slug="demo")
-    # P8 T4 预检：write_chapter 须 writing 态 + 章纲 + 角色
-    save_story_doc(workspace, StoryDoc(slug=workspace.slug, stage="writing"))
     save_character(workspace, Character(name="波洛", identity="比利时侦探"))
-    save_ledger(workspace.outline_path, [OutlineEntry(name="第1章", chapter=1)])
     tools = create_chapter_tools(workspace)
     by_name: Mapping[str, AgentTool] = {tool.name: tool for tool in tools}
     call = ToolCall(
         id="call-1",
-        name="write_chapter",
-        arguments={"chapter": 1, "title": "雪封之夜", "content": "雪从午夜开始落。"},
+        name="read_chapter",
+        arguments={"chapter": 1},
     )
     provider = FakeProvider(
         [
             [
                 AssistantStartEvent(partial=AssistantMessage(model="fake")),
-                *_stream_text("我先把第一章写入案卷。"),
+                *_stream_text("我先读回第一章原文。"),
                 ToolCallEndEvent(
                     content_index=1,
                     tool_call=call,
@@ -214,14 +209,13 @@ async def test_renderer_consumes_real_harness_event_stream(
     )
     renderer = PlainRenderer(by_name)
 
-    async for event in harness.prompt("写第一章"):
+    async for event in harness.prompt("读第一章"):
         renderer.handle(event)
 
     out = capsys.readouterr().out
-    assert "我先把第一章写入案卷。" in out
-    assert "[tool] write_chapter 写入第1章（8 字）" in out
+    assert "我先读回第一章原文。" in out
+    assert "[tool] read_chapter 读取第1章" in out
     assert "第一章已落盘。" in out
-    assert (workspace.chapters_dir / "ch01.md").exists()
     assert renderer.unhandled_event_types == ()
 
 
@@ -279,17 +273,10 @@ def test_bible_command_output_survives_corrupt_yaml(tmp_path: Any) -> None:
     assert "手法账本共 1 条" in bible_command_output(workspace, "method")
 
 
-def test_create_writing_tools_covers_ledger_lifecycle_tools(tmp_path: Any) -> None:
-    """真实端点工具集：五账本读写 + 锁定/解锁 + 时间线检测全注册。"""
+def test_create_writing_tools_covers_readonly_tools(tmp_path: Any) -> None:
+    """真实端点工具集（V1 弃用后）：只读工具全注册，写工具不再出现。"""
     workspace = _seeded_workspace(tmp_path)
 
     names = {tool.name for tool in create_writing_tools(workspace)}
 
-    assert {
-        "bible_upsert",
-        "bible_query",
-        "write_chapter",
-        "method_lock",
-        "method_unlock",
-        "timeline_check",
-    } <= names
+    assert {"bible_query", "read_chapter", "list_chapters", "timeline_check"} == names

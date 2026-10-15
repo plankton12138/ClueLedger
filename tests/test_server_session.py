@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from fake_scripts import assistant_stream, character_upsert, closing
+from fake_scripts import assistant_stream, character_lookup, closing
 from hastings.bible.store import StoryWorkspace
 from hastings.prompts import build_system_prompt
 from hastings.server.hastings_session import HastingsSession
@@ -32,13 +32,15 @@ def workspace(tmp_path: Path) -> StoryWorkspace:
 
 
 def _session(workspace: StoryWorkspace, *extra_turns: list[Any]) -> HastingsSession:
-    tools = create_bible_tools(workspace)
+    from hastings.cli import create_writing_tools
+
+    tools = create_writing_tools(workspace)
     harness = AgentHarness(
         AgentHarnessConfig(
             provider=FakeProvider(
                 [
                     assistant_stream(
-                        call=character_upsert("call-s1", "波洛", "比利时侦探"),
+                        call=character_lookup("call-s1", "波洛"),
                         text="先建档。",
                         reason="toolUse",
                     ),
@@ -65,7 +67,7 @@ async def test_prompt_streams_events_and_running_lifecycle(
     assert session.is_running is False
     assert session.slug == "orient-express"
     assert session.model == "fake"
-    assert session.tool_names == ("bible_upsert", "bible_query")
+    assert session.tool_names == ("bible_query", "read_chapter", "list_chapters", "timeline_check")
 
     stream = session.prompt("建一个角色")
     assert session.is_running is True  # prompt() 同步置位，无需等首个事件
@@ -200,33 +202,6 @@ async def test_subscribe_fanout_and_unsubscribe(workspace: StoryWorkspace) -> No
 
     assert "agent_start" in live and "agent_end" in live
     assert detached == []  # 退订后不再收到任何事件
-
-
-# ---------- edit_marks 接线（P5 T3，D4）：session 注册表与工具闭包共享 ----------
-
-
-@pytest.mark.anyio
-async def test_from_workspace_wires_edit_marks_into_chapter_tools(
-    workspace: StoryWorkspace,
-) -> None:
-    """from_workspace 装配的 write_chapter 与 session.edit_marks 是同一注册表。"""
-    from hastings.tools.errors import ToolInputError
-
-    session = HastingsSession.from_workspace(workspace, provider=FakeProvider([]), model="fake")
-    write_tool = next(t for t in session.harness.config.tools if t.name == "write_chapter")
-
-    session.edit_marks.acquire("ch02")
-
-    with pytest.raises(ToolInputError, match="正在被作者手动编辑"):
-        await write_tool.execute("call-1", {"chapter": 2, "content": "抢写。"})
-
-
-def test_direct_construction_gets_fresh_registry(workspace: StoryWorkspace) -> None:
-    """直接构造（无注册表实参）得到空注册表——CLI 等单 agent 场景锁永不触发。"""
-    session = _session(workspace)
-
-    assert session.edit_marks.mark_of("ch01") is None
-    assert session.edit_marks.acquire("ch01").holder == "user"
 
 
 # ---------- 写作语言热生效（P6，D3） ----------

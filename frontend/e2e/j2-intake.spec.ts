@@ -1,12 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * J2 P0 旅程（方案 §5）：新建文章 → 发委托 → FakeProvider intake 剧本流式渲染。
- * 断言口径（§6 反脆弱约定）：断终态事实（文案/角色/计数），零 waitForTimeout；
- * 「文章」页新建表单 → 自动切回创作台 → 发送 → 用户气泡 → bible_upsert 工具卡
- * ×2（被阶段守卫拒绝）→ 总结回合文本落定 → 验证账本未写入 → 发送按钮恢复。
+ * J2 P0 旅程（V1 只读退役后）：新建文章 → 发委托 → FakeProvider intake
+ * 只读剧本流式渲染。断言口径（§6 反脆弱约定）：断终态事实（文案/角色/计数），
+ * 零 waitForTimeout；「文章」页新建表单 → 自动切回创作台 → 发送 → 用户气泡
+ * → bible_query 工具卡 ×2（只读查档）→ 总结回合文本落定 → 验证账本未被
+ * 写入 → 发送按钮恢复。
  */
-test("J2 新建文章 → 发委托 → intake 拒绝未确认设定", async ({ page, request }) => {
+test("J2 新建文章 → 发委托 → 只读查档不落盘", async ({ page, request }) => {
   const slug = `e2e-j2-${Date.now()}`;
 
   await page.goto("/");
@@ -22,15 +23,15 @@ test("J2 新建文章 → 发委托 → intake 拒绝未确认设定", async ({ 
   await expect(page.getByRole("button", { name: slug, exact: true })).toBeVisible();
 
   // 发委托：用户气泡原样回显
-  const brief = "这是旅馆老板娘的委托：住客接连失踪，请先登记两位相关人物。";
+  const brief = "这是旅馆老板娘的委托：住客接连失踪，请先查一下两位相关人物。";
   await composer.fill(brief);
   await page.getByRole("button", { name: "发送", exact: true }).click();
   await expect(page.getByText(brief)).toBeVisible();
 
-  // 新工作区仍在 intake，未经作者确认的写入必须被拒绝。
-  await expect(page.getByRole("button", { name: /bible_upsert.*失败/ })).toHaveCount(2);
-  await expect(page.getByText("两位角色已建档。接下来可以安排委托场景了。")).toBeVisible();
-  // Fake 的自然语言声称成功不构成落盘证据，必须核对真实账本。
+  // V1 工具集只剩只读查询：bible_query 两连查均成功完成
+  await expect(page.getByRole("button", { name: /bible_query.*完成/ })).toHaveCount(2);
+  await expect(page.getByText("两位角色的档案状态已核对。V1 账本只读，登记请迁移到 V2 项目。")).toBeVisible();
+  // Fake 的自然语言不构成落盘证据，必须核对真实账本（只读剧本不会写账本）。
   const bible = await request.get(`/api/${slug}/bible/character`);
   expect(bible.ok()).toBeTruthy();
   expect((await bible.json()).count).toBe(0);

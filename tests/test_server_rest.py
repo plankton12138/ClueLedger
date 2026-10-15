@@ -12,7 +12,7 @@ PUT chapters/{id}（归档 + 锁 + 乐观并发）；POST /api/workspaces 只是
 import io
 import json
 import zipfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,6 @@ from hastings.bible.store import StoryWorkspace, save_character, save_ledger, sa
 from hastings.bible.story_state import StageTransition, StoryDoc
 from hastings.context_manager import CompactionResult
 from hastings.events_store import events_file
-from hastings.manuscript.diff import DiffHunk
 from hastings.server.app import create_app
 from hastings.server.provider_config import ProviderBook, ProviderProfile, ServerConfig
 from hastings.server.registry import WorkspaceRegistry
@@ -68,6 +67,30 @@ def workspace(root: Path) -> StoryWorkspace:
 
 def _client(root: Path) -> TestClient:
     return TestClient(create_app(stub_registry(root)))
+
+
+class _RunningSession(StubSession):
+    """is_running 恒真的会话：写作流冲突场景。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._running = True
+
+
+def _client_with_session(root: Path, session: StubSession) -> TestClient:
+    return TestClient(create_app(stub_registry(root, session=session)))
+
+
+class _RunningSession(StubSession):
+    """is_running 恒真的会话：写作流冲突场景。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._running = True
+
+
+def _client_with_session(root: Path, session: StubSession) -> TestClient:
+    return TestClient(create_app(stub_registry(root, session=session)))
 
 
 def _book(
@@ -511,7 +534,7 @@ def test_rest_state_reports_session_and_bible_types(root: Path) -> None:
         "slug": SLUG,
         "model": "fake",
         "is_running": False,
-        "tools": ["bible_upsert", "write_chapter"],
+        "tools": ["bible_query", "read_chapter"],
         "bible_types": ["character", "clue", "foreshadow", "method", "outline", "timeline"],
     }
 
@@ -608,7 +631,7 @@ def test_rest_bible_invalid_entity_fields_return_422(
     assert "characters" in response.json()["detail"]
 
 
-# --- story：生命周期快照（P8 T7，D8）；写路径只有 story_stage 工具 ---
+# --- story：生命周期快照（P8 T7，D8）；V1 弃用后 story.yaml 只读 ---
 
 
 def test_rest_story_reports_stage_counts_and_chapters(workspace: StoryWorkspace) -> None:
@@ -719,306 +742,6 @@ def test_rest_chapter_bad_id_returns_422(workspace: StoryWorkspace) -> None:
 
     assert response.status_code == 422
     assert "章节 id" in response.json()["detail"]
-
-
-# --- PUT chapters/{id}：受管写端点（P5 T2，D3/D4） ---
-
-
-class _RunningSession(StubSession):
-    """is_running 恒真的会话：写作流冲突场景。"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._running = True
-
-
-def _seed_chapter(workspace: StoryWorkspace, chapter_id: str = "ch03") -> None:
-    workspace.ensure_dirs()
-    (workspace.chapters_dir / f"{chapter_id}.md").write_text(
-        "# 第3章\n\n火车在九点四十七分抵达。\n", encoding="utf-8"
-    )
-
-
-def test_put_chapter_saves_archives_and_returns_revision_diff(
-    workspace: StoryWorkspace,
-) -> None:
-    _seed_chapter(workspace)
-    new_content = "# 第3章\n\n火车在十点零七分抵达。\n"
-
-    response = _client(workspace.root).put(
-        f"/api/{SLUG}/chapters/ch03",
-        json={"content": new_content, "baseRevision": 1},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["id"] == "ch03"
-    assert body["revision"] == 2
-    assert body["diff"] == [
-        {
-            "kind": "modified",
-            "oldIndex": 1,
-            "newIndex": 1,
-            "oldText": "火车在九点四十七分抵达。",
-            "newText": "火车在十点零七分抵达。",
-        },
-    ]
-    # 主文件与归档均落盘
-    assert (workspace.chapters_dir / "ch03.md").read_text(encoding="utf-8") == new_content
-    archive_dir = workspace.chapters_dir / ".revisions" / "ch03"
-    assert (archive_dir / "001.md").exists()
-    metadata = json.loads((archive_dir / "001.json").read_text(encoding="utf-8"))
-    assert metadata["hunks"][0]["old_index"] == 1
-
-
-def test_put_chapter_identical_content_is_noop(workspace: StoryWorkspace) -> None:
-    _seed_chapter(workspace)
-    original = (workspace.chapters_dir / "ch03.md").read_text(encoding="utf-8")
-
-    response = _client(workspace.root).put(
-        f"/api/{SLUG}/chapters/ch03",
-        json={"content": original, "baseRevision": 1},
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {"id": "ch03", "revision": 1, "diff": []}
-    assert not (workspace.chapters_dir / ".revisions").exists()
-
-
-def test_put_chapter_bad_id_returns_422(workspace: StoryWorkspace) -> None:
-    response = _client(workspace.root).put(
-        f"/api/{SLUG}/chapters/坏 名",
-        json={"content": "# 第1章\n\n正文。", "baseRevision": 1},
-    )
-
-    assert response.status_code == 422
-    assert "章节 id" in response.json()["detail"]
-
-
-def test_put_chapter_bad_title_returns_422_with_three_elements(
-    workspace: StoryWorkspace,
-) -> None:
-    _seed_chapter(workspace)
-
-    response = _client(workspace.root).put(
-        f"/api/{SLUG}/chapters/ch03",
-        json={"content": "没有标题行的正文。", "baseRevision": 1},
-    )
-
-    assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert "首行" in detail
-    assert "为什么错" in detail
-    assert "怎样算对" in detail
-
-
-def test_put_chapter_missing_returns_404_with_guidance(workspace: StoryWorkspace) -> None:
-    workspace.ensure_dirs()
-
-    response = _client(workspace.root).put(
-        f"/api/{SLUG}/chapters/ch09",
-        json={"content": "# 第9章\n\n正文。", "baseRevision": 1},
-    )
-
-    assert response.status_code == 404
-    detail = response.json()["detail"]
-    assert "ch09" in detail
-    assert f"/api/{SLUG}/chapters" in detail
-
-
-def test_put_chapter_stale_revision_returns_409_with_guidance(
-    workspace: StoryWorkspace,
-) -> None:
-    _seed_chapter(workspace)
-
-    response = _client(workspace.root).put(
-        f"/api/{SLUG}/chapters/ch03",
-        json={"content": "# 第3章\n\n过期提交。\n", "baseRevision": 7},
-    )
-
-    assert response.status_code == 409
-    detail = response.json()["detail"]
-    assert "revision" in detail
-    assert "为什么错" in detail
-    assert "怎样算对" in detail
-    # 冲突提交未触盘
-    assert "十点零七分" not in (workspace.chapters_dir / "ch03.md").read_text(encoding="utf-8")
-
-
-def test_put_chapter_while_agent_running_returns_409(
-    workspace: StoryWorkspace,
-) -> None:
-    _seed_chapter(workspace)
-    client = TestClient(create_app(stub_registry(workspace.root, session=_RunningSession())))
-
-    response = client.put(
-        f"/api/{SLUG}/chapters/ch03",
-        json={"content": "# 第3章\n\n抢写。\n", "baseRevision": 1},
-    )
-
-    assert response.status_code == 409
-    detail = response.json()["detail"]
-    assert "写作流" in detail
-    assert "为什么错" in detail
-    assert "怎样算对" in detail
-    # 锁未建、文件未动（运行态检查先于归档）
-    assert "抢写" not in (workspace.chapters_dir / "ch03.md").read_text(encoding="utf-8")
-
-
-def test_put_chapter_io_failure_returns_500_with_attribution(
-    workspace: StoryWorkspace,
-) -> None:
-    _seed_chapter(workspace)
-    # .revisions 被普通文件占位：归档必失败，主文件保持不动
-    (workspace.chapters_dir / ".revisions").write_text("占位", encoding="utf-8")
-    main_path = workspace.chapters_dir / "ch03.md"
-    content_before = main_path.read_text(encoding="utf-8")
-
-    response = _client(workspace.root).put(
-        f"/api/{SLUG}/chapters/ch03",
-        json={"content": "# 第3章\n\n新内容。\n", "baseRevision": 1},
-    )
-
-    assert response.status_code == 500
-    detail = response.json()["detail"]
-    assert "文件系统错误" in detail
-    assert "主文件未受影响" in detail
-    assert main_path.read_text(encoding="utf-8") == content_before
-
-
-# --- edit-mark：作者草稿锁（P5 T3，D4） ---
-
-
-def _client_with_session(root: Path, session: StubSession) -> TestClient:
-    return TestClient(create_app(stub_registry(root, session=session)))
-
-
-def test_acquire_edit_mark_locks_chapter_for_user(workspace: StoryWorkspace) -> None:
-    _seed_chapter(workspace)
-    session = StubSession()
-    client = _client_with_session(workspace.root, session)
-
-    response = client.put(f"/api/{SLUG}/chapters/ch03/edit-mark")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["chapterId"] == "ch03"
-    assert body["holder"] == "user"
-    assert isinstance(body["ts"], float)
-    assert session.edit_marks.mark_of("ch03") is not None
-
-
-def test_acquire_edit_mark_missing_chapter_returns_404(workspace: StoryWorkspace) -> None:
-    response = _client(workspace.root).put(f"/api/{SLUG}/chapters/ch99/edit-mark")
-
-    assert response.status_code == 404
-    detail = response.json()["detail"]
-    assert "ch99" in detail
-    assert "怎样算对" in detail
-
-
-def test_acquire_edit_mark_bad_id_returns_422(workspace: StoryWorkspace) -> None:
-    response = _client(workspace.root).put(f"/api/{SLUG}/chapters/坏 名/edit-mark")
-
-    assert response.status_code == 422
-    assert "章节 id" in response.json()["detail"]
-
-
-def test_release_edit_mark_is_idempotent(workspace: StoryWorkspace) -> None:
-    session = StubSession()
-    client = _client_with_session(workspace.root, session)
-    session.edit_marks.acquire("ch03")
-
-    first = client.delete(f"/api/{SLUG}/chapters/ch03/edit-mark")
-    second = client.delete(f"/api/{SLUG}/chapters/ch03/edit-mark")
-
-    assert first.status_code == 200
-    assert first.json() == {"chapterId": "ch03", "released": True}
-    assert second.json() == {"chapterId": "ch03", "released": False}  # 幂等：未持锁无害
-    assert session.edit_marks.mark_of("ch03") is None
-
-
-def test_put_save_releases_edit_mark(workspace: StoryWorkspace) -> None:
-    """锁生命周期：保存成功即释放（agent 随后可写该章）。"""
-    _seed_chapter(workspace)
-    session = StubSession()
-    client = _client_with_session(workspace.root, session)
-    session.edit_marks.acquire("ch03")
-
-    response = client.put(
-        f"/api/{SLUG}/chapters/ch03",
-        json={"content": "# 第3章\n\n火车在十点零七分抵达。\n", "baseRevision": 1},
-    )
-
-    assert response.status_code == 200
-    assert session.edit_marks.mark_of("ch03") is None
-
-
-# --- PUT 自动入队对账（P5 T4，D5）：sync 开关 + 空 diff no-op ---
-
-
-class _ReconcileRecordingSession(StubSession):
-    """记录 request_reconcile 调用的桩：钉住 PUT → 对账队列的接线。"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.requests: list[tuple[str, list[DiffHunk]]] = []
-
-    async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
-        self.requests.append((chapter_id, list(hunks)))
-
-
-def test_put_save_with_changes_enqueues_reconcile(workspace: StoryWorkspace) -> None:
-    _seed_chapter(workspace)
-    session = _ReconcileRecordingSession()
-    client = _client_with_session(workspace.root, session)
-
-    response = client.put(
-        f"/api/{SLUG}/chapters/ch03",
-        json={"content": "# 第3章\n\n火车在十点零七分抵达。\n", "baseRevision": 1},
-    )
-
-    assert response.status_code == 200
-    assert len(session.requests) == 1
-    chapter_id, hunks = session.requests[0]
-    assert chapter_id == "ch03"
-    assert [(h.kind, h.new_text) for h in hunks] == [("modified", "火车在十点零七分抵达。")]
-
-
-def test_put_save_sync_false_skips_reconcile(workspace: StoryWorkspace) -> None:
-    """sync=false 只存不同步：正文落盘、归档照常，对账队列不见请求。"""
-    _seed_chapter(workspace)
-    session = _ReconcileRecordingSession()
-    client = _client_with_session(workspace.root, session)
-
-    response = client.put(
-        f"/api/{SLUG}/chapters/ch03",
-        json={
-            "content": "# 第3章\n\n火车在十点零七分抵达。\n",
-            "baseRevision": 1,
-            "sync": False,
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json()["revision"] == 2
-    assert session.requests == []
-
-
-def test_put_save_noop_diff_skips_reconcile(workspace: StoryWorkspace) -> None:
-    """空 diff 是合法 no-op：无可对账，不入队不通知。"""
-    _seed_chapter(workspace)
-    original = (workspace.chapters_dir / "ch03.md").read_text(encoding="utf-8")
-    session = _ReconcileRecordingSession()
-    client = _client_with_session(workspace.root, session)
-
-    response = client.put(
-        f"/api/{SLUG}/chapters/ch03",
-        json={"content": original, "baseRevision": 1},
-    )
-
-    assert response.status_code == 200
-    assert session.requests == []
 
 
 # --- GET/PUT settings：写作语言 + 模型切换（P6，D1/D2/D3/D4） ---

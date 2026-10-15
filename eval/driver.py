@@ -70,7 +70,7 @@ async def run_harness_case(case: dict[str, Any], args: argparse.Namespace, model
     provider = OpenAICompatibleProvider(openai_compatible_config_from_env())
     workspace = StoryWorkspace(root=args.stories_root, slug=case["slug"])
     tools = create_writing_tools(workspace)
-    harness = build_harness(workspace, provider, model, max_advances_per_prompt=args.max_advances)
+    harness = build_harness(workspace, provider, model)
     workspace.ensure_dirs()
     renderer = PlainRenderer({tool.name: tool for tool in tools})
     await restore_and_attach(workspace, harness, on_warning=lambda w: print(w, file=sys.stderr))

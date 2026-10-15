@@ -283,12 +283,9 @@ function ItemView({
 }
 
 export default function ChatStream({
-  onRetrySync,
   stage = null,
   onSendPrompt,
 }: {
-  /** 对账失败卡片的重试回调（经 WS sync 命令手动重跑）。 */
-  onRetrySync?: (chapter: string) => void;
   /** 当前文章阶段（空态建议按钮数据源；null/未知 → 兜底 intake 建议）。 */
   stage?: string | null;
   /** 建议按钮点击回调（App 按 running 选 prompt/steer 命令）。 */
@@ -334,7 +331,7 @@ export default function ChatStream({
         <ItemView key={i} item={item} onSelectOption={onSendPrompt} />
       ))}
       {syncCards.map((card, i) => (
-        <SyncCard key={`sync-${i}`} entry={card} onRetry={onRetrySync} />
+        <SyncCard key={`sync-${i}`} entry={card} />
       ))}
       {thinkingBuffer && <ThinkingCard text={thinkingBuffer} streaming />}
       {assistantBuffer && (

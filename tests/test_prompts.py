@@ -1,4 +1,4 @@
-"""System prompt 组装测试（T4）+ 对账消息模板测试（P5 T4）。
+"""System prompt 组装测试（T4）。V1 弃用后工作流节为只读顾问语义。
 
 断言三节结构 + 工具 guidelines 全量拼接；无工具时不产生空标题节。
 """
@@ -14,14 +14,11 @@ from hastings.bible.models import (
     Foreshadow,
     Method,
     OutlineEntry,
-    TimelineEntry,
 )
 from hastings.bible.stats import build_workspace_status
 from hastings.bible.store import StoryWorkspace, save_character, save_ledger, save_story_doc
 from hastings.bible.story_state import StoryDoc
-from hastings.manuscript.diff import DiffHunk, HunkKind
 from hastings.prompts import (
-    CONFIRM_MARKER,
     LANGUAGE_HEADING,
     OPTIONS_MARKER,
     ROLE_HEADING,
@@ -30,7 +27,6 @@ from hastings.prompts import (
     WORKFLOW_HEADING,
     WORKFLOW_SECTION,
     build_language_section,
-    build_reconcile_message,
     build_system_prompt,
     refresh_system_prompt,
 )
@@ -79,8 +75,8 @@ def test_system_prompt_mentions_fair_play_rule() -> None:
 
 def test_system_prompt_appends_every_tool_guideline() -> None:
     tools = [
-        _tool("bible_upsert", "任何角色设定必须先经 bible_upsert 落盘，再写进正文。"),
-        _tool("write_chapter", "写章节前，确认出场角色都已用 bible_upsert 落盘。"),
+        _tool("bible_query", "动笔前先 bible_query 核对既有设定，避免正文与 Bible 矛盾。"),
+        _tool("read_chapter", "核对时间线细节前使用 read_chapter。"),
     ]
 
     prompt = build_system_prompt(tools)
@@ -95,26 +91,6 @@ def test_system_prompt_is_deterministic() -> None:
     tools = [_tool("bible_query", "动笔前先 bible_query 核对既有设定。")]
 
     assert build_system_prompt(tools) == build_system_prompt(tools)
-
-
-def test_system_prompt_states_transition_and_lock_semantics() -> None:
-    """工作流程节（T7）：状态沿合法迁移边经工具变更 + 锁定/解锁一句话版。
-
-    细节语义在各工具的 prompt_guidelines 里，这里只做一句话提醒，不重复维护。
-    """
-    prompt = build_system_prompt()
-
-    assert "合法迁移边" in prompt
-    assert "method_lock" in prompt
-    assert "method_unlock" in prompt
-
-
-def test_system_prompt_explains_reconcile_protocol() -> None:
-    """工作流程节（P5 D6）：【手动修订同步】开头的消息按对账协议处理。"""
-    prompt = build_system_prompt()
-
-    assert "【手动修订同步】" in prompt
-    assert "对账" in prompt
 
 
 # --- 写作语言节（P6，D2）：语言注入 + 默认中文不破既有断言 ---
@@ -254,24 +230,16 @@ def test_system_prompt_without_workspace_has_no_status_section() -> None:
 # --- 阶段感知工作流程（P8 T6，D6）：prompt 讲协议，门在工具层 ---
 
 
-def test_workflow_states_intake_protocol() -> None:
-    """intake 协议：三段式理解输出，禁止未确认先建账/写正文，每轮 1–2 问。"""
+def test_workflow_states_read_only_semantics() -> None:
+    """V1 弃用后：工作流节宣告只读能力与写入口指向 V2。"""
     section = WORKFLOW_SECTION
 
-    assert "intake" in section
-    assert "五维理解摘要" in section
-    for dimension in ("核心诡计", "人物群像", "结构", "结局", "文风"):
-        assert dimension in section
-    assert "缺口清单" in section
-    assert "1–2 个" in section  # 每轮只问 1–2 个
-    assert "多轮对话" in section  # 其余缺口多轮补齐
-    assert "5 个" not in section
-    assert "禁止" in section
-    assert "等作者答复" in section
-    # 想法有限 → 候选方案走【选项】标记协议
-    assert "候选方案" in section
-    assert OPTIONS_MARKER in section
-    assert "候选方案输出协议" in section
+    assert "只读" in section
+    assert "bible_query" in section
+    assert "read_chapter" in section
+    assert "timeline_check" in section
+    assert "没有任何写工具" in section
+    assert "V2 仓库项目" in section
 
 
 # --- 对话详略协议（P9 T1，D2）：结论先行/分条/≤300 字，交付物不受限 ---
@@ -292,7 +260,7 @@ def test_workflow_exempts_structured_deliverables_from_word_limit() -> None:
 
     assert "结构化交付物" in section
     assert "不受 300 字限制" in section
-    assert "Bible 总览" in section
+    assert "设定总览" in section
     assert "缺口清单" in section
 
 
@@ -347,189 +315,6 @@ def test_workflow_options_protocol_allows_dimension_blocks() -> None:
     assert "【选项：<维度>】" in section
     assert "每维度单独成块" in section
     assert "各自从 A 起" in section
-
-
-# --- 作者确认标记协议（P10 T10，D9）：尾部确认块 + 格式 + 适用场合 ---
-
-
-def test_confirm_marker_constant() -> None:
-    """确认标记常量：前后端靠同一文本锚点识别。"""
-    assert CONFIRM_MARKER == "【确认】"
-
-
-def test_workflow_confirm_protocol_specifies_trailing_block_and_fields() -> None:
-    """确认块必须在消息最末尾，含待确认/确认后/暂不三字段。"""
-    section = WORKFLOW_SECTION
-
-    assert "作者确认输出协议" in section
-    assert "最末尾" in section
-    assert "待确认：" in section
-    assert "确认后：" in section
-    assert "暂不：" in section
-
-
-def test_workflow_confirm_protocol_states_when_required() -> None:
-    """适用场合明确：Bible 建账完成后、推进阶段之前；硬约束仍归 story_stage。"""
-    section = WORKFLOW_SECTION
-
-    assert "Bible 建账完成后" in section
-    assert "story_stage 工具把门" in section
-
-
-def test_workflow_confirm_protocol_forbids_repeating_block_after_yes() -> None:
-    """确认块非终点：作者肯定后须自行 story_stage 推进，且被拒后立即照抄重试（H4/H2）。"""
-    section = WORKFLOW_SECTION
-
-    assert "不得再次输出同一个确认块" in section
-    assert "立即重试" in section
-
-
-def test_workflow_states_bible_drafting_protocol() -> None:
-    """bible_drafting 协议：建账顺序固定 + 总览确认三类点 + 确认后 story_stage 推进。"""
-    section = WORKFLOW_SECTION
-
-    assert "建账顺序固定" in section
-    assert "人物 → 手法 → 线索与伏笔 → 时间线 → 章纲" in section
-    assert "Bible 总览" in section
-    assert "三类点" in section
-    assert "story_stage" in section
-    assert "未经确认" in section
-
-
-def test_workflow_states_writing_protocol_anchors_outline_reading() -> None:
-    """writing 协议：动笔前读章纲与设定，写完报告落盘与迁移（原第 6 条保留）。"""
-    section = WORKFLOW_SECTION
-
-    assert "动笔前先读该章章纲" in section
-    assert "简要报告" in section
-    assert "落盘" in section
-
-
-# --- 走查修复（F3/F5）：账本修改的阶段语义 + intake 缺口锚点 ---
-
-
-def test_workflow_states_ledger_edits_allowed_in_every_stage() -> None:
-    """F3（B4 走查）：bible_upsert 任何阶段可用——阶段门只限制写正文，不限制账本
-    修改；写作/修订期更正设定直接改账本，不换阶段绕行。属协议解释，不动迁移表。
-    """
-    section = WORKFLOW_SECTION
-
-    assert "阶段门只限制" in section
-    assert "bible_upsert" in section
-    assert "不需要换阶段" in section
-
-
-def test_workflow_forbids_premature_ledger_writes_justified_by_gates() -> None:
-    """F5（B1 走查）：后续阶段的门约束不构成本阶段提前落账的理由。"""
-    section = WORKFLOW_SECTION
-
-    assert "提前落账" in section
-
-
-def test_intake_gap_anchors_include_character_backstory() -> None:
-    """F5（B1 走查）：intake 缺口清单锚点补「人物身世与往事」维度。"""
-    section = WORKFLOW_SECTION
-
-    assert "人物身世与往事" in section
-
-
-def test_workflow_keeps_reconcile_protocol_in_every_stage() -> None:
-    """对账协议原样保留，且作用于任何阶段。"""
-    assert "【手动修订同步】" in WORKFLOW_SECTION
-    assert "对账" in WORKFLOW_SECTION
-    assert "任何阶段" in WORKFLOW_SECTION
-
-
-# --- 对账消息模板（P5 T4，D5/D6） ---
-
-
-def _hunk(
-    kind: HunkKind,
-    old: str,
-    new: str,
-    old_index: int | None,
-    new_index: int | None,
-) -> DiffHunk:
-    return DiffHunk(kind=kind, old_index=old_index, new_index=new_index, old_text=old, new_text=new)
-
-
-def test_reconcile_message_starts_with_marker_and_role(tmp_path: Path) -> None:
-    """协议标记开头（D6 识别锚点）+ 风格观察者/台账校对角色校准为模板首句。"""
-    workspace = StoryWorkspace(root=tmp_path, slug="demo")
-    message = build_reconcile_message(workspace, "ch03", [_hunk("modified", "旧段", "新段", 1, 1)])
-
-    assert message.startswith("【手动修订同步】第3章已被作者直接修改。")
-    assert "风格观察者" in message
-    assert "习得作者本人的" in message
-    assert "不调用任何写正文的工具" in message
-
-
-def test_reconcile_message_puts_style_learning_first(tmp_path: Path) -> None:
-    """对账定位（P5 T7 用户澄清）：首要习得作者文风，其次校正账本。"""
-    workspace = StoryWorkspace(root=tmp_path, slug="demo")
-    message = build_reconcile_message(workspace, "ch03", [_hunk("modified", "旧段", "新段", 1, 1)])
-
-    assert "文风取向" in message
-    assert "风格参照" in message
-    assert "风格要点" in message
-    assert "校正受影响的账本条目" in message
-
-
-def test_reconcile_message_lists_hunk_previews(tmp_path: Path) -> None:
-    """每段一行：[类别] 段号 + 预览；removed 用旧文本做预览。"""
-    workspace = StoryWorkspace(root=tmp_path, slug="demo")
-    hunks = [
-        _hunk("modified", "火车在九点四十七分抵达。", "火车在十点零七分抵达。", 1, 1),
-        _hunk("removed", "被删掉的段落。", "", 2, None),
-        _hunk("added", "", "新增的结尾。", None, 3),
-    ]
-    message = build_reconcile_message(workspace, "ch03", hunks)
-
-    assert "[修改] 段1：火车在十点零七分抵达。" in message
-    assert "[删除] 段2：被删掉的段落。" in message
-    assert "[新增] 段3：新增的结尾。" in message
-
-
-def test_reconcile_message_truncates_beyond_max_hunks(tmp_path: Path) -> None:
-    """hunk 上限 20 段：超出截断并注明（全文用 read_chapter 自取）。"""
-    workspace = StoryWorkspace(root=tmp_path, slug="demo")
-    hunks = [_hunk("modified", f"旧{i}", f"新{i}", i, i) for i in range(25)]
-
-    message = build_reconcile_message(workspace, "ch03", hunks)
-
-    assert message.count("[修改]") == 20
-    assert "共 25 处变更，仅列出前 20 处" in message
-
-
-def test_reconcile_message_matches_entities_by_name(tmp_path: Path) -> None:
-    """相关账本条目：变更段文本命中实体名才附上（token 经济学）。"""
-    workspace = StoryWorkspace(root=tmp_path, slug="demo")
-    save_character(workspace, Character(name="波洛", identity="侦探"))
-    save_ledger(
-        workspace.timeline_path,
-        [TimelineEntry(name="列车晚点", day=1)],
-    )
-    hunks = [
-        _hunk("modified", "波洛皱眉。", "波洛看表，想起列车晚点的事。", 1, 1),
-        _hunk("added", "", "与案件无关的景物描写。", None, 2),
-    ]
-
-    message = build_reconcile_message(workspace, "ch03", hunks)
-
-    assert "相关账本条目" in message
-    assert "角色：波洛" in message
-    assert "时间线：列车晚点" in message
-
-
-def test_reconcile_message_degrades_when_ledger_unreadable(tmp_path: Path) -> None:
-    """账本损坏不阻断对账：跳过匹配并注明（不静默吞）。"""
-    workspace = StoryWorkspace(root=tmp_path, slug="demo")
-    workspace.bible_dir.mkdir(parents=True)
-    workspace.timeline_path.write_text("::: 不是列表 :::\n", encoding="utf-8")
-
-    message = build_reconcile_message(workspace, "ch03", [_hunk("modified", "旧", "新", 1, 1)])
-
-    assert "账本条目读取失败" in message
 
 
 # --- 刷新点共享（P10 T2，D6/L7）：三端单一事实源 ---

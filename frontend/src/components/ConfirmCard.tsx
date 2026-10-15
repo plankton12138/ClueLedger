@@ -1,7 +1,7 @@
 /**
  * 作者确认交互卡（P10 T10，D9）：把模型输出的【确认】标记块渲染为结构化卡片——
- * 说明行 + 「确认」「暂不」两键，点击发送定式指令。硬约束仍在 story_stage
- * 工具层，本卡片只是 UI 便利层（协议软、工具硬）。
+ * 说明行 + 「确认」「暂不」两键，点击发送定式指令。V1 弃用后（§2.10）story_stage
+ * 工具与 CONFIRM_MARKER 协议已下线，本卡片作为 UI 残留保留（生产中不再命中）。
  */
 
 import { CONFIRM_REPLY, DECLINE_REPLY, type ChatConfirm } from "./confirm";

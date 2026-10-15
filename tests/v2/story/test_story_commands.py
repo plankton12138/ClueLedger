@@ -28,8 +28,7 @@ from hastings.application.handlers.story_commands import (
     story_command,
 )
 from hastings.application.queries.story_queries import StoryQueries
-from hastings.bible.store import StoryWorkspace, save_story_doc
-from hastings.bible.story_state import StoryDoc
+from hastings.bible.store import StoryWorkspace
 from hastings.domain.repository import error_codes as repo_ec
 from hastings.domain.repository.ids import Actor, CommitId
 from hastings.domain.repository.results import COMMITTED, NO_CHANGE
@@ -48,7 +47,6 @@ from hastings.interfaces.architecture_version import (
 )
 from hastings.settings import workspace_architecture_version
 from hastings.tools.bible_tools import create_bible_tools
-from hastings.tools.errors import ToolInputError
 
 ACTOR = Actor(kind="human", id="author_test")
 
@@ -533,51 +531,16 @@ def test_resolve_architecture_version(metadata: dict[str, object] | None, expect
 
 
 @pytest.mark.anyio
-async def test_v2_project_cannot_call_bible_upsert(tmp_path: Path) -> None:
-    workspace = StoryWorkspace(root=tmp_path, slug="v2-case")
+async def test_bible_tools_are_readonly_after_v1_retirement(tmp_path: Path) -> None:
+    """V1 弃用后：bible 工具只剩 bible_query，写工具不再存在，读通道保留。"""
+    workspace = StoryWorkspace(root=tmp_path, slug="ro-case")
     workspace.ensure_dirs()
-    tools = {t.name: t for t in create_bible_tools(workspace, architecture_version="v2")}
-    assert set(tools) == {"bible_upsert", "bible_query"}
+    tools = {t.name: t for t in create_bible_tools(workspace)}
+    assert set(tools) == {"bible_query"}
 
-    # 说明必须与执行函数同源：不得再要求模型「必须先经 bible_upsert 落盘」，
-    # 否则模型会被提示调用一个必然拒绝的工具（评审 P2）。
-    upsert = tools["bible_upsert"]
-    assert "不可用" in upsert.description
-    assert "必须先经 bible_upsert 落盘" not in upsert.description
-    assert all("必须先经 bible_upsert 落盘" not in line for line in upsert.prompt_guidelines)
-
-    with pytest.raises(ToolInputError) as exc:
-        await tools["bible_upsert"].execute(
-            "call1", {"entity_type": "character", "data": {"name": "宫泽"}}
-        )
-    message = str(exc.value)
-    assert "V2" in message and "怎样算对" in message  # 三要素含修正指引
-    assert not any(workspace.characters_dir.glob("*.yaml"))  # 未落盘
-
-    # 读工具保留：迁移期仍需读旧账本
+    # 读工具保留：V1 只读工作区核对设定仍走它
     queried = await tools["bible_query"].execute("call2", {"entity_type": "character"})
     assert "空" in queried.text
-
-
-@pytest.mark.anyio
-async def test_v1_project_bible_upsert_unchanged(tmp_path: Path) -> None:
-    workspace = StoryWorkspace(root=tmp_path, slug="v1-case")
-    workspace.ensure_dirs()
-    save_story_doc(workspace, StoryDoc(slug="v1-case", stage="bible_drafting"))
-    tools = {t.name: t for t in create_bible_tools(workspace)}  # 缺省 v1
-
-    await tools["bible_upsert"].execute(
-        "call1",
-        {
-            "entity_type": "character",
-            "data": {
-                "name": "宫泽",
-                "identity": "退休刑警",
-                "relationships": ["宫泽惠: 妹妹"],
-            },
-        },
-    )
-    assert (workspace.characters_dir / "宫泽.yaml").exists()
 
 
 def test_workspace_architecture_version_reads_settings_metadata(tmp_path: Path) -> None:

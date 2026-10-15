@@ -66,7 +66,7 @@ def workspace_architecture_version(workspace: StoryWorkspace) -> ArchitectureVer
     """读取工作区项目元数据并解析架构版本（ADR §2.2 的「项目解析这一处」）。
 
     settings.yaml 是本项目唯一的项目级元数据承载处：``architecture_version: v2``
-    把该项目路由到 V2 装配（domain handler 写路径、bible_upsert 拒绝桩）；缺键、
+    把该项目路由到 V2 装配（domain handler 写路径）；缺键、
     缺文件或取值非法一律回退 v1，与「缺文件按兜底值」的既有惯例一致。
 
     读取（I/O）收敛在本模块，解析（纯函数）委托给

@@ -123,9 +123,7 @@ def test_interrupted_migration_source_change_requires_new_dry_run(
 
     fresh = healthy.dry_run(resolved_workspace)
     assert fresh.run_id != report.run_id
-    result = healthy.apply(
-        resolved_workspace, project_id=project, confirm_run_id=fresh.run_id
-    )
+    result = healthy.apply(resolved_workspace, project_id=project, confirm_run_id=fresh.run_id)
     assert result.validation.ok, f"新报告导入应完整落成：{result.validation.failures}"
 
 

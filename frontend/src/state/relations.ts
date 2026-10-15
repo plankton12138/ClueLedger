@@ -4,7 +4,7 @@
  * 数据约定：`Character.relationships` 是自由文本列表，逐条匹配
  * `「<已注册角色名>[:：]<关系描述>」` 模式 → 边；解析不出 / 指向未注册
  * 角色的条目不硬解析、不静默丢——进 ``unconnected`` 原样列出（泄压阀），
- * 关系图下方展示，并提示用 bible_upsert 补齐。
+ * 关系图下方展示，并提示补齐。
  */
 
 export interface RelationInput {

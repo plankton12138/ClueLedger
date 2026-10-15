@@ -6,17 +6,14 @@ health 是全局探活：只报 status，不绑定具体工作区（工作区状
 /api/{slug}/state）。
 """
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from hastings.bible.store import StoryWorkspace
 from hastings.context_manager import CompactionResult, TokenUsage
-from hastings.manuscript.diff import DiffHunk
-from hastings.manuscript.write_guard import EditMarkRegistry
 from hastings.server.app import create_app
-from hastings.server.reconcile import NoticeListener
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.session import AgentBusyError, WritingSession
 from tau_agent.events import AgentEvent
@@ -47,18 +44,12 @@ class StubSession:
 
     def __init__(self) -> None:
         self._running = False
-        self._edit_marks = EditMarkRegistry()
-        self.resync_calls: list[str] = []
         self.applied_languages: list[str] = []
         self.applied_models: list[str] = []
 
     @property
-    def edit_marks(self) -> EditMarkRegistry:
-        return self._edit_marks
-
-    @property
     def tool_names(self) -> tuple[str, ...]:
-        return ("bible_upsert", "write_chapter")
+        return ("bible_query", "read_chapter")
 
     @property
     def messages(self) -> tuple[AgentMessage, ...]:
@@ -86,14 +77,6 @@ class StubSession:
         del listener
         return lambda: None
 
-    async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
-        del chapter_id, hunks
-
-    async def resync_reconcile(self, chapter_id: str) -> bool:
-        """默认可重跑（记录调用章 id）；失败路径由子类覆盖。"""
-        self.resync_calls.append(chapter_id)
-        return True
-
     def apply_writing_language(self, language: str) -> None:
         """记录切换调用（P6）；真实会话在此重建 system prompt。"""
         self.applied_languages.append(language)
@@ -113,10 +96,6 @@ class StubSession:
     async def compact_context(self) -> CompactionResult:
         """手动压缩（P10 T13）；桩返回「无需压缩」合法空结果。"""
         return CompactionResult(False, "nothing_to_strip", 0, 0)
-
-    def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
-        del listener
-        return lambda: None
 
 
 def stub_registry(root: Path, session: WritingSession | None = None) -> WorkspaceRegistry:

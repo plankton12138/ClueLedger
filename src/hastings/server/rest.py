@@ -41,8 +41,7 @@ from hastings.bible.store import (
     load_story_doc,
 )
 from hastings.events_store import CATEGORIES, EventStore, events_file
-from hastings.manuscript.diff import InvalidChapterFormat, validate_title_heading
-from hastings.manuscript.store import current_revision, save_chapter
+from hastings.manuscript.store import current_revision
 from hastings.provider_catalog import PROVIDER_CATALOG
 from hastings.rag.corpus_store import (
     CorpusExistsError,
@@ -86,7 +85,6 @@ from hastings.settings import (
     StorySettings,
     load_settings,
     save_settings,
-    workspace_architecture_version,
 )
 from hastings.tools.bible_tools import ENTITY_LABELS
 from tau_agent.types import JSONValue
@@ -230,42 +228,6 @@ class ChapterResponse(BaseModel):
     id: str
     content: str
     revision: int
-
-
-class ChapterUpdateRequest(BaseModel):
-    # D3：请求体为 {content, baseRevision}——validation alias 收 camelCase
-    content: str
-    base_revision: int = Field(validation_alias="baseRevision")
-    # 对账接线（D5）：T4 消费；T2 只接收（sync=false 只存不同步）
-    sync: bool = True
-
-
-class DiffHunkResponse(BaseModel):
-    # D3 契约：hunk 字段经别名在 wire 上是 camelCase（与 WS 帧同形，
-    # 前端 diff 视图一套类型消费）
-    kind: str
-    old_index: int | None = Field(serialization_alias="oldIndex")
-    new_index: int | None = Field(serialization_alias="newIndex")
-    old_text: str = Field(serialization_alias="oldText")
-    new_text: str = Field(serialization_alias="newText")
-
-
-class ChapterSavedResponse(BaseModel):
-    id: str
-    revision: int
-    diff: list[DiffHunkResponse]
-
-
-class EditMarkResponse(BaseModel):
-    # D4：作者草稿锁加锁结果（wire 上 camelCase，与章节端点同形）
-    chapter_id: str = Field(serialization_alias="chapterId")
-    holder: str
-    ts: float
-
-
-class EditMarkReleaseResponse(BaseModel):
-    chapter_id: str = Field(serialization_alias="chapterId")
-    released: bool
 
 
 class WorkspacesResponse(BaseModel):
@@ -535,7 +497,7 @@ class StoryChaptersResponse(BaseModel):
 class StoryResponse(BaseModel):
     """工作区生命周期快照（P8 T7，D8）：顶栏阶段徽章 + 章节进度的数据源。
 
-    纯只读派生零新存储；story.yaml 的写路径只有 story_stage 工具（红线）。
+    纯只读派生零新存储；story.yaml 为 V1 历史状态，无任何写入口。
     """
 
     slug: str
@@ -703,30 +665,6 @@ def create_rest_router(
     def _workspace(slug: str) -> StoryWorkspace:
         # get_or_create 已过校验；这里只做路径解析（构造即校验，双保险）
         return StoryWorkspace(root=registry.root, slug=slug)
-
-    def _reject_v2_legacy_write(slug: str, *, action: str) -> None:
-        """V1 写端点的项目架构门（Phase 17 T17.6）。
-
-        ``architecture_version: v2`` 的项目只允许经领域命令与 Commit Service 写入；
-        旧 REST 写端点（章节保存、草稿锁）会绕过版本检查与依赖边，直接落盘 Markdown。
-        工具层已有拒绝桩，但 REST 是独立路径，必须在 HTTP 装配处一并阻断，否则
-        「V2 项目旧写入口不可达」不成立（评审 P1）。
-
-        判定点复用 ``workspace_architecture_version``（ADR §2.2 的单一项目解析），
-        不在此处另设 flag。
-        """
-        if workspace_architecture_version(_workspace(slug)) != "v2":
-            return
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"{action}被拒：项目 {slug!r} 声明 architecture_version=v2。"
-                "为什么错：V2 项目只允许经领域命令与 Commit Service 写入，"
-                "旧 REST 写端点会绕过版本检查、依赖边与领域不变量（V1 工作区文件被直接改写）。"
-                "怎样算对：改用 V2 接口（POST /api/v2/projects/{project_id}/chapters/{id}/save），"
-                "或把该项目移除 v2 标记后再用 V1 链路。"
-            ),
-        )
 
     async def _session(slug: str) -> WritingSession:
         try:
@@ -1321,7 +1259,7 @@ def create_rest_router(
         """工作区生命周期快照（P8 T7，D8）：纯只读派生零新存储。
 
         _session 守门 + stats 复用，账本损坏 422、IO 故障 500——与 stats
-        端点同出口；story.yaml 的写路径只有 story_stage 工具（REST 不暴露写口）。
+        端点同出口；story.yaml 为 V1 历史状态，只读。
         """
         await _session(slug)
         workspace = _workspace(slug)
@@ -1469,11 +1407,7 @@ def create_rest_router(
                 if workspace.chapters_dir.exists()
                 else []
             )
-            hint = (
-                f"当前可用章节：{'、'.join(available)}"
-                if available
-                else "工作区还没有任何章节（先用 write_chapter 工具落盘）"
-            )
+            hint = f"当前可用章节：{'、'.join(available)}" if available else "工作区还没有任何章节"
             raise HTTPException(
                 status_code=404,
                 detail=(
@@ -1491,146 +1425,6 @@ def create_rest_router(
             id=chapter_id,
             content=content,
             revision=current_revision(workspace, chapter_id),
-        )
-
-    @router.put("/api/{slug}/chapters/{chapter_id}/edit-mark", response_model=EditMarkResponse)
-    async def acquire_edit_mark(chapter_id: str, slug: str) -> EditMarkResponse:
-        """作者开始编辑：加草稿锁（P5 D4）。幂等——重复加锁覆盖旧 mark。"""
-        _reject_v2_legacy_write(slug, action="加草稿锁")
-        if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"章节 id 不合法：{chapter_id!r}。"
-                    "为什么错：id 只允许字母、数字、连字符与下划线。"
-                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
-                ),
-            )
-        session = await _session(slug)
-        if not (_workspace(slug).chapters_dir / f"{chapter_id}.md").exists():
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"章节 {chapter_id} 不存在。"
-                    "为什么错：编辑锁只对已有章节有意义。"
-                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
-                ),
-            )
-        mark = session.edit_marks.acquire(chapter_id)
-        return EditMarkResponse(chapter_id=mark.chapter_id, holder=mark.holder, ts=mark.ts)
-
-    @router.delete(
-        "/api/{slug}/chapters/{chapter_id}/edit-mark",
-        response_model=EditMarkReleaseResponse,
-    )
-    async def release_edit_mark(chapter_id: str, slug: str) -> EditMarkReleaseResponse:
-        """作者放弃草稿：释放锁（幂等，未持锁无害）。"""
-        _reject_v2_legacy_write(slug, action="释放草稿锁")
-        if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"章节 id 不合法：{chapter_id!r}。"
-                    "为什么错：id 只允许字母、数字、连字符与下划线。"
-                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
-                ),
-            )
-        session = await _session(slug)
-        released = session.edit_marks.release(chapter_id)
-        return EditMarkReleaseResponse(chapter_id=chapter_id, released=released)
-
-    @router.put("/api/{slug}/chapters/{chapter_id}", response_model=ChapterSavedResponse)
-    async def update_chapter(
-        chapter_id: str,
-        body: ChapterUpdateRequest,
-        slug: str,
-    ) -> ChapterSavedResponse:
-        """作者受管写端点（D3 管线，顺序固定）。"""
-        _reject_v2_legacy_write(slug, action="章节保存")
-        if not re.fullmatch(_CHAPTER_ID_PATTERN, chapter_id):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"章节 id 不合法：{chapter_id!r}。"
-                    "为什么错：id 只允许字母、数字、连字符与下划线。"
-                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用章节 id。"
-                ),
-            )
-        try:
-            validate_title_heading(body.content)
-        except InvalidChapterFormat as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-        session = await _session(slug)
-        if session.is_running or session.is_compacting:
-            # D4 HTTP 侧守门：写作流进行中作者不得保存
-            # （EditMark 是另一半——挡 agent 写作者有草稿的章，在工具层）
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"章节 {chapter_id} 保存被拒：agent 写作流进行中。"
-                    "为什么错：并发写同一文件会产生交叠版本。"
-                    "怎样算对：等待写作流结束（状态条消失）后再保存。"
-                ),
-            )
-
-        workspace = _workspace(slug)
-        revision = current_revision(workspace, chapter_id)
-        if body.base_revision != revision:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"章节 {chapter_id} 已被其他页面更新"
-                    f"（当前 revision={revision}，本次提交基于 "
-                    f"revision={body.base_revision}）。"
-                    "为什么错：继续保存会覆盖那份更新。"
-                    "怎样算对：重新 GET 该章节，把改动合并到最新版本后再保存。"
-                ),
-            )
-
-        try:
-            saved = save_chapter(workspace, chapter_id, body.content)
-        except FileNotFoundError as exc:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"章节 {chapter_id} 不存在。"
-                    "为什么错：受管写端点只保存已有章节，不负责创建新章。"
-                    f"怎样算对：先 GET /api/{slug}/chapters 查看可用 id，"
-                    "新章节请让 agent 用 write_chapter 落盘。"
-                ),
-            ) from exc
-        except OSError as exc:
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    f"章节 {chapter_id} 保存失败：文件系统错误 {exc}。"
-                    "旧版已归档至 .revisions/；主文件未受影响"
-                    "（归档先于写入、覆盖为原子替换），修复后可直接重试保存。"
-                ),
-            ) from exc
-
-        # D4 锁生命周期：保存成功即释放作者草稿锁（agent 随后可写该章）
-        session.edit_marks.release(chapter_id)
-
-        # D5：保存成功且实际有变更 → 自动入队对账（同章 debounce 合并）；
-        # sync=false 只存不同步；空 diff 已在上面走 no-op，不触发对账。
-        if body.sync and saved.hunks:
-            await session.request_reconcile(chapter_id, saved.hunks)
-
-        return ChapterSavedResponse(
-            id=chapter_id,
-            revision=saved.revision,
-            diff=[
-                DiffHunkResponse(
-                    kind=hunk.kind,
-                    old_index=hunk.old_index,
-                    new_index=hunk.new_index,
-                    old_text=hunk.old_text,
-                    new_text=hunk.new_text,
-                )
-                for hunk in saved.hunks
-            ],
         )
 
     @router.get("/api/{slug}/events", response_model=EventsResponse)

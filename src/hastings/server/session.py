@@ -7,19 +7,15 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Protocol
 
-from hastings.manuscript.diff import DiffHunk
-from hastings.manuscript.write_guard import EditMarkRegistry
 from tau_agent.events import AgentEvent
 from tau_agent.harness import EventListener
 from tau_agent.messages import AgentMessage
 
 if TYPE_CHECKING:
-    # 运行时不导入——reconcile.py 反向依赖本模块的 AgentBusyError，防循环
     from hastings.context_manager import CompactionResult, TokenUsage
-    from hastings.server.reconcile import NoticeListener
 
 
 class AgentBusyError(RuntimeError):
@@ -58,23 +54,6 @@ class WritingSession(Protocol):
     @property
     def messages(self) -> tuple[AgentMessage, ...]: ...
 
-    @property
-    def edit_marks(self) -> EditMarkRegistry:
-        """作者草稿锁注册表（P5 D4 人机互斥的共享状态，双侧守门读它）。"""
-        ...
-
-    async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
-        """保存成功后请求对账（P5 D5；空 hunks 为 no-op）。"""
-        ...
-
-    async def resync_reconcile(self, chapter_id: str) -> bool:
-        """手动重跑最近一次修订的对账（P5 T5 重试/「同步上下文」按钮）。
-
-        返回 False 表示该章没有可重跑的修订（尚无保存记录）——调用方
-        据此给出「先保存一次」的三要素指引用。
-        """
-        ...
-
     def apply_writing_language(self, language: str) -> None:
         """切换写作语言并立即重建 system prompt（P6 D3；下一轮对话即生效）。"""
         ...
@@ -104,10 +83,6 @@ class WritingSession(Protocol):
         无可剥离内容 → 返回 ``reason="nothing_to_strip"``（合法空结果）；
         运行中 → 返回 ``reason="running"``（REST 侧另有 409 前置守卫）。
         """
-        ...
-
-    def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
-        """订阅对账进度通知（ws 层翻成 notice 帧），返回退订函数。"""
         ...
 
     def prompt(self, content: str) -> AsyncIterator[AgentEvent]:

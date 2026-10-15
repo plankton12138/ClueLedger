@@ -12,15 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING
 
 from hastings.bible.store import StoryWorkspace
 from hastings.events_store import EventStore, events_file, make_event_persister
-from hastings.manuscript.diff import DiffHunk
-from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
 from hastings.server.provider_config import ProviderBook
-from hastings.server.reconcile import NoticeListener, ReconcileNotice, ReconcileQueue
 from hastings.server.registry import SessionFactory
 from hastings.server.session import AgentBusyError, WritingSession
 from hastings.settings import DEFAULT_PROVIDER_PROFILE
@@ -28,7 +25,6 @@ from tau_agent.events import AgentEvent
 from tau_agent.harness import AgentHarness, AgentHarnessConfig, EventListener
 from tau_agent.messages import AgentMessage
 from tau_agent.provider import ModelProvider
-from tau_agent.types import JSONValue
 
 BUSY_MESSAGE = (
     "prompt 被拒绝：当前有写作流正在进行。"
@@ -56,10 +52,7 @@ class HastingsSession:
         self,
         harness: AgentHarness,
         workspace: StoryWorkspace,
-        edit_marks: EditMarkRegistry | None = None,
-        run_kind: RunKindGuard | None = None,
         *,
-        reconcile_debounce: float = 3.0,
         profile_name: str = DEFAULT_PROVIDER_PROFILE,
     ) -> None:
         self._harness = harness
@@ -67,27 +60,11 @@ class HastingsSession:
         # 当前 provider 档案名（P6 T2）：跨档案切换的判定依据（同档案换模型热切）。
         self._profile_name = profile_name
         self._compaction_lock = asyncio.Lock()
-        # 作者草稿锁注册表（P5 D4）：from_workspace 会把同一实例闭包进
-        # write_chapter（agent 侧守门）；REST 锁端点与 PUT 保存经本属性读写。
-        # 直接构造（无实参）得到空注册表——CLI 等单 agent 场景锁永不触发。
-        self._edit_marks = edit_marks if edit_marks is not None else EditMarkRegistry()
-        # 运行类别守卫（P5 T4，D4 末条）：from_workspace 把同一实例闭包进
-        # write_chapter——对账轮期间模型写正文被工具层拒绝。
-        self._run_kind = run_kind if run_kind is not None else RunKindGuard()
-        # 对账队列（P5 T4，D5）：订阅 harness 事件流等空闲，出队即以紧凑
-        # 消息 prompt 同一 harness——会话记忆/持久化/事件流零成本复用。
-        self._reconcile = ReconcileQueue(
-            session=self,
-            workspace=workspace,
-            run_kind=self._run_kind,
-            debounce_seconds=reconcile_debounce,
-        )
         # 事件持久化（P6 T4，D4）：events.jsonl 是全量事件帧的可观测性账本，
         # 与 session.jsonl（会话记忆）职责分离；构造时挂载，CLI/Web 共用同一单点
         # （F4 起入库策略收敛到 make_event_persister）。
         self._events = EventStore(events_file(workspace))
         self._unsubscribe_events = harness.subscribe(make_event_persister(self._events))
-        self._unsubscribe_notice_events = self._reconcile.subscribe(self._persist_notice)
         # token 用量落账（P10 T12，D11）：每轮 agent_end 记一条 token_usage 事件，
         # 与压缩触发、前端占用共用唯一计数源（context_usage 同一函数）。
         self._unsubscribe_token_events = harness.subscribe(self._on_agent_end)
@@ -99,25 +76,15 @@ class HastingsSession:
         provider: ModelProvider,
         model: str,
         *,
-        reconcile_debounce: float = 3.0,
         profile_name: str = DEFAULT_PROVIDER_PROFILE,
     ) -> HastingsSession:
         """按 CLI 同款方式装配工具集、system prompt 与 harness。"""
         from hastings.cli import create_writing_tools
-        from hastings.manuscript.guards import attach_guards
         from hastings.prompts import build_system_prompt
-        from hastings.settings import load_settings, workspace_architecture_version
+        from hastings.settings import load_settings
 
-        edit_marks = EditMarkRegistry()
-        run_kind = RunKindGuard()
-        # 与 CLI build_harness 同款：项目架构版本在这一处解析并传入，V2 项目装配
-        # 拒绝桩。缺 settings.yaml → v1，V1 行为不变（ADR §2.2）。
-        tools = create_writing_tools(
-            workspace,
-            edit_marks=edit_marks,
-            run_kind=run_kind,
-            architecture_version=workspace_architecture_version(workspace),
-        )
+        # 与 CLI build_harness 同款：V1 弃用后工具集为只读（无写工具）。
+        tools = create_writing_tools(workspace)
         language = load_settings(workspace).writing_language
         harness = AgentHarness(
             AgentHarnessConfig(
@@ -127,13 +94,9 @@ class HastingsSession:
                 tools=tools,
             )
         )
-        attach_guards(harness, workspace)
         return cls(
             harness=harness,
             workspace=workspace,
-            edit_marks=edit_marks,
-            run_kind=run_kind,
-            reconcile_debounce=reconcile_debounce,
             profile_name=profile_name,
         )
 
@@ -174,14 +137,6 @@ class HastingsSession:
         return self._harness.messages
 
     @property
-    def edit_marks(self) -> EditMarkRegistry:
-        return self._edit_marks
-
-    @property
-    def run_kind(self) -> RunKindGuard:
-        return self._run_kind
-
-    @property
     def events(self) -> EventStore:
         """events.jsonl 账本（P6 T4）：只读分页由 REST 端点直读，此处暴露供接线/测试。"""
         return self._events
@@ -216,25 +171,6 @@ class HastingsSession:
                 file=sys.stderr,
             )
 
-    async def _persist_notice(self, notice: ReconcileNotice) -> None:
-        """对账进度通知落进事件流（可观测性账本记全貌，含对账三态）。"""
-        payload: dict[str, JSONValue] = {
-            "kind": notice.kind,
-            "chapter": notice.chapter,
-            "hunks": notice.hunks,
-            "updates": notice.updates,
-        }
-        if notice.status is not None:
-            payload["status"] = notice.status
-        await self._events.append("notice", payload)
-
-    async def request_reconcile(self, chapter_id: str, hunks: Sequence[DiffHunk]) -> None:
-        await self._reconcile.enqueue(chapter_id, hunks)
-
-    async def resync_reconcile(self, chapter_id: str) -> bool:
-        """手动重跑：复用该章最近一次保存的差异（对账失败重试 / 同步按钮）。"""
-        return await self._reconcile.resync(chapter_id)
-
     def apply_writing_language(self, language: str) -> None:
         """切换写作语言并立即重建 system prompt（P6 D3）。
 
@@ -252,8 +188,7 @@ class HastingsSession:
 
         委托 ``prompts.refresh_system_prompt``（P10 D6/L7 三端共享单一事实源）：
         prompt 入口重算即把 story.yaml 阶段与账本实况注入下一轮。运行中不刷新——
-        prompt 入口本就有 busy 防护，与「运行中 system 不变」同语义；reconcile
-        队列经 session.prompt 同入口，自动获得同一刷新。
+        prompt 入口本就有 busy 防护，与「运行中 system 不变」同语义。
         """
         from hastings.prompts import refresh_system_prompt
 
@@ -265,9 +200,6 @@ class HastingsSession:
         config.model 每轮运行时读取，直接赋值即下一轮生效；对话历史原地保留。
         """
         self._harness.config.model = model
-
-    def subscribe_notice(self, listener: NoticeListener) -> Callable[[], None]:
-        return self._reconcile.subscribe(listener)
 
     def prompt(self, content: str) -> AsyncIterator[AgentEvent]:
         if not self._harness.config.model:
@@ -283,7 +215,7 @@ class HastingsSession:
     async def auto_compact(self) -> CompactionResult:
         """prompt 入口的两档自动压缩（P10 D8/L9）：超阈值才动，摘要失败不进流。
 
-        ``prompt`` 是同步返回迭代器的签名（WS/reconcile 依赖），故压缩在此独立成
+        ``prompt`` 是同步返回迭代器的签名（WS 消费），故压缩在此独立成
         async 方法，由 WS prompt 入口 await。刷新 system 后再压缩，保证任何正文
         剥离都经会话文件持久化；同一会话的压缩串行，避免并发摘要覆盖彼此结果。
         """

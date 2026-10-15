@@ -3,7 +3,7 @@
 P1 只有 Character；P2 扩为五账本：character（+弧光状态机）、clue、
 foreshadow、method（含 alibi_claims，计划 D3）、timeline（无状态机，D1/D2）；
 P8 T3 增 outline 章纲账本（D3：长篇的分页记忆，章号唯一由工具层校验）。
-状态字段的默认值须与 state_machine.INITIAL_STATUS 一致——强制不变量在
+状态字段的默认值是各账本的初始状态——历史不变量曾由 state_machine 强制
 工具层校验（validate_initial / validate_transition），模型默认值只是让
 合法路径零参数可用。
 """
@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# 状态字面量与 state_machine 迁移表共用取值；默认值对齐 INITIAL_STATUS。
+# 状态字面量沿用历史迁移表的取值；默认值为各账本初始状态。
 ArcStatus = Literal["flat", "developing", "transformed"]
 ClueStatus = Literal["planned", "planted", "discovered", "interpreted", "resolved"]
 ForeshadowStatus = Literal["planned", "planted", "echoed", "resolved"]
@@ -29,7 +29,7 @@ class Character(BaseModel):
     motivation: str = ""
     secret: str = ""
     relationships: list[str] = Field(default_factory=list)
-    arc: ArcStatus = "flat"  # 弧光三阶段；迁移边见 state_machine.TRANSITIONS
+    arc: ArcStatus = "flat"  # 弧光三阶段（历史语义；V1 弃用后仅供只读展示）
     notes: str = ""
 
 
@@ -108,7 +108,7 @@ class OutlineEntry(BaseModel):
 
     name 为主键（注册表同款约定）；chapter 是工具层校验的唯一第二键
     （同章号两章纲=写作目标歧义，upsert 拒绝）；写正文前 read 章纲，
-    write_chapter 落盘后自动推进 status（T4）。
+    write_chapter 落盘后自动推进 status（T4，V1 历史行为）。
     """
 
     name: str = Field(min_length=1, max_length=64)

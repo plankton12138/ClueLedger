@@ -5,7 +5,7 @@
  * - 数据：buildGraphData 纯函数（state/relations.ts）解析 relationships，
  *   指向已注册角色的条目成边；未连线条目图下原样列出（泄压阀）；
  * - 交互：点节点 → onSelect 联动小传（右侧展示由 BiblePanel 负责）；
- *   无任何可解析关系 → 空态引导（bible_upsert 补关系示例）。
+ *   无任何可解析关系 → 空态引导（补关系示例）。
  */
 
 import { useMemo } from "react";
@@ -126,9 +126,9 @@ export default function RelationGraph({ characters, selected, onSelect }: Relati
       <div className="grid h-full min-h-0 place-items-center px-4">
         <div className="max-w-sm text-center text-xs leading-relaxed text-paper/50">
           <p>关系图还没有可画的关系。</p>
-          <p className="mt-2 text-gold-soft">让 agent 用 bible_upsert 补充角色关系：</p>
+          <p className="mt-2 text-gold-soft">让 agent 补充角色关系，例如：</p>
           <code className="mt-2 inline-block border border-line bg-ink px-2 py-1 text-[11px] text-gold">
-            bible_upsert character 陆远 relationships:[&quot;林岚: 对手&quot;]
+            给陆远登记关系：林岚——对手
           </code>
         </div>
       </div>

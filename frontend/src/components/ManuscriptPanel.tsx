@@ -1,71 +1,21 @@
 /**
- * 正文面板（P5 T1 阅读态 + T5 三态创作台，计划 D1/D2/D7；P7 T3 纸面提取）。
- * 正文是页面中心——羊皮纸（ChapterPaper 共享组件）承载，三态可切换：
- * - 阅读（设计稿 A）：首行缩进 / 首字下沉 + 章节切换 / 字数 / 上一章·下一章；
- * - 编辑（设计稿 B）：纯 textarea（不做富文本），dirty 徽标 + 显式保存（⌘S）/ 放弃；
- *   agent 写作中置只读并横幅提示（互斥的前端半边，服务端半边见 D4）；
- * - 对账（设计稿 C）：段落级 diff 色块 + 段内字符高亮，可手动重跑对账。
+ * 正文面板（阅读态；V1 弃用后只读）。
+ * 正文是页面中心——羊皮纸（ChapterPaper 共享组件）承载：章节切换 / 字数 /
+ * 上一章·下一章。编辑与对账态已随 V1 写路径退役（正文改动走 V2 仓库项目）；
  * 状态住在 store 的 manuscript 切片，本组件只做拉取调度、REST 编排与呈现
  * （与 BiblePanel 同一哲学：前端不跑业务逻辑）。
  */
 
-import { useCallback, useEffect, useRef } from "react";
-import type { DiffHunkWire } from "../api/rest";
-import { acquireEditMark, fetchChapter, fetchChapters, releaseEditMark, saveChapter } from "../api/rest";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { useCallback, useEffect } from "react";
+import { fetchChapter, fetchChapters } from "../api/rest";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ChapterPaper from "./ChapterPaper";
 import { chapterNumber, countChars, parseChapterHeading, splitParagraphs } from "../state/chapter";
-import { inlineDiff } from "../state/diff";
-import { nextEditLock, type EditLockRef } from "../state/editLock";
-import { useChatStore, type ManuscriptMode } from "../state/store";
+import { useChatStore } from "../state/store";
 
-const MODES: { key: ManuscriptMode; label: string }[] = [
-  { key: "read", label: "阅读" },
-  { key: "edit", label: "编辑" },
-  { key: "diff", label: "对账" },
-];
-
-/** 单段落 diff 块：新增绿 / 删除红 / 修改金（段级色条 + 段内字符高亮）。 */
-function DiffParagraph({ hunk }: { hunk: DiffHunkWire }) {
-  if (hunk.kind === "added") {
-    return (
-      <p className="mb-[1.35em] border-l-2 border-planted bg-planted/10 py-1 pl-3">
-        <span className="mr-2 align-middle text-[10px] text-planted">新增</span>
-        {hunk.newText}
-      </p>
-    );
-  }
-  if (hunk.kind === "removed") {
-    return (
-      <p className="mb-[1.35em] border-l-2 border-overdue bg-overdue/10 py-1 pl-3 text-overdue line-through">
-        <span className="mr-2 align-middle text-[10px] no-underline">删除</span>
-        {hunk.oldText}
-      </p>
-    );
-  }
-  const d = inlineDiff(hunk.oldText, hunk.newText);
-  return (
-    <p className="mb-[1.35em] border-l-2 border-gold bg-gold/10 py-1 pl-3">
-      <span className="mr-2 align-middle text-[10px] text-gold">修改</span>
-      {d.prefix}
-      {d.oldMiddle && <del className="bg-overdue/15 text-overdue line-through">{d.oldMiddle}</del>}
-      {d.newMiddle && <ins className="bg-planted/20 text-planted no-underline">{d.newMiddle}</ins>}
-      {d.suffix}
-    </p>
-  );
-}
-
-export default function ManuscriptPanel({
-  onSyncChapter,
-}: {
-  /** 手动重跑对账（经 WS sync 命令）；缺省则隐藏「重新同步」按钮。 */
-  onSyncChapter?: (chapter: string) => void;
-} = {}) {
+export default function ManuscriptPanel() {
   const slug = useChatStore((s) => s.slug);
   const status = useChatStore((s) => s.status);
-  const running = useChatStore((s) => s.running);
   const ms = useChatStore((s) => s.manuscript);
   const setChapters = useChatStore((s) => s.setChapters);
   const selectChapter = useChatStore((s) => s.selectChapter);
@@ -73,31 +23,7 @@ export default function ManuscriptPanel({
   const clearNav = useChatStore((s) => s.clearNav);
   const chapterLoaded = useChatStore((s) => s.chapterLoaded);
   const chapterFailed = useChatStore((s) => s.chapterFailed);
-  const setMode = useChatStore((s) => s.setMode);
-  const setDraft = useChatStore((s) => s.setDraft);
   const setManuscriptError = useChatStore((s) => s.setManuscriptError);
-  const saveStart = useChatStore((s) => s.saveStart);
-  const saveFailed = useChatStore((s) => s.saveFailed);
-  const applySaved = useChatStore((s) => s.applySaved);
-  const discardDraft = useChatStore((s) => s.discardDraft);
-
-  // 作者草稿锁的持有者（纯逻辑在 state/editLock.ts，这里只负责发 REST）。
-  const lockRef = useRef<EditLockRef | null>(null);
-
-  // 加锁后若不归还，agent 对该章的 write_chapter 会被长期拒绝（R3-①）：
-  // 切章节、切工作区、退出编辑态（保存/放弃）都必须释放——纯函数决定该释放谁。
-  useEffect(() => {
-    const { release, held } = nextEditLock(lockRef.current, {
-      slug,
-      chapterId: ms.chapterId,
-      mode: ms.mode,
-    });
-    lockRef.current = held;
-    if (release !== null) {
-      // 释放是幂等的；失败无害（进程重启自然清空）——不打扰作者
-      void releaseEditMark(release.slug, release.chapterId).catch(() => undefined);
-    }
-  }, [slug, ms.chapterId, ms.mode]);
 
   // 章节目录拉取：已选章不在新目录（空工作区/外部删章）时自动选第一章；
   // 已选章仍存在则保留选中（重连 refetch 不得打断阅读位置）。
@@ -154,70 +80,13 @@ export default function ManuscriptPanel({
     clearNav();
   }, [nav, ms.chapterId, selectChapter, clearNav]);
 
-  // --- REST 编排：加锁 / 保存 / 放弃（store 只存状态，本组件只调度） ---
-
-  const enterEdit = useCallback(() => {
-    const current = useChatStore.getState().manuscript;
-    if (slug === null || current.chapterId === null || running) return;
-    setMode("edit");
-    // 作者开始编辑 → 加草稿锁（D4）：失败则退回阅读（守门不变量优先，不让编辑态裸奔）
-    void acquireEditMark(slug, current.chapterId).catch((exc: unknown) => {
-      saveFailed(exc instanceof Error ? exc.message : String(exc));
-      setMode("read");
-    });
-  }, [slug, running, setMode, saveFailed]);
-
-  const doSave = useCallback(async () => {
-    const current = useChatStore.getState().manuscript;
-    if (slug === null || current.chapterId === null) return;
-    if (current.draft === null || current.revision === null) return;
-    if (current.saveState === "saving") return;
-    if (current.draft === current.baseline) return; // 无变更：不发请求（空 diff 是合法 no-op）
-    const submitted = current.draft; // 提交快照：保存期间的新输入不得被当作已保存
-    saveStart();
-    try {
-      const saved = await saveChapter(slug, current.chapterId, submitted, current.revision);
-      // 服务端保存成功即释放草稿锁 → 本地引用同步清空，避免随后的 effect 重复释放
-      lockRef.current = null;
-      applySaved(saved.revision, saved.diff, submitted);
-    } catch (exc) {
-      saveFailed(exc instanceof Error ? exc.message : String(exc));
-    }
-  }, [slug, saveStart, applySaved, saveFailed]);
-
-  const doDiscard = useCallback(() => {
-    const current = useChatStore.getState().manuscript;
-    lockRef.current = null; // 下面已显式释放，effect 不必再来一次
-    discardDraft();
-    if (slug !== null && current.chapterId !== null) {
-      // 释放锁是幂等的；失败无害（进程重启自然清空）——不打扰作者
-      void releaseEditMark(slug, current.chapterId).catch(() => undefined);
-    }
-  }, [slug, discardDraft]);
-
-  // ⌘S / Ctrl+S：编辑态且有未保存改动时保存（显式保存是唯一落盘入口）
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "s") return;
-      const current = useChatStore.getState().manuscript;
-      if (current.mode !== "edit" || current.saveState !== "dirty") return;
-      e.preventDefault();
-      void doSave();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [doSave]);
-
-  const shownText = ms.mode === "edit" ? ms.draft : ms.baseline;
+  const shownText = ms.baseline;
   const parsed = shownText !== null ? parseChapterHeading(shownText) : null;
   const paragraphs = parsed !== null ? splitParagraphs(parsed.body) : [];
   const chars = shownText !== null ? countChars(shownText) : 0;
   const index = ms.chapterId !== null ? ms.chapterIds.indexOf(ms.chapterId) : -1;
   const prev = index > 0 ? ms.chapterIds[index - 1] : null;
   const next = index >= 0 && index < ms.chapterIds.length - 1 ? ms.chapterIds[index + 1] : null;
-
-  const syncing = ms.syncState === "queued" || ms.syncState === "syncing";
-  const editLocked = running;
 
   return (
     <section className="flex min-w-0 flex-1 flex-col xl:min-w-[320px]">
@@ -245,62 +114,7 @@ export default function ManuscriptPanel({
             字数 <b className="font-semibold text-gold-soft">{chars.toLocaleString()}</b>
           </span>
         )}
-        <div className="ml-auto flex min-w-0 items-center gap-2">
-          {ms.saveState === "dirty" && <Badge variant="danger">● 未保存</Badge>}
-          {ms.saveState === "saving" && <Badge variant="info">保存中…</Badge>}
-          {syncing && <Badge variant="info">◌ 对账中…</Badge>}
-          {ms.syncState === "done" && <Badge variant="success">✓ 已同步</Badge>}
-          {ms.syncState === "failed" && <Badge variant="danger">⚠ 对账失败</Badge>}
-          {ms.mode === "edit" && (
-            <>
-              <Button
-                variant="outline"
-                onClick={doDiscard}
-                className="h-auto px-2.5 py-0.5 text-[11.5px] text-paper/60 hover:bg-transparent hover:text-paper"
-              >
-                放弃
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => void doSave()}
-                disabled={ms.saveState !== "dirty"}
-                className="h-auto border-gold/60 px-2.5 py-0.5 text-[11.5px] text-gold hover:bg-gold/15 hover:text-gold"
-              >
-                保存 ⌘S
-              </Button>
-            </>
-          )}
-          {ms.diff !== null && onSyncChapter && (
-            <Button
-              variant="outline"
-              onClick={() => ms.chapterId !== null && onSyncChapter(ms.chapterId)}
-              className="h-auto px-2.5 py-0.5 text-[11.5px] text-paper/60 hover:bg-transparent hover:text-paper"
-            >
-              重新同步
-            </Button>
-          )}
-          <div className="flex overflow-hidden rounded border border-line">
-            {MODES.map((m) => {
-              const active = ms.mode === m.key;
-              const disabled = m.key === "diff" ? ms.diff === null : m.key === "edit" && editLocked;
-              return (
-                <Button
-                  key={m.key}
-                  variant="ghost"
-                  disabled={disabled}
-                  onClick={() => (m.key === "edit" ? enterEdit() : setMode(m.key))}
-                  className={`h-auto rounded-none px-3 py-0.5 text-[11.5px] hover:bg-transparent ${
-                    active
-                      ? "bg-gold/15 text-gold hover:text-gold"
-                      : "text-paper/55 hover:text-gold"
-                  }`}
-                >
-                  {m.label}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
+        <span className="ml-auto text-[11px] text-paper/40">V1 只读 · 改写请迁移到 V2 项目</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -313,7 +127,7 @@ export default function ManuscriptPanel({
         {!ms.loading && parsed === null && ms.error === null && (
           <p className="mt-10 text-center text-xs text-paper/40">
             {ms.chapterIds.length === 0
-              ? "这篇文章还没有章节（在左侧与 AI 主编讨论，或让它动笔写第一章）。"
+              ? "这篇文章还没有章节。"
               : "从上方选择一章开始阅读。"}
           </p>
         )}
@@ -333,38 +147,7 @@ export default function ManuscriptPanel({
             onPrev={prev !== null ? () => selectChapter(prev) : undefined}
             onNext={next !== null ? () => selectChapter(next) : undefined}
             paragraphs={paragraphs}
-            banner={
-              ms.mode === "edit" ? (
-                <div className="mb-4 rounded border border-overdue/40 bg-overdue/10 px-3 py-1.5 text-center text-xs text-overdue">
-                  {editLocked
-                    ? "✎ Agent 写作中 · 本章正文暂不可编辑（写作完成后自动解锁）"
-                    : "✎ 作者编辑中 · 本章对 Agent 写入已锁定（write_chapter 将被拒绝）"}
-                </div>
-              ) : undefined
-            }
-          >
-            {ms.mode === "edit" ? (
-              <textarea
-                aria-label="正文编辑"
-                value={ms.draft ?? ""}
-                // 保存往返期间冻结输入（R3-②）：否则这段新输入会被晚到的保存响应
-                // 追认为已落盘（saveState 转 clean 而内容其实没提交过）
-                readOnly={editLocked || ms.saveState === "saving"}
-                onChange={(e) => setDraft(e.target.value)}
-                spellCheck={false}
-                className="min-h-[380px] w-full resize-y whitespace-pre-wrap border-0 bg-transparent font-serif text-[15px] leading-[2.0] text-parchment-ink outline-none"
-              />
-            ) : ms.mode === "diff" && ms.diff !== null ? (
-              <div className="text-justify font-serif text-[15px] leading-[2.0]">
-                {ms.diff.map((hunk, i) => (
-                  <DiffParagraph key={i} hunk={hunk} />
-                ))}
-                <p className="mt-3 border-t border-dashed border-parchment-line pt-2.5 font-sans text-[11px] text-parchment-mute">
-                  对账视图：{ms.diff.length} 处段落变更 · 段内高亮 = 字符级差异 · 右侧账本面板联动更新 →
-                </p>
-              </div>
-            ) : null}
-          </ChapterPaper>
+          />
         )}
       </div>
     </section>

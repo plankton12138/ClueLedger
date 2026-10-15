@@ -1,20 +1,13 @@
 /**
  * 对账同步卡片（P5 T5，设计稿 C 态）：notice 驱动，附在对话流末尾。
- * 成功 → 完成明细（检查 N 处变更 / 更新 M 处）；失败 → 归因 + 「重新同步」
- * （经 WS sync 命令手动重跑，复用最近一次保存的差异）。
+ * V1 弃用后（§2.10）后端不再产生对账 notice、WS sync 命令已下线，
+ * 此组件仅作展示残留保留：syncCards 队列在生产中恒为空。
  */
 
-import { Button } from "@/components/ui/button";
 import { chapterNumber } from "../state/chapter";
 import type { SyncCardEntry } from "../state/store";
 
-export default function SyncCard({
-  entry,
-  onRetry,
-}: {
-  entry: SyncCardEntry;
-  onRetry?: (chapter: string) => void;
-}) {
+export default function SyncCard({ entry }: { entry: SyncCardEntry }) {
   const failed = entry.status === "failed";
   return (
     <div
@@ -30,20 +23,7 @@ export default function SyncCard({
         <b className="text-gold-soft">{entry.updates}</b> 处
       </p>
       {failed && (
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-[11px] text-paper/50">
-            正文与账本未受影响；可手动重跑对账。
-          </span>
-          {onRetry && (
-            <Button
-              variant="outline"
-              onClick={() => onRetry(entry.chapter)}
-              className="h-auto shrink-0 border-overdue/60 px-2 py-0.5 text-[11px] text-overdue hover:bg-overdue/10 hover:text-overdue"
-            >
-              重新同步
-            </Button>
-          )}
-        </div>
+        <p className="mt-2 text-[11px] text-paper/50">正文与账本未受影响。</p>
       )}
     </div>
   );

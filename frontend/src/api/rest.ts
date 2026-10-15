@@ -407,66 +407,6 @@ export async function fetchChapter(slug: string, chapterId: string): Promise<Cha
   return body as ChapterResponse;
 }
 
-// ---------- 受管写端点 + 作者草稿锁（P5 T2/T3 契约，T5 前端接线） ----------
-
-/**
- * PUT /api/{slug}/chapters/{id}：作者受管写端点（D3 管线）。
- * 409（写作流冲突 / revision 过期）、422（标题格式）、404（章节不存在）、
- * 500（IO）的 detail 文案原样透出——泄压阀三情形的归因由服务端给出。
- */
-export async function saveChapter(
-  slug: string,
-  chapterId: string,
-  content: string,
-  baseRevision: number,
-): Promise<ChapterSavedResponse> {
-  const res = await fetch(
-    `/api/${encodeURIComponent(slug)}/chapters/${encodeURIComponent(chapterId)}`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content, baseRevision }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(`章节 ${chapterId} 保存失败：${await errorDetail(res)}`);
-  }
-  const body: unknown = await res.json().catch(() => null);
-  if (
-    body === null ||
-    typeof body !== "object" ||
-    typeof (body as { revision?: unknown }).revision !== "number" ||
-    !Array.isArray((body as { diff?: unknown }).diff)
-  ) {
-    throw new Error(
-      `章节保存响应结构不符：期望 { id, revision, diff[] }，收到 ${JSON.stringify(body)}。`,
-    );
-  }
-  return body as ChapterSavedResponse;
-}
-
-/** PUT .../edit-mark：作者开始编辑 → 加草稿锁（D4 幂等）；失败 detail 原样透出。 */
-export async function acquireEditMark(slug: string, chapterId: string): Promise<void> {
-  const res = await fetch(
-    `/api/${encodeURIComponent(slug)}/chapters/${encodeURIComponent(chapterId)}/edit-mark`,
-    { method: "PUT" },
-  );
-  if (!res.ok) {
-    throw new Error(`章节 ${chapterId} 加锁失败：${await errorDetail(res)}`);
-  }
-}
-
-/** DELETE .../edit-mark：放弃草稿 → 释放锁（D4 幂等）。 */
-export async function releaseEditMark(slug: string, chapterId: string): Promise<void> {
-  const res = await fetch(
-    `/api/${encodeURIComponent(slug)}/chapters/${encodeURIComponent(chapterId)}/edit-mark`,
-    { method: "DELETE" },
-  );
-  if (!res.ok) {
-    throw new Error(`章节 ${chapterId} 释放锁失败：${await errorDetail(res)}`);
-  }
-}
-
 // ---------- 工作区设置（P6 T2/T3）：写作语言 + 模型端点档案（snake_case 口径） ----------
 
 /** 预设写作语言；缺省中文，取值非法服务端 422 三要素。 */
@@ -961,15 +901,11 @@ export async function fetchAudit(slug: string, chapterId: string): Promise<Audit
  * 需提供 toolCallId → args 的查表（由 tool_execution_start 事件养起来）。
  */
 export function refetchTargets(
-  event: EventFrame,
-  argsOf: (toolCallId: string) => Record<string, unknown> | undefined,
+  _event: EventFrame,
+  _argsOf: (toolCallId: string) => Record<string, unknown> | undefined,
 ): BibleType[] {
-  if (event.type !== "tool_execution_end" || event.isError) return [];
-  if (event.toolName === "bible_upsert") {
-    const t = argsOf(event.toolCallId)?.["entity_type"];
-    return typeof t === "string" && (BIBLE_TYPES as string[]).includes(t) ? [t as BibleType] : [];
-  }
-  if (event.toolName === "method_lock" || event.toolName === "method_unlock") return ["method"];
+  // V1 写工具（bible_upsert/method_lock 等）已退役，账本数据不再经工具帧变化；
+  // 保留签名供 ChatStream 的数据刷新调度使用（当前恒为空）。
   return [];
 }
 

@@ -289,7 +289,7 @@ export default function BiblePanel({ onExpand }: { onExpand?: () => void }) {
         )}
         {!ledger.error && ledger.entities.length === 0 && (
           <p className="mt-6 text-center text-xs text-paper/40">
-            {ledger.loading ? "读取中…" : "该账本暂无条目（用 bible_upsert 工具登记）。"}
+            {ledger.loading ? "读取中…" : "该账本暂无条目。"}
           </p>
         )}
         {!ledger.error && ledger.entities.length > 0 && rows.length === 0 && (

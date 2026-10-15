@@ -105,8 +105,8 @@ def _foreshadow_overdue_checks(
                     f"当前已写至 ch{stats.latest_chapter:02d} 仍未回收"
                     f"（状态：{f.status}；内容：{f.content or '—'}）。"
                     "为什么错：超过计划回收章后悬念张力衰减，读者公平性受损。"
-                    "怎样算对：在后续章节尽快呼应回收，或用 bible_upsert 把"
-                    " expected_resolve_chapter 顺延并给出理由。"
+                    "怎样算对：在后续章节尽快呼应回收，或修正账本中的"
+                    " expected_resolve_chapter 并给出理由。"
                 ),
                 anchor_chapter=f.expected_resolve_chapter or f.plant_chapter or None,
                 anchor_name=f.name,
@@ -141,7 +141,7 @@ def _clue_planting_checks(clues: list[Clue], audit_chapter: int | None) -> list[
                     "为什么错：揭晓（解答）先于呈现（铺垫）违反公平性原则——"
                     "读者没有机会先看到线索。"
                     "怎样算对：把该线索的呈现写进审计章或更早章节，"
-                    "或用 bible_upsert 修正 chapter 字段。"
+                    "或修正该线索账本条目的 chapter 字段。"
                 ),
                 anchor_chapter=clue.chapter or None,
                 anchor_name=clue.name,
@@ -163,7 +163,7 @@ def _method_state_check(foreshadows: list[Foreshadow], methods: list[Method]) ->
         message=(
             f"谜底已揭晓（存在 resolved 伏笔），但手法状态未登记 revealed（{names}）。"
             "为什么错：手法账本与伏笔进度不同步，后续章节可能重复使用未声明手法。"
-            "怎样算对：用 method_lock 登记（或把对应手法状态置为 revealed）。"
+            "怎样算对：把对应手法状态登记为 revealed（账本状态与伏笔进度对齐）。"
         ),
         anchor_name=methods[0].name if methods else None,
     )

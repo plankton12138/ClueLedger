@@ -21,9 +21,6 @@ from hastings.bible.store import (
 from hastings.cli_v2 import v2_bible_output
 from hastings.context_manager import compact_context
 from hastings.events_store import EventStore, events_file, make_event_persister
-from hastings.manuscript.guards import attach_guards
-from hastings.manuscript.prose_guard import warn_empty_chapters
-from hastings.manuscript.write_guard import EditMarkRegistry, RunKindGuard
 from hastings.prompts import build_system_prompt, refresh_system_prompt
 from hastings.session_persist import restore_and_attach
 from hastings.session_store import (
@@ -36,8 +33,6 @@ from hastings.session_store import (
 from hastings.settings import load_settings, workspace_architecture_version
 from hastings.tools.bible_tools import ENTITY_LABELS, create_bible_tools, entity_summary
 from hastings.tools.chapter_tools import create_chapter_tools
-from hastings.tools.method_tools import create_method_tools
-from hastings.tools.story_tools import create_story_tools
 from hastings.tools.timeline_tools import create_timeline_tools
 from tau_agent.events import (
     AgentEndEvent,
@@ -125,7 +120,6 @@ def build_harness(
     workspace: StoryWorkspace,
     provider: ModelProvider,
     model: str,
-    max_advances_per_prompt: int | None = None,
 ) -> AgentHarness:
     """按工作区装配工具集、system prompt、事件账本与 harness。
 
@@ -134,14 +128,10 @@ def build_harness(
     「intake 协议遵循度」等走查结论不可信。事件持久化同理（F4）：在装配点
     挂 events.jsonl，run_repl 与 eval driver 一处接线两端生效。
 
-    ``max_advances_per_prompt``：评测口径放宽回合规速用（缺省 None 保持
-    产品语义——每回合至多一次成功推进）；eval driver 传值须随运行归档。
+    V1 弃用后工具集为只读（bible_query / read_chapter / list_chapters /
+    timeline_check）；写经 V2 领域命令与 Commit Service。
     """
-    # 项目级架构版本在这一处解析并传入工具集：V2 项目装配拒绝桩，V1 行为不变
-    # （ADR architecture-version-routing §2.2：「项目解析」是唯一判定点）。
-    tools = create_writing_tools(
-        workspace, architecture_version=workspace_architecture_version(workspace)
-    )
+    tools = create_writing_tools(workspace)
     language = load_settings(workspace).writing_language
     harness = AgentHarness(
         AgentHarnessConfig(
@@ -152,34 +142,17 @@ def build_harness(
         )
     )
     harness.subscribe(make_event_persister(EventStore(events_file(workspace))))
-    if max_advances_per_prompt is None:
-        attach_guards(harness, workspace)
-    else:
-        attach_guards(harness, workspace, max_advances=max_advances_per_prompt)
     return harness
 
 
-def create_writing_tools(
-    workspace: StoryWorkspace,
-    edit_marks: EditMarkRegistry | None = None,
-    run_kind: RunKindGuard | None = None,
-    *,
-    architecture_version: str = "v1",
-) -> list[AgentTool]:
-    """装配写作工具集；``architecture_version="v2"`` 时旧通用写工具（bible_upsert、
-    write_chapter、method_lock/unlock、story_stage）全部替换为拒绝桩——V2 项目只经
-    领域命令与 Commit Service 写入（T17.6）；只读工具保持可用。缺省 ``"v1"`` 行为不变。"""
+def create_writing_tools(workspace: StoryWorkspace) -> list[AgentTool]:
+    """装配 V1 存留工具集（只读）：bible_query、read_chapter、list_chapters、
+    timeline_check。旧写工具（bible_upsert、write_chapter、method_lock/unlock、
+    story_stage）已随 V1 弃用删除——写入只经 V2 领域命令与 Commit Service。"""
     return (
-        create_bible_tools(workspace, architecture_version=architecture_version)
-        + create_chapter_tools(
-            workspace,
-            edit_marks=edit_marks,
-            run_kind=run_kind,
-            architecture_version=architecture_version,
-        )
-        + create_method_tools(workspace, architecture_version=architecture_version)
+        create_bible_tools(workspace)
+        + create_chapter_tools(workspace)
         + create_timeline_tools(workspace)
-        + create_story_tools(workspace, architecture_version=architecture_version)
     )
 
 
@@ -338,7 +311,6 @@ async def run_repl(workspace: StoryWorkspace, provider: ModelProvider, model: st
 
     if renderer.unhandled_event_types:
         print(f"（有 {len(renderer.unhandled_event_types)} 类事件未渲染，属调试信息）")
-    warn_empty_chapters(workspace)  # D2 第 3 层：写作期空稿观测信号
     print("故事已合上。")
 
 

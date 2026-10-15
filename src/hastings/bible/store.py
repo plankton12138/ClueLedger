@@ -212,12 +212,12 @@ def save_ledger[M: (Clue, Foreshadow, Method, OutlineEntry, TimelineEntry)](
     return path
 
 
-# --- P8 T1b：story.yaml 生命周期（D1：唯一写入口是 story_stage 工具，REST 无写口） ---
+# --- P8 T1b：story.yaml 生命周期（V1 弃用后只读；save_story_doc 仅为夹具级工具） ---
 
 
 def load_story_doc(workspace: StoryWorkspace) -> StoryDoc:
     """读取 story.yaml；缺文件（含 P7 及更早的旧工作区）按 intake 兜底——
-    不强制迁移旧数据，首次经 story_stage 推进时自然落盘。"""
+    历史工作区可能没有该文件；V1 弃用后不再有生产写入口，缺失即按缺省读。"""
     path = workspace.story_path
     if not path.exists():
         return StoryDoc(slug=workspace.slug)

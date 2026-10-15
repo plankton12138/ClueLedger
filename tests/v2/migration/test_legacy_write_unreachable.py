@@ -1,23 +1,24 @@
-"""Phase 17 T17.6：旧写路径不可达证明（plan §5 T17.6）。
+"""旧写路径不可达证明（plan §5 T17.6；V1 弃用后升级为整体下线证明）。
 
-V2 项目不得再触达任何旧写入口。本测试枚举三类可达面：
+历史演进：T17.6 时写工具对 V2 项目替换为拒绝桩、REST 旧写口靠 409 架构门；
+V1 直接弃用后（项目未上线，无存量用户），写工具与 REST 旧写口**整体删除**。
+本测试枚举三类可达面：
 
 1. **REST 路由**：V2 应用的整张路由表不含旧端点（bible/upsert/stage/reconcile）；
-2. **工具集**：V2 项目的写工具全部是拒绝桩（bible_upsert / write_chapter /
-   method_lock / method_unlock / story_stage），只读工具保持可用；
+2. **工具集**：写工具（bible_upsert / write_chapter / method_lock /
+   method_unlock / story_stage）不再存在于任何工具集，只读工具保持可用；
 3. **模块依赖**：V2 分层（domain/application）不 import 旧存储与旧运行时
    （bible.store / events_store / server.reconcile / session 写锁 / sqlite3 / yaml）；
    interfaces 除 importers 的**只读**读取外也不触达旧写路径。
 
 三条都用「枚举实际可达面再断言」的方式，而不是逐点打勾，避免新增入口时漏测。
-**真实服务装配**（``create_app`` 同时挂载 V1 REST 与 V2 REST）下的 V2 写门由
+**真实服务装配**（``create_app`` 同时挂载 V1 REST 与 V2 REST）下的端点下线证明由
 ``tests/test_v2_write_gate.py`` 验证——本文件只覆盖独立 V2 应用与工具/模块面。
 """
 
 from __future__ import annotations
 
 import ast
-import asyncio
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,6 @@ import pytest
 from hastings.bible.store import StoryWorkspace
 from hastings.cli import create_writing_tools
 from hastings.server.v2 import V2Runtime, build_v2_app
-from hastings.tools.errors import ToolInputError
 
 from .conftest import FIXTURE, SLUG
 
@@ -93,31 +93,21 @@ def test_v2_write_routes_require_v2_projects() -> None:
 # --------------------------------------------------------------------------
 # 2. 工具集
 # --------------------------------------------------------------------------
-def _tool_map(architecture_version: str) -> dict[str, object]:
-    tools = create_writing_tools(_workspace(), architecture_version=architecture_version)
+def _tool_map() -> dict[str, object]:
+    tools = create_writing_tools(_workspace())
     return {tool.name: tool for tool in tools}
 
 
 @pytest.mark.parametrize("name", sorted(_LEGACY_WRITE_TOOLS))
-def test_v2_write_tools_are_refused(name: str) -> None:
-    tool = _tool_map("v2")[name]
-    with pytest.raises(ToolInputError) as exc:
-        asyncio.run(tool.execute("call", {}, None, None))  # type: ignore[attr-defined]
-    message = str(exc.value)
-    assert "V2" in message, "拒绝消息须说明这是 V2 项目约束"
-
-
-def test_v1_write_tools_remain_available() -> None:
-    """对照：V1 项目下这些工具不是拒绝桩（改动没有波及 V1 行为）。"""
-    tools = _tool_map("v1")
-    for name in _LEGACY_WRITE_TOOLS:
-        assert not tools[name].description.startswith("（V2 项目不可用）")
+def test_write_tools_are_retired(name: str) -> None:
+    """写工具已随 V1 弃用整体删除：任何工具集中都不再出现。"""
+    assert name not in _tool_map(), f"写工具 {name} 仍被装配"
 
 
 @pytest.mark.parametrize("name", sorted(_READ_TOOLS))
-def test_read_tools_not_refused(name: str) -> None:
-    tool = _tool_map("v2")[name]
-    assert not tool.description.startswith("（V2 项目不可用）")
+def test_read_tools_remain_available(name: str) -> None:
+    """只读工具是 V1 弃用后的存留通道（对照上面写工具的缺席）。"""
+    assert name in _tool_map(), f"只读工具 {name} 缺席"
 
 
 # --------------------------------------------------------------------------
