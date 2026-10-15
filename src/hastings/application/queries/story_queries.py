@@ -44,6 +44,11 @@ class StoryQueries:
         """取指定 Commit 的故事目录（投影与查询的共同入口）。"""
         return StoryCatalog.from_snapshot(self._reader.get_snapshot(project_id, commit_id))
 
+    def branch_head(self, project_id: ProjectId, branch_name: str = "main") -> CommitId | None:
+        """main（或指定分支）的 head；项目/分支不存在或为空返回 None。"""
+        branch = self._reader.get_branch(project_id, branch_name)
+        return branch.head_commit_id if branch is not None else None
+
     def canon_snapshot(self, project_id: ProjectId, commit_id: CommitId) -> CanonSnapshot:
         return canon_snapshot(self.catalog(project_id, commit_id))
 

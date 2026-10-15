@@ -92,6 +92,7 @@ class V2Runtime:
 
     def __init__(self, db_path: str | None = None) -> None:
         clock, ids = SystemClock(), UuidIdGenerator()
+        self.db_path = db_path
         repo: MemoryRepository | SqliteRepository
         if db_path is None:
             repo = build_memory_repository(clock, ids)
@@ -279,6 +280,12 @@ class V2Runtime:
     def dispatch_pending(self, project_id: str) -> int:
         """同步驱动一轮 Outbox 发布（测试 / 脚本 / 定时任务用）。"""
         return asyncio.run(self.publisher.publish_pending(project_id))
+
+    async def events_after(
+        self, project_id: str, after_seq: int, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """按项目读 sequence 之后的业务事件（已发布与未发布都算，V2 WS 补齐用）。"""
+        return await self._repo.events_after(project_id, after_seq, limit)
 
 
 # ---------------------------------------------------------------------------
@@ -639,7 +646,10 @@ def _error_body(exc: HastingsError) -> dict[str, Any]:
 
 def build_v2_app(runtime: V2Runtime) -> FastAPI:
     """独立 V2 应用（测试 / 纯 V2 部署）；与 V1 共存挂载见 ``server/app.py``。"""
+    from hastings.server.v2_ws import create_v2_ws_router
+
     app = FastAPI(title="Hastings V2", version="0.2.0")
     app.include_router(create_v2_router(runtime))
+    app.include_router(create_v2_ws_router(runtime))
     register_v2_error_handlers(app)
     return app

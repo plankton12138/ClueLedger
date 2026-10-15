@@ -695,6 +695,33 @@ class SqliteRepository:
     async def mark_published(self, event_id: str) -> None:
         await asyncio.to_thread(self._mark_published_sync, event_id)
 
+    async def events_after(
+        self, project_id: str, after_seq: int, limit: int = 200
+    ) -> list[dict[str, object]]:
+        """按 sequence 重放业务事件（已发布与未发布都算）——V2 WS 断线补齐用。"""
+        return await asyncio.to_thread(self._events_after_sync, project_id, after_seq, limit)
+
+    def _events_after_sync(
+        self, project_id: str, after_seq: int, limit: int
+    ) -> list[dict[str, object]]:
+        with self._storage.lock():
+            rows = self._conn.execute(
+                "SELECT id, commit_id, project_id, sequence, type, payload FROM outbox_events"
+                " WHERE project_id = ? AND sequence > ? ORDER BY sequence LIMIT ?",
+                (project_id, after_seq, limit),
+            ).fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "commit_id": r[1],
+                    "project_id": r[2],
+                    "sequence": r[3],
+                    "type": r[4],
+                    "payload": dict(json.loads(r[5])),
+                }
+                for r in rows
+            ]
+
     def _mark_published_sync(self, event_id: str) -> None:
         with self._storage.lock():
             self._conn.execute(

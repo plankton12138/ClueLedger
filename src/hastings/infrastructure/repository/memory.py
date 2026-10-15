@@ -398,6 +398,22 @@ class MemoryRepository:
             if event is not None and event.published_at is None:
                 self._storage.data.outbox[event_id] = replace(event, published_at=self._clock.now())
 
+    async def events_after(
+        self, project_id: str, after_seq: int, limit: int = 200
+    ) -> list[dict[str, object]]:
+        """按 sequence 重放业务事件（已发布与未发布都算）——V2 WS 断线补齐用。"""
+        await asyncio.sleep(0)
+        with self._storage.lock():
+            events = sorted(
+                (
+                    e
+                    for e in self._storage.data.outbox.values()
+                    if e.project_id.value == project_id and e.sequence > after_seq
+                ),
+                key=lambda e: e.sequence,
+            )[:limit]
+            return [self._event_dict(e) for e in events]
+
     @staticmethod
     def _event_dict(event: OutboxEvent) -> dict[str, object]:
         return {

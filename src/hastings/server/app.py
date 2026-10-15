@@ -20,6 +20,8 @@ from hastings.server.provider_config import ProviderBook
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.rest import create_rest_router
 from hastings.server.v2 import V2Runtime, create_v2_router, register_v2_error_handlers
+from hastings.server.v2_migration import create_migration_router
+from hastings.server.v2_ws import create_v2_ws_router
 from hastings.server.ws import router as ws_router
 
 
@@ -67,6 +69,9 @@ def create_app(
     if v2_runtime is not None:
         # V2 REST 面与 V1 共存（T14.8）：独立前缀 /api/v2，错误信封独立注册
         app.include_router(create_v2_router(v2_runtime))
+        app.include_router(create_v2_ws_router(v2_runtime))
+        # 迁移面（T17.5）：slug 命名空间的 dry-run/apply，衔接 V1 工作区与 V2 项目
+        app.include_router(create_migration_router(registry, v2_runtime))
         register_v2_error_handlers(app)
 
     if static_dir is not None and static_dir.is_dir():
