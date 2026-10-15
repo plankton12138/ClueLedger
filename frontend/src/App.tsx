@@ -145,6 +145,7 @@ export default function App() {
   const connectionError = useChatStore((s) => s.connectionError);
   const running = useChatStore((s) => s.running);
   const slug = useChatStore((s) => s.slug);
+  const model = useChatStore((s) => s.snapshot?.model ?? null);
   const workspaces = useChatStore((s) => s.workspaces);
   const nav = useChatStore((s) => s.nav);
   const [view, setView] = useState<View>("studio");
@@ -310,6 +311,16 @@ export default function App() {
           >
             <span className="block truncate">{slug ?? "未选择文章"}</span>
           </Button>
+          {/* 生效模型徽章：数据来自 WS 快照 get_state.model；设置保存经
+              setSnapshotModel 同步刷新（同档案热切不重连也能即时更新）。 */}
+          {model !== null && (
+            <span
+              title={`当前生效模型：${model}`}
+              className="hidden min-w-0 items-center border border-line px-2 py-0.5 md:flex"
+            >
+              <span className="max-w-40 truncate">{model}</span>
+            </span>
+          )}
           {/* 阶段徽章 + 章节进度（P8 T7，D7）：数据来自 GET /api/{slug}/story，
               完备度速览收进 title——顶栏保持一行的信息密度约束。 */}
           {story && (
@@ -388,7 +399,7 @@ export default function App() {
         </main>
       ) : view === "settings" ? (
         <main className="flex min-h-0 flex-1 flex-col border-t border-line">
-          <SettingsPanel />
+          <SettingsPanel onSessionChanged={reconnect} />
         </main>
       ) : view === "corpus" ? (
         <ErrorBoundary label="语料库">

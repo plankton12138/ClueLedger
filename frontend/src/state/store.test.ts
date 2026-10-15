@@ -77,6 +77,20 @@ describe("loadSnapshot running 语义（R3 问题2：卡 true）", () => {
   });
 });
 
+describe("setSnapshotModel 生效模型同步（顶栏徽章）", () => {
+  it("设置保存后同步快照 model（同档案热切不重连也能刷新显示）", () => {
+    useChatStore.getState().loadSnapshot({ ...SNAP_STATE, model: "fake" }, []);
+    useChatStore.getState().setSnapshotModel("deepseek-chat");
+    expect(useChatStore.getState().snapshot?.model).toBe("deepseek-chat");
+  });
+
+  it("快照未就绪时静默忽略（不造出半截快照）", () => {
+    useChatStore.setState({ snapshot: null });
+    useChatStore.getState().setSnapshotModel("deepseek-chat");
+    expect(useChatStore.getState().snapshot).toBeNull();
+  });
+});
+
 describe("工作区切片（P4 T6）", () => {
   it("setSlug 记录当前工作区；切换不改写事件流（由快照重放整体更替）", () => {
     useChatStore.setState({ items: [{ kind: "user", text: "旧文章的发言" }] });

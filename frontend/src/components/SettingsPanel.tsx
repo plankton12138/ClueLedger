@@ -33,7 +33,13 @@ import LocalModelCard from "./LocalModelCard";
 
 type Feedback = { kind: "ok" | "error"; text: string } | null;
 
-export default function SettingsPanel() {
+export default function SettingsPanel({
+  onSessionChanged,
+}: {
+  /** 跨档案切换触发服务端 registry.rebuild 后回调：旧 WS 连接绑定的是被
+   * 替换的 session（陈旧连接，首次命令会被拒 + 服务端关连接），必须重连。 */
+  onSessionChanged?: () => void;
+}) {
   const slug = useChatStore((s) => s.slug);
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [providers, setProviders] = useState<ProviderSummary[]>([]);
@@ -135,6 +141,11 @@ export default function SettingsPanel() {
       setLanguage(saved.writing_language);
       setProfile(saved.provider_profile);
       setModel(saved.model);
+      // 跨档案 = 服务端已 rebuild 会话，旧 WS 连接成了陈旧连接（首条命令会被
+      // 拒并遭服务端关闭）；同档案热切不动 registry，无需重连。
+      if (profileChanged) onSessionChanged?.();
+      // 顶栏生效模型徽章即时刷新（同档案热切不重连，快照不会自行更新）
+      useChatStore.getState().setSnapshotModel(saved.model);
       setFeedback({
         kind: "ok",
         text: profileChanged
@@ -323,6 +334,12 @@ export default function SettingsPanel() {
         writingLanguage={language}
         onProvidersChanged={async () => setProviders(await fetchProviders())}
         onModelSwitched={(switchedProfile, switchedModel) => {
+          // 本地模型切换经 saveSettings 落盘，跨档案时服务端已 rebuild 会话 → 重连
+          if (settings !== null && settings.provider_profile !== switchedProfile) {
+            onSessionChanged?.();
+          }
+          // 顶栏生效模型徽章即时刷新（本地模型切换同样可能同档案热切）
+          useChatStore.getState().setSnapshotModel(switchedModel);
           setProfile(switchedProfile);
           setModel(switchedModel);
           setSettings((prev) =>

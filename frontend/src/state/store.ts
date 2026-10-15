@@ -94,6 +94,9 @@ interface ChatStore extends UiState {
   setConnectionError(message: string | null): void;
   handleEvent(event: EventFrame): void;
   loadSnapshot(state: AgentStateSnapshot, messages: AgentMessageWire[]): void;
+  /** 设置保存后同步生效模型到快照（顶栏徽章）：同档案热切不重连，快照
+   * 其余字段不动；快照未就绪时忽略（不造半截快照）。 */
+  setSnapshotModel(model: string): void;
   setChapters(ids: string[]): void;
   selectChapter(id: string): void;
   chapterLoaded(id: string, content: string, revision: number): void;
@@ -184,6 +187,8 @@ export const useChatStore = create<ChatStore>()((set) => ({
       // 重置点唯一在 setSlug（换工作区）。重连后的章节列表新鲜度由
       // ManuscriptPanel 对连接状态的 refetch 负责。
     })),
+  setSnapshotModel: (model) =>
+    set((s) => (s.snapshot === null ? {} : { snapshot: { ...s.snapshot, model } })),
   setChapters: (chapterIds) => set((s) => ({ manuscript: { ...s.manuscript, chapterIds } })),
   selectChapter: (id) =>
     set((s) => ({
