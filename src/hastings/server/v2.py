@@ -30,7 +30,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 
 from fastapi import APIRouter, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from hastings.application.errors import HastingsError, ResultCategory, ViolationError
@@ -72,6 +72,7 @@ from hastings.infrastructure.repository.sqlite import SqliteRepository, build_sq
 from hastings.infrastructure.runtime import SystemClock, UuidIdGenerator
 from hastings.interfaces.api.agents import create_agents_router
 from hastings.interfaces.api.changes import create_changes_router
+from hastings.interfaces.exporters.v2_package_exporter import export_commit, zip_package
 from hastings.server.v2_agents import ConfiguredV2Runner
 
 __all__ = ["V2Runtime", "build_v2_app", "create_v2_router", "register_v2_error_handlers"]
@@ -516,6 +517,27 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             "preference_id": preference_id,
             "observations": [asdict(o) for o in evidence],
         }
+
+    @router.get("/projects/{project_id}/export")
+    def export_package(project_id: str, commit_id: str | None = None) -> Response:
+        """把指定 Commit（默认 main head）导出为可读备份包 zip（确定性字节）。"""
+        pid = ProjectId(project_id)
+        target = CommitId(commit_id) if commit_id else runtime.head(pid)
+        if target is None:
+            raise ViolationError(
+                code=repo_ec.REPO_INVALID_CHANGE,
+                where=f"v2.export({project_id})",
+                why="项目还没有任何提交，没有可导出的内容",
+                fix="先导入或创建章节，再导出",
+                project_id=project_id,
+            )
+        package = export_commit(runtime.service, pid, target)
+        filename = f"export-{package.package_hash[:12]}.zip"
+        return Response(
+            content=zip_package(package),
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename={filename!r}"},
+        )
 
     router.include_router(create_changes_router(runtime))
     router.include_router(create_agents_router(runtime))
