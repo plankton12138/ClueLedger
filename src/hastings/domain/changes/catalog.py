@@ -12,6 +12,7 @@ from typing import Any
 from hastings.domain.changes import kinds
 from hastings.domain.changes.error_codes import CHANGES_UNKNOWN_CHANGE_SET
 from hastings.domain.changes.errors import violation
+from hastings.domain.changes.impact import ImpactReport
 from hastings.domain.changes.models import ChangeSet
 from hastings.domain.repository.models import Snapshot
 
@@ -22,6 +23,8 @@ def decode(kind: str, content: dict[str, Any]) -> Any:
     """按 kind 解码为领域模型；未注册 kind 返回原始 content。"""
     if kind == kinds.KIND_CHANGE_SET:
         return ChangeSet.from_content(content)
+    if kind == kinds.KIND_IMPACT_REPORT:
+        return ImpactReport.from_content(content)
     return content
 
 
