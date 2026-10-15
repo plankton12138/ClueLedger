@@ -16,6 +16,10 @@
 
 transport 参数仅供测试注入 httpx.MockTransport（镜像 model_transport 惯例），
 installed_probe 仅供测试钉三态（默认探测 PATH 与 Windows 安装位置）。
+
+所有请求 trust_env=False：Windows 上 httpx 经 urllib.getproxies() 会读到
+系统代理注册表（Clash 等开启「系统代理」时），localhost 请求被路由进代理
+而超时——误判为「服务未运行」。本地回环永远不该走代理。
 """
 
 from __future__ import annotations
@@ -128,7 +132,7 @@ class OllamaClient:
         """GET /api/version → 版本串；连不通/上游故障上抛 OllamaError（502）。"""
         try:
             async with httpx.AsyncClient(
-                timeout=_OLLAMA_TIMEOUT, transport=self._transport
+                trust_env=False, timeout=_OLLAMA_TIMEOUT, transport=self._transport
             ) as client:
                 response = await client.get(f"{self._base_url}/api/version")
         except httpx.HTTPError as exc:
@@ -160,7 +164,7 @@ class OllamaClient:
         """GET /api/tags → 已安装模型列表；空列表是合法空结果。"""
         try:
             async with httpx.AsyncClient(
-                timeout=_OLLAMA_TIMEOUT, transport=self._transport
+                trust_env=False, timeout=_OLLAMA_TIMEOUT, transport=self._transport
             ) as client:
                 response = await client.get(f"{self._base_url}/api/tags")
         except httpx.HTTPError as exc:
@@ -209,7 +213,9 @@ class OllamaClient:
         body: dict[str, object] = {"model": model, "stream": True}
         try:
             async with (
-                httpx.AsyncClient(timeout=_PULL_READ_TIMEOUT, transport=self._transport) as client,
+                httpx.AsyncClient(
+                    trust_env=False, timeout=_PULL_READ_TIMEOUT, transport=self._transport
+                ) as client,
                 client.stream("POST", f"{self._base_url}/api/pull", json=body) as response,
             ):
                 if response.status_code >= 400:
@@ -237,7 +243,7 @@ class OllamaClient:
         """DELETE /api/delete：404（未装）/ 其余上游故障 502 / 成功静默返回。"""
         try:
             async with httpx.AsyncClient(
-                timeout=_OLLAMA_TIMEOUT, transport=self._transport
+                trust_env=False, timeout=_OLLAMA_TIMEOUT, transport=self._transport
             ) as client:
                 response = await client.request(
                     "DELETE", f"{self._base_url}/api/delete", json={"model": model}
