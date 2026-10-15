@@ -1,6 +1,6 @@
 # Hastings V2 重建计划总览
 
-> 计划状态：Phase 11–16 已完成（2026-10-15）；Phase 17 主体交付（2026-10-15：迁移产品流/CLI/WS/前端迁移面/导出/演练与容量测量），余项为人工验收（真实工作区用户核对、桌面安装包升级演练、e2e 走查）。
+> 计划状态：Phase 11–17 全部完成（2026-10-15）。Phase 17 经用户决策「项目未上线，V1 直接弃用」收口：旧写路径四项删除执行、V1 收缩为只读 + 可迁移，三项人工验收按构建笔记 §2.11 处置。
 > 原则：每个阶段产生可运行、可验证、可回退的纵向切片；后续阶段不得通过临时直写绕开前一阶段的契约。
 
 ## 1. 阶段依赖
@@ -28,7 +28,7 @@ Phase 13 和 Phase 14 在 Phase 12 后可以并行开发，但共享同一 Repos
 | P14 | 统一人工正文版本并建立作者模型 | 人工保存闭环、Patch hunk、偏好证据 | [phase-14-manuscript-author-model-plan.md](phase-14-manuscript-author-model-plan.md) |
 | P15 | 完成影响分析、修订分支和差异审阅 | 角色作用变化贯穿 Canon→Plan→正文，三章/部分接受/审计/重启 ✅ 已完成 | [phase-15-change-impact-plan.md](phase-15-change-impact-plan.md) |
 | P16 | 接入无状态 Agent、任务上下文和持久 Job | 四条工作流、六角色真模型、持久恢复与新项目闭环 ✅ 已完成 | [phase-16-agent-workflows-plan.md](phase-16-agent-workflows-plan.md) |
-| P17 | 导入旧工作区、迁移 UI、退出旧写链路 | 迁移报告、端到端验收、旧写入口不可达 → 导入器/校验/不可达证明/迁移产品流（REST+UI）/CLI+WS 切换/导出/演练与容量测量已交付；余项：真实工作区用户核对、桌面升级演练、e2e 走查 ⏳ 主体交付 | [phase-17-migration-cleanup-plan.md](phase-17-migration-cleanup-plan.md) |
+| P17 | 导入旧工作区、迁移 UI、退出旧写链路 | 迁移报告、端到端验收、旧写入口不可达 → 导入器/校验/不可达证明/迁移产品流（REST+UI）/CLI+WS 切换/导出/演练与容量测量已交付；V1 弃用收尾（四项旧写路径删除、只读化、e2e 对齐）执行完毕 ✅ 完成 | [phase-17-migration-cleanup-plan.md](phase-17-migration-cleanup-plan.md) |
 
 ## 3. 每阶段统一执行协议
 

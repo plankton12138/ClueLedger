@@ -13,6 +13,10 @@
   `e2e-writing`（writing 阶段 + 角色 ×2 + ch01 章纲与正文）两个盘上工作区。
 - **剧本件** [tests/fake_scripts.py](../../tests/fake_scripts.py)：新增 `chapter_write`
   （write_chapter force 覆盖调用，与预置正文同文保证重放幂等）。
+  > 退役注记（2026-10-15，Phase 17 §2.11）：V1 写路径删除后，`chapter_write` 已改为
+  > `chapter_read`（read_chapter 只读剧本），intake 剧本改 `bible_query`；j2/j3/j4
+  > 断言与 `reconcile_debounce` 参数同步对齐只读语义。本节以下 write/reconcile
+  > 相关描述为历史 as-built，不再反映现状。
 - **前端侧**：`@playwright/test` 精确锁版进 devDependencies；
   [playwright.config.ts](../../frontend/playwright.config.ts)（端口 8931、`retries: 0`、
   `workers: 1`、webServer 自动 `npm run build && uv run --directory .. python -m
