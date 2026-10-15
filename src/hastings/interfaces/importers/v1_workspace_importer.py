@@ -76,9 +76,11 @@ __all__ = [
 
 # 迁移报告与幂等键的 schema 版本：导入器语义一旦变化必须递增，让旧幂等记录失效
 # （同 (manifest hash, schema version) 才视为同一逻辑导入）。
-# v2：根级 session.jsonl（旧单会话布局）由「未知文件报错」改为带原因的只读归档
-# （评审 P2）。导入器语义变化必须递增版本号，使旧 (manifest hash, v1) 幂等记录失效。
-IMPORT_SCHEMA_VERSION = 2
+# v3：会话锁文件（.session.jsonl.lock / sessions/*.lock）与根级压缩归档会话
+# （session-<stamp>.jsonl）由「未知文件报错」改为带原因的只读归档（真实工作区
+# 核对发现，评审 P2 同类）；v2：根级 session.jsonl 改为只读归档。语义变化必须
+# 递增版本号，使旧幂等记录失效。
+IMPORT_SCHEMA_VERSION = 3
 
 OUTCOME_MAPPED = "mapped"
 OUTCOME_LEGACY = "legacy"
@@ -97,11 +99,17 @@ _LEGACY_SESSION_REASON = (
     "旧单会话格式（多会话索引引入前，见 session_store.legacy_session_file）的会话日志"
     "属 Agent 运行记录，作为只读历史归档，不进入仓库事实"
 )
+_SESSION_LOCK_REASON = (
+    "会话锁文件属运行期瞬态文件（进程互斥标记，非数据），作为只读残留归档；"
+    "迁移前也可手工删除后重新 dry-run"
+)
+_SESSION_ARCHIVE_REASON = "压缩归档的旧会话日志属 Agent 运行记录，作为只读历史归档，不进入仓库事实"
 _IGNORED_FILES: dict[str, str] = {
     "story.yaml": "工作区生命周期（stage/stage_history）不是故事事实，转为项目里程碑说明",
     "settings.yaml": "工作区设置属运行配置，不是故事事实，作为只读附件保留",
     "sessions.json": "会话索引属 Agent 运行记录，作为只读历史归档，不进入仓库事实",
     "session.jsonl": _LEGACY_SESSION_REASON,
+    ".session.jsonl.lock": _SESSION_LOCK_REASON,
     "events.jsonl": "事件流属运行审计，作为只读历史归档，不重放为业务事件",
 }
 
@@ -292,8 +300,16 @@ def _is_top_level_chapter(rel: str) -> bool:
 
 def _is_runtime_record(rel: str) -> bool:
     """rel 是否为「须只读归档的运行/生命周期记录」（会话索引、事件、会话日志、
-    生命周期与设置文件）。校验据此核对**源中实际存在**的记录，而非固定清单。"""
-    return rel in _IGNORED_FILES or (rel.startswith("sessions/") and rel.endswith(".jsonl"))
+    会话锁、压缩归档、生命周期与设置文件）。校验据此核对**源中实际存在**的记录，
+    而非固定清单。"""
+    if rel in _IGNORED_FILES:
+        return True
+    if rel.startswith("sessions/") and (
+        rel.endswith(".jsonl") or rel.endswith(".lock")
+    ):
+        return True
+    # 根级压缩归档：session-<stamp>.jsonl（压缩归档命名见 session_store）
+    return rel.startswith("session-") and rel.endswith(".jsonl")
 
 
 def _outline_by_number(workspace: StoryWorkspace) -> dict[int, str]:
@@ -445,8 +461,12 @@ def _classify_file(
     # 运行记录：显式 ignored + 原因
     if rel in _IGNORED_FILES:
         return SourceItem(rel, _type_of(rel), OUTCOME_IGNORED, detail=_IGNORED_FILES[rel])
+    if rel.startswith("sessions/") and rel.endswith(".lock"):
+        return SourceItem(rel, "session_lock", OUTCOME_IGNORED, detail=_SESSION_LOCK_REASON)
     if rel.startswith("sessions/") and rel.endswith(".jsonl"):
         return SourceItem(rel, "session_log", OUTCOME_IGNORED, detail=_SESSION_LOG_REASON)
+    if rel.startswith("session-") and rel.endswith(".jsonl"):
+        return SourceItem(rel, "session_archive", OUTCOME_IGNORED, detail=_SESSION_ARCHIVE_REASON)
 
     # 正文章节
     if rel.startswith("chapters/.revisions/"):
@@ -532,6 +552,8 @@ def _type_of(rel: str) -> str:
         return "session_index"
     if rel == "session.jsonl":
         return "session_log"
+    if rel == ".session.jsonl.lock":
+        return "session_lock"
     if rel == "events.jsonl":
         return "events"
     if rel.startswith("chapters/.revisions/"):

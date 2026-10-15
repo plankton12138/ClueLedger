@@ -218,6 +218,42 @@ def test_legacy_single_session_layout_imports(
     assert (root / "session.jsonl").exists(), "迁移不得改动旧工作区源文件"
 
 
+def test_session_lock_and_archive_files_are_ignored_not_errors(
+    tmp_workspace: StoryWorkspace,
+) -> None:
+    """真实工作区核对发现（2026-10-15）：会话锁文件与压缩归档会话不得阻断迁移。
+
+    旧格式工作区在根目录留有 ``.session.jsonl.lock``（进程互斥瞬态文件）、
+    ``sessions/.session-*.jsonl.lock``、以及压缩归档 ``session-<stamp>.jsonl``——
+    三者都是 Agent 运行痕迹，须带原因归档而非「未知文件」报错。
+    """
+    from hastings.bible.models import Clue
+    from hastings.bible.store import load_ledger, save_ledger
+
+    root = tmp_workspace.story_dir
+    clues = load_ledger(tmp_workspace.clues_path, Clue)
+    save_ledger(tmp_workspace.clues_path, [c for c in clues if not c.is_red_herring])
+    save_ledger(tmp_workspace.method_path, [])
+    (root / ".session.jsonl.lock").write_text("", encoding="utf-8")
+    sessions = root / "sessions"
+    sessions.mkdir(exist_ok=True)
+    (sessions / ".session-20261012-161507-6af0.jsonl.lock").write_text("", encoding="utf-8")
+    (root / "session-20261010-230506.jsonl").write_text('{"role": "user"}\n', encoding="utf-8")
+
+    report = scan_v1_workspace(tmp_workspace)
+    by_path = {item.path: item for item in report.items}
+    for path, expected_type in (
+        (".session.jsonl.lock", "session_lock"),
+        ("sessions/.session-20261012-161507-6af0.jsonl.lock", "session_lock"),
+        ("session-20261010-230506.jsonl", "session_archive"),
+    ):
+        item = by_path[path]
+        assert item.outcome == OUTCOME_IGNORED, f"{path} 应归档而非报错"
+        assert item.item_type == expected_type
+        assert item.detail.strip(), "归档必须带原因"
+    assert report.ok, f"运行痕迹不应阻断迁移报告：{report.errors}"
+
+
 def test_present_runtime_records_are_required_to_be_archived(
     resolved_workspace: StoryWorkspace,
 ) -> None:
