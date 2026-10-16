@@ -470,3 +470,44 @@ V2 基础架构只有在以下用例同时成立时才算完成：
 8. V2 项目能够导出并恢复到新仓库，对象、正文及依赖边逐项一致；
 9. 旧的通用写入、全局阶段授权和对账管线退出运行路径。
 
+
+## 15. 对话侧栏与显式创作周期（Phase 19 as-built）
+
+普通聊天与创作任务是两条独立状态流：聊天始终可用但**没有写端口**；只有显式
+任务建议（TaskDraft）经作者「开始」进入既有 planner/writer/auditor 工作流，
+候选经作者接受才成为正式内容（Commit 回读为准）。
+
+### 15.1 模块与事实源
+
+| 关注点 | 落点 | 说明 |
+|---|---|---|
+| 对话契约 | `frontend/src/api/chat.ts` | 消息/轮次/事件/TaskDraft 形状；SSE 信封序号仅在会话内递增 |
+| 对话状态 | `frontend/src/state/chat.ts` | 规范化视图 + 纯 reducer；流式文本不进正文编辑缓冲 |
+| 常驻侧栏 | `frontend/src/App.tsx`、`components/chat/*` | 桌面可调宽/收起、窄屏覆盖；切页不销毁会话 |
+| 对话存储 | `infrastructure/conversations/{store,drafts}.py` | Memory/SQLite；对话是项目辅助数据，不产生 Repository Revision |
+| 流式执行 | `infrastructure/conversations/runner.py` | 复用 Tau Provider 文本流；tools 恒空（聊天无工具、无写能力）；失败六分类 |
+| 会话服务 | `application/services/conversation_service.py` | 发送/取消/重试；同会话单轮、全局并发有界；重启标中断不自动重发 |
+| 任务准备 | `application/services/task_prep_service.py` | 受限 TaskDraft + 缺失项纯函数；启动拦截（缺失项/过期基础版本/幂等键） |
+| 候选投影 | `application/services/task_projection.py` | Job 状态 → `candidate.ready`/`result.accepted` 事件；任务卡只投影实际 Job |
+| REST/SSE | `interfaces/api/conversations.py` | conversations/messages/turns/task-drafts/accept + 事件流（快照与长连同一端点） |
+| 模型绑定 | `server/v2_agents.py` | 启动定格 `{profile, model, api}` 进 Job；来源失效明确失败不换厂商 |
+
+### 15.2 两条状态流的关键边界
+
+- **聊天轮次**：`queued → running → completed/stopped/failed/interrupted`。
+  用户消息与轮次原子创建（幂等键指纹）；取消是服务端动作，部分回复保留、
+  迟到分片由存储层裁决丢弃；断线只改连接状态，重连按序号补齐。
+- **创作周期**：建议本身不创建 Job；「开始」要求缺失项清空且基础版本未过期，
+  同键重放返回同一 Job（重启恢复窗口）；取消任务后迟到输出不产出候选；
+  候选接受复用既有审阅规则（marker Commit 幂等），聊天文本不能代替审批。
+- **模型绑定**：任务启动定格 provider/model/api 进 Job payload；执行与重试
+  读取绑定，切当前模型不影响已启动任务。
+
+### 15.3 验收入口
+
+- 自动化：`tests/v2/conversation/`（runner/服务/域/存储）、
+  `tests/v2/server/test_chat_api.py`、`test_task_draft_api.py`、
+  `test_task_lifecycle.py`、`tests/v2/agents/test_model_binding.py`；
+  前端 `frontend/e2e/v2-chat.spec.ts`。
+- 真模型走查：`uv run python eval/v2/chat_driver.py --out eval/runs/<日期>-phase19-chat`
+  （本地 Ollama；报告见 `eval/runs/2026-10-16-phase19-chat/`）。

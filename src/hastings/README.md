@@ -25,6 +25,8 @@ Phase 15 的 V2 变更闭环见 [change-impact.md](../../dev-notes/v2/modules/ch
 
 Phase 16 的无状态工作者与持久任务见 [orchestration-context.md](../../dev-notes/v2/modules/orchestration-context.md)：`agents/{schemas,roles,coordinator}.py`、`application/contexts/`、`application/workflows/{agent_workflows,worker_job}.py` 与 `infrastructure/agents/tau_runner.py`。Job/事件在 `infrastructure/jobs.py`，API 在 `interfaces/api/agents.py`；界面入口为“变更中心→规划与生成任务”（`AgentWorkbench.tsx`），服务生命周期负责恢复与派发。真模型评测入口为根目录 [eval/v2](../../eval/v2/README.md)，不使用旧 Hastings 工具。
 
+Phase 19 的常驻对话侧栏与显式创作周期见 [phase-19-chat-workbench.md](../../dev-notes/v2/phase-19-chat-workbench.md)：对话契约在 `frontend/src/api/chat.ts`（模拟与真实 API 同接口），后端事实源在 `domain/conversation/`、`application/services/{conversation_service,task_prep_service,task_projection}.py`、`infrastructure/conversations/` 与 `interfaces/api/conversations.py`（REST/SSE）。普通聊天没有写端口（tools 恒空），创作只能经 TaskDraft 显式启动映射到既有工作流，候选接受复用审阅规则；模型绑定快照随任务定格（`server/v2_agents.py`）。真模型走查入口 `eval/v2/chat_driver.py`。
+
 Phase 17 的旧工作区迁移已按[未上线项目的退役决策](../../dev-notes/v2/phase-17-workspace-retirement.md)删除：不再提供迁移面板、slug 迁移接口、导入器或 CLI 工作区映射。旧写路径退役证明在 `tests/v2/server/test_legacy_write_unreachable.py`；V2 业务事件在 `server/v2_ws.py`，备份导出与恢复在 `interfaces/exporters/v2_package_exporter.py`，均保留。
 
 | 想了解 | 入口 |

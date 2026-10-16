@@ -28,3 +28,13 @@ uv run pytest tests/v2/agents/test_closed_loop.py -q
 ```
 
 最近验收：[2026-10-15 报告](../runs/2026-10-15-phase16-real-complete/README.md)。每角色当前仅一个定向用例，不把 6/6 当作一般写作质量的统计结论。
+
+## 对话侧栏走查（Phase 19）
+
+常驻对话侧栏（流式聊天、停止、断线补齐、只讨论不写入、聊天到创作）使用专用驱动，进程内启动 V2 应用并接真实 Provider：
+
+```bash
+uv run python eval/v2/chat_driver.py --out eval/runs/<日期>-phase19-chat --model <本地模型名>
+```
+
+默认 `--provider config` 使用 config.yaml 的 ollama 档案；本地模型先启动 Ollama。四个场景的通过口径写在驱动 docstring；模型输出不合规时报告如实记录，不以 FakeProvider 替代。

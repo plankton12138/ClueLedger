@@ -186,7 +186,11 @@ test("19.1 中文输入法组合输入不误发送", async ({ page }) => {
 });
 
 test("19.1 旧后端能力提示：没有对话服务时不展示虚假成功", async ({ page }) => {
-  // 不带 ?chatMock=1：模拟器不装配，能力探测走真实端点，等同于「新前端连接旧后端」。
+  // 模拟「新前端连接旧后端」：能力探测返回 404（19.3 起 e2e 服务器已带对话端点，
+  // 用路由拦截复现旧后端，验证缺失端点指引而非真实服务器版本）。
+  await page.route("**/api/v2/projects/*/conversations*", (route) =>
+    route.fulfill({ status: 404, contentType: "application/json", body: "{}" }),
+  );
   await createProject(page, "旧后端核对", false);
   await page.getByRole("button", { name: "显示对话栏" }).click();
   const sidebar = page.getByRole("complementary", { name: "对话栏" });

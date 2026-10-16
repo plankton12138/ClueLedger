@@ -21,6 +21,18 @@ Ollama 保留检测、下载与安装引导，LM Studio 自动使用本地默认
 
 模型接入的设计、来源与验证边界见 [Phase 18](../dev-notes/v2/phase-18-model-access.md)。
 
+## 对话侧栏（Phase 19）
+
+七页共用右侧常驻对话栏：普通发送固定为聊天（流式回复、停止、逐会话草稿），
+讨论中的构想经「准备为任务」或输入框创作操作生成可检查的任务建议（TaskDraft），
+**建议不自动开工**；明确「开始」后才进入规划/起草/检查工作流，候选回到对话
+经作者接受才成为正式内容。输入框 Enter 发送、Shift+Enter 换行、输入法组合
+期不发送；正文选中文本可「引用到对话」（未保存摘录明确标注）。
+
+- 契约与状态：`src/api/chat.ts`（模拟器与真实 API 同接口）、`src/state/chat.ts`
+- 组件：`src/components/chat/*`；走查清单 `e2e/v2-chat.spec.ts`
+- 设计取舍：[Phase 19](../dev-notes/v2/phase-19-chat-workbench.md)
+
 ## 页面与状态
 
 | 入口 | 职责 |
