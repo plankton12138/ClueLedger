@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Any
@@ -44,15 +45,21 @@ class WorkerJobRunner:
             raise ValueError("WorkerJobRunner 需要固定版本读取端口")
         self.reader: RepositoryReader = repository_reader
 
-    async def submit(self, context: ContextPackage, key: str) -> str:
-        return await self.jobs.create(
-            context.task_kind,
-            {
-                "project_id": context.project_id,
-                "idempotency_key": key,
-                "context": context.model_dump(mode="json"),
-            },
-        )
+    async def submit(
+        self,
+        context: ContextPackage,
+        key: str,
+        model_binding: Mapping[str, object] | None = None,
+    ) -> str:
+        payload: dict[str, object] = {
+            "project_id": context.project_id,
+            "idempotency_key": key,
+            "context": context.model_dump(mode="json"),
+        }
+        if model_binding is not None:
+            # 任务启动时的模型快照（§19.5）：执行与重试读取绑定，不随当前选择漂移。
+            payload["model_binding"] = dict(model_binding)
+        return await self.jobs.create(context.task_kind, payload)
 
     async def cancel(self, job_id: str) -> dict[str, Any]:
         record = await self.jobs.get(job_id)
@@ -102,11 +109,14 @@ class WorkerJobRunner:
                     await self.jobs.append_event(job_id, generation, event)
 
                 streaming = getattr(self.runner, "run_with_events", None)
-                call = (
-                    streaming(ctx.task_kind, ctx.model_dump(), sink)
-                    if streaming
-                    else self.runner.run(ctx.task_kind, ctx.model_dump())
-                )
+                bound = getattr(self.runner, "run_with_events_bound", None)
+                binding = job["payload"].get("model_binding")
+                if binding and bound is not None:
+                    call = bound(ctx.task_kind, ctx.model_dump(), sink, binding)
+                elif streaming:
+                    call = streaming(ctx.task_kind, ctx.model_dump(), sink)
+                else:
+                    call = self.runner.run(ctx.task_kind, ctx.model_dump())
                 task = asyncio.create_task(call)
                 renewed = self.clock.now()
                 while not task.done():

@@ -43,6 +43,9 @@ from hastings.application.ports.agents import AgentRunner
 from hastings.application.ports.events import EventOutbox
 from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.manuscript import ManuscriptQueries
+from hastings.application.services.conversation_service import ConversationService
+from hastings.application.services.task_prep_service import TaskPrepService
+from hastings.application.services.task_projection import ChatTaskProjector
 from hastings.application.workflows.agent_workflows import AgentWorkflows
 from hastings.application.workflows.analysis_dispatch import AnalysisDispatcher
 from hastings.application.workflows.audit import AuditWorkflow
@@ -56,6 +59,7 @@ from hastings.application.workflows.rewrite import RewriteWorkflow
 from hastings.application.workflows.worker_job import WorkerJobRunner
 from hastings.domain.author_model.errors import AuthorModelViolation
 from hastings.domain.changes.errors import ChangesViolation
+from hastings.domain.conversation.task_drafts import ProjectView
 from hastings.domain.manuscript import error_codes as ms_ec
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
 from hastings.domain.manuscript.commands import import_chapter as import_chapter_command
@@ -65,6 +69,8 @@ from hastings.domain.manuscript.operations import operation_from_content
 from hastings.domain.repository import error_codes as repo_ec
 from hastings.domain.repository.ids import Actor, CommitId, ProjectId
 from hastings.domain.story.errors import StoryViolation
+from hastings.infrastructure.conversations.drafts import SqliteTaskDraftStore
+from hastings.infrastructure.conversations.store import SqliteConversationStore
 from hastings.infrastructure.events.outbox import OutboxPublisher
 from hastings.infrastructure.jobs import SqliteJobStore
 from hastings.infrastructure.repository.memory import MemoryRepository, build_memory_repository
@@ -124,7 +130,37 @@ class V2Runtime:
         self.queries = ManuscriptQueries(self.service)
         self.author_queries = AuthorProfileQueries(self.service)
         self.jobs = SqliteJobStore(db_path or ":memory:")
-        self.configure_agent_runner(ConfiguredV2Runner(self.service))
+        v2_runner = ConfiguredV2Runner(self.service)
+        self.configure_agent_runner(v2_runner)
+        self._v2_runner = v2_runner
+        # 对话存储与执行（Phase 19.3）：与 Repository/Job 同一 DB 文件、独立表；
+        # 模型解析与流式执行复用 ConfiguredV2Runner 的档案选择（设置页切换生效）。
+        self.conversation_store = SqliteConversationStore(db_path or ":memory:")
+        self.chat = ConversationService(
+            self.conversation_store,
+            runner_factory=v2_runner.chat_runner,
+            model_resolver=v2_runner.chat_model,
+            ref_validator=self.validate_refs,
+        )
+        # 任务准备（Phase 19.4）：建议本身不创建 Job；启动经 starter 映射到
+        # 既有 AgentWorkflows（plan/draft/audit），与 /agent-jobs 同一授权与调度。
+        self.task_draft_store = SqliteTaskDraftStore(db_path or ":memory:")
+        self.task_prep = TaskPrepService(
+            self.task_draft_store,
+            self.conversation_store,
+            project_view=self.project_view,
+            starter=self.start_task_job,
+            model_label=self._chat_model_label,
+            accepter=self.accept_candidate_job,
+        )
+        # 任务卡只投影实际 Job（§19.5）：worker_loop 每轮扫描已启动 draft。
+        self.task_projector = ChatTaskProjector(
+            self.task_draft_store,
+            self.conversation_store,
+            job_getter=self.jobs.get,
+        )
+        # 模型绑定快照来源（§19.5）：默认当前选择；测试可注入。
+        self.model_binding_provider = v2_runner.model_binding
         self._worker_enabled = False
         self._active_jobs: dict[str, asyncio.Task[None]] = {}
         self._wake_projects: set[str] = set()
@@ -220,6 +256,8 @@ class V2Runtime:
                         continue
                     self._wake_projects.discard(project)
                 await self.prepare_analysis_jobs()
+                with suppress(HastingsError):
+                    await self.task_projector.sync()
                 self._active_jobs = {jid: t for jid, t in self._active_jobs.items() if not t.done()}
                 for job in await self.jobs.list_jobs():
                     analysis_pending = (
@@ -253,6 +291,154 @@ class V2Runtime:
     @classmethod
     def memory(cls) -> V2Runtime:
         return cls(db_path=None)
+
+    # -- 任务准备装配（Phase 19.4） --------------------------------------------
+    def _chat_model_label(self) -> str | None:
+        """当前模型标签；未配置返回 None（缺失项计算用）。"""
+        try:
+            return self.chat.model_resolver()
+        except HastingsError:
+            return None
+
+    def project_view(self, project_id: str) -> ProjectView:
+        """项目只读视图：模型、已接受节拍、章节集合、head。"""
+        pid = ProjectId(project_id)
+        try:
+            head = self.head(pid)
+        except HastingsError:
+            head = None
+        chapter_ids: frozenset[str] = frozenset()
+        has_beats = False
+        if head is not None:
+            catalog = self.queries.catalog(pid, head)
+            chapter_ids = frozenset(
+                entry_id for entry_id, _chapter in _chapters(catalog)
+            )
+            snapshot = self.service.get_snapshot(pid, head)
+            has_beats = any(
+                v.artifact.kind in ("narrative.beat", "story.plot_beat")
+                for v in snapshot.artifacts.values()
+            )
+        return ProjectView(
+            model_configured=self._chat_model_label() is not None,
+            has_accepted_beats=has_beats,
+            chapter_ids=chapter_ids,
+            head=head.value if head else None,
+        )
+
+    async def start_task_job(self, project_id: str, draft: Any, key: str) -> str:
+        """TaskDraft → 既有工作流映射（§4.3）：与 /agent-jobs 同一授权与调度。
+
+        定向修订走 Change 用例（影响分析 → 批准 → 修订），不经本入口——
+        这里明确拒绝而不是静默降级。
+        """
+        pid = ProjectId(project_id)
+        app = self.agent_workflows
+        targets = tuple(draft.target_ids)
+        # 启动即定格模型快照（§19.5）：未配置在此明确失败，不悬挂任务。
+        binding = self.model_binding_provider()
+        if draft.task_kind == "targeted_revision":
+            raise ViolationError(
+                code="TASK_START_UNSUPPORTED",
+                where="task.start",
+                why="定向修订需要经变更中心批准范围后执行，本入口不直接启动",
+                fix="从变更中心发起修订流程；任务建议可作为其说明",
+            )
+        head = self.head(pid)
+        if head is None:
+            branch = self.service.get_branch(pid, _BRANCH_NAME)
+            if branch is not None:
+                head = self.head(pid)
+        if head is None:
+            raise ViolationError(
+                code="TASK_NO_BASE",
+                where="task.start",
+                why="项目还没有任何提交，没有可依据的内容版本",
+                fix="先在创作台导入或保存一章正文，再启动任务",
+            )
+        base = draft.base_version or head.value
+        if draft.task_kind == "plan":
+            jid = await app.plan(
+                pid, base, targets, key, draft.instruction, model_binding=binding
+            )
+        elif draft.task_kind == "chapter_draft":
+            chapter_id = draft.goal
+            if not chapter_id:
+                raise ViolationError(
+                    code="TASK_NO_CHAPTER_TARGET",
+                    where="task.start",
+                    why="没有指定要起草的章节",
+                    fix="在任务卡调整目标章节后重试",
+                )
+            jid = await app.draft(
+                pid, base, targets, chapter_id, key, draft.instruction, model_binding=binding
+            )
+        elif draft.task_kind == "check":
+            if not targets:
+                snapshot = self.service.get_snapshot(pid, CommitId(base))
+                targets = tuple(
+                    v.artifact.id.value
+                    for v in snapshot.artifacts.values()
+                    if v.artifact.kind.startswith(("story.", "narrative."))
+                )
+            jid = await app.audit(pid, base, targets, key, model_binding=binding)
+        else:  # pragma: no cover - TASK_KINDS 已约束
+            raise ViolationError(
+                code="TASK_START_UNSUPPORTED",
+                where="task.start",
+                why=f"未知任务类型 {draft.task_kind!r}",
+                fix="使用 plan / chapter_draft / check / targeted_revision",
+            )
+        await self.wake_workers(project_id)
+        await self.task_prep.record_binding(project_id, draft.draft_id, binding)
+        return jid
+
+    async def accept_candidate_job(self, job_ref: str, expected_head: str) -> dict[str, Any]:
+        """候选接受复用既有审阅规则（marker Commit 自带幂等）。"""
+        return await self.agent_workflows.accept(job_ref, expected_head)
+
+    def validate_refs(self, project_id: str, refs: list[dict[str, Any]]) -> None:
+        """发送轮次的引用校验：对象必须存在于当前项目（引用不能跨项目）。"""
+        if not refs:
+            return
+        pid = ProjectId(project_id)
+        try:
+            head = self.head(pid)
+        except HastingsError as exc:
+            raise exc
+        chapter_ids: set[str] = set()
+        artifact_ids: set[str] = set()
+        if head is not None:
+            catalog = self.queries.catalog(pid, head)
+            chapter_ids = {entry_id for entry_id, _ in _chapters(catalog)}
+            snapshot = self.service.get_snapshot(pid, head)
+            artifact_ids = {v.artifact.id.value for v in snapshot.artifacts.values()}
+        for ref in refs:
+            kind = str(ref.get("kind", ""))
+            target = str(ref.get("target_id", ""))
+            if kind == "chapter" and target not in chapter_ids:
+                raise ViolationError(
+                    code="CHAT_REF_NOT_FOUND",
+                    where="chat.refs.chapter",
+                    why=f"当前项目没有章节 {target!r}（或引用来自其他项目）",
+                    fix="重新选择当前项目的章节作为引用",
+                    details={"target_id": target},
+                )
+            if kind == "artifact" and target not in artifact_ids:
+                raise ViolationError(
+                    code="CHAT_REF_NOT_FOUND",
+                    where="chat.refs.artifact",
+                    why=f"当前项目没有对象 {target!r}（或引用来自其他项目）",
+                    fix="重新选择当前项目的对象作为引用",
+                    details={"target_id": target},
+                )
+            if kind == "selection" and not ref.get("saved") and not ref.get("excerpt"):
+                raise ViolationError(
+                    code="CHAT_REF_NOT_FOUND",
+                    where="chat.refs.selection",
+                    why="未保存选文必须携带摘录内容，空引用没有讨论基础",
+                    fix="重新选中文字并引用，或先保存正文后引用章节",
+                )
 
     @classmethod
     def sqlite(cls, path: str) -> V2Runtime:
@@ -353,12 +539,17 @@ def _chapter_payload_from(catalog: ManuscriptCatalog, chapter_id: str) -> dict[s
 # 路由
 # ---------------------------------------------------------------------------
 def create_v2_router(runtime: V2Runtime) -> APIRouter:
+    from hastings.interfaces.api.author_decisions import create_author_decisions_router
+    from hastings.interfaces.api.conversations import create_conversations_router
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # 启动恢复（§19.3）：遗留的排队/运行轮次标为中断，不自动重发模型调用。
+        await runtime.chat.mark_interrupted()
         task = asyncio.create_task(runtime.worker_loop())
         try:
             yield
         finally:
+            await runtime.chat.shutdown()
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
@@ -548,6 +739,8 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
 
     router.include_router(create_changes_router(runtime))
     router.include_router(create_agents_router(runtime))
+    router.include_router(create_author_decisions_router(runtime))
+    router.include_router(create_conversations_router(runtime))
     return router
 
 

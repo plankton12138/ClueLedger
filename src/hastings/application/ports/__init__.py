@@ -8,7 +8,9 @@ Phase 11 只冻结名称与语义（T11.5）；Phase 12 已把 repository 端口
 from __future__ import annotations
 
 from hastings.application.ports.agents import AgentRunner
+from hastings.application.ports.chat import ChatRun, ChatRunner, ChatStreamSink
 from hastings.application.ports.clock import Clock
+from hastings.application.ports.conversations import ConversationStore, OpenTurn
 from hastings.application.ports.events import EventOutbox
 from hastings.application.ports.ids import IdGenerator
 from hastings.application.ports.jobs import JobStore
@@ -21,12 +23,17 @@ from hastings.application.ports.repository import (
 
 __all__ = [
     "AgentRunner",
+    "ChatRun",
+    "ChatRunner",
+    "ChatStreamSink",
     "Clock",
     "CommitRepository",
+    "ConversationStore",
     "EventOutbox",
     "IdGenerator",
     "JobStore",
     "LeaseRepository",
+    "OpenTurn",
     "RepositoryReader",
     "RepositoryStorage",
 ]

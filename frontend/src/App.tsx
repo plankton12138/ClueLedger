@@ -1,548 +1,348 @@
-/**
- * 主页面（P3 T8/T9，P4 T6 多工作区，P5 T1 三栏反转，P6 T6 可调侧栏，P7 T1/T14 顶栏三段式）：
- * 顶栏 = 品牌区｜主导航六项｜右段（全局搜索 + 当前文章徽标 + 状态徽章 + 重连）。
- * 主视图：创作台（左主编对话可折叠可拖宽 + 中正文羊皮纸 + 右故事账本可拖宽，
- * 窄屏账本走抽屉覆盖层，把手在创作台右缘）/ 文章管理 / 语料库 / 审计中心（占位，T7/T9 转正）/
- * 事件流 / 设置；账本全页（ledger）从创作台下钻进入（T5）。工作区语义（P4 计划 D5）：
- * 切换 = socket 重连 ws/{slug} + REST 前缀换 slug，不整页刷新；选中 slug 经 ?w=
- * 记入地址（replaceState），刷新后不丢。文章的增删切换在「文章」页管理（T14）。
- */
-
-import { Feather, GitBranch, Library, PenLine, ScrollText, Settings, Target, type LucideIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { fetchStory, fetchWorkspaces } from "./api/rest";
-import type { StoryWire } from "./api/rest";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import ArticlesPage from "./components/ArticlesPage";
-import BiblePanel from "./components/BiblePanel";
-import ChatHeader from "./components/ChatHeader";
-import ChatStream from "./components/ChatStream";
-import Composer from "./components/Composer";
-import EventStreamView from "./components/EventStreamView";
+import {
+  BookOpenText,
+  CheckCheck,
+  Feather,
+  GitBranch,
+  LayoutDashboard,
+  Search,
+  Settings2,
+  Target,
+  UserRound,
+  type LucideIcon,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
-import AuditPage from "./components/AuditPage";
-import CorpusPage from "./components/CorpusPage";
-import ChangeCenter from "./components/ChangeCenter";
-import LedgerPage from "./components/LedgerPage";
-import ManuscriptPanel from "./components/ManuscriptPanel";
-import SearchBox from "./components/SearchBox";
-import SettingsPanel from "./components/SettingsPanel";
-import Splitter, { loadStoredWidth } from "./components/Splitter";
-import type { CommandType } from "./api/types";
-import type { ConnectionStatus } from "./api/socket";
-import { BREAKPOINTS } from "./layout";
-import { useChatStore } from "./state/store";
-import { chapterProgress, ledgerSummary, stageMeta } from "./state/story";
-import { useAgentSocket } from "./state/useAgentSocket";
-
-const STATUS_LABEL: Record<ConnectionStatus, string> = {
-  connecting: "连接中",
-  open: "已连接",
-  closed: "已断开",
-};
-
-const STATUS_DOT: Record<ConnectionStatus, string> = {
-  connecting: "bg-planned",
-  open: "bg-planted",
-  closed: "bg-overdue",
-};
-
-/**
- * 主视图类型（P7 D1，T14 扩容）：导航六项 + 账本全页详情（ledger 不进导航，
- * 从创作台账本面板「展开」下钻，T5 接线；先入骨架保证视图收口唯一）。
- */
-type View = "studio" | "articles" | "corpus" | "audit" | "events" | "settings" | "ledger" | "changes";
-
-/** 顶部主导航（P7 D1/T14）：创作台 | 文章 | 语料库 | 审计中心 | 事件流 | 设置。 */
-const NAV_ITEMS: Array<{ key: View; label: string; Icon: LucideIcon }> = [
+import ModelButton from "./components/ModelButton";
+import SearchResults from "./components/SearchResults";
+import SettingsDrawer from "./components/SettingsDrawer";
+import { ConfirmDiscard, type View } from "./components/Workbench";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
+import AuditPage from "./pages/AuditPage";
+import AuthorModelPage from "./pages/AuthorModelPage";
+import ChangesPage from "./pages/ChangesPage";
+import LedgerPage from "./pages/LedgerPage";
+import OverviewPage from "./pages/OverviewPage";
+import StudioPage from "./pages/StudioPage";
+import {
+  currentProjectName,
+  useV2Store,
+  isDirty,
+} from "./state/v2";
+import { useV2Events } from "./state/v2socket";
+import ChatSidebar, { ChatToggle, OPEN_KEY } from "./components/chat/ChatSidebar";
+import { mockEnabled, useChatStore } from "./state/chat";
+import { layoutKind } from "./layout";
+const nav: { key: View; label: string; Icon: LucideIcon }[] = [
+  { key: "overview", label: "项目概览", Icon: LayoutDashboard },
   { key: "studio", label: "创作台", Icon: Feather },
-  { key: "articles", label: "文章", Icon: PenLine },
-  { key: "corpus", label: "语料库", Icon: Library },
-  { key: "audit", label: "审计中心", Icon: Target },
-  { key: "changes", label: "变更中心", Icon: GitBranch },
-  { key: "events", label: "事件流", Icon: ScrollText },
-  { key: "settings", label: "设置", Icon: Settings },
+  { key: "ledger", label: "故事账本", Icon: BookOpenText },
+  { key: "changes", label: "变更影响", Icon: GitBranch },
+  { key: "review", label: "修订审阅", Icon: CheckCheck },
+  { key: "audit", label: "悬疑审计", Icon: Target },
+  { key: "model", label: "作者模型", Icon: UserRound },
 ];
-
-/** 选中工作区写进 ?w=（replaceState 不触发导航），刷新后恢复选择。 */
-function switchTo(slug: string): void {
-  useChatStore.getState().setSlug(slug);
-  const url = new URL(location.href);
-  url.searchParams.set("w", slug);
-  history.replaceState(null, "", url);
-}
-
-/** 侧栏宽度常量（P6 T6，D6）：默认值 + localStorage key 按面板命名。 */
-const CHAT_DEFAULT_WIDTH = 300;
-const BIBLE_DEFAULT_WIDTH = 340;
-const CHAT_WIDTH_KEY = "hastings.panel.chatWidth";
-const BIBLE_WIDTH_KEY = "hastings.panel.bibleWidth";
-
-/**
- * 拉工作区列表并初始化选择：?w= 优先，其次第一个；无任何文章 → 返回 true，
- * 由 App 落到「文章」页引导新建（T14）。
- */
-async function bootWorkspaces(): Promise<boolean> {
-  const slugs = await fetchWorkspaces();
-  useChatStore.getState().setWorkspaces(slugs);
-  const fromUrl = new URLSearchParams(location.search).get("w");
-  if (fromUrl !== null && slugs.includes(fromUrl)) {
-    switchTo(fromUrl);
-    return false;
+function readChatOpen(narrow: boolean): boolean {
+  try {
+    const stored = localStorage.getItem(OPEN_KEY);
+    if (stored === "0") return false;
+    if (stored === "1") return true;
+  } catch {
+    /* 禁用存储时走默认策略 */
   }
-  if (slugs.length > 0) {
-    switchTo(slugs[0] as string);
-    return false;
-  }
-  return true;
+  // 默认策略：窄屏默认收起（经顶栏按钮打开覆盖面板）；旧后端没有对话
+  // 服务时默认收起，由顶栏开关显式打开查看能力/版本提示。
+  return !narrow && mockEnabled();
 }
-
-/**
- * 对话面板内容（P9 T8，D6）：lg+ 常驻栏与 <lg 抽屉共用一份接线，
- * ChatHeader/对话流/输入笼三件套只在此处维护。
- */
-function ChatPanel({
-  slug,
-  running,
-  onSessionChanged,
-  onCompacted,
-  stage,
-  onSendPrompt,
-  onComposerCommand,
-  onAbort,
-}: {
-  slug: string;
-  running: boolean;
-  onSessionChanged: () => void;
-  onCompacted: () => void;
-  stage: string | null;
-  onSendPrompt: (message: string) => void;
-  onComposerCommand: (type: CommandType, message: string) => Promise<void>;
-  onAbort: () => Promise<void>;
-}) {
-  return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <ChatHeader
-        slug={slug}
-        running={running}
-        onSessionChanged={onSessionChanged}
-        onCompacted={onCompacted}
-      />
-      <ErrorBoundary label="对话">
-        <ChatStream stage={stage} onSendPrompt={onSendPrompt} />
-      </ErrorBoundary>
-      <Composer sendCommand={onComposerCommand} abort={onAbort} />
-    </section>
-  );
-}
-
 export default function App() {
-  const { reconnect, sendCommand } = useAgentSocket();
-  const status = useChatStore((s) => s.status);
-  const connectionError = useChatStore((s) => s.connectionError);
-  const running = useChatStore((s) => s.running);
-  const slug = useChatStore((s) => s.slug);
-  const model = useChatStore((s) => s.snapshot?.model ?? null);
-  const workspaces = useChatStore((s) => s.workspaces);
-  const nav = useChatStore((s) => s.nav);
-  const [view, setView] = useState<View>("studio");
-  const [chatCollapsed, setChatCollapsed] = useState(false);
-  // 可调侧栏（P6 T6）：宽度惰性读档（损坏回落默认），窄屏账本走抽屉覆盖层。
-  const [chatWidth, setChatWidth] = useState(() =>
-    loadStoredWidth(CHAT_WIDTH_KEY, CHAT_DEFAULT_WIDTH),
-  );
-  const [bibleWidth, setBibleWidth] = useState(() =>
-    loadStoredWidth(BIBLE_WIDTH_KEY, BIBLE_DEFAULT_WIDTH),
-  );
-  const [bibleDrawerOpen, setBibleDrawerOpen] = useState(false);
-  const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
-  // 生命周期快照（P8 T7，D7）：顶栏阶段徽章 + 章节进度；连接时 + 每次 run 结束 refetch。
-  const [story, setStory] = useState<StoryWire | null>(null);
-  // 布局断点事实源（P9 T8，D6）：lg=1024 常驻监听；<lg 对话强制抽屉形态，
-  // 忽略 chatCollapsed 与 Splitter。初值与 layout.ts 断点值同源。
-  const [isWide, setIsWide] = useState(() =>
-    window.matchMedia(`(min-width: ${BREAKPOINTS.lg}px)`).matches,
-  );
+  const [view, setView] = useState<View>("overview"),
+    [settingsOpen, setSettingsOpen] = useState(false),
+    [modelsOpen, setModelsOpen] = useState(false),
+    [query, setQuery] = useState("");
+  const [pending, setPending] = useState<string | null>(null);
+  // 对话栏：桌面收起/展开（持久化），窄屏以覆盖面板打开（不持久化）。
+  const [chatOpen, setChatOpen] = useState(() =>
+    readChatOpen(layoutKind(window.innerWidth) === "narrow"),
+  ),
+    [narrow, setNarrow] = useState(
+      () => layoutKind(window.innerWidth) === "narrow",
+    );
+  const s = useV2Store(),
+    conn = useV2Events(),
+    unread = useChatStore((st) => st.unread),
+    chatService = useChatStore((st) => st.service),
+    setPinned = useChatStore((st) => st.setPinned);
   useEffect(() => {
-    const mql = window.matchMedia(`(min-width: ${BREAKPOINTS.lg}px)`);
-    const onChange = () => setIsWide(mql.matches);
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
+    const onResize = () => setNarrow(layoutKind(window.innerWidth) === "narrow");
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
-
-  // 启动：拉工作区列表并恢复/选择工作区（失败走顶部错误条，可重试）；
-  // 无任何文章 → 直接落到「文章」页引导新建（T14）。
   useEffect(() => {
-    bootWorkspaces()
-      .then((empty) => {
-        if (empty) setView("articles");
-      })
-      .catch((exc: unknown) =>
-        useChatStore
-          .getState()
-          .setConnectionError(
-            `${exc instanceof Error ? exc.message : String(exc)} 怎样算对：确认服务已启动后刷新页面。`,
-          ),
-      );
-  }, []);
-
-  // 生命周期快照拉取（P8 T7）：slug 变化（切换文章）与 running 翻转（run 结束）时
-  // refetch；读取失败降级隐藏徽章——顶栏状态不阻断创作（与状态注入同一泄压哲学）。
-  useEffect(() => {
-    if (slug === null) {
-      setStory(null);
-      return;
+    setPinned(chatOpen && !narrow);
+    try {
+      localStorage.setItem(OPEN_KEY, chatOpen ? "1" : "0");
+    } catch {
+      /* 禁用存储时仅本次会话生效 */
     }
-    let alive = true;
-    fetchStory(slug)
-      .then((s) => {
-        if (alive) setStory(s);
-      })
-      .catch(() => {
-        if (alive) setStory(null);
-      });
-    return () => {
-      alive = false;
+  }, [chatOpen, narrow, setPinned]);
+  useEffect(() => {
+    if (!s.currentId) return;
+    const state = useV2Store.getState();
+    void state.refreshManuscript();
+    void state.refreshStory();
+    void state.refreshChanges();
+    void state.refreshPreferences();
+    void state.refreshJobs();
+    const timer = window.setInterval(() => { void state.refreshJobs(); }, 1800);
+    return () => window.clearInterval(timer);
+  }, [s.currentId]);
+  useEffect(() => {
+    const beforeUnload = (e: BeforeUnloadEvent) => {
+      const c = useV2Store.getState().chapter;
+      if (isDirty(c) || c.saving) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
     };
-  }, [slug, running]);
-
-  // 全局搜索跳转（P6 T11）：正文与账本都在创作台视图，命中一律切回；
-  // 窄屏（<xl 账本走抽屉覆盖层）时顺带打开抽屉，xl 及以上账本面板常驻无需处理。
-  useEffect(() => {
-    if (nav === null) return;
-    setView("studio");
-    if (nav.kind === "bible" && !window.matchMedia("(min-width: 1280px)").matches) {
-      setBibleDrawerOpen(true);
-    }
-  }, [nav]);
-
-  const slugInvalid = slug !== null && !workspaces.includes(slug);
-
-  // 对话发送统一出口（P9 T8 抽出）：idle 走 prompt、运行中走 steer；
-  // 服务端拒绝文案原样进连接错误条。
-  const sendPrompt = useCallback(
-    (message: string) => {
-      void sendCommand(running ? "steer" : "prompt", message).catch((exc: unknown) =>
-        useChatStore
-          .getState()
-          .setConnectionError(exc instanceof Error ? exc.message : String(exc)),
-      );
-    },
-    [running, sendCommand],
-  );
-
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, []);
+  const pendingCount = s.changes.filter(
+    (c) => !["committed", "abandoned"].includes(c.status),
+  ).length;
   return (
     <div className="flex h-screen flex-col">
-      {/* 顶栏三段式（P7 D2）：左品牌｜中主导航（窄屏折叠为下拉）｜右段操作区。 */}
-      <header className="flex flex-none items-center gap-4 border-b border-line bg-gradient-to-b from-ink-soft/90 to-ink/60 px-5 py-0" style={{ height: 52 }}>
-        <div className="flex flex-none items-center gap-2.5">
-          <div className="grid h-[30px] w-[30px] place-items-center rounded-full border border-gold font-serif text-sm font-bold text-gold">
-            赫
+      <header className="topbar flex min-h-16 flex-none items-center gap-2 px-3 sm:gap-4 sm:px-5">
+        <div className="mark grid h-10 w-10 flex-none place-items-center font-serif text-2xl font-bold">
+          H
+        </div>
+        <div className="hidden leading-tight sm:block">
+          <div className="font-serif text-xl font-bold tracking-wide">
+            Hastings
           </div>
-          <div className="hidden leading-tight lg:block">
-            <div className="font-serif text-base font-bold tracking-widest text-gold">黑斯廷斯备忘录</div>
-            <div className="text-[10px] tracking-[0.2em] text-gold-soft/65">
-              HASTINGS&rsquo; MEMO · 让好故事更接近真相
-            </div>
+          <div className="text-[9px] tracking-[0.25em] text-white/85">
+            STORY WORKSPACE
           </div>
         </div>
-        {/* 导航内联展示门槛取 xl（P2 复盘）：lucide 图标加入后按钮变宽，
-            md~xl 中间带会把按钮压到逐字竖排；<xl 统一折叠为下拉。 */}
-        <nav className="hidden min-w-0 flex-1 justify-center gap-0.5 xl:flex">
-          {NAV_ITEMS.map((item) => (
-            <Button
-              key={item.key}
-              aria-label={item.label}
-              title={item.label}
-              variant={view === item.key ? "outline" : "ghost"}
-              onClick={() => setView(item.key)}
-              className={`h-auto min-w-8 shrink-0 gap-1 whitespace-nowrap rounded px-1.5 py-1.5 text-[13px] ${
-                view === item.key
-                  ? "border-line bg-gold/10 text-gold hover:bg-gold/10"
-                  : "border border-transparent text-paper/75 hover:bg-transparent hover:text-gold"
-              }`}
-            >
-              <item.Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span className="hidden 2xl:inline">{item.label}</span>
-            </Button>
-          ))}
-        </nav>
-        {/* 窄屏（<xl）导航折叠为下拉——同一 view 状态，只是呈现收窄（D2 布局不变量）。 */}
-        <Select value={view} onValueChange={(v) => setView(v as View)}>
-          <SelectTrigger aria-label="页面导航" className="mx-auto px-1.5 py-1 text-xs xl:hidden">
-            <SelectValue />
+        <div className="hidden h-8 w-px bg-[#355f7f] shadow-[1px_0_#c4d9e8] sm:block" />
+        <Select
+          value={s.currentId ?? ""}
+          disabled={s.chapter.saving}
+          onValueChange={(v) => {
+            if (v === "__manage__") setSettingsOpen(true);
+            else if (!s.selectProject(v)) setPending(v);
+          }}
+        >
+          <SelectTrigger
+            aria-label="选择项目"
+            className="project-picker h-[34px] w-48 min-w-0 border-none px-3 text-xs font-bold text-white shadow-none focus:ring-0"
+          >
+            <SelectValue placeholder="选择项目…" />
           </SelectTrigger>
           <SelectContent>
-            {NAV_ITEMS.map((item) => (
-              <SelectItem key={item.key} value={item.key}>
-                {item.label}
+            {s.projects.map((p) => (
+              <SelectItem key={p.projectId} value={p.projectId}>
+                {p.name}
               </SelectItem>
             ))}
+            <SelectItem value="__manage__">管理 / 新建项目…</SelectItem>
           </SelectContent>
         </Select>
-        <div className="ml-auto flex flex-none items-center gap-2.5 text-xs text-paper/60">
-          <div className="hidden min-w-0 sm:block">
-            <SearchBox />
+        <div className="flex-1" />
+        <div className="relative hidden md:block">
+          <div className="search-well flex h-[33px] w-56 items-center gap-2 px-3">
+            <Search size={14} />
+            <input
+              aria-label="全局搜索"
+              className="w-full bg-transparent text-xs text-fg outline-none placeholder:text-mute"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索章节、角色与线索"
+            />
           </div>
-          {/* 当前文章只读徽标（T14）：管理动作收进「文章」页，此处只作指向。 */}
-          <Button
-            variant="outline"
-            onClick={() => setView("articles")}
-            title="文章管理"
-            className={`h-auto max-w-44 px-2 py-0.5 text-xs ${
-              view === "articles"
-                ? "border-gold/60 text-gold hover:bg-transparent"
-                : "text-paper/75 hover:border-gold/50 hover:bg-transparent"
-            }`}
-          >
-            <span className="block truncate">{slug ?? "未选择文章"}</span>
-          </Button>
-          {/* 生效模型徽章：数据来自 WS 快照 get_state.model；设置保存经
-              setSnapshotModel 同步刷新（同档案热切不重连也能即时更新）。 */}
-          {model !== null && (
-            <span
-              title={`当前生效模型：${model}`}
-              className="hidden min-w-0 items-center border border-line px-2 py-0.5 md:flex"
-            >
-              <span className="max-w-40 truncate">{model}</span>
-            </span>
-          )}
-          {/* 阶段徽章 + 章节进度（P8 T7，D7）：数据来自 GET /api/{slug}/story，
-              完备度速览收进 title——顶栏保持一行的信息密度约束。 */}
-          {story && (
-            <span
-              title={ledgerSummary(story.counts)}
-              className={`hidden items-center gap-2 border px-2 py-0.5 md:flex ${stageMeta(story.stage).className}`}
-            >
-              <span className="whitespace-nowrap">{stageMeta(story.stage).label}</span>
-              <span className="whitespace-nowrap text-paper/45">
-                {chapterProgress(story.chapters)}
-              </span>
-            </span>
-          )}
-          {/* 状态徽章（D2）：连接点 + 文案合并为一枚；写作中（连接正常且 run 进行）
-              同一枚徽章换色脉动，替代原先两处并排。 */}
-          {(() => {
-            const writing = running && status === "open";
-            return (
-              <span
-                className={`flex items-center gap-1.5 border px-2 py-0.5 ${
-                  writing ? "border-planned/50 text-planned" : "border-line text-paper/60"
-                }`}
-              >
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    writing
-                      ? "bg-planned animate-pulse"
-                      : `${STATUS_DOT[status]}${status !== "open" ? " animate-pulse" : ""}`
-                  }`}
-                />
-                {writing ? "写作中" : STATUS_LABEL[status]}
-              </span>
-            );
-          })()}
-          {status === "closed" && (
-            <Button
-              variant="outline"
-              onClick={reconnect}
-              className="h-auto px-2 py-0.5 text-xs hover:border-gold/50 hover:bg-transparent"
-            >
-              重连
-            </Button>
-          )}
-        </div>
-      </header>
-
-      {connectionError && (
-        <div className="flex items-center gap-3 border-b border-overdue/40 bg-overdue/10 px-6 py-2 text-xs text-paper">
-          <span className="min-w-0 flex-1">{connectionError}</span>
-          <Button
-            variant="outline"
-            onClick={() => {
-              useChatStore.getState().setConnectionError(null);
-              bootWorkspaces()
-                .then((empty) => {
-                  if (empty) setView("articles");
-                })
-                .catch((exc: unknown) =>
-                  useChatStore.getState().setConnectionError(String(exc)),
-                );
-            }}
-            className="h-auto shrink-0 border-overdue/60 px-2 py-0.5 text-xs text-overdue hover:bg-overdue/10 hover:text-overdue"
-          >
-            重试
-          </Button>
-        </div>
-      )}
-
-      {/* 顶层错误边界（D10）：一个面板崩不拖垮整个应用——顶部导航与其余视图不受影响。 */}
-      <ErrorBoundary label="页面">
-        {view === "changes" ? <ChangeCenter /> : view === "events" ? (
-        <main className="flex min-h-0 flex-1 flex-col border-t border-line">
-          <ErrorBoundary label="事件流">
-            <EventStreamView />
-          </ErrorBoundary>
-        </main>
-      ) : view === "settings" ? (
-        <main className="flex min-h-0 flex-1 flex-col border-t border-line">
-          <SettingsPanel onSessionChanged={reconnect} />
-        </main>
-      ) : view === "corpus" ? (
-        <ErrorBoundary label="语料库">
-          <CorpusPage />
-        </ErrorBoundary>
-      ) : view === "audit" ? (
-        <ErrorBoundary label="审计中心">
-          <AuditPage onSteer={(message) => sendCommand(running ? "steer" : "prompt", message)} />
-        </ErrorBoundary>
-      ) : view === "ledger" ? (
-        <ErrorBoundary label="账本全页">
-          <LedgerPage onBack={() => setView("studio")} />
-        </ErrorBoundary>
-      ) : view === "articles" || slug === null || slugInvalid ? (
-        <ErrorBoundary label="文章">
-          <ArticlesPage onSwitch={switchTo} onEnter={() => setView("studio")} />
-        </ErrorBoundary>
-      ) : (
-        <main className="relative flex min-h-0 flex-1">
-          {/* 窄屏账本抽屉把手（P7 D2）：从顶栏移入创作台，右缘中部抽屉拉手形态。 */}
-          <Button
-            variant="ghost"
-            onClick={() => setBibleDrawerOpen(true)}
-            aria-label="打开账本"
-            className="fixed right-0 top-1/2 z-30 h-auto -translate-y-1/2 rounded-none border border-r-0 border-line bg-ink-soft/90 px-0.5 py-3 text-[10px] tracking-widest text-gold-soft hover:bg-ink-soft/90 hover:text-gold xl:hidden"
-            style={{ writingMode: "vertical-rl" }}
-          >
-            账本
-          </Button>
-          {/* <lg 对话左缘抽屉把手（P9 T8，D6）：与账本把手对称，正文唯一常驻。 */}
-          {!isWide && (
-            <Button
-              variant="ghost"
-              onClick={() => setChatDrawerOpen(true)}
-              aria-label="打开对话"
-              className="fixed left-0 top-1/2 z-30 h-auto -translate-y-1/2 rounded-none border border-l-0 border-line bg-ink-soft/90 px-0.5 py-3 text-[10px] tracking-widest text-gold-soft hover:bg-ink-soft/90 hover:text-gold"
-              style={{ writingMode: "vertical-rl" }}
-            >
-              主编对话
-            </Button>
-          )}
-          {isWide && (
-            chatCollapsed ? (
-              <Button
-                variant="ghost"
-                onClick={() => setChatCollapsed(false)}
-                aria-label="展开对话"
-                className="h-auto w-7 flex-none flex-col gap-2 rounded-none border-r border-line bg-ink-soft/35 py-3 text-[10px] tracking-widest text-gold-soft hover:bg-ink-soft/35 hover:text-gold"
-                style={{ writingMode: "vertical-rl" }}
-              >
-                主编对话
-              </Button>
-            ) : (
-              <>
-                <aside
-                  className="relative flex min-w-0 flex-none flex-col overflow-hidden bg-ink-soft/35"
-                  style={{ width: chatWidth }}
-                >
-                  <TooltipProvider delayDuration={200}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          onClick={() => setChatCollapsed(true)}
-                          aria-label="折叠对话"
-                          className="absolute right-1.5 top-1.5 z-10 h-auto border border-line bg-ink px-1.5 py-0.5 text-[10px] text-paper/50 hover:bg-ink hover:text-gold"
-                        >
-                          ‹
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>折叠对话</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <ChatPanel
-                    slug={slug}
-                    running={running}
-                    onSessionChanged={reconnect}
-                    onCompacted={reconnect}
-                    stage={story?.stage ?? null}
-                    onSendPrompt={sendPrompt}
-                    onComposerCommand={(type: CommandType, message: string) =>
-                      sendCommand(type, message)
-                    }
-                    onAbort={() => sendCommand("abort")}
-                  />
-                </aside>
-                <Splitter
-                  side="left"
-                  width={chatWidth}
-                  onWidthChange={setChatWidth}
-                  defaultWidth={CHAT_DEFAULT_WIDTH}
-                  storageKey={CHAT_WIDTH_KEY}
-                />
-              </>
-            )
-          )}
-          <ErrorBoundary label="正文">
-            <ManuscriptPanel />
-          </ErrorBoundary>
-          <Splitter
-            side="right"
-            width={bibleWidth}
-            onWidthChange={setBibleWidth}
-            defaultWidth={BIBLE_DEFAULT_WIDTH}
-            storageKey={BIBLE_WIDTH_KEY}
-            className="hidden xl:block"
-          />
-          <aside
-            className="hidden flex-none flex-col overflow-hidden bg-ink-soft/35 xl:flex"
-            style={{ width: bibleWidth }}
-          >
-            <ErrorBoundary label="账本">
-              <BiblePanel onExpand={() => setView("ledger")} />
-            </ErrorBoundary>
-          </aside>
-          {/* 窄屏（<xl）账本抽屉（D6）：Radix Sheet 承担遮罩/Esc/焦点陷阱；
-              定宽渲染无 Splitter，把手在上面 fixed 按钮处。 */}
-          <Sheet open={bibleDrawerOpen} onOpenChange={setBibleDrawerOpen}>
-            <SheetContent side="right" className="xl:hidden">
-              <SheetHeader>
-                <SheetTitle>故事账本</SheetTitle>
-                <SheetClose aria-label="关闭账本">×</SheetClose>
-              </SheetHeader>
-              <div className="min-h-0 flex-1">
-                <ErrorBoundary label="账本">
-                  <BiblePanel onExpand={() => setView("ledger")} />
-                </ErrorBoundary>
-              </div>
-            </SheetContent>
-          </Sheet>
-          {/* <lg 对话抽屉（P9 T8，D6）：左缘 Sheet，ChatPanel 与常驻栏共用。 */}
-          <Sheet open={chatDrawerOpen && !isWide} onOpenChange={setChatDrawerOpen}>
-            <SheetContent side="left">
-              <SheetHeader>
-                <SheetTitle>主编对话</SheetTitle>
-                <SheetClose aria-label="关闭对话">×</SheetClose>
-              </SheetHeader>
-              <ChatPanel
-                slug={slug}
-                running={running}
-                onSessionChanged={reconnect}
-                onCompacted={reconnect}
-                stage={story?.stage ?? null}
-                onSendPrompt={sendPrompt}
-                onComposerCommand={(type: CommandType, message: string) =>
-                  sendCommand(type, message)
+          {query.trim() && (
+            <SearchResults
+              query={query.trim()}
+              onClose={() => setQuery("")}
+              onNavigate={(target) => {
+                if (target.kind === "chapter") {
+                  if (isDirty(s.chapter)) {
+                    s.setError("请先保存当前正文，再打开搜索结果中的章节。");
+                    return;
+                  }
+                  void s.selectChapter(target.id);
+                  setView("studio");
+                } else {
+                  useV2Store.setState({ focusArtifactId: target.id });
+                  setView("ledger");
                 }
-                onAbort={() => sendCommand("abort")}
-              />
-            </SheetContent>
-          </Sheet>
-        </main>
+                setQuery("");
+              }}
+            />
+          )}
+        </div>
+        <span
+          className="flex items-center gap-1.5 whitespace-nowrap text-[11px]"
+          role="status"
+        >
+          <i
+            className={`inline-block h-2 w-2 rounded-full ${conn === "open" ? "live-dot" : "bg-white/60"}`}
+          />
+          {!s.currentId
+            ? "未选择项目"
+            : conn === "open"
+              ? "已连接"
+              : conn === "connecting"
+                ? "连接中"
+                : "已断开"}
+        </span>
+        <div className="top-avatar hidden h-[34px] w-[34px] place-items-center font-serif text-lg lg:grid">
+          作
+        </div>
+        <ModelButton onClick={() => setModelsOpen(true)} />
+        <ChatToggle
+          open={chatOpen}
+          unread={unread}
+          onToggle={() => setChatOpen((v) => !v)}
+        />
+        <button
+          className="project-picker grid h-[34px] w-[34px] shrink-0 place-items-center"
+          aria-label="设置"
+          onClick={() => setSettingsOpen(true)}
+        >
+          <Settings2 size={16} />
+        </button>
+      </header>
+      <nav
+        aria-label="主导航"
+        className="navbar flex flex-none gap-1 overflow-x-auto px-3 pt-1.5"
+      >
+        {nav.map((item) => (
+          <button
+            type="button"
+            aria-label={item.label}
+            key={item.key}
+            aria-current={view === item.key ? "page" : undefined}
+            onClick={() => setView(item.key)}
+            className={`navitem h-10 shrink-0 px-4 text-xs ${view === item.key ? "on" : ""}`}
+          >
+            <item.Icon size={15} />
+            {item.label}
+            {item.key === "changes" && pendingCount > 0 && (
+              <span className="nav-badge px-1.5 py-0.5 text-[10px]">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </nav>
+      {s.error && (
+        <div
+          role="alert"
+          className="flex flex-none items-center gap-3 border-b border-red-edge bg-red-bg px-5 py-2 text-xs text-red"
+        >
+          <span className="min-w-0 flex-1">{s.error}</span>
+          <button
+            className="btn btn-gray shrink-0 px-3 py-1"
+            onClick={() => s.setError(null)}
+          >
+            知道了
+          </button>
+          <button
+            className="underline"
+            onClick={() => {
+              s.setError(null);
+              void s.refreshManuscript();
+              void s.refreshStory();
+              void s.refreshChanges();
+              void s.refreshPreferences();
+            }}
+          >
+            重试读取
+          </button>
+        </div>
       )}
-      </ErrorBoundary>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div
+          className={`workbench min-h-0 flex-1 overflow-hidden ${chatOpen && !narrow ? "chat-on" : ""}`}
+        >
+          <ErrorBoundary key={`${s.currentId}:${view}`} label="页面">
+            {view === "overview" && (
+              <OverviewPage
+                onNavigate={setView}
+                onManage={() => setSettingsOpen(true)}
+              />
+            )}
+            {view === "studio" && <StudioPage />}
+            {view === "ledger" && <LedgerPage onNavigate={setView} />}
+            {view === "changes" && <ChangesPage onNavigate={setView} />}
+            {view === "review" && <ChangesPage review onNavigate={setView} />}
+            {view === "audit" && <AuditPage onNavigate={setView} />}
+            {view === "model" && <AuthorModelPage />}
+          </ErrorBoundary>
+        </div>
+        <ChatSidebar
+          open={chatOpen}
+          narrow={narrow}
+          onClose={() => setChatOpen(false)}
+          onReviewCandidate={() => {
+            setView("review");
+            if (narrow) setChatOpen(false);
+          }}
+        />
+      </div>
+      <footer className="statusbar flex h-8 flex-none items-center justify-between gap-4 overflow-hidden whitespace-nowrap px-4 text-[10px]">
+        <span className="flex min-w-0 gap-4">
+          <span className="max-w-40 truncate">
+            ● {currentProjectName(s)} · 主分支
+          </span>
+          <span>
+            版本 <b>{s.head?.slice(0, 8) ?? "—"}</b>
+          </span>
+          <span className="hidden md:inline">
+            章基础 <b>{s.chapter.chapterBase.slice(0, 8) || "—"}</b>
+          </span>
+          <span className="hidden lg:inline">
+            上次保存 <b>{s.chapter.lastSavedAt ?? "—"}</b>
+          </span>
+        </span>
+        <span>
+          {s.chapter.saving
+            ? "保存中…"
+            : isDirty(s.chapter)
+              ? "● 有未保存修改"
+              : s.chapter.loading
+                ? "正在读取…"
+                : "✓ 无未保存修改"}
+        </span>
+        <span className="hidden lg:inline" data-testid="chat-status">
+          对话：
+          {chatOpen
+            ? narrow
+              ? "面板已打开"
+              : chatService
+                ? chatService.capabilities().simulated
+                  ? "模拟模式"
+                  : "已连接"
+                : "服务未连接"
+            : "已收起"}
+        </span>
+      </footer>
+      <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDrawer open={modelsOpen} onOpenChange={setModelsOpen} modelsOnly />
+      <ConfirmDiscard
+        open={pending !== null}
+        onCancel={() => setPending(null)}
+        onDiscard={() => {
+          if (pending) s.selectProject(pending, true);
+          setPending(null);
+        }}
+      />
     </div>
   );
 }
