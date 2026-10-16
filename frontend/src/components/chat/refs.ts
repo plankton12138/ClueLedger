@@ -48,7 +48,7 @@ export function artifactRef(artifact: {
   artifact_id: string;
   kind: string;
   content: Record<string, unknown>;
-}): ChatReference {
+}, version = ""): ChatReference {
   refSeed += 1;
   const title =
     String(artifact.content.name || artifact.content.title || artifact.content.statement || "") ||
@@ -58,7 +58,7 @@ export function artifactRef(artifact: {
     kind: "artifact",
     target_id: artifact.artifact_id,
     title,
-    version: "",
+    version,
     saved: true,
   };
 }

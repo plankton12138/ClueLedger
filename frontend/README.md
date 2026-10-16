@@ -29,9 +29,14 @@ Ollama 保留检测、下载与安装引导，LM Studio 自动使用本地默认
 经作者接受才成为正式内容。输入框 Enter 发送、Shift+Enter 换行、输入法组合
 期不发送；正文选中文本可「引用到对话」（未保存摘录明确标注）。
 
+任务建议的「调整」可选择本章节拍或检查范围；空项目可以直接规划，新章无需先导入正文。
+候选的「打开审阅」在主区显示对应任务完整内容；预览保留正文草稿，有未保存稿时禁止接受。
+定向修订通过「打开变更流程」继续影响分析、批准与差异审阅。默认聊天重试保留原模型来源。
+
 - 契约与状态：`src/api/chat.ts`（模拟器与真实 API 同接口）、`src/state/chat.ts`
 - 组件：`src/components/chat/*`；走查清单 `e2e/v2-chat.spec.ts`
 - 设计取舍：[Phase 19](../dev-notes/v2/phase-19-chat-workbench.md)
+- 审查修复与证据：[Phase 19 review fixes](../dev-notes/v2/phase-19-review-fixes.md)
 
 ## 页面与状态
 
@@ -63,6 +68,8 @@ npm run test:e2e
 ```
 
 浏览器测试启动隔离的真实 API + SQLite 服务，模型使用确定性工作者，不访问真实 Provider。
+`e2e/v2-chat-real.spec.ts` 通过真实 HTTP/SSE 测试聊天与创作闭环，不使用 `chatMock`；
+它和调用真实模型的 `eval/v2/chat_driver.py` 属于不同层次的证据。
 默认运行 `e2e/v2-*.spec.ts`，覆盖七页、迁移入口退役、规划到正文、保存冲突、项目切换、版本恢复、
 批准与分支修订、接受/拒绝差异、审计、导出及作者裁决。截图输出在 `test-results/`。
 `j1`–`j8` 保留为旧 V1/早期变更中心界面的历史旅程，不适用于替换后的七页壳；不作为当前 UI 质量门。

@@ -43,7 +43,7 @@ def test_plan_kind_needs_nothing_but_a_model() -> None:
 
 def test_chapter_draft_requires_beats_and_chapter_target() -> None:
     items = missing_items(
-        "chapter_draft", goal="ch_1", target_ids=[], base_version=None, view=_FULL_VIEW
+        "chapter_draft", goal="ch_1", target_ids=["beat_1"], base_version=None, view=_FULL_VIEW
     )
     assert items == []
     items = missing_items(

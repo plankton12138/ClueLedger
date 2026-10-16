@@ -80,6 +80,15 @@ def missing_items(
             )
         )
     if task_kind == "chapter_draft":
+        if not target_ids:
+            items.append(
+                _missing(
+                    "TASK_NO_BEAT_TARGET",
+                    "task.target_ids",
+                    "尚未选择本章要写的节拍",
+                    "在任务卡「调整」中选择已接受节拍后保存",
+                )
+            )
         if not view.has_accepted_beats:
             items.append(
                 _missing(
@@ -89,7 +98,7 @@ def missing_items(
                     "先运行「规划故事与节拍」并在审阅页接受其候选",
                 )
             )
-        if not goal or goal not in view.chapter_ids:
+        if not goal:
             items.append(
                 _missing(
                     "TASK_NO_CHAPTER_TARGET",

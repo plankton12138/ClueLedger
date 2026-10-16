@@ -73,7 +73,10 @@ class ConfiguredV2Runner:
 
     def chat_runner(self) -> ProviderChatRunner:
         """纯对话流式执行器：无工具、无写端口；本地模型放宽超时预算。"""
-        profile, _model = self._resolve_profile_model()
+        return self.bound_chat_runner(self.model_binding())
+
+    def bound_chat_runner(self, binding: dict[str, Any]) -> ProviderChatRunner:
+        profile, _model = self._resolve_bound(binding)
         loopback = is_loopback_url(profile.base_url)
         return ProviderChatRunner(
             lambda: build_provider(profile),
@@ -121,7 +124,7 @@ class ConfiguredV2Runner:
         """按任务启动时的绑定快照执行（切模型不改变已启动任务）。"""
         profile, model = self._resolve_bound(binding)
         runner = TauAgentRunner(
-            lambda: build_provider(profile),
+            lambda: build_provider(profile, worker=True),
             model,
             self.reader,
             owns_provider=True,

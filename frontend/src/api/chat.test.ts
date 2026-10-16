@@ -19,6 +19,14 @@ import {
 
 type Calls = { url: string; method: string; body: unknown }[];
 
+it("启动响应丢失后重试沿用同一建议修订的幂等键", async () => {
+  const calls = stubFetch(() => json({ job_ref: "j" }));
+  const service = createHttpChatService("p-key");
+  await service.startDraft("p-key", "c", "d", 1);
+  await service.startDraft("p-key", "c", "d", 1);
+  expect(calls[0].body).toEqual(calls[1].body);
+});
+
 function stubFetch(
   handler: (url: string, method: string, body: unknown) => Response | Promise<Response>,
 ): Calls {

@@ -20,6 +20,7 @@ create_app 既有注入点（registry.session_factory / static_dir / corpus_root
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import tempfile
 from collections.abc import Awaitable, Callable, Sequence
@@ -32,6 +33,7 @@ from tests.fake_scripts import assistant_stream, chapter_read, character_lookup,
 from tests.v2.agents.scenario import ScenarioRunner
 
 from hastings.bible.store import StoryWorkspace
+from hastings.infrastructure.conversations.runner import ProviderChatRunner
 from hastings.server.app import create_app
 from hastings.server.hastings_session import HastingsSession
 from hastings.server.provider_config import ProviderBook, ProviderProfile, ServerConfig
@@ -39,6 +41,8 @@ from hastings.server.registry import WorkspaceRegistry
 from hastings.server.session import WritingSession
 from hastings.server.v2 import V2Runtime
 from tau_agent import AgentHarness, AgentHarnessConfig
+from tau_agent.messages import AssistantMessage
+from tau_agent.provider_events import TextDeltaEvent
 from tau_ai import FakeProvider
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -227,6 +231,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     registry = WorkspaceRegistry(root=stories_root, session_factory=make_session_factory())
     v2_runtime = V2Runtime.sqlite(str(stories_root / "v2.sqlite"))
     v2_runtime.configure_agent_runner(ScenarioRunner(v2_runtime.service))
+
+    class PacedChatProvider:
+        async def stream_response(self, **kwargs: Any) -> Any:
+            for delta in ("第一段真实回复", "，后续讨论内容", "，结束。"):
+                yield TextDeltaEvent(content_index=0, delta=delta, partial=AssistantMessage())
+                await asyncio.sleep(0.8)
+
+    v2_runtime.chat.runner_factory = lambda: ProviderChatRunner(PacedChatProvider)
+    v2_runtime.chat.model_resolver = lambda: "e2e-chat"
+    v2_runtime.chat.binding_resolver = None
+    v2_runtime.chat.bound_runner_factory = None
+    v2_runtime.model_binding_provider = lambda: {
+        "profile": "e2e",
+        "model": "e2e-chat",
+        "api": "openai-completions",
+    }
     installed_models: list[str] = []
 
     def local_transport(request: httpx.Request) -> httpx.Response:

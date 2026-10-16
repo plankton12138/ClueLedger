@@ -488,7 +488,7 @@ V2 基础架构只有在以下用例同时成立时才算完成：
 | 流式执行 | `infrastructure/conversations/runner.py` | 复用 Tau Provider 文本流；tools 恒空（聊天无工具、无写能力）；失败六分类 |
 | 会话服务 | `application/services/conversation_service.py` | 发送/取消/重试；同会话单轮、全局并发有界；重启标中断不自动重发 |
 | 任务准备 | `application/services/task_prep_service.py` | 受限 TaskDraft + 缺失项纯函数；启动拦截（缺失项/过期基础版本/幂等键） |
-| 候选投影 | `application/services/task_projection.py` | Job 状态 → `candidate.ready`/`result.accepted` 事件；任务卡只投影实际 Job |
+| 候选投影 | `application/services/task_projection.py` | Job 状态 → `task.updated`/`candidate.ready`；接受服务发布 `result.accepted`；建议和执行卡有独立持久消息 |
 | REST/SSE | `interfaces/api/conversations.py` | conversations/messages/turns/task-drafts/accept + 事件流（快照与长连同一端点） |
 | 模型绑定 | `server/v2_agents.py` | 启动定格 `{profile, model, api}` 进 Job；来源失效明确失败不换厂商 |
 
@@ -502,6 +502,10 @@ V2 基础架构只有在以下用例同时成立时才算完成：
   候选接受复用既有审阅规则（marker Commit 幂等），聊天文本不能代替审批。
 - **模型绑定**：任务启动定格 provider/model/api 进 Job payload；执行与重试
   读取绑定，切当前模型不影响已启动任务。
+- **审查修复**：聊天轮次也持久化无密钥的模型来源绑定；停止主动取消后台调用；
+  已保存引用经服务端解析正文和实际版本；候选可在主区读取完整内容，有未保存稿时
+  禁止接受；定向修订打开既有变更流程；同项目创作执行串行。证据与限制见
+  [代码审查修复](phase-19-review-fixes.md)。
 
 ### 15.3 验收入口
 

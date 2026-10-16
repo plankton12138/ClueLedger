@@ -45,6 +45,7 @@ export default function ChatComposer() {
   const service = useChatStore((s) => s.service);
   const chapter = useV2Store((s) => s.chapter);
   const storyArtifacts = useV2Store((s) => s.storyArtifacts);
+  const storyCommit = useV2Store((s) => s.storyCommit);
   const model = useModelStore((s) => s.current);
   const composing = useRef(false);
   const [refMenuOpen, setRefMenuOpen] = useState(false);
@@ -198,7 +199,7 @@ export default function ChatComposer() {
                   <button
                     key={a.artifact_id}
                     className="chat-menu-item"
-                    onClick={() => attach(artifactRef(a))}
+                    onClick={() => attach(artifactRef(a, storyCommit ?? ""))}
                   >
                     {titleOf(a)}
                   </button>

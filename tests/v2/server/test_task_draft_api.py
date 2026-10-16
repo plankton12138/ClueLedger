@@ -44,6 +44,8 @@ def runtime(starter: RecordingStarter) -> V2Runtime:
     runtime = V2Runtime.memory()
     runtime.chat.runner_factory = lambda: FakeRunner()
     runtime.chat.model_resolver = lambda: "test-model"
+    runtime.chat.binding_resolver = None
+    runtime.chat.bound_runner_factory = None
     runtime.task_prep._starter = starter
     return runtime
 
@@ -102,7 +104,7 @@ def test_create_draft_from_message_copies_refs(client: TestClient) -> None:
             "text": "结合第一章讨论",
             "refs": [{
                 "ref_id": "r1", "kind": "chapter", "target_id": chapter_id,
-                "title": "第一章", "version": "v1", "saved": True,
+                "title": "第一章", "version": "", "saved": True,
             }],
             "idempotency_key": "k1",
         },

@@ -48,6 +48,7 @@ class CreateTaskDraftRequest(BaseModel):
     goal: str = ""
     target_ids: list[str] = Field(default_factory=list)
     source_message_id: str | None = None
+    refs: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AdjustTaskDraftRequest(BaseModel):
@@ -133,6 +134,7 @@ def create_conversations_router(runtime: V2Runtime) -> APIRouter:
             goal=req.goal,
             target_ids=req.target_ids,
             source_message_id=req.source_message_id,
+            refs=req.refs,
         )
         return {"draft": draft.to_payload(), "message_id": message_id}
 

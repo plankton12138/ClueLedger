@@ -198,11 +198,7 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
         job = await require_job(project_id, job_id)
         if job["state"] == "running":
             return job
-        result = await runtime.worker.execute(job_id)
-        if result["state"] == "completed" and result["job_type"] in ("auditor", "style_observer"):
-            result["analysis"] = await runtime.agent_workflows.apply_analysis(job_id)
-            await runtime.jobs.record_analysis(job_id, result["analysis"])
-        return result
+        return await runtime.execute_agent_job(job_id)
 
     @router.post("/agent-jobs/{job_id}/cancel")
     async def cancel(project_id: str, job_id: str) -> dict[str, Any]:
@@ -216,8 +212,22 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
 
     @router.post("/changes/{cs_id}/execute-agent")
     async def repair(project_id: str, cs_id: str, req: ExecuteRepair) -> dict[str, Any]:
-        return await runtime.agent_workflows.repair(
-            ProjectId(project_id), cs_id, req.idempotency_key, runtime.revision
+        drafts = await runtime.task_draft_store.list_by_status("started")
+        binding = next(
+            (
+                d.model_binding
+                for d in drafts
+                if d.project_id == project_id and d.job_ref == f"change:{cs_id}"
+            ),
+            None,
         )
+        async with runtime.project_execution_lock(project_id):
+            return await runtime.agent_workflows.repair(
+                ProjectId(project_id),
+                cs_id,
+                req.idempotency_key,
+                runtime.revision,
+                model_binding=binding,
+            )
 
     return router

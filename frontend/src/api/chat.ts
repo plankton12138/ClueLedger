@@ -107,7 +107,7 @@ export interface TaskDraftPayload {
   base_version: string | null;
   refs: ChatReference[];
   basis: string[];
-  missing: string[];
+  missing: (string | { code: string; where: string; why: string; fix: string })[];
   source_message_id: string | null;
   job_ref: string | null;
 }
@@ -129,6 +129,7 @@ export interface TaskExecutionPayload {
   draft_id: string;
   candidate_message_id: string | null;
   error: ChatErrorBody | null;
+  change_ref?: string | null;
 }
 
 export interface CandidatePayload {
@@ -164,6 +165,7 @@ export type ChatEvent =
   | { type: "task.draft.created"; draft: TaskDraftPayload; message_id: string }
   | { type: "task.draft.updated"; draft: TaskDraftPayload }
   | { type: "task.draft.abandoned"; draft_id: string }
+  | { type: "task.updated"; message_id: string; execution: TaskExecutionPayload }
   | {
       type: "task.linked";
       draft_id: string;
@@ -211,6 +213,12 @@ export interface SendTurnResult {
   user_message: ChatMessage;
 }
 
+export interface TaskDraftScope {
+  goal?: string;
+  target_ids?: string[];
+  refs?: ChatReference[];
+}
+
 export interface ChatService {
   readonly kind: "simulator" | "api";
   capabilities(): ChatCapabilities;
@@ -237,12 +245,14 @@ export interface ChatService {
     conversationId: string,
     messageId: string,
     taskKind: TaskKind,
+    scope?: TaskDraftScope,
   ): Promise<{ draft: TaskDraftPayload; message_id: string }>;
   createDraft(
     projectId: string,
     conversationId: string,
     taskKind: TaskKind,
     instruction?: string,
+    scope?: TaskDraftScope,
   ): Promise<{ draft: TaskDraftPayload; message_id: string }>;
   abandonDraft(projectId: string, conversationId: string, draftId: string): Promise<void>;
   startDraft(
@@ -396,6 +406,7 @@ export function createHttpChatService(
 ): ChatService {
   const fetchImpl = options.fetchImpl ?? ((...args) => fetch(...args));
   const retryBase = options.retryBaseMs ?? 400;
+  const startKeys = new Map<string, string>();
 
   const conversationUrl = (conversationId: string) =>
     `${projectPrefix(projectId)}/conversations/${encodeURIComponent(conversationId)}`;
@@ -444,6 +455,7 @@ export function createHttpChatService(
     conversationId: string,
     taskKind: TaskKind,
     instruction = "",
+    scope: TaskDraftScope = {},
   ) {
     return requestJson<{ draft: TaskDraftPayload; message_id: string }>(
       `${projectPrefix(projectId)}/task-drafts`,
@@ -451,6 +463,7 @@ export function createHttpChatService(
         conversation_id: conversationId,
         task_kind: taskKind,
         instruction,
+        ...scope,
       },
     );
   }
@@ -459,6 +472,7 @@ export function createHttpChatService(
     conversationId: string,
     messageId: string,
     taskKind: TaskKind,
+    scope: TaskDraftScope = {},
   ) {
     return requestJson<{ draft: TaskDraftPayload; message_id: string }>(
       `${projectPrefix(projectId)}/task-drafts`,
@@ -466,6 +480,7 @@ export function createHttpChatService(
         conversation_id: conversationId,
         source_message_id: messageId,
         task_kind: taskKind,
+        ...scope,
       },
     );
   }
@@ -496,9 +511,15 @@ export function createHttpChatService(
     draftId: string,
     expectedRevision: number,
   ) {
+    const storageKey = `hastings.chat.start:${projectId}:${draftId}:${expectedRevision}`;
+    let key = startKeys.get(storageKey);
+    try { key ??= sessionStorage.getItem(storageKey) ?? undefined; } catch { /* 本次会话去重 */ }
+    key ??= crypto.randomUUID();
+    startKeys.set(storageKey, key);
+    try { sessionStorage.setItem(storageKey, key); } catch { /* 本次会话去重 */ }
     return requestJson<{ job_ref: string }>(
       `${projectPrefix(projectId)}/task-drafts/${encodeURIComponent(draftId)}/start`,
-      { expected_revision: expectedRevision, idempotency_key: crypto.randomUUID() },
+      { expected_revision: expectedRevision, idempotency_key: key },
     );
   }
 
@@ -619,10 +640,10 @@ export function createHttpChatService(
     retryTurn: (_projectId, conversationId, turnId) => retryTurn(conversationId, turnId),
     adjustDraft: (_projectId, conversationId, draftId, revision, patch) =>
       adjustDraft(conversationId, draftId, revision, patch),
-    draftFromMessage: (_projectId, conversationId, messageId, taskKind) =>
-      draftFromMessage(conversationId, messageId, taskKind),
-    createDraft: (_projectId, conversationId, taskKind, instruction) =>
-      createDraft(conversationId, taskKind, instruction),
+    draftFromMessage: (_projectId, conversationId, messageId, taskKind, scope) =>
+      draftFromMessage(conversationId, messageId, taskKind, scope),
+    createDraft: (_projectId, conversationId, taskKind, instruction, scope) =>
+      createDraft(conversationId, taskKind, instruction, scope),
     abandonDraft: (_projectId, conversationId, draftId) =>
       abandonDraft(conversationId, draftId),
     startDraft: (_projectId, conversationId, draftId, revision) =>

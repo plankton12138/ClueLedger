@@ -37,6 +37,11 @@ class TurnCancellationToken:
         return self._event.is_set()
 
 
+class _CancellationProbe:
+    def __init__(self, cancelled: Callable[[], bool]) -> None:
+        self.is_cancelled = cancelled
+
+
 class ProviderChatRunner:
     """按每次执行构造 provider（配置可在轮次之间变化），流式执行纯对话。"""
 
@@ -69,9 +74,7 @@ class ProviderChatRunner:
         tail = list(run.refs)
         if messages and tail:
             quoted = "\n\n".join(f"- {ref}" for ref in tail)
-            messages[-1] = UserMessage(
-                content=f"{run.history[-1][1]}\n\n引用材料：\n{quoted}"
-            )
+            messages[-1] = UserMessage(content=f"{run.history[-1][1]}\n\n引用材料：\n{quoted}")
         elif tail:
             quoted = "\n\n".join(f"- {ref}" for ref in tail)
             messages.append(UserMessage(content=f"引用材料：\n{quoted}"))
@@ -100,7 +103,7 @@ class ProviderChatRunner:
                     system=run.system,
                     messages=self._build_messages(run),
                     tools=[],
-                    signal=token if isinstance(token, TurnCancellationToken) else None,
+                    signal=_CancellationProbe(token),
                 )
                 # 阶段一：首段正文等待（独立预算，本地冷启动不改总预算）。
                 try:

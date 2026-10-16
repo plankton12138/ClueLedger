@@ -41,6 +41,8 @@ def runtime() -> V2Runtime:
     runtime = V2Runtime.memory()
     runtime.chat.runner_factory = lambda: _NoopRunner()
     runtime.chat.model_resolver = lambda: "test-model"
+    runtime.chat.binding_resolver = None
+    runtime.chat.bound_runner_factory = None
     runtime.model_binding_provider = lambda: dict(BINDING)
     runtime.worker.runner = ScriptedWorkerRunner()
     return runtime

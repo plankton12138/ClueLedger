@@ -32,7 +32,7 @@ import {
 } from "../api/chat";
 import { SimulatorService } from "../api/chatSimulator";
 import { V2Error } from "../api/v2";
-import { useV2Store } from "./v2";
+import { isDirty, useV2Store } from "./v2";
 
 /** 开发模式或显式 `?chatMock=1` 才装配模拟服务；生产构建不展示虚假成功。 */
 export function mockEnabled(): boolean {
@@ -278,6 +278,11 @@ export function applyChatEvent(
     }
     case "task.linked": {
       if (view.messages.some((m) => m.message_id === event.message_id)) return next({});
+      const messages = view.messages.map((m) =>
+        m.kind === "task_draft" && (m.payload as TaskDraftPayload).draft_id === event.draft_id
+          ? { ...m, payload: { ...(m.payload as TaskDraftPayload), job_ref: event.job_ref } }
+          : m,
+      );
       const payload: TaskExecutionPayload = {
         job_ref: event.job_ref,
         task_kind: event.task_kind,
@@ -290,7 +295,7 @@ export function applyChatEvent(
       };
       return next({
         messages: [
-          ...view.messages,
+          ...messages,
           {
             message_id: event.message_id,
             conversation_id: envelope.conversation_id,
@@ -307,6 +312,17 @@ export function applyChatEvent(
           },
         ],
       });
+    }
+    case "task.updated": {
+      const existing = view.messages.find((m) => m.message_id === event.message_id);
+      if (existing) return next({ messages: patchMessage(view.messages, event.message_id,
+        { payload: event.execution }) });
+      return next({ messages: [...view.messages, {
+        message_id: event.message_id, conversation_id: envelope.conversation_id,
+        turn_id: null, role: "system", kind: "task_execution", text: "", refs: [],
+        model: event.execution.model, status: "completed", error: null,
+        created_at: new Date().toISOString(), payload: event.execution,
+      }] });
     }
     case "candidate.ready": {
       if (view.messages.some((m) => m.message_id === event.message_id)) return next({});
@@ -538,6 +554,21 @@ export const useChatStore = create<ChatStore>()((set, get) => {
           void get().reloadMessages(conversationId);
       },
     );
+  }
+
+  function taskScope(kind: TaskKind) {
+    const state = useV2Store.getState();
+    const cid = get().activeConversationId;
+    const refs = cid ? get().refs[cid] ?? [] : [];
+    const beats = state.storyArtifacts.filter((a) =>
+      ["narrative.beat", "story.plot_beat"].includes(a.kind));
+    const target_ids = kind === "chapter_draft" ? beats.map((a) => a.artifact_id)
+      : refs.length ? refs.map((r) => r.target_id)
+      : kind === "check" ? [...state.storyArtifacts.map((a) => a.artifact_id),
+        ...state.chapters.map((c) => c.chapter_id)] : [];
+    return { goal: kind === "chapter_draft"
+      ? state.chapter.chapterId ?? `${state.currentId}:manuscript-${crypto.randomUUID()}` : "",
+      target_ids, refs };
   }
 
   return {
@@ -824,6 +855,7 @@ export const useChatStore = create<ChatStore>()((set, get) => {
           activeConversationId,
           messageId,
           taskKind,
+          taskScope(taskKind),
         );
       } catch (e) {
         patchView(activeConversationId, { error: errText(e) });
@@ -839,6 +871,7 @@ export const useChatStore = create<ChatStore>()((set, get) => {
           activeConversationId,
           taskKind,
           (drafts[activeConversationId] ?? "").trim(),
+          taskScope(taskKind),
         );
         set((s) => ({ drafts: { ...s.drafts, [activeConversationId]: "" } }));
       } catch (e) {
@@ -880,12 +913,15 @@ export const useChatStore = create<ChatStore>()((set, get) => {
       if (!service || !projectId || !activeConversationId) return;
       const v2 = useV2Store.getState();
       try {
+        if (isDirty(v2.chapter) || v2.chapter.saving)
+          throw new Error("当前正文有未保存稿，请先保存后再接受候选。");
         await service.acceptCandidate(
           projectId,
           activeConversationId,
           messageId,
           v2.head ?? v2.storyCommit,
         );
+        await Promise.all([v2.refreshJobs(), v2.refreshManuscript(), v2.refreshStory()]);
       } catch (e) {
         patchView(activeConversationId, { error: errText(e) });
       }

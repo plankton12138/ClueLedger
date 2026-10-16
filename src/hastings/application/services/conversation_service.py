@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Iterable
+from contextlib import suppress
 from datetime import datetime
 from typing import Any, cast
 
@@ -66,6 +67,8 @@ class ConversationService:
         # 公开注入点：测试与服务装配（ProviderBook 接线）都可以替换。
         self.runner_factory = runner_factory
         self.model_resolver = model_resolver
+        self.binding_resolver: Callable[[], dict[str, Any]] | None = None
+        self.bound_runner_factory: Callable[[dict[str, Any]], Any] | None = None
         self._slots = asyncio.Semaphore(max_concurrent)
         self._first_token_timeout = first_token_timeout
         self._total_timeout = total_timeout
@@ -88,9 +91,7 @@ class ConversationService:
                 fix="先选择或创建项目，再新建会话",
             )
         try:
-            return await self.store.create_conversation(
-                project_id, title or "新对话"
-            )
+            return await self.store.create_conversation(project_id, title or "新对话")
         except ConversationViolation as exc:
             raise _as_hastings(exc) from exc
 
@@ -132,6 +133,7 @@ class ConversationService:
         idempotency_key: str = "",
         *,
         idempotency: str | None = None,
+        model_binding: dict[str, Any] | None = None,
     ) -> OpenTurn:
         idempotency_key = idempotency or idempotency_key
         if not idempotency_key:
@@ -146,6 +148,14 @@ class ConversationService:
         if self.ref_validator is not None:
             self.ref_validator(project_id, ref_list)
         fingerprint = content_hash([text, ref_list])
+        if model_binding is None:
+            # 未配置仍创建可观察的失败轮次。
+            with suppress(HastingsError):
+                model_binding = (
+                    self.binding_resolver()
+                    if self.binding_resolver is not None
+                    else {"model": self.model_resolver()}
+                )
         now = datetime.now().astimezone().isoformat()
         turn_id = f"turn_{content_hash([conversation_id, idempotency_key])[:16]}"
         user_message = m.ChatMessage(
@@ -165,6 +175,7 @@ class ConversationService:
             model=None,
             end_reason=None,
             idempotency_key=idempotency_key,
+            model_binding=model_binding,
         )
         try:
             opened = await self.store.open_turn(
@@ -183,9 +194,7 @@ class ConversationService:
 
     def _spawn(self, project_id: str, conversation_id: str, turn_id: str) -> None:
         run = _ActiveRun()
-        task = asyncio.create_task(
-            self._execute(project_id, conversation_id, turn_id, run)
-        )
+        task = asyncio.create_task(self._execute(project_id, conversation_id, turn_id, run))
         run.task = task
         self._runs[turn_id] = run
 
@@ -203,7 +212,12 @@ class ConversationService:
             if turn is None or turn.status != m.TURN_QUEUED:
                 return  # 已被取消/中断：不执行。
             try:
-                model = self.model_resolver()
+                model = str((turn.model_binding or {}).get("model") or self.model_resolver())
+                runner = (
+                    self.bound_runner_factory(turn.model_binding)
+                    if turn.model_binding and self.bound_runner_factory is not None
+                    else self.runner_factory()
+                )
             except HastingsError as exc:
                 await self._settle_failure(project_id, conversation_id, turn_id, exc)
                 return
@@ -232,7 +246,6 @@ class ConversationService:
                 cancelled=run.token.is_cancelled,
                 refs=refs,
             )
-            runner = self.runner_factory()
 
             async def sink(delta: str) -> None:
                 await self.store.append_delta(turn_id, delta)
@@ -318,9 +331,11 @@ class ConversationService:
         run = self._runs.get(turn_id)
         if run is not None:
             run.token.cancel()
-        await self.store.settle_turn(
-            turn_id, status=m.TURN_STOPPED, end_reason="author_stop"
-        )
+        await self.store.settle_turn(turn_id, status=m.TURN_STOPPED, end_reason="author_stop")
+        if run is not None and run.task is not None and not run.task.done():
+            run.task.cancel()
+            with suppress(asyncio.CancelledError):
+                await run.task
 
     async def retry_turn(
         self,
@@ -362,6 +377,7 @@ class ConversationService:
             text=text,
             refs=original_user.refs if original_user is not None else (),
             idempotency_key=key,
+            model_binding=turn.model_binding or ({"model": turn.model} if turn.model else None),
         )
         retried = opened.turn
         # open_turn 建的是干净轮次；这里把 retry 链接写回（新尝试链接原失败轮次）。

@@ -7,7 +7,7 @@
 > V2 的领域与工作流已有独立实现；Web 服务通过 `--v2-db` 选择性启用；作品直接创建为 V2 项目，旧工作区迁移功能已删除。
 > 模型接入与切换已补齐，见 [Phase 18](phase-18-model-access.md)：厂商/套餐预设、服务端当前模型与本地模型。
 > 前端已替换为七页作者工作台，交付与边界见 [phase-17-frontend-workbench.md](phase-17-frontend-workbench.md)，运行见 [frontend/README.md](../../frontend/README.md)。
-> Phase 19 进行中：19.1 已交付七页常驻对话栏与可控模拟完整流程，见 [phase-19-chat-workbench.md](phase-19-chat-workbench.md)。
+> Phase 19 主体已交付，见 [构建笔记](phase-19-chat-workbench.md) 与 [代码审查修复](phase-19-review-fixes.md)；真模型 A13 仍待验收。
 
 ## 1. 文档权威顺序
 
@@ -28,7 +28,7 @@
 
 ## 2. 阅读路线
 
-下一阶段计划：[Phase 19：常驻对话侧栏与显式创作周期](plans/phase-19-chat-workbench-plan.md)（进行中，19.1 已交付）。按前端原型、状态契约、真实流式对话、上下文与任务准备、创作审阅接入、整体验收推进。
+当前阶段计划：[Phase 19：常驻对话侧栏与显式创作周期](plans/phase-19-chat-workbench-plan.md)（主体交付，审查缺陷已修复；真模型 A13 待验）。
 
 | 想了解 | 先读 |
 |---|---|
@@ -36,7 +36,7 @@
 | 模块依赖、公开契约和不变量 | [modules/README.md](modules/README.md) |
 | 全部重建阶段、依赖和里程碑 | [plans/README.md](plans/README.md) |
 | 最新交付 | [Phase 18：模型接入与切换](phase-18-model-access.md) |
-| 进行中阶段 | [phase-19-chat-workbench.md](phase-19-chat-workbench.md)（19.1 常驻对话栏 + 可控模拟；19.2–19.6 待实施） |
+| 当前阶段 | [phase-19-chat-workbench.md](phase-19-chat-workbench.md) 与 [审查修复](phase-19-review-fixes.md)（真实接口和浏览器闭环已验证，真模型仍有未验项） |
 | 最新清理 | [旧工作区迁移退役记录](phase-17-workspace-retirement.md)（迁移入口、导入器、专用夹具退出，V2 导出保留） |
 | 最近阶段（已完成） | [phase-17-migration-cleanup.md](phase-17-migration-cleanup.md)（历史交付记录，迁移功能现已退役：扫描/幂等导入/校验/不可达证明/迁移产品流/CLI+WS 切换/导出/演练与测量；V1 弃用收尾见 §2.11）；上一阶段：[phase-16-agent-workflows.md](phase-16-agent-workflows.md)（六角色、任务上下文、持久 Job 与真模型走查） |
 | 旧工作区处理 | [旧工作区迁移退役记录](phase-17-workspace-retirement.md)；项目未上线，不再提供 V1 数据迁移 |
@@ -91,5 +91,6 @@ dev-notes/v2/
 ├── phase-16-agent-workflows.md       # Phase 16 构建笔记
 ├── phase-17-migration-cleanup.md     # Phase 17 构建笔记（已完成，含 V1 弃用收尾 §2.11）
 ├── phase-18-model-access.md          # Phase 18 构建笔记（模型接入与切换）
-└── phase-19-chat-workbench.md        # Phase 19 构建笔记（进行中，19.1 已交付）
+├── phase-19-chat-workbench.md        # Phase 19 构建笔记（主体交付，真模型 A13 待验）
+└── phase-19-review-fixes.md          # 代码审查修复与真实接口验收证据
 ```

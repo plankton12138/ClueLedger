@@ -12,8 +12,8 @@
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import datetime
 from inspect import isawaitable
 from typing import Any
@@ -62,23 +62,81 @@ class ChatTaskProjector:
         """扫描一轮；返回新投影的候选数。幂等：同一 Job 至多一条候选。"""
         projected = 0
         for draft in await self._drafts.list_by_status(DRAFT_STARTED):
-            if draft.job_settled or not draft.job_ref:
+            if not draft.job_ref:
                 continue
-            if draft.candidate_message_id is not None:
-                continue  # 候选已投影；等待审阅期间不做任何事（不自动接受）。
             fetched = self._job_getter(draft.job_ref)
             job = await fetched if isawaitable(fetched) else fetched
             if job is None:
                 continue
             state = str(job.get("state", ""))
-            if state == "waiting":
+            if (
+                state == "waiting"
+                and draft.candidate_message_id is None
+                and job.get("job_type") != "change"
+            ):
                 if await self._project_candidate(draft, job):
                     projected += 1
-            elif state in ("completed", "terminal_failed", "cancelled"):
-                await self._update_draft(
-                    draft, {**draft.to_dict(), "job_settled": True}
-                )
+                draft = await self._drafts.get_draft(draft.draft_id) or draft
+            await self._project_execution(draft, job)
+            if state in ("completed", "terminal_failed", "cancelled") and not draft.job_settled:
+                await self._update_draft(draft, {**draft.to_dict(), "job_settled": True})
         return projected
+
+    async def _project_execution(self, draft: TaskDraft, job: dict[str, Any]) -> None:
+        states = {
+            "queued": ("queued", "已排队"),
+            "running": ("running", "模型执行中"),
+            "waiting": ("waiting", "候选已返回，等待作者审阅"),
+            "completed": ("completed", "任务已完成"),
+            "retryable_failed": ("queued", "环境故障，等待重试"),
+            "terminal_failed": ("failed", "执行失败，需要处理"),
+            "cancelled": ("cancelled", "任务已取消"),
+        }
+        state, stage = states.get(str(job.get("state")), ("queued", "已排队"))
+        stage = str(job.get("stage") or stage)
+        output = dict(job.get("output") or {})
+        error = None
+        if state == "failed":
+            error = {
+                "code": "TASK_EXECUTION_FAILED",
+                "category": output.get("category", "environment"),
+                "where": "task.execute",
+                "why": output.get("reason", "任务执行失败"),
+                "fix": "查看任务详情并处理原因后，重新准备任务",
+            }
+        binding = dict((job.get("payload") or {}).get("model_binding") or {})
+        payload = {
+            "job_ref": draft.job_ref,
+            "draft_id": draft.draft_id,
+            "task_kind": draft.task_kind,
+            "state": state,
+            "stage": stage,
+            "model": binding.get("model", ""),
+            "candidate_message_id": draft.candidate_message_id,
+            "error": error,
+            "change_ref": job.get("change_ref"),
+        }
+        message_id = f"{draft.message_id}:execution"
+        message = await self._conversations.get_message(message_id)
+        if message is None:
+            message = m.ChatMessage(
+                message_id,
+                draft.conversation_id,
+                None,
+                m.ROLE_SYSTEM,
+                m.KIND_TASK_EXECUTION,
+                "",
+                created_at=draft.created_at,
+            )
+        if message.payload == payload:
+            return
+        await self._conversations.append_message(replace(message, payload=payload))
+        await self._conversations.append_event(
+            project_id=draft.project_id,
+            conversation_id=draft.conversation_id,
+            turn_id=None,
+            event={"type": "task.updated", "message_id": message_id, "execution": payload},
+        )
 
     async def _project_candidate(self, draft: TaskDraft, job: dict[str, Any]) -> bool:
         output = dict(job.get("output") or {})
@@ -91,7 +149,7 @@ class ChatTaskProjector:
             "accepted": False,
         }
         now = datetime.now().astimezone().isoformat()
-        message_id = f"msg_{uuid.uuid4().hex[:16]}"
+        message_id = f"{draft.message_id}:candidate"
         await self._conversations.append_message(
             m.ChatMessage(
                 message_id=message_id,
@@ -115,9 +173,7 @@ class ChatTaskProjector:
                 "candidate": payload,
             },
         )
-        await self._update_draft(
-            draft, {**draft.to_dict(), "candidate_message_id": message_id}
-        )
+        await self._update_draft(draft, {**draft.to_dict(), "candidate_message_id": message_id})
         return True
 
     async def _update_draft(self, _draft: TaskDraft, record: dict[str, Any]) -> None:

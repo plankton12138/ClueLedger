@@ -51,6 +51,9 @@ class WorkerJobRunner:
         key: str,
         model_binding: Mapping[str, object] | None = None,
     ) -> str:
+        binding_provider = getattr(self.runner, "model_binding", None)
+        if model_binding is None and binding_provider is not None:
+            model_binding = binding_provider()
         payload: dict[str, object] = {
             "project_id": context.project_id,
             "idempotency_key": key,

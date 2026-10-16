@@ -74,7 +74,12 @@ async def test_create_draft_builds_message_and_event_without_auto_refs() -> None
     service, conversations, starter = _service()
     conversation_id = await _conversation(conversations)
     draft, message_id = await service.create_draft(
-        "p1", conversation_id, "chapter_draft", instruction="写第一章", goal="ch_1"
+        "p1",
+        conversation_id,
+        "chapter_draft",
+        instruction="写第一章",
+        goal="ch_1",
+        target_ids=["beat_1"],
     )
     assert starter.calls == []  # 建议无执行权限：创建不启动任何任务
     assert draft.revision == 1
@@ -103,8 +108,16 @@ async def test_create_from_message_copies_its_refs_and_records_source() -> None:
         role=m.ROLE_AUTHOR,
         kind=m.KIND_TEXT,
         text="结合这段",
-        refs=[{"ref_id": "r1", "kind": "chapter", "target_id": "ch_1",
-               "title": "第一章", "version": "c001", "saved": True}],
+        refs=[
+            {
+                "ref_id": "r1",
+                "kind": "chapter",
+                "target_id": "ch_1",
+                "title": "第一章",
+                "version": "c001",
+                "saved": True,
+            }
+        ],
     )
     await conversations.append_message(source)
     draft, message_id = await service.create_draft(
@@ -140,15 +153,15 @@ async def test_adjust_bumps_revision_and_recomputes_missing() -> None:
     service, conversations, _ = _service(view=NO_PLAN_VIEW)
     conversation_id = await _conversation(conversations)
     draft, _ = await service.create_draft("p1", conversation_id, "chapter_draft", goal="ch_1")
-    assert [x["code"] for x in draft.missing] == ["TASK_NO_PLAN"]
+    assert {x["code"] for x in draft.missing} == {"TASK_NO_BEAT_TARGET", "TASK_NO_PLAN"}
 
     adjusted = await service.adjust_draft(
-        "p1", draft.draft_id, expected_revision=1, patch={"target_ids": ["ch_1"]}
+        "p1", draft.draft_id, expected_revision=1, patch={"target_ids": ["beat_1"]}
     )
     assert adjusted.revision == 2
     # NO_PLAN_VIEW 下缺节拍依旧；换到完整视图重算后缺失清空由测试数据决定，
     # 这里断言缺失被重新计算而不是沿用旧值。
-    assert adjusted.missing == [x for x in draft.missing if x["code"] != "TASK_NO_CHAPTER_TARGET"]
+    assert adjusted.missing == [x for x in draft.missing if x["code"] == "TASK_NO_PLAN"]
 
 
 @pytest.mark.anyio
@@ -197,7 +210,7 @@ async def test_start_binds_job_ref_and_emits_linked_event() -> None:
     service, conversations, starter = _service()
     conversation_id = await _conversation(conversations)
     draft, message_id = await service.create_draft(
-        "p1", conversation_id, "chapter_draft", goal="ch_1"
+        "p1", conversation_id, "chapter_draft", goal="ch_1", target_ids=["beat_1"]
     )
     started = await service.start_draft("p1", draft.draft_id, 1, "k1")
     assert starter.calls == [("p1", draft.draft_id, "k1")]
@@ -209,7 +222,7 @@ async def test_start_binds_job_ref_and_emits_linked_event() -> None:
     assert linked[0].event["job_ref"] == "job_1"
     assert linked[0].event["task_kind"] == "chapter_draft"
     assert linked[0].event["model"] == "test-model"
-    assert linked[0].event["message_id"] == message_id
+    assert linked[0].event["message_id"] == f"{message_id}:execution"
 
 
 @pytest.mark.anyio

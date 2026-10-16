@@ -11,7 +11,7 @@ SSE 与历史重放两个入口看到同一份事实。
 
 from __future__ import annotations
 
-import threading
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -49,6 +49,7 @@ class TaskPrepService:
         starter: Starter | None = None,
         model_label: Callable[[], str | None] | None = None,
         accepter: Callable[[str, str], Awaitable[dict[str, Any]]] | None = None,
+        ref_validator: Callable[[str, list[dict[str, Any]]], None] | None = None,
     ) -> None:
         self._drafts = drafts
         self._conversations = conversations
@@ -58,7 +59,8 @@ class TaskPrepService:
         # 候选接受入口（19.5）：注入既有工作流的 accept（job_ref, expected_head），
         # 服务本身不实现第二套审阅规则（§3.3：聊天文本不代替审批）。
         self._accepter = accepter
-        self._lock = threading.Lock()
+        self._ref_validator = ref_validator
+        self._lock = asyncio.Lock()
 
     # -- 助手 ---------------------------------------------------------------
     def _now(self) -> str:
@@ -85,9 +87,7 @@ class TaskPrepService:
             )
         return draft
 
-    async def _emit(
-        self, draft: TaskDraft, event: dict[str, Any]
-    ) -> None:
+    async def _emit(self, draft: TaskDraft, event: dict[str, Any]) -> None:
         await self._conversations.append_event(
             project_id=draft.project_id,
             conversation_id=draft.conversation_id,
@@ -127,6 +127,7 @@ class TaskPrepService:
         goal: str = "",
         target_ids: list[str] | None = None,
         source_message_id: str | None = None,
+        refs: list[dict[str, Any]] | None = None,
     ) -> tuple[TaskDraft, str]:
         await self._require_conversation(project_id, conversation_id)
         if task_kind not in TASK_KINDS:
@@ -136,7 +137,7 @@ class TaskPrepService:
                 why=f"未知任务类型 {task_kind!r}",
                 fix=f"使用 {sorted(TASK_KINDS)} 之一",
             )
-        refs: list[dict[str, Any]] = []
+        refs = [dict(r) for r in refs or []]
         basis: list[str] = []
         if source_message_id is not None:
             source = await self._conversations.get_message(source_message_id)
@@ -148,9 +149,12 @@ class TaskPrepService:
                     fix="从当前会话的一条消息重新准备任务",
                 )
             # 引用只来自作者明确指定的源消息，不做任何自动附加。
-            refs = [dict(r) for r in source.refs]
+            refs = [dict(r) for r in source.refs] + refs
             basis = [str(r.get("title", "")) for r in refs if r.get("title")]
-        with self._lock:
+            instruction = instruction or source.text
+        if self._ref_validator is not None:
+            self._ref_validator(project_id, refs)
+        async with self._lock:
             view = self._project_view(project_id)
             now = self._now()
             draft_id = f"draft_{uuid.uuid4().hex[:16]}"
@@ -195,8 +199,11 @@ class TaskPrepService:
             )
             await self._emit(
                 draft,
-                {"type": "task.draft.created", "draft": draft.to_payload(),
-                 "message_id": message_id},
+                {
+                    "type": "task.draft.created",
+                    "draft": draft.to_payload(),
+                    "message_id": message_id,
+                },
             )
         return draft, message_id
 
@@ -218,7 +225,7 @@ class TaskPrepService:
         patch: dict[str, Any] | None = None,
     ) -> TaskDraft:
         patch = dict(patch or {})
-        with self._lock:
+        async with self._lock:
             draft = await self._require_draft(project_id, draft_id)
             if draft.status == DRAFT_ABANDONED:
                 raise ViolationError(
@@ -240,8 +247,10 @@ class TaskPrepService:
                     where="task.draft.adjust",
                     why=f"建议已被修改为修订 {draft.revision}，提交基于修订 {expected_revision}",
                     fix="重新读取任务建议后基于最新修订调整",
-                    details={"current_revision": draft.revision,
-                             "expected_revision": expected_revision},
+                    details={
+                        "current_revision": draft.revision,
+                        "expected_revision": expected_revision,
+                    },
                 )
             view = self._project_view(project_id)
             instruction = str(patch.get("instruction", draft.instruction))
@@ -271,7 +280,7 @@ class TaskPrepService:
 
     # -- 放弃 ------------------------------------------------------------------
     async def abandon_draft(self, project_id: str, draft_id: str) -> None:
-        with self._lock:
+        async with self._lock:
             draft = await self._require_draft(project_id, draft_id)
             if draft.status == DRAFT_ABANDONED:
                 return  # 幂等放弃。
@@ -307,7 +316,7 @@ class TaskPrepService:
                 why="缺少幂等键，无法区分重放与新请求",
                 fix="为每次启动生成稳定 UUID 作为 idempotency_key",
             )
-        with self._lock:
+        async with self._lock:
             draft = await self._require_draft(project_id, draft_id)
             if draft.status == DRAFT_ABANDONED:
                 raise ViolationError(
@@ -332,8 +341,10 @@ class TaskPrepService:
                     where="task.draft.start",
                     why=f"建议已被修改为修订 {draft.revision}，启动基于修订 {expected_revision}",
                     fix="重新读取任务建议后用最新修订启动",
-                    details={"current_revision": draft.revision,
-                             "expected_revision": expected_revision},
+                    details={
+                        "current_revision": draft.revision,
+                        "expected_revision": expected_revision,
+                    },
                 )
             view = self._project_view(project_id)
             if draft.base_version is not None and view.head != draft.base_version:
@@ -352,6 +363,8 @@ class TaskPrepService:
                     fix="按缺失项逐条补齐后重试；每条缺失都写明了做法",
                     details={"missing": list(draft.missing)},
                 )
+            if self._ref_validator is not None:
+                self._ref_validator(project_id, [dict(r) for r in draft.refs])
             if self._starter is None:
                 raise ViolationError(
                     code=ec.TASK_START_UNSUPPORTED,
@@ -360,7 +373,11 @@ class TaskPrepService:
                     fix="使用既有任务页提交入口，或部署完整服务",
                 )
             job_ref = await self._starter(project_id, draft, idempotency_key)
-            model = self._model_label() if self._model_label is not None else None
+            # starter 可能登记绑定；不要用启动前的旧 draft 覆盖它。
+            draft = await self._require_draft(project_id, draft_id)
+            model = (draft.model_binding or {}).get("model") or (
+                self._model_label() if self._model_label is not None else None
+            )
             started = TaskDraft(
                 **{
                     **draft.to_dict(),
@@ -372,6 +389,31 @@ class TaskPrepService:
             )
             await self._drafts.update_draft(started)
             await self._sync_message(started)
+            await self._emit(started, {"type": "task.draft.updated", "draft": started.to_payload()})
+            execution_id = f"{draft.message_id}:execution"
+            execution = {
+                "job_ref": job_ref,
+                "draft_id": draft_id,
+                "task_kind": draft.task_kind,
+                "state": "queued",
+                "stage": "已排队",
+                "model": model or "",
+                "candidate_message_id": None,
+                "error": None,
+            }
+            await self._conversations.append_message(
+                m.ChatMessage(
+                    execution_id,
+                    draft.conversation_id,
+                    None,
+                    m.ROLE_SYSTEM,
+                    m.KIND_TASK_EXECUTION,
+                    "",
+                    payload=execution,
+                    created_at=self._now(),
+                    model=model,
+                )
+            )
             await self._emit(
                 started,
                 {
@@ -380,20 +422,17 @@ class TaskPrepService:
                     "job_ref": job_ref,
                     "task_kind": draft.task_kind,
                     "model": model or "",
-                    "message_id": draft.message_id,
+                    "message_id": execution_id,
                 },
             )
             return started
 
-    async def record_binding(
-        self, project_id: str, draft_id: str, binding: dict[str, Any]
-    ) -> None:
+    async def record_binding(self, project_id: str, draft_id: str, binding: dict[str, Any]) -> None:
         """把启动时的模型快照持久化到 draft（装配层启动映射完成后调用）。"""
         draft = await self._require_draft(project_id, draft_id)
         await self._drafts.update_draft(
             TaskDraft.from_dict(
-                {**draft.to_dict(), "model_binding": dict(binding),
-                 "updated_at": self._now()}
+                {**draft.to_dict(), "model_binding": dict(binding), "updated_at": self._now()}
             )
         )
 
@@ -442,9 +481,10 @@ class TaskPrepService:
         if payload.get("accepted"):
             # 幂等重放：返回既有结果消息的 payload。
             for existing in await self._conversations.list_messages(conversation_id):
-                if existing.kind == m.KIND_RESULT and (
-                    existing.payload or {}
-                ).get("job_ref") == job_ref:
+                if (
+                    existing.kind == m.KIND_RESULT
+                    and (existing.payload or {}).get("job_ref") == job_ref
+                ):
                     return dict(existing.payload or {})
         if self._accepter is None:
             raise ViolationError(

@@ -262,7 +262,13 @@ class AgentWorkflows:
         return await self.jobs.submit(ctx, key)
 
     async def repair(
-        self, project: ProjectId, change_set_id: str, key: str, executor: ExecuteRevisionPlan
+        self,
+        project: ProjectId,
+        change_set_id: str,
+        key: str,
+        executor: ExecuteRevisionPlan,
+        *,
+        model_binding: Mapping[str, object] | None = None,
     ) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
         owner = self
@@ -302,7 +308,9 @@ class AgentWorkflows:
                             "仅修改本步骤 targets，不扩张审批范围；patch 携带 base_revision_id",
                         ),
                     )
-                    jid = await owner.jobs.submit(ctx, f"{key}:{step.step_id}:{ctx.context_id}")
+                    jid = await owner.jobs.submit(
+                        ctx, f"{key}:{step.step_id}:{ctx.context_id}", model_binding=model_binding
+                    )
                     job = await owner.jobs.execute(jid)
                     if job["state"] != "waiting" or job["output"]["kind"] != "manuscript_patch":
                         if job.get("output", {}).get("kind") == "no_result":

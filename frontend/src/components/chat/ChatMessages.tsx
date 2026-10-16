@@ -121,8 +121,10 @@ function TextMessage({ message }: { message: ChatMessage }) {
 
 export default function ChatMessages({
   onReviewCandidate,
+  onOpenChange,
 }: {
-  onReviewCandidate(): void;
+  onReviewCandidate(message: ChatMessage): void;
+  onOpenChange(changeId: string): void;
 }) {
   const messages = useChatStore(activeMessages);
   const turns = useChatStore(activeTurns);
@@ -207,6 +209,7 @@ export default function ChatMessages({
               }}
               onCancel={(jobRef) => void cancelTask(jobRef)}
               onRetry={(jobRef) => void retryTask(jobRef)}
+              onOpenChange={onOpenChange}
             />
           );
         if (m.kind === "candidate")
@@ -214,7 +217,7 @@ export default function ChatMessages({
             <div key={m.message_id} id={`chat-msg-${m.message_id}`}>
               <CandidateCard
                 message={m}
-                onReview={onReviewCandidate}
+                onReview={() => onReviewCandidate(m)}
                 onAccept={(id) => void acceptCandidate(id)}
               />
             </div>

@@ -51,6 +51,8 @@ def runtime(runner: FakeRunner) -> V2Runtime:
     runtime = V2Runtime.memory()
     runtime.chat.runner_factory = lambda: runner
     runtime.chat.model_resolver = lambda: "test-model"
+    runtime.chat.binding_resolver = None
+    runtime.chat.bound_runner_factory = None
     return runtime
 
 
@@ -301,6 +303,8 @@ def test_startup_marks_stale_turns_interrupted(tmp_path: Any) -> None:
     runtime = V2Runtime.sqlite(str(db))
     runtime.chat.runner_factory = lambda: FakeRunner()
     runtime.chat.model_resolver = lambda: "test-model"
+    runtime.chat.binding_resolver = None
+    runtime.chat.bound_runner_factory = None
 
     async def seed() -> None:
         conversation = await runtime.chat.create_conversation("proj_stale")

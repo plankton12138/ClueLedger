@@ -222,6 +222,7 @@ class ChatTurn:
     end_reason: str | None
     idempotency_key: str
     retry_of: str | None = None
+    model_binding: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -232,6 +233,7 @@ class ChatTurn:
             "end_reason": self.end_reason,
             "idempotency_key": self.idempotency_key,
             "retry_of": self.retry_of,
+            "model_binding": self.model_binding,
         }
 
     @classmethod
@@ -252,6 +254,7 @@ class ChatTurn:
             end_reason=None if data.get("end_reason") is None else str(data["end_reason"]),
             idempotency_key=str(data.get("idempotency_key", "")),
             retry_of=None if data.get("retry_of") is None else str(data["retry_of"]),
+            model_binding=dict(data["model_binding"]) if data.get("model_binding") else None,
         )
 
 

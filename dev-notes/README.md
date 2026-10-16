@@ -20,7 +20,7 @@
 
 ## 当前入口
 
-- 下一阶段开发计划：[Phase 19：常驻对话侧栏与显式创作周期](v2/plans/phase-19-chat-workbench-plan.md)，先设计前端交互，再实现流式对话与明确触发的创作闭环；尚未实施。
+- 当前阶段：[Phase 19：常驻对话侧栏与显式创作周期](v2/phase-19-chat-workbench.md)，主体已交付；[代码审查修复](v2/phase-19-review-fixes.md) 已补真实 HTTP/SSE 与浏览器闭环，真模型 A13 仍待验收。
 
 - 最新模型接入：[Phase 18：模型接入与切换](v2/phase-18-model-access.md)，含国内 API / Coding Plan 预设与本地模型。
 - 当前目标设计：[v2/DESIGN.md](v2/DESIGN.md)

@@ -14,6 +14,7 @@ import { activeConversations, activeView, simulator, useChatStore } from "../../
 import { useV2Store } from "../../state/v2";
 import ChatMessages from "./ChatMessages";
 import ChatComposer from "./ChatComposer";
+import type { ChatMessage } from "../../api/chat";
 
 const MIN_W = 320;
 const MAX_W = 560;
@@ -37,11 +38,13 @@ export default function ChatSidebar({
   narrow,
   onClose,
   onReviewCandidate,
+  onOpenChange,
 }: {
   open: boolean;
   narrow: boolean;
   onClose(): void;
-  onReviewCandidate(): void;
+  onReviewCandidate(message: ChatMessage): void;
+  onOpenChange(changeId: string): void;
 }) {
   const projectId = useV2Store((s) => s.currentId);
   const bindProject = useChatStore((s) => s.bindProject);
@@ -225,7 +228,7 @@ export default function ChatSidebar({
               </button>
             </div>
           )}
-          <ChatMessages onReviewCandidate={onReviewCandidate} />
+          <ChatMessages onReviewCandidate={onReviewCandidate} onOpenChange={onOpenChange} />
           <ChatComposer />
         </>
       )}

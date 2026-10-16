@@ -18,6 +18,8 @@ import type {
 } from "../../api/chat";
 import { taskKindLabels } from "../../api/chat";
 import { Pill } from "../Workbench";
+import { useV2Store } from "../../state/v2";
+import { titleOf } from "../Workbench";
 
 const executionLabels: Record<TaskExecutionPayload["state"], string> = {
   queued: "排队中",
@@ -48,6 +50,14 @@ export function TaskDraftCard({
   const [editing, setEditing] = useState(false);
   const [instruction, setInstruction] = useState(draft.instruction);
   const [goal, setGoal] = useState(draft.goal);
+  const [targets, setTargets] = useState(draft.target_ids);
+  const artifacts = useV2Store((s) => s.storyArtifacts);
+  const chapters = useV2Store((s) => s.chapters);
+  const options = draft.task_kind === "chapter_draft"
+    ? artifacts.filter((a) => ["narrative.beat", "story.plot_beat"].includes(a.kind))
+        .map((a) => ({ id: a.artifact_id, title: titleOf(a) }))
+    : [...artifacts.map((a) => ({ id: a.artifact_id, title: titleOf(a) })),
+       ...chapters.map((c) => ({ id: c.chapter_id, title: c.title }))];
   const started = draft.job_ref !== null;
   if (abandoned) {
     return (
@@ -84,8 +94,10 @@ export function TaskDraftCard({
       </dl>
       {draft.missing.length > 0 && (
         <ul className="chat-card-missing" aria-label="缺失项">
-          {draft.missing.map((m) => (
-            <li key={m}>{m}</li>
+          {draft.missing.map((m, i) => (
+            <li key={typeof m === "string" ? m : `${m.code}:${i}`}>
+              {typeof m === "string" ? m : `${m.why}；${m.fix}`}
+            </li>
           ))}
         </ul>
       )}
@@ -94,7 +106,7 @@ export function TaskDraftCard({
           className="chat-card-form"
           onSubmit={(e) => {
             e.preventDefault();
-            onAdjust(draft.draft_id, { instruction, goal });
+            onAdjust(draft.draft_id, { instruction, goal, target_ids: targets });
             setEditing(false);
           }}
         >
@@ -107,6 +119,16 @@ export function TaskDraftCard({
               aria-label="任务说明"
             />
           </label>
+          <fieldset className="field">
+            <legend>{draft.task_kind === "chapter_draft" ? "已接受节拍" : "任务范围"}</legend>
+            {options.map((option) => <label key={option.id} className="flex gap-2 text-xs">
+              <input type="checkbox" checked={targets.includes(option.id)}
+                onChange={(e) => setTargets(e.target.checked
+                  ? [...targets, option.id] : targets.filter((id) => id !== option.id))} />
+              {option.title}
+            </label>)}
+            {options.length === 0 && <span>暂无可选对象，请先规划并接受故事内容。</span>}
+          </fieldset>
           <label className="field">
             目标
             <input
@@ -172,11 +194,13 @@ export function TaskExecutionCard({
   onView,
   onCancel,
   onRetry,
+  onOpenChange,
 }: {
   message: ChatMessage;
   onView(candidateMessageId: string): void;
   onCancel(jobRef: string): void;
   onRetry(jobRef: string): void;
+  onOpenChange(changeId: string): void;
 }) {
   const execution = message.payload as TaskExecutionPayload;
   const tone =
@@ -207,6 +231,8 @@ export function TaskExecutionCard({
         </p>
       )}
       <div className="chat-card-actions">
+        {execution.change_ref && <button className="btn px-3 py-1.5 text-xs"
+          onClick={() => onOpenChange(execution.change_ref!)}>打开变更流程</button>}
         {execution.state === "waiting" && execution.candidate_message_id && (
           <button
             className="btn px-3 py-1.5 text-xs"
@@ -223,7 +249,7 @@ export function TaskExecutionCard({
             重试任务
           </button>
         )}
-        {!["completed", "cancelled", "failed"].includes(execution.state) && (
+        {!execution.change_ref && !["completed", "cancelled", "failed"].includes(execution.state) && (
           <button
             className="btn btn-gray px-3 py-1.5 text-xs"
             onClick={() => onCancel(execution.job_ref)}

@@ -6,7 +6,7 @@
 
 ## 当前新增计划
 
-- [Phase 19：常驻对话侧栏与显式创作周期](phase-19-chat-workbench-plan.md)（待实施）：以前端原型驱动接口，补齐流式聊天、上下文引用与任务/审阅联动；普通发送不启动创作。
+- [Phase 19：常驻对话侧栏与显式创作周期](phase-19-chat-workbench-plan.md)（主体交付，审查缺陷已修复；真模型 A13 待验）：实际边界与回归见 [审查修复记录](../phase-19-review-fixes.md)。
 - Phase 18 模型接入已交付，记录见 [模型接入与切换](../phase-18-model-access.md)。下文 Phase 11–17 表保留原重建计划和历史依赖。
 
 ## 1. 阶段依赖

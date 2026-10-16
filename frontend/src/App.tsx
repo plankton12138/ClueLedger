@@ -38,6 +38,8 @@ import { useV2Events } from "./state/v2socket";
 import ChatSidebar, { ChatToggle, OPEN_KEY } from "./components/chat/ChatSidebar";
 import { mockEnabled, useChatStore } from "./state/chat";
 import { layoutKind } from "./layout";
+import ChatCandidateReview from "./components/chat/ChatCandidateReview";
+import type { ChatMessage } from "./api/chat";
 const nav: { key: View; label: string; Icon: LucideIcon }[] = [
   { key: "overview", label: "项目概览", Icon: LayoutDashboard },
   { key: "studio", label: "创作台", Icon: Feather },
@@ -65,6 +67,7 @@ export default function App() {
     [modelsOpen, setModelsOpen] = useState(false),
     [query, setQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
+  const [candidate, setCandidate] = useState<{ projectId: string; message: ChatMessage } | null>(null);
   // 对话栏：桌面收起/展开（持久化），窄屏以覆盖面板打开（不持久化）。
   const [chatOpen, setChatOpen] = useState(() =>
     readChatOpen(layoutKind(window.innerWidth) === "narrow"),
@@ -91,6 +94,7 @@ export default function App() {
     }
   }, [chatOpen, narrow, setPinned]);
   useEffect(() => {
+    setCandidate(null);
     if (!s.currentId) return;
     const state = useV2Store.getState();
     void state.refreshManuscript();
@@ -281,7 +285,11 @@ export default function App() {
             {view === "studio" && <StudioPage />}
             {view === "ledger" && <LedgerPage onNavigate={setView} />}
             {view === "changes" && <ChangesPage onNavigate={setView} />}
-            {view === "review" && <ChangesPage review onNavigate={setView} />}
+            {view === "review" && (candidate && candidate.projectId === s.currentId
+              ? <ChatCandidateReview key={candidate.message.message_id}
+                  candidate={candidate.message} projectId={candidate.projectId}
+                  onClose={() => setCandidate(null)} />
+              : <ChangesPage review onNavigate={setView} />)}
             {view === "audit" && <AuditPage onNavigate={setView} />}
             {view === "model" && <AuthorModelPage />}
           </ErrorBoundary>
@@ -290,8 +298,15 @@ export default function App() {
           open={chatOpen}
           narrow={narrow}
           onClose={() => setChatOpen(false)}
-          onReviewCandidate={() => {
+          onReviewCandidate={(message) => {
+            if (s.currentId) setCandidate({ projectId: s.currentId, message });
             setView("review");
+            if (narrow) setChatOpen(false);
+          }}
+          onOpenChange={(changeId) => {
+            useV2Store.setState({ selectedChangeId: changeId });
+            void s.refreshChanges();
+            setView("changes");
             if (narrow) setChatOpen(false);
           }}
         />
