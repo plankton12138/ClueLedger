@@ -280,6 +280,22 @@ def test_save_server_config_empty_fields_tolerated_on_reload(tmp_path: Path) -> 
     assert reloaded.providers[0].default_model == ""
 
 
+def test_failed_atomic_replace_keeps_previous_credentials(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "config.yaml"
+    original = ServerConfig(providers=[_profile("original")])
+    save_server_config(original, path)
+    previous = path.read_bytes()
+
+    def fail(*args):
+        raise OSError("replace failed")
+
+    monkeypatch.setattr("hastings.server.provider_config.os.replace", fail)
+    with pytest.raises(OSError):
+        save_server_config(ServerConfig(providers=[_profile("new")]), path)
+    assert path.read_bytes() == previous
+    assert list(tmp_path.iterdir()) == [path]
+
+
 def test_update_config_prunes_removed_instance_cache() -> None:
     """update_config 换磁盘事实并清理已删档案的实例缓存（仍用档案保留）。"""
     book = ProviderBook(

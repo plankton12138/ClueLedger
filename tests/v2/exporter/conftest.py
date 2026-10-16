@@ -1,22 +1,21 @@
-"""tests/v2/exporter 公共夹具：内存仓库 + V1 fixture 导入后的可导出项目。"""
+"""导出测试直接创建 V2 项目，不依赖旧工作区或迁移器。"""
 
-from __future__ import annotations
-
-import shutil
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from hastings.bible.models import Clue
-from hastings.bible.store import StoryWorkspace, load_ledger, save_ledger
-from hastings.domain.repository.ids import Actor, ProjectId
+from hastings.application.handlers.manuscript_commands import (
+    ManuscriptCommandHandler,
+    manuscript_command,
+)
+from hastings.domain.manuscript.commands import import_chapter
+from hastings.domain.repository.ids import Actor, ArtifactId, ProjectId
+from hastings.domain.repository.requests import ArtifactChange, CommitRequest, RelationChange
+from hastings.domain.story.canon.models import Character
 from hastings.infrastructure.repository.memory import build_memory_repository
-from hastings.interfaces.importers.v1_workspace_importer import V1WorkspaceImporter
+from hastings.infrastructure.runtime import SystemClock, UuidIdGenerator
 
-FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "v1_workspace" / "winter-manor-case"
-SLUG = "winter-manor-case"
 ACTOR = Actor(kind="human", id="exporter")
 
 
@@ -27,30 +26,50 @@ class ExportEnv:
     head: str
 
 
-def _imported_env(tmp_path: Path) -> ExportEnv:
-    """V1 基准 fixture（阻断项已由作者解决）→ 幂等导入 → 可导出的 V2 项目。"""
-    from hastings.infrastructure.runtime import SystemClock, UuidIdGenerator
-
-    clock, ids = SystemClock(), UuidIdGenerator()
-    repo = build_memory_repository(clock, ids)
-    service = repo.service
-
-    root = tmp_path / "root"
-    root.mkdir()
-    shutil.copytree(FIXTURE, root / SLUG)
-    workspace = StoryWorkspace(root=root, slug=SLUG)
-    clues = load_ledger(workspace.clues_path, Clue)
-    save_ledger(workspace.clues_path, [c for c in clues if not c.is_red_herring])
-    save_ledger(workspace.method_path, [])
-
-    importer = V1WorkspaceImporter(service, service, actor=ACTOR)
-    report = importer.dry_run(workspace)
-    project = service.create_project("导出源").id
-    result = importer.apply(workspace, project_id=project, confirm_run_id=report.run_id)
-    assert result.validation.ok, f"夹具导入失败：{result.validation.failures}"
-    return ExportEnv(service=service, project=project, head=result.new_head)
-
-
 @pytest.fixture
-def imported_project(tmp_path: Path) -> ExportEnv:
-    return _imported_env(tmp_path)
+def native_project() -> ExportEnv:
+    ids = UuidIdGenerator()
+    service = build_memory_repository(SystemClock(), ids).service
+    project = service.create_project("导出源").id
+    handler = ManuscriptCommandHandler(service, service, ids, ACTOR)
+    for index in range(1, 4):
+        handler.execute(
+            manuscript_command(
+                import_chapter,
+                chapter_id=f"chapter-{index}",
+                title=f"第{index}章",
+                text=f"第{index}章的开场。\n\n雨声从窗外传来。",
+                order_key=f"{index:04d}",
+            ),
+            project_id=project,
+            idempotency_key=f"chapter-{index}",
+            summary=f"创建第{index}章",
+        )
+    branch = service.get_branch(project, "main")
+    result = service.commit(
+        CommitRequest(
+            project_id=project,
+            branch_id=branch.id,
+            expected_head=branch.head_commit_id,
+            actor=ACTOR,
+            idempotency_key="character",
+            summary="登记角色及章节依赖",
+            changes=(
+                ArtifactChange(
+                    artifact_id=ArtifactId("character-1"),
+                    kind="story.character",
+                    content=Character(name="侦探", identity="调查者", goal="查明真相").to_content(),
+                ),
+            ),
+            relations=(
+                RelationChange(
+                    action="add",
+                    source=ArtifactId("chapter-1"),
+                    relation_type="references",
+                    target=ArtifactId("character-1"),
+                ),
+            ),
+        )
+    )
+    assert result.new_head is not None
+    return ExportEnv(service=service, project=project, head=result.new_head.value)

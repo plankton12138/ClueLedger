@@ -201,6 +201,7 @@ def test_rest_providers_lists_profiles_with_masked_keys(root: Path) -> None:
                 "base_url": "https://api.deepseek.com/v1",
                 "default_model": "deepseek-chat",
                 "key_hint": "…5678",
+                "catalog_id": "",
                 "available": True,
                 "no_auth": False,
             },
@@ -209,6 +210,7 @@ def test_rest_providers_lists_profiles_with_masked_keys(root: Path) -> None:
                 "base_url": "https://api.example.com/v1",
                 "default_model": "",
                 "key_hint": "",
+                "catalog_id": "",
                 "available": False,
                 "no_auth": False,
             },
@@ -380,6 +382,24 @@ def test_upsert_provider_update_with_blank_key_keeps_old_secret(root: Path) -> N
     assert response.json()["base_url"] == "https://api.deepseek.com/v2"
     config_text = (root / "config.yaml").read_text(encoding="utf-8")
     assert "sk-deepseek-12345678" in config_text  # 旧 key 原样保留
+
+
+def test_upsert_provider_omitted_auth_fields_preserve_existing_mode(root: Path) -> None:
+    """新设置抽屉只改默认模型时，不应清空不可回显的环境密钥来源。"""
+    env_profile = ProviderProfile(
+        name="from-env",
+        base_url="https://api.example.com/v1",
+        api_key_env="REVIEW_TEST_MODEL_KEY",
+        default_model="old-model",
+    )
+    client = _crud_client(root, _DEFAULT_PROFILE, env_profile)
+    response = client.put(
+        "/api/providers/from-env",
+        json={"base_url": env_profile.base_url, "default_model": "new-model"},
+    )
+    assert response.status_code == 200
+    config_text = (root / "config.yaml").read_text(encoding="utf-8")
+    assert "REVIEW_TEST_MODEL_KEY" in config_text
 
 
 def test_upsert_provider_update_with_new_key_replaces_secret(root: Path) -> None:

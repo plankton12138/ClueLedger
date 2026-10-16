@@ -24,10 +24,13 @@ def test_every_entry_has_complete_public_fields() -> None:
     """公开字段非空：缺一项，登录表单就有空预填。"""
     for entry in PROVIDER_CATALOG:
         assert entry.display_name, entry.name
-        assert entry.base_url.startswith("https://"), entry.name
-        assert entry.models, entry.name
-        assert entry.default_model in entry.models, entry.name
-        assert entry.api_key_env, entry.name
+        assert entry.base_url.startswith("http://" if entry.category == "local" else "https://"), (
+            entry.name
+        )
+        if entry.category != "local":
+            assert entry.models, entry.name
+            assert entry.default_model in entry.models, entry.name
+            assert entry.api_key_env, entry.name
         assert entry.key_url.startswith("https://"), entry.name
 
 

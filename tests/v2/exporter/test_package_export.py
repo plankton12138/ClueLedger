@@ -4,9 +4,7 @@
 package_hash 可重算）、往返（导出 → 重导入 → 内容/ID/关系逐项相等）、重导入幂等
 （同包重放返回原 Commit）、损坏包显式拒绝、指定历史 Commit 导出、REST zip 端点。
 
-往返的意义与迁移同构：导入器回答「V1 → V2 没丢东西」，导出器回答「V2 → 包 → V2
-还能还原」。两者共用同一套确定性 ID 与规范化文本哈希，使「导出可用」成为可核对
-的证据而不是一句承诺。
+往返验证回答「V2 → 包 → V2 还能还原」，逐项核对正文、对象身份与依赖关系。
 """
 
 from __future__ import annotations
@@ -20,6 +18,7 @@ import pytest
 
 from hastings.application.errors import ViolationError
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
+from hastings.domain.manuscript.diff import split_paragraphs
 from hastings.domain.repository.ids import Actor, ArtifactId, CommitId
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest
 from hastings.domain.story.canon.models import Character
@@ -35,7 +34,6 @@ from hastings.interfaces.exporters.v2_package_exporter import (
     write_package,
     zip_package,
 )
-from hastings.interfaces.importers.v1_workspace_importer import _text_hash
 
 ACTOR = Actor(kind="human", id="exporter")
 
@@ -60,13 +58,13 @@ def _chapter_entries(package) -> list[dict]:
 # --------------------------------------------------------------------------
 # 导出：结构与确定性
 # --------------------------------------------------------------------------
-def test_export_manifest_shape_and_integrity(imported_project) -> None:
-    package = _export(imported_project)
+def test_export_manifest_shape_and_integrity(native_project) -> None:
+    package = _export(native_project)
 
     assert package.manifest["kind"] == EXPORT_KIND
     assert package.manifest["schema_version"] == EXPORT_SCHEMA_VERSION
-    assert package.manifest["commit_id"] == imported_project.head
-    assert package.manifest["project_id"] == imported_project.project.value
+    assert package.manifest["commit_id"] == native_project.head
+    assert package.manifest["project_id"] == native_project.project.value
 
     # manifest 列出包内除自身外的每个文件，路径不重不漏
     paths = {entry["path"] for entry in package.manifest["files"]}
@@ -83,17 +81,17 @@ def test_export_manifest_shape_and_integrity(imported_project) -> None:
     assert package.package_hash == package_hash_of(package.manifest)
 
 
-def test_export_is_deterministic(imported_project) -> None:
-    first = _export(imported_project)
-    second = _export(imported_project)
+def test_export_is_deterministic(native_project) -> None:
+    first = _export(native_project)
+    second = _export(native_project)
     assert first.files == second.files
     assert first.manifest == second.manifest
     assert first.package_hash == second.package_hash
 
 
-def test_export_contains_readable_chapters_and_bible(imported_project) -> None:
-    """包是可读备份：Markdown 正文 + YAML 账本，且章数与导入报告一致。"""
-    package = _export(imported_project)
+def test_export_contains_readable_chapters_and_bible(native_project) -> None:
+    """包是可读备份：Markdown 正文 + YAML 账本，且原生项目的章节与账本均完整。"""
+    package = _export(native_project)
 
     chapters = _chapter_entries(package)
     assert len(chapters) == 3, "基准 fixture 有三章正文"
@@ -113,9 +111,9 @@ def test_export_contains_readable_chapters_and_bible(imported_project) -> None:
     assert package.manifest["counts"]["chars"] > 0
 
 
-def test_export_historical_commit_not_head(imported_project) -> None:
+def test_export_historical_commit_not_head(native_project) -> None:
     """指定历史 Commit 导出得到该时点内容：head 前移后旧 Commit 导出不变。"""
-    env = imported_project
+    env = native_project
     old = _export(env)
 
     # head 上追加一次真实提交（新增一个角色对象）
@@ -159,8 +157,8 @@ def test_export_historical_commit_not_head(imported_project) -> None:
 # --------------------------------------------------------------------------
 # 重导入：往返与幂等
 # --------------------------------------------------------------------------
-def test_roundtrip_reimport_restores_content(imported_project) -> None:
-    env = imported_project
+def test_roundtrip_reimport_restores_content(native_project) -> None:
+    env = native_project
     package = _export(env)
 
     target_service = _fresh_service()
@@ -182,7 +180,7 @@ def test_roundtrip_reimport_restores_content(imported_project) -> None:
     for entry in source_ms.chapters():
         source_text = "\n\n".join(u.model().text for u in source_ms.units_of(entry.artifact_id))
         target_text = "\n\n".join(u.model().text for u in target_ms.units_of(entry.artifact_id))
-        assert _text_hash(source_text) == _text_hash(target_text), entry.artifact_id
+        assert split_paragraphs(source_text) == split_paragraphs(target_text), entry.artifact_id
         assert source_ms.chapter_base(entry.artifact_id) == target_ms.chapter_base(
             entry.artifact_id
         ), "章基础（unit_id+文本）须逐位一致"
@@ -205,8 +203,8 @@ def test_roundtrip_reimport_restores_content(imported_project) -> None:
     assert source_rels == target_rels, "依赖边须逐条还原"
 
 
-def test_reimport_is_idempotent(imported_project) -> None:
-    env = imported_project
+def test_reimport_is_idempotent(native_project) -> None:
+    env = native_project
     package = _export(env)
     target_service = _fresh_service()
     target = target_service.create_project("幂等目标").id
@@ -220,8 +218,8 @@ def test_reimport_is_idempotent(imported_project) -> None:
     assert second.new_head == first.new_head
 
 
-def test_reimport_refuses_non_empty_project(imported_project) -> None:
-    env = imported_project
+def test_reimport_refuses_non_empty_project(native_project) -> None:
+    env = native_project
     package = _export(env)
     with pytest.raises(ViolationError) as exc:
         apply_exported_package(
@@ -237,8 +235,8 @@ def test_reimport_refuses_non_empty_project(imported_project) -> None:
 # --------------------------------------------------------------------------
 # 包完整性：损坏显式拒绝
 # --------------------------------------------------------------------------
-def test_verify_rejects_tampered_file(imported_project) -> None:
-    package = _export(imported_project)
+def test_verify_rejects_tampered_file(native_project) -> None:
+    package = _export(native_project)
     tampered = dict(package.files)
     chapter_path = _chapter_entries(package)[0]["path"]
     tampered[chapter_path] = tampered[chapter_path] + "被篡改的一段。\n".encode()
@@ -247,8 +245,8 @@ def test_verify_rejects_tampered_file(imported_project) -> None:
     assert "sha256" in exc.value.why or "哈希" in exc.value.why
 
 
-def test_verify_rejects_wrong_package_hash(imported_project) -> None:
-    package = _export(imported_project)
+def test_verify_rejects_wrong_package_hash(native_project) -> None:
+    package = _export(native_project)
     manifest = json.loads(package.files["manifest.json"])
     manifest["package_hash"] = "0" * 64
     tampered = dict(package.files)
@@ -262,14 +260,14 @@ def test_verify_rejects_wrong_package_hash(imported_project) -> None:
 # --------------------------------------------------------------------------
 # 磁盘表示与 zip
 # --------------------------------------------------------------------------
-def test_write_and_read_package_roundtrip(imported_project, tmp_path) -> None:
-    package = _export(imported_project)
+def test_write_and_read_package_roundtrip(native_project, tmp_path) -> None:
+    package = _export(native_project)
     directory = write_package(package, tmp_path / "pkg")
     assert read_package(directory) == package.files
 
 
-def test_zip_is_deterministic_and_contains_manifest(imported_project) -> None:
-    package = _export(imported_project)
+def test_zip_is_deterministic_and_contains_manifest(native_project) -> None:
+    package = _export(native_project)
     first = zip_package(package)
     second = zip_package(package)
     assert first == second, "同包两次打 zip 必须字节一致（不含时间戳漂移）"
@@ -281,12 +279,12 @@ def test_zip_is_deterministic_and_contains_manifest(imported_project) -> None:
 # --------------------------------------------------------------------------
 # REST 端点
 # --------------------------------------------------------------------------
-def test_rest_export_endpoint_returns_zip(imported_project) -> None:
+def test_rest_export_endpoint_returns_zip(native_project) -> None:
     from fastapi.testclient import TestClient
 
     from hastings.server.v2 import V2Runtime
 
-    env = imported_project
+    env = native_project
     runtime = V2Runtime.memory()
     # 把夹具仓库的服务面接到运行时上（同一内存仓库实例）
     runtime.service = env.service

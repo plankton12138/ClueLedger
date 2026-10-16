@@ -2,7 +2,7 @@
 
 历史演进：T17.6 时旧写端点仍挂载、靠 409 架构门拒 V2 项目；V1 直接弃用后
 （项目未上线，无存量用户），旧写端点**整体删除**——本文件证明它们不再可达，
-且设置写入仍保留项目架构元数据（迁移导入与 CLI V2 路由仍依赖它）。
+且设置写入仍保留项目架构元数据（旧运行时的架构判定仍依赖它）。
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ def test_legacy_edit_mark_is_404_for_any_workspace(tmp_path: Path) -> None:
 
 
 def test_settings_save_preserves_architecture_version(tmp_path: Path) -> None:
-    """V1 设置写入不得抹掉项目架构元数据（迁移导入与 CLI V2 路由仍依赖它）。"""
+    """V1 设置写入不得抹掉项目架构元数据（旧运行时的架构判定仍依赖它）。"""
     workspace = _make_workspace(tmp_path, SLUG, "v2")
     save_settings(workspace, StorySettings(writing_language="English"))
 

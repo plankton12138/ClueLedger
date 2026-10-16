@@ -239,7 +239,8 @@ def test_workflow_states_read_only_semantics() -> None:
     assert "read_chapter" in section
     assert "timeline_check" in section
     assert "没有任何写工具" in section
-    assert "V2 仓库项目" in section
+    assert "V2 工作台新建项目" in section
+    assert "迁移" not in section
 
 
 # --- 对话详略协议（P9 T1，D2）：结论先行/分条/≤300 字，交付物不受限 ---
