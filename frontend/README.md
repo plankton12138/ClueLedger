@@ -8,10 +8,13 @@
 在仓库根启动服务：
 
 ```powershell
-uv run python -m hastings.server --v2-db ./data/v2.sqlite
+uv run python -m hastings.server
 ```
 
 在本目录运行 `npm run dev`。开发服务器代理 `/api` 与 `/ws` 到本地 8000 端口；
+后端默认启用当前工作台：复用已有 `data/v2.db` 或 `data/v2.sqlite`，都不存在时创建
+`data/v2.db`。启动日志会打印实际数据库路径；需要打开其他仓库时传 `--v2-db <路径>`。
+两种默认文件同时存在时必须显式指定，避免打开错误的作品库。
 `npm run build` 生成生产文件。新建项目与编号找回在右上角「设置」。顶栏模型按钮可直接打开模型选择，也可从设置进入模型接入。
 选择厂商 / Coding Plan 后粘贴对应 Key，地址自动填写；保存连接后选模型并点击「使用此模型」。
 Ollama 保留检测、下载与安装引导，LM Studio 自动使用本地默认地址。需要其他服务时选择「自定义」。

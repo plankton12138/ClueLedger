@@ -21,7 +21,7 @@ tau 内核之上的**薄应用层**：装配（工具注册、system prompt、�
 
 V2 七页作者工作台入口见 [frontend/README.md](../../frontend/README.md) 与 [前端构建笔记](../../dev-notes/v2/phase-17-frontend-workbench.md)。项目身份/正文缓冲在 `frontend/src/state/v2.ts`，业务事件在 `state/v2socket.ts`；作者偏好声明与撤销的 HTTP 适配在 `interfaces/api/author_decisions.py`。
 
-Phase 15 的 V2 变更闭环见 [change-impact.md](../../dev-notes/v2/modules/change-impact.md)：`domain/changes/` 与 `application/workflows/{change_analysis,plan_revision,revision,review,rewrite,audit}.py`；HTTP 在 `interfaces/api/changes.py`，前端在 `frontend/src/components/ChangeCenter.tsx`。服务器通过 `uv run python -m hastings.server --v2-db ./data/v2.sqlite` 显式启用独立仓库，项目直接在 V2 中新建，旧工作区迁移已退役。
+Phase 15 的 V2 变更闭环见 [change-impact.md](../../dev-notes/v2/modules/change-impact.md)：`domain/changes/` 与 `application/workflows/{change_analysis,plan_revision,revision,review,rewrite,audit}.py`；HTTP 在 `interfaces/api/changes.py`，前端在 `frontend/src/components/ChangeCenter.tsx`。服务器通过 `uv run python -m hastings.server` 默认启用独立仓库，`--v2-db <路径>` 可指定作品库；默认路径与恢复规则见 [启动修复记录](../../dev-notes/v2/phase-19-default-startup.md)。项目直接在 V2 中新建，旧工作区迁移已退役。
 
 Phase 16 的无状态工作者与持久任务见 [orchestration-context.md](../../dev-notes/v2/modules/orchestration-context.md)：`agents/{schemas,roles,coordinator}.py`、`application/contexts/`、`application/workflows/{agent_workflows,worker_job}.py` 与 `infrastructure/agents/tau_runner.py`。Job/事件在 `infrastructure/jobs.py`，API 在 `interfaces/api/agents.py`；界面入口为“变更中心→规划与生成任务”（`AgentWorkbench.tsx`），服务生命周期负责恢复与派发。真模型评测入口为根目录 [eval/v2](../../eval/v2/README.md)，不使用旧 Hastings 工具。
 

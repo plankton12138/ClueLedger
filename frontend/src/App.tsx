@@ -36,7 +36,7 @@ import {
 } from "./state/v2";
 import { useV2Events } from "./state/v2socket";
 import ChatSidebar, { ChatToggle, OPEN_KEY } from "./components/chat/ChatSidebar";
-import { mockEnabled, useChatStore } from "./state/chat";
+import { useChatStore } from "./state/chat";
 import { layoutKind } from "./layout";
 import ChatCandidateReview from "./components/chat/ChatCandidateReview";
 import type { ChatMessage } from "./api/chat";
@@ -50,6 +50,7 @@ const nav: { key: View; label: string; Icon: LucideIcon }[] = [
   { key: "model", label: "作者模型", Icon: UserRound },
 ];
 function readChatOpen(narrow: boolean): boolean {
+  if (narrow) return false;
   try {
     const stored = localStorage.getItem(OPEN_KEY);
     if (stored === "0") return false;
@@ -57,9 +58,8 @@ function readChatOpen(narrow: boolean): boolean {
   } catch {
     /* 禁用存储时走默认策略 */
   }
-  // 默认策略：窄屏默认收起（经顶栏按钮打开覆盖面板）；旧后端没有对话
-  // 服务时默认收起，由顶栏开关显式打开查看能力/版本提示。
-  return !narrow && mockEnabled();
+  // 桌面真实服务与模拟器都默认展示；能力不匹配在侧栏内明确提示。
+  return true;
 }
 export default function App() {
   const [view, setView] = useState<View>("overview"),
@@ -87,6 +87,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     setPinned(chatOpen && !narrow);
+    if (narrow) return;
     try {
       localStorage.setItem(OPEN_KEY, chatOpen ? "1" : "0");
     } catch {

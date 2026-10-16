@@ -1,13 +1,37 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test("真实桌面默认显示对话栏，升级时忽略旧自动收起记录，主动收起仍可恢复", async ({ page }, info) => {
+  await page.addInitScript(() => localStorage.setItem("hastings.chat.open", "0"));
+  await project(page, "默认常驻对话");
+  const sidebar = page.getByRole("complementary", { name: "对话栏", exact: true });
+  await expect(sidebar).toBeVisible();
+  await page.getByRole("navigation", { name: "主导航" })
+    .getByRole("button", { name: "创作台", exact: true }).click();
+  await expect(sidebar).toBeVisible();
+  await page.screenshot({ path: info.outputPath("desktop-chat-default.png") });
+  await sidebar.getByRole("button", { name: "收起对话栏", exact: true }).click();
+  await expect(sidebar).toHaveCount(0);
+  await page.reload();
+  await expect(sidebar).toHaveCount(0);
+  await page.getByRole("button", { name: "显示对话栏", exact: true }).click();
+  await expect(sidebar).toBeVisible();
+});
+
+test("真实窄屏首次打开不遮挡正文，可经对话按钮打开", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const panel = page.getByRole("complementary", { name: "对话面板", exact: true });
+  await expect(panel).toHaveCount(0);
+  await page.getByRole("button", { name: "显示对话栏", exact: true }).click();
+  await expect(panel).toBeVisible();
+});
+
 async function project(page: Page, name: string) {
   await page.goto("/");
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await page.getByRole("textbox", { name: "新故事名称" }).fill(name);
   await page.getByRole("button", { name: "新建故事", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  if (await page.getByRole("button", { name: "显示对话栏", exact: true }).isVisible())
-    await page.getByRole("button", { name: "显示对话栏", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "对话输入" })).toBeVisible();
   await expect(page.locator(".chat-loading")).toHaveCount(0);
   return (await page.evaluate(() => localStorage.getItem("hastings.v2.current")))!;

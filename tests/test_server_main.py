@@ -89,13 +89,75 @@ def test_find_static_dir(tmp_path: Any) -> None:
 
 
 @pytest.fixture
-def clean_env(monkeypatch: MonkeyPatch) -> Iterator[None]:
+def clean_env(monkeypatch: MonkeyPatch, tmp_path: Path) -> Iterator[None]:
     """隔离 .env 注入：打桩 load_dotenv 并清空相关变量。"""
     monkeypatch.setattr(server_main, "load_dotenv", lambda: None)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("HASTINGS_MODEL", raising=False)
+    monkeypatch.chdir(tmp_path)
     yield
+
+
+def test_default_start_exposes_v2_and_reopens_projects(
+    clean_env: None, monkeypatch: MonkeyPatch, tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    from fastapi.testclient import TestClient
+
+    apps: list[FastAPI] = []
+    monkeypatch.setattr(server_main.uvicorn, "run", lambda app, **kwargs: apps.append(app))
+    monkeypatch.setattr(server_main, "resolve_static_dir", lambda _path: None)
+    assert server_main.main([]) == 0
+    client = TestClient(apps[-1])
+    created = client.post("/api/v2/projects", json={"name": "默认启动项目"})
+    assert created.status_code == 200, created.text
+    pid = created.json()["project_id"]
+    root = f"/api/v2/projects/{pid}"
+    for route in (
+        "manuscript",
+        "story",
+        "changes",
+        "author-model/preferences",
+        "agent-jobs",
+        "conversations",
+    ):
+        response = client.get(root + "/" + route)
+        assert response.status_code == 200, (route, response.text)
+    with client.websocket_connect(f"/ws/v2/{pid}") as ws:
+        ws.send_json({"type": "subscribe", "after_seq": 0})
+        assert ws.receive_json()["type"] == "replayed"
+    assert (tmp_path / "data" / "v2.db").is_file()
+    assert str((tmp_path / "data" / "v2.db").resolve()) in capsys.readouterr().out
+    assert server_main.main([]) == 0
+    restored = TestClient(apps[-1]).get(root + "/manuscript")
+    assert restored.status_code == 200, restored.text
+
+
+def test_default_database_reuses_existing_conventional_path(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert server_main.resolve_v2_db(None) == Path("data/v2.db")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data/v2.sqlite").touch()
+    assert server_main.resolve_v2_db(None) == Path("data/v2.sqlite")
+    (tmp_path / "data/v2.db").touch()
+    with pytest.raises(ValueError, match="--v2-db"):
+        server_main.resolve_v2_db(None)
+    assert server_main.resolve_v2_db(Path("custom/store.db")) == Path("custom/store.db")
+
+
+def test_ambiguous_default_database_exits_before_starting(
+    clean_env: None, monkeypatch: MonkeyPatch, tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    (tmp_path / "data").mkdir()
+    for name in ("v2.db", "v2.sqlite"):
+        (tmp_path / "data" / name).touch()
+    calls: list[FastAPI] = []
+    monkeypatch.setattr(server_main.uvicorn, "run", lambda app, **kwargs: calls.append(app))
+    assert server_main.main([]) == 2
+    assert not calls
+    assert "--v2-db" in capsys.readouterr().out
 
 
 def test_main_boots_unconfigured_with_env_hint_when_env_missing(
@@ -140,7 +202,7 @@ def test_main_boots_uvicorn_with_registry_app(
             "--config",
             str(tmp_path / "absent.yaml"),
             "--stories-root",
-            str(tmp_path),
+            str(tmp_path / "stories"),
             "--port",
             "9123",
         ]
@@ -155,7 +217,7 @@ def test_main_boots_uvicorn_with_registry_app(
     # 装配链：app.state.registry 是多工作区注册表，根指向 stories-root
     registry = app.state.registry
     assert isinstance(registry, WorkspaceRegistry)
-    assert registry.root == tmp_path
+    assert registry.root == tmp_path / "stories"
     # 全局探活与工作区列表真实可请求（slug 路由由 rest/ws 测试覆盖）
     from fastapi.testclient import TestClient
 

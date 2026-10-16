@@ -17,7 +17,7 @@
 - 内容 Patch 禁止改变身份、归属和依赖字段；此类变化继续走领域命令。完整接受某对象的补丁表示该影响已处理，独立审计仍能报告实际冲突。
 - Finding 引用检查版本；只有可验证的相关内容修复 Commit 才能标 fixed，元数据提交和重复审计不能关闭问题。
 - 重写按章在独立分支执行，锁定单元不进入 Worker；当前控制面为应用用例和 HTTP，正式采用重写稿的产品交互后续再做。
-- `/api/v2/projects/{id}/changes` 及 analyze/plan/approve/execute/review/merge 子路由、audit、rewrites 提供最小出口；前端「变更中心」已接通。`--v2-db` 显式开启服务。
+- `/api/v2/projects/{id}/changes` 及 analyze/plan/approve/execute/review/merge 子路由、audit、rewrites 提供最小出口；前端「变更中心」已接通。当前服务器默认启用 V2，`--v2-db` 仅覆盖仓库路径（见 [默认启动修复](../phase-19-default-startup.md)）。
 
 本阶段用 FakeWorker/人工候选验收管线；真实模型、持久后台调度和任务上下文属 Phase 16。V1 数据与写链不迁移，不修改 Tau 上游。
 

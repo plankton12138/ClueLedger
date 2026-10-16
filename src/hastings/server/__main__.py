@@ -9,6 +9,9 @@ registry 按 slug 懒装配、各自恢复会话历史。
 P6 D1：config.yaml 存在时为权威配置（第一个有 key 的档案作为引导档案，
 .env 不再必需）；缺失/为空则回落 env 单档案（P1 现状，零破坏）。引导档案
 与 --model 折进 ProviderBook（进程级端点目录），供各工作区按设置解析。
+
+当前工作台默认装配 V2 REST/WS/SSE 和持久仓库；--v2-db 仅覆盖数据库路径，
+不再作为启用开关。默认复用 data/v2.db 或 data/v2.sqlite，并打印实际打开路径。
 """
 
 from __future__ import annotations
@@ -17,7 +20,6 @@ import argparse
 import os
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TypedDict
 
 import uvicorn
 from dotenv import load_dotenv
@@ -35,13 +37,9 @@ from hastings.server.provider_config import (
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.v2 import V2Runtime
 
-
-class V2Options(TypedDict, total=False):
-    v2_runtime: V2Runtime
-
-
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
+DEFAULT_V2_DB = Path("data/v2.db")
 
 
 def find_static_dir(root: Path) -> Path | None:
@@ -76,10 +74,25 @@ def resolve_static_dir(static_dir: Path | None) -> Path | None:
     return default_static_dir()
 
 
+def resolve_v2_db(explicit: Path | None) -> Path:
+    """默认启动当前工作台，优先复用已有的约定数据库，避免打开空仓库。"""
+    if explicit is not None:
+        return explicit
+    candidates = (DEFAULT_V2_DB, Path("data/v2.sqlite"))
+    existing = [path for path in candidates if path.exists()]
+    if len(existing) > 1:
+        raise ValueError(
+            "工作台数据库不明确：data/v2.db 与 data/v2.sqlite 同时存在。"
+            "为什么错：无法判断当前作品属于哪个仓库，不能静默选择。"
+            "怎样算对：用 --v2-db 指定要打开的数据库路径。"
+        )
+    return existing[0] if existing else DEFAULT_V2_DB
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hastings-server",
-        description="Hastings：悬疑小说写作 Agent 的 Web 服务入口（多工作区）",
+        description="Hastings：悬疑小说作者工作台的 Web 服务入口",
     )
     parser.add_argument("--model", default=None, help="覆盖启动档案的 default_model")
     parser.add_argument(
@@ -116,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--v2-db",
         type=Path,
         default=None,
-        help="启用 V2 工作台，指定独立仓库数据库路径",
+        help="工作台数据库路径；默认复用 data/v2.db 或 data/v2.sqlite，新建时用 data/v2.db",
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="监听端口（默认 8000）")
@@ -127,6 +140,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         config_path = resolve_config_path(args.config, args.config_dir)
+        v2_db = resolve_v2_db(args.v2_db)
     except ValueError as exc:
         print(exc)
         return 2
@@ -200,16 +214,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         root=args.stories_root,
         session_factory=default_session_factory(book),
     )
-    app_options: V2Options = {}
-    if args.v2_db is not None:
-        args.v2_db.parent.mkdir(parents=True, exist_ok=True)
-        app_options["v2_runtime"] = V2Runtime.sqlite(str(args.v2_db))
+    v2_db.parent.mkdir(parents=True, exist_ok=True)
+    v2_runtime = V2Runtime.sqlite(str(v2_db))
     app = create_app(
-        registry, static_dir=static_dir, book=book, corpus_root=args.corpus_root, **app_options
+        registry,
+        static_dir=static_dir,
+        book=book,
+        corpus_root=args.corpus_root,
+        v2_runtime=v2_runtime,
     )
 
     print(f"文章目录已打开：{args.stories_root}")
     print(f"语料库目录：{args.corpus_root}")
+    print(f"工作台数据库：{v2_db.resolve()}")
     model_display = boot_model or "未配置（在设置页配置模型后即可对话）"
     print(
         f"模型：{model_display}｜档案：{boot_profile_name}｜写作台地址：http://{args.host}:{args.port}"

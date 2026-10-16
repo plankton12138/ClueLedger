@@ -1,6 +1,6 @@
 # 开发约定
 
-> 本文件只收开发习惯与工作流约定。目标架构见 [dev-notes/v2/DESIGN.md](dev-notes/v2/DESIGN.md)，当前实现见 [dev-notes/v1/DESIGN.md](dev-notes/v1/DESIGN.md)，模块与文档导航见各 README（见「文档与导航」）。
+> 本文件只收开发习惯与工作流约定。目标架构见 [dev-notes/v2/DESIGN.md](dev-notes/v2/DESIGN.md)，模块与文档导航见各 README（见「文档与导航」）。
 
 ## 学习式开发流程
 
@@ -27,3 +27,13 @@
 
 - 文档查找统一走导航层，不逐个翻文件：[dev-notes/README.md](dev-notes/README.md)（dev-notes 路由表）、[src/hastings/README.md](src/hastings/README.md)（模块导航）。
 - 读长期文档须先区分版本：`dev-notes/v2/` 是目标架构与新计划，`dev-notes/v1/` 是当前 as-built 和 P0–P10 历史；V1 的 `*-plan.md` 与 `artifacts/` 只作历史记录。
+
+<br />
+
+## 模型习惯
+
+- 当我需要详细开发计划时，最好针对每个模块给出优秀的代码示例
+- 注意维护所有文档的整洁度，包括可读性、文件的命名、开发文档目录的结构
+- 注意维护文档内容的时效性，注意更新内容
+- 开发过程中注意前后端接口的对齐度，留意是否存在前端有功能，但相应后端接口缺失，或者有多余后端接口的情况
+

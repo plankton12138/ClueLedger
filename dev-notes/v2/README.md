@@ -4,7 +4,7 @@
 > 本目录描述 Hastings 下一版的目标形态；当前已经运行的系统仍以
 > [`src/hastings/README.md`](../../src/hastings/README.md) 和旧版
 > [`dev-notes/v1/DESIGN.md`](../v1/DESIGN.md) 的 as-built 标注为准。
-> V2 的领域与工作流已有独立实现；Web 服务通过 `--v2-db` 选择性启用；作品直接创建为 V2 项目，旧工作区迁移功能已删除。
+> V2 的领域与工作流已有独立实现；Web 服务默认启用当前工作台，`--v2-db` 仅指定仓库路径；作品直接创建为 V2 项目，旧工作区迁移功能已删除。默认启动的恢复规则见 [启动修复记录](phase-19-default-startup.md)。
 > 模型接入与切换已补齐，见 [Phase 18](phase-18-model-access.md)：厂商/套餐预设、服务端当前模型与本地模型。
 > 前端已替换为七页作者工作台，交付与边界见 [phase-17-frontend-workbench.md](phase-17-frontend-workbench.md)，运行见 [frontend/README.md](../../frontend/README.md)。
 > Phase 19 主体已交付，见 [构建笔记](phase-19-chat-workbench.md) 与 [代码审查修复](phase-19-review-fixes.md)；真模型 A13 仍待验收。

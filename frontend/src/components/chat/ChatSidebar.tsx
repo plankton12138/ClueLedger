@@ -20,7 +20,8 @@ const MIN_W = 320;
 const MAX_W = 560;
 const DEFAULT_W = 380;
 const WIDTH_KEY = "hastings.chat.width";
-const OPEN_KEY = "hastings.chat.open";
+// 旧 key 会在真实模式初次加载时自动写入 0，无法代表作者主动收起的意图。
+const OPEN_KEY = "hastings.chat.open.v2";
 
 function readWidth(): number {
   try {
@@ -273,11 +274,14 @@ export function ChatToggle({
 }) {
   return (
     <button
-      className="project-picker relative grid h-[34px] w-[34px] shrink-0 place-items-center"
+      className="project-picker relative flex h-[34px] min-w-[34px] shrink-0 items-center justify-center gap-1.5 px-2"
       aria-label={open ? "隐藏对话栏" : "显示对话栏"}
+      aria-pressed={open}
+      title={open ? "收起项目对话" : "打开项目对话"}
       onClick={onToggle}
     >
       <MessageCircle size={16} />
+      <span className="hidden text-xs sm:inline">对话</span>
       {!open && unread > 0 && (
         <span className="nav-badge absolute -right-1 -top-1 px-1 text-[9px]">
           {unread}

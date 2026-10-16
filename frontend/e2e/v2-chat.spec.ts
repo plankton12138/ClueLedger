@@ -192,7 +192,6 @@ test("19.1 旧后端能力提示：没有对话服务时不展示虚假成功", 
     route.fulfill({ status: 404, contentType: "application/json", body: "{}" }),
   );
   await createProject(page, "旧后端核对", false);
-  await page.getByRole("button", { name: "显示对话栏" }).click();
   const sidebar = page.getByRole("complementary", { name: "对话栏" });
   await expect(sidebar.getByText("当前后端不提供对话服务。")).toBeVisible();
   await expect(sidebar.getByText(/重启后端/)).toBeVisible();
