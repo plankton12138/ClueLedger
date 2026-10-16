@@ -35,11 +35,6 @@ DEFAULT_PROVIDER_PROFILE: Final[str] = "default"
 # 缺省 128k 对齐云端常用窗口；本地小窗口（如 32k）在 settings.yaml 显式下调。
 DEFAULT_CONTEXT_WINDOW_TOKENS: Final[int] = 128_000
 
-# V2 迁移映射键（settings.yaml 承载的项目级元数据，T17.5）：
-# v2_project_id —— 迁移得到的 V2 项目；v2_db_path —— V2 仓库数据库路径。
-V2_PROJECT_ID_KEY: Final[str] = "v2_project_id"
-V2_DB_PATH_KEY: Final[str] = "v2_db_path"
-
 
 class SettingsFormatError(ValueError):
     """settings.yaml 根节点非映射等结构性损坏。
@@ -94,60 +89,6 @@ def load_settings(workspace: StoryWorkspace) -> StorySettings:
     return StorySettings.model_validate(raw)
 
 
-def _raw_settings(workspace: StoryWorkspace) -> dict[str, object]:
-    """读 settings.yaml 原始映射；缺文件/空文件/结构损坏一律回落空映射。
-
-    与 ``load_settings`` 的「结构性损坏抛错」不同：迁移映射的读取方（CLI/WS）
-    只想知道「有没有迁移过」，坏文件在架构版本解析（``workspace_architecture_version``）
-    与设置页读取两条既有路径上自有各自的暴露方式，这里不重复报错。
-    """
-    path = workspace.settings_path
-    if not path.exists():
-        return {}
-    raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return dict(raw) if isinstance(raw, dict) else {}
-
-
-def v2_project_id(workspace: StoryWorkspace) -> str | None:
-    """该工作区迁移得到的 V2 项目 ID；未迁移返回 None。
-
-    这是「slug → V2 项目」映射的唯一读取点（CLI 与 Web 共用），映射本体在
-    迁移落盘时由 ``record_v2_migration`` 写入——与 ``architecture_version``
-    同处 settings.yaml，避免第二套元数据承载。
-    """
-    value = _raw_settings(workspace).get(V2_PROJECT_ID_KEY)
-    return str(value) if value else None
-
-
-def v2_db_path(workspace: StoryWorkspace) -> str | None:
-    """V2 仓库数据库路径（服务启动 --v2-db 的值，迁移时记录）；未记录返回 None。"""
-    value = _raw_settings(workspace).get(V2_DB_PATH_KEY)
-    return str(value) if value else None
-
-
-def record_v2_migration(
-    workspace: StoryWorkspace, project_id: str, db_path: str | None = None
-) -> Path:
-    """迁移落盘：写 ``architecture_version: v2`` + 项目/数据库映射，保留未知键。
-
-    与 ``save_settings`` 同一防护：先读回既有映射，只覆盖迁移相关键——
-    不走 ``StorySettings`` 模型（迁移映射不是用户设置）。
-    写入 ``architecture_version`` 后，旧写路径门（REST/工具层/CLI）即刻生效。
-    """
-    workspace.ensure_dirs()
-    path = workspace.settings_path
-    payload = _raw_settings(workspace)
-    payload["architecture_version"] = "v2"
-    payload[V2_PROJECT_ID_KEY] = project_id
-    if db_path is not None:
-        payload[V2_DB_PATH_KEY] = db_path
-    path.write_text(
-        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
-    return path
-
-
 def save_settings(workspace: StoryWorkspace, settings: StorySettings) -> Path:
     """整表覆盖写设置文件，返回文件路径；自建父目录。
 
@@ -176,15 +117,10 @@ __all__ = [
     "DEFAULT_CONTEXT_WINDOW_TOKENS",
     "DEFAULT_PROVIDER_PROFILE",
     "DEFAULT_WRITING_LANGUAGE",
-    "V2_DB_PATH_KEY",
-    "V2_PROJECT_ID_KEY",
     "WRITING_LANGUAGES",
     "SettingsFormatError",
     "StorySettings",
     "load_settings",
-    "record_v2_migration",
     "save_settings",
-    "v2_db_path",
-    "v2_project_id",
     "workspace_architecture_version",
 ]

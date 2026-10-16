@@ -33,6 +33,7 @@ class TauAgentRunner:
         *,
         timeout: float = 120,
         owns_provider: bool = False,
+        provider_name: str = "",
     ) -> None:
         self.factory, self.model, self.reader, self.timeout = (
             provider_factory,
@@ -41,6 +42,7 @@ class TauAgentRunner:
             timeout,
         )
         self.owns_provider = owns_provider
+        self.provider_name = provider_name
 
     async def run(
         self, task_kind: str, context_package: Mapping[str, object]
@@ -291,7 +293,7 @@ class TauAgentRunner:
                 tools=tools(),
             )
         )
-        await event("agent.started", role=task_kind)
+        await event("agent.started", role=task_kind, provider=self.provider_name, model=self.model)
         prompt = json.dumps(ctx.model_dump(mode="json"), ensure_ascii=False)
         try:
             async with asyncio.timeout(self.timeout):

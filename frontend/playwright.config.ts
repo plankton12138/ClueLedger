@@ -10,12 +10,15 @@ const port = Number(process.env.HASTINGS_E2E_PORT ?? "8931");
  */
 export default defineConfig({
   testDir: "./e2e",
+  // j1–j8 是旧 V1 壳的历史旅程；V2 主界面从此套真实服务旅程验收。
+  testMatch: "v2-*.spec.ts",
   fullyParallel: false,
   workers: 1,
   retries: 0,
   timeout: 30_000,
   use: {
     baseURL: `http://127.0.0.1:${port}`,
+    viewport: { width: 1440, height: 900 },
     trace: "retain-on-failure",
   },
   webServer: {

@@ -20,11 +20,13 @@ create_app 既有注入点（registry.session_factory / static_dir / corpus_root
 from __future__ import annotations
 
 import argparse
+import json
 import tempfile
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+import httpx
 import uvicorn
 from tests.fake_scripts import assistant_stream, chapter_read, character_lookup, closing
 from tests.v2.agents.scenario import ScenarioRunner
@@ -32,6 +34,7 @@ from tests.v2.agents.scenario import ScenarioRunner
 from hastings.bible.store import StoryWorkspace
 from hastings.server.app import create_app
 from hastings.server.hastings_session import HastingsSession
+from hastings.server.provider_config import ProviderBook, ProviderProfile, ServerConfig
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.session import WritingSession
 from hastings.server.v2 import V2Runtime
@@ -79,7 +82,7 @@ def intake_turns() -> list[list[Any]]:
                 reason="toolUse",
             )
         )
-        turns.append(closing("两位角色的档案状态已核对。V1 账本只读，登记请迁移到 V2 项目。"))
+        turns.append(closing("两位角色的档案状态已核对。V1 账本只读，登记请使用 V2 工作台。"))
     return turns
 
 
@@ -98,7 +101,7 @@ def write_turns() -> list[list[Any]]:
                 reason="toolUse",
             )
         )
-        turns.append(closing("第一章已回读完毕。改写正文请迁移到 V2 项目。"))
+        turns.append(closing("第一章已回读完毕。改写正文请使用 V2 工作台。"))
     return turns
 
 
@@ -224,11 +227,51 @@ def main(argv: Sequence[str] | None = None) -> int:
     registry = WorkspaceRegistry(root=stories_root, session_factory=make_session_factory())
     v2_runtime = V2Runtime.sqlite(str(stories_root / "v2.sqlite"))
     v2_runtime.configure_agent_runner(ScenarioRunner(v2_runtime.service))
+    installed_models: list[str] = []
+
+    def local_transport(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/version":
+            return httpx.Response(200, json={"version": "e2e"})
+        if request.url.path == "/api/tags":
+            return httpx.Response(
+                200, json={"models": [{"name": name, "size": 1024} for name in installed_models]}
+            )
+        if request.url.path == "/api/pull":
+            name = json.loads(request.content)["model"]
+            if name not in installed_models:
+                installed_models.append(name)
+            return httpx.Response(200, text='{"status":"success"}\n')
+        return httpx.Response(404)
+
     app = create_app(
         registry,
         static_dir=args.static_dir,
         corpus_root=corpus_root,
         v2_runtime=v2_runtime,
+        book=ProviderBook(
+            ServerConfig(
+                providers=[ProviderProfile(name="default", base_url="https://example.invalid/v1")]
+            ),
+            boot_name="default",
+            boot_model="",
+            config_path=stories_root / "providers.yaml",
+        ),
+        model_transport=httpx.MockTransport(
+            lambda request: (
+                httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {"id": "qwen3:4b"},
+                            {"id": "gpt-oss:20b"},
+                        ]
+                    },
+                )
+                if request.url.host == "localhost"
+                else httpx.Response(404)
+            )
+        ),
+        ollama_transport=httpx.MockTransport(local_transport),
     )
     print(f"E2E 服务已就绪：http://{args.host}:{args.port}（文章目录：{stories_root}）")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")

@@ -1,6 +1,6 @@
 # Interfaces & Observability：API、事件、任务与导入导出
 
-> 状态：Phase 16 的 Job/API/最小界面已交付（见 §0）；Phase 17 的旧工作区导入与旧写路径 gating 已交付（见 §0.1），界面全面迁移与导出仍为 target。
+> 状态：Phase 16 的 Job/API 已交付（§0）；Phase 17 的旧数据迁移已退役，V2 导出及旧写路径退出保留（§0.1）。七页作者工作台与偏好裁决出口已交付（§0.2）；下文尚未逐项标记的资源仍是目标契约。
 > 目标包：`hastings.interfaces`、`hastings.infrastructure.events`、`hastings.infrastructure.jobs`。
 
 ## 0. Phase 16 as-built
@@ -18,20 +18,42 @@ API 实际前缀为 `/api/v2/projects/{project_id}`，入口 `interfaces/api/age
 
 前端入口为“变更中心→规划与生成任务”，支持空项目、规划/正文审阅、人工保存、任务状态/事件、取消/重试与审计；批准后的修复仍在变更中心审阅。当前进度采用轮询，未新增会话式 WebSocket Agent。V1 界面和工具保持其原项目边界。下文资源清单及导出接口仍是后续架构目标；证据见 [Phase 16](../phase-16-agent-workflows.md)。
 
-## 0.1 Phase 17 已交付：旧工作区导入（部分）
+## 0.1 旧工作区迁移已退役（2026-10-15）
 
-导入器实际落在 `interfaces/importers/v1_workspace_importer.py`，是 §7「导入」的 as-built 实现：
+项目未上线，没有需要承诺兼容的生产工作区。旧迁移面板、客户端、slug 迁移接口、
+全工作区导入器和账本映射器均已删除；`settings.py` 不再读写迁移项目/数据库映射。
+CLI 对 V2 工作区提示使用 Web 工作台；前端从本浏览器登记的原生项目进入作品。
 
-| 能力 | 实现 |
-|---|---|
-| 扫描（T17.1） | `scan_v1_workspace`：逐文件归类 `mapped/legacy/ambiguous/ignored/error`；`run_id` = 源 manifest hash；报告含 `ok` 判定与 `unexplained` 检查 |
-| 幂等导入（T17.2） | `V1WorkspaceImporter.apply`：幂等键 `v1-import:{schema}:{manifest hash}`，经 Commit Service 单次原子提交，附 `v1.workspace.imported` 事件；只写空项目；源变化须重新 dry-run |
-| 校验（T17.3） | `V1WorkspaceImporter.validate`：对象数、章节数、每章规范化正文哈希、悬空 ID、旧 revision 保留、运行记录归档 |
-| 不可达证明（T17.6） | 工具层：`tools/architecture_gate.py`（V2 项目旧写工具为拒绝桩）；HTTP 层：`server/rest.py::_reject_v2_legacy_write`（V2 项目的旧章节保存/草稿锁端点 409 拒绝）。证明见 `tests/v2/migration/test_legacy_write_unreachable.py`（独立 V2 应用/工具/模块面）与 `tests/test_v2_write_gate.py`（真实装配的行为面） |
+V2 原生项目、正文导入、业务事件及备份包导出/重导入继续保留。
+导出测试与容量测量直接创建 V2 数据，旧迁移夹具和专用测试已删除。
+旧写路径退役证明见 `tests/v2/server/test_legacy_write_unreachable.py`，
+接口退役与原生写入回归见 `tests/test_migration_retired.py`。
+决策及本地数据处理边界见[退役记录](../phase-17-workspace-retirement.md)。
 
-旧账本的逐字段映射仍由 `v1_story_mapper.py`（Phase 13）承担；导入器复用其报告，不重复实现。正文经领域命令 `import_chapter` 生成，但 `new_id` 换为确定性闭包以保证可复现。章正文范围由单一枚举 `_chapter_files`（仅 `chapters/` 顶层 `*.md`）统一扫描、导入与校验三者；嵌套结构显式报 error。
+## 0.2 V2 七页作者工作台（as-built）
 
-**本模块其余 target 未变**：§2 资源清单、§4 完整事件分类、§6 各前端投影、以及导出（manifest + 内容哈希）仍属未交付目标。证据见 [Phase 17](../phase-17-migration-cleanup.md)。
+`frontend/src/pages/` 为项目概览、创作台、故事账本、变更影响、修订审阅、悬疑审计与作者模型。
+所有页面共享 `state/v2.ts` 的项目身份；作品写操作只走 V2。`ChangesPage` 用两个页面状态承载同一个服务端变更集。
+`components/SettingsDrawer` 收纳新建/编号找回与服务级模型档案。
+
+新增 `interfaces/api/author_decisions.py`：
+
+- `POST /api/v2/projects/{id}/author-model/preferences`：作者显式声明，带 `expected_head` 与幂等键；
+- `POST /api/v2/projects/{id}/author-model/preferences/{preference_id}/revoke`：带原因撤销，保留历史。
+
+这两条仅适配已有领域命令与 Commit Service，不新增任意对象写入口。候选激活仍服从原归纳规则。
+业务 WS 按 sequence 去重和补齐，事件合并为 REST 回读信号；任务过程单独轮询。
+正文草稿在切页时保留，切项目/切章前处理脏稿，版本冲突保留输入；审阅依据不因刷新被静默替换。
+
+证据、截图与已知边界见 [phase-17-frontend-workbench.md](../phase-17-frontend-workbench.md)。
+
+## 0.3 模型接入与切换（Phase 18 as-built）
+
+服务级接口：`GET/PUT /api/model-selection`、`POST /api/providers/connect`、
+`GET /api/providers/{name}/model-choices`。来源分普通 API、套餐与本地，服务端预填地址。
+当前选择由同一 ProviderBook 驱动 API 与 V2 工作者，保存配置后后续任务生效。
+模型列表不支持时才回退内置候选；鉴权/网络错误不能显示为验证成功。
+本地免密、绕过系统代理、Ollama 安装与下载流程保留。详见 [Phase 18](../phase-18-model-access.md)。
 
 ## 1. 职责
 
@@ -140,13 +162,8 @@ Job 和对话事件没有 `project_sequence` 时使用各自 stream sequence。�
 
 ### 导入
 
-旧工作区导入分三步：
-
-1. 扫描并生成 `ImportReport`，列出文件、可识别实体、歧义和错误；
-2. 用户确认映射；
-3. 以一个或若干有序 Commit 写入 V2，并保存源文件哈希。
-
-导入器不得把旧 `story_stage` 转换成 V2 授权；它只可转为项目里程碑或迁移注释。
+不再支持 V1 工作区迁移。V2 章节文本导入与 V2 备份包恢复走既有领域命令和统一提交，
+不得恢复旧的通用工作区映射入口。
 
 ### 导出
 

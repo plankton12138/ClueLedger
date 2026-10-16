@@ -17,9 +17,13 @@ key 只进不出：ProviderProfile.api_key 用 SecretStr（repr/日志不泄露�
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from typing import Literal
+from urllib.parse import urlsplit
 
+import httpx
 import yaml
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
@@ -47,6 +51,8 @@ class ProviderProfile(BaseModel):
     # 免密端点（本地模型如 Ollama）：无 key 也可用；OpenAICompatibleProvider
     # 空 key 本就不发 Authorization 头。
     no_auth: bool = False
+    catalog_id: str = ""
+    api: Literal["openai-completions", "openai-responses"] = "openai-completions"
 
     def resolved_api_key(self) -> str:
         """解析实际 key：直填优先于 env 引用（D1）。两者皆空 → 空串。"""
@@ -69,6 +75,8 @@ class ServerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     providers: list[ProviderProfile]
+    active_provider: str = ""
+    active_model: str = ""
 
 
 def env_fallback_config() -> ServerConfig:
@@ -154,13 +162,33 @@ def save_server_config(config: ServerConfig, path: Path) -> Path:
                 "default_model": profile.default_model,
                 # 免密字段按需写入：False 不落盘，旧文件格式零扰动
                 **({"no_auth": True} if profile.no_auth else {}),
+                **({"catalog_id": profile.catalog_id} if profile.catalog_id else {}),
+                **({"api": profile.api} if profile.api != "openai-completions" else {}),
             }
             for profile in config.providers
-        ]
+        ],
+        **(
+            {"active_provider": config.active_provider, "active_model": config.active_model}
+            if config.active_provider
+            else {}
+        ),
     }
     header = "# 由设置页管理（P7 T12），也可手改；删掉本文件则回落 .env 单档案配置。\n"
     text = header + yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
-    path.write_text(text, encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return path
 
 
@@ -173,18 +201,40 @@ def mask_key(key: str) -> str:
     return f"…{key[-4:]}"
 
 
-def build_provider(profile: ProviderProfile) -> OpenAICompatibleProvider:
+def is_loopback_url(url: str) -> bool:
+    return urlsplit(url).hostname in ("localhost", "127.0.0.1", "::1")
+
+
+class _LocalProvider(OpenAICompatibleProvider):
+    """保持 Tau 的请求协议，本机请求不经系统代理，client 生命周期仍由 provider 拥有。"""
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=self._config.timeout_seconds, trust_env=False)
+        return self._client
+
+
+def build_provider(profile: ProviderProfile, *, worker: bool = False) -> OpenAICompatibleProvider:
     """由档案构造 provider 实例（跨档案切换/启动装配共用；T2 复用）。"""
     key = profile.resolved_api_key()
-    return OpenAICompatibleProvider(
-        OpenAICompatibleConfig(
-            api_key=key,
-            base_url=profile.base_url.rstrip("/"),
-            # 免密档案（Ollama 等）：空 key 不能发 `Authorization: Bearer `——
-            # httpx 会以 Illegal header value 拒绝该请求。
-            omit_authorization_header=profile.no_auth and not key,
-        )
+    config = OpenAICompatibleConfig(
+        api_key=key,
+        base_url=profile.base_url.rstrip("/"),
+        # 免密档案（Ollama 等）：空 key 不能发 `Authorization: Bearer `——
+        # httpx 会以 Illegal header value 拒绝该请求。
+        omit_authorization_header=profile.no_auth and not key,
+        api=profile.api,
+        infer_api_from_model=False,
     )
+    if worker:
+        config = replace(
+            config,
+            timeout_seconds=180 if is_loopback_url(profile.base_url) else 45,
+            max_retries=0,
+            max_tokens=4096,
+        )
+    provider_cls = _LocalProvider if is_loopback_url(profile.base_url) else OpenAICompatibleProvider
+    return provider_cls(config)
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +268,9 @@ class ProviderBook:
         # 档案写回路径（P7 T12）：由 CLI --config 传入；None → 写默认路径。
         self._config_path = config_path
         self._instances: dict[str, ModelProvider] = {}
+        self._initial_provider = next(
+            (p.name for p in config.providers if p.available and p.default_model), ""
+        )
 
     @property
     def config(self) -> ServerConfig:
@@ -239,15 +292,25 @@ class ProviderBook:
         return None
 
     def update_config(self, new: ServerConfig) -> None:
-        """替换磁盘事实（P7 T12 UI 化）：换 config 并清理已删档案的实例缓存。
+        """替换磁盘事实，并清理已删除或配置已变化的档案实例。
 
-        仍在用档案的 httpx client 缓存保留（跨档案来回切不重建连接）；
-        被删档案的缓存丢弃——下次按名取会抛三要素错，符合「档案已不存在」。
+        配置未变的档案复用 client；密钥、地址或协议更新后不再返回旧实例。
         """
+        changed = {p.name for p in new.providers if self.profile(p.name) != p}
         self._config = new
         live = {profile.name for profile in new.providers}
-        for name in [name for name in self._instances if name not in live]:
+        for name in [name for name in self._instances if name not in live or name in changed]:
             del self._instances[name]
+
+    def selected(self) -> tuple[ProviderProfile | None, str]:
+        """显式选择优先；凭证失效时保留选择，不静默切换到其他厂商。"""
+        if self.config.active_provider:
+            return self.profile(self.config.active_provider), self.config.active_model
+        boot = self.profile(self.boot_name)
+        if boot is not None and boot.available and (self._boot_model or boot.default_model):
+            return boot, self._boot_model or boot.default_model
+        profile = self.profile(self._initial_provider)
+        return profile, profile.default_model if profile else ""
 
     def provider(self, name: str) -> ModelProvider:
         """按名取 provider 实例（缓存复用）；未知档案名抛三要素错。"""

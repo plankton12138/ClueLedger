@@ -148,17 +148,14 @@ V2 项目的 `bible_upsert` 写工具被替换为**拒绝桩**，V1 行为不变
 
 工具层拒绝桩的工具描述与 `prompt_guidelines` 按版本生成：V2 下发的是「已停用、改用领域命令」的文案，不再指示模型调用一个必然被拒的写工具。
 
-## 9. V1 Dry-run 映射器
+## 9. V1 映射器已退役
 
-`interfaces/importers/v1_story_mapper.py` 的 `map_v1_workspace(workspace) -> ImportPlan`：只返回报告与提案（`DomainChange` 列表），**不写 V2 Repository、不改源文件**。
-
-- 归类四态：`mapped` / `legacy`（无法表达，值保留进 `legacy_metadata`）/ `ambiguous`（需作者决策）/ `error`（阻断，带三要素）；
-- `ImportReport` 提供 `legacy_fields`、`ambiguous_fields`、`errors`、`expected_artifacts`、`expected_relations`；
-- 读取源：character / clues / foreshadows / method / timeline / outline；
-- 显式登记为「不迁移」的源（`SourceNote`，记原因不静默跳过）：`story.yaml`（生命周期非故事事实）、`chapters`（正文留 Phase 14）、`sessions.json`/`sessions`（运行记录）、`events.jsonl`（审计）。
+2026-10-15 按项目未上线的决策删除旧账本映射器、工作区导入器及专用测试夹具。
+Story Domain 的模型、命令与投影继续使用 V2 仓库，不再依赖旧账本转换。
+历史映射设计见 Phase 13 构建记录，当前决策见[旧工作区退役记录](../phase-17-workspace-retirement.md)。
 
 ## 10. 测试重点
 
-测试目录 `tests/v2/story/`（14 个文件）：模型往返、目录/稳定 ID 与歧义、Canon 命令、Narrative 命令与结构顺序、状态折叠、Canon 与悬疑规则、五个投影、V1 dry-run 映射器、应用层写入口（含幂等重放、3 章悬疑基线与 §7 误解决策闭环）、路由闸。
+测试目录 `tests/v2/story/`：模型往返、目录/稳定 ID 与歧义、Canon 命令、Narrative 命令与结构顺序、状态折叠、Canon 与悬疑规则、五个投影、应用层写入口（含幂等重放、3 章悬疑基线与 §7 误解决策闭环）、路由闸。
 
 领域测试不需要数据库、Web 或模型。

@@ -13,6 +13,13 @@
 
 实际 Context 头见 `domain/worker.py`：包含 `capability`、`author_examples` 与 `evidence`；输出 Schema 由适配器按角色注入，不把浮动时间写入选择哈希。事件当前通过持久游标查询和 UI 轮询消费。详细取舍、真模型和闭环证据见 [Phase 16 构建笔记](../phase-16-agent-workflows.md)。
 
+## 0.1 Phase 18 模型选择装配
+
+`server/v2_agents.py` 的 ConfiguredV2Runner 与连接/选择 API 使用同一个 ProviderBook，
+不再重读默认路径并自行挑第一个来源。每次任务解析一个固定 provider/model 适配器，
+切换只影响后续开始的调用。显式选择失效不跨厂商回退。
+`agent.started` 带实际 provider/model；密钥不进入任务事件。见[模型接入记录](../phase-18-model-access.md)。
+
 ## 1. 职责
 
 本模块把用户意图转换成可恢复的应用工作流，选择合适的无状态工作者，并为单个任务构建最小、可解释、可重新读取的 Context Package。

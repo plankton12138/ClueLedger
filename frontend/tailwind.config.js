@@ -2,10 +2,10 @@ import tailwindcssAnimate from "tailwindcss-animate";
 import { theme } from "./src/theme";
 
 /**
- * Tailwind 主题。
- * 颜色事实源唯一：src/theme.ts。shadcn 语义名（primary/background/surface/
- * border/foreground/muted/danger/...）只是 theme.ts 色值的别名，
- * 供 components/ui/ 消费，不引入 HSL CSS 变量第二事实源（前端基建改造 P0）。
+ * Tailwind 主题（iOS 6 拟物浅色）。
+ * 颜色事实源唯一：src/theme.ts。shadcn 语义名（primary/background/...）
+ * 只是 theme.ts 色值的别名，供 components/ui/ 消费，不引入第二事实源。
+ * 拟物渐变、内阴影、织物纹理不进令牌，落在 index.css 组件类。
  * @type {import('tailwindcss').Config}
  */
 export default {
@@ -13,48 +13,103 @@ export default {
   theme: {
     extend: {
       colors: {
-        // --- 项目既有具名令牌 ---
-        ink: theme.colors.ink,
-        "ink-soft": theme.colors.inkSoft,
-        line: theme.colors.line,
-        gold: theme.colors.gold,
-        "gold-soft": theme.colors.goldSoft,
-        paper: theme.colors.paper,
-        planned: theme.colors.planned,
-        planted: theme.colors.planted,
-        recovered: theme.colors.recovered,
-        overdue: theme.colors.overdue,
-        violet: theme.colors.violet,
-        parchment: theme.colors.parchment,
-        "parchment-soft": theme.colors.parchmentSoft,
-        "parchment-ink": theme.colors.parchmentInk,
-        "parchment-mute": theme.colors.parchmentMute,
-        "parchment-line": theme.colors.parchmentLine,
+        // CSS theme() 使用令牌原名；工具类同时提供下方 kebab-case 别名。
+        ...theme.colors,
+        // --- iOS6 具名令牌（与 theme.ts 一一对应）---
+        page: theme.colors.page,
+        workbench: theme.colors.workbench,
+        fg: theme.colors.fg,
+        "fg-strong": theme.colors.fgStrong,
+        sub: theme.colors.sub,
+        mute: theme.colors.mute,
+        faint: theme.colors.faint,
+        "chrome-high": theme.colors.chromeHigh,
+        "chrome-mid": theme.colors.chromeMid,
+        "chrome-band": theme.colors.chromeBand,
+        "chrome-low": theme.colors.chromeLow,
+        "chrome-edge": theme.colors.chromeEdge,
+        "chrome-shadow": theme.colors.chromeShadow,
+        "nav-edge": theme.colors.navEdge,
+        "panel-edge": theme.colors.panelEdge,
+        "panel-head": theme.colors.panelHead,
+        "panel-head-edge": theme.colors.panelHeadEdge,
+        "row-edge": theme.colors.rowEdge,
+        live: theme.colors.live,
+        badge: theme.colors.badge,
+        count: theme.colors.count,
+        green: theme.colors.green,
+        "green-bg": theme.colors.greenBg,
+        "green-edge": theme.colors.greenEdge,
+        amber: theme.colors.amber,
+        "amber-bg": theme.colors.amberBg,
+        "amber-edge": theme.colors.amberEdge,
+        red: theme.colors.red,
+        "red-bg": theme.colors.redBg,
+        "red-edge": theme.colors.redEdge,
+        blue: theme.colors.blue,
+        "blue-bg": theme.colors.blueBg,
+        "blue-edge": theme.colors.blueEdge,
+        "notice-edge": theme.colors.noticeEdge,
+        "notice-text": theme.colors.noticeText,
+        "hero-high": theme.colors.heroHigh,
+        "hero-low": theme.colors.heroLow,
+        "del-bg": theme.colors.delBg,
+        "del-text": theme.colors.delText,
+        "ins-bg": theme.colors.insBg,
+        "ins-text": theme.colors.insText,
+        sheet: theme.colors.sheet,
+        "sheet-ink": theme.colors.sheetInk,
+        "sheet-mute": theme.colors.sheetMute,
+        "sheet-line": theme.colors.sheetLine,
+        "sel-high": theme.colors.selHigh,
+        "sel-low": theme.colors.selLow,
+        "seg-edge": theme.colors.segEdge,
+        "foot-high": theme.colors.footHigh,
+        "foot-low": theme.colors.footLow,
+        "foot-text": theme.colors.footText,
+        "foot-ok": theme.colors.footOk,
         // --- shadcn 语义别名（值仍出自 theme.ts）---
-        background: theme.colors.ink,
-        surface: theme.colors.inkSoft,
-        foreground: theme.colors.paper,
+        background: theme.colors.page,
+        surface: "#FFFFFF",
+        foreground: theme.colors.fg,
         primary: {
-          DEFAULT: theme.colors.gold,
-          foreground: theme.colors.ink,
+          DEFAULT: theme.colors.btnLow,
+          foreground: "#FFFFFF",
         },
         muted: {
-          DEFAULT: theme.colors.inkSoft,
-          // 次级文本：paper/55；Radix portal 内容也走该令牌，不依赖父级继承。
-          foreground: "rgba(224, 220, 200, 0.55)",
+          DEFAULT: "#EDF1F3",
+          foreground: theme.colors.sub,
         },
         accent: {
-          DEFAULT: "rgba(255, 255, 255, 0.06)",
-          foreground: theme.colors.paper,
+          DEFAULT: theme.colors.selHigh,
+          foreground: theme.colors.fgStrong,
         },
         danger: {
-          DEFAULT: theme.colors.overdue,
-          foreground: theme.colors.paper,
+          DEFAULT: theme.colors.red,
+          foreground: "#FFFFFF",
         },
-        success: theme.colors.planted,
-        info: theme.colors.planned,
-        // 弹窗/抽屉遮罩
-        overlay: "rgba(10, 14, 28, 0.72)",
+        success: theme.colors.green,
+        info: theme.colors.blue,
+        overlay: "rgba(39, 59, 75, 0.45)",
+        // --- 旧暗色令牌 → iOS6 浅色兼容映射 ---
+        // 仅供 components/ui/ 与遗留面板（设置/迁移）过渡渲染；
+        // 新页面一律使用上方具名令牌或 index.css 组件类，不得再用旧名。
+        ink: "#FFFFFF",
+        "ink-soft": "#F5F8F9",
+        line: theme.colors.panelEdge,
+        gold: theme.colors.btnLow,
+        "gold-soft": theme.colors.btnMid,
+        paper: theme.colors.fg,
+        planned: theme.colors.blue,
+        planted: theme.colors.green,
+        recovered: theme.colors.amber,
+        overdue: theme.colors.red,
+        violet: "#7A6FB0",
+        parchment: theme.colors.sheet,
+        "parchment-soft": "#EFE8D5",
+        "parchment-ink": theme.colors.sheetInk,
+        "parchment-mute": theme.colors.sheetMute,
+        "parchment-line": "#D9CFB2",
       },
       fontFamily: {
         serif: theme.fonts.serif,
@@ -62,7 +117,7 @@ export default {
       },
       boxShadow: {
         // portal 浮层（Select/Popover/Dialog/Sheet）统一投影
-        surface: "0 12px 32px rgba(0, 0, 0, 0.45)",
+        surface: "0 12px 32px rgba(37, 64, 81, 0.28)",
       },
       zIndex: {
         overlay: "50",

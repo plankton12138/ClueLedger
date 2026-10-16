@@ -62,6 +62,7 @@ from hastings.server.provider_config import (
     ProviderProfile,
     ServerConfig,
     env_fallback_config,
+    is_loopback_url,
     mask_key,
     save_server_config,
 )
@@ -104,10 +105,13 @@ _EVENT_LIMIT_MAX: Final[int] = 1000
 class ModelDiscoveryError(Exception):
     """模型发现失败（P6 D3）：携带拟采用的 HTTP 状态码与三要素文案。"""
 
-    def __init__(self, *, status_code: int, detail: str) -> None:
+    def __init__(
+        self, *, status_code: int, detail: str, upstream_status: int | None = None
+    ) -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+        self.upstream_status = upstream_status
 
 
 async def discover_models(
@@ -126,7 +130,9 @@ async def discover_models(
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
         async with httpx.AsyncClient(
-            timeout=_MODEL_DISCOVERY_TIMEOUT_SECONDS, transport=transport
+            timeout=_MODEL_DISCOVERY_TIMEOUT_SECONDS,
+            transport=transport,
+            trust_env=not is_loopback_url(base_url),
         ) as client:
             response = await client.get(url, headers=headers)
     except httpx.HTTPError as exc:
@@ -152,6 +158,7 @@ async def discover_models(
     if response.status_code >= 400:
         raise ModelDiscoveryError(
             status_code=502,
+            upstream_status=response.status_code,
             detail=(
                 f"拉取模型列表失败（HTTP {response.status_code}）。"
                 f"为什么错：上游端点返回了 {response.status_code}。"
@@ -319,6 +326,7 @@ class ProviderSummary(BaseModel):
     key_hint: str
     available: bool
     no_auth: bool = False
+    catalog_id: str = ""
 
 
 class ProvidersResponse(BaseModel):
@@ -335,6 +343,10 @@ class CatalogEntrySummary(BaseModel):
     models: list[str]
     api_key_env: str
     key_url: str
+    category: str = "api"
+    no_auth: bool = False
+    docs_url: str = ""
+    note: str = ""
 
 
 class CatalogResponse(BaseModel):
@@ -701,6 +713,10 @@ def create_rest_router(
                     models=list(entry.models),
                     api_key_env=entry.api_key_env,
                     key_url=entry.key_url,
+                    category=entry.category,
+                    no_auth=entry.no_auth,
+                    docs_url=entry.docs_url,
+                    note=entry.note,
                 )
                 for entry in PROVIDER_CATALOG
             ]
@@ -718,6 +734,7 @@ def create_rest_router(
                     key_hint=mask_key(profile.resolved_api_key()),
                     available=profile.available,
                     no_auth=profile.no_auth,
+                    catalog_id=profile.catalog_id,
                 )
                 for profile in _book().config.providers
             ]
@@ -765,11 +782,18 @@ def create_rest_router(
             key_hint=mask_key(profile.resolved_api_key()),
             available=profile.available,
             no_auth=profile.no_auth,
+            catalog_id=profile.catalog_id,
         )
 
     def _persist_book(new_config: ServerConfig) -> None:
         """写回 config.yaml + 换进程事实（P7 T12）。写盘失败 → 500 归因环境。"""
         book = _book()
+        new_config = new_config.model_copy(
+            update={
+                "active_provider": book.config.active_provider,
+                "active_model": book.config.active_model,
+            }
+        )
         try:
             save_server_config(new_config, book.config_path)
         except OSError as exc:
@@ -828,9 +852,15 @@ def create_rest_router(
                 base_url=body.base_url,
                 # key 只进不出：留空 = 沿用旧 key（前端只有尾 4 位）
                 api_key=SecretStr(body.api_key) if body.api_key else existing.api_key,
-                api_key_env=body.api_key_env,
+                api_key_env=(
+                    body.api_key_env
+                    if "api_key_env" in body.model_fields_set
+                    else existing.api_key_env
+                ),
                 default_model=body.default_model,
-                no_auth=body.no_auth,
+                no_auth=body.no_auth if "no_auth" in body.model_fields_set else existing.no_auth,
+                catalog_id=existing.catalog_id if body.base_url == existing.base_url else "",
+                api=existing.api,
             )
             others = [p for p in book.config.providers if p.name != name]
         _persist_book(ServerConfig(providers=[*others, profile]))
@@ -842,6 +872,8 @@ def create_rest_router(
         book = _book()
         if book.profile(name) is None:
             raise HTTPException(status_code=404, detail=f"provider 档案不存在：{name!r}。")
+        if name == book.config.active_provider:
+            raise HTTPException(409, "该来源是当前模型；请先切换到其他来源，再删除连接")
         if name == book.boot_name:
             raise HTTPException(
                 status_code=409,

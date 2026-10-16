@@ -11,6 +11,7 @@ const entry: CatalogEntry = {
   models: ["deepseek-chat", "deepseek-reasoner"],
   api_key_env: "DEEPSEEK_API_KEY",
   key_url: "https://platform.deepseek.com/api_keys",
+  category: "api", no_auth: false, docs_url: "", note: "",
 };
 
 describe("suggestProfileName", () => {

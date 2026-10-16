@@ -18,7 +18,6 @@ from hastings.bible.store import (
     list_characters,
     load_ledger,
 )
-from hastings.cli_v2 import v2_bible_output
 from hastings.context_manager import compact_context
 from hastings.events_store import EventStore, events_file, make_event_persister
 from hastings.prompts import build_system_prompt, refresh_system_prompt
@@ -192,14 +191,13 @@ def format_bible(workspace: StoryWorkspace, entity_type: str | None = None) -> s
 def bible_command_output(workspace: StoryWorkspace, arg: str) -> str:
     """/bible 命令的完整输出。
 
-    架构判定（唯一判定点）：已迁移工作区走 V2 查询（``cli_v2.v2_bible_output``），
-    不再读 YAML——迁移后账本事实源在 V2 仓库，读旧 YAML 会把用户带回旧真相。
+    V2 项目由 Web 工作台读取，不再通过旧工作区设置映射到独立仓库。
     V1 工作区保持直读；直读入口是唯一绕过工具层碰 YAML 的地方：手改的文件可能
     损坏，读取失败转成可读文本而不是抛异常崩 REPL（R3 #4 教训）。
     """
     try:
         if workspace_architecture_version(workspace) == "v2":
-            return v2_bible_output(workspace, arg or None)
+            return "V2 项目请在 Web 工作台查看故事账本；旧工作区 CLI 不提供 V2 项目入口。"
         return format_bible(workspace, arg or None)
     except (ValidationError, LedgerFormatError, yaml.YAMLError, OSError) as exc:
         return f"读取 Story Bible 失败：{exc}\n（请检查 {workspace.bible_dir} 下的 YAML 文件）"

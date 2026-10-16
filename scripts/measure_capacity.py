@@ -1,7 +1,7 @@
 """Phase 17 容量测量（T17.8 / plan §7）：100 章 × 每章约 5000 中文字。
 
 测量项（plan §7 逐条对应）：
-- V1 源构造 + 幂等导入（迁移耗时）；
+- V2 项目构造与章节提交；
 - 打开项目不读全书正文：ManuscriptCatalog 元数据（不拼正文单元文本）；
 - 读取单章（units 全文拼接）延迟；
 - 章基础（chapter_base）计算延迟；
@@ -12,7 +12,7 @@
 
 预算口径（plan §7：不先写死毫秒门槛，测量值随构建笔记归档并解释选择）：
 目标硬件为开发笔记本；单章读 / 章基础 / 保存为交互路径，应显著低于秒级；
-导入与导出为一次性路径，秒级可接受。
+项目构造与导出为批量路径，秒级可接受。
 
 运行：``uv run python scripts/measure_capacity.py``（临时目录，跑完自清理）。
 """
@@ -30,15 +30,17 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from hastings.application.handlers.manuscript_commands import (
+    ManuscriptCommandHandler,
+    manuscript_command,
+)
 from hastings.application.workflows.manual_edit import CommitManualEdit, ManualEditIntent
-from hastings.bible.models import Clue, OutlineEntry
-from hastings.bible.store import StoryWorkspace, save_ledger
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
-from hastings.domain.repository.ids import Actor, CommitId
+from hastings.domain.manuscript.commands import import_chapter
+from hastings.domain.repository.ids import Actor, ProjectId
 from hastings.infrastructure.repository.sqlite import build_sqlite_repository
 from hastings.infrastructure.runtime import SystemClock, UuidIdGenerator
 from hastings.interfaces.exporters.v2_package_exporter import export_commit, zip_package
-from hastings.interfaces.importers.v1_workspace_importer import V1WorkspaceImporter
 
 CHAPTERS = 100
 PARAGRAPHS_PER_CHAPTER = 10
@@ -47,46 +49,26 @@ ACTOR = Actor(kind="human", id="capacity")
 SENTENCE = "侦探沿着回廊走向尽头的书房，雨水敲打着高窗，烛光在墙上投下摇晃的影子。"
 
 
-def _build_v1_workspace(root: Path) -> StoryWorkspace:
-    """构造 100 章的 V1 工作区（bible + chapters）。"""
-    workspace = StoryWorkspace(root=root, slug="capacity-100")
-    workspace.ensure_dirs()
-    save_ledger(
-        workspace.outline_path,
-        [
-            OutlineEntry(
-                name=f"第{i:03d}章 迷雾-{i}",
-                chapter=i,
-                act="第一幕",
-                beats=["开场", "推进", "收束"],
-                plant_plans=[],
-                end_hook="",
-                status="planned",
-            )
-            for i in range(1, CHAPTERS + 1)
-        ],
-    )
-    save_ledger(
-        workspace.clues_path,
-        [
-            Clue(
-                name="怀表停摆",
-                content="怀表停在被害时刻",
-                chapter="ch050",
-                points_to="管家",
-                is_red_herring=False,
-                is_genuine=True,
-                status="planted",
-            )
-        ],
-    )
-    paragraph = "".join(SENTENCE for _ in range(PARAGRAPH_CHARS // len(SENTENCE) + 1))[
-        :PARAGRAPH_CHARS
-    ]
-    for i in range(1, CHAPTERS + 1):
-        text = "\n\n".join(paragraph for _ in range(PARAGRAPHS_PER_CHAPTER))
-        (workspace.chapters_dir / f"ch{i:02d}.md").write_text(text, encoding="utf-8")
-    return workspace
+def _build_v2_project(service: Any, ids: UuidIdGenerator) -> ProjectId:
+    """直接构造 100 章 V2 正文，通过现有命令入口提交。"""
+    project = service.create_project("容量测量").id
+    handler = ManuscriptCommandHandler(service, service, ids, ACTOR)
+    paragraph = (SENTENCE * (PARAGRAPH_CHARS // len(SENTENCE) + 1))[:PARAGRAPH_CHARS]
+    text = "\n\n".join(paragraph for _ in range(PARAGRAPHS_PER_CHAPTER))
+    for index in range(1, CHAPTERS + 1):
+        handler.execute(
+            manuscript_command(
+                import_chapter,
+                chapter_id=f"chapter-{index:03d}",
+                title=f"第{index:03d}章 迷雾-{index}",
+                text=text,
+                order_key=f"{index:04d}",
+            ),
+            project_id=project,
+            idempotency_key=f"chapter-{index}",
+            summary=f"构造第{index}章",
+        )
+    return project
 
 
 def _timed(fn: Callable[[], Any], *, repeat: int = 1) -> dict[str, float | Any]:
@@ -111,8 +93,6 @@ def _strip(timed: dict[str, float | Any]) -> dict[str, float]:
 def main() -> int:
     workdir = Path(tempfile.mkdtemp(prefix="h17-capacity-"))
     db_path = workdir / "v2.db"
-    root = workdir / "stories"
-    root.mkdir()
     measurements: dict[str, Any] = {
         "dataset": {
             "chapters": CHAPTERS,
@@ -120,27 +100,14 @@ def main() -> int:
         }
     }
     try:
-        # 1) V1 源构造
-        built = _timed(lambda: _build_v1_workspace(root))
-        workspace: StoryWorkspace = built["result"]
-        measurements["build_v1_workspace"] = _strip(built)
-
-        # 2) 幂等导入（迁移主路径，一次性）
-        repo = build_sqlite_repository(str(db_path), SystemClock(), UuidIdGenerator())
-        service = repo.service
-        importer = V1WorkspaceImporter(service, service, actor=ACTOR)
-        report = importer.dry_run(workspace)
-        if not report.ok:
-            print(json.dumps({"error": "报告未通过"}, ensure_ascii=False))
-            return 1
-        project = service.create_project("容量测量").id
-        applied = _timed(
-            lambda: importer.apply(workspace, project_id=project, confirm_run_id=report.run_id)
-        )
-        result = applied["result"]
-        assert result is not None and result.validation.ok, "导入校验未通过"
-        measurements["import_commit"] = _strip(applied)
-        head = CommitId(result.new_head)
+        # 直接使用 V2 命令构造项目，批量构造耗时与交互路径分开记录。
+        ids = UuidIdGenerator()
+        service = build_sqlite_repository(str(db_path), SystemClock(), ids).service
+        built = _timed(lambda: _build_v2_project(service, ids))
+        project = built["result"]
+        measurements["build_v2_project"] = _strip(built)
+        head = service.get_branch(project, "main").head_commit_id
+        assert head is not None
 
         # 3) 打开项目不读全书：章元数据目录
         opened = _timed(

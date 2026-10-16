@@ -1,10 +1,13 @@
 # Hastings V2 文档入口
 
-> 状态：**Phase 11–17 已完成（2026-10-15）**。Phase 17 经用户决策「项目未上线，V1 直接弃用」完成收口：旧写路径四项删除执行、V1 工作区收缩为只读 + 可迁移（见 [phase-17-migration-cleanup.md §2.11](phase-17-migration-cleanup.md)）。
+> 状态：**Phase 11–18 已完成（2026-10-15）**。Phase 17 经用户决策「项目未上线，V1 直接弃用」完成旧写路径退出；随后删除旧工作区迁移功能，见 [旧工作区迁移退役记录](phase-17-workspace-retirement.md)。
 > 本目录描述 Hastings 下一版的目标形态；当前已经运行的系统仍以
 > [`src/hastings/README.md`](../../src/hastings/README.md) 和旧版
 > [`dev-notes/v1/DESIGN.md`](../v1/DESIGN.md) 的 as-built 标注为准。
-> V2 的领域与工作流已有独立实现；Web 服务通过 `--v2-db` 选择性启用；旧工作区导入器已可 dry-run / 幂等导入 / 校验。
+> V2 的领域与工作流已有独立实现；Web 服务通过 `--v2-db` 选择性启用；作品直接创建为 V2 项目，旧工作区迁移功能已删除。
+> 模型接入与切换已补齐，见 [Phase 18](phase-18-model-access.md)：厂商/套餐预设、服务端当前模型与本地模型。
+> 前端已替换为七页作者工作台，交付与边界见 [phase-17-frontend-workbench.md](phase-17-frontend-workbench.md)，运行见 [frontend/README.md](../../frontend/README.md)。
+> Phase 19 进行中：19.1 已交付七页常驻对话栏与可控模拟完整流程，见 [phase-19-chat-workbench.md](phase-19-chat-workbench.md)。
 
 ## 1. 文档权威顺序
 
@@ -25,13 +28,18 @@
 
 ## 2. 阅读路线
 
+下一阶段计划：[Phase 19：常驻对话侧栏与显式创作周期](plans/phase-19-chat-workbench-plan.md)（进行中，19.1 已交付）。按前端原型、状态契约、真实流式对话、上下文与任务准备、创作审阅接入、整体验收推进。
+
 | 想了解 | 先读 |
 |---|---|
 | 产品目标、整体架构、核心流程 | [DESIGN.md](DESIGN.md) |
 | 模块依赖、公开契约和不变量 | [modules/README.md](modules/README.md) |
 | 全部重建阶段、依赖和里程碑 | [plans/README.md](plans/README.md) |
-| 最近阶段（已完成） | [phase-17-migration-cleanup.md](phase-17-migration-cleanup.md)（旧工作区迁移全链路：扫描/幂等导入/校验/不可达证明/迁移产品流/CLI+WS 切换/导出/演练与测量；V1 弃用收尾见 §2.11）；上一阶段：[phase-16-agent-workflows.md](phase-16-agent-workflows.md)（六角色、任务上下文、持久 Job 与真模型走查） |
-| 旧系统如何迁移 | [DESIGN.md §11](DESIGN.md#11-旧系统迁移边界)；导入器实现见 [modules/interfaces-observability.md §0.1](modules/interfaces-observability.md) |
+| 最新交付 | [Phase 18：模型接入与切换](phase-18-model-access.md) |
+| 进行中阶段 | [phase-19-chat-workbench.md](phase-19-chat-workbench.md)（19.1 常驻对话栏 + 可控模拟；19.2–19.6 待实施） |
+| 最新清理 | [旧工作区迁移退役记录](phase-17-workspace-retirement.md)（迁移入口、导入器、专用夹具退出，V2 导出保留） |
+| 最近阶段（已完成） | [phase-17-migration-cleanup.md](phase-17-migration-cleanup.md)（历史交付记录，迁移功能现已退役：扫描/幂等导入/校验/不可达证明/迁移产品流/CLI+WS 切换/导出/演练与测量；V1 弃用收尾见 §2.11）；上一阶段：[phase-16-agent-workflows.md](phase-16-agent-workflows.md)（六角色、任务上下文、持久 Job 与真模型走查） |
+| 旧工作区处理 | [旧工作区迁移退役记录](phase-17-workspace-retirement.md)；项目未上线，不再提供 V1 数据迁移 |
 
 ## 3. V2 核心词汇
 
@@ -74,12 +82,14 @@ dev-notes/v2/
 ├── decisions/                    # ADR-001~007 与路由开关设计（Phase 11 冻结）
 ├── current-system-inventory.md   # 现状系统迁移清单（as-built 快照）
 ├── modules/                      # 模块职责、契约和不变量
-├── plans/                        # Phase 11–17 详细实施计划
+├── plans/                        # Phase 11–19 详细实施计划
 ├── phase-11-architecture-baseline.md  # Phase 11 构建笔记
 ├── phase-12-repository-kernel.md      # Phase 12 构建笔记
 ├── phase-13-story-domain.md           # Phase 13 构建笔记
 ├── phase-14-manuscript-author-model.md  # Phase 14 构建笔记
 ├── phase-15-change-impact.md          # Phase 15 构建笔记
 ├── phase-16-agent-workflows.md       # Phase 16 构建笔记
-└── phase-17-migration-cleanup.md     # Phase 17 构建笔记（已完成，含 V1 弃用收尾 §2.11）
+├── phase-17-migration-cleanup.md     # Phase 17 构建笔记（已完成，含 V1 弃用收尾 §2.11）
+├── phase-18-model-access.md          # Phase 18 构建笔记（模型接入与切换）
+└── phase-19-chat-workbench.md        # Phase 19 构建笔记（进行中，19.1 已交付）
 ```

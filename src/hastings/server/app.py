@@ -16,11 +16,12 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from hastings.server.provider_config import ProviderBook
+from hastings.server.model_access import create_model_access_router
+from hastings.server.provider_config import ProviderBook, env_fallback_config
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.rest import create_rest_router
 from hastings.server.v2 import V2Runtime, create_v2_router, register_v2_error_handlers
-from hastings.server.v2_migration import create_migration_router
+from hastings.server.v2_agents import ConfiguredV2Runner
 from hastings.server.v2_ws import create_v2_ws_router
 from hastings.server.ws import router as ws_router
 
@@ -49,6 +50,10 @@ def create_app(
     ``ollama_transport``/``installed_probe``（本地模型）仅供测试注入。
     """
     app = FastAPI(title="Hastings", version="0.1.0")
+    if book is None:
+        book = ProviderBook(env_fallback_config(), boot_name="default", boot_model="")
+    app.state.provider_book = book
+    app.include_router(create_model_access_router(book, transport=model_transport))
     app.state.registry = registry  # WS 路由与测试内省用；REST 路由经参数绑定
     app.include_router(
         create_rest_router(
@@ -67,11 +72,11 @@ def create_app(
         return HealthResponse(status="ok")
 
     if v2_runtime is not None:
+        if isinstance(v2_runtime.worker.runner, ConfiguredV2Runner):
+            v2_runtime.worker.runner.book = book
         # V2 REST 面与 V1 共存（T14.8）：独立前缀 /api/v2，错误信封独立注册
         app.include_router(create_v2_router(v2_runtime))
         app.include_router(create_v2_ws_router(v2_runtime))
-        # 迁移面（T17.5）：slug 命名空间的 dry-run/apply，衔接 V1 工作区与 V2 项目
-        app.include_router(create_migration_router(registry, v2_runtime))
         register_v2_error_handlers(app)
 
     if static_dir is not None and static_dir.is_dir():

@@ -114,7 +114,7 @@ export default function ManuscriptPanel() {
             字数 <b className="font-semibold text-gold-soft">{chars.toLocaleString()}</b>
           </span>
         )}
-        <span className="ml-auto text-[11px] text-paper/40">V1 只读 · 改写请迁移到 V2 项目</span>
+        <span className="ml-auto text-[11px] text-paper/40">V1 只读 · 创作请使用 V2 工作台</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">

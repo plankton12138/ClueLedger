@@ -8,8 +8,8 @@
  *
  * 进度走 POST /api/ollama/pull 流式 NDJSON（fetch + ReadableStream），
  * AbortController 可取消；下载在 Ollama 侧继续，取消/断开后重发即续传。
- * 「设为当前模型」两跳：upsertProvider("ollama", no_auth) → saveSettings
- * （跨档案切换会重建会话，先经确认弹窗，与模型接入卡同一口径）。
+ * V2 的「设为当前模型」经 onUseModel 接到服务级模型选择；旧页面兼容路径
+ * 仍经 upsertProvider → saveSettings，只有旧会话切换需要重建提示。
  * 进度生命周期限于本卡（卸载即 abort），不进 Zustand 全局态。
  */
 
@@ -37,10 +37,11 @@ interface PullTask {
 }
 
 interface LocalModelCardProps {
-  slug: string;
-  writingLanguage: string;
+  slug?: string;
+  writingLanguage?: string;
   onProvidersChanged: () => Promise<void>;
   onModelSwitched: (profile: string, model: string) => void;
+  onUseModel?: (model: string) => Promise<void>;
 }
 
 export default function LocalModelCard({
@@ -48,6 +49,7 @@ export default function LocalModelCard({
   writingLanguage,
   onProvidersChanged,
   onModelSwitched,
+  onUseModel,
 }: LocalModelCardProps) {
   const [status, setStatus] = useState<OllamaStatusWire | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -64,7 +66,10 @@ export default function LocalModelCard({
     try {
       setInstalled(await fetchOllamaModels());
     } catch (exc) {
-      setFeedback({ kind: "error", text: exc instanceof Error ? exc.message : String(exc) });
+      setFeedback({
+        kind: "error",
+        text: exc instanceof Error ? exc.message : String(exc),
+      });
     }
   }
 
@@ -86,7 +91,10 @@ export default function LocalModelCard({
     fetchOllamaCatalog()
       .then(setCatalog)
       .catch((exc: unknown) =>
-        setFeedback({ kind: "error", text: exc instanceof Error ? exc.message : String(exc) }),
+        setFeedback({
+          kind: "error",
+          text: exc instanceof Error ? exc.message : String(exc),
+        }),
       );
     return () => abortRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,14 +118,23 @@ export default function LocalModelCard({
         },
         controller.signal,
       );
-      setFeedback({ kind: "ok", text: `模型 ${model} 下载完成，可点「设为当前模型」启用。` });
+      setFeedback({
+        kind: "ok",
+        text: `模型 ${model} 下载完成，可点「设为当前模型」启用。`,
+      });
       await refreshInstalled();
     } catch (exc) {
       const aborted = exc instanceof DOMException && exc.name === "AbortError";
       setFeedback(
         aborted
-          ? { kind: "ok", text: `已取消 ${model} 下载；Ollama 侧可能仍在继续，重新点击即续传。` }
-          : { kind: "error", text: exc instanceof Error ? exc.message : String(exc) },
+          ? {
+              kind: "ok",
+              text: `已取消 ${model} 下载；Ollama 侧可能仍在继续，重新点击即续传。`,
+            }
+          : {
+              kind: "error",
+              text: exc instanceof Error ? exc.message : String(exc),
+            },
       );
     } finally {
       setPull(null);
@@ -127,7 +144,12 @@ export default function LocalModelCard({
 
   async function removeModel(name: string): Promise<void> {
     if (pull !== null || deleting !== null) return;
-    if (!window.confirm(`从 Ollama 删除模型「${name}」？删除后需重新下载才能使用。`)) return;
+    if (
+      !window.confirm(
+        `从 Ollama 删除模型「${name}」？删除后需重新下载才能使用。`,
+      )
+    )
+      return;
     setDeleting(name);
     setFeedback(null);
     try {
@@ -135,7 +157,10 @@ export default function LocalModelCard({
       await refreshInstalled();
       setFeedback({ kind: "ok", text: `模型「${name}」已删除。` });
     } catch (exc) {
-      setFeedback({ kind: "error", text: exc instanceof Error ? exc.message : String(exc) });
+      setFeedback({
+        kind: "error",
+        text: exc instanceof Error ? exc.message : String(exc),
+      });
     } finally {
       setDeleting(null);
     }
@@ -144,6 +169,7 @@ export default function LocalModelCard({
   async function useAsCurrent(model: string): Promise<void> {
     if (status === null || switching !== null) return;
     if (
+      !onUseModel &&
       !window.confirm(
         `切换到本地模型「${model}」会重建该工作区会话（对话历史保留；` +
           `若有写作流在进行，请先等它结束）。继续？`,
@@ -154,6 +180,14 @@ export default function LocalModelCard({
     setSwitching(model);
     setFeedback(null);
     try {
+      if (onUseModel) {
+        await onUseModel(model);
+        setFeedback({
+          kind: "ok",
+          text: `已切换到本地模型 ${model}，后续任务生效。`,
+        });
+        return;
+      }
       await upsertProvider("ollama", {
         base_url: `${status.base_url}/v1`,
         api_key: "",
@@ -162,15 +196,21 @@ export default function LocalModelCard({
         no_auth: true,
       });
       await onProvidersChanged();
-      const saved = await saveSettings(slug, {
-        writing_language: writingLanguage,
+      const saved = await saveSettings(slug!, {
+        writing_language: writingLanguage ?? "中文",
         provider_profile: "ollama",
         model,
       });
       onModelSwitched(saved.provider_profile, saved.model);
-      setFeedback({ kind: "ok", text: `已切换到本地模型 ${saved.model}，下一轮对话即生效。` });
+      setFeedback({
+        kind: "ok",
+        text: `已切换到本地模型 ${saved.model}，下一轮对话即生效。`,
+      });
     } catch (exc) {
-      setFeedback({ kind: "error", text: exc instanceof Error ? exc.message : String(exc) });
+      setFeedback({
+        kind: "error",
+        text: exc instanceof Error ? exc.message : String(exc),
+      });
     } finally {
       setSwitching(null);
     }
@@ -197,11 +237,14 @@ export default function LocalModelCard({
         )}
       </div>
       <p className="mt-2 text-[11px] leading-relaxed text-paper/40">
-        经 Ollama 使用本机运行的小模型（推荐 Qwen 系列），无需 API key；推理完全在本地进行。
+        经 Ollama 使用本机运行的小模型（推荐 Qwen 系列），无需 API
+        key；推理完全在本地进行。
       </p>
 
       {statusError !== null && (
-        <p className="mt-3 text-xs leading-relaxed text-overdue">{statusError}</p>
+        <p className="mt-3 text-xs leading-relaxed text-overdue">
+          {statusError}
+        </p>
       )}
 
       {uiState === "unknown" && statusError === null && (
@@ -235,7 +278,10 @@ export default function LocalModelCard({
           <p>已检测到本机装有 Ollama，但服务未运行。启动方式任选其一：</p>
           <ul className="mt-2 list-inside list-disc space-y-1 text-paper/60">
             <li>启动 Ollama 桌面应用（开始菜单搜 Ollama）；</li>
-            <li>或在终端执行 <code className="text-gold-soft">ollama serve</code>。</li>
+            <li>
+              或在终端执行 <code className="text-gold-soft">ollama serve</code>
+              。
+            </li>
           </ul>
           <p className="mt-2 text-paper/40">启动后点右上角「重新检测」。</p>
         </div>
@@ -250,7 +296,10 @@ export default function LocalModelCard({
           {pull !== null && (
             <div className="mt-3 border border-line bg-ink p-3">
               <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] text-paper/60">
-                <span className="min-w-0 truncate" title={`${pull.model}：${pull.note}`}>
+                <span
+                  className="min-w-0 truncate"
+                  title={`${pull.model}：${pull.note}`}
+                >
                   {pull.model}：{pull.note}
                 </span>
                 <span className="flex-none font-mono">
@@ -280,10 +329,15 @@ export default function LocalModelCard({
               return (
                 <div key={entry.name} className="border border-line p-3">
                   <div className="flex min-w-0 items-center justify-between gap-2">
-                    <span className="min-w-0 truncate text-sm text-paper" title={entry.name}>
+                    <span
+                      className="min-w-0 truncate text-sm text-paper"
+                      title={entry.name}
+                    >
                       {entry.name}
                     </span>
-                    <span className="flex-none text-[11px] text-paper/40">{entry.params}</span>
+                    <span className="flex-none text-[11px] text-paper/40">
+                      {entry.params}
+                    </span>
                   </div>
                   <p className="mt-1 truncate text-[11px] text-paper/40">
                     {entry.size_label} · {entry.note}
@@ -328,8 +382,14 @@ export default function LocalModelCard({
           ) : (
             <ul className="mt-2 divide-y divide-line/60">
               {installed.map((m) => (
-                <li key={m.name} className="flex min-w-0 items-center gap-3 py-2">
-                  <span className="min-w-0 flex-1 truncate text-sm text-paper" title={m.name}>
+                <li
+                  key={m.name}
+                  className="flex min-w-0 items-center gap-3 py-2"
+                >
+                  <span
+                    className="min-w-0 flex-1 truncate text-sm text-paper"
+                    title={m.name}
+                  >
                     {m.name}
                   </span>
                   <span className="flex-none text-[11px] text-paper/45">

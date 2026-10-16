@@ -116,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--v2-db",
         type=Path,
         default=None,
-        help="启用 V2 变更中心，指定独立仓库数据库路径；不迁移旧工作区",
+        help="启用 V2 工作台，指定独立仓库数据库路径",
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="监听端口（默认 8000）")

@@ -1,54 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { theme } from "./theme";
-
-// 设计令牌是 T8/T9 全部样式的源头：把视觉稿的关键色值钉进测试，
-// 防止后续调样式时无意识漂移（与后端"用测试钉住协议"同一哲学）。
-describe("Digital Noir 设计令牌", () => {
-  it("主色与文本色与视觉稿一致（submission/03-cover-design.md）", () => {
-    expect(theme.colors.gold).toBe("#C8A84D"); // 暗金主色
-    expect(theme.colors.goldSoft).toBe("#D4B896"); // 淡金
-    expect(theme.colors.paper).toBe("#E0DCC8"); // 正文浅灰
+describe("iOS 6 浅色主题", () => {
+  it("蓝色金属界面与独立正文纸面", () => {
+    expect(theme.colors.page).toBe("#E7EAEB");
+    expect(theme.colors.sheet).toBe("#F7F3E8");
+    expect(theme.colors.fg).not.toBe(theme.colors.page);
+    expect(theme.colors.chromeLow).not.toBe(theme.colors.chromeHigh);
   });
-
-  it("语义状态色覆盖伏笔生命周期三态", () => {
-    expect(theme.colors.planned).toMatch(/^#[0-9A-F]{6}$/i); // 已计划：蓝
-    expect(theme.colors.planted).toMatch(/^#[0-9A-F]{6}$/i); // 已埋设：绿
-    expect(theme.colors.overdue).toMatch(/^#[0-9A-F]{6}$/i); // 逾期：红
-  });
-
-  it("P5：伏笔生命周期第四色已回收 = 暗金（与主色同源的语义别名）", () => {
-    expect(theme.colors.recovered).toBe("#C8A84D");
-  });
-
-  it("P7 T4：事件流工具返回徽章 violet 令牌（计划 D8）", () => {
-    expect(theme.colors.violet).toBe("#8B7EC8");
-  });
-
-  it("P5：parchment 系纸面令牌（暗色环境中的唯一浅色面）", () => {
-    expect(theme.colors.parchment).toBe("#F2ECD9"); // 纸面底色
-    expect(theme.colors.parchmentInk).toBe("#2B2417"); // 纸面墨色
-    expect(theme.colors.parchmentMute).toMatch(/^#[0-9A-F]{6}$/i); // 次级墨色
-    expect(theme.colors.parchmentLine).toMatch(/^#[0-9A-F]{6}$/i); // 纸面分隔线
-    // 纸面亮度必须显著高于页面底色（浅色面在深色环境中即为视觉焦点）
-    const lum = (hex: string): number => {
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
-      return r + g + b;
-    };
-    expect(lum(theme.colors.parchment)).toBeGreaterThan(lum(theme.colors.ink) * 4);
-  });
-
-  it("底色是深靛蓝系（亮度足够暗，保证暗色主题）", () => {
-    const ink = theme.colors.ink;
-    const r = parseInt(ink.slice(1, 3), 16);
-    const g = parseInt(ink.slice(3, 5), 16);
-    const b = parseInt(ink.slice(5, 7), 16);
-    expect(b).toBeGreaterThan(r); // 蓝分量主导
-    expect(Math.max(r, g, b)).toBeLessThan(0x40); // 足够深
-  });
-
-  it("中文标题走衬线字体栈", () => {
-    expect(theme.fonts.serif[0]).toBe('"Noto Serif SC"');
+  it("状态与差异有独立语义", () => {
+    expect(
+      new Set([
+        theme.colors.green,
+        theme.colors.amber,
+        theme.colors.red,
+        theme.colors.blue,
+      ]).size,
+    ).toBe(4);
+    expect(theme.colors.delBg).not.toBe(theme.colors.insBg);
+    expect(theme.fonts.serif).toContain('"Noto Serif SC"');
   });
 });

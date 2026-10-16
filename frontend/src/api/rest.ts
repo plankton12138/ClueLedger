@@ -7,6 +7,7 @@
 
 import type { EventFrame } from "./types";
 import { parsePullFrame, parsePullLines, type PullFrame } from "../state/ollama";
+import { MODEL_BACKEND_MISMATCH } from "./compatibility";
 
 export type BibleType = "character" | "clue" | "foreshadow" | "method" | "timeline";
 
@@ -483,6 +484,7 @@ export interface ProviderSummary {
   available: boolean;
   /** 免密端点（本地模型如 Ollama）：无 key 也可用，提示文案随之区分。 */
   no_auth: boolean;
+  catalog_id?: string;
 }
 
 /** GET /api/providers → 服务级档案目录（config.yaml 或 env 回落单档案）。 */
@@ -532,6 +534,10 @@ export interface CatalogEntry {
   models: string[];
   api_key_env: string;
   key_url: string;
+  category: "api" | "coding_plan" | "local";
+  no_auth: boolean;
+  docs_url: string;
+  note: string;
 }
 
 /** GET /api/provider-catalog → 内建目录（静态数据，无任何密钥字段）。 */
@@ -547,6 +553,14 @@ export async function fetchProviderCatalog(): Promise<CatalogEntry[]> {
       `目录响应结构不符：期望 { catalog: [] }，收到 ${JSON.stringify(body)}。`,
     );
   }
+  if (
+    catalog.some(
+      (entry: unknown) =>
+        typeof entry === "object" && entry !== null && !("category" in entry),
+    )
+  ) {
+    throw new Error(MODEL_BACKEND_MISMATCH);
+  }
   return catalog as CatalogEntry[];
 }
 
@@ -554,7 +568,8 @@ export async function fetchProviderCatalog(): Promise<CatalogEntry[]> {
 export interface ProviderUpsert {
   base_url: string;
   api_key: string;
-  api_key_env: string;
+  /** 省略时保留既有环境变量来源；显式空串表示清空。 */
+  api_key_env?: string;
   default_model: string;
   /** 免密端点（本地模型如 Ollama）：true 时档案无 key 也算可用。 */
   no_auth?: boolean;

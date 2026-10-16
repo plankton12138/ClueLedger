@@ -6,7 +6,7 @@
 
 | 文档集 | 定位 | 入口 |
 |---|---|---|
-| V2 | 目标架构与 Phase 11–17 计划；Phase 11–16 已交付，Phase 17（迁移）进行中 | [v2/README.md](v2/README.md) |
+| V2 | Phase 11–18 设计与交付记录，含作者工作台与模型接入 | [v2/README.md](v2/README.md) |
 | V1 | 当前运行系统的 as-built 说明、P0–P10 历史计划、构建笔记和验收材料 | [v1/README.md](v1/README.md) |
 | 灵感池 | 跨版本、未排期的产品与 Agent 想法 | [ideas.md](ideas.md) |
 | 真模型评测 | 走查用例、运行方法和历史报告 | [../eval/README.md](../eval/README.md) |
@@ -20,9 +20,13 @@
 
 ## 当前入口
 
+- 下一阶段开发计划：[Phase 19：常驻对话侧栏与显式创作周期](v2/plans/phase-19-chat-workbench-plan.md)，先设计前端交互，再实现流式对话与明确触发的创作闭环；尚未实施。
+
+- 最新模型接入：[Phase 18：模型接入与切换](v2/phase-18-model-access.md)，含国内 API / Coding Plan 预设与本地模型。
 - 当前目标设计：[v2/DESIGN.md](v2/DESIGN.md)
-- 当前实施计划：Phase 17 进行中（2026-10-15）；旧工作区导入（扫描/幂等导入/校验）与旧写路径不可达证明已交付，界面切换与旧代码删除未完成 [phase-17-migration-cleanup-plan.md](v2/plans/phase-17-migration-cleanup-plan.md)
-- 最近阶段构建笔记（进行中）：[v2/phase-17-migration-cleanup.md](v2/phase-17-migration-cleanup.md)
+- 当前前端交付（2026-10-15）：[V2 七页作者工作台](v2/phase-17-frontend-workbench.md)，运行与验证见 [frontend/README.md](../frontend/README.md)
+- 当前旧工作区处置：[迁移功能退役](v2/phase-17-workspace-retirement.md)；不再维护 V1 → V2 数据迁移。
+- 历史迁移与旧链路退出记录：[v2/phase-17-migration-cleanup.md](v2/phase-17-migration-cleanup.md)；原计划见 [phase-17-migration-cleanup-plan.md](v2/plans/phase-17-migration-cleanup-plan.md)
 - 上一阶段 as-built：Agent 编排与任务上下文 [v2/modules/orchestration-context.md](v2/modules/orchestration-context.md) + 构建笔记 [v2/phase-16-agent-workflows.md](v2/phase-16-agent-workflows.md)
 - Phase 15 as-built：影响分析与系统修复 [v2/modules/change-impact.md](v2/modules/change-impact.md) + 构建笔记 [v2/phase-15-change-impact.md](v2/phase-15-change-impact.md)
 - Phase 14 as-built：正文版本与作者模型 [v2/modules/manuscript-author-model.md](v2/modules/manuscript-author-model.md) + 构建笔记 [v2/phase-14-manuscript-author-model.md](v2/phase-14-manuscript-author-model.md)
