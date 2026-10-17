@@ -32,7 +32,7 @@ from typing import Any, cast
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from hastings import __version__
 from hastings.application.capabilities import capabilities_payload
@@ -58,6 +58,7 @@ from hastings.application.ports.events import EventOutbox
 from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.conversation_service import ConversationService
+from hastings.application.services.entry_service import EntryService
 from hastings.application.services.task_prep_service import TaskPrepService
 from hastings.application.services.task_projection import ChatTaskProjector
 from hastings.application.workflows.agent_workflows import AgentWorkflows
@@ -160,6 +161,9 @@ class V2Runtime:
             model_resolver=v2_runner.chat_model,
             ref_validator=self.validate_refs,
         )
+        # 无作品入口预约与无模型想法（M02/V03-1.2）：与对话共用存储，
+        # 预约记录走仓库辅助表（V03-0.5）。
+        self.entries = EntryService(self.service, self.conversation_store, self.clock)
         self.chat.binding_resolver = v2_runner.model_binding
         self.chat.bound_runner_factory = v2_runner.bound_chat_runner
         # 任务准备（Phase 19.4）：建议本身不创建 Job；启动经 starter 映射到
@@ -702,6 +706,16 @@ class V2Runtime:
 # ---------------------------------------------------------------------------
 # 请求 / 响应模型
 # ---------------------------------------------------------------------------
+class EntryRequest(BaseModel):
+    """无作品入口请求（M02/V03-1.2）。"""
+
+    entry_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    mode: str = "save_idea"
+    title: str = ""
+
+
 class ProjectCreateRequest(BaseModel):
     name: str
 
@@ -791,6 +805,32 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         前端只消费本接口，不另写常量；excluded 功能不公布为可用。
         """
         return capabilities_payload()
+
+    @router.post("/entries")
+    async def create_entry(req: EntryRequest) -> dict[str, Any]:
+        """无作品入口（M02/V03-1.2）：预约 + 无模型保存想法。
+
+        ``mode=save_idea`` 只落 author 消息（not_requested），不启动模型；
+        发送模式（明确授权后启动）在 V03-1.5「接着讨论」落地。
+        """
+        if req.mode != "save_idea":
+            raise ViolationError(
+                code="ENTRY_MODE_UNSUPPORTED",
+                where="entries.create",
+                why=f"入口模式 {req.mode!r} 尚未开放（为什么错：发送必须由作者显式授权）",
+                fix="先用 save_idea 保存想法；从已保存消息继续讨论见「接着讨论」",
+                details={"mode": req.mode},
+            )
+        saved = await runtime.entries.save_author_once(
+            req.entry_id, req.request_id, req.text, title=req.title or "新想法"
+        )
+        return {
+            "entry_id": saved.target.entry_id,
+            "project_id": saved.target.project_id,
+            "conversation_id": saved.target.conversation_id,
+            "message_id": saved.message_id,
+            "status": saved.status,
+        }
 
     @router.post("/projects")
     def create_project(req: ProjectCreateRequest) -> dict[str, Any]:

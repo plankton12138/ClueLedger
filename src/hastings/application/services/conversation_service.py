@@ -98,6 +98,10 @@ class ConversationService:
     async def list_conversations(self, project_id: str) -> list[m.Conversation]:
         return await self.store.list_conversations(project_id)
 
+    async def conversation(self, project_id: str, conversation_id: str) -> m.Conversation:
+        """公开的归属校验：跨项目/不存在一律 CHAT_CONVERSATION_NOT_FOUND。"""
+        return await self._require_conversation(project_id, conversation_id)
+
     async def _require_conversation(self, project_id: str, conversation_id: str) -> m.Conversation:
         conversation = await self.store.get_conversation(conversation_id)
         if conversation is None or conversation.project_id != project_id:

@@ -28,6 +28,7 @@ __all__ = [
     "KIND_TEXT",
     "MESSAGE_COMPLETED",
     "MESSAGE_FAILED",
+    "MESSAGE_NOT_REQUESTED",
     "MESSAGE_STOPPED",
     "MESSAGE_STREAMING",
     "ROLE_ASSISTANT",
@@ -67,8 +68,17 @@ MESSAGE_STREAMING = "streaming"
 MESSAGE_COMPLETED = "completed"
 MESSAGE_STOPPED = "stopped"
 MESSAGE_FAILED = "failed"
+#: 作者消息已保存但从未请求模型（M02/V03-1.2 无模型想法）：
+#: 与「失败」区分——这不是错误，是没有发起过调用。
+MESSAGE_NOT_REQUESTED = "not_requested"
 _MESSAGE_STATUSES = frozenset(
-    (MESSAGE_STREAMING, MESSAGE_COMPLETED, MESSAGE_STOPPED, MESSAGE_FAILED)
+    (
+        MESSAGE_STREAMING,
+        MESSAGE_COMPLETED,
+        MESSAGE_STOPPED,
+        MESSAGE_FAILED,
+        MESSAGE_NOT_REQUESTED,
+    )
 )
 
 # 消息类型

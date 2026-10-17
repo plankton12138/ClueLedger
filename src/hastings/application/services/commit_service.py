@@ -177,7 +177,13 @@ class CommitService:
     # 写路径
     # ------------------------------------------------------------------
 
-    def create_project(self, name: str) -> Project:
+    def create_project(self, name: str, project_id: str | None = None) -> Project:
+        """创建作品；``project_id`` 显式给出时使用该身份（V03-1.2 入口预约）。
+
+        入口预约（entry_id → 作品）需要确定性身份：同一 entry_id 的重试
+        必须找回同一作品而不是重复创建。显式 ID 已存在时原样返回既有
+        作品（幂等），不同名不覆盖。
+        """
         if not name or not name.strip():
             raise _violation(
                 ec.REPO_INVALID_CHANGE,
@@ -187,7 +193,13 @@ class CommitService:
             )
         now = self._storage.now()
         with self._storage.transaction() as txn:
-            project = Project(id=ProjectId(self._ids.new_id("prj")), name=name, created_at=now)
+            if project_id is not None:
+                existing = txn.get_project(ProjectId(project_id))
+                if existing is not None:
+                    return existing  # 幂等预约：同 entry 的重试找回同一作品
+            project = Project(
+                id=ProjectId(project_id or self._ids.new_id("prj")), name=name, created_at=now
+            )
             branch = Branch(
                 id=BranchId(self._ids.new_id("br")),
                 project_id=project.id,

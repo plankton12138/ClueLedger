@@ -37,6 +37,13 @@ class SendTurnRequest(BaseModel):
     idempotency_key: str = Field(min_length=1)
 
 
+class SaveAuthorMessageRequest(BaseModel):
+    """无模型保存后续想法（M02/V03-1.2）：只落 author 消息，不启动模型。"""
+
+    request_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+
+
 class CancelRequest(BaseModel):
     pass
 
@@ -91,6 +98,17 @@ def create_conversations_router(runtime: V2Runtime) -> APIRouter:
         found = await runtime.chat.messages(project_id, conversation_id)
         return {"messages": [x.to_dict() for x in found]}
 
+    @router.post("/conversations/{conversation_id}/author-messages")
+    async def save_author_message(
+        project_id: str, conversation_id: str, req: SaveAuthorMessageRequest
+    ) -> dict[str, Any]:
+        """保存后续想法（无模型端口）：not_requested，作者主动发送才启动。"""
+        await runtime.chat.conversation(project_id, conversation_id)
+        message_id = await runtime.entries.save_author_message(
+            conversation_id, req.request_id, req.text
+        )
+        return {"message_id": message_id, "status": "not_requested"}
+
     @router.post("/conversations/{conversation_id}/turns")
     async def send_turn(
         project_id: str, conversation_id: str, req: SendTurnRequest
@@ -115,16 +133,12 @@ def create_conversations_router(runtime: V2Runtime) -> APIRouter:
         return {}
 
     @router.post("/conversations/{conversation_id}/turns/{turn_id}/retry")
-    async def retry_turn(
-        project_id: str, conversation_id: str, turn_id: str
-    ) -> dict[str, Any]:
+    async def retry_turn(project_id: str, conversation_id: str, turn_id: str) -> dict[str, Any]:
         turn = await runtime.chat.retry_turn(project_id, conversation_id, turn_id)
         return turn.to_dict()
 
     @router.post("/task-drafts")
-    async def create_task_draft(
-        project_id: str, req: CreateTaskDraftRequest
-    ) -> dict[str, Any]:
+    async def create_task_draft(project_id: str, req: CreateTaskDraftRequest) -> dict[str, Any]:
         # 建议本身不创建 Job（§3.3）：这里只落盘一份可检查的参数草案。
         draft, message_id = await runtime.task_prep.create_draft(
             project_id,
