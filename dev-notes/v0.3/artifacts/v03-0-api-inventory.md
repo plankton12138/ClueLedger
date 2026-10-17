@@ -38,7 +38,7 @@
 | `POST /api/providers/test` | 测试连接 | **演进** | 优先收 `connection_id/revision + model`，实际使用已保存连接；同一连接才更新 verified | V03-1 |
 | `GET /api/providers/{name}/model-choices` | 可选模型 | 保留 | — | V03-1 |
 | `GET /api/ollama/status`、`/catalog`、`/models` | 本地环境检测 | 保留 | 区分未安装/未运行/不可达/无模型 | V03-1 |
-| `POST /api/ollama/pull` | 本地模型下载（进度流） | **演进** | 补应用管理的下载任务记录（`/api/local-model-tasks`），离开后可恢复真实阶段 | V03-1 |
+| `POST /api/ollama/pull` | 本地模型下载（进度流） | **已删除（V03-1.4 收敛）** | 由 `/api/local-model-tasks` 任务记录取代，离开后可恢复真实阶段 | ✅ V03-1.4 |
 | `DELETE /api/ollama/models/{name}` | 删除本地模型 | 保留 | — | V03-1 |
 
 ## 3. V2 项目面（`server/v2.py`，前缀 `/api/v2/projects/{project_id}`）

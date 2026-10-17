@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from hastings import __version__
+from hastings.application.services.local_model_service import LocalModelTaskService
 from hastings.server.model_access import create_model_access_router
 from hastings.server.provider_config import ProviderBook, env_fallback_config
 from hastings.server.registry import WorkspaceRegistry
@@ -40,6 +41,7 @@ def create_app(
     ollama_transport: httpx.AsyncBaseTransport | None = None,
     installed_probe: Callable[[], bool] | None = None,
     v2_runtime: V2Runtime | None = None,
+    local_model_tasks: LocalModelTaskService | None = None,
 ) -> FastAPI:
     """装配应用；``static_dir`` 存在时托管前端 build 产物（P3 T9）。
 
@@ -48,7 +50,8 @@ def create_app(
     env 回落单档案惰性新建（测试 / 纯 API 模式）。``model_transport`` 仅供
     测试注入 MockTransport（模型发现走真实网络时为 None）。
     ``corpus_root``（P7 T6）语料目录，缺省 ./corpus（服务级，作者级资产）。
-    ``ollama_transport``/``installed_probe``（本地模型）仅供测试注入。
+    ``ollama_transport``/``installed_probe``（本地模型）与 ``local_model_tasks``
+    （V03-1.4 本地模型任务）仅供测试注入。
     """
     app = FastAPI(title="Hastings", version=__version__)
     if book is None:
@@ -64,6 +67,7 @@ def create_app(
             corpus_root=corpus_root,
             ollama_transport=ollama_transport,
             installed_probe=installed_probe,
+            local_model_tasks=local_model_tasks,
         )
     )
     app.include_router(ws_router)
