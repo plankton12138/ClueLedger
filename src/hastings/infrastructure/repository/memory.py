@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
@@ -76,6 +76,8 @@ class _MemoryData:
     outbox: dict[str, OutboxEvent] = field(default_factory=dict)
     idempotency: dict[tuple[str, str], tuple[str, CommitResult]] = field(default_factory=dict)
     leases: dict[str, Lease] = field(default_factory=dict)
+    # v4 辅助表（V03-0.5）：(project_id, bucket, key) → payload
+    aux: dict[tuple[str, str, str], dict[str, Any]] = field(default_factory=dict)
 
     def clone(self) -> _MemoryData:
         return _MemoryData(
@@ -89,6 +91,7 @@ class _MemoryData:
             outbox=dict(self.outbox),
             idempotency=dict(self.idempotency),
             leases=dict(self.leases),
+            aux={k: _deep(v) for k, v in self.aux.items()},
         )
 
 
@@ -218,6 +221,24 @@ class MemoryTxn:
         self, project_id: ProjectId, key: str, fingerprint: str, result: CommitResult
     ) -> None:
         self._data.idempotency[(project_id.value, key)] = (fingerprint, result)
+
+    # ---- 辅助表（V03-0.5，与 SQLite 后端同端口） ----
+    def aux_read(self, project_id: str, bucket: str, key: str) -> dict[str, Any] | None:
+        record = self._data.aux.get((project_id, bucket, key))
+        return _deep(record) if record is not None else None
+
+    def aux_write(self, project_id: str, bucket: str, key: str, payload: Mapping[str, Any]) -> None:
+        self._data.aux[(project_id, bucket, key)] = _deep(dict(payload))
+
+    def aux_list(self, project_id: str, bucket: str) -> dict[str, dict[str, Any]]:
+        return {
+            key: _deep(record)
+            for (pid, b, key), record in self._data.aux.items()
+            if pid == project_id and b == bucket
+        }
+
+    def aux_delete(self, project_id: str, bucket: str, key: str) -> None:
+        self._data.aux.pop((project_id, bucket, key), None)
 
 
 class MemoryStorage:
