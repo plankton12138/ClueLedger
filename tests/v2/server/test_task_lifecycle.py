@@ -70,9 +70,9 @@ def _project_with_content(client: TestClient) -> tuple[str, str]:
         json={"idempotency_key": "imp1", "title": "第一章", "text": "第一段。"},
     )
     conversation_id = str(
-        client.post(
-            f"/api/v2/projects/{project_id}/conversations", json={}
-        ).json()["conversation_id"]
+        client.post(f"/api/v2/projects/{project_id}/conversations", json={}).json()[
+            "conversation_id"
+        ]
     )
     return project_id, conversation_id
 
@@ -151,9 +151,7 @@ def test_full_lifecycle_from_draft_to_commit(client: TestClient) -> None:
     assert len(results) == 1
 
 
-def test_recovery_window_rebinds_to_existing_job(
-    client: TestClient, runtime: V2Runtime
-) -> None:
+def test_recovery_window_rebinds_to_existing_job(client: TestClient, runtime: V2Runtime) -> None:
     """任务已建但卡片未关联：同幂等键重放启动 → 找回既有 Job，不重复创建。"""
     import asyncio
 
@@ -164,8 +162,24 @@ def test_recovery_window_rebinds_to_existing_job(
     assert head is not None
 
     # 先直接经工作流创建一个 Job（模拟「任务已建但绑定丢失」的现场）。
-    # 输入必须与 draft 启动时完全一致（空指令、空目标），指纹重放才匹配。
+    # 输入必须与 draft 启动时完全一致（空指令、空目标、同键同凭据），
+    # 指纹重放才匹配：grant_id 只由操作键派生（V03-0.3 重放契约）。
     async def seed_job() -> str:
+        from hastings.application.execution import ConnectionSnapshot, build_grant
+        from hastings.domain.repository.serialization import content_hash
+
+        grant = build_grant(
+            grant_id=f"grant_{content_hash(['recovery-key'])[:16]}",
+            source="author_button",
+            function="draft",
+            analysis_scope=(),
+            connection=ConnectionSnapshot(
+                connection_id="test",
+                revision=0,
+                provider="openai-completions",
+                model="test-model",
+            ),
+        ).to_wire()
         return await runtime.agent_workflows.plan(
             ProjectId(project_id),
             head.value,
@@ -173,6 +187,7 @@ def test_recovery_window_rebinds_to_existing_job(
             "recovery-key",
             "",
             model_binding=dict(BINDING),
+            grant=grant,
         )
 
     existing_jid = asyncio.run(seed_job())

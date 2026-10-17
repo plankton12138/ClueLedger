@@ -89,6 +89,7 @@ class AgentWorkflows:
         *,
         token_budget: int = 16000,
         model_binding: Mapping[str, object] | None = None,
+        grant: Mapping[str, object] | None = None,
     ) -> str:
         snapshot = self.reader.get_snapshot(project, CommitId(base))
         if not beats or any(
@@ -114,7 +115,7 @@ class AgentWorkflows:
             evidence={"chapter_id": chapter_id},
             constraints=(f"只为 {chapter_id} 返回整章 text；不修改 Canon，缺失事实应澄清",),
         )
-        return await self.jobs.submit(ctx, key, model_binding=model_binding)
+        return await self.jobs.submit(ctx, key, model_binding=model_binding, grant=grant)
 
     async def plan(
         self,
@@ -126,6 +127,7 @@ class AgentWorkflows:
         *,
         token_budget: int = 16000,
         model_binding: Mapping[str, object] | None = None,
+        grant: Mapping[str, object] | None = None,
     ) -> str:
         ctx = self.contexts.build(
             "planner",
@@ -188,7 +190,7 @@ class AgentWorkflows:
                 "items 按父级和引用依赖顺序排列，所有事实保持 proposed",
             ),
         )
-        return await self.jobs.submit(ctx, key, model_binding=model_binding)
+        return await self.jobs.submit(ctx, key, model_binding=model_binding, grant=grant)
 
     async def audit(
         self,
@@ -199,6 +201,7 @@ class AgentWorkflows:
         *,
         token_budget: int = 16000,
         model_binding: Mapping[str, object] | None = None,
+        grant: Mapping[str, object] | None = None,
     ) -> str:
         snapshot = self.reader.get_snapshot(project, CommitId(base))
         findings = audit_snapshot(snapshot)
@@ -210,7 +213,7 @@ class AgentWorkflows:
             token_budget=token_budget,
             constraints=("只返回带原文和对象定位的 Finding；泛泛评价写 editorial_notes",),
         )
-        return await self.jobs.submit(ctx, key, model_binding=model_binding)
+        return await self.jobs.submit(ctx, key, model_binding=model_binding, grant=grant)
 
     async def style(
         self,
@@ -269,6 +272,7 @@ class AgentWorkflows:
         executor: ExecuteRevisionPlan,
         *,
         model_binding: Mapping[str, object] | None = None,
+        grant: Mapping[str, object] | None = None,
     ) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
         owner = self

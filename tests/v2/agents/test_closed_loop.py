@@ -65,15 +65,21 @@ def test_v2_new_project_closed_loop_and_transcript(tmp_path):
             "expected_chapter_base": chapter["chapter_base"],
         },
     )
-    observed = run(
-        "style_observer",
-        chapter_id=f"{project}:draft",
-        before_commit_id=accepted["commit_id"],
-        base_commit_id=edit["commit_id"],
+    # 0.3 排除项（执行指导 §2.3）：风格观察属旧作者模型自动链，API 不再签发
+    # 启动凭据——不能绕过 UI 从旧入口创建此类 Job（计划 §8.3）。
+    refused = client.post(
+        prefix + "/agent-jobs",
+        json={
+            "role": "style_observer",
+            "instruction": "怀表谜案",
+            "idempotency_key": "style_observer",
+            "chapter_id": f"{project}:draft",
+            "before_commit_id": accepted["commit_id"],
+            "base_commit_id": edit["commit_id"],
+        },
     )
-    assert observed["state"] == "completed"
-    prefs = client.get(prefix + "/author-model/preferences").json()["preferences"]
-    assert prefs and all(p["status"] == "candidate" for p in prefs)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["code"] == "EXECUTION_NOT_AUTHORIZED"
 
     current = story()
     helper = next(a for a in current["artifacts"] if a["artifact_id"].endswith(":helper"))
@@ -117,7 +123,7 @@ def test_v2_new_project_closed_loop_and_transcript(tmp_path):
         "checks": {
             "new_project": True,
             "author_review": True,
-            "style_candidate": True,
+            "style_observer_refused": True,
             "out_of_scope_corrected_once": True,
             "partial_merge": True,
             "localized_audit": True,

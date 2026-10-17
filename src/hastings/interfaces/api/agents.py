@@ -8,9 +8,15 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from hastings.agents.coordinator import route_intent
+from hastings.application.errors import ViolationError
+from hastings.application.execution import (
+    ConnectionSnapshot,
+    build_grant,
+)
 from hastings.application.workflows.change_support import reject
 from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest
+from hastings.domain.repository.serialization import content_hash
 from hastings.domain.worker import WorkerRole
 
 if TYPE_CHECKING:
@@ -34,6 +40,16 @@ class AcceptJob(BaseModel):
 
 class ExecuteRepair(BaseModel):
     idempotency_key: str = Field(min_length=1)
+
+
+#: 角色 → 凭据功能（V03-0.3）：显式启动即授权；style_observer 属 0.3 排除的
+#: 作者模型自动链路，API 不签发凭据（不能绕过 UI 创建此类 Job，计划 §8.3）。
+ROLE_FUNCTIONS: dict[str, str] = {
+    "planner": "draft",
+    "writer": "draft",
+    "auditor": "suggestion",
+    "coordinator": "suggestion",
+}
 
 
 class CoordinatorRequest(BaseModel):
@@ -111,6 +127,30 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
         base = req.base_commit_id or head.value
         app = runtime.agent_workflows
         targets = tuple(req.target_ids)
+        function = ROLE_FUNCTIONS.get(str(req.role))
+        if function is None:
+            raise ViolationError(
+                code="EXECUTION_NOT_AUTHORIZED",
+                where="agent_jobs.submit",
+                why=f"角色 {req.role!r} 没有可签发的启动凭据（0.3 排除的自动链路）",
+                fix="使用 planner / writer / auditor / coordinator；风格观察等旧能力不再启动",
+                details={"role": str(req.role)},
+            )
+        binding = runtime.model_binding_provider()
+        connection = ConnectionSnapshot(
+            connection_id=str(binding.get("profile") or ""),
+            revision=0,
+            provider=str(binding.get("api") or binding.get("profile") or ""),
+            model=str(binding.get("model") or ""),
+        )
+        grant = build_grant(
+            grant_id=f"grant_{content_hash([req.idempotency_key])[:16]}",
+            source="author_button",
+            function=function,  # type: ignore[arg-type]
+            analysis_scope=targets,
+            write_scope=None,
+            connection=connection,
+        ).to_wire()
         if req.role == "planner":
             jid = await app.plan(
                 pid,
@@ -119,6 +159,7 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
                 req.idempotency_key,
                 req.instruction,
                 token_budget=req.token_budget,
+                grant=grant,
             )
         elif req.role == "writer":
             if not req.chapter_id:
@@ -131,6 +172,7 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
                 req.idempotency_key,
                 req.instruction,
                 token_budget=req.token_budget,
+                grant=grant,
             )
         elif req.role == "auditor":
             if not targets:
@@ -141,7 +183,7 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
                     if v.artifact.kind.startswith(("story.", "narrative.", "manuscript."))
                 )
             jid = await app.audit(
-                pid, base, targets, req.idempotency_key, token_budget=req.token_budget
+                pid, base, targets, req.idempotency_key, token_budget=req.token_budget, grant=grant
             )
         elif req.role == "style_observer":
             if not req.before_commit_id or not req.chapter_id:
@@ -172,7 +214,7 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
                 instruction=req.instruction,
                 token_budget=req.token_budget,
             )
-            jid = await runtime.worker.submit(ctx, req.idempotency_key)
+            jid = await runtime.worker.submit(ctx, req.idempotency_key, grant=grant)
         else:
             raise ValueError("Reviser 需要已批准的修订步骤；从变更中心执行 Agent 修复")
         job = await require_job(project_id, jid)

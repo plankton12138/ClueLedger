@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from datetime import datetime, timedelta
@@ -36,6 +36,14 @@ from pydantic import BaseModel
 
 from hastings import __version__
 from hastings.application.errors import HastingsError, ResultCategory, ViolationError
+from hastings.application.execution import (
+    JOB_TYPE_FUNCTIONS,
+    TASK_KIND_FUNCTIONS,
+    ConnectionSnapshot,
+    ExecutionGrant,
+    authorize_dispatch,
+    build_grant,
+)
 from hastings.application.handlers.change_commands import (
     ChangeSetCommandHandler,
     change_set_command,
@@ -76,6 +84,7 @@ from hastings.domain.manuscript.operations import operation_from_content
 from hastings.domain.repository import error_codes as repo_ec
 from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest
+from hastings.domain.repository.serialization import content_hash
 from hastings.domain.story.errors import StoryViolation
 from hastings.infrastructure.conversations.drafts import SqliteTaskDraftStore
 from hastings.infrastructure.conversations.store import SqliteConversationStore
@@ -242,6 +251,45 @@ class V2Runtime:
                     else None,
                 )
 
+    async def _authorize_job(self, job: Mapping[str, Any]) -> ExecutionGrant | None:
+        """派发门禁（V03-0.3，I05/I06）：无有效凭据的任务不派发、不运行。
+
+        - 无凭据（旧自动队列 / 事件派生）：标 ``historical_paused`` 等作者；
+        - 凭据无效（功能不匹配 / 预算耗尽 / 连接不可解析）：标 ``not_authorized``
+          并携带错误码与三要素，同样不派发。
+        返回 None 表示未放行（已暂停或状态不允许暂停）；两条入口共用：
+        worker_loop 自动派发与 ``/agent-jobs/{id}/run`` 手动运行。
+        """
+        job_id = str(job["job_id"])
+        grant_wire = job["payload"].get("grant")
+        if not isinstance(grant_wire, Mapping) or not grant_wire:
+            await self.jobs.pause(
+                job_id,
+                reason="historical_paused",
+                details={
+                    "job_type": job["job_type"],
+                    "why": "0.3 起模型任务必须由作者显式启动；旧自动队列不派发",
+                },
+            )
+            return None
+        try:
+            return authorize_dispatch(
+                grant_wire,
+                function=JOB_TYPE_FUNCTIONS.get(str(job["job_type"])),
+                where=f"agent_job({job_id}).grant",
+            )
+        except HastingsError as exc:
+            await self.jobs.pause(
+                job_id,
+                reason="not_authorized",
+                details={
+                    "job_type": job["job_type"],
+                    "error_code": exc.code,
+                    "error": exc.message,
+                },
+            )
+            return None
+
     async def _execute_job(self, job_id: str) -> None:
         try:
             await self.execute_agent_job(job_id)
@@ -253,6 +301,11 @@ class V2Runtime:
         job = await self.jobs.get(job_id)
         if job is None:
             raise ValueError("Job 不存在")
+        # 派发门禁（V03-0.3）：无有效凭据不运行、不部分运行。
+        grant = await self._authorize_job(job)
+        if grant is None:
+            current = await self.jobs.get(job_id)
+            return dict(current if current is not None else job)
         project_id = str(job["payload"]["project_id"])
         lock = self.project_execution_lock(project_id)
         async with lock:
@@ -313,6 +366,10 @@ class V2Runtime:
                         and len(self._active_jobs) < 2
                         and project_id not in active_projects
                     ):
+                        # 派发门禁（V03-0.3）：选择阶段即拦截无凭据任务，
+                        # 暂停一次后状态离开 queued/retryable_failed，不会反复重试。
+                        if await self._authorize_job(job) is None:
+                            continue
                         self._active_jobs[job["job_id"]] = asyncio.create_task(
                             self._execute_job(job["job_id"])
                         )
@@ -361,6 +418,41 @@ class V2Runtime:
             chapter_ids=chapter_ids,
             head=head.value if head else None,
         )
+
+    def _grant_for_draft(self, project_id: str, draft: Any, key: str) -> dict[str, Any]:
+        """任务草稿启动 → 显式凭据（V03-0.3）。
+
+        连接快照只含非敏感字段（profile/model/api），绝不含 Key；connection
+        revision 的精确跟踪随 V03-1.3 连接同源落地，当前记 0。
+        """
+        binding = self.model_binding_provider()
+        connection = ConnectionSnapshot(
+            connection_id=str(binding.get("profile") or ""),
+            revision=0,
+            provider=str(binding.get("api") or binding.get("profile") or ""),
+            model=str(binding.get("model") or ""),
+        )
+        function = TASK_KIND_FUNCTIONS.get(str(draft.task_kind))
+        if function is None:  # fail closed：未登记任务类型不生成凭据
+            raise ViolationError(
+                code="EXECUTION_NOT_AUTHORIZED",
+                where="task.start.grant",
+                why=f"任务类型 {draft.task_kind!r} 没有登记功能映射",
+                fix="使用 plan / chapter_draft / check；其他类型由作者显式授权后登记",
+            )
+        grant = build_grant(
+            # grant_id 只由操作键派生：同一 idempotency_key 的任意次启动
+            # （含卡片绑定丢失后的重放）携带同一凭据，JobStore 指纹才能
+            # 匹配并找回既有 Job，不重复创建（V03-0.3 重放契约）。
+            grant_id=f"grant_{content_hash([key])[:16]}",
+            source="author_message" if draft.source_message_id else "author_button",
+            source_message_id=draft.source_message_id,
+            function=function,
+            analysis_scope=tuple(draft.target_ids),
+            write_scope=None,  # 起草/审计只产生提案；正式写入走统一发布（另需授权）
+            connection=connection,
+        )
+        return grant.to_wire()
 
     async def start_task_job(self, project_id: str, draft: Any, key: str) -> str:
         """TaskDraft → 既有工作流映射（§4.3）：与 /agent-jobs 同一授权与调度。
@@ -427,8 +519,13 @@ class V2Runtime:
                 summary="从对话打开变更流程",
             )
             return "change:" + str(result.change.artifact_changes[0].content["change_set_id"])
+        # 显式启动凭据（V03-0.3，I05）：任务卡「开始」即作者按钮授权；
+        # 从作者消息发起的草稿带 source_message_id，可回查到触发消息。
+        grant = self._grant_for_draft(project_id, draft, key)
         if draft.task_kind == "plan":
-            jid = await app.plan(pid, base, targets, key, instruction, model_binding=binding)
+            jid = await app.plan(
+                pid, base, targets, key, instruction, model_binding=binding, grant=grant
+            )
         elif draft.task_kind == "chapter_draft":
             chapter_id = draft.goal
             if not chapter_id:
@@ -439,7 +536,7 @@ class V2Runtime:
                     fix="在任务卡调整目标章节后重试",
                 )
             jid = await app.draft(
-                pid, base, targets, chapter_id, key, instruction, model_binding=binding
+                pid, base, targets, chapter_id, key, instruction, model_binding=binding, grant=grant
             )
         elif draft.task_kind == "check":
             if not targets:
@@ -449,7 +546,7 @@ class V2Runtime:
                     for v in snapshot.artifacts.values()
                     if v.artifact.kind.startswith(("story.", "narrative."))
                 )
-            jid = await app.audit(pid, base, targets, key, model_binding=binding)
+            jid = await app.audit(pid, base, targets, key, model_binding=binding, grant=grant)
         else:  # pragma: no cover - TASK_KINDS 已约束
             raise ViolationError(
                 code="TASK_START_UNSUPPORTED",
@@ -681,8 +778,10 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # 启动恢复（§19.3）：遗留的排队/运行轮次标为中断，不自动重发模型调用。
+        # 启动恢复（§19.3、V03-0.3）：遗留的排队/运行轮次与执行中任务标为中断，
+        # 不自动重发模型调用（I06/I11）；已完成结果回读，无模型投影继续。
         await runtime.chat.mark_interrupted()
+        await runtime.jobs.mark_interrupted()
         task = asyncio.create_task(runtime.worker_loop())
         try:
             yield

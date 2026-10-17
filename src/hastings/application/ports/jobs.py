@@ -57,3 +57,19 @@ class PersistentJobs(JobStore, Protocol):
         self, job_id: str, generation: int, lease: Mapping[str, object]
     ) -> None: ...
     async def resolve(self, job_id: str, generation: int, result: Mapping[str, object]) -> None: ...
+    async def pause(
+        self, job_id: str, *, reason: str, details: Mapping[str, object] | None = None
+    ) -> dict[str, Any] | None:
+        """派发门禁暂停（V03-0.3）：queued/retryable_failed → waiting，不派发。
+
+        旧自动队列与无凭据任务标 ``historical_paused``；幂等——已 waiting 的
+        任务原样返回，不重复写事件。返回 None 表示任务不存在或状态不允许
+        （running/completed 等由调用方按原状态处理）。
+        """
+
+    async def mark_interrupted(self) -> int:
+        """启动恢复（V03-0.3）：执行中的任务标 interrupted 等待作者继续。
+
+        重启时不自动重发模型调用（I06/I11）：无法确认完成的调用不重跑，
+        已完成结果回读与无模型投影继续。返回标记数量。
+        """

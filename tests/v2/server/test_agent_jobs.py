@@ -98,7 +98,13 @@ def test_small_context_budget_is_honored_at_http_boundary():
     assert client.get(f"/api/v2/projects/{pid}/agent-jobs").json()["jobs"] == []
 
 
-def test_service_start_discovers_unpublished_edit_without_client_wake(tmp_path):
+def test_restart_does_not_replay_auto_style_observation(tmp_path):
+    """0.3（V03-0.3/0.4）：旧自动风格观察链重启后不派发、零模型调用。
+
+    0.2 语义是「重启自行发现 Outbox 并完成观察记录」；0.3 切断自动模型
+    调度（I06）：旧队列任务被派发门禁标 historical_paused，模型运行记录器
+    为零，作者模型资料不因重启复活。
+    """
     import time
 
     from hastings.application.handlers.manuscript_commands import manuscript_command
@@ -125,34 +131,32 @@ def test_service_start_discovers_unpublished_edit_without_client_wake(tmp_path):
         )
     )
     restarted = V2Runtime.sqlite(path)
+    observer_calls: list[str] = []
 
     class Observer:
         async def run(self, role, ctx):
-            return {
-                "kind": "observation_set",
-                "base_commit_id": ctx["repository_commit_id"],
-                "observations": [
-                    {
-                        "unit_id": e["unit_id"],
-                        "category": "style",
-                        "statement": "精简",
-                        "confidence": 0.95,
-                    }
-                    for e in ctx["evidence"]["edits"]
-                ],
-            }
+            observer_calls.append(role)
+            return {"kind": "no_result", "reason": "recorded"}
 
     restarted.configure_agent_runner(Observer())
     with TestClient(build_v2_app(restarted)) as client:
         deadline = time.monotonic() + 4
         while time.monotonic() < deadline:
             jobs = client.get(f"/api/v2/projects/{pid.value}/agent-jobs").json()["jobs"]
-            if any(j["job_type"] == "style_observer" and j.get("analysis") for j in jobs):
+            auto = [j for j in jobs if j["job_type"] in ("manuscript.analysis", "style_observer")]
+            pending = [j for j in auto if j["state"] in ("queued", "retryable_failed")]
+            paused = [
+                j
+                for j in auto
+                if j["state"] == "waiting" and j["output"]["reason"] == "historical_paused"
+            ]
+            if paused and not pending:
                 break
             time.sleep(0.03)
         else:
-            raise AssertionError("重启应自行发现 Outbox 并完成观察记录")
-        assert restarted.author_queries.preferences(ProjectId(pid.value), restarted.head(pid))
+            raise AssertionError("旧自动队列应被派发门禁暂停（historical_paused）")
+    assert observer_calls == []
+    assert not restarted.author_queries.preferences(ProjectId(pid.value), restarted.head(pid))
 
 
 def test_oversized_edit_analysis_fails_visibly_without_stopping_dispatch(tmp_path):
@@ -217,9 +221,25 @@ def test_completed_analysis_replays_metadata_after_restart(tmp_path):
     runtime.configure_agent_runner(Critic())
 
     async def interrupted():
+        from hastings.application.execution import ConnectionSnapshot, build_grant
+
         catalog = runtime.queries.catalog(pid, runtime.head(pid))
+        # 0.3（V03-0.3）：审计 Job 由作者显式启动，须带凭据才能过派发门禁。
+        grant = build_grant(
+            grant_id="grant_audit-recovery",
+            source="author_button",
+            function="suggestion",
+            analysis_scope=(catalog.units_of("ch")[0].artifact_id,),
+            connection=ConnectionSnapshot(
+                connection_id="test", revision=0, provider="test", model="test-model"
+            ),
+        ).to_wire()
         jid = await runtime.agent_workflows.audit(
-            pid, runtime.head(pid).value, (catalog.units_of("ch")[0].artifact_id,), "audit"
+            pid,
+            runtime.head(pid).value,
+            (catalog.units_of("ch")[0].artifact_id,),
+            "audit",
+            grant=grant,
         )
         await runtime.worker.execute(jid)
         return jid
