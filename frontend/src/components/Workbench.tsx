@@ -137,6 +137,7 @@ export function ConfirmDiscard({
 }
 export type View =
   | "overview"
+  | "desk"
   | "studio"
   | "ledger"
   | "changes"

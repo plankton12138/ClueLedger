@@ -4,6 +4,7 @@ import {
   Feather,
   GitBranch,
   LayoutDashboard,
+  PenLine,
   Search,
   Settings2,
   Target,
@@ -36,12 +37,14 @@ import {
 } from "./state/v2";
 import { useV2Events } from "./state/v2socket";
 import ChatSidebar, { ChatToggle, OPEN_KEY } from "./components/chat/ChatSidebar";
+import DeskShell from "./components/desk/DeskShell";
 import { useChatStore } from "./state/chat";
 import { layoutKind } from "./layout";
 import ChatCandidateReview from "./components/chat/ChatCandidateReview";
 import type { ChatMessage } from "./api/chat";
 const nav: { key: View; label: string; Icon: LucideIcon }[] = [
   { key: "overview", label: "项目概览", Icon: LayoutDashboard },
+  { key: "desk", label: "写作台", Icon: PenLine },
   { key: "studio", label: "创作台", Icon: Feather },
   { key: "ledger", label: "故事账本", Icon: BookOpenText },
   { key: "changes", label: "变更影响", Icon: GitBranch },
@@ -282,6 +285,9 @@ export default function App() {
                 onNavigate={setView}
                 onManage={() => setSettingsOpen(true)}
               />
+            )}
+            {view === "desk" && (
+              <DeskShell onOpenModels={() => setModelsOpen(true)} />
             )}
             {view === "studio" && <StudioPage />}
             {view === "ledger" && <LedgerPage onNavigate={setView} />}
