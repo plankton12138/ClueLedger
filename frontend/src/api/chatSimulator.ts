@@ -17,6 +17,7 @@ import type {
   ChatMessage,
   ChatService,
   ChatTurn,
+  ContinueTurnInput,
   ResultPayload,
   SendTurnInput,
   SendTurnResult,
@@ -176,12 +177,82 @@ export class SimulatorService implements ChatService {
     return { turn, user_message: userMessage };
   }
 
+  /**
+   * 接着讨论（V03-1.5，镜像后端 send_turn_from_messages 语义）：
+   * - 主消息（第一条引用）reparent 进新轮次——同一 message_id，不复制；
+   * - 引用源必须是本会话内的作者消息（跨会话/助手消息拒绝）；
+   * - 幂等重放返回同一轮次与同一主消息，不再产生新回复。
+   */
+  async continueTurn(
+    projectId: string,
+    conversationId: string,
+    input: ContinueTurnInput,
+  ): Promise<SendTurnResult> {
+    const conv = this.require(projectId, conversationId);
+    if (input.source_message_ids.length === 0)
+      throw new Error("接着讨论至少引用一条已保存消息");
+    // 幂等重放：同一幂等键返回原轮次与其主消息（reparent 后按 turn 查找）。
+    for (const turn of conv.turns.values()) {
+      if (turn.idempotency_key === input.idempotency_key) {
+        return {
+          turn,
+          user_message:
+            conv.messages.find((m) => m.turn_id === turn.turn_id && m.role === "author") ??
+            this.newRejected(conv, "原轮次没有可回读的主消息"),
+        };
+      }
+    }
+    const sources = input.source_message_ids.map((id) =>
+      conv.messages.find((m) => m.message_id === id),
+    );
+    if (sources.some((s) => !s || s.role !== "author")) {
+      throw new Error(
+        "引用的消息不存在、属于其他讨论或不是作者消息；只能引用本讨论内保存的想法继续。",
+      );
+    }
+    const primary = sources[0]!;
+    const turn: ChatTurn = {
+      turn_id: this.newId("turn"),
+      conversation_id: conversationId,
+      status: "queued",
+      model: this.view.model,
+      end_reason: null,
+      idempotency_key: input.idempotency_key,
+      retry_of: null,
+    };
+    conv.turns.set(turn.turn_id, turn);
+    // 主消息归入新轮次（upsert 语义）：保留原 message_id，不复制记录。
+    primary.turn_id = turn.turn_id;
+    this.emit(projectId, conversationId, turn.turn_id, { type: "turn.accepted", turn });
+    void this.runTurn(projectId, conv, turn, {
+      text: primary.text,
+      refs: primary.refs,
+      idempotency_key: input.idempotency_key,
+    });
+    return { turn, user_message: primary };
+  }
+
+  private newRejected(conv: SimConversation, why: string): ChatMessage {
+    return {
+      message_id: `missing-${this.newId("msg")}`,
+      conversation_id: conv.conversation.conversation_id,
+      turn_id: null,
+      role: "system",
+      kind: "text",
+      text: why,
+      refs: [],
+      model: null,
+      status: "failed",
+      error: null,
+      created_at: new Date().toISOString(),
+    };
+  }
+
   async cancelTurn(
     projectId: string,
     conversationId: string,
     turnId: string,
-  ): Promise<void> {
-    const conv = this.require(projectId, conversationId);
+  ): Promise<void> {    const conv = this.require(projectId, conversationId);
     const control = conv.running.get(turnId);
     const turn = conv.turns.get(turnId);
     if (!turn) return;
@@ -796,6 +867,22 @@ export class SimulatorService implements ChatService {
       error: null,
       created_at: new Date().toISOString(),
     };
+  }
+
+  /** 测试/走查辅助：只落一条作者消息（不启动轮次），模拟「已保存的想法」。 */
+  newAuthorMessageForTest(
+    projectId: string,
+    conversationId: string,
+    text: string,
+  ): ChatMessage {
+    const conv = this.require(projectId, conversationId);
+    const message = this.authorMessage(conv, {
+      text,
+      refs: [],
+      idempotency_key: this.newId("idem"),
+    });
+    conv.messages.push(message);
+    return message;
   }
 
   /** 轮次是否仍在运行：取消或进程级中断后迟到分片一律无效。 */

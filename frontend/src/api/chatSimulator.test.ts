@@ -272,3 +272,77 @@ describe("项目隔离", () => {
     ).rejects.toThrow(/不属于项目/);
   });
 });
+
+describe("接着讨论（V03-1.5）", () => {
+  it("主消息 reparent：同 message_id 归入新轮次，不复制记录", async () => {
+    const service = new SimulatorService();
+    const conv = await service.createConversation("p1");
+    // 先落一条作者消息（模拟保存想法：只落消息不流式回复）。
+    const seed = service.newAuthorMessageForTest("p1", conv.conversation_id, "两姐妹在山中旅");
+    const before = await service.loadMessages("p1", conv.conversation_id);
+    expect(before.some((m) => m.message_id === seed.message_id)).toBe(true);
+
+    const events = collect(service, "p1", conv.conversation_id);
+    const { turn, user_message } = await service.continueTurn("p1", conv.conversation_id, {
+      source_message_ids: [seed.message_id],
+      idempotency_key: "k-continue",
+    });
+    // 主消息以原 ID 返回（不复制），并归入新轮次。
+    expect(user_message.message_id).toBe(seed.message_id);
+    expect(user_message.turn_id).toBe(turn.turn_id);
+    const after = await service.loadMessages("p1", conv.conversation_id);
+    const primaries = after.filter((m) => m.message_id === seed.message_id);
+    expect(primaries).toHaveLength(1);
+    expect(primaries[0]!.turn_id).toBe(turn.turn_id);
+    // 轮次开始流式回复。
+    await waitFor(() => events.some((e) => e.event.type === "message.delta"));
+  });
+
+  it("幂等重放：同一幂等键返回同一轮次，不产生新回复", async () => {
+    const service = new SimulatorService();
+    const conv = await service.createConversation("p1");
+    const seed = service.newAuthorMessageForTest("p1", conv.conversation_id, "想法");
+    const first = await service.continueTurn("p1", conv.conversation_id, {
+      source_message_ids: [seed.message_id],
+      idempotency_key: "k1",
+    });
+    // 等回复完成，消息数稳定后再重放。
+    const events = collect(service, "p1", conv.conversation_id);
+    await waitFor(() => events.some((e) => e.event.type === "message.completed"));
+    const countBefore = (await service.loadMessages("p1", conv.conversation_id)).length;
+    const replay = await service.continueTurn("p1", conv.conversation_id, {
+      source_message_ids: [seed.message_id],
+      idempotency_key: "k1",
+    });
+    expect(replay.turn.turn_id).toBe(first.turn.turn_id);
+    expect(replay.user_message.message_id).toBe(first.user_message.message_id);
+    const countAfter = (await service.loadMessages("p1", conv.conversation_id)).length;
+    expect(countAfter).toBe(countBefore);
+  });
+
+  it("非作者消息或未知消息不能作为引用源", async () => {
+    const service = new SimulatorService();
+    const conv = await service.createConversation("p1");
+    const seed = service.newAuthorMessageForTest("p1", conv.conversation_id, "想法");
+    const events = collect(service, "p1", conv.conversation_id);
+    await service.continueTurn("p1", conv.conversation_id, {
+      source_message_ids: [seed.message_id],
+      idempotency_key: "k1",
+    });
+    await waitFor(() => events.some((e) => e.event.type === "turn.started"));
+    const messages = await service.loadMessages("p1", conv.conversation_id);
+    const assistant = messages.find((m) => m.role === "assistant")!;
+    await expect(
+      service.continueTurn("p1", conv.conversation_id, {
+        source_message_ids: [assistant.message_id],
+        idempotency_key: "k2",
+      }),
+    ).rejects.toThrow(/不是作者消息/);
+    await expect(
+      service.continueTurn("p1", conv.conversation_id, {
+        source_message_ids: ["m-unknown"],
+        idempotency_key: "k3",
+      }),
+    ).rejects.toThrow(/不存在/);
+  });
+});

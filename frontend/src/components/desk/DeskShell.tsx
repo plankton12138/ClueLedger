@@ -15,11 +15,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { fetchManuscript } from "../../api/v2";
+import { useChatStore } from "../../state/chat";
 import {
   selectInitialChapterId,
   type SourceKind,
 } from "../../state/desk";
-import { useDeskStore } from "../../state/deskStore";
+import { useDeskStore, type EntryReceipt } from "../../state/deskStore";
 import { isDirty, useV2Store } from "../../state/v2";
 import { ConfirmDiscard, Empty, ErrorText, Pill, kindLabels } from "../Workbench";
 import DeskComposer from "./DeskComposer";
@@ -32,6 +33,86 @@ const DETAIL_KINDS: { detailKind: "candidate" | "diff" | "graph" | "history"; la
 ];
 
 const SOURCE_KIND: SourceKind = "formal";
+
+/**
+ * 写作台讨论区（V03-1.5 接线）：只读呈现会话消息与流式回复。
+ * 与侧栏共享同一会话事实源（chat store views），输入与停止走唯一输入框/顶部控制，
+ * 任务卡等完整对话能力仍在侧栏——这里不复制对话编排。
+ */
+function DeskDiscussion({ conversationId }: { conversationId: string }) {
+  const view = useChatStore((s) => s.views[conversationId] ?? null);
+  const retryUnknownSend = useChatStore((s) => s.retryUnknownSend);
+  const stop = useChatStore((s) => s.stop);
+  if (!view) {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        <Empty>这条讨论还没有载入。从左侧「想法与讨论」重新打开。</Empty>
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4" aria-label="讨论消息">
+        {view.messages.length === 0 && !view.loading && (
+          <Empty>还没有讨论记录。从左侧想法点「接着讨论」开始。</Empty>
+        )}
+        {view.messages.map((m) => (
+          <article
+            key={m.message_id}
+            className={`mb-3 max-w-[85%] rounded-lg px-4 py-2 text-xs leading-6 ${
+              m.role === "author"
+                ? "ml-auto bg-blue-50 text-left"
+                : "bg-white/80"
+            }`}
+            aria-label={m.role === "author" ? "作者消息" : "助手消息"}
+          >
+            <span className="mb-1 block text-[10px] text-sub">
+              {m.role === "author" ? "我" : m.model ?? "助手"}
+              {m.status === "streaming" && " · 回复中…"}
+              {m.status === "failed" && " · 失败"}
+              {m.status === "stopped" && " · 已停止"}
+            </span>
+            <span className="whitespace-pre-wrap">{m.text}</span>
+            {m.status === "streaming" && (
+              <span className="chat-cursor" aria-hidden />
+            )}
+            {m.status === "stopped" && (
+              <span className="mt-1 block text-[10px] text-sub">
+                以上是已收到的部分回复。
+              </span>
+            )}
+          </article>
+        ))}
+        {view.error && (
+          <p className="notice p-3 text-xs text-red-600" role="alert">
+            {view.error}
+          </p>
+        )}
+        {view.pending && (
+          <div className="notice p-3 text-xs" role="alert">
+            <p>{view.pending.error}</p>
+            <button
+              className="mt-1 text-blue underline"
+              onClick={() => void retryUnknownSend()}
+            >
+              用同一请求重试
+            </button>
+          </div>
+        )}
+      </div>
+      {view.activeTurnId && (
+        <div className="border-t border-line px-4 py-2">
+          <button
+            className="btn btn-gray px-3 py-1.5 text-xs"
+            onClick={() => void stop()}
+          >
+            停止回复
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void }) {
   const v2 = useV2Store();
@@ -130,7 +211,54 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   }
 
   const [pending, setPending] = useState<string | null>(null);
+  const [continueError, setContinueError] = useState<string | null>(null);
   const chapter = v2.chapter;
+  const chatServiceKind = useChatStore((s) => s.serviceKind);
+
+  /** 打开讨论：绑定作品并载入会话（不发送）。 */
+  async function openDiscussion(r: EntryReceipt) {
+    if (!r.conversationId) return;
+    setContinueError(null);
+    try {
+      const chat = useChatStore.getState();
+      if (chat.projectId !== r.projectId) await chat.bindProject(r.projectId);
+      await useChatStore.getState().selectConversation(r.conversationId);
+      useDeskStore
+        .getState()
+        .navigate({ kind: "discussion", conversationId: r.conversationId });
+    } catch (e) {
+      setContinueError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /**
+   * 接着讨论（V03-1.5）：显式作者动作——引用这条已保存想法启动轮次。
+   * 零自动重放：只有点这里才调用模型；成功后焦点回到唯一输入框。
+   */
+  async function continueIdea(r: EntryReceipt) {
+    if (!r.conversationId) {
+      setContinueError("这条想法还没有讨论会话，请重新保存后再继续。");
+      return;
+    }
+    setContinueError(null);
+    try {
+      const chat = useChatStore.getState();
+      if (chat.projectId !== r.projectId) await chat.bindProject(r.projectId);
+      await useChatStore.getState().selectConversation(r.conversationId);
+      const ok = await useChatStore
+        .getState()
+        .continueFromMessages(r.conversationId, [r.messageId]);
+      if (!ok) return; // 错误已进会话视图/续传待重试，不打断当前阅读。
+      useDeskStore
+        .getState()
+        .navigate({ kind: "discussion", conversationId: r.conversationId });
+      useDeskStore.getState().requestComposerFocus();
+    } catch (e) {
+      setContinueError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  const continueEnabled = chatServiceKind === "api";
 
   return (
     <main className="flex h-full min-h-0" aria-label="写作台">
@@ -172,26 +300,47 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               </p>
             ) : (
               entryReceipts.map((r) => (
-                <button
+                <div
                   key={r.messageId}
                   className="asset-row block w-full px-4 py-3 text-left text-xs"
-                  onClick={() =>
-                    useDeskStore.getState().navigate({
-                      kind: "discussion",
-                      conversationId: r.conversationId ?? "pending",
-                    })
-                  }
                 >
-                  <span className="block truncate">{r.messageId}</span>
-                  <span className="text-[10px] text-sub">
-                    {r.savedAt} · {r.status}
-                  </span>
-                </button>
+                  <button
+                    className="block w-full text-left"
+                    onClick={() => void openDiscussion(r)}
+                    aria-label={`打开讨论：${r.text.slice(0, 20)}`}
+                  >
+                    <span className="block truncate">{r.text}</span>
+                    <span className="text-[10px] text-sub">
+                      {r.savedAt} · {r.status === "not_requested" ? "未请求模型" : r.status}
+                    </span>
+                  </button>
+                  <button
+                    className="mt-1 text-[11px] text-blue underline disabled:cursor-not-allowed disabled:text-sub disabled:no-underline"
+                    disabled={!continueEnabled || !r.conversationId}
+                    title={
+                      continueEnabled
+                        ? "引用这条想法开始一轮回复"
+                        : "连接模型后才能接着讨论（模拟模式不支持真实保存的想法）"
+                    }
+                    onClick={() => void continueIdea(r)}
+                  >
+                    接着讨论
+                  </button>
+                </div>
               ))
             )}
-            <p className="px-4 py-2 text-[10px] leading-5 text-sub">
-              讨论列表与「接着讨论」随 V03-1.5 接线。
-            </p>
+            {continueError && (
+              <p className="px-4 py-2 text-[11px] text-red-600" role="alert">
+                {continueError}
+              </p>
+            )}
+            {!continueEnabled && entryReceipts.length > 0 && (
+              <p className="px-4 py-2 text-[10px] leading-5 text-sub">
+                {chatServiceKind === "simulator"
+                  ? "模拟模式下不能继续真实保存的想法；用 ?chatMock=0 走真实 API。"
+                  : "连接模型后，可从任一条想法继续讨论。"}
+              </p>
+            )}
           </section>
           <section className="panel" aria-label="临时视图">
             <header className="panel-head px-4 py-3">临时视图（占位）</header>
@@ -282,16 +431,20 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               </div>
             )
           ) : mainView?.kind === "discussion" ? (
-            <div className="h-full overflow-y-auto p-4">
-              <div className="notice p-4 text-xs leading-6">
-                <strong>构思状态。</strong>
-                这个作品还没有正式正文——下方输入框保存的想法都留在这里，
-                连接模型后可从任一条想法继续讨论（V03-1.5 接线）。
+            mainView.conversationId === "pending" ? (
+              <div className="h-full overflow-y-auto p-4">
+                <div className="notice p-4 text-xs leading-6">
+                  <strong>构思状态。</strong>
+                  这个作品还没有正式正文——下方输入框保存的想法都留在这里，
+                  连接模型后可从任一条想法继续讨论。
+                </div>
+                {entryReceipts.length === 0 && (
+                  <Empty>还没有保存过想法。在下方写下第一条构思。</Empty>
+                )}
               </div>
-              {entryReceipts.length === 0 && (
-                <Empty>还没有保存过想法。在下方写下第一条构思。</Empty>
-              )}
-            </div>
+            ) : (
+              <DeskDiscussion conversationId={mainView.conversationId} />
+            )
           ) : mainView?.kind === "detail" ? (
             <div className="flex h-full items-center justify-center p-4">
               <Empty>

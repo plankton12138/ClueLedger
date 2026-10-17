@@ -7,7 +7,7 @@
  * 成功清除（api/entries.ts）。草稿刷新后从 localStorage 恢复。
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   clearPendingRequestId,
   ideaTitle,
@@ -41,6 +41,13 @@ export default function DeskComposer({
   const [error, setError] = useState<string | null>(null);
   const serviceKind = useChatStore((st) => st.serviceKind);
   const projects = useV2Store((s) => s.projects);
+  const composerFocusTick = useDeskStore((s) => s.composerFocusTick);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // 接着讨论成功后恢复原输入位置（焦点回到唯一输入框，M02）。
+  useEffect(() => {
+    if (composerFocusTick > 0) inputRef.current?.focus();
+  }, [composerFocusTick]);
 
   function onChange(text: string) {
     setDraft(text);
@@ -69,6 +76,7 @@ export default function DeskComposer({
         projectId: saved.project_id,
         conversationId: saved.conversation_id,
         messageId: saved.message_id,
+        text,
         status: saved.status,
         savedAt: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
       });
@@ -103,6 +111,7 @@ export default function DeskComposer({
       )}
       <div className="flex items-end gap-2">
         <textarea
+          ref={inputRef}
           aria-label="想法输入框"
           className="well-input min-h-[52px] max-h-40 flex-1 resize-y p-2 text-xs leading-6"
           placeholder="记下构思、人物、场景…保存为文字，不调用模型。"

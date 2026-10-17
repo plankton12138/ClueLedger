@@ -46,6 +46,8 @@ export interface EntryReceipt {
   projectId: string;
   conversationId: string | null;
   messageId: string;
+  /** 想法原文（列表展示与接着讨论按钮上下文）。 */
+  text: string;
   status: string;
   savedAt: string;
 }
@@ -53,11 +55,14 @@ export interface EntryReceipt {
 interface DeskStore extends DeskState {
   focusMode: boolean;
   entryReceipts: EntryReceipt[];
+  /** 接着讨论成功后请求输入框重新聚焦（恢复原输入位置，M02）。 */
+  composerFocusTick: number;
   setProject(projectId: string | null): void;
   navigate(view: MainView): void;
   applyOperationResult(envelope: OperationEnvelope): void;
   saveReadingPosition(position: ReadingPosition): void;
   addEntryReceipt(receipt: EntryReceipt): void;
+  requestComposerFocus(): void;
   toggleFocus(): void;
 }
 
@@ -65,6 +70,7 @@ export const useDeskStore = create<DeskStore>()((set, get) => ({
   ...emptyDeskState(),
   focusMode: readFocus(),
   entryReceipts: [],
+  composerFocusTick: 0,
   setProject: (projectId) => {
     if (get().projectId === projectId) return;
     // 换项目：壳层回到未定焦点；旧项目的操作与回执不带入（M01 验收第 5 条）。
@@ -75,6 +81,8 @@ export const useDeskStore = create<DeskStore>()((set, get) => ({
   saveReadingPosition: (position) => set(savePosition(get(), position)),
   addEntryReceipt: (receipt) =>
     set((s) => ({ entryReceipts: [...s.entryReceipts, receipt] })),
+  requestComposerFocus: () =>
+    set((s) => ({ composerFocusTick: s.composerFocusTick + 1 })),
   toggleFocus: () =>
     set((s) => {
       const focusMode = !s.focusMode;

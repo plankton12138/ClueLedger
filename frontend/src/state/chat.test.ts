@@ -100,6 +100,13 @@ function fakeService(over: Partial<ChatService> = {}): ChatService {
     }),
     loadMessages: async () => [],
     sendTurn: async () => ({ turn: turn("t1", "queued"), user_message: message("m1") }),
+    continueTurn: async (_p, _c, input) => ({
+      turn: turn("t9", "queued"),
+      user_message: message(input.source_message_ids[0] ?? "m1", {
+        role: "author",
+        status: "completed",
+      }),
+    }),
     cancelTurn: async () => undefined,
     retryTurn: async () => turn("t2", "queued"),
     adjustDraft: async () => {
@@ -429,6 +436,130 @@ describe("发送结果未知与幂等重试", () => {
     expect(view.pending).toBeNull();
     expect(view.error).toContain("会话忙");
     expect(useChatStore.getState().drafts.c1).toBe("再来一条");
+  });
+});
+
+describe("接着讨论（V03-1.5）", () => {
+  const authorMessage = (id: string, text: string): ChatMessage => ({
+    message_id: id,
+    conversation_id: "c1",
+    turn_id: null,
+    role: "author",
+    kind: "text",
+    text,
+    refs: [],
+    model: null,
+    status: "completed",
+    error: null,
+    created_at: "2026-10-17T00:00:00Z",
+  });
+
+  async function bindWithMessages(service: ChatService) {
+    await useChatStore.getState().bindProject("p1", apiSelection(service));
+    await useChatStore.getState().selectConversation("c1");
+  }
+
+  it("成功：主消息 reparent 进新轮次（同 message_id 不复制），轮次激活", async () => {
+    const calls: string[][] = [];
+    const service = fakeService({
+      loadMessages: async () => [authorMessage("m1", "两姐妹在山中旅"), authorMessage("m2", "旅馆背景")],
+      continueTurn: async (_p, _c, input) => {
+        calls.push(input.source_message_ids);
+        return {
+          turn: turn("t9", "queued"),
+          user_message: {
+            ...authorMessage(input.source_message_ids[0]!, "两姐妹在山中旅"),
+            turn_id: "t9",
+          },
+        };
+      },
+    });
+    await bindWithMessages(service);
+    const ok = await useChatStore.getState().continueFromMessages("c1", ["m1"]);
+    expect(ok).toBe(true);
+    const view = useChatStore.getState().views.c1!;
+    // 引用不复制：m1 仍只有一条，turn_id 指向新轮次。
+    const primaries = view.messages.filter((m) => m.message_id === "m1");
+    expect(primaries).toHaveLength(1);
+    expect(primaries[0]!.turn_id).toBe("t9");
+    // 其余消息保持原位。
+    expect(view.messages.find((m) => m.message_id === "m2")?.turn_id).toBeNull();
+    expect(view.turns.t9).toBeDefined();
+    expect(view.activeTurnId).toBe("t9");
+    expect(calls).toEqual([["m1"]]);
+  });
+
+  it("已有回复进行中：拒绝继续并提示，不发出请求", async () => {
+    const continueCalls: number[] = [];
+    const service = fakeService({
+      loadMessages: async () => [authorMessage("m1", "想法")],
+      continueTurn: async () => {
+        continueCalls.push(1);
+        return { turn: turn("t9", "queued"), user_message: authorMessage("m1", "想法") };
+      },
+    });
+    await bindWithMessages(service);
+    useChatStore.setState((s) => ({
+      views: {
+        ...s.views,
+        c1: { ...s.views.c1!, activeTurnId: "t-running" },
+      },
+    }));
+    const ok = await useChatStore.getState().continueFromMessages("c1", ["m1"]);
+    expect(ok).toBe(false);
+    expect(continueCalls).toHaveLength(0);
+    expect(useChatStore.getState().views.c1!.error).toContain("尚未结束");
+  });
+
+  it("网络故障：结果未知并记录引用范围，重试用同一幂等键", async () => {
+    const keys: string[] = [];
+    let fail = true;
+    const service = fakeService({
+      loadMessages: async () => [authorMessage("m1", "想法")],
+      continueTurn: async (_p, _c, input) => {
+        keys.push(input.idempotency_key);
+        if (fail) throw new TypeError("Failed to fetch");
+        return { turn: turn("t9", "queued"), user_message: authorMessage("m1", "想法") };
+      },
+    });
+    await bindWithMessages(service);
+    const ok = await useChatStore.getState().continueFromMessages("c1", ["m1"]);
+    expect(ok).toBe(false);
+    const view = useChatStore.getState().views.c1!;
+    expect(view.pending).not.toBeNull();
+    expect(view.pending!.sourceMessageIds).toEqual(["m1"]);
+    expect(view.pending!.idempotency_key).toBe(keys[0]);
+    fail = false;
+    await useChatStore.getState().retryUnknownSend();
+    // 同一请求重发：服务端幂等，不重复调用模型。
+    expect(keys[1]).toBe(keys[0]);
+    expect(useChatStore.getState().views.c1!.pending).toBeNull();
+  });
+
+  it("服务端明确拒绝（跨讨论/非作者消息）时不进入结果未知，直接提示", async () => {
+    const service = fakeService({
+      loadMessages: async () => [authorMessage("m1", "想法")],
+      continueTurn: async () => {
+        const { V2Error } = await import("../api/v2");
+        throw new V2Error(
+          {
+            code: "CHAT_MESSAGE_NOT_FOUND",
+            category: "violation",
+            where: "chat.turn.send_from_messages",
+            why: "引用的消息不存在、属于其他讨论或不是作者消息",
+            fix: "只能引用本讨论内保存的想法继续",
+            details: {},
+          },
+          404,
+        );
+      },
+    });
+    await bindWithMessages(service);
+    const ok = await useChatStore.getState().continueFromMessages("c1", ["m-x"]);
+    expect(ok).toBe(false);
+    const view = useChatStore.getState().views.c1!;
+    expect(view.pending).toBeNull();
+    expect(view.error).toContain("不是作者消息");
   });
 });
 
