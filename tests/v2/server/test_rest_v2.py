@@ -444,3 +444,29 @@ def test_runtime_builds_sqlite_backend(tmp_path: Path) -> None:
         _import_chapter(client, project_id)
         body = client.get(f"/api/v2/projects/{project_id}/manuscript").json()
         assert len(body["chapters"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# 统一能力公布（V03-0.7）
+# ---------------------------------------------------------------------------
+
+
+def test_capabilities_endpoint_publishes_unified_config() -> None:
+    """GET /api/v2/capabilities：格式/上限/功能状态统一公布，前端不另写常量。"""
+    runtime = V2Runtime.memory()
+    client = TestClient(build_v2_app(runtime))
+    payload = client.get("/api/v2/capabilities").json()
+    assert payload["product_version"] == "0.3"
+    assert payload["api_version"] == "v2"
+    imp = payload["import"]
+    assert imp["formats"] == [".txt", ".md"]
+    assert imp["max_file_bytes"] == 10 * 1024 * 1024
+    assert imp["max_batch_bytes"] == 20 * 1024 * 1024
+    assert imp["max_chapters_per_batch"] == 1000
+    assert imp["preview_ttl_hours"] == 24
+    features = payload["features"]
+    assert features["execution_grants"]["status"] == "implemented"
+    assert features["edit_sessions"]["status"] == "draft"
+    # 排除项不公布为可用（计划 §1.4：禁止显示为可用占位入口）
+    for excluded in ("author_model", "style_observation", "consistency_audit", "corpus_rag"):
+        assert features[excluded]["status"] == "excluded"

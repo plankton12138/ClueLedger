@@ -1,0 +1,36 @@
+{
+  "sample": {
+    "chapters": 100,
+    "approx_chars": 300000,
+    "ledger_objects": 500,
+    "relations": 1000
+  },
+  "single_chapter_save_ms": {
+    "p50": 49.19,
+    "p95": 78.13,
+    "max": 84.89,
+    "rounds": 30
+  },
+  "chapter_read_ms": {
+    "p50": 43.61,
+    "p95": 77.3,
+    "max": 82.29,
+    "rounds": 30
+  },
+  "catalog_read_ms": {
+    "p50": 43.44,
+    "p95": 71.04,
+    "max": 73.21
+  },
+  "story_snapshot_ms": {
+    "p50": 42.38,
+    "p95": 73.43,
+    "max": 74.27
+  },
+  "pending": [
+    "edit_session_autosave（V03-2.4 建成后测防抖+确认延迟）",
+    "manual_finish_two_chapters（V03-2.4/5.1）",
+    "graph_first_screen（V03-6）",
+    "execution_log_paging（V03-1.6）"
+  ]
+}

@@ -35,6 +35,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from hastings import __version__
+from hastings.application.capabilities import capabilities_payload
 from hastings.application.errors import HastingsError, ResultCategory, ViolationError
 from hastings.application.execution import (
     JOB_TYPE_FUNCTIONS,
@@ -782,6 +783,14 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
                 await task
 
     router = APIRouter(prefix="/api/v2", tags=["v2"], lifespan=lifespan)
+
+    @router.get("/capabilities")
+    def capabilities() -> dict[str, Any]:
+        """统一能力公布（V03-0.7 草案）：格式/上限/性能目标/功能状态。
+
+        前端只消费本接口，不另写常量；excluded 功能不公布为可用。
+        """
+        return capabilities_payload()
 
     @router.post("/projects")
     def create_project(req: ProjectCreateRequest) -> dict[str, Any]:
