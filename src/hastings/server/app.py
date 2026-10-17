@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from hastings import __version__
 from hastings.server.model_access import create_model_access_router
 from hastings.server.provider_config import ProviderBook, env_fallback_config
 from hastings.server.registry import WorkspaceRegistry
@@ -49,7 +50,7 @@ def create_app(
     ``corpus_root``（P7 T6）语料目录，缺省 ./corpus（服务级，作者级资产）。
     ``ollama_transport``/``installed_probe``（本地模型）仅供测试注入。
     """
-    app = FastAPI(title="Hastings", version="0.1.0")
+    app = FastAPI(title="Hastings", version=__version__)
     if book is None:
         book = ProviderBook(env_fallback_config(), boot_name="default", boot_model="")
     app.state.provider_book = book

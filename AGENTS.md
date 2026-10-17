@@ -15,16 +15,11 @@
 - **前端**：Node ≥ 18，`frontend/` 目录下 `npm run dev` / `npm run build`。
 - **环境变量**：API key 等敏感信息放 `.env`（不提交），代码经 `pydantic-settings` 或 `os.environ` 读取。
 
-## 工作流程
-
-1. **测试先行**：核心行为变更必须先写测试再写实现。
-2. **原子提交**：一次提交只做一件事（feature / fix / docs / refactor / cleanup）。
-3. **上游改动须记录**：对 `tau_agent` / `tau_ai` 的任何改动，必须在 dev-notes 中记录动机，避免无记录漂移。
-4. **阶段构建笔记**：V2 每完成一个阶段，在 `dev-notes/v2/` 追加一篇 `phase-XX-*.md`，须单独设「Agent 设计经验」专节（置于交付内容与关键决策之后、评审记录之前），以四透镜提炼 agent 设计手法，代码级 debug 细节作辅助记录。四透镜：① 错误消息是喂给模型的 API（三要素=哪里错、为什么错、怎样算对）；② 硬约束放工具层，prompt 只负责解释世界；③ 泄压阀——区分「违规 / 空结果 / 环境故障」三情形；④ 可观测性是事件契约的一部分。样板：[V1 phase-01-minimal-loop.md §3](dev-notes/v1/phase-01-minimal-loop.md)。
-5. **走查用例**：真模型走查用例统一放仓库根 `eval/` 目录，一个测试点一个文件；目录导航与跑法见 [eval/README.md](eval/README.md)。
+<br />
 
 ## 文档与导航
 
+- 产品版本统一使用 `0.x` 表示开发中：原 V1 对应 0.1，原 V2 对应 0.2，下一版本为 0.3；包版本使用 `0.3.0` 形式。新方案按产品版本标注，现有目录、接口与数据格式标识独立管理，版本约定见 [product-design/README.md](product-design/README.md)。
 - 文档查找统一走导航层，不逐个翻文件：[dev-notes/README.md](dev-notes/README.md)（dev-notes 路由表）、[src/hastings/README.md](src/hastings/README.md)（模块导航）。
 - 读长期文档须先区分版本：`dev-notes/v2/` 是目标架构与新计划，`dev-notes/v1/` 是当前 as-built 和 P0–P10 历史；V1 的 `*-plan.md` 与 `artifacts/` 只作历史记录。
 

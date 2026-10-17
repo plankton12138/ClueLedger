@@ -34,6 +34,7 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
+from hastings import __version__
 from hastings.application.errors import HastingsError, ResultCategory, ViolationError
 from hastings.application.handlers.change_commands import (
     ChangeSetCommandHandler,
@@ -978,7 +979,7 @@ def build_v2_app(runtime: V2Runtime) -> FastAPI:
     """独立 V2 应用（测试 / 纯 V2 部署）；与 V1 共存挂载见 ``server/app.py``。"""
     from hastings.server.v2_ws import create_v2_ws_router
 
-    app = FastAPI(title="Hastings V2", version="0.2.0")
+    app = FastAPI(title="Hastings", version=__version__)
     app.include_router(create_v2_router(runtime))
     app.include_router(create_v2_ws_router(runtime))
     register_v2_error_handlers(app)

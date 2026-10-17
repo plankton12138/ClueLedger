@@ -1,4 +1,4 @@
-# Hastings：基于 Tau 的悬疑小说写作 Agent — 设计说明文档
+# Hastings 0.1：基于 Tau 的悬疑小说写作 Agent — 设计说明文档
 
 > **已被 V2 取代（导航提示，Phase 17 T17.7）**：本文件描述 V1 的**历史设计与 as-built**，仅用于理解现状与迁移原因。后续目标架构见 [V2 DESIGN](../v2/DESIGN.md)，当前实施计划见 [Phase 17](../v2/plans/phase-17-migration-cleanup-plan.md)。V1 代码在迁移完成前仍在运行，但不再承载新设计。
 >

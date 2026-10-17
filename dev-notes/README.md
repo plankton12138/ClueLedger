@@ -6,11 +6,14 @@
 
 | 文档集 | 定位 | 入口 |
 |---|---|---|
-| V2 | Phase 11–18 设计与交付记录，含作者工作台与模型接入 | [v2/README.md](v2/README.md) |
-| V1 | 当前运行系统的 as-built 说明、P0–P10 历史计划、构建笔记和验收材料 | [v1/README.md](v1/README.md) |
+| 0.2（原 V2） | Phase 11–19 设计与交付记录，含作者工作台与模型接入 | [0.2 文档](v2/README.md) |
+| 0.1（原 V1） | 早期系统的 as-built 说明、P0–P10 历史计划、构建笔记和验收材料 | [0.1 文档](v1/README.md) |
 | 灵感池 | 跨版本、未排期的产品与 Agent 想法 | [ideas.md](ideas.md) |
 | 产品设计 | 产品方案、用户旅程、交互与可视化设计 | [../product-design/README.md](../product-design/README.md) |
 | 真模型评测 | 走查用例、运行方法和历史报告 | [../eval/README.md](../eval/README.md) |
+
+产品版本统一使用 `0.x`，下一版本为 **0.3（开发中）**，目标见[产品设计](../product-design/README.md)。
+代码包版本统一为 `0.3.0`，不表示下一版功能已经交付；现有目录与接口版本标识继续用于兼容，历史 V1/V2 分别对应 0.1/0.2。
 
 ## 如何判断“目标”和“现状”
 
@@ -21,7 +24,9 @@
 
 ## 当前入口
 
-- 最新产品提案：[Agent 主工作区与故事账本](../product-design/agent-first-workbench-product-design.md)（待评审）：主区持续协作、右侧故事账本、首次引导与从想法到首章的完整旅程。
+- 最新产品提案：[Agent 主工作区与故事账本](../product-design/agent-first-workbench-product-design.md)（待评审）：以人物、线索及账本关联组织创作，结合伏笔、悬念与信息揭示指导写作；包含正文中心的工作区、首次引导与可视化账本。后续产品流程以此提案为准，实现差距见方案中的改造范围。
+- 修改体验详案：[正文修改与作者长期记忆](../product-design/editing-and-author-memory.md)（待实现）：人工编辑记录版本、空闲时积累记忆，以及对话驱动的整体故事调整；统一融入创作台。
+- 检查体验详案：[悬疑审计交互设计](../product-design/mystery-audit-interaction-design.md)（待实现）：有正文后启动，明确检查范围、进度、问题依据和处理反馈；独立修改审计模块取消。
 
 - 当前阶段：[Phase 19：常驻对话侧栏与显式创作周期](v2/phase-19-chat-workbench.md)，主体已交付；[代码审查修复](v2/phase-19-review-fixes.md) 已补真实 HTTP/SSE 与浏览器闭环，真模型 A13 仍待验收。
 

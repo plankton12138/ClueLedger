@@ -1,5 +1,5 @@
 """Hastings — 基于 tau 的悬疑小说写作 Agent。"""
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 
 __all__ = ["__version__"]
