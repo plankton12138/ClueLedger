@@ -1,0 +1,61 @@
+{
+  "$comment": "V03-0.2 冻结的前后端样例 payload。Python 侧（tests/v2/manuscript/test_identities.py）与 TS 侧（frontend/src/api/identities.test.ts）都从本文件读取并做往返序列化逐字段比对；修改须同时通过两侧测试。字段名 snake_case，与 frontend/src/api/chat.ts 既有 wire 约定一致。",
+  "manuscript_refs": [
+    {
+      "kind": "formal",
+      "id": "art_9f2c1d4e6a8b0c2d4e6f8a0b",
+      "commit_id": "cmt_1a2b3c4d5e6f7a8b9c0d1e2f"
+    },
+    {
+      "kind": "edit_draft",
+      "id": "eds_3c4d5e6f7a8b9c0d1e2f3a4b",
+      "save_seq": 7
+    },
+    {
+      "kind": "candidate",
+      "id": "cnd_5e6f7a8b9c0d1e2f3a4b5c6d",
+      "content_hash": "0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d"
+    },
+    {
+      "kind": "task_snapshot",
+      "id": "tks_7a8b9c0d1e2f3a4b5c6d7e8f",
+      "context_version": 2
+    }
+  ],
+  "operation_envelopes": [
+    {
+      "operation_id": "op_2b3c4d5e6f7a8b9c0d1e2f3a",
+      "status": "committed",
+      "project_id": "prj_4d5e6f7a8b9c0d1e2f3a4b5c",
+      "conversation_id": "conv_6f7a8b9c0d1e2f3a4b5c6d7e",
+      "commit_id": "cmt_1a2b3c4d5e6f7a8b9c0d1e2f",
+      "changed_chapter_ids": ["art_9f2c1d4e6a8b0c2d4e6f8a0b", "art_8b0c2d4e6f8a0b1c2d3e4f5a"],
+      "summary_state": "stale",
+      "ledger_suggestions_state": "not_started",
+      "result_url": "/api/v2/projects/prj_4d5e6f7a8b9c0d1e2f3a4b5c/operations/op_2b3c4d5e6f7a8b9c0d1e2f3a"
+    },
+    {
+      "operation_id": "op_8b9c0d1e2f3a4b5c6d7e8f9a",
+      "status": "no_change",
+      "project_id": "prj_4d5e6f7a8b9c0d1e2f3a4b5c",
+      "changed_chapter_ids": []
+    }
+  ],
+  "error_envelope": {
+    "error": {
+      "code": "OPERATION_KEY_REUSED",
+      "category": "violation",
+      "where": "operations/op_2b3c4d5e6f7a8b9c0d1e2f3a",
+      "why": "操作键 'op_2b3c4d5e6f7a8b9c0d1e2f3a' 已被不同内容的请求使用",
+      "fix": "新意图使用新的 operation_id；原操作回执见 details.original",
+      "details": {
+        "operation_id": "op_2b3c4d5e6f7a8b9c0d1e2f3a",
+        "original": {
+          "operation_id": "op_2b3c4d5e6f7a8b9c0d1e2f3a",
+          "status": "committed",
+          "commit_id": "cmt_1a2b3c4d5e6f7a8b9c0d1e2f"
+        }
+      }
+    }
+  }
+}

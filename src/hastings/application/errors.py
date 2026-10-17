@@ -18,7 +18,23 @@ __all__ = [
     "HastingsError",
     "ResultCategory",
     "ViolationError",
+    "V03_ERROR_CODES",
 ]
+
+#: 0.3 目标错误码集中登记（计划 §4.4、执行指导 §3.1）：每新增一个错误码
+#: 在此登记，并同次补三类测试——领域抛出、API 映射 HTTP、前端按 code 分支。
+V03_ERROR_CODES: tuple[str, ...] = (
+    "EDIT_SAVE_CONFLICT",
+    "MANUSCRIPT_BASE_CONFLICT",
+    "EDIT_SESSION_BLOCKS_PUBLISH",
+    "SOURCE_NEEDS_RECHECK",
+    "IMPORT_PREVIEW_STALE",
+    "IMPORT_DUPLICATE_CONTENT",
+    "EXECUTION_NOT_AUTHORIZED",
+    "TASK_BUDGET_EXHAUSTED",
+    "UNDO_DEPENDENCY_CONFLICT",
+    "OPERATION_KEY_REUSED",
+)
 
 
 class ResultCategory(StrEnum):
