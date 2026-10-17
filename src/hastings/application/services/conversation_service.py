@@ -13,6 +13,7 @@ runner 看到取消即停并返回部分文本，随后所有迟到分片被存�
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from datetime import datetime
@@ -21,9 +22,11 @@ from typing import Any, cast
 from hastings.application.errors import EnvironmentFailure, HastingsError, ViolationError
 from hastings.application.ports.chat import ChatRun
 from hastings.application.ports.conversations import ConversationStore, OpenTurn
+from hastings.application.ports.execution_log import ExecutionLog
 from hastings.domain.conversation import error_codes as ec
 from hastings.domain.conversation import models as m
 from hastings.domain.conversation.errors import ConversationViolation
+from hastings.domain.execution_log import ExecutionEvent
 from hastings.domain.repository.serialization import content_hash
 from hastings.infrastructure.conversations.runner import TurnCancellationToken
 
@@ -62,6 +65,7 @@ class ConversationService:
         max_output_chars: int = 20000,
         history_window: int = _HISTORY_WINDOW,
         ref_validator: Callable[[str, list[dict[str, Any]]], None] | None = None,
+        execution_log: ExecutionLog | None = None,
     ) -> None:
         self.store = store
         # 公开注入点：测试与服务装配（ProviderBook 接线）都可以替换。
@@ -77,6 +81,8 @@ class ConversationService:
         # 引用校验挂点（19.4）：实现在装配层（对照项目快照验证存在性）；
         # None 时不校验（测试/本地纯聊天）。
         self.ref_validator = ref_validator
+        # 执行日志（V03-1.6）：None 不发射（既有装配与旧测试零改动）。
+        self.execution_log = execution_log
         self._runs: dict[str, _ActiveRun] = {}
 
     # -- 会话 ------------------------------------------------------------------
@@ -335,6 +341,9 @@ class ConversationService:
             )
             if not started:
                 return  # start 前已被取消。
+            await self._log_event(
+                project_id, conversation_id, turn_id, "started", "回复尝试开始", model=model
+            )
             history, refs = await self._build_context(conversation_id, turn_id)
             chat_run = ChatRun(
                 model=model,
@@ -367,15 +376,18 @@ class ConversationService:
                 )
                 return
             # 取消后的正常返回：轮次已被 cancel 收束，settle 返回 False 无副作用。
-            await self.store.settle_turn(
+            settled = await self.store.settle_turn(
                 turn_id, status=m.TURN_COMPLETED, end_reason="stop", text=final
             )
+            if settled:
+                await self._log_event(
+                    project_id, conversation_id, turn_id, "completed", "回复生成完成", model=model
+                )
 
     async def _settle_failure(
         self, project_id: str, conversation_id: str, turn_id: str, exc: HastingsError
     ) -> None:
-        del project_id
-        await self.store.settle_turn(
+        settled = await self.store.settle_turn(
             turn_id,
             status=m.TURN_FAILED,
             end_reason=exc.code,
@@ -388,6 +400,10 @@ class ConversationService:
                 "details": dict(exc.details),
             },
         )
+        if settled:
+            await self._log_event(
+                project_id, conversation_id, turn_id, "failed", f"回复失败：{exc.code}"
+            )
 
     async def _build_context(
         self, conversation_id: str, turn_id: str
@@ -415,6 +431,52 @@ class ConversationService:
             history.append(("author", current.text))
         return tuple(history[-self._history_window :]), tuple(refs)
 
+    # -- 执行日志（V03-1.6）---------------------------------------------------------
+    async def _log_event(
+        self,
+        project_id: str,
+        conversation_id: str,
+        turn_id: str,
+        phase: str,
+        summary: str,
+        *,
+        model: str | None = None,
+    ) -> None:
+        """向执行日志投影一条轮次生命周期事件；日志故障不中断写作流。
+
+        task/attempt 映射：对话任务通道 = ``chat-{conversation_id}``，每次轮次
+        = 一次尝试（attempt=turn_id，重试生成新 turn_id 天然分开）。源事件 ID
+        确定性派生（``{turn_id}:{phase}``），崩溃重放经 append_once 去重。
+        """
+        log = self.execution_log
+        if log is None:
+            return
+        source = f"{turn_id}:{phase}"
+        event = ExecutionEvent(
+            event_id=f"evt_{content_hash([project_id, source])[:20]}",
+            project_id=project_id,
+            sequence=0,
+            task_id=f"chat-{conversation_id}",
+            attempt_id=turn_id,
+            agent_id=None,
+            call_id=None,
+            parent_call_id=None,
+            event_type=f"model_task.{phase}",
+            occurred_at=datetime.now().astimezone().isoformat(),
+            summary=f"{summary}（模型 {model}）" if model else summary,
+            source_event_id=source,
+            version_refs=(),
+        )
+        try:
+            await log.append_once(source, event)
+        except Exception as exc:  # noqa: BLE001 — 观测侧通道故障不中断写作流
+            print(
+                f"[execution_log] where=execution_log.append({source}) "
+                f"why={type(exc).__name__}: {exc} "
+                f"fix=检查执行日志存储后重进回看；写作流不受影响",
+                file=sys.stderr,
+            )
+
     # -- 取消与重试 -----------------------------------------------------------------
     async def cancel_turn(self, project_id: str, conversation_id: str, turn_id: str) -> None:
         await self._require_conversation(project_id, conversation_id)
@@ -429,7 +491,11 @@ class ConversationService:
         run = self._runs.get(turn_id)
         if run is not None:
             run.token.cancel()
-        await self.store.settle_turn(turn_id, status=m.TURN_STOPPED, end_reason="author_stop")
+        settled = await self.store.settle_turn(
+            turn_id, status=m.TURN_STOPPED, end_reason="author_stop"
+        )
+        if settled:
+            await self._log_event(project_id, conversation_id, turn_id, "stopped", "作者停止回复")
         if run is not None and run.task is not None and not run.task.done():
             run.task.cancel()
             with suppress(asyncio.CancelledError):

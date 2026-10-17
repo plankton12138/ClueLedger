@@ -53,7 +53,7 @@ CAPABILITIES: Final[dict[str, Any]] = {
     "edit_sessions": {"status": "draft"},
     "operation_records": {"status": "draft"},
     "execution_grants": {"status": "implemented"},
-    "execution_events": {"status": "draft"},
+    "execution_events": {"status": "implemented"},
     "summaries": {"status": "draft"},
     "ledger_suggestions": {"status": "draft"},
     "agreements": {"status": "draft"},

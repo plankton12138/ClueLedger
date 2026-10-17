@@ -91,6 +91,7 @@ from hastings.domain.story.errors import StoryViolation
 from hastings.infrastructure.conversations.drafts import SqliteTaskDraftStore
 from hastings.infrastructure.conversations.store import SqliteConversationStore
 from hastings.infrastructure.events.outbox import OutboxPublisher
+from hastings.infrastructure.execution_log import MemoryExecutionLog, SqliteExecutionLog
 from hastings.infrastructure.jobs import SqliteJobStore
 from hastings.infrastructure.repository.memory import MemoryRepository, build_memory_repository
 from hastings.infrastructure.repository.sqlite import SqliteRepository, build_sqlite_repository
@@ -155,11 +156,16 @@ class V2Runtime:
         # 对话存储与执行（Phase 19.3）：与 Repository/Job 同一 DB 文件、独立表；
         # 模型解析与流式执行复用 ConfiguredV2Runner 的档案选择（设置页切换生效）。
         self.conversation_store = SqliteConversationStore(db_path or ":memory:")
+        # 执行日志（V03-1.6）：运行事件公共投影；SQLite 随库持久，内存版重启清零。
+        self.execution_log = (
+            MemoryExecutionLog() if db_path is None else SqliteExecutionLog(db_path)
+        )
         self.chat = ConversationService(
             self.conversation_store,
             runner_factory=v2_runner.chat_runner,
             model_resolver=v2_runner.chat_model,
             ref_validator=self.validate_refs,
+            execution_log=self.execution_log,
         )
         # 无作品入口预约与无模型想法（M02/V03-1.2）：与对话共用存储，
         # 预约记录走仓库辅助表（V03-0.5）。
@@ -780,6 +786,7 @@ def _chapter_payload_from(catalog: ManuscriptCatalog, chapter_id: str) -> dict[s
 def create_v2_router(runtime: V2Runtime) -> APIRouter:
     from hastings.interfaces.api.author_decisions import create_author_decisions_router
     from hastings.interfaces.api.conversations import create_conversations_router
+    from hastings.interfaces.api.execution_log import create_execution_log_router
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -1017,6 +1024,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
     router.include_router(create_agents_router(runtime))
     router.include_router(create_author_decisions_router(runtime))
     router.include_router(create_conversations_router(runtime))
+    router.include_router(create_execution_log_router(runtime))
     return router
 
 
