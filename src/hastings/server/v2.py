@@ -27,7 +27,7 @@ import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, FastAPI, Request
@@ -60,9 +60,9 @@ from hastings.application.services.conversation_service import ConversationServi
 from hastings.application.services.task_prep_service import TaskPrepService
 from hastings.application.services.task_projection import ChatTaskProjector
 from hastings.application.workflows.agent_workflows import AgentWorkflows
-from hastings.application.workflows.analysis_dispatch import AnalysisDispatcher
 from hastings.application.workflows.audit import AuditWorkflow
 from hastings.application.workflows.change_analysis import AnalyzeChangeImpact
+from hastings.application.workflows.event_projection import CountingProjectionSink
 from hastings.application.workflows.manual_edit import CommitManualEdit, ManualEditIntent
 from hastings.application.workflows.plan_revision import PlanRevision
 from hastings.application.workflows.restore_version import RestoreChapterVersion, RestoreIntent
@@ -185,11 +185,15 @@ class V2Runtime:
         self._active_jobs: dict[str, asyncio.Task[None]] = {}
         self._job_project_locks: dict[str, asyncio.Lock] = {}
         self._wake_projects: set[str] = set()
-        self.dispatcher = AnalysisDispatcher(self.jobs)
+        self._classified_legacy: set[str] = set()
+        # 0.3 装配（V03-0.4）：Outbox 订阅者是确定性投影端，不再是
+        # AnalysisDispatcher——章提交事件不再自动创建分析 Job。历史事件
+        # 与旧资料保留；dispatcher 类留作单元回归，不进 0.3 装配。
+        self.event_projection = CountingProjectionSink()
         self.restore = RestoreChapterVersion(self.handler, self.service)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
-        self.publisher = OutboxPublisher(cast("EventOutbox", repo), self.dispatcher)
+        self.publisher = OutboxPublisher(cast("EventOutbox", repo), self.event_projection)
 
     def configure_agent_runner(self, runner: AgentRunner) -> None:
         self.worker = WorkerJobRunner(self.jobs, runner, self._repo, self.ids, self.clock)
@@ -200,56 +204,47 @@ class V2Runtime:
     async def wake_workers(self, project_id: str) -> None:
         self._wake_projects.add(project_id)
 
-    async def prepare_analysis_jobs(self) -> None:
+    #: 旧自动链路遗留的 Job 类型（V03-0.4 分类报告范围）。作者显式启动的
+    #: auditor 等任务不在此列——它们带凭据，走正常派发。
+    LEGACY_AUTO_JOB_TYPES = ("manuscript.analysis", "style_observer")
+
+    async def classify_legacy_auto_jobs(self) -> dict[str, int]:
+        """旧自动队列分类报告（V03-0.4）：数量/类型/状态，可派发的一律暂停。
+
+        切断装配后不再有新的自动分析 Job；库里遗留的旧任务在此分类：可派发
+        状态（queued/retryable_failed）由派发门禁标 ``historical_paused``，
+        分类详情（legacy_auto/job_type/原因）随 ``job.paused`` 事件入库；
+        终态旧任务原样保留供回看。每个 Job 只分类一次；返回本次分类计数。
+        """
+        report: dict[str, int] = {}
         for job in await self.jobs.list_jobs():
-            if job["job_type"] != "manuscript.analysis" or job["state"] not in (
-                "queued",
-                "retryable_failed",
-            ):
+            if job["job_type"] not in self.LEGACY_AUTO_JOB_TYPES:
                 continue
-            if job["retry_at"] and datetime.fromisoformat(job["retry_at"]) > self.clock.now():
+            if job["job_id"] in self._classified_legacy:
                 continue
-            claimed = await self.jobs.claim(
-                job["job_id"], "analysis-dispatch", now=self.clock.now(), ttl=30
+            self._classified_legacy.add(job["job_id"])
+            key = f"{job['job_type']}:{job['state']}"
+            report[key] = report.get(key, 0) + 1
+            await self.jobs.pause(
+                job["job_id"],
+                reason="historical_paused",
+                details={
+                    "legacy_auto": True,
+                    "job_type": job["job_type"],
+                    "why": "0.3 切断旧自动模型调度；保留记录供回看，不派发",
+                },
             )
-            try:
-                payload = job["payload"]
-                pid = ProjectId(payload["project_id"])
-                after = CommitId(payload["commit_id"])
-                history = self.service.commit_history(pid, after)
-                commit = next(c for c in history if c.id == after)
-                if commit.parent_ids and commit.actor.kind == "human":
-                    await self.agent_workflows.style(
-                        pid,
-                        commit.parent_ids[0].value,
-                        after.value,
-                        payload["chapter_id"],
-                        f"{job['job_id']}:observer",
-                    )
-                await self.jobs.finish(
-                    job["job_id"],
-                    claimed["generation"],
-                    "completed",
-                    {"kind": "no_result", "reason": "已派发真实编辑观察或没有前后版本"},
-                )
-            except (ValueError, HastingsError, OSError) as exc:
-                violation = isinstance(exc, (ValueError, ViolationError))
-                retry = not violation and claimed["attempts"] < 3
-                await self.jobs.finish(
-                    job["job_id"],
-                    claimed["generation"],
-                    "retryable_failed" if retry else "terminal_failed",
-                    {
-                        "kind": "worker_failure",
-                        "category": "violation" if violation else "environment",
-                        "reason": str(exc),
-                        "errors": [],
-                        "raw_outputs": [],
-                    },
-                    retry_at=self.clock.now() + timedelta(seconds=2 ** claimed["attempts"])
-                    if retry
-                    else None,
-                )
+        return report
+
+    async def legacy_auto_report(self) -> dict[str, int]:
+        """旧自动队列只读分类快照（数量/类型/状态）；不改变任何状态。"""
+        report: dict[str, int] = {}
+        for job in await self.jobs.list_jobs():
+            if job["job_type"] not in self.LEGACY_AUTO_JOB_TYPES:
+                continue
+            key = f"{job['job_type']}:{job['state']}"
+            report[key] = report.get(key, 0) + 1
+        return report
 
     async def _authorize_job(self, job: Mapping[str, Any]) -> ExecutionGrant | None:
         """派发门禁（V03-0.3，I05/I06）：无有效凭据的任务不派发、不运行。
@@ -338,7 +333,7 @@ class V2Runtime:
                     except (HastingsError, OSError):
                         continue
                     self._wake_projects.discard(project)
-                await self.prepare_analysis_jobs()
+                await self.classify_legacy_auto_jobs()
                 with suppress(HastingsError):
                     await self.task_projector.sync()
                 self._active_jobs = {jid: t for jid, t in self._active_jobs.items() if not t.done()}
@@ -349,17 +344,12 @@ class V2Runtime:
                         active_projects.add(str(active["payload"]["project_id"]))
                 for job in await self.jobs.list_jobs():
                     project_id = str(job["payload"]["project_id"])
-                    analysis_pending = (
-                        job["state"] == "completed"
-                        and job["job_type"] in ("auditor", "style_observer")
-                        and not job.get("analysis")
-                    )
                     due = (
                         not job["retry_at"]
                         or datetime.fromisoformat(job["retry_at"]) <= self.clock.now()
                     )
                     if (
-                        (job["state"] in ("queued", "retryable_failed") or analysis_pending)
+                        job["state"] in ("queued", "retryable_failed")
                         and job["job_type"] != "manuscript.analysis"
                         and due
                         and job["job_id"] not in self._active_jobs

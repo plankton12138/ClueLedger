@@ -58,7 +58,12 @@ def test_planning_job_waits_for_author_and_survives_restart(tmp_path):
     assert restarted.post(f"/api/v2/projects/{other}/agent-jobs/{jid}/cancel").status_code == 404
 
 
-def test_outbox_analysis_is_persistent_and_uses_actual_diff(tmp_path):
+def test_save_event_no_longer_creates_analysis_job(tmp_path):
+    """0.3（V03-0.4）：保存事件走确定性投影，不再自动创建分析/风格观察 Job。
+
+    0.2 语义是「Outbox → AnalysisDispatcher → 分析 Job → 风格观察」；
+    0.3 切断装配：事件照常发布标记（不积压），模型调度为零（I06）。
+    """
     runtime = V2Runtime.sqlite(str(tmp_path / "v2.sqlite"))
     client = TestClient(build_v2_app(runtime))
     project = client.post("/api/v2/projects", json={"name": "编辑"}).json()["project_id"]
@@ -72,13 +77,11 @@ def test_outbox_analysis_is_persistent_and_uses_actual_diff(tmp_path):
         json={"idempotency_key": "edit", "full_text": "他走进房间。"},
     )
     assert saved.status_code == 200, saved.text
-    runtime.dispatch_pending(project)
-    asyncio.run(runtime.prepare_analysis_jobs())
+    assert runtime.dispatch_pending(project) >= 1  # 事件发布并标记，不积压
+    assert runtime.event_projection.report().get("manuscript.chapter.committed", 0) >= 1
     jobs = client.get(prefix + "/agent-jobs").json()["jobs"]
-    observer = next(j for j in jobs if j["job_type"] == "style_observer")
-    edits = observer["payload"]["context"]["evidence"]["edits"]
-    assert edits[0]["before"] == "他非常缓慢地走进房间。"
-    assert edits[0]["after"] == "他走进房间。"
+    assert [j for j in jobs if j["job_type"] in ("manuscript.analysis", "style_observer")] == []
+    assert asyncio.run(runtime.legacy_auto_report()) == {}
 
 
 def test_small_context_budget_is_honored_at_http_boundary():
@@ -130,6 +133,19 @@ def test_restart_does_not_replay_auto_style_observation(tmp_path):
             )
         )
     )
+    # 0.2 遗留的旧自动队列（直接落库，模拟升级前数据）：重启后不得派发。
+    asyncio.run(
+        initial.jobs.create(
+            "manuscript.analysis",
+            {"project_id": pid.value, "commit_id": initial.head(pid).value, "chapter_id": "ch"},
+        )
+    )
+    asyncio.run(
+        initial.jobs.create(
+            "style_observer",
+            {"project_id": pid.value, "context": {"project_id": pid.value}},
+        )
+    )
     restarted = V2Runtime.sqlite(path)
     observer_calls: list[str] = []
 
@@ -159,7 +175,12 @@ def test_restart_does_not_replay_auto_style_observation(tmp_path):
     assert not restarted.author_queries.preferences(ProjectId(pid.value), restarted.head(pid))
 
 
-def test_oversized_edit_analysis_fails_visibly_without_stopping_dispatch(tmp_path):
+def test_oversized_edit_no_longer_spawns_auto_analysis(tmp_path):
+    """0.3（V03-0.4）：大改动保存只落正文，不再派生自动分析任务。
+
+    0.2 的失败模式（分析上下文超预算 → terminal_failed）随自动链切断而
+    消失：保存成功、零自动 Job、零模型调用；正文与历史不受影响。
+    """
     from hastings.application.handlers.manuscript_commands import manuscript_command
     from hastings.application.workflows.manual_edit import ManualEditIntent
     from hastings.domain.manuscript.commands import import_chapter
@@ -179,13 +200,10 @@ def test_oversized_edit_analysis_fails_visibly_without_stopping_dispatch(tmp_pat
             )
         )
     )
-    runtime.dispatch_pending(pid.value)
-    asyncio.run(runtime.prepare_analysis_jobs())
+    assert runtime.dispatch_pending(pid.value) >= 1
     jobs = asyncio.run(runtime.jobs.list_jobs(pid.value))
-    failed = next(j for j in jobs if j["job_type"] == "manuscript.analysis")
-    assert failed["state"] == "terminal_failed"
-    assert failed["output"]["category"] == "violation"
-    assert "预算" in failed["output"]["reason"]
+    assert [j for j in jobs if j["job_type"] in ("manuscript.analysis", "style_observer")] == []
+    assert asyncio.run(runtime.legacy_auto_report()) == {}
 
 
 def test_completed_analysis_replays_metadata_after_restart(tmp_path):

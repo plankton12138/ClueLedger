@@ -148,7 +148,8 @@ def test_restart_preserves_author_model(tmp_path: Path) -> None:
     assert [o.observation_id for o in evidence] == ["obs_r1"]
 
 
-def test_restart_recovers_pending_analysis_dispatch(tmp_path: Path) -> None:
+def test_restart_publishes_pending_events_without_creating_jobs(tmp_path: Path) -> None:
+    """0.3（V03-0.4）：重启补偿只重投事件，不再派生自动分析 Job。"""
     path = tmp_path / "repository.db"
     rt1 = _build(path)
     project_id = rt1.create_project("冬馆").value
@@ -161,14 +162,15 @@ def test_restart_recovers_pending_analysis_dispatch(tmp_path: Path) -> None:
     chapter_id = _chapter_id(rt1, project_id)
     saved = asyncio.run(rt1.workflow.save(_intent(project_id, chapter_id, "save-1", EDITED_TEXT)))
     assert saved.is_committed
-    # 重启前不驱动发布：任务尚未创建，只存在于持久 Outbox
+    # 重启前不驱动发布：事件只存在于持久 Outbox
 
-    rt2 = _build(path)  # 重启：全新 JobStore 与消费者，零进程内记忆
+    rt2 = _build(path)  # 重启：全新 JobStore 与投影端，零进程内记忆
     assert rt2.jobs.created == []
     assert rt2.dispatch_pending(project_id) >= 1  # 待发布事件重投（补偿）
-    assert [job_type for job_type, _ in rt2.jobs.created] == ["manuscript.analysis"]
-    assert rt2.dispatch_pending(project_id) >= 0  # 已发布标记持久：不再重复建任务
-    assert len(rt2.jobs.created) == 1
+    assert rt2.jobs.created == []  # 切断自动调度：零 Job（I06）
+    assert rt2.event_projection.report().get("manuscript.chapter.committed", 0) >= 1
+    assert rt2.dispatch_pending(project_id) >= 0  # 已发布标记持久：不重复投递
+    assert rt2.jobs.created == []
 
 
 # ---------------------------------------------------------------------------

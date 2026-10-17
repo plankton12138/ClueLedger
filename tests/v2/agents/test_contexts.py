@@ -95,6 +95,14 @@ def test_context_resolves_chapter_preferences_and_active_examples(changes_env):
         )
     )
     ctx = ContextBuilder(env.service).build("writer", project.id, result.commit_id.value, ("tu_x",))
-    assert [p["preference_id"] for p in ctx.author_preferences] == ["chapter_pref"]
-    assert ctx.author_examples[0]["polarity"] == "negative"
-    assert "text" not in ctx.author_examples[0]
+    # 0.3（V03-0.4）：作者模型档案不再常驻注入任务背景（排除项）。
+    assert ctx.author_preferences == []
+    assert ctx.author_examples == []
+    # 原始数据只读保留：查询路径不受切断影响。
+    from hastings.application.queries.author_profile import AuthorProfileQueries
+
+    profiles = AuthorProfileQueries(env.service)
+    effective = profiles.effective_preferences(
+        project.id, result.commit_id, scope_kind="chapter", scope_target="ch1"
+    )
+    assert [p.preference_id for p in effective] == ["chapter_pref"]

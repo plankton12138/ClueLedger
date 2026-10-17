@@ -385,8 +385,10 @@ class TestRestoreEndpoint:
 # ---------------------------------------------------------------------------
 # 保存 → Outbox → 分析任务调度（消费者接线）
 # ---------------------------------------------------------------------------
-class TestAnalysisDispatchWiring:
-    def test_save_dispatches_one_analysis_job_via_outbox(self) -> None:
+class TestEventProjectionWiring:
+    """0.3（V03-0.4）：保存事件只走确定性投影，不再派生自动分析 Job。"""
+
+    def test_save_publishes_event_without_creating_jobs(self) -> None:
         runtime = V2Runtime.memory()
         app = build_v2_app(runtime)
         with TestClient(app) as c:
@@ -403,14 +405,14 @@ class TestAnalysisDispatchWiring:
             assert saved.status_code == 200
             assert saved.json()["status"] == "committed"
 
-            # Outbox 里除业务事件外还有内核事件（commit/revision/branch），
-            # 发布数 ≥ 1 即可；分析任务只由 manuscript.chapter.committed 派生。
+            # 事件发布并标记（不积压），但零自动 Job（切断模型调度，I06）。
             assert runtime.dispatch_pending(project_id) >= 1
-            assert [job_type for job_type, _ in runtime.jobs.created] == ["manuscript.analysis"]
+            assert runtime.jobs.created == []
+            assert runtime.event_projection.report().get("manuscript.chapter.committed", 0) >= 1
 
-            # 重复消费不重复建任务；无新业务事件时不再建第二个 Job
+            # 重复发布不重复计数；无新业务事件时投影 stable
             runtime.dispatch_pending(project_id)
-            assert len(runtime.jobs.created) == 1
+            assert runtime.jobs.created == []
 
     def test_noop_save_creates_no_event_no_job(self) -> None:
         runtime = V2Runtime.memory()

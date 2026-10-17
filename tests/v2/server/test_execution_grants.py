@@ -131,10 +131,21 @@ def test_no_implicit_model_call_on_reopen_and_save(tmp_path: Path) -> None:
             )
         )
     )
-    # 旧自动链：Outbox → 分析 Job → 风格观察 Job（只建 Job，不调用模型）。
-    runtime.dispatch_pending(project)
-    asyncio.run(runtime.prepare_analysis_jobs())
-    assert recorder.calls == []  # 保存与自动建 Job 本身不调用模型
+    # 旧自动链（V03-0.4 已切断装配）：事件只走确定性投影，不建分析 Job；
+    # 这里直接落库两条 0.2 遗留任务，验证重启后门禁暂停、零调用。
+    assert runtime.dispatch_pending(project) >= 1
+    asyncio.run(
+        runtime.jobs.create(
+            "manuscript.analysis",
+            {"project_id": project, "commit_id": "cmt_legacy", "chapter_id": chapter},
+        )
+    )
+    asyncio.run(
+        runtime.jobs.create(
+            "style_observer", {"project_id": project, "context": {"project_id": project}}
+        )
+    )
+    assert recorder.calls == []  # 保存与旧队列落库本身不调用模型
 
     # 重启：新 runtime + 同一记录器；lifespan 行为（mark_interrupted）。
     restarted = V2Runtime.sqlite(path)
