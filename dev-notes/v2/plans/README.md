@@ -6,7 +6,7 @@
 
 ## 当前新增计划
 
-- 产品提案统一收录在 [产品设计目录](../../../product-design/README.md)；当前方案为 [Agent 主工作区与故事账本](../../../product-design/agent-first-workbench-product-design.md)（待评审，尚未分配阶段编号）。
+- 0.3 产品范围已确认，待实现，见 [产品设计目录](../../../product-design/README.md)与[Agent 主工作区与故事账本](../../../product-design/agent-first-workbench-product-design.md)。完整实施安排见 [0.3 开发计划](../../v0.3/development-plan.md)，任务使用 `V03-*`，不续编历史 Phase 编号。
 
 - [Phase 19：常驻对话侧栏与显式创作周期](phase-19-chat-workbench-plan.md)（主体交付，审查缺陷已修复；真模型 A13 待验）：实际边界与回归见 [审查修复记录](../phase-19-review-fixes.md)。
 - Phase 18 模型接入已交付，记录见 [模型接入与切换](../phase-18-model-access.md)。下文 Phase 11–17 表保留原重建计划和历史依赖。
