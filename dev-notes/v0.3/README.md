@@ -33,3 +33,17 @@
 V03-0 退出状态（对照计划 §7 质量门）：仓库内存/SQLite 契约、幂等与故障注入、任务启动/恢复测试均通过；前后端 DTO 与 OpenAPI 对照以盘点清单 + 共用夹具落地；未完成事务方案（V03-0.5 已交付辅助表与双后端契约）不阻塞进入 V03-2 正式发布的前置已具备。
 
 下一阶段起点：V03-1（主工作区、模型引导与无模型记录）——开始条件检查单（V03-0 质量门通过、旧自动模型链路已隔离且有零调用证据、DTO 冻结）已满足。
+
+## V03-1 进行中（2026-10-17）
+
+质量门基线：`uv run pytest -q` 1438 passed；ruff/mypy 全过。
+
+| 任务 | 状态 | 产物 | 构建笔记 |
+|---|---|---|---|
+| V03-1.1 三部分工作区壳 | 状态核心已交付（React 壳层接线待续） | `frontend/src/state/desk.ts`（MainView 联合/applyOperationResult/阅读位置四元组）12 项测试 | [notes/v03-1.1](notes/v03-1.1-desk-shell-state.md) |
+| V03-1.2 入口预约与无模型记录 | 已交付 | `application/services/entry_service.py` + `POST /api/v2/entries` + author-messages 端点 5 项测试 | [notes/v03-1.2](notes/v03-1.2-entry-reservation-and-author-ideas.md) |
+| V03-1.3 个人 Key 与连接同源 | 已交付 | `CredentialStore` 端口 + keyring 实现 + 明文迁移 + 物化 5 项测试 | [notes/v03-1.3](notes/v03-1.3-personal-key-and-connection.md) |
+| V03-1.5 接着讨论 | 已交付 | `send_turn_from_messages`（source_message_ids 不复制消息）+ 轮次审计字段 3 项测试 | [notes/v03-1.5](notes/v03-1.5-continue-discussion.md) |
+| V03-1.4 本地模型真实阶段 | 待实施 | — | — |
+| V03-1.6 执行日志基础 | 待实施 | — | — |
+| V03-1.7 阅读位置保护 | 状态级已随 1.1 覆盖（200% 缩放走查待浏览器验收） | desk.ts 四元组键 | 同 1.1 |
