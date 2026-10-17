@@ -25,6 +25,7 @@ import uvicorn
 from dotenv import load_dotenv
 
 from hastings.__main__ import DEFAULT_STORIES_ROOT, env_error, normalize_base_url
+from hastings.infrastructure.credentials import build_credential_store
 from hastings.server.app import create_app
 from hastings.server.hastings_session import default_session_factory
 from hastings.server.provider_config import (
@@ -204,12 +205,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     # ProviderBook 是进程级端点目录（P6 D1/T2）：按档案名缓存 provider 实例，
     # 跨档案切换复用、无需关闭；boot_* 决定新工作区的引导端点与模型。
     # config_path（P7 T12）：设置页 UI 增删改档案后写回同一文件。
+    # credentials（V03-1.3）：个人 Key 进 OS 凭据存储；不可用时降级内存
+    # （重启后档案不可用，属可见故障，设置页给出安装引导）。
+    credential_store = build_credential_store()
     book = ProviderBook(
         server_config,
         boot_name=boot_profile_name,
         boot_model=boot_model,
         config_path=config_path,
+        credentials=credential_store,
     )
+    for failed in book.credential_migration["failed"]:
+        print(f"⚠ 凭据迁移未完成：{failed}（旧连接保持可用；修复后重启重试）")
     registry = WorkspaceRegistry(
         root=args.stories_root,
         session_factory=default_session_factory(book),
