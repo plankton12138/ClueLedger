@@ -59,6 +59,7 @@ from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.conversation_service import ConversationService
 from hastings.application.services.entry_service import EntryService
+from hastings.application.services.operation_service import OperationService
 from hastings.application.services.task_prep_service import TaskPrepService
 from hastings.application.services.task_projection import ChatTaskProjector
 from hastings.application.workflows.agent_workflows import AgentWorkflows
@@ -66,6 +67,10 @@ from hastings.application.workflows.audit import AuditWorkflow
 from hastings.application.workflows.change_analysis import AnalyzeChangeImpact
 from hastings.application.workflows.event_projection import CountingProjectionSink
 from hastings.application.workflows.manual_edit import CommitManualEdit, ManualEditIntent
+from hastings.application.workflows.operation_projection import (
+    FanOutSink,
+    OperationDiscussionProjector,
+)
 from hastings.application.workflows.plan_revision import PlanRevision
 from hastings.application.workflows.restore_version import RestoreChapterVersion, RestoreIntent
 from hastings.application.workflows.review import ReviewRevision
@@ -201,10 +206,17 @@ class V2Runtime:
         # AnalysisDispatcher——章提交事件不再自动创建分析 Job。历史事件
         # 与旧资料保留；dispatcher 类留作单元回归，不进 0.3 装配。
         self.event_projection = CountingProjectionSink()
+        # 操作记录与固定讨论投影（V03-2.1）：操作事件扇出到计数端与
+        # 创作记录投影端；投影失败事件保持待发布，不回滚已生效正文。
+        self.operations = OperationService(self.service)
+        self.operation_projection = OperationDiscussionProjector(self.conversation_store)
         self.restore = RestoreChapterVersion(self.handler, self.service)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
-        self.publisher = OutboxPublisher(cast("EventOutbox", repo), self.event_projection)
+        self.publisher = OutboxPublisher(
+            cast("EventOutbox", repo),
+            FanOutSink(self.event_projection, self.operation_projection),
+        )
 
     def configure_agent_runner(self, runner: AgentRunner) -> None:
         self.worker = WorkerJobRunner(self.jobs, runner, self._repo, self.ids, self.clock)
@@ -838,6 +850,15 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             "message_id": saved.message_id,
             "status": saved.status,
         }
+
+    @router.get("/projects/{project_id}/operations/{operation_id}")
+    def get_operation(project_id: str, operation_id: str) -> dict[str, Any]:
+        """按 operation_id 找回操作结果（V03-2.1）。
+
+        只依赖仓库（回执 + 记录 Artifact），不依赖对话投影：投影失败或
+        尚未完成时本查询仍可定位结果，展示层显示「同步中」。
+        """
+        return runtime.operations.get_operation(ProjectId(project_id), operation_id).to_wire()
 
     @router.post("/projects")
     def create_project(req: ProjectCreateRequest) -> dict[str, Any]:
