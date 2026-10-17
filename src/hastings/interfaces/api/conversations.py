@@ -19,6 +19,9 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from hastings.application.errors import ViolationError
+from hastings.domain.conversation import error_codes as ec
+
 if TYPE_CHECKING:
     from hastings.server.v2 import V2Runtime
 
@@ -32,9 +35,12 @@ class CreateConversationRequest(BaseModel):
 
 
 class SendTurnRequest(BaseModel):
-    text: str = Field(min_length=1)
+    """普通发送给 text；接着讨论（V03-1.5）给 source_message_ids，两者互斥。"""
+
+    text: str | None = None
     refs: list[dict[str, Any]] = Field(default_factory=list)
     idempotency_key: str = Field(min_length=1)
+    source_message_ids: list[str] = Field(default_factory=list)
 
 
 class SaveAuthorMessageRequest(BaseModel):
@@ -113,13 +119,36 @@ def create_conversations_router(runtime: V2Runtime) -> APIRouter:
     async def send_turn(
         project_id: str, conversation_id: str, req: SendTurnRequest
     ) -> dict[str, Any]:
-        opened = await runtime.chat.send_turn(
-            project_id,
-            conversation_id,
-            text=req.text,
-            refs=req.refs,
-            idempotency_key=req.idempotency_key,
-        )
+        if req.source_message_ids:
+            if req.text is not None:
+                raise ViolationError(
+                    code=ec.CHAT_INVALID_COMMAND,
+                    where="chat.turn.send",
+                    why="text 与 source_message_ids 只能提供其一"
+                    "（为什么错：普通发送与接着讨论是两种意图，混给无从确定）",
+                    fix="接着讨论只引用已保存消息；新发言给 text",
+                )
+            opened = await runtime.chat.send_turn_from_messages(
+                project_id,
+                conversation_id,
+                req.source_message_ids,
+                req.idempotency_key,
+            )
+        else:
+            if req.text is None:
+                raise ViolationError(
+                    code=ec.CHAT_INVALID_COMMAND,
+                    where="chat.turn.send",
+                    why="text 与 source_message_ids 必须提供其一",
+                    fix="新发言给 text；从已保存想法继续给 source_message_ids",
+                )
+            opened = await runtime.chat.send_turn(
+                project_id,
+                conversation_id,
+                text=req.text,
+                refs=req.refs,
+                idempotency_key=req.idempotency_key,
+            )
         return {
             "turn": opened.turn.to_dict(),
             "user_message": opened.user_message.to_dict(),

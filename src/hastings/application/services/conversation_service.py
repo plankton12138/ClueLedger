@@ -196,6 +196,100 @@ class ConversationService:
             self._spawn(project_id, conversation_id, opened.turn.turn_id)
         return opened
 
+    async def send_turn_from_messages(
+        self,
+        project_id: str,
+        conversation_id: str,
+        source_message_ids: list[str],
+        idempotency_key: str,
+        *,
+        model_binding: dict[str, Any] | None = None,
+    ) -> OpenTurn:
+        """接着讨论（M02/V03-1.5）：引用已保存消息启动轮次，不复制作者消息。
+
+        - 源消息必须是本讨论内的 author 消息；主消息（第一条）归入新轮次，
+          其余消息保留原位、经历史自然进入模型上下文；
+        - 只有作者显式调用本方法才启动模型：连接成功零自动重放（I06）；
+        - 幂等：同 (conversation, idempotency_key) 返回原轮次。
+        """
+        if not source_message_ids:
+            raise ViolationError(
+                code=ec.CHAT_MESSAGE_NOT_FOUND,
+                where="chat.turn.from_messages",
+                why="接着讨论至少要引用一条已保存消息",
+                fix="从讨论中选择已保存的想法后重试",
+            )
+        await self._require_conversation(project_id, conversation_id)
+        sources: list[m.ChatMessage] = []
+        for message_id in source_message_ids:
+            message = await self.store.get_message(message_id)
+            if message is None or message.conversation_id != conversation_id:
+                raise ViolationError(
+                    code=ec.CHAT_MESSAGE_NOT_FOUND,
+                    where="chat.turn.from_messages",
+                    why=f"消息 {message_id!r} 不在该讨论内",
+                    fix="从当前讨论的消息列表选择；跨讨论/跨项目引用拒绝",
+                    details={"message_id": message_id},
+                )
+            if message.role != m.ROLE_AUTHOR:
+                raise ViolationError(
+                    code=ec.CHAT_MESSAGE_NOT_FOUND,
+                    where="chat.turn.from_messages",
+                    why=f"消息 {message_id!r} 不是作者消息，不能作为接着讨论的起点",
+                    fix="选择已保存的作者想法；模型回复不能作为引用源",
+                    details={"message_id": message_id},
+                )
+            sources.append(message)
+        if not idempotency_key:
+            raise ViolationError(
+                code=ec.CHAT_IDEMPOTENCY_CONFLICT,
+                where="chat.turn.idempotency",
+                why="缺少幂等键，无法区分重放与新请求",
+                fix="为每次发送生成稳定 UUID 作为 idempotency_key",
+            )
+        if model_binding is None:
+            with suppress(HastingsError):
+                model_binding = (
+                    self.binding_resolver()
+                    if self.binding_resolver is not None
+                    else {"model": self.model_resolver()}
+                )
+        turn_id = f"turn_{content_hash([conversation_id, idempotency_key])[:16]}"
+        primary = m.ChatMessage(
+            message_id=sources[0].message_id,
+            conversation_id=sources[0].conversation_id,
+            turn_id=turn_id,
+            role=sources[0].role,
+            kind=sources[0].kind,
+            text=sources[0].text,
+            refs=[dict(ref) for ref in sources[0].refs],
+            model=sources[0].model,
+            status=sources[0].status,
+            created_at=sources[0].created_at,
+        )
+        turn = m.ChatTurn(
+            turn_id=turn_id,
+            conversation_id=conversation_id,
+            status=m.TURN_QUEUED,
+            model=None,
+            end_reason=None,
+            idempotency_key=idempotency_key,
+            model_binding=model_binding,
+            source_message_ids=list(source_message_ids),
+        )
+        fingerprint = content_hash(["from_messages", sorted(source_message_ids)])
+        opened = await self.store.open_turn(
+            project_id=project_id,
+            conversation_id=conversation_id,
+            idempotency_key=idempotency_key,
+            fingerprint=fingerprint,
+            user_message=primary,
+            turn=turn,
+        )
+        if opened.created:
+            self._spawn(project_id, conversation_id, opened.turn.turn_id)
+        return opened
+
     def _spawn(self, project_id: str, conversation_id: str, turn_id: str) -> None:
         run = _ActiveRun()
         task = asyncio.create_task(self._execute(project_id, conversation_id, turn_id, run))
