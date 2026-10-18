@@ -16,6 +16,8 @@ config.yaml
 # 编辑器 / 工具本地目录
 .trae/
 .vscode/
+.workbuddy/
+.workbuddy-ai/
 
 # 类型检查 / 测试缓存
 .mypy_cache/
