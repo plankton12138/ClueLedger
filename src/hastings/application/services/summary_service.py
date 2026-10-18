@@ -102,6 +102,7 @@ class SummaryService:
         *,
         request_id: str,
         guidance: str = "",
+        before_commit: Callable[[], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         pid = ProjectId(project_id)
         key = f"summary-start:{pid.value}:{request_id}"
@@ -193,6 +194,9 @@ class SummaryService:
 
         existing = self._stored(pid, current_head, chapter_id)
         now = self._clock.now().isoformat()
+        # 提交前最后一道门：任务被停止时在这里退出，不写任何版本。
+        if before_commit is not None:
+            await before_commit()
         if existing is None:
             content = domain.build_content(
                 summary_id=self._ids.new_id("sum"),

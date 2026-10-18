@@ -43,7 +43,12 @@ from hastings.application.contexts.collector import (
     MAX_BUDGET_TOKENS,
     BackgroundService,
 )
-from hastings.application.errors import HastingsError, ResultCategory, ViolationError
+from hastings.application.errors import (
+    EnvironmentFailure,
+    HastingsError,
+    ResultCategory,
+    ViolationError,
+)
 from hastings.application.execution import (
     JOB_TYPE_FUNCTIONS,
     TASK_KIND_FUNCTIONS,
@@ -97,6 +102,7 @@ from hastings.application.workflows.restore_version import RestoreChapterVersion
 from hastings.application.workflows.review import ReviewRevision
 from hastings.application.workflows.revision import ExecuteRevisionPlan
 from hastings.application.workflows.rewrite import RewriteWorkflow
+from hastings.application.workflows.summary_jobs import SUMMARY_JOB_TYPE, SummaryJobRunner
 from hastings.application.workflows.worker_job import WorkerJobRunner
 from hastings.domain.author_model.errors import AuthorModelViolation
 from hastings.domain.changes.commands import open_change_set
@@ -282,6 +288,9 @@ class V2Runtime:
         self.summaries = SummaryService(
             self.service, ids, self.clock, summarizer=self._summary_writer
         )
+        # 摘要任务化（V03-4.3 收尾）：与写作任务共用任务表，但走自己的执行器
+        # （摘要没有正文可写范围，不需要写作任务的授权与租约）。
+        self.summary_jobs = SummaryJobRunner(self.jobs, self.summaries, self.clock)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -475,6 +484,22 @@ class V2Runtime:
                         not job["retry_at"]
                         or datetime.fromisoformat(job["retry_at"]) <= self.clock.now()
                     )
+                    if job["job_type"] == SUMMARY_JOB_TYPE:
+                        # 摘要任务：不受写作任务的并发与授权约束，单独派发。
+                        # 同项目仍然串行（active_projects 已含该项目时跳过），
+                        # 避免同一章两个任务同时读写摘要版本。
+                        if (
+                            job["state"] in ("queued", "retryable_failed")
+                            and due
+                            and job["job_id"] not in self._active_jobs
+                            and project_id not in active_projects
+                        ):
+                            async def _run_summary(job_id: str = job["job_id"]) -> None:
+                                await self.summary_jobs.execute(job_id)
+
+                            self._active_jobs[job["job_id"]] = asyncio.create_task(_run_summary())
+                            active_projects.add(project_id)
+                        continue
                     if (
                         job["state"] in ("queued", "retryable_failed")
                         and job["job_type"] != "manuscript.analysis"
@@ -1360,13 +1385,52 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
     async def update_chapter_summary(
         project_id: str, chapter_id: str, req: SummaryStartRequest
     ) -> dict[str, Any]:
-        """显式更新摘要：保存正文不会调用这里；期间正文变了结果判 superseded。"""
-        return await runtime.summaries.start(
+        """同步更新摘要：建任务后立即执行并等待结果（桌面端「点一下等它算完」）。
+
+        与异步入口共用同一个执行器；失败按任务结果翻译成错误码，不静默成功。
+        """
+        submitted = await runtime.summary_jobs.submit(
             project_id,
             chapter_id,
             request_id=req.request_id,
             guidance=req.guidance,
         )
+        # 同一 request_id 命中已完成任务：不再执行，直接回读首次结果。
+        already_done = submitted["state"] == "completed"
+        finished = await runtime.summary_jobs.execute(submitted["job_id"])
+        result = _summary_sync_result(finished)
+        if already_done:
+            result["replayed"] = True
+        return result
+
+    @router.post("/projects/{project_id}/chapters/{chapter_id}/summary-jobs", status_code=202)
+    async def submit_summary_job(
+        project_id: str, chapter_id: str, req: SummaryStartRequest
+    ) -> dict[str, Any]:
+        """异步建任务：立刻拿到 job_id，关掉页面也会继续（worker 执行）。"""
+        return await runtime.summary_jobs.submit(
+            project_id,
+            chapter_id,
+            request_id=req.request_id,
+            guidance=req.guidance,
+        )
+
+    @router.get("/projects/{project_id}/summary-jobs/{job_id}")
+    async def get_summary_job(project_id: str, job_id: str) -> dict[str, Any]:
+        del project_id  # 归属校验由任务负载记录，路由保持作品作用域一致
+        return await runtime.summary_jobs.get(job_id)
+
+    @router.post("/projects/{project_id}/summary-jobs/{job_id}/stop")
+    async def stop_summary_job(project_id: str, job_id: str) -> dict[str, Any]:
+        """停止：已进入提交前的执行会被拦下，不写摘要版本。"""
+        del project_id
+        return await runtime.summary_jobs.stop(job_id)
+
+    @router.post("/projects/{project_id}/summary-jobs/{job_id}/retry")
+    async def retry_summary_job(project_id: str, job_id: str) -> dict[str, Any]:
+        """重试：失败任务放回队列；已停止的任务不允许重试。"""
+        del project_id
+        return await runtime.summary_jobs.retry(job_id)
 
     @router.get("/projects/{project_id}/agreements")
     def list_agreements(project_id: str, include_retired: bool = False) -> dict[str, Any]:
@@ -1683,8 +1747,42 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
     return router
 
 
-def _empty_chapter(chapter_id: str) -> dict[str, Any]:
-    return {
+def _summary_sync_result(finished: dict[str, Any]) -> dict[str, Any]:
+    """同步入口的统一翻译：任务失败要变成能看见的错误，而不是空结果。"""
+    state = str(finished.get("state", ""))
+    failure = finished.get("failure") or {}
+    if state == "terminal_failed":
+        raise ViolationError(
+            code=str(failure.get("code") or "SUMMARY_JOB_FAILED"),
+            where="summary.job",
+            why=str(failure.get("why") or "摘要任务失败"),
+            fix=str(failure.get("fix") or "重试一次；持续失败时换模型"),
+            details={"job_id": finished.get("job_id")},
+        )
+    if state == "retryable_failed":
+        raise EnvironmentFailure(
+            code="SUMMARY_JOB_ENVIRONMENT",
+            where="summary.job",
+            why=str(failure.get("why") or "摘要任务遇到环境故障"),
+            fix="稍后重试；服务恢复后可继续这次任务",
+            details={"job_id": finished.get("job_id")},
+        )
+    if state == "cancelled":
+        return {
+            "status": "cancelled",
+            "committed": False,
+            "commit_id": None,
+            "summary": {},
+            "replayed": False,
+            "reason": "任务已被停止，未写入任何摘要版本",
+            "job_id": finished.get("job_id"),
+        }
+    result = dict(finished.get("result") or {})
+    result["job_id"] = finished.get("job_id")
+    return result
+
+
+def _empty_chapter(chapter_id: str) -> dict[str, Any]:    return {
         "chapter_id": chapter_id,
         "title": "",
         "order_key": "",

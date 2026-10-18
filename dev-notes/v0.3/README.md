@@ -1,6 +1,6 @@
 # Hastings 0.3 开发文档
 
-> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 已交付**：3.1 活动起草路径已去节拍（旧规划管线与 AgentTasks 的节拍类型退出归 V03-8）、3.2 账本直接保存与设定候选成组、3.3/3.4/3.5 试写 → 只读预览 → 按哈希采用。**V03-4 进行中**：4.1 本书约定（后端与契约）、4.2 背景装配（装配器 + 只读接口 + 试写/对话接线）、4.3 显式章摘要（第一刀）已交付，前端入口待定（作品设置页要到 V03-8.6 才随默认壳建立）。更新：2026-10-18。
+> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 已交付**：3.1 活动起草路径已去节拍（旧规划管线与 AgentTasks 的节拍类型退出归 V03-8）、3.2 账本直接保存与设定候选成组、3.3/3.4/3.5 试写 → 只读预览 → 按哈希采用。**V03-4 进行中**：4.1 本书约定（后端与契约）、4.2 背景装配（装配器 + 只读接口 + 试写/对话接线）、4.3 显式章摘要（含任务化）已交付，前端入口待定（作品设置页要到 V03-8.6 才随默认壳建立）。更新：2026-10-18。
 
 0.3 将已有版本仓库与创作任务能力，组织为围绕正文、对话和故事账本的持续创作工作区。
 本目录使用产品版本命名；既有 `dev-notes/v2/`、`/api/v2` 和存储版本分别维护，不随产品版本重命名。
@@ -117,6 +117,6 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 | V03-4.1 本书约定 | **后端与契约已交付**（前端入口待定） | `domain/story/agreements.py`（`BookAgreement`、主题维度冲突规则、按 Commit 的快照与指纹）、`application/services/agreement_service.py`（一个 Commit 写入、幂等、真实版本回读）、`GET/POST /agreements` + `PATCH /agreements/{id}` + `GET /agreements/snapshot`；`story.agreement` 不进 `CANON_KINDS` | [notes/v03-4.1](notes/v03-4.1-book-agreements.md) |
 | V03-4.2 常驻上下文装配 | **已交付** | `application/contexts/background.py`（五层材料、优先级裁剪、`omissions`/`coverage`/`versions`）、`application/contexts/collector.py`（按 Commit 取材料，临时原文按需读，`render()` 共用）、`GET /context/background`；试写按 `base_head` 取背景、对话按 `project_id` 追加系统消息；`capabilities.features.background` 公布预算与层级 | [notes/v03-4.2](notes/v03-4.2-background-assembly.md) |
 
-| V03-4.3 显式摘要任务 | **第一刀已交付**（Job 化、停止与全书概览待续） | `domain/manuscript/summary.py`（来源清单、确定性提示词、落地前核对）、`application/services/summary_service.py`（显式 `start`、幂等、迟到结果 `superseded` 不落盘）、`POST/GET /chapters/{id}/summary` 与 `GET /summaries`；`ChapterSummaryState` 扩为状态 + 内容，失效改写保留正文 | [notes/v03-4.3](notes/v03-4.3-chapter-summaries.md) |
+| V03-4.3 显式摘要任务 | **已交付**（全书概览待续） | `domain/manuscript/summary.py`（来源清单、确定性提示词、落地前核对）、`application/services/summary_service.py`（显式 `start`、幂等、迟到结果 `superseded` 不落盘）、`application/workflows/summary_jobs.py`（`summary.chapter` 任务：排队/执行/停止/重试，停止在提交前拦截）、`POST /chapters/{id}/summary` 与 `/summary-jobs` 四端点、`GET /summaries`；`ChapterSummaryState` 扩为状态 + 内容，失效改写保留正文 | [notes/v03-4.3](notes/v03-4.3-chapter-summaries.md) |
 
-专项测试：4.1 十六项、4.2 二十四项（12 纯函数 + 7 HTTP + 5 接线）、4.3 九项。质量门：`uv run pytest -q` **1647 passed**（2026-10-18 实测）；`ruff check` 全过；`mypy src/hastings` 234 files 无问题；前端未改动（vitest 基线不变）。
+专项测试：4.1 十六项、4.2 二十四项（12 纯函数 + 7 HTTP + 5 接线）、4.3 十八项（9 领域/接口 + 9 任务化）。质量门：`uv run pytest -q` **1656 passed**（2026-10-18 实测）；`ruff check` 全过；`mypy src/hastings` 235 files 无问题；前端未改动（vitest 基线不变）。

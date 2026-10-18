@@ -59,7 +59,12 @@ CAPABILITIES: Final[dict[str, Any]] = {
     },
     "execution_grants": {"status": "implemented"},
     "execution_events": {"status": "implemented"},
-    "summaries": {"status": "draft", "api": "implemented", "surface": "pending"},
+    "summaries": {
+        "status": "draft",
+        "api": "implemented",
+        "jobs": "implemented",
+        "surface": "pending",
+    },
     "ledger_suggestions": {"status": "draft"},
     "agreements": {"status": "draft", "api": "implemented", "surface": "pending"},
     "background": {
