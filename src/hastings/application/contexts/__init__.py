@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict
 from typing import Any
 
+from hastings.application.contexts.tokens import estimate_tokens
 from hastings.application.ports.repository import RepositoryReader
 from hastings.application.queries.story_queries import StoryQueries
 from hastings.domain.repository.ids import ArtifactId, CommitId, ProjectId
@@ -19,11 +19,6 @@ from hastings.domain.worker import (
     SelectedInput,
     WorkerRole,
 )
-
-
-def estimate_tokens(value: Any) -> int:
-    # UTF-8 字节上界，偏保守；不依赖某个 Provider 的分词器或浮动 usage。
-    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
 class ContextBuilder:

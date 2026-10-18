@@ -30,14 +30,19 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from datetime import datetime
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from hastings import __version__
 from hastings.application.capabilities import capabilities_payload
+from hastings.application.contexts.collector import (
+    DEFAULT_BUDGET_TOKENS,
+    MAX_BUDGET_TOKENS,
+    BackgroundService,
+)
 from hastings.application.errors import HastingsError, ResultCategory, ViolationError
 from hastings.application.execution import (
     JOB_TYPE_FUNCTIONS,
@@ -267,6 +272,8 @@ class V2Runtime:
         )
         # 本书约定（V03-4.1）：作者显式维护的作品级要求，版本化、无模型。
         self.agreements = AgreementService(self.service, ids)
+        # 背景装配（V03-4.2）：约定→核心→概览→目录→目标，只读、按版本取材料。
+        self.background = BackgroundService(self.service)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -1265,6 +1272,55 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             expected_revision=req.expected_revision,
             request_id=req.request_id,
         )
+
+    @router.get("/projects/{project_id}/context/background")
+    def get_context_background(
+        project_id: str,
+        scope: str = "manuscript",
+        target: Annotated[list[str] | None, Query()] = None,
+        budget_tokens: int | None = None,
+        include_temporary_text: bool = False,
+    ) -> dict[str, Any]:
+        """一次任务会看到的背景：约定、故事核心、概览、目录与目标展开。
+
+        只读、按版本取；``include_temporary_text`` 为真时，缺失或过期摘要的目标章
+        由当前正文临时顶替（标 ``temporary``，不写回正式摘要）。
+        """
+        if scope not in ("manuscript", "discussion"):
+            raise ViolationError(
+                code="BACKGROUND_SCOPE_INVALID",
+                where="context.background.scope",
+                why=f"未知的适用范围 {scope!r}",
+                fix="scope 只接受 manuscript（正文写作）或 discussion（讨论回答）",
+                details={"scope": scope},
+            )
+        tokens = budget_tokens if budget_tokens is not None else DEFAULT_BUDGET_TOKENS
+        if tokens < 200 or tokens > MAX_BUDGET_TOKENS:
+            raise ViolationError(
+                code="BACKGROUND_BUDGET_INVALID",
+                where="context.background.budget_tokens",
+                why=f"预算 {tokens} 超出允许区间 200—{MAX_BUDGET_TOKENS}",
+                fix="给出区间内的预算；过小无法保留约定与核心设定，过大会拖慢装配",
+                details={"budget_tokens": tokens, "max": MAX_BUDGET_TOKENS},
+            )
+        try:
+            return runtime.background.build(
+                project_id,
+                scope=scope,
+                target_chapter_ids=list(target or []),
+                budget_tokens=tokens,
+                include_temporary_text=include_temporary_text,
+            )
+        except ValueError as exc:
+            # 装配器在「必留层级装不下」时抛出 ValueError（纯函数不依赖应用错误类）；
+            # 这里转成可用错误码，避免落到通用的 AGENT_INVALID_INPUT。
+            raise ViolationError(
+                code="BACKGROUND_BUDGET_TOO_SMALL",
+                where="context.background",
+                why=str(exc),
+                fix="增大 budget_tokens，或减少生效约定与故事核心设定",
+                details={"budget_tokens": tokens},
+            ) from exc
 
     @router.get("/projects/{project_id}/agreements")
     def list_agreements(project_id: str, include_retired: bool = False) -> dict[str, Any]:
