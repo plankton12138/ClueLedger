@@ -152,16 +152,15 @@ async def test_unknown_task_kind_is_rejected() -> None:
 async def test_adjust_bumps_revision_and_recomputes_missing() -> None:
     service, conversations, _ = _service(view=NO_PLAN_VIEW)
     conversation_id = await _conversation(conversations)
-    draft, _ = await service.create_draft("p1", conversation_id, "chapter_draft", goal="ch_1")
-    assert {x["code"] for x in draft.missing} == {"TASK_NO_BEAT_TARGET", "TASK_NO_PLAN"}
+    draft, _ = await service.create_draft("p1", conversation_id, "chapter_draft")
+    assert {x["code"] for x in draft.missing} == {"TASK_NO_CHAPTER_TARGET"}
 
     adjusted = await service.adjust_draft(
-        "p1", draft.draft_id, expected_revision=1, patch={"target_ids": ["beat_1"]}
+        "p1", draft.draft_id, expected_revision=1, patch={"goal": "ch_1"}
     )
     assert adjusted.revision == 2
-    # NO_PLAN_VIEW 下缺节拍依旧；换到完整视图重算后缺失清空由测试数据决定，
-    # 这里断言缺失被重新计算而不是沿用旧值。
-    assert adjusted.missing == [x for x in draft.missing if x["code"] == "TASK_NO_PLAN"]
+    # 缺失被重新计算而不是沿用旧值：补上目标后清空。
+    assert adjusted.missing == []
 
 
 @pytest.mark.anyio
@@ -229,7 +228,7 @@ async def test_start_binds_job_ref_and_emits_linked_event() -> None:
 async def test_start_with_missing_items_is_rejected() -> None:
     service, conversations, starter = _service(view=NO_PLAN_VIEW)
     conversation_id = await _conversation(conversations)
-    draft, _ = await service.create_draft("p1", conversation_id, "chapter_draft", goal="ch_1")
+    draft, _ = await service.create_draft("p1", conversation_id, "chapter_draft")
     with pytest.raises(HastingsError) as excinfo:
         await service.start_draft("p1", draft.draft_id, 1, "k1")
     assert excinfo.value.code == ec.TASK_MISSING_ITEMS

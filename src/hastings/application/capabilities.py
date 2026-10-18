@@ -50,8 +50,13 @@ CAPABILITIES: Final[dict[str, Any]] = {
     "product_version": "0.3",
     "api_version": "v2",
     "import": {**IMPORT_LIMITS, "status": "implemented"},
-    "edit_sessions": {"status": "draft"},
-    "operation_records": {"status": "draft"},
+    "edit_sessions": {"status": "implemented"},
+    "operation_records": {"status": "implemented"},
+    "chapter_drafts": {
+        "status": "implemented",
+        "max_chars": 120_000,
+        "targets": ("new", "existing_chapter"),
+    },
     "execution_grants": {"status": "implemented"},
     "execution_events": {"status": "implemented"},
     "summaries": {"status": "draft"},
@@ -75,7 +80,7 @@ def capabilities_payload() -> dict[str, Any]:
             key: value for key, value in PERFORMANCE_TARGETS.items() if key != "baseline_sample"
         },
         "features": {
-            name: {"status": spec["status"]}
+            name: dict(spec)
             for name, spec in CAPABILITIES.items()
             if isinstance(spec, dict) and "status" in spec
         },

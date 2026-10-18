@@ -12,8 +12,9 @@ ROLE_INSTRUCTIONS = {
         "items 按引用顺序排列。"
     ),
     "writer": (
-        "你是正文工作者，遵守已接受 Beat 与披露边界；只为当前章返回 chapter_id 和 text。"
-        "缺失的 Canon 应澄清或提出设定建议。"
+        "你是正文工作者，以本书账本（人物、线索、设定）与作者要求为依据，"
+        "遵守账本决定的披露边界；只为当前章返回 chapter_id 和 text。"
+        "缺失的 Canon 应澄清或提出设定建议；不要索取或等待节拍计划。"
     ),
     "reviser": (
         "你是修订工作者，只修当前步骤的 writable_ids；"

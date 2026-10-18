@@ -37,7 +37,11 @@ TASK_KINDS = ("plan", "chapter_draft", "check", "targeted_revision")
 
 @dataclass(frozen=True)
 class ProjectView:
-    """项目只读视图：缺失项计算的唯一事实来源；不含任何写能力。"""
+    """项目只读视图：缺失项计算的唯一事实来源；不含任何写能力。
+
+    ``has_accepted_beats`` 自 V03-3.1 起只保留给历史快照与旧任务回看，
+    不再参与任何任务的可启动判定（活动路径不得以节拍为前置）。
+    """
 
     model_configured: bool
     has_accepted_beats: bool
@@ -70,7 +74,18 @@ def missing_items(
         )
     if task_kind == "plan":
         return items  # 规划不需要前置内容：空项目也能讨论构想。
-    if view.head is None:
+    # V03-3.1：起草不再以节拍/大纲为前置。空项目是合法的首章来源，
+    # 依据改为「账本引用 + 作者要求」（计划 M05）。缺少目标时才阻断。
+    if task_kind == "chapter_draft" and not goal:
+        items.append(
+            _missing(
+                "TASK_NO_CHAPTER_TARGET",
+                "task.goal",
+                "没有指定要起草的章节",
+                "在任务卡写明「新章」，或选择已有的目标章节",
+            )
+        )
+    if task_kind != "chapter_draft" and view.head is None:
         items.append(
             _missing(
                 "TASK_NO_BASE",
@@ -79,34 +94,6 @@ def missing_items(
                 "先在创作台导入或保存一章正文，再准备这个任务",
             )
         )
-    if task_kind == "chapter_draft":
-        if not target_ids:
-            items.append(
-                _missing(
-                    "TASK_NO_BEAT_TARGET",
-                    "task.target_ids",
-                    "尚未选择本章要写的节拍",
-                    "在任务卡「调整」中选择已接受节拍后保存",
-                )
-            )
-        if not view.has_accepted_beats:
-            items.append(
-                _missing(
-                    "TASK_NO_PLAN",
-                    "task.basis",
-                    "没有已接受的节拍计划，直接起草容易脱离整体结构",
-                    "先运行「规划故事与节拍」并在审阅页接受其候选",
-                )
-            )
-        if not goal:
-            items.append(
-                _missing(
-                    "TASK_NO_CHAPTER_TARGET",
-                    "task.goal",
-                    "没有指定要起草的章节",
-                    "在创作台选择目标章节后，重新准备或调整这个任务",
-                )
-            )
     if task_kind == "check" and not target_ids:
         items.append(
             _missing(

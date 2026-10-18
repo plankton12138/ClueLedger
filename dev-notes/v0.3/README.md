@@ -1,6 +1,6 @@
 # Hastings 0.3 开发文档
 
-> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。下一步：V03-3 去除节拍、设定候选与首章采用。更新：2026-10-18。
+> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 进行中**：3.1 活动起草路径已去节拍前置（旧规划管线待 3.2 一起删）、3.3/3.4/3.5 已交付（试写 → 只读预览 → 按哈希采用），3.2 账本直接保存与候选成组未开始。更新：2026-10-18。
 
 0.3 将已有版本仓库与创作任务能力，组织为围绕正文、对话和故事账本的持续创作工作区。
 本目录使用产品版本命名；既有 `dev-notes/v2/`、`/api/v2` 和存储版本分别维护，不随产品版本重命名。
@@ -77,11 +77,11 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 
 - mypy files 数：README 旧记 236/239 为含 tests 口径；按 `src/hastings` 实测 207 files。后续统一以 `uv run mypy src/hastings` 口径记录。
 
-## V03-2 进行中（2026-10-17 起）
+## V03-2 已交付（2026-10-17 起）
 
 开始条件检查单：结果归属与入口身份稳定（V03-1.2/1.5）✓；仓库事务扩展通过故障注入（V03-0.5）✓。
 
-质量门基线：`uv run pytest -q` **1561 passed**；ruff/mypy 全过。
+质量门基线：`uv run pytest -q` **1579 passed**；ruff/mypy 全过。
 
 | 任务 | 状态 | 产物 | 构建笔记 |
 |---|---|---|---|
@@ -91,3 +91,19 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 | V03-2.4 手工修改副本 | 已交付（单章 UI；底层按章节集合设计） | `domain/manuscript/edit_session.py`、`commands.py::save_drafts`、`CommitService.aux_mutate`、`application/services/edit_session_service.py`、七个副本端点、写作台「手工修改」；专项 10 项 + 导入重叠拦截 1 项（全量 1552） | [notes/v03-2.4](notes/v03-2.4-edit-session.md) |
 | V03-2.5 历史恢复接入统一发布与证据核对 | 已交付 | `workflows/restore_version.py` 改走发布器（副本保护）、`queries/chapter_history.py`、`services/evidence_service.py`、三个只读/重锚端点、写作台「版本历史」与右栏「正文证据」；专项 6 项 + 恢复 5 项（全量 1558） | [notes/v03-2.5](notes/v03-2.5-history-and-evidence.md) |
 | V03-2.6 操作结果与后续状态 | **部分交付**（状态可见；启动入口随 V03-4，偏差见笔记） | `queries/followups.py`、`GET /operations/{id}` 附带 `summary_state`/`ledger_suggestions_state`、写作台右栏「后续状态」；专项 3 项（全量 1561） | [notes/v03-2.6](notes/v03-2.6-followup-states.md) |
+
+## V03-3 进行中（2026-10-18 起）
+
+开始条件检查单：导入与统一发布可用（V03-2.3/2.5）✓；模型启动有来源凭据与连接快照（V03-1.4/19.5）✓。
+
+质量门基线：`uv run pytest -q` **1579 passed**；`ruff check` 全过；`mypy src/hastings` 223 files 无问题；前端 vitest **369 passed**（43 文件）+ `vite build` 通过。
+
+| 任务 | 状态 | 产物 | 构建笔记 |
+|---|---|---|---|
+| V03-3.1 Beat 活动路径退出 | **部分交付**（起草前置/写作上下文已去节拍；旧规划管线仍可创建节拍，随 3.2 收尾一起删） | `task_drafts.missing_items` 去掉 `TASK_NO_BEAT_TARGET`/`TASK_NO_PLAN`、空 head 对起草合法；writer 角色与上下文只在目标是节拍时装配 `beat_states` | [notes/v03-3](notes/v03-3-drafting-and-adoption.md) |
+| V03-3.2 账本直接保存与候选成组 | **未开始** | — | — |
+| V03-3.3 无前置起草 | 已交付 | `domain/manuscript/drafting.py`（brief/候选/确定性提示词/文本清理）、`application/services/drafting_service.py`、`GET /ledger` 只读账本、`POST /drafts` | [notes/v03-3](notes/v03-3-drafting-and-adoption.md) |
+| V03-3.4 只读完整预览与按哈希采用 | 已交付 | `GET /drafts/{id}`、`POST /drafts/{id}/revise`、`POST /drafts/{id}/adopt`（`preview_hash` + 修订号双重校验）、`POST /drafts/{id}/discard`；写作台「试写」对话框 | 同上 |
+| V03-3.5 采用后定位与唯一结果 | 已交付 | 采用经 `PublishManuscriptChange`（新章 `chapter.create` / 现有章 `save_full_text`），返回 `chapter_id` + `operation_id`；前端定位正文并接 V03-2.6 后续状态 | 同上 |
+
+专项测试 18 项（全量 1579）；前端客户端契约 5 项（全量 369）。

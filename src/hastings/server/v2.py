@@ -56,12 +56,15 @@ from hastings.application.handlers.manuscript_commands import (
     manuscript_command,
 )
 from hastings.application.ports.agents import AgentRunner
+from hastings.application.ports.chat import ChatRun
 from hastings.application.ports.events import EventOutbox
 from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.chapter_history import ChapterHistoryQueries
 from hastings.application.queries.followups import FollowupQueries
+from hastings.application.queries.ledger import LedgerQueries
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.conversation_service import ConversationService
+from hastings.application.services.drafting_service import DraftingService, WrittenChapter
 from hastings.application.services.edit_session_service import EditSessionService
 from hastings.application.services.entry_service import EntryService
 from hastings.application.services.evidence_service import EvidenceService
@@ -242,6 +245,18 @@ class V2Runtime:
         self.evidence = EvidenceService(self.service, self.operations)
         # 操作后的派生状态（V03-2.6）：摘要是否待更新、建议是否已整理。
         self.followups = FollowupQueries(self.service)
+        # 账本只读查询（V03-3.3）：试写引用与前端设定清单共用同一投影。
+        self.ledger = LedgerQueries(self.service)
+        # 试写候选（V03-3.3/3.4）：账本+作者要求生成候选，只读预览，
+        # 按预览哈希采用；采用走统一发布（V03-3.5）。
+        self.drafting = DraftingService(
+            self.service,
+            self.manuscript_publisher,
+            self.edit_sessions,
+            ids,
+            self.clock,
+            writer=self._chapter_writer,
+        )
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -254,6 +269,30 @@ class V2Runtime:
         self.agent_workflows = AgentWorkflows(
             self.service, self.service, self.worker, self.ids, self.clock
         )
+
+    async def _chapter_writer(self, *, system: str, prompt: str) -> WrittenChapter:
+        """试写生成器：复用当前模型选择与流式执行器，无工具、无写端口。
+
+        模型来源在调用时解析（作者可能在两次试写之间换了模型）；失败按
+        环境错误如实上报，不伪造正文。
+        """
+        binding = self._v2_runner.model_binding()
+        model = str(binding.get("model", ""))
+        runner = self._v2_runner.bound_chat_runner(binding)
+
+        async def _sink(_delta: str) -> None:
+            return None
+
+        text = await runner.stream(
+            ChatRun(
+                model=model,
+                system=system,
+                history=(("author", prompt),),
+                cancelled=lambda: False,
+            ),
+            _sink,
+        )
+        return WrittenChapter(text=text, model=model)
 
     async def wake_workers(self, project_id: str) -> None:
         self._wake_projects.add(project_id)
@@ -810,6 +849,30 @@ class ReanchorRequest(BaseModel):
     quote: str | None = None
 
 
+class DraftCreateRequest(BaseModel):
+    """试写请求：目标 + 作者要求 + 可选账本引用（空项目也可用）。"""
+
+    target: str = "new"
+    chapter_title: str = ""
+    instruction: str
+    viewpoint: str = ""
+    length_target: str = ""
+    narrative_boundary: str = ""
+    refs: list[str] = Field(default_factory=list)
+    idempotency_key: str | None = None
+
+
+class DraftReviseRequest(BaseModel):
+    instruction: str = ""
+    expected_revision: int | None = None
+
+
+class DraftAdoptRequest(BaseModel):
+    preview_hash: str
+    revision: int | None = None
+    operation_id: str | None = None
+
+
 class SaveChapterRequest(BaseModel):
     idempotency_key: str
     operations: list[dict[str, Any]] | None = None
@@ -1045,6 +1108,63 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             operation_id=req.operation_id,
             expected_save_sequences=req.expected_save_sequences,
         )
+
+    @router.get("/projects/{project_id}/ledger")
+    def get_ledger(project_id: str) -> dict[str, Any]:
+        """可引用的账本条目（只读）：人物、地点、前提、线索等，不含节拍。"""
+        return {"entries": runtime.ledger.entries(ProjectId(project_id))}
+
+    @router.post("/projects/{project_id}/drafts")
+    async def create_draft(project_id: str, req: DraftCreateRequest) -> dict[str, Any]:
+        """试写候选：从账本与作者要求出发；空项目是合法首章来源。"""
+        return await runtime.drafting.create(
+            project_id,
+            target=req.target,
+            chapter_title=req.chapter_title,
+            instruction=req.instruction,
+            viewpoint=req.viewpoint,
+            length_target=req.length_target,
+            narrative_boundary=req.narrative_boundary,
+            refs=req.refs,
+            idempotency_key=req.idempotency_key,
+        )
+
+    @router.get("/projects/{project_id}/drafts")
+    def list_drafts(project_id: str) -> dict[str, Any]:
+        return {"candidates": runtime.drafting.list_candidates(project_id)}
+
+    @router.get("/projects/{project_id}/drafts/{candidate_id}")
+    def get_draft(project_id: str, candidate_id: str) -> dict[str, Any]:
+        return runtime.drafting.get(project_id, candidate_id)
+
+    @router.post("/projects/{project_id}/drafts/{candidate_id}/revise")
+    async def revise_draft(
+        project_id: str, candidate_id: str, req: DraftReviseRequest
+    ) -> dict[str, Any]:
+        """继续调整：生成新修订，旧修订不再是可采用目标。"""
+        return await runtime.drafting.revise(
+            project_id,
+            candidate_id,
+            instruction=req.instruction,
+            expected_revision=req.expected_revision,
+        )
+
+    @router.post("/projects/{project_id}/drafts/{candidate_id}/adopt")
+    def adopt_draft(
+        project_id: str, candidate_id: str, req: DraftAdoptRequest
+    ) -> dict[str, Any]:
+        """按预览哈希采用：一次发布，迟到候选不能覆盖新稿或未结束副本。"""
+        return runtime.drafting.adopt(
+            project_id,
+            candidate_id,
+            preview_hash=req.preview_hash,
+            revision=req.revision,
+            operation_id=req.operation_id,
+        )
+
+    @router.post("/projects/{project_id}/drafts/{candidate_id}/discard")
+    def discard_draft(project_id: str, candidate_id: str) -> dict[str, Any]:
+        return runtime.drafting.discard(project_id, candidate_id)
 
     @router.post("/projects/{project_id}/chapters/import")
     def import_chapter(project_id: str, req: ImportChapterRequest) -> dict[str, Any]:

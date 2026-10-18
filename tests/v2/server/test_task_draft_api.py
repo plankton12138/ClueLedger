@@ -219,7 +219,7 @@ def test_start_binds_job_ref_and_replays_idempotently(
 def test_start_with_missing_items_is_400(client: TestClient) -> None:
     project_id = _create_project(client)
     conversation_id = _new_conversation(client, project_id)
-    # 空项目 + 无节拍：chapter_draft 有缺失项（含 TASK_NO_PLAN）。
+    # 空项目 + 未指定目标：chapter_draft 仍有缺失项（TASK_NO_CHAPTER_TARGET）。
     created = client.post(
         f"/api/v2/projects/{project_id}/task-drafts",
         json={"conversation_id": conversation_id, "task_kind": "chapter_draft"},

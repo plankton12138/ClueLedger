@@ -61,6 +61,7 @@ V03_ID_PREFIXES: dict[str, str] = {
     "eds": "修改副本会话 EditSession",
     "edc": "副本章节 DraftChapter",
     "cnd": "候选 Candidate",
+    "drf": "试写 brief DraftBrief（V03-3.3）",
     "tks": "任务快照 ContextSnapshot",
     "op": "操作记录 OperationRecord",
     "evd": "正文证据 EvidenceLink",

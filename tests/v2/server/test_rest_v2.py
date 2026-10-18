@@ -466,7 +466,10 @@ def test_capabilities_endpoint_publishes_unified_config() -> None:
     assert imp["preview_ttl_hours"] == 24
     features = payload["features"]
     assert features["execution_grants"]["status"] == "implemented"
-    assert features["edit_sessions"]["status"] == "draft"
+    assert features["edit_sessions"]["status"] == "implemented"
+    assert features["operation_records"]["status"] == "implemented"
+    assert features["chapter_drafts"]["status"] == "implemented"
+    assert features["chapter_drafts"]["max_chars"] == 120_000
     # 排除项不公布为可用（计划 §1.4：禁止显示为可用占位入口）
     for excluded in ("author_model", "style_observation", "consistency_audit", "corpus_rag"):
         assert features[excluded]["status"] == "excluded"

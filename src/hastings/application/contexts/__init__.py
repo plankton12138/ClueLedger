@@ -68,13 +68,18 @@ class ContextBuilder:
                 selected[aid] = f"目标的第 {depth + 1} 跳显式依赖"
             frontier = neighbours
         task_evidence = dict(evidence or {})
-        if role == "writer":
+        # V03-3.1：节拍不再是写作前置。只有目标本身是节拍时才装配节拍状态，
+        # 供历史快照与旧任务回看；账本驱动的起草不会走到这里。
+        beat_targets = [
+            aid
+            for aid in targets
+            if snapshot.artifacts[ArtifactId(aid)].artifact.kind == "narrative.beat"
+        ]
+        if role == "writer" and beat_targets:
             queries = StoryQueries(self.reader)
             sequence = ordered_beats(queries.catalog(project, CommitId(commit_id)))
             beat_states = []
-            for aid in targets:
-                if snapshot.artifacts[ArtifactId(aid)].artifact.kind != "narrative.beat":
-                    continue
+            for aid in beat_targets:
                 for index, entry in enumerate(sequence):
                     if entry.artifact_id == aid and index:
                         previous = sequence[index - 1].artifact_id

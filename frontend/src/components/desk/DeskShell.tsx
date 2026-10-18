@@ -26,6 +26,7 @@ import { ConfirmDiscard, Empty, ErrorText, Pill, kindLabels } from "../Workbench
 import DeskComposer from "./DeskComposer";
 import ChapterHistory from "./ChapterHistory";
 import EvidenceCheck from "./EvidenceCheck";
+import DraftDialog from "./DraftDialog";
 import ImportDialog from "./ImportDialog";
 import OperationFollowups from "./OperationFollowups";
 import { useEditSession } from "./useEditSession";
@@ -219,6 +220,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   const [pending, setPending] = useState<string | null>(null);
   const [continueError, setContinueError] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [draftOpen, setDraftOpen] = useState(false);
   const [abandonPending, setAbandonPending] = useState(false);
   const chapter = v2.chapter;
   const chatServiceKind = useChatStore((s) => s.serviceKind);
@@ -288,19 +290,40 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               <span>
                 章节目录 <small>{v2.chapters.length} 章</small>
               </span>
-              <button
-                className="text-[11px] text-blue underline disabled:text-sub disabled:no-underline"
-                disabled={!pid || chapter.saving || edit.active}
-                title={edit.active ? "完成或暂存后可切换章节（本阶段只开单章修改）" : undefined}
-                onClick={() => setImportOpen(true)}
-              >
-                导入正文
-              </button>
+              <span className="flex items-center gap-2 text-[11px]">
+                <button
+                  className="text-blue underline disabled:text-sub disabled:no-underline"
+                  disabled={!pid || chapter.saving || edit.active}
+                  title={
+                    edit.active
+                      ? "完成或暂存后可试写新章（本阶段只开单章修改）"
+                      : "从设定与作者要求试写一章，采用前不写正文"
+                  }
+                  onClick={() => setDraftOpen(true)}
+                >
+                  试写
+                </button>
+                <button
+                  className="text-blue underline disabled:text-sub disabled:no-underline"
+                  disabled={!pid || chapter.saving || edit.active}
+                  title={edit.active ? "完成或暂存后可切换章节（本阶段只开单章修改）" : undefined}
+                  onClick={() => setImportOpen(true)}
+                >
+                  导入正文
+                </button>
+              </span>
             </header>
             {v2.chapters.length === 0 ? (
-              <p className="px-4 py-3 text-xs text-sub">
-                还没有正文。可以导入 .txt / .md 稿件，或在下方保存想法。
-              </p>
+              <div className="px-4 py-3 text-xs text-sub">
+                <p>还没有正文。可以导入 .txt / .md 稿件，或直接试写首章。</p>
+                <button
+                  className="mt-2 text-blue underline disabled:text-sub disabled:no-underline"
+                  disabled={!pid}
+                  onClick={() => setDraftOpen(true)}
+                >
+                  试写第一章
+                </button>
+              </div>
             ) : (
               v2.chapters.map((c) => (
                 <button
@@ -657,6 +680,22 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
           setPending(null);
         }}
       />
+
+      {pid && (
+        <DraftDialog
+          projectId={pid}
+          open={draftOpen}
+          chapters={v2.chapters.map((c) => ({ chapter_id: c.chapter_id, title: c.title }))}
+          onOpenChange={setDraftOpen}
+          onAdopted={(chapterId, operationId) => {
+            useDeskStore.getState().setLastOperation(operationId);
+            void v2.refreshManuscript().then(() => {
+              void v2.selectChapter(chapterId);
+              useDeskStore.getState().navigate({ kind: "manuscript", chapterId });
+            });
+          }}
+        />
+      )}
 
       {pid && (
         <ImportDialog
