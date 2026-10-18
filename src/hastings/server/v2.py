@@ -89,6 +89,7 @@ from hastings.application.services.suggestion_service import SuggestionService
 from hastings.application.services.summary_service import SummaryDraft, SummaryService
 from hastings.application.services.task_prep_service import TaskPrepService
 from hastings.application.services.task_projection import ChatTaskProjector
+from hastings.application.services.undo_service import UndoService
 from hastings.application.workflows.agent_workflows import AgentWorkflows
 from hastings.application.workflows.audit import AuditWorkflow
 from hastings.application.workflows.change_analysis import AnalyzeChangeImpact
@@ -299,6 +300,8 @@ class V2Runtime:
             self.clock,
             proposer=self._suggestion_writer,
         )
+        # 基础关联撤销（V03-4.6）：只读预览与冲突判定，写入在 4.6 后半。
+        self.undo = UndoService(self.service, self.operations, self.edit_sessions)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -1151,6 +1154,14 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             f"/api/v2/projects/{project_id}/operations/{operation_id}"
         )
         return payload
+
+    @router.get("/projects/{project_id}/operations/{operation_id}/undo")
+    def preview_undo(project_id: str, operation_id: str) -> dict[str, Any]:
+        """撤销预览（V03-4.6）：受影响章节、账本变化、冲突与阻断原因。
+
+        只读：不写版本、不调用模型。能否撤销取决于操作之后有没有新修改。
+        """
+        return runtime.undo.preview(project_id, operation_id)
 
     @router.post("/projects")
     def create_project(req: ProjectCreateRequest) -> dict[str, Any]:

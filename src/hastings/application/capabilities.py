@@ -78,6 +78,12 @@ CAPABILITIES: Final[dict[str, Any]] = {
         "tiers": ("agreements", "core", "overview", "index", "target"),
         "prompt_wiring": ("manuscript", "discussion"),
     },
+    "undo": {
+        "status": "draft",
+        "preview": "implemented",
+        "apply": "pending",
+        "surface": "pending",
+    },
     "graphs": {"status": "draft"},
     "author_model": {"status": "excluded"},
     "style_observation": {"status": "excluded"},
