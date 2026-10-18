@@ -70,6 +70,7 @@ from hastings.application.ports.events import EventOutbox
 from hastings.application.queries.chapter_history import ChapterHistoryQueries
 from hastings.application.queries.desk_state import DeskStateQueries
 from hastings.application.queries.followups import FollowupQueries
+from hastings.application.queries.graphs import GraphQueries
 from hastings.application.queries.ledger import LedgerQueries
 from hastings.application.queries.ledger_forms import ledger_schema
 from hastings.application.queries.manuscript import ManuscriptQueries
@@ -274,6 +275,8 @@ class V2Runtime:
         self.followups = FollowupQueries(self.service)
         # 账本只读查询（V03-3.3）：试写引用与前端设定清单共用同一投影。
         self.ledger = LedgerQueries(self.service)
+        # 统一图谱投影（V03-6.1）：节点/边固定同一 Commit，只读、无第二份事实源。
+        self.graphs = GraphQueries(self.service)
         # 账本直接保存（V03-3.2）：作者显式创建/修订，一次保存一个原子 Commit。
         self.ledger_entries = LedgerService(self.service, ids)
         # 设定候选成组（V03-3.2）：暂存在辅助表，选中后一次提交，假设不入账。
@@ -1459,6 +1462,11 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
     def get_ledger(project_id: str) -> dict[str, Any]:
         """可引用的账本条目（只读）：人物、地点、前提、线索等，不含节拍。"""
         return {"entries": runtime.ledger.entries(ProjectId(project_id))}
+
+    @router.get("/projects/{project_id}/graphs")
+    def get_graphs(project_id: str, at_commit_id: str | None = None) -> dict[str, Any]:
+        """统一图谱投影（只读）：节点/边带语义层与证据状态，固定到读取的 Commit。"""
+        return runtime.graphs.graph(project_id, at_commit_id=at_commit_id)
 
     @router.get("/projects/{project_id}/ledger/schema")
     def get_ledger_schema(project_id: str) -> dict[str, Any]:
