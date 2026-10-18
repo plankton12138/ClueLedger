@@ -36,6 +36,7 @@ from hastings.domain.manuscript.edit_session import (
     DraftChapter,
     EditSession,
 )
+from hastings.domain.manuscript.merge import merge_texts
 from hastings.domain.repository.ids import CommitId, ProjectId
 from hastings.domain.repository.serialization import content_hash
 
@@ -140,11 +141,14 @@ class EditSessionService:
         # 草稿基础绑定在**会话打开时**的版本——作者读到的那一版。早先这里取当前
         # 章基础，于是「打开旧正文 → 别人保存新稿 → 首次自动保存」会把新基础绑给
         # 旧文本，之后的「修改完成」拿着新基础放行，直接覆盖别人的保存。
-        base = self._base_at_open(pid, session.base_commit_id, chapter_id)
-        if base is None:
+        bound = self._base_at_open(pid, session.base_commit_id, chapter_id)
+        if bound is None:
             # 章在会话打开时还不存在（之后才建的章）：作者的文本本来就基于建章后
             # 的版本，取当前基础；会话本身没有基础版本时同样如此。
             base = catalog.chapter_base(chapter_id)
+            base_commit = self._head(pid) or ""
+        else:
+            base, base_commit = bound
         now = self._now()
 
         def mutate(current: dict[str, Any] | None) -> dict[str, Any]:
@@ -165,6 +169,7 @@ class EditSessionService:
                     save_seq=1,
                     updated_at=now,
                     request_id=request_id,
+                    base_commit_id=base_commit,
                 ).to_wire()
             draft = DraftChapter.from_wire(current)
             if draft.request_id == request_id:
@@ -186,6 +191,7 @@ class EditSessionService:
                 save_seq=draft.save_seq + 1,
                 updated_at=now,
                 request_id=request_id,
+                base_commit_id=draft.base_commit_id,
             ).to_wire()
 
         saved = self._repo.aux_mutate(pid, DRAFT_BUCKET, f"{session_id}:{chapter_id}", mutate)
@@ -219,8 +225,15 @@ class EditSessionService:
         operation_id: str | None = None,
         expected_save_sequences: dict[str, int] | None = None,
         conversation_id: str | None = None,
+        merge_choices: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """修改完成：整批发布一次，成功后关闭副本（可重试）。"""
+        """修改完成：整批发布一次，成功后关闭副本（可重试）。
+
+        ``merge_choices`` 是重叠冲突的逐处选择（V03-5.2）：``[{"chapter_id":
+        ..., "conflict": 序号, "choice": "ours"|"theirs"}]``，序号即上一次
+        409 报告里该章冲突的顺序。选择必须**逐处覆盖**本次重算出的冲突集合——
+        漏选、错号都会带着新报告再次 409（冲突列表可能因期间的新保存而变）。
+        """
         pid = ProjectId(project_id)
         session = self._load(pid, session_id)
         if not session.is_open:
@@ -259,6 +272,89 @@ class EditSessionService:
                         current_save_seq=draft.save_seq,
                     )
 
+        # 正式稿前进时三方合并（V03-5.2）：base=作者读到的那一版、ours=草稿、
+        # theirs=当前正式稿。干净则按**当前基础**发布合并稿——别人的保存不被
+        # 覆盖，作者的修改也不丢失；重叠则整批拒绝并给出逐段事实，副本与草稿
+        # 原样保留，作者改完再完成。
+        current = self._catalog(pid)
+        picked = _merge_choices(merge_choices or [])
+        plans: list[tuple[str, str, str]] = []
+        merged_chapters: list[str] = []
+        conflicts: list[dict[str, Any]] = []
+        for draft in drafts:
+            entry = current.get(draft.chapter_id)
+            theirs_base = current.chapter_base(draft.chapter_id) if entry is not None else None
+            if theirs_base is None:
+                # 章在正式稿里不存在了（本版无删除原语，正常不会发生）：按冲突
+                # 处理，不猜作者想怎么办。
+                conflicts.append(
+                    {
+                        "chapter_id": draft.chapter_id,
+                        "reason": "chapter_missing",
+                        "conflicts": [],
+                    }
+                )
+                continue
+            if theirs_base == draft.base_chapter_base:
+                plans.append((draft.chapter_id, draft.text, draft.base_chapter_base))
+                continue
+            base_text = self._text_at(
+                pid, draft.base_commit_id or session.base_commit_id, draft.chapter_id
+            )
+            if base_text is None:
+                # 找不到作者读取时的版本（旧草稿没有 base_commit_id 且会话基础
+                # 里没有这一章）：无法安全合并，按冲突处理并说明原因。
+                conflicts.append(
+                    {
+                        "chapter_id": draft.chapter_id,
+                        "reason": "base_unavailable",
+                        "conflicts": [],
+                    }
+                )
+                continue
+            wanted = {
+                index: choice
+                for (chapter_id, index), choice in picked.items()
+                if chapter_id == draft.chapter_id
+            }
+            merged = merge_texts(
+                base=base_text,
+                ours=draft.text,
+                theirs=current.manuscript().text_of(draft.chapter_id),
+                choices=wanted,
+            )
+            if merged.clean:
+                plans.append((draft.chapter_id, merged.text, theirs_base))
+                merged_chapters.append(draft.chapter_id)
+                continue
+            # 有冲突：作者的选择必须逐处覆盖本次重算出来的冲突集合。漏选或序号
+            # 对不上（期间又有新保存）都重新报告——不猜作者想选哪边。
+            if set(wanted) != set(range(len(merged.conflicts))):
+                conflicts.append(
+                    {
+                        "chapter_id": draft.chapter_id,
+                        "reason": "overlapping_changes",
+                        "conflicts": [item.to_wire() for item in merged.conflicts],
+                    }
+                )
+                continue
+            plans.append((draft.chapter_id, merged.text, theirs_base))
+            merged_chapters.append(draft.chapter_id)
+        if conflicts:
+            titles = []
+            for item in conflicts:
+                entry = current.get(str(item["chapter_id"]))
+                titles.append(
+                    str(entry.model().title) if entry is not None else str(item["chapter_id"])
+                )
+            raise _violation(
+                ec.EDIT_SESSION_MERGE_CONFLICT,
+                f"edit_sessions.finish({session_id})",
+                f"{len(conflicts)} 章在副本期间被正式稿修改，且与你的修改重叠：{titles}",
+                "逐段选择保留我的版本、采用正式版本，或自行修改后保存；副本不会丢失",
+                conflicts=conflicts,
+            )
+
         op_id = operation_id or (
             "op_"
             + content_hash(
@@ -274,34 +370,46 @@ class EditSessionService:
             manuscript_commands.save_drafts,
             drafts=tuple(
                 manuscript_commands.ChapterDraft(
-                    chapter_id=draft.chapter_id,
-                    text=draft.text,
-                    expected_chapter_base=draft.base_chapter_base,
+                    chapter_id=chapter_id,
+                    text=text,
+                    expected_chapter_base=expected_base,
                 )
-                for draft in drafts
+                for chapter_id, text, expected_base in plans
             ),
         )
+        # 选择进 refs：版本历史里能读出「这次合并在哪几处取了哪边」。
+        refs: dict[str, Any] = {"session_id": session_id}
+        if picked:
+            refs["merge_choices"] = [
+                {"chapter_id": chapter_id, "conflict": index, "choice": choice}
+                for (chapter_id, index), choice in sorted(picked.items())
+            ]
         result = self._publisher.publish_command(
             project_id=pid,
             command=command,
             operation_id=op_id,
             kind="edit_session.finish",
             summary=f"完成手工修改：{len(drafts)} 章",
-            refs={"session_id": session_id},
+            refs=refs,
             origin_conversation_id=conversation_id,
-            # 按会话打开时的版本求值：草稿的基础绑定在作者读到的那一版上，
-            # 期间别人保存的新稿会在提交层显式冲突，不被旧文本覆盖。
-            base_commit_id=CommitId(session.base_commit_id) if session.base_commit_id else None,
+            # 按**当前 head** 求值：合并稿是叠在最新正式稿上的，各命令的
+            # expected_chapter_base 就是当前基础；求值到提交之间若有新保存，
+            # 领域检查与提交层逐对象 CAS 都会显式冲突，不会静默覆盖。
         )
         closed = _ended(session, SESSION_CLOSED, result.operation_id, self._now())
         self._repo.aux_mutate(pid, CURRENT_BUCKET, _CURRENT_KEY, lambda _c: closed.to_wire())
         self._archive(closed)
+        published = set(result.envelope.changed_chapter_ids)
         return {
             "status": result.status,
             "session_id": session_id,
             "operation_id": result.operation_id,
             "commit_id": result.commit_id,
             "changed_chapter_ids": list(result.envelope.changed_chapter_ids),
+            # 如实报告哪些章是**合并后真正发布**的（V03-5.2）：作者有权知道
+            # 「我完成的不只是我写的」。走过合并但没有任何可发布内容的章
+            # （作者没真改）不在其中——它什么也没改变。
+            "merged_chapters": [cid for cid in merged_chapters if cid in published],
         }
 
     # -- 内部 -----------------------------------------------------------------
@@ -410,10 +518,23 @@ class EditSessionService:
 
         self._repo.aux_mutate(pid, CURRENT_BUCKET, _CURRENT_KEY, mutate)
 
+    def _text_at(self, pid: ProjectId, commit_id: str | None, chapter_id: str) -> str | None:
+        """任意提交上某章的整章文本；取不到返回 None（调用方按冲突降级）。"""
+        if not commit_id:
+            return None
+        try:
+            snapshot = self._repo.get_snapshot(pid, CommitId(commit_id))
+        except ViolationError:
+            return None
+        catalog = ManuscriptCatalog.from_snapshot(snapshot)
+        if catalog.get(chapter_id) is None:
+            return None
+        return catalog.manuscript().text_of(chapter_id)
+
     def _base_at_open(
         self, pid: ProjectId, base_commit_id: str | None, chapter_id: str
-    ) -> str | None:
-        """会话打开时该章的基础版本；取不到返回 None（调用方回落当前基础）。
+    ) -> tuple[str, str] | None:
+        """会话打开时该章的基础版本与对应提交；取不到返回 None。
 
         读取失败（基础提交不存在）同样返回 None：副本仍可用，只是这一章按当前
         版本绑定——比让整次保存失败更合理，且后续保存会沿用这个基础。
@@ -427,10 +548,32 @@ class EditSessionService:
         catalog = ManuscriptCatalog.from_snapshot(snapshot)
         if catalog.get(chapter_id) is None:
             return None
-        return catalog.chapter_base(chapter_id)
+        return catalog.chapter_base(chapter_id), base_commit_id
 
     def _now(self) -> str:
         return str(self._clock.now().isoformat())
+
+
+def _merge_choices(raw: list[dict[str, Any]]) -> dict[tuple[str, int], str]:
+    """归一化冲突选择：``{(chapter_id, 冲突序号): "ours"|"theirs"}``。
+
+    只做形状归一（章节 ID 去空格、序号转 int、取值原样）；「取哪边」的语义
+    在合并引擎里（``theirs`` 取正式稿，其余取副本）。重复的 (章, 序号) 以后
+    出现的为准——同一处冲突给两个说法没有意义，按最后送达的处理。
+    """
+    picked: dict[tuple[str, int], str] = {}
+    for item in raw:
+        chapter_id = str(item.get("chapter_id", "")).strip()
+        index = item.get("conflict")
+        if not chapter_id or not isinstance(index, int):
+            raise _violation(
+                ec.MANUSCRIPT_INVALID_OPERATION,
+                "edit_sessions.finish(merge_choices)",
+                f"冲突选择的形状不对：{item!r}",
+                "每项给 chapter_id（章 ID）与 conflict（报告里的冲突序号）",
+            )
+        picked[(chapter_id, index)] = str(item.get("choice", "ours"))
+    return picked
 
 
 def _text_hash(text: str) -> str:

@@ -119,6 +119,12 @@ def test_finish_publishes_drafts_and_closes_session() -> None:
 
 
 def test_finish_conflict_keeps_session_and_draft() -> None:
+    """副本之外正式稿被另一条路径推进：双方重写全章，按合并冲突处理。
+
+    V03-5.2 起同章前进不再是一律硬冲突——能自动叠加的会合并（见
+    test_disjoint_changes_merge_cleanly）；这里双方各自重写全章，没有可
+    自动叠加的部分，报 EDIT_SESSION_MERGE_CONFLICT 并保留副本与草稿。
+    """
     client, _runtime, pid, chapters = _client()
     session = _start(client, pid)["session"]["session_id"]
     _save(client, pid, session, chapters[0], "副本里的新文本。", 0)
@@ -132,7 +138,7 @@ def test_finish_conflict_keeps_session_and_draft() -> None:
 
     finished = client.post(f"/api/v2/projects/{pid}/edit-sessions/{session}/finish", json={})
     assert finished.status_code == 409
-    assert finished.json()["error"]["code"] == "MANUSCRIPT_BASE_CONFLICT"
+    assert finished.json()["error"]["code"] == "EDIT_SESSION_MERGE_CONFLICT"
 
     still = client.get(f"/api/v2/projects/{pid}/edit-sessions/current").json()
     assert still["session"]["session_id"] == session
@@ -264,8 +270,10 @@ def test_first_save_binds_the_version_the_author_read() -> None:
     assert drafts[0]["base_chapter_base"] == base_at_open
 
     finished = client.post(f"/api/v2/projects/{pid}/edit-sessions/{session}/finish", json={})
+    # 双方各自重写全章：没有可自动叠加的部分，按合并冲突拒绝（V03-5.2），
+    # 别人的保存没有被覆盖。
     assert finished.status_code == 409, finished.text
-    assert finished.json()["error"]["code"] == "MANUSCRIPT_BASE_CONFLICT"
+    assert finished.json()["error"]["code"] == "EDIT_SESSION_MERGE_CONFLICT"
     # 别人的保存没有被覆盖，副本与草稿都还在。
     assert _chapter_text(client, pid, chapters[0]) == "别的页面先改了这一章。"
     still = client.get(f"/api/v2/projects/{pid}/edit-sessions/current").json()

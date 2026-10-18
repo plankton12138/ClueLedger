@@ -86,7 +86,12 @@ class EditSession:
 
 @dataclass(frozen=True, slots=True)
 class DraftChapter:
-    """副本章节：实际文本 + 保存序号 + 开始修改时的正式基础。"""
+    """副本章节：实际文本 + 保存序号 + 开始修改时的正式基础。
+
+    ``base_chapter_base`` 是章基础（内容指纹），``base_commit_id`` 是它对应的
+    提交——三方合并要按提交取**作者读到的那一版原文**做 base，只有指纹不够
+    （V03-5.2）。旧草稿没有该字段，服务层回落到会话打开时的提交。
+    """
 
     session_id: str
     chapter_id: str
@@ -96,6 +101,7 @@ class DraftChapter:
     save_seq: int
     updated_at: str
     request_id: str
+    base_commit_id: str = ""
 
     def to_wire(self) -> dict[str, Any]:
         return {
@@ -107,6 +113,7 @@ class DraftChapter:
             "save_seq": self.save_seq,
             "updated_at": self.updated_at,
             "request_id": self.request_id,
+            "base_commit_id": self.base_commit_id,
         }
 
     @classmethod
@@ -120,4 +127,5 @@ class DraftChapter:
             save_seq=int(data.get("save_seq", 0)),
             updated_at=str(data.get("updated_at", "")),
             request_id=str(data.get("request_id", "")),
+            base_commit_id=str(data.get("base_commit_id", "")),
         )

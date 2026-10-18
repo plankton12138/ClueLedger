@@ -29,7 +29,7 @@ import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -981,11 +981,22 @@ class StartEditSessionRequest(BaseModel):
     chapter_ids: list[str] = Field(default_factory=list)
 
 
+class MergeChoice(BaseModel):
+    """一处重叠冲突的选择（V03-5.2）：序号即上次 409 报告里该章冲突的顺序。"""
+
+    chapter_id: str
+    conflict: int
+    choice: Literal["ours", "theirs"]
+
+
 class FinishEditRequest(BaseModel):
     operation_id: str | None = None
     expected_save_sequences: dict[str, int] | None = None
     #: 发起本轮修改的讨论；不给则归本作品「创作记录」（V03-4.5）。
     conversation_id: str | None = None
+    #: 重叠冲突的逐处选择：必须逐处覆盖本次重算出的冲突集合，否则带着新报告
+    # 再次 409。不给而又有冲突时，完成被拒绝并返回事实（V03-5.2）。
+    merge_choices: list[MergeChoice] = Field(default_factory=list)
 
 
 class ReanchorRequest(BaseModel):
@@ -1376,6 +1387,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             operation_id=req.operation_id,
             expected_save_sequences=req.expected_save_sequences,
             conversation_id=req.conversation_id,
+            merge_choices=[choice.model_dump() for choice in req.merge_choices],
         )
 
     @router.get("/projects/{project_id}/ledger")
