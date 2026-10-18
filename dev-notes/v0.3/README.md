@@ -34,7 +34,7 @@ V03-0 退出状态（对照计划 §7 质量门）：仓库内存/SQLite 契约�
 
 下一阶段起点：V03-1（主工作区、模型引导与无模型记录）——开始条件检查单（V03-0 质量门通过、旧自动模型链路已隔离且有零调用证据、DTO 冻结）已满足。
 
-## V03-1 进行中（2026-10-17）
+## V03-1 已交付（2026-10-17）
 
 质量门基线：`uv run pytest -q` 1491 passed（2026-10-17 实测确认）；ruff/mypy 全过；前端 vitest 353 passed。
 
@@ -96,7 +96,7 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 
 开始条件检查单：导入与统一发布可用（V03-2.3/2.5）✓；模型启动有来源凭据与连接快照（V03-1.4/19.5）✓。
 
-质量门基线：`uv run pytest -q` **1579 passed**；`ruff check` 全过；`mypy src/hastings` 223 files 无问题；前端 vitest **369 passed**（43 文件）+ `vite build` 通过。
+质量门基线：`uv run pytest -q` **1579 passed**；`ruff check src tests` 全过（仓库根另有 5 项既有告警在 `eval/v2/chat_driver.py`）；`mypy src/hastings` 223 files 无问题；前端 vitest **382 passed**（44 文件）+ `vite build` 通过。
 
 | 任务 | 状态 | 产物 | 构建笔记 |
 |---|---|---|---|
