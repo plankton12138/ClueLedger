@@ -11,7 +11,6 @@ import {
   adoptDraft,
   createDraft,
   fetchDraft,
-  fetchLedger,
   listDrafts,
   reviseDraft,
   type ChapterCandidate,
@@ -147,26 +146,5 @@ describe("drafting api", () => {
     const rows = await listDrafts("p1");
     expect(rows[0].candidate_id).toBe("cnd_1");
     expect(rows[0].excerpt).toBe("第一段。");
-  });
-
-  it("fetchLedger 返回可引用条目", async () => {
-    const fetchMock = vi.fn(async () =>
-      jsonResponse({
-        entries: [
-          {
-            id: "chr_1",
-            kind: "canon.character",
-            kind_label: "人物",
-            title: "林昭",
-            summary: "侦探",
-          },
-        ],
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const entries = await fetchLedger("p1");
-    expect(entries).toHaveLength(1);
-    expect(entries[0].kind_label).toBe("人物");
   });
 });

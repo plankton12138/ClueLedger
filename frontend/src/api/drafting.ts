@@ -7,14 +7,6 @@
 
 import { projectPrefix, request } from "./v2";
 
-export interface LedgerEntry {
-  id: string;
-  kind: string;
-  kind_label: string;
-  title: string;
-  summary: string;
-}
-
 export interface DraftBriefInput {
   target?: string;
   chapter_title?: string;
@@ -82,13 +74,6 @@ export interface DraftAdoptResult {
   operation_id: string;
   commit_id?: string | null;
   changed_chapter_ids?: string[];
-}
-
-export async function fetchLedger(projectId: string): Promise<LedgerEntry[]> {
-  const payload = await request<{ entries: LedgerEntry[] }>(
-    `${projectPrefix(projectId)}/ledger`,
-  );
-  return payload.entries;
 }
 
 export async function createDraft(

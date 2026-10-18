@@ -62,6 +62,7 @@ from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.chapter_history import ChapterHistoryQueries
 from hastings.application.queries.followups import FollowupQueries
 from hastings.application.queries.ledger import LedgerQueries
+from hastings.application.queries.ledger_forms import ledger_schema
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.conversation_service import ConversationService
 from hastings.application.services.drafting_service import DraftingService, WrittenChapter
@@ -69,6 +70,7 @@ from hastings.application.services.edit_session_service import EditSessionServic
 from hastings.application.services.entry_service import EntryService
 from hastings.application.services.evidence_service import EvidenceService
 from hastings.application.services.import_service import ImportService
+from hastings.application.services.ledger_service import LedgerService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
 from hastings.application.services.task_prep_service import TaskPrepService
@@ -247,6 +249,8 @@ class V2Runtime:
         self.followups = FollowupQueries(self.service)
         # 账本只读查询（V03-3.3）：试写引用与前端设定清单共用同一投影。
         self.ledger = LedgerQueries(self.service)
+        # 账本直接保存（V03-3.2）：作者显式创建/修订，一次保存一个原子 Commit。
+        self.ledger_entries = LedgerService(self.service, ids)
         # 试写候选（V03-3.3/3.4）：账本+作者要求生成候选，只读预览，
         # 按预览哈希采用；采用走统一发布（V03-3.5）。
         self.drafting = DraftingService(
@@ -862,6 +866,22 @@ class DraftCreateRequest(BaseModel):
     idempotency_key: str | None = None
 
 
+class LedgerEntryCreateRequest(BaseModel):
+    """直接保存账本条目：种类 + 字段 + 请求标识（重试不重复入账）。"""
+
+    kind: str
+    fields: dict[str, Any] = Field(default_factory=dict)
+    request_id: str = Field(min_length=1)
+
+
+class LedgerEntryUpdateRequest(BaseModel):
+    """修订账本条目：只覆盖提供的字段；expected_revision 防止覆盖他人的新版本。"""
+
+    fields: dict[str, Any] = Field(default_factory=dict)
+    expected_revision: str | None = None
+    request_id: str = Field(min_length=1)
+
+
 class DraftReviseRequest(BaseModel):
     instruction: str = ""
     expected_revision: int | None = None
@@ -1113,6 +1133,40 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
     def get_ledger(project_id: str) -> dict[str, Any]:
         """可引用的账本条目（只读）：人物、地点、前提、线索等，不含节拍。"""
         return {"entries": runtime.ledger.entries(ProjectId(project_id))}
+
+    @router.get("/projects/{project_id}/ledger/schema")
+    def get_ledger_schema(project_id: str) -> dict[str, Any]:
+        """账本编辑表单描述：种类、字段、控件与引用目标，前后端共用一份口径。"""
+        del project_id  # 表单描述与具体作品无关；路径保持作品归属一致
+        return {"kinds": ledger_schema()}
+
+    @router.get("/projects/{project_id}/ledger/entries/{entry_id}")
+    def get_ledger_entry(project_id: str, entry_id: str) -> dict[str, Any]:
+        """单条账本详情：完整内容 + 当前 revision（编辑时作为 CAS 基础）。"""
+        return runtime.ledger_entries.get_entry(project_id, entry_id)
+
+    @router.post("/projects/{project_id}/ledger/entries", status_code=201)
+    def create_ledger_entry(project_id: str, req: LedgerEntryCreateRequest) -> dict[str, Any]:
+        """直接保存新条目：不运行模型，不重写正文，保存后回读真实版本。"""
+        return runtime.ledger_entries.create_entry(
+            project_id,
+            kind=req.kind,
+            fields=req.fields,
+            request_id=req.request_id,
+        )
+
+    @router.patch("/projects/{project_id}/ledger/entries/{entry_id}")
+    def update_ledger_entry(
+        project_id: str, entry_id: str, req: LedgerEntryUpdateRequest
+    ) -> dict[str, Any]:
+        """修订条目：只覆盖提供的字段；revision 冲突时拒绝覆盖。"""
+        return runtime.ledger_entries.update_entry(
+            project_id,
+            entry_id,
+            fields=req.fields,
+            expected_revision=req.expected_revision,
+            request_id=req.request_id,
+        )
 
     @router.post("/projects/{project_id}/drafts")
     async def create_draft(project_id: str, req: DraftCreateRequest) -> dict[str, Any]:

@@ -27,6 +27,7 @@ KIND_LABELS: dict[str, str] = {
     story_kinds.KIND_RELATIONSHIP: "关系",
     story_kinds.KIND_TIMELINE_EVENT: "时间线事件",
     story_kinds.KIND_TRUTH_FACT: "事实",
+    story_kinds.KIND_KNOWLEDGE: "认知 / 证词",
 }
 
 #: 摘要优先取的字段（按 kind）；都没有则取前三个非空字符串字段。
@@ -37,9 +38,18 @@ SUMMARY_FIELDS: dict[str, tuple[str, ...]] = {
     story_kinds.KIND_WORLD_RULE: ("rule", "scope"),
     story_kinds.KIND_CLUE: ("statement", "source"),
     story_kinds.KIND_MYSTERY_TRUTH: ("truth", "solution"),
-    story_kinds.KIND_RELATIONSHIP: ("description", "nature"),
+    story_kinds.KIND_RELATIONSHIP: ("public_state", "true_state", "evolution"),
     story_kinds.KIND_TIMELINE_EVENT: ("time", "description"),
     story_kinds.KIND_TRUTH_FACT: ("statement",),
+    story_kinds.KIND_KNOWLEDGE: ("note",),
+}
+
+#: 认知模式的中文标签；证词与猜测保留原模式，不升级为客观事实。
+KNOWLEDGE_LABELS: dict[str, str] = {
+    "knows": "知道",
+    "suspects": "怀疑",
+    "misbelieves": "误信",
+    "unaware": "不知道",
 }
 
 #: 前端候选列表里的稳定排序：先人物与前提，再线索与地点。
@@ -51,6 +61,9 @@ _ORDER = {
     story_kinds.KIND_MYSTERY_TRUTH: 4,
     story_kinds.KIND_PLACE: 5,
     story_kinds.KIND_WORLD_RULE: 6,
+    story_kinds.KIND_TRUTH_FACT: 7,
+    story_kinds.KIND_KNOWLEDGE: 8,
+    story_kinds.KIND_TIMELINE_EVENT: 9,
 }
 
 
@@ -65,6 +78,13 @@ def _display(entry: StoryEntry) -> str:
 
 
 def _summarize(kind: str, content: Mapping[str, Any]) -> str:
+    if kind == story_kinds.KIND_KNOWLEDGE:
+        mode = str(content.get("mode", ""))
+        label = KNOWLEDGE_LABELS.get(mode, mode or "认知")
+        note = content.get("note")
+        if isinstance(note, str) and note.strip():
+            return f"{label}：{note.strip()}"
+        return label
     fields = SUMMARY_FIELDS.get(kind)
     values: list[str] = []
     if fields:

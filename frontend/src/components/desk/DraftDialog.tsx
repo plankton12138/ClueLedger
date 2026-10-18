@@ -14,11 +14,10 @@ import {
   adoptDraft,
   createDraft,
   discardDraft,
-  fetchLedger,
   reviseDraft,
   type ChapterCandidate,
-  type LedgerEntry,
 } from "../../api/drafting";
+import { fetchLedger, type LedgerEntry } from "../../api/ledger";
 import { message } from "../../state/v2";
 import { ErrorText, Pill } from "../Workbench";
 

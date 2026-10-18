@@ -22,12 +22,13 @@ import {
 } from "../../state/desk";
 import { useDeskStore, type EntryReceipt } from "../../state/deskStore";
 import { isDirty, useV2Store } from "../../state/v2";
-import { ConfirmDiscard, Empty, ErrorText, Pill, kindLabels } from "../Workbench";
+import { ConfirmDiscard, Empty, ErrorText, Pill } from "../Workbench";
 import DeskComposer from "./DeskComposer";
 import ChapterHistory from "./ChapterHistory";
 import EvidenceCheck from "./EvidenceCheck";
 import DraftDialog from "./DraftDialog";
 import ImportDialog from "./ImportDialog";
+import LedgerPanel from "./LedgerPanel";
 import OperationFollowups from "./OperationFollowups";
 import { useEditSession } from "./useEditSession";
 
@@ -613,31 +614,16 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
 
       {!focusMode && (
         <aside className="min-h-0 w-64 flex-none space-y-4 overflow-y-auto p-3">
-          <section className="panel" aria-label="账本概要">
-            <header className="panel-head px-4 py-3">相关账本</header>
-            {v2.storyArtifacts.length === 0 ? (
+          {pid ? (
+            <LedgerPanel projectId={pid} onSaved={() => void v2.refreshStory()} />
+          ) : (
+            <section className="panel" aria-label="故事账本">
+              <header className="panel-head px-4 py-3">故事账本</header>
               <p className="px-4 py-3 text-xs text-sub">
-                还没有账本条目。人物、线索会随创作出现在这里。
+                先在顶部选择或新建作品；账本条目会保存在作品里。
               </p>
-            ) : (
-              <div className="px-4 py-3 text-xs leading-6">
-                {Object.entries(
-                  v2.storyArtifacts.reduce<Record<string, number>>((acc, a) => {
-                    const label = kindLabels[a.kind] ?? a.kind;
-                    acc[label] = (acc[label] ?? 0) + 1;
-                    return acc;
-                  }, {}),
-                )
-                  .sort((a, b) => b[1] - a[1])
-                  .slice(0, 8)
-                  .map(([label, count]) => (
-                    <p key={label}>
-                      {label} · {count}
-                    </p>
-                  ))}
-              </div>
-            )}
-          </section>
+            </section>
+          )}
           {mainView?.kind === "manuscript" && pid && (
             <EvidenceCheck projectId={pid} chapterId={mainView.chapterId} />
           )}
