@@ -18,12 +18,16 @@ from __future__ import annotations
 from typing import Any
 
 from hastings.application.errors import ViolationError
+from hastings.application.handlers.manuscript_commands import manuscript_command
 from hastings.application.services.commit_service import CommitService
 from hastings.application.services.edit_session_service import EditSessionService
 from hastings.application.services.operation_service import OperationService
+from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
+from hastings.domain.manuscript.commands import save_full_text
 from hastings.domain.manuscript.operation_record import OperationRecord
 from hastings.domain.repository.ids import ArtifactId, CommitId, ProjectId
+from hastings.domain.repository.serialization import content_hash
 from hastings.domain.story import kinds as story_kinds
 from hastings.domain.story.catalog import StoryCatalog
 
@@ -39,10 +43,12 @@ class UndoService:
         self,
         repo: CommitService,
         operations: OperationService,
+        publisher: PublishManuscriptChange,
         edit_sessions: EditSessionService | None = None,
     ) -> None:
         self._repo = repo
         self._operations = operations
+        self._publisher = publisher
         self._edit_sessions = edit_sessions
 
     def preview(self, project_id: str, operation_id: str) -> dict[str, Any]:
@@ -103,7 +109,89 @@ class UndoService:
             "note": "撤销写入随 4.6 后半交付；本接口只报告事实",
         }
 
+    # -- 写入 ---------------------------------------------------------------
+    def apply(self, project_id: str, operation_id: str) -> dict[str, Any]:
+        """按预览结果执行撤销：多章恢复走一次提交，失败不留半套版本。
+
+        操作 ID 由「撤销 + 原操作」确定性派生：同一次撤销重试返回原提交，
+        不会因为连点两次产生第二个版本。
+        """
+        pid = ProjectId(project_id)
+        undo_operation_id = "op_" + content_hash(["manuscript.undo", pid.value, operation_id])[:16]
+        # 先看这次撤销是否已经执行过：连点两次应回读同一提交，而不是被自己的结果
+        # 判成「之后又被修改」。
+        prior = self._find_undo(pid, undo_operation_id)
+        if prior is not None:
+            return {
+                "status": prior.status,
+                "operation_id": undo_operation_id,
+                "undo_of": operation_id,
+                "commit_id": prior.commit_id,
+                "restored_chapter_ids": list(prior.changed_chapter_ids),
+                "replayed": True,
+            }
+        preview = self.preview(project_id, operation_id)
+        if not preview["can_undo"]:
+            raise _violation(
+                "UNDO_DEPENDENCY_CONFLICT",
+                f"undo.apply({pid.value}.{operation_id})",
+                preview["blocked_reason"] or "这次操作当前不能撤销",
+                "按提示先处理冲突或结束副本；本版不会覆盖已有内容",
+                operation_id=operation_id,
+                conflicts=list(preview["conflicts"]),
+            )
+        before = CommitId(str(preview["before_commit_id"]))
+        before_catalog = self._manuscript(pid, before)
+        commands = []
+        for row in preview["chapters"]:
+            chapter_id = str(row["chapter_id"])
+            text = before_catalog.manuscript().text_of(chapter_id)
+            commands.append(
+                manuscript_command(
+                    save_full_text,
+                    chapter_id=chapter_id,
+                    text=text,
+                    # 以「操作后」的基础做 CAS：这期间又改过就拒绝，不覆盖。
+                    expected_chapter_base=str(row["after_base"]),
+                )
+            )
+        if not commands:
+            raise _violation(
+                "UNDO_DEPENDENCY_CONFLICT",
+                f"undo.apply({pid.value}.{operation_id})",
+                "没有可恢复的章节",
+                "刷新撤销预览后重试",
+                operation_id=operation_id,
+            )
+        result = self._publisher.publish_commands(
+            project_id=pid,
+            commands=tuple(commands),
+            operation_id=undo_operation_id,
+            kind="chapter.undo",
+            summary=f"撤销操作 {operation_id}",
+            refs={
+                "undo_of": operation_id,
+                "chapters": [row["chapter_id"] for row in preview["chapters"]],
+            },
+        )
+        return {
+            "status": result.envelope.status,
+            "operation_id": undo_operation_id,
+            "undo_of": operation_id,
+            "commit_id": result.envelope.commit_id,
+            "restored_chapter_ids": [str(row["chapter_id"]) for row in preview["chapters"]],
+        }
+
     # -- 内部 ---------------------------------------------------------------
+    def _find_undo(self, pid: ProjectId, undo_operation_id: str) -> Any | None:
+        """按回执回读已执行的撤销；没有回执 = 还没撤过。"""
+        try:
+            return self._operations.get_operation(pid, undo_operation_id)
+        except ViolationError as exc:
+            if exc.code == "OPERATION_NOT_FOUND":
+                return None
+            raise
+
     def _blocked(self, pid: ProjectId, operation_id: str, reason: str) -> dict[str, Any]:
         del pid
         return {

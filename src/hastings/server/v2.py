@@ -300,8 +300,10 @@ class V2Runtime:
             self.clock,
             proposer=self._suggestion_writer,
         )
-        # 基础关联撤销（V03-4.6）：只读预览与冲突判定，写入在 4.6 后半。
-        self.undo = UndoService(self.service, self.operations, self.edit_sessions)
+        # 基础关联撤销（V03-4.6）：预览只读；写入走统一发布器，多章一次提交。
+        self.undo = UndoService(
+            self.service, self.operations, self.manuscript_publisher, self.edit_sessions
+        )
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -1162,6 +1164,14 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         只读：不写版本、不调用模型。能否撤销取决于操作之后有没有新修改。
         """
         return runtime.undo.preview(project_id, operation_id)
+
+    @router.post("/projects/{project_id}/operations/{operation_id}/undo")
+    def apply_undo(project_id: str, operation_id: str) -> dict[str, Any]:
+        """执行撤销（V03-4.6）：预览判定可撤销后，一次提交恢复相关章节。
+
+        有后续修改、有未结束副本、或原操作同时改了账本时拒绝，不覆盖任何内容。
+        """
+        return runtime.undo.apply(project_id, operation_id)
 
     @router.post("/projects")
     def create_project(req: ProjectCreateRequest) -> dict[str, Any]:

@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -155,7 +156,43 @@ class PublishManuscriptChange:
         summary: str,
         refs: dict[str, Any] | None = None,
     ) -> PublishResult:
-        """§3.3 六步：领域命令纯函数 → 证据/摘要核对 → 原子提交。"""
+        """§3.3 六步：领域命令纯函数 → 证据/摘要核对 → 原子提交。
+
+        单命令是 ``publish_commands`` 的特例：保留同一入口，重放指纹与旧版本一致。
+        """
+        return self.publish_commands(
+            project_id=project_id,
+            commands=(command,),
+            operation_id=operation_id,
+            kind=kind,
+            summary=summary,
+            refs=refs,
+        )
+
+    def publish_commands(
+        self,
+        *,
+        project_id: ProjectId,
+        commands: Sequence[ManuscriptCommand],
+        operation_id: str,
+        kind: str,
+        summary: str,
+        refs: dict[str, Any] | None = None,
+    ) -> PublishResult:
+        """一次提交多条稿件命令（V03-4.6 撤销用）：多章恢复只产生一个版本。
+
+        每条命令都对**同一个基础快照**求值，因此「恢复第 1、2 章」不会出现
+        前一条已经改了 head、后一条仍按旧基础计算的情况；真正的一致性由提交时的
+        ``expected_head`` 与各条命令自带的 ``expected_chapter_base`` 保证。
+        同一章不要在同一次调用里出现两次——两条命令都基于同一基础，后者会覆盖前者。
+        """
+        if not commands:
+            raise _violation(
+                ec.MANUSCRIPT_INVALID_OPERATION,
+                f"publish({operation_id})",
+                "没有要发布的命令",
+                "至少给一条稿件命令",
+            )
         pid = project_id
         branch = self._repo.get_branch(pid, "main")
         if branch is None:
@@ -166,13 +203,24 @@ class PublishManuscriptChange:
                 "先创建作品再发布",
             )
         head = branch.head_commit_id
-        # 意图指纹：命令身份 + 规范化意图（repr 稳定，与 handler 同一手）——
-        # 不含每次执行新生成的 Artifact ID，重试间恒定；回执重放据此判等。
-        fingerprint = content_hash(
-            {"command": command.name, "intent": repr(sorted(command.intent.items())), "refs": refs}
-        )
-        # (1) 回执重放必须先于命令执行：导入用确定性章 ID，先跑命令会在重试时
-        #     撞上已存在的章，永远走不到回执（保存类命令恰好幂等，未暴露此问题）。
+        if len(commands) == 1:
+            # 单命令沿用旧指纹形状：升级后重放既有操作仍能认出同一次请求。
+            fingerprint = content_hash(
+                {
+                    "command": commands[0].name,
+                    "intent": repr(sorted(commands[0].intent.items())),
+                    "refs": refs,
+                }
+            )
+        else:
+            fingerprint = content_hash(
+                {
+                    "commands": [
+                        [command.name, repr(sorted(command.intent.items()))] for command in commands
+                    ],
+                    "refs": refs,
+                }
+            )
         replayed = self._operations.find_replay(pid.value, operation_id, fingerprint)
         if replayed is not None:
             return PublishResult(
@@ -186,9 +234,21 @@ class PublishManuscriptChange:
             if head is not None
             else ManuscriptCatalog(commit_id=None, entries=())
         )
-        # (2)(3) 同一基础快照 + 领域命令纯函数：只读，不提交。
-        change = self._run(command, catalog)
-        if change.is_empty():
+        artifact_changes: list[ArtifactChange] = []
+        events: list[tuple[str, dict[str, Any]]] = []
+        warnings: list[str] = []
+        for command in commands:
+            change = self._run(command, catalog)
+            artifact_changes.extend(change.artifact_changes)
+            events.extend(change.events)
+            warnings.extend(change.warnings)
+        merged = ManuscriptChange(
+            artifact_changes=tuple(artifact_changes),
+            events=tuple(events),
+            warnings=tuple(warnings),
+            summary=summary,
+        )
+        if merged.is_empty():
             envelope = self._operations.submit(
                 project_id=pid.value,
                 operation_id=operation_id,
@@ -198,28 +258,25 @@ class PublishManuscriptChange:
                 refs=refs,
                 request_fingerprint=fingerprint,
             )
-            return PublishResult(envelope=envelope, warnings=(), summary=summary, change=change)
-        changed_artifact_ids = frozenset(c.artifact_id.value for c in change.artifact_changes)
-        chapter_ids = self._changed_chapters(catalog, change)
-        # (4) 证据核对与摘要失效：确定性，不用模型。
+            return PublishResult(envelope=envelope, warnings=(), summary=summary, change=merged)
+        changed_ids = frozenset(c.artifact_id.value for c in merged.artifact_changes)
+        chapter_ids = self._changed_chapters(catalog, merged)
         derived = self._derive_state_changes(
-            pid, head, catalog, change, changed_artifact_ids, chapter_ids, operation_id
+            pid, head, catalog, merged, changed_ids, chapter_ids, operation_id
         )
-        # (5) 一个 CommitRequest：正文 + 证据 + 摘要 + 记录 + 回执 + 事件。
         envelope = self._operations.submit(
             project_id=pid.value,
             operation_id=operation_id,
             kind=kind,
-            changes=(*change.artifact_changes, *derived),
+            changes=(*merged.artifact_changes, *derived),
             summary=summary,
             refs=refs,
-            events=change.events,
+            events=merged.events,
             changed_chapter_ids=tuple(chapter_ids),
             request_fingerprint=fingerprint,
         )
-        # (6) 回执 + 实际正式版本；投影未完成仍可按 operation_id 找回。
         return PublishResult(
-            envelope=envelope, warnings=change.warnings, summary=summary, change=change
+            envelope=envelope, warnings=tuple(warnings), summary=summary, change=merged
         )
 
     # -- 内部 -----------------------------------------------------------------

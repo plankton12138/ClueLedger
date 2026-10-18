@@ -81,7 +81,7 @@ CAPABILITIES: Final[dict[str, Any]] = {
     "undo": {
         "status": "draft",
         "preview": "implemented",
-        "apply": "pending",
+        "apply": "implemented",
         "surface": "pending",
     },
     "graphs": {"status": "draft"},
