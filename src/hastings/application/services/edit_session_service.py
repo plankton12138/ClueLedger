@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from hastings.application.errors import ViolationError
@@ -75,8 +76,14 @@ class EditSessionService:
             return None
         return self._view(EditSession.from_wire(payload))
 
-    def start(self, project_id: str) -> dict[str, Any]:
-        """开始或恢复唯一未结束副本；已有则原样返回（幂等）。"""
+    def start(self, project_id: str, chapter_ids: list[str] | None = None) -> dict[str, Any]:
+        """开始或恢复唯一未结束副本；已有则原样返回（幂等）。
+
+        ``chapter_ids`` 是本轮章节清单（V03-5.1）：开始时就声明要改哪几章。
+        只收作品里已存在的章；重复项按首次出现去重，顺序即声明顺序（界面
+        据此展示）。恢复已有副本时忽略传入的声明——清单以副本里的为准，
+        避免后到的请求悄悄改写正在进行的一轮。
+        """
         pid = ProjectId(project_id)
         existing = self._repo.aux_read(pid, CURRENT_BUCKET, _CURRENT_KEY)
         if existing is not None:
@@ -91,6 +98,7 @@ class EditSessionService:
             base_commit_id=self._head(pid),
             status=SESSION_OPEN,
             started_at=self._now(),
+            chapters=self._validate_chapters(pid, chapter_ids or []),
         )
         self._repo.aux_mutate(pid, CURRENT_BUCKET, _CURRENT_KEY, lambda _current: session.to_wire())
         return self._view(session)
@@ -182,6 +190,8 @@ class EditSessionService:
 
         saved = self._repo.aux_mutate(pid, DRAFT_BUCKET, f"{session_id}:{chapter_id}", mutate)
         assert saved is not None
+        # 首次保存的章进入本轮清单（有机流式修改不事先声明，V03-5.1）。
+        self._join_round(pid, session_id, chapter_id)
         return DraftChapter.from_wire(saved).to_wire()
 
     # -- 暂存 / 放弃 / 完成 ---------------------------------------------------
@@ -223,6 +233,19 @@ class EditSessionService:
                 f"edit_sessions.finish({session_id})",
                 "本轮没有任何修改内容",
                 "先修改至少一章，或放弃本轮",
+            )
+        # 完成前 flush 核对（V03-5.1）：本轮清单里的每一章都必须已落草稿。
+        # 声明了却没保存的章不允许「带病完成」——否则作者以为改完了，实际
+        # 有一章的修改从没进入这次提交，而完成又会关闭副本、无从补救。
+        saved_ids = {draft.chapter_id for draft in drafts}
+        missing = [cid for cid in session.chapters if cid not in saved_ids]
+        if missing:
+            raise _violation(
+                ec.EDIT_SESSION_UNFLUSHED,
+                f"edit_sessions.finish({session_id})",
+                f"本轮还有 {len(missing)} 章没有保存过修改：{missing}",
+                "先保存这些章的修改，或放弃本轮后重新声明；未保存的章不进入本次发布",
+                missing=missing,
             )
         if expected_save_sequences:
             for draft in drafts:
@@ -347,6 +370,45 @@ class EditSessionService:
         if branch is None or branch.head_commit_id is None:
             return ManuscriptCatalog(commit_id=None, entries=())
         return ManuscriptCatalog.from_snapshot(self._repo.get_snapshot(pid, branch.head_commit_id))
+
+    def _validate_chapters(self, pid: ProjectId, chapter_ids: list[str]) -> tuple[str, ...]:
+        """本轮清单校验：章必须存在；重复按首次出现去重，保序。
+
+        空清单合法（有机流式修改不事先声明，首次保存即入列）。
+        """
+        ordered = tuple(dict.fromkeys(str(c).strip() for c in chapter_ids if str(c).strip()))
+        if not ordered:
+            return ()
+        catalog = self._catalog(pid)
+        missing = [cid for cid in ordered if catalog.get(cid) is None]
+        if missing:
+            raise _violation(
+                ec.MANUSCRIPT_UNKNOWN_CHAPTER,
+                f"edit_sessions.start({pid.value})",
+                f"本轮清单里的章不存在：{missing}",
+                "刷新章节目录后重新声明；清单只收作品里已有的章",
+                missing=missing,
+            )
+        return ordered
+
+    def _join_round(self, pid: ProjectId, session_id: str, chapter_id: str) -> None:
+        """把首次保存的章加进本轮清单（V03-5.1）。
+
+        与草稿写入是两个事务，顺序固定为**先草稿后清单**：中途失败最坏是
+        「已保存但不在清单里」——草稿仍随完成发布，界面清单下次保存自愈；
+        反过来（在清单里却没有草稿）才会挡住完成，那是要避免的方向。
+        """
+
+        def mutate(current: dict[str, Any] | None) -> dict[str, Any] | None:
+            # 没有当前副本（已放弃/已完成）：无处可加，也不是错误。
+            if current is None:
+                return None
+            session = EditSession.from_wire(current)
+            if chapter_id in session.chapters:
+                return current
+            return replace(session, chapters=(*session.chapters, chapter_id)).to_wire()
+
+        self._repo.aux_mutate(pid, CURRENT_BUCKET, _CURRENT_KEY, mutate)
 
     def _base_at_open(
         self, pid: ProjectId, base_commit_id: str | None, chapter_id: str

@@ -289,3 +289,163 @@ def test_unrelated_save_between_open_and_finish_does_not_block() -> None:
     assert finished.status_code == 200, finished.text
     assert _chapter_text(client, pid, chapters[0]).strip() == "副本里的新文本。"
     assert _chapter_text(client, pid, chapters[1]) == "第二章也被改了。"
+
+
+# ---------------------------------------------------------------------------
+# 跨章修改（V03-5.1）：本轮章节清单、完成前 flush、无关章不变
+# ---------------------------------------------------------------------------
+
+THIRD = "门后是一条向下的楼梯，灯坏了。\n\n有人在楼梯口放了一把伞。"
+
+
+def _start_with(client: TestClient, pid: str, chapter_ids: list[str] | None = None) -> dict:
+    payload = {} if chapter_ids is None else {"chapter_ids": chapter_ids}
+    response = client.post(f"/api/v2/projects/{pid}/edit-sessions", json=payload)
+    assert response.status_code in (200, 201), response.text
+    return response.json()
+
+
+def _seed_summary(runtime: V2Runtime, pid: str, chapter_id: str) -> str:
+    """给某一章预置一条 fresh 摘要，返回该摘要对象的当前修订号。"""
+    from hastings.domain.manuscript.evidence import KIND_CHAPTER_SUMMARY
+    from hastings.domain.repository.ids import Actor, ArtifactId, ProjectId
+    from hastings.domain.repository.requests import ArtifactChange, CommitRequest
+
+    repo = runtime.service
+    branch = repo.get_branch(ProjectId(pid), "main")
+    assert branch is not None and branch.head_commit_id is not None
+    head = branch.head_commit_id
+    snapshot = repo.get_snapshot(ProjectId(pid), head)
+    chapter = snapshot.artifacts[ArtifactId(chapter_id)]
+    assert chapter.revision is not None
+    summary_id = f"sum_{chapter_id}"
+    result = repo.commit(
+        CommitRequest(
+            project_id=ProjectId(pid),
+            branch_id=branch.id,
+            expected_head=head,
+            actor=Actor(kind="human", id="author"),
+            idempotency_key=f"seed-summary-{chapter_id}",
+            summary=f"预置 {chapter_id} 摘要",
+            changes=(
+                ArtifactChange(
+                    artifact_id=ArtifactId(summary_id),
+                    content={
+                        "summary_id": summary_id,
+                        "chapter_id": chapter_id,
+                        "source_hash": chapter.revision.content_hash.value,
+                        "status": "fresh",
+                    },
+                    kind=KIND_CHAPTER_SUMMARY,
+                ),
+            ),
+        )
+    )
+    after = repo.get_snapshot(ProjectId(pid), result.commit_id)
+    revision = after.artifacts[ArtifactId(summary_id)].revision
+    assert revision is not None
+    return revision.id
+
+
+def test_start_declares_round_chapters_in_order() -> None:
+    """本轮清单按声明顺序去重：界面「本轮改了哪几章」与完成核对都用它。"""
+    client, _runtime, pid, chapters = _client()
+    body = _start_with(client, pid, [chapters[1], chapters[0], chapters[1]])
+    assert body["session"]["chapters"] == [chapters[1], chapters[0]]
+    # 恢复同一副本：清单不变，后到的声明不改写正在进行的一轮。
+    again = _start_with(client, pid, [chapters[0]])
+    assert again["session"]["chapters"] == [chapters[1], chapters[0]]
+
+
+def test_declaring_unknown_chapter_is_rejected() -> None:
+    """清单只收作品里已有的章：写错的章 ID 不能混进完成核对。"""
+    client, _runtime, pid, _chapters = _client()
+    response = client.post(
+        f"/api/v2/projects/{pid}/edit-sessions", json={"chapter_ids": ["ch_nope"]}
+    )
+    # 章不存在与「会话不存在」同族：按 404 报，不按请求格式错误报。
+    assert response.status_code == 404, response.text
+    assert response.json()["error"]["code"] == "MANUSCRIPT_UNKNOWN_CHAPTER"
+    assert client.get(f"/api/v2/projects/{pid}/edit-sessions/current").json()["session"] is None
+
+
+def test_first_save_joins_the_round() -> None:
+    """有机流式修改不事先声明：首次保存的章自动进入清单。"""
+    client, _runtime, pid, chapters = _client()
+    session = _start_with(client, pid)["session"]["session_id"]
+    assert session
+    _save(client, pid, session, chapters[1], "先改第二章。", 0)
+    current = client.get(f"/api/v2/projects/{pid}/edit-sessions/current").json()
+    assert current["session"]["chapters"] == [chapters[1]]
+
+
+def test_finish_requires_all_declared_chapters_flushed() -> None:
+    """声明了却没保存的章挡住完成：不产生「带病」的半套版本。"""
+    client, _runtime, pid, chapters = _client()
+    session = _start_with(client, pid, list(chapters))["session"]["session_id"]
+    _save(client, pid, session, chapters[0], "只改了第一章。", 0)
+
+    blocked = client.post(f"/api/v2/projects/{pid}/edit-sessions/{session}/finish", json={})
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["error"]["code"] == "EDIT_SESSION_UNFLUSHED"
+    assert blocked.json()["error"]["details"]["missing"] == [chapters[1]]
+    # 正文没动，副本还开着。
+    assert _chapter_text(client, pid, chapters[0]) == FIRST
+    still = client.get(f"/api/v2/projects/{pid}/edit-sessions/current").json()
+    assert still["session"]["status"] == "open"
+
+    _save(client, pid, session, chapters[1], "第二章也改完了。", 0)
+    finished = client.post(f"/api/v2/projects/{pid}/edit-sessions/{session}/finish", json={})
+    assert finished.status_code == 200, finished.text
+    assert _chapter_text(client, pid, chapters[1]) == "第二章也改完了。"
+
+
+def test_cross_chapter_finish_is_one_commit_and_leaves_the_rest_untouched() -> None:
+    """V03-5.1 退出条件：改 1、2 章一次 commit，第 3 章正文与摘要不变。"""
+    from hastings.domain.repository.ids import ArtifactId, ProjectId
+
+    client, runtime, pid, chapters = _client()
+    third_id = client.post(
+        f"/api/v2/projects/{pid}/chapters/import",
+        json={
+            "title": "第三章",
+            "text": THIRD,
+            "order_key": "0003",
+            "idempotency_key": "imp-3",
+        },
+    ).json()["chapter_id"]
+
+    summary_revisions = {
+        chapter_id: _seed_summary(runtime, pid, chapter_id)
+        for chapter_id in (chapters[0], chapters[1], third_id)
+    }
+
+    session = _start_with(client, pid, [chapters[0], chapters[1]])["session"]["session_id"]
+    _save(client, pid, session, chapters[0], "第一章的新文本。", 0)
+    _save(client, pid, session, chapters[1], "第二章的新文本。", 0)
+
+    finished = client.post(f"/api/v2/projects/{pid}/edit-sessions/{session}/finish", json={})
+    assert finished.status_code == 200, finished.text
+    body = finished.json()
+    assert body["status"] == "committed"
+    assert body["changed_chapter_ids"] == sorted([chapters[0], chapters[1]])
+    assert _chapter_text(client, pid, chapters[0]).strip() == "第一章的新文本。"
+    assert _chapter_text(client, pid, chapters[1]).strip() == "第二章的新文本。"
+
+    # 第 3 章：正文与摘要都不动（摘要连修订号都没变，说明没有多余提交碰它）。
+    assert _chapter_text(client, pid, third_id) == THIRD
+    branch = runtime.service.get_branch(ProjectId(pid), "main")
+    assert branch is not None and branch.head_commit_id is not None
+    snapshot = runtime.service.get_snapshot(ProjectId(pid), branch.head_commit_id)
+    for chapter_id in (chapters[0], chapters[1]):
+        view = snapshot.artifacts[ArtifactId(f"sum_{chapter_id}")]
+        assert view.revision is not None
+        assert view.revision.content["status"] == "stale"
+        assert view.revision.id != summary_revisions[chapter_id]
+    third_view = snapshot.artifacts[ArtifactId(f"sum_{third_id}")]
+    assert third_view.revision is not None
+    assert third_view.revision.id == summary_revisions[third_id]
+    assert third_view.revision.content["status"] == "fresh"
+    # 清单里的章都发了；没在清单里的第 3 章没有草稿可发。
+    drafts_after = client.get(f"/api/v2/projects/{pid}/edit-sessions/current").json()
+    assert drafts_after["session"] is None

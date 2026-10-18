@@ -34,7 +34,13 @@ SESSION_ABANDONED = "abandoned"
 
 @dataclass(frozen=True, slots=True)
 class EditSession:
-    """未结束或已归档的修改副本。"""
+    """未结束或已归档的修改副本。
+
+    ``chapters`` 是**本轮章节清单**（V03-5.1）：作者声明或首次保存时进入，
+    顺序即声明顺序。它有两个用途：界面显示「本轮改了哪几章」；完成前核对
+    清单内每章都已落草稿（flush）——声明了却没保存的章不允许带着未保存
+    状态完成。清单不等于草稿集合：有机流式修改不事先声明，首次保存即入列。
+    """
 
     session_id: str
     project_id: str
@@ -43,6 +49,7 @@ class EditSession:
     started_at: str
     ended_at: str | None = None
     closed_operation_id: str | None = None
+    chapters: tuple[str, ...] = ()
 
     @property
     def is_open(self) -> bool:
@@ -57,6 +64,7 @@ class EditSession:
             "started_at": self.started_at,
             "ended_at": self.ended_at,
             "closed_operation_id": self.closed_operation_id,
+            "chapters": list(self.chapters),
         }
 
     @classmethod
@@ -71,6 +79,8 @@ class EditSession:
             closed_operation_id=(
                 str(data["closed_operation_id"]) if data.get("closed_operation_id") else None
             ),
+            # 旧会话没有清单字段：按空列表读取，有机流式修改不受影响。
+            chapters=tuple(str(c) for c in data.get("chapters") or ()),
         )
 
 

@@ -971,6 +971,16 @@ class SaveDraftRequest(BaseModel):
     text: str
 
 
+class StartEditSessionRequest(BaseModel):
+    """开始一轮手工修改（V03-5.1）：可同时声明本轮要改的章。
+
+    声明是可选的：不声明就走有机流式——首次保存的章自动进入本轮清单。
+    声明了的章必须在作品里存在，且完成前要全部保存过（flush）。
+    """
+
+    chapter_ids: list[str] = Field(default_factory=list)
+
+
 class FinishEditRequest(BaseModel):
     operation_id: str | None = None
     expected_save_sequences: dict[str, int] | None = None
@@ -1306,9 +1316,17 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
     # -- 手工修改副本（V03-2.4）：唯一未结束副本 + 保存序号 CAS -------------
 
     @router.post("/projects/{project_id}/edit-sessions")
-    def start_edit_session(project_id: str) -> dict[str, Any]:
-        """开始或恢复唯一未结束副本；已有则原样返回（不重复建副本）。"""
-        return runtime.edit_sessions.start(project_id)
+    def start_edit_session(
+        project_id: str, req: StartEditSessionRequest | None = None
+    ) -> dict[str, Any]:
+        """开始或恢复唯一未结束副本；已有则原样返回（不重复建副本）。
+
+        可带 ``chapter_ids`` 声明本轮章节清单（V03-5.1）；不传 body 的旧
+        客户端行为不变。
+        """
+        return runtime.edit_sessions.start(
+            project_id, chapter_ids=list(req.chapter_ids) if req is not None else None
+        )
 
     @router.get("/projects/{project_id}/edit-sessions/current")
     def current_edit_session(project_id: str) -> dict[str, Any]:
@@ -1934,7 +1952,12 @@ def _status_for(error: HastingsError) -> int:
     if error.code.endswith("_CONFLICT"):
         return 409
     # 来源已变不是输入写错，而是「先重新整理再采用」的选择：按冲突返回。
-    if error.code in ("SOURCE_NEEDS_RECHECK", "DISCLOSURE_NEEDS_AUTHORIZATION"):
+    # 未 flush 同理：先保存声明过的章，或放弃本轮——不是请求格式错误。
+    if error.code in (
+        "SOURCE_NEEDS_RECHECK",
+        "DISCLOSURE_NEEDS_AUTHORIZATION",
+        "EDIT_SESSION_UNFLUSHED",
+    ):
         return 409
     return 400
 
