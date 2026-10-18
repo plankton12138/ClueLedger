@@ -28,6 +28,7 @@ from hastings.application.errors import ViolationError
 from hastings.application.handlers.manuscript_commands import manuscript_command
 from hastings.application.ports.ids import IdGenerator
 from hastings.application.services.commit_service import CommitService
+from hastings.application.services.edit_session_service import EditSessionService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
 from hastings.domain.manuscript import commands as manuscript_commands
 from hastings.domain.manuscript import error_codes as ec
@@ -65,11 +66,13 @@ class ImportService:
         publisher: PublishManuscriptChange,
         ids: IdGenerator,
         clock: Any,
+        edit_sessions: EditSessionService | None = None,
     ) -> None:
         self._repo = repo
         self._publisher = publisher
         self._ids = ids
         self._clock: Any = clock
+        self._edit_sessions = edit_sessions
 
     # -- 预览 -----------------------------------------------------------------
 
@@ -225,6 +228,7 @@ class ImportService:
         replacements, covered = self._plan_replacements(
             catalog, payload, selection, duplicates, duplicate_decision
         )
+        self._reject_edit_session_overlap(pid, {item.chapter_id for item in replacements})
         additions = [
             manuscript_commands.ChapterImport(
                 chapter_id=_chapter_id(preview_id, int(chapter["index"])),
@@ -336,6 +340,29 @@ class ImportService:
             )
             covered.add(int(index))
         return replacements, covered
+
+    def _reject_edit_session_overlap(self, pid: ProjectId, targets: set[str]) -> None:
+        """与未结束修改副本重叠：要求先完成或放弃本轮，不自动放弃副本。
+
+        M06 第 3 条。只拦**替换**目标——新增章不触碰副本里的章；副本自身的
+        基础版本校验会独立拦住「副本期间正式稿被导入替换」的情况。
+        """
+        if not targets or self._edit_sessions is None:
+            return
+        current = self._edit_sessions.current(pid.value)
+        if current is None:
+            return
+        drafts = {str(draft["chapter_id"]) for draft in current.get("drafts", [])}
+        blocked = sorted(drafts & targets)
+        if not blocked:
+            return
+        raise _violation(
+            ec.EDIT_SESSION_CONFLICT,
+            f"imports.confirm({pid.value})",
+            f"章节 {blocked} 正在手工修改副本中，导入不能替换",
+            "先完成或放弃这一轮修改，再重新导入；系统不会自动放弃副本",
+            chapter_ids=blocked,
+        )
 
     def _check_limits(self, parsed: ParsedManuscript, filename: str) -> None:
         if not parsed.chapters or all(not chapter.text for chapter in parsed.chapters):

@@ -49,6 +49,7 @@ from hastings.domain.repository.ids import ArtifactId, RevisionId
 from hastings.domain.repository.requests import ArtifactChange
 
 __all__ = [
+    "ChapterDraft",
     "ChapterImport",
     "ChapterReplacement",
     "NewId",
@@ -58,6 +59,7 @@ __all__ = [
     "import_chapter",
     "propose_patch",
     "reject_patch",
+    "save_drafts",
     "save_full_text",
 ]
 
@@ -84,6 +86,63 @@ class ChapterReplacement:
     chapter_id: str
     text: str
     expected_chapter_base: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChapterDraft:
+    """完成修改时提交的一章草稿：基础是副本开始修改时的正式基础。"""
+
+    chapter_id: str
+    text: str
+    expected_chapter_base: str | None = None
+
+
+def save_drafts(
+    catalog: ManuscriptCatalog,
+    new_id: NewId,
+    *,
+    drafts: tuple[ChapterDraft, ...] = (),
+) -> ManuscriptChange:
+    """「修改完成」的领域命令：把副本里的章一次性写成正式正文。
+
+    每章复用 ``save_full_text`` 的段落级 diff（未变段落保持身份，不制造无谓
+    新版本），整批合成一个变化集合——完成只产生**一个**正式版本（M04）。
+    任一章的基础在修改期间被外部推进 → 该章抛 ``MANUSCRIPT_BASE_CONFLICT``，
+    整批不提交，副本保持未完成。
+    """
+    where = "manuscript.save_drafts"
+    targets = [draft.chapter_id for draft in drafts]
+    duplicated = {target for target in targets if targets.count(target) > 1}
+    if duplicated:
+        raise violation(
+            ec.IMPORT_DUPLICATE_TARGET,
+            where,
+            f"同一批完成重复包含章节 {sorted(duplicated)}",
+            "每章只提交一次；同一章的多次修改应先在副本内合并",
+        )
+
+    changes: list[ArtifactChange] = []
+    events: list[tuple[str, dict[str, object]]] = []
+    warnings: list[str] = []
+    for draft in drafts:
+        part = save_full_text(
+            catalog,
+            new_id,
+            chapter_id=draft.chapter_id,
+            text=draft.text,
+            expected_chapter_base=draft.expected_chapter_base,
+        )
+        changes.extend(part.artifact_changes)
+        events.extend(part.events)
+        warnings.extend(part.warnings)
+    if not changes:
+        return ManuscriptChange(summary="修改未产生变化")
+    return ManuscriptChange(
+        artifact_changes=tuple(changes),
+        events=tuple(events),
+        warnings=tuple(warnings),
+        summary=f"完成手工修改：{len(drafts)} 章",
+    )
 
 
 def import_batch(

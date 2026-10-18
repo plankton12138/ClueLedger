@@ -66,6 +66,7 @@ V03_ID_PREFIXES: dict[str, str] = {
     "evd": "正文证据 EvidenceLink",
     "sum": "章摘要 ChapterSummaryState",
     "imp": "导入预览 ImportPreview",
+    "edt": "修改副本 EditSession",
     "prj": "作品 Project（既有）",
     "br": "分支 Branch（既有）",
     "art": "可版本化对象 Artifact（既有）",

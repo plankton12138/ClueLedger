@@ -350,6 +350,49 @@ def test_failed_batch_leaves_no_partial_manuscript() -> None:
     assert [c["title"] for c in after] == [c["title"] for c in chapters]
 
 
+def test_replace_blocked_by_active_edit_session() -> None:
+    """替换目标正在手工修改副本里：要求先完成或放弃，不自动放弃副本（M06 第 3 条）。"""
+    client, _runtime, pid = _client()
+    _confirm(client, pid, _preview(client, pid))
+    target = _chapters(client, pid)[0]
+    base = client.get(f"/api/v2/projects/{pid}/chapters/{target['chapter_id']}").json()[
+        "chapter_base"
+    ]
+
+    session = client.post(f"/api/v2/projects/{pid}/edit-sessions").json()["session"][
+        "session_id"
+    ]
+    draft = client.put(
+        f"/api/v2/projects/{pid}/edit-sessions/{session}/chapters/{target['chapter_id']}",
+        json={"expected_save_seq": 0, "request_id": "req-1", "text": "副本里的修改。"},
+    )
+    assert draft.status_code == 200, draft.text
+
+    preview = _preview(
+        client,
+        pid,
+        text="## 第一章 雨夜\n\n侦探在雨夜抵达旅馆。\n\n前台声称只有一位客人。\n",
+    )
+    updated = client.patch(
+        f"/api/v2/projects/{pid}/imports/previews/{preview['preview_id']}",
+        json={
+            "expected_revision": preview["revision"],
+            "mode": "replace",
+            "replacements": [
+                {"chapter_id": target["chapter_id"], "expected_chapter_base": base}
+            ],
+        },
+    ).json()
+
+    blocked = _confirm(client, pid, updated, decision="replace")
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "EDIT_SESSION_CONFLICT"
+    # 副本仍在，正式正文未被导入覆盖
+    current = client.get(f"/api/v2/projects/{pid}/edit-sessions/current").json()
+    assert current["session"]["session_id"] == session
+    assert _chapters(client, pid)[0]["chapter_id"] == target["chapter_id"]
+
+
 # -- 格式、编码与上限 -------------------------------------------------------
 
 

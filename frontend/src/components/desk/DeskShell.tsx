@@ -25,6 +25,7 @@ import { isDirty, useV2Store } from "../../state/v2";
 import { ConfirmDiscard, Empty, ErrorText, Pill, kindLabels } from "../Workbench";
 import DeskComposer from "./DeskComposer";
 import ImportDialog from "./ImportDialog";
+import { useEditSession } from "./useEditSession";
 
 const DETAIL_KINDS: { detailKind: "candidate" | "diff" | "graph" | "history"; label: string; stage: string }[] = [
   { detailKind: "candidate", label: "正文候选", stage: "V03-3" },
@@ -214,8 +215,19 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   const [pending, setPending] = useState<string | null>(null);
   const [continueError, setContinueError] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [abandonPending, setAbandonPending] = useState(false);
   const chapter = v2.chapter;
   const chatServiceKind = useChatStore((s) => s.serviceKind);
+  const edit = useEditSession({
+    projectId: pid,
+    chapterId: mainView?.kind === "manuscript" ? mainView.chapterId : null,
+    formalText: chapter.draft ?? "",
+    onFinished: (result) => {
+      void v2.refreshManuscript();
+      const first = result.changed_chapter_ids[0];
+      if (first) void v2.selectChapter(first);
+    },
+  });
 
   /** 打开讨论：绑定作品并载入会话（不发送）。 */
   async function openDiscussion(r: EntryReceipt) {
@@ -273,7 +285,8 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               </span>
               <button
                 className="text-[11px] text-blue underline disabled:text-sub disabled:no-underline"
-                disabled={!pid || chapter.saving}
+                disabled={!pid || chapter.saving || edit.active}
+                title={edit.active ? "完成或暂存后可切换章节（本阶段只开单章修改）" : undefined}
                 onClick={() => setImportOpen(true)}
               >
                 导入正文
@@ -293,7 +306,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                       ? "sel"
                       : ""
                   }`}
-                  disabled={chapter.saving}
+                  disabled={chapter.saving || edit.active}
                   onClick={() => openChapter(c.chapter_id)}
                 >
                   {c.title}
@@ -390,7 +403,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                   : "写作台"}
           </h1>
           <div className="flex items-center gap-2">
-            {mainView?.kind === "manuscript" && (
+            {mainView?.kind === "manuscript" && !edit.active && (
               <>
                 <Pill tone={isDirty(chapter) ? "amber" : "green"}>
                   {chapter.saving ? "保存中" : isDirty(chapter) ? "未保存" : "已保存"}
@@ -404,6 +417,64 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                 >
                   保存正文
                 </button>
+                <button
+                  className="btn btn-gray px-3 py-1.5 text-xs"
+                  disabled={!chapter.chapterId || chapter.loading}
+                  onClick={() => void edit.start()}
+                >
+                  手工修改
+                </button>
+              </>
+            )}
+            {edit.active && (
+              <>
+                <Pill tone={edit.conflict ? "amber" : "green"}>
+                  {edit.saving
+                    ? "保存中"
+                    : edit.conflict
+                      ? "序号冲突"
+                      : `修改中 · 已保存 #${edit.seq}`}
+                </Pill>
+                <button
+                  className="btn btn-gray px-3 py-1.5 text-xs"
+                  onClick={() => void edit.suspend()}
+                >
+                  暂存返回
+                </button>
+                <button
+                  className="btn px-4 py-1.5 text-xs"
+                  disabled={edit.saving || edit.conflict}
+                  onClick={() => void edit.finish()}
+                >
+                  完成修改
+                </button>
+                {abandonPending ? (
+                  <>
+                    <span className="text-[11px] text-sub">放弃本轮修改？</span>
+                    <button
+                      className="btn btn-gray px-2 py-1 text-[11px]"
+                      onClick={() => setAbandonPending(false)}
+                    >
+                      取消
+                    </button>
+                    <button
+                      className="btn btn-gray px-2 py-1 text-[11px]"
+                      onClick={() => {
+                        setAbandonPending(false);
+                        void edit.abandon();
+                      }}
+                    >
+                      确认放弃
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="btn btn-gray px-3 py-1.5 text-xs"
+                    onClick={() => setAbandonPending(true)}
+                  >
+                    放弃
+                  </button>
+                )}
               </>
             )}
             <button
@@ -415,8 +486,25 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
             </button>
           </div>
         </header>
+        {edit.view && !edit.active && mainView?.kind === "manuscript" && (
+          <div className="notice mx-3 mt-2 flex flex-wrap items-center gap-2 p-2 text-[11px]">
+            <span>有一轮未完成的修改（{edit.view.drafts.length} 章草稿）。</span>
+            <button className="text-blue underline" onClick={edit.resume}>
+              继续修改
+            </button>
+            <button className="text-sub underline" onClick={() => void edit.abandon()}>
+              放弃本轮
+            </button>
+          </div>
+        )}
         <div className="px-3 pt-2">
           <ErrorText>{chapter.error}</ErrorText>
+          <ErrorText>{edit.error}</ErrorText>
+          {edit.conflict && (
+            <p className="text-[11px] text-red-600" role="alert">
+              草稿已在别处前进，自动保存已暂停。请暂存返回后重新进入修改，避免覆盖较新的内容。
+            </p>
+          )}
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           {mainView?.kind === "manuscript" ? (
@@ -432,8 +520,10 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                   aria-label="人工正文"
                   className="paper-sheet min-h-full w-full resize-none px-6 py-8 font-serif text-[15px] leading-8 outline-none lg:px-10"
                   spellCheck={false}
-                  value={chapter.draft}
-                  onChange={(e) => v2.setDraft(e.target.value)}
+                  value={edit.active ? edit.text : chapter.draft}
+                  onChange={(e) =>
+                    edit.active ? edit.setText(e.target.value) : v2.setDraft(e.target.value)
+                  }
                 />
               </div>
             ) : (

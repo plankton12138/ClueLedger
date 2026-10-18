@@ -25,6 +25,7 @@ no-op 检测放在事务内 head 检查之后：与「检测先于开事务」�
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
@@ -166,6 +167,29 @@ class CommitService:
     def aux_list(self, project_id: ProjectId, bucket: str) -> dict[str, dict[str, Any]]:
         with self._storage.transaction() as txn:
             return txn.aux_list(project_id.value, bucket)
+
+    def aux_mutate(
+        self,
+        project_id: ProjectId,
+        bucket: str,
+        key: str,
+        mutate: Callable[[dict[str, Any] | None], dict[str, Any] | None],
+    ) -> dict[str, Any] | None:
+        """在**单个事务内**读-改-写一条辅助记录（V03-0.5 端口）。
+
+        修改副本的保存序号必须靠它：先读序号、再比较、再写入，三步在同一个
+        事务里，否则两个并发保存都能通过检查，后到的旧文本覆盖新文本
+        （M04 第 2 条）。``mutate`` 返回 None 表示删除该记录；抛异常则整个
+        事务回滚（调用方据此表达 CAS 冲突）。
+        """
+        with self._storage.transaction() as txn:
+            current = txn.aux_read(project_id.value, bucket, key)
+            updated = mutate(dict(current) if current is not None else None)
+            if updated is None:
+                txn.aux_delete(project_id.value, bucket, key)
+            else:
+                txn.aux_write(project_id.value, bucket, key, updated)
+            return updated
 
     def commit_history(self, project_id: ProjectId, at_commit_id: CommitId) -> tuple[Commit, ...]:
         # get_snapshot 先验证版本存在且属于本项目，再暴露受限历史查询。

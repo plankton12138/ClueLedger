@@ -60,6 +60,7 @@ from hastings.application.ports.events import EventOutbox
 from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.conversation_service import ConversationService
+from hastings.application.services.edit_session_service import EditSessionService
 from hastings.application.services.entry_service import EntryService
 from hastings.application.services.import_service import ImportService
 from hastings.application.services.operation_service import OperationService
@@ -217,8 +218,19 @@ class V2Runtime:
         # 统一正文发布（V03-2.2）：导入/保存/恢复同管线；领域命令纯函数
         # 准备 → 证据核对/摘要失效 → 原子提交（I03）。
         self.manuscript_publisher = PublishManuscriptChange(self.service, self.operations, ids)
-        # 正文导入预览与确认（V03-2.3）：预览落辅助表，确认走统一发布。
-        self.imports = ImportService(self.service, self.manuscript_publisher, ids, self.clock)
+        # 手工修改副本（V03-2.4）：唯一未结束副本、保存序号 CAS、完成走统一发布。
+        self.edit_sessions = EditSessionService(
+            self.service, self.manuscript_publisher, self.operations, ids, self.clock
+        )
+        # 正文导入预览与确认（V03-2.3）：预览落辅助表，确认走统一发布；
+        # 与未结束修改副本重叠的替换在确认时拒绝（M06 第 3 条）。
+        self.imports = ImportService(
+            self.service,
+            self.manuscript_publisher,
+            ids,
+            self.clock,
+            edit_sessions=self.edit_sessions,
+        )
         self.restore = RestoreChapterVersion(self.handler, self.service)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
@@ -773,6 +785,17 @@ class ImportConfirmRequest(BaseModel):
     operation_id: str | None = None
 
 
+class SaveDraftRequest(BaseModel):
+    expected_save_seq: int
+    request_id: str
+    text: str
+
+
+class FinishEditRequest(BaseModel):
+    operation_id: str | None = None
+    expected_save_sequences: dict[str, int] | None = None
+
+
 class SaveChapterRequest(BaseModel):
     idempotency_key: str
     operations: list[dict[str, Any]] | None = None
@@ -941,6 +964,61 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             preview_hash=req.preview_hash,
             duplicate_decision=req.duplicate_decision,
             operation_id=req.operation_id,
+        )
+
+    # -- 手工修改副本（V03-2.4）：唯一未结束副本 + 保存序号 CAS -------------
+
+    @router.post("/projects/{project_id}/edit-sessions")
+    def start_edit_session(project_id: str) -> dict[str, Any]:
+        """开始或恢复唯一未结束副本；已有则原样返回（不重复建副本）。"""
+        return runtime.edit_sessions.start(project_id)
+
+    @router.get("/projects/{project_id}/edit-sessions/current")
+    def current_edit_session(project_id: str) -> dict[str, Any]:
+        return runtime.edit_sessions.current(project_id) or {
+            "session": None,
+            "drafts": [],
+        }
+
+    @router.get("/projects/{project_id}/edit-sessions/{session_id}")
+    def get_edit_session(project_id: str, session_id: str) -> dict[str, Any]:
+        return runtime.edit_sessions.get(project_id, session_id)
+
+    @router.put("/projects/{project_id}/edit-sessions/{session_id}/chapters/{chapter_id}")
+    def save_edit_draft(
+        project_id: str,
+        session_id: str,
+        chapter_id: str,
+        req: SaveDraftRequest,
+    ) -> dict[str, Any]:
+        """按章自动保存：expected_save_seq 不符即冲突（迟到响应不覆盖新文本）。"""
+        return runtime.edit_sessions.save_draft(
+            project_id,
+            session_id,
+            chapter_id,
+            expected_save_seq=req.expected_save_seq,
+            request_id=req.request_id,
+            text=req.text,
+        )
+
+    @router.post("/projects/{project_id}/edit-sessions/{session_id}/suspend")
+    def suspend_edit_session(project_id: str, session_id: str) -> dict[str, Any]:
+        return runtime.edit_sessions.suspend(project_id, session_id)
+
+    @router.post("/projects/{project_id}/edit-sessions/{session_id}/abandon")
+    def abandon_edit_session(project_id: str, session_id: str) -> dict[str, Any]:
+        return runtime.edit_sessions.abandon(project_id, session_id)
+
+    @router.post("/projects/{project_id}/edit-sessions/{session_id}/finish")
+    def finish_edit_session(
+        project_id: str, session_id: str, req: FinishEditRequest
+    ) -> dict[str, Any]:
+        """修改完成：整批一次发布，成功后关闭副本；重试不产生第二个版本。"""
+        return runtime.edit_sessions.finish(
+            project_id,
+            session_id,
+            operation_id=req.operation_id,
+            expected_save_sequences=req.expected_save_sequences,
         )
 
     @router.post("/projects/{project_id}/chapters/import")
