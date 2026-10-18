@@ -1,7 +1,7 @@
 /**
  * Phase 19.1 对话栏走查（v2-chat）：可执行的场景清单。
  *
- * 对照 dev-notes/v2/plans/phase-19-chat-workbench-plan.md §19.1 退出条件：
+ * 对照 dev-notes/v0.2/plans/phase-19-chat-workbench-plan.md §19.1 退出条件：
  * 1. 从构想到候选审阅可以在前端完整走通（模拟器演示，?chatMock=1 入口）；
  * 2. 切七页、开关侧栏、输入法发送、滚动、窄屏都能使用；
  * 3. 作者能从文案区分聊天、任务和正式内容；

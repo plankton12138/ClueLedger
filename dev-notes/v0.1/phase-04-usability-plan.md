@@ -110,7 +110,7 @@
 
 ### T7 七道门 + 红线 + 浏览器人工验收
 
-- 六条验收标准逐条过（重点：杀进程重启恢复、双工作区隔离）；截图/transcript 存 `dev-notes/v1/artifacts/`。
+- 六条验收标准逐条过（重点：杀进程重启恢复、双工作区隔离）；截图/transcript 存 `dev-notes/v0.1/artifacts/`。
 
 ### T8 构建笔记 + R5
 

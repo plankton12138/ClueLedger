@@ -47,7 +47,7 @@
 | [作家的桌面](../../product-design/writers-desk-design.md) | 文章中心、模块化空间、老 iOS 控件、字号和位置保护 |
 | [正文修改与版本流程](../../product-design/manuscript-editing-design.md) | 工作副本、统一完成、建议归属、整体调整、关联撤销 |
 | [模型上下文与正文摘要](../../product-design/context-and-summary-design.md) | 常驻资料、来源版本、过期处理、本书约定、信息披露边界 |
-| [0.2 总设计](../v2/DESIGN.md)与[模块契约](../v2/modules/README.md) | 可复用的仓库与任务机制；其中节拍、自动作者学习及审计规则按0.3决定调整 |
+| [0.2 总设计](../v0.2/DESIGN.md)与[模块契约](../v0.2/modules/README.md) | 可复用的仓库与任务机制；其中节拍、自动作者学习及审计规则按0.3决定调整 |
 
 当前产品决定优先于历史计划与原型功能。原型只提供视觉参考，不将七页导航、占位按钮或示例数据当作需求。
 本文新增的工程选择是建议实施基线；若实现证明需要调整，应记录取舍并同步契约，不能降低产品要求。
@@ -103,7 +103,7 @@
 
 ### 2.2 本次不直接更改的基线
 
-2026-10-17 开始编写时，产品方案、`dev-notes/README.md`、`dev-notes/v2/{README,DESIGN}.md` 等已有未提交改动，另有后续设计文件移动。
+2026-10-17 开始编写时，产品方案、`dev-notes/README.md`、`dev-notes/v0.2/{README,DESIGN}.md` 等已有未提交改动，另有后续设计文件移动。
 它们作为当前有效输入保留；实施时重新运行 `git status --short`，不得回退或覆盖作者改动。
 Phase 19 的真模型 A13 仍有历史待验项；0.3须建立自己的证据，不能把旧计划状态当作通过证明。
 
@@ -1092,7 +1092,7 @@ V03-8负责统一压测、恢复、生产构建与旧入口最终退役，不是
 ### 8.4 文档与导航维护
 
 实施过程中更新：根 `dev-notes/README.md` 的当前入口、`dev-notes/v0.3/README.md`、对应模块as-built、`src/hastings/README.md`、`frontend/README.md`、评测导航及实际启动/备份说明。
-`dev-notes/v2/plans/README.md` 仅引导到新计划，Phase 11–19的历史目标和结果保留，不批量改写成0.3范围。
+`dev-notes/v0.2/plans/README.md` 仅引导到新计划，Phase 11–19的历史目标和结果保留，不批量改写成0.3范围。
 新增0.3模块文档放在本目录下的 `modules/`，实际交付时再建；每篇标target/as-built与验证日期，避免提前生成大量空文档。
 构建笔记按 `v03-<任务号>-<主题>.md` 命名，跨模块决定集中于一次记录并相互链接，不复制多份状态表。
 

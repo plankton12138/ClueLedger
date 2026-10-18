@@ -134,12 +134,12 @@ user: "创建两个角色并写第一章"
 
 1. 四道门全绿：`uv run ruff check .`、`uv run ruff format --check .`、`uv run mypy`、`uv run pytest`；
 2. T7 红线重跑：`tau_ai`/`tau_agent` 与上游 diff 为空（输出存档进构建笔记）；
-3. **人工验收**（验收标准 1–4）：用真实端点跑 `uv run python -m hastings demo-story`，完成"设定 2 角色 → 写 1 章"，完整 transcript 存 `dev-notes/v1/artifacts/p1-acceptance-transcript.md`；
+3. **人工验收**（验收标准 1–4）：用真实端点跑 `uv run python -m hastings demo-story`，完成"设定 2 角色 → 写 1 章"，完整 transcript 存 `dev-notes/v0.1/artifacts/p1-acceptance-transcript.md`；
 4. 若执行时暂无可用 API key：以 T6 集成测试 + FakeProvider 演示作为替代证据，真实端点验收记"已知留白"并明确补验条件（需用户本人 key，无法代跑）。
 
 ### T8 构建笔记
 
-写 `dev-notes/v1/phase-01-minimal-loop.md`：交付物、D1–D3 依赖决策落锤记录、事件流渲染的取舍、坑（预计：mypy 对 `yaml.safe_load` 返回 Any 的处理、Windows 终端中文流式输出）、四道门与红线输出、R3/R5 结论、验收 transcript 链接。
+写 `dev-notes/v0.1/phase-01-minimal-loop.md`：交付物、D1–D3 依赖决策落锤记录、事件流渲染的取舍、坑（预计：mypy 对 `yaml.safe_load` 返回 Any 的处理、Windows 终端中文流式输出）、四道门与红线输出、R3/R5 结论、验收 transcript 链接。
 
 ## 3. 评审方案
 
@@ -192,7 +192,7 @@ TRAE-code-review skill 双验证者评审，重点关注清单：
 - [ ] T7 红线：`tau_ai`/`tau_agent` diff 为空；hastings 零 import tau_coding
 - [ ] 人工验收：真实端点完成"2 角色 → 1 章"，transcript 存档（或按 T7-4 记留白）
 - [ ] R3 评审完成，blocker 清零
-- [ ] `dev-notes/v1/phase-01-minimal-loop.md` 构建笔记发布
+- [ ] `dev-notes/v0.1/phase-01-minimal-loop.md` 构建笔记发布
 
 ## 5. 风险与对策
 

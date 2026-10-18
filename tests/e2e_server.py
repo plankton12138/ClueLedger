@@ -1,4 +1,4 @@
-"""E2E 驱动器（L2 Web E2E，方案见 dev-notes/v1/e2e-test-plan.md §4.1）。
+"""E2E 驱动器（L2 Web E2E，方案见 dev-notes/v0.1/e2e-test-plan.md §4.1）。
 
 单进程真服务：create_app 同时装配 REST/WS 与前端 build 产物静态托管，
 session factory 注入 FakeProvider 剧本——后端与 tau 内核零改动，只经

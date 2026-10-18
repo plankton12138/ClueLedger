@@ -106,7 +106,7 @@ git diff --no-index --stat C:\Projects\Agent\tau\src\tau_ai src\tau_ai
 
 ### T8 构建笔记
 
-写 `dev-notes/v1/phase-00-skeleton.md`：做了什么、关键决策（依赖最小化证据、tau_coding 排除方式）、坑、验证输出、评审结论（见 §3 R5）。
+写 `dev-notes/v0.1/phase-00-skeleton.md`：做了什么、关键决策（依赖最小化证据、tau_coding 排除方式）、坑、验证输出、评审结论（见 §3 R5）。
 
 ## 3. 评审方案
 
@@ -157,7 +157,7 @@ uv run ruff check .; uv run ruff format --check .; uv run mypy; uv run pytest
 - [ ] `.github/workflows/ci.yml` 存在且语法有效
 - [ ] T7 上游 diff 为空（输出存档）
 - [ ] R3 代码评审完成，blocker 清零
-- [ ] `dev-notes/v1/phase-00-skeleton.md` 构建笔记发布
+- [ ] `dev-notes/v0.1/phase-00-skeleton.md` 构建笔记发布
 
 ## 5. 风险与对策
 

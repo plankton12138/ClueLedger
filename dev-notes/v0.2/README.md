@@ -6,7 +6,7 @@
 > 状态：**Phase 11–18 已完成（2026-10-15）**。Phase 17 经用户决策「项目未上线，V1 直接弃用」完成旧写路径退出；随后删除旧工作区迁移功能，见 [旧工作区迁移退役记录](phase-17-workspace-retirement.md)。
 > 本目录描述 Hastings 下一版的目标形态；当前已经运行的系统仍以
 > [`src/hastings/README.md`](../../src/hastings/README.md) 和旧版
-> [`dev-notes/v1/DESIGN.md`](../v1/DESIGN.md) 的 as-built 标注为准。
+> [`dev-notes/v0.1/DESIGN.md`](../v0.1/DESIGN.md) 的 as-built 标注为准。
 > V2 的领域与工作流已有独立实现；Web 服务默认启用当前工作台，`--v2-db` 仅指定仓库路径；作品直接创建为 V2 项目，旧工作区迁移功能已删除。默认启动的恢复规则见 [启动修复记录](phase-19-default-startup.md)。
 > 模型接入与切换已补齐，见 [Phase 18](phase-18-model-access.md)：厂商/套餐预设、服务端当前模型与本地模型。
 > 前端已替换为七页作者工作台，交付与边界见 [phase-17-frontend-workbench.md](phase-17-frontend-workbench.md)，运行见 [frontend/README.md](../../frontend/README.md)。
@@ -83,7 +83,7 @@
 ## 5. 文档目录
 
 ```text
-dev-notes/v2/
+dev-notes/v0.2/
 ├── README.md                     # V2 总入口与执行规则
 ├── DESIGN.md                     # 产品与总体架构
 ├── decisions/                    # ADR-001~007 与路由开关设计（Phase 11 冻结）

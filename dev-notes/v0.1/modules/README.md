@@ -1,7 +1,7 @@
 # modules/ — tau 之外新增功能与模块设计
 
 > 本目录记录当前 V1/as-built 模块。V2 目标模块与重建契约见
-> [`dev-notes/v2/modules/`](../../v2/modules/README.md)；在对应迁移阶段完成前，不要把 V2 文档描述成现有实现。
+> [`dev-notes/v0.2/modules/`](../../v0.2/modules/README.md)；在对应迁移阶段完成前，不要把 V2 文档描述成现有实现。
 
 本目录收录 **Hastings 应用层**（相对上游 tau_agent / tau_ai 内核之外新增部分）的
 功能与模块设计文档。内核零改动是本项目的架构红线，因此所有新功能设计都沉淀在这里，

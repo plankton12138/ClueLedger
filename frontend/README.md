@@ -26,7 +26,7 @@ Ollama 保留检测、下载与安装引导，LM Studio 自动使用本地默认
 本阶段订阅通过套餐 Key 接入，没有网页登录授权；套餐工具资格以厂商说明为准。
 作者偏好接口、正文写入、变更和 Agent 任务均走 `/api/v2`，模型档案走服务级接口；不再发现或迁移旧工作区。
 
-模型接入的设计、来源与验证边界见 [Phase 18](../dev-notes/v2/phase-18-model-access.md)。
+模型接入的设计、来源与验证边界见 [Phase 18](../dev-notes/v0.2/phase-18-model-access.md)。
 
 ## 对话侧栏（Phase 19）
 
@@ -44,8 +44,8 @@ Ollama 保留检测、下载与安装引导，LM Studio 自动使用本地默认
 
 - 契约与状态：`src/api/chat.ts`（模拟器与真实 API 同接口）、`src/state/chat.ts`
 - 组件：`src/components/chat/*`；走查清单 `e2e/v2-chat.spec.ts`
-- 设计取舍：[Phase 19](../dev-notes/v2/phase-19-chat-workbench.md)
-- 审查修复与证据：[Phase 19 review fixes](../dev-notes/v2/phase-19-review-fixes.md)
+- 设计取舍：[Phase 19](../dev-notes/v0.2/phase-19-chat-workbench.md)
+- 审查修复与证据：[Phase 19 review fixes](../dev-notes/v0.2/phase-19-review-fixes.md)
 
 ## 写作台账本（0.3）
 
@@ -90,4 +90,4 @@ npm run test:e2e
 批准与分支修订、接受/拒绝差异、审计、导出及作者裁决。截图输出在 `test-results/`。
 `j1`–`j8` 保留为旧 V1/早期变更中心界面的历史旅程，不适用于替换后的七页壳；不作为当前 UI 质量门。
 
-设计与交付记录见 `../dev-notes/v2/phase-17-frontend-workbench.md`。
+设计与交付记录见 `../dev-notes/v0.2/phase-17-frontend-workbench.md`。

@@ -1,9 +1,9 @@
 # Hastings 0.1 文档入口
 
-> 版本名称：0.1（原 V1）；文档路径与历史标识保留。下一产品版本为 0.3，见[版本约定](../../product-design/README.md#版本约定)。
+> 版本名称：0.1（原 V1）；文档目录已按产品版本命名为 `dev-notes/v0.1/`，正文中的历史标识 V1 保留。下一产品版本为 0.3，见[版本约定](../../product-design/README.md#版本约定)。
 
 > 状态：**当前 as-built 与历史记录**。V1 代码仍在运行，但后续目标架构与迁移计划已经转入
-> [V2 文档](../v2/README.md)。本目录不再承载新的产品设计。
+> [V2 文档](../v0.2/README.md)。本目录不再承载新的产品设计。
 
 ## 1. 查什么 → 去哪
 
@@ -48,7 +48,7 @@
 
 ## 4. V2 迁移入口
 
-- [V2 总设计](../v2/DESIGN.md)
-- [V2 模块契约](../v2/modules/README.md)
-- [V2 Phase 11–17 总览](../v2/plans/README.md)
-- [V1 → V2 迁移边界](../v2/DESIGN.md#11-旧系统迁移边界)
+- [V2 总设计](../v0.2/DESIGN.md)
+- [V2 模块契约](../v0.2/modules/README.md)
+- [V2 Phase 11–17 总览](../v0.2/plans/README.md)
+- [V1 → V2 迁移边界](../v0.2/DESIGN.md#11-旧系统迁移边界)

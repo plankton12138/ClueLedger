@@ -51,8 +51,8 @@
 - **端口源码位置**：`src/hastings/application/ports/`（包，非单文件）；错误信封 `src/hastings/application/errors.py`；
 - **错误码约定**：继承 `HastingsError`，code 全大写下划线（参照 repository-kernel.md §7 的 `REPO_*`）；只允许 VIOLATION / ENVIRONMENT 两类异常子类，LEGAL_EMPTY 走返回值；
 - **fixture 路径**：`tests/fixtures/v1_workspace/winter-manor-case/`，manifest 校验测试 `tests/test_v1_workspace_fixture.py`；Phase 12 开始条件"fixture 可用"已满足；
-- **ADR 列表**：ADR-001~007（`dev-notes/v2/decisions/`），全部已接受；路由开关设计同目录；
-- **旧写入口清单**：`dev-notes/v2/current-system-inventory.md` §7（28 条函数级写入口），Phase 12 不得触碰其中任何一条；
+- **ADR 列表**：ADR-001~007（`dev-notes/v0.2/decisions/`），全部已接受；路由开关设计同目录；
+- **旧写入口清单**：`dev-notes/v0.2/current-system-inventory.md` §7（28 条函数级写入口），Phase 12 不得触碰其中任何一条；
 - **V2 项目识别方式**：`architecture_version` 项目级元数据，缺失默认 v1，解析点收敛在项目解析处（设计文档 §2.2）；
 - **不得触碰的用户改动**：git 工作区中作者未提交的改动（dev-notes 重组、CP2 优化相关代码、eval runs）——Phase 12 原子提交只新增/修改 V2 相关路径。
 

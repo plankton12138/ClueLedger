@@ -50,7 +50,7 @@
 
 ### T11.2 现状迁移清单
 
-新增 `dev-notes/v2/current-system-inventory.md`，表格至少覆盖：
+新增 `dev-notes/v0.2/current-system-inventory.md`，表格至少覆盖：
 
 - 当前数据文件和创建者；
 - 当前工具及所有写路径；
@@ -101,8 +101,8 @@ src/hastings/interfaces/
 ## 5. 建议文件边界
 
 ```text
-dev-notes/v2/decisions/ADR-001-*.md ... ADR-007-*.md
-dev-notes/v2/current-system-inventory.md
+dev-notes/v0.2/decisions/ADR-001-*.md ... ADR-007-*.md
+dev-notes/v0.2/current-system-inventory.md
 tests/fixtures/v1_workspace/
 src/hastings/domain/__init__.py
 src/hastings/application/{__init__.py,ports.py,errors.py}

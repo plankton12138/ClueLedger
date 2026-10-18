@@ -32,7 +32,7 @@
 2. `method_lock` 后 `bible_upsert` 修改该方法必须被拒（提示先 unlock）；`method_unlock` 后可改；锁定/解锁事件记入 history；
 3. `timeline_check` 对构造的时间冲突必须命中（按 D3 决策的规则集），干净时间线零误报；
 4. FakeProvider 集成测试：剧本覆盖"角色+线索+伏笔+手法起草→锁定→写章→状态迁移→时间线检测"全流程，三层断言（事件序列/落盘/消息历史）；
-5. 真实端点人工验收：终端完成同一流程，transcript 存 `dev-notes/v1/artifacts/p2-acceptance-transcript.md`；
+5. 真实端点人工验收：终端完成同一流程，transcript 存 `dev-notes/v0.1/artifacts/p2-acceptance-transcript.md`；
 6. P1 存量工作区向后兼容：只有 `characters/` 的旧工作区照常打开（缺省账本视为空，`character.arc` 缺省 `flat`）。
 
 **非目标（本阶段明确不做）**：
@@ -156,7 +156,7 @@ user: "建角色、登记线索与伏笔、起草手法并锁定，然后写第�
 
 ### T9 构建笔记 + R5 关闭
 
-`dev-notes/v1/phase-02-five-ledgers.md`：交付物、D1–D8 决策落锤、「Agent 设计经验」四透镜专节（重点：状态机错误消息即 API 的实践、跨账本校验的守门人边界、timeline_check 泄压阀三情形落点）、四道门与红线输出、R3/R5 结论。
+`dev-notes/v0.1/phase-02-five-ledgers.md`：交付物、D1–D8 决策落锤、「Agent 设计经验」四透镜专节（重点：状态机错误消息即 API 的实践、跨账本校验的守门人边界、timeline_check 泄压阀三情形落点）、四道门与红线输出、R3/R5 结论。
 
 ## 4. 评审方案
 
@@ -208,7 +208,7 @@ TRAE-code-review skill 评审，重点关注清单：
 - [ ] 红线：tau_ai/tau_agent diff 为空；零 import tau_coding；依赖零新增
 - [ ] 真实端点人工验收 + transcript 存档（或按 T8-3 记留白）
 - [ ] R3 评审完成，blocker 清零
-- [ ] `dev-notes/v1/phase-02-five-ledgers.md` 构建笔记发布
+- [ ] `dev-notes/v0.1/phase-02-five-ledgers.md` 构建笔记发布
 
 ## 6. 风险与对策
 

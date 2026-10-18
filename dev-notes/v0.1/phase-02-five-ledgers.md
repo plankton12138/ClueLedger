@@ -86,7 +86,7 @@ R3 #1 从反面印证了同一条原则：含 R0 数据错误的条目若继续�
 - [x] 红线：tau_ai/tau_agent diff 为空；零 import tau_coding；依赖零新增
 - [ ] 真实端点人工验收 + transcript 存档 → **按 T8-3 记留白**（.env 就绪，随时可补跑：`uv run python -m hastings p2-acceptance`，剧本照计划 T6 九步）
 - [x] R3 评审完成，blocker 清零
-- [x] `dev-notes/v1/phase-02-five-ledgers.md` 构建笔记发布
+- [x] `dev-notes/v0.1/phase-02-five-ledgers.md` 构建笔记发布
 
 **R5 结论**：13 条 DoD 通过 12 条，唯一未勾项为真实端点人工验收留白（有明确补跑路径，不阻塞阶段关闭）。P2 关闭，允许进入 P3。
 

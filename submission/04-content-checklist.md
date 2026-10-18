@@ -9,7 +9,7 @@
 - **位置**：本 Git 仓库（提交时提供 GitHub 只读链接或 zip 打包）
 - **亮点引导**（建议在 README 或演示视频开头指出）：
   - [src/hastings/](../src/hastings/)：应用层，本次开发核心
-  - [dev-notes/v1/DESIGN.md](../dev-notes/v1/DESIGN.md)：完整架构设计文档
+  - [dev-notes/v0.1/DESIGN.md](../dev-notes/v0.1/DESIGN.md)：完整架构设计文档
   - [tests/](../tests/)：FakeProvider 确定性测试
 - **提交前检查**：
   - [ ] `uv run pytest` 全绿
@@ -20,9 +20,9 @@
 
 | 材料 | 位置 | 证明什么 |
 |---|---|---|
-| 架构设计文档 | [dev-notes/v1/DESIGN.md](../dev-notes/v1/DESIGN.md) | 系统设计深度、技术选型依据 |
-| P0 构建笔记 | [dev-notes/v1/phase-00-skeleton.md](../dev-notes/v1/phase-00-skeleton.md) | 工程过程、CI 质量门 |
-| P1 计划文档 | [dev-notes/v1/phase-01-minimal-loop-plan.md](../dev-notes/v1/phase-01-minimal-loop-plan.md) | 迭代规划能力 |
+| 架构设计文档 | [dev-notes/v0.1/DESIGN.md](../dev-notes/v0.1/DESIGN.md) | 系统设计深度、技术选型依据 |
+| P0 构建笔记 | [dev-notes/v0.1/phase-00-skeleton.md](../dev-notes/v0.1/phase-00-skeleton.md) | 工程过程、CI 质量门 |
+| P1 计划文档 | [dev-notes/v0.1/phase-01-minimal-loop-plan.md](../dev-notes/v0.1/phase-01-minimal-loop-plan.md) | 迭代规划能力 |
 | CI 流水线 | [.github/workflows/](../.github/workflows/) | 自动化质量保障（pytest + ruff + mypy） |
 
 ### 3. 架构图（建议补充）
@@ -51,7 +51,7 @@
 ### 5. 产品界面设计图
 
 - **现状**：P3 才有真实前端，当前阶段用**设计稿/原型**替代：
-  - 按 [DESIGN.md §5.2](../dev-notes/v1/DESIGN.md) 的页面结构（对话流 / Bible 面板 / 章节阅读器 / 语料管理 / 调试视图）在 Figma 画 4 张高保真稿；
+  - 按 [DESIGN.md §5.2](../dev-notes/v0.1/DESIGN.md) 的页面结构（对话流 / Bible 面板 / 章节阅读器 / 语料管理 / 调试视图）在 Figma 画 4 张高保真稿；
   - 或低成本方案：终端运行截图 + 手绘布局标注。
 - **P1 阶段可截**：CLI 流式输出截图（含工具调用卡片渲染）。
 

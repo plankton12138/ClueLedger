@@ -454,7 +454,7 @@ start）从此有真实对端。
 
 ### 文档收口
 
-- `dev-notes/v2/DESIGN.md` 新增 §15「对话侧栏与显式创作周期 as-built」
+- `dev-notes/v0.2/DESIGN.md` 新增 §15「对话侧栏与显式创作周期 as-built」
   （模块事实源表 + 两条状态流边界 + 验收入口）；
 - `src/hastings/README.md`、`eval/README.md`、`eval/v2/README.md` 导航更新；
 - `frontend/README.md` 新增对话侧栏使用说明与交互约定。

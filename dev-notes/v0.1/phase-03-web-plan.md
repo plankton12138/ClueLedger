@@ -38,7 +38,7 @@
 3. 运行中 prompt 被拒且 error 帧含指引（steer/followUp）；steer / follow_up / abort 在 FakeProvider 剧本下行为正确；
 4. REST 只读面：`/api/bible/{type}`、`/api/chapters` 返回结构化数据；损坏 YAML 返回可读错误而非裸 500；
 5. 前端：流式 delta 渲染、工具卡片折叠（render_call 单行摘要）、错误卡片；Bible 面板五账本 Tab、伏笔未回收红点；调试视图滚动原始事件帧、未知事件类型显式高亮；
-6. 真实端点人工验收：浏览器完成"设定 2 个角色 → 写 1 章"（P1 同流程），截图/transcript 存 `dev-notes/v1/artifacts/`；
+6. 真实端点人工验收：浏览器完成"设定 2 个角色 → 写 1 章"（P1 同流程），截图/transcript 存 `dev-notes/v0.1/artifacts/`；
 7. 红线：`tau_ai`/`tau_agent` 与上游 diff 为空、零 import tau_coding；Python 四门 + 前端三门全绿。
 
 **非目标（本阶段明确不做）**：
@@ -195,7 +195,7 @@ P3 不接 `JsonlSessionStorage`。理由：服务进程存活期间 `harness.mes
 
 ### T11 构建笔记 + R5 关闭
 
-`dev-notes/v1/phase-03-web.md`：交付物、D1–D10 落锤、「Agent 设计经验」四透镜专节（重点：协议错误帧即 API、前端作为"事件的另一个消费者"的架构验证、WS/HTTP 两层泄压阀落点、调试视图作为可观测性契约的兑现）、七门与红线输出、R3/R5 结论。
+`dev-notes/v0.1/phase-03-web.md`：交付物、D1–D10 落锤、「Agent 设计经验」四透镜专节（重点：协议错误帧即 API、前端作为"事件的另一个消费者"的架构验证、WS/HTTP 两层泄压阀落点、调试视图作为可观测性契约的兑现）、七门与红线输出、R3/R5 结论。
 
 ## 4. 评审方案
 
@@ -249,7 +249,7 @@ TRAE-code-review skill 评审，重点关注清单：
 - [ ] 红线：tau_ai/tau_agent diff 为空；零 import tau_coding
 - [ ] 真实端点浏览器完成 P1 同流程 + 截图/transcript 存档（或按 T10-3 记留白）
 - [ ] R3 评审完成，blocker 清零
-- [ ] `dev-notes/v1/phase-03-web.md` 构建笔记发布
+- [ ] `dev-notes/v0.1/phase-03-web.md` 构建笔记发布
 
 ## 6. 风险与对策
 
