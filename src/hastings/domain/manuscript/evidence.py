@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from hastings.domain.manuscript import error_codes as ec
@@ -156,8 +156,12 @@ class EvidenceLink:
 class ChapterSummaryState:
     """单章摘要的状态视图（Artifact content 的强类型视图）。
 
-    摘要内容本身由 V03-4.3 的摘要任务产出；V03-2.2 只负责**状态裁决**：
-    来源正文变化 ⇒ fresh → stale（保留内容与来源清单供回看）。
+    V03-2.2 只负责**状态裁决**：来源正文变化 ⇒ fresh → stale（保留内容与来源清单
+    供回看）。V03-4.3 起这段内容里还有摘要正文与来源清单——失效改写必须把它们
+    原样带过去，否则一次保存就会把模型写好的摘要擦掉。
+
+    ``extra`` 保留未识别字段（向前兼容）：旧摘要只有前五个字段，新摘要多出
+    ``text``/``sources`` 等；两者都要能读，且改写后不丢。
     """
 
     summary_id: str
@@ -165,15 +169,38 @@ class ChapterSummaryState:
     source_hash: str
     status: str
     reason: str = ""
+    text: str = ""
+    sources: dict[str, Any] | None = None
+    model: str = ""
+    generated_at: str = ""
+    task_id: str = ""
+    extra: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "extra", dict(self.extra))
+        if self.sources is not None:
+            object.__setattr__(self, "sources", dict(self.sources))
 
     def to_wire(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
+            **self.extra,
             "summary_id": self.summary_id,
             "chapter_id": self.chapter_id,
             "source_hash": self.source_hash,
             "status": self.status,
             "reason": self.reason,
         }
+        if self.text:
+            payload["text"] = self.text
+        if self.sources:
+            payload["sources"] = dict(self.sources)
+        if self.model:
+            payload["model"] = self.model
+        if self.generated_at:
+            payload["generated_at"] = self.generated_at
+        if self.task_id:
+            payload["task_id"] = self.task_id
+        return payload
 
     @classmethod
     def from_wire(cls, payload: Any) -> ChapterSummaryState:
@@ -194,12 +221,31 @@ class ChapterSummaryState:
                 f"摘要缺少必填字段 {missing}",
                 "摘要由摘要任务/发布器产出，不接受缺字段的手工负载",
             )
+        known = {
+            "summary_id",
+            "chapter_id",
+            "source_hash",
+            "status",
+            "reason",
+            "text",
+            "sources",
+            "model",
+            "generated_at",
+            "task_id",
+        }
+        sources = payload.get("sources")
         return cls(
             summary_id=str(payload["summary_id"]),
             chapter_id=str(payload["chapter_id"]),
             source_hash=str(payload["source_hash"]),
             status=str(payload["status"]),
             reason=str(payload.get("reason", "")),
+            text=str(payload.get("text", "")),
+            sources=dict(sources) if isinstance(sources, dict) else None,
+            model=str(payload.get("model", "")),
+            generated_at=str(payload.get("generated_at", "")),
+            task_id=str(payload.get("task_id", "")),
+            extra={k: v for k, v in payload.items() if k not in known},
         )
 
 
@@ -301,4 +347,12 @@ def summary_after_change(
         source_hash=state.source_hash,
         status=SUMMARY_STATUS_STALE,
         reason=f"来源正文已变化（操作 {operation_id}）",
+        # 失效只改状态与原因：正文、来源清单、模型与生成时间原样保留，
+        # 作者仍能回看上次摘要写了什么（计划 §4.3 摘要状态表）。
+        text=state.text,
+        sources=state.sources,
+        model=state.model,
+        generated_at=state.generated_at,
+        task_id=state.task_id,
+        extra=state.extra,
     )

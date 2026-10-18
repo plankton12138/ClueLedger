@@ -80,6 +80,7 @@ from hastings.application.services.ledger_candidate_service import LedgerCandida
 from hastings.application.services.ledger_service import LedgerService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
+from hastings.application.services.summary_service import SummaryDraft, SummaryService
 from hastings.application.services.task_prep_service import TaskPrepService
 from hastings.application.services.task_projection import ChatTaskProjector
 from hastings.application.workflows.agent_workflows import AgentWorkflows
@@ -277,6 +278,10 @@ class V2Runtime:
         )
         # 本书约定（V03-4.1）：作者显式维护的作品级要求，版本化、无模型。
         self.agreements = AgreementService(self.service, ids)
+        # 章摘要（V03-4.3）：只由作者显式启动；生成前冻结来源，迟到结果不落地。
+        self.summaries = SummaryService(
+            self.service, ids, self.clock, summarizer=self._summary_writer
+        )
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -290,11 +295,10 @@ class V2Runtime:
             self.service, self.service, self.worker, self.ids, self.clock
         )
 
-    async def _chapter_writer(self, *, system: str, prompt: str) -> WrittenChapter:
-        """试写生成器：复用当前模型选择与流式执行器，无工具、无写端口。
+    async def _run_text(self, *, system: str, prompt: str) -> tuple[str, str]:
+        """一次无工具的单轮模型调用：返回 (文本, 实际使用的模型)。
 
-        模型来源在调用时解析（作者可能在两次试写之间换了模型）；失败按
-        环境错误如实上报，不伪造正文。
+        模型来源在调用时解析（作者可能中途换模型）；失败按环境错误如实上报。
         """
         binding = self._v2_runner.model_binding()
         model = str(binding.get("model", ""))
@@ -312,7 +316,17 @@ class V2Runtime:
             ),
             _sink,
         )
+        return text, model
+
+    async def _chapter_writer(self, *, system: str, prompt: str) -> WrittenChapter:
+        """试写生成器：复用当前模型选择与流式执行器，无工具、无写端口。"""
+        text, model = await self._run_text(system=system, prompt=prompt)
         return WrittenChapter(text=text, model=model)
+
+    async def _summary_writer(self, *, system: str, prompt: str) -> SummaryDraft:
+        """摘要生成器：同一条模型通道；来源与版本由 SummaryService 另行固定。"""
+        text, model = await self._run_text(system=system, prompt=prompt)
+        return SummaryDraft(text=text, model=model)
 
     async def wake_workers(self, project_id: str) -> None:
         self._wake_projects.add(project_id)
@@ -975,6 +989,13 @@ class RestoreChapterRequest(BaseModel):
     expected_chapter_base: str | None = None
 
 
+class SummaryStartRequest(BaseModel):
+    """显式启动一次章摘要：request_id 复用同来源任务，guidance 只影响本次提示词。"""
+
+    request_id: str = Field(min_length=1)
+    guidance: str = ""
+
+
 # ---------------------------------------------------------------------------
 # 投影序列化：查询视图 → JSON（只读派生结果，不缓存）
 # ---------------------------------------------------------------------------
@@ -1324,6 +1345,28 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
                 fix="增大 budget_tokens，或减少生效约定与故事核心设定",
                 details={"budget_tokens": tokens},
             ) from exc
+
+    @router.get("/projects/{project_id}/summaries")
+    def list_summaries(project_id: str) -> dict[str, Any]:
+        """当前版本的各章摘要状态：正文里已有摘要才能被背景使用。"""
+        return runtime.summaries.list_summaries(project_id)
+
+    @router.get("/projects/{project_id}/chapters/{chapter_id}/summary")
+    def get_chapter_summary(project_id: str, chapter_id: str) -> dict[str, Any]:
+        """单章摘要：正文、来源清单、模型与状态；没有生成过时 status=missing。"""
+        return runtime.summaries.get(project_id, chapter_id)
+
+    @router.post("/projects/{project_id}/chapters/{chapter_id}/summary")
+    async def update_chapter_summary(
+        project_id: str, chapter_id: str, req: SummaryStartRequest
+    ) -> dict[str, Any]:
+        """显式更新摘要：保存正文不会调用这里；期间正文变了结果判 superseded。"""
+        return await runtime.summaries.start(
+            project_id,
+            chapter_id,
+            request_id=req.request_id,
+            guidance=req.guidance,
+        )
 
     @router.get("/projects/{project_id}/agreements")
     def list_agreements(project_id: str, include_retired: bool = False) -> dict[str, Any]:
