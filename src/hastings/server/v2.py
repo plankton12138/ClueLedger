@@ -1468,6 +1468,29 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         """统一图谱投影（只读）：节点/边带语义层与证据状态，固定到读取的 Commit。"""
         return runtime.graphs.graph(project_id, at_commit_id=at_commit_id)
 
+    @router.get("/projects/{project_id}/graphs/characters")
+    def get_character_graph(
+        project_id: str,
+        at_commit_id: str | None = None,
+        perspective: str | None = None,
+        at_beat_id: str | None = None,
+        at_chapter_id: str | None = None,
+        focus: str | None = None,
+    ) -> dict[str, Any]:
+        """人物图（只读）：真关系/认知分层，支持作者全知或角色视角、叙述位置与局部聚焦。
+
+        ``at_beat_id`` 与 ``at_chapter_id`` 互斥：前者按节拍，后者先解析为该章内
+        最后一个节拍，两者走同一折叠路径，不用章节下标冒充叙述位置。
+        """
+        return runtime.graphs.characters(
+            project_id,
+            at_commit_id=at_commit_id,
+            perspective=perspective,
+            at_beat_id=at_beat_id,
+            at_chapter_id=at_chapter_id,
+            focus=focus,
+        )
+
     @router.get("/projects/{project_id}/ledger/schema")
     def get_ledger_schema(project_id: str) -> dict[str, Any]:
         """账本编辑表单描述：种类、字段、控件与引用目标，前后端共用一份口径。"""

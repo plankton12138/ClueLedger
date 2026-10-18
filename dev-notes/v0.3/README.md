@@ -143,16 +143,16 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 
 质量门：`uv run pytest -q` **1769 passed**（2026-10-18 实测；V03-5.1 +5、5.2 +24、5.3 +13、5.4 +8、5.5 +5）；`ruff check src tests` 全过；`mypy src/hastings` 242 files 无问题；前端 `vitest` 389 passed、`tsc --noEmit` 无问题——5.1–5.5 的后端契约尚未接进写作台，前端数字只证明既有壳层未回归。
 
-## V03-6 人物关系与线索关联图（V03-6.1 已交付，2026-10-18）
+## V03-6 人物关系与线索关联图（V03-6.1/6.2 已交付，2026-10-18）
 
 开始条件：账本、正文来源和证据状态查询共用稳定契约 ✓（V03-2.5 证据核对 + V03-3.2 账本查询）。
 
 | 任务 | 状态 | 产物 | 构建笔记 |
 |---|---|---|---|
 | V03-6.1 图谱统一只读投影 | 已交付 | `domain/story/graph.py`（节点/边纯投影：四语义层、引用字段导边、显式关系边、悬空引用不入图）、`application/queries/graphs.py`（`GraphQueries`：固定 Commit + 中文标签 + M05 证据状态）、`GET /projects/{id}/graphs`；专项 11 项 | [notes/v03-6.1](notes/v03-6.1-graph-projection.md) |
-| V03-6.2 人物图 | 待开发 | — | — |
+| V03-6.2 人物图 | 已交付 | `domain/story/graph.py::character_projection`（真关系/认知分层、作者全知或角色视角隐藏 `true_state`、按获知事件的位置筛选、未记录不合成 unaware）、`domain/story/narrative/order.py::last_beat_of_node`（章→末节拍，不用章节序号）、`GraphQueries.characters`、`GET /projects/{id}/graphs/characters`；专项 14 项 | [notes/v03-6.2](notes/v03-6.2-character-graph.md) |
 | V03-6.3 线索图 | 待开发 | — | — |
 | V03-6.4 交互与布局持久化 | 待开发 | — | — |
 | V03-6.5 文字等价操作与可访问性 | 待开发 | — | — |
 
-质量门：`uv run pytest -q` **1780 passed**（V03-6.1 +11）；`ruff check`/`format --check` 全过；`mypy src/hastings` 244 files 无问题。留白：`story.place.adjacent` 未登记引用校验故暂不成边；真实工作区尚无 `evidence.link` 写路径，证据状态多为 `not_recorded`（用直接提交测试覆盖 `needs_check`）；四类带类型端点与角色视角筛选随 V03-6.2/6.3。
+质量门：`uv run pytest -q` **1794 passed**（V03-6.2 +14）；`ruff check src tests` 全过；`mypy src/hastings` 244 files 无问题。留白：`story.place.adjacent` 未登记引用校验故暂不成边；真实工作区尚无 `evidence.link` 写路径，证据状态多为 `not_recorded`（用直接提交测试覆盖 `needs_check`）；线索图/手法图/时间线带类型端点随 V03-6.3/6.4，前端接线随 V03-6.4/6.5。环境提示：本机 `uv run ruff` 为 0.16.10（pyproject `ruff>=0.5` 未锁版本），`ruff format --check` 会命中 17 个与本任务无关的历史文件，属既有版本漂移、不在本任务范围。

@@ -24,8 +24,11 @@ from dataclasses import dataclass
 
 from hastings.domain.repository.models import RELATION_ACTION_ADD, RelationRevision
 from hastings.domain.repository.serialization import content_hash
+from hastings.domain.story import error_codes as ec
 from hastings.domain.story import kinds
 from hastings.domain.story.catalog import StoryCatalog
+from hastings.domain.story.errors import violation
+from hastings.domain.story.narrative.state import story_state_at_beat, story_state_final
 
 __all__ = [
     "EVIDENCE_NEEDS_CHECK",
@@ -36,11 +39,16 @@ __all__ = [
     "LAYER_KNOWLEDGE",
     "LAYER_PLAN",
     "LAYER_TRUTH",
+    "PERSPECTIVE_AUTHOR",
+    "PERSPECTIVE_CHARACTER",
     "SEMANTIC_LAYERS",
+    "CharacterEdge",
+    "CharacterGraph",
     "GraphEdge",
     "GraphNode",
     "GraphProjection",
     "GraphSourceRef",
+    "character_projection",
     "graph_projection",
     "semantic_layer",
 ]
@@ -290,3 +298,132 @@ def graph_projection(
 def _relation_layer(catalog: StoryCatalog, relation: RelationRevision) -> str:
     source = catalog.get(relation.source.value)
     return semantic_layer(source.kind) if source is not None else LAYER_TRUTH
+
+
+# --- 人物图（V03-6.2）：在统一投影上按视角与叙述位置筛选 ---------------------
+#: 视角两种模式；``author`` 为作者全知，其余值按角色 ArtifactId 解析。
+PERSPECTIVE_AUTHOR = "author"
+PERSPECTIVE_CHARACTER = "character"
+
+#: 人物图只保留这两类边；其余（线索「指向」等）留给线索图/手法图。
+_RELATIONSHIP_REL_TYPE = kinds.KIND_RELATIONSHIP.removeprefix(kinds.CANON_PREFIX)
+_KNOWLEDGE_REL_TYPE = kinds.KIND_KNOWLEDGE.removeprefix(kinds.CANON_PREFIX)
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterEdge:
+    """人物图边：统一投影边 + 关系状态；角色视角隐藏真实状态。"""
+
+    edge: GraphEdge
+    public_state: str = ""
+    true_state: str = ""
+    true_state_hidden: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterGraph:
+    """人物图视图：统一投影的子集 + 视角/叙述位置声明（只读，不新建事实）。"""
+
+    commit_id: str | None
+    perspective_mode: str
+    perspective_id: str | None
+    at_beat_id: str | None
+    nodes: tuple[GraphNode, ...]
+    edges: tuple[CharacterEdge, ...]
+
+
+def _character_edge_kind(edge: GraphEdge) -> str | None:
+    """人物图关心的边种类；其余边不进入人物图。"""
+    if edge.relation_type == _RELATIONSHIP_REL_TYPE:
+        return kinds.KIND_RELATIONSHIP
+    if edge.relation_type == _KNOWLEDGE_REL_TYPE:
+        return kinds.KIND_KNOWLEDGE
+    return None
+
+
+def character_projection(
+    catalog: StoryCatalog,
+    *,
+    perspective: str | None = None,
+    at_beat_id: str | None = None,
+    evidence_status: Mapping[str, str] | None = None,
+) -> CharacterGraph:
+    """人物图：在统一投影上筛选，不另建失效/位置/事实逻辑。
+
+    - **视角**：``author`` 露全部关系边与认知边；角色视角只露该角色参与的
+      关系边与其本人认知边，且关系边只露 ``public_state``（``true_state`` 置空
+      并标记隐藏）——真关系与角色理解分开显示，不把认知当客观事实。
+    - **叙述位置**：``at_beat_id`` 交给 ``story_state_at_beat`` 折叠，认知按获知
+      事件生效、后序覆盖前序；关系是基础事实，任何位置都在（状态随位置变化）。
+      「截至某章」由调用方先解析为该章末节拍，再走同一路径。
+    - **未记录不变成不知道**：只在存在 ``story.knowledge`` 记录时才有认知边，
+      缺失即缺口，绝不合成 ``unaware`` 边。
+    """
+    projection = graph_projection(catalog, evidence_status=evidence_status)
+
+    character_ids = {entry.artifact_id for entry in catalog.by_kind(kinds.KIND_CHARACTER)}
+    mode = PERSPECTIVE_AUTHOR
+    perspective_id: str | None = None
+    if perspective and perspective != PERSPECTIVE_AUTHOR:
+        if perspective not in character_ids:
+            raise violation(
+                ec.STORY_UNKNOWN_ARTIFACT,
+                "graphs.characters.perspective",
+                f"视角角色 {perspective!r} 不在当前快照中",
+                "改用快照内存在的人物 ID，或用 author 表示作者全知",
+                character_id=perspective,
+            )
+        mode = PERSPECTIVE_CHARACTER
+        perspective_id = perspective
+
+    state = (
+        story_state_at_beat(catalog, at_beat_id, after=True)
+        if at_beat_id is not None
+        else story_state_final(catalog)
+    )
+    relationships = {(r.source_id, r.target_id): r for r in state.relationships}
+    knowledge = {(k.character_id, k.fact_id) for k in state.knowledge}
+
+    edges: list[CharacterEdge] = []
+    visible: set[str] = {perspective_id} if perspective_id is not None else set()
+    for edge in projection.edges:
+        kind = _character_edge_kind(edge)
+        if kind is None:
+            continue
+        if kind == kinds.KIND_RELATIONSHIP:
+            relation = relationships.get((edge.source, edge.target))
+            if relation is None:
+                continue
+            if perspective_id is not None and perspective_id not in (edge.source, edge.target):
+                continue
+            hidden = perspective_id is not None
+            edges.append(
+                CharacterEdge(
+                    edge=edge,
+                    public_state=relation.public_state,
+                    true_state="" if hidden else relation.true_state,
+                    true_state_hidden=hidden,
+                )
+            )
+        else:
+            if (edge.source, edge.target) not in knowledge:
+                continue
+            if perspective_id is not None and edge.source != perspective_id:
+                continue
+            edges.append(CharacterEdge(edge=edge))
+        visible.add(edge.source)
+        visible.add(edge.target)
+
+    nodes = (
+        tuple(node for node in projection.nodes if node.id in visible)
+        if mode == PERSPECTIVE_CHARACTER
+        else projection.nodes
+    )
+    return CharacterGraph(
+        commit_id=projection.commit_id,
+        perspective_mode=mode,
+        perspective_id=perspective_id,
+        at_beat_id=at_beat_id,
+        nodes=nodes,
+        edges=tuple(edges),
+    )
