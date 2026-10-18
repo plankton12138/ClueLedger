@@ -80,6 +80,7 @@ class OperationService:
         events: tuple[tuple[str, dict[str, Any]], ...] = (),
         changed_chapter_ids: tuple[str, ...] = (),
         request_fingerprint: str | None = None,
+        origin_conversation_id: str | None = None,
     ) -> OperationEnvelope:
         """提交一次操作：正文变化 + 记录 + 回执 + 事件，同一事务。
 
@@ -88,6 +89,10 @@ class OperationService:
         实际影响的章节清单（由调用方按 catalog kind 判定，不按 ID 前缀猜测）。
         本服务负责补全 old_revision_id（读基础快照）、构造记录与回执、no_change
         检测。重试语义：同 operation_id 同内容返回原结果，不同内容显式冲突。
+
+        ``origin_conversation_id`` 是**发起这次操作的讨论**（V03-4.5）：给了就
+        固定归属到它，没给就落本作品「创作记录」。归属在提交时确定，之后切换
+        讨论或换作品都不改变，投影也不会投进作者当时正打开的会话。
         """
         if not operation_id.startswith("op_") or operation_id.strip() != operation_id:
             raise _violation(
@@ -111,7 +116,7 @@ class OperationService:
         replayed = self._replay(pid, operation_id, fingerprint)
         if replayed is not None:
             return replayed
-        conversation_id = creation_log_conversation_id(project_id)
+        conversation_id = origin_conversation_id or creation_log_conversation_id(project_id)
         # 2) 基础快照：补全 old_revision_id 并预检 no_change（与引擎同一口径）。
         #    乐观预检：全部变化与有效版本内容一致（或本就无变化）⇒ no_change。
         snapshot = self._repo.get_snapshot(pid, head) if head is not None else None

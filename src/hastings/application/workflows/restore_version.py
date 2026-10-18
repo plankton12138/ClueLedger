@@ -58,7 +58,11 @@ class RestoreChapterVersion:
         self._edit_sessions = edit_sessions
 
     def restore(
-        self, intent: RestoreIntent, *, operation_id: str | None = None
+        self,
+        intent: RestoreIntent,
+        *,
+        operation_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> PublishResult:
         where = f"manuscript.restore({intent.project_id.value}.{intent.chapter_id})"
         source_text = self._source_text(intent, where=where)
@@ -79,6 +83,7 @@ class RestoreChapterVersion:
                 "chapter_id": intent.chapter_id,
                 "source_commit_id": intent.source_commit_id.value,
             },
+            origin_conversation_id=conversation_id,
         )
 
     def _reject_edit_session_overlap(self, intent: RestoreIntent) -> None:

@@ -181,6 +181,7 @@ class ImportService:
         preview_hash: str,
         duplicate_decision: str | None = None,
         operation_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> dict[str, Any]:
         """整批确认：一次发布，失败无半份正文；重试不重复建章。"""
         pid = ProjectId(project_id)
@@ -268,6 +269,7 @@ class ImportService:
                 f"替换 {len(replacements)} 章"
             ),
             refs={"preview_id": preview_id, "batch_hash": payload["batch_hash"]},
+            origin_conversation_id=conversation_id,
         )
         return {
             "status": result.status,

@@ -14,6 +14,11 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import {
+  fetchDeskState,
+  toOperationEnvelope,
+  type DeskState,
+} from "../../api/desk";
 import { fetchManuscript } from "../../api/v2";
 import { useChatStore } from "../../state/chat";
 import {
@@ -121,6 +126,40 @@ function DeskDiscussion({ conversationId }: { conversationId: string }) {
   );
 }
 
+/**
+ * 后续状态（V03-4.5）：摘要待更新、待确认条数、正在修改的章。
+ *
+ * 数字来自 `/desk-state`，重开页面也在；条目正文不在这里复制——点进去回
+ * 候选组或章节本身。没有内容时整块不渲染（空列表不占一张卡片）。
+ */
+function DeskFollowupSummary({ state }: { state: DeskState }) {
+  const { summaries, pending_candidates, open_edit_chapters } = state.counts;
+  const rows: { text: string; tone: "amber" | "blue" }[] = [];
+  const total = summaries.fresh + summaries.stale + summaries.missing;
+  if (summaries.stale > 0) {
+    rows.push({ text: `摘要待更新（${summaries.stale} 章）`, tone: "amber" });
+  } else if (total > 0 && summaries.missing > 0) {
+    rows.push({ text: `还有 ${summaries.missing} 章没有摘要`, tone: "blue" });
+  }
+  if (pending_candidates > 0) {
+    rows.push({ text: `待确认 ${pending_candidates} 条设定候选`, tone: "amber" });
+  }
+  if (open_edit_chapters > 0) {
+    rows.push({ text: `修改中（${open_edit_chapters} 章）`, tone: "amber" });
+  }
+  if (rows.length === 0) return null;
+  return (
+    <section className="panel" aria-label="后续状态">
+      <header className="panel-head px-4 py-3">后续状态</header>
+      {rows.map((row) => (
+        <p key={row.text} className="asset-row px-4 py-2 text-xs">
+          <Pill tone={row.tone}>{row.text}</Pill>
+        </p>
+      ))}
+    </section>
+  );
+}
+
 export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void }) {
   const v2 = useV2Store();
   const pid = v2.currentId;
@@ -134,6 +173,33 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   useEffect(() => {
     useDeskStore.getState().setProject(pid ?? null);
   }, [pid]);
+
+  // 侧栏共享状态（V03-4.5）：计数与最近结果都来自权威存储，重开页面也在。
+  // 最近结果按 operationId 灌回同一份缓存，不新加一份「历史列表」。
+  const [desk, setDesk] = useState<DeskState | null>(null);
+  useEffect(() => {
+    if (!pid) {
+      setDesk(null);
+      return;
+    }
+    let alive = true;
+    fetchDeskState(pid)
+      .then((state) => {
+        if (!alive) return;
+        setDesk(state);
+        for (const row of state.recent_operations) {
+          useDeskStore.getState().applyOperationResult(toOperationEnvelope(pid, row));
+        }
+      })
+      .catch(() => {
+        // 读不到侧栏状态不影响正文与输入；打开具体结果时会显示真实错误。
+        if (alive) setDesk(null);
+      });
+    return () => {
+      alive = false;
+    };
+    // lastOperationId：本次刚完成的操作会改变计数，顺带刷新一次。
+  }, [pid, lastOperationId]);
 
   // 初始焦点：自取正文目录判定（App 的 refreshManuscript 异步，无法区分
   // 「空目录」与「未加载」），一次性决定；之后由作者显式导航。
@@ -627,6 +693,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
           {mainView?.kind === "manuscript" && pid && (
             <EvidenceCheck projectId={pid} chapterId={mainView.chapterId} />
           )}
+          {pid && desk && <DeskFollowupSummary state={desk} />}
           {pid && lastOperationId && (
             <OperationFollowups projectId={pid} operationId={lastOperationId} />
           )}

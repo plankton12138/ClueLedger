@@ -201,6 +201,7 @@ class EditSessionService:
         *,
         operation_id: str | None = None,
         expected_save_sequences: dict[str, int] | None = None,
+        conversation_id: str | None = None,
     ) -> dict[str, Any]:
         """修改完成：整批发布一次，成功后关闭副本（可重试）。"""
         pid = ProjectId(project_id)
@@ -257,6 +258,7 @@ class EditSessionService:
             kind="edit_session.finish",
             summary=f"完成手工修改：{len(drafts)} 章",
             refs={"session_id": session_id},
+            origin_conversation_id=conversation_id,
         )
         closed = _ended(session, SESSION_CLOSED, result.operation_id, self._now())
         self._repo.aux_mutate(pid, CURRENT_BUCKET, _CURRENT_KEY, lambda _c: closed.to_wire())

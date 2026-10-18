@@ -140,6 +140,9 @@ class UndoService:
                 operation_id=operation_id,
                 conflicts=list(preview["conflicts"]),
             )
+        # 撤销记录的归属跟着原操作走（V03-4.5）：作者在哪条讨论里看到这次修改，
+        # 就在同一条讨论里看到它的撤销，历史不会断链。
+        original = self._operations.get_operation(pid, operation_id)
         before = CommitId(str(preview["before_commit_id"]))
         before_catalog = self._manuscript(pid, before)
         commands = []
@@ -173,6 +176,7 @@ class UndoService:
                 "undo_of": operation_id,
                 "chapters": [row["chapter_id"] for row in preview["chapters"]],
             },
+            origin_conversation_id=original.conversation_id,
         )
         return {
             "status": result.envelope.status,

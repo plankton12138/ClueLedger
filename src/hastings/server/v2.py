@@ -70,6 +70,7 @@ from hastings.application.ports.chat import ChatRun
 from hastings.application.ports.events import EventOutbox
 from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.chapter_history import ChapterHistoryQueries
+from hastings.application.queries.desk_state import DeskStateQueries
 from hastings.application.queries.followups import FollowupQueries
 from hastings.application.queries.ledger import LedgerQueries
 from hastings.application.queries.ledger_forms import ledger_schema
@@ -117,6 +118,10 @@ from hastings.domain.manuscript.catalog import ManuscriptCatalog
 from hastings.domain.manuscript.commands import import_chapter as import_chapter_command
 from hastings.domain.manuscript.errors import ManuscriptViolation
 from hastings.domain.manuscript.models import Chapter
+from hastings.domain.manuscript.operation_record import (
+    creation_log_conversation_id,
+    operation_reference_message_id,
+)
 from hastings.domain.manuscript.operations import operation_from_content
 from hastings.domain.repository import error_codes as repo_ec
 from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId
@@ -276,6 +281,10 @@ class V2Runtime:
         self.ledger_entries = LedgerService(self.service, ids)
         # 设定候选成组（V03-3.2）：暂存在辅助表，选中后一次提交，假设不入账。
         self.ledger_candidates = LedgerCandidateService(self.service, ids, self.clock)
+        # 工作台共享状态（V03-4.5）：侧栏只拿计数与权威 ID，不另存一份列表。
+        self.desk_state = DeskStateQueries(
+            self.service, self.ledger_candidates, self.edit_sessions
+        )
         # 试写候选（V03-3.3/3.4）：账本+作者要求生成候选，只读预览，
         # 按预览哈希采用；采用走统一发布（V03-3.5）。
         self.drafting = DraftingService(
@@ -320,6 +329,50 @@ class V2Runtime:
         self.agent_workflows = AgentWorkflows(
             self.service, self.service, self.worker, self.ids, self.clock
         )
+
+    async def ensure_conversation(self, project_id: str, conversation_id: str | None) -> None:
+        """来源讨论必须是本作品里存在的会话（V03-4.5）。
+
+        宁可在入口报错，也不要把一条结果静默归到一个不存在或别人的讨论里：
+        归属错了以后，作者在两处都找不到它。
+        """
+        if not conversation_id:
+            return
+        conversation = await self.conversation_store.get_conversation(conversation_id)
+        if conversation is None:
+            raise ViolationError(
+                code="CONVERSATION_NOT_FOUND",
+                where="operation.origin_conversation_id",
+                why=f"讨论 {conversation_id!r} 不存在",
+                fix="用当前作品的会话列表选择一个存在的讨论，或不传该字段",
+                details={"conversation_id": conversation_id},
+            )
+        if conversation.project_id != project_id:
+            raise ViolationError(
+                code="CONVERSATION_NOT_FOUND",
+                where="operation.origin_conversation_id",
+                why=f"讨论 {conversation_id!r} 属于别的作品",
+                fix="结果只能归到本作品的讨论；不传该字段时自动回落「创作记录」",
+                details={"conversation_id": conversation_id},
+            )
+
+    async def projection_state(
+        self, project_id: str, operation_id: str, conversation_id: str | None
+    ) -> dict[str, Any]:
+        """这次操作的讨论投影到什么程度（V03-4.5）。
+
+        只看固定归属会话里有没有那条引用消息：有就是已投影，没有就是待同步。
+        投影由 Outbox 消费者补写，崩溃或重启后 worker 循环会继续补——这里只读，
+        不触发任何写入，也不因为「没查到」就判失败。
+        """
+        target = conversation_id or creation_log_conversation_id(project_id)
+        message_id = operation_reference_message_id(operation_id)
+        stored = await self.conversation_store.get_message(message_id)
+        return {
+            "state": "projected" if stored is not None else "pending",
+            "conversation_id": target,
+            "message_id": message_id,
+        }
 
     async def _run_text(self, *, system: str, prompt: str) -> tuple[str, str]:
         """一次无工具的单轮模型调用：返回 (文本, 实际使用的模型)。
@@ -913,6 +966,8 @@ class ImportConfirmRequest(BaseModel):
     preview_hash: str
     duplicate_decision: str | None = None
     operation_id: str | None = None
+    #: 发起这次导入的讨论；不给则归本作品「创作记录」（V03-4.5）。
+    conversation_id: str | None = None
 
 
 class SaveDraftRequest(BaseModel):
@@ -924,6 +979,8 @@ class SaveDraftRequest(BaseModel):
 class FinishEditRequest(BaseModel):
     operation_id: str | None = None
     expected_save_sequences: dict[str, int] | None = None
+    #: 发起本轮修改的讨论；不给则归本作品「创作记录」（V03-4.5）。
+    conversation_id: str | None = None
 
 
 class ReanchorRequest(BaseModel):
@@ -1022,6 +1079,8 @@ class DraftAdoptRequest(BaseModel):
     preview_hash: str
     revision: int | None = None
     operation_id: str | None = None
+    #: 发起本次试写的讨论；不给则归本作品「创作记录」（V03-4.5）。
+    conversation_id: str | None = None
     #: 作者明确授权改变揭示安排：默认润色不扩大披露。
     allow_disclosure_change: bool = False
 
@@ -1049,6 +1108,7 @@ class RestoreChapterRequest(BaseModel):
     idempotency_key: str
     source_commit_id: str
     expected_chapter_base: str | None = None
+    conversation_id: str | None = None
 
 
 class SummaryStartRequest(BaseModel):
@@ -1158,7 +1218,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         }
 
     @router.get("/projects/{project_id}/operations/{operation_id}")
-    def get_operation(project_id: str, operation_id: str) -> dict[str, Any]:
+    async def get_operation(project_id: str, operation_id: str) -> dict[str, Any]:
         """按 operation_id 找回操作结果（V03-2.1）。
 
         只依赖仓库（回执 + 记录 Artifact），不依赖对话投影：投影失败或
@@ -1170,6 +1230,9 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         envelope = runtime.operations.get_operation(ProjectId(project_id), operation_id)
         payload = envelope.to_wire()
         payload.update(runtime.followups.states(project_id, envelope.changed_chapter_ids))
+        payload["projection"] = await runtime.projection_state(
+            project_id, operation_id, envelope.conversation_id
+        )
         payload["result_url"] = f"/api/v2/projects/{project_id}/operations/{operation_id}"
         return payload
 
@@ -1232,16 +1295,18 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         )
 
     @router.post("/projects/{project_id}/imports/previews/{preview_id}/confirm")
-    def confirm_import_preview(
+    async def confirm_import_preview(
         project_id: str, preview_id: str, req: ImportConfirmRequest
     ) -> dict[str, Any]:
         """整批确认：一次提交，失败无半份正文；重试不重复建章。"""
+        await runtime.ensure_conversation(project_id, req.conversation_id)
         return runtime.imports.confirm(
             project_id,
             preview_id,
             preview_hash=req.preview_hash,
             duplicate_decision=req.duplicate_decision,
             operation_id=req.operation_id,
+            conversation_id=req.conversation_id,
         )
 
     # -- 手工修改副本（V03-2.4）：唯一未结束副本 + 保存序号 CAS -------------
@@ -1288,15 +1353,17 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         return runtime.edit_sessions.abandon(project_id, session_id)
 
     @router.post("/projects/{project_id}/edit-sessions/{session_id}/finish")
-    def finish_edit_session(
+    async def finish_edit_session(
         project_id: str, session_id: str, req: FinishEditRequest
     ) -> dict[str, Any]:
         """修改完成：整批一次发布，成功后关闭副本；重试不产生第二个版本。"""
+        await runtime.ensure_conversation(project_id, req.conversation_id)
         return runtime.edit_sessions.finish(
             project_id,
             session_id,
             operation_id=req.operation_id,
             expected_save_sequences=req.expected_save_sequences,
+            conversation_id=req.conversation_id,
         )
 
     @router.get("/projects/{project_id}/ledger")
@@ -1426,6 +1493,15 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
                 fix="增大 budget_tokens，或减少生效约定与故事核心设定",
                 details={"budget_tokens": tokens},
             ) from exc
+
+    @router.get("/projects/{project_id}/desk-state")
+    def get_desk_state(project_id: str) -> dict[str, Any]:
+        """工作台共享状态：待确认数量 + 权威 ID（V03-4.5）。
+
+        侧栏用它对账和跳转，条目正文一律回各自接口取；这里不返回任何列表正文，
+        因此不会出现「侧栏里那份和建议列表不一样」。
+        """
+        return runtime.desk_state.states(project_id)
 
     @router.get("/projects/{project_id}/disclosure-boundary")
     def get_disclosure_boundary(
@@ -1616,8 +1692,11 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         )
 
     @router.post("/projects/{project_id}/drafts/{candidate_id}/adopt")
-    def adopt_draft(project_id: str, candidate_id: str, req: DraftAdoptRequest) -> dict[str, Any]:
+    async def adopt_draft(
+        project_id: str, candidate_id: str, req: DraftAdoptRequest
+    ) -> dict[str, Any]:
         """按预览哈希采用：一次发布，迟到候选不能覆盖新稿或未结束副本。"""
+        await runtime.ensure_conversation(project_id, req.conversation_id)
         return runtime.drafting.adopt(
             project_id,
             candidate_id,
@@ -1625,6 +1704,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             revision=req.revision,
             operation_id=req.operation_id,
             allow_disclosure_change=req.allow_disclosure_change,
+            conversation_id=req.conversation_id,
         )
 
     @router.post("/projects/{project_id}/drafts/{candidate_id}/discard")
@@ -1727,10 +1807,11 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         }
 
     @router.post("/projects/{project_id}/chapters/{chapter_id}/restore")
-    def restore_chapter(
+    async def restore_chapter(
         project_id: str, chapter_id: str, req: RestoreChapterRequest
     ) -> dict[str, Any]:
         """把章恢复到历史 Commit 的版本：恢复本身是一次新 Commit（不重写历史）。"""
+        await runtime.ensure_conversation(project_id, req.conversation_id)
         result = runtime.restore.restore(
             RestoreIntent(
                 project_id=ProjectId(project_id),
@@ -1738,7 +1819,8 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
                 source_commit_id=CommitId(req.source_commit_id),
                 idempotency_key=req.idempotency_key,
                 expected_chapter_base=req.expected_chapter_base,
-            )
+            ),
+            conversation_id=req.conversation_id,
         )
         head = runtime.head(ProjectId(project_id))
         chapter_base = (

@@ -155,6 +155,7 @@ class PublishManuscriptChange:
         kind: str,
         summary: str,
         refs: dict[str, Any] | None = None,
+        origin_conversation_id: str | None = None,
     ) -> PublishResult:
         """§3.3 六步：领域命令纯函数 → 证据/摘要核对 → 原子提交。
 
@@ -167,6 +168,7 @@ class PublishManuscriptChange:
             kind=kind,
             summary=summary,
             refs=refs,
+            origin_conversation_id=origin_conversation_id,
         )
 
     def publish_commands(
@@ -178,6 +180,7 @@ class PublishManuscriptChange:
         kind: str,
         summary: str,
         refs: dict[str, Any] | None = None,
+        origin_conversation_id: str | None = None,
     ) -> PublishResult:
         """一次提交多条稿件命令（V03-4.6 撤销用）：多章恢复只产生一个版本。
 
@@ -257,6 +260,7 @@ class PublishManuscriptChange:
                 summary=summary,
                 refs=refs,
                 request_fingerprint=fingerprint,
+                origin_conversation_id=origin_conversation_id,
             )
             return PublishResult(envelope=envelope, warnings=(), summary=summary, change=merged)
         changed_ids = frozenset(c.artifact_id.value for c in merged.artifact_changes)
@@ -274,6 +278,7 @@ class PublishManuscriptChange:
             events=merged.events,
             changed_chapter_ids=tuple(chapter_ids),
             request_fingerprint=fingerprint,
+            origin_conversation_id=origin_conversation_id,
         )
         return PublishResult(
             envelope=envelope, warnings=tuple(warnings), summary=summary, change=merged

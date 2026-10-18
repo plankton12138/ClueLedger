@@ -66,9 +66,23 @@ class OperationDiscussionProjector:
         if not operation_id or not project_id:
             logger.warning("操作事件缺少 operation_id/project_id，跳过投影：%s", dict(event))
             return
-        # 固定会话 ID 只由作品派生，不取事件里携带的会话——防止把结果投进
-        # 作者当时正在打开的讨论（§4.2 硬约束）。
+        # 归属会话取**提交时记录的**来源讨论（V03-4.5），不是「现在打开的那个」：
+        # 事件里的 conversation_id 在操作提交那一刻固化，之后切讨论不会改变它。
+        # 给了来源但会话不存在或不属于本作品时回落到创作记录——宁可归错到默认
+        # 讨论，也不能把一条结果投进别的作品。
         conversation_id = creation_log_conversation_id(project_id)
+        recorded = str(body.get("conversation_id") or "")
+        if recorded and recorded != conversation_id:
+            origin = await self._conversations.get_conversation(recorded)
+            if origin is None or origin.project_id != project_id:
+                logger.warning(
+                    "操作 %s 的来源讨论 %s 不可用或不属于作品 %s，回落到创作记录",
+                    operation_id,
+                    recorded,
+                    project_id,
+                )
+            else:
+                conversation_id = recorded
         conversation = await self._conversations.get_conversation(conversation_id)
         if conversation is None:
             await self._conversations.create_conversation(

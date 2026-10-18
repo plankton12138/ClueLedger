@@ -247,6 +247,7 @@ class DraftingService:
         revision: int | None = None,
         operation_id: str | None = None,
         allow_disclosure_change: bool = False,
+        conversation_id: str | None = None,
     ) -> dict[str, Any]:
         """按预览哈希采用：一次发布，迟到候选不能覆盖新稿或未结束副本。"""
         pid = ProjectId(project_id)
@@ -349,6 +350,7 @@ class DraftingService:
             kind=kind,
             summary=f"采用试写候选（{chosen.title}，修订 {target_revision}）",
             refs={"candidate_id": candidate_id, "preview_hash": preview_hash},
+            origin_conversation_id=conversation_id,
         )
         adopted = replace(
             candidate,
