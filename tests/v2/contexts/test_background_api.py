@@ -152,6 +152,7 @@ def test_budget_that_cannot_hold_agreements_is_a_named_error() -> None:
 def test_capabilities_publish_background_contract() -> None:
     client, _, _ = _client()
     features = client.get("/api/v2/capabilities").json()["features"]
-    assert features["background"]["status"] == "draft"
+    assert features["background"]["status"] == "implemented"
     assert features["background"]["default_tokens"] == 12_000
     assert features["background"]["tiers"][0] == "agreements"
+    assert set(features["background"]["prompt_wiring"]) == {"manuscript", "discussion"}

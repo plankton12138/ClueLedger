@@ -20,6 +20,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
+from hastings.application.contexts.collector import BackgroundService
 from hastings.application.errors import ViolationError
 from hastings.application.handlers.manuscript_commands import manuscript_command
 from hastings.application.ports.clock import Clock
@@ -40,6 +41,7 @@ __all__ = ["DraftingService", "WrittenChapter"]
 #: 辅助表桶名：候选与创建幂等键分开存，键值都是候选 ID。
 CANDIDATE_BUCKET = "draft_candidates"
 CANDIDATE_KEY_BUCKET = "draft_candidate_keys"
+
 
 @dataclass(frozen=True, slots=True)
 class WrittenChapter:
@@ -66,6 +68,7 @@ class DraftingService:
         ids: IdGenerator,
         clock: Clock,
         writer: ChapterWriterFn | None = None,
+        background: BackgroundService | None = None,
     ) -> None:
         self._repo = repo
         self._publisher = publisher
@@ -73,6 +76,8 @@ class DraftingService:
         self._ids = ids
         self._clock = clock
         self._writer = writer
+        # 常驻背景（V03-4.2）：按试写的基础版本取，不随当前 head 漂移。
+        self._background = background
 
     # -- 创建与调整 ----------------------------------------------------------
 
@@ -381,7 +386,11 @@ class DraftingService:
             )
         ledger = self._ledger(brief)
         prompt = drafting.render_user_prompt(
-            brief, ledger=ledger, previous_text=previous_text, adjustment=adjustment
+            brief,
+            background=self._background_text(brief),
+            ledger=ledger,
+            previous_text=previous_text,
+            adjustment=adjustment,
         )
         written = await self._writer(
             system=drafting.render_system_prompt(),
@@ -403,6 +412,26 @@ class DraftingService:
                 "缩短篇幅要求，或把这一章拆成两章分别试写",
             )
         return WrittenChapter(text=text, title=written.title.strip(), model=written.model)
+
+    def _background_text(self, brief: drafting.DraftBrief) -> str:
+        """按试写的基础版本取作品背景；没有接通装配器时退化为空。
+
+        预算不足时直接失败而不是悄悄少给：一份缺了本书约定的背景，比没有背景
+        更容易让模型写出「看起来对、其实违反作者要求」的正文。
+        """
+        if self._background is None:
+            return ""
+        try:
+            return self._background.render(
+                brief.project_id, scope="manuscript", commit_id=brief.base_head
+            )
+        except ValueError as exc:
+            raise _violation(
+                "DRAFT_BACKGROUND_TOO_SMALL",
+                f"drafts.context({brief.project_id})",
+                str(exc),
+                "减少生效约定或故事核心设定，或把本次试写的范围缩小后重试",
+            ) from exc
 
     def _ledger(self, brief: drafting.DraftBrief) -> list[dict[str, str]]:
         """按引用顺序读取账本条目；空项目或未引用任何条目时返回空列表。"""

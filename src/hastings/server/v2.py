@@ -185,12 +185,16 @@ class V2Runtime:
         self.execution_log = (
             MemoryExecutionLog() if db_path is None else SqliteExecutionLog(db_path)
         )
+        # 背景装配（V03-4.2）：约定→核心→概览→目录→目标，只读、按版本取材料。
+        # 先于对话与试写装配：这两条路径共用同一份背景，避免各拼一套。
+        self.background = BackgroundService(self.service)
         self.chat = ConversationService(
             self.conversation_store,
             runner_factory=v2_runner.chat_runner,
             model_resolver=v2_runner.chat_model,
             ref_validator=self.validate_refs,
             execution_log=self.execution_log,
+            background_provider=lambda pid: self.background.render(pid, scope="discussion"),
         )
         # 无作品入口预约与无模型想法（M02/V03-1.2）：与对话共用存储，
         # 预约记录走仓库辅助表（V03-0.5）。
@@ -269,11 +273,10 @@ class V2Runtime:
             ids,
             self.clock,
             writer=self._chapter_writer,
+            background=self.background,
         )
         # 本书约定（V03-4.1）：作者显式维护的作品级要求，版本化、无模型。
         self.agreements = AgreementService(self.service, ids)
-        # 背景装配（V03-4.2）：约定→核心→概览→目录→目标，只读、按版本取材料。
-        self.background = BackgroundService(self.service)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(

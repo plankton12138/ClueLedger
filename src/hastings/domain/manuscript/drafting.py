@@ -256,11 +256,16 @@ def _section(heading: str, body: str) -> str:
 def render_user_prompt(
     brief: DraftBrief,
     *,
+    background: str = "",
     ledger: list[dict[str, str]] | None = None,
     previous_text: str = "",
     adjustment: str = "",
 ) -> str:
-    """把 brief 渲染为确定性提示词；账本条目按传入顺序列出，不排序不猜。"""
+    """把 brief 渲染为确定性提示词；账本条目按传入顺序列出，不排序不猜。
+
+    ``background`` 是 V03-4.2 装配好的作品背景（约定/核心/概览/目录/目标），
+    由调用方按任务的基础版本取好；这里只负责摆放位置，不重新选择内容。
+    """
     target = "新章" if brief.target == TARGET_NEW_CHAPTER else f"现有章节 {brief.target}"
     if brief.chapter_title:
         target += f"（标题：{brief.chapter_title}）"
@@ -271,6 +276,9 @@ def render_user_prompt(
         _section("篇幅", brief.length_target),
         _section("叙事边界", brief.narrative_boundary),
     ]
+    if background.strip():
+        # 常驻背景在任务要求之后：本次明确要求优先，长线约束只作底色。
+        parts.append(_section("作品背景", background.strip()))
     if ledger:
         lines = [
             f"- {item.get('kind_label') or item.get('kind', '')} {item['title']}：{item['summary']}"

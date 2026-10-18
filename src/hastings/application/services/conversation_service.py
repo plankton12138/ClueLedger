@@ -35,6 +35,12 @@ __all__ = ["ConversationService"]
 # 进入模型上下文的历史轮数上限：保留最新指令与明确引用（§3.4 预算裁剪）。
 _HISTORY_WINDOW = 20
 
+#: 讨论的系统消息：只说明角色与无写权限，作品事实由背景装配器追加（V03-4.2）。
+CHAT_SYSTEM_PROMPT = (
+    "你是作者的写作伙伴：讨论构想、回答问题。你没有修改项目内容的"
+    "任何能力；涉及创作任务时，只会说明建议，不会假装已经开始执行。"
+)
+
 
 def _as_hastings(exc: ConversationViolation) -> HastingsError:
     return ViolationError(
@@ -66,6 +72,7 @@ class ConversationService:
         history_window: int = _HISTORY_WINDOW,
         ref_validator: Callable[[str, list[dict[str, Any]]], None] | None = None,
         execution_log: ExecutionLog | None = None,
+        background_provider: Callable[[str], str] | None = None,
     ) -> None:
         self.store = store
         # 公开注入点：测试与服务装配（ProviderBook 接线）都可以替换。
@@ -83,6 +90,9 @@ class ConversationService:
         self.ref_validator = ref_validator
         # 执行日志（V03-1.6）：None 不发射（既有装配与旧测试零改动）。
         self.execution_log = execution_log
+        # 常驻背景（V03-4.2）：按作品取一份渲染好的背景文本；None 表示不装配。
+        # 只接收 project_id，讨论会话本身不进入背景——同一作品的不同讨论因此一致。
+        self.background_provider = background_provider
         self._runs: dict[str, _ActiveRun] = {}
 
     # -- 会话 ------------------------------------------------------------------
@@ -345,10 +355,16 @@ class ConversationService:
                 project_id, conversation_id, turn_id, "started", "回复尝试开始", model=model
             )
             history, refs = await self._build_context(conversation_id, turn_id)
+            system = CHAT_SYSTEM_PROMPT
+            if self.background_provider is not None:
+                background = self.background_provider(project_id).strip()
+                if background:
+                    # 背景只描述作品现状，不改变「无写权限」的边界；放在系统消息里
+                    # 是为了让同一部作品的每次讨论看到同一份底色（M07）。
+                    system = f"{system}\n\n{background}"
             chat_run = ChatRun(
                 model=model,
-                system="你是作者的写作伙伴：讨论构想、回答问题。你没有修改项目内容的"
-                "任何能力；涉及创作任务时，只会说明建议，不会假装已经开始执行。",
+                system=system,
                 history=history,
                 cancelled=run.token.is_cancelled,
                 refs=refs,

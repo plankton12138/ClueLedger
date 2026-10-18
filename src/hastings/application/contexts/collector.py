@@ -17,6 +17,7 @@ from typing import Any
 from hastings.application.contexts.background import (
     SUMMARY_MISSING,
     AgreementInput,
+    BackgroundPackage,
     BackgroundRequest,
     ChapterInput,
     LedgerInput,
@@ -79,12 +80,60 @@ class BackgroundService:
         target_chapter_ids: list[str] | None = None,
         budget_tokens: int = DEFAULT_BUDGET_TOKENS,
         include_temporary_text: bool = False,
+        commit_id: str | None = None,
     ) -> dict[str, Any]:
         """装配并返回 wire 形状的背景包；空作品是合法输入。"""
+        return self.build_package(
+            project_id,
+            scope=scope,
+            target_chapter_ids=target_chapter_ids,
+            budget_tokens=budget_tokens,
+            include_temporary_text=include_temporary_text,
+            commit_id=commit_id,
+        ).to_wire()
+
+    def render(
+        self,
+        project_id: str,
+        *,
+        scope: str,
+        target_chapter_ids: list[str] | None = None,
+        budget_tokens: int = DEFAULT_BUDGET_TOKENS,
+        include_temporary_text: bool = False,
+        commit_id: str | None = None,
+    ) -> str:
+        """渲染成提示词用文本：同一部作品、同一版本，渲染结果完全一致。"""
+        return self.build_package(
+            project_id,
+            scope=scope,
+            target_chapter_ids=target_chapter_ids,
+            budget_tokens=budget_tokens,
+            include_temporary_text=include_temporary_text,
+            commit_id=commit_id,
+        ).render()
+
+    def build_package(
+        self,
+        project_id: str,
+        *,
+        scope: str,
+        target_chapter_ids: list[str] | None = None,
+        budget_tokens: int = DEFAULT_BUDGET_TOKENS,
+        include_temporary_text: bool = False,
+        commit_id: str | None = None,
+    ) -> BackgroundPackage:
+        """按指定版本（缺省为当前 head）装配；任务侧传自己的 ``base_head``。
+
+        传 ``commit_id`` 是 M07 的硬要求：任务开始后作者改约定或正文，不能偷换
+        已经启动任务的输入。调用方负责给出那个固定的版本。
+        """
         pid = ProjectId(project_id)
         targets = tuple(target_chapter_ids or ())
-        branch = self._repo.get_branch(pid, "main")
-        head: CommitId | None = branch.head_commit_id if branch is not None else None
+        if commit_id is not None:
+            head: CommitId | None = CommitId(commit_id)
+        else:
+            branch = self._repo.get_branch(pid, "main")
+            head = branch.head_commit_id if branch is not None else None
         if head is None:
             return assemble_background(
                 BackgroundRequest(
@@ -94,7 +143,7 @@ class BackgroundService:
                     budget_tokens=budget_tokens,
                     target_chapter_ids=targets,
                 )
-            ).to_wire()
+            )
 
         snapshot = self._repo.get_snapshot(pid, head)
         story = StoryCatalog.from_snapshot(snapshot)
@@ -135,7 +184,7 @@ class BackgroundService:
                 chapters=chapters,
                 target_chapter_ids=targets,
             )
-        ).to_wire()
+        )
 
     def _chapter_input(
         self,

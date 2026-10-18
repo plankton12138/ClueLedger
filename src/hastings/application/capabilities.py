@@ -63,11 +63,11 @@ CAPABILITIES: Final[dict[str, Any]] = {
     "ledger_suggestions": {"status": "draft"},
     "agreements": {"status": "draft", "api": "implemented", "surface": "pending"},
     "background": {
-        "status": "draft",
+        "status": "implemented",
         "default_tokens": 12_000,
         "max_tokens": 64_000,
         "tiers": ("agreements", "core", "overview", "index", "target"),
-        "prompt_wiring": "pending",
+        "prompt_wiring": ("manuscript", "discussion"),
     },
     "graphs": {"status": "draft"},
     "author_model": {"status": "excluded"},
