@@ -172,7 +172,11 @@ def test_restart_does_not_replay_auto_style_observation(tmp_path):
         else:
             raise AssertionError("旧自动队列应被派发门禁暂停（historical_paused）")
     assert observer_calls == []
-    assert not restarted.author_queries.preferences(ProjectId(pid.value), restarted.head(pid))
+    # 入口已移除，但数据可读：用领域查询确认「重启没有凭空长出偏好」。
+    from hastings.application.queries.author_profile import AuthorProfileQueries
+
+    head = restarted.head(pid)
+    assert not AuthorProfileQueries(restarted.service).preferences(pid, head)
 
 
 def test_oversized_edit_no_longer_spawns_auto_analysis(tmp_path):

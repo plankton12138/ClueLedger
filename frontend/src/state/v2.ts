@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import {
   fetchManuscript,
-  fetchPreferences,
   fetchStorySnapshot,
   fetchV2Chapter,
   listAgentJobs,
@@ -10,7 +9,6 @@ import {
   type AgentJob,
   type ChangeSetWire,
   type ChapterHeadWire,
-  type PreferenceWire,
   type StoryArtifact,
 } from "../api/v2";
 export interface V2ProjectRef {
@@ -97,7 +95,6 @@ interface V2Store {
   storyArtifacts: StoryArtifact[];
   storyCommit: string | null;
   changes: ChangeSetWire[];
-  preferences: PreferenceWire[];
   jobs: AgentJob[];
   error: string | null;
   selectedChangeId: string | null;
@@ -108,7 +105,6 @@ interface V2Store {
   refreshManuscript(): Promise<void>;
   refreshStory(): Promise<void>;
   refreshChanges(): Promise<void>;
-  refreshPreferences(): Promise<void>;
   refreshJobs(): Promise<void>;
   selectChapter(chapterId: string, discard?: boolean): Promise<void>;
   setDraft(text: string): void;
@@ -146,7 +142,6 @@ export const useV2Store = create<V2Store>()((set, get) => {
     storyArtifacts: [],
     storyCommit: null,
     changes: [],
-    preferences: [],
     jobs: [],
     error: null,
     selectedChangeId: null,
@@ -170,7 +165,6 @@ export const useV2Store = create<V2Store>()((set, get) => {
         storyArtifacts: [],
         storyCommit: null,
         changes: [],
-        preferences: [],
         jobs: [],
         error: null,
         selectedChangeId: null,
@@ -204,10 +198,6 @@ export const useV2Store = create<V2Store>()((set, get) => {
       ),
     refreshChanges: () =>
       refresh("changes", listChanges, (data) => set({ changes: data.changes })),
-    refreshPreferences: () =>
-      refresh("preferences", fetchPreferences, (data) =>
-        set({ preferences: data.preferences }),
-      ),
     refreshJobs: () => refresh("jobs", listAgentJobs, (jobs) => set({ jobs })),
     selectChapter: async (chapterId, discard = false) => {
       const pid = get().currentId;
@@ -274,7 +264,6 @@ export const useV2Store = create<V2Store>()((set, get) => {
         void get().refreshManuscript();
         void get().refreshStory();
         void get().refreshChanges();
-        void get().refreshPreferences();
       } catch (e) {
         if (epoch === generation && get().chapter.chapterId === cid)
           set((s) => ({

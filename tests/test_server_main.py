@@ -117,7 +117,6 @@ def test_default_start_exposes_v2_and_reopens_projects(
         "manuscript",
         "story",
         "changes",
-        "author-model/preferences",
         "agent-jobs",
         "conversations",
     ):

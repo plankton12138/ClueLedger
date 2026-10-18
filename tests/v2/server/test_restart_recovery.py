@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.workflows.manual_edit import ManualEditIntent
 from hastings.domain.author_model import kinds as am_kinds
 from hastings.domain.author_model.models import (
@@ -142,9 +143,11 @@ def test_restart_preserves_author_model(tmp_path: Path) -> None:
     # 生成上下文口径同样恢复：active 偏好可解析、证据可反查
     head = rt2.head(ProjectId(project_id))
     assert head is not None
-    effective = rt2.author_queries.effective_preferences(ProjectId(project_id), head)
+    effective = AuthorProfileQueries(rt2.service).effective_preferences(ProjectId(project_id), head)
     assert [p.preference_id for p in effective] == ["pref_r1"]
-    evidence = rt2.author_queries.preference_evidence(ProjectId(project_id), head, "pref_r1")
+    evidence = AuthorProfileQueries(rt2.service).preference_evidence(
+        ProjectId(project_id), head, "pref_r1"
+    )
     assert [o.observation_id for o in evidence] == ["obs_r1"]
 
 
@@ -220,7 +223,7 @@ def _prefs_view(rt: V2Runtime, project_id: str) -> list[dict[str, object]]:
             "status": p.status,
             "evidence": p.evidence,
         }
-        for p in rt.author_queries.preferences(ProjectId(project_id), head)
+        for p in AuthorProfileQueries(rt.service).preferences(ProjectId(project_id), head)
     ]
 
 
@@ -229,5 +232,5 @@ def _obs_view(rt: V2Runtime, project_id: str) -> list[dict[str, object]]:
     assert head is not None
     return [
         {"observation_id": o.observation_id, "edit": o.edit, "classification": o.classification}
-        for o in rt.author_queries.observations(ProjectId(project_id), head)
+        for o in AuthorProfileQueries(rt.service).observations(ProjectId(project_id), head)
     ]

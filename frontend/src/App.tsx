@@ -8,7 +8,6 @@ import {
   Search,
   Settings2,
   Target,
-  UserRound,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -25,7 +24,6 @@ import {
   SelectValue,
 } from "./components/ui/select";
 import AuditPage from "./pages/AuditPage";
-import AuthorModelPage from "./pages/AuthorModelPage";
 import ChangesPage from "./pages/ChangesPage";
 import LedgerPage from "./pages/LedgerPage";
 import OverviewPage from "./pages/OverviewPage";
@@ -50,7 +48,6 @@ const nav: { key: View; label: string; Icon: LucideIcon }[] = [
   { key: "changes", label: "变更影响", Icon: GitBranch },
   { key: "review", label: "修订审阅", Icon: CheckCheck },
   { key: "audit", label: "悬疑审计", Icon: Target },
-  { key: "model", label: "作者模型", Icon: UserRound },
 ];
 function readChatOpen(narrow: boolean): boolean {
   if (narrow) return false;
@@ -104,7 +101,6 @@ export default function App() {
     void state.refreshManuscript();
     void state.refreshStory();
     void state.refreshChanges();
-    void state.refreshPreferences();
     void state.refreshJobs();
     const timer = window.setInterval(() => { void state.refreshJobs(); }, 1800);
     return () => window.clearInterval(timer);
@@ -268,7 +264,6 @@ export default function App() {
               void s.refreshManuscript();
               void s.refreshStory();
               void s.refreshChanges();
-              void s.refreshPreferences();
             }}
           >
             重试读取
@@ -298,7 +293,6 @@ export default function App() {
                   onClose={() => setCandidate(null)} />
               : <ChangesPage review onNavigate={setView} />)}
             {view === "audit" && <AuditPage onNavigate={setView} />}
-            {view === "model" && <AuthorModelPage />}
           </ErrorBoundary>
         </div>
         <ChatSidebar

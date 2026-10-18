@@ -25,7 +25,6 @@ export function useV2Events(): V2ConnStatus {
         void s.refreshManuscript();
         void s.refreshStory();
         void s.refreshChanges();
-        void s.refreshPreferences();
         void s.refreshJobs();
       }, 180);
     };

@@ -286,47 +286,40 @@ def _seed_author_model(runtime: V2Runtime, project_id: str) -> None:
     assert result.status == "committed"
 
 
-class TestAuthorModelQueries:
-    def test_preferences_and_observations(self, client: TestClient, runtime: V2Runtime) -> None:
+class TestAuthorModelEntriesRemoved:
+    """作者模型 0.3 不交付入口（计划 §9.1：移除 0.3 入口、注入与默认调度）。
+
+    旧数据仍然留在仓库里、可备份回看，但 v2 不再暴露读写入口——
+    这条用例盯的就是「入口不会悄悄长回来」。
+    """
+
+    def test_legacy_author_model_paths_are_gone(
+        self, client: TestClient, runtime: V2Runtime
+    ) -> None:
         project_id = _create_project(client)
         _import_chapter(client, project_id)
         _seed_author_model(runtime, project_id)
 
-        prefs = client.get(f"/api/v2/projects/{project_id}/author-model/preferences")
-        assert prefs.status_code == 200, prefs.text
-        body = prefs.json()
-        assert len(body["preferences"]) == 1
-        pref = body["preferences"][0]
-        assert pref["preference_id"] == "pref_1"
-        assert pref["status"] == "active"
-        assert pref["statement"] == "作者偏好更精简的措辞与句式"
-        assert pref["scope_kind"] == "project"
+        for path in (
+            "author-model/preferences",
+            "author-model/observations",
+            "author-model/preferences/pref_1/evidence",
+        ):
+            response = client.get(f"/api/v2/projects/{project_id}/{path}")
+            assert response.status_code == 404, (path, response.text)
 
-        observations = client.get(f"/api/v2/projects/{project_id}/author-model/observations")
-        assert observations.status_code == 200, observations.text
-        rows = observations.json()["observations"]
-        assert len(rows) == 1
-        assert rows[0]["observation_id"] == "obs_1"
-        assert rows[0]["edit"]["before"] == "他解释了很久。"
-        assert rows[0]["classification"]["category"] == "language_style"
-
-    def test_preference_evidence_backtrack(self, client: TestClient, runtime: V2Runtime) -> None:
+    def test_legacy_preference_write_is_gone(self, client: TestClient) -> None:
         project_id = _create_project(client)
-        _import_chapter(client, project_id)
-        _seed_author_model(runtime, project_id)
-
-        response = client.get(
-            f"/api/v2/projects/{project_id}/author-model/preferences/pref_1/evidence"
-        )
-        assert response.status_code == 200, response.text
-        rows = response.json()["observations"]
-        assert [row["observation_id"] for row in rows] == ["obs_1"]
-
-    def test_unknown_preference_evidence_returns_404(self, client: TestClient) -> None:
-        project_id = _create_project(client)
-        _import_chapter(client, project_id)
-        response = client.get(
-            f"/api/v2/projects/{project_id}/author-model/preferences/pref_none/evidence"
+        response = client.post(
+            f"/api/v2/projects/{project_id}/author-model/preferences",
+            json={
+                "idempotency_key": "declare",
+                "expected_head": None,
+                "category": "language_style",
+                "statement": "少用解释性独白",
+                "scope_kind": "project",
+                "scope_target": project_id,
+            },
         )
         assert response.status_code == 404, response.text
 

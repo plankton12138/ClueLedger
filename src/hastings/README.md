@@ -19,7 +19,7 @@ tau 内核之上的**薄应用层**：装配（工具注册、system prompt、�
 
 ## 五焦点导航（读源码对号入座）
 
-V2 七页作者工作台入口见 [frontend/README.md](../../frontend/README.md) 与 [前端构建笔记](../../dev-notes/v2/phase-17-frontend-workbench.md)。项目身份/正文缓冲在 `frontend/src/state/v2.ts`，业务事件在 `state/v2socket.ts`；作者偏好声明与撤销的 HTTP 适配在 `interfaces/api/author_decisions.py`。
+V2 七页作者工作台入口见 [frontend/README.md](../../frontend/README.md) 与 [前端构建笔记](../../dev-notes/v2/phase-17-frontend-workbench.md)。项目身份/正文缓冲在 `frontend/src/state/v2.ts`，业务事件在 `state/v2socket.ts`。作者模型按 0.3 范围**不交付入口**（计划 §9.1：移除 0.3 入口、注入与默认调度）：v2 已下线路由与前端页面，旧数据保留可备份回看；`interfaces/api/author_decisions.py` 作为 0.2 遗留模块保留但不再挂载。
 
 Phase 15 的 V2 变更闭环见 [change-impact.md](../../dev-notes/v2/modules/change-impact.md)：`domain/changes/` 与 `application/workflows/{change_analysis,plan_revision,revision,review,rewrite,audit}.py`；HTTP 在 `interfaces/api/changes.py`，前端在 `frontend/src/components/ChangeCenter.tsx`。服务器通过 `uv run python -m hastings.server` 默认启用独立仓库，`--v2-db <路径>` 可指定作品库；默认路径与恢复规则见 [启动修复记录](../../dev-notes/v2/phase-19-default-startup.md)。项目直接在 V2 中新建，旧工作区迁移已退役。
 

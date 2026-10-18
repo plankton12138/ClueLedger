@@ -73,21 +73,6 @@ export default function StudioPage() {
           <Empty>接受策划候选后，场景与节拍会出现在这里。</Empty>
         )}
       </CollapsiblePanel>
-      <CollapsiblePanel title="生效的作者偏好" defaultOpen={!chatPinned}>
-        {s.preferences
-          .filter((p) => p.status === "active")
-          .map((p) => (
-            <p
-              className="asset-row p-4 text-xs leading-6"
-              key={p.preference_id}
-            >
-              {p.statement}
-            </p>
-          ))}
-        {!s.preferences.some((p) => p.status === "active") && (
-          <Empty>尚无生效偏好。真实编辑会形成可追溯的观察。</Empty>
-        )}
-      </CollapsiblePanel>
       <CollapsiblePanel title="从历史版本恢复" defaultOpen={!chatPinned}>
         <form
           className="space-y-3 p-4"

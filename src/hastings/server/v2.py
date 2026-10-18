@@ -28,7 +28,6 @@ import binascii
 import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
-from dataclasses import asdict
 from datetime import datetime
 from typing import Annotated, Any, cast
 
@@ -68,7 +67,6 @@ from hastings.application.handlers.manuscript_commands import (
 from hastings.application.ports.agents import AgentRunner
 from hastings.application.ports.chat import ChatRun
 from hastings.application.ports.events import EventOutbox
-from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.chapter_history import ChapterHistoryQueries
 from hastings.application.queries.desk_state import DeskStateQueries
 from hastings.application.queries.followups import FollowupQueries
@@ -188,7 +186,6 @@ class V2Runtime:
         )
         self.workflow = CommitManualEdit(self.handler)
         self.queries = ManuscriptQueries(self.service)
-        self.author_queries = AuthorProfileQueries(self.service)
         self.jobs = SqliteJobStore(db_path or ":memory:")
         v2_runner = ConfiguredV2Runner(self.service)
         self.configure_agent_runner(v2_runner)
@@ -1162,7 +1159,6 @@ def _chapter_payload_from(catalog: ManuscriptCatalog, chapter_id: str) -> dict[s
 # 路由
 # ---------------------------------------------------------------------------
 def create_v2_router(runtime: V2Runtime) -> APIRouter:
-    from hastings.interfaces.api.author_decisions import create_author_decisions_router
     from hastings.interfaces.api.conversations import create_conversations_router
     from hastings.interfaces.api.execution_log import create_execution_log_router
 
@@ -1857,46 +1853,6 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         """人工重新关联：引用片段必须在当前正文中可定位，否则拒绝。"""
         return runtime.evidence.reanchor(project_id, evidence_id, quote=req.quote)
 
-    @router.get("/projects/{project_id}/author-model/preferences")
-    def get_preferences(project_id: str) -> dict[str, Any]:
-        pid = ProjectId(project_id)
-        head = runtime.head(pid)
-        if head is None:
-            return {"project_id": project_id, "commit_id": None, "preferences": []}
-        preferences = runtime.author_queries.preferences(pid, head)
-        return {
-            "project_id": project_id,
-            "commit_id": head.value,
-            "preferences": [asdict(p) for p in preferences],
-        }
-
-    @router.get("/projects/{project_id}/author-model/observations")
-    def get_observations(project_id: str) -> dict[str, Any]:
-        pid = ProjectId(project_id)
-        head = runtime.head(pid)
-        if head is None:
-            return {"project_id": project_id, "commit_id": None, "observations": []}
-        observations = runtime.author_queries.observations(pid, head)
-        return {
-            "project_id": project_id,
-            "commit_id": head.value,
-            "observations": [asdict(o) for o in observations],
-        }
-
-    @router.get("/projects/{project_id}/author-model/preferences/{preference_id}/evidence")
-    def get_preference_evidence(project_id: str, preference_id: str) -> dict[str, Any]:
-        pid = ProjectId(project_id)
-        head = runtime.head(pid)
-        evidence = (
-            runtime.author_queries.preference_evidence(pid, head, preference_id) if head else ()
-        )
-        return {
-            "project_id": project_id,
-            "commit_id": head.value if head else None,
-            "preference_id": preference_id,
-            "observations": [asdict(o) for o in evidence],
-        }
-
     @router.get("/projects/{project_id}/export")
     def export_package(project_id: str, commit_id: str | None = None) -> Response:
         """把指定 Commit（默认 main head）导出为可读备份包 zip（确定性字节）。"""
@@ -1920,7 +1876,6 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
 
     router.include_router(create_changes_router(runtime))
     router.include_router(create_agents_router(runtime))
-    router.include_router(create_author_decisions_router(runtime))
     router.include_router(create_conversations_router(runtime))
     router.include_router(create_execution_log_router(runtime))
     return router
