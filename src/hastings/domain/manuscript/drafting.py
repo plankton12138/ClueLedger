@@ -84,6 +84,8 @@ class DraftBrief:
     viewpoint: str = ""
     length_target: str = ""
     narrative_boundary: str = ""
+    #: 叙事结构中的目标章（V03-4.7）：有它才能算披露边界；没有就不猜。
+    story_chapter_id: str = ""
     refs: tuple[str, ...] = ()
     base_head: str | None = None
     base_chapter: str | None = None
@@ -99,6 +101,7 @@ class DraftBrief:
             "viewpoint": self.viewpoint,
             "length_target": self.length_target,
             "narrative_boundary": self.narrative_boundary,
+            "story_chapter_id": self.story_chapter_id,
             "refs": list(self.refs),
             "base_head": self.base_head,
             "base_chapter": self.base_chapter,
@@ -116,6 +119,7 @@ class DraftBrief:
             viewpoint=str(data.get("viewpoint", "")),
             length_target=str(data.get("length_target", "")),
             narrative_boundary=str(data.get("narrative_boundary", "")),
+            story_chapter_id=str(data.get("story_chapter_id", "")),
             refs=tuple(str(r) for r in data.get("refs", [])),
             base_head=data.get("base_head"),
             base_chapter=data.get("base_chapter"),

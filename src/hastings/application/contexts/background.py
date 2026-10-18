@@ -27,6 +27,7 @@ from hastings.domain.repository.serialization import content_hash
 __all__ = [
     "AgreementInput",
     "BackgroundItem",
+    "BoundaryInput",
     "BackgroundOmission",
     "BackgroundPackage",
     "BackgroundRequest",
@@ -38,6 +39,7 @@ __all__ = [
     "MODE_TEMPORARY",
     "SUMMARY_MISSING",
     "TIER_AGREEMENTS",
+    "TIER_BOUNDARY",
     "TIER_CORE",
     "TIER_INDEX",
     "TIER_OVERVIEW",
@@ -51,6 +53,8 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 TIER_AGREEMENTS = "agreements"
+#: 披露边界紧跟约定：两者都是「这次写作的硬约束」，必须早于任何资料出现。
+TIER_BOUNDARY = "boundary"
 TIER_CORE = "core"
 TIER_OVERVIEW = "overview"
 TIER_INDEX = "index"
@@ -58,6 +62,7 @@ TIER_TARGET = "target"
 
 TIER_PRIORITY: Final[tuple[str, ...]] = (
     TIER_AGREEMENTS,
+    TIER_BOUNDARY,
     TIER_CORE,
     TIER_OVERVIEW,
     TIER_INDEX,
@@ -69,6 +74,7 @@ MANDATORY_TIERS: Final[frozenset[str]] = frozenset({TIER_AGREEMENTS, TIER_CORE})
 
 TIER_LABELS: Final[dict[str, str]] = {
     TIER_AGREEMENTS: "本书约定",
+    TIER_BOUNDARY: "知情与披露边界",
     TIER_CORE: "故事核心",
     TIER_OVERVIEW: "章节概览",
     TIER_INDEX: "目录",
@@ -112,6 +118,22 @@ class AgreementInput:
 
     def applies_to(self, scope: str) -> bool:
         return self.scope == "all" or self.scope == scope
+
+
+@dataclass(frozen=True, slots=True)
+class BoundaryInput:
+    """一份已算好的披露边界（V03-4.7）。
+
+    装配器不重新计算边界：位置解析与证据核对属于领域与仓库，背景只负责把
+    结果放在正确的层级、带上版本。``content_hash`` 用于版本索引，便于比对两次
+    装配用的是不是同一份边界。
+    """
+
+    position_label: str
+    text: str
+    ref_id: str = "disclosure_boundary"
+    revision_id: str = ""
+    content_hash: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +181,7 @@ class BackgroundRequest:
     ledger: tuple[LedgerInput, ...] = ()
     chapters: tuple[ChapterInput, ...] = ()
     target_chapter_ids: tuple[str, ...] = ()
+    boundary: BoundaryInput | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +323,23 @@ def _agreement_items(request: BackgroundRequest) -> list[BackgroundItem]:
             text=a.statement,
         )
         for a in chosen
+    ]
+
+
+def _boundary_items(request: BackgroundRequest) -> list[BackgroundItem]:
+    """披露边界：一条约束而不是一堆资料，所以整份装成一项，不拆条。"""
+    boundary = request.boundary
+    if boundary is None or not boundary.text.strip():
+        return []
+    return [
+        BackgroundItem(
+            tier=TIER_BOUNDARY,
+            kind="disclosure_boundary",
+            ref_id=boundary.ref_id,
+            revision_id=boundary.revision_id or str(request.commit_id or ""),
+            label=boundary.position_label or "本节点",
+            text=boundary.text.strip(),
+        )
     ]
 
 
@@ -457,6 +497,15 @@ def _versions(request: BackgroundRequest) -> dict[str, Any]:
         "commit_id": request.commit_id,
         "agreements": agreements,
         "summaries": summaries,
+        "boundary": (
+            {
+                "ref_id": request.boundary.ref_id,
+                "position": request.boundary.position_label,
+                "content_hash": request.boundary.content_hash,
+            }
+            if request.boundary is not None
+            else None
+        ),
     }
 
 
@@ -499,6 +548,7 @@ def assemble_background(request: BackgroundRequest) -> BackgroundPackage:
 
     candidates: list[BackgroundItem] = []
     candidates.extend(_agreement_items(request))
+    candidates.extend(_boundary_items(request))
     candidates.extend(_core_items(request))
     candidates.extend(_overview_items(request, target_set))
     candidates.extend(_index_items(request, target_set))

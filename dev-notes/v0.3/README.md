@@ -1,6 +1,6 @@
 # Hastings 0.3 开发文档
 
-> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 已交付**：3.1 活动起草路径已去节拍（旧规划管线与 AgentTasks 的节拍类型退出归 V03-8）、3.2 账本直接保存与设定候选成组、3.3/3.4/3.5 试写 → 只读预览 → 按哈希采用。**V03-4 进行中**：4.1 本书约定、4.2 背景装配（装配器 + 只读接口 + 试写/对话接线）、4.3 显式章摘要（含任务化）、4.4 账本更新建议、4.6 基础关联撤销（预览 + 一次提交恢复多章）已交付；4.5 投影恢复、4.7 披露边界待做，前端入口待定（作品设置页要到 V03-8.6 才随默认壳建立）。更新：2026-10-18。
+> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 已交付**：3.1 活动起草路径已去节拍（旧规划管线与 AgentTasks 的节拍类型退出归 V03-8）、3.2 账本直接保存与设定候选成组、3.3/3.4/3.5 试写 → 只读预览 → 按哈希采用。**V03-4 进行中**：4.1 本书约定、4.2 背景装配（装配器 + 只读接口 + 试写/对话接线）、4.3 显式章摘要（含任务化）、4.4 账本更新建议、4.6 基础关联撤销（预览 + 一次提交恢复多章）、4.7 披露边界（位置解析 + 三通道 + 采用门槛）已交付；4.5 投影恢复待做，前端入口待定（作品设置页要到 V03-8.6 才随默认壳建立）。更新：2026-10-18。
 
 0.3 将已有版本仓库与创作任务能力，组织为围绕正文、对话和故事账本的持续创作工作区。
 本目录使用产品版本命名；既有 `dev-notes/v2/`、`/api/v2` 和存储版本分别维护，不随产品版本重命名。
@@ -122,5 +122,6 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 | V03-4.4 账本更新建议 | **已交付**（任务化与「调整建议」待续） | `domain/story/suggestions.py`（确定性提示词、严格 JSON 解析、每条必须带原句）、`application/services/suggestion_service.py`（显式 `start`、零建议空结果）；候选组新增 `origin`/`source` 与 `_assert_sources_current`，采用沿用 `/ledger/candidates/accept`（`SOURCE_NEEDS_RECHECK` → 409） | [notes/v03-4.4](notes/v03-4.4-ledger-suggestions.md) |
 
 | V03-4.6 基础关联撤销 | **已交付**（正文路径；账本与正文一次恢复待 V03-7） | `application/services/undo_service.py`：预览对比 before/after/head，冲突按 `chapter_base` 判定；`apply` 经 `publish_commands` **一次提交恢复多章**，CAS 用操作后基础，撤销 ID 确定性派生（连点幂等）；`GET/POST /operations/{id}/undo`。同时改账本、新建章节、未结束副本均阻断 | [notes/v03-4.6](notes/v03-4.6-undo-preview.md) |
+| V03-4.7 披露边界 | **已交付**（语义级检测与结构入口见留白） | `domain/story/disclosure.py`：`resolve_position`（章/节拍/未知）、`boundary_at` 复用 `story_state_at_beat` 折叠出读者/角色/作者三通道、`unverified` 优先、倒叙按结构顺序；`check_expansion` 以**原文**为基线做名称级检测；`GET /disclosure-boundary` + `POST /disclosure-boundary/check`；背景新增 `boundary` 层（约定之后）；采用改写稿时 `allow_disclosure_change` 未授权即 409 | [notes/v03-4.7](notes/v03-4.7-disclosure-boundary.md) |
 
-专项测试：4.1 十六项、4.2 二十四项（12 纯函数 + 7 HTTP + 5 接线）、4.3 十八项（9 领域/接口 + 9 任务化）、4.4 九项、4.6 十二项（7 预览 + 5 写入）。质量门：`uv run pytest -q` **1677 passed**（2026-10-18 实测）；`ruff check` 全过；`mypy src/hastings` 238 files 无问题；前端未改动（vitest 基线不变）。
+专项测试：4.1 十六项、4.2 二十四项（12 纯函数 + 7 HTTP + 5 接线）、4.3 十八项（9 领域/接口 + 9 任务化）、4.4 九项、4.6 十二项（7 预览 + 5 写入）、4.7 二十二项（16 领域 + 3 接口 + 3 采用门槛）。质量门：`uv run pytest -q` **1699 passed**（2026-10-18 实测）；`ruff check` 全过；`mypy src/hastings` 240 files 无问题；前端未改动（vitest 基线不变）。

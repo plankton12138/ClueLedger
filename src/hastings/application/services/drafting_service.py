@@ -28,6 +28,7 @@ from hastings.application.ports.ids import IdGenerator
 from hastings.application.queries.ledger import entry_view
 from hastings.application.queries.story_queries import StoryQueries
 from hastings.application.services.commit_service import CommitService
+from hastings.application.services.disclosure_service import DisclosureService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
 from hastings.domain.manuscript import commands as manuscript_commands
 from hastings.domain.manuscript import drafting
@@ -69,6 +70,7 @@ class DraftingService:
         clock: Clock,
         writer: ChapterWriterFn | None = None,
         background: BackgroundService | None = None,
+        disclosure: DisclosureService | None = None,
     ) -> None:
         self._repo = repo
         self._publisher = publisher
@@ -78,6 +80,8 @@ class DraftingService:
         self._writer = writer
         # 常驻背景（V03-4.2）：按试写的基础版本取，不随当前 head 漂移。
         self._background = background
+        # 披露边界（V03-4.7）：采用改写稿前检查有没有提前披露后文真相。
+        self._disclosure = disclosure
 
     # -- 创建与调整 ----------------------------------------------------------
 
@@ -91,6 +95,7 @@ class DraftingService:
         viewpoint: str = "",
         length_target: str = "",
         narrative_boundary: str = "",
+        story_chapter_id: str = "",
         refs: list[str] | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
@@ -120,6 +125,7 @@ class DraftingService:
             viewpoint=viewpoint.strip(),
             length_target=length_target.strip(),
             narrative_boundary=narrative_boundary.strip(),
+            story_chapter_id=story_chapter_id.strip(),
             refs=tuple(str(r) for r in (refs or [])),
             base_head=catalog.commit_id,
             base_chapter=catalog.chapter_base(target)
@@ -240,6 +246,7 @@ class DraftingService:
         preview_hash: str,
         revision: int | None = None,
         operation_id: str | None = None,
+        allow_disclosure_change: bool = False,
     ) -> dict[str, Any]:
         """按预览哈希采用：一次发布，迟到候选不能覆盖新稿或未结束副本。"""
         pid = ProjectId(project_id)
@@ -298,6 +305,10 @@ class DraftingService:
                     "重新试写这一章，或在版本历史里比较后再决定",
                     chapter_id=candidate.brief.target,
                 )
+        # 默认润色不扩大披露：改写现有章时，新稿不能提前写出后文真相。
+        # 这是采用门槛而不是生成门槛——生成时可能已经越界，落地前必须挡住。
+        if candidate.brief.target != drafting.TARGET_NEW_CHAPTER:
+            self._ensure_disclosure_scope(candidate, chosen.text, allow_disclosure_change)
         op_id = operation_id or (
             "op_"
             + content_hash(
@@ -356,6 +367,43 @@ class DraftingService:
             "commit_id": result.commit_id,
             "changed_chapter_ids": list(result.envelope.changed_chapter_ids),
         }
+
+    def _ensure_disclosure_scope(
+        self,
+        candidate: drafting.ChapterCandidate,
+        text: str,
+        authorized: bool,
+    ) -> None:
+        """改写现有章前核对披露范围；没有叙事位置时不猜也不拦。
+
+        基线是**当前正文**：作者原来写过的事实名不算扩大披露，新出现且尚未揭示的
+        事实名才算。检测是字符串级的，长陈述句不在范围内——它拦的是「怀表坏了」
+        这类可命名事实被提前说破。
+        """
+        brief = candidate.brief
+        if self._disclosure is None or not brief.story_chapter_id:
+            return
+        pid = ProjectId(brief.project_id)
+        manuscript = self._catalog(pid).manuscript()
+        original = manuscript.text_of(brief.target)
+        report = self._disclosure.check(
+            brief.project_id,
+            original=original,
+            candidate=text,
+            chapter_id=brief.story_chapter_id,
+            authorized=authorized,
+        )
+        if not report.get("blocked"):
+            return
+        names = "、".join(str(item["label"]) for item in report["findings"])
+        raise _violation(
+            "DISCLOSURE_NEEDS_AUTHORIZATION",
+            f"drafts.adopt({candidate.candidate_id})",
+            f"新稿提前写出了后文才揭示的事实：{names}",
+            "去掉这些内容，或由作者明确授权改变揭示安排后重新采用",
+            findings=report["findings"],
+            position=report["position"],
+        )
 
     def discard(self, project_id: str, candidate_id: str) -> dict[str, Any]:
         """丢弃候选：只改候选状态，不碰正文与历史。"""
@@ -423,7 +471,11 @@ class DraftingService:
             return ""
         try:
             return self._background.render(
-                brief.project_id, scope="manuscript", commit_id=brief.base_head
+                brief.project_id,
+                scope="manuscript",
+                commit_id=brief.base_head,
+                # 有叙事位置才带披露边界；没有就不塞一份猜测出来的约束。
+                story_chapter_id=brief.story_chapter_id or None,
             )
         except ValueError as exc:
             raise _violation(

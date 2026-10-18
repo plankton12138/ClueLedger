@@ -19,17 +19,21 @@ from hastings.application.contexts.background import (
     AgreementInput,
     BackgroundPackage,
     BackgroundRequest,
+    BoundaryInput,
     ChapterInput,
     LedgerInput,
     assemble_background,
 )
 from hastings.application.queries.ledger import KIND_LABELS, entry_view
 from hastings.application.services.commit_service import CommitService
+from hastings.application.services.disclosure_service import as_violation, unverified_facts
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
 from hastings.domain.manuscript.evidence import KIND_CHAPTER_SUMMARY
 from hastings.domain.repository.ids import CommitId, ProjectId
 from hastings.domain.story import agreements as story_agreements
+from hastings.domain.story import disclosure as story_disclosure
 from hastings.domain.story.catalog import StoryCatalog, StoryEntry
+from hastings.domain.story.errors import StoryViolation
 
 __all__ = ["DEFAULT_BUDGET_TOKENS", "MAX_BUDGET_TOKENS", "BackgroundService"]
 
@@ -81,6 +85,7 @@ class BackgroundService:
         budget_tokens: int = DEFAULT_BUDGET_TOKENS,
         include_temporary_text: bool = False,
         commit_id: str | None = None,
+        story_chapter_id: str | None = None,
     ) -> dict[str, Any]:
         """装配并返回 wire 形状的背景包；空作品是合法输入。"""
         return self.build_package(
@@ -90,6 +95,7 @@ class BackgroundService:
             budget_tokens=budget_tokens,
             include_temporary_text=include_temporary_text,
             commit_id=commit_id,
+            story_chapter_id=story_chapter_id,
         ).to_wire()
 
     def render(
@@ -101,6 +107,7 @@ class BackgroundService:
         budget_tokens: int = DEFAULT_BUDGET_TOKENS,
         include_temporary_text: bool = False,
         commit_id: str | None = None,
+        story_chapter_id: str | None = None,
     ) -> str:
         """渲染成提示词用文本：同一部作品、同一版本，渲染结果完全一致。"""
         return self.build_package(
@@ -110,6 +117,7 @@ class BackgroundService:
             budget_tokens=budget_tokens,
             include_temporary_text=include_temporary_text,
             commit_id=commit_id,
+            story_chapter_id=story_chapter_id,
         ).render()
 
     def build_package(
@@ -121,6 +129,7 @@ class BackgroundService:
         budget_tokens: int = DEFAULT_BUDGET_TOKENS,
         include_temporary_text: bool = False,
         commit_id: str | None = None,
+        story_chapter_id: str | None = None,
     ) -> BackgroundPackage:
         """按指定版本（缺省为当前 head）装配；任务侧传自己的 ``base_head``。
 
@@ -149,6 +158,7 @@ class BackgroundService:
         story = StoryCatalog.from_snapshot(snapshot)
         manuscripts = ManuscriptCatalog.from_snapshot(snapshot)
         summaries = _summary_states(snapshot)
+        boundary = self._boundary(story, snapshot, story_chapter_id)
 
         agreements = tuple(
             AgreementInput(
@@ -183,7 +193,35 @@ class BackgroundService:
                 ledger=ledger,
                 chapters=chapters,
                 target_chapter_ids=targets,
+                boundary=boundary,
             )
+        )
+
+    @staticmethod
+    def _boundary(
+        story: StoryCatalog, snapshot: Any, story_chapter_id: str | None
+    ) -> BoundaryInput | None:
+        """只在调用方给了叙事位置时算边界。
+
+        没有位置就不猜：编一个边界比不给更糟——它会让「不得断言」的清单看起
+        像权威结论，实际只是按章号臆测的结果。
+        """
+        if not story_chapter_id:
+            return None
+        try:
+            computed = story_disclosure.boundary_at(
+                story,
+                chapter_id=story_chapter_id,
+                unverified=unverified_facts(snapshot),
+            )
+        except StoryViolation as exc:
+            # 位置写错要报错，不能悄悄少一块约束：模型会以为「本章没有限制」。
+            raise as_violation(exc) from exc
+        return BoundaryInput(
+            position_label=computed.position.label or "本节点",
+            text=computed.render(),
+            revision_id=computed.content_hash,
+            content_hash=computed.content_hash,
         )
 
     def _chapter_input(

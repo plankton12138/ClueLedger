@@ -76,6 +76,7 @@ from hastings.application.queries.ledger_forms import ledger_schema
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.agreement_service import AgreementService
 from hastings.application.services.conversation_service import ConversationService
+from hastings.application.services.disclosure_service import DisclosureService
 from hastings.application.services.drafting_service import DraftingService, WrittenChapter
 from hastings.application.services.edit_session_service import EditSessionService
 from hastings.application.services.entry_service import EntryService
@@ -197,6 +198,8 @@ class V2Runtime:
         # 背景装配（V03-4.2）：约定→核心→概览→目录→目标，只读、按版本取材料。
         # 先于对话与试写装配：这两条路径共用同一份背景，避免各拼一套。
         self.background = BackgroundService(self.service)
+        # 披露边界（V03-4.7）：按叙事位置算「谁已经知道什么」，只读。
+        self.disclosure = DisclosureService(self.service)
         self.chat = ConversationService(
             self.conversation_store,
             runner_factory=v2_runner.chat_runner,
@@ -283,6 +286,7 @@ class V2Runtime:
             self.clock,
             writer=self._chapter_writer,
             background=self.background,
+            disclosure=self.disclosure,
         )
         # 本书约定（V03-4.1）：作者显式维护的作品级要求，版本化、无模型。
         self.agreements = AgreementService(self.service, ids)
@@ -511,6 +515,7 @@ class V2Runtime:
                             and job["job_id"] not in self._active_jobs
                             and project_id not in active_projects
                         ):
+
                             async def _run_summary(job_id: str = job["job_id"]) -> None:
                                 await self.summary_jobs.execute(job_id)
 
@@ -934,6 +939,8 @@ class DraftCreateRequest(BaseModel):
     viewpoint: str = ""
     length_target: str = ""
     narrative_boundary: str = ""
+    #: 叙事结构中的目标章：给了才有披露边界，没给就不猜。
+    story_chapter_id: str = ""
     refs: list[str] = Field(default_factory=list)
     idempotency_key: str | None = None
 
@@ -1015,6 +1022,19 @@ class DraftAdoptRequest(BaseModel):
     preview_hash: str
     revision: int | None = None
     operation_id: str | None = None
+    #: 作者明确授权改变揭示安排：默认润色不扩大披露。
+    allow_disclosure_change: bool = False
+
+
+class DisclosureCheckRequest(BaseModel):
+    """检查一段新稿是否扩大披露；基线是原文，不是边界本身。"""
+
+    original: str
+    candidate: str
+    chapter_id: str | None = None
+    beat_id: str | None = None
+    commit_id: str | None = None
+    authorized: bool = False
 
 
 class SaveChapterRequest(BaseModel):
@@ -1149,12 +1169,8 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         """
         envelope = runtime.operations.get_operation(ProjectId(project_id), operation_id)
         payload = envelope.to_wire()
-        payload.update(
-            runtime.followups.states(project_id, envelope.changed_chapter_ids)
-        )
-        payload["result_url"] = (
-            f"/api/v2/projects/{project_id}/operations/{operation_id}"
-        )
+        payload.update(runtime.followups.states(project_id, envelope.changed_chapter_ids))
+        payload["result_url"] = f"/api/v2/projects/{project_id}/operations/{operation_id}"
         return payload
 
     @router.get("/projects/{project_id}/operations/{operation_id}/undo")
@@ -1351,9 +1367,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         )
 
     @router.post("/projects/{project_id}/ledger/candidates/skip")
-    def skip_ledger_candidates(
-        project_id: str, req: LedgerCandidateSkipRequest
-    ) -> dict[str, Any]:
+    def skip_ledger_candidates(project_id: str, req: LedgerCandidateSkipRequest) -> dict[str, Any]:
         """暂不处理：只更新候选组状态，不写正式账本。"""
         return runtime.ledger_candidates.skip(
             project_id,
@@ -1369,6 +1383,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         target: Annotated[list[str] | None, Query()] = None,
         budget_tokens: int | None = None,
         include_temporary_text: bool = False,
+        story_chapter_id: str | None = None,
     ) -> dict[str, Any]:
         """一次任务会看到的背景：约定、故事核心、概览、目录与目标展开。
 
@@ -1399,6 +1414,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
                 target_chapter_ids=list(target or []),
                 budget_tokens=tokens,
                 include_temporary_text=include_temporary_text,
+                story_chapter_id=story_chapter_id,
             )
         except ValueError as exc:
             # 装配器在「必留层级装不下」时抛出 ValueError（纯函数不依赖应用错误类）；
@@ -1410,6 +1426,34 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
                 fix="增大 budget_tokens，或减少生效约定与故事核心设定",
                 details={"budget_tokens": tokens},
             ) from exc
+
+    @router.get("/projects/{project_id}/disclosure-boundary")
+    def get_disclosure_boundary(
+        project_id: str,
+        chapter_id: str | None = None,
+        beat_id: str | None = None,
+        commit_id: str | None = None,
+    ) -> dict[str, Any]:
+        """某叙事位置上的知情与披露边界：读者已知、角色已知、不得断言、待核对。
+
+        只给章或节拍之一；都不给时返回保守边界（不声称任何事实已披露）。
+        """
+        return runtime.disclosure.boundary(
+            project_id, chapter_id=chapter_id, beat_id=beat_id, commit_id=commit_id
+        )
+
+    @router.post("/projects/{project_id}/disclosure-boundary/check")
+    def check_disclosure_expansion(project_id: str, req: DisclosureCheckRequest) -> dict[str, Any]:
+        """检查新稿有没有把后文事实提前写出来；``authorized`` 表示作者已明确授权。"""
+        return runtime.disclosure.check(
+            project_id,
+            original=req.original,
+            candidate=req.candidate,
+            chapter_id=req.chapter_id,
+            beat_id=req.beat_id,
+            commit_id=req.commit_id,
+            authorized=req.authorized,
+        )
 
     @router.get("/projects/{project_id}/summaries")
     def list_summaries(project_id: str) -> dict[str, Any]:
@@ -1546,6 +1590,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             viewpoint=req.viewpoint,
             length_target=req.length_target,
             narrative_boundary=req.narrative_boundary,
+            story_chapter_id=req.story_chapter_id,
             refs=req.refs,
             idempotency_key=req.idempotency_key,
         )
@@ -1571,9 +1616,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         )
 
     @router.post("/projects/{project_id}/drafts/{candidate_id}/adopt")
-    def adopt_draft(
-        project_id: str, candidate_id: str, req: DraftAdoptRequest
-    ) -> dict[str, Any]:
+    def adopt_draft(project_id: str, candidate_id: str, req: DraftAdoptRequest) -> dict[str, Any]:
         """按预览哈希采用：一次发布，迟到候选不能覆盖新稿或未结束副本。"""
         return runtime.drafting.adopt(
             project_id,
@@ -1581,6 +1624,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             preview_hash=req.preview_hash,
             revision=req.revision,
             operation_id=req.operation_id,
+            allow_disclosure_change=req.allow_disclosure_change,
         )
 
     @router.post("/projects/{project_id}/drafts/{candidate_id}/discard")
@@ -1713,18 +1757,14 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         }
 
     @router.get("/projects/{project_id}/chapters/{chapter_id}/history")
-    def get_chapter_history(
-        project_id: str, chapter_id: str, limit: int = 20
-    ) -> dict[str, Any]:
+    def get_chapter_history(project_id: str, chapter_id: str, limit: int = 20) -> dict[str, Any]:
         """章版本历史：只读投影，按章基础判重；limit 上限 50。"""
         return runtime.chapter_history.versions(
             project_id, chapter_id, limit=max(1, min(limit, 50))
         )
 
     @router.get("/projects/{project_id}/evidence-links")
-    def list_evidence_links(
-        project_id: str, chapter_id: str | None = None
-    ) -> dict[str, Any]:
+    def list_evidence_links(project_id: str, chapter_id: str | None = None) -> dict[str, Any]:
         """证据列表（可按章过滤）；需核对的排在前面。"""
         return runtime.evidence.list(project_id, chapter_id=chapter_id)
 
@@ -1839,7 +1879,8 @@ def _summary_sync_result(finished: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _empty_chapter(chapter_id: str) -> dict[str, Any]:    return {
+def _empty_chapter(chapter_id: str) -> dict[str, Any]:
+    return {
         "chapter_id": chapter_id,
         "title": "",
         "order_key": "",
@@ -1860,7 +1901,7 @@ def _status_for(error: HastingsError) -> int:
     if error.code.endswith("_CONFLICT"):
         return 409
     # 来源已变不是输入写错，而是「先重新整理再采用」的选择：按冲突返回。
-    if error.code == "SOURCE_NEEDS_RECHECK":
+    if error.code in ("SOURCE_NEEDS_RECHECK", "DISCLOSURE_NEEDS_AUTHORIZATION"):
         return 409
     return 400
 

@@ -75,8 +75,15 @@ CAPABILITIES: Final[dict[str, Any]] = {
         "status": "implemented",
         "default_tokens": 12_000,
         "max_tokens": 64_000,
-        "tiers": ("agreements", "core", "overview", "index", "target"),
+        "tiers": ("agreements", "boundary", "core", "overview", "index", "target"),
         "prompt_wiring": ("manuscript", "discussion"),
+    },
+    "disclosure_boundary": {
+        "status": "implemented",
+        "positions": ("chapter", "beat", "unknown"),
+        "default_boundary": "conservative",
+        "expansion_check": "name_level",
+        "authorization_required": True,
     },
     "undo": {
         "status": "draft",
