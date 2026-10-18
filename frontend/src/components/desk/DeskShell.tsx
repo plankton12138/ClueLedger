@@ -24,6 +24,7 @@ import { useDeskStore, type EntryReceipt } from "../../state/deskStore";
 import { isDirty, useV2Store } from "../../state/v2";
 import { ConfirmDiscard, Empty, ErrorText, Pill, kindLabels } from "../Workbench";
 import DeskComposer from "./DeskComposer";
+import ImportDialog from "./ImportDialog";
 
 const DETAIL_KINDS: { detailKind: "candidate" | "diff" | "graph" | "history"; label: string; stage: string }[] = [
   { detailKind: "candidate", label: "正文候选", stage: "V03-3" },
@@ -212,6 +213,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
 
   const [pending, setPending] = useState<string | null>(null);
   const [continueError, setContinueError] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const chapter = v2.chapter;
   const chatServiceKind = useChatStore((s) => s.serviceKind);
 
@@ -265,12 +267,21 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
       {!focusMode && (
         <aside className="min-h-0 w-60 flex-none space-y-4 overflow-y-auto p-3">
           <section className="panel" aria-label="章节目录">
-            <header className="panel-head px-4 py-3">
-              章节目录 <small>{v2.chapters.length} 章</small>
+            <header className="panel-head flex items-center justify-between px-4 py-3">
+              <span>
+                章节目录 <small>{v2.chapters.length} 章</small>
+              </span>
+              <button
+                className="text-[11px] text-blue underline disabled:text-sub disabled:no-underline"
+                disabled={!pid || chapter.saving}
+                onClick={() => setImportOpen(true)}
+              >
+                导入正文
+              </button>
             </header>
             {v2.chapters.length === 0 ? (
               <p className="px-4 py-3 text-xs text-sub">
-                还没有正文。先在下方保存想法，或从「创作台」导入章节。
+                还没有正文。可以导入 .txt / .md 稿件，或在下方保存想法。
               </p>
             ) : (
               v2.chapters.map((c) => (
@@ -528,6 +539,24 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
           setPending(null);
         }}
       />
+
+      {pid && (
+        <ImportDialog
+          projectId={pid}
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          onImported={(ids) => {
+            void v2.refreshManuscript().then(() => {
+              const first = ids[0];
+              if (!first) return;
+              void v2.selectChapter(first);
+              useDeskStore
+                .getState()
+                .navigate({ kind: "manuscript", chapterId: first });
+            });
+          }}
+        />
+      )}
     </main>
   );
 }

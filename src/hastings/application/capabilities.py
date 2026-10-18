@@ -49,7 +49,7 @@ PERFORMANCE_TARGETS: Final[dict[str, Any]] = {
 CAPABILITIES: Final[dict[str, Any]] = {
     "product_version": "0.3",
     "api_version": "v2",
-    "import": {**IMPORT_LIMITS, "status": "draft"},
+    "import": {**IMPORT_LIMITS, "status": "implemented"},
     "edit_sessions": {"status": "draft"},
     "operation_records": {"status": "draft"},
     "execution_grants": {"status": "implemented"},

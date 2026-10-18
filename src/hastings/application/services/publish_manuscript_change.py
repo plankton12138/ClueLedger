@@ -171,6 +171,16 @@ class PublishManuscriptChange:
         fingerprint = content_hash(
             {"command": command.name, "intent": repr(sorted(command.intent.items())), "refs": refs}
         )
+        # (1) 回执重放必须先于命令执行：导入用确定性章 ID，先跑命令会在重试时
+        #     撞上已存在的章，永远走不到回执（保存类命令恰好幂等，未暴露此问题）。
+        replayed = self._operations.find_replay(pid.value, operation_id, fingerprint)
+        if replayed is not None:
+            return PublishResult(
+                envelope=replayed,
+                warnings=(),
+                summary=summary,
+                change=ManuscriptChange(summary=summary),
+            )
         catalog = (
             ManuscriptCatalog.from_snapshot(self._repo.get_snapshot(pid, head))
             if head is not None

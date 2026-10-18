@@ -17,6 +17,7 @@ Agent Patch（T14.4）复用同一批操作与校验：提案只登记 hunk 与�
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from dataclasses import replace as _dataclass_replace
 from difflib import SequenceMatcher
 
@@ -48,9 +49,12 @@ from hastings.domain.repository.ids import ArtifactId, RevisionId
 from hastings.domain.repository.requests import ArtifactChange
 
 __all__ = [
+    "ChapterImport",
+    "ChapterReplacement",
     "NewId",
     "accept_patch_hunks",
     "apply_edits",
+    "import_batch",
     "import_chapter",
     "propose_patch",
     "reject_patch",
@@ -61,6 +65,89 @@ __all__ = [
 NewId = Callable[[str], str]
 
 _OPS_FIELD = "operations"
+
+
+@dataclass(frozen=True, slots=True)
+class ChapterImport:
+    """导入新增的一章：章身份由调用方确定（预览阶段已固定，重试不换 ID）。"""
+
+    chapter_id: str
+    title: str
+    text: str
+    order_key: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChapterReplacement:
+    """导入替换的一章：必须声明目标章与当前基础（乐观并发）。"""
+
+    chapter_id: str
+    text: str
+    expected_chapter_base: str | None = None
+
+
+def import_batch(
+    catalog: ManuscriptCatalog,
+    new_id: NewId,
+    *,
+    additions: tuple[ChapterImport, ...] = (),
+    replacements: tuple[ChapterReplacement, ...] = (),
+) -> ManuscriptChange:
+    """一次导入批次：新增若干章 + 显式替换若干章，合成一个变化集合。
+
+    整批在**同一个 CommitRequest** 里生效（计划 M06 第 5 条）：任一目标失败
+    整批拒绝，不留下半份正文。批次内同一目标章只允许出现一次；同名章不按
+    标题判等（新增还是替换由选择决定，不靠标题推断）。
+
+    组合既有纯函数：替换复用 ``save_full_text``（段落级 diff），新增复用
+    ``import_chapter``（新身份 + 确定性分段）。目标互不重叠，因此可以在同一
+    基础目录上依次求值而无需真正提交。
+    """
+    where = "manuscript.import_batch"
+    targets = [replacement.chapter_id for replacement in replacements]
+    duplicated = {target for target in targets if targets.count(target) > 1}
+    if duplicated:
+        raise violation(
+            ec.IMPORT_DUPLICATE_TARGET,
+            where,
+            f"同一批导入重复指向章节 {sorted(duplicated)}",
+            "每个替换目标只出现一次；同一章需要两次改动时先在预览中合并文本",
+        )
+
+    changes: list[ArtifactChange] = []
+    events: list[tuple[str, dict[str, object]]] = []
+    warnings: list[str] = []
+    for replacement in replacements:
+        part = save_full_text(
+            catalog,
+            new_id,
+            chapter_id=replacement.chapter_id,
+            text=replacement.text,
+            expected_chapter_base=replacement.expected_chapter_base,
+        )
+        changes.extend(part.artifact_changes)
+        events.extend(part.events)
+        warnings.extend(part.warnings)
+    for addition in additions:
+        part = import_chapter(
+            catalog,
+            new_id,
+            chapter_id=addition.chapter_id,
+            title=addition.title,
+            text=addition.text,
+            order_key=addition.order_key,
+        )
+        changes.extend(part.artifact_changes)
+        events.extend(part.events)
+        warnings.extend(part.warnings)
+    if not changes:
+        return ManuscriptChange(summary="导入未产生变化")
+    return ManuscriptChange(
+        artifact_changes=tuple(changes),
+        events=tuple(events),
+        warnings=tuple(warnings),
+        summary=f"导入新增 {len(additions)} 章、替换 {len(replacements)} 章",
+    )
 
 
 def import_chapter(

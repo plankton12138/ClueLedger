@@ -23,6 +23,8 @@ Phase 16：JobStore 与任务事件使用 SQLite；服务生命周期恢复 Job�
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
@@ -59,6 +61,7 @@ from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.conversation_service import ConversationService
 from hastings.application.services.entry_service import EntryService
+from hastings.application.services.import_service import ImportService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
 from hastings.application.services.task_prep_service import TaskPrepService
@@ -214,6 +217,8 @@ class V2Runtime:
         # 统一正文发布（V03-2.2）：导入/保存/恢复同管线；领域命令纯函数
         # 准备 → 证据核对/摘要失效 → 原子提交（I03）。
         self.manuscript_publisher = PublishManuscriptChange(self.service, self.operations, ids)
+        # 正文导入预览与确认（V03-2.3）：预览落辅助表，确认走统一发布。
+        self.imports = ImportService(self.service, self.manuscript_publisher, ids, self.clock)
         self.restore = RestoreChapterVersion(self.handler, self.service)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
@@ -749,6 +754,25 @@ class ImportChapterRequest(BaseModel):
     order_key: str = "0001"
 
 
+class ImportPreviewRequest(BaseModel):
+    """上传原始字节（base64）：解码与编码错误由服务端如实报告。"""
+
+    filename: str
+    content_base64: str
+
+
+class ImportSelectionRequest(BaseModel):
+    expected_revision: int
+    mode: str = "append"
+    replacements: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ImportConfirmRequest(BaseModel):
+    preview_hash: str
+    duplicate_decision: str | None = None
+    operation_id: str | None = None
+
+
 class SaveChapterRequest(BaseModel):
     idempotency_key: str
     operations: list[dict[str, Any]] | None = None
@@ -872,6 +896,52 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
     @router.get("/projects/{project_id}/manuscript")
     def get_manuscript(project_id: str) -> dict[str, Any]:
         return _manuscript_payload(runtime, ProjectId(project_id))
+
+    # -- 正文导入（V03-2.3）：预览 → 调整目标 → 整批确认 -------------------
+
+    @router.post("/projects/{project_id}/imports/previews", status_code=201)
+    def create_import_preview(project_id: str, req: ImportPreviewRequest) -> dict[str, Any]:
+        """只解析并生成预览；不写正式正文（计划 M06 第 1 条）。"""
+        try:
+            data = base64.b64decode(req.content_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ViolationError(
+                code=ms_ec.IMPORT_ENCODING_UNSUPPORTED,
+                where="imports.preview",
+                why=f"content_base64 不是合法 base64：{exc}",
+                fix="上传原始文件字节的 base64 编码（不要先自行转成文本）",
+            ) from exc
+        return runtime.imports.create_preview(project_id, req.filename, data)
+
+    @router.get("/projects/{project_id}/imports/previews/{preview_id}")
+    def get_import_preview(project_id: str, preview_id: str) -> dict[str, Any]:
+        return runtime.imports.get_preview(project_id, preview_id)
+
+    @router.patch("/projects/{project_id}/imports/previews/{preview_id}")
+    def update_import_preview(
+        project_id: str, preview_id: str, req: ImportSelectionRequest
+    ) -> dict[str, Any]:
+        """调整新增/替换目标；替换必须给目标章与当前章基础。"""
+        return runtime.imports.update_selection(
+            project_id,
+            preview_id,
+            expected_revision=req.expected_revision,
+            mode=req.mode,
+            replacements=req.replacements,
+        )
+
+    @router.post("/projects/{project_id}/imports/previews/{preview_id}/confirm")
+    def confirm_import_preview(
+        project_id: str, preview_id: str, req: ImportConfirmRequest
+    ) -> dict[str, Any]:
+        """整批确认：一次提交，失败无半份正文；重试不重复建章。"""
+        return runtime.imports.confirm(
+            project_id,
+            preview_id,
+            preview_hash=req.preview_hash,
+            duplicate_decision=req.duplicate_decision,
+            operation_id=req.operation_id,
+        )
 
     @router.post("/projects/{project_id}/chapters/import")
     def import_chapter(project_id: str, req: ImportChapterRequest) -> dict[str, Any]:

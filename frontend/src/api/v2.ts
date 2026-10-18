@@ -81,7 +81,7 @@ export async function request<T>(
 }
 
 const key = () => crypto.randomUUID();
-const projectPrefix = (projectId: string) =>
+export const projectPrefix = (projectId: string) =>
   `/api/v2/projects/${encodeURIComponent(projectId)}`;
 
 // ---------------------------------------------------------------------------

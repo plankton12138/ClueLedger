@@ -108,19 +108,9 @@ class OperationService:
         head = branch.head_commit_id
         fingerprint = request_fingerprint or self._fingerprint(kind, changes, summary, refs, events)
         # 1) 幂等重放：回执（同键同指纹）→ 原结果；同键不同指纹 → 冲突。
-        existing = self._repo.aux_read(pid, OPERATION_RECEIPT_BUCKET, operation_id)
-        if existing is not None:
-            receipt = OperationReceipt.from_wire(existing)
-            if receipt.request_fingerprint != fingerprint:
-                raise _violation(
-                    ec.OPERATION_KEY_CONFLICT,
-                    f"operations.submit({operation_id})",
-                    f"操作 {operation_id!r} 已被不同内容的请求使用"
-                    f"（原指纹 {receipt.request_fingerprint[:12]}…）",
-                    "同一个 operation_id 只用于同一逻辑操作的全部重试；新操作生成新的 operation_id",
-                    operation_id=operation_id,
-                )
-            return self.get_operation(pid, operation_id)
+        replayed = self._replay(pid, operation_id, fingerprint)
+        if replayed is not None:
+            return replayed
         conversation_id = creation_log_conversation_id(project_id)
         # 2) 基础快照：补全 old_revision_id 并预检 no_change（与引擎同一口径）。
         #    乐观预检：全部变化与有效版本内容一致（或本就无变化）⇒ no_change。
@@ -243,6 +233,34 @@ class OperationService:
         )
 
     # -- 查询 --------------------------------------------------------------
+
+    def find_replay(
+        self, project_id: str, operation_id: str, request_fingerprint: str
+    ) -> OperationEnvelope | None:
+        """回执重放（§3.3 第 1 步）：必须在执行领域命令**之前**调用。
+
+        导入确认使用确定性章 ID：先执行命令的话，重试会撞上已存在的章而
+        永远走不到回执重放。保存类命令恰好幂等，此前未暴露这个顺序问题。
+        """
+        return self._replay(ProjectId(project_id), operation_id, request_fingerprint)
+
+    def _replay(
+        self, pid: ProjectId, operation_id: str, fingerprint: str
+    ) -> OperationEnvelope | None:
+        existing = self._repo.aux_read(pid, OPERATION_RECEIPT_BUCKET, operation_id)
+        if existing is None:
+            return None
+        receipt = OperationReceipt.from_wire(existing)
+        if receipt.request_fingerprint != fingerprint:
+            raise _violation(
+                ec.OPERATION_KEY_CONFLICT,
+                f"operations.submit({operation_id})",
+                f"操作 {operation_id!r} 已被不同内容的请求使用"
+                f"（原指纹 {receipt.request_fingerprint[:12]}…）",
+                "同一个 operation_id 只用于同一逻辑操作的全部重试；新操作生成新的 operation_id",
+                operation_id=operation_id,
+            )
+        return self.get_operation(pid, operation_id)
 
     def get_operation(self, project_id: ProjectId | str, operation_id: str) -> OperationEnvelope:
         """按 operation_id 找回结果：只依赖仓库，不依赖对话投影（§4.2）。
