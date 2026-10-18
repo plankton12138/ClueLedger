@@ -50,6 +50,9 @@ _DECODERS: dict[str, Decoder] = {
     kinds.KIND_TRUTH_FACT: TruthFact.from_content,
     kinds.KIND_KNOWLEDGE: KnowledgeState.from_content,
     kinds.KIND_DISCLOSURE: Disclosure.from_content,
+    # 作品约定（`story.agreement`）不在此注册：`agreements.py` 反向依赖本模块的
+    # StoryCatalog，注册解码器会形成循环导入。约定内容由 agreements 模块自己
+    # 用 `BookAgreement.from_content` 解码，`decode()` 对它返回原始 content。
     kinds.KIND_SERIES: NarrativeNode.from_content,
     kinds.KIND_BOOK: NarrativeNode.from_content,
     kinds.KIND_ARC: NarrativeNode.from_content,
@@ -75,6 +78,7 @@ DISPLAY_NAME_FIELDS: dict[str, str] = {
     kinds.KIND_CHAPTER: "title",
     kinds.KIND_SCENE: "title",
     kinds.KIND_BEAT: "title",
+    kinds.KIND_AGREEMENT: "statement",
 }
 
 

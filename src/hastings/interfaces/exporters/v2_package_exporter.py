@@ -80,6 +80,8 @@ _BIBLE_DIRS: dict[str, str] = {
     story_kinds.KIND_TRUTH_FACT: "truth_facts",
     story_kinds.KIND_KNOWLEDGE: "knowledge",
     story_kinds.KIND_DISCLOSURE: "disclosures",
+    # 本书约定（V03-4.1）：作品级资料，不属于可引用账本，单独一个目录便于人工核对。
+    story_kinds.KIND_AGREEMENT: "agreements",
     story_kinds.KIND_SERIES: "structure",
     story_kinds.KIND_BOOK: "structure",
     story_kinds.KIND_ARC: "structure",

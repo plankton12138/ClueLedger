@@ -64,6 +64,7 @@ from hastings.application.queries.followups import FollowupQueries
 from hastings.application.queries.ledger import LedgerQueries
 from hastings.application.queries.ledger_forms import ledger_schema
 from hastings.application.queries.manuscript import ManuscriptQueries
+from hastings.application.services.agreement_service import AgreementService
 from hastings.application.services.conversation_service import ConversationService
 from hastings.application.services.drafting_service import DraftingService, WrittenChapter
 from hastings.application.services.edit_session_service import EditSessionService
@@ -264,6 +265,8 @@ class V2Runtime:
             self.clock,
             writer=self._chapter_writer,
         )
+        # 本书约定（V03-4.1）：作者显式维护的作品级要求，版本化、无模型。
+        self.agreements = AgreementService(self.service, ids)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -910,6 +913,33 @@ class LedgerCandidateSkipRequest(BaseModel):
     request_id: str = Field(min_length=1)
 
 
+class AgreementCreateRequest(BaseModel):
+    """新增本书约定：默认生效；与生效项同主题时必须 supersedes，否则用 pending_choice。"""
+
+    statement: str = Field(min_length=1)
+    topic: str = "other"
+    scope: str = "all"
+    status: str = "active"
+    source_kind: str = "settings_edit"
+    source_message_id: str = ""
+    supersedes: list[str] = Field(default_factory=list)
+    request_id: str = Field(min_length=1)
+
+
+class AgreementUpdateRequest(BaseModel):
+    """修订本书约定：只覆盖给出的字段；替换/移除都在这里表达。"""
+
+    statement: str | None = None
+    topic: str | None = None
+    scope: str | None = None
+    status: str | None = None
+    source_message_id: str | None = None
+    retired_reason: str | None = None
+    supersedes: list[str] = Field(default_factory=list)
+    expected_revision: str | None = None
+    request_id: str = Field(min_length=1)
+
+
 class DraftReviseRequest(BaseModel):
     instruction: str = ""
     expected_revision: int | None = None
@@ -1233,6 +1263,52 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             project_id,
             item_ids=req.item_ids,
             expected_revision=req.expected_revision,
+            request_id=req.request_id,
+        )
+
+    @router.get("/projects/{project_id}/agreements")
+    def list_agreements(project_id: str, include_retired: bool = False) -> dict[str, Any]:
+        """本书约定：生效/待选择在前，已停用项按需展开（保历史，不物理删除）。"""
+        return runtime.agreements.list(project_id, include_retired=include_retired)
+
+    @router.get("/projects/{project_id}/agreements/snapshot")
+    def get_agreement_snapshot(project_id: str, commit_id: str | None = None) -> dict[str, Any]:
+        """某个版本的生效约定快照：任务绑定后，改约定不换已启动任务的输入。"""
+        return runtime.agreements.snapshot(project_id, commit_id)
+
+    @router.post("/projects/{project_id}/agreements", status_code=201)
+    def create_agreement(project_id: str, req: AgreementCreateRequest) -> dict[str, Any]:
+        """新增约定：不运行模型；同主题冲突返回 409，等作者选择替换或保留。"""
+        return runtime.agreements.create(
+            project_id,
+            statement=req.statement,
+            topic=req.topic,
+            scope=req.scope,
+            status=req.status,
+            source_kind=req.source_kind,
+            source_message_id=req.source_message_id,
+            supersedes=req.supersedes,
+            request_id=req.request_id,
+        )
+
+    @router.patch("/projects/{project_id}/agreements/{agreement_id}")
+    def update_agreement(
+        project_id: str, agreement_id: str, req: AgreementUpdateRequest
+    ) -> dict[str, Any]:
+        """修订/替换/移除：只覆盖给出的字段，一次提交内完成旧项停用。"""
+        fields: dict[str, Any] = {}
+        for name in ("statement", "topic", "scope", "status", "source_message_id"):
+            value = getattr(req, name)
+            if value is not None:
+                fields[name] = value
+        if req.retired_reason is not None:
+            fields["retired_reason"] = req.retired_reason
+        return runtime.agreements.update(
+            project_id,
+            agreement_id,
+            fields=fields,
+            expected_revision=req.expected_revision,
+            supersedes=req.supersedes,
             request_id=req.request_id,
         )
 
