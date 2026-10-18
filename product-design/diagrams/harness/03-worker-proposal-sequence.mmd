@@ -1,0 +1,40 @@
+sequenceDiagram
+    accTitle: 工作者从作者启动到候选采用的时序
+    accDescr: 固定资料和授权后运行模型，校验并保存候选；作者接受后再次检查版本，最后原子提交。
+    autonumber
+    actor U as 作者
+    participant A as 应用工作流
+    participant J as Job 执行与存储
+    participant R as TauAgentRunner
+    participant H as Harness / Provider
+    participant DB as 作品仓库
+    U->>A: 明确启动规划或写作
+    A->>DB: 读取固定 Commit 的资料
+    DB-->>A: Snapshot 与 Revision 引用
+    A->>J: 保存 Context、能力范围、模型绑定、启动凭据
+    A->>A: 派发前检查凭据
+    A->>J: 领取任务、记录执行代际与租约
+    J->>R: 运行冻结的 Context
+    R->>H: 新建 Harness，注册白名单内工具
+    loop 最多 4 个回合 / 一次 Harness 调用
+        H->>R: 请求只读工具 / 提案工具
+        R->>DB: 仅从固定 Snapshot 读授权对象
+        DB-->>R: 对象内容与版本
+        R-->>H: 查询结果 / 候选校验结果
+    end
+    Note over R,H: 输出不合规最多纠正一次；有效提案在 turn_end 收束
+    H-->>R: 结构化输出（或最终 JSON 文本）
+    R-->>J: 返回已校验的候选
+    J->>J: 再校验、保存 checkpoint，进入 waiting
+    J-->>U: 展示候选与依据
+    Note over U,DB: 到这里仍未提交正式正文
+    U->>A: 接受候选 + expected_head
+    A->>DB: 复查当前版本、相关对象、能力范围
+    alt 依据仍有效
+        A->>DB: 领域命令 → CommitService 原子提交
+        DB-->>A: Commit ID 与 Outbox
+        A->>J: resolve 为 completed，保存接受结果
+        A-->>U: 返回正式版本
+    else 版本或范围冲突
+        A-->>U: 保留候选，要求重新读取 / 生成
+    end
