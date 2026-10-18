@@ -59,6 +59,7 @@ from hastings.application.ports.agents import AgentRunner
 from hastings.application.ports.events import EventOutbox
 from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.chapter_history import ChapterHistoryQueries
+from hastings.application.queries.followups import FollowupQueries
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.conversation_service import ConversationService
 from hastings.application.services.edit_session_service import EditSessionService
@@ -239,6 +240,8 @@ class V2Runtime:
         # 章版本历史与证据核对（V03-2.5）：只读历史 + 人工重锚。
         self.chapter_history = ChapterHistoryQueries(self.service)
         self.evidence = EvidenceService(self.service, self.operations)
+        # 操作后的派生状态（V03-2.6）：摘要是否待更新、建议是否已整理。
+        self.followups = FollowupQueries(self.service)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -919,8 +922,19 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
 
         只依赖仓库（回执 + 记录 Artifact），不依赖对话投影：投影失败或
         尚未完成时本查询仍可定位结果，展示层显示「同步中」。
+
+        V03-2.6：附带确定性的后续状态（摘要是否待更新、建议是否已整理）。
+        这里只报告状态，不创建任务、不调用模型。
         """
-        return runtime.operations.get_operation(ProjectId(project_id), operation_id).to_wire()
+        envelope = runtime.operations.get_operation(ProjectId(project_id), operation_id)
+        payload = envelope.to_wire()
+        payload.update(
+            runtime.followups.states(project_id, envelope.changed_chapter_ids)
+        )
+        payload["result_url"] = (
+            f"/api/v2/projects/{project_id}/operations/{operation_id}"
+        )
+        return payload
 
     @router.post("/projects")
     def create_project(req: ProjectCreateRequest) -> dict[str, Any]:

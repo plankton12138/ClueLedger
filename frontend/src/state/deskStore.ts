@@ -55,6 +55,8 @@ export interface EntryReceipt {
 interface DeskStore extends DeskState {
   focusMode: boolean;
   entryReceipts: EntryReceipt[];
+  /** 最近一次作者操作（导入/修改完成/保存）：右侧展示后续状态（V03-2.6）。 */
+  lastOperationId: string | null;
   /** 接着讨论成功后请求输入框重新聚焦（恢复原输入位置，M02）。 */
   composerFocusTick: number;
   setProject(projectId: string | null): void;
@@ -62,6 +64,7 @@ interface DeskStore extends DeskState {
   applyOperationResult(envelope: OperationEnvelope): void;
   saveReadingPosition(position: ReadingPosition): void;
   addEntryReceipt(receipt: EntryReceipt): void;
+  setLastOperation(operationId: string | null): void;
   requestComposerFocus(): void;
   toggleFocus(): void;
 }
@@ -70,17 +73,19 @@ export const useDeskStore = create<DeskStore>()((set, get) => ({
   ...emptyDeskState(),
   focusMode: readFocus(),
   entryReceipts: [],
+  lastOperationId: null,
   composerFocusTick: 0,
   setProject: (projectId) => {
     if (get().projectId === projectId) return;
     // 换项目：壳层回到未定焦点；旧项目的操作与回执不带入（M01 验收第 5 条）。
-    set({ ...emptyDeskState(projectId), entryReceipts: [] });
+    set({ ...emptyDeskState(projectId), entryReceipts: [], lastOperationId: null });
   },
   navigate: (view) => set(navigateView(get(), view)),
   applyOperationResult: (envelope) => set(applyOperationResult(get(), envelope)),
   saveReadingPosition: (position) => set(savePosition(get(), position)),
   addEntryReceipt: (receipt) =>
     set((s) => ({ entryReceipts: [...s.entryReceipts, receipt] })),
+  setLastOperation: (operationId) => set({ lastOperationId: operationId }),
   requestComposerFocus: () =>
     set((s) => ({ composerFocusTick: s.composerFocusTick + 1 })),
   toggleFocus: () =>

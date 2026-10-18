@@ -27,6 +27,7 @@ import DeskComposer from "./DeskComposer";
 import ChapterHistory from "./ChapterHistory";
 import EvidenceCheck from "./EvidenceCheck";
 import ImportDialog from "./ImportDialog";
+import OperationFollowups from "./OperationFollowups";
 import { useEditSession } from "./useEditSession";
 
 const DETAIL_KINDS: { detailKind: "candidate" | "diff" | "graph" | "history"; label: string; stage: string }[] = [
@@ -125,6 +126,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   const focusMode = useDeskStore((s) => s.focusMode);
   const entryReceipts = useDeskStore((s) => s.entryReceipts);
   const operations = useDeskStore((s) => s.operations);
+  const lastOperationId = useDeskStore((s) => s.lastOperationId);
 
   // 项目切换同步壳层状态（换项目：旧操作/回执不带入，主区回到未定焦点）。
   useEffect(() => {
@@ -225,6 +227,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
     chapterId: mainView?.kind === "manuscript" ? mainView.chapterId : null,
     formalText: chapter.draft ?? "",
     onFinished: (result) => {
+      useDeskStore.getState().setLastOperation(result.operation_id);
       void v2.refreshManuscript();
       const first = result.changed_chapter_ids[0];
       if (first) void v2.selectChapter(first);
@@ -615,6 +618,9 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
           {mainView?.kind === "manuscript" && pid && (
             <EvidenceCheck projectId={pid} chapterId={mainView.chapterId} />
           )}
+          {pid && lastOperationId && (
+            <OperationFollowups projectId={pid} operationId={lastOperationId} />
+          )}
           <section className="panel" aria-label="操作结果">
             <header className="panel-head px-4 py-3">操作结果</header>
             {Object.keys(operations).length === 0 ? (
@@ -657,7 +663,8 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
           projectId={pid}
           open={importOpen}
           onOpenChange={setImportOpen}
-          onImported={(ids) => {
+          onImported={(ids, operationId) => {
+            if (operationId) useDeskStore.getState().setLastOperation(operationId);
             void v2.refreshManuscript().then(() => {
               const first = ids[0];
               if (!first) return;

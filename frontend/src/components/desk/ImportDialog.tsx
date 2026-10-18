@@ -29,7 +29,7 @@ export default function ImportDialog({
   projectId: string;
   open: boolean;
   onOpenChange(open: boolean): void;
-  onImported(chapterIds: string[]): void;
+  onImported(chapterIds: string[], operationId?: string): void;
 }) {
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [decision, setDecision] = useState<Decision>("append");
@@ -95,7 +95,7 @@ export default function ImportDialog({
           ? "没有需要写入的变化。"
           : `已导入 ${result.chapter_ids.length} 章。`,
       );
-      onImported(result.chapter_ids);
+      onImported(result.chapter_ids, result.operation_id);
     } catch (e) {
       setError(message(e));
     } finally {
