@@ -23,6 +23,8 @@ from hastings.application.errors import ViolationError
 from hastings.application.ports.ids import IdGenerator
 from hastings.application.queries.ledger import entry_view
 from hastings.application.services.commit_service import CommitService
+from hastings.domain.manuscript.catalog import ManuscriptCatalog
+from hastings.domain.manuscript.errors import ManuscriptViolation
 from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest, RelationChange
 from hastings.domain.repository.serialization import content_hash
@@ -49,9 +51,7 @@ def _violation(code: str, where: str, why: str, fix: str, **details: Any) -> Vio
 
 def _as_violation(exc: StoryViolation) -> ViolationError:
     code = "LEDGER_ENTRY_CONFLICT" if exc.code == story_ec.STORY_STALE_REVISION else exc.code
-    return ViolationError(
-        code=code, where=exc.where, why=exc.why, fix=exc.fix, details=exc.details
-    )
+    return ViolationError(code=code, where=exc.where, why=exc.why, fix=exc.fix, details=exc.details)
 
 
 def _deterministic_id(group_id: str, item_id: str) -> str:
@@ -135,6 +135,73 @@ class LedgerCandidateService:
 
         self._repo.aux_mutate(pid, CANDIDATE_BUCKET, GROUP_KEY, mutate)
         return self.view(project_id)
+
+    def stage_suggestions(
+        self,
+        project_id: str,
+        *,
+        origin: dict[str, Any],
+        items: list[dict[str, Any]],
+        request_id: str,
+    ) -> dict[str, Any]:
+        """一次暂存整组建议（V03-4.4）：一条辅助版本，不逐条递增。
+
+        ``items`` 每项含 ``kind``/``fields``/``source``/``hypothesis``；字段与引用
+        仍走账本同一套校验——建议不因为来自模型就绕过类型规则。
+        """
+        pid = ProjectId(project_id)
+        head = self._head(pid)
+        catalog = self._catalog(pid, head)
+        group = self._load(pid) or self._empty_group(pid)
+        if request_id in group["requests"]:
+            return self._group_view(group)
+        lookup = self._lookup(catalog, {i["item_id"]: i for i in group["items"]})
+        staged: list[dict[str, Any]] = []
+        for raw in items:
+            try:
+                clean = ledger_entries.validate_fields(
+                    str(raw["kind"]),
+                    dict(raw["fields"]),
+                    ref_lookup=lookup,
+                    cmd="StageLedgerSuggestion",
+                )
+            except StoryViolation as exc:
+                raise _as_violation(exc) from exc
+            staged.append(
+                {
+                    "item_id": self._ids.new_id("lci"),
+                    "kind": str(raw["kind"]),
+                    "fields": clean,
+                    "hypothesis": bool(raw.get("hypothesis", False)),
+                    "source": dict(raw.get("source") or {}),
+                    "status": PENDING,
+                    "accepted_entry_id": None,
+                    "accepted_revision_id": None,
+                    "created_at": self._now(),
+                }
+            )
+
+        def mutate(current: dict[str, Any] | None) -> dict[str, Any] | None:
+            base = dict(current) if current is not None else self._empty_group(pid)
+            if request_id in base["requests"]:
+                return current
+            return {
+                **base,
+                "items": [*base["items"], *staged],
+                "origin": dict(origin),
+                "revision": int(base["revision"]) + 1,
+                "requests": {
+                    **base["requests"],
+                    request_id: {
+                        "action": "stage_suggestions",
+                        "item_ids": [item["item_id"] for item in staged],
+                    },
+                },
+                "updated_at": self._now(),
+            }
+
+        updated = self._repo.aux_mutate(pid, CANDIDATE_BUCKET, GROUP_KEY, mutate)
+        return self._group_view(updated or group)
 
     def skip(
         self,
@@ -246,6 +313,8 @@ class LedgerCandidateService:
                 )
 
         ordered = self._order(group, selected, by_id)
+        # 来源核对（V03-4.4）：建议带生成时的章基础版本，正文变了就不能原样采用。
+        self._assert_sources_current(pid, selected)
         branch = self._repo.get_branch(pid, "main")
         if branch is None:
             raise _violation(
@@ -316,12 +385,9 @@ class LedgerCandidateService:
         if commit_id is None:
             return self._group_view(group)
 
-        entries = [
-            self._entry_at(pid, commit_id, artifact_id) for artifact_id in created
-        ]
+        entries = [self._entry_at(pid, commit_id, artifact_id) for artifact_id in created]
         accepted = {
-            item["item_id"]: artifact_id
-            for item, artifact_id in zip(ordered, created, strict=True)
+            item["item_id"]: artifact_id for item, artifact_id in zip(ordered, created, strict=True)
         }
         self._mark_accepted(pid, accepted, request_id, commit_id.value, entries)
         return {
@@ -422,6 +488,43 @@ class LedgerCandidateService:
             "group": self.view(pid.value),
         }
 
+    def _assert_sources_current(self, pid: ProjectId, selected: list[dict[str, Any]]) -> None:
+        """建议带生成时的章基础版本：正文变了就不能原样采用（V03-4.4）。
+
+        手工暂存的候选没有 ``source``，因此不受影响；只有模型建议会被拦。
+        变化时给 409 而不是悄悄放行——采用一条依据已变的设定，等于把旧事实写进新稿。
+        """
+        expected: dict[str, str] = {}
+        for item in selected:
+            source = item.get("source") or {}
+            chapter_id = source.get("chapter_id")
+            chapter_base = source.get("chapter_base")
+            if isinstance(chapter_id, str) and isinstance(chapter_base, str) and chapter_base:
+                expected[chapter_id] = chapter_base
+        if not expected:
+            return
+        head = self._head(pid)
+        manuscripts = (
+            ManuscriptCatalog(commit_id=None, entries=())
+            if head is None
+            else ManuscriptCatalog.from_snapshot(self._repo.get_snapshot(pid, head))
+        )
+        for chapter_id, base in expected.items():
+            try:
+                current = manuscripts.chapter_base(chapter_id)
+            except (ManuscriptViolation, StoryViolation):
+                current = None
+            if current != base:
+                raise _violation(
+                    "SOURCE_NEEDS_RECHECK",
+                    f"ledger.candidates.accept({pid.value})",
+                    f"章节 {chapter_id} 的正文在建议生成后已变化",
+                    "重新整理这一章的账本建议；旧建议保留但不能再原样采用",
+                    chapter_id=chapter_id,
+                    expected_base=base,
+                    current_base=current,
+                )
+
     def _order(
         self,
         group: dict[str, Any],
@@ -435,9 +538,7 @@ class LedgerCandidateService:
         done: set[str] = set()
         for item in selected:
             deps = [
-                ref[1:]
-                for ref in _ref_values(item["fields"], item["kind"])
-                if ref.startswith("@")
+                ref[1:] for ref in _ref_values(item["fields"], item["kind"]) if ref.startswith("@")
             ]
             for dep in deps:
                 target = by_id.get(dep)
@@ -581,9 +682,7 @@ class LedgerCandidateService:
                 current=group["revision"],
             )
 
-    def _pending(
-        self, group: dict[str, Any], item_ids: list[str]
-    ) -> list[dict[str, Any]]:
+    def _pending(self, group: dict[str, Any], item_ids: list[str]) -> list[dict[str, Any]]:
         by_id = {item["item_id"]: item for item in group["items"]}
         wanted: list[dict[str, Any]] = []
         for item_id in item_ids:
@@ -635,6 +734,7 @@ class LedgerCandidateService:
             "project_id": group["project_id"],
             "revision": int(group["revision"]),
             "items": items,
+            "origin": group.get("origin"),
             "pending_count": len(pending),
             "hypothesis_count": sum(1 for item in pending if item["hypothesis"]),
             "updated_at": group.get("updated_at", ""),
@@ -660,6 +760,7 @@ class LedgerCandidateService:
             "summary": view["summary"],
             "hypothesis": bool(item["hypothesis"]),
             "status": item["status"],
+            "source": item.get("source"),
             "accepted_entry_id": item.get("accepted_entry_id"),
         }
 

@@ -65,7 +65,11 @@ CAPABILITIES: Final[dict[str, Any]] = {
         "jobs": "implemented",
         "surface": "pending",
     },
-    "ledger_suggestions": {"status": "draft"},
+    "ledger_suggestions": {
+        "status": "draft",
+        "api": "implemented",
+        "surface": "pending",
+    },
     "agreements": {"status": "draft", "api": "implemented", "surface": "pending"},
     "background": {
         "status": "implemented",

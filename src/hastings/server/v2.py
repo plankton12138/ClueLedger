@@ -85,6 +85,7 @@ from hastings.application.services.ledger_candidate_service import LedgerCandida
 from hastings.application.services.ledger_service import LedgerService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
+from hastings.application.services.suggestion_service import SuggestionService
 from hastings.application.services.summary_service import SummaryDraft, SummaryService
 from hastings.application.services.task_prep_service import TaskPrepService
 from hastings.application.services.task_projection import ChatTaskProjector
@@ -291,6 +292,13 @@ class V2Runtime:
         # 摘要任务化（V03-4.3 收尾）：与写作任务共用任务表，但走自己的执行器
         # （摘要没有正文可写范围，不需要写作任务的授权与租约）。
         self.summary_jobs = SummaryJobRunner(self.jobs, self.summaries, self.clock)
+        # 账本更新建议（V03-4.4）：显式启动，暂存进候选组，采用时核对来源。
+        self.suggestions = SuggestionService(
+            self.service,
+            self.ledger_candidates,
+            self.clock,
+            proposer=self._suggestion_writer,
+        )
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -336,6 +344,10 @@ class V2Runtime:
         """摘要生成器：同一条模型通道；来源与版本由 SummaryService 另行固定。"""
         text, model = await self._run_text(system=system, prompt=prompt)
         return SummaryDraft(text=text, model=model)
+
+    async def _suggestion_writer(self, *, system: str, prompt: str) -> tuple[str, str]:
+        """建议整理器：返回原始 JSON 文本与模型标识；解析在领域层严格进行。"""
+        return await self._run_text(system=system, prompt=prompt)
 
     async def wake_workers(self, project_id: str) -> None:
         self._wake_projects.add(project_id)
@@ -1021,6 +1033,13 @@ class SummaryStartRequest(BaseModel):
     guidance: str = ""
 
 
+class SuggestionStartRequest(BaseModel):
+    """显式整理某章的账本建议：零建议是合法结果，不建空卡片。"""
+
+    request_id: str = Field(min_length=1)
+    guidance: str = ""
+
+
 # ---------------------------------------------------------------------------
 # 投影序列化：查询视图 → JSON（只读派生结果，不缓存）
 # ---------------------------------------------------------------------------
@@ -1432,6 +1451,23 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         del project_id
         return await runtime.summary_jobs.retry(job_id)
 
+    @router.get("/projects/{project_id}/suggestions")
+    def list_suggestions(project_id: str) -> dict[str, Any]:
+        """待确认的账本建议：与手工候选同一份数据，带生成来源。"""
+        return runtime.suggestions.view(project_id)
+
+    @router.post("/projects/{project_id}/chapters/{chapter_id}/suggestions")
+    async def start_suggestions(
+        project_id: str, chapter_id: str, req: SuggestionStartRequest
+    ) -> dict[str, Any]:
+        """显式整理本章建议：只暂存候选，不改正文、不写正式账本。"""
+        return await runtime.suggestions.start(
+            project_id,
+            chapter_id,
+            request_id=req.request_id,
+            guidance=req.guidance,
+        )
+
     @router.get("/projects/{project_id}/agreements")
     def list_agreements(project_id: str, include_retired: bool = False) -> dict[str, Any]:
         """本书约定：生效/待选择在前，已停用项按需展开（保历史，不物理删除）。"""
@@ -1801,6 +1837,9 @@ def _status_for(error: HastingsError) -> int:
     if error.code.endswith("_NOT_FOUND") or "UNKNOWN" in error.code:
         return 404
     if error.code.endswith("_CONFLICT"):
+        return 409
+    # 来源已变不是输入写错，而是「先重新整理再采用」的选择：按冲突返回。
+    if error.code == "SOURCE_NEEDS_RECHECK":
         return 409
     return 400
 
