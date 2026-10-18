@@ -1,6 +1,6 @@
 # Hastings 0.3 开发文档
 
-> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 已交付**：3.1 活动起草路径已去节拍前置（旧规划管线删除待单独收尾）、3.2 账本直接保存与设定候选成组、3.3/3.4/3.5 试写 → 只读预览 → 按哈希采用。更新：2026-10-18。
+> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 已交付**：3.1 活动起草路径已去节拍（旧规划管线与 AgentTasks 的节拍类型退出归 V03-8）、3.2 账本直接保存与设定候选成组、3.3/3.4/3.5 试写 → 只读预览 → 按哈希采用。更新：2026-10-18。
 
 0.3 将已有版本仓库与创作任务能力，组织为围绕正文、对话和故事账本的持续创作工作区。
 本目录使用产品版本命名；既有 `dev-notes/v2/`、`/api/v2` 和存储版本分别维护，不随产品版本重命名。
@@ -96,11 +96,11 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 
 开始条件检查单：导入与统一发布可用（V03-2.3/2.5）✓；模型启动有来源凭据与连接快照（V03-1.4/19.5）✓。
 
-质量门基线：`uv run pytest -q` **1596 passed**；`ruff check src tests` 全过（仓库根另有 5 项既有告警在 `eval/v2/chat_driver.py`）；`mypy src/hastings` 227 files 无问题；前端 vitest **386 passed**（45 文件）+ `vite build` 通过。
+质量门基线：`uv run pytest -q` **1598 passed**；`ruff check src tests` 全过（仓库根另有 5 项既有告警在 `eval/v2/chat_driver.py`）；`mypy src/hastings` 227 files 无问题；前端 vitest **386 passed**（45 文件）+ `vite build` 通过；账本与七页聊天 e2e 通过（见 3.2 笔记，`v2-models`/`v2-workbench` 有既有失败）。
 
 | 任务 | 状态 | 产物 | 构建笔记 |
 |---|---|---|---|
-| V03-3.1 Beat 活动路径退出 | **部分交付**（起草前置/写作上下文已去节拍；旧规划管线仍可创建节拍，删除动作待单独收尾） | `task_drafts.missing_items` 去掉 `TASK_NO_BEAT_TARGET`/`TASK_NO_PLAN`、空 head 对起草合法；writer 角色与上下文只在目标是节拍时装配 `beat_states` | [notes/v03-3](notes/v03-3-drafting-and-adoption.md) |
+| V03-3.1 Beat 活动路径退出 | **部分交付**（起草前置、上下文与七页侧栏已去节拍；旧规划管线与 AgentTasks 仍可创建/使用节拍，类型退出归 V03-8） | `task_drafts.missing_items` 去掉 `TASK_NO_BEAT_TARGET`/`TASK_NO_PLAN`、空 head 对起草合法；`AgentWorkflows.draft` 允许空节拍目标（未知目标报 `DRAFT_TARGET_INVALID`）；writer 上下文只在目标是节拍时装配 `beat_states`；七页任务卡的章节草稿改为选择目标章节 | [notes/v03-3](notes/v03-3-drafting-and-adoption.md) |
 | V03-3.2 账本直接保存与候选成组 | 已交付 | `domain/story/canon/entries.py`（十种账本条目的类型化创建/修订、引用与 revision CAS）、`application/services/ledger_service.py`（一次保存一个 Commit、真实版本回读）、`application/services/ledger_candidate_service.py`（候选暂存/部分确认/假设拦截/依赖闭合）、`GET /ledger/schema` 等八个端点、写作台账本面板 | [notes/v03-3.2](notes/v03-3.2-ledger-candidates.md) |
 | V03-3.3 无前置起草 | 已交付 | `domain/manuscript/drafting.py`（brief/候选/确定性提示词/文本清理）、`application/services/drafting_service.py`、`GET /ledger` 只读账本、`POST /drafts` | [notes/v03-3](notes/v03-3-drafting-and-adoption.md) |
 | V03-3.4 只读完整预览与按哈希采用 | 已交付 | `GET /drafts/{id}`、`POST /drafts/{id}/revise`、`POST /drafts/{id}/adopt`（`preview_hash` + 修订号双重校验）、`POST /drafts/{id}/discard`；写作台「试写」对话框 | 同上 |
