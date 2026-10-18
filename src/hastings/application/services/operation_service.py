@@ -327,6 +327,20 @@ class OperationService:
             changed_chapter_ids=record.changed_chapter_ids,
         )
 
+    def record_refs(self, project_id: ProjectId | str, operation_id: str) -> dict[str, Any]:
+        """读取操作记录的 refs（来源、选择、段落来源）；no_change 返回空。"""
+        pid = project_id if isinstance(project_id, ProjectId) else ProjectId(project_id)
+        head = self._repo.get_branch(pid, "main")
+        head_id = head.head_commit_id if head else None
+        if head_id is None:
+            return {}
+        artifact_id = ArtifactId(_record_artifact_id(operation_id))
+        record_view = self._repo.get_artifact(artifact_id, head_id)
+        if record_view is None or record_view.revision is None:
+            return {}
+        record = OperationRecord.from_wire(record_view.revision.content)
+        return dict(record.refs)
+
     # -- 内部 ---------------------------------------------------------------
 
     @staticmethod

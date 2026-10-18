@@ -408,6 +408,133 @@ class DraftingService:
             "changed_chapter_ids": list(result.envelope.changed_chapter_ids),
         }
 
+    def apply_to_edit_session(
+        self,
+        project_id: str,
+        candidate_id: str,
+        *,
+        session_id: str,
+        expected_save_seq: int,
+        request_id: str,
+        preview_hash: str,
+        revision: int | None = None,
+        start_paragraph: int | None = None,
+        end_paragraph: int | None = None,
+        allow_disclosure_change: bool = False,
+    ) -> dict[str, Any]:
+        """把候选用进手工修改副本（V03-5.3），不发布正式正文。
+
+        与正式采用的区别：文字只落副本、段落标为 ``agent``；作者随后仍可在
+        副本里改，只有「修改完成」才会发布。候选一旦用进副本就不能再单独
+        正式采用——否则同一段生成文字会被发布两次。重复请求按 ``request_id``
+        幂等回放，不重复推进保存序号。
+        """
+        pid = ProjectId(project_id)
+        candidate = self._load(pid, candidate_id)
+        target = candidate.brief.target
+        if candidate.status == drafting.CANDIDATE_APPLIED:
+            if (
+                candidate.applied_request_id == request_id
+                and candidate.applied_session_id == session_id
+            ):
+                view = self._edit_sessions.get(project_id, session_id)
+                draft = next(
+                    (
+                        item
+                        for item in view["drafts"]
+                        if item["chapter_id"] == candidate.applied_chapter_id
+                    ),
+                    None,
+                )
+                return {
+                    "status": "applied",
+                    "candidate_id": candidate_id,
+                    "session_id": session_id,
+                    "chapter_id": candidate.applied_chapter_id,
+                    "preview_hash": preview_hash,
+                    "draft": draft,
+                }
+            raise _violation(
+                ec.DRAFT_CANDIDATE_NOT_ADOPTABLE,
+                f"drafts.apply_to_edit({candidate_id})",
+                "候选已经用进修改稿，不能重复写入",
+                "在同一副本里继续修改；要重新生成请从新的试写开始",
+                status=candidate.status,
+                applied_session_id=candidate.applied_session_id,
+            )
+        if candidate.status != drafting.CANDIDATE_READY:
+            raise _violation(
+                ec.DRAFT_CANDIDATE_NOT_ADOPTABLE,
+                f"drafts.apply_to_edit({candidate_id})",
+                f"候选当前状态是 {candidate.status}，不能写进修改稿",
+                "从新的一次试写开始，或改用仍是 ready 的候选",
+                status=candidate.status,
+            )
+        if target == drafting.TARGET_NEW_CHAPTER:
+            raise _violation(
+                ec.DRAFT_TARGET_CONFLICT,
+                f"drafts.apply_to_edit({candidate_id})",
+                "候选目标是新章，新章不在手工修改副本里",
+                "先正式采用这个候选创建章节，再打开手工修改",
+                candidate_id=candidate_id,
+            )
+        target_revision = candidate.current_revision if revision is None else revision
+        if target_revision != candidate.current_revision:
+            raise _violation(
+                ec.DRAFT_REVISION_CONFLICT,
+                f"drafts.apply_to_edit({candidate_id})",
+                f"修订 {target_revision} 已被修订 {candidate.current_revision} 取代",
+                "预览最新修订后再写入；迟到候选不能覆盖新稿",
+                current_revision=candidate.current_revision,
+                requested_revision=target_revision,
+            )
+        chosen = candidate.revision(target_revision)
+        if chosen is None:
+            raise _violation(
+                ec.DRAFT_CANDIDATE_NOT_FOUND,
+                f"drafts.apply_to_edit({candidate_id})",
+                f"候选没有修订 {target_revision}",
+                "重新读取候选后选择现有修订",
+            )
+        if chosen.preview_hash != preview_hash:
+            raise _violation(
+                ec.DRAFT_PREVIEW_CONFLICT,
+                f"drafts.apply_to_edit({candidate_id})",
+                "写进副本的正文与作者看到的预览不是同一份",
+                "重新打开预览，按当前预览重新写入",
+            )
+        self._ensure_disclosure_scope(candidate, chosen.text, allow_disclosure_change)
+        applied = self._edit_sessions.apply_generated_text(
+            project_id,
+            session_id,
+            target,
+            expected_save_seq=expected_save_seq,
+            request_id=request_id,
+            text=chosen.text,
+            candidate_id=candidate_id,
+            preview_hash=preview_hash,
+            start_paragraph=start_paragraph,
+            end_paragraph=end_paragraph,
+        )
+        updated = replace(
+            candidate,
+            status=drafting.CANDIDATE_APPLIED,
+            applied_session_id=session_id,
+            applied_chapter_id=target,
+            applied_save_seq=int(applied["draft"]["save_seq"]),
+            applied_request_id=request_id,
+            updated_at=self._now(),
+        )
+        self._write(pid, CANDIDATE_BUCKET, candidate_id, updated.to_dict())
+        return {
+            "status": "applied",
+            "candidate_id": candidate_id,
+            "session_id": session_id,
+            "chapter_id": target,
+            "preview_hash": preview_hash,
+            "draft": applied["draft"],
+        }
+
     def _ensure_disclosure_scope(
         self,
         candidate: drafting.ChapterCandidate,
@@ -455,6 +582,13 @@ class DraftingService:
                 f"drafts.discard({candidate_id})",
                 "候选已被采用，不能丢弃；正文已在版本历史中",
                 "如需撤销，使用版本历史恢复之前的版本",
+            )
+        if candidate.status == drafting.CANDIDATE_APPLIED:
+            raise _violation(
+                ec.DRAFT_CANDIDATE_NOT_ADOPTABLE,
+                f"drafts.discard({candidate_id})",
+                "候选已用进手工修改副本，不能丢弃",
+                "在副本里继续修改，或放弃本轮修改后重新生成候选",
             )
         updated = replace(candidate, status=drafting.CANDIDATE_DISCARDED, updated_at=self._now())
         self._write(pid, CANDIDATE_BUCKET, candidate_id, updated.to_dict())
@@ -604,6 +738,9 @@ class DraftingService:
             "updated_at": candidate.updated_at,
             "adopted_operation_id": candidate.adopted_operation_id,
             "adopted_chapter_id": candidate.adopted_chapter_id,
+            "applied_session_id": candidate.applied_session_id,
+            "applied_chapter_id": candidate.applied_chapter_id,
+            "applied_save_seq": candidate.applied_save_seq,
             "revisions": [
                 {
                     "revision": r.revision,
@@ -630,6 +767,7 @@ class DraftingService:
             "preview_hash": latest.preview_hash,
             "updated_at": candidate.updated_at,
             "adopted_chapter_id": candidate.adopted_chapter_id,
+            "applied_chapter_id": candidate.applied_chapter_id,
         }
 
     @staticmethod

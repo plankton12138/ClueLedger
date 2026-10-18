@@ -22,6 +22,7 @@ from hastings.domain.repository.serialization import content_hash
 
 __all__ = [
     "CANDIDATE_ADOPTED",
+    "CANDIDATE_APPLIED",
     "CANDIDATE_DISCARDED",
     "CANDIDATE_READY",
     "CANDIDATE_SUPERSEDED",
@@ -33,10 +34,13 @@ __all__ = [
     "render_user_prompt",
 ]
 
-# 候选状态：可预览/采用 → 被新修订取代 → 已采用 / 已丢弃。
+# 候选状态：可预览/采用 → 被新修订取代 → 已采用 / 已用进修改稿 / 已丢弃。
+# ``applied`` 与 ``adopted`` 不同：前者只进了副本，尚未成为正式版本；后者
+# 已经发布到正式正文。用进副本的候选不能再单独正式采用（否则会重复发布）。
 CANDIDATE_READY = "ready"
 CANDIDATE_SUPERSEDED = "superseded"
 CANDIDATE_ADOPTED = "adopted"
+CANDIDATE_APPLIED = "applied"
 CANDIDATE_DISCARDED = "discarded"
 
 #: 目标写「新章」时使用；其余取值是现有章节 ID。
@@ -196,6 +200,11 @@ class ChapterCandidate:
     adopted_operation_id: str | None = None
     adopted_chapter_id: str | None = None
     adopted_revision: int | None = None
+    #: 用进修改稿（V03-5.3）：记录落到哪个副本、哪一章、哪个保存序号。
+    applied_session_id: str | None = None
+    applied_chapter_id: str | None = None
+    applied_save_seq: int | None = None
+    applied_request_id: str | None = None
     created_at: str = ""
     updated_at: str = ""
 
@@ -218,6 +227,10 @@ class ChapterCandidate:
             "adopted_operation_id": self.adopted_operation_id,
             "adopted_chapter_id": self.adopted_chapter_id,
             "adopted_revision": self.adopted_revision,
+            "applied_session_id": self.applied_session_id,
+            "applied_chapter_id": self.applied_chapter_id,
+            "applied_save_seq": self.applied_save_seq,
+            "applied_request_id": self.applied_request_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -236,6 +249,10 @@ class ChapterCandidate:
             adopted_operation_id=data.get("adopted_operation_id"),
             adopted_chapter_id=data.get("adopted_chapter_id"),
             adopted_revision=data.get("adopted_revision"),
+            applied_session_id=data.get("applied_session_id"),
+            applied_chapter_id=data.get("applied_chapter_id"),
+            applied_save_seq=data.get("applied_save_seq"),
+            applied_request_id=data.get("applied_request_id"),
             created_at=str(data.get("created_at", "")),
             updated_at=str(data.get("updated_at", "")),
         )

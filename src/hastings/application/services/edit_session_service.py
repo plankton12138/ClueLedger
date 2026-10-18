@@ -33,14 +33,29 @@ from hastings.domain.manuscript.edit_session import (
     SESSION_ABANDONED,
     SESSION_CLOSED,
     SESSION_OPEN,
+    SOURCE_AGENT,
+    SOURCE_UNKNOWN,
     DraftChapter,
     EditSession,
+    EditSnapshot,
+    merge_saved_sources,
+    normalize_sources,
+    snapshot_id_for,
+    snapshot_key_for,
+    source_runs,
 )
 from hastings.domain.manuscript.merge import merge_texts
 from hastings.domain.repository.ids import CommitId, ProjectId
 from hastings.domain.repository.serialization import content_hash
 
-__all__ = ["CURRENT_BUCKET", "DRAFT_BUCKET", "EditSessionService", "SESSION_BUCKET"]
+__all__ = [
+    "CURRENT_BUCKET",
+    "DRAFT_BUCKET",
+    "EditSessionService",
+    "SESSION_BUCKET",
+    "SNAPSHOT_BUCKET",
+    "SNAPSHOT_KEY_BUCKET",
+]
 
 #: 唯一未结束副本（key 固定为 ``current``）。
 CURRENT_BUCKET = "edit_session_current"
@@ -48,6 +63,10 @@ CURRENT_BUCKET = "edit_session_current"
 SESSION_BUCKET = "edit_session"
 #: 章草稿（key = ``<session_id>:<chapter_id>``）。
 DRAFT_BUCKET = "edit_draft"
+#: 修改稿快照（key = snapshot_id，不可变）。
+SNAPSHOT_BUCKET = "edit_snapshot"
+#: 快照索引（key = 冻结点，不含文本哈希）：副本前进了也能回放同一引用。
+SNAPSHOT_KEY_BUCKET = "edit_snapshot_key"
 
 _CURRENT_KEY = "current"
 
@@ -170,6 +189,7 @@ class EditSessionService:
                     updated_at=now,
                     request_id=request_id,
                     base_commit_id=base_commit,
+                    paragraph_sources=normalize_sources(text, None),
                 ).to_wire()
             draft = DraftChapter.from_wire(current)
             if draft.request_id == request_id:
@@ -192,6 +212,8 @@ class EditSessionService:
                 updated_at=now,
                 request_id=request_id,
                 base_commit_id=draft.base_commit_id,
+                # 未改动的段落沿用原来源；改过/新插入的段落才是人工输入。
+                paragraph_sources=merge_saved_sources(draft.text, draft.paragraph_sources, text),
             ).to_wire()
 
         saved = self._repo.aux_mutate(pid, DRAFT_BUCKET, f"{session_id}:{chapter_id}", mutate)
@@ -199,6 +221,270 @@ class EditSessionService:
         # 首次保存的章进入本轮清单（有机流式修改不事先声明，V03-5.1）。
         self._join_round(pid, session_id, chapter_id)
         return DraftChapter.from_wire(saved).to_wire()
+
+    # -- 快照与生成文本（V03-5.3） ------------------------------------------
+
+    def create_snapshot(
+        self,
+        project_id: str,
+        session_id: str,
+        *,
+        chapter_id: str,
+        save_seq: int,
+        text_hash: str | None = None,
+        start_paragraph: int | None = None,
+        end_paragraph: int | None = None,
+    ) -> dict[str, Any]:
+        """冻结某个已保存的 ``save_seq``（可选段落选区），返回不可变引用。
+
+        只接受**已经落盘的草稿**：请求里的序号或哈希与草稿不符时显式冲突，
+        不能拿界面上的未保存缓冲冒充快照。快照 ID 由冻结点确定性派生，同一
+        冻结点的重复请求回放同一个引用。
+        """
+        pid = ProjectId(project_id)
+        session = self._load(pid, session_id)
+        if not session.is_open:
+            raise _violation(
+                ec.EDIT_SESSION_CONFLICT,
+                f"edit_sessions.snapshot({session_id})",
+                "副本已结束，不能再创建快照",
+                "重新开始一次手工修改",
+            )
+        # 同一冻结点（章 + 序号 + 选区）已有快照：即使副本已经前进，也回放
+        # 原引用——不可变引用不能因为后来的保存而失效。
+        key = snapshot_key_for(
+            project_id=project_id,
+            session_id=session_id,
+            chapter_id=chapter_id,
+            save_seq=save_seq,
+            start=start_paragraph,
+            end=end_paragraph,
+        )
+        indexed = self._repo.aux_read(pid, SNAPSHOT_KEY_BUCKET, key)
+        if indexed is not None:
+            return self.get_snapshot(project_id, session_id, str(indexed["snapshot_id"]))
+        draft = next(
+            (item for item in self._drafts(pid, session_id) if item.chapter_id == chapter_id),
+            None,
+        )
+        if draft is None:
+            raise _violation(
+                ec.EDIT_SESSION_CONFLICT,
+                f"edit_sessions.snapshot({chapter_id})",
+                "该章还没有保存过草稿，无法冻结快照",
+                "先保存这一章的修改，再冻结引用",
+            )
+        if draft.save_seq != save_seq:
+            raise _violation(
+                ec.EDIT_SNAPSHOT_CONFLICT,
+                f"edit_sessions.snapshot({chapter_id})",
+                f"草稿当前序号是 {draft.save_seq}，请求冻结的是 {save_seq}",
+                "重新读取最新草稿后再冻结；未保存的缓冲不能当作快照",
+                current_save_seq=draft.save_seq,
+                requested_save_seq=save_seq,
+            )
+        paragraphs = split_paragraphs(draft.text)
+        start, end = _selection_bounds(start_paragraph, end_paragraph, len(paragraphs))
+        text = "\n\n".join(paragraphs[start:end])
+        actual_hash = _text_hash(text)
+        if text_hash is not None and text_hash != actual_hash:
+            raise _violation(
+                ec.EDIT_SNAPSHOT_CONFLICT,
+                f"edit_sessions.snapshot({chapter_id})",
+                "快照文本哈希与草稿当前内容不符",
+                "重新读取草稿后按最新内容冻结；不要用旧界面的哈希",
+                current_save_seq=draft.save_seq,
+                current_text_hash=actual_hash,
+            )
+        sources = normalize_sources(draft.text, draft.paragraph_sources)[start:end]
+        snapshot = EditSnapshot(
+            snapshot_id=snapshot_id_for(
+                project_id=project_id,
+                session_id=session_id,
+                chapter_id=chapter_id,
+                save_seq=save_seq,
+                start=start if (start_paragraph is not None) else None,
+                end=end if (end_paragraph is not None) else None,
+                text_hash=actual_hash,
+            ),
+            project_id=project_id,
+            session_id=session_id,
+            chapter_id=chapter_id,
+            save_seq=save_seq,
+            text=text,
+            text_hash=actual_hash,
+            paragraph_sources=sources,
+            base_chapter_base=draft.base_chapter_base,
+            base_commit_id=draft.base_commit_id,
+            selection_start=start if start_paragraph is not None else None,
+            selection_end=end if end_paragraph is not None else None,
+            created_at=self._now(),
+        )
+
+        def mutate(current: dict[str, Any] | None) -> dict[str, Any]:
+            # 快照不可变：确定性 ID 已存在时原样返回（同一冻结点的重试）。
+            return current if current is not None else snapshot.to_wire()
+
+        stored = self._repo.aux_mutate(pid, SNAPSHOT_BUCKET, snapshot.snapshot_id, mutate)
+        assert stored is not None
+        # 索引与快照分开写：先快照后索引，崩溃重试会命中确定性 ID，不会丢引用。
+        self._repo.aux_mutate(
+            pid,
+            SNAPSHOT_KEY_BUCKET,
+            key,
+            lambda _current: {"snapshot_id": snapshot.snapshot_id},
+        )
+        return EditSnapshot.from_wire(stored).to_wire()
+
+    def get_snapshot(self, project_id: str, session_id: str, snapshot_id: str) -> dict[str, Any]:
+        """读取快照：只读，不随副本前进变化。"""
+        pid = ProjectId(project_id)
+        payload = self._repo.aux_read(pid, SNAPSHOT_BUCKET, snapshot_id)
+        if payload is None:
+            raise _violation(
+                ec.EDIT_SNAPSHOT_NOT_FOUND,
+                f"edit_sessions.snapshot({snapshot_id})",
+                "快照不存在或已被清理",
+                "核对 snapshot_id；快照属于创建它的作品与副本",
+            )
+        snapshot = EditSnapshot.from_wire(payload)
+        if snapshot.session_id != session_id or snapshot.project_id != project_id:
+            raise _violation(
+                ec.EDIT_SNAPSHOT_NOT_FOUND,
+                f"edit_sessions.snapshot({snapshot_id})",
+                "快照不属于这个副本",
+                "从创建快照的副本读取引用",
+            )
+        return snapshot.to_wire()
+
+    def apply_generated_text(
+        self,
+        project_id: str,
+        session_id: str,
+        chapter_id: str,
+        *,
+        expected_save_seq: int,
+        request_id: str,
+        text: str,
+        candidate_id: str,
+        preview_hash: str,
+        start_paragraph: int | None = None,
+        end_paragraph: int | None = None,
+    ) -> dict[str, Any]:
+        """把模型候选写进副本，并把写入段落标为 ``agent``（V03-5.3）。
+
+        与自动保存共用保存序号 CAS：迟到候选不能覆盖作者更新的草稿；同一
+        ``request_id`` 的重试原样返回。选区为空表示整章替换，否则只替换
+        ``[start, end)`` 段落，选区外的人工段落保持原来源——这就是「混合
+        来源」。这个入口只写副本，不发布正式正文；采用仍由作者显式触发。
+        """
+        pid = ProjectId(project_id)
+        session = self._load(pid, session_id)
+        if not session.is_open:
+            raise _violation(
+                ec.EDIT_SESSION_CONFLICT,
+                f"edit_sessions.apply({session_id})",
+                "副本已结束，不能再写入候选",
+                "重新开始一次手工修改",
+            )
+        catalog = self._catalog(pid)
+        if catalog.get(chapter_id) is None:
+            raise _violation(
+                ec.EDIT_SESSION_NOT_FOUND,
+                f"edit_sessions.apply({chapter_id})",
+                f"作品里没有章节 {chapter_id}",
+                "刷新目录后重新打开该章",
+            )
+        bound = self._base_at_open(pid, session.base_commit_id, chapter_id)
+        if bound is None:
+            base = catalog.chapter_base(chapter_id)
+            base_commit = self._head(pid) or ""
+        else:
+            base, base_commit = bound
+        now = self._now()
+        generated = tuple(str(item) for item in split_paragraphs(text))
+        if not generated:
+            raise _violation(
+                ec.MANUSCRIPT_INVALID_OPERATION,
+                f"edit_sessions.apply({chapter_id})",
+                "候选正文为空，没有可写入的段落",
+                "重新生成候选，或改用直接输入",
+            )
+
+        def mutate(current: dict[str, Any] | None) -> dict[str, Any]:
+            if current is None:
+                if expected_save_seq != 0:
+                    raise _violation(
+                        ec.EDIT_SAVE_SEQ_CONFLICT,
+                        f"edit_sessions.apply({chapter_id})",
+                        f"该章还没有草稿，却要求基于序号 {expected_save_seq} 写入",
+                        "首次写入使用 expected_save_seq=0",
+                    )
+                if start_paragraph is not None or end_paragraph is not None:
+                    raise _violation(
+                        ec.MANUSCRIPT_INVALID_OPERATION,
+                        f"edit_sessions.apply({chapter_id})",
+                        "该章还没有草稿，没有可替换的段落选区",
+                        "首次写入不传选区（整章替换），或先保存一版草稿",
+                    )
+                paragraphs: list[str] = list(generated)
+                sources: list[str] = [SOURCE_AGENT] * len(generated)
+                save_seq = 1
+                draft_base, draft_commit = base, base_commit
+            else:
+                draft = DraftChapter.from_wire(current)
+                if draft.request_id == request_id:
+                    return current  # 同一请求重试：不重复自增
+                if draft.save_seq != expected_save_seq:
+                    raise _violation(
+                        ec.EDIT_SAVE_SEQ_CONFLICT,
+                        f"edit_sessions.apply({chapter_id})",
+                        f"草稿已前进到序号 {draft.save_seq}，候选基于 {expected_save_seq}",
+                        "重新读取最新草稿后再写入；迟到的候选不能覆盖新文本",
+                        current_save_seq=draft.save_seq,
+                    )
+                old_paragraphs = split_paragraphs(draft.text)
+                old_sources = normalize_sources(draft.text, draft.paragraph_sources)
+                start, end = _selection_bounds(start_paragraph, end_paragraph, len(old_paragraphs))
+                if start_paragraph is None and end_paragraph is None:
+                    start, end = 0, len(old_paragraphs)
+                paragraphs = [
+                    *old_paragraphs[:start],
+                    *generated,
+                    *old_paragraphs[end:],
+                ]
+                sources = [
+                    *old_sources[:start],
+                    *([SOURCE_AGENT] * len(generated)),
+                    *old_sources[end:],
+                ]
+                save_seq = draft.save_seq + 1
+                draft_base, draft_commit = draft.base_chapter_base, draft.base_commit_id
+            combined = "\n\n".join(paragraphs)
+            return DraftChapter(
+                session_id=session_id,
+                chapter_id=chapter_id,
+                base_chapter_base=draft_base,
+                text=combined,
+                content_hash=_text_hash(combined),
+                save_seq=save_seq,
+                updated_at=now,
+                request_id=request_id,
+                base_commit_id=draft_commit,
+                paragraph_sources=tuple(sources),
+            ).to_wire()
+
+        saved = self._repo.aux_mutate(pid, DRAFT_BUCKET, f"{session_id}:{chapter_id}", mutate)
+        assert saved is not None
+        self._join_round(pid, session_id, chapter_id)
+        draft = DraftChapter.from_wire(saved)
+        return {
+            "session_id": session_id,
+            "chapter_id": chapter_id,
+            "candidate_id": candidate_id,
+            "preview_hash": preview_hash,
+            "draft": draft.to_wire(),
+        }
 
     # -- 暂存 / 放弃 / 完成 ---------------------------------------------------
 
@@ -278,7 +564,7 @@ class EditSessionService:
         # 原样保留，作者改完再完成。
         current = self._catalog(pid)
         picked = _merge_choices(merge_choices or [])
-        plans: list[tuple[str, str, str]] = []
+        plans: list[tuple[str, str, str, tuple[str, ...]]] = []
         merged_chapters: list[str] = []
         conflicts: list[dict[str, Any]] = []
         for draft in drafts:
@@ -296,7 +582,14 @@ class EditSessionService:
                 )
                 continue
             if theirs_base == draft.base_chapter_base:
-                plans.append((draft.chapter_id, draft.text, draft.base_chapter_base))
+                plans.append(
+                    (
+                        draft.chapter_id,
+                        draft.text,
+                        draft.base_chapter_base,
+                        normalize_sources(draft.text, draft.paragraph_sources),
+                    )
+                )
                 continue
             base_text = self._text_at(
                 pid, draft.base_commit_id or session.base_commit_id, draft.chapter_id
@@ -324,7 +617,16 @@ class EditSessionService:
                 choices=wanted,
             )
             if merged.clean:
-                plans.append((draft.chapter_id, merged.text, theirs_base))
+                # 合并过的章混入了正式稿（来源未必是作者这次输入），逐段来源
+                # 无法再精确判断：保守标 unknown，绝不把生成文字算成人工。
+                plans.append(
+                    (
+                        draft.chapter_id,
+                        merged.text,
+                        theirs_base,
+                        (SOURCE_UNKNOWN,) * len(split_paragraphs(merged.text)),
+                    )
+                )
                 merged_chapters.append(draft.chapter_id)
                 continue
             # 有冲突：作者的选择必须逐处覆盖本次重算出来的冲突集合。漏选或序号
@@ -338,7 +640,14 @@ class EditSessionService:
                     }
                 )
                 continue
-            plans.append((draft.chapter_id, merged.text, theirs_base))
+            plans.append(
+                (
+                    draft.chapter_id,
+                    merged.text,
+                    theirs_base,
+                    (SOURCE_UNKNOWN,) * len(split_paragraphs(merged.text)),
+                )
+            )
             merged_chapters.append(draft.chapter_id)
         if conflicts:
             titles = []
@@ -374,7 +683,7 @@ class EditSessionService:
                     text=text,
                     expected_chapter_base=expected_base,
                 )
-                for chapter_id, text, expected_base in plans
+                for chapter_id, text, expected_base, _sources in plans
             ),
         )
         # 选择进 refs：版本历史里能读出「这次合并在哪几处取了哪边」。
@@ -384,6 +693,15 @@ class EditSessionService:
                 {"chapter_id": chapter_id, "conflict": index, "choice": choice}
                 for (chapter_id, index), choice in sorted(picked.items())
             ]
+        # 段落来源随版本保留（V03-5.3）：生成段落不能事后被当作人工编辑证据。
+        # 只记录这次真的会变内容的章；与正文同哈希的章发布时是 no_change。
+        provenance: dict[str, list[dict[str, Any]]] = {}
+        for chapter_id, text, _expected_base, sources in plans:
+            if _text_hash(text) == _text_hash(current.manuscript().text_of(chapter_id)):
+                continue
+            provenance[chapter_id] = source_runs(sources)
+        if provenance:
+            refs["paragraph_sources"] = provenance
         result = self._publisher.publish_command(
             project_id=pid,
             command=command,
@@ -580,6 +898,30 @@ def _text_hash(text: str) -> str:
     return content_hash({"paragraphs": split_paragraphs(text)})
 
 
+def _selection_bounds(start: int | None, end: int | None, count: int) -> tuple[int, int]:
+    """段落选区归一：两个都给才是选区，范围左闭右开且不能为空。"""
+    if start is None and end is None:
+        return 0, count
+    if start is None or end is None:
+        raise _violation(
+            ec.MANUSCRIPT_INVALID_OPERATION,
+            "edit_sessions.selection",
+            "段落选区必须同时给出起止位置",
+            "同时给 start_paragraph 与 end_paragraph，或都不给表示整章",
+        )
+    if start < 0 or end > count or start >= end:
+        raise _violation(
+            ec.MANUSCRIPT_INVALID_OPERATION,
+            "edit_sessions.selection",
+            f"选区 [{start}, {end}) 超出本章 {count} 个段落的范围",
+            "按段落下标给出非空选区；只改整章时不要传选区",
+            start_paragraph=start,
+            end_paragraph=end,
+            paragraph_count=count,
+        )
+    return start, end
+
+
 def _ended(
     session: EditSession,
     status: str,
@@ -594,6 +936,8 @@ def _ended(
         started_at=session.started_at,
         ended_at=now,
         closed_operation_id=operation_id,
+        # 本轮清单是会话事实：结束后仍要能在归档里读出改过哪几章。
+        chapters=session.chapters,
     )
 
 

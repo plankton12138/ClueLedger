@@ -999,6 +999,31 @@ class FinishEditRequest(BaseModel):
     merge_choices: list[MergeChoice] = Field(default_factory=list)
 
 
+class EditSnapshotRequest(BaseModel):
+    """冻结某个已保存的草稿序号（可选段落选区），创建不可变引用（V03-5.3）。"""
+
+    chapter_id: str
+    save_seq: int
+    #: 可选的期望文本哈希：与草稿当前内容不符时显式冲突，防止用旧界面冻结。
+    text_hash: str | None = None
+    start_paragraph: int | None = None
+    end_paragraph: int | None = None
+
+
+class ApplyCandidateToEditRequest(BaseModel):
+    """把模型候选用进手工修改副本（V03-5.3）：只写副本，不发布正式正文。"""
+
+    session_id: str
+    expected_save_seq: int
+    request_id: str
+    preview_hash: str
+    revision: int | None = None
+    #: 只替换副本里的一段段落；不给表示整章替换。选区外的人工段落保留来源。
+    start_paragraph: int | None = None
+    end_paragraph: int | None = None
+    allow_disclosure_change: bool = False
+
+
 class ReanchorRequest(BaseModel):
     quote: str | None = None
 
@@ -1244,6 +1269,8 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         """
         envelope = runtime.operations.get_operation(ProjectId(project_id), operation_id)
         payload = envelope.to_wire()
+        # 操作记录的来源/选择/段落来源（V03-5.2/5.3）：终态事实可回读。
+        payload["refs"] = runtime.operations.record_refs(ProjectId(project_id), operation_id)
         payload.update(runtime.followups.states(project_id, envelope.changed_chapter_ids))
         payload["projection"] = await runtime.projection_state(
             project_id, operation_id, envelope.conversation_id
@@ -1366,6 +1393,26 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             request_id=req.request_id,
             text=req.text,
         )
+
+    @router.post("/projects/{project_id}/edit-sessions/{session_id}/snapshots", status_code=201)
+    def create_edit_snapshot(
+        project_id: str, session_id: str, req: EditSnapshotRequest
+    ) -> dict[str, Any]:
+        """冻结已保存的草稿序号（V03-5.3）：未落盘的界面缓冲不能冒充快照。"""
+        return runtime.edit_sessions.create_snapshot(
+            project_id,
+            session_id,
+            chapter_id=req.chapter_id,
+            save_seq=req.save_seq,
+            text_hash=req.text_hash,
+            start_paragraph=req.start_paragraph,
+            end_paragraph=req.end_paragraph,
+        )
+
+    @router.get("/projects/{project_id}/edit-sessions/{session_id}/snapshots/{snapshot_id}")
+    def get_edit_snapshot(project_id: str, session_id: str, snapshot_id: str) -> dict[str, Any]:
+        """读取不可变快照：副本继续前进也不改变已冻结的引用。"""
+        return runtime.edit_sessions.get_snapshot(project_id, session_id, snapshot_id)
 
     @router.post("/projects/{project_id}/edit-sessions/{session_id}/suspend")
     def suspend_edit_session(project_id: str, session_id: str) -> dict[str, Any]:
@@ -1727,6 +1774,28 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             operation_id=req.operation_id,
             allow_disclosure_change=req.allow_disclosure_change,
             conversation_id=req.conversation_id,
+        )
+
+    @router.post("/projects/{project_id}/drafts/{candidate_id}/apply-to-edit-session")
+    def apply_draft_to_edit_session(
+        project_id: str, candidate_id: str, req: ApplyCandidateToEditRequest
+    ) -> dict[str, Any]:
+        """把候选用进手工修改副本（V03-5.3）：只写副本并标记生成来源。
+
+        这是作者动作：候选不会自动写入副本；进副本后仍要「修改完成」才会
+        发布正式正文。采用片段时选区外的人工段落保留原来源。
+        """
+        return runtime.drafting.apply_to_edit_session(
+            project_id,
+            candidate_id,
+            session_id=req.session_id,
+            expected_save_seq=req.expected_save_seq,
+            request_id=req.request_id,
+            preview_hash=req.preview_hash,
+            revision=req.revision,
+            start_paragraph=req.start_paragraph,
+            end_paragraph=req.end_paragraph,
+            allow_disclosure_change=req.allow_disclosure_change,
         )
 
     @router.post("/projects/{project_id}/drafts/{candidate_id}/discard")
