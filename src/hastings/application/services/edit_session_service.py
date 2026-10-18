@@ -558,6 +558,24 @@ class EditSessionService:
                         current_save_seq=draft.save_seq,
                     )
 
+        op_id = operation_id or (
+            "op_"
+            + content_hash(
+                [
+                    "edit.finish",
+                    project_id,
+                    session_id,
+                    [[d.chapter_id, d.save_seq] for d in drafts],
+                ]
+            )[:16]
+        )
+        # 收口恢复（V03-5.5）：上一轮可能已经提交成功，却在关闭副本时失败
+        # （崩溃/写盘错误/响应丢失）。先按确定性操作 ID 找回已提交结果，
+        # 补完关闭后直接返回——不重新准备，也不会因为 head 已前进而发出第二版。
+        prior = self._find_finish(pid, op_id)
+        if prior is not None:
+            return self._replay_finish(pid, session, prior)
+
         # 正式稿前进时三方合并（V03-5.2）：base=作者读到的那一版、ours=草稿、
         # theirs=当前正式稿。干净则按**当前基础**发布合并稿——别人的保存不被
         # 覆盖，作者的修改也不丢失；重叠则整批拒绝并给出逐段事实，副本与草稿
@@ -664,17 +682,6 @@ class EditSessionService:
                 conflicts=conflicts,
             )
 
-        op_id = operation_id or (
-            "op_"
-            + content_hash(
-                [
-                    "edit.finish",
-                    project_id,
-                    session_id,
-                    [[d.chapter_id, d.save_seq] for d in drafts],
-                ]
-            )[:16]
-        )
         command = manuscript_command(
             manuscript_commands.save_drafts,
             drafts=tuple(
@@ -687,33 +694,62 @@ class EditSessionService:
             ),
         )
         # 选择进 refs：版本历史里能读出「这次合并在哪几处取了哪边」。
-        refs: dict[str, Any] = {"session_id": session_id}
+        refs: dict[str, Any] = {
+            "session_id": session_id,
+            "merged_chapters": list(merged_chapters),
+        }
         if picked:
             refs["merge_choices"] = [
                 {"chapter_id": chapter_id, "conflict": index, "choice": choice}
                 for (chapter_id, index), choice in sorted(picked.items())
             ]
         # 段落来源随版本保留（V03-5.3）：生成段落不能事后被当作人工编辑证据。
-        # 只记录这次真的会变内容的章；与正文同哈希的章发布时是 no_change。
-        provenance: dict[str, list[dict[str, Any]]] = {}
-        for chapter_id, text, _expected_base, sources in plans:
-            if _text_hash(text) == _text_hash(current.manuscript().text_of(chapter_id)):
-                continue
-            provenance[chapter_id] = source_runs(sources)
+        # 记录全部计划章而不是只记「与当前正文不同」的章：关闭失败后的重试会
+        # 在已提交的 head 上重新准备，若这里随 head 变化，操作指纹就会变，
+        # 幂等重放会退化成 OPERATION_KEY_CONFLICT。
+        provenance: dict[str, list[dict[str, Any]]] = {
+            chapter_id: source_runs(sources) for chapter_id, _text, _expected_base, sources in plans
+        }
         if provenance:
             refs["paragraph_sources"] = provenance
-        result = self._publisher.publish_command(
-            project_id=pid,
-            command=command,
-            operation_id=op_id,
-            kind="edit_session.finish",
-            summary=f"完成手工修改：{len(drafts)} 章",
-            refs=refs,
-            origin_conversation_id=conversation_id,
-            # 按**当前 head** 求值：合并稿是叠在最新正式稿上的，各命令的
-            # expected_chapter_base 就是当前基础；求值到提交之间若有新保存，
-            # 领域检查与提交层逐对象 CAS 都会显式冲突，不会静默覆盖。
-        )
+        try:
+            result = self._publisher.publish_command(
+                project_id=pid,
+                command=command,
+                operation_id=op_id,
+                kind="edit_session.finish",
+                summary=f"完成手工修改：{len(drafts)} 章",
+                refs=refs,
+                origin_conversation_id=conversation_id,
+                # 按**当前 head** 求值：合并稿是叠在最新正式稿上的，各命令的
+                # expected_chapter_base 就是当前基础；求值到提交之间若有新保存，
+                # 领域检查与提交层逐对象 CAS 都会显式冲突，不会静默覆盖。
+            )
+        except ViolationError as exc:
+            # 两个标签页同时点「完成」：同一会话派生同一个 op_id，先到的提交
+            # 成功，后到的 expected_head 过期。若该操作其实已经提交，就认回
+            # 它的结果并补完关闭，而不是把并发点按报成失败或再发一版。
+            if exc.code != "REPO_HEAD_CONFLICT":
+                raise
+            try:
+                envelope = self._operations.get_operation(pid, op_id)
+            except ViolationError:
+                raise exc from None
+            if envelope.commit_id is None or envelope.status != "committed":
+                raise exc from None
+            closed = _ended(session, SESSION_CLOSED, envelope.operation_id, self._now())
+            self._repo.aux_mutate(pid, CURRENT_BUCKET, _CURRENT_KEY, lambda _c: closed.to_wire())
+            self._archive(closed)
+            published = set(envelope.changed_chapter_ids)
+            return {
+                "status": envelope.status,
+                "session_id": session_id,
+                "operation_id": envelope.operation_id,
+                "commit_id": envelope.commit_id,
+                "changed_chapter_ids": list(envelope.changed_chapter_ids),
+                "merged_chapters": [cid for cid in merged_chapters if cid in published],
+                "replayed": True,
+            }
         closed = _ended(session, SESSION_CLOSED, result.operation_id, self._now())
         self._repo.aux_mutate(pid, CURRENT_BUCKET, _CURRENT_KEY, lambda _c: closed.to_wire())
         self._archive(closed)
@@ -731,6 +767,40 @@ class EditSessionService:
         }
 
     # -- 内部 -----------------------------------------------------------------
+
+    def _find_finish(self, pid: ProjectId, operation_id: str) -> Any | None:
+        """按确定性操作 ID 找回已提交的完成操作；没有回执返回 None。"""
+        try:
+            return self._operations.get_operation(pid, operation_id)
+        except ViolationError as exc:
+            if exc.code == "OPERATION_NOT_FOUND":
+                return None
+            raise
+
+    def _replay_finish(self, pid: ProjectId, session: EditSession, envelope: Any) -> dict[str, Any]:
+        """回放已提交的完成操作并补完关闭：不重新准备、不产生第二个版本。"""
+        refs = self._operations.record_refs(pid, envelope.operation_id)
+        recorded_session = refs.get("session_id")
+        if recorded_session is not None and recorded_session != session.session_id:
+            raise _violation(
+                ec.OPERATION_KEY_CONFLICT,
+                f"edit_sessions.finish({session.session_id})",
+                f"操作 {envelope.operation_id!r} 属于另一个副本 {recorded_session!r}",
+                "使用本副本自己的完成结果；不要复用其他副本的操作 ID",
+                operation_id=envelope.operation_id,
+            )
+        closed = _ended(session, SESSION_CLOSED, envelope.operation_id, self._now())
+        self._repo.aux_mutate(pid, CURRENT_BUCKET, _CURRENT_KEY, lambda _c: closed.to_wire())
+        self._archive(closed)
+        return {
+            "status": envelope.status,
+            "session_id": session.session_id,
+            "operation_id": envelope.operation_id,
+            "commit_id": envelope.commit_id,
+            "changed_chapter_ids": list(envelope.changed_chapter_ids),
+            "merged_chapters": list(refs.get("merged_chapters") or []),
+            "replayed": True,
+        }
 
     def _closed_result(self, pid: ProjectId, session: EditSession) -> dict[str, Any]:
         """已完成副本的重试：返回当时的操作结果，不再发布第二个版本。"""
