@@ -15,7 +15,9 @@ import {
   fetchLedger,
   fetchLedgerEntry,
   fetchLedgerSchema,
+  stageLedgerCandidate,
   updateLedgerEntry,
+  type LedgerCandidateGroup,
   type LedgerEntry,
   type LedgerField,
   type LedgerKind,
@@ -74,11 +76,13 @@ export default function LedgerEditor({
   entryId,
   onClose,
   onSaved,
+  onStaged,
 }: {
   projectId: string;
   entryId?: string;
   onClose(): void;
   onSaved(result: LedgerSaveResult): void;
+  onStaged?(group: LedgerCandidateGroup): void;
 }) {
   const [schema, setSchema] = useState<LedgerKind[]>([]);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
@@ -86,6 +90,7 @@ export default function LedgerEditor({
   const [revision, setRevision] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, FieldValue>>({});
   const [requestId, setRequestId] = useState(newRequestId);
+  const [hypothesis, setHypothesis] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
@@ -197,9 +202,35 @@ export default function LedgerEditor({
     }
   }
 
+  async function stage() {
+    if (!form) return;
+    const fields = toFields(form, values);
+    const missing = missingRequired(form, fields);
+    if (missing) {
+      setError(missing);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const group = await stageLedgerCandidate(projectId, {
+        kind: form.kind,
+        fields,
+        hypothesis,
+        request_id: requestId,
+      });
+      onStaged?.(group);
+      onClose();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const description = entryId
     ? "直接修改会形成新版本；保存后回读实际版本。角色猜测与证词请记在「认知 / 证词」，不要写成事实。"
-    : "这里保存你确认过的设定。还没决定的假设先不要保存；保存只写账本，不会改写正文。";
+    : "「保存设定」直接写入正式账本；「存为待确认」只进候选组，确认后才入账。假设不会进入正式账本。";
 
   return (
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
@@ -258,10 +289,29 @@ export default function LedgerEditor({
             <ErrorText>{error}</ErrorText>
           </div>
 
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+            {!entryId && (
+              <label className="mr-auto flex items-center gap-2 text-xs text-sub">
+                <input
+                  type="checkbox"
+                  checked={hypothesis}
+                  onChange={(e) => setHypothesis(e.target.checked)}
+                />
+                这只是假设（不进入正式账本）
+              </label>
+            )}
             <button className="btn btn-gray px-4 py-2 text-xs" disabled={busy} onClick={onClose}>
               取消
             </button>
+            {!entryId && (
+              <button
+                className="btn btn-gray px-4 py-2 text-xs"
+                disabled={busy || !ready || !form}
+                onClick={() => void stage()}
+              >
+                {busy ? "处理中…" : "存为待确认"}
+              </button>
+            )}
             <button
               className="btn px-4 py-2 text-xs"
               disabled={busy || !ready || !form}

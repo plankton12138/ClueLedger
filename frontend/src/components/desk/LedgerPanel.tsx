@@ -1,12 +1,22 @@
 /**
- * 故事账本面板（V03-3.2）：列出正式条目、直接新增/编辑，保存后显示真实版本。
+ * 故事账本面板（V03-3.2）：正式条目、直接新增/编辑、待确认候选成组。
  *
- * 只展示已确认的正式条目；候选与假设不混入这里（候选入口在 V03-3.2 的下一部分）。
+ * 正式条目与候选分开呈现：候选只进辅助表，选中确认后才一次入账；
+ * 假设可以暂存但不会进入正式账本。保存/确认后都显示真实版本。
  */
 
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchLedger, type LedgerEntry, type LedgerSaveResult } from "../../api/ledger";
+import {
+  acceptLedgerCandidates,
+  fetchLedger,
+  fetchLedgerCandidates,
+  skipLedgerCandidates,
+  type LedgerCandidateGroup,
+  type LedgerEntry,
+  type LedgerSaveResult,
+} from "../../api/ledger";
+import { V2Error } from "../../api/v2";
 import { message } from "../../state/v2";
 import LedgerEditor from "./LedgerEditor";
 
@@ -18,16 +28,30 @@ export default function LedgerPanel({
   onSaved?(): void;
 }) {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [group, setGroup] = useState<LedgerCandidateGroup | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<{ title: string; commitId: string | null; replayed: boolean } | null>(
-    null,
-  );
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<{
+    title: string;
+    commitId: string | null;
+    replayed: boolean;
+  } | null>(null);
   const [editing, setEditing] = useState<{ entryId?: string } | null>(null);
 
   const reload = useCallback(async () => {
     try {
-      const rows = await fetchLedger(projectId);
+      const [rows, candidates] = await Promise.all([
+        fetchLedger(projectId),
+        fetchLedgerCandidates(projectId),
+      ]);
       setEntries(rows);
+      setGroup(candidates);
+      setSelected((current) =>
+        current.filter((id) =>
+          candidates.items.some((item) => item.item_id === id && item.status === "pending"),
+        ),
+      );
       setError(null);
     } catch (e) {
       setError(message(e));
@@ -47,6 +71,71 @@ export default function LedgerPanel({
     void reload();
     onSaved?.();
   }
+
+  function staged(next: LedgerCandidateGroup) {
+    setGroup(next);
+    setSaved(null);
+    setSelected([]);
+    setError(null);
+  }
+
+  async function acceptSelected() {
+    if (!group || selected.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await acceptLedgerCandidates(projectId, {
+        item_ids: selected,
+        expected_revision: group.revision,
+        request_id: crypto.randomUUID(),
+      });
+      setSaved({
+        title: `${result.entries.length} 条设定`,
+        commitId: result.commit_id,
+        replayed: false,
+      });
+      setGroup(result.group);
+      setSelected([]);
+      const rows = await fetchLedger(projectId);
+      setEntries(rows);
+      onSaved?.();
+    } catch (e) {
+      if (e instanceof V2Error && e.code === "LEDGER_CANDIDATE_CONFLICT") {
+        setError("待确认列表已更新，本次选择基于旧列表；已重新读取，请再确认一次。");
+        await reload();
+      } else {
+        setError(message(e));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function skipSelected() {
+    if (!group || selected.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await skipLedgerCandidates(projectId, {
+        item_ids: selected,
+        expected_revision: group.revision,
+        request_id: crypto.randomUUID(),
+      });
+      setGroup(next);
+      setSelected([]);
+    } catch (e) {
+      if (e instanceof V2Error && e.code === "LEDGER_CANDIDATE_CONFLICT") {
+        setError("待确认列表已更新；已重新读取，请再选择一次。");
+        await reload();
+      } else {
+        setError(message(e));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const pending = group?.items.filter((item) => item.status === "pending") ?? [];
 
   return (
     <>
@@ -75,7 +164,7 @@ export default function LedgerPanel({
             还没决定的假设先不要保存。
           </p>
         ) : (
-          <ul className="max-h-80 overflow-y-auto px-2 py-2 text-xs">
+          <ul className="max-h-72 overflow-y-auto px-2 py-2 text-xs">
             {entries.map((entry) => (
               <li key={entry.id}>
                 <button
@@ -92,12 +181,70 @@ export default function LedgerPanel({
         )}
       </section>
 
+      {pending.length > 0 && (
+        <section className="panel" aria-label="待确认设定">
+          <header className="panel-head px-4 py-3">
+            待确认 · {pending.length}
+            {(group?.hypothesis_count ?? 0) > 0 && (
+              <span className="ml-2 text-[10px] text-sub">
+                其中 {group?.hypothesis_count} 条是假设
+              </span>
+            )}
+          </header>
+          <ul className="max-h-64 overflow-y-auto px-2 py-2 text-xs">
+            {pending.map((item) => (
+              <li key={item.item_id} className="flex items-start gap-2 px-2 py-1.5">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  aria-label={`选择候选 ${item.title}`}
+                  disabled={item.hypothesis || busy}
+                  checked={selected.includes(item.item_id)}
+                  onChange={(e) =>
+                    setSelected((current) =>
+                      e.target.checked
+                        ? [...current, item.item_id]
+                        : current.filter((id) => id !== item.item_id),
+                    )
+                  }
+                />
+                <span className="min-w-0">
+                  <span className="text-fgStrong">{item.title}</span>
+                  <span className="text-[10px] text-sub"> · {item.kind_label}</span>
+                  {item.hypothesis && (
+                    <span className="ml-1 text-[10px] text-danger">假设 · 不会入账</span>
+                  )}
+                  <span className="block truncate text-[10px] text-sub">{item.summary}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex gap-2 px-4 py-2">
+            <button
+              className="btn btn-gray px-3 py-1.5 text-[11px]"
+              disabled={busy || selected.length === 0}
+              onClick={() => void skipSelected()}
+            >
+              暂不处理
+            </button>
+            <button
+              className="btn px-3 py-1.5 text-[11px]"
+              disabled={busy || selected.length === 0}
+              onClick={() => void acceptSelected()}
+            >
+              {busy ? "处理中…" : `确认选中（${selected.length}）`}
+            </button>
+          </div>
+        </section>
+      )}
+
       {editing && (
         <LedgerEditor
           projectId={projectId}
           entryId={editing.entryId}
           onClose={() => setEditing(null)}
           onSaved={savedResult}
+          onStaged={staged}
         />
       )}
     </>

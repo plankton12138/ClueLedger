@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from hastings.domain.story import error_codes as ec
@@ -46,15 +46,16 @@ from hastings.domain.story.refs import (
     check_revision,
     create_change,
     new_artifact_id,
-    require_ref,
     revise_change,
 )
 
 __all__ = [
     "LEDGER_FIELDS",
     "LEDGER_KINDS",
+    "LEDGER_REF_FIELDS",
     "create_entry",
     "revise_entry",
+    "validate_fields",
 ]
 
 #: 可在写作台直接维护的账本种类；顺序即前端「新增」下拉的默认顺序。
@@ -134,6 +135,9 @@ _REF_FIELDS: dict[str, dict[str, tuple[str, ...]]] = {
     },
 }
 
+#: 引用字段的公开视图（候选成组需要识别哪些字段可能指向同组条目）。
+LEDGER_REF_FIELDS: dict[str, dict[str, tuple[str, ...]]] = _REF_FIELDS
+
 
 def _require_kind(kind: str, *, cmd: str) -> None:
     if kind not in _MODELS:
@@ -164,18 +168,45 @@ def _clean(kind: str, fields: Mapping[str, Any], *, cmd: str) -> dict[str, Any]:
     return {key: value for key, value in fields.items() if key in allowed}
 
 
-def _check_refs(catalog: StoryCatalog, kind: str, content: Mapping[str, Any], *, cmd: str) -> None:
+def _catalog_lookup(catalog: StoryCatalog) -> Callable[[str], str | None]:
+    def lookup(target: str) -> str | None:
+        entry = catalog.get(target)
+        return entry.kind if entry is not None else None
+
+    return lookup
+
+
+def _check_refs(
+    kind: str, content: Mapping[str, Any], *, cmd: str, lookup: Callable[[str], str | None]
+) -> None:
     for field, allowed in _REF_FIELDS.get(kind, {}).items():
         value = content.get(field)
         if not value:
             continue
         targets = [str(value)] if isinstance(value, str) else [str(v) for v in value]
         for target in targets:
-            require_ref(catalog, target, allowed, cmd=cmd, field=field)
+            actual = lookup(target)
+            if actual is None:
+                raise violation(
+                    ec.STORY_UNKNOWN_ARTIFACT,
+                    f"{cmd}.{field}",
+                    f"引用的对象 {target!r} 在当前作品里不存在",
+                    "先创建引用对象，或从引用列表重新选择；不要手填不存在的 ID",
+                    artifact_id=target,
+                )
+            if actual not in allowed:
+                raise violation(
+                    ec.STORY_INVALID_COMMAND,
+                    f"{cmd}.{field}",
+                    f"{target!r} 的类型是 {actual!r}，不能作为 {field} 引用",
+                    f"{field} 期望类型 {sorted(allowed)}；确认是否引用了错误对象",
+                    artifact_id=target,
+                    kind=actual,
+                    expected=list(allowed),
+                )
 
 
-def _validate(catalog: StoryCatalog, kind: str, content: Mapping[str, Any], *, cmd: str) -> None:
-    """种类级枚举与引用校验；字段必填由模型 ``from_content`` 负责。"""
+def _check_enums(kind: str, content: Mapping[str, Any], *, cmd: str) -> None:
     if kind == kinds.KIND_CHARACTER:
         role = content.get("role", "support")
         if role not in CHARACTER_ROLES:
@@ -198,7 +229,42 @@ def _validate(catalog: StoryCatalog, kind: str, content: Mapping[str, Any], *, c
                 mode=mode,
                 allowed=sorted(KNOWLEDGE_MODES),
             )
-    _check_refs(catalog, kind, content, cmd=cmd)
+
+
+def _validate(
+    kind: str,
+    content: Mapping[str, Any],
+    *,
+    cmd: str,
+    lookup: Callable[[str], str | None],
+) -> None:
+    """种类级枚举与引用校验；字段必填由模型 ``from_content`` 负责。"""
+    _check_enums(kind, content, cmd=cmd)
+    _check_refs(kind, content, cmd=cmd, lookup=lookup)
+
+
+def validate_fields(
+    kind: str,
+    fields: Mapping[str, Any],
+    *,
+    ref_lookup: Callable[[str], str | None],
+    cmd: str = "ValidateLedgerEntry",
+) -> dict[str, Any]:
+    """校验一份账本字段（候选暂存复用）：白名单、枚举、引用与必填。
+
+    与正式保存共用同一套规则，区别只在引用来源：这里由调用方提供 ``ref_lookup``，
+    因此候选可以先用组内条目占位（``@item_id``），确认时再解析成真实 ID。
+    返回只含可写字段的规范化内容。
+    """
+    _require_kind(kind, cmd=cmd)
+    content = _clean(kind, fields, cmd=cmd)
+    _validate(kind, content, cmd=cmd, lookup=ref_lookup)
+    model = _MODELS[kind].from_content(content)
+    return {
+        key: value
+        for key, value in model.to_content().items()
+        if key in LEDGER_FIELDS[kind]
+    }
 
 
 def _title(kind: str, content: Mapping[str, Any], artifact_id: str) -> str:
@@ -216,7 +282,7 @@ def create_entry(
     """新建一个账本条目；字段经类型化模型校验后才生成变更。"""
     _require_kind(kind, cmd="CreateLedgerEntry")
     content = _clean(kind, fields, cmd="CreateLedgerEntry")
-    _validate(catalog, kind, content, cmd="CreateLedgerEntry")
+    _validate(kind, content, cmd="CreateLedgerEntry", lookup=_catalog_lookup(catalog))
     model = _MODELS[kind].from_content(content)
     artifact_id = new_artifact_id(catalog, new_id, kind, cmd="CreateLedgerEntry")
     change = create_change(artifact_id, kind, model.to_content())
@@ -242,7 +308,12 @@ def revise_entry(
     updates = _clean(entry.kind, fields, cmd="ReviseLedgerEntry")
     merged = {**entry.content, **updates}
     merged.pop("schema_version", None)
-    _validate(catalog, entry.kind, merged, cmd="ReviseLedgerEntry")
+    _validate(
+        entry.kind,
+        merged,
+        cmd="ReviseLedgerEntry",
+        lookup=_catalog_lookup(catalog),
+    )
     model = _MODELS[entry.kind].from_content(merged)
     content = model.to_content()
     if content == entry.content:

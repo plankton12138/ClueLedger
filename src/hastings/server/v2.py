@@ -70,6 +70,7 @@ from hastings.application.services.edit_session_service import EditSessionServic
 from hastings.application.services.entry_service import EntryService
 from hastings.application.services.evidence_service import EvidenceService
 from hastings.application.services.import_service import ImportService
+from hastings.application.services.ledger_candidate_service import LedgerCandidateService
 from hastings.application.services.ledger_service import LedgerService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
@@ -251,6 +252,8 @@ class V2Runtime:
         self.ledger = LedgerQueries(self.service)
         # 账本直接保存（V03-3.2）：作者显式创建/修订，一次保存一个原子 Commit。
         self.ledger_entries = LedgerService(self.service, ids)
+        # 设定候选成组（V03-3.2）：暂存在辅助表，选中后一次提交，假设不入账。
+        self.ledger_candidates = LedgerCandidateService(self.service, ids, self.clock)
         # 试写候选（V03-3.3/3.4）：账本+作者要求生成候选，只读预览，
         # 按预览哈希采用；采用走统一发布（V03-3.5）。
         self.drafting = DraftingService(
@@ -882,6 +885,31 @@ class LedgerEntryUpdateRequest(BaseModel):
     request_id: str = Field(min_length=1)
 
 
+class LedgerStageRequest(BaseModel):
+    """暂存一条设定候选：尚未确认的内容不进入正式账本。"""
+
+    kind: str
+    fields: dict[str, Any] = Field(default_factory=dict)
+    hypothesis: bool = False
+    request_id: str = Field(min_length=1)
+
+
+class LedgerCandidateAcceptRequest(BaseModel):
+    """确认选中的候选：组版本防止基于旧列表确认，一次提交整组选中项。"""
+
+    item_ids: list[str] = Field(default_factory=list)
+    expected_revision: int
+    request_id: str = Field(min_length=1)
+
+
+class LedgerCandidateSkipRequest(BaseModel):
+    """暂不处理：只改候选组状态，不产生正式版本。"""
+
+    item_ids: list[str] = Field(default_factory=list)
+    expected_revision: int
+    request_id: str = Field(min_length=1)
+
+
 class DraftReviseRequest(BaseModel):
     instruction: str = ""
     expected_revision: int | None = None
@@ -1164,6 +1192,46 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             project_id,
             entry_id,
             fields=req.fields,
+            expected_revision=req.expected_revision,
+            request_id=req.request_id,
+        )
+
+    @router.get("/projects/{project_id}/ledger/candidates")
+    def get_ledger_candidates(project_id: str) -> dict[str, Any]:
+        """待确认的设定候选：独立于正式账本，假设不会自动入账。"""
+        return runtime.ledger_candidates.view(project_id)
+
+    @router.post("/projects/{project_id}/ledger/candidates/items")
+    def stage_ledger_candidate(project_id: str, req: LedgerStageRequest) -> dict[str, Any]:
+        """暂存一条候选：只写辅助表，不产生版本，不占用正式条目 ID。"""
+        return runtime.ledger_candidates.stage(
+            project_id,
+            kind=req.kind,
+            fields=req.fields,
+            hypothesis=req.hypothesis,
+            request_id=req.request_id,
+        )
+
+    @router.post("/projects/{project_id}/ledger/candidates/accept")
+    def accept_ledger_candidates(
+        project_id: str, req: LedgerCandidateAcceptRequest
+    ) -> dict[str, Any]:
+        """确认选中条目：一次提交、依赖闭合；未选中的继续留在候选组。"""
+        return runtime.ledger_candidates.accept(
+            project_id,
+            item_ids=req.item_ids,
+            expected_revision=req.expected_revision,
+            request_id=req.request_id,
+        )
+
+    @router.post("/projects/{project_id}/ledger/candidates/skip")
+    def skip_ledger_candidates(
+        project_id: str, req: LedgerCandidateSkipRequest
+    ) -> dict[str, Any]:
+        """暂不处理：只更新候选组状态，不写正式账本。"""
+        return runtime.ledger_candidates.skip(
+            project_id,
+            item_ids=req.item_ids,
             expected_revision=req.expected_revision,
             request_id=req.request_id,
         )

@@ -58,6 +58,35 @@ export interface LedgerSaveResult {
   replayed: boolean;
 }
 
+export interface LedgerCandidateItem {
+  item_id: string;
+  kind: string;
+  kind_label: string;
+  title: string;
+  summary: string;
+  hypothesis: boolean;
+  status: "pending" | "accepted" | "skipped";
+  accepted_entry_id: string | null;
+}
+
+export interface LedgerCandidateGroup {
+  group_id: string;
+  project_id: string;
+  revision: number;
+  items: LedgerCandidateItem[];
+  pending_count: number;
+  hypothesis_count: number;
+  updated_at: string;
+}
+
+export interface LedgerCandidateAcceptResult {
+  status: string;
+  commit_id: string;
+  entries: LedgerEntryDetail[];
+  commit_item_ids: string[];
+  group: LedgerCandidateGroup;
+}
+
 export interface LedgerSaveInput {
   kind: string;
   fields: Record<string, unknown>;
@@ -110,4 +139,29 @@ export async function updateLedgerEntry(
     input,
     "PATCH",
   );
+}
+
+export async function fetchLedgerCandidates(projectId: string): Promise<LedgerCandidateGroup> {
+  return request(`${projectPrefix(projectId)}/ledger/candidates`);
+}
+
+export async function stageLedgerCandidate(
+  projectId: string,
+  input: { kind: string; fields: Record<string, unknown>; hypothesis: boolean; request_id: string },
+): Promise<LedgerCandidateGroup> {
+  return request(`${projectPrefix(projectId)}/ledger/candidates/items`, input);
+}
+
+export async function acceptLedgerCandidates(
+  projectId: string,
+  input: { item_ids: string[]; expected_revision: number; request_id: string },
+): Promise<LedgerCandidateAcceptResult> {
+  return request(`${projectPrefix(projectId)}/ledger/candidates/accept`, input);
+}
+
+export async function skipLedgerCandidates(
+  projectId: string,
+  input: { item_ids: string[]; expected_revision: number; request_id: string },
+): Promise<LedgerCandidateGroup> {
+  return request(`${projectPrefix(projectId)}/ledger/candidates/skip`, input);
 }
