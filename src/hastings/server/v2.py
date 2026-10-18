@@ -58,10 +58,12 @@ from hastings.application.handlers.manuscript_commands import (
 from hastings.application.ports.agents import AgentRunner
 from hastings.application.ports.events import EventOutbox
 from hastings.application.queries.author_profile import AuthorProfileQueries
+from hastings.application.queries.chapter_history import ChapterHistoryQueries
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.conversation_service import ConversationService
 from hastings.application.services.edit_session_service import EditSessionService
 from hastings.application.services.entry_service import EntryService
+from hastings.application.services.evidence_service import EvidenceService
 from hastings.application.services.import_service import ImportService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
@@ -231,7 +233,12 @@ class V2Runtime:
             self.clock,
             edit_sessions=self.edit_sessions,
         )
-        self.restore = RestoreChapterVersion(self.handler, self.service)
+        self.restore = RestoreChapterVersion(
+            self.service, self.manuscript_publisher, self.edit_sessions
+        )
+        # 章版本历史与证据核对（V03-2.5）：只读历史 + 人工重锚。
+        self.chapter_history = ChapterHistoryQueries(self.service)
+        self.evidence = EvidenceService(self.service, self.operations)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -796,6 +803,10 @@ class FinishEditRequest(BaseModel):
     expected_save_sequences: dict[str, int] | None = None
 
 
+class ReanchorRequest(BaseModel):
+    quote: str | None = None
+
+
 class SaveChapterRequest(BaseModel):
     idempotency_key: str
     operations: list[dict[str, Any]] | None = None
@@ -1142,7 +1153,32 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             "new_head": result.new_head,
             "summary": result.summary,
             "chapter_base": chapter_base,
+            "operation_id": result.operation_id,
+            "source_commit_id": req.source_commit_id,
         }
+
+    @router.get("/projects/{project_id}/chapters/{chapter_id}/history")
+    def get_chapter_history(
+        project_id: str, chapter_id: str, limit: int = 20
+    ) -> dict[str, Any]:
+        """章版本历史：只读投影，按章基础判重；limit 上限 50。"""
+        return runtime.chapter_history.versions(
+            project_id, chapter_id, limit=max(1, min(limit, 50))
+        )
+
+    @router.get("/projects/{project_id}/evidence-links")
+    def list_evidence_links(
+        project_id: str, chapter_id: str | None = None
+    ) -> dict[str, Any]:
+        """证据列表（可按章过滤）；需核对的排在前面。"""
+        return runtime.evidence.list(project_id, chapter_id=chapter_id)
+
+    @router.post("/projects/{project_id}/evidence-links/{evidence_id}/reanchor")
+    def reanchor_evidence(
+        project_id: str, evidence_id: str, req: ReanchorRequest
+    ) -> dict[str, Any]:
+        """人工重新关联：引用片段必须在当前正文中可定位，否则拒绝。"""
+        return runtime.evidence.reanchor(project_id, evidence_id, quote=req.quote)
 
     @router.get("/projects/{project_id}/author-model/preferences")
     def get_preferences(project_id: str) -> dict[str, Any]:

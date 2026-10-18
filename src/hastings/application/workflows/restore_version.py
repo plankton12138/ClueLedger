@@ -1,17 +1,15 @@
-"""历史恢复用例（Phase 14 验收 9）：恢复 = 一次新的正文提交，不重写历史。
+"""历史恢复用例（Phase 14 验收 9；V03-2.5 接入统一发布）。
 
-「版本历史可查看和恢复为新 Commit」（计划 §T14.8）的写路径。设计取舍：
+恢复 = 读源 Commit 的章文本，转成当前 head 上的**一次新发布**，不重写历史：
 
-- **不移动分支、不重写 Commit 链**：恢复读源 Commit 的章文本，转成本次 head 上的
-  一次 ``save_full_text`` 提交——与人工保存走同一条命令、同一套乐观并发检查与
-  幂等重放（``expected_chapter_base`` 冲突照样拒绝，恢复不能绕过并发保护）。
-  旧版本永远在历史里，恢复本身也产生新历史，双向可追溯；
-- **源 Commit 校验前置**：章在源 Commit 不存在时给出指向「源」的违规（哪里错 =
-  restore.source），而不是让 ``save_full_text`` 在 head 上误报「章不存在」——
-  同一个错误码，两种错因必须可区分（四透镜①）。
+- 经 ``PublishManuscriptChange`` 走与保存/导入相同的六步管线——证据核对、
+  摘要失效、操作记录、回执与正文在同一个提交里（计划 §3.3）；
+- 源 Commit 校验前置：章在源 Commit 不存在时归因到「源」而不是 head；
+- 副本保护：该章正在手工修改副本里时拒绝恢复，不自动放弃副本；
+- 幂等：同一 ``idempotency_key`` 派生同一 ``operation_id``，重试返回原结果。
 
-段落谱系留白：经 ``save_full_text`` 的 diff 规范化恢复，未匹配段落会以新 TextUnit
-身份重生（与整章文本保存同一语义）；按 Revision 逐一恢复属后续增强，不在本阶段。
+段落谱系留白：经 ``save_full_text`` 的 diff 规范化恢复，未匹配段落会以新
+TextUnit 身份重生（与整章文本保存同一语义）。
 """
 
 from __future__ import annotations
@@ -19,16 +17,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from hastings.application.errors import ViolationError
-from hastings.application.handlers.manuscript_commands import (
-    ManuscriptCommandHandler,
-    ManuscriptCommandResult,
-    manuscript_command,
-)
+from hastings.application.handlers.manuscript_commands import manuscript_command
 from hastings.application.ports.repository import RepositoryReader
+from hastings.application.services.edit_session_service import EditSessionService
+from hastings.application.services.publish_manuscript_change import (
+    PublishManuscriptChange,
+    PublishResult,
+)
 from hastings.domain.manuscript import error_codes as ms_ec
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
 from hastings.domain.manuscript.commands import save_full_text
 from hastings.domain.repository.ids import CommitId, ProjectId
+from hastings.domain.repository.serialization import content_hash
 
 __all__ = ["RestoreChapterVersion", "RestoreIntent"]
 
@@ -45,25 +45,58 @@ class RestoreIntent:
 
 
 class RestoreChapterVersion:
-    """把历史章文本转成当前 head 上的一次保存提交。"""
+    """把历史章文本转成当前 head 上的一次统一发布。"""
 
-    def __init__(self, handler: ManuscriptCommandHandler, reader: RepositoryReader) -> None:
-        self._handler = handler
+    def __init__(
+        self,
+        reader: RepositoryReader,
+        publisher: PublishManuscriptChange,
+        edit_sessions: EditSessionService | None = None,
+    ) -> None:
         self._reader = reader
+        self._publisher = publisher
+        self._edit_sessions = edit_sessions
 
-    def restore(self, intent: RestoreIntent) -> ManuscriptCommandResult:
+    def restore(
+        self, intent: RestoreIntent, *, operation_id: str | None = None
+    ) -> PublishResult:
         where = f"manuscript.restore({intent.project_id.value}.{intent.chapter_id})"
         source_text = self._source_text(intent, where=where)
-        return self._handler.execute(
-            manuscript_command(
-                save_full_text,
-                chapter_id=intent.chapter_id,
-                text=source_text,
-                expected_chapter_base=intent.expected_chapter_base,
-            ),
+        self._reject_edit_session_overlap(intent)
+        command = manuscript_command(
+            save_full_text,
+            chapter_id=intent.chapter_id,
+            text=source_text,
+            expected_chapter_base=intent.expected_chapter_base,
+        )
+        return self._publisher.publish_command(
             project_id=intent.project_id,
-            idempotency_key=intent.idempotency_key,
+            command=command,
+            operation_id=operation_id or _operation_id(intent),
+            kind="chapter.restore",
             summary=f"恢复「{intent.chapter_id}」到 Commit {intent.source_commit_id.value}",
+            refs={
+                "chapter_id": intent.chapter_id,
+                "source_commit_id": intent.source_commit_id.value,
+            },
+        )
+
+    def _reject_edit_session_overlap(self, intent: RestoreIntent) -> None:
+        """副本保护：正在修改的章不能从历史覆盖，避免作者丢掉本轮改动。"""
+        if self._edit_sessions is None:
+            return
+        current = self._edit_sessions.current(intent.project_id.value)
+        if current is None:
+            return
+        drafts = {str(draft["chapter_id"]) for draft in current.get("drafts", [])}
+        if intent.chapter_id not in drafts:
+            return
+        raise ViolationError(
+            code=ms_ec.EDIT_SESSION_CONFLICT,
+            where=f"manuscript.restore({intent.chapter_id})",
+            why="该章正在手工修改副本里，恢复会与未完成的修改冲突",
+            fix="先完成或放弃这一轮修改，再恢复历史版本；系统不会自动放弃副本",
+            details={"chapter_id": intent.chapter_id},
         )
 
     def _source_text(self, intent: RestoreIntent, *, where: str) -> str:
@@ -84,3 +117,18 @@ class RestoreChapterVersion:
                 },
             )
         return catalog.manuscript().text_of(intent.chapter_id)
+
+
+def _operation_id(intent: RestoreIntent) -> str:
+    return (
+        "op_"
+        + content_hash(
+            [
+                "chapter.restore",
+                intent.project_id.value,
+                intent.chapter_id,
+                intent.source_commit_id.value,
+                intent.idempotency_key,
+            ]
+        )[:16]
+    )

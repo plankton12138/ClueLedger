@@ -24,6 +24,8 @@ import { useDeskStore, type EntryReceipt } from "../../state/deskStore";
 import { isDirty, useV2Store } from "../../state/v2";
 import { ConfirmDiscard, Empty, ErrorText, Pill, kindLabels } from "../Workbench";
 import DeskComposer from "./DeskComposer";
+import ChapterHistory from "./ChapterHistory";
+import EvidenceCheck from "./EvidenceCheck";
 import ImportDialog from "./ImportDialog";
 import { useEditSession } from "./useEditSession";
 
@@ -378,9 +380,15 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                     : ""
                 }`}
                 onClick={() =>
-                  useDeskStore
-                    .getState()
-                    .navigate({ kind: "detail", detailKind: d.detailKind, id: pid ?? "-" })
+                  useDeskStore.getState().navigate({
+                    kind: "detail",
+                    detailKind: d.detailKind,
+                    // 版本历史按章查看；其他临时视图仍以作品为范围。
+                    id:
+                      d.detailKind === "history" && v2.chapter.chapterId
+                        ? v2.chapter.chapterId
+                        : (pid ?? "-"),
+                  })
                 }
               >
                 {d.label}
@@ -547,12 +555,23 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               <DeskDiscussion conversationId={mainView.conversationId} />
             )
           ) : mainView?.kind === "detail" ? (
-            <div className="flex h-full items-center justify-center p-4">
-              <Empty>
-                「{DETAIL_KINDS.find((d) => d.detailKind === mainView.detailKind)?.label}」
-                在对应阶段接入真实数据，当前为占位视图。
-              </Empty>
-            </div>
+            mainView.detailKind === "history" && pid && mainView.id !== pid ? (
+              <ChapterHistory
+                projectId={pid}
+                chapterId={mainView.id}
+                onRestored={() => {
+                  void v2.refreshManuscript();
+                  void v2.selectChapter(mainView.id);
+                }}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center p-4">
+                <Empty>
+                  「{DETAIL_KINDS.find((d) => d.detailKind === mainView.detailKind)?.label}」
+                  在对应阶段接入真实数据，当前为占位视图。
+                </Empty>
+              </div>
+            )
           ) : (
             <div className="flex h-full items-center justify-center p-4">
               <Empty>
@@ -593,6 +612,9 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               </div>
             )}
           </section>
+          {mainView?.kind === "manuscript" && pid && (
+            <EvidenceCheck projectId={pid} chapterId={mainView.chapterId} />
+          )}
           <section className="panel" aria-label="操作结果">
             <header className="panel-head px-4 py-3">操作结果</header>
             {Object.keys(operations).length === 0 ? (
