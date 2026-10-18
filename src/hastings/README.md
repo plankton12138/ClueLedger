@@ -27,6 +27,8 @@ Phase 16 的无状态工作者与持久任务见 [orchestration-context.md](../.
 
 Phase 19 的常驻对话侧栏与显式创作周期见 [phase-19-chat-workbench.md](../../dev-notes/v2/phase-19-chat-workbench.md)：对话契约在 `frontend/src/api/chat.ts`（模拟与真实 API 同接口），后端事实源在 `domain/conversation/`、`application/services/{conversation_service,task_prep_service,task_projection}.py`、`infrastructure/conversations/` 与 `interfaces/api/conversations.py`（REST/SSE）。普通聊天没有写端口（tools 恒空），创作只能经 TaskDraft 显式启动映射到既有工作流，候选接受复用审阅规则；模型绑定快照随任务定格（`server/v2_agents.py`）。真模型走查入口 `eval/v2/chat_driver.py`。
 
+0.3 的正文中心工作区见 [v0.3 开发文档](../../dev-notes/v0.3/README.md)（实施进度与偏差以该文档为准）：正文写入统一走 `application/services/publish_manuscript_change.py`（导入/保存/恢复/候选采用同一管线，证据核对与摘要失效在同一次提交内），操作回执与讨论投影在 `application/services/operation_service.py`、`application/workflows/operation_projection.py`；入口预约与无模型想法在 `application/services/entry_service.py`（`POST /api/v2/entries`），本地模型任务在 `local_model_service.py`，执行日志在 `interfaces/api/execution_log.py`（`GET /api/v2/execution-events` 与 `/stream`）。前端写作台壳层在 `frontend/src/components/desk/`，状态不变量在 `state/desk.ts`；默认入口尚未切换（V03-8.6）。
+
 Phase 17 的旧工作区迁移已按[未上线项目的退役决策](../../dev-notes/v2/phase-17-workspace-retirement.md)删除：不再提供迁移面板、slug 迁移接口、导入器或 CLI 工作区映射。旧写路径退役证明在 `tests/v2/server/test_legacy_write_unreachable.py`；V2 业务事件在 `server/v2_ws.py`，备份导出与恢复在 `interfaces/exporters/v2_package_exporter.py`，均保留。
 
 | 想了解 | 入口 |

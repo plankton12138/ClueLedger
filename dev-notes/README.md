@@ -6,7 +6,7 @@
 
 | 文档集 | 定位 | 入口 |
 |---|---|---|
-| 0.3（V03-0 契约基线已交付） | 正文中心工作区、跨章修改、模型上下文与三批开发验收 | [0.3 开发文档](v0.3/README.md) |
+| 0.3（V03-1 已收口，V03-2 进行中） | 正文中心工作区、跨章修改、模型上下文与三批开发验收 | [0.3 开发文档](v0.3/README.md) |
 | 0.2（原 V2） | Phase 11–19 设计与交付记录，含作者工作台与模型接入 | [0.2 文档](v2/README.md) |
 | 0.1（原 V1） | 早期系统的 as-built 说明、P0–P10 历史计划、构建笔记和验收材料 | [0.1 文档](v1/README.md) |
 | 灵感池 | 跨版本、未排期的产品与 Agent 想法 | [ideas.md](ideas.md) |
@@ -25,13 +25,14 @@
 
 ## 当前入口
 
-- 0.3 开发计划：[完整开发计划](v0.3/development-plan.md)（2026-10-17 编写）：现状差距、14个模块及示例、前后端契约、三批任务、数据升级和33项产品验收映射。**V03-0 契约基线七个任务（0.1–0.7）已交付**（2026-10-17，commit `02772f9`），交付物与证据见 [v0.3/README](v0.3/README.md)。
+- 0.3 开发计划：[完整开发计划](v0.3/development-plan.md)（2026-10-17 编写）：现状差距、14个模块及示例、前后端契约、三批任务、数据升级和33项产品验收映射。
+- 0.3 当前进度：**V03-0 契约基线与 V03-1 首次引导均已收口**；V03-2.1 已交付，2.2 统一发布管线主体已交付（导入/恢复接入随 2.3/2.5）。质量门基线 1523 passed，交付证据、偏差与留白见 [v0.3/README](v0.3/README.md)。
 - 当前产品方案：[Agent 主工作区与故事账本](../product-design/agent-first-workbench-product-design.md)（2026-10-17 评审决定已确认，待实现）：人物、线索与正文中心的创作闭环，包含首次引导、可视化账本与执行日志。
 - 修改体验详案：[正文修改与版本流程](../product-design/manuscript-editing-design.md)：随时开启手工修改支线、跨章工作副本、修改完成后的统一版本与后续处理，以及对话整体调整。
 - 常驻上下文：[模型上下文与正文摘要](../product-design/context-and-summary-design.md)：账本与摘要提供稳定背景，精确任务按需读原文，摘要版本与失效状态可追溯。
 - 后续保留、0.3不实现：[作者模型](../product-design/future/author-model-design.md)、[全文/章节模型一致性审计](../product-design/future/consistency-audit-design.md)、[参考材料与风格语料](../product-design/future/reference-material-design.md)；RAG 同样留待后续，已有正文导入继续保留。
 
-- 当前阶段：[Phase 19：常驻对话侧栏与显式创作周期](v2/phase-19-chat-workbench.md)，主体已交付；[代码审查修复](v2/phase-19-review-fixes.md) 已补真实 HTTP/SSE 与浏览器闭环，真模型 A13 仍待验收。
+- 0.2 收尾阶段：[Phase 19：常驻对话侧栏与显式创作周期](v2/phase-19-chat-workbench.md)，主体已交付；[代码审查修复](v2/phase-19-review-fixes.md) 已补真实 HTTP/SSE 与浏览器闭环，真模型 A13 仍待验收。
 
 - 最新模型接入：[Phase 18：模型接入与切换](v2/phase-18-model-access.md)，含国内 API / Coding Plan 预设与本地模型。
 - 既有架构背景：[v2/DESIGN.md](v2/DESIGN.md)；0.3范围以[产品设计](../product-design/README.md)为准。
