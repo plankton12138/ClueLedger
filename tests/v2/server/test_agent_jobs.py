@@ -113,7 +113,6 @@ def test_restart_does_not_replay_auto_style_observation(tmp_path):
     from hastings.application.handlers.manuscript_commands import manuscript_command
     from hastings.application.workflows.manual_edit import ManualEditIntent
     from hastings.domain.manuscript.commands import import_chapter
-    from hastings.domain.repository.ids import ProjectId
 
     path = str(tmp_path / "outbox-restart.sqlite")
     initial = V2Runtime.sqlite(path)

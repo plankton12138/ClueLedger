@@ -104,7 +104,7 @@ def test_stop_during_generation_prevents_the_summary_from_landing() -> None:
 
     async def summarizer(*, system: str, prompt: str) -> SummaryDraft:
         # 模型还在跑的时候作者点了停止：提交前的那道门必须拦下。
-        await holder_runtime["runtime"].summary_jobs.stop(holder["job_id"])
+        await holder_runtime["runtime"].summary_jobs.stop(holder["pid"], holder["job_id"])
         return SummaryDraft(text=SUMMARY_TEXT, model="test-model")
 
     holder_runtime: dict[str, V2Runtime] = {}
@@ -117,6 +117,7 @@ def test_stop_during_generation_prevents_the_summary_from_landing() -> None:
         json={"request_id": "job-1"},
     ).json()["job_id"]
     holder["job_id"] = job_id
+    holder["pid"] = pid
 
     finished = asyncio.run(runtime.summary_jobs.execute(job_id))
 
@@ -219,3 +220,41 @@ def test_worker_loop_picks_up_queued_summary_jobs() -> None:
         assert job["state"] == "completed"
         assert job["result"]["summary"]["status"] == "fresh"
         assert len(calls) == 1
+
+
+def test_summary_routes_reject_jobs_of_other_projects() -> None:
+    """摘要接口只认本作品的摘要任务：别处的任务 ID 与不存在不可区分。
+
+    复现路径：用 B 作品的摘要停止接口传 A 作品的 writer 任务 ID——早先
+    ``del project_id`` 之后直接取消，A 的写作任务被别处停掉。现在按负载里的
+    作品归属与任务类型双重校验，不一致即 404，且不动原任务。
+    """
+    runtime, _ = _runtime([SUMMARY_TEXT])
+    client, pid, chapter_id = _client(runtime)
+    other = client.post("/api/v2/projects", json={"name": "别的作品"}).json()["project_id"]
+
+    # A 作品的一条写作任务（与摘要任务共用任务表）。
+    writer_job_id = asyncio.run(
+        runtime.jobs.create("writer", {"project_id": pid, "chapter_id": chapter_id})
+    )
+
+    for path in ("stop", "retry"):
+        response = client.post(f"/api/v2/projects/{other}/summary-jobs/{writer_job_id}/{path}")
+        assert response.status_code == 404, (path, response.text)
+        assert response.json()["error"]["code"] == "SUMMARY_JOB_NOT_FOUND"
+    detail = client.get(f"/api/v2/projects/{other}/summary-jobs/{writer_job_id}")
+    assert detail.status_code == 404
+    assert detail.json()["error"]["code"] == "SUMMARY_JOB_NOT_FOUND"
+
+    # 原任务没被碰掉：仍在队列里，可以正常执行。
+    job = asyncio.run(runtime.jobs.get(writer_job_id))
+    assert job is not None and job["state"] == "queued"
+
+    # 本作品自己的摘要任务照常可查可停。
+    own = client.post(
+        f"/api/v2/projects/{pid}/chapters/{chapter_id}/summary-jobs",
+        json={"request_id": "job-own"},
+    ).json()["job_id"]
+    stopped = client.post(f"/api/v2/projects/{pid}/summary-jobs/{own}/stop")
+    assert stopped.status_code == 200, stopped.text
+    assert stopped.json()["state"] == "cancelled"

@@ -35,7 +35,7 @@ from hastings.domain.manuscript.edit_session import (
     DraftChapter,
     EditSession,
 )
-from hastings.domain.repository.ids import ProjectId
+from hastings.domain.repository.ids import CommitId, ProjectId
 from hastings.domain.repository.serialization import content_hash
 
 __all__ = ["CURRENT_BUCKET", "DRAFT_BUCKET", "EditSessionService", "SESSION_BUCKET"]
@@ -129,7 +129,14 @@ class EditSessionService:
                 f"作品里没有章节 {chapter_id}",
                 "刷新目录后重新打开该章",
             )
-        base = catalog.chapter_base(chapter_id)
+        # 草稿基础绑定在**会话打开时**的版本——作者读到的那一版。早先这里取当前
+        # 章基础，于是「打开旧正文 → 别人保存新稿 → 首次自动保存」会把新基础绑给
+        # 旧文本，之后的「修改完成」拿着新基础放行，直接覆盖别人的保存。
+        base = self._base_at_open(pid, session.base_commit_id, chapter_id)
+        if base is None:
+            # 章在会话打开时还不存在（之后才建的章）：作者的文本本来就基于建章后
+            # 的版本，取当前基础；会话本身没有基础版本时同样如此。
+            base = catalog.chapter_base(chapter_id)
         now = self._now()
 
         def mutate(current: dict[str, Any] | None) -> dict[str, Any]:
@@ -259,6 +266,9 @@ class EditSessionService:
             summary=f"完成手工修改：{len(drafts)} 章",
             refs={"session_id": session_id},
             origin_conversation_id=conversation_id,
+            # 按会话打开时的版本求值：草稿的基础绑定在作者读到的那一版上，
+            # 期间别人保存的新稿会在提交层显式冲突，不被旧文本覆盖。
+            base_commit_id=CommitId(session.base_commit_id) if session.base_commit_id else None,
         )
         closed = _ended(session, SESSION_CLOSED, result.operation_id, self._now())
         self._repo.aux_mutate(pid, CURRENT_BUCKET, _CURRENT_KEY, lambda _c: closed.to_wire())
@@ -337,6 +347,25 @@ class EditSessionService:
         if branch is None or branch.head_commit_id is None:
             return ManuscriptCatalog(commit_id=None, entries=())
         return ManuscriptCatalog.from_snapshot(self._repo.get_snapshot(pid, branch.head_commit_id))
+
+    def _base_at_open(
+        self, pid: ProjectId, base_commit_id: str | None, chapter_id: str
+    ) -> str | None:
+        """会话打开时该章的基础版本；取不到返回 None（调用方回落当前基础）。
+
+        读取失败（基础提交不存在）同样返回 None：副本仍可用，只是这一章按当前
+        版本绑定——比让整次保存失败更合理，且后续保存会沿用这个基础。
+        """
+        if not base_commit_id:
+            return None
+        try:
+            snapshot = self._repo.get_snapshot(pid, CommitId(base_commit_id))
+        except ViolationError:
+            return None
+        catalog = ManuscriptCatalog.from_snapshot(snapshot)
+        if catalog.get(chapter_id) is None:
+            return None
+        return catalog.chapter_base(chapter_id)
 
     def _now(self) -> str:
         return str(self._clock.now().isoformat())

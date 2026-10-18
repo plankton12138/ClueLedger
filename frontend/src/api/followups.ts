@@ -7,7 +7,7 @@
 import { projectPrefix, request } from "./v2";
 
 export type SummaryState = "missing" | "stale" | "fresh";
-export type SuggestionsState = "not_started" | "available";
+export type SuggestionsState = "not_started" | "available" | "handled";
 
 export interface OperationFollowups {
   operation_id: string;
@@ -34,5 +34,7 @@ export function summaryLabel(state: SummaryState): string {
 }
 
 export function suggestionsLabel(state: SuggestionsState): string {
-  return state === "available" ? "有账本建议可查看" : "尚未整理账本建议";
+  if (state === "available") return "有账本建议可查看";
+  if (state === "handled") return "账本建议已处理";
+  return "尚未整理账本建议";
 }

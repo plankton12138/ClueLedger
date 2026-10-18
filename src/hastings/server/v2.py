@@ -279,9 +279,7 @@ class V2Runtime:
         # 设定候选成组（V03-3.2）：暂存在辅助表，选中后一次提交，假设不入账。
         self.ledger_candidates = LedgerCandidateService(self.service, ids, self.clock)
         # 工作台共享状态（V03-4.5）：侧栏只拿计数与权威 ID，不另存一份列表。
-        self.desk_state = DeskStateQueries(
-            self.service, self.ledger_candidates, self.edit_sessions
-        )
+        self.desk_state = DeskStateQueries(self.service, self.ledger_candidates, self.edit_sessions)
         # 试写候选（V03-3.3/3.4）：账本+作者要求生成候选，只读预览，
         # 按预览哈希采用；采用走统一发布（V03-3.5）。
         self.drafting = DraftingService(
@@ -1573,20 +1571,18 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
 
     @router.get("/projects/{project_id}/summary-jobs/{job_id}")
     async def get_summary_job(project_id: str, job_id: str) -> dict[str, Any]:
-        del project_id  # 归属校验由任务负载记录，路由保持作品作用域一致
-        return await runtime.summary_jobs.get(job_id)
+        """按作品作用域查询：别的作品的任务 ID 与不存在不可区分。"""
+        return await runtime.summary_jobs.get(project_id, job_id)
 
     @router.post("/projects/{project_id}/summary-jobs/{job_id}/stop")
     async def stop_summary_job(project_id: str, job_id: str) -> dict[str, Any]:
         """停止：已进入提交前的执行会被拦下，不写摘要版本。"""
-        del project_id
-        return await runtime.summary_jobs.stop(job_id)
+        return await runtime.summary_jobs.stop(project_id, job_id)
 
     @router.post("/projects/{project_id}/summary-jobs/{job_id}/retry")
     async def retry_summary_job(project_id: str, job_id: str) -> dict[str, Any]:
         """重试：失败任务放回队列；已停止的任务不允许重试。"""
-        del project_id
-        return await runtime.summary_jobs.retry(job_id)
+        return await runtime.summary_jobs.retry(project_id, job_id)
 
     @router.get("/projects/{project_id}/suggestions")
     def list_suggestions(project_id: str) -> dict[str, Any]:

@@ -311,3 +311,39 @@ def test_clean_chapter_text(raw: str, expected: str) -> None:
     from hastings.domain.manuscript.drafting import clean_chapter_text
 
     assert clean_chapter_text(raw) == expected
+
+
+def test_late_adjustment_does_not_revive_a_discarded_candidate() -> None:
+    """调整生成期间丢弃候选：模型返回后不许把 discarded 写回 ready。
+
+    复现路径：发起调整 → 作者丢弃候选 → 模型姗姗返回。早先落盘时直接覆盖
+    存储，迟到的结果把状态写回 ready，作者丢掉的候选又回到待采用列表。
+    """
+    holder: dict[str, str] = {}
+    runtime = _runtime("第一版正文。", "调整后的正文。")
+    client, pid = _client(runtime)
+    created = client.post(f"/api/v2/projects/{pid}/drafts", json={"instruction": "写一章"}).json()
+    holder["candidate_id"] = created["candidate_id"]
+
+    original_writer = runtime.drafting._writer
+
+    async def discarding_writer(*, system: str, prompt: str) -> WrittenChapter:
+        # 模型还在跑的时候作者点了丢弃。
+        client.post(f"/api/v2/projects/{pid}/drafts/{holder['candidate_id']}/discard")
+        return await original_writer(system=system, prompt=prompt)
+
+    runtime.drafting._writer = discarding_writer  # type: ignore[assignment]
+
+    revised = client.post(
+        f"/api/v2/projects/{pid}/drafts/{holder['candidate_id']}/revise",
+        json={"instruction": "更冷一些", "expected_revision": 1},
+    )
+    assert revised.status_code == 400, revised.text
+    assert revised.json()["error"]["code"] == "DRAFT_CANDIDATE_NOT_ADOPTABLE"
+
+    # 候选仍是 discarded，没有第二修订，也没有被迟到结果复活。
+    current = client.get(f"/api/v2/projects/{pid}/drafts/{holder['candidate_id']}").json()
+    assert current["status"] == "discarded"
+    assert current["current_revision"] == 1
+    listed = client.get(f"/api/v2/projects/{pid}/drafts").json()
+    assert [row["status"] for row in listed["candidates"]] == ["discarded"]

@@ -34,7 +34,7 @@ from hastings.domain.manuscript.operation_record import (
     OperationStatus,
     creation_log_conversation_id,
 )
-from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId
+from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId, RevisionId
 from hastings.domain.repository.requests import ArtifactChange, AuxWrite, CommitRequest
 from hastings.domain.repository.serialization import content_hash, normalize_json
 
@@ -124,14 +124,36 @@ class OperationService:
         no_change = True
         for change in changes:
             view = snapshot.artifacts.get(change.artifact_id) if snapshot else None
-            old_id = view.revision.id if view and view.revision else None
-            if old_id is None and change.old_revision_id is not None:
-                raise _violation(
-                    ec.MANUSCRIPT_INVALID_OPERATION,
-                    f"operations.submit({operation_id})",
-                    f"对象 {change.artifact_id.value} 尚不存在却声明了 old_revision",
-                    "新对象不携带 old_revision",
-                )
+            current_id: RevisionId | None = view.revision.id if view and view.revision else None
+            declared = change.old_revision_id
+            old_id: RevisionId | None
+            if declared is not None:
+                # 调用方自带的并发条件（准备这次修改时的基础版本）**原样贯穿到提交**。
+                # 早先这里用当前有效版本替换 declared，于是「准备之后别人保存的新正文」
+                # 会被静默覆盖——CAS 形同不存在。现在 declared 与当前版本不一致即显式
+                # 冲突：没动过的对象不受影响（一次无关保存不阻断本次发布），动过的
+                # 对象必须重新准备。
+                if current_id is None:
+                    raise _violation(
+                        ec.MANUSCRIPT_INVALID_OPERATION,
+                        f"operations.submit({operation_id})",
+                        f"对象 {change.artifact_id.value} 已不存在却声明了 old_revision",
+                        "新对象不携带 old_revision；对象不会被删除，请核对 ID",
+                    )
+                if declared != current_id:
+                    raise _violation(
+                        ec.MANUSCRIPT_BASE_CONFLICT,
+                        f"operations.submit({operation_id})",
+                        f"对象 {change.artifact_id.value} 的准备版本已过期："
+                        f"声明 {declared}，当前 {current_id}（准备之后已被修改）",
+                        "基于最新版本重新准备这次修改；系统不会用旧准备覆盖新内容",
+                        artifact_id=change.artifact_id.value,
+                        expected=str(declared),
+                        current=str(current_id),
+                    )
+                old_id = declared
+            else:
+                old_id = current_id
             same = (
                 view is not None
                 and view.revision is not None

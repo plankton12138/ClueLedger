@@ -40,11 +40,13 @@ describe("操作后续状态", () => {
     expect(operation.ledger_suggestions_state).toBe("not_started");
   });
 
-  it("状态文案区分「缺失 / 待更新 / 一致」与「尚未整理」", () => {
+  it("状态文案区分「缺失 / 待更新 / 一致」与建议三态", () => {
     expect(summaryLabel("missing")).toContain("没有");
     expect(summaryLabel("stale")).toContain("待更新");
     expect(summaryLabel("fresh")).toContain("一致");
     expect(suggestionsLabel("not_started")).toBe("尚未整理账本建议");
     expect(suggestionsLabel("available")).toBe("有账本建议可查看");
+    // 已处理：不再提示可查看，也不冒充「尚未整理」。
+    expect(suggestionsLabel("handled")).toBe("账本建议已处理");
   });
 });

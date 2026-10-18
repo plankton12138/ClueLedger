@@ -177,6 +177,9 @@ class UndoService:
                 "chapters": [row["chapter_id"] for row in preview["chapters"]],
             },
             origin_conversation_id=original.conversation_id,
+            # 以「操作后」的版本为求值基础：各章的 after_base 与它一致，
+            # 之后又被改过的章在提交层逐对象冲突；无关章的改动不阻断撤销。
+            base_commit_id=CommitId(str(preview["after_commit_id"])),
         )
         return {
             "status": result.envelope.status,

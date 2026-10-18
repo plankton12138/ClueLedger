@@ -47,7 +47,7 @@ from hastings.domain.manuscript.evidence import (
 from hastings.domain.manuscript.identities import OperationEnvelope
 from hastings.domain.manuscript.kinds import KIND_CHAPTER, KIND_TEXT_UNIT
 from hastings.domain.manuscript.models import ManuscriptChange
-from hastings.domain.repository.ids import ArtifactId, ProjectId
+from hastings.domain.repository.ids import ArtifactId, CommitId, ProjectId
 from hastings.domain.repository.requests import ArtifactChange
 from hastings.domain.repository.serialization import content_hash
 
@@ -156,6 +156,7 @@ class PublishManuscriptChange:
         summary: str,
         refs: dict[str, Any] | None = None,
         origin_conversation_id: str | None = None,
+        base_commit_id: CommitId | None = None,
     ) -> PublishResult:
         """§3.3 六步：领域命令纯函数 → 证据/摘要核对 → 原子提交。
 
@@ -169,6 +170,7 @@ class PublishManuscriptChange:
             summary=summary,
             refs=refs,
             origin_conversation_id=origin_conversation_id,
+            base_commit_id=base_commit_id,
         )
 
     def publish_commands(
@@ -181,6 +183,7 @@ class PublishManuscriptChange:
         summary: str,
         refs: dict[str, Any] | None = None,
         origin_conversation_id: str | None = None,
+        base_commit_id: CommitId | None = None,
     ) -> PublishResult:
         """一次提交多条稿件命令（V03-4.6 撤销用）：多章恢复只产生一个版本。
 
@@ -188,6 +191,13 @@ class PublishManuscriptChange:
         前一条已经改了 head、后一条仍按旧基础计算的情况；真正的一致性由提交时的
         ``expected_head`` 与各条命令自带的 ``expected_chapter_base`` 保证。
         同一章不要在同一次调用里出现两次——两条命令都基于同一基础，后者会覆盖前者。
+
+        ``base_commit_id`` 是**准备这次修改时**的基础版本（试写候选的 base_head、
+        手工副本打开时的 head、撤销预览时的 after 版本）。给了它就按那个快照求值：
+        命令自带的 ``expected_chapter_base`` 与准备时一致，产出的
+        ``old_revision_id`` 也是准备时版本——提交层据此做逐对象 CAS，准备之后
+        被改过的对象显式冲突，**没动过的对象不受影响**（一次无关保存不阻断本次
+        发布）。不给则按当前 head 求值（无准备阶段的路径，如恢复与导入）。
         """
         if not commands:
             raise _violation(
@@ -206,6 +216,8 @@ class PublishManuscriptChange:
                 "先创建作品再发布",
             )
         head = branch.head_commit_id
+        # 求值基础：准备时版本优先；没有准备阶段的路径按当前 head。
+        base = base_commit_id if base_commit_id is not None else head
         if len(commands) == 1:
             # 单命令沿用旧指纹形状：升级后重放既有操作仍能认出同一次请求。
             fingerprint = content_hash(
@@ -233,8 +245,8 @@ class PublishManuscriptChange:
                 change=ManuscriptChange(summary=summary),
             )
         catalog = (
-            ManuscriptCatalog.from_snapshot(self._repo.get_snapshot(pid, head))
-            if head is not None
+            ManuscriptCatalog.from_snapshot(self._repo.get_snapshot(pid, base))
+            if base is not None
             else ManuscriptCatalog(commit_id=None, entries=())
         )
         artifact_changes: list[ArtifactChange] = []

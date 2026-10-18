@@ -77,9 +77,7 @@ def _seed_summary(runtime: V2Runtime, pid: str, chapter_id: str, status: str) ->
 def test_operation_reports_missing_summary_and_unstarted_suggestions() -> None:
     client, _runtime, pid, chapter_id = _client()
     saved = _save(client, pid, chapter_id, CHANGED, "save-1")
-    operation = client.get(
-        f"/api/v2/projects/{pid}/operations/{saved['operation_id']}"
-    ).json()
+    operation = client.get(f"/api/v2/projects/{pid}/operations/{saved['operation_id']}").json()
     assert operation["summary_state"] == "missing"
     assert operation["ledger_suggestions_state"] == "not_started"
     assert operation["result_url"].endswith(f"/operations/{saved['operation_id']}")
@@ -89,9 +87,7 @@ def test_summary_becomes_stale_after_change() -> None:
     client, runtime, pid, chapter_id = _client()
     _seed_summary(runtime, pid, chapter_id, "fresh")
     saved = _save(client, pid, chapter_id, CHANGED, "save-1")
-    operation = client.get(
-        f"/api/v2/projects/{pid}/operations/{saved['operation_id']}"
-    ).json()
+    operation = client.get(f"/api/v2/projects/{pid}/operations/{saved['operation_id']}").json()
     assert operation["summary_state"] == "stale"
 
 
@@ -101,8 +97,80 @@ def test_no_change_operation_keeps_fresh_summary() -> None:
     _seed_summary(runtime, pid, chapter_id, "fresh")
     saved = _save(client, pid, chapter_id, FIRST, "save-same")
     assert saved["status"] == "no_change"
-    operation = client.get(
-        f"/api/v2/projects/{pid}/operations/{saved['operation_id']}"
-    ).json()
+    operation = client.get(f"/api/v2/projects/{pid}/operations/{saved['operation_id']}").json()
     assert operation["summary_state"] == "fresh"
     assert operation["changed_chapter_ids"] == []
+
+
+def test_suggestions_state_reads_the_real_candidate_group() -> None:
+    """建议存在候选组的辅助表里：状态必须读那份数据。
+
+    复现路径：整理出建议后查操作结果——早先按 ``ledger.suggestion_group``
+    Artifact 判断，而建议从来只写辅助表，于是「已有四条建议」仍回报
+    ``not_started``，作者会重复启动整理。现在按候选组的 pending 条目回答：
+    not_started → available → handled。
+    """
+    import json
+
+    from fastapi.testclient import TestClient as _Client
+
+    runtime = V2Runtime.memory()
+
+    async def proposer(*, system: str, prompt: str) -> tuple[str, str]:
+        return (
+            json.dumps(
+                {
+                    "suggestions": [
+                        {
+                            "kind": "story.character",
+                            "fields": {"name": "前台职员", "identity": "旅馆接待"},
+                            "quote": "前台声称只有一位客人",
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+            "test-model",
+        )
+
+    runtime.suggestions._proposer = proposer  # type: ignore[assignment]
+    client = _Client(build_v2_app(runtime))
+    pid = client.post("/api/v2/projects", json={"name": "建议状态"}).json()["project_id"]
+    chapter_id = client.post(
+        f"/api/v2/projects/{pid}/chapters/import",
+        json={
+            "title": "第一章",
+            "text": FIRST,
+            "order_key": "0001",
+            "idempotency_key": "imp-1",
+        },
+    ).json()["chapter_id"]
+
+    saved = _save(client, pid, chapter_id, CHANGED, "save-1")
+    operation = client.get(f"/api/v2/projects/{pid}/operations/{saved['operation_id']}").json()
+    assert operation["ledger_suggestions_state"] == "not_started"
+
+    started = client.post(
+        f"/api/v2/projects/{pid}/chapters/{chapter_id}/suggestions",
+        json={"request_id": "sug-1"},
+    )
+    assert started.status_code == 200, started.text
+
+    # 同一条操作结果，现在如实反映「有建议可查看」。
+    operation = client.get(f"/api/v2/projects/{pid}/operations/{saved['operation_id']}").json()
+    assert operation["ledger_suggestions_state"] == "available"
+
+    group = client.get(f"/api/v2/projects/{pid}/suggestions").json()
+    accepted = client.post(
+        f"/api/v2/projects/{pid}/ledger/candidates/accept",
+        json={
+            "item_ids": [group["items"][0]["item_id"]],
+            "expected_revision": group["revision"],
+            "request_id": "acc-1",
+        },
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    # 全部决定之后不再提示「可查看」，但也不谎称「尚未整理」。
+    operation = client.get(f"/api/v2/projects/{pid}/operations/{saved['operation_id']}").json()
+    assert operation["ledger_suggestions_state"] == "handled"

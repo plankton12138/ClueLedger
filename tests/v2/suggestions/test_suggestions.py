@@ -230,3 +230,80 @@ def test_same_request_id_does_not_duplicate_items() -> None:
     group = client.get(f"/api/v2/projects/{pid}/suggestions").json()
     assert len(group["items"]) == 2
     assert len(calls) == 2  # 第二次仍调用了模型，但没有重复暂存
+
+
+TWO_AFTER_CHANGE = _proposals(
+    {
+        "kind": "story.character",
+        "fields": {"name": "旅馆老板"},
+        "quote": "只留了一张字条",
+    },
+    {
+        "kind": "story.truth_fact",
+        "fields": {"statement": "字条是老板留的"},
+        "quote": "前台没有人",
+    },
+)
+
+
+def test_mixed_old_and_new_suggestions_cannot_skip_the_source_check() -> None:
+    """同章旧建议与新建议一起选：逐项核对来源，旧建议不搭新车。
+
+    复现路径：第一次整理（来源 B1）→ 正文被保存（B2）→ 第二次整理（来源 B2）
+    → 四组一起选。按章覆盖会让新建议的基础掩盖旧建议的，旧建议于是绕过过期
+    检查直接入账——已复现「返回成功并写入两条设定」。现在任一条过期即拒绝整组。
+    """
+    runtime, _ = _runtime()
+    client, pid, chapter_id = _client(runtime)
+    _start(client, pid, chapter_id, key="sug-old")
+    old_base = client.get(f"/api/v2/projects/{pid}/suggestions").json()["items"][0]["source"][
+        "chapter_base"
+    ]
+
+    saved = client.post(
+        f"/api/v2/projects/{pid}/chapters/{chapter_id}/save",
+        json={"idempotency_key": "save-1", "full_text": CHANGED},
+    )
+    assert saved.status_code == 200, saved.text
+
+    async def proposer_after(*, system: str, prompt: str) -> tuple[str, str]:
+        return TWO_AFTER_CHANGE, "test-model"
+
+    runtime.suggestions._proposer = proposer_after  # type: ignore[assignment]
+    second = _start(client, pid, chapter_id, key="sug-new")
+    assert second["source"]["chapter_base"] != old_base
+
+    group = client.get(f"/api/v2/projects/{pid}/suggestions").json()
+    assert len(group["items"]) == 4
+    blocked = client.post(
+        f"/api/v2/projects/{pid}/ledger/candidates/accept",
+        json={
+            "item_ids": [item["item_id"] for item in group["items"]],
+            "expected_revision": group["revision"],
+            "request_id": "acc-mixed",
+        },
+    )
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["error"]["code"] == "SOURCE_NEEDS_RECHECK"
+    # 一条都没入账；候选组原样保留，作者可以只选新建议。
+    assert client.get(f"/api/v2/projects/{pid}/ledger").json()["entries"] == []
+    after = client.get(f"/api/v2/projects/{pid}/suggestions").json()
+    assert after["pending_count"] == 4
+
+    # 只选第二次整理的（来源仍有效）：可以正常入账。
+    fresh_ids = [
+        item["item_id"]
+        for item in after["items"]
+        if item["source"]["chapter_base"] == second["source"]["chapter_base"]
+    ]
+    accepted = client.post(
+        f"/api/v2/projects/{pid}/ledger/candidates/accept",
+        json={
+            "item_ids": fresh_ids,
+            "expected_revision": after["revision"],
+            "request_id": "acc-fresh",
+        },
+    )
+    assert accepted.status_code == 200, accepted.text
+    entries = client.get(f"/api/v2/projects/{pid}/ledger").json()["entries"]
+    assert sorted(entry["title"] for entry in entries) == ["字条是老板留的", "旅馆老板"]

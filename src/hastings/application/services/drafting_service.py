@@ -221,8 +221,41 @@ class DraftingService:
             revisions=(*candidate.revisions, revision),
             updated_at=self._now(),
         )
-        self._write(pid, CANDIDATE_BUCKET, candidate_id, updated.to_dict())
-        return self._view(updated)
+
+        def mutate(current: dict[str, Any] | None) -> dict[str, Any]:
+            # 生成可能跑几十秒：期间作者可能丢弃候选，或又调整了一次。落盘前在
+            # **同一个事务里**核对状态与修订号——不一致就拒绝。否则迟到的结果会把
+            # ``discarded`` 写回 ``ready``，作者丢掉的候选又出现在待采用列表里。
+            if current is None:
+                raise _violation(
+                    ec.DRAFT_CANDIDATE_NOT_FOUND,
+                    f"drafts.revise({candidate_id})",
+                    f"候选 {candidate_id} 在调整期间已不存在",
+                    "刷新候选列表后重试",
+                )
+            stored = drafting.ChapterCandidate.from_dict(current)
+            if stored.status != drafting.CANDIDATE_READY:
+                raise _violation(
+                    ec.DRAFT_CANDIDATE_NOT_ADOPTABLE,
+                    f"drafts.revise({candidate_id})",
+                    f"候选在调整期间已被丢弃或采用（当前 {stored.status}），本次调整结果不落地",
+                    "从新的试写开始；被丢弃的候选不会被迟到的结果复活",
+                    status=stored.status,
+                )
+            if stored.current_revision != candidate.current_revision:
+                raise _violation(
+                    ec.DRAFT_REVISION_CONFLICT,
+                    f"drafts.revise({candidate_id})",
+                    f"候选在调整期间已推进到修订 {stored.current_revision}，"
+                    f"本次调整基于 {candidate.current_revision}",
+                    "以最新修订为基准重新调整；迟到的旧结果不覆盖新修订",
+                    current_revision=stored.current_revision,
+                )
+            return updated.to_dict()
+
+        stored_now = self._repo.aux_mutate(pid, CANDIDATE_BUCKET, candidate_id, mutate)
+        assert stored_now is not None
+        return self._view(drafting.ChapterCandidate.from_dict(stored_now))
 
     # -- 读取 ----------------------------------------------------------------
 
@@ -351,6 +384,11 @@ class DraftingService:
             summary=f"采用试写候选（{chosen.title}，修订 {target_revision}）",
             refs={"candidate_id": candidate_id, "preview_hash": preview_hash},
             origin_conversation_id=conversation_id,
+            # 按候选生成时的基础版本求值：之后别人改过的对象会在提交层显式冲突，
+            # 不会拿着旧基础把新稿覆盖掉。
+            base_commit_id=CommitId(candidate.brief.base_head)
+            if candidate.brief.base_head
+            else None,
         )
         adopted = replace(
             candidate,

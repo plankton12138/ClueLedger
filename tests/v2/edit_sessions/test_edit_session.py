@@ -232,3 +232,60 @@ def test_draft_and_session_survive_restart(tmp_path) -> None:
     assert current["session"]["session_id"] == session
     assert current["drafts"][0]["text"] == "重启前改的内容。"
     assert current["drafts"][0]["save_seq"] == 1
+
+
+def test_first_save_binds_the_version_the_author_read() -> None:
+    """打开旧正文后别人保存新稿：首次保存仍绑定作者读到的那一版。
+
+    复现路径：会话打开（H1）→ 别的页面保存同一章（H2）→ 首次自动保存。
+    早先这里取「当前章基础」，把新基础绑给旧文本，随后「修改完成」拿着新基础
+    放行，直接覆盖别人的保存。现在基础固定在会话打开时的版本，完成时显式冲突。
+    """
+    from hastings.domain.manuscript.catalog import ManuscriptCatalog
+    from hastings.domain.repository.ids import CommitId, ProjectId
+
+    client, runtime, pid, chapters = _client()
+    session = _start(client, pid)["session"]["session_id"]
+    head_at_open = client.get(f"/api/v2/projects/{pid}/manuscript").json()["commit_id"]
+    base_at_open = ManuscriptCatalog.from_snapshot(
+        runtime.service.get_snapshot(ProjectId(pid), CommitId(head_at_open))
+    ).chapter_base(chapters[0])
+
+    # 副本之外，正式正文先被推进——作者此刻还在读旧文本。
+    saved = client.post(
+        f"/api/v2/projects/{pid}/chapters/{chapters[0]}/save",
+        json={"idempotency_key": "outside-first", "full_text": "别的页面先改了这一章。"},
+    )
+    assert saved.status_code == 200, saved.text
+
+    stored = _save(client, pid, session, chapters[0], "副本里的新文本。", 0)
+    assert stored.status_code == 200, stored.text
+    drafts = client.get(f"/api/v2/projects/{pid}/edit-sessions/current").json()["drafts"]
+    assert drafts[0]["base_chapter_base"] == base_at_open
+
+    finished = client.post(f"/api/v2/projects/{pid}/edit-sessions/{session}/finish", json={})
+    assert finished.status_code == 409, finished.text
+    assert finished.json()["error"]["code"] == "MANUSCRIPT_BASE_CONFLICT"
+    # 别人的保存没有被覆盖，副本与草稿都还在。
+    assert _chapter_text(client, pid, chapters[0]) == "别的页面先改了这一章。"
+    still = client.get(f"/api/v2/projects/{pid}/edit-sessions/current").json()
+    assert still["session"]["status"] == "open"
+    assert still["drafts"][0]["text"] == "副本里的新文本。"
+
+
+def test_unrelated_save_between_open_and_finish_does_not_block() -> None:
+    """一次无关章的保存不该阻断本次修改：冲突按对象判，不按 commit 判。"""
+    client, _runtime, pid, chapters = _client()
+    session = _start(client, pid)["session"]["session_id"]
+    _save(client, pid, session, chapters[0], "副本里的新文本。", 0)
+
+    saved = client.post(
+        f"/api/v2/projects/{pid}/chapters/{chapters[1]}/save",
+        json={"idempotency_key": "outside-other", "full_text": "第二章也被改了。"},
+    )
+    assert saved.status_code == 200, saved.text
+
+    finished = client.post(f"/api/v2/projects/{pid}/edit-sessions/{session}/finish", json={})
+    assert finished.status_code == 200, finished.text
+    assert _chapter_text(client, pid, chapters[0]).strip() == "副本里的新文本。"
+    assert _chapter_text(client, pid, chapters[1]) == "第二章也被改了。"

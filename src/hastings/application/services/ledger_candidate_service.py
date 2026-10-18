@@ -491,17 +491,22 @@ class LedgerCandidateService:
     def _assert_sources_current(self, pid: ProjectId, selected: list[dict[str, Any]]) -> None:
         """建议带生成时的章基础版本：正文变了就不能原样采用（V03-4.4）。
 
+        **逐项核对，不按章覆盖**：同章的旧建议与新建议一起选时，按章去重会让
+        新建议的基础覆盖旧建议的，旧建议于是绕过过期检查直接入账——已复现
+        「混合采用写入两条设定」。现在每条带来源的建议各自比对，任一条过期即
+        拒绝整组。
+
         手工暂存的候选没有 ``source``，因此不受影响；只有模型建议会被拦。
         变化时给 409 而不是悄悄放行——采用一条依据已变的设定，等于把旧事实写进新稿。
         """
-        expected: dict[str, str] = {}
+        checked: list[tuple[str, str, str]] = []
         for item in selected:
             source = item.get("source") or {}
             chapter_id = source.get("chapter_id")
             chapter_base = source.get("chapter_base")
             if isinstance(chapter_id, str) and isinstance(chapter_base, str) and chapter_base:
-                expected[chapter_id] = chapter_base
-        if not expected:
+                checked.append((str(item["item_id"]), chapter_id, chapter_base))
+        if not checked:
             return
         head = self._head(pid)
         manuscripts = (
@@ -509,7 +514,7 @@ class LedgerCandidateService:
             if head is None
             else ManuscriptCatalog.from_snapshot(self._repo.get_snapshot(pid, head))
         )
-        for chapter_id, base in expected.items():
+        for item_id, chapter_id, base in checked:
             try:
                 current = manuscripts.chapter_base(chapter_id)
             except (ManuscriptViolation, StoryViolation):
@@ -518,8 +523,9 @@ class LedgerCandidateService:
                 raise _violation(
                     "SOURCE_NEEDS_RECHECK",
                     f"ledger.candidates.accept({pid.value})",
-                    f"章节 {chapter_id} 的正文在建议生成后已变化",
+                    f"章节 {chapter_id} 的正文在建议 {item_id} 生成后已变化",
                     "重新整理这一章的账本建议；旧建议保留但不能再原样采用",
+                    item_id=item_id,
                     chapter_id=chapter_id,
                     expected_base=base,
                     current_base=current,

@@ -68,45 +68,52 @@ class SummaryJobRunner:
         job = await self._jobs.get(job_id)
         return self._view(job) if job is not None else {"job_id": job_id, "state": "queued"}
 
-    async def get(self, job_id: str) -> dict[str, Any]:
-        job = await self._jobs.get(job_id)
-        if job is None:
-            raise _violation(
-                "SUMMARY_JOB_NOT_FOUND",
-                f"summary.job({job_id})",
-                f"摘要任务 {job_id!r} 不存在",
-                "刷新摘要状态后重新发起；任务不会因为刷新而消失",
-                job_id=job_id,
-            )
-        return self._view(job)
+    def _require_owned(
+        self, job: dict[str, Any] | None, project_id: str, job_id: str
+    ) -> dict[str, Any]:
+        """任务必须属于本作品且是摘要任务，否则按不存在处理。
 
-    async def stop(self, job_id: str) -> dict[str, Any]:
-        job = await self._jobs.get(job_id)
+        摘要停止/查询接口按作品作用域寻址：拿别的作品的 writer 任务 ID 来停，
+        必须和「任务不存在」不可区分——否则可以用一个作品的接口取消另一个作品
+        的写作任务，也能借此探知别处的任务 ID。
+        """
         if job is None:
-            raise _violation(
-                "SUMMARY_JOB_NOT_FOUND",
-                f"summary.stop({job_id})",
-                f"摘要任务 {job_id!r} 不存在",
-                "刷新摘要状态后重试",
-                job_id=job_id,
-            )
-        if job.get("state") == "completed":
-            return self._view(job)  # 已完成：停止是合法空操作，不回滚已有摘要
+            raise self._not_found(project_id, job_id)
+        payload = job.get("payload") or {}
+        if (
+            str(job.get("job_type", "")) != SUMMARY_JOB_TYPE
+            or str(payload.get("project_id", "")) != project_id
+        ):
+            raise self._not_found(project_id, job_id)
+        return job
+
+    @staticmethod
+    def _not_found(project_id: str, job_id: str) -> ViolationError:
+        return _violation(
+            "SUMMARY_JOB_NOT_FOUND",
+            f"summary.job({job_id})",
+            f"作品 {project_id} 没有摘要任务 {job_id!r}",
+            "在本作品的摘要状态页查看任务；任务 ID 不跨作品复用",
+            job_id=job_id,
+        )
+
+    async def get(self, project_id: str, job_id: str) -> dict[str, Any]:
+        job = await self._jobs.get(job_id)
+        return self._view(self._require_owned(job, project_id, job_id))
+
+    async def stop(self, project_id: str, job_id: str) -> dict[str, Any]:
+        job = await self._jobs.get(job_id)
+        owned = self._require_owned(job, project_id, job_id)
+        if owned.get("state") == "completed":
+            return self._view(owned)  # 已完成：停止是合法空操作，不回滚已有摘要
         cancelled = await self._jobs.cancel(job_id)
         return self._view(cancelled)
 
-    async def retry(self, job_id: str) -> dict[str, Any]:
+    async def retry(self, project_id: str, job_id: str) -> dict[str, Any]:
         """把失败任务放回队列；已取消的任务不允许重试（作者要的是停止）。"""
         job = await self._jobs.get(job_id)
-        if job is None:
-            raise _violation(
-                "SUMMARY_JOB_NOT_FOUND",
-                f"summary.retry({job_id})",
-                f"摘要任务 {job_id!r} 不存在",
-                "刷新摘要状态后重试",
-                job_id=job_id,
-            )
-        if job.get("state") == "cancelled":
+        owned = self._require_owned(job, project_id, job_id)
+        if owned.get("state") == "cancelled":
             raise _violation(
                 "SUMMARY_JOB_CANCELLED",
                 f"summary.retry({job_id})",
@@ -114,8 +121,8 @@ class SummaryJobRunner:
                 "重新发起一次摘要更新；停止意味着这次结果不再需要",
                 job_id=job_id,
             )
-        if job.get("state") not in ("terminal_failed", "retryable_failed"):
-            return self._view(job)
+        if owned.get("state") not in ("terminal_failed", "retryable_failed"):
+            return self._view(owned)
         await self._jobs.mark_retryable(job_id, "作者重试")
         current = await self._jobs.get(job_id)
         return self._view(current) if current is not None else {"job_id": job_id}
