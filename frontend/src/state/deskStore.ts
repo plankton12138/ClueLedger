@@ -59,6 +59,11 @@ interface DeskStore extends DeskState {
   lastOperationId: string | null;
   /** 接着讨论成功后请求输入框重新聚焦（恢复原输入位置，M02）。 */
   composerFocusTick: number;
+  /**
+   * 「加入讨论」待插入引用（V03-6.4）：tick 递增触发唯一输入框追加可见引用。
+   * 只带一段文字，不夹带领域写入；输入框仍是想法落盘前的草稿。
+   */
+  composerInsert: { text: string; tick: number } | null;
   setProject(projectId: string | null): void;
   navigate(view: MainView): void;
   applyOperationResult(envelope: OperationEnvelope): void;
@@ -66,6 +71,7 @@ interface DeskStore extends DeskState {
   addEntryReceipt(receipt: EntryReceipt): void;
   setLastOperation(operationId: string | null): void;
   requestComposerFocus(): void;
+  requestComposerInsert(reference: string): void;
   toggleFocus(): void;
 }
 
@@ -75,6 +81,7 @@ export const useDeskStore = create<DeskStore>()((set, get) => ({
   entryReceipts: [],
   lastOperationId: null,
   composerFocusTick: 0,
+  composerInsert: null,
   setProject: (projectId) => {
     if (get().projectId === projectId) return;
     // 换项目：壳层回到未定焦点；旧项目的操作与回执不带入（M01 验收第 5 条）。
@@ -88,6 +95,10 @@ export const useDeskStore = create<DeskStore>()((set, get) => ({
   setLastOperation: (operationId) => set({ lastOperationId: operationId }),
   requestComposerFocus: () =>
     set((s) => ({ composerFocusTick: s.composerFocusTick + 1 })),
+  requestComposerInsert: (reference) =>
+    set((s) => ({
+      composerInsert: { text: reference, tick: (s.composerInsert?.tick ?? 0) + 1 },
+    })),
   toggleFocus: () =>
     set((s) => {
       const focusMode = !s.focusMode;

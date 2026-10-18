@@ -40,7 +40,18 @@ class EvidenceService:
         self._repo = repo
         self._operations = operations
 
-    def list(self, project_id: str, *, chapter_id: str | None = None) -> dict[str, Any]:
+    def list(
+        self,
+        project_id: str,
+        *,
+        chapter_id: str | None = None,
+        target_id: str | None = None,
+    ) -> dict[str, Any]:
+        """证据列表，可按章（``chapter_id``）或按被锚定的账本对象（``target_id``）过滤。
+
+        ``target_id`` 收窄到某条账本对象（设定/披露/认知）在正文中的全部依据——供
+        图谱节点「来源定位」回读，不改变证据语义，也不新增可写事实。
+        """
         pid = ProjectId(project_id)
         branch = self._repo.get_branch(pid, "main")
         head = branch.head_commit_id if branch else None
@@ -53,6 +64,8 @@ class EvidenceService:
                 continue
             link = EvidenceLink.from_wire(view.revision.content)
             if chapter_id is not None and link.chapter_id != chapter_id:
+                continue
+            if target_id is not None and link.target_id != target_id:
                 continue
             items.append({"artifact_id": view.artifact.id.value, **link.to_wire()})
         # 需要核对的排在前面：这是作者真正要处理的部分。

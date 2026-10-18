@@ -2007,9 +2007,16 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         )
 
     @router.get("/projects/{project_id}/evidence-links")
-    def list_evidence_links(project_id: str, chapter_id: str | None = None) -> dict[str, Any]:
-        """证据列表（可按章过滤）；需核对的排在前面。"""
-        return runtime.evidence.list(project_id, chapter_id=chapter_id)
+    def list_evidence_links(
+        project_id: str,
+        chapter_id: str | None = None,
+        target_id: str | None = None,
+    ) -> dict[str, Any]:
+        """证据列表（可按章或按被锚定的账本对象过滤）；需核对的排在前面。
+
+        ``target_id`` 供图谱节点「来源定位」：查出该对象在正文中的全部依据。
+        """
+        return runtime.evidence.list(project_id, chapter_id=chapter_id, target_id=target_id)
 
     @router.post("/projects/{project_id}/evidence-links/{evidence_id}/reanchor")
     def reanchor_evidence(

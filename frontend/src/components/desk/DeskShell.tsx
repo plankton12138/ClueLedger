@@ -9,11 +9,12 @@
  * - 阅读位置四元组（project|chapter|formal|-），滚动保存、打开恢复；
  * - 专注写作收起两侧，保留正文与输入框。
  *
- * 占位（后续任务接线）：detail 四类视图渲染占位说明（V03-2/3/6）；
+ * 占位（后续任务接线）：detail 的候选/差异视图渲染占位说明（V03-2/3）；
  * 讨论列表与「接着讨论」（V03-1.5）；执行日志（V03-1.6）。
+ * 关联图谱（graph 视图）已在 V03-6.4 接真实投影：侧栏小图 + 主区展开共用同一视图。
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchDeskState,
   toOperationEnvelope,
@@ -26,12 +27,15 @@ import {
   type SourceKind,
 } from "../../state/desk";
 import { useDeskStore, type EntryReceipt } from "../../state/deskStore";
+import type { GraphViewId } from "../../state/graphLayout";
 import { isDirty, useV2Store } from "../../state/v2";
 import { ConfirmDiscard, Empty, ErrorText, Pill } from "../Workbench";
 import DeskComposer from "./DeskComposer";
 import ChapterHistory from "./ChapterHistory";
 import EvidenceCheck from "./EvidenceCheck";
 import DraftDialog from "./DraftDialog";
+import GraphOverview from "./GraphOverview";
+import GraphPanel from "./GraphPanel";
 import ImportDialog from "./ImportDialog";
 import LedgerPanel from "./LedgerPanel";
 import OperationFollowups from "./OperationFollowups";
@@ -289,7 +293,15 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   const [importOpen, setImportOpen] = useState(false);
   const [draftOpen, setDraftOpen] = useState(false);
   const [abandonPending, setAbandonPending] = useState(false);
+  // 图谱视图（V03-6.4）：侧栏与主区共用同一选择；展开后 id 记在主区视图里。
+  const [graphView, setGraphView] = useState<GraphViewId>("characters");
+  // 账本保存后让图谱重读实际版本（产品 §5.8 第 6 条）。
+  const [graphRefresh, setGraphRefresh] = useState(0);
   const chapter = v2.chapter;
+  const chapterTitles = useMemo(
+    () => Object.fromEntries(v2.chapters.map((c) => [c.chapter_id, c.title])),
+    [v2.chapters],
+  );
   const chatServiceKind = useChatStore((s) => s.serviceKind);
   const edit = useEditSession({
     projectId: pid,
@@ -302,6 +314,22 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
       if (first) void v2.selectChapter(first);
     },
   });
+
+  /** 侧栏切换图谱视图：只切选择，不夺走主区（数据事件与作者导航分离，M01）。 */
+  function switchGraphView(view: GraphViewId) {
+    setGraphView(view);
+  }
+
+  /** 打开/切换主区图谱视图：复用 detail 槽位，主区一次只展开一个。 */
+  function openGraphView(view: GraphViewId) {
+    setGraphView(view);
+    useDeskStore.getState().navigate({ kind: "detail", detailKind: "graph", id: view });
+  }
+
+  /** 「加入讨论」：把图谱选中对象作为可见引用附到唯一输入框（V03-6.4）。 */
+  function addToDiscussion(reference: string) {
+    useDeskStore.getState().requestComposerInsert(reference);
+  }
 
   /** 打开讨论：绑定作品并载入会话（不发送）。 */
   async function openDiscussion(r: EntryReceipt) {
@@ -472,7 +500,11 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                     ? "sel"
                     : ""
                 }`}
-                onClick={() =>
+                onClick={() => {
+                  if (d.detailKind === "graph") {
+                    openGraphView(graphView);
+                    return;
+                  }
                   useDeskStore.getState().navigate({
                     kind: "detail",
                     detailKind: d.detailKind,
@@ -481,8 +513,8 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                       d.detailKind === "history" && v2.chapter.chapterId
                         ? v2.chapter.chapterId
                         : (pid ?? "-"),
-                  })
-                }
+                  });
+                }}
               >
                 {d.label}
                 <span className="ml-1 text-[10px] text-sub">（{d.stage}）</span>
@@ -500,7 +532,9 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               : mainView?.kind === "discussion"
                 ? "构思与协作"
                 : mainView?.kind === "detail"
-                  ? `临时视图 · ${mainView.detailKind}`
+                  ? mainView.detailKind === "graph"
+                    ? `关联图谱 · ${mainView.id === "clues" ? "线索关联" : "人物关系"}`
+                    : `临时视图 · ${mainView.detailKind}`
                   : "写作台"}
           </h1>
           <div className="flex items-center gap-2">
@@ -648,7 +682,17 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               <DeskDiscussion conversationId={mainView.conversationId} />
             )
           ) : mainView?.kind === "detail" ? (
-            mainView.detailKind === "history" && pid && mainView.id !== pid ? (
+            mainView.detailKind === "graph" && pid ? (
+              <GraphPanel
+                projectId={pid}
+                viewId={mainView.id === "clues" ? "clues" : "characters"}
+                onSwitchView={openGraphView}
+                onNavigateChapter={openChapter}
+                onAddToDiscussion={addToDiscussion}
+                chapterTitles={chapterTitles}
+                refreshKey={graphRefresh}
+              />
+            ) : mainView.detailKind === "history" && pid && mainView.id !== pid ? (
               <ChapterHistory
                 projectId={pid}
                 chapterId={mainView.id}
@@ -681,7 +725,14 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
       {!focusMode && (
         <aside className="min-h-0 w-64 flex-none space-y-4 overflow-y-auto p-3">
           {pid ? (
-            <LedgerPanel projectId={pid} onSaved={() => void v2.refreshStory()} />
+            <LedgerPanel
+              projectId={pid}
+              onSaved={() => {
+                void v2.refreshStory();
+                // 账本保存后让图谱重读实际版本（产品 §5.8 第 6 条）。
+                setGraphRefresh((tick) => tick + 1);
+              }}
+            />
           ) : (
             <section className="panel" aria-label="故事账本">
               <header className="panel-head px-4 py-3">故事账本</header>
@@ -689,6 +740,15 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                 先在顶部选择或新建作品；账本条目会保存在作品里。
               </p>
             </section>
+          )}
+          {pid && (
+            <GraphOverview
+              projectId={pid}
+              viewId={graphView}
+              onSwitchView={switchGraphView}
+              onExpand={openGraphView}
+              refreshKey={graphRefresh}
+            />
           )}
           {mainView?.kind === "manuscript" && pid && (
             <EvidenceCheck projectId={pid} chapterId={mainView.chapterId} />

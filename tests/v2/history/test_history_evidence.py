@@ -221,3 +221,28 @@ def test_reanchor_unknown_evidence_returns_404() -> None:
     )
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
+
+
+def test_evidence_filters_by_target_id() -> None:
+    """按账本对象过滤证据：从图谱节点定位它在正文中的依据（V03-6.4 来源定位）。
+
+    不传过滤时行为不变（返回全部证据），过滤只收窄、不改语义。
+    """
+    client, runtime, pid, chapter_id = _client()
+    _seed_evidence(runtime, pid, chapter_id, "雨夜抵达旅馆")
+
+    hit = client.get(
+        f"/api/v2/projects/{pid}/evidence-links",
+        params={"target_id": "art_ledger_hotel"},
+    ).json()["evidence"]
+    assert [item["evidence_id"] for item in hit] == ["evd_1"]
+
+    miss = client.get(
+        f"/api/v2/projects/{pid}/evidence-links",
+        params={"target_id": "art_other"},
+    ).json()["evidence"]
+    assert miss == []
+
+    # 不传过滤：返回全部证据（既有行为不变）。
+    everything = client.get(f"/api/v2/projects/{pid}/evidence-links").json()["evidence"]
+    assert [item["evidence_id"] for item in everything] == ["evd_1"]

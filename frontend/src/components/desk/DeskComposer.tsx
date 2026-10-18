@@ -21,6 +21,7 @@ import {
 } from "../../api/entries";
 import { useChatStore } from "../../state/chat";
 import { useDeskStore } from "../../state/deskStore";
+import { appendReference } from "../../state/graphLayout";
 import { message, registerProject, useV2Store } from "../../state/v2";
 import { ErrorText } from "../Workbench";
 
@@ -42,12 +43,27 @@ export default function DeskComposer({
   const serviceKind = useChatStore((st) => st.serviceKind);
   const projects = useV2Store((s) => s.projects);
   const composerFocusTick = useDeskStore((s) => s.composerFocusTick);
+  const composerInsert = useDeskStore((s) => s.composerInsert);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // 接着讨论成功后恢复原输入位置（焦点回到唯一输入框，M02）。
   useEffect(() => {
     if (composerFocusTick > 0) inputRef.current?.focus();
   }, [composerFocusTick]);
+
+  // 「加入讨论」（V03-6.4）：把图谱选中对象作为可见引用追加到草稿并聚焦。
+  // 草稿仍是本地文字，未保存前不产生任何领域写入。
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+  useEffect(() => {
+    if (!composerInsert) return;
+    const next = appendReference(draftRef.current, composerInsert.text);
+    setDraft(next);
+    writeIdeaDraft(next);
+    inputRef.current?.focus();
+  }, [composerInsert]);
 
   function onChange(text: string) {
     setDraft(text);
