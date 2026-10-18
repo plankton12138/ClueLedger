@@ -60,7 +60,9 @@ LEDGER_FORMS: dict[str, dict[str, Any]] = {
             _field("need", "需求", "textarea"),
             _field("secret", "秘密", "textarea"),
             _field("arc", "变化", "textarea"),
-            _field("role", "故事作用", "select", options=_SELECT_OPTIONS["role"]),
+            _field(
+                "role", "故事作用", "select", options=_SELECT_OPTIONS["role"], default="support"
+            ),
             _field("traits", "特征（一行一条）", "lines"),
         ],
     },
@@ -117,7 +119,9 @@ LEDGER_FORMS: dict[str, dict[str, Any]] = {
         "fields": [
             _field("character_id", "谁的认知", "ref", ref_kinds=_CHARACTER, required=True),
             _field("fact_id", "关于哪件事", "ref", ref_kinds=_TRUTH, required=True),
-            _field("mode", "认知状态", "select", options=_SELECT_OPTIONS["mode"]),
+            _field(
+                "mode", "认知状态", "select", options=_SELECT_OPTIONS["mode"], default="unaware"
+            ),
             _field("note", "证词或备注", "textarea"),
         ],
     },

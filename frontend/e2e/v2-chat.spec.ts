@@ -104,11 +104,11 @@ test("19.1 完整创作流程：讨论 → 任务建议（不自动开工）→ 
   const draft = sidebar.getByRole("article", { name: "任务建议" }).last();
   await expect(draft).toBeVisible({ timeout: 8000 });
   await expect(draft.getByText("生成章节草稿", { exact: true })).toBeVisible();
-  // 范围不齐全：缺已接受节拍与基础版本，「开始」禁用并给出解决入口。
+  // 起草不再以节拍或基础版本为前置：空作品也能开始，结果仍是待审阅候选。
   const start = draft.getByRole("button", { name: /开始（创建创作任务）/ });
-  await expect(start).toBeDisabled();
-  await expect(draft.getByText(/还没有已接受的节拍/)).toBeVisible();
-  await expect(draft.getByText(/缺少可靠的基础版本/)).toBeVisible();
+  await expect(start).toBeEnabled();
+  await expect(draft.getByText(/不要求节拍/)).toBeVisible();
+  await expect(draft.getByLabel("缺失项")).toHaveCount(0);
   await expect(sidebar.getByRole("article", { name: "执行任务" })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("03-chat-draft-missing.png") });
 

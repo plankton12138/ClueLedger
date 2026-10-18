@@ -572,9 +572,8 @@ export const useChatStore = create<ChatStore>()((set, get) => {
     const state = useV2Store.getState();
     const cid = get().activeConversationId;
     const refs = cid ? get().refs[cid] ?? [] : [];
-    const beats = state.storyArtifacts.filter((a) =>
-      ["narrative.beat", "story.plot_beat"].includes(a.kind));
-    const target_ids = kind === "chapter_draft" ? beats.map((a) => a.artifact_id)
+    // 起草不再以节拍为目标：章节由 goal 指定，target_ids 留给检查/修订范围。
+    const target_ids = kind === "chapter_draft" ? []
       : refs.length ? refs.map((r) => r.target_id)
       : kind === "check" ? [...state.storyArtifacts.map((a) => a.artifact_id),
         ...state.chapters.map((c) => c.chapter_id)] : [];

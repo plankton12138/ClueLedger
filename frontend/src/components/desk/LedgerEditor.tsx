@@ -33,6 +33,10 @@ function newRequestId(): string {
   return crypto.randomUUID();
 }
 
+function selectDefault(field: LedgerField): string {
+  return field.default ?? field.options?.[0]?.value ?? "";
+}
+
 function initialValues(kind: LedgerKind | undefined, content: Record<string, unknown>) {
   const values: Record<string, FieldValue> = {};
   for (const field of kind?.fields ?? []) {
@@ -41,6 +45,9 @@ function initialValues(kind: LedgerKind | undefined, content: Record<string, unk
     else if (field.type === "refs") values[field.key] = Array.isArray(value) ? value.map(String) : [];
     else if (field.type === "lines") {
       values[field.key] = Array.isArray(value) ? value.map(String).join("\n") : "";
+    } else if (field.type === "select") {
+      values[field.key] =
+        typeof value === "string" && value !== "" ? value : selectDefault(field);
     } else values[field.key] = typeof value === "string" ? value : value == null ? "" : String(value);
   }
   return values;
@@ -57,6 +64,8 @@ function toFields(kind: LedgerKind, values: Record<string, FieldValue>): Record<
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean);
+    } else if (field.type === "select") {
+      fields[field.key] = String(value ?? "") || selectDefault(field);
     } else fields[field.key] = String(value ?? "").trim();
   }
   return fields;

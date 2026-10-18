@@ -59,7 +59,7 @@ test("真实任务：缺失项正常显示，空项目规划、正文候选均�
   await project(page, "真实创作闭环");
   await page.getByRole("button", { name: "✎ 创作操作", exact: true }).click();
   await page.getByRole("button", { name: /生成章节草稿/ }).click();
-  await expect(page.getByLabel("缺失项")).toContainText("没有已接受的节拍");
+  await expect(page.getByLabel("缺失项")).toHaveCount(0);
   await page.getByRole("button", { name: "放弃", exact: true }).click();
   await page.getByRole("textbox", { name: "对话输入" }).fill("规划怀表谜案");
   await page.getByRole("button", { name: "✎ 创作操作", exact: true }).click();

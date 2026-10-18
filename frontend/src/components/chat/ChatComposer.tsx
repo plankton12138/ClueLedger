@@ -26,7 +26,7 @@ import { taskKindLabels } from "../../api/chat";
 
 const creationActions: { kind: TaskKind; hint: string }[] = [
   { kind: "plan", hint: "产出故事前提与节拍候选，先审阅再接受" },
-  { kind: "chapter_draft", hint: "基于已接受节拍生成正文候选" },
+  { kind: "chapter_draft", hint: "从账本与作者要求生成正文候选，不要求节拍" },
   { kind: "check", hint: "检查人物知情与线索公平性，不自动修复" },
   { kind: "targeted_revision", hint: "按设定变化走影响分析与批准流程" },
 ];

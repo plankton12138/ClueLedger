@@ -92,18 +92,22 @@ class AgentWorkflows:
         grant: Mapping[str, object] | None = None,
     ) -> str:
         snapshot = self.reader.get_snapshot(project, CommitId(base))
-        if not beats or any(
-            ArtifactId(b) not in snapshot.artifacts
-            or snapshot.artifacts[ArtifactId(b)].artifact.kind
+        invalid = [
+            beat
+            for beat in beats
+            if ArtifactId(beat) not in snapshot.artifacts
+            or snapshot.artifacts[ArtifactId(beat)].artifact.kind
             not in ("narrative.beat", "story.plot_beat")
-            for b in beats
-        ):
+        ]
+        if invalid:
             reject(
-                "DRAFT_BEAT_REQUIRED",
+                "DRAFT_TARGET_INVALID",
                 "draft.targets",
-                "草稿必须从已提交的节拍开始",
-                "先规划并由作者接受 Beat",
+                f"引用 {invalid} 不是当前版本中的节拍",
+                "从当前版本重新选择目标；章节起草不再要求节拍，正文范围与账本引用即可",
             )
+        # V03-3.1：起草不再以节拍为前置。传入节拍时仍装配其状态并建立渲染血缘；
+        # 不传时按「账本 + 作者要求 + 章节」起草，空作品也是合法首章来源。
         targets = (*beats, chapter_id) if ArtifactId(chapter_id) in snapshot.artifacts else beats
         ctx = self.draft_context.for_task(
             project,

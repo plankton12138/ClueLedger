@@ -142,7 +142,7 @@ describe("对话轮次", () => {
 });
 
 describe("任务建议与创作周期", () => {
-  it("讨论可产生任务建议；缺项时不能开始，补齐后可开始", async () => {
+  it("章节起草不再要求节拍；未指定修订对象时不能开始", async () => {
     const service = new SimulatorService({ hasAcceptedBeats: false, currentChapter: null });
     const conv = await service.createConversation("p1");
     const events = collect(service, "p1", conv.conversation_id);
@@ -157,13 +157,30 @@ describe("任务建议与创作周期", () => {
         draft: { draft_id: string; missing: string[]; revision: number };
       }
     ).draft;
-    expect(draft.missing.length).toBeGreaterThan(0);
+    expect(draft.missing).toEqual([]);
+    const started = await service.startDraft(
+      "p1",
+      conv.conversation_id,
+      draft.draft_id,
+      draft.revision,
+    );
+    expect(started.job_ref).not.toBe("");
+
+    // 另一类任务仍有真实缺项：定向修订没有目标时不能开始。
+    const revision = await service.createDraft("p1", conv.conversation_id, "targeted_revision");
+    expect(revision.draft.missing.length).toBeGreaterThan(0);
     await expect(
-      service.startDraft("p1", conv.conversation_id, draft.draft_id, draft.revision),
+      service.startDraft("p1", conv.conversation_id, revision.draft.draft_id, revision.draft.revision),
     ).rejects.toThrow(/范围还不齐全/);
     // 修订不匹配时拒绝，防多标签覆盖。
     await expect(
-      service.adjustDraft("p1", conv.conversation_id, draft.draft_id, draft.revision + 5, {}),
+      service.adjustDraft(
+        "p1",
+        conv.conversation_id,
+        revision.draft.draft_id,
+        revision.draft.revision + 5,
+        {},
+      ),
     ).rejects.toThrow(/刚被修改过/);
   });
 

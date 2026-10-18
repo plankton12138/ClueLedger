@@ -33,6 +33,9 @@ def test_schema_covers_every_writable_field() -> None:
         written = {field["key"] for field in form["fields"]}
         assert written == set(LEDGER_FIELDS[kind]), kind
         assert all(field.get("label") for field in form["fields"])
+        for field in form["fields"]:
+            if field["type"] == "select":
+                assert field["default"] in {option["value"] for option in field["options"]}
     # 假设不是可保存种类：schema 不得提供，后端也必须拒绝。
     assert "story.hypothesis" not in kinds
 

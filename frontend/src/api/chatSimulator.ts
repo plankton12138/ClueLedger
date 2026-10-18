@@ -364,7 +364,7 @@ export class SimulatorService implements ChatService {
         taskKind === "plan"
           ? "产出故事前提与节拍候选"
           : taskKind === "chapter_draft"
-            ? `基于已接受节拍起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
+            ? `从账本与作者要求起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
             : taskKind === "check"
               ? "检查人物知情与线索公平性"
               : "按设定变化定向修订受影响正文",
@@ -418,7 +418,7 @@ export class SimulatorService implements ChatService {
         taskKind === "plan"
           ? "产出故事前提与节拍候选"
           : taskKind === "chapter_draft"
-            ? `基于已接受节拍起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
+            ? `从账本与作者要求起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
             : taskKind === "check"
               ? "检查人物知情与线索公平性"
               : "按设定变化定向修订受影响正文",
@@ -802,8 +802,8 @@ export class SimulatorService implements ChatService {
             ? "check"
             : "targeted_revision";
     const chapter = this.view.currentChapter;
-    const targetIds =
-      kind === "chapter_draft" && chapter ? [chapter.chapter_id] : [];
+    // 起草不绑定节拍：章节由 goal 指定；target_ids 留给检查/修订范围。
+    const targetIds: string[] = [];
     const baseVersion =
       kind === "chapter_draft" && chapter ? chapter.base || null : null;
     const draft: TaskDraftPayload = {
@@ -815,7 +815,7 @@ export class SimulatorService implements ChatService {
         kind === "plan"
           ? "产出故事前提与节拍候选"
           : kind === "chapter_draft"
-            ? `基于已接受节拍起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
+            ? `从账本与作者要求起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
             : kind === "check"
               ? "检查人物知情与线索公平性"
               : "按设定变化定向修订受影响正文",
@@ -834,12 +834,7 @@ export class SimulatorService implements ChatService {
   /** 缺失项是「哪里错、为什么、怎样继续」的具体入口，不是空泛的“参数不足”。 */
   private recomputeMissing(draft: TaskDraftPayload) {
     const missing: string[] = [];
-    if (draft.task_kind === "chapter_draft") {
-      if (!this.view.hasAcceptedBeats)
-        missing.push("还没有已接受的节拍：先完成规划候选并接受，再生成章节草稿");
-      if (!draft.base_version)
-        missing.push("缺少可靠的基础版本：先在创作台保存正文，再开始生成");
-    }
+    // 章节起草不再有前置：新章、空作品、未绑定基础版本都可以生成候选。
     if (draft.task_kind === "targeted_revision" && draft.target_ids.length === 0)
       missing.push("还没有指定修订对象：在引用条添加章节或故事对象");
     if (draft.refs.some((r) => !r.saved) && draft.task_kind !== "check")
@@ -979,7 +974,7 @@ export function replyScript(scenario: Scenario, input: string): ReplyScript {
         chunks: [
           `这一章的核心是「交接」：动作要短，解释要少。`,
           "\n\n建议顺序：环境压迫 → 怀表特写 → 对话留白 → 信任裂纹。",
-          "\n\n我已准备章节草稿任务建议；只有在已有接受节拍、基础版本可靠时才能开始。",
+          "\n\n我已准备章节草稿任务建议；不需要先有节拍，开始后结果先作为候选待你审阅。",
         ],
       };
     case "check_suggest":

@@ -43,6 +43,7 @@ export interface LedgerField {
   required?: boolean;
   options?: LedgerFieldOption[];
   ref_kinds?: string[];
+  default?: string;
 }
 
 export interface LedgerKind {
