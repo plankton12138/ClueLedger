@@ -1,6 +1,6 @@
 # Hastings 0.3 开发文档
 
-> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 已交付**：3.1 活动起草路径已去节拍（旧规划管线与 AgentTasks 的节拍类型退出归 V03-8）、3.2 账本直接保存与设定候选成组、3.3/3.4/3.5 试写 → 只读预览 → 按哈希采用。**V03-4 已交付收口，V03-5 进行中**（V03-4 七项，2026-10-18；阶段对账见 [v03-4-stage-summary](v03-4-stage-summary.md)；收口评审六项缺陷已修复，见 [v03-4-review-fixes](v03-4-review-fixes.md)；V03-5.1 跨章修改的本轮清单与完成前 flush、V03-5.2 正式稿前进时的三方合并与重叠逐处选择、V03-5.3 修改稿快照与候选进副本的段落来源已交付，见 [notes/v03-5.1](notes/v03-5.1-cross-chapter-rounds.md)、[notes/v03-5.2](notes/v03-5.2-three-way-merge.md) 与 [notes/v03-5.3](notes/v03-5.3-draft-snapshots-and-provenance.md)；5.4/5.5 待做）：4.1 本书约定、4.2 背景装配、4.3 显式章摘要（含任务化）、4.4 账本更新建议、4.5 对话来源与工作台共享状态、4.6 基础关联撤销、4.7 披露边界。同轮修复范围外残留：作者模型入口已按计划 §9.1 从 0.3 移除（数据保留）。遗留项：全书概览生成入口、账本同恢、`narrative.chapter/beat` 创建入口均带去向。更新：2026-10-18。
+> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 已交付**：3.1 活动起草路径已去节拍（旧规划管线与 AgentTasks 的节拍类型退出归 V03-8）、3.2 账本直接保存与设定候选成组、3.3/3.4/3.5 试写 → 只读预览 → 按哈希采用。**V03-4 已交付收口，V03-5 进行中**（V03-4 七项，2026-10-18；阶段对账见 [v03-4-stage-summary](v03-4-stage-summary.md)；收口评审六项缺陷已修复，见 [v03-4-review-fixes](v03-4-review-fixes.md)；V03-5.1 跨章修改的本轮清单与完成前 flush、V03-5.2 正式稿前进时的三方合并与重叠逐处选择、V03-5.3 修改稿快照与候选进副本的段落来源、V03-5.4 撤销的三方逆向与正文/账本一次恢复已交付，见 [notes/v03-5.1](notes/v03-5.1-cross-chapter-rounds.md)、[notes/v03-5.2](notes/v03-5.2-three-way-merge.md)、[notes/v03-5.3](notes/v03-5.3-draft-snapshots-and-provenance.md) 与 [notes/v03-5.4](notes/v03-5.4-undo-conflict-choices.md)；5.5 待做）：4.1 本书约定、4.2 背景装配、4.3 显式章摘要（含任务化）、4.4 账本更新建议、4.5 对话来源与工作台共享状态、4.6 基础关联撤销、4.7 披露边界。同轮修复范围外残留：作者模型入口已按计划 §9.1 从 0.3 移除（数据保留）。遗留项：全书概览生成入口、建议采用与正文操作的因果关联（V03-7.7）、`narrative.chapter/beat` 创建入口均带去向。更新：2026-10-18。
 
 0.3 将已有版本仓库与创作任务能力，组织为围绕正文、对话和故事账本的持续创作工作区。
 本目录使用产品版本命名；既有 `dev-notes/v2/`、`/api/v2` 和存储版本分别维护，不随产品版本重命名。
@@ -136,9 +136,9 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 | V03-5.1 跨章修改 | 已交付（后端与契约；写作台仍只有单章入口） | `EditSession.chapters` 一等字段（声明/有机两种入列）、完成前 `EDIT_SESSION_UNFLUSHED` 核对、多章一次 commit | [notes/v03-5.1](notes/v03-5.1-cross-chapter-rounds.md) |
 | V03-5.2 三方合并 | 已交付（后端与契约） | `domain/manuscript/merge.py` 段落级三方合并；干净叠加自动发布、重叠 409 三段事实、`merge_choices` 逐处选择进操作记录 | [notes/v03-5.2](notes/v03-5.2-three-way-merge.md) |
 | V03-5.3 快照与候选进副本 | 已交付（后端与契约；前端未接线） | `EditSnapshot`（冻结 save_seq/选区/文本/来源、确定性 ID 与索引）、`POST/GET /edit-sessions/{id}/snapshots`；候选 `applied` 终态与 `POST /drafts/{id}/apply-to-edit-session`；逐段 `paragraph_sources` 进 `GET /operations/{id}` 的 refs | [notes/v03-5.3](notes/v03-5.3-draft-snapshots-and-provenance.md) |
-| V03-5.4 完整撤销与冲突选择 | 未开始 | 后续独立正文/账本/新增引用的冲突选择；解决前无半套恢复 | — |
+| V03-5.4 完整撤销与冲突选择 | 已交付（同一操作内的正文+账本；建议采用的因果关联随 V03-7.7；前端未接线） | `undo_service` 三方逆向：非重叠后续修改自动保留、重叠逐处 `restore/keep`、预览 token 绑定；`publish_commands(extra_changes=…)` 把关联账本与正文放进同一 Commit；新建章节/账本仍阻断 | [notes/v03-5.4](notes/v03-5.4-undo-conflict-choices.md) |
 | V03-5.5 并发与收口恢复 | 未开始 | 多标签页序号 CAS、断网请求重排、完成成功后副本关闭失败的重启幂等 | — |
 
-阶段退出：三章夹具跨章修改 → 换作品 → 重启 → 完成 → 采用账本建议 → 独立再改 → 撤销；需等 5.4/5.5 完成后演练。
+阶段退出：三章夹具跨章修改 → 换作品 → 重启 → 完成 → 采用账本建议 → 独立再改 → 撤销；需等 5.5 完成后演练。5.4 已支持同一操作内正文+账本撤销与后续独立修改的选择；「采用账本建议」与正文操作的因果关联随 V03-7.7。
 
-质量门：`uv run pytest -q` **1756 passed**（2026-10-18 实测；V03-5.1 +5、5.2 +24、5.3 +13）；`ruff check src tests` 全过；`mypy src/hastings` 242 files 无问题；前端 `vitest` 389 passed、`tsc --noEmit` 无问题——5.1–5.3 的后端契约尚未接进写作台，前端数字只证明既有壳层未回归。
+质量门：`uv run pytest -q` **1764 passed**（2026-10-18 实测；V03-5.1 +5、5.2 +24、5.3 +13、5.4 +8（撤销测试 12→20））；`ruff check src tests` 全过；`mypy src/hastings` 242 files 无问题；前端 `vitest` 389 passed、`tsc --noEmit` 无问题——5.1–5.4 的后端契约尚未接进写作台，前端数字只证明既有壳层未回归。

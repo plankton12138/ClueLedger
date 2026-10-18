@@ -28,9 +28,9 @@
 - 0.3 开发计划：[完整开发计划](v0.3/development-plan.md)（2026-10-17 编写）：现状差距、14个模块及示例、前后端契约、三批任务、数据升级和33项产品验收映射。
 - 0.3 当前进度：**V03-0 至 V03-4 已交付收口，V03-5 进行中**，交付证据、偏差与留白见 [v0.3/README](v0.3/README.md)。
   - V03-4 阶段对账见 [v03-4-stage-summary](v0.3/v03-4-stage-summary.md)，收口评审六项修复见 [v03-4-review-fixes](v0.3/v03-4-review-fixes.md)。
-  - V03-5.1 跨章清单与完成前 flush、5.2 三方合并与重叠选择、5.3 快照与候选进副本的段落来源，分别见 [notes/v03-5.1](v0.3/notes/v03-5.1-cross-chapter-rounds.md)、[notes/v03-5.2](v0.3/notes/v03-5.2-three-way-merge.md)、[notes/v03-5.3](v0.3/notes/v03-5.3-draft-snapshots-and-provenance.md)。
+  - V03-5.1 跨章清单与完成前 flush、5.2 三方合并与重叠选择、5.3 快照与候选进副本的段落来源、5.4 撤销的三方逆向与正文/账本一次恢复，分别见 [notes/v03-5.1](v0.3/notes/v03-5.1-cross-chapter-rounds.md)、[notes/v03-5.2](v0.3/notes/v03-5.2-three-way-merge.md)、[notes/v03-5.3](v0.3/notes/v03-5.3-draft-snapshots-and-provenance.md)、[notes/v03-5.4](v0.3/notes/v03-5.4-undo-conflict-choices.md)。
   - 已交付能力：导入、手工修改、历史恢复均接入统一发布器；3.2 账本直接保存与设定候选成组；试写 → 只读预览 → 按预览哈希采用；4.1 本书约定、4.2 背景装配、4.3 显式章摘要（含任务化）、4.4 账本更新建议、4.5 对话来源与工作台共享状态、4.6 基础关联撤销、4.7 披露边界。
-  - 前端入口与完整壳层随 V03-8.6；起草路径与七页侧栏已脱离节拍，`narrative.beat` 类型退出随 V03-8。质量门基线 **1756 passed**（含 V03-5.1/5.2/5.3 回归）。
+  - 前端入口与完整壳层随 V03-8.6；起草路径与七页侧栏已脱离节拍，`narrative.beat` 类型退出随 V03-8。质量门基线 **1764 passed**（含 V03-5.1/5.2/5.3/5.4 回归）。
 - 当前产品方案：[Agent 主工作区与故事账本](../product-design/agent-first-workbench-product-design.md)（2026-10-17 评审决定已确认，待实现）：人物、线索与正文中心的创作闭环，包含首次引导、可视化账本与执行日志。
 - 修改体验详案：[正文修改与版本流程](../product-design/manuscript-editing-design.md)：随时开启手工修改支线、跨章工作副本、修改完成后的统一版本与后续处理，以及对话整体调整。
 - 常驻上下文：[模型上下文与正文摘要](../product-design/context-and-summary-design.md)：账本与摘要提供稳定背景，精确任务按需读原文，摘要版本与失效状态可追溯。

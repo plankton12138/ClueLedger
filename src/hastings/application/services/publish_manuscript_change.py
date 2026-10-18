@@ -184,6 +184,7 @@ class PublishManuscriptChange:
         refs: dict[str, Any] | None = None,
         origin_conversation_id: str | None = None,
         base_commit_id: CommitId | None = None,
+        extra_changes: Sequence[ArtifactChange] = (),
     ) -> PublishResult:
         """一次提交多条稿件命令（V03-4.6 撤销用）：多章恢复只产生一个版本。
 
@@ -198,13 +199,17 @@ class PublishManuscriptChange:
         ``old_revision_id`` 也是准备时版本——提交层据此做逐对象 CAS，准备之后
         被改过的对象显式冲突，**没动过的对象不受影响**（一次无关保存不阻断本次
         发布）。不给则按当前 head 求值（无准备阶段的路径，如恢复与导入）。
+
+        ``extra_changes`` 是正文命令之外的关联对象恢复（V03-5.4 撤销账本）：与
+        正文变化进同一个 Commit，任一对象 CAS 失败则整体不发布。它们不参与稿件
+        证据/摘要推导，但计入幂等指纹与实际变化集合。
         """
-        if not commands:
+        if not commands and not extra_changes:
             raise _violation(
                 ec.MANUSCRIPT_INVALID_OPERATION,
                 f"publish({operation_id})",
                 "没有要发布的命令",
-                "至少给一条稿件命令",
+                "至少给一条稿件命令或一个关联对象变化",
             )
         pid = project_id
         branch = self._repo.get_branch(pid, "main")
@@ -218,7 +223,7 @@ class PublishManuscriptChange:
         head = branch.head_commit_id
         # 求值基础：准备时版本优先；没有准备阶段的路径按当前 head。
         base = base_commit_id if base_commit_id is not None else head
-        if len(commands) == 1:
+        if len(commands) == 1 and not extra_changes:
             # 单命令沿用旧指纹形状：升级后重放既有操作仍能认出同一次请求。
             fingerprint = content_hash(
                 {
@@ -232,6 +237,10 @@ class PublishManuscriptChange:
                 {
                     "commands": [
                         [command.name, repr(sorted(command.intent.items()))] for command in commands
+                    ],
+                    "extra": [
+                        [change.artifact_id.value, change.kind, change.content]
+                        for change in extra_changes
                     ],
                     "refs": refs,
                 }
@@ -263,7 +272,7 @@ class PublishManuscriptChange:
             warnings=tuple(warnings),
             summary=summary,
         )
-        if merged.is_empty():
+        if merged.is_empty() and not extra_changes:
             envelope = self._operations.submit(
                 project_id=pid.value,
                 operation_id=operation_id,
@@ -275,7 +284,10 @@ class PublishManuscriptChange:
                 origin_conversation_id=origin_conversation_id,
             )
             return PublishResult(envelope=envelope, warnings=(), summary=summary, change=merged)
-        changed_ids = frozenset(c.artifact_id.value for c in merged.artifact_changes)
+        changed_ids = frozenset(
+            [c.artifact_id.value for c in merged.artifact_changes]
+            + [c.artifact_id.value for c in extra_changes]
+        )
         chapter_ids = self._changed_chapters(catalog, merged)
         derived = self._derive_state_changes(
             pid, head, catalog, merged, changed_ids, chapter_ids, operation_id
@@ -284,7 +296,7 @@ class PublishManuscriptChange:
             project_id=pid.value,
             operation_id=operation_id,
             kind=kind,
-            changes=(*merged.artifact_changes, *derived),
+            changes=(*merged.artifact_changes, *derived, *extra_changes),
             summary=summary,
             refs=refs,
             events=merged.events,
@@ -342,6 +354,9 @@ class PublishManuscriptChange:
         """证据核对 + 摘要失效：只读快照 → 新 content（同事务提交，I03）。"""
         if head is None:
             return ()  # 空仓库首提交：还没有证据/摘要可核对
+        if not chapter_ids:
+            # 只恢复账本或关联对象：没有正文变化，不该把全书概览判成过期。
+            return ()
         snapshot = self._repo.get_snapshot(pid, head)
         chapter_text_after = self._chapter_text_after(catalog, change, chapter_ids)
         # 证据核对的「变化集合」= 全部变化对象 ∪ 受影响章节（证据按章引用来源，

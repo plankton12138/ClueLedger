@@ -65,20 +65,23 @@ def test_preview_reports_the_chapter_and_allows_undo() -> None:
     assert preview["ledger"] == []
 
 
-def test_a_later_save_is_a_conflict_and_blocks_undo() -> None:
+def test_a_later_save_is_a_conflict_and_requires_choices() -> None:
     client, pid, chapter_id, _ = _client()
     first = _save(client, pid, chapter_id, CHANGED, "save-1")
-    _save(client, pid, chapter_id, CHANGED + "她在等地一个字条。", "save-2")
+    _save(client, pid, chapter_id, CHANGED + "她在等一张字条。", "save-2")
 
     preview = _preview(client, pid, first["operation_id"])
 
     assert preview["can_undo"] is False
+    assert preview["requires_choices"] is True
+    assert preview["hard_blocked"] is False
     assert preview["chapters"][0]["status"] == "conflict"
-    assert "又被修改过" in preview["conflicts"][0]
-    assert "新的修改" in preview["blocked_reason"]
+    assert preview["decisions"][0]["kind"] == "text"
+    assert preview["conflicts"][0].startswith("这一处正文")
+    assert "需要选择" in preview["blocked_reason"]
 
 
-def test_operation_that_also_changed_the_ledger_is_not_half_restored() -> None:
+def test_operation_that_created_a_ledger_entry_is_blocked() -> None:
     client, pid, _chapter, runtime = _client()
     envelope = runtime.operations.submit(
         project_id=pid,
@@ -101,8 +104,8 @@ def test_operation_that_also_changed_the_ledger_is_not_half_restored() -> None:
 
     assert preview["can_undo"] is False
     assert [row["artifact_id"] for row in preview["ledger"]] == ["art_character_x"]
-    assert "账本" in preview["blocked_reason"]
-    assert "不做半边恢复" in preview["blocked_reason"]
+    assert preview["ledger"][0]["status"] == "created"
+    assert "新建了账本条目" in preview["blocked_reason"]
 
 
 def test_first_commit_has_no_previous_version() -> None:

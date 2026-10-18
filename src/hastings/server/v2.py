@@ -1024,6 +1024,14 @@ class ApplyCandidateToEditRequest(BaseModel):
     allow_disclosure_change: bool = False
 
 
+class UndoApplyRequest(BaseModel):
+    """撤销选择（V03-5.4）：每个待选择项给 restore（恢复旧内容）或 keep。"""
+
+    choices: dict[str, str] = Field(default_factory=dict)
+    #: 预览令牌：预览之后 head 又变了，旧选择会被拒绝并要求重新预览。
+    preview_token: str | None = None
+
+
 class ReanchorRequest(BaseModel):
     quote: str | None = None
 
@@ -1287,12 +1295,22 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         return runtime.undo.preview(project_id, operation_id)
 
     @router.post("/projects/{project_id}/operations/{operation_id}/undo")
-    def apply_undo(project_id: str, operation_id: str) -> dict[str, Any]:
-        """执行撤销（V03-4.6）：预览判定可撤销后，一次提交恢复相关章节。
+    def apply_undo(
+        project_id: str,
+        operation_id: str,
+        req: UndoApplyRequest | None = None,
+    ) -> dict[str, Any]:
+        """执行撤销（V03-5.4）：按预览与逐项选择一次提交恢复正文与关联账本。
 
-        有后续修改、有未结束副本、或原操作同时改了账本时拒绝，不覆盖任何内容。
+        有未结束副本、新建章节/账本，或仍有未选择的后续修改时零写入；
+        选择覆盖后才发布，后续独立内容按选择保留。
         """
-        return runtime.undo.apply(project_id, operation_id)
+        return runtime.undo.apply(
+            project_id,
+            operation_id,
+            choices=req.choices if req is not None else None,
+            preview_token=req.preview_token if req is not None else None,
+        )
 
     @router.post("/projects")
     def create_project(req: ProjectCreateRequest) -> dict[str, Any]:
