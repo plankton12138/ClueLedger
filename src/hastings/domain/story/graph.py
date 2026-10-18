@@ -26,11 +26,16 @@ from hastings.domain.repository.models import RELATION_ACTION_ADD, RelationRevis
 from hastings.domain.repository.serialization import content_hash
 from hastings.domain.story import error_codes as ec
 from hastings.domain.story import kinds
+from hastings.domain.story.canon.models import Clue
 from hastings.domain.story.catalog import StoryCatalog
 from hastings.domain.story.errors import violation
 from hastings.domain.story.narrative.state import story_state_at_beat, story_state_final
+from hastings.domain.story.views import position_map, reader_reveals
 
 __all__ = [
+    "CLUE_STATUS_IMPLEMENTED",
+    "CLUE_STATUS_MISSING",
+    "CLUE_STATUS_PLANNED",
     "EVIDENCE_NEEDS_CHECK",
     "EVIDENCE_NOT_RECORDED",
     "EVIDENCE_VALID",
@@ -44,11 +49,14 @@ __all__ = [
     "SEMANTIC_LAYERS",
     "CharacterEdge",
     "CharacterGraph",
+    "ClueGraph",
+    "ClueState",
     "GraphEdge",
     "GraphNode",
     "GraphProjection",
     "GraphSourceRef",
     "character_projection",
+    "clue_projection",
     "graph_projection",
     "semantic_layer",
 ]
@@ -424,6 +432,158 @@ def character_projection(
         perspective_mode=mode,
         perspective_id=perspective_id,
         at_beat_id=at_beat_id,
+        nodes=nodes,
+        edges=tuple(edges),
+    )
+
+
+# --- 线索图（V03-6.3）：在统一投影上筛出线索子图 + 计划/实现分离 ---------------
+CLUE_STATUS_IMPLEMENTED = "implemented"  # 指向的事实已向读者披露（已在正文出现）
+CLUE_STATUS_PLANNED = "planned"  # 有计划的出现位置，尚未向读者披露
+CLUE_STATUS_MISSING = "missing"  # 无出现记录：合法缺口（可以是故意悬念），不判错
+
+
+@dataclass(frozen=True, slots=True)
+class ClueState:
+    """一条线索在当前视图下的出现情况；计划与实现分开报出。"""
+
+    clue_id: str
+    statement: str
+    necessity: bool
+    points_to: tuple[str, ...]
+    planned_beats: tuple[str, ...]
+    disclosed_beats: tuple[str, ...]
+    status: str
+    first_position: int | None
+    within_position: bool | None
+
+
+@dataclass(frozen=True, slots=True)
+class ClueGraph:
+    """线索图视图：统一投影中与线索相连的子图 + 每条线索的出现状态。"""
+
+    commit_id: str | None
+    at_beat_id: str | None
+    position_index: int | None
+    clues: tuple[ClueState, ...]
+    nodes: tuple[GraphNode, ...]
+    edges: tuple[GraphEdge, ...]
+
+
+def clue_projection(
+    catalog: StoryCatalog,
+    *,
+    at_beat_id: str | None = None,
+    focus: str | None = None,
+    evidence_status: Mapping[str, str] | None = None,
+) -> ClueGraph:
+    """线索图：以线索为中心的投影子图，附计划/实现与叙述位置筛选。
+
+    - **边**：只保留统一投影中与线索相连的边（线索自身的「指向」，以及与线索
+      相连的显式关系）。没有正式记录的连接不出现——误导解释、反驳等没有账本
+      依据时不凭措辞连线，缺口如实留白。
+    - **计划/实现分离**：计划出现取 ``Clue.disclosure_plan`` 落在结构内的节拍，
+      已在正文出现取 ``points_to`` 所指事实的读者披露位置（``reader_reveals``）；
+      二者不合并成一个「已实现」状态，也不因原文变化另建失效逻辑（证据状态仍
+      由 M05 决定）。
+    - **叙述位置**：``at_beat_id`` 给出截至位置，线索最早出现位置晚于它即标记
+      ``within_position=False``，后文线索不提前进入视图；无位置记录则留 ``None``。
+    """
+    projection = graph_projection(catalog, evidence_status=evidence_status)
+    positions = position_map(catalog)
+    if at_beat_id is not None and at_beat_id not in positions:
+        raise violation(
+            ec.STORY_UNKNOWN_ARTIFACT,
+            "graphs.clues.position",
+            f"节拍 {at_beat_id!r} 不在结构顺序中",
+            "改用结构中存在的 Beat ID（先用结构树查询可用节拍）",
+            beat_id=at_beat_id,
+        )
+
+    clue_entries = catalog.by_kind(kinds.KIND_CLUE)
+    clue_ids = {entry.artifact_id for entry in clue_entries}
+    reveals = reader_reveals(catalog)
+
+    node_ids: set[str] = set(clue_ids)
+    edges: list[GraphEdge] = []
+    for edge in projection.edges:
+        if edge.source in clue_ids or edge.target in clue_ids:
+            edges.append(edge)
+            node_ids.add(edge.source)
+            node_ids.add(edge.target)
+
+    cutoff = positions.get(at_beat_id) if at_beat_id is not None else None
+    states: list[ClueState] = []
+    for entry in sorted(clue_entries, key=lambda item: item.artifact_id):
+        clue = Clue.from_content(entry.content)
+        planned = tuple(
+            sorted(
+                (beat for beat in clue.disclosure_plan if beat in positions),
+                key=positions.__getitem__,
+            )
+        )
+        disclosed = tuple(
+            sorted(
+                {
+                    beat
+                    for fact_id in clue.points_to
+                    for beat in reveals.get(fact_id, ())
+                    if beat in positions
+                },
+                key=positions.__getitem__,
+            )
+        )
+        if disclosed:
+            status = CLUE_STATUS_IMPLEMENTED
+        elif planned:
+            status = CLUE_STATUS_PLANNED
+        else:
+            status = CLUE_STATUS_MISSING
+        appearance = tuple(sorted(set(disclosed) | set(planned), key=positions.__getitem__))
+        first_position = positions[appearance[0]] if appearance else None
+        if cutoff is None or first_position is None:
+            within_position: bool | None = None
+        else:
+            within_position = first_position <= cutoff
+        node_ids.update(appearance)
+        states.append(
+            ClueState(
+                clue_id=entry.artifact_id,
+                statement=clue.statement,
+                necessity=clue.necessity,
+                points_to=tuple(clue.points_to),
+                planned_beats=planned,
+                disclosed_beats=disclosed,
+                status=status,
+                first_position=first_position,
+                within_position=within_position,
+            )
+        )
+
+    if focus is not None:
+        if focus not in {node.id for node in projection.nodes}:
+            raise violation(
+                ec.STORY_UNKNOWN_ARTIFACT,
+                "graphs.clues.focus",
+                f"聚焦对象 {focus!r} 不在当前快照中",
+                "改用快照内存在的对象 ID",
+                node_id=focus,
+            )
+        kept = [edge for edge in edges if edge.source == focus or edge.target == focus]
+        focus_nodes = {focus}
+        for edge in kept:
+            focus_nodes.add(edge.source)
+            focus_nodes.add(edge.target)
+        edges = kept
+        node_ids = focus_nodes
+        states = [state for state in states if state.clue_id in node_ids]
+
+    nodes = tuple(node for node in projection.nodes if node.id in node_ids)
+    return ClueGraph(
+        commit_id=projection.commit_id,
+        at_beat_id=at_beat_id,
+        position_index=cutoff,
+        clues=tuple(states),
         nodes=nodes,
         edges=tuple(edges),
     )

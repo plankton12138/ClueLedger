@@ -47,6 +47,8 @@ __all__ = [
     "mystery_fairness",
     "narrative_tree",
     "open_setups",
+    "position_map",
+    "reader_reveals",
 ]
 
 _SEVERITY_ERROR = "error"
@@ -67,8 +69,12 @@ def _order_key(entry: StoryEntry) -> str:
     return raw if isinstance(raw, str) else str(raw)
 
 
-def _position_map(catalog: StoryCatalog) -> dict[str, int]:
-    """结构顺序中节拍 ID -> 序号；未绑定/未知节拍查不到即为 None 语义。"""
+def position_map(catalog: StoryCatalog) -> dict[str, int]:
+    """结构顺序中节拍 ID -> 序号；未绑定/未知节拍查不到即为 None 语义。
+
+    公开供线索图复用：叙述位置筛选（「截至某章」）与披露时间线、公平性判定
+    共用同一份序号口径，不各建一份。
+    """
     return {entry.artifact_id: index for index, entry in enumerate(ordered_beats(catalog))}
 
 
@@ -234,7 +240,7 @@ def _event_sort_key(event: DisclosureEvent) -> tuple[int, int, str, int, str]:
 
 def disclosure_timeline(catalog: StoryCatalog) -> DisclosureTimeline:
     """合并读者披露与角色认知两个通道，按结构位置排序。"""
-    positions = _position_map(catalog)
+    positions = position_map(catalog)
     warnings: list[StoryWarning] = []
     events: list[DisclosureEvent] = []
 
@@ -323,8 +329,12 @@ def disclosure_timeline(catalog: StoryCatalog) -> DisclosureTimeline:
 # --------------------------------------------------------------------------
 # MysteryFairnessView
 # --------------------------------------------------------------------------
-def _reader_reveals(catalog: StoryCatalog) -> dict[str, set[str]]:
-    """事实 -> 向读者披露过它的节拍集合（合并内联披露与 Disclosure 对象）。"""
+def reader_reveals(catalog: StoryCatalog) -> dict[str, set[str]]:
+    """事实 -> 向读者披露过它的节拍集合（合并内联披露与 Disclosure 对象）。
+
+    公开供线索图复用：`points_to` 指向的事实「已在正文出现」的位置口径与
+    公平性判定同源。
+    """
     result: dict[str, set[str]] = {}
     for entry in catalog.by_kind(kinds.KIND_DISCLOSURE):
         disclosure = Disclosure.from_content(entry.content)
@@ -372,9 +382,9 @@ def mystery_fairness(
     catalog: StoryCatalog, *, fairness_cutoff: float | None = None
 ) -> MysteryFairnessView:
     """只统计必要线索；fairness_cutoff=None 表示该项目不做公平性判定。"""
-    positions = _position_map(catalog)
+    positions = position_map(catalog)
     total = len(positions)
-    reveals = _reader_reveals(catalog)
+    reveals = reader_reveals(catalog)
     cutoff_index = fairness_cutoff * total - 1 if fairness_cutoff is not None else None
 
     clues: list[NecessaryClueView] = []
@@ -450,7 +460,7 @@ class OpenSetupsView:
 
 def open_setups(catalog: StoryCatalog, *, deadline: float | None = None) -> OpenSetupsView:
     """列出已建立但未回收的伏笔；deadline 为项目策略给的回收截止比例。"""
-    positions = _position_map(catalog)
+    positions = position_map(catalog)
     total = len(positions)
     established: dict[str, list[str]] = {}
     paid: set[str] = set()

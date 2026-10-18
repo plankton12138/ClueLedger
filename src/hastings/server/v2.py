@@ -1491,6 +1491,27 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             focus=focus,
         )
 
+    @router.get("/projects/{project_id}/graphs/clues")
+    def get_clue_graph(
+        project_id: str,
+        at_commit_id: str | None = None,
+        at_beat_id: str | None = None,
+        at_chapter_id: str | None = None,
+        focus: str | None = None,
+    ) -> dict[str, Any]:
+        """线索图（只读）：线索子图 + 计划/正文实现分离，支持叙述位置与局部聚焦。
+
+        ``at_beat_id`` 与 ``at_chapter_id`` 互斥；「截至某章」先解析为该章内最后
+        一个节拍。后文线索以 ``within_position=False`` 标出，不提前进入视图。
+        """
+        return runtime.graphs.clues(
+            project_id,
+            at_commit_id=at_commit_id,
+            at_beat_id=at_beat_id,
+            at_chapter_id=at_chapter_id,
+            focus=focus,
+        )
+
     @router.get("/projects/{project_id}/ledger/schema")
     def get_ledger_schema(project_id: str) -> dict[str, Any]:
         """账本编辑表单描述：种类、字段、控件与引用目标，前后端共用一份口径。"""

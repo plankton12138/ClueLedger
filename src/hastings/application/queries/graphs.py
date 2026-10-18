@@ -27,10 +27,12 @@ from hastings.domain.story.graph import (
     PERSPECTIVE_AUTHOR,
     PERSPECTIVE_CHARACTER,
     CharacterGraph,
+    ClueState,
     GraphEdge,
     GraphNode,
     GraphProjection,
     character_projection,
+    clue_projection,
     graph_projection,
 )
 from hastings.domain.story.narrative.order import last_beat_of_node
@@ -102,29 +104,12 @@ class GraphQueries:
         snapshot = self._repo.get_snapshot(pid, commit)
         catalog = StoryCatalog.from_snapshot(snapshot)
 
-        resolved_beat = at_beat_id
-        position: dict[str, Any] | None = None
-        if at_chapter_id is not None:
-            resolved_beat = last_beat_of_node(
-                catalog, at_chapter_id, where="graphs.characters.at_chapter_id"
-            )
-            chapter = catalog.get(at_chapter_id)
-            label = display_name(chapter.kind, chapter.content) if chapter else ""
-            position = {
-                "kind": "chapter",
-                "at_chapter_id": at_chapter_id,
-                "at_beat_id": resolved_beat,
-                "label": label or at_chapter_id,
-            }
-        elif at_beat_id is not None:
-            beat = catalog.get(at_beat_id)
-            label = display_name(beat.kind, beat.content) if beat else ""
-            position = {
-                "kind": "beat",
-                "at_chapter_id": None,
-                "at_beat_id": at_beat_id,
-                "label": label or at_beat_id,
-            }
+        resolved_beat, position = _resolve_position(
+            catalog,
+            at_beat_id=at_beat_id,
+            at_chapter_id=at_chapter_id,
+            where="graphs.characters.at_chapter_id",
+        )
 
         status = _evidence_status(snapshot)
         graph = character_projection(
@@ -169,9 +154,113 @@ class GraphQueries:
             "focus": focus_payload,
         }
 
+    def clues(
+        self,
+        project_id: str,
+        *,
+        at_commit_id: str | None = None,
+        at_beat_id: str | None = None,
+        at_chapter_id: str | None = None,
+        focus: str | None = None,
+    ) -> dict[str, Any]:
+        """线索图视图（只读）：线索子图 + 计划/实现分离 + 叙述位置筛选。
+
+        「截至某章」先解析为该章内最后一个节拍再筛选，与 ``at_beat_id`` 互斥；
+        每条线索分别报出计划出现与已在正文出现的节拍，后文线索以
+        ``within_position=False`` 标出，由调用方决定是否渲染。
+        """
+        if at_beat_id is not None and at_chapter_id is not None:
+            raise violation(
+                ec.STORY_INVALID_COMMAND,
+                "graphs.clues.position",
+                "at_beat_id 与 at_chapter_id 互斥，不能同时给出",
+                "二者取其一：按节拍或按章节指定叙述位置",
+            )
+        pid = ProjectId(project_id)
+        commit = CommitId(at_commit_id) if at_commit_id else self._head(pid)
+        if commit is None:
+            return _empty_clues(project_id)
+        snapshot = self._repo.get_snapshot(pid, commit)
+        catalog = StoryCatalog.from_snapshot(snapshot)
+
+        resolved_beat, position = _resolve_position(
+            catalog,
+            at_beat_id=at_beat_id,
+            at_chapter_id=at_chapter_id,
+            where="graphs.clues.at_chapter_id",
+        )
+        graph = clue_projection(
+            catalog,
+            at_beat_id=resolved_beat,
+            focus=focus,
+            evidence_status=_evidence_status(snapshot),
+        )
+
+        focus_payload: dict[str, Any] | None = None
+        if focus is not None:
+            focus_payload = {"node_id": focus, "neighbor_ids": _neighbors(graph.edges, focus)}
+
+        return {
+            "project_id": project_id,
+            "commit_id": graph.commit_id,
+            "position": position,
+            "focus": focus_payload,
+            "clues": [_clue_payload(state) for state in graph.clues],
+            "nodes": _node_payload(graph.nodes, catalog),
+            "edges": [_edge_base(edge) for edge in graph.edges],
+        }
+
     def _head(self, pid: ProjectId) -> CommitId | None:
         branch = self._repo.get_branch(pid, "main")
         return branch.head_commit_id if branch is not None else None
+
+
+def _resolve_position(
+    catalog: StoryCatalog,
+    *,
+    at_beat_id: str | None,
+    at_chapter_id: str | None,
+    where: str,
+) -> tuple[str | None, dict[str, Any] | None]:
+    """把「截至某章/某节拍」解析为叙述位置：返回末节拍与展示用位置描述。
+
+    章不经章节序号冒充位置，而是先解析为该章内按结构顺序的最后一个节拍，
+    人物图与线索图共用这一份解析口径。
+    """
+    if at_chapter_id is not None:
+        resolved = last_beat_of_node(catalog, at_chapter_id, where=where)
+        chapter = catalog.get(at_chapter_id)
+        label = display_name(chapter.kind, chapter.content) if chapter else ""
+        return resolved, {
+            "kind": "chapter",
+            "at_chapter_id": at_chapter_id,
+            "at_beat_id": resolved,
+            "label": label or at_chapter_id,
+        }
+    if at_beat_id is not None:
+        beat = catalog.get(at_beat_id)
+        label = display_name(beat.kind, beat.content) if beat else ""
+        return at_beat_id, {
+            "kind": "beat",
+            "at_chapter_id": None,
+            "at_beat_id": at_beat_id,
+            "label": label or at_beat_id,
+        }
+    return None, None
+
+
+def _clue_payload(state: ClueState) -> dict[str, Any]:
+    return {
+        "clue_id": state.clue_id,
+        "statement": state.statement,
+        "necessity": state.necessity,
+        "points_to": list(state.points_to),
+        "planned_beats": list(state.planned_beats),
+        "disclosed_beats": list(state.disclosed_beats),
+        "status": state.status,
+        "first_position": state.first_position,
+        "within_position": state.within_position,
+    }
 
 
 def _node_payload(nodes: Iterable[GraphNode], catalog: StoryCatalog) -> list[dict[str, Any]]:
@@ -248,4 +337,16 @@ def _empty_characters(project_id: str) -> dict[str, Any]:
         "nodes": [],
         "edges": [],
         "focus": None,
+    }
+
+
+def _empty_clues(project_id: str) -> dict[str, Any]:
+    return {
+        "project_id": project_id,
+        "commit_id": None,
+        "position": None,
+        "focus": None,
+        "clues": [],
+        "nodes": [],
+        "edges": [],
     }

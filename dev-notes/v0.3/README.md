@@ -1,6 +1,6 @@
 # Hastings 0.3 开发文档
 
-> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 已交付**：3.1 活动起草路径已去节拍（旧规划管线与 AgentTasks 的节拍类型退出归 V03-8）、3.2 账本直接保存与设定候选成组、3.3/3.4/3.5 试写 → 只读预览 → 按哈希采用。**V03-4 已交付收口，V03-5 五个任务已交付**（V03-4 七项，2026-10-18；阶段对账见 [v03-4-stage-summary](v03-4-stage-summary.md)；收口评审六项缺陷已修复，见 [v03-4-review-fixes](v03-4-review-fixes.md)；V03-5.1 跨章修改的本轮清单与完成前 flush、V03-5.2 正式稿前进时的三方合并与重叠逐处选择、V03-5.3 修改稿快照与候选进副本的段落来源、V03-5.4 撤销的三方逆向与正文/账本一次恢复、V03-5.5 并发保存与完成后的收口恢复已交付，见 [notes/v03-5.1](notes/v03-5.1-cross-chapter-rounds.md)、[notes/v03-5.2](notes/v03-5.2-three-way-merge.md)、[notes/v03-5.3](notes/v03-5.3-draft-snapshots-and-provenance.md)、[notes/v03-5.4](notes/v03-5.4-undo-conflict-choices.md) 与 [notes/v03-5.5](notes/v03-5.5-concurrency-and-recovery.md)；完整阶段退出仍待 V03-7.7 补齐建议采用与正文操作的因果关联）：4.1 本书约定、4.2 背景装配、4.3 显式章摘要（含任务化）、4.4 账本更新建议、4.5 对话来源与工作台共享状态、4.6 基础关联撤销、4.7 披露边界。同轮修复范围外残留：作者模型入口已按计划 §9.1 从 0.3 移除（数据保留）。遗留项：全书概览生成入口、建议采用与正文操作的因果关联（V03-7.7）、`narrative.chapter/beat` 创建入口均带去向。**V03-6.1 已交付**：统一图谱只读投影（节点/边/来源/语义层/证据状态，`GET /graphs`），四类图谱在它之上筛选。更新：2026-10-18。
+> 状态：**V03-0、V03-1 已交付收口**（V03-0 收口于 commit `ad2a166`；V03-1 收口于 commit `53c7eb2` + 同日「接着讨论」前端接线与切片走查 10/10，收口检查单见下，两项已声明偏差显式顺延）。**V03-2 已交付（2.6 部分交付：后续状态可见，启动入口随 V03-4）**。**V03-3 已交付**：3.1 活动起草路径已去节拍（旧规划管线与 AgentTasks 的节拍类型退出归 V03-8）、3.2 账本直接保存与设定候选成组、3.3/3.4/3.5 试写 → 只读预览 → 按哈希采用。**V03-4 已交付收口，V03-5 五个任务已交付**（V03-4 七项，2026-10-18；阶段对账见 [v03-4-stage-summary](v03-4-stage-summary.md)；收口评审六项缺陷已修复，见 [v03-4-review-fixes](v03-4-review-fixes.md)；V03-5.1 跨章修改的本轮清单与完成前 flush、V03-5.2 正式稿前进时的三方合并与重叠逐处选择、V03-5.3 修改稿快照与候选进副本的段落来源、V03-5.4 撤销的三方逆向与正文/账本一次恢复、V03-5.5 并发保存与完成后的收口恢复已交付，见 [notes/v03-5.1](notes/v03-5.1-cross-chapter-rounds.md)、[notes/v03-5.2](notes/v03-5.2-three-way-merge.md)、[notes/v03-5.3](notes/v03-5.3-draft-snapshots-and-provenance.md)、[notes/v03-5.4](notes/v03-5.4-undo-conflict-choices.md) 与 [notes/v03-5.5](notes/v03-5.5-concurrency-and-recovery.md)；完整阶段退出仍待 V03-7.7 补齐建议采用与正文操作的因果关联）：4.1 本书约定、4.2 背景装配、4.3 显式章摘要（含任务化）、4.4 账本更新建议、4.5 对话来源与工作台共享状态、4.6 基础关联撤销、4.7 披露边界。同轮修复范围外残留：作者模型入口已按计划 §9.1 从 0.3 移除（数据保留）。遗留项：全书概览生成入口、建议采用与正文操作的因果关联（V03-7.7）、`narrative.chapter/beat` 创建入口均带去向。**V03-6.1 已交付**：统一图谱只读投影（节点/边/来源/语义层/证据状态，`GET /graphs`），四类图谱在它之上筛选。**V03-6.2/6.3 已交付**：6.2 人物图（真关系/认知分层、作者全知或角色视角、叙述位置），6.3 线索图（只保留线索相连边、计划出现/已在正文出现分离、后文线索 `within_position` 标记、`missing` 为合法缺口）。更新：2026-10-18。
 
 0.3 将已有版本仓库与创作任务能力，组织为围绕正文、对话和故事账本的持续创作工作区。
 本目录与既有 `dev-notes/v0.2/` 均按产品版本命名；`/api/v2` 与存储版本标识独立维护，不随产品版本重命名。
@@ -143,7 +143,7 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 
 质量门：`uv run pytest -q` **1769 passed**（2026-10-18 实测；V03-5.1 +5、5.2 +24、5.3 +13、5.4 +8、5.5 +5）；`ruff check src tests` 全过；`mypy src/hastings` 242 files 无问题；前端 `vitest` 389 passed、`tsc --noEmit` 无问题——5.1–5.5 的后端契约尚未接进写作台，前端数字只证明既有壳层未回归。
 
-## V03-6 人物关系与线索关联图（V03-6.1/6.2 已交付，2026-10-18）
+## V03-6 人物关系与线索关联图（V03-6.1/6.2/6.3 已交付，2026-10-18）
 
 开始条件：账本、正文来源和证据状态查询共用稳定契约 ✓（V03-2.5 证据核对 + V03-3.2 账本查询）。
 
@@ -151,8 +151,8 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 |---|---|---|---|
 | V03-6.1 图谱统一只读投影 | 已交付 | `domain/story/graph.py`（节点/边纯投影：四语义层、引用字段导边、显式关系边、悬空引用不入图）、`application/queries/graphs.py`（`GraphQueries`：固定 Commit + 中文标签 + M05 证据状态）、`GET /projects/{id}/graphs`；专项 11 项 | [notes/v03-6.1](notes/v03-6.1-graph-projection.md) |
 | V03-6.2 人物图 | 已交付 | `domain/story/graph.py::character_projection`（真关系/认知分层、作者全知或角色视角隐藏 `true_state`、按获知事件的位置筛选、未记录不合成 unaware）、`domain/story/narrative/order.py::last_beat_of_node`（章→末节拍，不用章节序号）、`GraphQueries.characters`、`GET /projects/{id}/graphs/characters`；专项 14 项 | [notes/v03-6.2](notes/v03-6.2-character-graph.md) |
-| V03-6.3 线索图 | 待开发 | — | — |
+| V03-6.3 线索图 | 已交付 | `domain/story/graph.py::clue_projection`（只保留与线索相连的边、计划出现/已在正文出现分离、`within_position` 标记后文线索、`missing` 为合法缺口）、`views.py` 公开 `position_map`/`reader_reveals` 复用同一口径、`GraphQueries.clues`、`GET /projects/{id}/graphs/clues`；专项 15 项 | [notes/v03-6.3](notes/v03-6.3-clue-graph.md) |
 | V03-6.4 交互与布局持久化 | 待开发 | — | — |
 | V03-6.5 文字等价操作与可访问性 | 待开发 | — | — |
 
-质量门：`uv run pytest -q` **1794 passed**（V03-6.2 +14）；`ruff check src tests` 全过；`mypy src/hastings` 244 files 无问题。留白：`story.place.adjacent` 未登记引用校验故暂不成边；真实工作区尚无 `evidence.link` 写路径，证据状态多为 `not_recorded`（用直接提交测试覆盖 `needs_check`）；线索图/手法图/时间线带类型端点随 V03-6.3/6.4，前端接线随 V03-6.4/6.5。环境提示：本机 `uv run ruff` 为 0.16.10（pyproject `ruff>=0.5` 未锁版本），`ruff format --check` 会命中 17 个与本任务无关的历史文件，属既有版本漂移、不在本任务范围。
+质量门：`uv run pytest -q` **1809 passed**（V03-6.2 +14、V03-6.3 +15）；`ruff check src tests` 全过；`mypy src/hastings` 244 files 无问题。留白：`story.place.adjacent` 未登记引用校验故暂不成边；真实工作区尚无 `evidence.link` 写路径，证据状态多为 `not_recorded`（用直接提交测试覆盖 `needs_check`）；线索与误导解释/「反驳」尚无正式关系类型，故不自动连线（等经 `catalog.relations` 记录后自动带上）；出现的章节分组由前端用叙事树解析、不在线索图合成结构边；手法图/时间线带类型端点随 V03-7，前端接线随 V03-6.4/6.5。环境提示：本机 `uv run ruff` 为 0.16.10（pyproject `ruff>=0.5` 未锁版本），`ruff format --check` 会命中 17 个与本任务无关的历史文件，属既有版本漂移、不在本任务范围。
