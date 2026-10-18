@@ -60,6 +60,7 @@ from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.conversation_service import ConversationService
 from hastings.application.services.entry_service import EntryService
 from hastings.application.services.operation_service import OperationService
+from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
 from hastings.application.services.task_prep_service import TaskPrepService
 from hastings.application.services.task_projection import ChatTaskProjector
 from hastings.application.workflows.agent_workflows import AgentWorkflows
@@ -210,6 +211,9 @@ class V2Runtime:
         # 创作记录投影端；投影失败事件保持待发布，不回滚已生效正文。
         self.operations = OperationService(self.service)
         self.operation_projection = OperationDiscussionProjector(self.conversation_store)
+        # 统一正文发布（V03-2.2）：导入/保存/恢复同管线；领域命令纯函数
+        # 准备 → 证据核对/摘要失效 → 原子提交（I03）。
+        self.manuscript_publisher = PublishManuscriptChange(self.service, self.operations, ids)
         self.restore = RestoreChapterVersion(self.handler, self.service)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
@@ -937,19 +941,31 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             full_text=req.full_text,
             expected_chapter_base=req.expected_chapter_base,
         )
-        result = await runtime.workflow.save(intent)
+        result = await runtime.manuscript_publisher.publish_save(
+            project_id=ProjectId(project_id),
+            chapter_id=chapter_id,
+            operations=intent.operations,
+            full_text=intent.full_text,
+            expected_chapter_base=intent.expected_chapter_base,
+            operation_id=(
+                "op_"
+                + content_hash(["chapter.save", project_id, chapter_id, req.idempotency_key])[:16]
+            ),
+            summary=req.summary,
+        )
         await runtime.wake_workers(project_id)
         head = runtime.head(ProjectId(project_id))
-        chapter_base = result.edit.change.chapter_base_after
+        chapter_base = result.change.chapter_base_after
         if not chapter_base and head is not None:
             chapter_base = runtime.queries.chapter_base(ProjectId(project_id), head, chapter_id)
         return {
             "status": result.status,
             "commit_id": result.commit_id,
             "new_head": result.new_head,
-            "summary": result.edit.summary,
+            "summary": result.summary,
             "warnings": list(result.warnings),
             "chapter_base": chapter_base,
+            "operation_id": result.operation_id,
         }
 
     @router.post("/projects/{project_id}/chapters/{chapter_id}/restore")

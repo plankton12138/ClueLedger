@@ -81,8 +81,9 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 
 开始条件检查单：结果归属与入口身份稳定（V03-1.2/1.5）✓；仓库事务扩展通过故障注入（V03-0.5）✓。
 
-质量门基线：`uv run pytest -q` **1515 passed**；ruff/mypy 全过。
+质量门基线：`uv run pytest -q` **1523 passed**；ruff/mypy 全过。
 
 | 任务 | 状态 | 产物 | 构建笔记 |
 |---|---|---|---|
 | V03-2.1 OperationRecord 与固定讨论投影 | 已交付 | `domain/manuscript/operation_record.py`、`application/services/operation_service.py`、`application/workflows/operation_projection.py`（FanOutSink + 创作记录投影）、`GET /operations/{id}`；专项 24 项测试（全量 1515） | [notes/v03-2.1](notes/v03-2.1-operation-record.md) |
+| V03-2.2 统一发布 PublishManuscriptChange | 第一部分已交付（管线主体 + 保存入口接入；导入/恢复接入随 2.3/2.5） | `domain/manuscript/evidence.py`（确定性证据核对 + 摘要失效）、`application/services/publish_manuscript_change.py`、OperationService 扩展（events/显式章节清单/意图指纹）、保存路由走发布管线；专项 8 项测试（全量 1523） | [notes/v03-2.2](notes/v03-2.2-publish-manuscript-change.md) |

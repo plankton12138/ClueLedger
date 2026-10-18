@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from hastings.domain.repository.ids import ArtifactId, ProjectId
+from hastings.domain.repository.ids import ArtifactId
 from hastings.domain.repository.requests import ArtifactChange
 from hastings.server.v2 import V2Runtime, build_v2_app
 
@@ -33,6 +33,7 @@ def test_get_operation_returns_envelope() -> None:
             ),
         ),
         summary="API 走查",
+        changed_chapter_ids=("ch_1",),
     )
     response = client.get(f"/api/v2/projects/{project_id}/operations/op_api_1")
     assert response.status_code == 200
@@ -66,8 +67,9 @@ def test_get_operation_isolated_per_project() -> None:
             ),
         ),
         summary="隔离走查",
+        changed_chapter_ids=("ch_1",),
     )
     # 操作归属作品：其他作品查询同一 operation_id 是 404（辅助表按项目隔离）
     response = client.get(f"/api/v2/projects/{other.value}/operations/op_iso")
     assert response.status_code == 404
-    _ = ProjectId
+    assert response.json()["error"]["code"] == "OPERATION_NOT_FOUND"

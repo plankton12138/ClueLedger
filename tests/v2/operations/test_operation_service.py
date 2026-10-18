@@ -88,6 +88,7 @@ def _submit(
         kind=kind,
         changes=(_chapter_change(text),),
         summary=f"提交 {text}",
+        changed_chapter_ids=("ch_1",),
     )
 
 

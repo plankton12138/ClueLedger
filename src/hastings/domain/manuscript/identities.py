@@ -63,6 +63,8 @@ V03_ID_PREFIXES: dict[str, str] = {
     "cnd": "候选 Candidate",
     "tks": "任务快照 ContextSnapshot",
     "op": "操作记录 OperationRecord",
+    "evd": "正文证据 EvidenceLink",
+    "sum": "章摘要 ChapterSummaryState",
     "prj": "作品 Project（既有）",
     "br": "分支 Branch（既有）",
     "art": "可版本化对象 Artifact（既有）",

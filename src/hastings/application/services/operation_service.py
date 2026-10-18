@@ -42,9 +42,6 @@ __all__ = ["OperationService"]
 
 _AUTHOR = Actor(kind="human", id="author")
 
-#: 章节对象的 Artifact ID 前缀（ManualEdit 领域沿用）。
-_CHAPTER_PREFIX = "ch_"
-
 
 def _violation(code: str, where: str, why: str, fix: str, **details: Any) -> ViolationError:
     return ViolationError(code=code, where=where, why=why, fix=fix, details=details)
@@ -80,11 +77,16 @@ class OperationService:
         summary: str,
         source: str = "author",
         refs: dict[str, Any] | None = None,
+        events: tuple[tuple[str, dict[str, Any]], ...] = (),
+        changed_chapter_ids: tuple[str, ...] = (),
+        request_fingerprint: str | None = None,
     ) -> OperationEnvelope:
         """提交一次操作：正文变化 + 记录 + 回执 + 事件，同一事务。
 
-        ``changes`` 由调用方构造（V03-2.2 起由统一发布准备器产出）；本服务
-        负责补全 old_revision_id（读基础快照）、构造记录与回执、no_change
+        ``changes`` / ``events`` 由调用方构造（V03-2.2 起由统一发布准备器产出，
+        领域命令的纯函数结果原样汇入）；``changed_chapter_ids`` 是本次操作
+        实际影响的章节清单（由调用方按 catalog kind 判定，不按 ID 前缀猜测）。
+        本服务负责补全 old_revision_id（读基础快照）、构造记录与回执、no_change
         检测。重试语义：同 operation_id 同内容返回原结果，不同内容显式冲突。
         """
         if not operation_id.startswith("op_") or operation_id.strip() != operation_id:
@@ -104,7 +106,7 @@ class OperationService:
                 "先创建作品再提交操作",
             )
         head = branch.head_commit_id
-        fingerprint = self._fingerprint(kind, changes, summary, refs)
+        fingerprint = request_fingerprint or self._fingerprint(kind, changes, summary, refs, events)
         # 1) 幂等重放：回执（同键同指纹）→ 原结果；同键不同指纹 → 冲突。
         existing = self._repo.aux_read(pid, OPERATION_RECEIPT_BUCKET, operation_id)
         if existing is not None:
@@ -121,9 +123,10 @@ class OperationService:
             return self.get_operation(pid, operation_id)
         conversation_id = creation_log_conversation_id(project_id)
         # 2) 基础快照：补全 old_revision_id 并预检 no_change（与引擎同一口径）。
+        #    乐观预检：全部变化与有效版本内容一致（或本就无变化）⇒ no_change。
         snapshot = self._repo.get_snapshot(pid, head) if head is not None else None
         prepared: list[ArtifactChange] = []
-        no_change = bool(changes)
+        no_change = True
         for change in changes:
             view = snapshot.artifacts.get(change.artifact_id) if snapshot else None
             old_id = view.revision.id if view and view.revision else None
@@ -165,7 +168,7 @@ class OperationService:
 
         def build_request(
             changes: tuple[ArtifactChange, ...],
-            events: tuple[tuple[str, dict[str, Any]], ...] = (),
+            request_events: tuple[tuple[str, dict[str, Any]], ...],
         ) -> CommitRequest:
             return CommitRequest(
                 project_id=pid,
@@ -175,14 +178,14 @@ class OperationService:
                 idempotency_key=f"operation:{operation_id}",
                 summary=summary,
                 changes=changes,
-                events=events,
+                events=request_events,
                 aux_writes=(receipt_write,),
             )
 
         if no_change:
             # 3a) 无差异：只提交回执——引擎 no-op 分支同事务落库，不创建正文
             #     空版本、不创建记录 Artifact、事件不发出（引擎 no-op 分支）。
-            result = self._repo.commit(build_request(()))
+            result = self._repo.commit(build_request((), ()))
             return OperationEnvelope(
                 operation_id=operation_id,
                 status=result.status,
@@ -192,9 +195,6 @@ class OperationService:
                 changed_chapter_ids=(),
             )
         # 3b) 正文变化 + 记录 Artifact + 事件同事务提交。
-        chapters = tuple(
-            c.artifact_id.value for c in prepared if c.artifact_id.value.startswith(_CHAPTER_PREFIX)
-        )
         record = OperationRecord(
             operation_id=operation_id,
             request_fingerprint=fingerprint,
@@ -203,11 +203,12 @@ class OperationService:
             conversation_id=conversation_id,
             source=source,
             before_commit_id=head.value if head is not None else None,
-            changed_chapter_ids=chapters,
+            changed_chapter_ids=changed_chapter_ids,
             status=OperationStatus.COMMITTED,
             refs=refs or {},
         )
-        events = (
+        operation_events: tuple[tuple[str, dict[str, Any]], ...] = (
+            *events,
             (
                 OPERATION_EVENT_COMMITTED,
                 {
@@ -215,7 +216,7 @@ class OperationService:
                     "project_id": project_id,
                     "conversation_id": conversation_id,
                     "kind": kind,
-                    "changed_chapter_ids": list(chapters),
+                    "changed_chapter_ids": list(changed_chapter_ids),
                 },
             ),
         )
@@ -229,7 +230,7 @@ class OperationService:
                         kind=OPERATION_RECORD_KIND,
                     ),
                 ),
-                events,
+                operation_events,
             )
         )
         return OperationEnvelope(
@@ -238,7 +239,7 @@ class OperationService:
             project_id=project_id,
             conversation_id=conversation_id,
             commit_id=result.commit_id.value if result.commit_id else None,
-            changed_chapter_ids=chapters,
+            changed_chapter_ids=changed_chapter_ids,
         )
 
     # -- 查询 --------------------------------------------------------------
@@ -310,6 +311,7 @@ class OperationService:
         changes: tuple[ArtifactChange, ...],
         summary: str,
         refs: dict[str, Any] | None,
+        events: tuple[tuple[str, dict[str, Any]], ...] = (),
     ) -> str:
         """操作请求指纹：「写什么」的稳定哈希（排除并发凭据，同键重放比较用）。"""
         return content_hash(
@@ -320,6 +322,7 @@ class OperationService:
                     {"artifact_id": c.artifact_id.value, "content": c.content, "kind": c.kind}
                     for c in changes
                 ],
+                "events": [[t, p] for t, p in events],
                 "refs": refs or {},
             }
         )
