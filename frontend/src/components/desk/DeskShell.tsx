@@ -9,8 +9,10 @@
  * - 阅读位置四元组（project|chapter|formal|-），滚动保存、打开恢复；
  * - 专注写作收起两侧，保留正文与输入框。
  *
- * 占位（后续任务接线）：detail 的候选/差异视图渲染占位说明（V03-2/3）；
- * 讨论列表与「接着讨论」（V03-1.5）；执行日志（V03-1.6）。
+ * 响应式（M14 / V03-8.5 走查）：宽屏（≥1280）三部分；中屏（1024–1279）折叠
+ * 左导航为抽屉、保留右栏；小屏（<1024）主区优先，左右都走抽屉。断点以可读性
+ * 确定，不把三列按比例缩小。临时视图只列已有真实视图的入口（无伪入口）。
+ *
  * 关联图谱（graph 视图）已在 V03-6.4 接真实投影：侧栏小图 + 主区展开共用同一视图。
  */
 
@@ -41,9 +43,10 @@ import LedgerPanel from "./LedgerPanel";
 import OperationFollowups from "./OperationFollowups";
 import { useEditSession } from "./useEditSession";
 
-const DETAIL_KINDS: { detailKind: "candidate" | "diff" | "graph" | "history"; label: string; stage: string }[] = [
-  { detailKind: "candidate", label: "正文候选", stage: "V03-3" },
-  { detailKind: "diff", label: "差异对比", stage: "V03-2" },
+// 临时视图只保留已有真实视图的入口：关联图谱（V03-6.4）、版本历史（V03-2.5）。
+// 正文候选/差异对比的真实界面在「试写」与「手工修改」流程里，不作为占位入口
+// （M14：未实现工具不显示可点击占位；V03-8.5 走查销号）。
+const DETAIL_KINDS: { detailKind: "graph" | "history"; label: string; stage: string }[] = [
   { detailKind: "graph", label: "关联图谱", stage: "V03-6" },
   { detailKind: "history", label: "版本历史", stage: "V03-2" },
 ];
@@ -75,7 +78,7 @@ function DeskDiscussion({ conversationId }: { conversationId: string }) {
         {view.messages.map((m) => (
           <article
             key={m.message_id}
-            className={`mb-3 max-w-[85%] rounded-lg px-4 py-2 text-xs leading-6 ${
+            className={`mb-3 max-w-[85%] rounded-lg px-4 py-2 text-sm leading-7 ${
               m.role === "author"
                 ? "ml-auto bg-blue-50 text-left"
                 : "bg-white/80"
@@ -295,6 +298,21 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   const [abandonPending, setAbandonPending] = useState(false);
   // 图谱视图（V03-6.4）：侧栏与主区共用同一选择；展开后 id 记在主区视图里。
   const [graphView, setGraphView] = useState<GraphViewId>("characters");
+  // 响应式抽屉（M14 / V03-8.5）：中屏折叠左导航，小屏左右都走抽屉；
+  // 抽屉只在小断点渲染，Esc/遮罩关闭，互斥打开。
+  const [navDrawer, setNavDrawer] = useState(false);
+  const [railDrawer, setRailDrawer] = useState(false);
+  useEffect(() => {
+    if (!navDrawer && !railDrawer) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setNavDrawer(false);
+        setRailDrawer(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navDrawer, railDrawer]);
   // 账本保存后让图谱重读实际版本（产品 §5.8 第 6 条）。
   const [graphRefresh, setGraphRefresh] = useState(0);
   const chapter = v2.chapter;
@@ -379,7 +397,13 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   return (
     <main className="flex h-full min-h-0" aria-label="写作台">
       {!focusMode && (
-        <aside className="min-h-0 w-60 flex-none space-y-4 overflow-y-auto p-3">
+        <aside
+          className={`min-h-0 w-60 space-y-4 overflow-y-auto p-3 ${
+            navDrawer
+              ? "fixed inset-y-0 left-0 z-40 bg-page shadow-2xl lg:static lg:z-auto lg:flex-none lg:bg-transparent lg:shadow-none"
+              : "hidden lg:block lg:flex-none"
+          }`}
+        >
           <section className="panel" aria-label="章节目录">
             <header className="panel-head flex items-center justify-between px-4 py-3">
               <span>
@@ -490,7 +514,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
             )}
           </section>
           <section className="panel" aria-label="临时视图">
-            <header className="panel-head px-4 py-3">临时视图（占位）</header>
+            <header className="panel-head px-4 py-3">临时视图</header>
             {DETAIL_KINDS.map((d) => (
               <button
                 key={d.detailKind}
@@ -500,20 +524,26 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                     ? "sel"
                     : ""
                 }`}
+                disabled={d.detailKind === "history" && !v2.chapter.chapterId}
+                title={
+                  d.detailKind === "history" && !v2.chapter.chapterId
+                    ? "先打开一章，再查看它的版本历史"
+                    : undefined
+                }
                 onClick={() => {
                   if (d.detailKind === "graph") {
                     openGraphView(graphView);
                     return;
                   }
-                  useDeskStore.getState().navigate({
-                    kind: "detail",
-                    detailKind: d.detailKind,
-                    // 版本历史按章查看；其他临时视图仍以作品为范围。
-                    id:
-                      d.detailKind === "history" && v2.chapter.chapterId
-                        ? v2.chapter.chapterId
-                        : (pid ?? "-"),
-                  });
+                  // 版本历史按章查看：没有打开的章时入口禁用，不进占位。
+                  const chapterId = v2.chapter.chapterId;
+                  if (d.detailKind === "history" && chapterId) {
+                    useDeskStore.getState().navigate({
+                      kind: "detail",
+                      detailKind: "history",
+                      id: chapterId,
+                    });
+                  }
                 }}
               >
                 {d.label}
@@ -538,6 +568,32 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                   : "写作台"}
           </h1>
           <div className="flex items-center gap-2">
+            {!focusMode && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-gray px-3 py-1.5 text-xs lg:hidden"
+                  aria-label={navDrawer ? "关闭目录" : "打开目录"}
+                  onClick={() => {
+                    setRailDrawer(false);
+                    setNavDrawer((v) => !v);
+                  }}
+                >
+                  目录
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-gray px-3 py-1.5 text-xs xl:hidden"
+                  aria-label={railDrawer ? "关闭侧栏" : "打开侧栏"}
+                  onClick={() => {
+                    setNavDrawer(false);
+                    setRailDrawer((v) => !v);
+                  }}
+                >
+                  侧栏
+                </button>
+              </>
+            )}
             {mainView?.kind === "manuscript" && !edit.active && (
               <>
                 <Pill tone={isDirty(chapter) ? "amber" : "green"}>
@@ -615,7 +671,11 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
             <button
               className="btn btn-gray px-3 py-1.5 text-xs"
               aria-label={focusMode ? "退出专注写作" : "专注写作"}
-              onClick={() => useDeskStore.getState().toggleFocus()}
+              onClick={() => {
+                setNavDrawer(false);
+                setRailDrawer(false);
+                useDeskStore.getState().toggleFocus();
+              }}
             >
               {focusMode ? "展开两侧" : "专注写作"}
             </button>
@@ -653,7 +713,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               >
                 <textarea
                   aria-label="人工正文"
-                  className="paper-sheet min-h-full w-full resize-none px-6 py-8 font-serif text-[15px] leading-8 outline-none lg:px-10"
+                  className="paper-sheet mx-auto min-h-full w-full max-w-[44em] resize-none px-6 py-8 font-serif text-[18px] leading-8 lg:px-10"
                   spellCheck={false}
                   value={edit.active ? edit.text : chapter.draft}
                   onChange={(e) =>
@@ -723,7 +783,13 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
       </section>
 
       {!focusMode && (
-        <aside className="min-h-0 w-64 flex-none space-y-4 overflow-y-auto p-3">
+        <aside
+          className={`min-h-0 w-64 space-y-4 overflow-y-auto p-3 ${
+            railDrawer
+              ? "fixed inset-y-0 right-0 z-40 bg-page shadow-2xl xl:static xl:z-auto xl:flex-none xl:bg-transparent xl:shadow-none"
+              : "hidden xl:block xl:flex-none"
+          }`}
+        >
           {pid ? (
             <LedgerPanel
               projectId={pid}
@@ -777,6 +843,17 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
             )}
           </section>
         </aside>
+      )}
+
+      {!focusMode && (navDrawer || railDrawer) && (
+        <div
+          className="fixed inset-0 z-30 bg-overlay lg:hidden"
+          aria-hidden
+          onClick={() => {
+            setNavDrawer(false);
+            setRailDrawer(false);
+          }}
+        />
       )}
 
       <ConfirmDiscard

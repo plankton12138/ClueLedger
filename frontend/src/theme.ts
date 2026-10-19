@@ -10,8 +10,8 @@ export const theme = {
     // --- 文字 ---
     fg: "#273B4B", // 主文字（蓝灰墨）
     fgStrong: "#2B485D", // 标题
-    sub: "#697985", // 次级文字
-    mute: "#8294A0", // 弱提示
+    sub: "#626F7B", // 次级文字（V03-8.5 走查：4.82:1 on panel，达 WCAG AA）
+    mute: "#6E7F8B", // 弱提示（占位符/旧版聊天元信息；V03-8.5 走查压暗）
     faint: "#7A90A0", // eyebrow 小标
     // --- 金属顶栏 / 导航 ---
     chromeHigh: "#BAD0E2",

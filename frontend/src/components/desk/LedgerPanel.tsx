@@ -164,7 +164,7 @@ export default function LedgerPanel({
             还没决定的假设先不要保存。
           </p>
         ) : (
-          <ul className="max-h-72 overflow-y-auto px-2 py-2 text-xs">
+          <ul className="max-h-72 overflow-y-auto px-2 py-2 text-sm">
             {entries.map((entry) => (
               <li key={entry.id}>
                 <button
@@ -191,7 +191,7 @@ export default function LedgerPanel({
               </span>
             )}
           </header>
-          <ul className="max-h-64 overflow-y-auto px-2 py-2 text-xs">
+          <ul className="max-h-64 overflow-y-auto px-2 py-2 text-sm">
             {pending.map((item) => (
               <li key={item.item_id} className="flex items-start gap-2 px-2 py-1.5">
                 <input

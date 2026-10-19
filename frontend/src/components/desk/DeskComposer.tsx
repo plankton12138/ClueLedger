@@ -129,7 +129,7 @@ export default function DeskComposer({
         <textarea
           ref={inputRef}
           aria-label="想法输入框"
-          className="well-input min-h-[52px] max-h-40 flex-1 resize-y p-2 text-xs leading-6"
+          className="well-input min-h-[52px] max-h-40 flex-1 resize-y p-2 text-sm leading-7"
           placeholder="记下构思、人物、场景…保存为文字，不调用模型。"
           value={draft}
           disabled={busy}

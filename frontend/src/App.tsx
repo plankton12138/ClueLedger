@@ -85,6 +85,11 @@ export default function App() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+  // 写作台是正文中心的三部分工作区：进入时收起旧版对话栏，把宽度还给正文
+  // （作者仍可手动打开；V03-8.5 走查确认宽屏三部分不被挤压）。
+  useEffect(() => {
+    if (view === "desk") setChatOpen(false);
+  }, [view]);
   useEffect(() => {
     setPinned(chatOpen && !narrow);
     if (narrow) return;

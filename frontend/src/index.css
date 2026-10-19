@@ -457,6 +457,11 @@
       0 10px 28px rgba(70, 85, 95, 0.28);
     color: theme("colors.sheetInk");
   }
+  /* 键盘焦点可见（M14）：与按钮焦点同一蓝色语言，画在纸面边框内侧避免被裁切。 */
+  .paper-sheet:focus-visible {
+    outline: 2px solid #477fa4;
+    outline-offset: -2px;
+  }
 
   /* ===== 页脚状态栏 ===== */
   .statusbar {
