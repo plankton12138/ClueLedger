@@ -81,6 +81,13 @@ class AcceptCandidateRequest(BaseModel):
     idempotency_key: str = Field(min_length=1)
 
 
+class ConversationIntentRequest(BaseModel):
+    """意图分类（V03-7.1）：给已保存消息的 message_id，或给待发送文本 text 预览。"""
+
+    message_id: str | None = None
+    text: str | None = None
+
+
 def create_conversations_router(runtime: V2Runtime) -> APIRouter:
     router = APIRouter(prefix="/projects/{project_id}", tags=["chat"])
 
@@ -216,6 +223,15 @@ def create_conversations_router(runtime: V2Runtime) -> APIRouter:
             project_id, draft_id, req.expected_revision, req.idempotency_key
         )
         return {"job_ref": started.job_ref}
+
+    @router.post("/conversations/{conversation_id}/intents")
+    async def conversation_intent(
+        project_id: str, conversation_id: str, req: ConversationIntentRequest
+    ) -> dict[str, Any]:
+        # 只读分类：讨论/候选/执行三分与范围；不创建任务、不调用模型（V03-7.1）。
+        return await runtime.intents.classify(
+            project_id, conversation_id, text=req.text, message_id=req.message_id
+        )
 
     @router.post("/conversations/{conversation_id}/messages/{message_id}/accept")
     async def accept_candidate(

@@ -82,6 +82,7 @@ from hastings.application.services.edit_session_service import EditSessionServic
 from hastings.application.services.entry_service import EntryService
 from hastings.application.services.evidence_service import EvidenceService
 from hastings.application.services.import_service import ImportService
+from hastings.application.services.intent_service import IntentService
 from hastings.application.services.ledger_candidate_service import LedgerCandidateService
 from hastings.application.services.ledger_service import LedgerService
 from hastings.application.services.operation_service import OperationService
@@ -228,6 +229,9 @@ class V2Runtime:
             accepter=self.accept_candidate_job,
             ref_validator=self.validate_refs,
         )
+        # 意图分类（V03-7.1）：作者文本/消息 → 讨论/候选/执行三分与范围；
+        # 只读，复用同一 conversation 与 draft 存储判断「同范围不重复审批」。
+        self.intents = IntentService(self.conversation_store, self.task_draft_store)
         # 任务卡只投影实际 Job（§19.5）：worker_loop 每轮扫描已启动 draft。
         self.task_projector = ChatTaskProjector(
             self.task_draft_store,

@@ -9,6 +9,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage, ChatReference, TaskKind } from "../../api/chat";
 import { taskKindLabels } from "../../api/chat";
+import { classifyIntent, type IntentPayload } from "../../api/intent";
 import {
   activeAbandoned,
   activeMessages,
@@ -18,6 +19,7 @@ import {
   useChatStore,
 } from "../../state/chat";
 import ChatMarkdown from "./ChatMarkdown";
+import IntentNote from "./IntentNote";
 import {
   CandidateCard,
   ResultCard,
@@ -45,8 +47,32 @@ function TextMessage({ message }: { message: ChatMessage }) {
   const draftFromMessage = useChatStore((s) => s.draftFromMessage);
   const retry = useChatStore((s) => s.retry);
   const setDraft = useChatStore((s) => s.setDraft);
+  const projectId = useChatStore((s) => s.projectId);
+  const conversationId = useChatStore((s) => s.activeConversationId);
+  const service = useChatStore((s) => s.service);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [intentOpen, setIntentOpen] = useState(false);
+  const [intent, setIntent] = useState<IntentPayload | null>(null);
   const streaming = message.status === "streaming";
+
+  // 原消息授权（V03-7.1）：按 message_id 只读分类，同范围已启动任务不再重复审批。
+  async function toggleIntent() {
+    if (intentOpen) {
+      setIntentOpen(false);
+      return;
+    }
+    setIntentOpen(true);
+    if (intent || service?.kind !== "api" || !projectId || !conversationId) return;
+    try {
+      setIntent(
+        await classifyIntent(projectId, conversationId, {
+          messageId: message.message_id,
+        }),
+      );
+    } catch {
+      setIntent(null);
+    }
+  }
   return (
     <article
       className={`chat-msg ${message.role === "author" ? "mine" : "theirs"}`}
@@ -95,7 +121,19 @@ function TextMessage({ message }: { message: ChatMessage }) {
             </button>
           </span>
         )}
+        {message.role === "author" && !streaming && (
+          <span className="chat-msg-actions">
+            <button
+              className="text-blue underline"
+              aria-expanded={intentOpen}
+              onClick={() => void toggleIntent()}
+            >
+              意图区分 ▾
+            </button>
+          </span>
+        )}
       </footer>
+      {intentOpen && intent && <IntentNote payload={intent} />}
       {menuOpen && (
         <div className="chat-prepare-menu" role="group" aria-label="选择任务类型">
           {(Object.keys(taskKindLabels) as TaskKind[]).map((kind) => (

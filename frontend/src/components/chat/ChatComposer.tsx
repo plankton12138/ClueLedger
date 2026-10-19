@@ -23,6 +23,8 @@ import {
 import { titleOf } from "../Workbench";
 import type { ChatReference, TaskKind } from "../../api/chat";
 import { taskKindLabels } from "../../api/chat";
+import { classifyIntent, type IntentPayload } from "../../api/intent";
+import IntentNote from "./IntentNote";
 
 const creationActions: { kind: TaskKind; hint: string }[] = [
   { kind: "plan", hint: "产出故事前提与节拍候选，先审阅再接受" },
@@ -43,17 +45,45 @@ export default function ChatComposer() {
   const createDraft = useChatStore((s) => s.createDraft);
   const activeTurn = useChatStore(activeTurnId);
   const service = useChatStore((s) => s.service);
+  const projectId = useChatStore((s) => s.projectId);
+  const conversationId = useChatStore((s) => s.activeConversationId);
   const chapter = useV2Store((s) => s.chapter);
   const storyArtifacts = useV2Store((s) => s.storyArtifacts);
   const storyCommit = useV2Store((s) => s.storyCommit);
   const model = useModelStore((s) => s.current);
   const composing = useRef(false);
+  const intentSeq = useRef(0);
   const [refMenuOpen, setRefMenuOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [selection, setSelection] = useState<SelectionOffer | null>(null);
   const [refsOpen, setRefsOpen] = useState(true);
+  const [intent, setIntent] = useState<IntentPayload | null>(null);
 
   useEffect(() => onSelectionOffer(setSelection), []);
+
+  // 输入预览：作者停下打字后分类当前文本（只读），讨论不显示提示条。
+  useEffect(() => {
+    if (service?.kind !== "api" || !projectId || !conversationId) {
+      setIntent(null);
+      return;
+    }
+    const text = draft.trim();
+    if (text === "" || activeTurn) {
+      setIntent(null);
+      return;
+    }
+    const seq = ++intentSeq.current;
+    const timer = setTimeout(() => {
+      void classifyIntent(projectId, conversationId, { text })
+        .then((payload) => {
+          if (seq === intentSeq.current) setIntent(payload);
+        })
+        .catch(() => {
+          if (seq === intentSeq.current) setIntent(null);
+        });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [draft, service, projectId, conversationId, activeTurn]);
 
   const modelLabel = service
     ? (model?.model ?? service.currentModel() ?? "模拟模型")
@@ -114,6 +144,11 @@ export default function ChatComposer() {
               <span>{action.hint}</span>
             </button>
           ))}
+        </div>
+      )}
+      {intent && intent.intent !== "discussion" && (
+        <div className="chat-intent-bar">
+          <IntentNote payload={intent} />
         </div>
       )}
       <div className="chat-input-row">
