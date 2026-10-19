@@ -57,6 +57,7 @@ uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-deep-revis
 | S3 修订任务预算与覆盖 | `call_limit` 可缩小、开任务零模型调用；读取/覆盖结论入库；停止留痕 |
 | S4 环境失败（失败证据） | 不存在的模型必须 `turn.failed`（`CHAT_PROVIDER_FAILED`），不静默、不伪成功 |
 | S5 修订全循环（`--deep`） | 读章登记 + 装配含原文；真实模型按原文改写；覆盖→暂存→一次发布（正文换版、回执可回读） |
+| S6 执行循环（`--deep`） | `POST /revision-tasks/{id}/run`：预算 1 跑两章停在第二章（`waiting/budget_exhausted`）；继续后跑完并一次发布 |
 
 S5 的模型调用发生在试写候选服务（V03-3）：目标为现有章时，服务自己把该章正文装进
 提示词「现有正文」段（V03-8.7 补记修复），驱动不再粘贴原文。任务预算账本当前无执行器
@@ -65,4 +66,5 @@ S5 的模型调用发生在试写候选服务（V03-3）：目标为现有章时
 失败证据按设计记录、不计通过；模型输出不合规时报告如实记录，不用 FakeProvider 替代。
 最近验收：[2026-10-19 基础报告](../runs/2026-10-19-v03-8.7-real-model/README.md)、
 [2026-10-19 含修订全循环](../runs/2026-10-19-v03-8.7-deep-revision/README.md)、
-[2026-10-19 原文自动装入后复跑](../runs/2026-10-19-v03-8.7-deep-revision-v2/README.md)。
+[2026-10-19 原文自动装入后复跑](../runs/2026-10-19-v03-8.7-deep-revision-v2/README.md)、
+[2026-10-19 执行循环](../runs/2026-10-19-v03-8.7-execution-loop/README.md)。

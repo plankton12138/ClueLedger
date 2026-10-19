@@ -413,9 +413,7 @@ class RevisionTask:
         self._require_running("完成")
         return replace(self, state=STATE_COMPLETED, updated_at=at)
 
-    def mark_published(
-        self, *, operation_id: str, commit_id: str, at: str = ""
-    ) -> RevisionTask:
+    def mark_published(self, *, operation_id: str, commit_id: str, at: str = "") -> RevisionTask:
         """发布成功：任务完成，并记下本次操作与正式版本（V03-7.4）。
 
         先由统一发布管线提交、再标完成——发布失败时任务仍是 running，暂存内容
@@ -506,7 +504,8 @@ def publication_blockers(
     「为什么还不能发布、先做什么」逐条说清（计划第 8/11 条）。
     """
     blockers: list[PublishBlocker] = []
-    if task.state != STATE_RUNNING:
+    stopped_on_budget = task.state == STATE_WAITING and task.waiting_reason == WAIT_BUDGET
+    if task.state != STATE_RUNNING and not stopped_on_budget:
         blockers.append(
             PublishBlocker(
                 code=ec.REVISION_TASK_NOT_READY_CONFLICT,
@@ -533,11 +532,16 @@ def publication_blockers(
                 fix="继续读取未覆盖章节并逐章下结论；不能把未读当作无需修改",
             )
         )
-    if task.budget.exhausted:
+    # 只有「因预算停下」（waiting/budget_exhausted）才阻止发布。预算刚好用满但
+    # 本轮已跑完、覆盖也完整时，不应强迫作者追加一次用不到的预算才能发布。
+    if stopped_on_budget:
         blockers.append(
             PublishBlocker(
                 code=ec.REVISION_BUDGET_EXHAUSTED_CONFLICT,
-                why=f"调用预算已用尽（{task.budget.calls_used}/{task.budget.call_limit}）",
+                why=(
+                    f"本轮因预算耗尽停下（{task.budget.calls_used}/{task.budget.call_limit}），"
+                    "可能还有未处理的范围"
+                ),
                 fix="作者选择继续（追加预算）或缩小范围；内部进度已保留",
             )
         )

@@ -158,6 +158,11 @@ def test_publication_blockers_report_each_missing_condition() -> None:
 def test_publication_ready_when_conditions_hold() -> None:
     task = _task()
     assert publication_blockers(task, coverage_complete=True, head_commit_id="c1") == ()
+    # 预算刚好用满但本轮已跑完：不是阻塞项（否则作者要追加一次用不到的预算才能发布）。
     exhausted = task.consume(4)
-    blockers = publication_blockers(exhausted, coverage_complete=True, head_commit_id="c1")
+    assert publication_blockers(exhausted, coverage_complete=True, head_commit_id="c1") == ()
+    # 因预算停下（等待预算）才阻止发布，并给出「继续」的下一步。
+    stopped = exhausted.wait(WAIT_BUDGET, "本轮预算用尽")
+    blockers = publication_blockers(stopped, coverage_complete=True, head_commit_id="c1")
     assert [b.code for b in blockers] == ["REVISION_BUDGET_EXHAUSTED_CONFLICT"]
+    assert "继续" in blockers[0].fix

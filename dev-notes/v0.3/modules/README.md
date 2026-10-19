@@ -22,7 +22,7 @@
 | 文档 | 覆盖 | 关键包/文件 | 状态 |
 |---|---|---|---|
 | [desk-surface.md](desk-surface.md) | 写作台三部分工作区、响应式、键盘/输入法、唯一输入框、主区视图 | `frontend/src/components/desk/*`、`state/desk*` | as-built（V03-1.1/1.5/5.x/6.4/8.5） |
-| [revision-and-coverage.md](revision-and-coverage.md) | 意图三分、覆盖台账、预算/修正上限、修订任务状态机、统一发布与撤销 | `application/services/{intent_service,revision_task_service,revision_work_service,revision_publish_service}.py`、`domain/revision/*` | as-built（V03-7.x） |
+| [revision-and-coverage.md](revision-and-coverage.md) | 意图三分、覆盖台账、预算/修正上限、修订任务状态机、执行循环（读→改→覆盖→暂存）、统一发布与撤销 | `application/services/{intent_service,revision_task_service,revision_work_service,revision_publish_service,revision_execution_service}.py`、`domain/revision/*` | as-built（V03-7.x + 8.7 执行循环） |
 | [publish-import-recovery.md](publish-import-recovery.md) | 统一发布管线、导入预览、备份/恢复、启动恢复与旧队列隔离 | `application/services/{publish_manuscript_change,import_service,backup_service}.py`、`infrastructure/runtime.py` | as-built（V03-2.x/8.1-8.3） |
 | [execution-log.md](execution-log.md) | 执行日志（append-once/分页/SSE/断线补齐/压力目标） | `infrastructure/execution_log.py`、`interfaces/api/execution_log.py` | as-built（V03-1.6/8.4） |
 | [api-matrix-and-retirement.md](api-matrix-and-retirement.md) | API 分类、410 拒启、默认工作区、旧写路径收敛 | `interfaces/api/_retired.py`、`server/v2.py` | as-built（V03-8.6） |

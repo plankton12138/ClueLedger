@@ -66,7 +66,7 @@ class Walkthrough:
             "",
             f"- 时间：{self.started.isoformat()}",
             f"- 模型：{self.model}（本地 Ollama，config.yaml ollama 档案）",
-            f"- 范围：{'S1–S5（含真模型修订全循环）' if self.deep else 'S1–S4'}",
+            f"- 范围：{'S1–S6（含修订全循环与执行循环）' if self.deep else 'S1–S4'}",
             "- 证据性质：真实 Provider 调用（本地、无收费 API）；模拟/FakeProvider 证据不在本表。",
             f"- 结果：通过 {passed} / 失败 {failed} / 失败证据 {evidence}"
             "（失败证据按设计记录，不计通过）。",
@@ -477,13 +477,127 @@ async def scenario_deep_revision(walk: Walkthrough, client: Client) -> None:
     view = (await client.http.get(f"/api/v2/projects/{project}/revision-tasks/{task_id}")).json()
     budget = view.get("budget") or {}
     walk.record(
-        "S5.5 预算归因（已知缺口，如实记录）",
+        "S5.5 手动路径不计预算（口径说明）",
         None,
         f"任务 call_limit={budget.get('call_limit')}、calls_used={budget.get('calls_used')}；"
-        "本轮真实模型调用发生在试写候选服务（V03-3），任务预算账本没有任何执行器"
-        "调用 consume_calls，因此这次调用未被计入预算——产品口径缺口，不是驱动问题",
+        "本场景直接调试写候选再手工暂存，没经过执行循环，所以这次调用不计入任务预算"
+        "（设计如此：只有 POST /revision-tasks/{id}/run 的逐章记账才消耗预算）。"
+        "预算门禁由 S6 取证：1 次预算只跑 1 章，继续后才跑第 2 章",
         budget=budget,
         task_state=view.get("state"),
+    )
+
+
+async def scenario_execution_loop(walk: Walkthrough, client: Client) -> None:
+    """S6：执行循环真模型——预算 1 跑两章会停在第二章，继续后跑完并一次发布。"""
+    project = await client.create_project("8.7 执行循环")
+    first = await client.import_chapter(
+        project,
+        "第一章 九点",
+        "九点整，钟停了。林昭把伞靠在门边，雪水顺着伞骨滴在石板上。柜台后面没有人。",
+        "loop-imp-1",
+    )
+    second = await client.import_chapter(
+        project,
+        "第二章 空房",
+        "二楼尽头有一扇没有门牌的门。门后没有声音，只有一股冷气贴着地板流出来。",
+        "loop-imp-2",
+    )
+    originals = {
+        chapter_id: str(
+            (await client.http.get(f"/api/v2/projects/{project}/chapters/{chapter_id}")).json()[
+                "text"
+            ]
+        )
+        for chapter_id in (first["chapter_id"], second["chapter_id"])
+    }
+    head_before = str(
+        (await client.http.get(f"/api/v2/projects/{project}/manuscript")).json()["commit_id"]
+    )
+    started = await client.http.post(
+        f"/api/v2/projects/{project}/revision-tasks",
+        json={"request_id": "deep-loop-task", "call_budget": 1},
+    )
+    if started.status_code != 200:
+        walk.record("S6 执行循环（真模型）", False, f"开任务失败：{started.text[:300]}")
+        return
+    task_id = str(started.json()["task_id"])
+    instruction = "把这一章改得更克制，保留全部事实与时间线。"
+
+    first_round = await client.http.post(
+        f"/api/v2/projects/{project}/revision-tasks/{task_id}/run",
+        json={"instruction": instruction, "request_id": "deep-loop-1"},
+    )
+    first_body = first_round.json() if first_round.status_code == 200 else {}
+    walk.record(
+        "S6.1 预算 1 跑两章：停在第二章之前",
+        first_round.status_code == 200
+        and first_body.get("status") == "stopped"
+        and len(first_body.get("chapters") or []) == 1
+        and (first_body.get("task") or {}).get("state") == "waiting"
+        and ((first_body.get("task") or {}).get("budget") or {}).get("calls_used") == 1,
+        f"执行 HTTP {first_round.status_code}；状态 {first_body.get('status')}、"
+        f"完成 {len(first_body.get('chapters') or [])} 章、"
+        f"任务 {(first_body.get('task') or {}).get('state')}、"
+        f"原因 {((first_body.get('stopped') or {}).get('reason'))}",
+        status=first_round.status_code,
+        body=first_body,
+    )
+
+    continued = await client.http.post(
+        f"/api/v2/projects/{project}/revision-tasks/{task_id}/continue",
+        json={"additional_calls": 1},
+    )
+    second_round = await client.http.post(
+        f"/api/v2/projects/{project}/revision-tasks/{task_id}/run",
+        json={"instruction": instruction, "request_id": "deep-loop-2"},
+    )
+    second_body = second_round.json() if second_round.status_code == 200 else {}
+    walk.record(
+        "S6.2 继续后跑完剩余章",
+        continued.status_code == 200
+        and second_round.status_code == 200
+        and second_body.get("status") == "executed"
+        and len(second_body.get("chapters") or []) == 1
+        and ((second_body.get("task") or {}).get("budget") or {}).get("calls_used") == 2,
+        f"继续 HTTP {continued.status_code}；执行 HTTP {second_round.status_code}；"
+        f"完成 {len(second_body.get('chapters') or [])} 章、"
+        f"calls_used={((second_body.get('task') or {}).get('budget') or {}).get('calls_used')}",
+        status=second_round.status_code,
+    )
+
+    published = await client.http.post(
+        f"/api/v2/projects/{project}/revision-tasks/{task_id}/publish",
+        json={"operation_id": "op_deep_loop_publish_1"},
+    )
+    body = published.json() if published.status_code == 200 else {}
+    chapter_ids = [str(first["chapter_id"]), str(second["chapter_id"])]
+    texts = {
+        chapter_id: str(
+            (await client.http.get(f"/api/v2/projects/{project}/chapters/{chapter_id}")).json()[
+                "text"
+            ]
+        )
+        for chapter_id in chapter_ids
+    }
+    head_after = str(
+        (await client.http.get(f"/api/v2/projects/{project}/manuscript")).json()["commit_id"]
+    )
+    walk.record(
+        "S6.3 两章一次发布",
+        published.status_code == 200
+        and len(body.get("changed_chapters") or []) == 2
+        and head_after != head_before
+        and all(
+            texts[chapter_id].strip() != originals[chapter_id].strip() for chapter_id in chapter_ids
+        ),
+        f"发布 HTTP {published.status_code}；改动 {len(body.get('changed_chapters') or [])} 章；"
+        f"Commit {'前进' if head_after != head_before else '未变'}；"
+        f"首章保留要素 {[k for k in ('钟', '伞', '柜台') if k in texts[chapter_ids[0]]]}；"
+        f"正文样本 {texts[chapter_ids[0]][:40]!r}",
+        status=published.status_code,
+        changed=body.get("changed_chapters"),
+        sample=texts[chapter_ids[0]][:160],
     )
 
 
@@ -568,6 +682,7 @@ async def main() -> int:
             await scenario_revision_budget_coverage(walk, client, project)
             if args.deep:
                 await scenario_deep_revision(walk, client)
+                await scenario_execution_loop(walk, client)
         finally:
             await client.aclose()
             worker_task.cancel()

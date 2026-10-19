@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import base64
 
+import pytest
 from fastapi.testclient import TestClient
 
 from hastings.domain.repository.ids import CommitId, ProjectId
+from hastings.domain.revision.errors import CoverageViolation
 from hastings.server.v2 import V2Runtime, build_v2_app
 
 MD = """# 雪山旅馆
@@ -274,12 +276,18 @@ def test_budget_exhaustion_blocks_publish() -> None:
     task_id = _start(client, pid, budget=1)
     _stage_all(client, pid, task_id)
     runtime.revision_tasks.consume_calls(pid, task_id)  # 用掉唯一一次
+    with pytest.raises(CoverageViolation):
+        # 再要一次：整笔拒绝并把任务落到 waiting/budget_exhausted
+        runtime.revision_tasks.consume_calls(pid, task_id)
 
     blocked = _publish(client, pid, task_id)
-    assert blocked.status_code == 409, blocked.text
-    error = blocked.json()["error"]
-    assert error["code"] == "REVISION_BUDGET_EXHAUSTED_CONFLICT"
-    assert "继续" in error["fix"]
+    # 因预算停下 → 任务转 waiting，发布先被「不是运行中」拦下；任务视图给出预算原因。
+    assert blocked.status_code == 400, blocked.text
+    assert blocked.json()["error"]["code"] == "REVISION_TASK_NOT_RUNNING"
+    view = client.get(f"/api/v2/projects/{pid}/revision-tasks/{task_id}").json()
+    assert view["state"] == "waiting"
+    assert view["waiting_reason"] == "budget_exhausted"
+    assert "继续" in blocked.json()["error"]["fix"]
 
 
 def test_unstage_removes_item() -> None:

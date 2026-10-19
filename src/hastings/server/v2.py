@@ -89,6 +89,7 @@ from hastings.application.services.ledger_candidate_service import LedgerCandida
 from hastings.application.services.ledger_service import LedgerService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
+from hastings.application.services.revision_execution_service import RevisionExecutionService
 from hastings.application.services.revision_publish_service import RevisionPublishService
 from hastings.application.services.revision_task_service import RevisionTaskService
 from hastings.application.services.revision_work_service import RevisionWorkService
@@ -349,6 +350,16 @@ class V2Runtime:
             self.manuscript_publisher,
             self.edit_sessions,
             self.ids,
+            self.clock,
+        )
+        # 执行循环（V03-7.4 留白接线）：作者显式触发一轮，逐章记账→读章→改稿→
+        # 暂存→记覆盖；预算不足自动落 waiting，不产生半套版本。
+        self.revision_exec = RevisionExecutionService(
+            self.service,
+            self.revision_tasks,
+            self.revision_work,
+            self.revision_publish,
+            self.drafting,
             self.clock,
         )
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，

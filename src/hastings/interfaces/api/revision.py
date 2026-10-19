@@ -19,6 +19,8 @@
   只允许一个进行中任务）；
 - ``GET  /projects/{id}/revision-tasks/current``、``GET .../{task_id}``：回读预算、等待
   原因、覆盖摘要与发布前阻断项；
+- ``POST .../{task_id}/run``（V03-7.4 执行循环）：作者显式执行一轮——逐章先记账再
+  读章、改稿、暂存、记覆盖；预算不足自动落等待，已完成部分保留；
 - ``POST .../{task_id}/stop``、``POST .../{task_id}/continue``：停止保留进度；继续追加
   预算、推进 attempt，并要求发布前重验。
 
@@ -80,6 +82,14 @@ class ContinueRevisionTaskRequest(BaseModel):
     """作者继续：追加预算；已用次数与修正轮次不清零。"""
 
     additional_calls: int
+
+
+class RunRevisionRoundRequest(BaseModel):
+    """执行一轮：作者要求 + 可选章节范围 + 幂等 id（重放不重复记账/调用）。"""
+
+    instruction: str = Field(min_length=1)
+    chapter_ids: list[str] = Field(default_factory=list)
+    request_id: str = Field(min_length=1)
 
 
 class StageChapterRequest(BaseModel):
@@ -151,9 +161,7 @@ def create_revision_router(runtime: V2Runtime) -> APIRouter:
 
     # -- 有限执行任务（V03-7.3）-----------------------------------------------
     @router.post("/revision-tasks")
-    def start_revision_task(
-        project_id: str, req: StartRevisionTaskRequest
-    ) -> dict[str, Any]:
+    def start_revision_task(project_id: str, req: StartRevisionTaskRequest) -> dict[str, Any]:
         """开一次整体任务（预算默认 12、可缩小）；同 request_id 重放返回原任务。"""
         return runtime.revision_tasks.start(
             project_id, request_id=req.request_id, call_budget=req.call_budget
@@ -186,11 +194,22 @@ def create_revision_router(runtime: V2Runtime) -> APIRouter:
             project_id, task_id, additional_calls=req.additional_calls
         )
 
+    @router.post("/revision-tasks/{task_id}/run")
+    async def run_revision_round(
+        project_id: str, task_id: str, req: RunRevisionRoundRequest
+    ) -> dict[str, Any]:
+        """执行一轮：逐章记账 → 读章 → 改稿 → 暂存 → 记覆盖；预算不足自动等待。"""
+        return await runtime.revision_exec.run_round(
+            project_id,
+            task_id,
+            instruction=req.instruction,
+            chapter_ids=req.chapter_ids or None,
+            request_id=req.request_id,
+        )
+
     # -- 内部工作版本暂存与统一发布（V03-7.4）---------------------------------
     @router.post("/revision-tasks/{task_id}/staged-chapters")
-    def stage_chapter(
-        project_id: str, task_id: str, req: StageChapterRequest
-    ) -> dict[str, Any]:
+    def stage_chapter(project_id: str, task_id: str, req: StageChapterRequest) -> dict[str, Any]:
         """暂存一章全文；不写正式正文，发布时才进入同一个 Commit。"""
         return runtime.revision_publish.stage_chapter(
             project_id,
@@ -206,9 +225,7 @@ def create_revision_router(runtime: V2Runtime) -> APIRouter:
         return runtime.revision_publish.unstage_chapter(project_id, task_id, chapter_id)
 
     @router.post("/revision-tasks/{task_id}/staged-ledger")
-    def stage_ledger(
-        project_id: str, task_id: str, req: StageLedgerRequest
-    ) -> dict[str, Any]:
+    def stage_ledger(project_id: str, task_id: str, req: StageLedgerRequest) -> dict[str, Any]:
         """暂存一条账本新建/修订；暂存时先按基础目录校验字段与引用。"""
         return runtime.revision_publish.stage_ledger(
             project_id,
@@ -235,8 +252,6 @@ def create_revision_router(runtime: V2Runtime) -> APIRouter:
         project_id: str, task_id: str, req: PublishRevisionRequest
     ) -> dict[str, Any]:
         """一次发布正文与账本；门禁不通过时整体不提交。"""
-        return runtime.revision_publish.publish(
-            project_id, task_id, operation_id=req.operation_id
-        )
+        return runtime.revision_publish.publish(project_id, task_id, operation_id=req.operation_id)
 
     return router
