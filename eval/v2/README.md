@@ -46,6 +46,8 @@ uv run python eval/v2/chat_driver.py --out eval/runs/<日期>-phase19-chat --mod
 
 ```bash
 uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-real-model --model qwen3:8b
+# 追加真模型修订全循环（S5：读章→改稿→覆盖→暂存→发布）
+uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-deep-revision --model qwen3:8b --deep
 ```
 
 | 场景 | 检查点 |
@@ -54,6 +56,12 @@ uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-real-model
 | S2 试写候选 → 采用 | 候选带预览哈希；采用走统一发布产生 Commit，`operation_id` 可回读 |
 | S3 修订任务预算与覆盖 | `call_limit` 可缩小、开任务零模型调用；读取/覆盖结论入库；停止留痕 |
 | S4 环境失败（失败证据） | 不存在的模型必须 `turn.failed`（`CHAT_PROVIDER_FAILED`），不静默、不伪成功 |
+| S5 修订全循环（`--deep`） | 读章登记 + 装配含原文；真实模型按原文改写；覆盖→暂存→一次发布（正文换版、回执可回读） |
+
+S5 的模型调用发生在试写候选服务（V03-3），原文由驱动作为作者附加要求显式给出；
+任务预算账本当前无执行器消费（`consume_calls` 无调用方），该缺口在报告里单列为失败证据，
+不冒充通过。
 
 失败证据按设计记录、不计通过；模型输出不合规时报告如实记录，不用 FakeProvider 替代。
-最近验收：[2026-10-19 V03-8.7 报告](../runs/2026-10-19-v03-8.7-real-model/README.md)。
+最近验收：[2026-10-19 基础报告](../runs/2026-10-19-v03-8.7-real-model/README.md)、
+[2026-10-19 含修订全循环](../runs/2026-10-19-v03-8.7-deep-revision/README.md)。

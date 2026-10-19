@@ -6,7 +6,8 @@ Ollama 档案），经 HTTP 走查 0.3 的真模型路径与证据分层：
 S1 讨论流式：增量分片、终态到达、**不产生 Job**（讨论无写权限）；
 S2 试写候选 → 采用：真实模型产出候选（预览哈希），采用走统一发布产生 Commit；
 S3 修订任务预算与覆盖：开任务时预算可缩小、读取与覆盖结论入库、停止留痕；
-S4 环境失败记录：不存在的模型必须落成真实失败（不静默、不伪成功）。
+S4 环境失败记录：不存在的模型必须落成真实失败（不静默、不伪成功）；
+S5 真模型修订全循环（``--deep``）：读章 → 模型改稿 → 覆盖结论 → 暂存 → 一次发布。
 
 证据分层（计划 §9.1、执行指导 §2.2）：
 - 真模型证据只来自本驱动（真实 Provider 调用）；模拟/FakeProvider 证据另计；
@@ -16,7 +17,7 @@ S4 环境失败记录：不存在的模型必须落成真实失败（不静默�
 运行::
 
     uv run python eval/v2/desk_driver.py \\
-        --out eval/runs/2026-10-19-v03-8.7-real-model --model qwen3:8b
+        --out eval/runs/2026-10-19-v03-8.7-real-model --model qwen3:8b [--deep]
 
 报告：``<out>/README.md``（入库）；逐场景细节写 ``<out>/evidence.json``（入库）。
 """
@@ -44,9 +45,10 @@ ROOT = Path(__file__).resolve().parents[2]
 class Walkthrough:
     """收集证据行；``ok=None`` 表示「失败证据」（按设计记录，不计通过）。"""
 
-    def __init__(self, out_dir: Path, model: str) -> None:
+    def __init__(self, out_dir: Path, model: str, deep: bool = False) -> None:
         self.out_dir = out_dir
         self.model = model
+        self.deep = deep
         self.started = datetime.now()
         self.findings: list[dict[str, Any]] = []
 
@@ -60,10 +62,11 @@ class Walkthrough:
         failed = sum(1 for f in self.findings if f["ok"] is False)
         evidence = sum(1 for f in self.findings if f["ok"] is None)
         lines = [
-            "# V03-8.7 0.3 真模型走查报告",
+            "# V03-8.7 0.3 真模型走查报告" + ("（含 --deep 修订全循环）" if self.deep else ""),
             "",
             f"- 时间：{self.started.isoformat()}",
             f"- 模型：{self.model}（本地 Ollama，config.yaml ollama 档案）",
+            f"- 范围：{'S1–S5（含真模型修订全循环）' if self.deep else 'S1–S4'}",
             "- 证据性质：真实 Provider 调用（本地、无收费 API）；模拟/FakeProvider 证据不在本表。",
             f"- 结果：通过 {passed} / 失败 {failed} / 失败证据 {evidence}"
             "（失败证据按设计记录，不计通过）。",
@@ -317,6 +320,172 @@ async def scenario_revision_budget_coverage(
     )
 
 
+#: 深走查用的短章：读章、改稿、暂存、发布都走真实链路，正文长度控制在
+#: 本地模型的上下文舒适区，避免把「模型写不完」误当链路失败。
+DEEP_CHAPTER_TITLE = "第一章 九点的钟声"
+DEEP_CHAPTER_TEXT = (
+    "九点整，旅馆大厅的钟停了。林昭把伞靠在门边，雪水顺着伞骨滴在石板上。"
+    "柜台后面没有人，只有一本翻开的登记簿，最后一行写着林雪的名字。"
+    "他喊了一声，回答他的是楼上关门的声音，很轻，像有人贴着门板在听。"
+    "壁炉里的火只剩一层灰，茶几上的两只杯子，一只还温着。"
+)
+
+
+async def scenario_deep_revision(walk: Walkthrough, client: Client) -> None:
+    """S5：真模型修订全循环——读章 → 改稿 → 覆盖 → 暂存 → 一次发布。
+
+    口径（不夸大）：
+    - 「读章」= 驱动按当前版本读正文，并在覆盖台账登记 ``full``；上下文装配
+      端点回读时带同章原文，证明装配器确实拿到了这一章；
+    - 「改稿」的模型调用发生在**试写候选服务**（V03-3）；现有章作为试写目标时
+      提示词不含原文，所以本节把原文作为作者附加要求显式交给模型——这一点在
+      S5.5 作为真实缺口记录，不冒充「模型自动读到了原文」；
+    - 「覆盖 → 暂存 → 发布」走 V03-7.2/7.4 的真实端点，发布产生单个 Commit。
+    """
+    project = await client.create_project("8.7 深走查")
+    imported = await client.import_chapter(
+        project, DEEP_CHAPTER_TITLE, DEEP_CHAPTER_TEXT, "deep-imp"
+    )
+    chapter_id = str(imported["chapter_id"])
+    chapter = (await client.http.get(f"/api/v2/projects/{project}/chapters/{chapter_id}")).json()
+    original = str(chapter["text"])
+    chapter_base = str(chapter["chapter_base"])
+    head_before = str(
+        (await client.http.get(f"/api/v2/projects/{project}/manuscript")).json()["commit_id"]
+    )
+
+    started = await client.http.post(
+        f"/api/v2/projects/{project}/revision-tasks",
+        json={"request_id": "deep-task-1", "call_budget": 6},
+    )
+    if started.status_code != 200:
+        walk.record("S5 真模型修订全循环", False, f"开任务失败：{started.text[:300]}")
+        return
+    task_id = str(started.json()["task_id"])
+
+    # -- 读章：登记全文读取，并确认上下文装配拿到同章原文 -------------------
+    read = await client.http.post(
+        f"/api/v2/projects/{project}/revision-work/reads",
+        json={"chapter_id": chapter_id, "kind": "full"},
+    )
+    background = await client.http.get(
+        f"/api/v2/projects/{project}/context/background",
+        params={
+            "scope": "manuscript",
+            "target": [chapter_id],
+            "include_temporary_text": "true",
+        },
+    )
+    bg_text = (
+        json.dumps(background.json(), ensure_ascii=False) if background.status_code == 200 else ""
+    )
+    walk.record(
+        "S5.1 读章（登记全文读取 + 装配含原文）",
+        read.status_code == 200 and background.status_code == 200 and original[:24] in bg_text,
+        f"读取登记 HTTP {read.status_code}；上下文装配 HTTP {background.status_code}、"
+        f"{len(bg_text)} 字符；含本章原文={'是' if original[:24] in bg_text else '否'}",
+        background_chars=len(bg_text),
+    )
+
+    # -- 改稿：真实模型按原文改写（原文作为作者附加要求显式给出）------------
+    instruction = (
+        "以下是本章现有正文。请在不改变事实与时间线的前提下改写一版："
+        "保留钟停在九点、登记簿最后一行是林雪的名字、楼上很轻的关门声、还温着的杯子；"
+        "语言更克制，删掉解释性句子，篇幅与原文相当。\n\n【现有正文】\n" + original
+    )
+    created = await client.http.post(
+        f"/api/v2/projects/{project}/drafts",
+        json={
+            "target": chapter_id,
+            "instruction": instruction,
+            "idempotency_key": "deep-draft-1",
+        },
+    )
+    if created.status_code != 200:
+        walk.record(
+            "S5.2 真模型改稿（试写候选）",
+            False,
+            f"试写请求失败：{created.text[:400]}",
+            status=created.status_code,
+        )
+        return
+    candidate_id = str(created.json().get("candidate_id") or created.json().get("id"))
+    detail = (await client.http.get(f"/api/v2/projects/{project}/drafts/{candidate_id}")).json()
+    chosen = detail.get("candidate") or detail
+    revised = str(chosen.get("text") or "")
+    preview_hash = chosen.get("preview_hash")
+    kept = [token for token in ("九点", "林雪", "杯") if token in revised]
+    walk.record(
+        "S5.2 真模型改稿（试写候选）",
+        bool(preview_hash) and len(revised) > 40 and revised.strip() != original.strip(),
+        f"候选 {candidate_id}：{len(revised)} 字（原文 {len(original)} 字）、"
+        f"预览哈希 {str(preview_hash)[:12]}…；保留要素 {kept}",
+        candidate_id=candidate_id,
+        chars=len(revised),
+        kept=kept,
+        sample=revised[:200],
+    )
+
+    # -- 覆盖 → 暂存 → 一次发布 ---------------------------------------------
+    covered = await client.http.post(
+        f"/api/v2/projects/{project}/revision-work/coverage/{chapter_id}",
+        json={"action": "changed", "reason": "模型已按原文改写本章，待统一发布"},
+    )
+    staged = await client.http.post(
+        f"/api/v2/projects/{project}/revision-tasks/{task_id}/staged-chapters",
+        json={"chapter_id": chapter_id, "text": revised, "base_revision_id": chapter_base},
+    )
+    staged_text = str(
+        (await client.http.get(f"/api/v2/projects/{project}/chapters/{chapter_id}")).json()["text"]
+    )
+    walk.record(
+        "S5.3 覆盖结论与暂存（不写正式正文）",
+        covered.status_code == 200 and staged.status_code == 200,
+        f"覆盖 HTTP {covered.status_code}、暂存 HTTP {staged.status_code}；"
+        f"暂存前正式正文仍是原文={staged_text == original}",
+    )
+
+    published = await client.http.post(
+        f"/api/v2/projects/{project}/revision-tasks/{task_id}/publish",
+        json={"operation_id": "op_deep_revision_publish_1"},
+    )
+    after = (await client.http.get(f"/api/v2/projects/{project}/chapters/{chapter_id}")).json()
+    head_after = str(
+        (await client.http.get(f"/api/v2/projects/{project}/manuscript")).json()["commit_id"]
+    )
+    operation = await client.http.get(
+        f"/api/v2/projects/{project}/operations/op_deep_revision_publish_1"
+    )
+    body = published.json() if published.status_code == 200 else {}
+    replaced = str(after["text"]).strip() == revised.strip()
+    walk.record(
+        "S5.4 一次发布（正文换版 + 回执可回读）",
+        published.status_code == 200
+        and replaced
+        and head_after != head_before
+        and operation.status_code == 200,
+        f"发布 HTTP {published.status_code}；正文已换版={replaced}；"
+        f"Commit {'前进' if head_after != head_before else '未变'}；"
+        f"操作回执 HTTP {operation.status_code}",
+        status=published.status_code,
+        operation_id=body.get("operation_id"),
+        changed_chapters=body.get("changed_chapters"),
+    )
+
+    # -- 预算归因：真实缺口，如实记录（不计通过）----------------------------
+    view = (await client.http.get(f"/api/v2/projects/{project}/revision-tasks/{task_id}")).json()
+    budget = view.get("budget") or {}
+    walk.record(
+        "S5.5 预算归因（已知缺口，如实记录）",
+        None,
+        f"任务 call_limit={budget.get('call_limit')}、calls_used={budget.get('calls_used')}；"
+        "本轮真实模型调用发生在试写候选服务（V03-3），任务预算账本没有任何执行器"
+        "调用 consume_calls，因此这次调用未被计入预算——产品口径缺口，不是驱动问题",
+        budget=budget,
+        task_state=view.get("state"),
+    )
+
+
 async def scenario_environment_failure(walk: Walkthrough) -> None:
     """S4：不存在的模型 → 真实失败留记录（失败证据，不计通过）。"""
     with tempfile.TemporaryDirectory(prefix="v0387-fail-", ignore_cleanup_errors=True) as tmp:
@@ -368,6 +537,11 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, help="报告目录 eval/runs/<日期>-v03-8.7")
     parser.add_argument("--model", default="", help="覆盖档案模型名（如 qwen3:8b）")
+    parser.add_argument(
+        "--deep",
+        action="store_true",
+        help="追加 S5 真模型修订全循环（读章→改稿→覆盖→暂存→发布）",
+    )
     args = parser.parse_args()
 
     out_dir = ROOT / args.out
@@ -385,12 +559,14 @@ async def main() -> int:
         runtime = V2Runtime.sqlite(str(Path(tmp) / "walk.db"))
         runtime.worker.runner.book = book
         worker_task = asyncio.create_task(runtime.worker_loop())
-        walk = Walkthrough(out_dir, model)
+        walk = Walkthrough(out_dir, model, deep=args.deep)
         client = Client(runtime)
         try:
             project, _conversation = await scenario_discussion(walk, client)
             await scenario_draft_adopt(walk, client, project)
             await scenario_revision_budget_coverage(walk, client, project)
+            if args.deep:
+                await scenario_deep_revision(walk, client)
         finally:
             await client.aclose()
             worker_task.cancel()
