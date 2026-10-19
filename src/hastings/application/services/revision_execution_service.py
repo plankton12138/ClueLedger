@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
 from hastings.domain.repository.ids import CommitId, ProjectId
 from hastings.domain.revision import error_codes as ec
+from hastings.domain.revision.coverage import STATUS_CHECKED_UNCHANGED
 from hastings.domain.revision.errors import CoverageViolation, violation
 from hastings.domain.revision.task import (
     STATE_CANCELLED,
@@ -137,7 +138,7 @@ class RevisionExecutionService:
         settled = {
             str(row.get("chapter_id"))
             for row in coverage_now.get("coverage", [])
-            if row.get("status") in ("changed", "confirmed_unchanged")
+            if row.get("status") in ("changed", STATUS_CHECKED_UNCHANGED)
         }
         if chapter_ids:
             targets = list(chapter_ids)

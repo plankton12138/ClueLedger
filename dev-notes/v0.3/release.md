@@ -1,95 +1,107 @@
-# Hastings 0.3 发布记录与运行说明
+# Hastings 0.3 运行与验收状态
 
-> 版本：**0.3.0**（pyproject 已统一为 0.3.0）
-> 状态：**功能面交付完成（V03-0–V03-8.7）；完整验收未过——0.3 不标「完整交付」**。
-> 依据：[33 项验收追踪](artifacts/v03-8.8-acceptance-tracking.md)。未验项见 §5，未列入的项不视为通过。
-> 记录日期：2026-10-19，基线 commit `2aa7138`（V03-8.7）。
+包版本：`0.3.0`。当前默认入口为写作台，主要能力已实现，**完整验收尚未完成**。模块现状见[模块导航](modules/README.md)，逐项证据见[验收追踪](artifacts/v03-8.8-acceptance-tracking.md)。
 
-## 1. 交付范围
+本文的测试数字引用已保存的开发记录，本次文档核对未重跑测试或真实模型。当前限制直接写在 §5，不以历史“已交付”概括未接通的界面与执行链路。
 
-- **三批 0.3 能力**：写作台三部分工作区、统一发布与操作记录、导入预览、手改副本与三方合并、撤销、账本候选、背景装配与章摘要、披露边界、意图三分与覆盖台账、预算与修订任务、四类图谱与时间线、执行日志、备份恢复、生产装配、视觉与可访问性、旧入口退役。
-- **文档**：52 篇构建笔记（`dev-notes/v0.3/notes/`）、API 矩阵、模块 as-built（`modules/`）、本发布记录。
-- **质量门（2026-10-19）**：`uv run pytest -q` **1975 passed**；`ruff check src/hastings tests` 全过；`mypy src/hastings` 261 files 无问题；前端 `npm run build` 通过、`vitest` **433 passed**；真模型走查 **6 通过 + 1 失败证据**；视觉走查 **37/37**。
+## 1. 当前范围
 
-## 2. 运行说明（当前实现）
+无模型记录想法、导入预览、手工修改副本与跨章合并、候选预览采用、账本维护、背景装配、显式章摘要与账本建议、图谱、关联撤销和同作品内容恢复均有实现。
 
-### 2.1 环境
+整体修订提供原文覆盖、预算、执行循环、暂存与统一发布接口；前端执行按钮和修正轮次触发点尚未接通。执行日志后端可用，前端面板尚未接通。
 
-- Python 3.12（`uv run` 统一入口）；Node 22（前端）。
-- 模型：`config.yaml` 的 provider 档案（本机为 `ollama` → `http://localhost:11434/v1`）；或 `.env` 的 `OPENAI_BASE_URL/OPENAI_API_KEY/HASTINGS_MODEL` 回落。
-- 凭据只进服务端凭据存储；评测报告不回显 Key。
+## 2. 运行说明
 
-### 2.2 后端
+### 环境与模型
 
-```bash
-uv run python -m hastings.server            # 默认 127.0.0.1:8000，装配 V2 REST/WS/SSE
-uv run python -m hastings.server --v2-db data/v2.db   # 指定数据库（默认 data/v2.db）
+Python ≥3.12，所有 Python 命令经 `uv run`；前端 Node ≥18。
+
+模型连接通过服务端配置与凭据存储管理。配置文件缺失、空文件或空档案等回退路径仍可读取 `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`HASTINGS_MODEL`，未受专用开发开关限制；因此不能声称普通流程已完全禁止环境 Key 回退。未配置模型时服务可正常启动，非模型功能可用。
+
+### 后端
+
+在仓库根目录：
+
+```powershell
+uv run python -m hastings.server
+uv run python -m hastings.server --v2-db data/v2.db
 ```
 
-- 启动即执行 `recover_on_startup()`：执行中的轮次/任务标中断，旧自动队列隔离为 `historical_paused`（**不自动重发模型调用**）；取证 `GET /api/v2/recovery`。
-- 未配置模型时服务照起、可写（不阻塞本地文字工作）。
+默认监听 `127.0.0.1:8000`。数据库默认复用 `data/v2.db` 或 `data/v2.sqlite`；都不存在时创建前者，两者同时存在须显式指定。启动日志打印实际路径。
 
-### 2.3 前端
+启动恢复将执行中任务标中断或等待，旧自动队列隔离为 `historical_paused`；不自动重发模型调用。恢复摘要见 `GET /api/v2/recovery`。
 
-```bash
-cd frontend
+### 前端
+
+在 `frontend/`：
+
+```powershell
 npm install
-npm run dev        # http://localhost:5173，/api 与 /ws 反代到 :8000
-npm run build      # 生产产物 frontend/dist，由后端 / 静态托管
+npm run dev
+npm run build
 ```
 
-### 2.4 测试与评测
+开发服务器将 `/api` 与 `/ws` 转发到后端；生产产物在 `frontend/dist`，由后端托管。开发聊天默认模拟，真实链路使用 `?chatMock=0`。
 
-```bash
-uv run pytest                    # 全量后端
-uv run pytest tests/v2           # V2 领域/接口
-uv run ruff check src/hastings tests/v2
-uv run mypy
-cd frontend && npm test          # vitest 433
-cd frontend && npx playwright test   # v2-*.spec.ts（真实服务旅程，端口 8931）
+## 3. 验证方法与已有证据
 
-# 真模型走查（本地 Ollama，无收费 API）
-uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7 --model qwen3:8b
-# 含真模型修订全循环（读章→改稿→覆盖→暂存→发布）
-uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-deep --model qwen3:8b --deep
+仓库根目录：
+
+```powershell
+uv run pytest
+uv run ruff check src/hastings tests
+uv run mypy src/hastings
 ```
 
-### 2.5 数据与恢复
+在 `frontend/`：
 
-- 数据库：`data/v2.db`（SQLite）；服务级旧工作区在 `stories/`；语料在 `corpus/`（0.3 不消费）。
-- 备份：`GET /api/v2/projects/{id}/backup`（预览 + 导出包）；恢复：`POST /api/v2/projects/{id}/restore`（未确认差异 409）。
+```powershell
+npm test
+npm run build
+npm run test:e2e
+```
 
-## 3. 发布记录
+真实模型评测方法见[评测导航](../../eval/README.md)。本地驱动需先安装可用模型：
 
-| 日期 | 版本 | 内容 |
+```powershell
+uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-desk --model qwen3:8b --deep
+
+远程 OpenAI 兼容端点（DeepSeek 等）：`--provider` 选 config.yaml 档案名，驱动会加载仓库根 `.env`：
+
+```
+uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-desk-deepseek --provider default --deep
+```
+
+| 记录 | 已保存的结果 | 证据边界 |
 |---|---|---|
-| 2026-10-19 | 0.3.0 | V03-8.1–8.7 收口：启动恢复/备份恢复、生产装配、日志压力、视觉走查、旧入口退役、真模型实测；文档 as-built 与 33 项追踪 |
-| 2026-10-19 | 0.3.0 补丁 | 试写改写现有章自动装入该章正文（`drafting.create` → `previous_text`）；`--deep` 复跑 10 通过 + 2 证据；全量 1987 passed |
-| 2026-10-19 | 0.3.0 补丁 2 | 执行循环 `/revision-tasks/{id}/run`：逐章记账→读章→改稿→暂存→覆盖，预算成为门禁；预算用满但已覆盖不再阻止发布；`--deep` 13 通过 + 2 证据；全量 1993 passed |
-| 2026-10-19 | 0.3.0 补丁 3 | 驱动支持 `--provider` 并加载 `.env`；DeepSeek（`deepseek-flash`）真跑 13 通过 + 2 证据（34s）；配置排障：`config.yaml` 存在时 base_url 以文件为准（`.env` 的 `OPENAI_BASE_URL` 只在无配置文件时生效） |
+| [执行循环取证](notes/v03-8.7-execution-loop.md) | 后端全量 1993 passed；本地模型报告 13 通过 + 2 证据项 | 其中包含环境失败与手动路径预算说明；不证明改写质量，也不证明远程服务可用 |
+| [连贯场景补验](notes/v03-8.8-acceptance-scenarios.md) | 10 个用例通过 | 业务验收中 S5/S7 仍为部分覆盖；使用确定性模型替身 |
+| [视觉走查](notes/v03-8.5-visual-walkthrough.md) | 37/37；前端单测 433 passed、构建通过 | 真实缩放与中文输入法以等价视口和合成事件代理 |
+| [生产装配冒烟](notes/v03-8.3-production-startup-loop.md) | 同一装配链的创建、导入、修改、撤销、采用与恢复 | 同进程测试客户端；独立进程启动与请求日志见[整体调整面板](notes/v03-8.7-revision-panel.md) |
+| [整体调整面板](notes/v03-8.7-revision-panel.md) | 真 uvicorn + DeepSeek 走查 8/8：开任务、预算停顿、继续、一次发布；前端 vitest 438、后端 1994 | 预算等待以可继续提示呈现；不证明改写质量 |
 
-## 4. 兼容与迁移
+通过用例数量不等于所有产品验收条件通过。
 
-- `/api/v2` 与存储版本独立于产品版本号；0.3 默认工作区为写作台。
-- 旧工作区数据保留只读；旧自动队列任务不复活，需作者显式继续。
-- 旧写入（导入/保存/恢复）全部经统一发布，返回 `operation_id`。
+## 4. 数据与兼容
 
-## 5. 未验项（显式）
+作品内容备份：`GET /api/v2/projects/{id}/backup`；同作品恢复：`POST /api/v2/projects/{id}/restore`，存在未确认差异时返回 409。
 
-> 2026-10-19 补验：§9.4 十场景与雪山旅馆夹具已建并跑通（10/10，确定性模型替身，全量 **1985 passed**），第三批阶段退出已有端到端证据；`--deep` 真模型修订全循环 10 通过 + 2 失败证据。下列为**剩余**未验项。
+备份包含正式正文、账本、约定、叙事结构与依赖边，不包含副本、任务暂存、操作记录、候选、执行日志和凭据。它不是数据库完整备份；覆盖与限制见[发布与恢复](modules/publish-import-recovery.md#3-备份与恢复)。
 
-1. **真 uvicorn 进程启动无运维日志证据**（8.3 冒烟与验收套件都是同进程 TestClient）。
-2. **前端执行日志面板消费端未接**（接口齐备，无前端读取方）。
-3. **V1 语料写接口仍可手工调用**（0.3 无入口、无自动消费）。
-4. **节拍类型退出未做**（计划 §9.1 留白；起草入口已不要求 Beat）。
-5. ~~远程 Provider 未调用~~ **已补（2026-10-19）**：DeepSeek（OpenAI 兼容端点，`deepseek-flash`）真跑 `--deep`，13 通过 + 2 证据（`eval/runs/2026-10-19-v03-8.7-deepseek/`）。**OpenAI 官方端点仍无可用 Key**（本机经代理访问 502），未验。
-6. ~~试写候选对「现有章」不带原文~~ **已修复（2026-10-19）**：`drafting.create` 现在把该章当前正文作为 `previous_text` 交给提示词（段落 `现有正文`），不截断；`--deep` 复跑时 instruction 不含原文仍能保留原文细节。剩余口径：覆盖读取登记仍由发起方做（试写不绑定 revision-work）。
-7. ~~整体任务预算无消费方~~ **已修复（2026-10-19）**：新增 `POST /revision-tasks/{id}/run` 执行循环（`revision_execution_service.py`），逐章先记账再调用模型；预算不足停在下一章之前并落 `waiting/budget_exhausted`。真模型 S6 取证：预算 1 只跑 1 章、继续后跑第 2 章。剩余：前端未接 `/run`、修正轮次 `start_repair` 未接。
-8. 夹具层两处**专项边界**：证据锚点失效的 `needs_recheck` 需正文引文锚（V03-2.5 服务层覆盖）；披露定位型 409 需叙事结构（V03-4.7 服务层覆盖）。
+接口与存储格式版本独立于产品版本。旧自动任务不自动复活，旧数据保留不代表本版提供对应启动入口；兼容边界见[API 说明](modules/api-matrix-and-retirement.md)。
 
-## 6. 结论
+## 5. 剩余缺口与未验项
 
-0.3 的功能与工程面已交付；**十场景与三批退出已有可复跑证据**（夹具 + 套件 10/10、全量 1985 passed、视觉走查 37/37）。
-真模型侧：基础走查 6 通过 + 1 失败证据，`--deep` 修订全循环 10 通过 + 2 失败证据（读章→改稿→覆盖→暂存→一次发布）。
-按计划 §9.7 的完成定义，仍有未验项（§5）：真 uvicorn 日志、前端日志面板、V1 语料写接口、节拍类型、OpenAI 官方端点；`--deep` 暴露的两处缺口（试写读原文、预算消费方）均已修复，且本地/远程（DeepSeek）两条 Provider 各有真模型证据。
-对外表述为「**0.3 功能交付，验收补验中（运维取证 + 产品裁决）**」，不写「完整交付」。
+| 类型 | 当前情况 |
+|---|---|
+| 前端未接线 | 执行日志面板、旧逐段差异详情的当前界面承接 |
+| 执行链路缺口 | 修正轮次 `start_repair` 没有执行触发点；执行是同步请求，没有逐章进度、请求进行中无法取消 |
+| 上下文与摘要限制 | 全书概览生成、手工纠正与批量摘要入口不完整；披露检查依赖显式叙事位置且只做名称匹配 |
+| 配置偏差 | 环境 Key 回退仍存在；删除连接后凭据引用清理未完成 |
+| 产品范围待定 | V1 语料写接口仍可手工调用；节拍类型仍保留；保留 Job 角色的可达范围需与本版排除功能核对 |
+| 运行时未验 | OpenAI 官方端点（DeepSeek 已实测）、真实浏览器缩放与中文输入法 |
+| 验收覆盖边界 | 连贯场景 S5 的证据锚点失效、S7 的定位型披露拒绝由专项用例补充，不等于相同完整旅程已经跑通 |
+
+## 6. 历史发布证据
+
+开发阶段、改动与测试增量见[阶段交付记录](stage-delivery-record.md)及[执行循环笔记](notes/v03-8.7-execution-loop.md)。历史记录中的旧缺口、旧数量和修复过程不作为当前能力说明。

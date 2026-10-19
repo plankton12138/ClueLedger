@@ -22,7 +22,7 @@ export type MainView =
   | { kind: "discussion"; conversationId: string }
   | {
       kind: "detail";
-      detailKind: "candidate" | "diff" | "graph" | "history";
+      detailKind: "candidate" | "diff" | "graph" | "history" | "revision";
       id: string;
     };
 

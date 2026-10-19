@@ -38,6 +38,7 @@ import EvidenceCheck from "./EvidenceCheck";
 import DraftDialog from "./DraftDialog";
 import GraphOverview from "./GraphOverview";
 import GraphPanel from "./GraphPanel";
+import RevisionPanel from "./RevisionPanel";
 import ImportDialog from "./ImportDialog";
 import LedgerPanel from "./LedgerPanel";
 import OperationFollowups from "./OperationFollowups";
@@ -564,7 +565,9 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                 : mainView?.kind === "detail"
                   ? mainView.detailKind === "graph"
                     ? `关联图谱 · ${mainView.id === "clues" ? "线索关联" : "人物关系"}`
-                    : `临时视图 · ${mainView.detailKind}`
+                    : mainView.detailKind === "revision"
+                      ? "整体调整"
+                      : `临时视图 · ${mainView.detailKind}`
                   : "写作台"}
           </h1>
           <div className="flex items-center gap-2">
@@ -614,6 +617,20 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                   onClick={() => void edit.start()}
                 >
                   手工修改
+                </button>
+                <button
+                  className="btn btn-gray px-3 py-1.5 text-xs"
+                  disabled={!pid}
+                  onClick={() =>
+                    pid &&
+                    useDeskStore.getState().navigate({
+                      kind: "detail",
+                      detailKind: "revision",
+                      id: pid,
+                    })
+                  }
+                >
+                  整体调整
                 </button>
               </>
             )}
@@ -742,7 +759,21 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               <DeskDiscussion conversationId={mainView.conversationId} />
             )
           ) : mainView?.kind === "detail" ? (
-            mainView.detailKind === "graph" && pid ? (
+            mainView.detailKind === "revision" && pid ? (
+              <RevisionPanel
+                projectId={pid}
+                onPublished={() => {
+                  void v2.refreshManuscript();
+                  void v2.refreshStory();
+                }}
+                onBack={() => {
+                  const chapterId = v2.chapter.chapterId;
+                  if (chapterId) {
+                    useDeskStore.getState().navigate({ kind: "manuscript", chapterId });
+                  }
+                }}
+              />
+            ) : mainView.detailKind === "graph" && pid ? (
               <GraphPanel
                 projectId={pid}
                 viewId={mainView.id === "clues" ? "clues" : "characters"}

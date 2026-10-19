@@ -120,7 +120,7 @@ from hastings.domain.changes.errors import ChangesViolation
 from hastings.domain.changes.models import ChangeScope, SeedChange
 from hastings.domain.conversation.task_drafts import ProjectView
 from hastings.domain.manuscript import error_codes as ms_ec
-from hastings.domain.manuscript.catalog import ManuscriptCatalog
+from hastings.domain.manuscript.catalog import ManuscriptCatalog, next_order_keys
 from hastings.domain.manuscript.commands import import_chapter as import_chapter_command
 from hastings.domain.manuscript.errors import ManuscriptViolation
 from hastings.domain.manuscript.models import Chapter
@@ -1033,10 +1033,12 @@ class ProjectCreateRequest(BaseModel):
 
 
 class ImportChapterRequest(BaseModel):
+    """单章导入：``order_key`` 不传时接在现有章之后，避免每章都落到 0001。"""
+
     idempotency_key: str
     title: str
     text: str
-    order_key: str = "0001"
+    order_key: str | None = None
 
 
 class ImportPreviewRequest(BaseModel):
@@ -2033,6 +2035,16 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         与「导入正文」完全一致；响应补 ``operation_id`` 供回执查询。
         """
         chapter_id = runtime.new_artifact_id()
+        order_key = req.order_key
+        if order_key is None:
+            pid = ProjectId(project_id)
+            head = runtime.head(pid)
+            catalog = (
+                ManuscriptCatalog.from_snapshot(runtime.service.get_snapshot(pid, head))
+                if head is not None
+                else None
+            )
+            order_key = next_order_keys(catalog, 1)[0] if catalog is not None else "0001"
         result = runtime.manuscript_publisher.publish_command(
             project_id=ProjectId(project_id),
             command=manuscript_command(
@@ -2040,7 +2052,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
                 chapter_id=chapter_id,
                 title=req.title,
                 text=req.text,
-                order_key=req.order_key,
+                order_key=order_key,
             ),
             operation_id=(
                 "op_"

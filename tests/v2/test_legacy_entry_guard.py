@@ -222,3 +222,31 @@ def test_03_code_does_not_consume_corpus() -> None:
         ):
             offenders.append(posix.rsplit("hastings/", 1)[-1])
     assert offenders == [], f"0.3 代码不得消费语料/风格语料：{offenders}"
+
+
+def test_legacy_import_appends_order_key_when_omitted(client: TestClient) -> None:
+    """不传顺序键时接在现有章之后：两章不会都落到 0001 而按 ID 乱序。"""
+    project = _project(client)
+    prefix = f"/api/v2/projects/{project}"
+    for index, title in enumerate(("第一章 起", "第二章 承"), 1):
+        response = client.post(
+            f"{prefix}/chapters/import",
+            json={"idempotency_key": f"seq-{index}", "title": title, "text": f"第{index}段。"},
+        )
+        assert response.status_code == 200, response.text
+    chapters = client.get(f"{prefix}/manuscript").json()["chapters"]
+    assert [row["title"] for row in chapters] == ["第一章 起", "第二章 承"]
+
+    # 显式顺序键仍然被尊重（旧客户端可以指定插入位置）
+    explicit = client.post(
+        f"{prefix}/chapters/import",
+        json={
+            "idempotency_key": "seq-prologue",
+            "title": "序章",
+            "text": "序。",
+            "order_key": "0000",
+        },
+    )
+    assert explicit.status_code == 200, explicit.text
+    chapters = client.get(f"{prefix}/manuscript").json()["chapters"]
+    assert [row["title"] for row in chapters][0] == "序章"

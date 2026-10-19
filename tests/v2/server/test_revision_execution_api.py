@@ -192,3 +192,30 @@ def test_stopped_task_requires_continue_before_running_again() -> None:
     assert response.status_code == 400, response.text
     assert response.json()["error"]["code"] == "REVISION_TASK_NOT_RUNNING"
     assert _calls(runtime) == []
+
+
+def test_default_scope_skips_checked_unchanged_chapters() -> None:
+    """已确认无需修改的章不在默认范围：不重复消耗预算、不改它的正文。"""
+    client, runtime, pid = _client()
+    _import(client, pid)
+    task_id = _start(client, pid, budget=4)
+    chapters = _chapters(client, pid)
+    second = str(chapters[1]["chapter_id"])
+
+    read = client.post(
+        f"/api/v2/projects/{pid}/revision-work/reads",
+        json={"chapter_id": second, "kind": "full"},
+    )
+    assert read.status_code == 200, read.text
+    confirmed = client.post(
+        f"/api/v2/projects/{pid}/revision-work/coverage/{second}",
+        json={"action": "confirm_unchanged"},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+
+    body = _run(client, pid, task_id, request_id="round-skip").json()
+    assert body["status"] == "executed", body
+    assert [row["chapter_id"] for row in body["chapters"]] == [str(chapters[0]["chapter_id"])]
+    assert body["task"]["budget"]["calls_used"] == 1
+    second_text = client.get(f"/api/v2/projects/{pid}/chapters/{second}").json()["text"]
+    assert "改写稿" not in second_text

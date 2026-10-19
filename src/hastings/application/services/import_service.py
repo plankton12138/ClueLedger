@@ -32,7 +32,7 @@ from hastings.application.services.edit_session_service import EditSessionServic
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
 from hastings.domain.manuscript import commands as manuscript_commands
 from hastings.domain.manuscript import error_codes as ec
-from hastings.domain.manuscript.catalog import ManuscriptCatalog
+from hastings.domain.manuscript.catalog import ManuscriptCatalog, next_order_keys
 from hastings.domain.manuscript.kinds import KIND_CHAPTER
 from hastings.domain.repository.ids import Actor, ProjectId
 from hastings.domain.repository.requests import AuxWrite, CommitRequest
@@ -431,15 +431,7 @@ class ImportService:
 
     @staticmethod
     def _append_order_keys(catalog: ManuscriptCatalog, count: int) -> list[str]:
-        highest = 0
-        for entry in catalog.entries:
-            if entry.kind != KIND_CHAPTER:
-                continue
-            try:
-                highest = max(highest, int(entry.model().order_key))
-            except (TypeError, ValueError):
-                continue
-        return [f"{highest + index + 1:04d}" for index in range(count)]
+        return next_order_keys(catalog, count)
 
     def _validate_replacements(
         self,

@@ -1,0 +1,12 @@
+# 真 uvicorn 启动与请求摘录（2026-10-19，端口 8941，DeepSeek）
+
+INFO:     Started server process [20408]
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8941 (Press CTRL+C to quit)
+模型：deepseek-flash｜档案：default｜写作台地址：http://127.0.0.1:8941
+前端已托管：frontend\dist
+INFO:     127.0.0.1:63008 - "POST /api/v2/projects/prj_f7f5b7b72b614247/revision-tasks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63008 - "POST /api/v2/projects/prj_f7f5b7b72b614247/revision-tasks/rtk_3f76080456194e17/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50360 - "POST /api/v2/projects/prj_f7f5b7b72b614247/revision-tasks/rtk_3f76080456194e17/continue HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50360 - "POST /api/v2/projects/prj_f7f5b7b72b614247/revision-tasks/rtk_3f76080456194e17/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63008 - "POST /api/v2/projects/prj_f7f5b7b72b614247/revision-tasks/rtk_3f76080456194e17/publish HTTP/1.1" 200 OK
