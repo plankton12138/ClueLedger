@@ -165,6 +165,8 @@ class V2Runtime:
     def __init__(self, db_path: str | None = None) -> None:
         clock, ids = SystemClock(), UuidIdGenerator()
         self.db_path = db_path
+        # 启动恢复摘要（V03-8.1）：lifespan 写入，GET /recovery 只读取证。
+        self.last_recovery: dict[str, Any] | None = None
         repo: MemoryRepository | SqliteRepository
         if db_path is None:
             repo = build_memory_repository(clock, ids)
@@ -484,6 +486,47 @@ class V2Runtime:
             key = f"{job['job_type']}:{job['state']}"
             report[key] = report.get(key, 0) + 1
         return report
+
+    async def recover_on_startup(self) -> dict[str, Any]:
+        """启动恢复（V03-8.1 单一入口）：不自动重发任何模型调用。
+
+        三件事按顺序做，且都只改状态不改内容：
+
+        1. 执行中的对话轮次标中断（无法确认的模型调用不重跑）；
+        2. 执行中的任务标中断等作者继续（I06/I11）；
+        3. 旧自动队列遗留任务分类并暂停为 ``historical_paused``——0.3 起模型
+           任务只能由作者显式启动，重启不能把它们复活。
+
+        返回的摘要写进 ``last_recovery``，``GET /recovery`` 供演练取证。
+        """
+        chat_interrupted = await self.chat.mark_interrupted()
+        tasks_interrupted = await self.jobs.mark_interrupted()
+        legacy_paused = await self.classify_legacy_auto_jobs()
+        report = {
+            "chat_rounds_interrupted": chat_interrupted,
+            "tasks_interrupted": tasks_interrupted,
+            "legacy_paused": legacy_paused,
+            "legacy_paused_total": sum(legacy_paused.values()),
+        }
+        self.last_recovery = {"report": report, "generated_at": self.clock.now().isoformat()}
+        return report
+
+    async def recovery_report(self) -> dict[str, Any]:
+        """恢复取证（只读）：上次启动恢复摘要 + 旧队列快照 + 任务状态分布。"""
+        states: dict[str, int] = {}
+        waiting: list[str] = []
+        for job in await self.jobs.list_jobs():
+            state = str(job.get("state", "unknown"))
+            states[state] = states.get(state, 0) + 1
+            if state == "waiting":
+                waiting.append(str(job["job_id"]))
+        return {
+            "last_recovery": self.last_recovery,
+            "legacy_auto_snapshot": await self.legacy_auto_report(),
+            "task_states": states,
+            "waiting_task_ids": sorted(waiting),
+            "note": "恢复只标记状态，不自动重发模型调用；等待中的任务由作者显式继续。",
+        }
 
     async def _authorize_job(self, job: Mapping[str, Any]) -> ExecutionGrant | None:
         """派发门禁（V03-0.3，I05/I06）：无有效凭据的任务不派发、不运行。
@@ -1252,10 +1295,10 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # 启动恢复（§19.3、V03-0.3）：遗留的排队/运行轮次与执行中任务标为中断，
-        # 不自动重发模型调用（I06/I11）；已完成结果回读，无模型投影继续。
-        await runtime.chat.mark_interrupted()
-        await runtime.jobs.mark_interrupted()
+        # 启动恢复（§19.3 / V03-0.3 / V03-8.1）：执行中的对话与任务标中断，旧自动
+        # 队列任务分类暂停——只改状态，不自动重发任何模型调用（I06/I11）；已完成结果
+        # 回读，无模型投影继续。摘要写入 runtime.last_recovery，GET /recovery 供演练取证。
+        await runtime.recover_on_startup()
         task = asyncio.create_task(runtime.worker_loop())
         try:
             yield
@@ -1266,6 +1309,14 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
                 await task
 
     router = APIRouter(prefix="/api/v2", tags=["v2"], lifespan=lifespan)
+
+    @router.get("/recovery")
+    async def get_recovery() -> dict[str, Any]:
+        """启动恢复取证（V03-8.1，只读）：上次恢复摘要、旧队列快照、任务状态分布。
+
+        恢复只标记状态、不自动重发模型调用；等待中的任务由作者显式继续。
+        """
+        return await runtime.recovery_report()
 
     @router.get("/capabilities")
     def capabilities() -> dict[str, Any]:
