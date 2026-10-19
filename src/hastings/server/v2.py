@@ -87,6 +87,7 @@ from hastings.application.services.ledger_candidate_service import LedgerCandida
 from hastings.application.services.ledger_service import LedgerService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
+from hastings.application.services.revision_work_service import RevisionWorkService
 from hastings.application.services.suggestion_service import SuggestionService
 from hastings.application.services.summary_service import SummaryDraft, SummaryService
 from hastings.application.services.task_prep_service import TaskPrepService
@@ -127,6 +128,7 @@ from hastings.domain.repository import error_codes as repo_ec
 from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest
 from hastings.domain.repository.serialization import content_hash
+from hastings.domain.revision.errors import CoverageViolation
 from hastings.domain.story.errors import StoryViolation
 from hastings.infrastructure.conversations.drafts import SqliteTaskDraftStore
 from hastings.infrastructure.conversations.store import SqliteConversationStore
@@ -138,6 +140,7 @@ from hastings.infrastructure.repository.sqlite import SqliteRepository, build_sq
 from hastings.infrastructure.runtime import SystemClock, UuidIdGenerator
 from hastings.interfaces.api.agents import create_agents_router
 from hastings.interfaces.api.changes import create_changes_router
+from hastings.interfaces.api.revision import create_revision_router
 from hastings.interfaces.exporters.v2_package_exporter import export_commit, zip_package
 from hastings.server.v2_agents import ConfiguredV2Runner
 
@@ -319,6 +322,9 @@ class V2Runtime:
         self.undo = UndoService(
             self.service, self.operations, self.manuscript_publisher, self.edit_sessions
         )
+        # 整体调整工作版本与原文覆盖台账（V03-7.2）：绑定正式 head、声明章节集合，
+        # 逐章记录实际读取与未覆盖；只读投影同时作为「全局上下文」回读，不另存事实。
+        self.revision_work = RevisionWorkService(self.service, self.ids, self.clock)
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(
@@ -2054,6 +2060,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
     router.include_router(create_agents_router(runtime))
     router.include_router(create_conversations_router(runtime))
     router.include_router(create_execution_log_router(runtime))
+    router.include_router(create_revision_router(runtime))
     return router
 
 
@@ -2165,9 +2172,13 @@ def register_v2_error_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return _violation_response(exc)
 
+    @app.exception_handler(CoverageViolation)
+    async def coverage_violation_handler(request: Request, exc: CoverageViolation) -> JSONResponse:
+        return _violation_response(exc)
+
 
 def _as_violation(
-    exc: ManuscriptViolation | AuthorModelViolation | StoryViolation,
+    exc: ManuscriptViolation | AuthorModelViolation | StoryViolation | CoverageViolation,
 ) -> ViolationError:
     """边界转换：领域违规 → 应用错误信封（四要素原样透传，与 handler 同构）。"""
     return ViolationError(
@@ -2176,7 +2187,7 @@ def _as_violation(
 
 
 def _violation_response(
-    exc: ManuscriptViolation | AuthorModelViolation | StoryViolation,
+    exc: ManuscriptViolation | AuthorModelViolation | StoryViolation | CoverageViolation,
 ) -> JSONResponse:
     envelope = _as_violation(exc)
     return JSONResponse(status_code=_status_for(envelope), content={"error": _error_body(envelope)})

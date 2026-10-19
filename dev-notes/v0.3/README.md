@@ -159,12 +159,14 @@ V03-1 各任务交付与测试通过（pytest 1491 / vitest 361 / ruff / mypy）
 
 质量门：后端未改动（V03-6.5 只改前端与文档），沿用 `uv run pytest -q` **1810 passed**（V03-6.2 +14、V03-6.3 +15、V03-6.4 +1）口径；`ruff check src tests` 全过；`mypy src/hastings` 244 files。前端 `vitest` **420 passed**（49 文件；含 V03-6.5 新增 graphDirectory 12 + graphLayout 4）、`npm run build`（tsc --noEmit + vite build）通过，主 bundle 826.71 kB（gzip 271.82）。留白：`story.place.adjacent` 未登记引用校验故暂不成边；真实工作区尚无 `evidence.link` 写路径，证据状态多为 `not_recorded`（用直接提交测试覆盖 `needs_check`）；线索与误导解释/「反驳」尚无正式关系类型，故不自动连线（等经 `catalog.relations` 记录后自动带上）；出现的章节分组由前端用叙事树解析、不在线索图合成结构边；手法图/时间线带类型端点随 V03-7。V03-6.4/6.5 留白：视角/叙述位置切换控件未接（后端已支持 `perspective`/位置/`focus`，前端按缺省全知全图取数、目录按全知口径成行）、图谱旅程的 Playwright E2E 与真实浏览器键盘走查未补（Playwright J7-J8 图谱旅程留白）、bundle 无 code-split。环境提示：本机 `uv run ruff` 为 0.16.10（pyproject `ruff>=0.5` 未锁版本），`ruff format --check` 会命中 17 个与本任务无关的历史文件，属既有版本漂移、不在本任务范围。
 
-## V03-7 对话整体调整、手法结构与时间线（V03-7.1 已交付，2026-10-19）
+## V03-7 对话整体调整、手法结构与时间线（V03-7.1/7.2 已交付，2026-10-19）
 
 开始条件：跨章发布、后续冲突处理、叙述位置/故事时间与图谱基础均已通过 ✓（V03-5/V03-6 收口）。
 
 | 任务 | 状态 | 产物 | 构建笔记 |
 |---|---|---|---|
 | V03-7.1 意图区分与授权 | 已交付（后端与契约 + 只读前端展示） | 领域 `domain/conversation/intent.py`（确定性三分：讨论无写权限/候选只读/执行写范围，假设线索优先，无法判定降级讨论）、应用 `application/services/intent_service.py`（只读 `classify`：只认作者消息、`guard_intent_write_scope` 硬断言、同范围 `reuses_authorization`）、`POST /conversations/{id}/intents`、错误码 `INTENT_WRITE_SCOPE_INVALID`；前端 `api/intent.ts` + `components/chat/IntentNote.tsx`、`ChatComposer` 输入预览意图条、`ChatMessages` 作者消息「意图区分」；后端专项 27 项（全量 1837）、前端专项 8 项 | [notes/v03-7.1](notes/v03-7.1-intent-and-authorization.md) |
+| V03-7.2 全局上下文与原文覆盖台账、内部工作版本连续修订 | 已交付（后端契约 + 领域台账） | 领域 `domain/revision/coverage.py`（五状态 `unread/read/checked_unchanged/changed/blocked` + 读取种类 `summary`/`full` + `ReadRange` 区间；**摘要不得记 `checked_unchanged`** 为领域硬约束；来源变化重置区间）、`domain/revision/{error_codes,errors}.py`、应用 `application/services/revision_work_service.py`（`RevisionWorkService`：打开/恢复工作版本绑定正式 head、逐章登记读取与下结论、回读覆盖台账与全局上下文；aux 表 `revision_work`/`current` 一条记录原子读-改-写）、`interfaces/api/revision.py` + `server/v2.py`（`POST/GET /projects/{id}/revision-work`、`POST .../reads`、`POST .../coverage/{chapter_id}`; `CoverageViolation` 信封）；专项 26 项 | [notes/v03-7.2](notes/v03-7.2-coverage-ledger.md) |
 
-质量门：`uv run pytest -q` **1837 passed**（V03-7.1 后端专项 27）；`ruff check src tests` 全过；`ruff format --check`（本任务文件）全过；`mypy src/hastings` 246 files 无问题。前端 `vitest` **428 passed**（50 文件；含 intent 新增 8）、`npm run build`（tsc --noEmit + vite build）通过，主 bundle 829.02 kB（gzip 272.71）。留白：意图条与原消息提示均为**只读展示**，显式自然语言直启执行与预算等待随 V03-7.3；输入预览按 `text` 分类故 `reuses_authorization` 恒 false，同范围复用的界面呈现由作者消息「意图区分」（带引用目标）承担；分类线索是确定性词表、同义扩展待真模型走查补充；`holistic_revision` 仍走既有「定向修订」任务草稿，整体执行的覆盖台账随 V03-7.2。
+质量门：`uv run pytest -q` **1863 passed**（V03-7.2 后端专项 26）；`ruff check src tests` 全过；`ruff format --check`（本任务文件）全过；`mypy src/hastings` 252 files 无问题。前端未改动（本任务为后端契约 + 领域台账），沿用 V03-7.1 口径 `vitest` 428 passed / `npm run build` 通过。留白：预算（12 次调用/任务）、两轮修正、到上限等待作者属 V03-7.3；统一发布与副本门禁属 V03-7.4（本次 `changed` 仅是**记录**已改，分支暂存/合并未接）；`context` 全局上下文当前是可回读 REST 投影，并入模型 `ContextSnapshot` 供执行循环属 V03-7.3；作者侧覆盖清单界面随整体执行界面阶段补齐。
+
