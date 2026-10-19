@@ -1,6 +1,6 @@
 # Hastings 0.3：正文修改与版本流程
 
-> 状态：2026-10-17 评审决定已确认，待实现。
+> 定位：2026-10-17 确认的目标设计，不维护实施进度；当前行为与差距见[修改与撤销](../dev-notes/v0.3/modules/editing-and-undo.md)。
 > 关联：[主方案](agent-first-workbench-product-design.md)、[模型上下文与正文摘要](context-and-summary-design.md)。
 > 作者模型与独立模型一致性审计为后续保留项，不属于本版流程。
 

@@ -1,42 +1,32 @@
-# API 矩阵、入口拒启与默认工作区
+# API 与兼容边界
 
-> 状态：**as-built**（V03-8.6，2026-10-19）。证据：[8.6](../notes/v03-8.6-api-matrix-and-default-desk.md)、[API 矩阵](../artifacts/v03-8.6-api-matrix.md)。
-> 实际包：`interfaces/api/_retired.py`、`interfaces/api/{changes,agents,revision}.py`、`server/v2.py`、`frontend/src/App.tsx`。
+0.3 使用 `/api/v2` 业务接口，默认界面是写作台。接口是否可用由当前路由和用例决定，保留历史数据或底层服务不等于保留功能启动入口。
 
-## 1. 职责
+## 接口分类
 
-把「0.3 提供什么、不提供什么」写成可执行约束：126 条 V2 路由逐条分类；被排除功能的启动面在 HTTP 层统一拒绝；默认壳是写作台。
+| 类别 | 当前约束 |
+|---|---|
+| 写作台使用的接口 | 正文发布走统一管线，查询只读；候选与副本有独立工作状态 |
+| 内部任务与兼容用例 | 按各用例检查授权、来源、预算和版本；仅有 API 的能力明确标注未接前端 |
+| 旧工作区兼容接口 | 部分仍挂载；0.3 不自动使用旧语料和风格学习 |
+| 本版排除功能的启动接口 | 返回 HTTP 410 与稳定错误码，无启动副作用 |
 
-## 2. 分类
+## 排除功能与历史回看
 
-| 类别 | 含义 | 约束 |
-|---|---|---|
-| 0.3 消费面 | 写作台/客户端直接使用 | 走统一发布或只读投影 |
-| 内部/演进保留 | 有 0.3 真实用例（agent-jobs/task-drafts 等） | 凭据、预算、来源核对 |
-| V1 兼容保留 | 旧工作区读写 | 0.3 装配不消费、无自动链 |
-| 必须拒启 | 本版排除功能 | 410 + 三要素 + 无副作用 |
+旧变更集的分析、计划、批准、执行、Agent 执行、审阅、合并，以及审计、重写与协调的指定启动路由，统一返回 `FEATURE_RETIRED_IN_03`。错误含位置、原因与当前替代动作。变更集列表和详情的只读查询保留。
 
-## 3. 拒启契约
+作者模型前端页面与挂载路由已移除；旧数据和部分模块仍存在。旧变更影响与修订审阅页面只读回看，审计页面不提供启动按钮。
 
-- 错误码 `FEATURE_RETIRED_IN_03`，HTTP **410**（区分于 400 参数错、403 无权限、404 不存在）。
-- 三要素的 `fix` 必须给本版替代路径（拒启本身就是迁移指引）。
-- 覆盖 13 个启动面：变更集 analyze/plan/approve/execute/execute-agent/review/merge、`POST /audit`、`rewrites` 四个、`POST /coordinate`。
-- 只读保留：`GET /changes`、`GET /changes/{cs}`。
-- 证明：`tests/v2/test_legacy_entry_guard.py`（20 项：410、无副作用、只读可用、旧写路径归因、`style_observer` 拒启、作者模型路由不存在、语料静态守卫）。
+`coordinator`、`auditor` 角色仍可通过保留的 Job 入口创建有凭据约束的任务；不能据上述指定路由的 410 推断所有同类后台能力都已不可达。这是产品范围仍需核对的兼容边界。
 
-## 4. 旧写路径收敛
+## 正文写入与默认界面
 
-- `POST /chapters/import`（旧单章导入）从直提领域命令改为 `publish_command`，返回 `operation_id`——8.6 前是唯一绕过统一发布器的写路径。
-- save/restore/import/adopt/finish/undo/publish 全部可归因（`GET /operations/{id}`）。
+导入、保存、恢复、采用、副本完成、撤销与整体发布经统一正文发布器返回 `operation_id`，可查询实际章节变化。单独保存账本的返回契约不同，见[账本说明](context-and-ledger.md)。
 
-## 5. 默认工作区
+`frontend/src/App.tsx` 默认显示写作台，进入时自动收起兼容对话栏。兼容页面不能作为当前主要创作流程的能力承诺。
 
-- `App.tsx` 默认视图与导航首位 = 写作台；进入写作台自动收起旧版对话栏。
-- 旧七页保留为兼容入口：变更影响/修订审阅改只读回看、悬疑审计移除启动按钮。
-- 删除未挂载的 `ChangeCenter.tsx` 与 `changeAction`/`runAudit`/`coordinate` 客户端函数。
+## 当前限制与代码位置
 
-## 6. 未验与留白
+V1 语料写接口仍可手工调用，0.3 没有界面入口或自动消费；是否拒绝仍待产品决定。旧审批和审计底层服务仍保留。节拍类型与旧引用仍在，起草入口已不要求节拍。
 
-- V1 语料写接口（`POST /api/corpus` 等）仍可**手工**调用（数据保留策略）；0.3 无入口、无自动消费，是否拒启待产品裁决。
-- `coordinator`/`auditor` 角色仍可创建 Job（有凭据门禁），服务旧任务回看。
-- 逐章审批流底层服务保留未删，只保证入口不可达。
+主要位置：`interfaces/api/_retired.py`、`interfaces/api/{changes,agents,revision}.py`、`server/v2.py`、`frontend/src/App.tsx`。逐路由历史盘点见[API 矩阵](../artifacts/v03-8.6-api-matrix.md)，使用时须与当前路由核对。

@@ -1,6 +1,6 @@
 # Hastings 0.3：模型上下文与正文摘要
 
-> 状态：2026-10-17 评审决定已确认，待实现。
+> 定位：2026-10-17 确认的目标设计，不维护实施进度；当前行为与差距见[账本与模型背景](../dev-notes/v0.3/modules/context-and-ledger.md)。
 > 关联：[主方案](agent-first-workbench-product-design.md)、[正文修改与版本流程](manuscript-editing-design.md)。
 
 ## 1. 用稳定作品资料维持连续理解

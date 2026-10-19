@@ -1,6 +1,6 @@
 # 作家的桌面：视觉与交互原则
 
-> 产品版本：0.3，目标设计，待实现。
+> 产品版本：0.3，目标设计。本文描述要求，不维护实施进度；当前行为与差距见[模块说明](../dev-notes/v0.3/modules/README.md)。
 > 日期：2026-10-17。
 > 设计基准：一张稿纸，几本书，一支笔，几个印章，一枚镇纸。
 > 关联：[主工作区方案](agent-first-workbench-product-design.md)、[正文修改](manuscript-editing-design.md)、[模型上下文](context-and-summary-design.md)。

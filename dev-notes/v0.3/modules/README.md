@@ -1,46 +1,26 @@
-# Hastings 0.3 模块 as-built 导航
+# Hastings 0.3 模块导航
 
-> 状态：**as-built，2026-10-19**，基线 commit `2aa7138`（V03-8.7）。
-> 本目录只登记 **0.3 新增或契约实质变化**的模块；未变化模块的契约仍在
-> [`dev-notes/v0.2/modules/`](../../v0.2/modules/README.md)（仍是当前实现，不是历史文档）。
-> 模块文档写契约层（职责/公开接口/关键决策/约束/演化），实现细节以代码为准。
+本目录描述当前实现，按职责组织，不记录阶段进度或改动历史。核对日期：2026-10-19；本文与相关模块说明经源码静态核对，本次未重跑运行时验收。
 
-## 1. 与 v0.2 模块文档的关系
+## 按问题查找
 
-| v0.2 模块文档 | 0.3 是否有实质变化 | 0.3 处置 |
-|---|---|---|
-| [repository-kernel](../../v0.2/modules/repository-kernel.md) | 是：新增 `revision_work`/`operations`/`execution_log` 辅助表、`journal_mode` 加固 | 契约沿 v0.2，增量见本文档 §3 |
-| [story-domain](../../v0.2/modules/story-domain.md) | 否（Beat 类型保留，见未验项） | 契约不变 |
-| [manuscript-author-model](../../v0.2/modules/manuscript-author-model.md) | 是：作者模型资料面退出 0.3；正文侧新增锚点/核对 | 契约以 [desk-surface](desk-surface.md) / [publish-import-recovery](publish-import-recovery.md) 为准 |
-| [change-impact](../../v0.2/modules/change-impact.md) | 是：逐章审批流退役（HTTP 410），只读保留 | [api-matrix-and-retirement](api-matrix-and-retirement.md) |
-| [guard-authorization](../../v0.2/modules/guard-authorization.md) | 是：意图三分 + 执行凭据 + 预算门 | [revision-and-coverage](revision-and-coverage.md) |
-| [orchestration-context](../../v0.2/modules/orchestration-context.md) | 是：自动链切断、旧任务隔离、上下文装配 | [publish-import-recovery](publish-import-recovery.md) §4 |
-| [interfaces-observability](../../v0.2/modules/interfaces-observability.md) | 是：执行日志通道、SSE 游标补齐、拒启面 | [execution-log](execution-log.md)、[api-matrix-and-retirement](api-matrix-and-retirement.md) |
+| 需要了解 | 模块说明 |
+|---|---|
+| 默认工作区、主区导航、阅读位置与界面限制 | [写作台](desk-surface.md) |
+| 正文导入、正式发布、操作记录、备份与启动恢复 | [发布与恢复](publish-import-recovery.md) |
+| 手工修改副本、快照、候选采用、冲突与撤销 | [修改与撤销](editing-and-undo.md) |
+| 账本、约定、背景、摘要、更新建议与披露边界 | [账本与模型背景](context-and-ledger.md) |
+| 人物、线索、手法结构与时间线投影 | [图谱](graphs.md) |
+| 作者意图、原文覆盖、预算、执行与暂存发布 | [修订与覆盖](revision-and-coverage.md) |
+| 持久执行事件、分页、实时流与消费边界 | [执行日志](execution-log.md) |
+| 接口分类、旧功能限制与兼容入口 | [API 与兼容边界](api-matrix-and-retirement.md) |
 
-## 2. 0.3 模块索引
+代码位置见[后端导航](../../../src/hastings/README.md)和[前端说明](../../../frontend/README.md)。运行方法与剩余验收项见[运行与验收状态](../release.md)。
 
-| 文档 | 覆盖 | 关键包/文件 | 状态 |
-|---|---|---|---|
-| [desk-surface.md](desk-surface.md) | 写作台三部分工作区、响应式、键盘/输入法、唯一输入框、主区视图 | `frontend/src/components/desk/*`、`state/desk*` | as-built（V03-1.1/1.5/5.x/6.4/8.5） |
-| [revision-and-coverage.md](revision-and-coverage.md) | 意图三分、覆盖台账、预算/修正上限、修订任务状态机、执行循环（读→改→覆盖→暂存）、统一发布与撤销 | `application/services/{intent_service,revision_task_service,revision_work_service,revision_publish_service,revision_execution_service}.py`、`domain/revision/*` | as-built（V03-7.x + 8.7 执行循环） |
-| [publish-import-recovery.md](publish-import-recovery.md) | 统一发布管线、导入预览、备份/恢复、启动恢复与旧队列隔离 | `application/services/{publish_manuscript_change,import_service,backup_service}.py`、`infrastructure/runtime.py` | as-built（V03-2.x/8.1-8.3） |
-| [execution-log.md](execution-log.md) | 执行日志（append-once/分页/SSE/断线补齐/压力目标） | `infrastructure/execution_log.py`、`interfaces/api/execution_log.py` | as-built（V03-1.6/8.4） |
-| [api-matrix-and-retirement.md](api-matrix-and-retirement.md) | API 分类、410 拒启、默认工作区、旧写路径收敛 | `interfaces/api/_retired.py`、`server/v2.py` | as-built（V03-8.6） |
+## 基础契约与读取范围
 
-## 3. 0.3 新增的存储与端口（增量）
+版本仓库与故事基础模型复用既有契约，可按需读取[仓库内核](../../v0.2/modules/repository-kernel.md)和[故事领域](../../v0.2/modules/story-domain.md)。旧版本中的阶段状态、目标接口和作者模型等功能不能据此视为当前可用。
 
-| 面 | 位置 | 说明 |
-|---|---|---|
-| 操作记录 | `application/services/operation_service.py` | 每个写入返回 `operation_id`；`GET /operations/{id}(/impact|/undo)` |
-| 覆盖台账 | `revision_work` aux 表 + `revision_work_service` | 逐章读取登记与五状态结论；`complete` 只在全书下过结论后为真 |
-| 修订任务 | `revision_task_service` + `domain/revision/task.py` | 预算 `call_limit/calls_used/remaining`、修正轮次上限 2、等待/停止/继续 |
-| 执行日志 | `infrastructure/execution_log.py` | append-once + 作品级游标分页 + SSE 续传；事件类型见 `domain/execution_log` |
-| 入口拒启 | `interfaces/api/_retired.py` | 410 `FEATURE_RETIRED_IN_03` + 三要素；被排除功能不可从 HTTP 启动 |
-| 能力目标 | `application/capabilities.py` | §9.6 性能目标（执行日志 page_size、p95 等）被测试读取 |
+正文、账本等作品内容通过仓库提交保存；副本、覆盖台账、任务与暂存使用辅助记录保存工作状态；执行日志独立持久化。辅助记录与过程数据不等于正式作品内容，备份覆盖范围见[发布与恢复](publish-import-recovery.md#3-备份与恢复)。
 
-## 4. 未验与留白（模块级）
-
-- 节拍类型仍在 `domain/story/narrative`（计划 §9.1 留白「节拍类型退出随 V03-8」未做）；起草入口已不要求 Beat，但类型与旧引用未移除（`v03-0-beat-reference-map.md` 记录了 9 个引用点）。
-- 前端执行日志面板消费端未接（[execution-log](execution-log.md) §未验）。
-- V1 语料写接口仍挂载（0.3 无入口、无自动消费）；是否拒启待裁决。
-- 逐章审批流的底层服务（review/audit/rewrite）保留未删，只保证入口不可达。
+模块中写明当前限制，历史取证另从[开发记录入口](../README.md#开发与验收记录按需读取)查找。

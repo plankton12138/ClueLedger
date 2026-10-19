@@ -1,38 +1,45 @@
-# 统一发布、导入预览与备份恢复
+# 正文发布、导入与恢复
 
-> 状态：**as-built**（V03-2.1–2.5、8.1–8.3、8.6，2026-10-19）。证据：[2.2](../notes/v03-2.2-publish-manuscript-change.md)、[2.3](../notes/v03-2.3-import-preview.md)、[8.1](../notes/v03-8.1-recovery-and-legacy-isolation.md)、[8.2](../notes/v03-8.2-backup-and-restore.md)、[8.3](../notes/v03-8.3-production-startup-loop.md)。
-> 实际包：`application/services/{publish_manuscript_change,import_service,backup_service,operation_service}.py`、`interfaces/api/*`、`server/{__main__,v2}.py`。
+正式正文的导入、保存、恢复、候选采用、副本完成、撤销与整体修订发布共用发布管线。这样正文、来源证据、摘要状态与操作记录能够在同一次提交内保持一致，失败时不留部分更新。
 
-## 1. 统一发布管线（唯一正式写路径）
+## 1. 正式发布
 
-- 六步：领域命令纯函数 → 证据/摘要核对 → 操作记录 → 原子提交 → 来源/反向链接 → 事件投影。
-- 所有正式写入都返回 `operation_id`：`chapters/{id}/save`、`chapters/{id}/restore`、`chapters/import`（8.6 接入）、`imports/previews/confirm`、`drafts/{id}/adopt`、`edit-sessions/{id}/finish`、`operations/{id}/undo`、`revision-tasks/{id}/publish`。
-- 证明：`GET /operations/{id}` 能回读本次变化的章（`tests/v2/test_legacy_entry_guard.py`）。
+发布器准备领域变化，核对证据与摘要状态，生成操作记录，再原子提交并投影事件。正文写入返回 `operation_id`，可通过 `GET /operations/{id}` 回读相关变化。该约定针对正式正文发布，不表示单独保存账本也一定生成操作记录。
 
-## 2. 导入预览（2.3）
+保存会确定性地核对正文依据并标记摘要失效，不自动调用模型生成摘要或账本建议。副本、候选和覆盖台账的工作状态不直接替代正式内容。
 
-- `POST /imports/previews` 只解析不写入；预览展示**会被写入的实际文本**。
-- 同名章默认新增；内容相同必须作者选择（新增副本 / 替换 / 取消），不静默覆盖。
-- 整批确认一次提交，失败无半份正文；`preview_hash` 防过期采用。
+实现：`application/services/{publish_manuscript_change,operation_service}.py`、`application/workflows/operation_projection.py`。
 
-## 3. 备份与恢复（8.1/8.2）
+## 2. 导入预览
 
-- `GET /projects/{id}/backup`：预览按 head 构建并回报 `BACKUP_COVERAGE` 覆盖声明；凭据结构性排除。
-- `POST /projects/{id}/restore`：差异未确认 409（列章与 `changed_fields`），确认后 `save_full_text` + 账本进同一 Commit；包内对象缺失 `EXPORT_RESTORE_NEW_OBJECT`。
-- 恢复是覆盖语义（不做三方合并）；保留后来修改请用撤销。
+`POST /imports/previews` 只解析并返回实际将写入的文字，不保存正式正文。默认新增章节；重复内容须由作者选择新增副本、替换或取消。确认时检查预览指纹、目标版本与活动副本，整批一次提交，失败不留下部分章节。
 
-## 4. 启动恢复与旧任务隔离（8.1）
+旧单章导入 `POST /chapters/import` 同样经发布器返回操作编号。实现：`application/services/import_service.py`、`interfaces/importers/manuscript_text.py`。
 
-- `V2Runtime.recover_on_startup()` 是 lifespan 唯一入口：执行中的对话/任务标 `interrupted`/waiting，旧自动队列 `manuscript.analysis`/`style_observer` 启动即分类暂停为 `historical_paused`；**只改状态，不自动重发模型调用**。
-- `GET /api/v2/recovery` 提供上次恢复摘要、旧队列快照、任务状态分布与等待清单。
+## 3. 备份与恢复
 
-## 5. 生产装配（8.3）
+`GET /projects/{id}/backup` 以当前正式版本构建包并回报覆盖声明：
 
-- `assemble_server()`：config 解析 → 静态目录探测 → `.env` → `load_server_config` → 引导档案/未配置判定 → 凭据存储 → `ProviderBook` → `WorkspaceRegistry` → `V2Runtime.sqlite` → `create_app`；`main()` 只剩参数解析与 `uvicorn.run`。
-- 冒烟测试用同一段装配走完整回路（创建→导入→保存→跨章修改→撤销→采用→备份恢复）。
+| 纳入 | 不纳入 |
+|---|---|
+| 正文章节与段落清单、故事账本、本书约定、叙事结构、依赖边 | 手工修改副本与快照、覆盖台账、整体任务与暂存、关联链接、操作记录、待确认建议与候选、执行日志、模型连接与凭据 |
 
-## 6. 未验与留白
+这份导出包用于恢复作品内容，不能替代包含过程状态的数据库完整备份。
 
-- **真 uvicorn 进程启动无运维日志证据**（8.3 留白）——冒烟走的是同进程 TestClient。
-- 恢复到新作品需要 artifact ID 重映射（0.3 不做）。
-- 备份核对以「正文/账本/副本/操作/建议/来源/日志」为准；凭据排除是结构性保证。
+`POST /projects/{id}/restore` 仅支持同作品恢复。存在差异但未确认时返回 409 并列出差异；确认后正文与账本经统一发布一次提交。包内对象在当前作品不存在时返回 `EXPORT_RESTORE_NEW_OBJECT`，不自动创建另一部作品或重映射 ID。
+
+恢复按包内容覆盖，不做三方合并；需要保护后续独立修改时使用[撤销](editing-and-undo.md)。内容相同可返回无变化结果。
+
+实现与覆盖声明：`application/services/backup_service.py` 的 `BACKUP_COVERAGE`。
+
+## 4. 启动恢复与装配
+
+`server/v2.py` 的 `V2Runtime.recover_on_startup()` 在服务生命周期中统一处理执行中的对话与任务，将其标为中断或等待；旧自动分析和风格观察队列标为 `historical_paused`。恢复只改状态，不自动重新调用模型。
+
+`GET /api/v2/recovery` 返回恢复摘要、旧队列快照、状态分布与等待清单。
+
+`server/__main__.py` 的 `assemble_server()` 负责配置、凭据、模型连接、工作区、数据库与应用装配。未配置模型可正常启动并使用非模型功能。
+
+## 5. 验证边界
+
+现有装配闭环证据使用同进程测试客户端；独立服务进程的运行日志尚未取证。同作品恢复不等于跨作品迁移，也不证明完整数据库回退已经验证。运行命令见[运行说明](../release.md)。
