@@ -38,3 +38,22 @@ uv run python eval/v2/chat_driver.py --out eval/runs/<日期>-phase19-chat --mod
 ```
 
 默认 `--provider config` 使用 config.yaml 的 ollama 档案；本地模型先启动 Ollama。四个场景的通过口径写在驱动 docstring；模型输出不合规时报告如实记录，不以 FakeProvider 替代。
+
+## 0.3 写作台真模型走查（V03-8.7）
+
+`desk_driver.py` 进程内启动 V2 应用（隔离 SQLite）+ 真实 Provider（config.yaml 的 ollama 档案），
+走查 0.3 的真模型路径与证据分层：讨论流式、试写候选→采用、修订任务预算/覆盖/停止、环境失败记录。
+
+```bash
+uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-real-model --model qwen3:8b
+```
+
+| 场景 | 检查点 |
+|---|---|
+| S1 讨论流式 | 真实模型增量分片、终态到达、讨论不产生 Job |
+| S2 试写候选 → 采用 | 候选带预览哈希；采用走统一发布产生 Commit，`operation_id` 可回读 |
+| S3 修订任务预算与覆盖 | `call_limit` 可缩小、开任务零模型调用；读取/覆盖结论入库；停止留痕 |
+| S4 环境失败（失败证据） | 不存在的模型必须 `turn.failed`（`CHAT_PROVIDER_FAILED`），不静默、不伪成功 |
+
+失败证据按设计记录、不计通过；模型输出不合规时报告如实记录，不用 FakeProvider 替代。
+最近验收：[2026-10-19 V03-8.7 报告](../runs/2026-10-19-v03-8.7-real-model/README.md)。
