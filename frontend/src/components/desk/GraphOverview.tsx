@@ -74,7 +74,9 @@ export default function GraphOverview({
             <Empty>
               {viewId === "characters"
                 ? "登记人物与关系后，这里会出现关系小图。"
-                : "登记线索及其指向后，这里会出现线索小图。"}
+                : viewId === "method"
+                  ? "在账本新建「真相」条目并填写手法后，这里会出现手法结构。"
+                  : "登记线索及其指向后，这里会出现线索小图。"}
             </Empty>
           ) : (
             <div className="px-2">

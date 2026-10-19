@@ -12,6 +12,7 @@ import {
   fetchClueGraph,
   fetchEvidenceByTarget,
   fetchGraph,
+  fetchMethodGraph,
 } from "./graphs";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -100,6 +101,52 @@ describe("线索图视图", () => {
     const graph = await fetchClueGraph("prj_1", { at_beat_id: "beat_3" });
     expect(graph.clues[0].status).toBe("implemented");
     expect(graph.clues[0].within_position).toBe(true);
+  });
+});
+
+describe("手法图视图", () => {
+  it("回读真相文字、缺口与完整度，聚焦进查询串", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe(
+        "/api/v2/projects/prj_1/graphs/method?focus=art_truth",
+      );
+      return jsonResponse({
+        project_id: "prj_1",
+        commit_id: "c1",
+        focus: { node_id: "art_truth", neighbor_ids: ["art_sis"] },
+        truths: [
+          {
+            truth_id: "art_truth",
+            culprit_id: "art_sis",
+            motive: "",
+            method: "换药",
+            cover_up: "",
+            accomplice_ids: [],
+            true_timeline: ["art_event"],
+            missing_fields: ["motive", "cover_up"],
+          },
+        ],
+        gaps: [
+          {
+            code: "METHOD_TEXT_NOT_RECORDED",
+            where: "mystery_truth(art_truth).motive",
+            why: "账本里还没有动机",
+            fix: "在账本「真相」条目填写动机",
+            truth_id: "art_truth",
+          },
+        ],
+        completeness: { recorded: 1, total: 3, note: "只统计三段说明是否已写" },
+        nodes: [],
+        edges: [],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const graph = await fetchMethodGraph("prj_1", { focus: "art_truth" });
+    expect(graph.truths[0].method).toBe("换药");
+    expect(graph.truths[0].missing_fields).toEqual(["motive", "cover_up"]);
+    expect(graph.gaps[0].code).toBe("METHOD_TEXT_NOT_RECORDED");
+    expect(graph.completeness.recorded).toBe(1);
   });
 });
 

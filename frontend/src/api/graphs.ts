@@ -1,5 +1,6 @@
 /**
- * 图谱只读客户端（V03-6.4）：统一投影、人物图、线索图与「来源定位」证据查询。
+ * 图谱只读客户端（V03-6.4 / V03-7.5）：统一投影、人物图、线索图、手法图与
+ * 「来源定位」证据查询。
  *
  * 设计依据（计划 M12、产品 §5.4/§5.8）：图谱固定到读取的 Commit，前端只读回显，
  * 没有写端点——拖动只改本地布局偏好（见 state/graphLayout.ts）。查询参数有值才发，
@@ -94,6 +95,40 @@ export interface ClueGraphWire extends GraphWire {
   clues: ClueStateWire[];
 }
 
+/** 手法图（V03-7.5）：只回显账本已有文字与关系，缺口逐条给出。 */
+export interface MethodTruthWire {
+  truth_id: string;
+  culprit_id: string;
+  motive: string;
+  method: string;
+  cover_up: string;
+  accomplice_ids: string[];
+  true_timeline: string[];
+  missing_fields: string[];
+}
+
+export interface MethodGapWire {
+  code: string;
+  where: string;
+  why: string;
+  fix: string;
+  truth_id: string | null;
+}
+
+export interface MethodCompletenessWire {
+  recorded: number;
+  total: number;
+  /** 明确「只统计三段文字是否已写」，不代表推理链成立。 */
+  note: string;
+}
+
+export interface MethodGraphWire extends GraphWire {
+  focus: GraphFocusWire | null;
+  truths: MethodTruthWire[];
+  gaps: MethodGapWire[];
+  completeness: MethodCompletenessWire;
+}
+
 export interface GraphQuery {
   at_commit_id?: string | null;
   at_beat_id?: string | null;
@@ -150,6 +185,17 @@ export async function fetchClueGraph(
     focus: query.focus,
   });
   return request<ClueGraphWire>(`${projectPrefix(projectId)}/graphs/clues${suffix}`);
+}
+
+export async function fetchMethodGraph(
+  projectId: string,
+  query: GraphQuery = {},
+): Promise<MethodGraphWire> {
+  const suffix = queryString({
+    at_commit_id: query.at_commit_id,
+    focus: query.focus,
+  });
+  return request<MethodGraphWire>(`${projectPrefix(projectId)}/graphs/method${suffix}`);
 }
 
 /**

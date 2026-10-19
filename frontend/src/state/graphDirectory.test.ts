@@ -13,6 +13,7 @@ import type { ClueStateWire, GraphEdgeWire, GraphNodeWire } from "../api/graphs"
 import {
   buildDirectory,
   flattenRows,
+  graphEmptyText,
   graphModeKey,
   navigateRows,
   readGraphMode,
@@ -223,5 +224,14 @@ describe("查看方式偏好：按 project + view 隔离，存储不可用不抛
     vi.stubGlobal("localStorage", undefined);
     expect(readGraphMode("prj_1", "characters")).toBe("canvas");
     expect(() => writeGraphMode("prj_1", "characters", "directory")).not.toThrow();
+  });
+});
+
+describe("空图说明（V03-7.5）", () => {
+  it("手法结构给「先建真相条目」的下一步，而不是空白", () => {
+    expect(graphEmptyText("method")).toContain("真相");
+    expect(graphEmptyText("method")).toContain("手法");
+    expect(graphEmptyText("characters")).toContain("人物");
+    expect(graphEmptyText("clues")).toContain("线索");
   });
 });

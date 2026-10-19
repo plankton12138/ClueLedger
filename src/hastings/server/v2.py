@@ -1540,6 +1540,20 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             focus=focus,
         )
 
+    @router.get("/projects/{project_id}/graphs/method")
+    def get_method_graph(
+        project_id: str,
+        at_commit_id: str | None = None,
+        focus: str | None = None,
+    ) -> dict[str, Any]:
+        """手法图（只读）：既有真相文字与关系子图 + 缺口 + 完整度。
+
+        不新增步骤/条件/证据对象，也不按模型措辞补边；缺失只表示「尚未记录」。
+        """
+        return runtime.graphs.method(
+            project_id, at_commit_id=at_commit_id, focus=focus
+        )
+
     @router.get("/projects/{project_id}/ledger/schema")
     def get_ledger_schema(project_id: str) -> dict[str, Any]:
         """账本编辑表单描述：种类、字段、控件与引用目标，前后端共用一份口径。"""

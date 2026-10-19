@@ -26,7 +26,7 @@ from hastings.domain.repository.models import RELATION_ACTION_ADD, RelationRevis
 from hastings.domain.repository.serialization import content_hash
 from hastings.domain.story import error_codes as ec
 from hastings.domain.story import kinds
-from hastings.domain.story.canon.models import Clue
+from hastings.domain.story.canon.models import Clue, MysteryTruth
 from hastings.domain.story.catalog import StoryCatalog
 from hastings.domain.story.errors import violation
 from hastings.domain.story.narrative.state import story_state_at_beat, story_state_final
@@ -44,6 +44,10 @@ __all__ = [
     "LAYER_KNOWLEDGE",
     "LAYER_PLAN",
     "LAYER_TRUTH",
+    "METHOD_CLUES_NOT_RECORDED",
+    "METHOD_TEXT_NOT_RECORDED",
+    "METHOD_TIMELINE_UNRESOLVED",
+    "METHOD_TRUTH_NOT_RECORDED",
     "PERSPECTIVE_AUTHOR",
     "PERSPECTIVE_CHARACTER",
     "SEMANTIC_LAYERS",
@@ -55,9 +59,14 @@ __all__ = [
     "GraphNode",
     "GraphProjection",
     "GraphSourceRef",
+    "MethodCompleteness",
+    "MethodGap",
+    "MethodGraph",
+    "MethodTruthState",
     "character_projection",
     "clue_projection",
     "graph_projection",
+    "method_projection",
     "semantic_layer",
 ]
 
@@ -586,4 +595,257 @@ def clue_projection(
         clues=tuple(states),
         nodes=nodes,
         edges=tuple(edges),
+    )
+
+
+# --- 手法图（V03-7.5）：只投影已有正式文字与关系，缺口如实显示 -----------------
+# 硬约束（计划 M12 手法结构行）：**不新增步骤/条件/证据结构化对象**，不按模型措辞
+# 拆图或补边。这里能画的，全部来自账本里已经写下的文字与引用：
+#
+# - 真相条目自身的动机/手法/掩盖三段文字（原样回显，不解析成步骤）；
+# - 凶手、协助者、真实时间线引用的事件；
+# - 事件已有的地点与参与者；
+# - 与这些事件相关的真相事实，以及指向这些事实的线索。
+#
+# 缺失只表示「尚未记录」，不推断内容；完整度只是「三段文字写了几段」，
+# 不代表推理链成立、也不代表手法可行。
+METHOD_TRUTH_NOT_RECORDED = "METHOD_TRUTH_NOT_RECORDED"
+METHOD_TEXT_NOT_RECORDED = "METHOD_TEXT_NOT_RECORDED"
+METHOD_TIMELINE_UNRESOLVED = "METHOD_TIMELINE_UNRESOLVED"
+METHOD_CLUES_NOT_RECORDED = "METHOD_CLUES_NOT_RECORDED"
+
+_METHOD_TEXT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("method", "手法"),
+    ("motive", "动机"),
+    ("cover_up", "掩盖方式"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class MethodGap:
+    """手法图的缺口：只说「哪一项还没记录、去哪里补」，不补内容。"""
+
+    code: str
+    where: str
+    why: str
+    fix: str
+    truth_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MethodTruthState:
+    """一条真相的手法资料：三段文字 + 已解析的凶手/协助者/时间线引用。"""
+
+    truth_id: str
+    culprit_id: str
+    motive: str
+    method: str
+    cover_up: str
+    accomplice_ids: tuple[str, ...]
+    true_timeline: tuple[str, ...]
+    missing_fields: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MethodCompleteness:
+    """三段文字的记录情况；``note`` 明确它不代表逻辑证明。"""
+
+    recorded: int
+    total: int
+    note: str = "只统计手法/动机/掩盖三段说明是否已写，不代表推理链成立或手法可行"
+
+
+@dataclass(frozen=True, slots=True)
+class MethodGraph:
+    """手法图视图：真相资料 + 既有关系子图 + 缺口与完整度（只读）。"""
+
+    commit_id: str | None
+    truths: tuple[MethodTruthState, ...]
+    nodes: tuple[GraphNode, ...]
+    edges: tuple[GraphEdge, ...]
+    gaps: tuple[MethodGap, ...]
+    completeness: MethodCompleteness
+
+
+def _method_related_ids(catalog: StoryCatalog, truth: MysteryTruth) -> tuple[set[str], set[str]]:
+    """一条真相已记录的相关对象：节点 ID 集合 + 解析到的事件 ID 集合。
+
+    只沿账本已有的引用走两跳（真相 → 事件 → 事实/线索），不合成任何新关系。
+    """
+    ids: set[str] = {truth.culprit_id} if truth.culprit_id else set()
+    ids.update(truth.accomplice_ids)
+    events: set[str] = set()
+    for ref in truth.true_timeline:
+        entry = catalog.get(ref)
+        if entry is None:
+            continue
+        ids.add(ref)
+        if entry.kind == kinds.KIND_TIMELINE_EVENT:
+            events.add(ref)
+    for event_id in events:
+        event = catalog.get(event_id)
+        if event is None:
+            continue
+        place = str(event.content.get("place_id") or "")
+        if place:
+            ids.add(place)
+        ids.update(_as_ids(event.content.get("participants")))
+    facts = {
+        entry.artifact_id
+        for entry in catalog.by_kind(kinds.KIND_TRUTH_FACT)
+        if str(entry.content.get("event_id") or "") in events
+    }
+    ids.update(facts)
+    for entry in catalog.by_kind(kinds.KIND_CLUE):
+        points_to = _as_ids(entry.content.get("points_to"))
+        if any(target in facts for target in points_to):
+            ids.add(entry.artifact_id)
+    return ids, events
+
+
+def method_projection(
+    catalog: StoryCatalog,
+    *,
+    focus: str | None = None,
+    evidence_status: Mapping[str, str] | None = None,
+) -> MethodGraph:
+    """手法图：以「真相」条目为中心的既有关系子图。
+
+    - **不新增结构对象**：三段文字原样回显；事件、地点、人物、线索只来自账本
+      已有条目与引用，未记录就是缺口。
+    - **缺口**：手法/动机/掩盖为空、真实时间线引用悬空、没有线索指向相关事实，
+      逐条给出「哪里缺、怎么补」。
+    - **完整度**：只数三段文字写了几段，``note`` 明确不代表逻辑证明。
+    """
+    projection = graph_projection(catalog, evidence_status=evidence_status)
+    truth_entries = catalog.by_kind(kinds.KIND_MYSTERY_TRUTH)
+    if not truth_entries:
+        return MethodGraph(
+            commit_id=catalog.commit_id,
+            truths=(),
+            nodes=(),
+            edges=(),
+            gaps=(
+                MethodGap(
+                    code=METHOD_TRUTH_NOT_RECORDED,
+                    where="graphs.method",
+                    why="账本里还没有「真相」条目，手法结构无从投影",
+                    fix="在账本新建真相条目，填写凶手、手法、动机与掩盖方式；缺口只表示未记录",
+                ),
+            ),
+            completeness=MethodCompleteness(recorded=0, total=0),
+        )
+
+    node_ids = {node.id for node in projection.nodes}
+    selected: set[str] = set()
+    truths: list[MethodTruthState] = []
+    gaps: list[MethodGap] = []
+    recorded_fields = 0
+    total_fields = 0
+
+    for entry in sorted(truth_entries, key=lambda item: item.artifact_id):
+        truth = MysteryTruth.from_content(dict(entry.content))
+        ids, events = _method_related_ids(catalog, truth)
+        ids.add(entry.artifact_id)
+
+        missing = tuple(
+            field for field, _label in _METHOD_TEXT_FIELDS if not str(getattr(truth, field)).strip()
+        )
+        total_fields += len(_METHOD_TEXT_FIELDS)
+        recorded_fields += len(_METHOD_TEXT_FIELDS) - len(missing)
+        for field, label in _METHOD_TEXT_FIELDS:
+            if field in missing:
+                gaps.append(
+                    MethodGap(
+                        code=METHOD_TEXT_NOT_RECORDED,
+                        where=f"mystery_truth({entry.artifact_id}).{field}",
+                        why=f"账本里还没有{label}",
+                        fix=f"在账本「真相」条目填写{label}；缺口只表示未记录，不推断内容",
+                        truth_id=entry.artifact_id,
+                    )
+                )
+        for ref in truth.true_timeline:
+            if catalog.get(ref) is None:
+                gaps.append(
+                    MethodGap(
+                        code=METHOD_TIMELINE_UNRESOLVED,
+                        where=f"mystery_truth({entry.artifact_id}).true_timeline",
+                        why=f"真实时间线引用的 {ref!r} 不在当前版本",
+                        fix="先补该事件或修正引用；悬空引用不画成节点",
+                        truth_id=entry.artifact_id,
+                    )
+                )
+        related_facts = {
+            fact.artifact_id
+            for fact in catalog.by_kind(kinds.KIND_TRUTH_FACT)
+            if str(fact.content.get("event_id") or "") in events
+        }
+        clue_targets = related_facts | {entry.artifact_id}
+        has_clue = any(
+            target in clue_targets
+            for clue in catalog.by_kind(kinds.KIND_CLUE)
+            for target in _as_ids(clue.content.get("points_to"))
+        )
+        if not has_clue:
+            gaps.append(
+                MethodGap(
+                    code=METHOD_CLUES_NOT_RECORDED,
+                    where=f"mystery_truth({entry.artifact_id}).clues",
+                    why="还没有线索指向与这条真相相关的事实",
+                    fix="在账本记录线索及其指向；不根据正文措辞自动连线",
+                    truth_id=entry.artifact_id,
+                )
+            )
+        selected.update(item for item in ids if item in node_ids)
+        truths.append(
+            MethodTruthState(
+                truth_id=entry.artifact_id,
+                culprit_id=truth.culprit_id,
+                motive=truth.motive,
+                method=truth.method,
+                cover_up=truth.cover_up,
+                accomplice_ids=tuple(truth.accomplice_ids),
+                true_timeline=tuple(truth.true_timeline),
+                missing_fields=missing,
+            )
+        )
+
+    edges = [
+        edge
+        for edge in projection.edges
+        if edge.semantic_layer == LAYER_TRUTH
+        and edge.source in selected
+        and edge.target in selected
+    ]
+
+    if focus is not None:
+        if focus not in node_ids:
+            raise violation(
+                ec.STORY_UNKNOWN_ARTIFACT,
+                "graphs.method.focus",
+                f"聚焦对象 {focus!r} 不在当前快照中",
+                "改用快照内存在的对象 ID",
+                node_id=focus,
+            )
+        kept = [edge for edge in edges if focus in (edge.source, edge.target)]
+        focus_nodes = {focus}
+        for edge in kept:
+            focus_nodes.add(edge.source)
+            focus_nodes.add(edge.target)
+        selected = focus_nodes & node_ids
+        edges = kept
+        truths = [
+            item
+            for item in truths
+            if item.truth_id in selected or item.culprit_id in selected
+        ]
+
+    nodes = tuple(node for node in projection.nodes if node.id in selected)
+    return MethodGraph(
+        commit_id=projection.commit_id,
+        truths=tuple(truths),
+        nodes=nodes,
+        edges=tuple(edges),
+        gaps=tuple(gaps),
+        completeness=MethodCompleteness(recorded=recorded_fields, total=total_fields),
     )

@@ -15,6 +15,7 @@ import GraphDetail from "./GraphDetail";
 import GraphDirectory from "./GraphDirectory";
 import GraphViewTabs from "./GraphViewTabs";
 import { useGraphData } from "./useGraphData";
+import type { MethodGraphWire } from "../../api/graphs";
 import { readSelection, writeSelection, type GraphViewId } from "../../state/graphLayout";
 import {
   buildDirectory,
@@ -120,6 +121,9 @@ export default function GraphPanel({
           </span>
         )}
       </div>
+      {viewId === "method" && data?.method && data.method.truths.length > 0 && (
+        <MethodSummary method={data.method} />
+      )}
       {error && <ErrorText>{error}</ErrorText>}
       {loading ? (
         <Empty>正在读取图谱…</Empty>
@@ -160,6 +164,41 @@ export default function GraphPanel({
           />
         </>
       ) : null}
+    </div>
+  );
+}
+
+/** 手法资料摘要（V03-7.5）：原样回显账本文字；未记录与缺口直接写明，不补内容。 */
+function MethodSummary({ method }: { method: MethodGraphWire }) {
+  const gaps = method.gaps;
+  const shown = gaps.slice(0, 4);
+  return (
+    <div className="border-b border-line px-3 py-2 text-[11px]" aria-label="手法资料">
+      {method.truths.map((truth) => (
+        <div key={truth.truth_id} className="mb-1 last:mb-0">
+          <div>
+            <span className="text-sub">手法：</span>
+            {truth.method || <span className="text-amber-600">尚未记录</span>}
+          </div>
+          <div className="text-sub">
+            动机：{truth.motive || "尚未记录"} · 掩盖：{truth.cover_up || "尚未记录"}
+          </div>
+        </div>
+      ))}
+      <p className="mt-1 text-[10px] text-sub">
+        完整度 {method.completeness.recorded}/{method.completeness.total} ·{" "}
+        {method.completeness.note}
+      </p>
+      {gaps.length > 0 && (
+        <ul className="mt-1 space-y-0.5 text-[10px] text-amber-700">
+          {shown.map((gap) => (
+            <li key={`${gap.code}:${gap.where}`}>
+              {gap.why}——{gap.fix}
+            </li>
+          ))}
+          {gaps.length > shown.length && <li>另有 {gaps.length - shown.length} 项缺口</li>}
+        </ul>
+      )}
     </div>
   );
 }

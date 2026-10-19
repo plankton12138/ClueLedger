@@ -41,9 +41,13 @@ export interface DirectoryGroup {
 
 /** 空图说明：无对象时给「下一步做什么」，而不是留下一片空白。画布与文字目录共用。 */
 export function graphEmptyText(viewId: string): string {
-  return viewId === "characters"
-    ? "还没有可画的人物关系。先在账本登记人物与关系，图中才会出现节点。"
-    : "还没有可画的线索关联。先在账本登记线索及其指向。";
+  if (viewId === "characters") {
+    return "还没有可画的人物关系。先在账本登记人物与关系，图中才会出现节点。";
+  }
+  if (viewId === "method") {
+    return "还没有可画的手法结构。先在账本新建「真相」条目并填写凶手、手法、动机与掩盖方式。";
+  }
+  return "还没有可画的线索关联。先在账本登记线索及其指向。";
 }
 
 /** 行键：画布选中与目录选中共用同一个 key 口径。 */

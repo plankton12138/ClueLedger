@@ -1,9 +1,9 @@
 /**
- * 图谱视图切换标签（V03-6.4）：人物关系 / 线索关联；手法结构与时间线占位。
+ * 图谱视图切换标签（V03-6.4 / V03-7.5）：人物关系 / 线索关联 / 手法结构；
+ * 时间线在 V03-7.6 接入。
  *
  * 设计依据（产品 §5.4）：右侧账本提供「目录 / 人物关系 / 线索关联 / 手法结构 /
- * 时间线」的视图选择。0.3 阶段手法结构与时间线只投影正式数据，前端先给占位，
- * 不做「等填满的大画布」。
+ * 时间线」的视图选择。手法结构只回显账本已有文字与关系，缺口如实显示。
  */
 
 import type { GraphViewId } from "../../state/graphLayout";
@@ -11,6 +11,7 @@ import type { GraphViewId } from "../../state/graphLayout";
 export const GRAPH_VIEWS: { id: GraphViewId; label: string }[] = [
   { id: "characters", label: "人物关系" },
   { id: "clues", label: "线索关联" },
+  { id: "method", label: "手法结构" },
 ];
 
 export default function GraphViewTabs({
@@ -36,7 +37,7 @@ export default function GraphViewTabs({
         </button>
       ))}
       <span className="ml-1 text-[10px] text-sub" title="0.3 只投影正式账本数据">
-        手法结构 · 时间线（V03-7）
+        时间线（V03-7.6）
       </span>
     </div>
   );

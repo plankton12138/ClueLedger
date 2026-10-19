@@ -24,6 +24,7 @@ from hastings.domain.story.errors import violation
 from hastings.domain.story.graph import (
     EVIDENCE_NEEDS_CHECK,
     EVIDENCE_VALID,
+    METHOD_TRUTH_NOT_RECORDED,
     PERSPECTIVE_AUTHOR,
     PERSPECTIVE_CHARACTER,
     CharacterGraph,
@@ -31,9 +32,13 @@ from hastings.domain.story.graph import (
     GraphEdge,
     GraphNode,
     GraphProjection,
+    MethodCompleteness,
+    MethodGap,
+    MethodTruthState,
     character_projection,
     clue_projection,
     graph_projection,
+    method_projection,
 )
 from hastings.domain.story.narrative.order import last_beat_of_node
 
@@ -214,6 +219,45 @@ class GraphQueries:
         branch = self._repo.get_branch(pid, "main")
         return branch.head_commit_id if branch is not None else None
 
+    def method(
+        self,
+        project_id: str,
+        *,
+        at_commit_id: str | None = None,
+        focus: str | None = None,
+    ) -> dict[str, Any]:
+        """手法图视图（只读）：既有真相文字与关系子图 + 缺口 + 完整度。
+
+        不新增步骤/条件/证据对象，也不按模型措辞补边；未记录的内容以
+        ``gaps`` 逐条报出，完整度只统计三段文字是否已写（不冒充逻辑证明）。
+        """
+        pid = ProjectId(project_id)
+        commit = CommitId(at_commit_id) if at_commit_id else self._head(pid)
+        if commit is None:
+            return _empty_method(project_id)
+        snapshot = self._repo.get_snapshot(pid, commit)
+        catalog = StoryCatalog.from_snapshot(snapshot)
+        graph = method_projection(
+            catalog, focus=focus, evidence_status=_evidence_status(snapshot)
+        )
+        focus_payload: dict[str, Any] | None = None
+        if focus is not None:
+            focus_payload = {"node_id": focus, "neighbor_ids": _neighbors(graph.edges, focus)}
+        return {
+            "project_id": project_id,
+            "commit_id": graph.commit_id,
+            "focus": focus_payload,
+            "truths": [_method_truth_payload(item) for item in graph.truths],
+            "gaps": [_method_gap_payload(item) for item in graph.gaps],
+            "completeness": {
+                "recorded": graph.completeness.recorded,
+                "total": graph.completeness.total,
+                "note": graph.completeness.note,
+            },
+            "nodes": _node_payload(graph.nodes, catalog),
+            "edges": [_edge_base(edge) for edge in graph.edges],
+        }
+
 
 def _resolve_position(
     catalog: StoryCatalog,
@@ -347,6 +391,55 @@ def _empty_clues(project_id: str) -> dict[str, Any]:
         "position": None,
         "focus": None,
         "clues": [],
+        "nodes": [],
+        "edges": [],
+    }
+
+
+def _method_truth_payload(state: MethodTruthState) -> dict[str, Any]:
+    return {
+        "truth_id": state.truth_id,
+        "culprit_id": state.culprit_id,
+        "motive": state.motive,
+        "method": state.method,
+        "cover_up": state.cover_up,
+        "accomplice_ids": list(state.accomplice_ids),
+        "true_timeline": list(state.true_timeline),
+        "missing_fields": list(state.missing_fields),
+    }
+
+
+def _method_gap_payload(gap: MethodGap) -> dict[str, Any]:
+    return {
+        "code": gap.code,
+        "where": gap.where,
+        "why": gap.why,
+        "fix": gap.fix,
+        "truth_id": gap.truth_id,
+    }
+
+
+def _empty_method(project_id: str) -> dict[str, Any]:
+    completeness = MethodCompleteness(recorded=0, total=0)
+    return {
+        "project_id": project_id,
+        "commit_id": None,
+        "focus": None,
+        "truths": [],
+        "gaps": [
+            {
+                "code": METHOD_TRUTH_NOT_RECORDED,
+                "where": "graphs.method",
+                "why": "账本里还没有「真相」条目，手法结构无从投影",
+                "fix": "在账本新建真相条目，填写凶手、手法、动机与掩盖方式；缺口只表示未记录",
+                "truth_id": None,
+            }
+        ],
+        "completeness": {
+            "recorded": completeness.recorded,
+            "total": completeness.total,
+            "note": completeness.note,
+        },
         "nodes": [],
         "edges": [],
     }
