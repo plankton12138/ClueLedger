@@ -3,13 +3,15 @@
 三通道分工（计划 §6.2）：对话 SSE 是消息投影、业务 WS 是版本变化，本模块是
 运行事件（执行日志）的独立通道——历史分页与实时流共用同一作品游标与事件 ID
 空间，断线补齐 = 从上次游标重新分页。端点形状对应计划 ``GET /execution-events``
-与 ``GET /execution-events/stream``。
+与 ``GET /execution-events/stream``；``tail=0`` 为有限流：排空当前积压后关闭
+（积压超过 page_size 时连续取页不截断），``tail>=1`` 为持续流并以注释帧心跳。
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Query
@@ -31,6 +33,37 @@ def _page_size_cap() -> int:
     target = PERFORMANCE_TARGETS.get("execution_log", {})
     size = target.get("page_size", 200) if isinstance(target, dict) else 200
     return int(size)
+
+
+async def event_stream(
+    runtime: V2Runtime, project_id: str, after_sequence: int, tail: int
+) -> AsyncIterator[str]:
+    """执行日志 SSE 帧序列（路由与测试共用的唯一实现）。
+
+    - 游标从 ``after_sequence`` 起严格向后，断线重连从同一游标继续；
+    - ``tail=0`` 有限流：排空当前积压后关闭——连续取页，超过 page_size 的
+      积压不被截断（对照 §6.3「完成历史补齐后合并」）；
+    - ``tail>=1`` 持续流：每 ``_HEARTBEAT_EVERY`` 次空轮询一个注释帧心跳，
+      只证明连接存活，不伪装执行进度。
+    """
+    cursor = max(0, after_sequence)
+    idle = 0
+    while True:
+        page = await runtime.execution_log.page(project_id, cursor, _page_size_cap())
+        emitted = bool(page.events)
+        for event in page.events:
+            frame = json.dumps(event.to_payload(), ensure_ascii=False)
+            yield f"data: {frame}\n\n"
+            cursor = event.sequence
+            idle = 0
+        if tail == 0:
+            if emitted:
+                continue
+            return
+        idle += 1
+        if idle % _HEARTBEAT_EVERY == 0:
+            yield ": heartbeat\n\n"
+        await asyncio.sleep(_POLL_INTERVAL)
 
 
 def create_execution_log_router(runtime: V2Runtime) -> APIRouter:
@@ -75,22 +108,8 @@ def create_execution_log_router(runtime: V2Runtime) -> APIRouter:
         _require_project(project_id)
 
         async def stream() -> Any:
-            cursor = max(0, after_sequence)
-            idle = 0
-            while True:
-                page = await runtime.execution_log.page(project_id, cursor, _page_size_cap())
-                for event in page.events:
-                    frame = json.dumps(event.to_payload(), ensure_ascii=False)
-                    yield f"data: {frame}\n\n"
-                    cursor = event.sequence
-                    idle = 0
-                if tail == 0:
-                    return
-                idle += 1
-                if idle % _HEARTBEAT_EVERY == 0:
-                    # 心跳只证明连接存活，不伪装执行进度（§6.3）。
-                    yield ": heartbeat\n\n"
-                await asyncio.sleep(_POLL_INTERVAL)
+            async for frame in event_stream(runtime, project_id, after_sequence, tail):
+                yield frame
 
         return StreamingResponse(
             stream(),
