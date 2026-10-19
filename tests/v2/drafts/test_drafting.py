@@ -347,3 +347,48 @@ def test_late_adjustment_does_not_revive_a_discarded_candidate() -> None:
     assert current["current_revision"] == 1
     listed = client.get(f"/api/v2/projects/{pid}/drafts").json()
     assert [row["status"] for row in listed["candidates"]] == ["discarded"]
+
+
+def test_rewrite_existing_chapter_includes_original_text_without_pasting() -> None:
+    """改写现有章：模型必须看到该章正文，作者不需要把原文粘进要求。
+
+    这是 V03-8.7 `--deep` 走查暴露的缺口——此前 `previous_text` 恒为空、
+    背景也不展开目标章，模型只看得到章 ID，等于「另写一版」。
+    """
+    runtime = _runtime()
+    client, pid = _client(runtime)
+    original = "第一段：钟停在九点。\n\n第二段：登记簿最后一行是林雪的名字。"
+    imported = client.post(
+        f"/api/v2/projects/{pid}/chapters/import",
+        json={"idempotency_key": "imp-rewrite", "title": "第一章 九点的钟声", "text": original},
+    ).json()
+
+    created = client.post(
+        f"/api/v2/projects/{pid}/drafts",
+        json={
+            "target": imported["chapter_id"],
+            "instruction": "把这一版改得更克制，删掉解释性句子，保留全部事实。",
+        },
+    )
+    assert created.status_code == 200, created.text
+    prompt = _calls(runtime)[0]["prompt"]
+    # 原文两段都在提示词里，且落在「现有正文」段（不是靠作者粘贴）。
+    assert "钟停在九点" in prompt
+    assert "登记簿最后一行是林雪的名字" in prompt
+    assert "现有正文" in prompt
+    # 作者要求保持原样，没有被塞进原文。
+    assert "把这一版改得更克制" in prompt
+    assert prompt.count("钟停在九点") == 1
+
+
+def test_first_chapter_draft_has_no_existing_text_section() -> None:
+    """新章试写不该凭空出现「现有正文」：没有原文就不伪造一段。"""
+    runtime = _runtime()
+    client, pid = _client(runtime)
+    created = client.post(
+        f"/api/v2/projects/{pid}/drafts",
+        json={"instruction": "写第一章：林昭在雪夜抵达旅馆。"},
+    )
+    assert created.status_code == 200, created.text
+    prompt = _calls(runtime)[0]["prompt"]
+    assert "现有正文" not in prompt

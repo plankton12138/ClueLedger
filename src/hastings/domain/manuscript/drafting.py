@@ -307,7 +307,7 @@ def render_user_prompt(
         ]
         parts.append(_section("本书设定", "\n".join(lines)))
     if previous_text.strip():
-        parts.append(_section("上一稿正文", previous_text.strip()))
+        parts.append(_section("现有正文", previous_text.strip()))
     if adjustment.strip():
         parts.append(_section("本次调整", adjustment.strip()))
     parts.append(

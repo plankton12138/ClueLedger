@@ -337,9 +337,9 @@ async def scenario_deep_revision(walk: Walkthrough, client: Client) -> None:
     口径（不夸大）：
     - 「读章」= 驱动按当前版本读正文，并在覆盖台账登记 ``full``；上下文装配
       端点回读时带同章原文，证明装配器确实拿到了这一章；
-    - 「改稿」的模型调用发生在**试写候选服务**（V03-3）；现有章作为试写目标时
-      提示词不含原文，所以本节把原文作为作者附加要求显式交给模型——这一点在
-      S5.5 作为真实缺口记录，不冒充「模型自动读到了原文」；
+    - 「改稿」的模型调用发生在**试写候选服务**（V03-3）；试写目标为现有章时
+      服务自己把该章正文放进提示词的「现有正文」段（V03-8.7 补记修复），
+      这里的 instruction **不含原文**，模型能看到原文才算通过；
     - 「覆盖 → 暂存 → 发布」走 V03-7.2/7.4 的真实端点，发布产生单个 Commit。
     """
     project = await client.create_project("8.7 深走查")
@@ -387,11 +387,11 @@ async def scenario_deep_revision(walk: Walkthrough, client: Client) -> None:
         background_chars=len(bg_text),
     )
 
-    # -- 改稿：真实模型按原文改写（原文作为作者附加要求显式给出）------------
+    # -- 改稿：真实模型按原文改写（原文由服务端装入提示词，驱动不粘贴）------
     instruction = (
-        "以下是本章现有正文。请在不改变事实与时间线的前提下改写一版："
+        "请在不改变事实与时间线的前提下改写本章："
         "保留钟停在九点、登记簿最后一行是林雪的名字、楼上很轻的关门声、还温着的杯子；"
-        "语言更克制，删掉解释性句子，篇幅与原文相当。\n\n【现有正文】\n" + original
+        "语言更克制，删掉解释性句子，篇幅与原文相当。"
     )
     created = await client.http.post(
         f"/api/v2/projects/{project}/drafts",
@@ -419,7 +419,8 @@ async def scenario_deep_revision(walk: Walkthrough, client: Client) -> None:
         "S5.2 真模型改稿（试写候选）",
         bool(preview_hash) and len(revised) > 40 and revised.strip() != original.strip(),
         f"候选 {candidate_id}：{len(revised)} 字（原文 {len(original)} 字）、"
-        f"预览哈希 {str(preview_hash)[:12]}…；保留要素 {kept}",
+        f"预览哈希 {str(preview_hash)[:12]}…；保留要素 {kept}；"
+        f"instruction 未含原文={original[:12] not in instruction}（服务端自行装入）",
         candidate_id=candidate_id,
         chars=len(revised),
         kept=kept,

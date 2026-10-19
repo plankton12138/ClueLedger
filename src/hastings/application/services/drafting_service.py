@@ -34,6 +34,7 @@ from hastings.domain.manuscript import commands as manuscript_commands
 from hastings.domain.manuscript import drafting
 from hastings.domain.manuscript import error_codes as ec
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
+from hastings.domain.manuscript.summary import chapter_text as manuscript_chapter_text
 from hastings.domain.repository.ids import CommitId, ProjectId
 from hastings.domain.repository.serialization import content_hash
 
@@ -116,6 +117,14 @@ class DraftingService:
         catalog = self._catalog(pid)
         if target != drafting.TARGET_NEW_CHAPTER:
             catalog.require_chapter(target, where="drafts.create")
+        # 改写现有章：把该章当前正文作为「现有正文」交给模型（V03-8.7 补记）。
+        # 不加长度截断——截断会让模型「改完」却丢掉后半章，比报错更危险；
+        # 章过大时由 Provider 的上下文限制如实失败，作者可拆章或缩小范围。
+        base_text = (
+            manuscript_chapter_text(catalog, target)
+            if target != drafting.TARGET_NEW_CHAPTER
+            else ""
+        )
         brief = drafting.DraftBrief(
             brief_id=self._ids.new_id("drf"),
             project_id=project_id,
@@ -134,7 +143,7 @@ class DraftingService:
             created_at=self._now(),
         )
         candidate_id = self._ids.new_id("cnd")
-        written = await self._generate(brief, previous_text="", adjustment="")
+        written = await self._generate(brief, previous_text=base_text, adjustment="")
         revision = drafting.CandidateRevision(
             revision=1,
             title=written.title or brief.chapter_title or "未命名章节",
