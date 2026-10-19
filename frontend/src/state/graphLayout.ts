@@ -11,7 +11,7 @@
  *   本模块不发起请求。
  */
 
-export type GraphViewId = "characters" | "clues" | "method";
+export type GraphViewId = "characters" | "clues" | "method" | "timeline";
 
 export interface GraphPoint {
   x: number;

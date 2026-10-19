@@ -76,8 +76,24 @@ export default function GraphOverview({
                 ? "登记人物与关系后，这里会出现关系小图。"
                 : viewId === "method"
                   ? "在账本新建「真相」条目并填写手法后，这里会出现手法结构。"
-                  : "登记线索及其指向后，这里会出现线索小图。"}
+                  : viewId === "timeline"
+                    ? "在账本登记时间线事件后，这里会出现角色/地点分轨。"
+                    : "登记线索及其指向后，这里会出现线索小图。"}
             </Empty>
+          ) : viewId === "timeline" && data?.timeline ? (
+            <ul className="px-4 py-1 text-[11px]">
+              {data.timeline.tracks.slice(0, 5).map((track) => (
+                <li key={track.key} className="truncate">
+                  {track.label} · {track.event_ids.length} 个事件
+                </li>
+              ))}
+              {data.timeline.testimonies.length > 0 && (
+                <li className="text-sub">
+                  证词 / 认知{" "}
+                  {data.timeline.testimonies.reduce((sum, item) => sum + item.items.length, 0)} 条
+                </li>
+              )}
+            </ul>
           ) : (
             <div className="px-2">
               <GraphCanvas

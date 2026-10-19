@@ -1554,6 +1554,24 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             project_id, at_commit_id=at_commit_id, focus=focus
         )
 
+    @router.get("/projects/{project_id}/graphs/timeline")
+    def get_timeline_graph(
+        project_id: str,
+        at_commit_id: str | None = None,
+        group_by: str = "character",
+        focus: str | None = None,
+    ) -> dict[str, Any]:
+        """时间线（只读）：真实事件按角色/地点分轨，证词与认知单独成轨。
+
+        时间原文显示、不排序；叙述位置只来自角色获知事件；``focus`` 只收窄范围。
+        """
+        return runtime.graphs.timeline(
+            project_id,
+            at_commit_id=at_commit_id,
+            group_by=group_by,
+            focus=focus,
+        )
+
     @router.get("/projects/{project_id}/ledger/schema")
     def get_ledger_schema(project_id: str) -> dict[str, Any]:
         """账本编辑表单描述：种类、字段、控件与引用目标，前后端共用一份口径。"""

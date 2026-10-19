@@ -227,11 +227,16 @@ describe("查看方式偏好：按 project + view 隔离，存储不可用不抛
   });
 });
 
-describe("空图说明（V03-7.5）", () => {
+describe("空图说明（V03-7.5 / 7.6）", () => {
   it("手法结构给「先建真相条目」的下一步，而不是空白", () => {
     expect(graphEmptyText("method")).toContain("真相");
     expect(graphEmptyText("method")).toContain("手法");
     expect(graphEmptyText("characters")).toContain("人物");
     expect(graphEmptyText("clues")).toContain("线索");
+  });
+
+  it("时间线给「先登记事件」的下一步", () => {
+    expect(graphEmptyText("timeline")).toContain("时间线事件");
+    expect(graphEmptyText("timeline")).toContain("分轨");
   });
 });

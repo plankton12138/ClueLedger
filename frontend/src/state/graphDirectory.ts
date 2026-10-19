@@ -47,6 +47,9 @@ export function graphEmptyText(viewId: string): string {
   if (viewId === "method") {
     return "还没有可画的手法结构。先在账本新建「真相」条目并填写凶手、手法、动机与掩盖方式。";
   }
+  if (viewId === "timeline") {
+    return "还没有可分轨的事件。先在账本登记时间线事件及参与者或地点。";
+  }
   return "还没有可画的线索关联。先在账本登记线索及其指向。";
 }
 

@@ -1,6 +1,6 @@
 /**
- * 图谱只读客户端（V03-6.4 / V03-7.5）：统一投影、人物图、线索图、手法图与
- * 「来源定位」证据查询。
+ * 图谱只读客户端（V03-6.4 / V03-7.5 / V03-7.6）：统一投影、人物图、线索图、
+ * 手法图、时间线与「来源定位」证据查询。
  *
  * 设计依据（计划 M12、产品 §5.4/§5.8）：图谱固定到读取的 Commit，前端只读回显，
  * 没有写端点——拖动只改本地布局偏好（见 state/graphLayout.ts）。查询参数有值才发，
@@ -129,6 +129,69 @@ export interface MethodGraphWire extends GraphWire {
   completeness: MethodCompletenessWire;
 }
 
+/** 时间线（V03-7.6）：真实事件分轨 + 证词/认知分轨；时间原文、不排序。 */
+export interface TimelineEventWire {
+  event_id: string;
+  time_text: string;
+  time_status: "recorded" | "unspecified";
+  place_id: string;
+  participants: string[];
+  before_state: string;
+  after_state: string;
+}
+
+export interface TimelineTrackWire {
+  key: string;
+  kind: "character" | "place";
+  id: string;
+  label: string;
+  event_ids: string[];
+}
+
+export interface TestimonyItemWire {
+  knowledge_id: string;
+  character_id: string;
+  fact_id: string;
+  mode: string;
+  mode_label: string;
+  note: string;
+  at_beat_id: string | null;
+  position: number | null;
+  claimed_event_id: string | null;
+  claimed_event_time: string;
+}
+
+export interface TestimonyTrackWire {
+  character_id: string;
+  label: string;
+  items: TestimonyItemWire[];
+}
+
+export interface TimelineGapWire {
+  code: string;
+  where: string;
+  why: string;
+  fix: string;
+  target_id: string | null;
+}
+
+export interface TimelineOrderingWire {
+  story_time: string;
+  narrative_order: string;
+  note: string;
+}
+
+export interface TimelineGraphWire extends GraphWire {
+  group_by: "character" | "place";
+  ordering: TimelineOrderingWire;
+  testimony_note: string;
+  events: TimelineEventWire[];
+  tracks: TimelineTrackWire[];
+  testimonies: TestimonyTrackWire[];
+  gaps: TimelineGapWire[];
+  focus: GraphFocusWire | null;
+}
+
 export interface GraphQuery {
   at_commit_id?: string | null;
   at_beat_id?: string | null;
@@ -196,6 +259,22 @@ export async function fetchMethodGraph(
     focus: query.focus,
   });
   return request<MethodGraphWire>(`${projectPrefix(projectId)}/graphs/method${suffix}`);
+}
+
+export interface TimelineGraphQuery extends GraphQuery {
+  group_by?: "character" | "place" | null;
+}
+
+export async function fetchTimelineGraph(
+  projectId: string,
+  query: TimelineGraphQuery = {},
+): Promise<TimelineGraphWire> {
+  const suffix = queryString({
+    at_commit_id: query.at_commit_id,
+    group_by: query.group_by,
+    focus: query.focus,
+  });
+  return request<TimelineGraphWire>(`${projectPrefix(projectId)}/graphs/timeline${suffix}`);
 }
 
 /**

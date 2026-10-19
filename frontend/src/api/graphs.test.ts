@@ -13,6 +13,7 @@ import {
   fetchEvidenceByTarget,
   fetchGraph,
   fetchMethodGraph,
+  fetchTimelineGraph,
 } from "./graphs";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -147,6 +148,78 @@ describe("手法图视图", () => {
     expect(graph.truths[0].missing_fields).toEqual(["motive", "cover_up"]);
     expect(graph.gaps[0].code).toBe("METHOD_TEXT_NOT_RECORDED");
     expect(graph.completeness.recorded).toBe(1);
+  });
+});
+
+describe("时间线视图", () => {
+  it("按角色分轨请求，回读真实事件与证词轨", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe(
+        "/api/v2/projects/prj_1/graphs/timeline?group_by=character&focus=art_sis",
+      );
+      return jsonResponse({
+        project_id: "prj_1",
+        commit_id: "c1",
+        group_by: "character",
+        ordering: {
+          story_time: "as_recorded",
+          narrative_order: "testimony_only",
+          note: "不排序，也不用章节先后代替故事时间",
+        },
+        testimony_note: "证词保留原模式",
+        events: [
+          {
+            event_id: "art_e1",
+            time_text: "八点到九点之间",
+            time_status: "recorded",
+            place_id: "art_room",
+            participants: ["art_sis"],
+            before_state: "",
+            after_state: "",
+          },
+        ],
+        tracks: [
+          {
+            key: "character:art_sis",
+            kind: "character",
+            id: "art_sis",
+            label: "姐姐",
+            event_ids: ["art_e1"],
+          },
+        ],
+        testimonies: [
+          {
+            character_id: "art_det",
+            label: "侦探",
+            items: [
+              {
+                knowledge_id: "art_k1",
+                character_id: "art_det",
+                fact_id: "art_f1",
+                mode: "misbelieves",
+                mode_label: "误信",
+                note: "他相信管家说的是十点",
+                at_beat_id: null,
+                position: null,
+                claimed_event_id: "art_e1",
+                claimed_event_time: "八点到九点之间",
+              },
+            ],
+          },
+        ],
+        gaps: [],
+        focus: { node_id: "art_sis", neighbor_ids: ["art_e1"] },
+        nodes: [],
+        edges: [],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const graph = await fetchTimelineGraph("prj_1", { group_by: "character", focus: "art_sis" });
+    expect(graph.group_by).toBe("character");
+    expect(graph.tracks[0].event_ids).toEqual(["art_e1"]);
+    expect(graph.testimonies[0].items[0].mode_label).toBe("误信");
+    expect(graph.testimonies[0].items[0].position).toBeNull();
   });
 });
 

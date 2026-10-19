@@ -1,6 +1,6 @@
 /**
- * 图谱数据取数（V03-6.4 / V03-7.5）：把人物图/线索图/手法图三种响应归一到同一形状，
- * 供侧栏概览与主区面板共用。只读，固定到读取的 Commit；失败不吞错，交给调用方显示。
+ * 图谱数据取数（V03-6.4 / V03-7.5 / V03-7.6）：把人物图/线索图/手法图/时间线四种响应
+ * 归一到同一形状，供侧栏概览与主区面板共用。只读，固定到读取的 Commit；失败不吞错。
  */
 
 import { useEffect, useState } from "react";
@@ -9,10 +9,12 @@ import {
   fetchCharacterGraph,
   fetchClueGraph,
   fetchMethodGraph,
+  fetchTimelineGraph,
   type ClueStateWire,
   type GraphEdgeWire,
   type GraphNodeWire,
   type MethodGraphWire,
+  type TimelineGraphWire,
 } from "../../api/graphs";
 import { message } from "../../state/v2";
 import type { GraphViewId } from "../../state/graphLayout";
@@ -24,6 +26,8 @@ export interface GraphViewData {
   clues: ClueStateWire[];
   /** 手法图专用：真相文字、缺口与完整度；其他视图为 null。 */
   method: MethodGraphWire | null;
+  /** 时间线专用：事件轨、证词轨与顺序说明；其他视图为 null。 */
+  timeline: TimelineGraphWire | null;
   /** 当前视角说明（如「作者全知」），来源为空时为 null。 */
   perspectiveLabel: string | null;
   /** 当前叙述位置说明，未筛位置时为 null。 */
@@ -51,6 +55,7 @@ export function useGraphData(
             edges: graph.edges as GraphEdgeWire[],
             clues: [] as ClueStateWire[],
             method: null,
+            timeline: null,
             perspectiveLabel: graph.perspective?.label ?? null,
             positionLabel: graph.position?.label ?? null,
           }))
@@ -61,18 +66,31 @@ export function useGraphData(
               edges: graph.edges,
               clues: graph.clues,
               method: null,
+              timeline: null,
               perspectiveLabel: null,
               positionLabel: graph.position?.label ?? null,
             }))
-          : fetchMethodGraph(projectId).then((graph) => ({
-              commitId: graph.commit_id,
-              nodes: graph.nodes,
-              edges: graph.edges,
-              clues: [] as ClueStateWire[],
-              method: graph,
-              perspectiveLabel: null,
-              positionLabel: null,
-            }));
+          : viewId === "method"
+            ? fetchMethodGraph(projectId).then((graph) => ({
+                commitId: graph.commit_id,
+                nodes: graph.nodes,
+                edges: graph.edges,
+                clues: [] as ClueStateWire[],
+                method: graph,
+                timeline: null,
+                perspectiveLabel: null,
+                positionLabel: null,
+              }))
+            : fetchTimelineGraph(projectId).then((graph) => ({
+                commitId: graph.commit_id,
+                nodes: graph.nodes,
+                edges: graph.edges,
+                clues: [] as ClueStateWire[],
+                method: null,
+                timeline: graph,
+                perspectiveLabel: null,
+                positionLabel: null,
+              }));
     pending
       .then((next) => {
         if (!alive) return;

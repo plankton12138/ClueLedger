@@ -40,6 +40,7 @@ __all__ = [
     "EVIDENCE_NOT_RECORDED",
     "EVIDENCE_VALID",
     "GRAPH_NODE_KINDS",
+    "KNOWLEDGE_MODE_LABELS",
     "LAYER_DISCLOSURE",
     "LAYER_KNOWLEDGE",
     "LAYER_PLAN",
@@ -95,7 +96,7 @@ _LAYER_BY_KIND: dict[str, str] = {
 }
 
 #: 认知模式的中文标签；误信/怀疑保留原语义，不作为客观事实（M12 头部图）。
-_KNOWLEDGE_LABELS: dict[str, str] = {
+KNOWLEDGE_MODE_LABELS: dict[str, str] = {
     "knows": "知道",
     "suspects": "怀疑",
     "misbelieves": "误信",
@@ -200,7 +201,7 @@ def _two_ended_label(kind: str, content: Mapping[str, object], default_label: st
         return str(relation_type) if relation_type else default_label
     if kind == kinds.KIND_KNOWLEDGE:
         mode = str(content.get("mode", ""))
-        return _KNOWLEDGE_LABELS.get(mode, mode or default_label)
+        return KNOWLEDGE_MODE_LABELS.get(mode, mode or default_label)
     return default_label
 
 

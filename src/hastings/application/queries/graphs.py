@@ -41,6 +41,17 @@ from hastings.domain.story.graph import (
     method_projection,
 )
 from hastings.domain.story.narrative.order import last_beat_of_node
+from hastings.domain.story.timeline import (
+    GROUP_BY_CHARACTER,
+    ORDERING_NOTE,
+    TESTIMONY_TIME_NOTE,
+    TIMELINE_NO_EVENTS,
+    TestimonyTrack,
+    TimelineEventState,
+    TimelineGap,
+    TimelineTrack,
+    timeline_projection,
+)
 
 __all__ = ["GraphQueries"]
 
@@ -258,6 +269,53 @@ class GraphQueries:
             "edges": [_edge_base(edge) for edge in graph.edges],
         }
 
+    def timeline(
+        self,
+        project_id: str,
+        *,
+        at_commit_id: str | None = None,
+        group_by: str = GROUP_BY_CHARACTER,
+        focus: str | None = None,
+    ) -> dict[str, Any]:
+        """时间线视图（只读）：真实事件分轨 + 证词/认知分轨 + 缺口。
+
+        事件时间原样显示、不排序；叙述位置只来自角色获知事件。``focus`` 只收窄
+        展示范围，不改事件内容（筛选不改变事实）。
+        """
+        pid = ProjectId(project_id)
+        commit = CommitId(at_commit_id) if at_commit_id else self._head(pid)
+        if commit is None:
+            return _empty_timeline(project_id, group_by)
+        snapshot = self._repo.get_snapshot(pid, commit)
+        catalog = StoryCatalog.from_snapshot(snapshot)
+        graph = timeline_projection(
+            catalog,
+            group_by=group_by,
+            focus=focus,
+            evidence_status=_evidence_status(snapshot),
+        )
+        focus_payload: dict[str, Any] | None = None
+        if focus is not None:
+            focus_payload = {"node_id": focus, "neighbor_ids": _neighbors(graph.edges, focus)}
+        return {
+            "project_id": project_id,
+            "commit_id": graph.commit_id,
+            "group_by": graph.group_by,
+            "ordering": {
+                "story_time": "as_recorded",
+                "narrative_order": "testimony_only",
+                "note": ORDERING_NOTE,
+            },
+            "testimony_note": TESTIMONY_TIME_NOTE,
+            "events": [_timeline_event_payload(event) for event in graph.events],
+            "tracks": [_timeline_track_payload(track) for track in graph.tracks],
+            "testimonies": [_testimony_track_payload(track) for track in graph.testimonies],
+            "gaps": [_timeline_gap_payload(gap) for gap in graph.gaps],
+            "focus": focus_payload,
+            "nodes": _node_payload(graph.nodes, catalog),
+            "edges": [_edge_base(edge) for edge in graph.edges],
+        }
+
 
 def _resolve_position(
     catalog: StoryCatalog,
@@ -440,6 +498,89 @@ def _empty_method(project_id: str) -> dict[str, Any]:
             "total": completeness.total,
             "note": completeness.note,
         },
+        "nodes": [],
+        "edges": [],
+    }
+
+
+def _timeline_event_payload(event: TimelineEventState) -> dict[str, Any]:
+    return {
+        "event_id": event.event_id,
+        "time_text": event.time_text,
+        "time_status": event.time_status,
+        "place_id": event.place_id,
+        "participants": list(event.participants),
+        "before_state": event.before_state,
+        "after_state": event.after_state,
+    }
+
+
+def _timeline_track_payload(track: TimelineTrack) -> dict[str, Any]:
+    return {
+        "key": track.key,
+        "kind": track.kind,
+        "id": track.id,
+        "label": track.label,
+        "event_ids": list(track.event_ids),
+    }
+
+
+def _testimony_track_payload(track: TestimonyTrack) -> dict[str, Any]:
+    return {
+        "character_id": track.character_id,
+        "label": track.label,
+        "items": [
+            {
+                "knowledge_id": item.knowledge_id,
+                "character_id": item.character_id,
+                "fact_id": item.fact_id,
+                "mode": item.mode,
+                "mode_label": item.mode_label,
+                "note": item.note,
+                "at_beat_id": item.at_beat_id,
+                "position": item.position,
+                "claimed_event_id": item.claimed_event_id,
+                "claimed_event_time": item.claimed_event_time,
+            }
+            for item in track.items
+        ],
+    }
+
+
+def _timeline_gap_payload(gap: TimelineGap) -> dict[str, Any]:
+    return {
+        "code": gap.code,
+        "where": gap.where,
+        "why": gap.why,
+        "fix": gap.fix,
+        "target_id": gap.target_id,
+    }
+
+
+def _empty_timeline(project_id: str, group_by: str) -> dict[str, Any]:
+    return {
+        "project_id": project_id,
+        "commit_id": None,
+        "group_by": group_by,
+        "ordering": {
+            "story_time": "as_recorded",
+            "narrative_order": "testimony_only",
+            "note": ORDERING_NOTE,
+        },
+        "testimony_note": TESTIMONY_TIME_NOTE,
+        "events": [],
+        "tracks": [],
+        "testimonies": [],
+        "gaps": [
+            {
+                "code": TIMELINE_NO_EVENTS,
+                "where": "graphs.timeline",
+                "why": "账本里还没有时间线事件",
+                "fix": "在账本新建时间线事件，填写时间、地点与参与者；时间可以只写「时间未定」",
+                "target_id": None,
+            }
+        ],
+        "focus": None,
         "nodes": [],
         "edges": [],
     }
