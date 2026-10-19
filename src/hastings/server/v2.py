@@ -76,6 +76,7 @@ from hastings.application.queries.ledger import LedgerQueries
 from hastings.application.queries.ledger_forms import ledger_schema
 from hastings.application.queries.manuscript import ManuscriptQueries
 from hastings.application.services.agreement_service import AgreementService
+from hastings.application.services.backup_service import BackupService
 from hastings.application.services.conversation_service import ConversationService
 from hastings.application.services.disclosure_service import DisclosureService
 from hastings.application.services.drafting_service import DraftingService, WrittenChapter
@@ -287,6 +288,8 @@ class V2Runtime:
         self.followups = FollowupQueries(self.service)
         # 操作影响（V03-7.7）：按实际版本差异回读改动范围、后续修改与关联采用。
         self.impact = ImpactQueries(self.service, self.operations, self.edit_sessions)
+        # 备份预览与恢复（V03-8.2）：覆盖范围显式声明，恢复只经统一写入路径。
+        self.backup = BackupService(self.service, self.service, self.manuscript_publisher)
         # 账本只读查询（V03-3.3）：试写引用与前端设定清单共用同一投影。
         self.ledger = LedgerQueries(self.service)
         # 统一图谱投影（V03-6.1）：节点/边固定同一 Commit，只读、无第二份事实源。
@@ -447,6 +450,10 @@ class V2Runtime:
 
     #: 旧自动链路遗留的 Job 类型（V03-0.4 分类报告范围）。作者显式启动的
     #: auditor 等任务不在此列——它们带凭据，走正常派发。
+    def restore_actor(self) -> Actor:
+        """恢复写入的 Actor：作者本人（与手工修改同一身份，日志可归因）。"""
+        return Actor(kind="human", id="author")
+
     LEGACY_AUTO_JOB_TYPES = ("manuscript.analysis", "style_observer")
 
     async def classify_legacy_auto_jobs(self) -> dict[str, int]:
@@ -1222,6 +1229,18 @@ class DisclosureCheckRequest(BaseModel):
     beat_id: str | None = None
     commit_id: str | None = None
     authorized: bool = False
+
+
+class RestoreBackupRequest(BaseModel):
+    """恢复上传的备份 zip：``content_base64`` 是导出 zip 的字节。
+
+    ``conflict_choice`` 只在出现 ID 冲突时起作用：``merge_missing`` 只导入缺失
+    对象（不覆盖已有内容），``cancel`` 取消恢复。不给选择而存在冲突时整体拒绝。
+    """
+
+    content_base64: str = Field(min_length=1)
+    #: 覆盖确认：备份与当前内容有差异时必须显式为 true，否则只列出差异不改写。
+    confirm_overwrite: bool = False
 
 
 class SaveChapterRequest(BaseModel):
@@ -2149,6 +2168,37 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
     ) -> dict[str, Any]:
         """人工重新关联：引用片段必须在当前正文中可定位，否则拒绝。"""
         return runtime.evidence.reanchor(project_id, evidence_id, quote=req.quote)
+
+    @router.get("/projects/{project_id}/backup")
+    def backup_preview(project_id: str) -> dict[str, Any]:
+        """备份预览（V03-8.2，只读）：清单、计数、整包指纹与覆盖范围。
+
+        与 ``/export`` 用同一次确定性构建：这里回报「包里有什么、没有什么」，
+        下载 zip 仍走 ``/export``。覆盖范围逐条列出，不把过程状态说成已备份。
+        """
+        return runtime.backup.preview(project_id)
+
+    @router.post("/projects/{project_id}/restore")
+    def restore_backup(project_id: str, req: RestoreBackupRequest) -> dict[str, Any]:
+        """从备份 zip 恢复本作品（V03-8.2）：差异 → 确认 → 一次原子提交。
+
+        恢复只针对同一作品：包内容与当前一致是合法空结果；有差异而未确认时
+        拒绝并列出会被改写的章与账本字段；确认后正文与账本进同一个 Commit，
+        原历史保留为新提交。新建条目、跨作品搬运都不在此路径。
+        """
+        try:
+            archive = base64.b64decode(req.content_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ViolationError(
+                code="EXPORT_PACKAGE_INVALID",
+                where="v2.restore",
+                why=f"content_base64 不是合法 base64：{exc}",
+                fix="上传从「导出」下载的 zip 文件的 base64 内容，不要先解压再打包",
+                details={"project_id": project_id},
+            ) from exc
+        return runtime.backup.restore(
+            project_id, archive, confirm_overwrite=req.confirm_overwrite
+        )
 
     @router.get("/projects/{project_id}/export")
     def export_package(project_id: str, commit_id: str | None = None) -> Response:

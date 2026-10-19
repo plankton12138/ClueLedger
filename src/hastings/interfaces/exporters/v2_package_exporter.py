@@ -54,6 +54,7 @@ __all__ = [
     "export_commit",
     "package_hash_of",
     "read_package",
+    "unzip_package",
     "verify_package",
     "write_package",
     "zip_package",
@@ -461,6 +462,10 @@ def apply_exported_package(
 
     与迁移导入器同一套防线：先校验包完整性，确认目标分支存在且项目为空
     （重复导入命中幂等记录返回原结果），写入只经 Commit Service。
+
+    **目标必须是另一个仓库实例里的空项目**：artifact ID 归属创建它的项目，
+    同库内跨项目搬移 ID 会被仓库不变体拒绝（恢复到新作品需要 ID 重映射，
+    0.3 不提供；备份用于同作品恢复，见 ``BackupService.restore``）。
     """
     manifest = verify_package(files)
     package_hash = manifest["package_hash"]
@@ -528,3 +533,38 @@ def _violation(
     *, where: str, why: str, fix: str, code: str = "EXPORT_PACKAGE_INVALID", **details: Any
 ) -> ViolationError:
     return ViolationError(code=code, where=where, why=why, fix=fix, details=details)
+
+
+def unzip_package(data: bytes) -> dict[str, bytes]:
+    """把导出 zip 解回文件字典；不是 zip 或条目被恶意构造时显式拒绝。
+
+    与 ``zip_package`` 对称：恢复路径从「拿到的字节」开始，而不是从磁盘目录，
+    因此必须自己拒绝目录穿越条目（``../`` 与绝对路径）——备份文件可能来自
+    任何地方，猜它没被构造过等于没有校验。
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            names = [info.filename for info in zf.infolist() if not info.is_dir()]
+            files = {name: zf.read(name) for name in names}
+    except (zipfile.BadZipFile, KeyError, OSError) as exc:
+        raise _violation(
+            where="v2.export.unzip",
+            why=f"上传内容不是可读的 V2 导出 zip：{exc}",
+            fix="重新从「导出」下载备份包；不要手工改名或解压再压缩",
+        ) from exc
+    for name in files:
+        pure = name.replace("\\", "/")
+        if pure.startswith("/") or ".." in pure.split("/"):
+            raise _violation(
+                where="v2.export.unzip",
+                why=f"包内路径 {name!r} 不是包内相对路径",
+                fix="备份包只含 manifest 登记的相对路径；不要导入被构造过的包",
+                path=name,
+            )
+    if "manifest.json" not in files:
+        raise _violation(
+            where="v2.export.unzip",
+            why="zip 里没有 manifest.json，不是 V2 导出包",
+            fix="确认下载来源；重新导出后再恢复",
+        )
+    return files
