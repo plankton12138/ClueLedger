@@ -66,6 +66,7 @@ uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-deep --mod
 | 2026-10-19 | 0.3.0 | V03-8.1–8.7 收口：启动恢复/备份恢复、生产装配、日志压力、视觉走查、旧入口退役、真模型实测；文档 as-built 与 33 项追踪 |
 | 2026-10-19 | 0.3.0 补丁 | 试写改写现有章自动装入该章正文（`drafting.create` → `previous_text`）；`--deep` 复跑 10 通过 + 2 证据；全量 1987 passed |
 | 2026-10-19 | 0.3.0 补丁 2 | 执行循环 `/revision-tasks/{id}/run`：逐章记账→读章→改稿→暂存→覆盖，预算成为门禁；预算用满但已覆盖不再阻止发布；`--deep` 13 通过 + 2 证据；全量 1993 passed |
+| 2026-10-19 | 0.3.0 补丁 3 | 驱动支持 `--provider` 并加载 `.env`；DeepSeek（`deepseek-flash`）真跑 13 通过 + 2 证据（34s）；配置排障：`config.yaml` 存在时 base_url 以文件为准（`.env` 的 `OPENAI_BASE_URL` 只在无配置文件时生效） |
 
 ## 4. 兼容与迁移
 
@@ -81,7 +82,7 @@ uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-deep --mod
 2. **前端执行日志面板消费端未接**（接口齐备，无前端读取方）。
 3. **V1 语料写接口仍可手工调用**（0.3 无入口、无自动消费）。
 4. **节拍类型退出未做**（计划 §9.1 留白；起草入口已不要求 Beat）。
-5. 远程 Provider（OpenAI）无真实 Key，未调用；真 Key 链路证据缺失。
+5. ~~远程 Provider 未调用~~ **已补（2026-10-19）**：DeepSeek（OpenAI 兼容端点，`deepseek-flash`）真跑 `--deep`，13 通过 + 2 证据（`eval/runs/2026-10-19-v03-8.7-deepseek/`）。**OpenAI 官方端点仍无可用 Key**（本机经代理访问 502），未验。
 6. ~~试写候选对「现有章」不带原文~~ **已修复（2026-10-19）**：`drafting.create` 现在把该章当前正文作为 `previous_text` 交给提示词（段落 `现有正文`），不截断；`--deep` 复跑时 instruction 不含原文仍能保留原文细节。剩余口径：覆盖读取登记仍由发起方做（试写不绑定 revision-work）。
 7. ~~整体任务预算无消费方~~ **已修复（2026-10-19）**：新增 `POST /revision-tasks/{id}/run` 执行循环（`revision_execution_service.py`），逐章先记账再调用模型；预算不足停在下一章之前并落 `waiting/budget_exhausted`。真模型 S6 取证：预算 1 只跑 1 章、继续后跑第 2 章。剩余：前端未接 `/run`、修正轮次 `start_repair` 未接。
 8. 夹具层两处**专项边界**：证据锚点失效的 `needs_recheck` 需正文引文锚（V03-2.5 服务层覆盖）；披露定位型 409 需叙事结构（V03-4.7 服务层覆盖）。
@@ -90,5 +91,5 @@ uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-deep --mod
 
 0.3 的功能与工程面已交付；**十场景与三批退出已有可复跑证据**（夹具 + 套件 10/10、全量 1985 passed、视觉走查 37/37）。
 真模型侧：基础走查 6 通过 + 1 失败证据，`--deep` 修订全循环 10 通过 + 2 失败证据（读章→改稿→覆盖→暂存→一次发布）。
-按计划 §9.7 的完成定义，仍有未验项（§5）：真 uvicorn 日志、前端日志面板、V1 语料写接口、节拍类型、远程 Provider；`--deep` 暴露的两处缺口（试写读原文、预算消费方）均已修复并有真模型证据。
+按计划 §9.7 的完成定义，仍有未验项（§5）：真 uvicorn 日志、前端日志面板、V1 语料写接口、节拍类型、OpenAI 官方端点；`--deep` 暴露的两处缺口（试写读原文、预算消费方）均已修复，且本地/远程（DeepSeek）两条 Provider 各有真模型证据。
 对外表述为「**0.3 功能交付，验收补验中（运维取证 + 产品裁决）**」，不写「完整交付」。

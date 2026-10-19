@@ -41,13 +41,15 @@ uv run python eval/v2/chat_driver.py --out eval/runs/<日期>-phase19-chat --mod
 
 ## 0.3 写作台真模型走查（V03-8.7）
 
-`desk_driver.py` 进程内启动 V2 应用（隔离 SQLite）+ 真实 Provider（config.yaml 的 ollama 档案），
+`desk_driver.py` 进程内启动 V2 应用（隔离 SQLite）+ 真实 Provider（`--provider` 选 config.yaml 档案，默认 ollama；会加载仓库根 `.env`），
 走查 0.3 的真模型路径与证据分层：讨论流式、试写候选→采用、修订任务预算/覆盖/停止、环境失败记录。
 
 ```bash
 uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-real-model --model qwen3:8b
 # 追加真模型修订全循环（S5：读章→改稿→覆盖→暂存→发布）
 uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-deep-revision --model qwen3:8b --deep
+# 远程 OpenAI 兼容端点（DeepSeek 等）：--provider 填档案名
+uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-deepseek --provider default --deep
 ```
 
 | 场景 | 检查点 |
@@ -68,3 +70,4 @@ S5 的模型调用发生在试写候选服务（V03-3）：目标为现有章时
 [2026-10-19 含修订全循环](../runs/2026-10-19-v03-8.7-deep-revision/README.md)、
 [2026-10-19 原文自动装入后复跑](../runs/2026-10-19-v03-8.7-deep-revision-v2/README.md)、
 [2026-10-19 执行循环](../runs/2026-10-19-v03-8.7-execution-loop/README.md)。
+[2026-10-19 DeepSeek 远程端点](../runs/2026-10-19-v03-8.7-deepseek/README.md)。

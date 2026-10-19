@@ -1,0 +1,213 @@
+{
+  "started": "2026-10-19T22:12:45.983954",
+  "model": "deepseek-flash",
+  "findings": [
+    {
+      "scenario": "S1 讨论流式（真模型）",
+      "ok": true,
+      "detail": "65 个增量、96 字、终态到达；Job 0→0（讨论无写权限，期望不变）",
+      "deltas": 65,
+      "chars": 96,
+      "sample": "让雨停不下来，就是把天气变成一间没有门的房间——它隔绝外界、拖慢时间，让人物的困局在情节开始前就先成为读者的体感；顺带，连绵的雨声也做节拍器，压着全章的呼吸，攒出一种“总得发生点什么”的张力。"
+    },
+    {
+      "scenario": "S2.1 试写候选（真模型）",
+      "ok": true,
+      "detail": "候选 cnd_b283c65193d74c02：277 字，预览哈希 e0ced0f7d2d0…",
+      "candidate_id": "cnd_b283c65193d74c02",
+      "chars": 277,
+      "sample": "雨停后的第二个清晨，海边的雾还没散尽，潮汐时刻表上多了一行新墨迹。\n\n老周是在给渔船解缆绳时发现的。那块掉了漆的木牌立在码头入口，面朝大海的一面是旧表，背面用炭笔潦草地加了几行字——笔迹很新，还没被雾气洇开，上头写着的时间比日历上的大潮日整整早了两个钟点。他凑近看了看，又退后半步眯眼比对，确认自己的眼睛没花。附近几个起"
+    },
+    {
+      "scenario": "S2.2 采用产生 Commit（统一发布）",
+      "ok": true,
+      "detail": "采用 HTTP 200；operation op_1d7ca59a1d6e224…；Commit 已落盘",
+      "status": 200,
+      "operation_id": "op_1d7ca59a1d6e224f4b7a02a8"
+    },
+    {
+      "scenario": "S3.1 预算可缩小（开任务不调用模型）",
+      "ok": true,
+      "detail": "任务 rtk_33263348b29c472c：call_limit=1、calls_used=0、remaining=1；Job 数不变（开任务零模型调用）",
+      "budget": {
+        "call_limit": 1,
+        "calls_used": 0,
+        "remaining": 1,
+        "repair_rounds": 0,
+        "max_repair_rounds": 2,
+        "exhausted": false
+      }
+    },
+    {
+      "scenario": "S3.2 覆盖台账（读取登记 + 结论）",
+      "ok": true,
+      "detail": "2 章登记读取与结论（HTTP {200}）；覆盖 2/2、complete=True；状态 ['changed']",
+      "coverage": {
+        "art_23749ff70fe84ad0": "changed",
+        "ch_ca098833c362f76a": "changed"
+      }
+    },
+    {
+      "scenario": "S3.3 停止留痕",
+      "ok": true,
+      "detail": "停止 HTTP 200；任务状态 cancelled"
+    },
+    {
+      "scenario": "S5.1 读章（登记全文读取 + 装配含原文）",
+      "ok": true,
+      "detail": "读取登记 HTTP 200；上下文装配 HTTP 200、927 字符；含本章原文=是",
+      "background_chars": 927
+    },
+    {
+      "scenario": "S5.2 真模型改稿（试写候选）",
+      "ok": true,
+      "detail": "候选 cnd_75d8101367c64e8d：104 字（原文 123 字）、预览哈希 34a570994be5…；保留要素 ['九点', '林雪', '杯']；instruction 未含原文=True（服务端自行装入）",
+      "candidate_id": "cnd_75d8101367c64e8d",
+      "chars": 104,
+      "kept": [
+        "九点",
+        "林雪",
+        "杯"
+      ],
+      "sample": "九点整，旅馆大厅的钟停了。林昭把伞靠在门边，雪水顺着伞骨滴在石板上。柜台后面没有人。登记簿摊开着，最后一行是林雪的名字。他喊了一声。楼上传来关门的声音，很轻。壁炉里的火只剩一层灰。茶几上两只杯子，一只还温着。"
+    },
+    {
+      "scenario": "S5.3 覆盖结论与暂存（不写正式正文）",
+      "ok": true,
+      "detail": "覆盖 HTTP 200、暂存 HTTP 200；暂存前正式正文仍是原文=True"
+    },
+    {
+      "scenario": "S5.4 一次发布（正文换版 + 回执可回读）",
+      "ok": true,
+      "detail": "发布 HTTP 200；正文已换版=True；Commit 前进；操作回执 HTTP 200",
+      "status": 200,
+      "operation_id": "op_deep_revision_publish_1",
+      "changed_chapters": [
+        "art_1162c7b51065425f"
+      ]
+    },
+    {
+      "scenario": "S5.5 手动路径不计预算（口径说明）",
+      "ok": null,
+      "detail": "任务 call_limit=6、calls_used=0；本场景直接调试写候选再手工暂存，没经过执行循环，所以这次调用不计入任务预算（设计如此：只有 POST /revision-tasks/{id}/run 的逐章记账才消耗预算）。预算门禁由 S6 取证：1 次预算只跑 1 章，继续后才跑第 2 章",
+      "budget": {
+        "call_limit": 6,
+        "calls_used": 0,
+        "remaining": 6,
+        "repair_rounds": 0,
+        "max_repair_rounds": 2,
+        "exhausted": false
+      },
+      "task_state": "completed"
+    },
+    {
+      "scenario": "S6.1 预算 1 跑两章：停在第二章之前",
+      "ok": true,
+      "detail": "执行 HTTP 200；状态 stopped、完成 1 章、任务 waiting、原因 budget_exhausted",
+      "status": 200,
+      "body": {
+        "status": "stopped",
+        "task_id": "rtk_a2a2e967da924626",
+        "request_id": "deep-loop-1",
+        "chapters": [
+          {
+            "chapter_id": "art_952f35dbd6a14182",
+            "candidate_id": "cnd_ea2ccbbdc9034c0c",
+            "chars": 230,
+            "calls_used": 1
+          }
+        ],
+        "stopped": {
+          "reason": "budget_exhausted",
+          "chapter_id": "art_f5580343d38447ef",
+          "why": "本次要记 1 次调用，但只剩 0 次（1/1）"
+        },
+        "task": {
+          "task_id": "rtk_a2a2e967da924626",
+          "project_id": "prj_195b7d297a514938",
+          "work_id": "rwk_af35055c8c3e49c1",
+          "base_commit_id": "cmt_836916af38e24a04",
+          "state": "waiting",
+          "budget": {
+            "call_limit": 1,
+            "calls_used": 1,
+            "remaining": 0,
+            "repair_rounds": 0,
+            "max_repair_rounds": 2,
+            "exhausted": true
+          },
+          "attempt": 1,
+          "grant_version": 1,
+          "request_id": "deep-loop-task",
+          "waiting_reason": "budget_exhausted",
+          "waiting_detail": "本次要记 1 次调用，但只剩 0 次（1/1）",
+          "requires_revalidation": false,
+          "published_operation_id": "",
+          "published_commit_id": "",
+          "created_at": "2026-10-19T14:12:55.630771+00:00",
+          "updated_at": "2026-10-19T14:13:03.423510+00:00",
+          "coverage": {
+            "work_id": "rwk_af35055c8c3e49c1",
+            "complete": false,
+            "covered_count": 1,
+            "total_count": 2,
+            "uncovered": [
+              {
+                "chapter_id": "art_f5580343d38447ef",
+                "status": "unread",
+                "reason": "尚未读取该章"
+              }
+            ]
+          },
+          "publication": {
+            "ready": false,
+            "blockers": [
+              {
+                "code": "REVISION_COVERAGE_INCOMPLETE_CONFLICT",
+                "why": "还有章节没有覆盖（未读/只读摘要/受阻）",
+                "fix": "继续读取未覆盖章节并逐章下结论；不能把未读当作无需修改"
+              },
+              {
+                "code": "REVISION_BUDGET_EXHAUSTED_CONFLICT",
+                "why": "本轮因预算耗尽停下（1/1），可能还有未处理的范围",
+                "fix": "作者选择继续（追加预算）或缩小范围；内部进度已保留"
+              }
+            ],
+            "head_commit_id": "cmt_836916af38e24a04"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "S6.2 继续后跑完剩余章",
+      "ok": true,
+      "detail": "继续 HTTP 200；执行 HTTP 200；完成 1 章、calls_used=2",
+      "status": 200
+    },
+    {
+      "scenario": "S6.3 两章一次发布",
+      "ok": true,
+      "detail": "发布 HTTP 200；改动 2 章；Commit 前进；首章保留要素 ['钟', '伞', '柜台']；正文样本 '九点整，钟停了。\\n\\n林昭把伞靠在门边，雪水顺着伞骨滴在石板上。一滴，隔一会儿，又'",
+      "status": 200,
+      "changed": [
+        "art_952f35dbd6a14182",
+        "art_f5580343d38447ef"
+      ],
+      "sample": "九点整，钟停了。\n\n林昭把伞靠在门边，雪水顺着伞骨滴在石板上。一滴，隔一会儿，又一滴。他没有马上进去，站在门槛外，把肩上的雪拍掉。\n\n屋里亮着灯。一盏，在柜台上方，光是黄的，照到的地方不多。柜台是木头的，边角磨得发白。柜台后面没有人。\n\n墙上挂着钟。他看了一会儿，看清两根针都停在九点上，分针和时针几乎并在一起。他没有去"
+    },
+    {
+      "scenario": "S4 环境失败记录（不存在的模型）",
+      "ok": null,
+      "detail": "轮次终态 turn.failed；错误：{'code': 'CHAT_PROVIDER_FAILED', 'category': 'environment', 'where': 'chat.runner', 'why': 'Provider 返回错误事件，本轮没有可用正文', 'fix': '检查端点与凭证后重试；不会自动换用其他厂商', 'details': {}}",
+      "failed": true,
+      "error": {
+        "code": "CHAT_PROVIDER_FAILED",
+        "category": "environment",
+        "where": "chat.runner",
+        "why": "Provider 返回错误事件，本轮没有可用正文",
+        "fix": "检查端点与凭证后重试；不会自动换用其他厂商",
+        "details": {}
+      }
+    }
+  ]
+}

@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 
 from hastings.server.provider_config import ProviderBook, load_server_config
 from hastings.server.v2 import V2Runtime, build_v2_app
@@ -45,9 +46,12 @@ ROOT = Path(__file__).resolve().parents[2]
 class Walkthrough:
     """收集证据行；``ok=None`` 表示「失败证据」（按设计记录，不计通过）。"""
 
-    def __init__(self, out_dir: Path, model: str, deep: bool = False) -> None:
+    def __init__(
+        self, out_dir: Path, model: str, provider: str = "ollama", deep: bool = False
+    ) -> None:
         self.out_dir = out_dir
         self.model = model
+        self.provider = provider
         self.deep = deep
         self.started = datetime.now()
         self.findings: list[dict[str, Any]] = []
@@ -61,13 +65,17 @@ class Walkthrough:
         passed = sum(1 for f in self.findings if f["ok"] is True)
         failed = sum(1 for f in self.findings if f["ok"] is False)
         evidence = sum(1 for f in self.findings if f["ok"] is None)
+        if self.provider == "ollama":
+            nature = "真实 Provider 调用（本地模型，无收费 API）；模拟/FakeProvider 证据不在本表。"
+        else:
+            nature = "真实远程 Provider 调用（按量计费）；模拟/FakeProvider 证据不在本表。"
         lines = [
             "# V03-8.7 0.3 真模型走查报告" + ("（含 --deep 修订全循环）" if self.deep else ""),
             "",
             f"- 时间：{self.started.isoformat()}",
-            f"- 模型：{self.model}（本地 Ollama，config.yaml ollama 档案）",
+            f"- 模型：{self.model}（provider 档案 {self.provider!r}）",
             f"- 范围：{'S1–S6（含修订全循环与执行循环）' if self.deep else 'S1–S4'}",
-            "- 证据性质：真实 Provider 调用（本地、无收费 API）；模拟/FakeProvider 证据不在本表。",
+            f"- 证据性质：{nature}",
             f"- 结果：通过 {passed} / 失败 {failed} / 失败证据 {evidence}"
             "（失败证据按设计记录，不计通过）。",
             "",
@@ -601,17 +609,19 @@ async def scenario_execution_loop(walk: Walkthrough, client: Client) -> None:
     )
 
 
-async def scenario_environment_failure(walk: Walkthrough) -> None:
+async def scenario_environment_failure(walk: Walkthrough, provider_name: str) -> None:
     """S4：不存在的模型 → 真实失败留记录（失败证据，不计通过）。"""
     with tempfile.TemporaryDirectory(prefix="v0387-fail-", ignore_cleanup_errors=True) as tmp:
         runtime = V2Runtime.sqlite(str(Path(tmp) / "fail.db"))
         config = load_server_config()
-        profile = next((p for p in config.providers if p.name == "ollama" and p.available), None)
+        profile = next(
+            (p for p in config.providers if p.name == provider_name and p.available), None
+        )
         if profile is None:
             walk.record(
                 "S4 环境失败记录",
                 None,
-                "config.yaml 无可用 ollama 档案，无法构造失败证据",
+                f"config.yaml 无可用 {provider_name} 档案，无法构造失败证据",
                 skipped=True,
             )
             return
@@ -653,6 +663,11 @@ async def main() -> int:
     parser.add_argument("--out", required=True, help="报告目录 eval/runs/<日期>-v03-8.7")
     parser.add_argument("--model", default="", help="覆盖档案模型名（如 qwen3:8b）")
     parser.add_argument(
+        "--provider",
+        default="ollama",
+        help="provider 档案名（默认 ollama；用 .env 里的 DeepSeek 时填 default）",
+    )
+    parser.add_argument(
         "--deep",
         action="store_true",
         help="追加 S5 真模型修订全循环（读章→改稿→覆盖→暂存→发布）",
@@ -662,10 +677,15 @@ async def main() -> int:
     out_dir = ROOT / args.out
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    load_dotenv(ROOT / ".env")
     config = load_server_config()
-    profile = next((p for p in config.providers if p.name == "ollama" and p.available), None)
+    profile = next((p for p in config.providers if p.name == args.provider and p.available), None)
     if profile is None:
-        print("config.yaml 没有可用的 ollama 档案；真模型走查需要本地模型。", file=sys.stderr)
+        print(
+            f"config.yaml 没有可用的 {args.provider!r} 档案；"
+            "检查档案是否存在且 api_key_env 指向的变量已设置（.env 会被加载）。",
+            file=sys.stderr,
+        )
         return 2
     model = args.model or profile.default_model
     book = ProviderBook(config, boot_name=profile.name, boot_model=model)
@@ -674,7 +694,7 @@ async def main() -> int:
         runtime = V2Runtime.sqlite(str(Path(tmp) / "walk.db"))
         runtime.worker.runner.book = book
         worker_task = asyncio.create_task(runtime.worker_loop())
-        walk = Walkthrough(out_dir, model, deep=args.deep)
+        walk = Walkthrough(out_dir, model, provider=profile.name, deep=args.deep)
         client = Client(runtime)
         try:
             project, _conversation = await scenario_discussion(walk, client)
@@ -688,7 +708,7 @@ async def main() -> int:
             worker_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await worker_task
-    await scenario_environment_failure(walk)
+    await scenario_environment_failure(walk, profile.name)
 
     walk.write()
     failed = [f for f in walk.findings if f["ok"] is False]
