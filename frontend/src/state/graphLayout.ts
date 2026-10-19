@@ -104,7 +104,9 @@ export function initialLayout(nodeIds: readonly string[]): GraphLayout {
   const ids = [...new Set(nodeIds)].sort();
   if (ids.length === 0) return {};
   if (ids.length === 1) return { [ids[0]]: { x: 0, y: 0 } };
-  const radius = Math.min(260, 60 + 16 * ids.length);
+  // 半径随节点数增长（每节点约 36px 弧长）：真实作品几十个对象时，固定小圆周会把
+  // 节点挤成一团；上限只是防极端数据把初始布局撑爆，仍不表达任何重要性。
+  const radius = Math.max(120, Math.min(2400, ids.length * 36));
   const result: GraphLayout = {};
   ids.forEach((id, index) => {
     const angle = (2 * Math.PI * index) / ids.length;
@@ -136,6 +138,39 @@ export function dragNode(
   point: GraphPoint,
 ): GraphLayout {
   return { ...layout, [nodeId]: { x: point.x, y: point.y } };
+}
+
+/**
+ * 画布变更的最小形状：只声明本函数关心的字段，其余（`selected`/`dimensions` 等）
+ * 由索引签名原样接住，因此可以直接接受 React Flow 的 `NodeChange` 联合类型。
+ */
+export interface PositionChangeLike {
+  id?: string;
+  type: string;
+  position?: GraphPoint;
+  /** 拖动过程中的中间帧为 true；落定帧与键盘移动为 false。 */
+  dragging?: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * 从一批画布变更里取出**落定**位置：只收 `dragging !== true` 的位置变更。
+ * 拖动过程中不落盘，拖动结束与键盘移动（方向键每次移动一帧，同样标为落定）都经这里
+ * 写入布局偏好——键盘与鼠标因此是同一份偏好，不会出现「键盘挪了、刷新又弹回去」。
+ * 没有落定位置时返回 null，调用方据此跳过写入。
+ */
+export function settledPositions(
+  changes: readonly PositionChangeLike[],
+): GraphLayout | null {
+  const result: GraphLayout = {};
+  let found = false;
+  for (const change of changes) {
+    if (change.type !== "position" || !change.position || !change.id) continue;
+    if (change.dragging === true) continue;
+    result[change.id] = { x: change.position.x, y: change.position.y };
+    found = true;
+  }
+  return found ? result : null;
 }
 
 export interface GraphReferenceInput {

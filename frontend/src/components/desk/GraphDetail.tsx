@@ -17,31 +17,8 @@ import {
 import type { EvidenceLinkWire } from "../../api/history";
 import { message } from "../../state/v2";
 import { buildDiscussionReference } from "../../state/graphLayout";
+import { clueStatusLabel, evidenceLabel, layerLabel, relationSummary } from "../../state/graphLabels";
 import { ErrorText, Pill } from "../Workbench";
-
-const LAYER_LABELS: Record<string, string> = {
-  truth: "真相",
-  knowledge: "认知",
-  disclosure: "披露",
-  plan: "计划",
-};
-
-/** 语义层标签 + 层级说明，让作者一眼分清客观事实与角色理解。 */
-export function layerLabel(layer: string): string {
-  return LAYER_LABELS[layer] ?? layer;
-}
-
-function evidenceLabel(status: string): { text: string; tone: "green" | "amber" | "blue" } {
-  if (status === "needs_check") return { text: "来源需核对", tone: "amber" };
-  if (status === "valid") return { text: "来源有效", tone: "green" };
-  return { text: "未记录依据", tone: "blue" };
-}
-
-const CLUE_STATUS_LABELS: Record<string, string> = {
-  implemented: "已在正文出现",
-  planned: "计划出现，尚未写入正文",
-  missing: "还没有关联出现记录",
-};
 
 export default function GraphDetail({
   projectId,
@@ -119,21 +96,12 @@ export default function GraphDetail({
 
       {clue && (
         <p className="mt-1 leading-5 text-sub">
-          线索状态：{CLUE_STATUS_LABELS[clue.status] ?? clue.status}
+          线索状态：{clueStatusLabel(clue.status)}
           {clue.necessity ? " · 必要线索" : ""}
         </p>
       )}
 
-      {edge && (
-        <p className="mt-1 leading-5 text-sub">
-          {nodesById[edge.source]?.title ?? edge.source} →{" "}
-          {nodesById[edge.target]?.title ?? edge.target}
-          {edge.public_state && ` · 表面关系：${edge.public_state}`}
-          {edge.true_state_hidden
-            ? " · 真实关系：当前视角不可见"
-            : edge.true_state && ` · 真实关系：${edge.true_state}`}
-        </p>
-      )}
+      {edge && <p className="mt-1 leading-5 text-sub">{relationSummary(edge, nodesById)}</p>}
 
       <div className="mt-1 flex flex-wrap items-center gap-1">
         {(() => {

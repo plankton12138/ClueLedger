@@ -7,11 +7,12 @@
  *   的变更必须走账本编辑与确认路径。
  * - 侧栏窄栏不塞满所有节点：紧凑模式只画与当前工作相关的前若干个节点，其余
  *   交给「展开查看」。
- * - 画布不是唯一入口：节点/边同样可由文字列表（GraphPanel/GraphOverview 的
- *   文字路径）选中，画布只是投影。
+ * - 画布不是唯一入口：节点/边同样可由文字目录（GraphPanel 的「文字目录」）选中，
+ *   画布只是投影；节点可用 Tab 聚焦、回车选中，方向键移动选中节点（V03-6.5）——
+ *   键盘移动与拖动写的是同一份布局偏好，不产生第二种事实。
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Background,
   Controls,
@@ -30,12 +31,17 @@ import type { GraphEdgeWire, GraphNodeWire } from "../../api/graphs";
 import {
   readLayout,
   resolveLayout,
+  settledPositions,
   writeLayout,
+  type GraphLayout,
   type GraphViewId,
 } from "../../state/graphLayout";
+import { graphEmptyText } from "../../state/graphDirectory";
 
 /** 紧凑模式最多显示的对象数：窄栏只给与当前工作相关的小图。 */
 const COMPACT_NODE_LIMIT = 8;
+/** 超过这个对象数只渲染视口内的节点；初始布局已按数量拉开，缩放能看全。 */
+const VIRTUALIZE_NODE_LIMIT = 60;
 
 const EVIDENCE_TONE: Record<string, string> = {
   valid: "bg-emerald-400",
@@ -121,8 +127,6 @@ export default function GraphCanvas({
 
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphFlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  // 布局偏好版本号：拖动落盘后触发一次重算，保证受控节点与偏好一致。
-  const [layoutTick, setLayoutTick] = useState(0);
 
   useEffect(() => {
     const layout = resolveLayout(
@@ -158,26 +162,30 @@ export default function GraphCanvas({
     visible,
     visibleEdges,
     selectedId,
-    layoutTick,
     setNodes,
     setEdges,
   ]);
 
-  function persistPosition(node: Node) {
-    const saved = readLayout(projectId, viewId);
-    writeLayout(projectId, viewId, {
-      ...saved,
-      [node.id]: { x: node.position.x, y: node.position.y },
-    });
-    setLayoutTick((tick) => tick + 1);
+  /** 落定坐标写入布局偏好：拖动结束与键盘移动共用这一条落盘路径，不碰领域数据。 */
+  function persistPositions(positions: GraphLayout) {
+    writeLayout(projectId, viewId, { ...readLayout(projectId, viewId), ...positions });
+  }
+
+  /**
+   * 位置变更先交给受控状态，再把**落定**坐标落盘（V03-6.5）：
+   * 拖动中间帧只更新画面，拖动结束与键盘方向键移动都会写进本地偏好，
+   * 避免「键盘挪了、刷新又弹回去」的两种事实。
+   */
+  function handleNodesChange(changes: Parameters<typeof onNodesChange>[0]) {
+    onNodesChange(changes);
+    const settled = settledPositions(changes);
+    if (settled) persistPositions(settled);
   }
 
   if (wireNodes.length === 0) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center p-4 text-center text-xs leading-6 text-sub">
-        {viewId === "characters"
-          ? "还没有可画的人物关系。先在账本登记人物与关系，图中才会出现节点。"
-          : "还没有可画的线索关联。先在账本登记线索及其指向。"}
+        {graphEmptyText(viewId)}
       </div>
     );
   }
@@ -188,18 +196,21 @@ export default function GraphCanvas({
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onSelectNode(node.id)}
         onEdgeClick={(_, edge) => onSelectEdge(edge.id)}
-        onNodeDragStop={(_, node) => persistPosition(node)}
+        onNodeDragStop={(_, node) => persistPositions({ [node.id]: { ...node.position } })}
         nodesConnectable={false}
         elementsSelectable
         nodesDraggable
+        onlyRenderVisibleElements={wireNodes.length > VIRTUALIZE_NODE_LIMIT}
+        minZoom={0.1}
+        maxZoom={2}
         fitView
         fitViewOptions={{ padding: 0.25 }}
         proOptions={{ hideAttribution: true }}
-        aria-label="图谱画布（可拖动节点调整布局）"
+        aria-label="图谱画布（方向键移动选中节点、回车选择；拖动只调整本地布局）"
       >
         <Background gap={18} />
         <Controls showInteractive={false} />

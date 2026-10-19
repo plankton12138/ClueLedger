@@ -19,6 +19,7 @@ import {
   readLayout,
   readSelection,
   resolveLayout,
+  settledPositions,
   writeLayout,
   writeSelection,
 } from "./graphLayout";
@@ -87,6 +88,55 @@ describe("拖动只写布局偏好，零领域写入", () => {
     expect(JSON.parse(storage.get(graphLayoutKey("prj_1", "characters"))!)).toEqual({
       art_a: { x: 12, y: 34 },
     });
+  });
+});
+
+describe("大数据初始布局：半径随节点数增长，仍不重叠", () => {
+  it("24 个节点两两之间留出可读间距（固定小圆周会把节点挤成一团）", () => {
+    const ids = Array.from({ length: 24 }, (_, i) => `art_${String(i).padStart(2, "0")}`);
+    const layout = initialLayout(ids);
+    let min = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < ids.length; i += 1) {
+      for (let j = i + 1; j < ids.length; j += 1) {
+        const dx = layout[ids[i]].x - layout[ids[j]].x;
+        const dy = layout[ids[i]].y - layout[ids[j]].y;
+        min = Math.min(min, Math.hypot(dx, dy));
+      }
+    }
+    expect(min).toBeGreaterThanOrEqual(150);
+  });
+
+  it("极大数据有半径上限，不把画布撑到不可用", () => {
+    const ids = Array.from({ length: 400 }, (_, i) => `art_${i}`);
+    const layout = initialLayout(ids);
+    for (const id of ids) {
+      // 坐标取整，给 1px 取整余量
+      expect(Math.hypot(layout[id].x, layout[id].y)).toBeLessThanOrEqual(2401);
+    }
+  });
+});
+
+describe("画布位置落盘：只收落定帧，键盘与鼠标共用同一份偏好", () => {
+  it("拖动中间帧（dragging: true）不落盘", () => {
+    expect(
+      settledPositions([
+        { id: "art_a", type: "position", position: { x: 1, y: 2 }, dragging: true },
+      ]),
+    ).toBeNull();
+  });
+
+  it("落定帧与键盘移动（dragging: false / 缺省）返回坐标，非位置变更被忽略", () => {
+    expect(
+      settledPositions([
+        { id: "art_a", type: "position", position: { x: 5, y: 6 }, dragging: false },
+        { id: "art_b", type: "select", selected: true },
+        { id: "art_c", type: "dimensions" },
+      ]),
+    ).toEqual({ art_a: { x: 5, y: 6 } });
+    expect(settledPositions([{ id: "art_a", type: "position", position: { x: 7, y: 8 } }])).toEqual(
+      { art_a: { x: 7, y: 8 } },
+    );
+    expect(settledPositions([{ id: "art_a", type: "position", dragging: true }])).toBeNull();
   });
 });
 
