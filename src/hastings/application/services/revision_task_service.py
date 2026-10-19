@@ -114,6 +114,21 @@ class RevisionTaskService:
         pid = ProjectId(project_id)
         return self._view(pid, self._load(pid, task_id))
 
+    def load(self, project_id: str, task_id: str) -> RevisionTask:
+        """供发布/执行侧读取领域任务；调用方不得直接改它。"""
+        return self._load(ProjectId(project_id), task_id)
+
+    def mark_published(
+        self, project_id: str, task_id: str, *, operation_id: str, commit_id: str
+    ) -> dict[str, Any]:
+        """统一发布成功后标完成，并记下本次操作与正式版本（V03-7.4）。"""
+        pid, task = self._load_with_pid(project_id, task_id)
+        updated = task.mark_published(
+            operation_id=operation_id, commit_id=commit_id, at=self._now()
+        )
+        self._save(pid, updated)
+        return self._view(pid, updated)
+
     # -- 执行记账（执行循环在 V03-7.4 调用）-----------------------------------
     def begin(self, project_id: str, task_id: str) -> dict[str, Any]:
         pid, task = self._load_with_pid(project_id, task_id)

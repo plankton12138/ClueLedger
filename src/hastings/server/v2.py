@@ -87,6 +87,7 @@ from hastings.application.services.ledger_candidate_service import LedgerCandida
 from hastings.application.services.ledger_service import LedgerService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
+from hastings.application.services.revision_publish_service import RevisionPublishService
 from hastings.application.services.revision_task_service import RevisionTaskService
 from hastings.application.services.revision_work_service import RevisionWorkService
 from hastings.application.services.suggestion_service import SuggestionService
@@ -330,6 +331,17 @@ class V2Runtime:
         # 只允许一个进行中任务，新任务必须先继续或停止（防绕预算）。
         self.revision_tasks = RevisionTaskService(
             self.service, self.revision_work, self.ids, self.clock
+        )
+        # 内部工作版本暂存与统一发布（V03-7.4）：正文与账本进同一个 Commit；
+        # 活动副本、基础前进、未覆盖与预算耗尽都整体拒绝，不产生半套版本。
+        self.revision_publish = RevisionPublishService(
+            self.service,
+            self.revision_tasks,
+            self.revision_work,
+            self.manuscript_publisher,
+            self.edit_sessions,
+            self.ids,
+            self.clock,
         )
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下

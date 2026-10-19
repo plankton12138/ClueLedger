@@ -22,6 +22,16 @@
 - ``POST .../{task_id}/stop``、``POST .../{task_id}/continue``：停止保留进度；继续追加
   预算、推进 attempt，并要求发布前重验。
 
+统一发布（V03-7.4）先把改动暂存，再一次提交：
+
+- ``POST .../{task_id}/staged-chapters``、``DELETE .../staged-chapters/{chapter_id}``：
+  暂存/取消一章全文（不写正式正文）；
+- ``POST .../{task_id}/staged-ledger``、``DELETE .../staged-ledger/{stage_id}``：
+  暂存/取消一条账本新建或修订；
+- ``GET  .../{task_id}/staged``：回读暂存区；
+- ``POST .../{task_id}/publish``：正文与账本进同一个 Commit；活动副本、基础前进、
+  未覆盖、预算耗尽都会整体拒绝。
+
 硬约束不在这层：只读摘要不得记 ``checked_unchanged`` 由领域层判定，预算与修正轮次
 同样在领域层判定，端点只转发结果。领域违规（``CoverageViolation``）经应用边界的
 统一 handler 转信封，这里不重复翻译。
@@ -70,6 +80,30 @@ class ContinueRevisionTaskRequest(BaseModel):
     """作者继续：追加预算；已用次数与修正轮次不清零。"""
 
     additional_calls: int
+
+
+class StageChapterRequest(BaseModel):
+    """暂存一章全文：``base_revision_id`` 是读取时该章的章基础版本。"""
+
+    chapter_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    base_revision_id: str = Field(min_length=1)
+
+
+class StageLedgerRequest(BaseModel):
+    """暂存一条账本新建/修订；修订必须带条目当前 ``revision_id``。"""
+
+    fields: dict[str, Any]
+    stage_id: str | None = None
+    entry_id: str | None = None
+    kind: str = ""
+    expected_revision: str | None = None
+
+
+class PublishRevisionRequest(BaseModel):
+    """发布：``operation_id`` 用于回执重放与撤销找回。"""
+
+    operation_id: str = Field(min_length=1)
 
 
 def create_revision_router(runtime: V2Runtime) -> APIRouter:
@@ -150,6 +184,59 @@ def create_revision_router(runtime: V2Runtime) -> APIRouter:
         """继续：追加预算、推进 attempt，并要求发布前重验。"""
         return runtime.revision_tasks.continue_task(
             project_id, task_id, additional_calls=req.additional_calls
+        )
+
+    # -- 内部工作版本暂存与统一发布（V03-7.4）---------------------------------
+    @router.post("/revision-tasks/{task_id}/staged-chapters")
+    def stage_chapter(
+        project_id: str, task_id: str, req: StageChapterRequest
+    ) -> dict[str, Any]:
+        """暂存一章全文；不写正式正文，发布时才进入同一个 Commit。"""
+        return runtime.revision_publish.stage_chapter(
+            project_id,
+            task_id,
+            chapter_id=req.chapter_id,
+            text=req.text,
+            base_revision_id=req.base_revision_id,
+        )
+
+    @router.delete("/revision-tasks/{task_id}/staged-chapters/{chapter_id}")
+    def unstage_chapter(project_id: str, task_id: str, chapter_id: str) -> dict[str, Any]:
+        """取消一章的暂存；不影响正式正文。"""
+        return runtime.revision_publish.unstage_chapter(project_id, task_id, chapter_id)
+
+    @router.post("/revision-tasks/{task_id}/staged-ledger")
+    def stage_ledger(
+        project_id: str, task_id: str, req: StageLedgerRequest
+    ) -> dict[str, Any]:
+        """暂存一条账本新建/修订；暂存时先按基础目录校验字段与引用。"""
+        return runtime.revision_publish.stage_ledger(
+            project_id,
+            task_id,
+            fields=req.fields,
+            stage_id=req.stage_id,
+            entry_id=req.entry_id,
+            kind=req.kind,
+            expected_revision=req.expected_revision,
+        )
+
+    @router.delete("/revision-tasks/{task_id}/staged-ledger/{stage_id}")
+    def unstage_ledger(project_id: str, task_id: str, stage_id: str) -> dict[str, Any]:
+        """取消一条账本暂存；不影响正式账本。"""
+        return runtime.revision_publish.unstage_ledger(project_id, task_id, stage_id)
+
+    @router.get("/revision-tasks/{task_id}/staged")
+    def get_staged(project_id: str, task_id: str) -> dict[str, Any]:
+        """回读暂存区：章节全文、待发布账本变化与计数。"""
+        return runtime.revision_publish.staged(project_id, task_id)
+
+    @router.post("/revision-tasks/{task_id}/publish")
+    def publish_revision_task(
+        project_id: str, task_id: str, req: PublishRevisionRequest
+    ) -> dict[str, Any]:
+        """一次发布正文与账本；门禁不通过时整体不提交。"""
+        return runtime.revision_publish.publish(
+            project_id, task_id, operation_id=req.operation_id
         )
 
     return router

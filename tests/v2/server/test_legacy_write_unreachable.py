@@ -29,8 +29,10 @@ from hastings.server.v2 import V2Runtime, build_v2_app
 
 SRC = Path(__file__).resolve().parents[3] / "src" / "hastings"
 
-# 旧写入口 / 旧运行时标识：出现在 V2 可达面上即为漂移
-_LEGACY_ROUTE_TOKENS = ("bible", "upsert", "story_stage", "stage", "reconcile")
+# 旧写入口 / 旧运行时标识：出现在 V2 可达面上即为漂移。
+# ``stage`` 按**路径段**精确匹配：V03-7.4 的 ``staged-chapters`` 是暂存区，
+# 不是旧的 ``story_stage`` 阶段入口，不能靠子串误伤。
+_LEGACY_ROUTE_TOKENS = ("bible", "upsert", "story_stage", "reconcile")
 _LEGACY_WRITE_TOOLS = frozenset(
     ("bible_upsert", "write_chapter", "method_lock", "method_unlock", "story_stage")
 )
@@ -77,7 +79,12 @@ def test_v2_route_table_has_no_legacy_endpoints() -> None:
     assert table and all(path.startswith("/api/v2") for path in table), (
         f"V2 路由未挂载：{sorted(table)}"
     )
-    offenders = [path for path in table if any(token in path for token in _LEGACY_ROUTE_TOKENS)]
+    offenders = [
+        path
+        for path in table
+        if any(token in path for token in _LEGACY_ROUTE_TOKENS)
+        or "stage" in [segment for segment in path.split("/") if segment]
+    ]
     assert not offenders, f"V2 路由表出现旧写入口：{offenders}"
 
 

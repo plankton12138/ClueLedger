@@ -236,6 +236,8 @@ class RevisionTask:
     waiting_reason: str = ""
     waiting_detail: str = ""
     requires_revalidation: bool = False
+    published_operation_id: str = ""
+    published_commit_id: str = ""
     created_at: str = ""
     updated_at: str = ""
 
@@ -411,6 +413,32 @@ class RevisionTask:
         self._require_running("完成")
         return replace(self, state=STATE_COMPLETED, updated_at=at)
 
+    def mark_published(
+        self, *, operation_id: str, commit_id: str, at: str = ""
+    ) -> RevisionTask:
+        """发布成功：任务完成，并记下本次操作与正式版本（V03-7.4）。
+
+        先由统一发布管线提交、再标完成——发布失败时任务仍是 running，暂存内容
+        原样保留，作者可以修正后重试。
+        """
+        self._require_running("发布")
+        if not operation_id:
+            raise violation(
+                ec.REVISION_PUBLISH_EMPTY,
+                where="revision_task.publish",
+                why="发布结果缺少 operation_id",
+                fix="发布必须带稳定的操作 ID（op_ 前缀），以便回执与撤销找回",
+            )
+        return replace(
+            self,
+            state=STATE_COMPLETED,
+            published_operation_id=operation_id,
+            published_commit_id=commit_id,
+            waiting_reason="",
+            waiting_detail="",
+            updated_at=at,
+        )
+
     def to_wire(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
@@ -425,6 +453,8 @@ class RevisionTask:
             "waiting_reason": self.waiting_reason,
             "waiting_detail": self.waiting_detail,
             "requires_revalidation": self.requires_revalidation,
+            "published_operation_id": self.published_operation_id,
+            "published_commit_id": self.published_commit_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -444,6 +474,8 @@ class RevisionTask:
             waiting_reason=str(payload.get("waiting_reason", "")),
             waiting_detail=str(payload.get("waiting_detail", "")),
             requires_revalidation=bool(payload.get("requires_revalidation", False)),
+            published_operation_id=str(payload.get("published_operation_id", "")),
+            published_commit_id=str(payload.get("published_commit_id", "")),
             created_at=str(payload.get("created_at", "")),
             updated_at=str(payload.get("updated_at", "")),
         )
