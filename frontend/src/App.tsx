@@ -41,8 +41,10 @@ import { layoutKind } from "./layout";
 import ChatCandidateReview from "./components/chat/ChatCandidateReview";
 import type { ChatMessage } from "./api/chat";
 const nav: { key: View; label: string; Icon: LucideIcon }[] = [
-  { key: "overview", label: "项目概览", Icon: LayoutDashboard },
+  // 0.3 默认工作区是写作台（V03-8.6）：正文中心的三部分工作区放第一位；
+  // 其余页面是 V1/V2 兼容入口，被排除功能不再提供启动（见 V03-8.6 矩阵）。
   { key: "desk", label: "写作台", Icon: PenLine },
+  { key: "overview", label: "项目概览", Icon: LayoutDashboard },
   { key: "studio", label: "创作台", Icon: Feather },
   { key: "ledger", label: "故事账本", Icon: BookOpenText },
   { key: "changes", label: "变更影响", Icon: GitBranch },
@@ -62,7 +64,7 @@ function readChatOpen(narrow: boolean): boolean {
   return true;
 }
 export default function App() {
-  const [view, setView] = useState<View>("overview"),
+  const [view, setView] = useState<View>("desk"),
     [settingsOpen, setSettingsOpen] = useState(false),
     [modelsOpen, setModelsOpen] = useState(false),
     [query, setQuery] = useState("");

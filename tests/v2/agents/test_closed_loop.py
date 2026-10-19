@@ -81,6 +81,8 @@ def test_v2_new_project_closed_loop_and_transcript(tmp_path):
     assert refused.status_code == 400, refused.text
     assert refused.json()["error"]["code"] == "EXECUTION_NOT_AUTHORIZED"
 
+    # V03-8.6：变更集逐章审批流与独立审计已退役（HTTP 410）。这里只验证
+    # 变更集本身仍可打开与只读回看；启动类动作由 test_legacy_entry_guard 覆盖。
     current = story()
     helper = next(a for a in current["artifacts"] if a["artifact_id"].endswith(":helper"))
     cs = post(
@@ -93,40 +95,21 @@ def test_v2_new_project_closed_loop_and_transcript(tmp_path):
             "seed_patches": {helper["artifact_id"]: {**helper["content"], "role": "antagonist"}},
         },
     )["change_set_id"]
-    post(f"/changes/{cs}/analyze", {"idempotency_key": "impact"})
-    post(f"/changes/{cs}/plan", {"idempotency_key": "revision-plan"})
-    detail = client.get(prefix + f"/changes/{cs}").json()
-    post(
-        f"/changes/{cs}/approve",
-        {"idempotency_key": "approve", "expected_head": detail["head_commit_id"]},
-    )
-    execution = post(f"/changes/{cs}/execute-agent", {"idempotency_key": "repair"})
-    assert execution["status"] == "executed"
-    patch = post(f"/changes/{cs}/review", {"idempotency_key": "review"})
-    assert any(h["artifact_id"] in units for h in patch["hunks"])
-    selected = [h["hunk_id"] for h in patch["hunks"] if h["artifact_id"] != units[-1]]
-    merged = post(
-        f"/changes/{cs}/merge",
-        {"idempotency_key": "merge", "expected_head": story()["commit_id"], "selected": selected},
-    )
-    audited = run("auditor")
-    assert audited["state"] == "completed" and audited["output"]["findings"]
+    detail = client.get(prefix + f"/changes/{cs}")
+    assert detail.status_code == 200 and detail.json()["change_set"]["change_set_id"] == cs
+
     restored = TestClient(build_v2_app(V2Runtime.sqlite(path)))
     assert restored.get(prefix + "/manuscript").json() == client.get(prefix + "/manuscript").json()
     assert restored.get(prefix + f"/agent-jobs/{planned['job_id']}").json()["state"] == "completed"
-    assert any(c["role"] == "reviser" and c["provider_calls"] == 2 for c in scenario.calls)
     transcript = {
         "project_id": project,
         "trace": trace,
         "worker_calls": scenario.calls,
-        "merge": merged,
         "checks": {
             "new_project": True,
             "author_review": True,
             "style_observer_refused": True,
-            "out_of_scope_corrected_once": True,
-            "partial_merge": True,
-            "localized_audit": True,
+            "change_workflow_retired": True,
             "restart": True,
         },
     }

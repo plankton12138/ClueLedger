@@ -1633,9 +1633,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
 
         不新增步骤/条件/证据对象，也不按模型措辞补边；缺失只表示「尚未记录」。
         """
-        return runtime.graphs.method(
-            project_id, at_commit_id=at_commit_id, focus=focus
-        )
+        return runtime.graphs.method(project_id, at_commit_id=at_commit_id, focus=focus)
 
     @router.get("/projects/{project_id}/graphs/timeline")
     def get_timeline_graph(
@@ -2018,17 +2016,26 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
 
     @router.post("/projects/{project_id}/chapters/import")
     def import_chapter(project_id: str, req: ImportChapterRequest) -> dict[str, Any]:
+        """旧单章导入（V1 兼容语义）：V03-8.6 起与预览导入同一发布管线。
+
+        旧入口不再直接提交领域命令——操作记录、证据/摘要派生与事件投影
+        与「导入正文」完全一致；响应补 ``operation_id`` 供回执查询。
+        """
         chapter_id = runtime.new_artifact_id()
-        result = runtime.handler.execute(
-            manuscript_command(
+        result = runtime.manuscript_publisher.publish_command(
+            project_id=ProjectId(project_id),
+            command=manuscript_command(
                 import_chapter_command,
                 chapter_id=chapter_id,
                 title=req.title,
                 text=req.text,
                 order_key=req.order_key,
             ),
-            project_id=ProjectId(project_id),
-            idempotency_key=req.idempotency_key,
+            operation_id=(
+                "op_"
+                + content_hash(["chapter.import", project_id, chapter_id, req.idempotency_key])[:16]
+            ),
+            kind="chapter.create",
             summary=f"导入「{req.title}」",
         )
         return {
@@ -2037,6 +2044,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             "commit_id": result.commit_id,
             "new_head": result.new_head,
             "summary": result.summary,
+            "operation_id": result.operation_id,
         }
 
     @router.get("/projects/{project_id}/chapters/{chapter_id}")
@@ -2196,9 +2204,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
                 fix="上传从「导出」下载的 zip 文件的 base64 内容，不要先解压再打包",
                 details={"project_id": project_id},
             ) from exc
-        return runtime.backup.restore(
-            project_id, archive, confirm_overwrite=req.confirm_overwrite
-        )
+        return runtime.backup.restore(project_id, archive, confirm_overwrite=req.confirm_overwrite)
 
     @router.get("/projects/{project_id}/export")
     def export_package(project_id: str, commit_id: str | None = None) -> Response:
@@ -2281,6 +2287,9 @@ def _empty_chapter(chapter_id: str) -> dict[str, Any]:
 def _status_for(error: HastingsError) -> int:
     if error.category is ResultCategory.ENVIRONMENT:
         return 503
+    # 0.3 已退役入口（V03-8.6）：曾经存在、本版不再提供——410 与「参数写错」区分。
+    if error.code == "FEATURE_RETIRED_IN_03":
+        return 410
     if error.code.endswith("_NOT_FOUND") or "UNKNOWN" in error.code:
         return 404
     if error.code.endswith("_CONFLICT"):

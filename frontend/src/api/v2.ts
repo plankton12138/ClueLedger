@@ -302,30 +302,8 @@ export async function fetchChangeDetail(
   );
 }
 
-/** 变更集生命周期动作：analyze / plan / approve / execute / review / merge。 */
-export async function changeAction(
-  projectId: string,
-  csId: string,
-  action:
-    | "analyze"
-    | "plan"
-    | "approve"
-    | "execute"
-    | "review"
-    | "merge"
-    | "execute-agent",
-  expectedHead: string,
-  extra: Record<string, unknown> = {},
-): Promise<unknown> {
-  return request(
-    `${projectPrefix(projectId)}/changes/${encodeURIComponent(csId)}/${action}`,
-    {
-      idempotency_key: key(),
-      expected_head: expectedHead,
-      ...extra,
-    },
-  );
-}
+// 变更集生命周期动作（analyze/plan/approve/execute/review/merge）在 V03-8.6
+// 已随逐章审批流从 HTTP 层退役（410）；客户端不再保留对应函数。
 
 export interface AuditFinding {
   code?: string;
@@ -342,11 +320,8 @@ export interface AuditResult {
   [key: string]: unknown;
 }
 
-export async function runAudit(projectId: string): Promise<AuditResult> {
-  return request(`${projectPrefix(projectId)}/audit`, {
-    idempotency_key: key(),
-  });
-}
+// 独立一致性审计的启动入口在 V03-8.6 已从 HTTP 层退役（410）；
+// 页面只读回看旧报告，客户端不再保留 runAudit。
 
 // ---------------------------------------------------------------------------
 // Agent 任务（协作主编 / 撰写 / 审计 / 风格观察）
@@ -383,12 +358,7 @@ export interface CoordinateResult {
   snapshot: StorySnapshot;
 }
 
-export async function coordinate(
-  projectId: string,
-  instruction: string,
-): Promise<CoordinateResult> {
-  return request(`${projectPrefix(projectId)}/coordinate`, { instruction });
-}
+// POST /coordinate 在 V03-8.6 退役（多 Agent 协调入口，前端本来就 0 调用）。
 
 export async function submitAgentJob(
   projectId: string,

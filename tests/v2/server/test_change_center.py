@@ -1,4 +1,4 @@
-"""HTTP 出口：可读状态、受约束人工 Patch、审阅合并与重启。"""
+"""HTTP 出口：可读状态、变更集打开与只读回看（逐章审批流 V03-8.6 起已退役）。"""
 
 from fastapi.testclient import TestClient
 
@@ -15,7 +15,8 @@ def test_new_project_has_legal_empty_change_list() -> None:
     assert response.json() == {"head_commit_id": None, "changes": []}
 
 
-def test_change_center_http_flow_and_restart(tmp_path):
+def test_change_set_opens_reads_and_survives_restart(tmp_path):
+    """变更集仍可打开与回看；启动类动作（分析/计划/批准/执行/审阅/合并）统一 410。"""
     db = str(tmp_path / "changes.sqlite")
     runtime = V2Runtime.sqlite(db)
     project = runtime.create_project("冬馆")
@@ -49,43 +50,25 @@ def test_change_center_http_flow_and_restart(tmp_path):
     assert opened.status_code == 200, opened.text
     cs = opened.json()["change_set_id"]
     url = f"{prefix}/{cs}"
-    for action in ("analyze", "plan", "approve"):
+    # 打开变更集本身是一次 Commit；退役动作不得再移动版本头。
+    head_after_open = client.get(url).json()["head_commit_id"]
+
+    for action in ("analyze", "plan", "approve", "execute", "review", "merge"):
         response = client.post(
             f"{url}/{action}",
             json={
                 "idempotency_key": action,
-                "expected_head": client.get(url).json()["head_commit_id"],
+                "expected_head": head_after_open,
             },
         )
-        assert response.status_code == 200, response.text
-    response = client.post(
-        f"{url}/execute",
-        json={"idempotency_key": "exec", "patches": {"beat": {"name": "beat", "motive": "操纵"}}},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "executed"
-    prepared = client.post(f"{url}/review", json={"idempotency_key": "review"}).json()
+        assert response.status_code == 410, response.text
+        assert response.json()["error"]["code"] == "FEATURE_RETIRED_IN_03"
+
     detail = client.get(url).json()
-    assert detail["change_set"]["status"] == "review"
-    merged = client.post(
-        f"{url}/merge",
-        json={
-            "idempotency_key": "merge",
-            "expected_head": detail["head_commit_id"],
-            "selected": [h["hunk_id"] for h in prepared["hunks"]],
-        },
-    )
-    assert merged.status_code == 200, merged.text
+    assert detail["change_set"]["status"] == "opened"
+    assert detail["head_commit_id"] == head_after_open
+
     restarted = TestClient(build_v2_app(V2Runtime.sqlite(db)))
-    assert restarted.get(url).json()["change_set"]["status"] == "committed"
-    assert (
-        restarted.post(
-            f"{url}/merge",
-            json={
-                "idempotency_key": "merge",
-                "expected_head": detail["head_commit_id"],
-                "selected": [h["hunk_id"] for h in prepared["hunks"]],
-            },
-        ).json()
-        == merged.json()
-    )
+    restored = restarted.get(url).json()
+    assert restored["change_set"]["status"] == "opened"
+    assert restored["head_commit_id"] == head_after_open

@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from hastings.agents.coordinator import route_intent
 from hastings.application.errors import ViolationError
 from hastings.application.execution import (
     ConnectionSnapshot,
@@ -18,6 +17,7 @@ from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectI
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest
 from hastings.domain.repository.serialization import content_hash
 from hastings.domain.worker import WorkerRole
+from hastings.interfaces.api._retired import retired
 
 if TYPE_CHECKING:
     from hastings.server.v2 import V2Runtime
@@ -93,11 +93,12 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
 
     @router.post("/coordinate")
     def coordinate(project_id: str, req: CoordinatorRequest) -> dict[str, Any]:
-        snapshot = story(project_id)
-        return {
-            "decision": route_intent(req.instruction, change_set_id=req.change_set_id),
-            "snapshot": snapshot,
-        }
+        del project_id, req
+        retired(
+            where="agents.coordinate",
+            why="多 Agent 协调入口已退役（0.3 前端无调用点，任务由对话意图显式发起）",
+            fix="用对话意图区分（讨论/候选/执行）表达任务，或从写作台试写/修订任务发起",
+        )
 
     @router.post("/agent-jobs")
     async def submit(project_id: str, req: SubmitJob) -> dict[str, Any]:
@@ -254,22 +255,11 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
 
     @router.post("/changes/{cs_id}/execute-agent")
     async def repair(project_id: str, cs_id: str, req: ExecuteRepair) -> dict[str, Any]:
-        drafts = await runtime.task_draft_store.list_by_status("started")
-        binding = next(
-            (
-                d.model_binding
-                for d in drafts
-                if d.project_id == project_id and d.job_ref == f"change:{cs_id}"
-            ),
-            None,
+        del project_id, cs_id, req
+        retired(
+            where="changes.execute_agent",
+            why="变更集执行 Agent 随逐章审批流退出 0.3，不再接受按变更集启动模型",
+            fix="用修订任务（revision-tasks）或写作台试写候选承载同类执行",
         )
-        async with runtime.project_execution_lock(project_id):
-            return await runtime.agent_workflows.repair(
-                ProjectId(project_id),
-                cs_id,
-                req.idempotency_key,
-                runtime.revision,
-                model_binding=binding,
-            )
 
     return router

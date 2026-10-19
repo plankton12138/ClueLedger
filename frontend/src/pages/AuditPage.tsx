@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { runAudit, type AuditResult, type AuditFinding } from "../api/v2";
-import { useV2Store, message } from "../state/v2";
+import type { AuditResult, AuditFinding } from "../api/v2";
+import { useV2Store } from "../state/v2";
 import {
   Panel,
   Empty,
   Notice,
-  ErrorText,
   Pill,
   display,
   type View,
@@ -16,13 +15,10 @@ export default function AuditPage({
 }: {
   onNavigate(view: View): void;
 }) {
-  const pid = useV2Store((s) => s.currentId),
-    head = useV2Store((s) => s.head);
-  const [report, setReport] = useState<AuditResult | null>(
+  const pid = useV2Store((s) => s.currentId);
+  const [report] = useState<AuditResult | null>(
       pid ? (reports.get(pid) ?? null) : null,
-    ),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    );
   const [filter, setFilter] = useState("all"),
     [selected, setSelected] = useState<AuditFinding | null>(null);
   const findings = report?.findings ?? [];
@@ -30,22 +26,6 @@ export default function AuditPage({
     (f) => filter === "all" || f.status === filter,
   );
   const current = selected ?? filtered[0];
-  async function audit() {
-    if (!pid || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      const next = await runAudit(pid);
-      reports.set(pid, next);
-      setReport(next);
-      setSelected(null);
-      await useV2Store.getState().refreshManuscript();
-    } catch (e) {
-      setError(message(e));
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <main className="page-grid" aria-label="悬疑审计">
       <aside className="space-y-4">
@@ -77,13 +57,11 @@ export default function AuditPage({
             ))}
           </div>
         </Panel>
-        <button
-          className="btn w-full py-2 text-xs"
-          disabled={!pid || !head || busy}
-          onClick={() => void audit()}
-        >
-          {busy ? "检查中…" : "运行一致性审计"}
-        </button>
+        <Notice>
+          <strong>本版不提供启动</strong>
+          <br />
+          独立一致性审计属后续版本能力（V03-8.6 起旧入口统一拒绝）。写作台的「正文证据」与「披露边界」照常工作；历史报告仍可从对应版本回看。
+        </Notice>
         <Notice>
           <strong>审计报告绑定故事版本</strong>
           <br />
@@ -91,7 +69,6 @@ export default function AuditPage({
         </Notice>
       </aside>
       <section className="min-w-0 space-y-4">
-        <ErrorText>{error}</ErrorText>
         <div className="hero p-6">
           <p className="text-[10px] tracking-widest text-white/70">
             STORY / CONSISTENCY
@@ -119,7 +96,7 @@ export default function AuditPage({
         </div>
         <Panel
           title="一致性发现"
-          meta={report ? `共 ${findings.length} 项` : "尚未运行"}
+          meta={report ? `共 ${findings.length} 项` : "本版不提供启动"}
         >
           {filtered.map((f, i) => (
             <button
@@ -156,7 +133,7 @@ export default function AuditPage({
             <Empty>
               {report
                 ? "本次报告在当前分类中没有发现。零发现表示本轮规则未发现问题，不代表模型已证明整部作品无误。"
-                : "运行审计后，这里会显示问题、证据版本和修复方向。"}
+                : "本版不提供独立一致性审计的启动；旧报告可在对应历史版本中回看。写作台的「正文证据」与「披露边界」照常工作。"}
             </Empty>
           )}
         </Panel>
