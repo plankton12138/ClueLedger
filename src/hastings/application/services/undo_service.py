@@ -27,6 +27,7 @@ from hastings.application.services.commit_service import CommitService
 from hastings.application.services.edit_session_service import EditSessionService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
+from hastings.application.services.revision_links import read_acceptances
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
 from hastings.domain.manuscript.commands import save_full_text
 from hastings.domain.manuscript.evidence import KIND_EVIDENCE_LINK
@@ -88,6 +89,10 @@ class UndoService:
             if conflicts:
                 chapter_conflicts[cid] = conflicts
         ledger = self._ledger_rows(pid, before, after, head)
+        related = self._related_acceptance_rows(
+            pid, operation_id, head, {str(row["artifact_id"]) for row in ledger}
+        )
+        ledger.extend(related["rows"])
         ledger_ids = [str(row["artifact_id"]) for row in ledger if row["status"] != "created"]
         references = self._references(pid, after, head, set(record.changed_chapter_ids), ledger_ids)
 
@@ -156,6 +161,7 @@ class UndoService:
             "chapters": chapters,
             "ledger": ledger,
             "references": references,
+            "related_acceptances": related["acceptances"],
             "decisions": decisions,
             "conflicts": [item["why"] for item in decisions],
             "requires_choices": bool(decisions),
@@ -559,6 +565,91 @@ class UndoService:
                 }
             )
         return rows
+
+    def _related_acceptance_rows(
+        self,
+        pid: ProjectId,
+        operation_id: str,
+        head: CommitId | None,
+        existing_ids: set[str],
+    ) -> dict[str, Any]:
+        """把基于本操作采用建议的独立提交纳入同一份撤销检查（V03-7.7）。
+
+        只处理**修改**已有条目的情况：关联采用新建的条目不能在撤销里删除，跳过并
+        报告数量，不阻塞原操作本身的撤销。每条的恢复值仍按三方判定：当前版本等于
+        采用后版本才默认恢复，之后被独立改过就进入冲突选择。
+        """
+        acceptances = read_acceptances(self._repo, pid.value, operation_id)
+        rows: list[dict[str, Any]] = []
+        report: list[dict[str, Any]] = []
+        for item in acceptances:
+            commit_value = str(item.get("commit_id") or "")
+            if not commit_value:
+                continue
+            try:
+                chain = self._repo.commit_history(pid, CommitId(commit_value))
+            except (ViolationError, ValueError):
+                continue
+            commit = next((row for row in chain if row.id.value == commit_value), None)
+            if commit is None or not commit.parent_ids:
+                continue
+            parent = commit.parent_ids[0]
+            diff = self._repo.diff(parent, CommitId(commit_value))
+            before_map = self._story_entries(pid, parent)
+            after_map = self._story_entries(pid, CommitId(commit_value))
+            head_map = self._story_entries(pid, head)
+            included = 0
+            skipped_created = 0
+            skipped_missing = 0
+            for change in diff.artifact_changes:
+                artifact_id = change.artifact_id.value
+                if artifact_id in existing_ids:
+                    continue
+                before_entry = before_map.get(artifact_id)
+                after_entry = after_map.get(artifact_id)
+                head_entry = head_map.get(artifact_id)
+                if after_entry is None or head_entry is None:
+                    skipped_missing += 1
+                    continue
+                if before_entry is None:
+                    skipped_created += 1
+                    continue
+                status = (
+                    "ok"
+                    if head_entry["revision_id"] == after_entry["revision_id"]
+                    else "conflict"
+                )
+                rows.append(
+                    {
+                        "artifact_id": artifact_id,
+                        "kind": after_entry["kind"],
+                        "title": after_entry["title"],
+                        "status": status,
+                        "before_content": before_entry["content"],
+                        "after_content": after_entry["content"],
+                        "current_content": head_entry["content"],
+                        "current_revision": head_entry["revision_id"],
+                        "source": "related_acceptance",
+                        "acceptance_commit_id": commit_value,
+                        "why": (
+                            "这条账本在关联采用之后又被独立修改过，恢复会覆盖后来的修改"
+                            if status == "conflict"
+                            else ""
+                        ),
+                    }
+                )
+                existing_ids.add(artifact_id)
+                included += 1
+            report.append(
+                {
+                    "commit_id": commit_value,
+                    "request_id": str(item.get("request_id", "")),
+                    "included": included,
+                    "skipped_created": skipped_created,
+                    "skipped_missing": skipped_missing,
+                }
+            )
+        return {"rows": rows, "acceptances": report}
 
     def _story_entries(self, pid: ProjectId, commit: CommitId | None) -> dict[str, dict[str, Any]]:
         if commit is None:

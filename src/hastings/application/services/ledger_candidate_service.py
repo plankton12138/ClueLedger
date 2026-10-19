@@ -23,6 +23,7 @@ from hastings.application.errors import ViolationError
 from hastings.application.ports.ids import IdGenerator
 from hastings.application.queries.ledger import entry_view
 from hastings.application.services.commit_service import CommitService
+from hastings.application.services.revision_links import record_acceptance
 from hastings.domain.manuscript.catalog import ManuscriptCatalog
 from hastings.domain.manuscript.errors import ManuscriptViolation
 from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId
@@ -257,6 +258,7 @@ class LedgerCandidateService:
         item_ids: list[str],
         expected_revision: int,
         request_id: str,
+        source_operation_id: str | None = None,
     ) -> dict[str, Any]:
         pid = ProjectId(project_id)
         group = self._require_group(pid)
@@ -325,6 +327,21 @@ class LedgerCandidateService:
                 project_id=pid.value,
             )
         head = branch.head_commit_id
+        if source_operation_id is not None:
+            # 因果关联只指向真实存在的整体操作；不存在的 ID 不落库，避免假链。
+            record_view = (
+                self._repo.get_artifact(ArtifactId(f"art_{source_operation_id}"), head)
+                if head is not None
+                else None
+            )
+            if record_view is None:
+                raise _violation(
+                    "REVISION_OPERATION_NOT_FOUND",
+                    f"ledger.candidates.accept({pid.value})",
+                    f"引用的整体操作 {source_operation_id!r} 不存在",
+                    "刷新本次整体调整的结果后再采用建议；或去掉来源操作，按独立采用处理",
+                    operation_id=source_operation_id,
+                )
         catalog = self._catalog(pid, head)
         created: list[str] = []
         changes: list[ArtifactChange] = []
@@ -376,7 +393,11 @@ class LedgerCandidateService:
                 events=(
                     (
                         "ledger.candidates.accepted",
-                        {"entry_ids": created, "group_id": group["group_id"]},
+                        {
+                            "entry_ids": created,
+                            "group_id": group["group_id"],
+                            "source_operation_id": source_operation_id,
+                        },
                     ),
                 ),
             )
@@ -390,6 +411,16 @@ class LedgerCandidateService:
             item["item_id"]: artifact_id for item, artifact_id in zip(ordered, created, strict=True)
         }
         self._mark_accepted(pid, accepted, request_id, commit_id.value, entries)
+        if source_operation_id is not None:
+            record_acceptance(
+                self._repo,
+                project_id,
+                source_operation_id,
+                commit_id=commit_id.value,
+                request_id=request_id,
+                item_ids=sorted(accepted),
+                at=self._clock.now().isoformat(),
+            )
         return {
             "status": "committed",
             "commit_id": commit_id.value,

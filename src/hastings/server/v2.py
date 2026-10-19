@@ -71,6 +71,7 @@ from hastings.application.queries.chapter_history import ChapterHistoryQueries
 from hastings.application.queries.desk_state import DeskStateQueries
 from hastings.application.queries.followups import FollowupQueries
 from hastings.application.queries.graphs import GraphQueries
+from hastings.application.queries.impact import ImpactQueries
 from hastings.application.queries.ledger import LedgerQueries
 from hastings.application.queries.ledger_forms import ledger_schema
 from hastings.application.queries.manuscript import ManuscriptQueries
@@ -282,6 +283,8 @@ class V2Runtime:
         self.evidence = EvidenceService(self.service, self.operations)
         # 操作后的派生状态（V03-2.6）：摘要是否待更新、建议是否已整理。
         self.followups = FollowupQueries(self.service)
+        # 操作影响（V03-7.7）：按实际版本差异回读改动范围、后续修改与关联采用。
+        self.impact = ImpactQueries(self.service, self.operations, self.edit_sessions)
         # 账本只读查询（V03-3.3）：试写引用与前端设定清单共用同一投影。
         self.ledger = LedgerQueries(self.service)
         # 统一图谱投影（V03-6.1）：节点/边固定同一 Commit，只读、无第二份事实源。
@@ -1113,6 +1116,8 @@ class LedgerCandidateAcceptRequest(BaseModel):
     item_ids: list[str] = Field(default_factory=list)
     expected_revision: int
     request_id: str = Field(min_length=1)
+    #: 可选：这次采用基于哪次整体操作（V03-7.7 因果关联）。
+    source_operation_id: str | None = None
 
 
 class LedgerCandidateSkipRequest(BaseModel):
@@ -1316,6 +1321,14 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
         )
         payload["result_url"] = f"/api/v2/projects/{project_id}/operations/{operation_id}"
         return payload
+
+    @router.get("/projects/{project_id}/operations/{operation_id}/impact")
+    def get_operation_impact(project_id: str, operation_id: str) -> dict[str, Any]:
+        """影响高亮（V03-7.7）：实际版本差异、后续修改与关联采用。
+
+        只报告差异，不评价修订质量；范围来自操作记录与 Commit 差异。
+        """
+        return runtime.impact.impact(project_id, operation_id)
 
     @router.get("/projects/{project_id}/operations/{operation_id}/undo")
     def preview_undo(project_id: str, operation_id: str) -> dict[str, Any]:
@@ -1632,6 +1645,7 @@ def create_v2_router(runtime: V2Runtime) -> APIRouter:
             item_ids=req.item_ids,
             expected_revision=req.expected_revision,
             request_id=req.request_id,
+            source_operation_id=req.source_operation_id,
         )
 
     @router.post("/projects/{project_id}/ledger/candidates/skip")

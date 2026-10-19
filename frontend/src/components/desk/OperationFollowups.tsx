@@ -14,6 +14,7 @@ import {
   summaryLabel,
   type OperationFollowups as Followups,
 } from "../../api/followups";
+import { fetchOperationImpact, type ImpactWire } from "../../api/impact";
 
 export default function OperationFollowups({
   projectId,
@@ -23,11 +24,13 @@ export default function OperationFollowups({
   operationId: string;
 }) {
   const [data, setData] = useState<Followups | null>(null);
+  const [impact, setImpact] = useState<ImpactWire | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let alive = true;
     setData(null);
+    setImpact(null);
     setError(false);
     fetchOperation(projectId, operationId)
       .then((loaded) => {
@@ -35,6 +38,14 @@ export default function OperationFollowups({
       })
       .catch(() => {
         if (alive) setError(true);
+      });
+    // 影响是补充信息：失败不影响后续状态本身。
+    fetchOperationImpact(projectId, operationId)
+      .then((loaded) => {
+        if (alive) setImpact(loaded);
+      })
+      .catch(() => {
+        if (alive) setImpact(null);
       });
     return () => {
       alive = false;
@@ -60,6 +71,29 @@ export default function OperationFollowups({
           <p className="text-[10px] leading-4 text-sub">
             两项都是独立的模型功能，启动入口随各自任务提供；在此之前不会自动运行。
           </p>
+          {impact && (impact.chapters.length > 0 || impact.ledger.length > 0) && (
+            <div className="border-t border-line pt-2">
+              <p>
+                <span className="text-sub">本次影响 · </span>
+                {impact.chapters.length} 章 · {impact.ledger.length} 条账本
+              </p>
+              <ul className="mt-1 space-y-0.5 text-[10px] leading-4 text-sub">
+                {impact.chapters.map((chapter) => (
+                  <li key={chapter.chapter_id}>
+                    {chapter.title || chapter.chapter_id}：+{chapter.inserted_chars} / -
+                    {chapter.deleted_chars} 字
+                    {chapter.has_later_changes ? "（之后又改过）" : ""}
+                  </li>
+                ))}
+              </ul>
+              {impact.related_acceptances.length > 0 && (
+                <p className="mt-1 text-[10px] leading-4 text-sub">
+                  关联采用 {impact.related_acceptances.length} 次（独立提交，可分别撤销）
+                </p>
+              )}
+              <p className="mt-1 text-[10px] leading-4 text-sub">{impact.note}</p>
+            </div>
+          )}
         </div>
       )}
     </section>
