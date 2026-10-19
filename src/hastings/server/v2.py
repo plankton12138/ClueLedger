@@ -87,6 +87,7 @@ from hastings.application.services.ledger_candidate_service import LedgerCandida
 from hastings.application.services.ledger_service import LedgerService
 from hastings.application.services.operation_service import OperationService
 from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
+from hastings.application.services.revision_task_service import RevisionTaskService
 from hastings.application.services.revision_work_service import RevisionWorkService
 from hastings.application.services.suggestion_service import SuggestionService
 from hastings.application.services.summary_service import SummaryDraft, SummaryService
@@ -325,6 +326,11 @@ class V2Runtime:
         # 整体调整工作版本与原文覆盖台账（V03-7.2）：绑定正式 head、声明章节集合，
         # 逐章记录实际读取与未覆盖；只读投影同时作为「全局上下文」回读，不另存事实。
         self.revision_work = RevisionWorkService(self.service, self.ids, self.clock)
+        # 有限执行任务（V03-7.3）：预算、修正轮次与等待/停止/继续；同一作品
+        # 只允许一个进行中任务，新任务必须先继续或停止（防绕预算）。
+        self.revision_tasks = RevisionTaskService(
+            self.service, self.revision_work, self.ids, self.clock
+        )
         # cast 理由：两个后端的 pending() 都返回 list[dict]（dict 是 Mapping 的子类型，
         # 语义兼容），仅因 list 不变型被协议检查拦下
         self.publisher = OutboxPublisher(

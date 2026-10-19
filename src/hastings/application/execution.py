@@ -21,6 +21,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from hastings.application.errors import ViolationError
+from hastings.domain.revision.task import DEFAULT_CALL_BUDGET
 
 __all__ = [
     "DEFAULT_CALL_BUDGET",
@@ -37,9 +38,8 @@ __all__ = [
 ]
 
 #: 工程初值（M10：默认一次整体任务最多 12 次模型调用）；V03-0.7 以实际样本
-#: 测量后写入统一配置——初值是防护值，不是能力承诺。
-DEFAULT_CALL_BUDGET = 12
-
+#: 测量后写入统一配置——初值是防护值，不是能力承诺。V03-7.3 起与任务级
+#: ``RevisionBudget`` 共用同一常量，避免两处默认值漂移。
 GrantSource = Literal["author_message", "author_button"]
 
 #: discussion 为普通对话（作者发送即授权，不经 JobStore 派发）增设；

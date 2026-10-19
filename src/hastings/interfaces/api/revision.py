@@ -1,4 +1,4 @@
-"""整体调整工作版本的 REST 出口（V03-7.2）。
+"""整体调整工作版本与有限执行任务的 REST 出口（V03-7.2/7.3）。
 
 一次整体调整任务在正式发布前有个**内部工作版本**：绑定正式基础、声明要覆盖的
 章节集合，逐章记录「读到哪、全文还是摘要、是否确认无需修改、是否已改、是否受阻」。
@@ -13,8 +13,18 @@
 - ``POST /projects/{id}/revision-work/coverage/{chapter_id}``：对该章下结论——确认无需
   修改、记为已改、或记为受阻（带原因）。
 
-硬约束不在这层：只读摘要不得记 ``checked_unchanged`` 由领域层判定，端点只转发结果。
-领域违规（``CoverageViolation``）经应用边界的统一 handler 转信封，这里不重复翻译。
+有限执行（V03-7.3）在同一个工作版本上再加一层任务账本：
+
+- ``POST /projects/{id}/revision-tasks``：开任务（默认 12 次调用、可缩小；同作品同时
+  只允许一个进行中任务）；
+- ``GET  /projects/{id}/revision-tasks/current``、``GET .../{task_id}``：回读预算、等待
+  原因、覆盖摘要与发布前阻断项；
+- ``POST .../{task_id}/stop``、``POST .../{task_id}/continue``：停止保留进度；继续追加
+  预算、推进 attempt，并要求发布前重验。
+
+硬约束不在这层：只读摘要不得记 ``checked_unchanged`` 由领域层判定，预算与修正轮次
+同样在领域层判定，端点只转发结果。领域违规（``CoverageViolation``）经应用边界的
+统一 handler 转信封，这里不重复翻译。
 """
 
 from __future__ import annotations
@@ -47,6 +57,19 @@ class CoverageActionRequest(BaseModel):
 
     action: str = Field(min_length=1)
     reason: str = ""
+
+
+class StartRevisionTaskRequest(BaseModel):
+    """开一次整体任务：``request_id`` 用于重放；``call_budget`` 只能缩小默认值。"""
+
+    request_id: str = Field(min_length=1)
+    call_budget: int | None = None
+
+
+class ContinueRevisionTaskRequest(BaseModel):
+    """作者继续：追加预算；已用次数与修正轮次不清零。"""
+
+    additional_calls: int
 
 
 def create_revision_router(runtime: V2Runtime) -> APIRouter:
@@ -90,6 +113,43 @@ def create_revision_router(runtime: V2Runtime) -> APIRouter:
             why=f"覆盖动作只能是 confirm_unchanged / changed / blocked，收到 {req.action!r}",
             fix="改用 confirm_unchanged（先做过全文检查）、changed（本次已改）或 blocked（受阻）",
             details={"action": req.action},
+        )
+
+    # -- 有限执行任务（V03-7.3）-----------------------------------------------
+    @router.post("/revision-tasks")
+    def start_revision_task(
+        project_id: str, req: StartRevisionTaskRequest
+    ) -> dict[str, Any]:
+        """开一次整体任务（预算默认 12、可缩小）；同 request_id 重放返回原任务。"""
+        return runtime.revision_tasks.start(
+            project_id, request_id=req.request_id, call_budget=req.call_budget
+        )
+
+    @router.get("/revision-tasks/current")
+    def get_current_revision_task(project_id: str) -> dict[str, Any]:
+        """当前任务：没有时是合法空结果，不是错误。"""
+        current = runtime.revision_tasks.current(project_id)
+        if current is None:
+            return {"task_id": None, "opened": False}
+        return current
+
+    @router.get("/revision-tasks/{task_id}")
+    def get_revision_task(project_id: str, task_id: str) -> dict[str, Any]:
+        """按 id 回读任务：预算、等待原因、覆盖摘要与发布前阻断项。"""
+        return runtime.revision_tasks.get(project_id, task_id)
+
+    @router.post("/revision-tasks/{task_id}/stop")
+    def stop_revision_task(project_id: str, task_id: str) -> dict[str, Any]:
+        """停止：保留正式稳定版与内部进度；之后可显式继续。"""
+        return runtime.revision_tasks.stop(project_id, task_id)
+
+    @router.post("/revision-tasks/{task_id}/continue")
+    def continue_revision_task(
+        project_id: str, task_id: str, req: ContinueRevisionTaskRequest
+    ) -> dict[str, Any]:
+        """继续：追加预算、推进 attempt，并要求发布前重验。"""
+        return runtime.revision_tasks.continue_task(
+            project_id, task_id, additional_calls=req.additional_calls
         )
 
     return router

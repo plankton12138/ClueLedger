@@ -65,15 +65,19 @@ class RevisionWorkService:
         self._clock: Any = clock
 
     # -- 打开与回读 -----------------------------------------------------------
-    def open(self, project_id: str) -> dict[str, Any]:
+    def open(self, project_id: str, *, force_new: bool = False) -> dict[str, Any]:
         """打开（或恢复）当前工作版本：绑定正式 head，声明章节集合为全书各章。
 
         幂等：已有未结束的工作版本则原样返回，不重建、不改基础——后到的请求
         不会悄悄把正在进行的一轮重置。空作品（无提交）明确拒绝并给出下一步。
+
+        ``force_new`` 由「作者开了一个新任务」使用（V03-7.3）：上一轮任务已停止/
+        失败后，新任务是一份新授权，必须从当前 head 重新开账（全部章回到未读），
+        不能继承上一轮用旧预算读出来的覆盖进度。
         """
         pid = ProjectId(project_id)
         existing = self._repo.aux_read(pid, WORK_BUCKET, _CURRENT_KEY)
-        if existing is not None:
+        if existing is not None and not force_new:
             return self._view(CoverageLedger.from_wire(existing))
         head = self._head(pid)
         catalog = ManuscriptCatalog.from_snapshot(self._repo.get_snapshot(pid, CommitId(head)))
