@@ -22,7 +22,7 @@
 
 - 产品版本统一使用 `0.x` 表示开发中：原 V1 对应 0.1，原 V2 对应 0.2，下一版本为 0.3；包版本使用 `0.3.0` 形式。新方案按产品版本标注；文档目录按产品版本命名（`dev-notes/v0.1`、`v0.2`、`v0.3`），接口与数据格式标识（`/api/v2`、存储版本）独立管理，不随产品版本重命名。版本约定见 [product-design/README.md](product-design/README.md)。
 - 文档查找统一走导航层，不逐个翻文件：[dev-notes/README.md](dev-notes/README.md)（dev-notes 路由表）、[src/hastings/README.md](src/hastings/README.md)（模块导航）。
-- 读长期文档须先区分版本：`dev-notes/v0.2/` 是目标架构与新计划，`dev-notes/v0.1/` 是当前 as-built 和 P0–P10 历史；V1 的 `*-plan.md` 与 `artifacts/` 只作历史记录。
+- 读长期文档须先区分版本：`dev-notes/v0.3/` 是当前版本（计划 + 构建笔记 + 模块 as-built + 发布记录），`dev-notes/v0.2/` 是目标架构与历史，`dev-notes/v0.1/` 是 V1 as-built 与 P0–P10 历史；各版本的 `*-plan.md` 与 `artifacts/` 只作历史记录。
 
 <br />
 
