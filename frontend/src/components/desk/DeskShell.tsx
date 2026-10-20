@@ -32,8 +32,8 @@ import {
 } from "../../state/desk";
 import { useDeskStore } from "../../state/deskStore";
 import { appendReference, type GraphViewId } from "../../state/graphLayout";
-import { isDirty, useV2Store } from "../../state/v2";
-import { ConfirmDiscard, Empty, ErrorText, Pill } from "../Workbench";
+import { useV2Store } from "../../state/v2";
+import { Empty, ErrorText, Pill } from "../Workbench";
 import {
   CandidateCard,
   ResultCard,
@@ -49,7 +49,6 @@ import RevisionPanel from "./RevisionPanel";
 import ImportDialog from "./ImportDialog";
 import LedgerPanel from "./LedgerPanel";
 import OperationFollowups from "./OperationFollowups";
-import { useEditSession } from "./useEditSession";
 
 type RailPanel =
   | "ledger"
@@ -481,17 +480,11 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   }
 
   function openChapter(chapterId: string) {
-    if (isDirty(v2.chapter)) {
-      setPending(chapterId);
-      return;
-    }
     void v2.selectChapter(chapterId);
     useDeskStore.getState().navigate({ kind: "manuscript", chapterId });
   }
 
-  const [pending, setPending] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  const [abandonPending, setAbandonPending] = useState(false);
   // 图谱视图（V03-6.4）：侧栏与主区共用同一选择；展开后 id 记在主区视图里。
   const [graphView, setGraphView] = useState<GraphViewId>("characters");
   // 右栏（M3）：默认不渲染面板；标记在稿纸右缘，点开为抽屉，Esc/遮罩关闭。
@@ -516,17 +509,6 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
     () => Object.fromEntries(v2.chapters.map((c) => [c.chapter_id, c.title])),
     [v2.chapters],
   );
-  const edit = useEditSession({
-    projectId: pid,
-    chapterId: mainView?.kind === "manuscript" ? mainView.chapterId : null,
-    formalText: chapter.draft ?? "",
-    onFinished: (result) => {
-      useDeskStore.getState().setLastOperation(result.operation_id);
-      void v2.refreshManuscript();
-      const first = result.changed_chapter_ids[0];
-      if (first) void v2.selectChapter(first);
-    },
-  });
 
   /** 侧栏切换图谱视图：只切选择，不夺走主区（数据事件与作者导航分离，M01）。 */
   function switchGraphView(view: GraphViewId) {
@@ -633,8 +615,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               </span>
               <button
                 className="text-[11px] text-blue underline disabled:text-sub disabled:no-underline"
-                disabled={!pid || chapter.saving || edit.active}
-                title={edit.active ? "完成或暂存后可切换章节" : undefined}
+                disabled={!pid || chapter.saving}
                 onClick={() => setImportOpen(true)}
               >
                 导入正文
@@ -657,7 +638,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                       ? "sel"
                       : ""
                   }`}
-                  disabled={chapter.saving || edit.active}
+                  disabled={chapter.saving}
                   onClick={() => openChapter(c.chapter_id)}
                 >
                   {c.title}
@@ -720,106 +701,10 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
             >
               侧栏
             </button>
-            {mainView?.kind === "manuscript" && !edit.active && (
-              <>
-                {(isDirty(chapter) || chapter.saving) && (
-                  <Pill tone="amber">{chapter.saving ? "保存中" : "未保存"}</Pill>
-                )}
-                <button
-                  className="btn btn-gray px-3 py-1.5 text-xs"
-                  disabled={!chapter.chapterId || chapter.loading}
-                  onClick={() => void edit.start()}
-                >
-                  手工修改
-                </button>
-                <button
-                  className="btn btn-gray px-3 py-1.5 text-xs"
-                  disabled={!chapter.chapterId || chapter.loading}
-                  onClick={() => setRailPanel("history")}
-                >
-                  历史
-                </button>
-                <button
-                  className="btn btn-gray px-3 py-1.5 text-xs"
-                  disabled={!chapter.chapterId || chapter.loading}
-                  onClick={() => setRailPanel("evidence")}
-                >
-                  证据核对
-                </button>
-              </>
-            )}
-            {edit.active && (
-              <>
-                <Pill tone={edit.conflict ? "amber" : "green"}>
-                  {edit.saving
-                    ? "保存中"
-                    : edit.conflict
-                      ? "序号冲突"
-                      : `修改中 · 已保存 #${edit.seq}`}
-                </Pill>
-                <button
-                  className="btn btn-gray px-3 py-1.5 text-xs"
-                  onClick={() => void edit.suspend()}
-                >
-                  暂存返回
-                </button>
-                <button
-                  className="btn px-4 py-1.5 text-xs"
-                  disabled={edit.saving || edit.conflict}
-                  onClick={() => void edit.finish()}
-                >
-                  完成修改
-                </button>
-                {abandonPending ? (
-                  <>
-                    <span className="text-[11px] text-sub">放弃本轮修改？</span>
-                    <button
-                      className="btn btn-gray px-2 py-1 text-[11px]"
-                      onClick={() => setAbandonPending(false)}
-                    >
-                      取消
-                    </button>
-                    <button
-                      className="btn btn-gray px-2 py-1 text-[11px]"
-                      onClick={() => {
-                        setAbandonPending(false);
-                        void edit.abandon();
-                      }}
-                    >
-                      确认放弃
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    className="btn btn-gray px-3 py-1.5 text-xs"
-                    onClick={() => setAbandonPending(true)}
-                  >
-                    放弃
-                  </button>
-                )}
-              </>
-            )}
           </div>
         </header>
-        {edit.view && !edit.active && mainView?.kind === "manuscript" && (
-          <div className="notice mx-3 mt-2 flex flex-wrap items-center gap-2 p-2 text-[11px]">
-            <span>有一轮未完成的修改（{edit.view.drafts.length} 章草稿）。</span>
-            <button className="text-blue underline" onClick={edit.resume}>
-              继续修改
-            </button>
-            <button className="text-sub underline" onClick={() => void edit.abandon()}>
-              放弃本轮
-            </button>
-          </div>
-        )}
         <div className="px-3 pt-2">
           <ErrorText>{chapter.error}</ErrorText>
-          <ErrorText>{edit.error}</ErrorText>
-          {edit.conflict && (
-            <p className="text-[11px] text-red-600" role="alert">
-              草稿已在别处前进，自动保存已暂停。请暂存返回后重新进入修改，避免覆盖较新的内容。
-            </p>
-          )}
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           {mainView?.kind === "manuscript" ? (
@@ -835,9 +720,8 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                   aria-label="人工正文"
                   className="paper-sheet mx-auto min-h-full w-full max-w-[44em] resize-none px-6 py-8 font-serif text-[18px] leading-8 lg:px-10"
                   spellCheck={false}
-                  readOnly={!edit.active}
-                  value={edit.active ? edit.text : chapter.draft}
-                  onChange={(e) => edit.active && edit.setText(e.target.value)}
+                  readOnly
+                  value={chapter.draft}
                 />
               </div>
             ) : (
@@ -1062,21 +946,6 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
           onClick={() => setNavDrawer(false)}
         />
       )}
-
-      <ConfirmDiscard
-        open={pending !== null}
-        onCancel={() => setPending(null)}
-        onDiscard={() => {
-          if (pending) {
-            void v2.selectChapter(pending, true);
-            useDeskStore.getState().navigate({
-              kind: "manuscript",
-              chapterId: pending,
-            });
-          }
-          setPending(null);
-        }}
-      />
 
       {pid && (
         <ImportDialog

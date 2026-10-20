@@ -1,6 +1,6 @@
 /**
- * 写作台壳层行为测试（V03-9 M8）：稿纸默认只读、手工修改才可编辑、
- * 空态无「试写」入口、右栏默认不渲染面板、界面无开发痕迹。
+ * 写作台壳层行为测试（V03-10 M2）：稿纸恒只读、空态无「试写」入口、
+ * 右栏默认不渲染面板、界面无开发痕迹。
  *
  * 用 react-dom/server 静态渲染（项目偏好：不引入 jsdom）。zustand v5 在 SSR
  * 下以初始状态作 server snapshot，setState 不生效，故此处直接替换壳层依赖的
@@ -10,7 +10,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-const h = vi.hoisted(() => ({ editActive: false }));
 const m = vi.hoisted(() => {
   const v2 = {
     projects: [{ projectId: "prj_seq9", name: "测试作品", source: "created" }],
@@ -128,24 +127,7 @@ const c = vi.hoisted(() => {
   return { state, useChat: wrap(state) };
 });
 
-// 手工修改会话：默认未激活；第二条用例切到激活态验证可编辑。
-vi.mock("./useEditSession", () => ({
-  useEditSession: () => ({
-    view: null,
-    active: h.editActive,
-    text: "副本中的正文",
-    seq: 3,
-    saving: false,
-    error: null,
-    conflict: false,
-    start: async () => {},
-    resume: () => {},
-    setText: () => {},
-    finish: async () => null,
-    suspend: async () => {},
-    abandon: async () => {},
-  }),
-}));
+// 手工修改会话已随 V03-10 M2 撤除，壳层不再依赖该 hook。
 vi.mock("../../state/v2", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   useV2Store: m.useV2,
@@ -199,29 +181,20 @@ function seedEmptyProject() {
 }
 
 beforeEach(() => {
-  h.editActive = false;
   seedManuscript();
 });
 
 const MANUSCRIPT_TEXTAREA = 'aria-label="人工正文"';
 
 describe("写作台壳层（收拢后）", () => {
-  it("稿纸默认只读，头部只给三种阅读态入口", () => {
+  it("稿纸恒只读，头部无编辑入口", () => {
     const html = renderToStaticMarkup(<DeskShell />);
     expect(html).toContain(MANUSCRIPT_TEXTAREA);
     expect(html).toMatch(/readonly/);
-    expect(html).toContain("手工修改");
+    expect(html).not.toContain("手工修改");
     expect(html).not.toContain("保存正文");
     expect(html).not.toContain("专注写作");
     expect(html).not.toContain("未完成的修改");
-  });
-
-  it("手工修改激活后稿纸可编辑", () => {
-    h.editActive = true;
-    const html = renderToStaticMarkup(<DeskShell />);
-    expect(html).toContain(MANUSCRIPT_TEXTAREA);
-    expect(html).not.toMatch(/readonly/);
-    expect(html).toContain("完成修改");
   });
 
   it("空态只有导入与对话两条路，无任何「试写」入口", () => {
