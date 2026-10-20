@@ -208,7 +208,7 @@ describe("写作台壳层（收拢后）", () => {
     const html = renderToStaticMarkup(<DeskShell />);
     expect(html).not.toMatch(/role="dialog"/);
     expect(html).toContain('aria-label="侧栏标记"');
-    expect(html).toContain("账本");
+    expect(html).toContain("设定集");
     expect(html).toContain("图谱");
   });
 

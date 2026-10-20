@@ -61,7 +61,7 @@ type RailPanel =
 
 /** 右栏抽屉标题；标记在稿纸右缘常驻或有内容时出现，点开为抽屉，关闭不留痕。 */
 const RAIL_LABELS: Record<RailPanel, string> = {
-  ledger: "故事账本",
+  ledger: "设定集",
   graph: "关联图谱",
   followups: "后续状态",
   results: "操作结果",
@@ -502,8 +502,6 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [navDrawer, railPanel]);
-  // 账本保存后让图谱重读实际版本（产品 §5.8 第 6 条）。
-  const [graphRefresh, setGraphRefresh] = useState(0);
   const chapter = v2.chapter;
   const chapterTitles = useMemo(
     () => Object.fromEntries(v2.chapters.map((c) => [c.chapter_id, c.title])),
@@ -588,7 +586,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
       (summaries && summaries.stale + summaries.missing > 0 ? 1 : 0)
     : 0;
   const railMarks: { key: RailPanel; label: string }[] = [
-    { key: "ledger", label: "账本" },
+    { key: "ledger", label: "设定集" },
     { key: "graph", label: "图谱" },
     { key: "revision", label: "修订" },
     ...(followupCount > 0
@@ -757,7 +755,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               onNavigateChapter={openChapter}
               onAddToDiscussion={addToDiscussion}
               chapterTitles={chapterTitles}
-              refreshKey={graphRefresh}
+              refreshKey={0}
             />
           ) : mainView?.kind === "detail" && mainView.detailKind === "candidate" &&
             pid &&
@@ -847,19 +845,12 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
               {railPanel === "ledger" &&
                 (pid ? (
-                  <LedgerPanel
-                    projectId={pid}
-                    onSaved={() => {
-                      void v2.refreshStory();
-                      // 账本保存后让图谱重读实际版本（产品 §5.8 第 6 条）。
-                      setGraphRefresh((tick) => tick + 1);
-                    }}
-                  />
+                  <LedgerPanel projectId={pid} />
                 ) : (
-                  <section className="panel" aria-label="故事账本">
-                    <header className="panel-head px-4 py-2">故事账本</header>
+                  <section className="panel" aria-label="设定集">
+                    <header className="panel-head px-4 py-2">设定集</header>
                     <p className="px-4 py-2 text-xs text-sub">
-                      先在顶部选择或新建作品；账本条目会保存在作品里。
+                      先在顶部选择或新建作品；设定会保存在作品里。
                     </p>
                   </section>
                 ))}
@@ -872,7 +863,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                     openGraphView(view);
                     setRailPanel(null);
                   }}
-                  refreshKey={graphRefresh}
+                  refreshKey={0}
                 />
               )}
               {railPanel === "followups" && pid && (
