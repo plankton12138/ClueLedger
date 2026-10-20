@@ -105,19 +105,20 @@ const candidateMessage: ChatMessage = {
 describe("待审阅候选卡", () => {
   it("展示摘要与「任务完成不等于已保存」提醒", () => {
     const html = renderToStaticMarkup(
-      <CandidateCard message={candidateMessage} onReview={() => {}} onAccept={() => {}} />,
+      <CandidateCard message={candidateMessage} onAccept={() => {}} />,
     );
     expect(html).toContain("待审阅候选");
     expect(html).toContain("第一章草稿已就绪，共 6 章");
     expect(html).toContain("接受后才会生成正式版本");
-    expect(html).toContain("打开审阅");
     expect(html).toContain("接受候选并提交");
+    // V03-10 M5：独立审阅入口已撤下，审阅在对话卡内完成。
+    expect(html).not.toContain("打开审阅");
   });
 
   it("点「接受候选并提交」回调携带 message_id", () => {
     const onAccept = vi.fn();
     const html = renderToStaticMarkup(
-      <CandidateCard message={candidateMessage} onReview={() => {}} onAccept={onAccept} />,
+      <CandidateCard message={candidateMessage} onAccept={onAccept} />,
     );
     // 无浏览器事件环境：仅断言按钮存在且接受态未渲染接受入口。
     expect(html).toContain("接受候选并提交");
@@ -130,7 +131,7 @@ describe("待审阅候选卡", () => {
       payload: { ...(candidateMessage.payload as CandidatePayload), accepted: true },
     };
     const html = renderToStaticMarkup(
-      <CandidateCard message={accepted} onReview={() => {}} onAccept={() => {}} />,
+      <CandidateCard message={accepted} onAccept={() => {}} />,
     );
     expect(html).toContain("已接受");
     expect(html).not.toContain("接受候选并提交");

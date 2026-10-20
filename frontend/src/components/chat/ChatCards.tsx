@@ -226,7 +226,8 @@ export function TaskExecutionCard({
   onOpenChange,
 }: {
   message: ChatMessage;
-  onView(candidateMessageId: string): void;
+  /** 「查看候选」入口；写作台内候选只在对话里呈现，未提供时不渲染该按钮。 */
+  onView?(candidateMessageId: string): void;
   onCancel(jobRef: string): void;
   onRetry(jobRef: string): void;
   /** 变更流程入口；写作台内未提供时省略，不渲染该按钮（旧变更页已退出产品）。 */
@@ -269,14 +270,16 @@ export function TaskExecutionCard({
             打开变更流程
           </button>
         )}
-        {execution.state === "waiting" && execution.candidate_message_id && (
-          <button
-            className="btn px-3 py-1.5 text-xs"
-            onClick={() => onView(execution.candidate_message_id!)}
-          >
-            查看候选
-          </button>
-        )}
+        {execution.state === "waiting" &&
+          execution.candidate_message_id &&
+          onView && (
+            <button
+              className="btn px-3 py-1.5 text-xs"
+              onClick={() => onView(execution.candidate_message_id!)}
+            >
+              查看候选
+            </button>
+          )}
         {execution.state === "failed" && (
           <button
             className="btn btn-gray px-3 py-1.5 text-xs"
@@ -300,11 +303,9 @@ export function TaskExecutionCard({
 
 export function CandidateCard({
   message,
-  onReview,
   onAccept,
 }: {
   message: ChatMessage;
-  onReview(): void;
   onAccept(messageId: string): void;
 }) {
   const candidate = message.payload as CandidatePayload;
@@ -321,9 +322,6 @@ export function CandidateCard({
         任务完成不等于内容已保存；接受后才会生成正式版本（Commit）。
       </p>
       <div className="chat-card-actions">
-        <button className="btn btn-gray px-3 py-1.5 text-xs" onClick={onReview}>
-          打开审阅
-        </button>
         {!candidate.accepted && (
           <button
             className="btn px-3 py-1.5 text-xs"

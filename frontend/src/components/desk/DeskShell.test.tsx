@@ -223,8 +223,8 @@ describe("写作台壳层（收拢后）", () => {
   });
 });
 
-describe("候选链路在写作台内闭环（V03-9 §4）", () => {
-  it("讨论区渲染候选卡，含打开审阅与接受入口", () => {
+describe("候选链路在写作台内闭环（V03-9 §4 + V03-10 M5）", () => {
+  it("讨论区渲染候选卡，采用入口在对话卡内", () => {
     Object.assign(m.desk, {
       projectId: "prj_seq9",
       mainView: { kind: "discussion", conversationId: "conv_1" },
@@ -232,19 +232,8 @@ describe("候选链路在写作台内闭环（V03-9 §4）", () => {
     const html = renderToStaticMarkup(<DeskShell />);
     expect(html).toContain('aria-label="讨论消息"');
     expect(html).toContain("待审阅候选");
-    expect(html).toContain("打开审阅");
     expect(html).toContain("接受候选并提交");
-  });
-
-  it("候选审阅在主区展开，采用与返回讨论入口齐全", () => {
-    Object.assign(m.desk, {
-      projectId: "prj_seq9",
-      mainView: { kind: "detail", detailKind: "candidate", id: "cand-1" },
-    });
-    const html = renderToStaticMarkup(<DeskShell />);
-    expect(html).toContain("候选审阅");
-    expect(html).toContain('aria-label="候选完整内容"');
-    expect(html).toContain("接受候选并提交");
-    expect(html).toContain("返回讨论");
+    // V03-10 M5：独立审阅主区视图已撤下。
+    expect(html).not.toContain("打开审阅");
   });
 });

@@ -20,7 +20,7 @@ import type { OperationEnvelope } from "../api/identities";
 export type MainView =
   | { kind: "manuscript"; chapterId: string }
   | { kind: "discussion"; conversationId: string }
-  | { kind: "detail"; detailKind: "candidate" | "diff"; id: string };
+  | { kind: "detail"; detailKind: "diff"; id: string };
 
 /** 阅读位置键四元组（M01 第 3 条）。 */
 export type SourceKind = "formal" | "edit_draft" | "candidate";

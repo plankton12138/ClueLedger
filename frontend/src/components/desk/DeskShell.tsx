@@ -18,13 +18,11 @@
  * 确定，不把三列按比例缩小。临时视图只列已有真实视图的入口（无伪入口）。
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChatMessage } from "../../api/chat";
+import { useEffect, useRef, useState } from "react";
 import { fetchManuscript } from "../../api/v2";
 import { activeConversations, simulator, useChatStore } from "../../state/chat";
 import {
   selectInitialChapterId,
-  type MainView,
   type SourceKind,
 } from "../../state/desk";
 import { useDeskStore } from "../../state/deskStore";
@@ -36,7 +34,6 @@ import {
   TaskDraftCard,
   TaskExecutionCard,
 } from "../chat/ChatCards";
-import ChatCandidateReview from "../chat/ChatCandidateReview";
 import ImportDialog from "./ImportDialog";
 import LedgerPanel from "./LedgerPanel";
 
@@ -129,14 +126,13 @@ function ConversationComposer({
  *
  * 呈现会话消息与流式回复，并复用 ChatCards 渲染任务建议/执行/候选/结果卡，
  * 「对话中发起创作 → 候选采用」这条链路在写作台内闭环；底部自由输入框发送一轮。
+ * V03-10 M5：候选不再有独立审阅主区视图，审阅与采用都在对话卡内完成。
  */
 function DeskDiscussion({
   conversationId,
-  onOpenCandidate,
   onOpenModels,
 }: {
   conversationId: string;
-  onOpenCandidate(messageId: string): void;
   onOpenModels?: () => void;
 }) {
   const view = useChatStore((s) => s.views[conversationId] ?? null);
@@ -195,7 +191,6 @@ function DeskDiscussion({
               <div key={m.message_id} className="mb-3">
                 <TaskExecutionCard
                   message={m}
-                  onView={(candidateId) => onOpenCandidate(candidateId)}
                   onCancel={(jobRef) => void cancelTask(jobRef)}
                   onRetry={(jobRef) => void retryTask(jobRef)}
                 />
@@ -206,7 +201,6 @@ function DeskDiscussion({
               <div key={m.message_id} className="mb-3">
                 <CandidateCard
                   message={m}
-                  onReview={() => onOpenCandidate(m.message_id)}
                   onAccept={(id) => void acceptCandidate(id)}
                 />
               </div>
@@ -416,50 +410,6 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   }, [navDrawer, railPanel]);
   const chapter = v2.chapter;
 
-  // 候选审阅（V03-9 §4）：从讨论区的候选卡/任务卡点入主区临时视图，返回回到原视图。
-  const views = useChatStore((s) => s.views);
-  const candidateMessage = useMemo<ChatMessage | null>(() => {
-    if (mainView?.kind !== "detail" || mainView.detailKind !== "candidate")
-      return null;
-    const id = mainView.id;
-    for (const v of Object.values(views)) {
-      const m = v.messages.find((x) => x.message_id === id);
-      if (m) return m;
-    }
-    return null;
-  }, [mainView, views]);
-  const candidateReturn = useRef<MainView | null>(null);
-  function openCandidate(messageId: string) {
-    const desk = useDeskStore.getState();
-    candidateReturn.current = desk.mainView;
-    desk.navigate({ kind: "detail", detailKind: "candidate", id: messageId });
-  }
-  function closeCandidate() {
-    const back = candidateReturn.current;
-    candidateReturn.current = null;
-    useDeskStore
-      .getState()
-      .navigate(
-        back && back.kind !== "detail"
-          ? back
-          : { kind: "discussion", conversationId: "pending" },
-      );
-  }
-  /** 采用成功后回到受影响正文（能定位到章）；定位不到就回原视图。 */
-  function finishCandidate(result: { target_ids: string[] }) {
-    const chapters = useV2Store.getState().chapters;
-    const target = result.target_ids.find((id) =>
-      chapters.some((c) => c.chapter_id === id),
-    );
-    if (!target) {
-      closeCandidate();
-      return;
-    }
-    candidateReturn.current = null;
-    void useV2Store.getState().selectChapter(target);
-    useDeskStore.getState().navigate({ kind: "manuscript", chapterId: target });
-  }
-
   /** 打开一条历史对话：切换会话并显示讨论（V03-10 M1 左栏「对话历史」）。 */
   async function openConversation(conversationId: string) {
     await useChatStore.getState().selectConversation(conversationId);
@@ -549,10 +499,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               ? chapter.title || "正文"
               : mainView?.kind === "discussion"
                 ? "构思与协作"
-                : mainView?.kind === "detail" &&
-                    mainView.detailKind === "candidate"
-                  ? "候选审阅"
-                  : "写作台"}
+                : "写作台"}
           </h1>
           <div className="flex items-center gap-2">
             <button
@@ -615,26 +562,9 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                     ? activeConversationId!
                     : mainView.conversationId
                 }
-                onOpenCandidate={openCandidate}
                 onOpenModels={onOpenModels}
               />
             )
-          ) : mainView?.kind === "detail" && mainView.detailKind === "candidate" &&
-            pid &&
-            candidateMessage ? (
-            <div className="h-full overflow-y-auto p-2">
-              <ChatCandidateReview
-                key={candidateMessage.message_id}
-                candidate={candidateMessage}
-                projectId={pid}
-                onClose={closeCandidate}
-                onAccepted={finishCandidate}
-              />
-            </div>
-          ) : mainView?.kind === "detail" && mainView.detailKind === "candidate" ? (
-            <div className="flex h-full items-center justify-center p-4">
-              <Empty>候选内容还没有载入。回到讨论区重新打开。</Empty>
-            </div>
           ) : (
             <div className="flex h-full items-center justify-center p-4">
               <Empty>
