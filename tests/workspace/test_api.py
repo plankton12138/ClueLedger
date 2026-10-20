@@ -188,3 +188,81 @@ def test_unknown_workspace_returns_not_found(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "WORKSPACE_NOT_FOUND"
+
+
+# -- Git 状态与撤销 -------------------------------------------------------
+
+
+def test_git_status_reports_uninitialized_then_initialized(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    plain = tmp_path / "已有目录"
+    plain.mkdir()
+    workspace_id = client.post("/api/file-workspaces", json={"path": str(plain)}).json()["id"]
+
+    before = client.get(f"/api/file-workspaces/{workspace_id}/git/status")
+    assert before.status_code == 200
+    assert before.json()["initialized"] is False
+
+    after = client.post(f"/api/file-workspaces/{workspace_id}/git/init")
+
+    assert after.status_code == 200
+    assert after.json()["initialized"] is True
+    assert after.json()["clean"] is True
+    assert (plain / ".git").is_dir()
+    log = client.get(f"/api/file-workspaces/{workspace_id}/git/log").json()
+    assert [commit["subject"] for commit in log["commits"]] == ["初始化作品目录"]
+
+
+def test_git_diff_record_and_commit_diff(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    root = tmp_path / "作品"
+    workspace_id = _created(client, root)
+    (root / "正文/0001 雨夜.md").write_text("# 雨夜\n\n侦探抵达旅馆。\n", encoding="utf-8")
+
+    status = client.get(f"/api/file-workspaces/{workspace_id}/git/status").json()
+    assert [item["code"] for item in status["changes"]] == ["??"]
+
+    # 新文件不在工作区差异里：这是 Git 的行为，界面另行显示「未跟踪」。
+    assert client.get(f"/api/file-workspaces/{workspace_id}/git/diff").json()["diff"] == ""
+
+    recorded = client.post(f"/api/file-workspaces/{workspace_id}/git/record", json={})
+    assert recorded.status_code == 200
+    commit = recorded.json()["commit"]
+    assert commit
+
+    commit_diff = client.get(f"/api/file-workspaces/{workspace_id}/git/commits/{commit}/diff")
+    assert commit_diff.status_code == 200
+    assert "+侦探抵达旅馆。" in commit_diff.json()["diff"]
+
+    again = client.post(f"/api/file-workspaces/{workspace_id}/git/record", json={})
+    assert again.json()["commit"] is None
+
+
+def test_git_revert_requires_current_head(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    root = tmp_path / "作品"
+    workspace_id = _created(client, root)
+    (root / "正文/0001 雨夜.md").write_text("# 雨夜\n", encoding="utf-8")
+    commit = client.post(f"/api/file-workspaces/{workspace_id}/git/record", json={}).json()[
+        "commit"
+    ]
+
+    reverted = client.post(
+        f"/api/file-workspaces/{workspace_id}/git/revert", json={"commit": commit}
+    )
+    assert reverted.status_code == 200
+    assert not (root / "正文/0001 雨夜.md").exists()
+
+    stale = client.post(f"/api/file-workspaces/{workspace_id}/git/revert", json={"commit": commit})
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "GIT_HEAD_MOVED_CONFLICT"
+
+
+def test_git_commit_diff_rejects_unknown_commit(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    workspace_id = _created(client, tmp_path / "作品")
+
+    response = client.get(f"/api/file-workspaces/{workspace_id}/git/commits/deadbeef/diff")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "GIT_COMMIT_NOT_FOUND"

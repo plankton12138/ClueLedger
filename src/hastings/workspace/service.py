@@ -347,6 +347,7 @@ class TurnService:
     async def _consume(self, harness: AgentHarness, info: TurnInfo, text: str) -> None:
         """把 harness 事件翻译成会话事件：工具过程逐条记，回复整条记。"""
         reply: list[str] = []
+        last_args: dict[str, dict[str, Any]] = {}
         async for event in harness.prompt(text):
             if isinstance(event, MessageEndEvent) and isinstance(event.message, AssistantMessage):
                 text_part = "".join(
@@ -355,22 +356,26 @@ class TurnService:
                 if text_part.strip():
                     reply.append(text_part)
             elif isinstance(event, ToolExecutionStartEvent):
+                args = _short_args(event.args)
+                last_args[event.tool_name] = args
                 self.store.append(
                     info.conversation_id,
                     {
                         "type": "tool_started",
                         "turn_id": info.turn_id,
                         "tool": event.tool_name,
-                        "args": _short_args(event.args),
+                        "args": args,
                     },
                 )
             elif isinstance(event, ToolExecutionEndEvent):
+                # 结束事件带同一份定位参数：界面据此显示「写入 正文/…」而不是解析 JSON。
                 self.store.append(
                     info.conversation_id,
                     {
                         "type": "tool_finished",
                         "turn_id": info.turn_id,
                         "tool": event.tool_name,
+                        "args": last_args.get(event.tool_name, {}),
                         "ok": not event.is_error,
                         "summary": _excerpt(event.result.text),
                     },

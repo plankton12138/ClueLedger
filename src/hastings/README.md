@@ -2,7 +2,7 @@
 
 Hastings 提供悬疑小说写作工作台。默认启动是 0.4 文件工作区：作品为本地 Markdown 目录，接口前缀 `/api/file-workspaces`。
 
-`python -m hastings.server` 只装配文件工作区应用（`server/file_app.py`），不打开旧工作台数据库、不挂 `/api/v2` 与旧业务路由；`--workspace <目录>` 用于启动时预先打开作品。模型能力只保留「按当前档案取 provider」这一条复用（`config.yaml` 或环境变量），写作 Agent 直接读写作品文件，历史由作品目录内的真实 Git 仓库记录。前端接线尚未实现，浏览器界面仍是 0.3 构建、当前不可用。
+`python -m hastings.server` 只装配文件工作区应用（`server/file_app.py`），不打开旧工作台数据库、不挂 `/api/v2` 与旧业务路由；`--workspace <目录>` 用于启动时预先打开作品。模型能力只保留「按当前档案取 provider」这一条复用（`config.yaml` 或环境变量），写作 Agent 直接读写作品文件，历史由作品目录内的真实 Git 仓库记录。前端已接新接口（见[前端说明](../../frontend/README.md)）；真实模型调用未取证。
 
 0.3 的模块与测试仍在源码中，供后续清理时核对，但已没有启动入口，其文档作为历史实现保留。解释现状时先读[0.4 模块导航](../../dev-notes/v0.4/modules/README.md)，再按下表定位源码。
 

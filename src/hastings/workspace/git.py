@@ -287,13 +287,15 @@ class GitRepo:
         )
 
     def log(self, limit: int = 50) -> tuple[CommitInfo, ...]:
-        """提交历史（只列触及受管内容的提交），最新在前。"""
+        """作品仓库的全部提交，最新在前。
+
+        不按路径过滤：作品仓库只记录这部作品，初始化提交（只含 .gitignore）也是
+        作者能看到的历史起点，不应因为没触及正文就不显示。
+        """
         self.require_repository()
         if self.head() is None:
             return ()
-        out = self._git(
-            "log", f"--max-count={limit}", "--format=%H%x1f%aI%x1f%s", "--", *MANAGED_DIRS
-        )
+        out = self._git("log", f"--max-count={limit}", "--format=%H%x1f%aI%x1f%s")
         commits: list[CommitInfo] = []
         for line in _decode(out).splitlines():
             sha, _, rest = line.partition("\x1f")

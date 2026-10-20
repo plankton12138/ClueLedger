@@ -37,6 +37,11 @@ __all__ = [
     "ConversationView",
     "FileEntryView",
     "FileViewResponse",
+    "GitChangeView",
+    "GitCommitView",
+    "GitDiffView",
+    "GitLogView",
+    "GitStatusView",
     "OpenWorkspaceRequest",
     "SearchResponse",
     "TurnRequest",
@@ -127,6 +132,48 @@ class EventsView(BaseModel):
 
 class StopView(BaseModel):
     stopped: bool
+
+
+class GitChangeView(BaseModel):
+    path: str
+    code: str
+    orig_path: str | None = None
+
+
+class GitStatusView(BaseModel):
+    initialized: bool
+    branch: str | None = None
+    head: str | None = None
+    staged: list[str] = Field(default_factory=list)
+    changes: list[GitChangeView] = Field(default_factory=list)
+    conflicts: list[str] = Field(default_factory=list)
+    clean: bool = True
+
+
+class GitDiffView(BaseModel):
+    diff: str
+
+
+class GitCommitView(BaseModel):
+    commit: str
+    at: str
+    subject: str
+
+
+class GitLogView(BaseModel):
+    commits: list[GitCommitView]
+
+
+class RevertRequest(BaseModel):
+    commit: str = Field(min_length=1)
+
+
+class RecordRequest(BaseModel):
+    message: str = ""
+
+
+class RecordedView(BaseModel):
+    commit: str | None
 
 
 def create_file_workspace_router(
@@ -226,6 +273,53 @@ def create_file_workspace_router(
             settings=[_entry(entry) for entry in catalog.settings],
         )
 
+    # -- Git ---------------------------------------------------------------
+
+    @router.get("/{workspace_id}/git/status", response_model=GitStatusView)
+    def git_status(workspace_id: str) -> GitStatusView:
+        return _git_status(GitRepo(book.workspace(workspace_id).root))
+
+    @router.get("/{workspace_id}/git/diff", response_model=GitDiffView)
+    def git_diff(workspace_id: str) -> GitDiffView:
+        """工作区相对 HEAD 的差异；未跟踪的新章节不在其中（见模块说明）。"""
+        repo = GitRepo(book.workspace(workspace_id).root)
+        return GitDiffView(diff=repo.diff())
+
+    @router.get("/{workspace_id}/git/log", response_model=GitLogView)
+    def git_log(workspace_id: str, limit: int = Query(default=50, ge=1, le=200)) -> GitLogView:
+        repo = GitRepo(book.workspace(workspace_id).root)
+        return GitLogView(
+            commits=[
+                GitCommitView(commit=commit.sha, at=commit.committed_at, subject=commit.subject)
+                for commit in repo.log(limit)
+            ]
+        )
+
+    @router.get("/{workspace_id}/git/commits/{commit}/diff", response_model=GitDiffView)
+    def git_commit_diff(workspace_id: str, commit: str) -> GitDiffView:
+        repo = GitRepo(book.workspace(workspace_id).root)
+        return GitDiffView(diff=repo.commit_diff(commit))
+
+    @router.post("/{workspace_id}/git/init", response_model=GitStatusView)
+    def git_init(workspace_id: str) -> GitStatusView:
+        """对已有目录启用版本记录：初始化并记录当前内容作为基线。"""
+        repo = GitRepo(book.workspace(workspace_id).root)
+        repo.init()
+        return _git_status(repo)
+
+    @router.post("/{workspace_id}/git/record", response_model=RecordedView)
+    def git_record(workspace_id: str, body: RecordRequest | None = None) -> RecordedView:
+        """单独补记未记录的改动：只执行 Git，不调用模型。"""
+        message = (body.message.strip() if body else "") or "补记：应用之外的改动"
+        commit = GitRepo(book.workspace(workspace_id).root).record(message)
+        return RecordedView(commit=commit)
+
+    @router.post("/{workspace_id}/git/revert", response_model=RecordedView)
+    def git_revert(workspace_id: str, body: RevertRequest) -> RecordedView:
+        """撤销指定提交（必须是 HEAD）；生成反向提交，不改写历史。"""
+        commit = GitRepo(book.workspace(workspace_id).root).revert_latest(body.commit)
+        return RecordedView(commit=commit or None)
+
     # -- 对话与轮次 ---------------------------------------------------------
 
     @router.get("/{workspace_id}/conversations", response_model=list[ConversationView])
@@ -313,6 +407,24 @@ def create_file_workspace_router(
         )
 
     return router
+
+
+def _git_status(repo: GitRepo) -> GitStatusView:
+    if not repo.is_repository():
+        return GitStatusView(initialized=False)
+    status = repo.status()
+    return GitStatusView(
+        initialized=True,
+        branch=status.branch,
+        head=status.head,
+        staged=list(status.staged),
+        changes=[
+            GitChangeView(path=change.path, code=change.code, orig_path=change.orig_path)
+            for change in status.changes
+        ],
+        conflicts=list(status.conflicts),
+        clean=status.clean,
+    )
 
 
 def _conversation(item: Conversation) -> ConversationView:

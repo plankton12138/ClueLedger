@@ -1031,3 +1031,49 @@
     }
   }
 }
+
+@layer components {
+  /* ===== 只读稿纸排版（0.4 V04-4）=====
+     不引入 typography 插件：正文只需要一套克制的阅读样式，
+     标题、段落、引用与列表在纸面上有稳定间距即可。 */
+  .prose-paper {
+    color: theme("colors.sheetInk");
+  }
+  .prose-paper h1 {
+    @apply mb-4 font-serif text-2xl font-bold tracking-wide;
+  }
+  .prose-paper h2 {
+    @apply mt-6 mb-3 font-serif text-xl font-bold;
+  }
+  .prose-paper h3 {
+    @apply mt-5 mb-2 font-serif text-lg font-bold;
+  }
+  .prose-paper p {
+    @apply my-3 indent-[2em] leading-8;
+  }
+  .prose-paper ul,
+  .prose-paper ol {
+    @apply my-3 space-y-1 pl-6;
+  }
+  .prose-paper ul {
+    @apply list-disc;
+  }
+  .prose-paper ol {
+    @apply list-decimal;
+  }
+  .prose-paper blockquote {
+    @apply my-4 border-l-2 border-[#cfc7ae] pl-4 italic text-[#6b6555];
+  }
+  .prose-paper hr {
+    @apply my-6 border-[#cfc7ae];
+  }
+  .prose-paper code {
+    @apply rounded bg-[#efe8d4] px-1 py-0.5 text-[0.9em];
+  }
+  .prose-paper pre {
+    @apply my-4 overflow-auto rounded bg-[#efe8d4] p-3 text-xs leading-6;
+  }
+  .prose-paper pre code {
+    @apply bg-transparent p-0;
+  }
+}
