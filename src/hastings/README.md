@@ -1,10 +1,10 @@
 # Hastings 后端导航
 
-Hastings 提供悬疑小说写作工作区，负责正文、故事账本、创作任务、模型连接与持久化。当前主工作区为 0.3 写作台，业务接口沿用 `/api/v2`。
+Hastings 提供悬疑小说写作工作区，负责正文、故事账本、创作任务、模型连接与持久化。默认运行仍是 0.3 写作台，业务接口沿用 `/api/v2`。
 
-先从[当前模块说明](../../dev-notes/v0.3/modules/README.md)理解行为与约束，再按下表定位源码。历史目标不能替代当前实现；运行与验收限制见[运行说明](../../dev-notes/v0.3/release.md)。
+0.4 的文件工作区已完成基础部分（V04-1）：作品内容改为本地 Markdown 目录，新增 `workspace/` 包与 `--workspace <目录>` 启动参数，接口前缀 `/api/file-workspaces`。该模式不装配旧工作台，只提供目录、读取、搜索与导入；Git、写作 Agent、对话和前端接线尚未实现，默认入口未切换。
 
-下一版的 [0.4 修改计划](../../dev-notes/v0.4/development-plan.md)将改为 Markdown 工作目录与 Git，尚未实现。新包路径、工具和接口以计划为目标，不从下面的旧仓库模型继续推导。
+先从[当前模块说明](../../dev-notes/v0.3/modules/README.md)理解 0.3 行为与约束，再按下表定位源码。0.4 已实现的行为见[文件工作区](../../dev-notes/v0.4/modules/file-workspace.md)。历史目标不能替代当前实现；运行与验收限制见[0.3 运行说明](../../dev-notes/v0.3/release.md)。
 
 ## 当前代码入口
 
@@ -23,6 +23,7 @@ Hastings 提供悬疑小说写作工作区，负责正文、故事账本、创�
 | 执行日志、历史分页与实时流 | `domain/execution_log.py`、`infrastructure/execution_log.py`、`interfaces/api/execution_log.py` | [执行日志](../../dev-notes/v0.3/modules/execution-log.md) |
 | 路由装配与旧功能限制 | `server/v2.py`、`interfaces/api/`、`interfaces/api/_retired.py` | [API 与兼容边界](../../dev-notes/v0.3/modules/api-matrix-and-retirement.md) |
 | 模型目录、连接与本地模型任务 | `provider_catalog.py`、`server/{model_access,provider_config,local_model_service,v2_agents}.py` | [前端模型接入](../../frontend/README.md) |
+| 0.4 作品目录、读写指纹、搜索与导入 | `workspace/{files,state,api}.py`、`server/file_app.py`、`server/__main__.py` 的 `--workspace` | [文件工作区](../../dev-notes/v0.4/modules/file-workspace.md) |
 
 前端壳层在 `frontend/src/components/desk/`，状态在 `frontend/src/state/desk*.ts`；项目与正文缓冲在 `state/v2.ts`，业务事件在 `state/v2socket.ts`。详见[写作台模块](../../dev-notes/v0.3/modules/desk-surface.md)。
 
@@ -36,6 +37,7 @@ Hastings 提供悬疑小说写作工作区，负责正文、故事账本、创�
 | `infrastructure/` | 仓库、任务、会话、事件与模型端口的实现 |
 | `interfaces/` | HTTP、导入导出等边界适配 |
 | `server/` | 配置、连接、运行时与服务装配 |
+| `workspace/` | 0.4 文件工作区：目录规则、读写指纹、搜索、导入、最近目录与文件接口 |
 
 版本仓库的基础契约见[仓库内核](../../dev-notes/v0.2/modules/repository-kernel.md)，故事基础类型见[故事领域](../../dev-notes/v0.2/modules/story-domain.md)。两篇为旧版本材料，只按需读取当前模块导航指定的契约。
 

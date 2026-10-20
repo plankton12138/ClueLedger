@@ -1,7 +1,7 @@
 # Hastings 0.4：Markdown 工作目录
 
-> 状态：已确定的产品方向，尚未实现。确认日期：2026-10-20。
-> [实施计划](../../dev-notes/v0.4/development-plan.md) · [开发入口](../../dev-notes/v0.4/README.md) · [现有 0.3 实现](../../dev-notes/v0.3/modules/README.md)
+> 状态：已确定的产品方向。V04-1 已实现文件工作区（目录、读写、搜索、导入与读取接口），Git、Agent、对话与前端接线尚未实现。确认日期：2026-10-20。
+> [实施计划](../../dev-notes/v0.4/development-plan.md) · [开发入口](../../dev-notes/v0.4/README.md) · [已实现行为](../../dev-notes/v0.4/modules/file-workspace.md) · [现有 0.3 实现](../../dev-notes/v0.3/modules/README.md)
 
 ## 1. 为什么重新简化
 

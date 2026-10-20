@@ -1,0 +1,9 @@
+"""0.4 文件工作区：作品 = 一个 Markdown 目录 + Git 历史。
+
+包内只有文件规则（``files``）、最近目录登记（``state``）与接口（``api``）。
+不引入段落对象、作品版本库或候选采用；内容以磁盘为准。
+"""
+
+from __future__ import annotations
+
+__all__ = ["api", "errors", "files", "state"]

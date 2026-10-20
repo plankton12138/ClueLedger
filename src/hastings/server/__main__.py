@@ -12,6 +12,10 @@ P6 D1：config.yaml 存在时为权威配置（第一个有 key 的档案作为�
 
 当前工作台默认装配 V2 REST/WS/SSE 和持久仓库；--v2-db 仅覆盖数据库路径，
 不再作为启用开关。默认复用 data/v2.db 或 data/v2.sqlite，并打印实际打开路径。
+
+0.4（V04-1）：``--workspace <目录>`` 走文件工作区模式——只装配文件工作区应用，
+不读 config.yaml、不打开旧数据库，作品内容就是该目录下的 Markdown 文件。
+两种模式互斥，默认仍是旧工作台，直到 V04-5 切换默认入口。
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ from fastapi import FastAPI
 from hastings.__main__ import DEFAULT_STORIES_ROOT, env_error, normalize_base_url
 from hastings.infrastructure.credentials import build_credential_store
 from hastings.server.app import create_app
+from hastings.server.file_app import create_workspace_app
 from hastings.server.hastings_session import default_session_factory
 from hastings.server.provider_config import (
     DEFAULT_CONFIG_PATH,
@@ -39,6 +44,7 @@ from hastings.server.provider_config import (
 )
 from hastings.server.registry import WorkspaceRegistry
 from hastings.server.v2 import V2Runtime
+from hastings.workspace.state import RecentWorkspaces
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -133,6 +139,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="工作台数据库路径；默认复用 data/v2.db 或 data/v2.sqlite，新建时用 data/v2.db",
+    )
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=None,
+        help="以文件工作区模式启动（0.4）：直接打开这个作品目录，不装配旧工作台、不打开旧数据库",
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="监听端口（默认 8000）")
@@ -285,18 +297,81 @@ def assemble_server(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class AssembledFileWorkspace:
+    """0.4 文件工作区模式的一次装配：只有新应用与作品目录，不含旧运行时。"""
+
+    app: FastAPI
+    workspace: Path
+    binding_id: str
+    state_root: Path
+    static_dir: Path | None
+
+
+def assemble_file_workspace(
+    *,
+    workspace: Path,
+    static_dir: Path | None = None,
+    state_root: Path | None = None,
+) -> AssembledFileWorkspace:
+    """装配文件工作区应用：作品目录必须已存在，打开即登记到最近目录。
+
+    V04-1 只做文件闭环，因此这里不读 ``config.yaml``、不建 ``data/v2.db``：
+    没有模型和旧数据库也应该能打开、读写中文文件。
+    """
+    resolved = Path(workspace).expanduser()
+    if not resolved.exists():
+        raise StartupError(
+            f"作品目录不存在：{resolved}。为什么错：--workspace 要求打开一个已有目录。"
+            "怎样算对：先创建该目录，或通过界面新建作品。"
+        )
+    if not resolved.is_dir():
+        raise StartupError(
+            f"不是目录：{resolved}。为什么错：--workspace 指向的是文件。"
+            "怎样算对：改为指向存放作品的那个文件夹。"
+        )
+    resolved_static = resolve_static_dir(static_dir)
+    if resolved_static is not None and not resolved_static.is_dir():
+        raise StartupError(
+            f"前端目录不存在：{resolved_static}。为什么错：--static-dir 指向的目录不存在。"
+            "怎样算对：先构建前端（frontend/ 下 npm run build），或移除该参数走自动探测。"
+        )
+    book = RecentWorkspaces(state_root)
+    binding = book.bind(resolved)
+    app = create_workspace_app(book=book, static_dir=resolved_static)
+    return AssembledFileWorkspace(
+        app=app,
+        workspace=Path(binding.path),
+        binding_id=binding.id,
+        state_root=book.root,
+        static_dir=resolved_static,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    file_workspace: AssembledFileWorkspace | None = None
+    assembled: AssembledServer | None = None
     try:
-        assembled = assemble_server(
-            stories_root=args.stories_root,
-            corpus_root=args.corpus_root,
-            v2_db=args.v2_db,
-            config=args.config,
-            config_dir=args.config_dir,
-            static_dir=args.static_dir,
-            model=args.model,
-        )
+        if args.workspace is not None:
+            if args.v2_db is not None:
+                raise ValueError(
+                    "--workspace 与 --v2-db 不能同时使用。为什么错：文件工作区模式不打开旧工作台"
+                    "数据库，两个参数放在一起说明意图不明确。怎样算对：只保留 --workspace。"
+                )
+            file_workspace = assemble_file_workspace(
+                workspace=args.workspace, static_dir=args.static_dir
+            )
+        else:
+            assembled = assemble_server(
+                stories_root=args.stories_root,
+                corpus_root=args.corpus_root,
+                v2_db=args.v2_db,
+                config=args.config,
+                config_dir=args.config_dir,
+                static_dir=args.static_dir,
+                model=args.model,
+            )
     except StartupError as exc:
         print(exc)
         return 1
@@ -307,6 +382,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(exc)
         return 2
 
+    if file_workspace is not None:
+        print(f"作品目录：{file_workspace.workspace}")
+        print(f"应用状态目录：{file_workspace.state_root}")
+        print(f"写作台地址：http://{args.host}:{args.port}")
+        if file_workspace.static_dir is not None:
+            print(f"前端已托管：{file_workspace.static_dir}")
+        uvicorn.run(file_workspace.app, host=args.host, port=args.port, log_level="info")
+        return 0
+
+    assert assembled is not None
     if assembled.env_hint:
         print(f"{assembled.env_hint}服务仍将启动（未配置模式）：在设置页配置档案与模型后即可对话。")
     for failed in assembled.credential_migration_failed:
