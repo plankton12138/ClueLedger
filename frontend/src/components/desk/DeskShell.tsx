@@ -6,6 +6,8 @@
  * 「对话历史」会话列表。
  * V03-10 M4：撤下高级右栏入口（关联图谱、整体调整、后续状态、操作结果、证据核对、
  * 版本历史），右栏标记只剩「设定集」一枚；图谱与后续状态面板及其读接口一并移除。
+ * V03-10 M6：四列收拢——左栏（章节目录 + 对话历史）｜中区稿纸｜右侧固定对话栏
+ * （消息 + 输入框）｜右缘标记条；主区只选择哪一章正文，对话不再占用主区视图。
  *
  * 不变量全部消费 state/desk.ts 纯函数，不在组件里重写：
  * - 主区一次只展开一个（MainView），navigate 是唯一变更入口；
@@ -340,14 +342,10 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
     if (d.projectId !== pid || d.mainView !== null) return;
     if (initialChapters.length > 0) {
       const chapterId = selectInitialChapterId(initialChapters, d, pid);
-      d.navigate(
-        chapterId
-          ? { kind: "manuscript", chapterId }
-          : { kind: "discussion", conversationId: "pending" },
-      );
+      d.navigate(chapterId ? { kind: "manuscript", chapterId } : null);
     } else {
-      // 无正文（或只有未采用候选）：构思状态（M01 第 1 条）。
-      d.navigate({ kind: "discussion", conversationId: "pending" });
+      // 无正文（或只有未采用候选）：构思状态（M01 第 1 条）；对话在右侧栏起稿。
+      d.navigate(null);
     }
   }, [pid, initialChapters]);
 
@@ -397,29 +395,44 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   const [railPanel, setRailPanel] = useState<RailPanel | null>(null);
   // 左导航抽屉（中屏以下）：断点行为与既有一致。
   const [navDrawer, setNavDrawer] = useState(false);
+  // 对话抽屉（中屏以下）：固定对话栏在小屏折叠，点开为右侧抽屉（V03-10 M6）。
+  const [conversationDrawer, setConversationDrawer] = useState(false);
   useEffect(() => {
-    if (!navDrawer && !railPanel) return;
+    if (!navDrawer && !railPanel && !conversationDrawer) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setNavDrawer(false);
         setRailPanel(null);
+        setConversationDrawer(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navDrawer, railPanel]);
+  }, [navDrawer, railPanel, conversationDrawer]);
   const chapter = v2.chapter;
 
-  /** 打开一条历史对话：切换会话并显示讨论（V03-10 M1 左栏「对话历史」）。 */
+  /** 打开一条历史对话：切换右侧固定对话栏显示的会话（V03-10 M1/M6）。 */
   async function openConversation(conversationId: string) {
     await useChatStore.getState().selectConversation(conversationId);
-    useDeskStore.getState().navigate({ kind: "discussion", conversationId });
   }
 
   // 右栏标记（V03-10 M4）：只剩「设定集」一枚。
   const railMarks: { key: RailPanel; label: string }[] = [
     { key: "ledger", label: "设定集" },
   ];
+
+  // 右侧对话栏内容（固定栏与中屏抽屉共用）：无活动会话时给出等待提示。
+  const conversationBody = activeConversationId ? (
+    <DeskDiscussion
+      key={activeConversationId}
+      conversationId={activeConversationId}
+      onOpenModels={onOpenModels}
+    />
+  ) : (
+    <div className="flex h-full items-center justify-center p-4">
+      <Empty>{pid ? "正在准备对话…" : "先在顶部选择或新建作品。"}</Empty>
+    </div>
+  );
 
   return (
     <main className="flex h-full min-h-0" aria-label="写作台">
@@ -495,11 +508,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
       <section className="panel flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="panel-head flex-wrap gap-2 px-4 py-2">
           <h1 className="text-sm">
-            {mainView?.kind === "manuscript"
-              ? chapter.title || "正文"
-              : mainView?.kind === "discussion"
-                ? "构思与协作"
-                : "写作台"}
+            {mainView?.kind === "manuscript" ? chapter.title || "正文" : "写作台"}
           </h1>
           <div className="flex items-center gap-2">
             <button
@@ -509,6 +518,14 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               onClick={() => setNavDrawer((v) => !v)}
             >
               目录
+            </button>
+            <button
+              type="button"
+              className="btn btn-gray px-3 py-1.5 text-xs lg:hidden"
+              aria-label="打开对话"
+              onClick={() => setConversationDrawer(true)}
+            >
+              对话
             </button>
             <button
               type="button"
@@ -546,36 +563,31 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                 <Empty>此章暂无正文内容。</Empty>
               </div>
             )
-          ) : mainView?.kind === "discussion" ? (
-            mainView.conversationId === "pending" && !activeConversationId ? (
-              <div className="h-full overflow-y-auto p-4">
-                <div className="notice p-4 text-xs leading-6">
-                  <strong>构思状态。</strong>
-                  这个作品还没有正式正文——在对话里告诉 Agent 想写什么，
-                  生成的正文会以候选形式回到对话里，由你采用后落盘。
-                </div>
-              </div>
-            ) : (
-              <DeskDiscussion
-                conversationId={
-                  mainView.conversationId === "pending"
-                    ? activeConversationId!
-                    : mainView.conversationId
-                }
-                onOpenModels={onOpenModels}
-              />
-            )
           ) : (
-            <div className="flex h-full items-center justify-center p-4">
-              <Empty>
-                {!pid
-                  ? "先在顶部选择或新建作品，然后在对话里告诉 Agent 想写什么。"
-                  : "正在确定初始视图…"}
-              </Empty>
+            <div className="h-full overflow-y-auto p-4">
+              <div className="notice p-4 text-xs leading-6">
+                {!pid ? (
+                  "先在顶部选择或新建作品，然后在右侧对话里告诉 Agent 想写什么。"
+                ) : (
+                  <>
+                    <strong>构思状态。</strong>
+                    这个作品还没有正式正文——在右侧对话里告诉 Agent 想写什么，
+                    生成的正文会以候选形式回到对话里，由你采用后落盘。
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
       </section>
+
+      {/* 右侧固定对话栏（V03-10 M6）：消息 + 自由输入框，随时可用，不切换主区。 */}
+      <aside
+        className="hidden min-h-0 w-[380px] flex-none flex-col border-l border-line bg-white/40 lg:flex"
+        aria-label="对话栏"
+      >
+        {conversationBody}
+      </aside>
 
       <aside
         className="hidden min-h-0 w-16 flex-none flex-col gap-1 border-l border-line bg-white/40 p-1 lg:flex"
@@ -657,6 +669,35 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
           aria-hidden
           onClick={() => setNavDrawer(false)}
         />
+      )}
+
+      {/* 对话抽屉（中屏以下）：固定对话栏在小屏折叠为右侧抽屉。 */}
+      {conversationDrawer && (
+        <>
+          <div
+            className="fixed inset-0 z-30 bg-overlay lg:hidden"
+            aria-hidden
+            onClick={() => setConversationDrawer(false)}
+          />
+          <aside
+            className="fixed inset-y-0 right-0 z-40 flex w-[min(420px,92vw)] min-h-0 flex-col border-l border-line bg-page shadow-2xl lg:hidden"
+            role="dialog"
+            aria-label="对话"
+          >
+            <div className="flex items-center justify-between px-3 py-2">
+              <h2 className="text-sm">对话</h2>
+              <button
+                type="button"
+                className="btn btn-gray px-2 py-0.5 text-xs"
+                aria-label="关闭对话"
+                onClick={() => setConversationDrawer(false)}
+              >
+                关闭
+              </button>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col">{conversationBody}</div>
+          </aside>
+        </>
       )}
 
       {pid && (

@@ -25,7 +25,7 @@ interface DeskStore extends DeskState {
   /** 最近一次作者操作（导入/修改完成/保存）：右侧展示后续状态（V03-2.6）。 */
   lastOperationId: string | null;
   setProject(projectId: string | null): void;
-  navigate(view: MainView): void;
+  navigate(view: MainView | null): void;
   applyOperationResult(envelope: OperationEnvelope): void;
   saveReadingPosition(position: ReadingPosition): void;
   setLastOperation(operationId: string | null): void;

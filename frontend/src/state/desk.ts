@@ -16,11 +16,13 @@
 
 import type { OperationEnvelope } from "../api/identities";
 
-/** 主区可辨识联合：一次只展开一个（计划 M01 目标示例收编）。 */
-export type MainView =
-  | { kind: "manuscript"; chapterId: string }
-  | { kind: "discussion"; conversationId: string }
-  | { kind: "detail"; detailKind: "diff"; id: string };
+/**
+ * 主区可辨识联合：一次只展开一个（计划 M01 目标示例收编）。
+ *
+ * V03-10 M6：对话成为右侧固定栏后，主区只剩「哪一章正文」一个选择；
+ * `mainView === null` 表示尚未确定章节（无正文时按构思状态处理）。
+ */
+export type MainView = { kind: "manuscript"; chapterId: string };
 
 /** 阅读位置键四元组（M01 第 3 条）。 */
 export type SourceKind = "formal" | "edit_draft" | "candidate";
@@ -64,7 +66,7 @@ export function readingPositionKey(position: {
 }
 
 /** 作者显式导航：主区唯一变更入口。 */
-export function navigate(state: DeskState, view: MainView): DeskState {
+export function navigate(state: DeskState, view: MainView | null): DeskState {
   return { ...state, mainView: view };
 }
 

@@ -42,10 +42,11 @@ describe("MainView 主区唯一", () => {
   it("navigate 替换主区；一次只展开一个", () => {
     let state = stateWithChapter();
     expect(state.mainView).toEqual({ kind: "manuscript", chapterId: "art_ch1" });
-    state = navigate(state, { kind: "discussion", conversationId: "conv_1" });
-    expect(state.mainView).toEqual({ kind: "discussion", conversationId: "conv_1" });
-    state = navigate(state, { kind: "detail", detailKind: "diff", id: "d1" });
-    expect(state.mainView).toEqual({ kind: "detail", detailKind: "diff", id: "d1" });
+    state = navigate(state, { kind: "manuscript", chapterId: "art_ch2" });
+    expect(state.mainView).toEqual({ kind: "manuscript", chapterId: "art_ch2" });
+    // V03-10 M6：无正文时主区可为空（按构思状态处理）。
+    state = navigate(state, null);
+    expect(state.mainView).toBeNull();
   });
 });
 
