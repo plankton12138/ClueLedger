@@ -44,8 +44,8 @@ describe("MainView 主区唯一", () => {
     expect(state.mainView).toEqual({ kind: "manuscript", chapterId: "art_ch1" });
     state = navigate(state, { kind: "discussion", conversationId: "conv_1" });
     expect(state.mainView).toEqual({ kind: "discussion", conversationId: "conv_1" });
-    state = navigate(state, { kind: "detail", detailKind: "graph", id: "g1" });
-    expect(state.mainView).toEqual({ kind: "detail", detailKind: "graph", id: "g1" });
+    state = navigate(state, { kind: "detail", detailKind: "diff", id: "d1" });
+    expect(state.mainView).toEqual({ kind: "detail", detailKind: "diff", id: "d1" });
   });
 
   it("候选审阅也在主区展开（V03-9 §4 候选采用链路）", () => {

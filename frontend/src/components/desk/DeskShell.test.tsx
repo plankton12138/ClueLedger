@@ -209,7 +209,10 @@ describe("写作台壳层（收拢后）", () => {
     expect(html).not.toMatch(/role="dialog"/);
     expect(html).toContain('aria-label="侧栏标记"');
     expect(html).toContain("设定集");
-    expect(html).toContain("图谱");
+    // V03-10 M4：图谱等高级入口已撤下。
+    expect(html).not.toContain("图谱");
+    expect(html).not.toContain("整体调整");
+    expect(html).not.toContain("版本历史");
   });
 
   it("界面无阶段编号、内部 ID、「本阶段」措辞", () => {

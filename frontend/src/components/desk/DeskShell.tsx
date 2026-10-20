@@ -4,6 +4,8 @@
  * V03-10 M1：删「写想法 → 接着讨论」两步入口，对话区加自由输入框——回车即一轮，
  * 创作与设定改动都经对话内「采用」落盘。左栏「想法与讨论」移出，改为可切换的
  * 「对话历史」会话列表。
+ * V03-10 M4：撤下高级右栏入口（关联图谱、整体调整、后续状态、操作结果、证据核对、
+ * 版本历史），右栏标记只剩「设定集」一枚；图谱与后续状态面板及其读接口一并移除。
  *
  * 不变量全部消费 state/desk.ts 纯函数，不在组件里重写：
  * - 主区一次只展开一个（MainView），navigate 是唯一变更入口；
@@ -17,11 +19,6 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  fetchDeskState,
-  toOperationEnvelope,
-  type DeskState,
-} from "../../api/desk";
 import type { ChatMessage } from "../../api/chat";
 import { fetchManuscript } from "../../api/v2";
 import { activeConversations, simulator, useChatStore } from "../../state/chat";
@@ -31,9 +28,8 @@ import {
   type SourceKind,
 } from "../../state/desk";
 import { useDeskStore } from "../../state/deskStore";
-import { appendReference, type GraphViewId } from "../../state/graphLayout";
 import { useV2Store } from "../../state/v2";
-import { Empty, ErrorText, Pill } from "../Workbench";
+import { Empty, ErrorText } from "../Workbench";
 import {
   CandidateCard,
   ResultCard,
@@ -41,33 +37,14 @@ import {
   TaskExecutionCard,
 } from "../chat/ChatCards";
 import ChatCandidateReview from "../chat/ChatCandidateReview";
-import ChapterHistory from "./ChapterHistory";
-import EvidenceCheck from "./EvidenceCheck";
-import GraphOverview from "./GraphOverview";
-import GraphPanel from "./GraphPanel";
-import RevisionPanel from "./RevisionPanel";
 import ImportDialog from "./ImportDialog";
 import LedgerPanel from "./LedgerPanel";
-import OperationFollowups from "./OperationFollowups";
 
-type RailPanel =
-  | "ledger"
-  | "graph"
-  | "followups"
-  | "results"
-  | "revision"
-  | "history"
-  | "evidence";
+/** 右栏标记 V03-10 M4 收窄为「设定集」一枚。 */
+type RailPanel = "ledger";
 
-/** 右栏抽屉标题；标记在稿纸右缘常驻或有内容时出现，点开为抽屉，关闭不留痕。 */
 const RAIL_LABELS: Record<RailPanel, string> = {
   ledger: "设定集",
-  graph: "关联图谱",
-  followups: "后续状态",
-  results: "操作结果",
-  revision: "整体调整",
-  history: "版本历史",
-  evidence: "证据核对",
 };
 
 const SOURCE_KIND: SourceKind = "formal";
@@ -301,46 +278,10 @@ function DeskDiscussion({
   );
 }
 
-/**
- * 后续状态（V03-4.5）：摘要待更新、待确认条数、正在修改的章。
- *
- * 数字来自 `/desk-state`，重开页面也在；条目正文不在这里复制——点进去回
- * 候选组或章节本身。没有内容时整块不渲染（空列表不占一张卡片）。
- */
-function DeskFollowupSummary({ state }: { state: DeskState }) {
-  const { summaries, pending_candidates, open_edit_chapters } = state.counts;
-  const rows: { text: string; tone: "amber" | "blue" }[] = [];
-  const total = summaries.fresh + summaries.stale + summaries.missing;
-  if (summaries.stale > 0) {
-    rows.push({ text: `摘要待更新（${summaries.stale} 章）`, tone: "amber" });
-  } else if (total > 0 && summaries.missing > 0) {
-    rows.push({ text: `还有 ${summaries.missing} 章没有摘要`, tone: "blue" });
-  }
-  if (pending_candidates > 0) {
-    rows.push({ text: `待确认 ${pending_candidates} 条设定候选`, tone: "amber" });
-  }
-  if (open_edit_chapters > 0) {
-    rows.push({ text: `修改中（${open_edit_chapters} 章）`, tone: "amber" });
-  }
-  if (rows.length === 0) return null;
-  return (
-    <section className="panel" aria-label="后续状态">
-      <header className="panel-head px-4 py-2">后续状态</header>
-      {rows.map((row) => (
-        <p key={row.text} className="asset-row px-4 py-2 text-xs">
-          <Pill tone={row.tone}>{row.text}</Pill>
-        </p>
-      ))}
-    </section>
-  );
-}
-
 export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void }) {
   const v2 = useV2Store();
   const pid = v2.currentId;
   const mainView = useDeskStore((s) => s.mainView);
-  const operations = useDeskStore((s) => s.operations);
-  const lastOperationId = useDeskStore((s) => s.lastOperationId);
   // 左栏「对话历史」：当前项目的会话列表与当前选中会话（chat store 提供）。
   const conversations = useChatStore(activeConversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -377,33 +318,6 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
     v2.chapter.title,
     v2.chapter.chapterBase,
   ]);
-
-  // 侧栏共享状态（V03-4.5）：计数与最近结果都来自权威存储，重开页面也在。
-  // 最近结果按 operationId 灌回同一份缓存，不新加一份「历史列表」。
-  const [desk, setDesk] = useState<DeskState | null>(null);
-  useEffect(() => {
-    if (!pid) {
-      setDesk(null);
-      return;
-    }
-    let alive = true;
-    fetchDeskState(pid)
-      .then((state) => {
-        if (!alive) return;
-        setDesk(state);
-        for (const row of state.recent_operations) {
-          useDeskStore.getState().applyOperationResult(toOperationEnvelope(pid, row));
-        }
-      })
-      .catch(() => {
-        // 读不到侧栏状态不影响正文与输入；打开具体结果时会显示真实错误。
-        if (alive) setDesk(null);
-      });
-    return () => {
-      alive = false;
-    };
-    // lastOperationId：本次刚完成的操作会改变计数，顺带刷新一次。
-  }, [pid, lastOperationId]);
 
   // 初始焦点：自取正文目录判定（App 的 refreshManuscript 异步，无法区分
   // 「空目录」与「未加载」），一次性决定；之后由作者显式导航。
@@ -485,8 +399,6 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
   }
 
   const [importOpen, setImportOpen] = useState(false);
-  // 图谱视图（V03-6.4）：侧栏与主区共用同一选择；展开后 id 记在主区视图里。
-  const [graphView, setGraphView] = useState<GraphViewId>("characters");
   // 右栏（M3）：默认不渲染面板；标记在稿纸右缘，点开为抽屉，Esc/遮罩关闭。
   const [railPanel, setRailPanel] = useState<RailPanel | null>(null);
   // 左导航抽屉（中屏以下）：断点行为与既有一致。
@@ -503,29 +415,6 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
     return () => window.removeEventListener("keydown", onKey);
   }, [navDrawer, railPanel]);
   const chapter = v2.chapter;
-  const chapterTitles = useMemo(
-    () => Object.fromEntries(v2.chapters.map((c) => [c.chapter_id, c.title])),
-    [v2.chapters],
-  );
-
-  /** 侧栏切换图谱视图：只切选择，不夺走主区（数据事件与作者导航分离，M01）。 */
-  function switchGraphView(view: GraphViewId) {
-    setGraphView(view);
-  }
-
-  /** 打开/切换主区图谱视图：复用 detail 槽位，主区一次只展开一个。 */
-  function openGraphView(view: GraphViewId) {
-    setGraphView(view);
-    useDeskStore.getState().navigate({ kind: "detail", detailKind: "graph", id: view });
-  }
-
-  /** 「加入讨论」：把图谱选中对象作为可见引用附到对话输入草稿（V03-10 M1 改接对话输入）。 */
-  function addToDiscussion(reference: string) {
-    const chat = useChatStore.getState();
-    const cid = chat.activeConversationId;
-    if (!cid) return;
-    chat.setDraft(appendReference(chat.drafts[cid] ?? "", reference));
-  }
 
   // 候选审阅（V03-9 §4）：从讨论区的候选卡/任务卡点入主区临时视图，返回回到原视图。
   const views = useChatStore((s) => s.views);
@@ -577,24 +466,9 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
     useDeskStore.getState().navigate({ kind: "discussion", conversationId });
   }
 
-  // 右栏标记（M3）：账本/图谱/整体调整常驻；后续/结果有内容才出现，空列表不占标记。
-  const resultsCount = Object.keys(operations).length;
-  const summaries = desk?.counts.summaries;
-  const followupCount = desk
-    ? desk.counts.pending_candidates +
-      desk.counts.open_edit_chapters +
-      (summaries && summaries.stale + summaries.missing > 0 ? 1 : 0)
-    : 0;
+  // 右栏标记（V03-10 M4）：只剩「设定集」一枚。
   const railMarks: { key: RailPanel; label: string }[] = [
     { key: "ledger", label: "设定集" },
-    { key: "graph", label: "图谱" },
-    { key: "revision", label: "修订" },
-    ...(followupCount > 0
-      ? [{ key: "followups" as RailPanel, label: `后续 ${followupCount}` }]
-      : []),
-    ...(resultsCount > 0
-      ? [{ key: "results" as RailPanel, label: `结果 ${resultsCount}` }]
-      : []),
   ];
 
   return (
@@ -675,12 +549,10 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
               ? chapter.title || "正文"
               : mainView?.kind === "discussion"
                 ? "构思与协作"
-                : mainView?.kind === "detail" && mainView.detailKind === "graph"
-                  ? `关联图谱 · ${mainView.id === "clues" ? "线索关联" : "人物关系"}`
-                  : mainView?.kind === "detail" &&
-                      mainView.detailKind === "candidate"
-                    ? "候选审阅"
-                    : "写作台"}
+                : mainView?.kind === "detail" &&
+                    mainView.detailKind === "candidate"
+                  ? "候选审阅"
+                  : "写作台"}
           </h1>
           <div className="flex items-center gap-2">
             <button
@@ -747,16 +619,6 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                 onOpenModels={onOpenModels}
               />
             )
-          ) : mainView?.kind === "detail" && mainView.detailKind === "graph" && pid ? (
-            <GraphPanel
-              projectId={pid}
-              viewId={mainView.id === "clues" ? "clues" : "characters"}
-              onSwitchView={openGraphView}
-              onNavigateChapter={openChapter}
-              onAddToDiscussion={addToDiscussion}
-              chapterTitles={chapterTitles}
-              refreshKey={0}
-            />
           ) : mainView?.kind === "detail" && mainView.detailKind === "candidate" &&
             pid &&
             candidateMessage ? (
@@ -854,77 +716,6 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
                     </p>
                   </section>
                 ))}
-              {railPanel === "graph" && pid && (
-                <GraphOverview
-                  projectId={pid}
-                  viewId={graphView}
-                  onSwitchView={switchGraphView}
-                  onExpand={(view) => {
-                    openGraphView(view);
-                    setRailPanel(null);
-                  }}
-                  refreshKey={0}
-                />
-              )}
-              {railPanel === "followups" && pid && (
-                <>
-                  {desk && <DeskFollowupSummary state={desk} />}
-                  {lastOperationId && (
-                    <OperationFollowups projectId={pid} operationId={lastOperationId} />
-                  )}
-                </>
-              )}
-              {railPanel === "results" && (
-                <section className="panel" aria-label="操作结果">
-                  <header className="panel-head px-4 py-2">操作结果</header>
-                  {resultsCount === 0 ? (
-                    <p className="px-4 py-2 text-xs text-sub">
-                      异步任务结果会显示在这里，不改动主区与阅读位置。
-                    </p>
-                  ) : (
-                    Object.values(operations).map((op) => (
-                      <p className="asset-row px-4 py-2 text-xs" key={op.operationId}>
-                        {op.operationId.slice(0, 16)}… · {op.status}
-                        {op.changedChapterIds.length > 0 && (
-                          <span className="block text-[10px] text-sub">
-                            影响 {op.changedChapterIds.length} 章
-                          </span>
-                        )}
-                      </p>
-                    ))
-                  )}
-                </section>
-              )}
-              {railPanel === "revision" && pid && (
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <RevisionPanel
-                    projectId={pid}
-                    onPublished={() => {
-                      void v2.refreshManuscript();
-                      void v2.refreshStory();
-                    }}
-                    onBack={() => {
-                      const chapterId = v2.chapter.chapterId;
-                      if (chapterId) {
-                        useDeskStore.getState().navigate({ kind: "manuscript", chapterId });
-                      }
-                    }}
-                  />
-                </div>
-              )}
-              {railPanel === "history" && pid && mainView?.kind === "manuscript" && (
-                <ChapterHistory
-                  projectId={pid}
-                  chapterId={mainView.chapterId}
-                  onRestored={() => {
-                    void v2.refreshManuscript();
-                    void v2.selectChapter(mainView.chapterId);
-                  }}
-                />
-              )}
-              {railPanel === "evidence" && pid && mainView?.kind === "manuscript" && (
-                <EvidenceCheck projectId={pid} chapterId={mainView.chapterId} />
-              )}
             </div>
           </aside>
         </>
