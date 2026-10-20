@@ -7,7 +7,6 @@
  */
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
 
 interface ErrorBoundaryProps {
   /** 面板名，进错误卡文案（「哪里错」的第一要素）。 */
@@ -45,13 +44,13 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
           <p className="mt-2 text-xs leading-relaxed text-paper/50">
             怎样算对：点下方重试；若反复崩溃，检查服务端日志或刷新页面。
           </p>
-          <Button
-            variant="outline"
+          <button
+            type="button"
+            className="btn btn-gray mt-3 px-3 py-1 text-xs"
             onClick={() => this.setState({ error: null })}
-            className="mt-3 h-auto border-gold/60 px-3 py-1 text-xs text-gold hover:bg-gold/15 hover:text-gold"
           >
             重试
-          </Button>
+          </button>
         </div>
       </div>
     );

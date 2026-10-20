@@ -1,1 +1,0 @@
-{"role":"auditor","instruction":"原文声称侦探早已知道林岚调慢怀表，但已接受节拍只允许看到指针停在三点。请返回一个可定位 Finding，artifact_ids 指向该段落，quote 精确引用原文；不写正文 Patch。","expected_kind":"finding_set"}

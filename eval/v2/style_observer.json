@@ -1,1 +1,0 @@
-{"role":"style_observer","instruction":"检查真实人工 diff：只把时间从3点改为4点。此修改属于事实数字修正，不属于文风。返回 ObservationSet，category=fact，不得提出 active 偏好。","expected_kind":"observation_set"}

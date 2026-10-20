@@ -57,14 +57,13 @@ function buildSidecarArgs(port: number): string[] {
     process.env.HASTINGS_STATIC_DIR ??
     (app.isPackaged ? join(process.resourcesPath, "frontend-dist") : null);
   if (staticDir !== null) args.push("--static-dir", staticDir);
-  const storiesRoot = process.env.HASTINGS_STORIES_ROOT ?? userDataPath("stories");
-  const corpusRoot = process.env.HASTINGS_CORPUS_ROOT ?? userDataPath("corpus");
-  args.push("--stories-root", storiesRoot, "--corpus-root", corpusRoot);
+  // 0.4 起作品就是本地 Markdown 目录，服务端不再有 stories/corpus 根目录；
+  // 模型来源仍走 --config/--model，作品目录由界面选择。
   if (process.env.HASTINGS_CONFIG) {
     args.push("--config", process.env.HASTINGS_CONFIG);
-  } else {
-    const configDir = process.env.HASTINGS_CONFIG_DIR ?? userDataPath("config");
-    args.push("--config-dir", configDir);
+  }
+  if (process.env.HASTINGS_WORKSPACE) {
+    args.push("--workspace", process.env.HASTINGS_WORKSPACE);
   }
   if (process.env.HASTINGS_MODEL) args.push("--model", process.env.HASTINGS_MODEL);
   return args;

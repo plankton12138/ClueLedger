@@ -70,7 +70,6 @@ class ParsedManuscript:
 def decode_manuscript_bytes(data: bytes) -> str:
     """按 UTF-8 / UTF-8 BOM 解码；其他编码显式失败，不静默乱码。"""
     from hastings.application.errors import ViolationError
-    from hastings.domain.manuscript import error_codes as ec
 
     if data.startswith(codecs.BOM_UTF8):
         return data.decode("utf-8-sig")
@@ -78,7 +77,7 @@ def decode_manuscript_bytes(data: bytes) -> str:
         return data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ViolationError(
-            code=ec.IMPORT_ENCODING_UNSUPPORTED,
+            code="IMPORT_ENCODING_UNSUPPORTED",
             where="imports.decode",
             why=f"文件不是 UTF-8（第 {exc.start} 字节起无法解码）",
             fix="先用编辑器把稿件另存为 UTF-8 再导入；本版不做自动转码",
