@@ -14,7 +14,17 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import hastings.server.__main__ as server_main
+from hastings.infrastructure.credentials import InMemoryCredentialStore
 from hastings.server.__main__ import StartupError, assemble_server
+
+
+@pytest.fixture(autouse=True)
+def _isolated_model_sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """不读仓库里的真实 config.yaml、不碰系统凭据存储、不受本机环境变量影响。"""
+    monkeypatch.setattr(server_main, "DEFAULT_CONFIG_PATH", tmp_path / "absent.yaml")
+    monkeypatch.setattr(server_main, "build_credential_store", lambda: InMemoryCredentialStore())
+    for name in ("OPENAI_API_KEY", "OPENAI_BASE_URL", "HASTINGS_MODEL"):
+        monkeypatch.delenv(name, raising=False)
 
 
 def _directory(tmp_path: Path, name: str = "作品") -> Path:
@@ -41,10 +51,18 @@ def test_parser_defaults_and_overrides() -> None:
 
 def test_parser_rejects_retired_options() -> None:
     """旧工作台参数已退出：传进来按参数错误处理，不静默忽略。"""
-    for retired in ("--v2-db", "--stories-root", "--config", "--model", "--corpus-root"):
+    for retired in ("--v2-db", "--stories-root", "--corpus-root"):
         with pytest.raises(SystemExit) as exited:
             server_main.build_parser().parse_args([retired, "x"])
         assert exited.value.code == 2
+
+
+def test_parser_accepts_model_options() -> None:
+    """模型来源是 0.4 保留的唯一复用：--config 与 --model 仍然可用。"""
+    args = server_main.build_parser().parse_args(["--config", "cfg.yaml", "--model", "glm-4"])
+
+    assert args.config == Path("cfg.yaml")
+    assert args.model == "glm-4"
 
 
 def test_find_and_resolve_static_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -16,9 +16,15 @@ from hastings.server.file_app import create_workspace_app
 from hastings.workspace.state import RecentWorkspaces
 
 
+def _unconfigured_model() -> tuple[object, str]:
+    raise AssertionError("这些用例只走文件接口，不应该调用模型")
+
+
 def _client(tmp_path: Path) -> TestClient:
     book = RecentWorkspaces(tmp_path / "state")
-    return TestClient(create_workspace_app(book=book))
+    return TestClient(
+        create_workspace_app(book=book, provider_factory=_unconfigured_model)  # type: ignore[arg-type]
+    )
 
 
 def _created(client: TestClient, root: Path) -> str:

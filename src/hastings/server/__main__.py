@@ -5,9 +5,10 @@
 接口再选择目录。应用状态（最近目录、后续的会话与事件）放在 ``~/.hastings``，可用
 ``HASTINGS_STATE_DIR`` 覆盖。
 
-0.3 的旧工作台装配已从这个入口退出：不再读 ``config.yaml``、不再打开 ``data/v2.db``、
-不再挂 ``/api/v2`` 与旧模型路由，也没有任何参数能回到旧应用。旧模块与旧测试仍在源码
-里，供 V04-5 清理时核对，但它们不再构成一条可启动的链路。
+0.3 的旧工作台装配已从这个入口退出：不再打开 ``data/v2.db``、不再挂 ``/api/v2`` 与
+旧业务路由，也没有任何参数能回到旧应用。只保留模型来源这一条复用：读取 ``config.yaml``
+（或环境变量）解析当前档案与模型，供写作 Agent 调用。旧模块与旧测试仍在源码里，
+供 V04-5 清理时核对，但它们不再构成一条可启动的链路。
 
 退出码：目录不存在、前端目录不存在等环境故障 → 1；参数写错 → 2。
 """
@@ -22,7 +23,15 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 
-from hastings.server.file_app import create_workspace_app
+from hastings.infrastructure.credentials import build_credential_store
+from hastings.server.file_app import configured_provider_factory, create_workspace_app
+from hastings.server.provider_config import (
+    DEFAULT_CONFIG_PATH,
+    ProviderBook,
+    ServerConfig,
+    env_fallback_config,
+    load_server_config,
+)
 from hastings.workspace.state import RecentWorkspaces
 
 DEFAULT_HOST = "127.0.0.1"
@@ -64,6 +73,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="前端 build 产物目录（桌面 sidecar 用）；缺省自动探测 frontend/dist",
     )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="模型来源配置（默认 ./config.yaml；缺失时回落环境变量）",
+    )
+    parser.add_argument("--model", default=None, help="覆盖启动档案的模型名")
     parser.add_argument("--host", default=DEFAULT_HOST, help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="监听端口（默认 8000）")
     return parser
@@ -86,6 +102,30 @@ class AssembledServer:
     binding_id: str | None
     state_root: Path
     static_dir: Path | None
+    config_path: Path
+    boot_profile: str
+    boot_model: str
+
+
+def load_provider_book(config_path: Path, model: str | None) -> tuple[ProviderBook, str, str]:
+    """读取模型档案并选出启动档案；没有可用档案时返回空引导，不阻止启动。"""
+    server_config: ServerConfig = (
+        load_server_config(config_path) if config_path.exists() else env_fallback_config()
+    )
+    if not server_config.providers:
+        server_config = env_fallback_config()
+    available = next((profile for profile in server_config.providers if profile.available), None)
+    boot = available or (server_config.providers[0] if server_config.providers else None)
+    boot_name = boot.name if boot else "default"
+    boot_model = model or (boot.default_model if boot else "")
+    book = ProviderBook(
+        server_config,
+        boot_name=boot_name,
+        boot_model=boot_model,
+        config_path=config_path,
+        credentials=build_credential_store(),
+    )
+    return book, boot_name, boot_model
 
 
 def assemble_server(
@@ -93,6 +133,8 @@ def assemble_server(
     workspace: Path | None = None,
     static_dir: Path | None = None,
     state_root: Path | None = None,
+    config: Path | None = None,
+    model: str | None = None,
 ) -> AssembledServer:
     """按生产默认值装配文件工作区应用；任何位置失败都带三要素抛出，不静默降级。"""
     resolved_static = resolve_static_dir(static_dir)
@@ -118,25 +160,40 @@ def assemble_server(
             )
         opened = resolved
 
-    book = RecentWorkspaces(state_root)
+    config_path = Path(config).expanduser() if config is not None else DEFAULT_CONFIG_PATH
+    book, boot_profile, boot_model = load_provider_book(config_path, model)
+
+    recent = RecentWorkspaces(state_root)
     if opened is not None:
-        binding = book.bind(opened)
+        binding = recent.bind(opened)
         binding_id = binding.id
         opened = Path(binding.path)
-    app = create_workspace_app(book=book, static_dir=resolved_static)
+    app = create_workspace_app(
+        book=recent,
+        provider_factory=configured_provider_factory(book),
+        static_dir=resolved_static,
+    )
     return AssembledServer(
         app=app,
         workspace=opened,
         binding_id=binding_id,
-        state_root=book.root,
+        state_root=recent.root,
         static_dir=resolved_static,
+        config_path=config_path,
+        boot_profile=boot_profile,
+        boot_model=boot_model,
     )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        assembled = assemble_server(workspace=args.workspace, static_dir=args.static_dir)
+        assembled = assemble_server(
+            workspace=args.workspace,
+            static_dir=args.static_dir,
+            config=args.config,
+            model=args.model,
+        )
     except StartupError as exc:
         print(exc)
         return 1
@@ -149,6 +206,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         print("作品目录：未打开（用 --workspace 指定，或启动后在界面选择目录）")
     print(f"应用状态目录：{assembled.state_root}")
+    model_display = assembled.boot_model or "未配置（配置模型后才能对话）"
+    print(f"模型：{model_display}｜档案：{assembled.boot_profile}｜配置：{assembled.config_path}")
     print(f"写作台地址：http://{args.host}:{args.port}")
     if assembled.static_dir is not None:
         print(f"前端已托管：{assembled.static_dir}")

@@ -1,8 +1,8 @@
-"""文件工作区接口（0.4 M06 的首批端点）。
+"""文件工作区接口（0.4 M06）。
 
 契约按「界面直接反映目录」设计：目录列表、两块内容目录、单文件原文与指纹、搜索、
-导入。这里**没有**写文件端点——正文修改只能来自对话里的 Agent 或应用之外的编辑器，
-界面因此不会出现「先保存再发布」的第二条写入路径。
+导入，以及对话、轮次与事件流。这里**没有**写文件端点——正文修改只能来自对话里的
+Agent 或应用之外的编辑器，界面因此不会出现「先保存再发布」的第二条写入路径。
 
 错误信封与 0.3 保持一致（``{"error": {code, where, why, fix, details}}``），
 状态码由错误码尾缀决定，前端按 code 分支而不是解析文本。
@@ -10,24 +10,37 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, FastAPI, File, Query, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from hastings.workspace.errors import WorkspaceError, status_for_code
 from hastings.workspace.files import SETTING_PATHS, FileEntry, Workspace, chapter_title
 from hastings.workspace.git import GitRepo
-from hastings.workspace.state import RecentWorkspaces, WorkspaceBinding
+from hastings.workspace.service import ProviderFactory, TurnService
+from hastings.workspace.state import (
+    Conversation,
+    ConversationStore,
+    RecentWorkspaces,
+    WorkspaceBinding,
+    conversation_root,
+)
 
 __all__ = [
     "CatalogView",
+    "ConversationView",
     "FileEntryView",
     "FileViewResponse",
     "OpenWorkspaceRequest",
     "SearchResponse",
+    "TurnRequest",
+    "TurnView",
     "WorkspaceView",
     "create_file_workspace_router",
     "register_workspace_error_handlers",
@@ -85,14 +98,61 @@ class SearchResponse(BaseModel):
     truncated: bool
 
 
-def create_file_workspace_router(book: RecentWorkspaces) -> APIRouter:
-    """绑定一个最近目录登记实例；路由本身不持有全局状态。"""
+class ConversationView(BaseModel):
+    id: str
+    title: str
+    created_at: str
+    updated_at: str
+
+
+class CreateConversationRequest(BaseModel):
+    title: str = ""
+
+
+class TurnRequest(BaseModel):
+    text: str = Field(min_length=1)
+    request_key: str | None = None
+
+
+class TurnView(BaseModel):
+    turn_id: str
+    conversation_id: str
+    started_at: str
+
+
+class EventsView(BaseModel):
+    events: list[dict[str, object]]
+    last_seq: int
+
+
+class StopView(BaseModel):
+    stopped: bool
+
+
+def create_file_workspace_router(
+    book: RecentWorkspaces, provider_factory: ProviderFactory
+) -> APIRouter:
+    """绑定最近目录登记与模型来源；每个作品一个轮次服务，按需创建。"""
     router = APIRouter(prefix=PREFIX, tags=["file-workspaces"])
+    services: dict[str, TurnService] = {}
 
     def view(binding: WorkspaceBinding) -> WorkspaceView:
         return WorkspaceView(
             id=binding.id, name=binding.name, path=binding.path, exists=binding.exists
         )
+
+    def service_for(workspace_id: str) -> TurnService:
+        binding = book.get(workspace_id)
+        cached = services.get(workspace_id)
+        if cached is not None and str(cached.workspace.root) == binding.path:
+            return cached
+        workspace = book.workspace(workspace_id)
+        store = ConversationStore(conversation_root(book.root, workspace_id))
+        service = TurnService(workspace, store, provider_factory)
+        # 进程重启后，没有正常结束的轮次在这里补一条中断记录；不自动继续。
+        service.mark_interrupted()
+        services[workspace_id] = service
+        return service
 
     @router.get("", response_model=list[WorkspaceView])
     def list_workspaces() -> list[WorkspaceView]:
@@ -166,7 +226,102 @@ def create_file_workspace_router(book: RecentWorkspaces) -> APIRouter:
             settings=[_entry(entry) for entry in catalog.settings],
         )
 
+    # -- 对话与轮次 ---------------------------------------------------------
+
+    @router.get("/{workspace_id}/conversations", response_model=list[ConversationView])
+    def list_conversations(workspace_id: str) -> list[ConversationView]:
+        service = service_for(workspace_id)
+        return [_conversation(item) for item in service.store.conversations()]
+
+    @router.post("/{workspace_id}/conversations", response_model=ConversationView)
+    def create_conversation(
+        workspace_id: str, body: CreateConversationRequest | None = None
+    ) -> ConversationView:
+        service = service_for(workspace_id)
+        return _conversation(service.store.create(body.title if body else ""))
+
+    @router.get(
+        "/{workspace_id}/conversations/{conversation_id}/messages", response_model=EventsView
+    )
+    def conversation_messages(
+        workspace_id: str,
+        conversation_id: str,
+        after: int = Query(default=0, ge=0),
+    ) -> EventsView:
+        service = service_for(workspace_id)
+        service.store.get(conversation_id)
+        events = service.store.events(conversation_id, after=after)
+        last_seq = int(events[-1]["seq"]) if events else after
+        return EventsView(events=[dict(event) for event in events], last_seq=last_seq)
+
+    @router.post(
+        "/{workspace_id}/conversations/{conversation_id}/turns",
+        response_model=TurnView,
+        status_code=202,
+    )
+    async def start_turn(workspace_id: str, conversation_id: str, body: TurnRequest) -> TurnView:
+        service = service_for(workspace_id)
+        info = await service.start(conversation_id, body.text, request_key=body.request_key)
+        return TurnView(
+            turn_id=info.turn_id,
+            conversation_id=info.conversation_id,
+            started_at=info.started_at,
+        )
+
+    @router.post("/{workspace_id}/turns/{turn_id}/stop", response_model=StopView)
+    def stop_turn(workspace_id: str, turn_id: str) -> StopView:
+        service = service_for(workspace_id)
+        if not service.stop(turn_id):
+            raise WorkspaceError(
+                code="TURN_NOT_FOUND",
+                where="turns.stop",
+                why=f"这一轮已经结束或不存在：{turn_id}",
+                fix="刷新对话后确认当前是否还有正在进行的轮次",
+                details={"turn_id": turn_id},
+            )
+        return StopView(stopped=True)
+
+    @router.get("/{workspace_id}/events")
+    async def event_stream(
+        workspace_id: str,
+        conversation_id: str = Query(min_length=1),
+        after: int = Query(default=0, ge=0),
+        follow: bool = Query(default=True, description="false 时只回放已有事件"),
+    ) -> StreamingResponse:
+        """按游标推送事件；每轮以 ``run_finished`` 结束，客户端带新的 ``after`` 再连。"""
+        service = service_for(workspace_id)
+        service.store.get(conversation_id)
+
+        async def stream() -> AsyncIterator[str]:
+            cursor = after
+            while True:
+                batch = service.store.events(conversation_id, after=cursor)
+                for record in batch:
+                    cursor = int(record["seq"])
+                    payload = json.dumps(record, ensure_ascii=False)
+                    yield f"id: {cursor}\ndata: {payload}\n\n"
+                    if record.get("type") == "run_finished":
+                        return
+                if not batch and not follow:
+                    return
+                await asyncio.sleep(0.2)
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     return router
+
+
+def _conversation(item: Conversation) -> ConversationView:
+    return ConversationView(
+        id=item.id,
+        title=item.title,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+    )
 
 
 def register_workspace_error_handlers(app: FastAPI) -> None:
