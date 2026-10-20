@@ -42,10 +42,7 @@ const m = vi.hoisted(() => {
     mainView: { kind: "manuscript", chapterId: "ch_1" } as unknown,
     readingPositions: {} as Record<string, unknown>,
     operations: {} as Record<string, unknown>,
-    entryReceipts: [],
     lastOperationId: null,
-    composerFocusTick: 0,
-    composerInsert: null,
   };
   const wrap = <T extends object>(state: T) =>
     Object.assign(
@@ -97,6 +94,20 @@ const c = vi.hoisted(() => {
     serviceKind: "api",
     activeConversationId: "conv_1",
     projectId: "prj_seq9",
+    conversationsByProject: {
+      prj_seq9: [
+        {
+          conversation_id: "conv_1",
+          project_id: "prj_seq9",
+          title: "第一轮讨论",
+          created_at: "",
+          updated_at: "",
+        },
+      ],
+    } as Record<string, unknown>,
+    drafts: { conv_1: "" } as Record<string, string>,
+    setDraft: () => {},
+    send: async () => {},
     retryUnknownSend: () => {},
     stop: () => {},
     acceptCandidate: async () => ({}),
