@@ -1,6 +1,6 @@
 /**
- * 写作台壳层行为测试（V03-10 M2）：稿纸恒只读、空态无「试写」入口、
- * 右栏默认不渲染面板、界面无开发痕迹。
+ * 写作台壳层行为测试（V03-10 M8）：收拢后桌面只剩三件——只读稿纸、右侧固定对话栏、
+ * 右缘「设定集」标记；无任何编辑入口，界面无开发痕迹。
  *
  * 用 react-dom/server 静态渲染（项目偏好：不引入 jsdom）。zustand v5 在 SSR
  * 下以初始状态作 server snapshot，setState 不生效，故此处直接替换壳层依赖的
@@ -36,12 +36,11 @@ const m = vi.hoisted(() => {
     selectedChangeId: null,
     focusArtifactId: null,
   };
+  // V03-10 M7：操作结果缓存已随面板撤下移除，壳层只依赖主区与阅读位置。
   const desk = {
     projectId: "prj_seq9" as string | null,
     mainView: { kind: "manuscript", chapterId: "ch_1" } as unknown,
     readingPositions: {} as Record<string, unknown>,
-    operations: {} as Record<string, unknown>,
-    lastOperationId: null,
   };
   const wrap = <T extends object>(state: T) =>
     Object.assign(
@@ -56,7 +55,7 @@ const m = vi.hoisted(() => {
   return { v2, desk, useV2: wrap(v2), useDesk: wrap(desk) };
 });
 
-// 对话 store：注入一条候选消息，验证 §4 候选链路在写作台内的呈现接线。
+// 对话 store：注入一条候选消息，验证候选「采用」在写作台右侧对话栏内接线。
 const c = vi.hoisted(() => {
   const candidate = {
     message_id: "cand-1",
@@ -187,7 +186,7 @@ beforeEach(() => {
 const MANUSCRIPT_TEXTAREA = 'aria-label="人工正文"';
 
 describe("写作台壳层（收拢后）", () => {
-  it("稿纸恒只读，头部无编辑入口", () => {
+  it("稿纸常驻中区且恒只读，头部无编辑入口", () => {
     const html = renderToStaticMarkup(<DeskShell />);
     expect(html).toContain(MANUSCRIPT_TEXTAREA);
     expect(html).toMatch(/readonly/);
@@ -195,6 +194,7 @@ describe("写作台壳层（收拢后）", () => {
     expect(html).not.toContain("保存正文");
     expect(html).not.toContain("专注写作");
     expect(html).not.toContain("未完成的修改");
+    expect(html).not.toContain("试写");
   });
 
   it("空态只有导入与对话两条路，无任何「试写」入口", () => {
@@ -204,12 +204,22 @@ describe("写作台壳层（收拢后）", () => {
     expect(html).not.toContain("试写");
   });
 
-  it("右栏默认不渲染面板，只有常驻标记条", () => {
+  it("右侧固定对话栏常驻，左栏只有章节目录与对话历史", () => {
+    const html = renderToStaticMarkup(<DeskShell />);
+    expect(html).toContain('aria-label="对话栏"');
+    expect(html).toContain('aria-label="章节目录"');
+    expect(html).toContain('aria-label="对话历史"');
+    // 对话不再占用主区（V03-10 M6）：主区标题即当前章，无独立讨论主区。
+    expect(html).not.toContain('aria-label="讨论"');
+  });
+
+  it("右栏默认不渲染面板，只有「设定集」常驻标记", () => {
     const html = renderToStaticMarkup(<DeskShell />);
     expect(html).not.toMatch(/role="dialog"/);
     expect(html).toContain('aria-label="侧栏标记"');
     expect(html).toContain("设定集");
-    // V03-10 M4：图谱等高级入口已撤下。
+    // V03-10 M3/M4：旧「账本」显示名与图谱等高级入口已撤下。
+    expect(html).not.toContain("故事账本");
     expect(html).not.toContain("图谱");
     expect(html).not.toContain("整体调整");
     expect(html).not.toContain("版本历史");
@@ -223,12 +233,8 @@ describe("写作台壳层（收拢后）", () => {
   });
 });
 
-describe("候选链路在写作台内闭环（V03-9 §4 + V03-10 M5）", () => {
-  it("讨论区渲染候选卡，采用入口在对话卡内", () => {
-    Object.assign(m.desk, {
-      projectId: "prj_seq9",
-      mainView: { kind: "discussion", conversationId: "conv_1" },
-    });
+describe("候选链路在写作台右侧对话栏内闭环（V03-9 §4 + V03-10 M5/M6）", () => {
+  it("对话栏渲染候选卡，采用入口在对话卡内，无独立审阅视图", () => {
     const html = renderToStaticMarkup(<DeskShell />);
     expect(html).toContain('aria-label="讨论消息"');
     expect(html).toContain("待审阅候选");

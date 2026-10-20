@@ -1,8 +1,8 @@
 # 写作台再收拢：对话做增删改、设定集只读（V03-10）
 
-> 性质：开发计划（待作者确认后进入实施）。日期：2026-10-20。
-> 依据：2026-10-20 与作者的四轮讨论裁决（见 §1）；延续 [V03-9 前端收拢](notes/v03-9-frontend-collapse.md) 的「只撤前端入口、后端零改动」边界。
-> 关联：[0.3 完整开发计划](development-plan.md)、[写作台模块说明](modules/desk-surface.md)（当前实现）。
+> 性质：阶段计划（归档；实施记录见 [V03-10 构建记录](v03-10-desk-reduction.md)）。日期：2026-10-20。
+> 依据：2026-10-20 与作者的四轮讨论裁决（见 §1）；延续 [V03-9 前端收拢](v03-9-frontend-collapse.md) 的「只撤前端入口、后端零改动」边界。
+> 关联：[0.3 完整开发计划](../development-plan.md)、[写作台模块说明](../modules/desk-surface.md)（当前实现）。
 
 ## 1. 作者裁决（2026-10-20）
 
@@ -109,9 +109,9 @@
 
 ## 7. 文档同步清单（实施收尾时完成）
 
-- [product-design/README.md](../../product-design/README.md)：补 2026-10-20 本轮裁决（对话唯一操作面、稿纸只读、设定集只读 4 类、改名）。
-- [modules/desk-surface.md](modules/desk-surface.md)：改写为收拢后的当前行为。
-- [release.md](release.md)：登记撤除入口与保留能力清单、新走查证据与候选验证边界。
+- [product-design/README.md](../../../product-design/README.md)：补 2026-10-20 本轮裁决（对话唯一操作面、稿纸只读、设定集只读 4 类、改名）。
+- [modules/desk-surface.md](../modules/desk-surface.md)：改写为收拢后的当前行为。
+- [release.md](../release.md)：登记撤除入口与保留能力清单、新走查证据与候选验证边界。
 - [dev-notes/v0.3/README.md](../README.md)：更新导航。
 - 本文件实施完成后移入 `notes/` 归档，并新增构建记录。
 
