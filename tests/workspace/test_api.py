@@ -41,6 +41,8 @@ def test_create_workspace_makes_two_blocks(tmp_path: Path) -> None:
     assert body["path"] == str(root.resolve())
     assert (root / "正文").is_dir()
     assert (root / "设定集/真相.md").is_file()
+    # 新作品自带版本记录：.git 与首个基线提交。
+    assert (root / ".git").is_dir()
     assert client.get("/api/file-workspaces").json() == [body]
 
 
@@ -52,6 +54,7 @@ def test_open_existing_directory_does_not_create_content(tmp_path: Path) -> None
     response = client.post("/api/file-workspaces", json={"path": str(plain)})
 
     assert response.status_code == 200
+    # 打开不初始化 Git、不创建任何文件。
     assert list(plain.iterdir()) == []
 
 

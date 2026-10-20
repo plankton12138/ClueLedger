@@ -1,7 +1,7 @@
 # Hastings 0.4：Markdown 工作目录
 
-> 状态：已确定的产品方向。默认启动已切换为文件工作区（目录、读写、搜索、导入与读取接口）；Git、Agent、对话与前端接线尚未实现，旧工作台数据库已删除。确认日期：2026-10-20。
-> [实施计划](../../dev-notes/v0.4/development-plan.md) · [开发入口](../../dev-notes/v0.4/README.md) · [已实现行为](../../dev-notes/v0.4/modules/file-workspace.md) · [默认切换记录](../../dev-notes/v0.4/notes/v04-5-default-switch.md)
+> 状态：已确定的产品方向。默认启动已切换为文件工作区，内容读写、真实 Git 初始化/差异/提交/撤销已实现；写作 Agent、对话与前端接线尚未实现，旧工作台数据库已删除。确认日期：2026-10-20。
+> [实施计划](../../dev-notes/v0.4/development-plan.md) · [开发入口](../../dev-notes/v0.4/README.md) · [已实现行为](../../dev-notes/v0.4/modules/README.md) · [默认切换记录](../../dev-notes/v0.4/notes/v04-5-default-switch.md)
 
 ## 1. 为什么重新简化
 

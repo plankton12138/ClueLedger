@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from hastings.workspace.errors import WorkspaceError, status_for_code
 from hastings.workspace.files import SETTING_PATHS, FileEntry, Workspace, chapter_title
+from hastings.workspace.git import GitRepo
 from hastings.workspace.state import RecentWorkspaces, WorkspaceBinding
 
 __all__ = [
@@ -101,8 +102,11 @@ def create_file_workspace_router(book: RecentWorkspaces) -> APIRouter:
     def open_workspace(body: OpenWorkspaceRequest) -> WorkspaceView:
         target = Path(body.path).expanduser()
         if body.create:
+            # 新作品同时建立版本记录：历史从第一份内容开始，而不是从某次修改补起。
             Workspace.create(target)
+            GitRepo(target).init()
         else:
+            # 打开已有目录只读检查，不擅自初始化或改写内容。
             Workspace.open(target)
         return view(book.bind(target))
 
