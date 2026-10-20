@@ -705,8 +705,7 @@ export default function DeskShell({ onOpenModels }: { onOpenModels?: () => void 
           projectId={pid}
           open={importOpen}
           onOpenChange={setImportOpen}
-          onImported={(ids, operationId) => {
-            if (operationId) useDeskStore.getState().setLastOperation(operationId);
+          onImported={(ids) => {
             void v2.refreshManuscript().then(() => {
               const first = ids[0];
               if (!first) return;

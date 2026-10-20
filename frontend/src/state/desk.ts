@@ -1,20 +1,15 @@
 /**
- * 主工作区壳状态（M01/V03-1.1）——数据事件与作者导航分离。
+ * 主工作区壳状态（M01/V03-1.1）——主区一次只展开一个，阅读位置按章保存。
  *
- * 设计目的（计划 M01）：文章、协作和相关账本各自有稳定空间，任务执行
- * 不会夺走作者的阅读位置。核心不变量：
+ * 核心不变量：
  *
- * - 主区内容一次只展开一个（`MainView` 可辨识联合，无并列主区）；
- * - 收到流式文本和异步结果只更新数据区（`applyOperationResult` 不改
- *   `mainView`、不触发聚焦、不改滚动）；
- * - 跨作品的数据事件不得写入当前作品状态；
+ * - 主区只选择「哪一章正文」（V03-10 M6 收窄后，`MainView` 只有 manuscript 一个
+ *   变体，对话固定在右侧栏、不占主区）；
  * - 阅读位置按 `project_id + chapter_id + source_kind + edit_session_id`
  *   四元组保存，禁止全局单个 scrollTop（M01 第 3 条）。
  *
  * 纯函数可测（vitest node 环境）；React 壳层接线消费这些函数。
  */
-
-import type { OperationEnvelope } from "../api/identities";
 
 /**
  * 主区可辨识联合：一次只展开一个（计划 M01 目标示例收编）。
@@ -42,12 +37,10 @@ export interface DeskState {
   mainView: MainView | null;
   /** 四元组键 → 阅读位置；按项目隔离。 */
   readingPositions: Record<string, ReadingPosition>;
-  /** 操作结果按 operationId 记录；不改导航。 */
-  operations: Record<string, OperationEnvelope>;
 }
 
 export function emptyDeskState(projectId: string | null = null): DeskState {
-  return { projectId, mainView: null, readingPositions: {}, operations: {} };
+  return { projectId, mainView: null, readingPositions: {} };
 }
 
 /** 阅读位置四元组键：source_kind/edit_session_id 不同即不同位置。 */
@@ -79,19 +72,6 @@ export function saveReadingPosition(
   return {
     ...state,
     readingPositions: { ...state.readingPositions, [key]: position },
-  };
-}
-
-/** 数据事件：只记操作结果；主区/光标/滚动一律不变（M01 第 5 条）。 */
-export function applyOperationResult(
-  state: DeskState,
-  result: OperationEnvelope,
-): DeskState {
-  if (result.projectId !== state.projectId) return state; // 跨作品事件丢弃
-  return {
-    ...state,
-    operations: { ...state.operations, [result.operationId]: result },
-    // 主区和光标只在作者明确导航或采用首章时变更。
   };
 }
 

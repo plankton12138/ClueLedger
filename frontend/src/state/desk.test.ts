@@ -1,14 +1,13 @@
 /**
  * V03-1.1 主工作区壳状态测试（计划 M01、执行指导 §5.1）。
  *
- * 关键不变量：数据事件与作者导航分离——发送、候选到达、摘要完成、
- * 切图谱返回均不丢位置；任务完成不抢主区；跨作品事件不写入当前状态。
+ * 关键不变量：主区一次只展开一个；阅读位置四元组按章保存、跨项目隔离。
+ * V03-10 M7：操作结果缓存随后续状态 / 操作结果面板撤下移除，相关用例删除。
  */
 
 import { describe, expect, it } from "vitest";
 
 import {
-  applyOperationResult,
   emptyDeskState,
   navigate,
   readingPositionKey,
@@ -16,22 +15,8 @@ import {
   selectInitialChapterId,
   type DeskState,
 } from "./desk";
-import type { OperationEnvelope } from "../api/identities";
 
 const PROJECT = "prj_a";
-
-function envelope(
-  operationId: string,
-  overrides: Partial<OperationEnvelope> = {},
-): OperationEnvelope {
-  return {
-    operationId,
-    status: "committed",
-    projectId: PROJECT,
-    changedChapterIds: [],
-    ...overrides,
-  };
-}
 
 function stateWithChapter(): DeskState {
   const state = emptyDeskState(PROJECT);
@@ -47,55 +32,6 @@ describe("MainView 主区唯一", () => {
     // V03-10 M6：无正文时主区可为空（按构思状态处理）。
     state = navigate(state, null);
     expect(state.mainView).toBeNull();
-  });
-});
-
-describe("applyOperationResult：数据事件与作者导航分离", () => {
-  it("操作完成不改主区、不改阅读位置", () => {
-    const base = saveReadingPosition(stateWithChapter(), {
-      projectId: PROJECT,
-      chapterId: "art_ch1",
-      sourceKind: "formal",
-      editSessionId: null,
-      scrollTop: 320,
-    });
-    const next = applyOperationResult(base, envelope("op_1"));
-    expect(next.mainView).toEqual(base.mainView);
-    expect(next.operations["op_1"]).toBeDefined();
-    expect(
-      next.readingPositions[
-        readingPositionKey({
-          projectId: PROJECT,
-          chapterId: "art_ch1",
-          sourceKind: "formal",
-          editSessionId: null,
-        })
-      ]?.scrollTop,
-    ).toBe(320);
-  });
-
-  it("跨作品事件整体丢弃（切作品后旧响应不写入新作品状态）", () => {
-    const base = stateWithChapter();
-    const next = applyOperationResult(base, envelope("op_x", { projectId: "prj_other" }));
-    expect(next).toEqual(base);
-    expect(next.operations["op_x"]).toBeUndefined();
-  });
-
-  it("同一操作幂等重放只保留一份", () => {
-    const base = stateWithChapter();
-    const once = applyOperationResult(base, envelope("op_1"));
-    const twice = applyOperationResult(once, envelope("op_1"));
-    expect(Object.keys(twice.operations)).toEqual(["op_1"]);
-  });
-
-  it("blocked/failed 结果同样只进数据区", () => {
-    const base = stateWithChapter();
-    const next = applyOperationResult(
-      base,
-      envelope("op_2", { status: "blocked", resultUrl: "/x" }),
-    );
-    expect(next.mainView).toEqual(base.mainView);
-    expect(next.operations["op_2"]?.status).toBe("blocked");
   });
 });
 
