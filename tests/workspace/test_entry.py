@@ -1,8 +1,8 @@
-"""文件工作区启动入口（0.4 V04-1）。
+"""服务启动入口（0.4 默认启动）。
 
-契约：``--workspace <目录>`` 只装配文件工作区应用——不读 config.yaml、不打开旧工作台
-数据库、不挂 ``/api/v2``；与 ``--v2-db`` 同时出现属于意图冲突，按参数错误退出（2）。
-默认入口仍是旧工作台，直到 V04-5 切换。
+契约：``python -m hastings.server`` 只装配文件工作区应用——不读 ``config.yaml``、
+不打开旧工作台数据库、不挂 ``/api/v2`` 与旧模型路由，也没有回到旧应用的参数。
+``--workspace`` 只是预先打开一个目录，不是启用开关。退出码：环境故障 1、参数错误 2。
 """
 
 from __future__ import annotations
@@ -14,56 +14,130 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import hastings.server.__main__ as server_main
-from hastings.server.__main__ import StartupError, assemble_file_workspace
+from hastings.server.__main__ import StartupError, assemble_server
 
 
-def test_parser_accepts_workspace() -> None:
-    assert server_main.build_parser().parse_args([]).workspace is None
-    parsed = server_main.build_parser().parse_args(["--workspace", "作品"])
-    assert parsed.workspace == Path("作品")
+def _directory(tmp_path: Path, name: str = "作品") -> Path:
+    target = tmp_path / name
+    target.mkdir()
+    return target
+
+
+def test_parser_defaults_and_overrides() -> None:
+    args = server_main.build_parser().parse_args([])
+    assert args.workspace is None
+    assert args.static_dir is None
+    assert args.host == "127.0.0.1"
+    assert args.port == 8000
+
+    args = server_main.build_parser().parse_args(
+        ["--workspace", "作品", "--static-dir", "dist", "--port", "9123", "--host", "0.0.0.0"]
+    )
+    assert args.workspace == Path("作品")
+    assert args.static_dir == Path("dist")
+    assert args.port == 9123
+    assert args.host == "0.0.0.0"
+
+
+def test_parser_rejects_retired_options() -> None:
+    """旧工作台参数已退出：传进来按参数错误处理，不静默忽略。"""
+    for retired in ("--v2-db", "--stories-root", "--config", "--model", "--corpus-root"):
+        with pytest.raises(SystemExit) as exited:
+            server_main.build_parser().parse_args([retired, "x"])
+        assert exited.value.code == 2
+
+
+def test_find_and_resolve_static_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert server_main.find_static_dir(tmp_path) is None
+    dist = tmp_path / "frontend" / "dist"
+    dist.mkdir(parents=True)
+    assert server_main.find_static_dir(tmp_path) == dist
+
+    assert server_main.resolve_static_dir(dist) == dist
+    monkeypatch.setattr(server_main, "default_static_dir", lambda: None)
+    assert server_main.resolve_static_dir(None) is None
+
+
+def test_assembly_without_workspace_serves_empty_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    monkeypatch.setenv("HASTINGS_STATE_DIR", str(state))
+
+    assembled = assemble_server()
+
+    assert assembled.workspace is None
+    assert assembled.binding_id is None
+    assert assembled.state_root == state.resolve()
+    client = TestClient(assembled.app)
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/file-workspaces").json() == []
+
+
+def test_assembly_binds_requested_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "state"
+    monkeypatch.setenv("HASTINGS_STATE_DIR", str(state))
+    root = _directory(tmp_path)
+
+    assembled = assemble_server(workspace=root)
+
+    assert assembled.workspace == root.resolve()
+    assert assembled.binding_id
+    client = TestClient(assembled.app)
+    listed = client.get("/api/file-workspaces").json()
+    assert [item["path"] for item in listed] == [str(root.resolve())]
 
 
 def test_assembly_serves_only_file_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    state = tmp_path / "state"
-    monkeypatch.setenv("HASTINGS_STATE_DIR", str(state))
-    root = tmp_path / "作品"
-    root.mkdir()
+    monkeypatch.setenv("HASTINGS_STATE_DIR", str(tmp_path / "state"))
+    root = _directory(tmp_path)
 
-    assembled = assemble_file_workspace(workspace=root)
-    client = TestClient(assembled.app)
+    client = TestClient(assemble_server(workspace=root).app)
 
-    assert client.get("/api/health").status_code == 200
-    assert client.get("/api/file-workspaces").status_code == 200
     # 旧工作台与旧模型路由都不在装配范围：新应用不因模型设置挂载整套旧业务。
     assert client.get("/api/v2/projects").status_code == 404
     assert client.get("/api/model-selection").status_code == 404
-    assert assembled.workspace == root.resolve()
-    assert assembled.binding_id
-    assert (state / "workspaces.json").is_file()
-    # 作品目录与状态目录之外没有数据库；文件工作区模式不打开旧工作台。
-    assert not [path for path in root.iterdir() if path.suffix in {".db", ".sqlite"}]
+    assert client.get("/api/workspaces").status_code == 404
+
+
+def test_assembly_creates_no_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HASTINGS_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    root = _directory(tmp_path)
+
+    assemble_server(workspace=root)
+
+    assert not (tmp_path / "data").exists()
 
 
 def test_assembly_rejects_missing_workspace(tmp_path: Path) -> None:
-    with pytest.raises(StartupError):
-        assemble_file_workspace(workspace=tmp_path / "不存在")
+    with pytest.raises(StartupError, match="作品目录不存在"):
+        assemble_server(workspace=tmp_path / "不存在")
 
 
-def test_main_rejects_workspace_with_v2_db(tmp_path: Path) -> None:
-    root = tmp_path / "作品"
-    root.mkdir()
+def test_assembly_rejects_file_as_workspace(tmp_path: Path) -> None:
+    target = tmp_path / "a.md"
+    target.write_text("x", encoding="utf-8")
 
-    assert server_main.main(["--workspace", str(root), "--v2-db", str(tmp_path / "v2.db")]) == 2
+    with pytest.raises(StartupError, match="不是目录"):
+        assemble_server(workspace=target)
 
 
-def test_main_serves_file_workspace_without_old_database(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_assembly_rejects_missing_static_dir(tmp_path: Path) -> None:
+    with pytest.raises(StartupError, match="前端目录不存在"):
+        assemble_server(static_dir=tmp_path / "nope")
+
+
+def test_main_runs_uvicorn_with_file_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("HASTINGS_STATE_DIR", str(tmp_path / "state"))
-    root = tmp_path / "作品"
-    root.mkdir()
+    monkeypatch.setattr(server_main, "default_static_dir", lambda: None)
+    root = _directory(tmp_path)
     captured: dict[str, object] = {}
 
     def fake_run(app: FastAPI, **kwargs: object) -> None:
@@ -75,4 +149,26 @@ def test_main_serves_file_workspace_without_old_database(
     assert server_main.main(["--workspace", str(root), "--port", "8123"]) == 0
     assert isinstance(captured["app"], FastAPI)
     assert captured["kwargs"] == {"host": "127.0.0.1", "port": 8123, "log_level": "info"}
-    assert not (tmp_path / "data").exists()
+    out = capsys.readouterr().out
+    assert str(root.resolve()) in out
+    assert "8123" in out
+
+
+def test_main_starts_without_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HASTINGS_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setattr(server_main, "default_static_dir", lambda: None)
+    monkeypatch.setattr(server_main.uvicorn, "run", lambda app, **kwargs: None)
+
+    assert server_main.main([]) == 0
+    assert "未打开" in capsys.readouterr().out
+
+
+def test_main_exits_with_environment_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(server_main.uvicorn, "run", lambda *args, **kwargs: None)
+
+    assert server_main.main(["--workspace", str(tmp_path / "不存在")]) == 1
+    assert "怎样算对" in capsys.readouterr().out

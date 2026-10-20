@@ -1,10 +1,10 @@
 # Hastings 后端导航
 
-Hastings 提供悬疑小说写作工作区，负责正文、故事账本、创作任务、模型连接与持久化。默认运行仍是 0.3 写作台，业务接口沿用 `/api/v2`。
+Hastings 提供悬疑小说写作工作台。默认启动是 0.4 文件工作区：作品为本地 Markdown 目录，接口前缀 `/api/file-workspaces`。
 
-0.4 的文件工作区已完成基础部分（V04-1）：作品内容改为本地 Markdown 目录，新增 `workspace/` 包与 `--workspace <目录>` 启动参数，接口前缀 `/api/file-workspaces`。该模式不装配旧工作台，只提供目录、读取、搜索与导入；Git、写作 Agent、对话和前端接线尚未实现，默认入口未切换。
+`python -m hastings.server` 只装配文件工作区应用（`server/file_app.py`），不读 `config.yaml`、不打开旧工作台数据库、不挂 `/api/v2` 与旧模型路由；`--workspace <目录>` 用于启动时预先打开作品。Git、写作 Agent、对话和前端接线尚未实现，浏览器界面仍是 0.3 构建、当前不可用。
 
-先从[当前模块说明](../../dev-notes/v0.3/modules/README.md)理解 0.3 行为与约束，再按下表定位源码。0.4 已实现的行为见[文件工作区](../../dev-notes/v0.4/modules/file-workspace.md)。历史目标不能替代当前实现；运行与验收限制见[0.3 运行说明](../../dev-notes/v0.3/release.md)。
+0.3 的模块与测试仍在源码中，供后续清理时核对，但已没有启动入口，其文档作为历史实现保留。解释现状时先读[0.4 模块说明](../../dev-notes/v0.4/modules/file-workspace.md)，再按下表定位源码。
 
 ## 当前代码入口
 
@@ -12,7 +12,8 @@ Hastings 提供悬疑小说写作工作区，负责正文、故事账本、创�
 
 | 要修改的行为 | 主要位置 | 当前说明 |
 |---|---|---|
-| 服务装配、默认数据库、启动恢复 | `server/__main__.py`、`server/v2.py` | [发布、导入与恢复](../../dev-notes/v0.3/modules/publish-import-recovery.md) |
+| 服务入口、静态目录与退出码（0.4 默认） | `server/__main__.py`、`server/file_app.py` | [文件工作区](../../dev-notes/v0.4/modules/file-workspace.md) |
+| 0.3 旧装配（已无启动入口，待清理） | `server/app.py`、`server/v2.py`、`server/rest.py` | [发布、导入与恢复](../../dev-notes/v0.3/modules/publish-import-recovery.md) |
 | 正文发布、导入、操作归属 | `application/services/{publish_manuscript_change,import_service,operation_service}.py`、`application/workflows/operation_projection.py` | [发布、导入与恢复](../../dev-notes/v0.3/modules/publish-import-recovery.md) |
 | 手工修改副本、合并、快照与撤销 | `domain/manuscript/{edit_session,merge}.py`、`application/services/{edit_session_service,undo_service}.py` | [修改与撤销](../../dev-notes/v0.3/modules/editing-and-undo.md) |
 | 试写候选与预览采用 | `domain/manuscript/drafting.py`、`application/services/drafting_service.py` | [修改与撤销](../../dev-notes/v0.3/modules/editing-and-undo.md) |
