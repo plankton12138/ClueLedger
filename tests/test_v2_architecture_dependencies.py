@@ -1,6 +1,6 @@
 """V2 架构依赖方向测试（Phase 11 T11.4，计划 §4/§6）。
 
-规则来源：dev-notes/v2/modules/README.md §2 与 phase-11 计划 T11.4：
+规则来源：dev-notes/v0.2/modules/README.md §2 与 phase-11 计划 T11.4：
 
 1. ``domain`` 不得 import 其他四层、``hastings.tools`` 和 Tau；
 2. ``interfaces`` 不得 import ``infrastructure`` 具体实现；

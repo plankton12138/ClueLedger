@@ -258,6 +258,52 @@ class SqliteJobStore:
 
         self._mutate(job_id, apply)
 
+    async def pause(
+        self, job_id: str, *, reason: str, details: Mapping[str, object] | None = None
+    ) -> dict[str, Any] | None:
+        """派发门禁暂停（V03-0.3）：无凭据/旧自动队列任务不派发。
+
+        output 保持 ``NoResult`` schema 合法（kind/reason），结构化详情随
+        ``job.paused`` 事件落库，供 ``/agent-jobs/{id}/events`` 回看。
+        幂等：已 waiting 的任务原样返回（不重复写事件）；终态任务返回原记录。
+        """
+        current = await self.get(job_id)
+        if current is None:
+            return None
+        if current["state"] not in ("queued", "retryable_failed"):
+            return current  # 已在等待/终态：不重复写事件
+
+        def apply(job: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+            job.update(
+                state="waiting",
+                generation=job["generation"] + 1,
+                retry_at=None,
+                output={"kind": "no_result", "reason": reason},
+            )
+            return "job.paused", {"reason": reason, "details": dict(details or {})}
+
+        return self._mutate(job_id, apply)
+
+    async def mark_interrupted(self) -> int:
+        """启动恢复（V03-0.3）：执行中任务标 interrupted，等作者继续、不自动重发。"""
+
+        def apply(job: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+            if job["state"] == "running":
+                job.update(state="waiting", output={"kind": "no_result", "reason": "interrupted"})
+                return "job.interrupted", {
+                    "why": "服务重启；无法确认执行中的模型调用已完成，等作者继续"
+                }
+            return f"job.{job['state']}", {}
+
+        count = 0
+        for job in await self.list_jobs():
+            if job["state"] != "running":
+                continue
+            updated = self._mutate(job["job_id"], apply)
+            if updated["state"] == "waiting":
+                count += 1
+        return count
+
     async def recover(self, now: datetime) -> int:
         count = 0
         for job in await self.list_jobs():
@@ -317,6 +363,30 @@ class MemoryJobStore:
         record = self._jobs.get(job_id)
         if record is not None:
             record["retry"] = reason
+
+    async def pause(
+        self, job_id: str, *, reason: str, details: Mapping[str, object] | None = None
+    ) -> dict[str, Any] | None:
+        """派发门禁暂停（V03-0.3）：内存后端同端口，供契约测试双后端参数化。"""
+        record = self._jobs.get(job_id)
+        if record is None:
+            return None
+        if record.get("state", "queued") in ("queued", "retryable_failed"):
+            record["state"] = "waiting"
+            record["output"] = {"kind": "no_result", "reason": reason}
+            record["pause_details"] = dict(details or {})
+        return dict(record)
+
+    async def mark_interrupted(self) -> int:
+        """启动恢复（V03-0.3）：执行中任务标 interrupted，不自动重发。"""
+        count = 0
+        for record in self._jobs.values():
+            if record.get("state") == "running":
+                record["state"] = "waiting"
+                record["output"] = {"kind": "no_result", "reason": "interrupted"}
+                record["interrupted_why"] = "服务重启；无法确认执行中的模型调用已完成，等作者继续"
+                count += 1
+        return count
 
     async def get(self, job_id: str) -> Mapping[str, object] | None:
         record = self._jobs.get(job_id)

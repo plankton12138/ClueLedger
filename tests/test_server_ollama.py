@@ -1,13 +1,14 @@
-"""Ollama REST 端点测试（本地模型，D11）：三态 status / 目录 / 流式 pull / 删除。
+"""Ollama REST 端点测试（本地模型，D11）：三态 status / 目录 / 已装 / 删除。
 
+下载与调用测试走 /api/local-model-tasks 任务记录端点（V03-1.4，见
+test_server_local_model_tasks.py）——原 /api/ollama/pull 纯转发流已删除收敛。
 泄压阀三情形在 HTTP 层的落点逐条钉住：
 - 参数违规（模型名不合法）→ 422 三要素；
-- 环境故障（Ollama 不可达 / 上游报错）→ 502 归因（pull 在开流前探活）；
+- 环境故障（Ollama 不可达 / 上游报错）→ 502 归因；
 - status 恒 200——三态是结果数据不是错误。
 「设为当前模型」衔接：PUT /api/providers/ollama（no_auth）→ available 无 key 也为真。
 """
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -113,58 +114,6 @@ def test_ollama_models_unreachable_returns_502(tmp_path: Path) -> None:
 
     assert response.status_code == 502
     assert "无法连接" in response.json()["detail"]
-
-
-# --- POST /api/ollama/pull：流式 NDJSON 进度 ---
-
-
-def test_ollama_pull_rejects_invalid_name_422(tmp_path: Path) -> None:
-    response = _ollama_app(_refuse).post("/api/ollama/pull", json={"model": "../escape"})
-
-    assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert "模型名不合法" in detail and "怎样算对" in detail
-
-
-def test_ollama_pull_unreachable_returns_502_before_stream(tmp_path: Path) -> None:
-    response = _ollama_app(_refuse).post("/api/ollama/pull", json={"model": "qwen3:4b"})
-
-    assert response.status_code == 502
-    assert "无法连接" in response.json()["detail"]
-
-
-def test_ollama_pull_streams_progress_frames(tmp_path: Path) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            content=(
-                b'{"status": "pulling manifest"}\n'
-                b'{"status": "downloading", "total": 100, "completed": 50}\n'
-                b'{"status": "success"}\n'
-            ),
-        )
-
-    client = _ollama_app(_version_ok(handler))
-    with client.stream("POST", "/api/ollama/pull", json={"model": "qwen3:4b"}) as response:
-        assert response.status_code == 200
-        assert response.headers["content-type"].startswith("application/x-ndjson")
-        frames = [json.loads(line) for line in response.iter_lines() if line.strip()]
-
-    assert frames[0] == {"status": "pulling manifest"}
-    assert frames[1] == {"status": "downloading", "total": 100, "completed": 50}
-    assert frames[-1] == {"status": "success"}
-
-
-def test_ollama_pull_error_frame_appends_error_line(tmp_path: Path) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=b'{"error": "manifest not found"}\n')
-
-    client = _ollama_app(_version_ok(handler))
-    with client.stream("POST", "/api/ollama/pull", json={"model": "ghost"}) as response:
-        frames = [json.loads(line) for line in response.iter_lines() if line.strip()]
-
-    assert len(frames) == 1
-    assert "manifest not found" in frames[0]["error"]
 
 
 # --- DELETE /api/ollama/models/{name}：204 / 404 / 422 ---

@@ -457,6 +457,11 @@
       0 10px 28px rgba(70, 85, 95, 0.28);
     color: theme("colors.sheetInk");
   }
+  /* 键盘焦点可见（M14）：与按钮焦点同一蓝色语言，画在纸面边框内侧避免被裁切。 */
+  .paper-sheet:focus-visible {
+    outline: 2px solid #477fa4;
+    outline-offset: -2px;
+  }
 
   /* ===== 页脚状态栏 ===== */
   .statusbar {
@@ -931,6 +936,60 @@
   }
   .chat-prepare-note {
     @apply px-2 pb-1 text-[10px] leading-5;
+    color: theme("colors.sub");
+  }
+
+  /* 意图区分（V03-7.1）：讨论/候选标注只读；执行给出功能与写范围 */
+  .chat-intent-bar {
+    @apply mt-2 px-3;
+  }
+  .chat-intent {
+    @apply space-y-0.5 rounded p-2 text-[10px] leading-5;
+    border: 1px solid #c3d0d8;
+    background: #fff;
+  }
+  .chat-intent.candidate {
+    border-color: theme("colors.blueEdge");
+    background: theme("colors.blueBg");
+  }
+  .chat-intent.execution {
+    border-color: theme("colors.amberEdge");
+    background: theme("colors.amberBg");
+  }
+  .chat-intent-head {
+    @apply flex flex-wrap items-center gap-1;
+  }
+  .chat-intent-chip {
+    @apply rounded px-1 py-px font-bold text-[10px];
+    color: #fff;
+    background: #6f9ab8;
+  }
+  .chat-intent.execution .chat-intent-chip {
+    background: theme("colors.amber");
+  }
+  .chat-intent-fn {
+    @apply rounded px-1 py-px;
+    color: #2c648e;
+    border: 1px solid #c3d0d8;
+    background: #fff;
+  }
+  .chat-intent-summary {
+    color: theme("colors.fg");
+  }
+  .chat-intent-reason {
+    color: theme("colors.sub");
+  }
+  .chat-intent-choices {
+    @apply mt-0.5 space-y-0.5;
+  }
+  .chat-intent-choices li {
+    @apply flex flex-col;
+  }
+  .chat-intent-choices b {
+    @apply text-[10px];
+    color: #40596b;
+  }
+  .chat-intent-choices span {
     color: theme("colors.sub");
   }
 

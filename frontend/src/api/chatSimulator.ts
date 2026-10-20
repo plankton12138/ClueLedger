@@ -17,6 +17,7 @@ import type {
   ChatMessage,
   ChatService,
   ChatTurn,
+  ContinueTurnInput,
   ResultPayload,
   SendTurnInput,
   SendTurnResult,
@@ -176,12 +177,82 @@ export class SimulatorService implements ChatService {
     return { turn, user_message: userMessage };
   }
 
+  /**
+   * 接着讨论（V03-1.5，镜像后端 send_turn_from_messages 语义）：
+   * - 主消息（第一条引用）reparent 进新轮次——同一 message_id，不复制；
+   * - 引用源必须是本会话内的作者消息（跨会话/助手消息拒绝）；
+   * - 幂等重放返回同一轮次与同一主消息，不再产生新回复。
+   */
+  async continueTurn(
+    projectId: string,
+    conversationId: string,
+    input: ContinueTurnInput,
+  ): Promise<SendTurnResult> {
+    const conv = this.require(projectId, conversationId);
+    if (input.source_message_ids.length === 0)
+      throw new Error("接着讨论至少引用一条已保存消息");
+    // 幂等重放：同一幂等键返回原轮次与其主消息（reparent 后按 turn 查找）。
+    for (const turn of conv.turns.values()) {
+      if (turn.idempotency_key === input.idempotency_key) {
+        return {
+          turn,
+          user_message:
+            conv.messages.find((m) => m.turn_id === turn.turn_id && m.role === "author") ??
+            this.newRejected(conv, "原轮次没有可回读的主消息"),
+        };
+      }
+    }
+    const sources = input.source_message_ids.map((id) =>
+      conv.messages.find((m) => m.message_id === id),
+    );
+    if (sources.some((s) => !s || s.role !== "author")) {
+      throw new Error(
+        "引用的消息不存在、属于其他讨论或不是作者消息；只能引用本讨论内保存的想法继续。",
+      );
+    }
+    const primary = sources[0]!;
+    const turn: ChatTurn = {
+      turn_id: this.newId("turn"),
+      conversation_id: conversationId,
+      status: "queued",
+      model: this.view.model,
+      end_reason: null,
+      idempotency_key: input.idempotency_key,
+      retry_of: null,
+    };
+    conv.turns.set(turn.turn_id, turn);
+    // 主消息归入新轮次（upsert 语义）：保留原 message_id，不复制记录。
+    primary.turn_id = turn.turn_id;
+    this.emit(projectId, conversationId, turn.turn_id, { type: "turn.accepted", turn });
+    void this.runTurn(projectId, conv, turn, {
+      text: primary.text,
+      refs: primary.refs,
+      idempotency_key: input.idempotency_key,
+    });
+    return { turn, user_message: primary };
+  }
+
+  private newRejected(conv: SimConversation, why: string): ChatMessage {
+    return {
+      message_id: `missing-${this.newId("msg")}`,
+      conversation_id: conv.conversation.conversation_id,
+      turn_id: null,
+      role: "system",
+      kind: "text",
+      text: why,
+      refs: [],
+      model: null,
+      status: "failed",
+      error: null,
+      created_at: new Date().toISOString(),
+    };
+  }
+
   async cancelTurn(
     projectId: string,
     conversationId: string,
     turnId: string,
-  ): Promise<void> {
-    const conv = this.require(projectId, conversationId);
+  ): Promise<void> {    const conv = this.require(projectId, conversationId);
     const control = conv.running.get(turnId);
     const turn = conv.turns.get(turnId);
     if (!turn) return;
@@ -293,7 +364,7 @@ export class SimulatorService implements ChatService {
         taskKind === "plan"
           ? "产出故事前提与节拍候选"
           : taskKind === "chapter_draft"
-            ? `基于已接受节拍起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
+            ? `从账本与作者要求起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
             : taskKind === "check"
               ? "检查人物知情与线索公平性"
               : "按设定变化定向修订受影响正文",
@@ -347,7 +418,7 @@ export class SimulatorService implements ChatService {
         taskKind === "plan"
           ? "产出故事前提与节拍候选"
           : taskKind === "chapter_draft"
-            ? `基于已接受节拍起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
+            ? `从账本与作者要求起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
             : taskKind === "check"
               ? "检查人物知情与线索公平性"
               : "按设定变化定向修订受影响正文",
@@ -731,8 +802,8 @@ export class SimulatorService implements ChatService {
             ? "check"
             : "targeted_revision";
     const chapter = this.view.currentChapter;
-    const targetIds =
-      kind === "chapter_draft" && chapter ? [chapter.chapter_id] : [];
+    // 起草不绑定节拍：章节由 goal 指定；target_ids 留给检查/修订范围。
+    const targetIds: string[] = [];
     const baseVersion =
       kind === "chapter_draft" && chapter ? chapter.base || null : null;
     const draft: TaskDraftPayload = {
@@ -744,7 +815,7 @@ export class SimulatorService implements ChatService {
         kind === "plan"
           ? "产出故事前提与节拍候选"
           : kind === "chapter_draft"
-            ? `基于已接受节拍起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
+            ? `从账本与作者要求起草${chapter?.title ? `「${chapter.title}」` : "章节"}正文`
             : kind === "check"
               ? "检查人物知情与线索公平性"
               : "按设定变化定向修订受影响正文",
@@ -763,12 +834,7 @@ export class SimulatorService implements ChatService {
   /** 缺失项是「哪里错、为什么、怎样继续」的具体入口，不是空泛的“参数不足”。 */
   private recomputeMissing(draft: TaskDraftPayload) {
     const missing: string[] = [];
-    if (draft.task_kind === "chapter_draft") {
-      if (!this.view.hasAcceptedBeats)
-        missing.push("还没有已接受的节拍：先完成规划候选并接受，再生成章节草稿");
-      if (!draft.base_version)
-        missing.push("缺少可靠的基础版本：先在创作台保存正文，再开始生成");
-    }
+    // 章节起草不再有前置：新章、空作品、未绑定基础版本都可以生成候选。
     if (draft.task_kind === "targeted_revision" && draft.target_ids.length === 0)
       missing.push("还没有指定修订对象：在引用条添加章节或故事对象");
     if (draft.refs.some((r) => !r.saved) && draft.task_kind !== "check")
@@ -796,6 +862,22 @@ export class SimulatorService implements ChatService {
       error: null,
       created_at: new Date().toISOString(),
     };
+  }
+
+  /** 测试/走查辅助：只落一条作者消息（不启动轮次），模拟「已保存的想法」。 */
+  newAuthorMessageForTest(
+    projectId: string,
+    conversationId: string,
+    text: string,
+  ): ChatMessage {
+    const conv = this.require(projectId, conversationId);
+    const message = this.authorMessage(conv, {
+      text,
+      refs: [],
+      idempotency_key: this.newId("idem"),
+    });
+    conv.messages.push(message);
+    return message;
   }
 
   /** 轮次是否仍在运行：取消或进程级中断后迟到分片一律无效。 */
@@ -892,7 +974,7 @@ export function replyScript(scenario: Scenario, input: string): ReplyScript {
         chunks: [
           `这一章的核心是「交接」：动作要短，解释要少。`,
           "\n\n建议顺序：环境压迫 → 怀表特写 → 对话留白 → 信任裂纹。",
-          "\n\n我已准备章节草稿任务建议；只有在已有接受节拍、基础版本可靠时才能开始。",
+          "\n\n我已准备章节草稿任务建议；不需要先有节拍，开始后结果先作为候选待你审阅。",
         ],
       };
     case "check_suggest":

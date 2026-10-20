@@ -50,6 +50,7 @@ class WorkerJobRunner:
         context: ContextPackage,
         key: str,
         model_binding: Mapping[str, object] | None = None,
+        grant: Mapping[str, object] | None = None,
     ) -> str:
         binding_provider = getattr(self.runner, "model_binding", None)
         if model_binding is None and binding_provider is not None:
@@ -62,6 +63,9 @@ class WorkerJobRunner:
         if model_binding is not None:
             # 任务启动时的模型快照（§19.5）：执行与重试读取绑定，不随当前选择漂移。
             payload["model_binding"] = dict(model_binding)
+        if grant is not None:
+            # 显式启动凭据（V03-0.3，I05）：派发门禁按它放行；无凭据任务不派发。
+            payload["grant"] = dict(grant)
         return await self.jobs.create(context.task_kind, payload)
 
     async def cancel(self, job_id: str) -> dict[str, Any]:

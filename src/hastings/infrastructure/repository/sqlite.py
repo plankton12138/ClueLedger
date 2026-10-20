@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -445,6 +445,42 @@ class SqliteTxn:
                 canonical_json([a.value for a in result.changed_artifact_ids]),
                 fingerprint,
             ),
+        )
+
+    # ---- 辅助表（V03-0.5，与内存后端同端口） ----
+    def aux_read(self, project_id: str, bucket: str, key: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT payload FROM aux_records WHERE project_id = ? AND bucket = ? AND key = ?",
+            (project_id, bucket, key),
+        ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(row[0])
+        return payload if isinstance(payload, dict) else None
+
+    def aux_write(self, project_id: str, bucket: str, key: str, payload: Mapping[str, Any]) -> None:
+        self._conn.execute(
+            "INSERT INTO aux_records (project_id, bucket, key, payload) VALUES (?, ?, ?, ?)"
+            " ON CONFLICT (project_id, bucket, key) DO UPDATE SET payload = excluded.payload",
+            (project_id, bucket, key, canonical_json(dict(payload))),
+        )
+
+    def aux_list(self, project_id: str, bucket: str) -> dict[str, dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT key, payload FROM aux_records WHERE project_id = ? AND bucket = ?",
+            (project_id, bucket),
+        ).fetchall()
+        result: dict[str, dict[str, Any]] = {}
+        for key, payload in rows:
+            parsed = json.loads(payload)
+            if isinstance(parsed, dict):
+                result[key] = parsed
+        return result
+
+    def aux_delete(self, project_id: str, bucket: str, key: str) -> None:
+        self._conn.execute(
+            "DELETE FROM aux_records WHERE project_id = ? AND bucket = ? AND key = ?",
+            (project_id, bucket, key),
         )
 
 

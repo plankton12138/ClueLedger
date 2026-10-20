@@ -41,19 +41,33 @@ def test_plan_kind_needs_nothing_but_a_model() -> None:
     assert [x["code"] for x in items] == ["TASK_MODEL_NOT_CONFIGURED"]
 
 
-def test_chapter_draft_requires_beats_and_chapter_target() -> None:
-    items = missing_items(
-        "chapter_draft", goal="ch_1", target_ids=["beat_1"], base_version=None, view=_FULL_VIEW
+def test_chapter_draft_needs_only_a_target_and_model() -> None:
+    # V03-3.1：起草不以节拍/大纲为前置；有目标即可启动。
+    assert (
+        missing_items(
+            "chapter_draft", goal="ch_1", target_ids=[], base_version=None, view=_FULL_VIEW
+        )
+        == []
     )
-    assert items == []
+    # 空项目（无 head、无节拍）是合法的首章来源。
+    empty_project = ProjectView(
+        model_configured=True,
+        has_accepted_beats=False,
+        chapter_ids=frozenset(),
+        head=None,
+    )
+    assert (
+        missing_items(
+            "chapter_draft", goal="新章", target_ids=[], base_version=None, view=empty_project
+        )
+        == []
+    )
     items = missing_items(
         "chapter_draft", goal="", target_ids=[], base_version=None, view=_EMPTY_VIEW
     )
     codes = [x["code"] for x in items]
-    assert "TASK_NO_BASE" in codes
-    assert "TASK_NO_PLAN" in codes
-    assert "TASK_NO_CHAPTER_TARGET" in codes
-    # 三要素齐备：每条缺失都说明哪里缺、为什么、怎样继续。
+    assert codes == ["TASK_MODEL_NOT_CONFIGURED", "TASK_NO_CHAPTER_TARGET"]
+    # 每条缺失都说明哪里缺、为什么、怎样继续。
     for item in items:
         assert item["why"] and item["fix"] and item["where"]
 

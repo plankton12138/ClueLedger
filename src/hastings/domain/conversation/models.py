@@ -28,6 +28,7 @@ __all__ = [
     "KIND_TEXT",
     "MESSAGE_COMPLETED",
     "MESSAGE_FAILED",
+    "MESSAGE_NOT_REQUESTED",
     "MESSAGE_STOPPED",
     "MESSAGE_STREAMING",
     "ROLE_ASSISTANT",
@@ -67,8 +68,17 @@ MESSAGE_STREAMING = "streaming"
 MESSAGE_COMPLETED = "completed"
 MESSAGE_STOPPED = "stopped"
 MESSAGE_FAILED = "failed"
+#: 作者消息已保存但从未请求模型（M02/V03-1.2 无模型想法）：
+#: 与「失败」区分——这不是错误，是没有发起过调用。
+MESSAGE_NOT_REQUESTED = "not_requested"
 _MESSAGE_STATUSES = frozenset(
-    (MESSAGE_STREAMING, MESSAGE_COMPLETED, MESSAGE_STOPPED, MESSAGE_FAILED)
+    (
+        MESSAGE_STREAMING,
+        MESSAGE_COMPLETED,
+        MESSAGE_STOPPED,
+        MESSAGE_FAILED,
+        MESSAGE_NOT_REQUESTED,
+    )
 )
 
 # 消息类型
@@ -223,9 +233,11 @@ class ChatTurn:
     idempotency_key: str
     retry_of: str | None = None
     model_binding: dict[str, Any] | None = None
+    #: 接着讨论（V03-1.5）：本轮引用的已保存作者消息；普通发送为 None。
+    source_message_ids: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "turn_id": self.turn_id,
             "conversation_id": self.conversation_id,
             "status": self.status,
@@ -235,6 +247,9 @@ class ChatTurn:
             "retry_of": self.retry_of,
             "model_binding": self.model_binding,
         }
+        if self.source_message_ids is not None:
+            data["source_message_ids"] = list(self.source_message_ids)
+        return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ChatTurn:
@@ -255,6 +270,11 @@ class ChatTurn:
             idempotency_key=str(data.get("idempotency_key", "")),
             retry_of=None if data.get("retry_of") is None else str(data["retry_of"]),
             model_binding=dict(data["model_binding"]) if data.get("model_binding") else None,
+            source_message_ids=(
+                [str(x) for x in data["source_message_ids"]]
+                if data.get("source_message_ids")
+                else None
+            ),
         )
 
 

@@ -89,20 +89,25 @@ class AgentWorkflows:
         *,
         token_budget: int = 16000,
         model_binding: Mapping[str, object] | None = None,
+        grant: Mapping[str, object] | None = None,
     ) -> str:
         snapshot = self.reader.get_snapshot(project, CommitId(base))
-        if not beats or any(
-            ArtifactId(b) not in snapshot.artifacts
-            or snapshot.artifacts[ArtifactId(b)].artifact.kind
+        invalid = [
+            beat
+            for beat in beats
+            if ArtifactId(beat) not in snapshot.artifacts
+            or snapshot.artifacts[ArtifactId(beat)].artifact.kind
             not in ("narrative.beat", "story.plot_beat")
-            for b in beats
-        ):
+        ]
+        if invalid:
             reject(
-                "DRAFT_BEAT_REQUIRED",
+                "DRAFT_TARGET_INVALID",
                 "draft.targets",
-                "草稿必须从已提交的节拍开始",
-                "先规划并由作者接受 Beat",
+                f"引用 {invalid} 不是当前版本中的节拍",
+                "从当前版本重新选择目标；章节起草不再要求节拍，正文范围与账本引用即可",
             )
+        # V03-3.1：起草不再以节拍为前置。传入节拍时仍装配其状态并建立渲染血缘；
+        # 不传时按「账本 + 作者要求 + 章节」起草，空作品也是合法首章来源。
         targets = (*beats, chapter_id) if ArtifactId(chapter_id) in snapshot.artifacts else beats
         ctx = self.draft_context.for_task(
             project,
@@ -114,7 +119,7 @@ class AgentWorkflows:
             evidence={"chapter_id": chapter_id},
             constraints=(f"只为 {chapter_id} 返回整章 text；不修改 Canon，缺失事实应澄清",),
         )
-        return await self.jobs.submit(ctx, key, model_binding=model_binding)
+        return await self.jobs.submit(ctx, key, model_binding=model_binding, grant=grant)
 
     async def plan(
         self,
@@ -126,6 +131,7 @@ class AgentWorkflows:
         *,
         token_budget: int = 16000,
         model_binding: Mapping[str, object] | None = None,
+        grant: Mapping[str, object] | None = None,
     ) -> str:
         ctx = self.contexts.build(
             "planner",
@@ -188,7 +194,7 @@ class AgentWorkflows:
                 "items 按父级和引用依赖顺序排列，所有事实保持 proposed",
             ),
         )
-        return await self.jobs.submit(ctx, key, model_binding=model_binding)
+        return await self.jobs.submit(ctx, key, model_binding=model_binding, grant=grant)
 
     async def audit(
         self,
@@ -199,6 +205,7 @@ class AgentWorkflows:
         *,
         token_budget: int = 16000,
         model_binding: Mapping[str, object] | None = None,
+        grant: Mapping[str, object] | None = None,
     ) -> str:
         snapshot = self.reader.get_snapshot(project, CommitId(base))
         findings = audit_snapshot(snapshot)
@@ -210,7 +217,7 @@ class AgentWorkflows:
             token_budget=token_budget,
             constraints=("只返回带原文和对象定位的 Finding；泛泛评价写 editorial_notes",),
         )
-        return await self.jobs.submit(ctx, key, model_binding=model_binding)
+        return await self.jobs.submit(ctx, key, model_binding=model_binding, grant=grant)
 
     async def style(
         self,
@@ -269,6 +276,7 @@ class AgentWorkflows:
         executor: ExecuteRevisionPlan,
         *,
         model_binding: Mapping[str, object] | None = None,
+        grant: Mapping[str, object] | None = None,
     ) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
         owner = self

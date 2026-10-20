@@ -20,7 +20,7 @@ import os
 from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -47,6 +47,9 @@ class ProviderProfile(BaseModel):
     base_url: str
     api_key: SecretStr = SecretStr("")
     api_key_env: str = ""
+    #: V03-1.3：OS 凭据存储引用。设置后 api_key 字段应为空（元数据不存明文）；
+    # 实际密钥经 CredentialStore 读取（见 ProviderBook 物化）。
+    credential_ref: str = ""
     default_model: str = ""
     # 免密端点（本地模型如 Ollama）：无 key 也可用；OpenAICompatibleProvider
     # 空 key 本就不发 Authorization 头。
@@ -55,7 +58,11 @@ class ProviderProfile(BaseModel):
     api: Literal["openai-completions", "openai-responses"] = "openai-completions"
 
     def resolved_api_key(self) -> str:
-        """解析实际 key：直填优先于 env 引用（D1）。两者皆空 → 空串。"""
+        """解析实际 key：直填优先于 env 引用（D1）。两者皆空 → 空串。
+
+        ``credential_ref`` 档案在 ProviderBook 物化阶段已把 OS 凭据装进
+        ``api_key``（SecretStr，只进不出）；本方法不直接访问凭据存储。
+        """
         direct = self.api_key.get_secret_value()
         if direct:
             return direct
@@ -145,6 +152,61 @@ def _validation_error_message(path: Path, exc: ValidationError) -> str:
     )
 
 
+def _materialize_credentials(config: ServerConfig, store: Any) -> ServerConfig:
+    """把 OS 凭据装回内存档案（credential_ref → api_key，SecretStr 只进不出）。
+
+    磁盘元数据不改动；仅运行时视图持有明文（沿既有 SecretStr 泄露防线）。
+    """
+    providers = []
+    for profile in config.providers:
+        if profile.credential_ref and not profile.api_key.get_secret_value():
+            secret = store.load(profile.credential_ref)
+            if secret:
+                profile = profile.model_copy(update={"api_key": SecretStr(secret)})
+        providers.append(profile)
+    return config.model_copy(update={"providers": providers})
+
+
+def migrate_plaintext_credentials(
+    config: ServerConfig, store: Any, path: Path
+) -> dict[str, list[str]]:
+    """旧明文连接升级（V03-1.3）：写入并验证 → 元数据切换 → 清理旧 Key 字段。
+
+    每个含直填 Key 的档案独立迁移；任一步失败该档案保持旧连接可恢复
+    （明文不动、磁盘不写），失败原因进报告由调用方明确提示。
+    只在磁盘上仍有明文 Key 时执行；重复运行幂等（已迁移档案跳过）。
+    """
+    migrated: list[str] = []
+    failed: list[str] = []
+    updated: list[Any] = []
+    changed = False
+    for profile in config.providers:
+        key = profile.api_key.get_secret_value()
+        if not key or profile.credential_ref:
+            updated.append(profile)
+            continue
+        ref = f"hastings:provider:{profile.name}"
+        try:
+            store.save(ref, key)
+            if store.load(ref) != key:
+                raise ValueError("OS 凭据存储回读校验不一致")
+        except Exception as exc:  # 存储/验证失败：旧连接原样保留
+            code = getattr(exc, "code", type(exc).__name__)
+            failed.append(f"{profile.name}: {code}")
+            updated.append(profile)
+            continue
+        migrated.append(profile.name)
+        updated.append(profile.model_copy(update={"credential_ref": ref, "api_key": SecretStr("")}))
+        changed = True
+    if changed:
+        try:
+            save_server_config(config.model_copy(update={"providers": updated}), path)
+        except OSError as exc:
+            # 元数据切换失败：磁盘仍是旧明文，旧连接可用；OS 存储已写入（可重试）
+            return {"migrated": [], "failed": [f"config.yaml 写入失败: {exc}"]}
+    return {"migrated": migrated, "failed": failed}
+
+
 def save_server_config(config: ServerConfig, path: Path) -> Path:
     """写回 config.yaml（P7 T12 档案 UI 化）：UI 增删改档案后落盘，重启仍生效。
 
@@ -164,6 +226,8 @@ def save_server_config(config: ServerConfig, path: Path) -> Path:
                 **({"no_auth": True} if profile.no_auth else {}),
                 **({"catalog_id": profile.catalog_id} if profile.catalog_id else {}),
                 **({"api": profile.api} if profile.api != "openai-completions" else {}),
+                # V03-1.3：OS 凭据存储引用按需写入（明文 Key 迁移后为空串）
+                **({"credential_ref": profile.credential_ref} if profile.credential_ref else {}),
             }
             for profile in config.providers
         ],
@@ -261,7 +325,17 @@ class ProviderBook:
         boot_name: str,
         boot_model: str,
         config_path: Path | None = None,
+        credentials: Any | None = None,
     ) -> None:
+        self._credentials = credentials
+        self.credential_migration: dict[str, list[str]] = {"migrated": [], "failed": []}
+        if credentials is not None:
+            # 升级顺序（V03-1.3）：新存储写入并验证 → 元数据切换 → 清理旧
+            # Key 字段；失败保持旧连接可恢复，报告由调用方明确提示。
+            self.credential_migration = migrate_plaintext_credentials(
+                config, credentials, config_path or DEFAULT_CONFIG_PATH
+            )
+            config = _materialize_credentials(config, credentials)
         self._config = config
         self._boot_name = boot_name
         self._boot_model = boot_model
@@ -275,6 +349,11 @@ class ProviderBook:
     @property
     def config(self) -> ServerConfig:
         return self._config
+
+    @property
+    def credentials(self) -> Any | None:
+        """OS 凭据存储；None 表示未启用（连接走旧明文路径，仅限无存储环境）。"""
+        return self._credentials
 
     @property
     def config_path(self) -> Path:
@@ -297,6 +376,10 @@ class ProviderBook:
         配置未变的档案复用 client；密钥、地址或协议更新后不再返回旧实例。
         """
         changed = {p.name for p in new.providers if self.profile(p.name) != p}
+        if self._credentials is not None:
+            # UI 保存的连接只写 credential_ref；运行时视图从 OS 凭据装回
+            new = _materialize_credentials(new, self._credentials)
+            changed = {p.name for p in new.providers if self.profile(p.name) != p}
         self._config = new
         live = {profile.name for profile in new.providers}
         for name in [name for name in self._instances if name not in live or name in changed]:

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict
 from typing import Any
 
+from hastings.application.contexts.tokens import estimate_tokens
 from hastings.application.ports.repository import RepositoryReader
-from hastings.application.queries.author_profile import AuthorProfileQueries
 from hastings.application.queries.story_queries import StoryQueries
 from hastings.domain.repository.ids import ArtifactId, CommitId, ProjectId
 from hastings.domain.repository.serialization import content_hash
@@ -20,11 +19,6 @@ from hastings.domain.worker import (
     SelectedInput,
     WorkerRole,
 )
-
-
-def estimate_tokens(value: Any) -> int:
-    # UTF-8 字节上界，偏保守；不依赖某个 Provider 的分词器或浮动 usage。
-    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
 class ContextBuilder:
@@ -69,13 +63,18 @@ class ContextBuilder:
                 selected[aid] = f"目标的第 {depth + 1} 跳显式依赖"
             frontier = neighbours
         task_evidence = dict(evidence or {})
-        if role == "writer":
+        # V03-3.1：节拍不再是写作前置。只有目标本身是节拍时才装配节拍状态，
+        # 供历史快照与旧任务回看；账本驱动的起草不会走到这里。
+        beat_targets = [
+            aid
+            for aid in targets
+            if snapshot.artifacts[ArtifactId(aid)].artifact.kind == "narrative.beat"
+        ]
+        if role == "writer" and beat_targets:
             queries = StoryQueries(self.reader)
             sequence = ordered_beats(queries.catalog(project, CommitId(commit_id)))
             beat_states = []
-            for aid in targets:
-                if snapshot.artifacts[ArtifactId(aid)].artifact.kind != "narrative.beat":
-                    continue
+            for aid in beat_targets:
                 for index, entry in enumerate(sequence):
                     if entry.artifact_id == aid and index:
                         previous = sequence[index - 1].artifact_id
@@ -206,45 +205,11 @@ class ContextBuilder:
                 package.omissions = old_omissions
                 if aid in targets:
                     raise ValueError(f"Context 目标 {aid} 无法完整放入预算；增大预算或拆小目标")
-        chapter = next((str(c) for c in sorted(str(v) for v in target_chapters if v)), "")
-        profiles = AuthorProfileQueries(self.reader)
-        preferences = profiles.effective_preferences(
-            project,
-            CommitId(commit_id),
-            scope_kind="chapter" if chapter else "project",
-            scope_target=chapter,
-        )
-        for preference in preferences:
-            package.capability.readable_ids = sorted(
-                set(package.capability.readable_ids) | {preference.preference_id}
-            )
-            body = preference.to_content()
-            package.author_preferences.append(body)
-            if estimate_tokens(package.model_dump()) > token_budget - 200:
-                package.author_preferences.pop()
-                package.omissions.append(
-                    Omission(
-                        artifact_id=preference.preference_id,
-                        reason="偏好预算不足",
-                        refetch_tool="author_profile_read",
-                    )
-                )
-        for example in profiles.effective_examples(project, CommitId(commit_id)):
-            if example.unit_id not in selected:
-                continue
-            package.capability.readable_ids = sorted(
-                set(package.capability.readable_ids) | {example.example_id}
-            )
-            package.author_examples.append(example.to_content())
-            if estimate_tokens(package.model_dump()) > token_budget - 200:
-                package.author_examples.pop()
-                package.omissions.append(
-                    Omission(
-                        artifact_id=example.example_id,
-                        reason="作者样例预算不足",
-                        refetch_tool="author_profile_read",
-                    )
-                )
+        # 0.3（V03-0.4）：旧作者模型档案的常驻注入已切断——偏好/样例不再
+        # 自动进入任务背景（作者模型是 0.3 排除项）。原始数据经
+        # AuthorProfileQueries 只读保留，本书约定（V03-4.1）是显式替代路径。
+        # ContextPackage.author_preferences/author_examples 字段保留（默认空），
+        # 旧 Job payload 仍可校验。
         package.context_id = content_hash(package.model_dump())
         package.estimated_tokens = estimate_tokens(package.model_dump()) + 16
         if package.estimated_tokens > token_budget:

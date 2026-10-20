@@ -22,6 +22,8 @@ from hastings.domain.repository.ids import (
 __all__ = [
     "ArtifactChange",
     "ArtifactQuery",
+    "AuxKey",
+    "AuxWrite",
     "CommitRequest",
     "CreateBranchRequest",
     "MoveBranchRequest",
@@ -55,6 +57,34 @@ class RelationChange:
 
 
 @dataclass(frozen=True, slots=True)
+class AuxWrite:
+    """同事务辅助表写入（V03-0.5）：副本/回执/操作记录等关键业务状态。
+
+    与正文 Revision 走同一个事务端口——「同一个 SQLite 文件」不等于
+    「同一个事务」（计划 §4.2）；payload 必须是 JSON 可序列化字典。
+    """
+
+    bucket: str
+    key: str
+    payload: dict[str, Any]
+
+    def __post_init__(self) -> None:
+        if not self.bucket or not self.key:
+            raise ValueError(
+                "AuxWrite.bucket/key 不能为空（为什么错：辅助表按 (project, bucket, key)"
+                " 寻址；怎样算对：使用稳定的bucket与key）"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class AuxKey:
+    """同事务辅助表删除目标。"""
+
+    bucket: str
+    key: str
+
+
+@dataclass(frozen=True, slots=True)
 class CommitRequest:
     """原子提交请求；expected_head 不匹配时整体失败（不变量 3）。"""
 
@@ -68,6 +98,10 @@ class CommitRequest:
     relations: tuple[RelationChange, ...] = ()
     events: tuple[tuple[str, dict[str, Any]], ...] = ()
     required_leases: tuple[tuple[str, str, int], ...] = ()
+    # 0.3 辅助表同事务写入（V03-0.5）：无内容差异时也可单独携带（不创建
+    # 正文空版本，仅原子落辅助记录）。
+    aux_writes: tuple[AuxWrite, ...] = ()
+    aux_deletes: tuple[AuxKey, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.idempotency_key or not self.idempotency_key.strip():

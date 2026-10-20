@@ -13,6 +13,7 @@ runner 看到取消即停并返回部分文本，随后所有迟到分片被存�
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from datetime import datetime
@@ -21,9 +22,11 @@ from typing import Any, cast
 from hastings.application.errors import EnvironmentFailure, HastingsError, ViolationError
 from hastings.application.ports.chat import ChatRun
 from hastings.application.ports.conversations import ConversationStore, OpenTurn
+from hastings.application.ports.execution_log import ExecutionLog
 from hastings.domain.conversation import error_codes as ec
 from hastings.domain.conversation import models as m
 from hastings.domain.conversation.errors import ConversationViolation
+from hastings.domain.execution_log import ExecutionEvent
 from hastings.domain.repository.serialization import content_hash
 from hastings.infrastructure.conversations.runner import TurnCancellationToken
 
@@ -31,6 +34,12 @@ __all__ = ["ConversationService"]
 
 # 进入模型上下文的历史轮数上限：保留最新指令与明确引用（§3.4 预算裁剪）。
 _HISTORY_WINDOW = 20
+
+#: 讨论的系统消息：只说明角色与无写权限，作品事实由背景装配器追加（V03-4.2）。
+CHAT_SYSTEM_PROMPT = (
+    "你是作者的写作伙伴：讨论构想、回答问题。你没有修改项目内容的"
+    "任何能力；涉及创作任务时，只会说明建议，不会假装已经开始执行。"
+)
 
 
 def _as_hastings(exc: ConversationViolation) -> HastingsError:
@@ -62,6 +71,8 @@ class ConversationService:
         max_output_chars: int = 20000,
         history_window: int = _HISTORY_WINDOW,
         ref_validator: Callable[[str, list[dict[str, Any]]], None] | None = None,
+        execution_log: ExecutionLog | None = None,
+        background_provider: Callable[[str], str] | None = None,
     ) -> None:
         self.store = store
         # 公开注入点：测试与服务装配（ProviderBook 接线）都可以替换。
@@ -77,6 +88,11 @@ class ConversationService:
         # 引用校验挂点（19.4）：实现在装配层（对照项目快照验证存在性）；
         # None 时不校验（测试/本地纯聊天）。
         self.ref_validator = ref_validator
+        # 执行日志（V03-1.6）：None 不发射（既有装配与旧测试零改动）。
+        self.execution_log = execution_log
+        # 常驻背景（V03-4.2）：按作品取一份渲染好的背景文本；None 表示不装配。
+        # 只接收 project_id，讨论会话本身不进入背景——同一作品的不同讨论因此一致。
+        self.background_provider = background_provider
         self._runs: dict[str, _ActiveRun] = {}
 
     # -- 会话 ------------------------------------------------------------------
@@ -97,6 +113,10 @@ class ConversationService:
 
     async def list_conversations(self, project_id: str) -> list[m.Conversation]:
         return await self.store.list_conversations(project_id)
+
+    async def conversation(self, project_id: str, conversation_id: str) -> m.Conversation:
+        """公开的归属校验：跨项目/不存在一律 CHAT_CONVERSATION_NOT_FOUND。"""
+        return await self._require_conversation(project_id, conversation_id)
 
     async def _require_conversation(self, project_id: str, conversation_id: str) -> m.Conversation:
         conversation = await self.store.get_conversation(conversation_id)
@@ -192,6 +212,100 @@ class ConversationService:
             self._spawn(project_id, conversation_id, opened.turn.turn_id)
         return opened
 
+    async def send_turn_from_messages(
+        self,
+        project_id: str,
+        conversation_id: str,
+        source_message_ids: list[str],
+        idempotency_key: str,
+        *,
+        model_binding: dict[str, Any] | None = None,
+    ) -> OpenTurn:
+        """接着讨论（M02/V03-1.5）：引用已保存消息启动轮次，不复制作者消息。
+
+        - 源消息必须是本讨论内的 author 消息；主消息（第一条）归入新轮次，
+          其余消息保留原位、经历史自然进入模型上下文；
+        - 只有作者显式调用本方法才启动模型：连接成功零自动重放（I06）；
+        - 幂等：同 (conversation, idempotency_key) 返回原轮次。
+        """
+        if not source_message_ids:
+            raise ViolationError(
+                code=ec.CHAT_MESSAGE_NOT_FOUND,
+                where="chat.turn.from_messages",
+                why="接着讨论至少要引用一条已保存消息",
+                fix="从讨论中选择已保存的想法后重试",
+            )
+        await self._require_conversation(project_id, conversation_id)
+        sources: list[m.ChatMessage] = []
+        for message_id in source_message_ids:
+            message = await self.store.get_message(message_id)
+            if message is None or message.conversation_id != conversation_id:
+                raise ViolationError(
+                    code=ec.CHAT_MESSAGE_NOT_FOUND,
+                    where="chat.turn.from_messages",
+                    why=f"消息 {message_id!r} 不在该讨论内",
+                    fix="从当前讨论的消息列表选择；跨讨论/跨项目引用拒绝",
+                    details={"message_id": message_id},
+                )
+            if message.role != m.ROLE_AUTHOR:
+                raise ViolationError(
+                    code=ec.CHAT_MESSAGE_NOT_FOUND,
+                    where="chat.turn.from_messages",
+                    why=f"消息 {message_id!r} 不是作者消息，不能作为接着讨论的起点",
+                    fix="选择已保存的作者想法；模型回复不能作为引用源",
+                    details={"message_id": message_id},
+                )
+            sources.append(message)
+        if not idempotency_key:
+            raise ViolationError(
+                code=ec.CHAT_IDEMPOTENCY_CONFLICT,
+                where="chat.turn.idempotency",
+                why="缺少幂等键，无法区分重放与新请求",
+                fix="为每次发送生成稳定 UUID 作为 idempotency_key",
+            )
+        if model_binding is None:
+            with suppress(HastingsError):
+                model_binding = (
+                    self.binding_resolver()
+                    if self.binding_resolver is not None
+                    else {"model": self.model_resolver()}
+                )
+        turn_id = f"turn_{content_hash([conversation_id, idempotency_key])[:16]}"
+        primary = m.ChatMessage(
+            message_id=sources[0].message_id,
+            conversation_id=sources[0].conversation_id,
+            turn_id=turn_id,
+            role=sources[0].role,
+            kind=sources[0].kind,
+            text=sources[0].text,
+            refs=[dict(ref) for ref in sources[0].refs],
+            model=sources[0].model,
+            status=sources[0].status,
+            created_at=sources[0].created_at,
+        )
+        turn = m.ChatTurn(
+            turn_id=turn_id,
+            conversation_id=conversation_id,
+            status=m.TURN_QUEUED,
+            model=None,
+            end_reason=None,
+            idempotency_key=idempotency_key,
+            model_binding=model_binding,
+            source_message_ids=list(source_message_ids),
+        )
+        fingerprint = content_hash(["from_messages", sorted(source_message_ids)])
+        opened = await self.store.open_turn(
+            project_id=project_id,
+            conversation_id=conversation_id,
+            idempotency_key=idempotency_key,
+            fingerprint=fingerprint,
+            user_message=primary,
+            turn=turn,
+        )
+        if opened.created:
+            self._spawn(project_id, conversation_id, opened.turn.turn_id)
+        return opened
+
     def _spawn(self, project_id: str, conversation_id: str, turn_id: str) -> None:
         run = _ActiveRun()
         task = asyncio.create_task(self._execute(project_id, conversation_id, turn_id, run))
@@ -237,11 +351,20 @@ class ConversationService:
             )
             if not started:
                 return  # start 前已被取消。
+            await self._log_event(
+                project_id, conversation_id, turn_id, "started", "回复尝试开始", model=model
+            )
             history, refs = await self._build_context(conversation_id, turn_id)
+            system = CHAT_SYSTEM_PROMPT
+            if self.background_provider is not None:
+                background = self.background_provider(project_id).strip()
+                if background:
+                    # 背景只描述作品现状，不改变「无写权限」的边界；放在系统消息里
+                    # 是为了让同一部作品的每次讨论看到同一份底色（M07）。
+                    system = f"{system}\n\n{background}"
             chat_run = ChatRun(
                 model=model,
-                system="你是作者的写作伙伴：讨论构想、回答问题。你没有修改项目内容的"
-                "任何能力；涉及创作任务时，只会说明建议，不会假装已经开始执行。",
+                system=system,
                 history=history,
                 cancelled=run.token.is_cancelled,
                 refs=refs,
@@ -269,15 +392,18 @@ class ConversationService:
                 )
                 return
             # 取消后的正常返回：轮次已被 cancel 收束，settle 返回 False 无副作用。
-            await self.store.settle_turn(
+            settled = await self.store.settle_turn(
                 turn_id, status=m.TURN_COMPLETED, end_reason="stop", text=final
             )
+            if settled:
+                await self._log_event(
+                    project_id, conversation_id, turn_id, "completed", "回复生成完成", model=model
+                )
 
     async def _settle_failure(
         self, project_id: str, conversation_id: str, turn_id: str, exc: HastingsError
     ) -> None:
-        del project_id
-        await self.store.settle_turn(
+        settled = await self.store.settle_turn(
             turn_id,
             status=m.TURN_FAILED,
             end_reason=exc.code,
@@ -290,6 +416,10 @@ class ConversationService:
                 "details": dict(exc.details),
             },
         )
+        if settled:
+            await self._log_event(
+                project_id, conversation_id, turn_id, "failed", f"回复失败：{exc.code}"
+            )
 
     async def _build_context(
         self, conversation_id: str, turn_id: str
@@ -317,6 +447,52 @@ class ConversationService:
             history.append(("author", current.text))
         return tuple(history[-self._history_window :]), tuple(refs)
 
+    # -- 执行日志（V03-1.6）---------------------------------------------------------
+    async def _log_event(
+        self,
+        project_id: str,
+        conversation_id: str,
+        turn_id: str,
+        phase: str,
+        summary: str,
+        *,
+        model: str | None = None,
+    ) -> None:
+        """向执行日志投影一条轮次生命周期事件；日志故障不中断写作流。
+
+        task/attempt 映射：对话任务通道 = ``chat-{conversation_id}``，每次轮次
+        = 一次尝试（attempt=turn_id，重试生成新 turn_id 天然分开）。源事件 ID
+        确定性派生（``{turn_id}:{phase}``），崩溃重放经 append_once 去重。
+        """
+        log = self.execution_log
+        if log is None:
+            return
+        source = f"{turn_id}:{phase}"
+        event = ExecutionEvent(
+            event_id=f"evt_{content_hash([project_id, source])[:20]}",
+            project_id=project_id,
+            sequence=0,
+            task_id=f"chat-{conversation_id}",
+            attempt_id=turn_id,
+            agent_id=None,
+            call_id=None,
+            parent_call_id=None,
+            event_type=f"model_task.{phase}",
+            occurred_at=datetime.now().astimezone().isoformat(),
+            summary=f"{summary}（模型 {model}）" if model else summary,
+            source_event_id=source,
+            version_refs=(),
+        )
+        try:
+            await log.append_once(source, event)
+        except Exception as exc:  # noqa: BLE001 — 观测侧通道故障不中断写作流
+            print(
+                f"[execution_log] where=execution_log.append({source}) "
+                f"why={type(exc).__name__}: {exc} "
+                f"fix=检查执行日志存储后重进回看；写作流不受影响",
+                file=sys.stderr,
+            )
+
     # -- 取消与重试 -----------------------------------------------------------------
     async def cancel_turn(self, project_id: str, conversation_id: str, turn_id: str) -> None:
         await self._require_conversation(project_id, conversation_id)
@@ -331,7 +507,11 @@ class ConversationService:
         run = self._runs.get(turn_id)
         if run is not None:
             run.token.cancel()
-        await self.store.settle_turn(turn_id, status=m.TURN_STOPPED, end_reason="author_stop")
+        settled = await self.store.settle_turn(
+            turn_id, status=m.TURN_STOPPED, end_reason="author_stop"
+        )
+        if settled:
+            await self._log_event(project_id, conversation_id, turn_id, "stopped", "作者停止回复")
         if run is not None and run.task is not None and not run.task.done():
             run.task.cancel()
             with suppress(asyncio.CancelledError):

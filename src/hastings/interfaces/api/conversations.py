@@ -19,6 +19,9 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from hastings.application.errors import ViolationError
+from hastings.domain.conversation import error_codes as ec
+
 if TYPE_CHECKING:
     from hastings.server.v2 import V2Runtime
 
@@ -32,9 +35,19 @@ class CreateConversationRequest(BaseModel):
 
 
 class SendTurnRequest(BaseModel):
-    text: str = Field(min_length=1)
+    """普通发送给 text；接着讨论（V03-1.5）给 source_message_ids，两者互斥。"""
+
+    text: str | None = None
     refs: list[dict[str, Any]] = Field(default_factory=list)
     idempotency_key: str = Field(min_length=1)
+    source_message_ids: list[str] = Field(default_factory=list)
+
+
+class SaveAuthorMessageRequest(BaseModel):
+    """无模型保存后续想法（M02/V03-1.2）：只落 author 消息，不启动模型。"""
+
+    request_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
 
 
 class CancelRequest(BaseModel):
@@ -68,6 +81,13 @@ class AcceptCandidateRequest(BaseModel):
     idempotency_key: str = Field(min_length=1)
 
 
+class ConversationIntentRequest(BaseModel):
+    """意图分类（V03-7.1）：给已保存消息的 message_id，或给待发送文本 text 预览。"""
+
+    message_id: str | None = None
+    text: str | None = None
+
+
 def create_conversations_router(runtime: V2Runtime) -> APIRouter:
     router = APIRouter(prefix="/projects/{project_id}", tags=["chat"])
 
@@ -91,17 +111,51 @@ def create_conversations_router(runtime: V2Runtime) -> APIRouter:
         found = await runtime.chat.messages(project_id, conversation_id)
         return {"messages": [x.to_dict() for x in found]}
 
+    @router.post("/conversations/{conversation_id}/author-messages")
+    async def save_author_message(
+        project_id: str, conversation_id: str, req: SaveAuthorMessageRequest
+    ) -> dict[str, Any]:
+        """保存后续想法（无模型端口）：not_requested，作者主动发送才启动。"""
+        await runtime.chat.conversation(project_id, conversation_id)
+        message_id = await runtime.entries.save_author_message(
+            conversation_id, req.request_id, req.text
+        )
+        return {"message_id": message_id, "status": "not_requested"}
+
     @router.post("/conversations/{conversation_id}/turns")
     async def send_turn(
         project_id: str, conversation_id: str, req: SendTurnRequest
     ) -> dict[str, Any]:
-        opened = await runtime.chat.send_turn(
-            project_id,
-            conversation_id,
-            text=req.text,
-            refs=req.refs,
-            idempotency_key=req.idempotency_key,
-        )
+        if req.source_message_ids:
+            if req.text is not None:
+                raise ViolationError(
+                    code=ec.CHAT_INVALID_COMMAND,
+                    where="chat.turn.send",
+                    why="text 与 source_message_ids 只能提供其一"
+                    "（为什么错：普通发送与接着讨论是两种意图，混给无从确定）",
+                    fix="接着讨论只引用已保存消息；新发言给 text",
+                )
+            opened = await runtime.chat.send_turn_from_messages(
+                project_id,
+                conversation_id,
+                req.source_message_ids,
+                req.idempotency_key,
+            )
+        else:
+            if req.text is None:
+                raise ViolationError(
+                    code=ec.CHAT_INVALID_COMMAND,
+                    where="chat.turn.send",
+                    why="text 与 source_message_ids 必须提供其一",
+                    fix="新发言给 text；从已保存想法继续给 source_message_ids",
+                )
+            opened = await runtime.chat.send_turn(
+                project_id,
+                conversation_id,
+                text=req.text,
+                refs=req.refs,
+                idempotency_key=req.idempotency_key,
+            )
         return {
             "turn": opened.turn.to_dict(),
             "user_message": opened.user_message.to_dict(),
@@ -115,16 +169,12 @@ def create_conversations_router(runtime: V2Runtime) -> APIRouter:
         return {}
 
     @router.post("/conversations/{conversation_id}/turns/{turn_id}/retry")
-    async def retry_turn(
-        project_id: str, conversation_id: str, turn_id: str
-    ) -> dict[str, Any]:
+    async def retry_turn(project_id: str, conversation_id: str, turn_id: str) -> dict[str, Any]:
         turn = await runtime.chat.retry_turn(project_id, conversation_id, turn_id)
         return turn.to_dict()
 
     @router.post("/task-drafts")
-    async def create_task_draft(
-        project_id: str, req: CreateTaskDraftRequest
-    ) -> dict[str, Any]:
+    async def create_task_draft(project_id: str, req: CreateTaskDraftRequest) -> dict[str, Any]:
         # 建议本身不创建 Job（§3.3）：这里只落盘一份可检查的参数草案。
         draft, message_id = await runtime.task_prep.create_draft(
             project_id,
@@ -173,6 +223,15 @@ def create_conversations_router(runtime: V2Runtime) -> APIRouter:
             project_id, draft_id, req.expected_revision, req.idempotency_key
         )
         return {"job_ref": started.job_ref}
+
+    @router.post("/conversations/{conversation_id}/intents")
+    async def conversation_intent(
+        project_id: str, conversation_id: str, req: ConversationIntentRequest
+    ) -> dict[str, Any]:
+        # 只读分类：讨论/候选/执行三分与范围；不创建任务、不调用模型（V03-7.1）。
+        return await runtime.intents.classify(
+            project_id, conversation_id, text=req.text, message_id=req.message_id
+        )
 
     @router.post("/conversations/{conversation_id}/messages/{message_id}/accept")
     async def accept_candidate(

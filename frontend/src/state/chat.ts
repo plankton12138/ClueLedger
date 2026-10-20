@@ -25,6 +25,7 @@ import {
   type ChatService,
   type ChatTurn,
   type MessageStatus,
+  type ResultPayload,
   type TaskDraftPayload,
   type TaskExecutionPayload,
   type TaskKind,
@@ -34,8 +35,13 @@ import { SimulatorService } from "../api/chatSimulator";
 import { V2Error } from "../api/v2";
 import { isDirty, useV2Store } from "./v2";
 
-/** 开发模式或显式 `?chatMock=1` 才装配模拟服务；生产构建不展示虚假成功。 */
+/** 开发模式或显式 `?chatMock=1` 才装配模拟服务；生产构建不展示虚假成功。
+ * `?chatMock=0` 显式退出模拟（真实 API 走查用）；缺省行为不变。 */
 export function mockEnabled(): boolean {
+  if (typeof location !== "undefined") {
+    const flag = new URLSearchParams(location.search).get("chatMock");
+    if (flag === "0") return false;
+  }
   if (import.meta.env.DEV) return true;
   if (typeof location === "undefined") return false;
   return new URLSearchParams(location.search).get("chatMock") === "1";
@@ -52,6 +58,8 @@ export interface PendingSend {
   idempotency_key: string;
   text: string;
   refs: ChatReference[];
+  /** 接着讨论（V03-1.5）的结果未知时记录引用范围；与 text 互斥。 */
+  sourceMessageIds?: string[];
   error: string;
 }
 
@@ -493,7 +501,12 @@ interface ChatStore {
   setDraft(text: string): void;
   addRef(ref: ChatReference): void;
   removeRef(refId: string): void;
-  send(): Promise<void>;
+    send(): Promise<void>;
+  /** 接着讨论（V03-1.5）：引用已保存作者消息启动轮次。成功返回 true。 */
+  continueFromMessages(
+    conversationId: string,
+    sourceMessageIds: string[],
+  ): Promise<boolean>;
   retryUnknownSend(): Promise<void>;
   stop(): Promise<void>;
   retry(turnId: string): Promise<void>;
@@ -505,7 +518,8 @@ interface ChatStore {
   createDraft(taskKind: TaskKind): Promise<void>;
   abandonDraft(draftId: string): Promise<void>;
   startDraft(draftId: string): Promise<void>;
-  acceptCandidate(messageId: string): Promise<void>;
+  /** 接受候选并提交；成功返回正式结果（含受影响对象），失败返回 null 并进会话错误。 */
+  acceptCandidate(messageId: string): Promise<ResultPayload | null>;
   cancelTask(jobRef: string): Promise<void>;
   retryTask(jobRef: string): Promise<void>;
   applyEvent(envelope: ChatEventEnvelope): void;
@@ -560,9 +574,8 @@ export const useChatStore = create<ChatStore>()((set, get) => {
     const state = useV2Store.getState();
     const cid = get().activeConversationId;
     const refs = cid ? get().refs[cid] ?? [] : [];
-    const beats = state.storyArtifacts.filter((a) =>
-      ["narrative.beat", "story.plot_beat"].includes(a.kind));
-    const target_ids = kind === "chapter_draft" ? beats.map((a) => a.artifact_id)
+    // 起草不再以节拍为目标：章节由 goal 指定，target_ids 留给检查/修订范围。
+    const target_ids = kind === "chapter_draft" ? []
       : refs.length ? refs.map((r) => r.target_id)
       : kind === "check" ? [...state.storyArtifacts.map((a) => a.artifact_id),
         ...state.chapters.map((c) => c.chapter_id)] : [];
@@ -787,9 +800,72 @@ export const useChatStore = create<ChatStore>()((set, get) => {
       if (!cid) return;
       const pending = (get().views[cid] ?? emptyView()).pending;
       if (!pending) return;
+      // 接着讨论的结果未知：用原幂等键重发同一引用范围，服务端幂等。
+      if (pending.sourceMessageIds && pending.sourceMessageIds.length > 0) {
+        await get().continueFromMessages(cid, pending.sourceMessageIds);
+        return;
+      }
       // 用原幂等键重发：服务端幂等，客户端不生成新轮次请求。
       set((s) => ({ drafts: { ...s.drafts, [cid]: pending.text } }));
       await get().send();
+    },
+
+    continueFromMessages: async (conversationId, sourceMessageIds) => {
+      const { service, projectId } = get();
+      if (!service || !projectId) return false;
+      const view = get().views[conversationId] ?? emptyView();
+      if (view.activeTurnId) {
+        patchView(conversationId, {
+          error: "上一轮回复尚未结束，等它完成或停止后再从想法继续。",
+        });
+        return false;
+      }
+      // 与之前一次「结果未知」的引用范围完全一致时复用其幂等键（重试语义）。
+      const pending = view.pending;
+      const samePendingRefs =
+        pending !== null &&
+        pending.sourceMessageIds !== undefined &&
+        pending.sourceMessageIds.length === sourceMessageIds.length &&
+        pending.sourceMessageIds.every((id, i) => id === sourceMessageIds[i]);
+      const idempotencyKey = samePendingRefs
+        ? pending.idempotency_key
+        : crypto.randomUUID();
+      patchView(conversationId, { error: null, pending: null });
+      try {
+        const { turn, user_message } = await service.continueTurn(
+          projectId,
+          conversationId,
+          { source_message_ids: sourceMessageIds, idempotency_key: idempotencyKey },
+        );
+        patchView(conversationId, (v) => ({
+          // 引用不复制：主消息以服务端返回为准（同 message_id reparent 到新轮次）。
+          messages: v.messages.some((m) => m.message_id === user_message.message_id)
+            ? v.messages.map((m) =>
+                m.message_id === user_message.message_id ? user_message : m,
+              )
+            : [...v.messages, user_message],
+          turns: { ...v.turns, [turn.turn_id]: turn },
+          activeTurnId: turn.turn_id,
+        }));
+        return true;
+      } catch (e) {
+        if (isServerRejection(e)) {
+          // 服务端明确拒绝（跨讨论/非作者消息/互斥）：提示三要素，不保留待重试。
+          patchView(conversationId, { error: errText(e) });
+          return false;
+        }
+        // 网络故障：结果未知。保留引用范围与幂等键，明确继续后才创建回复尝试。
+        patchView(conversationId, {
+          pending: {
+            idempotency_key: idempotencyKey,
+            text: "",
+            refs: [],
+            sourceMessageIds,
+            error: `发送结果未知：${errText(e)}。重试会用同一请求，服务端若已受理则返回同一轮次，不会重复调用模型。`,
+          },
+        });
+        return false;
+      }
     },
 
     stop: async () => {
@@ -910,20 +986,22 @@ export const useChatStore = create<ChatStore>()((set, get) => {
 
     acceptCandidate: async (messageId) => {
       const { service, projectId, activeConversationId } = get();
-      if (!service || !projectId || !activeConversationId) return;
+      if (!service || !projectId || !activeConversationId) return null;
       const v2 = useV2Store.getState();
       try {
         if (isDirty(v2.chapter) || v2.chapter.saving)
           throw new Error("当前正文有未保存稿，请先保存后再接受候选。");
-        await service.acceptCandidate(
+        const result = await service.acceptCandidate(
           projectId,
           activeConversationId,
           messageId,
           v2.head ?? v2.storyCommit,
         );
         await Promise.all([v2.refreshJobs(), v2.refreshManuscript(), v2.refreshStory()]);
+        return result;
       } catch (e) {
         patchView(activeConversationId, { error: errText(e) });
+        return null;
       }
     },
 

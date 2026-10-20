@@ -25,6 +25,7 @@ no-op 检测放在事务内 head 检查之后：与「检测先于开事务」�
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
@@ -125,8 +126,25 @@ def _request_fingerprint(request: CommitRequest) -> ContentHash:
             for r in request.relations
         ],
         "events": [[t, p] for t, p in request.events],
+        # 辅助表写入是「写什么」的一部分（V03-0.5）：同键重放必须同内容；
+        # expected_head/old_revision_id 等并发凭据仍排除在外。
+        "aux_writes": [
+            {"bucket": w.bucket, "key": w.key, "payload": w.payload} for w in request.aux_writes
+        ],
+        "aux_deletes": [[k.bucket, k.key] for k in request.aux_deletes],
     }
     return ContentHash(content_hash(payload))
+
+
+def _apply_aux(txn: Any, request: CommitRequest) -> None:
+    """在同一事务内应用辅助表写入/删除（V03-0.5）。
+
+    顺序：先写后删；payload 原样落库（JSON 序列化由存储层负责）。
+    """
+    for write in request.aux_writes:
+        txn.aux_write(request.project_id.value, write.bucket, write.key, write.payload)
+    for key in request.aux_deletes:
+        txn.aux_delete(request.project_id.value, key.bucket, key.key)
 
 
 class CommitService:
@@ -141,6 +159,38 @@ class CommitService:
             record = txn.get_idempotent_result(project_id, key)
             return record[1] if record else None
 
+    # -- 辅助表读（V03-0.5）：副本/回执/操作记录的权威查询走同一存储端口 ----
+    def aux_read(self, project_id: ProjectId, bucket: str, key: str) -> dict[str, Any] | None:
+        with self._storage.transaction() as txn:
+            return txn.aux_read(project_id.value, bucket, key)
+
+    def aux_list(self, project_id: ProjectId, bucket: str) -> dict[str, dict[str, Any]]:
+        with self._storage.transaction() as txn:
+            return txn.aux_list(project_id.value, bucket)
+
+    def aux_mutate(
+        self,
+        project_id: ProjectId,
+        bucket: str,
+        key: str,
+        mutate: Callable[[dict[str, Any] | None], dict[str, Any] | None],
+    ) -> dict[str, Any] | None:
+        """在**单个事务内**读-改-写一条辅助记录（V03-0.5 端口）。
+
+        修改副本的保存序号必须靠它：先读序号、再比较、再写入，三步在同一个
+        事务里，否则两个并发保存都能通过检查，后到的旧文本覆盖新文本
+        （M04 第 2 条）。``mutate`` 返回 None 表示删除该记录；抛异常则整个
+        事务回滚（调用方据此表达 CAS 冲突）。
+        """
+        with self._storage.transaction() as txn:
+            current = txn.aux_read(project_id.value, bucket, key)
+            updated = mutate(dict(current) if current is not None else None)
+            if updated is None:
+                txn.aux_delete(project_id.value, bucket, key)
+            else:
+                txn.aux_write(project_id.value, bucket, key, updated)
+            return updated
+
     def commit_history(self, project_id: ProjectId, at_commit_id: CommitId) -> tuple[Commit, ...]:
         # get_snapshot 先验证版本存在且属于本项目，再暴露受限历史查询。
         self.get_snapshot(project_id, at_commit_id)
@@ -151,7 +201,13 @@ class CommitService:
     # 写路径
     # ------------------------------------------------------------------
 
-    def create_project(self, name: str) -> Project:
+    def create_project(self, name: str, project_id: str | None = None) -> Project:
+        """创建作品；``project_id`` 显式给出时使用该身份（V03-1.2 入口预约）。
+
+        入口预约（entry_id → 作品）需要确定性身份：同一 entry_id 的重试
+        必须找回同一作品而不是重复创建。显式 ID 已存在时原样返回既有
+        作品（幂等），不同名不覆盖。
+        """
         if not name or not name.strip():
             raise _violation(
                 ec.REPO_INVALID_CHANGE,
@@ -161,7 +217,13 @@ class CommitService:
             )
         now = self._storage.now()
         with self._storage.transaction() as txn:
-            project = Project(id=ProjectId(self._ids.new_id("prj")), name=name, created_at=now)
+            if project_id is not None:
+                existing = txn.get_project(ProjectId(project_id))
+                if existing is not None:
+                    return existing  # 幂等预约：同 entry 的重试找回同一作品
+            project = Project(
+                id=ProjectId(project_id or self._ids.new_id("prj")), name=name, created_at=now
+            )
             branch = Branch(
                 id=BranchId(self._ids.new_id("br")),
                 project_id=project.id,
@@ -306,6 +368,9 @@ class CommitService:
                 writes.append((change, new_rev, old_id))
                 changed_ids.append(aid)
             if not writes and not request.relations:
+                # 无内容差异：不创建正文空版本；携带的辅助写入仍在同一事务
+                # 原子生效（V03-0.5：no_change 回执/副本状态不伪造 Commit）。
+                _apply_aux(txn, request)
                 return CommitResult(
                     status=NO_CHANGE,
                     no_change_reason=(
@@ -384,6 +449,9 @@ class CommitService:
             txn.put_idempotent_result(
                 request.project_id, request.idempotency_key, fingerprint.value, result
             )
+            # (12) 辅助表同事务写入（V03-0.5）：回执/副本/操作记录与正文
+            # 提交同一事务——任一写失败整体回滚，head 不动、无半提交。
+            _apply_aux(txn, request)
         return result
 
     def create_branch(self, request: CreateBranchRequest) -> Branch:

@@ -21,6 +21,8 @@ import { Pill } from "../Workbench";
 import { useV2Store } from "../../state/v2";
 import { titleOf } from "../Workbench";
 
+const NEW_CHAPTER = "__new_chapter__";
+
 const executionLabels: Record<TaskExecutionPayload["state"], string> = {
   queued: "排队中",
   running: "执行中",
@@ -53,11 +55,13 @@ export function TaskDraftCard({
   const [targets, setTargets] = useState(draft.target_ids);
   const artifacts = useV2Store((s) => s.storyArtifacts);
   const chapters = useV2Store((s) => s.chapters);
-  const options = draft.task_kind === "chapter_draft"
-    ? artifacts.filter((a) => ["narrative.beat", "story.plot_beat"].includes(a.kind))
-        .map((a) => ({ id: a.artifact_id, title: titleOf(a) }))
-    : [...artifacts.map((a) => ({ id: a.artifact_id, title: titleOf(a) })),
-       ...chapters.map((c) => ({ id: c.chapter_id, title: c.title }))];
+  const [newChapterId] = useState(() => `ch_${crypto.randomUUID().slice(0, 12)}`);
+  const options = [
+    ...artifacts.map((a) => ({ id: a.artifact_id, title: titleOf(a) })),
+    ...chapters.map((c) => ({ id: c.chapter_id, title: c.title })),
+  ];
+  const draftChapter = chapters.find((c) => c.chapter_id === draft.goal);
+  const goalLabel = draftChapter ? `改写「${draftChapter.title}」` : "新章（追加到末尾）";
   const started = draft.job_ref !== null;
   if (abandoned) {
     return (
@@ -78,14 +82,16 @@ export function TaskDraftCard({
       </header>
       <dl className="chat-card-grid">
         <dt>目标</dt>
-        <dd>{draft.goal}</dd>
+        <dd>{draft.task_kind === "chapter_draft" ? goalLabel : draft.goal}</dd>
         <dt>范围</dt>
         <dd>
-          {draft.target_ids.length > 0
-            ? draft.target_ids.join("、")
-            : draft.task_kind === "check"
-              ? "当前项目已保存内容"
-              : "未指定（开始前需补齐）"}
+          {draft.task_kind === "chapter_draft"
+            ? "账本与作者要求（不要求节拍）"
+            : draft.target_ids.length > 0
+              ? draft.target_ids.join("、")
+              : draft.task_kind === "check"
+                ? "当前项目已保存内容"
+                : "未指定（开始前需补齐）"}
         </dd>
         <dt>基础版本</dt>
         <dd>{draft.base_version ? draft.base_version.slice(0, 12) : "未绑定"}</dd>
@@ -119,25 +125,48 @@ export function TaskDraftCard({
               aria-label="任务说明"
             />
           </label>
-          <fieldset className="field">
-            <legend>{draft.task_kind === "chapter_draft" ? "已接受节拍" : "任务范围"}</legend>
-            {options.map((option) => <label key={option.id} className="flex gap-2 text-xs">
-              <input type="checkbox" checked={targets.includes(option.id)}
-                onChange={(e) => setTargets(e.target.checked
-                  ? [...targets, option.id] : targets.filter((id) => id !== option.id))} />
-              {option.title}
-            </label>)}
-            {options.length === 0 && <span>暂无可选对象，请先规划并接受故事内容。</span>}
-          </fieldset>
-          <label className="field">
-            目标
-            <input
-              className="well-input"
-              value={goal}
-              onChange={(e) => setGoal(e.target.value)}
-              aria-label="任务目标"
-            />
-          </label>
+          {draft.task_kind === "chapter_draft" ? (
+            <label className="field">
+              写哪一章
+              <select
+                className="well-input"
+                aria-label="目标章节"
+                value={chapters.some((c) => c.chapter_id === goal) ? goal : NEW_CHAPTER}
+                onChange={(e) =>
+                  setGoal(e.target.value === NEW_CHAPTER ? newChapterId : e.target.value)
+                }
+              >
+                <option value={NEW_CHAPTER}>新章（追加到末尾）</option>
+                {chapters.map((c) => (
+                  <option key={c.chapter_id} value={c.chapter_id}>
+                    改写：{c.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <>
+              <fieldset className="field">
+                <legend>任务范围</legend>
+                {options.map((option) => <label key={option.id} className="flex gap-2 text-xs">
+                  <input type="checkbox" checked={targets.includes(option.id)}
+                    onChange={(e) => setTargets(e.target.checked
+                      ? [...targets, option.id] : targets.filter((id) => id !== option.id))} />
+                  {option.title}
+                </label>)}
+                {options.length === 0 && <span>暂无可选对象，请先规划并接受故事内容。</span>}
+              </fieldset>
+              <label className="field">
+                目标
+                <input
+                  className="well-input"
+                  value={goal}
+                  onChange={(e) => setGoal(e.target.value)}
+                  aria-label="任务目标"
+                />
+              </label>
+            </>
+          )}
           <div className="flex gap-2">
             <button className="btn px-3 py-1.5 text-xs" type="submit">
               保存修改
@@ -197,10 +226,12 @@ export function TaskExecutionCard({
   onOpenChange,
 }: {
   message: ChatMessage;
-  onView(candidateMessageId: string): void;
+  /** 「查看候选」入口；写作台内候选只在对话里呈现，未提供时不渲染该按钮。 */
+  onView?(candidateMessageId: string): void;
   onCancel(jobRef: string): void;
   onRetry(jobRef: string): void;
-  onOpenChange(changeId: string): void;
+  /** 变更流程入口；写作台内未提供时省略，不渲染该按钮（旧变更页已退出产品）。 */
+  onOpenChange?(changeId: string): void;
 }) {
   const execution = message.payload as TaskExecutionPayload;
   const tone =
@@ -231,16 +262,24 @@ export function TaskExecutionCard({
         </p>
       )}
       <div className="chat-card-actions">
-        {execution.change_ref && <button className="btn px-3 py-1.5 text-xs"
-          onClick={() => onOpenChange(execution.change_ref!)}>打开变更流程</button>}
-        {execution.state === "waiting" && execution.candidate_message_id && (
+        {execution.change_ref && onOpenChange && (
           <button
             className="btn px-3 py-1.5 text-xs"
-            onClick={() => onView(execution.candidate_message_id!)}
+            onClick={() => onOpenChange(execution.change_ref!)}
           >
-            查看候选
+            打开变更流程
           </button>
         )}
+        {execution.state === "waiting" &&
+          execution.candidate_message_id &&
+          onView && (
+            <button
+              className="btn px-3 py-1.5 text-xs"
+              onClick={() => onView(execution.candidate_message_id!)}
+            >
+              查看候选
+            </button>
+          )}
         {execution.state === "failed" && (
           <button
             className="btn btn-gray px-3 py-1.5 text-xs"
@@ -264,11 +303,9 @@ export function TaskExecutionCard({
 
 export function CandidateCard({
   message,
-  onReview,
   onAccept,
 }: {
   message: ChatMessage;
-  onReview(): void;
   onAccept(messageId: string): void;
 }) {
   const candidate = message.payload as CandidatePayload;
@@ -285,9 +322,6 @@ export function CandidateCard({
         任务完成不等于内容已保存；接受后才会生成正式版本（Commit）。
       </p>
       <div className="chat-card-actions">
-        <button className="btn btn-gray px-3 py-1.5 text-xs" onClick={onReview}>
-          打开审阅
-        </button>
         {!candidate.accepted && (
           <button
             className="btn px-3 py-1.5 text-xs"

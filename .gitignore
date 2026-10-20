@@ -16,6 +16,8 @@ config.yaml
 # 编辑器 / 工具本地目录
 .trae/
 .vscode/
+.workbuddy/
+.workbuddy-ai/
 
 # 类型检查 / 测试缓存
 .mypy_cache/
@@ -38,3 +40,6 @@ eval/runs/**/*.log
 # Playwright E2E 运行产物（trace/报告属本地调试物，不入库）
 frontend/test-results/
 frontend/playwright-report/
+
+# data/ 全部是本地运行产物（工作台数据库、服务日志），不入库；备份走 /backup 导出
+data/

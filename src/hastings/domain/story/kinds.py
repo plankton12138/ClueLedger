@@ -24,6 +24,9 @@ KIND_TRUTH_FACT = "story.truth_fact"
 KIND_KNOWLEDGE = "story.knowledge"
 KIND_DISCLOSURE = "story.disclosure"
 
+# --- 作品级资料（非 Canon 事实，但同样版本化，计划 §4.1 BookAgreement） ------
+KIND_AGREEMENT = "story.agreement"
+
 # --- Narrative Plan：Series → Book → Arc → Chapter → Scene → Beat -----------
 KIND_SERIES = "narrative.series"
 KIND_BOOK = "narrative.book"
@@ -33,7 +36,6 @@ KIND_SCENE = "narrative.scene"
 KIND_BEAT = "narrative.beat"
 
 NARRATIVE_NODE_KINDS = (KIND_SERIES, KIND_BOOK, KIND_ARC, KIND_CHAPTER, KIND_SCENE)
-
 CANON_KINDS = (
     KIND_STORY_PREMISE,
     KIND_CHARACTER,
@@ -50,7 +52,11 @@ CANON_KINDS = (
     KIND_DISCLOSURE,
 )
 
-KNOWN_STORY_KINDS = frozenset((*CANON_KINDS, *NARRATIVE_NODE_KINDS, KIND_BEAT))
+#: 作品级资料：不属于 Canon 事实（故不在 ``CANON_KINDS`` 里，``canon()`` 不返回），
+#: 但同样按 Artifact/Revision 版本化，导出与历史继承既有能力。
+PROJECT_KINDS = (KIND_AGREEMENT,)
+
+KNOWN_STORY_KINDS = frozenset((*CANON_KINDS, *NARRATIVE_NODE_KINDS, *PROJECT_KINDS, KIND_BEAT))
 
 
 def is_story_kind(kind: str) -> bool:

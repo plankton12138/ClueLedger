@@ -32,7 +32,17 @@ class OpenTurn:
 class ConversationStore(Protocol):
     """对话存储端口（异步 I/O；实现落在 infrastructure）。"""
 
-    async def create_conversation(self, project_id: str, title: str) -> Conversation: ...
+    async def create_conversation(
+        self,
+        project_id: str,
+        title: str,
+        conversation_id: str | None = None,
+    ) -> Conversation:
+        """创建会话。
+
+        ``conversation_id`` 显式给出时使用该身份（V03-2.1 创作记录：确定性
+        会话 ID）；已存在时幂等返回既有会话，不覆盖标题。
+        """
 
     async def get_conversation(self, conversation_id: str) -> Conversation | None:
         """按 id 读取；不存在返回 None（合法空结果，非异常）。"""

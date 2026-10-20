@@ -113,7 +113,7 @@ uv run python -m hastings ...    # P1 完成后：CLI 交互写作（需任一 O
 
 **方式二：演示视频**：30–120 秒屏幕录制，展示"设定角色 → 生成章节 → 审计报告"完整流程（随作品提交）。
 
-**方式三：设计文档**：`dev-notes/v1/DESIGN.md` 为完整架构设计说明；`dev-notes/v1/phase-XX-*.md` 为逐阶段构建笔记，可审阅工程过程。
+**方式三：设计文档**：`dev-notes/v0.1/DESIGN.md` 为完整架构设计说明；`dev-notes/v0.1/phase-XX-*.md` 为逐阶段构建笔记，可审阅工程过程。
 
 ---
 

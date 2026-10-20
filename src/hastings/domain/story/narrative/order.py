@@ -16,8 +16,9 @@ from hastings.domain.story import error_codes as ec
 from hastings.domain.story import kinds
 from hastings.domain.story.catalog import StoryCatalog, StoryEntry
 from hastings.domain.story.changes import StoryWarning
+from hastings.domain.story.errors import violation
 
-__all__ = ["Ordering", "ordered_beats", "sort_key", "structural_order"]
+__all__ = ["Ordering", "last_beat_of_node", "ordered_beats", "sort_key", "structural_order"]
 
 
 def sort_key(entry: StoryEntry) -> tuple[int, str, str]:
@@ -114,3 +115,46 @@ def structural_order(catalog: StoryCatalog) -> Ordering:
 def ordered_beats(catalog: StoryCatalog) -> tuple[StoryEntry, ...]:
     """按结构顺序返回节拍；状态折叠的唯一顺序来源。"""
     return structural_order(catalog).beats
+
+
+def last_beat_of_node(catalog: StoryCatalog, node_id: str, *, where: str) -> str:
+    """结构节点（章/场景）内按结构顺序的最后一个节拍，用作叙述位置。
+
+    只按 ``parent_id`` 归属与 ``structural_order`` 判定，不引入「第几章」这类
+    序号——叙述位置、故事时间与章节序号是三种不同的东西，不能互相冒充。
+    """
+    ordering = structural_order(catalog)
+    if node_id not in {entry.artifact_id for entry in ordering.entries}:
+        raise violation(
+            ec.STORY_UNKNOWN_ARTIFACT,
+            where,
+            f"结构节点 {node_id!r} 不在当前快照中",
+            "改用结构中存在的章/场景 ID（先用结构展开查询可用节点）",
+            artifact_id=node_id,
+        )
+
+    parent_of: dict[str, str | None] = {}
+    for entry in ordering.entries:
+        parent = entry.content.get("parent_id")
+        parent_of[entry.artifact_id] = parent if isinstance(parent, str) and parent else None
+
+    def is_under(beat_id: str) -> bool:
+        ancestor = parent_of.get(beat_id)
+        seen: set[str] = set()
+        while ancestor and ancestor not in seen:
+            if ancestor == node_id:
+                return True
+            seen.add(ancestor)
+            ancestor = parent_of.get(ancestor)
+        return False
+
+    beats = [entry.artifact_id for entry in ordering.beats if is_under(entry.artifact_id)]
+    if not beats:
+        raise violation(
+            ec.STORY_MISSING_PRECONDITION,
+            where,
+            f"结构节点 {node_id!r} 下没有节拍，无法作为叙述位置",
+            "先在该章/场景下创建节拍，或改用 at_beat_id 直接指定节拍",
+            node_id=node_id,
+        )
+    return beats[-1]

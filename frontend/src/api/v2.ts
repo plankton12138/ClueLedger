@@ -81,7 +81,7 @@ export async function request<T>(
 }
 
 const key = () => crypto.randomUUID();
-const projectPrefix = (projectId: string) =>
+export const projectPrefix = (projectId: string) =>
   `/api/v2/projects/${encodeURIComponent(projectId)}`;
 
 // ---------------------------------------------------------------------------
@@ -302,30 +302,8 @@ export async function fetchChangeDetail(
   );
 }
 
-/** 变更集生命周期动作：analyze / plan / approve / execute / review / merge。 */
-export async function changeAction(
-  projectId: string,
-  csId: string,
-  action:
-    | "analyze"
-    | "plan"
-    | "approve"
-    | "execute"
-    | "review"
-    | "merge"
-    | "execute-agent",
-  expectedHead: string,
-  extra: Record<string, unknown> = {},
-): Promise<unknown> {
-  return request(
-    `${projectPrefix(projectId)}/changes/${encodeURIComponent(csId)}/${action}`,
-    {
-      idempotency_key: key(),
-      expected_head: expectedHead,
-      ...extra,
-    },
-  );
-}
+// 变更集生命周期动作（analyze/plan/approve/execute/review/merge）在 V03-8.6
+// 已随逐章审批流从 HTTP 层退役（410）；客户端不再保留对应函数。
 
 export interface AuditFinding {
   code?: string;
@@ -342,114 +320,8 @@ export interface AuditResult {
   [key: string]: unknown;
 }
 
-export async function runAudit(projectId: string): Promise<AuditResult> {
-  return request(`${projectPrefix(projectId)}/audit`, {
-    idempotency_key: key(),
-  });
-}
-
-// ---------------------------------------------------------------------------
-// 作者模型
-// ---------------------------------------------------------------------------
-
-export interface EditSample {
-  unit_id: string;
-  before: string;
-  after: string;
-  operation: string;
-  chapter_id: string;
-  note: string;
-}
-
-export interface ObservationClassification {
-  category: string | null;
-  confidence: number;
-  status: string;
-  signals: string[];
-  alternatives: string[];
-  source: string;
-}
-
-export interface AuthorObservationWire {
-  observation_id: string;
-  commit_id: string;
-  edit: EditSample;
-  classification: ObservationClassification;
-}
-
-export interface PreferenceWire {
-  preference_id: string;
-  category: string;
-  statement: string;
-  scope_kind: string;
-  scope_target: string;
-  status: string; // candidate | active | revoked
-  origin: string; // explicit | induced
-  evidence: string[];
-  superseded_by: string | null;
-  reason: string;
-}
-
-export interface PreferencesWire {
-  project_id: string;
-  commit_id: string | null;
-  preferences: PreferenceWire[];
-}
-
-export interface ObservationsWire {
-  project_id: string;
-  commit_id: string | null;
-  observations: AuthorObservationWire[];
-}
-
-export async function fetchPreferences(
-  projectId: string,
-): Promise<PreferencesWire> {
-  return request(`${projectPrefix(projectId)}/author-model/preferences`);
-}
-
-export async function declarePreference(
-  projectId: string,
-  expectedHead: string | null,
-  statement: string,
-  category: string,
-  scopeTarget: string,
-): Promise<CommitResult> {
-  return request(`${projectPrefix(projectId)}/author-model/preferences`, {
-    idempotency_key: key(),
-    expected_head: expectedHead,
-    statement,
-    category,
-    scope_kind: "project",
-    scope_target: scopeTarget,
-  });
-}
-export async function revokePreference(
-  projectId: string,
-  preferenceId: string,
-  expectedHead: string | null,
-  reason: string,
-): Promise<CommitResult> {
-  return request(
-    `${projectPrefix(projectId)}/author-model/preferences/${encodeURIComponent(preferenceId)}/revoke`,
-    { idempotency_key: key(), expected_head: expectedHead, reason },
-  );
-}
-
-export async function fetchObservations(
-  projectId: string,
-): Promise<ObservationsWire> {
-  return request(`${projectPrefix(projectId)}/author-model/observations`);
-}
-
-export async function fetchPreferenceEvidence(
-  projectId: string,
-  preferenceId: string,
-): Promise<{ observations: AuthorObservationWire[] }> {
-  return request(
-    `${projectPrefix(projectId)}/author-model/preferences/${encodeURIComponent(preferenceId)}/evidence`,
-  );
-}
+// 独立一致性审计的启动入口在 V03-8.6 已从 HTTP 层退役（410）；
+// 页面只读回看旧报告，客户端不再保留 runAudit。
 
 // ---------------------------------------------------------------------------
 // Agent 任务（协作主编 / 撰写 / 审计 / 风格观察）
@@ -486,12 +358,7 @@ export interface CoordinateResult {
   snapshot: StorySnapshot;
 }
 
-export async function coordinate(
-  projectId: string,
-  instruction: string,
-): Promise<CoordinateResult> {
-  return request(`${projectPrefix(projectId)}/coordinate`, { instruction });
-}
+// POST /coordinate 在 V03-8.6 退役（多 Agent 协调入口，前端本来就 0 调用）。
 
 export async function submitAgentJob(
   projectId: string,

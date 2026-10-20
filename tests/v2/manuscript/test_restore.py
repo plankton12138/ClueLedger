@@ -13,6 +13,8 @@ import pytest
 
 from hastings.application.errors import ViolationError
 from hastings.application.handlers.manuscript_commands import manuscript_command
+from hastings.application.services.operation_service import OperationService
+from hastings.application.services.publish_manuscript_change import PublishManuscriptChange
 from hastings.application.workflows.manual_edit import ManualEditIntent
 from hastings.application.workflows.restore_version import RestoreChapterVersion, RestoreIntent
 from hastings.domain.manuscript.commands import import_chapter
@@ -28,7 +30,9 @@ def project(edit_env: ManualEditEnv) -> ProjectId:
 
 @pytest.fixture
 def restore(edit_env: ManualEditEnv) -> RestoreChapterVersion:
-    return RestoreChapterVersion(edit_env.handler, edit_env.service)
+    operations = OperationService(edit_env.service)
+    publisher = PublishManuscriptChange(edit_env.service, operations, edit_env.ids)
+    return RestoreChapterVersion(edit_env.service, publisher)
 
 
 def _head(env: ManualEditEnv, project: ProjectId) -> CommitId | None:
@@ -79,7 +83,7 @@ class TestRestoreAsNewCommit:
                 idempotency_key="restore-1",
             )
         )
-        assert result.is_committed
+        assert result.status == "committed"
         assert result.commit_id not in (None, first)
 
         # 正文回到首版，且 head 前移（不重写历史）
@@ -103,7 +107,7 @@ class TestRestoreAsNewCommit:
                 idempotency_key="restore-noop",
             )
         )
-        assert result.is_no_change
+        assert result.status == "no_change"
         assert result.commit_id is None
 
     def test_restore_is_idempotent_on_retry(

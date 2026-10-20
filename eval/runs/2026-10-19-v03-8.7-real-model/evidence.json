@@ -1,0 +1,70 @@
+{
+  "started": "2026-10-19T20:26:24.890669",
+  "model": "qwen3:8b",
+  "findings": [
+    {
+      "scenario": "S1 讨论流式（真模型）",
+      "ok": true,
+      "detail": "36 个增量、49 字、终态到达；Job 0→0（讨论无写权限，期望不变）",
+      "deltas": 36,
+      "chars": 49,
+      "sample": "开篇让雨停不下来，既渲染压抑阴郁的环境氛围，又暗示人物深陷无法摆脱的困境，为后续情节发展埋下伏笔。"
+    },
+    {
+      "scenario": "S2.1 试写候选（真模型）",
+      "ok": true,
+      "detail": "候选 cnd_6bb7ec599d564699：213 字，预览哈希 b1745f0e3d6c…",
+      "candidate_id": "cnd_6bb7ec599d564699",
+      "chars": 213,
+      "sample": "潮湿的海风裹着咸腥味钻进领口，林夏用抹布擦去玻璃窗上的水雾。她习惯性地瞥向办公桌角落的铜制潮汐表，那些被海盐腐蚀的刻度线在台灯下泛着暗金色。今夜的墨迹却让她瞳孔骤缩——第三行铅笔字被某种液体晕开，铁锈色的痕迹正顺着潮汐曲线蜿蜒，像条正在渗血的蜈蚣。她伸手触碰的瞬间，指腹传来细微的颗粒感，像是有人将砂纸揉碎了混进墨水里。"
+    },
+    {
+      "scenario": "S2.2 采用产生 Commit（统一发布）",
+      "ok": true,
+      "detail": "采用 HTTP 200；operation op_0a4f8741e3891f9…；Commit 已落盘",
+      "status": 200,
+      "operation_id": "op_0a4f8741e3891f99ffc14eea"
+    },
+    {
+      "scenario": "S3.1 预算可缩小（开任务不调用模型）",
+      "ok": true,
+      "detail": "任务 rtk_26d56651c469478e：call_limit=1、calls_used=0、remaining=1；Job 数不变（开任务零模型调用）",
+      "budget": {
+        "call_limit": 1,
+        "calls_used": 0,
+        "remaining": 1,
+        "repair_rounds": 0,
+        "max_repair_rounds": 2,
+        "exhausted": false
+      }
+    },
+    {
+      "scenario": "S3.2 覆盖台账（读取登记 + 结论）",
+      "ok": true,
+      "detail": "2 章登记读取与结论（HTTP {200}）；覆盖 2/2、complete=True；状态 ['changed']",
+      "coverage": {
+        "art_01133fea966c4d3b": "changed",
+        "ch_48af0c794eebb5ff": "changed"
+      }
+    },
+    {
+      "scenario": "S3.3 停止留痕",
+      "ok": true,
+      "detail": "停止 HTTP 200；任务状态 cancelled"
+    },
+    {
+      "scenario": "S4 环境失败记录（不存在的模型）",
+      "ok": null,
+      "detail": "轮次终态 turn.failed；错误：{'code': 'CHAT_PROVIDER_FAILED', 'category': 'environment', 'where': 'chat.runner', 'why': 'Provider 返回错误事件，本轮没有可用正文', 'fix': '检查端点与凭证后重试；不会自动换用其他厂商', 'details': {}}",
+      "failed": true,
+      "error": {
+        "code": "CHAT_PROVIDER_FAILED",
+        "category": "environment",
+        "where": "chat.runner",
+        "why": "Provider 返回错误事件，本轮没有可用正文",
+        "fix": "检查端点与凭证后重试；不会自动换用其他厂商",
+        "details": {}
+      }
+    }
+  ]
+}

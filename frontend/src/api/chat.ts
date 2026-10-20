@@ -208,6 +208,12 @@ export interface SendTurnInput {
   idempotency_key: string;
 }
 
+/** 接着讨论（V03-1.5）：引用已保存作者消息启动轮次，与 text 互斥（服务端校验）。 */
+export interface ContinueTurnInput {
+  source_message_ids: string[];
+  idempotency_key: string;
+}
+
 export interface SendTurnResult {
   turn: ChatTurn;
   user_message: ChatMessage;
@@ -230,6 +236,12 @@ export interface ChatService {
     projectId: string,
     conversationId: string,
     input: SendTurnInput,
+  ): Promise<SendTurnResult>;
+  /** 引用已保存消息继续讨论：主消息归入新轮次（不复制），服务端幂等可重放。 */
+  continueTurn(
+    projectId: string,
+    conversationId: string,
+    input: ContinueTurnInput,
   ): Promise<SendTurnResult>;
   cancelTurn(projectId: string, conversationId: string, turnId: string): Promise<void>;
   retryTurn(projectId: string, conversationId: string, turnId: string): Promise<ChatTurn>;
@@ -437,6 +449,14 @@ export function createHttpChatService(
     });
   }
 
+  async function continueTurn(conversationId: string, input: ContinueTurnInput) {
+    // text 与 source_message_ids 服务端互斥：接着讨论请求不携带 text。
+    return requestJson<SendTurnResult>(`${conversationUrl(conversationId)}/turns`, {
+      source_message_ids: input.source_message_ids,
+      idempotency_key: input.idempotency_key,
+    });
+  }
+
   async function cancelTurn(conversationId: string, turnId: string): Promise<void> {
     await requestJson(
       `${conversationUrl(conversationId)}/turns/${encodeURIComponent(turnId)}/cancel`,
@@ -636,6 +656,8 @@ export function createHttpChatService(
     createConversation: () => createConversation(),
     loadMessages: (_projectId, conversationId) => loadMessages(conversationId),
     sendTurn: (_projectId, conversationId, input) => sendTurn(conversationId, input),
+    continueTurn: (_projectId, conversationId, input) =>
+      continueTurn(conversationId, input),
     cancelTurn: (_projectId, conversationId, turnId) => cancelTurn(conversationId, turnId),
     retryTurn: (_projectId, conversationId, turnId) => retryTurn(conversationId, turnId),
     adjustDraft: (_projectId, conversationId, draftId, revision, patch) =>

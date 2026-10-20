@@ -41,15 +41,18 @@ async def setup(client: httpx.AsyncClient) -> tuple[str, str]:
     return root, cid
 
 
-def test_writer_without_selected_beats_is_visibly_incomplete() -> None:
+def test_writer_without_target_is_visibly_incomplete() -> None:
+    # V03-3.1：节拍不再是写作前置；缺少「写哪一章」才是真实缺失。
     missing = missing_items(
         "chapter_draft",
-        goal="new-chapter",
+        goal="",
         target_ids=[],
         base_version="base",
         view=ProjectView(True, True, head="base"),
     )
-    assert any(item["code"] == "TASK_NO_BEAT_TARGET" for item in missing)
+    assert any(item["code"] == "TASK_NO_CHAPTER_TARGET" for item in missing)
+    assert not any(item["code"].startswith("TASK_NO_BEAT") for item in missing)
+    assert not any(item["code"] == "TASK_NO_PLAN" for item in missing)
 
 
 @pytest.mark.anyio

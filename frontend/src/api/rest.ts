@@ -6,7 +6,6 @@
  */
 
 import type { EventFrame } from "./types";
-import { parsePullFrame, parsePullLines, type PullFrame } from "../state/ollama";
 import { MODEL_BACKEND_MISMATCH } from "./compatibility";
 
 export type BibleType = "character" | "clue" | "foreshadow" | "method" | "timeline";
@@ -1002,60 +1001,6 @@ export async function fetchOllamaModels(): Promise<OllamaModelInfoWire[]> {
     );
   }
   return models as OllamaModelInfoWire[];
-}
-
-/**
- * POST /api/ollama/pull → 读流式 NDJSON 进度，逐帧回调 onFrame（仅进度帧）；
- * error 帧与「流未送达 success 终帧」抛错（三要素文案服务端给出）。
- * signal 供取消——断开后 Ollama 侧继续下载，重发同一 pull 幂等续传。
- */
-export async function pullOllamaModel(
-  model: string,
-  onFrame: (frame: PullFrame) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  const res = await fetch("/api/ollama/pull", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model }),
-    signal,
-  });
-  if (!res.ok) {
-    throw new Error(await errorDetail(res));
-  }
-  if (!res.body) {
-    throw new Error(`下载流不可读：${model}。为什么错：浏览器未返回响应体流。`);
-  }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let succeeded = false;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const parsed = parsePullLines(buffer, decoder.decode(value, { stream: true }));
-    buffer = parsed.buffer;
-    for (const line of parsed.lines) {
-      const frame = parsePullFrame(line);
-      if (frame === null) continue;
-      if (frame.error !== undefined) {
-        throw new Error(frame.error);
-      }
-      if (frame.status === "success") succeeded = true;
-      onFrame(frame);
-    }
-  }
-  if (buffer.trim() !== "") {
-    const frame = parsePullFrame(buffer);
-    if (frame !== null && frame.error === undefined) onFrame(frame);
-  }
-  if (!succeeded) {
-    throw new Error(
-      `模型 ${model} 下载流意外中断。` +
-        "为什么错：连接在送达完成帧之前断开。" +
-        "怎样算对：重新点击下载——pull 支持断点续传，已下载部分不会丢失。",
-    );
-  }
 }
 
 /** DELETE /api/ollama/models/{name}：404（未装）/ 502（上游故障）detail 原样透出。 */

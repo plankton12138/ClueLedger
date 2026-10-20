@@ -1,7 +1,7 @@
 """生成 P1 演示 transcript：用 FakeProvider 确定性回放一次完整写作 loop。
 
 无需任何 API key 即可复现 Agent 的完整决策链与落盘结果，作为参赛演示素材与
-"AI 实践佐证"。产物：dev-notes/v1/artifacts/p1-demo-transcript.md
+"AI 实践佐证"。产物：dev-notes/v0.1/artifacts/p1-demo-transcript.md
 
 用法：
     uv run python scripts/render_demo_transcript.py

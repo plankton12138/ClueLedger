@@ -12,9 +12,10 @@ Phase 11 冻结的方法名全部保留；Phase 12（T12.1/T12.2）把签名从
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import AbstractContextManager
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from hastings.domain.repository.ids import (
     ArtifactId,
@@ -164,6 +165,18 @@ class RepositoryTxn(Protocol):
     def get_lease(self, resource_key: str) -> Lease | None: ...
     def next_sequence(self, project_id: ProjectId) -> int: ...
     def next_outbox_sequence(self, project_id: ProjectId) -> int: ...
+
+    # ---- 辅助表（V03-0.5）：副本/回执/操作记录与正文提交同事务 ----
+    def aux_read(self, project_id: str, bucket: str, key: str) -> dict[str, Any] | None:
+        """按 (project, bucket, key) 读辅助记录；不存在返回 None（合法空结果）。"""
+
+    def aux_write(self, project_id: str, bucket: str, key: str, payload: Mapping[str, Any]) -> None:
+        """同事务 upsert 辅助记录；与正文 Revision 共用同一事务边界。"""
+
+    def aux_list(self, project_id: str, bucket: str) -> dict[str, dict[str, Any]]:
+        """列出一个项目一个 bucket 的全部记录（key → payload）。"""
+
+    def aux_delete(self, project_id: str, bucket: str, key: str) -> None: ...
 
     # ---- 写 ----
     def insert_project(self, project: Project) -> None: ...

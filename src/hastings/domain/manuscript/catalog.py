@@ -71,6 +71,20 @@ class ManuscriptEntry:
         return decode(self.kind, self.content)
 
 
+def next_order_keys(catalog: ManuscriptCatalog, count: int) -> list[str]:
+    """追加章的顺序键：从现有最大数字 +1 起四位补零；非数字键忽略。
+
+    单章导入不传顺序键时用它接着排，避免每章都落到 ``0001`` 而退回按 ID 排序。
+    """
+    highest = 0
+    for entry in catalog.chapters():
+        try:
+            highest = max(highest, int(entry.model().order_key))
+        except (TypeError, ValueError):
+            continue
+    return [f"{highest + index + 1:04d}" for index in range(max(0, count))]
+
+
 @dataclass(frozen=True, slots=True)
 class ManuscriptCatalog:
     """某 Commit 的正文目录（只读）。commit_id 为 None 表示空目录。"""

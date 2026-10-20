@@ -29,6 +29,19 @@ _MIGRATION_STEPS: dict[int, tuple[str, ...]] = {
         # 多条关系的折叠顺序必须显式持久化。旧行序号 0（单行 Commit 无影响）。
         "ALTER TABLE relation_revisions ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
     ),
+    3: (
+        # v4（V03-0.5）：仓库辅助表——副本/回执/操作记录与正文提交同事务。
+        # 幂等：IF NOT EXISTS 保证重跑安全；已到 v4 的库不执行本步。
+        """
+        CREATE TABLE IF NOT EXISTS aux_records (
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            bucket TEXT NOT NULL,
+            key TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            PRIMARY KEY (project_id, bucket, key)
+        )
+        """,
+    ),
 }
 
 _TOO_NEW_WHY = (

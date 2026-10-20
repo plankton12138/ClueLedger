@@ -19,12 +19,15 @@ from __future__ import annotations
 import argparse
 import os
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import uvicorn
 from dotenv import load_dotenv
+from fastapi import FastAPI
 
 from hastings.__main__ import DEFAULT_STORIES_ROOT, env_error, normalize_base_url
+from hastings.infrastructure.credentials import build_credential_store
 from hastings.server.app import create_app
 from hastings.server.hastings_session import default_session_factory
 from hastings.server.provider_config import (
@@ -136,32 +139,74 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+class StartupError(RuntimeError):
+    """启动期的环境故障：退出码 1（与参数歧义的 2 区分）。
+
+    显式 ``--static-dir`` 不存在这类故障属于「环境不对」，fail fast 并给出
+    下一步；把它和参数错误混成一个退出码，运维脚本就无法分类处理。
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class AssembledServer:
+    """一次完整装配的结果：应用 + 各部件与实际生效的路径。
+
+    V03-8.3：把 ``main`` 里的装配抽成可复用入口，闭环冒烟测试因此走**同一条
+    生产装配链**（同样的 config 解析、ProviderBook、registry、SQLite 工作台），
+    而不是另搭一个测试运行时——否则「生产能起」永远只是假设。
+    """
+
+    app: FastAPI
+    v2_runtime: V2Runtime
+    config_path: Path
+    v2_db: Path
+    static_dir: Path | None
+    stories_root: Path
+    corpus_root: Path
+    boot_profile_name: str
+    boot_model: str
+    unconfigured: bool
+    env_hint: str = ""
+    credential_migration_failed: tuple[str, ...] = ()
+
+
+def assemble_server(
+    *,
+    stories_root: Path = DEFAULT_STORIES_ROOT,
+    corpus_root: Path | None = None,
+    v2_db: Path | None = None,
+    config: Path | None = None,
+    config_dir: Path | None = None,
+    static_dir: Path | None = None,
+    model: str | None = None,
+    load_env: bool = True,
+) -> AssembledServer:
+    """按生产默认值装配应用；任何位置失败都带三要素抛出，不静默降级。
+
+    ``load_env=False`` 供测试使用：不读真实 ``.env``／不调用 ``normalize_base_url``，
+    其余路径与 ``python -m hastings.server`` 完全一致（**没有测试专用开关**）。
+    """
     try:
-        config_path = resolve_config_path(args.config, args.config_dir)
-        v2_db = resolve_v2_db(args.v2_db)
+        config_path = resolve_config_path(config, config_dir)
+        db_path = resolve_v2_db(v2_db)
     except ValueError as exc:
-        print(exc)
-        return 2
-    static_dir = resolve_static_dir(args.static_dir)
-    if static_dir is not None and not static_dir.is_dir():
-        # 显式目录缺失属环境故障（区别于「不传=自动探测」），fail fast 三要素。
-        print(
-            f"前端目录不存在：{static_dir}。为什么错：--static-dir 指向的目录不存在。"
+        raise ValueError(str(exc)) from exc
+    resolved_static = resolve_static_dir(static_dir)
+    if resolved_static is not None and not resolved_static.is_dir():
+        raise StartupError(
+            f"前端目录不存在：{resolved_static}。为什么错：--static-dir 指向的目录不存在。"
             "怎样算对：先构建前端（frontend/ 下 npm run build），或移除该参数走自动探测。"
         )
-        return 1
+    if load_env:
+        load_dotenv()
+        normalize_base_url()
 
-    load_dotenv()
-    normalize_base_url()
+    server_config = load_server_config(config_path)
 
-    try:
-        server_config = load_server_config(config_path)
-    except ProviderConfigError as exc:
-        print(exc)
-        return 1
-
+    boot_profile_name = "default"
+    boot_model = model or ""
+    unconfigured = False
+    env_hint = ""
     if config_path.exists():
         # config.yaml 权威：第一个有 key 的档案作为引导档案（.env 不再必需）。
         # 空启动（首次使用无任何配置）：服务照起，用户在设置页配置后再对话——
@@ -177,7 +222,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if profile is None:
             fallback = server_config.providers[0]
             boot_profile_name = fallback.name
-            boot_model = args.model or fallback.default_model
+            boot_model = model or fallback.default_model
+            unconfigured = True
             print(
                 "当前没有可用档案（所有档案都缺 api_key / api_key_env，"
                 "或引用的环境变量为空），服务以未配置模式启动。"
@@ -185,8 +231,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             boot_profile_name = profile.name
-            boot_model = args.model or profile.default_model
+            boot_model = model or profile.default_model
             if not boot_model:
+                unconfigured = True
                 print(
                     f"引导档案 {profile.name!r} 没有配置模型名（{config_path}），"
                     "服务以未配置模式启动。"
@@ -194,46 +241,87 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "或用 --model 启动参数指定。"
                 )
     else:
-        # env 回落（P1 现状）：缺 env 不再拒绝启动——空启动，设置页配置后再对话
-        error = env_error(args.model)
-        if error is not None:
-            print(f"{error}服务仍将启动（未配置模式）：在设置页配置档案与模型后即可对话。")
+        # env 回落（P1 现状）：缺 env 不拒绝启动——空启动，设置页配置后再对话
+        env_hint = env_error(model) or ""
+        if env_hint:
+            unconfigured = True
         boot_profile_name = "default"
-        boot_model = args.model or os.environ.get("HASTINGS_MODEL", "")
+        boot_model = model or os.environ.get("HASTINGS_MODEL", "")
 
-    # ProviderBook 是进程级端点目录（P6 D1/T2）：按档案名缓存 provider 实例，
-    # 跨档案切换复用、无需关闭；boot_* 决定新工作区的引导端点与模型。
-    # config_path（P7 T12）：设置页 UI 增删改档案后写回同一文件。
+    credential_store = build_credential_store()
     book = ProviderBook(
         server_config,
         boot_name=boot_profile_name,
         boot_model=boot_model,
         config_path=config_path,
+        credentials=credential_store,
     )
     registry = WorkspaceRegistry(
-        root=args.stories_root,
+        root=stories_root,
         session_factory=default_session_factory(book),
     )
-    v2_db.parent.mkdir(parents=True, exist_ok=True)
-    v2_runtime = V2Runtime.sqlite(str(v2_db))
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    v2_runtime = V2Runtime.sqlite(str(db_path))
     app = create_app(
         registry,
-        static_dir=static_dir,
+        static_dir=resolved_static,
         book=book,
-        corpus_root=args.corpus_root,
+        corpus_root=corpus_root if corpus_root is not None else Path("./corpus"),
         v2_runtime=v2_runtime,
     )
-
-    print(f"文章目录已打开：{args.stories_root}")
-    print(f"语料库目录：{args.corpus_root}")
-    print(f"工作台数据库：{v2_db.resolve()}")
-    model_display = boot_model or "未配置（在设置页配置模型后即可对话）"
-    print(
-        f"模型：{model_display}｜档案：{boot_profile_name}｜写作台地址：http://{args.host}:{args.port}"
+    return AssembledServer(
+        app=app,
+        v2_runtime=v2_runtime,
+        config_path=config_path,
+        v2_db=db_path,
+        static_dir=resolved_static,
+        stories_root=stories_root,
+        corpus_root=corpus_root if corpus_root is not None else Path("./corpus"),
+        boot_profile_name=boot_profile_name,
+        boot_model=boot_model,
+        unconfigured=unconfigured,
+        env_hint=env_hint,
+        credential_migration_failed=tuple(book.credential_migration["failed"]),
     )
-    if static_dir is not None:
-        print(f"前端已托管：{static_dir}")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        assembled = assemble_server(
+            stories_root=args.stories_root,
+            corpus_root=args.corpus_root,
+            v2_db=args.v2_db,
+            config=args.config,
+            config_dir=args.config_dir,
+            static_dir=args.static_dir,
+            model=args.model,
+        )
+    except StartupError as exc:
+        print(exc)
+        return 1
+    except ProviderConfigError as exc:  # 配置损坏：先于 ValueError（它是子类）
+        print(exc)
+        return 1
+    except ValueError as exc:
+        print(exc)
+        return 2
+
+    if assembled.env_hint:
+        print(f"{assembled.env_hint}服务仍将启动（未配置模式）：在设置页配置档案与模型后即可对话。")
+    for failed in assembled.credential_migration_failed:
+        print(f"⚠ 凭据迁移未完成：{failed}（旧连接保持可用；修复后重启重试）")
+    print(f"文章目录已打开：{assembled.stories_root}")
+    print(f"语料库目录：{assembled.corpus_root}")
+    print(f"工作台数据库：{assembled.v2_db.resolve()}")
+    model_display = assembled.boot_model or "未配置（在设置页配置模型后即可对话）"
+    print(
+        f"模型：{model_display}｜档案：{assembled.boot_profile_name}｜"
+        f"写作台地址：http://{args.host}:{args.port}"
+    )
+    if assembled.static_dir is not None:
+        print(f"前端已托管：{assembled.static_dir}")
+    uvicorn.run(assembled.app, host=args.host, port=args.port, log_level="info")
     return 0
 
 

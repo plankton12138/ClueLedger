@@ -38,3 +38,36 @@ uv run python eval/v2/chat_driver.py --out eval/runs/<日期>-phase19-chat --mod
 ```
 
 默认 `--provider config` 使用 config.yaml 的 ollama 档案；本地模型先启动 Ollama。四个场景的通过口径写在驱动 docstring；模型输出不合规时报告如实记录，不以 FakeProvider 替代。
+
+## 0.3 写作台真模型走查（V03-8.7）
+
+`desk_driver.py` 进程内启动 V2 应用（隔离 SQLite）+ 真实 Provider（`--provider` 选 config.yaml 档案，默认 ollama；会加载仓库根 `.env`），
+走查 0.3 的真模型路径与证据分层：讨论流式、试写候选→采用、修订任务预算/覆盖/停止、环境失败记录。
+
+```bash
+uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-real-model --model qwen3:8b
+# 追加真模型修订全循环（S5：读章→改稿→覆盖→暂存→发布）
+uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-deep-revision --model qwen3:8b --deep
+# 远程 OpenAI 兼容端点（DeepSeek 等）：--provider 填档案名
+uv run python eval/v2/desk_driver.py --out eval/runs/<日期>-v03-8.7-deepseek --provider default --deep
+```
+
+| 场景 | 检查点 |
+|---|---|
+| S1 讨论流式 | 真实模型增量分片、终态到达、讨论不产生 Job |
+| S2 试写候选 → 采用 | 候选带预览哈希；采用走统一发布产生 Commit，`operation_id` 可回读 |
+| S3 修订任务预算与覆盖 | `call_limit` 可缩小、开任务零模型调用；读取/覆盖结论入库；停止留痕 |
+| S4 环境失败（失败证据） | 不存在的模型必须 `turn.failed`（`CHAT_PROVIDER_FAILED`），不静默、不伪成功 |
+| S5 修订全循环（`--deep`） | 读章登记 + 装配含原文；真实模型按原文改写；覆盖→暂存→一次发布（正文换版、回执可回读） |
+| S6 执行循环（`--deep`） | `POST /revision-tasks/{id}/run`：预算 1 跑两章停在第二章（`waiting/budget_exhausted`）；继续后跑完并一次发布 |
+
+S5 的模型调用发生在试写候选服务（V03-3）：目标为现有章时，服务自己把该章正文装进
+提示词「现有正文」段（V03-8.7 补记修复），驱动不再粘贴原文。任务预算账本当前无执行器
+消费（`consume_calls` 无调用方），该缺口在报告里单列为失败证据，不冒充通过。
+
+失败证据按设计记录、不计通过；模型输出不合规时报告如实记录，不用 FakeProvider 替代。
+最近验收：[2026-10-19 基础报告](../runs/2026-10-19-v03-8.7-real-model/README.md)、
+[2026-10-19 含修订全循环](../runs/2026-10-19-v03-8.7-deep-revision/README.md)、
+[2026-10-19 原文自动装入后复跑](../runs/2026-10-19-v03-8.7-deep-revision-v2/README.md)、
+[2026-10-19 执行循环](../runs/2026-10-19-v03-8.7-execution-loop/README.md)。
+[2026-10-19 DeepSeek 远程端点](../runs/2026-10-19-v03-8.7-deepseek/README.md)。

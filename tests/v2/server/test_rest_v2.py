@@ -286,47 +286,40 @@ def _seed_author_model(runtime: V2Runtime, project_id: str) -> None:
     assert result.status == "committed"
 
 
-class TestAuthorModelQueries:
-    def test_preferences_and_observations(self, client: TestClient, runtime: V2Runtime) -> None:
+class TestAuthorModelEntriesRemoved:
+    """作者模型 0.3 不交付入口（计划 §9.1：移除 0.3 入口、注入与默认调度）。
+
+    旧数据仍然留在仓库里、可备份回看，但 v2 不再暴露读写入口——
+    这条用例盯的就是「入口不会悄悄长回来」。
+    """
+
+    def test_legacy_author_model_paths_are_gone(
+        self, client: TestClient, runtime: V2Runtime
+    ) -> None:
         project_id = _create_project(client)
         _import_chapter(client, project_id)
         _seed_author_model(runtime, project_id)
 
-        prefs = client.get(f"/api/v2/projects/{project_id}/author-model/preferences")
-        assert prefs.status_code == 200, prefs.text
-        body = prefs.json()
-        assert len(body["preferences"]) == 1
-        pref = body["preferences"][0]
-        assert pref["preference_id"] == "pref_1"
-        assert pref["status"] == "active"
-        assert pref["statement"] == "作者偏好更精简的措辞与句式"
-        assert pref["scope_kind"] == "project"
+        for path in (
+            "author-model/preferences",
+            "author-model/observations",
+            "author-model/preferences/pref_1/evidence",
+        ):
+            response = client.get(f"/api/v2/projects/{project_id}/{path}")
+            assert response.status_code == 404, (path, response.text)
 
-        observations = client.get(f"/api/v2/projects/{project_id}/author-model/observations")
-        assert observations.status_code == 200, observations.text
-        rows = observations.json()["observations"]
-        assert len(rows) == 1
-        assert rows[0]["observation_id"] == "obs_1"
-        assert rows[0]["edit"]["before"] == "他解释了很久。"
-        assert rows[0]["classification"]["category"] == "language_style"
-
-    def test_preference_evidence_backtrack(self, client: TestClient, runtime: V2Runtime) -> None:
+    def test_legacy_preference_write_is_gone(self, client: TestClient) -> None:
         project_id = _create_project(client)
-        _import_chapter(client, project_id)
-        _seed_author_model(runtime, project_id)
-
-        response = client.get(
-            f"/api/v2/projects/{project_id}/author-model/preferences/pref_1/evidence"
-        )
-        assert response.status_code == 200, response.text
-        rows = response.json()["observations"]
-        assert [row["observation_id"] for row in rows] == ["obs_1"]
-
-    def test_unknown_preference_evidence_returns_404(self, client: TestClient) -> None:
-        project_id = _create_project(client)
-        _import_chapter(client, project_id)
-        response = client.get(
-            f"/api/v2/projects/{project_id}/author-model/preferences/pref_none/evidence"
+        response = client.post(
+            f"/api/v2/projects/{project_id}/author-model/preferences",
+            json={
+                "idempotency_key": "declare",
+                "expected_head": None,
+                "category": "language_style",
+                "statement": "少用解释性独白",
+                "scope_kind": "project",
+                "scope_target": project_id,
+            },
         )
         assert response.status_code == 404, response.text
 
@@ -385,8 +378,10 @@ class TestRestoreEndpoint:
 # ---------------------------------------------------------------------------
 # 保存 → Outbox → 分析任务调度（消费者接线）
 # ---------------------------------------------------------------------------
-class TestAnalysisDispatchWiring:
-    def test_save_dispatches_one_analysis_job_via_outbox(self) -> None:
+class TestEventProjectionWiring:
+    """0.3（V03-0.4）：保存事件只走确定性投影，不再派生自动分析 Job。"""
+
+    def test_save_publishes_event_without_creating_jobs(self) -> None:
         runtime = V2Runtime.memory()
         app = build_v2_app(runtime)
         with TestClient(app) as c:
@@ -403,14 +398,14 @@ class TestAnalysisDispatchWiring:
             assert saved.status_code == 200
             assert saved.json()["status"] == "committed"
 
-            # Outbox 里除业务事件外还有内核事件（commit/revision/branch），
-            # 发布数 ≥ 1 即可；分析任务只由 manuscript.chapter.committed 派生。
+            # 事件发布并标记（不积压），但零自动 Job（切断模型调度，I06）。
             assert runtime.dispatch_pending(project_id) >= 1
-            assert [job_type for job_type, _ in runtime.jobs.created] == ["manuscript.analysis"]
+            assert runtime.jobs.created == []
+            assert runtime.event_projection.report().get("manuscript.chapter.committed", 0) >= 1
 
-            # 重复消费不重复建任务；无新业务事件时不再建第二个 Job
+            # 重复发布不重复计数；无新业务事件时投影 stable
             runtime.dispatch_pending(project_id)
-            assert len(runtime.jobs.created) == 1
+            assert runtime.jobs.created == []
 
     def test_noop_save_creates_no_event_no_job(self) -> None:
         runtime = V2Runtime.memory()
@@ -442,3 +437,32 @@ def test_runtime_builds_sqlite_backend(tmp_path: Path) -> None:
         _import_chapter(client, project_id)
         body = client.get(f"/api/v2/projects/{project_id}/manuscript").json()
         assert len(body["chapters"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# 统一能力公布（V03-0.7）
+# ---------------------------------------------------------------------------
+
+
+def test_capabilities_endpoint_publishes_unified_config() -> None:
+    """GET /api/v2/capabilities：格式/上限/功能状态统一公布，前端不另写常量。"""
+    runtime = V2Runtime.memory()
+    client = TestClient(build_v2_app(runtime))
+    payload = client.get("/api/v2/capabilities").json()
+    assert payload["product_version"] == "0.3"
+    assert payload["api_version"] == "v2"
+    imp = payload["import"]
+    assert imp["formats"] == [".txt", ".md"]
+    assert imp["max_file_bytes"] == 10 * 1024 * 1024
+    assert imp["max_batch_bytes"] == 20 * 1024 * 1024
+    assert imp["max_chapters_per_batch"] == 1000
+    assert imp["preview_ttl_hours"] == 24
+    features = payload["features"]
+    assert features["execution_grants"]["status"] == "implemented"
+    assert features["edit_sessions"]["status"] == "implemented"
+    assert features["operation_records"]["status"] == "implemented"
+    assert features["chapter_drafts"]["status"] == "implemented"
+    assert features["chapter_drafts"]["max_chars"] == 120_000
+    # 排除项不公布为可用（计划 §1.4：禁止显示为可用占位入口）
+    for excluded in ("author_model", "style_observation", "consistency_audit", "corpus_rag"):
+        assert features[excluded]["status"] == "excluded"

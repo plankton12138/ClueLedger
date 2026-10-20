@@ -119,8 +119,14 @@ def create_model_access_router(
             default_model=entry.default_model,
             no_auth=entry.no_auth,
         )
+        # V03-1.3：个人 Key 进 OS 凭据存储，连接元数据只存 credential_ref；
+        # 可用性先按入存储前的完整档案判定（清空明文不影响判定）。
         if not profile.available:
             raise HTTPException(422, "尚未提供可用密钥；粘贴本来源的 API Key，或设置对应环境变量")
+        if key and book.credentials is not None:
+            ref = f"hastings:provider:{profile.name}"
+            book.credentials.save(ref, key)
+            profile = profile.model_copy(update={"credential_ref": ref, "api_key": SecretStr("")})
         persist(
             book.config.model_copy(
                 update={
@@ -131,14 +137,15 @@ def create_model_access_router(
                 }
             )
         )
+        materialized = book.profile(entry.name) or profile
         return {
-            "name": profile.name,
-            "base_url": profile.base_url,
-            "default_model": profile.default_model,
-            "catalog_id": profile.catalog_id,
-            "no_auth": profile.no_auth,
-            "available": profile.available,
-            "key_hint": mask_key(profile.resolved_api_key()),
+            "name": materialized.name,
+            "base_url": materialized.base_url,
+            "default_model": materialized.default_model,
+            "catalog_id": materialized.catalog_id,
+            "no_auth": materialized.no_auth,
+            "available": materialized.available,
+            "key_hint": mask_key(materialized.resolved_api_key()),
         }
 
     @router.get("/api/providers/{name}/model-choices")

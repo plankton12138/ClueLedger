@@ -346,3 +346,29 @@ describe("流式订阅与重连", () => {
     expect(attempts).toBe(after);
   });
 });
+
+describe("接着讨论端点（V03-1.5）", () => {
+  it("POST turns 携带 source_message_ids 与幂等键，不携带 text", async () => {
+    const calls = stubFetch((url) =>
+      url.endsWith("/turns")
+        ? json({
+            turn: { turn_id: "t9", conversation_id: "c1", status: "queued", model: "m", end_reason: null, idempotency_key: "k-continue", retry_of: null },
+            user_message: { message_id: "m1", conversation_id: "c1", turn_id: "t9", role: "author", kind: "text", text: "想法", refs: [], model: null, status: "completed", error: null, created_at: "" },
+          })
+        : json({}, 404),
+    );
+    const service = createHttpChatService("p1");
+    await service.continueTurn("p1", "c1", {
+      source_message_ids: ["m1"],
+      idempotency_key: "k-continue",
+    });
+    const call = calls.find((c) => c.url.endsWith("/turns"));
+    expect(call).toBeDefined();
+    expect(call!.method).toBe("POST");
+    // text 与 source_message_ids 服务端互斥：接着讨论请求绝不携带 text。
+    expect(call!.body).toEqual({
+      source_message_ids: ["m1"],
+      idempotency_key: "k-continue",
+    });
+  });
+});

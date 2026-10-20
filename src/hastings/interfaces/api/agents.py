@@ -7,11 +7,17 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from hastings.agents.coordinator import route_intent
+from hastings.application.errors import ViolationError
+from hastings.application.execution import (
+    ConnectionSnapshot,
+    build_grant,
+)
 from hastings.application.workflows.change_support import reject
 from hastings.domain.repository.ids import Actor, ArtifactId, CommitId, ProjectId
 from hastings.domain.repository.requests import ArtifactChange, CommitRequest
+from hastings.domain.repository.serialization import content_hash
 from hastings.domain.worker import WorkerRole
+from hastings.interfaces.api._retired import retired
 
 if TYPE_CHECKING:
     from hastings.server.v2 import V2Runtime
@@ -34,6 +40,16 @@ class AcceptJob(BaseModel):
 
 class ExecuteRepair(BaseModel):
     idempotency_key: str = Field(min_length=1)
+
+
+#: 角色 → 凭据功能（V03-0.3）：显式启动即授权；style_observer 属 0.3 排除的
+#: 作者模型自动链路，API 不签发凭据（不能绕过 UI 创建此类 Job，计划 §8.3）。
+ROLE_FUNCTIONS: dict[str, str] = {
+    "planner": "draft",
+    "writer": "draft",
+    "auditor": "suggestion",
+    "coordinator": "suggestion",
+}
 
 
 class CoordinatorRequest(BaseModel):
@@ -77,11 +93,12 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
 
     @router.post("/coordinate")
     def coordinate(project_id: str, req: CoordinatorRequest) -> dict[str, Any]:
-        snapshot = story(project_id)
-        return {
-            "decision": route_intent(req.instruction, change_set_id=req.change_set_id),
-            "snapshot": snapshot,
-        }
+        del project_id, req
+        retired(
+            where="agents.coordinate",
+            why="多 Agent 协调入口已退役（0.3 前端无调用点，任务由对话意图显式发起）",
+            fix="用对话意图区分（讨论/候选/执行）表达任务，或从写作台试写/修订任务发起",
+        )
 
     @router.post("/agent-jobs")
     async def submit(project_id: str, req: SubmitJob) -> dict[str, Any]:
@@ -111,6 +128,30 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
         base = req.base_commit_id or head.value
         app = runtime.agent_workflows
         targets = tuple(req.target_ids)
+        function = ROLE_FUNCTIONS.get(str(req.role))
+        if function is None:
+            raise ViolationError(
+                code="EXECUTION_NOT_AUTHORIZED",
+                where="agent_jobs.submit",
+                why=f"角色 {req.role!r} 没有可签发的启动凭据（0.3 排除的自动链路）",
+                fix="使用 planner / writer / auditor / coordinator；风格观察等旧能力不再启动",
+                details={"role": str(req.role)},
+            )
+        binding = runtime.model_binding_provider()
+        connection = ConnectionSnapshot(
+            connection_id=str(binding.get("profile") or ""),
+            revision=0,
+            provider=str(binding.get("api") or binding.get("profile") or ""),
+            model=str(binding.get("model") or ""),
+        )
+        grant = build_grant(
+            grant_id=f"grant_{content_hash([req.idempotency_key])[:16]}",
+            source="author_button",
+            function=function,  # type: ignore[arg-type]
+            analysis_scope=targets,
+            write_scope=None,
+            connection=connection,
+        ).to_wire()
         if req.role == "planner":
             jid = await app.plan(
                 pid,
@@ -119,6 +160,7 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
                 req.idempotency_key,
                 req.instruction,
                 token_budget=req.token_budget,
+                grant=grant,
             )
         elif req.role == "writer":
             if not req.chapter_id:
@@ -131,6 +173,7 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
                 req.idempotency_key,
                 req.instruction,
                 token_budget=req.token_budget,
+                grant=grant,
             )
         elif req.role == "auditor":
             if not targets:
@@ -141,7 +184,7 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
                     if v.artifact.kind.startswith(("story.", "narrative.", "manuscript."))
                 )
             jid = await app.audit(
-                pid, base, targets, req.idempotency_key, token_budget=req.token_budget
+                pid, base, targets, req.idempotency_key, token_budget=req.token_budget, grant=grant
             )
         elif req.role == "style_observer":
             if not req.before_commit_id or not req.chapter_id:
@@ -172,7 +215,7 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
                 instruction=req.instruction,
                 token_budget=req.token_budget,
             )
-            jid = await runtime.worker.submit(ctx, req.idempotency_key)
+            jid = await runtime.worker.submit(ctx, req.idempotency_key, grant=grant)
         else:
             raise ValueError("Reviser 需要已批准的修订步骤；从变更中心执行 Agent 修复")
         job = await require_job(project_id, jid)
@@ -212,22 +255,11 @@ def create_agents_router(runtime: V2Runtime) -> APIRouter:
 
     @router.post("/changes/{cs_id}/execute-agent")
     async def repair(project_id: str, cs_id: str, req: ExecuteRepair) -> dict[str, Any]:
-        drafts = await runtime.task_draft_store.list_by_status("started")
-        binding = next(
-            (
-                d.model_binding
-                for d in drafts
-                if d.project_id == project_id and d.job_ref == f"change:{cs_id}"
-            ),
-            None,
+        del project_id, cs_id, req
+        retired(
+            where="changes.execute_agent",
+            why="变更集执行 Agent 随逐章审批流退出 0.3，不再接受按变更集启动模型",
+            fix="用修订任务（revision-tasks）或写作台试写候选承载同类执行",
         )
-        async with runtime.project_execution_lock(project_id):
-            return await runtime.agent_workflows.repair(
-                ProjectId(project_id),
-                cs_id,
-                req.idempotency_key,
-                runtime.revision,
-                model_binding=binding,
-            )
 
     return router

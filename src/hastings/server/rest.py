@@ -12,8 +12,8 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
-import json
 import os
 import re
 import zipfile
@@ -26,9 +26,16 @@ from typing import Final, Literal
 import httpx
 import yaml
 from fastapi import APIRouter, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, SecretStr, ValidationError
 
+from hastings.application.errors import EnvironmentFailure, ViolationError
+from hastings.application.services.local_model_service import (
+    DownloadFrame,
+    LocalModelConnection,
+    LocalModelTask,
+    LocalModelTaskService,
+)
 from hastings.bible.audit import AuditRatio, build_audit_report
 from hastings.bible.models import Clue, Foreshadow, Method, OutlineEntry, TimelineEntry
 from hastings.bible.stats import compute_story_stats
@@ -41,6 +48,7 @@ from hastings.bible.store import (
     load_story_doc,
 )
 from hastings.events_store import CATEGORIES, EventStore, events_file
+from hastings.infrastructure.runtime import SystemClock, UuidIdGenerator
 from hastings.manuscript.store import current_revision
 from hastings.provider_catalog import PROVIDER_CATALOG
 from hastings.rag.corpus_store import (
@@ -61,6 +69,7 @@ from hastings.server.provider_config import (
     ProviderBook,
     ProviderProfile,
     ServerConfig,
+    build_provider,
     env_fallback_config,
     is_loopback_url,
     mask_key,
@@ -88,6 +97,8 @@ from hastings.settings import (
     save_settings,
 )
 from hastings.tools.bible_tools import ENTITY_LABELS
+from tau_agent.messages import UserMessage
+from tau_agent.provider_events import AssistantErrorEvent, TextDeltaEvent
 from tau_agent.types import JSONValue
 
 BibleType = Literal["character", "clue", "foreshadow", "method", "timeline"]
@@ -410,8 +421,38 @@ class OllamaModelsResponse(BaseModel):
     models: list[OllamaModelInfoResponse]
 
 
-class OllamaPullRequest(BaseModel):
+class LocalModelTaskResponse(BaseModel):
+    """一条本地模型任务记录（V03-1.4）：阶段即事实，percent 可空。
+
+    不含任何凭据字段——连接快照白名单（provider/base_url/model）。
+    """
+
+    task_id: str
+    request_id: str
+    action: Literal["download", "test"]
     model: str
+    provider: str
+    base_url: str
+    state: Literal["queued", "running", "succeeded", "failed", "stopped"]
+    stage: str
+    percent: int | None
+    detail: str
+    error: str | None
+    created_at: str
+    updated_at: str
+
+
+class LocalModelTaskCreateRequest(BaseModel):
+    """创建本地模型任务：request_id 幂等键 + 动作 + 模型 + 已保存连接。"""
+
+    request_id: str = Field(min_length=1)
+    action: Literal["download", "test"]
+    model: str
+    connection_id: str = Field(min_length=1)
+
+
+class LocalModelTaskListResponse(BaseModel):
+    tasks: list[LocalModelTaskResponse]
 
 
 class ModelsResponse(BaseModel):
@@ -641,6 +682,84 @@ def _read_ledger(workspace: StoryWorkspace, entity_type: BibleType) -> list[Base
         ) from exc
 
 
+def _ollama_root(base_url: str) -> str:
+    """OpenAI 兼容档案地址 → Ollama 服务根：去掉 /v1 后缀。
+
+    本地连接档案的 base_url 形如 ``http://localhost:11434/v1``（推理走
+    OpenAI 兼容端点）；下载与重检直连 Ollama 原生端口，需去掉 /v1。
+    """
+    return base_url.rstrip("/").removesuffix("/v1").rstrip("/")
+
+
+def _build_local_model_task_service(
+    *,
+    book: ProviderBook | None,
+    ollama_transport: httpx.AsyncBaseTransport | None,
+    resolve_book: Callable[[], ProviderBook],
+) -> LocalModelTaskService:
+    """真实执行器装配（V03-1.4）：下载/重检走 OllamaClient，测试走已保存连接。
+
+    调用测试经 ``build_provider`` 用已保存档案（no_auth 档案空 key 不发
+    Authorization 头）跑一次最小推理——模型目录可获取不等于推理测试通过。
+    """
+
+    async def download(model: str, base_url: str) -> AsyncIterator[DownloadFrame]:
+        client = OllamaClient(base_url=base_url, transport=ollama_transport)
+        async for progress in client.pull(model):
+            yield DownloadFrame(
+                status=progress.status, completed=progress.completed, total=progress.total
+            )
+
+    async def test_call(provider_name: str, model: str) -> str:
+        profile = resolve_book().profile(provider_name)
+        if profile is None:
+            raise ViolationError(
+                code="LOCAL_MODEL_CONNECTION_NOT_FOUND",
+                where=f"provider/{provider_name}",
+                why="连接在任务执行前被删除，无法发起调用测试",
+                fix="重新选择一个已保存的连接后重试",
+            )
+        provider = build_provider(profile)
+        try:
+            async with asyncio.timeout(120.0):
+                async for event in provider.stream_response(
+                    model=model,
+                    system="你是一次连通性测试。请只回复：OK",
+                    messages=[UserMessage(content="请只回复：OK")],
+                    tools=[],
+                ):
+                    if isinstance(event, AssistantErrorEvent):
+                        raise EnvironmentFailure(
+                            code="LOCAL_MODEL_TEST_PROVIDER_ERROR",
+                            where=f"local-model-test/{model}",
+                            why=f"模型端点返回错误事件：{event!r}",
+                            fix="确认 Ollama 正在运行且模型已下载后重试",
+                        )
+                    if isinstance(event, TextDeltaEvent):
+                        return event.delta
+            return ""
+        finally:
+            close = getattr(provider, "aclose", None)
+            if close is not None:
+                await close()
+
+    async def recheck(model: str, base_url: str) -> tuple[bool, bool]:
+        client = OllamaClient(base_url=base_url, transport=ollama_transport)
+        try:
+            tags = await client.tags()
+        except OllamaError:
+            return (False, False)
+        return (True, any(m.name == model for m in tags))
+
+    return LocalModelTaskService(
+        clock=SystemClock(),
+        new_task_id=lambda: UuidIdGenerator().new_id("lmt"),
+        download_executor=download,
+        test_executor=test_call,
+        recheck=recheck,
+    )
+
+
 def create_rest_router(
     *,
     registry: WorkspaceRegistry,
@@ -649,6 +768,7 @@ def create_rest_router(
     corpus_root: Path | None = None,
     ollama_transport: httpx.AsyncBaseTransport | None = None,
     installed_probe: Callable[[], bool] | None = None,
+    local_model_tasks: LocalModelTaskService | None = None,
 ) -> APIRouter:
     """装配 REST 路由（P6 T2：``book`` 提供档案目录与跨档案重建工厂）。
 
@@ -656,11 +776,16 @@ def create_rest_router(
     ``model_transport`` 仅供测试注入 MockTransport，生产为 None（走真实网络）。
     ``corpus_root`` 语料目录（P7 T6，D6）：缺省 ./corpus（服务级，与 stories/ 平级）。
     ``ollama_transport``（本地模型）与 ``installed_probe`` 仅供测试注入，生产为 None。
+    ``local_model_tasks`` 仅供测试注入（V03-1.4），缺省时用真实执行器装配。
     """
     router = APIRouter()
     corpus = CorpusStore(root=corpus_root if corpus_root is not None else Path("./corpus"))
     ollama = OllamaClient(transport=ollama_transport)
     fallback_book: ProviderBook | None = None
+    if local_model_tasks is None:
+        local_model_tasks = _build_local_model_task_service(
+            book=book, ollama_transport=ollama_transport, resolve_book=lambda: _book()
+        )
 
     def _book() -> ProviderBook:
         nonlocal fallback_book
@@ -927,9 +1052,9 @@ def create_rest_router(
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
         return ModelsResponse(models=models)
 
-    # ---- Ollama 本地模型（D11）：检测 / 目录 / 已装 / 下载流 / 删除 ----
-    # 服务级关注点，不绑定 slug；进度走流式 NDJSON 响应（fetch + ReadableStream
-    # 消费、AbortController 可取消），不挂 /ws/{slug} 会话通道。
+    # ---- Ollama 本地模型（D11）：检测 / 目录 / 已装 / 删除 ----
+    # 服务级关注点，不绑定 slug；下载/调用测试走 /api/local-model-tasks
+    # 任务记录端点（V03-1.4），本节只保留只读检测与删除。
     # 泄压阀：模型名不合法 422 / Ollama 不可达与上游故障 502 / 未装 404；
     # status 恒 200（三态是结果数据不是错误）。
 
@@ -968,15 +1093,52 @@ def create_rest_router(
             models=[OllamaModelInfoResponse(name=m.name, size_bytes=m.size_bytes) for m in models]
         )
 
-    @router.post("/api/ollama/pull")
-    async def ollama_pull(body: OllamaPullRequest) -> StreamingResponse:
-        """一键下载模型：转发 Ollama /api/pull 的 NDJSON 进度流。
+    # ---- 本地模型任务记录（V03-1.4）：下载 / 调用测试的应用侧协调 ----
+    # 计划 §6.5 补充合同：原 POST /api/ollama/pull 纯转发流已删除并收敛到
+    # 本节（前端断开即断流、无应用侧记录，无法支撑「离开后恢复真实阶段」）。
+    # 核心口径：下载完成 ≠ 加载完成 ≠ 测试通过；阶段无进度数时只显示阶段
+    # （percent 可空）；恢复（?active=true 与读回）先重检实际状态，不凭旧
+    # 百分比宣称运行中。任务记录不含凭据。
+    # 泄压阀：模型名不合法 422 / 连接不存在 404 / 指纹冲突与终态取消 409 /
+    # 环境失败落任务记录（归因数据，不是 5xx）。
 
-        帧口径（归一化后）：``{"status": str, "completed"?: int, "total"?: int}``，
-        终帧为 Ollama 原生 ``{"status": "success"}``；中途 Ollama 报错则补一帧
-        ``{"error": <三要素>}`` 后结束流。下载在 Ollama 侧继续——前端断开后
-        重新发起同一 pull 即幂等续传。
-        """
+    def _task_response(task: LocalModelTask) -> LocalModelTaskResponse:
+        return LocalModelTaskResponse(
+            task_id=task.task_id,
+            request_id=task.request_id,
+            action=task.action,
+            model=task.model,
+            provider=task.provider,
+            base_url=task.base_url,
+            state=task.state,
+            stage=task.stage,
+            percent=task.percent,
+            detail=task.detail,
+            error=task.error,
+            created_at=task.created_at.isoformat(),
+            updated_at=task.updated_at.isoformat(),
+        )
+
+    def _resolve_local_connection(connection_id: str) -> LocalModelConnection:
+        profile = _book().profile(connection_id)
+        if profile is None:
+            available = "、".join(p.name for p in _book().config.providers) or "（当前无档案）"
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"连接不存在：{connection_id!r}。"
+                    "为什么错：connection_id 不在服务级档案目录中。"
+                    f"怎样算对：从已保存连接 {available} 中选择，"
+                    "或先在设置页保存本地模型连接。"
+                ),
+            )
+        return LocalModelConnection(provider=profile.name, base_url=_ollama_root(profile.base_url))
+
+    @router.post("/api/local-model-tasks", response_model=LocalModelTaskResponse, status_code=201)
+    async def create_local_model_task(
+        body: LocalModelTaskCreateRequest, response: Response
+    ) -> LocalModelTaskResponse:
+        """创建下载/调用测试任务；request_id 幂等（重放回原任务，200）。"""
         name = body.model.strip()
         if not is_valid_model_name(name):
             raise HTTPException(
@@ -988,24 +1150,67 @@ def create_rest_router(
                     "怎样算对：到 ollama.com/library 查准确模型名后重试。"
                 ),
             )
+        connection = _resolve_local_connection(body.connection_id)
         try:
-            await ollama.version()  # 开流前先探活：连不上归 502 而非断流
-        except OllamaError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+            task, created = await local_model_tasks.create(
+                request_id=body.request_id,
+                action=body.action,
+                model=name,
+                connection=connection,
+            )
+        except ViolationError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if not created:
+            response.status_code = 200  # 幂等重放 / 复用运行中任务
+        return _task_response(task)
 
-        async def frames() -> AsyncIterator[str]:
-            try:
-                async for progress in ollama.pull(name):
-                    frame: dict[str, JSONValue] = {"status": progress.status}
-                    if progress.completed is not None:
-                        frame["completed"] = progress.completed
-                    if progress.total is not None:
-                        frame["total"] = progress.total
-                    yield json.dumps(frame, ensure_ascii=False) + "\n"
-            except OllamaError as exc:
-                yield json.dumps({"error": exc.detail}, ensure_ascii=False) + "\n"
+    @router.get("/api/local-model-tasks", response_model=LocalModelTaskListResponse)
+    async def list_local_model_tasks(active: bool = False) -> LocalModelTaskListResponse:
+        """恢复入口：active=true 列出未终态任务（逐个重检实际状态后返回）。"""
+        if not active:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "本端点仅支持 active=true 查询。"
+                    "为什么错：任务记录面向恢复场景，全量列举不是目标合同。"
+                    "怎样算对：携带 ?active=true 获取未终态任务并重检。"
+                ),
+            )
+        tasks = await local_model_tasks.active()
+        return LocalModelTaskListResponse(tasks=[_task_response(t) for t in tasks])
 
-        return StreamingResponse(frames(), media_type="application/x-ndjson")
+    @router.get("/api/local-model-tasks/{task_id}", response_model=LocalModelTaskResponse)
+    async def read_local_model_task(task_id: str) -> LocalModelTaskResponse:
+        task = await local_model_tasks.read(task_id)
+        if task is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"任务不存在：{task_id!r}。"
+                    "为什么错：任务 ID 不存在，或服务重启后进程内记录已清零。"
+                    "怎样算对：用 ?active=true 查看现存任务；"
+                    "模型实际是否已装以 GET /api/ollama/models 重检为准。"
+                ),
+            )
+        return _task_response(task)
+
+    @router.post("/api/local-model-tasks/{task_id}/cancel", response_model=LocalModelTaskResponse)
+    async def cancel_local_model_task(task_id: str) -> LocalModelTaskResponse:
+        """取消任务：如实回报取消范围（仅限本应用发起的这次请求）。"""
+        try:
+            task = await local_model_tasks.cancel(task_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"任务不存在：{task_id!r}。"
+                    "为什么错：任务 ID 不存在，或服务重启后进程内记录已清零。"
+                    "怎样算对：用 ?active=true 查看现存任务后重试。"
+                ),
+            ) from exc
+        except ViolationError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return _task_response(task)
 
     @router.delete("/api/ollama/models/{name}", status_code=204)
     async def ollama_delete(name: str) -> Response:

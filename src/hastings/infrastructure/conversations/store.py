@@ -111,12 +111,19 @@ class _BaseConversationStore:
         return self._append_event_row(conversation_id, body)
 
     # -- 公开 API ------------------------------------------------------------
-    async def create_conversation(self, project_id: str, title: str) -> m.Conversation:
+    async def create_conversation(
+        self, project_id: str, title: str, conversation_id: str | None = None
+    ) -> m.Conversation:
         with self._begin():
             now = self._now()
+            if conversation_id is not None:
+                # 确定性身份（V03-2.1 创作记录）：已存在即幂等返回，不覆盖标题。
+                existing = self._get_conversation(conversation_id)
+                if existing is not None:
+                    return m.Conversation.from_dict(existing)
             conversation = m.Conversation(
                 # 同一微秒可能创建多个会话：ID 必须带随机分量，不能只哈希输入。
-                conversation_id=f"conv_{uuid.uuid4().hex[:16]}",
+                conversation_id=conversation_id or f"conv_{uuid.uuid4().hex[:16]}",
                 project_id=project_id,
                 title=title,
                 created_at=now,

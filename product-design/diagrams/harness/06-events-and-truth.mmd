@@ -1,0 +1,33 @@
+flowchart TB
+    accTitle: 执行事件与正式作品变化
+    accDescr: 旧会话订阅、工作者进度、对话日志和正式作品事件使用不同通道，执行完成不能替代提交证据。
+    subgraph OLD["旧会话订阅"]
+        direction LR
+        H["AgentEvent"] --> SUB["subscribe<br/>逐个等待监听器"]
+        SUB --> UI["CLI / WebSocket<br/>即时展示"]
+        SUB --> JSONL["会话 JSONL<br/>message_end 定稿消息"]
+        SUB --> AUDIT["events.jsonl<br/>过滤 message_update"]
+    end
+    subgraph WORK["工作者进度"]
+        direction LR
+        T["TauAgentRunner<br/>筛选 Harness 事件<br/>补充 started / proposed 等"] --> JOB["Job 事件表<br/>generation 校验"]
+        JOB --> REST["agent-jobs / events<br/>按 Job 查询与轮询"]
+    end
+    subgraph CHAT["对话与执行日志"]
+        direction LR
+        C["ConversationService"] --> MSG["对话存储 → REST / SSE<br/>消息与任务引用"]
+        C --> LOG["ExecutionLog<br/>轮次生命周期事件"]
+        LOG --> SSE["execution-events<br/>分页 / SSE · 作品游标"]
+    end
+    subgraph FACT["正式作品变化"]
+        direction LR
+        COMMIT["CommitService<br/>Revision + Commit + Outbox<br/>同一事务"] --> OUT["Outbox 业务事件"]
+        OUT --> WS["业务 WebSocket<br/>sequence 断线补齐"]
+    end
+    OLD ~~~ WORK ~~~ CHAT ~~~ FACT
+    classDef run fill:#eaf5f0,stroke:#43836a,color:#173f31;
+    classDef app fill:#edf5ff,stroke:#4677a7,color:#183650;
+    classDef fact fill:#fff4df,stroke:#ae8037,color:#654719;
+    class H,SUB,T,JOB run;
+    class C,MSG,LOG,SSE,REST,UI,JSONL,AUDIT app;
+    class COMMIT,OUT,WS fact;

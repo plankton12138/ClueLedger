@@ -78,9 +78,11 @@ class ConfiguredV2Runner:
     def bound_chat_runner(self, binding: dict[str, Any]) -> ProviderChatRunner:
         profile, _model = self._resolve_bound(binding)
         loopback = is_loopback_url(profile.base_url)
+        # 首段预算按端点分档：远程端点排队或长提示下首字可能晚到，过紧会把「慢」
+        # 误判成「端点无响应」；180 秒之外仍给阶段二留 420 秒流式预算。
         return ProviderChatRunner(
             lambda: build_provider(profile),
-            first_token_timeout=300.0 if loopback else 60.0,
+            first_token_timeout=300.0 if loopback else 180.0,
             total_timeout=1800.0 if loopback else 600.0,
             max_output_chars=20000,
             owns_provider=True,

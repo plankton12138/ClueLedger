@@ -11,7 +11,7 @@ from __future__ import annotations
 
 __all__ = ["SCHEMA_VERSION", "SCHEMA_SQL"]
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA_SQL = """
 CREATE TABLE projects (
@@ -118,5 +118,15 @@ CREATE TABLE idempotency_records (
     no_change_reason TEXT,
     request_fingerprint TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (project_id, key)
+);
+
+-- v4（V03-0.5）：仓库辅助表。副本/回执/操作记录等关键业务状态与正文
+-- 提交同事务落库；「同一个 SQLite 文件」不等于「同一个事务」。
+CREATE TABLE aux_records (
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    bucket TEXT NOT NULL,
+    key TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY (project_id, bucket, key)
 );
 """

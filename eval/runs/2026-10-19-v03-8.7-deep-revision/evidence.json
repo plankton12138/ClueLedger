@@ -1,0 +1,118 @@
+{
+  "started": "2026-10-19T21:08:38.398552",
+  "model": "qwen3:8b",
+  "findings": [
+    {
+      "scenario": "S1 讨论流式（真模型）",
+      "ok": true,
+      "detail": "31 个增量、43 字、终态到达；Job 0→0（讨论无写权限，期望不变）",
+      "deltas": 31,
+      "chars": 43,
+      "sample": "开篇让雨停不下来，既象征主角被现实困住的压抑状态，也为后续剧情发展埋下持续高压的伏笔。"
+    },
+    {
+      "scenario": "S2.1 试写候选（真模型）",
+      "ok": true,
+      "detail": "候选 cnd_6b08717e83664380：140 字，预览哈希 441a589c5c0b…",
+      "candidate_id": "cnd_6b08717e83664380",
+      "chars": 140,
+      "sample": "晨雾在玻璃窗上凝结成珠，老渔夫的怀表在掌心发烫。他盯着木桌边沿那张泛黄的潮汐时刻表，新添的墨迹正顺着纸纹渗进海浪符号里，像某种暗语在晨光中发芽。海风裹着咸腥味掀动窗帘，远处渔船的汽笛声撞碎在礁石上，而他指腹下的墨迹正被水汽晕开，化作一串歪斜的数字——与昨夜暴雨时分的潮汐完全不符。"
+    },
+    {
+      "scenario": "S2.2 采用产生 Commit（统一发布）",
+      "ok": true,
+      "detail": "采用 HTTP 200；operation op_5ddbf5e8bd388a5…；Commit 已落盘",
+      "status": 200,
+      "operation_id": "op_5ddbf5e8bd388a5afc02d961"
+    },
+    {
+      "scenario": "S3.1 预算可缩小（开任务不调用模型）",
+      "ok": true,
+      "detail": "任务 rtk_a0747b7e090b4604：call_limit=1、calls_used=0、remaining=1；Job 数不变（开任务零模型调用）",
+      "budget": {
+        "call_limit": 1,
+        "calls_used": 0,
+        "remaining": 1,
+        "repair_rounds": 0,
+        "max_repair_rounds": 2,
+        "exhausted": false
+      }
+    },
+    {
+      "scenario": "S3.2 覆盖台账（读取登记 + 结论）",
+      "ok": true,
+      "detail": "2 章登记读取与结论（HTTP {200}）；覆盖 2/2、complete=True；状态 ['changed']",
+      "coverage": {
+        "art_a01ee511245d40b2": "changed",
+        "ch_897d8152b01e4e6d": "changed"
+      }
+    },
+    {
+      "scenario": "S3.3 停止留痕",
+      "ok": true,
+      "detail": "停止 HTTP 200；任务状态 cancelled"
+    },
+    {
+      "scenario": "S5.1 读章（登记全文读取 + 装配含原文）",
+      "ok": true,
+      "detail": "读取登记 HTTP 200；上下文装配 HTTP 200、927 字符；含本章原文=是",
+      "background_chars": 927
+    },
+    {
+      "scenario": "S5.2 真模型改稿（试写候选）",
+      "ok": true,
+      "detail": "候选 cnd_df64a8fb614541aa：101 字（原文 123 字）、预览哈希 39b9002634ea…；保留要素 ['九点', '林雪', '杯']",
+      "candidate_id": "cnd_df64a8fb614541aa",
+      "chars": 101,
+      "kept": [
+        "九点",
+        "林雪",
+        "杯"
+      ],
+      "sample": "钟停在九点。\n林昭将伞靠在门边，雪水沿伞骨滴落石板。\n柜台后无人，登记簿半开，末行是林雪的名字。\n他唤了一声，回应是楼上轻响，像有人贴着门板在听。\n壁炉余烬中浮着一层灰，茶几上两只杯子，一只仍带着温度。"
+    },
+    {
+      "scenario": "S5.3 覆盖结论与暂存（不写正式正文）",
+      "ok": true,
+      "detail": "覆盖 HTTP 200、暂存 HTTP 200；暂存前正式正文仍是原文=True"
+    },
+    {
+      "scenario": "S5.4 一次发布（正文换版 + 回执可回读）",
+      "ok": true,
+      "detail": "发布 HTTP 200；正文已换版=True；Commit 前进；操作回执 HTTP 200",
+      "status": 200,
+      "operation_id": "op_deep_revision_publish_1",
+      "changed_chapters": [
+        "art_a5cffed20e4c45b9"
+      ]
+    },
+    {
+      "scenario": "S5.5 预算归因（已知缺口，如实记录）",
+      "ok": null,
+      "detail": "任务 call_limit=6、calls_used=0；本轮真实模型调用发生在试写候选服务（V03-3），任务预算账本没有任何执行器调用 consume_calls，因此这次调用未被计入预算——产品口径缺口，不是驱动问题",
+      "budget": {
+        "call_limit": 6,
+        "calls_used": 0,
+        "remaining": 6,
+        "repair_rounds": 0,
+        "max_repair_rounds": 2,
+        "exhausted": false
+      },
+      "task_state": "completed"
+    },
+    {
+      "scenario": "S4 环境失败记录（不存在的模型）",
+      "ok": null,
+      "detail": "轮次终态 turn.failed；错误：{'code': 'CHAT_PROVIDER_FAILED', 'category': 'environment', 'where': 'chat.runner', 'why': 'Provider 返回错误事件，本轮没有可用正文', 'fix': '检查端点与凭证后重试；不会自动换用其他厂商', 'details': {}}",
+      "failed": true,
+      "error": {
+        "code": "CHAT_PROVIDER_FAILED",
+        "category": "environment",
+        "where": "chat.runner",
+        "why": "Provider 返回错误事件，本轮没有可用正文",
+        "fix": "检查端点与凭证后重试；不会自动换用其他厂商",
+        "details": {}
+      }
+    }
+  ]
+}
