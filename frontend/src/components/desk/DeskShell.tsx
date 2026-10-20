@@ -141,6 +141,7 @@ function DeskDiscussion({
   const serviceKind = useChatStore((s) => s.serviceKind);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const retryUnknownSend = useChatStore((s) => s.retryUnknownSend);
+  const retry = useChatStore((s) => s.retry);
   const stop = useChatStore((s) => s.stop);
   const acceptCandidate = useChatStore((s) => s.acceptCandidate);
   const adjustDraft = useChatStore((s) => s.adjustDraft);
@@ -230,6 +231,19 @@ function DeskDiscussion({
               <span className="whitespace-pre-wrap">{m.text}</span>
               {m.status === "streaming" && (
                 <span className="chat-cursor" aria-hidden />
+              )}
+              {m.status === "failed" && m.error && (
+                <p className="chat-card-error mt-1" role="alert">
+                  哪里错：{m.error.why}（怎样算对：{m.error.fix}）
+                </p>
+              )}
+              {m.status === "failed" && m.turn_id && (
+                <button
+                  className="mt-1 text-blue underline"
+                  onClick={() => void retry(m.turn_id!)}
+                >
+                  重试这一轮
+                </button>
               )}
               {m.status === "stopped" && (
                 <span className="mt-1 block text-[10px] text-sub">

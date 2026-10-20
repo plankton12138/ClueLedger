@@ -409,6 +409,62 @@ describe("发送结果未知与幂等重试", () => {
     expect(useChatStore.getState().views.c1!.pending).toBeNull();
   });
 
+  it("失败轮次可重试：建新轮次并设为活动轮次，界面错误清空", async () => {
+    const calls: string[] = [];
+    const service = fakeService({
+      listConversations: async () => [
+        { conversation_id: "c1", project_id: "p1", title: "甲", created_at: "", updated_at: "" },
+      ],
+      retryTurn: async (_p, _c, turnId) => {
+        calls.push(turnId);
+        return { ...turn("t2", "queued"), retry_of: turnId };
+      },
+    });
+    await useChatStore.getState().bindProject("p1", apiSelection(service));
+    await useChatStore.getState().selectConversation("c1");
+    // 先落一条失败轮次：接受 → 开始 → 失败（错误三要素随终态落到消息上）。
+    useChatStore.getState().applyEvent(
+      envelope("p1", "c1", { type: "turn.accepted", turn: turn("t1", "queued") }, 1),
+    );
+    useChatStore.getState().applyEvent(
+      envelope(
+        "p1",
+        "c1",
+        { type: "turn.started", turn_id: "t1", message_id: "m1", model: "模型A" },
+        2,
+      ),
+    );
+    useChatStore.getState().applyEvent(
+      envelope(
+        "p1",
+        "c1",
+        {
+          type: "turn.failed",
+          turn_id: "t1",
+          reason: "CHAT_FIRST_TOKEN_TIMEOUT",
+          error: {
+            code: "CHAT_FIRST_TOKEN_TIMEOUT",
+            category: "environment",
+            where: "chat.runner",
+            why: "模型连接建立后迟迟没有返回正文",
+            fix: "检查模型端点状态后重试",
+          },
+        },
+        3,
+      ),
+    );
+    const failed = useChatStore.getState().views.c1!;
+    expect(failed.messages[0]!.status).toBe("failed");
+    expect(failed.messages[0]!.error!.why).toContain("迟迟没有返回正文");
+    // 重试：原轮次是参数，新轮次成为活动轮次，旧失败消息作为历史保留。
+    await useChatStore.getState().retry("t1");
+    const after = useChatStore.getState().views.c1!;
+    expect(calls).toEqual(["t1"]);
+    expect(after.turns["t2"]!.retry_of).toBe("t1");
+    expect(after.activeTurnId).toBe("t2");
+    expect(after.messages[0]!.status).toBe("failed");
+  });
+
   it("服务端明确拒绝（有错误码）时不进入“结果未知”，直接提示", async () => {
     const service = fakeService({
       listConversations: async () => [

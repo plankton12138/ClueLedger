@@ -107,6 +107,7 @@ const c = vi.hoisted(() => {
     setDraft: () => {},
     send: async () => {},
     retryUnknownSend: () => {},
+    retry: async () => {},
     stop: () => {},
     acceptCandidate: async () => ({}),
     adjustDraft: async () => {},
@@ -241,5 +242,49 @@ describe("候选链路在写作台右侧对话栏内闭环（V03-9 §4 + V03-10 
     expect(html).toContain("接受候选并提交");
     // V03-10 M5：独立审阅主区视图已撤下。
     expect(html).not.toContain("打开审阅");
+  });
+});
+
+describe("失败轮次在对话栏内给出原因与重试入口", () => {
+  it("失败消息显示错误三要素与「重试这一轮」；已停止的轮次不给重试", () => {
+    const view = c.state.views.conv_1 as { messages: unknown[] };
+    const original = view.messages;
+    try {
+      view.messages = [
+        {
+          message_id: "fail-1",
+          conversation_id: "conv_1",
+          turn_id: "turn_1",
+          role: "assistant",
+          kind: "text",
+          text: "",
+          refs: [],
+          model: "deepseek-flash",
+          status: "failed",
+          error: {
+            code: "CHAT_FIRST_TOKEN_TIMEOUT",
+            category: "environment",
+            where: "chat.runner",
+            why: "模型连接建立后迟迟没有返回正文",
+            fix: "检查模型端点状态后重试",
+          },
+          created_at: "",
+        },
+      ];
+      const html = renderToStaticMarkup(<DeskShell />);
+      expect(html).toContain("deepseek-flash");
+      expect(html).toContain("模型连接建立后迟迟没有返回正文");
+      expect(html).toContain("检查模型端点状态后重试");
+      expect(html).toContain("重试这一轮");
+
+      view.messages = [
+        { ...(view.messages[0] as object), status: "stopped", error: null, text: "半句" },
+      ];
+      const stopped = renderToStaticMarkup(<DeskShell />);
+      expect(stopped).toContain("以上是已收到的部分回复。");
+      expect(stopped).not.toContain("重试这一轮");
+    } finally {
+      view.messages = original;
+    }
   });
 });
