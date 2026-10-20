@@ -24,6 +24,7 @@
 ## 开发与验收记录（按需读取）
 
 - [阶段交付记录](stage-delivery-record.md)：阶段开发结果与逐任务笔记索引；状态仅对应记录时点。
+- [写作台收拢](notes/v03-9-frontend-collapse.md)：V03-9 前端收拢的目标、改动、验证与偏差；[计划与设计示例](notes/v03-9-frontend-collapse-plan.md)。
 - [33 项验收追踪](artifacts/v03-8.8-acceptance-tracking.md)：各项证据和部分覆盖的边界。
 - [API 调用矩阵](artifacts/v03-8.6-api-matrix.md)：路由盘点时的前后端调用与处置记录。
 - [上下文与撤销阶段对账](v03-4-stage-summary.md)、[对应修复记录](v03-4-review-fixes.md)：特定阶段的开发记录。

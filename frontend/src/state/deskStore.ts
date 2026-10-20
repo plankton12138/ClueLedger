@@ -5,7 +5,6 @@
  * - 主区唯一变更入口 `navigate`；数据事件只进数据区；
  * - `projectId` 由壳层在项目切换时同步，跨作品数据事件由
  *   `applyOperationResult` 丢弃；
- * - `focusMode`（专注写作收起两侧）持久化，模式同 ChatSidebar 的 OPEN_KEY；
  * - `entryReceipts` 记录 save_idea 回执（V03-1.2）：回执不是 OperationEnvelope
  *   （无 operation_id），不伪造冻结 DTO，单独成列与操作结果同区展示。
  */
@@ -22,24 +21,6 @@ import {
   type ReadingPosition,
 } from "./desk";
 
-const FOCUS_KEY = "hastings.desk.focus";
-
-function readFocus(): boolean {
-  try {
-    return localStorage.getItem(FOCUS_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function writeFocus(on: boolean): void {
-  try {
-    localStorage.setItem(FOCUS_KEY, on ? "1" : "0");
-  } catch {
-    /* 禁用存储时仅本次会话生效。 */
-  }
-}
-
 /** save_idea 回执（POST /api/v2/entries 响应的 camelCase 消费形态）。 */
 export interface EntryReceipt {
   entryId: string;
@@ -53,7 +34,6 @@ export interface EntryReceipt {
 }
 
 interface DeskStore extends DeskState {
-  focusMode: boolean;
   entryReceipts: EntryReceipt[];
   /** 最近一次作者操作（导入/修改完成/保存）：右侧展示后续状态（V03-2.6）。 */
   lastOperationId: string | null;
@@ -72,12 +52,10 @@ interface DeskStore extends DeskState {
   setLastOperation(operationId: string | null): void;
   requestComposerFocus(): void;
   requestComposerInsert(reference: string): void;
-  toggleFocus(): void;
 }
 
 export const useDeskStore = create<DeskStore>()((set, get) => ({
   ...emptyDeskState(),
-  focusMode: readFocus(),
   entryReceipts: [],
   lastOperationId: null,
   composerFocusTick: 0,
@@ -99,10 +77,4 @@ export const useDeskStore = create<DeskStore>()((set, get) => ({
     set((s) => ({
       composerInsert: { text: reference, tick: (s.composerInsert?.tick ?? 0) + 1 },
     })),
-  toggleFocus: () =>
-    set((s) => {
-      const focusMode = !s.focusMode;
-      writeFocus(focusMode);
-      return { focusMode };
-    }),
 }));

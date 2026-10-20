@@ -229,7 +229,8 @@ export function TaskExecutionCard({
   onView(candidateMessageId: string): void;
   onCancel(jobRef: string): void;
   onRetry(jobRef: string): void;
-  onOpenChange(changeId: string): void;
+  /** 变更流程入口；写作台内未提供时省略，不渲染该按钮（旧变更页已退出产品）。 */
+  onOpenChange?(changeId: string): void;
 }) {
   const execution = message.payload as TaskExecutionPayload;
   const tone =
@@ -260,8 +261,14 @@ export function TaskExecutionCard({
         </p>
       )}
       <div className="chat-card-actions">
-        {execution.change_ref && <button className="btn px-3 py-1.5 text-xs"
-          onClick={() => onOpenChange(execution.change_ref!)}>打开变更流程</button>}
+        {execution.change_ref && onOpenChange && (
+          <button
+            className="btn px-3 py-1.5 text-xs"
+            onClick={() => onOpenChange(execution.change_ref!)}
+          >
+            打开变更流程
+          </button>
+        )}
         {execution.state === "waiting" && execution.candidate_message_id && (
           <button
             className="btn px-3 py-1.5 text-xs"

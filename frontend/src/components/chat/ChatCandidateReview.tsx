@@ -2,12 +2,16 @@ import { useEffect, useState } from "react";
 import { fetchAgentJob, type AgentJob } from "../../api/v2";
 import { isDirty, message, useV2Store } from "../../state/v2";
 import { useChatStore } from "../../state/chat";
-import type { CandidatePayload, ChatMessage } from "../../api/chat";
+import type { CandidatePayload, ChatMessage, ResultPayload } from "../../api/chat";
 import AgentOutputView from "../AgentOutputView";
 import { ErrorText, Panel } from "../Workbench";
 
-export default function ChatCandidateReview({ candidate, projectId, onClose }: {
-  candidate: ChatMessage; projectId: string; onClose(): void;
+export default function ChatCandidateReview({ candidate, projectId, onClose, onAccepted }: {
+  candidate: ChatMessage;
+  projectId: string;
+  onClose(): void;
+  /** 接受成功后回调（写作台据此回到正文/讨论），缺省只刷新不导航。 */
+  onAccepted?(result: ResultPayload): void;
 }) {
   const payload = candidate.payload as CandidatePayload;
   const [job, setJob] = useState<AgentJob | null>(null);
@@ -44,15 +48,16 @@ export default function ChatCandidateReview({ candidate, projectId, onClose }: {
             setBusy(true); setError("");
             try {
               const state = useV2Store.getState();
-              await service.acceptCandidate(projectId, candidate.conversation_id,
+              const result = await service.acceptCandidate(projectId, candidate.conversation_id,
                 candidate.message_id, state.head ?? state.storyCommit);
               setAccepted(true);
               await Promise.all([state.refreshJobs(), state.refreshManuscript(), state.refreshStory()]);
+              onAccepted?.(result);
             } catch (e) { setError(message(e)); } finally { setBusy(false); }
           })(); }}>
           {accepted ? "已接受" : "接受候选并提交"}
         </button>
-        <button className="btn btn-gray px-4 py-2" onClick={onClose}>返回修订审阅</button>
+        <button className="btn btn-gray px-4 py-2" onClick={onClose}>返回讨论</button>
       </div>
     </div>
   </Panel>;

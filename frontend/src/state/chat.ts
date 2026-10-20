@@ -25,6 +25,7 @@ import {
   type ChatService,
   type ChatTurn,
   type MessageStatus,
+  type ResultPayload,
   type TaskDraftPayload,
   type TaskExecutionPayload,
   type TaskKind,
@@ -517,7 +518,8 @@ interface ChatStore {
   createDraft(taskKind: TaskKind): Promise<void>;
   abandonDraft(draftId: string): Promise<void>;
   startDraft(draftId: string): Promise<void>;
-  acceptCandidate(messageId: string): Promise<void>;
+  /** 接受候选并提交；成功返回正式结果（含受影响对象），失败返回 null 并进会话错误。 */
+  acceptCandidate(messageId: string): Promise<ResultPayload | null>;
   cancelTask(jobRef: string): Promise<void>;
   retryTask(jobRef: string): Promise<void>;
   applyEvent(envelope: ChatEventEnvelope): void;
@@ -984,20 +986,22 @@ export const useChatStore = create<ChatStore>()((set, get) => {
 
     acceptCandidate: async (messageId) => {
       const { service, projectId, activeConversationId } = get();
-      if (!service || !projectId || !activeConversationId) return;
+      if (!service || !projectId || !activeConversationId) return null;
       const v2 = useV2Store.getState();
       try {
         if (isDirty(v2.chapter) || v2.chapter.saving)
           throw new Error("当前正文有未保存稿，请先保存后再接受候选。");
-        await service.acceptCandidate(
+        const result = await service.acceptCandidate(
           projectId,
           activeConversationId,
           messageId,
           v2.head ?? v2.storyCommit,
         );
         await Promise.all([v2.refreshJobs(), v2.refreshManuscript(), v2.refreshStory()]);
+        return result;
       } catch (e) {
         patchView(activeConversationId, { error: errText(e) });
+        return null;
       }
     },
 

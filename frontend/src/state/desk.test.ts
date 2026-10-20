@@ -47,6 +47,19 @@ describe("MainView 主区唯一", () => {
     state = navigate(state, { kind: "detail", detailKind: "graph", id: "g1" });
     expect(state.mainView).toEqual({ kind: "detail", detailKind: "graph", id: "g1" });
   });
+
+  it("候选审阅也在主区展开（V03-9 §4 候选采用链路）", () => {
+    let state = stateWithChapter();
+    state = navigate(state, { kind: "detail", detailKind: "candidate", id: "msg_cand_1" });
+    expect(state.mainView).toEqual({
+      kind: "detail",
+      detailKind: "candidate",
+      id: "msg_cand_1",
+    });
+    // 采用后回到该章正文：navigate 回 manuscript，候选视图被替换。
+    state = navigate(state, { kind: "manuscript", chapterId: "art_ch1" });
+    expect(state.mainView).toEqual({ kind: "manuscript", chapterId: "art_ch1" });
+  });
 });
 
 describe("applyOperationResult：数据事件与作者导航分离", () => {

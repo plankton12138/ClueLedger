@@ -1,8 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * V03-3.2 写作台账本走查（真实 API + SQLite）：
+ * V03-3.2 写作台账本走查（真实 API + SQLite；V03-9 收拢后经右栏「账本」标记进入）。
  * 直接保存 → 回读真实版本 → 暂存候选 → 假设不入账 → 部分确认 → 修订。
+ *
+ * V03-9 变化：账本不再是常驻面板，改为稿纸右缘「账本」标记打开的抽屉。
+ * 抽屉本身是 role=dialog（可访问名「故事账本」），编辑表单是另一层 role=dialog
+ * （可访问名「新增设定 / 编辑设定」），选择器按可访问名区分。
  */
 
 async function project(page: Page, name: string) {
@@ -11,8 +15,8 @@ async function project(page: Page, name: string) {
   await page.getByRole("textbox", { name: "新故事名称" }).fill(name);
   await page.getByRole("button", { name: "新建故事", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("navigation", { name: "主导航" })
-    .getByRole("button", { name: "写作台", exact: true }).click();
+  // 右栏「账本」标记打开抽屉（M3）；标记按钮的可访问名取其 aria-label「故事账本」。
+  await page.getByRole("button", { name: "故事账本", exact: true }).click();
   await expect(page.locator('section[aria-label="故事账本"]')).toBeVisible();
 }
 
@@ -23,7 +27,7 @@ test("写作台账本：直接保存回读版本，候选暂存与部分确认�
 
   // 1. 直接保存一个人物，回读真实版本。
   await ledger.getByRole("button", { name: "新增设定" }).click();
-  let dialog = page.getByRole("dialog");
+  let dialog = page.getByRole("dialog", { name: "新增设定" });
   await expect(dialog.getByRole("heading", { name: "新增设定" })).toBeVisible();
   await dialog.getByLabel(/姓名/).fill("姐姐");
   await dialog.getByLabel(/身份/).fill("旅馆经营者");
@@ -36,7 +40,7 @@ test("写作台账本：直接保存回读版本，候选暂存与部分确认�
 
   // 2. 暂存一个「假设」：可以在候选区看到，但勾选被禁用、不会入账。
   await ledger.getByRole("button", { name: "新增设定" }).click();
-  dialog = page.getByRole("dialog");
+  dialog = page.getByRole("dialog", { name: "新增设定" });
   await dialog.getByLabel(/姓名/).fill("管家");
   await dialog.getByLabel(/这只是假设/).check();
   await dialog.getByRole("button", { name: "存为待确认" }).click();
@@ -46,7 +50,7 @@ test("写作台账本：直接保存回读版本，候选暂存与部分确认�
 
   // 3. 暂存一个正式候选；部分确认只入账选中的条目。
   await ledger.getByRole("button", { name: "新增设定" }).click();
-  dialog = page.getByRole("dialog");
+  dialog = page.getByRole("dialog", { name: "新增设定" });
   await dialog.getByLabel(/姓名/).fill("妹妹");
   await dialog.getByRole("button", { name: "存为待确认" }).click();
   await expect(pending.getByText("妹妹")).toBeVisible();
@@ -62,7 +66,7 @@ test("写作台账本：直接保存回读版本，候选暂存与部分确认�
 
   // 4. 修订正式条目：保存后回读新版本。
   await ledger.getByRole("button", { name: /姐姐/ }).click();
-  dialog = page.getByRole("dialog");
+  dialog = page.getByRole("dialog", { name: "编辑设定" });
   await expect(dialog.getByRole("heading", { name: "编辑设定" })).toBeVisible();
   await dialog.getByLabel(/目标/).fill("守住旅馆的秘密");
   await dialog.getByRole("button", { name: "保存修改" }).click();
