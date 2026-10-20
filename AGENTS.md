@@ -20,9 +20,9 @@
 
 ## 文档与导航
 
-- 产品版本统一使用 `0.x` 表示开发中：原 V1 对应 0.1，原 V2 对应 0.2，下一版本为 0.3；包版本使用 `0.3.0` 形式。新方案按产品版本标注；文档目录按产品版本命名（`dev-notes/v0.1`、`v0.2`、`v0.3`），接口与数据格式标识（`/api/v2`、存储版本）独立管理，不随产品版本重命名。版本约定见 [product-design/README.md](product-design/README.md)。
+- 产品版本统一使用 `0.x` 表示开发中：原 V1 对应 0.1，原 V2 对应 0.2，当前运行实现为 0.3，下一版本为 0.4；包版本使用 `0.4.0` 形式，目前仍为 `0.3.0`，随首个 0.4 运行实现阶段同步升级。新方案按产品版本标注；文档目录按产品版本命名（`dev-notes/v0.1`、`v0.2`、`v0.3`、`v0.4`），接口与数据格式标识（`/api/v2`、存储版本）独立管理，不随产品版本重命名。版本约定见 [product-design/README.md](product-design/README.md)。
 - 文档查找统一走导航层，不逐个翻文件：[dev-notes/README.md](dev-notes/README.md)（dev-notes 路由表）、[src/hastings/README.md](src/hastings/README.md)（模块导航）。
-- 读长期文档须先区分版本与用途：`dev-notes/v0.3/modules/` 描述当前实现，`release.md` 记录运行与验收状态；计划描述目标，阶段交付记录、`notes/` 与 `artifacts/` 保存开发历史。`dev-notes/v0.2/` 是旧架构与交付材料，`dev-notes/v0.1/` 是早期实现与阶段历史；旧版本契约仅按当前模块导航的具体链接读取。
+- 读长期文档须先区分版本与用途：`dev-notes/v0.3/modules/` 描述当前实现，`release.md` 记录运行与验收状态；[0.4 入口](dev-notes/v0.4/README.md)目前只包含新方案与修改计划，不代表已经实现。计划描述目标，阶段交付记录、`notes/` 与 `artifacts/` 保存开发历史。`dev-notes/v0.2/` 是旧架构与交付材料，`dev-notes/v0.1/` 是早期实现与阶段历史；旧版本契约仅按当前模块导航的具体链接读取。
 
 ### 文档内容与更新
 
