@@ -234,12 +234,29 @@
     box-shadow: 0 1px 2px rgba(52, 80, 100, 0.1);
     color: theme("colors.fg");
   }
-  /* 作者消息用 iOS 6 信息绿：与蓝色控件区分开，一眼看出谁在说。 */
+  /* 作者消息：旧版聊天应用的绿色气泡。
+     顶部亮带用固定高度截断（`min(22%, 11px)`），气泡多长都只在顶部留一条高光，
+     不会像按百分比铺满时那样把硬边留在色块中间；主体上深下浅、底部一圈反光、
+     深色描边加内侧白线，都是那个年代气泡的画法。 */
   .chat-msg.mine .chat-bubble {
-    border-color: #4c965e;
-    color: #fff;
-    text-shadow: 0 -1px #34663f;
-    background: linear-gradient(#a8d69f, #7dbf7c 48%, #4c965e 49%, #3f7d4c);
+    border-color: rgba(0, 0, 0, 0.45);
+    border-radius: 12px;
+    color: #1e3a0f;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+    background-color: #96dd41;
+    background-image:
+      linear-gradient(#eaffd2, #a6e35c),
+      linear-gradient(#8ed441, #afe158),
+      linear-gradient(to top, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0) 9px);
+    background-repeat: no-repeat;
+    background-size:
+      100% min(22%, 11px),
+      100% 100%,
+      100% 100%;
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.22);
   }
   .chat-tool {
     @apply text-[11px] leading-5;
@@ -393,12 +410,24 @@
     @apply flex flex-col gap-2;
   }
   .chat-reply {
-    @apply max-w-full min-w-0;
+    @apply max-w-[92%] min-w-0;
     padding: 8px 10px;
-    border: 1px solid #c3d0d8;
+    border: 1px solid rgba(0, 0, 0, 0.42);
     border-radius: 12px;
-    background: linear-gradient(#fff, #f7fafb);
-    box-shadow: 0 1px 2px rgba(52, 80, 100, 0.08);
+    background-color: #d6d6d8;
+    background-image:
+      linear-gradient(#ffffff, #e4e4e7),
+      linear-gradient(#cdcdd0, #eeeef0),
+      linear-gradient(to top, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 10px);
+    background-repeat: no-repeat;
+    background-size:
+      100% min(22%, 11px),
+      100% 100%,
+      100% 100%;
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.35);
     color: theme("colors.fg");
   }
   .chat-reply-wide {
@@ -408,6 +437,7 @@
   /* 只有思考、没有公开文字的响应按过程展示，不画气泡。 */
   .chat-reply-plain,
   .chat-reply-plain.chat-reply-wide {
+    max-width: none;
     border: none;
     background: none;
     box-shadow: none;
@@ -449,10 +479,10 @@
     @apply my-3 border-panel-edge;
   }
   .prose-chat code {
-    @apply rounded bg-[#eef3f5] px-1 py-0.5 text-[0.92em];
+    @apply rounded bg-[#f1f2f4] px-1 py-0.5 text-[0.92em];
   }
   .prose-chat pre {
-    @apply my-2 overflow-x-auto rounded border border-panel-edge bg-[#f4f8f9] p-2 text-[12px] leading-5;
+    @apply my-2 overflow-x-auto rounded border border-panel-edge bg-[#f6f7f9] p-2 text-[12px] leading-5;
   }
   .prose-chat pre code {
     @apply bg-transparent p-0;
@@ -482,7 +512,7 @@
     max-width: 22em;
   }
   .chat-table-wrap th {
-    @apply bg-[#eef3f5] font-bold;
+    @apply bg-[#e3e3e6] font-bold;
   }
   .chat-image-alt {
     @apply italic;
