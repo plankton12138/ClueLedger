@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
+from hastings.workspace.directory_dialog import DirectoryPickerError
 from hastings.workspace.state import RecentWorkspaces
 
 
@@ -266,3 +267,76 @@ def test_git_commit_diff_rejects_unknown_commit(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "GIT_COMMIT_NOT_FOUND"
+
+
+def test_default_location_reports_the_documents_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """新建作品的默认父目录由服务端解析：浏览器不知道本机的文档目录在哪。"""
+    documents = tmp_path / "Documents"
+    documents.mkdir()
+    monkeypatch.setattr("hastings.workspace.api.default_workspace_root", lambda: documents)
+
+    client = _client(tmp_path)
+
+    response = client.get("/api/file-workspaces/default-location")
+
+    assert response.status_code == 200
+    assert response.json() == {"root": str(documents)}
+
+def test_pick_directory_returns_the_chosen_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """界面不再手输路径：位置只能从系统对话框来，接口原样回传作者选的目录。"""
+    chosen = tmp_path / "我的小说"
+    chosen.mkdir()
+    seen: dict[str, object] = {}
+
+    def fake_pick(*, initial: Path | None = None) -> Path:
+        seen["initial"] = initial
+        return chosen
+
+    monkeypatch.setattr("hastings.workspace.api.pick_directory", fake_pick)
+    client = _client(tmp_path)
+
+    response = client.post("/api/file-workspaces/pick-directory", json={"initial": str(tmp_path)})
+
+    assert response.status_code == 200
+    assert response.json() == {"path": str(chosen)}
+    assert seen["initial"] == tmp_path
+
+
+def test_pick_directory_cancel_returns_null(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("hastings.workspace.api.pick_directory", lambda *, initial=None: None)
+    client = _client(tmp_path)
+
+    response = client.post("/api/file-workspaces/pick-directory", json={})
+
+    assert response.status_code == 200
+    assert response.json() == {"path": None}
+
+
+def test_pick_directory_busy_is_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """已经有一个系统窗口开着时，第二个请求要明确拒绝，而不是再弹一个。"""
+
+    def busy(*, initial: Path | None = None) -> Path | None:
+        raise DirectoryPickerError(
+            code="DIRECTORY_PICKER_BUSY_CONFLICT",
+            why="已经有一个选择窗口开着",
+            fix="先在系统窗口里选好或取消",
+        )
+
+    monkeypatch.setattr("hastings.workspace.api.pick_directory", busy)
+    client = _client(tmp_path)
+
+    response = client.post("/api/file-workspaces/pick-directory", json={})
+
+    assert response.status_code == 409
+    body = response.json()["error"]
+    assert body["code"] == "DIRECTORY_PICKER_BUSY_CONFLICT"
+    assert "取消" in body["fix"]
+

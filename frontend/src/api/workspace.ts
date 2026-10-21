@@ -16,6 +16,16 @@ export interface WorkspaceBinding {
   exists: boolean;
 }
 
+/** 新作品的默认父目录（服务端解析出的「文档」目录）。 */
+export interface DefaultLocation {
+  root: string;
+}
+
+/** 系统文件夹对话框的结果；取消时 path 为 null。 */
+export interface PickedDirectory {
+  path: string | null;
+}
+
 export interface FileEntry {
   path: string;
   kind: "chapter" | "setting";
@@ -159,6 +169,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function listWorkspaces(): Promise<WorkspaceBinding[]> {
   return request<WorkspaceBinding[]>("");
+}
+
+export function fetchDefaultLocation(): Promise<DefaultLocation> {
+  return request<DefaultLocation>("/default-location");
+}
+
+export function pickDirectory(initial = ""): Promise<PickedDirectory> {
+  return request<PickedDirectory>("/pick-directory", {
+    method: "POST",
+    body: JSON.stringify({ initial }),
+  });
 }
 
 export function openWorkspace(path: string, create = false): Promise<WorkspaceBinding> {

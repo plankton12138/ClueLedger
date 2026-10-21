@@ -12,28 +12,35 @@ uv run python -m hastings.server --workspace 目录  # 启动时打开指定作�
 | 参数 | 说明 |
 |---|---|
 | `--workspace <目录>` | 启动时打开这个已有目录；不带时服务照常启动，由界面选择 |
-| `--config <文件>` | 模型来源配置，默认 `./config.yaml`；缺失时回落环境变量 |
+| `--config <文件>` | 模型来源配置，默认 `./config.yaml`；缺失时不配置模型，服务照常启动 |
 | `--model <名称>` | 覆盖启动档案的模型名 |
+| `--state-dir <目录>` | 应用状态目录（最近目录、会话与事件），缺省 `~/.hastings`，不含正文 |
 | `--static-dir <目录>` | 静态前端目录，缺省自动探测 `frontend/dist` |
 | `--host` / `--port` | 默认 `127.0.0.1:8000` |
 
-环境变量 `HASTINGS_STATE_DIR` 覆盖应用状态目录，默认 `~/.hastings`，存放最近目录、会话与事件；不含正文。
-
 退出码：目录或前端目录不存在等环境故障 → 1；参数写错 → 2。
+
+配置只有两个入口：命令行参数与 `config.yaml`。服务不读 `OPENAI_API_KEY`、`HASTINGS_STATE_DIR` 这一类进程环境变量。
 
 ## 2. 模型来源
 
-模型档案从 `config.yaml`（或环境变量）读取：
+模型档案只从 `config.yaml`（或 `--config` 指定的文件）读取，一个档案就是端点 + key + 默认模型：
 
 ```yaml
 providers:
-  - name: default
-    base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
-    default_model: gpt-4o-mini
+  - name: deepseek
+    base_url: https://api.deepseek.com/v1
+    api_key: sk-…            # 写一次即可，启动后转入系统凭据存储
+    default_model: deepseek-flash
 ```
 
-未配置时应用照常启动，发送消息的那一轮返回 `MODEL_NOT_CONFIGURED` 并说明怎么配。凭据优先走系统凭据存储，不可用时回落内存存储（重启后失效）。0.4 没有模型设置界面。
+应用不读进程环境变量（`OPENAI_API_KEY` 之类）：同一份配置换台机器、换个终端结果相同。`api_key` 写入后由启动流程转入系统凭据存储（Windows 凭据管理器 / macOS Keychain），磁盘上只留 `credential_ref`；系统凭据存储不可用时降级为内存存储，重启后档案变不可用，需要重新填 key。旧配置里的 `api_key_env` 会被拒绝并提示改成直填 `api_key`，不会被静默忽略。
+
+没有可用档案时应用照常启动，发送消息的那一轮返回 `MODEL_NOT_CONFIGURED` 并说明怎么配。0.4 没有模型设置界面：端点、key 与模型名都要写进这个文件。配完用下面这条命令核对，它按同一条装配路径发一句请求：
+
+```powershell
+uv run python scripts/check_model.py
+```
 
 ## 3. 作品目录
 
@@ -50,22 +57,28 @@ providers:
 
 界面不提供写正文的入口：修改来自对话里的 Agent，或应用之外的编辑器。外部保存后切回窗口或点「刷新」重新扫描。
 
+作品位置不靠手输：点「选择作品文件夹…」由本机服务弹出系统文件夹对话框，选中的目录就是结果。新建作品分两步——选存放位置，再起一个作品名，最终目录是「位置 / 作品名」；存放位置的默认值是系统「文档」目录（Windows 取系统已知文件夹，会跟随 OneDrive 重定向；取不到则退回用户主目录）。对应接口 `GET /api/file-workspaces/default-location` 与 `POST /api/file-workspaces/pick-directory`。
+
+对话框在运行应用的这台机器上弹出：没有桌面会话（远程部署、无界面的服务器）时打不开，接口会明确失败并建议用 `--workspace <目录>` 启动。同一时刻只允许一个对话框，第二个请求以 `DIRECTORY_PICKER_BUSY_CONFLICT` 拒绝。
+
 ## 4. 已验收
 
 | 项目 | 证据 |
 |---|---|
-| 目录规则、读写指纹、搜索、导入 | `uv run pytest tests/workspace -q`（130 项） |
+| 目录规则、读写指纹、搜索、导入 | `uv run pytest tests/workspace -q`（145 项） |
 | Git 初始化、基线、差异、提交、撤销、冲突与错误路径 | 同上 |
-| 文件工具与轮次记录（含停止、中断、并发拒绝） | 同上 |
-| 界面主链路 | `cd frontend && npx playwright test`（5 项，真服务 + Chromium） |
+| 文件工具与轮次记录（含停止、中断、并发拒绝、模型报错） | 同上 |
+| 真实模型一句请求 | `uv run python scripts/check_model.py`：`deepseek-flash` 回复正常，`key：…114a` |
+| 真实模型一轮写作 | 经 HTTP 接口建作品 → 发轮次 → 6 次工具调用 → `正文/0001 封山的旅馆.md`（723 字）与 `设定集/真相.md` → 一次 Git 提交；记录见[验证材料](artifacts/real-model-2026-10-20.md) |
+| 界面主链路 | `cd frontend && npx playwright test`（6 项，真服务 + Chromium） |
 | 前端单元 | `cd frontend && npm test` |
 | 类型与静态检查 | `uv run mypy src/hastings`、`uv run ruff check src/hastings tests/workspace` |
 
 ## 5. 未验收与缺口
 
-- **真实模型未取证**：全部轮次用脚本化假 provider 验证。「作者一句写第一章 → 文件 + Git 记录」在浏览器里经真实模型完成一轮，仍需用真实凭据与临时作品单独验证。
+- **界面未经真实模型验证**：真实调用在 HTTP 接口层取证（见上表），界面渲染与事件展示仍只用脚本化假 provider 验证过；在浏览器里点一轮真实创作尚未取证。
 - **没有 token 级流式**：回复整条显示。
-- **没有模型设置界面**：只能改 `config.yaml` 或环境变量。
+- **没有模型设置界面**：端点、key 与模型名只能改 `config.yaml`。
 - **窄屏未适配**：固定三列，未迁移 0.3 的断点规则。
 - **事件不跨进程广播**：SSE 轮询事件文件，多实例同时写同一作品不在本版范围。
 - **撤销只覆盖最新一次提交**：非 HEAD 提交的撤销需在 Git 里手工处理。

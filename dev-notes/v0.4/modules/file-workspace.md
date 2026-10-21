@@ -1,6 +1,6 @@
 # 文件工作区
 
-核对日期：2026-10-20。本文只描述 V04-1 已实现的行为；Git 历史、写作 Agent、对话与前端接线分别属于后续阶段，尚未实现。
+核对日期：2026-10-20。本文描述文件工作区的当前实现：目录规则、建立与打开（含新作品的默认存放位置）、读写指纹、搜索与导入。Git 历史、写作 Agent、对话与界面分别见对应模块说明。
 
 ## 1. 职责
 
@@ -32,6 +32,10 @@
 
 新建目录时建立 `正文/`、`设定集/` 与三份空设定文件，并初始化 Git（`create=true` 的新建操作；历史行为见 [Git 历史](git-history.md)），不创建数据库。打开已有目录只检查和读取，不创建、不改写任何文件，也不擅自初始化仓库；缺少受管文件时由后续正常写入补齐。
 
+位置不接受手输：界面经 `POST /api/file-workspaces/pick-directory` 让本机服务弹出系统文件夹对话框（`workspace/directory_dialog.py`），对话框给出绝对路径才是唯一来源；取消返回空，不改变任何状态。同一时刻只允许一个对话框，第二个请求以 `DIRECTORY_PICKER_BUSY_CONFLICT` 拒绝；没有桌面会话时以 `DIRECTORY_PICKER_FAILED` 明确失败，而不是假装选好了。
+
+新建作品的起始位置默认是系统「文档」目录（Windows 用系统已知文件夹，跟随 OneDrive 重定向；其他平台 `~/Documents`；都取不到则用户主目录），见 `workspace/locations.py` 与 `GET /api/file-workspaces/default-location`；最终目录 = 位置 + 作品名。作品是长期资产，默认位置不该是源码目录或临时目录。
+
 ## 3. 读写与指纹
 
 读取返回路径、LF 文本与实际字节指纹（SHA-256）。指纹按原始字节计算，因此 BOM、换行方式、行尾空格都算内容差异——外部编辑器保存过一次，指纹就会变。
@@ -61,7 +65,7 @@
 
 ## 6. 应用状态与绑定
 
-作品正文之外，应用只记录「最近打开过哪些目录」。登记文件是应用状态目录下的 `workspaces.json`，默认 `~/.hastings`，可用 `HASTINGS_STATE_DIR` 覆盖。
+作品正文之外，应用只记录「最近打开过哪些目录」。登记文件是应用状态目录下的 `workspaces.json`，默认 `~/.hastings`，可用启动参数 `--state-dir` 指定别处（不从进程环境读取）。
 
 绑定 ID 由规范化后的绝对路径散列得到：同一目录重复打开只有一条记录，界面、后续会话与事件因此不需要另一套映射。目录被移动或删除后 ID 变化，按「换了一个目录」处理。登记文件损坏时按空列表处理，让作者重新选择目录，而不是让启动失败。
 
@@ -72,6 +76,8 @@
 | 方法与路径 | 行为 |
 |---|---|
 | `GET /api/file-workspaces` | 最近目录列表，含目录当前是否可用 |
+| `GET /api/file-workspaces/default-location` | 新作品的默认父目录（文档目录） |
+| `POST /api/file-workspaces/pick-directory` | 弹出系统文件夹对话框；取消返回 `null` |
 | `POST /api/file-workspaces` | 按服务器本地路径打开；`create=true` 时补齐两块内容与三份设定 |
 | `GET /{id}/files` | 两块内容目录；设定集固定三条，缺失时 `exists=false` |
 | `GET /{id}/file?path=…` | 单文件原文、指纹、类别与标题 |

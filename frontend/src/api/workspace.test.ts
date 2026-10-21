@@ -8,7 +8,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  fetchDefaultLocation,
   gitRecord,
+  pickDirectory,
   listFiles,
   openWorkspace,
   readFile,
@@ -26,6 +28,44 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("默认存放位置", () => {
+  it("用 GET /default-location 取服务端解析出的父目录", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      calls.push(url);
+      return jsonResponse({ root: "C:////Users////me////Documents" });
+    });
+
+    const location = await fetchDefaultLocation();
+
+    expect(calls).toEqual(["/api/file-workspaces/default-location"]);
+    expect(location.root).toBe("C:////Users////me////Documents");
+  });
+});
+
+describe("系统文件夹对话框", () => {
+  it("用 POST /pick-directory 交给服务端弹窗，初始目录随请求带走", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return jsonResponse({ path: "C:////Users////me////Documents////我的小说" });
+    });
+
+    const picked = await pickDirectory("C:////Users////me////Documents");
+
+    expect(calls[0]?.url).toBe("/api/file-workspaces/pick-directory");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({ initial: "C:////Users////me////Documents" }));
+    expect(picked.path).toBe("C:////Users////me////Documents////我的小说");
+  });
+
+  it("取消时 path 为 null", async () => {
+    vi.stubGlobal("fetch", async () => jsonResponse({ path: null }));
+
+    await expect(pickDirectory()).resolves.toEqual({ path: null });
+  });
 });
 
 describe("请求形状", () => {

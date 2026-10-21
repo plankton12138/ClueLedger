@@ -102,15 +102,32 @@ test("搜索定位到正文，外部改动刷新后可见", async ({ page }) => 
   await expect(page.getByRole("button", { name: "来信" })).toBeVisible();
 });
 
-test("对话框新建作品并建立版本记录", async ({ page }) => {
+test("新建作品用系统窗口选位置，界面不再出现路径输入框", async ({ page }) => {
+  await page.route("**/default-location", (route) =>
+    route.fulfill({ json: { root: "C:\\Users\\someone\\Documents" } }),
+  );
   await open(page);
-  const created = mkdtempSync(join(tmpdir(), "hastings-e2e-new-")) + "\\新作品";
-  mkdirSync(created, { recursive: true });
   await page.getByRole("button", { name: "打开 / 新建" }).click();
-  await page.getByLabel("目录路径").fill(created);
-  await page.getByLabel(/新建作品/).check();
+  await page.getByRole("tab", { name: "新建作品" }).click();
+
+  await expect(page.getByText("C:\\Users\\someone\\Documents", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("作品名")).toHaveValue("未命名作品");
+  // 路径只能来自系统对话框：界面上没有可手输的路径框。
+  await expect(page.getByLabel("目录路径")).toHaveCount(0);
+});
+
+test("选好位置并起名后新建作品，建立版本记录", async ({ page }) => {
+  const parent = mkdtempSync(join(tmpdir(), "hastings-e2e-new-"));
+  await page.route("**/pick-directory", (route) => route.fulfill({ json: { path: parent } }));
+  await open(page);
+  await page.getByRole("button", { name: "打开 / 新建" }).click();
+  await page.getByRole("tab", { name: "新建作品" }).click();
+  await page.getByRole("button", { name: "更改位置…" }).click();
+  await expect(page.getByText(parent, { exact: true })).toBeVisible();
+  await page.getByLabel("作品名").fill("新作品");
   await page.getByRole("button", { name: "新建并打开" }).click();
 
+  const created = join(parent, "新作品");
   await page.waitForFunction((path) => document.body.innerText.includes(path), created, {
     timeout: 10_000,
   });

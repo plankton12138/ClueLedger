@@ -20,9 +20,11 @@ from fastapi import APIRouter, FastAPI, File, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from hastings.workspace.directory_dialog import DirectoryPickerError, pick_directory
 from hastings.workspace.errors import WorkspaceError, status_for_code
 from hastings.workspace.files import SETTING_PATHS, FileEntry, Workspace, chapter_title
 from hastings.workspace.git import GitRepo
+from hastings.workspace.locations import default_workspace_root
 from hastings.workspace.service import ProviderFactory, TurnService
 from hastings.workspace.state import (
     Conversation,
@@ -35,6 +37,7 @@ from hastings.workspace.state import (
 __all__ = [
     "CatalogView",
     "ConversationView",
+    "DefaultLocationView",
     "FileEntryView",
     "FileViewResponse",
     "GitChangeView",
@@ -43,6 +46,8 @@ __all__ = [
     "GitLogView",
     "GitStatusView",
     "OpenWorkspaceRequest",
+    "PickDirectoryRequest",
+    "PickedDirectoryView",
     "SearchResponse",
     "TurnRequest",
     "TurnView",
@@ -59,6 +64,24 @@ class OpenWorkspaceRequest(BaseModel):
 
     path: str = Field(min_length=1)
     create: bool = False
+
+
+class DefaultLocationView(BaseModel):
+    """新作品的默认父目录。只给目录，不替作者起作品名。"""
+
+    root: str
+
+
+class PickDirectoryRequest(BaseModel):
+    """打开文件夹选择框时的起始目录；不是最终结果。"""
+
+    initial: str = ""
+
+
+class PickedDirectoryView(BaseModel):
+    """作者在系统对话框里选的目录；取消时 ``path`` 为 null。"""
+
+    path: str | None
 
 
 class WorkspaceView(BaseModel):
@@ -204,6 +227,33 @@ def create_file_workspace_router(
     @router.get("", response_model=list[WorkspaceView])
     def list_workspaces() -> list[WorkspaceView]:
         return [view(binding) for binding in book.recent()]
+
+    @router.get("/default-location", response_model=DefaultLocationView)
+    def default_location() -> DefaultLocationView:
+        """新作品的默认父目录（作者的文档目录）；界面用它作为起始位置。"""
+        return DefaultLocationView(root=str(default_workspace_root()))
+
+    @router.post("/pick-directory", response_model=PickedDirectoryView)
+    async def choose_directory(body: PickDirectoryRequest | None = None) -> PickedDirectoryView:
+        """在运行应用的这台机器上弹出系统文件夹选择框；取消返回 null。
+
+        界面不再接受手输路径，作者只能从系统对话框里选；这条接口是唯一入口。
+        对话框阻塞到作者操作完为止，因此放在线程里等，不挡住其他请求。
+        """
+        initial: Path | None = None
+        if body is not None and body.initial.strip():
+            candidate = Path(body.initial).expanduser()
+            initial = candidate if candidate.is_dir() else None
+        try:
+            chosen = await asyncio.to_thread(pick_directory, initial=initial)
+        except DirectoryPickerError as exc:
+            raise WorkspaceError(
+                code=exc.code,
+                where="workspace.pick_directory",
+                why=exc.why,
+                fix=exc.fix,
+            ) from exc
+        return PickedDirectoryView(path=str(chosen) if chosen is not None else None)
 
     @router.post("", response_model=WorkspaceView)
     def open_workspace(body: OpenWorkspaceRequest) -> WorkspaceView:

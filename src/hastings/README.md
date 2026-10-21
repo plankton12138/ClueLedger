@@ -2,7 +2,7 @@
 
 Hastings 提供悬疑小说写作工作台。默认启动是 0.4 文件工作区：作品为本地 Markdown 目录，接口前缀 `/api/file-workspaces`。
 
-`python -m hastings.server` 只装配文件工作区应用（`server/file_app.py`），不打开旧工作台数据库、不挂 `/api/v2` 与旧业务路由；`--workspace <目录>` 用于启动时预先打开作品。模型能力只保留「按当前档案取 provider」这一条复用（`config.yaml` 或环境变量），写作 Agent 直接读写作品文件，历史由作品目录内的真实 Git 仓库记录。前端已接新接口（见[前端说明](../../frontend/README.md)）；真实模型调用未取证。
+`python -m hastings.server` 只装配文件工作区应用（`server/file_app.py`），不打开旧工作台数据库、不挂 `/api/v2` 与旧业务路由；`--workspace <目录>` 用于启动时预先打开作品。模型能力只保留「按当前档案取 provider」这一条复用（档案来自 `config.yaml`，key 在系统凭据存储），写作 Agent 直接读写作品文件，历史由作品目录内的真实 Git 仓库记录。前端已接新接口（见[前端说明](../../frontend/README.md)）；真实模型已在接口层取证，界面渲染仍用脚本化假 provider 验证。
 
 0.3 的模块与测试已在 V04-5 删除，只剩少量仍在用的文件（见「包职责」）。0.3 文档作为历史记录保留，其中描述的代码已不存在，不要据此推断可用能力。解释现状时先读[0.4 模块导航](../../dev-notes/v0.4/modules/README.md)，运行与验收口径见[0.4 运行说明](../../dev-notes/v0.4/release.md)。
 
@@ -14,6 +14,7 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.4 文件工作区
 |---|---|---|
 | 服务入口、静态目录与退出码 | `server/__main__.py`、`server/file_app.py` | [运行与验收](../../dev-notes/v0.4/release.md) |
 | 文件规则、读写指纹、搜索、导入 | `workspace/files.py` | [文件工作区](../../dev-notes/v0.4/modules/file-workspace.md) |
+| 新作品的默认位置与位置选择 | `workspace/locations.py`、`workspace/directory_dialog.py` | [文件工作区](../../dev-notes/v0.4/modules/file-workspace.md) |
 | 最近目录、会话与事件 | `workspace/state.py` | [写作 Agent 与对话](../../dev-notes/v0.4/modules/agent-and-chat.md) |
 | Git 历史、提交与撤销 | `workspace/git.py` | [Git 历史](../../dev-notes/v0.4/modules/git-history.md) |
 | 一轮请求的执行与记录 | `workspace/service.py` | [写作 Agent 与对话](../../dev-notes/v0.4/modules/agent-and-chat.md) |
