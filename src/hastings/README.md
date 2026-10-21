@@ -15,10 +15,11 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.5 文件工作区
 | 服务入口、静态目录与退出码 | `server/__main__.py`、`server/file_app.py` | [运行与验收](../../dev-notes/v0.5/release.md) |
 | 文件规则、读写指纹、搜索、导入 | `workspace/files.py` | [文件工作区](../../dev-notes/v0.5/modules/file-workspace.md) |
 | 新作品的默认位置与位置选择 | `workspace/locations.py`、`workspace/directory_dialog.py` | [文件工作区](../../dev-notes/v0.5/modules/file-workspace.md) |
-| 最近目录、会话索引、事件与界面草稿 | `workspace/state.py` | [会话与草稿](../../dev-notes/v0.4/modules/conversations.md) |
+| 最近目录、会话索引、事件、追尾读取与界面草稿 | `workspace/state.py` | [会话与草稿](../../dev-notes/v0.4/modules/conversations.md) |
 | 会话上下文回放与执行事实 | `workspace/conversation_context.py` | [会话与草稿](../../dev-notes/v0.4/modules/conversations.md) |
 | Git 历史、提交与撤销 | `workspace/git.py` | [Git 历史](../../dev-notes/v0.4/modules/git-history.md)，受管路径见[当前文件规则](../../dev-notes/v0.5/modules/file-workspace.md) |
-| 一轮请求的受理、执行与记录 | `workspace/service.py` | [写作 Agent 与对话](../../dev-notes/v0.4/modules/agent-and-chat.md) |
+| 一轮请求的受理、执行与记录 | `workspace/service.py` | [写作 Agent 与对话](../../dev-notes/v0.4/modules/agent-and-chat.md)，回复展示见[对话展示](../../dev-notes/v0.5/modules/chat-display.md) |
+| 模型增量到会话事件的桥接、合批与中断修复 | `workspace/chat_stream.py` | [对话展示与流式回复](../../dev-notes/v0.5/modules/chat-display.md) |
 | 文件工具与系统提示 | `workspace/agent.py`、`workspace/context.py` | [人物按需读取与文件工具](../../dev-notes/v0.5/modules/file-workspace.md) |
 | HTTP 接口（文件、Git、对话、事件） | `workspace/api.py` | [模块导航](../../dev-notes/v0.5/modules/README.md) |
 | 模型档案、provider 与凭据 | `server/provider_config.py`、`infrastructure/credentials.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
@@ -28,7 +29,7 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.5 文件工作区
 | 模型设置接口 | `server/model_api.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
 | 正文导入解析（遗留，仍在使用） | `interfaces/importers/manuscript_text.py` | [文件工作区](../../dev-notes/v0.5/modules/file-workspace.md) |
 
-前端壳层在 `frontend/src/components/workspace/`，作品状态在 `frontend/src/state/workspace.ts`，会话与草稿在 `frontend/src/state/conversations.ts`，客户端在 `frontend/src/api/workspace.ts`。角色分组见[当前文件规则](../../dev-notes/v0.5/modules/file-workspace.md)，其余布局见[写作台界面](../../dev-notes/v0.4/modules/desk.md)。
+前端壳层在 `frontend/src/components/workspace/`，对话展示组件在 `frontend/src/components/chat/`，作品状态在 `frontend/src/state/workspace.ts`，会话与草稿在 `frontend/src/state/conversations.ts`，事件归并在 `frontend/src/state/chatMessages.ts`，客户端在 `frontend/src/api/workspace.ts`。角色分组见[当前文件规则](../../dev-notes/v0.5/modules/file-workspace.md)，其余布局见[写作台界面](../../dev-notes/v0.4/modules/desk.md)。
 
 ## 包职责
 

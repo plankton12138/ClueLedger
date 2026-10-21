@@ -48,7 +48,7 @@ Git 的提交与撤销不暴露给模型：一轮结束时由应用统一记录�
 ```text
 发送消息 → 登记轮次（turn_started）→ 调用模型
   → 工具调用逐条记录（tool_started / tool_finished）
-  → 回复整条记录（assistant_message）
+  → 回复按响应与内容块记录（assistant_started 到 assistant_finished）
   → 结束时提交一次 Git 并记录结果（run_finished）
 ```
 
@@ -72,9 +72,9 @@ Git 的提交与撤销不暴露给模型：一轮结束时由应用统一记录�
 └─ <会话 ID>.jsonl         # 事件，按 seq 追加
 ```
 
-事件类型：`turn_started`、`tool_started`、`tool_finished`、`assistant_message`、`error`、`run_finished`。`turn_started` 额外记录本轮的 `connection_id`、`connection_name` 与 `model`，不含任何凭据。事件只记定位信息（路径、查询词、工具名与结果摘要），不把整章正文写进日志。
+事件类型：`turn_started`、`run_phase`、`assistant_started`、`assistant_block_started`、`assistant_block_delta`、`assistant_block_finished`、`assistant_message`、`assistant_finished`、`tool_started`、`tool_finished`、`error`、`run_finished`。`turn_started` 额外记录本轮的 `connection_id`、`connection_name` 与 `model`，不含任何凭据。事件只记定位信息（路径、查询词、工具名与结果摘要），不把整章正文写进日志；回复增量的合批、终态与展示见[对话展示与流式回复](../../v0.5/modules/chat-display.md)。
 
-进程重启后，第一次访问某个作品时会把「最后一条是 turn_started、没有 run_finished」的会话补一条 `interrupted` 记录；不自动继续，也不猜测已经完成。
+进程重启后，第一次访问某个作品时按轮次配对：有过 `turn_started` 却没有 `run_finished` 的轮次先按已保存增量补齐未结束的内容块与响应终态，再补一条 `interrupted` 结果；不自动继续，也不猜测已经完成。
 
 ## 6. 接口
 
@@ -101,7 +101,6 @@ Git 的提交与撤销不暴露给模型：一轮结束时由应用统一记录�
 
 ## 8. 当前缺口
 
-- **没有流式增量**：回复按整条消息写入事件，界面在模型结束后一次显示；token 级流式与打字机效果尚未实现。
 - **没有会话压缩**：长会话不自动摘要或截断，厂商返回超限时原样说明。
 - **浏览器内的真实创作未经走查**：真实模型链路已在应用接口层完成「连接 → 发现 → 测试 → 一轮写作 → 章节文件 + Git 提交」，界面渲染由构建、组件与状态测试覆盖，未在浏览器里逐屏取证。
 - **事件不跨进程广播**：SSE 靠轮询事件文件，多进程同时写同一作品不在本版范围。
