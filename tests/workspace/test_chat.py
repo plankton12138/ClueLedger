@@ -204,18 +204,21 @@ def test_turn_writes_chapter_and_records_git_commit(
     conversation_id = accepted["conversation_id"]
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)
-    assert [event["type"] for event in events] == [
-        "turn_started",
-        "tool_started",
-        "tool_finished",
-        "assistant_message",
-        "run_finished",
+    kinds = [event["type"] for event in events]
+    # 过程事件（块、增量、阶段）不逐条断言；这里关心的是可读结果与顺序：
+    # 工具先执行，公开回复随后，整轮结果最后。
+    assert kinds[0] == "turn_started"
+    assert kinds[-1] == "run_finished"
+    assert kinds.index("tool_started") < kinds.index("tool_finished")
+    assert kinds.index("tool_finished") < kinds.index("assistant_message")
+    tool_finished = next(event for event in events if event["type"] == "tool_finished")
+    assert tool_finished["ok"] is True
+    assert [event["text"] for event in events if event["type"] == "assistant_message"] == [
+        "第一章写好了。"
     ]
-    assert events[2]["ok"] is True
-    assert events[3]["text"] == "第一章写好了。"
-    assert events[4]["status"] == "completed"
-    assert events[4]["recording"] == "committed"
-    assert events[4]["changed_paths"] == ["正文/0001 雨夜.md"]
+    assert events[-1]["status"] == "completed"
+    assert events[-1]["recording"] == "committed"
+    assert events[-1]["changed_paths"] == ["正文/0001 雨夜.md"]
 
     root = tmp_path / "雪山旅馆"
     assert (root / "正文/0001 雨夜.md").is_file()
@@ -264,11 +267,15 @@ def test_model_error_fails_the_turn_instead_of_reporting_done(
     head = GitRepo(root).head()
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)
-    assert [event["type"] for event in events] == ["turn_started", "error", "run_finished"]
-    assert events[1]["code"] == "MODEL_CALL_FAILED"
-    assert "502 Bad Gateway" in events[1]["message"]
-    assert events[2]["status"] == "failed"
-    assert events[2]["changed_paths"] == []
+    kinds = [event["type"] for event in events]
+    assert kinds[-1] == "run_finished"
+    # 失败与整轮结果之间不再夹着一条「成功」的公开回复。
+    assert kinds.count("assistant_message") == 0
+    error = next(event for event in events if event["type"] == "error")
+    assert error["code"] == "MODEL_CALL_FAILED"
+    assert "502 Bad Gateway" in error["message"]
+    assert events[-1]["status"] == "failed"
+    assert events[-1]["changed_paths"] == []
     assert GitRepo(root).head() == head
 
 
@@ -619,10 +626,13 @@ def test_turn_without_model_reports_failure(
     conversation_id = _accept(client, workspace_id, "写第一章")["conversation_id"]
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)
-    assert [event["type"] for event in events] == ["turn_started", "error", "run_finished"]
-    assert events[1]["code"] == "MODEL_NOT_CONFIGURED"
-    assert events[2]["status"] == "failed"
-    assert events[2]["recording"] == "no_change"
+    kinds = [event["type"] for event in events]
+    assert kinds[0] == "turn_started"
+    assert kinds[-1] == "run_finished"
+    error = next(event for event in events if event["type"] == "error")
+    assert error["code"] == "MODEL_NOT_CONFIGURED"
+    assert events[-1]["status"] == "failed"
+    assert events[-1]["recording"] == "no_change"
 
 
 def test_unfinished_turn_is_marked_interrupted_on_restart(
@@ -698,8 +708,9 @@ def test_event_stream_replays_and_stops_at_run_finished(
     body = response.text
     assert "event: " not in body  # 只用 data 行与 id 行
     assert '"type": "turn_started"' in body
-    assert '"type": "run_finished"' in body
-    assert body.count("data: ") == 3
+    # 连接在整轮结束时关闭：最后一条推送就是 run_finished，不会悬着等下一轮。
+    last = [chunk for chunk in body.split("\n\n") if chunk.strip()][-1]
+    assert '"type": "run_finished"' in last
 
 
 def test_event_stream_isolates_conversations(

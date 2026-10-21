@@ -89,7 +89,8 @@ describe("加载与恢复", () => {
     const state = useConversationsStore.getState();
     expect(state.workspaceId).toBe("w1");
     expect(state.selectedId).toBe("c1");
-    expect(state.entries.c1?.events.map((event) => event.seq)).toEqual([1]);
+    expect(state.entries.c1?.lastSeq).toBe(1);
+    expect(state.entries.c1?.turns[0]?.prompt).toBe("写第一章");
     expect(api.conversationMessages).toHaveBeenCalledWith("w1", "c1", 0);
   });
 
@@ -168,7 +169,7 @@ describe("新对话与首次发送", () => {
     expect(state.items.map((item) => item.id)).toEqual(["c2", "c1"]);
     // 新草稿交给正式会话后不再留在 new 槽位。
     expect(state.drafts.new).toBeUndefined();
-    expect(state.entries.c2?.events.some((event) => event.type === "run_finished")).toBe(true);
+    expect(state.entries.c2?.turns[0]?.result?.status).toBe("completed");
     expect(state.entries.c2?.running).toBe(false);
   });
 
@@ -237,8 +238,8 @@ describe("切换会话", () => {
       expect.any(String),
     );
     expect(state.selectedId).toBe("c2");
-    expect(state.entries.c2?.events[0]?.text).toBe("讨论动机");
-    expect(state.entries.c1?.events[0]?.text).toBe("写第一章");
+    expect(state.entries.c2?.turns[0]?.prompt).toBe("讨论动机");
+    expect(state.entries.c1?.turns[0]?.prompt).toBe("写第一章");
   });
 
   it("切走后旧请求返回不覆盖当前会话", async () => {
@@ -275,9 +276,9 @@ describe("切换会话", () => {
 
     const state = useConversationsStore.getState();
     expect(state.selectedId).toBe("c2");
-    expect(state.entries.c2?.events[0]?.text).toBe("后选的会话");
+    expect(state.entries.c2?.turns[0]?.prompt).toBe("后选的会话");
     // 迟到的响应只更新它自己的会话，不抢回视图。
-    expect(state.entries.c1?.events[0]?.text).toBe("迟到的响应");
+    expect(state.entries.c1?.turns[0]?.prompt).toBe("迟到的响应");
   });
 
   it("切走不停止服务器任务：原会话仍在运行", async () => {

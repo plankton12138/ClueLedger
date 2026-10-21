@@ -36,6 +36,7 @@ __all__ = [
     "ConversationStore",
     "ConversationUi",
     "ConversationUiStore",
+    "EventTail",
     "RecentWorkspaces",
     "WorkspaceBinding",
     "conversation_root",
@@ -434,17 +435,40 @@ class ConversationStore:
 
     def append(self, conversation_id: str, event: dict[str, Any]) -> dict[str, Any]:
         """追加一条事件并返回带 ``seq`` 与时间的完整记录。"""
+        return self.append_batch(conversation_id, [event], update_activity=True)[0]
+
+    def append_batch(
+        self,
+        conversation_id: str,
+        events: list[dict[str, Any]],
+        *,
+        update_activity: bool = False,
+    ) -> tuple[dict[str, Any], ...]:
+        """一次写入一批事件：分配连续 ``seq``，整批在同一把写锁内落地。
+
+        流式增量一批可能只有几十个字符，逐条 ``open/write/close`` 既慢又会让读者看到
+        顺序错乱的片段。这里一次写完再返回，调用方确认成功后才让 SSE 读到。
+
+        ``update_activity`` 为假时不改写会话索引：增量不是「一次活动」，
+        每批都重写 ``conversations.json`` 会把长回复变成大量无意义的小文件写入。
+        """
+        if not events:
+            return ()
         path = self.events_file(conversation_id)
         with self._lock:
             seq = self._seqs.get(conversation_id)
             if seq is None:
                 seq = _last_seq(path)
-            seq += 1
-            record = {"seq": seq, "at": _now(), **event}
+            now = _now()
+            records: list[dict[str, Any]] = []
+            for event in events:
+                seq += 1
+                records.append({"seq": seq, "at": now, **event})
+            payload = "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records)
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with path.open("a", encoding="utf-8", newline="\n") as stream:
-                    stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    stream.write(payload)
             except OSError as exc:
                 raise WorkspaceError(
                     code="STATE_WRITE_FAILED",
@@ -453,8 +477,9 @@ class ConversationStore:
                     fix="检查应用状态目录是否可写（--state-dir 指定的目录或 ~/.hastings）",
                 ) from exc
             self._seqs[conversation_id] = seq
-            self._touch(conversation_id)
-            return record
+            if update_activity:
+                self._touch(conversation_id)
+            return tuple(records)
 
     def events(self, conversation_id: str, *, after: int = 0) -> tuple[dict[str, Any], ...]:
         """读取 ``seq > after`` 的事件；文件损坏时跳过无法解析的行。
@@ -508,6 +533,14 @@ class ConversationStore:
 
     def events_file(self, conversation_id: str) -> Path:
         return self.root / f"{conversation_id}.jsonl"
+
+    def tail(self, conversation_id: str, *, after: int = 0) -> EventTail:
+        """按游标追尾读取：先定位一次，之后每次只读新增的完整行。
+
+        给事件流用。``events()`` 每次都从头读整份日志，长回复下增量一多就是平方级
+        扫描；这里把偏移留在读者自己身上，重连的每个客户端各持一份，互不抢先。
+        """
+        return EventTail(self.events_file(conversation_id), after=after)
 
     def revision(self) -> str:
         """会话集合的版本：标题、活动时间与条数变化都会换一个值。"""
@@ -670,6 +703,93 @@ class ConversationStore:
                 for item in items
             ]
         )
+
+
+class EventTail:
+    """会话日志的增量读者：记住字节偏移，只返回上次之后写入的完整行。
+
+    追加写入是「一批一次 write」，读者可能在写一半时检查文件；因此只消费到最后一个
+    换行为止，未写完的半行留到下次。文件被替换或截断时偏移会超过文件长度，
+    这时从头重新定位，而不是继续读一个不存在的区间。
+
+    偏移属于这一个读者：几个窗口各订阅同一会话时，谁的游标也不会把别人的位置推走。
+    """
+
+    def __init__(self, path: Path, *, after: int = 0) -> None:
+        self.path = Path(path)
+        self._last_seq = max(0, after)
+        self._offset = 0
+        self._positioned = False
+
+    def read(self) -> tuple[dict[str, Any], ...]:
+        """读取新增的完整事件；没有新内容时返回空。"""
+        if not self._positioned:
+            self._position()
+        try:
+            size = self.path.stat().st_size
+        except OSError:
+            return ()
+        if size < self._offset:
+            # 截断或替换：旧偏移不再对应原来的内容，重新从头定位。
+            self._offset = 0
+        if size == self._offset:
+            return ()
+        try:
+            with self.path.open("rb") as stream:
+                stream.seek(self._offset)
+                data = stream.read()
+        except OSError:
+            return ()
+        cut = data.rfind(b"\n")
+        if cut < 0:
+            return ()
+        chunk = data[: cut + 1]
+        self._offset += len(chunk)
+        return self._parse(chunk)
+
+    def _parse(self, chunk: bytes) -> tuple[dict[str, Any], ...]:
+        records: list[dict[str, Any]] = []
+        for line in chunk.decode("utf-8", errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            seq = record.get("seq")
+            if not isinstance(seq, int) or seq <= self._last_seq:
+                continue
+            self._last_seq = seq
+            records.append(record)
+        return tuple(records)
+
+    def _position(self) -> None:
+        """首次读取时定位到游标之后：只有这一次要扫全文件。"""
+        self._positioned = True
+        try:
+            data = self.path.read_bytes()
+        except OSError:
+            return
+        offset = 0
+        start = 0
+        while True:
+            end = data.find(b"\n", start)
+            if end < 0:
+                break
+            try:
+                record = json.loads(data[start:end].decode("utf-8", errors="replace"))
+            except ValueError:
+                record = None
+            if (
+                isinstance(record, dict)
+                and isinstance(record.get("seq"), int)
+                and record["seq"] <= self._last_seq
+            ):
+                offset = end + 1
+            start = end + 1
+        self._offset = offset
 
 
 class ConversationUiStore:

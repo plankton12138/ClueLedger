@@ -606,18 +606,19 @@ def create_file_workspace_router(
         service.store.get(conversation_id)
 
         async def stream() -> AsyncIterator[str]:
-            cursor = after
+            # 追尾读取：只有这一次按游标定位，之后每次只读新增的完整行。
+            # 流式增量的条数比整轮事件多一个量级，每次从头扫整份日志会把长回复拖成平方级。
+            tail = service.store.tail(conversation_id, after=after)
             while True:
-                batch = service.store.events(conversation_id, after=cursor)
+                batch = tail.read()
                 for record in batch:
-                    cursor = int(record["seq"])
                     payload = json.dumps(record, ensure_ascii=False)
-                    yield f"id: {cursor}\ndata: {payload}\n\n"
+                    yield f"id: {record['seq']}\ndata: {payload}\n\n"
                     if record.get("type") == "run_finished":
                         return
                 if not batch and not follow:
                     return
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.1)
 
         return StreamingResponse(
             stream(),

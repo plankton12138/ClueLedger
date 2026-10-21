@@ -26,26 +26,43 @@ import {
   type ActiveTurn,
   type Conversation,
   type ConversationUi,
+  type RunPhase,
   type WorkspaceEvent,
 } from "../api/workspace";
+import {
+  appendEvent,
+  buildTurns,
+  NeedsConversationReload,
+  type ChatTurn,
+} from "./chatMessages";
 
 export interface ConversationEntry {
-  events: WorkspaceEvent[];
+  /** 按轮次归并后的展示结构；实时增量与历史回读共用同一套规则。 */
+  turns: ChatTurn[];
+  /** 已经处理到的事件位置：订阅从这里继续，不重复接收。 */
+  lastSeq: number;
+  /** 应用确认的运行阶段；没有可靠信息时为 null。 */
+  phase: RunPhase | null;
   running: boolean;
   activeTurn: ActiveTurn | null;
   loading: boolean;
   error: string | null;
+  /** 增量批次缺号，正在回读本会话日志。 */
+  needsReload: boolean;
 }
 
 /** 新对话草稿的固定槽位。 */
 export const NEW_DRAFT = "new";
 
 const EMPTY_ENTRY: ConversationEntry = {
-  events: [],
+  turns: [],
+  lastSeq: 0,
+  phase: null,
   running: false,
   activeTurn: null,
   loading: false,
   error: null,
+  needsReload: false,
 };
 
 export interface ConversationsStore {
@@ -68,6 +85,8 @@ export interface ConversationsStore {
   select(conversationId: string): Promise<void>;
   send(text: string): Promise<void>;
   stop(): Promise<void>;
+  /** 断线后重新接收：先取活动快照，再从确认过的位置继续。 */
+  reconnect(): Promise<void>;
   rename(conversationId: string, title: string): Promise<void>;
   setDraft(text: string): void;
   saveDraft(): Promise<void>;
@@ -81,18 +100,19 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : "请求失败";
 }
 
-function lastSeq(events: WorkspaceEvent[]): number {
-  return events.length ? events[events.length - 1]!.seq : 0;
-}
-
-function mergeEvent(events: WorkspaceEvent[], event: WorkspaceEvent): WorkspaceEvent[] {
-  if (events.some((item) => item.seq === event.seq)) return events;
-  return [...events, event].sort((left, right) => left.seq - right.seq);
-}
-
 function entryKey(conversationId: string | null): string {
   return conversationId ?? NEW_DRAFT;
 }
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 网络中断后的有限退避：不做无限重连，连续失败就把入口交给作者。
+const RECONNECT_DELAYS = [0, 1000, 2000, 5000];
+
+/** 正在回读日志的会话：缺口一次只补一次，避免重复请求。 */
+const reloading = new Set<string>();
 
 // 每个会话一个订阅代次：关闭旧订阅的 finally 不能改动新订阅的状态。
 const generations = new Map<string, number>();
@@ -136,16 +156,42 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     });
   }
 
-  function appendEvent(conversationId: string, event: WorkspaceEvent): void {
-    set((state) => {
-      const current = state.entries[conversationId] ?? EMPTY_ENTRY;
-      return {
-        entries: {
-          ...state.entries,
-          [conversationId]: { ...current, events: mergeEvent(current.events, event) },
-        },
-      };
-    });
+  function appendEventTo(conversationId: string, event: WorkspaceEvent): void {
+    const entry = get().entries[conversationId] ?? EMPTY_ENTRY;
+    // 先按 seq 去重：断开重连、回读与实时推送可能送到同一条。
+    if (event.seq <= entry.lastSeq) return;
+    const patch: Partial<ConversationEntry> = { lastSeq: event.seq };
+    if (event.type === "run_phase") patch.phase = event.phase;
+    try {
+      patch.turns = appendEvent(entry.turns, event);
+    } catch (error) {
+      if (error instanceof NeedsConversationReload) {
+        // 批次缺号：回读本会话日志补齐，不重发用户请求。
+        void reloadLog(conversationId);
+        return;
+      }
+      throw error;
+    }
+    patchEntry(conversationId, patch);
+  }
+
+  async function reloadLog(conversationId: string): Promise<void> {
+    const workspaceId = get().workspaceId;
+    if (!workspaceId || reloading.has(conversationId)) return;
+    reloading.add(conversationId);
+    patchEntry(conversationId, { needsReload: true });
+    try {
+      const snapshot = await conversationMessages(workspaceId, conversationId, 0);
+      patchEntry(conversationId, {
+        turns: buildTurns(snapshot.events),
+        lastSeq: snapshot.last_seq,
+        needsReload: false,
+      });
+    } catch (error) {
+      patchEntry(conversationId, { needsReload: false, error: describe(error) });
+    } finally {
+      reloading.delete(conversationId);
+    }
   }
 
   async function consume(conversationId: string, after: number): Promise<void> {
@@ -155,34 +201,53 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     const controller = new AbortController();
     controllers.get(conversationId)?.abort();
     controllers.set(conversationId, controller);
+    let cursor = after;
     let finished = false;
-    try {
-      for await (const event of streamEvents(
-        workspaceId,
-        conversationId,
-        after,
-        controller.signal,
-      )) {
-        // 事件只属于发起订阅的那个会话：代次不符就停，避免旧流污染新视图。
-        if (!isCurrentSubscription(conversationId, generation)) break;
-        appendEvent(conversationId, event);
-        if (event.type === "run_finished") {
-          finished = true;
+    for (const delay of RECONNECT_DELAYS) {
+      if (delay) await sleep(delay);
+      if (controller.signal.aborted) break;
+      // 事件只属于发起订阅的那个会话：代次不符就停，避免旧流污染新视图。
+      if (!isCurrentSubscription(conversationId, generation)) return;
+      try {
+        for await (const event of streamEvents(
+          workspaceId,
+          conversationId,
+          cursor,
+          controller.signal,
+        )) {
+          if (!isCurrentSubscription(conversationId, generation)) break;
+          appendEventTo(conversationId, event);
+          cursor = Math.max(cursor, event.seq);
+          if (event.type === "run_finished") {
+            finished = true;
+            break;
+          }
+        }
+      } catch (error) {
+        if (controller.signal.aborted || !isCurrentSubscription(conversationId, generation)) {
           break;
         }
+        // 连接断开不等于任务结束：保留运行状态，退避后再接一次。
+        patchEntry(conversationId, { error: `连接中断：${describe(error)}` });
+        continue;
       }
-    } catch (error) {
-      if (!controller.signal.aborted && isCurrentSubscription(conversationId, generation)) {
-        // 连接断开不等于任务结束：保留运行状态，只说明连不上。
-        patchEntry(conversationId, { error: describe(error) });
+      if (finished) break;
+      // 流正常结束却没有整轮终态：服务端可能重启过，按最后确认的位置再接一次。
+      if (isCurrentSubscription(conversationId, generation)) {
+        patchEntry(conversationId, { error: "连接中断，正在重新接收…" });
       }
-    } finally {
-      if (controllers.get(conversationId) === controller) controllers.delete(conversationId);
-      if (isCurrentSubscription(conversationId, generation) && finished) {
-        patchEntry(conversationId, { running: false, activeTurn: null });
-        onRunFinished?.();
-        void get().refreshList();
-      }
+    }
+    if (controllers.get(conversationId) === controller) controllers.delete(conversationId);
+    if (!isCurrentSubscription(conversationId, generation)) return;
+    if (finished) {
+      patchEntry(conversationId, {
+        running: false,
+        activeTurn: null,
+        phase: null,
+        error: null,
+      });
+      onRunFinished?.();
+      void get().refreshList();
     }
   }
 
@@ -327,11 +392,14 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         const snapshot = await conversationMessages(workspaceId, conversationId, 0);
         // 迟到的响应只更新它自己的会话，不把界面切回去。
         patchEntry(conversationId, {
-          events: snapshot.events,
+          turns: buildTurns(snapshot.events),
+          lastSeq: snapshot.last_seq,
+          phase: null,
           running: Boolean(snapshot.active_turn),
           activeTurn: snapshot.active_turn,
           loading: false,
           error: null,
+          needsReload: false,
         });
         if (get().selectedId === conversationId) void get().rememberRecent(conversationId);
         if (snapshot.active_turn) await consume(conversationId, snapshot.last_seq);
@@ -365,7 +433,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       set({ pendingKey: keyRequest, error: null });
       try {
         let conversationId = target;
-        let after = conversationId ? lastSeq(get().entries[conversationId]?.events ?? []) : 0;
+        let after = conversationId ? (get().entries[conversationId]?.lastSeq ?? 0) : 0;
         if (conversationId) {
           const turn = await startTurn(workspaceId, conversationId, trimmed, keyRequest);
           patchEntry(conversationId, {
@@ -396,7 +464,9 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
             ],
           }));
           patchEntry(conversationId, {
-            events: [],
+            turns: [],
+            lastSeq: 0,
+            phase: null,
             running: true,
             activeTurn: {
               conversation_id: conversationId,
@@ -446,6 +516,27 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         await stopTurn(workspaceId, turnId);
       } catch (error) {
         set({ error: describe(error) });
+      }
+    },
+
+    async reconnect() {
+      const workspaceId = get().workspaceId;
+      const selected = get().selectedId;
+      if (!workspaceId || !selected) return;
+      // 先取活动快照，再从最后确认的位置继续：断开期间保存的事件不会丢。
+      try {
+        const snapshot = await conversationMessages(workspaceId, selected, 0);
+        patchEntry(selected, {
+          turns: buildTurns(snapshot.events),
+          lastSeq: snapshot.last_seq,
+          running: Boolean(snapshot.active_turn),
+          activeTurn: snapshot.active_turn,
+          error: null,
+          needsReload: false,
+        });
+        if (snapshot.active_turn) await consume(selected, snapshot.last_seq);
+      } catch (error) {
+        patchEntry(selected, { error: describe(error) });
       }
     },
 

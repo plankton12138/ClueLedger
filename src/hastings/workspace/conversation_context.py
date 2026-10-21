@@ -44,19 +44,34 @@ _FACT_PROMPT_LIMIT = 60
 
 
 def replay_public_messages(events: Sequence[dict[str, Any]]) -> list[AgentMessage]:
-    """把事件还原成用户提示与公开回复；工具过程不回放。"""
+    """把事件还原成用户提示与公开回复；工具过程与流式增量不回放。
+
+    一轮里可能有多条正式公开文本（多次模型响应，例如先说明再动手）。它们在本轮内
+    合并成一条 assistant 消息：上下文看到的仍是「作者说一句、模型答一段」，
+    既不会把同一次回复拆成两条，也不会漏掉任何一段。
+    """
     messages: list[AgentMessage] = []
+    reply: list[str] = []
+
+    def flush() -> None:
+        if reply:
+            messages.append(
+                AssistantMessage(content=[TextContent(text="\n\n".join(reply))], stop_reason="stop")
+            )
+            reply.clear()
+
     for event in events:
         kind = event.get("type")
         text = event.get("text")
         if not isinstance(text, str) or not text.strip():
             continue
         if kind == "turn_started":
+            # 新一轮开始：上一轮的公开文本先落成一条 assistant 消息。
+            flush()
             messages.append(UserMessage(content=text))
         elif kind == "assistant_message":
-            messages.append(
-                AssistantMessage(content=[TextContent(text=text)], stop_reason="stop")
-            )
+            reply.append(text)
+    flush()
     return messages
 
 

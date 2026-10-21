@@ -1,17 +1,18 @@
 /**
- * 对话栏（0.4 V04-4 / V04-10）。
+ * 对话栏（0.4 V04-4 / V04-10 / V05-2）。
  *
- * 一次请求的完整过程：作者消息、工具调用、回复与该轮结果。结果卡把两条轴分开显示：
- * 执行状态（完成/部分/失败/已停止/中断）与记录状态（已记录/没有改动/历史未记录）。
- * 「文件已改但历史没记上」不能显示成全部成功。
+ * 这里只负责装配：会话选择、模型、草稿、发送与停止，以及把每轮交给 `ChatTurnView`。
+ * 消息怎么归并、过程怎么折叠、回复怎么复制与展开，都在 `components/chat/` 与
+ * `state/chatMessages.ts` 里，本组件不解析事件。
  *
- * 会话状态来自 `state/conversations.ts`：每个会话各有事件与草稿，切换只看另一份，
- * 不共用「最后一个结果」——结果卡按轮次挂在它自己的位置后面。
+ * 结果卡把两条轴分开：执行状态（完成/部分/失败/已停止/中断）与记录状态
+ * （已记录/没有改动/历史未记录）。「文件已改但历史没记上」不能显示成全部成功。
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
-import type { Conversation, WorkspaceEvent } from "../../api/workspace";
+import type { Conversation } from "../../api/workspace";
+import { findMessage, type ChatMessage } from "../../state/chatMessages";
 import {
   draftKeyOf,
   runningConversation,
@@ -21,45 +22,9 @@ import {
 import { useModelsStore } from "../../state/models";
 import { useWorkspaceStore } from "../../state/workspace";
 import ModelSelector from "../models/ModelSelector";
-
-const STATUS_LABEL: Record<string, string> = {
-  completed: "完成",
-  partial: "部分完成",
-  failed: "失败",
-  stopped: "已停止",
-  interrupted: "中断",
-};
-
-const RECORDING_LABEL: Record<string, string> = {
-  committed: "已记录",
-  no_change: "没有改动",
-  unrecorded: "历史未记录",
-};
-
-const TOOL_LABEL: Record<string, string> = {
-  list_files: "列出目录",
-  read_file: "读取",
-  search_text: "搜索",
-  write_file: "写入",
-  edit_file: "修改",
-  move_file: "移动",
-  delete_file: "删除",
-  git_diff: "查看差异",
-  git_log: "查看历史",
-};
-
-function toolLine(event: WorkspaceEvent): string {
-  const name = TOOL_LABEL[event.tool ?? ""] ?? event.tool ?? "工具";
-  const args = event.args ?? {};
-  const path = typeof args.path === "string" ? args.path : "";
-  const source = typeof args.source === "string" ? args.source : "";
-  const target = typeof args.target === "string" ? args.target : "";
-  const query = typeof args.query === "string" ? args.query : "";
-  if (source && target) return `${name} ${source} → ${target}`;
-  if (path) return `${name} ${path}`;
-  if (query) return `${name}「${query}」`;
-  return name;
-}
+import ChatTurnView from "../chat/ChatTurnView";
+import ExpandedReplyDialog from "../chat/ExpandedReplyDialog";
+import { useChatScroll } from "../chat/useChatScroll";
 
 function conversationLabel(item: Conversation, running: boolean): string {
   return running ? `${item.title}（进行中）` : item.title;
@@ -79,6 +44,7 @@ export default function ConversationPanel() {
   const startNew = useConversationsStore((state) => state.newConversation);
   const send = useConversationsStore((state) => state.send);
   const stop = useConversationsStore((state) => state.stop);
+  const reconnect = useConversationsStore((state) => state.reconnect);
   const setDraft = useConversationsStore((state) => state.setDraft);
   const rename = useConversationsStore((state) => state.rename);
   const dismissError = useConversationsStore((state) => state.dismissError);
@@ -87,6 +53,12 @@ export default function ConversationPanel() {
 
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  // 宽阅读视图绑定「哪个会话的哪条回复」：切走就关闭，不显示错会话的内容。
+  const [expanded, setExpanded] = useState<{ conversationId: string; messageId: string } | null>(
+    null,
+  );
+  const [copyHint, setCopyHint] = useState(false);
+  const scroll = useChatScroll(entry.lastSeq);
 
   // 未配置模型时给入口而不是拦死输入：草稿要保留，配好之后作者自己点发送。
   const selectionAvailable = useModelsStore((state) => state.selection.available);
@@ -95,6 +67,24 @@ export default function ConversationPanel() {
   const running = entry.running;
   const otherRunning = busyElsewhere !== null && busyElsewhere.id !== selectedId;
   const canSend = Boolean(draft.trim()) && !running && !pending && !otherRunning;
+
+  const expandedMessage: ChatMessage | null = useMemo(() => {
+    if (!expanded || expanded.conversationId !== selectedId) return null;
+    return findMessage(entry.turns, expanded.messageId);
+  }, [expanded, selectedId, entry.turns]);
+
+  const openExpanded = (message: ChatMessage) => {
+    if (!selectedId) return;
+    setCopyHint(false);
+    setExpanded({ conversationId: selectedId, messageId: message.id });
+  };
+
+  const copyFailed = (message: ChatMessage) => {
+    // 剪贴板失败：把同一条回复打开成可选择复制的原文，不假装复制成功。
+    if (!selectedId) return;
+    setCopyHint(true);
+    setExpanded({ conversationId: selectedId, messageId: message.id });
+  };
 
   const submit = async () => {
     if (!canSend) return;
@@ -152,10 +142,7 @@ export default function ConversationPanel() {
               if (event.key === "Escape") setRenaming(false);
             }}
           />
-          <button
-            className="btn btn-gold px-2 py-0.5 text-[10px]"
-            onClick={() => void commitRename()}
-          >
+          <button className="btn btn-gold px-2 py-0.5 text-[10px]" onClick={() => void commitRename()}>
             保存
           </button>
         </div>
@@ -166,99 +153,50 @@ export default function ConversationPanel() {
         <ModelSelector />
       </div>
 
-      <div className="chat-scroll">
-        {entry.loading && <p className="text-[11px] text-mute">正在读取这段讨论…</p>}
-        {!entry.loading && entry.events.length === 0 && (
-          <p className="text-xs leading-6 text-sub">
-            直接说要求，例如「写第一章，雨夜，侦探刚到旅馆」。普通讨论不会改动文件。
-          </p>
-        )}
-        {entry.events.map((event) => {
-          if (event.type === "turn_started") {
-            return (
-              <div key={event.seq} className="chat-msg mine">
-                <div className="chat-bubble">{event.text}</div>
-              </div>
-            );
-          }
-          if (event.type === "assistant_message") {
-            return (
-              <div key={event.seq} className="chat-msg">
-                <div className="chat-bubble">{event.text}</div>
-              </div>
-            );
-          }
-          if (event.type === "tool_started") {
-            return (
-              <div key={event.seq} className="chat-tool">
-                · {toolLine(event)}…
-              </div>
-            );
-          }
-          if (event.type === "tool_finished") {
-            return (
-              <div key={event.seq} className={event.ok ? "chat-tool" : "chat-tool bad"}>
-                {event.ok ? "✓" : "✗"} {toolLine(event)}
-                {!event.ok && event.summary ? `：${event.summary}` : ""}
-              </div>
-            );
-          }
-          if (event.type === "error") {
-            return (
-              <div key={event.seq} className="chat-error">
-                {event.message}
-              </div>
-            );
-          }
-          if (event.type === "run_finished") {
-            const status = event.status ?? "completed";
-            const recording = event.recording ?? "no_change";
-            const paths = event.changed_paths ?? [];
-            return (
-              <div
-                key={event.seq}
-                className={`chat-card ${status === "completed" ? "result" : "warn"}`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="font-bold">{STATUS_LABEL[status] ?? status}</span>
-                  <span className="text-sub">{RECORDING_LABEL[recording] ?? recording}</span>
-                  {event.commit && (
-                    <code className="text-[10px] text-mute">{event.commit.slice(0, 7)}</code>
-                  )}
-                </div>
-                {paths.length > 0 && (
-                  <ul className="mt-1 space-y-0.5 text-sub">
-                    {paths.map((path) => (
-                      <li key={path}>· {path}</li>
-                    ))}
-                  </ul>
-                )}
-                {event.note && <p className="mt-1 text-amber">{event.note}</p>}
-                <div className="mt-2 flex gap-2">
-                  {recording === "committed" && event.commit && (
-                    <button
-                      className="btn btn-gray px-2 py-0.5 text-[10px]"
-                      onClick={() => void revert(event.commit!)}
-                    >
-                      撤销这次修改
-                    </button>
-                  )}
-                  {recording === "unrecorded" && (
-                    <button
-                      className="btn btn-gray px-2 py-0.5 text-[10px]"
-                      onClick={() => void recordChanges()}
-                    >
-                      补记到历史
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          }
-          return null;
-        })}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={scroll.ref}
+          className="chat-scroll"
+          onScroll={scroll.onScroll}
+          role="log"
+          aria-label="讨论内容"
+        >
+          {entry.loading && <p className="text-[11px] text-mute">正在读取这段讨论…</p>}
+          {!entry.loading && entry.turns.length === 0 && (
+            <p className="text-xs leading-6 text-sub">
+              直接说要求，例如「写第一章，雨夜，侦探刚到旅馆」。普通讨论不会改动文件。
+            </p>
+          )}
+          {entry.turns.map((turn, index) => (
+            <ChatTurnView
+              key={turn.id}
+              turn={turn}
+              running={running && index === entry.turns.length - 1}
+              phase={entry.phase}
+              onExpand={openExpanded}
+              onCopyFailed={copyFailed}
+              onRevert={(commit) => void revert(commit)}
+              onRecord={() => void recordChanges()}
+            />
+          ))}
 
-        {entry.error && <div className="chat-error">{entry.error}</div>}
+          {entry.error && (
+            <div className="chat-error flex items-start gap-2">
+              <span className="min-w-0 flex-1">{entry.error}</span>
+              {running && (
+                <button className="font-bold" onClick={() => void reconnect()}>
+                  重新连接
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {scroll.hasNew && (
+          <button type="button" className="chat-jump" onClick={scroll.toLatest}>
+            回到最新
+          </button>
+        )}
       </div>
 
       <div className="chat-composer">
@@ -317,6 +255,14 @@ export default function ConversationPanel() {
           )}
         </div>
       </div>
+
+      <ExpandedReplyDialog
+        message={expandedMessage}
+        open={Boolean(expandedMessage)}
+        copyHint={copyHint}
+        onClose={() => setExpanded(null)}
+        onCopyFailed={() => setCopyHint(true)}
+      />
     </aside>
   );
 }

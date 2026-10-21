@@ -385,4 +385,230 @@
   .prose-paper pre code {
     @apply bg-transparent p-0;
   }
+
+  /* ===== 对话回复（V05-2）=====
+     回复是阅读主体：段落不缩进、行距略紧，宽表与代码块在栏内横向滚动。
+     过程（思考、工具）默认折叠，展开才占版面。 */
+  .chat-turn {
+    @apply flex flex-col gap-2;
+  }
+  .chat-reply {
+    @apply max-w-full min-w-0;
+    padding: 8px 10px;
+    border: 1px solid #c3d0d8;
+    border-radius: 12px;
+    background: linear-gradient(#fff, #f7fafb);
+    box-shadow: 0 1px 2px rgba(52, 80, 100, 0.08);
+    color: theme("colors.fg");
+  }
+  .chat-reply-wide {
+    @apply max-w-none;
+    padding: 12px 16px;
+  }
+  /* 只有思考、没有公开文字的响应按过程展示，不画气泡。 */
+  .chat-reply-plain,
+  .chat-reply-plain.chat-reply-wide {
+    border: none;
+    background: none;
+    box-shadow: none;
+    padding: 0;
+  }
+  .prose-chat {
+    @apply min-w-0 text-[13px] leading-6;
+    overflow-wrap: anywhere;
+  }
+  .prose-chat > *:first-child {
+    margin-top: 0;
+  }
+  .prose-chat > *:last-child {
+    margin-bottom: 0;
+  }
+  .prose-chat h1 {
+    @apply mt-4 mb-2 font-serif text-lg font-bold;
+  }
+  .prose-chat h2 {
+    @apply mt-4 mb-2 font-serif text-base font-bold;
+  }
+  .prose-chat h3 {
+    @apply mt-3 mb-1.5 font-serif text-[15px] font-bold;
+  }
+  .prose-chat p {
+    @apply my-2 leading-6;
+  }
+  .prose-chat ul {
+    @apply my-2 list-disc space-y-0.5 pl-5;
+  }
+  .prose-chat ol {
+    @apply my-2 list-decimal space-y-0.5 pl-5;
+  }
+  .prose-chat blockquote {
+    @apply my-2 border-l-2 border-panel-edge pl-3 italic;
+    color: theme("colors.sub");
+  }
+  .prose-chat hr {
+    @apply my-3 border-panel-edge;
+  }
+  .prose-chat code {
+    @apply rounded bg-[#eef3f5] px-1 py-0.5 text-[0.92em];
+  }
+  .prose-chat pre {
+    @apply my-2 overflow-x-auto rounded border border-panel-edge bg-[#f4f8f9] p-2 text-[12px] leading-5;
+  }
+  .prose-chat pre code {
+    @apply bg-transparent p-0;
+  }
+  .prose-chat a {
+    @apply underline;
+    color: theme("colors.blue");
+  }
+  .prose-chat li > input[type="checkbox"] {
+    @apply mr-1 align-middle;
+  }
+  .prose-chat-wide {
+    @apply text-[14px] leading-7;
+  }
+  .chat-table-wrap {
+    @apply my-2 overflow-x-auto;
+  }
+  /* 表格按内容宽度排布，单元格换行有上限：窄栏里横向滚动，宽视图里自然收窄。 */
+  .chat-table-wrap table {
+    @apply border-collapse text-[12px];
+    width: max-content;
+    min-width: 100%;
+  }
+  .chat-table-wrap th,
+  .chat-table-wrap td {
+    @apply border border-panel-edge px-2 py-1 text-left align-top;
+    max-width: 22em;
+  }
+  .chat-table-wrap th {
+    @apply bg-[#eef3f5] font-bold;
+  }
+  .chat-image-alt {
+    @apply italic;
+    color: theme("colors.mute");
+  }
+
+  /* 思考块：默认折叠，标题行保持一行高度，不挤占阅读区。 */
+  .chat-thinking {
+    @apply my-1.5 rounded border border-panel-edge bg-[#f8fbfc];
+  }
+  .chat-thinking-head {
+    @apply cursor-pointer select-none px-2 py-1 text-[11px] font-bold;
+    color: theme("colors.sub");
+  }
+  .chat-thinking-head:focus-visible {
+    outline: 2px solid theme("colors.blue");
+    outline-offset: -2px;
+  }
+  .chat-thinking-body {
+    @apply border-t border-panel-edge px-2 py-1 text-[12px];
+    color: theme("colors.sub");
+  }
+
+  /* 工具：一行摘要，失败在折叠状态也看得见。 */
+  .chat-tool-line {
+    @apply flex cursor-pointer select-none flex-wrap items-baseline gap-1 text-[11px] leading-5;
+  }
+  .chat-tool-mark {
+    @apply w-3 flex-none text-center font-bold;
+  }
+  .chat-tool-name {
+    @apply min-w-0;
+    overflow-wrap: anywhere;
+  }
+  .chat-tool-note {
+    @apply text-[10px];
+    color: theme("colors.mute");
+  }
+  .chat-tool-fail {
+    @apply min-w-0 flex-1 text-[10px];
+  }
+  .chat-tool-body {
+    @apply mt-1 ml-4 rounded border border-panel-edge bg-[#f8fbfc] px-2 py-1 text-[10px];
+    color: theme("colors.sub");
+  }
+  .chat-tool-args {
+    @apply space-y-0.5;
+  }
+  .chat-tool-args div {
+    @apply flex gap-2;
+  }
+  .chat-tool-args dt {
+    @apply flex-none font-bold;
+  }
+  .chat-tool-args dd {
+    @apply min-w-0;
+    overflow-wrap: anywhere;
+  }
+  .chat-tool-result {
+    @apply mt-1 leading-4;
+  }
+
+  .chat-note {
+    @apply mt-1 text-[11px] leading-5;
+    color: theme("colors.amber");
+  }
+  .chat-status {
+    @apply text-[11px] leading-5;
+    color: theme("colors.mute");
+  }
+  .chat-actions {
+    @apply flex gap-2 pl-1;
+  }
+  .chat-action {
+    @apply rounded px-1 text-[10px];
+    color: theme("colors.mute");
+  }
+  .chat-action:hover {
+    color: theme("colors.blue");
+  }
+  .chat-action:focus-visible {
+    outline: 2px solid theme("colors.blue");
+    outline-offset: 1px;
+  }
+
+  /* 回到最新：只在作者主动向上阅读、又有新内容时出现。 */
+  .chat-jump {
+    @apply absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-[11px] font-bold;
+    border: 1px solid #a8b7c0;
+    background: linear-gradient(#fff, #eef3f5);
+    color: theme("colors.blue");
+    box-shadow: 0 1px 3px rgba(52, 80, 100, 0.2);
+  }
+
+  /* 宽阅读视图：同一份内容放到大面板里看。 */
+  .chat-dialog-overlay {
+    @apply fixed inset-0 z-50;
+    background: rgba(30, 45, 55, 0.36);
+  }
+  .chat-dialog {
+    @apply fixed top-1/2 left-1/2 z-50 flex max-h-[82vh] w-[min(920px,92vw)] -translate-x-1/2 -translate-y-1/2 flex-col;
+    border: 1px solid #a8b7c0;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 12px 40px rgba(30, 50, 65, 0.3);
+  }
+  .chat-dialog-head {
+    @apply flex flex-none items-center gap-2 border-b border-panel-edge px-3 py-2;
+    background: linear-gradient(#fff, #e9eff2);
+  }
+  .chat-dialog-title {
+    @apply min-w-0 flex-1 truncate text-xs font-bold;
+    color: theme("colors.panelHead");
+  }
+  .chat-dialog-tools {
+    @apply flex flex-none gap-2;
+  }
+  .chat-dialog-hint {
+    @apply flex-none border-b border-amber-edge bg-amber-bg px-3 py-1.5 text-[11px];
+    color: theme("colors.amber");
+  }
+  .chat-dialog-body {
+    @apply min-h-0 flex-1 overflow-auto p-4;
+  }
+  .chat-dialog-source {
+    @apply mt-3 max-h-56 overflow-auto rounded border border-panel-edge bg-[#f8fbfc] p-2 text-[12px] leading-6 whitespace-pre-wrap select-text;
+    color: theme("colors.fg");
+  }
 }

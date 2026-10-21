@@ -129,30 +129,101 @@ export interface ConversationUiPatch {
   draft_text?: string;
 }
 
-export interface WorkspaceEvent {
+/** 单条回复的完整性：块与响应各自成立，不代替整轮结果。 */
+export type Completion = "completed" | "stopped" | "failed" | "interrupted" | "truncated";
+
+/** 内容块类型：模型可见的公开文字，以及仅供查看的思考。 */
+export type BlockKind = "text" | "thinking";
+
+/** 应用确认的运行阶段；界面只按这些阶段说明状态，不猜进度。 */
+export type RunPhase = "model" | "tool" | "record";
+
+interface EventBase {
   seq: number;
   at: string;
-  type:
-    | "turn_started"
-    | "tool_started"
-    | "tool_finished"
-    | "assistant_message"
-    | "error"
-    | "run_finished";
-  turn_id?: string;
-  text?: string;
-  tool?: string;
-  args?: Record<string, unknown>;
-  ok?: boolean;
-  summary?: string;
-  code?: string;
-  message?: string;
-  status?: RunStatus;
-  recording?: Recording;
-  changed_paths?: string[];
-  commit?: string | null;
-  note?: string;
 }
+
+/**
+ * 会话事件（按 `type` 区分的联合类型）。
+ *
+ * 旧日志只有 `turn_started`、`tool_*`、`assistant_message`、`error`、`run_finished`，
+ * 这些分支保持可读；流式事件是新增的，旧记录不会凭空多出内容。
+ * 可选字段只用于兼容旧记录，新事件一律写全。
+ */
+export type WorkspaceEvent =
+  | (EventBase & { type: "turn_started"; turn_id: string; text: string })
+  | (EventBase & { type: "run_phase"; turn_id: string; phase: RunPhase })
+  | (EventBase & { type: "assistant_started"; turn_id: string; message_id: string })
+  | (EventBase & {
+      type: "assistant_block_started";
+      turn_id: string;
+      message_id: string;
+      block_id: string;
+      kind: BlockKind;
+      order: number;
+    })
+  | (EventBase & {
+      type: "assistant_block_delta";
+      turn_id: string;
+      message_id: string;
+      block_id: string;
+      kind: BlockKind;
+      part: number;
+      text: string;
+    })
+  | (EventBase & {
+      type: "assistant_block_finished";
+      turn_id: string;
+      message_id: string;
+      block_id: string;
+      kind: BlockKind;
+      text: string;
+      last_part: number;
+      completion: Completion;
+      duration_ms?: number | null;
+    })
+  | (EventBase & {
+      type: "assistant_message";
+      turn_id: string;
+      message_id?: string;
+      text: string;
+      completion?: Completion;
+    })
+  | (EventBase & {
+      type: "assistant_finished";
+      turn_id: string;
+      message_id: string;
+      completion: Completion;
+      stop_reason?: string;
+      duration_ms?: number | null;
+    })
+  | (EventBase & {
+      type: "tool_started";
+      turn_id: string;
+      tool_call_id?: string;
+      tool: string;
+      args?: Record<string, unknown>;
+    })
+  | (EventBase & {
+      type: "tool_finished";
+      turn_id: string;
+      tool_call_id?: string;
+      tool: string;
+      args?: Record<string, unknown>;
+      ok: boolean;
+      summary?: string;
+      duration_ms?: number | null;
+    })
+  | (EventBase & { type: "error"; turn_id: string; code?: string; message?: string })
+  | (EventBase & {
+      type: "run_finished";
+      turn_id: string;
+      status: RunStatus;
+      recording: Recording;
+      changed_paths?: string[];
+      commit?: string | null;
+      note?: string;
+    });
 
 export interface GitChange {
   path: string;

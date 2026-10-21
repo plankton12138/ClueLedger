@@ -20,23 +20,33 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from hastings.server.provider_runtime import ModelSnapshot
+from hastings.workspace.chat_stream import ChatStreamBridge, repair_interrupted_stream
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
 from hastings.workspace.state import ConversationStore
 from tau_agent.events import (
     MessageEndEvent,
+    MessageStartEvent,
+    MessageUpdateEvent,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
 )
 from tau_agent.harness import AgentHarness
-from tau_agent.messages import AssistantMessage, TextContent
+from tau_agent.messages import AssistantMessage
+from tau_agent.provider_events import (
+    TextDeltaEvent,
+    TextEndEvent,
+    ThinkingDeltaEvent,
+    ThinkingEndEvent,
+)
 
 __all__ = [
     "EXTERNAL_CHANGE_MESSAGE",
@@ -405,6 +415,9 @@ class TurnService:
             for turn_id in self.store.unfinished_turns(conversation.id):
                 if turn_id in self._tasks:
                     continue
+                # 先按已保存的增量补齐没有结束的内容块与响应，再补本轮中断结果：
+                # 这样界面看到的是「写到一半的回复 + 中断」，不是一条断在空中的记录。
+                repair_interrupted_stream(self.store, conversation.id, turn_id)
                 self.store.append(
                     conversation.id,
                     {
@@ -522,9 +535,15 @@ class TurnService:
                     return
                 # 阻塞消费事件流，直到模型循环自然结束或被取消；
                 # 模型调用和工具执行本身都在 harness 内部的 run_agent_loop 里完成。
-                await self._consume(harness, info, text)
+                truncated = await self._consume(harness, info, text)
                 # 正常返回也可能是停止：取消令牌会让模型循环正常收尾。
-                status = "stopped" if info.turn_id in self._stopped else "completed"
+                if info.turn_id in self._stopped:
+                    status = "stopped"
+                elif truncated:
+                    # 回复被输出上限截断：文字保留，但整轮不能算作全部成功。
+                    status = "partial"
+                else:
+                    status = "completed"
         except asyncio.CancelledError:
             # 任务被外部取消（进程关闭、测试清理）。harness 已补过中断的工具结果，
             # 这里只补终态并继续向上抛，让调用方知道任务确实被取消。
@@ -565,6 +584,10 @@ class TurnService:
                 await snapshot.aclose()
             # 按磁盘实际变化提交：停止或失败时已写入的内容也会入库，
             # 是否成功由 status 标明，不在这一步丢弃作者已经得到的结果。
+            self.store.append_batch(
+                conversation_id,
+                [{"type": "run_phase", "turn_id": info.turn_id, "phase": "record"}],
+            )
             result = session.finish(status)
             # 终态事件：前端据此结束「进行中」状态并刷新会话与工作区。
             self.store.append(
@@ -580,62 +603,138 @@ class TurnService:
             if self._active is not None and self._active.turn_id == info.turn_id:
                 self._active = None
 
-    async def _consume(self, harness: AgentHarness, info: TurnInfo, text: str) -> None:
-        """把 harness 事件翻译成会话事件：工具过程逐条记，回复整条记。
+    async def _consume(self, harness: AgentHarness, info: TurnInfo, text: str) -> bool:
+        """把模型事件翻译成会话事件：增量合批落盘，工具按调用 ID 配对。
 
         模型侧失败必须变成这一轮的失败：厂商报错时消息里没有正文、也没有工具调用，
         如果只是「记了个空回复」，作者看到的是「已完成、文件没改」，而真正的原因是
         端点或 key 不对。这里直接抛出，由 ``_run`` 落成 ``error`` 事件与失败状态。
+
+        读到的是搬运任务放进队列的事件，而不是直接迭代模型输出：这样在事件之间
+        可以按间隔提交缓冲，空闲时也把已收到的文字写下来，不必等下一个 token。
+
+        返回本轮的回复是否被输出上限截断。
         """
-        reply: list[str] = []
-        last_args: dict[str, dict[str, Any]] = {}
-        async for event in harness.prompt(text):
-            if isinstance(event, MessageEndEvent) and isinstance(event.message, AssistantMessage):
-                message = event.message
-                if message.stop_reason == "error" or message.error_message:
-                    raise WorkspaceError(
-                        code="MODEL_CALL_FAILED",
-                        where="turn.model",
-                        why=f"模型调用失败：{message.error_message or '厂商没有返回可用回复'}",
-                        fix="检查 config.yaml 里该档案的 base_url、api_key 与模型名，"
-                        "或换成可用的模型后重试这一轮",
-                        details={"model": message.model},
-                    )
-                text_part = "".join(
-                    block.text for block in message.content if isinstance(block, TextContent)
+        bridge = ChatStreamBridge(self.store, info.conversation_id, info.turn_id)
+        queue: asyncio.Queue[object] = asyncio.Queue()
+        done = object()
+        failure: list[Exception] = []
+
+        async def pump() -> None:
+            try:
+                async for item in harness.prompt(text):
+                    await queue.put(item)
+            except Exception as exc:  # provider 自己抛错：由读循环统一落成失败
+                failure.append(exc)
+            finally:
+                await queue.put(done)
+
+        reader = asyncio.create_task(pump())
+        tools: dict[str, tuple[dict[str, Any], float]] = {}
+        truncated = False
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=bridge.pending_delay())
+                except TimeoutError:
+                    bridge.flush_due()
+                    continue
+                if event is done:
+                    break
+                truncated = self._handle_agent_event(event, info, bridge, tools) or truncated
+                bridge.flush_due()
+            # 模型循环自己抛错时，先封口已收到的内容再向上抛，由 _run 记为失败。
+            if failure:
+                raise failure[0]
+        finally:
+            if not reader.done():
+                reader.cancel()
+                with suppress(asyncio.CancelledError):
+                    await reader
+            # 停止或失败：已保存的文字继续显示，块与响应标明未完整生成。
+            bridge.close_open("stopped" if info.turn_id in self._stopped else "failed")
+        return truncated
+
+    def _handle_agent_event(
+        self,
+        event: Any,
+        info: TurnInfo,
+        bridge: ChatStreamBridge,
+        tools: dict[str, tuple[dict[str, Any], float]],
+    ) -> bool:
+        """翻译单条模型事件；返回这一条是否让回复被截断。"""
+        if isinstance(event, MessageStartEvent):
+            if isinstance(event.message, AssistantMessage):
+                bridge.start_response()
+            return False
+        if isinstance(event, MessageUpdateEvent):
+            delta = event.assistant_message_event
+            if isinstance(delta, TextDeltaEvent):
+                bridge.append("text", delta.content_index, delta.delta)
+            elif isinstance(delta, ThinkingDeltaEvent):
+                bridge.append("thinking", delta.content_index, delta.delta)
+            elif isinstance(delta, TextEndEvent):
+                bridge.finish_block("text", delta.content_index, delta.content)
+            elif isinstance(delta, ThinkingEndEvent):
+                bridge.finish_block("thinking", delta.content_index, delta.content)
+            return False
+        if isinstance(event, MessageEndEvent) and isinstance(event.message, AssistantMessage):
+            message = event.message
+            if message.stop_reason == "aborted":
+                bridge.close_open("stopped")
+                return False
+            if message.stop_reason == "error" or message.error_message:
+                # 作者停止时，harness 会补一条「没有可用回复」的收尾消息：
+                # 那是停止，不是厂商失败，不能把已写出的内容标成失败。
+                if info.turn_id in self._stopped:
+                    bridge.close_open("stopped")
+                    return False
+                # 先封口已收到的内容，再让这一轮落成失败。
+                bridge.close_open("failed")
+                raise WorkspaceError(
+                    code="MODEL_CALL_FAILED",
+                    where="turn.model",
+                    why=f"模型调用失败：{message.error_message or '厂商没有返回可用回复'}",
+                    fix="检查 config.yaml 里该档案的 base_url、api_key 与模型名，"
+                    "或换成可用的模型后重试这一轮",
+                    details={"model": message.model},
                 )
-                if text_part.strip():
-                    reply.append(text_part)
-            elif isinstance(event, ToolExecutionStartEvent):
-                args = _short_args(event.args)
-                last_args[event.tool_name] = args
-                self.store.append(
-                    info.conversation_id,
+            return bridge.finish_response(message) == "truncated"
+        if isinstance(event, ToolExecutionStartEvent):
+            # 工具开始前提交缓冲：界面上的文字顺序与工具位置一致。
+            bridge.flush()
+            bridge.phase("tool")
+            tools[event.tool_call_id] = (_short_args(event.args), time.monotonic())
+            self.store.append_batch(
+                info.conversation_id,
+                [
                     {
                         "type": "tool_started",
                         "turn_id": info.turn_id,
+                        "tool_call_id": event.tool_call_id,
                         "tool": event.tool_name,
-                        "args": args,
-                    },
-                )
-            elif isinstance(event, ToolExecutionEndEvent):
-                # 结束事件带同一份定位参数：界面据此显示「写入 正文/…」而不是解析 JSON。
-                self.store.append(
-                    info.conversation_id,
-                    {
-                        "type": "tool_finished",
-                        "turn_id": info.turn_id,
-                        "tool": event.tool_name,
-                        "args": last_args.get(event.tool_name, {}),
-                        "ok": not event.is_error,
-                        "summary": _excerpt(event.result.text),
-                    },
-                )
-        if reply:
-            self.store.append(
-                info.conversation_id,
-                {"type": "assistant_message", "turn_id": info.turn_id, "text": "\n\n".join(reply)},
+                        "args": _short_args(event.args),
+                    }
+                ],
             )
+            return False
+        if isinstance(event, ToolExecutionEndEvent):
+            started = tools.pop(event.tool_call_id, None)
+            payload: dict[str, Any] = {
+                "type": "tool_finished",
+                "turn_id": info.turn_id,
+                "tool_call_id": event.tool_call_id,
+                "tool": event.tool_name,
+                # 结束事件带同一份定位参数：界面据此显示「写入 正文/…」而不是解析 JSON。
+                "args": started[0] if started is not None else {},
+                "ok": not event.is_error,
+                "summary": _excerpt(event.result.text),
+            }
+            if started is not None:
+                payload["duration_ms"] = int(max(0.0, time.monotonic() - started[1]) * 1000)
+            self.store.append_batch(info.conversation_id, [payload])
+            return False
+        return False
 
 
 def _short_args(arguments: dict[str, Any]) -> dict[str, Any]:
