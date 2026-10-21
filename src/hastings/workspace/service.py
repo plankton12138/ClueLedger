@@ -24,6 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
@@ -35,7 +36,6 @@ from tau_agent.events import (
 )
 from tau_agent.harness import AgentHarness
 from tau_agent.messages import AssistantMessage, TextContent
-from tau_agent.provider import ModelProvider
 
 __all__ = [
     "EXTERNAL_CHANGE_MESSAGE",
@@ -51,8 +51,10 @@ __all__ = [
 RunStatus = Literal["completed", "partial", "failed", "stopped", "interrupted"]
 Recording = Literal["committed", "no_change", "unrecorded"]
 
-#: 取得「这一轮用哪个 provider 与模型」；未配置时抛 WorkspaceError。
-ProviderFactory = Callable[[], tuple[ModelProvider, str]]
+#: 取得「这一轮用哪个连接、哪个模型、哪个实例」；未配置时抛带 code 的错误。
+#:
+#: 工厂在受理一轮时调用一次并固定结果：受理之后切换或编辑连接只影响下一轮。
+ProviderFactory = Callable[[], ModelSnapshot]
 
 #: 外部编辑形成的独立提交：让作者的改动先有归属，再开始这一轮。
 EXTERNAL_CHANGE_MESSAGE = "外部修改：应用之外保存的内容"
@@ -230,9 +232,21 @@ class TurnService:
                 details={"conversation": conversation_id},
             )
         turn_id = f"t_{os.urandom(4).hex()}"
+        # 受理时固定这一轮的模型事实：之后切换、编辑或删除连接都不影响它。
+        snapshot: ModelSnapshot | None
+        failure: Exception | None = None
+        try:
+            snapshot = self.provider_factory()
+        except Exception as exc:  # 未配置模型等情况在受理时就已经知道
+            snapshot, failure = None, exc
         event = self.store.append(
             conversation_id,
-            {"type": "turn_started", "turn_id": turn_id, "text": text},
+            {
+                "type": "turn_started",
+                "turn_id": turn_id,
+                "text": text,
+                **(snapshot.describe() if snapshot is not None else {}),
+            },
         )
         info = TurnInfo(
             turn_id=turn_id, conversation_id=conversation_id, started_at=str(event["at"])
@@ -241,7 +255,7 @@ class TurnService:
             self._request_keys[request_key] = info
         if self.store.get(conversation_id).title == "新的对话":
             self.store.rename(conversation_id, _summary(text) or "新的对话")
-        self._tasks[turn_id] = asyncio.create_task(self._run(info, text))
+        self._tasks[turn_id] = asyncio.create_task(self._run(info, text, snapshot, failure))
         return info
 
     async def wait(self, turn_id: str) -> None:
@@ -281,7 +295,13 @@ class TurnService:
             interrupted.append(conversation.id)
         return interrupted
 
-    async def _run(self, info: TurnInfo, text: str) -> None:
+    async def _run(
+        self,
+        info: TurnInfo,
+        text: str,
+        snapshot: ModelSnapshot | None = None,
+        failure: Exception | None = None,
+    ) -> None:
         # 局部导入：agent 依赖本模块的 WriteSession，顶层导入会成环。
         from hastings.workspace.agent import RunContext, build_harness
 
@@ -289,16 +309,22 @@ class TurnService:
         status: RunStatus = "completed"
         session = WriteSession(self.workspace, instruction=text)
         try:
+            if snapshot is None:
+                raise failure or WorkspaceError(
+                    code="MODEL_NOT_CONFIGURED",
+                    where="turn.model",
+                    why="当前没有可用的模型来源或模型名，这一轮不会调用模型",
+                    fix="在模型设置里选择连接与模型，或补齐 config.yaml 的连接配置",
+                )
             async with self._lock:
                 repo = GitRepo(self.workspace.root)
                 if repo.is_repository():
                     # 仓库已初始化时先确认可写：暂存区/冲突/分离头都在调用模型前挡住。
                     repo.require_ready()
-                provider, model = self.provider_factory()
                 run = RunContext(workspace=self.workspace, session=session)
                 harness = build_harness(
-                    provider=provider,
-                    model=model,
+                    provider=snapshot.provider,
+                    model=snapshot.model,
                     workspace=self.workspace,
                     run=run,
                     max_turns=self.max_turns,
@@ -325,16 +351,22 @@ class TurnService:
         except Exception as exc:  # 一轮的失败要落到事件里，不能吞掉进程
             status = "stopped" if info.turn_id in self._stopped else "failed"
             if status == "failed":
+                # 配置类错误自带稳定 code 与三要素文案，原样透传比包一层更有用。
+                code = getattr(exc, "code", None) or "TURN_FAILED"
+                message = getattr(exc, "message", None) or f"这一轮没有完成：{exc}"
                 self.store.append(
                     conversation_id,
                     {
                         "type": "error",
                         "turn_id": info.turn_id,
-                        "code": "TURN_FAILED",
-                        "message": f"这一轮没有完成：{exc}",
+                        "code": code,
+                        "message": message,
                     },
                 )
         finally:
+            if snapshot is not None:
+                # 完成、失败、停止都关闭本轮实例：下一轮重新构造，不复用可能已失效的连接。
+                await snapshot.aclose()
             result = session.finish(status)
             self.store.append(
                 conversation_id,

@@ -1,13 +1,17 @@
-"""服务级 provider 档案配置（P6 T1，D1）。
+"""服务级模型连接配置（0.4 V04-9A）。
 
-一处事实源：``config.yaml`` 的档案目录；一个档案就是「一个可用的模型端点」，
-含地址、key 与默认模型。模型来源不从进程环境读取——作者在自己的机器上用产品，
+一处事实源：``config.yaml`` 的连接目录；一个连接就是「作者自己的一个模型账号」——
+含地址、协议、key 与可选模型。模型来源不从进程环境读取——作者在自己的机器上用产品，
 不会去设置 ``OPENAI_API_KEY`` 这类变量；让某个字段能引用环境变量，只会把运维侧的
 概念塞进产品配置，并让「同一份配置在不同机器上行为不同」。
 
-缺文件 / 空文件 → 没有档案（服务照常启动，发送消息的那一轮明确回报「未配置模型」）；
-结构性损坏（根节点非映射、档案缺 name/base_url、档案名重复、字段拼写错误）→
-ProviderConfigError 三要素——模型配置错了应该当场知道，而不是写作到一半才发现。
+缺文件 / 空文件 / ``providers: []`` → 没有连接（服务照常启动，发送消息的那一轮明确
+回报「未配置模型」）；结构性损坏（根节点非映射、连接缺 name/base_url、连接名重复、
+字段拼写错误）→ ProviderConfigError 三要素——模型配置错了应该当场知道，而不是写作
+到一半才发现。
+
+空目录是合法状态：作者可以在界面里删掉最后一个连接，那时磁盘上就是空列表，重启后
+保持「没有选择」，不能退回到「文件不存在」的推断里。
 
 key 只进不出：磁盘上可直填 ``api_key``（首次启动后转入系统凭据存储，磁盘只留
 ``credential_ref``）；运行时用 SecretStr 持有（repr/日志不泄露），任何对外输出
@@ -16,50 +20,55 @@ key 只进不出：磁盘上可直填 ``api_key``（首次启动后转入系统�
 
 from __future__ import annotations
 
+import hashlib
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
-import httpx
 import yaml
-from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, model_validator
 
-from tau_agent.provider import ModelProvider
-from tau_ai.env import OpenAICompatibleConfig
-from tau_ai.openai_compatible import OpenAICompatibleProvider
+from hastings.server.provider_catalog import ProviderApi
+from hastings.server.provider_runtime import ModelSnapshot, build_provider, snapshot
 
 DEFAULT_CONFIG_PATH = Path("config.yaml")
 
+SelectionMode = Literal["auto", "explicit", "none"]
+
 
 class ProviderConfigError(ValueError):
-    """config.yaml 结构损坏或启动时无可用档案（三要素文案随异常携带）。"""
+    """config.yaml 结构损坏（三要素文案随异常携带）。"""
 
 
 class ProviderProfile(BaseModel):
-    """一个模型端点档案：名字 + 端点 + key（直填或凭据引用）+ 默认模型。"""
+    """一个连接：稳定名字 + 显示名 + 端点 + 协议 + key（直填或凭据引用）+ 模型。"""
 
     model_config = ConfigDict(extra="forbid")  # 拼错字段早失败（如 api_ky）
 
     name: str
+    #: 作者可改的显示名；改它不改变 name（工作区与服务按 name 引用连接）。
+    display_name: str = ""
     base_url: str
     api_key: SecretStr = SecretStr("")
     #: V03-1.3：OS 凭据存储引用。设置后 api_key 字段应为空（元数据不存明文）；
     # 实际密钥经 CredentialStore 读取（见 ProviderBook 物化）。
     credential_ref: str = ""
     default_model: str = ""
-    # 免密端点（本地模型如 Ollama）：无 key 也可用；OpenAICompatibleProvider
-    # 空 key 本就不发 Authorization 头。
+    #: 作者勾选为日常可用的模型；旧档案没有该字段时由 default_model 推导（见 models_for）。
+    models: list[str] = Field(default_factory=list)
+    # 免密端点（本机兼容服务）：无 key 也可用；空 key 本就不发 Authorization 头。
     no_auth: bool = False
+    #: 供应商预设 ID；未知值按自定义服务展示，不阻止读取。
     catalog_id: str = ""
-    api: Literal["openai-completions", "openai-responses"] = "openai-completions"
+    api: ProviderApi = "openai-completions"
 
     def resolved_api_key(self) -> str:
-        """解析实际 key：只用档案自身的 key（直填或已物化的凭据）。
+        """解析实际 key：只用连接自身的 key（直填或已物化的凭据）。
 
-        ``credential_ref`` 档案在 ProviderBook 物化阶段已把 OS 凭据装进
+        ``credential_ref`` 连接在 ProviderBook 物化阶段已把系统凭据装进
         ``api_key``（SecretStr，只进不出）；本方法不直接访问凭据存储，
         也不读进程环境。
         """
@@ -67,18 +76,78 @@ class ProviderProfile(BaseModel):
 
     @property
     def available(self) -> bool:
-        """启动/切换的可用性 = 免密端点，或能解析出非空 key。"""
+        """可用性 = 免密端点，或能解析出非空 key。"""
         return self.no_auth or bool(self.resolved_api_key())
+
+    @property
+    def title(self) -> str:
+        """界面显示名；旧档案没有 display_name 时回退到 name。"""
+        return self.display_name or self.name
+
+    def models_for(self) -> list[str]:
+        """可选模型视图；旧档案只有 default_model 时把它当作唯一可选模型。
+
+        不在启动时批量改写磁盘：读的时候兼容，写的时候才落新字段。
+        """
+        if self.models:
+            return list(self.models)
+        return [self.default_model] if self.default_model else []
 
 
 class ServerConfig(BaseModel):
-    """服务级配置根：档案目录。档案名唯一（工作区设置按名引用）。"""
+    """服务级配置根：连接目录。连接名唯一（工作区设置按名引用）。"""
 
     model_config = ConfigDict(extra="forbid")
 
     providers: list[ProviderProfile]
     active_provider: str = ""
     active_model: str = ""
+    #: 空选择的持久化语义：auto 沿用启动默认，explicit 用 active_provider，
+    # none 表示作者明确清空，重启后保持未选。
+    selection_mode: SelectionMode = "auto"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _infer_selection_mode(cls, value: object) -> object:
+        """旧配置没有 selection_mode：有 active_provider 即 explicit，否则 auto。"""
+        if isinstance(value, dict) and "selection_mode" not in value:
+            raw = dict(value)
+            raw["selection_mode"] = "explicit" if raw.get("active_provider") else "auto"
+            return raw
+        return value
+
+
+@dataclass(frozen=True, slots=True)
+class ModelSelection:
+    """当前生效的「连接 + 模型」，并说明它来自哪里。
+
+    ``source`` 让界面显示与实际调用一致：``saved`` 是作者保存过的选择，
+    ``startup`` 来自启动参数，``automatic`` 是首个可用连接的默认模型，
+    ``none`` 表示没有选择。
+    """
+
+    connection_id: str | None
+    model: str
+    source: Literal["saved", "startup", "automatic", "none"]
+    available: bool
+    reason: str = ""
+
+    @property
+    def display_name(self) -> str:
+        return self.connection_id or ""
+
+
+def config_revision(path: Path = DEFAULT_CONFIG_PATH) -> str:
+    """配置版本：文件内容的短摘要，用于提交时的并发校验。
+
+    用内容而不是修改时间：同一个文件被复制、恢复或重新保存都会改变时间戳，
+    但只有内容变化才意味着「你手里的列表已经过期」。
+    """
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        return "0" * 16
+    return hashlib.sha256(raw).hexdigest()[:16]
 
 
 def _reject_env_reference(raw: dict[str, Any], path: Path) -> None:
@@ -98,21 +167,21 @@ def _reject_env_reference(raw: dict[str, Any], path: Path) -> None:
     if not offenders:
         return
     raise ProviderConfigError(
-        f"config.yaml 已不再支持环境变量引用：档案 {offenders} 使用了 api_key_env（{path}）。"
+        f"config.yaml 已不再支持环境变量引用：连接 {offenders} 使用了 api_key_env（{path}）。"
         "为什么错：模型来源只从本文件读取，应用不再读进程环境里的 key；"
-        "保留该字段会让档案看起来配好了、实际没有 key。"
-        "怎样算对：删掉 api_key_env，把 key 直接写进同一档案的 api_key"
+        "保留该字段会让连接看起来配好了、实际没有 key。"
+        "怎样算对：删掉 api_key_env，把 key 直接写进同一连接的 api_key"
         "（首次启动后会转入系统凭据存储，磁盘上只留 credential_ref）。"
     )
 
 
 def load_server_config(path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
-    """加载服务级配置；缺文件/空文件 → 空档案目录，结构性损坏 → 三要素报错。"""
+    """加载服务级配置；缺文件/空文件/空列表 → 空连接目录，结构性损坏 → 三要素报错。"""
     if not path.exists():
         return ServerConfig(providers=[])
     raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
     if raw is None:
-        # 空文件等价于「还没配置」→ 空档案目录（与「删掉文件」同一结果）
+        # 空文件等价于「还没配置」→ 空连接目录（与「删掉文件」同一结果）
         return ServerConfig(providers=[])
     if not isinstance(raw, dict):
         raise ProviderConfigError(
@@ -126,20 +195,13 @@ def load_server_config(path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
         config = ServerConfig.model_validate(raw)
     except ValidationError as exc:
         raise ProviderConfigError(_validation_error_message(path, exc)) from exc
-    if not config.providers:
-        raise ProviderConfigError(
-            f"config.yaml 损坏：providers 列表为空（{path}）。"
-            "为什么错：文件写了一个空列表，和「还没配置」混在了一起。"
-            "怎样算对：配置至少一个档案（含 name / base_url 与 key），"
-            "或删除该文件表示暂时不配置。"
-        )
     names = [profile.name for profile in config.providers]
     duplicates = sorted({name for name in names if names.count(name) > 1})
     if duplicates:
         raise ProviderConfigError(
-            f"config.yaml 损坏：档案名重复 {duplicates}（{path}）。"
-            "为什么错：工作区设置按档案名引用端点，重名无法解析。"
-            "怎样算对：为每个档案取唯一的名字。"
+            f"config.yaml 损坏：连接名重复 {duplicates}（{path}）。"
+            "为什么错：工作区设置按连接名引用端点，重名无法解析。"
+            "怎样算对：为每个连接取唯一的名字。"
         )
     return config
 
@@ -152,13 +214,13 @@ def _validation_error_message(path: Path, exc: ValidationError) -> str:
     return (
         f"config.yaml 损坏：{lines}（{path}）。"
         "为什么错：字段缺失、类型不对或存在未知字段（多为拼写错误）。"
-        "怎样算对：每个档案必含 name / base_url，可选 api_key（直填）"
+        "怎样算对：每个连接必含 name / base_url，可选 api_key（直填）"
         "与 default_model；参照 config.example.yaml。"
     )
 
 
 def _materialize_credentials(config: ServerConfig, store: Any) -> ServerConfig:
-    """把 OS 凭据装回内存档案（credential_ref → api_key，SecretStr 只进不出）。
+    """把系统凭据装回内存连接（credential_ref → api_key，SecretStr 只进不出）。
 
     磁盘元数据不改动；仅运行时视图持有明文（沿既有 SecretStr 泄露防线）。
     """
@@ -177,9 +239,9 @@ def migrate_plaintext_credentials(
 ) -> dict[str, list[str]]:
     """旧明文连接升级（V03-1.3）：写入并验证 → 元数据切换 → 清理旧 Key 字段。
 
-    每个含直填 Key 的档案独立迁移；任一步失败该档案保持旧连接可恢复
+    每个含直填 Key 的连接独立迁移；任一步失败该连接保持旧连接可恢复
     （明文不动、磁盘不写），失败原因进报告由调用方明确提示。
-    只在磁盘上仍有明文 Key 时执行；重复运行幂等（已迁移档案跳过）。
+    只在磁盘上仍有明文 Key 时执行；重复运行幂等（已迁移连接跳过）。
     """
     migrated: list[str] = []
     failed: list[str] = []
@@ -213,34 +275,21 @@ def migrate_plaintext_credentials(
 
 
 def save_server_config(config: ServerConfig, path: Path) -> Path:
-    """写回 config.yaml：档案增删改后落盘，重启仍生效。
+    """写回 config.yaml：连接增删改后落盘，重启仍生效。
 
     api_key 以明文写入——文件存储格式本就支持直填 key（与手写 config.yaml
-    同一保密边界：key 安全性依赖文件系统权限，不依赖本函数）；已迁入系统
-    凭据存储的档案此处写空串，只留 credential_ref。写盘 OSError 上抛，
-    由调用方归因环境故障。
+    同一保密边界）；已迁入系统凭据存储的连接此处写空串，只留 credential_ref。
+    设置界面的写入路径不经过这里把明文交给序列化器：它写的是只有引用、没有 key
+    的配置对象（见 model_connections）。
     """
     payload = {
-        "providers": [
-            {
-                "name": profile.name,
-                "base_url": profile.base_url,
-                "api_key": profile.api_key.get_secret_value(),
-                "default_model": profile.default_model,
-                # 免密字段按需写入：False 不落盘，旧文件格式零扰动
-                **({"no_auth": True} if profile.no_auth else {}),
-                **({"catalog_id": profile.catalog_id} if profile.catalog_id else {}),
-                **({"api": profile.api} if profile.api != "openai-completions" else {}),
-                # V03-1.3：OS 凭据存储引用按需写入（明文 Key 迁移后为空串）
-                **({"credential_ref": profile.credential_ref} if profile.credential_ref else {}),
-            }
-            for profile in config.providers
-        ],
+        "providers": [_profile_payload(profile) for profile in config.providers],
         **(
             {"active_provider": config.active_provider, "active_model": config.active_model}
-            if config.active_provider
+            if config.selection_mode == "explicit" and config.active_provider
             else {}
         ),
+        **({"selection_mode": "none"} if config.selection_mode == "none" else {}),
     }
     header = "# 由设置页或手工维护；模型来源只从这个文件读取，不读进程环境。\n"
     text = header + yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
@@ -261,6 +310,24 @@ def save_server_config(config: ServerConfig, path: Path) -> Path:
     return path
 
 
+def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
+    """一个连接的磁盘形状：默认值不落盘，旧文件格式零扰动。"""
+    return {
+        "name": profile.name,
+        "base_url": profile.base_url,
+        "api_key": profile.api_key.get_secret_value(),
+        "default_model": profile.default_model,
+        **({"display_name": profile.display_name} if profile.display_name else {}),
+        **({"models": list(profile.models)} if profile.models else {}),
+        # 免密字段按需写入：False 不落盘
+        **({"no_auth": True} if profile.no_auth else {}),
+        **({"catalog_id": profile.catalog_id} if profile.catalog_id else {}),
+        **({"api": profile.api} if profile.api != "openai-completions" else {}),
+        # V03-1.3：OS 凭据存储引用按需写入（明文 Key 迁移后为空串）
+        **({"credential_ref": profile.credential_ref} if profile.credential_ref else {}),
+    }
+
+
 def mask_key(key: str) -> str:
     """key 脱敏（尾 4 位）：key 只进不出，对外只给这个。"""
     if not key:
@@ -271,56 +338,17 @@ def mask_key(key: str) -> str:
 
 
 def is_loopback_url(url: str) -> bool:
+    """本机地址判断（兼容旧导入路径）。"""
     return urlsplit(url).hostname in ("localhost", "127.0.0.1", "::1")
 
 
-class _LocalProvider(OpenAICompatibleProvider):
-    """保持 Tau 的请求协议，本机请求不经系统代理，client 生命周期仍由 provider 拥有。"""
-
-    def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=self._config.timeout_seconds, trust_env=False)
-        return self._client
-
-
-def build_provider(profile: ProviderProfile, *, worker: bool = False) -> OpenAICompatibleProvider:
-    """由档案构造 provider 实例（跨档案切换/启动装配共用；T2 复用）。"""
-    key = profile.resolved_api_key()
-    config = OpenAICompatibleConfig(
-        api_key=key,
-        base_url=profile.base_url.rstrip("/"),
-        # 免密档案（Ollama 等）：空 key 不能发 `Authorization: Bearer `——
-        # httpx 会以 Illegal header value 拒绝该请求。
-        omit_authorization_header=profile.no_auth and not key,
-        api=profile.api,
-        infer_api_from_model=False,
-    )
-    if worker:
-        config = replace(
-            config,
-            timeout_seconds=180 if is_loopback_url(profile.base_url) else 45,
-            max_retries=0,
-            max_tokens=4096,
-        )
-    provider_cls = _LocalProvider if is_loopback_url(profile.base_url) else OpenAICompatibleProvider
-    return provider_cls(config)
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedProvider:
-    """一次会话装配所需的端点事实：生效档案名 + 生效模型 + provider 实例。"""
-
-    profile_name: str
-    model: str
-    provider: ModelProvider
-
-
 class ProviderBook:
-    """档案目录的运行时视图（P6 T2）：按名复用 provider 实例 + 解析生效档案。
+    """连接目录的运行时视图：解析当前选择 + 构造每一轮使用的实例。
 
     与 ServerConfig 的分工：ServerConfig 是磁盘事实（Pydantic 校验），
-    ProviderBook 是进程事实（httpx client 按档案名缓存复用——跨档案来回切
-    不重复建 client，也不需要在重建会话时关闭被共享的 provider）。
+    ProviderBook 是进程事实（当前选择、本轮快照）。这里不再缓存 provider 实例：
+    实例随快照创建、随轮次关闭，编辑与删除因此不需要「摘掉缓存里那个可能还在用的
+    client」。
     """
 
     def __init__(
@@ -331,6 +359,7 @@ class ProviderBook:
         boot_model: str,
         config_path: Path | None = None,
         credentials: Any | None = None,
+        cli_model: str = "",
     ) -> None:
         self._credentials = credentials
         self.credential_migration: dict[str, list[str]] = {"migrated": [], "failed": []}
@@ -340,16 +369,19 @@ class ProviderBook:
             self.credential_migration = migrate_plaintext_credentials(
                 config, credentials, config_path or DEFAULT_CONFIG_PATH
             )
+            if self.credential_migration["migrated"]:
+                # 迁移把明文换成了引用并写回磁盘：内存视图按磁盘重读，避免
+                # 继续持有一份「有明文 key、没有 credential_ref」的旧对象。
+                config = load_server_config(config_path or DEFAULT_CONFIG_PATH)
             config = _materialize_credentials(config, credentials)
         self._config = config
         self._boot_name = boot_name
         self._boot_model = boot_model
-        # 档案写回路径（P7 T12）：由 CLI --config 传入；None → 写默认路径。
+        # CLI --model 是临时覆盖：与 boot_model 分开记，界面一旦选择就被取代。
+        self._cli_model = cli_model
         self._config_path = config_path
-        self._instances: dict[str, ModelProvider] = {}
-        self._initial_provider = next(
-            (p.name for p in config.providers if p.available and p.default_model), ""
-        )
+        # 本次运行中作者通过界面作出的选择（含清空）；None 表示还没动过。
+        self._runtime_selection: ModelSelection | None = None
 
     @property
     def config(self) -> ServerConfig:
@@ -357,7 +389,7 @@ class ProviderBook:
 
     @property
     def credentials(self) -> Any | None:
-        """OS 凭据存储；None 表示未启用（连接走旧明文路径，仅限无存储环境）。"""
+        """系统凭据存储；None 表示未启用（连接走旧明文路径，仅限无存储环境）。"""
         return self._credentials
 
     @property
@@ -369,92 +401,142 @@ class ProviderBook:
         return self._boot_name
 
     def profile(self, name: str) -> ProviderProfile | None:
-        """严格查找（PUT settings 校验用）；未知档案名返回 None。"""
+        """严格查找（写操作校验用）；未知连接名返回 None。"""
         for profile in self._config.providers:
             if profile.name == name:
                 return profile
         return None
 
     def update_config(self, new: ServerConfig) -> None:
-        """替换磁盘事实，并清理已删除或配置已变化的档案实例。
+        """替换磁盘事实（提交后的内存快照）。
 
-        配置未变的档案复用 client；密钥、地址或协议更新后不再返回旧实例。
+        不做可能失败的凭据读取：需要明文 key 时由快照构造阶段从存储里取。
         """
-        changed = {p.name for p in new.providers if self.profile(p.name) != p}
-        if self._credentials is not None:
-            # UI 保存的连接只写 credential_ref；运行时视图从 OS 凭据装回
-            new = _materialize_credentials(new, self._credentials)
-            changed = {p.name for p in new.providers if self.profile(p.name) != p}
         self._config = new
-        live = {profile.name for profile in new.providers}
-        for name in [name for name in self._instances if name not in live or name in changed]:
-            del self._instances[name]
 
-    def selected(self) -> tuple[ProviderProfile | None, str]:
-        """显式选择优先；凭证失效时保留选择，不静默切换到其他厂商。"""
-        if self.config.active_provider:
-            return self.profile(self.config.active_provider), self.config.active_model
-        boot = self.profile(self.boot_name)
-        if boot is not None and boot.available and (self._boot_model or boot.default_model):
-            return boot, self._boot_model or boot.default_model
-        profile = self.profile(self._initial_provider)
-        return profile, profile.default_model if profile else ""
+    def reload(self, new: ServerConfig) -> ServerConfig:
+        """装入新配置并装回系统凭据，返回运行时视图。"""
+        if self._credentials is not None:
+            new = _materialize_credentials(new, self._credentials)
+        self._config = new
+        return new
 
-    def provider(self, name: str) -> ModelProvider:
-        """按名取 provider 实例（缓存复用）；未知档案名抛三要素错。"""
-        cached = self._instances.get(name)
-        if cached is not None:
-            return cached
-        profile = self.profile(name)
-        if profile is None:
-            msg = (
-                f"provider 档案不存在：{name!r}。"
-                "为什么错：档案名不在服务级 config.yaml 的 providers 列表中。"
-                "怎样算对：GET /api/providers 查看可用档案名。"
-            )
-            raise ProviderConfigError(msg)
-        instance = build_provider(profile)
-        self._instances[name] = instance
-        return instance
+    def selection(self) -> ModelSelection:
+        """当前有效选择。
 
-    def resolve(self, profile_name: str, model_override: str) -> ResolvedProvider:
-        """装配路径的宽容解析：未知或缺 key 的档案回落引导档案（重启后仍可用）。
-
-        模型优先级：工作区设置 > 引导档案的引导模型（CLI --model）>
-        档案 default_model。引导模型对引导档案优先，使 ``--model`` 覆盖
-        config.yaml 里该档案的 default_model（CLI 优先于文件）。
+        优先级：界面选择（含清空）→ CLI ``--model`` 临时覆盖 → 配置里的
+        explicit / none → 仅 auto 模式下的启动默认规则。
         """
-        profile = self.profile(profile_name)
-        if profile is None or not profile.available:
-            profile = self.profile(self._boot_name)
-        if profile is None:  # 引导档案也找不到（config.yaml 被改坏）
-            msg = (
-                f"引导档案不存在：{self._boot_name!r}。"
-                "为什么错：工作区设置的档案与服务级配置均无法解析出可用端点。"
-                "怎样算对：检查 config.yaml 的 providers 列表，补齐档案名、地址与 key。"
+        if self._runtime_selection is not None:
+            return self._runtime_selection
+
+        explicit = self._explicit()
+        if self._cli_model:
+            target = explicit or self.profile(self._boot_name)
+            if target is None:
+                return ModelSelection(None, "", "none", False, self._no_profile_reason())
+            return self._selection_of(target, self._cli_model, "startup")
+        if self._config.selection_mode == "none":
+            return ModelSelection(
+                None, "", "none", False, "已清空当前选择；选择连接与模型后才能对话"
             )
-            raise ProviderConfigError(msg)
-        model = model_override
-        if not model and profile.name == self._boot_name:
-            model = self._boot_model
-        if not model:
-            model = profile.default_model
-        return ResolvedProvider(
-            profile_name=profile.name,
-            model=model,
-            provider=self.provider(profile.name),
+        if explicit is not None:
+            model = self._config.active_model or explicit.default_model
+            return self._selection_of(explicit, model, "saved")
+
+        boot = self.profile(self._boot_name)
+        if boot is not None and boot.available:
+            model = self._boot_model or boot.default_model
+            if model:
+                # 没有 --model 时这就是「启动默认规则」的结果，不是命令行覆盖。
+                return self._selection_of(boot, model, "automatic")
+        auto = next(
+            (item for item in self._config.providers if item.available and item.default_model),
+            None,
         )
+        if auto is not None:
+            return self._selection_of(auto, auto.default_model, "automatic")
+        return ModelSelection(None, "", "none", False, self._no_profile_reason())
+
+    def apply_selection(self, connection_id: str | None, model: str) -> ModelSelection:
+        """记录界面选择（由管理服务在写盘成功后调用）；清空即 none。"""
+        self._cli_model = ""  # 界面一经改动即取代 --model 的临时覆盖
+        if connection_id is None:
+            self._runtime_selection = ModelSelection(
+                None, "", "none", False, "已清空当前选择；选择连接与模型后才能对话"
+            )
+            return self._runtime_selection
+        profile = self.profile(connection_id)
+        if profile is None:
+            self._runtime_selection = ModelSelection(
+                connection_id, model, "none", False, f"连接不存在：{connection_id}"
+            )
+            return self._runtime_selection
+        chosen = model or profile.default_model
+        self._runtime_selection = self._selection_of(profile, chosen, "saved")
+        return self._runtime_selection
+
+    def available_models(self, name: str) -> list[str]:
+        profile = self.profile(name)
+        return profile.models_for() if profile is not None else []
+
+    def snapshot(self, *, worker: bool = True) -> ModelSnapshot:
+        """解析当前选择并构造一轮快照；未配置时抛三要素错。"""
+        return snapshot_for(self.selection(), self)
+
+    def _explicit(self) -> ProviderProfile | None:
+        if self._config.selection_mode != "explicit" or not self._config.active_provider:
+            return None
+        return self.profile(self._config.active_provider)
+
+    def _selection_of(
+        self,
+        profile: ProviderProfile,
+        model: str,
+        source: Literal["saved", "startup", "automatic"],
+    ) -> ModelSelection:
+        if not profile.available:
+            return ModelSelection(
+                profile.name,
+                model,
+                source,
+                False,
+                f"连接「{profile.title}」还没有可用的凭据；填好 API Key 后再发送",
+            )
+        if not model:
+            return ModelSelection(profile.name, "", source, False, "这个连接还没有选择模型")
+        return ModelSelection(profile.name, model, source, True)
+
+    def _no_profile_reason(self) -> str:
+        return "还没有可用的模型连接；先在模型设置里添加一个连接"
+
+
+def snapshot_for(selection: ModelSelection, book: ProviderBook) -> ModelSnapshot:
+    """把选择变成实例；选择不可用时抛三要素错（轮次与脚本共用同一句提示）。"""
+    profile = book.profile(selection.connection_id) if selection.connection_id else None
+    if profile is None or not selection.available or not selection.model:
+        raise ProviderConfigError(
+            f"没有可用的模型来源：{selection.reason or '当前没有选择连接与模型'}。"
+            "为什么错：这一轮不会调用模型，也不会有任何文件改动。"
+            "怎样算对：在「模型设置」里添加并选择一个连接与模型，"
+            "或在 config.yaml 里补齐 base_url、api_key 与模型名。"
+        )
+    return snapshot(profile, selection.model)
 
 
 __all__ = [
     "DEFAULT_CONFIG_PATH",
+    "ModelSelection",
     "ProviderBook",
     "ProviderConfigError",
     "ProviderProfile",
-    "ResolvedProvider",
+    "SelectionMode",
     "ServerConfig",
     "build_provider",
+    "config_revision",
+    "is_loopback_url",
     "load_server_config",
     "mask_key",
     "save_server_config",
+    "snapshot_for",
 ]

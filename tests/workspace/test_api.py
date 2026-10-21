@@ -24,7 +24,7 @@ def _unconfigured_model() -> tuple[object, str]:
 def _client(tmp_path: Path) -> TestClient:
     book = RecentWorkspaces(tmp_path / "state")
     return TestClient(
-        create_workspace_app(book=book, provider_factory=_unconfigured_model)  # type: ignore[arg-type]
+        create_workspace_app(workspaces=book, provider_factory=_unconfigured_model)  # type: ignore[arg-type]
     )
 
 

@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
+from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.git import GitRepo
 from hastings.workspace.service import ProviderFactory
@@ -67,6 +68,13 @@ def _text_turn(text: str) -> list[Any]:
     ]
 
 
+def _snapshot(provider: Any, model: str = "fake-model") -> ModelSnapshot:
+    """测试用快照：假 provider 没有 aclose，关闭被视为无操作。"""
+    return ModelSnapshot(
+        connection_id="test", display_name="测试连接", model=model, provider=provider
+    )
+
+
 @pytest.fixture()
 def client_factory(tmp_path: Path) -> Iterator[Callable[[ProviderFactory], TestClient]]:
     """保持 TestClient 的 portal 存活：否则每个请求一个新事件循环，后台轮次会被拆掉。"""
@@ -74,7 +82,7 @@ def client_factory(tmp_path: Path) -> Iterator[Callable[[ProviderFactory], TestC
 
     def build(factory: ProviderFactory) -> TestClient:
         book = RecentWorkspaces(tmp_path / "state")
-        client = TestClient(create_workspace_app(book=book, provider_factory=factory))
+        client = TestClient(create_workspace_app(workspaces=book, provider_factory=factory))
         client.__enter__()
         opened.append(client)
         return client
@@ -147,7 +155,7 @@ def test_turn_writes_chapter_and_records_git_commit(
             _text_turn("第一章写好了。"),
         ]
     )
-    client = client_factory(lambda: (provider, "fake-model"))
+    client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
     conversation_id = _conversation(client, workspace_id)
 
@@ -184,7 +192,7 @@ def test_discussion_turn_changes_no_files(
     tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
 ) -> None:
     provider = ScriptedProvider([_text_turn("第三人称更合适，因为……")])
-    client = client_factory(lambda: (provider, "fake-model"))
+    client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
     conversation_id = _conversation(client, workspace_id)
     root = tmp_path / "雪山旅馆"
@@ -215,7 +223,7 @@ def test_model_error_fails_the_turn_instead_of_reporting_done(
             ]
         ]
     )
-    client = client_factory(lambda: (provider, "fake-model"))
+    client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
     conversation_id = _conversation(client, workspace_id)
     root = tmp_path / "雪山旅馆"
@@ -254,7 +262,7 @@ def test_second_turn_is_rejected_while_one_is_running(
         ],
         hang_from=1,
     )
-    client = client_factory(lambda: (provider, "fake-model"))
+    client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
     conversation_id = _conversation(client, workspace_id)
     url = f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns"
@@ -299,7 +307,7 @@ def test_stop_marks_partial_commit(
         ],
         hang_from=1,
     )
-    client = client_factory(lambda: (provider, "fake-model"))
+    client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
     conversation_id = _conversation(client, workspace_id)
 
@@ -357,7 +365,7 @@ def test_unfinished_turn_is_marked_interrupted_on_restart(
 ) -> None:
     book = RecentWorkspaces(tmp_path / "state")
     provider = ScriptedProvider([_text_turn("你好")])
-    app = create_workspace_app(book=book, provider_factory=lambda: (provider, "fake-model"))
+    app = create_workspace_app(workspaces=book, provider_factory=lambda: _snapshot(provider))
     client = TestClient(app)
     workspace_id = _workspace(client, tmp_path)
     conversation_id = _conversation(client, workspace_id)
@@ -370,7 +378,7 @@ def test_unfinished_turn_is_marked_interrupted_on_restart(
 
     # 新进程：第一次访问这个作品时补一条中断记录。
     restarted = TestClient(
-        create_workspace_app(book=book, provider_factory=lambda: (provider, "fake-model"))
+        create_workspace_app(workspaces=book, provider_factory=lambda: _snapshot(provider))
     )
     events = _events(restarted, workspace_id, conversation_id)
 
@@ -386,7 +394,7 @@ def test_request_key_is_idempotent(
     tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
 ) -> None:
     provider = ScriptedProvider([_text_turn("好")])
-    client = client_factory(lambda: (provider, "fake-model"))
+    client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
     conversation_id = _conversation(client, workspace_id)
     url = f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns"
@@ -413,7 +421,7 @@ def test_event_stream_replays_and_stops_at_run_finished(
     tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
 ) -> None:
     provider = ScriptedProvider([_text_turn("好")])
-    client = client_factory(lambda: (provider, "fake-model"))
+    client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
     conversation_id = _conversation(client, workspace_id)
     client.post(

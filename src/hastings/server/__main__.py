@@ -25,6 +25,7 @@ from fastapi import FastAPI
 
 from hastings.infrastructure.credentials import build_credential_store
 from hastings.server.file_app import configured_provider_factory, create_workspace_app
+from hastings.server.model_connections import ModelConnectionService
 from hastings.server.provider_config import (
     DEFAULT_CONFIG_PATH,
     ProviderBook,
@@ -110,10 +111,13 @@ class AssembledServer:
     config_path: Path
     boot_profile: str
     boot_model: str
+    model_service: ModelConnectionService | None = None
 
 
-def load_provider_book(config_path: Path, model: str | None) -> tuple[ProviderBook, str, str]:
-    """读取模型档案并选出启动档案；没有可用档案时返回空引导，不阻止启动。"""
+def load_provider_book(
+    config_path: Path, model: str | None, credentials: object
+) -> tuple[ProviderBook, str, str]:
+    """读取模型连接并选出启动连接；没有可用连接时返回空引导，不阻止启动。"""
     server_config: ServerConfig = load_server_config(config_path)
     available = next((profile for profile in server_config.providers if profile.available), None)
     boot = available or (server_config.providers[0] if server_config.providers else None)
@@ -124,7 +128,8 @@ def load_provider_book(config_path: Path, model: str | None) -> tuple[ProviderBo
         boot_name=boot_name,
         boot_model=boot_model,
         config_path=config_path,
-        credentials=build_credential_store(),
+        credentials=credentials,
+        cli_model=model or "",
     )
     return book, boot_name, boot_model
 
@@ -162,7 +167,12 @@ def assemble_server(
         opened = resolved
 
     config_path = Path(config).expanduser() if config is not None else DEFAULT_CONFIG_PATH
-    book, boot_profile, boot_model = load_provider_book(config_path, model)
+    credentials = build_credential_store()
+    book, boot_profile, boot_model = load_provider_book(config_path, model, credentials)
+    # 设置页与写作轮次共用这一个服务：保存的连接就是下一轮实际调用的连接。
+    model_service = ModelConnectionService(
+        book=book, config_path=config_path, credentials=credentials
+    )
 
     recent = RecentWorkspaces(state_root)
     if opened is not None:
@@ -170,8 +180,9 @@ def assemble_server(
         binding_id = binding.id
         opened = Path(binding.path)
     app = create_workspace_app(
-        book=recent,
+        workspaces=recent,
         provider_factory=configured_provider_factory(book),
+        model_service=model_service,
         static_dir=resolved_static,
     )
     return AssembledServer(
@@ -183,6 +194,7 @@ def assemble_server(
         config_path=config_path,
         boot_profile=boot_profile,
         boot_model=boot_model,
+        model_service=model_service,
     )
 
 
@@ -211,6 +223,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     model_display = assembled.boot_model or "未配置（配置模型后才能对话）"
     profile_display = assembled.boot_profile or "无"
     print(f"模型：{model_display}｜档案：{profile_display}｜配置：{assembled.config_path}")
+    if assembled.model_service is not None and assembled.model_service.storage == "session":
+        print("注意：系统凭据存储不可用，API Key 只在本次运行有效（重启后需重新填写）。")
     print(f"写作台地址：http://{args.host}:{args.port}")
     if assembled.static_dir is not None:
         print(f"前端已托管：{assembled.static_dir}")

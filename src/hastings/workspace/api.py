@@ -200,7 +200,7 @@ class RecordedView(BaseModel):
 
 
 def create_file_workspace_router(
-    book: RecentWorkspaces, provider_factory: ProviderFactory
+    workspaces: RecentWorkspaces, provider_factory: ProviderFactory
 ) -> APIRouter:
     """绑定最近目录登记与模型来源；每个作品一个轮次服务，按需创建。"""
     router = APIRouter(prefix=PREFIX, tags=["file-workspaces"])
@@ -212,12 +212,12 @@ def create_file_workspace_router(
         )
 
     def service_for(workspace_id: str) -> TurnService:
-        binding = book.get(workspace_id)
+        binding = workspaces.get(workspace_id)
         cached = services.get(workspace_id)
         if cached is not None and str(cached.workspace.root) == binding.path:
             return cached
-        workspace = book.workspace(workspace_id)
-        store = ConversationStore(conversation_root(book.root, workspace_id))
+        workspace = workspaces.workspace(workspace_id)
+        store = ConversationStore(conversation_root(workspaces.root, workspace_id))
         service = TurnService(workspace, store, provider_factory)
         # 进程重启后，没有正常结束的轮次在这里补一条中断记录；不自动继续。
         service.mark_interrupted()
@@ -226,7 +226,7 @@ def create_file_workspace_router(
 
     @router.get("", response_model=list[WorkspaceView])
     def list_workspaces() -> list[WorkspaceView]:
-        return [view(binding) for binding in book.recent()]
+        return [view(binding) for binding in workspaces.recent()]
 
     @router.get("/default-location", response_model=DefaultLocationView)
     def default_location() -> DefaultLocationView:
@@ -265,11 +265,11 @@ def create_file_workspace_router(
         else:
             # 打开已有目录只读检查，不擅自初始化或改写内容。
             Workspace.open(target)
-        return view(book.bind(target))
+        return view(workspaces.bind(target))
 
     @router.get("/{workspace_id}/files", response_model=CatalogView)
     def list_files(workspace_id: str) -> CatalogView:
-        catalog = book.workspace(workspace_id).catalog()
+        catalog = workspaces.workspace(workspace_id).catalog()
         return CatalogView(
             chapters=[_entry(entry) for entry in catalog.chapters],
             settings=[_entry(entry) for entry in catalog.settings],
@@ -277,7 +277,7 @@ def create_file_workspace_router(
 
     @router.get("/{workspace_id}/file", response_model=FileViewResponse)
     def read_file(workspace_id: str, path: str = Query(min_length=1)) -> FileViewResponse:
-        workspace = book.workspace(workspace_id)
+        workspace = workspaces.workspace(workspace_id)
         view_file = workspace.read(path)
         kind: Literal["chapter", "setting"] = "setting" if path in SETTING_PATHS else "chapter"
         title = (
@@ -300,7 +300,7 @@ def create_file_workspace_router(
         q: str = Query(min_length=1),
         limit: int = Query(default=50, ge=1, le=200),
     ) -> SearchResponse:
-        result = book.workspace(workspace_id).search(q, limit=limit)
+        result = workspaces.workspace(workspace_id).search(q, limit=limit)
         return SearchResponse(
             hits=[
                 SearchHitView(path=hit.path, line=hit.line, text=hit.text) for hit in result.hits
@@ -314,7 +314,7 @@ def create_file_workspace_router(
         workspace_id: str,
         file: Annotated[UploadFile, File(description="待导入的 .md 或 .txt 正文")],
     ) -> CatalogView:
-        workspace = book.workspace(workspace_id)
+        workspace = workspaces.workspace(workspace_id)
         data = await file.read()
         workspace.import_text(file.filename or "导入正文.md", data)
         catalog = workspace.catalog()
@@ -327,17 +327,17 @@ def create_file_workspace_router(
 
     @router.get("/{workspace_id}/git/status", response_model=GitStatusView)
     def git_status(workspace_id: str) -> GitStatusView:
-        return _git_status(GitRepo(book.workspace(workspace_id).root))
+        return _git_status(GitRepo(workspaces.workspace(workspace_id).root))
 
     @router.get("/{workspace_id}/git/diff", response_model=GitDiffView)
     def git_diff(workspace_id: str) -> GitDiffView:
         """工作区相对 HEAD 的差异；未跟踪的新章节不在其中（见模块说明）。"""
-        repo = GitRepo(book.workspace(workspace_id).root)
+        repo = GitRepo(workspaces.workspace(workspace_id).root)
         return GitDiffView(diff=repo.diff())
 
     @router.get("/{workspace_id}/git/log", response_model=GitLogView)
     def git_log(workspace_id: str, limit: int = Query(default=50, ge=1, le=200)) -> GitLogView:
-        repo = GitRepo(book.workspace(workspace_id).root)
+        repo = GitRepo(workspaces.workspace(workspace_id).root)
         return GitLogView(
             commits=[
                 GitCommitView(commit=commit.sha, at=commit.committed_at, subject=commit.subject)
@@ -347,13 +347,13 @@ def create_file_workspace_router(
 
     @router.get("/{workspace_id}/git/commits/{commit}/diff", response_model=GitDiffView)
     def git_commit_diff(workspace_id: str, commit: str) -> GitDiffView:
-        repo = GitRepo(book.workspace(workspace_id).root)
+        repo = GitRepo(workspaces.workspace(workspace_id).root)
         return GitDiffView(diff=repo.commit_diff(commit))
 
     @router.post("/{workspace_id}/git/init", response_model=GitStatusView)
     def git_init(workspace_id: str) -> GitStatusView:
         """对已有目录启用版本记录：初始化并记录当前内容作为基线。"""
-        repo = GitRepo(book.workspace(workspace_id).root)
+        repo = GitRepo(workspaces.workspace(workspace_id).root)
         repo.init()
         return _git_status(repo)
 
@@ -361,13 +361,13 @@ def create_file_workspace_router(
     def git_record(workspace_id: str, body: RecordRequest | None = None) -> RecordedView:
         """单独补记未记录的改动：只执行 Git，不调用模型。"""
         message = (body.message.strip() if body else "") or "补记：应用之外的改动"
-        commit = GitRepo(book.workspace(workspace_id).root).record(message)
+        commit = GitRepo(workspaces.workspace(workspace_id).root).record(message)
         return RecordedView(commit=commit)
 
     @router.post("/{workspace_id}/git/revert", response_model=RecordedView)
     def git_revert(workspace_id: str, body: RevertRequest) -> RecordedView:
         """撤销指定提交（必须是 HEAD）；生成反向提交，不改写历史。"""
-        commit = GitRepo(book.workspace(workspace_id).root).revert_latest(body.commit)
+        commit = GitRepo(workspaces.workspace(workspace_id).root).revert_latest(body.commit)
         return RecordedView(commit=commit or None)
 
     # -- 对话与轮次 ---------------------------------------------------------

@@ -1,6 +1,6 @@
 # 0.4 运行与验收说明
 
-核对日期：2026-10-20。本文是 0.4 的运行与验收口径：怎么起、能做什么、哪些已验证、哪些没有。实施过程见[阶段记录](notes/README.md)，模块行为见[模块导航](modules/README.md)。
+核对日期：2026-10-21。本文是 0.4 的运行与验收口径：怎么起、能做什么、哪些已验证、哪些没有。实施过程见[0.4 开发入口](README.md)，模块行为见[模块导航](modules/README.md)。
 
 ## 1. 运行
 
@@ -12,8 +12,8 @@ uv run python -m hastings.server --workspace 目录  # 启动时打开指定作�
 | 参数 | 说明 |
 |---|---|
 | `--workspace <目录>` | 启动时打开这个已有目录；不带时服务照常启动，由界面选择 |
-| `--config <文件>` | 模型来源配置，默认 `./config.yaml`；缺失时不配置模型，服务照常启动 |
-| `--model <名称>` | 覆盖启动档案的模型名 |
+| `--config <文件>` | 模型连接配置，默认 `./config.yaml`；缺失时没有连接，服务照常启动 |
+| `--model <名称>` | 临时覆盖当前连接的模型名，不落盘 |
 | `--state-dir <目录>` | 应用状态目录（最近目录、会话与事件），缺省 `~/.hastings`，不含正文 |
 | `--static-dir <目录>` | 静态前端目录，缺省自动探测 `frontend/dist` |
 | `--host` / `--port` | 默认 `127.0.0.1:8000` |
@@ -22,21 +22,32 @@ uv run python -m hastings.server --workspace 目录  # 启动时打开指定作�
 
 配置只有两个入口：命令行参数与 `config.yaml`。服务不读 `OPENAI_API_KEY`、`HASTINGS_STATE_DIR` 这一类进程环境变量。
 
-## 2. 模型来源
+## 2. 模型连接
 
-模型档案只从 `config.yaml`（或 `--config` 指定的文件）读取，一个档案就是端点 + key + 默认模型：
+模型来源只有一处：`config.yaml`（或 `--config` 指定的文件）。一个连接是作者自己的一个账号：
 
 ```yaml
 providers:
-  - name: deepseek
+  - name: conn_5a48402f
+    display_name: 我的 DeepSeek
+    catalog_id: deepseek
     base_url: https://api.deepseek.com/v1
-    api_key: sk-…            # 写一次即可，启动后转入系统凭据存储
+    api: openai-completions
+    models: [deepseek-flash, deepseek-v4-pro]
     default_model: deepseek-flash
+    credential_ref: hastings:provider:conn_5a48402f:1f3a9c02
+active_provider: conn_5a48402f
+active_model: deepseek-flash
+selection_mode: explicit
 ```
 
-应用不读进程环境变量（`OPENAI_API_KEY` 之类）：同一份配置换台机器、换个终端结果相同。`api_key` 写入后由启动流程转入系统凭据存储（Windows 凭据管理器 / macOS Keychain），磁盘上只留 `credential_ref`；系统凭据存储不可用时降级为内存存储，重启后档案变不可用，需要重新填 key。旧配置里的 `api_key_env` 会被拒绝并提示改成直填 `api_key`，不会被静默忽略。
+日常不需要手写这个文件：顶栏「模型设置」可以选择供应商、填 API Key、获取或手填模型、分别测试响应与工具调用，并切换当前连接与模型。保存写入的就是这份文件，重启后保留。字段、接口与失败行为见[模型连接](modules/model-connections.md)。
 
-没有可用档案时应用照常启动，发送消息的那一轮返回 `MODEL_NOT_CONFIGURED` 并说明怎么配。0.4 没有模型设置界面：端点、key 与模型名都要写进这个文件。配完用下面这条命令核对，它按同一条装配路径发一句请求：
+应用不读进程环境变量（`OPENAI_API_KEY` 之类）：同一份配置换台机器、换个终端结果相同。API Key 写入后由启动流程转入系统凭据存储（Windows 凭据管理器 / macOS Keychain），磁盘上只留 `credential_ref`；系统凭据存储不可用时降级为内存存储，界面提示「仅本次运行有效」，重启后需要重新填写。旧配置里的 `api_key_env` 会被拒绝并提示改成直填 `api_key`。
+
+旧档案（只有 `default_model`、没有 `models`）照常可读；`providers: []` 是合法状态，删掉最后一个连接后服务仍然启动并保持「未选择」。没有可用连接时应用照常启动，发送消息的那一轮返回 `MODEL_NOT_CONFIGURED` 并说明怎么配。
+
+不启动写作台也能核对「模型到底通不通」，它走同一条装配路径：
 
 ```powershell
 uv run python scripts/check_model.py
@@ -65,20 +76,24 @@ uv run python scripts/check_model.py
 
 | 项目 | 证据 |
 |---|---|
-| 目录规则、读写指纹、搜索、导入 | `uv run pytest tests/workspace -q`（145 项） |
+| 目录规则、读写指纹、搜索、导入 | `uv run pytest tests/workspace -q`（229 项） |
 | Git 初始化、基线、差异、提交、撤销、冲突与错误路径 | 同上 |
 | 文件工具与轮次记录（含停止、中断、并发拒绝、模型报错） | 同上 |
+| 四类协议的连接构造、选择规则、旧配置兼容与空配置 | 同上（`test_model_config.py`） |
+| 连接增删改、凭据分步提交、版本冲突、删除当前连接 | 同上（`test_model_service.py`） |
+| 三种列表策略、分页上限与失败分类、响应/工具测试 | 同上（`test_model_probe.py`，含本机受控 HTTP 服务） |
+| 模型设置接口、脱敏视图、`If-Match`、受理后不受切换影响 | 同上（`test_model_api.py`） |
 | 真实模型一句请求 | `uv run python scripts/check_model.py`：`deepseek-flash` 回复正常，`key：…114a` |
-| 真实模型一轮写作 | 经 HTTP 接口建作品 → 发轮次 → 6 次工具调用 → `正文/0001 封山的旅馆.md`（723 字）与 `设定集/真相.md` → 一次 Git 提交；记录见[验证材料](artifacts/real-model-2026-10-20.md) |
-| 界面主链路 | `cd frontend && npx playwright test`（6 项，真服务 + Chromium） |
-| 前端单元 | `cd frontend && npm test` |
+| 真实模型连接链路 | 真实发现（2 个模型）→ 响应测试通过 → 工具测试通过 → 新增连接 → 设为当前 → 一轮写作（`正文/0001 雨夜.md` 709 字节，一次 Git 提交）→ 删除临时连接 → 重启后选择保留；记录见[验证材料](artifacts/v04-9-verification.md) |
+| 界面主链路 | `cd frontend && npx playwright test`（6 项，真服务 + Chromium；V04-4 建立，V04-9 未重跑） |
+| 前端单元 | `cd frontend && npm test`（36 项，含模型设置客户端与状态） |
 | 类型与静态检查 | `uv run mypy src/hastings`、`uv run ruff check src/hastings tests/workspace` |
 
 ## 5. 未验收与缺口
 
-- **界面未经真实模型验证**：真实调用在 HTTP 接口层取证（见上表），界面渲染与事件展示仍只用脚本化假 provider 验证过；在浏览器里点一轮真实创作尚未取证。
+- **浏览器内未逐屏走查**：模型连接全链路在应用接口层用真实 DeepSeek 取证（见上表），界面由构建、状态与测试覆盖；没有在浏览器里从「打开设置」点到「看见新章节」的截图或录屏证据。
+- **真实供应商只覆盖 DeepSeek**：Anthropic、Google 与其余 OpenAI 兼容服务的协议契约由受控传输验证，真实服务未逐家验证。
 - **没有 token 级流式**：回复整条显示。
-- **没有模型设置界面**：端点、key 与模型名只能改 `config.yaml`。
 - **窄屏未适配**：固定三列，未迁移 0.3 的断点规则。
 - **事件不跨进程广播**：SSE 轮询事件文件，多实例同时写同一作品不在本版范围。
 - **撤销只覆盖最新一次提交**：非 HEAD 提交的撤销需在 Git 里手工处理。

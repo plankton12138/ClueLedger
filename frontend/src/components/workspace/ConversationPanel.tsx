@@ -8,7 +8,9 @@
 import { useState } from "react";
 
 import type { WorkspaceEvent } from "../../api/workspace";
+import { useModelsStore } from "../../state/models";
 import { useWorkspaceStore } from "../../state/workspace";
+import ModelSelector from "../models/ModelSelector";
 
 const STATUS_LABEL: Record<string, string> = {
   completed: "完成",
@@ -62,6 +64,9 @@ export default function ConversationPanel() {
   const revert = useWorkspaceStore((state) => state.revert);
   const recordChanges = useWorkspaceStore((state) => state.recordChanges);
   const [draft, setDraft] = useState("");
+  // 未配置模型时给入口而不是拦死输入：草稿要保留，配好之后作者自己点发送。
+  const selectionAvailable = useModelsStore((state) => state.selection.available);
+  const openModelSettings = useModelsStore((state) => state.openSettings);
 
   const submit = async () => {
     if (!draft.trim() || running) return;
@@ -94,6 +99,11 @@ export default function ConversationPanel() {
         >
           新对话
         </button>
+      </div>
+
+      <div className="flex flex-none items-center gap-2 border-b border-[#355f7f] px-3 py-1.5">
+        <span className="text-[10px] text-white/45">模型</span>
+        <ModelSelector />
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-auto px-3 py-3">
@@ -187,6 +197,14 @@ export default function ConversationPanel() {
       </div>
 
       <div className="flex-none border-t border-[#355f7f] p-2">
+        {!selectionAvailable && (
+          <div className="mb-2 flex items-center gap-2 rounded bg-[#1b4666] px-2 py-1.5 text-[11px] text-white/75">
+            <span className="min-w-0 flex-1">连接模型后开始对话。</span>
+            <button className="btn btn-gold px-2 py-0.5 text-[10px]" onClick={openModelSettings}>
+              去设置
+            </button>
+          </div>
+        )}
         <textarea
           className="h-20 w-full resize-none rounded bg-[#0e2b41] px-3 py-2 text-xs leading-5 text-white placeholder:text-white/35"
           placeholder={running ? "这一轮还在进行…" : "说要求，回车发送，Shift+Enter 换行"}

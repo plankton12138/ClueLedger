@@ -129,10 +129,13 @@ def test_assembly_serves_only_file_workspace(
         assemble_server(workspace=root, state_root=tmp_path / "state").app
     )
 
-    # 旧工作台与旧模型路由都不在装配范围：新应用不因模型设置挂载整套旧业务。
+    # 旧工作台路由不在装配范围：新应用不因模型设置挂载整套旧业务。
     assert client.get("/api/v2/projects").status_code == 404
-    assert client.get("/api/model-selection").status_code == 404
     assert client.get("/api/workspaces").status_code == 404
+    # 应用级模型设置是新装配的一部分，且与作品是否打开无关。
+    assert client.get("/api/model-providers").status_code == 200
+    body = client.get("/api/model-selection").json()
+    assert body["selection"]["source"] == "none"
 
 
 def test_assembly_creates_no_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

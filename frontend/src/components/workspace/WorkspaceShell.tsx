@@ -3,11 +3,16 @@
  *
  * 数据全部来自 `/api/file-workspaces`：目录、文件、事件与 Git。外部编辑不会自动推送，
  * 切换回窗口或点刷新时重新扫描目录——首版不做文件系统监听。
+ *
+ * 模型设置是应用级状态（V04-9）：它不随作品打开/关闭，顶栏入口在没有作品时也能用；
+ * 窗口重新获得焦点只重读本机配置，不自动调用供应商。
  */
 
 import { useEffect, useRef, useState } from "react";
 
+import { useModelsStore } from "../../state/models";
 import { useWorkspaceStore } from "../../state/workspace";
+import ModelSettingsDialog from "../models/ModelSettingsDialog";
 import ChangesDrawer from "./ChangesDrawer";
 import ConversationPanel from "./ConversationPanel";
 import DirectoryDialog from "./DirectoryDialog";
@@ -39,14 +44,19 @@ export default function WorkspaceShell() {
   const fileInput = useRef<HTMLInputElement>(null);
   const current = bindings.find((binding) => binding.id === currentId);
 
+  const initModels = useModelsStore((state) => state.init);
+  const openModelSettings = useModelsStore((state) => state.openSettings);
+
   useEffect(() => {
     void init();
-  }, [init]);
+    void initModels();
+  }, [init, initModels]);
 
-  // 外部编辑不推送：切回窗口时重新扫描目录与当前文件。
+  // 外部编辑不推送：切回窗口时重新扫描目录与当前文件，并重读模型配置。
   useEffect(() => {
     const onFocus = () => {
       if (useWorkspaceStore.getState().currentId) void refreshAll();
+      void useModelsStore.getState().refresh();
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
@@ -86,6 +96,9 @@ export default function WorkspaceShell() {
           打开 / 新建
         </button>
         <div className="flex-1" />
+        <button className="btn btn-gray px-2 py-1 text-[11px]" onClick={openModelSettings}>
+          模型设置
+        </button>
         <button
           className="btn btn-gray px-2 py-1 text-[11px]"
           disabled={!currentId}
@@ -294,6 +307,7 @@ export default function WorkspaceShell() {
       </main>
 
       <DirectoryDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+      <ModelSettingsDialog />
       <ChangesDrawer />
     </div>
   );

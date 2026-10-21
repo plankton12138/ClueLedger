@@ -1,22 +1,48 @@
-# Hastings 模型来源模板——复制为 config.yaml 并填入真实值（config.yaml 已被 git 忽略）。
+# Hastings 模型连接模板——复制为 config.yaml 并填入真实值（config.yaml 已被 git 忽略）。
 #
 # 模型来源只从这个文件读取：应用不读 OPENAI_API_KEY 这类进程环境变量，
 # 换一台机器、换一个终端，行为都一样。
 #
-# 一个档案 = 一个端点 + key + 默认模型。api_key 写一次即可：启动时转入系统凭据存储
-# （Windows 凭据管理器 / macOS Keychain），磁盘上只留 credential_ref。
-# 配好之后用 `uv run python scripts/check_model.py` 核对是否真的能调通。
+# 一个连接 = 作者自己的一个账号：端点 + 协议 + key + 可选模型。
+# 通常不用手写这个文件：顶栏「模型设置」按「供应商 → 连接 → 模型」三步生成它。
+# api_key 写一次即可：启动时转入系统凭据存储（Windows 凭据管理器 / macOS Keychain），
+# 磁盘上只留 credential_ref。配好之后用 `uv run python scripts/check_model.py` 核对。
 
 providers:
-  # 档案名：命令行 --model 与日志里显示的短名（必须唯一）
-  - name: deepseek
+  # name 是稳定标识（改显示名不会变它），必须唯一
+  - name: conn_example
+    display_name: 我的 DeepSeek
+    # 供应商预设：openai / deepseek / qwen / moonshot / zhipu / openrouter /
+    # anthropic / google / custom；未知值按自定义服务展示
+    catalog_id: deepseek
     base_url: https://api.deepseek.com/v1
-    api_key: sk-xxxxxxxxxxxxxxxx
-    # 工作区未指定模型时使用；也可用 --model 临时覆盖
+    # 四类协议：openai-completions / openai-responses /
+    # anthropic-messages / google-generative-ai
+    api: openai-completions
+    # 作者勾选为日常可用的模型；默认模型必须在其中
+    models: [deepseek-flash, deepseek-v4-pro]
     default_model: deepseek-flash
+    api_key: sk-xxxxxxxxxxxxxxxx
+    # 已迁入系统凭据存储的旧文件只有这一行，没有 api_key：
+    # credential_ref: hastings:provider:conn_example:1f3a9c02
 
-  # 本地模型（Ollama）免密：no_auth 为真时不发 Authorization 头
-  # - name: ollama
-  #   base_url: http://localhost:11434/v1
-  #   default_model: qwen3:4b
-  #   no_auth: true
+# 当前选择（界面切换后由设置页写入；手写同样生效）
+# active_provider: conn_example
+# active_model: deepseek-flash
+# selection_mode: explicit   # auto（默认）| explicit | none
+
+# 另一家服务可以并存，日常在界面里切换
+# - name: conn_claude
+#   display_name: 我的 Anthropic
+#   catalog_id: anthropic
+#   base_url: https://api.anthropic.com/v1
+#   api: anthropic-messages
+#   models: [claude-sonnet-4-5]
+#   default_model: claude-sonnet-4-5
+#   api_key: sk-ant-xxxxxxxx
+
+# 本地模型（Ollama）免密：no_auth 为真时不发 Authorization 头
+# - name: ollama
+#   base_url: http://localhost:11434/v1
+#   default_model: qwen3:4b
+#   no_auth: true
