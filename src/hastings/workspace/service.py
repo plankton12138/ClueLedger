@@ -459,15 +459,22 @@ class TurnService:
             replay_public_messages,
         )
 
+        # _started 与 accept() 里的 _active 不是一回事：
+        # 它表示后台任务已经真正开始执行，stop() 据此决定要不要等待收尾。
         self._started.add(info.turn_id)
         conversation_id = info.conversation_id
+        # 先假定正常完成，异常分支再改写；finally 用这个值决定终态。
         status: RunStatus = "completed"
+        # 一轮对应一个 WriteSession：Git 基线、外部改动和提交都在这里收口。
+        # 「执行是否成功」和「内容是否入库」是两个独立维度，不要合并成一个状态。
         session = WriteSession(self.workspace, instruction=text)
         try:
+            # stop() 可能发生在任务真正被调度之前，此时还没有发出任何模型请求。
             if info.turn_id in self._stopped:
-                # 受理后立刻被停止：不调用模型，也不产生任何请求。
                 status = "stopped"
                 return
+            # snapshot 由 accept() 固定后传入；为 None 说明受理时模型就不可用。
+            # 复用受理时保存的 failure，避免等到调用模型才暴露配置问题。
             if snapshot is None:
                 raise failure or WorkspaceError(
                     code="MODEL_NOT_CONFIGURED",
@@ -475,8 +482,11 @@ class TurnService:
                     why="当前没有可用的模型来源或模型名，这一轮不会调用模型",
                     fix="在模型设置里选择连接与模型，或补齐 config.yaml 的连接配置",
                 )
+            # 执行锁覆盖整轮模型运行，保证同一作品同时只有一轮在改文件。
+            # 它与 accept()/stop() 用的受理锁分开，避免状态查询被长任务阻塞。
             async with self._lock:
                 if self._active is not None and self._active.turn_id == info.turn_id:
+                    # 把运行状态暴露给前端轮询；真正的中断由 stop() 调用 harness.cancel()。
                     self._active.state = (
                         "stop_requested" if info.turn_id in self._stopped else "running"
                     )
@@ -484,12 +494,17 @@ class TurnService:
                 if repo.is_repository():
                     # 仓库已初始化时先确认可写：暂存区/冲突/分离头都在调用模型前挡住。
                     repo.require_ready()
+                # 只回放到受理时的 history_seq：本轮新写入的事件不能被再次喂给模型。
                 history_events = tuple(
                     event
                     for event in self.store.events(conversation_id)
                     if int(event["seq"]) <= info.history_seq
                 )
+                # RunContext 是工具层能看到的运行上下文；
+                # 第一次写文件时它会调用 session.prepare()，只读讨论不会产生提交。
                 run = RunContext(workspace=self.workspace, session=session)
+                # provider、model、system、工具清单和历史在这里合并成一次可执行配置。
+                # 工具清单由 build_harness 内部调用 build_tools() 注入，_run 不直接持有。
                 harness = build_harness(
                     provider=snapshot.provider,
                     model=snapshot.model,
@@ -499,18 +514,24 @@ class TurnService:
                     history=replay_public_messages(history_events),
                     history_facts=execution_facts(history_events),
                 )
+                # stop() 依靠这张表找到 harness，再通过它的取消令牌中断模型循环。
                 self._harnesses[info.turn_id] = harness
                 if info.turn_id in self._stopped:
-                    # 建 harness 期间作者点了停止：停在调用模型之前。
+                    # 建 harness 期间收到了停止请求：停在发出模型请求之前。
                     status = "stopped"
                     return
+                # 阻塞消费事件流，直到模型循环自然结束或被取消；
+                # 模型调用和工具执行本身都在 harness 内部的 run_agent_loop 里完成。
                 await self._consume(harness, info, text)
+                # 正常返回也可能是停止：取消令牌会让模型循环正常收尾。
                 status = "stopped" if info.turn_id in self._stopped else "completed"
         except asyncio.CancelledError:
+            # 任务被外部取消（进程关闭、测试清理）。harness 已补过中断的工具结果，
+            # 这里只补终态并继续向上抛，让调用方知道任务确实被取消。
             status = "stopped"
             raise
         except WorkspaceError as exc:
-            # 停止导致的收尾异常不算失败：作者主动结束，内容照常记录。
+            # 已知业务错误，自带稳定 code；作者主动停止时抛出的收尾错误不记为失败。
             status = "stopped" if info.turn_id in self._stopped else "failed"
             if status == "failed":
                 self.store.append(
@@ -525,6 +546,7 @@ class TurnService:
         except Exception as exc:  # 一轮的失败要落到事件里，不能吞掉进程
             status = "stopped" if info.turn_id in self._stopped else "failed"
             if status == "failed":
+                # 未知异常也必须落成事件：否则前端只会看到一直「进行中」。
                 # 配置类错误自带稳定 code 与可读文案，原样透传比包一层更有用。
                 code = getattr(exc, "code", None) or "TURN_FAILED"
                 message = getattr(exc, "message", None) or f"这一轮没有完成：{exc}"
@@ -541,11 +563,15 @@ class TurnService:
             if snapshot is not None:
                 # 完成、失败、停止都关闭本轮实例：下一轮重新构造，不复用可能已失效的连接。
                 await snapshot.aclose()
+            # 按磁盘实际变化提交：停止或失败时已写入的内容也会入库，
+            # 是否成功由 status 标明，不在这一步丢弃作者已经得到的结果。
             result = session.finish(status)
+            # 终态事件：前端据此结束「进行中」状态并刷新会话与工作区。
             self.store.append(
                 conversation_id,
                 {"type": "run_finished", "turn_id": info.turn_id, **result.to_dict()},
             )
+            # 清理四张按 turn_id 索引的表，防止旧轮次的状态泄漏到后续轮次。
             self._harnesses.pop(info.turn_id, None)
             self._started.discard(info.turn_id)
             self._stopped.discard(info.turn_id)
