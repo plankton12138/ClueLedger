@@ -38,7 +38,6 @@ __all__ = [
 #: 应用状态目录：聊天、最近目录、运行事件都在这里；不含作品正文。
 DEFAULT_STATE_ROOT = Path.home() / ".hastings"
 
-_STATE_ENV = "HASTINGS_STATE_DIR"
 _REGISTRY_FILE = "workspaces.json"
 _REGISTRY_VERSION = 1
 #: 最近目录保留条数；超出后丢弃最旧的登记，不删除磁盘上的作品。
@@ -46,10 +45,11 @@ _MAX_ENTRIES = 20
 
 
 def default_state_root() -> Path:
-    """状态目录：``HASTINGS_STATE_DIR`` 优先，否则用户主目录下的 ``.hastings``。"""
-    override = os.environ.get(_STATE_ENV)
-    if override:
-        return Path(override).expanduser()
+    """状态目录默认值：用户主目录下的 ``.hastings``。
+
+    位置由启动参数 ``--state-dir`` 决定（未给时用这里的默认值）。不读进程环境：
+    同一台机器上换个终端启动，作品与对话仍在同一处。
+    """
     return DEFAULT_STATE_ROOT
 
 
@@ -282,7 +282,7 @@ class ConversationStore:
                     code="STATE_WRITE_FAILED",
                     where="conversations.append",
                     why=f"无法写入会话事件：{exc.strerror or exc}",
-                    fix="检查应用状态目录是否可写（HASTINGS_STATE_DIR 或 ~/.hastings）",
+                    fix="检查应用状态目录是否可写（--state-dir 指定的目录或 ~/.hastings）",
                 ) from exc
             self._seqs[conversation_id] = seq
             self._touch(conversation_id)
@@ -404,7 +404,7 @@ def _write_json_atomic(path: Path, payload: object, *, where: str, why_prefix: s
             code="STATE_WRITE_FAILED",
             where=where,
             why=f"{why_prefix}：{exc.strerror or exc}",
-            fix="检查应用状态目录是否可写（HASTINGS_STATE_DIR 或 ~/.hastings）",
+            fix="检查应用状态目录是否可写（--state-dir 指定的目录或 ~/.hastings）",
         ) from exc
     finally:
         if handle is not None:

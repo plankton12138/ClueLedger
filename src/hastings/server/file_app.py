@@ -49,7 +49,8 @@ def configured_provider_factory(book: ProviderBook) -> ProviderFactory:
                 code="MODEL_NOT_CONFIGURED",
                 where="turn.model",
                 why="当前没有可用的模型来源或模型名，这一轮不会调用模型",
-                fix="在 config.yaml 里配置可用的厂商与模型，或用 --model 指定启动模型",
+                fix="在 config.yaml 里给档案填好 base_url、api_key 与模型名，"
+                "或用 --model 指定启动模型",
                 details={"provider": profile.name if profile else "", "model": model},
             )
         return book.provider(profile.name), model

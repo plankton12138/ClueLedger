@@ -9,8 +9,9 @@
  * - HASTINGS_STATIC_DIR     前端 dist 目录（sidecar 托管）
  * - HASTINGS_STORIES_ROOT / HASTINGS_CORPUS_ROOT
  * - HASTINGS_CONFIG / HASTINGS_CONFIG_DIR
- * - HASTINGS_MODEL
  * - HASTINGS_CDP            开 remote-debugging-port（自动化冒烟）
+ *
+ * 模型名不从这里传：端点、key 与模型都在 config.yaml 里，桌面壳只负责拉起 sidecar。
  */
 
 import { app, BrowserWindow, ipcMain } from "electron";
@@ -58,14 +59,13 @@ function buildSidecarArgs(port: number): string[] {
     (app.isPackaged ? join(process.resourcesPath, "frontend-dist") : null);
   if (staticDir !== null) args.push("--static-dir", staticDir);
   // 0.4 起作品就是本地 Markdown 目录，服务端不再有 stories/corpus 根目录；
-  // 模型来源仍走 --config/--model，作品目录由界面选择。
+  // 模型端点、key 与模型名都在 config.yaml 里，这里只指定配置文件位置。
   if (process.env.HASTINGS_CONFIG) {
     args.push("--config", process.env.HASTINGS_CONFIG);
   }
   if (process.env.HASTINGS_WORKSPACE) {
     args.push("--workspace", process.env.HASTINGS_WORKSPACE);
   }
-  if (process.env.HASTINGS_MODEL) args.push("--model", process.env.HASTINGS_MODEL);
   return args;
 }
 

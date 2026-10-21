@@ -14,7 +14,7 @@
 - **包管理**：uv
 - **Python**：≥ 3.12，用 uv 管理的解释器；所有 Python 命令经 `uv run` 执行。
 - **前端**：Node ≥ 18，`frontend/` 目录下 `npm run dev` / `npm run build`。
-- **环境变量**：API key 等敏感信息放 `.env`（不提交），代码经 `pydantic-settings` 或 `os.environ` 读取。
+- **模型凭据**：端点与 key 写在 `config.yaml`（已被 git 忽略，提交前不要改成明文进仓）；首次启动后 key 转入系统凭据存储，磁盘只留引用。产品运行时不读 `OPENAI_API_KEY` 这类进程环境变量——配置只从文件来，换台机器结果一样。
 
 <br />
 

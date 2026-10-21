@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ZIP_PATH = ROOT / "hackathon" / "assets" / "案卷Hastings-源码快照.zip"
 
 INCLUDE_DIRS = ("src", "tests", "scripts", "dev-notes")
-INCLUDE_FILES = ("pyproject.toml", "uv.lock", ".env.example", "AGENTS.md", "README.md")
+INCLUDE_FILES = ("pyproject.toml", "uv.lock", "config.example.yaml", "AGENTS.md", "README.md")
 EXCLUDE_PARTS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
 EXECUTABLE_SUFFIXES = {".py", ".md", ".toml", ".lock", ".yaml", ".yml", ".txt", ".example"}
 

@@ -2,13 +2,13 @@
 
 默认启动文件工作区应用：作品是本地 Markdown 目录，接口前缀 ``/api/file-workspaces``。
 ``--workspace <目录>`` 在启动时预先打开一个作品；不带该参数时服务照常启动，由界面或
-接口再选择目录。应用状态（最近目录、后续的会话与事件）放在 ``~/.hastings``，可用
-``HASTINGS_STATE_DIR`` 覆盖。
+接口再选择目录。应用状态（最近目录、后续的会话与事件）默认放在 ``~/.hastings``，
+可用 ``--state-dir`` 指定别处。
 
 0.3 的旧工作台装配已从这个入口退出：不再打开 ``data/v2.db``、不再挂 ``/api/v2`` 与
 旧业务路由，也没有任何参数能回到旧应用。只保留模型来源这一条复用：读取 ``config.yaml``
-（或环境变量）解析当前档案与模型，供写作 Agent 调用。旧模块与旧测试仍在源码里，
-供 V04-5 清理时核对，但它们不再构成一条可启动的链路。
+解析当前档案与模型，供写作 Agent 调用。模型来源不从进程环境读取——作者在产品里
+配一次端点与 key，之后由系统凭据存储保管。
 
 退出码：目录不存在、前端目录不存在等环境故障 → 1；参数写错 → 2。
 """
@@ -29,7 +29,6 @@ from hastings.server.provider_config import (
     DEFAULT_CONFIG_PATH,
     ProviderBook,
     ServerConfig,
-    env_fallback_config,
     load_server_config,
 )
 from hastings.workspace.state import RecentWorkspaces
@@ -77,9 +76,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--config",
         type=Path,
         default=None,
-        help="模型来源配置（默认 ./config.yaml；缺失时回落环境变量）",
+        help="模型来源配置（默认 ./config.yaml；缺失时不配置模型，服务照常启动）",
     )
     parser.add_argument("--model", default=None, help="覆盖启动档案的模型名")
+    parser.add_argument(
+        "--state-dir",
+        type=Path,
+        default=None,
+        help="应用状态目录（最近目录、会话与事件）；缺省 ~/.hastings",
+    )
     parser.add_argument("--host", default=DEFAULT_HOST, help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="监听端口（默认 8000）")
     return parser
@@ -109,14 +114,10 @@ class AssembledServer:
 
 def load_provider_book(config_path: Path, model: str | None) -> tuple[ProviderBook, str, str]:
     """读取模型档案并选出启动档案；没有可用档案时返回空引导，不阻止启动。"""
-    server_config: ServerConfig = (
-        load_server_config(config_path) if config_path.exists() else env_fallback_config()
-    )
-    if not server_config.providers:
-        server_config = env_fallback_config()
+    server_config: ServerConfig = load_server_config(config_path)
     available = next((profile for profile in server_config.providers if profile.available), None)
     boot = available or (server_config.providers[0] if server_config.providers else None)
-    boot_name = boot.name if boot else "default"
+    boot_name = boot.name if boot else ""
     boot_model = model or (boot.default_model if boot else "")
     book = ProviderBook(
         server_config,
@@ -191,6 +192,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         assembled = assemble_server(
             workspace=args.workspace,
             static_dir=args.static_dir,
+            state_root=args.state_dir,
             config=args.config,
             model=args.model,
         )
@@ -207,7 +209,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("作品目录：未打开（用 --workspace 指定，或启动后在界面选择目录）")
     print(f"应用状态目录：{assembled.state_root}")
     model_display = assembled.boot_model or "未配置（配置模型后才能对话）"
-    print(f"模型：{model_display}｜档案：{assembled.boot_profile}｜配置：{assembled.config_path}")
+    profile_display = assembled.boot_profile or "无"
+    print(f"模型：{model_display}｜档案：{profile_display}｜配置：{assembled.config_path}")
     print(f"写作台地址：http://{args.host}:{args.port}")
     if assembled.static_dir is not None:
         print(f"前端已托管：{assembled.static_dir}")

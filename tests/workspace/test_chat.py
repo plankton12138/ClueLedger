@@ -22,7 +22,7 @@ from hastings.workspace.git import GitRepo
 from hastings.workspace.service import ProviderFactory
 from hastings.workspace.state import RecentWorkspaces
 from tau_agent.messages import AssistantMessage, TextContent, ToolCall
-from tau_agent.provider_events import AssistantDoneEvent, AssistantStartEvent
+from tau_agent.provider_events import AssistantDoneEvent, AssistantErrorEvent, AssistantStartEvent
 
 
 class ScriptedProvider:
@@ -198,6 +198,40 @@ def test_discussion_turn_changes_no_files(
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     assert events[-1]["recording"] == "no_change"
     assert events[-1]["changed_paths"] == []
+    assert GitRepo(root).head() == head
+
+
+def test_model_error_fails_the_turn_instead_of_reporting_done(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """厂商报错时不能记成「完成、无改动」：轮次失败，错误原样落到事件里。"""
+    provider = ScriptedProvider(
+        [
+            [
+                AssistantErrorEvent(
+                    reason="error",
+                    error=AssistantMessage(stop_reason="error", error_message="502 Bad Gateway"),
+                )
+            ]
+        ]
+    )
+    client = client_factory(lambda: (provider, "fake-model"))
+    workspace_id = _workspace(client, tmp_path)
+    conversation_id = _conversation(client, workspace_id)
+    root = tmp_path / "雪山旅馆"
+    head = GitRepo(root).head()
+
+    client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns",
+        json={"text": "写第一章"},
+    )
+
+    events = _wait_until(client, workspace_id, conversation_id, _finished)
+    assert [event["type"] for event in events] == ["turn_started", "error", "run_finished"]
+    assert events[1]["code"] == "MODEL_CALL_FAILED"
+    assert "502 Bad Gateway" in events[1]["message"]
+    assert events[2]["status"] == "failed"
+    assert events[2]["changed_paths"] == []
     assert GitRepo(root).head() == head
 
 

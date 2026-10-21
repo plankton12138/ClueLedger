@@ -1,22 +1,22 @@
-# Hastings 服务级 provider 档案模板——复制为 config.yaml 并填入真实值（config.yaml 已被 git 忽略）。
+# Hastings 模型来源模板——复制为 config.yaml 并填入真实值（config.yaml 已被 git 忽略）。
 #
-# 不配置本文件时回落 .env 单档案（name="default"，P1 起的现状）：
-#   OPENAI_API_KEY / OPENAI_BASE_URL / HASTINGS_MODEL
+# 模型来源只从这个文件读取：应用不读 OPENAI_API_KEY 这类进程环境变量，
+# 换一台机器、换一个终端，行为都一样。
 #
-# P6 起可在设置页按工作区切换档案与模型（跨档案切换会重建会话，对话历史自动恢复）。
+# 一个档案 = 一个端点 + key + 默认模型。api_key 写一次即可：启动时转入系统凭据存储
+# （Windows 凭据管理器 / macOS Keychain），磁盘上只留 credential_ref。
+# 配好之后用 `uv run python scripts/check_model.py` 核对是否真的能调通。
 
 providers:
-  # 档案名：设置页展示、工作区设置引用（必须唯一）
+  # 档案名：命令行 --model 与日志里显示的短名（必须唯一）
   - name: deepseek
     base_url: https://api.deepseek.com/v1
-    # key 二选一：直填（本地单用户工具，可接受）……
     api_key: sk-xxxxxxxxxxxxxxxx
-    # ……或引用环境变量（直填优先于 env 引用）
-    # api_key_env: DEEPSEEK_API_KEY
-    # 默认模型：工作区未指定模型时使用
-    default_model: deepseek-chat
+    # 工作区未指定模型时使用；也可用 --model 临时覆盖
+    default_model: deepseek-flash
 
-  - name: openrouter
-    base_url: https://openrouter.ai/api/v1
-    api_key_env: OPENROUTER_API_KEY
-    default_model: anthropic/claude-sonnet-4
+  # 本地模型（Ollama）免密：no_auth 为真时不发 Authorization 头
+  # - name: ollama
+  #   base_url: http://localhost:11434/v1
+  #   default_model: qwen3:4b
+  #   no_auth: true

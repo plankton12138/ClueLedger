@@ -345,13 +345,28 @@ class TurnService:
             self._tasks.pop(info.turn_id, None)
 
     async def _consume(self, harness: AgentHarness, info: TurnInfo, text: str) -> None:
-        """把 harness 事件翻译成会话事件：工具过程逐条记，回复整条记。"""
+        """把 harness 事件翻译成会话事件：工具过程逐条记，回复整条记。
+
+        模型侧失败必须变成这一轮的失败：厂商报错时消息里没有正文、也没有工具调用，
+        如果只是「记了个空回复」，作者看到的是「已完成、文件没改」，而真正的原因是
+        端点或 key 不对。这里直接抛出，由 ``_run`` 落成 ``error`` 事件与失败状态。
+        """
         reply: list[str] = []
         last_args: dict[str, dict[str, Any]] = {}
         async for event in harness.prompt(text):
             if isinstance(event, MessageEndEvent) and isinstance(event.message, AssistantMessage):
+                message = event.message
+                if message.stop_reason == "error" or message.error_message:
+                    raise WorkspaceError(
+                        code="MODEL_CALL_FAILED",
+                        where="turn.model",
+                        why=f"模型调用失败：{message.error_message or '厂商没有返回可用回复'}",
+                        fix="检查 config.yaml 里该档案的 base_url、api_key 与模型名，"
+                        "或换成可用的模型后重试这一轮",
+                        details={"model": message.model},
+                    )
                 text_part = "".join(
-                    block.text for block in event.message.content if isinstance(block, TextContent)
+                    block.text for block in message.content if isinstance(block, TextContent)
                 )
                 if text_part.strip():
                     reply.append(text_part)

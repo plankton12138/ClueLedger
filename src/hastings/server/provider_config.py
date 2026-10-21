@@ -1,17 +1,17 @@
 """服务级 provider 档案配置（P6 T1，D1）。
 
-一处事实源：config.yaml 多档案（可更换的模型端点目录）+ env 单档案回落。
-与工作区级 settings.yaml 的职责分界：
-- config.yaml 是服务级的——描述「有哪些可用端点」；
-- settings.yaml 是工作区级的——描述「这个故事用哪一个」（P6 T2 扩展）。
+一处事实源：``config.yaml`` 的档案目录；一个档案就是「一个可用的模型端点」，
+含地址、key 与默认模型。模型来源不从进程环境读取——作者在自己的机器上用产品，
+不会去设置 ``OPENAI_API_KEY`` 这类变量；让某个字段能引用环境变量，只会把运维侧的
+概念塞进产品配置，并让「同一份配置在不同机器上行为不同」。
 
-泄压阀（沿用 settings.yaml 惯例）：缺文件/空文件 → env 单档案回落
-（name="default"，P1 起的现状，零破坏）；结构性损坏（根节点非映射、
-档案缺 name/base_url、档案名重复、空列表）→ ProviderConfigError 三要素
-——模型配置错了应该当场知道，而不是写作到一半才发现。
+缺文件 / 空文件 → 没有档案（服务照常启动，发送消息的那一轮明确回报「未配置模型」）；
+结构性损坏（根节点非映射、档案缺 name/base_url、档案名重复、字段拼写错误）→
+ProviderConfigError 三要素——模型配置错了应该当场知道，而不是写作到一半才发现。
 
-key 只进不出：ProviderProfile.api_key 用 SecretStr（repr/日志不泄露），
-任何对外输出只经 mask_key（尾 4 位）。
+key 只进不出：磁盘上可直填 ``api_key``（首次启动后转入系统凭据存储，磁盘只留
+``credential_ref``）；运行时用 SecretStr 持有（repr/日志不泄露），任何对外输出
+只经 ``mask_key``（尾 4 位）。
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from tau_agent.provider import ModelProvider
-from tau_ai.env import DEFAULT_OPENAI_COMPATIBLE_BASE_URL, OpenAICompatibleConfig
+from tau_ai.env import OpenAICompatibleConfig
 from tau_ai.openai_compatible import OpenAICompatibleProvider
 
 DEFAULT_CONFIG_PATH = Path("config.yaml")
@@ -39,14 +39,13 @@ class ProviderConfigError(ValueError):
 
 
 class ProviderProfile(BaseModel):
-    """一个模型端点档案：名字 + 端点 + key（直填或 env 引用）+ 默认模型。"""
+    """一个模型端点档案：名字 + 端点 + key（直填或凭据引用）+ 默认模型。"""
 
     model_config = ConfigDict(extra="forbid")  # 拼错字段早失败（如 api_ky）
 
     name: str
     base_url: str
     api_key: SecretStr = SecretStr("")
-    api_key_env: str = ""
     #: V03-1.3：OS 凭据存储引用。设置后 api_key 字段应为空（元数据不存明文）；
     # 实际密钥经 CredentialStore 读取（见 ProviderBook 物化）。
     credential_ref: str = ""
@@ -58,17 +57,13 @@ class ProviderProfile(BaseModel):
     api: Literal["openai-completions", "openai-responses"] = "openai-completions"
 
     def resolved_api_key(self) -> str:
-        """解析实际 key：直填优先于 env 引用（D1）。两者皆空 → 空串。
+        """解析实际 key：只用档案自身的 key（直填或已物化的凭据）。
 
         ``credential_ref`` 档案在 ProviderBook 物化阶段已把 OS 凭据装进
-        ``api_key``（SecretStr，只进不出）；本方法不直接访问凭据存储。
+        ``api_key``（SecretStr，只进不出）；本方法不直接访问凭据存储，
+        也不读进程环境。
         """
-        direct = self.api_key.get_secret_value()
-        if direct:
-            return direct
-        if self.api_key_env:
-            return os.environ.get(self.api_key_env, "")
-        return ""
+        return self.api_key.get_secret_value()
 
     @property
     def available(self) -> bool:
@@ -86,37 +81,47 @@ class ServerConfig(BaseModel):
     active_model: str = ""
 
 
-def env_fallback_config() -> ServerConfig:
-    """由当前 env 编译出的单档案（config.yaml 缺失时的回落，即 P1 现状）。"""
-    base_url = os.environ.get("OPENAI_BASE_URL") or DEFAULT_OPENAI_COMPATIBLE_BASE_URL
-    return ServerConfig(
-        providers=[
-            ProviderProfile(
-                name="default",
-                base_url=base_url.rstrip("/"),
-                api_key_env="OPENAI_API_KEY",
-                default_model=os.environ.get("HASTINGS_MODEL", ""),
-            )
-        ]
+def _reject_env_reference(raw: dict[str, Any], path: Path) -> None:
+    """旧版 ``api_key_env``：环境变量引用已从产品里移除，给出可操作的迁移提示。
+
+    不静默忽略：字段存在说明作者的配置仍指望进程环境提供 key；若悄悄丢掉，
+    结果只是「档案突然不可用」，比一句直白的迁移说明难查得多。
+    """
+    providers = raw.get("providers")
+    if not isinstance(providers, list):
+        return
+    offenders = [
+        str(entry.get("name") or index)
+        for index, entry in enumerate(providers)
+        if isinstance(entry, dict) and "api_key_env" in entry
+    ]
+    if not offenders:
+        return
+    raise ProviderConfigError(
+        f"config.yaml 已不再支持环境变量引用：档案 {offenders} 使用了 api_key_env（{path}）。"
+        "为什么错：模型来源只从本文件读取，应用不再读进程环境里的 key；"
+        "保留该字段会让档案看起来配好了、实际没有 key。"
+        "怎样算对：删掉 api_key_env，把 key 直接写进同一档案的 api_key"
+        "（首次启动后会转入系统凭据存储，磁盘上只留 credential_ref）。"
     )
 
 
 def load_server_config(path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
-    """加载服务级配置；缺文件/空文件 → env 回落，结构性损坏 → 三要素报错。"""
+    """加载服务级配置；缺文件/空文件 → 空档案目录，结构性损坏 → 三要素报错。"""
     if not path.exists():
-        return env_fallback_config()
+        return ServerConfig(providers=[])
     raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
     if raw is None:
-        # 空文件等价于「未配置」→ env 回落（与 settings.yaml 的空文件惯例一致）
-        return env_fallback_config()
+        # 空文件等价于「还没配置」→ 空档案目录（与「删掉文件」同一结果）
+        return ServerConfig(providers=[])
     if not isinstance(raw, dict):
         raise ProviderConfigError(
             f"config.yaml 损坏：根节点应为 YAML 映射（providers 列表），"
             f"实际是 {type(raw).__name__}（{path}）。"
             "为什么错：文件结构不对，无法解析出任何模型端点。"
-            "怎样算对：参照 config.example.yaml 修复文件结构，"
-            "或删除该文件回落 .env 单档案配置。"
+            "怎样算对：参照 config.example.yaml 修复文件结构。"
         )
+    _reject_env_reference(raw, path)
     try:
         config = ServerConfig.model_validate(raw)
     except ValidationError as exc:
@@ -124,9 +129,9 @@ def load_server_config(path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
     if not config.providers:
         raise ProviderConfigError(
             f"config.yaml 损坏：providers 列表为空（{path}）。"
-            "为什么错：启动后没有任何可用的模型端点。"
+            "为什么错：文件写了一个空列表，和「还没配置」混在了一起。"
             "怎样算对：配置至少一个档案（含 name / base_url 与 key），"
-            "或删除该文件回落 .env 单档案配置。"
+            "或删除该文件表示暂时不配置。"
         )
     names = [profile.name for profile in config.providers]
     duplicates = sorted({name for name in names if names.count(name) > 1})
@@ -147,8 +152,8 @@ def _validation_error_message(path: Path, exc: ValidationError) -> str:
     return (
         f"config.yaml 损坏：{lines}（{path}）。"
         "为什么错：字段缺失、类型不对或存在未知字段（多为拼写错误）。"
-        "怎样算对：每个档案必含 name / base_url，可选 api_key（直填）、"
-        "api_key_env（env 引用）与 default_model；参照 config.example.yaml。"
+        "怎样算对：每个档案必含 name / base_url，可选 api_key（直填）"
+        "与 default_model；参照 config.example.yaml。"
     )
 
 
@@ -208,11 +213,12 @@ def migrate_plaintext_credentials(
 
 
 def save_server_config(config: ServerConfig, path: Path) -> Path:
-    """写回 config.yaml（P7 T12 档案 UI 化）：UI 增删改档案后落盘，重启仍生效。
+    """写回 config.yaml：档案增删改后落盘，重启仍生效。
 
     api_key 以明文写入——文件存储格式本就支持直填 key（与手写 config.yaml
-    同一保密边界：key 安全性依赖文件系统权限，不依赖本函数）。空字段写成
-    空串（load 侧一律容忍空值）。写盘 OSError 上抛，由调用方归因环境故障。
+    同一保密边界：key 安全性依赖文件系统权限，不依赖本函数）；已迁入系统
+    凭据存储的档案此处写空串，只留 credential_ref。写盘 OSError 上抛，
+    由调用方归因环境故障。
     """
     payload = {
         "providers": [
@@ -220,7 +226,6 @@ def save_server_config(config: ServerConfig, path: Path) -> Path:
                 "name": profile.name,
                 "base_url": profile.base_url,
                 "api_key": profile.api_key.get_secret_value(),
-                "api_key_env": profile.api_key_env,
                 "default_model": profile.default_model,
                 # 免密字段按需写入：False 不落盘，旧文件格式零扰动
                 **({"no_auth": True} if profile.no_auth else {}),
@@ -237,7 +242,7 @@ def save_server_config(config: ServerConfig, path: Path) -> Path:
             else {}
         ),
     }
-    header = "# 由设置页管理（P7 T12），也可手改；删掉本文件则回落 .env 单档案配置。\n"
+    header = "# 由设置页或手工维护；模型来源只从这个文件读取，不读进程环境。\n"
     text = header + yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
@@ -415,7 +420,7 @@ class ProviderBook:
     def resolve(self, profile_name: str, model_override: str) -> ResolvedProvider:
         """装配路径的宽容解析：未知或缺 key 的档案回落引导档案（重启后仍可用）。
 
-        模型优先级：工作区设置 > 引导档案的引导模型（CLI --model / env）>
+        模型优先级：工作区设置 > 引导档案的引导模型（CLI --model）>
         档案 default_model。引导模型对引导档案优先，使 ``--model`` 覆盖
         config.yaml 里该档案的 default_model（CLI 优先于文件）。
         """
@@ -426,7 +431,7 @@ class ProviderBook:
             msg = (
                 f"引导档案不存在：{self._boot_name!r}。"
                 "为什么错：工作区设置的档案与服务级配置均无法解析出可用端点。"
-                "怎样算对：检查 config.yaml 的 providers 列表（或删除它回落 .env）。"
+                "怎样算对：检查 config.yaml 的 providers 列表，补齐档案名、地址与 key。"
             )
             raise ProviderConfigError(msg)
         model = model_override
@@ -449,7 +454,6 @@ __all__ = [
     "ResolvedProvider",
     "ServerConfig",
     "build_provider",
-    "env_fallback_config",
     "load_server_config",
     "mask_key",
     "save_server_config",

@@ -88,9 +88,10 @@ def test_bind_rejects_missing_path(tmp_path: Path) -> None:
     assert missing.value.code == "WORKSPACE_NOT_FOUND"
 
 
-def test_state_root_follows_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    custom = tmp_path / "自定义状态"
-    monkeypatch.setenv("HASTINGS_STATE_DIR", str(custom))
+def test_state_root_ignores_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """状态目录只由构造参数决定：设了环境变量也不会把状态写到别处。"""
+    monkeypatch.setenv("HASTINGS_STATE_DIR", str(tmp_path / "环境变量指的目录"))
 
-    assert default_state_root() == custom
-    assert RecentWorkspaces().root == custom.resolve()
+    assert default_state_root() != tmp_path / "环境变量指的目录"
+    assert RecentWorkspaces().root == default_state_root().resolve()
+    assert RecentWorkspaces(tmp_path / "自定义状态").root == (tmp_path / "自定义状态").resolve()

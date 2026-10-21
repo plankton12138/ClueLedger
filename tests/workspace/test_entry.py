@@ -80,9 +80,8 @@ def test_assembly_without_workspace_serves_empty_catalog(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     state = tmp_path / "state"
-    monkeypatch.setenv("HASTINGS_STATE_DIR", str(state))
 
-    assembled = assemble_server()
+    assembled = assemble_server(state_root=state)
 
     assert assembled.workspace is None
     assert assembled.binding_id is None
@@ -92,14 +91,27 @@ def test_assembly_without_workspace_serves_empty_catalog(
     assert client.get("/api/file-workspaces").json() == []
 
 
+def test_assembly_without_model_config_reports_unconfigured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """没有 config.yaml 就没有模型档案——环境变量补不出一个端点来。"""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-environment")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.setenv("HASTINGS_MODEL", "env-model")
+
+    assembled = assemble_server(state_root=tmp_path / "state")
+
+    assert assembled.boot_profile == ""
+    assert assembled.boot_model == ""
+
+
 def test_assembly_binds_requested_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     state = tmp_path / "state"
-    monkeypatch.setenv("HASTINGS_STATE_DIR", str(state))
     root = _directory(tmp_path)
 
-    assembled = assemble_server(workspace=root)
+    assembled = assemble_server(workspace=root, state_root=state)
 
     assert assembled.workspace == root.resolve()
     assert assembled.binding_id
@@ -111,10 +123,11 @@ def test_assembly_binds_requested_workspace(
 def test_assembly_serves_only_file_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("HASTINGS_STATE_DIR", str(tmp_path / "state"))
     root = _directory(tmp_path)
 
-    client = TestClient(assemble_server(workspace=root).app)
+    client = TestClient(
+        assemble_server(workspace=root, state_root=tmp_path / "state").app
+    )
 
     # 旧工作台与旧模型路由都不在装配范围：新应用不因模型设置挂载整套旧业务。
     assert client.get("/api/v2/projects").status_code == 404
@@ -123,11 +136,10 @@ def test_assembly_serves_only_file_workspace(
 
 
 def test_assembly_creates_no_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HASTINGS_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     root = _directory(tmp_path)
 
-    assemble_server(workspace=root)
+    assemble_server(workspace=root, state_root=tmp_path / "state")
 
     assert not (tmp_path / "data").exists()
 
@@ -153,7 +165,6 @@ def test_assembly_rejects_missing_static_dir(tmp_path: Path) -> None:
 def test_main_runs_uvicorn_with_file_app(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("HASTINGS_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setattr(server_main, "default_static_dir", lambda: None)
     root = _directory(tmp_path)
     captured: dict[str, object] = {}
@@ -164,7 +175,9 @@ def test_main_runs_uvicorn_with_file_app(
 
     monkeypatch.setattr(server_main.uvicorn, "run", fake_run)
 
-    assert server_main.main(["--workspace", str(root), "--port", "8123"]) == 0
+    assert server_main.main(
+        ["--workspace", str(root), "--port", "8123", "--state-dir", str(tmp_path / "state")]
+    ) == 0
     assert isinstance(captured["app"], FastAPI)
     assert captured["kwargs"] == {"host": "127.0.0.1", "port": 8123, "log_level": "info"}
     out = capsys.readouterr().out
@@ -175,11 +188,10 @@ def test_main_runs_uvicorn_with_file_app(
 def test_main_starts_without_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("HASTINGS_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setattr(server_main, "default_static_dir", lambda: None)
     monkeypatch.setattr(server_main.uvicorn, "run", lambda app, **kwargs: None)
 
-    assert server_main.main([]) == 0
+    assert server_main.main(["--state-dir", str(tmp_path / "state")]) == 0
     assert "未打开" in capsys.readouterr().out
 
 

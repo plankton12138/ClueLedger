@@ -23,9 +23,8 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `npm run build && uv run --directory .. python -m hastings.server --port ${port}`,
+    command: `npm run build && uv run --directory .. python -m hastings.server --port ${port} --state-dir ../data/test-tmp/e2e-state`,
     url: `http://127.0.0.1:${port}/api/health`,
-    env: { HASTINGS_STATE_DIR: "../data/test-tmp/e2e-state" },
     reuseExistingServer: !process.env.CI && !process.env.HASTINGS_E2E_PORT,
     timeout: 120_000,
   },
