@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
 from hastings.workspace.directory_dialog import DirectoryPickerError
+from hastings.workspace.files import Workspace
 from hastings.workspace.state import RecentWorkspaces
 
 
@@ -97,6 +98,43 @@ def test_files_lists_chapters_characters_and_fixed_settings(tmp_path: Path) -> N
     assert [(item["path"], item["title"], item["order"]) for item in listed["chapters"]] == [
         ("正文/0001 雨夜.md", "雨夜", "0001")
     ]
+
+
+def test_files_and_file_share_display_metadata(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    root = tmp_path / "雪山旅馆"
+    workspace_id = _created(client, root)
+    workspace = Workspace.open(root)
+    workspace.write("正文/0001 暴雪来客.md", "# 雪山旅馆\n\n正文。\n", expected_digest=None)
+    workspace.write("正文/0003 书房里的脚印.md", "## 第三章 书房里的脚印\n", expected_digest=None)
+    workspace.write(
+        "设定集/角色小传/许衡.md",
+        "---\nroles: [suspect, culprit]\n---\n# 许衡\n\n身份。\n",
+        expected_digest=None,
+    )
+
+    listed = client.get(f"/api/file-workspaces/{workspace_id}/files").json()
+    chapters = {item["path"]: item for item in listed["chapters"]}
+    first = chapters["正文/0001 暴雪来客.md"]
+    assert first["display_title"] == "第一章 暴雪来客"
+    assert first["chapter_number"] == 1
+    assert first["chapter_type"] == "regular"
+    assert first["metadata_warnings"]
+    assert chapters["正文/0003 书房里的脚印.md"]["display_title"] == "第三章 书房里的脚印"
+    character = listed["characters"][0]
+    assert character["display_title"] == "许衡"
+    assert character["roles"] == ["suspect", "culprit"]
+
+    detail = client.get(
+        f"/api/file-workspaces/{workspace_id}/file",
+        params={"path": "设定集/角色小传/许衡.md"},
+    ).json()
+    assert detail["display_title"] == "许衡"
+    assert detail["roles"] == ["suspect", "culprit"]
+    # 原文保留元信息；稿纸读 display_text，不把 --- 围栏当正文。
+    assert detail["text"].startswith("---")
+    assert detail["display_text"].startswith("# 许衡")
+    assert detail["digest"] == workspace.read("设定集/角色小传/许衡.md").digest
 
 
 def test_read_file_returns_text_digest_and_kind(tmp_path: Path) -> None:

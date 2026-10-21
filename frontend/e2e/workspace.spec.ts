@@ -141,6 +141,38 @@ test("搜索定位到正文，外部改动刷新后可见", async ({ page }) => 
   await expect(page.getByRole("button", { name: "来信" })).toBeVisible();
 });
 
+test("章名带章序，人物标签在目录与稿纸一致", async ({ page }) => {
+  // 身份写在人物文件开头的元信息里；界面与模型目录使用同一份解析结果。
+  writeFileSync(
+    join(workspaceRoot, "设定集", "角色小传", "许衡.md"),
+    "---\nroles: [suspect, culprit]\n---\n# 许衡\n\n身份：旅馆客人。\n",
+    "utf-8",
+  );
+  await open(page);
+  await page.getByRole("button", { name: "刷新" }).click();
+
+  // 章序来自文件编号，不按列表位置重排。
+  await expect(page.getByRole("button", { name: "第一章 雨夜" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "第二章 来信" })).toBeVisible();
+
+  const row = page.getByRole("button").filter({ hasText: "许衡" });
+  await expect(row).toContainText("嫌疑人");
+  await expect(row).toContainText("凶手");
+  // 颜色靠样式类生效：类名被构建删掉时标签仍有文字，但会退回透明背景。
+  const badge = row.locator(".role-badge").filter({ hasText: "凶手" });
+  await expect
+    .poll(() => badge.evaluate((node) => getComputedStyle(node).backgroundColor))
+    .not.toBe("rgba(0, 0, 0, 0)");
+  await row.click();
+
+  const paper = page.locator("article");
+  await expect(paper).toContainText("身份：旅馆客人。");
+  await expect(paper).toContainText("嫌疑人");
+  await expect(paper).toContainText("凶手");
+  // 元信息只用于标签，不当作小说正文显示。
+  await expect(paper).not.toContainText("roles:");
+});
+
 test("对话栏可隐藏，隐藏状态刷新后保持", async ({ page }) => {
   await open(page);
   const panel = chatPanel(page);

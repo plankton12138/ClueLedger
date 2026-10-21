@@ -20,6 +20,7 @@ import { useModelsStore } from "../../state/models";
 import { useWorkspaceStore } from "../../state/workspace";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
 import ChangesDrawer from "./ChangesDrawer";
+import CharacterBadges from "./CharacterBadges";
 import ConversationPanel from "./ConversationPanel";
 import DirectoryDialog from "./DirectoryDialog";
 import Paper from "./Paper";
@@ -264,7 +265,7 @@ export default function WorkspaceShell() {
                           title={entry.path}
                           onClick={() => void openPath(entry.path)}
                         >
-                          {entry.title}
+                          {entry.display_title}
                         </button>
                       </li>
                     ))}
@@ -290,7 +291,8 @@ export default function WorkspaceShell() {
                             title={entry.path}
                             onClick={() => void openPath(entry.path)}
                           >
-                            {entry.title}
+                            {entry.display_title}
+                            <CharacterBadges roles={entry.roles} compact />
                           </button>
                         </li>
                       ))}
@@ -310,7 +312,7 @@ export default function WorkspaceShell() {
                           }`}
                           onClick={() => void openPath(entry.path)}
                         >
-                          {entry.title}
+                          {entry.display_title}
                           {!entry.exists && (
                             <span className="ml-2 text-[10px] text-mute">（缺失）</span>
                           )}

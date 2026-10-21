@@ -22,14 +22,7 @@ from pydantic import BaseModel, Field
 
 from hastings.workspace.directory_dialog import DirectoryPickerError, pick_directory
 from hastings.workspace.errors import WorkspaceError, status_for_code
-from hastings.workspace.files import (
-    FileEntry,
-    FileKind,
-    Workspace,
-    chapter_title,
-    character_title,
-    managed_kind,
-)
+from hastings.workspace.files import FileEntry, FileKind, Workspace
 from hastings.workspace.git import GitRepo
 from hastings.workspace.locations import default_workspace_root
 from hastings.workspace.service import ProviderFactory, TurnService
@@ -107,9 +100,15 @@ class FileEntryView(BaseModel):
     path: str
     kind: FileKind
     title: str
+    #: 服务端生成的显示名：目录、稿纸与模型目录共用，前端不再自行拼章序。
+    display_title: str
     order: str
+    chapter_number: int | None = None
+    chapter_type: Literal["regular", "prologue", "epilogue", "extra"] | None = None
+    roles: list[str] = Field(default_factory=list)
     exists: bool
     size: int
+    metadata_warnings: list[str] = Field(default_factory=list)
 
 
 class CatalogView(BaseModel):
@@ -122,9 +121,16 @@ class FileViewResponse(BaseModel):
     path: str
     kind: FileKind
     title: str
+    display_title: str
     text: str
+    #: 阅读用正文：人物小传去掉开头元信息，其余与 text 相同。
+    display_text: str
     digest: str
     size: int
+    chapter_number: int | None = None
+    chapter_type: Literal["regular", "prologue", "epilogue", "extra"] | None = None
+    roles: list[str] = Field(default_factory=list)
+    metadata_warnings: list[str] = Field(default_factory=list)
 
 
 class SearchHitView(BaseModel):
@@ -374,21 +380,20 @@ def create_file_workspace_router(
     def read_file(workspace_id: str, path: str = Query(min_length=1)) -> FileViewResponse:
         workspace = workspaces.workspace(workspace_id)
         view_file = workspace.read(path)
-        kind = managed_kind(path)
-        assert kind is not None  # workspace.read 已校验受管路径。
-        if kind == "setting":
-            title = _setting_title(path)
-        elif kind == "character":
-            title = character_title(view_file.text, Path(path).name)
-        else:
-            title = chapter_title(view_file.text, Path(path).name)
+        entry = workspace.describe(path)
         return FileViewResponse(
             path=view_file.path,
-            kind=kind,
-            title=title,
+            kind=entry.kind,
+            title=entry.title,
+            display_title=entry.display_title,
             text=view_file.text,
+            display_text=view_file.display_text,
             digest=view_file.digest,
             size=view_file.size,
+            chapter_number=entry.chapter_number,
+            chapter_type=entry.chapter_type,
+            roles=list(entry.roles),
+            metadata_warnings=list(entry.metadata_warnings),
         )
 
     @router.get("/{workspace_id}/search", response_model=SearchResponse)
@@ -685,11 +690,12 @@ def _entry(entry: FileEntry) -> FileEntryView:
         path=entry.path,
         kind=entry.kind,
         title=entry.title,
+        display_title=entry.display_title,
         order=entry.order,
+        chapter_number=entry.chapter_number,
+        chapter_type=entry.chapter_type,
+        roles=list(entry.roles),
         exists=entry.exists,
         size=entry.size,
+        metadata_warnings=list(entry.metadata_warnings),
     )
-
-
-def _setting_title(path: str) -> str:
-    return Path(path).stem

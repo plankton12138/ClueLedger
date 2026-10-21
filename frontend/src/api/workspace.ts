@@ -26,13 +26,24 @@ export interface PickedDirectory {
   path: string | null;
 }
 
+export type CharacterRole = "detective" | "assistant" | "culprit" | "suspect" | "victim";
+
+export type ChapterType = "regular" | "prologue" | "epilogue" | "extra";
+
 export interface FileEntry {
   path: string;
   kind: "chapter" | "character" | "setting";
   title: string;
+  /** 服务端生成的显示名：目录、稿纸与模型目录共用，前端不再自行拼章序。 */
+  display_title: string;
   order: string;
+  chapter_number: number | null;
+  chapter_type: ChapterType | null;
+  roles: CharacterRole[];
   exists: boolean;
   size: number;
+  /** 命名与元信息诊断；空数组表示没有需要提示的问题。 */
+  metadata_warnings: string[];
 }
 
 export interface Catalog {
@@ -45,9 +56,16 @@ export interface FileView {
   path: string;
   kind: "chapter" | "character" | "setting";
   title: string;
+  display_title: string;
   text: string;
+  /** 阅读用正文：人物小传去掉了开头的元信息。 */
+  display_text: string;
   digest: string;
   size: number;
+  chapter_number: number | null;
+  chapter_type: ChapterType | null;
+  roles: CharacterRole[];
+  metadata_warnings: string[];
 }
 
 export interface SearchHit {

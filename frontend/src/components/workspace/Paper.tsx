@@ -9,6 +9,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import type { FileView } from "../../api/workspace";
+import CharacterBadges from "./CharacterBadges";
 
 interface Props {
   file: FileView | null;
@@ -31,20 +32,26 @@ export default function Paper({ file, loading }: Props) {
 
   return (
     <article className="mx-auto flex h-full w-full max-w-3xl flex-col px-4 py-4">
-      <header className="mb-3 flex flex-none items-baseline gap-3 text-sub">
+      <header className="mb-3 flex flex-none flex-wrap items-baseline gap-x-3 gap-y-1 text-sub">
         <h2 className="min-w-0 truncate font-serif text-lg font-bold text-fg-strong">
-          {file.title}
+          {file.display_title}
         </h2>
+        <CharacterBadges roles={file.roles} />
         <span className="truncate text-[11px]">{file.path}</span>
         <span className="ml-auto shrink-0 text-[11px]">{file.size} 字节</span>
         {loading && <span className="text-[11px]">读取中…</span>}
+        {file.metadata_warnings.length > 0 && (
+          <p className="meta-warning basis-full">
+            {file.metadata_warnings.join("；")}
+          </p>
+        )}
       </header>
       <div className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm">
         <div className="paper-lined min-h-full px-8 py-6">
-          {file.text.trim() ? (
+          {file.display_text.trim() ? (
             <div className="prose-paper text-[15px] leading-8">
               <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-                {file.text}
+                {file.display_text}
               </ReactMarkdown>
             </div>
           ) : (

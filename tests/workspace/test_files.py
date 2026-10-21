@@ -376,6 +376,29 @@ def test_import_markdown_creates_one_chapter(tmp_path: Path) -> None:
     assert (workspace.root / "正文/0001 雨夜.md").read_text(encoding="utf-8").startswith("# 雨夜")
 
 
+def test_import_markdown_with_book_title_does_not_repeat_filename_number(tmp_path: Path) -> None:
+    """一级标题是书名时回退到文件名的章名，编号不会被拼进新章名。"""
+    workspace = _workspace(tmp_path)
+
+    created = workspace.import_text("0001 暴雪来客.md", "# 雪山旅馆\n\n雪下了一夜。\n".encode())
+
+    assert [view.path for view in created] == ["正文/0001 暴雪来客.md"]
+    chapter = workspace.catalog().chapters[0]
+    assert chapter.display_title == "第一章 暴雪来客"
+
+
+def test_import_keeps_special_marker_when_falling_back(tmp_path: Path) -> None:
+    """回退只去掉编号：「序章」属于章名，去掉会丢章节类型。"""
+    workspace = _workspace(tmp_path)
+
+    created = workspace.import_text(
+        "0000 序章 暴雪前的信.md", "# 雪山旅馆\n\n信在雪里放了三天。\n".encode()
+    )
+
+    assert [view.path for view in created] == ["正文/0001 序章 暴雪前的信.md"]
+    assert workspace.catalog().chapters[0].chapter_type == "prologue"
+
+
 def test_import_text_splits_chapters_and_never_overwrites(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     data = "第一章 来信\n\n信件来自十年前。\n\n第二章 雪停\n\n雪停了。\n".encode()

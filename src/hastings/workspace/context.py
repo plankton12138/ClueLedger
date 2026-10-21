@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import SETTING_FILES, Workspace
+from hastings.workspace.metadata import ROLE_LABELS
 
 __all__ = ["SETTINGS_BUDGET", "build_system_prompt", "settings_section"]
 
@@ -35,6 +36,9 @@ _INSTRUCTIONS = """\
 - 一个角色只有一份小传，别名和化名写在同一文件中。写到该角色之前先读取其小传，
   涉及多人时分别读取；不能仅凭名字猜测人物设定。目录不包含小传全文，未读取不能声称已读。
 - 小传可在角色目录内改名或删除；改文件名不自动改正文中的人名，删除小传也不等于删除正文中的人物。
+- 人物身份写在文件开头的元信息里，例如 `---`、`roles: [suspect, culprit]`、`---` 三行；
+  可用值只有 detective（侦探）、assistant（助手）、culprit（凶手）、suspect（嫌疑人）、
+  victim（受害者）。只有作者明确要求或已确认的设定才写 culprit；讨论「如果他是凶手」不算确认。
 
 ## 写作要求
 - 正文只写读者能看到的内容。真相用于规划和自查，不能因为「作者知道」就让角色或叙述者说出来。
@@ -83,13 +87,15 @@ def settings_section(workspace: Workspace, *, budget: int = SETTINGS_BUDGET) -> 
 
 
 def catalog_section(workspace: Workspace) -> str:
-    """章节与角色按文件名列出，线索和真相使用固定路径。"""
+    """章节与角色按文件名列出，线索和真相使用固定路径；名称与标签取服务端同一份结果。"""
     catalog = workspace.catalog()
     lines = ["### 正文"]
     if catalog.chapters:
         for entry in catalog.chapters:
             state = "" if entry.exists else "（缺失）"
-            lines.append(f"- {entry.path}｜{entry.title}{state}")
+            lines.append(f"- {entry.path}｜{entry.display_title}{state}")
+            for warning in entry.metadata_warnings:
+                lines.append(f"  （命名提示：{warning}）")
     else:
         lines.append("- （还没有章节）")
     lines.append("")
@@ -97,7 +103,8 @@ def catalog_section(workspace: Workspace) -> str:
     lines.append("#### 角色小传（按需读取原文）")
     if catalog.characters:
         for entry in catalog.characters:
-            lines.append(f"- {entry.path}｜{entry.title}")
+            roles = "、".join(ROLE_LABELS[role] for role in entry.roles)
+            lines.append(f"- {entry.path}｜{entry.title}" + (f"｜{roles}" if roles else ""))
     else:
         lines.append("（尚无角色；需要时在角色小传目录创建一人一个 Markdown 文件。）")
     lines.append("#### 固定设定")

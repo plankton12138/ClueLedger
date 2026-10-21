@@ -26,6 +26,16 @@ from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.metadata import (
+    PLACEHOLDER_TITLE,
+    ChapterType,
+    Role,
+    check_character_metadata,
+    filename_without_order,
+    parse_chapter,
+    parse_chapters,
+    parse_character,
+)
 
 __all__ = [
     "BODY_DIR",
@@ -72,7 +82,6 @@ _RESERVED_STEMS = frozenset(
     }
 )
 _ORDER_PREFIX = re.compile(r"^(\d{4})(?!\d)")
-_H1 = re.compile(r"^#\s+(.+?)\s*#*\s*$")
 
 #: 应用新建章节的文件名长度上限（不含扩展名与序号）。
 _MAX_TITLE_CHARS = 60
@@ -147,45 +156,45 @@ def decode_text(data: bytes, *, where: str) -> str:
 
 
 def chapter_title(text: str, filename: str) -> str:
-    """章节标题：首个一级标题优先，缺失时回退文件名（去掉序号前缀）。"""
-    for line in text.split("\n")[:20]:
-        match = _H1.match(line)
-        if match:
-            return match.group(1).strip()
-    stem = PurePosixPath(filename).stem
-    stripped = _ORDER_PREFIX.sub("", stem).strip(" -_·")
-    return stripped or stem
+    """章节标题：与目录共用同一套解析，避免界面、工具与导入各拼一套规则。"""
+    return parse_chapter(f"{BODY_DIR}/{filename}", text).title
 
 
 def character_title(text: str, filename: str) -> str:
     """角色名优先取一级标题，缺失时使用完整文件名，不剥离数字。"""
-    for line in text.split("\n")[:20]:
-        match = _H1.match(line)
-        if match:
-            return match.group(1).strip()
-    return PurePosixPath(filename).stem
+    return parse_character(f"{CHARACTERS_DIR}/{filename}", text).title
 
 
 @dataclass(frozen=True, slots=True)
 class FileView:
-    """一次读取或写入的结果：路径、LF 文本、实际字节指纹。"""
+    """一次读取或写入的结果：路径、LF 文本、实际字节指纹。
+
+    ``text`` 是磁盘上的完整文本（人物小传含开头的元信息），``display_text`` 是给人
+    阅读的部分：只对人物小传去掉元信息，其余与 ``text`` 相同。
+    """
 
     path: str
     text: str
     digest: str
     size: int
+    display_text: str
 
 
 @dataclass(frozen=True, slots=True)
 class FileEntry:
-    """目录条目：存在性与标题可直接用于列表，读取原文再单独请求。"""
+    """目录条目：存在性、显示名、章序与人物身份都来自同一次解析。"""
 
     path: str
     kind: FileKind
     title: str
+    display_title: str
     order: str
+    chapter_number: int | None
+    chapter_type: ChapterType | None
+    roles: tuple[Role, ...]
     exists: bool
     size: int
+    metadata_warnings: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,11 +297,27 @@ class Workspace:
     def read(self, path: str) -> FileView:
         target = self._target(path)
         data = self._read_bytes(target, path)
+        text = decode_text(data, where=f"files.read:{path}")
         return FileView(
             path=path,
-            text=decode_text(data, where=f"files.read:{path}"),
+            text=text,
             digest=digest_bytes(data),
             size=len(data),
+            display_text=_display_text(path, text),
+        )
+
+    def describe(self, path: str) -> FileEntry:
+        """按目录的方式描述一个文件：显示名、章序与标签与列表完全一致。"""
+        catalog = self.catalog()
+        for entry in (*catalog.chapters, *catalog.characters, *catalog.settings):
+            if entry.path == path:
+                return entry
+        raise WorkspaceError(
+            code="FILE_NOT_FOUND",
+            where=f"files.describe:{path}",
+            why="目录里没有这个文件",
+            fix="刷新目录后重新选择；文件可能刚被删除或改名",
+            details={"path": path},
         )
 
     def search(self, query: str, *, limit: int = 50) -> SearchResult:
@@ -339,13 +364,16 @@ class Workspace:
         target = self._target(path)
         self._writable_directory(PurePosixPath(path).parent.as_posix())
         self._check_expected(target, path, expected_digest)
-        payload = normalize_newlines(text).encode("utf-8")
+        normalized = normalize_newlines(text)
+        self._reject_invalid_metadata(path, normalized)
+        payload = normalized.encode("utf-8")
         _atomic_replace(target, payload, path)
         return FileView(
             path=path,
-            text=normalize_newlines(text),
+            text=normalized,
             digest=digest_bytes(payload),
             size=len(payload),
+            display_text=_display_text(path, normalized),
         )
 
     def create_chapter(self, title: str, text: str = "") -> FileView:
@@ -419,7 +447,7 @@ class Workspace:
                 fix="确认文件不是空文件或只有标题",
             )
         if suffix in (".md", ".markdown"):
-            title = chapter_title(text, name) or "导入正文"
+            title = _import_title(self.name, name, text)
             return (self.create_chapter(title, text),)
         if suffix == ".txt":
             # 分章规则仍沿用 0.3 的纯函数：它只做文本切分，不写存储。
@@ -551,6 +579,22 @@ class Workspace:
                 },
             )
 
+    def _reject_invalid_metadata(self, path: str, text: str) -> None:
+        """应用写入不接受新的坏元信息；外部编辑器留下的损坏仍按正文可读。"""
+        if managed_kind(path) != "character":
+            return
+        problems = check_character_metadata(text)
+        if not problems:
+            return
+        raise WorkspaceError(
+            code="CHARACTER_METADATA_INVALID",
+            where=f"files.write:{path}",
+            why="人物小传开头的元信息无法使用：" + "；".join(problems),
+            fix="把开头改成「---」「roles: [suspect, culprit]」「---」三行，身份只用 "
+            "detective、assistant、culprit、suspect、victim；或删掉整段元信息。",
+            details={"path": path, "problems": list(problems)},
+        )
+
     def _current_digest(self, target: Path, path: str) -> str | None:
         try:
             data = target.read_bytes()
@@ -569,7 +613,7 @@ class Workspace:
         body = self._directory(directory)
         if not body.is_dir():
             return ()
-        entries: list[FileEntry] = []
+        rows: list[tuple[str, str, str | None, int]] = []
         for child in sorted(body.iterdir(), key=lambda item: item.name):
             path = f"{directory}/{child.name}"
             if managed_kind(path) != kind:
@@ -582,25 +626,50 @@ class Workspace:
             except OSError:
                 continue
             try:
-                text = decode_text(data, where=f"files.list:{path}")
+                text: str | None = decode_text(data, where=f"files.list:{path}")
             except WorkspaceError:
-                text = ""
-            order = _ORDER_PREFIX.match(child.name)
-            entries.append(
+                # 无法解码仍要列出：作者需要看到文件存在，而不是它凭空消失。
+                text = None
+            rows.append((path, child.name, text, size))
+        if kind == "chapter":
+            # 章节整本一起解析：重复书名与重复章序必须跨文件才看得出来。
+            metas = parse_chapters(self.name, [(path, text or "") for path, _, text, _ in rows])
+            return tuple(
                 FileEntry(
-                    path=path,
-                    kind=kind,
-                    title=(
-                        character_title(text, child.name)
-                        if kind == "character"
-                        else chapter_title(text, child.name)
-                    ),
-                    order=order.group(1) if order and kind == "chapter" else "",
+                    path=meta.path,
+                    kind="chapter",
+                    title=meta.title,
+                    display_title=meta.display_title,
+                    order=_file_order(name),
+                    chapter_number=meta.number,
+                    chapter_type=meta.chapter_type,
+                    roles=(),
                     exists=True,
                     size=size,
+                    metadata_warnings=meta.warnings + _decode_warning(text),
                 )
+                for meta, (_, name, text, size) in zip(metas, rows, strict=True)
             )
-        return tuple(entries)
+        return tuple(
+            FileEntry(
+                path=meta.path,
+                kind="character",
+                title=meta.title,
+                display_title=meta.title,
+                order="",
+                chapter_number=None,
+                chapter_type=None,
+                roles=meta.roles,
+                exists=True,
+                size=size,
+                metadata_warnings=meta.warnings + _decode_warning(text),
+            )
+            for meta, (_, _, text, size) in zip(
+                (parse_character(path, text or "") for path, _, text, _ in rows),
+                rows,
+                strict=True,
+            )
+        )
 
     def _settings(self) -> tuple[FileEntry, ...]:
         entries: list[FileEntry] = []
@@ -613,7 +682,17 @@ class Workspace:
                 exists, size = False, 0
             entries.append(
                 FileEntry(
-                    path=path, kind="setting", title=title, order="", exists=exists, size=size
+                    path=path,
+                    kind="setting",
+                    title=title,
+                    display_title=title,
+                    order="",
+                    chapter_number=None,
+                    chapter_type=None,
+                    roles=(),
+                    exists=exists,
+                    size=size,
+                    metadata_warnings=(),
                 )
             )
         return tuple(entries)
@@ -632,6 +711,41 @@ class Workspace:
             if match and child.suffix == ".md":
                 numbers.append(int(match.group(1)))
         return numbers
+
+
+def _display_text(path: str, text: str) -> str:
+    """给人阅读的正文：人物小传去掉开头元信息，其余文件与磁盘内容一致。"""
+    if managed_kind(path) == "character":
+        return parse_character(path, text).display_text
+    return text
+
+
+def _file_order(filename: str) -> str:
+    match = _ORDER_PREFIX.match(filename)
+    return match.group(1) if match else ""
+
+
+def _decode_warning(text: str | None) -> tuple[str, ...]:
+    if text is not None:
+        return ()
+    return ("文件不是 UTF-8，无法读取标题与标签。",)
+
+
+def _import_title(work_name: str, filename: str, text: str) -> str:
+    """导入 Markdown 时的章名：一级标题若是书名，退回上传文件名里的章名。
+
+    回退用的是去掉四位编号的文件名，不是整条文件名：``0001`` 是存储编号，
+    带进新文件名会变成 ``0001 0001 暴雪来客.md``，界面也会把它读成章名的一部分。
+    """
+    meta = parse_chapter(f"{BODY_DIR}/{filename}", text)
+    if meta.title == PLACEHOLDER_TITLE:
+        return "导入正文"
+    title = (
+        filename_without_order(filename)
+        if meta.title.strip() == work_name.strip()
+        else meta.title
+    )
+    return title.strip() or "导入正文"
 
 
 def _escaped(path: str) -> WorkspaceError:

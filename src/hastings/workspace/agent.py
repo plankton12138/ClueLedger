@@ -64,7 +64,14 @@ def build_tools(workspace: Workspace, run: RunContext) -> list[AgentTool]:
         return _json(
             {
                 "chapters": [
-                    {"path": entry.path, "title": entry.title, "size": entry.size}
+                    {
+                        "path": entry.path,
+                        "display_title": entry.display_title,
+                        "title": entry.title,
+                        "chapter_number": entry.chapter_number,
+                        "chapter_type": entry.chapter_type,
+                        "size": entry.size,
+                    }
                     for entry in catalog.chapters
                 ],
                 "settings": [
@@ -72,7 +79,13 @@ def build_tools(workspace: Workspace, run: RunContext) -> list[AgentTool]:
                     for entry in catalog.settings
                 ],
                 "characters": [
-                    {"path": entry.path, "title": entry.title, "size": entry.size}
+                    {
+                        "path": entry.path,
+                        "display_title": entry.display_title,
+                        "title": entry.title,
+                        "roles": list(entry.roles),
+                        "size": entry.size,
+                    }
                     for entry in catalog.characters
                 ],
             }

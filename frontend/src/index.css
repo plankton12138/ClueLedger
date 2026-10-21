@@ -180,6 +180,42 @@
     text-shadow: 0 1px #fff;
   }
 
+  /* ===== 人物身份标签：文字与颜色同时表达 ===== */
+  .role-badges {
+    @apply ml-2 inline-flex shrink-0 items-center gap-1 align-middle;
+  }
+  .role-badges-compact {
+    @apply ml-1;
+  }
+  .role-badge {
+    @apply inline-block rounded px-1.5 py-[1px] text-[10px] font-bold leading-4;
+    border: 1px solid currentColor;
+  }
+  .role-detective {
+    color: #2a5f86;
+    background: #e4eff8;
+  }
+  .role-assistant {
+    color: #356b3f;
+    background: #e6f2e6;
+  }
+  .role-culprit {
+    color: #93352d;
+    background: #f8e4e1;
+  }
+  .role-suspect {
+    color: #84551a;
+    background: #fbf0d8;
+  }
+  .role-victim {
+    color: #57506a;
+    background: #eeeaf4;
+  }
+  .meta-warning {
+    @apply mt-1 text-[11px];
+    color: #8a5a1e;
+  }
+
   /* ===== 表单井（内凹）===== */
   .well-input {
     border: 1px solid #a8b7c0;
