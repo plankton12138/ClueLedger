@@ -64,6 +64,25 @@ async def test_list_files_reports_both_blocks(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_list_files_shares_display_title_and_roles(tmp_path: Path) -> None:
+    workspace, tools, _ = _setup(tmp_path)
+    workspace.write("正文/0001 暴雪来客.md", "# 雪山旅馆\n", expected_digest=None)
+    workspace.write(
+        "设定集/角色小传/许衡.md",
+        "---\nroles: [suspect, culprit]\n---\n# 许衡\n",
+        expected_digest=None,
+    )
+
+    body = await _call(tools["list_files"])
+
+    # 一级标题是书名：模型看到的显示名与界面一样回退到文件名，并带命名提示。
+    assert body["chapters"][0]["display_title"] == "第一章 暴雪来客"
+    assert body["chapters"][0]["chapter_number"] == 1
+    assert body["characters"][0]["display_title"] == "许衡"
+    assert body["characters"][0]["roles"] == ["suspect", "culprit"]
+
+
+@pytest.mark.anyio
 async def test_read_file_pages_and_returns_digest(tmp_path: Path) -> None:
     _, tools, _ = _long_chapter(tmp_path)
 
