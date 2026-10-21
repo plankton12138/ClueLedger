@@ -91,25 +91,6 @@ export default {
         success: theme.colors.green,
         info: theme.colors.blue,
         overlay: "rgba(39, 59, 75, 0.45)",
-        // --- 旧暗色令牌 → iOS6 浅色兼容映射 ---
-        // 仅供 components/ui/ 与遗留面板（设置/迁移）过渡渲染；
-        // 新页面一律使用上方具名令牌或 index.css 组件类，不得再用旧名。
-        ink: "#FFFFFF",
-        "ink-soft": "#F5F8F9",
-        line: theme.colors.panelEdge,
-        gold: theme.colors.btnLow,
-        "gold-soft": theme.colors.btnMid,
-        paper: theme.colors.fg,
-        planned: theme.colors.blue,
-        planted: theme.colors.green,
-        recovered: theme.colors.amber,
-        overdue: theme.colors.red,
-        violet: "#7A6FB0",
-        parchment: theme.colors.sheet,
-        "parchment-soft": "#EFE8D5",
-        "parchment-ink": theme.colors.sheetInk,
-        "parchment-mute": theme.colors.sheetMute,
-        "parchment-line": "#D9CFB2",
       },
       fontFamily: {
         serif: theme.fonts.serif,

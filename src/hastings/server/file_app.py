@@ -46,7 +46,7 @@ class HealthResponse(BaseModel):
 
 
 def configured_provider_factory(book: ProviderBook) -> ProviderFactory:
-    """受理一轮时固定模型快照；未配置时给可操作的三要素错误。"""
+    """受理一轮时固定模型快照；未配置时给可操作的错误。"""
 
     def factory() -> ModelSnapshot:
         selection = book.selection()

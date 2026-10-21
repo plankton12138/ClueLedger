@@ -148,7 +148,7 @@ def test_assembly_creates_no_database(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 def test_assembly_rejects_missing_workspace(tmp_path: Path) -> None:
-    with pytest.raises(StartupError, match="作品目录不存在"):
+    with pytest.raises(StartupError, match="--workspace 指向的目录不存在"):
         assemble_server(workspace=tmp_path / "不存在")
 
 
@@ -156,12 +156,12 @@ def test_assembly_rejects_file_as_workspace(tmp_path: Path) -> None:
     target = tmp_path / "a.md"
     target.write_text("x", encoding="utf-8")
 
-    with pytest.raises(StartupError, match="不是目录"):
+    with pytest.raises(StartupError, match="--workspace 指向的是文件而不是目录"):
         assemble_server(workspace=target)
 
 
 def test_assembly_rejects_missing_static_dir(tmp_path: Path) -> None:
-    with pytest.raises(StartupError, match="前端目录不存在"):
+    with pytest.raises(StartupError, match="--static-dir 指向的目录不存在"):
         assemble_server(static_dir=tmp_path / "nope")
 
 
@@ -204,4 +204,4 @@ def test_main_exits_with_environment_failure(
     monkeypatch.setattr(server_main.uvicorn, "run", lambda *args, **kwargs: None)
 
     assert server_main.main(["--workspace", str(tmp_path / "不存在")]) == 1
-    assert "怎样算对" in capsys.readouterr().out
+    assert "建议" in capsys.readouterr().out

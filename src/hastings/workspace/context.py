@@ -1,10 +1,11 @@
-"""作品材料与写作要求（0.4 M04）。
+"""作品材料与写作要求（0.5）。
 
 模型需要知道「有哪些文件、设定写了什么、这次从哪一章入手」，但整本书不该塞进提示词。
 这里提供两件事：
 
 - **目录**：两块内容的文件清单与标题，始终完整（很小）；
-- **设定**：三份固定文件的内容，按字符预算装入；超出预算时明确写出「已截断、还剩多少」，
+- **设定**：线索与真相按字符预算装入；角色只列名称与路径，涉及人物时读取小传。
+  固定设定超出预算时明确写出「已截断、还剩多少」，
   并让模型自己用工具分段读取。不静默截断后宣称读过全文。
 
 创作要求（线索是读者可观察的信息、真相是实际经过）写在系统提示里，不引入第四份
@@ -19,7 +20,7 @@ from hastings.workspace.files import SETTING_FILES, Workspace
 
 __all__ = ["SETTINGS_BUDGET", "build_system_prompt", "settings_section"]
 
-#: 三份设定装入提示词的总字符预算；超出时保留开头并说明剩余量。
+#: 线索与真相装入提示词的总字符预算；角色正文按需读取。
 SETTINGS_BUDGET = 6000
 
 _INSTRUCTIONS = """\
@@ -27,10 +28,13 @@ _INSTRUCTIONS = """\
 
 ## 作品结构
 - `正文/` 下一章一个 Markdown 文件，按文件名排序；新章由你创建，文件名用「四位序号 + 标题」。
-- `设定集/角色小传.md`：角色设定、个性、往事。
+- `设定集/角色小传/姓名.md`：一名角色一份小传，记录身份、个性、往事和关系。
 - `设定集/线索.md`：读者视角可观察到的信息，可以支持错误推断。
 - `设定集/真相.md`：实际发生的情况，包括真实手法。
-- 设定集只有这三份，不能新建第四种文件。
+- 设定集只有角色小传、线索和真相三类；角色小传为目录，线索和真相为固定文件。
+- 一个角色只有一份小传，别名和化名写在同一文件中。写到该角色之前先读取其小传，
+  涉及多人时分别读取；不能仅凭名字猜测人物设定。目录不包含小传全文，未读取不能声称已读。
+- 小传可在角色目录内改名或删除；改文件名不自动改正文中的人名，删除小传也不等于删除正文中的人物。
 
 ## 写作要求
 - 正文只写读者能看到的内容。真相用于规划和自查，不能因为「作者知道」就让角色或叙述者说出来。
@@ -39,12 +43,12 @@ _INSTRUCTIONS = """\
 
 ## 工具规则
 - 改任何文件前先读它：`read_file` 返回的 `digest` 是写入凭据。
-- `write_file` 改写已有文件、`edit_file` 做局部替换、`move_file` / `delete_file` 调整章节，
+- `write_file` 改写已有文件、`edit_file` 做局部替换、`move_file` / `delete_file` 调整章节或小传，
   都必须带上刚读到的 `digest`；不匹配说明文件已被改动，重新读取后再写。
-- 新建章节不需要 `digest`；已存在的文件不能当新文件写。
+- 新建章节或小传不需要 `digest`；已存在的文件不能当新文件写。
 - 局部修改优先用 `edit_file`（原文必须唯一匹配），不要为了改一句就重写整章。
 - 不确定有哪些文件时先 `list_files`；找具体文字用 `search_text`；看历史用 `git_log` / `git_diff`。
-- 路径只能写成 `正文/xxx.md` 或 `设定集/角色小传.md` 这类受管路径。
+- 路径只能是 `正文/xxx.md`、`设定集/角色小传/姓名.md`、`设定集/线索.md`、`设定集/真相.md`。
 
 ## 工作方式
 - 普通讨论可以直接回答，不必写文件。
@@ -54,7 +58,7 @@ _INSTRUCTIONS = """\
 
 
 def settings_section(workspace: Workspace, *, budget: int = SETTINGS_BUDGET) -> str:
-    """三份设定的文本块；超预算时截断并写明剩余字符。"""
+    """线索与真相的文本块；角色全文只通过文件工具按需读取。"""
     per_file = max(budget // len(SETTING_FILES), 400)
     blocks: list[str] = []
     for path, title in SETTING_FILES:
@@ -79,7 +83,7 @@ def settings_section(workspace: Workspace, *, budget: int = SETTINGS_BUDGET) -> 
 
 
 def catalog_section(workspace: Workspace) -> str:
-    """两块内容的清单：章节按文件名顺序，设定固定三条。"""
+    """章节与角色按文件名列出，线索和真相使用固定路径。"""
     catalog = workspace.catalog()
     lines = ["### 正文"]
     if catalog.chapters:
@@ -90,16 +94,36 @@ def catalog_section(workspace: Workspace) -> str:
         lines.append("- （还没有章节）")
     lines.append("")
     lines.append("### 设定集")
+    lines.append("#### 角色小传（按需读取原文）")
+    if catalog.characters:
+        for entry in catalog.characters:
+            lines.append(f"- {entry.path}｜{entry.title}")
+    else:
+        lines.append("（尚无角色；需要时在角色小传目录创建一人一个 Markdown 文件。）")
+    lines.append("#### 固定设定")
     for entry in catalog.settings:
         state = "" if entry.exists else "（缺失）"
         lines.append(f"- {entry.path}｜{entry.title}{state}")
     return "\n".join(lines)
 
 
-def build_system_prompt(workspace: Workspace, *, selected_path: str | None = None) -> str:
-    """系统提示：固定写作要求 + 当前目录 + 设定（按预算装入）。"""
+def build_system_prompt(
+    workspace: Workspace,
+    *,
+    selected_path: str | None = None,
+    history_facts: str = "",
+) -> str:
+    """系统提示：固定写作要求 + 当前目录 + 设定（按预算装入）+ 本会话执行事实。"""
     parts = [_INSTRUCTIONS, "## 当前作品", catalog_section(workspace)]
     if selected_path:
         parts.append(f"作者当前打开的是 `{selected_path}`；这只用来定位，不限制你可以改哪些文件。")
     parts.append("## 设定集内容\n\n" + settings_section(workspace))
+    if history_facts.strip():
+        # 应用记录的执行事实，不是作者的要求：让模型知道上一轮到底成了没有。
+        parts.append(
+            "## 本会话此前的轮次\n\n"
+            f"{history_facts.strip()}\n\n"
+            "这些是应用按实际结果记录的事实，与你自己记得的说法冲突时以这里为准。"
+            "需要原文时重新 `read_file`：文件是本作品共享的当前内容，旧轮次读到的内容可能已经变了。"
+        )
     return "\n\n".join(parts)

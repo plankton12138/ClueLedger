@@ -5,9 +5,11 @@
 
 - **最近目录**：同一目录重复打开只有一条记录，绑定 ID 由规范化路径算出；
 - **会话与事件**：每个作品一组会话，每个会话一个 JSONL，按自增 ``seq`` 追加，
-  供界面回读与断线补齐。事件是过程记录，不是作品内容。
+  供界面回读与断线补齐。事件是过程记录，不是作品内容；
+- **界面状态**：最近正式会话与各会话草稿，单独一个 JSON，不属于聊天记录。
 
 登记或事件文件损坏时按空处理——宁可让作者重新选择目录、重新开始对话，也不让启动失败。
+会话日志是「这一轮是否被受理」的唯一依据：索引缺项可以从日志重建，反过来不行。
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import json
 import os
 import tempfile
 import threading
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,10 +31,14 @@ from hastings.workspace.files import Workspace
 
 __all__ = [
     "DEFAULT_STATE_ROOT",
+    "AcceptedTurn",
     "Conversation",
     "ConversationStore",
+    "ConversationUi",
+    "ConversationUiStore",
     "RecentWorkspaces",
     "WorkspaceBinding",
+    "conversation_root",
     "default_state_root",
 ]
 
@@ -42,6 +49,15 @@ _REGISTRY_FILE = "workspaces.json"
 _REGISTRY_VERSION = 1
 #: 最近目录保留条数；超出后丢弃最旧的登记，不删除磁盘上的作品。
 _MAX_ENTRIES = 20
+
+#: 新会话日志的格式版本与首条元信息：旧日志没有它，按旧登记继续读。
+LOG_VERSION = 2
+META_TYPE = "conversation_meta"
+#: 会话列表索引与界面状态文件；两者都可以从日志重建或按需重建。
+_INDEX_FILE = "conversations.json"
+_UI_FILE = "conversation-ui.json"
+#: 会话标题取首条提示的前若干字，够在列表里辨认即可。
+_TITLE_LIMIT = 24
 
 
 def default_state_root() -> Path:
@@ -202,40 +218,59 @@ class Conversation:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class AcceptedTurn:
+    """一次已被受理的提示：正式会话从这一刻开始存在。"""
+
+    conversation_id: str
+    turn_id: str
+    request_key: str
+    last_seq: int
+    started_at: str
+    title: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationUi:
+    """一个作品的界面状态：上次看的正式会话与各会话草稿。"""
+
+    recent_id: str | None
+    drafts: dict[str, str]
+    revision: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "recent_id": self.recent_id,
+            "drafts": dict(self.drafts),
+            "revision": self.revision,
+        }
+
+
 class ConversationStore:
-    """一个作品的会话登记与事件日志；事件按 ``seq`` 追加，界面据此补齐。"""
+    """一个作品的会话登记与事件日志；事件按 ``seq`` 追加，界面据此补齐。
+
+    写入顺序固定为「先发布日志，再更新索引」：日志是受理成立的依据，索引只是加速列表。
+    索引写失败不影响已经受理的提示，下次读取时按日志补齐（``_repair``）。
+    """
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
-        self.registry_file = self.root / "conversations.json"
-        self._lock = threading.Lock()
+        self.registry_file = self.root / _INDEX_FILE
+        # 重入锁：公开方法之间会互相调用（受理要查重、追加要 touch 索引）。
+        self._lock = threading.RLock()
         self._seqs: dict[str, int] = {}
 
     # -- 会话 ---------------------------------------------------------------
 
     def conversations(self) -> tuple[Conversation, ...]:
         with self._lock:
-            return tuple(self._load())
-
-    def create(self, title: str = "", *, conversation_id: str | None = None) -> Conversation:
-        conversation = Conversation(
-            id=conversation_id or _new_id("c"),
-            title=title.strip() or "新的对话",
-            created_at=_now(),
-            updated_at=_now(),
-        )
-        with self._lock:
             items = self._load()
-            if any(item.id == conversation.id for item in items):
-                raise WorkspaceError(
-                    code="CONVERSATION_EXISTS_CONFLICT",
-                    where="conversations.create",
-                    why=f"会话 ID 已存在：{conversation.id}",
-                    fix="换一个会话 ID，或直接打开已有会话",
-                    details={"id": conversation.id},
-                )
-            self._save([conversation, *items])
-        return conversation
+            repaired = self._repair(items)
+            if repaired is not items:
+                # 索引缺项时尝试补写；补写失败仍然返回从日志读到的会话。
+                with suppress(WorkspaceError):
+                    self._save(repaired)
+            return tuple(repaired)
 
     def get(self, conversation_id: str) -> Conversation:
         for item in self.conversations():
@@ -244,7 +279,16 @@ class ConversationStore:
         raise _unknown_conversation(conversation_id)
 
     def rename(self, conversation_id: str, title: str) -> Conversation:
-        """按首条消息补一个标题；已有自定义标题不覆盖。"""
+        """作者改名；空白标题按原样保留，不覆盖成空字符串。"""
+        clean = title.strip()
+        if not clean:
+            raise WorkspaceError(
+                code="CONVERSATION_TITLE_INVALID",
+                where="conversations.rename",
+                why="会话标题不能为空",
+                fix="写一个能辨认这段讨论的标题后再保存",
+                details={"id": conversation_id},
+            )
         with self._lock:
             items = self._load()
             updated: Conversation | None = None
@@ -252,8 +296,9 @@ class ConversationStore:
                 if item.id == conversation_id:
                     updated = Conversation(
                         id=item.id,
-                        title=title.strip() or item.title,
+                        title=clean,
                         created_at=item.created_at,
+                        # 改名算一次活动：列表按最近活动排序，改名要能反映出来。
                         updated_at=_now(),
                     )
                     break
@@ -261,6 +306,129 @@ class ConversationStore:
                 raise _unknown_conversation(conversation_id)
             self._save([updated if item.id == conversation_id else item for item in items])
         return updated
+
+    # -- 受理 ---------------------------------------------------------------
+
+    def find_accepted(self, request_key: str) -> AcceptedTurn | None:
+        """按请求键找工作区里已受理的那一轮；同键重试不能生成第二个会话。"""
+        if not request_key:
+            return None
+        for conversation in self.conversations():
+            for event in self.events(conversation.id):
+                if event.get("type") != "turn_started":
+                    continue
+                if event.get("request_key") != request_key:
+                    continue
+                turn_id = event.get("turn_id")
+                if not isinstance(turn_id, str):
+                    continue
+                return AcceptedTurn(
+                    conversation_id=conversation.id,
+                    turn_id=turn_id,
+                    request_key=request_key,
+                    last_seq=int(event["seq"]),
+                    started_at=str(event.get("at", "")),
+                    title=conversation.title,
+                )
+        return None
+
+    def prompt_of(self, conversation_id: str, turn_id: str) -> str:
+        for event in self.events(conversation_id):
+            if event.get("type") == "turn_started" and event.get("turn_id") == turn_id:
+                text = event.get("text")
+                return text if isinstance(text, str) else ""
+        return ""
+
+    def create_with_first_turn(
+        self,
+        *,
+        text: str,
+        request_key: str,
+        turn_id: str,
+        facts: Mapping[str, object] | None = None,
+        conversation_id: str | None = None,
+    ) -> AcceptedTurn:
+        """建会话与受理首轮合成一步：只留下「至少有一条已受理提示」的正式会话。"""
+        prompt = _require_prompt(text)
+        with self._lock:
+            previous = self.find_accepted(request_key)
+            if previous is not None:
+                stored = self.prompt_of(previous.conversation_id, previous.turn_id)
+                return _same_request(previous, prompt, stored)
+            cid = conversation_id or _new_id("c")
+            if self.events_file(cid).exists():
+                raise WorkspaceError(
+                    code="CONVERSATION_EXISTS_CONFLICT",
+                    where="conversations.create",
+                    why=f"会话 ID 已存在：{cid}",
+                    fix="换一个会话 ID，或直接打开已有会话",
+                    details={"id": cid},
+                )
+            now = _now()
+            title = _title_from(prompt)
+            meta = {
+                "seq": 0,
+                "at": now,
+                "type": META_TYPE,
+                "version": LOG_VERSION,
+                "conversation_id": cid,
+                "title": title,
+                "created_at": now,
+            }
+            event = {
+                "seq": 1,
+                "at": now,
+                "type": "turn_started",
+                "turn_id": turn_id,
+                "text": prompt,
+                "request_key": request_key,
+                **dict(facts or {}),
+            }
+            self._publish(cid, (meta, event))
+            self._seqs[cid] = 1
+            # 日志已经发布：这一轮确实被受理了，索引缺项由下次读取的重建补齐。
+            with suppress(WorkspaceError):
+                self._save([Conversation(cid, title, now, now), *self._load()])
+            return AcceptedTurn(cid, turn_id, request_key, 1, now, title)
+
+    def accept_turn(
+        self,
+        conversation_id: str,
+        *,
+        text: str,
+        request_key: str,
+        turn_id: str,
+        facts: Mapping[str, object] | None = None,
+    ) -> AcceptedTurn:
+        """在已有会话里受理一轮；同一请求键重复提交返回原来那一轮。"""
+        prompt = _require_prompt(text)
+        with self._lock:
+            conversation = self.get(conversation_id)
+            previous = self.find_accepted(request_key)
+            if previous is not None:
+                if previous.conversation_id != conversation_id:
+                    raise _request_key_conflict(request_key, previous.conversation_id)
+                return _same_request(
+                    previous, prompt, self.prompt_of(previous.conversation_id, previous.turn_id)
+                )
+            record = self.append(
+                conversation_id,
+                {
+                    "type": "turn_started",
+                    "turn_id": turn_id,
+                    "text": prompt,
+                    "request_key": request_key,
+                    **dict(facts or {}),
+                },
+            )
+            return AcceptedTurn(
+                conversation_id=conversation_id,
+                turn_id=turn_id,
+                request_key=request_key,
+                last_seq=int(record["seq"]),
+                started_at=str(record["at"]),
+                title=conversation.title,
+            )
 
     # -- 事件 ---------------------------------------------------------------
 
@@ -289,7 +457,11 @@ class ConversationStore:
             return record
 
     def events(self, conversation_id: str, *, after: int = 0) -> tuple[dict[str, Any], ...]:
-        """读取 ``seq > after`` 的事件；文件损坏时跳过无法解析的行。"""
+        """读取 ``seq > after`` 的事件；文件损坏时跳过无法解析的行。
+
+        首条元信息 ``seq`` 为 0，因此不会出现在 ``after >= 0`` 的读取结果里：
+        界面只看到轮次事件，元信息只服务于会话重建。
+        """
         path = self.events_file(conversation_id)
         try:
             raw = path.read_text(encoding="utf-8")
@@ -315,10 +487,69 @@ class ConversationStore:
         events = self.events(conversation_id)
         return events[-1] if events else None
 
+    def unfinished_turns(self, conversation_id: str) -> list[str]:
+        """有过 ``turn_started`` 却没有终态的轮次，按出现顺序。
+
+        只看「最后一条是否 turn_started」会漏掉崩在中途的轮次：工具开始、工具结束、
+        助理回复之后都可能直接断电。这里按轮次配对，重复调用不会新增第二次中断。
+        """
+        started: list[str] = []
+        finished: set[str] = set()
+        for event in self.events(conversation_id):
+            turn_id = event.get("turn_id")
+            if not isinstance(turn_id, str):
+                continue
+            kind = event.get("type")
+            if kind == "turn_started":
+                started.append(turn_id)
+            elif kind == "run_finished":
+                finished.add(turn_id)
+        return [turn_id for turn_id in started if turn_id not in finished]
+
     def events_file(self, conversation_id: str) -> Path:
         return self.root / f"{conversation_id}.jsonl"
 
+    def revision(self) -> str:
+        """会话集合的版本：标题、活动时间与条数变化都会换一个值。"""
+        payload = [
+            [item.id, item.title, item.updated_at] for item in self.conversations()
+        ]
+        digest = hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        return digest[:12]
+
     # -- 内部 ---------------------------------------------------------------
+
+    def _publish(self, conversation_id: str, records: tuple[dict[str, Any], ...]) -> None:
+        """原子发布一份初始日志：整份写入临时文件后替换，不留半条会话。"""
+        path = self.events_file(conversation_id)
+        handle: int | None = None
+        temp_name: str | None = None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handle, temp_name = tempfile.mkstemp(
+                dir=str(path.parent), prefix=f".{conversation_id}-", suffix=".jsonl"
+            )
+            with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
+                handle = None
+                for record in records:
+                    stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+            os.replace(temp_name, path)
+            temp_name = None
+        except OSError as exc:
+            raise WorkspaceError(
+                code="STATE_WRITE_FAILED",
+                where="conversations.create",
+                why=f"无法写入会话日志：{exc.strerror or exc}",
+                fix="检查应用状态目录是否可写（--state-dir 指定的目录或 ~/.hastings）",
+            ) from exc
+        finally:
+            if handle is not None:
+                os.close(handle)
+            if temp_name is not None:
+                with suppress(OSError):
+                    os.unlink(temp_name)
 
     def _load(self) -> list[Conversation]:
         try:
@@ -354,6 +585,68 @@ class ConversationStore:
             )
         return conversations
 
+    def _repair(self, items: list[Conversation]) -> list[Conversation]:
+        """把日志里存在、索引里缺失的会话补回来；旧记录一条都不改。"""
+        known = {item.id for item in items}
+        orphans: list[Conversation] = []
+        try:
+            paths = sorted(self.root.glob("*.jsonl"))
+        except OSError:
+            return items
+        for path in paths:
+            conversation_id = path.stem
+            if conversation_id in known:
+                continue
+            rebuilt = self._rebuild(path)
+            if rebuilt is not None:
+                orphans.append(rebuilt)
+        return [*items, *orphans] if orphans else items
+
+    def _rebuild(self, path: Path) -> Conversation | None:
+        """从日志恢复一条会话：优先用首条元信息，旧日志退回首条提示。"""
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        created_at = ""
+        title = ""
+        first_at = ""
+        last_at = ""
+        for line in raw.splitlines():
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            at = record.get("at")
+            if isinstance(at, str) and at:
+                last_at = at
+                if not first_at:
+                    first_at = at
+            if record.get("type") == META_TYPE:
+                meta_title = record.get("title")
+                if isinstance(meta_title, str) and meta_title:
+                    title = meta_title
+                meta_created = record.get("created_at")
+                if isinstance(meta_created, str) and meta_created:
+                    created_at = meta_created
+                continue
+            if record.get("type") == "turn_started" and not title:
+                text = record.get("text")
+                if isinstance(text, str) and text.strip():
+                    title = _title_from(text)
+        if not title:
+            return None
+        return Conversation(
+            id=path.stem,
+            title=title,
+            created_at=created_at or first_at or _now(),
+            updated_at=last_at or created_at or _now(),
+        )
+
     def _save(self, items: list[Conversation]) -> None:
         _write_json_atomic(
             self.registry_file,
@@ -377,6 +670,119 @@ class ConversationStore:
                 for item in items
             ]
         )
+
+
+class ConversationUiStore:
+    """界面状态：上次查看的正式会话 + 各会话草稿。
+
+    草稿不是已发送的提示，不进入模型上下文；这里只负责「切回来还在」。写入按版本核对，
+    避免一个过期的请求把别的会话草稿整份覆盖掉。
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = Path(root)
+        self.file = self.root / _UI_FILE
+        self._lock = threading.RLock()
+
+    def read(self) -> ConversationUi:
+        with self._lock:
+            return self._read()
+
+    def update(
+        self,
+        *,
+        expected_revision: str = "",
+        set_recent: bool = False,
+        recent_id: str | None = None,
+        set_draft: bool = False,
+        draft_target: str | None = None,
+        draft_text: str | None = None,
+    ) -> ConversationUi:
+        with self._lock:
+            current = self._read()
+            if expected_revision and expected_revision != current.revision:
+                raise WorkspaceError(
+                    code="CONVERSATION_UI_CONFLICT",
+                    where="conversation-ui.update",
+                    why="界面状态已被其他窗口改动",
+                    fix="刷新对话后按当前内容重新编辑",
+                    details={"revision": current.revision},
+                )
+            recent = current.recent_id
+            if set_recent:
+                recent = recent_id if recent_id else None
+            drafts = dict(current.drafts)
+            if set_draft and draft_target:
+                text = (draft_text or "").strip()
+                if text:
+                    drafts[draft_target] = text
+                else:
+                    drafts.pop(draft_target, None)
+            self._save(recent, drafts)
+            return self._read()
+
+    def _read(self) -> ConversationUi:
+        try:
+            raw = json.loads(self.file.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, ValueError):
+            return ConversationUi(recent_id=None, drafts={}, revision="0")
+        data = raw if isinstance(raw, dict) else {}
+        recent = data.get("recent_id")
+        drafts_raw = data.get("drafts")
+        drafts: dict[str, str] = {}
+        if isinstance(drafts_raw, dict):
+            for key, value in drafts_raw.items():
+                if isinstance(key, str) and isinstance(value, str) and value.strip():
+                    drafts[key] = value
+        return ConversationUi(
+            recent_id=recent if isinstance(recent, str) and recent else None,
+            drafts=drafts,
+            revision=_file_revision(self.file),
+        )
+
+    def _save(self, recent_id: str | None, drafts: dict[str, str]) -> None:
+        _write_json_atomic(
+            self.file,
+            {"version": 1, "recent_id": recent_id, "drafts": drafts},
+            where="conversation-ui.save",
+            why_prefix="无法保存界面状态",
+        )
+
+
+def _require_prompt(text: str) -> str:
+    prompt = text.strip()
+    if not prompt:
+        raise WorkspaceError(
+            code="PROMPT_EMPTY",
+            where="conversations.create",
+            why="提示词是空的",
+            fix="写下要让模型做什么，再发送",
+        )
+    return prompt
+
+
+def _same_request(previous: AcceptedTurn, prompt: str, stored: str) -> AcceptedTurn:
+    """同键同内容返回原来那一轮；同键不同内容拒绝，不能悄悄换掉已受理的要求。"""
+    if stored == prompt:
+        return previous
+    raise _request_key_conflict(previous.request_key, previous.conversation_id)
+
+
+def _request_key_conflict(request_key: str, conversation_id: str) -> WorkspaceError:
+    return WorkspaceError(
+        code="REQUEST_KEY_CONFLICT",
+        where="conversations.accept",
+        why=f"这个请求标识已经用在另一条要求上：{request_key}",
+        fix="要发新的要求就换一个请求标识；要重试上一次，请保持文字不变",
+        details={"request_key": request_key, "conversation": conversation_id},
+    )
+
+
+def _title_from(text: str) -> str:
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= _TITLE_LIMIT:
+        return collapsed
+    return collapsed[:_TITLE_LIMIT] + "…"
 
 
 def binding_id(path: Path) -> str:
@@ -412,6 +818,15 @@ def _write_json_atomic(path: Path, payload: object, *, where: str, why_prefix: s
         if temp_name is not None:
             with suppress(OSError):
                 os.unlink(temp_name)
+
+
+def _file_revision(path: Path) -> str:
+    """文件内容散列作为版本：没写过时是 ``0``，写完就换值。"""
+    try:
+        data = path.read_bytes()
+    except (FileNotFoundError, OSError):
+        return "0"
+    return hashlib.sha256(data).hexdigest()[:12]
 
 
 def _last_seq(path: Path) -> int:

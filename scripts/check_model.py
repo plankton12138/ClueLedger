@@ -7,7 +7,7 @@
 
 做的事只有一件：按产品同一条装配路径（config.yaml → 系统凭据存储 → 适配器）取当前
 连接与模型，发一句最短的请求，把连接名、模型、key 尾四位、回复与用量打到终端。
-失败时给三要素说明并以退出码 1 结束——这样「模型到底通不通」不必启动整个写作台、
+失败时说明报错信息与建议，并以退出码 1 结束——这样「模型到底通不通」不必启动整个写作台、
 也不必写一章小说才能看出来。
 
 不读进程环境：key 只来自 config.yaml（直填）或系统凭据存储（credential_ref）。
@@ -60,8 +60,8 @@ async def ask(snapshot: ModelSnapshot) -> tuple[str, str]:
             elif isinstance(event, AssistantErrorEvent):
                 raise ProviderConfigError(
                     f"模型调用失败：{event.error.error_message or '厂商没有返回可用回复'}。"
-                    "为什么错：端点、key 或模型名与厂商不匹配，或网络到不了该端点。"
-                    "怎样算对：核对 config.yaml 里该连接的 base_url、api_key 与模型名。"
+                    "端点、key 或模型名可能与厂商不匹配，或网络到不了该端点。"
+                    "建议：核对 config.yaml 里该连接的 base_url、api_key 与模型名。"
                 )
     finally:
         await snapshot.aclose()
@@ -75,8 +75,8 @@ def main(argv: list[str] | None = None) -> int:
         if not config.providers:
             raise ProviderConfigError(
                 f"没有可用的模型连接：{args.config} 不存在或没有 providers。"
-                "为什么错：模型来源只从这个文件读取。"
-                "怎样算对：在写作台的「模型设置」里添加一个连接，"
+                "模型来源只从这个文件读取。"
+                "建议：在写作台的「模型设置」里添加一个连接，"
                 "或参照 config.example.yaml 手写一个（name / base_url / api_key / 模型）。"
             )
         available = next((item for item in config.providers if item.available), None)
@@ -96,8 +96,8 @@ def main(argv: list[str] | None = None) -> int:
         if profile is None or not selection.available:
             raise ProviderConfigError(
                 f"连接不可用：{selection.connection_id or '（未选择）'}。"
-                f"为什么错：{selection.reason or '这条连接没有可用的 key 或模型'}。"
-                "怎样算对：在「模型设置」里填好 API Key 与模型，"
+                f"{selection.reason or '这条连接没有可用的 key 或模型'}。"
+                "建议：在「模型设置」里填好 API Key 与模型，"
                 "或把 key 写进 config.yaml 的 api_key（保存一次即转入系统凭据存储）。"
             )
         print(f"连接：{profile.title}（{profile.name}）｜端点：{profile.base_url}")

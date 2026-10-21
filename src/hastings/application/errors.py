@@ -1,10 +1,10 @@
 """V2 统一结果类别与错误信封（Phase 11 T11.5）。
 
 设计来源：DESIGN.md P8「失败必须可分类」与各模块文档的跨模块共同约束
-（稳定错误码 + 三要素消息）。旧 V1 异常不迁移到这里；新错误按需定义子类。
+（稳定错误码 + 可读消息）。旧 V1 异常不迁移到这里；新错误按需定义子类。
 
-三要素是喂给模型与用户的 API（四透镜①）：where=哪里错，why=为什么错，
-fix=怎样算对。LEGAL_EMPTY 永不作为异常抛出——合法空结果是正常返回值，
+消息是喂给模型与用户的 API（四透镜①）：where 指出位置，why 说明现象与原因，
+fix 给出建议。LEGAL_EMPTY 永不作为异常抛出——合法空结果是正常返回值，
 走异常会把「没改动」污名化成故障（四透镜③）。
 """
 
@@ -66,7 +66,7 @@ class ResultCategory(StrEnum):
 
 
 class HastingsError(Exception):
-    """V2 统一错误信封：稳定错误码 + 结果类别 + 三要素消息 + 结构化详情。
+    """V2 统一错误信封：稳定错误码 + 结果类别 + 可读消息 + 结构化详情。
 
     ``code`` 是对外稳定契约（如 ``REPO_HEAD_CONFLICT``），调用方按 code 分支，
     不得解析 message 文本；``details`` 保留给日志/前端的结构化数据（四透镜④）。
@@ -92,8 +92,8 @@ class HastingsError(Exception):
 
     @property
     def message(self) -> str:
-        """三要素合成消息：哪里错、为什么错、怎样算对。"""
-        return f"[{self.code}] 在 {self.where}：{self.why}。怎样算对：{self.fix}"
+        """合成可读消息：位置与现象，再加一句建议。"""
+        return f"[{self.code}] {self.where}：{self.why}。建议：{self.fix}"
 
     def __str__(self) -> str:
         return self.message

@@ -19,7 +19,7 @@ export default function ModelSelector() {
   if (connections.length === 0) {
     return (
       <button
-        className="rounded border border-[#4c7a9c] bg-[#1b4666] px-2 py-1 text-[11px] text-white/85 hover:bg-[#25557a]"
+        className="btn btn-gray px-2 py-1 text-[11px]"
         onClick={openSettings}
       >
         连接模型…
@@ -43,7 +43,7 @@ export default function ModelSelector() {
     <div className="flex min-w-0 items-center gap-1">
       <select
         aria-label="当前连接与模型"
-        className="min-w-0 max-w-[220px] rounded bg-[#1b4666] px-2 py-1 text-[11px] text-white"
+        className="well-input min-w-0 max-w-[220px] px-2 py-1 text-[11px]"
         value={value}
         disabled={loading}
         onChange={(event) => {
@@ -66,7 +66,7 @@ export default function ModelSelector() {
         ))}
       </select>
       <button
-        className="rounded border border-[#355f7f] px-2 py-1 text-[10px] text-white/70 hover:bg-[#1b4666]"
+        className="px-1 py-1 text-[10px] font-bold text-blue hover:underline"
         onClick={openSettings}
         title="管理连接"
       >

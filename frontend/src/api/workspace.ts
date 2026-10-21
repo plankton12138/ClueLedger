@@ -28,7 +28,7 @@ export interface PickedDirectory {
 
 export interface FileEntry {
   path: string;
-  kind: "chapter" | "setting";
+  kind: "chapter" | "character" | "setting";
   title: string;
   order: string;
   exists: boolean;
@@ -37,12 +37,13 @@ export interface FileEntry {
 
 export interface Catalog {
   chapters: FileEntry[];
+  characters: FileEntry[];
   settings: FileEntry[];
 }
 
 export interface FileView {
   path: string;
-  kind: "chapter" | "setting";
+  kind: "chapter" | "character" | "setting";
   title: string;
   text: string;
   digest: string;
@@ -79,10 +80,53 @@ export interface Conversation {
   updated_at: string;
 }
 
+/** 本作品当前占用的那一轮；只含公开信息，不含凭据。 */
+export interface ActiveTurn {
+  conversation_id: string;
+  turn_id: string;
+  state: "accepted" | "running" | "stop_requested";
+  model: string;
+  connection: string;
+  started_at: string;
+}
+
+/** 会话列表：一次读齐列表、上次看的会话与作品当前活动轮次。 */
+export interface ConversationList {
+  items: Conversation[];
+  recent_id: string | null;
+  active_turn: ActiveTurn | null;
+  revision: string;
+}
+
+/** 首次发送的受理结果：会话与第一轮一起成立。 */
+export interface AcceptedTurn {
+  conversation_id: string;
+  turn_id: string;
+  started_at: string;
+  title: string;
+  request_key: string;
+}
+
 export interface TurnInfo {
   turn_id: string;
   conversation_id: string;
   started_at: string;
+  title?: string;
+}
+
+/** 界面状态：上次看的正式会话与各会话草稿（``new`` 是未发送的新对话槽位）。 */
+export interface ConversationUi {
+  recent_id: string | null;
+  drafts: Record<string, string>;
+  revision: string;
+}
+
+export interface ConversationUiPatch {
+  set_recent?: boolean;
+  recent_id?: string | null;
+  set_draft?: boolean;
+  draft_target?: string;
+  draft_text?: string;
 }
 
 export interface WorkspaceEvent {
@@ -147,9 +191,11 @@ export class WorkspaceApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // headers 必须最后合并：`...init` 写在后面会把整个 headers 覆盖掉，
+  // 带 If-Match 的写请求就会连 Content-Type 一起丢掉，后端解析不了 body 返回 422。
   const response = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
@@ -158,8 +204,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const error = body?.error;
     throw new WorkspaceApiError(
       error?.code ?? `HTTP_${response.status}`,
-      error?.why ?? "请求没有成功",
-      error?.fix ?? "稍后重试；若持续失败，检查后端日志",
+      // 后端没给原因时至少留下状态码：否则界面只能显示「请求没有成功」，无从判断是
+      // 路由不存在、参数被拒还是服务端异常。
+      error?.why ?? `请求没有成功（HTTP ${response.status}）`,
+      error?.fix ?? "稍后重试；若持续失败，按状态码查后端日志",
       response.status,
     );
   }
@@ -258,14 +306,33 @@ export function gitRevert(workspaceId: string, commit: string): Promise<{ commit
   });
 }
 
-export function listConversations(workspaceId: string): Promise<Conversation[]> {
-  return request<Conversation[]>(`/${workspaceId}/conversations`);
+export function listConversations(workspaceId: string): Promise<ConversationList> {
+  return request<ConversationList>(`/${workspaceId}/conversations`);
 }
 
-export function createConversation(workspaceId: string): Promise<Conversation> {
-  return request<Conversation>(`/${workspaceId}/conversations`, {
+/**
+ * 首次发送：一次请求建会话并受理首轮。
+ * 没有提示就没有会话——界面不再先建空记录。
+ */
+export function createConversationWithText(
+  workspaceId: string,
+  text: string,
+  requestKey: string,
+): Promise<AcceptedTurn> {
+  return request<AcceptedTurn>(`/${workspaceId}/conversations`, {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify({ text, request_key: requestKey }),
+  });
+}
+
+export function renameConversation(
+  workspaceId: string,
+  conversationId: string,
+  title: string,
+): Promise<Conversation> {
+  return request<Conversation>(`/${workspaceId}/conversations/${conversationId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
   });
 }
 
@@ -273,10 +340,31 @@ export function conversationMessages(
   workspaceId: string,
   conversationId: string,
   after = 0,
-): Promise<{ events: WorkspaceEvent[]; last_seq: number }> {
-  return request<{ events: WorkspaceEvent[]; last_seq: number }>(
+): Promise<{
+  events: WorkspaceEvent[];
+  last_seq: number;
+  active_turn: ActiveTurn | null;
+  revision: string;
+}> {
+  return request(
     `/${workspaceId}/conversations/${conversationId}/messages?after=${after}`,
   );
+}
+
+export function fetchConversationUi(workspaceId: string): Promise<ConversationUi> {
+  return request<ConversationUi>(`/${workspaceId}/conversation-ui`);
+}
+
+export function patchConversationUi(
+  workspaceId: string,
+  patch: ConversationUiPatch,
+  revision: string,
+): Promise<ConversationUi> {
+  return request<ConversationUi>(`/${workspaceId}/conversation-ui`, {
+    method: "PATCH",
+    headers: { "If-Match": revision },
+    body: JSON.stringify(patch),
+  });
 }
 
 export function startTurn(

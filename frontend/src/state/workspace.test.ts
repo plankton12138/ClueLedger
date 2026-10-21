@@ -22,10 +22,13 @@ const api = vi.hoisted(() => ({
   gitRecord: vi.fn(),
   gitRevert: vi.fn(),
   listConversations: vi.fn(),
-  createConversation: vi.fn(),
+  fetchConversationUi: vi.fn(),
+  patchConversationUi: vi.fn(),
+  createConversationWithText: vi.fn(),
   conversationMessages: vi.fn(),
   startTurn: vi.fn(),
   stopTurn: vi.fn(),
+  renameConversation: vi.fn(),
   streamEvents: vi.fn(),
 }));
 
@@ -34,12 +37,15 @@ vi.mock("../api/workspace", async () => {
   return { ...actual, ...api };
 });
 
+import { useConversationsStore } from "./conversations";
 import { useWorkspaceStore } from "./workspace";
 
 const CATALOG = {
   chapters: [{ path: "正文/0001 雨夜.md", kind: "chapter", title: "雨夜", order: "0001", exists: true, size: 10 }],
+  characters: [
+    { path: "设定集/角色小传/林远.md", kind: "character", title: "林远", order: "", exists: true, size: 12 },
+  ],
   settings: [
-    { path: "设定集/角色小传.md", kind: "setting", title: "角色小传", order: "", exists: true, size: 0 },
     { path: "设定集/线索.md", kind: "setting", title: "线索", order: "", exists: true, size: 0 },
     { path: "设定集/真相.md", kind: "setting", title: "真相", order: "", exists: true, size: 0 },
   ],
@@ -57,6 +63,7 @@ const STATUS = {
 
 function reset(): void {
   useWorkspaceStore.setState(useWorkspaceStore.getInitialState(), true);
+  useConversationsStore.getState().reset();
 }
 
 beforeEach(() => {
@@ -66,7 +73,13 @@ beforeEach(() => {
     { id: "w1", name: "雪山旅馆", path: "C:/作品", exists: true },
   ]);
   api.listFiles.mockResolvedValue(CATALOG);
-  api.listConversations.mockResolvedValue([]);
+  api.listConversations.mockResolvedValue({
+    items: [],
+    recent_id: null,
+    active_turn: null,
+    revision: "r1",
+  });
+  api.fetchConversationUi.mockResolvedValue({ recent_id: null, drafts: {}, revision: "r1" });
   api.gitStatus.mockResolvedValue(STATUS);
   api.gitDiff.mockResolvedValue({ diff: "" });
   api.gitLog.mockResolvedValue({ commits: [] });
@@ -101,90 +114,37 @@ describe("目录与文件", () => {
   it("换目录清空旧文件与对话，不把上一部作品带过去", async () => {
     await useWorkspaceStore.getState().init();
     await useWorkspaceStore.getState().openPath("正文/0001 雨夜.md");
-    api.listFiles.mockResolvedValue({ chapters: [], settings: [] });
+    api.listFiles.mockResolvedValue({ chapters: [], characters: [], settings: [] });
 
     await useWorkspaceStore.getState().selectWorkspace("w1");
 
     expect(useWorkspaceStore.getState().file).toBeNull();
     expect(useWorkspaceStore.getState().selectedPath).toBeNull();
-    expect(useWorkspaceStore.getState().events).toEqual([]);
-  });
-});
-
-describe("一轮对话", () => {
-  it("发送后按事件流推进，结束时记录结果并回读目录", async () => {
-    await useWorkspaceStore.getState().init();
-    api.createConversation.mockResolvedValue({
-      id: "c1",
-      title: "新的对话",
-      created_at: "2026-10-20T10:00:00+08:00",
-      updated_at: "2026-10-20T10:00:00+08:00",
-    });
-    api.startTurn.mockResolvedValue({
-      turn_id: "t1",
-      conversation_id: "c1",
-      started_at: "2026-10-20T10:00:00+08:00",
-    });
-    api.streamEvents.mockImplementation(async function* () {
-      yield { seq: 1, at: "", type: "turn_started", text: "写第一章" };
-      yield { seq: 2, at: "", type: "assistant_message", text: "写好了。" };
-      yield {
-        seq: 3,
-        at: "",
-        type: "run_finished",
-        status: "completed",
-        recording: "committed",
-        changed_paths: ["正文/0001 雨夜.md"],
-        commit: "abc1234",
-      };
-    });
-
-    await useWorkspaceStore.getState().send("写第一章");
-
-    const state = useWorkspaceStore.getState();
-    expect(api.startTurn).toHaveBeenCalledWith("w1", "c1", "写第一章", expect.any(String));
-    expect(state.events.map((event) => event.seq)).toEqual([1, 2, 3]);
-    expect(state.running).toBe(false);
-    expect(state.lastResult).toMatchObject({
-      status: "completed",
-      recording: "committed",
-      changed_paths: ["正文/0001 雨夜.md"],
-      commit: "abc1234",
-    });
-    // 结束必须回读目录与 Git：文件是磁盘上的事实。
-    expect(api.listFiles).toHaveBeenCalledTimes(2);
-    expect(api.gitStatus).toHaveBeenCalledTimes(2);
+    // 会话由单独的 store 管理：换作品时它自己重新加载，不留在文件状态里。
+    expect(useConversationsStore.getState().workspaceId).toBe("w1");
   });
 
-  it("停止只发停止请求，不把状态假装成完成", async () => {
+  it("刷新仍存在的角色小传时保留选择并回读原文", async () => {
     await useWorkspaceStore.getState().init();
-    useWorkspaceStore.setState({ activeTurn: "t1", running: true });
-    api.stopTurn.mockResolvedValue({ stopped: true });
-
-    await useWorkspaceStore.getState().stop();
-
-    expect(api.stopTurn).toHaveBeenCalledWith("w1", "t1");
-    expect(useWorkspaceStore.getState().running).toBe(true);
+    const path = "设定集/角色小传/林远.md";
+    await useWorkspaceStore.getState().openPath(path);
+    api.readFile.mockClear();
+    await useWorkspaceStore.getState().refreshAll();
+    expect(api.readFile).toHaveBeenCalledWith("w1", path);
+    expect(useWorkspaceStore.getState().selectedPath).toBe(path);
   });
 
-  it("事件流断开时记录错误，不会卡在运行中", async () => {
+  it("角色被外部改名后刷新清空旧选择，并显示新目录", async () => {
     await useWorkspaceStore.getState().init();
-    api.createConversation.mockResolvedValue({
-      id: "c1",
-      title: "新的对话",
-      created_at: "",
-      updated_at: "",
+    await useWorkspaceStore.getState().openPath("设定集/角色小传/林远.md");
+    api.listFiles.mockResolvedValue({
+      ...CATALOG,
+      characters: [{ ...CATALOG.characters[0], path: "设定集/角色小传/林侦探.md" }],
     });
-    api.startTurn.mockResolvedValue({ turn_id: "t1", conversation_id: "c1", started_at: "" });
-    api.streamEvents.mockImplementation(async function* () {
-      yield { seq: 1, at: "", type: "turn_started", text: "写第一章" };
-      throw new Error("连接中断");
-    });
-
-    await useWorkspaceStore.getState().send("写第一章");
-
-    expect(useWorkspaceStore.getState().running).toBe(false);
-    expect(useWorkspaceStore.getState().error).toContain("连接中断");
+    await useWorkspaceStore.getState().refreshAll();
+    expect(useWorkspaceStore.getState().selectedPath).toBeNull();
+    expect(useWorkspaceStore.getState().catalog.characters[0]?.path)
+      .toBe("设定集/角色小传/林侦探.md");
   });
 });
 

@@ -97,9 +97,10 @@ await step("顶栏显示已打开的目录", async () => {
   if (value !== binding.id) throw new Error(`选中的不是预期目录：${value}`);
 });
 
-await step("左栏列出章节与三份设定", async () => {
+await step("左栏列出章节、角色分组与固定设定", async () => {
   await page.getByRole("button", { name: "雨夜" }).waitFor();
-  for (const title of ["角色小传", "线索", "真相"]) {
+  await page.locator("summary").filter({ hasText: "角色小传" }).waitFor();
+  for (const title of ["线索", "真相"]) {
     await page.getByRole("button", { name: title, exact: true }).waitFor();
   }
 });
@@ -162,7 +163,7 @@ await step("通过对话框新建作品并建立版本记录", async () => {
     SECOND,
     { timeout: 10000 },
   );
-  await page.getByRole("button", { name: "角色小传", exact: true }).waitFor();
+  await page.locator("summary").filter({ hasText: "角色小传" }).waitFor();
   await page.getByRole("button", { name: "改动与历史" }).click();
   await page.getByText("初始化作品目录").waitFor();
   await page.getByRole("button", { name: "关闭" }).click();

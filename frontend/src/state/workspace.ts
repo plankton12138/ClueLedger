@@ -1,18 +1,16 @@
 /**
  * 文件工作区状态（0.4 V04-4）。
  *
- * 界面只读这里的状态：目录、两块内容、当前文件、对话事件、Git 状态与抽屉。
- * 所有变更都经 `api/workspace.ts` 的真实请求；没有「只在前端成立」的能力。
+ * 这里只管作品本身：目录、两块内容、当前文件、Git 状态与抽屉。对话与会话是另一份
+ * 状态（`state/conversations.ts`）：一个作品可以有多个会话，各自的事件、运行轮次与
+ * 草稿都不该挤进文件阅读状态里。
  *
- * 一轮对话用事件流推进：先 POST 启动，再按游标读 SSE，收到 `run_finished` 后
- * 刷新目录、当前文件与 Git 状态——文件是磁盘上的事实，不是前端拼接的结果。
+ * 一轮对话结束后回调这里回读目录与 Git——文件是磁盘上的事实，不是前端拼接的结果。
  */
 
 import { create } from "zustand";
 
 import {
-  conversationMessages,
-  createConversation,
   gitCommitDiff,
   gitDiff,
   gitInit,
@@ -21,28 +19,22 @@ import {
   gitRevert,
   gitStatus,
   importManuscript,
-  listConversations,
   listFiles,
   listWorkspaces,
   openWorkspace,
   readFile,
   searchText,
-  startTurn,
-  stopTurn,
-  streamEvents,
   WorkspaceApiError,
   type Catalog,
-  type Conversation,
   type FileView,
   type GitCommit,
   type GitStatus,
-  type RunResult,
   type SearchResult,
   type WorkspaceBinding,
-  type WorkspaceEvent,
 } from "../api/workspace";
+import { registerRunFinished, useConversationsStore } from "./conversations";
 
-const EMPTY_CATALOG: Catalog = { chapters: [], settings: [] };
+const EMPTY_CATALOG: Catalog = { chapters: [], characters: [], settings: [] };
 
 interface WorkspaceStore {
   bindings: WorkspaceBinding[];
@@ -54,13 +46,6 @@ interface WorkspaceStore {
   loading: boolean;
   error: string | null;
   notice: string | null;
-
-  conversations: Conversation[];
-  conversationId: string | null;
-  events: WorkspaceEvent[];
-  running: boolean;
-  activeTurn: string | null;
-  lastResult: RunResult | null;
 
   git: GitStatus | null;
   diff: string;
@@ -79,11 +64,6 @@ interface WorkspaceStore {
   clearSearch(): void;
   upload(file: File): Promise<void>;
 
-  newConversation(): Promise<void>;
-  selectConversation(id: string): Promise<void>;
-  send(text: string): Promise<void>;
-  stop(): Promise<void>;
-
   openDrawer(): Promise<void>;
   closeDrawer(): void;
   initGit(): Promise<void>;
@@ -94,7 +74,6 @@ interface WorkspaceStore {
   dismissNotice(): void;
 }
 
-let abortStream: AbortController | null = null;
 let initializing = false;
 
 function describe(error: unknown): string {
@@ -102,25 +81,6 @@ function describe(error: unknown): string {
     return `${error.why}。${error.fix}`;
   }
   return error instanceof Error ? error.message : "请求失败";
-}
-
-function mergeEvent(events: WorkspaceEvent[], event: WorkspaceEvent): WorkspaceEvent[] {
-  if (events.some((item) => item.seq === event.seq)) return events;
-  return [...events, event].sort((left, right) => left.seq - right.seq);
-}
-
-function lastSeq(events: WorkspaceEvent[]): number {
-  return events.length ? events[events.length - 1]!.seq : 0;
-}
-
-function resultFrom(event: WorkspaceEvent): RunResult {
-  return {
-    status: event.status ?? "completed",
-    recording: event.recording ?? "no_change",
-    changed_paths: event.changed_paths ?? [],
-    commit: event.commit ?? null,
-    note: event.note ?? "",
-  };
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
@@ -133,13 +93,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   loading: false,
   error: null,
   notice: null,
-
-  conversations: [],
-  conversationId: null,
-  events: [],
-  running: false,
-  activeTurn: null,
-  lastResult: null,
 
   git: null,
   diff: "",
@@ -177,20 +130,12 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   },
 
   async selectWorkspace(id) {
-    abortStream?.abort();
-    abortStream = null;
     set({
       currentId: id,
       catalog: EMPTY_CATALOG,
       file: null,
       selectedPath: null,
       search: null,
-      conversations: [],
-      conversationId: null,
-      events: [],
-      running: false,
-      activeTurn: null,
-      lastResult: null,
       git: null,
       diff: "",
       log: [],
@@ -199,6 +144,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       error: null,
       notice: null,
     });
+    // 会话按作品各自加载：切作品不把上一部作品的会话带过来。
+    await useConversationsStore.getState().load(id);
     await get().refreshAll();
   },
 
@@ -206,23 +153,16 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     const id = get().currentId;
     if (!id) return;
     try {
-      const [catalog, conversations, git] = await Promise.all([
-        listFiles(id),
-        listConversations(id),
-        gitStatus(id),
-      ]);
-      set({ catalog, conversations, git });
+      const [catalog, git] = await Promise.all([listFiles(id), gitStatus(id)]);
+      set({ catalog, git });
       // 外部编辑后回读当前文件；文件已不存在时清空选择。
       const path = get().selectedPath;
       if (path) {
-        const stillThere = [...catalog.chapters, ...catalog.settings].some(
+        const stillThere = [...catalog.chapters, ...catalog.characters, ...catalog.settings].some(
           (entry) => entry.path === path && entry.exists,
         );
         if (stillThere) await get().openPath(path);
         else set({ selectedPath: null, file: null });
-      }
-      if (!get().conversationId && conversations.length) {
-        await get().selectConversation(conversations[0]!.id);
       }
     } catch (error) {
       set({ error: describe(error) });
@@ -277,72 +217,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       set({ error: describe(error) });
     } finally {
       set({ loading: false });
-    }
-  },
-
-  async newConversation() {
-    const id = get().currentId;
-    if (!id) return;
-    try {
-      const conversation = await createConversation(id);
-      set((state) => ({
-        conversations: [conversation, ...state.conversations],
-        conversationId: conversation.id,
-        events: [],
-        lastResult: null,
-      }));
-    } catch (error) {
-      set({ error: describe(error) });
-    }
-  },
-
-  async selectConversation(id) {
-    const workspaceId = get().currentId;
-    if (!workspaceId) return;
-    abortStream?.abort();
-    abortStream = null;
-    try {
-      const { events } = await conversationMessages(workspaceId, id, 0);
-      const finished = [...events].reverse().find((event) => event.type === "run_finished");
-      set({
-        conversationId: id,
-        events,
-        lastResult: finished ? resultFrom(finished) : null,
-      });
-    } catch (error) {
-      set({ error: describe(error) });
-    }
-  },
-
-  async send(text) {
-    const id = get().currentId;
-    const trimmed = text.trim();
-    if (!id || !trimmed || get().running) return;
-    set({ error: null, notice: null });
-    try {
-      let conversationId = get().conversationId;
-      if (!conversationId) {
-        const conversation = await createConversation(id);
-        conversationId = conversation.id;
-        set((state) => ({ conversations: [conversation, ...state.conversations] }));
-      }
-      const after = lastSeq(get().events);
-      const turn = await startTurn(id, conversationId, trimmed, `ui-${Date.now()}`);
-      set({ running: true, activeTurn: turn.turn_id, conversationId });
-      await consume(id, conversationId, after, set, get);
-    } catch (error) {
-      set({ running: false, activeTurn: null, error: describe(error) });
-    }
-  },
-
-  async stop() {
-    const id = get().currentId;
-    const turn = get().activeTurn;
-    if (!id || !turn) return;
-    try {
-      await stopTurn(id, turn);
-    } catch (error) {
-      set({ error: describe(error) });
     }
   },
 
@@ -412,28 +286,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   },
 }));
 
-async function consume(
-  workspaceId: string,
-  conversationId: string,
-  after: number,
-  set: (partial: Partial<WorkspaceStore>) => void,
-  get: () => WorkspaceStore,
-): Promise<void> {
-  const controller = new AbortController();
-  abortStream = controller;
-  try {
-    for await (const event of streamEvents(workspaceId, conversationId, after, controller.signal)) {
-      set({ events: mergeEvent(get().events, event) });
-      if (event.type === "run_finished") {
-        set({ lastResult: resultFrom(event) });
-        break;
-      }
-    }
-  } catch (error) {
-    if (!controller.signal.aborted) set({ error: describe(error) });
-  } finally {
-    if (abortStream === controller) abortStream = null;
-    set({ running: false, activeTurn: null });
-    await get().refreshAll();
-  }
-}
+// 一轮结束后回读磁盘：目录、当前文件与 Git 都可能已经变了。
+registerRunFinished(() => {
+  void useWorkspaceStore.getState().refreshAll();
+  void useWorkspaceStore.getState().refreshGit();
+});

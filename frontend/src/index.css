@@ -11,15 +11,15 @@
     @apply bg-page font-sans text-fg antialiased;
     font-synthesis: none;
   }
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid #477fa4;
+    outline-offset: 2px;
+  }
 }
 
 @layer components {
-  /* ui/ 可聚焦原语统一焦点环：iOS6 蓝，替代浏览器默认 outline。 */
-  .focus-ring {
-    @apply focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue/70;
-  }
-
-  /* ===== 织物工作台底纹 ===== */
+  /* ===== 织物工作台底纹（中区）===== */
   .workbench {
     background-color: theme("colors.workbench");
     background-image:
@@ -55,13 +55,7 @@
   .mark {
     border: 1px solid #285170;
     border-radius: 9px;
-    background: linear-gradient(
-      135deg,
-      #e6f1f8,
-      #6a9fc3 48%,
-      #265e89 49%,
-      #174d79
-    );
+    background: linear-gradient(135deg, #e6f1f8, #6a9fc3 48%, #265e89 49%, #174d79);
     box-shadow:
       0 1px rgba(255, 255, 255, 0.6) inset,
       0 2px 5px #1e4664;
@@ -74,90 +68,6 @@
     background: linear-gradient(#b3cbdc, #739ab8 50%, #587e9e 51%, #4b7192);
     box-shadow: 0 1px rgba(255, 255, 255, 0.5) inset;
     color: #fff;
-  }
-  .search-well {
-    border: 1px solid #4c6b84;
-    border-radius: 16px;
-    background: linear-gradient(#d8e4ea, #f6f8f9);
-    color: #78909f;
-    box-shadow: 0 2px 4px rgba(30, 60, 80, 0.25) inset;
-    text-shadow: none;
-  }
-  .live-dot {
-    background: theme("colors.live");
-    border: 1px solid theme("colors.liveEdge");
-    box-shadow: 0 0 4px #c5ec9e;
-  }
-  .top-avatar {
-    border: 1px solid #44647c;
-    border-radius: 6px;
-    background: linear-gradient(#f7eedb, #c6ab85);
-    color: #71553d;
-    text-shadow: none;
-  }
-
-  /* ===== 主导航（分段金属条）===== */
-  .navbar {
-    background: linear-gradient(#f8fafb, #dce3e8 48%, #c5d1d9 49%, #d8e0e5);
-    border-bottom: 1px solid theme("colors.navEdge");
-    box-shadow: 0 1px #fff inset;
-  }
-  .navitem {
-    @apply flex items-center justify-center gap-1.5 font-bold;
-    color: #4c677b;
-    text-shadow: 0 1px #fff;
-    border: 1px solid transparent;
-    border-bottom: none;
-    border-radius: 6px 6px 0 0;
-  }
-  .navitem:hover {
-    color: #33566e;
-    background: rgba(255, 255, 255, 0.45);
-  }
-  .navitem.on {
-    border-color: #6f8da4;
-    color: #fff;
-    text-shadow: 0 -1px #315679;
-    background: linear-gradient(#8fb8d5 0, #5e91b8 48%, #3374a2 49%, #2c648e);
-    box-shadow: 0 1px #d4edfb inset;
-  }
-  .nav-badge {
-    @apply rounded-full font-bold text-white;
-    background: theme("colors.badge");
-    text-shadow: 0 -1px #8a462d;
-    box-shadow: 0 1px rgba(255, 255, 255, 0.45) inset;
-  }
-
-  /* ===== 面板 ===== */
-  .panel {
-    background: linear-gradient(#fff, #f5f8f9);
-    border: 1px solid theme("colors.panelEdge");
-    border-radius: 7px;
-    box-shadow:
-      0 1px #fff inset,
-      0 2px 5px rgba(52, 80, 100, 0.11);
-    overflow: hidden;
-  }
-  .panel-head {
-    @apply flex items-center justify-between font-bold;
-    color: theme("colors.panelHead");
-    text-shadow: 0 1px #fff;
-    border-bottom: 1px solid theme("colors.panelHeadEdge");
-    background: linear-gradient(#fff, #e5ecef);
-  }
-  .panel-head small {
-    color: theme("colors.panelHeadSub");
-    text-shadow: 0 1px #fff;
-  }
-  .dark-head {
-    background: linear-gradient(#91afc7, #537d9d 50%, #416d90 51%, #385f80);
-    color: #fff;
-    text-shadow: 0 -1px #2a4b67;
-    border-bottom-color: theme("colors.darkHeadEdge");
-  }
-  .dark-head small {
-    color: #d8e9f2;
-    text-shadow: 0 -1px #2a4b67;
   }
 
   /* ===== 按钮（凸起高光）===== */
@@ -205,73 +115,7 @@
     background: linear-gradient(#f5e2b2, #dcb66c 49%, #c69046 50%, #b07c39);
   }
 
-  /* ===== 徽章丸 ===== */
-  .pill {
-    @apply inline-flex items-center gap-1 whitespace-nowrap font-bold;
-    border: 1px solid #b6c6cf;
-    background: linear-gradient(#fff, #eaf0f2);
-    border-radius: 10px;
-    color: #648096;
-  }
-  .pill-green {
-    border-color: theme("colors.greenEdge");
-    color: theme("colors.green");
-    background: theme("colors.greenBg");
-  }
-  .pill-amber {
-    border-color: theme("colors.amberEdge");
-    color: theme("colors.amber");
-    background: theme("colors.amberBg");
-  }
-  .pill-red {
-    border-color: theme("colors.redEdge");
-    color: theme("colors.red");
-    background: theme("colors.redBg");
-  }
-  .pill-blue {
-    border-color: theme("colors.blueEdge");
-    color: theme("colors.blue");
-    background: theme("colors.blueBg");
-  }
-  .count-pill {
-    @apply font-serif font-bold text-white;
-    border-radius: 10px;
-    background: theme("colors.count");
-    text-shadow: 0 -1px #496b81;
-  }
-
-  /* ===== 列表行 ===== */
-  .asset-row {
-    @apply flex items-center gap-2;
-    border-bottom: 1px solid theme("colors.rowEdge");
-  }
-  .asset-row:last-child {
-    border-bottom: 0;
-  }
-  .asset-row.sel {
-    background: linear-gradient(
-      theme("colors.selHigh"),
-      theme("colors.selLow")
-    );
-    box-shadow: 0 1px #fff inset;
-  }
-  .mini-icon {
-    @apply grid flex-none place-items-center text-white;
-    border-radius: 5px;
-    background: linear-gradient(#9bbbd0, #457da3);
-    text-shadow: 0 -1px #315774;
-    box-shadow:
-      0 1px rgba(255, 255, 255, 0.6) inset,
-      0 1px 2px rgba(0, 0, 0, 0.2);
-  }
-  .mini-icon.gold {
-    background: linear-gradient(#f0c782, #b97a39);
-  }
-  .mini-icon.green {
-    background: linear-gradient(#abd096, #679358);
-  }
-
-  /* ===== 分段控件 ===== */
+  /* ===== 分段控件（顶栏对话开关）===== */
   .seg {
     @apply inline-flex overflow-hidden font-bold;
     border: 1px solid theme("colors.segEdge");
@@ -292,190 +136,48 @@
     text-shadow: 0 -1px #2c5677;
     background: linear-gradient(#91bad5, #5c91b7 49%, #3f79a5 50%, #336d98);
   }
-
-  /* ===== 系统提醒（黄）===== */
-  .notice {
-    border: 1px solid theme("colors.noticeEdge");
-    border-radius: 6px;
-    background: linear-gradient(
-      theme("colors.noticeHigh"),
-      theme("colors.noticeLow")
-    );
-    color: theme("colors.noticeText");
-    box-shadow: 0 1px rgba(255, 255, 255, 0.6) inset;
+  .seg > button:disabled {
+    opacity: 0.55;
+    cursor: default;
   }
-  .notice strong {
-    color: #735730;
+  /* 关闭态：在金属顶栏上压成暗色，与蓝色的开启态一眼可分。 */
+  .seg.dim > button {
+    color: #dbe8f1;
+    text-shadow: 0 -1px #3d5b73;
+    background: linear-gradient(#7f9db4, #5f7f97);
   }
 
-  /* ===== 指标卡 ===== */
-  .metric {
-    border: 1px solid #afbec7;
-    border-radius: 6px;
-    background: linear-gradient(#fff, #e5ecf0);
-    box-shadow: 0 1px #fff inset;
+  /* ===== 目录栏（V04-12：iOS 6 分组列表）=====
+     浅灰底 + 白色行；选中行用蓝色高光渐变，与顶栏、按钮同一套蓝色语言。 */
+  .toc-pane {
+    background: linear-gradient(#f5f7f8, #e7ebed);
+    border-right: 1px solid theme("colors.navEdge");
+    color: theme("colors.fg");
   }
-  .metric b {
-    @apply font-serif font-bold;
-    color: #3b739a;
+  .toc-head {
+    color: theme("colors.panelHead");
+    text-shadow: 0 1px #fff;
   }
-  .metric.warn b {
-    color: #bf7946;
+  .toc-row {
+    @apply block w-full truncate rounded text-left;
+    border: 1px solid #d3dee4;
+    background: rgba(255, 255, 255, 0.92);
+    color: theme("colors.fg");
   }
-  .metric.green b {
-    color: #6e9b69;
+  .toc-row:hover {
+    border-color: #b9cbd6;
+    background: #fff;
   }
-
-  /* ===== 英雄区（深青蓝 + 金线）===== */
-  .hero {
-    position: relative;
-    overflow: hidden;
-    border-radius: 8px;
-    background: linear-gradient(
-      115deg,
-      theme("colors.heroLow"),
-      theme("colors.heroHigh") 58%,
-      theme("colors.heroAccent")
-    );
-    border: 1px solid #274b5d;
+  .toc-row.on {
+    border-color: #2d6996;
     color: #fff;
-    box-shadow: 0 1px rgba(255, 255, 255, 0.35) inset;
+    text-shadow: 0 -1px #2c5677;
+    background: linear-gradient(#8fb8d5, #5e91b8 48%, #3374a2 49%, #2c648e);
   }
-  .hero::after {
-    content: "";
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 6px;
-    background: linear-gradient(theme("colors.heroGold"), #9b733f);
-  }
-
-  /* ===== 影响路径 / 流程节点 ===== */
-  .link-path {
-    border-left: 2px solid #7fa8c0;
-  }
-  .link-path > div {
-    position: relative;
-  }
-  .link-path > div::before {
-    content: "";
-    position: absolute;
-    left: -23px;
-    top: 1px;
-    height: 9px;
-    width: 9px;
-    background: #5b91b3;
-    border: 2px solid #eaf1f5;
-    border-radius: 50%;
-  }
-  .flow-node {
-    border: 1px solid #b2c2ca;
-    border-radius: 6px;
-    background: linear-gradient(#fff, #edf3f5);
-  }
-
-  /* ===== 进度条 / 条形图 ===== */
-  .progress {
-    background: #cbd8de;
-    border-radius: 5px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15) inset;
-    overflow: hidden;
-  }
-  .progress > i {
-    display: block;
-    height: 100%;
-    background: linear-gradient(#8bbad7, #3d83b2);
-  }
-  .barrow-track {
-    border-radius: 6px;
-    background: #d8e2e7;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15) inset;
-  }
-  .barrow-track > i {
-    display: block;
-    height: 100%;
-    border-radius: 6px;
-    background: linear-gradient(#8ebac9, #548ba5);
-  }
-
-  /* ===== 差异 ===== */
-  .diff-del {
-    background: theme("colors.delBg");
-    color: theme("colors.delText");
-    text-decoration: line-through;
-  }
-  .diff-ins {
-    background: theme("colors.insBg");
-    color: theme("colors.insText");
-  }
-
-  /* ===== iOS 开关 ===== */
-  .ios-switch {
-    position: relative;
-    border-radius: 15px;
-    border: 1px solid #9fb0ba;
-    background: linear-gradient(#c7d2d8, #9fb2bd);
-    box-shadow: 0 1px 3px rgba(50, 70, 85, 0.4) inset;
-    transition: background 0.15s;
-  }
-  .ios-switch::after {
-    content: "";
-    position: absolute;
-    width: 20px;
-    height: 20px;
-    left: 1px;
-    top: 1px;
-    border-radius: 50%;
-    background: linear-gradient(#fff, #dce4dd);
-    box-shadow: 0 1px 2px rgba(49, 82, 64, 0.5);
-    transition: left 0.15s;
-  }
-  .ios-switch.on {
-    border-color: #588268;
-    background: linear-gradient(#8cc694, #4c965e);
-    box-shadow: 0 1px 3px #315240 inset;
-  }
-  .ios-switch.on::after {
-    left: calc(100% - 21px);
-  }
-
-  /* ===== 正文纸面（创作台中心）===== */
-  .paper-sheet {
-    background:
-      repeating-linear-gradient(
-        0deg,
-        transparent 0,
-        transparent 31px,
-        rgba(180, 170, 140, 0.18) 31px,
-        rgba(180, 170, 140, 0.18) 32px
-      ),
-      linear-gradient(#fbf8ef, theme("colors.sheet"));
-    border: 1px solid #cfc7ae;
-    box-shadow:
-      0 1px #fff inset,
-      0 10px 28px rgba(70, 85, 95, 0.28);
-    color: theme("colors.sheetInk");
-  }
-  /* 键盘焦点可见（M14）：与按钮焦点同一蓝色语言，画在纸面边框内侧避免被裁切。 */
-  .paper-sheet:focus-visible {
-    outline: 2px solid #477fa4;
-    outline-offset: -2px;
-  }
-
-  /* ===== 页脚状态栏 ===== */
-  .statusbar {
-    border-top: 1px solid #72889a;
-    color: theme("colors.footText");
-    background: linear-gradient(
-      theme("colors.footHigh"),
-      theme("colors.footLow")
-    );
-    text-shadow: 0 -1px #2f4a5e;
-  }
-  .statusbar b {
-    color: theme("colors.footOk");
-    font-weight: 600;
+  .toc-foot {
+    border-top: 1px solid theme("colors.navEdge");
+    color: theme("colors.sub");
+    text-shadow: 0 1px #fff;
   }
 
   /* ===== 表单井（内凹）===== */
@@ -486,6 +188,9 @@
     box-shadow: 0 1px 3px rgba(60, 80, 95, 0.18) inset;
     color: theme("colors.fg");
   }
+  .well-input::placeholder {
+    color: theme("colors.mute");
+  }
   .well-input:focus {
     outline: none;
     border-color: #6f9ab8;
@@ -493,179 +198,28 @@
       0 1px 3px rgba(60, 80, 95, 0.18) inset,
       0 0 0 2px rgba(111, 154, 184, 0.35);
   }
-}
 
-@layer components {
-  .page-grid {
-    @apply grid h-full min-h-0 gap-4 overflow-y-auto p-4 lg:p-5;
-    grid-template-columns: 220px minmax(360px, 1fr) 280px;
-    align-content: start;
-  }
-  .studio-grid {
-    @apply grid h-full min-h-0 gap-4 overflow-hidden p-4;
-    grid-template-columns: 280px minmax(360px, 1fr) 260px;
-  }
-  .field {
-    @apply flex flex-col gap-1.5 text-xs leading-6;
-  }
-  .field > .well-input {
-    @apply min-w-0 px-3 py-2 text-sm;
-  }
-  .book-spine {
-    @apply grid h-14 w-10 shrink-0 place-items-center rounded text-white;
-    background: linear-gradient(
-      90deg,
-      #143b4a,
-      #356474 12%,
-      #224f60 16%,
-      #386b79
-    );
-    border: 1px solid #153c4d;
-    border-bottom: 3px solid #c9b47f;
-    box-shadow: 2px 2px 3px #31465230;
-  }
-  button:focus-visible,
-  a:focus-visible {
-    outline: 2px solid #477fa4;
-    outline-offset: 3px;
-  }
-  .page-grid > *,
-  .studio-grid > * {
-    min-width: 0;
-  }
-  @media (max-width: 1199px) {
-    .page-grid {
-      grid-template-columns: 190px minmax(320px, 1fr);
-    }
-    .page-grid > aside:last-of-type {
-      grid-column: 2;
-    }
-    .studio-grid {
-      grid-template-columns: 245px minmax(320px, 1fr);
-    }
-    .studio-grid > aside:last-of-type {
-      display: none;
-    }
-  }
-  @media (max-width: 767px) {
-    .page-grid,
-    .studio-grid {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      overflow: auto;
-      padding: 12px;
-    }
-    .page-grid > *,
-    .studio-grid > * {
-      flex: none;
-    }
-    .studio-grid > section {
-      min-height: 65vh;
-    }
-    .studio-grid > aside:first-of-type {
-      max-height: 50vh;
-    }
-    .studio-grid > aside:last-of-type {
-      display: block;
-    }
-  }
-}
-
-@layer components {
-  /* ===== 对话栏（Phase 19.1）===== */
+  /* ===== 对话栏（V04-12：iOS 6 浅色面板）===== */
   .chat-shell {
-    @apply relative flex min-h-0 flex-col;
+    @apply flex min-h-0 flex-col;
     background: linear-gradient(#fff, #f5f8f9);
     border-left: 1px solid theme("colors.panelEdge");
-    box-shadow: -2px 0 6px rgba(52, 80, 100, 0.08);
-  }
-  .chat-shell-overlay {
-    @apply h-full w-full;
-    border-left: none;
-  }
-  .chat-overlay {
-    @apply fixed inset-y-0 right-0 z-40 w-[min(420px,100vw)];
-    box-shadow: -8px 0 24px rgba(30, 60, 80, 0.25);
-  }
-  .chat-resize {
-    @apply absolute inset-y-0 left-0 w-1.5 cursor-col-resize;
-    background: transparent;
-  }
-  .chat-resize:hover {
-    background: rgba(111, 154, 184, 0.35);
+    color: theme("colors.fg");
   }
   .chat-head {
-    @apply flex flex-none items-center gap-1 px-3 py-2.5;
     color: theme("colors.panelHead");
     text-shadow: 0 1px #fff;
     border-bottom: 1px solid theme("colors.panelHeadEdge");
     background: linear-gradient(#fff, #e5ecef);
   }
-  .chat-title {
-    @apply flex max-w-full items-center gap-1 text-left text-sm font-bold;
-    color: theme("colors.panelHead");
-  }
-  .chat-title-caret {
-    @apply text-[9px];
-    color: theme("colors.panelHeadSub");
-  }
-  .chat-subtitle {
-    @apply mt-0.5 text-[10px] font-normal;
-    color: theme("colors.panelHeadSub");
-    text-shadow: none;
-  }
-  .chat-icon-btn {
-    @apply grid h-8 w-8 flex-none place-items-center rounded;
-    color: #4c677b;
-    border: 1px solid transparent;
-  }
-  .chat-icon-btn:hover {
-    background: rgba(255, 255, 255, 0.6);
-    border-color: #b6c6cf;
+  .chat-bar {
+    border-bottom: 1px solid theme("colors.panelHeadEdge");
+    background: linear-gradient(#fbfdfd, #eef3f5);
+    color: theme("colors.sub");
   }
   .chat-scroll {
-    @apply relative min-h-0 flex-1 space-y-3 overflow-y-auto p-3;
+    @apply min-h-0 flex-1 space-y-2.5 overflow-y-auto p-3;
   }
-  .chat-empty {
-    @apply p-6 text-center text-xs leading-6;
-    color: theme("colors.sub");
-  }
-  .chat-loading {
-    @apply px-3 pb-2 text-[11px];
-    color: theme("colors.sub");
-  }
-  .chat-guide {
-    @apply m-3 p-4 text-xs leading-7;
-    color: theme("colors.sub");
-    border: 1px solid theme("colors.noticeEdge");
-    border-radius: 6px;
-    background: linear-gradient(theme("colors.noticeHigh"), theme("colors.noticeLow"));
-  }
-  .chat-guide-note {
-    @apply mt-2 text-[11px];
-    color: theme("colors.noticeText");
-  }
-  .chat-error {
-    @apply mx-3 mt-2 flex items-center gap-2 p-2 text-[11px] leading-6;
-    color: theme("colors.red");
-    border: 1px solid theme("colors.redEdge");
-    border-radius: 6px;
-    background: theme("colors.redBg");
-  }
-  .chat-banner {
-    @apply mx-3 mt-2 flex flex-wrap items-center gap-2 p-2 text-[11px] leading-6;
-    color: theme("colors.amber");
-    border: 1px solid theme("colors.amberEdge");
-    border-radius: 6px;
-    background: theme("colors.amberBg");
-  }
-  .chat-error-close {
-    @apply px-1 font-bold;
-    color: theme("colors.red");
-  }
-
-  /* 消息 */
   .chat-msg {
     @apply flex flex-col gap-1;
   }
@@ -673,367 +227,122 @@
     @apply items-end;
   }
   .chat-bubble {
-    @apply max-w-[92%] px-3 py-2 text-[13px] leading-6;
+    @apply max-w-[92%] whitespace-pre-wrap px-3 py-2 text-[13px] leading-6;
     border: 1px solid #c3d0d8;
-    border-radius: 10px;
-    background: linear-gradient(#fff, #f3f7f9);
+    border-radius: 12px;
+    background: linear-gradient(#fff, #f2f6f8);
     box-shadow: 0 1px 2px rgba(52, 80, 100, 0.1);
     color: theme("colors.fg");
   }
+  /* 作者消息用 iOS 6 信息绿：与蓝色控件区分开，一眼看出谁在说。 */
   .chat-msg.mine .chat-bubble {
+    border-color: #4c965e;
     color: #fff;
-    text-shadow: 0 -1px #29506d;
-    border-color: #2d6996;
-    background: linear-gradient(#a5c9df, #639cc4 48%, #357ba9 49%, #2d6996);
+    text-shadow: 0 -1px #34663f;
+    background: linear-gradient(#a8d69f, #7dbf7c 48%, #4c965e 49%, #3f7d4c);
   }
-  .chat-cursor {
-    @apply ml-0.5 inline-block h-3.5 w-0.5 align-middle;
-    background: theme("colors.blue");
-    animation: chat-blink 1s steps(2, start) infinite;
-  }
-  @keyframes chat-blink {
-    to {
-      visibility: hidden;
-    }
-  }
-  .chat-msg-meta {
-    @apply flex flex-wrap items-center gap-2 text-[10px];
+  .chat-tool {
+    @apply text-[11px] leading-5;
     color: theme("colors.mute");
   }
-  .chat-msg-actions {
-    @apply flex gap-2;
-  }
-  .chat-msg-error {
-    @apply max-w-[92%] p-2 text-[11px] leading-6;
+  .chat-tool.bad {
     color: theme("colors.red");
+  }
+  .chat-error {
+    @apply px-3 py-2 text-[11px] leading-5;
     border: 1px solid theme("colors.redEdge");
-    border-radius: 6px;
+    border-radius: 8px;
     background: theme("colors.redBg");
+    color: theme("colors.red");
   }
-  .chat-msg-note {
-    @apply text-[10px];
-    color: theme("colors.sub");
-  }
-  .chat-jump {
-    @apply sticky bottom-1 mx-auto block px-3 py-1 text-[11px] font-bold;
-    color: #fff;
-    text-shadow: 0 -1px #29506d;
-    border: 1px solid #2d6996;
-    border-radius: 12px;
-    background: linear-gradient(#a5c9df, #639cc4 48%, #357ba9 49%, #2d6996);
-  }
-
-  /* 引用 */
-  .chat-refs-bar {
-    @apply flex-none px-3 pt-2 text-[11px];
-  }
-  .chat-refs-toggle {
-    @apply flex items-center gap-1 font-bold;
-    color: #4c677b;
-  }
-  .chat-refs-bar ul {
-    @apply mt-1 flex flex-wrap gap-1.5;
-  }
-  .chat-refs-bar li {
-    @apply flex items-center gap-0.5;
-  }
-  .chat-ref-chip {
-    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[10px];
-    color: theme("colors.blue");
-    border: 1px solid theme("colors.blueEdge");
-    background: theme("colors.blueBg");
-  }
-  .chat-ref-chip.unsaved {
-    color: theme("colors.amber");
-    border-color: theme("colors.amberEdge");
-    background: theme("colors.amberBg");
-  }
-  .chat-ref-remove {
-    @apply px-0.5 text-[11px] font-bold;
-    color: theme("colors.mute");
-  }
-  .chat-refs-used {
-    @apply flex flex-wrap gap-1;
-  }
-
-  /* 任务卡片 */
   .chat-card {
-    @apply p-3 text-xs leading-6;
+    @apply px-3 py-2 text-[11px] leading-5;
     border: 1px solid #b6c6cf;
     border-radius: 8px;
     background: linear-gradient(#fff, #f0f5f7);
     box-shadow: 0 1px 2px rgba(52, 80, 100, 0.08);
+    color: theme("colors.fg");
   }
-  .chat-card-draft {
-    border-color: theme("colors.blueEdge");
-    background: linear-gradient(#fff, theme("colors.blueBg"));
-  }
-  .chat-card-candidate {
-    border-color: theme("colors.amberEdge");
-    background: linear-gradient(#fff, theme("colors.amberBg"));
-  }
-  .chat-card-result {
+  .chat-card.result {
     border-color: theme("colors.greenEdge");
     background: linear-gradient(#fff, theme("colors.greenBg"));
   }
-  .chat-card-head {
-    @apply mb-2 flex items-center justify-between gap-2 font-bold;
-    color: theme("colors.fgStrong");
+  .chat-card.warn {
+    border-color: theme("colors.amberEdge");
+    background: linear-gradient(#fff, theme("colors.amberBg"));
   }
-  .chat-card-grid {
-    @apply grid grid-cols-[4.5em_1fr] gap-x-2 gap-y-1 text-[11px];
-  }
-  .chat-card-grid dt {
-    color: theme("colors.sub");
-  }
-  .chat-card-grid dd {
-    @apply min-w-0 break-words;
-    color: theme("colors.fg");
-  }
-  .chat-card-missing {
-    @apply mb-2 space-y-1 text-[11px] leading-6;
-    color: #7a4b12;
-  }
-  .chat-card-missing li::before {
-    content: "⚠ ";
-  }
-  .chat-card-actions {
-    @apply mt-2 flex flex-wrap gap-2;
-  }
-  .chat-card-note {
-    @apply text-[11px] leading-6;
-    color: theme("colors.sub");
-  }
-  .chat-card-error {
-    @apply mb-2 p-2 text-[11px] leading-6;
-    color: theme("colors.red");
-    border: 1px solid theme("colors.redEdge");
-    border-radius: 6px;
-    background: theme("colors.redBg");
-  }
-  .chat-card-form {
-    @apply mt-2 space-y-2;
-  }
-
-  /* 输入区 */
   .chat-composer {
-    @apply flex-none space-y-2 border-t border-line p-3;
+    @apply flex-none space-y-2 p-3;
+    border-top: 1px solid theme("colors.panelHeadEdge");
     background: linear-gradient(#fbfdfd, #eef3f5);
   }
-  .chat-input-row {
-    @apply flex items-end gap-2;
-  }
   .chat-input {
-    @apply min-h-11 min-w-0 flex-1 resize-none px-3 py-2 text-[13px] leading-6;
+    @apply min-h-20 w-full resize-none px-3 py-2 text-[13px] leading-6;
     border: 1px solid #a8b7c0;
     border-radius: 6px;
     background: linear-gradient(#e8eef1, #f7fafb 20%);
     box-shadow: 0 1px 3px rgba(60, 80, 95, 0.18) inset;
     color: theme("colors.fg");
   }
+  .chat-input::placeholder {
+    color: theme("colors.mute");
+  }
   .chat-input:focus {
     outline: none;
     border-color: #6f9ab8;
   }
-  .chat-input-buttons {
-    @apply flex flex-none gap-1.5;
+
+  /* ===== 正文纸面 =====
+     纸底、边框与投影留在滚动容器上；横线见 .paper-lined（内容层）。 */
+  .paper-sheet {
+    background: linear-gradient(#fbf8ef, theme("colors.sheet"));
+    border: 1px solid #cfc7ae;
+    box-shadow:
+      0 1px #fff inset,
+      0 10px 28px rgba(70, 85, 95, 0.28);
+    color: theme("colors.sheetInk");
   }
-  .chat-send {
-    @apply px-3 py-2 text-xs;
+  .paper-sheet:focus-visible {
+    outline: 2px solid #477fa4;
+    outline-offset: -2px;
   }
-  .chat-input-actions {
-    @apply flex items-center gap-3 text-[10px];
-    color: theme("colors.sub");
-  }
-  .chat-model {
-    @apply min-w-0 flex-1 truncate;
-  }
-  .chat-mini-btn {
-    @apply font-bold;
-    color: #4c677b;
-  }
-  .chat-mini-btn:hover {
-    color: #33566e;
+  /* 横线画在内容层（V04-11）：纸面本身是滚动容器，滚动容器的背景不随内容移动，
+     所以横线必须挂在随内容滚动的内层。周期 32px 与段落行高 leading-8 一致；
+     标题、列表高度不是 32 的倍数，跨过它们后线格与文字会错位——这里按装饰处理。 */
+  .paper-lined {
+    background-image: repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 31px,
+      rgba(180, 170, 140, 0.18) 31px,
+      rgba(180, 170, 140, 0.18) 32px
+    );
+    background-position-y: 26px;
   }
 
-  /* 浮层菜单 */
-  .chat-menu {
-    @apply absolute bottom-6 left-0 z-30 min-w-44 max-h-72 overflow-auto rounded p-1 text-xs;
-    border: 1px solid #8fa6b5;
-    background: linear-gradient(#fff, #eef3f5);
-    box-shadow: 0 8px 20px rgba(37, 64, 81, 0.25);
+  /* ===== 栏宽把手（V04-11）===== */
+  .resize-handle {
+    @apply relative w-1.5 flex-none cursor-col-resize;
+    background: transparent;
+    touch-action: none;
   }
-  .chat-history {
-    @apply left-0 top-7 bottom-auto w-56;
+  .resize-handle::after {
+    content: "";
+    position: absolute;
+    inset: 0 2px;
+    border-radius: 1px;
+    background: transparent;
+    transition: background 0.12s;
   }
-  .chat-menu-item {
-    @apply block w-full rounded px-2 py-1.5 text-left;
-    color: #40596b;
+  .resize-handle:hover::after,
+  .resize-handle:focus-visible::after {
+    background: rgba(111, 154, 184, 0.6);
   }
-  .chat-menu-item:hover:not(:disabled) {
-    color: #fff;
-    background: linear-gradient(#8fb8d5, #5e91b8 48%, #3374a2 49%, #2c648e);
-  }
-  .chat-menu-item:disabled {
-    @apply cursor-default;
-    color: theme("colors.mute");
-  }
-  .chat-menu-item.on {
-    color: #fff;
-    background: linear-gradient(#8fb8d5, #5e91b8 48%, #3374a2 49%, #2c648e);
-  }
-  .chat-menu-head {
-    @apply px-2 pb-1 pt-2 text-[10px] font-bold;
-    color: theme("colors.sub");
-  }
-  .chat-menu-scroll {
-    @apply max-h-40 overflow-auto;
-  }
-  .chat-menu-empty {
-    @apply px-2 py-2 text-[11px];
-    color: theme("colors.sub");
+  .resize-handle:focus-visible {
+    outline: none;
   }
 
-  /* 创作操作与准备任务菜单 */
-  .chat-create {
-    @apply space-y-1.5 rounded p-2;
-    border: 1px solid theme("colors.blueEdge");
-    background: theme("colors.blueBg");
-  }
-  .chat-create-note {
-    @apply text-[10px] leading-5;
-    color: theme("colors.sub");
-  }
-  .chat-create-item {
-    @apply flex w-full flex-col items-start rounded px-2 py-1.5 text-left;
-    border: 1px solid #c3d0d8;
-    background: #fff;
-  }
-  .chat-create-item:hover {
-    border-color: #6f9ab8;
-  }
-  .chat-create-item b {
-    @apply text-xs;
-    color: #2c648e;
-  }
-  .chat-create-item span {
-    @apply text-[10px];
-    color: theme("colors.sub");
-  }
-  .chat-prepare-menu {
-    @apply mt-1 max-w-[92%] space-y-0.5 rounded p-1;
-    border: 1px solid #c3d0d8;
-    background: #fff;
-    box-shadow: 0 2px 6px rgba(52, 80, 100, 0.12);
-  }
-  .chat-prepare-item {
-    @apply block w-full rounded px-2 py-1 text-left text-[11px];
-    color: #40596b;
-  }
-  .chat-prepare-item:hover {
-    color: #fff;
-    background: linear-gradient(#8fb8d5, #5e91b8 48%, #3374a2 49%, #2c648e);
-  }
-  .chat-prepare-note {
-    @apply px-2 pb-1 text-[10px] leading-5;
-    color: theme("colors.sub");
-  }
-
-  /* 意图区分（V03-7.1）：讨论/候选标注只读；执行给出功能与写范围 */
-  .chat-intent-bar {
-    @apply mt-2 px-3;
-  }
-  .chat-intent {
-    @apply space-y-0.5 rounded p-2 text-[10px] leading-5;
-    border: 1px solid #c3d0d8;
-    background: #fff;
-  }
-  .chat-intent.candidate {
-    border-color: theme("colors.blueEdge");
-    background: theme("colors.blueBg");
-  }
-  .chat-intent.execution {
-    border-color: theme("colors.amberEdge");
-    background: theme("colors.amberBg");
-  }
-  .chat-intent-head {
-    @apply flex flex-wrap items-center gap-1;
-  }
-  .chat-intent-chip {
-    @apply rounded px-1 py-px font-bold text-[10px];
-    color: #fff;
-    background: #6f9ab8;
-  }
-  .chat-intent.execution .chat-intent-chip {
-    background: theme("colors.amber");
-  }
-  .chat-intent-fn {
-    @apply rounded px-1 py-px;
-    color: #2c648e;
-    border: 1px solid #c3d0d8;
-    background: #fff;
-  }
-  .chat-intent-summary {
-    color: theme("colors.fg");
-  }
-  .chat-intent-reason {
-    color: theme("colors.sub");
-  }
-  .chat-intent-choices {
-    @apply mt-0.5 space-y-0.5;
-  }
-  .chat-intent-choices li {
-    @apply flex flex-col;
-  }
-  .chat-intent-choices b {
-    @apply text-[10px];
-    color: #40596b;
-  }
-  .chat-intent-choices span {
-    color: theme("colors.sub");
-  }
-
-  /* 消息内 Markdown */
-  .chat-markdown p {
-    @apply my-1 first:mt-0 last:mb-0;
-  }
-  .chat-markdown ul {
-    @apply my-1 list-disc pl-4;
-  }
-  .chat-markdown ol {
-    @apply my-1 list-decimal pl-4;
-  }
-  .chat-markdown blockquote {
-    @apply my-1 border-l-2 border-line pl-2;
-    color: theme("colors.sub");
-  }
-  .chat-msg.mine .chat-markdown a {
-    color: #eaf4fb;
-  }
-
-  /* 可折叠侧面板（创作台次要信息收拢，保留正文空间）*/
-  .panel-collapsible .panel-head {
-    @apply p-0;
-  }
-  .panel-collapsible .panel-head > button {
-    @apply w-full px-4 py-3 text-left;
-  }
-
-  /* 对话栏开启时：创作台次要面板收拢左列，右列让位，对话紧贴正文。
-     右列为条件渲染（chatPinned 时不出现在 DOM），网格天然两列，
-     不再用 :last-of-type 隐藏（会误伤唯一左列）。 */
-  .chat-on .studio-grid {
-    grid-template-columns: 245px minmax(360px, 1fr);
-  }
-  @media (max-width: 1199px) {
-    .chat-on .studio-grid {
-      grid-template-columns: 200px minmax(300px, 1fr);
-    }
-  }
-}
-
-@layer components {
-  /* ===== 只读稿纸排版（0.4 V04-4）=====
+  /* ===== 只读稿纸排版 =====
      不引入 typography 插件：正文只需要一套克制的阅读样式，
      标题、段落、引用与列表在纸面上有稳定间距即可。 */
   .prose-paper {

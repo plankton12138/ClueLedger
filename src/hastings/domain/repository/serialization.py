@@ -44,24 +44,24 @@ def _norm(value: Any) -> Any:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             raise ValueError(
-                f"datetime {value!r} 不带时区（为什么错：naive 时间在不同环境下语义漂移；"
-                "怎样算对：一律使用带时区 UTC 的 datetime）"
+                f"datetime {value!r} 不带时区，naive 时间在不同环境下语义漂移。"
+                "建议：一律使用带时区 UTC 的 datetime"
             )
         return value.astimezone(UTC).isoformat()
     if isinstance(value, dict):
         bad = next((k for k in value if not isinstance(k, str)), None)
         if bad is not None:
             raise ValueError(
-                f"字典键 {bad!r} 不是 str（为什么错：隐式 str() 转换会让 "
-                "{1: 'first', '1': 'second'} 与 {'1': 'second'} 产生同一哈希且丢失内容；"
-                "怎样算对：上游先把键统一转成 str 再提交）"
+                f"字典键 {bad!r} 不是 str。隐式 str() 转换会让 "
+                "{1: 'first', '1': 'second'} 与 {'1': 'second'} 产生同一哈希且丢失内容。"
+                "建议：上游先把键统一转成 str 再提交"
             )
         return {k: _norm(v) for k, v in sorted(value.items(), key=lambda kv: kv[0])}
     if isinstance(value, (list, tuple)):
         return [_norm(item) for item in value]
     raise TypeError(
-        f"类型 {type(value).__name__} 不支持规范序列化（为什么错：没有明确的全局规则；"
-        "怎样算对：先转换为 JSON 兼容结构，集合先排序为 list）"
+        f"类型 {type(value).__name__} 不支持规范序列化，没有明确的全局规则。"
+        "建议：先转换为 JSON 兼容结构，集合先排序为 list"
     )
 
 

@@ -18,9 +18,9 @@ interface Props {
 export default function Paper({ file, loading }: Props) {
   if (!file) {
     return (
-      <div className="grid h-full place-items-center px-8 text-center text-sm text-white/70">
+      <div className="grid h-full place-items-center px-8 text-center text-sm text-sub">
         <div>
-          <p className="font-serif text-lg text-white/90">还没有打开文章</p>
+          <p className="font-serif text-lg font-bold text-fg-strong">还没有打开文章</p>
           <p className="mt-2 text-xs">
             从左侧选择一章或一份设定；也可以在对话里直接说「写第一章」。
           </p>
@@ -31,24 +31,26 @@ export default function Paper({ file, loading }: Props) {
 
   return (
     <article className="mx-auto flex h-full w-full max-w-3xl flex-col px-4 py-4">
-      <header className="mb-3 flex flex-none items-baseline gap-3 text-white/80">
-        <h2 className="min-w-0 truncate font-serif text-lg font-bold text-white">
+      <header className="mb-3 flex flex-none items-baseline gap-3 text-sub">
+        <h2 className="min-w-0 truncate font-serif text-lg font-bold text-fg-strong">
           {file.title}
         </h2>
-        <span className="truncate text-[11px] text-white/55">{file.path}</span>
-        <span className="ml-auto shrink-0 text-[11px] text-white/55">{file.size} 字节</span>
-        {loading && <span className="text-[11px] text-white/55">读取中…</span>}
+        <span className="truncate text-[11px]">{file.path}</span>
+        <span className="ml-auto shrink-0 text-[11px]">{file.size} 字节</span>
+        {loading && <span className="text-[11px]">读取中…</span>}
       </header>
-      <div className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm px-8 py-6">
-        {file.text.trim() ? (
-          <div className="prose-paper text-[15px] leading-8">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-              {file.text}
-            </ReactMarkdown>
-          </div>
-        ) : (
-          <p className="text-sm italic text-[#8a8371]">这一页还是空的。</p>
-        )}
+      <div className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm">
+        <div className="paper-lined min-h-full px-8 py-6">
+          {file.text.trim() ? (
+            <div className="prose-paper text-[15px] leading-8">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+                {file.text}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <p className="text-sm italic text-[#8a8371]">这一页还是空的。</p>
+          )}
+        </div>
       </div>
     </article>
   );

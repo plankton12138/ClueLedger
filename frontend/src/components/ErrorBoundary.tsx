@@ -2,14 +2,14 @@
  * 面板级错误边界（P6 T12，D10）：一个面板崩不拖垮整个应用。
  *
  * 用法：<ErrorBoundary label="正文">…</ErrorBoundary>——渲染期异常被捕获后
- * 显示错误卡片（三要素式文案：哪个面板崩了 / 错误摘要 / 怎样算对），
+ * 显示错误卡片（面板名 / 错误摘要 / 一句建议），
  * 顶部导航与其他面板不受影响。「重试」重置边界状态，重新渲染子树。
  */
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface ErrorBoundaryProps {
-  /** 面板名，进错误卡文案（「哪里错」的第一要素）。 */
+  /** 面板名，显示在错误卡标题里。 */
   label: string;
   children: ReactNode;
 }
@@ -36,13 +36,13 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
     }
     return (
       <div className="flex flex-1 items-center justify-center p-6">
-        <div className="max-w-md border border-overdue/50 bg-overdue/10 px-4 py-3">
-          <div className="text-sm font-bold text-overdue">「{this.props.label}」面板崩溃了</div>
-          <p className="mt-1 text-xs leading-relaxed text-paper/75">
-            哪里错：{this.state.error.message}
+        <div className="max-w-md rounded border border-red-edge bg-red-bg px-4 py-3">
+          <div className="text-sm font-bold text-red">「{this.props.label}」面板崩溃了</div>
+          <p className="mt-1 text-xs leading-relaxed text-fg/75">
+            {this.state.error.message}
           </p>
-          <p className="mt-2 text-xs leading-relaxed text-paper/50">
-            怎样算对：点下方重试；若反复崩溃，检查服务端日志或刷新页面。
+          <p className="mt-2 text-xs leading-relaxed text-fg/50">
+            建议：点下方重试；若反复崩溃，检查服务端日志或刷新页面。
           </p>
           <button
             type="button"

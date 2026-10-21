@@ -1,8 +1,12 @@
 /**
- * 工作区壳层（0.4 V04-4）：顶栏 + 章节目录 + 稿纸 + 对话栏。
+ * 工作区壳层（0.4 V04-4 / V04-11）：顶栏 + 章节目录 + 稿纸 + 对话栏。
  *
  * 数据全部来自 `/api/file-workspaces`：目录、文件、事件与 Git。外部编辑不会自动推送，
  * 切换回窗口或点刷新时重新扫描目录——首版不做文件系统监听。
+ *
+ * 三栏宽度与对话栏显隐是界面偏好（`state/layout.ts`），存在浏览器本地：拖动栏间把手改宽度，
+ * 双击复位；顶栏「对话」开关收起右栏，稿纸占满剩余空间。收起只是不渲染面板，
+ * 会话状态在 `state/conversations.ts`，重新打开时草稿、事件与运行状态都还在。
  *
  * 模型设置是应用级状态（V04-9）：它不随作品打开/关闭，顶栏入口在没有作品时也能用；
  * 窗口重新获得焦点只重读本机配置，不自动调用供应商。
@@ -10,6 +14,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useConversationsStore } from "../../state/conversations";
+import { CHAT, SIDEBAR, useLayoutStore } from "../../state/layout";
 import { useModelsStore } from "../../state/models";
 import { useWorkspaceStore } from "../../state/workspace";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
@@ -17,6 +23,7 @@ import ChangesDrawer from "./ChangesDrawer";
 import ConversationPanel from "./ConversationPanel";
 import DirectoryDialog from "./DirectoryDialog";
 import Paper from "./Paper";
+import ResizeHandle from "./ResizeHandle";
 
 export default function WorkspaceShell() {
   const bindings = useWorkspaceStore((state) => state.bindings);
@@ -47,6 +54,13 @@ export default function WorkspaceShell() {
   const initModels = useModelsStore((state) => state.init);
   const openModelSettings = useModelsStore((state) => state.openSettings);
 
+  const sidebarWidth = useLayoutStore((state) => state.sidebarWidth);
+  const chatWidth = useLayoutStore((state) => state.chatWidth);
+  const chatVisible = useLayoutStore((state) => state.chatVisible);
+  const setSidebarWidth = useLayoutStore((state) => state.setSidebarWidth);
+  const setChatWidth = useLayoutStore((state) => state.setChatWidth);
+  const toggleChat = useLayoutStore((state) => state.toggleChat);
+
   useEffect(() => {
     void init();
     void initModels();
@@ -55,7 +69,11 @@ export default function WorkspaceShell() {
   // 外部编辑不推送：切回窗口时重新扫描目录与当前文件，并重读模型配置。
   useEffect(() => {
     const onFocus = () => {
-      if (useWorkspaceStore.getState().currentId) void refreshAll();
+      if (useWorkspaceStore.getState().currentId) {
+        void refreshAll();
+        // 运行状态与列表以服务端为准：别的窗口受理的轮次也能在这里看到。
+        void useConversationsStore.getState().refreshList();
+      }
       void useModelsStore.getState().refresh();
     };
     window.addEventListener("focus", onFocus);
@@ -96,6 +114,17 @@ export default function WorkspaceShell() {
           打开 / 新建
         </button>
         <div className="flex-1" />
+        <div className={`seg flex-none text-[11px] ${chatVisible ? "" : "dim"}`}>
+          <button
+            className={chatVisible ? "on px-2 py-1" : "px-2 py-1"}
+            aria-pressed={chatVisible}
+            disabled={!currentId}
+            onClick={toggleChat}
+            title="显示或隐藏对话栏"
+          >
+            对话
+          </button>
+        </div>
         <button className="btn btn-gray px-2 py-1 text-[11px]" onClick={openModelSettings}>
           模型设置
         </button>
@@ -127,7 +156,7 @@ export default function WorkspaceShell() {
         </div>
       )}
       {notice && (
-        <div className="flex flex-none items-center gap-3 border-b border-[#cfc7ae] bg-[#f3ecd8] px-5 py-2 text-xs text-[#4b4737]">
+        <div className="flex flex-none items-center gap-3 border-b border-amber-edge bg-amber-bg px-5 py-2 text-xs text-amber">
           <span className="min-w-0 flex-1">{notice}</span>
           <button className="underline" onClick={dismissNotice}>
             知道了
@@ -135,12 +164,12 @@ export default function WorkspaceShell() {
         </div>
       )}
 
-      <main className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_380px] overflow-hidden">
-        <nav className="flex min-h-0 flex-col border-r border-[#355f7f] bg-[#12354f] text-white">
+      <main className="flex min-h-0 flex-1 overflow-hidden">
+        <nav className="toc-pane flex min-h-0 flex-none flex-col" style={{ width: sidebarWidth }}>
           <div className="flex flex-none items-center gap-2 px-3 py-2">
             <input
               aria-label="搜索正文与设定"
-              className="min-w-0 flex-1 rounded bg-[#1b4666] px-2 py-1 text-[11px] text-white placeholder:text-white/35"
+              className="well-input min-w-0 flex-1 px-2 py-1 text-[11px]"
               placeholder="搜索…"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -166,10 +195,10 @@ export default function WorkspaceShell() {
           <div className="min-h-0 flex-1 overflow-auto px-2 pb-3">
             {search ? (
               <section>
-                <div className="flex items-center gap-2 px-1 py-2 text-[11px] text-white/60">
+                <div className="flex items-center gap-2 px-1 py-2 text-[11px] text-sub">
                   <span className="flex-1">搜索结果 {search.hits.length} 条</span>
                   <button
-                    className="underline"
+                    className="underline text-blue"
                     onClick={() => {
                       setQuery("");
                       clearSearch();
@@ -182,10 +211,10 @@ export default function WorkspaceShell() {
                   {search.hits.map((hit) => (
                     <li key={`${hit.path}:${hit.line}`}>
                       <button
-                        className="w-full rounded px-2 py-1 text-left text-[11px] leading-5 hover:bg-[#1b4666]"
+                        className="toc-row px-2 py-1 text-[11px] leading-5"
                         onClick={() => void openPath(hit.path)}
                       >
-                        <div className="truncate text-white/50">
+                        <div className="truncate text-mute">
                           {hit.path} · 第 {hit.line} 行
                         </div>
                         <div className="truncate">{hit.text}</div>
@@ -193,11 +222,11 @@ export default function WorkspaceShell() {
                     </li>
                   ))}
                   {search.hits.length === 0 && (
-                    <li className="px-2 py-1 text-[11px] text-white/50">没有找到。</li>
+                    <li className="px-2 py-1 text-[11px] text-mute">没有找到。</li>
                   )}
                 </ul>
                 {search.unreadable.length > 0 && (
-                  <p className="mt-2 px-1 text-[10px] text-[#f0c48a]">
+                  <p className="mt-2 px-1 text-[10px] text-amber">
                     无法读取：{search.unreadable.join("、")}
                   </p>
                 )}
@@ -206,11 +235,9 @@ export default function WorkspaceShell() {
               <>
                 <section>
                   <div className="flex items-center gap-2 px-1 py-2">
-                    <h2 className="flex-1 text-[11px] font-bold tracking-wide text-white/70">
-                      正文
-                    </h2>
+                    <h2 className="toc-head flex-1 text-[11px] font-bold tracking-wide">正文</h2>
                     <button
-                      className="text-[10px] underline text-white/60"
+                      className="text-[10px] underline text-blue"
                       onClick={() => fileInput.current?.click()}
                     >
                       导入
@@ -231,8 +258,8 @@ export default function WorkspaceShell() {
                     {catalog.chapters.map((entry) => (
                       <li key={entry.path}>
                         <button
-                          className={`w-full truncate rounded px-2 py-1 text-left text-[12px] ${
-                            selectedPath === entry.path ? "bg-[#2b5f85]" : "hover:bg-[#1b4666]"
+                          className={`toc-row px-2 py-1 text-[12px] ${
+                            selectedPath === entry.path ? "on" : ""
                           }`}
                           title={entry.path}
                           onClick={() => void openPath(entry.path)}
@@ -242,7 +269,7 @@ export default function WorkspaceShell() {
                       </li>
                     ))}
                     {catalog.chapters.length === 0 && (
-                      <li className="px-2 py-1 text-[11px] text-white/45">
+                      <li className="px-2 py-1 text-[11px] text-mute">
                         还没有章节。对右边说「写第一章」。
                       </li>
                     )}
@@ -250,21 +277,42 @@ export default function WorkspaceShell() {
                 </section>
 
                 <section className="mt-3">
-                  <h2 className="px-1 py-2 text-[11px] font-bold tracking-wide text-white/70">
-                    设定集
-                  </h2>
+                  <h2 className="toc-head px-1 py-2 text-[11px] font-bold tracking-wide">设定集</h2>
+                  <details open className="mb-1">
+                    <summary className="px-2 py-1 text-[12px] font-bold">角色小传</summary>
+                    <ul className="ml-2 space-y-0.5">
+                      {catalog.characters.map((entry) => (
+                        <li key={entry.path}>
+                          <button
+                            className={`toc-row px-2 py-1 text-[12px] ${
+                              selectedPath === entry.path ? "on" : ""
+                            }`}
+                            title={entry.path}
+                            onClick={() => void openPath(entry.path)}
+                          >
+                            {entry.title}
+                          </button>
+                        </li>
+                      ))}
+                      {catalog.characters.length === 0 && (
+                        <li className="px-2 py-1 text-[11px] text-mute">
+                          还没有角色。可在对话中要求创建人物小传。
+                        </li>
+                      )}
+                    </ul>
+                  </details>
                   <ul className="space-y-0.5">
                     {catalog.settings.map((entry) => (
                       <li key={entry.path}>
                         <button
-                          className={`w-full truncate rounded px-2 py-1 text-left text-[12px] ${
-                            selectedPath === entry.path ? "bg-[#2b5f85]" : "hover:bg-[#1b4666]"
+                          className={`toc-row px-2 py-1 text-[12px] ${
+                            selectedPath === entry.path ? "on" : ""
                           }`}
                           onClick={() => void openPath(entry.path)}
                         >
                           {entry.title}
                           {!entry.exists && (
-                            <span className="ml-2 text-[10px] text-white/40">（缺失）</span>
+                            <span className="ml-2 text-[10px] text-mute">（缺失）</span>
                           )}
                         </button>
                       </li>
@@ -275,19 +323,30 @@ export default function WorkspaceShell() {
             )}
           </div>
 
-          <div className="flex-none border-t border-[#355f7f] px-3 py-2 text-[10px] text-white/45">
+          <div className="toc-foot flex-none px-3 py-2 text-[10px]">
             {current ? current.path : "未打开目录"}
           </div>
         </nav>
 
-        <section className="min-h-0 overflow-hidden bg-[#12354f]">
+        <ResizeHandle
+          value={sidebarWidth}
+          min={SIDEBAR.min}
+          max={SIDEBAR.max}
+          label="目录栏宽度"
+          onChange={setSidebarWidth}
+          onReset={() => setSidebarWidth(SIDEBAR.default)}
+        />
+
+        <section className="workbench min-h-0 min-w-0 flex-1 overflow-hidden">
           {currentId ? (
             <Paper file={file} loading={loading} />
           ) : (
-            <div className="grid h-full place-items-center text-center text-sm text-white/70">
+            <div className="grid h-full place-items-center text-center text-sm text-sub">
               <div>
-                <p className="font-serif text-lg text-white/90">打开一个作品目录</p>
-                <p className="mt-2 text-xs">作品就是一个文件夹：正文/ 与 设定集/，历史用 Git。</p>
+                <p className="font-serif text-lg font-bold text-fg-strong">打开一个作品目录</p>
+                <p className="mt-2 text-xs">
+                  作品就是一个文件夹：正文/ 与 设定集/，历史用 Git。
+                </p>
                 <button
                   className="btn btn-gold mt-4 px-4 py-1.5 text-xs"
                   onClick={() => setDialogOpen(true)}
@@ -299,10 +358,21 @@ export default function WorkspaceShell() {
           )}
         </section>
 
-        {currentId ? (
-          <ConversationPanel />
-        ) : (
-          <aside className="border-l border-[#355f7f] bg-[#12354f]" />
+        {currentId && chatVisible && (
+          <>
+            <ResizeHandle
+              value={chatWidth}
+              min={CHAT.min}
+              max={CHAT.max}
+              invert
+              label="对话栏宽度"
+              onChange={setChatWidth}
+              onReset={() => setChatWidth(CHAT.default)}
+            />
+            <div className="flex min-h-0 flex-none flex-col" style={{ width: chatWidth }}>
+              <ConversationPanel />
+            </div>
+          </>
         )}
       </main>
 

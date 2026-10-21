@@ -57,10 +57,10 @@ async def test_list_files_reports_both_blocks(tmp_path: Path) -> None:
 
     assert [item["path"] for item in body["chapters"]] == ["正文/0001 雨夜.md"]
     assert [item["path"] for item in body["settings"]] == [
-        "设定集/角色小传.md",
         "设定集/线索.md",
         "设定集/真相.md",
     ]
+    assert body["characters"] == []
 
 
 @pytest.mark.anyio

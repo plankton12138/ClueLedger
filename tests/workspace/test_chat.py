@@ -1,7 +1,10 @@
-"""对话、轮次与事件（0.4 V04-3，计划 M05）。
+"""对话、轮次与事件（0.4 V04-3 / V04-10）。
 
-契约：一轮请求由后台任务执行，事件按 ``seq`` 追加并可回放；同一作品同时只允许一轮
-在写；停止保留已写入文件并记录为「已停止」；进程重启把没有正常结束的轮次标为中断。
+契约：一轮请求由后台任务执行，事件按 ``seq`` 追加并可回放；**首次发送同时建会话并受理
+首轮**，空提示不落任何记录；同一作品同时只允许一轮，包括已受理但还没开始执行的；
+停止覆盖「已受理」与「正在跑」两个阶段；进程重启按轮次配对补中断，不自动继续。
+同一会话能接上前文，不同会话的聊天互相独立。
+
 模型用脚本化假 provider 驱动——它替代的是「模型说什么」，不替代工具、文件与 Git。
 """
 
@@ -20,23 +23,37 @@ from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.git import GitRepo
-from hastings.workspace.service import ProviderFactory
-from hastings.workspace.state import RecentWorkspaces
-from tau_agent.messages import AssistantMessage, TextContent, ToolCall
+from hastings.workspace.service import ProviderFactory, TurnService
+from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
+from tau_agent.messages import AssistantMessage, TextContent, ToolCall, UserMessage
 from tau_agent.provider_events import AssistantDoneEvent, AssistantErrorEvent, AssistantStartEvent
 
 
 class ScriptedProvider:
-    """按脚本吐事件；``hang_from`` 之后的调用会一直等取消，用来模拟长轮次。"""
+    """按脚本吐事件；``hang_from`` 之后的调用会一直等取消，用来模拟长轮次。
+
+    每次调用都记下实际收到的 ``system`` 与 ``messages``：判断上下文是否恢复，
+    要看模型真正收到什么，而不是界面显示了几条消息。
+    """
 
     def __init__(self, turns: list[list[Any]], *, hang_from: int | None = None) -> None:
         self.turns = turns
         self.hang_from = hang_from
         self.calls = 0
+        self.requests: list[dict[str, Any]] = []
 
-    def stream_response(self, *, signal: Any = None, **_: Any) -> Any:
+    def stream_response(
+        self,
+        *,
+        model: str = "",
+        system: str = "",
+        messages: list[Any] | None = None,
+        **_rest: Any,
+    ) -> Any:
         index = self.calls
         self.calls += 1
+        self.requests.append({"model": model, "system": system, "messages": list(messages or [])})
+        signal = _rest.get("signal")
 
         async def generator() -> Any:
             yield AssistantStartEvent(partial=AssistantMessage())
@@ -99,10 +116,30 @@ def _workspace(client: TestClient, tmp_path: Path) -> str:
     return str(response.json()["id"])
 
 
-def _conversation(client: TestClient, workspace_id: str) -> str:
-    response = client.post(f"/api/file-workspaces/{workspace_id}/conversations", json={})
-    assert response.status_code == 200, response.text
-    return str(response.json()["id"])
+def _accept(
+    client: TestClient, workspace_id: str, text: str = "写第一章", *, key: str | None = None
+) -> dict[str, Any]:
+    """首次发送：一次请求建会话并受理首轮。"""
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={"text": text, "request_key": key or f"k_{time.monotonic_ns()}"},
+    )
+    assert response.status_code == 202, response.text
+    return dict(response.json())
+
+
+def _send(
+    client: TestClient,
+    workspace_id: str,
+    conversation_id: str,
+    text: str,
+    *,
+    key: str | None = None,
+) -> Any:
+    return client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns",
+        json={"text": text, "request_key": key or f"k_{time.monotonic_ns()}"},
+    )
 
 
 def _events(client: TestClient, workspace_id: str, conversation_id: str) -> list[dict[str, Any]]:
@@ -111,6 +148,12 @@ def _events(client: TestClient, workspace_id: str, conversation_id: str) -> list
     )
     assert response.status_code == 200, response.text
     return list(response.json()["events"])
+
+
+def _listed(client: TestClient, workspace_id: str) -> dict[str, Any]:
+    response = client.get(f"/api/file-workspaces/{workspace_id}/conversations")
+    assert response.status_code == 200, response.text
+    return dict(response.json())
 
 
 def _wait_until(
@@ -157,14 +200,9 @@ def test_turn_writes_chapter_and_records_git_commit(
     )
     client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
-    conversation_id = _conversation(client, workspace_id)
+    accepted = _accept(client, workspace_id, "写第一章，雨夜")
+    conversation_id = accepted["conversation_id"]
 
-    response = client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns",
-        json={"text": "写第一章，雨夜"},
-    )
-
-    assert response.status_code == 202, response.text
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     assert [event["type"] for event in events] == [
         "turn_started",
@@ -183,9 +221,10 @@ def test_turn_writes_chapter_and_records_git_commit(
     assert (root / "正文/0001 雨夜.md").is_file()
     subjects = [commit.subject for commit in GitRepo(root).log()]
     assert subjects[0] == "写作：写第一章，雨夜"
-    # 对话标题取首条消息，便于在左栏辨认。
-    listed = client.get(f"/api/file-workspaces/{workspace_id}/conversations").json()
-    assert listed[0]["title"] == "写第一章，雨夜"
+    # 标题取首条提示，便于在列表里辨认。
+    listed = _listed(client, workspace_id)
+    assert [item["title"] for item in listed["items"]] == ["写第一章，雨夜"]
+    assert accepted["title"] == "写第一章，雨夜"
 
 
 def test_discussion_turn_changes_no_files(
@@ -194,14 +233,9 @@ def test_discussion_turn_changes_no_files(
     provider = ScriptedProvider([_text_turn("第三人称更合适，因为……")])
     client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
-    conversation_id = _conversation(client, workspace_id)
+    conversation_id = _accept(client, workspace_id, "这个故事用什么视角好？")["conversation_id"]
     root = tmp_path / "雪山旅馆"
     head = GitRepo(root).head()
-
-    client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns",
-        json={"text": "这个故事用什么视角好？"},
-    )
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     assert events[-1]["recording"] == "no_change"
@@ -225,14 +259,9 @@ def test_model_error_fails_the_turn_instead_of_reporting_done(
     )
     client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
-    conversation_id = _conversation(client, workspace_id)
+    conversation_id = _accept(client, workspace_id, "写第一章")["conversation_id"]
     root = tmp_path / "雪山旅馆"
     head = GitRepo(root).head()
-
-    client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns",
-        json={"text": "写第一章"},
-    )
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     assert [event["type"] for event in events] == ["turn_started", "error", "run_finished"]
@@ -241,6 +270,210 @@ def test_model_error_fails_the_turn_instead_of_reporting_done(
     assert events[2]["status"] == "failed"
     assert events[2]["changed_paths"] == []
     assert GitRepo(root).head() == head
+
+
+# -- 新建与首次发送 -------------------------------------------------------
+
+
+def test_empty_create_is_rejected_and_leaves_no_conversation(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """旧的「先建空会话」不再存在：没有提示就没有会话。"""
+    provider = ScriptedProvider([])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    url = f"/api/file-workspaces/{workspace_id}/conversations"
+
+    assert client.post(url, json={}).status_code == 422
+    blank = client.post(url, json={"text": "   ", "request_key": "k1"})
+    assert blank.status_code == 400
+    assert blank.json()["error"]["code"] == "PROMPT_EMPTY"
+
+    listed = _listed(client, workspace_id)
+    assert listed["items"] == []
+    assert provider.calls == 0
+    state_root = conversation_root(tmp_path / "state", workspace_id)
+    assert not list(state_root.glob("*.jsonl"))
+
+
+def test_first_send_creates_one_conversation_and_one_turn(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    provider = ScriptedProvider([_text_turn("好")])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+
+    accepted = _accept(client, workspace_id, "先讨论人物动机", key="k1")
+    _wait_until(client, workspace_id, accepted["conversation_id"], _finished)
+    retried = _accept(client, workspace_id, "先讨论人物动机", key="k1")
+
+    assert retried["turn_id"] == accepted["turn_id"]
+    assert retried["conversation_id"] == accepted["conversation_id"]
+    assert provider.calls == 1
+    listed = _listed(client, workspace_id)
+    assert len(listed["items"]) == 1
+    assert (
+        len(
+            [
+                e
+                for e in _events(client, workspace_id, accepted["conversation_id"])
+                if e["type"] == "turn_started"
+            ]
+        )
+        == 1
+    )
+
+
+def test_same_request_key_with_different_text_is_a_conflict(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    provider = ScriptedProvider([_text_turn("好")])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    _accept(client, workspace_id, "第一件事", key="same")
+
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={"text": "第二件事", "request_key": "same"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "REQUEST_KEY_CONFLICT"
+
+
+def test_index_is_rebuilt_from_the_log(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """索引写坏或丢失不影响已受理的会话：日志才是受理成立的依据。"""
+    provider = ScriptedProvider([_text_turn("好")])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    accepted = _accept(client, workspace_id, "写第一章")
+    _wait_until(client, workspace_id, accepted["conversation_id"], _finished)
+
+    index = conversation_root(tmp_path / "state", workspace_id) / "conversations.json"
+    index.unlink()
+
+    listed = _listed(client, workspace_id)
+    assert [item["id"] for item in listed["items"]] == [accepted["conversation_id"]]
+    assert listed["items"][0]["title"] == "写第一章"
+
+
+def test_failed_log_write_leaves_no_visible_conversation(
+    tmp_path: Path,
+    client_factory: Callable[[ProviderFactory], TestClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """初始日志都写不下去时不能留下「半条会话」：作者看到的是失败，不是空对话。"""
+    provider = ScriptedProvider([])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+
+    def broken(self: ConversationStore, conversation_id: str, records: Any) -> None:
+        raise WorkspaceError(
+            code="STATE_WRITE_FAILED",
+            where="conversations.create",
+            why="磁盘不可写",
+            fix="检查应用状态目录",
+        )
+
+    monkeypatch.setattr(ConversationStore, "_publish", broken)
+
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={"text": "写第一章", "request_key": "k1"},
+    )
+
+    assert response.status_code == 500
+    assert _listed(client, workspace_id)["items"] == []
+
+
+# -- 连续讨论与隔离 -------------------------------------------------------
+
+
+def test_second_turn_replays_public_history(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """同一会话能接着聊：第二次请求真的带上了前一轮的提示与公开回复。"""
+    provider = ScriptedProvider(
+        [_text_turn("记住了：侦探不能是凶手。"), _text_turn("好，按这个约束写。")]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    accepted = _accept(client, workspace_id, "记住：侦探不能是凶手")
+    conversation_id = accepted["conversation_id"]
+    _wait_until(client, workspace_id, conversation_id, _finished)
+
+    response = _send(client, workspace_id, conversation_id, "现在写第一章", key="k2")
+    assert response.status_code == 202, response.text
+    _wait_until(
+        client,
+        workspace_id,
+        conversation_id,
+        lambda events: len([e for e in events if e["type"] == "run_finished"]) == 2,
+    )
+
+    second = provider.requests[1]
+    users = [message.text for message in second["messages"] if isinstance(message, UserMessage)]
+    replies = [
+        "".join(block.text for block in message.content)
+        for message in second["messages"]
+        if isinstance(message, AssistantMessage)
+    ]
+    # 当前提示只出现一次；前一轮的提示与公开回复都在。
+    assert users == ["记住：侦探不能是凶手", "现在写第一章"]
+    assert replies == ["记住了：侦探不能是凶手。"]
+    # 执行事实通过应用说明进入系统提示，不冒充作者要求。
+    assert "本会话此前的轮次" in second["system"]
+    assert "完成" in second["system"]
+
+
+def test_new_conversation_has_no_history_from_another(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    provider = ScriptedProvider([_text_turn("A 记下了。"), _text_turn("B 不知道 A。")])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    first = _accept(client, workspace_id, "A 的约束：没有超自然元素")
+    _wait_until(client, workspace_id, first["conversation_id"], _finished)
+
+    second = _accept(client, workspace_id, "B 的新问题")
+    _wait_until(client, workspace_id, second["conversation_id"], _finished)
+
+    request = provider.requests[1]
+    users = [message.text for message in request["messages"] if isinstance(message, UserMessage)]
+    assert users == ["B 的新问题"]
+    assert "本会话此前的轮次" not in request["system"]
+
+
+def test_two_conversations_share_workspace_files(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """作品文件是共享的：A 写下的章节，B 下一轮能读到当前内容。"""
+    provider = ScriptedProvider(
+        [
+            _tool_turn(
+                ToolCall(
+                    id="c1",
+                    name="write_file",
+                    arguments={"path": "正文/0001 雨夜.md", "text": "# 雨夜\n\nA 写的。\n"},
+                )
+            ),
+            _text_turn("写好了。"),
+            _text_turn("我读到了新的第一章。"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    first = _accept(client, workspace_id, "写第一章")
+    _wait_until(client, workspace_id, first["conversation_id"], _finished)
+
+    second = _accept(client, workspace_id, "第一章现在是什么内容？")
+    _wait_until(client, workspace_id, second["conversation_id"], _finished)
+
+    assert (tmp_path / "雪山旅馆/正文/0001 雨夜.md").is_file()
+    # B 的系统提示按当前作品装配，能看到 A 写出来的章节。
+    assert "正文/0001 雨夜.md" in provider.requests[-1]["system"]
 
 
 # -- 并发与停止 -----------------------------------------------------------
@@ -264,11 +497,8 @@ def test_second_turn_is_rejected_while_one_is_running(
     )
     client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
-    conversation_id = _conversation(client, workspace_id)
-    url = f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns"
-
-    first = client.post(url, json={"text": "写第一章"})
-    assert first.status_code == 202
+    first = _accept(client, workspace_id, "写第一章")
+    conversation_id = first["conversation_id"]
     _wait_until(
         client,
         workspace_id,
@@ -276,19 +506,39 @@ def test_second_turn_is_rejected_while_one_is_running(
         lambda events: any(event["type"] == "tool_finished" for event in events),
     )
 
-    second = client.post(url, json={"text": "再写第二章"})
+    second = _send(client, workspace_id, conversation_id, "再写第二章")
 
     assert second.status_code == 409
     assert second.json()["error"]["code"] == "WORKSPACE_BUSY_CONFLICT"
+    assert second.json()["error"]["details"]["conversation"] == conversation_id
 
-    stopped = client.post(
-        f"/api/file-workspaces/{workspace_id}/turns/{first.json()['turn_id']}/stop"
-    )
+    stopped = client.post(f"/api/file-workspaces/{workspace_id}/turns/{first['turn_id']}/stop")
     assert stopped.status_code == 200
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     assert events[-1]["status"] == "stopped"
     # 停止不撤销已经写进去的内容。
     assert (tmp_path / "雪山旅馆/正文/0001 雨夜.md").is_file()
+
+
+def test_busy_workspace_rejects_a_new_conversation_without_creating_it(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """新会话遇忙：拒绝且不留空会话。"""
+    provider = ScriptedProvider([_text_turn("好")], hang_from=0)
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    first = _accept(client, workspace_id, "先写第一章")
+
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={"text": "另开一个话题", "request_key": "k_new"},
+    )
+
+    assert response.status_code == 409
+    listed = _listed(client, workspace_id)
+    assert [item["id"] for item in listed["items"]] == [first["conversation_id"]]
+    assert listed["active_turn"]["conversation_id"] == first["conversation_id"]
+    client.post(f"/api/file-workspaces/{workspace_id}/turns/{first['turn_id']}/stop")
 
 
 def test_stop_marks_partial_commit(
@@ -309,12 +559,8 @@ def test_stop_marks_partial_commit(
     )
     client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
-    conversation_id = _conversation(client, workspace_id)
-
-    turn = client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns",
-        json={"text": "写第一章"},
-    ).json()
+    turn = _accept(client, workspace_id, "写第一章")
+    conversation_id = turn["conversation_id"]
     _wait_until(
         client,
         workspace_id,
@@ -328,6 +574,30 @@ def test_stop_marks_partial_commit(
     assert events[-1]["recording"] == "committed"
     subjects = [commit.subject for commit in GitRepo(tmp_path / "雪山旅馆").log()]
     assert subjects[0] == "写作（已停止）：写第一章"
+
+
+def test_stop_works_before_the_model_is_called(tmp_path: Path) -> None:
+    """受理阶段就能停止：不调用模型，也不留下「轮次不存在」。"""
+    workspace = _create_workspace(tmp_path)
+    store = ConversationStore(conversation_root(tmp_path / "state", "w1"))
+    provider = ScriptedProvider([_text_turn("不该被调用")])
+    service = TurnService(workspace, store, lambda: _snapshot(provider))
+
+    async def scenario() -> tuple[bool, list[dict[str, Any]]]:
+        info = await service.accept("写第一章", "k1")
+        stopped = await service.stop(info.turn_id)
+        await service.wait(info.turn_id)
+        return stopped, list(store.events(info.conversation_id))
+
+    stopped, events = asyncio.run(scenario())
+
+    assert stopped is True
+    assert provider.calls == 0
+    assert events[-1]["type"] == "run_finished"
+    assert events[-1]["status"] == "stopped"
+    assert service.active_turn() is None
+    # 中断修复不会把已经停止的轮次再补一遍。
+    assert service.mark_interrupted() == []
 
 
 # -- 失败与重启 -----------------------------------------------------------
@@ -346,12 +616,7 @@ def test_turn_without_model_reports_failure(
 
     client = client_factory(factory)
     workspace_id = _workspace(client, tmp_path)
-    conversation_id = _conversation(client, workspace_id)
-
-    client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns",
-        json={"text": "写第一章"},
-    )
+    conversation_id = _accept(client, workspace_id, "写第一章")["conversation_id"]
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     assert [event["type"] for event in events] == ["turn_started", "error", "run_finished"]
@@ -365,26 +630,32 @@ def test_unfinished_turn_is_marked_interrupted_on_restart(
 ) -> None:
     book = RecentWorkspaces(tmp_path / "state")
     provider = ScriptedProvider([_text_turn("你好")])
-    app = create_workspace_app(workspaces=book, provider_factory=lambda: _snapshot(provider))
-    client = TestClient(app)
+    client = TestClient(
+        create_workspace_app(workspaces=book, provider_factory=lambda: _snapshot(provider))
+    )
     workspace_id = _workspace(client, tmp_path)
-    conversation_id = _conversation(client, workspace_id)
-
-    # 直接写入一条没有结尾的轮次，模拟进程在运行中退出。
-    from hastings.workspace.state import ConversationStore, conversation_root
-
     store = ConversationStore(conversation_root(book.root, workspace_id))
-    store.append(conversation_id, {"type": "turn_started", "turn_id": "t_old", "text": "写第一章"})
+    accepted = store.create_with_first_turn(text="写第一章", request_key="k1", turn_id="t_old")
+    # 崩在工具阶段：最后一条不是 turn_started 也要识别出来。
+    store.append(
+        accepted.conversation_id, {"type": "tool_started", "turn_id": "t_old", "tool": "read_file"}
+    )
 
-    # 新进程：第一次访问这个作品时补一条中断记录。
     restarted = TestClient(
         create_workspace_app(workspaces=book, provider_factory=lambda: _snapshot(provider))
     )
-    events = _events(restarted, workspace_id, conversation_id)
+    events = _events(restarted, workspace_id, accepted.conversation_id)
 
     assert events[-1]["type"] == "run_finished"
     assert events[-1]["status"] == "interrupted"
     assert events[-1]["recording"] == "unrecorded"
+
+    # 再启动一次不会补第二条中断。
+    again = TestClient(
+        create_workspace_app(workspaces=book, provider_factory=lambda: _snapshot(provider))
+    )
+    events = _events(again, workspace_id, accepted.conversation_id)
+    assert len([e for e in events if e["type"] == "run_finished"]) == 1
 
 
 # -- 请求键与事件流 -------------------------------------------------------
@@ -396,25 +667,16 @@ def test_request_key_is_idempotent(
     provider = ScriptedProvider([_text_turn("好")])
     client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
-    conversation_id = _conversation(client, workspace_id)
-    url = f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns"
+    first = _accept(client, workspace_id, "你好", key="k1")
+    _wait_until(client, workspace_id, first["conversation_id"], _finished)
 
-    first = client.post(url, json={"text": "你好", "request_key": "k1"})
-    _wait_until(client, workspace_id, conversation_id, _finished)
-    second = client.post(url, json={"text": "你好", "request_key": "k1"})
-
-    assert second.json()["turn_id"] == first.json()["turn_id"]
-    assert provider.calls == 1
-    assert (
-        len(
-            [
-                e
-                for e in _events(client, workspace_id, conversation_id)
-                if e["type"] == "turn_started"
-            ]
-        )
-        == 1
+    second = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations/{first['conversation_id']}/turns",
+        json={"text": "你好", "request_key": "k1"},
     )
+
+    assert second.json()["turn_id"] == first["turn_id"]
+    assert provider.calls == 1
 
 
 def test_event_stream_replays_and_stops_at_run_finished(
@@ -423,11 +685,7 @@ def test_event_stream_replays_and_stops_at_run_finished(
     provider = ScriptedProvider([_text_turn("好")])
     client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
-    conversation_id = _conversation(client, workspace_id)
-    client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns",
-        json={"text": "你好"},
-    )
+    conversation_id = _accept(client, workspace_id, "你好")["conversation_id"]
     _wait_until(client, workspace_id, conversation_id, _finished)
 
     response = client.get(
@@ -442,3 +700,107 @@ def test_event_stream_replays_and_stops_at_run_finished(
     assert '"type": "turn_started"' in body
     assert '"type": "run_finished"' in body
     assert body.count("data: ") == 3
+
+
+def test_event_stream_isolates_conversations(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """只推送指定会话：另一个会话的事件不会混进来。"""
+    provider = ScriptedProvider([_text_turn("A"), _text_turn("B")])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    first = _accept(client, workspace_id, "先聊 A")
+    _wait_until(client, workspace_id, first["conversation_id"], _finished)
+    second = _accept(client, workspace_id, "再聊 B")
+    _wait_until(client, workspace_id, second["conversation_id"], _finished)
+
+    response = client.get(
+        f"/api/file-workspaces/{workspace_id}/events",
+        params={"conversation_id": second["conversation_id"], "after": 0, "follow": False},
+    )
+
+    body = response.text
+    assert "再聊 B" in body
+    assert "先聊 A" not in body
+
+
+# -- 改名与界面状态 -------------------------------------------------------
+
+
+def test_rename_keeps_author_title(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    provider = ScriptedProvider([_text_turn("好"), _text_turn("好")])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    accepted = _accept(client, workspace_id, "随便说点什么")
+    conversation_id = accepted["conversation_id"]
+    _wait_until(client, workspace_id, conversation_id, _finished)
+
+    renamed = client.patch(
+        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}",
+        json={"title": "人物动机"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["title"] == "人物动机"
+
+    _send(client, workspace_id, conversation_id, "继续")
+    _wait_until(
+        client,
+        workspace_id,
+        conversation_id,
+        lambda events: len([e for e in events if e["type"] == "run_finished"]) == 2,
+    )
+    # 自动标题只在首次受理时生成，后续轮次不覆盖作者改过的标题。
+    assert _listed(client, workspace_id)["items"][0]["title"] == "人物动机"
+
+
+def test_conversation_ui_keeps_drafts_and_recent(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    provider = ScriptedProvider([_text_turn("好")])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    accepted = _accept(client, workspace_id, "写第一章")
+    _wait_until(client, workspace_id, accepted["conversation_id"], _finished)
+    url = f"/api/file-workspaces/{workspace_id}/conversation-ui"
+
+    first = client.get(url).json()
+    assert first["drafts"] == {}
+    saved = client.patch(
+        url,
+        json={"set_draft": True, "draft_target": "new", "draft_text": "还没发出去的想法"},
+        headers={"If-Match": first["revision"]},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["drafts"] == {"new": "还没发出去的想法"}
+
+    # 过期版本被拒绝：不能让旧窗口的请求覆盖新草稿。
+    stale = client.patch(
+        url,
+        json={"set_draft": True, "draft_target": "new", "draft_text": "旧窗口的内容"},
+        headers={"If-Match": first["revision"]},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "CONVERSATION_UI_CONFLICT"
+
+    chosen = client.patch(
+        url,
+        json={"set_recent": True, "recent_id": accepted["conversation_id"]},
+        headers={"If-Match": saved.json()["revision"]},
+    )
+    assert chosen.json()["recent_id"] == accepted["conversation_id"]
+    assert _listed(client, workspace_id)["recent_id"] == accepted["conversation_id"]
+
+    cleared = client.patch(
+        url,
+        json={"set_draft": True, "draft_target": "new", "draft_text": ""},
+        headers={"If-Match": chosen.json()["revision"]},
+    )
+    assert cleared.json()["drafts"] == {}
+
+
+def _create_workspace(tmp_path: Path) -> Any:
+    from hastings.workspace.files import Workspace
+
+    return Workspace.create(tmp_path / "雪山旅馆")

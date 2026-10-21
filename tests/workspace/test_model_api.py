@@ -327,12 +327,10 @@ def test_probe_endpoint_reports_two_independent_facts(tmp_path: Path) -> None:
 # -- 与写作轮次共用同一配置 --------------------------------------------------
 
 
-def _workspace(client: TestClient, tmp_path: Path) -> tuple[str, str]:
+def _workspace(client: TestClient, tmp_path: Path) -> str:
     root = tmp_path / "作品"
     created = client.post("/api/file-workspaces", json={"path": str(root), "create": True})
-    workspace_id = str(created.json()["id"])
-    conversation = client.post(f"/api/file-workspaces/{workspace_id}/conversations", json={})
-    return workspace_id, str(conversation.json()["id"])
+    return str(created.json()["id"])
 
 
 def _wait_finished(client: TestClient, workspace_id: str, conversation_id: str) -> list[Any]:
@@ -373,13 +371,15 @@ def test_accepted_turn_keeps_its_snapshot_after_switching(
         json={"connection_id": first, "model": "deepseek-chat"},
         headers={"If-Match": _revision(client)},
     )
-    workspace_id, conversation_id = _workspace(client, tmp_path)
+    workspace_id = _workspace(client, tmp_path)
 
+    # 首次发送即建会话：受理时就固定这一轮的连接与模型。
     started = client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/turns",
-        json={"text": "先写一句"},
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={"text": "先写一句", "request_key": "k-snapshot"},
     )
     assert started.status_code == 202
+    conversation_id = str(started.json()["conversation_id"])
 
     events = _wait_finished(client, workspace_id, conversation_id)
     turn_started = next(event for event in events if event["type"] == "turn_started")

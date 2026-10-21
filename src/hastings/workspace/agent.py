@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,7 +22,7 @@ from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
 from hastings.workspace.service import WriteSession
 from tau_agent.harness import AgentHarness, AgentHarnessConfig
-from tau_agent.messages import TextContent
+from tau_agent.messages import AgentMessage, TextContent
 from tau_agent.provider import ModelProvider
 from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
 from tau_agent.types import JSONValue
@@ -70,6 +70,10 @@ def build_tools(workspace: Workspace, run: RunContext) -> list[AgentTool]:
                 "settings": [
                     {"path": entry.path, "title": entry.title, "exists": entry.exists}
                     for entry in catalog.settings
+                ],
+                "characters": [
+                    {"path": entry.path, "title": entry.title, "size": entry.size}
+                    for entry in catalog.characters
                 ],
             }
         )
@@ -227,7 +231,7 @@ def build_tools(workspace: Workspace, run: RunContext) -> list[AgentTool]:
         AgentTool(
             name="list_files",
             label="文件目录",
-            description="列出正文各章与三份设定文件的路径、标题与大小（只读）。",
+            description="列出正文章节、角色小传以及线索与真相文件的路径和标题（只读）。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
             execute_fn=list_files,
             prompt_guidelines=("不确定有哪些文件时先调用；无参数。",),
@@ -315,8 +319,8 @@ def build_tools(workspace: Workspace, run: RunContext) -> list[AgentTool]:
         ),
         AgentTool(
             name="move_file",
-            label="重命名章节",
-            description="重命名或移动章节文件（设定集不可移动），需要 digest。",
+            label="重命名文件",
+            description="在同类目录内重命名章节或角色小传（线索、真相不可移动），需要 digest。",
             parameters={
                 "type": "object",
                 "properties": {
@@ -332,8 +336,8 @@ def build_tools(workspace: Workspace, run: RunContext) -> list[AgentTool]:
         ),
         AgentTool(
             name="delete_file",
-            label="删除章节",
-            description="删除章节文件（设定集不可删除），需要 digest。",
+            label="删除文件",
+            description="删除章节或单个角色小传（线索、真相不可删除），需要 digest。",
             parameters={
                 "type": "object",
                 "properties": {"path": {"type": "string"}, "digest": {"type": "string"}},
@@ -375,16 +379,25 @@ def build_harness(
     run: RunContext,
     selected_path: str | None = None,
     max_turns: int = MAX_TURNS,
+    history: Sequence[AgentMessage] = (),
+    history_facts: str = "",
 ) -> AgentHarness:
-    """单个写作 Agent：系统提示 + 文件工具 + 回合上限。"""
+    """单个写作 Agent：系统提示 + 文件工具 + 回合上限。
+
+    ``history`` 只有本会话公开过的提示与回复（见 ``conversation_context``）；当前提示由
+    ``prompt()`` 追加一次，不能已经包含在 ``history`` 里，否则模型会收到两遍。
+    """
     return AgentHarness(
         AgentHarnessConfig(
             provider=provider,
             model=model,
-            system=build_system_prompt(workspace, selected_path=selected_path),
+            system=build_system_prompt(
+                workspace, selected_path=selected_path, history_facts=history_facts
+            ),
             tools=build_tools(workspace, run),
             max_turns=max_turns,
-        )
+        ),
+        messages=history,
     )
 
 

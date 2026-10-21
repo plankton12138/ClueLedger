@@ -28,7 +28,7 @@ class DirectoryPickerError(RuntimeError):
         self.code = code
         self.why = why
         self.fix = fix
-        super().__init__(f"[{code}] {why}。怎样算对：{fix}")
+        super().__init__(f"[{code}] {why}。建议：{fix}")
 
 
 #: 系统对话框是单例资源：同一进程同时开两个，作者会分不清哪个属于哪个窗口。

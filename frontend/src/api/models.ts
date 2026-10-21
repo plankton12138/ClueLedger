@@ -120,8 +120,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const error = body?.error;
     throw new ModelApiError(
       error?.code ?? `HTTP_${response.status}`,
-      error?.why ?? "请求没有成功",
-      error?.fix ?? "稍后重试；若持续失败，检查后端日志",
+      error?.why ?? `请求没有成功（HTTP ${response.status}）`,
+      error?.fix ?? "稍后重试；若持续失败，按状态码查后端日志",
       response.status,
     );
   }

@@ -1,7 +1,7 @@
 """文件工作区的失败分类（0.4 M01）。
 
 0.4 不再使用 0.3 的领域错误层：这里的错误只回答「目录或文件这一层发生了什么」，
-不携带版本、候选、账本等旧概念。消息仍保持三要素（哪里错、为什么错、怎样算对），
+不携带版本、候选、账本等旧概念。消息统一写成「位置与现象 + 建议」，
 因为调用方是模型工具和界面，二者都不该解析自然语言来判断处理方式。
 
 状态码由错误码尾缀决定：``*_NOT_FOUND`` → 404，``*_CONFLICT`` → 409，
@@ -17,7 +17,7 @@ __all__ = ["WorkspaceError", "status_for_code"]
 
 
 class WorkspaceError(Exception):
-    """文件工作区的可分类失败：稳定错误码 + 三要素消息 + 结构化详情。"""
+    """文件工作区的可分类失败：稳定错误码 + 可读消息 + 结构化详情。"""
 
     def __init__(
         self,
@@ -37,7 +37,7 @@ class WorkspaceError(Exception):
 
     @property
     def message(self) -> str:
-        return f"[{self.code}] 在 {self.where}：{self.why}。怎样算对：{self.fix}"
+        return f"[{self.code}] {self.where}：{self.why}。建议：{self.fix}"
 
     def __str__(self) -> str:
         return self.message

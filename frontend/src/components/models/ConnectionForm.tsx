@@ -21,6 +21,7 @@ import {
   type ProviderPreset,
 } from "../../api/models";
 import { useModelsStore } from "../../state/models";
+import { defaultConnectionName } from "./naming";
 
 interface Props {
   connection: ModelConnection | null;
@@ -54,8 +55,13 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
   const conflict = useModelsStore((state) => state.conflict);
   const refresh = useModelsStore((state) => state.refresh);
 
+  const connections = useModelsStore((state) => state.connections);
+
   const [stage, setStage] = useState<"connect" | "models">("connect");
-  const [displayName, setDisplayName] = useState(connection?.display_name ?? "");
+  // 新增时先把名称填好（供应商名，重名加序号）：作者不改也能直接往下走。
+  const [displayName, setDisplayName] = useState(
+    connection?.display_name ?? defaultConnectionName(preset, connections),
+  );
   const [baseUrl, setBaseUrl] = useState(connection?.base_url || preset.base_url);
   const [api, setApi] = useState<ProviderApi>(connection?.api ?? preset.api);
   const [apiKey, setApiKey] = useState("");
@@ -225,11 +231,12 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
               id="connection-name"
               autoFocus
               className="mt-1 w-full rounded border border-[#cfc7ae] bg-white px-3 py-2 text-sm"
-              placeholder={preset.display_name}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
             />
-            <p className="mt-1 text-[10px] text-[#8a8371]">只是显示名，可以随时改。</p>
+            <p className="mt-1 text-[10px] text-[#8a8371]">
+              默认用供应商名称，可以改成「我的 DeepSeek」这类更好认的名字；随时能改。
+            </p>
           </div>
 
           <div>

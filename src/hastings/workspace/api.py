@@ -16,26 +16,38 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, FastAPI, File, Query, Request, UploadFile
+from fastapi import APIRouter, FastAPI, File, Header, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from hastings.workspace.directory_dialog import DirectoryPickerError, pick_directory
 from hastings.workspace.errors import WorkspaceError, status_for_code
-from hastings.workspace.files import SETTING_PATHS, FileEntry, Workspace, chapter_title
+from hastings.workspace.files import (
+    FileEntry,
+    FileKind,
+    Workspace,
+    chapter_title,
+    character_title,
+    managed_kind,
+)
 from hastings.workspace.git import GitRepo
 from hastings.workspace.locations import default_workspace_root
 from hastings.workspace.service import ProviderFactory, TurnService
 from hastings.workspace.state import (
     Conversation,
     ConversationStore,
+    ConversationUiStore,
     RecentWorkspaces,
     WorkspaceBinding,
     conversation_root,
 )
 
 __all__ = [
+    "AcceptedTurnView",
+    "ActiveTurnView",
     "CatalogView",
+    "ConversationListView",
+    "ConversationUiView",
     "ConversationView",
     "DefaultLocationView",
     "FileEntryView",
@@ -93,7 +105,7 @@ class WorkspaceView(BaseModel):
 
 class FileEntryView(BaseModel):
     path: str
-    kind: Literal["chapter", "setting"]
+    kind: FileKind
     title: str
     order: str
     exists: bool
@@ -102,12 +114,13 @@ class FileEntryView(BaseModel):
 
 class CatalogView(BaseModel):
     chapters: list[FileEntryView]
+    characters: list[FileEntryView]
     settings: list[FileEntryView]
 
 
 class FileViewResponse(BaseModel):
     path: str
-    kind: Literal["chapter", "setting"]
+    kind: FileKind
     title: str
     text: str
     digest: str
@@ -133,24 +146,78 @@ class ConversationView(BaseModel):
     updated_at: str
 
 
+class ActiveTurnView(BaseModel):
+    """本作品当前占用的那一轮；只含公开信息。"""
+
+    conversation_id: str
+    turn_id: str
+    state: Literal["accepted", "running", "stop_requested"]
+    model: str
+    connection: str
+    started_at: str
+
+
+class ConversationListView(BaseModel):
+    """会话列表带上「上次看的会话」与作品当前活动轮次，一次读齐。"""
+
+    items: list[ConversationView]
+    recent_id: str | None
+    active_turn: ActiveTurnView | None
+    revision: str
+
+
+class AcceptedTurnView(BaseModel):
+    conversation_id: str
+    turn_id: str
+    started_at: str
+    title: str
+    request_key: str
+
+
 class CreateConversationRequest(BaseModel):
-    title: str = ""
+    """首次发送即建会话：空提示不再创建空记录。"""
+
+    text: str = Field(min_length=1)
+    request_key: str = Field(min_length=1)
+
+
+class RenameConversationRequest(BaseModel):
+    title: str = Field(min_length=1)
 
 
 class TurnRequest(BaseModel):
     text: str = Field(min_length=1)
-    request_key: str | None = None
+    request_key: str = Field(min_length=1)
 
 
 class TurnView(BaseModel):
     turn_id: str
     conversation_id: str
     started_at: str
+    title: str = ""
 
 
 class EventsView(BaseModel):
     events: list[dict[str, object]]
     last_seq: int
+    active_turn: ActiveTurnView | None = None
+    revision: str = ""
+
+
+class ConversationUiView(BaseModel):
+    recent_id: str | None
+    drafts: dict[str, str]
+    revision: str
+
+
+class ConversationUiPatch(BaseModel):
+    """只改指定的那一项：不整份覆盖其他会话的草稿。"""
+
+    set_recent: bool = False
+    recent_id: str | None = None
+    draft_target: str | None = None
+    draft_text: str | None = None
+    set_draft: bool = False
 
 
 class StopView(BaseModel):
@@ -205,6 +272,7 @@ def create_file_workspace_router(
     """绑定最近目录登记与模型来源；每个作品一个轮次服务，按需创建。"""
     router = APIRouter(prefix=PREFIX, tags=["file-workspaces"])
     services: dict[str, TurnService] = {}
+    ui_stores: dict[str, ConversationUiStore] = {}
 
     def view(binding: WorkspaceBinding) -> WorkspaceView:
         return WorkspaceView(
@@ -223,6 +291,32 @@ def create_file_workspace_router(
         service.mark_interrupted()
         services[workspace_id] = service
         return service
+
+    def ui_for(workspace_id: str) -> ConversationUiStore:
+        workspaces.get(workspace_id)
+        cached = ui_stores.get(workspace_id)
+        if cached is not None:
+            return cached
+        store = ConversationUiStore(conversation_root(workspaces.root, workspace_id))
+        ui_stores[workspace_id] = store
+        return store
+
+    def active_view(
+        service: TurnService, conversation_id: str | None = None
+    ) -> ActiveTurnView | None:
+        active = service.active_turn()
+        if active is None:
+            return None
+        if conversation_id is not None and active.conversation_id != conversation_id:
+            return None
+        return ActiveTurnView(
+            conversation_id=active.conversation_id,
+            turn_id=active.turn_id,
+            state=active.state,
+            model=active.model,
+            connection=active.connection,
+            started_at=active.started_at,
+        )
 
     @router.get("", response_model=list[WorkspaceView])
     def list_workspaces() -> list[WorkspaceView]:
@@ -272,6 +366,7 @@ def create_file_workspace_router(
         catalog = workspaces.workspace(workspace_id).catalog()
         return CatalogView(
             chapters=[_entry(entry) for entry in catalog.chapters],
+            characters=[_entry(entry) for entry in catalog.characters],
             settings=[_entry(entry) for entry in catalog.settings],
         )
 
@@ -279,12 +374,14 @@ def create_file_workspace_router(
     def read_file(workspace_id: str, path: str = Query(min_length=1)) -> FileViewResponse:
         workspace = workspaces.workspace(workspace_id)
         view_file = workspace.read(path)
-        kind: Literal["chapter", "setting"] = "setting" if path in SETTING_PATHS else "chapter"
-        title = (
-            _setting_title(path)
-            if kind == "setting"
-            else chapter_title(view_file.text, Path(path).name)
-        )
+        kind = managed_kind(path)
+        assert kind is not None  # workspace.read 已校验受管路径。
+        if kind == "setting":
+            title = _setting_title(path)
+        elif kind == "character":
+            title = character_title(view_file.text, Path(path).name)
+        else:
+            title = chapter_title(view_file.text, Path(path).name)
         return FileViewResponse(
             path=view_file.path,
             kind=kind,
@@ -320,6 +417,7 @@ def create_file_workspace_router(
         catalog = workspace.catalog()
         return CatalogView(
             chapters=[_entry(entry) for entry in catalog.chapters],
+            characters=[_entry(entry) for entry in catalog.characters],
             settings=[_entry(entry) for entry in catalog.settings],
         )
 
@@ -372,17 +470,45 @@ def create_file_workspace_router(
 
     # -- 对话与轮次 ---------------------------------------------------------
 
-    @router.get("/{workspace_id}/conversations", response_model=list[ConversationView])
-    def list_conversations(workspace_id: str) -> list[ConversationView]:
+    @router.get("/{workspace_id}/conversations", response_model=ConversationListView)
+    def list_conversations(workspace_id: str) -> ConversationListView:
         service = service_for(workspace_id)
-        return [_conversation(item) for item in service.store.conversations()]
+        items = sorted(
+            service.store.conversations(), key=lambda item: item.updated_at, reverse=True
+        )
+        ui = ui_for(workspace_id).read()
+        known = {item.id for item in items}
+        return ConversationListView(
+            items=[_conversation(item) for item in items],
+            # 记住的会话已被删除时不给悬空 ID：界面按最新活动自己选一个。
+            recent_id=ui.recent_id if ui.recent_id in known else None,
+            active_turn=active_view(service),
+            revision=service.store.revision(),
+        )
 
-    @router.post("/{workspace_id}/conversations", response_model=ConversationView)
-    def create_conversation(
-        workspace_id: str, body: CreateConversationRequest | None = None
+    @router.post("/{workspace_id}/conversations", response_model=AcceptedTurnView, status_code=202)
+    async def create_conversation(
+        workspace_id: str, body: CreateConversationRequest
+    ) -> AcceptedTurnView:
+        """首次发送：一次请求同时建会话与受理首轮，不再有「空会话」这一步。"""
+        service = service_for(workspace_id)
+        info = await service.accept(body.text, body.request_key)
+        return AcceptedTurnView(
+            conversation_id=info.conversation_id,
+            turn_id=info.turn_id,
+            started_at=info.started_at,
+            title=info.title,
+            request_key=body.request_key,
+        )
+
+    @router.patch(
+        "/{workspace_id}/conversations/{conversation_id}", response_model=ConversationView
+    )
+    def rename_conversation(
+        workspace_id: str, conversation_id: str, body: RenameConversationRequest
     ) -> ConversationView:
         service = service_for(workspace_id)
-        return _conversation(service.store.create(body.title if body else ""))
+        return _conversation(service.store.rename(conversation_id, body.title))
 
     @router.get(
         "/{workspace_id}/conversations/{conversation_id}/messages", response_model=EventsView
@@ -396,7 +522,12 @@ def create_file_workspace_router(
         service.store.get(conversation_id)
         events = service.store.events(conversation_id, after=after)
         last_seq = int(events[-1]["seq"]) if events else after
-        return EventsView(events=[dict(event) for event in events], last_seq=last_seq)
+        return EventsView(
+            events=[dict(event) for event in events],
+            last_seq=last_seq,
+            active_turn=active_view(service, conversation_id),
+            revision=service.store.revision(),
+        )
 
     @router.post(
         "/{workspace_id}/conversations/{conversation_id}/turns",
@@ -405,17 +536,19 @@ def create_file_workspace_router(
     )
     async def start_turn(workspace_id: str, conversation_id: str, body: TurnRequest) -> TurnView:
         service = service_for(workspace_id)
-        info = await service.start(conversation_id, body.text, request_key=body.request_key)
+        service.store.get(conversation_id)
+        info = await service.accept(body.text, body.request_key, conversation_id=conversation_id)
         return TurnView(
             turn_id=info.turn_id,
             conversation_id=info.conversation_id,
             started_at=info.started_at,
+            title=info.title,
         )
 
     @router.post("/{workspace_id}/turns/{turn_id}/stop", response_model=StopView)
-    def stop_turn(workspace_id: str, turn_id: str) -> StopView:
+    async def stop_turn(workspace_id: str, turn_id: str) -> StopView:
         service = service_for(workspace_id)
-        if not service.stop(turn_id):
+        if not await service.stop(turn_id):
             raise WorkspaceError(
                 code="TURN_NOT_FOUND",
                 where="turns.stop",
@@ -424,6 +557,42 @@ def create_file_workspace_router(
                 details={"turn_id": turn_id},
             )
         return StopView(stopped=True)
+
+    @router.get("/{workspace_id}/conversation-ui", response_model=ConversationUiView)
+    def read_conversation_ui(workspace_id: str) -> ConversationUiView:
+        ui = ui_for(workspace_id).read()
+        return ConversationUiView(
+            recent_id=ui.recent_id, drafts=dict(ui.drafts), revision=ui.revision
+        )
+
+    @router.patch("/{workspace_id}/conversation-ui", response_model=ConversationUiView)
+    def update_conversation_ui(
+        workspace_id: str,
+        body: ConversationUiPatch,
+        if_match: Annotated[str, Header(alias="If-Match")] = "",
+    ) -> ConversationUiView:
+        """按目标合并界面状态：只动指定的那一条草稿或最近会话。"""
+        store = ui_for(workspace_id)
+        if body.set_draft and not (body.draft_target or "").strip():
+            raise WorkspaceError(
+                code="CONVERSATION_UI_TARGET_INVALID",
+                where="conversation-ui.update",
+                why="没有指定草稿属于哪个会话",
+                fix="带上会话 ID，或对新对话使用固定槽位 new",
+            )
+        if body.set_recent and body.recent_id:
+            service_for(workspace_id).store.get(body.recent_id)
+        ui = store.update(
+            expected_revision=if_match,
+            set_recent=body.set_recent,
+            recent_id=body.recent_id,
+            set_draft=body.set_draft,
+            draft_target=body.draft_target,
+            draft_text=body.draft_text,
+        )
+        return ConversationUiView(
+            recent_id=ui.recent_id, drafts=dict(ui.drafts), revision=ui.revision
+        )
 
     @router.get("/{workspace_id}/events")
     async def event_stream(

@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -39,6 +40,7 @@ from tau_agent.messages import AssistantMessage, TextContent
 
 __all__ = [
     "EXTERNAL_CHANGE_MESSAGE",
+    "ActiveTurn",
     "ProviderFactory",
     "Recording",
     "RunResult",
@@ -184,13 +186,44 @@ class TurnInfo:
     turn_id: str
     conversation_id: str
     started_at: str
+    #: 这一轮受理前的历史位置：恢复范围止于此，当前提示不会重复进入模型上下文。
+    history_seq: int = 0
+    title: str = ""
+
+
+ActiveState = Literal["accepted", "running", "stop_requested"]
+
+
+@dataclass
+class ActiveTurn:
+    """本作品当前被占用的那一轮；只放公开信息，不含实例与凭据。"""
+
+    conversation_id: str
+    turn_id: str
+    state: ActiveState
+    model: str
+    connection: str
+    started_at: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "conversation_id": self.conversation_id,
+            "turn_id": self.turn_id,
+            "state": self.state,
+            "model": self.model,
+            "connection": self.connection,
+            "started_at": self.started_at,
+        }
 
 
 class TurnService:
     """执行一轮对话：串行写入、事件记录、停止与中断。
 
-    一个作品同一时刻只允许一轮在写；第二轮直接拒绝（``WORKSPACE_BUSY_CONFLICT``），
-    阅读不受影响。停止只保留已写入的文件并如实记录，不恢复原文、不自动继续。
+    一个作品同一时刻只允许一轮——**包括已受理但还没开始执行的轮次**。受理锁覆盖
+    「查重 → 忙碌判断 → 写初始记录 → 占用」，不能等后台任务拿到执行锁才算忙碌：
+    否则两次几乎同时的发送都会通过检查，第二个在队列里等待，作者却以为它没被接受。
+
+    停止在受理阶段就有效：还没调用模型的轮次直接收尾为「已停止」，不必先有一个 harness。
     """
 
     def __init__(
@@ -205,95 +238,212 @@ class TurnService:
         self.store = store
         self.provider_factory = provider_factory
         self.max_turns = max_turns
+        self._admission = asyncio.Lock()
         self._lock = asyncio.Lock()
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._harnesses: dict[str, AgentHarness] = {}
+        self._started: set[str] = set()
         self._stopped: set[str] = set()
-        self._request_keys: dict[str, TurnInfo] = {}
+        self._active: ActiveTurn | None = None
 
     @property
     def busy(self) -> bool:
-        return self._lock.locked()
+        return self._active is not None
 
-    async def start(
-        self, conversation_id: str, text: str, *, request_key: str | None = None
+    def active_turn(self) -> ActiveTurn | None:
+        return self._active
+
+    async def accept(
+        self, text: str, request_key: str, *, conversation_id: str | None = None
     ) -> TurnInfo:
-        """登记一轮并立即返回；实际执行在后台任务里。"""
-        self.store.get(conversation_id)
-        if request_key and request_key in self._request_keys:
-            # 同一请求键重复发送：返回原来那一轮，不重复执行。
-            return self._request_keys[request_key]
-        if self._lock.locked():
-            raise WorkspaceError(
-                code="WORKSPACE_BUSY_CONFLICT",
-                where="turns.start",
-                why="这个作品还有一轮正在写入",
-                fix="等当前这轮结束或停止它，再发送新的要求",
-                details={"conversation": conversation_id},
+        """受理一轮并立即返回；``conversation_id`` 为空表示「首次发送即建会话」。"""
+        async with self._admission:
+            previous = self.store.find_accepted(request_key)
+            if previous is not None:
+                if conversation_id is not None and previous.conversation_id != conversation_id:
+                    raise WorkspaceError(
+                        code="REQUEST_KEY_CONFLICT",
+                        where="turns.accept",
+                        why="这个请求标识已经属于另一个会话",
+                        fix="换一个请求标识，或回到原会话继续",
+                        details={"conversation": previous.conversation_id},
+                    )
+                if self.store.prompt_of(
+                    previous.conversation_id, previous.turn_id
+                ) != text.strip():
+                    raise WorkspaceError(
+                        code="REQUEST_KEY_CONFLICT",
+                        where="turns.accept",
+                        why="这个请求标识已经用在另一条要求上",
+                        fix="要发新的要求就换一个请求标识；要重试上一次，请保持文字不变",
+                        details={"conversation": previous.conversation_id},
+                    )
+                return TurnInfo(
+                    turn_id=previous.turn_id,
+                    conversation_id=previous.conversation_id,
+                    started_at=previous.started_at,
+                    history_seq=previous.last_seq - 1,
+                    title=previous.title,
+                )
+            if self._active is not None:
+                raise WorkspaceError(
+                    code="WORKSPACE_BUSY_CONFLICT",
+                    where="turns.accept",
+                    why="这个作品还有一轮正在写入",
+                    fix="等当前这轮结束或停止它，再发送新的要求",
+                    details={
+                        "conversation": self._active.conversation_id,
+                        "turn_id": self._active.turn_id,
+                    },
+                )
+            if conversation_id is None:
+                # 先做空提示校验，再决定是否生成会话 ID：拒绝时不留任何记录。
+                clean = text.strip()
+                if not clean:
+                    raise WorkspaceError(
+                        code="PROMPT_EMPTY",
+                        where="turns.accept",
+                        why="提示词是空的",
+                        fix="写下要让模型做什么，再发送",
+                    )
+            history_seq = self._history_cursor(conversation_id)
+            turn_id = f"t_{os.urandom(4).hex()}"
+            # 受理时固定这一轮的模型事实：之后切换、编辑或删除连接都不影响它。
+            snapshot: ModelSnapshot | None
+            failure: Exception | None = None
+            try:
+                snapshot = self.provider_factory()
+            except Exception as exc:  # 未配置模型等情况在受理时就已经知道
+                snapshot, failure = None, exc
+            model_facts = snapshot.describe() if snapshot is not None else {}
+            if conversation_id is None:
+                accepted = self.store.create_with_first_turn(
+                    text=text,
+                    request_key=request_key,
+                    turn_id=turn_id,
+                    facts=model_facts,
+                )
+            else:
+                accepted = self.store.accept_turn(
+                    conversation_id,
+                    text=text,
+                    request_key=request_key,
+                    turn_id=turn_id,
+                    facts=model_facts,
+                )
+            # 旧记录的占位标题在首次受理时补上；作者改过的标题不动。
+            if accepted.title == "新的对话":
+                with suppress(WorkspaceError):
+                    self.store.rename(accepted.conversation_id, _summary(text) or "新的对话")
+            info = TurnInfo(
+                turn_id=turn_id,
+                conversation_id=accepted.conversation_id,
+                started_at=accepted.started_at,
+                history_seq=history_seq,
+                title=accepted.title,
             )
-        turn_id = f"t_{os.urandom(4).hex()}"
-        # 受理时固定这一轮的模型事实：之后切换、编辑或删除连接都不影响它。
-        snapshot: ModelSnapshot | None
-        failure: Exception | None = None
-        try:
-            snapshot = self.provider_factory()
-        except Exception as exc:  # 未配置模型等情况在受理时就已经知道
-            snapshot, failure = None, exc
-        event = self.store.append(
-            conversation_id,
-            {
-                "type": "turn_started",
-                "turn_id": turn_id,
-                "text": text,
-                **(snapshot.describe() if snapshot is not None else {}),
-            },
-        )
-        info = TurnInfo(
-            turn_id=turn_id, conversation_id=conversation_id, started_at=str(event["at"])
-        )
-        if request_key:
-            self._request_keys[request_key] = info
-        if self.store.get(conversation_id).title == "新的对话":
-            self.store.rename(conversation_id, _summary(text) or "新的对话")
-        self._tasks[turn_id] = asyncio.create_task(self._run(info, text, snapshot, failure))
-        return info
+            self._active = ActiveTurn(
+                conversation_id=accepted.conversation_id,
+                turn_id=turn_id,
+                state="accepted",
+                model=str(model_facts.get("model", "")),
+                connection=str(model_facts.get("connection_name", "")),
+                started_at=accepted.started_at,
+            )
+            # 初始轮次事件里的模型字段由 store 与提示一起原子写入。
+            self._tasks[turn_id] = asyncio.create_task(
+                self._run(info, text, snapshot, failure)
+            )
+            return info
 
     async def wait(self, turn_id: str) -> None:
         """测试与需要同步结果的调用方使用。"""
         task = self._tasks.get(turn_id)
         if task is not None:
-            await task
+            with suppress(asyncio.CancelledError):
+                await task
 
-    def stop(self, turn_id: str) -> bool:
-        """请求停止：取消模型流，保留已写入文件，记录为「已停止」。"""
-        harness = self._harnesses.get(turn_id)
-        if harness is None:
-            return False
-        self._stopped.add(turn_id)
-        harness.cancel()
-        return True
+    async def stop(self, turn_id: str) -> bool:
+        """请求停止：覆盖「已受理但还没调模型」与「正在跑」两种情况。"""
+        async with self._admission:
+            active = self._active
+            if active is None or active.turn_id != turn_id:
+                return False
+            if turn_id in self._stopped:
+                return True
+            self._stopped.add(turn_id)
+            active.state = "stop_requested"
+            harness = self._harnesses.get(turn_id)
+            if harness is not None:
+                harness.cancel()
+                return True
+            if turn_id in self._started:
+                # 已经进了 _run 但还没建好 harness：标志位足以让它跳过模型调用。
+                return True
+            # 还没开始执行：取消排队的任务，由这里直接写终态——别无第二处会写。
+            task = self._tasks.pop(turn_id, None)
+            if task is not None:
+                task.cancel()
+            self._record_terminal(
+                active.conversation_id,
+                turn_id,
+                "stopped",
+                note="在调用模型之前就停止了，没有产生请求",
+            )
+            self._active = None
+            self._stopped.discard(turn_id)
+            return True
 
     def mark_interrupted(self) -> list[str]:
-        """进程重启后把没有正常结束的轮次标为中断；不自动继续。"""
+        """进程重启后把没有正常结束的轮次标为中断；不自动继续。
+
+        按轮次配对，而不是只看最后一条：崩在工具开始、工具结束或助理回复之后的轮次
+        同样要被识别。已经有终态的轮次不会再补第二遍。
+        """
         interrupted: list[str] = []
         for conversation in self.store.conversations():
-            last = self.store.last_event(conversation.id)
-            if last is None or last.get("type") != "turn_started":
-                continue
-            self.store.append(
-                conversation.id,
-                {
-                    "type": "run_finished",
-                    "turn_id": last.get("turn_id"),
-                    "status": "interrupted",
-                    "recording": "unrecorded",
-                    "changed_paths": [],
-                    "commit": None,
-                    "note": "进程重启时这一轮没有正常结束；文件以磁盘为准，可查看差异后单独补记",
-                },
-            )
-            interrupted.append(conversation.id)
+            for turn_id in self.store.unfinished_turns(conversation.id):
+                if turn_id in self._tasks:
+                    continue
+                self.store.append(
+                    conversation.id,
+                    {
+                        "type": "run_finished",
+                        "turn_id": turn_id,
+                        "status": "interrupted",
+                        "recording": "unrecorded",
+                        "changed_paths": [],
+                        "commit": None,
+                        "note": (
+                            "进程重启时这一轮没有正常结束；"
+                            "文件以磁盘为准，可查看差异后单独补记"
+                        ),
+                    },
+                )
+                interrupted.append(conversation.id)
         return interrupted
+
+    def _history_cursor(self, conversation_id: str | None) -> int:
+        if conversation_id is None:
+            return 0
+        events = self.store.events(conversation_id)
+        return int(events[-1]["seq"]) if events else 0
+
+    def _record_terminal(
+        self, conversation_id: str, turn_id: str, status: RunStatus, *, note: str = ""
+    ) -> None:
+        self.store.append(
+            conversation_id,
+            {
+                "type": "run_finished",
+                "turn_id": turn_id,
+                "status": status,
+                "recording": "no_change",
+                "changed_paths": [],
+                "commit": None,
+                "note": note,
+            },
+        )
 
     async def _run(
         self,
@@ -304,11 +454,20 @@ class TurnService:
     ) -> None:
         # 局部导入：agent 依赖本模块的 WriteSession，顶层导入会成环。
         from hastings.workspace.agent import RunContext, build_harness
+        from hastings.workspace.conversation_context import (
+            execution_facts,
+            replay_public_messages,
+        )
 
+        self._started.add(info.turn_id)
         conversation_id = info.conversation_id
         status: RunStatus = "completed"
         session = WriteSession(self.workspace, instruction=text)
         try:
+            if info.turn_id in self._stopped:
+                # 受理后立刻被停止：不调用模型，也不产生任何请求。
+                status = "stopped"
+                return
             if snapshot is None:
                 raise failure or WorkspaceError(
                     code="MODEL_NOT_CONFIGURED",
@@ -317,10 +476,19 @@ class TurnService:
                     fix="在模型设置里选择连接与模型，或补齐 config.yaml 的连接配置",
                 )
             async with self._lock:
+                if self._active is not None and self._active.turn_id == info.turn_id:
+                    self._active.state = (
+                        "stop_requested" if info.turn_id in self._stopped else "running"
+                    )
                 repo = GitRepo(self.workspace.root)
                 if repo.is_repository():
                     # 仓库已初始化时先确认可写：暂存区/冲突/分离头都在调用模型前挡住。
                     repo.require_ready()
+                history_events = tuple(
+                    event
+                    for event in self.store.events(conversation_id)
+                    if int(event["seq"]) <= info.history_seq
+                )
                 run = RunContext(workspace=self.workspace, session=session)
                 harness = build_harness(
                     provider=snapshot.provider,
@@ -328,8 +496,14 @@ class TurnService:
                     workspace=self.workspace,
                     run=run,
                     max_turns=self.max_turns,
+                    history=replay_public_messages(history_events),
+                    history_facts=execution_facts(history_events),
                 )
                 self._harnesses[info.turn_id] = harness
+                if info.turn_id in self._stopped:
+                    # 建 harness 期间作者点了停止：停在调用模型之前。
+                    status = "stopped"
+                    return
                 await self._consume(harness, info, text)
                 status = "stopped" if info.turn_id in self._stopped else "completed"
         except asyncio.CancelledError:
@@ -351,7 +525,7 @@ class TurnService:
         except Exception as exc:  # 一轮的失败要落到事件里，不能吞掉进程
             status = "stopped" if info.turn_id in self._stopped else "failed"
             if status == "failed":
-                # 配置类错误自带稳定 code 与三要素文案，原样透传比包一层更有用。
+                # 配置类错误自带稳定 code 与可读文案，原样透传比包一层更有用。
                 code = getattr(exc, "code", None) or "TURN_FAILED"
                 message = getattr(exc, "message", None) or f"这一轮没有完成：{exc}"
                 self.store.append(
@@ -373,8 +547,12 @@ class TurnService:
                 {"type": "run_finished", "turn_id": info.turn_id, **result.to_dict()},
             )
             self._harnesses.pop(info.turn_id, None)
+            self._started.discard(info.turn_id)
             self._stopped.discard(info.turn_id)
             self._tasks.pop(info.turn_id, None)
+            # 只释放自己占用的那一轮：后面受理的新轮次不能被前一轮的收尾清掉。
+            if self._active is not None and self._active.turn_id == info.turn_id:
+                self._active = None
 
     async def _consume(self, harness: AgentHarness, info: TurnInfo, text: str) -> None:
         """把 harness 事件翻译成会话事件：工具过程逐条记，回复整条记。

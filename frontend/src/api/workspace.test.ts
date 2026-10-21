@@ -8,12 +8,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createConversationWithText,
   fetchDefaultLocation,
   gitRecord,
+  listConversations,
+  patchConversationUi,
   pickDirectory,
   listFiles,
   openWorkspace,
   readFile,
+  renameConversation,
   startTurn,
   streamEvents,
   WorkspaceApiError,
@@ -188,5 +192,94 @@ describe("事件流解析", () => {
     };
 
     await expect(iterate()).rejects.toMatchObject({ code: "HTTP_503" });
+  });
+});
+
+describe("会话（V04-10）", () => {
+  it("首次发送把提示与请求标识一起提交，不再先建空会话", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return jsonResponse(
+        {
+          conversation_id: "c1",
+          turn_id: "t1",
+          started_at: "",
+          title: "写第一章",
+          request_key: "ui-1",
+        },
+        202,
+      );
+    });
+
+    const accepted = await createConversationWithText("w1", "写第一章", "ui-1");
+
+    expect(calls[0]?.url).toBe("/api/file-workspaces/w1/conversations");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(calls[0]?.init?.body).toBe(
+      JSON.stringify({ text: "写第一章", request_key: "ui-1" }),
+    );
+    expect(accepted.conversation_id).toBe("c1");
+  });
+
+  it("会话列表带上次看的会话与活动轮次", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      calls.push(url);
+      return jsonResponse({
+        items: [{ id: "c1", title: "写第一章", created_at: "", updated_at: "" }],
+        recent_id: "c1",
+        active_turn: null,
+        revision: "r1",
+      });
+    });
+
+    const list = await listConversations("w1");
+
+    expect(calls).toEqual(["/api/file-workspaces/w1/conversations"]);
+    expect(list.recent_id).toBe("c1");
+  });
+
+  it("界面状态带上 If-Match 版本，只提交指定的那一项", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return jsonResponse({ recent_id: "c1", drafts: { c1: "草稿" }, revision: "r2" });
+    });
+
+    await patchConversationUi("w1", { set_draft: true, draft_target: "c1", draft_text: "草稿" }, "r1");
+
+    expect(calls[0]?.url).toBe("/api/file-workspaces/w1/conversation-ui");
+    expect(calls[0]?.init?.method).toBe("PATCH");
+    expect((calls[0]?.init?.headers as Record<string, string>)["If-Match"]).toBe("r1");
+  });
+
+  it("改名走 PATCH 会话路径", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return jsonResponse({ id: "c1", title: "人物动机", created_at: "", updated_at: "" });
+    });
+
+    const updated = await renameConversation("w1", "c1", "人物动机");
+
+    expect(calls[0]?.url).toBe("/api/file-workspaces/w1/conversations/c1");
+    expect(calls[0]?.init?.method).toBe("PATCH");
+    expect(updated.title).toBe("人物动机");
+  });
+});
+
+describe("请求头（V04-10 补）", () => {
+  it("带 If-Match 时仍保留 Content-Type，否则后端解析不了 body", async () => {
+    let sent: Record<string, string> = {};
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      sent = (init?.headers ?? {}) as Record<string, string>;
+      return jsonResponse({ recent_id: null, drafts: {}, revision: "r2" });
+    });
+
+    await patchConversationUi("w1", { set_draft: true, draft_target: "new", draft_text: "草稿" }, "r1");
+
+    expect(sent["Content-Type"]).toBe("application/json");
+    expect(sent["If-Match"]).toBe("r1");
   });
 });

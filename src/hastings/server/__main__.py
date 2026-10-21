@@ -142,12 +142,12 @@ def assemble_server(
     config: Path | None = None,
     model: str | None = None,
 ) -> AssembledServer:
-    """按生产默认值装配文件工作区应用；任何位置失败都带三要素抛出，不静默降级。"""
+    """按生产默认值装配文件工作区应用；任何位置失败都带可读的错误信息抛出，不静默降级。"""
     resolved_static = resolve_static_dir(static_dir)
     if resolved_static is not None and not resolved_static.is_dir():
         raise StartupError(
-            f"前端目录不存在：{resolved_static}。为什么错：--static-dir 指向的目录不存在。"
-            "怎样算对：先构建前端（frontend/ 下 npm run build），或移除该参数走自动探测。"
+            f"--static-dir 指向的目录不存在：{resolved_static}。"
+            "建议：先构建前端（frontend/ 下 npm run build），或移除该参数走自动探测。"
         )
 
     binding_id: str | None = None
@@ -156,13 +156,13 @@ def assemble_server(
         resolved = Path(workspace).expanduser()
         if not resolved.exists():
             raise StartupError(
-                f"作品目录不存在：{resolved}。为什么错：--workspace 要求打开一个已有目录。"
-                "怎样算对：先创建该目录，或去掉 --workspace 启动后通过界面新建作品。"
+                f"--workspace 指向的目录不存在：{resolved}。"
+                "建议：先创建该目录，或去掉 --workspace 启动后通过界面新建作品。"
             )
         if not resolved.is_dir():
             raise StartupError(
-                f"不是目录：{resolved}。为什么错：--workspace 指向的是文件。"
-                "怎样算对：改为指向存放作品的那个文件夹。"
+                f"--workspace 指向的是文件而不是目录：{resolved}。"
+                "建议：改为指向存放作品的那个文件夹。"
             )
         opened = resolved
 

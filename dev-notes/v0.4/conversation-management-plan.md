@@ -1,6 +1,6 @@
 # Hastings 0.4 会话管理开发计划
 
-> 编写日期：2026-10-21。状态：待实施；本文描述目标，不代表已有能力。
+> 编写日期：2026-10-21。状态：已实施（V04-10，2026-10-21）。本文保留为目标与验收口径；已实现行为见[会话与草稿](modules/conversations.md)，交付记录见[V04-10 阶段记录](notes/v04-10-conversation-management.md)。
 > 已确认：不同会话默认独立；新建后未输入提示词就切走的空白会话不保存。
 > 现状入口：[写作 Agent 与对话](modules/agent-and-chat.md)、[写作台界面](modules/desk.md)、[后端导航](../../src/hastings/README.md)。关联工作：[供应商连接计划](model-connections-plan.md)。
 

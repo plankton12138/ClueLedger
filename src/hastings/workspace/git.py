@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.files import BODY_DIR, SETTINGS_DIR, is_managed_path
+from hastings.workspace.files import BODY_DIR, SETTINGS_DIR, Workspace, is_managed_path
 
 __all__ = [
     "Change",
@@ -386,18 +386,12 @@ class GitRepo:
     # -- 内部 ---------------------------------------------------------------
 
     def _managed_existing_paths(self) -> list[str]:
-        paths: list[str] = []
-        body = self.root / BODY_DIR
-        if body.is_dir():
-            for child in sorted(body.iterdir(), key=lambda item: item.name):
-                relative = f"{BODY_DIR}/{child.name}"
-                if child.is_file() and not child.is_symlink() and is_managed_path(relative):
-                    paths.append(relative)
-        for name in ("角色小传.md", "线索.md", "真相.md"):
-            relative = f"{SETTINGS_DIR}/{name}"
-            if (self.root / relative).is_file():
-                paths.append(relative)
-        return paths
+        catalog = Workspace(self.root).catalog()
+        return [
+            entry.path
+            for entry in (*catalog.chapters, *catalog.characters, *catalog.settings)
+            if entry.exists
+        ]
 
     def _exec(self, *args: str) -> tuple[int, bytes, bytes]:
         command = ["git", *_CONFIG, "--literal-pathspecs", "-C", str(self.root), *args]

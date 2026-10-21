@@ -1,11 +1,11 @@
-"""作品目录的文件规则（0.4 M01）。
+"""作品目录的文件规则（0.5）。
 
-作品就是一个本地目录：``正文/`` 下每章一个 Markdown 文件，``设定集/`` 下三个固定
-文件。这个模块只回答「哪些路径属于作品、当前内容是什么、这次写入是否基于我读到的
+作品就是一个本地目录：``正文/`` 下每章一个 Markdown 文件，``设定集/角色小传/``
+下一名角色一个文件，线索与真相为固定文件。这个模块只回答「哪些路径属于作品、当前内容是什么、这次写入是否基于我读到的
 那一份」，不解析段落、不保存章节清单、不写数据库。目录本身就是内容依据，因此外部
 编辑器的改动无需同步即可被读到。
 
-路径校验分两层：词法上只接受两类受管相对路径；访问前再把解析后的目录与作品根比对，
+路径校验分两层：词法上只接受章节、角色和固定设定的相对路径；访问前再把解析后的目录与作品根比对，
 拒绝符号链接、目录联接和任何越出根目录的结果。只做词法检查不足以保护 Windows 上的
 目录联接，所以两层都保留。
 
@@ -29,6 +29,8 @@ from hastings.workspace.errors import WorkspaceError
 
 __all__ = [
     "BODY_DIR",
+    "CHARACTERS_DIR",
+    "FileKind",
     "SETTINGS_DIR",
     "SETTING_FILES",
     "SETTING_PATHS",
@@ -39,17 +41,20 @@ __all__ = [
     "SearchResult",
     "Workspace",
     "chapter_title",
+    "character_title",
     "digest_bytes",
     "is_managed_path",
+    "managed_kind",
     "normalize_newlines",
 ]
 
 BODY_DIR = "正文"
 SETTINGS_DIR = "设定集"
+CHARACTERS_DIR = f"{SETTINGS_DIR}/角色小传"
+FileKind = Literal["chapter", "character", "setting"]
 
-#: 设定集只有三类，路径固定；顺序即界面顺序。
+#: 角色按文件列出；其余两份设定路径固定，顺序即界面顺序。
 SETTING_FILES: tuple[tuple[str, str], ...] = (
-    (f"{SETTINGS_DIR}/角色小传.md", "角色小传"),
     (f"{SETTINGS_DIR}/线索.md", "线索"),
     (f"{SETTINGS_DIR}/真相.md", "真相"),
 )
@@ -75,28 +80,37 @@ _MAX_TITLE_CHARS = 60
 _SNIPPET_CHARS = 200
 
 
-def is_managed_path(path: str) -> bool:
-    """词法判断：是否属于作品受管路径（不代表文件存在，也不代表可安全访问）。"""
+def managed_kind(path: str) -> FileKind | None:
+    """统一分类受管路径；真实目录与链接另由 Workspace 校验。"""
     if not path or "\\" in path:
-        return False
+        return None
     parsed = PurePosixPath(path)
     if parsed.is_absolute():
-        return False
+        return None
     parts = parsed.parts
     # "." / ".." / 空段 / 连续分隔符都会让规范化后的 parts 与原串不一致。
-    if len(parts) != 2 or "/".join(parts) != path:
-        return False
-    directory, filename = parts
-    if directory not in (BODY_DIR, SETTINGS_DIR):
-        return False
+    if len(parts) not in (2, 3) or "/".join(parts) != path:
+        return None
+    directory, filename = parsed.parent.as_posix(), parsed.name
     if _ILLEGAL_NAME.search(filename) or filename != filename.strip(" ."):
-        return False
+        return None
     stem = PurePosixPath(filename).stem
-    if not stem or stem.casefold() in _RESERVED_STEMS:
-        return False
+    if not stem or stem.split(".")[0].casefold() in _RESERVED_STEMS:
+        return None
     if path in SETTING_PATHS:
-        return True
-    return directory == BODY_DIR and PurePosixPath(filename).suffix == ".md"
+        return "setting"
+    if parsed.suffix != ".md":
+        return None
+    if directory == BODY_DIR:
+        return "chapter"
+    if directory == CHARACTERS_DIR:
+        return "character"
+    return None
+
+
+def is_managed_path(path: str) -> bool:
+    """词法判断：是否属于作品受管路径（不代表文件存在或可安全访问）。"""
+    return managed_kind(path) is not None
 
 
 def normalize_newlines(text: str) -> str:
@@ -143,6 +157,15 @@ def chapter_title(text: str, filename: str) -> str:
     return stripped or stem
 
 
+def character_title(text: str, filename: str) -> str:
+    """角色名优先取一级标题，缺失时使用完整文件名，不剥离数字。"""
+    for line in text.split("\n")[:20]:
+        match = _H1.match(line)
+        if match:
+            return match.group(1).strip()
+    return PurePosixPath(filename).stem
+
+
 @dataclass(frozen=True, slots=True)
 class FileView:
     """一次读取或写入的结果：路径、LF 文本、实际字节指纹。"""
@@ -158,7 +181,7 @@ class FileEntry:
     """目录条目：存在性与标题可直接用于列表，读取原文再单独请求。"""
 
     path: str
-    kind: Literal["chapter", "setting"]
+    kind: FileKind
     title: str
     order: str
     exists: bool
@@ -167,9 +190,10 @@ class FileEntry:
 
 @dataclass(frozen=True, slots=True)
 class Catalog:
-    """两块内容目录：章节按文件名排序，设定集固定三条（缺失也在列表里）。"""
+    """章节、角色各按文件名排序，线索与真相缺失时也列出。"""
 
     chapters: tuple[FileEntry, ...]
+    characters: tuple[FileEntry, ...]
     settings: tuple[FileEntry, ...]
 
 
@@ -197,7 +221,7 @@ class Workspace:
 
     @classmethod
     def create(cls, root: Path) -> Workspace:
-        """新建（或补齐）作品目录：正文目录 + 三份空设定；不覆盖已有内容。"""
+        """新建（或补齐）正文、角色目录与两份空设定；不覆盖已有内容。"""
         target = Path(root).expanduser()
         try:
             target.mkdir(parents=True, exist_ok=True)
@@ -241,7 +265,7 @@ class Workspace:
 
     def ensure_structure(self) -> None:
         """补齐受管目录与缺失的设定文件；已存在的文件保持原样。"""
-        for name in (BODY_DIR, SETTINGS_DIR):
+        for name in (BODY_DIR, SETTINGS_DIR, CHARACTERS_DIR):
             self._writable_directory(name)
         for path, _ in SETTING_FILES:
             if not self._target(path).exists():
@@ -255,7 +279,11 @@ class Workspace:
 
     def catalog(self) -> Catalog:
         """列出两块内容。设定文件缺失时仍列出，界面据此提示补齐。"""
-        return Catalog(chapters=self._chapters(), settings=self._settings())
+        return Catalog(
+            chapters=self._markdown_entries(BODY_DIR, "chapter"),
+            characters=self._markdown_entries(CHARACTERS_DIR, "character"),
+            settings=self._settings(),
+        )
 
     def read(self, path: str) -> FileView:
         target = self._target(path)
@@ -282,7 +310,7 @@ class Workspace:
         unreadable: list[str] = []
         truncated = False
         catalog = self.catalog()
-        for entry in (*catalog.chapters, *catalog.settings):
+        for entry in (*catalog.chapters, *catalog.characters, *catalog.settings):
             if not entry.exists:
                 continue
             try:
@@ -309,7 +337,7 @@ class Workspace:
     def write(self, path: str, text: str, *, expected_digest: str | None) -> FileView:
         """按指纹前提写入；``expected_digest=None`` 只用于创建新文件。"""
         target = self._target(path)
-        self._writable_directory(PurePosixPath(path).parts[0])
+        self._writable_directory(PurePosixPath(path).parent.as_posix())
         self._check_expected(target, path, expected_digest)
         payload = normalize_newlines(text).encode("utf-8")
         _atomic_replace(target, payload, path)
@@ -328,11 +356,18 @@ class Workspace:
         return self.write(path, body, expected_digest=None)
 
     def move(self, source: str, target: str, *, expected_digest: str) -> FileView:
-        """重命名或移动章节文件；设定集路径固定，不参与移动。"""
+        """在同类目录内重命名章节或角色；线索与真相路径固定。"""
         self._reject_setting_path(source, "files.move")
         self._reject_setting_path(target, "files.move")
         src = self._target(source)
         dst = self._target(target)
+        if managed_kind(source) != managed_kind(target):
+            raise WorkspaceError(
+                code="FILE_KIND_MISMATCH",
+                where="files.move",
+                why="不能把章节和角色小传互相移动",
+                fix="章节保留在正文目录，角色保留在角色小传目录；改内容类型时明确新建文件",
+            )
         self._check_expected(src, source, expected_digest)
         if dst.exists():
             raise WorkspaceError(
@@ -342,7 +377,7 @@ class Workspace:
                 fix="换一个文件名，或先删除目标文件",
                 details={"path": target},
             )
-        self._writable_directory(PurePosixPath(target).parts[0])
+        self._writable_directory(PurePosixPath(target).parent.as_posix())
         try:
             os.replace(src, dst)
         except OSError as exc:
@@ -355,7 +390,7 @@ class Workspace:
         return self.read(target)
 
     def delete(self, path: str, *, expected_digest: str) -> None:
-        """删除章节文件；设定集三个文件只允许创建和改写。"""
+        """按指纹删除章节或角色文件；线索与真相不能删除。"""
         self._reject_setting_path(path, "files.delete")
         target = self._target(path)
         self._check_expected(target, path, expected_digest)
@@ -443,11 +478,11 @@ class Workspace:
                 code="PATH_NOT_MANAGED",
                 where="files.path",
                 why=f"不是作品受管路径：{path}",
-                fix="正文用「正文/文件名.md」，设定只用三份固定文件",
+                fix="正文用「正文/文件名.md」，角色用「设定集/角色小传/姓名.md」，其余设定为线索.md、真相.md",
                 details={"path": path},
             )
-        directory, filename = PurePosixPath(path).parts
-        target = self._directory(directory) / filename
+        parsed = PurePosixPath(path)
+        target = self._directory(parsed.parent.as_posix()) / parsed.name
         if target.is_symlink():
             raise _escaped(path)
         return target
@@ -458,7 +493,7 @@ class Workspace:
                 code="SETTING_PATH_FIXED",
                 where=where,
                 why=f"设定文件不能移动或删除：{path}",
-                fix="设定集只保留角色小传、线索、真相三个固定文件，可改写内容但不能改名或删除",
+                fix="线索.md、真相.md 只允许改写；角色小传目录内的角色文件可以改名或删除",
                 details={"path": path},
             )
 
@@ -472,7 +507,7 @@ class Workspace:
                 code="FILE_NOT_FOUND",
                 where=f"files.read:{path}",
                 why="文件不存在",
-                fix="刷新目录后重新选择；若刚被删除，可重新创建同名章节",
+                fix="刷新目录后重新选择；若刚被删除，可重新创建同名文件",
                 details={"path": path},
             ) from exc
         except OSError as exc:
@@ -491,7 +526,7 @@ class Workspace:
                     code="FILE_EXISTS_CONFLICT",
                     where=f"files.write:{path}",
                     why="文件已存在，而这次写入声明为新建",
-                    fix="先读取该文件，再用读到的指纹改写；需要另一章时换一个文件名",
+                    fix="先读取该文件，再用读到的指纹改写；需要另一份文件时换一个文件名",
                     details={"path": path},
                 )
             return
@@ -530,14 +565,14 @@ class Workspace:
             ) from exc
         return digest_bytes(data)
 
-    def _chapters(self) -> tuple[FileEntry, ...]:
-        body = self.root / BODY_DIR
+    def _markdown_entries(self, directory: str, kind: FileKind) -> tuple[FileEntry, ...]:
+        body = self._directory(directory)
         if not body.is_dir():
             return ()
         entries: list[FileEntry] = []
         for child in sorted(body.iterdir(), key=lambda item: item.name):
-            path = f"{BODY_DIR}/{child.name}"
-            if not is_managed_path(path):
+            path = f"{directory}/{child.name}"
+            if managed_kind(path) != kind:
                 continue
             try:
                 if not child.is_file() or child.is_symlink():
@@ -554,9 +589,13 @@ class Workspace:
             entries.append(
                 FileEntry(
                     path=path,
-                    kind="chapter",
-                    title=chapter_title(text, child.name),
-                    order=order.group(1) if order else "",
+                    kind=kind,
+                    title=(
+                        character_title(text, child.name)
+                        if kind == "character"
+                        else chapter_title(text, child.name)
+                    ),
+                    order=order.group(1) if order and kind == "chapter" else "",
                     exists=True,
                     size=size,
                 )

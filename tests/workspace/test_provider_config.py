@@ -75,7 +75,7 @@ def test_legacy_api_key_env_field_is_rejected_with_migration_hint(tmp_path: Path
     message = str(raised.value)
     assert "api_key_env" in message
     assert "['deepseek']" in message
-    assert "怎样算对" in message
+    assert "建议" in message
     assert "api_key" in message
 
 

@@ -72,33 +72,52 @@ uv run python scripts/check_model.py
 
 对话框在运行应用的这台机器上弹出：没有桌面会话（远程部署、无界面的服务器）时打不开，接口会明确失败并建议用 `--workspace <目录>` 启动。同一时刻只允许一个对话框，第二个请求以 `DIRECTORY_PICKER_BUSY_CONFLICT` 拒绝。
 
-## 4. 已验收
+## 4. 会话与草稿
+
+一部作品可以有多个会话，聊天上下文默认各自独立，作品文件共享。
+
+- 「新对话」只切到临时输入状态；首次发送才建会话（`POST /api/file-workspaces/{id}/conversations`，必须带非空 `text` 与 `request_key`）。没有提示就没有会话记录。
+- 同一会话可以接着聊：下一轮会带上本会话此前的提示与公开回复，并把各轮实际执行结果写进系统提示；当前提示只出现一次。
+- 草稿按「作品 + 会话」保存在应用状态目录，不进入模型上下文；只有受理确认后才清除「仍然等于提交文本」的那一版。
+- 同一作品同时只受理一轮（含已受理未开始）；切换会话不停止服务器任务，切回后恢复事件、运行状态与停止按钮；网断只提示连接中断，不宣布任务结束。
+- 重启后按轮次配对补中断终态，不自动继续；回到上次查看的正式会话，不自动发送草稿。
+
+字段、接口与失败行为见[会话与草稿](modules/conversations.md)。
+
+## 5. 已验收
 
 | 项目 | 证据 |
 |---|---|
-| 目录规则、读写指纹、搜索、导入 | `uv run pytest tests/workspace -q`（229 项） |
+| 目录规则、读写指纹、搜索、导入 | `uv run pytest tests/workspace -q`（261 项） |
 | Git 初始化、基线、差异、提交、撤销、冲突与错误路径 | 同上 |
 | 文件工具与轮次记录（含停止、中断、并发拒绝、模型报错） | 同上 |
+| 会话日志、请求键去重、索引自愈、界面草稿版本 | 同上（`test_conversations.py`） |
+| 新建即发送、续聊上下文、跨会话隔离、切走后恢复任务、停止与中断修复 | 同上（`test_chat.py`，用受控 provider 检查模型实际收到的消息） |
 | 四类协议的连接构造、选择规则、旧配置兼容与空配置 | 同上（`test_model_config.py`） |
 | 连接增删改、凭据分步提交、版本冲突、删除当前连接 | 同上（`test_model_service.py`） |
 | 三种列表策略、分页上限与失败分类、响应/工具测试 | 同上（`test_model_probe.py`，含本机受控 HTTP 服务） |
 | 模型设置接口、脱敏视图、`If-Match`、受理后不受切换影响 | 同上（`test_model_api.py`） |
 | 真实模型一句请求 | `uv run python scripts/check_model.py`：`deepseek-flash` 回复正常，`key：…114a` |
 | 真实模型连接链路 | 真实发现（2 个模型）→ 响应测试通过 → 工具测试通过 → 新增连接 → 设为当前 → 一轮写作（`正文/0001 雨夜.md` 709 字节，一次 Git 提交）→ 删除临时连接 → 重启后选择保留；记录见[验证材料](artifacts/v04-9-verification.md) |
-| 界面主链路 | `cd frontend && npx playwright test`（6 项，真服务 + Chromium；V04-4 建立，V04-9 未重跑） |
-| 前端单元 | `cd frontend && npm test`（36 项，含模型设置客户端与状态） |
+| 真实会话链路 | 真实 DeepSeek：声明约束 → 按约束写第一章 → 重启 → 复述约束 → 另开会话（看不到前一个会话的聊天）；记录见[验证材料](artifacts/v04-10-verification.md) |
+| 界面主链路 | `cd frontend && npx playwright test`（10 项，真服务 + Chromium；V04-4 建立，V04-11 重跑并追加对话栏显隐、栏宽拖拽、横线滚动四项） |
+| 界面视觉走查 | `cd frontend && node e2e/walkthrough-v04-12-ui.mjs`（五屏截图：阅读、收起对话栏、拖宽目录栏、改动抽屉、模型设置），见[视觉证据](artifacts/v04-12-ui/) |
+| 前端单元 | `cd frontend && npm test`（68 项，含模型设置、连接默认名称、会话状态与布局偏好） |
 | 类型与静态检查 | `uv run mypy src/hastings`、`uv run ruff check src/hastings tests/workspace` |
 
-## 5. 未验收与缺口
+## 6. 未验收与缺口
 
 - **浏览器内未逐屏走查**：模型连接全链路在应用接口层用真实 DeepSeek 取证（见上表），界面由构建、状态与测试覆盖；没有在浏览器里从「打开设置」点到「看见新章节」的截图或录屏证据。
 - **真实供应商只覆盖 DeepSeek**：Anthropic、Google 与其余 OpenAI 兼容服务的协议契约由受控传输验证，真实服务未逐家验证。
 - **没有 token 级流式**：回复整条显示。
-- **窄屏未适配**：固定三列，未迁移 0.3 的断点规则。
+- **会话没有压缩**：长会话不自动摘要或截断，厂商返回超限时原样说明，建议新建会话。
+- **草稿不跨窗口合并**：两个窗口同时编辑同一草稿时以版本先到者为准，后到者保留本地文字并提示。
+- **浏览器内的会话切换未逐屏走查**：会话全链路在接口层取证，界面由构建与状态测试覆盖。
+- **窄屏未适配**：三栏宽度可拖、对话栏可收起，但没有响应式重排。
 - **事件不跨进程广播**：SSE 轮询事件文件，多实例同时写同一作品不在本版范围。
 - **撤销只覆盖最新一次提交**：非 HEAD 提交的撤销需在 Git 里手工处理。
 
-## 6. 代码清理范围（V04-5）
+## 7. 代码清理范围（V04-5）
 
 0.3 的链路已删除：`domain/`（除仍在用的 `manuscript/diff.py` 与 `repository/serialization.py`）、`application/`（除 `errors.py` 与 `ports/credentials.py`）、`interfaces/`（除 `importers/manuscript_text.py`）、`infrastructure/`（除 `credentials.py`）、`agents/`、`bible/`、`tools/`、`prompts.py`、`session_store.py`、`rag/`、`manuscript/`、`settings.py`、`server/app.py`、`rest.py`、`v2.py`、`ws.py`、`registry.py`、`session.py`、`hastings_session.py`、`v2_agents.py`、`model_access.py`、`ollama.py`，以及对应的 `tests/` 与 `eval/` 驱动器。`hastings.__main__`（CLI 入口）随之退出。
 

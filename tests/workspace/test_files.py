@@ -1,13 +1,13 @@
 """文件工作区（0.4 V04-1，计划 M01）。
 
-契约：作品就是一个目录；``正文/`` 每章一个 Markdown，``设定集/`` 三个固定文件。
+契约：正文每章一个 Markdown，角色小传一人一文件，线索与真相固定。
 本文件只验证文件层——不涉及 Git（V04-2）、模型（V04-3）和界面（V04-4）：
 
-- 新建目录只建立两块内容与三份空设定，不创建任何数据库；
+- 新建目录建立正文、角色目录与两份空设定，不创建任何数据库；
 - 写入按「上次读到的指纹」生效，过期或被外部改动一律拒绝；
 - 路径校验拒绝绝对路径、上级跳转、盘符、反斜杠、``.git`` 与设定集旁路文件；
 - 读取接受 BOM 与 CRLF，指纹按实际字节计算，外部编辑因此可被识别；
-- 搜索、导入与删除只作用于受管文件，设定集不能改名或删除。
+- 搜索、导入与删除只作用于受管文件，线索与真相不能改名或删除。
 """
 
 from __future__ import annotations
@@ -44,16 +44,17 @@ def _code(exc_info: pytest.ExceptionInfo[WorkspaceError]) -> str:
 # -- 建立与打开 -------------------------------------------------------------
 
 
-def test_create_builds_two_blocks_and_three_empty_settings(tmp_path: Path) -> None:
+def test_create_builds_character_directory_and_two_empty_settings(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
 
     assert (workspace.root / "正文").is_dir()
     assert (workspace.root / "设定集").is_dir()
     assert sorted(path.name for path in (workspace.root / "设定集").iterdir()) == sorted(
-        ["角色小传.md", "线索.md", "真相.md"]
+        ["角色小传", "线索.md", "真相.md"]
     )
     for path in SETTING_PATHS:
         assert (workspace.root / path).read_bytes() == b""
+    assert (workspace.root / "设定集/角色小传").is_dir()
     # 作品目录里没有数据库或第二份内容清单。
     assert not [item for item in workspace.root.iterdir() if item.suffix in {".db", ".sqlite"}]
 
@@ -185,6 +186,7 @@ REJECTED_PATHS = [
     "正文/0001.MD",
     "设定集/时间线.md",
     "设定集/角色小传.md.bak",
+    "设定集/角色小传.md",
     "正文/CON.md",
     "正文/.md",
     "正文/0001.md ",
@@ -201,9 +203,9 @@ def test_paths_outside_managed_set_are_rejected(path: str, tmp_path: Path) -> No
     assert _code(rejected) == "PATH_NOT_MANAGED"
 
 
-def test_managed_paths_accept_chapters_and_three_settings() -> None:
+def test_managed_paths_accept_chapters_characters_and_fixed_settings() -> None:
     assert is_managed_path("正文/0001 雨夜.md")
-    assert is_managed_path("设定集/角色小传.md")
+    assert is_managed_path("设定集/角色小传/林远.md")
     assert is_managed_path("设定集/线索.md")
     assert is_managed_path("设定集/真相.md")
 

@@ -153,8 +153,7 @@ def test_finish_failed_keeps_written_files_and_records_them(tmp_path: Path) -> N
     workspace, repo = _setup(tmp_path)
     session = WriteSession(workspace, instruction="改角色小传")
     session.prepare()
-    digest = workspace.read("设定集/角色小传.md").digest
-    workspace.write("设定集/角色小传.md", "# 角色小传\n\n管家，五十岁。\n", expected_digest=digest)
+    workspace.write("设定集/角色小传/管家.md", "# 管家\n\n管家，五十岁。\n", expected_digest=None)
 
     result = session.finish("failed")
 
@@ -162,7 +161,7 @@ def test_finish_failed_keeps_written_files_and_records_them(tmp_path: Path) -> N
     assert result.status == "failed"
     assert result.recording == "committed"
     assert _subjects(repo)[0] == "写作（失败）：改角色小传"
-    assert "管家" in (workspace.root / "设定集/角色小传.md").read_text(encoding="utf-8")
+    assert "管家" in (workspace.root / "设定集/角色小传/管家.md").read_text(encoding="utf-8")
 
 
 def test_finish_reports_unrecorded_when_git_fails(

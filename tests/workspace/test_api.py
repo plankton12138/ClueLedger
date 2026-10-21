@@ -75,15 +75,15 @@ def test_open_missing_directory_returns_not_found(tmp_path: Path) -> None:
     assert set(response.json()["error"]) == {"code", "where", "why", "fix", "details"}
 
 
-def test_files_lists_chapters_and_three_settings(tmp_path: Path) -> None:
+def test_files_lists_chapters_characters_and_fixed_settings(tmp_path: Path) -> None:
     client = _client(tmp_path)
     root = tmp_path / "作品"
     workspace_id = _created(client, root)
 
     empty = client.get(f"/api/file-workspaces/{workspace_id}/files").json()
     assert empty["chapters"] == []
+    assert empty["characters"] == []
     assert [item["path"] for item in empty["settings"]] == [
-        "设定集/角色小传.md",
         "设定集/线索.md",
         "设定集/真相.md",
     ]

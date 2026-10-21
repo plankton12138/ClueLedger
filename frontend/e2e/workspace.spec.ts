@@ -1,15 +1,18 @@
 import { test, expect, type Page } from "@playwright/test";
-import { mkdtempSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /**
- * 文件工作区 E2E（0.4 V04-4）。
+ * 文件工作区 E2E（0.4 V04-4 / V04-11）。
  *
- * 覆盖浏览器主链路：打开目录 → 章节与三份设定 → 只读阅读 → 改动与历史 →
- * 撤销 → 搜索 → 外部改动刷新 → 对话框新建作品。
+ * 覆盖浏览器主链路：打开目录 → 章节、角色与固定设定 → 只读阅读 → 改动与历史 →
+ * 撤销 → 搜索 → 外部改动刷新 → 布局交互（对话栏显隐、栏宽拖拽、稿纸横线滚动）
+ * → 对话框新建作品。
  * 夹具自己经真实接口准备作品（新建 + 两次提交），不调用模型；
  * 真实模型链路需单独取证，见 dev-notes/v0.4/notes/v04-4-frontend.md。
+ *
+ * 新建作品的用例会改变后端「上次打开的作品」，因此排在最后：之前的用例都依赖夹具作品。
  */
 
 const PORT = process.env.HASTINGS_E2E_PORT ?? "8931";
@@ -30,6 +33,11 @@ test.beforeAll(async () => {
   writeFileSync(
     join(workspaceRoot, "正文", "0001 雨夜.md"),
     "# 雨夜\n\n侦探抵达旅馆时，雪已经下了三天。\n",
+    "utf-8",
+  );
+  writeFileSync(
+    join(workspaceRoot, "设定集", "角色小传", "林远.md"),
+    "# 林远\n\n身份：私家侦探。曾经担任刑警。\n",
     "utf-8",
   );
   await fetch(`${BASE}/${bindingId}/git/record`, {
@@ -54,12 +62,43 @@ async function open(page: Page) {
   await expect(page.getByLabel("选择作品目录")).toHaveValue(bindingId, { timeout: 10_000 });
 }
 
-test("目录打开后显示章节与三份设定", async ({ page }) => {
+/** 对话栏根节点：以「选择对话」为内部锚点，不依赖面板的标签结构。 */
+function chatPanel(page: Page) {
+  return page.locator("aside").filter({ has: page.getByLabel("选择对话") });
+}
+
+/** 按住把手横向拖动一段距离。 */
+async function dragHandle(page: Page, name: string, deltaX: number) {
+  const handle = page.getByRole("separator", { name });
+  const box = await handle.boundingBox();
+  if (!box) throw new Error(`找不到把手：${name}`);
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + deltaX, y, { steps: 8 });
+  await page.mouse.up();
+}
+
+test("目录打开后显示章节、角色分组与固定设定", async ({ page }) => {
   await open(page);
   await expect(page.getByRole("button", { name: "雨夜" })).toBeVisible();
-  for (const title of ["角色小传", "线索", "真相"]) {
+  await expect(page.locator("summary").filter({ hasText: "角色小传" })).toBeVisible();
+  for (const title of ["林远", "线索", "真相"]) {
     await expect(page.getByRole("button", { name: title, exact: true })).toBeVisible();
   }
+});
+
+test("角色小传可阅读并参与搜索", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "林远", exact: true }).click();
+  await expect(page.getByText("身份：私家侦探。曾经担任刑警。")).toBeVisible();
+  await page.getByLabel("搜索正文与设定").fill("刑警");
+  await page.getByRole("button", { name: "查找", exact: true }).click();
+  const result = page.getByRole("button").filter({ hasText: "设定集/角色小传/林远.md" });
+  await expect(result).toBeVisible();
+  await result.click();
+  await page.getByRole("button", { name: "返回目录" }).click();
 });
 
 test("稿纸只读显示正文", async ({ page }) => {
@@ -100,6 +139,101 @@ test("搜索定位到正文，外部改动刷新后可见", async ({ page }) => 
   );
   await page.getByRole("button", { name: "刷新" }).click();
   await expect(page.getByRole("button", { name: "来信" })).toBeVisible();
+});
+
+test("对话栏可隐藏，隐藏状态刷新后保持", async ({ page }) => {
+  await open(page);
+  const panel = chatPanel(page);
+  const section = page.locator("main > section");
+  await expect(panel).toBeVisible();
+  const narrow = (await section.boundingBox())!.width;
+
+  // 顶栏开关与面板里的「新对话」按钮同名不同义，必须精确匹配。
+  await page.getByRole("button", { name: "对话", exact: true }).click();
+  await expect(panel).toHaveCount(0);
+
+  // 收起后稿纸区接过对话栏与把手的宽度。
+  await expect
+    .poll(async () => Math.round((await section.boundingBox())!.width))
+    .toBeGreaterThan(Math.round(narrow) + 300);
+
+  await page.reload();
+  await expect(page.getByLabel("选择作品目录")).not.toHaveValue("", { timeout: 10_000 });
+  await expect(chatPanel(page)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "对话", exact: true }).click();
+  await expect(chatPanel(page)).toBeVisible();
+});
+
+test("拖拽把手改栏宽，刷新后保持，双击恢复默认", async ({ page }) => {
+  await open(page);
+  const nav = page.locator("main > nav");
+  const before = (await nav.boundingBox())!.width;
+
+  await dragHandle(page, "目录栏宽度", 60);
+  await expect
+    .poll(async () => Math.round((await nav.boundingBox())!.width))
+    .toBe(Math.round(before) + 60);
+
+  // 宽度写进本地偏好，刷新后保持。
+  await page.reload();
+  await expect(page.getByLabel("选择作品目录")).not.toHaveValue("", { timeout: 10_000 });
+  await expect
+    .poll(async () => Math.round((await nav.boundingBox())!.width))
+    .toBe(Math.round(before) + 60);
+
+  await page.getByRole("separator", { name: "目录栏宽度" }).dblclick();
+  await expect
+    .poll(async () => Math.round((await nav.boundingBox())!.width))
+    .toBe(Math.round(before));
+});
+
+test("对话栏宽度可拖拽，且不超过上限", async ({ page }) => {
+  await open(page);
+  const panel = chatPanel(page);
+  const before = (await panel.boundingBox())!.width;
+
+  // 右栏把手方向相反：指针左移变宽。
+  await dragHandle(page, "对话栏宽度", -80);
+  await expect
+    .poll(async () => Math.round((await panel.boundingBox())!.width))
+    .toBe(Math.round(before) + 80);
+
+  // 继续向左拖到超过上限，宽度停在 560。
+  await dragHandle(page, "对话栏宽度", -400);
+  await expect
+    .poll(async () => Math.round((await panel.boundingBox())!.width))
+    .toBe(560);
+});
+
+test("稿纸横线随内容滚动", async ({ page }) => {
+  const long = Array.from({ length: 60 }, (_, index) => `第 ${index + 1} 段：雪还在下。`).join(
+    "\n\n",
+  );
+  writeFileSync(join(workspaceRoot, "正文", "0003 长夜.md"), `# 长夜\n\n${long}\n`, "utf-8");
+
+  await open(page);
+  await page.getByRole("button", { name: "刷新" }).click();
+  await page.getByRole("button", { name: "长夜" }).click();
+  await expect(page.getByText("第 1 段")).toBeVisible();
+
+  const lined = page.locator(".paper-lined");
+  const sheet = page.locator(".paper-sheet");
+
+  // 横线挂在内容层，不挂在滚动容器上。
+  expect(await lined.evaluate((el) => getComputedStyle(el).backgroundImage)).toContain(
+    "repeating-linear-gradient",
+  );
+  expect(await sheet.evaluate((el) => getComputedStyle(el).backgroundImage)).not.toContain(
+    "repeating-linear-gradient",
+  );
+
+  const before = (await lined.boundingBox())!.y;
+  await sheet.evaluate((el) => {
+    el.scrollTop = 160;
+  });
+  const after = (await lined.boundingBox())!.y;
+  expect(Math.round(before - after)).toBeGreaterThan(120);
 });
 
 test("新建作品用系统窗口选位置，界面不再出现路径输入框", async ({ page }) => {

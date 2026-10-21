@@ -7,8 +7,8 @@
 
 缺文件 / 空文件 / ``providers: []`` → 没有连接（服务照常启动，发送消息的那一轮明确
 回报「未配置模型」）；结构性损坏（根节点非映射、连接缺 name/base_url、连接名重复、
-字段拼写错误）→ ProviderConfigError 三要素——模型配置错了应该当场知道，而不是写作
-到一半才发现。
+字段拼写错误）→ ProviderConfigError，消息说明哪里不对、建议怎么改——模型配置错了
+应该当场知道，而不是写作到一半才发现。
 
 空目录是合法状态：作者可以在界面里删掉最后一个连接，那时磁盘上就是空列表，重启后
 保持「没有选择」，不能退回到「文件不存在」的推断里。
@@ -40,7 +40,7 @@ SelectionMode = Literal["auto", "explicit", "none"]
 
 
 class ProviderConfigError(ValueError):
-    """config.yaml 结构损坏（三要素文案随异常携带）。"""
+    """config.yaml 结构损坏（消息随异常携带）。"""
 
 
 class ProviderProfile(BaseModel):
@@ -168,15 +168,15 @@ def _reject_env_reference(raw: dict[str, Any], path: Path) -> None:
         return
     raise ProviderConfigError(
         f"config.yaml 已不再支持环境变量引用：连接 {offenders} 使用了 api_key_env（{path}）。"
-        "为什么错：模型来源只从本文件读取，应用不再读进程环境里的 key；"
+        "模型来源只从本文件读取，应用不再读进程环境里的 key；"
         "保留该字段会让连接看起来配好了、实际没有 key。"
-        "怎样算对：删掉 api_key_env，把 key 直接写进同一连接的 api_key"
+        "建议：删掉 api_key_env，把 key 直接写进同一连接的 api_key"
         "（首次启动后会转入系统凭据存储，磁盘上只留 credential_ref）。"
     )
 
 
 def load_server_config(path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
-    """加载服务级配置；缺文件/空文件/空列表 → 空连接目录，结构性损坏 → 三要素报错。"""
+    """加载服务级配置；缺文件/空文件/空列表 → 空连接目录，结构性损坏 → 报错并说明改法。"""
     if not path.exists():
         return ServerConfig(providers=[])
     raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -187,8 +187,8 @@ def load_server_config(path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
         raise ProviderConfigError(
             f"config.yaml 损坏：根节点应为 YAML 映射（providers 列表），"
             f"实际是 {type(raw).__name__}（{path}）。"
-            "为什么错：文件结构不对，无法解析出任何模型端点。"
-            "怎样算对：参照 config.example.yaml 修复文件结构。"
+            "文件结构不对，无法解析出任何模型端点。"
+            "建议：参照 config.example.yaml 修复文件结构。"
         )
     _reject_env_reference(raw, path)
     try:
@@ -200,8 +200,8 @@ def load_server_config(path: Path = DEFAULT_CONFIG_PATH) -> ServerConfig:
     if duplicates:
         raise ProviderConfigError(
             f"config.yaml 损坏：连接名重复 {duplicates}（{path}）。"
-            "为什么错：工作区设置按连接名引用端点，重名无法解析。"
-            "怎样算对：为每个连接取唯一的名字。"
+            "工作区设置按连接名引用端点，重名无法解析。"
+            "建议：为每个连接取唯一的名字。"
         )
     return config
 
@@ -213,8 +213,8 @@ def _validation_error_message(path: Path, exc: ValidationError) -> str:
     )
     return (
         f"config.yaml 损坏：{lines}（{path}）。"
-        "为什么错：字段缺失、类型不对或存在未知字段（多为拼写错误）。"
-        "怎样算对：每个连接必含 name / base_url，可选 api_key（直填）"
+        "字段缺失、类型不对或存在未知字段（多为拼写错误）。"
+        "建议：每个连接必含 name / base_url，可选 api_key（直填）"
         "与 default_model；参照 config.example.yaml。"
     )
 
@@ -481,7 +481,7 @@ class ProviderBook:
         return profile.models_for() if profile is not None else []
 
     def snapshot(self, *, worker: bool = True) -> ModelSnapshot:
-        """解析当前选择并构造一轮快照；未配置时抛三要素错。"""
+        """解析当前选择并构造一轮快照；未配置时抛错并说明如何配置。"""
         return snapshot_for(self.selection(), self)
 
     def _explicit(self) -> ProviderProfile | None:
@@ -512,13 +512,13 @@ class ProviderBook:
 
 
 def snapshot_for(selection: ModelSelection, book: ProviderBook) -> ModelSnapshot:
-    """把选择变成实例；选择不可用时抛三要素错（轮次与脚本共用同一句提示）。"""
+    """把选择变成实例；选择不可用时抛错（轮次与脚本共用同一句提示）。"""
     profile = book.profile(selection.connection_id) if selection.connection_id else None
     if profile is None or not selection.available or not selection.model:
         raise ProviderConfigError(
             f"没有可用的模型来源：{selection.reason or '当前没有选择连接与模型'}。"
-            "为什么错：这一轮不会调用模型，也不会有任何文件改动。"
-            "怎样算对：在「模型设置」里添加并选择一个连接与模型，"
+            "这一轮不会调用模型，也不会有任何文件改动。"
+            "建议：在「模型设置」里添加并选择一个连接与模型，"
             "或在 config.yaml 里补齐 base_url、api_key 与模型名。"
         )
     return snapshot(profile, selection.model)
