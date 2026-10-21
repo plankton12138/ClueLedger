@@ -20,6 +20,7 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.5 文件工作区
 | Git 历史、提交与撤销 | `workspace/git.py` | [Git 历史](../../dev-notes/v0.4/modules/git-history.md)，受管路径见[当前文件规则](../../dev-notes/v0.5/modules/file-workspace.md) |
 | 一轮请求的受理、执行与记录 | `workspace/service.py` | [写作 Agent 与对话](../../dev-notes/v0.4/modules/agent-and-chat.md)，回复展示见[对话展示](../../dev-notes/v0.5/modules/chat-display.md) |
 | 模型增量到会话事件的桥接、合批与中断修复 | `workspace/chat_stream.py` | [对话展示与流式回复](../../dev-notes/v0.5/modules/chat-display.md) |
+| 章序、章节显示名与人物身份标签的解析和写入检查 | `workspace/metadata.py` | [文件工作区与角色小传](../../dev-notes/v0.5/modules/file-workspace.md) |
 | 文件工具与系统提示 | `workspace/agent.py`、`workspace/context.py` | [人物按需读取与文件工具](../../dev-notes/v0.5/modules/file-workspace.md) |
 | HTTP 接口（文件、Git、对话、事件） | `workspace/api.py` | [模块导航](../../dev-notes/v0.5/modules/README.md) |
 | 模型档案、provider 与凭据 | `server/provider_config.py`、`infrastructure/credentials.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
