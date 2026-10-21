@@ -260,6 +260,8 @@ class ConversationStore:
         # 重入锁：公开方法之间会互相调用（受理要查重、追加要 touch 索引）。
         self._lock = threading.RLock()
         self._seqs: dict[str, int] = {}
+        # 已确认日志尾部完整的会话：崩溃留下的半条记录每个进程只需修一次。
+        self._tails_checked: set[str] = set()
 
     # -- 会话 ---------------------------------------------------------------
 
@@ -456,6 +458,9 @@ class ConversationStore:
             return ()
         path = self.events_file(conversation_id)
         with self._lock:
+            if conversation_id not in self._tails_checked:
+                _repair_tail(path)
+                self._tails_checked.add(conversation_id)
             seq = self._seqs.get(conversation_id)
             if seq is None:
                 seq = _last_seq(path)
@@ -570,6 +575,8 @@ class ConversationStore:
                     stream.write(json.dumps(record, ensure_ascii=False) + "\n")
             os.replace(temp_name, path)
             temp_name = None
+            # 新日志整份替换，尾部必然是完整的一行。
+            self._tails_checked.add(conversation_id)
         except OSError as exc:
             raise WorkspaceError(
                 code="STATE_WRITE_FAILED",
@@ -947,6 +954,47 @@ def _file_revision(path: Path) -> str:
     except (FileNotFoundError, OSError):
         return "0"
     return hashlib.sha256(data).hexdigest()[:12]
+
+
+def _repair_tail(path: Path) -> None:
+    """追加前先修好上一次写到一半的尾部。
+
+    追加写不检查文件尾：崩溃留下的半条记录没有换行，新记录会直接接在它后面，两条粘成
+    一行；读取时整行解析失败，补写的第一条——往往正是补出来的正式回复——随之消失，
+    而且补上的终态会让下一次扫描认为这一轮已经处理完，再也不会重写。这里按行截掉无法
+    解析的残片；只是缺换行的完整记录则补一个换行保留下来。
+    """
+    try:
+        if path.stat().st_size == 0:
+            return
+        with path.open("rb") as stream:
+            stream.seek(-1, os.SEEK_END)
+            if stream.read(1) == b"\n":
+                return
+            stream.seek(0)
+            raw = stream.read()
+    except OSError:
+        return
+    cut = raw.rfind(b"\n") + 1
+    try:
+        record = json.loads(raw[cut:].decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        record = None
+    complete = isinstance(record, dict) and isinstance(record.get("seq"), int)
+    try:
+        with path.open("r+b") as stream:
+            if complete:
+                stream.seek(0, os.SEEK_END)
+                stream.write(b"\n")
+            else:
+                stream.truncate(cut)
+    except OSError as exc:
+        raise WorkspaceError(
+            code="STATE_WRITE_FAILED",
+            where="conversations.append",
+            why=f"无法修复会话日志的尾部：{exc.strerror or exc}",
+            fix="检查应用状态目录是否可写（--state-dir 指定的目录或 ~/.hastings）",
+        ) from exc
 
 
 def _last_seq(path: Path) -> int:

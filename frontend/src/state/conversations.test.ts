@@ -313,6 +313,142 @@ describe("切换会话", () => {
   });
 });
 
+describe("缺批回读与实时流", () => {
+  it("回读期间收到的事件不会被旧快照覆盖，游标不回退", async () => {
+    api.conversationMessages.mockResolvedValueOnce({
+      events: [{ seq: 1, at: "", type: "turn_started", turn_id: "t1", text: "写第一章" }],
+      last_seq: 1,
+      active_turn: null,
+      revision: "r1",
+    });
+    await useConversationsStore.getState().load("w1");
+    let release: (value: unknown) => void = () => undefined;
+    api.conversationMessages.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    api.streamEvents.mockImplementation(async function* () {
+      yield { seq: 2, at: "", type: "assistant_started", turn_id: "t2", message_id: "m1" };
+      yield {
+        seq: 3,
+        at: "",
+        type: "assistant_block_started",
+        turn_id: "t2",
+        message_id: "m1",
+        block_id: "b1",
+        kind: "text",
+        order: 0,
+      };
+      yield {
+        seq: 4,
+        at: "",
+        type: "assistant_block_delta",
+        turn_id: "t2",
+        message_id: "m1",
+        block_id: "b1",
+        text: "雪停",
+        part: 0,
+      };
+      // 缺了 part 1：界面回读日志补齐，但实时流仍在继续。
+      yield {
+        seq: 8,
+        at: "",
+        type: "assistant_block_delta",
+        turn_id: "t2",
+        message_id: "m1",
+        block_id: "b1",
+        text: "了。",
+        part: 2,
+      };
+      yield {
+        seq: 9,
+        at: "",
+        type: "assistant_message",
+        turn_id: "t2",
+        message_id: "m1",
+        text: "雪停了。",
+        completion: "completed",
+      };
+      yield {
+        seq: 10,
+        at: "",
+        type: "run_finished",
+        turn_id: "t2",
+        status: "completed",
+        recording: "no_change",
+        changed_paths: [],
+        commit: null,
+      };
+    });
+
+    void useConversationsStore.getState().send("继续");
+    await flush();
+    expect(useConversationsStore.getState().entries.c1?.lastSeq).toBe(10);
+
+    // 回读请求发出时日志只到 6；之后实时流又收到了 9、10。
+    release({
+      events: [
+        { seq: 1, at: "", type: "turn_started", turn_id: "t1", text: "写第一章" },
+        { seq: 2, at: "", type: "assistant_started", turn_id: "t2", message_id: "m1" },
+        {
+          seq: 3,
+          at: "",
+          type: "assistant_block_started",
+          turn_id: "t2",
+          message_id: "m1",
+          block_id: "b1",
+          kind: "text",
+          order: 0,
+        },
+        {
+          seq: 4,
+          at: "",
+          type: "assistant_block_delta",
+          turn_id: "t2",
+          message_id: "m1",
+          block_id: "b1",
+          text: "雪停",
+          part: 0,
+        },
+        {
+          seq: 5,
+          at: "",
+          type: "assistant_block_delta",
+          turn_id: "t2",
+          message_id: "m1",
+          block_id: "b1",
+          text: "了",
+          part: 1,
+        },
+        {
+          seq: 6,
+          at: "",
+          type: "assistant_block_finished",
+          turn_id: "t2",
+          message_id: "m1",
+          block_id: "b1",
+          kind: "text",
+          order: 0,
+          text: "雪停了",
+          completion: "completed",
+          duration_ms: 10,
+        },
+      ],
+      last_seq: 6,
+      active_turn: null,
+      revision: "r1",
+    });
+    await flush();
+
+    const entry = useConversationsStore.getState().entries.c1;
+    expect(entry?.lastSeq).toBe(10);
+    expect(entry?.needsReload).toBe(false);
+    expect(entry?.turns.find((turn) => turn.id === "t2")?.result?.status).toBe("completed");
+  });
+});
+
 describe("草稿与列表", () => {
   it("草稿按版本保存，成功后采用新版本号", async () => {
     await useConversationsStore.getState().load("w1");

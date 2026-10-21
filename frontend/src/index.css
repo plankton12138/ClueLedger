@@ -571,6 +571,10 @@
     @apply border-t border-panel-edge px-2 py-1 text-[12px];
     color: theme("colors.sub");
   }
+  .chat-thinking-text {
+    @apply whitespace-pre-wrap text-[13px] leading-6;
+    overflow-wrap: anywhere;
+  }
 
   /* 工具：一行摘要，失败在折叠状态也看得见。 */
   .chat-tool-line {

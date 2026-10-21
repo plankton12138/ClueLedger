@@ -5,7 +5,7 @@
  * 组件按轮次记忆化——只有正在变化的那一轮会重绘，已完成的历史轮次保持原样。
  */
 
-import { memo, useCallback } from "react";
+import { memo } from "react";
 
 import type { RunPhase } from "../../api/workspace";
 import { phaseLabel, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
@@ -46,10 +46,6 @@ function ChatTurnView({
   onRevert,
   onRecord,
 }: Props) {
-  const expand = useCallback(
-    (message: ChatMessage) => () => onExpand(message),
-    [onExpand],
-  );
   const result = turn.result;
 
   return (
@@ -63,7 +59,7 @@ function ChatTurnView({
           <AssistantMessageView
             key={item.key}
             message={item.message}
-            onExpand={expand(item.message)}
+            onExpand={onExpand}
             onCopyFailed={onCopyFailed}
           />
         ) : (

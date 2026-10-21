@@ -5,6 +5,8 @@
  * 原因（停止、截断、失败、中断），不能因为「有一段文字」就显示成完整成功。
  */
 
+import { memo } from "react";
+
 import { orderedBlocks, type ChatBlock, type ChatMessage } from "../../state/chatMessages";
 import ChatMarkdown from "./ChatMarkdown";
 import MessageActions from "./MessageActions";
@@ -22,17 +24,17 @@ interface Props {
   wide?: boolean;
   /** 宽阅读视图里不重复放操作按钮。 */
   showActions?: boolean;
-  onExpand?: () => void;
+  onExpand?: (message: ChatMessage) => void;
   onCopyFailed?: (message: ChatMessage) => void;
 }
 
-function Block({ block }: { block: ChatBlock }) {
+const Block = memo(function Block({ block }: { block: ChatBlock }) {
   if (block.kind === "thinking") return <ThinkingBlock block={block} />;
   if (!block.text.trim()) return null;
   return <ChatMarkdown text={block.text} />;
-}
+});
 
-export default function AssistantMessageView({
+function AssistantMessageView({
   message,
   wide = false,
   showActions = true,
@@ -64,10 +66,12 @@ export default function AssistantMessageView({
       {showActions && (
         <MessageActions
           message={message}
-          onExpand={onExpand ?? (() => undefined)}
+          onExpand={() => onExpand?.(message)}
           onCopyFailed={() => onCopyFailed?.(message)}
         />
       )}
     </div>
   );
 }
+
+export default memo(AssistantMessageView);

@@ -9,7 +9,8 @@
  * （已记录/没有改动/历史未记录）。「文件已改但历史没记上」不能显示成全部成功。
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import type { Conversation } from "../../api/workspace";
 import { findMessage, type ChatMessage } from "../../state/chatMessages";
@@ -34,7 +35,9 @@ export default function ConversationPanel() {
   const items = useConversationsStore((state) => state.items);
   const selectedId = useConversationsStore((state) => state.selectedId);
   const entry = useConversationsStore(selectedEntry);
-  const entries = useConversationsStore((state) => state.entries);
+  const runningIds = useConversationsStore(useShallow((state) =>
+    Object.keys(state.entries).filter((id) => state.entries[id]?.running),
+  ));
   const drafts = useConversationsStore((state) => state.drafts);
   const draft = useConversationsStore((state) => state.drafts[draftKeyOf(state)] ?? "");
   const pending = useConversationsStore((state) => state.pendingKey);
@@ -58,7 +61,7 @@ export default function ConversationPanel() {
     null,
   );
   const [copyHint, setCopyHint] = useState(false);
-  const scroll = useChatScroll(entry.lastSeq);
+  const scroll = useChatScroll(entry.lastSeq, selectedId);
 
   // 未配置模型时给入口而不是拦死输入：草稿要保留，配好之后作者自己点发送。
   const selectionAvailable = useModelsStore((state) => state.selection.available);
@@ -73,18 +76,21 @@ export default function ConversationPanel() {
     return findMessage(entry.turns, expanded.messageId);
   }, [expanded, selectedId, entry.turns]);
 
-  const openExpanded = (message: ChatMessage) => {
+  const openExpanded = useCallback((message: ChatMessage) => {
     if (!selectedId) return;
     setCopyHint(false);
     setExpanded({ conversationId: selectedId, messageId: message.id });
-  };
+  }, [selectedId]);
 
-  const copyFailed = (message: ChatMessage) => {
+  const copyFailed = useCallback((message: ChatMessage) => {
     // 剪贴板失败：把同一条回复打开成可选择复制的原文，不假装复制成功。
     if (!selectedId) return;
     setCopyHint(true);
     setExpanded({ conversationId: selectedId, messageId: message.id });
-  };
+  }, [selectedId]);
+
+  const onRevert = useCallback((commit: string) => void revert(commit), [revert]);
+  const onRecord = useCallback(() => void recordChanges(), [recordChanges]);
 
   const submit = async () => {
     if (!canSend) return;
@@ -110,7 +116,7 @@ export default function ConversationPanel() {
           <option value="">{drafts.new ? "（新对话 · 草稿）" : "（新对话）"}</option>
           {items.map((item) => (
             <option key={item.id} value={item.id}>
-              {conversationLabel(item, Boolean(entries[item.id]?.running))}
+              {conversationLabel(item, runningIds.includes(item.id))}
             </option>
           ))}
         </select>
@@ -172,11 +178,11 @@ export default function ConversationPanel() {
               key={turn.id}
               turn={turn}
               running={running && index === entry.turns.length - 1}
-              phase={entry.phase}
+              phase={running && index === entry.turns.length - 1 ? entry.phase : null}
               onExpand={openExpanded}
               onCopyFailed={copyFailed}
-              onRevert={(commit) => void revert(commit)}
-              onRecord={() => void recordChanges()}
+              onRevert={onRevert}
+              onRecord={onRecord}
             />
           ))}
 

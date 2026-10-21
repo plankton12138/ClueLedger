@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
+from hastings.workspace.conversation_context import replay_public_messages
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.git import GitRepo
 from hastings.workspace.service import ProviderFactory, TurnService
@@ -666,6 +667,75 @@ def test_unfinished_turn_is_marked_interrupted_on_restart(
     )
     events = _events(again, workspace_id, accepted.conversation_id)
     assert len([e for e in events if e["type"] == "run_finished"]) == 1
+
+
+def test_restart_recovers_reply_after_truncated_log_tail(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """日志尾部留着半条记录时，补出来的正式回复仍要落地并进入下一轮上下文。"""
+    book = RecentWorkspaces(tmp_path / "state")
+    provider = ScriptedProvider([_text_turn("你好")])
+    client = TestClient(
+        create_workspace_app(workspaces=book, provider_factory=lambda: _snapshot(provider))
+    )
+    workspace_id = _workspace(client, tmp_path)
+    store = ConversationStore(conversation_root(book.root, workspace_id))
+    accepted = store.create_with_first_turn(text="写第一章", request_key="k1", turn_id="t_old")
+    conversation_id = accepted.conversation_id
+    # 崩之前：内容块已经收尾，只差那条正式回复与响应终态。
+    store.append_batch(
+        conversation_id,
+        [
+            {"type": "assistant_started", "turn_id": "t_old", "message_id": "m1"},
+            {
+                "type": "assistant_block_started",
+                "turn_id": "t_old",
+                "message_id": "m1",
+                "block_id": "b1",
+                "kind": "text",
+                "order": 0,
+            },
+            {
+                "type": "assistant_block_delta",
+                "turn_id": "t_old",
+                "message_id": "m1",
+                "block_id": "b1",
+                "text": "雪停了。",
+                "part": 0,
+            },
+            {
+                "type": "assistant_block_finished",
+                "turn_id": "t_old",
+                "message_id": "m1",
+                "block_id": "b1",
+                "kind": "text",
+                "order": 0,
+                "text": "雪停了。",
+                "completion": "completed",
+                "duration_ms": 12,
+            },
+        ],
+    )
+    # 写到一半断电：尾部留下一条没有换行、也无法解析的记录。
+    with store.events_file(conversation_id).open("a", encoding="utf-8", newline="\n") as stream:
+        stream.write('{"seq": 6, "at": "2026-10-21T10:00:00+08:00", "type": "assistant_mess')
+
+    restarted = TestClient(
+        create_workspace_app(workspaces=book, provider_factory=lambda: _snapshot(provider))
+    )
+    events = _events(restarted, workspace_id, conversation_id)
+
+    replies = [event["text"] for event in events if event["type"] == "assistant_message"]
+    assert replies == ["雪停了。"]
+    assert events[-1]["type"] == "run_finished"
+    assert events[-1]["status"] == "interrupted"
+    # 下一轮模型上下文要带上这段回复，而不是只剩执行结果。
+    replayed = [
+        "".join(block.text for block in message.content)
+        for message in replay_public_messages(events)
+        if isinstance(message, AssistantMessage)
+    ]
+    assert replayed == ["雪停了。"]
 
 
 # -- 请求键与事件流 -------------------------------------------------------

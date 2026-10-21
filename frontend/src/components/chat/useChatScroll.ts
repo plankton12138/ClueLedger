@@ -6,7 +6,7 @@
  * 正在阅读的人拽回底部，所以这里只在内容真的增长时决定要不要跟随。
  */
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 //: 距底部多远算「在底部附近」；窄对话栏走查后的小范围余量。
 const BOTTOM_MARGIN = 48;
@@ -28,10 +28,10 @@ export interface ChatScroll {
 }
 
 /**
- * @param token 内容版本：每收到一条事件或整轮结束时变化。
- * @param active 是否还有一轮在进行；收尾时用来重新判断是否跟随。
+ * @param token 已合批的内容版本。
+ * @param conversationId 切换会话后重新定位，旧会话的回调不能移动新会话。
  */
-export function useChatScroll(token: number): ChatScroll {
+export function useChatScroll(token: number, conversationId: string | null): ChatScroll {
   const ref = useRef<HTMLDivElement | null>(null);
   const following = useRef(true);
   const [hasNew, setHasNew] = useState(false);
@@ -46,17 +46,25 @@ export function useChatScroll(token: number): ChatScroll {
     setHasNew(!near);
   }, []);
 
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    if (!following.current) {
-      setHasNew(true);
-      return;
-    }
-    if (selectionInside(element)) return;
-    element.scrollTop = element.scrollHeight;
+  useEffect(() => {
+    following.current = true;
     setHasNew(false);
-  }, [token]);
+  }, [conversationId]);
+
+  useEffect(() => {
+    // 与浏览器绘制对齐，同一帧最多读取和调整一次布局，不在每条事件的提交阶段强制排版。
+    const frame = requestAnimationFrame(() => {
+      const element = ref.current;
+      if (!element) return;
+      if (!following.current || selectionInside(element)) {
+        setHasNew(true);
+        return;
+      }
+      element.scrollTop = element.scrollHeight;
+      setHasNew(false);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [token, conversationId]);
 
   const toLatest = useCallback(() => {
     const element = ref.current;

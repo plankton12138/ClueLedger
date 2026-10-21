@@ -35,6 +35,7 @@ import {
   NeedsConversationReload,
   type ChatTurn,
 } from "./chatMessages";
+import { createStreamBatcher } from "./streamBatcher";
 
 export interface ConversationEntry {
   /** 按轮次归并后的展示结构；实时增量与历史回读共用同一套规则。 */
@@ -113,6 +114,8 @@ const RECONNECT_DELAYS = [0, 1000, 2000, 5000];
 
 /** 正在回读日志的会话：缺口一次只补一次，避免重复请求。 */
 const reloading = new Set<string>();
+/** 回读在途时收到的实时事件：快照落地后按 seq 接上，不让旧快照抹掉新事件。 */
+const bufferedDuringReload = new Map<string, WorkspaceEvent[]>();
 
 // 每个会话一个订阅代次：关闭旧订阅的 finally 不能改动新订阅的状态。
 const generations = new Map<string, number>();
@@ -156,42 +159,80 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     });
   }
 
-  function appendEventTo(conversationId: string, event: WorkspaceEvent): void {
+  function applyEvents(conversationId: string, events: WorkspaceEvent[]): void {
     const entry = get().entries[conversationId] ?? EMPTY_ENTRY;
-    // 先按 seq 去重：断开重连、回读与实时推送可能送到同一条。
-    if (event.seq <= entry.lastSeq) return;
-    const patch: Partial<ConversationEntry> = { lastSeq: event.seq };
-    if (event.type === "run_phase") patch.phase = event.phase;
-    try {
-      patch.turns = appendEvent(entry.turns, event);
-    } catch (error) {
-      if (error instanceof NeedsConversationReload) {
-        // 批次缺号：回读本会话日志补齐，不重发用户请求。
-        void reloadLog(conversationId);
-        return;
+    let { turns, lastSeq, phase } = entry;
+    let needsReload = false;
+    for (const event of events) {
+      // 每批内部也按 seq 去重，分片仍逐条归并；只在全部处理后通知一次界面。
+      if (event.seq <= lastSeq) continue;
+      try {
+        turns = appendEvent(turns, event);
+      } catch (error) {
+        if (!(error instanceof NeedsConversationReload)) throw error;
+        needsReload = true;
+        continue;
       }
-      throw error;
+      lastSeq = event.seq;
+      if (event.type === "run_phase") phase = event.phase;
     }
-    patchEntry(conversationId, patch);
+    if (lastSeq !== entry.lastSeq) patchEntry(conversationId, { turns, lastSeq, phase });
+    if (needsReload) void reloadLog(conversationId);
+  }
+
+  function appendEventsTo(conversationId: string, events: WorkspaceEvent[]): void {
+    // 回读在途：照常显示，同时记下这一段。快照代表请求发出那一刻的日志位置，
+    // 比实时流落后；快照落地后按 seq 把这些事件接上，游标才不会倒退、
+    // 已经收到的完成结果也不会被旧快照抹掉。
+    if (reloading.has(conversationId)) {
+      const buffered = bufferedDuringReload.get(conversationId) ?? [];
+      buffered.push(...events);
+      bufferedDuringReload.set(conversationId, buffered);
+    }
+    applyEvents(conversationId, events);
   }
 
   async function reloadLog(conversationId: string): Promise<void> {
     const workspaceId = get().workspaceId;
     if (!workspaceId || reloading.has(conversationId)) return;
     reloading.add(conversationId);
+    bufferedDuringReload.delete(conversationId);
     patchEntry(conversationId, { needsReload: true });
+    let again = false;
     try {
       const snapshot = await conversationMessages(workspaceId, conversationId, 0);
-      patchEntry(conversationId, {
-        turns: buildTurns(snapshot.events),
-        lastSeq: snapshot.last_seq,
-        needsReload: false,
-      });
+      const current = get().entries[conversationId] ?? EMPTY_ENTRY;
+      if (snapshot.last_seq < current.lastSeq) {
+        // 快照比已经显示的内容还旧：保留现有事件，等下一次缺号再补。
+        patchEntry(conversationId, { needsReload: false });
+      } else {
+        const buffered = bufferedDuringReload.get(conversationId) ?? [];
+        let turns = buildTurns(snapshot.events);
+        let lastSeq = snapshot.last_seq;
+        let phase = current.phase;
+        for (const event of buffered) {
+          if (event.seq <= lastSeq) continue;
+          try {
+            turns = appendEvent(turns, event);
+          } catch (error) {
+            if (error instanceof NeedsConversationReload) {
+              // 接上之后仍有缺口：先把已经接好的部分落地，再回读一次。
+              again = true;
+              break;
+            }
+            throw error;
+          }
+          lastSeq = event.seq;
+          if (event.type === "run_phase") phase = event.phase;
+        }
+        patchEntry(conversationId, { turns, lastSeq, phase, needsReload: false });
+      }
     } catch (error) {
       patchEntry(conversationId, { needsReload: false, error: describe(error) });
-    } finally {
-      reloading.delete(conversationId);
     }
+    bufferedDuringReload.delete(conversationId);
+    reloading.delete(conversationId);
+    if (again) void reloadLog(conversationId);
   }
 
   async function consume(conversationId: string, after: number): Promise<void> {
@@ -201,6 +242,11 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     const controller = new AbortController();
     controllers.get(conversationId)?.abort();
     controllers.set(conversationId, controller);
+    const batcher = createStreamBatcher((events) => {
+      if (get().workspaceId === workspaceId && isCurrentSubscription(conversationId, generation)) {
+        appendEventsTo(conversationId, events);
+      }
+    });
     let cursor = after;
     let finished = false;
     for (const delay of RECONNECT_DELAYS) {
@@ -216,7 +262,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           controller.signal,
         )) {
           if (!isCurrentSubscription(conversationId, generation)) break;
-          appendEventTo(conversationId, event);
+          batcher.push(event);
           cursor = Math.max(cursor, event.seq);
           if (event.type === "run_finished") {
             finished = true;
@@ -224,6 +270,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           }
         }
       } catch (error) {
+        batcher.flush();
         if (controller.signal.aborted || !isCurrentSubscription(conversationId, generation)) {
           break;
         }
@@ -231,12 +278,14 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         patchEntry(conversationId, { error: `连接中断：${describe(error)}` });
         continue;
       }
+      batcher.flush();
       if (finished) break;
       // 流正常结束却没有整轮终态：服务端可能重启过，按最后确认的位置再接一次。
       if (isCurrentSubscription(conversationId, generation)) {
         patchEntry(conversationId, { error: "连接中断，正在重新接收…" });
       }
     }
+    batcher.flush();
     if (controllers.get(conversationId) === controller) controllers.delete(conversationId);
     if (!isCurrentSubscription(conversationId, generation)) return;
     if (finished) {
@@ -338,6 +387,8 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       for (const controller of controllers.values()) controller.abort();
       controllers.clear();
       generations.clear();
+      reloading.clear();
+      bufferedDuringReload.clear();
       if (draftTimer) clearTimeout(draftTimer);
       draftTimer = null;
       draftQueue = Promise.resolve();

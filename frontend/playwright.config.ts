@@ -12,7 +12,7 @@ const port = Number(process.env.HASTINGS_E2E_PORT ?? "8931");
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "workspace.spec.ts",
+  testMatch: ["workspace.spec.ts", "chat-rendering.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,

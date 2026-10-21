@@ -5,6 +5,8 @@
  * 参数只来自服务端允许保留的那几项，整章正文与完整写入参数不会出现在这里。
  */
 
+import { memo } from "react";
+
 import { formatDuration, type ChatTool } from "../../state/chatMessages";
 
 const TOOL_LABEL: Record<string, string> = {
@@ -35,7 +37,7 @@ interface Props {
   tool: ChatTool;
 }
 
-export default function ToolActivity({ tool }: Props) {
+function ToolActivity({ tool }: Props) {
   const running = tool.ok === null;
   const mark = running ? "·" : tool.ok ? "✓" : "✗";
   const duration = formatDuration(tool.durationMs);
@@ -70,3 +72,5 @@ export default function ToolActivity({ tool }: Props) {
     </details>
   );
 }
+
+export default memo(ToolActivity);

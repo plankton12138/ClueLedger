@@ -10,6 +10,7 @@
  * - 任务列表只读：勾选不写回，回复内容是记录，不是表单。
  */
 
+import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -52,7 +53,7 @@ interface Props {
   wide?: boolean;
 }
 
-export default function ChatMarkdown({ text, wide = false }: Props) {
+function ChatMarkdown({ text, wide = false }: Props) {
   return (
     <div className={wide ? "prose-chat prose-chat-wide" : "prose-chat"}>
       <ReactMarkdown
@@ -66,3 +67,5 @@ export default function ChatMarkdown({ text, wide = false }: Props) {
     </div>
   );
 }
+
+export default memo(ChatMarkdown);
