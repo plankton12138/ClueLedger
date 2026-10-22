@@ -17,8 +17,11 @@
 import type {
   BlockKind,
   Completion,
+  ReviewFinding,
+  ReviewStatus,
   RunPhase,
   RunResult,
+  TaskScope,
   WorkspaceEvent,
 } from "../api/workspace";
 
@@ -67,6 +70,17 @@ export interface TurnError {
   message: string;
 }
 
+/** 本轮材料：只记路径、版本与已提供的区间，不保存原文。 */
+export interface TurnMaterial {
+  path: string;
+  digest: string;
+  /** 作者指定或明确要求的参考：写作品前必须读完。 */
+  required: boolean;
+  /** 已提供的原文区间（服务端字符下标，左闭右开）。 */
+  spans: [number, number][];
+  length: number;
+}
+
 export interface ChatTurn {
   id: string;
   prompt: string;
@@ -76,6 +90,38 @@ export interface ChatTurn {
   result: RunResult | null;
   /** 局部增量缺号且未能由完整块校正：说明记录不完整。 */
   incomplete: boolean;
+  /** 这一轮实际提供过的材料；没有指定参考时为空。 */
+  materials: TurnMaterial[];
+  /** 这一轮登记的修改范围；没有登记时为 null（纯讨论）。 */
+  scope: TaskScope | null;
+  /** 这一轮的检查报告摘要；没有检查时为 null。 */
+  review: TurnReview | null;
+}
+
+/** 一轮检查的结果：只放展示需要的内容，完整报告由接口回看。 */
+export interface TurnReview {
+  reportId: string | null;
+  status: ReviewStatus;
+  findings: ReviewFinding[];
+  uncovered: string[];
+}
+
+/** 已提供字符数：重叠区间合并后求和，避免重复累计。 */
+export function materialReadChars(material: TurnMaterial): number {
+  const spans = [...material.spans].sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let cursor = 0;
+  for (const [start, end] of spans) {
+    const from = Math.max(start, cursor);
+    if (end > from) total += end - from;
+    cursor = Math.max(cursor, end);
+  }
+  return total;
+}
+
+/** 是否已经提供了该版本全文；空文件算读完。 */
+export function materialComplete(material: TurnMaterial): boolean {
+  return material.length === 0 || materialReadChars(material) >= material.length;
 }
 
 /** 实时状态收到缺批时抛出：需要回读本会话日志，不重发用户请求。 */
@@ -94,9 +140,46 @@ const EMPTY_TURN = (id: string, at: string): ChatTurn => ({
   errors: [],
   result: null,
   incomplete: false,
+  materials: [],
+  scope: null,
+  review: null,
 });
 
 // -- 结构更新：只替换受影响的节点 -------------------------------------------
+
+function withMaterial(
+  turn: ChatTurn,
+  path: string,
+  digest: string,
+  required: boolean,
+  spans: [number, number][],
+  length: number,
+): ChatTurn {
+  const index = turn.materials.findIndex((item) => item.path === path);
+  if (index < 0) {
+    const material: TurnMaterial = {
+      path,
+      digest,
+      required,
+      spans: spans.filter(([start, end]) => end > start),
+      length,
+    };
+    return { ...turn, materials: [...turn.materials, material] };
+  }
+  const current = turn.materials[index]!;
+  const material: TurnMaterial = {
+    ...current,
+    // 版本变化后不拼接新旧区间：只保留当前版本的读取记录。
+    digest: digest || current.digest,
+    required: required || current.required,
+    spans: digest && digest !== current.digest ? [] : current.spans,
+    length: length || current.length,
+  };
+  material.spans = [...material.spans, ...spans.filter(([start, end]) => end > start)];
+  const materials = turn.materials.slice();
+  materials[index] = material;
+  return { ...turn, materials };
+}
 
 function withTurn(
   turns: ChatTurn[],
@@ -285,6 +368,66 @@ export function appendEvent(turns: ChatTurn[], event: WorkspaceEvent): ChatTurn[
           stopReason: event.stop_reason ?? "",
           durationMs: event.duration_ms ?? null,
         })),
+      );
+    }
+    case "review_finished": {
+      return withTurn(turns, event.turn_id, (turn) => ({
+        ...turn,
+        review: {
+          reportId: event.report_id,
+          status: event.status,
+          findings: event.findings ?? [],
+          uncovered: event.uncovered ?? [],
+        },
+      }));
+    }
+    case "task_scope_set":
+    case "task_scope_extended": {
+      const { seq, at, type, turn_id, ...scope } = event;
+      void seq;
+      void at;
+      void type;
+      void turn_id;
+      return withTurn(turns, event.turn_id, (turn) =>
+        // 只前进不后退：迟到的旧版本事件不能覆盖已经登记的更大版本。
+        turn.scope && turn.scope.version > scope.version ? turn : { ...turn, scope },
+      );
+    }
+    case "context_prepared": {
+      const digests = new Map(event.references.map((item) => [item.path, item.digest]));
+      return withTurn(turns, event.turn_id, (turn) => {
+        let next = turn;
+        for (const item of event.provided) {
+          next = withMaterial(next, item.path, digests.get(item.path) ?? "", true, [
+            [item.start, item.end],
+          ], item.length);
+        }
+        for (const reference of event.references) {
+          if (next.materials.some((material) => material.path === reference.path)) continue;
+          next = withMaterial(next, reference.path, reference.digest, true, [], 0);
+        }
+        return next;
+      });
+    }
+    case "reference_registered": {
+      return withTurn(turns, event.turn_id, (turn) => {
+        let next = turn;
+        for (const reference of event.references) {
+          next = withMaterial(next, reference.path, reference.digest, reference.required, [], 0);
+        }
+        return next;
+      });
+    }
+    case "material_read": {
+      return withTurn(turns, event.turn_id, (turn) =>
+        withMaterial(
+          turn,
+          event.path,
+          event.digest,
+          turn.materials.find((item) => item.path === event.path)?.required ?? false,
+          [[event.start_char, event.end_char]],
+          event.total_chars,
+        ),
       );
     }
     case "tool_started": {

@@ -120,7 +120,25 @@ async def test_agent_can_create_read_rename_and_delete_a_character(tmp_path: Pat
     repo = GitRepo(workspace.root)
     repo.init()
     session = WriteSession(workspace, instruction="创建并整理林远的小传")
-    tools = {tool.name: tool for tool in build_tools(workspace, RunContext(workspace, session))}
+    run = RunContext(
+        workspace,
+        session,
+        author_messages=((1, "创建并整理林远的小传。"),),
+    )
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
+    await tools["set_task_scope"].execute(
+        "scope",
+        {
+            "mode": "edit",
+            "summary": "创建并整理林远的小传",
+            "authorization": "创建并整理林远的小传",
+            "grants": [
+                {"action": "create", "path": ROLE},
+                {"action": "move", "path": ROLE, "target": "设定集/角色小传/林医生.md"},
+                {"action": "delete", "path": "设定集/角色小传/林医生.md"},
+            ],
+        },
+    )
     created = await tools["write_file"].execute(
         "create", {"path": ROLE, "text": "# 林远\n\n侦探。\n"}
     )

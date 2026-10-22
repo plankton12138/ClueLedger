@@ -1,10 +1,10 @@
 # Hastings 后端导航
 
-Hastings 提供悬疑小说写作工作台。默认启动是 0.5 文件工作区：作品为本地 Markdown 目录，人物小传一人一文件，接口前缀 `/api/file-workspaces`。
+Hastings 提供悬疑小说写作工作台。默认启动是 0.6 文件工作区：作品为本地 Markdown 目录，人物小传一人一文件，接口前缀 `/api/file-workspaces`；本轮材料、修改范围、章节索引与只读检查按 0.6 契约执行。
 
 `python -m hastings.server` 只装配文件工作区应用（`server/file_app.py`），不打开旧工作台数据库、不挂 `/api/v2` 与旧业务路由；`--workspace <目录>` 用于启动时预先打开作品。模型能力是应用级的一组 `/api/model-*` 接口：供应商预设 → 连接（地址、协议、凭据引用、模型）→ 当前选择，写作轮次在受理时固定这一轮的连接与模型。写作 Agent 直接读写作品文件，历史由作品目录内的真实 Git 仓库记录。前端已接新接口（见[前端说明](../../frontend/README.md)）；模型连接已用真实 DeepSeek 在接口层取证，界面渲染由构建与状态测试覆盖。
 
-0.3 的模块与测试已在 V04-5 删除，只剩少量仍在用的文件（见「包职责」）。0.3 文档作为历史记录保留，其中描述的代码已不存在，不要据此推断可用能力。解释现状时先读[0.5 模块导航](../../dev-notes/v0.5/modules/README.md)，运行与验收口径见[0.5 运行说明](../../dev-notes/v0.5/release.md)。
+0.3 的模块与测试已在 V04-5 删除，只剩少量仍在用的文件（见「包职责」）。0.3 文档作为历史记录保留，其中描述的代码已不存在，不要据此推断可用能力。解释现状时先读[0.6 模块导航](../../dev-notes/v0.6/modules/README.md)，运行与验收口径见[0.6 运行说明](../../dev-notes/v0.6/release.md)；没有变化的会话、连接与执行契约按 0.5/0.4 模块说明的具体链接读取。
 
 ## 当前代码入口
 
@@ -22,6 +22,10 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.5 文件工作区
 | 模型增量到会话事件的桥接、合批与中断修复 | `workspace/chat_stream.py` | [对话展示与流式回复](../../dev-notes/v0.5/modules/chat-display.md) |
 | 章序、章节显示名与人物身份标签的解析和写入检查 | `workspace/metadata.py` | [文件工作区与角色小传](../../dev-notes/v0.5/modules/file-workspace.md) |
 | 文件工具与系统提示 | `workspace/agent.py`、`workspace/context.py` | [人物按需读取与文件工具](../../dev-notes/v0.5/modules/file-workspace.md) |
+| 材料来源、读取区间、受理快照与有界输出 | `workspace/materials.py` | [V06-A1 读取与材料基础](../../dev-notes/v0.6/notes/V06-A1-materials.md)、[V06-A2 可选参考闭环](../../dev-notes/v0.6/notes/V06-A2-references.md) |
+| 章节索引的生成、发布与状态 | `workspace/chapter_index.py` | [V06-A3 章节索引](../../dev-notes/v0.6/notes/V06-A3-chapter-index.md) |
+| 只读检查、报告与失效 | `workspace/review.py` | [V06-C1 只读检查](../../dev-notes/v0.6/notes/V06-C1-review.md) |
+| 本轮修改范围、操作检查与承接规则 | `workspace/task_scope.py` | [V06-B1 任务范围基础](../../dev-notes/v0.6/notes/V06-B1-task-scope.md)、[V06-B2 范围事件](../../dev-notes/v0.6/notes/V06-B2-scope-events.md) |
 | HTTP 接口（文件、Git、对话、事件） | `workspace/api.py` | [模块导航](../../dev-notes/v0.5/modules/README.md) |
 | 模型档案、provider 与凭据 | `server/provider_config.py`、`infrastructure/credentials.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
 | 供应商预设、协议构造与实例关闭 | `server/provider_catalog.py`、`server/provider_runtime.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |

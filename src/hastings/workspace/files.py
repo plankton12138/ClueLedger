@@ -359,6 +359,40 @@ class Workspace:
 
     # -- 写入 ---------------------------------------------------------------
 
+    def check_write_intent(self, path: str, *, expected_digest: str | None) -> None:
+        """只核对「这次写入的意图与磁盘现状是否一致」，不写文件、不建目录。
+
+        给上层在准备 Git 基线之前做一次无副作用预检：意图与现状冲突时直接失败，
+        不会先创建文件或提交基线，再回头报告「其实没写成」。
+        """
+        self._check_expected(self._target(path), path, expected_digest)
+
+    def check_move_intent(self, source: str, target: str, *, expected_digest: str) -> None:
+        """移动的预检：两端都检查，源指纹必须匹配，目标必须不存在。"""
+        self._reject_setting_path(source, "files.move")
+        self._reject_setting_path(target, "files.move")
+        if managed_kind(source) != managed_kind(target):
+            raise WorkspaceError(
+                code="FILE_KIND_MISMATCH",
+                where="files.move",
+                why="不能把章节和角色小传互相移动",
+                fix="章节保留在正文目录，角色保留在角色小传目录；改内容类型时明确新建文件",
+            )
+        self._check_expected(self._target(source), source, expected_digest)
+        if self._target(target).exists():
+            raise WorkspaceError(
+                code="FILE_EXISTS_CONFLICT",
+                where="files.move",
+                why=f"目标文件已存在：{target}",
+                fix="换一个文件名，或先删除目标文件",
+                details={"path": target},
+            )
+
+    def check_delete_intent(self, path: str, *, expected_digest: str) -> None:
+        """删除的预检：固定设定不可删除，指纹必须匹配。"""
+        self._reject_setting_path(path, "files.delete")
+        self._check_expected(self._target(path), path, expected_digest)
+
     def write(self, path: str, text: str, *, expected_digest: str | None) -> FileView:
         """按指纹前提写入；``expected_digest=None`` 只用于创建新文件。"""
         target = self._target(path)
@@ -741,9 +775,7 @@ def _import_title(work_name: str, filename: str, text: str) -> str:
     if meta.title == PLACEHOLDER_TITLE:
         return "导入正文"
     title = (
-        filename_without_order(filename)
-        if meta.title.strip() == work_name.strip()
-        else meta.title
+        filename_without_order(filename) if meta.title.strip() == work_name.strip() else meta.title
     )
     return title.strip() or "导入正文"
 

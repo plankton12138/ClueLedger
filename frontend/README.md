@@ -1,6 +1,6 @@
 # Hastings 前端
 
-当前默认入口为 **0.5 工作区**：作品是一个 Markdown 目录，界面只读文件、发起对话、查看 Git 改动与历史。人物小传一人一文件。产品目标见[产品设计](../product-design/README.md)，当前目录与文件契约见[文件工作区与角色小传](../dev-notes/v0.5/modules/file-workspace.md)，其余布局见[写作台界面](../dev-notes/v0.4/modules/desk.md)。
+当前默认入口为 **0.6 工作区**：作品是一个 Markdown 目录，界面只读文件、发起对话、选择本轮参考、查看 Git 改动与历史、管理章节索引并回看检查报告。人物小传一人一文件。产品目标见[产品设计](../product-design/README.md)，当前目录与文件契约见[文件工作区与角色小传](../dev-notes/v0.5/modules/file-workspace.md)，本轮材料、范围、索引与检查见[0.6 模块导航](../dev-notes/v0.6/modules/README.md)，其余布局见[写作台界面](../dev-notes/v0.4/modules/desk.md)。
 
 当前页面只接文件工作区接口，旧版内容界面已移除。对话的流式接收、折叠过程与阅读操作见[对话展示与流式回复](../dev-notes/v0.5/modules/chat-display.md)。
 
@@ -57,8 +57,8 @@ npm run build
 | 位置 | 职责 |
 |---|---|
 | `src/App.tsx` | 挂载工作区壳层 |
-| `src/components/workspace/` | 顶栏、章节目录、只读稿纸、人物身份标签、对话栏（会话选择与改名、逐轮装配）、改动与历史抽屉、目录对话框 |
-| `src/components/chat/` | 回复展示：Markdown、思考折叠、工具摘要、复制与展开、逐轮视图、滚动跟随 |
+| `src/components/workspace/` | 顶栏、章节目录（行内「＋」加入本轮参考）、只读稿纸、人物身份标签、对话栏（会话选择与改名、逐轮装配）、本轮参考选择、章节索引面板、改动与历史抽屉、目录对话框 |
+| `src/components/chat/` | 回复展示：Markdown、思考折叠、工具摘要、复制与展开、逐轮视图、本轮材料与范围详情、检查报告、滚动跟随 |
 | `src/state/chatMessages.ts` | 事件归并为轮次与内容块；实时与回放共用 |
 | `src/state/streamBatcher.ts` | 流式增量合批：按 50 毫秒或终态事件提交，一批只通知界面一次 |
 | `src/components/models/` | 模型设置对话框、供应商选择、连接表单、日常模型选择器 |
@@ -78,6 +78,7 @@ npm run test:e2e
 
 端到端测试会构建前端、启动真实后端并经接口准备作品，不调用模型。`e2e/chat-rendering.spec.ts`
 是例外：它用受控 SSE 夹具替换事件来源，渲染真实对话组件，并在测试构建里统计 Markdown 解析
-与轮次渲染次数，用来守住「折叠不解析、合批只重绘变化的一轮」。当前验证结果见[0.5 运行说明](../dev-notes/v0.5/release.md)；模型连接的历史真实链路见[验证材料](../dev-notes/v0.4/artifacts/v04-9-verification.md)，不算本次重新验证。
+与轮次渲染次数，用来守住「折叠不解析、合批只重绘变化的一轮」。涉及模型的走查与语义验收接
+在线模型端点，不用本地模型（见[开发约定](../AGENTS.md)）。当前验证结果见[0.6 运行说明](../dev-notes/v0.6/release.md)；模型连接的历史真实链路见[验证材料](../dev-notes/v0.4/artifacts/v04-9-verification.md)，不算本次重新验证。
 
 本机并行运行 vitest 曾出现系统临时目录 `ssr\*` 的 EPERM，症状是只跑完部分文件但退出码仍为 0。验证使用 `--no-file-parallelism` 串行执行，并核对完整结果。

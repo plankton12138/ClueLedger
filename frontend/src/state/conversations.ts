@@ -23,10 +23,14 @@ import {
   stopTurn,
   streamEvents,
   WorkspaceApiError,
+  EMPTY_CONTEXT,
   type ActiveTurn,
+  type ContextInput,
   type Conversation,
   type ConversationUi,
+  type DraftContext,
   type RunPhase,
+  type TurnInput,
   type WorkspaceEvent,
 } from "../api/workspace";
 import {
@@ -55,6 +59,13 @@ export interface ConversationEntry {
 /** 新对话草稿的固定槽位。 */
 export const NEW_DRAFT = "new";
 
+/** 发送选项：索引与检查都由界面明确发起，不靠模型从文字里猜。 */
+export interface SendOptions {
+  purpose: "chat" | "update_chapter_index" | "review";
+  indexPaths?: string[];
+  reviewPaths?: string[];
+}
+
 const EMPTY_ENTRY: ConversationEntry = {
   turns: [],
   lastSeq: 0,
@@ -74,6 +85,8 @@ export interface ConversationsStore {
   selectedId: string | null;
   entries: Record<string, ConversationEntry>;
   drafts: Record<string, string>;
+  /** 草稿携带的参考：与文字同一次保存，删除文字时一并删除。 */
+  draftContexts: Record<string, DraftContext>;
   revision: string;
   error: string | null;
   pendingKey: string | null;
@@ -84,7 +97,11 @@ export interface ConversationsStore {
   rememberRecent(conversationId: string): Promise<void>;
   newConversation(): void;
   select(conversationId: string): Promise<void>;
-  send(text: string): Promise<void>;
+  send(text: string, context?: ContextInput, options?: SendOptions): Promise<void>;
+  /** 修改当前草稿的参考选择；只选文件、还没写文字时也保留。 */
+  setDraftContext(selectedPath: string | null, referencePaths: string[]): void;
+  /** 目录里「加入对话」：把一份文件追加到当前草稿的参考，重复点击不重复登记。 */
+  addReference(path: string): void;
   stop(): Promise<void>;
   /** 断线后重新接收：先取活动快照，再从确认过的位置继续。 */
   reconnect(): Promise<void>;
@@ -103,6 +120,11 @@ function describe(error: unknown): string {
 
 function entryKey(conversationId: string | null): string {
   return conversationId ?? NEW_DRAFT;
+}
+
+/** 两份参考列表是否完全相同：顺序即选择顺序，所以不排序比较。 */
+function samePathList(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((path, index) => path === right[index]);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -309,10 +331,19 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
   }
 
   async function writeDraft(key: string): Promise<void> {
-    const { workspaceId, drafts } = get();
+    const { workspaceId, drafts, draftContexts } = get();
     if (!workspaceId) return;
     const text = drafts[key] ?? "";
-    const patch = { set_draft: true, draft_target: key, draft_text: text };
+    const context = (draftContexts ?? {})[key];
+    // 文字与参考放在同一个 PATCH 里：文字清空时引用不会残留成没有内容的悬空选择。
+    const patch = {
+      set_draft: true,
+      draft_target: key,
+      draft_text: text,
+      set_draft_context: true,
+      draft_selected_path: context?.selected_path ?? null,
+      draft_reference_paths: context?.reference_paths ?? [],
+    };
     try {
       const ui: ConversationUi = await patchConversationUi(
         workspaceId,
@@ -352,6 +383,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     selectedId: null,
     entries: {},
     drafts: {},
+    draftContexts: {},
     revision: "0",
     error: null,
     pendingKey: null,
@@ -368,6 +400,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           items: list.items,
           recentId: list.recent_id,
           drafts: ui.drafts,
+          draftContexts: ui.draft_contexts ?? {},
           revision: ui.revision,
         });
         if (list.active_turn) {
@@ -400,6 +433,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         selectedId: null,
         entries: {},
         drafts: {},
+        draftContexts: {},
         revision: "0",
         error: null,
         pendingKey: null,
@@ -474,19 +508,33 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       }
     },
 
-    async send(text) {
+    async send(text, context, options) {
       const workspaceId = get().workspaceId;
       const trimmed = text.trim();
       if (!workspaceId || !trimmed || get().pendingKey) return;
       const target = get().selectedId;
       const key = target ?? NEW_DRAFT;
       const keyRequest = `ui-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+      // 请求对象在发送前生成一次：重试与回调都复用同一个快照，不把当前选择偷偷带进去。
+      const request: TurnInput = {
+        text: trimmed,
+        request_key: keyRequest,
+        context: context ?? EMPTY_CONTEXT,
+        ...(options && options.purpose === "update_chapter_index"
+          ? { purpose: options.purpose, index_paths: options.indexPaths ?? [] }
+          : {}),
+        ...(options && options.purpose === "review"
+          ? { purpose: options.purpose, review_paths: options.reviewPaths ?? [] }
+          : {}),
+      };
       set({ pendingKey: keyRequest, error: null });
+      // 提交时带上的参考：清空草稿时用它判断「作者有没有在受理期间改动过参考」。
+      const submittedRefs = [...(request.context?.reference_paths ?? [])];
       try {
         let conversationId = target;
         let after = conversationId ? (get().entries[conversationId]?.lastSeq ?? 0) : 0;
         if (conversationId) {
-          const turn = await startTurn(workspaceId, conversationId, trimmed, keyRequest);
+          const turn = await startTurn(workspaceId, conversationId, request);
           patchEntry(conversationId, {
             running: true,
             activeTurn: {
@@ -499,7 +547,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
             },
           });
         } else {
-          const accepted = await createConversationWithText(workspaceId, trimmed, keyRequest);
+          const accepted = await createConversationWithText(workspaceId, request);
           conversationId = accepted.conversation_id;
           after = 0;
           set((state) => ({
@@ -528,12 +576,19 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
               started_at: accepted.started_at,
             },
           });
-          // 首次受理把新草稿交给正式会话：不覆盖作者另开的新草稿。
+          // 首次受理把新草稿交给正式会话：不覆盖作者另开的新草稿，也不擦掉发送期间
+          // 新选的参考——只有参考仍是这次提交的那一份时，才随文字一起清掉。
           if (get().drafts[NEW_DRAFT] === trimmed) {
             set((state) => {
               const next = { ...state.drafts };
               delete next[NEW_DRAFT];
-              return { drafts: next };
+              const contexts = { ...state.draftContexts };
+              const current = contexts[NEW_DRAFT];
+              if (!current || samePathList(current.reference_paths ?? [], submittedRefs)) {
+                // 新草稿连同它的参考一起交给正式会话，不在槽位里留下悬空引用。
+                delete contexts[NEW_DRAFT];
+              }
+              return { drafts: next, draftContexts: contexts };
             });
             void persistDraft(NEW_DRAFT);
           }
@@ -543,7 +598,13 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           set((state) => {
             const next = { ...state.drafts };
             delete next[key];
-            return { drafts: next };
+            const contexts = { ...state.draftContexts };
+            // 参考随文字一起交给这一轮；发送期间新选的参考要留下，不能被旧响应擦掉。
+            const current = contexts[key];
+            if (!current || samePathList(current.reference_paths ?? [], submittedRefs)) {
+              delete contexts[key];
+            }
+            return { drafts: next, draftContexts: contexts };
           });
           void persistDraft(key);
         }
@@ -609,6 +670,26 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const key = entryKey(get().selectedId);
       set((state) => ({ drafts: { ...state.drafts, [key]: text } }));
       scheduleDraftSave();
+    },
+
+    setDraftContext(selectedPath, referencePaths) {
+      const key = entryKey(get().selectedId);
+      set((state) => ({
+        draftContexts: {
+          ...state.draftContexts,
+          [key]: { selected_path: selectedPath, reference_paths: [...referencePaths] },
+        },
+      }));
+      scheduleDraftSave();
+    },
+
+    addReference(path) {
+      const key = entryKey(get().selectedId);
+      const context = get().draftContexts[key];
+      const current = context?.reference_paths ?? [];
+      // 目录入口只是追加：已经选过的路径不重复登记，也不打乱作者的选择顺序。
+      if (current.includes(path)) return;
+      get().setDraftContext(context?.selected_path ?? null, [...current, path]);
     },
 
     async saveDraft() {

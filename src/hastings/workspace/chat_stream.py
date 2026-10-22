@@ -67,8 +67,9 @@ class _Block:
     parts: int = 0
     finished: bool = False
 
-    def to_event(self, message_id: str, turn_id: str, text: str, completion: Completion,
-                 duration_ms: int) -> dict[str, Any]:
+    def to_event(
+        self, message_id: str, turn_id: str, text: str, completion: Completion, duration_ms: int
+    ) -> dict[str, Any]:
         return {
             "type": "assistant_block_finished",
             "turn_id": turn_id,
@@ -307,9 +308,7 @@ class ChatStreamBridge:
         block = response.blocks.get(block_id)
         if block is not None or not create:
             return block
-        block = _Block(
-            block_id=block_id, kind=kind, order=content_index, started_at=self._clock()
-        )
+        block = _Block(block_id=block_id, kind=kind, order=content_index, started_at=self._clock())
         response.blocks[block_id] = block
         self._push(
             {
@@ -365,9 +364,7 @@ class _ReplayBlock:
     finished: bool = False
 
 
-def repair_interrupted_stream(
-    store: ConversationStore, conversation_id: str, turn_id: str
-) -> bool:
+def repair_interrupted_stream(store: ConversationStore, conversation_id: str, turn_id: str) -> bool:
     """重启后补齐没有结束的响应：重建块、补部分公开文本、补响应终态。
 
     只看日志里已有的内容：没有存下来的增量无法恢复，也不猜。修复本身是幂等的，

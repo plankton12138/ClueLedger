@@ -82,11 +82,30 @@ async function dragHandle(page: Page, name: string, deltaX: number) {
 
 test("目录打开后显示章节、角色分组与固定设定", async ({ page }) => {
   await open(page);
-  await expect(page.getByRole("button", { name: "雨夜" })).toBeVisible();
+  // 目录行与行内的「加入对话」是两个按钮：按行定位，避免名字里带章名时命中两个。
+  await expect(page.locator(".toc-row").filter({ hasText: "雨夜" })).toBeVisible();
   await expect(page.locator("summary").filter({ hasText: "角色小传" })).toBeVisible();
   for (const title of ["林远", "线索", "真相"]) {
     await expect(page.getByRole("button", { name: title, exact: true })).toBeVisible();
   }
+});
+
+test("目录里的加入对话把文件放进本轮参考", async ({ page }) => {
+  await open(page);
+  const panel = chatPanel(page);
+  const add = page.getByLabel("加入对话 正文/0001 雨夜.md");
+
+  await add.click();
+  const chips = panel.getByLabel("本轮参考");
+  await expect(chips).toContainText("雨夜");
+
+  // 同一份文件再点一次不重复登记。
+  await add.click();
+  await expect(chips.locator("span").filter({ hasText: "雨夜" })).toHaveCount(1);
+
+  // 只验证选择状态，不发送：发送需要模型连接。
+  await chips.getByLabel("移除参考 正文/0001 雨夜.md").click();
+  await expect(panel.getByLabel("本轮参考")).toHaveCount(0);
 });
 
 test("角色小传可阅读并参与搜索", async ({ page }) => {
@@ -103,7 +122,7 @@ test("角色小传可阅读并参与搜索", async ({ page }) => {
 
 test("稿纸只读显示正文", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "雨夜" }).click();
+  await page.locator(".toc-row").filter({ hasText: "雨夜" }).click();
   await expect(page.getByText("侦探抵达旅馆时")).toBeVisible();
   // 稿纸区域没有任何可编辑控件：正文只能由对话或外部编辑器改动。
   await expect(
@@ -138,7 +157,7 @@ test("搜索定位到正文，外部改动刷新后可见", async ({ page }) => 
     "utf-8",
   );
   await page.getByRole("button", { name: "刷新" }).click();
-  await expect(page.getByRole("button", { name: "来信" })).toBeVisible();
+  await expect(page.locator(".toc-row").filter({ hasText: "来信" })).toBeVisible();
 });
 
 test("章名带章序，人物标签在目录与稿纸一致", async ({ page }) => {
@@ -246,7 +265,7 @@ test("稿纸横线随内容滚动", async ({ page }) => {
 
   await open(page);
   await page.getByRole("button", { name: "刷新" }).click();
-  await page.getByRole("button", { name: "长夜" }).click();
+  await page.locator(".toc-row").filter({ hasText: "长夜" }).click();
   await expect(page.getByText("第 1 段")).toBeVisible();
 
   const lined = page.locator(".paper-lined");

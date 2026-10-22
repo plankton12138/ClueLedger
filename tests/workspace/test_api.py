@@ -322,6 +322,7 @@ def test_default_location_reports_the_documents_directory(
     assert response.status_code == 200
     assert response.json() == {"root": str(documents)}
 
+
 def test_pick_directory_returns_the_chosen_folder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -356,9 +357,7 @@ def test_pick_directory_cancel_returns_null(
     assert response.json() == {"path": None}
 
 
-def test_pick_directory_busy_is_conflict(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pick_directory_busy_is_conflict(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """已经有一个系统窗口开着时，第二个请求要明确拒绝，而不是再弹一个。"""
 
     def busy(*, initial: Path | None = None) -> Path | None:
@@ -378,3 +377,85 @@ def test_pick_directory_busy_is_conflict(
     assert body["code"] == "DIRECTORY_PICKER_BUSY_CONFLICT"
     assert "取消" in body["fix"]
 
+
+def test_conversation_context_rejects_foreign_paths(tmp_path: Path) -> None:
+    """材料只接受作品受管路径：不能借接口把任意磁盘位置带进受理。"""
+    client = _client(tmp_path)
+    workspace_id = _created(client, tmp_path / "雪山旅馆")
+    url = f"/api/file-workspaces/{workspace_id}/conversations"
+
+    outside = client.post(
+        url,
+        json={
+            "text": "参考这个文件",
+            "request_key": "k1",
+            "context": {"reference_paths": ["../秘密.md"]},
+        },
+    )
+    assert outside.status_code == 422
+
+    missing = client.post(
+        url,
+        json={
+            "text": "参考这个文件",
+            "request_key": "k2",
+            "context": {"reference_paths": ["正文/0009 没有.md"]},
+        },
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "CONTEXT_SOURCE_NOT_FOUND"
+
+
+def test_conversation_ui_keeps_draft_references(tmp_path: Path) -> None:
+    """草稿的参考与文字一起保存；文字清空后引用不残留。"""
+    client = _client(tmp_path)
+    root = tmp_path / "雪山旅馆"
+    workspace_id = _created(client, root)
+    (root / "正文/0001 雨夜.md").write_text("# 雨夜\n", encoding="utf-8")
+    url = f"/api/file-workspaces/{workspace_id}/conversation-ui"
+
+    first = client.get(url).json()
+    assert first["draft_contexts"] == {}
+
+    saved = client.patch(
+        url,
+        json={
+            "set_draft": True,
+            "draft_target": "new",
+            "draft_text": "参考第一章改第三章",
+            "set_draft_context": True,
+            "draft_selected_path": "正文/0001 雨夜.md",
+            "draft_reference_paths": ["正文/0001 雨夜.md"],
+        },
+        headers={"If-Match": first["revision"]},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["draft_contexts"] == {
+        "new": {"selected_path": "正文/0001 雨夜.md", "reference_paths": ["正文/0001 雨夜.md"]}
+    }
+
+    cleared = client.patch(
+        url,
+        json={"set_draft": True, "draft_target": "new", "draft_text": ""},
+        headers={"If-Match": saved.json()["revision"]},
+    )
+    assert cleared.json()["drafts"] == {}
+    assert cleared.json()["draft_contexts"] == {}
+
+
+def test_draft_context_rejects_unmanaged_reference(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    workspace_id = _created(client, tmp_path / "雪山旅馆")
+    url = f"/api/file-workspaces/{workspace_id}/conversation-ui"
+
+    response = client.patch(
+        url,
+        json={
+            "set_draft_context": True,
+            "draft_target": "new",
+            "draft_reference_paths": ["C:/随便一个文件.md"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "CONVERSATION_UI_TARGET_INVALID"

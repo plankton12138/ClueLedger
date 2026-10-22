@@ -21,16 +21,32 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from hastings.server.provider_runtime import ModelSnapshot
+from hastings.workspace.chapter_index import (
+    MAX_INDEX_CHAPTERS,
+    ChapterIndexStore,
+    index_injection,
+)
 from hastings.workspace.chat_stream import ChatStreamBridge, repair_interrupted_stream
+from hastings.workspace.context import materials_section
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
+from hastings.workspace.materials import (
+    ContextRequest,
+    ContextSnapshot,
+    MaterialLedger,
+    Reference,
+    freeze_context,
+    prepare_references,
+    verify_context,
+)
+from hastings.workspace.review import ReviewStore, target_digests
 from hastings.workspace.state import ConversationStore
 from tau_agent.events import (
     MessageEndEvent,
@@ -38,9 +54,14 @@ from tau_agent.events import (
     MessageUpdateEvent,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
+    TurnStartEvent,
 )
 from tau_agent.harness import AgentHarness
 from tau_agent.messages import AssistantMessage
+
+if TYPE_CHECKING:
+    from hastings.workspace.agent import RunContext
+
 from tau_agent.provider_events import (
     TextDeltaEvent,
     TextEndEvent,
@@ -188,6 +209,71 @@ def _summary(instruction: str) -> str:
     return collapsed[:_MAX_SUMMARY]
 
 
+def _tool_mode(purpose: str) -> Literal["write", "index", "review"]:
+    if purpose == "update_chapter_index":
+        return "index"
+    if purpose == "review":
+        return "review"
+    return "write"
+
+
+def _written_targets(run: RunContext) -> tuple[str, ...]:
+    """这一轮实际写过的路径：没有显式指定检查目标时按范围里的新建/修改项推断。"""
+    scope = run.scope.current
+    if scope is None:
+        return ()
+    return tuple(
+        dict.fromkeys(
+            grant.path for grant in scope.draft.grants if grant.action in ("create", "update")
+        )
+    )
+
+
+def _append_event(
+    store: ConversationStore,
+    conversation_id: str,
+    turn_id: str,
+    kind: str,
+    payload: dict[str, Any],
+) -> None:
+    """材料与范围事件先落盘再推送；返回值不参与判断。"""
+    store.append_batch(conversation_id, [{"type": kind, "turn_id": turn_id, **payload}])
+
+
+def _same_materials(
+    previous: dict[str, object] | None,
+    request: ContextRequest,
+    previous_purpose: str,
+    previous_targets: Sequence[str],
+    previous_review: Sequence[str],
+    purpose: str,
+    targets: Sequence[str],
+    review: Sequence[str],
+) -> bool:
+    """同键重试必须带同一份材料与用途；旧日志没有新字段时按空材料与 chat 处理。"""
+    paths = _dedupe(request.reference_paths)
+    observed = dict(sorted(request.observed_digests.items()))
+    if previous_purpose != purpose:
+        return False
+    if tuple(previous_targets) != tuple(targets) or tuple(previous_review) != tuple(review):
+        return False
+    if previous is None:
+        return not paths and request.selected_path is None and not observed
+    return (
+        previous.get("selected_path") == request.selected_path
+        and previous.get("reference_paths") == list(paths)
+        and previous.get("observed_digests") == observed
+    )
+
+
+def _dedupe(paths: Sequence[str]) -> tuple[str, ...]:
+    ordered: list[str] = []
+    for path in paths:
+        if path not in ordered:
+            ordered.append(path)
+    return tuple(ordered)
+
+
 # -- 一轮请求 ---------------------------------------------------------------
 
 
@@ -199,6 +285,12 @@ class TurnInfo:
     #: 这一轮受理前的历史位置：恢复范围止于此，当前提示不会重复进入模型上下文。
     history_seq: int = 0
     title: str = ""
+    #: 受理时冻结的材料身份；执行阶段按它复核版本，不反读当前界面。
+    context: ContextSnapshot | None = None
+    #: 本轮用途：普通对话、更新章节索引，或只读检查。
+    purpose: str = "chat"
+    index_paths: tuple[str, ...] = ()
+    review_paths: tuple[str, ...] = ()
 
 
 ActiveState = Literal["accepted", "running", "stop_requested"]
@@ -264,9 +356,21 @@ class TurnService:
         return self._active
 
     async def accept(
-        self, text: str, request_key: str, *, conversation_id: str | None = None
+        self,
+        text: str,
+        request_key: str,
+        *,
+        conversation_id: str | None = None,
+        context: ContextRequest | None = None,
+        purpose: str = "chat",
+        index_paths: Sequence[str] = (),
+        review_paths: Sequence[str] = (),
     ) -> TurnInfo:
-        """受理一轮并立即返回；``conversation_id`` 为空表示「首次发送即建会话」。"""
+        """受理一轮并立即返回；``conversation_id`` 为空表示「首次发送即建会话」。
+
+        ``context`` 是作者这次的当前阅读位置与显式参考。受理时只冻结路径与服务端指纹；
+        自然语言定位和后来发现的材料属于执行阶段记录，不回写这份请求身份。
+        """
         async with self._admission:
             previous = self.store.find_accepted(request_key)
             if previous is not None:
@@ -278,14 +382,29 @@ class TurnService:
                         fix="换一个请求标识，或回到原会话继续",
                         details={"conversation": previous.conversation_id},
                     )
-                if self.store.prompt_of(
-                    previous.conversation_id, previous.turn_id
-                ) != text.strip():
+                if self.store.prompt_of(previous.conversation_id, previous.turn_id) != text.strip():
                     raise WorkspaceError(
                         code="REQUEST_KEY_CONFLICT",
                         where="turns.accept",
                         why="这个请求标识已经用在另一条要求上",
                         fix="要发新的要求就换一个请求标识；要重试上一次，请保持文字不变",
+                        details={"conversation": previous.conversation_id},
+                    )
+                if not _same_materials(
+                    previous.context,
+                    context or ContextRequest(),
+                    previous.purpose,
+                    previous.index_paths,
+                    previous.review_paths,
+                    purpose,
+                    tuple(index_paths),
+                    tuple(review_paths),
+                ):
+                    raise WorkspaceError(
+                        code="REQUEST_KEY_CONFLICT",
+                        where="turns.accept",
+                        why="这个请求标识已经用在另一份材料上",
+                        fix="参考或当前路径变了就换一个请求标识；重试请保持原来的选择",
                         details={"conversation": previous.conversation_id},
                     )
                 return TurnInfo(
@@ -316,6 +435,9 @@ class TurnService:
                         why="提示词是空的",
                         fix="写下要让模型做什么，再发送",
                     )
+            # 冻结材料版本：缺失或超限在这里失败，此时还没有写任何记录。
+            frozen = freeze_context(self.workspace, context or ContextRequest())
+            targets, review_targets = self._purpose_targets(purpose, index_paths, review_paths)
             history_seq = self._history_cursor(conversation_id)
             turn_id = f"t_{os.urandom(4).hex()}"
             # 受理时固定这一轮的模型事实：之后切换、编辑或删除连接都不影响它。
@@ -332,6 +454,10 @@ class TurnService:
                     request_key=request_key,
                     turn_id=turn_id,
                     facts=model_facts,
+                    context=frozen.to_dict(),
+                    purpose=purpose,
+                    index_paths=targets,
+                    review_paths=review_targets,
                 )
             else:
                 accepted = self.store.accept_turn(
@@ -340,6 +466,10 @@ class TurnService:
                     request_key=request_key,
                     turn_id=turn_id,
                     facts=model_facts,
+                    context=frozen.to_dict(),
+                    purpose=purpose,
+                    index_paths=targets,
+                    review_paths=review_targets,
                 )
             # 旧记录的占位标题在首次受理时补上；作者改过的标题不动。
             if accepted.title == "新的对话":
@@ -351,6 +481,10 @@ class TurnService:
                 started_at=accepted.started_at,
                 history_seq=history_seq,
                 title=accepted.title,
+                context=frozen,
+                purpose=purpose,
+                index_paths=targets,
+                review_paths=review_targets,
             )
             self._active = ActiveTurn(
                 conversation_id=accepted.conversation_id,
@@ -361,9 +495,7 @@ class TurnService:
                 started_at=accepted.started_at,
             )
             # 初始轮次事件里的模型字段由 store 与提示一起原子写入。
-            self._tasks[turn_id] = asyncio.create_task(
-                self._run(info, text, snapshot, failure)
-            )
+            self._tasks[turn_id] = asyncio.create_task(self._run(info, text, snapshot, failure))
             return info
 
     async def wait(self, turn_id: str) -> None:
@@ -428,19 +560,144 @@ class TurnService:
                         "changed_paths": [],
                         "commit": None,
                         "note": (
-                            "进程重启时这一轮没有正常结束；"
-                            "文件以磁盘为准，可查看差异后单独补记"
+                            "进程重启时这一轮没有正常结束；文件以磁盘为准，可查看差异后单独补记"
                         ),
                     },
                 )
                 interrupted.append(conversation.id)
         return interrupted
 
+    def _purpose_targets(
+        self, purpose: str, index_paths: Sequence[str], review_paths: Sequence[str]
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """校验用途与目标：索引 1–10 章、检查 1–20 个文件，普通对话不能带任何目标。"""
+        if purpose == "review":
+            if index_paths:
+                raise WorkspaceError(
+                    code="REVIEW_SCOPE_INVALID",
+                    where="turns.accept",
+                    why="检查任务不接受索引目标",
+                    fix="检查时只选择要核对的章节或设定文件",
+                )
+            return (), self._review_targets(review_paths)
+        targets = _dedupe(tuple(index_paths))
+        if purpose == "chat":
+            if targets or review_paths:
+                raise WorkspaceError(
+                    code="CHAPTER_INDEX_SCOPE_INVALID",
+                    where="turns.accept",
+                    why="普通对话不接受索引或检查目标",
+                    fix="要更新索引或发起检查时使用对应用途，并选择目标",
+                )
+            return (), ()
+        if purpose != "update_chapter_index":
+            raise WorkspaceError(
+                code="CHAPTER_INDEX_SCOPE_INVALID",
+                where="turns.accept",
+                why=f"不支持的用途：{purpose}",
+                fix="使用 chat 或 update_chapter_index",
+                details={"purpose": purpose},
+            )
+        if not targets:
+            raise WorkspaceError(
+                code="CHAPTER_INDEX_SCOPE_INVALID",
+                where="turns.accept",
+                why="索引任务没有选择章节",
+                fix="选择 1 到 10 个章节后再发起",
+            )
+        if len(targets) > MAX_INDEX_CHAPTERS:
+            raise WorkspaceError(
+                code="CHAPTER_INDEX_SCOPE_INVALID",
+                where="turns.accept",
+                why=f"一次最多更新 {MAX_INDEX_CHAPTERS} 章，这次有 {len(targets)} 章",
+                fix="分几次更新，每次不超过 10 章",
+                details={"limit": MAX_INDEX_CHAPTERS, "count": len(targets)},
+            )
+        for path in targets:
+            if not path.startswith("正文/") or not path.endswith(".md"):
+                raise WorkspaceError(
+                    code="CHAPTER_INDEX_SCOPE_INVALID",
+                    where="turns.accept",
+                    why=f"索引只针对正文章节：{path}",
+                    fix="只选择 正文/ 下的章节文件",
+                    details={"path": path},
+                )
+            try:
+                self.workspace.read(path)
+            except WorkspaceError as exc:
+                raise WorkspaceError(
+                    code="CONTEXT_SOURCE_NOT_FOUND",
+                    where="turns.accept",
+                    why=f"要建索引的章节当前不可用：{path}（{exc.why}）",
+                    fix="刷新目录后重新选择章节",
+                    details={"path": path},
+                ) from exc
+        return targets, ()
+
+    def _review_targets(self, review_paths: Sequence[str]) -> tuple[str, ...]:
+        """检查目标：1–20 个存在的受管文件；检查本身只读。"""
+        targets = _dedupe(tuple(review_paths))
+        if not targets:
+            raise WorkspaceError(
+                code="REVIEW_SCOPE_INVALID",
+                where="turns.accept",
+                why="检查任务没有选择文件",
+                fix="选择要核对的章节或设定文件后再发起",
+            )
+        if len(targets) > 20:
+            raise WorkspaceError(
+                code="REVIEW_SCOPE_INVALID",
+                where="turns.accept",
+                why="一次最多检查 20 个文件",
+                fix="分几次检查，每次不超过 20 个文件",
+                details={"count": len(targets)},
+            )
+        target_digests(self.workspace, targets)
+        return targets
+
     def _history_cursor(self, conversation_id: str | None) -> int:
         if conversation_id is None:
             return 0
         events = self.store.events(conversation_id)
         return int(events[-1]["seq"]) if events else 0
+
+    def _prepare_materials(self, info: TurnInfo) -> MaterialLedger:
+        """登记受理快照里的显式参考，并按预算预读。
+
+        预读是「应用实际提供了多少原文」的记录：作者选择的参考默认为必需，写作品前要读完全文；
+        这一轮先给开头一段，模型用 ``read_file`` 继续读剩下的部分。
+        """
+        ledger = MaterialLedger()
+        snapshot = info.context
+        if snapshot is None or (snapshot.selected_path is None and not snapshot.references):
+            # 没有参考也没有当前阅读：不写空事件，事件流保持与只讨论时一致。
+            return ledger
+        for ref in snapshot.references:
+            ledger.register(Reference(ref=ref, kind="author_selected", required=True))
+        prepared = prepare_references(self.workspace, ledger, snapshot.reference_paths)
+        self.store.append_batch(
+            info.conversation_id,
+            [
+                {
+                    "type": "context_prepared",
+                    "turn_id": info.turn_id,
+                    "selected_path": snapshot.selected_path,
+                    "references": [
+                        {"path": ref.path, "digest": ref.digest} for ref in snapshot.references
+                    ],
+                    "provided": [
+                        {
+                            "path": item.path,
+                            "start": item.start,
+                            "end": item.end,
+                            "length": item.length,
+                        }
+                        for item in prepared
+                    ],
+                }
+            ],
+        )
+        return ledger
 
     def _record_terminal(
         self, conversation_id: str, turn_id: str, status: RunStatus, *, note: str = ""
@@ -513,9 +770,55 @@ class TurnService:
                     for event in self.store.events(conversation_id)
                     if int(event["seq"]) <= info.history_seq
                 )
+                # 受理之后参考文件被改动：这一轮直接失败，不按旧版本继续，也不偷偷换引用。
+                if info.context is not None:
+                    verify_context(self.workspace, info.context)
+                ledger = self._prepare_materials(info)
                 # RunContext 是工具层能看到的运行上下文；
                 # 第一次写文件时它会调用 session.prepare()，只读讨论不会产生提交。
-                run = RunContext(workspace=self.workspace, session=session)
+                # 作者消息只来自 turn_started：助手回复与作品内容都不能作为授权来源。
+                author_messages = tuple(
+                    (int(event["seq"]), str(event["text"]))
+                    for event in self.store.events(conversation_id)
+                    if event.get("type") == "turn_started"
+                    and isinstance(event.get("text"), str)
+                    and str(event["text"]).strip()
+                )
+                index_store = ChapterIndexStore(self.store.root)
+                # 索引任务只读原文生成；普通写作才注入有效索引，避免递归压缩旧摘要。
+                index_notes = (
+                    ""
+                    if info.purpose == "update_chapter_index"
+                    else index_injection(index_store.valid(self.workspace))
+                )
+                run = RunContext(
+                    workspace=self.workspace,
+                    session=session,
+                    materials=ledger,
+                    author_messages=author_messages,
+                    turn_id=info.turn_id,
+                    emit=lambda kind, payload: _append_event(
+                        self.store,
+                        conversation_id,
+                        info.turn_id,
+                        kind,
+                        payload,
+                    ),
+                )
+                review_store = ReviewStore(self.store.root)
+                if info.purpose == "review":
+                    # 作者直接要求检查：先记下请求，再进入只读检查。
+                    _append_event(
+                        self.store,
+                        conversation_id,
+                        info.turn_id,
+                        "review_requested",
+                        {
+                            "requirement": text.strip(),
+                            "authorization": text.strip(),
+                            "targets": list(info.review_paths),
+                        },
+                    )
                 # provider、model、system、工具清单和历史在这里合并成一次可执行配置。
                 # 工具清单由 build_harness 内部调用 build_tools() 注入，_run 不直接持有。
                 harness = build_harness(
@@ -526,6 +829,13 @@ class TurnService:
                     max_turns=self.max_turns,
                     history=replay_public_messages(history_events),
                     history_facts=execution_facts(history_events),
+                    materials=materials_section(info.context, ledger.summaries()),
+                    index_notes=index_notes,
+                    mode=_tool_mode(info.purpose),
+                    index_allowed=info.index_paths,
+                    index_store=index_store,
+                    review_targets=info.review_paths,
+                    review_store=review_store,
                 )
                 # stop() 依靠这张表找到 harness，再通过它的取消令牌中断模型循环。
                 self._harnesses[info.turn_id] = harness
@@ -535,7 +845,8 @@ class TurnService:
                     return
                 # 阻塞消费事件流，直到模型循环自然结束或被取消；
                 # 模型调用和工具执行本身都在 harness 内部的 run_agent_loop 里完成。
-                truncated = await self._consume(harness, info, text)
+                turns_used = [0]
+                truncated = await self._consume(harness, info, text, turns_used=turns_used)
                 # 正常返回也可能是停止：取消令牌会让模型循环正常收尾。
                 if info.turn_id in self._stopped:
                     status = "stopped"
@@ -544,6 +855,21 @@ class TurnService:
                     status = "partial"
                 else:
                     status = "completed"
+                # 只读检查没有报告，就等于没有检查结论：记为部分完成并说明原因。
+                if (
+                    status == "completed"
+                    and info.purpose == "review"
+                    and not self._has_review_report(info)
+                ):
+                    self._append_review_incomplete(info, "这一轮没有生成检查报告")
+                    status = "partial"
+                if status == "completed" and run.review_request is not None:
+                    # 作者在修改任务里明确要求「改完检查」：同一轮内进入只读检查阶段。
+                    published = await self._review_after_write(
+                        info, run, snapshot, turns_used=turns_used[0]
+                    )
+                    if not published:
+                        status = "partial"
         except asyncio.CancelledError:
             # 任务被外部取消（进程关闭、测试清理）。harness 已补过中断的工具结果，
             # 这里只补终态并继续向上抛，让调用方知道任务确实被取消。
@@ -603,7 +929,95 @@ class TurnService:
             if self._active is not None and self._active.turn_id == info.turn_id:
                 self._active = None
 
-    async def _consume(self, harness: AgentHarness, info: TurnInfo, text: str) -> bool:
+    async def _review_after_write(
+        self,
+        info: TurnInfo,
+        run: RunContext,
+        snapshot: ModelSnapshot,
+        *,
+        turns_used: int = 0,
+    ) -> bool:
+        """修改完成后的只读检查：同一轮、同一模型连接，工具换成检查工具集。
+
+        修改已经落盘，检查失败不能把它撤掉：这里只决定整轮状态与报告内容。检查是同一轮
+        的第二阶段，回合上限要接着写作阶段已用的部分算，不能重新拿满。
+        """
+        from hastings.workspace.agent import build_harness
+
+        request = run.review_request
+        if request is None:
+            return False
+        remaining = max(self.max_turns - turns_used, 0)
+        if remaining <= 0:
+            self._append_review_incomplete(
+                info, "写作阶段已用完本轮的回合上限，没有进入检查阶段"
+            )
+            return False
+        targets = request.targets or _written_targets(run)
+        if not targets:
+            self._append_review_incomplete(info, "没有可检查的目标")
+            return False
+        try:
+            harness = build_harness(
+                provider=snapshot.provider,
+                model=snapshot.model,
+                workspace=self.workspace,
+                run=run,
+                max_turns=remaining,
+                mode="review",
+                review_targets=targets,
+                review_store=ReviewStore(self.store.root),
+            )
+            self._harnesses[info.turn_id] = harness
+            prompt = (
+                f"请按作者要求检查这一轮的改动：{request.requirement}\n"
+                f"检查目标：{'、'.join(targets)}"
+            )
+            await self._consume(harness, info, prompt)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # 检查失败不能吞掉已完成的修改
+            self._append_review_incomplete(info, f"检查没有完成：{exc}")
+            return False
+        if not self._has_review_report(info):
+            self._append_review_incomplete(info, "检查阶段没有生成报告")
+            return False
+        return True
+
+    def _has_review_report(self, info: TurnInfo) -> bool:
+        for event in self.store.events(info.conversation_id):
+            if (
+                event.get("type") == "review_finished"
+                and event.get("turn_id") == info.turn_id
+                and event.get("status") != "incomplete"
+            ):
+                return True
+        return False
+
+    def _append_review_incomplete(self, info: TurnInfo, note: str) -> None:
+        """没有报告也要留下记录：界面据此说明「检查未完成」，不冒充通过。"""
+        _append_event(
+            self.store,
+            info.conversation_id,
+            info.turn_id,
+            "review_finished",
+            {
+                "report_id": None,
+                "status": "incomplete",
+                "targets": list(info.review_paths),
+                "findings": [],
+                "uncovered": [note],
+            },
+        )
+
+    async def _consume(
+        self,
+        harness: AgentHarness,
+        info: TurnInfo,
+        text: str,
+        *,
+        turns_used: list[int] | None = None,
+    ) -> bool:
         """把模型事件翻译成会话事件：增量合批落盘，工具按调用 ID 配对。
 
         模型侧失败必须变成这一轮的失败：厂商报错时消息里没有正文、也没有工具调用，
@@ -613,7 +1027,8 @@ class TurnService:
         读到的是搬运任务放进队列的事件，而不是直接迭代模型输出：这样在事件之间
         可以按间隔提交缓冲，空闲时也把已收到的文字写下来，不必等下一个 token。
 
-        返回本轮的回复是否被输出上限截断。
+        返回本轮的回复是否被输出上限截断。``turns_used`` 累计本次消费用掉的模型回合，
+        供同一轮的后续阶段接着算剩余预算。
         """
         bridge = ChatStreamBridge(self.store, info.conversation_id, info.turn_id)
         queue: asyncio.Queue[object] = asyncio.Queue()
@@ -641,7 +1056,12 @@ class TurnService:
                     continue
                 if event is done:
                     break
-                truncated = self._handle_agent_event(event, info, bridge, tools) or truncated
+                truncated = (
+                    self._handle_agent_event(
+                        event, info, bridge, tools, turns_used=turns_used
+                    )
+                    or truncated
+                )
                 bridge.flush_due()
             # 模型循环自己抛错时，先封口已收到的内容再向上抛，由 _run 记为失败。
             if failure:
@@ -661,8 +1081,15 @@ class TurnService:
         info: TurnInfo,
         bridge: ChatStreamBridge,
         tools: dict[str, tuple[dict[str, Any], float]],
+        *,
+        turns_used: list[int] | None = None,
     ) -> bool:
         """翻译单条模型事件；返回这一条是否让回复被截断。"""
+        if isinstance(event, TurnStartEvent):
+            # 每个模型回合开始一次；这是「本轮用掉了几个回合」的唯一依据。
+            if turns_used is not None:
+                turns_used[0] += 1
+            return False
         if isinstance(event, MessageStartEvent):
             if isinstance(event.message, AssistantMessage):
                 bridge.start_response()

@@ -19,9 +19,9 @@ import json
 import os
 import tempfile
 import threading
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -36,6 +36,7 @@ __all__ = [
     "ConversationStore",
     "ConversationUi",
     "ConversationUiStore",
+    "DraftContext",
     "EventTail",
     "RecentWorkspaces",
     "WorkspaceBinding",
@@ -221,7 +222,11 @@ class Conversation:
 
 @dataclass(frozen=True, slots=True)
 class AcceptedTurn:
-    """一次已被受理的提示：正式会话从这一刻开始存在。"""
+    """一次已被受理的提示：正式会话从这一刻开始存在。
+
+    ``context`` 是受理时冻结的材料身份（当前路径、显式参考与服务端实际指纹）。
+    旧日志没有这个字段，按 ``None`` 处理，不用今天的界面反推旧材料。
+    """
 
     conversation_id: str
     turn_id: str
@@ -229,20 +234,61 @@ class AcceptedTurn:
     last_seq: int
     started_at: str
     title: str
+    context: dict[str, object] | None = None
+    #: 用途与目标：``chat``、``update_chapter_index`` 或 ``review``；旧日志按 chat 处理。
+    purpose: str = "chat"
+    index_paths: tuple[str, ...] = ()
+    review_paths: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DraftContext:
+    """草稿携带的参考选择：只选文件、没写文字时也保留，但不构成正式会话。"""
+
+    selected_path: str | None = None
+    reference_paths: tuple[str, ...] = ()
+
+    @property
+    def empty(self) -> bool:
+        return self.selected_path is None and not self.reference_paths
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "selected_path": self.selected_path,
+            "reference_paths": list(self.reference_paths),
+        }
+
+    @classmethod
+    def from_raw(cls, raw: object) -> DraftContext:
+        if not isinstance(raw, dict):
+            return cls()
+        selected = raw.get("selected_path")
+        paths = raw.get("reference_paths")
+        references: list[str] = []
+        if isinstance(paths, list):
+            for item in paths:
+                if isinstance(item, str) and item and item not in references:
+                    references.append(item)
+        return cls(
+            selected_path=selected if isinstance(selected, str) and selected else None,
+            reference_paths=tuple(references),
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class ConversationUi:
-    """一个作品的界面状态：上次看的正式会话与各会话草稿。"""
+    """一个作品的界面状态：上次看的正式会话、各会话草稿与草稿携带的参考。"""
 
     recent_id: str | None
     drafts: dict[str, str]
     revision: str
+    draft_contexts: dict[str, DraftContext] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
             "recent_id": self.recent_id,
             "drafts": dict(self.drafts),
+            "draft_contexts": {key: value.to_dict() for key, value in self.draft_contexts.items()},
             "revision": self.revision,
         }
 
@@ -325,6 +371,9 @@ class ConversationStore:
                 turn_id = event.get("turn_id")
                 if not isinstance(turn_id, str):
                     continue
+                frozen = event.get("context")
+                paths = event.get("index_paths")
+                review = event.get("review_paths")
                 return AcceptedTurn(
                     conversation_id=conversation.id,
                     turn_id=turn_id,
@@ -332,6 +381,14 @@ class ConversationStore:
                     last_seq=int(event["seq"]),
                     started_at=str(event.get("at", "")),
                     title=conversation.title,
+                    context=dict(frozen) if isinstance(frozen, dict) else None,
+                    purpose=str(event.get("purpose") or "chat"),
+                    index_paths=(
+                        tuple(str(item) for item in paths) if isinstance(paths, list) else ()
+                    ),
+                    review_paths=(
+                        tuple(str(item) for item in review) if isinstance(review, list) else ()
+                    ),
                 )
         return None
 
@@ -350,6 +407,10 @@ class ConversationStore:
         turn_id: str,
         facts: Mapping[str, object] | None = None,
         conversation_id: str | None = None,
+        context: Mapping[str, object] | None = None,
+        purpose: str = "chat",
+        index_paths: Sequence[str] = (),
+        review_paths: Sequence[str] = (),
     ) -> AcceptedTurn:
         """建会话与受理首轮合成一步：只留下「至少有一条已受理提示」的正式会话。"""
         prompt = _require_prompt(text)
@@ -387,12 +448,29 @@ class ConversationStore:
                 "request_key": request_key,
                 **dict(facts or {}),
             }
+            if context is not None:
+                event["context"] = dict(context)
+            if purpose != "chat" or index_paths or review_paths:
+                event["purpose"] = purpose
+                event["index_paths"] = list(index_paths)
+                event["review_paths"] = list(review_paths)
             self._publish(cid, (meta, event))
             self._seqs[cid] = 1
             # 日志已经发布：这一轮确实被受理了，索引缺项由下次读取的重建补齐。
             with suppress(WorkspaceError):
                 self._save([Conversation(cid, title, now, now), *self._load()])
-            return AcceptedTurn(cid, turn_id, request_key, 1, now, title)
+            return AcceptedTurn(
+                cid,
+                turn_id,
+                request_key,
+                1,
+                now,
+                title,
+                dict(context) if context is not None else None,
+                purpose,
+                tuple(index_paths),
+                tuple(review_paths),
+            )
 
     def accept_turn(
         self,
@@ -402,6 +480,10 @@ class ConversationStore:
         request_key: str,
         turn_id: str,
         facts: Mapping[str, object] | None = None,
+        context: Mapping[str, object] | None = None,
+        purpose: str = "chat",
+        index_paths: Sequence[str] = (),
+        review_paths: Sequence[str] = (),
     ) -> AcceptedTurn:
         """在已有会话里受理一轮；同一请求键重复提交返回原来那一轮。"""
         prompt = _require_prompt(text)
@@ -414,16 +496,20 @@ class ConversationStore:
                 return _same_request(
                     previous, prompt, self.prompt_of(previous.conversation_id, previous.turn_id)
                 )
-            record = self.append(
-                conversation_id,
-                {
-                    "type": "turn_started",
-                    "turn_id": turn_id,
-                    "text": prompt,
-                    "request_key": request_key,
-                    **dict(facts or {}),
-                },
-            )
+            event: dict[str, Any] = {
+                "type": "turn_started",
+                "turn_id": turn_id,
+                "text": prompt,
+                "request_key": request_key,
+                **dict(facts or {}),
+            }
+            if context is not None:
+                event["context"] = dict(context)
+            if purpose != "chat" or index_paths or review_paths:
+                event["purpose"] = purpose
+                event["index_paths"] = list(index_paths)
+                event["review_paths"] = list(review_paths)
+            record = self.append(conversation_id, event)
             return AcceptedTurn(
                 conversation_id=conversation_id,
                 turn_id=turn_id,
@@ -431,6 +517,10 @@ class ConversationStore:
                 last_seq=int(record["seq"]),
                 started_at=str(record["at"]),
                 title=conversation.title,
+                context=dict(context) if context is not None else None,
+                purpose=purpose,
+                index_paths=tuple(index_paths),
+                review_paths=tuple(review_paths),
             )
 
     # -- 事件 ---------------------------------------------------------------
@@ -549,12 +639,8 @@ class ConversationStore:
 
     def revision(self) -> str:
         """会话集合的版本：标题、活动时间与条数变化都会换一个值。"""
-        payload = [
-            [item.id, item.title, item.updated_at] for item in self.conversations()
-        ]
-        digest = hashlib.sha256(
-            json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        ).hexdigest()
+        payload = [[item.id, item.title, item.updated_at] for item in self.conversations()]
+        digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode("utf-8")).hexdigest()
         return digest[:12]
 
     # -- 内部 ---------------------------------------------------------------
@@ -824,6 +910,8 @@ class ConversationUiStore:
         set_draft: bool = False,
         draft_target: str | None = None,
         draft_text: str | None = None,
+        set_draft_context: bool = False,
+        draft_context: DraftContext | None = None,
     ) -> ConversationUi:
         with self._lock:
             current = self._read()
@@ -839,13 +927,21 @@ class ConversationUiStore:
             if set_recent:
                 recent = recent_id if recent_id else None
             drafts = dict(current.drafts)
+            contexts = dict(current.draft_contexts)
             if set_draft and draft_target:
                 text = (draft_text or "").strip()
                 if text:
                     drafts[draft_target] = text
                 else:
+                    # 删除文字草稿时一并删除它携带的参考：不留没有文字的悬空引用。
                     drafts.pop(draft_target, None)
-            self._save(recent, drafts)
+                    contexts.pop(draft_target, None)
+            if set_draft_context and draft_target:
+                if draft_context is None or draft_context.empty:
+                    contexts.pop(draft_target, None)
+                else:
+                    contexts[draft_target] = draft_context
+            self._save(recent, drafts, contexts)
             return self._read()
 
     def _read(self) -> ConversationUi:
@@ -861,16 +957,39 @@ class ConversationUiStore:
             for key, value in drafts_raw.items():
                 if isinstance(key, str) and isinstance(value, str) and value.strip():
                     drafts[key] = value
+        contexts: dict[str, DraftContext] = {}
+        contexts_raw = data.get("draft_contexts")
+        if isinstance(contexts_raw, dict):
+            for key, value in contexts_raw.items():
+                if not isinstance(key, str):
+                    continue
+                # 没有文字草稿的参考不保留：仅选文件不构成待发送的内容。
+                if key not in drafts:
+                    continue
+                context = DraftContext.from_raw(value)
+                if not context.empty:
+                    contexts[key] = context
         return ConversationUi(
             recent_id=recent if isinstance(recent, str) and recent else None,
             drafts=drafts,
             revision=_file_revision(self.file),
+            draft_contexts=contexts,
         )
 
-    def _save(self, recent_id: str | None, drafts: dict[str, str]) -> None:
+    def _save(
+        self,
+        recent_id: str | None,
+        drafts: dict[str, str],
+        contexts: dict[str, DraftContext] | None = None,
+    ) -> None:
         _write_json_atomic(
             self.file,
-            {"version": 1, "recent_id": recent_id, "drafts": drafts},
+            {
+                "version": 2,
+                "recent_id": recent_id,
+                "drafts": drafts,
+                "draft_contexts": {key: value.to_dict() for key, value in (contexts or {}).items()},
+            },
             where="conversation-ui.save",
             why_prefix="无法保存界面状态",
         )

@@ -132,10 +132,46 @@ export interface TurnInfo {
   title?: string;
 }
 
-/** 界面状态：上次看的正式会话与各会话草稿（``new`` 是未发送的新对话槽位）。 */
+/** 本轮带上来的材料：当前阅读位置、显式参考与客户端看到的版本。 */
+export interface ContextInput {
+  selected_path: string | null;
+  /** 顺序即作者选择顺序；服务端按路径去重。 */
+  reference_paths: string[];
+  /** 客户端看到的版本，只对应本次当前路径与参考；不是服务端内容依据。 */
+  observed_digests: Record<string, string>;
+}
+
+/** 首次发送与续聊共用同一个请求：界面生成快照，重试复用同一个对象。 */
+export interface TurnInput {
+  text: string;
+  request_key: string;
+  context: ContextInput;
+  /** 用途：普通对话，或按作者选择更新章节索引。 */
+  purpose?: "chat" | "update_chapter_index" | "review";
+  /** 索引用途要更新的章节；普通对话不能带。 */
+  index_paths?: string[];
+  /** 检查用途要核对的文件。 */
+  review_paths?: string[];
+}
+
+/** 没有选择任何材料时的空上下文。 */
+export const EMPTY_CONTEXT: ContextInput = {
+  selected_path: null,
+  reference_paths: [],
+  observed_digests: {},
+};
+
+/** 草稿携带的参考：只选文件、还没写文字时也保留。 */
+export interface DraftContext {
+  selected_path: string | null;
+  reference_paths: string[];
+}
+
+/** 界面状态：上次看的正式会话、各会话草稿与草稿携带的参考（`new` 是未发送的新对话槽位）。 */
 export interface ConversationUi {
   recent_id: string | null;
   drafts: Record<string, string>;
+  draft_contexts: Record<string, DraftContext>;
   revision: string;
 }
 
@@ -145,6 +181,9 @@ export interface ConversationUiPatch {
   set_draft?: boolean;
   draft_target?: string;
   draft_text?: string;
+  set_draft_context?: boolean;
+  draft_selected_path?: string | null;
+  draft_reference_paths?: string[];
 }
 
 /** 单条回复的完整性：块与响应各自成立，不代替整轮结果。 */
@@ -234,6 +273,47 @@ export type WorkspaceEvent =
     })
   | (EventBase & { type: "error"; turn_id: string; code?: string; message?: string })
   | (EventBase & {
+      type: "context_prepared";
+      turn_id: string;
+      selected_path: string | null;
+      references: { path: string; digest: string }[];
+      provided: { path: string; start: number; end: number; length: number }[];
+    })
+  | (EventBase & {
+      type: "reference_registered";
+      turn_id: string;
+      references: { path: string; digest: string; kind: string; required: boolean }[];
+    })
+  | (EventBase & {
+      type: "review_requested";
+      turn_id: string;
+      requirement: string;
+      authorization: string;
+      targets: string[];
+    })
+  | (EventBase & {
+      type: "review_finished";
+      turn_id: string;
+      report_id: string | null;
+      status: ReviewStatus;
+      targets: string[];
+      findings: ReviewFinding[];
+      uncovered: string[];
+    })
+  | (EventBase & { type: "task_scope_set"; turn_id: string } & TaskScope)
+  | (EventBase & { type: "task_scope_extended"; turn_id: string } & TaskScope)
+  | (EventBase & {
+      type: "material_read";
+      turn_id: string;
+      path: string;
+      digest: string;
+      start_char: number;
+      end_char: number;
+      start_line: number;
+      end_line: number;
+      total_chars: number;
+    })
+  | (EventBase & {
       type: "run_finished";
       turn_id: string;
       status: RunStatus;
@@ -242,6 +322,98 @@ export type WorkspaceEvent =
       commit?: string | null;
       note?: string;
     });
+
+/** 一章索引的当前状态：内容来自上次发布，状态按当前磁盘算出。 */
+export type ChapterIndexStatus = "missing" | "valid" | "stale" | "source_missing" | "unavailable";
+
+export interface ChapterIndexEvidence {
+  index: number;
+  start: number;
+  end: number;
+  quote: string;
+}
+
+export interface ChapterIndexEntry {
+  kind: "event" | "character" | "place" | "clue";
+  text: string;
+  evidence: number[];
+}
+
+export interface ChapterIndexItem {
+  source_path: string;
+  source_digest: string;
+  recipe_version: number;
+  generated_at: string;
+  summary: string;
+  status: ChapterIndexStatus;
+  evidence: ChapterIndexEvidence[];
+  events: ChapterIndexEntry[];
+  characters: ChapterIndexEntry[];
+  places: ChapterIndexEntry[];
+  clues: ChapterIndexEntry[];
+}
+
+export interface ChapterIndex {
+  items: ChapterIndexItem[];
+}
+
+/** 本轮范围里的一条允许操作。 */
+export interface TaskGrant {
+  action: "create" | "update" | "delete" | "move";
+  path: string;
+  target?: string;
+}
+
+/** 本轮修改范围：模型登记的内容与应用保存的版本。 */
+export interface TaskScope {
+  version: number;
+  mode: "read_only" | "edit";
+  summary: string;
+  authorization: string;
+  authorization_seq: number | null;
+  carried_from_seq: number | null;
+  grants: TaskGrant[];
+  denied_paths: string[];
+  required_references: string[];
+  extendable: boolean;
+  extend_actions: string[];
+}
+
+/** 一处检查证据：路径、版本、字符区间与引文。 */
+export interface ReviewEvidence {
+  path: string;
+  digest: string;
+  start: number;
+  end: number;
+  quote: string;
+}
+
+/** 一条检查问题：确定程度区分「有依据」与「疑点」。 */
+export interface ReviewFinding {
+  kind: "continuity" | "disclosure" | "task_mismatch" | "other";
+  certainty: "supported" | "suspected";
+  description: string;
+  suggestion: string;
+  evidence: ReviewEvidence[];
+}
+
+export type ReviewStatus = "findings" | "no_findings" | "incomplete";
+
+export interface ReviewReport {
+  report_id: string;
+  turn_id: string;
+  target_paths: string[];
+  requirement: string;
+  status: ReviewStatus;
+  freshness: "valid" | "stale" | "source_missing";
+  findings: ReviewFinding[];
+  uncovered: string[];
+  created_at: string;
+}
+
+export interface ReviewList {
+  items: ReviewReport[];
+}
 
 export interface GitChange {
   path: string;
@@ -395,6 +567,15 @@ export function gitRevert(workspaceId: string, commit: string): Promise<{ commit
   });
 }
 
+export function fetchReviews(workspaceId: string, path?: string): Promise<ReviewList> {
+  const suffix = path ? `?path=${encodeURIComponent(path)}` : "";
+  return request<ReviewList>(`/${workspaceId}/reviews${suffix}`);
+}
+
+export function fetchChapterIndex(workspaceId: string): Promise<ChapterIndex> {
+  return request<ChapterIndex>(`/${workspaceId}/chapter-index`);
+}
+
 export function listConversations(workspaceId: string): Promise<ConversationList> {
   return request<ConversationList>(`/${workspaceId}/conversations`);
 }
@@ -405,12 +586,11 @@ export function listConversations(workspaceId: string): Promise<ConversationList
  */
 export function createConversationWithText(
   workspaceId: string,
-  text: string,
-  requestKey: string,
+  turn: TurnInput,
 ): Promise<AcceptedTurn> {
   return request<AcceptedTurn>(`/${workspaceId}/conversations`, {
     method: "POST",
-    body: JSON.stringify({ text, request_key: requestKey }),
+    body: JSON.stringify(turn),
   });
 }
 
@@ -459,12 +639,11 @@ export function patchConversationUi(
 export function startTurn(
   workspaceId: string,
   conversationId: string,
-  text: string,
-  requestKey?: string,
+  turn: TurnInput,
 ): Promise<TurnInfo> {
   return request<TurnInfo>(`/${workspaceId}/conversations/${conversationId}/turns`, {
     method: "POST",
-    body: JSON.stringify({ text, request_key: requestKey ?? null }),
+    body: JSON.stringify(turn),
   });
 }
 

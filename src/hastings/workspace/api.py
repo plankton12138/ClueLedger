@@ -18,18 +18,28 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, FastAPI, File, Header, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from hastings.workspace.chapter_index import (
+    MAX_INDEX_CHAPTERS,
+    ChapterIndexEntry,
+    ChapterIndexRecord,
+    ChapterIndexStore,
+)
 from hastings.workspace.directory_dialog import DirectoryPickerError, pick_directory
 from hastings.workspace.errors import WorkspaceError, status_for_code
-from hastings.workspace.files import FileEntry, FileKind, Workspace
+from hastings.workspace.files import FileEntry, FileKind, Workspace, is_managed_path
 from hastings.workspace.git import GitRepo
 from hastings.workspace.locations import default_workspace_root
+from hastings.workspace.materials import MAX_REFERENCES, ContextRequest
+from hastings.workspace.review import ReviewReport, ReviewStore
 from hastings.workspace.service import ProviderFactory, TurnService
 from hastings.workspace.state import (
     Conversation,
     ConversationStore,
+    ConversationUi,
     ConversationUiStore,
+    DraftContext,
     RecentWorkspaces,
     WorkspaceBinding,
     conversation_root,
@@ -180,20 +190,80 @@ class AcceptedTurnView(BaseModel):
     request_key: str
 
 
-class CreateConversationRequest(BaseModel):
+class ContextInput(BaseModel):
+    """本轮带上来的材料：当前阅读位置、显式参考与客户端看到的版本。
+
+    只接受作品受管路径；``observed_digests`` 是客户端看到的版本，不是服务端内容依据。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    selected_path: str | None = None
+    reference_paths: list[str] = Field(default_factory=list, max_length=MAX_REFERENCES)
+    observed_digests: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("selected_path")
+    @classmethod
+    def _check_selected(cls, value: str | None) -> str | None:
+        if value is not None and not is_managed_path(value):
+            raise ValueError("selected_path 必须是作品内的受管路径")
+        return value
+
+    @field_validator("reference_paths")
+    @classmethod
+    def _check_references(cls, value: list[str]) -> list[str]:
+        for path in value:
+            if not is_managed_path(path):
+                raise ValueError(f"参考路径不是作品受管路径：{path}")
+        return value
+
+    def to_request(self) -> ContextRequest:
+        return ContextRequest(
+            selected_path=self.selected_path,
+            reference_paths=tuple(self.reference_paths),
+            observed_digests=dict(self.observed_digests),
+        )
+
+
+class TurnPurposeMixin(BaseModel):
+    """首次与续聊共用的用途字段：索引任务必须选章节，普通对话不能带。"""
+
+    purpose: Literal["chat", "update_chapter_index", "review"] = "chat"
+    index_paths: list[str] = Field(default_factory=list, max_length=MAX_INDEX_CHAPTERS)
+    review_paths: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def _check_purpose_targets(self) -> TurnPurposeMixin:
+        if self.purpose == "update_chapter_index":
+            if not self.index_paths:
+                raise ValueError("索引用途需要选择至少一章")
+            if self.review_paths:
+                raise ValueError("索引用途不能带检查目标")
+        elif self.purpose == "review":
+            if not self.review_paths:
+                raise ValueError("检查用途需要选择至少一个文件")
+            if self.index_paths:
+                raise ValueError("检查用途不能带索引目标")
+        elif self.index_paths or self.review_paths:
+            raise ValueError("普通对话不能带索引或检查目标")
+        return self
+
+
+class CreateConversationRequest(TurnPurposeMixin):
     """首次发送即建会话：空提示不再创建空记录。"""
 
     text: str = Field(min_length=1)
     request_key: str = Field(min_length=1)
+    context: ContextInput = Field(default_factory=ContextInput)
 
 
 class RenameConversationRequest(BaseModel):
     title: str = Field(min_length=1)
 
 
-class TurnRequest(BaseModel):
+class TurnRequest(TurnPurposeMixin):
     text: str = Field(min_length=1)
     request_key: str = Field(min_length=1)
+    context: ContextInput = Field(default_factory=ContextInput)
 
 
 class TurnView(BaseModel):
@@ -210,9 +280,17 @@ class EventsView(BaseModel):
     revision: str = ""
 
 
+class DraftContextView(BaseModel):
+    """草稿携带的参考选择：仅选文件、还没写文字时也保留。"""
+
+    selected_path: str | None = None
+    reference_paths: list[str] = Field(default_factory=list)
+
+
 class ConversationUiView(BaseModel):
     recent_id: str | None
     drafts: dict[str, str]
+    draft_contexts: dict[str, DraftContextView] = Field(default_factory=dict)
     revision: str
 
 
@@ -224,10 +302,80 @@ class ConversationUiPatch(BaseModel):
     draft_target: str | None = None
     draft_text: str | None = None
     set_draft: bool = False
+    set_draft_context: bool = False
+    draft_selected_path: str | None = None
+    draft_reference_paths: list[str] | None = None
 
 
 class StopView(BaseModel):
     stopped: bool
+
+
+class ChapterIndexEvidenceView(BaseModel):
+    index: int
+    start: int
+    end: int
+    quote: str
+
+
+class ChapterIndexEntryView(BaseModel):
+    kind: Literal["event", "character", "place", "clue"]
+    text: str
+    evidence: list[int] = Field(default_factory=list)
+
+
+class ChapterIndexItemView(BaseModel):
+    """一章的索引：状态由当前磁盘算出，内容来自上次成功发布。"""
+
+    source_path: str
+    source_digest: str
+    recipe_version: int
+    generated_at: str
+    summary: str
+    status: Literal["missing", "valid", "stale", "source_missing", "unavailable"]
+    evidence: list[ChapterIndexEvidenceView] = Field(default_factory=list)
+    events: list[ChapterIndexEntryView] = Field(default_factory=list)
+    characters: list[ChapterIndexEntryView] = Field(default_factory=list)
+    places: list[ChapterIndexEntryView] = Field(default_factory=list)
+    clues: list[ChapterIndexEntryView] = Field(default_factory=list)
+
+
+class ChapterIndexView(BaseModel):
+    items: list[ChapterIndexItemView]
+
+
+class ReviewEvidenceView(BaseModel):
+    path: str
+    digest: str
+    start: int
+    end: int
+    quote: str
+
+
+class ReviewFindingView(BaseModel):
+    kind: Literal["continuity", "disclosure", "task_mismatch", "other"]
+    certainty: Literal["supported", "suspected"]
+    description: str
+    suggestion: str
+    evidence: list[ReviewEvidenceView] = Field(default_factory=list)
+
+
+class ReviewReportView(BaseModel):
+    """一份检查报告：内容来自发布时，freshness 按当前磁盘算出。"""
+
+    report_id: str
+    turn_id: str
+    target_paths: list[str]
+    requirement: str
+    status: Literal["findings", "no_findings", "incomplete"]
+    freshness: Literal["valid", "stale", "source_missing"]
+    findings: list[ReviewFindingView] = Field(default_factory=list)
+    uncovered: list[str] = Field(default_factory=list)
+    created_at: str
+
+
+class ReviewListView(BaseModel):
+    items: list[ReviewReportView]
 
 
 class GitChangeView(BaseModel):
@@ -426,6 +574,29 @@ def create_file_workspace_router(
             settings=[_entry(entry) for entry in catalog.settings],
         )
 
+    @router.get("/{workspace_id}/chapter-index", response_model=ChapterIndexView)
+    def chapter_index(
+        workspace_id: str, path: str | None = Query(default=None, min_length=1)
+    ) -> ChapterIndexView:
+        """已发布的索引与当前状态；没有记录的章节由界面按目录标为「未生成」。"""
+        workspace = workspaces.workspace(workspace_id)
+        store = ChapterIndexStore(conversation_root(workspaces.root, workspace_id))
+        records = store.records(workspace)
+        if path is not None:
+            records = tuple(record for record in records if record.source_path == path)
+        return ChapterIndexView(items=[_index_item(record) for record in records])
+
+    @router.get("/{workspace_id}/reviews", response_model=ReviewListView)
+    def list_reviews(
+        workspace_id: str, path: str | None = Query(default=None, min_length=1)
+    ) -> ReviewListView:
+        """历史检查报告；过期或源文件已删除的报告只标记状态，不重跑模型。"""
+        workspace = workspaces.workspace(workspace_id)
+        store = ReviewStore(conversation_root(workspaces.root, workspace_id))
+        return ReviewListView(
+            items=[_review_item(report) for report in store.reports(workspace, path=path)]
+        )
+
     # -- Git ---------------------------------------------------------------
 
     @router.get("/{workspace_id}/git/status", response_model=GitStatusView)
@@ -497,7 +668,14 @@ def create_file_workspace_router(
     ) -> AcceptedTurnView:
         """首次发送：一次请求同时建会话与受理首轮，不再有「空会话」这一步。"""
         service = service_for(workspace_id)
-        info = await service.accept(body.text, body.request_key)
+        info = await service.accept(
+            body.text,
+            body.request_key,
+            context=body.context.to_request(),
+            purpose=body.purpose,
+            index_paths=tuple(body.index_paths),
+            review_paths=tuple(body.review_paths),
+        )
         return AcceptedTurnView(
             conversation_id=info.conversation_id,
             turn_id=info.turn_id,
@@ -542,7 +720,15 @@ def create_file_workspace_router(
     async def start_turn(workspace_id: str, conversation_id: str, body: TurnRequest) -> TurnView:
         service = service_for(workspace_id)
         service.store.get(conversation_id)
-        info = await service.accept(body.text, body.request_key, conversation_id=conversation_id)
+        info = await service.accept(
+            body.text,
+            body.request_key,
+            conversation_id=conversation_id,
+            context=body.context.to_request(),
+            purpose=body.purpose,
+            index_paths=tuple(body.index_paths),
+            review_paths=tuple(body.review_paths),
+        )
         return TurnView(
             turn_id=info.turn_id,
             conversation_id=info.conversation_id,
@@ -565,10 +751,7 @@ def create_file_workspace_router(
 
     @router.get("/{workspace_id}/conversation-ui", response_model=ConversationUiView)
     def read_conversation_ui(workspace_id: str) -> ConversationUiView:
-        ui = ui_for(workspace_id).read()
-        return ConversationUiView(
-            recent_id=ui.recent_id, drafts=dict(ui.drafts), revision=ui.revision
-        )
+        return _ui_view(ui_for(workspace_id).read())
 
     @router.patch("/{workspace_id}/conversation-ui", response_model=ConversationUiView)
     def update_conversation_ui(
@@ -578,7 +761,7 @@ def create_file_workspace_router(
     ) -> ConversationUiView:
         """按目标合并界面状态：只动指定的那一条草稿或最近会话。"""
         store = ui_for(workspace_id)
-        if body.set_draft and not (body.draft_target or "").strip():
+        if (body.set_draft or body.set_draft_context) and not (body.draft_target or "").strip():
             raise WorkspaceError(
                 code="CONVERSATION_UI_TARGET_INVALID",
                 where="conversation-ui.update",
@@ -587,6 +770,21 @@ def create_file_workspace_router(
             )
         if body.set_recent and body.recent_id:
             service_for(workspace_id).store.get(body.recent_id)
+        draft_context: DraftContext | None = None
+        if body.set_draft_context:
+            for path in body.draft_reference_paths or []:
+                if not is_managed_path(path):
+                    raise WorkspaceError(
+                        code="CONVERSATION_UI_TARGET_INVALID",
+                        where="conversation-ui.update",
+                        why=f"草稿参考不是作品受管路径：{path}",
+                        fix="只保存作品内的章节、小传或固定设定路径",
+                        details={"path": path},
+                    )
+            draft_context = DraftContext(
+                selected_path=body.draft_selected_path,
+                reference_paths=tuple(body.draft_reference_paths or ()),
+            )
         ui = store.update(
             expected_revision=if_match,
             set_recent=body.set_recent,
@@ -594,10 +792,10 @@ def create_file_workspace_router(
             set_draft=body.set_draft,
             draft_target=body.draft_target,
             draft_text=body.draft_text,
+            set_draft_context=body.set_draft_context,
+            draft_context=draft_context,
         )
-        return ConversationUiView(
-            recent_id=ui.recent_id, drafts=dict(ui.drafts), revision=ui.revision
-        )
+        return _ui_view(ui)
 
     @router.get("/{workspace_id}/events")
     async def event_stream(
@@ -658,6 +856,78 @@ def _conversation(item: Conversation) -> ConversationView:
         title=item.title,
         created_at=item.created_at,
         updated_at=item.updated_at,
+    )
+
+
+def _index_item(record: ChapterIndexRecord) -> ChapterIndexItemView:
+    return ChapterIndexItemView(
+        source_path=record.source_path,
+        source_digest=record.source_digest,
+        recipe_version=record.recipe_version,
+        generated_at=record.generated_at,
+        summary=record.summary,
+        status=record.status,
+        evidence=[
+            ChapterIndexEvidenceView(
+                index=item.index, start=item.start, end=item.end, quote=item.quote
+            )
+            for item in record.evidence
+        ],
+        events=[_index_entry(item) for item in record.events],
+        characters=[_index_entry(item) for item in record.characters],
+        places=[_index_entry(item) for item in record.places],
+        clues=[_index_entry(item) for item in record.clues],
+    )
+
+
+def _index_entry(entry: ChapterIndexEntry) -> ChapterIndexEntryView:
+    return ChapterIndexEntryView(kind=entry.kind, text=entry.text, evidence=list(entry.evidence))
+
+
+def _review_item(report: ReviewReport) -> ReviewReportView:
+    return ReviewReportView(
+        report_id=report.report_id,
+        turn_id=report.turn_id,
+        target_paths=list(report.target_paths),
+        requirement=report.requirement,
+        status=report.status,
+        freshness=report.freshness,
+        findings=[
+            ReviewFindingView(
+                kind=finding.kind,
+                certainty=finding.certainty,
+                description=finding.description,
+                suggestion=finding.suggestion,
+                evidence=[
+                    ReviewEvidenceView(
+                        path=item.path,
+                        digest=item.digest,
+                        start=item.start,
+                        end=item.end,
+                        quote=item.quote,
+                    )
+                    for item in finding.evidence
+                ],
+            )
+            for finding in report.findings
+        ],
+        uncovered=list(report.uncovered),
+        created_at=report.created_at,
+    )
+
+
+def _ui_view(ui: ConversationUi) -> ConversationUiView:
+    return ConversationUiView(
+        recent_id=ui.recent_id,
+        drafts=dict(ui.drafts),
+        draft_contexts={
+            key: DraftContextView(
+                selected_path=value.selected_path,
+                reference_paths=list(value.reference_paths),
+            )
+            for key, value in ui.draft_contexts.items()
+        },
+        revision=ui.revision,
     )
 
 

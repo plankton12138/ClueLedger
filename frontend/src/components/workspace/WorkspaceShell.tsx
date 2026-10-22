@@ -12,7 +12,7 @@
  * 窗口重新获得焦点只重读本机配置，不自动调用供应商。
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useConversationsStore } from "../../state/conversations";
 import { CHAT, SIDEBAR, useLayoutStore } from "../../state/layout";
@@ -20,11 +20,53 @@ import { useModelsStore } from "../../state/models";
 import { useWorkspaceStore } from "../../state/workspace";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
 import ChangesDrawer from "./ChangesDrawer";
+import ChapterIndexPanel from "./ChapterIndexPanel";
 import CharacterBadges from "./CharacterBadges";
 import ConversationPanel from "./ConversationPanel";
 import DirectoryDialog from "./DirectoryDialog";
 import Paper from "./Paper";
 import ResizeHandle from "./ResizeHandle";
+
+/**
+ * 目录行：点标题打开文件，点右侧「＋」把它加入这一轮的参考。
+ *
+ * 打开与加入是两件事：只打开不会读原文、也不产生修改授权；加入参考只说明「这一轮
+ * 可以参考它」，同样不授权写。按钮放在行内而不是右键菜单里，键盘也能到达。
+ */
+function TocLine({
+  path,
+  active,
+  onOpen,
+  onReference,
+  children,
+}: {
+  path: string;
+  active: boolean;
+  onOpen: () => void;
+  onReference: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <li className="toc-line">
+      <button
+        className={`toc-row px-2 py-1 text-[12px] ${active ? "on" : ""}`}
+        title={path}
+        onClick={onOpen}
+      >
+        {children}
+      </button>
+      <button
+        type="button"
+        className="toc-add"
+        aria-label={`加入对话 ${path}`}
+        title="加入这一轮的参考"
+        onClick={onReference}
+      >
+        ＋
+      </button>
+    </li>
+  );
+}
 
 export default function WorkspaceShell() {
   const bindings = useWorkspaceStore((state) => state.bindings);
@@ -46,8 +88,11 @@ export default function WorkspaceShell() {
   const openDrawer = useWorkspaceStore((state) => state.openDrawer);
   const dismissError = useWorkspaceStore((state) => state.dismissError);
   const dismissNotice = useWorkspaceStore((state) => state.dismissNotice);
+  // 目录里的「加入对话」写的是会话草稿的参考列表：与输入区的选择器同一份状态。
+  const addReference = useConversationsStore((state) => state.addReference);
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [indexOpen, setIndexOpen] = useState(false);
   const [query, setQuery] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const current = bindings.find((binding) => binding.id === currentId);
@@ -139,6 +184,13 @@ export default function WorkspaceShell() {
         <button
           className="btn btn-gray px-2 py-1 text-[11px]"
           disabled={!currentId}
+          onClick={() => setIndexOpen(true)}
+        >
+          索引
+        </button>
+        <button
+          className="btn btn-gray px-2 py-1 text-[11px]"
+          disabled={!currentId}
           onClick={() => void openDrawer()}
         >
           改动与历史
@@ -164,6 +216,8 @@ export default function WorkspaceShell() {
           </button>
         </div>
       )}
+
+      <ChapterIndexPanel open={indexOpen} onClose={() => setIndexOpen(false)} />
 
       <main className="flex min-h-0 flex-1 overflow-hidden">
         <nav className="toc-pane flex min-h-0 flex-none flex-col" style={{ width: sidebarWidth }}>
@@ -257,17 +311,15 @@ export default function WorkspaceShell() {
                   </div>
                   <ul className="space-y-0.5">
                     {catalog.chapters.map((entry) => (
-                      <li key={entry.path}>
-                        <button
-                          className={`toc-row px-2 py-1 text-[12px] ${
-                            selectedPath === entry.path ? "on" : ""
-                          }`}
-                          title={entry.path}
-                          onClick={() => void openPath(entry.path)}
-                        >
-                          {entry.display_title}
-                        </button>
-                      </li>
+                      <TocLine
+                        key={entry.path}
+                        path={entry.path}
+                        active={selectedPath === entry.path}
+                        onOpen={() => void openPath(entry.path)}
+                        onReference={() => addReference(entry.path)}
+                      >
+                        {entry.display_title}
+                      </TocLine>
                     ))}
                     {catalog.chapters.length === 0 && (
                       <li className="px-2 py-1 text-[11px] text-mute">
@@ -283,18 +335,16 @@ export default function WorkspaceShell() {
                     <summary className="px-2 py-1 text-[12px] font-bold">角色小传</summary>
                     <ul className="ml-2 space-y-0.5">
                       {catalog.characters.map((entry) => (
-                        <li key={entry.path}>
-                          <button
-                            className={`toc-row px-2 py-1 text-[12px] ${
-                              selectedPath === entry.path ? "on" : ""
-                            }`}
-                            title={entry.path}
-                            onClick={() => void openPath(entry.path)}
-                          >
-                            {entry.display_title}
-                            <CharacterBadges roles={entry.roles} compact />
-                          </button>
-                        </li>
+                        <TocLine
+                          key={entry.path}
+                          path={entry.path}
+                          active={selectedPath === entry.path}
+                          onOpen={() => void openPath(entry.path)}
+                          onReference={() => addReference(entry.path)}
+                        >
+                          {entry.display_title}
+                          <CharacterBadges roles={entry.roles} compact />
+                        </TocLine>
                       ))}
                       {catalog.characters.length === 0 && (
                         <li className="px-2 py-1 text-[11px] text-mute">
@@ -305,19 +355,18 @@ export default function WorkspaceShell() {
                   </details>
                   <ul className="space-y-0.5">
                     {catalog.settings.map((entry) => (
-                      <li key={entry.path}>
-                        <button
-                          className={`toc-row px-2 py-1 text-[12px] ${
-                            selectedPath === entry.path ? "on" : ""
-                          }`}
-                          onClick={() => void openPath(entry.path)}
-                        >
-                          {entry.display_title}
-                          {!entry.exists && (
-                            <span className="ml-2 text-[10px] text-mute">（缺失）</span>
-                          )}
-                        </button>
-                      </li>
+                      <TocLine
+                        key={entry.path}
+                        path={entry.path}
+                        active={selectedPath === entry.path}
+                        onOpen={() => void openPath(entry.path)}
+                        onReference={() => addReference(entry.path)}
+                      >
+                        {entry.display_title}
+                        {!entry.exists && (
+                          <span className="ml-2 text-[10px] text-mute">（缺失）</span>
+                        )}
+                      </TocLine>
                     ))}
                   </ul>
                 </section>

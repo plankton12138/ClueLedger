@@ -12,8 +12,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
-import type { Conversation } from "../../api/workspace";
-import { findMessage, type ChatMessage } from "../../state/chatMessages";
+import { EMPTY_CONTEXT, type ContextInput, type Conversation } from "../../api/workspace";
+import { findMessage, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import {
   draftKeyOf,
   runningConversation,
@@ -26,6 +26,7 @@ import ModelSelector from "../models/ModelSelector";
 import ChatTurnView from "../chat/ChatTurnView";
 import ExpandedReplyDialog from "../chat/ExpandedReplyDialog";
 import { useChatScroll } from "../chat/useChatScroll";
+import ReferencePicker from "./ReferencePicker";
 
 function conversationLabel(item: Conversation, running: boolean): string {
   return running ? `${item.title}（进行中）` : item.title;
@@ -49,6 +50,11 @@ export default function ConversationPanel() {
   const stop = useConversationsStore((state) => state.stop);
   const reconnect = useConversationsStore((state) => state.reconnect);
   const setDraft = useConversationsStore((state) => state.setDraft);
+  const setDraftContext = useConversationsStore((state) => state.setDraftContext);
+  const draftContext = useConversationsStore((state) => state.draftContexts[draftKeyOf(state)]);
+  const catalog = useWorkspaceStore((state) => state.catalog);
+  const openPath = useWorkspaceStore((state) => state.selectedPath);
+  const openFile = useWorkspaceStore((state) => state.file);
   const rename = useConversationsStore((state) => state.rename);
   const dismissError = useConversationsStore((state) => state.dismissError);
   const revert = useWorkspaceStore((state) => state.revert);
@@ -92,9 +98,47 @@ export default function ConversationPanel() {
   const onRevert = useCallback((commit: string) => void revert(commit), [revert]);
   const onRecord = useCallback(() => void recordChanges(), [recordChanges]);
 
+  // 只检查仍然存在的文件：已删除的路径不能作为检查目标。
+  const knownPaths = useMemo(
+    () =>
+      new Set(
+        [...catalog.chapters, ...catalog.characters, ...catalog.settings].map(
+          (entry) => entry.path,
+        ),
+      ),
+    [catalog],
+  );
+  const reviewHandler = useCallback(
+    (turn: ChatTurn): (() => void) | null => {
+      const paths = (turn.result?.changed_paths ?? []).filter((path) => knownPaths.has(path));
+      if (paths.length === 0) return null;
+      return () =>
+        void send(`检查本次改动：${paths.join("、")}`, undefined, {
+          purpose: "review",
+          reviewPaths: paths,
+        });
+    },
+    [knownPaths, send],
+  );
+
+  // 参考只影响这一轮的材料；顺序即作者选择顺序，取消选择不影响已经打开的文件。
+  const references = draftContext?.reference_paths ?? [];
+  const toggleReference = (path: string) => {
+    const next = references.includes(path)
+      ? references.filter((item) => item !== path)
+      : [...references, path];
+    setDraftContext(openPath, next);
+  };
+
   const submit = async () => {
     if (!canSend) return;
-    await send(draft);
+    // 组件生成快照：当前阅读位置与参考、以及客户端看到的版本，一起交给受理。
+    const context: ContextInput = {
+      selected_path: openPath,
+      reference_paths: references,
+      observed_digests: openFile && openFile.path === openPath ? { [openPath]: openFile.digest } : {},
+    };
+    await send(draft, context.selected_path || context.reference_paths.length ? context : EMPTY_CONTEXT);
   };
 
   const commitRename = async () => {
@@ -183,6 +227,7 @@ export default function ConversationPanel() {
               onCopyFailed={copyFailed}
               onRevert={onRevert}
               onRecord={onRecord}
+              onReview={reviewHandler(turn)}
             />
           ))}
 
@@ -227,6 +272,12 @@ export default function ConversationPanel() {
             「{busyElsewhere.title}」还在进行；结束或停止它之后才能发送。
           </div>
         )}
+        <ReferencePicker
+          catalog={catalog}
+          selected={references}
+          onToggle={toggleReference}
+          onClear={() => setDraftContext(openPath, [])}
+        />
         <textarea
           className="chat-input"
           placeholder={

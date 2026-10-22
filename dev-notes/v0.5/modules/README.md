@@ -13,4 +13,4 @@
 | 供应商、连接、凭据、模型选择与测试 | [模型连接](../../v0.4/modules/model-connections.md) |
 | 写作台布局、阅读和历史抽屉 | [沿用的界面契约](../../v0.4/modules/desk.md)；目录中的角色分组以本版为准 |
 
-运行与验证范围见[运行说明](../release.md)。上下文与作品信息仍为[开发计划](../context-management-plan.md)，不作为当前模块能力。
+运行与验证范围见[运行说明](../release.md)。本轮参考、索引与来源核对尚未实施，后续见 [0.6 上下文与文件操作计划](../../v0.6/context-and-file-operations-plan.md)，不作为当前模块能力。

@@ -12,6 +12,8 @@ import {
   appendEvent,
   buildTurns,
   formatDuration,
+  materialComplete,
+  materialReadChars,
   NeedsConversationReload,
   orderedBlocks,
   phaseLabel,
@@ -320,5 +322,207 @@ describe("读取辅助", () => {
     expect(formatDuration(0)).toBe("<1 毫秒");
     expect(formatDuration(1500)).toBe("1.5 秒");
     expect(formatDuration(null)).toBe("");
+  });
+});
+
+describe("本轮范围", () => {
+  const scope = (version: number, overrides: Record<string, unknown> = {}) => ({
+    type: "task_scope_set" as const,
+    turn_id: "t1",
+    version,
+    mode: "edit" as const,
+    summary: "改写第三章",
+    authorization: "只改第三章",
+    authorization_seq: 1,
+    carried_from_seq: null,
+    grants: [{ action: "update" as const, path: "正文/0003 书房.md" }],
+    denied_paths: [],
+    required_references: [],
+    extendable: false,
+    extend_actions: [],
+    ...overrides,
+  });
+
+  it("登记与追加按版本前进，迟到的旧版本不覆盖", () => {
+    reset();
+    const turns = buildTurns([
+      turnStarted(),
+      next(scope(1)),
+      next({
+        ...scope(2, {
+          type: "task_scope_extended",
+          grants: [
+            { action: "update", path: "正文/0003 书房.md" },
+            { action: "update", path: "正文/0004 书房外.md" },
+          ],
+        }),
+      }),
+      next(scope(1)),
+    ]);
+
+    const current = turns[0]!.scope!;
+    expect(current.version).toBe(2);
+    expect(current.grants).toHaveLength(2);
+  });
+
+  it("只读范围也记录，用于说明这一轮不写文件", () => {
+    reset();
+    const turns = buildTurns([
+      turnStarted(),
+      next(scope(1, { mode: "read_only", grants: [], summary: "检查第三章" })),
+    ]);
+
+    const current = turns[0]!.scope!;
+    expect(current.mode).toBe("read_only");
+    expect(current.grants).toEqual([]);
+  });
+
+  it("没有登记范围的轮次不带范围", () => {
+    reset();
+    const turns = buildTurns([turnStarted()]);
+    expect(turns[0]!.scope).toBeNull();
+  });
+});
+
+describe("检查报告", () => {
+  it("报告归并到本轮，区分有依据与疑点", () => {
+    reset();
+    const turns = buildTurns([
+      turnStarted(),
+      next({
+        type: "review_finished",
+        turn_id: "t1",
+        report_id: "r_1",
+        status: "findings",
+        targets: ["正文/0003 书房.md"],
+        findings: [
+          {
+            kind: "continuity",
+            certainty: "suspected",
+            description: "时间线可能对不上",
+            suggestion: "补一句交代",
+            evidence: [
+              {
+                path: "正文/0003 书房.md",
+                digest: "d1",
+                start: 0,
+                end: 4,
+                quote: "书房",
+              },
+            ],
+          },
+        ],
+        uncovered: [],
+      }),
+    ]);
+
+    const review = turns[0]!.review!;
+    expect(review.status).toBe("findings");
+    expect(review.reportId).toBe("r_1");
+    expect(review.findings[0]!.certainty).toBe("suspected");
+  });
+
+  it("未完成的检查写明没覆盖的部分，不冒充通过", () => {
+    reset();
+    const turns = buildTurns([
+      turnStarted(),
+      next({
+        type: "review_finished",
+        turn_id: "t1",
+        report_id: null,
+        status: "incomplete",
+        targets: ["正文/0003 书房.md"],
+        findings: [],
+        uncovered: ["这一轮没有生成检查报告"],
+      }),
+    ]);
+
+    const review = turns[0]!.review!;
+    expect(review.status).toBe("incomplete");
+    expect(review.uncovered).toEqual(["这一轮没有生成检查报告"]);
+    expect(review.reportId).toBeNull();
+  });
+});
+
+describe("本轮材料", () => {
+  it("预读与读取区间合并成同一份材料，重叠不重复累计", () => {
+    reset();
+    const prepared = next({
+      type: "context_prepared",
+      turn_id: "t1",
+      selected_path: "正文/0003 书房.md",
+      references: [{ path: "正文/0001 参考.md", digest: "d1" }],
+      provided: [{ path: "正文/0001 参考.md", start: 0, end: 100, length: 400 }],
+    });
+    const read = next({
+      type: "material_read",
+      turn_id: "t1",
+      path: "正文/0001 参考.md",
+      digest: "d1",
+      start_char: 80,
+      end_char: 400,
+      start_line: 3,
+      end_line: 12,
+      total_chars: 400,
+    });
+
+    const turns = buildTurns([turnStarted(), prepared, read]);
+
+    const material = turns[0]!.materials[0]!;
+    expect(material.path).toBe("正文/0001 参考.md");
+    expect(material.required).toBe(true);
+    expect(material.length).toBe(400);
+    // 0-100 与 80-400 合并后是 400 个字符，不是 420。
+    expect(materialReadChars(material)).toBe(400);
+    expect(materialComplete(material)).toBe(true);
+  });
+
+  it("版本变化后不拼接旧区间", () => {
+    reset();
+    const first = next({
+      type: "material_read",
+      turn_id: "t1",
+      path: "正文/0001 参考.md",
+      digest: "d1",
+      start_char: 0,
+      end_char: 50,
+      start_line: 1,
+      end_line: 2,
+      total_chars: 100,
+    });
+    const second = next({
+      type: "material_read",
+      turn_id: "t1",
+      path: "正文/0001 参考.md",
+      digest: "d2",
+      start_char: 0,
+      end_char: 10,
+      start_line: 1,
+      end_line: 1,
+      total_chars: 120,
+    });
+
+    const turns = buildTurns([turnStarted(), first, second]);
+
+    const material = turns[0]!.materials[0]!;
+    expect(material.digest).toBe("d2");
+    expect(materialReadChars(material)).toBe(10);
+    expect(materialComplete(material)).toBe(false);
+  });
+
+  it("登记的参考即使还没读也出现在材料里", () => {
+    reset();
+    const registered = next({
+      type: "reference_registered",
+      turn_id: "t1",
+      references: [{ path: "设定集/角色小传/林远.md", digest: "d9", kind: "discovered", required: false }],
+    });
+
+    const turns = buildTurns([turnStarted(), registered]);
+
+    const material = turns[0]!.materials[0]!;
+    expect(material.required).toBe(false);
+    expect(material.spans).toEqual([]);
+    expect(materialReadChars(material)).toBe(0);
   });
 });

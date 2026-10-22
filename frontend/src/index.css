@@ -174,6 +174,27 @@
     text-shadow: 0 -1px #2c5677;
     background: linear-gradient(#8fb8d5, #5e91b8 48%, #3374a2 49%, #2c648e);
   }
+  .toc-line {
+    @apply flex items-center gap-1;
+  }
+  .toc-line .toc-row {
+    @apply min-w-0 flex-1;
+  }
+  /* 目录行右侧的「加入对话」：与目录行同一套白色小按钮语言。 */
+  .toc-add {
+    @apply shrink-0 rounded px-1 text-[11px] leading-5;
+    border: 1px solid #d3dee4;
+    background: rgba(255, 255, 255, 0.92);
+    color: theme("colors.sub");
+  }
+  .toc-add:hover {
+    border-color: #2d6996;
+    color: theme("colors.panelHead");
+  }
+  .toc-add:focus-visible {
+    outline: 2px solid #2d6996;
+    outline-offset: 1px;
+  }
   .toc-foot {
     border-top: 1px solid theme("colors.navEdge");
     color: theme("colors.sub");

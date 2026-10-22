@@ -25,8 +25,33 @@ def _setup(tmp_path: Path) -> tuple[Workspace, dict[str, AgentTool], WriteSessio
     workspace = Workspace.create(tmp_path / "雪山旅馆")
     GitRepo(workspace.root).init()
     session = WriteSession(workspace, instruction="写第一章")
-    tools = {tool.name: tool for tool in build_tools(workspace, RunContext(workspace, session))}
+    run = RunContext(
+        workspace,
+        session,
+        author_messages=((1, "写第一章，改写雨夜这一章。"),),
+    )
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
     return workspace, tools, session
+
+
+async def _grant(tools: dict[str, AgentTool], *paths: str) -> None:
+    """登记本轮范围：这些章节允许新建、修改、删除与改名。"""
+    renamed = [f"{path[: -len('.md')]}改.md" for path in paths]
+    await _call(
+        tools["set_task_scope"],
+        mode="edit",
+        summary="改写雨夜这一章",
+        authorization="写第一章",
+        grants=[
+            {"action": action, "path": path}
+            for path in (*paths, *renamed)
+            for action in ("create", "update", "delete")
+        ]
+        + [
+            {"action": "move", "path": path, "target": target}
+            for path, target in zip(paths, renamed, strict=True)
+        ],
+    )
 
 
 def _long_chapter(tmp_path: Path) -> tuple[Workspace, dict[str, AgentTool], WriteSession]:
@@ -100,6 +125,7 @@ async def test_read_file_pages_and_returns_digest(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_write_file_requires_digest_for_existing_file(tmp_path: Path) -> None:
     workspace, tools, session = _setup(tmp_path)
+    await _grant(tools, "正文/0001 雨夜.md")
     created = await _call(
         tools["write_file"], path="正文/0001 雨夜.md", text="# 雨夜\n\n侦探抵达旅馆。\n"
     )
@@ -123,6 +149,7 @@ async def test_write_file_requires_digest_for_existing_file(tmp_path: Path) -> N
 @pytest.mark.anyio
 async def test_edit_file_replaces_unique_text(tmp_path: Path) -> None:
     workspace, tools, _ = _setup(tmp_path)
+    await _grant(tools, "正文/0001 雨夜.md")
     created = await _call(
         tools["write_file"], path="正文/0001 雨夜.md", text="# 雨夜\n\n侦探抵达旅馆。\n"
     )
@@ -142,6 +169,7 @@ async def test_edit_file_replaces_unique_text(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_edit_file_rejects_missing_or_ambiguous_text(tmp_path: Path) -> None:
     _, tools, _ = _setup(tmp_path)
+    await _grant(tools, "正文/0001 雨夜.md")
     created = await _call(
         tools["write_file"], path="正文/0001 雨夜.md", text="# 雨夜\n\n他来了。\n\n他来了。\n"
     )
@@ -171,6 +199,7 @@ async def test_edit_file_rejects_missing_or_ambiguous_text(tmp_path: Path) -> No
 @pytest.mark.anyio
 async def test_edit_file_rejects_stale_digest(tmp_path: Path) -> None:
     workspace, tools, _ = _setup(tmp_path)
+    await _grant(tools, "正文/0001 雨夜.md")
     created = await _call(tools["write_file"], path="正文/0001 雨夜.md", text="# 雨夜\n\n原稿。\n")
     # 外部在文末加了一段：要替换的原文仍然唯一，但指纹已经过期。
     (workspace.root / "正文/0001 雨夜.md").write_text(
@@ -185,7 +214,7 @@ async def test_edit_file_rejects_stale_digest(tmp_path: Path) -> None:
             new_text="改写。",
             digest=created["digest"],
         )
-    assert _code(stale) == "FILE_STALE_CONFLICT"
+    assert _code(stale) == "CONTEXT_SOURCE_STALE_CONFLICT"
     assert "外部新增" in (workspace.root / "正文/0001 雨夜.md").read_text(encoding="utf-8")
 
 
@@ -202,6 +231,7 @@ async def test_tools_reject_paths_outside_managed_set(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_move_and_delete_require_digest(tmp_path: Path) -> None:
     workspace, tools, _ = _setup(tmp_path)
+    await _grant(tools, "正文/0001 雨夜.md")
     created = await _call(tools["write_file"], path="正文/0001 雨夜.md", text="# 雨夜\n")
 
     moved = await _call(
@@ -241,3 +271,76 @@ async def test_tool_input_validation(tmp_path: Path) -> None:
     with pytest.raises(WorkspaceError) as empty_query:
         await _call(tools["search_text"], query="")
     assert _code(empty_query) == "TOOL_INPUT_INVALID"
+
+
+@pytest.mark.anyio
+async def test_register_references_needs_author_quote_or_real_evidence(tmp_path: Path) -> None:
+    workspace, tools, _ = _setup(tmp_path)
+    workspace.write("正文/0002 参考章.md", "# 参考章\n\n书房里有一枚脚印。\n", expected_digest=None)
+
+    registered = await _call(
+        tools["register_references"],
+        references=[
+            {
+                "path": "正文/0002 参考章.md",
+                "kind": "author_text",
+                "quote": "写第一章",
+                "required": True,
+            }
+        ],
+    )
+    assert registered["required"] == ["正文/0002 参考章.md"]
+
+    with pytest.raises(WorkspaceError) as invented:
+        await _call(
+            tools["register_references"],
+            references=[
+                {"path": "正文/0002 参考章.md", "kind": "author_text", "quote": "模型觉得可以"}
+            ],
+        )
+    assert _code(invented) == "REFERENCE_EVIDENCE_INVALID"
+
+
+@pytest.mark.anyio
+async def test_discovered_reference_must_be_read_first(tmp_path: Path) -> None:
+    workspace, tools, _ = _setup(tmp_path)
+    workspace.write("正文/0002 参考章.md", "# 参考章\n\n书房里有一枚脚印。\n", expected_digest=None)
+
+    with pytest.raises(WorkspaceError) as unread:
+        await _call(
+            tools["register_references"],
+            references=[
+                {"path": "正文/0002 参考章.md", "kind": "discovered", "quote": "书房里有一枚脚印。"}
+            ],
+        )
+    assert _code(unread) == "REFERENCE_EVIDENCE_INVALID"
+
+    await _call(tools["read_file"], path="正文/0002 参考章.md")
+    accepted = await _call(
+        tools["register_references"],
+        references=[
+            {"path": "正文/0002 参考章.md", "kind": "discovered", "quote": "书房里有一枚脚印。"}
+        ],
+    )
+    assert accepted["references"][0]["kind"] == "discovered"
+
+    with pytest.raises(WorkspaceError) as wrong_quote:
+        await _call(
+            tools["register_references"],
+            references=[
+                {"path": "正文/0002 参考章.md", "kind": "discovered", "quote": "文中没有这句"}
+            ],
+        )
+    assert _code(wrong_quote) == "REFERENCE_EVIDENCE_INVALID"
+
+
+@pytest.mark.anyio
+async def test_register_references_rejects_other_kinds(tmp_path: Path) -> None:
+    workspace, tools, _ = _setup(tmp_path)
+    workspace.write("正文/0002 参考章.md", "# 参考章\n", expected_digest=None)
+    with pytest.raises(WorkspaceError) as invalid:
+        await _call(
+            tools["register_references"],
+            references=[{"path": "正文/0002 参考章.md", "kind": "author_selected"}],
+        )
+    assert _code(invalid) == "REFERENCE_KIND_INVALID"

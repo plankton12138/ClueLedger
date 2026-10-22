@@ -10,7 +10,10 @@ import { memo } from "react";
 import type { RunPhase } from "../../api/workspace";
 import { phaseLabel, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import AssistantMessageView from "./AssistantMessageView";
+import ReviewReportView from "./ReviewReport";
+import TaskScopeDetails from "./TaskScopeDetails";
 import ToolActivity from "./ToolActivity";
+import TurnMaterials from "./TurnMaterials";
 
 const STATUS_LABEL: Record<string, string> = {
   completed: "完成",
@@ -35,6 +38,8 @@ interface Props {
   onCopyFailed: (message: ChatMessage) => void;
   onRevert: (commit: string) => void;
   onRecord: () => void;
+  /** 对本轮改动发起一次只读检查；没有可检查的文件时为 null。 */
+  onReview: (() => void) | null;
 }
 
 function ChatTurnView({
@@ -45,6 +50,7 @@ function ChatTurnView({
   onCopyFailed,
   onRevert,
   onRecord,
+  onReview,
 }: Props) {
   const result = turn.result;
 
@@ -53,6 +59,9 @@ function ChatTurnView({
       <div className="chat-msg mine">
         <div className="chat-bubble">{turn.prompt}</div>
       </div>
+
+      <TurnMaterials materials={turn.materials} />
+      {turn.scope && <TaskScopeDetails scope={turn.scope} />}
 
       {turn.items.map((item) =>
         item.kind === "message" ? (
@@ -119,9 +128,20 @@ function ChatTurnView({
                 补记到历史
               </button>
             )}
+            {onReview && !turn.review && (
+              <button
+                type="button"
+                className="btn btn-gray px-2 py-0.5 text-[10px]"
+                onClick={onReview}
+              >
+                检查本次改动
+              </button>
+            )}
           </div>
         </div>
       )}
+
+      {turn.review && <ReviewReportView review={turn.review} />}
     </section>
   );
 }

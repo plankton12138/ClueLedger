@@ -97,10 +97,18 @@ describe("请求形状", () => {
     });
 
     await openWorkspace("C:/作品", true);
-    await startTurn("w1", "c1", "写第一章", "k1");
+    await startTurn("w1", "c1", {
+      text: "写第一章",
+      request_key: "k1",
+      context: { selected_path: null, reference_paths: [], observed_digests: {} },
+    });
 
     expect(JSON.parse(bodies[0]!)).toEqual({ path: "C:/作品", create: true });
-    expect(JSON.parse(bodies[1]!)).toEqual({ text: "写第一章", request_key: "k1" });
+    expect(JSON.parse(bodies[1]!)).toEqual({
+      text: "写第一章",
+      request_key: "k1",
+      context: { selected_path: null, reference_paths: [], observed_digests: {} },
+    });
   });
 
   it("补记历史用 POST 空体也会发送对象", async () => {
@@ -212,12 +220,20 @@ describe("会话（V04-10）", () => {
       );
     });
 
-    const accepted = await createConversationWithText("w1", "写第一章", "ui-1");
+    const accepted = await createConversationWithText("w1", {
+      text: "写第一章",
+      request_key: "ui-1",
+      context: { selected_path: null, reference_paths: [], observed_digests: {} },
+    });
 
     expect(calls[0]?.url).toBe("/api/file-workspaces/w1/conversations");
     expect(calls[0]?.init?.method).toBe("POST");
     expect(calls[0]?.init?.body).toBe(
-      JSON.stringify({ text: "写第一章", request_key: "ui-1" }),
+      JSON.stringify({
+        text: "写第一章",
+        request_key: "ui-1",
+        context: { selected_path: null, reference_paths: [], observed_digests: {} },
+      }),
     );
     expect(accepted.conversation_id).toBe("c1");
   });

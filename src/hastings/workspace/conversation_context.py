@@ -98,9 +98,7 @@ def execution_facts(events: Sequence[dict[str, Any]]) -> str:
         result = turn["result"]
         prompt = " ".join(str(turn["prompt"]).split())[:_FACT_PROMPT_LIMIT]
         status = _STATUS_LABEL.get(str(result.get("status")), str(result.get("status")))
-        recording = _RECORDING_LABEL.get(
-            str(result.get("recording")), str(result.get("recording"))
-        )
+        recording = _RECORDING_LABEL.get(str(result.get("recording")), str(result.get("recording")))
         paths = result.get("changed_paths") or []
         changed = "、".join(str(path) for path in paths) if paths else "没有改动文件"
         lines.append(f"- 「{prompt}」：{status}；{changed}；{recording}")

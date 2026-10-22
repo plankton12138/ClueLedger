@@ -162,7 +162,10 @@ describe("新对话与首次发送", () => {
 
     await useConversationsStore.getState().send("写第一章");
 
-    expect(api.createConversationWithText).toHaveBeenCalledWith("w1", "写第一章", expect.any(String));
+    expect(api.createConversationWithText).toHaveBeenCalledWith(
+      "w1",
+      expect.objectContaining({ text: "写第一章" }),
+    );
     expect(api.startTurn).not.toHaveBeenCalled();
     const state = useConversationsStore.getState();
     expect(state.selectedId).toBe("c2");
@@ -178,7 +181,11 @@ describe("新对话与首次发送", () => {
 
     await useConversationsStore.getState().send("继续");
 
-    expect(api.startTurn).toHaveBeenCalledWith("w1", "c1", "继续", expect.any(String));
+    expect(api.startTurn).toHaveBeenCalledWith(
+      "w1",
+      "c1",
+      expect.objectContaining({ text: "继续" }),
+    );
     expect(api.streamEvents).toHaveBeenCalledWith("w1", "c1", 1, expect.any(AbortSignal));
   });
 
@@ -234,7 +241,7 @@ describe("切换会话", () => {
     const state = useConversationsStore.getState();
     expect(api.patchConversationUi).toHaveBeenCalledWith(
       "w1",
-      { set_draft: true, draft_target: "c1", draft_text: "草稿 A" },
+      expect.objectContaining({ set_draft: true, draft_target: "c1", draft_text: "草稿 A" }),
       expect.any(String),
     );
     expect(state.selectedId).toBe("c2");
@@ -458,7 +465,7 @@ describe("草稿与列表", () => {
 
     expect(api.patchConversationUi).toHaveBeenLastCalledWith(
       "w1",
-      { set_draft: true, draft_target: "c1", draft_text: "先写开头" },
+      expect.objectContaining({ set_draft: true, draft_target: "c1", draft_text: "先写开头" }),
       expect.any(String),
     );
     expect(useConversationsStore.getState().revision).toBe("r2");
@@ -479,7 +486,7 @@ describe("草稿与列表", () => {
     // 重发用的是重新读到的版本号（mock 返回 r1），而不是第一次的旧值。
     expect(api.patchConversationUi).toHaveBeenLastCalledWith(
       "w1",
-      { set_draft: true, draft_target: "c1", draft_text: "我的草稿" },
+      expect.objectContaining({ set_draft: true, draft_target: "c1", draft_text: "我的草稿" }),
       "r1",
     );
     expect(state.drafts.c1).toBe("我的草稿");
@@ -557,5 +564,180 @@ describe("草稿与列表", () => {
 
     expect(api.renameConversation).toHaveBeenCalledWith("w1", "c1", "人物动机");
     expect(useConversationsStore.getState().items[0]?.title).toBe("人物动机");
+  });
+
+  it("草稿的参考与文字同一次保存，删除文字时一并删除", async () => {
+    await useConversationsStore.getState().load("w1");
+    useConversationsStore.getState().setDraft("参考第一章改第三章");
+    useConversationsStore.getState().setDraftContext("正文/0001 雨夜.md", ["正文/0001 雨夜.md"]);
+
+    await useConversationsStore.getState().saveDraft();
+
+    expect(api.patchConversationUi).toHaveBeenLastCalledWith(
+      "w1",
+      expect.objectContaining({
+        set_draft: true,
+        draft_text: "参考第一章改第三章",
+        set_draft_context: true,
+        draft_selected_path: "正文/0001 雨夜.md",
+        draft_reference_paths: ["正文/0001 雨夜.md"],
+      }),
+      expect.any(String),
+    );
+
+    // 只选文件、没有文字时不创建会话：草稿槽位仍然是 new。
+    expect(useConversationsStore.getState().selectedId).toBe("c1");
+    expect(api.createConversationWithText).not.toHaveBeenCalled();
+  });
+
+  it("发送时把当前参考与版本一起交给受理，并在受理后清掉草稿参考", async () => {
+    await useConversationsStore.getState().load("w1");
+    api.createConversationWithText.mockResolvedValue({
+      conversation_id: "c2",
+      turn_id: "t2",
+      started_at: "2026-10-22T10:00:00+08:00",
+      title: "参考第一章",
+      request_key: "k1",
+    });
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+    useConversationsStore.getState().newConversation();
+    useConversationsStore.getState().setDraft("参考第一章改第三章");
+    useConversationsStore.getState().setDraftContext("正文/0001 雨夜.md", ["正文/0001 雨夜.md"]);
+
+    await useConversationsStore.getState().send("参考第一章改第三章", {
+      selected_path: "正文/0001 雨夜.md",
+      reference_paths: ["正文/0001 雨夜.md"],
+      observed_digests: { "正文/0001 雨夜.md": "d1" },
+    });
+
+    expect(api.createConversationWithText).toHaveBeenCalledWith(
+      "w1",
+      expect.objectContaining({
+        text: "参考第一章改第三章",
+        context: {
+          selected_path: "正文/0001 雨夜.md",
+          reference_paths: ["正文/0001 雨夜.md"],
+          observed_digests: { "正文/0001 雨夜.md": "d1" },
+        },
+      }),
+    );
+    expect(useConversationsStore.getState().draftContexts.new).toBeUndefined();
+    expect(useConversationsStore.getState().drafts.new).toBeUndefined();
+  });
+
+  it("目录里加入对话只追加参考，不重复也不打乱顺序", async () => {
+    await useConversationsStore.getState().load("w1");
+    useConversationsStore.getState().newConversation();
+
+    useConversationsStore.getState().addReference("正文/0002 别章.md");
+    useConversationsStore.getState().addReference("正文/0001 雨夜.md");
+    useConversationsStore.getState().addReference("正文/0002 别章.md");
+
+    expect(useConversationsStore.getState().draftContexts.new?.reference_paths).toEqual([
+      "正文/0002 别章.md",
+      "正文/0001 雨夜.md",
+    ]);
+  });
+
+  it("发送后不清掉受理期间新选的参考", async () => {
+    await useConversationsStore.getState().load("w1");
+    let resolveCreate: (value: unknown) => void = () => undefined;
+    api.createConversationWithText.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+    useConversationsStore.getState().newConversation();
+    useConversationsStore.getState().setDraft("参考第一章改第三章");
+    useConversationsStore.getState().setDraftContext(null, ["正文/0001 雨夜.md"]);
+
+    const sending = useConversationsStore.getState().send("参考第一章改第三章", {
+      selected_path: null,
+      reference_paths: ["正文/0001 雨夜.md"],
+      observed_digests: {},
+    });
+    // 受理还没返回：作者在目录里又加了一份参考。
+    useConversationsStore.getState().addReference("正文/0002 别章.md");
+    resolveCreate({
+      conversation_id: "c5",
+      turn_id: "t5",
+      started_at: "2026-10-22T13:00:00+08:00",
+      title: "参考第一章改第三章",
+      request_key: "k5",
+    });
+    await sending;
+
+    // 文字随这一轮交出去，新选的参考留在草稿里等下一次发送。
+    expect(useConversationsStore.getState().drafts.new).toBeUndefined();
+    expect(useConversationsStore.getState().draftContexts.new?.reference_paths).toEqual([
+      "正文/0001 雨夜.md",
+      "正文/0002 别章.md",
+    ]);
+  });
+
+  it("检查任务把目标文件一起提交", async () => {
+    await useConversationsStore.getState().load("w1");
+    api.createConversationWithText.mockResolvedValue({
+      conversation_id: "c4",
+      turn_id: "t4",
+      started_at: "2026-10-22T12:00:00+08:00",
+      title: "检查本次改动",
+      request_key: "k3",
+    });
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+    useConversationsStore.getState().newConversation();
+
+    await useConversationsStore.getState().send("检查本次改动：第三章", undefined, {
+      purpose: "review",
+      reviewPaths: ["正文/0003 书房.md"],
+    });
+
+    expect(api.createConversationWithText).toHaveBeenCalledWith(
+      "w1",
+      expect.objectContaining({
+        purpose: "review",
+        review_paths: ["正文/0003 书房.md"],
+      }),
+    );
+  });
+
+  it("索引任务把用途与目标一起提交", async () => {
+    await useConversationsStore.getState().load("w1");
+    api.createConversationWithText.mockResolvedValue({
+      conversation_id: "c3",
+      turn_id: "t3",
+      started_at: "2026-10-22T11:00:00+08:00",
+      title: "更新章节索引",
+      request_key: "k2",
+    });
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+    useConversationsStore.getState().newConversation();
+
+    await useConversationsStore.getState().send("更新章节索引：第三章", undefined, {
+      purpose: "update_chapter_index",
+      indexPaths: ["正文/0003 书房.md"],
+    });
+
+    expect(api.createConversationWithText).toHaveBeenCalledWith(
+      "w1",
+      expect.objectContaining({
+        purpose: "update_chapter_index",
+        index_paths: ["正文/0003 书房.md"],
+      }),
+    );
   });
 });

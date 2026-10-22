@@ -118,13 +118,18 @@ def _workspace(client: TestClient, tmp_path: Path) -> str:
 
 
 def _accept(
-    client: TestClient, workspace_id: str, text: str = "写第一章", *, key: str | None = None
+    client: TestClient,
+    workspace_id: str,
+    text: str = "写第一章",
+    *,
+    key: str | None = None,
+    context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """首次发送：一次请求建会话并受理首轮。"""
-    response = client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations",
-        json={"text": text, "request_key": key or f"k_{time.monotonic_ns()}"},
-    )
+    body: dict[str, Any] = {"text": text, "request_key": key or f"k_{time.monotonic_ns()}"}
+    if context is not None:
+        body["context"] = context
+    response = client.post(f"/api/file-workspaces/{workspace_id}/conversations", json=body)
     assert response.status_code == 202, response.text
     return dict(response.json())
 
@@ -188,13 +193,23 @@ def test_turn_writes_chapter_and_records_git_commit(
         [
             _tool_turn(
                 ToolCall(
+                    id="s0",
+                    name="set_task_scope",
+                    arguments={
+                        "mode": "edit",
+                        "summary": "写第一章",
+                        "authorization": "写第一章",
+                        "grants": [{"action": "create", "path": "正文/0001 雨夜.md"}],
+                    },
+                ),
+                ToolCall(
                     id="c1",
                     name="write_file",
                     arguments={
                         "path": "正文/0001 雨夜.md",
                         "text": "# 雨夜\n\n侦探抵达旅馆。\n",
                     },
-                )
+                ),
             ),
             _text_turn("第一章写好了。"),
         ]
@@ -462,10 +477,20 @@ def test_two_conversations_share_workspace_files(
         [
             _tool_turn(
                 ToolCall(
+                    id="s0",
+                    name="set_task_scope",
+                    arguments={
+                        "mode": "edit",
+                        "summary": "写第一章",
+                        "authorization": "写第一章",
+                        "grants": [{"action": "create", "path": "正文/0001 雨夜.md"}],
+                    },
+                ),
+                ToolCall(
                     id="c1",
                     name="write_file",
                     arguments={"path": "正文/0001 雨夜.md", "text": "# 雨夜\n\nA 写的。\n"},
-                )
+                ),
             ),
             _text_turn("写好了。"),
             _text_turn("我读到了新的第一章。"),
@@ -494,10 +519,20 @@ def test_second_turn_is_rejected_while_one_is_running(
         [
             _tool_turn(
                 ToolCall(
+                    id="s0",
+                    name="set_task_scope",
+                    arguments={
+                        "mode": "edit",
+                        "summary": "写第一章",
+                        "authorization": "写第一章",
+                        "grants": [{"action": "create", "path": "正文/0001 雨夜.md"}],
+                    },
+                ),
+                ToolCall(
                     id="c1",
                     name="write_file",
                     arguments={"path": "正文/0001 雨夜.md", "text": "# 雨夜\n"},
-                )
+                ),
             ),
             [],
         ],
@@ -556,10 +591,20 @@ def test_stop_marks_partial_commit(
         [
             _tool_turn(
                 ToolCall(
+                    id="s0",
+                    name="set_task_scope",
+                    arguments={
+                        "mode": "edit",
+                        "summary": "写第一章",
+                        "authorization": "写第一章",
+                        "grants": [{"action": "create", "path": "正文/0001 雨夜.md"}],
+                    },
+                ),
+                ToolCall(
                     id="c1",
                     name="write_file",
                     arguments={"path": "正文/0001 雨夜.md", "text": "# 雨夜\n\n写到一半。\n"},
-                )
+                ),
             ),
             [],
         ],
@@ -885,3 +930,478 @@ def _create_workspace(tmp_path: Path) -> Any:
     from hastings.workspace.files import Workspace
 
     return Workspace.create(tmp_path / "雪山旅馆")
+
+
+# -- 本轮材料 ---------------------------------------------------------------
+
+
+def test_reference_selection_limits_write_until_read(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """作者指定参考后：先给开头一段，写作品前必须读完；未读完的写入被拒绝。"""
+    workspace = _create_workspace(tmp_path)
+    reference = workspace.write(
+        "正文/0001 参考章.md",
+        "# 参考章\n\n" + "书房里的脚印。" * 600 + "\n",
+        expected_digest=None,
+    )
+    provider = ScriptedProvider(
+        [
+            _tool_turn(
+                ToolCall(
+                    id="s0",
+                    name="set_task_scope",
+                    arguments={
+                        "mode": "edit",
+                        "summary": "参考第一章写第三章",
+                        "authorization": "参考第一章",
+                        "grants": [{"action": "create", "path": "正文/0003 新章.md"}],
+                    },
+                ),
+                ToolCall(
+                    id="c1",
+                    name="write_file",
+                    arguments={"path": "正文/0003 新章.md", "text": "# 新章\n"},
+                ),
+            ),
+            _text_turn("参考还没读完。"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    accepted = _accept(
+        client,
+        workspace_id,
+        "参考第一章写第三章",
+        context={
+            "reference_paths": [reference.path],
+            "observed_digests": {reference.path: reference.digest},
+        },
+    )
+    events = _wait_until(client, workspace_id, accepted["conversation_id"], _finished)
+
+    prepared = next(event for event in events if event["type"] == "context_prepared")
+    assert prepared["references"] == [{"path": reference.path, "digest": reference.digest}]
+    provided = prepared["provided"][0]
+    assert provided["start"] == 0
+    assert provided["end"] < provided["length"]
+
+    failed = next(event for event in events if event["type"] == "tool_finished" and not event["ok"])
+    assert "REFERENCE_NOT_FULLY_READ_CONFLICT" in failed["summary"]
+    assert not (tmp_path / "雪山旅馆/正文/0003 新章.md").exists()
+
+    # 材料状态写进系统提示：模型知道只提供了部分原文，而不是读过全文。
+    assert "已提供部分原文" in provider.requests[0]["system"]
+
+
+def test_same_request_key_with_different_materials_conflicts(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """同键重试必须带同一份材料：换了参考就是另一个请求，不能复用旧受理。"""
+    provider = ScriptedProvider([_text_turn("好"), _text_turn("好")])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    root = tmp_path / "雪山旅馆"
+    (root / "正文/0001 雨夜.md").write_text("# 雨夜\n", encoding="utf-8")
+    first = _accept(client, workspace_id, "写第一章", key="fixed")
+    _wait_until(client, workspace_id, first["conversation_id"], _finished)
+
+    changed = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={
+            "text": "写第一章",
+            "request_key": "fixed",
+            "context": {"reference_paths": ["正文/0001 雨夜.md"]},
+        },
+    )
+    assert changed.status_code == 409
+    assert changed.json()["error"]["code"] == "REQUEST_KEY_CONFLICT"
+
+    same = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={"text": "写第一章", "request_key": "fixed"},
+    )
+    assert same.status_code == 202
+    assert same.json()["turn_id"] == first["turn_id"]
+
+
+def test_index_turn_publishes_and_hides_write_tools(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """索引任务：只用只读工具与 save_chapter_index，发布后接口能看到有效索引。"""
+    chapter = "正文/0003 书房.md"
+    text = "# 书房\n\n侦探在书房发现一枚脚印。\n"
+    quote = "侦探在书房发现一枚脚印。"
+    root = tmp_path / "雪山旅馆"
+    workspace = _create_workspace(tmp_path)
+    created = workspace.write(chapter, text, expected_digest=None)
+    start = text.index(quote)
+
+    provider = ScriptedProvider(
+        [
+            _tool_turn(ToolCall(id="r1", name="read_file", arguments={"path": chapter})),
+            _tool_turn(
+                ToolCall(
+                    id="i1",
+                    name="save_chapter_index",
+                    arguments={
+                        "path": chapter,
+                        "digest": created.digest,
+                        "summary": "侦探在书房发现脚印。",
+                        "evidence": [
+                            {"index": 1, "start": start, "end": start + len(quote), "quote": quote}
+                        ],
+                        "events": [{"text": "发现脚印", "evidence": [1]}],
+                        "clues": [{"text": "脚印", "evidence": [1]}],
+                    },
+                )
+            ),
+            _text_turn("索引更新好了。"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = str(
+        client.post("/api/file-workspaces", json={"path": str(root), "create": False}).json()["id"]
+    )
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={
+            "text": "更新章节索引：书房",
+            "request_key": "idx-1",
+            "purpose": "update_chapter_index",
+            "index_paths": [chapter],
+        },
+    )
+    assert response.status_code == 202, response.text
+    events = _wait_until(client, workspace_id, response.json()["conversation_id"], _finished)
+
+    finished = [event for event in events if event["type"] == "tool_finished"]
+    assert [event["tool"] for event in finished] == ["read_file", "save_chapter_index"]
+    assert all(event["ok"] for event in finished), [e["summary"] for e in finished]
+    updated = next(event for event in events if event["type"] == "chapter_index_updated")
+    assert updated["path"] == chapter
+    assert updated["status"] == "valid"
+
+    index = client.get(f"/api/file-workspaces/{workspace_id}/chapter-index").json()
+    assert index["items"][0]["status"] == "valid"
+    assert index["items"][0]["summary"] == "侦探在书房发现脚印。"
+    # 索引任务不产生作品提交：正文没有被改动。
+    assert workspace.read(chapter).digest == created.digest
+
+
+# -- 修改范围 ---------------------------------------------------------------
+
+
+def test_reference_does_not_authorize_writing(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """作者把文件当参考，不等于允许修改：没有登记范围时写入被拒绝，文件不变。"""
+    chapter = "正文/0001 雨夜.md"
+    text = "# 雨夜\n\n侦探抵达旅馆。\n"
+    workspace = _create_workspace(tmp_path)
+    created = workspace.write(chapter, text, expected_digest=None)
+    provider = ScriptedProvider(
+        [
+            _tool_turn(
+                ToolCall(
+                    id="w1",
+                    name="write_file",
+                    arguments={
+                        "path": chapter,
+                        "text": "# 雨夜\n\n改写。\n",
+                        "digest": created.digest,
+                    },
+                )
+            ),
+            _text_turn("这一章的结构是先抑后扬。"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    accepted = _accept(
+        client,
+        workspace_id,
+        "参考第一章，说说结构",
+        context={"reference_paths": [chapter]},
+    )
+    events = _wait_until(client, workspace_id, accepted["conversation_id"], _finished)
+
+    kinds = [event["type"] for event in events]
+    assert "context_prepared" in kinds
+    assert "task_scope_set" not in kinds
+    failed = next(event for event in events if event["type"] == "tool_finished" and not event["ok"])
+    assert "TASK_SCOPE_REQUIRED_CONFLICT" in failed["summary"]
+    assert workspace.read(chapter).text == text
+
+
+def test_scope_is_recorded_and_writes_follow_it(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """登记范围后写入成功；范围事件带任务理解、授权原话与确切路径。"""
+    provider = ScriptedProvider(
+        [
+            _tool_turn(
+                ToolCall(
+                    id="s0",
+                    name="set_task_scope",
+                    arguments={
+                        "mode": "edit",
+                        "summary": "写第三章的问询",
+                        "authorization": "只改第三章",
+                        "grants": [{"action": "create", "path": "正文/0003 书房.md"}],
+                        "denied_paths": ["设定集/角色小传/林远.md"],
+                    },
+                ),
+                ToolCall(
+                    id="c1",
+                    name="write_file",
+                    arguments={"path": "正文/0003 书房.md", "text": "# 书房\n\n问询。\n"},
+                ),
+            ),
+            _text_turn("第三章写好了。"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    accepted = _accept(client, workspace_id, "只改第三章，写问询")
+    events = _wait_until(client, workspace_id, accepted["conversation_id"], _finished)
+
+    scope = next(event for event in events if event["type"] == "task_scope_set")
+    assert scope["version"] == 1
+    assert scope["summary"] == "写第三章的问询"
+    assert scope["authorization"] == "只改第三章"
+    assert scope["grants"] == [{"action": "create", "path": "正文/0003 书房.md"}]
+    assert scope["denied_paths"] == ["设定集/角色小传/林远.md"]
+    assert all(event["ok"] for event in events if event["type"] == "tool_finished")
+    assert (tmp_path / "雪山旅馆/正文/0003 书房.md").is_file()
+
+
+# -- 写后检查 ---------------------------------------------------------------
+
+
+def test_review_turn_publishes_report(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """显式检查任务：只读工具加保存报告，发布后接口能回看。"""
+    chapter = "正文/0003 书房.md"
+    text = "# 书房\n\n侦探在书房发现一枚脚印。\n\n林远说他一直在客厅。\n"
+    quote = "侦探在书房发现一枚脚印。"
+    workspace = _create_workspace(tmp_path)
+    created = workspace.write(chapter, text, expected_digest=None)
+    start = text.index(quote)
+    provider = ScriptedProvider(
+        [
+            _tool_turn(ToolCall(id="r1", name="read_file", arguments={"path": chapter})),
+            _tool_turn(
+                ToolCall(
+                    id="v1",
+                    name="save_review_report",
+                    arguments={
+                        "target_paths": [chapter],
+                        "requirement": "检查时间线",
+                        "status": "findings",
+                        "findings": [
+                            {
+                                "kind": "continuity",
+                                "certainty": "supported",
+                                "description": "不在场说法与书房脚印冲突。",
+                                "suggestion": "补一句解释。",
+                                "evidence": [
+                                    {
+                                        "path": chapter,
+                                        "digest": created.digest,
+                                        "start": start,
+                                        "end": start + len(quote),
+                                        "quote": quote,
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                )
+            ),
+            _text_turn("检查完成。"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={
+            "text": "检查第三章的时间线",
+            "request_key": "rev-1",
+            "purpose": "review",
+            "review_paths": [chapter],
+        },
+    )
+    assert response.status_code == 202, response.text
+    events = _wait_until(client, workspace_id, response.json()["conversation_id"], _finished)
+
+    assert any(event["type"] == "review_requested" for event in events)
+    finished = next(event for event in events if event["type"] == "review_finished")
+    assert finished["status"] == "findings"
+    assert finished["findings"][0]["description"] == "不在场说法与书房脚印冲突。"
+    assert [event["tool"] for event in events if event["type"] == "tool_finished"] == [
+        "read_file",
+        "save_review_report",
+    ]
+    assert events[-1]["status"] == "completed"
+
+    reports = client.get(f"/api/file-workspaces/{workspace_id}/reviews").json()
+    assert reports["items"][0]["freshness"] == "valid"
+    # 检查不产生作品改动，也不产生提交。
+    assert workspace.read(chapter).digest == created.digest
+
+
+def test_write_then_check_enters_readonly_phase(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """作者说「改完检查」：修改落盘后同一轮进入只读检查，工具换成检查工具集。"""
+    chapter = "正文/0003 书房.md"
+    text = "# 书房\n\n侦探在书房发现一枚脚印。\n"
+    workspace = _create_workspace(tmp_path)
+    created = workspace.write(chapter, text, expected_digest=None)
+    provider = ScriptedProvider(
+        [
+            _tool_turn(
+                ToolCall(id="r0", name="read_file", arguments={"path": chapter}),
+                ToolCall(
+                    id="s0",
+                    name="set_task_scope",
+                    arguments={
+                        "mode": "edit",
+                        "summary": "改写书房一段并检查时间线",
+                        "authorization": "改完检查时间线",
+                        "grants": [{"action": "update", "path": chapter}],
+                    },
+                ),
+                ToolCall(
+                    id="q1",
+                    name="request_review",
+                    arguments={
+                        "requirement": "检查时间线是否自相矛盾",
+                        "authorization": "改完检查时间线",
+                    },
+                ),
+                ToolCall(
+                    id="w1",
+                    name="write_file",
+                    arguments={
+                        "path": chapter,
+                        "text": "# 书房\n\n侦探在书房发现两枚脚印。\n",
+                        "digest": created.digest,
+                    },
+                ),
+            ),
+            _text_turn("改好了。"),
+            _tool_turn(
+                ToolCall(id="r2", name="read_file", arguments={"path": chapter}),
+                ToolCall(
+                    id="v2",
+                    name="save_review_report",
+                    arguments={
+                        "target_paths": [chapter],
+                        "requirement": "检查时间线是否自相矛盾",
+                        "status": "no_findings",
+                    },
+                ),
+            ),
+            _text_turn("检查完成，时间线一致。"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    accepted = _accept(client, workspace_id, "只改第三章，改完检查时间线")
+    events = _wait_until(client, workspace_id, accepted["conversation_id"], _finished)
+
+    tools = [event["tool"] for event in events if event["type"] == "tool_finished"]
+    assert tools == [
+        "read_file",
+        "set_task_scope",
+        "request_review",
+        "write_file",
+        "read_file",
+        "save_review_report",
+    ]
+    assert all(event["ok"] for event in events if event["type"] == "tool_finished"), [
+        (e["tool"], e["summary"]) for e in events if e["type"] == "tool_finished"
+    ]
+    review = next(event for event in events if event["type"] == "review_finished")
+    assert review["status"] == "no_findings"
+    assert events[-1]["status"] == "completed"
+    # 修改保留：检查阶段不撤销已经写入的内容。
+    assert "两枚脚印" in workspace.read(chapter).text
+
+
+def test_check_phase_shares_the_turn_budget(tmp_path: Path) -> None:
+    """写后检查不重新拿满回合：写作阶段用完了，就不再进入检查阶段。"""
+    chapter = "正文/0003 书房.md"
+    workspace = _create_workspace(tmp_path)
+    GitRepo(workspace.root).init()
+    created = workspace.write(chapter, "# 书房\n\n侦探在书房发现一枚脚印。\n", expected_digest=None)
+    provider = ScriptedProvider(
+        [
+            _tool_turn(
+                ToolCall(id="r0", name="read_file", arguments={"path": chapter}),
+                ToolCall(
+                    id="s0",
+                    name="set_task_scope",
+                    arguments={
+                        "mode": "edit",
+                        "summary": "改写书房一段并检查时间线",
+                        "authorization": "改完检查时间线",
+                        "grants": [{"action": "update", "path": chapter}],
+                    },
+                ),
+                ToolCall(
+                    id="q1",
+                    name="request_review",
+                    arguments={
+                        "requirement": "检查时间线是否自相矛盾",
+                        "authorization": "改完检查时间线",
+                    },
+                ),
+                ToolCall(
+                    id="w1",
+                    name="write_file",
+                    arguments={
+                        "path": chapter,
+                        "text": "# 书房\n\n侦探在书房发现两枚脚印。\n",
+                        "digest": created.digest,
+                    },
+                ),
+            ),
+            _text_turn("改好了。"),
+            _tool_turn(
+                ToolCall(id="r2", name="read_file", arguments={"path": chapter}),
+                ToolCall(
+                    id="v2",
+                    name="save_review_report",
+                    arguments={
+                        "target_paths": [chapter],
+                        "requirement": "检查时间线是否自相矛盾",
+                        "status": "no_findings",
+                    },
+                ),
+            ),
+            _text_turn("检查完成，时间线一致。"),
+        ]
+    )
+    store = ConversationStore(conversation_root(tmp_path / "state", "w1"))
+    service = TurnService(workspace, store, lambda: _snapshot(provider), max_turns=2)
+
+    async def scenario() -> list[dict[str, Any]]:
+        info = await service.accept("只改第三章，改完检查时间线", "k1")
+        await service.wait(info.turn_id)
+        return list(store.events(info.conversation_id))
+
+    events = asyncio.run(scenario())
+
+    # 两个回合都属于写作阶段；检查阶段没有剩余回合，不能再调用模型。
+    assert provider.calls == 2
+    review = next(event for event in events if event["type"] == "review_finished")
+    assert review["status"] == "incomplete"
+    assert "回合" in review["uncovered"][0]
+    assert events[-1]["status"] == "partial"
+    # 写作阶段的结果保留：检查没进入不能撤销已落盘的修改。
+    assert "两枚脚印" in workspace.read(chapter).text
