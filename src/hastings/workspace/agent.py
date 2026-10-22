@@ -521,6 +521,18 @@ def build_tools(
                         fix="先 read_file 读取当前内容，再登记它",
                         details={"path": path},
                     )
+                if not _quote_in_read_range(view.text, coverage.spans, quote):
+                    # 读过文件不等于读过这一段：关联证据要落在实际提供过的原文里。
+                    raise WorkspaceError(
+                        code="REFERENCE_EVIDENCE_INVALID",
+                        where=f"tools.register_references:{path}",
+                        why="这段引文所在的区间本轮没有提供给模型",
+                        fix="先用 read_file 读到包含这句原文的区间，再登记",
+                        details={
+                            "path": path,
+                            "read": [list(span) for span in coverage.spans],
+                        },
+                    )
             reference = run.materials.register(
                 Reference(
                     ref=SourceRef(view.path, view.digest),
@@ -1524,6 +1536,14 @@ def _action_list_argument(
             raise _input_error(name, f"包含不支持的操作：{item}")
         actions.append(cast(MutationAction, item))
     return tuple(actions)
+
+
+def _quote_in_read_range(text: str, spans: Sequence[tuple[int, int]], quote: str) -> bool:
+    """引文是否落在本轮实际提供过的某个区间里；忽略换行与空白差异。"""
+    target = " ".join(quote.split())
+    if not target:
+        return False
+    return any(target in " ".join(text[start:end].split()) for start, end in spans)
 
 
 def _mutation_arguments(value: JSONValue) -> tuple[Mutation, ...]:

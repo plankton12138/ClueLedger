@@ -21,6 +21,8 @@ C2 遗留的界面遗漏与检查阶段的回合预算。
 
 - `MaterialLedger.register` 改为合并：同一路径的 `required` 只保持或加严，`author_selected`
   类别保持，作者来源的引文与事件定位优先。模型再登记同一份文件只能补充说明。
+- `register_references` 的「发现的材料」也加区间判断：引文必须落在本轮实际提供过的区间里，
+  读过文件开头不能拿后面一段当关联证据。
 
 **检查证据（`workspace/review.py`）**
 
@@ -68,7 +70,7 @@ C2 遗留的界面遗漏与检查阶段的回合预算。
 
 | 检查 | 结果 |
 |---|---|
-| `uv run pytest -q` | 444 通过（C2 交付时 432，本阶段新增 12） |
+| `uv run pytest -q` | 445 通过（C2 交付时 432，本阶段新增 13） |
 | `uv run ruff check src tests` | 通过 |
 | `uv run mypy` | 78 个源文件通过 |
 | `npm test`（frontend） | 11 个文件、104 项通过（新增 2 项） |
@@ -82,6 +84,7 @@ C2 遗留的界面遗漏与检查阶段的回合预算。
 `test_tool_reregistration_cannot_bypass_a_fixed_scope`、
 `test_model_cannot_downgrade_an_author_selected_reference`、
 `test_register_merges_duplicate_paths_without_downgrading`、
+`test_discovered_reference_must_quote_a_read_range`、
 `test_evidence_must_lie_inside_the_provided_range`、
 `test_evidence_span_across_a_read_gap_is_rejected`、
 `test_evidence_inside_a_partial_read_passes`、`test_check_phase_shares_the_turn_budget`。
@@ -95,5 +98,3 @@ C2 遗留的界面遗漏与检查阶段的回合预算。
 - 新增流程（参考、范围、索引、检查）没有浏览器用例，现有浏览器用例仍只覆盖既有工作区与
   渲染回归。
 - 计划 §11.2 的七类真实模型任务仍未验收。
-- `register_references` 的「发现的材料」只核对引文出现在文件里，没有核对引文是否落在
-  本轮读过的区间内；与本次修掉的检查证据缺口属同一类问题，未在本阶段修改。

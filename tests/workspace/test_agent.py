@@ -335,6 +335,32 @@ async def test_discovered_reference_must_be_read_first(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_discovered_reference_must_quote_a_read_range(tmp_path: Path) -> None:
+    """读过文件开头不能拿后面的原文当关联证据：引文要落在实际提供过的区间。"""
+    path = "正文/0002 参考章.md"
+    workspace, tools, _ = _setup(tmp_path)
+    workspace.write(
+        path, "# 参考章\n\n书房里有一枚脚印。\n\n窗外的雪停了。\n", expected_digest=None
+    )
+    await _call(tools["read_file"], path=path, limit=1)
+
+    with pytest.raises(WorkspaceError) as unprovided:
+        await _call(
+            tools["register_references"],
+            references=[{"path": path, "kind": "discovered", "quote": "窗外的雪停了。"}],
+        )
+    assert _code(unprovided) == "REFERENCE_EVIDENCE_INVALID"
+    assert unprovided.value.details["path"] == path
+
+    await _call(tools["read_file"], path=path)
+    accepted = await _call(
+        tools["register_references"],
+        references=[{"path": path, "kind": "discovered", "quote": "窗外的雪停了。"}],
+    )
+    assert accepted["references"][0]["kind"] == "discovered"
+
+
+@pytest.mark.anyio
 async def test_register_references_rejects_other_kinds(tmp_path: Path) -> None:
     workspace, tools, _ = _setup(tmp_path)
     workspace.write("正文/0002 参考章.md", "# 参考章\n", expected_digest=None)

@@ -335,7 +335,8 @@ async def test_model_cannot_downgrade_an_author_selected_reference(tmp_path: Pat
             SourceRef(reference.path, reference.digest), kind="author_selected", required=True
         )
     )
-    await _call(tools["read_file"], path=reference.path, limit=2)
+    # 只读到第三行：引文落在读过的区间里，全文仍未读完。
+    await _call(tools["read_file"], path=reference.path, limit=3)
 
     registered = await _call(
         tools["register_references"],
