@@ -85,7 +85,8 @@ class ScopeDraft:
 
     ``authorization`` 是作者原话里的短引文，``authorization_seq`` 定位那条消息；
     承接旧要求时 ``carried_from_seq`` 记被承接的作者请求，两者都要能在本轮可见的
-    作者消息里找到。``extendable`` 对应「同步相关章节」这类可发现范围。
+    作者消息里找到。``extendable`` 对应「同步相关章节」这类可发现范围；追加时
+    ``evidence_path`` 与 ``note`` 记下依据来自哪份文件的哪句原文。
     """
 
     mode: ScopeMode
@@ -98,6 +99,7 @@ class ScopeDraft:
     required_references: tuple[str, ...] = ()
     extendable: bool = False
     extend_actions: tuple[MutationAction, ...] = ()
+    evidence_path: str = ""
     note: str = ""
 
 
@@ -110,7 +112,7 @@ class TaskScope:
     scope: WriteScope
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "version": self.version,
             "mode": self.scope.mode,
             "summary": self.draft.summary,
@@ -123,6 +125,11 @@ class TaskScope:
             "extendable": self.draft.extendable,
             "extend_actions": list(self.draft.extend_actions),
         }
+        # 依据只在追加时存在：登记事件保持原来的字段，不写两个空值。
+        if self.draft.evidence_path:
+            payload["evidence_path"] = self.draft.evidence_path
+            payload["evidence"] = self.draft.note
+        return payload
 
 
 class ScopeController:
@@ -174,10 +181,15 @@ class ScopeController:
         *,
         version: int,
         grants: Sequence[Mutation],
+        evidence_path: str,
         evidence: str,
         author_texts: Sequence[tuple[int, str]],
     ) -> TaskScope:
-        """在可发现范围内追加具体路径；保留原禁止项与操作类别限制。"""
+        """在可发现范围内追加具体路径；保留原禁止项与操作类别限制。
+
+        依据必须是「哪份文件 + 哪句原文」。这里只核对结构；这句原文是否真的在本轮读过、
+        是否落在提供给模型的区间里，由工具入口用读取记录核对（本模块不持有材料状态）。
+        """
         current = self._require_scope()
         if version != current.version:
             raise WorkspaceError(
@@ -230,6 +242,14 @@ class ScopeController:
                 why="追加范围需要说明实际读到的关联证据",
                 fix="先读取要追加的文件，再用其中的短引文说明为什么它属于本次任务",
             )
+        if not evidence_path.strip():
+            raise WorkspaceError(
+                code="TASK_SCOPE_EVIDENCE_INVALID",
+                where="task_scope.extend",
+                why="追加范围要说明这句原文来自哪份文件",
+                fix="带上实际读过并引用的文件路径，与 evidence 一起给出",
+            )
+        _validate_path(evidence_path, where="task_scope.extend")
         merged = tuple(dict.fromkeys((*current.draft.grants, *grants)))
         draft = ScopeDraft(
             mode=current.draft.mode,
@@ -242,6 +262,7 @@ class ScopeController:
             required_references=current.draft.required_references,
             extendable=True,
             extend_actions=current.draft.extend_actions,
+            evidence_path=evidence_path,
             note=evidence.strip()[:200],
         )
         _validate_draft(draft, author_texts)

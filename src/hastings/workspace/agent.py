@@ -41,6 +41,7 @@ from hastings.workspace.materials import (
     bounded_search_hits,
     read_slice,
     require_author_quote,
+    require_read_quote,
 )
 from hastings.workspace.review import (
     REVIEW_INSTRUCTIONS,
@@ -504,35 +505,13 @@ def build_tools(
                         fix="先 read_file 读取该文件，再引用其中一句说明为什么相关",
                         details={"path": path},
                     )
-                if " ".join(quote.split()) not in " ".join(view.text.split()):
-                    raise WorkspaceError(
-                        code="REFERENCE_EVIDENCE_INVALID",
-                        where=f"tools.register_references:{path}",
-                        why="引文不在这个文件的当前内容里",
-                        fix="引用该文件里确实存在的一句原文；不要凭记忆写",
-                        details={"path": path},
-                    )
-                coverage = run.materials.coverage(path)
-                if coverage is None or coverage.ref.digest != view.digest:
-                    raise WorkspaceError(
-                        code="REFERENCE_EVIDENCE_INVALID",
-                        where=f"tools.register_references:{path}",
-                        why="这个文件本轮还没有读取过，不能作为发现的材料",
-                        fix="先 read_file 读取当前内容，再登记它",
-                        details={"path": path},
-                    )
-                if not _quote_in_read_range(view.text, coverage.spans, quote):
-                    # 读过文件不等于读过这一段：关联证据要落在实际提供过的原文里。
-                    raise WorkspaceError(
-                        code="REFERENCE_EVIDENCE_INVALID",
-                        where=f"tools.register_references:{path}",
-                        why="这段引文所在的区间本轮没有提供给模型",
-                        fix="先用 read_file 读到包含这句原文的区间，再登记",
-                        details={
-                            "path": path,
-                            "read": [list(span) for span in coverage.spans],
-                        },
-                    )
+                require_read_quote(
+                    workspace,
+                    run.materials,
+                    path=path,
+                    quote=quote,
+                    where=f"tools.register_references:{path}",
+                )
             reference = run.materials.register(
                 Reference(
                     ref=SourceRef(view.path, view.digest),
@@ -593,10 +572,21 @@ def build_tools(
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
         del tool_call_id, signal, on_update
+        evidence_path = _text_argument(arguments, "evidence_path")
+        evidence = _text_argument(arguments, "evidence")
+        # 依据必须来自本轮真正提供给模型的原文：先读、后引，且引文在已提供的区间里。
+        require_read_quote(
+            workspace,
+            run.materials,
+            path=evidence_path,
+            quote=evidence,
+            where=f"tools.extend_task_scope:{evidence_path}",
+        )
         scope = run.scope.extend(
             version=_int_argument(arguments, "version", default=0, minimum=0),
             grants=_mutation_arguments(arguments.get("grants")),
-            evidence=_text_argument(arguments, "evidence"),
+            evidence_path=evidence_path,
+            evidence=evidence,
             author_texts=run.author_messages,
         )
         run.record("task_scope_extended", scope.to_dict())
@@ -954,8 +944,8 @@ def build_tools(
             name="extend_task_scope",
             label="追加修改范围",
             description=(
-                "在可发现范围内追加与原目标有关的具体文件；必须说明实际读到的关联证据，"
-                "并带上当前范围版本。"
+                "在可发现范围内追加与原目标有关的具体文件；必须给出这句原文来自哪份文件、"
+                "原文本身，并带上当前范围版本。"
             ),
             parameters={
                 "type": "object",
@@ -977,12 +967,16 @@ def build_tools(
                             "additionalProperties": False,
                         },
                     },
+                    "evidence_path": {
+                        "type": "string",
+                        "description": "这句原文来自哪份文件：必须本轮已读过",
+                    },
                     "evidence": {
                         "type": "string",
                         "description": "为什么这个文件属于本次任务：引用实际读到的原文",
                     },
                 },
-                "required": ["version", "grants", "evidence"],
+                "required": ["version", "grants", "evidence_path", "evidence"],
                 "additionalProperties": False,
             },
             execute_fn=extend_task_scope,
@@ -1536,14 +1530,6 @@ def _action_list_argument(
             raise _input_error(name, f"包含不支持的操作：{item}")
         actions.append(cast(MutationAction, item))
     return tuple(actions)
-
-
-def _quote_in_read_range(text: str, spans: Sequence[tuple[int, int]], quote: str) -> bool:
-    """引文是否落在本轮实际提供过的某个区间里；忽略换行与空白差异。"""
-    target = " ".join(quote.split())
-    if not target:
-        return False
-    return any(target in " ".join(text[start:end].split()) for start, end in spans)
 
 
 def _mutation_arguments(value: JSONValue) -> tuple[Mutation, ...]:

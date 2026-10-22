@@ -73,12 +73,17 @@ npm run build
 ```powershell
 npm test -- --no-file-parallelism
 npm run build
-npm run test:e2e
+npm run test:e2e          # workspace（不调模型）+ online（在线模型）
+npm run test:e2e:local    # 只跑不调模型的确定性部分
+npm run test:e2e:online   # 只跑在线模型流程
 ```
 
-端到端测试会构建前端、启动真实后端并经接口准备作品，不调用模型。`e2e/chat-rendering.spec.ts`
-是例外：它用受控 SSE 夹具替换事件来源，渲染真实对话组件，并在测试构建里统计 Markdown 解析
-与轮次渲染次数，用来守住「折叠不解析、合批只重绘变化的一轮」。涉及模型的走查与语义验收接
-在线模型端点，不用本地模型（见[开发约定](../AGENTS.md)）。当前验证结果见[0.6 运行说明](../dev-notes/v0.6/release.md)；模型连接的历史真实链路见[验证材料](../dev-notes/v0.4/artifacts/v04-9-verification.md)，不算本次重新验证。
+端到端测试会构建前端、启动真实后端并经接口准备作品。`workspace` 项目不调用模型；
+`online` 项目真的调用在线模型，检查「说话 → 登记范围 → 写入 → 检查」在浏览器里接通，
+断言只放可判定的事实（哪些文件变了、禁止文件的指纹、事件里的范围与报告），失败按
+端点/网络、产品接线、模型理解三类留证。`e2e/chat-rendering.spec.ts` 是受控 SSE 夹具：
+渲染真实对话组件，并在测试构建里统计 Markdown 解析与轮次渲染次数，用来守住「折叠不解析、
+合批只重绘变化的一轮」。涉及模型的走查与语义验收一律接在线模型端点，不用本地模型
+（见[开发约定](../AGENTS.md)）。当前验证结果见[0.6 运行说明](../dev-notes/v0.6/release.md)；模型连接的历史真实链路见[验证材料](../dev-notes/v0.4/artifacts/v04-9-verification.md)，不算本次重新验证。
 
 本机并行运行 vitest 曾出现系统临时目录 `ssr\*` 的 EPERM，症状是只跑完部分文件但退出码仍为 0。验证使用 `--no-file-parallelism` 串行执行，并核对完整结果。

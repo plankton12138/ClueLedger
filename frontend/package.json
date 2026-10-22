@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:local": "playwright test --project=workspace",
+    "test:e2e:online": "playwright test --project=online"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.24",

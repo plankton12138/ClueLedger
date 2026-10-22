@@ -16,6 +16,9 @@ C2 遗留的界面遗漏与检查阶段的回合预算。
   禁止项、不能把固定范围改成可追加范围、不能放宽可追加的操作类别。改成只读时不要求保留
   禁止项（只读范围没有写权限），但重新登记回修改范围仍受「不新增操作」限制。
 - 扩大范围仍只有 `extend_task_scope` 一条路：要求可发现范围、操作类别白名单与关联证据。
+- 追加的证据从「一段非空文字」改为「依据文件 + 原文引文」（`evidence_path` + `evidence`）：
+  工具入口用本轮读取记录核对这句原文确实在提供给模型的区间里，凭印象写的理由不能追加。
+  事件里记下依据文件与引文，回看能看出这次追加读的是什么。
 
 **参考材料（`workspace/materials.py`）**
 
@@ -70,7 +73,7 @@ C2 遗留的界面遗漏与检查阶段的回合预算。
 
 | 检查 | 结果 |
 |---|---|
-| `uv run pytest -q` | 445 通过（C2 交付时 432，本阶段新增 13） |
+| `uv run pytest -q` | 446 通过（C2 交付时 432，本阶段新增 14） |
 | `uv run ruff check src tests` | 通过 |
 | `uv run mypy` | 78 个源文件通过 |
 | `npm test`（frontend） | 11 个文件、104 项通过（新增 2 项） |
@@ -85,6 +88,7 @@ C2 遗留的界面遗漏与检查阶段的回合预算。
 `test_model_cannot_downgrade_an_author_selected_reference`、
 `test_register_merges_duplicate_paths_without_downgrading`、
 `test_discovered_reference_must_quote_a_read_range`、
+`test_extend_requires_evidence_from_a_read_range`、
 `test_evidence_must_lie_inside_the_provided_range`、
 `test_evidence_span_across_a_read_gap_is_rejected`、
 `test_evidence_inside_a_partial_read_passes`、`test_check_phase_shares_the_turn_budget`。
@@ -95,6 +99,5 @@ C2 遗留的界面遗漏与检查阶段的回合预算。
 
 ## 偏差与未完成项
 
-- 新增流程（参考、范围、索引、检查）没有浏览器用例，现有浏览器用例仍只覆盖既有工作区与
-  渲染回归。
-- 计划 §11.2 的七类真实模型任务仍未验收。
+- 浏览器验收与七类真实模型任务不在本阶段范围内，由 [V06-D2 在线验收](V06-D2-acceptance.md)
+  承接；本阶段只保证受控 provider 下的规则与接线。

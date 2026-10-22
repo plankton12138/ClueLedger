@@ -53,6 +53,7 @@ __all__ = [
     "prepare_references",
     "read_slice",
     "require_author_quote",
+    "require_read_quote",
     "verify_context",
     "ContextRequest",
     "ContextSnapshot",
@@ -463,6 +464,66 @@ def verify_context(workspace: Workspace, snapshot: ContextSnapshot) -> None:
             why="受理之后参考文件被改动，这一轮不能按旧版本继续",
             fix="刷新后重新发送；需要新内容时重新选择参考",
             details={"sources": stale},
+        )
+
+
+def require_read_quote(
+    workspace: Workspace,
+    ledger: MaterialLedger,
+    *,
+    path: str,
+    quote: str,
+    where: str,
+) -> None:
+    """核验一段引文确实来自本轮提供给模型的原文。
+
+    检查顺序是「非空 → 文件存在 → 这个版本读过 → 引文落在已提供的区间里」。凭记忆写一句、
+    读过文件开头却引用后面一段、引用一个本轮没打开过的文件，都过不了。这段原文是否真的
+    「与任务相关」属于任务理解，不在程序判断范围内。
+    """
+    clean = " ".join(quote.split())
+    if not clean:
+        raise WorkspaceError(
+            code="REFERENCE_EVIDENCE_INVALID",
+            where=where,
+            why="需要一段实际读到的原文作为依据",
+            fix="先 read_file 读取该文件，再引用其中一句原文；不要用自己的概括",
+            details={"path": path},
+        )
+    try:
+        view = workspace.read(path)
+    except WorkspaceError as exc:
+        raise WorkspaceError(
+            code="CONTEXT_SOURCE_NOT_FOUND",
+            where=where,
+            why=f"引文所在文件当前不可用：{path}（{exc.why}）",
+            fix="刷新目录后重新读取；文件可能已被移动或删除",
+            details={"path": path},
+        ) from exc
+    coverage = ledger.coverage(path)
+    if coverage is None or coverage.ref.digest != view.digest:
+        raise WorkspaceError(
+            code="REFERENCE_EVIDENCE_INVALID",
+            where=where,
+            why="这个文件本轮还没有读取过，不能作为依据",
+            fix="先 read_file 读取当前内容，再引用其中的原文",
+            details={"path": path},
+        )
+    if clean not in " ".join(view.text.split()):
+        raise WorkspaceError(
+            code="REFERENCE_EVIDENCE_INVALID",
+            where=where,
+            why="引文不在这个文件的当前内容里",
+            fix="引用该文件里确实存在的一句原文；不要凭记忆写",
+            details={"path": path},
+        )
+    if not any(clean in " ".join(view.text[start:end].split()) for start, end in coverage.spans):
+        raise WorkspaceError(
+            code="REFERENCE_EVIDENCE_INVALID",
+            where=where,
+            why="这段引文所在的区间本轮没有提供给模型",
+            fix="先用 read_file 读到包含这句原文的区间，再引用",
+            details={"path": path, "read": [list(span) for span in coverage.spans]},
         )
 
 

@@ -15,6 +15,7 @@
 | 只读检查、报告与失效（已实施） | [V06-C1 只读检查](notes/V06-C1-review.md) |
 | 版本升级、模块与运行说明、全量验证（已实施） | [V06-C2 整体交付](notes/V06-C2-delivery.md) |
 | 三处约束加固、检查回合预算与界面收口（已实施） | [V06-D1 约束加固与界面收口](notes/V06-D1-constraints.md) |
+| 在线模型的浏览器流程与七类任务验收（已执行） | [V06-D2 在线模型验收](notes/V06-D2-acceptance.md) |
 | 0.5 章序与人物标签的当前实现 | [文件工作区与角色小传](../v0.5/modules/file-workspace.md) |
 | 当前模块说明 | [模块导航](modules/README.md) |
 | 运行与本次验证 | [运行说明](release.md) |

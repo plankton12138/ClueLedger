@@ -222,6 +222,7 @@ def test_reregistration_cannot_switch_a_fixed_scope_to_extendable() -> None:
         controller.extend(
             version=1,
             grants=(Mutation("update", "正文/0004 别章.md"),),
+            evidence_path="正文/0004 别章.md",
             evidence="相关章节",
             author_texts=_AUTHOR,
         )
@@ -315,6 +316,7 @@ def test_versions_advance_and_old_versions_cannot_extend() -> None:
         controller.extend(
             version=1,
             grants=(Mutation("update", "正文/0004 别章.md"),),
+            evidence_path=_CHAPTER,
             evidence="第三章提到了这次问询",
             author_texts=_AUTHOR,
         )
@@ -328,6 +330,7 @@ def test_fixed_scope_cannot_be_extended() -> None:
         controller.extend(
             version=1,
             grants=(Mutation("update", "正文/0004 别章.md"),),
+            evidence_path=_CHAPTER,
             evidence="相关章节",
             author_texts=_AUTHOR,
         )
@@ -349,6 +352,7 @@ def test_extend_adds_paths_but_keeps_limits() -> None:
     extended = controller.extend(
         version=1,
         grants=(Mutation("update", "正文/0004 书房外的脚印.md"),),
+        evidence_path="正文/0004 书房外的脚印.md",
         evidence="第四章开头复述了这次问询",
         author_texts=_AUTHOR,
     )
@@ -363,6 +367,7 @@ def test_extend_adds_paths_but_keeps_limits() -> None:
         controller.extend(
             version=2,
             grants=(Mutation("delete", "正文/0004 书房外的脚印.md"),),
+            evidence_path="正文/0004 书房外的脚印.md",
             evidence="顺便删掉",
             author_texts=_AUTHOR,
         )
@@ -379,6 +384,7 @@ def test_extend_requires_evidence() -> None:
         controller.extend(
             version=1,
             grants=(Mutation("update", "正文/0004 别章.md"),),
+            evidence_path="正文/0004 别章.md",
             evidence="   ",
             author_texts=_AUTHOR,
         )
@@ -508,9 +514,11 @@ async def test_tool_reregistration_cannot_bypass_a_fixed_scope(tmp_path: Path) -
 
 @pytest.mark.anyio
 async def test_scope_tools_write_events(tmp_path: Path) -> None:
-    _, tools, run = _tools(tmp_path)
+    workspace, tools, run = _tools(tmp_path)
     events: list[tuple[str, dict[str, Any]]] = []
     run.emit = lambda kind, payload: events.append((kind, payload))
+    chapter = "正文/0004 书房外的脚印.md"
+    workspace.write(chapter, "# 书房外的脚印\n\n第四章复述了这次问询。\n", expected_digest=None)
 
     await _call(
         tools["set_task_scope"],
@@ -521,24 +529,83 @@ async def test_scope_tools_write_events(tmp_path: Path) -> None:
         extendable=True,
         extend_actions=["update"],
     )
+    await _call(tools["read_file"], path=chapter)
     await _call(
         tools["extend_task_scope"],
         version=1,
-        grants=[{"action": "update", "path": "正文/0004 书房外的脚印.md"}],
-        evidence="第四章复述了这次问询",
+        grants=[{"action": "update", "path": chapter}],
+        evidence_path=chapter,
+        evidence="第四章复述了这次问询。",
     )
 
-    assert [kind for kind, _ in events] == ["task_scope_set", "task_scope_extended"]
-    first = events[0][1]
+    assert [kind for kind, _ in events if kind.startswith("task_scope")] == [
+        "task_scope_set",
+        "task_scope_extended",
+    ]
+    first = next(payload for kind, payload in events if kind == "task_scope_set")
     assert first["version"] == 1
     assert first["grants"] == [{"action": "update", "path": _CHAPTER}]
     assert first["authorization"] == "只改第三章"
-    second = events[1][1]
+    # 登记事件不写空的依据字段。
+    assert "evidence_path" not in first
+    second = next(payload for kind, payload in events if kind == "task_scope_extended")
     assert second["version"] == 2
-    assert [item["path"] for item in second["grants"]] == [
-        _CHAPTER,
-        "正文/0004 书房外的脚印.md",
-    ]
+    assert [item["path"] for item in second["grants"]] == [_CHAPTER, chapter]
+    assert second["evidence_path"] == chapter
+    assert second["evidence"] == "第四章复述了这次问询。"
+
+
+@pytest.mark.anyio
+async def test_extend_requires_evidence_from_a_read_range(tmp_path: Path) -> None:
+    """关联证据不能凭印象写：必须来自本轮读过、且落在已提供区间里的原文。"""
+    workspace, tools, run = _tools(tmp_path)
+    chapter = "正文/0004 书房外的脚印.md"
+    workspace.write(chapter, "# 书房外的脚印\n\n雪地上有两行脚印。\n", expected_digest=None)
+    await _call(
+        tools["set_task_scope"],
+        mode="edit",
+        summary="改写第三章的问询",
+        authorization="只改第三章",
+        grants=[{"action": "update", "path": _CHAPTER}],
+        extendable=True,
+        extend_actions=["update"],
+    )
+
+    # 一份文件都没读过，随手写个理由。
+    with pytest.raises(WorkspaceError) as unread:
+        await _call(
+            tools["extend_task_scope"],
+            version=1,
+            grants=[{"action": "update", "path": chapter}],
+            evidence_path=chapter,
+            evidence="第四章和这一章有关",
+        )
+    assert _code(unread) == "REFERENCE_EVIDENCE_INVALID"
+    assert run.scope.current is not None and run.scope.current.version == 1
+
+    # 只读了标题，却引用下面一段。
+    await _call(tools["read_file"], path=chapter, limit=1)
+    with pytest.raises(WorkspaceError) as outside_range:
+        await _call(
+            tools["extend_task_scope"],
+            version=1,
+            grants=[{"action": "update", "path": chapter}],
+            evidence_path=chapter,
+            evidence="雪地上有两行脚印。",
+        )
+    assert _code(outside_range) == "REFERENCE_EVIDENCE_INVALID"
+
+    # 读完再引用同一句，才允许追加。
+    await _call(tools["read_file"], path=chapter)
+    extended = await _call(
+        tools["extend_task_scope"],
+        version=1,
+        grants=[{"action": "update", "path": chapter}],
+        evidence_path=chapter,
+        evidence="雪地上有两行脚印。",
+    )
+    assert extended["version"] == 2
+    assert extended["evidence_path"] == chapter
 
 
 def test_continue_must_carry_an_earlier_author_request() -> None:
