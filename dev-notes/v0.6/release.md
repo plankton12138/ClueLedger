@@ -36,28 +36,27 @@ uv run python -m hastings.server --workspace <作品目录>
 
 ## 本次验证
 
-2026-10-22，本次工作区代码验证结果如下；历史验证不计入本次结果。本轮在 C2 交付后修掉了
-三处可以绕过的约束（重复登记放宽范围、参考必读被降级、检查证据引用未提供的区间），并补上
-界面遗漏与检查阶段回合预算，改动与取舍见[V06-D1 约束加固与界面收口](notes/V06-D1-constraints.md)。
+2026-10-22，本次修正在线验收器的空改动与后续轮误判，补齐浏览器页面断言和报告响应的
+目标版本字段。以下只列本次重新执行的验证，详见[V06-D2 在线模型验收](notes/V06-D2-acceptance.md)。
+此前的约束加固与阶段证据见[V06-D1](notes/V06-D1-constraints.md)。
 
 | 检查 | 结果与证据范围 |
 |---|---|
-| `uv run pytest -q` | 446 通过；在 432 项之上新增 14 项：重复登记只能收窄（含工具层复现）、禁止项不能撤销、固定范围不能改成可追加、参考必读不可降级、发现的材料与范围追加的引文必须落在已读区间、检查证据必须落在已提供区间、检查阶段共享回合预算 |
-| `uv run ruff check src tests` | 通过 |
-| `uv run mypy` | 78 个源文件通过（`tau_ai`、`tau_agent`、`hastings`） |
-| `npm test -- --no-file-parallelism`（frontend） | 11 个文件、104 项通过；新增目录「加入对话」只追加参考、发送后保留受理期间新选的参考 |
+| `uv run pytest -q --basetemp data/test-tmp/d2-full-regression -o tmp_path_retention_count=100` | 460 通过，含十四项验收器回归；报告接口补字段前执行 |
+| `uv run pytest tests/workspace/test_review.py -q --basetemp data/test-tmp/d2-review-interface -o tmp_path_retention_count=100` | 报告接口补字段后 17 项通过，含目标快照与失效后的旧版本保留 |
+| `uv run ruff check src/hastings scripts/model_acceptance.py tests` | 通过 |
+| `uv run mypy src/hastings` | 42 个源文件通过 |
+| `npm test -- --no-file-parallelism`（frontend） | 11 个文件、104 项通过 |
 | `npm run build`（frontend） | 通过 |
-| `npm run test:e2e:local`（frontend，端口 8931） | 16 项通过；在既有 15 项之上新增「目录里的加入对话把文件放进本轮参考」 |
-| `npm run test:e2e:online`（frontend，端口 8931，在线模型） | 2 项通过：只改指定章节、改完检查；失败分类与证据留在 `data/test-tmp/e2e-model/` |
-| `uv run python scripts/model_acceptance.py`（在线模型） | 7 类任务全部通过，明细与原件见 [V06-D2](notes/V06-D2-acceptance.md) |
+| 在线浏览器（frontend，端口 8946） | 首轮参考/范围/草稿、索引/过期/重读两条通过；报告流程因接口缺字段失败，修复后仅定向复测该条，通过。不是一次三条全绿；[命令与证据](artifacts/d2-browser-validation-20261022.md) |
+| `uv run python scripts/model_acceptance.py`（在线模型） | 七个类别、十二个独立样例的必需检查通过；范围追加观察项未覆盖，明细与原件见 [V06-D2](notes/V06-D2-acceptance.md) |
 
 分阶段证据（含每条用例清单）见各[阶段记录](README.md)；以下事项**未验证或未实施**，
 不作为当前能力：
 
-- **浏览器在线流程只覆盖两条**：范围登记与写后检查已有在线用例；参考选择、索引面板、
-  草稿切换与外部改源仍只靠接口层用例与不调模型的断言。
+- **不调模型的完整浏览器项目本次未重跑**：此前的通过结果保留在阶段历史，不计入本次验证。
 - **真实模型验收只覆盖一个模型**：结论只对 `deepseek-flash` 成立，不外推到其他模型；
-  计划 §11.2 的七类任务由[驱动器](../../../scripts/model_acceptance.py)自动核对可判定事实，
+  七类任务由[驱动器](../../scripts/model_acceptance.py)自动核对可判定事实，
   文笔、伏笔与人物动机等判断需要作者看样例。
 - **范围追加的证据要求未在在线样例中出现**：模型在同步任务里选择一次登记完整范围；
   该约束由工具层用例覆盖。

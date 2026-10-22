@@ -403,6 +403,7 @@ export interface ReviewReport {
   report_id: string;
   turn_id: string;
   target_paths: string[];
+  target_digests: [string, string][];
   requirement: string;
   status: ReviewStatus;
   freshness: "valid" | "stale" | "source_missing";

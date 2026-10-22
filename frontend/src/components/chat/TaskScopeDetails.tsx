@@ -29,7 +29,7 @@ export default function TaskScopeDetails({ scope }: Props) {
   const title =
     scope.mode === "read_only" ? "本轮只读" : `本轮范围 v${scope.version} · ${scope.grants.length} 项`;
   return (
-    <details className="mt-1 text-[11px] text-sub">
+    <details className="mt-1 text-[11px] text-sub" data-testid="task-scope">
       <summary className="cursor-pointer text-[10px] text-mute">{title}</summary>
       <ul className="mt-1 flex flex-col gap-0.5">
         <li>任务：{scope.summary}</li>

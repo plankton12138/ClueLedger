@@ -93,7 +93,7 @@ function ChatTurnView({
       )}
 
       {result && (
-        <div className={`chat-card ${result.status === "completed" ? "result" : "warn"}`}>
+        <div className={`chat-card ${result.status === "completed" ? "result" : "warn"}`} data-testid="turn-result" data-status={result.status}>
           <div className="flex items-center gap-2">
             <span className="font-bold">{STATUS_LABEL[result.status] ?? result.status}</span>
             <span className="text-sub">{RECORDING_LABEL[result.recording] ?? result.recording}</span>

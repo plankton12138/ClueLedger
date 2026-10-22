@@ -74,7 +74,7 @@ export default function ReviewReportView({ review }: Props) {
         : "text-red";
 
   return (
-    <div className="chat-card mt-1 text-[11px]">
+    <div className="chat-card mt-1 text-[11px]" data-testid="review-report" data-status={review.status}>
       <div className="flex items-center gap-2">
         <span className={`font-bold ${tone}`}>{STATUS_LABEL[review.status]}</span>
         {review.findings.length > 0 && (

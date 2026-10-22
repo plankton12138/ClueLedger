@@ -396,11 +396,13 @@ def test_review_endpoint_lists_reports_with_freshness(tmp_path: Path) -> None:
     body = client.get(f"/api/file-workspaces/{workspace_id}/reviews").json()
     assert len(body["items"]) == 1
     assert body["items"][0]["freshness"] == "valid"
+    assert body["items"][0]["target_digests"] == [[_CHAPTER, workspace.read(_CHAPTER).digest]]
     assert body["items"][0]["findings"][0]["evidence"][0]["quote"] == _QUOTE
 
     (root / _CHAPTER).write_text(_TEXT + "\n改过。\n", encoding="utf-8")
     stale = client.get(f"/api/file-workspaces/{workspace_id}/reviews").json()
     assert stale["items"][0]["freshness"] == "stale"
+    assert stale["items"][0]["target_digests"] == body["items"][0]["target_digests"]
 
 
 def test_review_purpose_requires_targets(tmp_path: Path) -> None:

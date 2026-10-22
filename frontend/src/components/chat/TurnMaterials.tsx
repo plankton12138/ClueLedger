@@ -22,7 +22,7 @@ function status(material: TurnMaterial): string {
 export default function TurnMaterials({ materials }: Props) {
   if (materials.length === 0) return null;
   return (
-    <details className="mt-1 text-[11px] text-sub">
+    <details className="mt-1 text-[11px] text-sub" data-testid="turn-materials">
       <summary className="cursor-pointer text-[10px] text-mute">
         本轮材料 {materials.length} 份
       </summary>

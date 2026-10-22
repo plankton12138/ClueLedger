@@ -366,6 +366,7 @@ class ReviewReportView(BaseModel):
     report_id: str
     turn_id: str
     target_paths: list[str]
+    target_digests: list[tuple[str, str]]
     requirement: str
     status: Literal["findings", "no_findings", "incomplete"]
     freshness: Literal["valid", "stale", "source_missing"]
@@ -889,6 +890,7 @@ def _review_item(report: ReviewReport) -> ReviewReportView:
         report_id=report.report_id,
         turn_id=report.turn_id,
         target_paths=list(report.target_paths),
+        target_digests=list(report.target_digests),
         requirement=report.requirement,
         status=report.status,
         freshness=report.freshness,

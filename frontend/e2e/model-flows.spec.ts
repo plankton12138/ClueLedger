@@ -2,17 +2,19 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ReviewReport } from "../src/api/workspace";
 
 /**
  * 在线模型浏览器验收（0.6 V06-D2）。
  *
  * 与 `workspace.spec.ts` 的区别：这里真的调用模型，检查「作者说话 → 模型登记范围 →
  * 写入 → 检查」在浏览器里是否接通。断言只放在可判定的事实上：哪些文件变了、禁止文件
- * 的指纹是否没变、事件里有没有范围登记与检查报告。文字好不好不在自动判断范围内，
+ * 的指纹是否没变、事件与页面是否展示范围与完整报告、草稿参考是否恢复、索引是否过期。
+ * 文字好不好不在自动判断范围内，
  * 由作者看样例。
  *
- * 失败分类：端点/网络、产品接线或规则、模型理解。首次失败直接留证，不重试；
- * 分类只用来判断下一步查哪里，不改变失败本身。
+ * 首次失败直接留证，不重试；端点与工具错误以外先记为待判读，
+ * 再核对脚本、夹具、产品接线或模型理解，分类不改变失败本身。
  */
 
 const PORT = process.env.HASTINGS_E2E_PORT ?? "8931";
@@ -20,6 +22,7 @@ const BASE = `http://127.0.0.1:${PORT}/api/file-workspaces`;
 const ARTIFACTS = join(process.cwd(), "..", "data", "test-tmp", "e2e-model");
 
 const CHAPTER = "正文/0003 书房.md";
+const FIRST = "正文/0001 雨夜.md";
 const OTHER = "正文/0002 走廊.md";
 const TRUTH = "设定集/真相.md";
 
@@ -34,11 +37,38 @@ const REVIEW_PROMPT =
   "把第三章《书房》里「窗外雪停了」改成「窗外又飘起雪」。改完检查有没有前后矛盾。";
 
 let bindingId = "";
+let workspaceRoot = "";
 
 type WorkspaceEvent = Record<string, unknown> & { type?: string };
 
-test.beforeAll(() => {
+test.beforeAll(async ({ request }) => {
   mkdirSync(ARTIFACTS, { recursive: true });
+  const response = await request.get(`http://127.0.0.1:${PORT}/api/model-connections`);
+  expect(response.ok()).toBeTruthy();
+  const config = await response.json();
+  const connection = config.connections.find(
+    (item: { name: string }) => item.name === config.selection.connection_id,
+  );
+  expect(connection, "在线验收必须有当前模型连接").toBeTruthy();
+  expect(["localhost", "127.0.0.1", "[::1]", "0.0.0.0"]).not.toContain(
+    new URL(connection.base_url).hostname,
+  );
+});
+
+test.afterEach(async ({ page, request }, info) => {
+  if (info.status === info.expectedStatus) return;
+  const conversations = await request.get(`${BASE}/${bindingId}/conversations`);
+  const listed = conversations.ok() ? await conversations.json() : { items: [] };
+  const conversation = listed.items[0]?.id;
+  const snapshot = conversation
+    ? await request.get(`${BASE}/${bindingId}/conversations/${conversation}/messages`)
+    : null;
+  const events = snapshot?.ok() ? (await snapshot.json()).events : [];
+  saveEvidence("first-failure", {
+    title: info.title, errors: info.errors.map((error) => error.message), events,
+    classification: classify(events),
+    visibleText: (await page.locator("body").innerText()).slice(-12000),
+  });
 });
 
 /**
@@ -47,10 +77,11 @@ test.beforeAll(() => {
  */
 async function prepareWorkspace(request: APIRequestContext): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "hastings-model-e2e-"));
-  const workspaceRoot = join(root, "雪山旅馆");
+  workspaceRoot = join(root, "雪山旅馆");
   const opened = await request.post(BASE, { data: { path: workspaceRoot, create: true } });
   expect(opened.ok()).toBeTruthy();
   bindingId = (await opened.json()).id;
+  writeFileSync(join(workspaceRoot, FIRST), "# 雨夜\n\n雪已经下了三天。\n", "utf-8");
   writeFileSync(join(workspaceRoot, CHAPTER), CHAPTER_TEXT, "utf-8");
   writeFileSync(join(workspaceRoot, OTHER), OTHER_TEXT, "utf-8");
   writeFileSync(join(workspaceRoot, TRUTH), TRUTH_TEXT, "utf-8");
@@ -85,6 +116,7 @@ async function digestOf(request: APIRequestContext, path: string): Promise<strin
 async function waitForRun(
   request: APIRequestContext,
   timeoutMs = 180_000,
+  afterSeq = 0,
 ): Promise<{ conversationId: string; events: WorkspaceEvent[] }> {
   const deadline = Date.now() + timeoutMs;
   let conversationId = "";
@@ -96,6 +128,7 @@ async function waitForRun(
     if (conversationId) {
       const snapshot = await request.get(
         `${BASE}/${bindingId}/conversations/${conversationId}/messages`,
+        { params: { after: afterSeq } },
       );
       events = snapshot.ok() ? ((await snapshot.json()).events ?? []) : [];
       if (events.some((event) => event.type === "run_finished")) break;
@@ -108,7 +141,7 @@ async function waitForRun(
   return { conversationId, events };
 }
 
-/** 失败原因分三类：端点或网络、产品接线或规则、模型理解。 */
+/** 事件只能给出初步分类，断言失败仍需结合页面和脚本判读。 */
 function classify(events: WorkspaceEvent[]): string {
   const error = events.find((event) => event.type === "error");
   if (error) {
@@ -123,7 +156,7 @@ function classify(events: WorkspaceEvent[]): string {
     (event) => event.type === "tool_finished" && event.ok === false,
   );
   if (failedTool) return "产品接线或规则";
-  return "模型理解";
+  return "待判读（没有已记录的端点或工具错误）";
 }
 
 function saveEvidence(name: string, payload: Record<string, unknown>): void {
@@ -134,13 +167,17 @@ function saveEvidence(name: string, payload: Record<string, unknown>): void {
 test.describe("在线模型", () => {
   test.setTimeout(240_000);
 
-  test("只改指定章节，禁止文件不被改动", async ({ page, request }) => {
+  test("可选参考发送、范围展示与引用草稿切换", async ({ page, request }) => {
     await prepareWorkspace(request);
     const chapterBefore = await digestOf(request, CHAPTER);
     const otherBefore = await digestOf(request, OTHER);
     const truthBefore = await digestOf(request, TRUTH);
     await openWorkspace(page);
-    await send(page, SCOPE_PROMPT);
+    await page.getByRole("button", { name: `加入对话 ${FIRST}`, exact: true }).click();
+    await expect(page.getByLabel("本轮参考")).toContainText("雨夜");
+    // 这里不点“新对话”，保留刚选中的引用快照。
+    await page.locator(".chat-input").fill(SCOPE_PROMPT);
+    await page.locator(".chat-input").press("Enter");
     const { conversationId, events } = await waitForRun(request);
     const after = {
       chapter: await digestOf(request, CHAPTER),
@@ -163,6 +200,25 @@ test.describe("在线模型", () => {
     expect(after.chapter, "目标章节没有任何改动").not.toBe(chapterBefore);
     // 写入前必须登记范围：事件里要能看到本轮范围。
     expect(events.some((event) => event.type === "task_scope_set")).toBe(true);
+    const turn = page.getByRole("region", { name: "一轮对话" });
+    // section 的 aria-label 对应 region；断言真实渲染，不只轮询接口。
+    await expect(turn.getByTestId("turn-result")).toHaveAttribute("data-status", "completed");
+    const scope = turn.getByTestId("task-scope");
+    await scope.locator("summary").click();
+    await expect(scope).toContainText(`允许修改 ${CHAPTER}`);
+    const materials = turn.getByTestId("turn-materials");
+    await materials.locator("summary").click();
+    await expect(materials).toContainText(FIRST);
+    await expect(materials).toContainText("已提供全文");
+    // 同一段文字之外，引用也必须随会话草稿隔离并恢复。
+    await page.locator(".chat-input").fill("原会话的下一轮草稿");
+    await page.getByRole("button", { name: `加入对话 ${FIRST}`, exact: true }).click();
+    await page.getByRole("button", { name: "新对话", exact: true }).click();
+    await expect(page.locator(".chat-input")).toHaveValue("");
+    await page.locator(".chat-input").fill("新会话草稿");
+    await page.getByLabel("选择对话").selectOption(conversationId);
+    await expect(page.locator(".chat-input")).toHaveValue("原会话的下一轮草稿");
+    await expect(page.getByLabel("本轮参考")).toContainText("雨夜");
   });
 
   test("改完检查会形成报告并与磁盘版本一致", async ({ page, request }) => {
@@ -171,7 +227,7 @@ test.describe("在线模型", () => {
     await send(page, REVIEW_PROMPT);
     const { conversationId, events } = await waitForRun(request);
     const reports = await request.get(`${BASE}/${bindingId}/reviews`);
-    const items = reports.ok() ? ((await reports.json()).items ?? []) : [];
+    const items: ReviewReport[] = reports.ok() ? ((await reports.json()).items ?? []) : [];
     saveEvidence("review-flow", {
       prompt: REVIEW_PROMPT,
       conversation: conversationId,
@@ -182,13 +238,60 @@ test.describe("在线模型", () => {
 
     const review = events.find((event) => event.type === "review_finished");
     expect(review, `没有检查报告；失败分类：${classify(events)}`).toBeTruthy();
-    expect(["findings", "no_findings", "incomplete"]).toContain(String(review?.status));
+    expect(events.find((event) => event.type === "run_finished")?.status).toBe("completed");
+    expect(["findings", "no_findings"]).toContain(String(review?.status));
     expect(items.length, "报告没有落到 /reviews 里").toBeGreaterThan(0);
     // 回看时的可用性由服务端按当前磁盘算：刚检查完应当是有效的。
     expect(items[0].freshness).toBe("valid");
     expect(items[0].report_id).toBe(review?.report_id);
-    for (const path of items[0].target_paths as string[]) {
-      await expect(digestOf(request, path)).resolves.toBeTruthy();
+    for (const [path, digest] of items[0].target_digests as [string, string][]) {
+      await expect(digestOf(request, path)).resolves.toBe(digest);
     }
+    const chapter = await request.get(`${BASE}/${bindingId}/file`, { params: { path: CHAPTER } });
+    expect((await chapter.json()).text).toContain("窗外又飘起雪");
+    const card = page.getByTestId("review-report");
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute("data-status", String(review?.status));
+    await expect(card).toContainText(review?.status === "findings" ? "发现问题" : "没有发现问题");
+    await expect(page.getByTestId("turn-result")).toHaveAttribute("data-status", "completed");
+    await page.reload();
+    await expect(card).toHaveAttribute("data-status", String(review?.status));
+    writeFileSync(join(workspaceRoot, CHAPTER), "# 书房\n\n检查后外部改写。\n", "utf-8");
+    await page.reload();
+    await expect(card).toContainText("已过期");
+    await expect(card).toContainText("结论不再对应当前版本");
+  });
+
+  test("索引面板生成、外部改源失效与重新读取", async ({ page, request }) => {
+    await prepareWorkspace(request);
+    await openWorkspace(page);
+    await page.getByRole("button", { name: "索引", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "章节索引" });
+    const row = panel.locator("li").first();
+    await panel.getByRole("checkbox").first().check();
+    await panel.getByRole("button", { name: /更新所选索引/ }).click();
+    const firstRun = await waitForRun(request);
+    expect(firstRun.events.find((event) => event.type === "run_finished")?.status).toBe("completed");
+    await expect(row).toContainText("有效");
+    writeFileSync(join(workspaceRoot, FIRST), "# 雨夜\n\n雪已经停了三天。\n", "utf-8");
+    await panel.getByRole("button", { name: "刷新", exact: true }).click();
+    await expect(row).toContainText("已过期");
+    await panel.getByRole("button", { name: "关闭", exact: true }).click();
+    const prompt = "第一章被外部修改了。读取当前原文后，只把第三章末句改成『窗外的雪已经停了三天』。";
+    await page.locator(".chat-input").fill(prompt);
+    await page.locator(".chat-input").press("Enter");
+    const afterSeq = Number(firstRun.events.at(-1)?.seq ?? 0);
+    const next = await waitForRun(request, 180_000, afterSeq);
+    saveEvidence("index-stale-flow", { prompt, first: firstRun.events, next: next.events });
+    expect(next.events.find((event) => event.type === "run_finished")?.status).toBe("completed");
+    const digest = await digestOf(request, FIRST);
+    expect(next.events.some((event) => event.type === "material_read" && event.path === FIRST
+      && event.digest === digest)).toBe(true);
+    const changed = await request.get(`${BASE}/${bindingId}/file`, { params: { path: CHAPTER } });
+    expect((await changed.json()).text).toContain("窗外的雪已经停了三天");
+    await expect(page.getByTestId("turn-result").last()).toHaveAttribute("data-status", "completed");
+    await expect(page.getByTestId("task-scope").last()).toBeVisible();
+    const index = await request.get(`${BASE}/${bindingId}/chapter-index`);
+    expect((await index.json()).items.find((item: { source_path: string }) => item.source_path === FIRST).status).toBe("stale");
   });
 });

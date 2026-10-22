@@ -1,0 +1,189 @@
+{
+  "model": "deepseek-flash",
+  "results": [
+    {
+      "key": "refs_locate",
+      "family": "自然语言参考",
+      "title": "不选文件，参考第一章修改第三章",
+      "model": "deepseek-flash",
+      "prompt": "参考第一章《雨夜》，把第三章『桌上有一盏冷掉的茶』改为『桌上那盏茶已经凉透』。只改第三章。",
+      "follow_up": null,
+      "changed": [],
+      "before": {
+        "正文/0001 雨夜.md": "74f6c89de5b23c2df3fd3384598a0057cc65f8135dea77eefb7d11774cecc8e9",
+        "正文/0002 走廊.md": "0f7c612af3f9f518f424e186297a5a7ec39e8d62c6da734a2d2ee7e4edae9f8b",
+        "正文/0003 书房.md": "817a9787f5fe80ddc72c073fc4446d61294e713824caef808a213a639a1cc63f",
+        "正文/0004 客房.md": "4cb3bcb91d159a2e0cc60ea14433faee029cf9c35c95cff39e79e621041b3e0b",
+        "设定集/角色小传/林远.md": "258e093bbe707fdcf7bb749abf65d11cac554d8531c229789f9713cfb3b3c4de",
+        "设定集/线索.md": "8e163aafd180470c13e4de6ccf9cc70288b9d106dd2db506c5498df5bb585287",
+        "设定集/真相.md": "d18a10f4e6d67df06df007e05d3a7d6e51968ad2e0ff8c5ea86603688b0dd0ef"
+      },
+      "after": {
+        "正文/0001 雨夜.md": "74f6c89de5b23c2df3fd3384598a0057cc65f8135dea77eefb7d11774cecc8e9",
+        "正文/0002 走廊.md": "0f7c612af3f9f518f424e186297a5a7ec39e8d62c6da734a2d2ee7e4edae9f8b",
+        "正文/0003 书房.md": "817a9787f5fe80ddc72c073fc4446d61294e713824caef808a213a639a1cc63f",
+        "正文/0004 客房.md": "4cb3bcb91d159a2e0cc60ea14433faee029cf9c35c95cff39e79e621041b3e0b",
+        "设定集/角色小传/林远.md": "258e093bbe707fdcf7bb749abf65d11cac554d8531c229789f9713cfb3b3c4de",
+        "设定集/线索.md": "8e163aafd180470c13e4de6ccf9cc70288b9d106dd2db506c5498df5bb585287",
+        "设定集/真相.md": "d18a10f4e6d67df06df007e05d3a7d6e51968ad2e0ff8c5ea86603688b0dd0ef"
+      },
+      "workspace": "C:\\Projects\\Agent\\myagent\\data\\test-tmp\\model-acceptance\\20261022-230229-864200\\refs_locate\\作品",
+      "checks": [
+        {
+          "name": "首轮完成",
+          "ok": false,
+          "status": "fail",
+          "required": true,
+          "detail": {
+            "seq": 4,
+            "at": "2026-10-22T23:02:29+08:00",
+            "type": "run_finished",
+            "turn_id": "t_fbc3cbab",
+            "status": "failed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "name": "首轮实际操作符合当时范围",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "没有范围外改动",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "要求修改的文件确实改变",
+          "ok": false,
+          "status": "fail",
+          "required": true,
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "name": "读取原文:正文/0001 雨夜.md",
+          "ok": false,
+          "status": "fail",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "读取原文:正文/0003 书房.md",
+          "ok": false,
+          "status": "fail",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "落盘内容包含本次要求:正文/0003 书房.md",
+          "ok": false,
+          "status": "fail",
+          "required": true,
+          "detail": "桌上那盏茶已经凉透"
+        }
+      ],
+      "status": "fail",
+      "events": [
+        {
+          "seq": 1,
+          "at": "2026-10-22T23:02:29+08:00",
+          "type": "turn_started",
+          "turn_id": "t_fbc3cbab",
+          "request_key": "k-refs_locate",
+          "context": {
+            "selected_path": null,
+            "reference_paths": [],
+            "observed_digests": {},
+            "reference_digests": {}
+          }
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-22T23:02:29+08:00",
+          "type": "error",
+          "turn_id": "t_fbc3cbab",
+          "code": "MODEL_NOT_CONFIGURED",
+          "message": "[MODEL_NOT_CONFIGURED] turn.model：连接「deepseek」还没有可用的凭据；填好 API Key 后再发送。建议：在顶栏「模型设置」里添加并选择一个连接与模型，或在 config.yaml 里补齐 base_url、api_key 与模型名"
+        },
+        {
+          "seq": 4,
+          "at": "2026-10-22T23:02:29+08:00",
+          "type": "run_finished",
+          "turn_id": "t_fbc3cbab",
+          "status": "failed",
+          "recording": "no_change",
+          "changed_paths": [],
+          "commit": null,
+          "note": ""
+        }
+      ],
+      "follow_events": [],
+      "duration_seconds": 0.5
+    }
+  ],
+  "coverage": [
+    {
+      "family": "自然语言参考",
+      "status": "fail",
+      "cases": {
+        "refs_locate": "fail"
+      }
+    },
+    {
+      "family": "选择参考",
+      "status": "partial",
+      "cases": {
+        "reference_not_authority": "not_covered"
+      }
+    },
+    {
+      "family": "固定范围",
+      "status": "partial",
+      "cases": {
+        "fixed_scope": "not_covered"
+      }
+    },
+    {
+      "family": "关联修改",
+      "status": "partial",
+      "cases": {
+        "sync_chapters": "not_covered"
+      }
+    },
+    {
+      "family": "任务理解",
+      "status": "partial",
+      "cases": {
+        "discuss_only": "not_covered",
+        "read_only_check": "not_covered",
+        "continue_unanchored": "not_covered",
+        "ambiguous_character": "not_covered",
+        "negative_reference": "not_covered"
+      }
+    },
+    {
+      "family": "索引与原文",
+      "status": "partial",
+      "cases": {
+        "index_recall": "not_covered",
+        "index_stale": "not_covered"
+      }
+    },
+    {
+      "family": "写后检查",
+      "status": "partial",
+      "cases": {
+        "review_after_write": "not_covered"
+      }
+    }
+  ]
+}
