@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
+from hastings.workspace.api import _material_prompt
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.material_tasks import (
@@ -419,6 +420,17 @@ def _wait_finished(client: TestClient, workspace_id: str, conversation_id: str) 
             return list(events)
         time.sleep(0.05)
     raise AssertionError("等待轮次结束超时")
+
+
+def test_material_prompt_reads_chapter_number_from_file_name() -> None:
+    """任务提示里的章号取文件名，不取带目录的整个路径。"""
+
+    scope = MaterialTaskScope(
+        domain="chapter_index",
+        chapter_paths=[FIRST, SECOND],
+        as_of_chapter=2,
+    )
+    assert _material_prompt(scope) == "整理章节概览：第 1—2 章"
 
 
 def test_task_without_result_is_partial_and_hidden_from_writing_list(

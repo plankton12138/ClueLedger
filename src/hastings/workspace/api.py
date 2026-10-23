@@ -768,10 +768,16 @@ class MaterialTaskListView(BaseModel):
     items: list[MaterialTaskView]
 
 
+def _chapter_number(path: str) -> int:
+    """章号取文件名前四位；目录名不参与，文件名不以数字开头时返回 0。"""
+    name = path.rsplit("/", 1)[-1]
+    return int(name[:4]) if name[:4].isdigit() else 0
+
+
 def _material_prompt(scope: MaterialTaskScope) -> str:
     """任务提示由冻结范围生成：作者在活动记录里看到的就是这次整理的对象。"""
     label = DOMAIN_LABEL.get(scope.domain, "资料")
-    numbers = sorted(int(path[:4]) if path[:4].isdigit() else 0 for path in scope.chapter_paths)
+    numbers = sorted(number for number in map(_chapter_number, scope.chapter_paths) if number)
     if numbers:
         span = f"第 {numbers[0]} 章" if len(numbers) == 1 else f"第 {numbers[0]}—{numbers[-1]} 章"
     else:
