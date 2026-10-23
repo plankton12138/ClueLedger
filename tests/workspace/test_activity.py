@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
-from hastings.workspace.activity import ActivityStore
+from hastings.workspace.activity import ActivityStore, classify
 from hastings.workspace.agent import RunContext, build_tools
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
@@ -413,3 +414,201 @@ def test_activity_api_real_operations_validation_export_and_workspace_isolation(
         assert client.delete(base + "/activity/details").json()["removed"] == 0
         root = conversation_root(book.root, first)
         assert (root / "activity/operations.jsonl").exists()
+
+
+def test_classify_maps_real_events_to_readable_actions() -> None:
+    turn = classify(
+        {
+            "type": "turn_started",
+            "turn_id": "t1",
+            "text": "我想到一个点子。\n一部悬疑小说。",
+            "model": "deepseek-flash",
+        }
+    )
+    assert (turn.action, turn.phase, turn.title) == ("conversation", "started", "收到要求")
+    assert turn.subject == "我想到一个点子。 一部悬疑小说。"
+    assert turn.pair_key == "turn:t1"
+
+    materials = classify(
+        {
+            "type": "turn_started",
+            "turn_id": "t2",
+            "origin": "materials",
+            "model": "deepseek-flash",
+            "material_scope": {
+                "domain": "clues",
+                "chapter_paths": ["正文/0001 六点的白鸦馆.md"],
+                "as_of_chapter": 1,
+            },
+        }
+    )
+    assert (materials.action, materials.title) == ("materials", "开始整理")
+    assert materials.subject == "线索与伏笔 · 第 1 章"
+
+    model = classify(
+        {
+            "type": "model_request_finished",
+            "operation_id": "op1",
+            "model": "deepseek-flash",
+            "status": "completed",
+            "duration_ms": 313921,
+            "usage": {"input": 3806, "output": 42704},
+        }
+    )
+    assert (model.action, model.phase) == ("model", "completed")
+    assert model.note == "输出 42,704 tokens · 5 分 14 秒"
+    assert model.pair_key == "model:op1"
+
+    tool = classify(
+        {
+            "type": "tool_finished",
+            "tool_call_id": "call1",
+            "tool": "read_file",
+            "ok": True,
+            "args": {"path": "设定集/真相.md"},
+            "result_chars": 3920,
+            "duration_ms": 120,
+        }
+    )
+    assert (tool.action, tool.title, tool.subject) == ("tool", "读取", "设定集/真相.md")
+    assert tool.note == "3,920 字 · 120 毫秒"
+    assert tool.pair_key == "tool:call1"
+
+    changed = classify(
+        {
+            "type": "file_changed",
+            "tool_call_id": "call1",
+            "action": "update",
+            "path": "设定集/真相.md",
+            "size": 10626,
+        }
+    )
+    assert (changed.action, changed.title, changed.note) == ("file", "写入文件", "10.4 KB")
+    assert changed.pair_key == "tool:call1"
+
+    finished = classify(
+        {
+            "type": "run_finished",
+            "turn_id": "t1",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": ["a", "b"],
+            "commit": "1abef6f2a296",
+        }
+    )
+    assert finished.phase == "completed"
+    assert finished.note == "2 个文件 · 已提交"
+    assert finished.subject == "1abef6f"
+    assert finished.pair_key == "turn:t1"
+
+    scope = classify(
+        {"type": "task_scope_set", "summary": "先建人物小传", "grants": [{"path": "a"}]}
+    )
+    assert (scope.action, scope.title, scope.note) == ("scope", "登记修改范围", "1 项")
+
+    denied = classify(
+        {
+            "type": "tool_finished",
+            "tool_call_id": "c2",
+            "tool": "set_task_scope",
+            "ok": False,
+            "summary": "[TASK_SCOPE_DENIED_CONFLICT] 范围只能登记作品内的确切文件路径",
+        }
+    )
+    assert denied.phase == "failed"
+    assert denied.note.startswith("[TASK_SCOPE_DENIED_CONFLICT]")
+
+    error = classify(
+        {
+            "type": "error",
+            "code": "ACTIVITY_INVALID_LINE",
+            "message": "原始日志包含无法解析的完整行",
+        }
+    )
+    assert (error.action, error.phase, error.subject) == (
+        "error", "failed", "ACTIVITY_INVALID_LINE",
+    )
+
+    published = classify(
+        {
+            "type": "material_target_published",
+            "domain": "chapter_index",
+            "path": "正文/0001 六点的白鸦馆.md",
+            "outcome": "found",
+            "published": 1,
+        }
+    )
+    assert (published.action, published.title) == ("materials", "发布整理结果")
+    assert published.subject == "章节概览 · 正文/0001 六点的白鸦馆.md"
+    assert published.note == "有结果 · 提交 1 条"
+
+    finished = classify(
+        {"type": "material_task_finished", "domain": "clues", "done": 1, "total": 1}
+    )
+    assert (finished.title, finished.phase) == ("整理任务结束", "completed")
+    assert finished.note == "完成 1 / 1"
+    partial = classify(
+        {"type": "material_task_finished", "domain": "clues", "done": 1, "total": 2}
+    )
+    assert partial.phase == "partial"
+
+
+def test_query_exposes_action_fields_and_schema_upgrade_rebuilds_index(tmp_path: Path) -> None:
+    write_log(
+        tmp_path,
+        "c",
+        [
+            event(
+                1,
+                type="tool_started",
+                tool="read_file",
+                tool_call_id="call1",
+                args={"path": "正文/第一章.md"},
+            ),
+            event(
+                2,
+                type="tool_finished",
+                tool="read_file",
+                tool_call_id="call1",
+                args={"path": "正文/第一章.md"},
+                ok=True,
+                result_chars=12,
+                duration_ms=5,
+            ),
+        ],
+    )
+    store = ActivityStore(tmp_path)
+    items = store.query()["items"]
+    assert [item["type"] for item in items] == ["tool_finished", "tool_started"]
+    assert [item["action"] for item in items] == ["tool", "tool"]
+    assert {item["pair_key"] for item in items} == {"tool:call1"}
+    assert items[0]["phase"] == "completed"
+    assert items[1]["phase"] == "started"
+    assert items[0]["title"] == "读取"
+
+    db = sqlite3.connect(tmp_path / "activity/index.sqlite3")
+    db.execute("UPDATE meta SET value='1' WHERE key='schema'")
+    db.commit()
+    db.close()
+    rebuilt = store.query()
+    assert rebuilt["items"][1]["subject"] == "正文/第一章.md"
+    assert rebuilt["items"][0]["note"] == "12 字 · 5 毫秒"
+
+
+def test_every_writing_tool_has_a_readable_verb(tmp_path: Path) -> None:
+    """写作工具在界面上说人话：没配动词的工具会直接显示英文名，等于漏配。"""
+
+    workspace = Workspace.create(tmp_path / "book")
+    GitRepo(workspace.root).init()
+    run = RunContext(
+        workspace,
+        WriteSession(workspace),
+        author_messages=((1, "写第一章"),),
+        emit=lambda kind, payload: None,
+    )
+    missing = [
+        tool.name
+        for tool in build_tools(workspace, run)
+        if classify({"type": "tool_started", "tool": tool.name}).title == tool.name
+    ]
+    assert missing == []

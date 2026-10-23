@@ -10,6 +10,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -59,8 +60,110 @@ def _error(exc: Exception) -> WorkspaceError:
     )
 
 
-def describe(event: dict[str, Any]) -> tuple[str, str, str]:
+SCHEMA_VERSION = 3
+
+#: 工具名 → 作者读得懂的动词。未列出的工具保留原名，不猜用途。
+_TOOL_VERBS = {
+    "read_file": "读取",
+    "write_file": "写入",
+    "edit_file": "修改",
+    "move_file": "移动",
+    "delete_file": "删除",
+    "list_files": "列出文件",
+    "search_text": "查找",
+    "read_state": "查看状态",
+    "set_task_scope": "登记修改范围",
+    "extend_task_scope": "扩展修改范围",
+    "request_review": "请求检查",
+    "register_references": "登记参考",
+    "git_log": "查看历史",
+    "git_diff": "查看差异",
+    "publish_material_result": "提交整理结果",
+}
+_FILE_VERBS = {
+    "create": "新建文件",
+    "update": "写入文件",
+    "delete": "删除文件",
+    "move": "移动文件",
+}
+_STAGE_LABELS = {"write": "写作", "review": "检查", "index": "索引", "materials": "资料整理"}
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityText:
+    """一条事件在界面上的说法：动作、阶段、动词、对象、结果。
+
+    同一 ``pair_key`` 的开始与结束事件在界面合成一行；``summary`` 仍按旧格式保留，
+    供导出与旧客户端读取。
+    """
+
+    category: str
+    status: str
+    action: str
+    phase: str
+    title: str
+    subject: str
+    note: str
+    pair_key: str
+    summary: str
+
+
+def _squash(value: Any, limit: int = 60) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _count(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _size(value: Any) -> str:
+    size = _count(value)
+    if not size:
+        return ""
+    return f"{size} 字节" if size < 1024 else f"{size / 1024:.1f} KB"
+
+
+def _duration(value: Any) -> str:
+    ms = _count(value)
+    if not ms:
+        return ""
+    if ms < 1000:
+        return f"{ms} 毫秒"
+    if ms < 60_000:
+        return f"{ms / 1000:.1f} 秒"
+    minutes, seconds = divmod(round(ms / 1000), 60)
+    if minutes < 60:
+        return f"{minutes} 分 {seconds} 秒"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} 小时 {minutes} 分"
+
+
+def _join(*parts: str) -> str:
+    return " · ".join(part for part in parts if part)
+
+
+def _domain_label(domain: str) -> str:
+    if not domain:
+        return "资料"
+    from hastings.workspace.story_materials import DOMAIN_LABEL
+
+    return DOMAIN_LABEL.get(domain, "资料")
+
+
+def _status(kind: str, event: Mapping[str, Any]) -> str:
+    status = str(event.get("status", ""))
+    if kind == "error" or event.get("ok") is False or status == "failed":
+        return "failed"
+    if kind.endswith("started"):
+        return "started"
+    return status or "completed"
+
+
+def classify(event: dict[str, Any], event_id: str = "") -> ActivityText:
+    """把内部事件翻译成作者能读的一行动作；不改事件本身，也不推断未记录的结果。"""
     kind = str(event.get("type", "unknown"))
+    status = _status(kind, event)
     category = "task"
     if kind.startswith("model_") or kind.startswith("assistant_"):
         category = "model"
@@ -74,53 +177,170 @@ def describe(event: dict[str, Any]) -> tuple[str, str, str]:
         category = "state"
     elif kind.startswith("version_"):
         category = "version"
-    status = str(event.get("status", ""))
-    if kind == "error" or event.get("ok") is False or status == "failed":
-        status = "failed"
-    elif kind.endswith("started"):
-        status = "started"
-    elif not status:
-        status = "completed"
-    labels = {
-        "turn_started": "任务受理",
-        "run_finished": "本轮结束",
-        "run_phase": "执行阶段",
-        "model_request_started": "模型请求",
-        "model_request_finished": "模型请求结束",
-        "assistant_started": "回复开始",
-        "assistant_finished": "回复结束",
-        "assistant_message": "公开回复",
-        "assistant_block_delta": "文字增量",
-        "tool_started": "工具开始",
-        "tool_finished": "工具结果",
-        "material_read": "读取材料",
-        "context_prepared": "准备参考",
-        "reference_registered": "登记参考",
-        "state_injected": "装配上下文",
-        "task_scope_set": "登记修改范围",
-        "task_scope_extended": "扩展修改范围",
-        "file_changed": "文件变化",
-        "state_published": "发布状态",
-        "index_published": "发布章节索引",
-        "review_requested": "请求检查",
-        "review_finished": "检查结束",
-        "version_finished": "版本记录",
-        "operation_started": "用户操作开始",
-        "operation_finished": "用户操作结束",
-        "stop_requested": "请求停止",
-        "error": "错误",
-    }
-    target = (
-        event.get("path")
-        or event.get("entity")
-        or event.get("tool")
-        or event.get("model")
-        or event.get("operation")
-        or event.get("status")
-    )
-    detail = event.get("summary") or event.get("message") or event.get("text") or target or ""
-    summary = f"{labels.get(kind, kind)} · {' '.join(str(detail).split())[:180]}".rstrip(" ·")
-    return category, status, summary
+
+    action, title, subject, note = "other", kind, "", ""
+    phase = status
+    pair = f"event:{event_id or event.get('seq', '')}"
+
+    if kind == "turn_started":
+        scope = event.get("material_scope")
+        scope = scope if isinstance(scope, Mapping) else {}
+        if str(event.get("origin") or "writing") == "materials":
+            action, title = "materials", "开始整理"
+            label = _domain_label(str(scope.get("domain") or ""))
+            chapter = scope.get("as_of_chapter")
+            subject = f"{label} · 第 {chapter} 章" if _count(chapter) else label
+        else:
+            action, title = "conversation", "收到要求"
+            subject = _squash(event.get("text"), 42)
+        note = str(event.get("model") or "")
+        pair = f"turn:{event.get('turn_id', '')}"
+    elif kind == "run_finished":
+        action, title = "conversation", "本轮结束"
+        changed = event.get("changed_paths")
+        changed = changed if isinstance(changed, (list, tuple)) else []
+        recording = str(event.get("recording") or "")
+        if changed:
+            note = f"{len(changed)} 个文件" + (" · 已提交" if recording == "committed" else "")
+        elif recording == "no_change":
+            note = "没有文件变化"
+        subject = str(event.get("commit") or "")[:7]
+        pair = f"turn:{event.get('turn_id', '')}"
+    elif kind in ("assistant_started", "assistant_finished"):
+        action, title = "model", "模型回复"
+        pair = f"model:{event.get('parent_operation_id') or event_id}"
+    elif kind == "assistant_message":
+        action, title = "conversation", "公开回复"
+        text = str(event.get("text") or "")
+        subject = f"{len(text):,} 字" if text else ""
+    elif kind == "model_request_started":
+        action, title = "model", "请求模型"
+        subject = str(event.get("model") or "")
+        note = _STAGE_LABELS.get(str(event.get("stage") or ""), "")
+        pair = f"model:{event.get('operation_id') or event_id}"
+    elif kind == "model_request_finished":
+        action, title = "model", "模型返回"
+        subject = str(event.get("model") or "")
+        usage = event.get("usage")
+        output = usage.get("output") if isinstance(usage, Mapping) else None
+        note = _join(
+            f"输出 {output:,} tokens" if _count(output) else "",
+            _duration(event.get("duration_ms")),
+        )
+        pair = f"model:{event.get('operation_id') or event_id}"
+    elif kind in ("tool_started", "tool_finished"):
+        tool = str(event.get("tool") or "")
+        args = event.get("args")
+        args = args if isinstance(args, Mapping) else {}
+        action = "tool"
+        title = _TOOL_VERBS.get(tool, tool or "调用工具")
+        subject = str(args.get("path") or args.get("query") or "")
+        if kind == "tool_finished":
+            chars = _count(event.get("result_chars"))
+            note = (
+                _squash(event.get("summary"), 80)
+                if event.get("ok") is False
+                else _join(f"{chars:,} 字" if chars else "", _duration(event.get("duration_ms")))
+            )
+        pair = f"tool:{event.get('tool_call_id') or event_id}"
+    elif kind == "file_changed":
+        change = str(event.get("action") or "update")
+        action, title = "file", _FILE_VERBS.get(change, "修改文件")
+        subject = str(event.get("path") or "")
+        note = _size(event.get("size"))
+        pair = f"tool:{event['tool_call_id']}" if event.get("tool_call_id") else f"event:{event_id}"
+    elif kind in ("version_baseline", "version_finished"):
+        action = "version"
+        title = "建立版本基线" if kind == "version_baseline" else "记录版本"
+        subject = str(event.get("commit") or event.get("baseline_commit") or "")[:7]
+        if kind == "version_finished":
+            changed = event.get("changed_paths")
+            changed = changed if isinstance(changed, (list, tuple)) else []
+            note = _join(
+                f"{len(changed)} 个文件" if changed else "", _duration(event.get("duration_ms"))
+            )
+        pair = f"version:{event.get('parent_operation_id') or event.get('turn_id') or event_id}"
+    elif kind in ("task_scope_set", "task_scope_extended"):
+        action = "scope"
+        title = "登记修改范围" if kind == "task_scope_set" else "扩展修改范围"
+        subject = _squash(event.get("summary"), 46)
+        grants = event.get("grants")
+        note = f"{len(grants)} 项" if isinstance(grants, (list, tuple)) and grants else ""
+    elif kind == "state_injected":
+        action, title = "context", "装配上下文"
+        subject = str(event.get("profile") or "")
+        budget = event.get("budget")
+        if isinstance(budget, Mapping):
+            note = f"{_count(budget.get('used')):,} / {_count(budget.get('limit')):,} 字"
+    elif kind == "material_read":
+        action, title = "context", "读取材料"
+        subject = str(event.get("path") or "")
+        chars = _count(event.get("total_chars"))
+        note = f"{chars:,} 字" if chars else ""
+    elif kind == "context_prepared":
+        action, title = "context", "准备参考"
+        paths = event.get("reference_paths") or event.get("paths")
+        paths = paths if isinstance(paths, (list, tuple)) else []
+        note = f"{len(paths)} 个文件" if paths else ""
+    elif kind == "reference_registered":
+        action, title = "context", "登记参考"
+        subject = str(event.get("path") or "")
+    elif kind.startswith("state_"):
+        action, title = "state", "发布状态"
+        subject = str(event.get("domain") or event.get("path") or "")
+    elif kind.startswith(("index_", "chapter_index_")):
+        action, title = "state", "发布章节索引"
+        subject = str(event.get("path") or "")
+    elif kind.startswith("review_"):
+        action = "state"
+        title = "请求检查" if kind == "review_requested" else "检查结束"
+    elif kind in ("operation_started", "operation_finished"):
+        action = "operation"
+        title = str(event.get("operation") or "作品操作")
+        subject = _squash(event.get("filename") or event.get("summary") or "", 40)
+        if kind == "operation_finished":
+            note = _join(
+                _duration(event.get("duration_ms")),
+                _squash(event.get("message"), 60) if status == "failed" else "",
+            )
+        pair = f"operation:{event.get('operation_id') or event_id}"
+    elif kind == "run_phase":
+        action, title = "other", "执行阶段"
+        note = {"model": "模型思考", "tool": "工具执行"}.get(str(event.get("phase") or ""), "")
+    elif kind == "material_target_published":
+        action, title = "materials", "发布整理结果"
+        subject = _join(_domain_label(str(event.get("domain") or "")), str(event.get("path") or ""))
+        outcome = {"found": "有结果", "empty": "无发现", "insufficient": "信息不足"}.get(
+            str(event.get("outcome") or ""), ""
+        )
+        published = _count(event.get("published"))
+        note = _join(outcome, f"提交 {published} 条" if published else "")
+    elif kind == "material_task_finished":
+        action, title = "materials", "整理任务结束"
+        subject = _domain_label(str(event.get("domain") or ""))
+        done, total = _count(event.get("done")), _count(event.get("total"))
+        if total:
+            note = f"完成 {done} / {total}"
+            phase = "completed" if done >= total else "partial"
+    elif kind == "stop_requested":
+        action, title = "conversation", "请求停止"
+    elif kind == "error":
+        action, title = "error", "错误"
+        subject = str(event.get("code") or "")
+        note = _squash(event.get("message"), 80)
+    elif kind == "conversation_meta":
+        action, title = "other", "会话建立"
+        subject = _squash(event.get("title"), 40)
+
+    summary = _join(title, subject, note)[:180]
+    return ActivityText(category, status, action, phase, title, subject, note, pair, summary)
+
+
+def describe(event: dict[str, Any]) -> tuple[str, str, str]:
+    """旧接口：只取类别、状态与摘要。"""
+    text = classify(event)
+    return text.category, text.status, text.summary
+
 
 
 class ActivityStore:
@@ -177,10 +397,30 @@ class ActivityStore:
             CREATE TABLE IF NOT EXISTS events
               (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE, source TEXT,
                seq INTEGER, at TEXT, conversation_id TEXT, turn_id TEXT, type TEXT,
-               category TEXT, status TEXT, summary TEXT, search TEXT, payload TEXT);
+               category TEXT, status TEXT, action TEXT, phase TEXT, title TEXT,
+               subject TEXT, note TEXT, pair_key TEXT, summary TEXT, search TEXT,
+               payload TEXT);
             CREATE INDEX IF NOT EXISTS events_scope ON events(conversation_id, turn_id, id);
         """)
         db.execute("INSERT OR IGNORE INTO meta VALUES ('generation', ?)", (uuid.uuid4().hex,))
+        row = db.execute("SELECT value FROM meta WHERE key='schema'").fetchone()
+        if row is None or row[0] != str(SCHEMA_VERSION):
+            # 索引只用于查询，可整体重建；原始日志不动，游标代次改变让客户端重取。
+            db.executescript("""
+                DROP TABLE IF EXISTS events;
+                DROP TABLE IF EXISTS sources;
+                CREATE TABLE events
+                  (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE, source TEXT,
+                   seq INTEGER, at TEXT, conversation_id TEXT, turn_id TEXT, type TEXT,
+                   category TEXT, status TEXT, action TEXT, phase TEXT, title TEXT,
+                   subject TEXT, note TEXT, pair_key TEXT, summary TEXT, search TEXT,
+                   payload TEXT);
+                CREATE TABLE sources
+                  (name TEXT PRIMARY KEY, offset INTEGER, inode TEXT, modified INTEGER);
+                CREATE INDEX events_scope ON events(conversation_id, turn_id, id);
+            """)
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('schema', ?)", (str(SCHEMA_VERSION),))
+            db.execute("UPDATE meta SET value=? WHERE key='generation'", (uuid.uuid4().hex,))
         db.commit()
         return db
 
@@ -357,12 +597,13 @@ class ActivityStore:
                             f"{name}:{event.get('seq', offset)}".encode()
                         ).hexdigest()[:32]
                     )
-                    category, status, summary = describe(event)
+                    text = classify(event, str(event_id))
                     payload = json.dumps(event, ensure_ascii=False)
                     db.execute(
                         """INSERT INTO pending
                         (event_id,source,seq,at,conversation_id,turn_id,type,category,status,
-                         summary,search,payload) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         action,phase,title,subject,note,pair_key,summary,search,payload)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             event_id,
                             name,
@@ -371,9 +612,15 @@ class ActivityStore:
                             conversation,
                             event.get("turn_id", ""),
                             event.get("type", "unknown"),
-                            category,
-                            status,
-                            summary,
+                            text.category,
+                            text.status,
+                            text.action,
+                            text.phase,
+                            text.title,
+                            text.subject,
+                            text.note,
+                            text.pair_key,
+                            text.summary,
                             payload.lower(),
                             payload,
                         ),
@@ -383,9 +630,11 @@ class ActivityStore:
                 (name, offset, inode, path.stat().st_mtime_ns),
             )
         db.execute("""INSERT OR IGNORE INTO events
-            (event_id,source,seq,at,conversation_id,turn_id,type,category,status,summary,search,payload)
+            (event_id,source,seq,at,conversation_id,turn_id,type,category,status,
+             action,phase,title,subject,note,pair_key,summary,search,payload)
             SELECT event_id,source,seq,at,conversation_id,turn_id,type,category,status,
-                   summary,search,payload FROM pending ORDER BY at,source,seq""")
+                   action,phase,title,subject,note,pair_key,summary,search,payload
+            FROM pending ORDER BY at,source,seq""")
         db.execute("DELETE FROM pending")
         db.commit()
 
@@ -492,6 +741,9 @@ class ActivityStore:
                             (latest_run["conversation_id"], latest_run["turn_id"]),
                         ).fetchone()
                         payload = json.loads(latest_run["payload"])
+                        scope = payload.get("material_scope")
+                        scope = scope if isinstance(scope, Mapping) else {}
+                        origin = str(payload.get("origin") or "writing")
                         run = {
                             "turn_id": latest_run["turn_id"],
                             "started_at": latest_run["at"],
@@ -500,6 +752,10 @@ class ActivityStore:
                             "status": json.loads(terminal["payload"])["status"]
                             if terminal
                             else "running",
+                            "origin": origin,
+                            "label": _domain_label(str(scope.get("domain") or ""))
+                            if origin == "materials"
+                            else "写作",
                         }
                     items = []
                     for row in rows:
@@ -514,6 +770,12 @@ class ActivityStore:
                                 "type",
                                 "category",
                                 "status",
+                                "action",
+                                "phase",
+                                "title",
+                                "subject",
+                                "note",
+                                "pair_key",
                                 "summary",
                             )
                         }
