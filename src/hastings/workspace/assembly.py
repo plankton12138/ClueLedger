@@ -37,7 +37,7 @@ __all__ = [
 
 #: 用途决定装哪些分区。受理时只知道用途（写正文、建索引、做检查），
 #: 不知道作者这一轮想讨论还是想改稿，所以「讨论」不单列类型。
-Profile = Literal["writer", "extract", "review"]
+Profile = Literal["writer", "extract", "review", "materials"]
 
 #: 各分区初始预算，集中定义、集中测试，不做成用户配置。
 INSTRUCTIONS_BUDGET = 4_000
@@ -77,6 +77,9 @@ PROFILE_BUDGETS: dict[Profile, int] = {
     + TIMELINE_BUDGET
     + CLUES_BUDGET
     + SETTINGS_BUDGET,
+    # 资料整理：任务要求、目录与本次范围；不装设定集与状态分区，避免把谜底和作者计划
+    # 当成「截至这一章的正文事实」。
+    "materials": INSTRUCTIONS_BUDGET + CATALOG_BUDGET + MATERIALS_BUDGET,
 }
 
 

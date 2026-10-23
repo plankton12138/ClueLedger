@@ -12,14 +12,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from collections.abc import AsyncIterator
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, FastAPI, File, Header, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from hastings.workspace.activity import ActivityStore
 from hastings.workspace.chapter_index import (
     MAX_INDEX_CHAPTERS,
     ChapterIndexEntry,
@@ -46,6 +49,12 @@ from hastings.workspace.files import FileEntry, FileKind, Workspace, is_managed_
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import GlossaryStore, build_glossary, glossary_view
 from hastings.workspace.locations import default_workspace_root
+from hastings.workspace.material_tasks import (
+    MaterialTaskScope,
+    material_conversation_ids,
+    task_list,
+    task_view,
+)
 from hastings.workspace.materials import MAX_REFERENCES, ContextRequest
 from hastings.workspace.review import ReviewReport, ReviewStore
 from hastings.workspace.service import ProviderFactory, TurnService
@@ -58,6 +67,11 @@ from hastings.workspace.state import (
     RecentWorkspaces,
     WorkspaceBinding,
     conversation_root,
+)
+from hastings.workspace.story_materials import (
+    DOMAIN_LABEL,
+    author_view,
+    entry_detail,
 )
 from hastings.workspace.timeline import TimelineStore, build_timeline, timeline_view
 
@@ -120,6 +134,13 @@ class WorkspaceView(BaseModel):
     name: str
     path: str
     exists: bool
+
+
+class PruneWorkspacesView(BaseModel):
+    """清理结果：被移除的登记与清理后仍在册的作品。"""
+
+    removed: list[WorkspaceView]
+    workspaces: list[WorkspaceView]
 
 
 class FileEntryView(BaseModel):
@@ -571,6 +592,194 @@ class RecordedView(BaseModel):
     commit: str | None
 
 
+class ActivityFilter(BaseModel):
+    conversation_id: str = ""
+    turn_id: str = ""
+    category: Literal["", "task", "model", "tool", "file", "context", "state", "version"] = ""
+    status: str = Field(default="", max_length=40)
+    q: str = Field(default="", max_length=200)
+    since: str = Field(default="", max_length=40)
+    until: str = Field(default="", max_length=40)
+    verbose: bool = False
+
+    @field_validator("since", "until")
+    @classmethod
+    def activity_time(cls, value: str) -> str:
+        if value and datetime.fromisoformat(value).tzinfo is None:
+            raise ValueError("时间必须包含时区")
+        return value
+
+
+class ActivityQuery(ActivityFilter):
+    after: str = Field(default="", pattern=r"^([a-f0-9]{32}:\d+)?$")
+    before: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class ActivitySettings(BaseModel):
+    capture_inputs: bool = Field(default=False, strict=True)
+    retention_days: int = Field(default=30, ge=0, le=3650, strict=True)
+
+
+class ActivityExport(ActivityFilter):
+    include_details: bool = False
+
+
+MaterialDomainName = Literal[
+    "chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"
+]
+
+
+class SourceEvidenceView(BaseModel):
+    """一处原文依据：路径、版本、章节、区间、引文与当前有效性。"""
+
+    path: str
+    digest: str
+    chapter: int | None = None
+    start: int
+    end: int
+    quote: str
+    freshness: Literal["valid", "stale", "source_missing", "unavailable", "none"] = "valid"
+
+
+class MaterialEntryView(BaseModel):
+    """作者视图的一条资料；``data`` 按域区分，前端用域类型收窄。"""
+
+    id: str
+    domain: MaterialDomainName
+    title: str
+    subtitle: str = ""
+    chapter: int | None = None
+    entity_path: str | None = None
+    #: 整理覆盖：有结果、无发现、信息不足或还没整理。
+    coverage: Literal["found", "empty", "insufficient", "unrecorded"] = "unrecorded"
+    #: 版本有效性：与整理覆盖分开表达。
+    freshness: Literal["valid", "stale", "source_missing", "unavailable", "none"] = "none"
+    task_id: str = ""
+    updated_at: str = ""
+    data: dict[str, Any] = Field(default_factory=dict)
+    evidence: list[SourceEvidenceView] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class MaterialChapterView(BaseModel):
+    path: str
+    chapter: int
+    title: str
+    digest: str
+
+
+class MaterialEntityView(BaseModel):
+    path: str
+    name: str
+
+
+class MaterialCoverageView(BaseModel):
+    total: int = 0
+    found: int = 0
+    empty: int = 0
+    insufficient: int = 0
+    unrecorded: int = 0
+    stale: int = 0
+
+
+class StoryMaterialsView(BaseModel):
+    domain: MaterialDomainName
+    label: str
+    as_of_chapter: int
+    current_chapter: int
+    chapters: list[MaterialChapterView]
+    entities: list[MaterialEntityView]
+    entries: list[MaterialEntryView]
+    total: int
+    next_cursor: str = ""
+    coverage: MaterialCoverageView
+    warnings: list[str] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class MaterialEntryDetailView(BaseModel):
+    domain: MaterialDomainName
+    as_of_chapter: int
+    entry: MaterialEntryView
+    coverage: MaterialCoverageView
+    warnings: list[str] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class MaterialScopeInput(BaseModel):
+    """资料页提交的范围：结构校验在模型里，真实路径与指纹在受理时复核。"""
+
+    model_config = ConfigDict(extra="forbid")
+    domain: MaterialDomainName
+    chapter_paths: list[str] = Field(min_length=1, max_length=10)
+    entity_paths: list[str] = Field(default_factory=list, max_length=10)
+    as_of_chapter: int = Field(ge=0)
+    observed_digests: dict[str, str] = Field(default_factory=dict)
+
+    def to_model(self) -> MaterialTaskScope:
+        return MaterialTaskScope(**self.model_dump())
+
+
+class MaterialTaskRequest(BaseModel):
+    request_key: str = Field(min_length=1)
+    scope: MaterialScopeInput
+
+
+class MaterialTaskAcceptedView(BaseModel):
+    """受理结果：HTTP 202 只表示任务已开始，不代表整理完成。"""
+
+    turn_id: str
+    conversation_id: str
+    origin: Literal["materials"] = "materials"
+    domain: MaterialDomainName
+    label: str
+    title: str
+    model: str = ""
+    request_key: str
+    scope: dict[str, Any]
+
+
+class MaterialTargetView(BaseModel):
+    path: str
+    chapter: int
+    entity_path: str = ""
+    outcome: Literal["found", "empty", "insufficient", "unrecorded"] = "unrecorded"
+    freshness: str = "none"
+
+
+class MaterialTaskView(BaseModel):
+    turn_id: str
+    conversation_id: str
+    domain: MaterialDomainName
+    label: str
+    scope: dict[str, Any]
+    status: str
+    model: str = ""
+    started_at: str = ""
+    published: int = 0
+    done: int = 0
+    total: int = 0
+    targets: list[MaterialTargetView] = Field(default_factory=list)
+    unfinished: list[MaterialTargetView] = Field(default_factory=list)
+
+
+class MaterialTaskListView(BaseModel):
+    items: list[MaterialTaskView]
+
+
+def _material_prompt(scope: MaterialTaskScope) -> str:
+    """任务提示由冻结范围生成：作者在活动记录里看到的就是这次整理的对象。"""
+    label = DOMAIN_LABEL.get(scope.domain, "资料")
+    numbers = sorted(int(path[:4]) if path[:4].isdigit() else 0 for path in scope.chapter_paths)
+    if numbers:
+        span = f"第 {numbers[0]} 章" if len(numbers) == 1 else f"第 {numbers[0]}—{numbers[-1]} 章"
+    else:
+        span = "所选章节"
+    names = "、".join(path.rsplit("/", 1)[-1].removesuffix(".md") for path in scope.entity_paths)
+    return f"整理{label}：{span}" + (f"（{names}）" if names else "")
+
+
 def create_file_workspace_router(
     workspaces: RecentWorkspaces, provider_factory: ProviderFactory
 ) -> APIRouter:
@@ -578,6 +787,17 @@ def create_file_workspace_router(
     router = APIRouter(prefix=PREFIX, tags=["file-workspaces"])
     services: dict[str, TurnService] = {}
     ui_stores: dict[str, ConversationUiStore] = {}
+    activity_stores: dict[str, ActivityStore] = {}
+    activity_lock = threading.RLock()
+
+    def activity_for(workspace_id: str) -> ActivityStore:
+        workspaces.get(workspace_id)
+        with activity_lock:
+            if workspace_id not in activity_stores:
+                store = ActivityStore(conversation_root(workspaces.root, workspace_id))
+                store.recover()
+                activity_stores[workspace_id] = store
+            return activity_stores[workspace_id]
 
     def view(binding: WorkspaceBinding) -> WorkspaceView:
         return WorkspaceView(
@@ -592,6 +812,7 @@ def create_file_workspace_router(
         workspace = workspaces.workspace(workspace_id)
         store = ConversationStore(conversation_root(workspaces.root, workspace_id))
         service = TurnService(workspace, store, provider_factory)
+        service.activity = activity_for(workspace_id)
         # 进程重启后，没有正常结束的轮次在这里补一条中断记录；不自动继续。
         service.mark_interrupted()
         services[workspace_id] = service
@@ -626,6 +847,15 @@ def create_file_workspace_router(
     @router.get("", response_model=list[WorkspaceView])
     def list_workspaces() -> list[WorkspaceView]:
         return [view(binding) for binding in workspaces.recent()]
+
+    @router.delete("/stale", response_model=PruneWorkspacesView)
+    def prune_stale_workspaces() -> PruneWorkspacesView:
+        """清掉目录已不存在的登记；作品目录本身不受影响。"""
+        removed = workspaces.prune_missing()
+        return PruneWorkspacesView(
+            removed=[view(binding) for binding in removed],
+            workspaces=[view(binding) for binding in workspaces.recent()],
+        )
 
     @router.get("/default-location", response_model=DefaultLocationView)
     def default_location() -> DefaultLocationView:
@@ -717,7 +947,14 @@ def create_file_workspace_router(
     ) -> CatalogView:
         workspace = workspaces.workspace(workspace_id)
         data = await file.read()
-        workspace.import_text(file.filename or "导入正文.md", data)
+        with activity_for(workspace_id).operation("导入正文", filename=file.filename) as operation:
+            imported = workspace.import_text(file.filename or "导入正文.md", data)
+            operation.result = {
+                "files": [
+                    {"path": item.path, "digest": item.digest, "size": item.size}
+                    for item in imported
+                ]
+            }
         catalog = workspace.catalog()
         return CatalogView(
             chapters=[_entry(entry) for entry in catalog.chapters],
@@ -777,6 +1014,117 @@ def create_file_workspace_router(
             items=[_review_item(report) for report in store.reports(workspace, path=path)]
         )
 
+    # -- 故事资料：作者视图与整理任务 ---------------------------------------
+
+    @router.get("/{workspace_id}/story-materials/{domain}", response_model=StoryMaterialsView)
+    def story_materials(
+        workspace_id: str,
+        domain: MaterialDomainName,
+        as_of_chapter: int | None = Query(default=None, ge=0),
+        q: str = Query(default="", max_length=200),
+        limit: int = Query(default=100, ge=1, le=200),
+        cursor: str = Query(default="", max_length=32),
+    ) -> StoryMaterialsView:
+        """作者视图：条目、证据、覆盖统计与实际采用的时点。
+
+        截止章只影响浏览；服务端按真实文件重算章号，不接受浏览器传来的任意路径。
+        """
+        workspace = workspaces.workspace(workspace_id)
+        root = conversation_root(workspaces.root, workspace_id)
+        view = author_view(
+            workspace,
+            root,
+            domain,
+            as_of_chapter=as_of_chapter,
+            query=q,
+            limit=limit,
+            cursor=cursor,
+        )
+        return StoryMaterialsView(**view)  # type: ignore[arg-type]
+
+    @router.get(
+        "/{workspace_id}/story-materials/{domain}/entries/{entry_id}",
+        response_model=MaterialEntryDetailView,
+    )
+    def story_material_entry(
+        workspace_id: str,
+        domain: MaterialDomainName,
+        entry_id: str,
+        as_of_chapter: int | None = Query(default=None, ge=0),
+    ) -> MaterialEntryDetailView:
+        """按稳定 ID 取完整条目；条目不存在时 404，不返回空对象冒充。"""
+        workspace = workspaces.workspace(workspace_id)
+        root = conversation_root(workspaces.root, workspace_id)
+        view = entry_detail(workspace, root, domain, entry_id, as_of_chapter=as_of_chapter)
+        return MaterialEntryDetailView(**view)  # type: ignore[arg-type]
+
+    @router.post(
+        "/{workspace_id}/material-tasks",
+        response_model=MaterialTaskAcceptedView,
+        status_code=202,
+    )
+    async def create_material_task(
+        workspace_id: str, body: MaterialTaskRequest
+    ) -> MaterialTaskAcceptedView:
+        """受理一次整理：一个任务只更新一个域，返回的是受理结果而不是完成结果。"""
+        service = service_for(workspace_id)
+        scope = body.scope.to_model()
+        info = await service.accept(
+            _material_prompt(scope),
+            body.request_key,
+            purpose="organize_materials",
+            material_scope=scope,
+        )
+        frozen = info.material_scope or {}
+        active = service.active_turn()
+        return MaterialTaskAcceptedView(
+            turn_id=info.turn_id,
+            conversation_id=info.conversation_id,
+            domain=scope.domain,
+            label=DOMAIN_LABEL[scope.domain],
+            title=info.title,
+            model=active.model if active is not None else "",
+            request_key=body.request_key,
+            scope={
+                "domain": frozen.get("domain"),
+                "chapter_paths": frozen.get("chapter_paths", []),
+                "entity_paths": frozen.get("entity_paths", []),
+                "as_of_chapter": frozen.get("as_of_chapter"),
+            },
+        )
+
+    @router.get("/{workspace_id}/material-tasks", response_model=MaterialTaskListView)
+    def list_material_tasks(
+        workspace_id: str,
+        domain: Annotated[MaterialDomainName | None, Query()] = None,
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> MaterialTaskListView:
+        """本域最近的资料任务；仍在运行的任务也列出来，刷新后能接上。"""
+        service = service_for(workspace_id)
+        active = service.active_turn()
+        items = task_list(
+            service.store,
+            conversation_root(workspaces.root, workspace_id),
+            domain=domain or "",
+            limit=limit,
+            active_turn_id=active.turn_id if active is not None else "",
+        )
+        return MaterialTaskListView(items=items)  # type: ignore[arg-type]
+
+    @router.get("/{workspace_id}/material-tasks/{turn_id}", response_model=MaterialTaskView)
+    def material_task_detail(workspace_id: str, turn_id: str) -> MaterialTaskView:
+        """单个任务的规范化结果：目标、已发布、未完成项与覆盖结果。"""
+        service = service_for(workspace_id)
+        active = service.active_turn()
+        view = task_view(
+            service.store,
+            conversation_root(workspaces.root, workspace_id),
+            service.workspace,
+            turn_id,
+            active_turn_id=active.turn_id if active is not None else "",
+        )
+        return MaterialTaskView(**view)  # type: ignore[arg-type]
+
     # -- Git ---------------------------------------------------------------
 
     @router.get("/{workspace_id}/git/status", response_model=GitStatusView)
@@ -808,29 +1156,114 @@ def create_file_workspace_router(
     def git_init(workspace_id: str) -> GitStatusView:
         """对已有目录启用版本记录：初始化并记录当前内容作为基线。"""
         repo = GitRepo(workspaces.workspace(workspace_id).root)
-        repo.init()
+        with activity_for(workspace_id).operation("启用版本记录"):
+            repo.init()
         return _git_status(repo)
 
     @router.post("/{workspace_id}/git/record", response_model=RecordedView)
     def git_record(workspace_id: str, body: RecordRequest | None = None) -> RecordedView:
         """单独补记未记录的改动：只执行 Git，不调用模型。"""
         message = (body.message.strip() if body else "") or "补记：应用之外的改动"
-        commit = GitRepo(workspaces.workspace(workspace_id).root).record(message)
+        with activity_for(workspace_id).operation("补记版本", summary=message) as operation:
+            commit = GitRepo(workspaces.workspace(workspace_id).root).record(message)
+            operation.result = {"commit": commit}
         return RecordedView(commit=commit)
 
     @router.post("/{workspace_id}/git/revert", response_model=RecordedView)
     def git_revert(workspace_id: str, body: RevertRequest) -> RecordedView:
         """撤销指定提交（必须是 HEAD）；生成反向提交，不改写历史。"""
-        commit = GitRepo(workspaces.workspace(workspace_id).root).revert_latest(body.commit)
+        with activity_for(workspace_id).operation(
+            "撤销版本", target_commit=body.commit
+        ) as operation:
+            commit = GitRepo(workspaces.workspace(workspace_id).root).revert_latest(body.commit)
+            operation.result = {"commit": commit}
         return RecordedView(commit=commit or None)
+
+    # -- 作品活动：与聊天 SSE 分开，持续订阅跨越任务边界 ------------------------
+
+    @router.get("/{workspace_id}/activity")
+    def list_activity(
+        workspace_id: str, query: Annotated[ActivityQuery, Query()]
+    ) -> dict[str, Any]:
+        return activity_for(workspace_id).query(**query.model_dump())
+
+    @router.get("/{workspace_id}/activity/settings")
+    def activity_settings(workspace_id: str) -> dict[str, Any]:
+        return activity_for(workspace_id).settings()
+
+    @router.put("/{workspace_id}/activity/settings")
+    def set_activity_settings(workspace_id: str, body: ActivitySettings) -> dict[str, Any]:
+        store = activity_for(workspace_id)
+        with store.operation("设置活动详情保留", **body.model_dump()):
+            return store.configure(**body.model_dump())
+
+    @router.delete("/{workspace_id}/activity/details")
+    def clear_activity_details(workspace_id: str) -> dict[str, Any]:
+        store = activity_for(workspace_id)
+        with store.operation("清理活动详情") as operation:
+            removed = store.clear_details()
+            operation.result = {"removed": removed}
+        return {"removed": removed}
+
+    @router.post("/{workspace_id}/activity/rebuild")
+    def rebuild_activity(workspace_id: str) -> dict[str, bool]:
+        store = activity_for(workspace_id)
+        with store.operation("重建活动索引"):
+            store.rebuild()
+        return {"rebuilt": True}
+
+    @router.get("/{workspace_id}/activity/attachments/{key}")
+    def activity_attachment(workspace_id: str, key: str) -> object:
+        return activity_for(workspace_id).detail_attachment(key)
+
+    @router.get("/{workspace_id}/activity/export")
+    def export_activity(
+        workspace_id: str, query: Annotated[ActivityExport, Query()]
+    ) -> StreamingResponse:
+        return StreamingResponse(
+            activity_for(workspace_id).export(**query.model_dump()),
+            media_type="application/x-ndjson",
+            headers={"Content-Disposition": 'attachment; filename="activity.jsonl"'},
+        )
+
+    @router.get("/{workspace_id}/activity/stream")
+    async def stream_activity(
+        workspace_id: str, request: Request, query: Annotated[ActivityQuery, Query()]
+    ) -> StreamingResponse:
+        store = activity_for(workspace_id)
+
+        async def stream() -> AsyncIterator[str]:
+            filters = query.model_dump()
+            # 首次连接同时送出快照，之后按作品索引游标续传。
+            while not await request.is_disconnected():
+                page = await asyncio.to_thread(store.query, **filters)
+                yield f"id: {page['cursor']}\ndata: {json.dumps(page, ensure_ascii=False)}\n\n"
+                filters["after"] = page["cursor"]
+                filters["before"] = 0
+                if not page["has_more"]:
+                    await asyncio.sleep(1)
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @router.get("/{workspace_id}/activity/{event_id}")
+    def activity_detail(workspace_id: str, event_id: str) -> dict[str, Any]:
+        return activity_for(workspace_id).detail(event_id)
 
     # -- 对话与轮次 ---------------------------------------------------------
 
     @router.get("/{workspace_id}/conversations", response_model=ConversationListView)
     def list_conversations(workspace_id: str) -> ConversationListView:
         service = service_for(workspace_id)
+        # 资料任务的专用会话不在写作会话列表里出现；它们从资料页与活动记录回看。
+        hidden = material_conversation_ids(service.store)
         items = sorted(
-            service.store.conversations(), key=lambda item: item.updated_at, reverse=True
+            (item for item in service.store.conversations() if item.id not in hidden),
+            key=lambda item: item.updated_at,
+            reverse=True,
         )
         ui = ui_for(workspace_id).read()
         known = {item.id for item in items}

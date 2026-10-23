@@ -1,0 +1,63 @@
+[WebServer] (node:6696) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] INFO:     Started server process [36184]
+[WebServer] INFO:     Waiting for application startup.
+[WebServer] INFO:     Application startup complete.
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8945 (Press CTRL+C to quit)
+
+Running 17 tests using 1 worker
+
+(node:36760) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  1 [workspace] › e2e\chat-rendering.spec.ts:44:1 › 长思考折叠时不解析正文，突发分片合批且历史轮次不重绘 (586ms)
+  ok  2 [workspace] › e2e\chat-rendering.spec.ts:65:3 › 高像素密度下阅读长思考 › 展开后完整保留实时原文，向上阅读与选字不被新内容拉走 (523ms)
+  ok  3 [workspace] › e2e\chat-rendering.spec.ts:90:1 › 切换作品后，待刷新的旧分片不能重新填回页面 (340ms)
+  ok  4 [workspace] › e2e\workspace.spec.ts:83:1 › 目录打开后显示章节、角色分组与固定设定 (726ms)
+  ok  5 [workspace] › e2e\workspace.spec.ts:93:1 › 目录里的加入对话把文件放进本轮参考 (704ms)
+  ok  6 [workspace] › e2e\workspace.spec.ts:111:1 › 角色小传可阅读并参与搜索 (837ms)
+  ok  7 [workspace] › e2e\workspace.spec.ts:123:1 › 稿纸只读显示正文 (601ms)
+  ok  8 [workspace] › e2e\workspace.spec.ts:133:1 › 改动与历史列出提交，撤销后内容回退 (2.2s)
+  ok  9 [workspace] › e2e\workspace.spec.ts:147:1 › 搜索定位到正文，外部改动刷新后可见 (1.3s)
+  ok 10 [workspace] › e2e\workspace.spec.ts:164:1 › 章名带章序，人物标签在目录与稿纸一致 (656ms)
+  ok 11 [workspace] › e2e\workspace.spec.ts:196:1 › 对话栏可隐藏，隐藏状态刷新后保持 (467ms)
+  ok 12 [workspace] › e2e\workspace.spec.ts:220:1 › 拖拽把手改栏宽，刷新后保持，双击恢复默认 (644ms)
+  ok 13 [workspace] › e2e\workspace.spec.ts:243:1 › 对话栏宽度可拖拽，且不超过上限 (657ms)
+  ok 14 [workspace] › e2e\workspace.spec.ts:261:1 › 稿纸横线随内容滚动 (726ms)
+  ok 15 [workspace] › e2e\workspace.spec.ts:291:1 › 新建作品用系统窗口选位置，界面不再出现路径输入框 (354ms)
+  x  16 [workspace] › e2e\workspace.spec.ts:305:1 › 选好位置并起名后新建作品，建立版本记录 (30.1s)
+(node:36316) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 17 [online] › e2e\activity.spec.ts:6:1 › 在线模型任务的事件流、输入详情、跨轮实时更新、筛选与导出 (14.3s)
+
+
+  1) [workspace] › e2e\workspace.spec.ts:305:1 › 选好位置并起名后新建作品，建立版本记录 ───────────────────────────────
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: '改动与历史' })
+
+
+      318 |     timeout: 10_000,
+      319 |   });
+    > 320 |   await page.getByRole("button", { name: "改动与历史" }).click();
+          |                                                     ^
+      321 |   await expect(page.getByText("初始化作品目录")).toBeVisible();
+      322 |   expect(existsSync(join(created, ".git"))).toBe(true);
+      323 | });
+        at C:\Projects\Agent\myagent\frontend\e2e\workspace.spec.ts:320:53
+
+    Error Context: ..\data\test-tmp\activity-browser-final\workspace-选好位置并起名后新建作品，建立版本记录-workspace\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\data\test-tmp\activity-browser-final\workspace-选好位置并起名后新建作品，建立版本记录-workspace\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\data\test-tmp\activity-browser-final\workspace-选好位置并起名后新建作品，建立版本记录-workspace\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [workspace] › e2e\workspace.spec.ts:305:1 › 选好位置并起名后新建作品，建立版本记录 ────────────────────────────────
+  16 passed (1.2m)

@@ -9,6 +9,7 @@
   }
   body {
     @apply bg-page font-sans text-fg antialiased;
+    font-size: 1rem;
     font-synthesis: none;
   }
   button:focus-visible,
@@ -387,9 +388,9 @@
     background-image: repeating-linear-gradient(
       0deg,
       transparent 0,
-      transparent 31px,
-      rgba(180, 170, 140, 0.18) 31px,
-      rgba(180, 170, 140, 0.18) 32px
+      transparent calc(32px * var(--font-scale, 1) - 1px),
+      rgba(180, 170, 140, 0.18) calc(32px * var(--font-scale, 1) - 1px),
+      rgba(180, 170, 140, 0.18) calc(32px * var(--font-scale, 1))
     );
     background-position-y: 26px;
   }
@@ -701,5 +702,17 @@
   .chat-dialog-source {
     @apply mt-3 max-h-56 overflow-auto rounded border border-panel-edge bg-[#f8fbfc] p-2 text-[12px] leading-6 whitespace-pre-wrap select-text;
     color: theme("colors.fg");
+  }
+
+  /* ===== 故事资料页导航（0.7） ===== */
+  .materials-nav {
+    background: linear-gradient(180deg, #f7f9fa, #e8eef0);
+    border-right: 1px solid theme("colors.panelEdge");
+  }
+  @media (max-width: 767px) {
+    .materials-nav {
+      border-right: 0;
+      border-bottom: 1px solid theme("colors.panelEdge");
+    }
   }
 }

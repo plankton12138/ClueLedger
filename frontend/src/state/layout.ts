@@ -1,7 +1,7 @@
 /**
  * 写作台布局偏好（0.4 V04-11）。
  *
- * 对话栏显隐与两个栏宽是界面状态，不属于作品数据，也不进后端：它们只影响这一台机器
+ * 对话栏显隐、两个栏宽与字号是界面状态，不属于作品数据，也不进后端：它们只影响这一台机器
  * 上的窗口怎么排，所以单独放一份状态，并写在浏览器本地存储里，重开窗口保持原样。
  *
  * 读取失败（没有本地存储、内容损坏、数值越界）一律回到默认值，不阻断启动。
@@ -19,20 +19,23 @@ export interface WidthRange {
 
 export const SIDEBAR: WidthRange = { default: 260, min: 180, max: 400 };
 export const CHAT: WidthRange = { default: 380, min: 280, max: 560 };
+export const FONT_SCALE: WidthRange = { default: 100, min: 80, max: 150 };
 
 export interface LayoutPrefs {
   sidebarWidth: number;
   chatWidth: number;
   chatVisible: boolean;
+  fontScale: number;
 }
 
 export const DEFAULT_LAYOUT: LayoutPrefs = {
   sidebarWidth: SIDEBAR.default,
   chatWidth: CHAT.default,
   chatVisible: true,
+  fontScale: FONT_SCALE.default,
 };
 
-/** 宽度钳制到区间内；非数值（NaN、字符串、缺省）按默认值处理。 */
+/** 栏宽及字号百分比钳制到区间内；非数值按默认值处理。 */
 export function clampWidth(value: unknown, range: WidthRange): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return range.default;
   return Math.min(range.max, Math.max(range.min, Math.round(value)));
@@ -48,6 +51,7 @@ export function parseLayout(raw: string | null): LayoutPrefs {
       sidebarWidth: clampWidth(parsed.sidebarWidth, SIDEBAR),
       chatWidth: clampWidth(parsed.chatWidth, CHAT),
       chatVisible: typeof parsed.chatVisible === "boolean" ? parsed.chatVisible : true,
+      fontScale: clampWidth(parsed.fontScale, FONT_SCALE),
     };
   } catch {
     return DEFAULT_LAYOUT;
@@ -76,10 +80,16 @@ interface LayoutStore extends LayoutPrefs {
   setSidebarWidth(width: number): void;
   setChatWidth(width: number): void;
   toggleChat(): void;
+  setFontScale(scale: number): void;
 }
 
 export const useLayoutStore = create<LayoutStore>()((set, get) => ({
   ...readLayout(),
+
+  setFontScale(scale) {
+    set({ fontScale: clampWidth(scale, FONT_SCALE) });
+    writeLayout(get());
+  },
 
   setSidebarWidth(width) {
     set({ sidebarWidth: clampWidth(width, SIDEBAR) });

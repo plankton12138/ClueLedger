@@ -21,7 +21,7 @@ function changeLabel(code: string): string {
   return CHANGE_LABEL[key] ?? CHANGE_LABEL[key[0] ?? ""] ?? code;
 }
 
-export default function ChangesDrawer() {
+export default function ChangesDrawer({ embedded = false }: { embedded?: boolean }) {
   const open = useWorkspaceStore((state) => state.drawerOpen);
   const close = useWorkspaceStore((state) => state.closeDrawer);
   const git = useWorkspaceStore((state) => state.git);
@@ -37,15 +37,15 @@ export default function ChangesDrawer() {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/30">
-      <div className="flex h-full w-full max-w-xl flex-col border-l border-[#cfc7ae] bg-[#fbf8ef] shadow-2xl">
-        <div className="flex flex-none items-center gap-2 border-b border-[#e2dbc6] px-4 py-3">
+    <div className={embedded ? "min-h-0 flex-1 overflow-auto" : "fixed inset-0 z-40 flex justify-end bg-black/30"}>
+      <div className={embedded ? "flex h-full flex-col" : "flex h-full w-full max-w-xl flex-col border-l border-[#cfc7ae] bg-[#fbf8ef] shadow-2xl"}>
+        {!embedded && <div className="flex flex-none items-center gap-2 border-b border-[#e2dbc6] px-4 py-3">
           <h2 className="font-serif text-base font-bold text-sheetInk">改动与历史</h2>
           <div className="flex-1" />
           <button className="btn btn-gray px-2 py-1 text-[11px]" onClick={close}>
             关闭
           </button>
-        </div>
+        </div>}
 
         <div className="min-h-0 flex-1 space-y-5 overflow-auto px-4 py-4 text-xs text-[#4b4737]">
           {!git || !git.initialized ? (

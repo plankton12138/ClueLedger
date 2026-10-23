@@ -1,0 +1,98 @@
+{
+  "accepted": {
+    "turn_id": "t_d41c8ef2",
+    "conversation_id": "c_36706cb3638d",
+    "origin": "materials",
+    "domain": "timeline",
+    "label": "时间线",
+    "title": "整理时间线：第 0 章",
+    "model": "deepseek-flash",
+    "request_key": "k_1792753292413",
+    "scope": {
+      "domain": "timeline",
+      "chapter_paths": [
+        "正文/0001 门.md"
+      ],
+      "entity_paths": [],
+      "as_of_chapter": 1
+    }
+  },
+  "task": {
+    "turn_id": "t_d41c8ef2",
+    "conversation_id": "c_36706cb3638d",
+    "domain": "timeline",
+    "label": "时间线",
+    "scope": {
+      "domain": "timeline",
+      "chapter_paths": [
+        "正文/0001 门.md"
+      ],
+      "entity_paths": [],
+      "as_of_chapter": 1
+    },
+    "status": "completed",
+    "model": "deepseek-flash",
+    "started_at": "2026-10-23T19:01:32.422+08:00",
+    "published": 1,
+    "done": 1,
+    "total": 1,
+    "targets": [
+      {
+        "path": "正文/0001 门.md",
+        "chapter": 1,
+        "entity_path": "",
+        "outcome": "empty",
+        "freshness": "valid"
+      }
+    ],
+    "unfinished": []
+  },
+  "materials": {
+    "domain": "timeline",
+    "label": "时间线",
+    "as_of_chapter": 1,
+    "current_chapter": 1,
+    "chapters": [
+      {
+        "path": "正文/0001 门.md",
+        "chapter": 1,
+        "title": "第一章 门",
+        "digest": "0c3fd059214b72fd188b68f282e019593e36fa6136d955a09a16fbb4dfa95030"
+      }
+    ],
+    "entities": [],
+    "entries": [
+      {
+        "id": "f68c3a4844c385de",
+        "domain": "timeline",
+        "title": "第一章 门",
+        "subtitle": "时间未知",
+        "chapter": 1,
+        "entity_path": null,
+        "coverage": "empty",
+        "freshness": "valid",
+        "task_id": "t_d41c8ef2",
+        "updated_at": "2026-10-23T19:01:38+08:00",
+        "data": {
+          "when": "",
+          "span": "",
+          "location": ""
+        },
+        "evidence": [],
+        "notes": []
+      }
+    ],
+    "total": 1,
+    "next_cursor": "",
+    "coverage": {
+      "total": 1,
+      "found": 0,
+      "empty": 1,
+      "insufficient": 0,
+      "unrecorded": 0,
+      "stale": 0
+    },
+    "warnings": [],
+    "conflicts": []
+  }
+}

@@ -62,6 +62,7 @@ from hastings.workspace.glossary import (
     glossary_view,
     publish_terms,
 )
+from hastings.workspace.material_tasks import publish_material_result
 from hastings.workspace.materials import (
     LIST_RESULT_CHARS,
     READ_MAX_CHARS,
@@ -88,6 +89,7 @@ from hastings.workspace.review import (
     target_digests,
 )
 from hastings.workspace.service import WriteSession
+from hastings.workspace.story_materials import DOMAIN_LABEL, CoverageStore
 from hastings.workspace.task_scope import (
     Mutation,
     MutationAction,
@@ -111,7 +113,7 @@ from tau_agent.types import JSONValue
 __all__ = ["MAX_TURNS", "RunContext", "ToolMode", "build_harness", "build_tools"]
 
 #: 工具集合：普通写作、索引任务，或只读检查。
-ToolMode = Literal["write", "index", "review", "state"]
+ToolMode = Literal["write", "index", "review", "state", "materials"]
 
 #: 单轮最多的模型回合数；到顶就结束并如实记录，不无限循环。
 MAX_TURNS = 24
@@ -170,6 +172,13 @@ class RunContext:
         self.materials.verify_current(self.workspace)
         if not self.session.prepared:
             self.session.prepare()
+            self.record(
+                "version_baseline",
+                {
+                    "baseline_commit": self.session.baseline_head,
+                    "external_commit": self.session.external_commit,
+                },
+            )
         # Git 准备期间可能有外部程序改动文件：落盘前再复核一次依赖版本。
         self.materials.verify_current(self.workspace)
 
@@ -188,6 +197,8 @@ def build_tools(
     roster_store: CharacterStateStore | None = None,
     timeline_store: TimelineStore | None = None,
     clue_store: ClueStore | None = None,
+    material_scope: Mapping[str, object] | None = None,
+    coverage_store: CoverageStore | None = None,
 ) -> list[AgentTool]:
     """本轮可用的文件工具；Git 提交与撤销不暴露给模型。
 
@@ -646,7 +657,7 @@ def build_tools(
         signal: ToolCancellationToken | None = None,
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
-        del tool_call_id, signal, on_update
+        del signal, on_update
         path = _text_argument(arguments, "path")
         text = _text_argument(arguments, "text", allow_empty=True)
         digest = _digest_argument(arguments)
@@ -660,6 +671,18 @@ def build_tools(
             preflight=lambda: workspace.check_write_intent(path, expected_digest=digest),
         )
         view = workspace.write(path, text, expected_digest=digest)
+        run.record(
+            "file_changed",
+            {
+                "tool_call_id": tool_call_id,
+                "action": action,
+                "path": view.path,
+                "before_digest": digest,
+                "after_digest": view.digest,
+                "changed": digest != view.digest,
+                "size": view.size,
+            },
+        )
         run.materials.after_full_write(view)
         return _json({"path": view.path, "digest": view.digest, "size": view.size})
 
@@ -669,7 +692,7 @@ def build_tools(
         signal: ToolCancellationToken | None = None,
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
-        del tool_call_id, signal, on_update
+        del signal, on_update
         path = _text_argument(arguments, "path")
         old_text = _text_argument(arguments, "old_text")
         new_text = _text_argument(arguments, "new_text", allow_empty=True)
@@ -701,6 +724,20 @@ def build_tools(
         )
         updated = view.text.replace(old_text, new_text, 1)
         written = workspace.write(path, updated, expected_digest=digest)
+        run.record(
+            "file_changed",
+            {
+                "tool_call_id": tool_call_id,
+                "action": "update",
+                "path": written.path,
+                "before_digest": view.digest,
+                "after_digest": written.digest,
+                "changed": view.digest != written.digest,
+                "start": start,
+                "end": end,
+                "size": written.size,
+            },
+        )
         run.materials.after_edit(
             before=SourceRef(view.path, view.digest), view=written, start=start, end=end
         )
@@ -712,7 +749,7 @@ def build_tools(
         signal: ToolCancellationToken | None = None,
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
-        del tool_call_id, signal, on_update
+        del signal, on_update
         source = _text_argument(arguments, "source")
         target = _text_argument(arguments, "target")
         digest = _required_digest(arguments)
@@ -722,6 +759,18 @@ def build_tools(
             preflight=lambda: workspace.check_move_intent(source, target, expected_digest=digest),
         )
         view = workspace.move(source, target, expected_digest=digest)
+        run.record(
+            "file_changed",
+            {
+                "tool_call_id": tool_call_id,
+                "action": "move",
+                "path": source,
+                "target": target,
+                "before_digest": digest,
+                "after_digest": view.digest,
+                "changed": True,
+            },
+        )
         run.materials.after_move(SourceRef(source, digest), view)
         return _json({"path": view.path, "digest": view.digest})
 
@@ -731,7 +780,7 @@ def build_tools(
         signal: ToolCancellationToken | None = None,
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
-        del tool_call_id, signal, on_update
+        del signal, on_update
         path = _text_argument(arguments, "path")
         digest = _required_digest(arguments)
         run.before_mutation(
@@ -740,6 +789,17 @@ def build_tools(
             preflight=lambda: workspace.check_delete_intent(path, expected_digest=digest),
         )
         workspace.delete(path, expected_digest=digest)
+        run.record(
+            "file_changed",
+            {
+                "tool_call_id": tool_call_id,
+                "action": "delete",
+                "path": path,
+                "before_digest": digest,
+                "after_digest": None,
+                "changed": True,
+            },
+        )
         run.materials.after_delete(SourceRef(path, digest))
         return _json({"path": path, "deleted": True})
 
@@ -1495,6 +1555,16 @@ def build_tools(
             assert term.evidence is not None
             require_evidence(term.evidence, term.first_chapter)
             published = publish_terms(workspace, glossary_store, (term,))
+            run.record(
+                "state_published",
+                {
+                    "domain": "glossary",
+                    "term": term.term,
+                    "published": 1,
+                    "total": len(published),
+                    "evidence": arguments.get("evidence"),
+                },
+            )
             return _json({"term": term.term, "total": len(published)})
 
         async def save_character_state(
@@ -1531,6 +1601,16 @@ def build_tools(
             for item in snapshots:
                 require_evidence(item.evidence, item.chapter)
             published = publish_states(workspace, roster_store, snapshots)
+            run.record(
+                "state_published",
+                {
+                    "domain": "roster",
+                    "entity": entity,
+                    "published": len(snapshots),
+                    "total": len(published),
+                    "records": arguments.get("states"),
+                },
+            )
             return _json({"entity": entity, "published": len(snapshots), "total": len(published)})
 
         async def save_timeline(
@@ -1554,6 +1634,15 @@ def build_tools(
             for entry in entries:
                 require_evidence(entry.evidence, entry.chapter)
             published = publish_timeline(workspace, timeline_store, entries)
+            run.record(
+                "state_published",
+                {
+                    "domain": "timeline",
+                    "published": len(entries),
+                    "total": len(published),
+                    "records": arguments.get("entries"),
+                },
+            )
             return _json({"published": len(entries), "total": len(published)})
 
         async def save_clues(
@@ -1579,6 +1668,15 @@ def build_tools(
                 if clue.resolution_evidence is not None and clue.resolution_chapter is not None:
                     require_evidence(clue.resolution_evidence, clue.resolution_chapter)
             published = publish_clues(workspace, clue_store, entries)
+            run.record(
+                "state_published",
+                {
+                    "domain": "clues",
+                    "published": len(entries),
+                    "total": len(published),
+                    "records": arguments.get("entries"),
+                },
+            )
             return _json({"published": len(entries), "total": len(published)})
 
         async def save_disclosure(
@@ -1615,6 +1713,16 @@ def build_tools(
             for fact in facts:
                 require_evidence(fact.evidence, fact.chapter)
             published = publish_observed(workspace, disclosure_store, facts)
+            run.record(
+                "state_published",
+                {
+                    "domain": "disclosure",
+                    "entity": entity,
+                    "published": len(facts),
+                    "total": len(published),
+                    "records": arguments.get("facts"),
+                },
+            )
             return _json(
                 {
                     "entity": entity,
@@ -1879,6 +1987,86 @@ def build_tools(
                 execution_mode="sequential",
             ),
         ]
+    if mode == "materials":
+        # 资料整理：只读目录、搜索、读取，外加本域唯一的结果提交工具；没有作品写工具。
+        readonly = {"list_files", "read_file", "search_text"}
+        scope = material_scope or {}
+        domain = str(scope.get("domain") or "")
+
+        async def publish_material(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            if coverage_store is None:
+                raise _input_error("coverage_store", "本轮没有开启资料保存")
+            raw_records = arguments.get("records")
+            if not isinstance(raw_records, list):
+                raise _input_error("records", "必须是数组；空结果用 []")
+            result = publish_material_result(
+                workspace=workspace,
+                root=coverage_store.root,
+                scope=scope,
+                ledger=run.materials,
+                turn_id=run.turn_id,
+                domain=_text_argument(arguments, "domain"),
+                path=_text_argument(arguments, "path"),
+                entity_path=_optional_text_argument(arguments, "entity") or "",
+                outcome=_text_argument(arguments, "outcome"),
+                note=_optional_text_argument(arguments, "note") or "",
+                records=[item for item in raw_records if isinstance(item, dict)],
+                digest=_text_argument(arguments, "digest"),
+            )
+            run.record("material_target_published", dict(result))
+            return _json(result)
+
+        return [
+            *[tool for tool in tools if tool.name in readonly],
+            AgentTool(
+                name="publish_material_result",
+                label="提交资料结果",
+                description=(
+                    f"提交一个目标的「{DOMAIN_LABEL.get(domain, domain)}」整理结果。"
+                    "有发现用 found 并给出条目；读完确认没有相关发现用 empty；"
+                    "信息不足用 insufficient。空结果也要写一句说明。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "domain": {"type": "string", "enum": [domain]},
+                        "path": {
+                            "type": "string",
+                            "description": "本次任务列出的正文章节路径",
+                        },
+                        "digest": {"type": "string", "description": "read_file 得到的 digest"},
+                        "entity": {
+                            "type": "string",
+                            "description": "人物域要填本次选择的小传路径；其他域不要填",
+                        },
+                        "outcome": {
+                            "type": "string",
+                            "enum": ["found", "empty", "insufficient"],
+                        },
+                        "note": {"type": "string", "description": "空结果或信息不足的说明"},
+                        "records": {
+                            "type": "array",
+                            "items": _MATERIAL_RECORD_SCHEMA[domain],
+                        },
+                    },
+                    "required": ["domain", "path", "digest", "outcome", "records"],
+                    "additionalProperties": False,
+                },
+                execute_fn=publish_material,
+                prompt_guidelines=(
+                    "先读完目标当前全文再提交；每条记录都要给原文证据。",
+                    "没有提交结果的目标不算完成；不要用回复代替结果提交。",
+                    "空结果也要写说明，并确认目标已完整读取。",
+                ),
+                execution_mode="sequential",
+            ),
+        ]
     return tools
 
 
@@ -1890,6 +2078,7 @@ def build_turn_assembly(
     history_facts: str = "",
     materials: str = "",
     index_notes: str = "",
+    instructions: str = "",
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
     roster_store: CharacterStateStore | None = None,
@@ -1910,7 +2099,7 @@ def build_turn_assembly(
         history_facts=history_facts,
         materials=materials,
         index_notes=index_notes,
-        instructions=_instructions_for(mode),
+        instructions=instructions or _instructions_for(mode),
         disclosure_store=disclosure_store,
         glossary_store=glossary_store,
         roster_store=roster_store,
@@ -1941,6 +2130,8 @@ def build_harness(
     roster_store: CharacterStateStore | None = None,
     timeline_store: TimelineStore | None = None,
     clue_store: ClueStore | None = None,
+    material_scope: Mapping[str, object] | None = None,
+    coverage_store: CoverageStore | None = None,
     assembly: AssembledContext | None = None,
 ) -> AgentHarness:
     """单个写作 Agent：系统提示 + 文件工具 + 回合上限。
@@ -1981,6 +2172,8 @@ def build_harness(
                 roster_store=roster_store,
                 timeline_store=timeline_store,
                 clue_store=clue_store,
+                material_scope=material_scope,
+                coverage_store=coverage_store,
             ),
             max_turns=max_turns,
         ),
@@ -1994,6 +2187,8 @@ _PROFILE_BY_MODE: dict[ToolMode, Profile] = {
     # 核对任务与建索引同类：只读原文、发布派生记录，不注入文风与旧摘要。
     "state": "extract",
     "review": "review",
+    # 资料整理只装任务要求、目录与本次范围；不装设定集、谜底与作者计划。
+    "materials": "materials",
 }
 
 
@@ -2202,6 +2397,96 @@ _EVIDENCE_SCHEMA: dict[str, Any] = {
     },
     "required": ["path", "digest", "start", "end", "quote"],
     "additionalProperties": False,
+}
+
+#: 资料整理每个域的结果条目结构；一次任务只装配对应域的那一份。
+_MATERIAL_RECORD_SCHEMA: dict[str, dict[str, Any]] = {
+    "chapter_index": {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "description": "这一章发生了什么，≤500 字符"},
+            "evidence": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "index": {"type": "integer", "minimum": 1},
+                        "start": {"type": "integer", "minimum": 0},
+                        "end": {"type": "integer", "minimum": 0},
+                        "quote": {"type": "string"},
+                    },
+                    "required": ["index", "start", "end", "quote"],
+                    "additionalProperties": False,
+                },
+            },
+            "events": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
+            "characters": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
+            "places": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
+            "clues": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
+        },
+        "required": ["summary", "evidence"],
+        "additionalProperties": False,
+    },
+    "timeline": {
+        "type": "object",
+        "properties": {
+            "when": {"type": "string", "description": "原文里的时间说法"},
+            "span": {"type": "string", "description": "这一章跨了多久"},
+            "location": {"type": "string", "description": "主要地点"},
+            "evidence": _EVIDENCE_SCHEMA,
+        },
+        "required": ["when", "evidence"],
+        "additionalProperties": False,
+    },
+    "clues": {
+        "type": "object",
+        "properties": {
+            "clue": {"type": "string", "description": "读者能观察到的事实，不是解释"},
+            "planted_chapter": {"type": "integer", "minimum": 1},
+            "due_chapter": {"type": "integer", "minimum": 1},
+            "status": {"type": "string", "enum": ["open", "resolved", "dropped"]},
+            "supports": {"type": "string"},
+            "resolution_chapter": {"type": "integer", "minimum": 1},
+            "evidence": _EVIDENCE_SCHEMA,
+            "resolution_evidence": _EVIDENCE_SCHEMA,
+        },
+        "required": ["clue", "planted_chapter", "status", "evidence"],
+        "additionalProperties": False,
+    },
+    "glossary": {
+        "type": "object",
+        "properties": {
+            "term": {"type": "string"},
+            "kind": {"type": "string", "enum": ["person", "place", "org", "item"]},
+            "aliases": {"type": "array", "items": {"type": "string"}},
+            "first_chapter": {"type": "integer", "minimum": 1},
+            "evidence": _EVIDENCE_SCHEMA,
+        },
+        "required": ["term", "kind", "first_chapter", "evidence"],
+        "additionalProperties": False,
+    },
+    "disclosure": {
+        "type": "object",
+        "properties": {
+            "fact": {"type": "string", "description": "读者知道了什么"},
+            "chapter": {"type": "integer", "minimum": 1},
+            "evidence": _EVIDENCE_SCHEMA,
+        },
+        "required": ["fact", "chapter", "evidence"],
+        "additionalProperties": False,
+    },
+    "roster": {
+        "type": "object",
+        "properties": {
+            "chapter": {"type": "integer", "minimum": 1},
+            "location": {"type": "string"},
+            "alive": {"type": "boolean"},
+            "stance": {"type": "string"},
+            "evidence": _EVIDENCE_SCHEMA,
+        },
+        "required": ["chapter", "alive", "evidence"],
+        "additionalProperties": False,
+    },
 }
 
 

@@ -1,0 +1,102 @@
+{
+  "model": "deepseek-flash",
+  "task": {
+    "turn_id": "t_6d4858a4",
+    "conversation_id": "c_1f4a4d802994",
+    "domain": "chapter_index",
+    "label": "章节概览",
+    "scope": {
+      "domain": "chapter_index",
+      "chapter_paths": [
+        "正文/0001 雨夜.md"
+      ],
+      "entity_paths": [],
+      "as_of_chapter": 1
+    },
+    "status": "completed",
+    "model": "deepseek-flash",
+    "started_at": "2026-10-23T19:02:19.003+08:00",
+    "published": 1,
+    "done": 1,
+    "total": 1,
+    "targets": [
+      {
+        "path": "正文/0001 雨夜.md",
+        "chapter": 1,
+        "entity_path": "",
+        "outcome": "found",
+        "freshness": "valid"
+      }
+    ],
+    "unfinished": []
+  },
+  "entry": {
+    "id": "8420e5589eefe1b6",
+    "domain": "chapter_index",
+    "title": "第一章 雨夜",
+    "subtitle": "10月21日深夜，侦探抵达旅馆，前台告知只剩一间房。凌晨两点，走廊尽头传来水声。",
+    "chapter": 1,
+    "entity_path": null,
+    "coverage": "found",
+    "freshness": "valid",
+    "task_id": "t_6d4858a4",
+    "updated_at": "2026-10-23T19:02:31+08:00",
+    "data": {
+      "summary": "10月21日深夜，侦探抵达旅馆，前台告知只剩一间房。凌晨两点，走廊尽头传来水声。",
+      "events": [
+        "10月21日深夜，侦探抵达旅馆，前台称只剩一间房。",
+        "凌晨两点，走廊尽头传来水声。"
+      ],
+      "characters": [
+        "侦探：本章唯一在行动中出现的人物，深夜抵达旅馆投宿。",
+        "前台：接待侦探，告知只剩一间房。"
+      ],
+      "places": [
+        "旅馆：故事起始地点，10月21日深夜侦探抵达，客房只剩一间。",
+        "走廊尽头：凌晨两点传来水声的位置。"
+      ],
+      "clues": [
+        "只剩一间房：旅馆房间紧张，为后续安排留下余地。",
+        "凌晨两点走廊尽头传来水声：来源未明的可疑声响。"
+      ]
+    },
+    "evidence": [
+      {
+        "path": "正文/0001 雨夜.md",
+        "digest": "68d228062dc71cc7cf75e50d0101a3941e2523d8ecd5a4ea478dafd657398aa5",
+        "chapter": 1,
+        "start": 6,
+        "end": 31,
+        "quote": "10月21日深夜，侦探抵达旅馆。前台说只剩一间房。",
+        "freshness": "valid"
+      },
+      {
+        "path": "正文/0001 雨夜.md",
+        "digest": "68d228062dc71cc7cf75e50d0101a3941e2523d8ecd5a4ea478dafd657398aa5",
+        "chapter": 1,
+        "start": 33,
+        "end": 47,
+        "quote": "凌晨两点，走廊尽头传来水声。",
+        "freshness": "valid"
+      },
+      {
+        "path": "正文/0001 雨夜.md",
+        "digest": "68d228062dc71cc7cf75e50d0101a3941e2523d8ecd5a4ea478dafd657398aa5",
+        "chapter": 1,
+        "start": 22,
+        "end": 31,
+        "quote": "前台说只剩一间房。",
+        "freshness": "valid"
+      }
+    ],
+    "notes": []
+  },
+  "coverage": {
+    "total": 1,
+    "found": 1,
+    "empty": 0,
+    "insufficient": 0,
+    "unrecorded": 0,
+    "stale": 0
+  }
+}

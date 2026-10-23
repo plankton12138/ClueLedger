@@ -236,9 +236,7 @@ def test_deltas_are_readable_before_the_response_ends(
     workspace_id = _workspace(client, tmp_path)
     conversation_id = _accept(client, workspace_id)["conversation_id"]
 
-    seen = _wait_until(
-        client, workspace_id, conversation_id, _has_delta
-    )
+    seen = _wait_until(client, workspace_id, conversation_id, _has_delta)
     assert not _finished(seen)
     delta = _of_type(seen, "assistant_block_delta")[0]
     assert delta["text"] == "旅馆的灯"
@@ -247,6 +245,17 @@ def test_deltas_are_readable_before_the_response_ends(
     assert delta["message_id"].startswith("m_")
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)
+    request_start = _of_type(events, "model_request_started")[0]
+    request_end = _of_type(events, "model_request_finished")[0]
+    assert request_start["operation_id"] == request_end["operation_id"]
+    assert request_start["seq"] < request_end["seq"]
+    # 活动诊断事件不改变回复流的既有顺序与内容。
+    events = [
+        event
+        for event in events
+        if event["type"]
+        not in ("model_request_started", "model_request_finished", "version_finished")
+    ]
     assert [event["type"] for event in events] == [
         "turn_started",
         # 装配记录先落盘：配置与分区在模型开始输出之前就已经确定。
@@ -523,9 +532,7 @@ def test_stop_keeps_partial_text_and_closes_blocks(
     workspace_id = _workspace(client, tmp_path)
     turn = _accept(client, workspace_id)
     conversation_id = turn["conversation_id"]
-    _wait_until(
-        client, workspace_id, conversation_id, _has_delta
-    )
+    _wait_until(client, workspace_id, conversation_id, _has_delta)
     client.post(f"/api/file-workspaces/{workspace_id}/turns/{turn['turn_id']}/stop")
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)

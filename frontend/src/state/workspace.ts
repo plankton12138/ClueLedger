@@ -22,6 +22,7 @@ import {
   listFiles,
   listWorkspaces,
   openWorkspace,
+  pruneStaleWorkspaces,
   readFile,
   searchText,
   WorkspaceApiError,
@@ -57,6 +58,7 @@ interface WorkspaceStore {
   init(): Promise<void>;
   open(path: string, create: boolean): Promise<void>;
   selectWorkspace(id: string): Promise<void>;
+  pruneMissing(): Promise<void>;
   refreshAll(): Promise<void>;
   refreshGit(): Promise<void>;
   openPath(path: string): Promise<void>;
@@ -147,6 +149,36 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     // 会话按作品各自加载：切作品不把上一部作品的会话带过来。
     await useConversationsStore.getState().load(id);
     await get().refreshAll();
+  },
+
+  async pruneMissing() {
+    try {
+      const result = await pruneStaleWorkspaces();
+      set({ bindings: result.workspaces, error: null });
+      const currentId = get().currentId;
+      if (currentId && !result.workspaces.some((item) => item.id === currentId)) {
+        const next = result.workspaces.find((item) => item.exists);
+        if (next) await get().selectWorkspace(next.id);
+        else {
+          set({
+            currentId: null,
+            catalog: EMPTY_CATALOG,
+            file: null,
+            selectedPath: null,
+            search: null,
+            git: null,
+            diff: "",
+            log: [],
+            selectedCommit: null,
+            commitDiff: "",
+          });
+          useConversationsStore.getState().reset();
+        }
+      }
+      set({ notice: `已清理 ${result.removed.length} 个目录已不存在的作品。` });
+    } catch (error) {
+      set({ error: describe(error) });
+    }
   },
 
   async refreshAll() {

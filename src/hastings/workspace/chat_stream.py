@@ -128,6 +128,7 @@ class ChatStreamBridge:
         self._pending_since: float | None = None
         self._response: _Response | None = None
         self._phase = ""
+        self.parent_operation_id: str | None = None
 
     # -- 发布 ---------------------------------------------------------------
 
@@ -163,6 +164,8 @@ class ChatStreamBridge:
 
     def _push(self, event: dict[str, Any]) -> None:
         event.setdefault("turn_id", self.turn_id)
+        if self.parent_operation_id is not None:
+            event.setdefault("parent_operation_id", self.parent_operation_id)
         self._buffer.append(event)
         text = event.get("text")
         if isinstance(text, str):

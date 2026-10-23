@@ -153,6 +153,15 @@ class RecentWorkspaces:
             self._save([binding, *entries][:_MAX_ENTRIES])
         return binding
 
+    def prune_missing(self) -> tuple[WorkspaceBinding, ...]:
+        """移除目录已不在的登记；只改登记文件，不碰磁盘上的作品内容。"""
+        with self._lock:
+            entries = self._load()
+            removed = tuple(item for item in entries if not item.exists)
+            if removed:
+                self._save([item for item in entries if item.exists])
+            return removed
+
     # -- 内部 ---------------------------------------------------------------
 
     def _load(self) -> list[WorkspaceBinding]:
@@ -245,6 +254,10 @@ class AcceptedTurn:
     purpose: str = "chat"
     index_paths: tuple[str, ...] = ()
     review_paths: tuple[str, ...] = ()
+    #: 资料任务的冻结范围；普通写作与旧日志为空。
+    material_scope: dict[str, object] | None = None
+    #: 轮次来源：``writing``（写作台）或 ``materials``（故事资料页）。旧日志按写作处理。
+    origin: str = "writing"
 
 
 @dataclass(frozen=True, slots=True)
@@ -380,6 +393,7 @@ class ConversationStore:
                 frozen = event.get("context")
                 paths = event.get("index_paths")
                 review = event.get("review_paths")
+                scope = event.get("material_scope")
                 return AcceptedTurn(
                     conversation_id=conversation.id,
                     turn_id=turn_id,
@@ -395,6 +409,8 @@ class ConversationStore:
                     review_paths=(
                         tuple(str(item) for item in review) if isinstance(review, list) else ()
                     ),
+                    material_scope=dict(scope) if isinstance(scope, dict) else None,
+                    origin=str(event.get("origin") or "writing"),
                 )
         return None
 
@@ -417,6 +433,8 @@ class ConversationStore:
         purpose: str = "chat",
         index_paths: Sequence[str] = (),
         review_paths: Sequence[str] = (),
+        material_scope: Mapping[str, object] | None = None,
+        origin: str = "writing",
     ) -> AcceptedTurn:
         """建会话与受理首轮合成一步：只留下「至少有一条已受理提示」的正式会话。"""
         prompt = _require_prompt(text)
@@ -448,6 +466,9 @@ class ConversationStore:
             event = {
                 "seq": 1,
                 "at": now,
+                "event_version": 1,
+                "event_id": f"{cid}:1",
+                "conversation_id": cid,
                 "type": "turn_started",
                 "turn_id": turn_id,
                 "text": prompt,
@@ -460,6 +481,10 @@ class ConversationStore:
                 event["purpose"] = purpose
                 event["index_paths"] = list(index_paths)
                 event["review_paths"] = list(review_paths)
+            if material_scope is not None:
+                event["material_scope"] = dict(material_scope)
+            if origin != "writing":
+                event["origin"] = origin
             self._publish(cid, (meta, event))
             self._seqs[cid] = 1
             # 日志已经发布：这一轮确实被受理了，索引缺项由下次读取的重建补齐。
@@ -476,6 +501,8 @@ class ConversationStore:
                 purpose,
                 tuple(index_paths),
                 tuple(review_paths),
+                dict(material_scope) if material_scope is not None else None,
+                origin,
             )
 
     def accept_turn(
@@ -490,6 +517,8 @@ class ConversationStore:
         purpose: str = "chat",
         index_paths: Sequence[str] = (),
         review_paths: Sequence[str] = (),
+        material_scope: Mapping[str, object] | None = None,
+        origin: str = "writing",
     ) -> AcceptedTurn:
         """在已有会话里受理一轮；同一请求键重复提交返回原来那一轮。"""
         prompt = _require_prompt(text)
@@ -515,6 +544,10 @@ class ConversationStore:
                 event["purpose"] = purpose
                 event["index_paths"] = list(index_paths)
                 event["review_paths"] = list(review_paths)
+            if material_scope is not None:
+                event["material_scope"] = dict(material_scope)
+            if origin != "writing":
+                event["origin"] = origin
             record = self.append(conversation_id, event)
             return AcceptedTurn(
                 conversation_id=conversation_id,
@@ -564,7 +597,16 @@ class ConversationStore:
             records: list[dict[str, Any]] = []
             for event in events:
                 seq += 1
-                records.append({"seq": seq, "at": now, **event})
+                records.append(
+                    {
+                        "seq": seq,
+                        "at": now,
+                        "event_version": 1,
+                        "event_id": f"{conversation_id}:{seq}",
+                        "conversation_id": conversation_id,
+                        **event,
+                    }
+                )
             payload = "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records)
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -1140,7 +1182,7 @@ def _last_seq(path: Path) -> int:
 
 
 def _now() -> str:
-    return datetime.now().astimezone().isoformat(timespec="seconds")
+    return datetime.now().astimezone().isoformat(timespec="milliseconds")
 
 
 def _new_id(prefix: str) -> str:

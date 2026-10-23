@@ -1,0 +1,73 @@
+........................................................................ [ 12%]
+........................................................................ [ 25%]
+...........F............................................................ [ 38%]
+........................................................................ [ 51%]
+........................................................................ [ 64%]
+........................................................................ [ 77%]
+........................................................................ [ 90%]
+....................................................                     [100%]
+================================== FAILURES ===================================
+______________ test_deltas_are_readable_before_the_response_ends ______________
+
+tmp_path = WindowsPath('C:/Projects/Agent/myagent/data/test-tmp/activity-full/test_deltas_are_readable_befor0')
+client_factory = <function client_factory.<locals>.build at 0x00000225B55E05E0>
+
+    def test_deltas_are_readable_before_the_response_ends(
+        tmp_path: Path, client_factory: Callable[[Any], TestClient]
+    ) -> None:
+        """�׶�����Ҫ��ģ�ͻ�û����ʱ���ܶ�����������ʽ��ֻ�����ơ�"""
+        provider = FlowProvider(
+            [
+                [
+                    _text_delta("�ùݵĵ�"),
+                    _text_end("�ùݵĵ�Ϩ���ˡ�"),
+                    _done([TextContent(text="�ùݵĵ�Ϩ���ˡ�")]),
+                ]
+            ],
+            pace=0.4,
+        )
+        client = client_factory(provider)
+        workspace_id = _workspace(client, tmp_path)
+        conversation_id = _accept(client, workspace_id)["conversation_id"]
+    
+        seen = _wait_until(
+            client, workspace_id, conversation_id, _has_delta
+        )
+        assert not _finished(seen)
+        delta = _of_type(seen, "assistant_block_delta")[0]
+        assert delta["text"] == "�ùݵĵ�"
+        assert delta["part"] == 0
+        assert delta["kind"] == "text"
+        assert delta["message_id"].startswith("m_")
+    
+        events = _wait_until(client, workspace_id, conversation_id, _finished)
+>       assert [event["type"] for event in events] == [
+            "turn_started",
+            # װ���¼�����̣������������ģ�Ϳ�ʼ���֮ǰ���Ѿ�ȷ����
+            "state_injected",
+            "run_phase",
+            "assistant_started",
+            "assistant_block_started",
+            "assistant_block_delta",
+            "assistant_block_finished",
+            "assistant_message",
+            "assistant_finished",
+            "run_phase",
+            "run_finished",
+        ]
+E       AssertionError: assert ['turn_starte...started', ...] == ['turn_starte...k_delta', ...]
+E         
+E         At index 2 diff: 'model_request_started' != 'run_phase'
+E         Left contains 3 more items, first extra item: 'run_phase'
+E         Use -v to get more diff
+
+tests\workspace\test_chat_stream.py:250: AssertionError
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Projects\Agent\myagent\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/workspace/test_chat_stream.py::test_deltas_are_readable_before_the_response_ends
+1 failed, 555 passed, 1 warning in 140.78s (0:02:20)

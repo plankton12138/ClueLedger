@@ -1,0 +1,52 @@
+[WebServer] (node:29760) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] INFO:     Started server process [1768]
+[WebServer] INFO:     Waiting for application startup.
+[WebServer] INFO:     Application startup complete.
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8943 (Press CTRL+C to quit)
+
+Running 1 test using 1 worker
+
+(node:36780) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  x  1 [online] › e2e\activity.spec.ts:6:1 › 在线模型任务的事件流、输入详情、跨轮实时更新、筛选与导出 (1.8s)
+
+
+  1) [online] › e2e\activity.spec.ts:6:1 › 在线模型任务的事件流、输入详情、跨轮实时更新、筛选与导出 ────────────────────────────
+
+    Error: locator.check: Clicking the checkbox did not change its state
+    Call log:
+      - waiting for getByRole('dialog', { name: '活动记录' }).getByLabel('保存后续模型输入快照')
+        - locator resolved to <input type="checkbox"/>
+      - attempting click action
+        - waiting for element to be visible, enabled and stable
+        - element is visible, enabled and stable
+        - scrolling into view if needed
+        - done scrolling
+        - performing click action
+        - click action done
+        - waiting for scheduled navigations to finish
+        - navigations have finished
+
+
+      27 |   const panel = page.getByRole("dialog", { name: "活动记录" });
+      28 |   await expect(panel.getByText("实时连接中", { exact: true })).toBeVisible();
+    > 29 |   await panel.getByLabel("保存后续模型输入快照").check();
+         |                                        ^
+      30 |   await expect.poll(async () => (await (await request.get(base + "/activity/settings")).json()).capture_inputs).toBe(true);
+      31 |   await panel.getByRole("button", { name: "关闭", exact: true }).click();
+      32 |
+        at C:\Projects\Agent\myagent\frontend\e2e\activity.spec.ts:29:40
+
+    Error Context: ..\data\test-tmp\activity-browser\activity-在线模型任务的事件流、输入详情、跨轮实时更新、筛选与导出-online\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\data\test-tmp\activity-browser\activity-在线模型任务的事件流、输入详情、跨轮实时更新、筛选与导出-online\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\data\test-tmp\activity-browser\activity-在线模型任务的事件流、输入详情、跨轮实时更新、筛选与导出-online\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [online] › e2e\activity.spec.ts:6:1 › 在线模型任务的事件流、输入详情、跨轮实时更新、筛选与导出 ─────────────────────────────

@@ -130,9 +130,53 @@ test("稿纸只读显示正文", async ({ page }) => {
   ).toHaveCount(0);
 });
 
+test("字号调整同步到正文与活动日志，刷新保留并可恢复默认", async ({ page }) => {
+  await open(page);
+  await page.locator(".toc-row").filter({ hasText: "雨夜" }).click();
+  const paragraph = page.locator(".prose-paper p").first();
+  const original = await paragraph.evaluate(element => ({
+    font: parseFloat(getComputedStyle(element).fontSize),
+    line: parseFloat(getComputedStyle(element).lineHeight),
+  }));
+  const choice = page.getByLabel("调整字体大小");
+  await choice.selectOption("150");
+  await expect.poll(() => paragraph.evaluate(element => parseFloat(getComputedStyle(element).fontSize)))
+    .toBeCloseTo(original.font * 1.5);
+  expect(await paragraph.evaluate(element => parseFloat(getComputedStyle(element).lineHeight)))
+    .toBeCloseTo(original.line * 1.5);
+  expect(await page.locator(".chat-input").evaluate(element => parseFloat(getComputedStyle(element).fontSize)))
+    .toBeCloseTo(13 * 1.5);
+  // 调字号不缩放窗口和栏宽，顶栏允许换行。
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.reload();
+  await expect(choice).toHaveValue("150");
+  await page.getByRole("button", { name: "活动记录", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: "活动记录" });
+  await expect(panel.getByLabel("调整字体大小")).toHaveValue("150");
+  await expect(panel.locator("main article button").first()).toBeVisible();
+  const columnHeight = await panel.locator("main > div").first().evaluate(element => element.getBoundingClientRect().height);
+  const groupTop = await panel.locator("main article > div").first().evaluate(element => parseFloat(getComputedStyle(element).top));
+  expect(groupTop).toBeGreaterThanOrEqual(columnHeight);
+  const row = panel.locator("main article button").first();
+  const larger = await row.evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+  await panel.getByLabel("调整字体大小").selectOption("120");
+  await expect.poll(() => row.evaluate(element => parseFloat(getComputedStyle(element).fontSize)))
+    .toBeCloseTo(larger * 1.2 / 1.5);
+  // 详情里的固定 px 字号也跟随；继承字号没有重复放大。
+  await row.click();
+  const detail = panel.locator("pre").first();
+  await expect(detail).toBeVisible();
+  expect(await detail.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(11 * 1.2);
+  await panel.getByRole("button", { name: "恢复默认字号" }).click();
+  await expect(panel.getByLabel("调整字体大小")).toHaveValue("100");
+  await panel.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(choice).toHaveValue("100");
+});
+
 test("改动与历史列出提交，撤销后内容回退", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "改动与历史" }).click();
+  await page.getByRole("button", { name: "活动记录", exact: true }).click();
+  await page.getByRole("button", { name: "文件版本", exact: true }).click();
   await expect(page.getByText("补充线索")).toBeVisible();
   await expect(page.getByText("写入第一章")).toBeVisible();
 
@@ -156,7 +200,7 @@ test("搜索定位到正文，外部改动刷新后可见", async ({ page }) => 
     "# 来信\n\n早上，信封从门缝里塞进来。\n",
     "utf-8",
   );
-  await page.getByRole("button", { name: "刷新" }).click();
+  await page.getByRole("button", { name: "重新读取文件" }).click();
   await expect(page.locator(".toc-row").filter({ hasText: "来信" })).toBeVisible();
 });
 
@@ -168,7 +212,7 @@ test("章名带章序，人物标签在目录与稿纸一致", async ({ page }) 
     "utf-8",
   );
   await open(page);
-  await page.getByRole("button", { name: "刷新" }).click();
+  await page.getByRole("button", { name: "重新读取文件" }).click();
 
   // 章序来自文件编号，不按列表位置重排。
   await expect(page.getByRole("button", { name: "第一章 雨夜" })).toBeVisible();
@@ -264,7 +308,7 @@ test("稿纸横线随内容滚动", async ({ page }) => {
   writeFileSync(join(workspaceRoot, "正文", "0003 长夜.md"), `# 长夜\n\n${long}\n`, "utf-8");
 
   await open(page);
-  await page.getByRole("button", { name: "刷新" }).click();
+  await page.getByRole("button", { name: "重新读取文件" }).click();
   await page.locator(".toc-row").filter({ hasText: "长夜" }).click();
   await expect(page.getByText("第 1 段")).toBeVisible();
 
@@ -316,7 +360,8 @@ test("选好位置并起名后新建作品，建立版本记录", async ({ page 
   await page.waitForFunction((path) => document.body.innerText.includes(path), created, {
     timeout: 10_000,
   });
-  await page.getByRole("button", { name: "改动与历史" }).click();
+  await page.getByRole("button", { name: "活动记录", exact: true }).click();
+  await page.getByRole("button", { name: "文件版本", exact: true }).click();
   await expect(page.getByText("初始化作品目录")).toBeVisible();
   expect(existsSync(join(created, ".git"))).toBe(true);
 });

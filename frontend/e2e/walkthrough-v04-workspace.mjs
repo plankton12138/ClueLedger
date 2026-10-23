@@ -148,7 +148,7 @@ await step("外部新增的章节刷新后可见", async () => {
     "# 来信\n\n早上，信封从门缝里塞进来。\n",
     "utf-8",
   );
-  await page.getByRole("button", { name: "刷新" }).click();
+  await page.getByRole("button", { name: "重新读取文件" }).click();
   await page.getByRole("button", { name: "来信" }).waitFor();
 });
 

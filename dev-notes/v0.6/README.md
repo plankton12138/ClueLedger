@@ -7,6 +7,8 @@
 
 | 需要了解 | 入口 |
 |---|---|
+| 全局字号、行高及本机偏好 | [显示偏好](modules/appearance.md) |
+| 事件流、作品级查询、详细模型与操作记录、导出及文件版本 | [活动记录模块](modules/activity-log.md)、[V06-F 交付记录](notes/V06-F-activity-log.md) |
 | 状态发布依据、任务截止章、写后检查接线与审查修复 | [V06-E 审查修复](notes/V06-E-review-fixes.md) |
 | 上下文按用途分区装配、预算与 `state_injected` 事件（已实施） | [V06-E1 装配容器](notes/V06-E1-assembly.md) |
 | 人物身份声明、按章节生效的披露与身份面板（已实施） | [V06-E2a 身份披露](notes/V06-E2-disclosure.md) |

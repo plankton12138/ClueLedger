@@ -66,6 +66,23 @@ def test_deleted_directory_is_reported(tmp_path: Path) -> None:
     assert gone.value.code == "WORKSPACE_NOT_FOUND"
 
 
+def test_prune_missing_removes_only_gone_directories(tmp_path: Path) -> None:
+    alive = _directory(tmp_path, "还在")
+    gone = _directory(tmp_path, "已删除")
+    book = RecentWorkspaces(tmp_path / "state")
+    kept = book.bind(alive)
+    removed = book.bind(gone)
+    gone.rmdir()
+
+    pruned = book.prune_missing()
+
+    assert [item.id for item in pruned] == [removed.id]
+    assert [item.id for item in book.recent()] == [kept.id]
+    reloaded = RecentWorkspaces(tmp_path / "state")
+    assert [item.id for item in reloaded.recent()] == [kept.id]
+    assert book.prune_missing() == ()
+
+
 def test_corrupt_registry_is_treated_as_empty(tmp_path: Path) -> None:
     state = tmp_path / "state"
     state.mkdir()

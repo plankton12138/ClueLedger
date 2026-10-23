@@ -16,6 +16,12 @@ export interface WorkspaceBinding {
   exists: boolean;
 }
 
+/** 清理失效目录后的结果：被移除的登记与仍在册的作品。 */
+export interface PruneWorkspacesResult {
+  removed: WorkspaceBinding[];
+  workspaces: WorkspaceBinding[];
+}
+
 /** 新作品的默认父目录（服务端解析出的「文档」目录）。 */
 export interface DefaultLocation {
   root: string;
@@ -199,6 +205,10 @@ export type RunPhase = "model" | "tool" | "record";
 interface EventBase {
   seq: number;
   at: string;
+  event_id?: string;
+  event_version?: number;
+  conversation_id?: string;
+  parent_operation_id?: string | null;
 }
 
 /**
@@ -209,6 +219,24 @@ interface EventBase {
  * 可选字段只用于兼容旧记录，新事件一律写全。
  */
 export type WorkspaceEvent =
+  | (EventBase & { type: "model_request_started"; turn_id: string; operation_id: string;
+      stage: string; model: string; input_detail: string | null; input_captured: boolean;
+      system_chars: number; message_count: number; tools: string[] })
+  | (EventBase & { type: "model_request_finished"; turn_id: string; operation_id: string;
+      stage: string; model: string; status: string; duration_ms: number | null;
+      first_output_ms?: number | null; usage: Record<string, unknown> | null })
+  | (EventBase & { type: "file_changed"; turn_id: string; tool_call_id: string;
+      action: "create" | "update" | "delete" | "move"; path: string; target?: string;
+      before_digest: string | null; after_digest: string | null; changed: boolean })
+  | (EventBase & { type: "state_published"; turn_id: string; domain: string;
+      published: number; total: number; entity?: string })
+  | (EventBase & { type: "chapter_index_updated"; turn_id: string; path: string;
+      source_digest: string; recipe_version: number; entries: number; status: string })
+  | (EventBase & { type: "version_baseline"; turn_id: string;
+      baseline_commit: string | null; external_commit: string | null })
+  | (EventBase & { type: "version_finished"; turn_id: string; status: string;
+      recording: Recording; commit: string | null; changed_paths: string[] })
+  | (EventBase & { type: "stop_requested"; turn_id: string })
   | (EventBase & { type: "turn_started"; turn_id: string; text: string })
   | (EventBase & { type: "run_phase"; turn_id: string; phase: RunPhase })
   | (EventBase & { type: "assistant_started"; turn_id: string; message_id: string })
@@ -261,6 +289,8 @@ export type WorkspaceEvent =
       tool_call_id?: string;
       tool: string;
       args?: Record<string, unknown>;
+      input_detail?: string;
+      parent_operation_id?: string | null;
     })
   | (EventBase & {
       type: "tool_finished";
@@ -270,6 +300,9 @@ export type WorkspaceEvent =
       args?: Record<string, unknown>;
       ok: boolean;
       summary?: string;
+      result_detail?: string;
+      result_chars?: number;
+      parent_operation_id?: string | null;
       duration_ms?: number | null;
     })
   | (EventBase & { type: "error"; turn_id: string; code?: string; message?: string })
@@ -323,6 +356,24 @@ export type WorkspaceEvent =
       total_chars: number;
     })
   | (EventBase & {
+      type: "material_target_published";
+      turn_id: string;
+      domain: string;
+      path: string;
+      entity: string;
+      outcome: "found" | "empty" | "insufficient";
+      published: number;
+      note?: string;
+    })
+  | (EventBase & {
+      type: "material_task_finished";
+      turn_id: string;
+      domain: string;
+      done: number;
+      total: number;
+      note?: string;
+    })
+  | (EventBase & {
       type: "run_finished";
       turn_id: string;
       status: RunStatus;
@@ -331,160 +382,6 @@ export type WorkspaceEvent =
       commit?: string | null;
       note?: string;
     });
-
-/** 一章索引的当前状态：内容来自上次发布，状态按当前磁盘算出。 */
-export type ChapterIndexStatus = "missing" | "valid" | "stale" | "source_missing" | "unavailable";
-
-export interface ChapterIndexEvidence {
-  index: number;
-  start: number;
-  end: number;
-  quote: string;
-}
-
-export interface ChapterIndexEntry {
-  kind: "event" | "character" | "place" | "clue";
-  text: string;
-  evidence: number[];
-}
-
-export interface ChapterIndexItem {
-  source_path: string;
-  source_digest: string;
-  recipe_version: number;
-  generated_at: string;
-  summary: string;
-  status: ChapterIndexStatus;
-  evidence: ChapterIndexEvidence[];
-  events: ChapterIndexEntry[];
-  characters: ChapterIndexEntry[];
-  places: ChapterIndexEntry[];
-  clues: ChapterIndexEntry[];
-}
-
-export interface ChapterIndex {
-  items: ChapterIndexItem[];
-}
-
-/** 一条身份披露：第几章起读者已知，或计划第几章披露。 */
-export interface DisclosureFact {
-  fact: string;
-  chapter: number;
-  /** text：正文核对过；declared：只有作者声明。 */
-  source?: "text" | "declared";
-}
-
-export interface DisclosureEntity {
-  path: string;
-  name: string;
-  surface: string;
-  aliases: string[];
-  roles: string[];
-  revealed: DisclosureFact[];
-  /** 声明了起始章，但正文还没写到那一章。 */
-  upcoming: DisclosureFact[];
-  /** 计划披露：只在这里显示，不进入写作上下文。 */
-  planned: DisclosureFact[];
-  overdue: boolean;
-  /** 这个角色有没有可用的正文核对记录。 */
-  record_status?: "valid" | "stale" | "source_missing" | null;
-  verified?: number;
-  warnings: string[];
-}
-
-export interface DisclosureConflict {
-  path: string;
-  name: string;
-  kind: string;
-  label: string;
-  detail: string;
-}
-
-export interface DisclosureState {
-  domain: "disclosure";
-  current_chapter: number;
-  entities: DisclosureEntity[];
-  conflicts: DisclosureConflict[];
-}
-
-/** 一个角色截至当前章的最后一次原文核对状态。 */
-export interface RosterCharacter {
-  path: string;
-  name: string;
-  location: string;
-  alive: boolean;
-  stance: string;
-  /** 这条状态出自第几章；没有核对记录时为 null。 */
-  chapter: number | null;
-  /** 距当前章差几章；0 或 null 表示不落后。 */
-  lag: number | null;
-  stale: boolean;
-  warnings: string[];
-}
-
-export interface RosterState {
-  domain: "roster";
-  current_chapter: number;
-  characters: RosterCharacter[];
-  warnings: string[];
-}
-
-/** 一章的时间锚点：`when` 是原文的说法，不做日期换算。 */
-export interface TimelineEntry {
-  chapter: number;
-  when: string;
-  span: string;
-  location: string;
-}
-
-export interface TimelineState {
-  domain: "timeline";
-  current_chapter: number;
-  entries: TimelineEntry[];
-  /** 有正文但没有锚点的章号。 */
-  missing: number[];
-  warnings: string[];
-}
-
-/** 一条线索：埋在哪一章、该在哪一章回收、现在什么状态。 */
-export interface ClueEntry {
-  clue: string;
-  planted_chapter: number;
-  due_chapter: number | null;
-  status: "open" | "resolved" | "dropped";
-  label: string;
-  /** 计划回收章已过、仍未回收。 */
-  overdue: boolean;
-  supports: string;
-  resolution_chapter: number | null;
-  quote: string;
-}
-
-export interface ClueState {
-  domain: "clues";
-  current_chapter: number;
-  entries: ClueEntry[];
-  /** 超期未回收的线索内容。 */
-  overdue: string[];
-  warnings: string[];
-}
-
-export interface GlossaryTerm {
-  term: string;
-  kind: "person" | "place" | "org" | "item";
-  label: string;
-  aliases: string[];
-  first_chapter: number;
-  source: "declared" | "text";
-}
-
-export interface GlossaryState {
-  domain: "glossary";
-  current_chapter: number;
-  terms: GlossaryTerm[];
-  conflicts: { term: string; kind: string; detail: string }[];
-  warnings: string[];
-}
 
 /** 本轮范围里的一条允许操作。 */
 export interface TaskGrant {
@@ -610,6 +507,10 @@ export function listWorkspaces(): Promise<WorkspaceBinding[]> {
   return request<WorkspaceBinding[]>("");
 }
 
+export function pruneStaleWorkspaces(): Promise<PruneWorkspacesResult> {
+  return request<PruneWorkspacesResult>("/stale", { method: "DELETE" });
+}
+
 export function fetchDefaultLocation(): Promise<DefaultLocation> {
   return request<DefaultLocation>("/default-location");
 }
@@ -700,35 +601,6 @@ export function gitRevert(workspaceId: string, commit: string): Promise<{ commit
 export function fetchReviews(workspaceId: string, path?: string): Promise<ReviewList> {
   const suffix = path ? `?path=${encodeURIComponent(path)}` : "";
   return request<ReviewList>(`/${workspaceId}/reviews${suffix}`);
-}
-
-export function fetchChapterIndex(workspaceId: string): Promise<ChapterIndex> {
-  return request<ChapterIndex>(`/${workspaceId}/chapter-index`);
-}
-
-/** 身份状态：这一版由小传元信息实时算出，没有派生记录。 */
-export function fetchDisclosureState(workspaceId: string): Promise<DisclosureState> {
-  return request<DisclosureState>(`/${workspaceId}/state`);
-}
-
-/** 人物状态：位置、生死、立场，只来自原文核对记录。 */
-export function fetchRosterState(workspaceId: string): Promise<RosterState> {
-  return request<RosterState>(`/${workspaceId}/state?domain=roster`);
-}
-
-/** 故事时间：一章一个锚点，缺锚点的章单独列出。 */
-export function fetchTimelineState(workspaceId: string): Promise<TimelineState> {
-  return request<TimelineState>(`/${workspaceId}/state?domain=timeline`);
-}
-
-/** 线索台账：只列未回收的进上下文，超期项排在最前。 */
-export function fetchClueState(workspaceId: string): Promise<ClueState> {
-  return request<ClueState>(`/${workspaceId}/state?domain=clues`);
-}
-
-/** 专有名词：人物来自小传声明，其他专名来自原文登记。 */
-export function fetchGlossaryState(workspaceId: string): Promise<GlossaryState> {
-  return request<GlossaryState>(`/${workspaceId}/state?domain=glossary`);
 }
 
 export function listConversations(workspaceId: string): Promise<ConversationList> {

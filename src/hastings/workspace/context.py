@@ -54,6 +54,7 @@ from hastings.workspace.timeline import TimelineStore, build_timeline, timeline_
 
 __all__ = [
     "INDEX_INSTRUCTIONS",
+    "MATERIALS_INSTRUCTIONS",
     "SETTINGS_BUDGET",
     "STATE_INSTRUCTIONS",
     "build_assembled_context",
@@ -166,6 +167,19 @@ STATE_INSTRUCTIONS = """\
 - 人物说「我当时在客厅」不等于他真在客厅：写成「某人声称」，或者不记。
 - 原文没交代的不要补。缺一条比记错一条安全：缺失会在下一轮核对里补上，错的会被一直注入。
 - 只发布变化过的条目：位置与立场都没变就不必重复记录。
+"""
+
+
+#: 资料整理的兜底要求；具体域的要求由 material_tasks 按任务生成。
+MATERIALS_INSTRUCTIONS = """\
+你在整理这部作品的派生资料，供作者查看与后续写作使用。这一轮只读正文与设定，
+发布带原文依据的资料记录，不改任何作品文件。
+
+## 这一轮只做整理
+- 只处理任务里列出的章节与人物，不要顺手扩大范围。
+- 每读完一个目标再提交结果；没有提交结果的目标不算完成。
+- 空结果要说明读到了什么、为什么没有相关发现。
+- 证据要给路径、版本、字符区间与引文，区间与引文必须一致。
 """
 
 
@@ -283,6 +297,8 @@ def _default_instructions(profile: Profile) -> str:
     """
     if profile == "extract":
         return INDEX_INSTRUCTIONS
+    if profile == "materials":
+        return MATERIALS_INSTRUCTIONS
     if profile == "review":
         from hastings.workspace.review import REVIEW_INSTRUCTIONS
 
@@ -406,7 +422,7 @@ def build_assembled_context(
                     budget=GLOSSARY_BUDGET,
                 )
             )
-    if profile != "extract":
+    if profile in ("writer", "review"):
         parts.append(
             Partition(
                 key="settings",

@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CHAT, DEFAULT_LAYOUT, SIDEBAR, clampWidth, parseLayout, useLayoutStore } from "./layout";
+import { CHAT, DEFAULT_LAYOUT, FONT_SCALE, SIDEBAR, clampWidth, parseLayout, useLayoutStore } from "./layout";
 
 describe("clampWidth", () => {
   it("取整并限制在区间内", () => {
@@ -46,6 +46,14 @@ describe("parseLayout", () => {
   it("保留合法的显隐状态", () => {
     expect(parseLayout(JSON.stringify({ chatVisible: false })).chatVisible).toBe(false);
   });
+
+  it("旧偏好缺少字号时保留布局，并兼容损坏与越界的字号", () => {
+    expect(parseLayout(JSON.stringify({ chatVisible: false, sidebarWidth: 300 })))
+      .toMatchObject({ chatVisible: false, sidebarWidth: 300, fontScale: 100 });
+    expect(parseLayout('{"fontScale":"large"}').fontScale).toBe(FONT_SCALE.default);
+    expect(parseLayout('{"fontScale":999}').fontScale).toBe(FONT_SCALE.max);
+    expect(parseLayout('{"fontScale":0}').fontScale).toBe(FONT_SCALE.min);
+  });
 });
 
 describe("useLayoutStore", () => {
@@ -79,6 +87,19 @@ describe("useLayoutStore", () => {
     expect(useLayoutStore.getState().chatVisible).toBe(false);
     const [, raw] = setItem.mock.calls[0] as [string, string];
     expect(JSON.parse(raw).chatVisible).toBe(false);
+  });
+
+  it("调整和恢复字号保存到同一份偏好，并保留栏宽与显隐", () => {
+    const setItem = vi.fn();
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem });
+    useLayoutStore.setState({ chatWidth: 420, chatVisible: false });
+    useLayoutStore.getState().setFontScale(120);
+    expect(JSON.parse(setItem.mock.calls[0]![1])).toMatchObject({
+      fontScale: 120, chatWidth: 420, chatVisible: false,
+    });
+    useLayoutStore.getState().setFontScale(FONT_SCALE.default);
+    expect(useLayoutStore.getState().fontScale).toBe(100);
+    expect(useLayoutStore.getState().chatWidth).toBe(420);
   });
 
   it("本地存储不可写时只丢偏好，不抛错", () => {

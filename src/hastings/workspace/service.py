@@ -21,12 +21,14 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from hastings.server.provider_runtime import ModelSnapshot
+from hastings.workspace.activity import ActivityStore, redact
 from hastings.workspace.chapter_index import (
     MAX_INDEX_CHAPTERS,
     ChapterIndexStore,
@@ -41,6 +43,15 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import GlossaryStore
+from hastings.workspace.material_tasks import (
+    MaterialTaskScope,
+    freeze_material_scope,
+    material_instructions,
+    scope_brief,
+)
+from hastings.workspace.material_tasks import (
+    targets as material_targets,
+)
 from hastings.workspace.materials import (
     ContextRequest,
     ContextSnapshot,
@@ -50,9 +61,11 @@ from hastings.workspace.materials import (
     prepare_references,
     verify_context,
 )
+from hastings.workspace.model_activity import RecordedProvider
 from hastings.workspace.review import ReviewStore, target_digests
 from hastings.workspace.state import ConversationStore
 from hastings.workspace.state_store import state_chapter
+from hastings.workspace.story_materials import CoverageStore
 from hastings.workspace.timeline import TimelineStore
 from tau_agent.events import (
     MessageEndEvent,
@@ -215,13 +228,15 @@ def _summary(instruction: str) -> str:
     return collapsed[:_MAX_SUMMARY]
 
 
-def _tool_mode(purpose: str) -> Literal["write", "index", "review", "state"]:
+def _tool_mode(purpose: str) -> Literal["write", "index", "review", "state", "materials"]:
     if purpose == "update_chapter_index":
         return "index"
     if purpose == "review":
         return "review"
     if purpose in ("update_disclosure", "update_state"):
         return "state"
+    if purpose == "organize_materials":
+        return "materials"
     return "write"
 
 
@@ -257,13 +272,21 @@ def _same_materials(
     purpose: str,
     targets: Sequence[str],
     review: Sequence[str],
+    previous_scope: Mapping[str, object] | None = None,
+    scope: Mapping[str, object] | None = None,
 ) -> bool:
     """同键重试必须带同一份材料与用途；旧日志没有新字段时按空材料与 chat 处理。"""
     paths = _dedupe(request.reference_paths)
     observed = dict(sorted(request.observed_digests.items()))
     if previous_purpose != purpose:
         return False
-    if tuple(previous_targets) != tuple(targets) or tuple(previous_review) != tuple(review):
+    # 资料任务的章节由范围本身比较；写作任务仍按索引目标比较。
+    if purpose != "organize_materials" and tuple(previous_targets) != tuple(targets):
+        return False
+    if tuple(previous_review) != tuple(review):
+        return False
+    # 资料任务的范围也是请求身份的一部分：换了章节或人物就是另一次任务，不能返回旧结果。
+    if not _same_scope(previous_scope, scope):
         return False
     if previous is None:
         return (
@@ -278,6 +301,49 @@ def _same_materials(
         and previous.get("reference_paths") == list(paths)
         and previous.get("observed_digests") == observed
     )
+
+
+def _requested_scope(
+    scope: MaterialTaskScope | Mapping[str, object] | None,
+) -> dict[str, object] | None:
+    """把客户端提交的范围收成可比较的四个字段；不含服务端冻结的指纹。"""
+    if scope is None:
+        return None
+    if isinstance(scope, MaterialTaskScope):
+        return {
+            "domain": scope.domain,
+            "chapter_paths": list(scope.chapter_paths),
+            "entity_paths": list(scope.entity_paths),
+            "as_of_chapter": scope.as_of_chapter,
+        }
+    return {
+        "domain": scope.get("domain"),
+        "chapter_paths": list(cast(list[object], scope.get("chapter_paths") or [])),
+        "entity_paths": list(cast(list[object], scope.get("entity_paths") or [])),
+        "as_of_chapter": scope.get("as_of_chapter"),
+    }
+
+
+def _same_scope(
+    previous: Mapping[str, object] | None, current: Mapping[str, object] | None
+) -> bool:
+    if previous is None or current is None:
+        return previous is None and current is None
+    for key in ("domain", "chapter_paths", "entity_paths", "as_of_chapter"):
+        left = previous.get(key)
+        right = current.get(key)
+        if key == "as_of_chapter":
+            # 冻结范围记的是解析后的章号；比较时用客户端原始请求值。
+            left = previous.get("requested_as_of", left)
+        if key == "as_of_chapter":
+            # 冻结范围记的是解析后的章号；比较时用客户端原始请求值。
+            left = previous.get("requested_as_of", left)
+        if isinstance(left, list) or isinstance(right, list):
+            if list(cast(list[object], left or [])) != list(cast(list[object], right or [])):
+                return False
+        elif left != right:
+            return False
+    return True
 
 
 def _dedupe(paths: Sequence[str]) -> tuple[str, ...]:
@@ -305,6 +371,8 @@ class TurnInfo:
     purpose: str = "chat"
     index_paths: tuple[str, ...] = ()
     review_paths: tuple[str, ...] = ()
+    #: 资料任务的冻结范围；普通对话为空。
+    material_scope: dict[str, object] | None = None
 
 
 ActiveState = Literal["accepted", "running", "stop_requested"]
@@ -352,6 +420,7 @@ class TurnService:
     ) -> None:
         self.workspace = workspace
         self.store = store
+        self.activity = ActivityStore(store.root)
         self.provider_factory = provider_factory
         self.max_turns = max_turns
         self._admission = asyncio.Lock()
@@ -361,6 +430,19 @@ class TurnService:
         self._started: set[str] = set()
         self._stopped: set[str] = set()
         self._active: ActiveTurn | None = None
+        self._request_ids: dict[str, str] = {}
+
+    def _record_activity(self, info: TurnInfo, kind: str, payload: dict[str, Any]) -> None:
+        if kind == "model_request_started":
+            self._request_ids[info.turn_id] = str(payload["operation_id"])
+        parent = None if kind == "model_request_started" else self._request_ids.get(info.turn_id)
+        _append_event(
+            self.store,
+            info.conversation_id,
+            info.turn_id,
+            kind,
+            redact({"parent_operation_id": parent, **payload}),
+        )
 
     @property
     def busy(self) -> bool:
@@ -379,11 +461,13 @@ class TurnService:
         purpose: str = "chat",
         index_paths: Sequence[str] = (),
         review_paths: Sequence[str] = (),
+        material_scope: MaterialTaskScope | Mapping[str, object] | None = None,
     ) -> TurnInfo:
         """受理一轮并立即返回；``conversation_id`` 为空表示「首次发送即建会话」。
 
         ``context`` 是作者这次的当前阅读位置与显式参考。受理时只冻结路径与服务端指纹；
         自然语言定位和后来发现的材料属于执行阶段记录，不回写这份请求身份。
+        资料任务用 ``material_scope`` 冻结目标与依赖版本，不复用写作任务的索引字段。
         """
         async with self._admission:
             previous = self.store.find_accepted(request_key)
@@ -413,6 +497,8 @@ class TurnService:
                     purpose,
                     tuple(index_paths),
                     tuple(review_paths),
+                    previous.material_scope,
+                    _requested_scope(material_scope),
                 ):
                     raise WorkspaceError(
                         code="REQUEST_KEY_CONFLICT",
@@ -451,7 +537,24 @@ class TurnService:
                     )
             # 冻结材料版本：缺失或超限在这里失败，此时还没有写任何记录。
             frozen = freeze_context(self.workspace, context or ContextRequest())
-            targets, review_targets = self._purpose_targets(purpose, index_paths, review_paths)
+            frozen_scope: dict[str, object] | None = None
+            targets: tuple[str, ...]
+            review_targets: tuple[str, ...]
+            if purpose == "organize_materials":
+                if material_scope is None:
+                    raise WorkspaceError(
+                        code="MATERIAL_SCOPE_INVALID",
+                        where="turns.accept",
+                        why="资料任务没有给出整理范围",
+                        fix="从资料页选择资料种类、章节与人物后再发起",
+                    )
+                frozen_scope = freeze_material_scope(self.workspace, material_scope)
+                targets = tuple(
+                    str(item) for item in cast(list[object], frozen_scope["chapter_paths"])
+                )
+                review_targets = ()
+            else:
+                targets, review_targets = self._purpose_targets(purpose, index_paths, review_paths)
             history_seq = self._history_cursor(conversation_id)
             turn_id = f"t_{os.urandom(4).hex()}"
             # 受理时固定这一轮的模型事实：之后切换、编辑或删除连接都不影响它。
@@ -472,6 +575,8 @@ class TurnService:
                     purpose=purpose,
                     index_paths=targets,
                     review_paths=review_targets,
+                    material_scope=frozen_scope,
+                    origin="materials" if frozen_scope is not None else "writing",
                 )
             else:
                 accepted = self.store.accept_turn(
@@ -484,6 +589,8 @@ class TurnService:
                     purpose=purpose,
                     index_paths=targets,
                     review_paths=review_targets,
+                    material_scope=frozen_scope,
+                    origin="materials" if frozen_scope is not None else "writing",
                 )
             # 旧记录的占位标题在首次受理时补上；作者改过的标题不动。
             if accepted.title == "新的对话":
@@ -499,6 +606,7 @@ class TurnService:
                 purpose=purpose,
                 index_paths=targets,
                 review_paths=review_targets,
+                material_scope=frozen_scope,
             )
             self._active = ActiveTurn(
                 conversation_id=accepted.conversation_id,
@@ -528,6 +636,9 @@ class TurnService:
             if turn_id in self._stopped:
                 return True
             self._stopped.add(turn_id)
+            self.store.append(
+                active.conversation_id, {"type": "stop_requested", "turn_id": turn_id}
+            )
             active.state = "stop_requested"
             harness = self._harnesses.get(turn_id)
             if harness is not None:
@@ -564,6 +675,29 @@ class TurnService:
                 # 先按已保存的增量补齐没有结束的内容块与响应，再补本轮中断结果：
                 # 这样界面看到的是「写到一半的回复 + 中断」，不是一条断在空中的记录。
                 repair_interrupted_stream(self.store, conversation.id, turn_id)
+                pending: dict[str, dict[str, Any]] = {}
+                for event in self.store.events(conversation.id):
+                    if event.get("turn_id") != turn_id:
+                        continue
+                    op = str(event.get("operation_id", ""))
+                    if event.get("type") == "model_request_started":
+                        pending[op] = event
+                    elif event.get("type") == "model_request_finished":
+                        pending.pop(op, None)
+                for op, event in pending.items():
+                    self.store.append(
+                        conversation.id,
+                        {
+                            "type": "model_request_finished",
+                            "turn_id": turn_id,
+                            "operation_id": op,
+                            "stage": event.get("stage"),
+                            "model": event.get("model"),
+                            "status": "interrupted",
+                            "duration_ms": None,
+                            "usage": None,
+                        },
+                    )
                 self.store.append(
                     conversation.id,
                     {
@@ -819,7 +953,7 @@ class TurnService:
                 # 索引任务只读原文生成；普通写作才注入有效索引，避免递归压缩旧摘要。
                 index_notes = (
                     ""
-                    if info.purpose == "update_chapter_index"
+                    if info.purpose in ("update_chapter_index", "organize_materials")
                     else index_injection(index_store.valid(self.workspace))
                 )
                 cutoff = state_chapter(
@@ -828,6 +962,9 @@ class TurnService:
                     targets=info.review_paths,
                     explicit=info.context.state_chapter if info.context else None,
                 )
+                if info.material_scope is not None:
+                    # 资料任务按受理时冻结的截止章装配；与写作任务的阅读位置无关。
+                    cutoff = int(str(info.material_scope.get("as_of_chapter") or cutoff))
                 run = RunContext(
                     state_chapter=cutoff
                     if cutoff or (info.context and info.context.state_chapter is not None)
@@ -837,13 +974,7 @@ class TurnService:
                     materials=ledger,
                     author_messages=author_messages,
                     turn_id=info.turn_id,
-                    emit=lambda kind, payload: _append_event(
-                        self.store,
-                        conversation_id,
-                        info.turn_id,
-                        kind,
-                        payload,
-                    ),
+                    emit=lambda kind, payload: self._record_activity(info, kind, payload),
                 )
                 review_store = ReviewStore(self.store.root)
                 if info.purpose == "review":
@@ -866,13 +997,25 @@ class TurnService:
                 roster_store = CharacterStateStore(self.store.root)
                 timeline_store = TimelineStore(self.store.root)
                 clue_store = ClueStore(self.store.root)
+                coverage_store = CoverageStore(self.store.root)
+                if mode == "materials" and info.material_scope is not None:
+                    # 资料任务的上下文只装与该域有关的内容：范围说明 + 已有记录（待核对）。
+                    domain = str(info.material_scope.get("domain") or "")
+                    instructions = material_instructions(domain)
+                    turn_materials = scope_brief(
+                        self.workspace, self.store.root, info.material_scope
+                    )
+                else:
+                    instructions = ""
+                    turn_materials = materials_section(info.context, ledger.summaries())
                 assembly = build_turn_assembly(
                     self.workspace,
                     as_of_chapter=run.state_chapter,
                     mode=mode,
                     history_facts=execution_facts(history_events),
-                    materials=materials_section(info.context, ledger.summaries()),
+                    materials=turn_materials,
                     index_notes=index_notes,
+                    instructions=instructions,
                     disclosure_store=disclosure_store,
                     glossary_store=glossary_store,
                     roster_store=roster_store,
@@ -889,14 +1032,16 @@ class TurnService:
                 # provider、model、system、工具清单和历史在这里合并成一次可执行配置。
                 # 工具清单由 build_harness 内部调用 build_tools() 注入，_run 不直接持有。
                 harness = build_harness(
-                    provider=snapshot.provider,
+                    provider=RecordedProvider(
+                        snapshot.provider, self.activity, run.record, stage=mode
+                    ),
                     model=snapshot.model,
                     workspace=self.workspace,
                     run=run,
                     max_turns=self.max_turns,
                     history=replay_public_messages(history_events),
                     history_facts=execution_facts(history_events),
-                    materials=materials_section(info.context, ledger.summaries()),
+                    materials=turn_materials,
                     index_notes=index_notes,
                     mode=mode,
                     assembly=assembly,
@@ -909,6 +1054,8 @@ class TurnService:
                     clue_store=clue_store,
                     review_targets=info.review_paths,
                     review_store=review_store,
+                    material_scope=info.material_scope,
+                    coverage_store=coverage_store,
                 )
                 # stop() 依靠这张表找到 harness，再通过它的取消令牌中断模型循环。
                 self._harnesses[info.turn_id] = harness
@@ -936,6 +1083,25 @@ class TurnService:
                 ):
                     self._append_review_incomplete(info, "这一轮没有生成检查报告")
                     status = "partial"
+                if info.purpose == "organize_materials":
+                    # 完成度由服务端目标清单与已发布结果算；模型说「整理完了」不算完成。
+                    done, total = self._material_progress(info)
+                    _append_event(
+                        self.store,
+                        conversation_id,
+                        info.turn_id,
+                        "material_task_finished",
+                        {
+                            "domain": str((info.material_scope or {}).get("domain") or ""),
+                            "done": done,
+                            "total": total,
+                            "note": (
+                                "" if done >= total else f"还有 {total - done} 个目标没有提交结果"
+                            ),
+                        },
+                    )
+                    if status == "completed" and done < total:
+                        status = "partial"
                 if status == "completed" and run.review_request is not None:
                     # 作者在修改任务里明确要求「改完检查」：同一轮内进入只读检查阶段。
                     published = await self._review_after_write(
@@ -988,6 +1154,19 @@ class TurnService:
                 [{"type": "run_phase", "turn_id": info.turn_id, "phase": "record"}],
             )
             result = session.finish(status)
+            self.store.append_batch(
+                conversation_id,
+                [
+                    {
+                        "type": "version_finished",
+                        "turn_id": info.turn_id,
+                        "baseline_commit": session.baseline_head,
+                        "external_commit": session.external_commit,
+                        **result.to_dict(),
+                        "status": "failed" if result.recording == "unrecorded" else "completed",
+                    }
+                ],
+            )
             # 终态事件：前端据此结束「进行中」状态并刷新会话与工作区。
             self.store.append(
                 conversation_id,
@@ -998,6 +1177,7 @@ class TurnService:
             self._started.discard(info.turn_id)
             self._stopped.discard(info.turn_id)
             self._tasks.pop(info.turn_id, None)
+            self._request_ids.pop(info.turn_id, None)
             # 只释放自己占用的那一轮：后面受理的新轮次不能被前一轮的收尾清掉。
             if self._active is not None and self._active.turn_id == info.turn_id:
                 self._active = None
@@ -1050,7 +1230,9 @@ class TurnService:
                 self.store, info.conversation_id, info.turn_id, "state_injected", assembly.summary()
             )
             harness = build_harness(
-                provider=snapshot.provider,
+                provider=RecordedProvider(
+                    snapshot.provider, self.activity, run.record, stage="review"
+                ),
                 model=snapshot.model,
                 workspace=self.workspace,
                 run=run,
@@ -1076,6 +1258,19 @@ class TurnService:
             self._append_review_incomplete(info, "检查阶段没有生成报告")
             return False
         return True
+
+    def _material_progress(self, info: TurnInfo) -> tuple[int, int]:
+        """本次任务的目标数与已发布数：只认提交过的结果，不认回复里的说法。"""
+        scope = info.material_scope or {}
+        total = len(material_targets(scope))
+        seen: set[tuple[str, str]] = set()
+        for event in self.store.events(info.conversation_id):
+            if event.get("type") != "material_target_published":
+                continue
+            if event.get("turn_id") != info.turn_id:
+                continue
+            seen.add((str(event.get("path") or ""), str(event.get("entity") or "")))
+        return len(seen), total
 
     def _has_review_report(self, info: TurnInfo) -> bool:
         for event in self.store.events(info.conversation_id):
@@ -1124,18 +1319,24 @@ class TurnService:
         供同一轮的后续阶段接着算剩余预算。
         """
         bridge = ChatStreamBridge(self.store, info.conversation_id, info.turn_id)
-        queue: asyncio.Queue[object] = asyncio.Queue()
-        done = object()
+        queue: asyncio.Queue[tuple[Any, str | None, float, str] | None] = asyncio.Queue()
         failure: list[Exception] = []
 
         async def pump() -> None:
             try:
                 async for item in harness.prompt(text):
-                    await queue.put(item)
+                    await queue.put(
+                        (
+                            item,
+                            self._request_ids.get(info.turn_id),
+                            time.monotonic(),
+                            datetime.now().astimezone().isoformat(timespec="milliseconds"),
+                        )
+                    )
             except Exception as exc:  # provider 自己抛错：由读循环统一落成失败
                 failure.append(exc)
             finally:
-                await queue.put(done)
+                await queue.put(None)
 
         reader = asyncio.create_task(pump())
         tools: dict[str, tuple[dict[str, Any], float]] = {}
@@ -1143,14 +1344,25 @@ class TurnService:
         try:
             while True:
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=bridge.pending_delay())
+                    observed = await asyncio.wait_for(queue.get(), timeout=bridge.pending_delay())
                 except TimeoutError:
                     bridge.flush_due()
                     continue
-                if event is done:
+                if observed is None:
                     break
+                event, request_id, observed_at, occurred_at = observed
+                bridge.parent_operation_id = request_id
                 truncated = (
-                    self._handle_agent_event(event, info, bridge, tools, turns_used=turns_used)
+                    self._handle_agent_event(
+                        event,
+                        info,
+                        bridge,
+                        tools,
+                        turns_used=turns_used,
+                        request_id=request_id,
+                        observed_at=observed_at,
+                        occurred_at=occurred_at,
+                    )
                     or truncated
                 )
                 bridge.flush_due()
@@ -1173,6 +1385,9 @@ class TurnService:
         bridge: ChatStreamBridge,
         tools: dict[str, tuple[dict[str, Any], float]],
         *,
+        request_id: str | None,
+        observed_at: float,
+        occurred_at: str,
         turns_used: list[int] | None = None,
     ) -> bool:
         """翻译单条模型事件；返回这一条是否让回复被截断。"""
@@ -1222,7 +1437,9 @@ class TurnService:
             # 工具开始前提交缓冲：界面上的文字顺序与工具位置一致。
             bridge.flush()
             bridge.phase("tool")
-            tools[event.tool_call_id] = (_short_args(event.args), time.monotonic())
+            args = redact(event.args)
+            detail = self.activity.attachment(args)
+            tools[event.tool_call_id] = (_short_args(args), observed_at)
             self.store.append_batch(
                 info.conversation_id,
                 [
@@ -1231,7 +1448,10 @@ class TurnService:
                         "turn_id": info.turn_id,
                         "tool_call_id": event.tool_call_id,
                         "tool": event.tool_name,
-                        "args": _short_args(event.args),
+                        "args": _short_args(args),
+                        "input_detail": detail,
+                        "parent_operation_id": request_id,
+                        "at": occurred_at,
                     }
                 ],
             )
@@ -1247,9 +1467,13 @@ class TurnService:
                 "args": started[0] if started is not None else {},
                 "ok": not event.is_error,
                 "summary": _excerpt(event.result.text),
+                "result_detail": self.activity.attachment(event.result.text),
+                "result_chars": len(event.result.text),
+                "parent_operation_id": request_id,
+                "at": occurred_at,
             }
             if started is not None:
-                payload["duration_ms"] = int(max(0.0, time.monotonic() - started[1]) * 1000)
+                payload["duration_ms"] = int(max(0.0, observed_at - started[1]) * 1000)
             self.store.append_batch(info.conversation_id, [payload])
             return False
         return False

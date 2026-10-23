@@ -141,6 +141,29 @@ async function waitForRun(
   return { conversationId, events };
 }
 
+/** 资料任务有自己的会话，不在写作会话列表里；按任务接口轮询。 */
+async function waitForMaterialTask(
+  request: APIRequestContext,
+  timeoutMs = 180_000,
+): Promise<{ task: Record<string, unknown> & { status?: string; conversation_id?: string }; events: WorkspaceEvent[] }> {
+  const deadline = Date.now() + timeoutMs;
+  let task: (Record<string, unknown> & { status?: string; conversation_id?: string }) | null = null;
+  while (Date.now() < deadline) {
+    const listed = await request.get(`${BASE}/${bindingId}/material-tasks?domain=chapter_index`);
+    const items = listed.ok() ? ((await listed.json()).items ?? []) : [];
+    task = items[0] ?? null;
+    if (task && !["accepted", "running"].includes(String(task.status))) {
+      const snapshot = await request.get(
+        `${BASE}/${bindingId}/conversations/${task.conversation_id}/messages`,
+      );
+      const events = snapshot.ok() ? ((await snapshot.json()).events ?? []) : [];
+      return { task, events };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(`等待资料任务结束超时；最后状态 ${task?.status ?? "没有任务"}`);
+}
+
 /** 事件只能给出初步分类，断言失败仍需结合页面和脚本判读。 */
 function classify(events: WorkspaceEvent[]): string {
   const error = events.find((event) => event.type === "error");
@@ -262,36 +285,55 @@ test.describe("在线模型", () => {
     await expect(card).toContainText("结论不再对应当前版本");
   });
 
-  test("索引面板生成、外部改源失效与重新读取", async ({ page, request }) => {
+  test("故事资料整理、外部改源失效与重新读取", async ({ page, request }) => {
     await prepareWorkspace(request);
     await openWorkspace(page);
-    await page.getByRole("button", { name: "索引", exact: true }).click();
-    const panel = page.getByRole("dialog", { name: "章节索引" });
-    const row = panel.locator("li").first();
-    await panel.getByRole("checkbox").first().check();
-    await panel.getByRole("button", { name: /更新所选索引/ }).click();
-    const firstRun = await waitForRun(request);
-    expect(firstRun.events.find((event) => event.type === "run_finished")?.status).toBe("completed");
-    await expect(row).toContainText("有效");
+    await page.getByRole("button", { name: "故事资料", exact: true }).click();
+    await expect(page.locator(".materials-nav")).toBeVisible();
+    await page.getByRole("button", { name: "整理所选章节", exact: true }).click();
+    const picker = page.getByRole("dialog", { name: "整理章节概览" });
+    await picker.getByRole("button", { name: "整理所选章节", exact: true }).click();
+    const firstRun = await waitForMaterialTask(request);
+    saveEvidence("materials-index-flow", { task: firstRun.task, events: firstRun.events });
+    expect(firstRun.task.status).toBe("completed");
+    expect(firstRun.events.some((event) => event.type === "material_target_published")).toBe(true);
+    // 资料任务不能使用写文件工具。
+    const toolNames = firstRun.events
+      .filter((event) => event.type === "tool_started")
+      .map((event) => String(event.tool ?? ""));
+    expect(toolNames).not.toContain("write_file");
+    expect(toolNames).not.toContain("edit_file");
+
+    const row = page.locator("li", { hasText: "第一章 雨夜" }).first();
+    await expect(row).toContainText("有结果", { timeout: 30_000 });
     writeFileSync(join(workspaceRoot, FIRST), "# 雨夜\n\n雪已经停了三天。\n", "utf-8");
-    await panel.getByRole("button", { name: "刷新", exact: true }).click();
-    await expect(row).toContainText("已过期");
-    await panel.getByRole("button", { name: "关闭", exact: true }).click();
+    await page.getByRole("button", { name: "重新读取资料", exact: true }).click();
+    await expect(row).toContainText("来源已修改", { timeout: 30_000 });
+
+    // 回到写作页：资料页的浏览不改变写作草稿与当前文件。
+    await page.getByRole("button", { name: "写作", exact: true }).click();
     const prompt = "第一章被外部修改了。读取当前原文后，只把第三章末句改成『窗外的雪已经停了三天』。";
-    await page.locator(".chat-input").fill(prompt);
-    await page.locator(".chat-input").press("Enter");
-    const afterSeq = Number(firstRun.events.at(-1)?.seq ?? 0);
-    const next = await waitForRun(request, 180_000, afterSeq);
-    saveEvidence("index-stale-flow", { prompt, first: firstRun.events, next: next.events });
+    await send(page, prompt);
+    const next = await waitForRun(request, 180_000);
+    saveEvidence("materials-index-writing", { prompt, next: next.events });
     expect(next.events.find((event) => event.type === "run_finished")?.status).toBe("completed");
     const digest = await digestOf(request, FIRST);
-    expect(next.events.some((event) => event.type === "material_read" && event.path === FIRST
-      && event.digest === digest)).toBe(true);
+    expect(
+      next.events.some(
+        (event) =>
+          event.type === "material_read" && event.path === FIRST && event.digest === digest,
+      ),
+    ).toBe(true);
     const changed = await request.get(`${BASE}/${bindingId}/file`, { params: { path: CHAPTER } });
     expect((await changed.json()).text).toContain("窗外的雪已经停了三天");
     await expect(page.getByTestId("turn-result").last()).toHaveAttribute("data-status", "completed");
     await expect(page.getByTestId("task-scope").last()).toBeVisible();
-    const index = await request.get(`${BASE}/${bindingId}/chapter-index`);
-    expect((await index.json()).items.find((item: { source_path: string }) => item.source_path === FIRST).status).toBe("stale");
+
+    const materials = await request.get(`${BASE}/${bindingId}/story-materials/chapter_index`);
+    const entry = (await materials.json()).entries.find(
+      (item: { chapter: number }) => item.chapter === 1,
+    );
+    expect(entry.coverage).toBe("found");
+    expect(entry.freshness).toBe("stale");
   });
 });

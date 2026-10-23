@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,25 @@ def test_create_workspace_makes_two_blocks(tmp_path: Path) -> None:
     # 新作品自带版本记录：.git 与首个基线提交。
     assert (root / ".git").is_dir()
     assert client.get("/api/file-workspaces").json() == [body]
+
+
+def test_prune_stale_workspaces_removes_missing_binding(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    kept_root = tmp_path / "还在"
+    kept_root.mkdir()
+    gone_root = tmp_path / "已删除"
+    (gone_root / "正文").mkdir(parents=True)
+    kept = client.post("/api/file-workspaces", json={"path": str(kept_root)}).json()
+    gone = client.post("/api/file-workspaces", json={"path": str(gone_root)}).json()
+    shutil.rmtree(gone_root)
+
+    response = client.delete("/api/file-workspaces/stale")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["removed"]] == [gone["id"]]
+    assert [item["id"] for item in body["workspaces"]] == [kept["id"]]
+    assert client.get("/api/file-workspaces").json() == [kept]
 
 
 def test_open_existing_directory_does_not_create_content(tmp_path: Path) -> None:

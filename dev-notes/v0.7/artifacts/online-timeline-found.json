@@ -1,0 +1,91 @@
+{
+  "model": "deepseek-flash",
+  "accepted": {
+    "turn_id": "t_3096da06",
+    "domain": "timeline",
+    "scope": {
+      "domain": "timeline",
+      "chapter_paths": [
+        "正文/0001 雨夜.md"
+      ],
+      "entity_paths": [],
+      "as_of_chapter": 1
+    }
+  },
+  "task": {
+    "turn_id": "t_3096da06",
+    "conversation_id": "c_a2f7df6b0876",
+    "domain": "timeline",
+    "label": "时间线",
+    "scope": {
+      "domain": "timeline",
+      "chapter_paths": [
+        "正文/0001 雨夜.md"
+      ],
+      "entity_paths": [],
+      "as_of_chapter": 1
+    },
+    "status": "completed",
+    "model": "deepseek-flash",
+    "started_at": "2026-10-23T19:01:54.600+08:00",
+    "published": 1,
+    "done": 1,
+    "total": 1,
+    "targets": [
+      {
+        "path": "正文/0001 雨夜.md",
+        "chapter": 1,
+        "entity_path": "",
+        "outcome": "found",
+        "freshness": "valid"
+      }
+    ],
+    "unfinished": []
+  },
+  "tools": [
+    "list_files",
+    "read_file",
+    "publish_material_result"
+  ],
+  "materials": {
+    "entries": [
+      {
+        "id": "95d6b4ee865b7485",
+        "domain": "timeline",
+        "title": "第一章 雨夜",
+        "subtitle": "10月21日深夜｜旅馆（前台、走廊尽头）",
+        "chapter": 1,
+        "entity_path": null,
+        "coverage": "found",
+        "freshness": "valid",
+        "task_id": "t_3096da06",
+        "updated_at": "2026-10-23T19:02:05+08:00",
+        "data": {
+          "when": "10月21日深夜",
+          "span": "同一夜内从深夜延续到凌晨两点，约数小时",
+          "location": "旅馆（前台、走廊尽头）"
+        },
+        "evidence": [
+          {
+            "path": "正文/0001 雨夜.md",
+            "digest": "68d228062dc71cc7cf75e50d0101a3941e2523d8ecd5a4ea478dafd657398aa5",
+            "chapter": 1,
+            "start": 6,
+            "end": 47,
+            "quote": "10月21日深夜，侦探抵达旅馆。前台说只剩一间房。\n\n凌晨两点，走廊尽头传来水声。",
+            "freshness": "valid"
+          }
+        ],
+        "notes": []
+      }
+    ],
+    "coverage": {
+      "total": 1,
+      "found": 1,
+      "empty": 0,
+      "insufficient": 0,
+      "unrecorded": 0,
+      "stale": 0
+    }
+  }
+}

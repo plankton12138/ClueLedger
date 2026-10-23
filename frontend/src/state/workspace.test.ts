@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   listWorkspaces: vi.fn(),
   openWorkspace: vi.fn(),
+  pruneStaleWorkspaces: vi.fn(),
   listFiles: vi.fn(),
   readFile: vi.fn(),
   searchText: vi.fn(),
@@ -122,6 +123,21 @@ describe("目录与文件", () => {
     expect(useWorkspaceStore.getState().selectedPath).toBeNull();
     // 会话由单独的 store 管理：换作品时它自己重新加载，不留在文件状态里。
     expect(useConversationsStore.getState().workspaceId).toBe("w1");
+  });
+
+  it("清理失效目录后切到仍在册的作品并提示数量", async () => {
+    const alive = { id: "w1", name: "雪山旅馆", path: "C:/作品", exists: true };
+    const stale = { id: "w2", name: "旧作", path: "C:/旧作", exists: false };
+    await useWorkspaceStore.getState().init();
+    useWorkspaceStore.setState({ bindings: [stale, alive], currentId: "w2" });
+    api.pruneStaleWorkspaces.mockResolvedValue({ removed: [stale], workspaces: [alive] });
+
+    await useWorkspaceStore.getState().pruneMissing();
+
+    expect(api.pruneStaleWorkspaces).toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().bindings).toEqual([alive]);
+    expect(useWorkspaceStore.getState().currentId).toBe("w1");
+    expect(useWorkspaceStore.getState().notice).toBe("已清理 1 个目录已不存在的作品。");
   });
 
   it("刷新仍存在的角色小传时保留选择并回读原文", async () => {

@@ -17,11 +17,12 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useConversationsStore } from "../../state/conversations";
 import { CHAT, SIDEBAR, useLayoutStore } from "../../state/layout";
 import { useModelsStore } from "../../state/models";
+import { navigate, useWorkspacePage } from "../../state/navigation";
 import { useWorkspaceStore } from "../../state/workspace";
+import StoryMaterialsPage from "../materials/StoryMaterialsPage";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
-import ChangesDrawer from "./ChangesDrawer";
-import ChapterIndexPanel from "./ChapterIndexPanel";
-import StatePanel from "./StatePanel";
+import ActivityPanel from "./ActivityPanel";
+import FontSizeControl from "./FontSizeControl";
 import CharacterBadges from "./CharacterBadges";
 import ConversationPanel from "./ConversationPanel";
 import DirectoryDialog from "./DirectoryDialog";
@@ -81,6 +82,7 @@ export default function WorkspaceShell() {
   const notice = useWorkspaceStore((state) => state.notice);
   const init = useWorkspaceStore((state) => state.init);
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
+  const pruneMissing = useWorkspaceStore((state) => state.pruneMissing);
   const refreshAll = useWorkspaceStore((state) => state.refreshAll);
   const openPath = useWorkspaceStore((state) => state.openPath);
   const runSearch = useWorkspaceStore((state) => state.runSearch);
@@ -93,11 +95,12 @@ export default function WorkspaceShell() {
   const addReference = useConversationsStore((state) => state.addReference);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [indexOpen, setIndexOpen] = useState(false);
-  const [stateOpen, setStateOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const page = useWorkspacePage();
+  const materials = page?.kind === "materials" ? page : null;
   const fileInput = useRef<HTMLInputElement>(null);
   const current = bindings.find((binding) => binding.id === currentId);
+  const staleCount = bindings.filter((binding) => !binding.exists).length;
 
   const initModels = useModelsStore((state) => state.init);
   const openModelSettings = useModelsStore((state) => state.openSettings);
@@ -113,6 +116,22 @@ export default function WorkspaceShell() {
     void init();
     void initModels();
   }, [init, initModels]);
+
+  // 页面位置与作品选择互相对齐：URL 里的作品未登记时回到当前作品，不把它当读取指令。
+  useEffect(() => {
+    if (!bindings.length) return;
+    const target = page?.workspaceId;
+    if (target && target !== currentId && bindings.some((item) => item.id === target)) {
+      void selectWorkspace(target);
+      return;
+    }
+    if (currentId && target !== currentId) {
+      navigate({
+        kind: "writing",
+        workspaceId: currentId,
+      });
+    }
+  }, [page, bindings, currentId, selectWorkspace]);
 
   // 外部编辑不推送：切回窗口时重新扫描目录与当前文件，并重读模型配置。
   useEffect(() => {
@@ -130,12 +149,12 @@ export default function WorkspaceShell() {
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="topbar flex min-h-12 flex-none items-center gap-2 px-3 sm:gap-3 sm:px-5">
+      <header className="topbar flex min-h-12 flex-none flex-wrap items-center gap-2 px-3 sm:gap-3 sm:px-5">
         <div className="mark grid h-10 w-10 flex-none place-items-center font-serif text-2xl font-bold">
-          H
+          C
         </div>
         <div className="hidden leading-tight sm:block">
-          <div className="font-serif text-xl font-bold tracking-wide">Hastings</div>
+          <div className="font-serif text-xl font-bold tracking-wide">ClueLedger</div>
           <div className="text-[9px] tracking-[0.25em] text-white/85">MARKDOWN WORKSPACE</div>
         </div>
         <div className="hidden h-8 w-px bg-[#355f7f] shadow-[1px_0_#c4d9e8] sm:block" />
@@ -144,7 +163,9 @@ export default function WorkspaceShell() {
           className="project-picker h-[34px] min-w-0 max-w-56 rounded px-2 text-xs font-bold text-white"
           value={currentId ?? ""}
           onChange={(event) => {
-            if (event.target.value) void selectWorkspace(event.target.value);
+            if (!event.target.value) return;
+            const id = event.target.value;
+            void selectWorkspace(id).then(() => navigate({ kind: "writing", workspaceId: id }));
           }}
         >
           <option value="">（未打开目录）</option>
@@ -161,7 +182,51 @@ export default function WorkspaceShell() {
         >
           打开 / 新建
         </button>
+        <button
+          className="btn btn-gray px-2 py-1 text-[11px]"
+          disabled={!currentId}
+          title="重新读取目录、版本与当前文件；不调用模型"
+          onClick={() => void refreshAll()}
+        >
+          重新读取文件
+        </button>
+        {staleCount > 0 && (
+          <button
+            className="btn btn-gray whitespace-nowrap px-2 py-1 text-[11px]"
+            title="只移除登记，不删除磁盘上的目录"
+            onClick={() => void pruneMissing()}
+          >
+            清理失效（{staleCount}）
+          </button>
+        )}
         <div className="flex-1" />
+        <div className="seg flex-none text-[11px]">
+          <button
+            className={!materials ? "on px-2 py-1" : "px-2 py-1"}
+            aria-pressed={!materials}
+            disabled={!currentId}
+            onClick={() => currentId && navigate({ kind: "writing", workspaceId: currentId })}
+          >
+            写作
+          </button>
+          <button
+            className={materials ? "on px-2 py-1" : "px-2 py-1"}
+            aria-pressed={Boolean(materials)}
+            disabled={!currentId}
+            onClick={() =>
+              currentId &&
+              navigate({
+                kind: "materials",
+                workspaceId: currentId,
+                section: materials?.section ?? "chapters",
+                chapter: materials?.chapter ?? null,
+              })
+            }
+          >
+            故事资料
+          </button>
+        </div>
+        <FontSizeControl />
         <div className={`seg flex-none text-[11px] ${chatVisible ? "" : "dim"}`}>
           <button
             className={chatVisible ? "on px-2 py-1" : "px-2 py-1"}
@@ -179,30 +244,9 @@ export default function WorkspaceShell() {
         <button
           className="btn btn-gray px-2 py-1 text-[11px]"
           disabled={!currentId}
-          onClick={() => void refreshAll()}
-        >
-          刷新
-        </button>
-        <button
-          className="btn btn-gray px-2 py-1 text-[11px]"
-          disabled={!currentId}
-          onClick={() => setIndexOpen(true)}
-        >
-          索引
-        </button>
-        <button
-          className="btn btn-gray px-2 py-1 text-[11px]"
-          disabled={!currentId}
-          onClick={() => setStateOpen(true)}
-        >
-          状态
-        </button>
-        <button
-          className="btn btn-gray px-2 py-1 text-[11px]"
-          disabled={!currentId}
           onClick={() => void openDrawer()}
         >
-          改动与历史
+          活动记录
         </button>
       </header>
 
@@ -226,9 +270,29 @@ export default function WorkspaceShell() {
         </div>
       )}
 
-      <ChapterIndexPanel open={indexOpen} onClose={() => setIndexOpen(false)} />
-      <StatePanel open={stateOpen} onClose={() => setStateOpen(false)} />
-
+      {materials && currentId ? (
+        <main className="flex min-h-0 flex-1 overflow-hidden">
+          <StoryMaterialsPage
+            workspaceId={currentId}
+            section={materials.section}
+            chapter={materials.chapter}
+            entryId={materials.entryId}
+            onNavigate={navigate}
+            onOpenSource={(path) => {
+              void openPath(path).then(() =>
+                navigate({ kind: "writing", workspaceId: currentId }),
+              );
+            }}
+            onTakeToChat={(path) => {
+              addReference(path);
+              void openPath(path).then(() =>
+                navigate({ kind: "writing", workspaceId: currentId }),
+              );
+            }}
+            onOpenActivity={() => void openDrawer()}
+          />
+        </main>
+      ) : (
       <main className="flex min-h-0 flex-1 overflow-hidden">
         <nav className="toc-pane flex min-h-0 flex-none flex-col" style={{ width: sidebarWidth }}>
           <div className="flex flex-none items-center gap-2 px-3 py-2">
@@ -436,10 +500,11 @@ export default function WorkspaceShell() {
           </>
         )}
       </main>
+      )}
 
       <DirectoryDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
       <ModelSettingsDialog />
-      <ChangesDrawer />
+      <ActivityPanel />
     </div>
   );
 }
