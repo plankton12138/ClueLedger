@@ -154,16 +154,18 @@ test("字号调整同步到正文与活动日志，刷新保留并可恢复默�
   const panel = page.getByRole("dialog", { name: "活动记录" });
   await expect(panel.getByLabel("调整字体大小")).toHaveValue("150");
   await expect(panel.locator("main article button").first()).toBeVisible();
-  const columnHeight = await panel.locator("main > div").first().evaluate(element => element.getBoundingClientRect().height);
-  const groupTop = await panel.locator("main article > div").first().evaluate(element => parseFloat(getComputedStyle(element).top));
-  expect(groupTop).toBeGreaterThanOrEqual(columnHeight);
+  // 列头固定在顶部，任务分组标题从它下方开始，不重叠。
+  const column = await panel.locator("main > div").first().boundingBox();
+  const groupHeader = await panel.locator("main section > div").first().boundingBox();
+  expect(groupHeader!.y).toBeGreaterThanOrEqual(column!.y + column!.height - 1);
   const row = panel.locator("main article button").first();
   const larger = await row.evaluate(element => parseFloat(getComputedStyle(element).fontSize));
   await panel.getByLabel("调整字体大小").selectOption("120");
   await expect.poll(() => row.evaluate(element => parseFloat(getComputedStyle(element).fontSize)))
     .toBeCloseTo(larger * 1.2 / 1.5);
-  // 详情里的固定 px 字号也跟随；继承字号没有重复放大。
+  // 详情里的固定 px 字号也跟随；继承字号没有重复放大。展开行后需点单条事件的「详情」。
   await row.click();
+  await panel.getByRole("button", { name: "详情", exact: true }).first().click();
   const detail = panel.locator("pre").first();
   await expect(detail).toBeVisible();
   expect(await detail.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(11 * 1.2);

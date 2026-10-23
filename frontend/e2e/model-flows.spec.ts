@@ -304,7 +304,10 @@ test.describe("在线模型", () => {
     expect(toolNames).not.toContain("write_file");
     expect(toolNames).not.toContain("edit_file");
 
-    const row = page.locator("li", { hasText: "第一章 雨夜" }).first();
+    // 目录里也有「第一章 雨夜」，显式限定在资料页的章节列表内；列表顶部的失效提示是纯文本行，
+    // 不带按钮，用条目按钮定位真实的一行。
+    const chapters = page.locator("section", { has: page.getByRole("heading", { name: "章节概览" }) });
+    const row = chapters.getByRole("button").filter({ hasText: "第一章 雨夜" }).first();
     await expect(row).toContainText("有结果", { timeout: 30_000 });
     writeFileSync(join(workspaceRoot, FIRST), "# 雨夜\n\n雪已经停了三天。\n", "utf-8");
     await page.getByRole("button", { name: "重新读取资料", exact: true }).click();
