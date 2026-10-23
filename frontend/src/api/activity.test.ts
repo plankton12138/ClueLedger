@@ -6,7 +6,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 const event = (id: number, at = `2026-10-23T04:00:${String(id).padStart(2, "0")}Z`): ActivityEvent => ({
   id, event_id: `e${id}`, at, conversation_id: "c1", turn_id: "t1", type: "tool_finished",
-  category: "tool", status: "completed", summary: "读取第一章",
+  category: "tool", status: "completed", action: "tool", phase: "completed", title: "读取",
+  subject: "", note: "", pair_key: `tool:${id}`, summary: "读取第一章",
 });
 const page: ActivityPage = { items: [event(1)], cursor: "a:1", reset: false, has_more: false,
   next_before: null, stats: { events: 1, models: 0, tools: 1, errors: 0 } };

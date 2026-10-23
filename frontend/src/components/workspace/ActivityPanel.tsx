@@ -1,20 +1,54 @@
-import { useEffect, useRef, useState } from "react";
+/**
+ * 活动记录（0.8）：按任务分组的事件流。
+ *
+ * 每条事件由后端给出动作说法（action / phase / title / subject / note），这里只做三件事：
+ * 把同一调用的开始与结束合成一行、按任务分组、把连续的同名文件动作折成一批。
+ * 原始事件仍保留在行内，展开即可逐条查看，日志本身不改写。
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
 import { activityError, activityPage, activityRequest, activityStream, exportActivity, mergeActivity,
   type ActivityEvent, type ActivityFilters, type ActivityPage } from "../../api/activity";
 import { useWorkspaceStore } from "../../state/workspace";
 import { useConversationsStore } from "../../state/conversations";
 import ChangesDrawer from "./ChangesDrawer";
 import FontSizeControl from "./FontSizeControl";
+import {
+  ACTION_LABEL,
+  ACTION_TONE,
+  PHASE_LABEL,
+  PHASE_TONE,
+  actionCounts,
+  buildActivity,
+  hasLegacyEvents,
+  formatDuration,
+  type ActivityBand,
+  type ActivityRow,
+} from "./activityRows";
 
-const CATEGORIES: Record<string, string> = {
-  "": "全部", task: "任务", model: "模型", tool: "工具", context: "材料与范围",
-  file: "文件操作", state: "状态与检查", version: "版本",
-};
 const STATUS: Record<string, string> = {
   started: "已开始", running: "进行中", completed: "完成", failed: "失败", stopped: "已停止",
-  interrupted: "中断", partial: "部分完成", truncated: "输出截断",
+  interrupted: "中断", partial: "部分完成", truncated: "输出截断", unloaded: "未完整载入",
 };
 const emptyStats = { events: 0, models: 0, tools: 0, errors: 0 };
+
+const clock = (at: string) =>
+  at ? `${new Date(at).toLocaleTimeString("zh-CN", { hour12: false })}.${String(new Date(at).getMilliseconds()).padStart(3, "0")}` : "未记录";
+
+const duration = (band: ActivityBand) => {
+  const end = band.finished_at ? new Date(band.finished_at).getTime() : Date.now();
+  const start = new Date(band.started_at).getTime();
+  return Number.isFinite(start) && end >= start ? formatDuration(end - start) : "";
+};
+
+function ActionChip({ action }: { action: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${ACTION_TONE[action] ?? ACTION_TONE.other}`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {ACTION_LABEL[action] ?? action}
+    </span>
+  );
+}
 
 function Detail({ workspace, event, jump, showVersions }: {
   workspace: string; event: ActivityEvent; jump: (conversation: string) => void;
@@ -57,6 +91,29 @@ function Detail({ workspace, event, jump, showVersions }: {
   </div>;
 }
 
+function BandHeader({ band }: { band: ActivityBand }) {
+  return <div className="border-y border-[#d8d0bb] bg-[#eee8d8] px-3 py-2">
+    <div className="flex items-baseline gap-2">
+      <span className="text-[13px] font-bold">{band.label}</span>
+      {band.model && <span className="text-[#8a8371]">{band.model}</span>}
+      <span className={`ml-auto whitespace-nowrap font-bold ${PHASE_TONE[band.status] ?? "text-mute"}`}>
+        {STATUS[band.status] ?? band.status}
+      </span>
+    </div>
+    <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] text-[#6b6553]">
+      {band.subject && <span className="min-w-0 flex-1 truncate">{band.subject}</span>}
+      <span className="whitespace-nowrap text-[#8a8371]">
+        {duration(band)}{band.note ? ` · ${band.note}` : ""}
+      </span>
+    </div>
+    {!band.complete && (
+      <p className="mt-0.5 text-[11px] text-[#a1783b]">
+        这一任务的开始事件在更早的记录里，先加载更早记录再看次数
+      </p>
+    )}
+  </div>;
+}
+
 export default function ActivityPanel() {
   const open = useWorkspaceStore(state => state.drawerOpen);
   const workspace = useWorkspaceStore(state => state.currentId);
@@ -69,6 +126,7 @@ export default function ActivityPanel() {
   const [run, setRun] = useState<ActivityPage["run"]>(null);
   const [before, setBefore] = useState<number | null>(null);
   const [expanded, setExpanded] = useState("");
+  const [detailEvent, setDetailEvent] = useState("");
   const [connection, setConnection] = useState("连接中");
   const [error, setError] = useState("");
   const [follow, setFollow] = useState(true);
@@ -89,6 +147,10 @@ export default function ActivityPanel() {
   const settingsEpoch = useRef(0);
   const dialog = useRef<HTMLElement>(null);
   const scope = JSON.stringify(filters);
+  const bands = useMemo(() => buildActivity(events), [events]);
+  const counts = useMemo(() => actionCounts(bands), [bands]);
+  const legacy = useMemo(() => hasLegacyEvents(events), [events]);
+  const peak = Math.max(1, ...counts.map(item => item.count));
 
   useEffect(() => {
     if (!open) return;
@@ -116,6 +178,7 @@ export default function ActivityPanel() {
     setFilters(selected ? { conversation_id: selected } : {});
     setTab("events");
     setExpanded("");
+    setDetailEvent("");
     let live = true;
     setConfirmClear(false); setNotice(""); setSettingsReady(false); setSavingSettings(false);
     settingsEpoch.current += 1;
@@ -170,8 +233,6 @@ export default function ActivityPanel() {
   }, [events, follow]);
 
   if (!open || !workspace) return null;
-  const change = (key: keyof ActivityFilters, value: string | boolean) =>
-    setFilters(current => ({ ...current, [key]: value }));
   async function older() {
     if (before === null || loading) return;
     setLoading(true);
@@ -210,9 +271,14 @@ export default function ActivityPanel() {
     void useConversationsStore.getState().select(conversation);
     useWorkspaceStore.getState().closeDrawer();
   }
+  function toggle(row: ActivityRow) {
+    const next = expanded === row.key ? "" : row.key;
+    setExpanded(next);
+    setDetailEvent(next ? (row.events[row.events.length - 1]?.event_id ?? "") : "");
+  }
   return <div className="fixed inset-0 z-40 bg-black/30 p-2 sm:p-5">
     <section ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="活动记录"
-      className="flex h-full flex-col rounded border border-[#cfc7ae] bg-[#fbf8ef] text-xs text-[#4b4737] shadow-2xl">
+      className="flex h-full flex-col rounded border border-[#cfc7ae] bg-[#fbf8ef] text-[13px] text-[#4b4737] shadow-2xl">
       <header className="flex flex-none flex-wrap items-center gap-3 border-b border-[#e2dbc6] px-4 py-3">
         <h2 className="font-serif text-lg font-bold">活动记录</h2>
         <button className={`btn px-3 py-1 ${tab === "events" ? "btn-gold" : "btn-gray"}`}
@@ -227,79 +293,111 @@ export default function ActivityPanel() {
         <div className="flex min-h-0 flex-1 flex-col-reverse md:flex-row">
           <main ref={scroll} className="min-h-0 min-w-0 flex-1 overflow-auto"
             onScroll={() => { const el = scroll.current; if (el && el.scrollHeight - el.scrollTop - el.clientHeight > 80) setFollow(false); }}>
-            <div className="sticky top-0 z-10 grid grid-cols-[90px_70px_1fr] gap-2 border-b border-[#e2dbc6] bg-[#fbf8ef] px-3 py-2 font-bold sm:grid-cols-[110px_90px_1fr_80px]">
-              <span>时间</span><span>类型</span><span>事件内容</span><span className="hidden sm:block">操作</span>
+            <div className="sticky top-0 z-10 grid grid-cols-[86px_58px_1fr_92px] gap-2 border-b border-[#e2dbc6] bg-[#fbf8ef] px-3 py-2 font-bold sm:grid-cols-[96px_66px_1fr_104px]">
+              <span>时间</span><span>类型</span><span>事件内容</span><span className="text-right">状态</span>
             </div>
+            {legacy && <p className="border-b border-[#e6d9b8] bg-[#fff4de] px-3 py-2 text-[12px] text-[#a1783b]">
+                这份索引由旧版本服务生成，只有摘要与状态。重启服务后会重建索引，显示动作标签、对象与耗时。
+              </p>}
             {before !== null && <button className="btn btn-gray m-3 px-3 py-1" disabled={loading}
               onClick={() => void older()}>加载更早记录</button>}
             {events.length === 0 && <p className="p-6">{connection === "连接中" ? "正在读取记录…" : "没有符合条件的事件。"}</p>}
-            {events.map((event, index) => <article key={event.event_id}>
-              {(index === 0 || events[index - 1]?.turn_id !== event.turn_id ||
-                events[index - 1]?.conversation_id !== event.conversation_id) &&
-                <div className="sticky border-b bg-[#eee8d8] px-3 py-2 font-bold"
-                  style={{ top: "calc(1rem * var(--font-scale, 1) + 1rem + 1px)" }}>
-                  <span className="mr-3">{event.at ? new Date(event.at).toLocaleDateString("zh-CN") : ""}</span>
-                  {event.turn_id ? `任务 ${event.turn_id.slice(-10)}` : "作品操作"}
-                  {event.conversation_id && <span className="ml-3 font-normal">{conversations.find(item => item.id === event.conversation_id)?.title ?? event.conversation_id}</span>}
+            {bands.map(band => <section key={band.key}>
+              <BandHeader band={band} />
+              {band.rows.map(row => <article key={row.key}>
+                <button aria-expanded={expanded === row.key}
+                  className={`grid w-full grid-cols-[86px_58px_1fr_92px] items-start gap-2 border-b border-[#e2dbc6] px-3 py-2.5 text-left hover:bg-white/60 sm:grid-cols-[96px_66px_1fr_104px] ${
+                    row.phase === "failed" ? "border-l-2 border-l-red" : ""}`}
+                  onClick={() => toggle(row)}>
+                  <time title={row.at} className="whitespace-nowrap text-[11px] text-[#8a8371]">{clock(row.at)}</time>
+                  <span><ActionChip action={row.action} /></span>
+                  <span className="min-w-0">
+                    <span className="font-bold">{row.title}</span>
+                    {row.subject && <span className="ml-1 break-all">{row.subject}</span>}
+                    {row.note && <span className="ml-1 text-[#8a8371]">· {row.note}</span>}
+                    {row.count > 1 && <span className="ml-1 text-[#8a8371]">· {row.count} 次</span>}
+                  </span>
+                  <span className={`whitespace-nowrap text-right ${PHASE_TONE[row.phase] ?? "text-mute"}`}>
+                    {PHASE_LABEL[row.phase] ?? row.phase}
+                  </span>
+                </button>
+                {expanded === row.key && <div className="border-b border-[#e2dbc6] bg-white/50 px-3 py-2">
+                  <ul className="space-y-1">
+                    {row.events.map(item => <li key={item.event_id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <time className="text-[#8a8371]">{clock(item.at)}</time>
+                      <span className="font-bold">{ACTION_LABEL[item.action] ?? item.action}</span>
+                      <span>{item.title}</span>
+                      {item.subject && <span className="break-all text-[#6b6553]">{item.subject}</span>}
+                      {item.note && <span className="text-[#8a8371]">{item.note}</span>}
+                      <button className="btn btn-gray ml-auto px-2 py-0.5 text-[10px]"
+                        onClick={() => setDetailEvent(item.event_id)}>详情</button>
+                    </li>)}
+                  </ul>
+                  {detailEvent && row.events.some(item => item.event_id === detailEvent) &&
+                    <Detail workspace={workspace} event={row.events.find(item => item.event_id === detailEvent)!}
+                      jump={jump} showVersions={() => setTab("versions")} />}
                 </div>}
-              <button aria-expanded={expanded === event.event_id} className="grid w-full grid-cols-[90px_70px_1fr] gap-2 border-b border-[#e2dbc6] p-3 text-left hover:bg-white/60 sm:grid-cols-[110px_90px_1fr_80px]"
-                onClick={() => setExpanded(expanded === event.event_id ? "" : event.event_id)}>
-                <time title={event.at}>{event.at ? new Date(event.at).toLocaleTimeString("zh-CN", { hour12: false }) + "." + String(new Date(event.at).getMilliseconds()).padStart(3, "0") : "未记录"}</time>
-                <span>{CATEGORIES[event.category] ?? event.category}</span>
-                <span className={event.status === "failed" ? "text-red-700" : ""}>
-                  {event.summary} <span className="text-[#8a8371]">· {STATUS[event.status] ?? event.status}</span>
-                  {event.duration_ms != null && <span className="ml-2">{event.duration_ms} ms</span>}
-                </span>
-                <span className="hidden text-right sm:inline">{expanded === event.event_id ? "收起" : "详情"}</span>
-              </button>
-              {expanded === event.event_id && <Detail workspace={workspace} event={event} jump={jump} showVersions={() => setTab("versions")} />}
-            </article>)}
+              </article>)}
+            </section>)}
           </main>
-          <aside className="max-h-48 flex-none space-y-4 overflow-auto border-b border-[#e2dbc6] p-4 md:max-h-none md:w-72 md:border-b-0 md:border-l">
+          <aside className="max-h-64 flex-none space-y-4 overflow-auto border-b border-[#e2dbc6] p-4 md:max-h-none md:w-80 md:border-b-0 md:border-l">
             {run && <div className="space-y-1 border-b border-[#e2dbc6] pb-3">
               <strong>最近任务 · {STATUS[run.status] ?? run.status}</strong>
-              <p>{run.model ?? "模型未记录"}</p>
+              <p>{run.label ?? "写作"} · {run.model ?? "模型未记录"}</p>
               <p>{Math.max(0, Math.round((new Date(run.finished_at ?? Date.now()).getTime() - new Date(run.started_at).getTime()) / 1000))} 秒</p>
             </div>}
             <div className="grid grid-cols-4 gap-2 md:grid-cols-2">
               {([["事件", stats.events], ["模型请求", stats.models], ["工具调用", stats.tools], ["失败事件", stats.errors]] as const).map(([label, value]) =>
-                <div key={label} className="rounded border border-[#e2dbc6] p-2">{label}<strong className="block text-xl">{value}</strong></div>)}
+                <div key={label} className="rounded border border-[#e2dbc6] p-2.5">
+                  <span className="text-[11px] text-[#8a8371]">{label}</span>
+                  <strong className="block text-2xl leading-tight">{value}</strong>
+                </div>)}
+            </div>
+            <div>
+              <strong className="mb-2 block">动作分布</strong>
+              {counts.length === 0 ? <p className="text-[11px] text-[#8a8371]">当前范围没有可统计的动作。</p> :
+                <ul className="space-y-1.5">
+                  {counts.map(item => {
+                    return <li key={item.action}>
+                      <div className="flex items-center justify-between gap-2 px-1">
+                        <ActionChip action={item.action} />
+                        <span>{item.count}</span>
+                      </div>
+                      <div className="mx-1 mt-1 h-1 overflow-hidden rounded bg-[#e6ebef]">
+                        <div className="h-full rounded bg-[#9db8c8]"
+                          style={{ width: `${Math.round(item.count / peak * 100)}%` }} />
+                      </div>
+                    </li>;
+                  })}
+                </ul>}
             </div>
             <label className="block">查看范围<select aria-label="活动范围" className="mt-1 w-full rounded border p-2"
-              value={filters.conversation_id ?? ""} onChange={e => change("conversation_id", e.target.value)}>
+              value={filters.conversation_id ?? ""} onChange={e => setFilters(current => ({ ...current, conversation_id: e.target.value }))}>
               <option value="">当前作品全部活动</option>{conversations.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
             </select></label>
-            <label className="block">任务标识<input aria-label="任务标识" className="mt-1 w-full rounded border p-2" value={filters.turn_id ?? ""}
-              onChange={e => change("turn_id", e.target.value)} /></label>
-            <label className="block">搜索内容或文件路径<input aria-label="搜索活动" type="search" className="mt-1 w-full rounded border p-2"
-              value={filters.q ?? ""} onChange={e => change("q", e.target.value)} /></label>
-            <label className="block">事件类型<select aria-label="事件类型" className="mt-1 w-full rounded border p-2"
-              value={filters.category ?? ""} onChange={e => change("category", e.target.value)}>
-              {Object.entries(CATEGORIES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-            <label className="block">结果<select aria-label="事件结果" className="mt-1 w-full rounded border p-2"
-              value={filters.status ?? ""} onChange={e => change("status", e.target.value)}>
-              <option value="">全部</option>{Object.entries(STATUS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-            {(["since", "until"] as const).map(key => <label className="block" key={key}>{key === "since" ? "开始时间" : "结束时间"}
-              <input aria-label={key === "since" ? "开始时间" : "结束时间"} type="datetime-local" className="mt-1 w-full rounded border p-2"
-                onChange={e => change(key, e.target.value ? new Date(e.target.value).toISOString() : "")} /></label>)}
-            <label className="block"><input type="checkbox" checked={filters.verbose ?? false}
-              onChange={e => change("verbose", e.target.checked)} /> 显示文字分片事件</label>
-            <label className="block"><input type="checkbox" checked={capture} disabled={!settingsReady || savingSettings}
-              onChange={e => void configure(e.target.checked)} /> 保存后续模型输入快照</label>
-            <p className="text-[11px] leading-5 text-[#8a8371]">快照保存在本机，可能包含作品正文。清理详情保留事件摘要与版本关联。</p>
-            <label className="block">详情保留时间<select aria-label="详情保留时间" className="mt-1 w-full rounded border p-2" value={retention} disabled={!settingsReady || savingSettings}
-              onChange={e => void configure(capture, Number(e.target.value))}>
-              <option value={7}>7 天</option><option value={30}>30 天</option><option value={0}>直到手动清理</option>
-              {![0, 7, 30].includes(retention) && <option value={retention}>{retention} 天</option>}
-            </select></label>
-            {!confirmClear ? <button className="btn btn-gray px-3 py-1" onClick={() => setConfirmClear(true)}>清理已保存详情</button> :
-              <div><p className="mb-2">输入与工具结果详情将被删除，无法恢复。</p>
-                <button className="btn btn-gray mr-2 px-3 py-1" onClick={() => setConfirmClear(false)}>取消</button>
-                <button className="btn btn-gold px-3 py-1" onClick={() => void activityRequest<{ removed: number }>(workspace, "/details", { method: "DELETE" })
-                  .then(value => { setNotice(`已清理 ${value.removed} 份详情。`); setExpanded(""); setConfirmClear(false); })
-                  .catch(reason => setError(activityError(reason)))}>确认清理详情</button></div>}
-            <button className="btn btn-gray ml-2 px-3 py-1" onClick={() => void activityRequest(workspace, "/rebuild", { method: "POST" })
-              .then(() => setGeneration(value => value + 1)).catch(reason => setError(activityError(reason)))}>重建查询索引</button>
+            <details className="border-t border-[#e2dbc6] pt-3">
+              <summary className="cursor-pointer font-bold">记录设置</summary>
+              <div className="mt-2 space-y-2">
+                <label className="block"><input type="checkbox" checked={filters.verbose ?? false}
+                  onChange={e => setFilters(current => ({ ...current, verbose: e.target.checked }))} /> 显示文字分片事件</label>
+                <label className="block"><input type="checkbox" checked={capture} disabled={!settingsReady || savingSettings}
+                  onChange={e => void configure(e.target.checked)} /> 保存后续模型输入快照</label>
+                <p className="text-[11px] leading-5 text-[#8a8371]">快照保存在本机，可能包含作品正文。清理详情保留事件摘要与版本关联。</p>
+                <label className="block">详情保留时间<select aria-label="详情保留时间" className="mt-1 w-full rounded border p-2" value={retention} disabled={!settingsReady || savingSettings}
+                  onChange={e => void configure(capture, Number(e.target.value))}>
+                  <option value={7}>7 天</option><option value={30}>30 天</option><option value={0}>直到手动清理</option>
+                  {![0, 7, 30].includes(retention) && <option value={retention}>{retention} 天</option>}
+                </select></label>
+                {!confirmClear ? <button className="btn btn-gray px-3 py-1" onClick={() => setConfirmClear(true)}>清理已保存详情</button> :
+                  <div><p className="mb-2">输入与工具结果详情将被删除，无法恢复。</p>
+                    <button className="btn btn-gray mr-2 px-3 py-1" onClick={() => setConfirmClear(false)}>取消</button>
+                    <button className="btn btn-gold px-3 py-1" onClick={() => void activityRequest<{ removed: number }>(workspace, "/details", { method: "DELETE" })
+                      .then(value => { setNotice(`已清理 ${value.removed} 份详情。`); setExpanded(""); setConfirmClear(false); })
+                      .catch(reason => setError(activityError(reason)))}>确认清理详情</button></div>}
+                <button className="btn btn-gray px-3 py-1" onClick={() => void activityRequest(workspace, "/rebuild", { method: "POST" })
+                  .then(() => setGeneration(value => value + 1)).catch(reason => setError(activityError(reason)))}>重建查询索引</button>
+              </div>
+            </details>
           </aside>
         </div>
         <footer className="flex flex-none flex-wrap items-center gap-3 border-t border-[#e2dbc6] px-4 py-3">

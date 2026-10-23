@@ -15,6 +15,12 @@ export interface ActivityEvent {
   type: string;
   category: string;
   status: string;
+  action: string;
+  phase: string;
+  title: string;
+  subject: string;
+  note: string;
+  pair_key: string;
   summary: string;
   duration_ms?: number | null;
   operation_id?: string | null;
@@ -27,7 +33,15 @@ export interface ActivityPage {
   has_more: boolean;
   next_before: number | null;
   stats: { events: number; models: number; tools: number; errors: number };
-  run?: { turn_id: string; started_at: string; finished_at: string | null; model: string | null; status: string } | null;
+  run?: {
+    turn_id: string;
+    started_at: string;
+    finished_at: string | null;
+    model: string | null;
+    status: string;
+    origin?: string;
+    label?: string;
+  } | null;
 }
 
 export interface ActivityFilters {
