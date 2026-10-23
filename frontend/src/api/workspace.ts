@@ -134,6 +134,7 @@ export interface TurnInfo {
 
 /** 本轮带上来的材料：当前阅读位置、显式参考与客户端看到的版本。 */
 export interface ContextInput {
+  state_chapter?: number | null;
   selected_path: string | null;
   /** 顺序即作者选择顺序；服务端按路径去重。 */
   reference_paths: string[];

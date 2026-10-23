@@ -33,7 +33,7 @@ __all__ = [
 ]
 
 RECORD_VERSION = 1
-RECIPE_VERSION = 1
+RECIPE_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,22 +170,26 @@ def _check_entry(workspace: Workspace, entry: TimelineEntry) -> None:
             why="时间锚点不能为空",
             fix="写上原文里交代的时间，例如「10月21日深夜」",
         )
-    check_evidence(workspace, entry.evidence)
+    check_evidence(workspace, entry.evidence, chapter=entry.chapter)
 
 
-def build_timeline(workspace: Workspace, store: TimelineStore | None = None) -> TimelineState:
+def build_timeline(
+    workspace: Workspace, store: TimelineStore | None = None, *, as_of_chapter: int | None = None
+) -> TimelineState:
     """有效锚点按章序排列；失效的丢掉并说明，缺锚点的章列出来。"""
-    current = current_chapter(workspace)
+    current = current_chapter(workspace, as_of_chapter)
     chapters = sorted(
         entry.chapter_number
         for entry in workspace.catalog().chapters
-        if entry.chapter_number is not None and entry.exists
+        if entry.chapter_number is not None and entry.exists and entry.chapter_number <= current
     )
     records = store.entries() if store is not None else ()
     usable: list[TimelineEntry] = []
     warnings: list[str] = []
     dropped: list[int] = []
     for item in records:
+        if item.chapter > current:
+            continue
         status = store.status(workspace, item) if store is not None else "valid"
         if status == "valid" and item.chapter in chapters:
             usable.append(item)

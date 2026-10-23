@@ -225,7 +225,7 @@ def test_dead_characters_come_first_and_are_dropped_last(tmp_path: Path) -> None
     section = roster_section(roster)
     assert section.index("周岚") < section.index("林静")
 
-    tight = roster_section(roster, budget=120)
+    tight = roster_section(roster, budget=160)
     assert "已死亡" in tight
     assert "林静" not in tight
     assert "还有 1 人未列入" in tight

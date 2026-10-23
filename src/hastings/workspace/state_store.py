@@ -22,10 +22,10 @@ from pathlib import Path
 
 from hastings.workspace.files import Workspace
 
-__all__ = ["current_chapter", "read_records", "write_records"]
+__all__ = ["current_chapter", "state_chapter", "read_records", "write_records"]
 
 
-def current_chapter(workspace: Workspace) -> int:
+def current_chapter(workspace: Workspace, as_of_chapter: int | None = None) -> int:
     """已经写到的最大章号；没有章节时为 0。
 
     「截至第 N 章」这类判断都从它来：章节文件在不在、章号是否可解析，只在这里定义一次。
@@ -35,7 +35,27 @@ def current_chapter(workspace: Workspace) -> int:
         for entry in workspace.catalog().chapters
         if entry.chapter_number is not None and entry.exists
     ]
-    return max(numbers, default=0)
+    latest = max(numbers, default=0)
+    return latest if as_of_chapter is None else min(latest, max(0, as_of_chapter))
+
+
+def state_chapter(
+    workspace: Workspace,
+    *,
+    selected_path: str | None = None,
+    targets: Sequence[str] = (),
+    explicit: int | None = None,
+) -> int:
+    """任务时点与作品进度分开；未知目标时不自动采用全书末章状态。"""
+    if explicit is not None:
+        return current_chapter(workspace, explicit)
+    paths = set(targets) if targets else {selected_path}
+    numbers = [
+        e.chapter_number
+        for e in workspace.catalog().chapters
+        if e.path in paths and e.chapter_number is not None
+    ]
+    return min(numbers) if numbers else 0
 
 
 def read_records(

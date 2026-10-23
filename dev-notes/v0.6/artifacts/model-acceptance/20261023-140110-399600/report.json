@@ -1,0 +1,718 @@
+{
+  "model": "deepseek-flash",
+  "results": [
+    {
+      "key": "glossary_extract",
+      "family": "状态核对",
+      "title": "核对原文专名并注入下一轮",
+      "model": "deepseek-flash",
+      "prompt": "核对专名：读取第一章，把正文里确实出现过的地名、组织、物件登记进词典（人物名不用登记，人物由小传声明）。只核对林远这条线，不改任何作品文件。",
+      "follow_up": "第二章要写林远在旅馆大堂与人接头。先列出这一章可以用的专有名词，不要改任何文件。",
+      "changed": [],
+      "before": {
+        "正文/0001 雨夜.md": "16dd1af2edd6f3ef8bb1550fce04f2ffdbd41d1e8970424904c824a18c91d22a",
+        "正文/0002 走廊.md": "0f7c612af3f9f518f424e186297a5a7ec39e8d62c6da734a2d2ee7e4edae9f8b",
+        "正文/0003 书房.md": "817a9787f5fe80ddc72c073fc4446d61294e713824caef808a213a639a1cc63f",
+        "正文/0004 客房.md": "4cb3bcb91d159a2e0cc60ea14433faee029cf9c35c95cff39e79e621041b3e0b",
+        "设定集/角色小传/林远.md": "258e093bbe707fdcf7bb749abf65d11cac554d8531c229789f9713cfb3b3c4de",
+        "设定集/线索.md": "8e163aafd180470c13e4de6ccf9cc70288b9d106dd2db506c5498df5bb585287",
+        "设定集/真相.md": "d18a10f4e6d67df06df007e05d3a7d6e51968ad2e0ff8c5ea86603688b0dd0ef"
+      },
+      "after": {
+        "正文/0001 雨夜.md": "16dd1af2edd6f3ef8bb1550fce04f2ffdbd41d1e8970424904c824a18c91d22a",
+        "正文/0002 走廊.md": "0f7c612af3f9f518f424e186297a5a7ec39e8d62c6da734a2d2ee7e4edae9f8b",
+        "正文/0003 书房.md": "817a9787f5fe80ddc72c073fc4446d61294e713824caef808a213a639a1cc63f",
+        "正文/0004 客房.md": "4cb3bcb91d159a2e0cc60ea14433faee029cf9c35c95cff39e79e621041b3e0b",
+        "设定集/角色小传/林远.md": "258e093bbe707fdcf7bb749abf65d11cac554d8531c229789f9713cfb3b3c4de",
+        "设定集/线索.md": "8e163aafd180470c13e4de6ccf9cc70288b9d106dd2db506c5498df5bb585287",
+        "设定集/真相.md": "d18a10f4e6d67df06df007e05d3a7d6e51968ad2e0ff8c5ea86603688b0dd0ef"
+      },
+      "workspace": "C:\\Projects\\Agent\\myagent\\data\\test-tmp\\model-acceptance\\20261023-140110-399600\\glossary_extract\\作品",
+      "checks": [
+        {
+          "name": "首轮完成",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": {
+            "seq": 956,
+            "at": "2026-10-23T14:01:20+08:00",
+            "type": "run_finished",
+            "turn_id": "t_c5e1f244",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "name": "首轮实际操作符合当时范围",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "后续轮完成",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": {
+            "seq": 2245,
+            "at": "2026-10-23T14:01:32+08:00",
+            "type": "run_finished",
+            "turn_id": "t_04c482c6",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "name": "后续轮实际操作符合当时范围",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "没有范围外改动",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "要求修改的文件确实改变",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "读取原文:正文/0001 雨夜.md",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": [
+            "正文/0001 雨夜.md",
+            "设定集/角色小传/林远.md"
+          ]
+        },
+        {
+          "name": "已给作者公开回答",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": "我先看看有哪些文件，再读取第一章。\n第一章只有一句话，正文里出现过两个专名——一个地名、一个组织名。人物名「林远」已由小传声明，不重复登记。\n专名核对完成。第一条记录如下。\n\n## 本轮登记（第一章）\n\n| 专名 | 类型 | 首见章 | 原文依据 |\n| --- | --- | --- | --- |\n| 青梧旅馆 | 地点 | 1 | 正文/0001 雨夜.md（digest 16dd1af2…），[6,16)「林远撑伞走进青梧旅馆」 |\n| 临江旅业公司 | 组织 | 1 | 正文/0001 雨夜.md（digest 16dd1af2…），[17,32)「大堂里挂着临江旅业公司的铜牌。」"
+        },
+        {
+          "name": "核对轮发布了词典条目",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": 2
+        },
+        {
+          "name": "条目都来自原文登记",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": [
+            [
+              "青梧旅馆",
+              "text"
+            ],
+            [
+              "临江旅业公司",
+              "text"
+            ]
+          ]
+        },
+        {
+          "name": "条目种类不是人物",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": [
+            [
+              "青梧旅馆",
+              "place"
+            ],
+            [
+              "临江旅业公司",
+              "org"
+            ]
+          ]
+        },
+        {
+          "name": "条目首现章在已写章节内",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": [
+            1
+          ]
+        },
+        {
+          "name": "条目证据与当前原文一致",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "条目被状态采用",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "下一轮注入了核对结果",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": {
+            "want": [
+              "glossary"
+            ],
+            "parts": [
+              "catalog",
+              "glossary",
+              "history",
+              "instructions",
+              "settings"
+            ]
+          }
+        }
+      ],
+      "status": "pass",
+      "events": [
+        {
+          "seq": 1,
+          "at": "2026-10-23T14:01:10+08:00",
+          "type": "turn_started",
+          "turn_id": "t_c5e1f244",
+          "request_key": "k-glossary_extract",
+          "connection_id": "conn_db37ffaa",
+          "connection_name": "deepseek",
+          "model": "deepseek-flash",
+          "context": {
+            "selected_path": null,
+            "reference_paths": [],
+            "observed_digests": {},
+            "reference_digests": {}
+          },
+          "purpose": "update_state",
+          "index_paths": [
+            "设定集/角色小传/林远.md"
+          ],
+          "review_paths": []
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-23T14:01:10+08:00",
+          "type": "state_injected",
+          "turn_id": "t_c5e1f244",
+          "profile": "extract",
+          "parts": [
+            {
+              "key": "instructions",
+              "chars": 547
+            },
+            {
+              "key": "catalog",
+              "chars": 185
+            }
+          ],
+          "skipped": [],
+          "budget": {
+            "limit": 16000,
+            "used": 732
+          }
+        },
+        {
+          "seq": 16,
+          "at": "2026-10-23T14:01:11+08:00",
+          "type": "assistant_message",
+          "message_id": "m_ab5ee870702c",
+          "completion": "completed",
+          "turn_id": "t_c5e1f244",
+          "text": "我先看看有哪些文件，再读取第一章。"
+        },
+        {
+          "seq": 19,
+          "at": "2026-10-23T14:01:11+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_c5e1f244",
+          "tool_call_id": "call_00_ET_tvVc4Zay4k3EGT69we3N9892",
+          "tool": "list_files",
+          "args": {},
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 22,
+          "at": "2026-10-23T14:01:11+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_c5e1f244",
+          "tool_call_id": "call_01_ET_eNOxQhCArwD3cAd6irXi7011",
+          "tool": "read_state",
+          "args": {},
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 35,
+          "at": "2026-10-23T14:01:13+08:00",
+          "type": "material_read",
+          "turn_id": "t_c5e1f244",
+          "path": "正文/0001 雨夜.md",
+          "digest": "16dd1af2edd6f3ef8bb1550fce04f2ffdbd41d1e8970424904c824a18c91d22a",
+          "start_char": 0,
+          "end_char": 33,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 33
+        },
+        {
+          "seq": 36,
+          "at": "2026-10-23T14:01:13+08:00",
+          "type": "material_read",
+          "turn_id": "t_c5e1f244",
+          "path": "设定集/角色小传/林远.md",
+          "digest": "258e093bbe707fdcf7bb749abf65d11cac554d8531c229789f9713cfb3b3c4de",
+          "start_char": 0,
+          "end_char": 22,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 22
+        },
+        {
+          "seq": 40,
+          "at": "2026-10-23T14:01:13+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_c5e1f244",
+          "tool_call_id": "call_00_xBFqIMU2MSGx2D1OXICm3303",
+          "tool": "read_file",
+          "args": {
+            "path": "正文/0001 雨夜.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 43,
+          "at": "2026-10-23T14:01:13+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_c5e1f244",
+          "tool_call_id": "call_01_PtKJH8TgLeoIvZhEVSF81633",
+          "tool": "read_file",
+          "args": {
+            "path": "设定集/角色小传/林远.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 617,
+          "at": "2026-10-23T14:01:17+08:00",
+          "type": "assistant_message",
+          "message_id": "m_a5f41667be8b",
+          "completion": "completed",
+          "turn_id": "t_c5e1f244",
+          "text": "第一章只有一句话，正文里出现过两个专名——一个地名、一个组织名。人物名「林远」已由小传声明，不重复登记。"
+        },
+        {
+          "seq": 620,
+          "at": "2026-10-23T14:01:17+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_c5e1f244",
+          "tool_call_id": "call_00_RztGAoMGRDU3TOXhc81h5934",
+          "tool": "save_glossary_term",
+          "args": {},
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 623,
+          "at": "2026-10-23T14:01:17+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_c5e1f244",
+          "tool_call_id": "call_01_Rc42G5usOsAiJD7311pI8004",
+          "tool": "save_glossary_term",
+          "args": {},
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 636,
+          "at": "2026-10-23T14:01:18+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_c5e1f244",
+          "tool_call_id": "call_00_wX9jz4Rzu9TABw9e2bQw6912",
+          "tool": "read_state",
+          "args": {},
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 953,
+          "at": "2026-10-23T14:01:20+08:00",
+          "type": "assistant_message",
+          "message_id": "m_9454417ae9d6",
+          "completion": "completed",
+          "turn_id": "t_c5e1f244",
+          "text": "专名核对完成。第一条记录如下。\n\n## 本轮登记（第一章）\n\n| 专名 | 类型 | 首见章 | 原文依据 |\n| --- | --- | --- | --- |\n| 青梧旅馆 | 地点 | 1 | 正文/0001 雨夜.md（digest 16dd1af2…），[6,16)「林远撑伞走进青梧旅馆」 |\n| 临江旅业公司 | 组织 | 1 | 正文/0001 雨夜.md（digest 16dd1af2…），[17,32)「大堂里挂着临江旅业公司的铜牌。」 |\n\n- 人物名「林远」已由小传声明（来源为 declared），按要求未重复登记。\n- 「伞」「铜牌」是普通物件，不是专名，因此未登记。\n\n需要说明的两点：\n\n1. 第一章正文只有一句话，合计 33 个字符，所以可登记的专名确实只有这两个。「青梧旅馆」刚出现，还没有别名；「临江旅业公司」目前也只是铜牌上的名称，正文没说它和旅馆是什么关系，因此没有做延伸推断。\n2. 本轮只按你的要求核对了第一章。第二章至第四章还没有进行专名核对，这四个章节里如果出现同一地点的其他写法，比如「青梧」，或者「旅馆」的简称，后面几轮核对时可以再补成别名。\n\n未改动任何作品文件。"
+        },
+        {
+          "seq": 956,
+          "at": "2026-10-23T14:01:20+08:00",
+          "type": "run_finished",
+          "turn_id": "t_c5e1f244",
+          "status": "completed",
+          "recording": "no_change",
+          "changed_paths": [],
+          "commit": null,
+          "note": ""
+        }
+      ],
+      "follow_events": [
+        {
+          "seq": 957,
+          "at": "2026-10-23T14:01:20+08:00",
+          "type": "turn_started",
+          "turn_id": "t_04c482c6",
+          "request_key": "k-glossary_extract-2",
+          "connection_id": "conn_db37ffaa",
+          "connection_name": "deepseek",
+          "model": "deepseek-flash",
+          "context": {
+            "state_chapter": 2,
+            "selected_path": null,
+            "reference_paths": [],
+            "observed_digests": {},
+            "reference_digests": {}
+          }
+        },
+        {
+          "seq": 958,
+          "at": "2026-10-23T14:01:20+08:00",
+          "type": "state_injected",
+          "turn_id": "t_04c482c6",
+          "profile": "writer",
+          "parts": [
+            {
+              "key": "instructions",
+              "chars": 2106
+            },
+            {
+              "key": "catalog",
+              "chars": 185
+            },
+            {
+              "key": "glossary",
+              "chars": 60
+            },
+            {
+              "key": "settings",
+              "chars": 68
+            },
+            {
+              "key": "history",
+              "chars": 164
+            }
+          ],
+          "skipped": [],
+          "budget": {
+            "limit": 44900,
+            "used": 2583
+          }
+        },
+        {
+          "seq": 1179,
+          "at": "2026-10-23T14:01:23+08:00",
+          "type": "material_read",
+          "turn_id": "t_04c482c6",
+          "path": "正文/0001 雨夜.md",
+          "digest": "16dd1af2edd6f3ef8bb1550fce04f2ffdbd41d1e8970424904c824a18c91d22a",
+          "start_char": 0,
+          "end_char": 33,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 33
+        },
+        {
+          "seq": 1180,
+          "at": "2026-10-23T14:01:23+08:00",
+          "type": "material_read",
+          "turn_id": "t_04c482c6",
+          "path": "设定集/角色小传/林远.md",
+          "digest": "258e093bbe707fdcf7bb749abf65d11cac554d8531c229789f9713cfb3b3c4de",
+          "start_char": 0,
+          "end_char": 22,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 22
+        },
+        {
+          "seq": 1184,
+          "at": "2026-10-23T14:01:23+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_04c482c6",
+          "tool_call_id": "call_00_3TDzFGhtKb5yByhSBsbG9248",
+          "tool": "read_state",
+          "args": {},
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1187,
+          "at": "2026-10-23T14:01:23+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_04c482c6",
+          "tool_call_id": "call_01_qJdLKvsuDVrybMes4i7I7872",
+          "tool": "read_file",
+          "args": {
+            "path": "正文/0001 雨夜.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1189,
+          "at": "2026-10-23T14:01:23+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_04c482c6",
+          "tool_call_id": "call_02_Al6kxe5fl3gwJgNeIO8Y4343",
+          "tool": "read_file",
+          "args": {
+            "path": "设定集/角色小传/林远.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1307,
+          "at": "2026-10-23T14:01:25+08:00",
+          "type": "material_read",
+          "turn_id": "t_04c482c6",
+          "path": "正文/0002 走廊.md",
+          "digest": "0f7c612af3f9f518f424e186297a5a7ec39e8d62c6da734a2d2ee7e4edae9f8b",
+          "start_char": 0,
+          "end_char": 18,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 18
+        },
+        {
+          "seq": 1308,
+          "at": "2026-10-23T14:01:25+08:00",
+          "type": "material_read",
+          "turn_id": "t_04c482c6",
+          "path": "正文/0003 书房.md",
+          "digest": "817a9787f5fe80ddc72c073fc4446d61294e713824caef808a213a639a1cc63f",
+          "start_char": 0,
+          "end_char": 30,
+          "start_line": 1,
+          "end_line": 4,
+          "total_chars": 30
+        },
+        {
+          "seq": 1309,
+          "at": "2026-10-23T14:01:25+08:00",
+          "type": "material_read",
+          "turn_id": "t_04c482c6",
+          "path": "正文/0004 客房.md",
+          "digest": "4cb3bcb91d159a2e0cc60ea14433faee029cf9c35c95cff39e79e621041b3e0b",
+          "start_char": 0,
+          "end_char": 24,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 24
+        },
+        {
+          "seq": 1310,
+          "at": "2026-10-23T14:01:25+08:00",
+          "type": "material_read",
+          "turn_id": "t_04c482c6",
+          "path": "设定集/线索.md",
+          "digest": "8e163aafd180470c13e4de6ccf9cc70288b9d106dd2db506c5498df5bb585287",
+          "start_char": 0,
+          "end_char": 17,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 17
+        },
+        {
+          "seq": 1311,
+          "at": "2026-10-23T14:01:25+08:00",
+          "type": "material_read",
+          "turn_id": "t_04c482c6",
+          "path": "设定集/真相.md",
+          "digest": "d18a10f4e6d67df06df007e05d3a7d6e51968ad2e0ff8c5ea86603688b0dd0ef",
+          "start_char": 0,
+          "end_char": 15,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 15
+        },
+        {
+          "seq": 1315,
+          "at": "2026-10-23T14:01:25+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_04c482c6",
+          "tool_call_id": "call_00_H3YTO1OdP8h9FysUmO1R6442",
+          "tool": "read_file",
+          "args": {
+            "path": "正文/0002 走廊.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1318,
+          "at": "2026-10-23T14:01:25+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_04c482c6",
+          "tool_call_id": "call_01_EWNJtMfXD8X6Omj3LrOR3113",
+          "tool": "read_file",
+          "args": {
+            "path": "正文/0003 书房.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1320,
+          "at": "2026-10-23T14:01:25+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_04c482c6",
+          "tool_call_id": "call_02_4dnBlHyMA0nHx33bm0ON7129",
+          "tool": "read_file",
+          "args": {
+            "path": "正文/0004 客房.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1322,
+          "at": "2026-10-23T14:01:25+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_04c482c6",
+          "tool_call_id": "call_03_hwUOvYwWDoIlJHTQIfzu5326",
+          "tool": "read_file",
+          "args": {
+            "path": "设定集/线索.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1324,
+          "at": "2026-10-23T14:01:25+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_04c482c6",
+          "tool_call_id": "call_04_YqP6dlkyQ2iKmcdttXsK2619",
+          "tool": "read_file",
+          "args": {
+            "path": "设定集/真相.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 2242,
+          "at": "2026-10-23T14:01:32+08:00",
+          "type": "assistant_message",
+          "message_id": "m_761560cff7f9",
+          "completion": "completed",
+          "turn_id": "t_04c482c6",
+          "text": "核对完第一章原文和词典现状后，可用的专有名词如下。\n\n## 已入词典、可直接用（都来自第一章正文）\n\n| 专名 | 类型 | 首见 | 说明 |\n| --- | --- | --- | --- |\n| 青梧旅馆 | 地点 | 第 1 章 | 本章在它的「大堂」，是现成的场合，不用另起地名 |\n| 临江旅业公司 | 组织 | 第 1 章 | 第一章是「大堂里挂着……的铜牌」，写大堂接头时可以自然再提一次当作背景；但正文还没说它和旅馆是什么关系（业主？冠名？上级？），不要顺手替它定关系 |\n| 林远 | 人物 | 小传声明 | 私家侦探、曾任刑警。人物名由小传声明，不额外登记 |\n\n## 正文里已出现但不算专名（不必登记，可当普通名词写）\n\n- 「大堂」「走廊」「书房」「客房」——普通场所名词。\n- 「铜牌」「伞」「茶」——普通物件。\n- 「前台」（线索里「前台的手套是湿的」）——岗位或位置，不是专有名称。如果第二章要让人在楼下前台附近活动，这个词能用，但不是需要登记的专名。\n\n## 尚无、需要你确认后才会新增的\n\n- **接头对象的姓名或化名**：目前词典和小传里都没有第二个人物。新名字我不替你起，你定下写法后我再登记；该角色开写前还需要一份小传。\n- **「旅馆管家」**：只出现在真相里，是身份描述、不是专名，读者视角也还看不到，不列入本章可用词。\n- 任何新的街道名、房间号、公司分部名等：第一章都没出现，一律等你确认。\n\n## 一个需要你先决定的冲突\n\n`正文/0002 走廊.md` 已经存在（内容：「走廊尽头的灯忽明忽暗。」）。你说的「第二章……大堂接头」如果要落成新的第二章，就得决定是改这份文件、还是把它挪到后面另起一章。另外提醒一句：第四章写着「林远没有进过书房，他一直待在客房」，所以第二章别把林远写成上过楼或进过书房，否则会和后文冲突。\n\n本轮只读，未改动任何文件。"
+        },
+        {
+          "seq": 2245,
+          "at": "2026-10-23T14:01:32+08:00",
+          "type": "run_finished",
+          "turn_id": "t_04c482c6",
+          "status": "completed",
+          "recording": "no_change",
+          "changed_paths": [],
+          "commit": null,
+          "note": ""
+        }
+      ],
+      "duration_seconds": 22.2
+    }
+  ],
+  "coverage": [
+    {
+      "family": "自然语言参考",
+      "status": "partial",
+      "cases": {
+        "refs_locate": "not_covered"
+      }
+    },
+    {
+      "family": "选择参考",
+      "status": "partial",
+      "cases": {
+        "reference_not_authority": "not_covered"
+      }
+    },
+    {
+      "family": "固定范围",
+      "status": "partial",
+      "cases": {
+        "fixed_scope": "not_covered"
+      }
+    },
+    {
+      "family": "关联修改",
+      "status": "partial",
+      "cases": {
+        "sync_chapters": "not_covered"
+      }
+    },
+    {
+      "family": "任务理解",
+      "status": "partial",
+      "cases": {
+        "discuss_only": "not_covered",
+        "read_only_check": "not_covered",
+        "continue_unanchored": "not_covered",
+        "ambiguous_character": "not_covered",
+        "negative_reference": "not_covered"
+      }
+    },
+    {
+      "family": "索引与原文",
+      "status": "partial",
+      "cases": {
+        "index_recall": "not_covered",
+        "index_stale": "not_covered"
+      }
+    },
+    {
+      "family": "写后检查",
+      "status": "partial",
+      "cases": {
+        "review_after_write": "not_covered"
+      }
+    },
+    {
+      "family": "状态核对",
+      "status": "partial",
+      "cases": {
+        "disclosure_extract": "not_covered",
+        "state_and_timeline": "not_covered",
+        "glossary_extract": "pass",
+        "clue_plant": "not_covered"
+      }
+    }
+  ]
+}

@@ -120,9 +120,9 @@ def test_alias_pointing_at_another_person_is_a_conflict(tmp_path: Path) -> None:
 def test_term_introduced_later_is_not_listed_yet(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     store = GlossaryStore(tmp_path / "state")
-    publish_terms(workspace, store, (_term(workspace, term="雪山旅馆", chapter=5),))
-    state = build_glossary(workspace, store)
-    # 第 5 章才出现的地名，写到第 1 章时不该出现在白名单里。
+    publish_terms(workspace, store, (_term(workspace, term="雪山旅馆", chapter=1),))
+    state = build_glossary(workspace, store, as_of_chapter=0)
+    # 尚未写到第一章时，该章的专名不进入白名单。
     assert "雪山旅馆" not in glossary_section(state)
 
 

@@ -38,7 +38,7 @@ __all__ = [
 ]
 
 RECORD_VERSION = 1
-RECIPE_VERSION = 1
+RECIPE_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,13 +155,16 @@ def _snapshot_from_payload(item: dict[str, object]) -> StateSnapshot | None:
     evidence = item.get("evidence")
     if not isinstance(evidence, dict):
         return None
+    alive = item.get("alive")
+    if not isinstance(alive, bool):
+        return None
     try:
         return StateSnapshot(
             entity_path=str(item["entity_path"]),
             entity_digest=str(item["entity_digest"]),
             chapter=int(str(item["chapter"])),
             location=str(item.get("location") or ""),
-            alive=bool(item.get("alive", True)),
+            alive=alive,
             stance=str(item.get("stance") or ""),
             evidence=ObservedEvidence(
                 path=str(evidence["path"]),
@@ -235,12 +238,17 @@ def _check_snapshot(workspace: Workspace, snapshot: StateSnapshot) -> None:
             fix="重新 read_file 拿到最新 digest 后再发布",
             details={"path": snapshot.entity_path},
         )
-    check_evidence(workspace, snapshot.evidence)
+    check_evidence(workspace, snapshot.evidence, chapter=snapshot.chapter)
 
 
-def build_roster(workspace: Workspace, store: CharacterStateStore | None = None) -> RosterState:
+def build_roster(
+    workspace: Workspace,
+    store: CharacterStateStore | None = None,
+    *,
+    as_of_chapter: int | None = None,
+) -> RosterState:
     """按当前章节算每个人的最新状态；失效快照退回上一个有效章，并说明退到哪。"""
-    current = current_chapter(workspace)
+    current = current_chapter(workspace, as_of_chapter)
     records = store.entries() if store is not None else ()
     warnings: list[str] = []
     characters: list[CharacterState] = []
@@ -248,7 +256,11 @@ def build_roster(workspace: Workspace, store: CharacterStateStore | None = None)
         if not entry.exists:
             continue
         meta = parse_character(entry.path, workspace.read(entry.path).text)
-        owned = [item for item in records if item.entity_path == meta.path]
+        owned = [
+            item
+            for item in records
+            if item.entity_path == meta.path and (as_of_chapter is None or item.chapter <= current)
+        ]
         usable: list[StateSnapshot] = []
         dropped: list[int] = []
         for item in owned:
@@ -305,6 +317,12 @@ def roster_section(state: RosterState, *, budget: int = 700, limit: int = 10) ->
         ),
     )
     header = f"截至第 {state.current_chapter} 章的人物状态（按原文核对，最近一次在前）："
+    suffix = [
+        "以上是原文核对到的最近状态；没核对到的章节不要当作已知。",
+        f"（还有 {len(ordered)} 人未列入，用 `read_state` 查具体某人。）",
+        "写已死角色时只能是回忆、转述或尸体；不要让他在新场景里行动。",
+    ]
+    reserved = len("\n".join(suffix)) + 1
     lines: list[str] = []
     used = len(header)
     dropped = 0
@@ -321,7 +339,7 @@ def roster_section(state: RosterState, *, budget: int = 700, limit: int = 10) ->
         if index >= limit:
             dropped += 1
             continue
-        if used + len(line) + 1 > budget - 60:
+        if used + len(line) + 1 > budget - reserved:
             dropped += 1
             continue
         lines.append(line)

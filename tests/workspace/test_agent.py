@@ -431,6 +431,8 @@ async def test_save_disclosure_requires_matching_evidence(tmp_path: Path) -> Non
             }
         ],
     }
+    await _call(tools["read_file"], path=person.path)
+    await _call(tools["read_file"], path=chapter.path)
     body = await _call(tools["save_disclosure"], **good)
     assert body["published"] == 1
     assert len(store.entries()) == 1
@@ -512,6 +514,8 @@ async def test_save_character_state_and_timeline(tmp_path: Path) -> None:
         )
     }
     assert {"save_character_state", "save_timeline", "read_state"} <= set(tools)
+    await _call(tools["read_file"], path=person.path)
+    await _call(tools["read_file"], path=chapter.path)
 
     quote = "她死在书房。"
     start = chapter.text.index(quote)
@@ -580,6 +584,7 @@ async def test_save_clues_rejects_resolved_without_evidence(tmp_path: Path) -> N
         tool.name: tool for tool in build_tools(workspace, run, mode="state", clue_store=clue_store)
     }
     assert "save_clues" in tools
+    await _call(tools["read_file"], path=chapter.path)
 
     quote = "门锁内侧有擦痕。"
     start = chapter.text.index(quote)

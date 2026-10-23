@@ -49,6 +49,7 @@ from hastings.workspace.files import SETTING_FILES, Workspace
 from hastings.workspace.glossary import GlossaryStore, build_glossary, glossary_section
 from hastings.workspace.materials import LIST_PREVIEW_CHARS, ContextSnapshot, MaterialSummary
 from hastings.workspace.metadata import ROLE_LABELS
+from hastings.workspace.state_store import state_chapter
 from hastings.workspace.timeline import TimelineStore, build_timeline, timeline_section
 
 __all__ = [
@@ -98,8 +99,9 @@ _INSTRUCTIONS = """\
 - `read_file` 的 `truncated` 为真表示还有没读到的部分，按返回的 `next_cursor` 继续；
   单次最多 16000 字符。目录、搜索摘录、界面上打开文件都不算读过原文。
 - 局部修改优先用 `edit_file`（原文必须唯一匹配），不要为了改一句就重写整章。
-- 人物身份的披露进度用 `read_state` 查：不带参数给概览，带 `entity` 给该角色已披露、未到章、
-  计划披露与原文依据。写到某个人物前先看这份状态，不要凭印象推断「读者现在知不知道」。
+- 人物身份的披露进度用 `read_state` 查：不带参数给概览，带 `entity` 给该角色已披露条目与
+  原文依据。写作视图不返回计划披露；定位不明确时用 `as_of_chapter` 指明本轮所写章号。
+  写到某个人物前先看这份状态，不要凭印象推断「读者现在知不知道」。
 - 不确定有哪些文件时先 `list_files`；找具体文字用 `search_text`；看历史用 `git_log` / `git_diff`。
 - 路径只能是 `正文/xxx.md`、`设定集/角色小传/姓名.md`、`设定集/线索.md`、`设定集/真相.md`。
 
@@ -302,12 +304,14 @@ def build_assembled_context(
     roster_store: CharacterStateStore | None = None,
     timeline_store: TimelineStore | None = None,
     clue_store: ClueStore | None = None,
+    as_of_chapter: int | None = None,
 ) -> AssembledContext:
     """按用途装配系统提示：分区、预算与跳过原因一起返回。
 
     各用途装的分区不同：建索引只给要求与目录（读原文即可，不需要线索与真相，更不注入
     自己的旧摘要）；检查给设定，不给索引摘要（避免用摘要替代原文证据）；写正文全部装。
     """
+    cutoff = state_chapter(workspace, selected_path=selected_path, explicit=as_of_chapter)
     parts: list[Partition] = [
         Partition(
             key="instructions",
@@ -345,7 +349,9 @@ def build_assembled_context(
             )
         )
     if profile == "writer":
-        state_notes = state_section(build_disclosure_state(workspace, disclosure_store))
+        state_notes = state_section(
+            build_disclosure_state(workspace, disclosure_store, as_of_chapter=cutoff)
+        )
         if state_notes.strip():
             parts.append(
                 Partition(
@@ -357,7 +363,7 @@ def build_assembled_context(
             )
     if profile in ("writer", "review"):
         # 检查也需要「谁已经死了、故事时间到哪」，否则时间冲突只能靠通读猜。
-        roster_notes = roster_section(build_roster(workspace, roster_store))
+        roster_notes = roster_section(build_roster(workspace, roster_store, as_of_chapter=cutoff))
         if roster_notes.strip():
             parts.append(
                 Partition(
@@ -367,7 +373,9 @@ def build_assembled_context(
                     budget=ROSTER_BUDGET,
                 )
             )
-        time_notes = timeline_section(build_timeline(workspace, timeline_store))
+        time_notes = timeline_section(
+            build_timeline(workspace, timeline_store, as_of_chapter=cutoff)
+        )
         if time_notes.strip():
             parts.append(
                 Partition(
@@ -377,7 +385,7 @@ def build_assembled_context(
                     budget=TIMELINE_BUDGET,
                 )
             )
-        clue_notes = clues_section(build_clues(workspace, clue_store))
+        clue_notes = clues_section(build_clues(workspace, clue_store, as_of_chapter=cutoff))
         if clue_notes.strip():
             parts.append(
                 Partition(
@@ -388,7 +396,7 @@ def build_assembled_context(
                 )
             )
     if profile == "writer":
-        names = glossary_section(build_glossary(workspace, glossary_store))
+        names = glossary_section(build_glossary(workspace, glossary_store, as_of_chapter=cutoff))
         if names.strip():
             parts.append(
                 Partition(

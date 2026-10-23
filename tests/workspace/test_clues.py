@@ -215,7 +215,7 @@ def test_section_reports_hidden_entries_instead_of_dropping_all(tmp_path: Path) 
         tuple(_clue(workspace, clue=f"线索{index}号", planted=1, due=3) for index in range(6)),
     )
 
-    section = clues_section(build_clues(workspace, store), budget=120)
+    section = clues_section(build_clues(workspace, store), budget=160)
 
     assert "线索" in section
     assert "还有" in section

@@ -80,6 +80,7 @@ class Case:
     forbid_state_text: tuple[str, ...] = ()
     inject_parts: tuple[str, ...] = ()
     reads_first: bool = False
+    follow_state_chapter: int = 3
 
 
 CASES = (
@@ -219,7 +220,7 @@ CASES = (
         fixtures={
             FIRST: "# 雨夜\n\n林远以私家侦探的身份登记住店。\n",
             SECOND: "# 走廊\n\n林远对掌柜说，他以前在刑警队待过。\n",
-            THIRD: "# 书房\n\n林远没有说出他与死者之间的旧怨。\n",
+            THIRD: "# 书房\n\n林远欲言又止，最终什么也没说。\n",
         },
         domain="disclosure",
         docs=(CHARACTER,),
@@ -263,6 +264,7 @@ CASES = (
             FIRST: "# 雨夜\n\n林远撑伞走进青梧旅馆，大堂里挂着临江旅业公司的铜牌。\n",
         },
         domain="glossary",
+        follow_state_chapter=2,
         docs=(CHARACTER,),
         inject_parts=("glossary",),
         reads_first=True,
@@ -548,15 +550,13 @@ def _state_checks(
             )
         )
         bad = [
-            t.term for t in terms if t.evidence is None or not _evidence_matches(
-                workspace, t.evidence
-            )
+            t.term
+            for t in terms
+            if t.evidence is None or not _evidence_matches(workspace, t.evidence)
         ]
         rows.append(_check("条目证据与当前原文一致", not bad, bad))
         store_terms = GlossaryStore(root)
-        invalid = [
-            t.term for t in terms if store_terms.status(workspace, t) != "valid"
-        ]
+        invalid = [t.term for t in terms if store_terms.status(workspace, t) != "valid"]
         rows.append(_check("条目被状态采用", not invalid, invalid))
     elif case.domain == "clues":
         entries = ClueStore(root).entries()
@@ -578,9 +578,7 @@ def _state_checks(
         bad = [e.clue for e in entries if not _evidence_matches(workspace, e.evidence)]
         rows.append(_check("线索证据与当前原文一致", not bad, bad))
         clue_state = build_clues(workspace, ClueStore(root))
-        rows.append(
-            _check("线索被采用", bool(clue_state.open), [e.clue for e in clue_state.open])
-        )
+        rows.append(_check("线索被采用", bool(clue_state.open), [e.clue for e in clue_state.open]))
         rows.append(
             _check(
                 "超期线索进入未回收名单",
@@ -775,7 +773,12 @@ class Runner:
             index_before_follow = index.status if index else "missing"
             follow_before = _digests(workspace)
             follow_info = await service.accept(
-                case.follow_up, f"k-{case.key}-2", conversation_id=info.conversation_id
+                case.follow_up,
+                f"k-{case.key}-2",
+                conversation_id=info.conversation_id,
+                context=ContextRequest(state_chapter=case.follow_state_chapter)
+                if case.domain
+                else None,
             )
             await service.wait(follow_info.turn_id)
             follow = [

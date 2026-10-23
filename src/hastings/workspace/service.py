@@ -52,6 +52,7 @@ from hastings.workspace.materials import (
 )
 from hastings.workspace.review import ReviewStore, target_digests
 from hastings.workspace.state import ConversationStore
+from hastings.workspace.state_store import state_chapter
 from hastings.workspace.timeline import TimelineStore
 from tau_agent.events import (
     MessageEndEvent,
@@ -265,9 +266,15 @@ def _same_materials(
     if tuple(previous_targets) != tuple(targets) or tuple(previous_review) != tuple(review):
         return False
     if previous is None:
-        return not paths and request.selected_path is None and not observed
+        return (
+            not paths
+            and request.selected_path is None
+            and not observed
+            and request.state_chapter is None
+        )
     return (
-        previous.get("selected_path") == request.selected_path
+        previous.get("state_chapter") == request.state_chapter
+        and previous.get("selected_path") == request.selected_path
         and previous.get("reference_paths") == list(paths)
         and previous.get("observed_digests") == observed
     )
@@ -815,7 +822,16 @@ class TurnService:
                     if info.purpose == "update_chapter_index"
                     else index_injection(index_store.valid(self.workspace))
                 )
+                cutoff = state_chapter(
+                    self.workspace,
+                    selected_path=info.context.selected_path if info.context else None,
+                    targets=info.review_paths,
+                    explicit=info.context.state_chapter if info.context else None,
+                )
                 run = RunContext(
+                    state_chapter=cutoff
+                    if cutoff or (info.context and info.context.state_chapter is not None)
+                    else None,
                     workspace=self.workspace,
                     session=session,
                     materials=ledger,
@@ -852,6 +868,7 @@ class TurnService:
                 clue_store = ClueStore(self.store.root)
                 assembly = build_turn_assembly(
                     self.workspace,
+                    as_of_chapter=run.state_chapter,
                     mode=mode,
                     history_facts=execution_facts(history_events),
                     materials=materials_section(info.context, ledger.summaries()),
@@ -1012,6 +1029,26 @@ class TurnService:
             self._append_review_incomplete(info, "没有可检查的目标")
             return False
         try:
+            from hastings.workspace.agent import build_turn_assembly
+
+            cutoff = state_chapter(
+                self.workspace,
+                targets=targets,
+                explicit=info.context.state_chapter if info.context else None,
+            )
+            stores: dict[str, Any] = {
+                "disclosure_store": DisclosureStore(self.store.root),
+                "glossary_store": GlossaryStore(self.store.root),
+                "roster_store": CharacterStateStore(self.store.root),
+                "timeline_store": TimelineStore(self.store.root),
+                "clue_store": ClueStore(self.store.root),
+            }
+            assembly = build_turn_assembly(
+                self.workspace, mode="review", as_of_chapter=cutoff, **stores
+            )
+            _append_event(
+                self.store, info.conversation_id, info.turn_id, "state_injected", assembly.summary()
+            )
             harness = build_harness(
                 provider=snapshot.provider,
                 model=snapshot.model,
@@ -1019,6 +1056,8 @@ class TurnService:
                 run=run,
                 max_turns=remaining,
                 mode="review",
+                assembly=assembly,
+                **stores,
                 review_targets=targets,
                 review_store=ReviewStore(self.store.root),
             )

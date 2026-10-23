@@ -47,7 +47,7 @@ KIND_LABEL: dict[TermKind, str] = {
 }
 
 RECORD_VERSION = 1
-RECIPE_VERSION = 1
+RECIPE_VERSION = 2
 
 ConflictKind = Literal["alias_collision", "name_collision", "kind_collision"]
 
@@ -200,7 +200,7 @@ def publish_terms(
                 why="从原文登记的词必须给出一处原文依据",
                 fix="用 read_file 读到这个词出现的句子，再登记区间与引文",
             )
-        check_evidence(workspace, term.evidence)
+        check_evidence(workspace, term.evidence, chapter=term.first_chapter)
     store.replace(tuple(terms))
     return store.entries()
 
@@ -223,7 +223,9 @@ def _declared_terms(workspace: Workspace) -> list[GlossaryTerm]:
     return terms
 
 
-def build_glossary(workspace: Workspace, store: GlossaryStore | None = None) -> GlossaryState:
+def build_glossary(
+    workspace: Workspace, store: GlossaryStore | None = None, *, as_of_chapter: int | None = None
+) -> GlossaryState:
     """声明的人物姓名在前，原文登记的专名在后；失效登记不采用，只留诊断。"""
     current = max(
         (
@@ -234,9 +236,13 @@ def build_glossary(workspace: Workspace, store: GlossaryStore | None = None) -> 
         default=0,
     )
     warnings: list[str] = []
+    if as_of_chapter is not None:
+        current = min(current, max(0, as_of_chapter))
     terms = _declared_terms(workspace)
     if store is not None:
         for item in store.entries():
+            if item.first_chapter > current:
+                continue
             status = store.status(workspace, item)
             if status != "valid":
                 warnings.append(f"「{item.term}」的原文登记已失效，暂不采用。")

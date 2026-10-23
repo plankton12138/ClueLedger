@@ -1336,6 +1336,7 @@ def test_write_then_check_enters_readonly_phase(
     )
     client = client_factory(lambda: _snapshot(provider))
     workspace_id = _workspace(client, tmp_path)
+    _seed_review_states(workspace, conversation_root(tmp_path / "state", workspace_id))
     accepted = _accept(client, workspace_id, "只改第三章，改完检查时间线")
     events = _wait_until(client, workspace_id, accepted["conversation_id"], _finished)
 
@@ -1356,6 +1357,71 @@ def test_write_then_check_enters_readonly_phase(
     assert events[-1]["status"] == "completed"
     # 修改保留：检查阶段不撤销已经写入的内容。
     assert "两枚脚印" in workspace.read(chapter).text
+    review_system = provider.requests[2]["system"]
+    assert "已死亡" in review_system and "第一章深夜" in review_system
+    assert "尚未回收的线索" in review_system
+    injections = [e for e in events if e["type"] == "state_injected"]
+    assert [e["profile"] for e in injections] == ["writer", "review"]
+    assert {"roster", "timeline", "clues"} <= {p["key"] for p in injections[-1]["parts"]}
+
+
+def _seed_review_states(workspace: Any, root: Path) -> None:
+    from hastings.workspace.character_states import (
+        CharacterStateStore,
+        StateSnapshot,
+        publish_states,
+    )
+    from hastings.workspace.clues import ClueEntry, ClueStore, publish_clues
+    from hastings.workspace.disclosure import ObservedEvidence
+    from hastings.workspace.timeline import TimelineEntry, TimelineStore, publish_timeline
+
+    person = "设定集/角色小传/林静.md"
+    workspace.write(person, "# 林静\n", expected_digest=None)
+    source = workspace.write(
+        "正文/0001 雨夜.md", "林静死在书房，门边留有脚印。", expected_digest=None
+    )
+    evidence = ObservedEvidence(source.path, source.digest, 0, len(source.text), source.text)
+    publish_states(
+        workspace,
+        CharacterStateStore(root),
+        (StateSnapshot(person, workspace.read(person).digest, 1, "书房", False, "", evidence),),
+    )
+    publish_timeline(
+        workspace, TimelineStore(root), (TimelineEntry(1, "第一章深夜", "", "书房", evidence),)
+    )
+    publish_clues(workspace, ClueStore(root), (ClueEntry("门边脚印", 1, 3, "open", "", evidence),))
+
+
+@pytest.mark.parametrize(
+    "context", [{"state_chapter": 1}, {"selected_path": "正文/0001 雨夜.md"}, {}]
+)
+def test_state_cutoff_reaches_model_and_request_identity(
+    tmp_path: Path,
+    client_factory: Callable[[ProviderFactory], TestClient],
+    context: dict[str, Any],
+) -> None:
+    workspace = _create_workspace(tmp_path)
+    workspace.write("正文/0001 雨夜.md", "第一章。", expected_digest=None)
+    workspace.write("正文/0009 揭晓.md", "第九章。", expected_digest=None)
+    workspace.write(
+        "设定集/角色小传/林静.md", "---\nrevealed: [9:秘密身份]\n---\n# 林静", expected_digest=None
+    )
+    provider = ScriptedProvider([_text_turn("只讨论。")])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    accepted = _accept(client, workspace_id, "只讨论第一章。", context=context, key="cutoff")
+    events = _wait_until(client, workspace_id, accepted["conversation_id"], _finished)
+    assert events[-1]["status"] == "completed"
+    assert "秘密身份" not in provider.requests[0]["system"]
+    changed = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={
+            "text": "只讨论第一章。",
+            "request_key": "cutoff",
+            "context": {"state_chapter": 9},
+        },
+    )
+    assert changed.status_code == 409
 
 
 def test_check_phase_shares_the_turn_budget(tmp_path: Path) -> None:

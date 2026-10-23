@@ -7,13 +7,14 @@
 
 | 需要了解 | 入口 |
 |---|---|
+| 状态发布依据、任务截止章、写后检查接线与审查修复 | [V06-E 审查修复](notes/V06-E-review-fixes.md) |
 | 上下文按用途分区装配、预算与 `state_injected` 事件（已实施） | [V06-E1 装配容器](notes/V06-E1-assembly.md) |
 | 人物身份声明、按章节生效的披露与身份面板（已实施） | [V06-E2a 身份披露](notes/V06-E2-disclosure.md) |
 | 正文核对记录、发布校验、失效与面板发起（已实施） | [V06-E2b 正文核对](notes/V06-E2b-verify.md) |
 | 专有名词词典、原文登记与写作白名单（已实施） | [V06-E3 名词词典](notes/V06-E3-glossary.md) |
 | 人物状态（位置、生死、立场）与故事时间锚点、状态抽屉三标签（已实施） | [V06-E4 时间线与人物状态](notes/V06-E4-timeline-roster.md) |
 | 线索与伏笔台账、超期提醒与状态抽屉四标签（已实施） | [V06-E5 线索与伏笔台账](notes/V06-E5-clues.md) |
-| 下一阶段：作者侧状态编辑、真实作品与在线模型验收（**未实施**） | [状态层与装配分层计划](state-and-assembly-plan.md) |
+| 后续范围：作者侧状态编辑与真实作品验收（未实施） | [状态层与装配分层计划](state-and-assembly-plan.md) |
 | 可选文件参考、自然语言定位、材料版本、任务修改范围与写后检查 | [上下文与文件操作开发计划](context-and-file-operations-plan.md) |
 | 材料来源、读取区间与有界工具（已实施） | [V06-A1 读取与材料基础](notes/V06-A1-materials.md) |
 | 受理快照、显式参考、自然语言登记与材料展示（已实施） | [V06-A2 可选参考闭环](notes/V06-A2-references.md) |

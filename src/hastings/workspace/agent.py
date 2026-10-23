@@ -49,6 +49,7 @@ from hastings.workspace.disclosure import (
     ObservedEvidence,
     ObservedFact,
     build_disclosure_state,
+    check_evidence,
     publish_observed,
 )
 from hastings.workspace.errors import WorkspaceError
@@ -142,6 +143,8 @@ class RunContext:
     turn_id: str = ""
     #: 作者在修改任务里明确要求的写后检查；为 None 表示没有要求。
     review_request: ReviewRequest | None = None
+    #: 本轮状态时点；没有定位时不自动采用全书末章，查询需明确指定章号。
+    state_chapter: int | None = None
 
     def record(self, event_type: str, payload: Mapping[str, Any]) -> None:
         if self.emit is not None:
@@ -1164,18 +1167,25 @@ def build_tools(
     ) -> AgentToolResult:
         """状态层查询：``domain`` 选域；``entity`` 只在身份与人物状态域里用。"""
         del tool_call_id, signal, on_update
+        chapter = run.state_chapter if mode == "write" else None
+        if arguments.get("as_of_chapter") is not None:
+            requested = _int_argument(arguments, "as_of_chapter", default=0, minimum=0)
+            chapter = min(chapter, requested) if chapter is not None else requested
+        if mode == "write" and chapter is None:
+            chapter = 0
+        at = {"as_of_chapter": chapter}
         domain = arguments.get("domain") or "disclosure"
         if domain == "roster":
-            return _json(roster_view(build_roster(workspace, roster_store)))
+            return _json(roster_view(build_roster(workspace, roster_store, **at)))
         if domain == "timeline":
-            return _json(timeline_view(build_timeline(workspace, timeline_store)))
+            return _json(timeline_view(build_timeline(workspace, timeline_store, **at)))
         if domain == "clues":
-            return _json(clues_view(build_clues(workspace, clue_store)))
+            return _json(clues_view(build_clues(workspace, clue_store, **at)))
         if domain == "glossary":
-            return _json(glossary_view(build_glossary(workspace, glossary_store)))
+            return _json(glossary_view(build_glossary(workspace, glossary_store, **at)))
         if domain != "disclosure":
             raise _input_error("domain", "只能是 disclosure / roster / timeline / clues / glossary")
-        snapshot = build_disclosure_state(workspace, disclosure_store)
+        snapshot = build_disclosure_state(workspace, disclosure_store, **at)
         entity_path = arguments.get("entity")
         if entity_path is None:
             return _json(
@@ -1193,6 +1203,7 @@ def build_tools(
                             "planned": [
                                 {"fact": item.fact, "chapter": item.chapter}
                                 for item in entity.planned
+                                if mode != "write"
                             ],
                         }
                         for entity in snapshot.entities
@@ -1200,6 +1211,7 @@ def build_tools(
                     "conflicts": [
                         {"name": conflict.name, "kind": conflict.kind, "detail": conflict.detail}
                         for conflict in snapshot.conflicts
+                        if mode != "write"
                     ],
                 }
             )
@@ -1226,10 +1238,14 @@ def build_tools(
                     for item in entity.revealed
                 ],
                 "upcoming": [
-                    {"fact": item.fact, "chapter": item.chapter} for item in entity.upcoming
+                    {"fact": item.fact, "chapter": item.chapter}
+                    for item in entity.upcoming
+                    if mode != "write"
                 ],
                 "planned": [
-                    {"fact": item.fact, "chapter": item.chapter} for item in entity.planned
+                    {"fact": item.fact, "chapter": item.chapter}
+                    for item in entity.planned
+                    if mode != "write"
                 ],
                 "record_status": entity.record_status,
                 "evidence": [
@@ -1242,6 +1258,9 @@ def build_tools(
                     }
                     for item in entries
                     if item.entity_path == entity.path
+                    and item.chapter <= snapshot.current_chapter
+                    and disclosure_store is not None
+                    and disclosure_store.status(workspace, item) == "valid"
                 ],
             }
         )
@@ -1263,6 +1282,11 @@ def build_tools(
                         "enum": ["disclosure", "roster", "timeline", "clues", "glossary"],
                     },
                     "entity": {"type": "string", "description": "如 设定集/角色小传/林静.md"},
+                    "as_of_chapter": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "本轮所写章号；不会超过已固定的任务时点",
+                    },
                 },
                 "additionalProperties": False,
             },
@@ -1422,6 +1446,12 @@ def build_tools(
         readonly = {"list_files", "read_file", "search_text", "read_state"}
         allowed = tuple(index_allowed)
 
+        def require_entity_read(path: str) -> None:
+            run.materials.require_target_read(workspace, ReadRequirement.full(path))
+
+        def require_evidence(evidence: ObservedEvidence, chapter: int) -> None:
+            check_evidence(workspace, evidence, chapter=chapter, ledger=run.materials)
+
         async def save_glossary_term(
             tool_call_id: str,
             arguments: Mapping[str, JSONValue],
@@ -1462,6 +1492,8 @@ def build_tools(
                     why="没有可写的状态目录",
                     fix="从作品状态目录重新发起核对",
                 )
+            assert term.evidence is not None
+            require_evidence(term.evidence, term.first_chapter)
             published = publish_terms(workspace, glossary_store, (term,))
             return _json({"term": term.term, "total": len(published)})
 
@@ -1495,6 +1527,9 @@ def build_tools(
                     why="没有可写的状态目录",
                     fix="从作品状态目录重新发起核对",
                 )
+            require_entity_read(entity)
+            for item in snapshots:
+                require_evidence(item.evidence, item.chapter)
             published = publish_states(workspace, roster_store, snapshots)
             return _json({"entity": entity, "published": len(snapshots), "total": len(published)})
 
@@ -1516,6 +1551,8 @@ def build_tools(
                     why="没有可写的状态目录",
                     fix="从作品状态目录重新发起核对",
                 )
+            for entry in entries:
+                require_evidence(entry.evidence, entry.chapter)
             published = publish_timeline(workspace, timeline_store, entries)
             return _json({"published": len(entries), "total": len(published)})
 
@@ -1537,6 +1574,10 @@ def build_tools(
                     why="没有可写的状态目录",
                     fix="从作品状态目录重新发起核对",
                 )
+            for clue in entries:
+                require_evidence(clue.evidence, clue.planted_chapter)
+                if clue.resolution_evidence is not None and clue.resolution_chapter is not None:
+                    require_evidence(clue.resolution_evidence, clue.resolution_chapter)
             published = publish_clues(workspace, clue_store, entries)
             return _json({"published": len(entries), "total": len(published)})
 
@@ -1570,6 +1611,9 @@ def build_tools(
                     why="没有可写的状态目录",
                     fix="从作品状态目录重新发起核对",
                 )
+            require_entity_read(entity)
+            for fact in facts:
+                require_evidence(fact.evidence, fact.chapter)
             published = publish_observed(workspace, disclosure_store, facts)
             return _json(
                 {
@@ -1715,7 +1759,7 @@ def build_tools(
                                         "additionalProperties": False,
                                     },
                                 },
-                                "required": ["chapter", "evidence"],
+                                "required": ["chapter", "alive", "evidence"],
                                 "additionalProperties": False,
                             },
                         },
@@ -1851,6 +1895,7 @@ def build_turn_assembly(
     roster_store: CharacterStateStore | None = None,
     timeline_store: TimelineStore | None = None,
     clue_store: ClueStore | None = None,
+    as_of_chapter: int | None = None,
 ) -> AssembledContext:
     """这一轮的上下文装配：工具模式决定用途，用途决定装哪些分区。
 
@@ -1859,6 +1904,7 @@ def build_turn_assembly(
     """
     return build_assembled_context(
         workspace,
+        as_of_chapter=as_of_chapter,
         profile=_PROFILE_BY_MODE[mode],
         selected_path=selected_path,
         history_facts=history_facts,
@@ -1905,6 +1951,7 @@ def build_harness(
     """
     resolved = assembly or build_turn_assembly(
         workspace,
+        as_of_chapter=run.state_chapter,
         mode=mode,
         selected_path=selected_path,
         history_facts=history_facts,
@@ -2019,14 +2066,14 @@ def _snapshot_from(value: JSONValue, *, entity: str, entity_digest: str) -> Stat
     if not isinstance(value, dict):
         raise _input_error("states", "每一项必须是对象")
     alive = value.get("alive")
-    if alive is not None and not isinstance(alive, bool):
+    if not isinstance(alive, bool):
         raise _input_error("alive", "必须是布尔值")
     return StateSnapshot(
         entity_path=entity,
         entity_digest=entity_digest,
         chapter=_int_argument(value, "chapter", default=0, minimum=1),
         location=str(value.get("location") or ""),
-        alive=True if alive is None else alive,
+        alive=alive,
         stance=str(value.get("stance") or ""),
         evidence=_evidence_argument(value.get("evidence")),
     )

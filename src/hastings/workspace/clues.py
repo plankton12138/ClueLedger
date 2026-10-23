@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -41,7 +41,7 @@ __all__ = [
 ClueStatus = Literal["open", "resolved", "dropped"]
 
 RECORD_VERSION = 1
-RECIPE_VERSION = 1
+RECIPE_VERSION = 2
 
 STATUS_LABEL: dict[ClueStatus, str] = {
     "open": "未回收",
@@ -256,18 +256,24 @@ def _check_entry(workspace: Workspace, entry: ClueEntry) -> None:
                 fix="确认这两章的章号",
                 details={"clue": entry.key},
             )
-        check_evidence(workspace, entry.resolution_evidence)
-    check_evidence(workspace, entry.evidence)
+        check_evidence(workspace, entry.resolution_evidence, chapter=entry.resolution_chapter)
+    check_evidence(workspace, entry.evidence, chapter=entry.planted_chapter)
 
 
-def build_clues(workspace: Workspace, store: ClueStore | None = None) -> ClueState:
+def build_clues(
+    workspace: Workspace, store: ClueStore | None = None, *, as_of_chapter: int | None = None
+) -> ClueState:
     """按当前章排出未回收线索；失效条目整条不采用，并说明退回了什么。"""
-    current = current_chapter(workspace)
+    current = current_chapter(workspace, as_of_chapter)
     records = store.entries() if store is not None else ()
     usable: list[ClueEntry] = []
     warnings: list[str] = []
     dropped: list[str] = []
     for item in records:
+        if as_of_chapter is not None and item.planted_chapter > current:
+            continue
+        if item.resolution_chapter is not None and item.resolution_chapter > current:
+            item = replace(item, status="open", resolution_chapter=None, resolution_evidence=None)
         status = store.status(workspace, item) if store is not None else "valid"
         if status != "valid":
             dropped.append(item.key)
@@ -311,6 +317,11 @@ def clues_section(state: ClueState, *, budget: int = 500, limit: int = 8) -> str
     if not state.open:
         return ""
     header = f"尚未回收的线索（截至第 {state.current_chapter} 章）："
+    suffix = [
+        "这些是读者看到过的线索，不等于真相；这一章要么推进，要么明确不推进。",
+        f"（还有 {len(state.open)} 条未列入，用 `read_state` 的 `domain=clues` 查看。）",
+    ]
+    reserved = len("\n".join(suffix)) + 1
     lines: list[str] = []
     used = len(header)
     hidden = 0
@@ -328,7 +339,7 @@ def clues_section(state: ClueState, *, budget: int = 500, limit: int = 8) -> str
         if item.supports:
             marks.append(f"｜指向：{item.supports}")
         line = "- " + "".join(marks)
-        if used + len(line) + 1 > budget - 60:
+        if used + len(line) + 1 > budget - reserved:
             hidden += 1
             continue
         lines.append(line)

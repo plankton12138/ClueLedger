@@ -183,8 +183,8 @@ def test_roster_and_timeline_partitions_reach_writer_and_review(tmp_path: Path) 
         "timeline_store": TimelineStore(tmp_path / "state"),
     }
 
-    writer = build_assembled_context(workspace, profile="writer", **stores)
-    review = build_assembled_context(workspace, profile="review", **stores)
+    writer = build_assembled_context(workspace, profile="writer", as_of_chapter=1, **stores)
+    review = build_assembled_context(workspace, profile="review", as_of_chapter=1, **stores)
     extract = build_assembled_context(workspace, profile="extract", **stores)
 
     for assembled in (writer, review):
@@ -237,7 +237,7 @@ def test_overdue_clue_reaches_the_writer_context(tmp_path: Path) -> None:
     )
 
     assembled = build_assembled_context(
-        workspace, profile="writer", clue_store=ClueStore(tmp_path / "state")
+        workspace, profile="writer", as_of_chapter=2, clue_store=ClueStore(tmp_path / "state")
     )
 
     keys = [part.key for part in assembled.parts]

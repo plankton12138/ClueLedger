@@ -1,0 +1,598 @@
+{
+  "model": "deepseek-flash",
+  "results": [
+    {
+      "key": "disclosure_extract",
+      "family": "状态核对",
+      "title": "核对身份披露并注入下一轮",
+      "model": "deepseek-flash",
+      "prompt": "核对读者对林远的身份已知到什么程度：读取第一到第三章，把正文里明确写出、读者已经知道的身份事实登记到林远的小传上。小传里没写到、正文也没写出的不要登记。只核对林远，不改任何作品文件。",
+      "follow_up": "第四章准备开写。先说明读者目前知道林远的哪些身份信息，不要改任何文件。",
+      "changed": [],
+      "before": {
+        "正文/0001 雨夜.md": "55f734f96f8683df3dcc9e29fb5a4f20d792b3fee5a22c3e1aaa7201dbd44fc6",
+        "正文/0002 走廊.md": "6c3202063f0082306ac4f72eba67251fdf036ef54dfae85399b8dc3610310ed5",
+        "正文/0003 书房.md": "cdaaa9956b5682a60924276062f290c7a24a8d0a9394dcfb0f233410051567cc",
+        "正文/0004 客房.md": "4cb3bcb91d159a2e0cc60ea14433faee029cf9c35c95cff39e79e621041b3e0b",
+        "设定集/角色小传/林远.md": "258e093bbe707fdcf7bb749abf65d11cac554d8531c229789f9713cfb3b3c4de",
+        "设定集/线索.md": "8e163aafd180470c13e4de6ccf9cc70288b9d106dd2db506c5498df5bb585287",
+        "设定集/真相.md": "d18a10f4e6d67df06df007e05d3a7d6e51968ad2e0ff8c5ea86603688b0dd0ef"
+      },
+      "after": {
+        "正文/0001 雨夜.md": "55f734f96f8683df3dcc9e29fb5a4f20d792b3fee5a22c3e1aaa7201dbd44fc6",
+        "正文/0002 走廊.md": "6c3202063f0082306ac4f72eba67251fdf036ef54dfae85399b8dc3610310ed5",
+        "正文/0003 书房.md": "cdaaa9956b5682a60924276062f290c7a24a8d0a9394dcfb0f233410051567cc",
+        "正文/0004 客房.md": "4cb3bcb91d159a2e0cc60ea14433faee029cf9c35c95cff39e79e621041b3e0b",
+        "设定集/角色小传/林远.md": "258e093bbe707fdcf7bb749abf65d11cac554d8531c229789f9713cfb3b3c4de",
+        "设定集/线索.md": "8e163aafd180470c13e4de6ccf9cc70288b9d106dd2db506c5498df5bb585287",
+        "设定集/真相.md": "d18a10f4e6d67df06df007e05d3a7d6e51968ad2e0ff8c5ea86603688b0dd0ef"
+      },
+      "workspace": "C:\\Projects\\Agent\\myagent\\data\\test-tmp\\model-acceptance\\20261023-135659-744500\\disclosure_extract\\作品",
+      "checks": [
+        {
+          "name": "首轮完成",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": {
+            "seq": 1455,
+            "at": "2026-10-23T13:57:15+08:00",
+            "type": "run_finished",
+            "turn_id": "t_354f4e3c",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "name": "首轮实际操作符合当时范围",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "后续轮完成",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": {
+            "seq": 1910,
+            "at": "2026-10-23T13:57:20+08:00",
+            "type": "run_finished",
+            "turn_id": "t_9f453c81",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "name": "后续轮实际操作符合当时范围",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "没有范围外改动",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "要求修改的文件确实改变",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "读取原文:正文/0001 雨夜.md",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": [
+            "正文/0001 雨夜.md",
+            "正文/0002 走廊.md",
+            "正文/0003 书房.md",
+            "设定集/角色小传/林远.md"
+          ]
+        },
+        {
+          "name": "读取原文:正文/0002 走廊.md",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": [
+            "正文/0001 雨夜.md",
+            "正文/0002 走廊.md",
+            "正文/0003 书房.md",
+            "设定集/角色小传/林远.md"
+          ]
+        },
+        {
+          "name": "已给作者公开回答",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": "我先读取林远的小传，并读取指定的章节。\n已核对完成，只登记了身份披露两条，未改动任何作品文件。\n\n**读取范围**：林远小传、正文第一至第三章全文（四个文件都很短，已通读）。\n\n**登记结果（`save_disclosure`，entity = 设定集/角色小传/林远.md）**\n\n| 章 | 读者知道的事实 | 依据 |\n|---|---|---|\n| 第一章 | 林远以私家侦探的身份登记住店 | 正文/0001 雨夜.md，区间 6–21：「林远以私家侦探的身份登记住店。」 |\n| 第二章 | 林远对掌柜说，他以前在刑警队待过（写明是林远的自述） | 正文/0002 走廊.md，区间 6–"
+        },
+        {
+          "name": "核对轮发布了披露记录",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": 2
+        },
+        {
+          "name": "记录只归属选中的小传",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": [
+            "设定集/角色小传/林远.md"
+          ]
+        },
+        {
+          "name": "记录章号在已写章节内",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": [
+            1,
+            2
+          ]
+        },
+        {
+          "name": "记录证据与当前原文一致",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "记录被状态采用",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": 2
+        },
+        {
+          "name": "未把正文没写的事实记为已披露",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": []
+        },
+        {
+          "name": "下一轮注入了核对结果",
+          "ok": true,
+          "status": "pass",
+          "required": true,
+          "detail": {
+            "want": [
+              "state"
+            ],
+            "parts": [
+              "catalog",
+              "glossary",
+              "history",
+              "instructions",
+              "settings",
+              "state"
+            ]
+          }
+        }
+      ],
+      "status": "pass",
+      "events": [
+        {
+          "seq": 1,
+          "at": "2026-10-23T13:57:00+08:00",
+          "type": "turn_started",
+          "turn_id": "t_354f4e3c",
+          "request_key": "k-disclosure_extract",
+          "connection_id": "conn_db37ffaa",
+          "connection_name": "deepseek",
+          "model": "deepseek-flash",
+          "context": {
+            "selected_path": null,
+            "reference_paths": [],
+            "observed_digests": {},
+            "reference_digests": {}
+          },
+          "purpose": "update_disclosure",
+          "index_paths": [
+            "设定集/角色小传/林远.md"
+          ],
+          "review_paths": []
+        },
+        {
+          "seq": 2,
+          "at": "2026-10-23T13:57:00+08:00",
+          "type": "state_injected",
+          "turn_id": "t_354f4e3c",
+          "profile": "extract",
+          "parts": [
+            {
+              "key": "instructions",
+              "chars": 547
+            },
+            {
+              "key": "catalog",
+              "chars": 185
+            }
+          ],
+          "skipped": [],
+          "budget": {
+            "limit": 16000,
+            "used": 732
+          }
+        },
+        {
+          "seq": 18,
+          "at": "2026-10-23T13:57:01+08:00",
+          "type": "material_read",
+          "turn_id": "t_354f4e3c",
+          "path": "设定集/角色小传/林远.md",
+          "digest": "258e093bbe707fdcf7bb749abf65d11cac554d8531c229789f9713cfb3b3c4de",
+          "start_char": 0,
+          "end_char": 22,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 22
+        },
+        {
+          "seq": 19,
+          "at": "2026-10-23T13:57:01+08:00",
+          "type": "material_read",
+          "turn_id": "t_354f4e3c",
+          "path": "正文/0001 雨夜.md",
+          "digest": "55f734f96f8683df3dcc9e29fb5a4f20d792b3fee5a22c3e1aaa7201dbd44fc6",
+          "start_char": 0,
+          "end_char": 22,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 22
+        },
+        {
+          "seq": 21,
+          "at": "2026-10-23T13:57:01+08:00",
+          "type": "assistant_message",
+          "message_id": "m_33799d441773",
+          "completion": "completed",
+          "turn_id": "t_354f4e3c",
+          "text": "我先读取林远的小传，并读取指定的章节。"
+        },
+        {
+          "seq": 24,
+          "at": "2026-10-23T13:57:01+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_354f4e3c",
+          "tool_call_id": "call_00_ET_fSq3wC14NqQrjqOQigSc6306",
+          "tool": "read_file",
+          "args": {
+            "path": "设定集/角色小传/林远.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 27,
+          "at": "2026-10-23T13:57:01+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_354f4e3c",
+          "tool_call_id": "call_01_ET_NhQBIY335JeXqMhq8PUG2029",
+          "tool": "read_file",
+          "args": {
+            "path": "正文/0001 雨夜.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 42,
+          "at": "2026-10-23T13:57:02+08:00",
+          "type": "material_read",
+          "turn_id": "t_354f4e3c",
+          "path": "正文/0002 走廊.md",
+          "digest": "6c3202063f0082306ac4f72eba67251fdf036ef54dfae85399b8dc3610310ed5",
+          "start_char": 0,
+          "end_char": 24,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 24
+        },
+        {
+          "seq": 43,
+          "at": "2026-10-23T13:57:02+08:00",
+          "type": "material_read",
+          "turn_id": "t_354f4e3c",
+          "path": "正文/0003 书房.md",
+          "digest": "cdaaa9956b5682a60924276062f290c7a24a8d0a9394dcfb0f233410051567cc",
+          "start_char": 0,
+          "end_char": 22,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 22
+        },
+        {
+          "seq": 47,
+          "at": "2026-10-23T13:57:02+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_354f4e3c",
+          "tool_call_id": "call_00_ytEqzxEsjRyVKm4baHu49942",
+          "tool": "read_file",
+          "args": {
+            "path": "正文/0002 走廊.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 50,
+          "at": "2026-10-23T13:57:02+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_354f4e3c",
+          "tool_call_id": "call_01_7vXitqaIPRzpLNLQNEKN5561",
+          "tool": "read_file",
+          "args": {
+            "path": "正文/0003 书房.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 69,
+          "at": "2026-10-23T13:57:03+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_354f4e3c",
+          "tool_call_id": "call_00_59XnzjP9qOdkOppafjLp4528",
+          "tool": "read_state",
+          "args": {},
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 709,
+          "at": "2026-10-23T13:57:09+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_354f4e3c",
+          "tool_call_id": "call_00_BlCLWwAl39T4DmvSYHT99512",
+          "tool": "save_disclosure",
+          "args": {},
+          "ok": false,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1117,
+          "at": "2026-10-23T13:57:12+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_354f4e3c",
+          "tool_call_id": "call_00_WBn9PyhPEQpTSvE9TlbH5667",
+          "tool": "save_disclosure",
+          "args": {},
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1452,
+          "at": "2026-10-23T13:57:15+08:00",
+          "type": "assistant_message",
+          "message_id": "m_f00f1cf6ef31",
+          "completion": "completed",
+          "turn_id": "t_354f4e3c",
+          "text": "已核对完成，只登记了身份披露两条，未改动任何作品文件。\n\n**读取范围**：林远小传、正文第一至第三章全文（四个文件都很短，已通读）。\n\n**登记结果（`save_disclosure`，entity = 设定集/角色小传/林远.md）**\n\n| 章 | 读者知道的事实 | 依据 |\n|---|---|---|\n| 第一章 | 林远以私家侦探的身份登记住店 | 正文/0001 雨夜.md，区间 6–21：「林远以私家侦探的身份登记住店。」 |\n| 第二章 | 林远对掌柜说，他以前在刑警队待过（写明是林远的自述） | 正文/0002 走廊.md，区间 6–23：「林远对掌柜说，他以前在刑警队待过。」 |\n\n**处理说明**\n- 第三章（书房）只有「林远欲言又止，最终什么也没说」，没有任何身份信息，故未登记。\n- 第二章的刑警经历按原文写成「他对掌柜说」，没有提升为客观事实「他确实当过刑警」——原文只交代了这句自述；不过它与小传「曾经担任刑警」一致。\n- 小传里有的「私家侦探」「曾经担任刑警」两项，正文分别在第一、二章有了可观察依据；小传之外的身份信息（如有无其他身份）本轮未作任何补充。\n- 按范围要求，本轮未登记时间锚点、线索、专名与人物状态。"
+        },
+        {
+          "seq": 1455,
+          "at": "2026-10-23T13:57:15+08:00",
+          "type": "run_finished",
+          "turn_id": "t_354f4e3c",
+          "status": "completed",
+          "recording": "no_change",
+          "changed_paths": [],
+          "commit": null,
+          "note": ""
+        }
+      ],
+      "follow_events": [
+        {
+          "seq": 1456,
+          "at": "2026-10-23T13:57:15+08:00",
+          "type": "turn_started",
+          "turn_id": "t_9f453c81",
+          "request_key": "k-disclosure_extract-2",
+          "connection_id": "conn_db37ffaa",
+          "connection_name": "deepseek",
+          "model": "deepseek-flash",
+          "context": {
+            "state_chapter": 3,
+            "selected_path": null,
+            "reference_paths": [],
+            "observed_digests": {},
+            "reference_digests": {}
+          }
+        },
+        {
+          "seq": 1457,
+          "at": "2026-10-23T13:57:15+08:00",
+          "type": "state_injected",
+          "turn_id": "t_9f453c81",
+          "profile": "writer",
+          "parts": [
+            {
+              "key": "instructions",
+              "chars": 2108
+            },
+            {
+              "key": "catalog",
+              "chars": 185
+            },
+            {
+              "key": "state",
+              "chars": 153
+            },
+            {
+              "key": "glossary",
+              "chars": 38
+            },
+            {
+              "key": "settings",
+              "chars": 68
+            },
+            {
+              "key": "history",
+              "chars": 164
+            }
+          ],
+          "skipped": [],
+          "budget": {
+            "limit": 44900,
+            "used": 2716
+          }
+        },
+        {
+          "seq": 1536,
+          "at": "2026-10-23T13:57:17+08:00",
+          "type": "material_read",
+          "turn_id": "t_9f453c81",
+          "path": "设定集/角色小传/林远.md",
+          "digest": "258e093bbe707fdcf7bb749abf65d11cac554d8531c229789f9713cfb3b3c4de",
+          "start_char": 0,
+          "end_char": 22,
+          "start_line": 1,
+          "end_line": 3,
+          "total_chars": 22
+        },
+        {
+          "seq": 1540,
+          "at": "2026-10-23T13:57:17+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_9f453c81",
+          "tool_call_id": "call_00_2I5aMo598bnSzjT7I9EM7987",
+          "tool": "read_state",
+          "args": {},
+          "ok": true,
+          "duration_ms": 15
+        },
+        {
+          "seq": 1543,
+          "at": "2026-10-23T13:57:17+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_9f453c81",
+          "tool_call_id": "call_01_1lu2BJT8OHTm9LU02I3U4924",
+          "tool": "read_state",
+          "args": {},
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1545,
+          "at": "2026-10-23T13:57:17+08:00",
+          "type": "tool_finished",
+          "turn_id": "t_9f453c81",
+          "tool_call_id": "call_02_JaQpKlVbU5U9fBNyUGn04914",
+          "tool": "read_file",
+          "args": {
+            "path": "设定集/角色小传/林远.md"
+          },
+          "ok": true,
+          "duration_ms": 0
+        },
+        {
+          "seq": 1907,
+          "at": "2026-10-23T13:57:20+08:00",
+          "type": "assistant_message",
+          "message_id": "m_c7abc9761ab0",
+          "completion": "completed",
+          "turn_id": "t_9f453c81",
+          "text": "**读者目前（截至第三章末，第四章开笔前）对林远的身份已知：**\n\n1. **他是私家侦探** —— 第一章起，读者看到他以私家侦探的身份登记住店（依据：正文/0001 雨夜.md「林远以私家侦探的身份登记住店。」）。这是外部可观察的身份，叙述已确认为事实。\n2. **他以前在刑警队待过** —— 第二章起，读者是从他自己口中知道的（依据：正文/0002 走廊.md「林远对掌柜说，他以前在刑警队待过。」）。注意这仍是**林远的自述**，正文没有以旁观视角证实；第四章若沿用，宜保持「他说」的分寸，除非你打算在本章让它被外部事实验证。\n\n**三点提醒**\n- 第三章（书房）没有补充任何身份信息，因此没有第三条可列。\n- 小传正文写有「身份：私家侦探。曾经担任刑警。」两项，与上面两条一一对应，没有**尚未披露**的身份残留；也没有 `planned`（计划披露）条目——即目前没有既定的「第四章该揭开某身份」安排。\n- 读者已知的仅是这两项。刑警经历的具体年限、单位、离职原因、是否有其他身份，都还没进正文，第四章不能当作读者已知来用。\n\n未改动任何文件。"
+        },
+        {
+          "seq": 1910,
+          "at": "2026-10-23T13:57:20+08:00",
+          "type": "run_finished",
+          "turn_id": "t_9f453c81",
+          "status": "completed",
+          "recording": "no_change",
+          "changed_paths": [],
+          "commit": null,
+          "note": ""
+        }
+      ],
+      "duration_seconds": 21.4
+    }
+  ],
+  "coverage": [
+    {
+      "family": "自然语言参考",
+      "status": "partial",
+      "cases": {
+        "refs_locate": "not_covered"
+      }
+    },
+    {
+      "family": "选择参考",
+      "status": "partial",
+      "cases": {
+        "reference_not_authority": "not_covered"
+      }
+    },
+    {
+      "family": "固定范围",
+      "status": "partial",
+      "cases": {
+        "fixed_scope": "not_covered"
+      }
+    },
+    {
+      "family": "关联修改",
+      "status": "partial",
+      "cases": {
+        "sync_chapters": "not_covered"
+      }
+    },
+    {
+      "family": "任务理解",
+      "status": "partial",
+      "cases": {
+        "discuss_only": "not_covered",
+        "read_only_check": "not_covered",
+        "continue_unanchored": "not_covered",
+        "ambiguous_character": "not_covered",
+        "negative_reference": "not_covered"
+      }
+    },
+    {
+      "family": "索引与原文",
+      "status": "partial",
+      "cases": {
+        "index_recall": "not_covered",
+        "index_stale": "not_covered"
+      }
+    },
+    {
+      "family": "写后检查",
+      "status": "partial",
+      "cases": {
+        "review_after_write": "not_covered"
+      }
+    },
+    {
+      "family": "状态核对",
+      "status": "partial",
+      "cases": {
+        "disclosure_extract": "pass",
+        "state_and_timeline": "not_covered",
+        "glossary_extract": "not_covered",
+        "clue_plant": "not_covered"
+      }
+    }
+  ]
+}

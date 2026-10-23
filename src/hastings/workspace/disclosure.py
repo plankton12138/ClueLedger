@@ -6,8 +6,8 @@
 - 按当前章节算出「现在可以写什么」；
 - 把冲突列成清单（别名撞车、两个真凶、同一事实既已披露又计划披露）。
 
-不落文件：这一版的状态由元信息实时算出，作者改了小传状态立刻变化。抽取正文、核对
-「正文是否真的写到」是下一步的事，那时才需要可重建的派生记录。
+声明由元信息实时算出，正文核对结果保存为可重建记录；装配和查询按任务时点筛选，
+失效记录逐条排除，其他有效记录继续采用。
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from typing import Literal
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, is_managed_path
+from hastings.workspace.materials import MaterialLedger, ReadRequirement
 from hastings.workspace.metadata import CharacterMeta, DeclaredFact, parse_character
 from hastings.workspace.state_store import current_chapter, read_records, write_records
 
@@ -42,7 +43,7 @@ EntryStatus = Literal["valid", "stale", "source_missing"]
 
 #: 记录结构版本与生成规则版本；规则变化时旧记录整份过期，不猜测兼容。
 RECORD_VERSION = 1
-RECIPE_VERSION = 1
+RECIPE_VERSION = 2
 
 _CONFLICT_LABEL: dict[ConflictKind, str] = {
     "alias_collision": "别名重复",
@@ -257,14 +258,32 @@ def _check_fact(workspace: Workspace, fact: ObservedFact) -> None:
             fix="写明这条披露从第几章开始对读者可见",
         )
     _require_digest(workspace, fact.entity_path, fact.entity_digest)
-    check_evidence(workspace, fact.evidence)
+    check_evidence(workspace, fact.evidence, chapter=fact.chapter)
 
 
-def check_evidence(workspace: Workspace, evidence: ObservedEvidence) -> None:
+def check_evidence(
+    workspace: Workspace,
+    evidence: ObservedEvidence,
+    *,
+    chapter: int | None = None,
+    ledger: MaterialLedger | None = None,
+) -> None:
     """核对一处原文依据：版本、区间与引文三者一致才算通过。
 
     身份披露与名词词典共用这一份规则，避免两套实现放过不同的问题。
     """
+    source = next((e for e in workspace.catalog().chapters if e.path == evidence.path), None)
+    if (
+        source is None
+        or source.chapter_number is None
+        or (chapter is not None and source.chapter_number != chapter)
+    ):
+        raise WorkspaceError(
+            code="STATE_EVIDENCE_INVALID",
+            where=f"state.publish:{evidence.path}",
+            why="证据必须来自所登记章号的正文文件",
+            fix="读取对应章节，并使用该章的版本、区间与引文",
+        )
     _require_digest(workspace, evidence.path, evidence.digest)
     text = workspace.read(evidence.path).text
     start, end, quote = evidence.start, evidence.end, evidence.quote
@@ -282,6 +301,16 @@ def check_evidence(workspace: Workspace, evidence: ObservedEvidence) -> None:
             why="引文与该区间上的原文不一致",
             fix="用 read_file 重新读这段原文，引文要与区间完全对应",
             details={"path": evidence.path, "start": start, "end": end},
+        )
+    if ledger is not None:
+        ledger.require_target_read(
+            workspace,
+            ReadRequirement(
+                path=evidence.path,
+                mode="range",
+                start=start,
+                end=end,
+            ),
         )
 
 
@@ -304,10 +333,6 @@ def _require_digest(workspace: Workspace, path: str, digest: str) -> None:
             fix="重新读取该文件，按新版本重做这一条",
             details={"path": path},
         )
-
-
-def _current_chapter(workspace: Workspace) -> int:
-    return current_chapter(workspace)
 
 
 def _entity(
@@ -339,8 +364,8 @@ def _entity(
             )
     if status in ("stale", "source_missing"):
         warnings.append(
-            "正文核对记录已失效（源文件被改过或已删除），当前只按声明显示；"
-            "重新核对后才会带上原文依据。"
+            "部分正文核对记录已失效（源文件被改过或已删除），只采用仍有效的记录与声明；"
+            "失效的部分需重新核对。"
         )
     revealed.sort(key=lambda item: (item.chapter, item.source != "text"))
     return EntityState(
@@ -359,14 +384,17 @@ def _entity(
 
 
 def build_disclosure_state(
-    workspace: Workspace, store: DisclosureStore | None = None
+    workspace: Workspace,
+    store: DisclosureStore | None = None,
+    *,
+    as_of_chapter: int | None = None,
 ) -> DisclosureState:
     """读全部小传，按当前章节算可见身份，并汇总跨文件的冲突。
 
     传入 ``store`` 时合并正文核对记录：有效的核对事实优先于作者声明，失效的记录不采用，
     只留下「已失效」的诊断。
     """
-    current = _current_chapter(workspace)
+    current = current_chapter(workspace, as_of_chapter)
     metas: list[CharacterMeta] = []
     for entry in workspace.catalog().characters:
         if not entry.exists:
@@ -391,7 +419,9 @@ def build_disclosure_state(
             status = "stale"
         else:
             status = "valid"
-        usable = tuple(item for item in owned if status == "valid")
+        usable = tuple(
+            item for item in owned if store is not None and store.status(workspace, item) == "valid"
+        )
         entities.append(_entity(meta, current, usable, status))
 
     conflicts: list[Conflict] = []

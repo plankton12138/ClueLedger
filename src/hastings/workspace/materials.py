@@ -362,6 +362,7 @@ class ContextRequest:
     selected_path: str | None = None
     reference_paths: tuple[str, ...] = ()
     observed_digests: Mapping[str, str] = field(default_factory=dict)
+    state_chapter: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,6 +376,7 @@ class ContextSnapshot:
     selected_path: str | None
     references: tuple[SourceRef, ...]
     observed_digests: Mapping[str, str]
+    state_chapter: int | None = None
 
     @property
     def reference_paths(self) -> tuple[str, ...]:
@@ -383,6 +385,7 @@ class ContextSnapshot:
     def identity(self) -> dict[str, object]:
         """用于请求键查重的稳定表示：顺序有意义，指纹按路径排序。"""
         return {
+            **({"state_chapter": self.state_chapter} if self.state_chapter is not None else {}),
             "selected_path": self.selected_path,
             "reference_paths": list(self.reference_paths),
             "observed_digests": dict(sorted(self.observed_digests.items())),
@@ -397,6 +400,17 @@ class ContextSnapshot:
 
 def freeze_context(workspace: Workspace, request: ContextRequest) -> ContextSnapshot:
     """受理时读取显式材料的实际版本；缺失、超限与越界都在这里失败。"""
+    if request.state_chapter is not None and (
+        isinstance(request.state_chapter, bool)
+        or not isinstance(request.state_chapter, int)
+        or request.state_chapter < 0
+    ):
+        raise WorkspaceError(
+            code="CONTEXT_INPUT_INVALID",
+            where="materials.accept",
+            why="状态截止章必须是非负整数",
+            fix="指定正确章号或省略此字段",
+        )
     paths: list[str] = []
     for path in request.reference_paths:
         if path not in paths:
@@ -433,6 +447,7 @@ def freeze_context(workspace: Workspace, request: ContextRequest) -> ContextSnap
             ) from exc
         references.append(SourceRef(view.path, view.digest))
     return ContextSnapshot(
+        state_chapter=request.state_chapter,
         selected_path=request.selected_path,
         references=tuple(references),
         observed_digests=dict(request.observed_digests),

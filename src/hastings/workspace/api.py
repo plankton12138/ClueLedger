@@ -216,6 +216,7 @@ class ContextInput(BaseModel):
     selected_path: str | None = None
     reference_paths: list[str] = Field(default_factory=list, max_length=MAX_REFERENCES)
     observed_digests: dict[str, str] = Field(default_factory=dict)
+    state_chapter: int | None = Field(default=None, ge=0, strict=True)
 
     @field_validator("selected_path")
     @classmethod
@@ -234,6 +235,7 @@ class ContextInput(BaseModel):
 
     def to_request(self) -> ContextRequest:
         return ContextRequest(
+            state_chapter=self.state_chapter,
             selected_path=self.selected_path,
             reference_paths=tuple(self.reference_paths),
             observed_digests=dict(self.observed_digests),
