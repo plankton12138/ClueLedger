@@ -165,7 +165,9 @@ export default function WorkspaceShell() {
           onChange={(event) => {
             if (!event.target.value) return;
             const id = event.target.value;
-            void selectWorkspace(id).then(() => navigate({ kind: "writing", workspaceId: id }));
+            // 切页与读取分开：目录读取可能持续几秒，期间作者已经点进资料页时不能再被拉回写作页。
+            void selectWorkspace(id);
+            navigate({ kind: "writing", workspaceId: id });
           }}
         >
           <option value="">（未打开目录）</option>
