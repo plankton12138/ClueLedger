@@ -103,7 +103,7 @@ export default function ChapterIndexPanel({ open, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-30 flex justify-end bg-black/30" role="dialog" aria-label="章节索引">
-      <aside className="flex h-full w-[min(520px,92vw)] flex-col bg-panel shadow-xl">
+      <aside className="flex h-full w-[min(520px,92vw)] flex-col bg-surface shadow-xl">
         <div className="flex flex-none items-center gap-2 border-b border-panel-edge px-3 py-2">
           <h2 className="min-w-0 flex-1 text-sm font-bold">章节索引</h2>
           <button className="btn btn-gray px-2 py-0.5 text-[11px]" onClick={() => void load()}>

@@ -84,7 +84,7 @@ export default function ReferencePicker({ catalog, selected, onToggle, onClear }
       </div>
 
       {open && (
-        <div className="max-h-56 overflow-auto rounded border border-panel-edge bg-panel p-2">
+        <div className="max-h-56 overflow-auto rounded border border-panel-edge bg-surface p-2">
           {groups.length === 0 && <p className="text-[11px] text-mute">这个作品还没有可参考的文件。</p>}
           {groups.map((group) => (
             <div key={group.label} className="mb-2 last:mb-0">
