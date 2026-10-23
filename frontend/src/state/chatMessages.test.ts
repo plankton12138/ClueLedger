@@ -526,3 +526,29 @@ describe("本轮材料", () => {
     expect(materialReadChars(material)).toBe(0);
   });
 });
+
+describe("本轮注入", () => {
+  it("记录分区规模与跳过原因，不含注入正文", () => {
+    reset();
+    const injected = next({
+      type: "state_injected",
+      turn_id: "t1",
+      profile: "writer",
+      parts: [
+        { key: "instructions", chars: 1200 },
+        { key: "catalog", chars: 300 },
+      ],
+      skipped: [{ key: "index", reason: "budget", chars: 9000 }],
+      budget: { limit: 20000, used: 1500 },
+    });
+
+    const turns = buildTurns([turnStarted(), injected]);
+
+    const injection = turns[0]!.injection!;
+    expect(injection.profile).toBe("writer");
+    expect(injection.parts.map((part) => part.key)).toEqual(["instructions", "catalog"]);
+    expect(injection.skipped).toEqual([{ key: "index", reason: "budget", chars: 9000 }]);
+    expect(injection.used).toBe(1500);
+    expect(injection.limit).toBe(20000);
+  });
+});

@@ -1,0 +1,317 @@
+"""专有名词词典（0.6 V06-E3）。
+
+同一个人三个名字、地名前后不一致，是长篇里最常见也最容易避免的漂移。这里把「这部作品
+用过哪些名字」汇总成一份表：人物姓名与别名来自小传声明，地名、组织、物件由核对任务从
+原文登记，每条带原文依据。
+
+词汇表不新增设定文件，也不进作品 Git：它是从现有材料汇总出来的派生结果，删掉可以重建。
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+from hastings.workspace.disclosure import (
+    EntryStatus,
+    ObservedEvidence,
+    check_evidence,
+)
+from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.files import Workspace
+from hastings.workspace.metadata import parse_character
+from hastings.workspace.state_store import read_records, write_records
+
+__all__ = [
+    "GlossaryConflict",
+    "GlossaryState",
+    "GlossaryStore",
+    "GlossaryTerm",
+    "TermKind",
+    "build_glossary",
+    "glossary_section",
+    "glossary_view",
+    "publish_terms",
+]
+
+TermKind = Literal["person", "place", "org", "item"]
+TermSource = Literal["declared", "text"]
+
+KIND_LABEL: dict[TermKind, str] = {
+    "person": "人物",
+    "place": "地点",
+    "org": "组织",
+    "item": "物件",
+}
+
+RECORD_VERSION = 1
+RECIPE_VERSION = 1
+
+ConflictKind = Literal["alias_collision", "name_collision", "kind_collision"]
+
+
+@dataclass(frozen=True, slots=True)
+class GlossaryTerm:
+    term: str
+    kind: TermKind
+    aliases: tuple[str, ...]
+    first_chapter: int
+    source: TermSource
+    #: 从原文登记的词带依据；人物姓名来自小传声明，没有原文依据。
+    evidence: ObservedEvidence | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "term": self.term,
+            "kind": self.kind,
+            "aliases": list(self.aliases),
+            "first_chapter": self.first_chapter,
+        }
+        if self.evidence is not None:
+            payload["evidence"] = {
+                "path": self.evidence.path,
+                "digest": self.evidence.digest,
+                "start": self.evidence.start,
+                "end": self.evidence.end,
+                "quote": self.evidence.quote,
+            }
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class GlossaryConflict:
+    term: str
+    kind: ConflictKind
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class GlossaryState:
+    current_chapter: int
+    terms: tuple[GlossaryTerm, ...]
+    conflicts: tuple[GlossaryConflict, ...]
+    warnings: tuple[str, ...] = ()
+
+
+class GlossaryStore:
+    """作品状态目录里的 ``glossary.json``；同名同类只留一条，后登记的覆盖旧的。"""
+
+    def __init__(self, root: Path) -> None:
+        self.root = Path(root)
+        self.file = self.root / "glossary.json"
+
+    def entries(self) -> tuple[GlossaryTerm, ...]:
+        terms: list[GlossaryTerm] = []
+        for item in read_records(
+            self.file,
+            record_version=RECORD_VERSION,
+            recipe_version=RECIPE_VERSION,
+            key="terms",
+        ):
+            parsed = _term_from_payload(item)
+            if parsed is not None:
+                terms.append(parsed)
+        return tuple(terms)
+
+    def replace(self, terms: tuple[GlossaryTerm, ...]) -> None:
+        merged = {(item.term, item.kind): item for item in self.entries()}
+        for item in terms:
+            merged[(item.term, item.kind)] = item
+        write_records(
+            self.file,
+            prefix=".glossary-",
+            record_version=RECORD_VERSION,
+            recipe_version=RECIPE_VERSION,
+            key="terms",
+            entries=[item.to_dict() for item in merged.values()],
+        )
+
+    def status(self, workspace: Workspace, term: GlossaryTerm) -> EntryStatus:
+        evidence = term.evidence
+        if evidence is None:
+            return "valid"
+        try:
+            current = workspace.read(evidence.path).digest
+        except WorkspaceError:
+            return "source_missing"
+        return "valid" if current == evidence.digest else "stale"
+
+
+def _term_from_payload(item: object) -> GlossaryTerm | None:
+    if not isinstance(item, dict):
+        return None
+    kind = item.get("kind")
+    if kind not in KIND_LABEL:
+        return None
+    evidence_raw = item.get("evidence")
+    evidence: ObservedEvidence | None = None
+    if isinstance(evidence_raw, dict):
+        try:
+            evidence = ObservedEvidence(
+                path=str(evidence_raw["path"]),
+                digest=str(evidence_raw["digest"]),
+                start=int(evidence_raw["start"]),
+                end=int(evidence_raw["end"]),
+                quote=str(evidence_raw["quote"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            evidence = None
+    try:
+        aliases = item.get("aliases")
+        return GlossaryTerm(
+            term=str(item["term"]),
+            kind=kind,
+            aliases=tuple(str(alias) for alias in aliases) if isinstance(aliases, list) else (),
+            first_chapter=int(item.get("first_chapter") or 0),
+            source="text",
+            evidence=evidence,
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def publish_terms(
+    workspace: Workspace,
+    store: GlossaryStore,
+    terms: Sequence[GlossaryTerm],
+) -> tuple[GlossaryTerm, ...]:
+    """整批登记：每条都要有原文依据，任一条不过整批不写。"""
+    if not terms:
+        raise WorkspaceError(
+            code="STATE_EVIDENCE_INVALID",
+            where="glossary.publish",
+            why="这一批没有词条",
+            fix="至少给出一条带原文依据的词",
+        )
+    for term in terms:
+        if not term.term.strip():
+            raise WorkspaceError(
+                code="STATE_EVIDENCE_INVALID",
+                where="glossary.publish",
+                why="词条不能是空字符串",
+                fix="写上作品里实际使用的名字",
+            )
+        if term.evidence is None:
+            raise WorkspaceError(
+                code="STATE_EVIDENCE_INVALID",
+                where=f"glossary.publish:{term.term}",
+                why="从原文登记的词必须给出一处原文依据",
+                fix="用 read_file 读到这个词出现的句子，再登记区间与引文",
+            )
+        check_evidence(workspace, term.evidence)
+    store.replace(tuple(terms))
+    return store.entries()
+
+
+def _declared_terms(workspace: Workspace) -> list[GlossaryTerm]:
+    terms: list[GlossaryTerm] = []
+    for entry in workspace.catalog().characters:
+        if not entry.exists:
+            continue
+        meta = parse_character(entry.path, workspace.read(entry.path).text)
+        terms.append(
+            GlossaryTerm(
+                term=meta.title,
+                kind="person",
+                aliases=meta.aliases,
+                first_chapter=0,
+                source="declared",
+            )
+        )
+    return terms
+
+
+def build_glossary(workspace: Workspace, store: GlossaryStore | None = None) -> GlossaryState:
+    """声明的人物姓名在前，原文登记的专名在后；失效登记不采用，只留诊断。"""
+    current = max(
+        (
+            entry.chapter_number
+            for entry in workspace.catalog().chapters
+            if entry.chapter_number is not None and entry.exists
+        ),
+        default=0,
+    )
+    warnings: list[str] = []
+    terms = _declared_terms(workspace)
+    if store is not None:
+        for item in store.entries():
+            status = store.status(workspace, item)
+            if status != "valid":
+                warnings.append(f"「{item.term}」的原文登记已失效，暂不采用。")
+                continue
+            terms.append(item)
+
+    conflicts: list[GlossaryConflict] = []
+    owners: dict[str, GlossaryTerm] = {}
+    for term in terms:
+        names = (term.term, *term.aliases)
+        for name in names:
+            owner = owners.get(name)
+            if owner is None:
+                owners[name] = term
+                continue
+            if owner.term == term.term and owner.kind == term.kind:
+                continue
+            conflict_kind: ConflictKind = (
+                "kind_collision" if owner.term == term.term else "alias_collision"
+            )
+            if name == term.term and owner.term != term.term:
+                conflict_kind = "name_collision"
+            conflicts.append(
+                GlossaryConflict(
+                    term=name,
+                    kind=conflict_kind,
+                    detail=f"「{name}」同时指向 {owner.term}（{KIND_LABEL[owner.kind]}）"
+                    f"与 {term.term}（{KIND_LABEL[term.kind]}）",
+                )
+            )
+    return GlossaryState(
+        current_chapter=current,
+        terms=tuple(terms),
+        conflicts=tuple(conflicts),
+        warnings=tuple(warnings),
+    )
+
+
+def glossary_section(state: GlossaryState, *, limit: int = 24) -> str:
+    """写作上下文里的专名表：按类别列名字与别名，只给已经出现过的。"""
+    grouped: dict[TermKind, list[str]] = {"person": [], "place": [], "org": [], "item": []}
+    for term in state.terms:
+        if term.source == "text" and term.first_chapter > state.current_chapter:
+            continue
+        label = term.term + (f"（{'、'.join(term.aliases)}）" if term.aliases else "")
+        grouped[term.kind].append(label)
+    lines: list[str] = []
+    for kind in ("person", "place", "org", "item"):
+        names = grouped[kind][:limit]
+        if names:
+            lines.append(f"- {KIND_LABEL[kind]}：{'、'.join(names)}")
+    if not lines:
+        return ""
+    lines.append("写到的名字用这里的写法；要新增专名时先确认作品里确实用了它。")
+    return "\n".join(lines)
+
+
+def glossary_view(state: GlossaryState) -> dict[str, object]:
+    return {
+        "domain": "glossary",
+        "current_chapter": state.current_chapter,
+        "terms": [
+            {
+                "term": term.term,
+                "kind": term.kind,
+                "label": KIND_LABEL[term.kind],
+                "aliases": list(term.aliases),
+                "first_chapter": term.first_chapter,
+                "source": term.source,
+            }
+            for term in state.terms
+        ],
+        "conflicts": [
+            {"term": conflict.term, "kind": conflict.kind, "detail": conflict.detail}
+            for conflict in state.conflicts
+        ],
+        "warnings": list(state.warnings),
+    }

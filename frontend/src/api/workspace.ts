@@ -147,7 +147,7 @@ export interface TurnInput {
   request_key: string;
   context: ContextInput;
   /** 用途：普通对话，或按作者选择更新章节索引。 */
-  purpose?: "chat" | "update_chapter_index" | "review";
+  purpose?: "chat" | "update_chapter_index" | "review" | "update_disclosure" | "update_state";
   /** 索引用途要更新的章节；普通对话不能带。 */
   index_paths?: string[];
   /** 检查用途要核对的文件。 */
@@ -280,6 +280,14 @@ export type WorkspaceEvent =
       provided: { path: string; start: number; end: number; length: number }[];
     })
   | (EventBase & {
+      type: "state_injected";
+      turn_id: string;
+      profile: "writer" | "extract" | "review";
+      parts: { key: string; chars: number }[];
+      skipped: { key: string; reason: "budget" | "empty"; chars?: number }[];
+      budget: { limit: number; used: number };
+    })
+  | (EventBase & {
       type: "reference_registered";
       turn_id: string;
       references: { path: string; digest: string; kind: string; required: boolean }[];
@@ -355,6 +363,126 @@ export interface ChapterIndexItem {
 
 export interface ChapterIndex {
   items: ChapterIndexItem[];
+}
+
+/** 一条身份披露：第几章起读者已知，或计划第几章披露。 */
+export interface DisclosureFact {
+  fact: string;
+  chapter: number;
+  /** text：正文核对过；declared：只有作者声明。 */
+  source?: "text" | "declared";
+}
+
+export interface DisclosureEntity {
+  path: string;
+  name: string;
+  surface: string;
+  aliases: string[];
+  roles: string[];
+  revealed: DisclosureFact[];
+  /** 声明了起始章，但正文还没写到那一章。 */
+  upcoming: DisclosureFact[];
+  /** 计划披露：只在这里显示，不进入写作上下文。 */
+  planned: DisclosureFact[];
+  overdue: boolean;
+  /** 这个角色有没有可用的正文核对记录。 */
+  record_status?: "valid" | "stale" | "source_missing" | null;
+  verified?: number;
+  warnings: string[];
+}
+
+export interface DisclosureConflict {
+  path: string;
+  name: string;
+  kind: string;
+  label: string;
+  detail: string;
+}
+
+export interface DisclosureState {
+  domain: "disclosure";
+  current_chapter: number;
+  entities: DisclosureEntity[];
+  conflicts: DisclosureConflict[];
+}
+
+/** 一个角色截至当前章的最后一次原文核对状态。 */
+export interface RosterCharacter {
+  path: string;
+  name: string;
+  location: string;
+  alive: boolean;
+  stance: string;
+  /** 这条状态出自第几章；没有核对记录时为 null。 */
+  chapter: number | null;
+  /** 距当前章差几章；0 或 null 表示不落后。 */
+  lag: number | null;
+  stale: boolean;
+  warnings: string[];
+}
+
+export interface RosterState {
+  domain: "roster";
+  current_chapter: number;
+  characters: RosterCharacter[];
+  warnings: string[];
+}
+
+/** 一章的时间锚点：`when` 是原文的说法，不做日期换算。 */
+export interface TimelineEntry {
+  chapter: number;
+  when: string;
+  span: string;
+  location: string;
+}
+
+export interface TimelineState {
+  domain: "timeline";
+  current_chapter: number;
+  entries: TimelineEntry[];
+  /** 有正文但没有锚点的章号。 */
+  missing: number[];
+  warnings: string[];
+}
+
+/** 一条线索：埋在哪一章、该在哪一章回收、现在什么状态。 */
+export interface ClueEntry {
+  clue: string;
+  planted_chapter: number;
+  due_chapter: number | null;
+  status: "open" | "resolved" | "dropped";
+  label: string;
+  /** 计划回收章已过、仍未回收。 */
+  overdue: boolean;
+  supports: string;
+  resolution_chapter: number | null;
+  quote: string;
+}
+
+export interface ClueState {
+  domain: "clues";
+  current_chapter: number;
+  entries: ClueEntry[];
+  /** 超期未回收的线索内容。 */
+  overdue: string[];
+  warnings: string[];
+}
+
+export interface GlossaryTerm {
+  term: string;
+  kind: "person" | "place" | "org" | "item";
+  label: string;
+  aliases: string[];
+  first_chapter: number;
+  source: "declared" | "text";
+}
+
+export interface GlossaryState {
+  domain: "glossary";
+  current_chapter: number;
+  terms: GlossaryTerm[];
+  conflicts: { term: string; kind: string; detail: string }[];
+  warnings: string[];
 }
 
 /** 本轮范围里的一条允许操作。 */
@@ -575,6 +703,31 @@ export function fetchReviews(workspaceId: string, path?: string): Promise<Review
 
 export function fetchChapterIndex(workspaceId: string): Promise<ChapterIndex> {
   return request<ChapterIndex>(`/${workspaceId}/chapter-index`);
+}
+
+/** 身份状态：这一版由小传元信息实时算出，没有派生记录。 */
+export function fetchDisclosureState(workspaceId: string): Promise<DisclosureState> {
+  return request<DisclosureState>(`/${workspaceId}/state`);
+}
+
+/** 人物状态：位置、生死、立场，只来自原文核对记录。 */
+export function fetchRosterState(workspaceId: string): Promise<RosterState> {
+  return request<RosterState>(`/${workspaceId}/state?domain=roster`);
+}
+
+/** 故事时间：一章一个锚点，缺锚点的章单独列出。 */
+export function fetchTimelineState(workspaceId: string): Promise<TimelineState> {
+  return request<TimelineState>(`/${workspaceId}/state?domain=timeline`);
+}
+
+/** 线索台账：只列未回收的进上下文，超期项排在最前。 */
+export function fetchClueState(workspaceId: string): Promise<ClueState> {
+  return request<ClueState>(`/${workspaceId}/state?domain=clues`);
+}
+
+/** 专有名词：人物来自小传声明，其他专名来自原文登记。 */
+export function fetchGlossaryState(workspaceId: string): Promise<GlossaryState> {
+  return request<GlossaryState>(`/${workspaceId}/state?domain=glossary`);
 }
 
 export function listConversations(workspaceId: string): Promise<ConversationList> {

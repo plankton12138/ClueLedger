@@ -16,6 +16,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
+from hastings.workspace.assembly import AssembledContext, Profile
 from hastings.workspace.chapter_index import (
     ChapterIndexDraft,
     ChapterIndexEntry,
@@ -24,10 +25,42 @@ from hastings.workspace.chapter_index import (
     IndexEvidence,
     publish_index,
 )
-from hastings.workspace.context import INDEX_INSTRUCTIONS, build_system_prompt
+from hastings.workspace.character_states import (
+    CharacterStateStore,
+    StateSnapshot,
+    build_roster,
+    publish_states,
+    roster_view,
+)
+from hastings.workspace.clues import (
+    ClueEntry,
+    ClueStore,
+    build_clues,
+    clues_view,
+    publish_clues,
+)
+from hastings.workspace.context import (
+    INDEX_INSTRUCTIONS,
+    STATE_INSTRUCTIONS,
+    build_assembled_context,
+)
+from hastings.workspace.disclosure import (
+    DisclosureStore,
+    ObservedEvidence,
+    ObservedFact,
+    build_disclosure_state,
+    publish_observed,
+)
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
+from hastings.workspace.glossary import (
+    GlossaryStore,
+    GlossaryTerm,
+    build_glossary,
+    glossary_view,
+    publish_terms,
+)
 from hastings.workspace.materials import (
     LIST_RESULT_CHARS,
     READ_MAX_CHARS,
@@ -61,6 +94,13 @@ from hastings.workspace.task_scope import (
     ScopeDraft,
     ScopeMode,
 )
+from hastings.workspace.timeline import (
+    TimelineEntry,
+    TimelineStore,
+    build_timeline,
+    publish_timeline,
+    timeline_view,
+)
 from tau_agent.harness import AgentHarness, AgentHarnessConfig
 from tau_agent.messages import AgentMessage, TextContent
 from tau_agent.provider import ModelProvider
@@ -70,7 +110,7 @@ from tau_agent.types import JSONValue
 __all__ = ["MAX_TURNS", "RunContext", "ToolMode", "build_harness", "build_tools"]
 
 #: 工具集合：普通写作、索引任务，或只读检查。
-ToolMode = Literal["write", "index", "review"]
+ToolMode = Literal["write", "index", "review", "state"]
 
 #: 单轮最多的模型回合数；到顶就结束并如实记录，不无限循环。
 MAX_TURNS = 24
@@ -140,6 +180,11 @@ def build_tools(
     index_store: ChapterIndexStore | None = None,
     review_targets: Sequence[str] = (),
     review_store: ReviewStore | None = None,
+    disclosure_store: DisclosureStore | None = None,
+    glossary_store: GlossaryStore | None = None,
+    roster_store: CharacterStateStore | None = None,
+    timeline_store: TimelineStore | None = None,
+    clue_store: ClueStore | None = None,
 ) -> list[AgentTool]:
     """本轮可用的文件工具；Git 提交与撤销不暴露给模型。
 
@@ -1110,6 +1155,122 @@ def build_tools(
             execution_mode="sequential",
         ),
     ]
+
+    async def read_state(
+        tool_call_id: str,
+        arguments: Mapping[str, JSONValue],
+        signal: ToolCancellationToken | None = None,
+        on_update: ToolUpdateCallback | None = None,
+    ) -> AgentToolResult:
+        """状态层查询：``domain`` 选域；``entity`` 只在身份与人物状态域里用。"""
+        del tool_call_id, signal, on_update
+        domain = arguments.get("domain") or "disclosure"
+        if domain == "roster":
+            return _json(roster_view(build_roster(workspace, roster_store)))
+        if domain == "timeline":
+            return _json(timeline_view(build_timeline(workspace, timeline_store)))
+        if domain == "clues":
+            return _json(clues_view(build_clues(workspace, clue_store)))
+        if domain == "glossary":
+            return _json(glossary_view(build_glossary(workspace, glossary_store)))
+        if domain != "disclosure":
+            raise _input_error("domain", "只能是 disclosure / roster / timeline / clues / glossary")
+        snapshot = build_disclosure_state(workspace, disclosure_store)
+        entity_path = arguments.get("entity")
+        if entity_path is None:
+            return _json(
+                {
+                    "current_chapter": snapshot.current_chapter,
+                    "entities": [
+                        {
+                            "path": entity.path,
+                            "name": entity.name,
+                            "surface": entity.surface,
+                            "revealed": [
+                                {"fact": item.fact, "chapter": item.chapter, "source": item.source}
+                                for item in entity.revealed
+                            ],
+                            "planned": [
+                                {"fact": item.fact, "chapter": item.chapter}
+                                for item in entity.planned
+                            ],
+                        }
+                        for entity in snapshot.entities
+                    ],
+                    "conflicts": [
+                        {"name": conflict.name, "kind": conflict.kind, "detail": conflict.detail}
+                        for conflict in snapshot.conflicts
+                    ],
+                }
+            )
+        if not isinstance(entity_path, str) or not entity_path:
+            raise _input_error("entity", "必须是小传路径")
+        entity = next((item for item in snapshot.entities if item.path == entity_path), None)
+        if entity is None:
+            raise WorkspaceError(
+                code="STATE_NOT_FOUND",
+                where=f"state.read:{entity_path}",
+                why="没有这个角色的身份状态",
+                fix="先用不带 entity 的形式看有哪些角色",
+                details={"path": entity_path},
+            )
+        entries = disclosure_store.entries() if disclosure_store is not None else ()
+        return _json(
+            {
+                "path": entity.path,
+                "name": entity.name,
+                "surface": entity.surface,
+                "aliases": list(entity.aliases),
+                "revealed": [
+                    {"fact": item.fact, "chapter": item.chapter, "source": item.source}
+                    for item in entity.revealed
+                ],
+                "upcoming": [
+                    {"fact": item.fact, "chapter": item.chapter} for item in entity.upcoming
+                ],
+                "planned": [
+                    {"fact": item.fact, "chapter": item.chapter} for item in entity.planned
+                ],
+                "record_status": entity.record_status,
+                "evidence": [
+                    {
+                        "fact": item.fact,
+                        "path": item.evidence.path,
+                        "start": item.evidence.start,
+                        "end": item.evidence.end,
+                        "quote": item.evidence.quote,
+                    }
+                    for item in entries
+                    if item.entity_path == entity.path
+                ],
+            }
+        )
+
+    tools.append(
+        AgentTool(
+            name="read_state",
+            label="查看状态",
+            description=(
+                "查看状态层：domain=disclosure（默认）给人物身份，domain=roster 给位置、生死与"
+                "立场，domain=timeline 给故事时间，domain=clues 给线索台账，domain=glossary 给"
+                "专名。带 entity 可查某个角色的条目与原文依据。"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "domain": {
+                        "type": "string",
+                        "enum": ["disclosure", "roster", "timeline", "clues", "glossary"],
+                    },
+                    "entity": {"type": "string", "description": "如 设定集/角色小传/林静.md"},
+                },
+                "additionalProperties": False,
+            },
+            execute_fn=read_state,
+            execution_mode="sequential",
+        )
+    )
+
     if mode == "review":
         # 检查任务：只读原文与搜索，加保存报告；没有作品写工具。
         readonly = {"list_files", "read_file", "search_text"}
@@ -1256,7 +1417,460 @@ def build_tools(
                 execution_mode="sequential",
             ),
         ]
+    if mode == "state":
+        # 核对身份：只读原文与小传，发布带证据的披露条目；没有作品写工具。
+        readonly = {"list_files", "read_file", "search_text", "read_state"}
+        allowed = tuple(index_allowed)
+
+        async def save_glossary_term(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            kind = _text_argument(arguments, "kind")
+            if kind not in ("person", "place", "org", "item"):
+                raise _input_error("kind", "只能是 person / place / org / item")
+            evidence_raw = arguments.get("evidence")
+            if not isinstance(evidence_raw, dict):
+                raise _input_error("evidence", "必须是对象")
+            raw_aliases = arguments.get("aliases")
+            aliases: tuple[str, ...] = ()
+            if raw_aliases is not None:
+                if not isinstance(raw_aliases, list):
+                    raise _input_error("aliases", "必须是字符串数组")
+                aliases = tuple(str(item) for item in raw_aliases if str(item).strip())
+            term = GlossaryTerm(
+                term=_text_argument(arguments, "term"),
+                kind=kind,  # type: ignore[arg-type]
+                aliases=aliases,
+                first_chapter=_int_argument(arguments, "first_chapter", default=0, minimum=1),
+                source="text",
+                evidence=ObservedEvidence(
+                    path=_text_argument(evidence_raw, "path"),
+                    digest=_text_argument(evidence_raw, "digest"),
+                    start=_int_argument(evidence_raw, "start", default=0, minimum=0),
+                    end=_int_argument(evidence_raw, "end", default=0, minimum=0),
+                    quote=_text_argument(evidence_raw, "quote"),
+                ),
+            )
+            if glossary_store is None:
+                raise WorkspaceError(
+                    code="STATE_STORE_MISSING",
+                    where="glossary.save",
+                    why="没有可写的状态目录",
+                    fix="从作品状态目录重新发起核对",
+                )
+            published = publish_terms(workspace, glossary_store, (term,))
+            return _json({"term": term.term, "total": len(published)})
+
+        async def save_character_state(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            entity = _text_argument(arguments, "entity")
+            entity_digest = _text_argument(arguments, "entity_digest")
+            if allowed and entity not in allowed:
+                raise WorkspaceError(
+                    code="STATE_ENTITY_INVALID",
+                    where=f"roster.save:{entity}",
+                    why="这一轮没有选择这份小传",
+                    fix="只核对作者选中的小传；需要更多时让作者重新发起核对",
+                    details={"path": entity},
+                )
+            raw = arguments.get("states")
+            if not isinstance(raw, list) or not raw:
+                raise _input_error("states", "必须是非空数组")
+            snapshots = tuple(
+                _snapshot_from(item, entity=entity, entity_digest=entity_digest) for item in raw
+            )
+            if roster_store is None:
+                raise WorkspaceError(
+                    code="STATE_STORE_MISSING",
+                    where="roster.save",
+                    why="没有可写的状态目录",
+                    fix="从作品状态目录重新发起核对",
+                )
+            published = publish_states(workspace, roster_store, snapshots)
+            return _json({"entity": entity, "published": len(snapshots), "total": len(published)})
+
+        async def save_timeline(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            raw = arguments.get("entries")
+            if not isinstance(raw, list) or not raw:
+                raise _input_error("entries", "必须是非空数组")
+            entries = tuple(_timeline_from(item) for item in raw)
+            if timeline_store is None:
+                raise WorkspaceError(
+                    code="STATE_STORE_MISSING",
+                    where="timeline.save",
+                    why="没有可写的状态目录",
+                    fix="从作品状态目录重新发起核对",
+                )
+            published = publish_timeline(workspace, timeline_store, entries)
+            return _json({"published": len(entries), "total": len(published)})
+
+        async def save_clues(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            raw = arguments.get("entries")
+            if not isinstance(raw, list) or not raw:
+                raise _input_error("entries", "必须是非空数组")
+            entries = tuple(_clue_from(item) for item in raw)
+            if clue_store is None:
+                raise WorkspaceError(
+                    code="STATE_STORE_MISSING",
+                    where="clues.save",
+                    why="没有可写的状态目录",
+                    fix="从作品状态目录重新发起核对",
+                )
+            published = publish_clues(workspace, clue_store, entries)
+            return _json({"published": len(entries), "total": len(published)})
+
+        async def save_disclosure(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            entity = _text_argument(arguments, "entity")
+            entity_digest = _text_argument(arguments, "entity_digest")
+            if allowed and entity not in allowed:
+                raise WorkspaceError(
+                    code="STATE_ENTITY_INVALID",
+                    where=f"disclosure.save:{entity}",
+                    why="这一轮没有选择这份小传",
+                    fix="只核对作者选中的小传；需要更多时让作者重新发起核对",
+                    details={"path": entity},
+                )
+            raw = arguments.get("facts")
+            if not isinstance(raw, list) or not raw:
+                raise _input_error("facts", "必须是非空数组")
+            facts = tuple(
+                _observed_from(item, entity=entity, entity_digest=entity_digest) for item in raw
+            )
+            if disclosure_store is None:
+                raise WorkspaceError(
+                    code="STATE_STORE_MISSING",
+                    where="disclosure.save",
+                    why="没有可写的状态目录",
+                    fix="从作品状态目录重新发起核对",
+                )
+            published = publish_observed(workspace, disclosure_store, facts)
+            return _json(
+                {
+                    "entity": entity,
+                    "published": len(facts),
+                    "total": len(published),
+                }
+            )
+
+        return [
+            *[tool for tool in tools if tool.name in readonly],
+            AgentTool(
+                name="save_disclosure",
+                label="保存身份核对",
+                description=(
+                    "记录一条或多条「读者从第几章起知道什么」，每条都要给出正文原文依据。"
+                    "只对作者选中核对的小传有效，必须先读完该小传与相关章节。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "entity": {"type": "string", "description": "如 设定集/角色小传/林静.md"},
+                        "entity_digest": {
+                            "type": "string",
+                            "description": "read_file 读到的小传 digest",
+                        },
+                        "facts": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "fact": {"type": "string", "description": "读者知道了什么"},
+                                    "chapter": {"type": "integer", "minimum": 1},
+                                    "evidence": {
+                                        "type": "object",
+                                        "properties": {
+                                            "path": {"type": "string"},
+                                            "digest": {"type": "string"},
+                                            "start": {"type": "integer", "minimum": 0},
+                                            "end": {"type": "integer", "minimum": 0},
+                                            "quote": {"type": "string", "description": "≤160 字符"},
+                                        },
+                                        "required": ["path", "digest", "start", "end", "quote"],
+                                        "additionalProperties": False,
+                                    },
+                                },
+                                "required": ["fact", "chapter", "evidence"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": ["entity", "entity_digest", "facts"],
+                    "additionalProperties": False,
+                },
+                execute_fn=save_disclosure,
+                prompt_guidelines=(
+                    "只记录正文里确实写到的披露；凭设定推测的不要发布。",
+                    "证据区间用 read_file 返回的字符位置，引文要与区间完全一致。",
+                ),
+                execution_mode="sequential",
+            ),
+            AgentTool(
+                name="save_glossary_term",
+                label="登记专有名词",
+                description=(
+                    "登记正文里确实出现过的专名（地名、组织、物件），带一处原文依据。"
+                    "人物姓名与别名来自小传，不需要重复登记。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "term": {"type": "string"},
+                        "kind": {"type": "string", "enum": ["person", "place", "org", "item"]},
+                        "aliases": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "同一事物的其他写法",
+                        },
+                        "first_chapter": {"type": "integer", "minimum": 1},
+                        "evidence": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string"},
+                                "digest": {"type": "string"},
+                                "start": {"type": "integer", "minimum": 0},
+                                "end": {"type": "integer", "minimum": 0},
+                                "quote": {"type": "string", "description": "≤160 字符"},
+                            },
+                            "required": ["path", "digest", "start", "end", "quote"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["term", "kind", "first_chapter", "evidence"],
+                    "additionalProperties": False,
+                },
+                execute_fn=save_glossary_term,
+                prompt_guidelines=(
+                    "只登记正文出现过的名字；同义写法放进 aliases。",
+                    "证据区间用 read_file 返回的字符位置，引文要与区间完全一致。",
+                ),
+                execution_mode="sequential",
+            ),
+            AgentTool(
+                name="save_character_state",
+                label="保存人物状态",
+                description=(
+                    "记录某人在某一章结束时的状态：位置、是否还活着、立场。"
+                    "每条都要给出正文原文依据；只对作者选中核对的小传有效。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "entity": {"type": "string", "description": "如 设定集/角色小传/林静.md"},
+                        "entity_digest": {
+                            "type": "string",
+                            "description": "read_file 读到的小传 digest",
+                        },
+                        "states": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "chapter": {"type": "integer", "minimum": 1},
+                                    "location": {
+                                        "type": "string",
+                                        "description": "这一章结束时在哪",
+                                    },
+                                    "alive": {"type": "boolean"},
+                                    "stance": {
+                                        "type": "string",
+                                        "description": "这一章结束时的立场，可为空",
+                                    },
+                                    "evidence": {
+                                        "type": "object",
+                                        "properties": {
+                                            "path": {"type": "string"},
+                                            "digest": {"type": "string"},
+                                            "start": {"type": "integer", "minimum": 0},
+                                            "end": {"type": "integer", "minimum": 0},
+                                            "quote": {"type": "string", "description": "≤160 字符"},
+                                        },
+                                        "required": ["path", "digest", "start", "end", "quote"],
+                                        "additionalProperties": False,
+                                    },
+                                },
+                                "required": ["chapter", "evidence"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": ["entity", "entity_digest", "states"],
+                    "additionalProperties": False,
+                },
+                execute_fn=save_character_state,
+                prompt_guidelines=(
+                    "只记这一章正文明确写到的事；人物说自己在某处不等于他真在。",
+                    "位置与立场至少要有一个；都没有就不要发布这一条。",
+                    "死亡只在正文确实写到死亡时记 alive=false。",
+                ),
+                execution_mode="sequential",
+            ),
+            AgentTool(
+                name="save_timeline",
+                label="保存时间锚点",
+                description=(
+                    "记录一章的时间锚点：原文怎么说的时间、跨了多久、主要在哪。"
+                    "一章一条，后来的覆盖旧的。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "entries": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "chapter": {"type": "integer", "minimum": 1},
+                                    "when": {
+                                        "type": "string",
+                                        "description": "原文里的时间说法，如「10月21日深夜」",
+                                    },
+                                    "span": {"type": "string", "description": "这一章跨了多久"},
+                                    "location": {"type": "string", "description": "主要地点"},
+                                    "evidence": {
+                                        "type": "object",
+                                        "properties": {
+                                            "path": {"type": "string"},
+                                            "digest": {"type": "string"},
+                                            "start": {"type": "integer", "minimum": 0},
+                                            "end": {"type": "integer", "minimum": 0},
+                                            "quote": {"type": "string", "description": "≤160 字符"},
+                                        },
+                                        "required": ["path", "digest", "start", "end", "quote"],
+                                        "additionalProperties": False,
+                                    },
+                                },
+                                "required": ["chapter", "when", "evidence"],
+                                "additionalProperties": False,
+                            },
+                        }
+                    },
+                    "required": ["entries"],
+                    "additionalProperties": False,
+                },
+                execute_fn=save_timeline,
+                prompt_guidelines=(
+                    "时间写原文的说法，不要换算成自己推的日期。",
+                    "跨度只在原文给了线索时写，例如「次日清晨」就是一夜。",
+                ),
+                execution_mode="sequential",
+            ),
+            AgentTool(
+                name="save_clues",
+                label="登记线索",
+                description=(
+                    "登记读者看到过的线索：埋在哪一章、计划哪一章回收、现在什么状态。"
+                    "每条都要给出埋设处的原文依据；标为已回收时还要给出回收处。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "entries": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "clue": {
+                                        "type": "string",
+                                        "description": "读者能观察到的事实，不是解释",
+                                    },
+                                    "planted_chapter": {"type": "integer", "minimum": 1},
+                                    "due_chapter": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "description": "计划回收章；不确定就不填",
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": ["open", "resolved", "dropped"],
+                                    },
+                                    "supports": {
+                                        "type": "string",
+                                        "description": "这条线索指向哪种可能，可为空",
+                                    },
+                                    "resolution_chapter": {"type": "integer", "minimum": 1},
+                                    "evidence": _EVIDENCE_SCHEMA,
+                                    "resolution_evidence": _EVIDENCE_SCHEMA,
+                                },
+                                "required": ["clue", "planted_chapter", "status", "evidence"],
+                                "additionalProperties": False,
+                            },
+                        }
+                    },
+                    "required": ["entries"],
+                    "additionalProperties": False,
+                },
+                execute_fn=save_clues,
+                prompt_guidelines=(
+                    "线索是读者看到的事实，不是它的解释；解释属于设定，不写进台账。",
+                    "只有正文确实写了回收过程才标 resolved，并给出回收处原文。",
+                    "作者已经放弃的线索标 dropped，不要删掉：删掉等于下次又会被当成新线索。",
+                ),
+                execution_mode="sequential",
+            ),
+        ]
     return tools
+
+
+def build_turn_assembly(
+    workspace: Workspace,
+    *,
+    mode: ToolMode = "write",
+    selected_path: str | None = None,
+    history_facts: str = "",
+    materials: str = "",
+    index_notes: str = "",
+    disclosure_store: DisclosureStore | None = None,
+    glossary_store: GlossaryStore | None = None,
+    roster_store: CharacterStateStore | None = None,
+    timeline_store: TimelineStore | None = None,
+    clue_store: ClueStore | None = None,
+) -> AssembledContext:
+    """这一轮的上下文装配：工具模式决定用途，用途决定装哪些分区。
+
+    服务层与 harness 共用这一个入口，保证「记下来的注入内容」和「实际发给模型的内容」
+    是同一份结果，而不是两处各拼一遍。
+    """
+    return build_assembled_context(
+        workspace,
+        profile=_PROFILE_BY_MODE[mode],
+        selected_path=selected_path,
+        history_facts=history_facts,
+        materials=materials,
+        index_notes=index_notes,
+        instructions=_instructions_for(mode),
+        disclosure_store=disclosure_store,
+        glossary_store=glossary_store,
+        roster_store=roster_store,
+        timeline_store=timeline_store,
+        clue_store=clue_store,
+    )
 
 
 def build_harness(
@@ -1276,24 +1890,37 @@ def build_harness(
     index_store: ChapterIndexStore | None = None,
     review_targets: Sequence[str] = (),
     review_store: ReviewStore | None = None,
+    disclosure_store: DisclosureStore | None = None,
+    glossary_store: GlossaryStore | None = None,
+    roster_store: CharacterStateStore | None = None,
+    timeline_store: TimelineStore | None = None,
+    clue_store: ClueStore | None = None,
+    assembly: AssembledContext | None = None,
 ) -> AgentHarness:
     """单个写作 Agent：系统提示 + 文件工具 + 回合上限。
 
     ``history`` 只有本会话公开过的提示与回复（见 ``conversation_context``）；当前提示由
     ``prompt()`` 追加一次，不能已经包含在 ``history`` 里，否则模型会收到两遍。
+    ``assembly`` 由调用方传入时直接使用，避免同一轮装配两次、结果不一致。
     """
+    resolved = assembly or build_turn_assembly(
+        workspace,
+        mode=mode,
+        selected_path=selected_path,
+        history_facts=history_facts,
+        materials=materials,
+        index_notes=index_notes,
+        disclosure_store=disclosure_store,
+        glossary_store=glossary_store,
+        roster_store=roster_store,
+        timeline_store=timeline_store,
+        clue_store=clue_store,
+    )
     return AgentHarness(
         AgentHarnessConfig(
             provider=provider,
             model=model,
-            system=build_system_prompt(
-                workspace,
-                selected_path=selected_path,
-                history_facts=history_facts,
-                materials=materials,
-                index_notes=index_notes,
-                instructions=_instructions_for(mode),
-            ),
+            system=resolved.text,
             tools=build_tools(
                 workspace,
                 run,
@@ -1302,6 +1929,11 @@ def build_harness(
                 index_store=index_store,
                 review_targets=review_targets,
                 review_store=review_store,
+                disclosure_store=disclosure_store,
+                glossary_store=glossary_store,
+                roster_store=roster_store,
+                timeline_store=timeline_store,
+                clue_store=clue_store,
             ),
             max_turns=max_turns,
         ),
@@ -1309,9 +1941,20 @@ def build_harness(
     )
 
 
+_PROFILE_BY_MODE: dict[ToolMode, Profile] = {
+    "write": "writer",
+    "index": "extract",
+    # 核对任务与建索引同类：只读原文、发布派生记录，不注入文风与旧摘要。
+    "state": "extract",
+    "review": "review",
+}
+
+
 def _instructions_for(mode: ToolMode) -> str:
     if mode == "index":
         return INDEX_INSTRUCTIONS
+    if mode == "state":
+        return STATE_INSTRUCTIONS
     if mode == "review":
         return REVIEW_INSTRUCTIONS
     return ""
@@ -1344,6 +1987,94 @@ def _int_argument(
     if value < minimum:
         raise _input_error(name, f"必须 ≥ {minimum}")
     return value
+
+
+def _observed_from(value: JSONValue, *, entity: str, entity_digest: str) -> ObservedFact:
+    """把一条披露参数转成记录；缺字段或类型不对时按可修正的输入错误返回。"""
+    if not isinstance(value, dict):
+        raise _input_error("facts", "每一项必须是对象")
+    return ObservedFact(
+        entity_path=entity,
+        entity_digest=entity_digest,
+        fact=_text_argument(value, "fact"),
+        chapter=_int_argument(value, "chapter", default=0, minimum=1),
+        evidence=_evidence_argument(value.get("evidence")),
+    )
+
+
+def _evidence_argument(value: JSONValue, name: str = "evidence") -> ObservedEvidence:
+    if not isinstance(value, dict):
+        raise _input_error(name, "必须是对象")
+    return ObservedEvidence(
+        path=_text_argument(value, "path"),
+        digest=_text_argument(value, "digest"),
+        start=_int_argument(value, "start", default=0, minimum=0),
+        end=_int_argument(value, "end", default=0, minimum=0),
+        quote=_text_argument(value, "quote"),
+    )
+
+
+def _snapshot_from(value: JSONValue, *, entity: str, entity_digest: str) -> StateSnapshot:
+    """把一条人物状态参数转成记录；缺字段按可修正的输入错误返回。"""
+    if not isinstance(value, dict):
+        raise _input_error("states", "每一项必须是对象")
+    alive = value.get("alive")
+    if alive is not None and not isinstance(alive, bool):
+        raise _input_error("alive", "必须是布尔值")
+    return StateSnapshot(
+        entity_path=entity,
+        entity_digest=entity_digest,
+        chapter=_int_argument(value, "chapter", default=0, minimum=1),
+        location=str(value.get("location") or ""),
+        alive=True if alive is None else alive,
+        stance=str(value.get("stance") or ""),
+        evidence=_evidence_argument(value.get("evidence")),
+    )
+
+
+def _timeline_from(value: JSONValue) -> TimelineEntry:
+    """把一条时间锚点参数转成记录。"""
+    if not isinstance(value, dict):
+        raise _input_error("entries", "每一项必须是对象")
+    return TimelineEntry(
+        chapter=_int_argument(value, "chapter", default=0, minimum=1),
+        when=_text_argument(value, "when"),
+        span=str(value.get("span") or ""),
+        location=str(value.get("location") or ""),
+        evidence=_evidence_argument(value.get("evidence")),
+    )
+
+
+def _clue_from(value: JSONValue) -> ClueEntry:
+    """把一条线索参数转成记录；状态取值不合法时按可修正的输入错误返回。"""
+    if not isinstance(value, dict):
+        raise _input_error("entries", "每一项必须是对象")
+    status = value.get("status")
+    if status not in ("open", "resolved", "dropped"):
+        raise _input_error("status", "只能是 open / resolved / dropped")
+    due = value.get("due_chapter")
+    resolution_chapter = value.get("resolution_chapter")
+    raw_resolution = value.get("resolution_evidence")
+    return ClueEntry(
+        clue=_text_argument(value, "clue"),
+        planted_chapter=_int_argument(value, "planted_chapter", default=0, minimum=1),
+        due_chapter=(
+            _int_argument(value, "due_chapter", default=0, minimum=1) if due is not None else None
+        ),
+        status=status,  # type: ignore[arg-type]
+        supports=str(value.get("supports") or ""),
+        evidence=_evidence_argument(value.get("evidence")),
+        resolution_chapter=(
+            _int_argument(value, "resolution_chapter", default=0, minimum=1)
+            if resolution_chapter is not None
+            else None
+        ),
+        resolution_evidence=(
+            _evidence_argument(raw_resolution, "resolution_evidence")
+            if raw_resolution is not None
+            else None
+        ),
+    )
 
 
 def _review_findings(value: JSONValue) -> tuple[ReviewFinding, ...]:
@@ -1409,6 +2140,20 @@ _INDEX_ENTRY_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["text", "evidence"],
+    "additionalProperties": False,
+}
+
+#: 一处原文依据的 JSON Schema。发布类工具共用同一份：字段少一个就等于少一道校验。
+_EVIDENCE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string"},
+        "digest": {"type": "string"},
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0},
+        "quote": {"type": "string", "description": "≤160 字符"},
+    },
+    "required": ["path", "digest", "start", "end", "quote"],
     "additionalProperties": False,
 }
 

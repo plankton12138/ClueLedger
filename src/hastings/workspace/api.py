@@ -26,10 +26,25 @@ from hastings.workspace.chapter_index import (
     ChapterIndexRecord,
     ChapterIndexStore,
 )
+from hastings.workspace.character_states import (
+    CharacterStateStore,
+    build_roster,
+    roster_view,
+)
+from hastings.workspace.clues import ClueStore, build_clues, clues_view
 from hastings.workspace.directory_dialog import DirectoryPickerError, pick_directory
+from hastings.workspace.disclosure import (
+    DisclosureState as DisclosureStateRecord,
+)
+from hastings.workspace.disclosure import (
+    DisclosureStore,
+    build_disclosure_state,
+    state_view,
+)
 from hastings.workspace.errors import WorkspaceError, status_for_code
 from hastings.workspace.files import FileEntry, FileKind, Workspace, is_managed_path
 from hastings.workspace.git import GitRepo
+from hastings.workspace.glossary import GlossaryStore, build_glossary, glossary_view
 from hastings.workspace.locations import default_workspace_root
 from hastings.workspace.materials import MAX_REFERENCES, ContextRequest
 from hastings.workspace.review import ReviewReport, ReviewStore
@@ -44,6 +59,7 @@ from hastings.workspace.state import (
     WorkspaceBinding,
     conversation_root,
 )
+from hastings.workspace.timeline import TimelineStore, build_timeline, timeline_view
 
 __all__ = [
     "AcceptedTurnView",
@@ -227,7 +243,9 @@ class ContextInput(BaseModel):
 class TurnPurposeMixin(BaseModel):
     """首次与续聊共用的用途字段：索引任务必须选章节，普通对话不能带。"""
 
-    purpose: Literal["chat", "update_chapter_index", "review"] = "chat"
+    purpose: Literal[
+        "chat", "update_chapter_index", "review", "update_disclosure", "update_state"
+    ] = "chat"
     index_paths: list[str] = Field(default_factory=list, max_length=MAX_INDEX_CHAPTERS)
     review_paths: list[str] = Field(default_factory=list, max_length=20)
 
@@ -238,6 +256,11 @@ class TurnPurposeMixin(BaseModel):
                 raise ValueError("索引用途需要选择至少一章")
             if self.review_paths:
                 raise ValueError("索引用途不能带检查目标")
+        elif self.purpose in ("update_disclosure", "update_state"):
+            if not self.index_paths:
+                raise ValueError("核对状态需要选择至少一份角色小传")
+            if self.review_paths:
+                raise ValueError("核对身份不能带检查目标")
         elif self.purpose == "review":
             if not self.review_paths:
                 raise ValueError("检查用途需要选择至少一个文件")
@@ -342,6 +365,131 @@ class ChapterIndexItemView(BaseModel):
 
 class ChapterIndexView(BaseModel):
     items: list[ChapterIndexItemView]
+
+
+class DisclosureFactView(BaseModel):
+    fact: str
+    chapter: int
+    source: Literal["text", "declared"] = "declared"
+
+
+class DisclosureEntityView(BaseModel):
+    path: str
+    name: str
+    surface: str
+    aliases: list[str]
+    roles: list[str]
+    revealed: list[DisclosureFactView]
+    upcoming: list[DisclosureFactView]
+    planned: list[DisclosureFactView]
+    overdue: bool
+    record_status: Literal["valid", "stale", "source_missing"] | None = None
+    verified: int = 0
+    warnings: list[str]
+
+
+class DisclosureConflictView(BaseModel):
+    path: str
+    name: str
+    kind: str
+    label: str
+    detail: str
+
+
+class StateView(BaseModel):
+    domain: Literal["disclosure"]
+    current_chapter: int
+    entities: list[DisclosureEntityView]
+    conflicts: list[DisclosureConflictView]
+
+
+class RosterCharacterView(BaseModel):
+    path: str
+    name: str
+    location: str = ""
+    alive: bool = True
+    stance: str = ""
+    #: 这条状态出自第几章；从没核对过时为 null。
+    chapter: int | None = None
+    #: 距离当前章差几章；0 或 null 表示不落后。
+    lag: int | None = None
+    stale: bool = False
+    warnings: list[str] = Field(default_factory=list)
+
+
+class RosterStateView(BaseModel):
+    domain: Literal["roster"]
+    current_chapter: int
+    characters: list[RosterCharacterView]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class TimelineEntryView(BaseModel):
+    chapter: int
+    when: str
+    span: str = ""
+    location: str = ""
+
+
+class TimelineStateView(BaseModel):
+    domain: Literal["timeline"]
+    current_chapter: int
+    entries: list[TimelineEntryView]
+    missing: list[int] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class GlossaryTermView(BaseModel):
+    term: str
+    kind: str
+    label: str
+    aliases: list[str] = Field(default_factory=list)
+    first_chapter: int = 0
+    source: Literal["declared", "text"] = "text"
+
+
+class GlossaryConflictView(BaseModel):
+    term: str
+    kind: str
+    detail: str
+
+
+class GlossaryStateView(BaseModel):
+    domain: Literal["glossary"]
+    current_chapter: int
+    terms: list[GlossaryTermView]
+    conflicts: list[GlossaryConflictView]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ClueEntryView(BaseModel):
+    clue: str
+    planted_chapter: int
+    due_chapter: int | None = None
+    status: Literal["open", "resolved", "dropped"]
+    label: str
+    #: 计划回收章已过、仍未回收。
+    overdue: bool = False
+    supports: str = ""
+    resolution_chapter: int | None = None
+    quote: str = ""
+
+
+class ClueStateView(BaseModel):
+    domain: Literal["clues"]
+    current_chapter: int
+    entries: list[ClueEntryView]
+    #: 超期未回收的线索内容，按台账顺序。
+    overdue: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+#: 状态层的几种视图靠 ``domain`` 区分；用一个判别联合而不是一个宽松模型，
+#: 免得某个域的字段悄悄串到另一个域。
+StateUnion = Annotated[
+    StateView | RosterStateView | TimelineStateView | ClueStateView | GlossaryStateView,
+    Field(discriminator="domain"),
+]
 
 
 class ReviewEvidenceView(BaseModel):
@@ -586,6 +734,35 @@ def create_file_workspace_router(
         if path is not None:
             records = tuple(record for record in records if record.source_path == path)
         return ChapterIndexView(items=[_index_item(record) for record in records])
+
+    @router.get("/{workspace_id}/state", response_model=StateUnion)
+    def workspace_state(
+        workspace_id: str,
+        domain: Literal["disclosure", "roster", "timeline", "clues", "glossary"] = Query(
+            default="disclosure"
+        ),
+    ) -> StateUnion:
+        """状态层按域返回：身份披露、人物状态、故事时间、线索台账、专有名词。
+
+        每个域分开返回，界面上也分栏显示：作者要能看出「这条是声明」还是「这条是原文核对
+        到的」，混成一份会让计划和事实互相冒充。破坏性冲突单列，不替作者裁决。
+        """
+        workspace = workspaces.workspace(workspace_id)
+        root = conversation_root(workspaces.root, workspace_id)
+        if domain == "roster":
+            roster = roster_view(build_roster(workspace, CharacterStateStore(root)))
+            return RosterStateView(**roster)  # type: ignore[arg-type]
+        if domain == "timeline":
+            timeline = timeline_view(build_timeline(workspace, TimelineStore(root)))
+            return TimelineStateView(**timeline)  # type: ignore[arg-type]
+        if domain == "clues":
+            clues = clues_view(build_clues(workspace, ClueStore(root)))
+            return ClueStateView(**clues)  # type: ignore[arg-type]
+        if domain == "glossary":
+            terms = glossary_view(build_glossary(workspace, GlossaryStore(root)))
+            return GlossaryStateView(**terms)  # type: ignore[arg-type]
+        state: DisclosureStateRecord = build_disclosure_state(workspace, DisclosureStore(root))
+        return StateView(**state_view(state))  # type: ignore[arg-type]
 
     @router.get("/{workspace_id}/reviews", response_model=ReviewListView)
     def list_reviews(

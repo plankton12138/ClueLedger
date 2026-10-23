@@ -459,3 +459,80 @@ def test_draft_context_rejects_unmanaged_reference(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "CONVERSATION_UI_TARGET_INVALID"
+
+
+def test_state_endpoint_lists_declared_identity(tmp_path: Path) -> None:
+    """身份状态按当前章节返回：已披露、未到章与计划披露分开，冲突单列。"""
+    client = _client(tmp_path)
+    root = tmp_path / "雪山旅馆"
+    workspace_id = _created(client, root)
+    (root / "正文/0001 雨夜.md").write_text("第一章 雨夜\n\n雪。\n", encoding="utf-8")
+    (root / "设定集/角色小传/林静.md").write_text(
+        "---\n"
+        "roles: [suspect]\n"
+        "surface: 被害人的主治医师\n"
+        "aliases: [林医生]\n"
+        "revealed: [1:主治医师, 6:与死者有旧怨]\n"
+        "planned: [9:凶手]\n"
+        "---\n\n# 林静\n\n手术灯下站了整夜。\n",
+        encoding="utf-8",
+    )
+
+    body = client.get(f"/api/file-workspaces/{workspace_id}/state").json()
+
+    assert body["domain"] == "disclosure"
+    assert body["current_chapter"] == 1
+    entity = body["entities"][0]
+    assert entity["name"] == "林静"
+    assert entity["surface"] == "被害人的主治医师"
+    assert entity["aliases"] == ["林医生"]
+    assert entity["revealed"] == [{"fact": "主治医师", "chapter": 1, "source": "declared"}]
+    assert entity["record_status"] is None
+    assert entity["verified"] == 0
+    assert entity["upcoming"] == [{"fact": "与死者有旧怨", "chapter": 6, "source": "declared"}]
+    assert entity["planned"] == [{"fact": "凶手", "chapter": 9, "source": "declared"}]
+    assert entity["overdue"] is False
+    assert body["conflicts"] == []
+
+
+def test_state_endpoint_switches_domains(tmp_path: Path) -> None:
+    """同一个入口按 domain 返回不同状态域，各有自己的形状。"""
+    client = _client(tmp_path)
+    root = tmp_path / "雪山旅馆"
+    workspace_id = _created(client, root)
+    (root / "正文/0001 雨夜.md").write_text("第一章 雨夜\n\n雪。\n", encoding="utf-8")
+    (root / "设定集/角色小传/林静.md").write_text(
+        "---\nroles: [suspect]\naliases: [林医生]\n---\n\n# 林静\n", encoding="utf-8"
+    )
+
+    roster = client.get(f"/api/file-workspaces/{workspace_id}/state?domain=roster").json()
+    timeline = client.get(f"/api/file-workspaces/{workspace_id}/state?domain=timeline").json()
+    glossary = client.get(f"/api/file-workspaces/{workspace_id}/state?domain=glossary").json()
+
+    assert roster["domain"] == "roster"
+    assert roster["characters"][0]["name"] == "林静"
+    # 还没有核对记录：位置未知、章节为空，但姓名与存活默认值可用。
+    assert roster["characters"][0]["chapter"] is None
+    assert roster["characters"][0]["alive"] is True
+
+    assert timeline["domain"] == "timeline"
+    assert timeline["entries"] == []
+    assert timeline["missing"] == [1]
+
+    assert glossary["domain"] == "glossary"
+    assert glossary["terms"][0]["term"] == "林静"
+    assert glossary["terms"][0]["source"] == "declared"
+
+
+def test_state_endpoint_lists_clue_ledger(tmp_path: Path) -> None:
+    """线索按状态分列，超期项单独给一份内容清单；没有记录时为空。"""
+    client = _client(tmp_path)
+    root = tmp_path / "雪山旅馆"
+    workspace_id = _created(client, root)
+    (root / "正文/0001 雨夜.md").write_text("第一章 雨夜\n\n雪。\n", encoding="utf-8")
+
+    empty = client.get(f"/api/file-workspaces/{workspace_id}/state?domain=clues").json()
+
+    assert empty["domain"] == "clues"
+    assert empty["entries"] == []
+    assert empty["overdue"] == []

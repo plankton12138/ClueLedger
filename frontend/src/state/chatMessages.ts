@@ -96,6 +96,17 @@ export interface ChatTurn {
   scope: TaskScope | null;
   /** 这一轮的检查报告摘要；没有检查时为 null。 */
   review: TurnReview | null;
+  /** 这一轮装配进提示词的分区；没有装配记录时为 null。 */
+  injection: TurnInjection | null;
+}
+
+/** 本轮注入：只记分区规模与跳过原因，不含注入正文。 */
+export interface TurnInjection {
+  profile: "writer" | "extract" | "review";
+  parts: { key: string; chars: number }[];
+  skipped: { key: string; reason: "budget" | "empty"; chars?: number }[];
+  limit: number;
+  used: number;
 }
 
 /** 一轮检查的结果：只放展示需要的内容，完整报告由接口回看。 */
@@ -143,6 +154,7 @@ const EMPTY_TURN = (id: string, at: string): ChatTurn => ({
   materials: [],
   scope: null,
   review: null,
+  injection: null,
 });
 
 // -- 结构更新：只替换受影响的节点 -------------------------------------------
@@ -392,6 +404,18 @@ export function appendEvent(turns: ChatTurn[], event: WorkspaceEvent): ChatTurn[
         // 只前进不后退：迟到的旧版本事件不能覆盖已经登记的更大版本。
         turn.scope && turn.scope.version > scope.version ? turn : { ...turn, scope },
       );
+    }
+    case "state_injected": {
+      return withTurn(turns, event.turn_id, (turn) => ({
+        ...turn,
+        injection: {
+          profile: event.profile,
+          parts: event.parts,
+          skipped: event.skipped,
+          limit: event.budget.limit,
+          used: event.budget.used,
+        },
+      }));
     }
     case "context_prepared": {
       const digests = new Map(event.references.map((item) => [item.path, item.digest]));

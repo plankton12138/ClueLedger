@@ -25,6 +25,7 @@ __all__ = [
     "ChapterMeta",
     "ChapterType",
     "CharacterMeta",
+    "DeclaredFact",
     "FrontMatter",
     "Role",
     "check_character_metadata",
@@ -133,6 +134,14 @@ class ChapterMeta:
 
 
 @dataclass(frozen=True, slots=True)
+class DeclaredFact:
+    """作者声明的一条身份披露：第 ``chapter`` 章起读者已知（或计划在该章披露）。"""
+
+    fact: str
+    chapter: int
+
+
+@dataclass(frozen=True, slots=True)
 class CharacterMeta:
     """一名角色的显示信息；``display_text`` 去掉了元信息，原文仍在 ``text``。"""
 
@@ -141,6 +150,10 @@ class CharacterMeta:
     roles: tuple[Role, ...]
     display_text: str
     warnings: tuple[str, ...] = ()
+    surface: str = ""
+    aliases: tuple[str, ...] = ()
+    revealed: tuple[DeclaredFact, ...] = ()
+    planned: tuple[DeclaredFact, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,12 +228,25 @@ def parse_character(path: str, text: str) -> CharacterMeta:
     front = split_front_matter(text)
     warnings = list(front.warnings)
     roles = _roles_from(front.fields, warnings) if front.present else ()
+    surface = ""
+    aliases: tuple[str, ...] = ()
+    revealed: tuple[DeclaredFact, ...] = ()
+    planned: tuple[DeclaredFact, ...] = ()
+    if front.present:
+        surface = _first(front.fields.get("surface"))
+        aliases = tuple(dict.fromkeys(front.fields.get("aliases", [])))
+        revealed = _facts_from(front.fields, "revealed", "已披露", warnings)
+        planned = _facts_from(front.fields, "planned", "计划披露", warnings)
     return CharacterMeta(
         path=path,
         title=_first_h1(front.body) or PurePosixPath(path).stem,
         roles=roles,
         display_text=front.body,
         warnings=tuple(warnings),
+        surface=surface,
+        aliases=aliases,
+        revealed=revealed,
+        planned=planned,
     )
 
 
@@ -236,6 +262,10 @@ def check_character_metadata(text: str) -> tuple[str, ...]:
     problems = list(front.warnings)
     if front.present:
         _roles_from(front.fields, problems)
+        if len(front.fields.get("surface", [])) > 1:
+            problems.append("surface 只能写一个社会身份；多个身份请写成披露条目。")
+        _facts_from(front.fields, "revealed", "已披露", problems)
+        _facts_from(front.fields, "planned", "计划披露", problems)
     return tuple(problems)
 
 
@@ -515,3 +545,42 @@ def _roles_from(fields: dict[str, list[str]], warnings: list[str]) -> tuple[Role
         if role not in roles:
             roles.append(role)
     return tuple(roles)
+
+
+def _first(values: list[str] | None) -> str:
+    """单值字段：只取第一项，多余的值由写入检查挡在落盘之前。"""
+    return values[0].strip() if values else ""
+
+
+def _facts_from(
+    fields: dict[str, list[str]],
+    key: str,
+    label: str,
+    warnings: list[str],
+) -> tuple[DeclaredFact, ...]:
+    """解析「章节号:事实」形式的披露条目；坏条目单独作废，不连累同一字段的其他条目。
+
+    格式必须是完整一项：章节号是正整数、事实非空。缺一半、章节号写成中文或条目里
+    又冒出一个冒号，都按该项作废并给诊断——解析器不替作者猜意思。
+    """
+    facts: list[DeclaredFact] = []
+    seen: set[tuple[int, str]] = set()
+    for value in fields.get(key, []):
+        chapter_text, sep, fact = value.partition(":")
+        fact = fact.strip()
+        chapter_text = chapter_text.strip()
+        if not sep or not fact:
+            warnings.append(
+                f"{label}条目「{value[:40]}」格式不对，已忽略；写法是「章节号:事实」，例如 9:凶手。"
+            )
+            continue
+        if not chapter_text.isdigit() or int(chapter_text) <= 0:
+            warnings.append(f"{label}条目「{value[:40]}」的章节号不是正整数，已忽略。")
+            continue
+        item = (int(chapter_text), fact)
+        if item in seen:
+            continue
+        seen.add(item)
+        facts.append(DeclaredFact(fact=fact, chapter=item[0]))
+    facts.sort(key=lambda declared: declared.chapter)
+    return tuple(facts)

@@ -13,6 +13,7 @@ import AssistantMessageView from "./AssistantMessageView";
 import ReviewReportView from "./ReviewReport";
 import TaskScopeDetails from "./TaskScopeDetails";
 import ToolActivity from "./ToolActivity";
+import TurnContextSummary from "./TurnContextSummary";
 import TurnMaterials from "./TurnMaterials";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -61,6 +62,7 @@ function ChatTurnView({
       </div>
 
       <TurnMaterials materials={turn.materials} />
+      {turn.injection && <TurnContextSummary injection={turn.injection} />}
       {turn.scope && <TaskScopeDetails scope={turn.scope} />}
 
       {turn.items.map((item) =>

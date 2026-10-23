@@ -21,6 +21,7 @@ import { useWorkspaceStore } from "../../state/workspace";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
 import ChangesDrawer from "./ChangesDrawer";
 import ChapterIndexPanel from "./ChapterIndexPanel";
+import StatePanel from "./StatePanel";
 import CharacterBadges from "./CharacterBadges";
 import ConversationPanel from "./ConversationPanel";
 import DirectoryDialog from "./DirectoryDialog";
@@ -93,6 +94,7 @@ export default function WorkspaceShell() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
+  const [stateOpen, setStateOpen] = useState(false);
   const [query, setQuery] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const current = bindings.find((binding) => binding.id === currentId);
@@ -191,6 +193,13 @@ export default function WorkspaceShell() {
         <button
           className="btn btn-gray px-2 py-1 text-[11px]"
           disabled={!currentId}
+          onClick={() => setStateOpen(true)}
+        >
+          状态
+        </button>
+        <button
+          className="btn btn-gray px-2 py-1 text-[11px]"
+          disabled={!currentId}
           onClick={() => void openDrawer()}
         >
           改动与历史
@@ -218,6 +227,7 @@ export default function WorkspaceShell() {
       )}
 
       <ChapterIndexPanel open={indexOpen} onClose={() => setIndexOpen(false)} />
+      <StatePanel open={stateOpen} onClose={() => setStateOpen(false)} />
 
       <main className="flex min-h-0 flex-1 overflow-hidden">
         <nav className="toc-pane flex min-h-0 flex-none flex-col" style={{ width: sidebarWidth }}>

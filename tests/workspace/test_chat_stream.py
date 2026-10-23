@@ -249,6 +249,8 @@ def test_deltas_are_readable_before_the_response_ends(
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     assert [event["type"] for event in events] == [
         "turn_started",
+        # 装配记录先落盘：配置与分区在模型开始输出之前就已经确定。
+        "state_injected",
         "run_phase",
         "assistant_started",
         "assistant_block_started",
@@ -260,14 +262,14 @@ def test_deltas_are_readable_before_the_response_ends(
         "run_finished",
     ]
     assert [event["phase"] for event in _of_type(events, "run_phase")] == ["model", "record"]
-    finished = events[5]
+    finished = events[6]
     assert finished["text"] == "旅馆的灯熄灭了。"  # 完整结束值覆盖增量
     assert finished["last_part"] == 0
     assert finished["completion"] == "completed"
     assert finished["duration_ms"] >= 0
-    assert events[6]["text"] == "旅馆的灯熄灭了。"
-    assert events[6]["completion"] == "completed"
-    assert events[7]["stop_reason"] == "stop"
+    assert events[7]["text"] == "旅馆的灯熄灭了。"
+    assert events[7]["completion"] == "completed"
+    assert events[8]["stop_reason"] == "stop"
 
 
 def test_idle_timer_flushes_without_waiting_for_the_next_token(

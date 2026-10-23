@@ -59,9 +59,9 @@ export interface ConversationEntry {
 /** 新对话草稿的固定槽位。 */
 export const NEW_DRAFT = "new";
 
-/** 发送选项：索引与检查都由界面明确发起，不靠模型从文字里猜。 */
+/** 发送选项：索引、检查与身份核对都由界面明确发起，不靠模型从文字里猜。 */
 export interface SendOptions {
-  purpose: "chat" | "update_chapter_index" | "review";
+  purpose: "chat" | "update_chapter_index" | "review" | "update_disclosure" | "update_state";
   indexPaths?: string[];
   reviewPaths?: string[];
 }
@@ -520,7 +520,10 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         text: trimmed,
         request_key: keyRequest,
         context: context ?? EMPTY_CONTEXT,
-        ...(options && options.purpose === "update_chapter_index"
+        ...(options &&
+        (options.purpose === "update_chapter_index" ||
+          options.purpose === "update_disclosure" ||
+          options.purpose === "update_state")
           ? { purpose: options.purpose, index_paths: options.indexPaths ?? [] }
           : {}),
         ...(options && options.purpose === "review"

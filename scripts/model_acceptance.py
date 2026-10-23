@@ -18,19 +18,29 @@ from hastings.server.__main__ import DEFAULT_CONFIG_PATH, build_credential_store
 from hastings.server.file_app import configured_provider_factory
 from hastings.server.provider_runtime import is_loopback_url
 from hastings.workspace.chapter_index import ChapterIndexStore
+from hastings.workspace.character_states import CharacterStateStore, build_roster
+from hastings.workspace.clues import ClueStore, build_clues
+from hastings.workspace.disclosure import (
+    DisclosureStore,
+    ObservedEvidence,
+    build_disclosure_state,
+)
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
+from hastings.workspace.glossary import GlossaryStore
 from hastings.workspace.materials import ContextRequest, merge_spans
 from hastings.workspace.review import ReviewStore
 from hastings.workspace.service import TurnService
 from hastings.workspace.state import ConversationStore, conversation_root
+from hastings.workspace.timeline import TimelineStore, build_timeline
 
 FIRST = "正文/0001 雨夜.md"
 SECOND = "正文/0002 走廊.md"
 THIRD = "正文/0003 书房.md"
 FOURTH = "正文/0004 客房.md"
 CHARACTER = "设定集/角色小传/林远.md"
+MANAGER = "设定集/角色小传/管家.md"
 TRUTH = "设定集/真相.md"
 CLUES = "设定集/线索.md"
 _FIXTURES = {
@@ -64,6 +74,12 @@ class Case:
     change_source: bool = False
     clarification: bool = False
     require_review: bool = False
+    #: 状态核对样例：核对域、允许写入记录的小传、禁止登记的措辞、核对轮要读的原文。
+    domain: str | None = None
+    docs: tuple[str, ...] = ()
+    forbid_state_text: tuple[str, ...] = ()
+    inject_parts: tuple[str, ...] = ()
+    reads_first: bool = False
 
 
 CASES = (
@@ -190,6 +206,88 @@ CASES = (
         required_changes=(THIRD,),
         require_review=True,
         expected_text={THIRD: "窗外又飘起雪"},
+    ),
+    Case(
+        "disclosure_extract",
+        "状态核对",
+        "核对身份披露并注入下一轮",
+        "核对读者对林远的身份已知到什么程度：读取第一到第三章，把正文里明确写出、读者已经知道的"
+        "身份事实登记到林远的小传上。小传里没写到、正文也没写出的不要登记。只核对林远，"
+        "不改任何作品文件。",
+        purpose="update_disclosure",
+        index_paths=(CHARACTER,),
+        fixtures={
+            FIRST: "# 雨夜\n\n林远以私家侦探的身份登记住店。\n",
+            SECOND: "# 走廊\n\n林远对掌柜说，他以前在刑警队待过。\n",
+            THIRD: "# 书房\n\n林远没有说出他与死者之间的旧怨。\n",
+        },
+        domain="disclosure",
+        docs=(CHARACTER,),
+        forbid_state_text=("旧怨",),
+        inject_parts=("state",),
+        reads_first=True,
+        expected_reads=(FIRST, SECOND),
+        follow_up="第四章准备开写。先说明读者目前知道林远的哪些身份信息，不要改任何文件。",
+    ),
+    Case(
+        "state_and_timeline",
+        "状态核对",
+        "核对人物状态与故事时间并注入下一轮",
+        "核对第三章结束时的人物状态与故事时间：读取第二、三章，登记林远和管家第三章结束时在哪、"
+        "是否还活着，以及第三章发生在什么时候。只核对这两位，不改任何作品文件。",
+        purpose="update_state",
+        index_paths=(CHARACTER, MANAGER),
+        fixtures={
+            SECOND: "# 走廊\n\n傍晚，林远在走廊尽头遇见管家。\n",
+            THIRD: "# 书房\n\n深夜十一点，林远和管家在书房门口相遇。管家说他已经知道真相。\n",
+            CHARACTER: "# 林远\n\n身份：私家侦探。曾经担任刑警。\n",
+            MANAGER: "# 管家\n\n身份：旅馆管家。与死者共事多年。\n",
+        },
+        domain="roster",
+        docs=(CHARACTER, MANAGER),
+        inject_parts=("roster", "timeline"),
+        reads_first=True,
+        expected_reads=(SECOND, THIRD),
+        follow_up="第四章准备写林远在客房醒来。先说明他此刻应该在哪、故事时间是什么时候，"
+        "不要改任何文件。",
+    ),
+    Case(
+        "glossary_extract",
+        "状态核对",
+        "核对原文专名并注入下一轮",
+        "核对专名：读取第一章，把正文里确实出现过的地名、组织、物件登记进词典"
+        "（人物名不用登记，人物由小传声明）。只核对林远这条线，不改任何作品文件。",
+        purpose="update_state",
+        index_paths=(CHARACTER,),
+        fixtures={
+            FIRST: "# 雨夜\n\n林远撑伞走进青梧旅馆，大堂里挂着临江旅业公司的铜牌。\n",
+        },
+        domain="glossary",
+        docs=(CHARACTER,),
+        inject_parts=("glossary",),
+        reads_first=True,
+        expected_reads=(FIRST,),
+        follow_up="第二章要写林远在旅馆大堂与人接头。先列出这一章可以用的专有名词，"
+        "不要改任何文件。",
+    ),
+    Case(
+        "clue_plant",
+        "状态核对",
+        "核对埋设线索并确认超期未回收",
+        "核对第一章里读者能观察到的线索：读取第一章，把『前台的手套是湿的』登记为一条线索，"
+        "计划在第二章回收（现在已经写到第三章，它还没被回收）。这一轮只核对林远这条线，"
+        "不改任何作品文件。",
+        purpose="update_state",
+        index_paths=(CHARACTER,),
+        fixtures={
+            FIRST: "# 雨夜\n\n前台的手套是湿的，林远记下了这一点。\n",
+        },
+        domain="clues",
+        docs=(CHARACTER,),
+        inject_parts=("clues",),
+        reads_first=True,
+        expected_reads=(FIRST,),
+        follow_up="第四章要开写，先说说还欠读者哪些线索，不要改任何文件。",
     ),
 )
 
@@ -337,6 +435,171 @@ def _review_checks(
     return rows
 
 
+def _evidence_matches(workspace: Workspace, evidence: ObservedEvidence) -> bool:
+    """证据是否仍然指向当前原文：版本一致、区间可读、引文与区间逐字相同。"""
+    try:
+        view = workspace.read(evidence.path)
+    except WorkspaceError:
+        return False
+    if view.digest != evidence.digest or evidence.start > evidence.end:
+        return False
+    window = view.text[evidence.start : evidence.end]
+    return " ".join(window.split()) == " ".join(evidence.quote.split())
+
+
+def _injected_keys(events: list[dict[str, Any]]) -> set[str]:
+    event: dict[str, Any] = next(
+        (e for e in reversed(events) if e.get("type") == "state_injected"), {}
+    )
+    return {str(p.get("key")) for p in event.get("parts", []) if isinstance(p, dict)}
+
+
+def _state_checks(
+    case: Case, workspace: Workspace, store: ConversationStore, follow: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """核对轮发布的状态记录：归属、章号、证据，以及下一轮是否真的装进上下文。"""
+    root = store.root
+    rows: list[dict[str, Any]] = []
+    if case.domain == "disclosure":
+        facts = DisclosureStore(root).entries()
+        rows.append(_check("核对轮发布了披露记录", bool(facts), len(facts)))
+        rows.append(
+            _check(
+                "记录只归属选中的小传",
+                all(f.entity_path in case.docs for f in facts),
+                sorted({f.entity_path for f in facts}),
+            )
+        )
+        rows.append(
+            _check(
+                "记录章号在已写章节内",
+                all(1 <= f.chapter <= 3 for f in facts),
+                sorted({f.chapter for f in facts}),
+            )
+        )
+        bad = [f.fact for f in facts if not _evidence_matches(workspace, f.evidence)]
+        rows.append(_check("记录证据与当前原文一致", not bad, bad))
+        state = build_disclosure_state(workspace, DisclosureStore(root))
+        verified = sum(entity.verified for entity in state.entities)
+        rows.append(_check("记录被状态采用", verified > 0, verified))
+        leaked = [f.fact for f in facts if any(t in f.fact for t in case.forbid_state_text)]
+        rows.append(_check("未把正文没写的事实记为已披露", not leaked, leaked))
+    elif case.domain == "roster":
+        snapshots = CharacterStateStore(root).entries()
+        rows.append(_check("核对轮发布了人物状态", bool(snapshots), len(snapshots)))
+        rows.append(
+            _check(
+                "状态只归属选中的小传",
+                all(s.entity_path in case.docs for s in snapshots),
+                sorted({s.entity_path for s in snapshots}),
+            )
+        )
+        rows.append(
+            _check(
+                "状态章号在已写章节内",
+                all(1 <= s.chapter <= 3 for s in snapshots),
+                sorted({s.chapter for s in snapshots}),
+            )
+        )
+        bad = [s.entity_path for s in snapshots if not _evidence_matches(workspace, s.evidence)]
+        rows.append(_check("状态证据与当前原文一致", not bad, bad))
+        roster = build_roster(workspace, CharacterStateStore(root))
+        rows.append(
+            _check(
+                "状态被采用",
+                bool(roster.known()) and not any(c.stale for c in roster.characters),
+                [c.name for c in roster.known()],
+            )
+        )
+        anchors = TimelineStore(root).entries()
+        rows.append(_check("核对轮发布了时间锚点", bool(anchors), len(anchors)))
+        bad_time = [a.chapter for a in anchors if not _evidence_matches(workspace, a.evidence)]
+        rows.append(_check("时间锚点证据与当前原文一致", not bad_time, bad_time))
+        timeline = build_timeline(workspace, TimelineStore(root))
+        rows.append(
+            _check(
+                "时间锚点被采用",
+                bool(timeline.entries),
+                [a.when for a in timeline.entries],
+            )
+        )
+    elif case.domain == "glossary":
+        terms = GlossaryStore(root).entries()
+        rows.append(_check("核对轮发布了词典条目", bool(terms), len(terms)))
+        rows.append(
+            _check(
+                "条目都来自原文登记",
+                all(t.source == "text" for t in terms),
+                [(t.term, t.source) for t in terms],
+            )
+        )
+        rows.append(
+            _check(
+                "条目种类不是人物",
+                all(t.kind in ("place", "org", "item") for t in terms),
+                [(t.term, t.kind) for t in terms],
+            )
+        )
+        rows.append(
+            _check(
+                "条目首现章在已写章节内",
+                all(1 <= t.first_chapter <= 3 for t in terms),
+                sorted({t.first_chapter for t in terms}),
+            )
+        )
+        bad = [
+            t.term for t in terms if t.evidence is None or not _evidence_matches(
+                workspace, t.evidence
+            )
+        ]
+        rows.append(_check("条目证据与当前原文一致", not bad, bad))
+        store_terms = GlossaryStore(root)
+        invalid = [
+            t.term for t in terms if store_terms.status(workspace, t) != "valid"
+        ]
+        rows.append(_check("条目被状态采用", not invalid, invalid))
+    elif case.domain == "clues":
+        entries = ClueStore(root).entries()
+        rows.append(_check("核对轮发布了线索", bool(entries), len(entries)))
+        rows.append(
+            _check(
+                "线索埋设章在已写章节内",
+                all(1 <= e.planted_chapter <= 3 for e in entries),
+                sorted({e.planted_chapter for e in entries}),
+            )
+        )
+        rows.append(
+            _check(
+                "线索计划回收章按原文要求",
+                any(e.due_chapter == 2 for e in entries),
+                [(e.clue, e.due_chapter) for e in entries],
+            )
+        )
+        bad = [e.clue for e in entries if not _evidence_matches(workspace, e.evidence)]
+        rows.append(_check("线索证据与当前原文一致", not bad, bad))
+        clue_state = build_clues(workspace, ClueStore(root))
+        rows.append(
+            _check("线索被采用", bool(clue_state.open), [e.clue for e in clue_state.open])
+        )
+        rows.append(
+            _check(
+                "超期线索进入未回收名单",
+                bool(clue_state.overdue()),
+                [e.clue for e in clue_state.overdue()],
+            )
+        )
+    if case.inject_parts:
+        parts = _injected_keys(follow)
+        rows.append(
+            _check(
+                "下一轮注入了核对结果",
+                set(case.inject_parts) <= parts,
+                {"want": list(case.inject_parts), "parts": sorted(parts)},
+            )
+        )
+    return rows
+
+
 def _checks(
     case: Case,
     workspace: Workspace,
@@ -368,7 +631,7 @@ def _checks(
     rows.append(_check("没有范围外改动", not outside, outside))
     missing = sorted(set(case.required_changes) - set(changed))
     rows.append(_check("要求修改的文件确实改变", not missing, missing))
-    active = follow if case.follow_up else events
+    active = follow if case.follow_up and not case.reads_first else events
     for path in case.expected_reads:
         rows.append(
             _check(f"读取原文:{path}", path in _read_paths(active), sorted(_read_paths(active)))
@@ -402,7 +665,7 @@ def _checks(
                 required=False,
             )
         )
-    if case.index_paths:
+    if case.purpose == "update_chapter_index":
         rows.append(_check("索引轮没有改作品", initial_changed == [], initial_changed))
         rows.append(
             _check(
@@ -447,6 +710,8 @@ def _checks(
             )
     if case.require_review:
         rows.extend(_review_checks(events, workspace, store))
+    if case.domain:
+        rows.extend(_state_checks(case, workspace, store, follow))
     return rows
 
 
@@ -460,6 +725,7 @@ def _brief(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "task_scope_extended",
         "tool_finished",
         "chapter_index_updated",
+        "state_injected",
         "review_requested",
         "review_finished",
         "run_finished",

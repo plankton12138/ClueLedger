@@ -740,4 +740,62 @@ describe("草稿与列表", () => {
       }),
     );
   });
+
+  it("身份核对把用途与小传一起提交", async () => {
+    await useConversationsStore.getState().load("w1");
+    api.createConversationWithText.mockResolvedValue({
+      conversation_id: "c4",
+      turn_id: "t4",
+      started_at: "2026-10-23T10:00:00+08:00",
+      title: "核对人物身份",
+      request_key: "k3",
+    });
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+    useConversationsStore.getState().newConversation();
+
+    await useConversationsStore.getState().send("核对人物身份：林静", undefined, {
+      purpose: "update_disclosure",
+      indexPaths: ["设定集/角色小传/林静.md"],
+    });
+
+    expect(api.createConversationWithText).toHaveBeenCalledWith(
+      "w1",
+      expect.objectContaining({
+        purpose: "update_disclosure",
+        index_paths: ["设定集/角色小传/林静.md"],
+      }),
+    );
+  });
+
+  it("人物状态核对用 update_state 提交同一批小传", async () => {
+    await useConversationsStore.getState().load("w1");
+    api.createConversationWithText.mockResolvedValue({
+      conversation_id: "c5",
+      turn_id: "t5",
+      started_at: "2026-10-23T11:00:00+08:00",
+      title: "核对人物状态",
+      request_key: "k4",
+    });
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+    useConversationsStore.getState().newConversation();
+
+    await useConversationsStore.getState().send("核对人物状态与时间：林静", undefined, {
+      purpose: "update_state",
+      indexPaths: ["设定集/角色小传/林静.md"],
+    });
+
+    expect(api.createConversationWithText).toHaveBeenCalledWith(
+      "w1",
+      expect.objectContaining({
+        purpose: "update_state",
+        index_paths: ["设定集/角色小传/林静.md"],
+      }),
+    );
+  });
 });

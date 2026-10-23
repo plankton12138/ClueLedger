@@ -32,11 +32,15 @@ from hastings.workspace.chapter_index import (
     ChapterIndexStore,
     index_injection,
 )
+from hastings.workspace.character_states import CharacterStateStore
 from hastings.workspace.chat_stream import ChatStreamBridge, repair_interrupted_stream
+from hastings.workspace.clues import ClueStore
 from hastings.workspace.context import materials_section
+from hastings.workspace.disclosure import DisclosureStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
+from hastings.workspace.glossary import GlossaryStore
 from hastings.workspace.materials import (
     ContextRequest,
     ContextSnapshot,
@@ -48,6 +52,7 @@ from hastings.workspace.materials import (
 )
 from hastings.workspace.review import ReviewStore, target_digests
 from hastings.workspace.state import ConversationStore
+from hastings.workspace.timeline import TimelineStore
 from tau_agent.events import (
     MessageEndEvent,
     MessageStartEvent,
@@ -209,11 +214,13 @@ def _summary(instruction: str) -> str:
     return collapsed[:_MAX_SUMMARY]
 
 
-def _tool_mode(purpose: str) -> Literal["write", "index", "review"]:
+def _tool_mode(purpose: str) -> Literal["write", "index", "review", "state"]:
     if purpose == "update_chapter_index":
         return "index"
     if purpose == "review":
         return "review"
+    if purpose in ("update_disclosure", "update_state"):
+        return "state"
     return "write"
 
 
@@ -590,6 +597,23 @@ class TurnService:
                     fix="要更新索引或发起检查时使用对应用途，并选择目标",
                 )
             return (), ()
+        if purpose in ("update_disclosure", "update_state"):
+            if not targets:
+                raise WorkspaceError(
+                    code="STATE_SCOPE_INVALID",
+                    where="turns.accept",
+                    why="核对状态需要选择要读的角色小传",
+                    fix="选择 1 到 10 份小传后再发起",
+                )
+            if len(targets) > MAX_INDEX_CHAPTERS:
+                raise WorkspaceError(
+                    code="STATE_SCOPE_INVALID",
+                    where="turns.accept",
+                    why=f"一次最多核对 {MAX_INDEX_CHAPTERS} 份小传，这次有 {len(targets)} 份",
+                    fix="分几次核对，每次不超过 10 份",
+                    details={"limit": MAX_INDEX_CHAPTERS, "count": len(targets)},
+                )
+            return targets, ()
         if purpose != "update_chapter_index":
             raise WorkspaceError(
                 code="CHAPTER_INDEX_SCOPE_INVALID",
@@ -723,7 +747,7 @@ class TurnService:
         failure: Exception | None = None,
     ) -> None:
         # 局部导入：agent 依赖本模块的 WriteSession，顶层导入会成环。
-        from hastings.workspace.agent import RunContext, build_harness
+        from hastings.workspace.agent import RunContext, build_harness, build_turn_assembly
         from hastings.workspace.conversation_context import (
             execution_facts,
             replay_public_messages,
@@ -819,6 +843,32 @@ class TurnService:
                             "targets": list(info.review_paths),
                         },
                     )
+                # 装配一次，记一次：事件里的注入内容与实际发给模型的内容必须是同一份结果。
+                mode = _tool_mode(info.purpose)
+                disclosure_store = DisclosureStore(self.store.root)
+                glossary_store = GlossaryStore(self.store.root)
+                roster_store = CharacterStateStore(self.store.root)
+                timeline_store = TimelineStore(self.store.root)
+                clue_store = ClueStore(self.store.root)
+                assembly = build_turn_assembly(
+                    self.workspace,
+                    mode=mode,
+                    history_facts=execution_facts(history_events),
+                    materials=materials_section(info.context, ledger.summaries()),
+                    index_notes=index_notes,
+                    disclosure_store=disclosure_store,
+                    glossary_store=glossary_store,
+                    roster_store=roster_store,
+                    timeline_store=timeline_store,
+                    clue_store=clue_store,
+                )
+                _append_event(
+                    self.store,
+                    conversation_id,
+                    info.turn_id,
+                    "state_injected",
+                    assembly.summary(),
+                )
                 # provider、model、system、工具清单和历史在这里合并成一次可执行配置。
                 # 工具清单由 build_harness 内部调用 build_tools() 注入，_run 不直接持有。
                 harness = build_harness(
@@ -831,9 +881,15 @@ class TurnService:
                     history_facts=execution_facts(history_events),
                     materials=materials_section(info.context, ledger.summaries()),
                     index_notes=index_notes,
-                    mode=_tool_mode(info.purpose),
+                    mode=mode,
+                    assembly=assembly,
                     index_allowed=info.index_paths,
                     index_store=index_store,
+                    disclosure_store=disclosure_store,
+                    glossary_store=glossary_store,
+                    roster_store=roster_store,
+                    timeline_store=timeline_store,
+                    clue_store=clue_store,
                     review_targets=info.review_paths,
                     review_store=review_store,
                 )
@@ -949,9 +1005,7 @@ class TurnService:
             return False
         remaining = max(self.max_turns - turns_used, 0)
         if remaining <= 0:
-            self._append_review_incomplete(
-                info, "写作阶段已用完本轮的回合上限，没有进入检查阶段"
-            )
+            self._append_review_incomplete(info, "写作阶段已用完本轮的回合上限，没有进入检查阶段")
             return False
         targets = request.targets or _written_targets(run)
         if not targets:
@@ -1057,9 +1111,7 @@ class TurnService:
                 if event is done:
                     break
                 truncated = (
-                    self._handle_agent_event(
-                        event, info, bridge, tools, turns_used=turns_used
-                    )
+                    self._handle_agent_event(event, info, bridge, tools, turns_used=turns_used)
                     or truncated
                 )
                 bridge.flush_due()

@@ -370,3 +370,256 @@ async def test_register_references_rejects_other_kinds(tmp_path: Path) -> None:
             references=[{"path": "正文/0002 参考章.md", "kind": "author_selected"}],
         )
     assert _code(invalid) == "REFERENCE_KIND_INVALID"
+
+
+@pytest.mark.anyio
+async def test_save_disclosure_requires_matching_evidence(tmp_path: Path) -> None:
+    """核对工具只接受对得上原文的条目：引文不一致时整批拒绝，不留下半份记录。"""
+    from hastings.workspace.disclosure import DisclosureStore
+    from hastings.workspace.glossary import GlossaryStore
+
+    workspace, _, _ = _setup(tmp_path)
+    workspace.write(
+        "设定集/角色小传/林静.md",
+        "---\nroles: [suspect]\n---\n\n# 林静\n",
+        expected_digest=None,
+    )
+    chapter = workspace.write(
+        "正文/0003 旧怨.md", "第三章 旧怨\n\n她说出了那个名字。\n", expected_digest=None
+    )
+    person = workspace.read("设定集/角色小传/林静.md")
+    run = RunContext(workspace, WriteSession(workspace, instruction="核对身份"))
+    store = DisclosureStore(tmp_path / "state")
+    tools = {
+        tool.name: tool
+        for tool in build_tools(
+            workspace,
+            run,
+            mode="state",
+            index_allowed=("设定集/角色小传/林静.md",),
+            disclosure_store=store,
+            glossary_store=GlossaryStore(tmp_path / "state"),
+        )
+    }
+    assert set(tools) == {
+        "list_files",
+        "read_file",
+        "search_text",
+        "read_state",
+        "save_disclosure",
+        "save_glossary_term",
+        "save_character_state",
+        "save_timeline",
+        "save_clues",
+    }
+
+    start = chapter.text.index("她说出了那个名字。")
+    good = {
+        "entity": "设定集/角色小传/林静.md",
+        "entity_digest": person.digest,
+        "facts": [
+            {
+                "fact": "与死者有旧怨",
+                "chapter": 3,
+                "evidence": {
+                    "path": chapter.path,
+                    "digest": chapter.digest,
+                    "start": start,
+                    "end": start + len("她说出了那个名字。"),
+                    "quote": "她说出了那个名字。",
+                },
+            }
+        ],
+    }
+    body = await _call(tools["save_disclosure"], **good)
+    assert body["published"] == 1
+    assert len(store.entries()) == 1
+
+    overview = await _call(tools["read_state"])
+    assert overview["current_chapter"] == 3
+    assert overview["entities"][0]["revealed"] == [
+        {"fact": "与死者有旧怨", "chapter": 3, "source": "text"}
+    ]
+
+    detail = await _call(tools["read_state"], entity="设定集/角色小传/林静.md")
+    assert detail["record_status"] == "valid"
+    assert detail["evidence"][0]["quote"] == "她说出了那个名字。"
+
+    term = await _call(
+        tools["save_glossary_term"],
+        term="旧宅",
+        kind="place",
+        first_chapter=3,
+        evidence={
+            "path": chapter.path,
+            "digest": chapter.digest,
+            "start": start,
+            "end": start + len("她说出了那个名字。"),
+            "quote": "她说出了那个名字。",
+        },
+    )
+    assert term["total"] >= 1
+
+    bad = {
+        **good,
+        "facts": [
+            {
+                **good["facts"][0],
+                "evidence": {**good["facts"][0]["evidence"], "quote": "她说出了名字。"},
+            }
+        ],
+    }
+    with pytest.raises(WorkspaceError) as excinfo:
+        await _call(tools["save_disclosure"], **bad)
+    assert _code(excinfo) == "STATE_EVIDENCE_INVALID"
+
+    with pytest.raises(WorkspaceError) as excinfo:
+        await _call(tools["save_disclosure"], **{**good, "entity": "设定集/角色小传/周岚.md"})
+    assert _code(excinfo) == "STATE_ENTITY_INVALID"
+
+
+@pytest.mark.anyio
+async def test_save_character_state_and_timeline(tmp_path: Path) -> None:
+    """两个状态工具都要求原文依据，并能在 read_state 里按域读回来。"""
+    from hastings.workspace.character_states import CharacterStateStore
+    from hastings.workspace.timeline import TimelineStore
+
+    workspace, _, _ = _setup(tmp_path)
+    workspace.write(
+        "设定集/角色小传/林静.md",
+        "---\nroles: [suspect]\n---\n\n# 林静\n",
+        expected_digest=None,
+    )
+    chapter = workspace.write(
+        "正文/0003 旧怨.md",
+        "第三章 旧怨\n\n十月二十一日深夜，她死在书房。\n",
+        expected_digest=None,
+    )
+    person = workspace.read("设定集/角色小传/林静.md")
+    run = RunContext(workspace, WriteSession(workspace, instruction="核对状态"))
+    state_root = tmp_path / "state"
+    roster_store = CharacterStateStore(state_root)
+    timeline_store = TimelineStore(state_root)
+    tools = {
+        tool.name: tool
+        for tool in build_tools(
+            workspace,
+            run,
+            mode="state",
+            index_allowed=("设定集/角色小传/林静.md",),
+            roster_store=roster_store,
+            timeline_store=timeline_store,
+        )
+    }
+    assert {"save_character_state", "save_timeline", "read_state"} <= set(tools)
+
+    quote = "她死在书房。"
+    start = chapter.text.index(quote)
+    evidence = {
+        "path": chapter.path,
+        "digest": chapter.digest,
+        "start": start,
+        "end": start + len(quote),
+        "quote": quote,
+    }
+
+    saved = await _call(
+        tools["save_character_state"],
+        entity="设定集/角色小传/林静.md",
+        entity_digest=person.digest,
+        states=[
+            {
+                "chapter": 3,
+                "location": "书房",
+                "alive": False,
+                "stance": "",
+                "evidence": evidence,
+            }
+        ],
+    )
+    assert saved["published"] == 1
+
+    anchor = await _call(
+        tools["save_timeline"],
+        entries=[
+            {
+                "chapter": 3,
+                "when": "十月二十一日深夜",
+                "span": "一夜",
+                "location": "雪山旅馆",
+                "evidence": evidence,
+            }
+        ],
+    )
+    assert anchor["total"] == 1
+
+    roster = await _call(tools["read_state"], domain="roster")
+    assert roster["characters"][0]["alive"] is False
+    assert roster["characters"][0]["location"] == "书房"
+
+    timeline = await _call(tools["read_state"], domain="timeline")
+    assert timeline["entries"][0]["when"] == "十月二十一日深夜"
+
+    with pytest.raises(WorkspaceError) as excinfo:
+        await _call(tools["read_state"], domain="unknown")
+    assert "domain" in str(excinfo.value)
+
+
+@pytest.mark.anyio
+async def test_save_clues_rejects_resolved_without_evidence(tmp_path: Path) -> None:
+    """标为已回收却没给回收处：整批拒绝，并通过 read_state 读到台账。"""
+    from hastings.workspace.clues import ClueStore
+
+    workspace, _, _ = _setup(tmp_path)
+    chapter = workspace.write(
+        "正文/0001 雨夜.md", "第一章 雨夜\n\n门锁内侧有擦痕。\n", expected_digest=None
+    )
+    run = RunContext(workspace, WriteSession(workspace, instruction="核对状态"))
+    clue_store = ClueStore(tmp_path / "state")
+    tools = {
+        tool.name: tool for tool in build_tools(workspace, run, mode="state", clue_store=clue_store)
+    }
+    assert "save_clues" in tools
+
+    quote = "门锁内侧有擦痕。"
+    start = chapter.text.index(quote)
+    evidence = {
+        "path": chapter.path,
+        "digest": chapter.digest,
+        "start": start,
+        "end": start + len(quote),
+        "quote": quote,
+    }
+
+    with pytest.raises(WorkspaceError) as excinfo:
+        await _call(
+            tools["save_clues"],
+            entries=[
+                {
+                    "clue": "门锁内侧有擦痕",
+                    "planted_chapter": 1,
+                    "status": "resolved",
+                    "evidence": evidence,
+                }
+            ],
+        )
+    assert _code(excinfo) == "STATE_EVIDENCE_INVALID"
+
+    saved = await _call(
+        tools["save_clues"],
+        entries=[
+            {
+                "clue": "门锁内侧有擦痕",
+                "planted_chapter": 1,
+                "due_chapter": 3,
+                "status": "open",
+                "supports": "凶手从内侧开门",
+                "evidence": evidence,
+            }
+        ],
+    )
+    assert saved["published"] == 1
+
+    view = await _call(tools["read_state"], domain="clues")
+    assert view["entries"][0]["clue"] == "门锁内侧有擦痕"
+    assert view["overdue"] == []

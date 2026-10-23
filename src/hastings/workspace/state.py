@@ -42,6 +42,7 @@ __all__ = [
     "WorkspaceBinding",
     "conversation_root",
     "default_state_root",
+    "workspace_state_root",
 ]
 
 #: 应用状态目录：聊天、最近目录、运行事件都在这里；不含作品正文。
@@ -199,9 +200,14 @@ class RecentWorkspaces:
 # -- 会话与事件 -------------------------------------------------------------
 
 
-def conversation_root(state_root: Path, workspace_id: str) -> Path:
-    """一个作品在应用状态目录里的位置：按绑定 ID 分开，互不干扰。"""
+def workspace_state_root(state_root: Path, workspace_id: str) -> Path:
+    """一个作品在应用状态目录里的位置：会话、报告、索引与后续状态账本共用。"""
     return Path(state_root) / "workspaces" / workspace_id
+
+
+def conversation_root(state_root: Path, workspace_id: str) -> Path:
+    """旧名保留一个版本：路径与 ``workspace_state_root`` 相同，不做数据迁移。"""
+    return workspace_state_root(state_root, workspace_id)
 
 
 @dataclass(frozen=True, slots=True)

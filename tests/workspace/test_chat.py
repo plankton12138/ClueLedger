@@ -262,6 +262,31 @@ def test_discussion_turn_changes_no_files(
     assert GitRepo(root).head() == head
 
 
+def test_injection_event_matches_the_system_prompt(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """装配结果与事件同源：事件里记的分区，就是系统提示里实际出现的那几块。"""
+    provider = ScriptedProvider([_text_turn("第三人称更合适。")])
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    conversation_id = _accept(client, workspace_id, "这个故事用什么视角好？")["conversation_id"]
+
+    events = _wait_until(client, workspace_id, conversation_id, _finished)
+    injected = next(event for event in events if event["type"] == "state_injected")
+    assert injected["profile"] == "writer"
+    assert [part["key"] for part in injected["parts"]][:2] == ["instructions", "catalog"]
+    assert all(part["chars"] > 0 for part in injected["parts"])
+    assert injected["skipped"] == []
+    assert injected["budget"]["used"] > 0
+
+    # 事件说的分区确实出现在发给模型的系统提示里。
+    system = provider.requests[0]["system"]
+    for part in injected["parts"]:
+        assert f"chars={part['chars']}" not in system  # 事件只记规模，不复制正文
+    assert "## 设定集内容" in system
+    assert "## 当前作品" in system
+
+
 def test_model_error_fails_the_turn_instead_of_reporting_done(
     tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
 ) -> None:
