@@ -1,0 +1,59 @@
+# F4：条目级候选与排除原因
+
+日期：2026-10-24。目标：把提示词里会截断的列表分区改成「条目记账」——没装进去的候选
+保留 id、原因、完整渲染字符数与继续查看的入口，而不是只留一句「还有 N 条」。
+
+## 实际改动
+
+- `assembly.Exclusion`：一条没进入本轮上下文的候选，字段为 `id`、`reason`
+  （`budget`／`limit`）、`chars`、`location`；`Partition` 增加 `excluded` 元组。
+- `AssembledContext.summary()` 在有排除项的分区里写 `excluded` 列表；没有排除项的分区
+  形状不变，`state_injected` 仍只记身份与规模，不复制条目正文。
+- 五处会截断的装配入口在生成文本的同时登记排除项：
+  - 章节索引（`chapter_index.index_injection`）：超预算时从当前章起全部记为 `budget`，
+    入口为 `read_file <章节路径>`。
+  - 线索（`clues_section`）：超出条数记 `limit`，超出字符记 `budget`，入口为
+    `read_state domain=clues`。
+  - 人物状态（`roster_section`）：同上，入口为 `read_state domain=roster`。
+  - 故事时间（`timeline_section`）：早于最近几章的记 `limit`，超预算后只留最近一章，
+    被丢的记 `budget`，入口为 `read_state domain=timeline`。
+  - 专名（`glossary_section`）：每类超出条数记 `limit`，入口为 `read_state domain=glossary`；
+    文本末尾补一句「还有 N 个专名未列出」，不再静默丢名字。
+- `context.build_assembled_context` 把各分区的排除项挂回对应 `Partition`；
+  索引分区的排除项由服务层在生成 `index_notes` 时收集后传入。
+
+## 接口与数据
+
+- 没有新增 HTTP 路由；`state_injected.parts[i]` 在原本的 `key`／`chars` 之外可能多一个
+  `excluded` 数组。前端未接这一字段，现有读取不受影响。
+- 排除项只描述「没给什么」，不产生读取授权；继续查看仍走原来的只读工具与 `read_state`。
+
+## 取舍
+
+- **分开记账而不是加预算**：条目被裁掉是设计的一部分，把预算调大只会推迟问题；记录原因
+  让作者能判断是「本来没有」还是「这一轮没装下」。
+- **只记定位，不塞正文**：排除项不带原文片段，避免事件日志变成第二份上下文；需要原文时
+  按 `location` 重新读取，读取区间照常进入材料账本。
+- **required 不进可选池**：作者明确指定的材料仍按分区必装／预读规则处理，不参与这里的
+  条目裁减，因此不会被降级成 optional 或被半句截断。
+- **文本与记录同源**：模型可见的「还有 N 条」与实际排除项来自同一次截断循环，不另算一遍。
+
+## 验证
+
+| 范围 | 命令 | 结果 |
+|---|---|---|
+| 装配与分区专项 | `uv run pytest -q tests/workspace/test_assembly.py tests/workspace/test_context_budget.py tests/workspace/test_clues.py tests/workspace/test_character_states.py tests/workspace/test_timeline.py tests/workspace/test_glossary.py tests/workspace/test_chapter_index.py` | 76 passed |
+| 静态检查 | `uv run ruff check src/hastings tests` | 通过 |
+| 类型检查 | `uv run mypy` | 106 个源文件无问题 |
+| 后端全量 | `uv run pytest -q --basetemp data/test-tmp/f4-selection-full -o tmp_path_retention_count=100` | 766 passed，0 failures |
+
+覆盖：分区摘要带排除项且无排除项时不出现该键；线索超预算记录 `budget`；人物状态只留
+死亡角色时记录被裁者；故事时间超预算只留最近一章并记录更早锚点；专名超条数记录 `limit`；
+索引超预算记录全部未装入章节与 `read_file` 入口。
+
+## 未完成
+
+- 界面没有显示排除项；活动事件已有数据，前端未接。
+- 整请求字符规模与上游实际 token 仍未记录；`model_request_started` 目前只有系统提示字符数。
+- 条目排序仍是固定分区顺序，没有统一候选池与按任务相关性的重排。
+- 任务卡（当前授权、约束、未读内容、执行事实）没有随本项实现。

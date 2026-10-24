@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from hastings.workspace.assembly import (
@@ -30,6 +31,7 @@ from hastings.workspace.assembly import (
     STATE_BUDGET,
     TIMELINE_BUDGET,
     AssembledContext,
+    Exclusion,
     Partition,
     Profile,
     assemble,
@@ -369,6 +371,7 @@ def build_assembled_context(
     materials: str = "",
     modules: str = "",
     index_notes: str = "",
+    index_excluded: Sequence[Exclusion] = (),
     instructions: str = "",
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
@@ -422,6 +425,7 @@ def build_assembled_context(
                     "这些是应用按各章原文生成的索引，用于定位；与原文冲突时以原文为准。"
                 ),
                 budget=INDEX_BUDGET,
+                excluded=tuple(index_excluded),
             )
         )
     if profile == "writer":
@@ -439,9 +443,11 @@ def build_assembled_context(
             )
     if profile in ("writer", "review"):
         # 检查也需要「谁已经死了、故事时间到哪」，否则时间冲突只能靠通读猜。
+        roster_excluded: list[Exclusion] = []
         roster_notes = roster_section(
             build_roster(workspace, roster_store, as_of_chapter=cutoff),
             budget=body_budget("人物状态", ROSTER_BUDGET),
+            excluded=roster_excluded,
         )
         if roster_notes.strip():
             parts.append(
@@ -450,11 +456,14 @@ def build_assembled_context(
                     title="人物状态",
                     text=roster_notes,
                     budget=ROSTER_BUDGET,
+                    excluded=tuple(roster_excluded),
                 )
             )
+        timeline_excluded: list[Exclusion] = []
         time_notes = timeline_section(
             build_timeline(workspace, timeline_store, as_of_chapter=cutoff),
             budget=body_budget("故事时间", TIMELINE_BUDGET),
+            excluded=timeline_excluded,
         )
         if time_notes.strip():
             parts.append(
@@ -463,11 +472,14 @@ def build_assembled_context(
                     title="故事时间",
                     text=time_notes,
                     budget=TIMELINE_BUDGET,
+                    excluded=tuple(timeline_excluded),
                 )
             )
+        clue_excluded: list[Exclusion] = []
         clue_notes = clues_section(
             build_clues(workspace, clue_store, as_of_chapter=cutoff),
             budget=body_budget("未回收线索", CLUES_BUDGET),
+            excluded=clue_excluded,
         )
         if clue_notes.strip():
             parts.append(
@@ -476,10 +488,15 @@ def build_assembled_context(
                     title="未回收线索",
                     text=clue_notes,
                     budget=CLUES_BUDGET,
+                    excluded=tuple(clue_excluded),
                 )
             )
     if profile == "writer":
-        names = glossary_section(build_glossary(workspace, glossary_store, as_of_chapter=cutoff))
+        glossary_excluded: list[Exclusion] = []
+        names = glossary_section(
+            build_glossary(workspace, glossary_store, as_of_chapter=cutoff),
+            excluded=glossary_excluded,
+        )
         if names.strip():
             parts.append(
                 Partition(
@@ -487,6 +504,7 @@ def build_assembled_context(
                     title="专有名词",
                     text=names,
                     budget=GLOSSARY_BUDGET,
+                    excluded=tuple(glossary_excluded),
                 )
             )
     if profile in ("writer", "review"):

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from hastings.workspace.assembly import Exclusion
 from hastings.workspace.disclosure import (
     EntryStatus,
     ObservedEvidence,
@@ -281,22 +282,46 @@ def build_glossary(
     )
 
 
-def glossary_section(state: GlossaryState, *, limit: int = 24) -> str:
-    """写作上下文里的专名表：按类别列名字与别名，只给已经出现过的。"""
+def glossary_section(
+    state: GlossaryState,
+    *,
+    limit: int = 24,
+    excluded: list[Exclusion] | None = None,
+) -> str:
+    """写作上下文里的专名表：按类别列名字与别名，只给已经出现过的。
+
+    每类最多 ``limit`` 个；超出的名字按类别记进 ``excluded``，仍然可以用
+    ``read_state`` 的 ``domain=glossary`` 查全表。
+    """
     grouped: dict[TermKind, list[str]] = {"person": [], "place": [], "org": [], "item": []}
+    hidden = 0
     for term in state.terms:
         if term.source == "text" and term.first_chapter > state.current_chapter:
             continue
         label = term.term + (f"（{'、'.join(term.aliases)}）" if term.aliases else "")
+        if len(grouped[term.kind]) >= limit:
+            hidden += 1
+            if excluded is not None:
+                excluded.append(
+                    Exclusion(
+                        id=f"glossary:{term.term}",
+                        reason="limit",
+                        chars=len(label),
+                        location="read_state domain=glossary",
+                    )
+                )
+            continue
         grouped[term.kind].append(label)
     lines: list[str] = []
     for kind in ("person", "place", "org", "item"):
-        names = grouped[kind][:limit]
+        names = grouped[kind]
         if names:
             lines.append(f"- {KIND_LABEL[kind]}：{'、'.join(names)}")
     if not lines:
         return ""
     lines.append("写到的名字用这里的写法；要新增专名时先确认作品里确实用了它。")
+    if hidden:
+        lines.append(f"（还有 {hidden} 个专名未列出，用 `read_state` 查看全表。）")
     return "\n".join(lines)
 
 

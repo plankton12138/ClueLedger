@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from hastings.workspace.assembly import Exclusion
 from hastings.workspace.disclosure import ObservedEvidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
@@ -124,6 +125,40 @@ def test_term_introduced_later_is_not_listed_yet(tmp_path: Path) -> None:
     state = build_glossary(workspace, store, as_of_chapter=0)
     # 尚未写到第一章时，该章的专名不进入白名单。
     assert "雪山旅馆" not in glossary_section(state)
+
+
+def test_names_beyond_the_limit_keep_their_location(tmp_path: Path) -> None:
+    workspace = Workspace.create(tmp_path / "雪山旅馆")
+    workspace.write("正文/0001 雨夜.md", "第一章 雨夜\n\n雪山旅馆后是山路。", expected_digest=None)
+    chapter = workspace.read("正文/0001 雨夜.md")
+
+    def term(name: str) -> GlossaryTerm:
+        start = chapter.text.index(name)
+        return GlossaryTerm(
+            term=name,
+            kind="place",
+            aliases=(),
+            first_chapter=1,
+            source="text",
+            evidence=ObservedEvidence(
+                path=chapter.path,
+                digest=chapter.digest,
+                start=start,
+                end=start + len(name),
+                quote=name,
+            ),
+        )
+
+    store = GlossaryStore(tmp_path / "state")
+    publish_terms(workspace, store, (term("雪山旅馆"), term("山路")))
+    excluded: list[Exclusion] = []
+
+    state = build_glossary(workspace, store)
+    section = glossary_section(state, limit=1, excluded=excluded)
+
+    assert "还有" in section
+    assert [(item.id, item.reason) for item in excluded] == [("glossary:山路", "limit")]
+    assert excluded[0].location == "read_state domain=glossary"
 
 
 def test_publish_requires_matching_evidence(tmp_path: Path) -> None:

@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
 from hastings.workspace.agent import RunContext, build_tools
+from hastings.workspace.assembly import Exclusion
 from hastings.workspace.chapter_index import (
     RECIPE_VERSION,
     ChapterIndexDraft,
@@ -268,8 +269,13 @@ def test_injection_stops_at_budget(tmp_path: Path) -> None:
     records = store.valid(workspace)
 
     assert "书房" in index_injection(records)
-    truncated = index_injection(records, budget=20)
+    excluded: list[Exclusion] = []
+    truncated = index_injection(records, budget=20, excluded=excluded)
     assert "其余章节未装入" in truncated
+    assert [(item.id, item.reason) for item in excluded] == [
+        (f"chapter-index:{_CHAPTER}", "budget")
+    ]
+    assert excluded[0].location == f"read_file {_CHAPTER}"
 
 
 # -- 工具与接口 -------------------------------------------------------------

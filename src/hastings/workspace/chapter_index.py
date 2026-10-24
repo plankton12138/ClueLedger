@@ -28,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast
 
+from hastings.workspace.assembly import Exclusion
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, is_managed_path
 from hastings.workspace.materials import MaterialLedger, SourceRef
@@ -433,32 +434,56 @@ def publish_index(
     return store.publish(draft, expected_source=SourceRef(source.path, source.digest))
 
 
-def index_injection(records: Iterable[ChapterIndexRecord], *, budget: int = INDEX_BUDGET) -> str:
-    """把有效索引装配成提示词片段；超预算按章节顺序截断并说明。"""
+def index_injection(
+    records: Iterable[ChapterIndexRecord],
+    *,
+    budget: int = INDEX_BUDGET,
+    excluded: list[Exclusion] | None = None,
+) -> str:
+    """把有效索引装配成提示词片段；超预算按章节顺序截断并说明。
+
+    没装入的章节记进 ``excluded``：保留章节路径与实际渲染字符数，原稿仍可用
+    ``read_file`` 读取。文本提示不给模型伪装的「已读到全部索引」。
+    """
+    items = list(records)
     blocks: list[str] = []
     used = 0
-    for record in records:
-        lines = [f"### {record.source_path}", f"摘要：{record.summary}"]
-        for kind in ("event", "character", "place", "clue"):
-            entries = {
-                "event": record.events,
-                "character": record.characters,
-                "place": record.places,
-                "clue": record.clues,
-            }[kind]
-            if not entries:
-                continue
-            lines.append(f"- {_ENTRY_LABEL[kind]}：")
-            for entry in entries:
-                marks = "、".join(str(index) for index in entry.evidence)
-                lines.append(f"  - {entry.text}（证据 {marks}）")
-        block = "\n".join(lines)
+    for position, record in enumerate(items):
+        block = _index_block(record)
         if used + len(block) > budget:
+            for rest in items[position:]:
+                if excluded is not None:
+                    excluded.append(
+                        Exclusion(
+                            id=f"chapter-index:{rest.source_path}",
+                            reason="budget",
+                            chars=len(_index_block(rest)),
+                            location=f"read_file {rest.source_path}",
+                        )
+                    )
             blocks.append("（索引较长，其余章节未装入；需要时用 read_file 读原文）")
             break
         blocks.append(block)
         used += len(block) + 2
     return "\n\n".join(blocks)
+
+
+def _index_block(record: ChapterIndexRecord) -> str:
+    lines = [f"### {record.source_path}", f"摘要：{record.summary}"]
+    for kind in ("event", "character", "place", "clue"):
+        entries = {
+            "event": record.events,
+            "character": record.characters,
+            "place": record.places,
+            "clue": record.clues,
+        }[kind]
+        if not entries:
+            continue
+        lines.append(f"- {_ENTRY_LABEL[kind]}：")
+        for entry in entries:
+            marks = "、".join(str(index) for index in entry.evidence)
+            lines.append(f"  - {entry.text}（证据 {marks}）")
+    return "\n".join(lines)
 
 
 def _with_status(record: ChapterIndexRecord, status: ChapterIndexStatus) -> ChapterIndexRecord:

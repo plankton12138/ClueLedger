@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from hastings.workspace.assembly import Partition, assemble
+from hastings.workspace.assembly import Exclusion, Partition, assemble
 from hastings.workspace.context import build_assembled_context
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
@@ -55,6 +55,36 @@ def test_empty_partition_is_reported_not_rendered() -> None:
     )
     assert [(skip.key, skip.reason) for skip in result.skipped] == [("settings", "empty")]
     assert "## 设定" not in result.text
+
+
+def test_summary_reports_candidates_left_out_by_budget() -> None:
+    excluded = Exclusion(
+        id="clue:门锁",
+        reason="budget",
+        chars=42,
+        location="read_state domain=clues",
+    )
+    result = assemble(
+        "writer",
+        [
+            _part("instructions", 5, 100, required=True),
+            Partition("clues", "未回收线索", "正文", 100, excluded=(excluded,)),
+        ],
+    )
+
+    summary = result.summary()
+    parts = summary["parts"]
+    assert isinstance(parts, list)
+    rows = {row["key"]: row for row in parts}
+    assert rows["clues"]["excluded"] == [
+        {
+            "id": "clue:门锁",
+            "reason": "budget",
+            "chars": 42,
+            "location": "read_state domain=clues",
+        }
+    ]
+    assert "excluded" not in rows["instructions"]
 
 
 def test_writer_prompt_keeps_partition_headers_and_order(tmp_path: Path) -> None:

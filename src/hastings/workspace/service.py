@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from hastings.library.modules import ModuleLibrary
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.activity import ActivityStore, redact
+from hastings.workspace.assembly import Exclusion
 from hastings.workspace.chapter_index import (
     MAX_INDEX_CHAPTERS,
     ChapterIndexStore,
@@ -973,10 +974,11 @@ class TurnService:
                 )
                 index_store = ChapterIndexStore(self.store.root)
                 # 索引任务只读原文生成；普通写作才注入有效索引，避免递归压缩旧摘要。
+                index_excluded: list[Exclusion] = []
                 index_notes = (
                     ""
                     if info.purpose in ("update_chapter_index", "organize_materials")
-                    else index_injection(index_store.valid(self.workspace))
+                    else index_injection(index_store.valid(self.workspace), excluded=index_excluded)
                 )
                 cutoff = state_chapter(
                     self.workspace,
@@ -1042,6 +1044,7 @@ class TurnService:
                     history_facts=execution_facts(history_events),
                     materials=turn_materials,
                     index_notes=index_notes,
+                    index_excluded=index_excluded,
                     instructions=instructions,
                     modules=modules,
                     disclosure_store=disclosure_store,

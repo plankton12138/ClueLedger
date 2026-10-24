@@ -33,6 +33,7 @@ __all__ = [
     "SETTINGS_BUDGET",
     "STATE_BUDGET",
     "AssembledContext",
+    "Exclusion",
     "Partition",
     "Profile",
     "Skip",
@@ -99,11 +100,33 @@ PROFILE_BUDGETS: dict[Profile, int] = {
 
 
 @dataclass(frozen=True, slots=True)
+class Exclusion:
+    """一个没有进入本轮上下文的候选条目：保留定位与原因，不静默丢弃。
+
+    ``location`` 是模型与作者都能继续查的入口；``chars`` 是这条完整渲染后的字符数，
+    不用来换算 token。
+    """
+
+    id: str
+    reason: Literal["budget", "limit"]
+    chars: int = 0
+    location: str = ""
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "reason": self.reason,
+            "chars": self.chars,
+            "location": self.location,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class Partition:
     """一段装入提示词的内容。
 
     ``budget`` 是这段内容**渲染后**允许占用的字符数（含标题行与提示文字）；
-    ``required`` 为真时不允许裁掉。
+    ``required`` 为真时不允许裁掉。``excluded`` 记下这一段里没有装入的候选条目。
     """
 
     key: str
@@ -111,6 +134,7 @@ class Partition:
     text: str
     budget: int
     required: bool = False
+    excluded: tuple[Exclusion, ...] = ()
 
     def render(self) -> str:
         body = self.text.strip()
@@ -141,10 +165,20 @@ class AssembledContext:
     limit: int
 
     def summary(self) -> dict[str, object]:
-        """写入 ``state_injected`` 事件的形状：只记身份与规模，不复制正文。"""
+        """写入 ``state_injected`` 事件的形状：只记身份与规模，不复制正文。
+
+        分区里的 ``excluded`` 只记条目 id、原因、实际字符数与继续查看的入口；
+        UI 与日志读同一份结果，不另外拼一套选择记录。
+        """
+        parts: list[dict[str, object]] = []
+        for part in self.parts:
+            row: dict[str, object] = {"key": part.key, "chars": part.size}
+            if part.excluded:
+                row["excluded"] = [item.to_dict() for item in part.excluded]
+            parts.append(row)
         return {
             "profile": self.profile,
-            "parts": [{"key": part.key, "chars": part.size} for part in self.parts],
+            "parts": parts,
             "skipped": [
                 {"key": skip.key, "reason": skip.reason, "chars": skip.chars}
                 for skip in self.skipped

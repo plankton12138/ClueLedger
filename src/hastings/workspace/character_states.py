@@ -15,7 +15,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
+from hastings.workspace.assembly import Exclusion
 from hastings.workspace.disclosure import (
     EntryStatus,
     ObservedEvidence,
@@ -300,11 +302,17 @@ def build_roster(
     )
 
 
-def roster_section(state: RosterState, *, budget: int = 700, limit: int = 10) -> str:
+def roster_section(
+    state: RosterState,
+    *,
+    budget: int = 700,
+    limit: int = 10,
+    excluded: list[Exclusion] | None = None,
+) -> str:
     """写作上下文里的人物状态：已死亡的人最优先，其次按最后核对章倒序。
 
     超出预算时按行裁掉并在末尾说明还有几人未列入——整块丢掉等于写作时完全没有状态，
-    比少给几个人更危险。
+    比少给几个人更危险。``excluded`` 把裁掉的人与继续查看的入口交给注入记录。
     """
     known = [item for item in state.known() if item.current is not None]
     if not known:
@@ -338,9 +346,11 @@ def roster_section(state: RosterState, *, budget: int = 700, limit: int = 10) ->
         line = "".join(parts)
         if index >= limit:
             dropped += 1
+            _exclude_character(excluded, item, "limit", 0)
             continue
         if used + len(line) + 1 > budget - reserved:
             dropped += 1
+            _exclude_character(excluded, item, "budget", len(line))
             continue
         lines.append(line)
         used += len(line) + 1
@@ -351,6 +361,24 @@ def roster_section(state: RosterState, *, budget: int = 700, limit: int = 10) ->
         lines.append(f"（还有 {dropped} 人未列入，用 `read_state` 查具体某人。）")
     lines.append("写已死角色时只能是回忆、转述或尸体；不要让他在新场景里行动。")
     return "\n".join([header, *lines])
+
+
+def _exclude_character(
+    excluded: list[Exclusion] | None,
+    item: CharacterState,
+    reason: Literal["budget", "limit"],
+    chars: int,
+) -> None:
+    if excluded is None:
+        return
+    excluded.append(
+        Exclusion(
+            id=f"character:{item.path}",
+            reason=reason,
+            chars=chars,
+            location="read_state domain=roster",
+        )
+    )
 
 
 def roster_view(state: RosterState) -> dict[str, object]:

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from hastings.library.modules import ModuleLibrary
-from hastings.workspace.assembly import AssembledContext, Profile
+from hastings.workspace.assembly import AssembledContext, Exclusion, Profile
 from hastings.workspace.chapter_index import (
     ChapterIndexDraft,
     ChapterIndexEntry,
@@ -2426,6 +2426,7 @@ def build_turn_assembly(
     materials: str = "",
     modules: str = "",
     index_notes: str = "",
+    index_excluded: Sequence[Exclusion] = (),
     instructions: str = "",
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
@@ -2448,6 +2449,7 @@ def build_turn_assembly(
         materials=materials,
         modules=modules,
         index_notes=index_notes,
+        index_excluded=index_excluded,
         instructions=instructions or _instructions_for(mode),
         disclosure_store=disclosure_store,
         glossary_store=glossary_store,

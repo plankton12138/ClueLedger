@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from hastings.workspace.assembly import Exclusion
 from hastings.workspace.disclosure import ObservedEvidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
@@ -115,11 +116,16 @@ def test_section_keeps_the_latest_anchor_when_budget_is_tight(tmp_path: Path) ->
         ),
     )
 
-    section = timeline_section(build_timeline(workspace, store), budget=60)
+    excluded: list[Exclusion] = []
+    section = timeline_section(build_timeline(workspace, store), budget=60, excluded=excluded)
 
     assert "第3章" in section
     assert "第1章" not in section
     assert "下一章从第 3 章之后接着写" in section
+    assert [(item.id, item.reason) for item in excluded] == [
+        ("timeline:1", "budget"),
+        ("timeline:2", "budget"),
+    ]
 
 
 def test_anchor_must_match_source_range(tmp_path: Path) -> None:

@@ -33,7 +33,7 @@
 | `workspace/metadata.py` | 人物头部、身份和披露字段 | 加稳定 ID 与分 kind 元数据验证，保留外部坏格式诊断 |
 | `workspace/git.py` | 正文／设定 Git、最新应用修改撤销 | 纳入作品 assembly，不提交全局模块或灵感修订；不扩大任意历史回退 |
 | `workspace/context.py` | 按用途装配、人物按需读、固定设定预读 | 修正渲染预算，改成模块概览和条目候选 |
-| `workspace/assembly.py` | 字符分区预算、超量整块跳过、注入记录 | required/optional 分离、条目粒度排除与整请求规模记录 |
+| `workspace/assembly.py` | 字符分区预算、超量整块跳过、注入记录 | 条目粒度排除与整请求规模记录 |
 | `workspace/materials.py` | 快照、实际读取区间、必读、指纹 | 扩展 idea/record 引用，不新增绕过读取的接口 |
 | `workspace/chapter_index.py` | 摘要、事件、人物、时间地点、线索、证据 | 演进成统一章节投影与事件观察 |
 | `workspace/timeline.py` | 一章一个时间锚点 | 兼容读取，切换到统一事件派生视图 |
@@ -189,8 +189,9 @@ flowchart LR
   许可由 `task_scope.library_search` 登记，作者原话须出现模块库相关短语。
 - [x] 受理冻结 assembly 与模块版本；运行中拒绝本作品装卸，库独立发布不改本轮输入。
   实施记录见 [notes/F2-assembly-freeze.md](notes/F2-assembly-freeze.md)。
-- [ ] required 与 optional 分离，完整渲染后预算；超量候选给定位和排除原因。
-  现有分区已有 required／optional 与整块跳过；条目级候选与排除原因尚未实现，留到 F4。
+- [x] required 与 optional 分离，完整渲染后预算；超量候选给定位和排除原因。
+  条目级排除记录见 [notes/F4-entry-selection.md](notes/F4-entry-selection.md)；
+  作者指定材料仍走必装／预读规则，不进入可选条目池。
 - [ ] 保持完整必读参考规则，read_record 不能绕过全文覆盖与写前版本核对。
 - [x] 未来计划可按相关性查询，未来正文事实仍受截止章约束；旧 read_state 不变成混合真相。
 - [x] 整理／检查／写作各自的查询范围与工具权限均在服务端执行；资料任务强制排除计划。

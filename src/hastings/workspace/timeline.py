@@ -16,7 +16,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
+from hastings.workspace.assembly import Exclusion
 from hastings.workspace.disclosure import EntryStatus, ObservedEvidence, check_evidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
@@ -221,11 +223,24 @@ def _anchor_line(entry: TimelineEntry) -> str:
     return "".join(parts)
 
 
-def timeline_section(state: TimelineState, *, limit: int = 3, budget: int = 400) -> str:
-    """写作上下文里的时间线：最近几个锚点，外加「从哪接」。"""
+def timeline_section(
+    state: TimelineState,
+    *,
+    limit: int = 3,
+    budget: int = 400,
+    excluded: list[Exclusion] | None = None,
+) -> str:
+    """写作上下文里的时间线：最近几个锚点，外加「从哪接」。
+
+    ``excluded`` 分开记两种裁掉：``limit`` 早于最近几章，``budget`` 超预算后只留
+    最近一章。两者都能用 ``read_state`` 的 ``domain=timeline`` 继续查。
+    """
     if not state.entries:
         return ""
-    recent = state.entries[-limit:]
+    recent = state.entries[-limit:] if limit > 0 else list(state.entries)
+    if limit > 0:
+        for entry in state.entries[:-limit]:
+            _exclude_anchor(excluded, entry, "limit", 0)
     header = "故事时间（按原文核对，最近几章）："
     lines = [header, *(_anchor_line(entry) for entry in recent)]
     if state.missing:
@@ -235,9 +250,29 @@ def timeline_section(state: TimelineState, *, limit: int = 3, budget: int = 400)
     text = "\n".join(lines)
     if len(text) > budget and len(recent) > 1:
         # 超预算先丢弃早的锚点：最近一章的时间是「从哪接」的唯一依据。
+        for entry in recent[:-1]:
+            _exclude_anchor(excluded, entry, "budget", len(_anchor_line(entry)))
         lines = [header, _anchor_line(recent[-1]), lines[-1]]
         text = "\n".join(lines)
     return text
+
+
+def _exclude_anchor(
+    excluded: list[Exclusion] | None,
+    entry: TimelineEntry,
+    reason: Literal["budget", "limit"],
+    chars: int,
+) -> None:
+    if excluded is None:
+        return
+    excluded.append(
+        Exclusion(
+            id=f"timeline:{entry.chapter}",
+            reason=reason,
+            chars=chars,
+            location="read_state domain=timeline",
+        )
+    )
 
 
 def timeline_view(state: TimelineState) -> dict[str, object]:

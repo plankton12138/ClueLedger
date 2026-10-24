@@ -23,6 +23,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
+from hastings.workspace.assembly import Exclusion
 from hastings.workspace.disclosure import EntryStatus, ObservedEvidence, check_evidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
@@ -312,8 +313,18 @@ def _order(items: list[ClueEntry], current: int) -> list[ClueEntry]:
     return sorted(items, key=rank)
 
 
-def clues_section(state: ClueState, *, budget: int = 500, limit: int = 8) -> str:
-    """写作上下文里的线索台账：只列未回收的，超期在前。"""
+def clues_section(
+    state: ClueState,
+    *,
+    budget: int = 500,
+    limit: int = 8,
+    excluded: list[Exclusion] | None = None,
+) -> str:
+    """写作上下文里的线索台账：只列未回收的，超期在前。
+
+    ``excluded`` 不是模型可见文本：它把没列入的条目按 id、原因与入口交给注入记录，
+    让作者能看出「不是没有线索，而是这一轮没装下」。
+    """
     if not state.open:
         return ""
     header = f"尚未回收的线索（截至第 {state.current_chapter} 章）："
@@ -328,6 +339,7 @@ def clues_section(state: ClueState, *, budget: int = 500, limit: int = 8) -> str
     for item in state.open:
         if len(lines) >= limit:
             hidden += 1
+            _exclude_clue(excluded, item, "limit", 0)
             continue
         marks = [f"第{item.planted_chapter}章埋下：{item.key}"]
         if item.due_chapter is None:
@@ -341,6 +353,7 @@ def clues_section(state: ClueState, *, budget: int = 500, limit: int = 8) -> str
         line = "- " + "".join(marks)
         if used + len(line) + 1 > budget - reserved:
             hidden += 1
+            _exclude_clue(excluded, item, "budget", len(line))
             continue
         lines.append(line)
         used += len(line) + 1
@@ -350,6 +363,24 @@ def clues_section(state: ClueState, *, budget: int = 500, limit: int = 8) -> str
     if hidden:
         lines.append(f"（还有 {hidden} 条未列入，用 `read_state` 的 `domain=clues` 查看。）")
     return "\n".join([header, *lines])
+
+
+def _exclude_clue(
+    excluded: list[Exclusion] | None,
+    item: ClueEntry,
+    reason: Literal["budget", "limit"],
+    chars: int,
+) -> None:
+    if excluded is None:
+        return
+    excluded.append(
+        Exclusion(
+            id=f"clue:{item.key}",
+            reason=reason,
+            chars=chars,
+            location="read_state domain=clues",
+        )
+    )
 
 
 def clues_view(state: ClueState) -> dict[str, object]:
