@@ -371,9 +371,7 @@ def test_pagination_cursor_expires_when_a_source_changes(tmp_path: Path) -> None
         expected_digest=workspace.read(EIGHTH).digest,
     )
 
-    first = query_materials(
-        workspace, root, Assembly(), None, MaterialQuery(text="书房", limit=1)
-    )
+    first = query_materials(workspace, root, Assembly(), None, MaterialQuery(text="书房", limit=1))
     assert len(first["items"]) == 1
     assert first["items"][0]["id"].endswith(FIRST)
     assert first["next_cursor"]

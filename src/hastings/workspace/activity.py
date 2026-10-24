@@ -79,6 +79,9 @@ _TOOL_VERBS = {
     "git_log": "查看历史",
     "git_diff": "查看差异",
     "publish_material_result": "提交整理结果",
+    "read_idea": "读取灵感",
+    "search_ideas": "查找灵感",
+    "save_idea": "保存灵感",
 }
 _FILE_VERBS = {
     "create": "新建文件",

@@ -10,7 +10,13 @@
 
 import { useEffect, useState } from "react";
 
-import type { EntryInput, ModuleKind } from "../../api/moduleLibrary";
+import type {
+  AssemblyBinding,
+  EntryInput,
+  ModuleKind,
+  RevisionSummary,
+} from "../../api/moduleLibrary";
+import { fetchRevisions } from "../../api/moduleLibrary";
 import { navigate } from "../../state/navigation";
 import {
   bindingLabel,
@@ -44,12 +50,25 @@ interface EntryRow {
   kind: string;
   title: string;
   body: string;
-  aliases: string[];
-  fields: Record<string, unknown>;
+  aliasesText: string;
+  fieldsText: string;
 }
 
 function newEntryId(): string {
   return `entry_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function parseFields(text: string): Record<string, unknown> | null {
+  if (!text.trim()) return {};
+  try {
+    const value: unknown = JSON.parse(text);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export default function ModuleDrawer() {
@@ -69,6 +88,10 @@ export default function ModuleDrawer() {
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [deriving, setDeriving] = useState(false);
   const [deriveName, setDeriveName] = useState("");
+  const [replacementOptions, setReplacementOptions] = useState<Record<string, RevisionSummary[]>>(
+    {},
+  );
+  const [replacements, setReplacements] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) {
@@ -78,6 +101,8 @@ export default function ModuleDrawer() {
       setForking(false);
       setDeriving(false);
       setDeriveName("");
+      setReplacementOptions({});
+      setReplacements({});
     }
   }, [open]);
 
@@ -92,8 +117,8 @@ export default function ModuleDrawer() {
         kind: entry.kind,
         title: entry.title,
         body: store.bodies[entry.entry_id] ?? "",
-        aliases: entry.aliases,
-        fields: entry.fields,
+        aliasesText: entry.aliases.join(", "),
+        fieldsText: JSON.stringify(entry.fields ?? {}, null, 2),
       })),
     );
   }, [store.detail, store.bodies]);
@@ -102,6 +127,7 @@ export default function ModuleDrawer() {
 
   const info = store.modules.find((item) => item.module_id === store.selectedModuleId);
   const atHead = Boolean(info && store.selectedRevisionId === info.head);
+  const invalidFields = rows.filter((row) => parseFields(row.fieldsText) === null);
   const bound = store.assembly?.bindings.find(
     (item) => item.module.module_id === store.selectedModuleId,
   );
@@ -112,16 +138,68 @@ export default function ModuleDrawer() {
       kind: row.kind,
       title: row.title,
       body: row.body,
-      aliases: row.aliases,
-      fields: row.fields,
+      aliases: row.aliasesText
+        .split(/[,，]/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+      fields: parseFields(row.fieldsText) ?? {},
     }));
   }
 
   function addEntry(): void {
     setRows((current) => [
       ...current,
-      { entry_id: newEntryId(), kind: "", title: "", body: "", aliases: [], fields: {} },
+      {
+        entry_id: newEntryId(),
+        kind: "",
+        title: "",
+        body: "",
+        aliasesText: "",
+        fieldsText: "{}",
+      },
     ]);
+  }
+
+  async function startDerive(): Promise<void> {
+    setDeriving(true);
+    setReplacements({});
+    const bindings = store.assembly?.bindings ?? [];
+    const loaded = await Promise.all(
+      bindings.map(async (binding) => {
+        try {
+          const page = await fetchRevisions(binding.module.module_id, { limit: 50 });
+          return [binding.module.module_id, page.items] as const;
+        } catch {
+          // 版本列表读不到时仍可用当前版本派生，不阻断操作。
+          return [binding.module.module_id, []] as const;
+        }
+      }),
+    );
+    setReplacementOptions(Object.fromEntries(loaded));
+  }
+
+  function revisionChoices(binding: AssemblyBinding): RevisionSummary[] {
+    const list = replacementOptions[binding.module.module_id] ?? [];
+    if (list.some((item) => item.revision_id === binding.module.revision_id)) return list;
+    return [
+      {
+        revision_id: binding.module.revision_id,
+        parent: null,
+        created_at: "",
+        entry_ids: [],
+      },
+      ...list,
+    ];
+  }
+
+  function chosenReplacements(): Record<string, string> {
+    const bindings = store.assembly?.bindings ?? [];
+    return Object.fromEntries(
+      Object.entries(replacements).filter(([moduleId, revisionId]) => {
+        const binding = bindings.find((item) => item.module.module_id === moduleId);
+        return Boolean(binding && binding.module.revision_id !== revisionId);
+      }),
+    );
   }
 
   function removeEntry(entryId: string): void {
@@ -179,10 +257,10 @@ export default function ModuleDrawer() {
                   本作品已装（{store.assembly.bindings.length}）
                 </h3>
                 <ul className="mt-1 space-y-1">
-                  {store.assembly.bindings.map((binding) => {
+                  {store.assembly.bindings.map((binding, index) => {
                     const problems = bindingProblems(binding);
                     return (
-                      <li key={binding.id} className="flex items-center gap-2 text-[11px]">
+                      <li key={binding.id} className="flex items-center gap-1 text-[11px]">
                         <button
                           className="min-w-0 flex-1 truncate text-left hover:underline"
                           onClick={() =>
@@ -198,6 +276,24 @@ export default function ModuleDrawer() {
                           </span>
                         </button>
                         {problems && <span className="text-[10px] text-amber">{problems}</span>}
+                        <span className="flex flex-none items-center">
+                          <button
+                            aria-label={`上移 ${bindingLabel(binding)}`}
+                            className="px-0.5 text-[10px] text-[#8a8371] disabled:opacity-30"
+                            disabled={store.busy || index === 0}
+                            onClick={() => void store.reorder(binding.id, -1)}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            aria-label={`下移 ${bindingLabel(binding)}`}
+                            className="px-0.5 text-[10px] text-[#8a8371] disabled:opacity-30"
+                            disabled={store.busy || index === store.assembly!.bindings.length - 1}
+                            onClick={() => void store.reorder(binding.id, 1)}
+                          >
+                            ↓
+                          </button>
+                        </span>
                         <button
                           className="text-[10px] text-[#8a8371] underline"
                           onClick={() => void store.unbind(binding.id)}
@@ -210,43 +306,83 @@ export default function ModuleDrawer() {
                 </ul>
                 <div className="mt-2 flex flex-none items-center gap-1">
                   {deriving ? (
-                    <>
-                      <input
-                        aria-label="新作品名称"
-                        className="well-input min-w-0 flex-1 px-2 py-1 text-[11px]"
-                        value={deriveName}
-                        placeholder="新作品目录名"
-                        onChange={(event) => setDeriveName(event.target.value)}
-                      />
-                      <button
-                        className="btn btn-gold px-2 py-1 text-[11px]"
-                        disabled={store.busy || !deriveName.trim()}
-                        onClick={() => {
-                          void store.derive(deriveName).then(async (created) => {
-                            if (!created) return;
+                    <div className="flex w-full flex-col gap-1">
+                      <div className="flex items-center gap-1">
+                        <input
+                          aria-label="新作品名称"
+                          className="well-input min-w-0 flex-1 px-2 py-1 text-[11px]"
+                          value={deriveName}
+                          placeholder="新作品目录名"
+                          onChange={(event) => setDeriveName(event.target.value)}
+                        />
+                        <button
+                          className="btn btn-gold px-2 py-1 text-[11px]"
+                          disabled={store.busy || !deriveName.trim()}
+                          onClick={() => {
+                            void store.derive(deriveName, chosenReplacements()).then(
+                              async (created) => {
+                                if (!created) return;
+                                setDeriving(false);
+                                setDeriveName("");
+                                setReplacements({});
+                                // 登记列表会多一条：先刷新，否则顶栏仍把新作品标成「目录已不在」。
+                                await useWorkspaceStore.getState().refreshBindings();
+                                await useWorkspaceStore.getState().selectWorkspace(created.id);
+                                navigate({ kind: "writing", workspaceId: created.id });
+                                store.closeDrawer();
+                              },
+                            );
+                          }}
+                        >
+                          创建
+                        </button>
+                        <button
+                          className="text-[10px] text-[#8a8371] underline"
+                          onClick={() => {
                             setDeriving(false);
-                            setDeriveName("");
-                            // 登记列表会多一条：先刷新，否则顶栏仍把新作品标成「目录已不在」。
-                            await useWorkspaceStore.getState().refreshBindings();
-                            await useWorkspaceStore.getState().selectWorkspace(created.id);
-                            navigate({ kind: "writing", workspaceId: created.id });
-                            store.closeDrawer();
-                          });
-                        }}
-                      >
-                        创建
-                      </button>
-                      <button
-                        className="text-[10px] text-[#8a8371] underline"
-                        onClick={() => setDeriving(false)}
-                      >
-                        取消
-                      </button>
-                    </>
+                            setReplacements({});
+                          }}
+                        >
+                          取消
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-[#8a8371]">
+                        默认沿用当前版本；需要换版本时在下面选择。新作品只有装配，正文与观察从空白开始。
+                      </p>
+                      {store.assembly.bindings.map((binding) => (
+                        <label key={binding.id} className="flex items-center gap-2 text-[10px]">
+                          <span className="w-24 flex-none truncate">{bindingLabel(binding)}</span>
+                          <select
+                            aria-label={`${bindingLabel(binding)} 派生版本`}
+                            className="well-input min-w-0 flex-1 px-1 py-0.5 text-[10px]"
+                            value={
+                              replacements[binding.module.module_id] ??
+                              binding.module.revision_id
+                            }
+                            onChange={(event) =>
+                              setReplacements((current) => ({
+                                ...current,
+                                [binding.module.module_id]: event.target.value,
+                              }))
+                            }
+                          >
+                            {revisionChoices(binding).map((revision) => (
+                              <option key={revision.revision_id} value={revision.revision_id}>
+                                {revision.revision_id === binding.module.revision_id
+                                  ? "当前使用"
+                                  : revision.created_at
+                                    ? revision.created_at.slice(0, 10)
+                                    : revision.revision_id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
                   ) : (
                     <button
                       className="text-[10px] text-[#6b6555] underline"
-                      onClick={() => setDeriving(true)}
+                      onClick={() => void startDerive()}
                     >
                       用当前组合新建作品
                     </button>
@@ -476,6 +612,51 @@ export default function ModuleDrawer() {
                           )
                         }
                       />
+                      <div className="mt-1 grid gap-2 md:grid-cols-2">
+                        <label className="block text-[10px] text-[#6b6555]">
+                          别名（逗号分隔）
+                          <input
+                            aria-label="条目别名"
+                            className="well-input mt-0.5 w-full px-2 py-1 text-[11px]"
+                            value={row.aliasesText}
+                            placeholder="例如：老林, 林侦探"
+                            onChange={(event) =>
+                              setRows((current) =>
+                                current.map((item) =>
+                                  item.entry_id === row.entry_id
+                                    ? { ...item, aliasesText: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="block text-[10px] text-[#6b6555]">
+                          结构化字段（JSON 对象）
+                          <textarea
+                            aria-label="条目字段"
+                            className={`well-input mt-0.5 h-16 w-full px-2 py-1 text-[11px] leading-5 ${
+                              parseFields(row.fieldsText) === null ? "border-red" : ""
+                            }`}
+                            value={row.fieldsText}
+                            onChange={(event) =>
+                              setRows((current) =>
+                                current.map((item) =>
+                                  item.entry_id === row.entry_id
+                                    ? { ...item, fieldsText: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                          />
+                        </label>
+                      </div>
+                      {parseFields(row.fieldsText) === null && (
+                        <p className="mt-1 text-[10px] text-red">
+                          [ENTRY_FIELDS_INVALID] 条目字段：需要合法的 JSON 对象。建议：改回
+                          {" {"}...{"}"} 形式后再保存。
+                        </p>
+                      )}
                     </article>
                   ))}
                   <button className="text-[11px] text-[#6b6555] underline" onClick={addEntry}>
@@ -510,7 +691,9 @@ export default function ModuleDrawer() {
                   )}
                   <button
                     className="btn btn-gray px-3 py-1 text-[11px]"
-                    disabled={store.busy || !atHead || Boolean(info?.deleted)}
+                    disabled={
+                      store.busy || !atHead || Boolean(info?.deleted) || invalidFields.length > 0
+                    }
                     title={atHead ? "发布新版本；任何作品都不会自动跟随" : "只有最新版本可以继续保存"}
                     onClick={() => void store.saveToLibrary(entries())}
                   >
@@ -518,7 +701,9 @@ export default function ModuleDrawer() {
                   </button>
                   <button
                     className="btn btn-gold px-3 py-1 text-[11px]"
-                    disabled={store.busy || !atHead || Boolean(info?.deleted)}
+                    disabled={
+                      store.busy || !atHead || Boolean(info?.deleted) || invalidFields.length > 0
+                    }
                     onClick={() => void store.saveAndUse(entries())}
                   >
                     保存并用于本作品

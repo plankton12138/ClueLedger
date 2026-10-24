@@ -272,6 +272,37 @@ describe("派生", () => {
     );
     expect(useModuleLibraryStore.getState().notice).toContain("另一条线");
   });
+
+  it("派生时把替换版本原样交给后端", async () => {
+    deriveMock.mockResolvedValue({
+      workspace: { id: "ws2", name: "另一条线", path: "/tmp/另一条线", exists: true },
+      assembly: { schema_version: 1, library_id: "lib_1", digest: "d2", bindings: [], links: [] },
+      recovered: false,
+    });
+    useModuleLibraryStore.setState({
+      workspaceId: "ws1",
+      assembly: {
+        schema_version: 1,
+        library_id: "lib_1",
+        digest: "d1",
+        bindings: [
+          {
+            id: "bnd_1",
+            label: "主角团",
+            module: { library_id: "lib_1", module_id: "mod_1", revision_id: "rev_1" },
+          },
+        ],
+        links: [],
+      },
+    });
+
+    await useModuleLibraryStore.getState().derive("另一条线", { mod_1: "rev_2" });
+
+    expect(deriveMock).toHaveBeenCalledWith(
+      "ws1",
+      expect.objectContaining({ replacements: { mod_1: "rev_2" } }),
+    );
+  });
 });
 
 describe("装配", () => {
@@ -393,6 +424,44 @@ describe("装配", () => {
     const body = putMock.mock.calls[0][1];
     expect(body.links).toEqual([["bnd_1", "bnd_2"]]);
     expect(body.bindings[0].module.revision_id).toBe("rev_2");
+  });
+
+  it("调整顺序只交换位置并保留关联", async () => {
+    putMock.mockResolvedValue({
+      schema_version: 1,
+      library_id: "lib_1",
+      digest: "d3",
+      bindings: [],
+      links: [],
+    });
+    useModuleLibraryStore.setState({
+      workspaceId: "ws1",
+      assembly: {
+        schema_version: 1,
+        library_id: "lib_1",
+        digest: "d2",
+        bindings: [
+          {
+            id: "bnd_1",
+            label: "主角团",
+            module: { library_id: "lib_1", module_id: "mod_1", revision_id: "rev_1" },
+          },
+          {
+            id: "bnd_2",
+            label: "反派",
+            module: { library_id: "lib_1", module_id: "mod_2", revision_id: "rev_9" },
+          },
+        ],
+        links: [["bnd_1", "bnd_2"]],
+      },
+    });
+
+    await useModuleLibraryStore.getState().reorder("bnd_2", -1);
+
+    const body = putMock.mock.calls[0][1];
+    expect(body.bindings.map((item) => item.id)).toEqual(["bnd_2", "bnd_1"]);
+    expect(body.links).toEqual([["bnd_1", "bnd_2"]]);
+    expect(useModuleLibraryStore.getState().notice).toContain("顺序");
   });
 });
 

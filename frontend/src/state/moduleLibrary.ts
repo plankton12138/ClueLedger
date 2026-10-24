@@ -82,10 +82,14 @@ interface ModuleLibraryStore {
   restoreSelected(): Promise<void>;
   saveToLibrary(entries: EntryInput[]): Promise<boolean>;
   saveAndUse(entries: EntryInput[]): Promise<boolean>;
-  derive(name: string): Promise<{ id: string; name: string; path: string } | null>;
+  derive(
+    name: string,
+    replacements?: Record<string, string>,
+  ): Promise<{ id: string; name: string; path: string } | null>;
   bind(moduleId: string, revisionId: string): Promise<void>;
   unbind(bindingId: string): Promise<void>;
   upgrade(bindingId: string, revisionId: string): Promise<void>;
+  reorder(bindingId: string, direction: -1 | 1): Promise<void>;
   importLegacy(): Promise<void>;
   loadAssembly(): Promise<void>;
   loadImportInfo(): Promise<void>;
@@ -345,7 +349,7 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
     }
   },
 
-  async derive(name) {
+  async derive(name, replacements = {}) {
     const { workspaceId, assembly } = get();
     const trimmed = name.trim();
     if (!workspaceId || !assembly) return null;
@@ -357,6 +361,7 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
     try {
       const result = await deriveWorkspace(workspaceId, {
         name: trimmed,
+        replacements,
         expected_digest: assembly.digest,
         request_key: requestKey("derive"),
       });
@@ -444,6 +449,32 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         request_key: requestKey("upgrade"),
       });
       set({ assembly: next, busy: false, notice: "已切换本作品使用的版本。" });
+    } catch (error) {
+      set({ busy: false, error: describe(error) });
+    }
+  },
+
+  async reorder(bindingId, direction) {
+    const { workspaceId, assembly } = get();
+    if (!workspaceId || !assembly) return;
+    const index = assembly.bindings.findIndex((item) => item.id === bindingId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= assembly.bindings.length) return;
+    const bindings = [...assembly.bindings];
+    [bindings[index], bindings[target]] = [bindings[target], bindings[index]];
+    set({ busy: true, error: null, notice: null });
+    try {
+      const next = await putAssembly(workspaceId, {
+        bindings: bindings.map((item) => ({
+          id: item.id,
+          label: item.label,
+          module: item.module,
+        })),
+        links: assembly.links,
+        expected_digest: assembly.digest,
+        request_key: requestKey("reorder"),
+      });
+      set({ assembly: next, busy: false, notice: "已调整装配顺序。" });
     } catch (error) {
       set({ busy: false, error: describe(error) });
     }

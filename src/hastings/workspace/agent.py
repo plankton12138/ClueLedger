@@ -1657,8 +1657,7 @@ def build_tools(
             ref = [run.library.library_id or "", module_id, revision_id, entry_id]
             detail["module_ref"] = ref
             detail["installed"] = any(
-                binding.module.module_id == module_id
-                and binding.module.revision_id == revision_id
+                binding.module.module_id == module_id and binding.module.revision_id == revision_id
                 for binding in run.assembly.bindings
             )
             run.record(
