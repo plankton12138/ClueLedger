@@ -1,0 +1,165 @@
+"""检索工具（0.8 F3）：只读本轮装配的精确版本，不旁路库或作品范围。"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from hastings.library import EntryDraft, ModuleLibrary
+from hastings.library.bindings import AssemblyService
+from hastings.workspace.agent import RunContext, build_tools
+from hastings.workspace.disclosure import ObservedEvidence
+from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.files import Workspace
+from hastings.workspace.module_assembly import AssemblyStore
+from hastings.workspace.service import WriteSession
+from hastings.workspace.story_index import (
+    ChapterProjection,
+    EventObservation,
+    StoryIndexStore,
+    StoryTime,
+)
+from tau_agent.tools import AgentTool
+
+CHAPTER = "正文/0001 雨夜.md"
+
+
+async def _call(tool: AgentTool, **arguments: Any) -> dict[str, Any]:
+    result = await tool.execute("call-1", arguments)
+    return json.loads(result.text)
+
+
+def _setup(tmp_path: Path) -> tuple[Workspace, dict[str, AgentTool], ModuleLibrary, dict[str, Any]]:
+    library = ModuleLibrary(tmp_path / "模块库", cache_file=tmp_path / "cache" / "catalog.json")
+    workspace = Workspace.create(tmp_path / "雪山旅馆")
+    workspace.write(CHAPTER, "# 雨夜\n\n林静在书房。\n", expected_digest=None)
+    created = library.create_module(
+        kind="characters",
+        name="主角团",
+        entries=[EntryDraft("lin", "character", "林静", "法医，旧识。", ("法医",), {})],
+        request_key="create-1",
+    )
+    module = created["module"]  # type: ignore[index]
+    AssemblyService(library, workspace).bind(
+        module_id=str(module["module_id"]),
+        revision_id=str(module["head"]),
+        label="主角团",
+        expected_digest=None,
+        request_key="bind-key-1",
+    )
+    assembly = AssemblyStore(workspace.root).read()
+    run = RunContext(
+        workspace,
+        WriteSession(workspace, instruction="写第一章"),
+        assembly=assembly,
+        library=library,
+        state_root=tmp_path / "state",
+    )
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
+    facts = {
+        "module_id": str(module["module_id"]),
+        "revision_id": str(module["head"]),
+        "entry_id": "lin",
+    }
+    return workspace, tools, library, facts
+
+
+def _publish_event(workspace: Workspace, root: Path) -> None:
+    view = workspace.read(CHAPTER)
+    quote = "林静在书房。"
+    start = view.text.index(quote)
+    event = EventObservation(
+        text="林静在书房",
+        chapter=1,
+        mode="narration",
+        evidence=(
+            ObservedEvidence(
+                path=CHAPTER,
+                digest=view.digest,
+                start=start,
+                end=start + len(quote),
+                quote=quote,
+            ),
+        ),
+        story_time=StoryTime(label="那晚"),
+    )
+    projection = ChapterProjection(
+        path=CHAPTER,
+        digest=view.digest,
+        chapter=1,
+        summary="林静在书房。",
+        events=(event,),
+    )
+    StoryIndexStore(root).publish(projection, expected_digest=projection.digest)
+
+
+def test_tools_only_exist_when_a_library_is_configured(tmp_path: Path) -> None:
+    workspace = Workspace.create(tmp_path / "雪山旅馆")
+    run = RunContext(workspace, WriteSession(workspace))
+    names = {tool.name for tool in build_tools(workspace, run)}
+    assert "list_modules" not in names
+    assert "query_records" not in names
+    assert "read_record" not in names
+
+
+@pytest.mark.anyio
+async def test_list_modules_and_query_records_use_only_the_frozen_assembly(
+    tmp_path: Path,
+) -> None:
+    _, tools, _, facts = _setup(tmp_path)
+
+    modules = await _call(tools["list_modules"])
+    assert modules["total"] == 1
+    assert modules["modules"][0]["module_id"] == facts["module_id"]
+
+    found = await _call(tools["query_records"], query="林静")
+    assert found["items"][0]["module_ref"][1] == facts["module_id"]
+    assert found["items"][0]["source"] == "author"
+    assert found["metrics"]["candidates"] >= 1
+
+    uninstalled = await _call(
+        tools["query_records"], query="林静", module_ids=["mod_0000000000000000"]
+    )
+    assert uninstalled["items"] == []
+    assert any("不在本轮装配" in warning for warning in uninstalled["warnings"])
+
+
+@pytest.mark.anyio
+async def test_query_records_reads_observations_up_to_the_task_chapter(tmp_path: Path) -> None:
+    workspace, tools, _, _ = _setup(tmp_path)
+    _publish_event(workspace, tmp_path / "state")
+
+    found = await _call(tools["query_records"], query="书房", kinds=["event"])
+    assert found["items"][0]["source"] == "observed"
+    assert found["items"][0]["kind"] == "event"
+    assert "书房" in found["items"][0]["title"]
+
+
+@pytest.mark.anyio
+async def test_read_record_rejects_versions_outside_the_assembly(tmp_path: Path) -> None:
+    _, tools, _, facts = _setup(tmp_path)
+
+    denied = None
+    try:
+        await _call(
+            tools["read_record"],
+            module_id=facts["module_id"],
+            revision_id="rev_0000000000000000",
+            entry_id=facts["entry_id"],
+        )
+    except WorkspaceError as exc:
+        denied = exc
+    assert denied is not None
+    assert denied.code == "MODULE_ACCESS_DENIED"
+
+    body = await _call(
+        tools["read_record"],
+        module_id=facts["module_id"],
+        revision_id=facts["revision_id"],
+        entry_id=facts["entry_id"],
+    )
+    assert body["text"]
+    assert body["module_ref"][2] == facts["revision_id"]

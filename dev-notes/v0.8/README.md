@@ -30,8 +30,9 @@
   `/story-events` 两种顺序、旧章节概览与时间线路由映射。多时间线的计划叠加与线索／专名的
   多来源贡献分组留给 F。
 - F 检索基础（L0 短目录、L1 有界查询、L2 区间读取）已实施（[记录](notes/F1-retrieval.md)）；
-  F2 受理冻结装配、运行中拒绝装卸与已装模块短目录已实施（[记录](notes/F2-assembly-freeze.md)）。
-  条目级预算、权限与 agent 工具接线待实施。
+  F2 受理冻结装配、运行中拒绝装卸与已装模块短目录已实施（[记录](notes/F2-assembly-freeze.md)）；
+  F3 的 `list_modules`／`query_records`／`read_record` 已接入写作、检查与资料任务
+  （[记录](notes/F3-retrieval-tools.md)）。全局库搜索、一跳关联、条目级预算与前端状态待实施。
 - G 交付待实施。
 - 不预建 `modules/` 充当当前能力，也不写通过数量或发布结论。
 - 实施时阶段记录放本目录 `notes/`，证据放 `artifacts/`；完成后再编写 `modules/` 与 `release.md`。

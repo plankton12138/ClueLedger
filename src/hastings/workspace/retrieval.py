@@ -188,7 +188,9 @@ def catalog_brief(
 def module_overview(assembly: Assembly, library: ModuleLibrary | None, *, limit: int = 20) -> str:
     """L0 装配概览：只列已装实例与精确版本，不列未装库内容，也不读条目正文。"""
     if not assembly.bindings:
-        return "（没有装入模块；本轮只使用本作品正文与设定。）"
+        if library is None:
+            return "（没有装入模块；本轮只使用本作品正文与设定。）"
+        return "（没有装入模块；本轮只使用本作品正文与设定。用 list_modules 查看当前装配。）"
     labels: dict[str, str] = {item.kind: item.label for item in PRESETS}
     lines: list[str] = []
     for binding in assembly.bindings[: max(1, limit)]:
@@ -214,6 +216,11 @@ def module_overview(assembly: Assembly, library: ModuleLibrary | None, *, limit:
     remaining = len(assembly.bindings) - min(len(assembly.bindings), max(1, limit))
     if remaining > 0:
         lines.append(f"- （还有 {remaining} 个模块未列出；到模块库查看精确版本）")
+    if library is not None:
+        lines.append(
+            "- （用 list_modules 看完整装配，query_records 检索条目，read_record 读原文；"
+            "命中不等于读过。）"
+        )
     return "\n".join(lines)
 
 

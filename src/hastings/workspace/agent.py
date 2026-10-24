@@ -14,8 +14,10 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal, cast
 
+from hastings.library.modules import ModuleLibrary
 from hastings.workspace.assembly import AssembledContext, Profile
 from hastings.workspace.chapter_index import (
     ChapterIndexDraft,
@@ -78,6 +80,8 @@ from hastings.workspace.materials import (
     require_author_quote,
     require_read_quote,
 )
+from hastings.workspace.module_assembly import Assembly
+from hastings.workspace.retrieval import MaterialQuery, catalog_brief, query_materials
 from hastings.workspace.review import (
     REVIEW_INSTRUCTIONS,
     ReviewDraft,
@@ -147,6 +151,11 @@ class RunContext:
     review_request: ReviewRequest | None = None
     #: 本轮状态时点；没有定位时不自动采用全书末章，查询需明确指定章号。
     state_chapter: int | None = None
+    #: 受理时冻结的装配与库入口；检索工具只读这些精确版本。
+    assembly: Assembly = field(default_factory=Assembly)
+    library: ModuleLibrary | None = None
+    #: 作品状态目录；检索观察与本作品投影都在这里。
+    state_root: Path | None = None
 
     def record(self, event_type: str, payload: Mapping[str, Any]) -> None:
         if self.emit is not None:
@@ -1355,9 +1364,255 @@ def build_tools(
         )
     )
 
+    if run.library is not None and mode in ("write", "review", "materials"):
+
+        async def list_modules(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            limit = _int_argument(arguments, "limit", default=50, minimum=1)
+            offset = _int_argument(arguments, "offset", default=0, minimum=0)
+            brief = catalog_brief(workspace, run.assembly, run.library, limit=limit)
+            bindings = list(cast(list[dict[str, object]], brief["bindings"]))
+            page = bindings[offset : offset + limit]
+            next_offset = offset + len(page)
+            return _json(
+                {
+                    "current_chapter": brief["current_chapter"],
+                    "modules": page,
+                    "total": len(bindings),
+                    "next_cursor": str(next_offset) if next_offset < len(bindings) else "",
+                    "warnings": brief["warnings"],
+                }
+            )
+
+        async def query_records(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            if run.state_root is None:
+                raise WorkspaceError(
+                    code="RETRIEVAL_UNAVAILABLE",
+                    where="tools.query_records",
+                    why="这一轮没有作品状态目录，无法读取观察",
+                    fix="在正常写作轮次里使用检索；不要用它查临时文件",
+                )
+            include_plans = arguments.get("include_plans", True)
+            if not isinstance(include_plans, bool):
+                raise _input_error("include_plans", "必须是布尔值")
+            if mode == "materials":
+                # 整理任务只能核对正文观察，不能把作者计划当成已发生的事实。
+                include_plans = False
+            query = MaterialQuery(
+                kinds=_string_list_argument(arguments, "kinds"),
+                module_ids=_string_list_argument(arguments, "module_ids"),
+                text=_optional_text_argument(arguments, "query"),
+                entity_ids=_string_list_argument(arguments, "entity_ids"),
+                chapter_paths=_string_list_argument(arguments, "chapter_paths"),
+                as_of_chapter=run.state_chapter,
+                include_plans=include_plans,
+                cursor=_optional_text_argument(arguments, "cursor"),
+                limit=_int_argument(arguments, "limit", default=20, minimum=1),
+            )
+            view = query_materials(workspace, run.state_root, run.assembly, run.library, query)
+            run.record(
+                "records_queried",
+                {
+                    "query": {
+                        "text": query.text,
+                        "module_ids": list(query.module_ids),
+                        "kinds": list(query.kinds),
+                    },
+                    "metrics": view["metrics"],
+                },
+            )
+            return _json(view)
+
+        async def read_record(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            if run.library is None:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="tools.read_record",
+                    why="这一轮没有可用的模块库",
+                    fix="确认应用已配置模块库后再读取；不要用文件工具猜库路径",
+                )
+            module_id = _text_argument(arguments, "module_id")
+            revision_id = _text_argument(arguments, "revision_id")
+            entry_id = _text_argument(arguments, "entry_id")
+            binding = next(
+                (
+                    item
+                    for item in run.assembly.bindings
+                    if item.module.module_id == module_id and item.module.revision_id == revision_id
+                ),
+                None,
+            )
+            if binding is None:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where=f"tools.read_record:{module_id}@{revision_id}",
+                    why="这个模块版本不在本轮装配里",
+                    fix="先用 list_modules 或 query_records 拿本轮可用的完整引用",
+                    details={"module_id": module_id, "revision_id": revision_id},
+                )
+            detail = run.library.read_entry(
+                module_id=module_id,
+                revision_id=revision_id,
+                entry_id=entry_id,
+                start=_optional_int_argument(arguments, "start", minimum=0) or 0,
+                end=_optional_int_argument(arguments, "end", minimum=0),
+                ledger=run.materials,
+            )
+            detail["module_ref"] = [
+                binding.module.library_id,
+                module_id,
+                revision_id,
+                entry_id,
+            ]
+            detail["binding_id"] = binding.id
+            run.record(
+                "record_read",
+                {
+                    "module_ref": detail["module_ref"],
+                    "entry_id": entry_id,
+                    "start": detail["start"],
+                    "end": detail["end"],
+                    "length": detail["length"],
+                    "digest": detail["digest"],
+                },
+            )
+            if len(json.dumps(detail, ensure_ascii=False)) > READ_RESULT_CHARS:
+                raise WorkspaceError(
+                    code="TOOL_RESULT_TOO_LARGE",
+                    where=f"tools.read_record:{entry_id}",
+                    why="这次读取的结果超过单次输出上限",
+                    fix="用更小的 start/end 区间再读一次",
+                    details={"entry_id": entry_id},
+                )
+            return _json(detail)
+
+        tools.extend(
+            [
+                AgentTool(
+                    name="list_modules",
+                    label="查看已装模块",
+                    description=("列出本轮装配里的模块实例与精确版本，含条目数；不接受未装模块。"),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "limit": {"type": "integer", "minimum": 1},
+                            "offset": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "从第几个模块开始；用上一页的 next_cursor",
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                    execute_fn=list_modules,
+                    prompt_guidelines=("只在这里出现的模块版本可以读取；不要按名字去库里找。",),
+                    execution_mode="sequential",
+                ),
+                AgentTool(
+                    name="query_records",
+                    label="检索资料",
+                    description=(
+                        "查询本轮已装模块的条目与本作品观察：可按模块、人物、章区间与关键词。"
+                        "返回来源、版本、命中原因与扫描量；命中不等于读过全文。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "关键词或别名"},
+                            "kinds": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "条目种类，如 character、author_event",
+                            },
+                            "module_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "只查这些已装实例",
+                            },
+                            "entity_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "人物或作者事件的条目 ID",
+                            },
+                            "chapter_paths": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "只看这些正文观察",
+                            },
+                            "include_plans": {
+                                "type": "boolean",
+                                "description": "是否返回计划类模块；默认 true",
+                            },
+                            "cursor": {"type": "string", "description": "上一页的 next_cursor"},
+                            "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "默认 20，最多 50",
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                    execute_fn=query_records,
+                    prompt_guidelines=(
+                        "先给具体模块、人物、章区间或关键词；没有命中时看 scope 与 warnings。",
+                        "命中只用于定位；原文用 read_record 或 read_file，不要凭摘要写作。",
+                    ),
+                    execution_mode="sequential",
+                ),
+                AgentTool(
+                    name="read_record",
+                    label="读取模块条目",
+                    description=("按本轮装配的完整引用读取模块条目原文与区间；未装版本会被拒绝。"),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "module_id": {"type": "string"},
+                            "revision_id": {"type": "string"},
+                            "entry_id": {"type": "string"},
+                            "start": {"type": "integer", "minimum": 0},
+                            "end": {"type": "integer", "minimum": 0},
+                        },
+                        "required": ["module_id", "revision_id", "entry_id"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=read_record,
+                    prompt_guidelines=(
+                        "module_ref 四段必须来自 list_modules/query_records；"
+                        "不要用库 head 代替精确版本。",
+                        "truncated 为真时按 next_cursor 用 start 继续读。",
+                    ),
+                    execution_mode="sequential",
+                ),
+            ]
+        )
+
     if mode == "review":
         # 检查任务：只读原文与搜索，加保存报告；没有作品写工具。
-        readonly = {"list_files", "read_file", "search_text"}
+        readonly = {
+            "list_files",
+            "read_file",
+            "search_text",
+            "list_modules",
+            "query_records",
+            "read_record",
+        }
         return [
             *[tool for tool in tools if tool.name in readonly],
             AgentTool(
@@ -1989,7 +2244,14 @@ def build_tools(
         ]
     if mode == "materials":
         # 资料整理：只读目录、搜索、读取，外加本域唯一的结果提交工具；没有作品写工具。
-        readonly = {"list_files", "read_file", "search_text"}
+        readonly = {
+            "list_files",
+            "read_file",
+            "search_text",
+            "list_modules",
+            "query_records",
+            "read_record",
+        }
         scope = material_scope or {}
         domain = str(scope.get("domain") or "")
 

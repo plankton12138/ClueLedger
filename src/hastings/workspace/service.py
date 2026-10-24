@@ -987,6 +987,8 @@ class TurnService:
                 if info.material_scope is not None:
                     # 资料任务按受理时冻结的截止章装配；与写作任务的阅读位置无关。
                     cutoff = int(str(info.material_scope.get("as_of_chapter") or cutoff))
+                frozen_assembly = info.assembly or Assembly()
+                modules = module_overview(frozen_assembly, self.library)
                 run = RunContext(
                     state_chapter=cutoff
                     if cutoff or (info.context and info.context.state_chapter is not None)
@@ -997,6 +999,9 @@ class TurnService:
                     author_messages=author_messages,
                     turn_id=info.turn_id,
                     emit=lambda kind, payload: self._record_activity(info, kind, payload),
+                    assembly=frozen_assembly,
+                    library=self.library,
+                    state_root=self.store.root,
                 )
                 review_store = ReviewStore(self.store.root)
                 if info.purpose == "review":
@@ -1030,8 +1035,6 @@ class TurnService:
                 else:
                     instructions = ""
                     turn_materials = materials_section(info.context, ledger.summaries())
-                frozen_assembly = info.assembly or Assembly()
-                modules = module_overview(frozen_assembly, self.library)
                 assembly = build_turn_assembly(
                     self.workspace,
                     as_of_chapter=run.state_chapter,
