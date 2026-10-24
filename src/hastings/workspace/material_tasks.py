@@ -628,7 +628,7 @@ def publish_material_result(
         )
 
     # 空结果通常只记覆盖，不写域存储：没有发现不等于清空已有记录。
-    # 统一章节索引是例外：一章重建为 empty 表示这一章不再有可发布的观察，
+    # 例外是「一章一份贡献」的域：索引、时间线、线索与专名重建为 empty 时，
     # 只移除这一章的贡献，其他章与作者安排都不动。
     published = 0
     if outcome == "found":
@@ -643,8 +643,14 @@ def publish_material_result(
             records=records,
             ledger=ledger,
         )
-    elif domain == "story_index" and outcome == "empty":
+    elif outcome == "empty" and domain == "story_index":
         StoryIndexStore(root).remove(path)
+    elif outcome == "empty" and domain == "timeline":
+        publish_timeline(workspace, TimelineStore(root), (), source_chapter=chapter_number)
+    elif outcome == "empty" and domain == "clues":
+        publish_clues(workspace, ClueStore(root), (), source_chapter=chapter_number)
+    elif outcome == "empty" and domain == "glossary":
+        publish_terms(workspace, GlossaryStore(root), (), source_chapter=chapter_number)
 
     CoverageStore(root).record(
         CoverageRecord(
@@ -741,7 +747,7 @@ def _dispatch(
         anchors = tuple(_timeline_entry(item, chapter_number, as_of) for item in records)
         for anchor in anchors:
             check_evidence(workspace, anchor.evidence, chapter=anchor.chapter, ledger=ledger)
-        publish_timeline(workspace, TimelineStore(root), anchors)
+        publish_timeline(workspace, TimelineStore(root), anchors, source_chapter=chapter_number)
         return len(anchors)
     if domain == "clues":
         clues = tuple(_clue_entry(item, as_of) for item in records)
@@ -754,14 +760,14 @@ def _dispatch(
                     chapter=clue.resolution_chapter,
                     ledger=ledger,
                 )
-        publish_clues(workspace, ClueStore(root), clues)
+        publish_clues(workspace, ClueStore(root), clues, source_chapter=chapter_number)
         return len(clues)
     if domain == "glossary":
         terms = tuple(_glossary_term(item, as_of) for item in records)
         for term in terms:
             if term.evidence is not None:
                 check_evidence(workspace, term.evidence, chapter=term.first_chapter, ledger=ledger)
-        publish_terms(workspace, GlossaryStore(root), terms)
+        publish_terms(workspace, GlossaryStore(root), terms, source_chapter=chapter_number)
         return len(terms)
     if domain == "disclosure":
         facts = tuple(_observed_fact(item, entity_path, workspace, as_of) for item in records)

@@ -19,9 +19,10 @@ from pydantic import ValidationError
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.api import _material_prompt
-from hastings.workspace.clues import ClueStore
+from hastings.workspace.clues import ClueStore, build_clues
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
+from hastings.workspace.glossary import GlossaryStore
 from hastings.workspace.material_tasks import (
     MaterialTaskScope,
     freeze_material_scope,
@@ -33,6 +34,7 @@ from hastings.workspace.service import ProviderFactory
 from hastings.workspace.state import RecentWorkspaces
 from hastings.workspace.story_index import StoryIndexStore, chapter_view, story_view
 from hastings.workspace.story_materials import author_view, entry_detail
+from hastings.workspace.timeline import TimelineStore
 from tau_agent.messages import AssistantMessage, TextContent, ToolCall
 from tau_agent.provider_events import AssistantDoneEvent, AssistantStartEvent
 
@@ -743,6 +745,162 @@ def test_story_index_empty_removes_only_that_chapter(tmp_path: Path) -> None:
     coverage = author_view(workspace, root, "story_index", as_of_chapter=2)["entries"]
     first = next(item for item in coverage if item["data"]["summary"] == "")
     assert first["coverage"] == "empty"
+
+
+def test_clue_and_glossary_empty_remove_only_that_chapter(tmp_path: Path) -> None:
+    workspace, root = _book(tmp_path)
+    clue_scope = _clues_scope(workspace, (FIRST, SECOND), 2)
+    _publish(
+        workspace,
+        root,
+        clue_scope,
+        path=FIRST,
+        outcome="found",
+        records=[
+            {
+                "clue": "书房有第二把椅子",
+                "planted_chapter": 1,
+                "evidence": _quote(workspace, FIRST, "书房"),
+            }
+        ],
+    )
+    _publish(
+        workspace,
+        root,
+        clue_scope,
+        path=SECOND,
+        outcome="found",
+        records=[
+            {
+                "clue": "书房没有人",
+                "planted_chapter": 2,
+                "evidence": _quote(workspace, SECOND, "书房没有人"),
+            }
+        ],
+    )
+    _publish(
+        workspace,
+        root,
+        clue_scope,
+        path=SECOND,
+        outcome="empty",
+        note="重读后确认这一章没有线索",
+    )
+    clues = ClueStore(root).entries()
+    assert [item.key for item in clues] == ["书房有第二把椅子"]
+    assert clues[0].source_chapter == 1
+
+    glossary_scope = freeze_material_scope(
+        workspace,
+        MaterialTaskScope(domain="glossary", chapter_paths=[FIRST, SECOND], as_of_chapter=2),
+    )
+    _publish(
+        workspace,
+        root,
+        glossary_scope,
+        path=FIRST,
+        outcome="found",
+        records=[
+            {
+                "term": "雪山旅馆",
+                "kind": "place",
+                "first_chapter": 1,
+                "evidence": _quote(workspace, FIRST, "书房"),
+            }
+        ],
+    )
+    _publish(
+        workspace,
+        root,
+        glossary_scope,
+        path=SECOND,
+        outcome="found",
+        records=[
+            {
+                "term": "书房",
+                "kind": "place",
+                "first_chapter": 2,
+                "evidence": _quote(workspace, SECOND, "书房没有人"),
+            }
+        ],
+    )
+    _publish(
+        workspace,
+        root,
+        glossary_scope,
+        path=SECOND,
+        outcome="empty",
+        note="重读后确认这一章没有新专名",
+    )
+    terms = GlossaryStore(root).entries()
+    assert [term.term for term in terms] == ["雪山旅馆"]
+
+
+def test_same_clue_uses_the_latest_chapter_contribution(tmp_path: Path) -> None:
+    workspace, root = _book(tmp_path)
+    scope = _clues_scope(workspace, (FIRST, SECOND), 2)
+    proof = _quote(workspace, FIRST, "书房")
+    _publish(
+        workspace,
+        root,
+        scope,
+        path=FIRST,
+        outcome="found",
+        records=[{"clue": "书房有人", "planted_chapter": 1, "supports": "甲", "evidence": proof}],
+    )
+    _publish(
+        workspace,
+        root,
+        scope,
+        path=SECOND,
+        outcome="found",
+        records=[
+            {
+                "clue": "书房有人",
+                "planted_chapter": 2,
+                "supports": "乙",
+                "evidence": _quote(workspace, SECOND, "书房没有人"),
+            }
+        ],
+    )
+
+    state = build_clues(workspace, ClueStore(root), as_of_chapter=2)
+    assert [item.supports for item in state.open] == ["乙"]
+    # 两份贡献都留在存储里，作者视图不出现重复行。
+    assert len(ClueStore(root).entries()) == 2
+
+
+def test_timeline_empty_removes_only_that_chapter(tmp_path: Path) -> None:
+    workspace, root = _book(tmp_path)
+    scope = _timeline_scope(workspace, (FIRST, SECOND), 2)
+    _publish(
+        workspace,
+        root,
+        scope,
+        path=FIRST,
+        outcome="found",
+        records=[{"when": "十月二十日深夜", "evidence": _quote(workspace, FIRST, "书房")}],
+    )
+    _publish(
+        workspace,
+        root,
+        scope,
+        path=SECOND,
+        outcome="found",
+        records=[{"when": "次日清晨", "evidence": _quote(workspace, SECOND, "书房没有人")}],
+    )
+
+    _publish(
+        workspace,
+        root,
+        scope,
+        path=FIRST,
+        outcome="empty",
+        note="重读后确认这一章没有时间锚点",
+    )
+
+    entries = TimelineStore(root).entries()
+    assert [entry.chapter for entry in entries] == [2]
 
 
 def test_story_index_task_publishes_and_story_events_endpoint_reads_it(

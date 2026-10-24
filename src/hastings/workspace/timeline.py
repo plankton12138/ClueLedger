@@ -110,6 +110,18 @@ class TimelineStore:
             entries=[item.to_dict() for item in merged.values()],
         )
 
+    def remove_chapter(self, chapter: int) -> None:
+        """这一章重建后确认没有时间锚点：移除旧锚点，别让旧记录继续当当前。"""
+        kept = [item for item in self.entries() if item.chapter != chapter]
+        write_records(
+            self.file,
+            prefix=".timeline-",
+            record_version=RECORD_VERSION,
+            recipe_version=RECIPE_VERSION,
+            key="entries",
+            entries=[item.to_dict() for item in kept],
+        )
+
     def status(self, workspace: Workspace, entry: TimelineEntry) -> EntryStatus:
         try:
             current = workspace.read(entry.evidence.path).digest
@@ -141,16 +153,27 @@ def _entry_from_payload(item: dict[str, object]) -> TimelineEntry | None:
 
 
 def publish_timeline(
-    workspace: Workspace, store: TimelineStore, entries: Sequence[TimelineEntry]
+    workspace: Workspace,
+    store: TimelineStore,
+    entries: Sequence[TimelineEntry],
+    *,
+    source_chapter: int | None = None,
 ) -> tuple[TimelineEntry, ...]:
-    """整批发布：每条都要能对上原文，任一条不过整批不写。"""
+    """整批发布：每条都要能对上原文，任一条不过整批不写。
+
+    ``source_chapter`` 给出且这一批为空时，表示这一章确认没有时间锚点：
+    移除该章旧锚点，其他章不受影响。
+    """
     if not entries:
-        raise WorkspaceError(
-            code="STATE_EVIDENCE_INVALID",
-            where="timeline.publish",
-            why="这一批没有时间锚点",
-            fix="至少给出一条带原文依据的锚点",
-        )
+        if source_chapter is None:
+            raise WorkspaceError(
+                code="STATE_EVIDENCE_INVALID",
+                where="timeline.publish",
+                why="这一批没有时间锚点",
+                fix="至少给出一条带原文依据的锚点",
+            )
+        store.remove_chapter(source_chapter)
+        return store.entries()
     for entry in entries:
         _check_entry(workspace, entry)
     store.replace(tuple(entries))

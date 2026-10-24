@@ -27,8 +27,9 @@
   排序、保存并用于本作品、依赖诊断、全局抽屉与空正文派生。
 - 作品包导入导出已取消（2026-10-24）：服务端路由、前端入口与相关用例一并移除，不保留隐藏入口。
 - E 统一章节索引与双视图已实施（[记录](notes/E-story-index.md)）：story_index 发布链路、
-  `/story-events` 两种顺序、旧章节概览与时间线路由映射。多时间线的计划叠加与线索／专名的
-  多来源贡献分组留给 F。
+  `/story-events` 两种顺序、旧章节概览与时间线路由映射；线索与专名改为按章记录贡献、
+  按章清除并合并读取（[记录](notes/E-multi-source-contributions.md)）。多时间线的计划
+  叠加仍留待后续。
 - F 检索基础（L0 短目录、L1 有界查询、L2 区间读取）已实施（[记录](notes/F1-retrieval.md)）；
   F2 受理冻结装配、运行中拒绝装卸与已装模块短目录已实施（[记录](notes/F2-assembly-freeze.md)）；
   F3 的 `list_modules`／`query_records`／`read_record`、受作者授权的库搜索与

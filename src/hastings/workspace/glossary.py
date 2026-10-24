@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -47,7 +47,7 @@ KIND_LABEL: dict[TermKind, str] = {
     "item": "物件",
 }
 
-RECORD_VERSION = 1
+RECORD_VERSION = 2
 RECIPE_VERSION = 2
 
 ConflictKind = Literal["alias_collision", "name_collision", "kind_collision"]
@@ -62,6 +62,8 @@ class GlossaryTerm:
     source: TermSource
     #: 从原文登记的词带依据；人物姓名来自小传声明，没有原文依据。
     evidence: ObservedEvidence | None = None
+    #: 这条贡献是哪一章的整理结果；重建一章只替换该章的贡献。
+    source_chapter: int = 0
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -69,6 +71,7 @@ class GlossaryTerm:
             "kind": self.kind,
             "aliases": list(self.aliases),
             "first_chapter": self.first_chapter,
+            "source_chapter": self.source_chapter,
         }
         if self.evidence is not None:
             payload["evidence"] = {
@@ -129,6 +132,20 @@ class GlossaryStore:
             entries=[item.to_dict() for item in merged.values()],
         )
 
+    def replace_source(self, source_chapter: int, terms: tuple[GlossaryTerm, ...]) -> None:
+        """只替换这一章的贡献；空批表示这一章确认没有新专名。"""
+        kept = [item for item in self.entries() if item.source_chapter != source_chapter]
+        merged = {(item.term, item.kind): item for item in terms}
+        rows = [*kept, *merged.values()]
+        write_records(
+            self.file,
+            prefix=".glossary-",
+            record_version=RECORD_VERSION,
+            recipe_version=RECIPE_VERSION,
+            key="terms",
+            entries=[item.to_dict() for item in rows],
+        )
+
     def status(self, workspace: Workspace, term: GlossaryTerm) -> EntryStatus:
         evidence = term.evidence
         if evidence is None:
@@ -168,6 +185,7 @@ def _term_from_payload(item: object) -> GlossaryTerm | None:
             first_chapter=int(item.get("first_chapter") or 0),
             source="text",
             evidence=evidence,
+            source_chapter=int(item.get("source_chapter") or 0),
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -177,15 +195,24 @@ def publish_terms(
     workspace: Workspace,
     store: GlossaryStore,
     terms: Sequence[GlossaryTerm],
+    *,
+    source_chapter: int | None = None,
 ) -> tuple[GlossaryTerm, ...]:
-    """整批登记：每条都要有原文依据，任一条不过整批不写。"""
+    """整批登记：每条都要有原文依据，任一条不过整批不写。
+
+    ``source_chapter`` 给出时只替换该章的贡献；空批表示这一章确认没有新专名，
+    移除该章旧贡献。给定来源时不再覆盖其他章登记过的词。
+    """
     if not terms:
-        raise WorkspaceError(
-            code="STATE_EVIDENCE_INVALID",
-            where="glossary.publish",
-            why="这一批没有词条",
-            fix="至少给出一条带原文依据的词",
-        )
+        if source_chapter is None:
+            raise WorkspaceError(
+                code="STATE_EVIDENCE_INVALID",
+                where="glossary.publish",
+                why="这一批没有词条",
+                fix="至少给出一条带原文依据的词",
+            )
+        store.replace_source(source_chapter, ())
+        return store.entries()
     for term in terms:
         if not term.term.strip():
             raise WorkspaceError(
@@ -202,7 +229,11 @@ def publish_terms(
                 fix="用 read_file 读到这个词出现的句子，再登记区间与引文",
             )
         check_evidence(workspace, term.evidence, chapter=term.first_chapter)
-    store.replace(tuple(terms))
+    if source_chapter is None:
+        store.replace(tuple(terms))
+    else:
+        tagged = tuple(replace(term, source_chapter=source_chapter) for term in terms)
+        store.replace_source(source_chapter, tagged)
     return store.entries()
 
 
@@ -224,6 +255,26 @@ def _declared_terms(workspace: Workspace) -> list[GlossaryTerm]:
     return terms
 
 
+def _merged_contributions(entries: Sequence[GlossaryTerm]) -> tuple[GlossaryTerm, ...]:
+    """同名同类只留最新一章的一份；别名取并集，首次出现章取最早。"""
+    merged: dict[tuple[str, TermKind], GlossaryTerm] = {}
+    order: list[tuple[str, TermKind]] = []
+    for item in entries:
+        key = (item.term, item.kind)
+        current = merged.get(key)
+        if current is None:
+            merged[key] = item
+            order.append(key)
+            continue
+        latest = item if item.source_chapter >= current.source_chapter else current
+        merged[key] = replace(
+            latest,
+            aliases=tuple(dict.fromkeys((*current.aliases, *item.aliases))),
+            first_chapter=min(current.first_chapter, item.first_chapter),
+        )
+    return tuple(merged[key] for key in order)
+
+
 def build_glossary(
     workspace: Workspace, store: GlossaryStore | None = None, *, as_of_chapter: int | None = None
 ) -> GlossaryState:
@@ -241,7 +292,7 @@ def build_glossary(
         current = min(current, max(0, as_of_chapter))
     terms = _declared_terms(workspace)
     if store is not None:
-        for item in store.entries():
+        for item in _merged_contributions(store.entries()):
             if item.first_chapter > current:
                 continue
             status = store.status(workspace, item)
