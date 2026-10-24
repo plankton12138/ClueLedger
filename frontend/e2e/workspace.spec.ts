@@ -40,6 +40,8 @@ test.beforeAll(async () => {
     "# 林远\n\n身份：私家侦探。曾经担任刑警。\n",
     "utf-8",
   );
+  writeFileSync(join(workspaceRoot, "设定集", "真相.md"), "", "utf-8");
+  writeFileSync(join(workspaceRoot, "设定集", "线索.md"), "", "utf-8");
   await fetch(`${BASE}/${bindingId}/git/record`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -54,6 +56,51 @@ test.beforeAll(async () => {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message: "补充线索" }),
+  });
+
+  // 一份已装的时间线模块：用于验证故事资料页的计划叠加与筛选。
+  const origin = BASE.replace("/api/file-workspaces", "");
+  const created = await fetch(`${origin}/api/module-library/modules`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      kind: "timeline",
+      name: "主线时间",
+      request_key: "e2e-plan-module",
+      entries: [
+        {
+          entry_id: "plan-9",
+          kind: "author_event",
+          title: "第9章误导",
+          body: "让读者以为管家撒了谎。",
+          fields: { planned_chapter: 9 },
+        },
+      ],
+    }),
+  }).then((response) => response.json());
+  const module = created.module as { module_id: string; head: string };
+  const detail = await fetch(
+    `${origin}/api/module-library/modules/${module.module_id}/revisions/${module.head}`,
+  ).then((response) => response.json());
+  await fetch(`${BASE}/${bindingId}/assembly`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bindings: [
+        {
+          id: "",
+          label: "主线时间",
+          module: {
+            library_id: detail.library_id,
+            module_id: module.module_id,
+            revision_id: module.head,
+          },
+        },
+      ],
+      links: [],
+      expected_digest: null,
+      request_key: "e2e-plan-bind",
+    }),
   });
 });
 
@@ -331,6 +378,41 @@ test("稿纸横线随内容滚动", async ({ page }) => {
   });
   const after = (await lined.boundingBox())!.y;
   expect(Math.round(before - after)).toBeGreaterThan(120);
+});
+
+test("故事资料页叠加已装模块的计划，并可按模块筛选", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "故事资料", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: /计划叠加/ }),
+  ).toBeVisible();
+  await expect(page.getByText("第9章误导")).toBeVisible();
+
+  await page.getByRole("button", { name: "主线时间", exact: true }).click();
+  await expect(page.getByText("第9章误导")).toHaveCount(0);
+  await page.getByRole("button", { name: "主线时间", exact: true }).click();
+  await expect(page.getByText("第9章误导")).toBeVisible();
+});
+
+test("灵感本可新建、删除恢复并带到对话", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  await page.getByRole("button", { name: "新建", exact: true }).click();
+  await page.getByLabel("灵感标题").fill("旧识");
+  await page.getByLabel("灵感正文").fill("老板娘认识死者，这层关系暂时不揭穿。");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByText("已保存为新的灵感修订")).toBeVisible();
+  await expect(page.locator(".toc-row").filter({ hasText: "旧识" })).toBeVisible();
+
+  await page.getByRole("button", { name: "删除", exact: true }).click();
+  await expect(page.getByText("已移到最近删除")).toBeVisible();
+  await page.getByRole("button", { name: /最近删除/ }).click();
+  await page.locator(".toc-row").filter({ hasText: "旧识" }).click();
+  await page.getByRole("button", { name: "恢复", exact: true }).click();
+  await expect(page.getByText("已恢复；恢复会生成一条新修订")).toBeVisible();
+  await page.getByRole("button", { name: "带到对话", exact: true }).click();
+  await expect(page.getByText("本轮灵感：")).toBeVisible();
+  await expect(page.getByText("旧识")).toBeVisible();
 });
 
 test("新建作品用系统窗口选位置，界面不再出现路径输入框", async ({ page }) => {

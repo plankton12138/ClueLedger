@@ -284,8 +284,15 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
     if (!workspaceId || !selected || !selected.deleted) return;
     set({ busy: true, error: null, notice: null });
     try {
+      // 恢复「删除状态」的修订只会再生成一条删除修订；撤销删除要恢复最近一条未删除的历史。
+      const history = await listIdeaRevisions(workspaceId, selected.idea_id);
+      const alive = history.items.find((item) => !item.deleted);
+      if (!alive) {
+        set({ busy: false, error: "这条灵感只有已删除的修订，无法恢复。" });
+        return;
+      }
       const view = await restoreIdea(workspaceId, selected.idea_id, {
-        target_revision: selected.revision_id,
+        target_revision: alive.id,
         expected_digest: selected.digest,
         request_key: requestKey("idea-restore"),
       });
