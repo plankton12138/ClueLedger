@@ -70,6 +70,51 @@ def _binding_id(workspace: Workspace) -> str:
 
 
 @pytest.mark.anyio
+async def test_single_turn_reference_reads_uninstalled_record_without_binding(
+    tmp_path: Path,
+) -> None:
+    workspace, tools, _, facts = _setup(tmp_path, author_text="从模块库找一份人物参考。")
+    await _call(
+        tools["set_task_scope"],
+        mode="read_only",
+        summary="引用模块库里的人物",
+        authorization="从模块库找一份人物参考",
+        library_search=True,
+    )
+
+    directory = await _call(
+        tools["read_library_record"],
+        module_id=facts["module_id"],
+        revision_id=facts["revision_id"],
+    )
+    assert directory["entries"][0]["entry_id"] == "lin"
+
+    record = await _call(
+        tools["read_library_record"],
+        module_id=facts["module_id"],
+        revision_id=facts["revision_id"],
+        entry_id="lin",
+    )
+    assert record["text"].endswith("法医，旧识。")
+    assert record["installed"] is False
+    assert AssemblyStore(workspace.root).read().bindings == ()
+
+
+@pytest.mark.anyio
+async def test_single_turn_reference_requires_library_search_scope(tmp_path: Path) -> None:
+    _, tools, _, facts = _setup(tmp_path, author_text="写第一章。")
+
+    with pytest.raises(WorkspaceError) as blocked:
+        await _call(
+            tools["read_library_record"],
+            module_id=facts["module_id"],
+            revision_id=facts["revision_id"],
+            entry_id="lin",
+        )
+    assert blocked.value.code == "MODULE_ACCESS_DENIED"
+
+
+@pytest.mark.anyio
 async def test_attach_needs_registered_scope(tmp_path: Path) -> None:
     _, tools, _, facts = _setup(tmp_path, author_text="写第一章。")
 

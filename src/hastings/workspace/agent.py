@@ -1583,6 +1583,97 @@ def build_tools(
             )
             return _json(page)
 
+        async def read_library_record(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            """作者明确要求时，单轮只读一个未装版本；不装入、不开放其他模块。"""
+            del tool_call_id, signal, on_update
+            scope = run.scope.current
+            if scope is None or not scope.draft.library_search:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="tools.read_library_record",
+                    why="作者还没有明确要求引用模块库里的内容",
+                    fix="先按作者原话登记 library_search；单轮引用不等于装入",
+                )
+            if run.library is None:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="tools.read_library_record",
+                    why="这一轮没有可用的模块库",
+                    fix="确认应用已配置模块库后再读取",
+                )
+            module_id = _text_argument(arguments, "module_id")
+            revision_text = _optional_text_argument(arguments, "revision_id")
+            revision_id = revision_text or ""
+            if not revision_id:
+                try:
+                    head = run.library.module(module_id).head
+                except WorkspaceError as exc:
+                    raise WorkspaceError(
+                        code="MODULE_ACCESS_DENIED",
+                        where="tools.read_library_record",
+                        why=f"模块不可用：{exc.why}",
+                        fix="先用 search_module_library 取得存在的模块与版本",
+                        details={"module_id": module_id},
+                    ) from exc
+                if not head:
+                    raise WorkspaceError(
+                        code="MODULE_ACCESS_DENIED",
+                        where="tools.read_library_record",
+                        why="这个模块还没有可读的版本",
+                        fix="先发布一个版本，或选择其他模块",
+                        details={"module_id": module_id},
+                    )
+                revision_id = head
+            revision = run.library.revision(module_id=module_id, revision_id=revision_id)
+            entry_id = _optional_text_argument(arguments, "entry_id")
+            if not entry_id:
+                return _json(
+                    {
+                        "library_id": run.library.library_id,
+                        "module_id": module_id,
+                        "revision_id": revision_id,
+                        "kind": revision.module_kind,
+                        "name": revision.module_name,
+                        "entries": [
+                            {"entry_id": item.entry_id, "kind": item.kind, "title": item.title}
+                            for item in revision.entries
+                        ],
+                        "note": "这里只是目录；正文用 entry_id 再读一次。本轮不自动装入。",
+                    }
+                )
+            detail = run.library.read_entry(
+                module_id=module_id,
+                revision_id=revision_id,
+                entry_id=entry_id,
+                start=_optional_int_argument(arguments, "start", minimum=0) or 0,
+                end=_optional_int_argument(arguments, "end", minimum=0),
+                ledger=run.materials,
+            )
+            ref = [run.library.library_id or "", module_id, revision_id, entry_id]
+            detail["module_ref"] = ref
+            detail["installed"] = any(
+                binding.module.module_id == module_id
+                and binding.module.revision_id == revision_id
+                for binding in run.assembly.bindings
+            )
+            run.record(
+                "library_record_read",
+                {
+                    "module_ref": ref,
+                    "entry_id": entry_id,
+                    "start": detail["start"],
+                    "end": detail["end"],
+                    "length": detail["length"],
+                    "digest": detail["digest"],
+                },
+            )
+            return _json(detail)
+
         def _require_module_grant(
             action: ModuleAction,
             *,
@@ -1929,6 +2020,40 @@ def build_tools(
                     prompt_guidelines=(
                         "先在范围里登记 library_search；作者没有明确要求就不要搜索。",
                         "搜索结果只是候选；装入要由作者确认，不能自己改装配。",
+                    ),
+                    execution_mode="sequential",
+                )
+            )
+            tools.append(
+                AgentTool(
+                    name="read_library_record",
+                    label="单轮读取库记录",
+                    description=(
+                        "作者明确要求参考库内容时，只读一个精确版本的目录或条目原文；"
+                        "不自动装入，也不开放其他模块。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "module_id": {"type": "string"},
+                            "revision_id": {
+                                "type": "string",
+                                "description": "省略时读取当前 head；写入前仍应确认版本",
+                            },
+                            "entry_id": {
+                                "type": "string",
+                                "description": "省略时只返回该版本的条目标题目录",
+                            },
+                            "start": {"type": "integer", "minimum": 0},
+                            "end": {"type": "integer", "minimum": 0},
+                        },
+                        "required": ["module_id"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=read_library_record,
+                    prompt_guidelines=(
+                        "只在作者明确要求引用模块库内容且已登记 library_search 时使用。",
+                        "单轮引用不改变装配；要长期使用仍需作者确认装入。",
                     ),
                     execution_mode="sequential",
                 )
