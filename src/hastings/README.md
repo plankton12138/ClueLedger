@@ -26,6 +26,7 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 | 材料来源、读取区间、受理快照与有界输出 | `workspace/materials.py` | [V06-A1 读取与材料基础](../../dev-notes/v0.6/notes/V06-A1-materials.md)、[V06-A2 可选参考闭环](../../dev-notes/v0.6/notes/V06-A2-references.md) |
 | 章节索引的生成、发布与状态 | `workspace/chapter_index.py` | [V06-A3 章节索引](../../dev-notes/v0.6/notes/V06-A3-chapter-index.md) |
 | 故事资料的作者视图、证据与覆盖记录 | `workspace/story_materials.py` | [故事资料](../../dev-notes/v0.7/modules/story-materials.md) |
+| L0 短目录、L1 有界查询与来源标签（0.8 F1） | `workspace/retrieval.py` | [F1 检索基础](../../dev-notes/v0.8/notes/F1-retrieval.md) |
 | 资料任务的范围、域权限、发布与完成度 | `workspace/material_tasks.py` | [故事资料](../../dev-notes/v0.7/modules/story-materials.md) |
 | 只读检查、报告与失效 | `workspace/review.py` | [V06-C1 只读检查](../../dev-notes/v0.6/notes/V06-C1-review.md) |
 | 本轮修改范围、操作检查与承接规则 | `workspace/task_scope.py` | [V06-B1 任务范围基础](../../dev-notes/v0.6/notes/V06-B1-task-scope.md)、[V06-B2 范围事件](../../dev-notes/v0.6/notes/V06-B2-scope-events.md) |
