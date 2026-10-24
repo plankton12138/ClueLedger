@@ -38,8 +38,6 @@ async function api(path, init) {
 async function prepare() {
   rmSync(WORKSPACE, { recursive: true, force: true });
   rmSync(DERIVED, { recursive: true, force: true });
-  rmSync(IMPORTED, { recursive: true, force: true });
-  rmSync(ZIP, { force: true });
   const binding = await api("/api/file-workspaces", {
     method: "POST",
     body: JSON.stringify({ path: WORKSPACE, create: true }),
@@ -163,7 +161,7 @@ async function main() {
     throw new Error(`浏览器控制台报错：\n${errors.join("\n")}`);
   }
   console.log(
-    `走查完成：${prepared.workspaceId}；截图 ${join(SHOTS, "00-overview.png")} 等 7 张`,
+    `走查完成：${prepared.workspaceId}；截图 ${join(SHOTS, "00-overview.png")} 等 5 张`,
   );
 }
 

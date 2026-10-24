@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hastings-ai"
-version = "0.7.0"
+version = "0.8.0"
 description = "ClueLedger (线簿), a mystery-novel writing agent built on the tau agent harness."
 requires-python = ">=3.12"
 dependencies = [
