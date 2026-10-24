@@ -138,12 +138,19 @@ export interface TurnInfo {
   title?: string;
 }
 
+/** 本轮明确选中的灵感修订；正文由服务端按修订读取。 */
+export interface IdeaReferenceInput {
+  idea_id: string;
+  revision_id: string;
+}
+
 /** 本轮带上来的材料：当前阅读位置、显式参考与客户端看到的版本。 */
 export interface ContextInput {
   state_chapter?: number | null;
   selected_path: string | null;
   /** 顺序即作者选择顺序；服务端按路径去重。 */
   reference_paths: string[];
+  idea_references?: IdeaReferenceInput[];
   /** 客户端看到的版本，只对应本次当前路径与参考；不是服务端内容依据。 */
   observed_digests: Record<string, string>;
 }
@@ -165,6 +172,7 @@ export interface TurnInput {
 export const EMPTY_CONTEXT: ContextInput = {
   selected_path: null,
   reference_paths: [],
+  idea_references: [],
   observed_digests: {},
 };
 

@@ -66,12 +66,14 @@ from hastings.workspace.glossary import (
     glossary_view,
     publish_terms,
 )
+from hastings.workspace.ideas import IdeaStore
 from hastings.workspace.material_tasks import publish_material_result
 from hastings.workspace.materials import (
     LIST_RESULT_CHARS,
     READ_MAX_CHARS,
     READ_RESULT_CHARS,
     SEARCH_MAX_HITS,
+    IdeaReference,
     MaterialLedger,
     ReadRequirement,
     Reference,
@@ -158,6 +160,10 @@ class RunContext:
     #: 受理时冻结的装配与库入口；检索工具只读这些精确版本。
     assembly: Assembly = field(default_factory=Assembly)
     library: ModuleLibrary | None = None
+    #: 作者在对话里明确选中的灵感修订；只有这些条目允许读取正文。
+    idea_references: tuple[IdeaReference, ...] = ()
+    #: 本轮显式搜索灵感后看到的修订；只在当前轮有效，下一轮不继承。
+    idea_visible: set[tuple[str, str]] = field(default_factory=set)
     #: 作品状态目录；检索观察与本作品投影都在这里。
     state_root: Path | None = None
 
@@ -2040,6 +2046,210 @@ def build_tools(
                 )
             )
 
+    if mode == "write":
+        search_phrases = (
+            "找灵感",
+            "搜灵感",
+            "搜索灵感",
+            "查灵感",
+            "翻灵感",
+            "看看灵感",
+            "灵感里找",
+            "灵感里查",
+        )
+        save_phrases = (
+            "记下来",
+            "记一下",
+            "记住",
+            "保存为灵感",
+            "存成灵感",
+            "存到灵感",
+            "记到灵感",
+            "放进灵感",
+            "写到灵感",
+        )
+
+        def _author_said(phrases: tuple[str, ...]) -> bool:
+            return any(phrase in text for _, text in run.author_messages for phrase in phrases)
+
+        async def read_idea(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            idea_id = _text_argument(arguments, "idea_id")
+            revision_id = str(arguments.get("revision_id") or "").strip()
+            allowed = {(item.idea_id, item.revision_id) for item in run.idea_references}
+            if not revision_id:
+                selected = [item for item in run.idea_references if item.idea_id == idea_id]
+                if selected:
+                    revision_id = selected[0].revision_id
+            if (idea_id, revision_id) not in allowed and (
+                idea_id,
+                revision_id,
+            ) not in run.idea_visible:
+                raise WorkspaceError(
+                    code="IDEA_ACCESS_DENIED",
+                    where="tools.read_idea",
+                    why="这条灵感不在本轮授权范围内",
+                    fix="请作者先在本轮选中这条灵感，或明确要求检索灵感本",
+                    details={"idea_id": idea_id, "revision_id": revision_id},
+                )
+            view = IdeaStore(workspace).revision(idea_id, revision_id)
+            return _json(
+                {
+                    "idea_id": idea_id,
+                    "revision_id": revision_id,
+                    "title": view["title"],
+                    "body": view["body"],
+                    "tags": view["tags"],
+                    "note": "灵感是作者笔记，不是正文事实；写进正文前要由作者确认。",
+                }
+            )
+
+        async def search_ideas(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            if not _author_said(search_phrases):
+                raise WorkspaceError(
+                    code="IDEA_SEARCH_DENIED",
+                    where="tools.search_ideas",
+                    why="作者没有要求检索灵感本",
+                    fix="只在作者明确说找灵感、搜索灵感时使用；普通写作不能顺手翻灵感",
+                )
+            query = str(arguments.get("query") or "").strip()
+            page = IdeaStore(workspace).list(q=query, limit=10)
+            items = cast(list[dict[str, object]], page["items"])
+            for item in items:
+                run.idea_visible.add((str(item["idea_id"]), str(item["head_revision_id"])))
+            return _json(
+                {
+                    "items": items,
+                    "total": page["total"],
+                    "note": "这些摘要只在本轮可继续用 read_idea 读取；下一轮不再自动可见。",
+                }
+            )
+
+        async def save_idea(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            if not _author_said(save_phrases):
+                raise WorkspaceError(
+                    code="IDEA_SAVE_DENIED",
+                    where="tools.save_idea",
+                    why="作者没有明确要求把内容记成灵感",
+                    fix="只在作者说记下来、保存为灵感时使用；普通讨论不要自动收集",
+                )
+            title = str(arguments.get("title") or "").strip()
+            body = str(arguments.get("body") or "").strip()
+            created = IdeaStore(workspace).create(
+                title=title,
+                body=body,
+                tags=list(_string_list_argument(arguments, "tags")),
+                request_key=f"{run.turn_id}:idea",
+            )
+            run.record(
+                "idea_saved",
+                {
+                    "idea_id": created["idea_id"],
+                    "revision_id": created["revision_id"],
+                    "title": created["title"],
+                },
+            )
+            return _json(
+                {
+                    "idea_id": created["idea_id"],
+                    "revision_id": created["revision_id"],
+                    "note": "已保存到灵感本；它不是正式设定，也不会自动写进正文。",
+                }
+            )
+
+        tools.extend(
+            [
+                AgentTool(
+                    name="read_idea",
+                    label="读取灵感",
+                    description=(
+                        "读取作者本轮选中、或本轮明确搜索到的灵感修订；未授权的灵感拒绝。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "idea_id": {"type": "string"},
+                            "revision_id": {
+                                "type": "string",
+                                "description": "省略时使用本轮选中的那个修订",
+                            },
+                        },
+                        "required": ["idea_id"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=read_idea,
+                    prompt_guidelines=(
+                        "只读本轮选中的修订；作者改过之后不要拿旧修订当当前。",
+                        "灵感是作者笔记，不是已发生的事实。",
+                    ),
+                    execution_mode="sequential",
+                ),
+                AgentTool(
+                    name="search_ideas",
+                    label="搜索灵感本",
+                    description=(
+                        "仅在作者明确要求找灵感时使用；返回摘要与当前修订，不自动写入作品。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "关键词或标签"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    execute_fn=search_ideas,
+                    prompt_guidelines=(
+                        "作者没有明确要求就不要搜索灵感；普通目录与文件工具读不到灵感。",
+                        "搜索结果只在本轮可见，下一轮要重新获得许可。",
+                    ),
+                    execution_mode="sequential",
+                ),
+                AgentTool(
+                    name="save_idea",
+                    label="记成灵感",
+                    description=(
+                        "把作者明确要求记下的内容保存为灵感；不改成正式设定，也不自动采用。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "body": {"type": "string"},
+                            "tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                        "required": ["body"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=save_idea,
+                    prompt_guidelines=(
+                        "只在作者说记下来、保存为灵感时使用；不要自动收集讨论内容。",
+                        "保存后告诉作者已记录，但不要把它当成正文设定。",
+                    ),
+                    execution_mode="sequential",
+                ),
+            ]
+        )
+
     if mode == "review":
         # 检查任务：只读原文与搜索，加保存报告；没有作品写工具。
         readonly = {
@@ -2776,6 +2986,7 @@ def build_turn_assembly(
     selected_path: str | None = None,
     history_facts: str = "",
     materials: str = "",
+    ideas: str = "",
     modules: str = "",
     index_notes: str = "",
     index_excluded: Sequence[Exclusion] = (),
@@ -2799,6 +3010,7 @@ def build_turn_assembly(
         selected_path=selected_path,
         history_facts=history_facts,
         materials=materials,
+        ideas=ideas,
         modules=modules,
         index_notes=index_notes,
         index_excluded=index_excluded,
@@ -2822,6 +3034,7 @@ def build_harness(
     history: Sequence[AgentMessage] = (),
     history_facts: str = "",
     materials: str = "",
+    ideas: str = "",
     modules: str = "",
     index_notes: str = "",
     mode: ToolMode = "write",
@@ -2851,6 +3064,7 @@ def build_harness(
         selected_path=selected_path,
         history_facts=history_facts,
         materials=materials,
+        ideas=ideas,
         modules=modules,
         index_notes=index_notes,
         disclosure_store=disclosure_store,

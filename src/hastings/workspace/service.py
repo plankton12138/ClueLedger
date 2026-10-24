@@ -39,7 +39,7 @@ from hastings.workspace.chapter_index import (
 from hastings.workspace.character_states import CharacterStateStore
 from hastings.workspace.chat_stream import ChatStreamBridge, repair_interrupted_stream
 from hastings.workspace.clues import ClueStore
-from hastings.workspace.context import materials_section
+from hastings.workspace.context import ideas_section, materials_section
 from hastings.workspace.disclosure import DisclosureStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
@@ -1003,6 +1003,7 @@ class TurnService:
                     emit=lambda kind, payload: self._record_activity(info, kind, payload),
                     assembly=frozen_assembly,
                     library=self.library,
+                    idea_references=info.context.ideas if info.context else (),
                     state_root=self.store.root,
                 )
                 review_store = ReviewStore(self.store.root)
@@ -1037,12 +1038,14 @@ class TurnService:
                 else:
                     instructions = ""
                     turn_materials = materials_section(info.context, ledger.summaries())
+                turn_ideas = ideas_section(info.context) if mode != "materials" else ""
                 assembly = build_turn_assembly(
                     self.workspace,
                     as_of_chapter=run.state_chapter,
                     mode=mode,
                     history_facts=execution_facts(history_events),
                     materials=turn_materials,
+                    ideas=turn_ideas,
                     index_notes=index_notes,
                     index_excluded=index_excluded,
                     instructions=instructions,

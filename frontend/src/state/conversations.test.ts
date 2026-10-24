@@ -606,6 +606,7 @@ describe("草稿与列表", () => {
     useConversationsStore.getState().newConversation();
     useConversationsStore.getState().setDraft("参考第一章改第三章");
     useConversationsStore.getState().setDraftContext("正文/0001 雨夜.md", ["正文/0001 雨夜.md"]);
+    useConversationsStore.getState().addIdeaReference("idea_1", "irev_1", "旧识");
 
     await useConversationsStore.getState().send("参考第一章改第三章", {
       selected_path: "正文/0001 雨夜.md",
@@ -620,11 +621,13 @@ describe("草稿与列表", () => {
         context: {
           selected_path: "正文/0001 雨夜.md",
           reference_paths: ["正文/0001 雨夜.md"],
+          idea_references: [{ idea_id: "idea_1", revision_id: "irev_1" }],
           observed_digests: { "正文/0001 雨夜.md": "d1" },
         },
       }),
     );
     expect(useConversationsStore.getState().draftContexts.new).toBeUndefined();
+    expect(useConversationsStore.getState().draftIdeas.new).toBeUndefined();
     expect(useConversationsStore.getState().drafts.new).toBeUndefined();
   });
 

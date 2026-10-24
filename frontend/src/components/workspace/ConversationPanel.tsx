@@ -19,6 +19,7 @@ import {
   runningConversation,
   selectedEntry,
   useConversationsStore,
+  type DraftIdea,
 } from "../../state/conversations";
 import { useModelsStore } from "../../state/models";
 import { useWorkspaceStore } from "../../state/workspace";
@@ -31,6 +32,8 @@ import ReferencePicker from "./ReferencePicker";
 function conversationLabel(item: Conversation, running: boolean): string {
   return running ? `${item.title}（进行中）` : item.title;
 }
+
+const NO_IDEAS: DraftIdea[] = [];
 
 export default function ConversationPanel() {
   const items = useConversationsStore((state) => state.items);
@@ -52,6 +55,10 @@ export default function ConversationPanel() {
   const setDraft = useConversationsStore((state) => state.setDraft);
   const setDraftContext = useConversationsStore((state) => state.setDraftContext);
   const draftContext = useConversationsStore((state) => state.draftContexts[draftKeyOf(state)]);
+  const draftIdeas = useConversationsStore(
+    (state) => state.draftIdeas[draftKeyOf(state)] ?? NO_IDEAS,
+  );
+  const removeIdeaReference = useConversationsStore((state) => state.removeIdeaReference);
   const catalog = useWorkspaceStore((state) => state.catalog);
   const openPath = useWorkspaceStore((state) => state.selectedPath);
   const openFile = useWorkspaceStore((state) => state.file);
@@ -270,6 +277,29 @@ export default function ConversationPanel() {
         {otherRunning && busyElsewhere && (
           <div className="rounded border border-amber-edge bg-amber-bg px-2 py-1.5 text-[11px] text-amber">
             「{busyElsewhere.title}」还在进行；结束或停止它之后才能发送。
+          </div>
+        )}
+        {draftIdeas.length > 0 && (
+          <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px]">
+            <span className="text-mute">本轮灵感：</span>
+            {draftIdeas.map((item) => (
+              <span
+                key={item.idea_id}
+                className="flex items-center gap-1 rounded border border-amber-edge bg-amber-bg px-1.5 py-0.5 text-amber"
+              >
+                <span className="max-w-40 truncate">
+                  {item.title || item.idea_id.slice(0, 8)}
+                </span>
+                <span className="text-mute">{item.revision_id.slice(0, 6)}</span>
+                <button
+                  aria-label={`移除灵感 ${item.title || item.idea_id}`}
+                  className="text-mute"
+                  onClick={() => removeIdeaReference(item.idea_id)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
           </div>
         )}
         <ReferencePicker

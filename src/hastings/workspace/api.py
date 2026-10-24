@@ -230,6 +230,14 @@ class AcceptedTurnView(BaseModel):
     request_key: str
 
 
+class IdeaReferenceInput(BaseModel):
+    """作者在对话里明确选中的灵感修订；只给标识，正文由服务端按修订读取。"""
+
+    model_config = ConfigDict(extra="forbid")
+    idea_id: str = Field(min_length=1, max_length=64)
+    revision_id: str = Field(min_length=1, max_length=64)
+
+
 class ContextInput(BaseModel):
     """本轮带上来的材料：当前阅读位置、显式参考与客户端看到的版本。
 
@@ -239,6 +247,7 @@ class ContextInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     selected_path: str | None = None
     reference_paths: list[str] = Field(default_factory=list, max_length=MAX_REFERENCES)
+    idea_references: list[IdeaReferenceInput] = Field(default_factory=list, max_length=10)
     observed_digests: dict[str, str] = Field(default_factory=dict)
     state_chapter: int | None = Field(default=None, ge=0, strict=True)
 
@@ -262,6 +271,9 @@ class ContextInput(BaseModel):
             state_chapter=self.state_chapter,
             selected_path=self.selected_path,
             reference_paths=tuple(self.reference_paths),
+            idea_references=tuple(
+                (item.idea_id, item.revision_id) for item in self.idea_references
+            ),
             observed_digests=dict(self.observed_digests),
         )
 

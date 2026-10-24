@@ -34,11 +34,13 @@ __all__ = [
     "READ_RESULT_CHARS",
     "REFERENCE_PREREAD_CHARS",
     "REFERENCE_PREREAD_TOTAL",
+    "IDEA_PREREAD_CHARS",
     "SEARCH_MAX_HITS",
     "SEARCH_RESULT_CHARS",
     "SEARCH_SNIPPET_CHARS",
     "MaterialLedger",
     "MaterialSummary",
+    "IdeaReference",
     "PreparedReference",
     "ReadCoverage",
     "ReadRequirement",
@@ -68,6 +70,8 @@ __all__ = [
 MAX_REFERENCES = 20
 REFERENCE_PREREAD_CHARS = 2_000
 REFERENCE_PREREAD_TOTAL = 8_000
+#: 单条选中灵感在上下文里的正文上限；更长时用专用工具继续读。
+IDEA_PREREAD_CHARS = 2_000
 
 #: 单次 read_file 的原文上限与整个结果上限。
 READ_MAX_CHARS = 16_000
@@ -356,11 +360,29 @@ def prepare_references(
 
 
 @dataclass(frozen=True, slots=True)
+class IdeaReference:
+    """作者本轮明确选中的灵感修订；正文在受理时冻结。"""
+
+    idea_id: str
+    revision_id: str
+    title: str
+    body: str
+
+    def view(self) -> dict[str, str]:
+        return {
+            "idea_id": self.idea_id,
+            "revision_id": self.revision_id,
+            "title": self.title,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ContextRequest:
     """客户端提交的当前阅读位置与显式参考；顺序即作者选择顺序。"""
 
     selected_path: str | None = None
     reference_paths: tuple[str, ...] = ()
+    idea_references: tuple[tuple[str, str], ...] = ()
     observed_digests: Mapping[str, str] = field(default_factory=dict)
     state_chapter: int | None = None
 
@@ -377,6 +399,7 @@ class ContextSnapshot:
     references: tuple[SourceRef, ...]
     observed_digests: Mapping[str, str]
     state_chapter: int | None = None
+    ideas: tuple[IdeaReference, ...] = ()
 
     @property
     def reference_paths(self) -> tuple[str, ...]:
@@ -388,6 +411,7 @@ class ContextSnapshot:
             **({"state_chapter": self.state_chapter} if self.state_chapter is not None else {}),
             "selected_path": self.selected_path,
             "reference_paths": list(self.reference_paths),
+            "idea_references": [[item.idea_id, item.revision_id] for item in self.ideas],
             "observed_digests": dict(sorted(self.observed_digests.items())),
         }
 
@@ -395,6 +419,7 @@ class ContextSnapshot:
         return {
             **self.identity(),
             "reference_digests": {ref.path: ref.digest for ref in self.references},
+            "idea_revisions": [item.view() for item in self.ideas],
         }
 
 
@@ -446,11 +471,44 @@ def freeze_context(workspace: Workspace, request: ContextRequest) -> ContextSnap
                 details={"path": path},
             ) from exc
         references.append(SourceRef(view.path, view.digest))
+    ideas: list[IdeaReference] = []
+    if request.idea_references:
+        from hastings.workspace.ideas import IdeaStore
+
+        store = IdeaStore(workspace)
+        for idea_id, revision_id in request.idea_references:
+            try:
+                revision = store.revision(idea_id, revision_id)
+            except WorkspaceError as exc:
+                raise WorkspaceError(
+                    code="CONTEXT_SOURCE_NOT_FOUND",
+                    where="materials.accept",
+                    why=f"灵感修订当前不可用：{idea_id}@{revision_id}（{exc.why}）",
+                    fix="刷新灵感本后重新选择；条目可能已被删除",
+                    details={"idea_id": idea_id, "revision_id": revision_id},
+                ) from exc
+            if bool(revision.get("deleted")):
+                raise WorkspaceError(
+                    code="CONTEXT_SOURCE_NOT_FOUND",
+                    where="materials.accept",
+                    why=f"灵感修订已删除：{idea_id}@{revision_id}",
+                    fix="从最近删除恢复，或改选当前修订",
+                    details={"idea_id": idea_id, "revision_id": revision_id},
+                )
+            ideas.append(
+                IdeaReference(
+                    idea_id=idea_id,
+                    revision_id=revision_id,
+                    title=str(revision.get("title") or ""),
+                    body=str(revision.get("body") or ""),
+                )
+            )
     return ContextSnapshot(
         state_chapter=request.state_chapter,
         selected_path=request.selected_path,
         references=tuple(references),
         observed_digests=dict(request.observed_digests),
+        ideas=tuple(ideas),
     )
 
 

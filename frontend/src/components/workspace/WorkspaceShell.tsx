@@ -21,6 +21,7 @@ import { useModelsStore } from "../../state/models";
 import { navigate, useWorkspacePage } from "../../state/navigation";
 import { useWorkspaceStore } from "../../state/workspace";
 import StoryMaterialsPage from "../materials/StoryMaterialsPage";
+import IdeasPage from "../ideas/IdeasPage";
 import ModuleDrawer from "../library/ModuleDrawer";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
 import ActivityPanel from "./ActivityPanel";
@@ -96,11 +97,13 @@ export default function WorkspaceShell() {
   const dismissNotice = useWorkspaceStore((state) => state.dismissNotice);
   // 目录里的「加入对话」写的是会话草稿的参考列表：与输入区的选择器同一份状态。
   const addReference = useConversationsStore((state) => state.addReference);
+  const addIdeaReference = useConversationsStore((state) => state.addIdeaReference);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState("");
   const page = useWorkspacePage();
 
+  const ideas = page?.kind === "ideas" ? page : null;
   const materials = page?.kind === "materials" ? page : null;
   const fileInput = useRef<HTMLInputElement>(null);
   const current = bindings.find((binding) => binding.id === currentId);
@@ -216,12 +219,23 @@ export default function WorkspaceShell() {
         <div className="flex-1" />
         <div className="seg flex-none text-[11px]">
           <button
-            className={!materials ? "on px-2 py-1" : "px-2 py-1"}
-            aria-pressed={!materials}
+            className={!materials && !ideas ? "on px-2 py-1" : "px-2 py-1"}
+            aria-pressed={!materials && !ideas}
             disabled={!currentId}
             onClick={() => currentId && navigate({ kind: "writing", workspaceId: currentId })}
           >
             写作
+          </button>
+          <button
+            className={ideas ? "on px-2 py-1" : "px-2 py-1"}
+            aria-pressed={Boolean(ideas)}
+            disabled={!currentId}
+            onClick={() =>
+              currentId &&
+              navigate({ kind: "ideas", workspaceId: currentId, ideaId: ideas?.ideaId })
+            }
+          >
+            灵感
           </button>
           <button
             className={materials ? "on px-2 py-1" : "px-2 py-1"}
@@ -285,7 +299,19 @@ export default function WorkspaceShell() {
         </div>
       )}
 
-      {materials && currentId ? (
+      {ideas && currentId ? (
+        <main className="flex min-h-0 flex-1 overflow-hidden">
+          <IdeasPage
+            workspaceId={currentId}
+            ideaId={ideas.ideaId}
+            onNavigate={navigate}
+            onTakeToChat={(ideaId, revisionId, title) => {
+              addIdeaReference(ideaId, revisionId, title);
+              navigate({ kind: "writing", workspaceId: currentId });
+            }}
+          />
+        </main>
+      ) : materials && currentId ? (
         <main className="flex min-h-0 flex-1 overflow-hidden">
           <StoryMaterialsPage
             workspaceId={currentId}

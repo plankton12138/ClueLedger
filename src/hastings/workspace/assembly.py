@@ -25,6 +25,7 @@ __all__ = [
     "INSTRUCTIONS_BUDGET",
     "MATERIALS_BUDGET",
     "MODULES_BUDGET",
+    "IDEAS_BUDGET",
     "PROFILE_BUDGETS",
     "CLUES_BUDGET",
     "GLOSSARY_BUDGET",
@@ -51,6 +52,8 @@ CATALOG_BUDGET = 12_000
 #: 已装模块的短目录；只放实例、精确版本与条目数，不读条目正文。
 MODULES_BUDGET = 2_000
 MATERIALS_BUDGET = 8_000
+#: 作者本轮明确选中的灵感修订；按修订冻结，和正文材料分开计量。
+IDEAS_BUDGET = 3_000
 #: 章节索引摘要在写作上下文里的位置；单列成常量，便于核对总预算的构成。
 INDEX_BUDGET = 8_000
 SETTINGS_BUDGET = 6_000
@@ -68,7 +71,7 @@ CLUES_BUDGET = 500
 
 #: 每种用途的总预算：分区预算之和，超出的判断仍按分区做。
 #:
-#: 这是**字符**预算，不是 token 上限：写作用途合计 46,900 字符，只用来解释这一轮
+#: 这是**字符**预算，不是 token 上限：写作用途合计 49,900 字符，只用来解释这一轮
 #: 装进了多少材料。上游实际消耗的 token 由用量记录单独上报，两者不互相换算，也不能
 #: 拿这里的数字代替 token 统计。
 PROFILE_BUDGETS: dict[Profile, int] = {
@@ -76,6 +79,7 @@ PROFILE_BUDGETS: dict[Profile, int] = {
     + CATALOG_BUDGET
     + MODULES_BUDGET
     + MATERIALS_BUDGET
+    + IDEAS_BUDGET
     + INDEX_BUDGET
     + STATE_BUDGET
     + GLOSSARY_BUDGET
@@ -89,6 +93,7 @@ PROFILE_BUDGETS: dict[Profile, int] = {
     + CATALOG_BUDGET
     + MODULES_BUDGET
     + MATERIALS_BUDGET
+    + IDEAS_BUDGET
     + ROSTER_BUDGET
     + TIMELINE_BUDGET
     + CLUES_BUDGET

@@ -87,6 +87,8 @@ export interface ConversationsStore {
   drafts: Record<string, string>;
   /** 草稿携带的参考：与文字同一次保存，删除文字时一并删除。 */
   draftContexts: Record<string, DraftContext>;
+  /** 草稿携带的灵感修订：只在本机草稿槽位里，发送时随本轮提交。 */
+  draftIdeas: Record<string, DraftIdea[]>;
   revision: string;
   error: string | null;
   pendingKey: string | null;
@@ -102,6 +104,9 @@ export interface ConversationsStore {
   setDraftContext(selectedPath: string | null, referencePaths: string[]): void;
   /** 目录里「加入对话」：把一份文件追加到当前草稿的参考，重复点击不重复登记。 */
   addReference(path: string): void;
+  /** 灵感「带到对话」：只登记本轮参考，不发送、不改正文。 */
+  addIdeaReference(ideaId: string, revisionId: string, title: string): void;
+  removeIdeaReference(ideaId: string): void;
   stop(): Promise<void>;
   /** 断线后重新接收：先取活动快照，再从确认过的位置继续。 */
   reconnect(): Promise<void>;
@@ -125,6 +130,23 @@ function entryKey(conversationId: string | null): string {
 /** 两份参考列表是否完全相同：顺序即选择顺序，所以不排序比较。 */
 function samePathList(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((path, index) => path === right[index]);
+}
+
+export interface DraftIdea {
+  idea_id: string;
+  revision_id: string;
+  title: string;
+}
+
+function sameIdeaList(left: DraftIdea[], right: DraftIdea[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (item, index) =>
+        item.idea_id === right[index].idea_id &&
+        item.revision_id === right[index].revision_id,
+    )
+  );
 }
 
 function sleep(ms: number): Promise<void> {
@@ -384,6 +406,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     entries: {},
     drafts: {},
     draftContexts: {},
+    draftIdeas: {},
     revision: "0",
     error: null,
     pendingKey: null,
@@ -434,6 +457,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         entries: {},
         drafts: {},
         draftContexts: {},
+        draftIdeas: {},
         revision: "0",
         error: null,
         pendingKey: null,
@@ -516,10 +540,17 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const key = target ?? NEW_DRAFT;
       const keyRequest = `ui-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
       // 请求对象在发送前生成一次：重试与回调都复用同一个快照，不把当前选择偷偷带进去。
+      const submittedIdeas = [...(get().draftIdeas[key] ?? [])];
       const request: TurnInput = {
         text: trimmed,
         request_key: keyRequest,
-        context: context ?? EMPTY_CONTEXT,
+        context: {
+          ...(context ?? EMPTY_CONTEXT),
+          idea_references: submittedIdeas.map(({ idea_id, revision_id }) => ({
+            idea_id,
+            revision_id,
+          })),
+        },
         ...(options &&
         (options.purpose === "update_chapter_index" ||
           options.purpose === "update_disclosure" ||
@@ -591,7 +622,12 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
                 // 新草稿连同它的参考一起交给正式会话，不在槽位里留下悬空引用。
                 delete contexts[NEW_DRAFT];
               }
-              return { drafts: next, draftContexts: contexts };
+              const ideas = { ...state.draftIdeas };
+              const currentIdeas = ideas[NEW_DRAFT];
+              if (!currentIdeas || sameIdeaList(currentIdeas, submittedIdeas)) {
+                delete ideas[NEW_DRAFT];
+              }
+              return { drafts: next, draftContexts: contexts, draftIdeas: ideas };
             });
             void persistDraft(NEW_DRAFT);
           }
@@ -607,7 +643,12 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
             if (!current || samePathList(current.reference_paths ?? [], submittedRefs)) {
               delete contexts[key];
             }
-            return { drafts: next, draftContexts: contexts };
+            const ideas = { ...state.draftIdeas };
+            const currentIdeas = ideas[key];
+            if (!currentIdeas || sameIdeaList(currentIdeas, submittedIdeas)) {
+              delete ideas[key];
+            }
+            return { drafts: next, draftContexts: contexts, draftIdeas: ideas };
           });
           void persistDraft(key);
         }
@@ -693,6 +734,29 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       // 目录入口只是追加：已经选过的路径不重复登记，也不打乱作者的选择顺序。
       if (current.includes(path)) return;
       get().setDraftContext(context?.selected_path ?? null, [...current, path]);
+    },
+
+    addIdeaReference(ideaId, revisionId, title) {
+      const key = entryKey(get().selectedId);
+      const current = get().draftIdeas[key] ?? [];
+      if (current.some((item) => item.idea_id === ideaId)) return;
+      set((state) => ({
+        draftIdeas: {
+          ...state.draftIdeas,
+          [key]: [...current, { idea_id: ideaId, revision_id: revisionId, title }],
+        },
+      }));
+    },
+
+    removeIdeaReference(ideaId) {
+      const key = entryKey(get().selectedId);
+      const current = get().draftIdeas[key] ?? [];
+      set((state) => ({
+        draftIdeas: {
+          ...state.draftIdeas,
+          [key]: current.filter((item) => item.idea_id !== ideaId),
+        },
+      }));
     },
 
     async saveDraft() {

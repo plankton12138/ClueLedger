@@ -5,10 +5,15 @@ import { describe, expect, it } from "vitest";
 import { pageHash, parseHash } from "./navigation";
 
 describe("parseHash", () => {
-  it("解析写作页与资料页", () => {
+  it("解析写作页、灵感页与资料页", () => {
     expect(parseHash("#/workspaces/ws1/writing")).toEqual({
       kind: "writing",
       workspaceId: "ws1",
+    });
+    expect(parseHash("#/workspaces/ws1/ideas?entry=idea_123")).toEqual({
+      kind: "ideas",
+      workspaceId: "ws1",
+      ideaId: "idea_123",
     });
     expect(parseHash("#/workspaces/ws1/materials/story?order=story&chapter=8&entry=abc123")).toEqual({
       kind: "materials",
@@ -58,6 +63,8 @@ describe("pageHash", () => {
   it("往返一致", () => {
     const pages = [
       { kind: "writing" as const, workspaceId: "ws1" },
+      { kind: "ideas" as const, workspaceId: "ws1" },
+      { kind: "ideas" as const, workspaceId: "ws1", ideaId: "idea_123" },
       {
         kind: "materials" as const,
         workspaceId: "ws1",

@@ -31,6 +31,7 @@ const LEGACY_SECTIONS: Record<string, { section: MaterialSection; order: StoryOr
 
 export type WorkspacePage =
   | { kind: "writing"; workspaceId: string }
+  | { kind: "ideas"; workspaceId: string; ideaId?: string }
   | {
       kind: "materials";
       workspaceId: string;
@@ -61,6 +62,14 @@ export function parseHash(hash: string): WorkspacePage | null {
   if (parts[2] === "writing" && parts.length === 3) {
     return { kind: "writing", workspaceId };
   }
+  if (parts[2] === "ideas" && parts.length === 3) {
+    const params = new URLSearchParams(query);
+    const entryRaw = params.get("entry");
+    if (entryRaw !== null && !ENTRY_ID.test(entryRaw)) return null;
+    const page: WorkspacePage = { kind: "ideas", workspaceId };
+    if (entryRaw) page.ideaId = entryRaw;
+    return page;
+  }
   if (parts[2] !== "materials" || parts.length < 4) return null;
   const resolved = resolveSection(parts[3]);
   if (resolved === null) return null;
@@ -87,6 +96,10 @@ export function parseHash(hash: string): WorkspacePage | null {
 
 export function pageHash(page: WorkspacePage): string {
   if (page.kind === "writing") return `#/workspaces/${page.workspaceId}/writing`;
+  if (page.kind === "ideas") {
+    const suffix = page.ideaId ? `?entry=${encodeURIComponent(page.ideaId)}` : "";
+    return `#/workspaces/${page.workspaceId}/ideas${suffix}`;
+  }
   const params = new URLSearchParams();
   if (page.section === "story" && page.order === "story") params.set("order", "story");
   if (page.chapter !== null) params.set("chapter", String(page.chapter));

@@ -24,6 +24,7 @@ from hastings.workspace.assembly import (
     CLUES_BUDGET,
     GLOSSARY_BUDGET,
     HISTORY_BUDGET,
+    IDEAS_BUDGET,
     INDEX_BUDGET,
     INSTRUCTIONS_BUDGET,
     MATERIALS_BUDGET,
@@ -55,12 +56,18 @@ from hastings.workspace.disclosure import (
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import SETTING_FILES, Workspace
 from hastings.workspace.glossary import GlossaryStore, build_glossary, glossary_section
-from hastings.workspace.materials import LIST_PREVIEW_CHARS, ContextSnapshot, MaterialSummary
+from hastings.workspace.materials import (
+    IDEA_PREREAD_CHARS,
+    LIST_PREVIEW_CHARS,
+    ContextSnapshot,
+    MaterialSummary,
+)
 from hastings.workspace.metadata import ROLE_LABELS
 from hastings.workspace.state_store import state_chapter
 from hastings.workspace.timeline import TimelineStore, build_timeline, timeline_section
 
 __all__ = [
+    "IDEAS_BUDGET",
     "INDEX_INSTRUCTIONS",
     "MATERIALS_INSTRUCTIONS",
     "SETTINGS_BUDGET",
@@ -68,6 +75,7 @@ __all__ = [
     "build_assembled_context",
     "build_system_prompt",
     "catalog_section",
+    "ideas_section",
     "materials_section",
     "settings_section",
 ]
@@ -318,6 +326,26 @@ def catalog_section(workspace: Workspace) -> str:
     return "\n".join(kept)
 
 
+def ideas_section(snapshot: ContextSnapshot | None) -> str:
+    """作者本轮选中的灵感：按修订冻结，只用于讨论与参考，不是正文事实。"""
+    if snapshot is None or not snapshot.ideas:
+        return ""
+    lines = ["作者本轮选中的灵感（按修订冻结；是作者笔记，不是正文事实）："]
+    used = 0
+    for item in snapshot.ideas:
+        header = f"- 「{item.title or item.idea_id}」（{item.idea_id}@{item.revision_id}）"
+        body = item.body.strip()
+        remaining = min(IDEA_PREREAD_CHARS, IDEAS_BUDGET - used - len(header))
+        if remaining <= 0:
+            break
+        if len(body) > remaining:
+            body = body[: max(0, remaining - 20)].rstrip() + "\n（已截断：用 read_idea 继续读）"
+        lines.append(header)
+        lines.append(body)
+        used += len(header) + len(body)
+    return "\n".join(lines)
+
+
 def materials_section(
     snapshot: ContextSnapshot | None,
     summaries: tuple[MaterialSummary, ...],
@@ -375,6 +403,7 @@ def build_assembled_context(
     selected_path: str | None = None,
     history_facts: str = "",
     materials: str = "",
+    ideas: str = "",
     modules: str = "",
     index_notes: str = "",
     index_excluded: Sequence[Exclusion] = (),
@@ -420,6 +449,8 @@ def build_assembled_context(
         parts.append(
             Partition(key="materials", title="本轮材料", text=materials, budget=MATERIALS_BUDGET)
         )
+    if profile != "extract" and ideas.strip():
+        parts.append(Partition(key="ideas", title="本轮灵感", text=ideas, budget=IDEAS_BUDGET))
     if profile == "writer" and index_notes.strip():
         # 只有有效索引会走到这里：过期记录不注入，避免按旧摘要写作。
         parts.append(
