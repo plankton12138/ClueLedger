@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261024-211535-723496",
+    "started_at": "2026-10-24T21:15:35.723496+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "8959c7d1fa3ce21ec093b05db8fac24195207daf",
+    "git_dirty": true,
+    "source_sha256": "a3e7ef97e6ceffc1a06cdcb8e527de4a9c5ca76b37aabf612dac2b26e786c76a",
+    "cases_sha256": "1b5c4825fd50546471f013c32179f18fe556c19aa4605b41e22b4104acd3d265",
+    "suite": "core",
+    "jobs": [
+      {
+        "key": "v08_idea_unused--current--1",
+        "case": "v08_idea_unused",
+        "family": "灵感边界",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 20,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261024-211535-723496",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 5,
+    "rescored_at": "2026-10-24T21:17:08.131222+08:00",
+    "scorer_source_sha256": "a3e7ef97e6ceffc1a06cdcb8e527de4a9c5ca76b37aabf612dac2b26e786c76a",
+    "reviews_sha256": "1b20e138aa462b06ea0facada849290588d8cc52fa68eb46b554b3425146511e"
+  },
+  "summary": {
+    "planned": 1,
+    "executed": 1,
+    "counts": {
+      "pass": 1,
+      "not_run": 0
+    },
+    "success_rate": 1.0,
+    "duration_p50_seconds": 36.547,
+    "duration_p95_seconds": 36.547,
+    "input_tokens": 5365,
+    "output_tokens": 4655,
+    "tokens_per_success": 10020.0,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 36.547,
+        "duration_p95_seconds": 36.547,
+        "input_tokens": 5365,
+        "output_tokens": 4655,
+        "tokens_per_success": 10020.0,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "灵感边界": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 36.547,
+        "duration_p95_seconds": 36.547,
+        "input_tokens": 5365,
+        "output_tokens": 4655,
+        "tokens_per_success": 10020.0,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 36.547,
+        "duration_p95_seconds": 36.547,
+        "input_tokens": 5365,
+        "output_tokens": 4655,
+        "tokens_per_success": 10020.0,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v08_idea_unused": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 36.547,
+        "duration_p95_seconds": 36.547,
+        "input_tokens": 5365,
+        "output_tokens": 4655,
+        "tokens_per_success": 10020.0,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 3637,
+            "at": "2026-10-24T21:16:12.685+08:00",
+            "event_version": 1,
+            "event_id": "c_8f289f51d723:3637",
+            "conversation_id": "c_8f289f51d723",
+            "type": "run_finished",
+            "turn_id": "t_bb70c663",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0006 早餐.md"
+            ],
+            "commit": "39936ae75f32f5f29d40ef281800c2794bdebadd",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "第六章已经写完，只动了这一章。\n\n**改了什么**\n- `正文/0006 早餐.md` 由原来的一句话扩写成完整的早餐现场：林远选了能看见整间餐厅的位置，逐个观察住客——看怀表的丈夫、掰方糖的妻子、手抖喝汤的老妇人（对面空着一副碗筷）、鞋上带泥且自称睡得很沉的年轻人、报纸一页没翻的中年男人。\n- 呼应已有伏笔：第一章「林远声称案发时自己一直在客房，尚无人证实」写成他数谁在雨夜醒着时，只有他自己说不清；第二章管家收起的铜钥匙，在这里从围裙口袋里顶出边角，用途仍未说明。第六章也没有提前揭示这两项身份（管家就是失踪的医生、也是凶手），只留下两处可另作解释的观察：他说得出老妇人「药该换了」，左手腕有一道像长期戴表留下的白痕。\n- 结尾让管家主动提供不在场说明（“我在楼下守了一夜”），林远注意到的是「没有人问过他」，同时仍惦记着「青鸟归巢」这句暗号。\n\n**没动的地方**：线索、真相、两份小传、其余章节。如果你的意图是「第六章本来该由别的章节承接」，或者想让观察更明显地指向某个住客，告诉我具体方向，我再收紧。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0006 早餐.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0006 早餐.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_old_acquaintance",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0006 早餐.md",
+            "expected": "旧识"
+          }
+        },
+        {
+          "id": "step-1/no_leak",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "Trae 复核",
+            "reason": "正文只写早餐观察与既有伏笔，没有出现老板娘认识死者或等价关系；只改动第六章。药与白痕只是可另作解释的观察。",
+            "evidence": "assistant_message seq=3633"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 5,
+        "model_finished": 5,
+        "tool_calls": 11,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 5,
+        "fresh_input_tokens": 5365,
+        "input_tokens": 5365,
+        "output_tokens": 4655,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 2637,
+            "messages_json_chars": 87,
+            "tools_json_chars": 8107
+          },
+          {
+            "system_chars": 2637,
+            "messages_json_chars": 5050,
+            "tools_json_chars": 8107
+          },
+          {
+            "system_chars": 2637,
+            "messages_json_chars": 11089,
+            "tools_json_chars": 8107
+          },
+          {
+            "system_chars": 2637,
+            "messages_json_chars": 13449,
+            "tools_json_chars": 8107
+          },
+          {
+            "system_chars": 2637,
+            "messages_json_chars": 15463,
+            "tools_json_chars": 8107
+          }
+        ],
+        "max_request_json_chars": 26207,
+        "cost": null
+      },
+      "key": "v08_idea_unused--current--1",
+      "case": "v08_idea_unused",
+      "title": "未选中的强诱导灵感不进入写作",
+      "family": "灵感边界",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 36.547,
+      "evidence": "evidence/v08_idea_unused--current--1",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

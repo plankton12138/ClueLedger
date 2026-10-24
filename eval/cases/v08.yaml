@@ -1,0 +1,73 @@
+version: 1
+cases:
+  - id: v08_idea_discuss
+    title: 选中灵感只用于讨论，不改成设定
+    family: 灵感边界
+    ideas:
+      - title: 老板娘的旧识
+        body: 老板娘认识死者，但不想让侦探知道这层关系。
+    steps:
+      - text: 只讨论这条灵感可以怎样制造误导，不要改任何文件，也不要把它当成已经发生的事实。
+        idea_references: [老板娘的旧识]
+        checks:
+          - {id: selected, kind: idea_contains, value: 老板娘认识死者}
+          - id: discuss
+            kind: manual
+            rubric: 应给出至少一个可用的误导方向，并明确这是作者笔记或尚未采用的猜想；不得声称已经写进正文，不得修改文件。
+
+  - id: v08_idea_apply
+    title: 按选中灵感写异常表现但不直接揭露
+    family: 灵感落实
+    ideas:
+      - title: 老板娘的旧识
+        body: 老板娘认识死者，但不想让侦探知道这层关系。
+    files:
+      正文/0006 旧识.md: "# 旧识\n\n雨停了，旅馆的人陆续下楼。\n"
+    steps:
+      - text: 写第六章，让老板娘见到侦探时有异常反应，但不要直接揭露她认识死者。只改第六章。
+        idea_references: [老板娘的旧识]
+        selected: 正文/0006 旧识.md
+        allowed_changes: [正文/0006 旧识.md]
+        required_changes: [正文/0006 旧识.md]
+        checks:
+          - id: no_direct_reveal
+            kind: manual
+            rubric: 应写出可回看的异常表现（动作、停顿、回避等），不能直接或等价明示老板娘认识死者；不得改其他文件。
+
+  - id: v08_idea_unused
+    title: 未选中的强诱导灵感不进入写作
+    family: 灵感边界
+    ideas:
+      - title: 老板娘的旧识
+        body: 老板娘认识死者，但不想让侦探知道这层关系。
+    files:
+      正文/0006 早餐.md: "# 早餐\n\n雨停了，旅馆的人陆续下楼。\n"
+    steps:
+      - text: 写第六章，让侦探在早餐时观察旅馆里的人。只改第六章。
+        selected: 正文/0006 早餐.md
+        allowed_changes: [正文/0006 早餐.md]
+        required_changes: [正文/0006 早餐.md]
+        checks:
+          - {id: no_old_acquaintance, kind: file_excludes, path: 正文/0006 早餐.md, value: 旧识}
+          - id: no_leak
+            kind: manual
+            rubric: 不得凭空写出老板娘认识死者或等价关系；本章只做观察与铺垫。不得修改其他文件。
+
+  - id: v08_module_reference
+    title: 已装模块的动机可以被引用
+    family: 模块读取
+    modules:
+      - kind: characters
+        name: 旧案人物
+        entries:
+          - entry_id: motive
+            kind: character
+            title: 管家动机
+            body: 管家为掩盖自己就是失踪医生的事实而杀人。
+    steps:
+      - text: 参考已装模块里管家的动机，讨论第八章揭晓是否成立，不改任何文件。
+        checks:
+          - {id: bound, kind: module_bound, value: 旧案人物}
+          - id: uses_module
+            kind: manual
+            rubric: 应引用“掩盖失踪医生身份”这一动机来判断揭晓是否成立，并明确这是模块内容而不是正文已发生事实；不得修改文件。

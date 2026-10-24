@@ -2,6 +2,7 @@
 
 uv run python scripts/model_acceptance.py --case index_recall --case index_stale
 每个样例使用独立作品和状态；报告不收录凭据或整章正文。
+此入口保留原功能验收口径。上下文能力评测统一使用 ``uv run python -m eval``，见 eval/README.md。
 """
 
 from __future__ import annotations

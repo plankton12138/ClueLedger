@@ -1,0 +1,20 @@
+{
+  "v08_idea_discuss--current--1/step-1/discuss": {
+    "verdict": "pass",
+    "reviewer": "Trae 复核",
+    "reason": "回复给出三种可用的误导结构，明确指出这是作者笔记与未采用的猜想，并说明没有修改文件；没有把灵感当成已发生事实。",
+    "evidence": "assistant_message seq=2005"
+  },
+  "v08_idea_apply--current--1/step-1/no_direct_reveal": {
+    "verdict": "pass",
+    "reviewer": "Trae 复核",
+    "reason": "正文通过杯子滑落、反复擦拭、改口等动作表现异常，没有直接或等价明示老板娘认识死者；只改动第六章。",
+    "evidence": "assistant_message seq=3296"
+  },
+  "v08_module_reference--current--1/step-1/uses_module": {
+    "verdict": "pass",
+    "reviewer": "Trae 复核",
+    "reason": "回复引用模块条目「管家为掩盖自己就是失踪医生的事实而杀人」，并把模块内容与正文事实分开，没有修改文件。",
+    "evidence": "assistant_message seq=2133"
+  }
+}

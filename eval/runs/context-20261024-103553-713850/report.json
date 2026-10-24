@@ -1,0 +1,745 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261024-103553-713850",
+    "started_at": "2026-10-24T10:35:53.715093+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "8b910f9eedddf5d0c05045a8ec4978070a5e7737",
+    "git_dirty": true,
+    "source_sha256": "f84dde771e5b81ba0fc76bd0686ef6a5f6479ede77ed91bd7f40e341b565d883",
+    "cases_sha256": "9f2317f4797e0bfc09db8f8fc601de82e0beff9b39ba60f50a961c5c231c15cd",
+    "suite": "smoke",
+    "jobs": [
+      {
+        "key": "cross_chapter--current--1",
+        "case": "cross_chapter",
+        "family": "信息定位",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "source_changed--current--1",
+        "case": "source_changed",
+        "family": "来源更新",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "material_empty--current--1",
+        "case": "material_empty",
+        "family": "资料生成",
+        "layer": "end_to_end",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 40,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261024-103553-713850",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 14
+  },
+  "summary": {
+    "planned": 3,
+    "executed": 3,
+    "counts": {
+      "pass": 3,
+      "not_run": 0
+    },
+    "success_rate": 1.0,
+    "duration_p50_seconds": 6.469,
+    "duration_p95_seconds": 12.89,
+    "input_tokens": 3555,
+    "output_tokens": 2339,
+    "tokens_per_success": 1964.6666666666667,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 6.469,
+        "duration_p95_seconds": 12.89,
+        "input_tokens": 3555,
+        "output_tokens": 2339,
+        "tokens_per_success": 1964.6666666666667,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "信息定位": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 6.469,
+        "duration_p95_seconds": 6.469,
+        "input_tokens": 1017,
+        "output_tokens": 590,
+        "tokens_per_success": 1607.0,
+        "cost_per_success": null
+      },
+      "来源更新": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 12.89,
+        "duration_p95_seconds": 12.89,
+        "input_tokens": 1905,
+        "output_tokens": 1204,
+        "tokens_per_success": 3109.0,
+        "cost_per_success": null
+      },
+      "资料生成": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 5.875,
+        "duration_p95_seconds": 5.875,
+        "input_tokens": 633,
+        "output_tokens": 545,
+        "tokens_per_success": 1178.0,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pass": 2,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 6.469,
+        "duration_p95_seconds": 12.89,
+        "input_tokens": 2922,
+        "output_tokens": 1794,
+        "tokens_per_success": 2358.0,
+        "cost_per_success": null
+      },
+      "end_to_end": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 5.875,
+        "duration_p95_seconds": 5.875,
+        "input_tokens": 633,
+        "output_tokens": 545,
+        "tokens_per_success": 1178.0,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "cross_chapter": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 6.469,
+        "duration_p95_seconds": 6.469,
+        "input_tokens": 1017,
+        "output_tokens": 590,
+        "tokens_per_success": 1607.0,
+        "cost_per_success": null
+      },
+      "source_changed": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 12.89,
+        "duration_p95_seconds": 12.89,
+        "input_tokens": 1905,
+        "output_tokens": 1204,
+        "tokens_per_success": 3109.0,
+        "cost_per_success": null
+      },
+      "material_empty": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 5.875,
+        "duration_p95_seconds": 5.875,
+        "input_tokens": 633,
+        "output_tokens": 545,
+        "tokens_per_success": 1178.0,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 226,
+            "at": "2026-10-24T10:36:01.029+08:00",
+            "event_version": 1,
+            "event_id": "c_940e752d1b6b:226",
+            "conversation_id": "c_940e752d1b6b",
+            "type": "run_finished",
+            "turn_id": "t_51485c0a",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0003 书房.md"
+            ],
+            "commit": "34d54105ef57592a363c68fc246156ec1b1b6de4",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "已完成。\n\n- 来源：`正文/0001 雨夜.md` 里写着「信封背面写着接头暗号：青鸟归巢。」\n- 修改：`正文/0003 书房.md` 的「纸条上的暗号：待补。」→「纸条上的暗号：青鸟归巢。」\n\n只替换了这两个字，其余正文（章节标题、林远推开门、窗外雪停了）均未改动，也没有触碰设定集。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/exact_replace:正文/0003 书房.md",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "replacements": {
+              "待补": "青鸟归巢"
+            }
+          }
+        },
+        {
+          "id": "step-1/code",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "expected": "纸条上的暗号：青鸟归巢。"
+          }
+        },
+        {
+          "id": "step-1/evidence",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0001 雨夜.md",
+            "spans": [
+              [
+                0,
+                53
+              ]
+            ]
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 4,
+        "model_finished": 4,
+        "tool_calls": 4,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 4,
+        "fresh_input_tokens": 1017,
+        "input_tokens": 1017,
+        "output_tokens": 590,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 115,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 2932,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 4999,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 6384,
+            "tools_json_chars": 6806
+          }
+        ],
+        "max_request_json_chars": 15770,
+        "cost": null
+      },
+      "key": "cross_chapter--current--1",
+      "case": "cross_chapter",
+      "title": "从前文找到暗号并局部修改",
+      "family": "信息定位",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 6.469,
+      "evidence": "evidence/cross_chapter--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 285,
+            "at": "2026-10-24T10:36:05.572+08:00",
+            "event_version": 1,
+            "event_id": "c_1f8b965f15a6:285",
+            "conversation_id": "c_1f8b965f15a6",
+            "type": "run_finished",
+            "turn_id": "t_6753df6e",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "第一章《雨夜》里，信封背面的接头暗号是：**青鸟归巢**。\n\n原文依据（正文/0001 雨夜.md）：\n\n> 雨已经下了三天。信封背面写着接头暗号：青鸟归巢。\n\n同一章还有一句交代时间线的信息：林远声称案发时自己一直在客房，尚无人证实。\n\n未修改任何文件。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/old_source",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0001 雨夜.md",
+            "spans": [
+              [
+                0,
+                53
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-2/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 767,
+            "at": "2026-10-24T10:36:14.434+08:00",
+            "event_version": 1,
+            "event_id": "c_1f8b965f15a6:767",
+            "conversation_id": "c_1f8b965f15a6",
+            "type": "run_finished",
+            "turn_id": "t_17617ada",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0003 书房.md"
+            ],
+            "commit": "bf258c528c13e0071fd4ab94b575fb86c64698ea",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-2/public_answer",
+          "status": "pass",
+          "detail": "已改。第三章现在是：\n\n```\n# 书房\n\n林远推开门。\n纸条上的暗号：白帆靠岸。\n窗外雪停了。\n```\n\n两点说明：\n\n- **暗号是「白帆靠岸」**，不是我上一轮说的「青鸟归巢」。第一章 `正文/0001 雨夜.md` 当前原文是「信封背面写着接头暗号：白帆靠岸。」——我这次重新读了原文再动手，按现在的文面填的。上一轮那个回答与现在文件不符，以文件为准。\n- 只动了第三章 `正文/0003 书房.md` 里「待补」这一处，标题、其余两句原样保留；第一章未改动。"
+        },
+        {
+          "id": "step-2/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-2/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-2/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/exact_replace:正文/0003 书房.md",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "replacements": {
+              "待补": "白帆靠岸"
+            }
+          }
+        },
+        {
+          "id": "step-2/current_code",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "expected": "白帆靠岸"
+          }
+        },
+        {
+          "id": "step-2/current_evidence",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0001 雨夜.md",
+            "spans": [
+              [
+                0,
+                31
+              ]
+            ]
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 7,
+        "model_finished": 7,
+        "tool_calls": 6,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 7,
+        "fresh_input_tokens": 1905,
+        "input_tokens": 1905,
+        "output_tokens": 1204,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 2511,
+            "messages_json_chars": 87,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2511,
+            "messages_json_chars": 1810,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2656,
+            "messages_json_chars": 873,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2656,
+            "messages_json_chars": 3644,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2656,
+            "messages_json_chars": 5782,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2656,
+            "messages_json_chars": 7167,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2656,
+            "messages_json_chars": 8852,
+            "tools_json_chars": 6806
+          }
+        ],
+        "max_request_json_chars": 18314,
+        "cost": null
+      },
+      "key": "source_changed--current--1",
+      "case": "source_changed",
+      "title": "续聊重新核对当前原文",
+      "family": "来源更新",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 12.89,
+      "evidence": "evidence/source_changed--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 303,
+            "at": "2026-10-24T10:36:20.883+08:00",
+            "event_version": 1,
+            "event_id": "c_a342f1534141:303",
+            "conversation_id": "c_a342f1534141",
+            "type": "run_finished",
+            "turn_id": "t_e6992143",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我会读取目标章节。\n第四章时间线整理完成。\n\n- 读取：`正文/0004 客房.md`（全章 4 行、18 字符，一次读完，未截断）。\n- 内容：只有标题「# 客房」与正文「桌上留着一张空白便笺。」。\n- 结论：**empty（无相关发现）**，已提交。原文没有任何时间说法，也没有可供推断的先后或跨度线索，因此不编造时间锚点。\n\n未改动任何作品文件，也未读取或引用第五章及以后的内容。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/full_source",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0004 客房.md",
+            "spans": [
+              [
+                0,
+                18
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-1/empty_coverage",
+          "status": "pass",
+          "detail": [
+            {
+              "domain": "timeline",
+              "path": "正文/0004 客房.md",
+              "entity_path": "",
+              "digest": "79bcbc76413df8f554a44f77dfb61b1521f199774bfeddd591f26cd1a2884e8a",
+              "outcome": "empty",
+              "task_id": "t_e6992143",
+              "at": "2026-10-24T10:36:19+08:00",
+              "note": "已读完整章（共 4 行、18 字符，全文为「# 客房」标题与「桌上留着一张空白便笺。」一句），其中没有任何时间说法（无日期、时段、先后或跨度提示），也没有可推断的时序线索，故按原文不补写时间，本章无时间锚点可提交。",
+              "freshness": "valid"
+            }
+          ]
+        },
+        {
+          "id": "step-1/material_tools",
+          "status": "pass",
+          "detail": [
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "publish_material_result"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "publish_material_result"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "publish_material_result"
+            ]
+          ]
+        }
+      ],
+      "metrics": {
+        "model_requests": 3,
+        "model_finished": 3,
+        "tool_calls": 2,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 3,
+        "fresh_input_tokens": 633,
+        "input_tokens": 633,
+        "output_tokens": 545,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 889,
+            "messages_json_chars": 94,
+            "tools_json_chars": 2514
+          },
+          {
+            "system_chars": 889,
+            "messages_json_chars": 1813,
+            "tools_json_chars": 2514
+          },
+          {
+            "system_chars": 889,
+            "messages_json_chars": 3567,
+            "tools_json_chars": 2514
+          }
+        ],
+        "max_request_json_chars": 6970,
+        "cost": null
+      },
+      "key": "material_empty--current--1",
+      "case": "material_empty",
+      "title": "缺少时间信息时发布合法空结果",
+      "family": "资料生成",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 5.875,
+      "evidence": "evidence/material_empty--current--1",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

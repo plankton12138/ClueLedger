@@ -37,6 +37,9 @@ eval/assets/*.epub
 # 走查转录属运行产物：入库驱动/规格/报告，不入库逐例终端记录
 eval/runs/**/*.log
 
+# 上下文评测：报告与清单可入库，逐步原文、输入快照和工具详情留在本机
+eval/runs/context-*/evidence/
+
 # Playwright E2E 运行产物（trace/报告属本地调试物，不入库）
 frontend/test-results/
 frontend/playwright-report/

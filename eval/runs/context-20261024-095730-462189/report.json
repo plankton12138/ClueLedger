@@ -1,0 +1,710 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261024-095730-462189",
+    "started_at": "2026-10-24T09:57:30.464747+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "conn_db37ffaa",
+    "provider_api": "openai-completions",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "8b910f9eedddf5d0c05045a8ec4978070a5e7737",
+    "git_dirty": true,
+    "source_sha256": "de277f9dd99111e53dcb5e9abc0f0ebdc73c7b13d4b9fee45895012081b8cf1d",
+    "cases_sha256": "9f2317f4797e0bfc09db8f8fc601de82e0beff9b39ba60f50a961c5c231c15cd",
+    "suite": "core",
+    "jobs": [
+      {
+        "key": "failed_history--current--1",
+        "case": "failed_history",
+        "family": "失败恢复",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "failed_history--no_history_facts--1",
+        "case": "failed_history",
+        "family": "失败恢复",
+        "layer": "context",
+        "variant": "no_history_facts",
+        "repeat": 1
+      },
+      {
+        "key": "failed_history--no_history_facts--2",
+        "case": "failed_history",
+        "family": "失败恢复",
+        "layer": "context",
+        "variant": "no_history_facts",
+        "repeat": 2
+      },
+      {
+        "key": "failed_history--current--2",
+        "case": "failed_history",
+        "family": "失败恢复",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 2
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 40,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261024-095730-462189",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 20
+  },
+  "summary": {
+    "planned": 4,
+    "executed": 4,
+    "counts": {
+      "pass": 4,
+      "not_run": 0
+    },
+    "success_rate": 1.0,
+    "duration_p50_seconds": 9.75,
+    "duration_p95_seconds": 10.735,
+    "input_tokens": 4621,
+    "output_tokens": 3690,
+    "tokens_per_success": 2077.75,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pass": 2,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 10.515,
+        "duration_p95_seconds": 10.735,
+        "input_tokens": 2269,
+        "output_tokens": 2045,
+        "tokens_per_success": 2157.0,
+        "cost_per_success": null
+      },
+      "no_history_facts": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pass": 2,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 9.563,
+        "duration_p95_seconds": 9.75,
+        "input_tokens": 2352,
+        "output_tokens": 1645,
+        "tokens_per_success": 1998.5,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "失败恢复": {
+        "planned": 4,
+        "executed": 4,
+        "counts": {
+          "pass": 4,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 9.75,
+        "duration_p95_seconds": 10.735,
+        "input_tokens": 4621,
+        "output_tokens": 3690,
+        "tokens_per_success": 2077.75,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 4,
+        "executed": 4,
+        "counts": {
+          "pass": 4,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 9.75,
+        "duration_p95_seconds": 10.735,
+        "input_tokens": 4621,
+        "output_tokens": 3690,
+        "tokens_per_success": 2077.75,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "failed_history": {
+        "planned": 4,
+        "executed": 4,
+        "counts": {
+          "pass": 4,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 9.75,
+        "duration_p95_seconds": 10.735,
+        "input_tokens": 4621,
+        "output_tokens": 3690,
+        "tokens_per_success": 2077.75,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 561,
+            "at": "2026-10-24T09:57:42.359+08:00",
+            "event_version": 1,
+            "event_id": "c_902f38c94617:561",
+            "conversation_id": "c_902f38c94617",
+            "type": "run_finished",
+            "turn_id": "t_0d95ecf1",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0003 书房.md"
+            ],
+            "commit": "263947ce7872d4d55dcd2b6a02a06f2a1c063c10",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "这次确实改好了（上一轮我说“已经改完”是错的，文件当时没动）。\n\n`正文/0003 书房.md` 现在的内容：\n\n```\n# 书房\n\n林远推开门。\n纸条上的暗号：夜航无声。\n窗外雪停了。\n```\n\n只改动了「待补」→「夜航无声」，章节标题、其余三行一字未动，其他章节、小传、线索与真相都没有碰。\n\n顺带提醒一句：`设定集/线索.md` 里目前记着「第二章的铜钥匙尚未说明用途」，纸条暗号现在有了具体内容，将来若要写进线索台账，需要另一轮授权，本轮没有改动它。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/exact_replace:正文/0003 书房.md",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "replacements": {
+              "待补": "夜航无声"
+            }
+          }
+        },
+        {
+          "id": "step-1/actual_completion",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "expected": "夜航无声"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 5,
+        "model_finished": 5,
+        "tool_calls": 5,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 5,
+        "fresh_input_tokens": 1193,
+        "input_tokens": 1193,
+        "output_tokens": 920,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 2732,
+            "messages_json_chars": 742,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2732,
+            "messages_json_chars": 3107,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2732,
+            "messages_json_chars": 5070,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2732,
+            "messages_json_chars": 6455,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2732,
+            "messages_json_chars": 8145,
+            "tools_json_chars": 6806
+          }
+        ],
+        "max_request_json_chars": 17683,
+        "cost": null
+      },
+      "key": "failed_history--current--1",
+      "case": "failed_history",
+      "title": "执行事实纠正此前的完成声明",
+      "family": "失败恢复",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 10.735,
+      "evidence": "evidence/failed_history--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 442,
+            "at": "2026-10-24T09:57:53.195+08:00",
+            "event_version": 1,
+            "event_id": "c_eda88f68f6ef:442",
+            "conversation_id": "c_eda88f68f6ef",
+            "type": "run_finished",
+            "turn_id": "t_78a6490c",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0003 书房.md"
+            ],
+            "commit": "46aca1ef0b94ac37843029913f9933bf650b9125",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "先说明一点：上一轮我说“已经修改完成”，这个说法不准确。实际没有改好：文件里还是“待补”。这一轮已经补做完成。\n\n现在 `正文/0003 书房.md` 的内容是：\n\n```\n# 书房\n\n林远推开门。\n纸条上的暗号：夜航无声。\n窗外雪停了。\n```\n\n原来那处“纸条上的暗号：待补。”已经替换为“纸条上的暗号：夜航无声。”，标题、开场和结尾三行都保持原样；全文中“待补”已无残留。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/exact_replace:正文/0003 书房.md",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "replacements": {
+              "待补": "夜航无声"
+            }
+          }
+        },
+        {
+          "id": "step-1/actual_completion",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "expected": "夜航无声"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 5,
+        "model_finished": 5,
+        "tool_calls": 5,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 5,
+        "fresh_input_tokens": 1155,
+        "input_tokens": 1155,
+        "output_tokens": 816,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 742,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 3107,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 5111,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 6494,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 8184,
+            "tools_json_chars": 6806
+          }
+        ],
+        "max_request_json_chars": 17570,
+        "cost": null
+      },
+      "key": "failed_history--no_history_facts--1",
+      "case": "failed_history",
+      "title": "执行事实纠正此前的完成声明",
+      "family": "失败恢复",
+      "layer": "context",
+      "variant": "no_history_facts",
+      "repeat": 1,
+      "duration_seconds": 9.75,
+      "evidence": "evidence/failed_history--no_history_facts--1",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 450,
+            "at": "2026-10-24T09:58:03.777+08:00",
+            "event_version": 1,
+            "event_id": "c_31cf3571e3dd:450",
+            "conversation_id": "c_31cf3571e3dd",
+            "type": "run_finished",
+            "turn_id": "t_d26bc65d",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0003 书房.md"
+            ],
+            "commit": "dd35256e729cd3a3ded1c1f23d0691c5d899552b",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "先更正：上一轮我并没有实际写入文件，却回复“已经修改完成”，这是我的错误。\n\n现在已实际补做，改动只在这一处：\n\n`正文/0003 书房.md` 第 4 行\n- 原文：`纸条上的暗号：待补。`\n- 改为：`纸条上的暗号：夜航无声。`\n\n标题、开头的“林远推开门。”和结尾的“窗外雪停了。”都没有改动，其余章节与设定集也未触碰。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/exact_replace:正文/0003 书房.md",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "replacements": {
+              "待补": "夜航无声"
+            }
+          }
+        },
+        {
+          "id": "step-1/actual_completion",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "expected": "夜航无声"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 5,
+        "model_finished": 5,
+        "tool_calls": 5,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 5,
+        "fresh_input_tokens": 1197,
+        "input_tokens": 1197,
+        "output_tokens": 829,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 742,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 3106,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 5066,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 6451,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2580,
+            "messages_json_chars": 8141,
+            "tools_json_chars": 6806
+          }
+        ],
+        "max_request_json_chars": 17527,
+        "cost": null
+      },
+      "key": "failed_history--no_history_facts--2",
+      "case": "failed_history",
+      "title": "执行事实纠正此前的完成声明",
+      "family": "失败恢复",
+      "layer": "context",
+      "variant": "no_history_facts",
+      "repeat": 2,
+      "duration_seconds": 9.563,
+      "evidence": "evidence/failed_history--no_history_facts--2",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 743,
+            "at": "2026-10-24T09:58:15.320+08:00",
+            "event_version": 1,
+            "event_id": "c_16277550c9c4:743",
+            "conversation_id": "c_16277550c9c4",
+            "type": "run_finished",
+            "turn_id": "t_47f49f5a",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0003 书房.md"
+            ],
+            "commit": "8c6765b03dbdbae0ccc5a2dd25e13761ac3a3f78",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "这次已经实际写入文件。第三章 `正文/0003 书房.md` 现在只有一处改动：\n\n- 原句：`纸条上的暗号：待补。`\n- 现句：`纸条上的暗号：夜航无声。`\n\n其余各行（标题「# 书房」、「林远推开门。」、「窗外雪停了。」）以及空行、标点都没变；只修改了 `设定集/真相.md` 和 `设定集/线索.md`，没有动。如果需要，我可以把它同步记入线索（这条暗号对应“夜航无声”）。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/exact_replace:正文/0003 书房.md",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "replacements": {
+              "待补": "夜航无声"
+            }
+          }
+        },
+        {
+          "id": "step-1/actual_completion",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "expected": "夜航无声"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 5,
+        "model_finished": 5,
+        "tool_calls": 4,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 5,
+        "fresh_input_tokens": 1076,
+        "input_tokens": 1076,
+        "output_tokens": 1125,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 2732,
+            "messages_json_chars": 742,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2732,
+            "messages_json_chars": 2426,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2732,
+            "messages_json_chars": 4459,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2732,
+            "messages_json_chars": 5836,
+            "tools_json_chars": 6806
+          },
+          {
+            "system_chars": 2732,
+            "messages_json_chars": 7520,
+            "tools_json_chars": 6806
+          }
+        ],
+        "max_request_json_chars": 17058,
+        "cost": null
+      },
+      "key": "failed_history--current--2",
+      "case": "failed_history",
+      "title": "执行事实纠正此前的完成声明",
+      "family": "失败恢复",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2,
+      "duration_seconds": 10.515,
+      "evidence": "evidence/failed_history--current--2",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}
