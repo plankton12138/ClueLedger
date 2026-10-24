@@ -125,9 +125,7 @@ def test_assembly_serves_only_file_workspace(
 ) -> None:
     root = _directory(tmp_path)
 
-    client = TestClient(
-        assemble_server(workspace=root, state_root=tmp_path / "state").app
-    )
+    client = TestClient(assemble_server(workspace=root, state_root=tmp_path / "state").app)
 
     # 旧工作台路由不在装配范围：新应用不因模型设置挂载整套旧业务。
     assert client.get("/api/v2/projects").status_code == 404
@@ -178,9 +176,12 @@ def test_main_runs_uvicorn_with_file_app(
 
     monkeypatch.setattr(server_main.uvicorn, "run", fake_run)
 
-    assert server_main.main(
-        ["--workspace", str(root), "--port", "8123", "--state-dir", str(tmp_path / "state")]
-    ) == 0
+    assert (
+        server_main.main(
+            ["--workspace", str(root), "--port", "8123", "--state-dir", str(tmp_path / "state")]
+        )
+        == 0
+    )
     assert isinstance(captured["app"], FastAPI)
     assert captured["kwargs"] == {"host": "127.0.0.1", "port": 8123, "log_level": "info"}
     out = capsys.readouterr().out

@@ -167,9 +167,7 @@ def test_evidence_must_lie_inside_the_provided_range(tmp_path: Path) -> None:
     ledger.record_read(SourceRef(view.path, view.digest), length=len(view.text), start=0, end=1)
 
     with pytest.raises(WorkspaceError) as unprovided:
-        validate_report(
-            _draft(workspace), workspace=workspace, ledger=ledger, allowed_targets=()
-        )
+        validate_report(_draft(workspace), workspace=workspace, ledger=ledger, allowed_targets=())
     assert _code(unprovided) == "REVIEW_EVIDENCE_INVALID"
     assert unprovided.value.details["path"] == _CHAPTER
 
@@ -185,9 +183,7 @@ def test_evidence_span_across_a_read_gap_is_rejected(tmp_path: Path) -> None:
     ledger.record_read(ref, length=len(view.text), start=quote_start + 6, end=len(view.text))
 
     with pytest.raises(WorkspaceError):
-        validate_report(
-            _draft(workspace), workspace=workspace, ledger=ledger, allowed_targets=()
-        )
+        validate_report(_draft(workspace), workspace=workspace, ledger=ledger, allowed_targets=())
 
 
 def test_evidence_inside_a_partial_read_passes(tmp_path: Path) -> None:

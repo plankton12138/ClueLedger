@@ -51,6 +51,7 @@ __all__ = [
     "StagedKey",
 ]
 
+
 #: 接口层转换后的提交内容；``api_key=None`` 表示「保留原 key」。
 @dataclass(frozen=True, slots=True)
 class ConnectionDraft:
@@ -203,9 +204,7 @@ class ModelConnectionService:
                 self.book.apply_selection(None, "")
             return self.view()
 
-    async def select(
-        self, connection_id: str, model: str, *, expected_revision: str
-    ) -> ConfigView:
+    async def select(self, connection_id: str, model: str, *, expected_revision: str) -> ConfigView:
         """显式选择连接与模型；``model`` 留空表示用该连接的默认模型。"""
         async with self._lock:
             self._require_revision(expected_revision)

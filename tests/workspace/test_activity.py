@@ -534,7 +534,9 @@ def test_classify_maps_real_events_to_readable_actions() -> None:
         }
     )
     assert (error.action, error.phase, error.subject) == (
-        "error", "failed", "ACTIVITY_INVALID_LINE",
+        "error",
+        "failed",
+        "ACTIVITY_INVALID_LINE",
     )
 
     published = classify(
@@ -555,9 +557,7 @@ def test_classify_maps_real_events_to_readable_actions() -> None:
     )
     assert (finished.title, finished.phase) == ("整理任务结束", "completed")
     assert finished.note == "完成 1 / 1"
-    partial = classify(
-        {"type": "material_task_finished", "domain": "clues", "done": 1, "total": 2}
-    )
+    partial = classify({"type": "material_task_finished", "domain": "clues", "done": 1, "total": 2})
     assert partial.phase == "partial"
 
 

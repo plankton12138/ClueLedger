@@ -146,9 +146,7 @@ def test_writes_require_matching_revision(tmp_path: Path) -> None:
     before = path.read_text(encoding="utf-8")
 
     missing = client.post("/api/model-connections", json=DRAFT)
-    outdated = client.post(
-        "/api/model-connections", json=DRAFT, headers={"If-Match": stale}
-    )
+    outdated = client.post("/api/model-connections", json=DRAFT, headers={"If-Match": stale})
 
     assert missing.status_code == 409
     assert missing.json()["error"]["code"] == "MODEL_CONFIG_CONFLICT"

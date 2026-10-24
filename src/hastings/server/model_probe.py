@@ -63,8 +63,7 @@ PAGE_SIZE = 100
 PROBE_TOOL_NAME = "connection_probe"
 PROBE_PROMPT = "请只回答两个字：你好。"
 PROBE_TOOL_PROMPT = (
-    f"调用 {PROBE_TOOL_NAME} 工具，参数 echo 传「ping」，"
-    "然后根据工具结果用一句话说明你收到了什么。"
+    f"调用 {PROBE_TOOL_NAME} 工具，参数 echo 传「ping」，然后根据工具结果用一句话说明你收到了什么。"
 )
 PROBE_TOOL_VALUE = "pong"
 
@@ -169,9 +168,7 @@ async def discover_models(
         return DiscoveryResult(models=[], complete=False, code=code, message=message)
 
 
-async def _discover_openai(
-    client: httpx.AsyncClient, base: str, key: str
-) -> DiscoveryResult:
+async def _discover_openai(client: httpx.AsyncClient, base: str, key: str) -> DiscoveryResult:
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     return await _paged(
         client,
@@ -181,9 +178,7 @@ async def _discover_openai(
     )
 
 
-async def _discover_anthropic(
-    client: httpx.AsyncClient, base: str, key: str
-) -> DiscoveryResult:
+async def _discover_anthropic(client: httpx.AsyncClient, base: str, key: str) -> DiscoveryResult:
     headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
     models: list[str] = []
     after: str | None = None
@@ -212,9 +207,7 @@ async def _discover_anthropic(
     return DiscoveryResult(models=_dedupe(models), complete=False)
 
 
-async def _discover_google(
-    client: httpx.AsyncClient, base: str, key: str
-) -> DiscoveryResult:
+async def _discover_google(client: httpx.AsyncClient, base: str, key: str) -> DiscoveryResult:
     models: list[str] = []
     token: str | None = None
     for _ in range(MAX_PAGES):

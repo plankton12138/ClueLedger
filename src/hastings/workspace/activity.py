@@ -342,7 +342,6 @@ def describe(event: dict[str, Any]) -> tuple[str, str, str]:
     return text.category, text.status, text.summary
 
 
-
 class ActivityStore:
     """一个作品一个实例；索引和原始操作日志在同一锁内串行更新。"""
 

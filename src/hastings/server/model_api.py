@@ -242,9 +242,7 @@ def create_model_router(service: ModelConnectionService) -> APIRouter:
 
     @router.post("/model-connections/discover", response_model=DiscoveryView)
     async def discover(body: DiscoverRequest) -> DiscoveryView:
-        result = await service.discover(
-            _draft_from_probe(body), connection_id=body.connection_id
-        )
+        result = await service.discover(_draft_from_probe(body), connection_id=body.connection_id)
         return DiscoveryView(
             revision=service.revision,
             connection_id=body.connection_id,
@@ -278,15 +276,11 @@ def create_model_router(service: ModelConnectionService) -> APIRouter:
         return SelectionResponse(revision=view.revision, selection=_selection(view.selection))
 
     @router.put("/model-selection", response_model=ModelConfigView)
-    async def write_selection(
-        body: SelectionRequest, if_match: IfMatch = ""
-    ) -> ModelConfigView:
+    async def write_selection(body: SelectionRequest, if_match: IfMatch = "") -> ModelConfigView:
         if body.connection_id is None:
             view = await service.clear_selection(expected_revision=if_match)
         else:
-            view = await service.select(
-                body.connection_id, body.model, expected_revision=if_match
-            )
+            view = await service.select(body.connection_id, body.model, expected_revision=if_match)
         return _config_view(view)
 
     return router

@@ -156,8 +156,7 @@ def _compatible_config(
         # 端点并不相同，猜错的表现是「模型存在但调用 404」。
         infer_api_from_model=False,
         max_retries=_retries(max_retries, worker),
-        timeout_seconds=timeout_seconds
-        or ((180.0 if loopback else 45.0) if worker else 60.0),
+        timeout_seconds=timeout_seconds or ((180.0 if loopback else 45.0) if worker else 60.0),
         max_tokens=4096 if worker else None,
     )
 
