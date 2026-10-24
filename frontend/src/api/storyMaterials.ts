@@ -280,6 +280,28 @@ export interface StoryConflict {
   events: { id: string; text: string; chapter: number; mode: string; mode_label: string }[];
 }
 
+export interface StoryPlan {
+  binding_id: string;
+  module_id: string;
+  revision_id: string;
+  module_kind: string;
+  module_name: string;
+  entry_id: string;
+  title: string;
+  story_time: string;
+  planned_chapter: number | null;
+  decision: string;
+  excerpt: string;
+}
+
+export interface StoryPlanModule {
+  binding_id: string;
+  module_id: string;
+  revision_id: string;
+  kind: string;
+  name: string;
+}
+
 export interface StoryEvents {
   mode: StoryOrder;
   as_of_chapter: number;
@@ -288,6 +310,8 @@ export interface StoryEvents {
   unknown: StoryEvent[];
   conflicts: StoryConflict[];
   warnings: string[];
+  plans: StoryPlan[];
+  plan_modules: StoryPlanModule[];
 }
 
 const BASE = "/api/file-workspaces";

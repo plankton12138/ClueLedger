@@ -14,6 +14,7 @@ import {
   type StoryEvent,
   type StoryEvents,
   type StoryOrder,
+  type StoryPlan,
 } from "../../api/storyMaterials";
 import { WorkspaceApiError } from "../../api/workspace";
 import { COVERAGE_LABEL, COVERAGE_TONE } from "./labels";
@@ -58,6 +59,7 @@ export default function StoryEventsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [hiddenPlans, setHiddenPlans] = useState<string[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,6 +115,35 @@ export default function StoryEventsPanel({
         </button>
       </div>
 
+      {data && data.plan_modules.length > 0 && (
+        <div className="flex flex-none flex-wrap items-center gap-1 border-b border-panel-edge px-3 py-1 text-[10px]">
+          <span className="text-mute">计划叠加：</span>
+          {data.plan_modules.map((module) => {
+            const hidden = hiddenPlans.includes(module.module_id);
+            return (
+              <button
+                key={module.module_id}
+                className={`rounded border px-1.5 py-0.5 ${
+                  hidden
+                    ? "border-panel-edge text-mute"
+                    : "border-amber-edge bg-amber-bg text-amber"
+                }`}
+                aria-pressed={!hidden}
+                onClick={() =>
+                  setHiddenPlans((current) =>
+                    hidden
+                      ? current.filter((item) => item !== module.module_id)
+                      : [...current, module.module_id],
+                  )
+                }
+              >
+                {module.name || module.module_id}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {error && (
         <div className="flex flex-none items-center gap-2 border-b border-red-edge bg-red-bg px-3 py-1.5 text-[11px] text-red">
           <span className="min-w-0 flex-1">{error}</span>
@@ -131,6 +162,11 @@ export default function StoryEventsPanel({
             ))}
           </ul>
         ) : null}
+        {data && (
+          <PlanList
+            plans={data.plans.filter((plan) => !hiddenPlans.includes(plan.module_id))}
+          />
+        )}
         {data &&
           (order === "chapter" ? (
             <ChapterList rows={data.chapters} onOpenSource={onOpenSource} />
@@ -289,6 +325,38 @@ function StoryList({
         </section>
       ))}
     </div>
+  );
+}
+
+function PlanList({ plans }: { plans: StoryPlan[] }) {
+  if (plans.length === 0) return null;
+  return (
+    <section className="border-b border-row-edge">
+      <h3 className="toc-head flex items-center gap-2 px-3 py-1 text-[10px] font-bold tracking-wide text-sub">
+        计划叠加
+        <span className="font-normal text-mute">来自已装模块，不是正文事实</span>
+        <span className="font-normal text-mute">（{plans.length}）</span>
+      </h3>
+      <ul>
+        {plans.map((plan) => (
+          <li
+            key={`${plan.module_id}:${plan.entry_id}`}
+            className="border-t border-row-edge px-3 py-1.5 text-[11px] leading-5"
+          >
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-[10px] text-amber">
+                {plan.planned_chapter ? `计划第 ${plan.planned_chapter} 章` : "未定章号"}
+              </span>
+              {plan.story_time && <span className="text-[10px] text-sub">{plan.story_time}</span>}
+              <span className="font-bold">{plan.title || plan.entry_id}</span>
+              <span className="text-[10px] text-mute">{plan.module_name}</span>
+            </div>
+            {plan.decision && <p className="text-[10px] text-sub">取舍：{plan.decision}</p>}
+            {plan.excerpt && <p className="text-[11px] text-sub">{plan.excerpt}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

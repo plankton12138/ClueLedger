@@ -76,6 +76,7 @@ from hastings.workspace.story_materials import (
     author_view,
     entry_detail,
 )
+from hastings.workspace.story_plans import planned_overlay
 from hastings.workspace.timeline import TimelineStore, build_timeline, timeline_view
 
 __all__ = [
@@ -655,6 +656,8 @@ class StoryEventsView(BaseModel):
     unknown: list[dict[str, Any]] = Field(default_factory=list)
     conflicts: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    plans: list[dict[str, Any]] = Field(default_factory=list)
+    plan_modules: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SourceEvidenceView(BaseModel):
@@ -1077,6 +1080,18 @@ def create_file_workspace_router(
             if order == "chapter"
             else story_view(workspace, root, as_of_chapter=as_of_chapter)
         )
+        overlay = planned_overlay(workspace, library)
+        warnings_raw = view.get("warnings")
+        warnings = [str(item) for item in warnings_raw] if isinstance(warnings_raw, list) else []
+        plan_warnings = overlay.get("warnings")
+        if isinstance(plan_warnings, list):
+            warnings.extend(str(item) for item in plan_warnings)
+        view = {
+            **view,
+            "plans": overlay["plans"],
+            "plan_modules": overlay["plan_modules"],
+            "warnings": warnings,
+        }
         return StoryEventsView(**view)  # type: ignore[arg-type]
 
     @router.get("/{workspace_id}/story-materials/{domain}", response_model=StoryMaterialsView)
