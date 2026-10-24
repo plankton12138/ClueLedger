@@ -230,7 +230,7 @@ class Workspace:
 
     @classmethod
     def create(cls, root: Path) -> Workspace:
-        """新建（或补齐）正文、角色目录与两份空设定；不覆盖已有内容。"""
+        """新建（或补齐）正文与设定目录；不覆盖已有内容，也不预建设定文件。"""
         target = Path(root).expanduser()
         try:
             target.mkdir(parents=True, exist_ok=True)
@@ -273,12 +273,13 @@ class Workspace:
         return cls(target)
 
     def ensure_structure(self) -> None:
-        """补齐受管目录与缺失的设定文件；已存在的文件保持原样。"""
+        """补齐受管目录；不预建线索与真相文件。
+
+        新作品只从正文开始：线索、真相与人物改由模块库或作者按需建立。已有作品里
+        这两份文件继续按原路径读取，不会被删除或迁移。
+        """
         for name in (BODY_DIR, SETTINGS_DIR, CHARACTERS_DIR):
             self._writable_directory(name)
-        for path, _ in SETTING_FILES:
-            if not self._target(path).exists():
-                self.write(path, "", expected_digest=None)
 
     @property
     def name(self) -> str:

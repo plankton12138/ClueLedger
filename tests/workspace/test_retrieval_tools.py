@@ -153,6 +153,7 @@ async def test_record_read_does_not_satisfy_a_required_file_reference(tmp_path: 
     workspace, tools, _, facts = _setup(tmp_path)
     GitRepo(workspace.root).init()
     workspace.write("正文/0002 第二章.md", "# 第二章\n\n新的证词。\n", expected_digest=None)
+    workspace.write("设定集/线索.md", "# 线索\n\n门锁有擦痕。\n", expected_digest=None)
     await _call(
         tools["register_references"],
         references=[

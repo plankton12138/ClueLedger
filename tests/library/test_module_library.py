@@ -419,9 +419,7 @@ def test_opening_a_legacy_workspace_writes_nothing(tmp_path: Path) -> None:
     """旧作品打开只读：不建库、不改设定文件；库只在第一次作者操作时创建。"""
     root = tmp_path / "旧作品"
     workspace = Workspace.create(root)
-    workspace.write(
-        "设定集/线索.md", "门锁有擦痕。", expected_digest=workspace.read("设定集/线索.md").digest
-    )
+    workspace.write("设定集/线索.md", "门锁有擦痕。", expected_digest=None)
     before = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
 
     library = ModuleLibrary(tmp_path / "库")

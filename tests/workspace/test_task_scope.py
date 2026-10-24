@@ -561,8 +561,7 @@ async def test_tool_rejects_bad_grants_shape(tmp_path: Path) -> None:
 async def test_tool_reregistration_cannot_bypass_a_fixed_scope(tmp_path: Path) -> None:
     """复现路径：登记固定范围后再次调用 set_task_scope 换范围。"""
     workspace, tools, _ = _tools(tmp_path)
-    truth = workspace.read(_TRUTH)
-    workspace.write(_TRUTH, "# 真相\n\n凶手是管家。\n", expected_digest=truth.digest)
+    workspace.write(_TRUTH, "# 真相\n\n凶手是管家。\n", expected_digest=None)
     await _call(
         tools["set_task_scope"],
         mode="edit",

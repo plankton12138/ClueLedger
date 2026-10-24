@@ -49,7 +49,9 @@ def test_create_workspace_makes_two_blocks(tmp_path: Path) -> None:
     assert body["exists"] is True
     assert body["path"] == str(root.resolve())
     assert (root / "正文").is_dir()
-    assert (root / "设定集/真相.md").is_file()
+    # 新作品不预建线索与真相文件；作者按需创建或改用模块库。
+    assert not (root / "设定集/真相.md").exists()
+    assert not (root / "设定集/线索.md").exists()
     # 新作品自带版本记录：.git 与首个基线提交。
     assert (root / ".git").is_dir()
     assert client.get("/api/file-workspaces").json() == [body]
@@ -108,7 +110,7 @@ def test_files_lists_chapters_characters_and_fixed_settings(tmp_path: Path) -> N
         "设定集/线索.md",
         "设定集/真相.md",
     ]
-    assert all(item["exists"] for item in empty["settings"])
+    assert not any(item["exists"] for item in empty["settings"])
 
     client.post(
         f"/api/file-workspaces/{workspace_id}/imports",
@@ -175,6 +177,7 @@ def test_read_file_returns_text_digest_and_kind(tmp_path: Path) -> None:
     assert chapter.json()["text"].startswith("# 雨夜")
     assert len(chapter.json()["digest"]) == 64
 
+    (root / "设定集/真相.md").write_text("", encoding="utf-8")
     setting = client.get(
         f"/api/file-workspaces/{workspace_id}/file", params={"path": "设定集/真相.md"}
     )

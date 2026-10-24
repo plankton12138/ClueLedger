@@ -83,6 +83,7 @@ def test_init_creates_repository_and_baseline(tmp_path: Path) -> None:
 def test_init_commits_existing_content_as_baseline(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     workspace.write("正文/0001 雨夜.md", "# 雨夜\n\n侦探抵达旅馆。\n", expected_digest=None)
+    workspace.write("设定集/真相.md", "# 真相\n\n凶手是管家。\n", expected_digest=None)
     repo = GitRepo(workspace.root)
 
     repo.init()

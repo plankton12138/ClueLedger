@@ -197,7 +197,7 @@ def test_finish_reports_unrecorded_when_history_moves(tmp_path: Path) -> None:
     session.prepare()
     workspace.create_chapter("雨夜", "# 雨夜\n")
     # 另一进程改了别的文件并提交：HEAD 前进，但本轮改动还没记录。
-    digest = workspace.read("设定集/线索.md").digest
+    digest = None
     workspace.write("设定集/线索.md", "# 线索\n\n门口有雪。\n", expected_digest=digest)
     _git(workspace.root, "add", "-A", "--", "设定集")
     _git(workspace.root, "commit", "-m", "外部提交")

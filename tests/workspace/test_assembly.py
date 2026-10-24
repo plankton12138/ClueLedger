@@ -24,7 +24,11 @@ def _workspace(tmp_path: Path) -> Workspace:
         ("设定集/线索.md", "门锁没有被撬。"),
         ("设定集/真相.md", "凶手从内侧打开了门。"),
     ):
-        workspace.write(path, text, expected_digest=workspace.read(path).digest)
+        try:
+            expected = workspace.read(path).digest
+        except WorkspaceError:
+            expected = None
+        workspace.write(path, text, expected_digest=expected)
     return workspace
 
 

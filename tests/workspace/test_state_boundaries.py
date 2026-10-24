@@ -132,7 +132,7 @@ async def test_publication_requires_actual_read_range(setup, tool):
 async def test_setting_and_wrong_chapter_cannot_be_published(setup, tool):
     workspace, _, stores, tools = setup
     truth = "设定集/真相.md"
-    workspace.write(truth, "幕后主使是林静。", expected_digest=workspace.read(truth).digest)
+    workspace.write(truth, "幕后主使是林静。", expected_digest=None)
     await tools["read_file"].execute("entity", {"path": PERSON})
     for path in (truth, LATER):
         await tools["read_file"].execute("source", {"path": path})

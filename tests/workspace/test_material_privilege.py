@@ -84,8 +84,11 @@ async def test_idea_files_stay_outside_every_material_entry(tmp_path: Path) -> N
 @pytest.mark.anyio
 async def test_reference_text_cannot_open_a_write_scope(tmp_path: Path) -> None:
     workspace, tools = _setup(tmp_path)
-    current = workspace.read("设定集/线索.md")
-    workspace.write("设定集/线索.md", _INJECTION, expected_digest=current.digest)
+    try:
+        expected = workspace.read("设定集/线索.md").digest
+    except WorkspaceError:
+        expected = None
+    workspace.write("设定集/线索.md", _INJECTION, expected_digest=expected)
 
     # 引文来自设定文件而不是作者消息：范围必须被拒。
     with pytest.raises(WorkspaceError) as quote:
@@ -99,6 +102,7 @@ async def test_reference_text_cannot_open_a_write_scope(tmp_path: Path) -> None:
     assert quote.value.code == "TASK_SCOPE_EVIDENCE_INVALID"
 
     # 没有范围时，资料里的文字不会让写工具可用。
+    workspace.write("设定集/真相.md", "凶手是管家。\n", expected_digest=None)
     truth = workspace.read("设定集/真相.md")
     with pytest.raises(WorkspaceError) as blocked:
         await _call(tools["delete_file"], path="设定集/真相.md", digest="0" * 64)

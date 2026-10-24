@@ -33,8 +33,12 @@ def _workspace(tmp_path: Path) -> Workspace:
 
 
 def _overwrite(workspace: Workspace, path: str, text: str) -> None:
-    """设定文件在新建时就已存在，改写必须带读到的指纹。"""
-    workspace.write(path, text, expected_digest=workspace.read(path).digest)
+    """设定文件按需创建；已存在时用读到的指纹改写。"""
+    try:
+        expected = workspace.read(path).digest
+    except WorkspaceError:
+        expected = None
+    workspace.write(path, text, expected_digest=expected)
 
 
 def _code(exc_info: pytest.ExceptionInfo[WorkspaceError]) -> str:
@@ -44,17 +48,16 @@ def _code(exc_info: pytest.ExceptionInfo[WorkspaceError]) -> str:
 # -- 建立与打开 -------------------------------------------------------------
 
 
-def test_create_builds_character_directory_and_two_empty_settings(tmp_path: Path) -> None:
+def test_create_builds_character_directory_without_forced_settings(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
 
     assert (workspace.root / "正文").is_dir()
     assert (workspace.root / "设定集").is_dir()
-    assert sorted(path.name for path in (workspace.root / "设定集").iterdir()) == sorted(
-        ["角色小传", "线索.md", "真相.md"]
-    )
-    for path in SETTING_PATHS:
-        assert (workspace.root / path).read_bytes() == b""
+    assert sorted(path.name for path in (workspace.root / "设定集").iterdir()) == ["角色小传"]
     assert (workspace.root / "设定集/角色小传").is_dir()
+    # 新作品不再强制创建线索与真相文件；已有作品里这两份文件仍按原路径读取。
+    for path in SETTING_PATHS:
+        assert not (workspace.root / path).exists()
     # 作品目录里没有数据库或第二份内容清单。
     assert not [item for item in workspace.root.iterdir() if item.suffix in {".db", ".sqlite"}]
 

@@ -18,6 +18,7 @@ import pytest
 from hastings.workspace import assembly
 from hastings.workspace.assembly import Partition, assemble
 from hastings.workspace.context import build_assembled_context
+from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 
 _CHAPTER = "正文/0001 雨夜.md"
@@ -29,7 +30,11 @@ def _workspace(tmp_path: Path, *, clues: str, truth: str) -> Workspace:
     workspace = Workspace.create(tmp_path / "雪山旅馆")
     workspace.write(_CHAPTER, "第一章 雨夜\n\n雪压住了山路。", expected_digest=None)
     for path, text in ((_CLUES, clues), (_TRUTH, truth)):
-        workspace.write(path, text, expected_digest=workspace.read(path).digest)
+        try:
+            expected = workspace.read(path).digest
+        except WorkspaceError:
+            expected = None
+        workspace.write(path, text, expected_digest=expected)
     return workspace
 
 
