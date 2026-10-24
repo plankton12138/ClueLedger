@@ -100,13 +100,27 @@ export interface ChatTurn {
   injection: TurnInjection | null;
 }
 
-/** 本轮注入：只记分区规模与跳过原因，不含注入正文。 */
+/** 本轮注入：只记分区规模、跳过原因与未装入条目，不含注入正文。 */
 export interface TurnInjection {
-  profile: "writer" | "extract" | "review";
-  parts: { key: string; chars: number }[];
+  profile: "writer" | "extract" | "review" | "materials";
+  parts: TurnInjectionPart[];
   skipped: { key: string; reason: "budget" | "empty"; chars?: number }[];
   limit: number;
   used: number;
+}
+
+/** 一个分区：没装进去的候选带 id、原因与继续查看的入口。 */
+export interface TurnInjectionPart {
+  key: string;
+  chars: number;
+  excluded?: TurnExcludedEntry[];
+}
+
+export interface TurnExcludedEntry {
+  id: string;
+  reason: "budget" | "limit";
+  chars?: number;
+  location?: string;
 }
 
 /** 一轮检查的结果：只放展示需要的内容，完整报告由接口回看。 */

@@ -19,6 +19,10 @@ const TOOL_LABEL: Record<string, string> = {
   delete_file: "删除",
   git_diff: "查看差异",
   git_log: "查看历史",
+  list_modules: "列出模块",
+  query_records: "检索资料",
+  read_record: "读取资料",
+  search_module_library: "搜索模块库",
 };
 
 export function toolLine(tool: ChatTool): string {
@@ -27,8 +31,10 @@ export function toolLine(tool: ChatTool): string {
   const source = typeof tool.args.source === "string" ? tool.args.source : "";
   const target = typeof tool.args.target === "string" ? tool.args.target : "";
   const query = typeof tool.args.query === "string" ? tool.args.query : "";
+  const entry = typeof tool.args.entry_id === "string" ? tool.args.entry_id : "";
   if (source && target) return `${name} ${source} → ${target}`;
   if (path) return `${name} ${path}`;
+  if (entry) return `${name} ${entry}`;
   if (query) return `${name}「${query}」`;
   return name;
 }

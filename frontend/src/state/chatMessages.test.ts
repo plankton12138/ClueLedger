@@ -528,7 +528,7 @@ describe("本轮材料", () => {
 });
 
 describe("本轮注入", () => {
-  it("记录分区规模与跳过原因，不含注入正文", () => {
+  it("记录分区规模、跳过原因与未装入条目，不含注入正文", () => {
     reset();
     const injected = next({
       type: "state_injected",
@@ -537,18 +537,38 @@ describe("本轮注入", () => {
       parts: [
         { key: "instructions", chars: 1200 },
         { key: "catalog", chars: 300 },
+        {
+          key: "index",
+          chars: 900,
+          excluded: [
+            {
+              id: "chapter-index:正文/0002.md",
+              reason: "budget",
+              chars: 300,
+              location: "read_file 正文/0002.md",
+            },
+          ],
+        },
       ],
-      skipped: [{ key: "index", reason: "budget", chars: 9000 }],
-      budget: { limit: 20000, used: 1500 },
+      skipped: [{ key: "clues", reason: "budget", chars: 120 }],
+      budget: { limit: 20000, used: 2400 },
     });
 
     const turns = buildTurns([turnStarted(), injected]);
 
     const injection = turns[0]!.injection!;
     expect(injection.profile).toBe("writer");
-    expect(injection.parts.map((part) => part.key)).toEqual(["instructions", "catalog"]);
-    expect(injection.skipped).toEqual([{ key: "index", reason: "budget", chars: 9000 }]);
-    expect(injection.used).toBe(1500);
+    expect(injection.parts.map((part) => part.key)).toEqual(["instructions", "catalog", "index"]);
+    expect(injection.parts[2]!.excluded).toEqual([
+      {
+        id: "chapter-index:正文/0002.md",
+        reason: "budget",
+        chars: 300,
+        location: "read_file 正文/0002.md",
+      },
+    ]);
+    expect(injection.skipped).toEqual([{ key: "clues", reason: "budget", chars: 120 }]);
+    expect(injection.used).toBe(2400);
     expect(injection.limit).toBe(20000);
   });
 });

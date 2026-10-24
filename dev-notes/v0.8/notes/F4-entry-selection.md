@@ -30,6 +30,17 @@
 - 上游实际用量仍只在 `model_request_finished.usage` 出现：供应商没提供时保持 `null`，
   不拿 0 冒充「用量为零」；本项不触发任何额外摘要或压缩任务。
 
+### 前端显示
+
+- `TurnContextSummary` 读同一份 `state_injected`：分区行显示「未装入 N 条」，展开列出
+  每条候选的 id、原因（预算不足／超出条数）与继续查看入口；摘要行给出未装入总数。
+- 补齐写作档实际存在的分区名（已装模块、身份披露、人物状态、故事时间、未回收线索、
+  专有名词）与「资料整理」用途标签，避免界面退回显示英文 key。
+- 工具行补齐模块工具的中文动作：`query_records` 显示为「检索资料」、`read_record` 为
+  「读取资料」，与文件读取区分；命中仍只表示找到，不代表读过原文。
+- 本轮材料块继续按「必读／已提供全文／已提供部分原文（x/y）／已指定尚未读取」显示，
+  与注入排除项一起构成选择、命中、已读、未覆盖四种状态。
+
 ## 接口与数据
 
 - 没有新增 HTTP 路由；`state_injected.parts[i]` 在原本的 `key`／`chars` 之外可能多一个
@@ -55,15 +66,17 @@
 | 请求记录专项 | `uv run pytest -q tests/workspace/test_activity.py tests/workspace/test_chat.py tests/workspace/test_chat_stream.py` | 73 passed |
 | 静态检查 | `uv run ruff check src/hastings tests` | 通过 |
 | 类型检查 | `uv run mypy` | 106 个源文件无问题 |
+| 前端构建 | `npm --prefix frontend run build` | 通过（含 `tsc --noEmit` 与 vite build） |
+| 前端单测 | `npm --prefix frontend test` | 18 个文件 161 passed |
 | 后端全量 | `uv run pytest -q --basetemp data/test-tmp/f4b-full -o tmp_path_retention_count=100` | 766 passed，0 failures |
 
 覆盖：分区摘要带排除项且无排除项时不出现该键；线索超预算记录 `budget`；人物状态只留
 死亡角色时记录被裁者；故事时间超预算只留最近一章并记录更早锚点；专名超条数记录 `limit`；
 索引超预算记录全部未装入章节与 `read_file` 入口；请求开始事件带可复算的字符规模，
-没有上游用量时 `usage` 仍为 `null`。
+没有上游用量时 `usage` 仍为 `null`；前端把同一份注入记录里的未装入条目逐条显示。
 
 ## 未完成
 
-- 界面没有显示排除项与请求规模；活动事件已有数据，前端未接。
+- 整请求字符规模只进活动记录，对话界面还没有显示；用量仍要到活动详情查看。
 - 条目排序仍是固定分区顺序，没有统一候选池与按任务相关性的重排。
 - 任务卡（当前授权、约束、未读内容、执行事实）没有随本项实现。

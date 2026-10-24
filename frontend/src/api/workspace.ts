@@ -316,8 +316,17 @@ export type WorkspaceEvent =
   | (EventBase & {
       type: "state_injected";
       turn_id: string;
-      profile: "writer" | "extract" | "review";
-      parts: { key: string; chars: number }[];
+      profile: "writer" | "extract" | "review" | "materials";
+      parts: {
+        key: string;
+        chars: number;
+        excluded?: {
+          id: string;
+          reason: "budget" | "limit";
+          chars?: number;
+          location?: string;
+        }[];
+      }[];
       skipped: { key: string; reason: "budget" | "empty"; chars?: number }[];
       budget: { limit: number; used: number };
     })
