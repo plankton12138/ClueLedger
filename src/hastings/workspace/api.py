@@ -68,6 +68,7 @@ from hastings.workspace.state import (
     WorkspaceBinding,
     conversation_root,
 )
+from hastings.workspace.story_index import chapter_view, story_view
 from hastings.workspace.story_materials import (
     DOMAIN_LABEL,
     author_view,
@@ -626,8 +627,20 @@ class ActivityExport(ActivityFilter):
 
 
 MaterialDomainName = Literal[
-    "chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"
+    "story_index", "chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"
 ]
+
+
+class StoryEventsView(BaseModel):
+    """统一事件视图：按章序或可证明的故事先后；两种顺序读同一份投影。"""
+
+    mode: Literal["chapter", "story"]
+    as_of_chapter: int
+    chapters: list[dict[str, Any]] = Field(default_factory=list)
+    groups: list[dict[str, Any]] = Field(default_factory=list)
+    unknown: list[dict[str, Any]] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class SourceEvidenceView(BaseModel):
@@ -1021,6 +1034,26 @@ def create_file_workspace_router(
         )
 
     # -- 故事资料：作者视图与整理任务 ---------------------------------------
+
+    @router.get("/{workspace_id}/story-events", response_model=StoryEventsView)
+    def story_events(
+        workspace_id: str,
+        order: Literal["chapter", "story"] = Query(default="chapter"),
+        as_of_chapter: int | None = Query(default=None, ge=0),
+    ) -> StoryEventsView:
+        """统一事件视图：章节顺序按章与原文区间，故事顺序只对可证明的先后排序。
+
+        两种顺序读同一份 `story-index.json` 投影；旧概览与时间锚点只读兼容，
+        不返回第三份独立的时间线正文。
+        """
+        workspace = workspaces.workspace(workspace_id)
+        root = conversation_root(workspaces.root, workspace_id)
+        view = (
+            chapter_view(workspace, root, as_of_chapter=as_of_chapter)
+            if order == "chapter"
+            else story_view(workspace, root, as_of_chapter=as_of_chapter)
+        )
+        return StoryEventsView(**view)  # type: ignore[arg-type]
 
     @router.get("/{workspace_id}/story-materials/{domain}", response_model=StoryMaterialsView)
     def story_materials(

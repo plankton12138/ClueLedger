@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,11 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, is_managed_path
 from hastings.workspace.glossary import KIND_LABEL, GlossaryStore, build_glossary
 from hastings.workspace.state_store import current_chapter, read_records, write_records
+from hastings.workspace.story_index import (
+    MODE_LABEL,
+    EventObservation,
+    StoryIndexStore,
+)
 from hastings.workspace.timeline import TimelineStore
 
 __all__ = [
@@ -45,11 +51,14 @@ __all__ = [
     "entry_detail",
 ]
 
-MaterialDomain = Literal["chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"]
+MaterialDomain = Literal[
+    "chapter_index", "story_index", "disclosure", "roster", "timeline", "clues", "glossary"
+]
 CoverageOutcome = Literal["found", "empty", "insufficient"]
 Freshness = Literal["valid", "stale", "source_missing", "unavailable", "none"]
 
 DOMAINS: tuple[MaterialDomain, ...] = (
+    "story_index",
     "chapter_index",
     "disclosure",
     "roster",
@@ -59,6 +68,7 @@ DOMAINS: tuple[MaterialDomain, ...] = (
 )
 
 DOMAIN_LABEL: dict[str, str] = {
+    "story_index": "章节索引与事件",
     "chapter_index": "章节概览",
     "disclosure": "身份披露",
     "roster": "人物状态",
@@ -316,6 +326,93 @@ def _record_status(workspace: Workspace, record: CoverageRecord) -> Freshness:
     except WorkspaceError as exc:
         return "source_missing" if exc.code == "FILE_NOT_FOUND" else "unavailable"
     return "valid" if current == record.digest else "stale"
+
+
+def _story_index_entries(
+    workspace: Workspace,
+    root: Path,
+    as_of: int,
+    chapters: tuple[ChapterRef, ...],
+    coverage: dict[tuple[str, str, str], CoverageRecord],
+) -> tuple[list[dict[str, object]], list[str]]:
+    """统一索引的作者视图：摘要 + 带表达方式的事件；旧版概览不再单独占一页。"""
+    projections = StoryIndexStore(root).read_all()
+    warnings: list[str] = []
+    entries: list[dict[str, object]] = []
+    for ref in chapters:
+        projection = projections.get(ref.path)
+        outcome, cov_fresh, task_id, at = _coverage_of(coverage, workspace, "story_index", ref.path)
+        if projection is None:
+            entries.append(
+                _entry(
+                    domain="story_index",
+                    key=ref.path,
+                    title=ref.title,
+                    subtitle="还没有整理这一章",
+                    chapter=ref.chapter,
+                    coverage=outcome,
+                    freshness=cov_fresh,
+                    task_id=task_id,
+                    updated_at=at,
+                    data={"summary": "", "events": [], "modes": {}},
+                )
+            )
+            continue
+        status = "valid" if projection.digest == ref.digest else "stale"
+        freshness: Freshness = cast(Freshness, status)
+        if status == "stale":
+            warnings.append(f"{ref.title}的章节索引依据已改过，不再作为当前观察使用。")
+        evidence = tuple(
+            _evidence(
+                item.path,
+                item.digest,
+                ref.chapter,
+                item.start,
+                item.end,
+                item.quote,
+                freshness,
+            )
+            for event in projection.events
+            for item in event.evidence
+        )
+        entries.append(
+            _entry(
+                domain="story_index",
+                key=ref.path,
+                title=ref.title,
+                subtitle=projection.summary,
+                chapter=ref.chapter,
+                coverage=outcome,
+                freshness=freshness,
+                task_id=task_id,
+                updated_at=projection.generated_at or at,
+                data={
+                    "summary": projection.summary,
+                    "events": [
+                        {
+                            "id": item.id,
+                            "text": item.text,
+                            "mode": item.mode,
+                            "mode_label": MODE_LABEL.get(item.mode, item.mode),
+                            "chapter": item.chapter,
+                            "speaker": list(item.speaker) if item.speaker else None,
+                            "story_time": item.story_time.to_dict(),
+                        }
+                        for item in projection.events
+                    ],
+                    "modes": _mode_counts(projection.events),
+                },
+                evidence=evidence,
+            )
+        )
+    return entries, warnings
+
+
+def _mode_counts(events: Sequence[EventObservation]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in events:
+        counts[item.mode] = counts.get(item.mode, 0) + 1
+    return counts
 
 
 def _chapter_index_entries(
@@ -871,7 +968,17 @@ def _build(
         (item.domain, item.path, item.entity_path): item for item in store.records()
     }
     conflicts: list[dict[str, object]] = []
-    if domain == "chapter_index":
+    if domain not in DOMAINS:
+        raise WorkspaceError(
+            code="MATERIAL_DOMAIN_INVALID",
+            where=f"story_materials.view:{domain}",
+            why=f"没有这种资料：{domain or '（空）'}",
+            fix="用资料页列出的种类之一；未知种类不按相近种类替代",
+            details={"domain": domain},
+        )
+    if domain == "story_index":
+        entries, warnings = _story_index_entries(workspace, root, as_of, chapters, coverage)
+    elif domain == "chapter_index":
         entries, warnings = _chapter_index_entries(workspace, root, as_of, chapters, coverage)
     elif domain == "timeline":
         entries, warnings = _timeline_entries(workspace, root, as_of, chapters, coverage)

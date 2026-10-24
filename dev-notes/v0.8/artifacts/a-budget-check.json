@@ -1,0 +1,75 @@
+{
+  "case": "两份固定设定等长（线索 / 真相）",
+  "rows": [
+    {
+      "each_file_chars": 10,
+      "settings_rendered": 68,
+      "settings_budget": 6000,
+      "used": 2325,
+      "limit": 44900,
+      "skipped": [],
+      "truncated": false,
+      "body_chars": [
+        10,
+        10
+      ],
+      "notice": "真真真真真真真真真真"
+    },
+    {
+      "each_file_chars": 2900,
+      "settings_rendered": 5848,
+      "settings_budget": 6000,
+      "used": 8105,
+      "limit": 44900,
+      "skipped": [],
+      "truncated": false,
+      "body_chars": [
+        2900,
+        2900
+      ],
+      "notice": "真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真真"
+    },
+    {
+      "each_file_chars": 3000,
+      "settings_rendered": 6000,
+      "settings_budget": 6000,
+      "used": 8257,
+      "limit": 44900,
+      "skipped": [],
+      "truncated": true,
+      "body_chars": [
+        2940,
+        2940
+      ],
+      "notice": "（已截断：还剩约 60 个字符未装入，用 read_file 继续读）"
+    },
+    {
+      "each_file_chars": 3500,
+      "settings_rendered": 6000,
+      "settings_budget": 6000,
+      "used": 8257,
+      "limit": 44900,
+      "skipped": [],
+      "truncated": true,
+      "body_chars": [
+        2939,
+        2939
+      ],
+      "notice": "（已截断：还剩约 561 个字符未装入，用 read_file 继续读）"
+    },
+    {
+      "each_file_chars": 20000,
+      "settings_rendered": 6000,
+      "settings_budget": 6000,
+      "used": 8257,
+      "limit": 44900,
+      "skipped": [],
+      "truncated": true,
+      "body_chars": [
+        2937,
+        2937
+      ],
+      "notice": "（已截断：还剩约 17063 个字符未装入，用 read_file 继续读）"
+    }
+  ]
+}

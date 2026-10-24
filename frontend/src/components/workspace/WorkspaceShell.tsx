@@ -15,11 +15,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useConversationsStore } from "../../state/conversations";
+import { useModuleLibraryStore } from "../../state/moduleLibrary";
 import { CHAT, SIDEBAR, useLayoutStore } from "../../state/layout";
 import { useModelsStore } from "../../state/models";
 import { navigate, useWorkspacePage } from "../../state/navigation";
 import { useWorkspaceStore } from "../../state/workspace";
 import StoryMaterialsPage from "../materials/StoryMaterialsPage";
+import ModuleDrawer from "../library/ModuleDrawer";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
 import ActivityPanel from "./ActivityPanel";
 import FontSizeControl from "./FontSizeControl";
@@ -89,6 +91,7 @@ export default function WorkspaceShell() {
   const clearSearch = useWorkspaceStore((state) => state.clearSearch);
   const upload = useWorkspaceStore((state) => state.upload);
   const openDrawer = useWorkspaceStore((state) => state.openDrawer);
+  const openLibrary = useModuleLibraryStore((state) => state.openDrawer);
   const dismissError = useWorkspaceStore((state) => state.dismissError);
   const dismissNotice = useWorkspaceStore((state) => state.dismissNotice);
   // 目录里的「加入对话」写的是会话草稿的参考列表：与输入区的选择器同一份状态。
@@ -97,6 +100,7 @@ export default function WorkspaceShell() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState("");
   const page = useWorkspacePage();
+
   const materials = page?.kind === "materials" ? page : null;
   const fileInput = useRef<HTMLInputElement>(null);
   const current = bindings.find((binding) => binding.id === currentId);
@@ -201,6 +205,14 @@ export default function WorkspaceShell() {
             清理失效（{staleCount}）
           </button>
         )}
+        <button
+          className="btn btn-gray whitespace-nowrap px-2 py-1 text-[11px]"
+          disabled={!currentId}
+          title="浏览全局模块库；装入或切换本作品使用的版本"
+          onClick={() => currentId && void openLibrary(currentId)}
+        >
+          模块库
+        </button>
         <div className="flex-1" />
         <div className="seg flex-none text-[11px]">
           <button
@@ -220,8 +232,9 @@ export default function WorkspaceShell() {
               navigate({
                 kind: "materials",
                 workspaceId: currentId,
-                section: materials?.section ?? "chapters",
+                section: materials?.section ?? "story",
                 chapter: materials?.chapter ?? null,
+                order: materials?.order ?? "chapter",
               })
             }
           >
@@ -278,6 +291,7 @@ export default function WorkspaceShell() {
             workspaceId={currentId}
             section={materials.section}
             chapter={materials.chapter}
+            order={materials.order}
             entryId={materials.entryId}
             onNavigate={navigate}
             onOpenSource={(path) => {
@@ -504,6 +518,7 @@ export default function WorkspaceShell() {
       </main>
       )}
 
+      {currentId && <ModuleDrawer />}
       <DirectoryDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
       <ModelSettingsDialog />
       <ActivityPanel />

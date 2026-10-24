@@ -291,7 +291,7 @@ test.describe("在线模型", () => {
     await page.getByRole("button", { name: "故事资料", exact: true }).click();
     await expect(page.locator(".materials-nav")).toBeVisible();
     await page.getByRole("button", { name: "整理所选章节", exact: true }).click();
-    const picker = page.getByRole("dialog", { name: "整理章节概览" });
+    const picker = page.getByRole("dialog", { name: "整理章节索引" });
     await picker.getByRole("button", { name: "整理所选章节", exact: true }).click();
     const firstRun = await waitForMaterialTask(request);
     saveEvidence("materials-index-flow", { task: firstRun.task, events: firstRun.events });
@@ -304,14 +304,12 @@ test.describe("在线模型", () => {
     expect(toolNames).not.toContain("write_file");
     expect(toolNames).not.toContain("edit_file");
 
-    // 目录里也有「第一章 雨夜」，显式限定在资料页的章节列表内；列表顶部的失效提示是纯文本行，
-    // 不带按钮，用条目按钮定位真实的一行。
-    const chapters = page.locator("section", { has: page.getByRole("heading", { name: "章节概览" }) });
-    const row = chapters.getByRole("button").filter({ hasText: "第一章 雨夜" }).first();
+    // 章节与事件页把章节概览与时间线合成一份投影；按章标题定位真实的一章。
+    const row = page.locator("section").filter({ hasText: "第一章 雨夜" }).first();
     await expect(row).toContainText("有结果", { timeout: 30_000 });
     writeFileSync(join(workspaceRoot, FIRST), "# 雨夜\n\n雪已经停了三天。\n", "utf-8");
-    await page.getByRole("button", { name: "重新读取资料", exact: true }).click();
-    await expect(row).toContainText("来源已修改", { timeout: 30_000 });
+    await page.getByRole("button", { name: "重新读取", exact: true }).click();
+    await expect(row).toContainText("依据已改动", { timeout: 30_000 });
 
     // 回到写作页：资料页的浏览不改变写作草稿与当前文件。
     await page.getByRole("button", { name: "写作", exact: true }).click();
@@ -332,7 +330,7 @@ test.describe("在线模型", () => {
     await expect(page.getByTestId("turn-result").last()).toHaveAttribute("data-status", "completed");
     await expect(page.getByTestId("task-scope").last()).toBeVisible();
 
-    const materials = await request.get(`${BASE}/${bindingId}/story-materials/chapter_index`);
+    const materials = await request.get(`${BASE}/${bindingId}/story-materials/story_index`);
     const entry = (await materials.json()).entries.find(
       (item: { chapter: number }) => item.chapter === 1,
     );

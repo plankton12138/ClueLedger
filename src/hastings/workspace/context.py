@@ -15,11 +15,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from hastings.workspace.assembly import (
     CATALOG_BUDGET,
     CLUES_BUDGET,
     GLOSSARY_BUDGET,
     HISTORY_BUDGET,
+    INDEX_BUDGET,
     INSTRUCTIONS_BUDGET,
     MATERIALS_BUDGET,
     ROSTER_BUDGET,
@@ -29,6 +32,7 @@ from hastings.workspace.assembly import (
     Partition,
     Profile,
     assemble,
+    body_budget,
 )
 from hastings.workspace.assembly import (
     SETTINGS_BUDGET as _SETTINGS_BUDGET,
@@ -183,29 +187,78 @@ MATERIALS_INSTRUCTIONS = """\
 """
 
 
-def settings_section(workspace: Workspace, *, budget: int = SETTINGS_BUDGET) -> str:
-    """线索与真相的文本块；角色全文只通过文件工具按需读取。"""
-    per_file = max(budget // len(SETTING_FILES), 400)
+def settings_section(
+    workspace: Workspace, *, budget: int = SETTINGS_BUDGET, title: str = "设定集内容"
+) -> str:
+    """线索与真相的文本块；角色全文只通过文件工具按需读取。
+
+    ``budget`` 是这一分区**渲染后**的字符上限，标题行也算在内。正文按剩余空间分配：
+    放得下就整段装入，放不下就截短并写明还剩多少，读取入口始终保留——长设定不能让
+    整个分区消失，否则模型既看不到内容，也不知道该去读哪里。
+    """
+    available = body_budget(title, budget)
+    sources = [_setting_source(workspace, path, label) for path, label in SETTING_FILES]
+    longest = max((len(source.text) for source in sources), default=0)
+    if longest == 0:
+        return _render_settings(sources, [0 for _ in sources])
+    # 二分找每份正文都能容纳的上限：短设定整段装入，长设定按同一个上限截短，
+    # 避免把预算全部让给其中一份。
+    low, high = 0, longest
+    while low < high:
+        middle = (low + high + 1) // 2
+        if len(_render_settings(sources, _caps(sources, middle))) <= available:
+            low = middle
+        else:
+            high = middle - 1
+    rendered = _render_settings(sources, _caps(sources, low))
+    if len(rendered) > available:
+        # 连标题与读取入口都放不下：只留一份读取入口，不假装装入了内容。
+        return _settings_read_entry(sources)
+    return rendered
+
+
+def _caps(sources: list[_SettingSource], limit: int) -> list[int]:
+    return [min(len(source.text), limit) for source in sources]
+
+
+@dataclass(frozen=True, slots=True)
+class _SettingSource:
+    path: str
+    label: str
+    text: str
+
+
+def _setting_source(workspace: Workspace, path: str, label: str) -> _SettingSource:
+    try:
+        return _SettingSource(path=path, label=label, text=workspace.read(path).text.strip())
+    except WorkspaceError:
+        return _SettingSource(path=path, label=label, text="")
+
+
+def _render_settings(sources: list[_SettingSource], caps: list[int]) -> str:
     blocks: list[str] = []
-    for path, title in SETTING_FILES:
-        try:
-            text = workspace.read(path).text.strip()
-        except WorkspaceError:
-            blocks.append(f"### {title}（{path}）\n（尚未写入）")
-            continue
-        if not text:
-            blocks.append(f"### {title}（{path}）\n（尚未写入）")
-            continue
-        if len(text) > per_file:
-            remaining = len(text) - per_file
-            body = text[:per_file]
+    for source, cap in zip(sources, caps, strict=True):
+        header = f"### {source.label}（{source.path}）"
+        if not source.text:
+            blocks.append(f"{header}\n（尚未写入）")
+        elif cap >= len(source.text):
+            blocks.append(f"{header}\n{source.text}")
+        elif cap > 0:
+            remaining = len(source.text) - cap
             blocks.append(
-                f"### {title}（{path}）\n{body}\n"
+                f"{header}\n{source.text[:cap]}\n"
                 f"（已截断：还剩约 {remaining} 个字符未装入，用 read_file 继续读）"
             )
         else:
-            blocks.append(f"### {title}（{path}）\n{text}")
+            blocks.append(
+                f"{header}\n（未装入正文：共 {len(source.text)} 个字符，用 read_file 读取）"
+            )
     return "\n\n".join(blocks)
+
+
+def _settings_read_entry(sources: list[_SettingSource]) -> str:
+    paths = "、".join(f"`{source.path}`" for source in sources)
+    return f"（设定较长，未装入正文；用 read_file 读取 {paths}。）"
 
 
 def catalog_section(workspace: Workspace) -> str:
@@ -361,7 +414,7 @@ def build_assembled_context(
                     f"{index_notes.strip()}\n\n"
                     "这些是应用按各章原文生成的索引，用于定位；与原文冲突时以原文为准。"
                 ),
-                budget=8_000,
+                budget=INDEX_BUDGET,
             )
         )
     if profile == "writer":
@@ -379,7 +432,10 @@ def build_assembled_context(
             )
     if profile in ("writer", "review"):
         # 检查也需要「谁已经死了、故事时间到哪」，否则时间冲突只能靠通读猜。
-        roster_notes = roster_section(build_roster(workspace, roster_store, as_of_chapter=cutoff))
+        roster_notes = roster_section(
+            build_roster(workspace, roster_store, as_of_chapter=cutoff),
+            budget=body_budget("人物状态", ROSTER_BUDGET),
+        )
         if roster_notes.strip():
             parts.append(
                 Partition(
@@ -390,7 +446,8 @@ def build_assembled_context(
                 )
             )
         time_notes = timeline_section(
-            build_timeline(workspace, timeline_store, as_of_chapter=cutoff)
+            build_timeline(workspace, timeline_store, as_of_chapter=cutoff),
+            budget=body_budget("故事时间", TIMELINE_BUDGET),
         )
         if time_notes.strip():
             parts.append(
@@ -401,7 +458,10 @@ def build_assembled_context(
                     budget=TIMELINE_BUDGET,
                 )
             )
-        clue_notes = clues_section(build_clues(workspace, clue_store, as_of_chapter=cutoff))
+        clue_notes = clues_section(
+            build_clues(workspace, clue_store, as_of_chapter=cutoff),
+            budget=body_budget("未回收线索", CLUES_BUDGET),
+        )
         if clue_notes.strip():
             parts.append(
                 Partition(
@@ -423,11 +483,12 @@ def build_assembled_context(
                 )
             )
     if profile in ("writer", "review"):
+        settings_title = "设定集内容"
         parts.append(
             Partition(
                 key="settings",
-                title="设定集内容",
-                text=settings_section(workspace),
+                title=settings_title,
+                text=settings_section(workspace, budget=SETTINGS_BUDGET, title=settings_title),
                 budget=SETTINGS_BUDGET,
             )
         )

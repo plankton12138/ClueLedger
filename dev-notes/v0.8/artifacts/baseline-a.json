@@ -1,0 +1,23 @@
+{
+  "stage": "0.8 A",
+  "captured_at": "2026-10-24T11:21:07+08:00",
+  "git": {
+    "head": "8b910f9eedddf5d0c05045a8ec4978070a5e7737",
+    "status_lines": 60,
+    "status_digest": "9b423b55c342735d"
+  },
+  "python": "3.13.14",
+  "package_version": "version = \"0.7.0\"",
+  "files_sha256_16": {
+    "pyproject.toml": "fb5a92a88f1babdd",
+    "src/hastings/workspace/assembly.py": "9dbc3d8f47ed2e0c",
+    "src/hastings/workspace/context.py": "30a0ccad25d3652a",
+    "src/hastings/workspace/clues.py": "38235d4675f41f54",
+    "src/hastings/workspace/material_tasks.py": "dbd46006b1d039ae",
+    "src/hastings/workspace/materials.py": "034f312dc5546c97",
+    "tests/workspace/test_assembly.py": "e101507dbd0a0cd4",
+    "tests/workspace/test_clues.py": "e75ce2395b2d7704",
+    "tests/workspace/test_story_materials.py": "872b3b2c391c2173"
+  },
+  "synthetic_workspace": "tests/workspace/test_context_budget.py 内临时作品；不使用 data/ 本机样例"
+}

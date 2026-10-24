@@ -79,6 +79,15 @@ class ObservedEvidence:
     end: int
     quote: str
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "path": self.path,
+            "digest": self.digest,
+            "start": self.start,
+            "end": self.end,
+            "quote": self.quote,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class ObservedFact:

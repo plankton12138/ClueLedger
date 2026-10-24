@@ -15,6 +15,9 @@ from collections.abc import Mapping
 
 __all__ = ["WorkspaceError", "status_for_code"]
 
+#: 需要显式给出 403 的错误码：尾缀规则只能推出 404/409/500，访问被拒不属于其中任何一种。
+_FORBIDDEN_CODES = frozenset({"MODULE_ACCESS_DENIED", "IDEA_ACCESS_DENIED"})
+
 
 class WorkspaceError(Exception):
     """文件工作区的可分类失败：稳定错误码 + 可读消息 + 结构化详情。"""
@@ -45,6 +48,8 @@ class WorkspaceError(Exception):
 
 def status_for_code(code: str) -> int:
     """错误码 → HTTP 状态；未知码按「输入写错」处理（400）。"""
+    if code in _FORBIDDEN_CODES:
+        return 403
     if code.endswith("_NOT_FOUND"):
         return 404
     if code.endswith("_CONFLICT"):

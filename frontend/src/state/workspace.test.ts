@@ -94,6 +94,23 @@ beforeEach(() => {
   }));
 });
 
+describe("登记列表刷新", () => {
+  it("派生后重新读取登记，但不改变当前作品", async () => {
+    useWorkspaceStore.setState({ currentId: "w1", bindings: [] });
+    api.listWorkspaces.mockResolvedValue([
+      { id: "w1", name: "雪山旅馆", path: "C:/作品", exists: true },
+      { id: "w2", name: "另一条线", path: "C:/另一条线", exists: true },
+    ]);
+
+    await useWorkspaceStore.getState().refreshBindings();
+
+    const state = useWorkspaceStore.getState();
+    expect(state.bindings.map((item) => item.id)).toEqual(["w1", "w2"]);
+    expect(state.currentId).toBe("w1");
+    expect(api.listFiles).not.toHaveBeenCalled();
+  });
+});
+
 describe("目录与文件", () => {
   it("初始化选中第一个可用目录并加载目录、对话与 Git", async () => {
     await useWorkspaceStore.getState().init();

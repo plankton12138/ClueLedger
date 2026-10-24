@@ -2399,8 +2399,73 @@ _EVIDENCE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+#: 完整模块身份：库、模块、修订、条目。四段缺一不算引用。
+_REF_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "items": {"type": "string"},
+    "minItems": 4,
+    "maxItems": 4,
+    "description": "库、模块、修订、条目四段 ID；不知道就省略，不要只写名字",
+}
+
 #: 资料整理每个域的结果条目结构；一次任务只装配对应域的那一份。
 _MATERIAL_RECORD_SCHEMA: dict[str, dict[str, Any]] = {
+    "story_index": {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "description": "这一章发生了什么，≤500 字符"},
+            "events": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "description": "这一条观察，≤300 字符"},
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "narration",
+                                "testimony",
+                                "recollection",
+                                "hypothesis",
+                                "dream",
+                                "unknown",
+                            ],
+                            "description": "表达方式；回忆与证词不等于事实",
+                        },
+                        "story_time": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string", "description": "原文的时间说法"},
+                                "normalized": {
+                                    "type": "string",
+                                    "description": "只有原文明确对应日期时才写 YYYY-MM-DD",
+                                },
+                                "before": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "本事件在哪些观察之前",
+                                },
+                                "after": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "本事件在哪些观察之后",
+                                },
+                            },
+                            "additionalProperties": False,
+                        },
+                        "speaker": _REF_SCHEMA,
+                        "related": {"type": "array", "items": _REF_SCHEMA},
+                        "author_event": _REF_SCHEMA,
+                        "evidence": {"type": "array", "items": _EVIDENCE_SCHEMA},
+                    },
+                    "required": ["text", "mode", "evidence"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["summary", "events"],
+        "additionalProperties": False,
+    },
     "chapter_index": {
         "type": "object",
         "properties": {

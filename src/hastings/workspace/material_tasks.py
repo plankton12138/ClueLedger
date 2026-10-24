@@ -52,6 +52,17 @@ from hastings.workspace.materials import MaterialLedger, ReadRequirement
 from hastings.workspace.metadata import parse_character
 from hastings.workspace.state import ConversationStore
 from hastings.workspace.state_store import current_chapter
+from hastings.workspace.story_index import (
+    MODE_LABEL,
+    OBSERVATION_MODES,
+    ChapterProjection,
+    EventObservation,
+    ObservationMode,
+    RecordRef,
+    StoryIndexStore,
+    StoryTime,
+    validate_projection,
+)
 from hastings.workspace.story_materials import (
     COVERAGE_OUTCOMES,
     DOMAIN_LABEL,
@@ -73,7 +84,9 @@ __all__ = [
     "task_view",
 ]
 
-MaterialDomain = Literal["chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"]
+MaterialDomain = Literal[
+    "story_index", "chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"
+]
 CoverageOutcome = Literal["found", "empty", "insufficient"]
 
 #: 一次整理最多覆盖的章节与人物数；与章节索引一致，分几次整理而不是一次跑整本书。
@@ -86,7 +99,9 @@ _ENTITY_DOMAINS = {"disclosure", "roster"}
 class MaterialTaskScope(BaseModel):
     """前端提交的整理范围；结构合法不代表范围可用，服务端会再核对一遍。"""
 
-    domain: Literal["chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"]
+    domain: Literal[
+        "story_index", "chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"
+    ]
     chapter_paths: list[str] = Field(min_length=1, max_length=MAX_MATERIAL_CHAPTERS)
     entity_paths: list[str] = Field(default_factory=list, max_length=MAX_MATERIAL_ENTITIES)
     as_of_chapter: int = Field(ge=0)
@@ -296,6 +311,15 @@ def targets(scope: Mapping[str, object]) -> tuple[dict[str, object], ...]:
 
 
 _DOMAIN_RULES: dict[str, str] = {
+    "story_index": (
+        "每章提交一份摘要（≤500 字符）与事件观察。\n"
+        "每条事件写清表达方式：narration（叙述）、testimony（证词）、recollection（回忆）、"
+        "hypothesis（推测）、dream（梦）或 unknown（不确定）；回忆与证词不等于事实，"
+        "不要改写成客观叙述。\n"
+        "时间写原文说法；只有原文能明确对应日期时才填 normalized（YYYY-MM-DD）。"
+        "只有正文明确写出先后的，才用 before／after 引用其他观察的 ID；不确定就留空。\n"
+        "人物与作者事件用完整引用（库、模块、修订、条目四段）；不知道就留空，不要只写名字。"
+    ),
     "chapter_index": (
         "每章提交一份摘要（≤500 字符）与带证据的事件、人物、时间地点、线索。\n"
         "摘要只写这一章实际发生了什么，不从旧摘要改写；这一章有正文就必须提交摘要。"
@@ -309,6 +333,8 @@ _DOMAIN_RULES: dict[str, str] = {
         "登记读者能观察到的线索：埋在哪一章、计划哪一章回收、现在什么状态。\n"
         "只有正文确实写了回收过程才标 resolved，并同时给出回收章与回收处原文；"
         "计划回收章和「已废弃」是作者的决定，不要凭「读完后没再出现」自行设定。\n"
+        "计划回收章可以落在本次截止章之后，它是计划不是证据；埋设与回收的原文都必须在"
+        "截止章以内。\n"
         "整理回收章时，已有线索要保留并复核原埋设证据，不能顺带改写别的章的埋设事实。"
     ),
     "glossary": (
@@ -392,7 +418,19 @@ def _existing_notes(
     numbers = {int(str(number)) for number in chapters.values()}
     entities = [str(item) for item in cast(list[object], scope.get("entity_paths") or [])]
     lines: list[str] = []
-    if domain == "chapter_index":
+    if domain == "story_index":
+        story_store = StoryIndexStore(root)
+        for path, projection in story_store.read_all().items():
+            if path not in chapters:
+                continue
+            modes = "、".join(
+                sorted({MODE_LABEL.get(item.mode, item.mode) for item in projection.events})
+            )
+            lines.append(
+                f"- `{path}` 上次摘要：{projection.summary}"
+                + (f"（事件 {len(projection.events)} 条：{modes}）" if modes else "")
+            )
+    elif domain == "chapter_index":
         index_store = ChapterIndexStore(root)
         for path in chapters:
             record = index_store.read_all().get(path)
@@ -589,9 +627,12 @@ def publish_material_result(
             details={"chapter": chapter_number, "as_of_chapter": as_of},
         )
 
-    # 空结果只记覆盖，不写域存储：没有发现不等于清空已有记录。
-    published = (
-        _dispatch(
+    # 空结果通常只记覆盖，不写域存储：没有发现不等于清空已有记录。
+    # 统一章节索引是例外：一章重建为 empty 表示这一章不再有可发布的观察，
+    # 只移除这一章的贡献，其他章与作者安排都不动。
+    published = 0
+    if outcome == "found":
+        published = _dispatch(
             workspace=workspace,
             root=root,
             domain=domain,
@@ -602,9 +643,8 @@ def publish_material_result(
             records=records,
             ledger=ledger,
         )
-        if outcome == "found"
-        else 0
-    )
+    elif domain == "story_index" and outcome == "empty":
+        StoryIndexStore(root).remove(path)
 
     CoverageStore(root).record(
         CoverageRecord(
@@ -640,6 +680,36 @@ def _dispatch(
     records: Sequence[Mapping[str, object]],
     ledger: MaterialLedger,
 ) -> int:
+    if domain == "story_index":
+        if not records:
+            raise WorkspaceError(
+                code="MATERIAL_RESULT_INVALID",
+                where=f"material_tasks.publish:{chapter_path}",
+                why="章节索引必须提交摘要与事件，不能用空数组绕过",
+                fix="按当前原文写一份摘要与事件后再提交",
+            )
+        raw = dict(records[0])
+        events_raw = raw.get("events")
+        if not isinstance(events_raw, list):
+            raise _result_error("events", "必须是数组；这一章没有事件时提交空数组")
+        events = tuple(
+            _story_event(item, chapter_number) for item in events_raw if isinstance(item, dict)
+        )
+        if len(events) != len(events_raw):
+            raise _result_error("events", "每一项必须是对象")
+        for event in events:
+            for item in event.evidence:
+                check_evidence(workspace, item, chapter=chapter_number, ledger=ledger)
+        projection = ChapterProjection(
+            path=chapter_path,
+            digest=workspace.read(chapter_path).digest,
+            chapter=chapter_number,
+            summary=str(raw.get("summary") or ""),
+            events=events,
+        )
+        validate_projection(workspace, projection)
+        StoryIndexStore(root).publish(projection, expected_digest=projection.digest)
+        return 1
     if domain == "chapter_index":
         if not records:
             raise WorkspaceError(
@@ -721,6 +791,74 @@ def _evidence_from(raw: object) -> ObservedEvidence:
         raise _result_error("evidence", "需要 path、digest、start、end、quote") from exc
 
 
+def _story_event(item: Mapping[str, object], chapter: int) -> EventObservation:
+    """把模型提交的一条事件转成观察；表达方式与引用格式在这里就拦住。"""
+    text = str(item.get("text") or "").strip()
+    mode = str(item.get("mode") or "unknown")
+    if mode not in OBSERVATION_MODES:
+        raise _result_error(
+            "mode",
+            "只能是 narration、testimony、recollection、hypothesis、dream 或 unknown",
+        )
+    evidence_raw = item.get("evidence")
+    if not isinstance(evidence_raw, list) or not evidence_raw:
+        raise _result_error("evidence", "每条事件至少要有一处原文依据")
+    story_time = _story_time(item.get("story_time"))
+    return EventObservation(
+        text=text,
+        chapter=chapter,
+        mode=cast(ObservationMode, mode),
+        evidence=tuple(_evidence_from(value) for value in evidence_raw),
+        story_time=story_time,
+        speaker=_record_ref(item.get("speaker"), "speaker"),
+        related=_record_refs(item.get("related"), "related"),
+        author_event=_record_ref(item.get("author_event"), "author_event"),
+    )
+
+
+def _story_time(raw: object) -> StoryTime:
+    if raw is None:
+        return StoryTime()
+    if not isinstance(raw, dict):
+        raise _result_error("story_time", "必须是对象或省略")
+    return StoryTime(
+        label=str(raw.get("label") or ""),
+        normalized=str(raw.get("normalized") or ""),
+        before=_id_list(raw.get("before"), "story_time.before"),
+        after=_id_list(raw.get("after"), "story_time.after"),
+    )
+
+
+def _id_list(raw: object, field: str) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise _result_error(field, "必须是数组")
+    return tuple(str(item) for item in raw if str(item).strip())
+
+
+def _record_ref(raw: object, field: str) -> RecordRef | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or len(raw) != 4:
+        raise _result_error(field, "必须是库、模块、修订、条目四段引用")
+    parts = tuple(str(item) for item in raw)
+    return cast(RecordRef, parts)
+
+
+def _record_refs(raw: object, field: str) -> tuple[RecordRef, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise _result_error(field, "必须是数组")
+    refs: list[RecordRef] = []
+    for item in raw:
+        ref = _record_ref(item, field)
+        if ref is not None:
+            refs.append(ref)
+    return tuple(refs)
+
+
 def _index_evidence(raw: object) -> tuple[IndexEvidence, ...]:
     if not isinstance(raw, list):
         raise _result_error("evidence", "必须是数组")
@@ -781,6 +919,13 @@ def _timeline_entry(item: Mapping[str, object], chapter: int, as_of: int) -> Tim
 
 
 def _clue_entry(item: Mapping[str, object], as_of: int) -> ClueEntry:
+    """把一条提交转成台账条目。
+
+    截止章只管正文证据：埋设与回收都要有已写出的原文，因此不得晚于本次截止章。
+    ``due_chapter`` 是作者的回收计划，可以落在截止章之后——否则写到第 8 章就没法
+    登记「计划第 22 章回收」，这正是伏笔台账存在的理由。计划不能早于埋设由
+    ``publish_clues`` 统一校验，不在这里重复。
+    """
     status = str(item.get("status") or "open")
     if status not in ("open", "resolved", "dropped"):
         raise _result_error("status", "只能是 open、resolved 或 dropped")
@@ -789,8 +934,6 @@ def _clue_entry(item: Mapping[str, object], as_of: int) -> ClueEntry:
     resolution = item.get("resolution_chapter")
     if planted > as_of:
         raise _result_error("planted_chapter", "埋设章超出本次截止章")
-    if due is not None and int(str(due)) > as_of:
-        raise _result_error("due_chapter", "计划回收章超出本次截止章")
     if resolution is not None and int(str(resolution)) > as_of:
         raise _result_error("resolution_chapter", "回收章超出本次截止章")
     resolution_evidence = item.get("resolution_evidence")

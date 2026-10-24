@@ -15,12 +15,18 @@ import {
   type MaterialDomain,
   type MaterialEntry,
 } from "../../api/storyMaterials";
-import { MATERIAL_SECTIONS, type MaterialSection, type WorkspacePage } from "../../state/navigation";
+import {
+  MATERIAL_SECTIONS,
+  type MaterialSection,
+  type StoryOrder,
+  type WorkspacePage,
+} from "../../state/navigation";
 import { useMaterialTasksStore } from "../../state/materialTasks";
 import { materialsKey, useStoryMaterialsStore } from "../../state/storyMaterials";
 import ChapterRangePicker from "./ChapterRangePicker";
 import EvidencePane from "./EvidencePane";
 import MaterialTaskBar from "./MaterialTaskBar";
+import StoryEventsPanel from "./StoryEventsPanel";
 import {
   COVERAGE_LABEL,
   COVERAGE_TONE,
@@ -29,14 +35,14 @@ import {
 } from "./labels";
 
 const PRIMARY: Record<MaterialSection, MaterialDomain> = {
-  chapters: "chapter_index",
+  story: "story_index",
   characters: "disclosure",
-  timeline: "timeline",
   clues: "clues",
   glossary: "glossary",
 };
 
 const DOMAIN_LABEL: Record<MaterialDomain, string> = {
+  story_index: "章节索引与事件",
   chapter_index: "章节概览",
   disclosure: "身份披露",
   roster: "人物状态",
@@ -56,6 +62,7 @@ interface Props {
   workspaceId: string;
   section: MaterialSection;
   chapter: number | null;
+  order: StoryOrder;
   entryId?: string;
   onNavigate: (page: WorkspacePage) => void;
   onOpenSource: (path: string) => void;
@@ -114,6 +121,7 @@ export default function StoryMaterialsPage({
   workspaceId,
   section,
   chapter,
+  order,
   entryId,
   onNavigate,
   onOpenSource,
@@ -193,11 +201,11 @@ export default function StoryMaterialsPage({
     tasks[active[primary] ?? ""] ?? (section === "characters" ? tasks[active.roster ?? ""] : null);
 
   const open = (entry: MaterialEntry) =>
-    onNavigate({ kind: "materials", workspaceId, section, chapter, entryId: entry.id });
+    onNavigate({ kind: "materials", workspaceId, section, chapter, order, entryId: entry.id });
 
   const changeChapter = (value: string) => {
     const next = value === "" ? null : Number(value);
-    onNavigate({ kind: "materials", workspaceId, section, chapter: next });
+    onNavigate({ kind: "materials", workspaceId, section, chapter: next, order });
   };
 
   const submitTask = async (
@@ -244,7 +252,13 @@ export default function StoryMaterialsPage({
             }`}
             aria-current={item.key === section ? "page" : undefined}
             onClick={() =>
-              onNavigate({ kind: "materials", workspaceId, section: item.key, chapter })
+              onNavigate({
+                kind: "materials",
+                workspaceId,
+                section: item.key,
+                chapter,
+                order: "chapter",
+              })
             }
           >
             {item.label}
@@ -284,14 +298,14 @@ export default function StoryMaterialsPage({
           <button className="btn btn-gray px-2 py-1 text-[11px]" onClick={reload}>
             重新读取资料
           </button>
-          {section === "chapters" && (
+          {section === "story" && (
             <button
               className="btn btn-gold px-2 py-1 text-[11px]"
               disabled={chapters.length === 0}
               onClick={() =>
                 setPicker({
-                  domain: "chapter_index",
-                  title: "整理章节概览",
+                  domain: "story_index",
+                  title: "整理章节索引",
                   action: "整理所选章节",
                   entitiesRequired: false,
                 })
@@ -331,22 +345,6 @@ export default function StoryMaterialsPage({
                 从章节整理人物状态
               </button>
             </>
-          )}
-          {section === "timeline" && (
-            <button
-              className="btn btn-gold px-2 py-1 text-[11px]"
-              disabled={chapters.length === 0}
-              onClick={() =>
-                setPicker({
-                  domain: "timeline",
-                  title: "整理时间线",
-                  action: "从章节整理时间线",
-                  entitiesRequired: false,
-                })
-              }
-            >
-              从章节整理时间线
-            </button>
           )}
           {section === "clues" && (
             <button
@@ -403,6 +401,18 @@ export default function StoryMaterialsPage({
           onOpenActivity={onOpenActivity}
         />
 
+        {section === "story" ? (
+          <StoryEventsPanel
+            workspaceId={workspaceId}
+            order={order}
+            chapter={chapter}
+            refreshKey={taskRevision + refreshToken}
+            onOrderChange={(next) =>
+              onNavigate({ kind: "materials", workspaceId, section, chapter, order: next })
+            }
+            onOpenSource={onOpenSource}
+          />
+        ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
           <div className="min-h-0 flex-1 overflow-auto">
             {loading[materialsKey(primary, chapter)] && !primaryData && (
@@ -473,12 +483,13 @@ export default function StoryMaterialsPage({
                 onOpenSource={onOpenSource}
                 onTakeToChat={onTakeToChat}
                 onClose={() =>
-                  onNavigate({ kind: "materials", workspaceId, section, chapter })
+                  onNavigate({ kind: "materials", workspaceId, section, chapter, order })
                 }
               />
             </div>
           ) : null}
         </div>
+        )}
       </section>
 
       {picker && primaryData && (

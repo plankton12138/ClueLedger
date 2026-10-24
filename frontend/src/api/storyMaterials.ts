@@ -9,6 +9,7 @@
 import { WorkspaceApiError } from "./workspace";
 
 export type MaterialDomain =
+  | "story_index"
   | "chapter_index"
   | "disclosure"
   | "roster"
@@ -221,6 +222,74 @@ export interface MaterialTask {
   unfinished: MaterialTarget[];
 }
 
+export type StoryOrder = "chapter" | "story";
+
+export interface StoryTime {
+  label: string;
+  normalized: string;
+  before: string[];
+  after: string[];
+}
+
+export interface StoryEvent {
+  id: string;
+  text: string;
+  chapter: number;
+  mode: string;
+  mode_label: string;
+  speaker: string[] | null;
+  related: string[][];
+  author_event: string[] | null;
+  story_time: StoryTime;
+  evidence: { path: string; start: number; end: number; quote: string }[];
+}
+
+export interface StoryChapterRow {
+  path: string;
+  chapter: number;
+  title: string;
+  source: "story_index" | "legacy" | "none";
+  status: string;
+  summary: string;
+  events: StoryEvent[];
+  legacy_entries: {
+    events: string[];
+    characters: string[];
+    places: string[];
+    clues: string[];
+  } | null;
+  anchor: { when: string; span: string; location: string; source: string } | null;
+  coverage: {
+    domain: string;
+    outcome: CoverageOutcome;
+    at: string;
+    task_id: string;
+    fresh: boolean;
+  } | null;
+}
+
+export interface StoryGroup {
+  provisional: boolean;
+  events: StoryEvent[];
+}
+
+export interface StoryConflict {
+  kind: string;
+  detail: string;
+  ids: string[];
+  events: { id: string; text: string; chapter: number; mode: string; mode_label: string }[];
+}
+
+export interface StoryEvents {
+  mode: StoryOrder;
+  as_of_chapter: number;
+  chapters: StoryChapterRow[];
+  groups: StoryGroup[];
+  unknown: StoryEvent[];
+  conflicts: StoryConflict[];
+  warnings: string[];
+}
+
 const BASE = "/api/file-workspaces";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -283,6 +352,20 @@ export function fetchMaterialEntry(
   return request(
     `/${workspaceId}/story-materials/${domain}/entries/${entryId}${suffix ? `?${suffix}` : ""}`,
   );
+}
+
+export function fetchStoryEvents(
+  workspaceId: string,
+  order: StoryOrder,
+  options: { asOfChapter?: number | null; signal?: AbortSignal } = {},
+): Promise<StoryEvents> {
+  const params = new URLSearchParams({ order });
+  if (options.asOfChapter !== undefined && options.asOfChapter !== null) {
+    params.set("as_of_chapter", String(options.asOfChapter));
+  }
+  return request<StoryEvents>(`/${workspaceId}/story-events?${params.toString()}`, {
+    signal: options.signal,
+  });
 }
 
 export function startMaterialTask(

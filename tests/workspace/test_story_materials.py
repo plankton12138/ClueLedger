@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.api import _material_prompt
+from hastings.workspace.clues import ClueStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.material_tasks import (
@@ -30,6 +31,7 @@ from hastings.workspace.material_tasks import (
 from hastings.workspace.materials import MaterialLedger, SourceRef
 from hastings.workspace.service import ProviderFactory
 from hastings.workspace.state import RecentWorkspaces
+from hastings.workspace.story_index import StoryIndexStore, chapter_view, story_view
 from hastings.workspace.story_materials import author_view, entry_detail
 from tau_agent.messages import AssistantMessage, TextContent, ToolCall
 from tau_agent.provider_events import AssistantDoneEvent, AssistantStartEvent
@@ -81,6 +83,20 @@ def _timeline_scope(workspace: Workspace, paths: tuple[str, ...], as_of: int) ->
             chapter_paths=list(paths),
             as_of_chapter=as_of,
         ),
+    )
+
+
+def _clues_scope(workspace: Workspace, paths: tuple[str, ...], as_of: int) -> dict[str, Any]:
+    return freeze_material_scope(
+        workspace,
+        MaterialTaskScope(domain="clues", chapter_paths=list(paths), as_of_chapter=as_of),
+    )
+
+
+def _story_scope(workspace: Workspace, paths: tuple[str, ...], as_of: int) -> dict[str, Any]:
+    return freeze_material_scope(
+        workspace,
+        MaterialTaskScope(domain="story_index", chapter_paths=list(paths), as_of_chapter=as_of),
     )
 
 
@@ -277,6 +293,93 @@ def test_empty_result_is_coverage_and_expires_with_the_source(tmp_path: Path) ->
     assert view["coverage"]["stale"] == 1
 
 
+def test_clue_due_chapter_may_be_a_future_plan(tmp_path: Path) -> None:
+    """计划回收章是作者计划，不是正文证据：截至第 1 章也能登记第 22 章回收。"""
+    workspace, root = _book(tmp_path)
+    scope = _clues_scope(workspace, (FIRST,), 1)
+    proof = _quote(workspace, FIRST, "书房")
+
+    result = _publish(
+        workspace,
+        root,
+        scope,
+        path=FIRST,
+        outcome="found",
+        records=[
+            {
+                "clue": "书房有第二把椅子",
+                "planted_chapter": 1,
+                "due_chapter": 22,
+                "evidence": proof,
+            }
+        ],
+    )
+
+    assert result["published"] == 1
+    entry = ClueStore(root).entries()[0]
+    assert (entry.planted_chapter, entry.due_chapter) == (1, 22)
+    assert entry.status == "open"
+
+
+def test_clue_body_evidence_still_stops_at_the_cutoff(tmp_path: Path) -> None:
+    """正文证据不能提前：埋设或回收写在第 2 章，就不能按第 1 章的截止章登记。"""
+    workspace, root = _book(tmp_path)
+    scope = _clues_scope(workspace, (FIRST,), 1)
+    proof = _quote(workspace, FIRST, "书房")
+
+    with pytest.raises(WorkspaceError, match="MATERIAL_RESULT_INVALID"):
+        _publish(
+            workspace,
+            root,
+            scope,
+            path=FIRST,
+            outcome="found",
+            records=[{"clue": "雨夜的门", "planted_chapter": 2, "evidence": proof}],
+        )
+    with pytest.raises(WorkspaceError, match="MATERIAL_RESULT_INVALID"):
+        _publish(
+            workspace,
+            root,
+            scope,
+            path=FIRST,
+            outcome="found",
+            records=[
+                {
+                    "clue": "雨夜的门",
+                    "planted_chapter": 1,
+                    "status": "resolved",
+                    "resolution_chapter": 2,
+                    "resolution_evidence": proof,
+                    "evidence": proof,
+                }
+            ],
+        )
+
+
+def test_clue_plan_cannot_precede_its_planting(tmp_path: Path) -> None:
+    """计划与证据分开以后，计划早于埋设仍然是错的。"""
+    workspace, root = _book(tmp_path)
+    scope = _clues_scope(workspace, (FIRST, SECOND), 2)
+    proof = _quote(workspace, SECOND, "书房没有人")
+
+    with pytest.raises(WorkspaceError, match="STATE_EVIDENCE_INVALID"):
+        _publish(
+            workspace,
+            root,
+            scope,
+            path=SECOND,
+            outcome="found",
+            records=[
+                {
+                    "clue": "书房没有人",
+                    "planted_chapter": 2,
+                    "due_chapter": 1,
+                    "evidence": proof,
+                }
+            ],
+        )
+
+
 def test_author_view_lists_unrecorded_chapters_and_detail_by_id(tmp_path: Path) -> None:
     workspace, root = _book(tmp_path)
     view = author_view(workspace, root, "timeline", as_of_chapter=2)
@@ -394,11 +497,12 @@ def _start_task(
     chapter_paths: list[str],
     as_of: int = 1,
     observed: dict[str, str] | None = None,
+    domain: str = "timeline",
 ) -> dict[str, Any]:
     body = {
         "request_key": key,
         "scope": {
-            "domain": "timeline",
+            "domain": domain,
             "chapter_paths": chapter_paths,
             "entity_paths": [],
             "as_of_chapter": as_of,
@@ -540,3 +644,183 @@ def test_same_request_key_does_not_create_a_second_task(
     assert again["turn_id"] == first["turn_id"]
     tasks = client.get(f"/api/file-workspaces/{workspace_id}/material-tasks").json()["items"]
     assert len(tasks) == 1
+
+
+# -- 统一章节索引（0.8 E） ---------------------------------------------------
+
+
+def _story_record(
+    workspace: Workspace,
+    path: str,
+    *,
+    text: str,
+    mode: str = "narration",
+    label: str = "",
+    needle: str,
+) -> dict[str, Any]:
+    event: dict[str, Any] = {
+        "text": text,
+        "mode": mode,
+        "evidence": [_quote(workspace, path, needle)],
+    }
+    if label:
+        event["story_time"] = {"label": label}
+    return {"summary": f"{text}。", "events": [event]}
+
+
+def test_story_index_publish_writes_projection_and_both_views(tmp_path: Path) -> None:
+    workspace, root = _book(tmp_path)
+    scope = _story_scope(workspace, (FIRST,), 1)
+    result = _publish(
+        workspace,
+        root,
+        scope,
+        path=FIRST,
+        outcome="found",
+        records=[
+            _story_record(
+                workspace,
+                FIRST,
+                text="林静声称自己深夜在书房",
+                mode="testimony",
+                label="10月21日深夜",
+                needle="10月21日深夜",
+            )
+        ],
+    )
+    assert result["published"] == 1
+
+    projection = StoryIndexStore(root).read_all()[FIRST]
+    assert projection.summary == "林静声称自己深夜在书房。"
+    assert projection.events[0].mode == "testimony"
+    assert projection.events[0].id
+
+    chapters = chapter_view(workspace, root)["chapters"]
+    assert chapters[0]["source"] == "story_index"
+    assert chapters[0]["status"] == "valid"
+    assert chapters[0]["events"][0]["mode_label"] == "证词"
+
+    story = story_view(workspace, root)
+    # 证词不自动变成事实，也不自动获得先后关系：单独列在未知组。
+    assert [item["text"] for item in story["unknown"]] == ["林静声称自己深夜在书房"]
+    assert story["groups"] == []
+    assert story["conflicts"] == []
+
+
+def test_story_index_empty_removes_only_that_chapter(tmp_path: Path) -> None:
+    workspace, root = _book(tmp_path)
+    scope = _story_scope(workspace, (FIRST, SECOND), 2)
+    _publish(
+        workspace,
+        root,
+        scope,
+        path=FIRST,
+        outcome="found",
+        records=[_story_record(workspace, FIRST, text="雨夜的事", needle="10月21日深夜")],
+    )
+    _publish(
+        workspace,
+        root,
+        scope,
+        path=SECOND,
+        outcome="found",
+        records=[_story_record(workspace, SECOND, text="清晨的事", needle="天亮了")],
+    )
+
+    _publish(
+        workspace,
+        root,
+        scope,
+        path=FIRST,
+        outcome="empty",
+        note="重读后确认这一章没有可发布的事件",
+    )
+
+    rows = StoryIndexStore(root).read_all()
+    assert FIRST not in rows
+    assert SECOND in rows
+    # 覆盖记录单独更新，不冒充正文事实。
+    coverage = author_view(workspace, root, "story_index", as_of_chapter=2)["entries"]
+    first = next(item for item in coverage if item["data"]["summary"] == "")
+    assert first["coverage"] == "empty"
+
+
+def test_story_index_task_publishes_and_story_events_endpoint_reads_it(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    root = tmp_path / "雪山旅馆"
+    book = Workspace.create(root)
+    book.write(FIRST, "# 雨夜\n\n10月21日深夜，林静在书房。\n", expected_digest=None)
+    view = book.read(FIRST)
+    needle = "10月21日深夜"
+    start = view.text.index(needle)
+    provider = ScriptedProvider(
+        [
+            _tool_turn(ToolCall(id="c1", name="read_file", arguments={"path": FIRST})),
+            _tool_turn(
+                ToolCall(
+                    id="c2",
+                    name="publish_material_result",
+                    arguments={
+                        "domain": "story_index",
+                        "path": FIRST,
+                        "digest": view.digest,
+                        "outcome": "found",
+                        "records": [
+                            {
+                                "summary": "林静深夜在书房。",
+                                "events": [
+                                    {
+                                        "text": "林静深夜在书房",
+                                        "mode": "narration",
+                                        "story_time": {"label": needle},
+                                        "evidence": [
+                                            {
+                                                "path": FIRST,
+                                                "digest": view.digest,
+                                                "start": start,
+                                                "end": start + len(needle),
+                                                "quote": needle,
+                                            }
+                                        ],
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                )
+            ),
+            _text_turn("整理完成"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    response = client.post("/api/file-workspaces", json={"path": str(root)})
+    assert response.status_code == 200, response.text
+    workspace_id = str(response.json()["id"])
+
+    accepted = _start_task(
+        client,
+        workspace_id,
+        key="story-index",
+        chapter_paths=[FIRST],
+        observed={FIRST: view.digest},
+        domain="story_index",
+    )
+    events = _wait_finished(client, workspace_id, accepted["conversation_id"])
+    published = [event for event in events if event["type"] == "material_target_published"]
+    assert published and published[0]["outcome"] == "found"
+
+    chapter_view_response = client.get(
+        f"/api/file-workspaces/{workspace_id}/story-events?order=chapter"
+    )
+    assert chapter_view_response.status_code == 200, chapter_view_response.text
+    chapters = chapter_view_response.json()["chapters"]
+    assert chapters[0]["source"] == "story_index"
+    assert chapters[0]["summary"] == "林静深夜在书房。"
+    assert chapters[0]["events"][0]["mode"] == "narration"
+
+    story_response = client.get(f"/api/file-workspaces/{workspace_id}/story-events?order=story")
+    assert story_response.status_code == 200, story_response.text
+    story = story_response.json()
+    assert story["mode"] == "story"
+    assert [item["text"] for item in story["unknown"]] == ["林静深夜在书房"]

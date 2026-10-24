@@ -58,6 +58,7 @@ interface WorkspaceStore {
   init(): Promise<void>;
   open(path: string, create: boolean): Promise<void>;
   selectWorkspace(id: string): Promise<void>;
+  refreshBindings(): Promise<void>;
   pruneMissing(): Promise<void>;
   refreshAll(): Promise<void>;
   refreshGit(): Promise<void>;
@@ -72,6 +73,7 @@ interface WorkspaceStore {
   recordChanges(): Promise<void>;
   revert(commit: string): Promise<void>;
   showCommit(commit: GitCommit): Promise<void>;
+  reportError(message: string): void;
   dismissError(): void;
   dismissNotice(): void;
 }
@@ -128,6 +130,15 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       set({ error: describe(error) });
     } finally {
       set({ loading: false });
+    }
+  },
+
+  async refreshBindings() {
+    // 派生或新建之后，登记列表会多一条；只刷新列表，不改变当前作品。
+    try {
+      set({ bindings: await listWorkspaces() });
+    } catch (error) {
+      set({ error: describe(error) });
     }
   },
 
@@ -307,6 +318,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     } catch (error) {
       set({ error: describe(error) });
     }
+  },
+
+  reportError(message) {
+    set({ error: message });
   },
 
   dismissError() {

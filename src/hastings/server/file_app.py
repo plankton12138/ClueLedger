@@ -22,6 +22,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from hastings import __version__
+from hastings.library.api import create_library_router
+from hastings.library.assembly_api import create_assembly_router
+from hastings.library.modules import ModuleLibrary
 from hastings.server.model_api import create_model_router
 from hastings.server.model_connections import ModelConnectionService
 from hastings.server.provider_config import ProviderBook, ProviderConfigError
@@ -31,6 +34,7 @@ from hastings.workspace.api import (
     register_workspace_error_handlers,
 )
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.ideas_api import create_ideas_router
 from hastings.workspace.service import ProviderFactory
 from hastings.workspace.state import RecentWorkspaces
 
@@ -74,17 +78,22 @@ def create_workspace_app(
     provider_factory: ProviderFactory,
     model_service: ModelConnectionService | None = None,
     static_dir: Path | None = None,
+    library: ModuleLibrary | None = None,
 ) -> FastAPI:
     """装配文件工作区应用；``model_service`` 存在时同时挂模型设置接口。
 
     参数名 ``workspaces`` 是作品登记，``model_service`` 是模型连接：两者曾经都叫
-    ``book``，放在一起读起来分不清哪个是哪个。
+    ``book``，放在一起读不清哪个是哪个。``library`` 是应用级模块库，缺省时库接口不挂载。
     """
     app = FastAPI(title="Hastings", version=__version__)
     app.state.workspaces = workspaces
     app.include_router(create_file_workspace_router(workspaces, provider_factory))
+    app.include_router(create_ideas_router(workspaces))
     if model_service is not None:
         app.include_router(create_model_router(model_service))
+    if library is not None:
+        app.include_router(create_library_router(library))
+        app.include_router(create_assembly_router(workspaces, library))
     register_workspace_error_handlers(app)
 
     @app.get("/api/health", response_model=HealthResponse)

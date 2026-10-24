@@ -24,6 +24,8 @@ import uvicorn
 from fastapi import FastAPI
 
 from hastings.infrastructure.credentials import build_credential_store
+from hastings.library.modules import ModuleLibrary
+from hastings.library.storage import DEFAULT_LIBRARY_DIR
 from hastings.server.file_app import configured_provider_factory, create_workspace_app
 from hastings.server.model_connections import ModelConnectionService
 from hastings.server.provider_config import (
@@ -86,6 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="应用状态目录（最近目录、会话与事件）；缺省 ~/.hastings",
     )
+    parser.add_argument(
+        "--library-dir",
+        type=Path,
+        default=None,
+        help=f"全局模块库目录；缺省 {DEFAULT_LIBRARY_DIR}，首次写入时才创建",
+    )
     parser.add_argument("--host", default=DEFAULT_HOST, help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="监听端口（默认 8000）")
     return parser
@@ -112,6 +120,7 @@ class AssembledServer:
     boot_profile: str
     boot_model: str
     model_service: ModelConnectionService | None = None
+    library_dir: Path | None = None
 
 
 def load_provider_book(
@@ -141,6 +150,7 @@ def assemble_server(
     state_root: Path | None = None,
     config: Path | None = None,
     model: str | None = None,
+    library_dir: Path | None = None,
 ) -> AssembledServer:
     """按生产默认值装配文件工作区应用；任何位置失败都带可读的错误信息抛出，不静默降级。"""
     resolved_static = resolve_static_dir(static_dir)
@@ -179,11 +189,17 @@ def assemble_server(
         binding = recent.bind(opened)
         binding_id = binding.id
         opened = Path(binding.path)
+    # 库是作者内容，默认放在系统文档目录；索引缓存放应用状态目录，可随时重建。
+    resolved_library = (
+        Path(library_dir).expanduser() if library_dir is not None else DEFAULT_LIBRARY_DIR
+    )
+    library = ModuleLibrary(resolved_library, cache_file=recent.root / "library-catalog.json")
     app = create_workspace_app(
         workspaces=recent,
         provider_factory=configured_provider_factory(book),
         model_service=model_service,
         static_dir=resolved_static,
+        library=library,
     )
     return AssembledServer(
         app=app,
@@ -195,6 +211,7 @@ def assemble_server(
         boot_profile=boot_profile,
         boot_model=boot_model,
         model_service=model_service,
+        library_dir=resolved_library,
     )
 
 
@@ -207,6 +224,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             state_root=args.state_dir,
             config=args.config,
             model=args.model,
+            library_dir=args.library_dir,
         )
     except StartupError as exc:
         print(exc)
