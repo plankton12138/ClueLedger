@@ -7,6 +7,7 @@
  */
 
 import type { TurnInjection, TurnInjectionPart } from "../../state/chatMessages";
+import { useModuleLibraryStore } from "../../state/moduleLibrary";
 
 const PART_LABEL: Record<string, string> = {
   instructions: "任务要求",
@@ -53,9 +54,22 @@ function excludedCount(part: TurnInjectionPart): number {
 }
 
 export default function TurnContextSummary({ injection }: { injection: TurnInjection }) {
+  const assembly = useModuleLibraryStore((state) => state.assembly);
   const skipped = injection.skipped;
   const hidden = injection.parts.reduce((total, part) => total + excludedCount(part), 0);
   const summary = `上下文 ${injection.parts.length} 个分区 · ${size(injection.used)} 字符`;
+  const staleModules = (injection.frozenBindings ?? [])
+    .map((frozen) => {
+      const current = assembly?.bindings.find(
+        (binding) => binding.module.module_id === frozen.module_id,
+      );
+      if (!current) return `${frozen.label || frozen.module_id}（已卸下）`;
+      if (current.module.revision_id !== frozen.revision_id) {
+        return `${frozen.label || frozen.module_id}（版本已切换）`;
+      }
+      return "";
+    })
+    .filter(Boolean);
   return (
     <details className="mt-1 text-[11px] text-sub" data-testid="turn-injection">
       <summary className="cursor-pointer text-[10px] text-mute">
@@ -63,6 +77,11 @@ export default function TurnContextSummary({ injection }: { injection: TurnInjec
         {skipped.length > 0 && `｜跳过 ${skipped.length} 项`}
         {hidden > 0 && `｜未装入 ${hidden} 条`}
       </summary>
+      {staleModules.length > 0 && (
+        <div className="mt-1 rounded border border-amber-edge bg-amber-bg px-2 py-1 text-[10px] text-amber" data-testid="stale-modules">
+          本轮使用的模块已变更：{staleModules.join("、")}。旧材料不再适用于后续轮次，已经写出的正文事实仍然保留。
+        </div>
+      )}
       <ul className="mt-1 flex flex-col gap-0.5">
         {injection.parts.map((part) => (
           <li key={part.key} className="flex flex-col gap-0.5">

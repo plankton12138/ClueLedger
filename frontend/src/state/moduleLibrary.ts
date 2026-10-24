@@ -89,6 +89,8 @@ interface ModuleLibraryStore {
   importLegacy(): Promise<void>;
   loadAssembly(): Promise<void>;
   loadImportInfo(): Promise<void>;
+  /** 只跟踪当前作品的装配，不打开抽屉；用于旧轮次材料是否仍适用。 */
+  trackAssembly(workspaceId: string): Promise<void>;
   clearNotice(): void;
 }
 
@@ -556,6 +558,18 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
     } catch (error) {
       if (get().workspaceId !== workspaceId) return;
       set({ error: describe(error) });
+    }
+  },
+
+  async trackAssembly(workspaceId) {
+    if (get().workspaceId === workspaceId && get().assembly) return;
+    set({ workspaceId });
+    try {
+      const assembly = await fetchAssembly(workspaceId);
+      if (get().workspaceId !== workspaceId) return;
+      set({ assembly });
+    } catch {
+      // 没有装配或接口不可用时不打断写作；旧轮次只是不显示模块变更提示。
     }
   },
 

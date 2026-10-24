@@ -337,6 +337,14 @@ export type WorkspaceEvent =
       }[];
       skipped: { key: string; reason: "budget" | "empty"; chars?: number }[];
       budget: { limit: number; used: number };
+      frozen?: {
+        digest: string | null;
+        bindings: {
+          id: string;
+          label: string;
+          module: { library_id: string; module_id: string; revision_id: string };
+        }[];
+      };
     })
   | (EventBase & {
       type: "reference_registered";

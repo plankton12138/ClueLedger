@@ -109,6 +109,8 @@ export interface TurnInjection {
   skipped: { key: string; reason: "budget" | "empty"; chars?: number }[];
   limit: number;
   used: number;
+  /** 受理时冻结的模块绑定；用于事后比较模块是否已卸下或换了版本。 */
+  frozenBindings?: { module_id: string; revision_id: string; label: string }[];
 }
 
 /** 一个分区：没装进去的候选带 id、原因与继续查看的入口。 */
@@ -491,6 +493,11 @@ export function appendEvent(turns: ChatTurn[], event: WorkspaceEvent): ChatTurn[
           skipped: event.skipped,
           limit: event.budget.limit,
           used: event.budget.used,
+          frozenBindings: event.frozen?.bindings.map((binding) => ({
+            module_id: binding.module.module_id,
+            revision_id: binding.module.revision_id,
+            label: binding.label,
+          })),
         },
       }));
     }

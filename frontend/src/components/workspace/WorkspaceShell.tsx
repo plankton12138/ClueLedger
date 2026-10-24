@@ -93,6 +93,7 @@ export default function WorkspaceShell() {
   const upload = useWorkspaceStore((state) => state.upload);
   const openDrawer = useWorkspaceStore((state) => state.openDrawer);
   const openLibrary = useModuleLibraryStore((state) => state.openDrawer);
+  const trackAssembly = useModuleLibraryStore((state) => state.trackAssembly);
   const dismissError = useWorkspaceStore((state) => state.dismissError);
   const dismissNotice = useWorkspaceStore((state) => state.dismissNotice);
   // 目录里的「加入对话」写的是会话草稿的参考列表：与输入区的选择器同一份状态。
@@ -123,6 +124,10 @@ export default function WorkspaceShell() {
     void init();
     void initModels();
   }, [init, initModels]);
+
+  useEffect(() => {
+    if (currentId) void trackAssembly(currentId);
+  }, [currentId, trackAssembly]);
 
   // 页面位置与作品选择互相对齐：URL 里的作品未登记时回到当前作品，不把它当读取指令。
   useEffect(() => {
