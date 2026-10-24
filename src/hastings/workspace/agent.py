@@ -17,7 +17,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from hastings.library.bindings import AssemblyService
 from hastings.library.modules import ModuleLibrary
+from hastings.library.records import EntryDraft
 from hastings.workspace.assembly import AssembledContext, Exclusion, Profile
 from hastings.workspace.chapter_index import (
     ChapterIndexDraft,
@@ -95,6 +97,8 @@ from hastings.workspace.review import (
 from hastings.workspace.service import WriteSession
 from hastings.workspace.story_materials import DOMAIN_LABEL, CoverageStore
 from hastings.workspace.task_scope import (
+    ModuleAction,
+    ModuleGrant,
     Mutation,
     MutationAction,
     ScopeController,
@@ -625,6 +629,8 @@ def build_tools(
             carried_from_seq=_optional_int_argument(arguments, "carried_from_seq", minimum=0),
             required_references=_string_list_argument(arguments, "required_references"),
             library_search=bool(arguments.get("library_search", False)),
+            module_grants=_module_grant_arguments(arguments.get("module_grants")),
+            library_publish=bool(arguments.get("library_publish", False)),
             extendable=bool(arguments.get("extendable", False)),
             extend_actions=_action_list_argument(arguments, "extend_actions"),
             note=_optional_text_argument(arguments, "note"),
@@ -1037,6 +1043,27 @@ def build_tools(
                     "library_search": {
                         "type": "boolean",
                         "description": "作者明确要求从全局模块库查找时才设 true；只开搜索",
+                    },
+                    "module_grants": {
+                        "type": "array",
+                        "description": (
+                            "作者明确要求装卸时才登记；装入给模块与精确版本，卸下给绑定 ID"
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {"type": "string", "enum": ["attach", "detach"]},
+                                "module_id": {"type": "string"},
+                                "revision_id": {"type": "string"},
+                                "binding_id": {"type": "string"},
+                            },
+                            "required": ["action"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "library_publish": {
+                        "type": "boolean",
+                        "description": "作者明确要求把内容发布到全局模块库时才设 true",
                     },
                     "extendable": {
                         "type": "boolean",
@@ -1550,6 +1577,219 @@ def build_tools(
             )
             return _json(page)
 
+        def _require_module_grant(
+            action: ModuleAction,
+            *,
+            module_id: str = "",
+            revision_id: str = "",
+            binding_id: str = "",
+        ) -> None:
+            """装卸只看本轮登记过的确切版本或绑定；搜索与一般写作授权都不够。"""
+            scope = run.scope.current
+            if scope is None:
+                raise WorkspaceError(
+                    code="TASK_SCOPE_REQUIRED_CONFLICT",
+                    where="tools.module_assembly",
+                    why="这一轮还没有登记修改范围",
+                    fix="先用 set_task_scope 登记装配操作与作者原话",
+                )
+            if scope.scope.mode == "read_only":
+                raise WorkspaceError(
+                    code="TASK_SCOPE_DENIED_CONFLICT",
+                    where="tools.module_assembly",
+                    why="这一轮登记为只读任务",
+                    fix="装卸模块要由作者提出新的修改要求",
+                )
+            grant = next(
+                (
+                    item
+                    for item in scope.draft.module_grants
+                    if item.action == action
+                    and item.module_id == module_id
+                    and item.revision_id == revision_id
+                    and item.binding_id == binding_id
+                ),
+                None,
+            )
+            if grant is None:
+                raise WorkspaceError(
+                    code="TASK_SCOPE_DENIED_CONFLICT",
+                    where="tools.module_assembly",
+                    why="本轮范围不包含这次装配操作",
+                    fix="只操作已登记的确切模块版本或绑定；需要变更时请作者明确要求",
+                    details={
+                        "action": action,
+                        "module_id": module_id,
+                        "revision_id": revision_id,
+                        "binding_id": binding_id,
+                        "granted": [item.to_dict() for item in scope.draft.module_grants],
+                    },
+                )
+
+        def _require_library_publish() -> None:
+            scope = run.scope.current
+            if scope is None:
+                raise WorkspaceError(
+                    code="TASK_SCOPE_REQUIRED_CONFLICT",
+                    where="tools.publish_module",
+                    why="这一轮还没有登记修改范围",
+                    fix="先用 set_task_scope 登记库发布与作者原话",
+                )
+            if not scope.draft.library_publish:
+                raise WorkspaceError(
+                    code="TASK_SCOPE_DENIED_CONFLICT",
+                    where="tools.publish_module",
+                    why="作者没有明确要求把内容发布到模块库",
+                    fix="只在作者明确要求保存或发布模块时使用；搜索与装入不算发布授权",
+                    details={"version": scope.version},
+                )
+
+        async def attach_module(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            if run.library is None:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="tools.attach_module",
+                    why="这一轮没有可用的模块库",
+                    fix="确认应用已配置模块库后再装入",
+                )
+            module_id = _text_argument(arguments, "module_id")
+            revision_id = _text_argument(arguments, "revision_id")
+            label = _optional_text_argument(arguments, "label")
+            _require_module_grant("attach", module_id=module_id, revision_id=revision_id)
+            service = AssemblyService(run.library, workspace)
+            view = service.bind(
+                module_id=module_id,
+                revision_id=revision_id,
+                label=label,
+                expected_digest=service.store.digest(),
+                request_key=f"{run.turn_id}:attach:{module_id}:{revision_id}",
+            )
+            run.record(
+                "assembly_attached",
+                {
+                    "module_id": module_id,
+                    "revision_id": revision_id,
+                    "digest": view.get("digest"),
+                },
+            )
+            # 专用装配轮：提交后结束，避免同轮后续工具按旧装配继续。
+            return _json(
+                {
+                    "attached": True,
+                    "assembly": view,
+                    "note": "装配已提交；这一轮到此结束，下一轮写作会使用新装配。",
+                },
+                terminate=True,
+            )
+
+        async def detach_module(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            if run.library is None:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="tools.detach_module",
+                    why="这一轮没有可用的模块库",
+                    fix="确认应用已配置模块库后再卸下",
+                )
+            binding_id = _text_argument(arguments, "binding_id")
+            _require_module_grant("detach", binding_id=binding_id)
+            service = AssemblyService(run.library, workspace)
+            view = service.unbind(
+                binding_id=binding_id,
+                expected_digest=service.store.digest(),
+                request_key=f"{run.turn_id}:detach:{binding_id}",
+            )
+            run.record(
+                "assembly_detached",
+                {"binding_id": binding_id, "digest": view.get("digest")},
+            )
+            return _json(
+                {
+                    "detached": True,
+                    "assembly": view,
+                    "note": "装配已提交；这一轮到此结束，下一轮写作不再使用该模块。",
+                },
+                terminate=True,
+            )
+
+        async def publish_module(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            if run.library is None:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="tools.publish_module",
+                    why="这一轮没有可用的模块库",
+                    fix="确认应用已配置模块库后再发布",
+                )
+            _require_library_publish()
+            entries = _entry_drafts_argument(arguments.get("entries"))
+            module_id = _optional_text_argument(arguments, "module_id")
+            library = run.library
+            if module_id:
+                # 默认基于调用时的 head 编辑并做 CAS：期间别人发布过就冲突，不覆盖新版本。
+                current = library.module(module_id)
+                base_revision = _optional_text_argument(arguments, "base_revision") or current.head
+                expected_head = _optional_text_argument(arguments, "expected_head") or current.head
+                revision = library.publish(
+                    module_id=module_id,
+                    base_revision=base_revision,
+                    expected_head=expected_head,
+                    entries=entries,
+                    request_key=f"{run.turn_id}:publish:{module_id}",
+                )
+                view: dict[str, object] = {
+                    "created": False,
+                    "module_id": module_id,
+                    "revision_id": revision.revision_id,
+                }
+            else:
+                kind = _text_argument(arguments, "kind")
+                name = _text_argument(arguments, "name")
+                created = library.create_module(
+                    kind=kind,
+                    name=name,
+                    entries=entries,
+                    request_key=f"{run.turn_id}:publish:new",
+                )
+                revision_row = cast(Mapping[str, object], created.get("revision") or {})
+                view = {
+                    "created": True,
+                    "module_id": str(revision_row.get("module_id") or ""),
+                    "revision_id": str(revision_row.get("revision_id") or ""),
+                }
+            run.record(
+                "module_published",
+                {
+                    "module_id": view["module_id"],
+                    "revision_id": view["revision_id"],
+                    "entries": len(entries),
+                    "created": view["created"],
+                },
+            )
+            return _json(
+                {
+                    **view,
+                    "entries": len(entries),
+                    "note": "已发布新版本；不自动装入本作品，也不改其他作品的绑定。",
+                }
+            )
+
         tools.extend(
             [
                 AgentTool(
@@ -1683,6 +1923,118 @@ def build_tools(
                     prompt_guidelines=(
                         "先在范围里登记 library_search；作者没有明确要求就不要搜索。",
                         "搜索结果只是候选；装入要由作者确认，不能自己改装配。",
+                    ),
+                    execution_mode="sequential",
+                )
+            )
+            tools.append(
+                AgentTool(
+                    name="attach_module",
+                    label="装入模块",
+                    description=(
+                        "把本轮范围登记过的精确模块版本装入本作品；只改装配清单，不改库与正文。"
+                        "提交后本轮结束。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "module_id": {"type": "string"},
+                            "revision_id": {"type": "string"},
+                            "label": {"type": "string", "description": "可选：界面显示名"},
+                        },
+                        "required": ["module_id", "revision_id"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=attach_module,
+                    prompt_guidelines=(
+                        "只在作者明确要求装入、且范围已登记这个精确版本时使用。",
+                        "不要按模块名猜版本；版本应从 list_modules/query_records 或库搜索里取。",
+                        "提交装配后本轮结束；写作下一轮才会看到新模块。",
+                    ),
+                    execution_mode="sequential",
+                )
+            )
+            tools.append(
+                AgentTool(
+                    name="detach_module",
+                    label="卸下模块",
+                    description=(
+                        "把本轮范围登记过的绑定从本作品卸下；后续默认查询与依赖展开都会排除它。"
+                        "正文事实不受影响，提交后本轮结束。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "binding_id": {"type": "string", "description": "本作品的绑定 ID"},
+                        },
+                        "required": ["binding_id"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=detach_module,
+                    prompt_guidelines=(
+                        "先用 list_modules 拿到绑定 ID；不要按模块名猜。",
+                        "卸下只影响后续查询；已经写进正文的事实仍然保留。",
+                    ),
+                    execution_mode="sequential",
+                )
+            )
+            tools.append(
+                AgentTool(
+                    name="publish_module",
+                    label="发布模块",
+                    description=(
+                        "把作者要求的条目发布到全局模块库：已有模块发布新版本，或新建一个实例。"
+                        "不自动装入本作品，也不改其他作品的绑定。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "module_id": {
+                                "type": "string",
+                                "description": "已有模块：发布新版本；省略时按 kind 与 name 新建",
+                            },
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "characters",
+                                    "world",
+                                    "clues",
+                                    "truth",
+                                    "timeline",
+                                    "plot",
+                                    "reference",
+                                ],
+                            },
+                            "name": {"type": "string"},
+                            "base_revision": {"type": "string"},
+                            "expected_head": {"type": "string"},
+                            "entries": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "entry_id": {"type": "string"},
+                                        "kind": {"type": "string"},
+                                        "title": {"type": "string"},
+                                        "body": {"type": "string"},
+                                        "aliases": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                        },
+                                        "fields": {"type": "object"},
+                                    },
+                                    "required": ["entry_id", "kind", "title"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                        },
+                        "required": ["entries"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=publish_module,
+                    prompt_guidelines=(
+                        "只在作者明确要求保存或发布到模块库、且范围已登记 library_publish 时使用。",
+                        "发布不隐含装入；要用于本作品时另行登记装配操作。",
                     ),
                     execution_mode="sequential",
                 )
@@ -2555,11 +2907,14 @@ def _instructions_for(mode: ToolMode) -> str:
     return ""
 
 
-def _json(payload: Mapping[str, Any]) -> AgentToolResult:
-    return AgentToolResult(
+def _json(payload: Mapping[str, Any], *, terminate: bool = False) -> AgentToolResult:
+    result = AgentToolResult(
         content=[TextContent(text=json.dumps(payload, ensure_ascii=False, indent=2))],
         details=dict(payload),
     )
+    if terminate:
+        result.terminate = True
+    return result
 
 
 def _text_argument(
@@ -3048,6 +3403,80 @@ def _mutation_arguments(value: JSONValue) -> tuple[Mutation, ...]:
             raise _input_error("grants", "target 必须是非空字符串")
         grants.append(Mutation(action=cast(MutationAction, action), path=path, target=target))
     return tuple(grants)
+
+
+def _module_grant_arguments(value: JSONValue) -> tuple[ModuleGrant, ...]:
+    """装配操作参数；装入要模块与版本，卸下要绑定 ID。"""
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise _input_error("module_grants", "必须是数组")
+    grants: list[ModuleGrant] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise _input_error("module_grants", "每一项必须是对象")
+        action = item.get("action")
+        if action not in ("attach", "detach"):
+            raise _input_error("module_grants", f"包含不支持的操作：{action}")
+        module_id = item.get("module_id", "")
+        revision_id = item.get("revision_id", "")
+        binding_id = item.get("binding_id", "")
+        if not (
+            isinstance(module_id, str)
+            and isinstance(revision_id, str)
+            and isinstance(binding_id, str)
+        ):
+            raise _input_error("module_grants", "module_id、revision_id 与 binding_id 必须是字符串")
+        grants.append(
+            ModuleGrant(
+                action=cast(ModuleAction, action),
+                module_id=module_id,
+                revision_id=revision_id,
+                binding_id=binding_id,
+            )
+        )
+    return tuple(grants)
+
+
+def _entry_drafts_argument(value: JSONValue) -> list[EntryDraft]:
+    """库发布的内容由模型给出，但结构在这里先校验；类型与名称留给库服务。"""
+    if not isinstance(value, list) or not value:
+        raise _input_error("entries", "必须是非空数组")
+    drafts: list[EntryDraft] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise _input_error("entries", "每一条必须是对象")
+        entry_id = item.get("entry_id")
+        kind = item.get("kind")
+        title = item.get("title")
+        if not isinstance(entry_id, str) or not entry_id:
+            raise _input_error("entries", "每一条都要有非空 entry_id")
+        if not isinstance(kind, str) or not kind:
+            raise _input_error("entries", "每一条都要有非空 kind")
+        if not isinstance(title, str) or not title:
+            raise _input_error("entries", "每一条都要有非空 title")
+        body = item.get("body", "")
+        if not isinstance(body, str):
+            raise _input_error("entries", "body 必须是字符串")
+        aliases_value = item.get("aliases", [])
+        if not isinstance(aliases_value, list) or not all(
+            isinstance(alias, str) for alias in aliases_value
+        ):
+            raise _input_error("entries", "aliases 必须是字符串数组")
+        fields_value = item.get("fields", {})
+        if not isinstance(fields_value, dict):
+            raise _input_error("entries", "fields 必须是对象")
+        drafts.append(
+            EntryDraft(
+                entry_id=entry_id,
+                kind=kind,
+                title=title,
+                body=body,
+                aliases=tuple(cast(list[str], aliases_value)),
+                fields=cast(dict[str, Any], fields_value),
+            )
+        )
+    return drafts
 
 
 def _input_error(name: str, why: str) -> WorkspaceError:

@@ -19,6 +19,7 @@ from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
 from hastings.workspace.service import WriteSession
 from hastings.workspace.task_scope import (
+    ModuleGrant,
     Mutation,
     ScopeController,
     ScopeDraft,
@@ -101,6 +102,85 @@ def test_read_only_scope_rejects_grants() -> None:
             author_texts=_AUTHOR,
         )
     assert _code(invalid) == "TASK_SCOPE_EVIDENCE_INVALID"
+
+
+def test_module_grant_requires_an_explicit_instruction() -> None:
+    controller = ScopeController()
+    with pytest.raises(WorkspaceError) as denied:
+        controller.set_scope(
+            ScopeDraft(
+                mode="edit",
+                summary="装入模块",
+                authorization="只改第三章",
+                module_grants=(ModuleGrant("attach", "mod_1", "rev_1"),),
+            ),
+            author_texts=_AUTHOR,
+        )
+    assert _code(denied) == "TASK_SCOPE_EVIDENCE_INVALID"
+
+    with pytest.raises(WorkspaceError) as incomplete:
+        controller.set_scope(
+            ScopeDraft(
+                mode="edit",
+                summary="装入模块",
+                authorization="把设定模块装进这个作品",
+                module_grants=(ModuleGrant("attach", "mod_1"),),
+            ),
+            author_texts=((1, "把设定模块装进这个作品。"),),
+        )
+    assert _code(incomplete) == "TASK_SCOPE_EVIDENCE_INVALID"
+
+
+def test_module_grants_are_reported_and_cannot_expand_on_reregistration() -> None:
+    controller = ScopeController()
+    author = ((1, "把设定模块装进这个作品。"),)
+    grant = ModuleGrant("attach", "mod_1", "rev_1")
+
+    first = controller.set_scope(
+        ScopeDraft(
+            mode="edit",
+            summary="装入模块",
+            authorization="把设定模块装进这个作品",
+            module_grants=(grant,),
+        ),
+        author_texts=author,
+    )
+    assert first.to_dict()["module_grants"] == [
+        {"action": "attach", "module_id": "mod_1", "revision_id": "rev_1"}
+    ]
+
+    with pytest.raises(WorkspaceError) as expanded:
+        controller.set_scope(
+            ScopeDraft(
+                mode="edit",
+                summary="再装一个",
+                authorization="把设定模块装进这个作品",
+                module_grants=(grant, ModuleGrant("attach", "mod_2", "rev_2")),
+            ),
+            author_texts=author,
+        )
+    assert _code(expanded) == "TASK_SCOPE_DENIED_CONFLICT"
+
+
+def test_read_only_rejects_module_grants_and_publish() -> None:
+    controller = ScopeController()
+    for draft in (
+        ScopeDraft(
+            mode="read_only",
+            summary="只看装配",
+            authorization="把设定模块装进这个作品",
+            module_grants=(ModuleGrant("attach", "mod_1", "rev_1"),),
+        ),
+        ScopeDraft(
+            mode="read_only",
+            summary="只看库",
+            authorization="把设定发布到模块库",
+            library_publish=True,
+        ),
+    ):
+        with pytest.raises(WorkspaceError) as invalid:
+            controller.set_scope(draft, author_texts=((1, draft.authorization),))
+        assert _code(invalid) == "TASK_SCOPE_EVIDENCE_INVALID"
 
 
 def test_scope_rejects_non_managed_and_wildcard_paths() -> None:
@@ -502,9 +582,7 @@ async def test_tool_reregistration_cannot_bypass_a_fixed_scope(tmp_path: Path) -
         )
     assert _code(widened) == "TASK_SCOPE_DENIED_CONFLICT"
     with pytest.raises(WorkspaceError) as denied:
-        await _call(
-            tools["write_file"], path=_TRUTH, text="# 真相改\n", digest="0" * 64
-        )
+        await _call(tools["write_file"], path=_TRUTH, text="# 真相改\n", digest="0" * 64)
     assert _code(denied) == "TASK_SCOPE_DENIED_CONFLICT"
     assert (workspace.root / _TRUTH).read_text(encoding="utf-8") == "# 真相\n\n凶手是管家。\n"
 

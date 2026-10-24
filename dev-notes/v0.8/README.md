@@ -31,7 +31,8 @@
   多来源贡献分组留给 F。
 - F 检索基础（L0 短目录、L1 有界查询、L2 区间读取）已实施（[记录](notes/F1-retrieval.md)）；
   F2 受理冻结装配、运行中拒绝装卸与已装模块短目录已实施（[记录](notes/F2-assembly-freeze.md)）；
-  F3 的 `list_modules`／`query_records`／`read_record` 与受作者授权的库搜索已接入
+  F3 的 `list_modules`／`query_records`／`read_record`、受作者授权的库搜索与
+  `attach_module`／`detach_module`／`publish_module` 已接入
   （[记录](notes/F3-retrieval-tools.md)）；F4 条目级排除记录已实施
   （[记录](notes/F4-entry-selection.md)）。注入排除项、资料越权用例与任务卡已实施；
   请求规模仍只在活动记录。

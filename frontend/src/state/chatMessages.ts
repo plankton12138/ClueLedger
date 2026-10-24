@@ -22,6 +22,7 @@ import type {
   RunPhase,
   RunResult,
   TaskGrant,
+  TaskModuleGrant,
   TaskScope,
   WorkspaceEvent,
 } from "../api/workspace";
@@ -159,6 +160,8 @@ export interface TaskCardFacts {
   version: number | null;
   mode: "read_only" | "edit" | null;
   grants: TaskGrant[];
+  moduleGrants: TaskModuleGrant[];
+  libraryPublish: boolean;
   deniedPaths: string[];
   extendable: boolean;
   requiredCount: number;
@@ -182,6 +185,8 @@ export function taskCardFacts(turn: ChatTurn): TaskCardFacts {
     version: scope?.version ?? null,
     mode: scope?.mode ?? null,
     grants: scope?.grants ?? [],
+    moduleGrants: scope?.module_grants ?? [],
+    libraryPublish: scope?.library_publish ?? false,
     deniedPaths: scope?.denied_paths ?? [],
     extendable: scope?.extendable ?? false,
     requiredCount: required.length,

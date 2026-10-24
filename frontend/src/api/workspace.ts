@@ -399,6 +399,14 @@ export interface TaskGrant {
   target?: string;
 }
 
+/** 一项装配操作：装入精确版本或卸下确切绑定。 */
+export interface TaskModuleGrant {
+  action: "attach" | "detach";
+  module_id?: string;
+  revision_id?: string;
+  binding_id?: string;
+}
+
 /** 本轮修改范围：模型登记的内容与应用保存的版本。 */
 export interface TaskScope {
   version: number;
@@ -410,6 +418,8 @@ export interface TaskScope {
   grants: TaskGrant[];
   denied_paths: string[];
   required_references: string[];
+  module_grants?: TaskModuleGrant[];
+  library_publish?: boolean;
   extendable: boolean;
   extend_actions: string[];
 }

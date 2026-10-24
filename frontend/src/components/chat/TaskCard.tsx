@@ -6,7 +6,13 @@
  * 取自 `run_finished` 与检查结果。它不替模型自述，也不产生权限。
  */
 
-import type { Recording, ReviewStatus, RunStatus, TaskGrant } from "../../api/workspace";
+import type {
+  Recording,
+  ReviewStatus,
+  RunStatus,
+  TaskGrant,
+  TaskModuleGrant,
+} from "../../api/workspace";
 import { hasTaskCard, taskCardFacts, type ChatTurn } from "../../state/chatMessages";
 
 const ACTION_LABEL: Record<TaskGrant["action"], string> = {
@@ -43,11 +49,19 @@ function grantLabel(grant: TaskGrant): string {
   return `${ACTION_LABEL[grant.action]} ${grant.path}`;
 }
 
+function moduleGrantLabel(grant: TaskModuleGrant): string {
+  if (grant.action === "attach") {
+    return `装入 ${grant.module_id ?? ""}@${grant.revision_id ?? ""}`;
+  }
+  return `卸下 ${grant.binding_id ?? ""}`;
+}
+
 function titleOf(turn: ChatTurn): string {
   const scope = turn.scope;
   if (scope === null) return "任务卡";
   if (scope.mode === "read_only") return "任务卡 · 只读";
-  return `任务卡 v${scope.version} · ${scope.grants.length} 项`;
+  const count = scope.grants.length + (scope.module_grants?.length ?? 0);
+  return `任务卡 v${scope.version} · ${count} 项`;
 }
 
 export default function TaskCard({ turn }: { turn: ChatTurn }) {
@@ -82,6 +96,12 @@ export default function TaskCard({ turn }: { turn: ChatTurn }) {
             允许{grantLabel(grant)}
           </li>
         ))}
+        {facts.moduleGrants.map((grant) => (
+          <li key={`${grant.action}:${grant.module_id ?? ""}:${grant.binding_id ?? ""}`}>
+            允许{moduleGrantLabel(grant)}
+          </li>
+        ))}
+        {facts.libraryPublish && <li>允许发布到模块库</li>}
         {facts.deniedPaths.length > 0 && (
           <li className="text-amber">不动：{facts.deniedPaths.join("、")}</li>
         )}

@@ -32,6 +32,20 @@
 - 已装模块短目录末尾补一句工具入口：`list_modules` 看装配、`query_records` 检索、
   `read_record` 读原文；命中不等于读过。没有模块库时不出现这句，避免提示不存在的工具。
 
+### 装配与库发布工具
+
+- `task_scope` 增加两类资源项：`module_grants`（`attach` 精确到模块与版本，`detach` 精确到
+  绑定 ID）与 `library_publish`。只读范围不能登记；重复登记只能收窄，不能中途新开装卸或发布。
+- 作者的授权原话里还要出现对应动词：装入（装入／装上／装进／放进／加载／挂上／装配／绑定）、
+  卸下（卸下／移除／拆下／卸载／解绑）、发布（发布／存成模块／保存到模块库等）。
+  库搜索或一般写作授权不能代替装卸与发布指令。
+- `attach_module`：只写本作品装配清单；按调用时的装配指纹做 CAS，返回绑定与新指纹，
+  然后结束本轮（`terminate`）。同轮后续工具不会按旧装配继续执行。
+- `detach_module`：按绑定 ID 卸下；后续默认查询不再包含该实例，已写进正文的事实仍保留。
+- `publish_module`：已有模块基于当前 head 发布新版本，或用 `kind` + `name` 新建实例；
+  默认以调用时的 head 做 CAS，期间别人发布过就返回冲突。发布不改任何作品绑定。
+- 三个工具只在写作用途、且配置了模块库时出现；资料整理与检查任务没有装卸与发布入口。
+
 ## 接口与数据
 
 - 没有新增 HTTP 路由与前端入口。
@@ -50,20 +64,21 @@
 | 范围 | 命令 | 结果 |
 |---|---|---|
 | 工具专项 | `uv run pytest -q tests/workspace/test_retrieval_tools.py tests/workspace/test_task_scope.py` | 34 passed |
+| 装配与发布专项 | `uv run pytest -q tests/workspace/test_module_tools.py tests/workspace/test_task_scope.py` | 38 passed |
 | 静态检查 | `uv run ruff check src/hastings tests` | 通过 |
-| 类型检查 | `uv run mypy src/hastings` | 70 个源文件无问题 |
-| 后端全量 | `uv run pytest -q --basetemp data/test-tmp/f3c-full -o tmp_path_retention_count=100` | 764 passed，0 failures |
+| 类型检查 | `uv run mypy` | 106 个源文件无问题 |
+| 后端全量 | `uv run pytest -q --basetemp data/test-tmp/f3-module-tools -o tmp_path_retention_count=100` | 778 passed，0 failures |
 
 覆盖：没有模块库时工具不出现；只列已装模块；未装模块查询只警告；正文观察来源与截止章；
 未装版本读取返回 403；已装版本读取返回原文与 `module_ref`；库搜索无作者许可被拒，
 登记后只返回候选且装配不变；没有库搜索短语时不能登记许可；显式模块范围带出一跳关联，
-无关实例不进入结果。
+无关实例不进入结果；装入只接受登记过的精确版本并结束本轮；卸下按登记绑定移除；
+发布只在作者明确要求时可用，新建或追加版本都不改装配。
 
 ## 未完成
 
-- `task_scope` 的 module／assembly 资源项、模块发布与装配更新工具都没有；当前只有库搜索许可。
-- 条目级 required／optional 预算与排除原因还没有。
-- 界面没有把「找到／命中／已读／未覆盖」分开显示；活动事件已有数据，前端未接。
-- 灵感工具（`search_ideas`／`read_idea`／`save_idea`／`link_idea_use`）与整请求规模记录仍未做。
+- 装配工具只支持单个精确版本装卸，不支持一次提交多模块排序或升级；批量调整仍走装配接口。
+- 库发布的条目由模型给出，没有与作品文件逐条比对来源；发布内容的语义正确性仍由作者复核。
+- 灵感工具（`search_ideas`／`read_idea`／`save_idea`／`link_idea_use`）仍未做。
 - 库搜索许可只检查作者消息里是否出现「模块库／库里／全局」等短语，不解析否定语气；
   「不要从模块库找」仍可能被登记。否定句需要后续与任务理解一起处理。

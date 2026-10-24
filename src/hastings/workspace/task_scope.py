@@ -21,6 +21,8 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import is_managed_path
 
 __all__ = [
+    "ModuleAction",
+    "ModuleGrant",
     "Mutation",
     "MutationAction",
     "ScopeController",
@@ -30,6 +32,7 @@ __all__ = [
 ]
 
 MutationAction = Literal["create", "update", "delete", "move"]
+ModuleAction = Literal["attach", "detach"]
 ScopeMode = Literal["read_only", "edit"]
 
 _ACTION_LABEL: dict[str, str] = {
@@ -38,6 +41,13 @@ _ACTION_LABEL: dict[str, str] = {
     "delete": "删除",
     "move": "移动",
 }
+
+#: 明确指向某类模块操作的短语；只用来核对作者是否真的提出了要求，不推断任务意图。
+_MODULE_PHRASES: dict[str, tuple[str, ...]] = {
+    "attach": ("装入", "装上", "装进", "放进", "加载", "挂上", "装配", "绑定"),
+    "detach": ("卸下", "移除", "拆下", "卸载", "解绑"),
+}
+_PUBLISH_PHRASES = ("发布", "存成模块", "保存到模块库", "存进模块库", "放进模块库", "另存为模块")
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +68,35 @@ class Mutation:
         if self.target is not None:
             return f"{_ACTION_LABEL[self.action]} {self.path} → {self.target}"
         return f"{_ACTION_LABEL[self.action]} {self.path}"
+
+
+@dataclass(frozen=True, slots=True)
+class ModuleGrant:
+    """一次装配操作：装入必须精确到模块版本，卸下必须精确到绑定。
+
+    库与作品独立：这里只允许改本作品的装配清单，不包含库发布；发布另由
+    ``library_publish`` 登记，并复用作者的发布原话。
+    """
+
+    action: ModuleAction
+    module_id: str = ""
+    revision_id: str = ""
+    binding_id: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        payload: dict[str, str] = {"action": self.action}
+        if self.module_id:
+            payload["module_id"] = self.module_id
+        if self.revision_id:
+            payload["revision_id"] = self.revision_id
+        if self.binding_id:
+            payload["binding_id"] = self.binding_id
+        return payload
+
+    def describe(self) -> str:
+        if self.action == "attach":
+            return f"装入 {self.module_id}@{self.revision_id}"
+        return f"卸下 {self.binding_id}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +138,10 @@ class ScopeDraft:
     required_references: tuple[str, ...] = ()
     #: 作者明确要求从全局模块库查找时登记；只开搜索，不自动装入或发布。
     library_search: bool = False
+    #: 本作品装配操作：装入精确版本或卸下确切绑定；只在专用装配轮使用。
+    module_grants: tuple[ModuleGrant, ...] = ()
+    #: 作者明确要求把内容发布到全局模块库；不隐含装入或改正文。
+    library_publish: bool = False
     extendable: bool = False
     extend_actions: tuple[MutationAction, ...] = ()
     evidence_path: str = ""
@@ -125,6 +168,8 @@ class TaskScope:
             "denied_paths": list(self.draft.denied_paths),
             "required_references": list(self.draft.required_references),
             "library_search": self.draft.library_search,
+            "module_grants": [item.to_dict() for item in self.draft.module_grants],
+            "library_publish": self.draft.library_publish,
             "extendable": self.draft.extendable,
             "extend_actions": list(self.draft.extend_actions),
         }
@@ -263,6 +308,9 @@ class ScopeController:
             authorization_seq=current.draft.authorization_seq,
             carried_from_seq=current.draft.carried_from_seq,
             required_references=current.draft.required_references,
+            library_search=current.draft.library_search,
+            module_grants=current.draft.module_grants,
+            library_publish=current.draft.library_publish,
             extendable=True,
             extend_actions=current.draft.extend_actions,
             evidence_path=evidence_path,
@@ -348,12 +396,14 @@ def _validate_draft(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) 
     if not draft.summary.strip():
         raise _evidence_error("没有写清这一轮要做什么")
     if draft.mode == "read_only":
-        if draft.grants:
-            raise _evidence_error("只读任务不能登记写操作")
-    elif not draft.grants:
-        raise _evidence_error("修改任务至少要登记一个确切的路径与操作")
+        if draft.grants or draft.module_grants or draft.library_publish:
+            raise _evidence_error("只读任务不能登记写操作、装配变更或库发布")
+    elif not draft.grants and not draft.module_grants and not draft.library_publish:
+        raise _evidence_error("修改任务至少要登记一个确切的路径、装配操作或库发布")
     for grant in draft.grants:
         _validate_mutation(grant, where="task_scope.set")
+    for module_grant in draft.module_grants:
+        _validate_module_grant(module_grant)
     for path in draft.denied_paths:
         _validate_path(path, where="task_scope.set")
     for path in draft.required_references:
@@ -363,8 +413,42 @@ def _validate_draft(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) 
     if draft.extendable and not draft.extend_actions:
         raise _evidence_error("可发现范围要写明允许追加哪类操作")
     _validate_authorization(draft, author_texts)
+    _validate_module_authorization(draft, author_texts)
     if draft.library_search and not _library_search_authorized(draft, author_texts):
         raise _evidence_error("作者没有明确要求从全局模块库查找，不能登记库搜索权限")
+
+
+def _validate_module_grant(grant: ModuleGrant) -> None:
+    """装配操作必须精确到版本或绑定；不接受「随便装一个」这种模糊授权。"""
+    if grant.action == "attach":
+        if not grant.module_id.strip() or not grant.revision_id.strip():
+            raise _evidence_error("装入模块要写清模块 ID 与精确版本")
+    elif not grant.binding_id.strip():
+        raise _evidence_error("卸下模块要写清本作品的绑定 ID")
+
+
+def _validate_module_authorization(
+    draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]
+) -> None:
+    """装配与发布要求作者原话里确实出现对应动词，而不是只给一句通用授权。"""
+    text = _quoted_author_text(draft, author_texts)
+    for grant in draft.module_grants:
+        phrases = _MODULE_PHRASES[grant.action]
+        if not any(phrase in text for phrase in phrases):
+            raise _evidence_error(
+                f"作者没有明确要求「{grant.describe()}」；库搜索或一般写作授权不能代替装卸指令"
+            )
+    if draft.library_publish and not any(phrase in text for phrase in _PUBLISH_PHRASES):
+        raise _evidence_error("作者没有明确要求发布到模块库")
+
+
+def _quoted_author_text(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) -> str:
+    quote = " ".join(draft.authorization.split())
+    for _, text in author_texts:
+        normalized = " ".join(text.split())
+        if quote and quote in normalized:
+            return normalized
+    return ""
 
 
 def _validate_reregistration(current: TaskScope, draft: ScopeDraft) -> None:
@@ -394,6 +478,28 @@ def _validate_reregistration(current: TaskScope, draft: ScopeDraft) -> None:
             where="task_scope.set",
             why="重新登记不能新开全局模块库搜索",
             fix="需要库搜索时由作者明确要求后重新登记；不要在这一轮中途扩大读取范围",
+            details={"version": current.version},
+        )
+    added_modules = [
+        grant for grant in draft.module_grants if grant not in current.draft.module_grants
+    ]
+    if added_modules:
+        raise WorkspaceError(
+            code="TASK_SCOPE_DENIED_CONFLICT",
+            where="task_scope.set",
+            why=f"重新登记只能收窄范围，这次新增了装配操作：{added_modules[0].describe()}",
+            fix="装配变更一次登记完整；中途扩大装卸范围需要作者新的明确要求",
+            details={
+                "added": [grant.to_dict() for grant in added_modules],
+                "version": current.version,
+            },
+        )
+    if draft.library_publish and not current.draft.library_publish:
+        raise WorkspaceError(
+            code="TASK_SCOPE_DENIED_CONFLICT",
+            where="task_scope.set",
+            why="重新登记不能新开模块库发布",
+            fix="需要发布时由作者明确要求后重新登记",
             details={"version": current.version},
         )
     if draft.extendable and not current.draft.extendable:
