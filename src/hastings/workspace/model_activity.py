@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -24,6 +25,26 @@ def _message(message: AgentMessage) -> dict[str, Any]:
             if block.get("type") != "thinking"
         ]
     return dict(redact(raw))
+
+
+def _chars(payload: object) -> int:
+    """应用侧序列化字符数；只是可复算的估算，不冒充供应商 token。"""
+    return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+
+
+def _request_size(
+    system: str, messages: list[AgentMessage], definitions: list[dict[str, Any]]
+) -> dict[str, object]:
+    message_chars = sum(_chars(message.model_dump(mode="json")) for message in messages)
+    tool_chars = _chars(definitions)
+    return {
+        "method": "json_char_count",
+        "estimated": True,
+        "system_chars": len(system),
+        "message_chars": message_chars,
+        "tool_chars": tool_chars,
+        "total_chars": len(system) + message_chars + tool_chars,
+    }
 
 
 class RecordedProvider:
@@ -72,6 +93,7 @@ class RecordedProvider:
                 "system_chars": len(system),
                 "message_count": len(messages),
                 "tools": [t.name for t in tools],
+                "request_size": _request_size(system, messages, definitions),
                 "input_captured": self.capture,
             },
         )

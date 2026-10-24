@@ -246,6 +246,14 @@ def test_actual_model_input_capture_is_optional_and_matches_request(
         assert records[0][1]["operation_id"] == records[1][1]["operation_id"]
         assert records[1][1]["usage"] is None
         assert records[1][1]["first_output_ms"] is not None
+        size = records[0][1]["request_size"]
+        assert size["method"] == "json_char_count"
+        assert size["estimated"] is True
+        assert size["system_chars"] == len("实际上下文")
+        assert size["message_chars"] > 0
+        assert size["total_chars"] == (
+            size["system_chars"] + size["message_chars"] + size["tool_chars"]
+        )
         key = records[0][1]["input_detail"]
         assert bool(key) == capture
         if key:

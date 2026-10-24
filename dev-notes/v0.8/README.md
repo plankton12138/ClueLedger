@@ -33,7 +33,7 @@
   F2 受理冻结装配、运行中拒绝装卸与已装模块短目录已实施（[记录](notes/F2-assembly-freeze.md)）；
   F3 的 `list_modules`／`query_records`／`read_record` 与受作者授权的库搜索已接入
   （[记录](notes/F3-retrieval-tools.md)）；F4 条目级排除记录已实施
-  （[记录](notes/F4-entry-selection.md)）。注入排除项的前端显示与整请求规模记录待实施。
+  （[记录](notes/F4-entry-selection.md)）。注入排除项与请求规模的前端显示待实施。
 - G 交付待实施。
 - 不预建 `modules/` 充当当前能力，也不写通过数量或发布结论。
 - 实施时阶段记录放本目录 `notes/`，证据放 `artifacts/`；完成后再编写 `modules/` 与 `release.md`。

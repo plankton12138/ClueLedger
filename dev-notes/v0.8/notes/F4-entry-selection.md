@@ -22,10 +22,19 @@
 - `context.build_assembled_context` 把各分区的排除项挂回对应 `Partition`；
   索引分区的排除项由服务层在生成 `index_notes` 时收集后传入。
 
+### 整请求规模
+
+- `model_activity` 在 `model_request_started` 里增加 `request_size`：系统提示、消息序列与
+  工具定义各自的应用侧 JSON 字符数，以及三项之和；字段带 `method=json_char_count` 与
+  `estimated=true`，明确这是可复算的估算，不是供应商 token。
+- 上游实际用量仍只在 `model_request_finished.usage` 出现：供应商没提供时保持 `null`，
+  不拿 0 冒充「用量为零」；本项不触发任何额外摘要或压缩任务。
+
 ## 接口与数据
 
 - 没有新增 HTTP 路由；`state_injected.parts[i]` 在原本的 `key`／`chars` 之外可能多一个
-  `excluded` 数组。前端未接这一字段，现有读取不受影响。
+  `excluded` 数组。`model_request_started` 多一个 `request_size` 对象；前端未接这两个字段，
+  现有读取不受影响。
 - 排除项只描述「没给什么」，不产生读取授权；继续查看仍走原来的只读工具与 `read_state`。
 
 ## 取舍
@@ -43,17 +52,18 @@
 | 范围 | 命令 | 结果 |
 |---|---|---|
 | 装配与分区专项 | `uv run pytest -q tests/workspace/test_assembly.py tests/workspace/test_context_budget.py tests/workspace/test_clues.py tests/workspace/test_character_states.py tests/workspace/test_timeline.py tests/workspace/test_glossary.py tests/workspace/test_chapter_index.py` | 76 passed |
+| 请求记录专项 | `uv run pytest -q tests/workspace/test_activity.py tests/workspace/test_chat.py tests/workspace/test_chat_stream.py` | 73 passed |
 | 静态检查 | `uv run ruff check src/hastings tests` | 通过 |
 | 类型检查 | `uv run mypy` | 106 个源文件无问题 |
-| 后端全量 | `uv run pytest -q --basetemp data/test-tmp/f4-selection-full -o tmp_path_retention_count=100` | 766 passed，0 failures |
+| 后端全量 | `uv run pytest -q --basetemp data/test-tmp/f4b-full -o tmp_path_retention_count=100` | 766 passed，0 failures |
 
 覆盖：分区摘要带排除项且无排除项时不出现该键；线索超预算记录 `budget`；人物状态只留
 死亡角色时记录被裁者；故事时间超预算只留最近一章并记录更早锚点；专名超条数记录 `limit`；
-索引超预算记录全部未装入章节与 `read_file` 入口。
+索引超预算记录全部未装入章节与 `read_file` 入口；请求开始事件带可复算的字符规模，
+没有上游用量时 `usage` 仍为 `null`。
 
 ## 未完成
 
-- 界面没有显示排除项；活动事件已有数据，前端未接。
-- 整请求字符规模与上游实际 token 仍未记录；`model_request_started` 目前只有系统提示字符数。
+- 界面没有显示排除项与请求规模；活动事件已有数据，前端未接。
 - 条目排序仍是固定分区顺序，没有统一候选池与按任务相关性的重排。
 - 任务卡（当前授权、约束、未读内容、执行事实）没有随本项实现。
