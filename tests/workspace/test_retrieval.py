@@ -358,6 +358,40 @@ def test_pagination_cursor_is_bound_to_the_query(tmp_path: Path) -> None:
     assert excinfo.value.code == "RETRIEVAL_CURSOR_STALE_CONFLICT"
 
 
+def test_pagination_cursor_expires_when_a_source_changes(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    root = tmp_path / "state"
+    store = StoryIndexStore(root)
+    store.publish(
+        _projection(workspace, FIRST, 1, "林静在书房。"),
+        expected_digest=workspace.read(FIRST).digest,
+    )
+    store.publish(
+        _projection(workspace, EIGHTH, 8, "管家在书房承认那晚的事。"),
+        expected_digest=workspace.read(EIGHTH).digest,
+    )
+
+    first = query_materials(
+        workspace, root, Assembly(), None, MaterialQuery(text="书房", limit=1)
+    )
+    assert len(first["items"]) == 1
+    assert first["items"][0]["id"].endswith(FIRST)
+    assert first["next_cursor"]
+
+    # 翻页期间第一章被外部改写：旧摘要失效，结果集只剩第二章。
+    workspace.write(FIRST, "# 雨夜\n\n林静离开了。\n", expected_digest=workspace.read(FIRST).digest)
+
+    with pytest.raises(WorkspaceError) as excinfo:
+        query_materials(
+            workspace,
+            root,
+            Assembly(),
+            None,
+            MaterialQuery(text="书房", limit=1, cursor=first["next_cursor"]),
+        )
+    assert excinfo.value.code == "RETRIEVAL_CURSOR_STALE_CONFLICT"
+
+
 def test_long_entry_body_is_found_while_detail_stays_complete(tmp_path: Path) -> None:
     library = _library(tmp_path)
     workspace = _workspace(tmp_path)

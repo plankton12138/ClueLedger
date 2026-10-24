@@ -235,8 +235,6 @@ def query_materials(
     started = time.monotonic()
     size = _limit(query.limit)
     as_of = current_chapter(workspace, query.as_of_chapter)
-    fingerprint = _fingerprint(query)
-    offset = _cursor_offset(query.cursor, fingerprint)
     warnings: list[str] = []
     hits: list[MaterialHit] = []
 
@@ -273,6 +271,10 @@ def query_materials(
 
     filtered = [hit for hit in hits if _passes_filters(hit, query)]
     filtered.sort(key=_sort_key)
+    # 游标同时绑定查询条件与这一次的实际结果集：翻页期间来源被改、条目失效或新增，
+    # 指纹都会变化并返回过期，而不是按旧偏移跳过仍然有效的记录。
+    fingerprint = _fingerprint(query, filtered)
+    offset = _cursor_offset(query.cursor, fingerprint)
     page, consumed = _page(filtered, offset, size)
     next_offset = offset + consumed
     return {
@@ -752,7 +754,7 @@ def _chapter_number(path: str) -> int | None:
     return int(name[:4]) if name[:4].isdigit() else None
 
 
-def _fingerprint(query: MaterialQuery) -> str:
+def _fingerprint(query: MaterialQuery, results: Sequence[MaterialHit]) -> str:
     payload = {
         "kinds": list(query.kinds),
         "module_ids": list(query.module_ids),
@@ -761,6 +763,8 @@ def _fingerprint(query: MaterialQuery) -> str:
         "chapter_paths": list(query.chapter_paths),
         "as_of_chapter": query.as_of_chapter,
         "include_plans": query.include_plans,
+        # 结果身份包含来源、版本、命中原因与摘要；任一来源改动都会让旧游标失配。
+        "results": [hit.to_dict() for hit in results],
     }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
@@ -787,8 +791,8 @@ def _cursor_error(cursor: str) -> WorkspaceError:
     return WorkspaceError(
         code="RETRIEVAL_CURSOR_STALE_CONFLICT",
         where="retrieval.query",
-        why="分页游标不属于这次查询，或查询条件已经改变",
-        fix="从第一页重新查询；不要混用两次不同条件的游标",
+        why="分页游标不属于这次查询，或查询条件、来源内容已经改变",
+        fix="从第一页重新查询；不要混用两次不同条件或来源已改动的游标",
         details={"cursor": cursor},
     )
 

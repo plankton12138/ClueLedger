@@ -162,6 +162,65 @@ def test_same_module_two_versions_maps_to_409(tmp_path: Path) -> None:
     assert response.json()["error"]["code"] == "ASSEMBLY_BINDING_CONFLICT"
 
 
+def test_put_assembly_preserves_links_when_field_is_omitted(tmp_path: Path) -> None:
+    client, workspace_id, library = _client(tmp_path)
+    first = _module(client)
+    second = client.post(
+        "/api/module-library/modules",
+        json={
+            "kind": "characters",
+            "name": "反派",
+            "request_key": "assembly-lib-2",
+            "entries": [{"entry_id": "villain", "title": "周叙", "body": "旧识。"}],
+        },
+    ).json()["module"]
+    created = client.put(
+        f"/api/file-workspaces/{workspace_id}/assembly",
+        json={
+            "bindings": [_binding(library, first), _binding(library, second)],
+            "expected_digest": None,
+            "request_key": "assembly-links-1",
+        },
+    ).json()
+    rows = [
+        {"id": row["id"], "label": row["label"], "module": row["module"]}
+        for row in created["bindings"]
+    ]
+
+    linked = client.put(
+        f"/api/file-workspaces/{workspace_id}/assembly",
+        json={
+            "bindings": rows,
+            "links": [[rows[0]["id"], rows[1]["id"]]],
+            "expected_digest": created["digest"],
+            "request_key": "assembly-links-2",
+        },
+    ).json()
+    assert linked["links"] == [[rows[0]["id"], rows[1]["id"]]]
+
+    # 装卸客户端可能只回传 bindings；省略 links 必须保留已有关系。
+    preserved = client.put(
+        f"/api/file-workspaces/{workspace_id}/assembly",
+        json={
+            "bindings": rows,
+            "expected_digest": linked["digest"],
+            "request_key": "assembly-links-3",
+        },
+    ).json()
+    assert preserved["links"] == [[rows[0]["id"], rows[1]["id"]]]
+
+    cleared = client.put(
+        f"/api/file-workspaces/{workspace_id}/assembly",
+        json={
+            "bindings": rows,
+            "links": [],
+            "expected_digest": preserved["digest"],
+            "request_key": "assembly-links-4",
+        },
+    ).json()
+    assert cleared["links"] == []
+
+
 def test_module_updates_publishes_and_binds(tmp_path: Path) -> None:
     client, workspace_id, library = _client(tmp_path)
     module = _module(client)

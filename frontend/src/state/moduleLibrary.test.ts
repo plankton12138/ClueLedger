@@ -288,7 +288,7 @@ describe("装配", () => {
             module: { library_id: "lib_1", module_id: "mod_2", revision_id: "rev_9" },
           },
         ],
-        links: [],
+        links: [["bnd_1", "bnd_2"]],
       },
     });
 
@@ -296,6 +296,7 @@ describe("装配", () => {
 
     const body = putMock.mock.calls[0][1];
     expect(body.expected_digest).toBe("d1");
+    expect(body.links).toEqual([["bnd_1", "bnd_2"]]);
     expect(body.bindings).toHaveLength(2);
     expect(body.bindings[1].module).toEqual({
       library_id: "lib_1",
@@ -330,7 +331,11 @@ describe("装配", () => {
             module: { library_id: "lib_1", module_id: "mod_2", revision_id: "rev_9" },
           },
         ],
-        links: [],
+        links: [
+          ["bnd_1", "bnd_2"],
+          ["bnd_2", "bnd_3"],
+          ["bnd_3", "bnd_4"],
+        ],
       },
     });
 
@@ -338,6 +343,48 @@ describe("装配", () => {
 
     const body = putMock.mock.calls[0][1];
     expect(body.bindings.map((item) => item.id)).toEqual(["bnd_2"]);
+    // 只移除与被卸绑定有关的关系，其他关联保留。
+    expect(body.links).toEqual([
+      ["bnd_2", "bnd_3"],
+      ["bnd_3", "bnd_4"],
+    ]);
+  });
+
+  it("切换版本时保留已有关系", async () => {
+    putMock.mockResolvedValue({
+      schema_version: 1,
+      library_id: "lib_1",
+      digest: "d3",
+      bindings: [],
+      links: [],
+    });
+    useModuleLibraryStore.setState({
+      workspaceId: "ws1",
+      assembly: {
+        schema_version: 1,
+        library_id: "lib_1",
+        digest: "d2",
+        bindings: [
+          {
+            id: "bnd_1",
+            label: "主角团",
+            module: { library_id: "lib_1", module_id: "mod_1", revision_id: "rev_1" },
+          },
+          {
+            id: "bnd_2",
+            label: "反派",
+            module: { library_id: "lib_1", module_id: "mod_2", revision_id: "rev_9" },
+          },
+        ],
+        links: [["bnd_1", "bnd_2"]],
+      },
+    });
+
+    await useModuleLibraryStore.getState().upgrade("bnd_1", "rev_2");
+
+    const body = putMock.mock.calls[0][1];
+    expect(body.links).toEqual([["bnd_1", "bnd_2"]]);
+    expect(body.bindings[0].module.revision_id).toBe("rev_2");
   });
 });
 

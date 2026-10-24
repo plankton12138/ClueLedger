@@ -378,6 +378,7 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
           })),
           { module: { library_id: libraryId, module_id: moduleId, revision_id: revisionId } },
         ],
+        links: assembly?.links ?? [],
         expected_digest: assembly?.digest ?? null,
         request_key: requestKey("bind"),
       });
@@ -396,6 +397,10 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         bindings: assembly.bindings
           .filter((item) => item.id !== bindingId)
           .map((item) => ({ id: item.id, label: item.label, module: item.module })),
+        // 卸下只移除与被卸绑定有关的关系，其他关联保持原样。
+        links: assembly.links.filter(
+          ([left, right]) => left !== bindingId && right !== bindingId,
+        ),
         expected_digest: assembly.digest,
         request_key: requestKey("unbind"),
       });
@@ -425,6 +430,7 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
               }
             : { id: item.id, label: item.label, module: item.module },
         ),
+        links: assembly.links,
         expected_digest: assembly.digest,
         request_key: requestKey("upgrade"),
       });

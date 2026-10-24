@@ -43,7 +43,9 @@ class BindingPayload(BaseModel):
 
 class PutAssemblyRequest(BaseModel):
     bindings: list[BindingPayload] = Field(default_factory=list)
-    links: list[list[str]] = Field(default_factory=list)
+    #: 省略表示保留当前关系；显式空列表才是「清空关系」。装卸通常不改关系，
+    #: 客户端漏传时不能把作者已经建立的关联一起删掉。
+    links: list[list[str]] | None = None
     expected_digest: str | None = None
     request_key: str
 
@@ -109,8 +111,14 @@ def create_assembly_router(
             )
             for item in payload.bindings
         ]
-        links = tuple((str(link[0]), str(link[1])) for link in payload.links if len(link) == 2)
-        return service_for(workspace_id).replace(
+        service = service_for(workspace_id)
+        if payload.links is None:
+            links = tuple(service.store.read().links)
+        else:
+            links = tuple(
+                (str(link[0]), str(link[1])) for link in payload.links if len(link) == 2
+            )
+        return service.replace(
             bindings=bindings,
             links=links,
             expected_digest=payload.expected_digest,
