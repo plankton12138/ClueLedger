@@ -1,0 +1,18 @@
+{
+  "request_key": "fed5553b-ffd7-449a-9b37-143a9226f308",
+  "scope": {
+    "domain": "roster",
+    "chapter_paths": [
+      "正文/0001 六点的白鸦馆.md"
+    ],
+    "entity_paths": [
+      "设定集/角色小传/久我 春臣.md",
+      "设定集/角色小传/荒井 十三.md",
+      "设定集/角色小传/氷室 灯里.md"
+    ],
+    "as_of_chapter": 1,
+    "observed_digests": {
+      "正文/0001 六点的白鸦馆.md": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78"
+    }
+  }
+}

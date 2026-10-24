@@ -1,0 +1,267 @@
+{
+  "chapters": [
+    {
+      "path": "正文/0001 六点的白鸦馆.md",
+      "kind": "chapter",
+      "title": "六点的白鸦馆",
+      "display_title": "第一章 六点的白鸦馆",
+      "order": "0001",
+      "chapter_number": 1,
+      "chapter_type": "regular",
+      "roles": [],
+      "exists": true,
+      "size": 3442,
+      "metadata_warnings": []
+    }
+  ],
+  "characters": [
+    {
+      "path": "设定集/角色小传/三隅 ひかり.md",
+      "kind": "character",
+      "title": "三隅 ひかり（みすみ ひかり）／19",
+      "display_title": "三隅 ひかり（みすみ ひかり）／19",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "suspect"
+      ],
+      "exists": true,
+      "size": 3261,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/久我 春臣.md",
+      "kind": "character",
+      "title": "久我 春臣（くが はるおみ）／27",
+      "display_title": "久我 春臣（くが はるおみ）／27",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "assistant"
+      ],
+      "exists": true,
+      "size": 3349,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/宇佐美 静.md",
+      "kind": "character",
+      "title": "宇佐美 静（うさみ しずか）／46　旧姓：白峰 静",
+      "display_title": "宇佐美 静（うさみ しずか）／46　旧姓：白峰 静",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "culprit",
+        "suspect"
+      ],
+      "exists": true,
+      "size": 5028,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/戸田 亀蔵.md",
+      "kind": "character",
+      "title": "戸田 亀蔵（とだ かめぞう）／71",
+      "display_title": "戸田 亀蔵（とだ かめぞう）／71",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [],
+      "exists": true,
+      "size": 1816,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/曽根崎 徹.md",
+      "kind": "character",
+      "title": "曽根崎 徹（そねざき とおる）／61",
+      "display_title": "曽根崎 徹（そねざき とおる）／61",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "suspect"
+      ],
+      "exists": true,
+      "size": 3851,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/柊 十和子.md",
+      "kind": "character",
+      "title": "柊 十和子（ひいらぎ とわこ）／38",
+      "display_title": "柊 十和子（ひいらぎ とわこ）／38",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "suspect"
+      ],
+      "exists": true,
+      "size": 3197,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/氷室 岳彦.md",
+      "kind": "character",
+      "title": "氷室 岳彦（ひむろ たけひこ）／54",
+      "display_title": "氷室 岳彦（ひむろ たけひこ）／54",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "victim"
+      ],
+      "exists": true,
+      "size": 4545,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/氷室 澪.md",
+      "kind": "character",
+      "title": "氷室 澪（ひむろ みお）／22",
+      "display_title": "氷室 澪（ひむろ みお）／22",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "suspect"
+      ],
+      "exists": true,
+      "size": 2824,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/氷室 灯里.md",
+      "kind": "character",
+      "title": "氷室 灯里（ひむろ あかり）／41",
+      "display_title": "氷室 灯里（ひむろ あかり）／41",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "suspect"
+      ],
+      "exists": true,
+      "size": 3030,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/浅倉 冬吾.md",
+      "kind": "character",
+      "title": "浅倉 冬吾（あさくら とうご）／44",
+      "display_title": "浅倉 冬吾（あさくら とうご）／44",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "suspect"
+      ],
+      "exists": true,
+      "size": 3600,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/犀川 権三.md",
+      "kind": "character",
+      "title": "犀川 権三（さいかわ ごんぞう）／64",
+      "display_title": "犀川 権三（さいかわ ごんぞう）／64",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "suspect"
+      ],
+      "exists": true,
+      "size": 2700,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/犬飼 惣一.md",
+      "kind": "character",
+      "title": "犬飼 惣一（いぬかい そういち）／58",
+      "display_title": "犬飼 惣一（いぬかい そういち）／58",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "suspect"
+      ],
+      "exists": true,
+      "size": 3069,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/猪熊 昇.md",
+      "kind": "character",
+      "title": "猪熊 昇（いのくま のぼる）／47",
+      "display_title": "猪熊 昇（いのくま のぼる）／47",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [],
+      "exists": true,
+      "size": 1487,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/荒井 十三.md",
+      "kind": "character",
+      "title": "荒井 十三（あらい じゅうぞう）／62",
+      "display_title": "荒井 十三（あらい じゅうぞう）／62",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [
+        "detective"
+      ],
+      "exists": true,
+      "size": 3843,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/角色小传/雨宮 栞.md",
+      "kind": "character",
+      "title": "雨宮 栞（あまみや しおり）／29",
+      "display_title": "雨宮 栞（あまみや しおり）／29",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [],
+      "exists": true,
+      "size": 1591,
+      "metadata_warnings": []
+    }
+  ],
+  "settings": [
+    {
+      "path": "设定集/线索.md",
+      "kind": "setting",
+      "title": "线索",
+      "display_title": "线索",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [],
+      "exists": true,
+      "size": 0,
+      "metadata_warnings": []
+    },
+    {
+      "path": "设定集/真相.md",
+      "kind": "setting",
+      "title": "真相",
+      "display_title": "真相",
+      "order": "",
+      "chapter_number": null,
+      "chapter_type": null,
+      "roles": [],
+      "exists": true,
+      "size": 10626,
+      "metadata_warnings": []
+    }
+  ]
+}

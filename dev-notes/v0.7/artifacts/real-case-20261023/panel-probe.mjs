@@ -1,0 +1,23 @@
+// Visual check of the redesigned activity panel against the real-case log.
+import { createRequire } from 'node:module';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const require = createRequire(join(process.cwd(), 'frontend/package.json'));
+const { chromium } = require('playwright');
+const out = fileURLToPath(new URL('.', import.meta.url));
+const base = 'http://127.0.0.1:8947';
+const workspaceId = 'b9b12fe248ca6299';
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+await page.goto(base);
+await page.getByLabel('选择作品目录').selectOption(workspaceId);
+await page.getByRole('button', { name: '活动记录', exact: true }).click();
+await page.getByText('已载入', { exact: false }).waitFor({ timeout: 20000 });
+await page.waitForFunction(() => !document.body.innerText.includes('正在读取记录'), { timeout: 30000 });
+await page.waitForTimeout(2500);
+const text = await page.locator('section[role="dialog"]').innerText();
+await page.screenshot({ path: join(out, 'panel-activity.png'), fullPage: false });
+writeFileSync(join(out, 'panel-activity.txt'), text, 'utf8');
+console.log(text.slice(0, 3500));
+await browser.close();

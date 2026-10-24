@@ -1,0 +1,19 @@
+{
+  "http_status": 202,
+  "turn_id": "t_f535c54b",
+  "conversation_id": "c_f4f25347dfe2",
+  "origin": "materials",
+  "domain": "clues",
+  "label": "线索与伏笔",
+  "title": "整理线索与伏笔：第 0 章",
+  "model": "deepseek-flash",
+  "request_key": "8ddf6862-3a76-434c-83ff-33d882fcd630",
+  "scope": {
+    "domain": "clues",
+    "chapter_paths": [
+      "正文/0001 六点的白鸦馆.md"
+    ],
+    "entity_paths": [],
+    "as_of_chapter": 1
+  }
+}

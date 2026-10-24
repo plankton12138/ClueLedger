@@ -1,0 +1,222 @@
+[
+  {
+    "text": "打开 / 新建",
+    "disabled": false
+  },
+  {
+    "text": "重新读取文件",
+    "disabled": false
+  },
+  {
+    "text": "写作",
+    "disabled": false
+  },
+  {
+    "text": "故事资料",
+    "disabled": false
+  },
+  {
+    "text": "重置",
+    "disabled": true
+  },
+  {
+    "text": "对话",
+    "disabled": false
+  },
+  {
+    "text": "模型设置",
+    "disabled": false
+  },
+  {
+    "text": "活动记录",
+    "disabled": false
+  },
+  {
+    "text": "查找",
+    "disabled": false
+  },
+  {
+    "text": "导入",
+    "disabled": false
+  },
+  {
+    "text": "第一章 六点的白鸦馆",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "三隅 ひかり（みすみ ひかり）／19\n嫌疑人",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "久我 春臣（くが はるおみ）／27\n助手",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "宇佐美 静（うさみ しずか）／46　旧姓：白峰 静\n凶手\n嫌疑人",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "戸田 亀蔵（とだ かめぞう）／71",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "曽根崎 徹（そねざき とおる）／61\n嫌疑人",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "柊 十和子（ひいらぎ とわこ）／38\n嫌疑人",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "氷室 岳彦（ひむろ たけひこ）／54\n受害者",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "氷室 澪（ひむろ みお）／22\n嫌疑人",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "氷室 灯里（ひむろ あかり）／41\n嫌疑人",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "浅倉 冬吾（あさくら とうご）／44\n嫌疑人",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "犀川 権三（さいかわ ごんぞう）／64\n嫌疑人",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "犬飼 惣一（いぬかい そういち）／58\n嫌疑人",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "猪熊 昇（いのくま のぼる）／47",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "荒井 十三（あらい じゅうぞう）／62\n侦探",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "雨宮 栞（あまみや しおり）／29",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "线索",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "真相",
+    "disabled": false
+  },
+  {
+    "text": "＋",
+    "disabled": false
+  },
+  {
+    "text": "新对话",
+    "disabled": false
+  },
+  {
+    "text": "改名",
+    "disabled": false
+  },
+  {
+    "text": "管理",
+    "disabled": false
+  },
+  {
+    "text": "复制",
+    "disabled": false
+  },
+  {
+    "text": "展开阅读",
+    "disabled": false
+  },
+  {
+    "text": "撤销这次修改",
+    "disabled": false
+  },
+  {
+    "text": "检查本次改动",
+    "disabled": false
+  },
+  {
+    "text": "+ 添加文件",
+    "disabled": false
+  },
+  {
+    "text": "发送",
+    "disabled": true
+  }
+]

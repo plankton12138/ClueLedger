@@ -1,0 +1,23 @@
+{
+  "url": "http://127.0.0.1:8947/#/workspaces/b9b12fe248ca6299/materials/characters",
+  "body": "C\nClueLedger\nMARKDOWN WORKSPACE\n（未打开目录）\n雪山温泉案例\n打开 / 新建\n重新读取文件\n写作\n故事资料\n字号\n80%\n90%\n100%\n110%\n120%\n130%\n140%\n150%\n重置\n对话\n模型设置\n活动记录\n故事资料\n章节概览\n人物\n时间线\n线索与伏笔\n名词表\n人物\n查看截至\n全书（第 0 章）\n有结果 0 · 无发现 0 · 未整理 0\n重新读取资料\n核对身份披露\n从章节整理人物状态\n\n这个作品还没有章节。先在写作页建立正文，再回来整理资料。\n\n还没有角色小传。在对话里建立小传后，这里会显示身份与状态。",
+  "errors": [],
+  "responses": [
+    {
+      "url": "http://127.0.0.1:8947/api/file-workspaces/b9b12fe248ca6299/material-tasks?domain=roster",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8947/api/file-workspaces/b9b12fe248ca6299/material-tasks?domain=disclosure",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8947/api/file-workspaces/b9b12fe248ca6299/story-materials/disclosure",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8947/api/file-workspaces/b9b12fe248ca6299/story-materials/roster",
+      "status": 200
+    }
+  ]
+}

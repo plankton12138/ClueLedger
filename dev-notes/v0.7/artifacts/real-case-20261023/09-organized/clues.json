@@ -1,0 +1,396 @@
+{
+  "domain": "clues",
+  "label": "线索与伏笔",
+  "as_of_chapter": 1,
+  "current_chapter": 1,
+  "chapters": [
+    {
+      "path": "正文/0001 六点的白鸦馆.md",
+      "chapter": 1,
+      "title": "第一章 六点的白鸦馆",
+      "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78"
+    }
+  ],
+  "entities": [
+    {
+      "path": "设定集/角色小传/三隅 ひかり.md",
+      "name": "三隅 ひかり（みすみ ひかり）／19"
+    },
+    {
+      "path": "设定集/角色小传/久我 春臣.md",
+      "name": "久我 春臣（くが はるおみ）／27"
+    },
+    {
+      "path": "设定集/角色小传/宇佐美 静.md",
+      "name": "宇佐美 静（うさみ しずか）／46　旧姓：白峰 静"
+    },
+    {
+      "path": "设定集/角色小传/戸田 亀蔵.md",
+      "name": "戸田 亀蔵（とだ かめぞう）／71"
+    },
+    {
+      "path": "设定集/角色小传/曽根崎 徹.md",
+      "name": "曽根崎 徹（そねざき とおる）／61"
+    },
+    {
+      "path": "设定集/角色小传/柊 十和子.md",
+      "name": "柊 十和子（ひいらぎ とわこ）／38"
+    },
+    {
+      "path": "设定集/角色小传/氷室 岳彦.md",
+      "name": "氷室 岳彦（ひむろ たけひこ）／54"
+    },
+    {
+      "path": "设定集/角色小传/氷室 澪.md",
+      "name": "氷室 澪（ひむろ みお）／22"
+    },
+    {
+      "path": "设定集/角色小传/氷室 灯里.md",
+      "name": "氷室 灯里（ひむろ あかり）／41"
+    },
+    {
+      "path": "设定集/角色小传/浅倉 冬吾.md",
+      "name": "浅倉 冬吾（あさくら とうご）／44"
+    },
+    {
+      "path": "设定集/角色小传/犀川 権三.md",
+      "name": "犀川 権三（さいかわ ごんぞう）／64"
+    },
+    {
+      "path": "设定集/角色小传/犬飼 惣一.md",
+      "name": "犬飼 惣一（いぬかい そういち）／58"
+    },
+    {
+      "path": "设定集/角色小传/猪熊 昇.md",
+      "name": "猪熊 昇（いのくま のぼる）／47"
+    },
+    {
+      "path": "设定集/角色小传/荒井 十三.md",
+      "name": "荒井 十三（あらい じゅうぞう）／62"
+    },
+    {
+      "path": "设定集/角色小传/雨宮 栞.md",
+      "name": "雨宮 栞（あまみや しおり）／29"
+    }
+  ],
+  "entries": [
+    {
+      "id": "87ee18ceb774eda1",
+      "domain": "clues",
+      "title": "叙述者久我春臣说，相识三个月里问过十七次荒井十三从前靠什么吃饭，对方一次也没回答——荒井的来历被明确留白。",
+      "subtitle": "第1章埋下｜未定回收章",
+      "chapter": 1,
+      "entity_path": null,
+      "coverage": "found",
+      "freshness": "valid",
+      "task_id": "t_f535c54b",
+      "updated_at": "2026-10-23T20:14:41+08:00",
+      "data": {
+        "clue": "叙述者久我春臣说，相识三个月里问过十七次荒井十三从前靠什么吃饭，对方一次也没回答——荒井的来历被明确留白。",
+        "planted_chapter": 1,
+        "due_chapter": null,
+        "status": "open",
+        "label": "未回收",
+        "overdue": false,
+        "supports": "对应《真相》四：荒井是元警视厅搜查一课警部，猪熊昇是他带过的后辈，因此有现场委托与初步询问的资格。截至第1章正文只留白，未交代来历，故为 open，计划回收章原著未标明，不擅自填。",
+        "resolution_chapter": null
+      },
+      "evidence": [
+        {
+          "path": "正文/0001 六点的白鸦馆.md",
+          "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78",
+          "chapter": 1,
+          "start": 262,
+          "end": 292,
+          "quote": "他从前靠什么吃饭，我在那三个月里问过十七次，他一次也没回答。",
+          "freshness": "valid"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "3658d229719b8cc5",
+      "domain": "clues",
+      "title": "氷室灯里接过每件大衣挂好之前都要抖一下，把袖子、领口、扣子逐处看一遍。",
+      "subtitle": "第1章埋下｜未定回收章",
+      "chapter": 1,
+      "entity_path": null,
+      "coverage": "found",
+      "freshness": "valid",
+      "task_id": "t_f535c54b",
+      "updated_at": "2026-10-23T20:14:41+08:00",
+      "data": {
+        "clue": "氷室灯里接过每件大衣挂好之前都要抖一下，把袖子、领口、扣子逐处看一遍。",
+        "planted_chapter": 1,
+        "due_chapter": null,
+        "status": "open",
+        "label": "未回收",
+        "overdue": false,
+        "supports": "灯里在《真相》七里列为疑点人物（遗产、与曽根崎的密约），中期洗清；此处逐件检查衣物的举动是读者可见的异常行为，正文尚未说明她在查什么，故 open。",
+        "resolution_chapter": null
+      },
+      "evidence": [
+        {
+          "path": "正文/0001 六点的白鸦馆.md",
+          "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78",
+          "chapter": 1,
+          "start": 610,
+          "end": 650,
+          "quote": "一边把每件大衣接过去挂好，挂之前都抖一下，袖子、领口、扣子，全在她眼皮底下过一遍",
+          "freshness": "valid"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "51ac3e8036f29ed6",
+      "domain": "clues",
+      "title": "灯里告知山路两点就封了，并笑着说「今晚这屋里的人，谁也别想走」。",
+      "subtitle": "第1章埋下｜未定回收章",
+      "chapter": 1,
+      "entity_path": null,
+      "coverage": "found",
+      "freshness": "valid",
+      "task_id": "t_f535c54b",
+      "updated_at": "2026-10-23T20:14:41+08:00",
+      "data": {
+        "clue": "灯里告知山路两点就封了，并笑着说「今晚这屋里的人，谁也别想走」。",
+        "planted_chapter": 1,
+        "due_chapter": null,
+        "status": "open",
+        "label": "未回收",
+        "overdue": false,
+        "supports": "预告封闭环境：《真相》四（暴风雪封路、手机无信号、县警三天内到不了）与五（停电二十分钟里谁不在房间等被摆位的线索）。正文尚未展开道路与通讯状况的矛盾，故 open。",
+        "resolution_chapter": null
+      },
+      "evidence": [
+        {
+          "path": "正文/0001 六点的白鸦馆.md",
+          "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78",
+          "chapter": 1,
+          "start": 651,
+          "end": 682,
+          "quote": "「山路两点就封了，」她笑着说，「今晚这屋里的人，谁也别想走。」",
+          "freshness": "valid"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "e9a305e5486c83d2",
+      "domain": "clues",
+      "title": "氷室岳彦腰带上挂着一台黑色的控制器，侧面小屏亮着，像一台老式随身听。",
+      "subtitle": "第1章埋下｜未定回收章",
+      "chapter": 1,
+      "entity_path": null,
+      "coverage": "found",
+      "freshness": "valid",
+      "task_id": "t_f535c54b",
+      "updated_at": "2026-10-23T20:14:41+08:00",
+      "data": {
+        "clue": "氷室岳彦腰带上挂着一台黑色的控制器，侧面小屏亮着，像一台老式随身听。",
+        "planted_chapter": 1,
+        "due_chapter": null,
+        "status": "open",
+        "label": "未回收",
+        "overdue": false,
+        "supports": "本案物证核心：控制器是人工心脏控制器，其上传窗口、报警阈值与厂家封印的黑色匣子构成犯罪与举证的关键（《真相》二、三）。第1章只给出外观，未点明用途与数据，故 open。",
+        "resolution_chapter": null
+      },
+      "evidence": [
+        {
+          "path": "正文/0001 六点的白鸦馆.md",
+          "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78",
+          "chapter": 1,
+          "start": 801,
+          "end": 828,
+          "quote": "腰带上挂着一台黑色的控制器，小屏亮着，像一台老式随身听",
+          "freshness": "valid"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "3f16f36ea0e69a19",
+      "domain": "clues",
+      "title": "浅倉冬吾进屋第一句是「你们把暖气开这么大，是怕他不死吗」。",
+      "subtitle": "第1章埋下｜未定回收章",
+      "chapter": 1,
+      "entity_path": null,
+      "coverage": "found",
+      "freshness": "valid",
+      "task_id": "t_f535c54b",
+      "updated_at": "2026-10-23T20:14:41+08:00",
+      "data": {
+        "clue": "浅倉冬吾进屋第一句是「你们把暖气开这么大，是怕他不死吗」。",
+        "planted_chapter": 1,
+        "due_chapter": null,
+        "status": "open",
+        "label": "未回收",
+        "overdue": false,
+        "supports": "浅倉对氷室的敌意与知情（十二年前雾丘事故、被推为替罪者，见《真相》一、七）。表面像刻薄玩笑，实指向死者将死；正文未解释这句话的来由，故 open。",
+        "resolution_chapter": null
+      },
+      "evidence": [
+        {
+          "path": "正文/0001 六点的白鸦馆.md",
+          "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78",
+          "chapter": 1,
+          "start": 831,
+          "end": 856,
+          "quote": "「你们把暖气开这么大，」浅倉说，「是怕他不死吗。」",
+          "freshness": "valid"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "82176f6fd475d09b",
+      "domain": "clues",
+      "title": "浅倉冬吾从裤兜里摸出一把改锥，在指间转了半圈，又插回去。",
+      "subtitle": "第1章埋下｜未定回收章",
+      "chapter": 1,
+      "entity_path": null,
+      "coverage": "found",
+      "freshness": "valid",
+      "task_id": "t_f535c54b",
+      "updated_at": "2026-10-23T20:14:41+08:00",
+      "data": {
+        "clue": "浅倉冬吾从裤兜里摸出一把改锥，在指间转了半圈，又插回去。",
+        "planted_chapter": 1,
+        "due_chapter": null,
+        "status": "open",
+        "label": "未回收",
+        "overdue": false,
+        "supports": "《真相》七把「技术、仇恨、随身改锥」列为浅倉的疑点，他最终留在三人名单里却早就知道实情；改锥其后并未在正文中被解释，故 open。",
+        "resolution_chapter": null
+      },
+      "evidence": [
+        {
+          "path": "正文/0001 六点的白鸦馆.md",
+          "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78",
+          "chapter": 1,
+          "start": 885,
+          "end": 908,
+          "quote": "从裤兜里摸出一把改锥，在指间转了半圈，又插回去",
+          "freshness": "valid"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "a90be494941da236",
+      "domain": "clues",
+      "title": "岳彦当众对记者说「明天开始，我说，你写」，把自传的口述安排定在第二天。",
+      "subtitle": "第1章埋下｜未定回收章",
+      "chapter": 1,
+      "entity_path": null,
+      "coverage": "found",
+      "freshness": "valid",
+      "task_id": "t_f535c54b",
+      "updated_at": "2026-10-23T20:14:41+08:00",
+      "data": {
+        "clue": "岳彦当众对记者说「明天开始，我说，你写」，把自传的口述安排定在第二天。",
+        "planted_chapter": 1,
+        "due_chapter": null,
+        "status": "open",
+        "label": "未回收",
+        "overdue": false,
+        "supports": "自传与记者会既是晚餐宣布的事项，也是各人动机的着力点（曽根崎去偷原稿与旧记录、犀川只想延期、犬飼需要他活着改遗嘱，见《真相》五、七）。第1章尚未发生，故 open。",
+        "resolution_chapter": null
+      },
+      "evidence": [
+        {
+          "path": "正文/0001 六点的白鸦馆.md",
+          "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78",
+          "chapter": 1,
+          "start": 929,
+          "end": 949,
+          "quote": "「小记者，过来。明天开始，我说，你写。」",
+          "freshness": "valid"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "6cf23933f1645919",
+      "domain": "clues",
+      "title": "走廊尽头有人压着嗓子打电话说「雪太大，上不来……三天？」，随后是长段沉默；叙述者补充这栋房子只有一部老式有线电话。",
+      "subtitle": "第1章埋下｜未定回收章",
+      "chapter": 1,
+      "entity_path": null,
+      "coverage": "found",
+      "freshness": "valid",
+      "task_id": "t_f535c54b",
+      "updated_at": "2026-10-23T20:14:41+08:00",
+      "data": {
+        "clue": "走廊尽头有人压着嗓子打电话说「雪太大，上不来……三天？」，随后是长段沉默；叙述者补充这栋房子只有一部老式有线电话。",
+        "planted_chapter": 1,
+        "due_chapter": null,
+        "status": "open",
+        "label": "未回收",
+        "overdue": false,
+        "supports": "封闭与取证条件：只有一部有线电话、县警三天内到不了，是荒井必须当场查案的前提（《真相》四）。通话人身份与内容在第1章未交代，故 open。",
+        "resolution_chapter": null
+      },
+      "evidence": [
+        {
+          "path": "正文/0001 六点的白鸦馆.md",
+          "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78",
+          "chapter": 1,
+          "start": 994,
+          "end": 1033,
+          "quote": "「雪太大，上不来……三天？」然后是很长的一截沉默。这栋房子只有一部老式有线电话",
+          "freshness": "valid"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "id": "b3e42644d2443ba0",
+      "domain": "clues",
+      "title": "后门外的雪地上有一行从门槛走到锅炉房的脚印，只有去的一行没有回来的，新雪已填掉一半，叙述者数到墙根也没数清。",
+      "subtitle": "第1章埋下｜未定回收章",
+      "chapter": 1,
+      "entity_path": null,
+      "coverage": "found",
+      "freshness": "valid",
+      "task_id": "t_f535c54b",
+      "updated_at": "2026-10-23T20:14:41+08:00",
+      "data": {
+        "clue": "后门外的雪地上有一行从门槛走到锅炉房的脚印，只有去的一行没有回来的，新雪已填掉一半，叙述者数到墙根也没数清。",
+        "planted_chapter": 1,
+        "due_chapter": null,
+        "status": "open",
+        "label": "未回收",
+        "overdue": false,
+        "supports": "《真相》五点明「雪地上朝锅炉房去的脚印」是真线索却被摆在最像的位置上用于带偏；七里三隅ひかり的疑点亦与雪中行动相关，前期洗清。第1章只留下痕迹，未说明是谁的，故 open。",
+        "resolution_chapter": null
+      },
+      "evidence": [
+        {
+          "path": "正文/0001 六点的白鸦馆.md",
+          "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78",
+          "chapter": 1,
+          "start": 1080,
+          "end": 1120,
+          "quote": "后门外有一行脚印，从门槛一直走到锅炉房那头，深深浅浅。只有去的一行，没有回来的。",
+          "freshness": "valid"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "total": 9,
+  "next_cursor": "",
+  "coverage": {
+    "total": 1,
+    "found": 1,
+    "empty": 0,
+    "insufficient": 0,
+    "unrecorded": 0,
+    "stale": 0
+  },
+  "warnings": [],
+  "conflicts": []
+}

@@ -1,0 +1,23 @@
+{
+  "http_status": 202,
+  "turn_id": "t_02aafac5",
+  "conversation_id": "c_0d7280dbcb00",
+  "origin": "materials",
+  "domain": "disclosure",
+  "label": "身份披露",
+  "title": "整理身份披露：第 0 章（久我 春臣、荒井 十三…",
+  "model": "deepseek-flash",
+  "request_key": "a8a74541-54ae-4beb-92f6-2a4468f467f9",
+  "scope": {
+    "domain": "disclosure",
+    "chapter_paths": [
+      "正文/0001 六点的白鸦馆.md"
+    ],
+    "entity_paths": [
+      "设定集/角色小传/久我 春臣.md",
+      "设定集/角色小传/荒井 十三.md",
+      "设定集/角色小传/氷室 灯里.md"
+    ],
+    "as_of_chapter": 1
+  }
+}

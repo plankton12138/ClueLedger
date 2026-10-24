@@ -1,0 +1,547 @@
+{
+  "domain": "disclosure",
+  "label": "身份披露",
+  "as_of_chapter": 1,
+  "current_chapter": 1,
+  "chapters": [
+    {
+      "path": "正文/0001 六点的白鸦馆.md",
+      "chapter": 1,
+      "title": "第一章 六点的白鸦馆",
+      "digest": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78"
+    }
+  ],
+  "entities": [
+    {
+      "path": "设定集/角色小传/三隅 ひかり.md",
+      "name": "三隅 ひかり（みすみ ひかり）／19"
+    },
+    {
+      "path": "设定集/角色小传/久我 春臣.md",
+      "name": "久我 春臣（くが はるおみ）／27"
+    },
+    {
+      "path": "设定集/角色小传/宇佐美 静.md",
+      "name": "宇佐美 静（うさみ しずか）／46　旧姓：白峰 静"
+    },
+    {
+      "path": "设定集/角色小传/戸田 亀蔵.md",
+      "name": "戸田 亀蔵（とだ かめぞう）／71"
+    },
+    {
+      "path": "设定集/角色小传/曽根崎 徹.md",
+      "name": "曽根崎 徹（そねざき とおる）／61"
+    },
+    {
+      "path": "设定集/角色小传/柊 十和子.md",
+      "name": "柊 十和子（ひいらぎ とわこ）／38"
+    },
+    {
+      "path": "设定集/角色小传/氷室 岳彦.md",
+      "name": "氷室 岳彦（ひむろ たけひこ）／54"
+    },
+    {
+      "path": "设定集/角色小传/氷室 澪.md",
+      "name": "氷室 澪（ひむろ みお）／22"
+    },
+    {
+      "path": "设定集/角色小传/氷室 灯里.md",
+      "name": "氷室 灯里（ひむろ あかり）／41"
+    },
+    {
+      "path": "设定集/角色小传/浅倉 冬吾.md",
+      "name": "浅倉 冬吾（あさくら とうご）／44"
+    },
+    {
+      "path": "设定集/角色小传/犀川 権三.md",
+      "name": "犀川 権三（さいかわ ごんぞう）／64"
+    },
+    {
+      "path": "设定集/角色小传/犬飼 惣一.md",
+      "name": "犬飼 惣一（いぬかい そういち）／58"
+    },
+    {
+      "path": "设定集/角色小传/猪熊 昇.md",
+      "name": "猪熊 昇（いのくま のぼる）／47"
+    },
+    {
+      "path": "设定集/角色小传/荒井 十三.md",
+      "name": "荒井 十三（あらい じゅうぞう）／62"
+    },
+    {
+      "path": "设定集/角色小传/雨宮 栞.md",
+      "name": "雨宮 栞（あまみや しおり）／29"
+    }
+  ],
+  "entries": [
+    {
+      "id": "44480f7f9c42cca2",
+      "domain": "disclosure",
+      "title": "三隅 ひかり（みすみ ひかり）／19",
+      "subtitle": "看护专门学校的学生、雾丘事故遗族",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/三隅 ひかり.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "三隅 ひかり（みすみ ひかり）／19",
+        "surface": "看护专门学校的学生、雾丘事故遗族",
+        "aliases": [],
+        "roles": [
+          "suspect"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "雾丘事故遗族",
+            "chapter": 22
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "f0f727b74441a5c4",
+      "domain": "disclosure",
+      "title": "久我 春臣（くが はるおみ）／27",
+      "subtitle": "医疗杂志《医疗春秋》记者",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/久我 春臣.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "久我 春臣（くが はるおみ）／27",
+        "surface": "医疗杂志《医疗春秋》记者",
+        "aliases": [],
+        "roles": [
+          "assistant"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "写荒井案件连载的记者",
+            "chapter": 4
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "cb0ba4a0e660c282",
+      "domain": "disclosure",
+      "title": "宇佐美 静（うさみ しずか）／46　旧姓：白峰 静",
+      "subtitle": "氷室家的住家护理员",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/宇佐美 静.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "宇佐美 静（うさみ しずか）／46　旧姓：白峰 静",
+        "surface": "氷室家的住家护理员",
+        "aliases": [
+          "白峰 静"
+        ],
+        "roles": [
+          "culprit",
+          "suspect"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "旧姓白峰、原白峰电装工程师",
+            "chapter": 50
+          },
+          {
+            "fact": "真凶",
+            "chapter": 58
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "7d1e01831a955016",
+      "domain": "disclosure",
+      "title": "戸田 亀蔵（とだ かめぞう）／71",
+      "subtitle": "白鸦馆的管理员兼锅炉工",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/戸田 亀蔵.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "戸田 亀蔵（とだ かめぞう）／71",
+        "surface": "白鸦馆的管理员兼锅炉工",
+        "aliases": [],
+        "roles": [],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "9d5ec7f095b2cfd9",
+      "domain": "disclosure",
+      "title": "曽根崎 徹（そねざき とおる）／61",
+      "subtitle": "氷室メディカル顾问、元副社长",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/曽根崎 徹.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "曽根崎 徹（そねざき とおる）／61",
+        "surface": "氷室メディカル顾问、元副社长",
+        "aliases": [],
+        "roles": [
+          "suspect"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "十二年前销毁证据的执行者",
+            "chapter": 26
+          },
+          {
+            "fact": "被认定为凶手（实为栽赃）",
+            "chapter": 56
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "865f94a300612d19",
+      "domain": "disclosure",
+      "title": "柊 十和子（ひいらぎ とわこ）／38",
+      "subtitle": "循环器内科医生、氷室岳彦的主治医",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/柊 十和子.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "柊 十和子（ひいらぎ とわこ）／38",
+        "surface": "循环器内科医生、氷室岳彦的主治医",
+        "aliases": [],
+        "roles": [
+          "suspect"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "被氷室压下的一次医疗事故",
+            "chapter": 40
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "8fbe4c307ce2e8e3",
+      "domain": "disclosure",
+      "title": "氷室 岳彦（ひむろ たけひこ）／54",
+      "subtitle": "医疗器械公司「氷室メディカル」创始人",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/氷室 岳彦.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "氷室 岳彦（ひむろ たけひこ）／54",
+        "surface": "医疗器械公司「氷室メディカル」创始人",
+        "aliases": [],
+        "roles": [
+          "victim"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "十二年前雾丘事故的下令者",
+            "chapter": 14
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "6f38cd6018a8cfd3",
+      "domain": "disclosure",
+      "title": "氷室 澪（ひむろ みお）／22",
+      "subtitle": "氷室岳彦的女儿，情报工学专业的学生",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/氷室 澪.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "氷室 澪（ひむろ みお）／22",
+        "surface": "氷室岳彦的女儿，情报工学专业的学生",
+        "aliases": [],
+        "roles": [
+          "suspect"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "母亲的遗书",
+            "chapter": 43
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "6923d045a51b98b8",
+      "domain": "disclosure",
+      "title": "氷室 灯里（ひむろ あかり）／41",
+      "subtitle": "氷室岳彦的第二任妻子",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/氷室 灯里.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "氷室 灯里（ひむろ あかり）／41",
+        "surface": "氷室岳彦的第二任妻子",
+        "aliases": [
+          "旧姓：莅戸 灯里"
+        ],
+        "roles": [
+          "suspect"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "与曽根崎的密约",
+            "chapter": 34
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "45d17b78982d9784",
+      "domain": "disclosure",
+      "title": "浅倉 冬吾（あさくら とうご）／44",
+      "subtitle": "家电修理店「浅仓电化」店主",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/浅倉 冬吾.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "浅倉 冬吾（あさくら とうご）／44",
+        "surface": "家电修理店「浅仓电化」店主",
+        "aliases": [],
+        "roles": [
+          "suspect"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "十二年前的举报者",
+            "chapter": 18
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "49bae024dd6d06c9",
+      "domain": "disclosure",
+      "title": "犀川 権三（さいかわ ごんぞう）／64",
+      "subtitle": "氷室メディカル会长、大股东",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/犀川 権三.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "犀川 権三（さいかわ ごんぞう）／64",
+        "surface": "氷室メディカル会长、大股东",
+        "aliases": [],
+        "roles": [
+          "suspect"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "上市与丑闻的利害",
+            "chapter": 37
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "9cad00e5908850bb",
+      "domain": "disclosure",
+      "title": "犬飼 惣一（いぬかい そういち）／58",
+      "subtitle": "律师、氷室家的法律顾问",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/犬飼 惣一.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "犬飼 惣一（いぬかい そういち）／58",
+        "surface": "律师、氷室家的法律顾问",
+        "aliases": [],
+        "roles": [
+          "suspect"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "封口协议与空壳基金",
+            "chapter": 30
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "6457d3bd39fc15fb",
+      "domain": "disclosure",
+      "title": "猪熊 昇（いのくま のぼる）／47",
+      "subtitle": "长野县警搜查一课警部",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/猪熊 昇.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "猪熊 昇（いのくま のぼる）／47",
+        "surface": "长野县警搜查一课警部",
+        "aliases": [],
+        "roles": [],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "97542e5cd77a2d62",
+      "domain": "disclosure",
+      "title": "荒井 十三（あらい じゅうぞう）／62",
+      "subtitle": "元警视厅搜查一课警部，现居松本的退休老人",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/荒井 十三.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "荒井 十三（あらい じゅうぞう）／62",
+        "surface": "元警视厅搜查一课警部，现居松本的退休老人",
+        "aliases": [],
+        "roles": [
+          "detective"
+        ],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [
+          {
+            "fact": "元警视厅警部",
+            "chapter": 3
+          }
+        ],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "78ffa20d3f841e9e",
+      "domain": "disclosure",
+      "title": "雨宮 栞（あまみや しおり）／29",
+      "subtitle": "氷室岳彦的秘书",
+      "chapter": null,
+      "entity_path": "设定集/角色小传/雨宮 栞.md",
+      "coverage": "unrecorded",
+      "freshness": "none",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "name": "雨宮 栞（あまみや しおり）／29",
+        "surface": "氷室岳彦的秘书",
+        "aliases": [],
+        "roles": [],
+        "revealed": [],
+        "upcoming": [],
+        "planned": [],
+        "verified": 0
+      },
+      "evidence": [],
+      "notes": []
+    }
+  ],
+  "total": 15,
+  "next_cursor": "",
+  "coverage": {
+    "total": 15,
+    "found": 0,
+    "empty": 0,
+    "insufficient": 0,
+    "unrecorded": 15,
+    "stale": 0
+  },
+  "warnings": [],
+  "conflicts": []
+}

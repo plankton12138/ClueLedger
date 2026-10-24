@@ -2,7 +2,7 @@
 
 > 范围决定：2026-10-17。**后续保留项，0.3 不实现，版本未排期。**
 > 原交互草案日期：2026-10-16；本次同步全文/章节审计、独立模型工具与上下文边界。
-> 关联：[主方案](../agent-first-workbench-product-design.md)、[正文修改](../manuscript-editing-design.md)、[模型上下文](../context-and-summary-design.md)。
+> 关联：[主方案](../v0.3/agent-first-workbench-product-design.md)、[正文修改](../v0.3/manuscript-editing-design.md)、[模型上下文](../v0.3/context-and-summary-design.md)。
 > 以下入口、状态和验收属于未来设计；0.3 不展示占位按钮，不触发审计任务，也不以审计阻塞修改完成。
 
 ## 1. 功能与使用位置

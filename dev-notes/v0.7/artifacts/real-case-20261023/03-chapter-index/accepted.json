@@ -1,0 +1,19 @@
+{
+  "http_status": 202,
+  "turn_id": "t_1044436b",
+  "conversation_id": "c_b32d3ffa738a",
+  "origin": "materials",
+  "domain": "chapter_index",
+  "label": "章节概览",
+  "title": "整理章节概览：第 0 章",
+  "model": "deepseek-flash",
+  "request_key": "89655433-66eb-45b4-9e77-d9ca50b1f665",
+  "scope": {
+    "domain": "chapter_index",
+    "chapter_paths": [
+      "正文/0001 六点的白鸦馆.md"
+    ],
+    "entity_paths": [],
+    "as_of_chapter": 1
+  }
+}

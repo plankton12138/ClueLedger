@@ -1,0 +1,14 @@
+{
+  "request_key": "89655433-66eb-45b4-9e77-d9ca50b1f665",
+  "scope": {
+    "domain": "chapter_index",
+    "chapter_paths": [
+      "正文/0001 六点的白鸦馆.md"
+    ],
+    "entity_paths": [],
+    "as_of_chapter": 1,
+    "observed_digests": {
+      "正文/0001 六点的白鸦馆.md": "47382ab7c448c99d123c2bf9989023aaa8e071d586bacb0a73db42e61a496b78"
+    }
+  }
+}

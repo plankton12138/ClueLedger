@@ -1,0 +1,19 @@
+{
+  "http_status": 202,
+  "turn_id": "t_5d384da1",
+  "conversation_id": "c_c911fbc629c9",
+  "origin": "materials",
+  "domain": "glossary",
+  "label": "名词表",
+  "title": "整理名词表：第 0 章",
+  "model": "deepseek-flash",
+  "request_key": "27301478-a82e-4d06-a377-e2ce08374198",
+  "scope": {
+    "domain": "glossary",
+    "chapter_paths": [
+      "正文/0001 六点的白鸦馆.md"
+    ],
+    "entity_paths": [],
+    "as_of_chapter": 1
+  }
+}

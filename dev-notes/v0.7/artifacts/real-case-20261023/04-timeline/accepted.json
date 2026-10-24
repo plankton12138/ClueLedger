@@ -1,0 +1,19 @@
+{
+  "http_status": 202,
+  "turn_id": "t_4e8c99a8",
+  "conversation_id": "c_c3396309085d",
+  "origin": "materials",
+  "domain": "timeline",
+  "label": "时间线",
+  "title": "整理时间线：第 0 章",
+  "model": "deepseek-flash",
+  "request_key": "0a5c4a6f-525e-4983-90d2-e7ee648ef54d",
+  "scope": {
+    "domain": "timeline",
+    "chapter_paths": [
+      "正文/0001 六点的白鸦馆.md"
+    ],
+    "entity_paths": [],
+    "as_of_chapter": 1
+  }
+}

@@ -43,10 +43,10 @@
 | 依据 | 本计划负责落实的内容 |
 |---|---|
 | [产品范围与版本决定](../../product-design/README.md) | 0.3 必须交付与后续保留的边界；模型任务必须显式启动 |
-| [主工作区与故事账本](../../product-design/agent-first-workbench-product-design.md) | 用户旅程、首次引导、四类图谱、日志、三批交付及33项验收 |
-| [作家的桌面](../../product-design/writers-desk-design.md) | 文章中心、模块化空间、老 iOS 控件、字号和位置保护 |
-| [正文修改与版本流程](../../product-design/manuscript-editing-design.md) | 工作副本、统一完成、建议归属、整体调整、关联撤销 |
-| [模型上下文与正文摘要](../../product-design/context-and-summary-design.md) | 常驻资料、来源版本、过期处理、本书约定、信息披露边界 |
+| [主工作区与故事账本](../../product-design/v0.3/agent-first-workbench-product-design.md) | 用户旅程、首次引导、四类图谱、日志、三批交付及33项验收 |
+| [作家的桌面](../../product-design/v0.3/writers-desk-design.md) | 文章中心、模块化空间、老 iOS 控件、字号和位置保护 |
+| [正文修改与版本流程](../../product-design/v0.3/manuscript-editing-design.md) | 工作副本、统一完成、建议归属、整体调整、关联撤销 |
+| [模型上下文与正文摘要](../../product-design/v0.3/context-and-summary-design.md) | 常驻资料、来源版本、过期处理、本书约定、信息披露边界 |
 | [0.2 总设计](../v0.2/DESIGN.md)与[模块契约](../v0.2/modules/README.md) | 可复用的仓库与任务机制；其中节拍、自动作者学习及审计规则按0.3决定调整 |
 
 当前产品决定优先于历史计划与原型功能。原型只提供视觉参考，不将七页导航、占位按钮或示例数据当作需求。
@@ -717,7 +717,7 @@ async def project_event(source: SourceEvent, log: ExecutionLog) -> None:
 - 宽屏三部分，中屏折叠导航、必要时账本抽屉，小屏主区优先；断点以可读性确定，不为了保留列数缩字。
 - 语义区域有稳定标题、边界与间距，同模块内用排版/分隔组织，不每条说明一张卡片。
 - 一个步骤突出一个主要动作，入口有文字；空候选/空待办不占卡片；未实现工具不显示可点击占位。
-- 通过操作与反馈体现作者决定权，落实[桌面交互原则](../../product-design/writers-desk-design.md#通过交互让作者感知设计理念)：建议不自动触发创作，作者明确要求后才执行，试写候选经采用才进入正文；移除宣告理念的常驻黄色提示框，保留必要操作与状态说明，不增加重复确认。
+- 通过操作与反馈体现作者决定权，落实[桌面交互原则](../../product-design/v0.3/writers-desk-design.md#通过交互让作者感知设计理念)：建议不自动触发创作，作者明确要求后才执行，试写候选经采用才进入正文；移除宣告理念的常驻黄色提示框，保留必要操作与状态说明，不增加重复确认。
 - 键盘能进入编辑、完成、停止、历史、来源与图谱目录；保留可见焦点、表单标签、200%缩放和中文输入法组合保护。
 - 状态用文字+辅助颜色，按可访问对比度标准验收；不以低对比小字或悬停隐藏重要操作。
 - 长讨论/日志各自滚动，不因流式文本推移正文；动画仅用于展开/定位，尊重减少动态效果设置。
@@ -1130,7 +1130,7 @@ V03-8负责统一压测、恢复、生产构建与旧入口最终退役，不是
 
 ### 9.3 主方案33项验收追踪
 
-编号对应[主方案第10节](../../product-design/agent-first-workbench-product-design.md#10-03-验收清单)，下表编号本身不代表已通过。
+编号对应[主方案第10节](../../product-design/v0.3/agent-first-workbench-product-design.md#10-03-验收清单)，下表编号本身不代表已通过。
 
 | 产品项 | 场景与必须观察的结果 | 实施任务 / 建议验收ID |
 |---|---|---|
@@ -1168,7 +1168,7 @@ V03-8负责统一压测、恢复、生产构建与旧入口最终退役，不是
 | 32 | 任务要求与本书约定分开，可直接维护、冲突选择、实际快照可追 | V03-4；A32 |
 | 33 | 无模型连续想法、归属/草稿/去重正确；连接后自主继续无自动发送 | V03-1；A33 |
 
-另将[桌面14项视觉与交互验收](../../product-design/writers-desk-design.md#7-视觉与交互验收)、[修改流程验收](../../product-design/manuscript-editing-design.md#7-本版验收)、[上下文验收](../../product-design/context-and-summary-design.md#6-验收重点)作为A05/A10/A12/A20/A27/A29—A33的细分用例。
+另将[桌面14项视觉与交互验收](../../product-design/v0.3/writers-desk-design.md#7-视觉与交互验收)、[修改流程验收](../../product-design/v0.3/manuscript-editing-design.md#7-本版验收)、[上下文验收](../../product-design/v0.3/context-and-summary-design.md#6-验收重点)作为A05/A10/A12/A20/A27/A29—A33的细分用例。
 不能因主表一行标通过而省略原方案中的副本保护、原子故障、关联撤销或无模型场景。
 
 ### 9.4 连贯业务夹具

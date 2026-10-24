@@ -1,0 +1,431 @@
+{
+  "domain": "glossary",
+  "label": "名词表",
+  "as_of_chapter": 1,
+  "current_chapter": 1,
+  "chapters": [
+    {
+      "path": "正文/0001 六点的白鸦馆.md",
+      "chapter": 1,
+      "title": "第一章 六点的白鸦馆",
+      "digest": "e8deb5b7c372e4137c90b9fa8bd57675b453e627ac8ab5f3b671692e812021e3"
+    }
+  ],
+  "entities": [
+    {
+      "path": "设定集/角色小传/三隅 ひかり.md",
+      "name": "三隅 ひかり（みすみ ひかり）／19"
+    },
+    {
+      "path": "设定集/角色小传/久我 春臣.md",
+      "name": "久我 春臣（くが はるおみ）／27"
+    },
+    {
+      "path": "设定集/角色小传/宇佐美 静.md",
+      "name": "宇佐美 静（うさみ しずか）／46　旧姓：白峰 静"
+    },
+    {
+      "path": "设定集/角色小传/戸田 亀蔵.md",
+      "name": "戸田 亀蔵（とだ かめぞう）／71"
+    },
+    {
+      "path": "设定集/角色小传/曽根崎 徹.md",
+      "name": "曽根崎 徹（そねざき とおる）／61"
+    },
+    {
+      "path": "设定集/角色小传/柊 十和子.md",
+      "name": "柊 十和子（ひいらぎ とわこ）／38"
+    },
+    {
+      "path": "设定集/角色小传/氷室 岳彦.md",
+      "name": "氷室 岳彦（ひむろ たけひこ）／54"
+    },
+    {
+      "path": "设定集/角色小传/氷室 澪.md",
+      "name": "氷室 澪（ひむろ みお）／22"
+    },
+    {
+      "path": "设定集/角色小传/氷室 灯里.md",
+      "name": "氷室 灯里（ひむろ あかり）／41"
+    },
+    {
+      "path": "设定集/角色小传/浅倉 冬吾.md",
+      "name": "浅倉 冬吾（あさくら とうご）／44"
+    },
+    {
+      "path": "设定集/角色小传/犀川 権三.md",
+      "name": "犀川 権三（さいかわ ごんぞう）／64"
+    },
+    {
+      "path": "设定集/角色小传/犬飼 惣一.md",
+      "name": "犬飼 惣一（いぬかい そういち）／58"
+    },
+    {
+      "path": "设定集/角色小传/猪熊 昇.md",
+      "name": "猪熊 昇（いのくま のぼる）／47"
+    },
+    {
+      "path": "设定集/角色小传/荒井 十三.md",
+      "name": "荒井 十三（あらい じゅうぞう）／62"
+    },
+    {
+      "path": "设定集/角色小传/雨宮 栞.md",
+      "name": "雨宮 栞（あまみや しおり）／29"
+    }
+  ],
+  "entries": [
+    {
+      "id": "c52b191db4c87fa9",
+      "domain": "glossary",
+      "title": "三隅 ひかり（みすみ ひかり）／19",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "三隅 ひかり（みすみ ひかり）／19",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "942f81820bc278ea",
+      "domain": "glossary",
+      "title": "久我 春臣（くが はるおみ）／27",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "久我 春臣（くが はるおみ）／27",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "8e5a8da053532b43",
+      "domain": "glossary",
+      "title": "宇佐美 静（うさみ しずか）／46　旧姓：白峰 静",
+      "subtitle": "白峰 静",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "宇佐美 静（うさみ しずか）／46　旧姓：白峰 静",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [
+          "白峰 静"
+        ],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "30f46af6d168da22",
+      "domain": "glossary",
+      "title": "戸田 亀蔵（とだ かめぞう）／71",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "戸田 亀蔵（とだ かめぞう）／71",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "1400f76e02a5689b",
+      "domain": "glossary",
+      "title": "曽根崎 徹（そねざき とおる）／61",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "曽根崎 徹（そねざき とおる）／61",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "7c97b09a1868ef61",
+      "domain": "glossary",
+      "title": "柊 十和子（ひいらぎ とわこ）／38",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "柊 十和子（ひいらぎ とわこ）／38",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "41f049db64cd9030",
+      "domain": "glossary",
+      "title": "氷室 岳彦（ひむろ たけひこ）／54",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "氷室 岳彦（ひむろ たけひこ）／54",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "d722375ce3847382",
+      "domain": "glossary",
+      "title": "氷室 澪（ひむろ みお）／22",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "氷室 澪（ひむろ みお）／22",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "6ac808ff7f4e617c",
+      "domain": "glossary",
+      "title": "氷室 灯里（ひむろ あかり）／41",
+      "subtitle": "旧姓：莅戸 灯里",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "氷室 灯里（ひむろ あかり）／41",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [
+          "旧姓：莅戸 灯里"
+        ],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "ed2c10a82b61669b",
+      "domain": "glossary",
+      "title": "浅倉 冬吾（あさくら とうご）／44",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "浅倉 冬吾（あさくら とうご）／44",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "2a8f7b726b8f7dac",
+      "domain": "glossary",
+      "title": "犀川 権三（さいかわ ごんぞう）／64",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "犀川 権三（さいかわ ごんぞう）／64",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "4968a6c524782d9d",
+      "domain": "glossary",
+      "title": "犬飼 惣一（いぬかい そういち）／58",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "犬飼 惣一（いぬかい そういち）／58",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "8c8f21eec7fdf6c4",
+      "domain": "glossary",
+      "title": "猪熊 昇（いのくま のぼる）／47",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "猪熊 昇（いのくま のぼる）／47",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "ad27906b5350d863",
+      "domain": "glossary",
+      "title": "荒井 十三（あらい じゅうぞう）／62",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "荒井 十三（あらい じゅうぞう）／62",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    },
+    {
+      "id": "8aaa80cdb50df9c8",
+      "domain": "glossary",
+      "title": "雨宮 栞（あまみや しおり）／29",
+      "subtitle": "",
+      "chapter": null,
+      "entity_path": null,
+      "coverage": "unrecorded",
+      "freshness": "valid",
+      "task_id": "",
+      "updated_at": "",
+      "data": {
+        "term": "雨宮 栞（あまみや しおり）／29",
+        "kind": "person",
+        "label": "人物",
+        "aliases": [],
+        "first_chapter": 0,
+        "source": "declared"
+      },
+      "evidence": [],
+      "notes": []
+    }
+  ],
+  "total": 15,
+  "next_cursor": "",
+  "coverage": {
+    "total": 1,
+    "found": 1,
+    "empty": 0,
+    "insufficient": 0,
+    "unrecorded": 0,
+    "stale": 1
+  },
+  "warnings": [
+    "「白鸦馆」的原文登记已失效，暂不采用。",
+    "「白岭温泉站」的原文登记已失效，暂不采用。",
+    "「松本」的原文登记已失效，暂不采用。",
+    "「氷室メディカル」的原文登记已失效，暂不采用。",
+    "「医疗春秋」的原文登记已失效，暂不采用。",
+    "「东京的九个房间」的原文登记已失效，暂不采用。"
+  ],
+  "conflicts": []
+}

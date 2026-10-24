@@ -1,0 +1,78 @@
+[
+  {
+    "text": "打开 / 新建",
+    "disabled": false
+  },
+  {
+    "text": "重新读取文件",
+    "disabled": false
+  },
+  {
+    "text": "写作",
+    "disabled": false
+  },
+  {
+    "text": "故事资料",
+    "disabled": false
+  },
+  {
+    "text": "重置",
+    "disabled": true
+  },
+  {
+    "text": "对话",
+    "disabled": false
+  },
+  {
+    "text": "模型设置",
+    "disabled": false
+  },
+  {
+    "text": "活动记录",
+    "disabled": false
+  },
+  {
+    "text": "章节概览",
+    "disabled": false
+  },
+  {
+    "text": "人物",
+    "disabled": false
+  },
+  {
+    "text": "时间线",
+    "disabled": false
+  },
+  {
+    "text": "线索与伏笔",
+    "disabled": false
+  },
+  {
+    "text": "名词表",
+    "disabled": false
+  },
+  {
+    "text": "重新读取资料",
+    "disabled": false
+  },
+  {
+    "text": "从章节整理时间线",
+    "disabled": false
+  },
+  {
+    "text": "第一章 六点的白鸦馆\n第 1 章\n时间未知\n未整理",
+    "disabled": false
+  },
+  {
+    "text": "关闭",
+    "disabled": false
+  },
+  {
+    "text": "打开原文",
+    "disabled": true
+  },
+  {
+    "text": "带到对话",
+    "disabled": true
+  }
+]

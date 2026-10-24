@@ -1,0 +1,21 @@
+{
+  "domain": "disclosure",
+  "label": "身份披露",
+  "as_of_chapter": 0,
+  "current_chapter": 0,
+  "chapters": [],
+  "entities": [],
+  "entries": [],
+  "total": 0,
+  "next_cursor": "",
+  "coverage": {
+    "total": 0,
+    "found": 0,
+    "empty": 0,
+    "insufficient": 0,
+    "unrecorded": 0,
+    "stale": 0
+  },
+  "warnings": [],
+  "conflicts": []
+}

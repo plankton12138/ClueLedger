@@ -1,0 +1,20 @@
+{
+  "workspace": {
+    "id": "b9b12fe248ca6299",
+    "name": "雪山温泉案例",
+    "path": "C:\\Projects\\Agent\\myagent\\data\\test-tmp\\real-case-20261023-e27994ea\\雪山温泉案例",
+    "exists": true
+  },
+  "selection": {
+    "connection_id": "conn_db37ffaa",
+    "model": "deepseek-flash",
+    "source": "saved",
+    "available": true,
+    "reason": ""
+  },
+  "endpoint_host": "api.deepseek.com",
+  "started_at": "2026-10-23T11:54:16.498Z",
+  "local_root": "C:\\Projects\\Agent\\myagent\\data\\test-tmp\\real-case-20261023-e27994ea",
+  "commit": "c32cbaa",
+  "retries": 0
+}

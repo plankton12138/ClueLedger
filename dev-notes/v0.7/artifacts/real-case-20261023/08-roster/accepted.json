@@ -1,0 +1,23 @@
+{
+  "http_status": 202,
+  "turn_id": "t_c0f5708f",
+  "conversation_id": "c_707044fc451d",
+  "origin": "materials",
+  "domain": "roster",
+  "label": "人物状态",
+  "title": "整理人物状态：第 0 章（久我 春臣、荒井 十三…",
+  "model": "deepseek-flash",
+  "request_key": "fed5553b-ffd7-449a-9b37-143a9226f308",
+  "scope": {
+    "domain": "roster",
+    "chapter_paths": [
+      "正文/0001 六点的白鸦馆.md"
+    ],
+    "entity_paths": [
+      "设定集/角色小传/久我 春臣.md",
+      "设定集/角色小传/荒井 十三.md",
+      "设定集/角色小传/氷室 灯里.md"
+    ],
+    "as_of_chapter": 1
+  }
+}

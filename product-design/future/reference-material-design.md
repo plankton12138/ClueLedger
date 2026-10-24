@@ -1,7 +1,7 @@
 # 参考材料与写作风格语料：后续保留设计
 
 > 范围决定：2026-10-17。**0.3 不实现，后续版本未排期。**
-> 关联：[产品范围](../README.md)、[模型上下文](../context-and-summary-design.md)。
+> 关联：[产品范围](../README.md)、[模型上下文](../v0.3/context-and-summary-design.md)。
 
 ## 1. 保留的方向
 
