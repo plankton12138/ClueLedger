@@ -35,6 +35,7 @@ from hastings.workspace.api import (
 )
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.ideas_api import create_ideas_router
+from hastings.workspace.run_registry import RunRegistry
 from hastings.workspace.service import ProviderFactory
 from hastings.workspace.state import RecentWorkspaces
 
@@ -87,13 +88,23 @@ def create_workspace_app(
     """
     app = FastAPI(title="Hastings", version=__version__)
     app.state.workspaces = workspaces
-    app.include_router(create_file_workspace_router(workspaces, provider_factory))
+    # 写作轮次与装配接口共享同一张占用表：运行中不接受本作品的装卸。
+    run_registry = RunRegistry()
+    app.state.run_registry = run_registry
+    app.include_router(
+        create_file_workspace_router(
+            workspaces,
+            provider_factory,
+            library=library,
+            run_registry=run_registry,
+        )
+    )
     app.include_router(create_ideas_router(workspaces))
     if model_service is not None:
         app.include_router(create_model_router(model_service))
     if library is not None:
         app.include_router(create_library_router(library))
-        app.include_router(create_assembly_router(workspaces, library))
+        app.include_router(create_assembly_router(workspaces, library, busy=run_registry.is_busy))
     register_workspace_error_handlers(app)
 
     @app.get("/api/health", response_model=HealthResponse)

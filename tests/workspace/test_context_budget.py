@@ -108,11 +108,12 @@ def test_summary_reports_rendered_sizes(tmp_path: Path) -> None:
 
 
 def test_writer_limit_is_a_partition_character_budget() -> None:
-    """44,900 是分区字符预算之和；它不是整轮 token 上限，也不参与 token 统计。"""
+    """46,900 是分区字符预算之和；它不是整轮 token 上限，也不参与 token 统计。"""
     writer = assembly.PROFILE_BUDGETS["writer"]
     assert writer == (
         assembly.INSTRUCTIONS_BUDGET
         + assembly.CATALOG_BUDGET
+        + assembly.MODULES_BUDGET
         + assembly.MATERIALS_BUDGET
         + assembly.INDEX_BUDGET
         + assembly.STATE_BUDGET
@@ -123,4 +124,14 @@ def test_writer_limit_is_a_partition_character_budget() -> None:
         + assembly.SETTINGS_BUDGET
         + assembly.HISTORY_BUDGET
     )
-    assert writer == 44_900
+    assert writer == 46_900
+
+
+def test_modules_partition_is_optional_and_reports_why_it_was_skipped(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path, clues="", truth="")
+    assembled = build_assembled_context(workspace, modules="模块" * (assembly.MODULES_BUDGET + 1))
+
+    assert "modules" not in {item.key for item in assembled.parts}
+    skipped = next(item for item in assembled.skipped if item.key == "modules")
+    assert skipped.reason == "budget"
+    assert skipped.chars > assembly.MODULES_BUDGET

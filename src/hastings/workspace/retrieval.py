@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,6 +50,7 @@ __all__ = [
     "MaterialHit",
     "MaterialQuery",
     "catalog_brief",
+    "module_overview",
     "query_materials",
 ]
 
@@ -183,6 +185,38 @@ def catalog_brief(
     }
 
 
+def module_overview(assembly: Assembly, library: ModuleLibrary | None, *, limit: int = 20) -> str:
+    """L0 装配概览：只列已装实例与精确版本，不列未装库内容，也不读条目正文。"""
+    if not assembly.bindings:
+        return "（没有装入模块；本轮只使用本作品正文与设定。）"
+    labels: dict[str, str] = {item.kind: item.label for item in PRESETS}
+    lines: list[str] = []
+    for binding in assembly.bindings[: max(1, limit)]:
+        base = (
+            f"- {binding.label or binding.module.module_id}"
+            f"｜{binding.module.module_id}@{binding.module.revision_id}"
+        )
+        if library is None:
+            lines.append(f"{base}｜（模块库不可用）")
+            continue
+        try:
+            revision = library.revision(
+                module_id=binding.module.module_id,
+                revision_id=binding.module.revision_id,
+            )
+        except WorkspaceError as exc:
+            lines.append(f"{base}｜（不可用：{exc.why}）")
+            continue
+        lines.append(
+            f"{base}｜{labels.get(revision.module_kind, revision.module_kind)}"
+            f"｜{len(revision.entries)} 条"
+        )
+    remaining = len(assembly.bindings) - min(len(assembly.bindings), max(1, limit))
+    if remaining > 0:
+        lines.append(f"- （还有 {remaining} 个模块未列出；到模块库查看精确版本）")
+    return "\n".join(lines)
+
+
 def query_materials(
     workspace: Workspace,
     root: Path,
@@ -191,6 +225,7 @@ def query_materials(
     query: MaterialQuery,
 ) -> dict[str, object]:
     """L1：返回有界候选、来源与实际检索范围；没有命中时也说明搜过什么。"""
+    started = time.monotonic()
     size = _limit(query.limit)
     as_of = current_chapter(workspace, query.as_of_chapter)
     fingerprint = _fingerprint(query)
@@ -246,7 +281,34 @@ def query_materials(
                 if entry.chapter_number is not None and entry.chapter_number <= as_of
             ],
         },
+        "metrics": _metrics(filtered, page, scan, started),
         "warnings": warnings,
+    }
+
+
+def _metrics(
+    filtered: Sequence[MaterialHit],
+    page: Sequence[MaterialHit],
+    scan: dict[str, int | bool],
+    started: float,
+) -> dict[str, object]:
+    """这次查询实际扫了什么、命中了多少；阈值校准与漏检复盘都读这一份。"""
+    sources = {"author": 0, "observed": 0, "legacy_unverified": 0}
+    matched: dict[str, int] = {}
+    for hit in filtered:
+        sources[hit.source] = sources.get(hit.source, 0) + 1
+        for reason in hit.matched_by:
+            matched[reason] = matched.get(reason, 0) + 1
+    return {
+        "candidates": len(filtered),
+        "returned": len(page),
+        "returned_chars": sum(len(hit.excerpt) for hit in page),
+        "scanned_entries": int(scan["entries"]),
+        "scanned_chars": int(scan["chars"]),
+        "scan_limited": bool(scan["limited"]),
+        "sources": sources,
+        "matched_by": matched,
+        "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
     }
 
 

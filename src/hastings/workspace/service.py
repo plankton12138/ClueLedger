@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from hastings.library.modules import ModuleLibrary
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.activity import ActivityStore, redact
 from hastings.workspace.chapter_index import (
@@ -62,7 +63,10 @@ from hastings.workspace.materials import (
     verify_context,
 )
 from hastings.workspace.model_activity import RecordedProvider
+from hastings.workspace.module_assembly import Assembly, AssemblyStore
+from hastings.workspace.retrieval import module_overview
 from hastings.workspace.review import ReviewStore, target_digests
+from hastings.workspace.run_registry import RunRegistry
 from hastings.workspace.state import ConversationStore
 from hastings.workspace.state_store import state_chapter
 from hastings.workspace.story_materials import CoverageStore
@@ -373,6 +377,9 @@ class TurnInfo:
     review_paths: tuple[str, ...] = ()
     #: 资料任务的冻结范围；普通对话为空。
     material_scope: dict[str, object] | None = None
+    #: 受理时冻结的装配；执行阶段不再反读界面或库的新状态。
+    assembly: Assembly | None = None
+    assembly_digest: str | None = None
 
 
 ActiveState = Literal["accepted", "running", "stop_requested"]
@@ -417,12 +424,18 @@ class TurnService:
         provider_factory: ProviderFactory,
         *,
         max_turns: int = 24,
+        library: ModuleLibrary | None = None,
+        run_registry: RunRegistry | None = None,
     ) -> None:
         self.workspace = workspace
         self.store = store
         self.activity = ActivityStore(store.root)
         self.provider_factory = provider_factory
         self.max_turns = max_turns
+        #: 库在本进程里的精确版本读取入口；为空时只读作品内容。
+        self.library = library
+        #: 与装配接口共享的占用登记；没传时仍用本服务内部的受理锁。
+        self.run_registry = run_registry
         self._admission = asyncio.Lock()
         self._lock = asyncio.Lock()
         self._tasks: dict[str, asyncio.Task[None]] = {}
@@ -537,6 +550,10 @@ class TurnService:
                     )
             # 冻结材料版本：缺失或超限在这里失败，此时还没有写任何记录。
             frozen = freeze_context(self.workspace, context or ContextRequest())
+            # 装配也属于这一轮的输入：受理后作者再装卸、库再发布都不改变本轮。
+            assembly_store = AssemblyStore(self.workspace.root)
+            assembly_snapshot = assembly_store.read()
+            assembly_digest = assembly_store.digest()
             frozen_scope: dict[str, object] | None = None
             targets: tuple[str, ...]
             review_targets: tuple[str, ...]
@@ -607,6 +624,8 @@ class TurnService:
                 index_paths=targets,
                 review_paths=review_targets,
                 material_scope=frozen_scope,
+                assembly=assembly_snapshot,
+                assembly_digest=assembly_digest,
             )
             self._active = ActiveTurn(
                 conversation_id=accepted.conversation_id,
@@ -616,6 +635,9 @@ class TurnService:
                 connection=str(model_facts.get("connection_name", "")),
                 started_at=accepted.started_at,
             )
+            # 占用登记放在受理成功之后：写初始记录失败不会留下假忙碌。
+            if self.run_registry is not None:
+                self.run_registry.mark(self.workspace.root, turn_id)
             # 初始轮次事件里的模型字段由 store 与提示一起原子写入。
             self._tasks[turn_id] = asyncio.create_task(self._run(info, text, snapshot, failure))
             return info
@@ -1008,6 +1030,8 @@ class TurnService:
                 else:
                     instructions = ""
                     turn_materials = materials_section(info.context, ledger.summaries())
+                frozen_assembly = info.assembly or Assembly()
+                modules = module_overview(frozen_assembly, self.library)
                 assembly = build_turn_assembly(
                     self.workspace,
                     as_of_chapter=run.state_chapter,
@@ -1016,18 +1040,25 @@ class TurnService:
                     materials=turn_materials,
                     index_notes=index_notes,
                     instructions=instructions,
+                    modules=modules,
                     disclosure_store=disclosure_store,
                     glossary_store=glossary_store,
                     roster_store=roster_store,
                     timeline_store=timeline_store,
                     clue_store=clue_store,
                 )
+                injected = assembly.summary()
+                # 这一轮实际用的是受理时冻结的装配，不是现在界面上的绑定。
+                injected["frozen"] = {
+                    "digest": info.assembly_digest,
+                    "bindings": [binding.view() for binding in frozen_assembly.bindings],
+                }
                 _append_event(
                     self.store,
                     conversation_id,
                     info.turn_id,
                     "state_injected",
-                    assembly.summary(),
+                    injected,
                 )
                 # provider、model、system、工具清单和历史在这里合并成一次可执行配置。
                 # 工具清单由 build_harness 内部调用 build_tools() 注入，_run 不直接持有。
@@ -1043,6 +1074,7 @@ class TurnService:
                     history_facts=execution_facts(history_events),
                     materials=turn_materials,
                     index_notes=index_notes,
+                    modules=modules,
                     mode=mode,
                     assembly=assembly,
                     index_allowed=info.index_paths,
@@ -1172,6 +1204,9 @@ class TurnService:
                 conversation_id,
                 {"type": "run_finished", "turn_id": info.turn_id, **result.to_dict()},
             )
+            # 先释放占用：装配接口不必等到服务内部表格清完才恢复可用。
+            if self.run_registry is not None:
+                self.run_registry.release(self.workspace.root, info.turn_id)
             # 清理四张按 turn_id 索引的表，防止旧轮次的状态泄漏到后续轮次。
             self._harnesses.pop(info.turn_id, None)
             self._started.discard(info.turn_id)

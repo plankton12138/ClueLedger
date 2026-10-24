@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -64,11 +65,30 @@ class ModuleUpdateRequest(BaseModel):
     request_key: str
 
 
-def create_assembly_router(workspaces: RecentWorkspaces, library: ModuleLibrary) -> APIRouter:
+def create_assembly_router(
+    workspaces: RecentWorkspaces,
+    library: ModuleLibrary,
+    *,
+    busy: Callable[[Path], bool] | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/file-workspaces", tags=["assembly"])
 
     def service_for(workspace_id: str) -> AssemblyService:
         return AssemblyService(library, workspaces.workspace(workspace_id))
+
+    def require_idle(workspace_id: str) -> None:
+        """写作轮次运行中不改装配：这一轮已按受理时的版本冻结，不接受中途换输入。"""
+        if busy is None:
+            return
+        workspace = workspaces.workspace(workspace_id)
+        if busy(workspace.root):
+            raise WorkspaceError(
+                code="ASSEMBLY_BUSY_CONFLICT",
+                where="assembly.write",
+                why="这个作品还有一轮正在写入，装配已经按受理时的版本冻结",
+                fix="等这一轮结束或停止后再装卸；库的发布不受影响",
+                details={"workspace_id": workspace_id},
+            )
 
     @router.get("/{workspace_id}/assembly")
     def read_assembly(workspace_id: str) -> dict[str, object]:
@@ -76,6 +96,7 @@ def create_assembly_router(workspaces: RecentWorkspaces, library: ModuleLibrary)
 
     @router.put("/{workspace_id}/assembly")
     def put_assembly(workspace_id: str, payload: PutAssemblyRequest) -> dict[str, object]:
+        require_idle(workspace_id)
         bindings = [
             Binding(
                 id=item.id or new_id("binding"),
@@ -130,6 +151,7 @@ def create_assembly_router(workspaces: RecentWorkspaces, library: ModuleLibrary)
 
     @router.post("/{workspace_id}/module-updates")
     def module_updates(workspace_id: str, payload: ModuleUpdateRequest) -> dict[str, object]:
+        require_idle(workspace_id)
         entries: list[dict[str, Any]] = [entry.model_dump() for entry in payload.entries]
         return service_for(workspace_id).publish_and_bind(
             module_id=payload.module_id,

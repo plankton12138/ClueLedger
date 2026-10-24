@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+import hastings.workspace.retrieval as retrieval_module
 from hastings.library import EntryDraft, ModuleLibrary
 from hastings.library.bindings import AssemblyService
 from hastings.workspace.chapter_index import ChapterIndexDraft, ChapterIndexStore, IndexEvidence
@@ -269,6 +270,11 @@ def test_pagination_cursor_is_bound_to_the_query(tmp_path: Path) -> None:
     )
     assert len(first["items"]) == 20
     assert first["next_cursor"]
+    metrics = first["metrics"]
+    assert metrics["candidates"] == 25
+    assert metrics["returned"] == 20
+    assert metrics["scanned_entries"] == 0
+    assert metrics["sources"]["author"] == 25
     second = query_materials(
         workspace,
         tmp_path / "state",
@@ -313,6 +319,9 @@ def test_long_entry_body_is_found_while_detail_stays_complete(tmp_path: Path) ->
     )
     assert "长长长" in body_hit["items"][0]["excerpt"]
     assert len(body_hit["items"][0]["excerpt"]) <= 240
+    assert body_hit["metrics"]["scanned_entries"] == 1
+    assert body_hit["metrics"]["scanned_chars"] > 0
+    assert body_hit["metrics"]["scan_limited"] is False
 
     entry = library.read_entry(
         module_id=str(created["module"]["module_id"]),  # type: ignore[index]
@@ -320,6 +329,28 @@ def test_long_entry_body_is_found_while_detail_stays_complete(tmp_path: Path) ->
         entry_id="long",
     )
     assert body in str(entry["text"])
+
+
+def test_scan_limit_is_reported_instead_of_silently_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    library = _library(tmp_path)
+    workspace = _workspace(tmp_path)
+    created = _create(
+        library,
+        name="长条目",
+        entries=[EntryDraft("long", "character", "长人物", "动机" + "长" * 400, (), {})],
+        key="create-1",
+    )
+    assembly = _bind(workspace, library, created)
+    monkeypatch.setattr(retrieval_module, "MAX_SCAN_CHARS", 10)
+
+    view = query_materials(
+        workspace, tmp_path / "state", assembly, library, MaterialQuery(text="动机")
+    )
+
+    assert view["metrics"]["scan_limited"] is True
+    assert any("只扫了部分条目正文" in warning for warning in view["warnings"])
 
 
 def test_catalog_brief_lists_installed_bindings_and_chapters(tmp_path: Path) -> None:

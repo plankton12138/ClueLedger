@@ -22,6 +22,7 @@ from fastapi import APIRouter, FastAPI, File, Header, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from hastings.library.modules import ModuleLibrary
 from hastings.workspace.activity import ActivityStore
 from hastings.workspace.chapter_index import (
     MAX_INDEX_CHAPTERS,
@@ -57,6 +58,7 @@ from hastings.workspace.material_tasks import (
 )
 from hastings.workspace.materials import MAX_REFERENCES, ContextRequest
 from hastings.workspace.review import ReviewReport, ReviewStore
+from hastings.workspace.run_registry import RunRegistry
 from hastings.workspace.service import ProviderFactory, TurnService
 from hastings.workspace.state import (
     Conversation,
@@ -800,7 +802,11 @@ def _material_prompt(scope: MaterialTaskScope) -> str:
 
 
 def create_file_workspace_router(
-    workspaces: RecentWorkspaces, provider_factory: ProviderFactory
+    workspaces: RecentWorkspaces,
+    provider_factory: ProviderFactory,
+    *,
+    library: ModuleLibrary | None = None,
+    run_registry: RunRegistry | None = None,
 ) -> APIRouter:
     """绑定最近目录登记与模型来源；每个作品一个轮次服务，按需创建。"""
     router = APIRouter(prefix=PREFIX, tags=["file-workspaces"])
@@ -830,7 +836,13 @@ def create_file_workspace_router(
             return cached
         workspace = workspaces.workspace(workspace_id)
         store = ConversationStore(conversation_root(workspaces.root, workspace_id))
-        service = TurnService(workspace, store, provider_factory)
+        service = TurnService(
+            workspace,
+            store,
+            provider_factory,
+            library=library,
+            run_registry=run_registry,
+        )
         service.activity = activity_for(workspace_id)
         # 进程重启后，没有正常结束的轮次在这里补一条中断记录；不自动继续。
         service.mark_interrupted()

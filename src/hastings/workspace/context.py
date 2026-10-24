@@ -25,6 +25,7 @@ from hastings.workspace.assembly import (
     INDEX_BUDGET,
     INSTRUCTIONS_BUDGET,
     MATERIALS_BUDGET,
+    MODULES_BUDGET,
     ROSTER_BUDGET,
     STATE_BUDGET,
     TIMELINE_BUDGET,
@@ -366,6 +367,7 @@ def build_assembled_context(
     selected_path: str | None = None,
     history_facts: str = "",
     materials: str = "",
+    modules: str = "",
     index_notes: str = "",
     instructions: str = "",
     disclosure_store: DisclosureStore | None = None,
@@ -400,6 +402,11 @@ def build_assembled_context(
             key="catalog", title="当前作品", text=catalog, budget=CATALOG_BUDGET, required=True
         )
     )
+    if profile != "extract" and modules.strip():
+        # 只列已装实例与精确版本；条目正文仍要按需读取。索引任务不装这一块。
+        parts.append(
+            Partition(key="modules", title="已装模块", text=modules, budget=MODULES_BUDGET)
+        )
     if profile != "extract" and materials.strip():
         parts.append(
             Partition(key="materials", title="本轮材料", text=materials, budget=MATERIALS_BUDGET)
@@ -516,6 +523,7 @@ def build_system_prompt(
     selected_path: str | None = None,
     history_facts: str = "",
     materials: str = "",
+    modules: str = "",
     index_notes: str = "",
     instructions: str = "",
 ) -> str:
@@ -526,6 +534,7 @@ def build_system_prompt(
         selected_path=selected_path,
         history_facts=history_facts,
         materials=materials,
+        modules=modules,
         index_notes=index_notes,
         instructions=instructions,
     ).text

@@ -11,6 +11,8 @@
   条目数与正文短目录；章节分页，超出部分只给总数与下一页，不一次列出整本书。
 - `MaterialQuery`：种类、模块范围、关键词、人物 ID、章路径、截止章、是否包含计划、游标与条数。
   模块范围只能取本轮装配的子集，传入未装模块只产生警告，不会去库里按名字找。
+- `query_materials` 返回 `metrics`：候选与返回数、返回字符、扫描条目与字符、扫描上限是否触发、
+  各来源与各命中原因的分布、耗时。后续摸底与阈值校准读这一份，不靠外部猜。
 - `query_materials`：L1 查询。作者条目、统一章节索引、旧版章节概览、旧时间锚点、线索与名词
   各自带 `source` 与 `freshness`；过期投影、过期旧版记录不当作当前依据，只在 `warnings` 说明
   跳过了哪一章。
@@ -41,7 +43,7 @@
 
 | 范围 | 命令 | 结果 |
 |---|---|---|
-| 检索用例 | `uv run pytest -q tests/workspace/test_retrieval.py` | 8 passed |
+| 检索用例 | `uv run pytest -q tests/workspace/test_retrieval.py` | 9 passed |
 | 静态检查 | `uv run ruff check src/hastings tests` | 通过 |
 | 类型检查 | `uv run mypy src/hastings` | 69 个源文件无问题 |
 | 后端全量 | `CODEBUDDY_SAFE_DELETE_ENABLED=0 uv run pytest -q --basetemp data/test-tmp/f1-full -o tmp_path_retention_count=100` | 753 passed，0 failures |
