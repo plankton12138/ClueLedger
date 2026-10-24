@@ -11,7 +11,7 @@ import type { RunPhase } from "../../api/workspace";
 import { phaseLabel, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import AssistantMessageView from "./AssistantMessageView";
 import ReviewReportView from "./ReviewReport";
-import TaskScopeDetails from "./TaskScopeDetails";
+import TaskCard from "./TaskCard";
 import ToolActivity from "./ToolActivity";
 import TurnContextSummary from "./TurnContextSummary";
 import TurnMaterials from "./TurnMaterials";
@@ -63,7 +63,7 @@ function ChatTurnView({
 
       <TurnMaterials materials={turn.materials} />
       {turn.injection && <TurnContextSummary injection={turn.injection} />}
-      {turn.scope && <TaskScopeDetails scope={turn.scope} />}
+      <TaskCard turn={turn} />
 
       {turn.items.map((item) =>
         item.kind === "message" ? (

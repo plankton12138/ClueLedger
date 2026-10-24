@@ -18,6 +18,8 @@ import {
   orderedBlocks,
   phaseLabel,
   publicText,
+  hasTaskCard,
+  taskCardFacts,
   type ChatTurn,
 } from "./chatMessages";
 
@@ -570,5 +572,77 @@ describe("本轮注入", () => {
     expect(injection.skipped).toEqual([{ key: "clues", reason: "budget", chars: 120 }]);
     expect(injection.used).toBe(2400);
     expect(injection.limit).toBe(20000);
+  });
+});
+
+describe("任务卡", () => {
+  it("把授权、未读必读材料与执行事实收在同一份投影里", () => {
+    reset();
+    const events = [
+      turnStarted(),
+      next({
+        type: "task_scope_set",
+        turn_id: "t1",
+        version: 1,
+        mode: "edit",
+        summary: "改写第一章",
+        authorization: "写第一章",
+        authorization_seq: 1,
+        carried_from_seq: null,
+        grants: [{ action: "update", path: "正文/0001 雨夜.md" }],
+        denied_paths: ["设定集/真相.md"],
+        required_references: ["设定集/线索.md"],
+        extendable: false,
+        extend_actions: [],
+      }),
+      next({
+        type: "reference_registered",
+        turn_id: "t1",
+        references: [
+          { path: "设定集/线索.md", digest: "d1", kind: "file", required: true },
+        ],
+      }),
+      next({
+        type: "material_read",
+        turn_id: "t1",
+        path: "设定集/线索.md",
+        digest: "d1",
+        start_char: 0,
+        end_char: 3,
+        start_line: 1,
+        end_line: 1,
+        total_chars: 10,
+      }),
+      next({
+        type: "run_finished",
+        turn_id: "t1",
+        status: "completed",
+        recording: "committed",
+        changed_paths: ["正文/0001 雨夜.md"],
+        commit: "abc1234",
+        note: "",
+      }),
+    ];
+
+    const facts = taskCardFacts(buildTurns(events)[0]!);
+
+    expect(hasTaskCard(facts)).toBe(true);
+    expect(facts.mode).toBe("edit");
+    expect(facts.authorization).toBe("写第一章");
+    expect(facts.authorizationSeq).toBe(1);
+    expect(facts.grants.map((grant) => grant.path)).toEqual(["正文/0001 雨夜.md"]);
+    expect(facts.deniedPaths).toEqual(["设定集/真相.md"]);
+    expect(facts.requiredCount).toBe(1);
+    expect(facts.requiredComplete).toBe(false);
+    expect(facts.requiredUnread).toEqual([{ path: "设定集/线索.md", remaining: 7 }]);
+    expect(facts.status).toBe("completed");
+    expect(facts.recording).toBe("committed");
+    expect(facts.changedPaths).toEqual(["正文/0001 雨夜.md"]);
+  });
+
+  it("没有范围、必读材料与结果时不显示任务卡", () => {
+    reset();
+    const facts = taskCardFacts(buildTurns([turnStarted()])[0]!);
+    expect(hasTaskCard(facts)).toBe(false);
   });
 });

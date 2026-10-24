@@ -21,6 +21,7 @@ import type {
   ReviewStatus,
   RunPhase,
   RunResult,
+  TaskGrant,
   TaskScope,
   WorkspaceEvent,
 } from "../api/workspace";
@@ -147,6 +148,63 @@ export function materialReadChars(material: TurnMaterial): number {
 /** 是否已经提供了该版本全文；空文件算读完。 */
 export function materialComplete(material: TurnMaterial): boolean {
   return material.length === 0 || materialReadChars(material) >= material.length;
+}
+
+/** 任务卡：本轮授权、约束、未读必读材料与执行事实；全部来自同一条事件流。 */
+export interface TaskCardFacts {
+  summary: string;
+  authorization: string;
+  authorizationSeq: number | null;
+  carriedFromSeq: number | null;
+  version: number | null;
+  mode: "read_only" | "edit" | null;
+  grants: TaskGrant[];
+  deniedPaths: string[];
+  extendable: boolean;
+  requiredCount: number;
+  requiredComplete: boolean;
+  requiredUnread: { path: string; remaining: number }[];
+  status: RunResult["status"] | null;
+  recording: RunResult["recording"] | null;
+  changedPaths: string[];
+  reviewStatus: ReviewStatus | null;
+}
+
+export function taskCardFacts(turn: ChatTurn): TaskCardFacts {
+  const scope = turn.scope;
+  const required = turn.materials.filter((material) => material.required);
+  const unread = required.filter((material) => !materialComplete(material));
+  return {
+    summary: scope?.summary ?? "",
+    authorization: scope?.authorization ?? "",
+    authorizationSeq: scope?.authorization_seq ?? null,
+    carriedFromSeq: scope?.carried_from_seq ?? null,
+    version: scope?.version ?? null,
+    mode: scope?.mode ?? null,
+    grants: scope?.grants ?? [],
+    deniedPaths: scope?.denied_paths ?? [],
+    extendable: scope?.extendable ?? false,
+    requiredCount: required.length,
+    requiredComplete: required.length > 0 && unread.length === 0,
+    requiredUnread: unread.map((material) => ({
+      path: material.path,
+      remaining: Math.max(0, material.length - materialReadChars(material)),
+    })),
+    status: turn.result?.status ?? null,
+    recording: turn.result?.recording ?? null,
+    changedPaths: turn.result?.changed_paths ?? [],
+    reviewStatus: turn.review?.status ?? null,
+  };
+}
+
+/** 任务卡是否有内容：没有范围、没有必读材料、也没有结果时不显示。 */
+export function hasTaskCard(facts: TaskCardFacts): boolean {
+  return (
+    facts.mode !== null ||
+    facts.requiredCount > 0 ||
+    facts.status !== null ||
+    facts.reviewStatus !== null
+  );
 }
 
 /** 实时状态收到缺批时抛出：需要回读本会话日志，不重发用户请求。 */

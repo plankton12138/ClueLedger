@@ -33,8 +33,8 @@
   F2 受理冻结装配、运行中拒绝装卸与已装模块短目录已实施（[记录](notes/F2-assembly-freeze.md)）；
   F3 的 `list_modules`／`query_records`／`read_record` 与受作者授权的库搜索已接入
   （[记录](notes/F3-retrieval-tools.md)）；F4 条目级排除记录已实施
-  （[记录](notes/F4-entry-selection.md)）。注入排除项已在前端显示，资料文本不作为授权的
-  越权用例已覆盖目录、搜索与读取入口；请求规模仍只在活动记录。
+  （[记录](notes/F4-entry-selection.md)）。注入排除项、资料越权用例与任务卡已实施；
+  请求规模仍只在活动记录。
 - G 交付待实施。
 - 不预建 `modules/` 充当当前能力，也不写通过数量或发布结论。
 - 实施时阶段记录放本目录 `notes/`，证据放 `artifacts/`；完成后再编写 `modules/` 与 `release.md`。

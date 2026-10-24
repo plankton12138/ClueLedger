@@ -198,7 +198,9 @@ flowchart LR
 - [x] 记录整请求字符规模与上游实际 token，用量缺失不填零；不自动启动额外摘要任务。
   `model_request_started.request_size` 为应用侧字符估算；实际用量仍看
   `model_request_finished.usage`，缺失保持 `null`。
-- [ ] 任务卡保留当前授权、约束、未读内容及执行事实；重复原文按版本去重，必要时重新读取。
+- [x] 任务卡保留当前授权、约束、未读内容及执行事实；重复原文按版本去重，必要时重新读取。
+  任务卡是事件流投影（`taskCardFacts`），不新增事实来源；材料覆盖按路径与版本去重，
+  记录见 [notes/F4-entry-selection.md](notes/F4-entry-selection.md)。
 - [x] UI 区分选择、命中、已读、未覆盖，日志与真实装配同源。
   注入摘要直接读 `state_injected` 显示未装入条目；本轮材料块显示必读与已提供区间；
   模块检索与读取在工具行分别标为「检索资料」「读取资料」。
