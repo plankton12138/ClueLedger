@@ -439,6 +439,52 @@ def test_failed_log_write_leaves_no_visible_conversation(
 # -- 连续讨论与隔离 -------------------------------------------------------
 
 
+@pytest.mark.parametrize("text", ["继续写下一段。", "不要搜索灵感，也不要记下来。"])
+def test_idea_permission_does_not_carry_over_in_the_same_conversation(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient], text: str
+) -> None:
+    provider = ScriptedProvider(
+        [
+            _text_turn("这轮已结束。"),
+            _tool_turn(
+                ToolCall(id="idea-search", name="search_ideas", arguments={"query": "房卡"})
+            ),
+            _tool_turn(
+                ToolCall(id="idea-save", name="save_idea", arguments={"body": "未授权笔记。"})
+            ),
+            _text_turn("没有访问或保存灵感。"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    first = _accept(client, workspace_id, "帮我找灵感，并把想法记下来。")
+    conversation_id = first["conversation_id"]
+    _wait_until(client, workspace_id, conversation_id, _finished)
+
+    accepted = _send(client, workspace_id, conversation_id, text)
+    assert accepted.status_code == 202, accepted.text
+    turn_id = accepted.json()["turn_id"]
+    events = _wait_until(
+        client,
+        workspace_id,
+        conversation_id,
+        lambda rows: any(
+            row["type"] == "run_finished" and row["turn_id"] == turn_id for row in rows
+        ),
+    )
+    failed = [
+        event
+        for event in events
+        if event["type"] == "tool_finished" and event["turn_id"] == turn_id
+    ]
+    assert len(failed) == 2
+    assert all(event["ok"] is False for event in failed)
+    assert "IDEA_SEARCH_DENIED" in failed[0]["summary"]
+    assert "IDEA_SAVE_DENIED" in failed[1]["summary"]
+    ideas = client.get(f"/api/file-workspaces/{workspace_id}/ideas").json()
+    assert ideas["total"] == 0
+
+
 def test_second_turn_replays_public_history(
     tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
 ) -> None:

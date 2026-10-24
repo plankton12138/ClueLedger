@@ -999,6 +999,7 @@ class TurnService:
                     session=session,
                     materials=ledger,
                     author_messages=author_messages,
+                    current_author_text=text,
                     turn_id=info.turn_id,
                     emit=lambda kind, payload: self._record_activity(info, kind, payload),
                     assembly=frozen_assembly,

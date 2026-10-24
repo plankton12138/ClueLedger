@@ -115,6 +115,7 @@ export default function IdeasPage({ workspaceId, ideaId, onNavigate, onTakeToCha
                 className="well-input min-w-0 flex-1 px-2 py-1 font-serif text-sm"
                 placeholder="标题（可留空）"
                 value={store.draft.title}
+                disabled={store.busy}
                 onChange={(event) =>
                   useIdeasStore.getState().setDraft({ title: event.target.value })
                 }
@@ -128,7 +129,7 @@ export default function IdeasPage({ workspaceId, ideaId, onNavigate, onTakeToCha
               </button>
               <button
                 className="btn btn-gray px-3 py-1 text-[11px]"
-                disabled={!store.dirty}
+                disabled={!store.dirty || store.busy}
                 onClick={() => useIdeasStore.getState().cancel()}
               >
                 取消
@@ -140,6 +141,7 @@ export default function IdeasPage({ workspaceId, ideaId, onNavigate, onTakeToCha
                 className="well-input min-w-0 flex-1 px-2 py-1"
                 placeholder="标签，用顿号或逗号分隔"
                 value={store.draft.tags}
+                disabled={store.busy}
                 onChange={(event) =>
                   useIdeasStore.getState().setDraft({ tags: event.target.value })
                 }
@@ -148,14 +150,14 @@ export default function IdeasPage({ workspaceId, ideaId, onNavigate, onTakeToCha
                 <>
                   <button
                     className="underline text-red"
-                    disabled={store.busy}
+                    disabled={store.busy || store.dirty}
                     onClick={() => void useIdeasStore.getState().trashSelected()}
                   >
                     删除
                   </button>
                   <button
                     className="underline"
-                    disabled={store.busy}
+                    disabled={store.busy || store.dirty}
                     onClick={() =>
                       onTakeToChat(selected.idea_id, selected.revision_id, selected.title)
                     }
@@ -167,7 +169,7 @@ export default function IdeasPage({ workspaceId, ideaId, onNavigate, onTakeToCha
               {selected?.deleted && (
                 <button
                   className="underline"
-                  disabled={store.busy}
+                  disabled={store.busy || store.dirty}
                   onClick={() => void useIdeasStore.getState().restoreSelected()}
                 >
                   恢复
@@ -180,6 +182,7 @@ export default function IdeasPage({ workspaceId, ideaId, onNavigate, onTakeToCha
               style={{ minHeight: "240px" }}
               placeholder="写一条想法、一个疑点，或一句还不想放进正文的对白。"
               value={store.draft.body}
+              disabled={store.busy}
               onChange={(event) => useIdeasStore.getState().setDraft({ body: event.target.value })}
               onKeyDown={(event) => {
                 if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
@@ -202,7 +205,7 @@ export default function IdeasPage({ workspaceId, ideaId, onNavigate, onTakeToCha
                       </span>
                       <button
                         className="underline text-[10px]"
-                        disabled={store.busy}
+                        disabled={store.busy || store.dirty}
                         onClick={() =>
                           void useIdeasStore.getState().restoreRevision(revision.id)
                         }

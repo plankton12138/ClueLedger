@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -166,6 +167,8 @@ class RunContext:
     idea_visible: set[tuple[str, str]] = field(default_factory=set)
     #: 作品状态目录；检索观察与本作品投影都在这里。
     state_root: Path | None = None
+    #: 当前受理轮次的作者原话；灵感许可不能从历史授权中继承。
+    current_author_text: str | None = None
 
     def record(self, event_type: str, payload: Mapping[str, Any]) -> None:
         if self.emit is not None:
@@ -2194,7 +2197,20 @@ def build_tools(
         )
 
         def _author_said(phrases: tuple[str, ...]) -> bool:
-            return any(phrase in text for _, text in run.author_messages for phrase in phrases)
+            text = run.current_author_text
+            if text is None:
+                # 直接构造工具的调用方没有受理快照时，只认最新一条作者消息。
+                text = max(run.author_messages, default=(0, ""), key=lambda item: item[0])[1]
+            # 引号中的笔记内容既不授予权限，也不把正文里的否定误当成操作禁止。
+            text = re.sub(r"「[^」]*」|『[^』]*』|“[^”]*”|\"[^\"]*\"|'[^']*'", "", text)
+            clauses = re.split(r"[，,。.!！？?；;\n]|但是?|不过", text)
+            matching = [clause for clause in clauses if any(phrase in clause for phrase in phrases)]
+            # 同一操作的明确禁止优先；搜索和保存分别判断，互不授予权限。
+            denied = (
+                r"不要|不用|无需|不必|不准|不能|禁止|不得|别(?!忘)|"
+                r"不想|不需要|不允许|不可以|不再|暂不"
+            )
+            return bool(matching) and not any(re.search(denied, clause) for clause in matching)
 
         async def read_idea(
             tool_call_id: str,

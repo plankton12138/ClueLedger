@@ -30,6 +30,8 @@ interface IdeaDraft {
 
 interface IdeasStore {
   workspaceId: string | null;
+  session: number;
+  editors: Record<string, IdeaEditorState>;
   items: IdeaSummary[];
   deletedItems: IdeaSummary[];
   total: number;
@@ -62,6 +64,16 @@ interface IdeasStore {
   clearNotice(): void;
 }
 
+type IdeaEditorState = Pick<
+  IdeasStore,
+  "query" | "showDeleted" | "selectedId" | "selected" | "revisions" | "newDraft" | "draft" | "dirty"
+>;
+
+function editorOf(state: IdeasStore): IdeaEditorState {
+  const { query, showDeleted, selectedId, selected, revisions, newDraft, draft, dirty } = state;
+  return { query, showDeleted, selectedId, selected, revisions, newDraft, draft, dirty };
+}
+
 function describe(error: unknown): string {
   if (error instanceof WorkspaceApiError) return `${error.why}。${error.fix}`;
   return error instanceof Error ? error.message : "操作没有完成";
@@ -83,6 +95,8 @@ function tagList(text: string): string[] {
 
 export const useIdeasStore = create<IdeasStore>()((set, get) => ({
   workspaceId: null,
+  session: 0,
+  editors: {},
   items: [],
   deletedItems: [],
   total: 0,
@@ -101,16 +115,34 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
   dirty: false,
 
   async load(workspaceId) {
-    set({
-      workspaceId,
-      items: [],
-      deletedItems: [],
+    const current = get();
+    // 页面重新挂载只刷新列表，不重置编辑器；不同作品分别保留草稿。
+    if (current.workspaceId === workspaceId) {
+      await get().refresh();
+      return;
+    }
+    const editors = { ...current.editors };
+    if (current.workspaceId) editors[current.workspaceId] = editorOf(current);
+    const editor: IdeaEditorState = editors[workspaceId] ?? {
+      query: "",
+      showDeleted: false,
       selectedId: null,
       selected: null,
       revisions: [],
       newDraft: false,
       draft: { ...EMPTY_DRAFT },
       dirty: false,
+    };
+    set({
+      workspaceId,
+      session: current.session + 1,
+      editors,
+      items: [],
+      deletedItems: [],
+      total: 0,
+      ...editor,
+      loading: false,
+      busy: false,
       error: null,
       notice: null,
     });
@@ -118,7 +150,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
   },
 
   async refresh() {
-    const { workspaceId, query } = get();
+    const { workspaceId, query, session } = get();
     if (!workspaceId) return;
     set({ loading: true, error: null });
     try {
@@ -126,7 +158,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
         listIdeas(workspaceId, { q: query, limit: 50 }),
         listIdeas(workspaceId, { q: query, deleted: true, limit: 50 }),
       ]);
-      if (get().workspaceId !== workspaceId) return;
+      if (get().session !== session || get().query !== query) return;
       set({
         items: active.items,
         deletedItems: deleted.items,
@@ -134,7 +166,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
         loading: false,
       });
     } catch (error) {
-      if (get().workspaceId !== workspaceId) return;
+      if (get().session !== session || get().query !== query) return;
       set({ loading: false, error: describe(error) });
     }
   },
@@ -149,8 +181,8 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
   },
 
   async select(ideaId) {
-    const { workspaceId, dirty } = get();
-    if (!workspaceId) return;
+    const { workspaceId, dirty, busy, session } = get();
+    if (!workspaceId || busy) return;
     if (dirty) {
       set({ notice: "当前草稿还没保存；先保存或取消，再切换到其他灵感。" });
       return;
@@ -161,7 +193,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
         getIdea(workspaceId, ideaId),
         listIdeaRevisions(workspaceId, ideaId),
       ]);
-      if (get().workspaceId !== workspaceId) return;
+      if (get().session !== session) return;
       set({
         selected: view,
         revisions: revisions.items,
@@ -170,12 +202,13 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
         busy: false,
       });
     } catch (error) {
-      if (get().workspaceId !== workspaceId) return;
+      if (get().session !== session) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   startNew() {
+    if (get().busy) return;
     if (get().dirty) {
       set({ notice: "当前草稿还没保存；先保存或取消，再新建灵感。" });
       return;
@@ -197,8 +230,8 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
   },
 
   async save() {
-    const { workspaceId, selected, newDraft, draft, dirty } = get();
-    if (!workspaceId || !dirty) return;
+    const { workspaceId, selected, newDraft, draft, dirty, busy, session } = get();
+    if (!workspaceId || !dirty || busy) return;
     if (!draft.body.trim()) {
       set({ error: "灵感正文不能为空。" });
       return;
@@ -221,7 +254,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
               tags: tagList(draft.tags),
               request_key: requestKey("idea"),
             });
-      if (get().workspaceId !== workspaceId) return;
+      if (get().session !== session) return;
       set({
         selected: view,
         selectedId: view.idea_id,
@@ -233,14 +266,16 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
       });
       await get().refresh();
       const revisions = await listIdeaRevisions(workspaceId, view.idea_id);
+      if (get().session !== session || get().selectedId !== view.idea_id) return;
       set({ revisions: revisions.items });
     } catch (error) {
-      if (get().workspaceId !== workspaceId) return;
+      if (get().session !== session) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   cancel() {
+    if (get().busy) return;
     const { selected } = get();
     if (selected) {
       set({ draft: draftOf(selected), dirty: false });
@@ -257,8 +292,12 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
   },
 
   async trashSelected() {
-    const { workspaceId, selected } = get();
-    if (!workspaceId || !selected || selected.deleted) return;
+    const { workspaceId, selected, dirty, busy, session } = get();
+    if (!workspaceId || !selected || selected.deleted || busy) return;
+    if (dirty) {
+      set({ notice: "当前草稿还没保存；先保存或取消，再删除灵感。" });
+      return;
+    }
     set({ busy: true, error: null, notice: null });
     try {
       const view = await trashIdea(workspaceId, selected.idea_id, {
@@ -266,6 +305,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
         expected_revision: selected.revision_id,
         request_key: requestKey("idea-trash"),
       });
+      if (get().session !== session) return;
       set({
         selected: view,
         draft: draftOf(view),
@@ -275,17 +315,23 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
       });
       await get().refresh();
     } catch (error) {
+      if (get().session !== session) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   async restoreSelected() {
-    const { workspaceId, selected } = get();
-    if (!workspaceId || !selected || !selected.deleted) return;
+    const { workspaceId, selected, dirty, busy, session } = get();
+    if (!workspaceId || !selected || !selected.deleted || busy) return;
+    if (dirty) {
+      set({ notice: "当前草稿还没保存；先保存或取消，再恢复灵感。" });
+      return;
+    }
     set({ busy: true, error: null, notice: null });
     try {
       // 恢复「删除状态」的修订只会再生成一条删除修订；撤销删除要恢复最近一条未删除的历史。
       const history = await listIdeaRevisions(workspaceId, selected.idea_id);
+      if (get().session !== session) return;
       const alive = history.items.find((item) => !item.deleted);
       if (!alive) {
         set({ busy: false, error: "这条灵感只有已删除的修订，无法恢复。" });
@@ -296,6 +342,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
         expected_digest: selected.digest,
         request_key: requestKey("idea-restore"),
       });
+      if (get().session !== session) return;
       set({
         selected: view,
         draft: draftOf(view),
@@ -305,13 +352,18 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
       });
       await get().refresh();
     } catch (error) {
+      if (get().session !== session) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   async restoreRevision(revisionId) {
-    const { workspaceId, selected } = get();
-    if (!workspaceId || !selected) return;
+    const { workspaceId, selected, dirty, busy, session } = get();
+    if (!workspaceId || !selected || busy) return;
+    if (dirty) {
+      set({ notice: "当前草稿还没保存；先保存或取消，再恢复历史修订。" });
+      return;
+    }
     set({ busy: true, error: null, notice: null });
     try {
       const view = await restoreIdea(workspaceId, selected.idea_id, {
@@ -319,6 +371,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
         expected_digest: selected.digest,
         request_key: requestKey("idea-history"),
       });
+      if (get().session !== session) return;
       set({
         selected: view,
         draft: draftOf(view),
@@ -327,9 +380,11 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => ({
         notice: "已把这一版恢复为当前修订；后续修订仍保留。",
       });
       const revisions = await listIdeaRevisions(workspaceId, view.idea_id);
+      if (get().session !== session || get().selectedId !== view.idea_id) return;
       set({ revisions: revisions.items });
       await get().refresh();
     } catch (error) {
+      if (get().session !== session) return;
       set({ busy: false, error: describe(error) });
     }
   },

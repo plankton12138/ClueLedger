@@ -47,6 +47,24 @@ uv run python -m hastings.server --state-dir <状态目录> --library-dir <模�
 
 ## 本次验证
 
+### 核查后修复回归
+
+修复灵感许可跨轮延续、明确禁止被当作授权、切页清空未保存草稿的问题。灵感草稿在当前
+页面会话内按作品保留，切换作品或写作页面后返回可继续编辑；关闭或刷新整个页面后不承诺
+恢复未保存内容。详见[修复记录](notes/C-idea-permissions-and-drafts.md)。
+
+| 范围 | 本次实际命令 | 结果 |
+|---|---|---|
+| 灵感权限与真实会话回归 | `uv run pytest -q tests/workspace/test_ideas_tools.py tests/workspace/test_chat.py` | 53 passed（37.37s） |
+| 前端单元 | 在 `frontend/` 执行 `npm test -- --run` | 173 passed（19 个文件） |
+| 浏览器回归与构建 | 在 `frontend/` 设置 `HASTINGS_E2E_PORT=8947` 后执行 `npm run test:e2e:local` | 19 passed（31.1s）；启动前构建通过 |
+
+本次修改的后端源码与测试通过 `ruff check`、`ruff format --check`；`uv run mypy` 检查
+108 个源文件通过，`git diff --check` 通过。
+
+以下全量与在线结果保留为此前运行记录。本次未重新调用在线模型；完整验收、在线场景和
+成本对照仍按实施计划的未完成项管理，不将已通过的部分勾选为整项完成。
+
 ### 确定性测试
 
 | 范围 | 命令 | 结果 |

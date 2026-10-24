@@ -394,12 +394,16 @@ test("故事资料页叠加已装模块的计划，并可按模块筛选", async
   await expect(page.getByText("第9章误导")).toBeVisible();
 });
 
-test("灵感本可新建、删除恢复并带到对话", async ({ page }) => {
+test("灵感草稿切页返回后保留，保存后可删除恢复并带到对话", async ({ page }) => {
   await open(page);
   await page.getByRole("button", { name: "灵感", exact: true }).click();
   await page.getByRole("button", { name: "新建", exact: true }).click();
   await page.getByLabel("灵感标题").fill("旧识");
   await page.getByLabel("灵感正文").fill("老板娘认识死者，这层关系暂时不揭穿。");
+  await page.getByRole("button", { name: "写作", exact: true }).click();
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  await expect(page.getByLabel("灵感标题")).toHaveValue("旧识");
+  await expect(page.getByLabel("灵感正文")).toHaveValue("老板娘认识死者，这层关系暂时不揭穿。");
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByText("已保存为新的灵感修订")).toBeVisible();
   await expect(page.locator(".toc-row").filter({ hasText: "旧识" })).toBeVisible();

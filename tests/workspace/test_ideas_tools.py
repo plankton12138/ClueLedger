@@ -123,7 +123,7 @@ async def test_search_requires_an_explicit_request_and_expires_next_turn(tmp_pat
     )
     assert "房卡" in read["body"]
 
-    next_turn = _run(workspace, "继续写下一段。")
+    next_turn = _run(workspace, "帮我找灵感，有没有房卡相关的内容？", "继续写下一段。")
     next_tools = {tool.name: tool for tool in build_tools(workspace, next_turn)}
     with pytest.raises(WorkspaceError) as denied:
         await _call(next_tools["search_ideas"], query="房卡")
@@ -145,3 +145,84 @@ async def test_save_idea_requires_the_author_to_ask_for_it(tmp_path: Path) -> No
 
     stored = IdeaStore(workspace).get(saved["idea_id"])
     assert stored["body"] == "门后有第三个人。"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("denial", ["不要", "不用", "禁止", "不需要", "暂不", "别"])
+async def test_idea_tools_reject_explicit_denial_without_side_effects(
+    tmp_path: Path, denial: str
+) -> None:
+    workspace = _workspace(tmp_path)
+    store = IdeaStore(workspace)
+    store.create(title="房卡", body="后门。", request_key="idea-denial-seed")
+    before = {path: path.read_bytes() for path in store.root.glob("*.json")}
+    run = _run(workspace, "帮我搜索灵感，把想法记下来。", f"{denial}搜索灵感，{denial}记下来。")
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
+
+    for name, arguments, code in (
+        ("search_ideas", {"query": "房卡"}, "IDEA_SEARCH_DENIED"),
+        ("save_idea", {"body": "未授权的新想法。"}, "IDEA_SAVE_DENIED"),
+    ):
+        with pytest.raises(WorkspaceError) as denied:
+            await _call(tools[name], **arguments)
+        assert denied.value.code == code
+    assert not run.idea_visible
+    assert {path: path.read_bytes() for path in store.root.glob("*.json")} == before
+
+
+@pytest.mark.anyio
+async def test_current_turn_text_overrides_historical_idea_permissions(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    run = _run(workspace, "帮我找灵感，把这个记下来。")
+    run.current_author_text = "继续写下一段。"
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
+    for name, arguments in (
+        ("search_ideas", {"query": "房卡"}),
+        ("save_idea", {"body": "未授权的新想法。"}),
+    ):
+        with pytest.raises(WorkspaceError):
+            await _call(tools[name], **arguments)
+
+
+@pytest.mark.anyio
+async def test_idea_search_and_save_permissions_are_independent(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    run = _run(workspace, "帮我找灵感，但不要记下来。")
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
+    assert (await _call(tools["search_ideas"], query="房卡"))["items"] == []
+    with pytest.raises(WorkspaceError) as denied:
+        await _call(tools["save_idea"], body="新想法。")
+    assert denied.value.code == "IDEA_SAVE_DENIED"
+
+    run = _run(workspace, "不要搜索灵感，把「后门有人」记下来。")
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
+    assert (await _call(tools["save_idea"], body="后门有人。"))["idea_id"]
+    with pytest.raises(WorkspaceError) as denied:
+        await _call(tools["search_ideas"], query="后门")
+    assert denied.value.code == "IDEA_SEARCH_DENIED"
+
+
+@pytest.mark.anyio
+async def test_quoted_idea_content_does_not_deny_a_save_request(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    run = _run(workspace, "把「侦探不能是凶手，不要搜索灵感」记下来。")
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
+    saved = await _call(tools["save_idea"], body="侦探不能是凶手，不要搜索灵感")
+    assert IdeaStore(workspace).get(saved["idea_id"])["body"] == "侦探不能是凶手，不要搜索灵感"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("text", "tool", "arguments"),
+    [
+        ("只讨论「搜索灵感」这几个字。", "search_ideas", {"query": "房卡"}),
+        ("只讨论「记下来」这几个字。", "save_idea", {"body": "不应保存"}),
+    ],
+)
+async def test_quoted_action_words_do_not_authorize_idea_tools(
+    tmp_path: Path, text: str, tool: str, arguments: dict[str, str]
+) -> None:
+    workspace = _workspace(tmp_path)
+    tools = {tool.name: tool for tool in build_tools(workspace, _run(workspace, text))}
+    with pytest.raises(WorkspaceError):
+        await _call(tools[tool], **arguments)
