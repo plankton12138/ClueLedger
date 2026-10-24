@@ -12,11 +12,13 @@ vi.mock("../api/moduleLibrary", () => ({
   deriveWorkspace: vi.fn(),
   entryBody: (text: string) => text,
   fetchAssembly: vi.fn(),
+  fetchImportInfo: vi.fn(),
   fetchPresets: vi.fn(),
   fetchRecord: vi.fn(),
   fetchRevision: vi.fn(),
   fetchRevisions: vi.fn(),
   forkModule: vi.fn(),
+  importLegacyMaterials: vi.fn(),
   listModules: vi.fn(),
   postModuleUpdate: vi.fn(),
   publishRevision: vi.fn(),
@@ -29,10 +31,12 @@ vi.mock("../api/moduleLibrary", () => ({
 import {
   deriveWorkspace,
   fetchAssembly,
+  fetchImportInfo,
   fetchPresets,
   fetchRecord,
   fetchRevision,
   fetchRevisions,
+  importLegacyMaterials,
   listModules,
   postModuleUpdate,
   putAssembly,
@@ -42,6 +46,8 @@ import { useModuleLibraryStore } from "./moduleLibrary";
 const listMock = vi.mocked(listModules);
 const presetsMock = vi.mocked(fetchPresets);
 const assemblyMock = vi.mocked(fetchAssembly);
+const importInfoMock = vi.mocked(fetchImportInfo);
+const importMock = vi.mocked(importLegacyMaterials);
 const revisionMock = vi.mocked(fetchRevision);
 const revisionsMock = vi.mocked(fetchRevisions);
 const recordMock = vi.mocked(fetchRecord);
@@ -53,6 +59,8 @@ function reset(): void {
   listMock.mockReset();
   presetsMock.mockReset();
   assemblyMock.mockReset();
+  importInfoMock.mockReset();
+  importMock.mockReset();
   revisionMock.mockReset();
   revisionsMock.mockReset();
   recordMock.mockReset();
@@ -388,6 +396,51 @@ describe("装配", () => {
   });
 });
 
+describe("导入旧资料", () => {
+  it("用当前导入清单指纹提交，并汇总新建、更新与无变化", async () => {
+    importMock.mockResolvedValue({
+      items: [
+        {
+          path: "设定集/线索.md",
+          module_id: "mod_1",
+          revision_id: "rev_1",
+          kind: "clues",
+          name: "线索（导入）",
+          action: "created",
+        },
+        {
+          path: "设定集/真相.md",
+          module_id: "mod_2",
+          revision_id: "rev_2",
+          kind: "truth",
+          name: "真相（导入）",
+          action: "unchanged",
+        },
+      ],
+      assembly: { schema_version: 1, library_id: "lib_1", digest: "d2", bindings: [], links: [] },
+      digest: "import-d2",
+    });
+    importInfoMock.mockResolvedValue({ digest: "import-d2", items: [] });
+    listMock.mockResolvedValue({ items: [], total: 0, next_cursor: null });
+    useModuleLibraryStore.setState({
+      workspaceId: "ws1",
+      importInfo: { digest: "import-d1", items: [] },
+      assembly: { schema_version: 1, library_id: "lib_1", digest: "d1", bindings: [], links: [] },
+    });
+
+    await useModuleLibraryStore.getState().importLegacy();
+
+    expect(importMock).toHaveBeenCalledWith(
+      "ws1",
+      expect.objectContaining({ expected_digest: "import-d1" }),
+    );
+    const state = useModuleLibraryStore.getState();
+    expect(state.notice).toContain("新建 1");
+    expect(state.notice).toContain("无变化 1");
+    expect(state.importInfo?.digest).toBe("import-d2");
+  });
+});
+
 describe("打开抽屉", () => {
   it("同时读取预设、模块列表与装配", async () => {
     presetsMock.mockResolvedValue([
@@ -406,6 +459,7 @@ describe("打开抽屉", () => {
       bindings: [],
       links: [],
     });
+    importInfoMock.mockResolvedValue({ digest: null, items: [] });
 
     await useModuleLibraryStore.getState().openDrawer("ws1");
 

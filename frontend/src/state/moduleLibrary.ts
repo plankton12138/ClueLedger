@@ -13,12 +13,14 @@ import {
   createModule,
   deriveWorkspace,
   entryBody,
-  forkModule,
   fetchAssembly,
+  fetchImportInfo,
   fetchPresets,
   fetchRecord,
   fetchRevision,
   fetchRevisions,
+  forkModule,
+  importLegacyMaterials,
   listModules,
   postModuleUpdate,
   publishRevision,
@@ -29,6 +31,7 @@ import {
   type AssemblyBinding,
   type AssemblyView,
   type EntryInput,
+  type ImportInfo,
   type ModuleInfo,
   type ModuleKind,
   type ModuleSpec,
@@ -61,6 +64,7 @@ interface ModuleLibraryStore {
   bodies: Record<string, string>;
   detailLoading: boolean;
   assembly: AssemblyView | null;
+  importInfo: ImportInfo | null;
   busy: boolean;
 
   openDrawer(workspaceId: string): Promise<void>;
@@ -82,7 +86,9 @@ interface ModuleLibraryStore {
   bind(moduleId: string, revisionId: string): Promise<void>;
   unbind(bindingId: string): Promise<void>;
   upgrade(bindingId: string, revisionId: string): Promise<void>;
+  importLegacy(): Promise<void>;
   loadAssembly(): Promise<void>;
+  loadImportInfo(): Promise<void>;
   clearNotice(): void;
 }
 
@@ -116,6 +122,7 @@ const initial = {
   bodies: {} as Record<string, string>,
   detailLoading: false,
   assembly: null as AssemblyView | null,
+  importInfo: null as ImportInfo | null,
   busy: false,
 };
 
@@ -136,7 +143,7 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
     } catch (error) {
       set({ error: describe(error) });
     }
-    await Promise.all([get().refresh(), get().loadAssembly()]);
+    await Promise.all([get().refresh(), get().loadAssembly(), get().loadImportInfo()]);
   },
 
   closeDrawer() {
@@ -498,6 +505,34 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
     }
   },
 
+  async importLegacy() {
+    const { workspaceId, importInfo } = get();
+    if (!workspaceId) return;
+    set({ busy: true, error: null, notice: null });
+    try {
+      const result = await importLegacyMaterials(workspaceId, {
+        expected_digest: importInfo?.digest ?? null,
+        request_key: requestKey("import"),
+      });
+      if (get().workspaceId !== workspaceId) return;
+      const created = result.items.filter((item) => item.action === "created").length;
+      const published = result.items.filter((item) => item.action === "published").length;
+      const unchanged = result.items.filter((item) => item.action === "unchanged").length;
+      set({
+        assembly: result.assembly,
+        busy: false,
+        notice:
+          result.items.length === 0
+            ? "没有可导入的旧资料。"
+            : `已导入 ${result.items.length} 项旧资料（新建 ${created}、更新 ${published}、无变化 ${unchanged}）。`,
+      });
+      await Promise.all([get().refresh(), get().loadImportInfo()]);
+    } catch (error) {
+      if (get().workspaceId !== workspaceId) return;
+      set({ busy: false, error: describe(error) });
+    }
+  },
+
   async loadAssembly() {
     const { workspaceId } = get();
     if (!workspaceId) return;
@@ -505,6 +540,19 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
       const assembly = await fetchAssembly(workspaceId);
       if (get().workspaceId !== workspaceId) return;
       set({ assembly });
+    } catch (error) {
+      if (get().workspaceId !== workspaceId) return;
+      set({ error: describe(error) });
+    }
+  },
+
+  async loadImportInfo() {
+    const { workspaceId } = get();
+    if (!workspaceId) return;
+    try {
+      const importInfo = await fetchImportInfo(workspaceId);
+      if (get().workspaceId !== workspaceId) return;
+      set({ importInfo });
     } catch (error) {
       if (get().workspaceId !== workspaceId) return;
       set({ error: describe(error) });

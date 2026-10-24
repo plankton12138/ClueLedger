@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from hastings.library.imports import imported_paths
 from hastings.workspace.assembly import (
     CATALOG_BUDGET,
     CLUES_BUDGET,
@@ -200,7 +201,12 @@ def settings_section(
     整个分区消失，否则模型既看不到内容，也不知道该去读哪里。
     """
     available = body_budget(title, budget)
-    sources = [_setting_source(workspace, path, label) for path, label in SETTING_FILES]
+    imported = imported_paths(workspace)
+    sources = [
+        _setting_source(workspace, path, label)
+        for path, label in SETTING_FILES
+        if path not in imported
+    ]
     longest = max((len(source.text) for source in sources), default=0)
     if longest == 0:
         return _render_settings(sources, [0 for _ in sources])

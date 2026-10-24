@@ -20,6 +20,7 @@ from hastings.library.api import EntryPayload
 from hastings.library.bindings import AssemblyService
 from hastings.library.derive import derive_workspace
 from hastings.library.ids import new_id
+from hastings.library.imports import import_legacy_materials, read_import_info
 from hastings.library.modules import ModuleLibrary
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.git import GitRepo
@@ -63,6 +64,11 @@ class ModuleUpdateRequest(BaseModel):
     base_revision: str | None = None
     expected_head: str | None = None
     entries: list[EntryPayload]
+    expected_digest: str | None = None
+    request_key: str
+
+
+class ImportLegacyRequest(BaseModel):
     expected_digest: str | None = None
     request_key: str
 
@@ -115,9 +121,7 @@ def create_assembly_router(
         if payload.links is None:
             links = tuple(service.store.read().links)
         else:
-            links = tuple(
-                (str(link[0]), str(link[1])) for link in payload.links if len(link) == 2
-            )
+            links = tuple((str(link[0]), str(link[1])) for link in payload.links if len(link) == 2)
         return service.replace(
             bindings=bindings,
             links=links,
@@ -166,6 +170,20 @@ def create_assembly_router(
             base_revision=payload.base_revision,
             expected_head=payload.expected_head,
             entries=entries,
+            expected_digest=payload.expected_digest,
+            request_key=payload.request_key,
+        )
+
+    @router.get("/{workspace_id}/library-imports")
+    def read_imports(workspace_id: str) -> dict[str, object]:
+        return read_import_info(workspaces.workspace(workspace_id))
+
+    @router.post("/{workspace_id}/library-imports")
+    def import_legacy(workspace_id: str, payload: ImportLegacyRequest) -> dict[str, object]:
+        require_idle(workspace_id)
+        return import_legacy_materials(
+            library,
+            workspaces.workspace(workspace_id),
             expected_digest=payload.expected_digest,
             request_key=payload.request_key,
         )

@@ -143,6 +143,14 @@ export default function ModuleDrawer() {
           <h2 className="font-serif text-base font-bold text-[#3f3a2c]">模块库</h2>
           <span className="text-[11px] text-[#8a8371]">全局内容，按版本装入作品</span>
           <div className="flex-1" />
+          <button
+            className="btn btn-gray px-2 py-1 text-[11px]"
+            title="把本作品已有的线索、真相与人物小传导入全局库，并绑定精确版本"
+            disabled={store.busy}
+            onClick={() => void store.importLegacy()}
+          >
+            导入旧资料
+          </button>
           <button className="btn btn-gray px-2 py-1 text-[11px]" onClick={() => store.closeDrawer()}>
             关闭
           </button>

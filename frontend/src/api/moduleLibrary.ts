@@ -123,6 +123,33 @@ export interface AssemblyView {
   links: [string, string][];
 }
 
+export interface ImportLegacyItem {
+  path: string;
+  module_id: string;
+  revision_id: string;
+  kind: ModuleKind;
+  name: string;
+  action: "created" | "published" | "unchanged";
+}
+
+export interface ImportLegacyResult {
+  items: ImportLegacyItem[];
+  assembly: AssemblyView;
+  digest: string | null;
+}
+
+export interface ImportInfo {
+  digest: string | null;
+  items: {
+    path: string;
+    digest: string;
+    module_id: string;
+    revision_id: string;
+    kind: ModuleKind;
+    name: string;
+  }[];
+}
+
 export interface ModuleUpdateError {
   code: string;
   where: string;
@@ -303,6 +330,20 @@ export function putAssembly(
 ): Promise<AssemblyView> {
   return request<AssemblyView>(`${WORKSPACES}/${workspaceId}/assembly`, {
     method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchImportInfo(workspaceId: string): Promise<ImportInfo> {
+  return request<ImportInfo>(`${WORKSPACES}/${workspaceId}/library-imports`);
+}
+
+export function importLegacyMaterials(
+  workspaceId: string,
+  input: { expected_digest: string | null; request_key: string },
+): Promise<ImportLegacyResult> {
+  return request<ImportLegacyResult>(`${WORKSPACES}/${workspaceId}/library-imports`, {
+    method: "POST",
     body: JSON.stringify(input),
   });
 }
