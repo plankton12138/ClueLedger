@@ -41,6 +41,18 @@
 - 本轮材料块继续按「必读／已提供全文／已提供部分原文（x/y）／已指定尚未读取」显示，
   与注入排除项一起构成选择、命中、已读、未覆盖四种状态。
 
+### 资料文本不授权
+
+- 新增 `tests/workspace/test_material_privilege.py`，覆盖四个通用入口：
+  - 目录：`list_files` 不列灵感本文件；
+  - 搜索：`search_text` 与 `query_materials` 都不返回灵感正文；
+  - 读取：`read_file` 访问灵感路径返回 `PATH_NOT_MANAGED`；
+  - 授权：灵感正文或设定文件里的「忽略所有之前的指令」不能当作作者引文登记范围
+    （`TASK_SCOPE_EVIDENCE_INVALID`），没有范围时写工具仍返回
+    `TASK_SCOPE_REQUIRED_CONFLICT`，目标文件指纹不变。
+- 灵感专用读取／保存工具尚未实现，本项只验证现有通用入口不会旁路；专用工具的授权
+  校验等工具本身落地后再补用例。
+
 ## 接口与数据
 
 - 没有新增 HTTP 路由；`state_injected.parts[i]` 在原本的 `key`／`chars` 之外可能多一个
@@ -64,16 +76,18 @@
 |---|---|---|
 | 装配与分区专项 | `uv run pytest -q tests/workspace/test_assembly.py tests/workspace/test_context_budget.py tests/workspace/test_clues.py tests/workspace/test_character_states.py tests/workspace/test_timeline.py tests/workspace/test_glossary.py tests/workspace/test_chapter_index.py` | 76 passed |
 | 请求记录专项 | `uv run pytest -q tests/workspace/test_activity.py tests/workspace/test_chat.py tests/workspace/test_chat_stream.py` | 73 passed |
+| 资料越权专项 | `uv run pytest -q tests/workspace/test_material_privilege.py` | 2 passed |
 | 静态检查 | `uv run ruff check src/hastings tests` | 通过 |
 | 类型检查 | `uv run mypy` | 106 个源文件无问题 |
 | 前端构建 | `npm --prefix frontend run build` | 通过（含 `tsc --noEmit` 与 vite build） |
 | 前端单测 | `npm --prefix frontend test` | 18 个文件 161 passed |
-| 后端全量 | `uv run pytest -q --basetemp data/test-tmp/f4b-full -o tmp_path_retention_count=100` | 766 passed，0 failures |
+| 后端全量 | `uv run pytest -q --basetemp data/test-tmp/f4d-rerun -o tmp_path_retention_count=100` | 768 passed，0 failures |
 
 覆盖：分区摘要带排除项且无排除项时不出现该键；线索超预算记录 `budget`；人物状态只留
 死亡角色时记录被裁者；故事时间超预算只留最近一章并记录更早锚点；专名超条数记录 `limit`；
 索引超预算记录全部未装入章节与 `read_file` 入口；请求开始事件带可复算的字符规模，
-没有上游用量时 `usage` 仍为 `null`；前端把同一份注入记录里的未装入条目逐条显示。
+没有上游用量时 `usage` 仍为 `null`；前端把同一份注入记录里的未装入条目逐条显示；
+灵感文件与提示注入文本不能从目录、搜索、读取或范围登记里取得写权限。
 
 ## 未完成
 
