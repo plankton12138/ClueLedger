@@ -68,7 +68,7 @@ MAX_SCAN_ENTRIES = 300
 MATCH_CONTEXT_CHARS = 120
 
 _SOURCE_RANK: dict[str, int] = {"author": 0, "observed": 1, "legacy_unverified": 2}
-_MATCH_RANK: dict[str, int] = {"entity": 0, "chapter": 1, "module": 2, "keyword": 3}
+_MATCH_RANK: dict[str, int] = {"entity": 0, "relation": 1, "chapter": 2, "module": 3, "keyword": 4}
 _PLAN_MODULE_KINDS = frozenset({"clues", "plot"})
 
 
@@ -240,7 +240,7 @@ def query_materials(
     warnings: list[str] = []
     hits: list[MaterialHit] = []
 
-    selected, missing = _selected_bindings(assembly, query.module_ids)
+    selected, missing, related = _selected_bindings(assembly, query.module_ids)
     for module_id in missing:
         warnings.append(f"模块 {module_id} 不在本轮装配里，未查询。")
     scan = {"chars": 0, "entries": 0, "limited": False}
@@ -261,7 +261,7 @@ def query_materials(
         if not query.include_plans and revision.module_kind in _PLAN_MODULE_KINDS:
             continue
         for entry in revision.entries:
-            hit = _entry_hit(library, revision, entry, query, scan)
+            hit = _entry_hit(library, revision, entry, query, scan, relation=binding.id in related)
             if hit is not None:
                 hits.append(hit)
     if scan["limited"]:
@@ -321,13 +321,22 @@ def _metrics(
 
 def _selected_bindings(
     assembly: Assembly, module_ids: Sequence[str]
-) -> tuple[list[Binding], list[str]]:
+) -> tuple[list[Binding], list[str], set[str]]:
+    """显式模块范围只允许一跳关联：装配里的简单连接可以带入，未装模块不旁路。"""
     wanted = {item for item in module_ids if item}
     if not wanted:
-        return list(assembly.bindings), []
+        return list(assembly.bindings), [], set()
     selected = [binding for binding in assembly.bindings if binding.module.module_id in wanted]
     missing = sorted(wanted - {binding.module.module_id for binding in selected})
-    return selected, missing
+    explicit = {binding.id for binding in selected}
+    related_ids: set[str] = set()
+    for left, right in assembly.links:
+        if left in explicit and right not in explicit:
+            related_ids.add(right)
+        if right in explicit and left not in explicit:
+            related_ids.add(left)
+    related = [binding for binding in assembly.bindings if binding.id in related_ids]
+    return [*selected, *related], missing, related_ids
 
 
 def _entry_hit(
@@ -336,6 +345,8 @@ def _entry_hit(
     entry: CatalogEntry,
     query: MaterialQuery,
     scan: dict[str, int | bool],
+    *,
+    relation: bool = False,
 ) -> MaterialHit | None:
     if query.kinds and entry.kind not in query.kinds:
         return None
@@ -356,6 +367,8 @@ def _entry_hit(
     matched: list[str] = []
     if query.entity_ids and entry.entry_id in query.entity_ids:
         matched.append("entity")
+    if relation:
+        matched.append("relation")
     if query.module_ids:
         matched.append("module")
     if query.text:

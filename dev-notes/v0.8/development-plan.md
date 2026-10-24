@@ -183,8 +183,8 @@ flowchart LR
 - [x] L0 短目录、L1 有界查询、L2 详情与区间读取；名称歧义返回候选，不擅自选择。
   实施记录见 [notes/F1-retrieval.md](notes/F1-retrieval.md)。
 - [x] 三层索引分开：库版本索引、作品装配索引、正文索引；F1 按这三层读取，不另建副本。
-- [x] 按当前目标和已装实例获取候选；未装依赖不旁路。
-  实施记录见 [notes/F3-retrieval-tools.md](notes/F3-retrieval-tools.md)。一跳关联与显式再次扩展未做。
+- [x] 按当前目标和已装实例获取候选，允许一跳关联及显式再次扩展；未装依赖不旁路。
+  实施记录见 [notes/F3-retrieval-tools.md](notes/F3-retrieval-tools.md)。
 - [x] 明确全局选模块请求才开放本轮库搜索，搜索不隐含装配更新或库写权限。
   许可由 `task_scope.library_search` 登记，作者原话须出现模块库相关短语。
 - [x] 受理冻结 assembly 与模块版本；运行中拒绝本作品装卸，库独立发布不改本轮输入。

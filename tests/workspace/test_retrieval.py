@@ -124,6 +124,69 @@ def test_only_installed_module_is_queried(tmp_path: Path) -> None:
     assert view["items"][0]["excerpt"].startswith("林静")
 
 
+def test_explicit_module_scope_allows_one_relation_hop(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    workspace = _workspace(tmp_path)
+    first = _create(
+        library,
+        name="主角团",
+        entries=[EntryDraft("lin", "character", "林静", "法医。", (), {})],
+        key="create-1",
+    )
+    second = _create(
+        library,
+        name="关联人物",
+        entries=[EntryDraft("he", "character", "何医生", "旧识。", (), {})],
+        key="create-2",
+    )
+    third = _create(
+        library,
+        name="无关人物",
+        entries=[EntryDraft("wu", "character", "吴先生", "无关。", (), {})],
+        key="create-3",
+    )
+    service = AssemblyService(library, workspace)
+    for index, created in enumerate((first, second, third), start=1):
+        module = created["module"]  # type: ignore[index]
+        service.bind(
+            module_id=str(module["module_id"]),
+            revision_id=str(module["head"]),
+            label=str(module["name"]),
+            expected_digest=service.view()["digest"],
+            request_key=f"bind-key-{index}",
+        )
+    store = AssemblyStore(workspace.root)
+    assembly = store.read()
+    ids = {binding.label: binding.id for binding in assembly.bindings}
+    store.replace(
+        library_id=assembly.library_id,
+        bindings=assembly.bindings,
+        links=((ids["主角团"], ids["关联人物"]),),
+        expected_digest=store.digest(),
+        request_key="links-key-1",
+    )
+    linked = store.read()
+
+    view = query_materials(
+        workspace,
+        tmp_path / "state",
+        linked,
+        library,
+        MaterialQuery(module_ids=(str(first["module"]["module_id"]),), text="何医生"),  # type: ignore[index]
+    )
+    assert [item["title"] for item in view["items"]] == ["何医生"]
+    assert "relation" in view["items"][0]["matched_by"]
+
+    none = query_materials(
+        workspace,
+        tmp_path / "state",
+        linked,
+        library,
+        MaterialQuery(module_ids=(str(first["module"]["module_id"]),), text="吴先生"),  # type: ignore[index]
+    )
+    assert none["items"] == []
+
+
 def test_uninstalled_module_is_reported_not_silently_queried(tmp_path: Path) -> None:
     library = _library(tmp_path)
     workspace = _workspace(tmp_path)
