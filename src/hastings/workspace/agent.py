@@ -624,6 +624,7 @@ def build_tools(
             authorization_seq=_optional_int_argument(arguments, "authorization_seq", minimum=0),
             carried_from_seq=_optional_int_argument(arguments, "carried_from_seq", minimum=0),
             required_references=_string_list_argument(arguments, "required_references"),
+            library_search=bool(arguments.get("library_search", False)),
             extendable=bool(arguments.get("extendable", False)),
             extend_actions=_action_list_argument(arguments, "extend_actions"),
             note=_optional_text_argument(arguments, "note"),
@@ -1032,6 +1033,10 @@ def build_tools(
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "写作品前必须读完的参考文件",
+                    },
+                    "library_search": {
+                        "type": "boolean",
+                        "description": "作者明确要求从全局模块库查找时才设 true；只开搜索",
                     },
                     "extendable": {
                         "type": "boolean",
@@ -1503,6 +1508,48 @@ def build_tools(
                 )
             return _json(detail)
 
+        async def search_module_library(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            scope = run.scope.current
+            if scope is None or not scope.draft.library_search:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="tools.search_module_library",
+                    why="作者还没有明确要求从全局模块库查找",
+                    fix="先按作者原话登记 library_search；搜索不等于装入或改库",
+                )
+            if run.library is None:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="tools.search_module_library",
+                    why="这一轮没有可用的模块库",
+                    fix="确认应用已配置模块库后再搜索",
+                )
+            kind = _optional_text_argument(arguments, "kind")
+            text = _optional_text_argument(arguments, "query")
+            page = run.library.modules(
+                kind=kind or None,
+                q=text,
+                cursor=_optional_text_argument(arguments, "cursor") or None,
+                limit=_int_argument(arguments, "limit", default=20, minimum=1),
+                include_deleted=False,
+            )
+            run.record(
+                "module_library_searched",
+                {
+                    "query": text,
+                    "kind": kind,
+                    "total": int(str(page.get("total") or 0)),
+                    "returned": len(cast(list[object], page.get("items") or [])),
+                },
+            )
+            return _json(page)
+
         tools.extend(
             [
                 AgentTool(
@@ -1602,6 +1649,44 @@ def build_tools(
                 ),
             ]
         )
+        if mode == "write":
+            tools.append(
+                AgentTool(
+                    name="search_module_library",
+                    label="搜索全局模块库",
+                    description=(
+                        "仅在作者明确要求从模块库挑选模块时使用；返回有界候选与精确版本，"
+                        "不自动装入、升级或修改任何内容。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "名称或关键词"},
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "characters",
+                                    "world",
+                                    "clues",
+                                    "truth",
+                                    "timeline",
+                                    "plot",
+                                    "reference",
+                                ],
+                            },
+                            "cursor": {"type": "string"},
+                            "limit": {"type": "integer", "minimum": 1},
+                        },
+                        "additionalProperties": False,
+                    },
+                    execute_fn=search_module_library,
+                    prompt_guidelines=(
+                        "先在范围里登记 library_search；作者没有明确要求就不要搜索。",
+                        "搜索结果只是候选；装入要由作者确认，不能自己改装配。",
+                    ),
+                    execution_mode="sequential",
+                )
+            )
 
     if mode == "review":
         # 检查任务：只读原文与搜索，加保存报告；没有作品写工具。

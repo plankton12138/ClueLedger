@@ -97,6 +97,8 @@ class ScopeDraft:
     authorization_seq: int | None = None
     carried_from_seq: int | None = None
     required_references: tuple[str, ...] = ()
+    #: 作者明确要求从全局模块库查找时登记；只开搜索，不自动装入或发布。
+    library_search: bool = False
     extendable: bool = False
     extend_actions: tuple[MutationAction, ...] = ()
     evidence_path: str = ""
@@ -122,6 +124,7 @@ class TaskScope:
             "grants": [item.to_dict() for item in self.draft.grants],
             "denied_paths": list(self.draft.denied_paths),
             "required_references": list(self.draft.required_references),
+            "library_search": self.draft.library_search,
             "extendable": self.draft.extendable,
             "extend_actions": list(self.draft.extend_actions),
         }
@@ -360,6 +363,8 @@ def _validate_draft(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) 
     if draft.extendable and not draft.extend_actions:
         raise _evidence_error("可发现范围要写明允许追加哪类操作")
     _validate_authorization(draft, author_texts)
+    if draft.library_search and not _library_search_authorized(draft, author_texts):
+        raise _evidence_error("作者没有明确要求从全局模块库查找，不能登记库搜索权限")
 
 
 def _validate_reregistration(current: TaskScope, draft: ScopeDraft) -> None:
@@ -382,6 +387,14 @@ def _validate_reregistration(current: TaskScope, draft: ScopeDraft) -> None:
                 "added": [grant.to_dict() for grant in added],
                 "version": current.version,
             },
+        )
+    if draft.library_search and not current.draft.library_search:
+        raise WorkspaceError(
+            code="TASK_SCOPE_DENIED_CONFLICT",
+            where="task_scope.set",
+            why="重新登记不能新开全局模块库搜索",
+            fix="需要库搜索时由作者明确要求后重新登记；不要在这一轮中途扩大读取范围",
+            details={"version": current.version},
         )
     if draft.extendable and not current.draft.extendable:
         raise WorkspaceError(
@@ -435,6 +448,19 @@ def _validate_path(path: str, *, where: str) -> None:
             fix="用 正文/xxx.md、设定集/角色小传/姓名.md、设定集/线索.md 或 设定集/真相.md",
             details={"path": path},
         )
+
+
+#: 明确指向全局模块库的短语；只用来判断作者是否真的提出了库搜索，不推断任务意图。
+_LIBRARY_SEARCH_PHRASES = ("模块库", "库里", "全局", "挑选模块", "找模块")
+
+
+def _library_search_authorized(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) -> bool:
+    quote = " ".join(draft.authorization.split())
+    for _, text in author_texts:
+        normalized = " ".join(text.split())
+        if quote and quote in normalized:
+            return any(phrase in normalized for phrase in _LIBRARY_SEARCH_PHRASES)
+    return False
 
 
 def _validate_authorization(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) -> None:

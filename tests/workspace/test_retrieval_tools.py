@@ -32,7 +32,9 @@ async def _call(tool: AgentTool, **arguments: Any) -> dict[str, Any]:
     return json.loads(result.text)
 
 
-def _setup(tmp_path: Path) -> tuple[Workspace, dict[str, AgentTool], ModuleLibrary, dict[str, Any]]:
+def _setup(
+    tmp_path: Path, *, author_text: str = "写第一章。"
+) -> tuple[Workspace, dict[str, AgentTool], ModuleLibrary, dict[str, Any]]:
     library = ModuleLibrary(tmp_path / "模块库", cache_file=tmp_path / "cache" / "catalog.json")
     workspace = Workspace.create(tmp_path / "雪山旅馆")
     workspace.write(CHAPTER, "# 雨夜\n\n林静在书房。\n", expected_digest=None)
@@ -41,6 +43,12 @@ def _setup(tmp_path: Path) -> tuple[Workspace, dict[str, AgentTool], ModuleLibra
         name="主角团",
         entries=[EntryDraft("lin", "character", "林静", "法医，旧识。", ("法医",), {})],
         request_key="create-1",
+    )
+    library.create_module(
+        kind="characters",
+        name="另一组",
+        entries=[EntryDraft("lin", "character", "林静", "另一个世界。", (), {})],
+        request_key="create-2",
     )
     module = created["module"]  # type: ignore[index]
     AssemblyService(library, workspace).bind(
@@ -54,6 +62,7 @@ def _setup(tmp_path: Path) -> tuple[Workspace, dict[str, AgentTool], ModuleLibra
     run = RunContext(
         workspace,
         WriteSession(workspace, instruction="写第一章"),
+        author_messages=((1, author_text),),
         assembly=assembly,
         library=library,
         state_root=tmp_path / "state",
@@ -136,6 +145,51 @@ async def test_query_records_reads_observations_up_to_the_task_chapter(tmp_path:
     assert found["items"][0]["source"] == "observed"
     assert found["items"][0]["kind"] == "event"
     assert "书房" in found["items"][0]["title"]
+
+
+@pytest.mark.anyio
+async def test_library_search_requires_explicit_author_permission(tmp_path: Path) -> None:
+    workspace, tools, _, _ = _setup(tmp_path, author_text="写第一章，从模块库再找一份人物。")
+
+    denied = None
+    try:
+        await _call(tools["search_module_library"], query="另一组")
+    except WorkspaceError as exc:
+        denied = exc
+    assert denied is not None
+    assert denied.code == "MODULE_ACCESS_DENIED"
+
+    await _call(
+        tools["set_task_scope"],
+        mode="read_only",
+        summary="从模块库找一份人物",
+        authorization="从模块库再找一份人物",
+        library_search=True,
+    )
+    found = await _call(tools["search_module_library"], query="另一组")
+    assert [item["name"] for item in found["items"]] == ["另一组"]
+    # 搜索不自动装入；本轮装配保持一个绑定。
+    assert len(AssemblyStore(workspace.root).read().bindings) == 1
+
+
+@pytest.mark.anyio
+async def test_library_search_cannot_be_granted_without_an_author_request(
+    tmp_path: Path,
+) -> None:
+    _, tools, _, _ = _setup(tmp_path)
+    invalid = None
+    try:
+        await _call(
+            tools["set_task_scope"],
+            mode="read_only",
+            summary="写第一章",
+            authorization="写第一章",
+            library_search=True,
+        )
+    except WorkspaceError as exc:
+        invalid = exc
+    assert invalid is not None
+    assert invalid.code == "TASK_SCOPE_EVIDENCE_INVALID"
 
 
 @pytest.mark.anyio

@@ -12,7 +12,10 @@
   返回来源、`module_ref`、`match_by`、`scope`、`metrics` 与 `warnings`。未装模块只警告，不按名字去库里找。
 - `read_record`：按四段完整引用读取模块原文；模块与版本必须同时出现在本轮装配里，否则返回
   `MODULE_ACCESS_DENIED`。读取区间进入 `MaterialLedger`，`truncated` 时按 `next_cursor` 继续。
-- 三个工具只在配置了模块库的写作、检查与资料任务里出现；索引与状态任务不装。
+- `search_module_library`：仅在写作用途出现，且要求 `task_scope.library_search=true`；
+  该许可只有在作者消息明确出现「模块库／库里／全局」等短语时才能登记。搜索返回未装候选与
+  精确版本，不自动装入、升级或改库。
+- 三个只读工具在配置了模块库的写作、检查与资料任务里出现；索引与状态任务不装。
 
 ### 按用途收窄
 
@@ -44,18 +47,20 @@
 
 | 范围 | 命令 | 结果 |
 |---|---|---|
-| 工具专项 | `uv run pytest -q tests/workspace/test_retrieval_tools.py` | 4 passed |
+| 工具专项 | `uv run pytest -q tests/workspace/test_retrieval_tools.py tests/workspace/test_task_scope.py` | 34 passed |
 | 静态检查 | `uv run ruff check src/hastings tests` | 通过 |
 | 类型检查 | `uv run mypy src/hastings` | 70 个源文件无问题 |
-| 后端全量 | `CODEBUDDY_SAFE_DELETE_ENABLED=0 uv run pytest -q --basetemp data/test-tmp/f3-full -o tmp_path_retention_count=100` | 761 passed，0 failures |
+| 后端全量 | `CODEBUDDY_SAFE_DELETE_ENABLED=0 uv run pytest -q --basetemp data/test-tmp/f3b-full -o tmp_path_retention_count=100` | 763 passed，0 failures |
 
 覆盖：没有模块库时工具不出现；只列已装模块；未装模块查询只警告；正文观察来源与截止章；
-未装版本读取返回 403；已装版本读取返回原文与 `module_ref`。
+未装版本读取返回 403；已装版本读取返回原文与 `module_ref`；库搜索无作者许可被拒，
+登记后只返回候选且装配不变；没有库搜索短语时不能登记许可。
 
 ## 未完成
 
-- `search_module_library` 与「作者明确请求全局选模块」的授权还没有；当前不开放跨库搜索。
-- `task_scope` 的 module／assembly 资源项、模块发布与装配更新工具都没有。
+- `task_scope` 的 module／assembly 资源项、模块发布与装配更新工具都没有；当前只有库搜索许可。
 - 简单关联的一跳扩展、条目级 required／optional 预算与排除原因还没有。
 - 界面没有把「找到／命中／已读／未覆盖」分开显示；活动事件已有数据，前端未接。
 - 灵感工具（`search_ideas`／`read_idea`／`save_idea`／`link_idea_use`）与整请求规模记录仍未做。
+- 库搜索许可只检查作者消息里是否出现「模块库／库里／全局」等短语，不解析否定语气；
+  「不要从模块库找」仍可能被登记。否定句需要后续与任务理解一起处理。
