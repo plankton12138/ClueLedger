@@ -14,6 +14,7 @@ from hastings.workspace.agent import RunContext, build_tools
 from hastings.workspace.disclosure import ObservedEvidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
+from hastings.workspace.git import GitRepo
 from hastings.workspace.module_assembly import AssemblyStore
 from hastings.workspace.service import WriteSession
 from hastings.workspace.story_index import (
@@ -145,6 +146,58 @@ async def test_query_records_reads_observations_up_to_the_task_chapter(tmp_path:
     assert found["items"][0]["source"] == "observed"
     assert found["items"][0]["kind"] == "event"
     assert "书房" in found["items"][0]["title"]
+
+
+@pytest.mark.anyio
+async def test_record_read_does_not_satisfy_a_required_file_reference(tmp_path: Path) -> None:
+    workspace, tools, _, facts = _setup(tmp_path)
+    GitRepo(workspace.root).init()
+    workspace.write("正文/0002 第二章.md", "# 第二章\n\n新的证词。\n", expected_digest=None)
+    await _call(
+        tools["register_references"],
+        references=[
+            {
+                "path": "设定集/线索.md",
+                "kind": "author_text",
+                "quote": "写第一章。",
+                "required": True,
+            }
+        ],
+    )
+    await _call(
+        tools["set_task_scope"],
+        mode="edit",
+        summary="改写第二章",
+        authorization="写第一章",
+        grants=[{"action": "update", "path": "正文/0002 第二章.md"}],
+    )
+    chapter = await _call(tools["read_file"], path="正文/0002 第二章.md")
+    await _call(
+        tools["read_record"],
+        module_id=facts["module_id"],
+        revision_id=facts["revision_id"],
+        entry_id=facts["entry_id"],
+    )
+
+    with pytest.raises(WorkspaceError) as blocked:
+        await _call(
+            tools["write_file"],
+            path="正文/0002 第二章.md",
+            text="# 第二章\n\n改写。\n",
+            digest=chapter["digest"],
+        )
+    assert blocked.value.code == "REFERENCE_NOT_FULLY_READ_CONFLICT"
+
+    reference = workspace.read("设定集/线索.md")
+    await _call(tools["read_file"], path="设定集/线索.md")
+    written = await _call(
+        tools["write_file"],
+        path="正文/0002 第二章.md",
+        text="# 第二章\n\n改写。\n",
+        digest=chapter["digest"],
+    )
+    assert written["digest"] != chapter["digest"]
+    assert reference.digest  # 参考文件本身没有被写工具改动
 
 
 @pytest.mark.anyio

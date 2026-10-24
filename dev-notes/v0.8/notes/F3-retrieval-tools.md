@@ -46,6 +46,12 @@
   默认以调用时的 head 做 CAS，期间别人发布过就返回冲突。发布不改任何作品绑定。
 - 三个工具只在写作用途、且配置了模块库时出现；资料整理与检查任务没有装卸与发布入口。
 
+### 必读参考不被模块读取替代
+
+- `read_record` 的区间只记在模块引用上，不满足作者指定文件「全文已提供」的要求；
+  写文件前仍返回 `REFERENCE_NOT_FULLY_READ_CONFLICT`，必须用 `read_file` 读完该文件。
+- 读完参考后写目标文件，仍按目标文件当前指纹核对；参考文件本身的版本不会被写工具改动。
+
 ## 接口与数据
 
 - 没有新增 HTTP 路由与前端入口。
@@ -63,11 +69,11 @@
 
 | 范围 | 命令 | 结果 |
 |---|---|---|
-| 工具专项 | `uv run pytest -q tests/workspace/test_retrieval_tools.py tests/workspace/test_task_scope.py` | 34 passed |
+| 工具专项 | `uv run pytest -q tests/workspace/test_retrieval_tools.py tests/workspace/test_task_scope.py` | 35 passed |
 | 装配与发布专项 | `uv run pytest -q tests/workspace/test_module_tools.py tests/workspace/test_task_scope.py` | 38 passed |
 | 静态检查 | `uv run ruff check src/hastings tests` | 通过 |
 | 类型检查 | `uv run mypy` | 106 个源文件无问题 |
-| 后端全量 | `uv run pytest -q --basetemp data/test-tmp/f3-module-tools -o tmp_path_retention_count=100` | 778 passed，0 failures |
+| 后端全量 | `uv run pytest -q --basetemp data/test-tmp/f3-refs -o tmp_path_retention_count=100` | 779 passed，0 failures |
 
 覆盖：没有模块库时工具不出现；只列已装模块；未装模块查询只警告；正文观察来源与截止章；
 未装版本读取返回 403；已装版本读取返回原文与 `module_ref`；库搜索无作者许可被拒，
