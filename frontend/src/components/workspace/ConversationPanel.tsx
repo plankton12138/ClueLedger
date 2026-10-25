@@ -9,10 +9,12 @@
  * （已记录/没有改动/历史未记录）。「文件已改但历史没记上」不能显示成全部成功。
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { EMPTY_CONTEXT, type ContextInput, type Conversation } from "../../api/workspace";
+import { errorMessage } from "../../api/errors";
+import { createIdea, requestKey } from "../../api/ideas";
 import { findMessage, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import {
   draftKeyOf,
@@ -21,10 +23,13 @@ import {
   useConversationsStore,
   type DraftIdea,
 } from "../../state/conversations";
+import { referencePreview, useIdeasStore } from "../../state/ideas";
+import { useIdeasSurfaceStore } from "../../state/ideasSurface";
 import { useModelsStore } from "../../state/models";
 import { useWorkspaceStore } from "../../state/workspace";
 import ModelSelector from "../models/ModelSelector";
 import ChatTurnView from "../chat/ChatTurnView";
+import IdeaReferenceChip from "../chat/IdeaReferenceChip";
 import ExpandedReplyDialog from "../chat/ExpandedReplyDialog";
 import { useChatScroll } from "../chat/useChatScroll";
 import ReferencePicker from "./ReferencePicker";
@@ -34,6 +39,16 @@ function conversationLabel(item: Conversation, running: boolean): string {
 }
 
 const NO_IDEAS: DraftIdea[] = [];
+
+/** 选段记成灵感的来源：这一轮的身份、角色与准确引文。 */
+interface CaptureTarget {
+  text: string;
+  role: "user" | "assistant";
+  turnId: string;
+  turnIndex: number;
+  x: number;
+  y: number;
+}
 
 export default function ConversationPanel() {
   const items = useConversationsStore((state) => state.items);
@@ -58,7 +73,6 @@ export default function ConversationPanel() {
   const draftIdeas = useConversationsStore(
     (state) => state.draftIdeas[draftKeyOf(state)] ?? NO_IDEAS,
   );
-  const removeIdeaReference = useConversationsStore((state) => state.removeIdeaReference);
   const catalog = useWorkspaceStore((state) => state.catalog);
   const openPath = useWorkspaceStore((state) => state.selectedPath);
   const openFile = useWorkspaceStore((state) => state.file);
@@ -74,6 +88,13 @@ export default function ConversationPanel() {
     null,
   );
   const [copyHint, setCopyHint] = useState(false);
+  // 选段记成灵感：命令身份按「会话 + 这一轮 + 角色 + 原文」冻结，重试不重复创建。
+  const [capture, setCapture] = useState<CaptureTarget | null>(null);
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const [captured, setCaptured] = useState<{ ideaId: string; preview: string } | null>(null);
+  const captureCommand = useRef<{ signature: string; requestKey: string } | null>(null);
+  const workspaceId = useWorkspaceStore((state) => state.currentId);
   const scroll = useChatScroll(entry.lastSeq, selectedId);
 
   // 未配置模型时给入口而不是拦死输入：草稿要保留，配好之后作者自己点发送。
@@ -101,6 +122,72 @@ export default function ConversationPanel() {
     setCopyHint(true);
     setExpanded({ conversationId: selectedId, messageId: message.id });
   }, [selectedId]);
+
+  // 只在稳定消息里取选段：运行中的流式文本还没有确定定位，不能伪造来源。
+  const selectForCapture = useCallback(() => {
+    if (running || !selectedId) {
+      setCapture(null);
+      return;
+    }
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+      setCapture(null);
+      return;
+    }
+    const text = selection.toString().trim();
+    if (!text) {
+      setCapture(null);
+      return;
+    }
+    const node = selection.anchorNode;
+    const element = node instanceof Element ? node : (node?.parentElement ?? null);
+    const host = element?.closest<HTMLElement>("[data-turn-id]");
+    if (!host?.dataset.role) {
+      setCapture(null);
+      return;
+    }
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    setCapture({
+      text,
+      role: host.dataset.role === "user" ? "user" : "assistant",
+      turnId: host.dataset.turnId ?? "",
+      turnIndex: Number(host.dataset.turnIndex ?? 0),
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+    });
+  }, [running, selectedId]);
+
+  const captureSelection = async () => {
+    if (!capture || !workspaceId || !selectedId || captureBusy) return;
+    const signature = JSON.stringify([selectedId, capture.turnId, capture.role, capture.text]);
+    if (captureCommand.current?.signature !== signature) {
+      captureCommand.current = { signature, requestKey: requestKey("idea-selection") };
+    }
+    setCaptureBusy(true);
+    setCaptureError(null);
+    try {
+      const view = await createIdea(workspaceId, {
+        body: capture.text,
+        request_key: captureCommand.current.requestKey,
+        origin: {
+          role: capture.role,
+          conversation_id: selectedId,
+          message_seq: capture.turnIndex,
+          quote: capture.text,
+          turn_id: capture.turnId,
+        },
+      });
+      captureCommand.current = null;
+      setCaptured({ ideaId: view.idea_id, preview: referencePreview(view.body) });
+      setCapture(null);
+      window.getSelection()?.removeAllRanges();
+      void useIdeasStore.getState().refresh();
+    } catch (caught) {
+      setCaptureError(errorMessage(caught, "记成灵感"));
+    } finally {
+      setCaptureBusy(false);
+    }
+  };
 
   const onRevert = useCallback((commit: string) => revert(commit), [revert]);
   const onRecord = useCallback(() => void recordChanges(), [recordChanges]);
@@ -215,6 +302,8 @@ export default function ConversationPanel() {
           ref={scroll.ref}
           className="chat-scroll"
           onScroll={scroll.onScroll}
+          onMouseUp={selectForCapture}
+          onKeyUp={selectForCapture}
           role="log"
           aria-label="讨论内容"
         >
@@ -228,6 +317,7 @@ export default function ConversationPanel() {
             <ChatTurnView
               key={turn.id}
               turn={turn}
+              turnIndex={index + 1}
               running={running && index === entry.turns.length - 1}
               phase={running && index === entry.turns.length - 1 ? entry.phase : null}
               onExpand={openExpanded}
@@ -279,26 +369,36 @@ export default function ConversationPanel() {
             「{busyElsewhere.title}」还在进行；结束或停止它之后才能发送。
           </div>
         )}
+        {captureError && (
+          <div className="chat-error flex items-start gap-2">
+            <span className="min-w-0 flex-1">{captureError}</span>
+            <button className="font-bold" onClick={() => setCaptureError(null)}>
+              关闭
+            </button>
+          </div>
+        )}
+        {captured && (
+          <div className="mb-1 flex items-center gap-2 text-[10px] text-mute">
+            <span className="min-w-0 flex-1 truncate">已记成灵感：{captured.preview}</span>
+            <button
+              className="font-bold text-blue"
+              onClick={() => {
+                useIdeasSurfaceStore.getState().show({ entryId: captured.ideaId });
+                setCaptured(null);
+              }}
+            >
+              打开
+            </button>
+            <button className="text-mute" aria-label="关闭提示" onClick={() => setCaptured(null)}>
+              ×
+            </button>
+          </div>
+        )}
         {draftIdeas.length > 0 && (
           <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px]">
             <span className="text-mute">本轮灵感：</span>
             {draftIdeas.map((item) => (
-              <span
-                key={item.idea_id}
-                className="flex items-center gap-1 rounded border border-amber-edge bg-amber-bg px-1.5 py-0.5 text-amber"
-              >
-                <span className="max-w-40 truncate">
-                  {item.title || item.idea_id.slice(0, 8)}
-                </span>
-                <span className="text-mute">{item.revision_id.slice(0, 6)}</span>
-                <button
-                  aria-label={`移除灵感 ${item.title || item.idea_id}`}
-                  className="text-mute"
-                  onClick={() => removeIdeaReference(item.idea_id)}
-                >
-                  ×
-                </button>
-              </span>
+              <IdeaReferenceChip key={item.idea_id} reference={item} />
             ))}
           </div>
         )}
@@ -342,6 +442,20 @@ export default function ConversationPanel() {
           )}
         </div>
       </div>
+
+      {capture && (
+        <button
+          type="button"
+          className="idea-capture-fab"
+          style={{ left: capture.x, top: capture.y }}
+          disabled={captureBusy}
+          // 按下时阻止默认行为，避免选区在点击瞬间被清掉。
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => void captureSelection()}
+        >
+          {captureBusy ? "记录中…" : "记成灵感"}
+        </button>
+      )}
 
       <ExpandedReplyDialog
         message={expandedMessage}

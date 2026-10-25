@@ -116,6 +116,8 @@ interface IdeasStore {
   saveEntry(ideaId: string): Promise<SaveResult>;
   discardEntry(ideaId: string): void;
   saveExact(workspaceId: string, draftKey: string): Promise<SaveResult>;
+  /** 引用前的固定版本：有脏稿先保存，成功才返回可引用的修订。 */
+  prepareReference(ideaId: string): Promise<SavedIdea | null>;
 
   trashEntry(ideaId: string): Promise<void>;
   restoreEntry(ideaId: string): Promise<void>;
@@ -163,6 +165,13 @@ function patchScope(state: IdeasStore, patch: Partial<IdeaScope>): Partial<Ideas
 export function draftDirty(draft: IdeaDraft): boolean {
   if (!draft.base) return draft.body.length > 0;
   return draft.body !== draft.base.body;
+}
+
+/** 引用预览：合并空白后截断，只用于显示，不写回服务端。 */
+export function referencePreview(body: string, limit = 48): string {
+  const text = body.replace(/\s+/gu, " ").trim();
+  const chars = Array.from(text);
+  return chars.slice(0, limit).join("") + (chars.length > limit ? "…" : "");
 }
 
 /** 当前作品的灵感作用域；作品还没载入时返回空作用域，不新建对象。 */
@@ -568,6 +577,38 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => {
       const promise = runSave(workspaceId, draftKey).finally(() => inflight.delete(key));
       inflight.set(key, promise);
       return promise;
+    },
+
+    async prepareReference(ideaId) {
+      const { workspaceId } = get();
+      if (!workspaceId) return null;
+      const scope = scopeOf(get(), workspaceId);
+      const draft = scope.editing[ideaId];
+      if (draft && draftDirty(draft)) {
+        const result = await get().saveExact(workspaceId, ideaId);
+        if (result.status === "failed") return null;
+        return result.value;
+      }
+      if (draft?.base) {
+        return {
+          workspaceId,
+          ideaId,
+          revisionId: draft.base.revisionId,
+          digest: draft.base.digest,
+          body: draft.base.body,
+        };
+      }
+      const view = scope.selected;
+      if (view && view.idea_id === ideaId) {
+        return {
+          workspaceId,
+          ideaId,
+          revisionId: view.revision_id,
+          digest: view.digest,
+          body: view.body,
+        };
+      }
+      return null;
     },
 
     discardEntry(ideaId) {

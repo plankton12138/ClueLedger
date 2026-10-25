@@ -72,6 +72,8 @@ REFERENCE_PREREAD_CHARS = 2_000
 REFERENCE_PREREAD_TOTAL = 8_000
 #: 单条选中灵感在上下文里的正文上限；更长时用专用工具继续读。
 IDEA_PREREAD_CHARS = 2_000
+#: 灵感引用在界面上的短预览长度；只用于显示，不保存也不参与请求身份。
+PREVIEW_CHARS = 48
 
 #: 单次 read_file 的原文上限与整个结果上限。
 READ_MAX_CHARS = 16_000
@@ -368,11 +370,18 @@ class IdeaReference:
     title: str
     body: str
 
+    @property
+    def preview(self) -> str:
+        """显示用的短预览：合并空白后取前 48 个字符，不保存、不参与身份比较。"""
+        collapsed = " ".join(self.body.split())
+        return collapsed[:PREVIEW_CHARS] + ("…" if len(collapsed) > PREVIEW_CHARS else "")
+
     def view(self) -> dict[str, str]:
         return {
             "idea_id": self.idea_id,
             "revision_id": self.revision_id,
             "title": self.title,
+            "preview": self.preview,
         }
 
 

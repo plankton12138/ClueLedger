@@ -619,7 +619,7 @@ describe("草稿与列表", () => {
     useConversationsStore.getState().newConversation();
     useConversationsStore.getState().setDraft("参考第一章改第三章");
     useConversationsStore.getState().setDraftContext("正文/0001 雨夜.md", ["正文/0001 雨夜.md"]);
-    useConversationsStore.getState().addIdeaReference("idea_1", "irev_1", "旧识");
+    useConversationsStore.getState().addIdeaReference({ ideaId: "idea_1", revisionId: "irev_1", preview: "旧识", chars: 2 });
 
     await useConversationsStore.getState().send("参考第一章改第三章", {
       selected_path: "正文/0001 雨夜.md",
@@ -813,5 +813,62 @@ describe("草稿与列表", () => {
         index_paths: ["设定集/角色小传/林静.md"],
       }),
     );
+  });
+});
+
+describe("灵感引用（I3）", () => {
+  it("同一条目重复加入同修订忽略，换修订原位更新，不叠出第二个引用", () => {
+    reset();
+    const store = useConversationsStore.getState();
+    store.addIdeaReference({ ideaId: "idea_1", revisionId: "irev_1", preview: "第一版", chars: 3 });
+    store.addIdeaReference({ ideaId: "idea_1", revisionId: "irev_1", preview: "第一版", chars: 3 });
+    expect(useConversationsStore.getState().draftIdeas.new).toHaveLength(1);
+
+    store.addIdeaReference({ ideaId: "idea_2", revisionId: "irev_2", preview: "第二条", chars: 3 });
+    store.updateIdeaReference({ ideaId: "idea_1", revisionId: "irev_9", preview: "第三版", chars: 3 });
+
+    const items = useConversationsStore.getState().draftIdeas.new ?? [];
+    expect(items.map((item) => item.idea_id)).toEqual(["idea_1", "idea_2"]);
+    expect(items[0]).toMatchObject({ revision_id: "irev_9", preview: "第三版" });
+
+    store.removeIdeaReference("idea_1");
+    expect(useConversationsStore.getState().draftIdeas.new?.map((item) => item.idea_id)).toEqual([
+      "idea_2",
+    ]);
+  });
+
+  it("发送失败保留引用，受理成功后清掉本轮的引用", async () => {
+    reset();
+    useConversationsStore.setState({ workspaceId: "w1" });
+    const store = useConversationsStore.getState();
+    store.addIdeaReference({ ideaId: "idea_1", revisionId: "irev_1", preview: "第一版", chars: 3 });
+    store.setDraft("用这条灵感");
+    api.createConversationWithText.mockRejectedValueOnce(new Error("网络中断"));
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+
+    await useConversationsStore.getState().send("用这条灵感", {
+      selected_path: null,
+      reference_paths: [],
+      observed_digests: {},
+    });
+    expect(useConversationsStore.getState().draftIdeas.new).toHaveLength(1);
+
+    api.createConversationWithText.mockResolvedValue({
+      conversation_id: "c9",
+      turn_id: "t9",
+      started_at: "2026-10-22T10:00:00+08:00",
+      title: "用这条灵感",
+      request_key: "k9",
+    });
+    await useConversationsStore.getState().send("用这条灵感", {
+      selected_path: null,
+      reference_paths: [],
+      observed_digests: {},
+    });
+    await flush();
+    expect(useConversationsStore.getState().draftIdeas.new ?? []).toHaveLength(0);
   });
 });

@@ -286,3 +286,21 @@ async def test_saved_idea_keeps_the_original_text(tmp_path: Path) -> None:
     view = IdeaStore(workspace).get(str(saved["idea_id"]))
     assert view["body"] == body
     assert view["title"] == ""
+
+
+def test_reference_view_carries_a_short_preview(tmp_path: Path) -> None:
+    """受理事件里带的是短预览，不是内部标识：界面据此显示引用内容。"""
+    workspace = _workspace(tmp_path)
+    body = "  灯塔在退潮时才会露出第二层台阶。 " + "很长的补充。" * 40
+    idea = IdeaStore(workspace).create(body=body, request_key="idea-preview-1")
+    snapshot = freeze_context(
+        workspace,
+        ContextRequest(idea_references=((idea["idea_id"], idea["revision_id"]),)),
+    )
+
+    view = snapshot.to_dict()["idea_revisions"][0]
+    assert str(view["preview"]).startswith("灯塔在退潮时才会露出第二层台阶。")
+    assert len(str(view["preview"])) <= 49
+    # 提示词里用预览当标题，而不是内部标识。
+    section = ideas_section(snapshot)
+    assert "灯塔在退潮时" in section

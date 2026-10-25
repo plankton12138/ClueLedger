@@ -333,7 +333,7 @@ def ideas_section(snapshot: ContextSnapshot | None) -> str:
     lines = ["作者本轮选中的灵感（按修订冻结；是作者笔记，不是正文事实）："]
     used = 0
     for item in snapshot.ideas:
-        header = f"- 「{item.title or item.idea_id}」（{item.idea_id}@{item.revision_id}）"
+        header = f"- 「{item.title or item.preview}」（{item.idea_id}@{item.revision_id}）"
         body = item.body.strip()
         remaining = min(IDEA_PREREAD_CHARS, IDEAS_BUDGET - used - len(header))
         if remaining <= 0:

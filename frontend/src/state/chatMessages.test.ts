@@ -646,3 +646,30 @@ describe("任务卡", () => {
     expect(hasTaskCard(facts)).toBe(false);
   });
 });
+
+describe("本轮灵感引用（I3）", () => {
+  it("受理事件里的固定修订进入轮次，旧事件没有该字段时为空", () => {
+    reset();
+    const withIdeas = next({
+      type: "turn_started",
+      turn_id: "t1",
+      text: "按这条灵感展开",
+      context: {
+        idea_references: [["idea_1", "irev_1"]],
+        idea_revisions: [
+          { idea_id: "idea_1", revision_id: "irev_1", title: "", preview: "灯塔在退潮时才会露出第二层台阶。" },
+        ],
+      },
+    });
+    const legacy = next({ type: "turn_started", turn_id: "t2", text: "旧记录" });
+    const turns = buildTurns([withIdeas, legacy]);
+    expect(turns[0]?.ideas).toEqual([
+      {
+        idea_id: "idea_1",
+        revision_id: "irev_1",
+        preview: "灯塔在退潮时才会露出第二层台阶。",
+      },
+    ]);
+    expect(turns[1]?.ideas).toEqual([]);
+  });
+});

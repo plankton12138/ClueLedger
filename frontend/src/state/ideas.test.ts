@@ -338,3 +338,41 @@ describe("灵感草稿保护", () => {
     expect(scope().selected?.digest).toBe(saved.digest);
   });
 });
+
+describe("引用前的固定版本", () => {
+  it("有脏稿先保存，返回保存结果的新修订", async () => {
+    await useIdeasStore.getState().load("workspace-a");
+    await useIdeasStore.getState().select(saved.idea_id);
+    useIdeasStore.getState().setEntryBody(saved.idea_id, "改过的正文");
+    vi.mocked(updateIdea).mockResolvedValue({
+      ...saved,
+      revision_id: "r2",
+      digest: "d2",
+      body: "改过的正文",
+    });
+
+    const result = await useIdeasStore.getState().prepareReference(saved.idea_id);
+
+    expect(updateIdea).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ideaId: saved.idea_id, revisionId: "r2", body: "改过的正文" });
+  });
+
+  it("没有修改时直接使用当前基线，不额外保存", async () => {
+    await useIdeasStore.getState().load("workspace-a");
+    await useIdeasStore.getState().select(saved.idea_id);
+
+    const result = await useIdeasStore.getState().prepareReference(saved.idea_id);
+
+    expect(updateIdea).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ revisionId: saved.revision_id, body: saved.body });
+  });
+
+  it("保存失败时不返回可引用的版本", async () => {
+    await useIdeasStore.getState().load("workspace-a");
+    await useIdeasStore.getState().select(saved.idea_id);
+    useIdeasStore.getState().setEntryBody(saved.idea_id, "冲突的正文");
+    vi.mocked(updateIdea).mockRejectedValue(new Error("版本冲突"));
+
+    expect(await useIdeasStore.getState().prepareReference(saved.idea_id)).toBeNull();
+  });
+});

@@ -245,7 +245,15 @@ export type WorkspaceEvent =
   | (EventBase & { type: "version_finished"; turn_id: string; status: string;
       recording: Recording; commit: string | null; changed_paths: string[] })
   | (EventBase & { type: "stop_requested"; turn_id: string })
-  | (EventBase & { type: "turn_started"; turn_id: string; text: string })
+  | (EventBase & {
+      type: "turn_started";
+      turn_id: string;
+      text: string;
+      /** 受理时冻结的显式参考；灵感只给标识与短预览，正文由服务端读取。 */
+      context?: {
+        idea_revisions?: { idea_id: string; revision_id: string; title?: string; preview?: string }[];
+      };
+    })
   | (EventBase & { type: "run_phase"; turn_id: string; phase: RunPhase })
   | (EventBase & { type: "assistant_started"; turn_id: string; message_id: string })
   | (EventBase & {

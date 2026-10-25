@@ -22,6 +22,8 @@ class IdeaOriginPayload(BaseModel):
     conversation_id: str = ""
     message_seq: int = 0
     quote: str = ""
+    #: 产生这段文字的那一轮；比 message_seq 更稳，旧客户端可以不传。
+    turn_id: str = ""
 
 
 class CreateIdeaRequest(BaseModel):

@@ -106,7 +106,9 @@ export interface ConversationsStore {
   /** 目录里「加入对话」：把一份文件追加到当前草稿的参考，重复点击不重复登记。 */
   addReference(path: string): void;
   /** 灵感「带到对话」：只登记本轮参考，不发送、不改正文。 */
-  addIdeaReference(ideaId: string, revisionId: string, title: string): void;
+  addIdeaReference(input: IdeaReferenceInput): void;
+  /** 作者明确把一条引用换成新修订；同一条目不叠出两个引用。 */
+  updateIdeaReference(input: IdeaReferenceInput): void;
   removeIdeaReference(ideaId: string): void;
   stop(): Promise<void>;
   /** 断线后重新接收：先取活动快照，再从确认过的位置继续。 */
@@ -133,7 +135,17 @@ function samePathList(left: string[], right: string[]): boolean {
 export interface DraftIdea {
   idea_id: string;
   revision_id: string;
-  title: string;
+  /** 原文短预览：显示用，不能当编辑原文，也不写回服务端。 */
+  preview: string;
+  /** 正文字符数，用来说明这一条引用覆盖多少原文。 */
+  chars: number;
+}
+
+export interface IdeaReferenceInput {
+  ideaId: string;
+  revisionId: string;
+  preview: string;
+  chars: number;
 }
 
 function sameIdeaList(left: DraftIdea[], right: DraftIdea[]): boolean {
@@ -740,16 +752,24 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       get().setDraftContext(context?.selected_path ?? null, [...current, path]);
     },
 
-    addIdeaReference(ideaId, revisionId, title) {
+    addIdeaReference(input) {
       const key = entryKey(get().selectedId);
       const current = get().draftIdeas[key] ?? [];
-      if (current.some((item) => item.idea_id === ideaId)) return;
-      set((state) => ({
-        draftIdeas: {
-          ...state.draftIdeas,
-          [key]: [...current, { idea_id: ideaId, revision_id: revisionId, title }],
-        },
-      }));
+      const index = current.findIndex((item) => item.idea_id === input.ideaId);
+      const next: DraftIdea = {
+        idea_id: input.ideaId,
+        revision_id: input.revisionId,
+        preview: input.preview,
+        chars: input.chars,
+      };
+      // 同一条目再次加入：同修订忽略，换修订就原位更新，不叠加第二个引用。
+      if (index >= 0 && current[index].revision_id === input.revisionId) return;
+      const items = index >= 0 ? current.map((item, at) => (at === index ? next : item)) : [...current, next];
+      set((state) => ({ draftIdeas: { ...state.draftIdeas, [key]: items } }));
+    },
+
+    updateIdeaReference(input) {
+      get().addIdeaReference(input);
     },
 
     removeIdeaReference(ideaId) {

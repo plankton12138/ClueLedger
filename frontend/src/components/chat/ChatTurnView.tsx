@@ -14,6 +14,7 @@ import ReviewReportView from "./ReviewReport";
 import TaskCard from "./TaskCard";
 import ToolActivity from "./ToolActivity";
 import TurnContextSummary from "./TurnContextSummary";
+import TurnIdeas from "./TurnIdeas";
 import TurnMaterials from "./TurnMaterials";
 import RevertConfirmation from "./RevertConfirmation";
 
@@ -33,6 +34,8 @@ const RECORDING_LABEL: Record<string, string> = {
 
 interface Props {
   turn: ChatTurn;
+  /** 这一轮在会话中的位置（从 1 开始）：选段记成灵感时作为来源定位。 */
+  turnIndex: number;
   /** 是否是当前正在进行的这一轮。 */
   running: boolean;
   phase: RunPhase | null;
@@ -46,6 +49,7 @@ interface Props {
 
 function ChatTurnView({
   turn,
+  turnIndex,
   running,
   phase,
   onExpand,
@@ -58,11 +62,12 @@ function ChatTurnView({
 
   return (
     <section className="chat-turn" aria-label="一轮对话">
-      <div className="chat-msg mine">
+      <div className="chat-msg mine" data-role="user" data-turn-id={turn.id} data-turn-index={turnIndex}>
         <div className="chat-bubble">{turn.prompt}</div>
       </div>
 
       <TurnMaterials materials={turn.materials} />
+      <TurnIdeas ideas={turn.ideas} />
       {turn.injection && <TurnContextSummary injection={turn.injection} />}
       <TaskCard turn={turn} />
 
@@ -71,6 +76,8 @@ function ChatTurnView({
           <AssistantMessageView
             key={item.key}
             message={item.message}
+            turnId={turn.id}
+            turnIndex={turnIndex}
             onExpand={onExpand}
             onCopyFailed={onCopyFailed}
           />

@@ -9,6 +9,12 @@ async function screenshot(page: Page, name: string) {
   await page.screenshot({ path: `${output}/H2-${name}.png` });
 }
 
+async function ideaShot(page: Page, name: string) {
+  const output = resolve("../dev-notes/v0.8/artifacts/ideas-experience/screenshots");
+  mkdirSync(output, { recursive: true });
+  await page.screenshot({ path: `${output}/${name}.png` });
+}
+
 async function editModule(library: ReturnType<Page["getByRole"]>) {
   const resume = library.getByRole("button", { name: "继续编辑", exact: true });
   if (await resume.isVisible()) await resume.click();
@@ -273,4 +279,109 @@ test("中文输入法确认不发送，章节范围悬停仍可读", async ({ pa
   const range = page.getByRole("dialog", { name: "整理章节索引", exact: true });
   await range.getByText(/雨夜/).hover();
   await screenshot(page, "chapter-range-hover-1440");
+});
+
+test("对话选段记成灵感，来源定位与原文一致", async ({ page, request, book }) => {
+  const stamp = "2026-10-25T10:00:00+08:00";
+  await page.route(`**/api/file-workspaces/${book.id}/conversations`, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    await route.fulfill({
+      json: {
+        items: [{ id: "c1", title: "雨衣讨论", created_at: stamp, updated_at: stamp }],
+        recent_id: "c1",
+        active_turn: null,
+        revision: "r1",
+      },
+    });
+  });
+  await page.route(`**/api/file-workspaces/${book.id}/conversations/c1/messages*`, async (route) => {
+    await route.fulfill({
+      json: {
+        events: [
+          { seq: 1, at: stamp, type: "turn_started", turn_id: "t1", text: "说说雨衣" },
+          {
+            seq: 2,
+            at: stamp,
+            type: "assistant_message",
+            turn_id: "t1",
+            text: "雨衣上的水痕说明他刚从码头回来。",
+          },
+        ],
+        last_seq: 2,
+        active_turn: null,
+        revision: "r1",
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByLabel("选择作品目录").selectOption(book.id);
+  await page.getByLabel("选择对话").selectOption("c1");
+  const reply = page.locator(".chat-reply").first();
+  await expect(reply).toContainText("雨衣上的水痕");
+
+  const before = await (await request.get(`/api/file-workspaces/${book.id}/ideas?order=created`)).json();
+
+  // 三击选中整段：浮动入口只在稳定消息的选段上出现。
+  await reply.locator("p").first().click({ clickCount: 3 });
+  await page.getByRole("button", { name: "记成灵感", exact: true }).click();
+  await expect(page.getByText(/已记成灵感/)).toBeVisible();
+  await ideaShot(page, "selection-capture-1440");
+
+  const after = await (await request.get(`/api/file-workspaces/${book.id}/ideas?order=created`)).json();
+  expect(after.total).toBe(before.total + 1);
+  const known = new Set(before.items.map((item: { idea_id: string }) => item.idea_id));
+  const newest = after.items.find((item: { idea_id: string }) => !known.has(item.idea_id));
+  const created = await (
+    await request.get(`/api/file-workspaces/${book.id}/ideas/${newest.idea_id}`)
+  ).json();
+  // 存的是选段原文，不是重写过的句子。
+  expect("雨衣上的水痕说明他刚从码头回来。").toContain(created.body);
+  expect(created.body.trim().length).toBeGreaterThan(0);
+  expect(created.origin).toMatchObject({
+    role: "assistant",
+    conversation_id: "c1",
+    turn_id: "t1",
+    message_seq: 1,
+  });
+  expect(created.origin.quote).toBe(created.body);
+});
+
+test("引用显示原文预览，作者明确更新到最新版本", async ({ page, request, book }) => {
+  await page.goto("/");
+  await page.getByLabel("选择作品目录").selectOption(book.id);
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
+  await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
+  await page.getByRole("button", { name: "带到对话", exact: true }).click();
+
+  const chip = page.getByRole("button", { name: /^查看引用的灵感：侦探认出了雨衣/ });
+  await expect(chip).toBeVisible();
+  // 引用显示原文预览，不把修订号当日常标签。
+  await expect(page.getByText(/irev_[0-9a-f]/)).toHaveCount(0);
+
+  // 作者在别处把这条灵感改成新版本；引用不会自己换版本。
+  const listing = await (await request.get(`/api/file-workspaces/${book.id}/ideas`)).json();
+  const idea = await (
+    await request.get(`/api/file-workspaces/${book.id}/ideas/${listing.items[0].idea_id}`)
+  ).json();
+  const updated = await request.patch(`/api/file-workspaces/${book.id}/ideas/${idea.idea_id}`, {
+    data: {
+      expected_digest: idea.digest,
+      expected_revision: idea.revision_id,
+      body: "侦探认出了雨衣，也认出了那把伞。",
+      request_key: `ref-update-${book.id}`,
+    },
+  });
+  expect(updated.ok()).toBeTruthy();
+
+  await chip.click();
+  const dialog = page.getByRole("dialog", { name: "引用的灵感", exact: true });
+  await expect(dialog).toContainText("侦探认出了雨衣。");
+  await expect(dialog.getByText(/已有更新的版本/)).toBeVisible();
+  await ideaShot(page, "reference-update-1440");
+  await dialog.getByRole("button", { name: "更新到最新版本", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: /^查看引用的灵感：侦探认出了雨衣，也认出了那把伞/ }),
+  ).toBeVisible();
 });

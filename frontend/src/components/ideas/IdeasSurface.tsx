@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { navigate } from "../../state/navigation";
 import { useConversationsStore } from "../../state/conversations";
-import { useIdeasStore, useIdeaScope } from "../../state/ideas";
+import { referencePreview, useIdeasStore, useIdeaScope } from "../../state/ideas";
 import { useIdeasSurfaceStore } from "../../state/ideasSurface";
 import { useLayoutStore } from "../../state/layout";
 import { useWorkspaceStore } from "../../state/workspace";
@@ -139,8 +139,16 @@ export default function IdeasSurface() {
 
   if (!open || !workspaceId) return null;
 
-  const takeToChat = (ideaId: string, revisionId: string, preview: string) => {
-    useConversationsStore.getState().addIdeaReference(ideaId, revisionId, preview);
+  const takeToChat = async (ideaId: string) => {
+    // 有脏稿先保存：引用绑定保存返回的具体修订，不引用一个还没落盘的版本。
+    const saved = await useIdeasStore.getState().prepareReference(ideaId);
+    if (!saved) return;
+    useConversationsStore.getState().addIdeaReference({
+      ideaId: saved.ideaId,
+      revisionId: saved.revisionId,
+      preview: referencePreview(saved.body),
+      chars: Array.from(saved.body).length,
+    });
     close();
     navigate({ kind: "writing", workspaceId });
   };

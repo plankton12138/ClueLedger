@@ -100,6 +100,14 @@ export interface ChatTurn {
   review: TurnReview | null;
   /** 这一轮装配进提示词的分区；没有装配记录时为 null。 */
   injection: TurnInjection | null;
+  /** 受理时固定的灵感引用；只表示「带上了这一版」，不表示模型读完了全文。 */
+  ideas: TurnIdea[];
+}
+
+export interface TurnIdea {
+  idea_id: string;
+  revision_id: string;
+  preview: string;
 }
 
 /** 本轮注入：只记分区规模、跳过原因与未装入条目，不含注入正文。 */
@@ -234,6 +242,7 @@ const EMPTY_TURN = (id: string, at: string): ChatTurn => ({
   scope: null,
   review: null,
   injection: null,
+  ideas: [],
 });
 
 // -- 结构更新：只替换受影响的节点 -------------------------------------------
@@ -356,9 +365,14 @@ export function appendEvent(turns: ChatTurn[], event: WorkspaceEvent): ChatTurn[
   switch (event.type) {
     case "turn_started": {
       if (turns.some((turn) => turn.id === event.turn_id)) return turns;
+      const ideas = (event.context?.idea_revisions ?? []).map((item) => ({
+        idea_id: item.idea_id,
+        revision_id: item.revision_id,
+        preview: item.preview ?? item.title ?? "",
+      }));
       return [
         ...turns,
-        { ...EMPTY_TURN(event.turn_id, event.at), prompt: event.text },
+        { ...EMPTY_TURN(event.turn_id, event.at), prompt: event.text, ideas },
       ];
     }
     case "run_phase":

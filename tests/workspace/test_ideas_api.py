@@ -235,3 +235,28 @@ def test_update_keeps_legacy_title_and_tags_when_only_body_is_sent(tmp_path: Pat
     assert view["body"] == "只改正文。"
     assert view["title"] == "老板娘"
     assert view["tags"] == ["人物"]
+
+
+def test_origin_keeps_the_selection_locator(tmp_path: Path) -> None:
+    """对话选段记成灵感时，来源定位要按提交的原样保存。"""
+    client, workspace_id = _client(tmp_path)
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/ideas",
+        json={
+            "body": "选段原文",
+            "request_key": "idea-origin-1",
+            "origin": {
+                "role": "assistant",
+                "conversation_id": "c1",
+                "message_seq": 2,
+                "quote": "选段原文",
+                "turn_id": "t1",
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    origin = response.json()["origin"]
+    assert origin["role"] == "assistant"
+    assert origin["message_seq"] == 2
+    assert origin["turn_id"] == "t1"
+    assert origin["quote"] == "选段原文"

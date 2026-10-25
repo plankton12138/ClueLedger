@@ -12,7 +12,8 @@ import { EmptyState, StatusMessage } from "../ui/StatusMessage";
 import IdeaHistory from "./IdeaHistory";
 
 interface Props {
-  onTakeToChat: (id: string, revision: string, preview: string) => void;
+  /** 有脏稿时由上层先保存，再用保存结果的具体修订引用。 */
+  onTakeToChat: (id: string) => void;
   onOpenSource?: (path: string) => void;
 }
 
@@ -85,9 +86,9 @@ export default function IdeaEditor({ onTakeToChat, onOpenSource }: Props) {
         {!selected.deleted && (
           <>
             <Button
-              disabled={dirty || busy}
-              disabledReason="先保存或放弃当前修改"
-              onClick={() => onTakeToChat(selected.idea_id, selected.revision_id, body)}
+              disabled={busy}
+              busy={busy}
+              onClick={() => onTakeToChat(selected.idea_id)}
             >
               带到对话
             </Button>

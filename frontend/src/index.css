@@ -835,6 +835,8 @@
   .idea-surface[data-presentation="expanded"] { left: 12px; right: 12px; width: auto; }
   .idea-surface[data-presentation="expanded"] .idea-surface-body { width: 100%; max-width: 820px; margin: 0 auto; }
   .idea-surface[data-presentation="compact"] { top: 60px; left: 0; right: 0; bottom: 0; z-index: 62; width: auto; border: 0; border-radius: 0; box-shadow: none; }
+  .idea-capture-fab { position: fixed; z-index: 55; transform: translate(-50%, -130%); padding: 4px 10px; border: 1px solid theme("colors.ui.edge"); border-radius: 6px; background: theme("colors.ui.surface"); color: theme("colors.ui.text"); font-size: 11px; box-shadow: 0 4px 12px #273b4b26; }
+  .idea-reference-body { max-height: 320px; overflow: auto; margin: 0; padding: 8px; border: 1px solid theme("colors.ui.edge"); border-radius: 6px; background: theme("colors.ui.paper"); font: inherit; font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
   .idea-surface-scrim { position: fixed; inset: 60px 0 0 0; z-index: 61; background: theme("colors.ui.overlay"); }
   .idea-surface-tools { display: flex; flex: none; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid theme("colors.ui.edge"); }
   .idea-surface-title { font-size: 15px; font-weight: 600; }

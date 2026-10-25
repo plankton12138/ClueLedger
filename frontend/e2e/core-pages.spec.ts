@@ -71,7 +71,8 @@ test("灵感面板：窄屏草稿与主操作矩阵，引用保留聊天草稿�
   await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("侦探认出了雨衣。");
   await page.getByLabel("灵感正文", { exact: true }).fill("新内容保留");
-  await expect(page.getByRole("button", { name: "带到对话", exact: true })).toBeDisabled();
+  // 有未保存修改也可以引用：先保存再绑定保存结果的那一版。
+  await expect(page.getByRole("button", { name: "带到对话", exact: true })).toBeEnabled();
   for (const width of [1440, 1024, 760, 640]) for (const scale of [100, 150]) {
     await page.setViewportSize({ width, height: width === 1024 ? 768 : width === 640 ? 800 : 900 }); await font(page, scale);
     await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("新内容保留");

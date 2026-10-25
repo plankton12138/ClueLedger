@@ -22,6 +22,9 @@ const COMPLETION_NOTE: Record<string, string> = {
 interface Props {
   message: ChatMessage;
   wide?: boolean;
+  /** 来源定位：选段记成灵感时用这一轮的身份，不用渲染顺序猜。 */
+  turnId?: string;
+  turnIndex?: number;
   /** 宽阅读视图里不重复放操作按钮。 */
   showActions?: boolean;
   onExpand?: (message: ChatMessage) => void;
@@ -37,6 +40,8 @@ const Block = memo(function Block({ block }: { block: ChatBlock }) {
 function AssistantMessageView({
   message,
   wide = false,
+  turnId,
+  turnIndex,
   showActions = true,
   onExpand,
   onCopyFailed,
@@ -56,7 +61,7 @@ function AssistantMessageView({
   if (!hasReply) classes.push("chat-reply-plain");
 
   return (
-    <div className="chat-msg">
+    <div className="chat-msg" data-role="assistant" data-turn-id={turnId} data-turn-index={turnIndex}>
       <div className={classes.join(" ")}>
         {blocks.map((block) => (
           <Block key={block.id} block={block} />

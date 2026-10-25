@@ -9,7 +9,7 @@
 
 - [0.8 开发入口](v0.8/README.md)：本版方案、阶段记录与交付状态。
 - [0.8 前端体验与结构修复计划](v0.8/frontend-experience-plan.md)：H1–H6 已实施并完成确定性回归，在线长篇与桌面打包另列未执行；页面与操作层级、视觉规则、编辑可靠性、阶段任务与验收，版本保持 0.8.0。
-- [0.8 灵感全流程改造计划](v0.8/ideas-experience-plan.md)：I0–I2 已实施（[基线](v0.8/notes/I0-baseline.md)、[正文优先](v0.8/notes/I1-body-first.md)、[悬浮面板](v0.8/notes/I2-surface.md)），I3–I6 待实施；纯正文记录、悬浮面板、修改删除已完成，固定版本引用、只读展开与实际使用关联仍待做；附[分模块实现示例](v0.8/ideas-experience-examples.md)，版本保持 0.8.0。
+- [0.8 灵感全流程改造计划](v0.8/ideas-experience-plan.md)：I0–I3 已实施（[基线](v0.8/notes/I0-baseline.md)、[正文优先](v0.8/notes/I1-body-first.md)、[悬浮面板](v0.8/notes/I2-surface.md)、[固定版本引用](v0.8/notes/I3-references.md)），I4–I6 待实施；纯正文记录、悬浮面板、修改删除、固定版本引用与选段再记录已完成，只读展开与实际使用关联仍待做；附[分模块实现示例](v0.8/ideas-experience-examples.md)，版本保持 0.8.0。
 - [0.8 模块导航](v0.8/modules/README.md)：当前职责、真实行为与未实现项。
 - [全局模块库与作品装配](v0.8/modules/library-and-assembly.md)：七种类型、不可变版本、精确绑定、装卸与派生。
 - [统一章节与事件索引](v0.8/modules/story-index.md)：双视图、事件观察、按章贡献与旧记录兼容。

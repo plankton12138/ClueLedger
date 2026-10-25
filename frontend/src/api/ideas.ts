@@ -116,6 +116,7 @@ export interface IdeaOriginInput {
   conversation_id: string;
   message_seq: number;
   quote: string;
+  turn_id?: string;
 }
 
 export type IdeaOrder = "created" | "updated";
