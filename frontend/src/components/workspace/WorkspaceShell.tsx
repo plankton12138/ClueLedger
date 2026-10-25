@@ -8,6 +8,7 @@ import { useIdeasSurfaceStore } from "../../state/ideasSurface";
 import { usePagePositions } from "../../state/pagePositions";
 import { useWorkspaceStore } from "../../state/workspace";
 import StoryMaterialsPage from "../materials/StoryMaterialsPage";
+import StoryOverviewPage from "../overview/StoryOverviewPage";
 import IdeasSurface from "../ideas/IdeasSurface";
 import LibraryRoute from "../library/LibraryRoute";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
@@ -104,6 +105,9 @@ export default function WorkspaceShell() {
     {notice && <StatusMessage tone="warning" action={<Button size="compact" variant="quiet" onClick={dismissNotice}>知道了</Button>}>{notice}</StatusMessage>}
     <main className="app-content">
       <div className="workspace-page" hidden={!writing}><WritingLayout onOpen={() => setDirectory(true)} /></div>
+      {currentId && page?.kind === "overview" && <div key={`${currentId}:overview`} className="workspace-page">
+        <StoryOverviewPage page={page} onNavigate={navigate} onOpenSource={path => { void openPath(path).then(() => navigate({ kind: "writing", workspaceId: currentId })); }} onOpenActivity={() => void openDrawer()} />
+      </div>}
       {currentId && rememberedMaterials && <div key={`${currentId}:materials`} className="workspace-page" hidden={!materials}>
         <StoryMaterialsPage workspaceId={currentId} section={rememberedMaterials.section} chapter={rememberedMaterials.chapter} order={rememberedMaterials.order} entryId={rememberedMaterials.entryId} onNavigate={navigate}
           onOpenSource={path => { void openPath(path).then(() => navigate({ kind: "writing", workspaceId: currentId })); }}

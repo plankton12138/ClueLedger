@@ -19,4 +19,5 @@
 * 开发过程中注意前后端接口的对齐度，留意是否存在前端有功能，但相应后端接口缺失，或者有多余后端接口的情况
 * Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
 * 当需要使用模型进行评测时，使用在线模型（.env），不在使用本地模型
+* 项目根目录的README文档仅在用户要求时修改
 

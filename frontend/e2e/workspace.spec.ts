@@ -397,7 +397,8 @@ test("稿纸横线随内容滚动", async ({ page }) => {
 
 test("故事资料页叠加已装模块的计划，并可按模块筛选", async ({ page }) => {
   await open(page);
-  await page.getByRole("link", { name: "故事资料", exact: true }).click();
+  await page.getByRole("link", { name: "故事总览", exact: true }).click();
+  await page.evaluate(() => { location.hash = location.hash.replace(/overview.*$/, "materials/legacy-story"); });
   await expect(
     page.getByRole("heading", { name: /计划叠加/ }),
   ).toBeVisible();

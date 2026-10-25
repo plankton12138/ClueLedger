@@ -1,0 +1,26 @@
+{
+  "overview_mixed_module--current--1/step-1/mixed": {
+    "verdict": "pass",
+    "reviewer": "Codex 原文与公开派生结果复核",
+    "reason": "人物林远与𠮷引用不同，铜钥匙和姐弟关系有对应模块引文；没有正文目标。",
+    "evidence": "evidence/overview_mixed_module--current--1/step-1.json: derived, run_finished, diffs；所有作品 diff 为空。"
+  },
+  "overview_negation_and_ambiguity--current--1/step-1/no_invented_relation": {
+    "verdict": "pass",
+    "reviewer": "Codex 原文与公开派生结果复核",
+    "reason": "两个林远分别提取；关系为空。否定和未采用父子设想保留为非既定事实。",
+    "evidence": "evidence/overview_negation_and_ambiguity--current--1/step-1.json: derived, run_finished, diffs；所有作品 diff 为空。"
+  },
+  "overview_testimony_and_future--current--1/step-1/observation_scope": {
+    "verdict": "pass",
+    "reviewer": "Codex 原文与公开派生结果复核",
+    "reason": "人物林远与铜钥匙已提取；正文只含第1章，林远否认属于 testimony。第九章计划仅在模块摘要中说明，未移入正文。",
+    "evidence": "evidence/overview_testimony_and_future--current--1/step-1.json: derived, run_finished, diffs；所有作品 diff 为空。"
+  },
+  "overview_empty_discovery--current--1/step-1/empty_not_invented": {
+    "verdict": "pass",
+    "reviewer": "Codex 原文与公开派生结果复核",
+    "reason": "行文要求模块保存 empty 和空人物关系列表，没有虚构对象。",
+    "evidence": "evidence/overview_empty_discovery--current--1/step-1.json: derived, run_finished, diffs；所有作品 diff 为空。"
+  }
+}

@@ -1,0 +1,701 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261025-211828-108744",
+    "started_at": "2026-10-25T21:18:28.109752+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "352b27cc0376998af724e5b230afa710243272c6",
+    "git_dirty": true,
+    "source_sha256": "91a180a7741b5a8ca273c76df9a0cf725792c1ef224103c0d6ddc23387deabbd",
+    "cases_sha256": "f7b6624761a52d540480704cdc41959fff114593fec13eb49e5b26f1e4371a62",
+    "suite": "story-overview",
+    "jobs": [
+      {
+        "key": "overview_mixed_module--current--1",
+        "case": "overview_mixed_module",
+        "family": "故事总览",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "overview_negation_and_ambiguity--current--1",
+        "case": "overview_negation_and_ambiguity",
+        "family": "故事总览",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "overview_testimony_and_future--current--1",
+        "case": "overview_testimony_and_future",
+        "family": "故事总览",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "overview_empty_discovery--current--1",
+        "case": "overview_empty_discovery",
+        "family": "故事总览",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 70,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261025-211828-108744",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 21
+  },
+  "summary": {
+    "planned": 4,
+    "executed": 4,
+    "counts": {
+      "pending_review": 4,
+      "not_run": 0
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": 16.828,
+    "duration_p95_seconds": 20.375,
+    "input_tokens": 7843,
+    "output_tokens": 8895,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 4,
+        "executed": 4,
+        "counts": {
+          "pending_review": 4,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 16.828,
+        "duration_p95_seconds": 20.375,
+        "input_tokens": 7843,
+        "output_tokens": 8895,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "故事总览": {
+        "planned": 4,
+        "executed": 4,
+        "counts": {
+          "pending_review": 4,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 16.828,
+        "duration_p95_seconds": 20.375,
+        "input_tokens": 7843,
+        "output_tokens": 8895,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 4,
+        "executed": 4,
+        "counts": {
+          "pending_review": 4,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 16.828,
+        "duration_p95_seconds": 20.375,
+        "input_tokens": 7843,
+        "output_tokens": 8895,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "overview_mixed_module": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 19.328,
+        "duration_p95_seconds": 19.328,
+        "input_tokens": 1707,
+        "output_tokens": 3402,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "overview_negation_and_ambiguity": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 20.375,
+        "duration_p95_seconds": 20.375,
+        "input_tokens": 1123,
+        "output_tokens": 3391,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "overview_testimony_and_future": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 16.828,
+        "duration_p95_seconds": 16.828,
+        "input_tokens": 4160,
+        "output_tokens": 1902,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "overview_empty_discovery": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 3.219,
+        "duration_p95_seconds": 3.219,
+        "input_tokens": 853,
+        "output_tokens": 200,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2695,
+            "at": "2026-10-25T21:18:47.926+08:00",
+            "event_version": 1,
+            "event_id": "c_e89357e8bbec:2695",
+            "conversation_id": "c_e89357e8bbec",
+            "type": "run_finished",
+            "turn_id": "t_3d657ef4",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我会先分段阅读冻结源文本。\n已读完该模块原文（144 码点，一次读完），并发布派生结果：\n\n- **人物**\n  - 林远：船医（依据 84–92）\n  - 𠮷：林远的姐姐，在码头经营邮局（依据 92–108）\n- **线索**\n  - 带缺口的铜钥匙：林远随身携带，可打开废弃船坞侧门（依据 114–144）\n- **关系**\n  - 林远 ↔ 𠮷：姐弟（原文明确“𠮷是林远的姐姐”）\n\n原文无章节事件与日期信息，故未生成事件；关系端点仅用当前 facets 下标（0、1）。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_write",
+          "status": "pass",
+          "detail": {
+            "banned": [
+              "attach_module",
+              "delete_file",
+              "edit_file",
+              "move_file",
+              "publish_module",
+              "save_idea",
+              "write_file"
+            ],
+            "called": [
+              "publish_overview_result",
+              "read_overview_source"
+            ]
+          }
+        },
+        {
+          "id": "step-1/mixed",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "查看 derived.overview，人物包含林远和𠮷且引用不同；铜钥匙是线索；姐弟关系有模块原文依据；没有虚构章节或正文已知状态。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 4,
+        "model_finished": 4,
+        "tool_calls": 3,
+        "tool_errors": 1,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 4,
+        "fresh_input_tokens": 1707,
+        "input_tokens": 1707,
+        "output_tokens": 3402,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 462,
+            "messages_json_chars": 571,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 1896,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 3553,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 5194,
+            "tools_json_chars": 1314
+          }
+        ],
+        "max_request_json_chars": 6970,
+        "cost": null
+      },
+      "key": "overview_mixed_module--current--1",
+      "case": "overview_mixed_module",
+      "title": "纯模块作品中的人物、关系和线索",
+      "family": "故事总览",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 19.328,
+      "evidence": "evidence/overview_mixed_module--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 3127,
+            "at": "2026-10-25T21:19:08.775+08:00",
+            "event_version": 1,
+            "event_id": "c_62ac0a20d2da:3127",
+            "conversation_id": "c_62ac0a20d2da",
+            "type": "run_finished",
+            "turn_id": "t_44d2d12e",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我将分段读取冻结目标原文，然后发布派生结果。\n已验证读完（长度 166，无后续分段）。为确保引用位置精确，我再取两个偏移点校验。\n已读完冻结目标全文（166 码点，单段，无后续分段），并发布派生结果。\n\n处理说明：\n- 人物 2 个：林远甲（退休邮差）、林远乙（十七岁的学生，原文明确与林远甲无亲属关系）。\n- 关系 0 条：原文对二人只有“没有亲属关系”的否定表述；“未采用的想法”一节属作者尚未确定的写作设想，不是正文事实，故未据此建立父子关系。\n- 本模块原文不含章节事件、日期或线索内容，未生成相应条目。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_invented_relation",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "查看派生结果，两个林远不能合并；不得生成父子等肯定人物关系；可以没有任何关系边。否定和未采用假设不得转为事实。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 4,
+        "model_finished": 4,
+        "tool_calls": 4,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 4,
+        "fresh_input_tokens": 1123,
+        "input_tokens": 1123,
+        "output_tokens": 3391,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 462,
+            "messages_json_chars": 571,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 1932,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 3786,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 5206,
+            "tools_json_chars": 1314
+          }
+        ],
+        "max_request_json_chars": 6982,
+        "cost": null
+      },
+      "key": "overview_negation_and_ambiguity--current--1",
+      "case": "overview_negation_and_ambiguity",
+      "title": "不从同名、否定和假设生成肯定关系",
+      "family": "故事总览",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 20.375,
+      "evidence": "evidence/overview_negation_and_ambiguity--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1401,
+            "at": "2026-10-25T21:19:26.124+08:00",
+            "event_version": 1,
+            "event_id": "c_c67a0f8c0bf9:1401",
+            "conversation_id": "c_c67a0f8c0bf9",
+            "type": "run_finished",
+            "turn_id": "t_fe6a9e18",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我会先分段读取冻结目标原文。\n已读完目标全文（共 115 码点，无后续分段）。\n\n原文仅含作者设定与计划说明（“作者计划第九章才揭晓钥匙来自林远”，以及“林远是一名船医”），并非正文叙述事实，因此没有可提取的人物、线索或明确关系。已按规则发布 `empty` 结果，未将作者计划升级为正文事实。\n我先分段读取本章原文。\n已读完《第一章 雨夜》全文并发布派生结果。\n\n- 概要：雨夜中，林远向侦探声称没见过那枚铜钥匙；侦探尚未核实该说法。\n- 事件 1（testimony）：林远对侦探称自己未见过铜钥匙。\n- 事件 2（narration）：侦探尚未核实林远的说法。\n\n证词保持为证词，未升级为客观事实；本章无明确日期信息，未做时间规范化。\nI'll start by reading the source text.\n已读完《第一章 雨夜》全文（共 37 码点）：\n\n- 章节原文仅包含两句：林远对侦探否认见过铜钥匙（testimony），以及侦探尚未核实其说法（narration）。\n- 本章提交的 facets 为空，即没有任何可用的人物/对象关系端点；因此无法建立人物关系或事件关联（关联端点只能取自 facets 下标，不能凭文本自行造对象）。\n- 两个既有事件维持原有表达方式，未将林远的证词升级为客观事实，也未推断核实结果。\n\n已发布结果：outcome = empty，links 与 relations 均为空（校验确认：在不虚构端点的情况下，“found” 状态与空结果不一致，故按无可用关联材料处理）。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/observation_scope",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "查看 story-index 与 overview，第1章林远的话保留证词或其他非客观模式；不得把‘没见过’写成已证实事实。第2章不在本轮章节范围。钥匙来自林远是作者未来计划，不能成为第1章正文观察。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 10,
+        "model_finished": 10,
+        "tool_calls": 7,
+        "tool_errors": 1,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 10,
+        "fresh_input_tokens": 4160,
+        "input_tokens": 4160,
+        "output_tokens": 1902,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 462,
+            "messages_json_chars": 571,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 1861,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 2972,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 368,
+            "tools_json_chars": 1173
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 1568,
+            "tools_json_chars": 1173
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 3174,
+            "tools_json_chars": 1173
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 1288,
+            "tools_json_chars": 4100
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 2517,
+            "tools_json_chars": 4100
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 3823,
+            "tools_json_chars": 4100
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 4931,
+            "tools_json_chars": 4100
+          }
+        ],
+        "max_request_json_chars": 9493,
+        "cost": null
+      },
+      "key": "overview_testimony_and_future--current--1",
+      "case": "overview_testimony_and_future",
+      "title": "证词和未来设定不变成已写事实",
+      "family": "故事总览",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 16.828,
+      "evidence": "evidence/overview_testimony_and_future--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 136,
+            "at": "2026-10-25T21:19:30.060+08:00",
+            "event_version": 1,
+            "event_id": "c_31b8adb6ce6d:136",
+            "conversation_id": "c_31b8adb6ce6d",
+            "type": "run_finished",
+            "turn_id": "t_845837cf",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "已读完该目标模块。全文仅是一份“行文要求”的格式说明（段落简短、减少重复形容词、对话用中文引号、章节后留空行），不含任何人物、线索或可建立关系的叙事内容，因此发布结果为 empty。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/empty_not_invented",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "derived.overview 对模块保存 empty 覆盖，没有凭空生成角色、人物关系或线索，作者内容没有变化。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 3,
+        "model_finished": 3,
+        "tool_calls": 2,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 3,
+        "fresh_input_tokens": 853,
+        "input_tokens": 853,
+        "output_tokens": 200,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 462,
+            "messages_json_chars": 571,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 1793,
+            "tools_json_chars": 1314
+          },
+          {
+            "system_chars": 462,
+            "messages_json_chars": 2903,
+            "tools_json_chars": 1314
+          }
+        ],
+        "max_request_json_chars": 4679,
+        "cost": null
+      },
+      "key": "overview_empty_discovery--current--1",
+      "case": "overview_empty_discovery",
+      "title": "无人物线索的通用模块返回合法空发现",
+      "family": "故事总览",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 3.219,
+      "evidence": "evidence/overview_empty_discovery--current--1",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

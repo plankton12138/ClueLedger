@@ -1,5 +1,7 @@
 # 0.8 数据与存储设计
 
+2026-10-25：作品应用状态新增 `overview/`，保存带精确来源的模块派生对象、正文关联、信息不足尝试和无需更新回执。正文事件继续使用 `story-index.json`。派生 schema 1、recipe 2；作者模块与装配格式不变。详见 [O6 记录](notes/O6-story-overview.md)。
+
 日期：2026-10-24。状态：待实施。产品行为见[产品方案](../../product-design/v0.8/README.md)，
 调用方契约见[接口与前端](api-and-frontend.md)。下文结构是目标结构，不是现有文件格式。
 

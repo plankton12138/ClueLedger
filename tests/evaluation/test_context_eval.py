@@ -67,9 +67,9 @@ def deliver(item: dict[str, Any], tool: str, payload: dict[str, Any], key: str) 
 
 def test_all_cases_and_suites_are_loadable() -> None:
     cases, digest = load_cases()
-    assert len(cases) == 20 and len(digest) == 64
+    assert len(cases) == 24 and len(digest) == 64
     for case in cases:
-        assert fixture_files(case)
+        assert fixture_files(case) or case.modules
     for suite in (ROOT / "suites").glob("*.json"):
         data = json.loads(suite.read_text(encoding="utf-8"))
         assert set(data["cases"]) <= {c.id for c in cases}

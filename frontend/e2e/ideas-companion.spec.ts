@@ -42,7 +42,7 @@ test("独立入口：按钮和面板可拖动，位置跨刷新保留，拖动�
   const panelAfter=await panel.boundingBox();
   expect(panelAfter!.x).toBeLessThan(panelBefore!.x-120);
   await page.getByLabel("记录灵感",{exact:true}).fill("收起也保留的输入");
-  await page.getByRole("link",{name:"故事资料",exact:true}).click();
+  await page.getByRole("link",{name:"故事总览",exact:true}).click();
   await expect(page.getByLabel("记录灵感",{exact:true})).toHaveValue("收起也保留的输入");
   await page.getByRole("button",{name:"收起灵感",exact:true}).click();
   await expect(launcher).toBeFocused();

@@ -236,7 +236,9 @@ def _summary(instruction: str) -> str:
 
 def _tool_mode(
     purpose: str,
-) -> Literal["write", "index", "review", "state", "materials", "idea"]:
+) -> Literal["write", "index", "review", "state", "materials", "idea", "overview"]:
+    if purpose == "organize_overview":
+        return "overview"
     if purpose == "update_chapter_index":
         return "index"
     if purpose == "review":
@@ -351,6 +353,8 @@ def _requested_scope(
     """把客户端提交的范围收成可比较的四个字段；不含服务端冻结的指纹。"""
     if scope is None:
         return None
+    if isinstance(scope, Mapping) and scope.get("domain") == "overview":
+        return {"domain": "overview", "request": scope.get("request")}
     if isinstance(scope, MaterialTaskScope):
         return {
             "domain": scope.domain,
@@ -371,6 +375,10 @@ def _same_scope(
 ) -> bool:
     if previous is None or current is None:
         return previous is None and current is None
+    if previous.get("domain") == "overview" or current.get("domain") == "overview":
+        return previous.get("domain") == current.get("domain") and previous.get(
+            "request"
+        ) == current.get("request")
     for key in ("domain", "chapter_paths", "entity_paths", "as_of_chapter"):
         left = previous.get(key)
         right = current.get(key)
@@ -597,7 +605,13 @@ class TurnService:
             frozen_scope: dict[str, object] | None = None
             targets: tuple[str, ...]
             review_targets: tuple[str, ...]
-            if purpose == "organize_materials":
+            if purpose == "organize_overview":
+                from hastings.workspace.overview_updates import freeze_overview
+
+                requested = dict(cast(Mapping[str, Any], material_scope or {}))
+                frozen_scope = freeze_overview(self, requested["request"])
+                targets, review_targets = (), ()
+            elif purpose == "organize_materials":
                 if material_scope is None:
                     raise WorkspaceError(
                         code="MATERIAL_SCOPE_INVALID",
@@ -991,6 +1005,20 @@ class TurnService:
             # 执行锁覆盖整轮模型运行，保证同一作品同时只有一轮在改文件。
             # 它与 accept()/stop() 用的受理锁分开，避免状态查询被长任务阻塞。
             async with self._lock:
+                if info.purpose == "organize_overview":
+                    from hastings.workspace.overview_updates import execute_overview
+
+                    run = RunContext(
+                        workspace=self.workspace,
+                        session=session,
+                        turn_id=info.turn_id,
+                        library=self.library,
+                        state_root=self.store.root,
+                        assembly=info.assembly or Assembly(),
+                        emit=lambda kind, payload: self._record_activity(info, kind, payload),
+                    )
+                    status = cast(RunStatus, await execute_overview(self, info, run, snapshot))
+                    return
                 if self._active is not None and self._active.turn_id == info.turn_id:
                     # 把运行状态暴露给前端轮询；真正的中断由 stop() 调用 harness.cancel()。
                     self._active.state = (

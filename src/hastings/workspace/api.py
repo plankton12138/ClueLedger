@@ -1526,6 +1526,9 @@ def create_file_workspace_router(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    from hastings.workspace.overview_api import create_overview_router
+
+    router.include_router(create_overview_router(workspaces, library, service_for))
     return router
 
 

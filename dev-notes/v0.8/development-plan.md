@@ -6,6 +6,8 @@ A–F 的承诺项已接线；G 的确定性、浏览器与 v0.8 冒烟评测已
 产品范围见[产品方案](../../product-design/v0.8/README.md)，实施契约见[数据](data-and-storage.md)、
 [上下文](context-and-index.md)、[接口](api-and-frontend.md)与[验收](acceptance.md)。
 
+2026-10-25 后续工作：[故事总览开发计划](story-overview-plan.md)与[分模块示例](story-overview-examples.md)已实施接线，**O6 本轮验证已执行，扩展范围见阶段记录**。该计划承接自由内容模块和时间线主视图的产品方向，不改变本文历史阶段的交付状态。
+
 2026-10-24 补充：[前端体验与结构修复计划](frontend-experience-plan.md)为本版后续 H1–H6 工作，
 包含页面规则、各模块任务、代码示例和 UI01–UI18 验收；**H1–H6 已实施并完成确定性回归；历史语义验收不据此更新，版本保持 `0.8.0`**。
 下文 A–G 的历史交付与未完成验收仍按原状态记录，不因新增修复计划重新勾选。

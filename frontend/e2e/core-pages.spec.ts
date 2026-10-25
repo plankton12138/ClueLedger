@@ -131,7 +131,7 @@ test("资料读取、顺序与范围选择不调用模型，后台筛选不重�
     starts++; submitted = route.request().postDataJSON();
     await route.fulfill({ status: 409, json: { error: { code: "TEST_SCOPE_CAPTURED", where: "整理范围核对", why: "已截获测试范围", fix: "关闭提示" } } });
   });
-  await page.goto(`/#/workspaces/${book.id}/materials/story`);
+  await page.goto(`/#/workspaces/${book.id}/materials/legacy-story`);
   await expect(page.getByText("依据已改动", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "重新读取资料", exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "重新读取资料", exact: true }).click();
@@ -142,7 +142,7 @@ test("资料读取、顺序与范围选择不调用模型，后台筛选不重�
   await picker.getByRole("checkbox", { name: /第 1 章/ }).uncheck();
   await picker.getByRole("checkbox", { name: /第 2 章/ }).check();
   expect(starts).toBe(0);
-  await page.evaluate(id => { location.hash = `#/workspaces/${id}/materials/story?chapter=1`; }, book.id);
+  await page.evaluate(id => { location.hash = `#/workspaces/${id}/materials/legacy-story?chapter=1`; }, book.id);
   await expect(picker.getByRole("checkbox", { name: /第 2 章/ })).toBeChecked();
   await picker.getByRole("button", { name: "整理所选章节", exact: true }).click();
   await expect.poll(() => starts).toBe(1);
@@ -158,7 +158,7 @@ test("资料窗口与字号矩阵、无模型范围可查看、合法空结果",
     await route.fulfill({ json: config });
   });
   let starts = 0; page.on("request", req => { if (req.method() === "POST" && /material-tasks/.test(req.url())) starts++; });
-  await page.goto(`/#/workspaces/${book.id}/materials/story`);
+  await page.goto(`/#/workspaces/${book.id}/materials/legacy-story`);
   await expect(page.getByText("依据已改动", { exact: true }).first()).toBeVisible();
   for (const width of [1440, 1024, 760, 640]) for (const scale of [100, 150]) {
     await page.setViewportSize({ width, height: width === 1024 ? 768 : width === 640 ? 800 : 900 }); await font(page, scale);

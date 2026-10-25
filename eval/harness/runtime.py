@@ -183,6 +183,7 @@ def capture(
     coverage = CoverageStore(service.store.root)
     derived = {}
     for name in (
+        "story-index.json",
         "chapter-index.json",
         "disclosure.json",
         "character-states.json",
@@ -195,6 +196,12 @@ def capture(
         state_file = service.store.root / name
         if state_file.exists():
             derived[name] = json.loads(state_file.read_text(encoding="utf-8"))
+    overview_dir = service.store.root / "overview"
+    if overview_dir.exists():
+        derived["overview"] = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted(overview_dir.glob("*.json"))
+        ]
     diffs = {}
     for path in before.keys() | after.keys():
         old, new = before.get(path, {}).get("text", ""), after.get(path, {}).get("text", "")
@@ -306,6 +313,19 @@ async def run_attempt(
             trace["faults"].clear()
             info = None
             try:
+                material_scope = step.material_scope
+                if step.purpose == "organize_overview":
+                    from hastings.workspace.story_overview import StoryOverview
+
+                    overview = StoryOverview(workspace, store.root, library, step.state_chapter)
+                    material_scope = {
+                        "domain": "overview",
+                        "request": {
+                            "request_key": f"eval-overview-{i + 1}",
+                            "observed_generation": overview.generation,
+                            "as_of_chapter": overview.as_of,
+                        },
+                    }
                 info = await service.accept(
                     step.text,
                     f"eval-{i + 1}",
@@ -325,7 +345,7 @@ async def run_attempt(
                     ),
                     purpose=step.purpose,
                     index_paths=step.index_paths,
-                    material_scope=step.material_scope,
+                    material_scope=material_scope,
                 )
                 cid = info.conversation_id
                 try:

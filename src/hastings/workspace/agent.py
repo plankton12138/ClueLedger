@@ -125,7 +125,7 @@ from tau_agent.types import JSONValue
 __all__ = ["MAX_TURNS", "RunContext", "ToolMode", "build_harness", "build_tools"]
 
 #: 工具集合：普通写作、索引任务、只读检查，或只读展开一条灵感。
-ToolMode = Literal["write", "index", "review", "state", "materials", "idea"]
+ToolMode = Literal["write", "index", "review", "state", "materials", "idea", "overview"]
 
 
 #: 单轮最多的模型回合数；到顶就结束并如实记录，不无限循环。
@@ -229,6 +229,14 @@ def build_tools(
     索引任务只开放目录、搜索、读取与 ``save_chapter_index``：它能保存索引缓存，
     但不能改作品正文，也不准备 Git 基线。
     """
+    if mode == "overview":
+        # 该用途由统一轮次中的逐目标执行器构造受限工具，禁止意外得到写作工具。
+        raise WorkspaceError(
+            code="OVERVIEW_SCOPE_INVALID",
+            where="总览整理",
+            why="缺少冻结的总览目标",
+            fix="从故事总览发起更新",
+        )
     repo = GitRepo(workspace.root)
 
     async def list_files(
@@ -3272,6 +3280,7 @@ def build_harness(
 
 
 _PROFILE_BY_MODE: dict[ToolMode, Profile] = {
+    "overview": "materials",
     "write": "writer",
     "index": "extract",
     # 核对任务与建索引同类：只读原文、发布派生记录，不注入文风与旧摘要。

@@ -21,12 +21,10 @@ describe("parseHash", () => {
       ideaId: "idea_123",
     });
     expect(parseHash("#/workspaces/ws1/materials/story?order=story&chapter=8&entry=abc123")).toEqual({
-      kind: "materials",
+      kind: "overview",
       workspaceId: "ws1",
-      section: "story",
       chapter: 8,
       order: "story",
-      entryId: "abc123",
     });
   });
 
@@ -42,12 +40,12 @@ describe("parseHash", () => {
 
   it("旧章节概览与时间线路由落到同一页的不同顺序", () => {
     expect(parseHash("#/workspaces/ws1/materials/chapters?chapter=3")).toMatchObject({
-      section: "story",
+      kind: "overview",
       chapter: 3,
       order: "chapter",
     });
     expect(parseHash("#/workspaces/ws1/materials/timeline")).toMatchObject({
-      section: "story",
+      kind: "overview",
       chapter: null,
       order: "story",
     });
@@ -79,9 +77,8 @@ describe("pageHash", () => {
         entryId: "deadbeef",
       },
       {
-        kind: "materials" as const,
+        kind: "overview" as const,
         workspaceId: "ws1",
-        section: "story" as const,
         chapter: null,
         order: "story" as const,
       },

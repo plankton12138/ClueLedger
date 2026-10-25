@@ -12,7 +12,7 @@ export function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | nul
   const positions = usePagePositions(state => workspaceId ? state.pages[workspaceId] : undefined);
   const writing: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId } : null;
   const materials: WorkspacePage | null = workspaceId
-    ? { kind: "materials", workspaceId, section: "story", chapter: null, order: "chapter" }
+    ? { kind: "overview", workspaceId, chapter: null, order: "chapter" }
     : null;
   return <nav className="workspace-navigation" aria-label="作品页面">
     {writing
@@ -20,9 +20,9 @@ export function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | nul
         <BookOpen size={16} strokeWidth={2} aria-hidden="true" />写作</a>
       : <span aria-disabled="true"><BookOpen size={16} strokeWidth={2} aria-hidden="true" />写作</span>}
     {materials
-      ? <a className="ui-nav-link" href={pageHash(positions?.materials ?? materials)} aria-current={page?.kind === "materials" ? "page" : undefined}>
-        <FolderOpen size={16} strokeWidth={2} aria-hidden="true" />故事资料</a>
-      : <span aria-disabled="true"><FolderOpen size={16} strokeWidth={2} aria-hidden="true" />故事资料</span>}
+      ? <a className="ui-nav-link" href={pageHash(positions?.overview ?? materials)} aria-current={page?.kind === "overview" || page?.kind === "materials" ? "page" : undefined}>
+        <FolderOpen size={16} strokeWidth={2} aria-hidden="true" />故事总览</a>
+      : <span aria-disabled="true"><FolderOpen size={16} strokeWidth={2} aria-hidden="true" />故事总览</span>}
   </nav>;
 }
 

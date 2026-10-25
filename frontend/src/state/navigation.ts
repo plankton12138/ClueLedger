@@ -25,12 +25,14 @@ export const MATERIAL_SECTIONS: { key: MaterialSection; label: string }[] = [
 
 /** 旧路由到新位置的映射：保留旧链接可用，但页面只有合并后的一份视图。 */
 const LEGACY_SECTIONS: Record<string, { section: MaterialSection; order: StoryOrder }> = {
+  "legacy-story": { section: "story", order: "chapter" },
   chapters: { section: "story", order: "chapter" },
   timeline: { section: "story", order: "story" },
 };
 
 export type WorkspacePage =
   | { kind: "writing"; workspaceId: string }
+  | { kind: "overview"; workspaceId: string; chapter: number | null; order: StoryOrder; bindingId?: string; view?: "content" | "characters" | "clues"; facetId?: string; eventId?: string }
   | { kind: "ideas"; workspaceId: string; ideaId?: string }
   | {
       kind: "materials";
@@ -87,6 +89,18 @@ export function parseHash(hash: string): AppPage | null {
     if (entryRaw) page.ideaId = entryRaw;
     return page;
   }
+  if (parts[2] === "overview" && parts.length === 3) {
+    const params = new URLSearchParams(query);
+    const chapterRaw = params.get("chapter");
+    const chapter = chapterRaw === null ? null : Number(chapterRaw);
+    if (chapter !== null && (!Number.isSafeInteger(chapter) || chapter < 0)) return null;
+    for (const key of ["binding", "facet", "event"]) if (params.has(key) && !/^[A-Za-z0-9_-]{1,100}$/.test(params.get(key)!)) return null;
+    const view = params.get("view");
+    if (view && !["content", "characters", "clues"].includes(view)) return null;
+    return { kind: "overview", workspaceId, chapter, order: params.get("order") === "story" ? "story" : "chapter",
+      bindingId: params.get("binding") ?? undefined, facetId: params.get("facet") ?? undefined, eventId: params.get("event") ?? undefined,
+      view: (view as "content" | "characters" | "clues" | null) ?? undefined };
+  }
   if (parts[2] !== "materials" || parts.length !== 4) return null;
   const resolved = resolveSection(parts[3]);
   if (resolved === null) return null;
@@ -106,6 +120,7 @@ export function parseHash(hash: string): AppPage | null {
   }
   const entryRaw = params.get("entry");
   if (entryRaw !== null && !ENTRY_ID.test(entryRaw)) return null;
+  if (resolved.section === "story" && parts[3] !== "legacy-story") return { kind: "overview", workspaceId, chapter, order };
   const page: WorkspacePage = { kind: "materials", workspaceId, section: resolved.section, chapter, order };
   if (entryRaw) page.entryId = entryRaw;
   return page;
@@ -122,11 +137,20 @@ export function pageHash(page: AppPage): string {
     return `#/workspaces/${page.workspaceId}/ideas${suffix}`;
   }
   const params = new URLSearchParams();
+  if (page.kind === "overview") {
+    if (page.chapter !== null) params.set("chapter", String(page.chapter));
+    if (page.order === "story") params.set("order", "story");
+    if (page.bindingId) params.set("binding", page.bindingId);
+    if (page.view) params.set("view", page.view);
+    if (page.facetId) params.set("facet", page.facetId);
+    if (page.eventId) params.set("event", page.eventId);
+    return `#/workspaces/${page.workspaceId}/overview${params.size ? `?${params}` : ""}`;
+  }
   if (page.section === "story" && page.order === "story") params.set("order", "story");
   if (page.chapter !== null) params.set("chapter", String(page.chapter));
   if (page.entryId) params.set("entry", page.entryId);
   const suffix = params.toString();
-  return `#/workspaces/${page.workspaceId}/materials/${page.section}${suffix ? `?${suffix}` : ""}`;
+  return `#/workspaces/${page.workspaceId}/materials/${page.section === "story" ? "legacy-story" : page.section}${suffix ? `?${suffix}` : ""}`;
 }
 
 function subscribe(onChange: () => void): () => void {
