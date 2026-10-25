@@ -24,6 +24,7 @@ import {
   type IdeaSummary,
   type IdeaView,
 } from "../api/ideas";
+import { WorkspaceApiError } from "../api/workspace";
 import { draftDirty, scopeOf, useIdeasStore } from "./ideas";
 
 const saved: IdeaView = {
@@ -102,6 +103,42 @@ describe("灵感草稿保护", () => {
     await useIdeasStore.getState().select(saved.idea_id);
     await useIdeasStore.getState().loadMoreRevisions();
     expect(scope().revisions.map(item => item.id)).toEqual(["r", "older"]);
+  });
+
+  it("翻页期间列表变化时从第一页刷新，保留当前编辑与选中", async () => {
+    vi.mocked(listIdeas).mockImplementation(async (_ws, options) => ({
+      items: options?.cursor ? [summary("next")] : [summary("idea-1")],
+      total: 2,
+      invalid: 0,
+      next_cursor: options?.cursor ? null : "c2",
+    }));
+    await useIdeasStore.getState().load("workspace-a");
+    await useIdeasStore.getState().select("idea-1");
+    useIdeasStore.getState().setEntryBody("idea-1", "还没保存的修改");
+
+    vi.mocked(listIdeas).mockRejectedValueOnce(
+      new WorkspaceApiError(
+        "QUERY_CURSOR_STALE_CONFLICT",
+        "列表在翻页期间发生变化",
+        "从第一页重新读取",
+        409,
+      ),
+    );
+    vi.mocked(listIdeas).mockImplementation(async (_ws, options) => ({
+      items: options?.deleted ? [] : [summary("idea-1"), summary("fresh")],
+      total: 2,
+      invalid: 0,
+      next_cursor: null,
+    }));
+    await useIdeasStore.getState().loadMore();
+
+    const state = useIdeasStore.getState();
+    // 不把内部游标错误摆给作者：从第一页重读，按标识去重后继续。
+    expect(state.items.map(item => item.idea_id)).toEqual(["idea-1", "fresh"]);
+    expect(state.error).toBeNull();
+    expect(state.notice).toContain("从第一页刷新");
+    expect(scope().selected?.idea_id).toBe("idea-1");
+    expect(scope().editing["idea-1"]?.body).toBe("还没保存的修改");
   });
 
   it("历史预览乱序与切条目不会显示旧请求的内容", async () => {

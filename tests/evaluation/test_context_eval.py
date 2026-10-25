@@ -67,12 +67,44 @@ def deliver(item: dict[str, Any], tool: str, payload: dict[str, Any], key: str) 
 
 def test_all_cases_and_suites_are_loadable() -> None:
     cases, digest = load_cases()
-    assert len(cases) == 16 and len(digest) == 64
+    assert len(cases) == 20 and len(digest) == 64
     for case in cases:
         assert fixture_files(case)
     for suite in (ROOT / "suites").glob("*.json"):
         data = json.loads(suite.read_text(encoding="utf-8"))
         assert set(data["cases"]) <= {c.id for c in cases}
+
+
+def test_expand_step_requires_exactly_one_idea_and_no_other_material() -> None:
+    """只读展开的受理条件与产品一致：一条灵感，且不夹带章节或索引目标。"""
+
+    with pytest.raises(ValidationError):
+        Step(text="展开", purpose="expand_idea")
+    with pytest.raises(ValidationError):
+        Step(
+            text="展开",
+            purpose="expand_idea",
+            idea_references=["老板娘的旧识", "灯塔"],
+        )
+    with pytest.raises(ValidationError):
+        Step(
+            text="展开",
+            purpose="expand_idea",
+            idea_references=["老板娘的旧识"],
+            selected=FIRST,
+        )
+    step = Step(text="展开", purpose="expand_idea", idea_references=["老板娘的旧识"])
+    assert step.purpose == "expand_idea"
+
+
+def test_tool_not_called_reads_started_tools() -> None:
+    rule = Check(id="no_tools", kind="tool_not_called", value="search_ideas,save_idea")
+    item = evidence()
+    assert evaluate_rule(rule, item, None)["status"] == "pass"
+    item["events"].append({"type": "tool_started", "tool": "save_idea"})
+    row = evaluate_rule(rule, item, None)
+    assert row["status"] == "fail"
+    assert row["detail"]["called"] == ["save_idea"]
 
 
 def test_case_rejects_paths_outside_workspace_and_unknown_fields() -> None:

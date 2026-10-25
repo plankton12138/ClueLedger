@@ -78,6 +78,8 @@ class IdeaUseDraft:
     start: int | None = None
     end: int | None = None
     turn_id: str = ""
+    #: 产生这段原文的那次提交；撤销过得靠它认出来，旧记录可以没有。
+    commit: str = ""
 
 
 class IdeaStore:
@@ -284,14 +286,27 @@ class IdeaStore:
             document = self._read(idea_id)
             _revision(document, use.idea_revision_id)
             checked = self._checked_use(use)
-            request = _request_digest({"op": "link", "use": _use_payload(checked)})
+            request = _request_digest({"op": "link", "use": _use_request(checked)})
             replay = self._replay(document, key, request)
             if replay is not None:
                 return _idea_view(document, _revision(document, replay))
             self._check_digest(idea_id, expected_digest)
             uses = list(document.get("uses") or [])
-            if not any(_same_use(item, checked) for item in uses):
+            existing = next((item for item in uses if _same_use(item, checked)), None)
+            if existing is None:
                 uses.append(_use_payload(checked))
+            else:
+                # 同一修订、同一位置又写了一次：保留同一条记录，只换成这次的提交与轮次。
+                # 否则撤销过的那次提交会一直挂着，重新写入也显示「已撤回」。
+                fresh = _use_payload(checked)
+                fresh["id"] = existing.get("id")
+                fresh["at"] = existing.get("at") or fresh["at"]
+                # 这次没带提交或轮次（例如作者手动登记）时保留原值，不把已有依据抹掉。
+                if not checked.commit:
+                    fresh["commit"] = existing.get("commit") or ""
+                if not checked.turn_id:
+                    fresh["turn_id"] = existing.get("turn_id") or ""
+                uses[uses.index(existing)] = fresh
             document["uses"] = uses
             document["updated_at"] = _now()
             head = _revision(document, str(document["head_revision_id"]))
@@ -740,6 +755,7 @@ class IdeaStore:
             start=start,
             end=end,
             turn_id=use.turn_id,
+            commit=use.commit,
         )
 
 
@@ -808,7 +824,28 @@ def _use_payload(use: IdeaUseDraft) -> dict[str, object]:
         "start": use.start,
         "end": use.end,
         "turn_id": use.turn_id,
+        "commit": use.commit,
         "at": _now(),
+    }
+
+
+def _use_request(use: IdeaUseDraft) -> dict[str, object]:
+    """补记请求的身份：只含作者选择与核对结果，不含新生成的标识与时间。
+
+    同一次补记用同一个请求键重试必须回到同一结果；把 ``id``／``at`` 放进摘要会让
+    每次重算都不相等，重试被误判成「这个键用在另一件事上」。
+    """
+    return {
+        "idea_revision_id": use.idea_revision_id,
+        "kind": use.kind,
+        "target_record_id": use.target_record_id,
+        "target_path": use.target_path,
+        "target_digest": use.target_digest,
+        "quote": use.quote,
+        "start": use.start,
+        "end": use.end,
+        "turn_id": use.turn_id,
+        "commit": use.commit,
     }
 
 

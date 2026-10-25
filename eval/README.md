@@ -12,7 +12,8 @@
 | 修改首批案例及作者请求 | [案例集](cases/core.yaml) |
 | 修改 0.8 灵感与模块案例 | [0.8 案例](cases/v08.yaml) |
 | 修改模型可见的作品初态 | [作品材料](fixtures/inn.json) |
-| 选择本次运行的题目 | [冒烟集](suites/smoke.json)、[核心集](suites/core.json)、[0.8 冒烟集](suites/v08-smoke.json) |
+| 选择本次运行的题目 | [冒烟集](suites/smoke.json)、[核心集](suites/core.json)、[0.8 冒烟集](suites/v08-smoke.json)、[I6 只读与授权集](suites/i06.json) |
+| 修改 I6 只读展开与禁止授权案例 | [I6 案例](cases/i06.yaml) |
 | 修改执行、取证、评分与报告 | [执行代码](harness/) |
 | 查看本次交付与验证范围 | [运行与验证](release.md) |
 | 查找旧版本证据与旧验收脚本 | [历史导航](archive/README.md) |
@@ -41,6 +42,7 @@ uv run python -m eval list
 uv run python -m eval run --suite smoke
 uv run python -m eval run --suite core
 uv run python -m eval run --suite v08-smoke
+uv run python -m eval run --suite i06
 uv run python -m eval run --case long_history --max-turns 24 --timeout 240
 ```
 

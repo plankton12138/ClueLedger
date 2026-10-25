@@ -55,7 +55,7 @@ truth／plot／timeline 可显式关联相同作者事件，但不同 module_id 
 
 | 接口 | 结果 |
 |---|---|
-| `GET /ideas?q&deleted&cursor&limit` | 当前条目的摘要与 head revision；不返回整段历史 |
+| `GET /ideas?q&deleted&cursor&limit&order` | 当前条目的摘要与 head revision；`order=created` 按创建时间，默认按更新；不返回整段历史 |
 | `POST /ideas` | 创建一条灵感；可携带选中文字与会话来源 |
 | `GET /ideas/{idea_id}` | 当前修订、digest、来源、使用定位 |
 | `PATCH /ideas/{idea_id}` | 编辑；必须给 expected_digest、expected_revision、request_key |
@@ -64,8 +64,12 @@ truth／plot／timeline 可显式关联相同作者事件，但不同 module_id 
 | `GET /ideas/{idea_id}/revisions/{revision_id}` | 精确历史内容 |
 | `POST /ideas/{idea_id}/restore` | 指定历史修订，以旧内容创建新 head |
 | `POST /ideas/{idea_id}/links` | 作者明确关联或验证后的本轮落实位置；必须有 expected_digest |
+| `GET /ideas/{idea_id}/activity?cursor&limit` | 引用、展开、已核对写入与作者关联；返回 `items`、`total`、`complete`、`next_cursor`；索引未扫完时不给游标 |
 
 作者 HTTP 调用可浏览该作品灵感；agent 不能绕过工具服务直接使用作者 HTTP 权限。
+受理用途除普通对话、索引更新与检查外，还包含只读的 `expand_idea`：必须有且只有一条灵感参考，
+不夹带当前章节、参考文件或索引目标；用途与参考进入请求身份，同键换用途或换修订必须冲突。
+后续追问仍是普通对话，每次由作者明确提交参考，不靠会话名称继承权限。
 收藏只保存客户端明确选中且服务端能核对的原始消息片段；若消息已不可读，可作为普通笔记保存，来源标为不可验证。
 恢复已删除条目使用删除前的目标修订；恢复某个历史删除修订则恢复其删除状态，按钮需说明。
 

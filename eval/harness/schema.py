@@ -45,6 +45,7 @@ class Check(Spec):
         "coverage",
         "module_bound",
         "idea_contains",
+        "tool_not_called",
         "manual",
         "fault_observed",
     ]
@@ -117,7 +118,7 @@ class Step(Spec):
     references: list[str] = Field(default_factory=list)
     idea_references: list[str] = Field(default_factory=list)
     state_chapter: int | None = Field(default=None, ge=0)
-    purpose: Literal["chat", "update_chapter_index", "organize_materials"] = "chat"
+    purpose: Literal["chat", "update_chapter_index", "organize_materials", "expand_idea"] = "chat"
     index_paths: list[str] = Field(default_factory=list)
     material_scope: dict[str, Any] | None = None
     external_updates: dict[str, str] = Field(default_factory=dict)
@@ -144,6 +145,12 @@ class Step(Spec):
             raise ValueError("精确替换只能指定允许修改的文件")
         if any(not old for pairs in self.exact_replacements.values() for old in pairs):
             raise ValueError("精确替换的原文不能为空")
+        if self.purpose == "expand_idea":
+            # 与产品受理规则一致：只读展开必须有且只有一条灵感，且不夹带其他材料。
+            if len(self.idea_references) != 1:
+                raise ValueError("expand_idea 需要且只需要一条灵感参考")
+            if self.selected or self.references or self.index_paths or self.material_scope:
+                raise ValueError("expand_idea 不夹带当前章节、参考文件或索引目标")
         if self.purpose == "organize_materials":
             from hastings.workspace.material_tasks import MaterialTaskScope
 

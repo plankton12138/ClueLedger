@@ -29,6 +29,7 @@ import {
   type IdeaView,
 } from "../api/ideas";
 import { errorMessage } from "../api/errors";
+import { WorkspaceApiError } from "../api/workspace";
 
 export interface IdeaDraft {
   /** 草稿标识：快速记录用 `capture`，条目修改稿用条目 ID。 */
@@ -458,9 +459,14 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => {
             : { items: merged, cursor: page.next_cursor, loadingMore: false },
         );
       } catch (error) {
-        if (get().session === session && get().queryEpoch === queryEpoch) {
-          set({ loadingMore: false, error: describe(error) });
+        if (get().session !== session || get().queryEpoch !== queryEpoch) return;
+        if (error instanceof WorkspaceApiError && error.code === "QUERY_CURSOR_STALE_CONFLICT") {
+          // 列表在翻页期间变了：从第一页刷新，按标识去重；当前编辑与选中不动。
+          await get().refresh();
+          set({ notice: "列表在翻页期间有变化，已从第一页刷新。" });
+          return;
         }
+        set({ loadingMore: false, error: describe(error) });
       }
     },
 

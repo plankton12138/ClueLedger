@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261025-165359-466332",
+    "started_at": "2026-10-25T16:53:59.469626+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "ca2e343173103c68572950bd0ea61b958cdc7701",
+    "git_dirty": true,
+    "source_sha256": "562fdb755e52b8c1601582f4277bf642b987bea056dd046e5d8093539ee4d98e",
+    "cases_sha256": "f421dff573193d146e46790d837fe63099e36576a596db031f0a0144d1dfaa0a",
+    "suite": "i06",
+    "jobs": [
+      {
+        "key": "i06_expand_three_directions--current--1",
+        "case": "i06_expand_three_directions",
+        "family": "灵感边界",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "i06_expand_asks_for_write--current--1",
+        "case": "i06_expand_asks_for_write",
+        "family": "灵感边界",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "i06_expand_followup--current--1",
+        "case": "i06_expand_followup",
+        "family": "灵感边界",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "i06_forbid_idea_tools--current--1",
+        "case": "i06_forbid_idea_tools",
+        "family": "灵感边界",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v08_idea_apply--current--1",
+        "case": "v08_idea_apply",
+        "family": "灵感落实",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 200,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261025-165359-466332",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留"
+  },
+  "summary": {
+    "planned": 5,
+    "executed": 0,
+    "counts": {
+      "not_run": 5
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": null,
+    "duration_p95_seconds": null,
+    "input_tokens": null,
+    "output_tokens": null,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 5,
+        "executed": 0,
+        "counts": {
+          "not_run": 5
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "灵感边界": {
+        "planned": 4,
+        "executed": 0,
+        "counts": {
+          "not_run": 4
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "灵感落实": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 5,
+        "executed": 0,
+        "counts": {
+          "not_run": 5
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "i06_expand_three_directions": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "i06_expand_asks_for_write": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "i06_expand_followup": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "i06_forbid_idea_tools": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v08_idea_apply": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [],
+  "unexecuted": [
+    "i06_expand_three_directions--current--1",
+    "i06_expand_asks_for_write--current--1",
+    "i06_expand_followup--current--1",
+    "i06_forbid_idea_tools--current--1",
+    "v08_idea_apply--current--1"
+  ]
+}

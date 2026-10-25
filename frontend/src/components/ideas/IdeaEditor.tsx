@@ -11,6 +11,8 @@ import { useModelsStore } from "../../state/models";
 import { Button } from "../ui/Button";
 import { AppDialog } from "../ui/AppDialog";
 import { EmptyState, StatusMessage } from "../ui/StatusMessage";
+import { useWorkspaceStore } from "../../state/workspace";
+import IdeaActivityList from "./IdeaActivityList";
 import IdeaHistory from "./IdeaHistory";
 
 interface Props {
@@ -18,15 +20,27 @@ interface Props {
   onTakeToChat: (id: string) => void;
   /** 一次点击发起只读展开；已有讨论时打开它继续。 */
   onExpand: (id: string) => void;
+  /** 打开某次讨论；没有会话时由上层决定回到哪里。 */
+  onOpenConversation?: (conversationId: string) => void;
+  /** 把这条灵感带进某章的写作要求。 */
+  onUseForWriting?: (ideaId: string, path: string, title: string) => void;
   onOpenSource?: (path: string) => void;
 }
 
-export default function IdeaEditor({ onTakeToChat, onExpand, onOpenSource }: Props) {
+export default function IdeaEditor({
+  onTakeToChat,
+  onExpand,
+  onOpenConversation,
+  onUseForWriting,
+  onOpenSource,
+}: Props) {
   const scope = useIdeaScope();
   const reading = useIdeasStore(state => state.reading);
   const busy = useIdeasStore(state => state.busy);
   const selected = scope.selected;
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const chapters = useWorkspaceStore(state => state.catalog.chapters);
   const modelReady = useModelsStore(state => state.selection.available);
   const busyElsewhere = useConversationsStore(runningConversation);
   const store = useIdeasStore.getState();
@@ -107,6 +121,19 @@ export default function IdeaEditor({ onTakeToChat, onExpand, onOpenSource }: Pro
             >
               展开讨论
             </Button>
+            {onUseForWriting && (
+              <Button
+                disabled={busy || !modelReady || busyElsewhere !== null}
+                disabledReason={
+                  !modelReady
+                    ? "先连接模型再用于写作"
+                    : "已有一轮在进行，等它结束或停止它"
+                }
+                onClick={() => setWriting(true)}
+              >
+                用于写作
+              </Button>
+            )}
             <Button variant="danger" disabled={busy} onClick={() => (dirty ? setConfirmDiscard(true) : void store.trashEntry(selected.idea_id))}>
               删除
             </Button>
@@ -126,7 +153,8 @@ export default function IdeaEditor({ onTakeToChat, onExpand, onOpenSource }: Pro
         )}
       </div>
 
-      <IdeaHistory onOpenSource={onOpenSource} />
+      <IdeaHistory />
+      <IdeaActivityList onOpenConversation={onOpenConversation} onOpenSource={onOpenSource} />
 
       {selected.origin && (
         <details className="idea-sources">
@@ -134,6 +162,24 @@ export default function IdeaEditor({ onTakeToChat, onExpand, onOpenSource }: Pro
           <pre>{JSON.stringify(selected.origin, null, 2)}</pre>
         </details>
       )}
+
+      <AppDialog title="把这条灵感用到哪一章" open={writing} onOpenChange={setWriting}>
+        <div className="ui-action-list">
+          {chapters.length === 0 && <p className="ui-field-hint">这个作品还没有正文章节。</p>}
+          {chapters.map(chapter => (
+            <Button
+              key={chapter.path}
+              variant="quiet"
+              onClick={() => {
+                setWriting(false);
+                onUseForWriting?.(selected.idea_id, chapter.path, chapter.title);
+              }}
+            >
+              {chapter.title || chapter.path}
+            </Button>
+          ))}
+        </div>
+      </AppDialog>
 
       <AppDialog
         title="这条灵感有未保存的修改"

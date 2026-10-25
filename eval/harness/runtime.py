@@ -149,7 +149,8 @@ def intervention(case: Case, variant: str, trace: dict[str, Any]) -> Iterator[No
 def _idea_rows(workspace: Workspace) -> list[dict[str, object]]:
     store = IdeaStore(workspace)
     rows: list[dict[str, object]] = []
-    for item in store.list(limit=100)["items"]:
+    listed = store.list(limit=100).get("items")
+    for item in listed if isinstance(listed, list) else []:
         view = store.get(str(item["idea_id"]))
         rows.append(
             {
@@ -268,7 +269,9 @@ async def run_attempt(
                 ],
                 request_key=f"eval-module-{index + 1}",
             )
-            module = created["module"]  # type: ignore[index]
+            module = created["module"]
+            if not isinstance(module, dict):
+                raise RuntimeError("模块创建结果缺少 module 字段")
             service_assembly.bind(
                 module_id=str(module["module_id"]),
                 revision_id=str(module["head"]),
@@ -277,16 +280,16 @@ async def run_attempt(
                 request_key=f"eval-bind-{index + 1}",
             )
     GitRepo(workspace.root).init()
-    ideas = {}
+    ideas: dict[str, dict[str, object]] = {}
     idea_store = IdeaStore(workspace)
-    for index, seed in enumerate(case.ideas):
+    for index, idea_seed in enumerate(case.ideas):
         created = idea_store.create(
-            title=seed.title,
-            body=seed.body,
-            tags=seed.tags,
+            title=idea_seed.title,
+            body=idea_seed.body,
+            tags=idea_seed.tags,
             request_key=f"eval-idea-{index + 1}",
         )
-        ideas[seed.title] = created
+        ideas[idea_seed.title] = created
     store = ConversationStore(conversation_root(work / key / "state", "eval"))
     cid = seed_history(store, case)
     service = TurnService(workspace, store, factory, max_turns=max_turns, library=library)
@@ -311,7 +314,10 @@ async def run_attempt(
                         selected_path=step.selected,
                         reference_paths=tuple(step.references),
                         idea_references=tuple(
-                            (ideas[title]["idea_id"], ideas[title]["revision_id"])
+                            (
+                                str(ideas[title]["idea_id"]),
+                                str(ideas[title]["revision_id"]),
+                            )
                             for title in step.idea_references
                             if title in ideas
                         ),

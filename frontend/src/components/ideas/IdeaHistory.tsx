@@ -12,7 +12,7 @@ const OPERATIONS: Record<string, string> = {
   delete: "删除",
 };
 
-export default function IdeaHistory({ onOpenSource }: { onOpenSource?: (path: string) => void }) {
+export default function IdeaHistory() {
   const scope = useIdeaScope();
   const revisions = scope.revisions;
   const cursor = scope.revisionsCursor;
@@ -71,25 +71,6 @@ export default function IdeaHistory({ onOpenSource }: { onOpenSource?: (path: st
                 {preview.deleted ? "恢复为删除状态" : "恢复内容"}
               </Button>
             )}
-          </section>
-        )}
-        {selected.uses.length > 0 && (
-          <section className="idea-history-preview" aria-label="使用位置">
-            <h3>使用位置</h3>
-            <ul>
-              {selected.uses.map((use, index) => (
-                <li key={String(use.id ?? index)}>
-                  {typeof use.target_path === "string" && use.target_path ? (
-                    <Button variant="quiet" onClick={() => onOpenSource?.(use.target_path as string)}>
-                      {use.target_path}
-                    </Button>
-                  ) : (
-                    <span>关联条目</span>
-                  )}
-                  {typeof use.quote === "string" && <p>{use.quote}</p>}
-                </li>
-              ))}
-            </ul>
           </section>
         )}
       </div>

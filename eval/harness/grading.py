@@ -181,6 +181,18 @@ def evaluate_rule(
             for row in rows
         )
         return check_row(rule.id, ok, {"value": rule.value, "ideas": len(rows)})
+    if rule.kind == "tool_not_called":
+        banned = {name.strip() for name in rule.value.split(",") if name.strip()}
+        called = sorted(
+            {
+                str(event.get("tool"))
+                for event in evidence["events"]
+                if event.get("type") == "tool_started"
+            }
+        )
+        return check_row(
+            rule.id, not (banned & set(called)), {"banned": sorted(banned), "called": called}
+        )
     if rule.kind == "fault_observed":
         return check_row(rule.id, bool(evidence.get("faults")), evidence.get("faults", []))
     if rule.kind == "manual":

@@ -5,9 +5,10 @@
 
 ## 可用能力
 
-- 16 个固定案例，包含跨章定位、长参考、多轮纠正、改源、索引失效、失败续做、披露、
+- 20 个固定案例，包含跨章定位、长参考、多轮纠正、改源、索引失效、失败续做、披露、
   声称与事实、参考注入、同名澄清、长历史及临时读取失败、资料空结果，以及 0.8 的灵感
-  讨论／落实／未引用外溢与未装模块单轮引用。
+  讨论／落实／未引用外溢与未装模块单轮引用；I6 增加只读展开的三例、明确禁止搜索与
+  保存灵感的一例。
 - 案例可预置灵感条目与已装模块，步骤可指定本轮灵感参考。
 - 真实任务服务与工具链路；每题、每方案、每次重复使用独立作品及状态。
 - 当前方案与三个分区消融方案，重复与交错运行、同题对比。
@@ -22,8 +23,9 @@
 
 | 范围 | 命令 | 结果与范围 |
 |---|---|---|
+| I6 收口回归（2026-10-25） | `uv run pytest -q`；`uv run pytest tests/evaluation tests/acceptance -q` | 全量 850 passed；评测与验收 52 passed；含 20 个案例、只读展开与工具检查 |
 | 后端全量回归 | `uv run pytest -q --junitxml=data/eval/verification.xml` | 600 passed；运行时的全部后端测试，含初版 18 条评测器测试 |
-| 最终评测器与旧验收器回归 | `uv run pytest tests/evaluation tests/acceptance -q` | 50 passed；含交付核对、缓存统计、重新评分与 `.env` 配置边界 |
+| 最终评测器与旧验收器回归 | `uv run pytest tests/evaluation tests/acceptance -q` | 52 passed；含交付核对、缓存统计、重新评分、`.env` 配置边界与只读展开／工具检查 |
 | 静态检查 | `uv run ruff check eval/__main__.py eval/harness tests/evaluation scripts/model_acceptance.py` | 通过 |
 | 类型检查 | `uv run mypy eval/__main__.py eval/harness tests/evaluation --follow-imports=silent` | 通过；评测代码与对应测试 |
 
@@ -46,6 +48,7 @@
 | [当前 `.env` 入口冒烟](runs/context-20261024-103553-713850/report.md) | 跨章定位、改源、资料空结果 | 3 次均通过；模型来源记录为 `.env` |
 | [0.8 冒烟](runs/context-20261024-211233-229612/rescored.md) | 灵感讨论、灵感落实、未引用灵感、未装模块引用，当前方案 | 3 通过、1 失败；失败源于案例文件名含被排除词 |
 | [0.8 单题重跑](runs/context-20261024-211535-723496/rescored.md) | `v08_idea_unused`（改名后） | 1 次，人工复核通过 |
+| [I6 只读展开与禁止授权](runs/context-20261025-165537-111167/rescored.md) | 只读展开三例、禁止搜索与保存一例、灵感落实一例，当前方案 | 5 次均通过；含工具未调用检查与逐条复核 |
 
 对照中，同次移除执行事实相对当前方案的输入 token 差异为 -38、+121；模型路径不同，
 不据此得出稳定的成本优势。完整请求规模和逐项用量见对应 JSON 报告。

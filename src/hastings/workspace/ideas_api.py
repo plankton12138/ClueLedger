@@ -11,8 +11,9 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from hastings.workspace.idea_activity import IdeaActivityIndex
 from hastings.workspace.ideas import IdeaStore, IdeaUseDraft
-from hastings.workspace.state import RecentWorkspaces
+from hastings.workspace.state import RecentWorkspaces, conversation_root
 
 __all__ = ["create_ideas_router"]
 
@@ -146,6 +147,18 @@ def create_ideas_router(workspaces: RecentWorkspaces) -> APIRouter:
     @router.get("/{workspace_id}/ideas/{idea_id}/revisions/{revision_id}")
     def get_revision(workspace_id: str, idea_id: str, revision_id: str) -> dict[str, object]:
         return store_for(workspace_id).revision(idea_id, revision_id)
+
+    @router.get("/{workspace_id}/ideas/{idea_id}/activity")
+    def idea_activity(
+        workspace_id: str, idea_id: str, cursor: str | None = None, limit: int = 20
+    ) -> dict[str, object]:
+        """引用、展开与已核对写入的记录；索引未扫完时 complete=false。"""
+        store_for(workspace_id).get(idea_id)
+        index = IdeaActivityIndex(
+            workspaces.workspace(workspace_id),
+            conversation_root(workspaces.root, workspace_id),
+        )
+        return index.page(idea_id, cursor=cursor, limit=limit)
 
     @router.post("/{workspace_id}/ideas/{idea_id}/links")
     def link_idea(workspace_id: str, idea_id: str, payload: LinkIdeaRequest) -> dict[str, object]:

@@ -217,6 +217,71 @@ export function getIdeaRevision(
   );
 }
 
+/** 使用记录：引用、展开、已核对写入与作者关联。 */
+export interface IdeaActivityTurn {
+  id: string;
+  kind: "referenced" | "expanded";
+  idea_id: string;
+  revision_id: string;
+  conversation_id: string;
+  conversation_title: string;
+  /** false 表示这次讨论的会话已经不在了；记录仍保留。 */
+  conversation_available: boolean;
+  turn_id: string;
+  at: string;
+}
+
+export interface IdeaActivityApplied {
+  id: string;
+  kind: "applied";
+  idea_id: string;
+  revision_id: string;
+  turn_id: string;
+  target_path: string;
+  target_digest: string;
+  /** 写入那次提交；撤销之后用来判断这条写入是否还成立。 */
+  commit: string;
+  start: number | null;
+  end: number | null;
+  quote: string;
+  /** current 需要指纹与区间同时对上；reverted 是那次提交已被明确撤销。 */
+  validity: "current" | "changed" | "reverted";
+  at: string;
+}
+
+export interface IdeaActivityLinked {
+  id: string;
+  kind: "linked";
+  idea_id: string;
+  revision_id: string;
+  target_path: string;
+  at: string;
+}
+
+export type IdeaActivity = IdeaActivityTurn | IdeaActivityApplied | IdeaActivityLinked;
+
+export interface IdeaActivityPage {
+  items: IdeaActivity[];
+  total: number;
+  /** false 表示索引还没扫完：此时不能断言「没有使用记录」。 */
+  complete: boolean;
+  next_cursor: string | null;
+}
+
+export function listIdeaActivity(
+  workspaceId: string,
+  ideaId: string,
+  options: { cursor?: string | null; limit?: number } = {},
+): Promise<IdeaActivityPage> {
+  const params = new URLSearchParams();
+  if (options.cursor) params.set("cursor", options.cursor);
+  if (options.limit) params.set("limit", String(options.limit));
+  const suffix = params.toString();
+  return request<IdeaActivityPage>(
+    `${WORKSPACES}/${workspaceId}/ideas/${ideaId}/activity${suffix ? `?${suffix}` : ""}`,
+  );
+}
+
 export function requestKey(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }

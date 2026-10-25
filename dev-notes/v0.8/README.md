@@ -12,7 +12,7 @@
 | [实施计划](development-plan.md) | 现状差异、职责拆分、阶段依赖、任务清单与交付门槛 |
 | [前端体验与结构修复计划](frontend-experience-plan.md) | H1–H6 已实施并完成确定性回归：可读性、导航、布局、草稿、模块编辑、公共交互与 H1–H6 验收，版本保持 0.8.0 |
 | [前端修复代码示例](frontend-experience-examples.md) | 设计参考；当前实现和证据另见阶段记录 |
-| [灵感全流程改造计划](ideas-experience-plan.md) | I0–I4 已实施、I5–I6 待实施：纯正文记录、悬浮面板、修改删除、固定版本引用与只读展开已完成；真实使用关联仍待做，版本保持 0.8.0 |
+| [灵感全流程改造计划](ideas-experience-plan.md) | I0–I6 已实施：纯正文记录、悬浮面板、修改删除、固定版本引用、只读展开、使用记录与「用于写作」已完成；专项验收在线 5 例通过、矩阵 17 通过 5 部分通过，版本保持 0.8.0 |
 | [灵感改造实现示例](ideas-experience-examples.md) | 分模块的契约与实现参考，未实施、未编译验证 |
 | [0.8 模块导航](modules/README.md) | 当前职责、真实实现与未接线的部分 |
 | [全局模块库与装配](modules/library-and-assembly.md) | 多实例、不可变版本、装卸、跨作品复用与缺失依赖 |
@@ -27,8 +27,8 @@
 ## 状态与版本
 
 - 2026-10-25 新增[灵感全流程改造计划](ideas-experience-plan.md)：作者要求取消标题与标签操作，
-  以悬浮面板连接记录、管理、引用、模型展开和用于作品。**I0–I4 已实施并通过确定性回归，I5–I6 待实施**：
-  见[基线](notes/I0-baseline.md)、[正文优先的数据与命令层](notes/I1-body-first.md)、[悬浮面板](notes/I2-surface.md)、[固定版本引用](notes/I3-references.md)、[只读展开](notes/I4-expand.md)；
+  以悬浮面板连接记录、管理、引用、模型展开和用于作品。**I0–I6 已实施并通过确定性回归与在线语义验收**：
+  见[基线](notes/I0-baseline.md)、[正文优先的数据与命令层](notes/I1-body-first.md)、[悬浮面板](notes/I2-surface.md)、[固定版本引用](notes/I3-references.md)、[只读展开](notes/I4-expand.md)、[使用记录与用于写作](notes/I5-activity.md)、[专项验收与收口](notes/I6-acceptance.md)；
   独立灵感页面已由应用外壳上的唯一面板取代。它承接 H4 之后的灵感体验设计，
   不改变 C 阶段、H1–H6 或在线验收的历史交付结论。
 - H1–H6 前端体验与结构修复已制定[详细计划](frontend-experience-plan.md)，**H1–H6 实施与确定性回归已完成；在线长篇与桌面打包未执行**；

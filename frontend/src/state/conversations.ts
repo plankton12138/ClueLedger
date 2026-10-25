@@ -71,6 +71,11 @@ export interface SendOptions {
     | "expand_idea";
   indexPaths?: string[];
   reviewPaths?: string[];
+  /**
+   * 这一轮随行的灵感修订。给定时就不再取当前草稿里的引用：
+   * 「用于写作」提交后不该把引用留在作者的下一条草稿里。
+   */
+  ideas?: DraftIdea[];
 }
 
 /** 一次展开的输入：灵感标识、固定修订与显示用预览。 */
@@ -80,10 +85,21 @@ export interface ExpandIdeaInput {
   preview: string;
 }
 
-export interface ExpansionResult {
+/** 把一条灵感用到哪一章：目标章节与固定修订一起提交。 */
+export interface WriteFromIdeaInput extends ExpandIdeaInput {
+  title: string;
+  path: string;
+  /** 打开目标章节后读到的版本；还没读到就不带，由服务端按当前内容冻结。 */
+  digest?: string;
+}
+
+export interface SendResult {
   conversationId: string;
   turnId: string;
 }
+
+/** 一次展开或一次「用于写作」的受理结果；失败返回 null。 */
+export type ExpansionResult = SendResult;
 
 const EMPTY_ENTRY: ConversationEntry = {
   turns: [],
@@ -120,7 +136,7 @@ export interface ConversationsStore {
   rememberRecent(conversationId: string): Promise<void>;
   newConversation(): void;
   select(conversationId: string): Promise<void>;
-  send(text: string, context?: ContextInput, options?: SendOptions): Promise<void>;
+  send(text: string, context?: ContextInput, options?: SendOptions): Promise<SendResult | null>;
   /** 修改当前草稿的参考选择；只选文件、还没写文字时也保留。 */
   setDraftContext(selectedPath: string | null, referencePaths: string[]): void;
   /** 目录里「加入对话」：把一份文件追加到当前草稿的参考，重复点击不重复登记。 */
@@ -132,6 +148,8 @@ export interface ConversationsStore {
   removeIdeaReference(ideaId: string): void;
   /** 一次点击展开：固定修订、首次发送即建会话；已受理的重试回到同一轮。 */
   expandIdea(input: ExpandIdeaInput): Promise<ExpansionResult | null>;
+  /** 「用于写作」：带固定修订与目标章节走普通写作用途，不动当前草稿的文字。 */
+  writeFromIdea(input: WriteFromIdeaInput): Promise<SendResult | null>;
   stop(): Promise<void>;
   /** 断线后重新接收：先取活动快照，再从确认过的位置继续。 */
   reconnect(): Promise<void>;
@@ -578,12 +596,13 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     async send(text, context, options) {
       const workspaceId = get().workspaceId;
       const trimmed = text.trim();
-      if (!workspaceId || !trimmed || get().pendingKey) return;
+      if (!workspaceId || !trimmed || get().pendingKey) return null;
       const target = get().selectedId;
       const key = target ?? NEW_DRAFT;
       const keyRequest = `ui-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
       // 请求对象在发送前生成一次：重试与回调都复用同一个快照，不把当前选择偷偷带进去。
-      const submittedIdeas = [...(get().draftIdeas[key] ?? [])];
+      // 显式给了随行引用就不读草稿：那次提交不该改动作者正在写的下一条。
+      const submittedIdeas = [...(options?.ideas ?? get().draftIdeas[key] ?? [])];
       const request: TurnInput = {
         text: trimmed,
         request_key: keyRequest,
@@ -609,9 +628,11 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const submittedRefs = [...(request.context?.reference_paths ?? [])];
       try {
         let conversationId = target;
+        let turnId = "";
         let after = conversationId ? (get().entries[conversationId]?.lastSeq ?? 0) : 0;
         if (conversationId) {
           const turn = await startTurn(workspaceId, conversationId, request);
+          turnId = turn.turn_id;
           patchEntry(conversationId, {
             running: true,
             activeTurn: {
@@ -626,6 +647,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         } else {
           const accepted = await createConversationWithText(workspaceId, request);
           conversationId = accepted.conversation_id;
+          turnId = accepted.turn_id;
           after = 0;
           set((state) => ({
             selectedId: conversationId,
@@ -696,9 +718,11 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           void persistDraft(key);
         }
         await consume(conversationId, after);
+        return { conversationId, turnId };
       } catch (error) {
         // 受理前失败：不清草稿、不多建会话，保留输入让作者重试。
         set({ error: describe(error) });
+        return null;
       } finally {
         set({ pendingKey: null });
       }
@@ -885,6 +909,32 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       } finally {
         set({ pendingKey: null });
       }
+    },
+
+    async writeFromIdea(input) {
+      const workspaceId = get().workspaceId;
+      if (!workspaceId || get().pendingKey) return null;
+      // 走普通写作用途：显式给出目标章节与固定修订，权限和范围检查沿用既有受理。
+      const result = await get().send(
+        `把这条灵感用到《${input.title}》：${input.preview}。先登记要改的范围，再改正文。`,
+        {
+          selected_path: input.path,
+          reference_paths: [],
+          observed_digests: input.digest ? { [input.path]: input.digest } : {},
+        },
+        {
+          purpose: "chat",
+          ideas: [
+            {
+              idea_id: input.ideaId,
+              revision_id: input.revisionId,
+              preview: input.preview,
+              chars: Array.from(input.preview).length,
+            },
+          ],
+        },
+      );
+      return result;
     },
 
     async saveDraft() {

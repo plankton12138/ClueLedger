@@ -260,3 +260,51 @@ def test_origin_keeps_the_selection_locator(tmp_path: Path) -> None:
     assert origin["message_seq"] == 2
     assert origin["turn_id"] == "t1"
     assert origin["quote"] == "选段原文"
+
+
+def test_activity_endpoint_lists_an_empty_index_and_rejects_unknown_ideas(
+    tmp_path: Path,
+) -> None:
+    client, workspace_id = _client(tmp_path)
+    created = _create(client, workspace_id, key="idea-activity-1")
+
+    response = client.get(
+        f"/api/file-workspaces/{workspace_id}/ideas/{created['idea_id']}/activity"
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert set(body) == {"items", "total", "complete", "next_cursor"}
+    assert body["items"] == []
+    assert body["total"] == 0
+    assert body["complete"] is True
+
+    missing = client.get(
+        f"/api/file-workspaces/{workspace_id}/ideas/idea_0000000000000000/activity"
+    )
+    assert missing.status_code == 404
+
+
+def test_activity_endpoint_reads_back_an_author_link(tmp_path: Path) -> None:
+    client, workspace_id = _client(tmp_path)
+    created = _create(client, workspace_id, key="idea-activity-2")
+    linked = client.post(
+        f"/api/file-workspaces/{workspace_id}/ideas/{created['idea_id']}/links",
+        json={
+            "expected_digest": created["digest"],
+            "idea_revision_id": created["revision_id"],
+            "kind": "author_link",
+            "request_key": "idea-activity-link-1",
+        },
+    )
+    assert linked.status_code == 200, linked.text
+
+    body = client.get(
+        f"/api/file-workspaces/{workspace_id}/ideas/{created['idea_id']}/activity"
+    ).json()
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["kind"] == "linked"
+    assert item["revision_id"] == created["revision_id"]
+    # 关联没有目标文件，也不冒充已写入。
+    assert "validity" not in item
+    assert body["next_cursor"] is None

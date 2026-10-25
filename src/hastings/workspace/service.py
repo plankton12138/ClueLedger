@@ -57,6 +57,7 @@ from hastings.workspace.material_tasks import (
 from hastings.workspace.materials import (
     ContextRequest,
     ContextSnapshot,
+    IdeaReference,
     MaterialLedger,
     Reference,
     freeze_context,
@@ -1256,6 +1257,8 @@ class TurnService:
                     }
                 ],
             )
+            # 正文确实写进去了才登记「已采用」；登记失败只影响这条关联，不撤销正文。
+            self._record_idea_applications(info, result)
             # 终态事件：前端据此结束「进行中」状态并刷新会话与工作区。
             self.store.append(
                 conversation_id,
@@ -1273,6 +1276,79 @@ class TurnService:
             # 只释放自己占用的那一轮：后面受理的新轮次不能被前一轮的收尾清掉。
             if self._active is not None and self._active.turn_id == info.turn_id:
                 self._active = None
+
+    def _record_idea_applications(self, info: TurnInfo, result: RunResult) -> None:
+        """把「灵感原文确实出现在改动后的正文里」登记为已采用。
+
+        依据是文件内容与区间，不是模型说「我用了」。找不到原文就只保留引用事实，
+        不制造虚假的「已写入」。重复轮次由请求键与同位置去重，不重复登记。
+        """
+        if info.context is None or not info.context.ideas:
+            return
+        if result.recording != "committed" or not result.changed_paths:
+            return
+        from hastings.workspace.ideas import IdeaStore, IdeaUseDraft
+
+        store = IdeaStore(self.workspace)
+        for idea in info.context.ideas:
+            body = idea.body.strip()
+            if not body:
+                continue
+            for path in result.changed_paths:
+                try:
+                    view = self.workspace.read(path)
+                except WorkspaceError:
+                    continue
+                start = view.text.find(body)
+                if start < 0:
+                    continue
+                try:
+                    current = store.get(idea.idea_id)
+                    store.add_use(
+                        idea.idea_id,
+                        expected_digest=str(current["digest"]),
+                        use=IdeaUseDraft(
+                            idea_revision_id=idea.revision_id,
+                            kind="applied",
+                            target_path=path,
+                            target_digest=view.digest,
+                            quote=body,
+                            start=start,
+                            end=start + len(body),
+                            turn_id=info.turn_id,
+                            commit=str(result.commit or ""),
+                        ),
+                        request_key=f"{info.turn_id}:idea-apply:{idea.idea_id}:{path}",
+                    )
+                except WorkspaceError:
+                    # 关联补记失败不重跑正文：留一条待补记录，下次读取时再核对。
+                    self._defer_idea_application(idea, path, body, info, result)
+                    continue
+                break
+
+    def _defer_idea_application(
+        self,
+        idea: IdeaReference,
+        path: str,
+        body: str,
+        info: TurnInfo,
+        result: RunResult,
+    ) -> None:
+        """正文已改好但关联没记上：留痕，不重复写入，也不假装成功。"""
+        from hastings.workspace.idea_activity import IdeaActivityIndex
+
+        try:
+            IdeaActivityIndex(self.workspace, self.store.root).defer(
+                idea.idea_id,
+                revision_id=idea.revision_id,
+                target_path=path,
+                quote=body,
+                commit=str(result.commit or ""),
+                turn_id=info.turn_id,
+            )
+        except WorkspaceError:
+            # 连留痕都失败时只能放弃这次关联；本轮结果照旧。
+            return
 
     async def _review_after_write(
         self,

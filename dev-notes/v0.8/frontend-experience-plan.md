@@ -4,6 +4,10 @@
 本文承接界面检查和作者确认的修改方向；阶段结果见[H2记录](notes/H2-frontend-foundation.md)、[H1记录](notes/H1-frontend-reliability.md)和[验证记录](artifacts/frontend-experience/verification.md)，未勾选项继续待实施或待验收。
 原有 A–G 功能开发及其未完成验收继续见[实施计划](development-plan.md)和[运行说明](release.md)。
 
+2026-10-25 后续设计：[灵感全流程改造计划](ideas-experience-plan.md)与[实现示例](ideas-experience-examples.md)
+新增 I0–I6 任务（现已全部实施），取消灵感标题、标签操作，以悬浮面板串联记录、管理、引用、模型展开和实际使用。
+该专项取代本文灵感页面形态的后续要求；本文 H1–H6 的历史实现与验证记录保持原样，不能当作专项完成证据。
+
 ## 阅读与执行
 
 - 本文：为什么调整、页面行为、模块任务、接口约束、实施顺序和验收矩阵。

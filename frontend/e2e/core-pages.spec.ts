@@ -61,6 +61,35 @@ test("灵感面板：真实列表分页、历史预览与删除恢复", async ({
   await ideaShot(page, "history-1440-100");
 });
 
+test("灵感面板：长文完整读取后再编辑，保存不改写原文与长度", async ({ page, request, book }) => {
+  const body = "长文首段：这段用于验证完整读取。\n" + "雨落在旧港的屋顶上，没有人抬头。".repeat(700);
+  const created = await (await request.post(`/api/file-workspaces/${book.id}/ideas`, {
+    data: { body, request_key: `long-${book.id}` },
+  })).json();
+
+  await page.goto(`/#/workspaces/${book.id}/ideas`);
+  const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
+  await list.getByRole("button", { name: /^长文首段/ }).click();
+
+  const editor = page.getByLabel("灵感正文", { exact: true });
+  // 编辑的是完整原文，不是列表里的摘要。
+  await expect.poll(async () => editor.evaluate(el => (el as HTMLTextAreaElement).value.length)).toBe(body.length);
+  await expect(editor).toHaveValue(body);
+
+  const edited = `${body}\n尾部补充`;
+  await editor.fill(edited);
+  // 等到保存请求真正返回，再读服务端内容；只看按钮状态会在保存途中就通过。
+  const saved_response = page.waitForResponse(
+    response => response.url().includes(`/ideas/${created.idea_id}`) && response.request().method() === "PATCH",
+  );
+  await page.getByRole("button", { name: "完成", exact: true }).click();
+  expect((await saved_response).ok()).toBeTruthy();
+
+  const saved = await (await request.get(`/api/file-workspaces/${book.id}/ideas/${created.idea_id}`)).json();
+  expect(saved.body).toBe(edited);
+  expect(Array.from(saved.body as string).length).toBe(Array.from(edited).length);
+});
+
 test("灵感面板：窄屏草稿与主操作矩阵，引用保留聊天草稿且不发送", async ({ page, book }) => {
   let writes = 0;
   page.on("request", req => { if (req.method() === "POST" && /\/turns|\/material-tasks/.test(req.url())) writes++; });

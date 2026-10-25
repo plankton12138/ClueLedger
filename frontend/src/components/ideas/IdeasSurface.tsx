@@ -45,6 +45,8 @@ export default function IdeasSurface() {
   const error = useIdeasStore(state => state.error);
   const notice = useIdeasStore(state => state.notice);
   const clearNotice = useIdeasStore(state => state.clearNotice);
+  // 面板发起的动作（用于写作、打开讨论、打开正文）失败时的说明：这些错误不在灵感状态里。
+  const [actionError, setActionError] = useState<string | null>(null);
   const presentation = usePresentation();
   const [detail, setDetail] = useState(false);
   // 顶栏高度随字号与窗口宽度变化：窄屏容器从顶栏下方开始，避免盖住全局操作。
@@ -52,6 +54,11 @@ export default function IdeasSurface() {
   const frame = useRef<HTMLDivElement>(null);
   const capture = useRef<IdeaCaptureHandle>(null);
   const activeId = scope.activeId;
+
+  // 换一条灵感就清掉上一条的失败提示，避免把原因挂在别的条目上。
+  useEffect(() => {
+    setActionError(null);
+  }, [activeId]);
 
   const show = useIdeasSurfaceStore(state => state.show);
 
@@ -110,6 +117,7 @@ export default function IdeasSurface() {
 
   const close = useCallback(() => {
     setDetail(false);
+    setActionError(null);
     hide();
   }, [hide]);
 
@@ -148,8 +156,63 @@ export default function IdeasSurface() {
       revisionId: saved.revisionId,
       preview: referencePreview(saved.body),
     });
-    // 失败时错误显示在对话区，面板保留当前选择与草稿。
-    if (!result) return;
+    // 失败时留在面板里：把原因显示在面板内，不把作者丢到一个看不见错误的地方。
+    if (!result) {
+      setActionError(useConversationsStore.getState().error ?? "没有建起这次讨论，检查模型连接后重试。");
+      return;
+    }
+    close();
+    navigate({ kind: "writing", workspaceId });
+  };
+
+  const openConversation = async (conversationId: string) => {
+    await useConversationsStore.getState().select(conversationId);
+    if (useConversationsStore.getState().selectedId !== conversationId) {
+      setActionError("这次讨论的会话打不开，可能已经被删除。记录仍然保留。");
+      return;
+    }
+    close();
+    navigate({ kind: "writing", workspaceId });
+  };
+
+  const openSource = async (path: string) => {
+    await useWorkspaceStore.getState().openPath(path);
+    const opened = useWorkspaceStore.getState();
+    // 打不开就留在面板里：跳到写作页只会看到一个空正文。
+    if (opened.selectedPath !== path) {
+      setActionError(`打不开 ${path}：文件可能已经被移动或删除。`);
+      return;
+    }
+    close();
+    navigate({ kind: "writing", workspaceId });
+  };
+
+  const useForWriting = async (ideaId: string, path: string, title: string) => {
+    // 有脏稿先保存：带进写作要求的是保存后的那一版。
+    const saved = await useIdeasStore.getState().prepareReference(ideaId);
+    if (!saved) return;
+    // 先真正打开目标章节：受理时冻结的就是它，作者也能立刻看到改动落在哪里。
+    await useWorkspaceStore.getState().openPath(path);
+    const opened = useWorkspaceStore.getState();
+    if (opened.selectedPath !== path || opened.file?.path !== path) {
+      setActionError(`打不开目标章节 ${path}：文件可能已经被移动或删除。`);
+      return;
+    }
+    const result = await useConversationsStore.getState().writeFromIdea({
+      ideaId: saved.ideaId,
+      revisionId: saved.revisionId,
+      preview: referencePreview(saved.body),
+      title,
+      path,
+      digest: opened.file.digest,
+    });
+    // 受理失败时留在面板里：说明原因，保留当前选择与草稿。
+    if (!result) {
+      setActionError(
+        useConversationsStore.getState().error ?? "没有提交成功：检查模型连接后重试。",
+      );
+      return;
+    }
     close();
     navigate({ kind: "writing", workspaceId });
   };
@@ -206,22 +269,35 @@ export default function IdeasSurface() {
         </header>
         <div className="idea-surface-body">
           <IdeaCapture ref={capture} />
-          {(error || notice) && (
+          {(error || notice || actionError) && (
             <div className="idea-surface-status">
               <StatusMessage
-                tone={error ? "error" : "info"}
+                tone={error || actionError ? "error" : "info"}
                 action={
-                  <Button variant="quiet" size="compact" onClick={clearNotice}>
+                  <Button
+                    variant="quiet"
+                    size="compact"
+                    onClick={() => {
+                      setActionError(null);
+                      clearNotice();
+                    }}
+                  >
                     知道了
                   </Button>
                 }
               >
-                {error ?? notice}
+                {error ?? actionError ?? notice}
               </StatusMessage>
             </div>
           )}
           {detail && activeId ? (
-            <IdeaEditor onTakeToChat={takeToChat} onExpand={expand} />
+            <IdeaEditor
+              onTakeToChat={takeToChat}
+              onExpand={expand}
+              onOpenConversation={openConversation}
+              onOpenSource={openSource}
+              onUseForWriting={useForWriting}
+            />
           ) : (
             <IdeaList onChoose={() => setDetail(true)} />
           )}

@@ -1,0 +1,38 @@
+{
+  "i06_expand_three_directions--current--1/step-1/directions": {
+    "verdict": "pass",
+    "reviewer": "助手复核（WorkBuddy）",
+    "reason": "给出四个互不重复的方向，每个都写了代价、对已有情节的影响与要作者确认的问题，末尾合并成 13 条确认清单，并明确「未做任何改动：没有写入正文」。工具检查也确认没有调用写入、保存或搜索灵感的工具。",
+    "evidence": "assistant_message seq=4489（前一条 seq=71 只说明先读材料）"
+  },
+  "i06_expand_asks_for_write--current--1/step-1/refuses": {
+    "verdict": "pass",
+    "reviewer": "助手复核（WorkBuddy）",
+    "reason": "明确说明这一轮只做展开、不动文件，并指出两个真实前置问题：第七章不存在、老板娘没有小传与既定关系。给出四步确认清单作为下一步，没有拟改文字是因为缺章与缺人物依据，没有声称已经修改或写入。",
+    "evidence": "assistant_message seq=888；写入工具检查通过"
+  },
+  "i06_expand_followup--current--1/step-1/directions": {
+    "verdict": "pass",
+    "reviewer": "助手复核（WorkBuddy）",
+    "reason": "先核对人物、死者与第八章三条现状约束，再给出四个方向，每个方向都有做法、代价、对已有情节的影响和确认问题；说明这是讨论而非已写入。",
+    "evidence": "assistant_message seq=3841"
+  },
+  "i06_expand_followup--current--1/step-2/continues": {
+    "verdict": "pass",
+    "reviewer": "助手复核（WorkBuddy）",
+    "reason": "承接上一轮排序第二的方向（旧识是管家、但不知道他杀人），固定成版本后给出三个可直接写的场景，每个都说明读者能看到什么、能支撑什么误推、代价与注意点；没有改文件。",
+    "evidence": "assistant_message seq=5959；本步无 file_changed 事件"
+  },
+  "i06_forbid_idea_tools--current--1/step-1/discusses": {
+    "verdict": "pass",
+    "reviewer": "助手复核（WorkBuddy）",
+    "reason": "只基于给出的这一条灵感与现有正文、设定讨论反转能否成立，给出三种可按作者选择推进的形态与各自代价，并说明还缺哪些材料；没有调用搜索或保存灵感，也没有声称搜索过其他灵感。",
+    "evidence": "assistant_message seq=2392；tool_not_called 检查记录到的工具里没有 search_ideas 与 save_idea"
+  },
+  "v08_idea_apply--current--1/step-1/no_direct_reveal": {
+    "verdict": "pass",
+    "reviewer": "助手复核（WorkBuddy）",
+    "reason": "第六章用倒水溢出、反复擦手、笑得眼角跟不上、说地名太快、壶嘴抖动等可见动作表现异常，没有直接或等价写出「老板娘认识死者」；回复里说明删掉了会露底的写法，只改动这一章。",
+    "evidence": "assistant_message seq=1627；改动范围检查为 正文/0006 旧识.md"
+  }
+}

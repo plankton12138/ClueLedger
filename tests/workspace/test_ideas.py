@@ -351,6 +351,135 @@ def test_author_link_does_not_need_a_target(tmp_path: Path) -> None:
     assert linked["uses"][0]["kind"] == "author_link"
 
 
+def test_link_use_replays_by_request_key(tmp_path: Path) -> None:
+    """补记是独立命令：同一个键重试回到同一条关联，不新增、也不报冲突。"""
+    workspace, store = _store(tmp_path)
+    created = _create(store)
+    chapter = workspace.read("正文/0001 雨夜.md")
+    quote = "雪压住了山路。"
+    start = chapter.text.index(quote)
+    draft = IdeaUseDraft(
+        idea_revision_id=str(created["revision_id"]),
+        kind="applied",
+        target_path=chapter.path,
+        target_digest=chapter.digest,
+        quote=quote,
+        start=start,
+        end=start + len(quote),
+        turn_id="turn-1",
+        commit="c1",
+    )
+
+    first = store.add_use(
+        str(created["idea_id"]),
+        expected_digest=str(created["digest"]),
+        use=draft,
+        request_key="idea-link-9",
+    )
+    again = store.add_use(
+        str(created["idea_id"]),
+        expected_digest=str(created["digest"]),
+        use=draft,
+        request_key="idea-link-9",
+    )
+
+    assert len(first["uses"]) == 1
+    assert again["uses"] == first["uses"]
+    assert again["uses"][0]["commit"] == "c1"
+
+
+def test_link_use_rejects_a_reused_key_for_another_target(tmp_path: Path) -> None:
+    workspace, store = _store(tmp_path)
+    created = _create(store)
+    chapter = workspace.read("正文/0001 雨夜.md")
+    quote = "雪压住了山路。"
+    start = chapter.text.index(quote)
+    store.add_use(
+        str(created["idea_id"]),
+        expected_digest=str(created["digest"]),
+        use=IdeaUseDraft(
+            idea_revision_id=str(created["revision_id"]),
+            kind="applied",
+            target_path=chapter.path,
+            target_digest=chapter.digest,
+            quote=quote,
+            start=start,
+            end=start + len(quote),
+            turn_id="turn-1",
+        ),
+        request_key="idea-link-10",
+    )
+
+    with pytest.raises(WorkspaceError) as excinfo:
+        store.add_use(
+            str(created["idea_id"]),
+            expected_digest=str(store.get(str(created["idea_id"]))["digest"]),
+            use=IdeaUseDraft(
+                idea_revision_id=str(created["revision_id"]),
+                kind="applied",
+                target_path=chapter.path,
+                target_digest=chapter.digest,
+                quote=quote,
+                start=start,
+                end=start + len(quote),
+                turn_id="turn-2",
+            ),
+            request_key="idea-link-10",
+        )
+    assert excinfo.value.code == "REQUEST_KEY_CONFLICT"
+
+
+def test_rewriting_the_same_range_refreshes_the_recorded_commit(tmp_path: Path) -> None:
+    """同一位置再次写入时记录换成新提交，避免一直挂着已经被撤销的旧提交。"""
+    workspace, store = _store(tmp_path)
+    created = _create(store)
+    chapter = workspace.read("正文/0001 雨夜.md")
+    quote = "雪压住了山路。"
+    start = chapter.text.index(quote)
+
+    def link(commit: str, key: str) -> None:
+        store.add_use(
+            str(created["idea_id"]),
+            expected_digest=str(store.get(str(created["idea_id"]))["digest"]),
+            use=IdeaUseDraft(
+                idea_revision_id=str(created["revision_id"]),
+                kind="applied",
+                target_path=chapter.path,
+                target_digest=chapter.digest,
+                quote=quote,
+                start=start,
+                end=start + len(quote),
+                turn_id="turn-1",
+                commit=commit,
+            ),
+            request_key=key,
+        )
+
+    link("c1", "idea-link-11")
+    link("c2", "idea-link-12")
+    uses = store.get(str(created["idea_id"]))["uses"]
+    assert len(uses) == 1
+    assert uses[0]["commit"] == "c2"
+
+    # 不带提交的登记（例如作者手动补充）不能把已有依据抹掉。
+    store.add_use(
+        str(created["idea_id"]),
+        expected_digest=str(store.get(str(created["idea_id"]))["digest"]),
+        use=IdeaUseDraft(
+            idea_revision_id=str(created["revision_id"]),
+            kind="applied",
+            target_path=chapter.path,
+            target_digest=chapter.digest,
+            quote=quote,
+            start=start,
+            end=start + len(quote),
+            turn_id="turn-1",
+        ),
+        request_key="idea-link-13",
+    )
+    assert store.get(str(created["idea_id"]))["uses"][0]["commit"] == "c2"
+
+
 def test_body_is_saved_verbatim_without_trimming(tmp_path: Path) -> None:
     """正文按原文保存：首尾空白、缩进与表情都不改写，长度按原文计算。"""
     _, store = _store(tmp_path)

@@ -62,6 +62,38 @@ def _error(exc: Exception) -> WorkspaceError:
 
 SCHEMA_VERSION = 3
 
+
+def reverted_commits(root: Path) -> frozenset[str]:
+    """已经明确撤销的提交标识。
+
+    只读原始操作日志，不依赖查询索引：撤销是 ``撤销版本`` 操作里记下的目标提交。
+    日志缺失或损坏时返回空集——宁可多显示一条「该位置已变更」，也不把没撤销的
+    写入说成已撤回。
+    """
+    path = Path(root) / "activity" / "operations.jsonl"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (FileNotFoundError, OSError):
+        return frozenset()
+    found: set[str] = set()
+    for line in lines:
+        # 先做一次廉价过滤：绝大多数事件既没有提交标识，也不是撤销操作。
+        if "target_commit" not in line or "撤销版本" not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "operation_finished":
+            continue
+        if event.get("operation") != "撤销版本" or event.get("status") != "completed":
+            continue
+        commit = event.get("target_commit")
+        if isinstance(commit, str) and commit:
+            found.add(commit)
+    return frozenset(found)
+
+
 #: 工具名 → 作者读得懂的动词。未列出的工具保留原名，不猜用途。
 _TOOL_VERBS = {
     "read_file": "读取",

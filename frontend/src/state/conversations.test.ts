@@ -973,3 +973,73 @@ describe("展开灵感（I4）", () => {
     expect(api.createConversationWithText).not.toHaveBeenCalled();
   });
 });
+
+describe("用于写作（I5）", () => {
+  const ACCEPTED = {
+    conversation_id: "c-write",
+    turn_id: "t-write",
+    started_at: "2026-10-25T10:00:00+08:00",
+    title: "把这条灵感用到《雨夜》",
+    request_key: "k-write",
+  };
+
+  function ready(): void {
+    reset();
+    useConversationsStore.setState({ workspaceId: "w1" });
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+    api.createConversationWithText.mockResolvedValue(ACCEPTED);
+  }
+
+  it("带目标章节与固定修订走普通用途，作者自己的草稿不被动", async () => {
+    ready();
+    useConversationsStore.getState().setDraft("作者正在写的草稿");
+
+    const result = await useConversationsStore.getState().writeFromIdea({
+      ideaId: "idea_1",
+      revisionId: "irev_1",
+      preview: "灯塔在退潮时才会露出第二层台阶。",
+      title: "雨夜",
+      path: "正文/0001 雨夜.md",
+      digest: "d1",
+    });
+
+    expect(result).toEqual({ conversationId: "c-write", turnId: "t-write" });
+    const [, request] = api.createConversationWithText.mock.calls[0];
+    expect(request.purpose).toBeUndefined();
+    expect(request.context.selected_path).toBe("正文/0001 雨夜.md");
+    expect(request.context.observed_digests).toEqual({ "正文/0001 雨夜.md": "d1" });
+    expect(request.context.idea_references).toEqual([
+      { idea_id: "idea_1", revision_id: "irev_1" },
+    ]);
+    expect(request.text).toContain("《雨夜》");
+    expect(request.text).toContain("灯塔在退潮时");
+    // 提交用的是这一次的引用，不把引用留在作者的下一条草稿里。
+    const state = useConversationsStore.getState();
+    expect(state.drafts.new).toBe("作者正在写的草稿");
+    expect(state.draftIdeas.new ?? []).toHaveLength(0);
+  });
+
+  it("已有会话时接着发，不另建会话", async () => {
+    ready();
+    useConversationsStore.setState({ selectedId: "c1" });
+
+    const result = await useConversationsStore.getState().writeFromIdea({
+      ideaId: "idea_1",
+      revisionId: "irev_1",
+      preview: "预览",
+      title: "雨夜",
+      path: "正文/0001 雨夜.md",
+    });
+
+    expect(result).toEqual({ conversationId: "c1", turnId: "t1" });
+    expect(api.createConversationWithText).not.toHaveBeenCalled();
+    const [, conversationId, request] = api.startTurn.mock.calls[0];
+    expect(conversationId).toBe("c1");
+    expect(request.context.selected_path).toBe("正文/0001 雨夜.md");
+    // 还没读到目标版本就不带指纹，由服务端按当前内容冻结。
+    expect(request.context.observed_digests).toEqual({});
+  });
+});

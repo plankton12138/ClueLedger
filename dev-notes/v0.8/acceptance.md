@@ -126,6 +126,11 @@
 | v08_library_search | 明确请求从库选择另一故事线 | 有界检索与理由，不自动装入、升级或修改正文 |
 | v08_revision_pinned | 库 head 更新，当前作品仍固定旧版本 | 使用固定版本，指出可更新但不偷换新设定 |
 
+本表是设计清单，不等于已执行：当前实现并在 `eval/suites` 里可运行的是
+`v08_idea_discuss`、`v08_idea_apply`、`v08_idea_unused`、`v08_module_reference` 与本轮新增的
+`i06_expand_three_directions`、`i06_expand_asks_for_write`、`i06_expand_followup`、
+`i06_forbid_idea_tools`；其余条目仍是设计，没有任何运行结果。
+
 前三类至少覆盖“作者记录／讨论／落实”的完整差异；文学质量不只用关键词匹配。
 语义复核必须引用具体正文、公开回复和证据，标明动机是否成立、铺垫是否可回看、读者边界是否保持。
 未知或未复核记 pending_review，不替模型补签通过。
