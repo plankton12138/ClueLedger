@@ -2276,13 +2276,24 @@ def build_tools(
                 }
             )
 
+        save_operations = 0
+
+        def _save_operation(call_id: str) -> str:
+            """一次保存调用一个稳定身份：同一调用重试复用，不同调用各自独立。"""
+            nonlocal save_operations
+            text = str(call_id or "").strip()
+            if text:
+                return text
+            save_operations += 1
+            return f"call-{save_operations}"
+
         async def save_idea(
             tool_call_id: str,
             arguments: Mapping[str, JSONValue],
             signal: ToolCancellationToken | None = None,
             on_update: ToolUpdateCallback | None = None,
         ) -> AgentToolResult:
-            del tool_call_id, signal, on_update
+            del signal, on_update
             if not _author_said(save_phrases):
                 raise WorkspaceError(
                     code="IDEA_SAVE_DENIED",
@@ -2290,13 +2301,15 @@ def build_tools(
                     why="作者没有明确要求把内容记成灵感",
                     fix="只在作者说记下来、保存为灵感时使用；普通讨论不要自动收集",
                 )
+            # 新 schema 只公开正文；旧参数仍被接受，供历史重放与旧调用记录使用。
+            body = str(arguments.get("body") or "")
             title = str(arguments.get("title") or "").strip()
-            body = str(arguments.get("body") or "").strip()
+            tags = list(_string_list_argument(arguments, "tags"))
             created = IdeaStore(workspace).create(
                 title=title,
                 body=body,
-                tags=list(_string_list_argument(arguments, "tags")),
-                request_key=f"{run.turn_id}:idea",
+                tags=tags,
+                request_key=f"{run.turn_id}:idea:{_save_operation(tool_call_id)}",
             )
             run.record(
                 "idea_saved",
@@ -2304,6 +2317,7 @@ def build_tools(
                     "idea_id": created["idea_id"],
                     "revision_id": created["revision_id"],
                     "title": created["title"],
+                    "tool_call_id": tool_call_id,
                 },
             )
             return _json(
@@ -2370,11 +2384,9 @@ def build_tools(
                     parameters={
                         "type": "object",
                         "properties": {
-                            "title": {"type": "string"},
-                            "body": {"type": "string"},
-                            "tags": {
-                                "type": "array",
-                                "items": {"type": "string"},
+                            "body": {
+                                "type": "string",
+                                "description": "作者要求记下的原文；照抄，不要改写或补充",
                             },
                         },
                         "required": ["body"],

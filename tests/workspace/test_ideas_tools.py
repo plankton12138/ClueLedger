@@ -226,3 +226,63 @@ async def test_quoted_action_words_do_not_authorize_idea_tools(
     tools = {tool.name: tool for tool in build_tools(workspace, _run(workspace, text))}
     with pytest.raises(WorkspaceError):
         await _call(tools[tool], **arguments)
+
+
+def test_accepting_a_deleted_entry_is_rejected_even_for_an_older_live_revision(
+    tmp_path: Path,
+) -> None:
+    """条目当前已删除时，旧的可读修订也不能被新受理；已受理的轮次不受影响。"""
+    workspace = _workspace(tmp_path)
+    store = IdeaStore(workspace)
+    created = store.create(body="第一版。", request_key="idea-freeze-1")
+    edited = store.update(
+        str(created["idea_id"]),
+        expected_digest=str(created["digest"]),
+        expected_revision=str(created["revision_id"]),
+        body="第二版。",
+        request_key="idea-freeze-2",
+    )
+    store.trash(
+        str(created["idea_id"]),
+        expected_digest=str(edited["digest"]),
+        expected_revision=str(edited["revision_id"]),
+        request_key="idea-freeze-3",
+    )
+
+    with pytest.raises(WorkspaceError) as excinfo:
+        freeze_context(
+            workspace,
+            ContextRequest(idea_references=((created["idea_id"], created["revision_id"]),)),
+        )
+    assert excinfo.value.code == "CONTEXT_SOURCE_NOT_FOUND"
+    assert "已删除" in excinfo.value.why
+
+
+@pytest.mark.anyio
+async def test_one_turn_can_save_several_ideas_with_separate_operations(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    run = _run(workspace, "把这两句都记下来。")
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
+    save = tools["save_idea"]
+
+    first = json.loads((await save.execute("call-a", {"body": "第一句。"})).text)
+    second = json.loads((await save.execute("call-b", {"body": "第二句。"})).text)
+    assert first["idea_id"] != second["idea_id"]
+
+    # 同一次调用的重试复用同一操作身份，不新增记录。
+    retry = json.loads((await save.execute("call-a", {"body": "第一句。"})).text)
+    assert retry["idea_id"] == first["idea_id"]
+    assert IdeaStore(workspace).list()["total"] == 2
+
+
+@pytest.mark.anyio
+async def test_saved_idea_keeps_the_original_text(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    run = _run(workspace, "把这句话记下来。")
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
+    body = "  前后都有空格，中间有\n换行 🎭  "
+    saved = json.loads((await tools["save_idea"].execute("call-1", {"body": body})).text)
+
+    view = IdeaStore(workspace).get(str(saved["idea_id"]))
+    assert view["body"] == body
+    assert view["title"] == ""

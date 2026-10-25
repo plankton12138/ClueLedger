@@ -7,6 +7,10 @@ async function shot(page: Page, name: string, stage = "H4") {
   const output = resolve("../dev-notes/v0.8/artifacts/frontend-experience/screenshots");
   mkdirSync(output, { recursive: true }); await page.screenshot({ path: `${output}/${stage}-${name}.png` });
 }
+async function ideaShot(page: Page, name: string) {
+  const output = resolve("../dev-notes/v0.8/artifacts/ideas-experience/screenshots");
+  mkdirSync(output, { recursive: true }); await page.screenshot({ path: `${output}/${name}.png` });
+}
 async function font(page: Page, value: number) {
   await page.getByRole("button", { name: "设置", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "设置", exact: true });
@@ -14,23 +18,30 @@ async function font(page: Page, value: number) {
   await page.keyboard.press("Escape");
 }
 
-test("灵感真实列表与历史分页、旧内容预览和删除修订恢复", async ({ page, request, book }) => {
-  test.setTimeout(60_000);
+test("灵感面板：真实列表分页、历史预览与删除恢复", async ({ page, request, book }) => {
+  test.setTimeout(90_000);
   const base = `/api/file-workspaces/${book.id}/ideas`;
   for (let n = 0; n < 51; n++) {
-    const created = await request.post(base, { data: { title: `分页灵感${n}`, body: `正文${n}`, tags: [], request_key: `page-${book.id}-${n}` } });
+    const created = await request.post(base, { data: { body: `正文${n}`, request_key: `page-${book.id}-${n}` } });
     expect(created.ok()).toBeTruthy();
   }
-  let view = await (await request.post(base, { data: { title: "历史核对", body: "最初内容", tags: [], request_key: `history-${book.id}` } })).json();
-  for (let n = 0; n < 21; n++) view = await (await request.patch(`${base}/${view.idea_id}`, { data: { expected_digest: view.digest, expected_revision: view.revision_id, title: "历史核对", body: `修订${n}`, request_key: `edit-${book.id}-${n}` } })).json();
+  let view = await (await request.post(base, { data: { body: "最初内容", request_key: `history-${book.id}` } })).json();
+  for (let n = 0; n < 21; n++) view = await (await request.patch(`${base}/${view.idea_id}`, { data: { expected_digest: view.digest, expected_revision: view.revision_id, body: `修订${n}`, request_key: `edit-${book.id}-${n}` } })).json();
+
+  // 旧链接仍然有效：打开展开容器并定位到指定记录。
   await page.goto(`/#/workspaces/${book.id}/ideas`);
+  await expect(page.getByRole("complementary", { name: "灵感", exact: true })).toBeVisible();
   const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
   await expect(list.getByRole("button", { name: "加载更多灵感", exact: true })).toBeVisible();
   await list.getByRole("button", { name: "加载更多灵感", exact: true }).click();
-  await expect(list.getByRole("button", { name: /^旧识 / })).toBeVisible();
-  await list.getByRole("button", { name: /^历史核对 / }).click();
+  await expect(list.getByRole("button", { name: "加载更多灵感", exact: true })).toHaveCount(0);
+
+  await page.getByLabel("搜索灵感", { exact: true }).fill("修订20");
+  await list.getByRole("button", { name: /^修订20/ }).click();
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("修订20");
-  const history = page.locator(".idea-history"); await history.locator("summary").click();
+
+  const history = page.locator(".idea-history");
+  await history.locator("summary").click();
   await expect(history.locator("li")).toHaveCount(20);
   await history.getByRole("button", { name: "更多历史", exact: true }).click();
   await expect(history.locator("li")).toHaveCount(22);
@@ -38,51 +49,48 @@ test("灵感真实列表与历史分页、旧内容预览和删除修订恢复",
   await expect(page.getByRole("region", { name: "历史内容" })).toContainText("最初内容");
   await history.getByRole("button", { name: "恢复内容", exact: true }).click();
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("最初内容");
-  await page.getByRole("button", { name: "条目操作", exact: true }).click();
-  await page.getByRole("dialog", { name: "条目操作" }).getByRole("button", { name: "删除", exact: true }).click();
+
+  await page.getByRole("button", { name: "删除", exact: true }).click();
   await expect(page.getByRole("button", { name: "恢复", exact: true })).toBeVisible();
-  if (!await history.evaluate(el => (el as HTMLDetailsElement).open)) await history.locator("summary").click();
+  if (!(await history.evaluate(el => (el as HTMLDetailsElement).open))) await history.locator("summary").click();
   await history.getByRole("button", { name: "查看内容", exact: true }).first().click();
   await expect(page.getByRole("region", { name: "历史内容" })).toContainText("删除修订");
-  await expect(history.getByRole("button", { name: "恢复为删除状态", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "恢复", exact: true }).click();
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("最初内容");
-  await expect(page.getByRole("button", { name: "条目操作", exact: true })).toBeVisible();
-  await history.locator("li").filter({ hasText: /^删除/ }).getByRole("button", { name: "查看内容", exact: true }).first().click();
-  await history.getByRole("button", { name: "恢复为删除状态", exact: true }).click();
-  await expect(page.getByRole("button", { name: "恢复", exact: true })).toBeVisible();
-  await shot(page, "ideas-history-1440");
+  await expect(page.getByRole("button", { name: "删除", exact: true })).toBeVisible();
+  await ideaShot(page, "history-1440-100");
 });
 
-test("灵感窄屏草稿与主操作矩阵，引用保留聊天草稿且不发送", async ({ page, book }) => {
+test("灵感面板：窄屏草稿与主操作矩阵，引用保留聊天草稿且不发送", async ({ page, book }) => {
   let writes = 0;
   page.on("request", req => { if (req.method() === "POST" && /\/turns|\/material-tasks/.test(req.url())) writes++; });
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByPlaceholder("说要求，回车发送，Shift+Enter 换行").fill("保留聊天输入");
-  await page.getByRole("link", { name: "灵感", exact: true }).click();
-  await page.getByRole("button", { name: /^旧识 / }).click();
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
+  await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("侦探认出了雨衣。");
   await page.getByLabel("灵感正文", { exact: true }).fill("新内容保留");
   await expect(page.getByRole("button", { name: "带到对话", exact: true })).toBeDisabled();
   for (const width of [1440, 1024, 760, 640]) for (const scale of [100, 150]) {
     await page.setViewportSize({ width, height: width === 1024 ? 768 : width === 640 ? 800 : 900 }); await font(page, scale);
     await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("新内容保留");
-    await expect(page.getByRole("button", { name: "保存", exact: true })).toBeInViewport();
+    await expect(page.getByRole("button", { name: "完成", exact: true })).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     if (await page.getByRole("button", { name: "返回列表", exact: true }).isVisible()) {
       await page.getByRole("button", { name: "返回列表", exact: true }).click();
-      await page.getByLabel("搜索灵感", { exact: true }).fill("旧识");
-      await page.getByRole("button", { name: /^旧识 / }).click();
+      await page.getByLabel("搜索灵感", { exact: true }).fill("侦探");
+      await page.getByRole("complementary", { name: "灵感列表", exact: true }).getByRole("button", { name: /^侦探认出了雨衣/ }).click();
       await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("新内容保留");
     }
-    await shot(page, `ideas-${width}-${scale}`);
+    await ideaShot(page, `editor-${width}-${scale}`);
   }
-  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await page.getByRole("button", { name: "完成", exact: true }).click();
   await expect(page.getByRole("button", { name: "带到对话", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "带到对话", exact: true }).click();
   const chat = page.getByRole("button", { name: /^对话/, exact: false }); if (await chat.isVisible()) await chat.click();
   await expect(page.getByPlaceholder("说要求，回车发送，Shift+Enter 换行")).toHaveValue("保留聊天输入");
-  await expect(page.locator(".writing-chat")).toContainText("旧识");
+  await expect(page.locator(".writing-chat")).toContainText("新内容保留");
   expect(writes).toBe(0);
 });
 

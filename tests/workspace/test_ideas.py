@@ -349,3 +349,139 @@ def test_author_link_does_not_need_a_target(tmp_path: Path) -> None:
         request_key="idea-link-3",
     )
     assert linked["uses"][0]["kind"] == "author_link"
+
+
+def test_body_is_saved_verbatim_without_trimming(tmp_path: Path) -> None:
+    """正文按原文保存：首尾空白、缩进与表情都不改写，长度按原文计算。"""
+    _, store = _store(tmp_path)
+    body = "  开头两个空格\n\t缩进与表情 🎭\n结尾保留  \n"
+    created = store.create(body=body, request_key="idea-verbatim-1")
+    assert created["body"] == body
+    assert store.get(str(created["idea_id"]))["body"] == body
+
+    edited = store.update(
+        str(created["idea_id"]),
+        expected_digest=str(created["digest"]),
+        expected_revision=str(created["revision_id"]),
+        body=body + "追加",
+        request_key="idea-verbatim-2",
+    )
+    assert edited["body"] == body + "追加"
+
+
+def test_length_limit_counts_the_original_text(tmp_path: Path) -> None:
+    _, store = _store(tmp_path)
+    at_limit = " " + "字" * 19_998 + " "
+    assert len(at_limit) == 20_000
+    created = store.create(body=at_limit, request_key="idea-limit-1")
+    assert len(str(created["body"])) == 20_000
+
+    with pytest.raises(WorkspaceError) as excinfo:
+        store.create(body=" " + "字" * 20_000 + " ", request_key="idea-limit-2")
+    assert excinfo.value.code == "IDEA_CONTENT_TOO_LARGE"
+
+
+def test_update_with_identical_body_does_not_append_a_revision(tmp_path: Path) -> None:
+    _, store = _store(tmp_path)
+    created = _create(store)
+    same = store.update(
+        str(created["idea_id"]),
+        expected_digest=str(created["digest"]),
+        expected_revision=str(created["revision_id"]),
+        body=str(created["body"]),
+        request_key="idea-key-same",
+    )
+    assert same["revision_id"] == created["revision_id"]
+    assert store.revisions(str(created["idea_id"]))["total"] == 1
+
+    # 同键重试仍返回同一修订，不因为文件指纹变化而失败。
+    retry = store.update(
+        str(created["idea_id"]),
+        expected_digest=str(created["digest"]),
+        expected_revision=str(created["revision_id"]),
+        body=str(created["body"]),
+        request_key="idea-key-same",
+    )
+    assert retry["revision_id"] == created["revision_id"]
+
+
+def test_list_order_separates_created_from_updated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hastings.workspace.ideas as ideas_module
+
+    stamp = {"value": 0}
+
+    def clock() -> str:
+        stamp["value"] += 1
+        return f"2026-10-25T00:00:{stamp['value']:02d}+00:00"
+
+    monkeypatch.setattr(ideas_module, "_now", clock)
+    _, store = _store(tmp_path)
+    first = store.create(body="第一条。", request_key="idea-order-1")
+    second = store.create(body="第二条。", request_key="idea-order-2")
+
+    before = [item["idea_id"] for item in store.list(order="created")["items"]]
+    assert before == [second["idea_id"], first["idea_id"]]
+
+    store.update(
+        str(first["idea_id"]),
+        expected_digest=str(first["digest"]),
+        expected_revision=str(first["revision_id"]),
+        body="第一条改。",
+        request_key="idea-order-3",
+    )
+    updated = [item["idea_id"] for item in store.list(order="updated")["items"]]
+    created = [item["idea_id"] for item in store.list(order="created")["items"]]
+    assert updated == [first["idea_id"], second["idea_id"]]
+    assert created == before
+
+
+def test_summary_reports_length_and_truncation(tmp_path: Path) -> None:
+    _, store = _store(tmp_path)
+    short = store.create(body="很短的一条。", request_key="idea-summary-1")
+    long = store.create(body="字" * 200, request_key="idea-summary-2")
+    rows = {item["idea_id"]: item for item in store.list()["items"]}
+    assert rows[str(short["idea_id"])]["body_chars"] == len("很短的一条。")
+    assert rows[str(short["idea_id"])]["excerpt_truncated"] is False
+    assert rows[str(long["idea_id"])]["body_chars"] == 200
+    assert rows[str(long["idea_id"])]["excerpt_truncated"] is True
+    assert len(str(rows[str(long["idea_id"])]["excerpt"])) == 120
+    assert rows[str(short["idea_id"])]["created_at"]
+
+
+def test_resolve_reference_rejects_deleted_entry_and_delete_revision(tmp_path: Path) -> None:
+    _, store = _store(tmp_path)
+    created = _create(store)
+    resolved = store.resolve_reference(str(created["idea_id"]), str(created["revision_id"]))
+    assert resolved["body"] == "老板娘认识死者。"
+
+    deleted = store.trash(
+        str(created["idea_id"]),
+        expected_digest=str(created["digest"]),
+        expected_revision=str(created["revision_id"]),
+        request_key="idea-ref-1",
+    )
+    with pytest.raises(WorkspaceError) as excinfo:
+        store.resolve_reference(str(created["idea_id"]), str(created["revision_id"]))
+    assert excinfo.value.code == "IDEA_REFERENCE_UNAVAILABLE"
+
+    # 恢复后条目重新可读，但删除修订本身仍然不能被引用。
+    restored = store.restore(
+        str(created["idea_id"]),
+        target_revision=str(created["revision_id"]),
+        expected_digest=str(deleted["digest"]),
+        request_key="idea-ref-2",
+    )
+    assert store.resolve_reference(str(created["idea_id"]), str(restored["revision_id"]))
+    with pytest.raises(WorkspaceError) as excinfo:
+        store.resolve_reference(str(created["idea_id"]), str(deleted["revision_id"]))
+    assert excinfo.value.code == "IDEA_REFERENCE_UNAVAILABLE"
+
+
+def test_resolve_reference_rejects_unknown_revision(tmp_path: Path) -> None:
+    _, store = _store(tmp_path)
+    created = _create(store)
+    with pytest.raises(WorkspaceError) as excinfo:
+        store.resolve_reference(str(created["idea_id"]), "irev_0000000000000000")
+    assert excinfo.value.code == "IDEA_REFERENCE_UNAVAILABLE"

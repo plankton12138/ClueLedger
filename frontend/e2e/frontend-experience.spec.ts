@@ -40,10 +40,10 @@ test("隔离基线：主要页面与窄窗口正文", async ({ page, book }) => 
     console.log(`baseline paper ${width}: ${JSON.stringify(size)}`);
   }
   await page.setViewportSize({ width: 1440, height: 900 });
-  for (const [label, name] of [["灵感", "ideas"], ["故事资料", "materials"]]) {
-    await page.getByRole("link", { name: label, exact: true }).click();
-    await page.screenshot({ path: `${output}/${name}-1440.png` });
-  }
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  await page.screenshot({ path: `${output}/ideas-1440.png` });
+  await page.getByRole("link", { name: "故事资料", exact: true }).click();
+  await page.screenshot({ path: `${output}/materials-1440.png` });
   await page.getByRole("link", { name: "模块库", exact: true }).click();
   const dialog = page.getByRole("region", { name: "模块库", exact: true });
   await dialog.getByRole("button", { name: new RegExp(`长记录-${book.id}`) }).click();
@@ -235,29 +235,25 @@ test("B11：无模型发送禁用，草稿和连接入口保留", async ({ page,
   await screenshot(page, "no-model-draft-1440");
 });
 
-test("灵感：多份会话草稿切换和无模型保存，选中摘要可读", async ({ page, book }) => {
+test("灵感：快速记录与条目修改稿分开保留，无模型保存", async ({ page, book }) => {
   await page.goto("/");
   await page.getByLabel("选择作品目录").selectOption(book.id);
-  await page.getByRole("link", { name: "灵感", exact: true }).click();
-  await page.getByRole("button", { name: "旧识", exact: false }).click();
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
+  await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("侦探认出了雨衣。");
   await page.getByLabel("灵感正文", { exact: true }).fill("未保存的旧识");
-  await page.getByRole("button", { name: "新建", exact: true }).click();
-  await page.getByLabel("灵感标题", { exact: true }).fill("另一份临时灵感");
-  await page.getByLabel("灵感正文", { exact: true }).fill("临时草稿");
-  await page.getByRole("button", { name: "旧识", exact: false }).click();
+  await page.getByRole("button", { name: "返回列表", exact: true }).click();
+  await page.getByLabel("记录灵感", { exact: true }).fill("临时草稿");
+  await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("未保存的旧识");
-  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByLabel("记录灵感", { exact: true })).toHaveValue("临时草稿");
+  await page.getByRole("button", { name: "完成", exact: true }).click();
   await expect(page.getByText("已保存为新的灵感修订。", { exact: true })).toBeVisible();
   await screenshot(page, "idea-selected-1440");
-  const row = page.getByRole("button", { name: /旧识.*未保存的旧识/ });
-  const colors = await row.evaluate(el => {
-    const spans = el.querySelectorAll("span");
-    return [getComputedStyle(el).color, getComputedStyle(spans[1]).color];
-  });
-  expect(colors[1]).toBe(colors[0]);
-  await page.getByRole("button", { name: /另一份临时灵感/, exact: false }).click();
-  await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("临时草稿");
+  await page.getByRole("button", { name: "返回列表", exact: true }).click();
+  await expect(list.getByRole("button", { name: /^未保存的旧识/ })).toBeVisible();
+  await expect(page.getByLabel("记录灵感", { exact: true })).toHaveValue("临时草稿");
 });
 
 test("中文输入法确认不发送，章节范围悬停仍可读", async ({ page, book }) => {

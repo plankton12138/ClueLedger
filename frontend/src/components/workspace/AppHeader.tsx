@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { pageHash, type AppPage, type WorkspacePage } from "../../state/navigation";
+import { useIdeasSurfaceStore } from "../../state/ideasSurface";
 import { useWorkspaceStore } from "../../state/workspace";
 import { useModelsStore } from "../../state/models";
 import { usePagePositions } from "../../state/pagePositions";
@@ -9,15 +10,23 @@ import FontSizeControl from "./FontSizeControl";
 
 export function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; workspaceId: string | null }) {
   const positions = usePagePositions(state => workspaceId ? state.pages[workspaceId] : undefined);
-  const defaults: WorkspacePage[] = workspaceId ? [
-    { kind: "writing", workspaceId }, { kind: "ideas", workspaceId },
-    { kind: "materials", workspaceId, section: "story", chapter: null, order: "chapter" },
-  ] : [];
-  return <nav className="workspace-navigation" aria-label="作品页面">{["写作", "灵感", "故事资料"].map((label, index) => {
-    const target = defaults[index];
-    return target ? <a key={label} href={pageHash(positions?.[target.kind] ?? target)} aria-current={page?.kind === target.kind ? "page" : undefined}>{label}</a>
-      : <span key={label} aria-disabled="true">{label}</span>;
-  })}</nav>;
+  const ideasOpen = useIdeasSurfaceStore(state => state.open);
+  const showIdeas = useIdeasSurfaceStore(state => state.show);
+  const hideIdeas = useIdeasSurfaceStore(state => state.hide);
+  const writing: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId } : null;
+  const materials: WorkspacePage | null = workspaceId
+    ? { kind: "materials", workspaceId, section: "story", chapter: null, order: "chapter" }
+    : null;
+  return <nav className="workspace-navigation" aria-label="作品页面">
+    {writing
+      ? <a href={pageHash(positions?.writing ?? writing)} aria-current={page?.kind === "writing" ? "page" : undefined}>写作</a>
+      : <span aria-disabled="true">写作</span>}
+    <button type="button" className="ui-nav-link" aria-pressed={ideasOpen} aria-current={page?.kind === "ideas" ? "page" : undefined}
+      disabled={!workspaceId} title="灵感（Alt+I）" onClick={() => { if (ideasOpen) hideIdeas(); else showIdeas(); }}>灵感</button>
+    {materials
+      ? <a href={pageHash(positions?.materials ?? materials)} aria-current={page?.kind === "materials" ? "page" : undefined}>故事资料</a>
+      : <span aria-disabled="true">故事资料</span>}
+  </nav>;
 }
 
 export function WorkspaceMenu({ onOpen }: { onOpen: () => void }) {

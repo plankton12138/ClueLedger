@@ -168,3 +168,70 @@ def test_unknown_workspace_maps_to_404(tmp_path: Path) -> None:
     client, _ = _client(tmp_path)
     response = client.get("/api/file-workspaces/does-not-exist/ideas")
     assert response.status_code == 404
+
+
+def test_list_exposes_created_order_and_length_fields(tmp_path: Path) -> None:
+    client, workspace_id = _client(tmp_path)
+    first = _create(client, workspace_id, key="idea-http-order-1")
+    second = _create(client, workspace_id, key="idea-http-order-2")
+
+    page = client.get(f"/api/file-workspaces/{workspace_id}/ideas?order=created&limit=1")
+    assert page.status_code == 200, page.text
+    body = page.json()
+    item = body["items"][0]
+    assert set(item) >= {"created_at", "body_chars", "excerpt_truncated"}
+    assert item["body_chars"] == len("老板娘认识死者。")
+    assert item["excerpt_truncated"] is False
+    assert body["next_cursor"]
+
+    # 排序方式进入游标身份：换排序不能复用旧游标。
+    mismatched = client.get(
+        f"/api/file-workspaces/{workspace_id}/ideas?order=updated&limit=1"
+        f"&cursor={body['next_cursor']}"
+    )
+    assert mismatched.status_code == 409
+    assert mismatched.json()["error"]["code"] == "QUERY_CURSOR_STALE_CONFLICT"
+
+    # 修改较早的一条后，默认（updated）排序把它排到最前，created 排序不变。
+    created_order = [
+        row["idea_id"]
+        for row in client.get(f"/api/file-workspaces/{workspace_id}/ideas?order=created").json()[
+            "items"
+        ]
+    ]
+    edited = client.patch(
+        f"/api/file-workspaces/{workspace_id}/ideas/{first['idea_id']}",
+        json={
+            "expected_digest": first["digest"],
+            "expected_revision": first["revision_id"],
+            "body": "老板娘一直在保护死者的女儿。",
+            "request_key": "idea-http-order-3",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+    assert [
+        row["idea_id"]
+        for row in client.get(f"/api/file-workspaces/{workspace_id}/ideas?order=created").json()[
+            "items"
+        ]
+    ] == created_order
+    assert second["idea_id"] in created_order
+
+
+def test_update_keeps_legacy_title_and_tags_when_only_body_is_sent(tmp_path: Path) -> None:
+    client, workspace_id = _client(tmp_path)
+    created = _create(client, workspace_id, key="idea-http-legacy-1")
+    edited = client.patch(
+        f"/api/file-workspaces/{workspace_id}/ideas/{created['idea_id']}",
+        json={
+            "expected_digest": created["digest"],
+            "expected_revision": created["revision_id"],
+            "body": "只改正文。",
+            "request_key": "idea-http-legacy-2",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+    view = edited.json()
+    assert view["body"] == "只改正文。"
+    assert view["title"] == "老板娘"
+    assert view["tags"] == ["人物"]

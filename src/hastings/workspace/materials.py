@@ -478,7 +478,8 @@ def freeze_context(workspace: Workspace, request: ContextRequest) -> ContextSnap
         store = IdeaStore(workspace)
         for idea_id, revision_id in request.idea_references:
             try:
-                revision = store.revision(idea_id, revision_id)
+                # 同一条目锁内核对「条目未删除、所选修订可读」，避免分别读取造成竞争。
+                revision = store.resolve_reference(idea_id, revision_id)
             except WorkspaceError as exc:
                 raise WorkspaceError(
                     code="CONTEXT_SOURCE_NOT_FOUND",
@@ -487,14 +488,6 @@ def freeze_context(workspace: Workspace, request: ContextRequest) -> ContextSnap
                     fix="刷新灵感本后重新选择；条目可能已被删除",
                     details={"idea_id": idea_id, "revision_id": revision_id},
                 ) from exc
-            if bool(revision.get("deleted")):
-                raise WorkspaceError(
-                    code="CONTEXT_SOURCE_NOT_FOUND",
-                    where="materials.accept",
-                    why=f"灵感修订已删除：{idea_id}@{revision_id}",
-                    fix="从最近删除恢复，或改选当前修订",
-                    details={"idea_id": idea_id, "revision_id": revision_id},
-                )
             ideas.append(
                 IdeaReference(
                     idea_id=idea_id,

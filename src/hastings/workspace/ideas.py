@@ -50,6 +50,8 @@ MAX_REVISIONS_PER_IDEA = 5_000
 MAX_REQUEST_KEYS = 100
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 50
+#: 列表摘要的字符上限；超过时由 ``excerpt_truncated`` 标记，进入编辑前必须读完整修订。
+EXCERPT_CHARS = 120
 
 IdeaOperation = Literal["create", "edit", "delete", "restore"]
 IdeaUseKind = Literal["author_link", "applied"]
@@ -173,6 +175,17 @@ class IdeaStore:
                     details={"idea_id": idea_id},
                 )
             self._check_current(idea_id, document, expected_digest, expected_revision)
+            if (
+                not bool(head["deleted"])
+                and str(head["title"]) == next_title
+                and str(head["body"]) == next_body
+                and [str(item) for item in head["tags"]] == list(next_tags)
+            ):
+                # 内容没有变化：不追加空修订，但把这次请求记在头上，重试仍然幂等。
+                document["requests"][key] = {"request": request, "revision_id": head["id"]}
+                document["requests"] = _trim(document["requests"])
+                self._write(idea_id, document)
+                return _idea_view(document, head)
             return self._append(
                 idea_id,
                 document,
@@ -300,9 +313,15 @@ class IdeaStore:
         deleted: bool = False,
         cursor: str | None = None,
         limit: int = DEFAULT_PAGE_SIZE,
+        order: Literal["created", "updated"] = "updated",
     ) -> dict[str, object]:
-        """列表只给摘要；默认不含已删除条目，搜索不返回未选中的灵感给 agent。"""
+        """列表只给摘要；默认不含已删除条目，搜索不返回未选中的灵感给 agent。
+
+        ``order`` 默认按更新时间，兼容旧客户端；新界面显式按创建时间，避免恢复历史
+        把条目挪到最前。排序方式与查询一起进入游标身份。
+        """
         size = _limit(limit)
+        sort_by = "created" if order == "created" else "updated"
         needle = q.strip().lower()
         rows: RowList = []
         invalid = 0
@@ -318,9 +337,10 @@ class IdeaStore:
             if needle and not _matches(head, needle):
                 continue
             rows.append(_idea_summary(document, head))
-        query = f"ideas:{needle}:{1 if deleted else 0}:{len(rows)}"
+        query = f"ideas:{needle}:{1 if deleted else 0}:{sort_by}:{len(rows)}"
         offset = _offset(cursor, query)
-        rows.sort(key=lambda item: (str(item["updated_at"]), str(item["idea_id"])), reverse=True)
+        field = "created_at" if sort_by == "created" else "updated_at"
+        rows.sort(key=lambda item: (str(item[field]), str(item["idea_id"])), reverse=True)
         page = rows[offset : offset + size]
         next_offset = offset + size
         return {
@@ -374,6 +394,43 @@ class IdeaStore:
             "tags": list(item["tags"]),
             "deleted": item["deleted"],
         }
+
+    def resolve_reference(self, idea_id: str, revision_id: str) -> dict[str, object]:
+        """受理引用时在同一把锁里核对条目与修订：条目已删除或修订不可读都拒绝。
+
+        分别读取当前条目和历史修订会留下竞争窗口：刚检查完就被删除，本轮仍会带上
+        一条已经不存在的原文。这里一次读盘、一次判断，返回值就是本轮冻结的原文。
+        """
+        with self._lock(idea_id):
+            document = self._read(idea_id)
+            head = _revision(document, str(document["head_revision_id"]))
+            try:
+                selected = _revision(document, revision_id)
+            except WorkspaceError as exc:
+                raise WorkspaceError(
+                    code="IDEA_REFERENCE_UNAVAILABLE",
+                    where=f"ideas.reference:{idea_id}",
+                    why=f"灵感修订不存在：{idea_id}@{revision_id}",
+                    fix="刷新灵感本后重新选择当前修订",
+                    details={"idea_id": idea_id, "revision_id": revision_id},
+                ) from exc
+            if bool(head["deleted"]):
+                raise WorkspaceError(
+                    code="IDEA_REFERENCE_UNAVAILABLE",
+                    where=f"ideas.reference:{idea_id}",
+                    why=f"这条灵感已删除：{idea_id}",
+                    fix="从最近删除恢复，或改选其他灵感",
+                    details={"idea_id": idea_id, "revision_id": revision_id},
+                )
+            if bool(selected["deleted"]):
+                raise WorkspaceError(
+                    code="IDEA_REFERENCE_UNAVAILABLE",
+                    where=f"ideas.reference:{idea_id}",
+                    why=f"所选修订是删除修订：{idea_id}@{revision_id}",
+                    fix="改选这条灵感未删除的修订",
+                    details={"idea_id": idea_id, "revision_id": revision_id},
+                )
+            return _idea_view(document, selected)
 
     # -- 内部：存储 ---------------------------------------------------------
 
@@ -711,13 +768,17 @@ def _idea_view(document: Mapping[str, Any], revision: Mapping[str, Any]) -> dict
 
 def _idea_summary(document: Mapping[str, Any], revision: Mapping[str, Any]) -> dict[str, object]:
     body = str(revision.get("body") or "")
+    excerpt = body[:EXCERPT_CHARS]
     return {
         "idea_id": str(document.get("idea_id") or ""),
         "head_revision_id": str(document.get("head_revision_id") or ""),
         "title": str(revision.get("title") or ""),
-        "excerpt": body[:120],
+        "excerpt": excerpt,
+        "excerpt_truncated": len(body) > len(excerpt),
+        "body_chars": len(body),
         "tags": list(revision.get("tags") or []),
         "deleted": bool(revision.get("deleted")),
+        "created_at": str(document.get("created_at") or ""),
         "updated_at": str(document.get("updated_at") or ""),
     }
 
@@ -765,8 +826,8 @@ def _same_use(left: Mapping[str, Any], right: IdeaUseDraft) -> bool:
 def _checked_content(
     title: object, body: object, tags: Sequence[object]
 ) -> tuple[str, str, tuple[str, ...]]:
+    """标题与标签是旧字段，按原样裁剪；正文只做空白判定，保存原文。"""
     checked_title = str(title or "").strip()
-    checked_body = str(body or "").strip()
     if len(checked_title) > MAX_TITLE_CHARS:
         raise WorkspaceError(
             code="IDEA_CONTENT_TOO_LARGE",
@@ -774,21 +835,23 @@ def _checked_content(
             why=f"标题最长 {MAX_TITLE_CHARS} 字符，当前 {len(checked_title)}",
             fix="缩短标题，把说明写进正文",
         )
-    if not checked_body:
+    raw_body = str(body or "")
+    if not raw_body.strip():
         raise WorkspaceError(
             code="IDEA_CONTENT_INVALID",
             where="ideas.content",
             why="灵感正文不能为空",
             fix="写一句想记下来的内容；只言片语也可以",
         )
-    if len(checked_body) > MAX_BODY_CHARS:
+    if len(raw_body) > MAX_BODY_CHARS:
         raise WorkspaceError(
             code="IDEA_CONTENT_TOO_LARGE",
             where="ideas.content",
-            why=f"灵感正文最长 {MAX_BODY_CHARS} 字符，当前 {len(checked_body)}",
+            why=f"灵感正文最长 {MAX_BODY_CHARS} 字符，当前 {len(raw_body)}",
             fix="拆成几条灵感分别记录；不会截断保存",
-            details={"chars": len(checked_body), "limit": MAX_BODY_CHARS},
+            details={"chars": len(raw_body), "limit": MAX_BODY_CHARS},
         )
+    checked_body = raw_body
     checked_tags: list[str] = []
     for tag in tags:
         text = str(tag).strip()

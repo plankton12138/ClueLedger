@@ -1,8 +1,8 @@
 /**
- * 灵感本客户端（0.8 C）。
+ * 灵感本客户端（0.8 I1）。
  *
- * 条目、修订与删除恢复都走作品前缀；正文按修订读取。这里只做字段映射，不在前端
- * 猜测冲突或自动合并——并发编辑由服务端返回的版本号判定。
+ * 新界面只提交正文：标题与标签是旧字段，继续可读可写，但不再由这里生成。
+ * 列表按创建时间排序，摘要带长度与截断标记；编辑前必须读取完整修订。
  */
 
 import { WorkspaceApiError } from "./workspace";
@@ -44,10 +44,14 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export interface IdeaSummary {
   idea_id: string;
   head_revision_id: string;
+  /** 旧字段：新界面不显示也不写入，只在历史详情里按需查看。 */
   title: string;
   excerpt: string;
+  excerpt_truncated: boolean;
+  body_chars: number;
   tags: string[];
   deleted: boolean;
+  created_at: string;
   updated_at: string;
 }
 
@@ -80,6 +84,19 @@ export interface IdeaRevision {
   chars: number;
 }
 
+export interface IdeaRevisionView {
+  idea_id: string;
+  revision_id: string;
+  parent: string | null;
+  created_at: string;
+  operation: string;
+  restored_from: string | null;
+  title: string;
+  body: string;
+  tags: string[];
+  deleted: boolean;
+}
+
 export interface IdeaPage {
   items: IdeaSummary[];
   total: number;
@@ -93,15 +110,32 @@ export interface RevisionPage {
   next_cursor: string | null;
 }
 
+/** 对话选段再记录时的来源定位；由作者创建接口直接保存。 */
+export interface IdeaOriginInput {
+  role: "user" | "assistant";
+  conversation_id: string;
+  message_seq: number;
+  quote: string;
+}
+
+export type IdeaOrder = "created" | "updated";
+
 export function listIdeas(
   workspaceId: string,
-  options: { q?: string; deleted?: boolean; cursor?: string | null; limit?: number } = {},
+  options: {
+    q?: string;
+    deleted?: boolean;
+    cursor?: string | null;
+    limit?: number;
+    order?: IdeaOrder;
+  } = {},
 ): Promise<IdeaPage> {
   const params = new URLSearchParams();
   if (options.q) params.set("q", options.q);
   if (options.deleted) params.set("deleted", "true");
   if (options.cursor) params.set("cursor", options.cursor);
   if (options.limit) params.set("limit", String(options.limit));
+  if (options.order) params.set("order", options.order);
   const suffix = params.toString();
   return request<IdeaPage>(`${WORKSPACES}/${workspaceId}/ideas${suffix ? `?${suffix}` : ""}`);
 }
@@ -112,7 +146,7 @@ export function getIdea(workspaceId: string, ideaId: string): Promise<IdeaView> 
 
 export function createIdea(
   workspaceId: string,
-  input: { title: string; body: string; tags: string[]; request_key: string },
+  input: { body: string; request_key: string; origin?: IdeaOriginInput },
 ): Promise<IdeaView> {
   return request<IdeaView>(`${WORKSPACES}/${workspaceId}/ideas`, {
     method: "POST",
@@ -126,9 +160,7 @@ export function updateIdea(
   input: {
     expected_digest: string;
     expected_revision: string;
-    title?: string;
-    body?: string;
-    tags?: string[];
+    body: string;
     request_key: string;
   },
 ): Promise<IdeaView> {
@@ -178,19 +210,10 @@ export function getIdeaRevision(
   workspaceId: string,
   ideaId: string,
   revisionId: string,
-): Promise<{
-  idea_id: string;
-  revision_id: string;
-  parent: string | null;
-  created_at: string;
-  operation: string;
-  restored_from: string | null;
-  title: string;
-  body: string;
-  tags: string[];
-  deleted: boolean;
-}> {
-  return request(`${WORKSPACES}/${workspaceId}/ideas/${ideaId}/revisions/${revisionId}`);
+): Promise<IdeaRevisionView> {
+  return request<IdeaRevisionView>(
+    `${WORKSPACES}/${workspaceId}/ideas/${ideaId}/revisions/${revisionId}`,
+  );
 }
 
 export function requestKey(prefix: string): string {

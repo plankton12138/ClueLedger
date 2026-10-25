@@ -1,39 +1,153 @@
+/**
+ * 条目编辑：只编辑正文，原位保存。
+ *
+ * 「完成」提交当前修改稿；「放弃修改」回到保存基线；删除、恢复与撤销都走冻结命令。
+ * 有未保存修改时不直接删除，先让作者决定保存、放弃还是返回编辑。
+ */
 import { useState } from "react";
-import { useIdeasStore } from "../../state/ideas";
+import { draftDirty, useIdeasStore, useIdeaScope } from "../../state/ideas";
 import { Button } from "../ui/Button";
-import { Field } from "../ui/Field";
 import { AppDialog } from "../ui/AppDialog";
 import { EmptyState, StatusMessage } from "../ui/StatusMessage";
 import IdeaHistory from "./IdeaHistory";
-export default function IdeaEditor({ onTakeToChat, onOpenSource }: { onTakeToChat: (id: string, revision: string, title: string) => void; onOpenSource?: (path: string) => void }) {
-  const store = useIdeasStore();
-  const [actions, setActions] = useState(false);
-  const selected = store.selected;
-  if (!selected && store.reading) return <StatusMessage>正在读取灵感…</StatusMessage>;
-  if (!selected && !store.newDraft) return <EmptyState>选择一条灵感，或新建记录。</EmptyState>;
-  return <div className="idea-editor">
-    <div className="idea-editor-heading"><Field label="灵感标题"><input aria-label="灵感标题" value={store.draft.title} onChange={event => store.setDraft({ title: event.target.value })} /></Field>
-      <Button variant="primary" disabled={!store.dirty || !store.draft.body.trim()} busy={store.busy} disabledReason="先填写需要保存的内容" onClick={() => void store.save()}>保存</Button>
-      <Button variant="quiet" disabled={!store.dirty || store.busy} onClick={store.cancel}>放弃修改</Button>
+
+interface Props {
+  onTakeToChat: (id: string, revision: string, preview: string) => void;
+  onOpenSource?: (path: string) => void;
+}
+
+export default function IdeaEditor({ onTakeToChat, onOpenSource }: Props) {
+  const scope = useIdeaScope();
+  const reading = useIdeasStore(state => state.reading);
+  const busy = useIdeasStore(state => state.busy);
+  const selected = scope.selected;
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const store = useIdeasStore.getState();
+  const draft = scope.activeId ? scope.editing[scope.activeId] : undefined;
+  const dirty = draft ? draftDirty(draft) : false;
+
+  if (!selected) {
+    return reading ? <StatusMessage>正在读取灵感…</StatusMessage> : <EmptyState>选择一条灵感查看或修改。</EmptyState>;
+  }
+
+  const body = draft?.body ?? selected.body;
+  const heading = body.split("\n").find(line => line.trim()) ?? "";
+
+  return (
+    <div className="idea-editor">
+      <header className="idea-editor-heading">
+        <h2 className="idea-editor-title">{heading || "（没有正文）"}</h2>
+        {!selected.deleted && (
+          <>
+            <Button
+              variant="primary"
+              disabled={!dirty}
+              busy={busy}
+              disabledReason="没有需要保存的修改"
+              onClick={() => void store.saveEntry(selected.idea_id)}
+            >
+              完成
+            </Button>
+            <Button variant="quiet" disabled={!dirty || busy} onClick={() => store.discardEntry(selected.idea_id)}>
+              放弃修改
+            </Button>
+          </>
+        )}
+      </header>
+
+      <label className="idea-body-label" htmlFor="idea-body">
+        灵感正文
+      </label>
+      <textarea
+        id="idea-body"
+        aria-label="灵感正文"
+        className="ui-input idea-body"
+        value={body}
+        readOnly={selected.deleted}
+        onChange={event => store.setEntryBody(selected.idea_id, event.target.value)}
+        onKeyDown={event => {
+          if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+          if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && dirty && !busy && !selected.deleted) {
+            event.preventDefault();
+            void store.saveEntry(selected.idea_id);
+          }
+        }}
+      />
+      <p className="ui-field-hint">
+        {selected.deleted
+          ? "这条灵感在最近删除里，恢复后才能修改。"
+          : dirty
+            ? "有未保存修改。"
+            : `已保存 · ${new Date(selected.updated_at).toLocaleString("zh-CN", { hour12: false })}`}
+      </p>
+
+      <div className="idea-editor-meta">
+        {!selected.deleted && (
+          <>
+            <Button
+              disabled={dirty || busy}
+              disabledReason="先保存或放弃当前修改"
+              onClick={() => onTakeToChat(selected.idea_id, selected.revision_id, body)}
+            >
+              带到对话
+            </Button>
+            <Button variant="danger" disabled={busy} onClick={() => (dirty ? setConfirmDiscard(true) : void store.trashEntry(selected.idea_id))}>
+              删除
+            </Button>
+          </>
+        )}
+        {selected.deleted && (
+          <>
+            <Button disabled={busy} onClick={() => void store.restoreEntry(selected.idea_id)}>
+              恢复
+            </Button>
+            {scope.lastTrashed === selected.idea_id && (
+              <Button variant="quiet" disabled={busy} onClick={() => void store.undoTrash()}>
+                撤销删除
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+
+      <IdeaHistory onOpenSource={onOpenSource} />
+
+      {selected.origin && (
+        <details className="idea-sources">
+          <summary>来源</summary>
+          <pre>{JSON.stringify(selected.origin, null, 2)}</pre>
+        </details>
+      )}
+
+      <AppDialog
+        title="这条灵感有未保存的修改"
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+      >
+        <div className="ui-action-list">
+          <Button onClick={() => setConfirmDiscard(false)}>返回编辑</Button>
+          <Button
+            onClick={() => {
+              setConfirmDiscard(false);
+              void store.saveEntry(selected.idea_id).then(result => {
+                if (result.status !== "failed") void store.trashEntry(selected.idea_id);
+              });
+            }}
+          >
+            保存后删除
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              setConfirmDiscard(false);
+              store.discardEntry(selected.idea_id);
+              void store.trashEntry(selected.idea_id);
+            }}
+          >
+            放弃修改并删除
+          </Button>
+        </div>
+      </AppDialog>
     </div>
-    <div className="idea-editor-meta"><Field label="灵感标签"><input aria-label="灵感标签" value={store.draft.tags} onChange={event => store.setDraft({ tags: event.target.value })} /></Field>
-      {selected && !selected.deleted && <><Button disabled={store.dirty || store.busy} disabledReason="先保存当前修改" onClick={() => onTakeToChat(selected.idea_id, selected.revision_id, selected.title)}>带到对话</Button>
-        <AppDialog title="条目操作" open={actions} onOpenChange={setActions} trigger={<Button variant="quiet" disabled={store.busy || store.dirty}>条目操作</Button>}>
-          <Button variant="danger" disabled={store.busy || store.dirty} onClick={() => void store.trashSelected().then(() => { if (!useIdeasStore.getState().error) setActions(false); })}>删除</Button>
-        </AppDialog></>}
-      {selected?.deleted && <Button disabled={store.dirty || store.busy} onClick={() => void store.restoreSelected()} title="恢复最近一次未删除的内容">恢复</Button>}
-    </div>
-    <label className="idea-body-label" htmlFor="idea-body">灵感正文</label>
-    <textarea id="idea-body" aria-label="灵感正文" className="ui-input idea-body" value={store.draft.body} onChange={event => store.setDraft({ body: event.target.value })}
-      onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (store.dirty && !store.busy) void store.save(); } }} />
-    <p className="ui-field-hint">{store.dirty ? "有未保存修改。" : selected ? `已保存 · ${new Date(selected.updated_at).toLocaleString("zh-CN", { hour12: false })}` : "新建草稿"}{store.dirty && selected ? " 保存后可带到对话。" : ""}</p>
-    <IdeaHistory />
-    {selected && (selected.origin || selected.uses.length > 0) && <details className="idea-sources"><summary>来源与使用位置</summary>
-      {selected.origin && <pre>{JSON.stringify(selected.origin, null, 2)}</pre>}
-      <ul>{selected.uses.map((use, index) => <li key={String(use.id ?? index)}>
-        {typeof use.target_path === "string" && use.target_path ? <Button variant="quiet" onClick={() => onOpenSource?.(use.target_path as string)}>{use.target_path}</Button> : <span>关联条目</span>}
-        {typeof use.quote === "string" && <p>{use.quote}</p>}
-      </li>)}</ul>
-    </details>}
-  </div>;
+  );
 }

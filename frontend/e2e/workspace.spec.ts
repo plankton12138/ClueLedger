@@ -185,8 +185,8 @@ test("字号调整同步到正文与活动日志，刷新保留并可恢复默�
     font: parseFloat(getComputedStyle(element).fontSize),
     line: parseFloat(getComputedStyle(element).lineHeight),
   }));
-  await page.getByRole("button", { name: "阅读显示", exact: true }).click();
-  const choice = page.getByLabel("调整字体大小");
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  const choice = page.getByRole("dialog", { name: "设置", exact: true }).getByLabel("调整字体大小");
   await choice.selectOption("150");
   await expect.poll(() => paragraph.evaluate(element => parseFloat(getComputedStyle(element).fontSize)))
     .toBeCloseTo(original.font * 1.5);
@@ -196,11 +196,11 @@ test("字号调整同步到正文与活动日志，刷新保留并可恢复默�
     .toBeCloseTo(14 * 1.5);
   // 调字号不缩放窗口和栏宽，顶栏允许换行。
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.getByRole("dialog", { name: "阅读显示", exact: true }).getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("dialog", { name: "设置", exact: true }).getByRole("button", { name: "关闭", exact: true }).click();
   await page.reload();
-  await page.getByRole("button", { name: "阅读显示", exact: true }).click();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(choice).toHaveValue("150");
-  await page.getByRole("dialog", { name: "阅读显示", exact: true }).getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("dialog", { name: "设置", exact: true }).getByRole("button", { name: "关闭", exact: true }).click();
   await page.getByRole("button", { name: "活动记录", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "活动记录" });
   await expect(panel.getByLabel("调整字体大小")).toHaveValue("150");
@@ -223,7 +223,7 @@ test("字号调整同步到正文与活动日志，刷新保留并可恢复默�
   await panel.getByRole("button", { name: "恢复默认字号" }).click();
   await expect(panel.getByLabel("调整字体大小")).toHaveValue("100");
   await panel.getByRole("button", { name: "关闭", exact: true }).click();
-  await page.getByRole("button", { name: "阅读显示", exact: true }).click();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(choice).toHaveValue("100");
 });
 
@@ -406,30 +406,39 @@ test("故事资料页叠加已装模块的计划，并可按模块筛选", async
   await expect(page.getByText("第9章误导")).toBeVisible();
 });
 
-test("灵感草稿切页返回后保留，保存后可删除恢复并带到对话", async ({ page }) => {
+test("灵感面板：记录、删除撤销恢复并带到对话", async ({ page }) => {
   await open(page);
-  await page.getByRole("link", { name: "灵感", exact: true }).click();
-  await page.getByRole("button", { name: "新建", exact: true }).click();
-  await page.getByLabel("灵感标题").fill("旧识");
-  await page.getByLabel("灵感正文").fill("老板娘认识死者，这层关系暂时不揭穿。");
-  await page.getByRole("link", { name: "写作", exact: true }).click();
-  await page.getByRole("link", { name: "灵感", exact: true }).click();
-  await expect(page.getByLabel("灵感标题")).toHaveValue("旧识");
-  await expect(page.getByLabel("灵感正文")).toHaveValue("老板娘认识死者，这层关系暂时不揭穿。");
-  await page.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(page.getByText("已保存为新的灵感修订")).toBeVisible();
-  await expect(page.getByRole("button", { name: /旧识/ })).toBeVisible();
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  const body = "老板娘认识死者，这层关系暂时不揭穿。";
+  await page.getByLabel("记录灵感", { exact: true }).fill(body);
+  await page.getByRole("button", { name: "记下", exact: true }).click();
+  await expect(page.getByText("已记录。", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue(body);
 
-  await page.getByRole("button", { name: "条目操作", exact: true }).click();
+  // 展开查看只是更大的区域，内容与草稿不重建。
+  const surface = page.getByRole("complementary", { name: "灵感", exact: true });
+  await expect(surface).toHaveAttribute("data-presentation", "panel");
+  await page.getByRole("button", { name: "展开查看", exact: true }).click();
+  await expect(surface).toHaveAttribute("data-presentation", "expanded");
+  await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue(body);
+  await page.getByRole("button", { name: "收起为侧栏", exact: true }).click();
+  await expect(surface).toHaveAttribute("data-presentation", "panel");
+
+  // 收起再打开：已保存记录仍在，快速记录输入框是空的。
+  await page.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(page.getByRole("complementary", { name: "灵感", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  await expect(page.getByLabel("记录灵感", { exact: true })).toHaveValue("");
+  await page.getByRole("complementary", { name: "灵感列表", exact: true }).getByRole("button", { name: /^老板娘认识死者/ }).click();
+  await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue(body);
+
   await page.getByRole("button", { name: "删除", exact: true }).click();
-  await expect(page.getByText("已移到最近删除")).toBeVisible();
-  await page.getByRole("tab", { name: /最近删除/ }).click();
-  await page.getByRole("button", { name: /旧识/ }).click();
+  await expect(page.getByText("已移到最近删除。", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "恢复", exact: true }).click();
-  await expect(page.getByText("已恢复；恢复会生成一条新修订")).toBeVisible();
+  await expect(page.getByText("已恢复；恢复会生成一条新修订。", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "带到对话", exact: true }).click();
-  await expect(page.getByText("本轮灵感：")).toBeVisible();
-  await expect(page.getByText("旧识", { exact: true })).toBeVisible();
+  await expect(page.getByText("本轮灵感：", { exact: true })).toBeVisible();
+  await expect(page.getByText(body, { exact: true })).toBeVisible();
 });
 
 test("新建作品用系统窗口选位置，界面不再出现路径输入框", async ({ page }) => {

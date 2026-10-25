@@ -4,10 +4,11 @@ import { useConversationsStore } from "../../state/conversations";
 import { useModuleLibraryStore } from "../../state/moduleLibrary";
 import { useModelsStore } from "../../state/models";
 import { navigate, parseHash, useWorkspacePage, type WorkspacePage } from "../../state/navigation";
+import { useIdeasSurfaceStore } from "../../state/ideasSurface";
 import { usePagePositions } from "../../state/pagePositions";
 import { useWorkspaceStore } from "../../state/workspace";
 import StoryMaterialsPage from "../materials/StoryMaterialsPage";
-import IdeasPage from "../ideas/IdeasPage";
+import IdeasSurface from "../ideas/IdeasSurface";
 import LibraryRoute from "../library/LibraryRoute";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
 import { Button } from "../ui/Button";
@@ -24,10 +25,8 @@ export default function WorkspaceShell() {
   const page = useWorkspacePage();
   const positions = usePagePositions(state => currentId ? state.pages[currentId] : undefined);
   const [directory, setDirectory] = useState(false);
-  const [visited, setVisited] = useState<Record<string, boolean>>({});
   const returnPage = useRef<WorkspacePage | null>(null);
   const library = page?.kind === "library" ? page : null;
-  const ideas = page?.kind === "ideas" ? page : null;
   const materials = page?.kind === "materials" ? page : null;
   const contextId = library?.workspaceContextId && bindings.some(item => item.id === library.workspaceContextId && item.exists) ? library.workspaceContextId : null;
   const initModels = useModelsStore(state => state.init);
@@ -53,10 +52,30 @@ export default function WorkspaceShell() {
     if (page && page.kind !== "library" && page.workspaceId === currentId) {
       returnPage.current = page;
       usePagePositions.getState().remember(page);
-      setVisited(previous => previous[`${currentId}:${page.kind}`] ? previous : { ...previous, [`${currentId}:${page.kind}`]: true });
     }
   }, [page, currentId]);
   useEffect(() => { if (currentId && !library) void useModuleLibraryStore.getState().trackAssembly(currentId); }, [currentId, Boolean(library)]);
+  // 旧灵感路由只是打开同一个面板：`?entry=` 定位到具体记录，页面本身仍是写作页。
+  const surfaceOpen = useIdeasSurfaceStore(state => state.open);
+  const showIdeas = useIdeasSurfaceStore(state => state.show);
+  useEffect(() => {
+    if (page?.kind !== "ideas" || !ready) return;
+    showIdeas({ expanded: true, entryId: page.ideaId ?? null });
+  }, [page, ready, showIdeas]);
+  // 面板被收起后，旧灵感路由回到写作页；只处理「曾经打开过」的情况，
+  // 避免首帧还没载入完成就把链接改掉。
+  const surfaceWasOpen = useRef(false);
+  useEffect(() => {
+    if (surfaceOpen) {
+      surfaceWasOpen.current = true;
+      return;
+    }
+    if (!surfaceWasOpen.current) return;
+    surfaceWasOpen.current = false;
+    if (page?.kind === "ideas" && currentId) {
+      navigate({ kind: "writing", workspaceId: currentId }, true);
+    }
+  }, [surfaceOpen, page, currentId]);
   useEffect(() => {
     const focus = () => {
       if (useWorkspaceStore.getState().currentId) { void refreshAll(); void useConversationsStore.getState().refreshList(); }
@@ -77,8 +96,7 @@ export default function WorkspaceShell() {
     if (target) navigate(target);
     else { useModuleLibraryStore.getState().closeDrawer(); window.location.hash = ""; }
   }
-  const writing = !page || page.kind === "writing";
-  const rememberedIdeas = ideas ?? (positions?.ideas?.kind === "ideas" ? positions.ideas : null);
+  const writing = !page || page.kind === "writing" || page.kind === "ideas";
   const rememberedMaterials = materials ?? (positions?.materials?.kind === "materials" ? positions.materials : null);
   return <div className="app-shell">
     <AppHeader page={page} onOpen={() => setDirectory(true)} onSelect={select} />
@@ -86,11 +104,6 @@ export default function WorkspaceShell() {
     {notice && <StatusMessage tone="warning" action={<Button size="compact" variant="quiet" onClick={dismissNotice}>知道了</Button>}>{notice}</StatusMessage>}
     <main className="app-content">
       <div className="workspace-page" hidden={!writing}><WritingLayout onOpen={() => setDirectory(true)} /></div>
-      {currentId && (ideas || visited[`${currentId}:ideas`]) && <div key={`${currentId}:ideas`} className="workspace-page" hidden={!ideas}>
-        <IdeasPage workspaceId={currentId} ideaId={rememberedIdeas?.ideaId} onNavigate={navigate} onOpenSource={path => { void openPath(path).then(() => navigate({ kind: "writing", workspaceId: currentId })); }} onTakeToChat={(id, revision, title) => {
-          useConversationsStore.getState().addIdeaReference(id, revision, title); navigate({ kind: "writing", workspaceId: currentId });
-        }} />
-      </div>}
       {currentId && rememberedMaterials && <div key={`${currentId}:materials`} className="workspace-page" hidden={!materials}>
         <StoryMaterialsPage workspaceId={currentId} section={rememberedMaterials.section} chapter={rememberedMaterials.chapter} order={rememberedMaterials.order} entryId={rememberedMaterials.entryId} onNavigate={navigate}
           onOpenSource={path => { void openPath(path).then(() => navigate({ kind: "writing", workspaceId: currentId })); }}
@@ -99,6 +112,7 @@ export default function WorkspaceShell() {
       </div>}
       <div className="workspace-page" hidden={!library}><LibraryRoute page={library} contextId={contextId} onReturn={leaveLibrary} /></div>
     </main>
+    <IdeasSurface />
     <DirectoryDialog open={directory} onClose={() => setDirectory(false)} />
     <ModelSettingsDialog /><ActivityPanel />
   </div>;

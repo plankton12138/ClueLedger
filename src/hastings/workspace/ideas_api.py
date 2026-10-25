@@ -80,8 +80,12 @@ def create_ideas_router(workspaces: RecentWorkspaces) -> APIRouter:
         deleted: bool = False,
         cursor: str | None = None,
         limit: int = 20,
+        order: Literal["created", "updated"] = "updated",
     ) -> dict[str, object]:
-        return store_for(workspace_id).list(q=q, deleted=deleted, cursor=cursor, limit=limit)
+        # 新界面显式传 created；默认 updated 保持旧客户端行为。
+        return store_for(workspace_id).list(
+            q=q, deleted=deleted, cursor=cursor, limit=limit, order=order
+        )
 
     @router.post("/{workspace_id}/ideas")
     def create_idea(workspace_id: str, payload: CreateIdeaRequest) -> dict[str, object]:
