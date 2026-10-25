@@ -62,9 +62,27 @@ export const NEW_DRAFT = "new";
 
 /** 发送选项：索引、检查与身份核对都由界面明确发起，不靠模型从文字里猜。 */
 export interface SendOptions {
-  purpose: "chat" | "update_chapter_index" | "review" | "update_disclosure" | "update_state";
+  purpose:
+    | "chat"
+    | "update_chapter_index"
+    | "review"
+    | "update_disclosure"
+    | "update_state"
+    | "expand_idea";
   indexPaths?: string[];
   reviewPaths?: string[];
+}
+
+/** 一次展开的输入：灵感标识、固定修订与显示用预览。 */
+export interface ExpandIdeaInput {
+  ideaId: string;
+  revisionId: string;
+  preview: string;
+}
+
+export interface ExpansionResult {
+  conversationId: string;
+  turnId: string;
 }
 
 const EMPTY_ENTRY: ConversationEntry = {
@@ -90,6 +108,8 @@ export interface ConversationsStore {
   draftContexts: Record<string, DraftContext>;
   /** 草稿携带的灵感修订：只在本机草稿槽位里，发送时随本轮提交。 */
   draftIdeas: Record<string, DraftIdea[]>;
+  /** 已发起过展开的灵感 → 会话：再次点击默认打开它，不自动重发。 */
+  expansions: Record<string, string>;
   revision: string;
   error: string | null;
   pendingKey: string | null;
@@ -110,6 +130,8 @@ export interface ConversationsStore {
   /** 作者明确把一条引用换成新修订；同一条目不叠出两个引用。 */
   updateIdeaReference(input: IdeaReferenceInput): void;
   removeIdeaReference(ideaId: string): void;
+  /** 一次点击展开：固定修订、首次发送即建会话；已受理的重试回到同一轮。 */
+  expandIdea(input: ExpandIdeaInput): Promise<ExpansionResult | null>;
   stop(): Promise<void>;
   /** 断线后重新接收：先取活动快照，再从确认过的位置继续。 */
   reconnect(): Promise<void>;
@@ -165,6 +187,9 @@ function sleep(ms: number): Promise<void> {
 
 // 网络中断后的有限退避：不做无限重连，连续失败就把入口交给作者。
 const RECONNECT_DELAYS = [0, 1000, 2000, 5000];
+
+/** 展开命令身份：同一条目同一修订的重试复用请求键，受理成功后才丢弃。 */
+const expandCommands = new Map<string, string>();
 
 /** 正在回读日志的会话：缺口一次只补一次，避免重复请求。 */
 const reloading = new Set<string>();
@@ -418,6 +443,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     drafts: {},
     draftContexts: {},
     draftIdeas: {},
+    expansions: {},
     revision: "0",
     error: null,
     pendingKey: null,
@@ -472,6 +498,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         drafts: {},
         draftContexts: {},
         draftIdeas: {},
+    expansions: {},
         revision: "0",
         error: null,
         pendingKey: null,
@@ -781,6 +808,83 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           [key]: current.filter((item) => item.idea_id !== ideaId),
         },
       }));
+    },
+
+    async expandIdea(input) {
+      const workspaceId = get().workspaceId;
+      if (!workspaceId || get().pendingKey) return null;
+      // 已有讨论：打开它继续，不自动再发一次同样的展开。
+      const existing = get().expansions[input.ideaId];
+      if (existing) {
+        await get().select(existing);
+        if (get().selectedId === existing && !get().entries[existing]?.error) {
+          return { conversationId: existing, turnId: "" };
+        }
+        // 会话已被删除或读不到：清掉关联，由作者再点一次决定要不要新建讨论。
+        const next = { ...get().expansions };
+        delete next[input.ideaId];
+        set({
+          expansions: next,
+          error: "这次讨论的会话已不可用。再点一次「展开讨论」会新建一个。",
+        });
+        return null;
+      }
+      const signature = `${workspaceId}:${input.ideaId}:${input.revisionId}`;
+      let requestKey = expandCommands.get(signature);
+      if (!requestKey) {
+        requestKey = `expand-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+        expandCommands.set(signature, requestKey);
+      }
+      const request: TurnInput = {
+        text: `展开这条灵感：${input.preview}`,
+        request_key: requestKey,
+        purpose: "expand_idea",
+        context: {
+          ...EMPTY_CONTEXT,
+          idea_references: [{ idea_id: input.ideaId, revision_id: input.revisionId }],
+        },
+      };
+      set({ pendingKey: requestKey, error: null });
+      try {
+        const accepted = await createConversationWithText(workspaceId, request);
+        // 受理成功才丢掉命令身份：结果不明时重试仍用同一个请求键。
+        expandCommands.delete(signature);
+        set((state) => ({
+          selectedId: accepted.conversation_id,
+          expansions: { ...state.expansions, [input.ideaId]: accepted.conversation_id },
+          items: [
+            {
+              id: accepted.conversation_id,
+              title: accepted.title,
+              created_at: accepted.started_at,
+              updated_at: accepted.started_at,
+            },
+            ...state.items.filter((item) => item.id !== accepted.conversation_id),
+          ],
+        }));
+        patchEntry(accepted.conversation_id, {
+          turns: [],
+          lastSeq: 0,
+          phase: null,
+          running: true,
+          activeTurn: {
+            conversation_id: accepted.conversation_id,
+            turn_id: accepted.turn_id,
+            state: "accepted",
+            model: "",
+            connection: "",
+            started_at: accepted.started_at,
+          },
+        });
+        void get().refreshList();
+        await consume(accepted.conversation_id, 0);
+        return { conversationId: accepted.conversation_id, turnId: accepted.turn_id };
+      } catch (error) {
+        set({ error: describe(error) });
+        return null;
+      } finally {
+        set({ pendingKey: null });
+      }
     },
 
     async saveDraft() {

@@ -872,3 +872,104 @@ describe("灵感引用（I3）", () => {
     expect(useConversationsStore.getState().draftIdeas.new ?? []).toHaveLength(0);
   });
 });
+
+describe("展开灵感（I4）", () => {
+  const ACCEPTED = {
+    conversation_id: "c-expand",
+    turn_id: "t-expand",
+    started_at: "2026-10-25T10:00:00+08:00",
+    title: "展开这条灵感：灯塔在退潮时",
+    request_key: "k-expand",
+  };
+
+  function ready(): void {
+    reset();
+    useConversationsStore.setState({ workspaceId: "w1" });
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+  }
+
+  it("一次点击只带选定的灵感与用途，不动当前聊天草稿", async () => {
+    ready();
+    useConversationsStore.getState().setDraft("还没发出去的草稿");
+    api.createConversationWithText.mockResolvedValue(ACCEPTED);
+
+    const result = await useConversationsStore.getState().expandIdea({
+      ideaId: "idea_1",
+      revisionId: "irev_1",
+      preview: "灯塔在退潮时才会露出第二层台阶。",
+    });
+
+    expect(result).toEqual({ conversationId: "c-expand", turnId: "t-expand" });
+    const [, request] = api.createConversationWithText.mock.calls[0];
+    expect(request.purpose).toBe("expand_idea");
+    expect(request.context.idea_references).toEqual([
+      { idea_id: "idea_1", revision_id: "irev_1" },
+    ]);
+    expect(request.context.selected_path).toBeNull();
+    expect(request.context.reference_paths).toEqual([]);
+    expect(request.text).toContain("灯塔在退潮时");
+    // 当前草稿保持原样：展开用的是独立会话。
+    expect(useConversationsStore.getState().drafts.new).toBe("还没发出去的草稿");
+    expect(useConversationsStore.getState().selectedId).toBe("c-expand");
+  });
+
+  it("结果不明时重试沿用同一个请求键", async () => {
+    ready();
+    api.createConversationWithText
+      .mockRejectedValueOnce(new Error("网络中断"))
+      .mockResolvedValue(ACCEPTED);
+
+    const first = await useConversationsStore.getState().expandIdea({
+      ideaId: "idea_1",
+      revisionId: "irev_1",
+      preview: "预览",
+    });
+    const second = await useConversationsStore.getState().expandIdea({
+      ideaId: "idea_1",
+      revisionId: "irev_1",
+      preview: "预览",
+    });
+
+    expect(first).toBeNull();
+    expect(second?.conversationId).toBe("c-expand");
+    const firstKey = api.createConversationWithText.mock.calls[0][1].request_key;
+    const secondKey = api.createConversationWithText.mock.calls[1][1].request_key;
+    expect(secondKey).toBe(firstKey);
+  });
+
+  it("已有讨论时再次点击只打开它，不重复发送", async () => {
+    ready();
+    api.createConversationWithText.mockResolvedValue(ACCEPTED);
+    await useConversationsStore.getState().expandIdea({
+      ideaId: "idea_1",
+      revisionId: "irev_1",
+      preview: "预览",
+    });
+    useConversationsStore.getState().newConversation();
+
+    const again = await useConversationsStore.getState().expandIdea({
+      ideaId: "idea_1",
+      revisionId: "irev_1",
+      preview: "预览",
+    });
+
+    expect(again?.conversationId).toBe("c-expand");
+    expect(api.createConversationWithText).toHaveBeenCalledTimes(1);
+    expect(useConversationsStore.getState().selectedId).toBe("c-expand");
+  });
+
+  it("已有发送在途时不并发展开", async () => {
+    ready();
+    useConversationsStore.setState({ pendingKey: "k-running" });
+    const result = await useConversationsStore.getState().expandIdea({
+      ideaId: "idea_1",
+      revisionId: "irev_1",
+      preview: "预览",
+    });
+    expect(result).toBeNull();
+    expect(api.createConversationWithText).not.toHaveBeenCalled();
+  });
+});

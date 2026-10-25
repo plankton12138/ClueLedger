@@ -5,7 +5,9 @@
  * 有未保存修改时不直接删除，先让作者决定保存、放弃还是返回编辑。
  */
 import { useState } from "react";
+import { runningConversation, useConversationsStore } from "../../state/conversations";
 import { draftDirty, useIdeasStore, useIdeaScope } from "../../state/ideas";
+import { useModelsStore } from "../../state/models";
 import { Button } from "../ui/Button";
 import { AppDialog } from "../ui/AppDialog";
 import { EmptyState, StatusMessage } from "../ui/StatusMessage";
@@ -14,15 +16,19 @@ import IdeaHistory from "./IdeaHistory";
 interface Props {
   /** 有脏稿时由上层先保存，再用保存结果的具体修订引用。 */
   onTakeToChat: (id: string) => void;
+  /** 一次点击发起只读展开；已有讨论时打开它继续。 */
+  onExpand: (id: string) => void;
   onOpenSource?: (path: string) => void;
 }
 
-export default function IdeaEditor({ onTakeToChat, onOpenSource }: Props) {
+export default function IdeaEditor({ onTakeToChat, onExpand, onOpenSource }: Props) {
   const scope = useIdeaScope();
   const reading = useIdeasStore(state => state.reading);
   const busy = useIdeasStore(state => state.busy);
   const selected = scope.selected;
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const modelReady = useModelsStore(state => state.selection.available);
+  const busyElsewhere = useConversationsStore(runningConversation);
   const store = useIdeasStore.getState();
   const draft = scope.activeId ? scope.editing[scope.activeId] : undefined;
   const dirty = draft ? draftDirty(draft) : false;
@@ -91,6 +97,15 @@ export default function IdeaEditor({ onTakeToChat, onOpenSource }: Props) {
               onClick={() => onTakeToChat(selected.idea_id)}
             >
               带到对话
+            </Button>
+            <Button
+              disabled={busy || !modelReady || busyElsewhere !== null}
+              disabledReason={
+                !modelReady ? "先连接模型再展开" : "已有一轮在进行，等它结束或停止它"
+              }
+              onClick={() => onExpand(selected.idea_id)}
+            >
+              展开讨论
             </Button>
             <Button variant="danger" disabled={busy} onClick={() => (dirty ? setConfirmDiscard(true) : void store.trashEntry(selected.idea_id))}>
               删除

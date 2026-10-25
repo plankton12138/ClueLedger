@@ -160,8 +160,14 @@ export interface TurnInput {
   text: string;
   request_key: string;
   context: ContextInput;
-  /** 用途：普通对话，或按作者选择更新章节索引。 */
-  purpose?: "chat" | "update_chapter_index" | "review" | "update_disclosure" | "update_state";
+  /** 用途：普通对话、按作者选择更新索引，或只读展开一条灵感。 */
+  purpose?:
+    | "chat"
+    | "update_chapter_index"
+    | "review"
+    | "update_disclosure"
+    | "update_state"
+    | "expand_idea";
   /** 索引用途要更新的章节；普通对话不能带。 */
   index_paths?: string[];
   /** 检查用途要核对的文件。 */

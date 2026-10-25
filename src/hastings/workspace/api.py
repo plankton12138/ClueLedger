@@ -283,7 +283,12 @@ class TurnPurposeMixin(BaseModel):
     """首次与续聊共用的用途字段：索引任务必须选章节，普通对话不能带。"""
 
     purpose: Literal[
-        "chat", "update_chapter_index", "review", "update_disclosure", "update_state"
+        "chat",
+        "update_chapter_index",
+        "review",
+        "update_disclosure",
+        "update_state",
+        "expand_idea",
     ] = "chat"
     index_paths: list[str] = Field(default_factory=list, max_length=MAX_INDEX_CHAPTERS)
     review_paths: list[str] = Field(default_factory=list, max_length=20)

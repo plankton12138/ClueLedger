@@ -45,6 +45,7 @@ from hastings.workspace.clues import (
     publish_clues,
 )
 from hastings.workspace.context import (
+    IDEA_INSTRUCTIONS,
     INDEX_INSTRUCTIONS,
     STATE_INSTRUCTIONS,
     build_assembled_context,
@@ -123,8 +124,9 @@ from tau_agent.types import JSONValue
 
 __all__ = ["MAX_TURNS", "RunContext", "ToolMode", "build_harness", "build_tools"]
 
-#: 工具集合：普通写作、索引任务，或只读检查。
-ToolMode = Literal["write", "index", "review", "state", "materials"]
+#: 工具集合：普通写作、索引任务、只读检查，或只读展开一条灵感。
+ToolMode = Literal["write", "index", "review", "state", "materials", "idea"]
+
 
 #: 单轮最多的模型回合数；到顶就结束并如实记录，不无限循环。
 MAX_TURNS = 24
@@ -2173,7 +2175,7 @@ def build_tools(
                 )
             )
 
-    if mode == "write":
+    if mode in ("write", "idea"):
         search_phrases = (
             "找灵感",
             "搜灵感",
@@ -2401,6 +2403,23 @@ def build_tools(
                 ),
             ]
         )
+
+    if mode == "idea":
+        # 展开讨论：只读原文、只读本轮固定的灵感；白名单之外的写入、装配、发布、
+        # 索引与状态工具一律不返回。新增工具默认不进入这个用途。
+        readonly = {
+            "list_files",
+            "read_file",
+            "search_text",
+            "list_modules",
+            "query_records",
+            "read_record",
+            "read_state",
+            "read_idea",
+            "search_ideas",
+            "save_idea",
+        }
+        return [tool for tool in tools if tool.name in readonly]
 
     if mode == "review":
         # 检查任务：只读原文与搜索，加保存报告；没有作品写工具。
@@ -3260,6 +3279,8 @@ _PROFILE_BY_MODE: dict[ToolMode, Profile] = {
     "review": "review",
     # 资料整理只装任务要求、目录与本次范围；不装设定集、谜底与作者计划。
     "materials": "materials",
+    # 展开灵感：只装任务要求与那条灵感，不注入文风、设定与旧摘要。
+    "idea": "idea",
 }
 
 
@@ -3270,6 +3291,8 @@ def _instructions_for(mode: ToolMode) -> str:
         return STATE_INSTRUCTIONS
     if mode == "review":
         return REVIEW_INSTRUCTIONS
+    if mode == "idea":
+        return IDEA_INSTRUCTIONS
     return ""
 
 

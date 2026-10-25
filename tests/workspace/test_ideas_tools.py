@@ -304,3 +304,27 @@ def test_reference_view_carries_a_short_preview(tmp_path: Path) -> None:
     # 提示词里用预览当标题，而不是内部标识。
     section = ideas_section(snapshot)
     assert "灯塔在退潮时" in section
+
+
+def test_expand_mode_only_exposes_read_only_tools(tmp_path: Path) -> None:
+    """展开用途按白名单装配：写入、装配、发布与索引工具一律不出现。"""
+    workspace = _workspace(tmp_path)
+    run = _run(workspace, "展开这条灵感")
+    expand = {tool.name for tool in build_tools(workspace, run, mode="idea")}
+    write = {tool.name for tool in build_tools(workspace, run, mode="write")}
+
+    assert {"read_idea", "read_file", "search_text", "search_ideas", "save_idea"} <= expand
+    assert not expand & {
+        "write_file",
+        "edit_file",
+        "move_file",
+        "delete_file",
+        "save_review_report",
+        "save_chapter_index",
+        "attach_module",
+        "detach_module",
+        "publish_module",
+        "search_module_library",
+    }
+    # 普通写作仍然有写入工具：限制只作用在展开用途。
+    assert "write_file" in write

@@ -385,3 +385,122 @@ test("引用显示原文预览，作者明确更新到最新版本", async ({ pa
     page.getByRole("button", { name: /^查看引用的灵感：侦探认出了雨衣，也认出了那把伞/ }),
   ).toBeVisible();
 });
+
+test("展开讨论在未连接模型时说明原因，选择与草稿保留", async ({ page, book }) => {
+  // 把模型配置桩成「没有可用连接」：这条用例只验证未配置时的界面状态。
+  await page.route("**/api/model-connections", async (route) => {
+    await route.fulfill({
+      json: {
+        revision: "r1",
+        connections: [],
+        selection: {
+          connection_id: null,
+          model: "",
+          source: "none",
+          available: false,
+          reason: "还没有可用的模型连接",
+        },
+        providers: [],
+        storage: "system",
+      },
+    });
+  });
+  let posts = 0;
+  page.on("request", req => {
+    if (req.method() === "POST" && /\/conversations$/.test(req.url())) posts++;
+  });
+
+  await page.goto("/");
+  await page.getByLabel("选择作品目录").selectOption(book.id);
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
+  await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
+  await page.getByLabel("灵感正文", { exact: true }).fill("改了一半的正文");
+
+  const expand = page.getByRole("button", { name: "展开讨论", exact: true });
+  await expect(expand).toBeDisabled();
+  await expect(expand).toHaveAttribute("title", "先连接模型再展开");
+  expect(posts).toBe(0);
+
+  // 收起再打开：未保存的修改仍在，不会因为按钮不可用被丢掉。
+  await page.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  await page
+    .getByRole("complementary", { name: "灵感列表", exact: true })
+    .getByRole("button", { name: /^侦探认出了雨衣/ })
+    .click();
+  await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("改了一半的正文");
+  expect(posts).toBe(0);
+});
+
+test("展开灵感：一次点击只读讨论，再次点击打开同一次讨论", async ({ page, book }) => {
+  const stamp = "2026-10-25T10:00:00+08:00";
+  const events = [
+    { seq: 1, at: stamp, type: "turn_started", turn_id: "t-expand", text: "展开这条灵感：侦探认出了雨衣。" },
+    {
+      seq: 2,
+      at: stamp,
+      type: "assistant_message",
+      turn_id: "t-expand",
+      text: "三个方向：追查雨衣来源、假装没认出、让对方先开口。",
+    },
+    { seq: 3, at: stamp, type: "run_finished", turn_id: "t-expand", status: "completed", recording: "no_change" },
+  ];
+  const accepted = {
+    conversation_id: "c-expand",
+    turn_id: "t-expand",
+    started_at: stamp,
+    title: "展开这条灵感",
+    request_key: "k-expand",
+  };
+  const posts: Record<string, unknown>[] = [];
+
+  await page.route(`**/api/file-workspaces/${book.id}/conversations`, async (route) => {
+    if (route.request().method() === "POST") {
+      posts.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({ status: 202, json: accepted });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        items: [{ id: "c-expand", title: "展开这条灵感", created_at: stamp, updated_at: stamp }],
+        recent_id: "c-expand",
+        active_turn: null,
+        revision: "r1",
+      },
+    });
+  });
+  await page.route(`**/api/file-workspaces/${book.id}/conversations/c-expand/messages*`, async (route) => {
+    await route.fulfill({ json: { events, last_seq: 3, active_turn: null, revision: "r1" } });
+  });
+  await page.route(`**/api/file-workspaces/${book.id}/events?**`, async (route) => {
+    const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+    await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body });
+  });
+
+  await page.goto("/");
+  await page.getByLabel("选择作品目录").selectOption(book.id);
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
+  await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
+  await page.getByRole("button", { name: "展开讨论", exact: true }).click();
+
+  // 面板收起，写作页显示这次只读讨论的回答。
+  await expect(page.getByRole("complementary", { name: "灵感", exact: true })).toHaveCount(0);
+  await expect(page.locator(".chat-reply")).toContainText("三个方向");
+  expect(posts).toHaveLength(1);
+  const request = posts[0] as {
+    purpose: string;
+    context: { idea_references: { idea_id: string }[]; selected_path: null };
+  };
+  expect(request.purpose).toBe("expand_idea");
+  expect(request.context.idea_references).toHaveLength(1);
+  expect(request.context.selected_path).toBeNull();
+
+  // 再次点击：打开同一次讨论，不重复发送。
+  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  await page.getByRole("complementary", { name: "灵感列表", exact: true }).getByRole("button", { name: /^侦探认出了雨衣/ }).click();
+  await page.getByRole("button", { name: "展开讨论", exact: true }).click();
+  await expect(page.locator(".chat-reply")).toContainText("三个方向");
+  expect(posts).toHaveLength(1);
+});

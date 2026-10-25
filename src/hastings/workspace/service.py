@@ -233,7 +233,9 @@ def _summary(instruction: str) -> str:
     return collapsed[:_MAX_SUMMARY]
 
 
-def _tool_mode(purpose: str) -> Literal["write", "index", "review", "state", "materials"]:
+def _tool_mode(
+    purpose: str,
+) -> Literal["write", "index", "review", "state", "materials", "idea"]:
     if purpose == "update_chapter_index":
         return "index"
     if purpose == "review":
@@ -242,7 +244,38 @@ def _tool_mode(purpose: str) -> Literal["write", "index", "review", "state", "ma
         return "state"
     if purpose == "organize_materials":
         return "materials"
+    # 展开灵感是只读用途：能力由用途决定，不靠提示词约束。
+    if purpose == "expand_idea":
+        return "idea"
     return "write"
+
+
+def _check_expand_context(snapshot: ContextSnapshot) -> None:
+    """展开只绑定一条灵感的固定版本：没有灵感或夹带其他材料都不受理。"""
+    if len(snapshot.ideas) != 1:
+        raise WorkspaceError(
+            code="EXPAND_SCOPE_INVALID",
+            where="turns.accept",
+            why="展开需要选定一条灵感" if not snapshot.ideas else "展开一次只讨论一条灵感",
+            fix="在灵感面板里选一条，点「展开」；多条请分别展开",
+            details={"ideas": len(snapshot.ideas)},
+        )
+    extra: list[str] = []
+    if snapshot.selected_path:
+        extra.append("当前阅读位置")
+    if snapshot.references:
+        extra.append("参考文件")
+    if snapshot.observed_digests:
+        extra.append("文件版本")
+    if snapshot.state_chapter is not None:
+        extra.append("状态截止章")
+    if extra:
+        raise WorkspaceError(
+            code="EXPAND_SCOPE_INVALID",
+            where="turns.accept",
+            why=f"展开只绑定选定的灵感，不接受：{'、'.join(extra)}",
+            fix="去掉其他材料后重试；要讨论正文请用普通对话",
+        )
 
 
 def _written_targets(run: RunContext) -> tuple[str, ...]:
@@ -300,11 +333,14 @@ def _same_materials(
             and not observed
             and request.state_chapter is None
         )
+    requested_ideas = [[idea_id, revision_id] for idea_id, revision_id in request.idea_references]
     return (
         previous.get("state_chapter") == request.state_chapter
         and previous.get("selected_path") == request.selected_path
         and previous.get("reference_paths") == list(paths)
         and previous.get("observed_digests") == observed
+        # 灵感修订是请求身份的一部分：同键换了灵感或版本就是另一次展开。
+        and list(cast(list[object], previous.get("idea_references") or [])) == requested_ideas
     )
 
 
@@ -551,6 +587,8 @@ class TurnService:
                     )
             # 冻结材料版本：缺失或超限在这里失败，此时还没有写任何记录。
             frozen = freeze_context(self.workspace, context or ContextRequest())
+            if purpose == "expand_idea":
+                _check_expand_context(frozen)
             # 装配也属于这一轮的输入：受理后作者再装卸、库再发布都不改变本轮。
             assembly_store = AssemblyStore(self.workspace.root)
             assembly_snapshot = assembly_store.read()
@@ -742,6 +780,15 @@ class TurnService:
         self, purpose: str, index_paths: Sequence[str], review_paths: Sequence[str]
     ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """校验用途与目标：索引 1–10 章、检查 1–20 个文件，普通对话不能带任何目标。"""
+        if purpose == "expand_idea":
+            if index_paths or review_paths:
+                raise WorkspaceError(
+                    code="EXPAND_SCOPE_INVALID",
+                    where="turns.accept",
+                    why="展开灵感不接受索引或检查目标",
+                    fix="展开只讨论选定的那条灵感；要处理章节请另发一轮",
+                )
+            return (), ()
         if purpose == "review":
             if index_paths:
                 raise WorkspaceError(

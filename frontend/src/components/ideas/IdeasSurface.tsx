@@ -139,6 +139,21 @@ export default function IdeasSurface() {
 
   if (!open || !workspaceId) return null;
 
+  const expand = async (ideaId: string) => {
+    // 有脏稿先保存：展开绑定保存结果的那一版，不引用还没落盘的草稿。
+    const saved = await useIdeasStore.getState().prepareReference(ideaId);
+    if (!saved) return;
+    const result = await useConversationsStore.getState().expandIdea({
+      ideaId: saved.ideaId,
+      revisionId: saved.revisionId,
+      preview: referencePreview(saved.body),
+    });
+    // 失败时错误显示在对话区，面板保留当前选择与草稿。
+    if (!result) return;
+    close();
+    navigate({ kind: "writing", workspaceId });
+  };
+
   const takeToChat = async (ideaId: string) => {
     // 有脏稿先保存：引用绑定保存返回的具体修订，不引用一个还没落盘的版本。
     const saved = await useIdeasStore.getState().prepareReference(ideaId);
@@ -206,7 +221,7 @@ export default function IdeasSurface() {
             </div>
           )}
           {detail && activeId ? (
-            <IdeaEditor onTakeToChat={takeToChat} />
+            <IdeaEditor onTakeToChat={takeToChat} onExpand={expand} />
           ) : (
             <IdeaList onChoose={() => setDetail(true)} />
           )}

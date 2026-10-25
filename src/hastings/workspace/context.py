@@ -68,6 +68,7 @@ from hastings.workspace.timeline import TimelineStore, build_timeline, timeline_
 
 __all__ = [
     "IDEAS_BUDGET",
+    "IDEA_INSTRUCTIONS",
     "INDEX_INSTRUCTIONS",
     "MATERIALS_INSTRUCTIONS",
     "SETTINGS_BUDGET",
@@ -196,6 +197,17 @@ MATERIALS_INSTRUCTIONS = """\
 - 每读完一个目标再提交结果；没有提交结果的目标不算完成。
 - 空结果要说明读到了什么、为什么没有相关发现。
 - 证据要给路径、版本、字符区间与引文，区间与引文必须一致。
+"""
+
+
+#: 展开灵感的任务要求：只讨论这一版，不碰文件，给方向、影响与待确认问题。
+IDEA_INSTRUCTIONS = """\
+作者选中的一条灵感需要展开成可讨论的方案。
+
+- 只讨论这一条灵感的这一版。需要别的材料时说明要哪一份，由作者在下一轮单独提出。
+- 给出至少三种不同方向的展开，每种写清代价、对已有情节的影响，以及需要作者确认的问题。
+- 灵感是作者笔记，不是已经发生的正文事实；不要把它当成既定设定。
+- 不要修改任何文件，也不要声称已经写入正文。
 """
 
 
@@ -393,6 +405,8 @@ def _default_instructions(profile: Profile) -> str:
         from hastings.workspace.review import REVIEW_INSTRUCTIONS
 
         return REVIEW_INSTRUCTIONS
+    if profile == "idea":
+        return IDEA_INSTRUCTIONS
     return _INSTRUCTIONS
 
 
@@ -440,12 +454,12 @@ def build_assembled_context(
             key="catalog", title="当前作品", text=catalog, budget=CATALOG_BUDGET, required=True
         )
     )
-    if profile != "extract" and modules.strip():
+    if profile in ("writer", "review", "materials") and modules.strip():
         # 只列已装实例与精确版本；条目正文仍要按需读取。索引任务不装这一块。
         parts.append(
             Partition(key="modules", title="已装模块", text=modules, budget=MODULES_BUDGET)
         )
-    if profile != "extract" and materials.strip():
+    if profile in ("writer", "review", "materials") and materials.strip():
         parts.append(
             Partition(key="materials", title="本轮材料", text=materials, budget=MATERIALS_BUDGET)
         )
