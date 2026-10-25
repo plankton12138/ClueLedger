@@ -39,13 +39,13 @@ async function shot(page: Page, name: string) {
 }
 async function chooseChapter(page: Page) {
   const directory = page.getByRole("button", { name: "目录", exact: true });
-  if (await directory.isVisible()) await directory.click();
+  if (await directory.getAttribute("aria-pressed") === "false") await directory.click();
   await page.getByRole("button", { name: "第一章 雨夜", exact: true }).click();
   await expect(page.getByRole("region", { name: "正文阅读", exact: true })).toContainText("侦探抵达港口");
 }
 async function font(page: Page, scale: number) {
-  await page.getByRole("button", { name: "阅读显示", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "阅读显示", exact: true });
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "设置", exact: true });
   await dialog.getByLabel("调整字体大小").selectOption(String(scale));
   await dialog.getByRole("button", { name: "关闭", exact: true }).click();
 }
@@ -71,7 +71,7 @@ test("窗口与字体矩阵：正文、目录、聊天与草稿都可到达，�
       await expect(page.getByRole("separator", { name: "目录栏宽度", exact: true })).toHaveCount(0);
       const trigger = page.getByRole("button", { name: "目录", exact: true });
       await trigger.click();
-      const directory = page.getByRole("dialog", { name: "目录", exact: true });
+      const directory = page.getByRole("region", { name: "目录", exact: true });
       await expect(directory.getByRole("navigation", { name: "作品目录", exact: true })).toBeVisible();
       await page.keyboard.press("Escape"); await expect(directory).toBeHidden(); await expect(trigger).toBeFocused();
     }
@@ -82,17 +82,58 @@ test("窗口与字体矩阵：正文、目录、聊天与草稿都可到达，�
       const send = await page.getByRole("button", { name: "发送", exact: true }).boundingBox();
       expect(send!.x + send!.width).toBeLessThanOrEqual(width);
       expect(send!.y + send!.height).toBeLessThanOrEqual(width === 640 ? 800 : width === 1024 ? 768 : 900);
-      await page.getByRole("button", { name: "正文", exact: true }).click();
+      await page.getByRole("button", { name: "对话", exact: true }).click();
       await expect(paper).toBeVisible();
       await page.getByRole("button", { name: "对话", exact: true }).click();
       await expect(page.locator(".chat-input")).toHaveValue("布局切换保留的聊天草稿");
-      await page.getByRole("button", { name: "正文", exact: true }).click();
+      await page.getByRole("button", { name: "对话", exact: true }).click();
     }
     const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem("hastings.workspace.layout")!));
-    expect(prefs).toMatchObject({ sidebarWidth: 260, chatWidth: 380, chatVisible: true });
+    expect(prefs).toMatchObject({ sidebarWidth: 260, chatWidth: 380, chatVisible: true, sidebarVisible: true });
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await shot(page, "writing-390-150-observation");
+});
+
+test("目录和对话是固定位置的独立开关，关闭对话不展开目录", async ({ page, book }) => {
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  const directory = page.getByRole("button", { name: "目录", exact: true });
+  const chat = page.getByRole("button", { name: "对话", exact: true });
+  const pane = page.getByRole("region", { name: "目录", exact: true });
+  for (const width of [1440, 1024, 640]) for (const scale of [100, 150]) {
+    await page.setViewportSize({ width, height: width === 1024 ? 768 : width === 640 ? 800 : 900 });
+    await font(page, scale);
+    // 先关闭目录，之后开关对话都不应改变目录或工具顺序。
+    if (await directory.getAttribute("aria-pressed") === "true") await directory.click();
+    await expect(pane).toBeHidden();
+    const before = { directory: await directory.boundingBox(), chat: await chat.boundingBox() };
+    for (let n = 0; n < 2; n++) {
+      const wasOpen = await chat.getAttribute("aria-pressed") === "true";
+      await chat.click();
+      await expect(chat).toHaveAttribute("aria-pressed", String(!wasOpen));
+      await expect(pane).toBeHidden();
+      await expect(directory).toHaveAttribute("aria-pressed", "false");
+      expect(await directory.boundingBox()).toEqual(before.directory);
+      expect(await chat.boundingBox()).toEqual(before.chat);
+      await expect(page.getByRole("button", { name: "正文", exact: true })).toHaveCount(0);
+    }
+    const chatState = await chat.getAttribute("aria-pressed");
+    await directory.click(); await expect(pane).toBeVisible();
+    await expect(directory).toHaveAttribute("aria-pressed", "true");
+    await expect(chat).toHaveAttribute("aria-pressed", chatState!);
+    await chat.click(); await expect(pane).toBeVisible();
+    await expect(directory).toHaveAttribute("aria-pressed", "true");
+    await chat.click(); await expect(pane).toBeVisible();
+    // 同一个目录按钮能够直接关闭目录，工具栏不会被浮层遮住。
+    await directory.click(); await expect(pane).toBeHidden();
+    await expect(chat).toHaveAttribute("aria-pressed", chatState!);
+  }
+  await page.setViewportSize({ width: 1024, height: 768 }); await font(page, 100);
+  if (await chat.getAttribute("aria-pressed") === "true") await chat.click();
+  await expect(pane).toBeHidden(); await expect(directory).toBeVisible();
+  await expect(page.getByRole("region", { name: "正文阅读", exact: true })).toBeVisible();
+  const output = resolve("../data/test-tmp/writing-toggle-buttons-1024.png");
+  mkdirSync(resolve("../data/test-tmp"), { recursive: true }); await page.screenshot({ path: output });
 });
 
 test("模块库精确链接、前进后退、作品内同一入口与未登记上下文", async ({ page, book }) => {

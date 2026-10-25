@@ -1,7 +1,7 @@
 /**
  * 写作台布局偏好（0.4 V04-11）。
  *
- * 对话栏显隐、两个栏宽与字号是界面状态，不属于作品数据，也不进后端：它们只影响这一台机器
+ * 对话与目录的显隐、两个栏宽与字号是界面状态，不属于作品数据，也不进后端：它们只影响这一台机器
  * 上的窗口怎么排，所以单独放一份状态，并写在浏览器本地存储里，重开窗口保持原样。
  *
  * 读取失败（没有本地存储、内容损坏、数值越界）一律回到默认值，不阻断启动。
@@ -25,6 +25,7 @@ export interface LayoutPrefs {
   sidebarWidth: number;
   chatWidth: number;
   chatVisible: boolean;
+  sidebarVisible: boolean;
   fontScale: number;
 }
 
@@ -32,6 +33,7 @@ export const DEFAULT_LAYOUT: LayoutPrefs = {
   sidebarWidth: SIDEBAR.default,
   chatWidth: CHAT.default,
   chatVisible: true,
+  sidebarVisible: true,
   fontScale: FONT_SCALE.default,
 };
 
@@ -44,14 +46,16 @@ export interface WritingPlan {
 /** 只计算实际显示宽度，不把自动收起或宽度钳制写入长期偏好。 */
 export function writingLayout(width: number, prefs: LayoutPrefs): WritingPlan {
   const scale = Math.max(1, prefs.fontScale / 100);
-  const sidebar = clampWidth(prefs.sidebarWidth, SIDEBAR);
+  const preferredSidebar = clampWidth(prefs.sidebarWidth, SIDEBAR);
   const chatMin = CHAT.min * scale;
   const preferredChat = Math.max(chatMin, clampWidth(prefs.chatWidth, CHAT));
   const widePaper = 560 * scale, compactPaper = 420 * scale, handle = 6;
-  if (!prefs.chatVisible) return width >= sidebar + widePaper + handle
+  // 目录能否常驻只看窗口预算，关闭对话不自动展开目录。
+  const sidebar = prefs.sidebarVisible && width >= 1280 * scale && width >= preferredSidebar + chatMin + widePaper + handle * 2 ? preferredSidebar : 0;
+  if (!prefs.chatVisible) return sidebar
     ? { kind: "reading", sidebar, chat: 0, paperMin: widePaper }
     : { kind: "single", sidebar: 0, chat: 0, paperMin: 0 };
-  if (width >= 1280 * scale && width >= sidebar + chatMin + widePaper + handle * 2) {
+  if (sidebar) {
     return { kind: "three", sidebar, chat: Math.min(preferredChat, width - sidebar - widePaper - handle * 2), paperMin: widePaper };
   }
   if (width >= 900 && width >= chatMin + compactPaper + handle) {
@@ -76,6 +80,7 @@ export function parseLayout(raw: string | null): LayoutPrefs {
       sidebarWidth: clampWidth(parsed.sidebarWidth, SIDEBAR),
       chatWidth: clampWidth(parsed.chatWidth, CHAT),
       chatVisible: typeof parsed.chatVisible === "boolean" ? parsed.chatVisible : true,
+      sidebarVisible: typeof parsed.sidebarVisible === "boolean" ? parsed.sidebarVisible : true,
       fontScale: clampWidth(parsed.fontScale, FONT_SCALE),
     };
   } catch {
@@ -105,6 +110,7 @@ interface LayoutStore extends LayoutPrefs {
   setSidebarWidth(width: number): void;
   setChatWidth(width: number): void;
   toggleChat(): void;
+  toggleSidebar(): void;
   setFontScale(scale: number): void;
 }
 
@@ -128,6 +134,11 @@ export const useLayoutStore = create<LayoutStore>()((set, get) => ({
 
   toggleChat() {
     set((state) => ({ chatVisible: !state.chatVisible }));
+    writeLayout(get());
+  },
+
+  toggleSidebar() {
+    set(state => ({ sidebarVisible: !state.sidebarVisible }));
     writeLayout(get());
   },
 }));

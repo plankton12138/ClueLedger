@@ -25,10 +25,12 @@ describe("空间分配", () => {
     expect(writingLayout(1000, prefs).kind).toBe("single");
     expect(prefs).toMatchObject({ chatWidth: 380, sidebarWidth: 260, chatVisible: true });
   });
-  it("关闭对话后优先阅读，只有空间足够才显示目录", () => {
+  it("关闭对话不把原本收起的目录自动展开", () => {
     const prefs = { ...DEFAULT_LAYOUT, chatVisible: false };
-    expect(writingLayout(1000, prefs).kind).toBe("reading");
+    expect(writingLayout(1416, prefs).kind).toBe("reading");
+    expect(writingLayout(1000, prefs)).toMatchObject({ kind: "single", sidebar: 0 });
     expect(writingLayout(616, prefs).kind).toBe("single");
+    expect(writingLayout(1416, { ...prefs, sidebarVisible: false }).sidebar).toBe(0);
   });
 });
 
@@ -68,6 +70,8 @@ describe("parseLayout", () => {
 
   it("保留合法的显隐状态", () => {
     expect(parseLayout(JSON.stringify({ chatVisible: false })).chatVisible).toBe(false);
+    expect(parseLayout(JSON.stringify({ sidebarVisible: false })).sidebarVisible).toBe(false);
+    expect(parseLayout(JSON.stringify({ chatVisible: false })).sidebarVisible).toBe(true);
   });
 
   it("旧偏好缺少字号时保留布局，并兼容损坏与越界的字号", () => {
@@ -110,6 +114,10 @@ describe("useLayoutStore", () => {
     expect(useLayoutStore.getState().chatVisible).toBe(false);
     const [, raw] = setItem.mock.calls[0] as [string, string];
     expect(JSON.parse(raw).chatVisible).toBe(false);
+    useLayoutStore.getState().toggleSidebar();
+    expect(useLayoutStore.getState()).toMatchObject({ sidebarVisible: false, chatVisible: false });
+    useLayoutStore.getState().toggleChat();
+    expect(useLayoutStore.getState()).toMatchObject({ sidebarVisible: false, chatVisible: true });
   });
 
   it("调整和恢复字号保存到同一份偏好，并保留栏宽与显隐", () => {
