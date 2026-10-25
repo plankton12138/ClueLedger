@@ -67,6 +67,7 @@ export function fieldProblem(row: EntryRow, preset: ModuleSpec | undefined): str
   return null;
 }
 interface ModuleEditorStore {
+  activeNewDraftId: string | null;
   drafts: Record<string, ModuleDraft>;
   newDrafts: Record<string, { kind: import("../api/moduleLibrary").ModuleKind; name: string; title: string; body: string }>;
   ensure(detail: RevisionDetail, bodies: Record<string, string>): void;
@@ -75,7 +76,7 @@ interface ModuleEditorStore {
   published(key: string, sequence: number, revisionId: string, submitted: EntryRow[]): string;
 }
 export const useModuleEditorStore = create<ModuleEditorStore>()((set, get) => ({
-  drafts: {}, newDrafts: {},
+  drafts: {}, newDrafts: {}, activeNewDraftId: null,
   ensure(detail, bodies) {
     const key = moduleDraftKey(detail);
     if (get().drafts[key]) return;

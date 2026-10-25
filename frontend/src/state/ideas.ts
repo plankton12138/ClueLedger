@@ -263,8 +263,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => {
             activeId: state.workspaceId === workspaceId ? view.idea_id : scope.activeId,
           },
         },
-        notice: clean ? "已记录。" : "已记录；之后输入的内容留在同一条灵感的修改稿里。",
-        busy: false,
+        ...(state.workspaceId === workspaceId ? { notice: clean ? "已记录。" : "已记录；之后输入的内容留在同一条灵感的修改稿里。", busy: false } : {}),
       });
     } else {
       const editing = {
@@ -279,8 +278,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => {
       };
       set({
         scopes: { ...state.scopes, [workspaceId]: { ...scope, editing } },
-        notice: unchanged ? "内容没有变化。" : "已保存为新的灵感修订。",
-        busy: false,
+        ...(state.workspaceId === workspaceId ? { notice: unchanged ? "内容没有变化。" : "已保存为新的灵感修订。", busy: false } : {}),
       });
     }
 
@@ -337,7 +335,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => {
       return await reconcile(workspaceId, draftKey, snapshot, view);
     } catch (error) {
       const message = describe(error);
-      set({ busy: false, error: message });
+      if (get().workspaceId === workspaceId) set({ busy: false, error: message });
       return { status: "failed", error: message };
     }
   }
@@ -484,7 +482,14 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => {
       const { workspaceId, session } = current;
       if (!workspaceId) return;
       const scope = scopeOf(current, workspaceId);
-      if (scope.activeId === ideaId && scope.selected) return;
+      const listed = [...current.items, ...current.deletedItems].find(item => item.idea_id === ideaId);
+      if (scope.activeId === ideaId && scope.selected && (!listed || listed.head_revision_id === scope.selected.revision_id)) {
+        // 快速记录可直接选中保存结果，首次打开修改时仍需建立草稿与保存基线。
+        if (!scope.editing[ideaId]) {
+          set(patchScope(current, { editing: { ...scope.editing, [ideaId]: freshDraft(workspaceId, scope.selected) } }));
+        }
+        return;
+      }
       const epoch = current.selectionEpoch + 1;
       set({
         ...patchScope(current, {
@@ -586,16 +591,18 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => {
     },
 
     async prepareReference(ideaId) {
-      const { workspaceId } = get();
+      const { workspaceId, session } = get();
       if (!workspaceId) return null;
       const scope = scopeOf(get(), workspaceId);
       const draft = scope.editing[ideaId];
+      const listed = get().items.find(item => item.idea_id === ideaId);
+      if (scope.selected?.idea_id === ideaId && scope.selected.deleted) return null;
       if (draft && draftDirty(draft)) {
         const result = await get().saveExact(workspaceId, ideaId);
         if (result.status === "failed") return null;
         return result.value;
       }
-      if (draft?.base) {
+      if (draft?.base && (!listed || listed.head_revision_id === draft.base.revisionId)) {
         return {
           workspaceId,
           ideaId,
@@ -605,7 +612,7 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => {
         };
       }
       const view = scope.selected;
-      if (view && view.idea_id === ideaId) {
+      if (view && view.idea_id === ideaId && (!listed || listed.head_revision_id === view.revision_id)) {
         return {
           workspaceId,
           ideaId,
@@ -614,7 +621,19 @@ export const useIdeasStore = create<IdeasStore>()((set, get) => {
           body: view.body,
         };
       }
-      return null;
+      // 列表可直接引用：读取完整原文，不要求先选中或打开编辑器，也不把摘要当正文。
+      try {
+        const current = await getIdea(workspaceId, ideaId);
+        if (get().session !== session || get().workspaceId !== workspaceId) return null;
+        if (current.deleted) {
+          set({ error: "[IDEA_DELETED] 加入对话：这条灵感已删除。建议：在最近删除中恢复后再加入。" });
+          return null;
+        }
+        return { workspaceId, ideaId, revisionId: current.revision_id, digest: current.digest, body: current.body };
+      } catch (error) {
+        if (get().session === session) set({ error: describe(error) });
+        return null;
+      }
     },
 
     discardEntry(ideaId) {

@@ -1,117 +1,101 @@
-/**
- * 灵感列表：按创建时间倒序，用原文识别内容。
- *
- * 标题与标签是旧字段，列表不再显示；正文为空的旧异常条目给出可理解的诊断，
- * 不拿内部 ID 充当标题。摘要被截断时明确提供「展开」，先读取完整修订再编辑。
- */
-import { useLayoutEffect, useRef } from "react";
-import { draftDirty, useIdeasStore, useIdeaScope } from "../../state/ideas";
-import { usePagePositions } from "../../state/pagePositions";
+/** 短内容直接阅读、引用与原处修改；搜索和回收只在主动展开后出现。 */
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
+import { draftDirty, referencePreview, useIdeasStore, useIdeaScope } from "../../state/ideas";
+import { NEW_DRAFT, useConversationsStore } from "../../state/conversations";
 import { Button } from "../ui/Button";
 import { Field } from "../ui/Field";
-import { ListItem } from "../ui/ListItem";
 import { EmptyState, StatusMessage } from "../ui/StatusMessage";
 import { Tabs } from "../ui/Tabs";
+import IdeaEditor, { type IdeaActions } from "./IdeaEditor";
 
 function when(value: string): string {
   if (!value) return "";
-  return new Date(value).toLocaleString("zh-CN", { hour12: false });
+  const date = new Date(value), now = new Date();
+  return date.toDateString() === now.toDateString()
+    ? date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })
+    : date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
 }
 
-export default function IdeaList({ onChoose }: { onChoose: (id?: string) => void }) {
+export default function IdeaList({ expanded, onExpandList, actionBusy, ...actions }: IdeaActions & {
+  expanded: boolean;
+  onExpandList: () => void;
+  actionBusy: boolean;
+}) {
   const scope = useIdeaScope();
-  const items = useIdeasStore(state => state.items);
-  const deletedItems = useIdeasStore(state => state.deletedItems);
-  const total = useIdeasStore(state => state.total);
-  const deletedTotal = useIdeasStore(state => state.deletedTotal);
-  const loading = useIdeasStore(state => state.loading);
-  const loadingMore = useIdeasStore(state => state.loadingMore);
-  const error = useIdeasStore(state => state.error);
-  const cursor = useIdeasStore(state => (scope.showDeleted ? state.deletedCursor : state.cursor));
+  const { items, deletedItems, total, deletedTotal, loading, loadingMore, error, reading, busy, workspaceId } = useIdeasStore();
+  const cursor = useIdeasStore(state => scope.showDeleted ? state.deletedCursor : state.cursor);
+  const references = useConversationsStore(state => state.draftIdeas[state.selectedId ?? NEW_DRAFT]);
+  const [chosenId, setChosenId] = useState<string | null>(null);
+  const [moreId, setMoreId] = useState<string | null>(null);
+  const container = useRef<HTMLElement>(null);
   const store = useIdeasStore.getState();
-  const scroll = useRef<HTMLDivElement>(null);
-  const positionKey = `${store.workspaceId}:ideas:${scope.showDeleted ? "deleted" : "active"}:${scope.query}`;
-  const rows = scope.showDeleted ? deletedItems : items;
+  const rows = expanded && scope.showDeleted ? deletedItems : items;
+  const recent = rows.slice(0, 3);
+  // 有未保存修改时，该记录即使不在最近三条里也保留入口。
+  const shown = expanded ? [...rows] : rows.filter(row => recent.includes(row) || row.idea_id === chosenId || (scope.editing[row.idea_id] && draftDirty(scope.editing[row.idea_id])));
+  // 删除、恢复历史或修改内容后可能不再匹配当前筛选，原处操作保留到作者主动收起。
+  if (scope.selected?.idea_id === chosenId && !shown.some(item => item.idea_id === chosenId)) {
+    const selected = scope.selected;
+    shown.unshift({ ...selected, excerpt: referencePreview(selected.body, 120), excerpt_truncated: Array.from(selected.body).length > 120, body_chars: Array.from(selected.body).length });
+  }
 
+  useEffect(() => { setChosenId(null); setMoreId(null); }, [workspaceId]);
+  useEffect(() => { if (expanded && scope.activeId) setChosenId(scope.activeId); }, [expanded, scope.activeId]);
   useLayoutEffect(() => {
-    if (scroll.current) {
-      scroll.current.scrollTop = usePagePositions.getState().offsets[positionKey] ?? 0;
+    if (chosenId && scope.selected?.idea_id === chosenId) {
+      container.current?.querySelector<HTMLElement>(`[data-idea-id="${CSS.escape(chosenId)}"]`)?.scrollIntoView({ block: "nearest" });
     }
-  }, [positionKey, items, deletedItems]);
+  }, [chosenId, scope.selected?.idea_id]);
 
-  const list = (
-    <div
-      className="idea-list-scroll"
-      ref={scroll}
-      onScroll={event => {
-        if (event.currentTarget.clientHeight && rows.length) {
-          usePagePositions.getState().offset(positionKey, event.currentTarget.scrollTop);
-        }
-      }}
-    >
-      {loading && <StatusMessage>正在读取灵感…</StatusMessage>}
-      {!loading && !rows.length && !error && (
-        <EmptyState>{scope.showDeleted ? "没有已删除的灵感。" : "还没有记录；想到一句就写在上面。"}</EmptyState>
-      )}
-      <ul>
-        {rows.map(item => {
-          const draft = scope.editing[item.idea_id];
-          const unsaved = draft ? draftDirty(draft) : false;
-          const empty = item.body_chars === 0;
-          return (
-            <li key={item.idea_id}>
-              <ListItem
-                selected={item.idea_id === scope.activeId}
-                summary={
-                  <>
-                    {empty ? "正文为空，可能是旧版本留下的异常条目。" : item.excerpt}
-                    <time>
-                      {when(item.created_at)}
-                      {unsaved ? " · 未保存" : ""}
-                      {item.excerpt_truncated ? ` · 共 ${item.body_chars} 字` : ""}
-                    </time>
-                  </>
-                }
-                onClick={() => {
-                  void store.select(item.idea_id);
-                  onChoose(item.idea_id);
-                }}
-              >
-                {empty ? "（没有正文）" : item.excerpt.split("\n")[0]}
+  function choose(id: string, more = false) {
+    setChosenId(id); setMoreId(more ? id : null);
+    void store.select(id);
+  }
+
+  const list = <div className="idea-list-scroll">
+    {loading && !rows.length && <StatusMessage>正在读取灵感…</StatusMessage>}
+    {!loading && !shown.length && !error && <EmptyState>{scope.showDeleted && expanded ? "没有已删除的灵感。" : "想到一句，就记下来。"}</EmptyState>}
+    <ul>
+      {shown.map(item => {
+        const draft = scope.editing[item.idea_id];
+        const unsaved = draft ? draftDirty(draft) : false;
+        const reference = references?.find(ref => ref.idea_id === item.idea_id);
+        const referenceState = reference ? reference.revision_id === item.head_revision_id && !unsaved ? "added" : "update" : "add";
+        return <li key={item.idea_id} data-idea-id={item.idea_id} className="idea-note">
+          {chosenId === item.idea_id && scope.activeId === item.idea_id ? reading || !scope.selected ? <StatusMessage>正在读取原文…</StatusMessage> :
+            <IdeaEditor {...actions} referenceState={referenceState} actionBusy={actionBusy} showMore={moreId === item.idea_id} onClose={() => setChosenId(null)} />
+            : <>
+              <button type="button" className="idea-note-text" onClick={() => choose(item.idea_id)}>
+                {item.body_chars === 0 ? "（没有正文）" : item.excerpt}
                 {item.excerpt_truncated && <span className="idea-excerpt-more">展开</span>}
-              </ListItem>
-            </li>
-          );
-        })}
-      </ul>
-      {cursor && (
-        <Button variant="quiet" busy={loadingMore} onClick={() => void store.loadMore()}>
-          加载更多灵感
-        </Button>
-      )}
-    </div>
-  );
+              </button>
+              <div className="idea-note-footer">
+                <time dateTime={item.created_at}>{when(item.created_at)}{unsaved ? " · 未保存" : ""}</time>
+                {!item.deleted && <Button variant="quiet" size="compact" className="idea-add-reference" disabled={busy || actionBusy || referenceState === "added"}
+                  aria-pressed={referenceState === "added"} onClick={() => void actions.onTakeToChat(item.idea_id)}>
+                  {referenceState === "added" ? "✓ 已加入" : referenceState === "update" ? "更新引用" : "加入对话"}
+                </Button>}
+                <details className="idea-options"><summary aria-label={`管理灵感：${referencePreview(item.excerpt, 24)}`}><MoreHorizontal size={16} aria-hidden="true" /></summary>
+                  <div className="idea-options-menu">
+                    <Button variant="quiet" size="compact" onClick={() => choose(item.idea_id)}>{item.deleted ? "查看与恢复" : "修改"}</Button>
+                    <Button variant="quiet" size="compact" onClick={() => choose(item.idea_id, true)}>历史与更多</Button>
+                  </div>
+                </details>
+              </div>
+            </>}
+        </li>;
+      })}
+    </ul>
+    {!expanded && (total > 3 || cursor) && <Button variant="quiet" size="compact" className="idea-list-more" onClick={onExpandList}>全部灵感</Button>}
+    {expanded && cursor && <Button variant="quiet" size="compact" busy={loadingMore} onClick={() => void store.loadMore()}>加载更多灵感</Button>}
+  </div>;
 
-  return (
-    <aside className="idea-list module" aria-label="灵感列表">
-      <div className="idea-list-tools">
-        <Field label="搜索灵感">
-          <input
-            aria-label="搜索灵感"
-            value={scope.query}
-            onChange={event => void store.setQuery(event.target.value)}
-          />
-        </Field>
-      </div>
-      <Tabs
-        label="灵感范围"
-        value={scope.showDeleted ? "deleted" : "active"}
-        onValueChange={value => void store.setShowDeleted(value === "deleted")}
-        items={[
-          { value: "active", label: `灵感（${total}）`, content: scope.showDeleted ? null : list },
-          { value: "deleted", label: `最近删除（${deletedTotal}）`, content: scope.showDeleted ? list : null },
-        ]}
-      />
-    </aside>
-  );
+  return <aside ref={container} className="idea-list" aria-label="灵感列表">
+    {expanded ? <>
+      <div className="idea-list-tools"><Field label="搜索灵感"><input aria-label="搜索灵感" placeholder="找一句记过的话…" value={scope.query} onChange={event => void store.setQuery(event.target.value)} /></Field></div>
+      <Tabs label="灵感范围" value={scope.showDeleted ? "deleted" : "active"} onValueChange={value => void store.setShowDeleted(value === "deleted")}
+        items={[{value:"active",label:`灵感（${total}）`,content:scope.showDeleted?null:list},{value:"deleted",label:`最近删除（${deletedTotal}）`,content:scope.showDeleted?list:null}]} />
+    </> : list}
+  </aside>;
 }

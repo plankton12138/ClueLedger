@@ -4,11 +4,11 @@ import { resolve, join } from "node:path";
 import type { Page } from "@playwright/test";
 
 async function shot(page: Page, name: string, stage = "H4") {
-  const output = resolve("../dev-notes/v0.8/artifacts/frontend-experience/screenshots");
+  const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v0.8/artifacts/frontend-experience/screenshots");
   mkdirSync(output, { recursive: true }); await page.screenshot({ path: `${output}/${stage}-${name}.png` });
 }
 async function ideaShot(page: Page, name: string) {
-  const output = resolve("../dev-notes/v0.8/artifacts/ideas-experience/screenshots");
+  const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v0.8/artifacts/ideas-experience/screenshots");
   mkdirSync(output, { recursive: true }); await page.screenshot({ path: `${output}/${name}.png` });
 }
 async function font(page: Page, value: number) {
@@ -41,6 +41,7 @@ test("灵感面板：真实列表分页、历史预览与删除恢复", async ({
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("修订20");
 
   const history = page.locator(".idea-history");
+  await page.locator(".idea-entry-more > summary").click();
   await history.locator("summary").click();
   await expect(history.locator("li")).toHaveCount(20);
   await history.getByRole("button", { name: "更多历史", exact: true }).click();
@@ -101,24 +102,17 @@ test("灵感面板：窄屏草稿与主操作矩阵，引用保留聊天草稿�
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("侦探认出了雨衣。");
   await page.getByLabel("灵感正文", { exact: true }).fill("新内容保留");
   // 有未保存修改也可以引用：先保存再绑定保存结果的那一版。
-  await expect(page.getByRole("button", { name: "带到对话", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "加入对话", exact: true })).toBeEnabled();
   for (const width of [1440, 1024, 760, 640]) for (const scale of [100, 150]) {
     await page.setViewportSize({ width, height: width === 1024 ? 768 : width === 640 ? 800 : 900 }); await font(page, scale);
     await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("新内容保留");
     await expect(page.getByRole("button", { name: "完成", exact: true })).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    if (await page.getByRole("button", { name: "返回列表", exact: true }).isVisible()) {
-      await page.getByRole("button", { name: "返回列表", exact: true }).click();
-      await page.getByLabel("搜索灵感", { exact: true }).fill("侦探");
-      await page.getByRole("complementary", { name: "灵感列表", exact: true }).getByRole("button", { name: /^侦探认出了雨衣/ }).click();
-      await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("新内容保留");
-    }
     await ideaShot(page, `editor-${width}-${scale}`);
   }
   await page.getByRole("button", { name: "完成", exact: true }).click();
-  await expect(page.getByRole("button", { name: "带到对话", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "带到对话", exact: true }).click();
-  const chat = page.getByRole("button", { name: /^对话/, exact: false }); if (await chat.isVisible()) await chat.click();
+  await expect(page.getByRole("button", { name: "加入对话", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "加入对话", exact: true }).click();
   await expect(page.getByPlaceholder("说要求，回车发送，Shift+Enter 换行")).toHaveValue("保留聊天输入");
   await expect(page.locator(".writing-chat")).toContainText("新内容保留");
   expect(writes).toBe(0);
@@ -228,9 +222,9 @@ test("模块预览与编辑的完整窗口及字号矩阵", async ({ page, book 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await shot(page, `library-preview-${width}-${scale}`, "H6");
     await page.getByRole("button", { name: "编辑", exact: true }).click();
-    await expect(page.getByRole("button", { name: "保存新版本", exact: true })).toBeInViewport();
-    await expect(page.getByLabel("条目正文", { exact: true }).last()).toHaveValue(book.body);
+    await expect(page.getByRole("button", { name: "保存", exact: true })).toBeInViewport();
+    await expect(page.getByLabel("模块正文", { exact: true }).last()).toHaveValue(book.body);
     await shot(page, `library-editor-${width}-${scale}`, "H6");
-    await page.getByRole("button", { name: "返回预览", exact: true }).click();
+    await page.getByRole("button", { name: "取消", exact: true }).click();
   }
 });

@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
 async function shot(page: Page, name: string) {
-  const path = resolve("../dev-notes/v0.8/artifacts/frontend-experience/screenshots"); mkdirSync(path, { recursive: true });
+  const path = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v0.8/artifacts/frontend-experience/screenshots"); mkdirSync(path, { recursive: true });
   await page.screenshot({ path: `${path}/H3-${name}.png` });
 }
 test("七种预设字段按真实契约往返，数字0与布尔false保留", async ({ page, request }) => {
@@ -18,9 +18,10 @@ test("七种预设字段按真实契约往返，数字0与布尔false保留", as
     await page.evaluate(hash => { location.hash = hash; }, `#/library/modules/${created.module.module_id}/revisions/${created.module.head}`);
     const library = page.getByRole("region", { name: "模块库", exact: true });
     await expect(library.locator(".module-preview")).toContainText("隔离正文。");
-    await expect(library.getByLabel("条目正文")).toHaveCount(0);
+    await expect(library.getByLabel("模块正文")).toHaveCount(0);
     await library.getByRole("button", { name: "编辑", exact: true }).click();
-    const save = library.getByRole("button", { name: "保存新版本", exact: true });
+    await library.locator(".module-original-data > summary").click();
+    const save = library.getByRole("button", { name: "保存", exact: true });
     await expect(save).toBeDisabled();
     const control = library.locator(".entry-field-control").first();
     await expect(control.locator("input").first()).toHaveValue("0");
@@ -30,6 +31,8 @@ test("七种预设字段按真实契约往返，数字0与布尔false保留", as
     let revision = await library.getByLabel("模块版本").inputValue();
     let detail = await request.get(`/api/module-library/modules/${created.module.module_id}/revisions/${revision}`).then(r => r.json());
     expect(detail.entries[0].fields[field]).toBe(2);
+    await library.getByRole("button", { name: "编辑", exact: true }).click();
+    await library.locator(".module-original-data > summary").click();
     await control.locator("select").selectOption("boolean");
     const previous = revision;
     await save.click();
@@ -45,13 +48,27 @@ test("七种预设字段按真实契约往返，数字0与布尔false保留", as
 test("高级字段异常保留输入并阻止发布，标量列表可在修正后发布", async ({ page, book, request }) => {
   const listing = await request.get("/api/module-library/modules?limit=50").then(r => r.json());
   const info = listing.items.find((item: { module_id: string }) => item.module_id === book.moduleId);
-  await page.goto(`/#/library/modules/${book.moduleId}/revisions/${info.head}?workspace=${book.id}`);
+  const seeded = await request.post(`/api/module-library/modules/${book.moduleId}/revisions`, { data: {
+    base_revision: info.head,expected_head:info.head,request_key:crypto.randomUUID(),entries:[
+      {entry_id:"rain",title:"雨夜原文",body:book.body,fields:{source:"档案"}},
+      {entry_id:"port",title:"港口",body:"潮汐表第二版。"},
+    ],
+  } }).then(r=>r.json());
+  await page.goto(`/#/library/modules/${book.moduleId}/revisions/${seeded.revision_id}?workspace=${book.id}`);
   const library = page.getByRole("region", { name: "模块库", exact: true });
   await library.getByRole("button", { name: "编辑", exact: true }).click();
-  await library.locator(".advanced-fields summary").last().click();
+  // 旧字段可以保留与修正，默认内容编辑不展示字段表。
+  await library.getByLabel("模块正文").last().fill("字段兼容性草稿");
   const fields = library.getByLabel("条目字段", { exact: true }).last();
-  const save = library.getByRole("button", { name: "保存新版本", exact: true });
+  const save = library.getByRole("button", { name: "保存", exact: true });
+  async function openFields() {
+    const extra=library.locator(".module-editor .module-original-data").last();
+    if(!await extra.evaluate(el=>(el as HTMLDetailsElement).open))await extra.locator("summary").first().click();
+    const advanced=library.locator(".advanced-fields").last();
+    if(!await advanced.evaluate(el=>(el as HTMLDetailsElement).open))await advanced.locator("summary").click();
+  }
   for (const text of ['{"unknown":"保留"}', '{"source":{"nested":true}}', '{损坏']) {
+    await openFields();
     await fields.fill(text); await expect(save).toBeDisabled();
     await expect(library.locator(".ui-field-error").last()).toBeVisible();
     await page.getByRole("link", { name: "写作", exact: true }).click();
@@ -63,13 +80,14 @@ test("高级字段异常保留输入并阻止发布，标量列表可在修正�
     await expect(fields).toHaveValue(text);
   }
   await shot(page, "invalid-fields-preserved-1440");
+  await openFields();
   await fields.fill('{"source":["档案",1,true]}'); await save.click();
   await expect(library.getByText("已保存到模块库；其他作品保持原版本。", { exact: true })).toBeVisible();
   const revision = await library.getByLabel("模块版本").inputValue();
   const detail = await request.get(`/api/module-library/modules/${book.moduleId}/revisions/${revision}`).then(r => r.json());
   expect(detail.entries.find((entry: { entry_id: string }) => entry.entry_id === "rain").fields.source).toEqual(["档案", 1, true]);
   const revisions = await request.get(`/api/module-library/modules/${book.moduleId}/revisions`).then(r => r.json());
-  expect(revisions.total).toBe(3);
+  expect(revisions.total).toBe(4);
 });
 
 test("窄窗口模块预览与编辑可返回列表，失败变体保留名称", async ({ page, book }) => {
@@ -79,17 +97,18 @@ test("窄窗口模块预览与编辑可返回列表，失败变体保留名称",
   await library.getByLabel("搜索模块").fill(book.id); await library.getByLabel("搜索模块").press("Enter");
   await library.getByRole("button", { name: new RegExp(`长记录-${book.id}`) }).click();
   await expect(library.locator(".module-preview")).toContainText(book.body);
-  await expect(library.getByRole("complementary", { name: "浏览模块库", exact: true, includeHidden: true })).toBeHidden();
+  await expect(library.getByRole("region", { name: "浏览模块库", exact: true, includeHidden: true })).toBeHidden();
   await shot(page, "preview-640");
   await library.getByRole("button", { name: "编辑", exact: true }).click();
-  await library.getByLabel("条目正文").last().fill("窄窗口草稿");
+  await library.getByLabel("模块正文").last().fill("窄窗口草稿");
   await shot(page, "editor-640");
   await library.getByRole("button", { name: "返回列表", exact: true }).click();
   await expect(library.getByLabel("搜索模块")).toHaveValue(book.id);
   await library.getByRole("button", { name: new RegExp(`长记录-${book.id}`) }).click();
   await library.getByRole("button", { name: "继续编辑", exact: true }).click();
-  await expect(library.getByLabel("条目正文").last()).toHaveValue("窄窗口草稿");
+  await expect(library.getByLabel("模块正文").last()).toHaveValue("窄窗口草稿");
   await page.route(`**/api/module-library/modules/${book.moduleId}/fork`, route => route.fulfill({ status: 409, json: { error: { code: "MODULE_HEAD_STALE_CONFLICT", where: "library", why: "版本已变化", fix: "核对版本后重试" } } }));
+  await library.locator(".library-detail-toolbar > .library-more > summary").click();
   await library.getByRole("button", { name: "另存变体", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "另存变体", exact: true });
   await dialog.getByLabel("变体名称").fill("仍要保留的名称"); await dialog.getByRole("button", { name: "另存", exact: true }).click();

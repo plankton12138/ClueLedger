@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -63,6 +65,17 @@ def test_create_is_idempotent_and_refuses_key_reuse(tmp_path: Path) -> None:
     with pytest.raises(WorkspaceError) as excinfo:
         store.create(title="另一条", body="不同内容。", request_key="idea-key-1")
     assert excinfo.value.code == "REQUEST_KEY_CONFLICT"
+
+
+def test_quick_captures_in_one_second_keep_creation_order(tmp_path: Path) -> None:
+    _, store = _store(tmp_path)
+    moments = [datetime(2026, 10, 25, 10, 0, 0, n, tzinfo=UTC) for n in (100, 200, 300)]
+    with patch("hastings.workspace.ideas.datetime") as clock:
+        clock.now.side_effect = moments
+        for number in range(3):
+            store.create(body=f"连续灵感{number}", request_key=f"quick-capture-{number}")
+    page = store.list(order="created")
+    assert [item["excerpt"] for item in page["items"]] == ["连续灵感2", "连续灵感1", "连续灵感0"]
 
 
 def test_edit_appends_a_revision_and_keeps_history(tmp_path: Path) -> None:

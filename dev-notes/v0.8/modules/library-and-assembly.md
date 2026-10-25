@@ -5,6 +5,8 @@
 
 ## 1. 两个层次
 
+2026-10-25 的[模块体验更新](module-experience.md)已实施：界面使用自由正文与实际挂载目录；新增作品内内容保存，库 head 保持不变。下列七种类型继续作为兼容数据存在，普通新建不再要求选择类型。
+
 - **全局模块库**属于应用，不属于任何作品。同一份人物可以装进两个作品，各作品固定自己使用的版本。
 - **作品装配**只记录「用了库里的哪个精确版本」，不复制模块原文。库里的内容始终只有一份。
 
@@ -91,6 +93,7 @@ ModuleLibrary/
 |---|---|
 | 读装配与依赖诊断 | `GET /api/file-workspaces/{id}/assembly` |
 | 整份替换装配（装卸、排序、链接） | `PUT /api/file-workspaces/{id}/assembly` |
+| 保存当前作品使用的内容与名称，库原稿不变 | `PUT /api/file-workspaces/{id}/assembly/{binding_id}/content` |
 | 以当前组合派生新作品 | `POST /api/file-workspaces/{id}/derive` |
 | 保存并用于本作品（先发布、再绑定） | `POST /api/file-workspaces/{id}/module-updates` |
 | 库浏览、发布、变体、删除与恢复 | `/api/module-library` 下的 `presets`、`modules`、`revisions`、`fork`、`trash`、`restore` |

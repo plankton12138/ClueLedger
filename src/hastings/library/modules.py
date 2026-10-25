@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -220,6 +221,40 @@ class ModuleLibrary:
             self.storage.write_module(module_id, module)
             return revision
 
+    def save_workspace_revision(
+        self,
+        *,
+        module_id: str,
+        base_revision: str,
+        entries: Sequence[EntryDraft | Mapping[str, object]],
+        request_key: str,
+    ) -> RevisionInfo:
+        """保存作品自己的内容版本；库的 head 保持不变，其他作品也不跟随。
+
+        仍使用不可变版本和幂等请求，绑定失败后可以用同一请求继续保存。
+        base 可以是作品先前保存的版本，不要求它等于库的最新版本。
+        """
+        key = _check_request_key(request_key)
+        with self.storage.lock(module_id):
+            module = self.storage.read_module(module_id)
+            self.revision(module_id=module_id, revision_id=base_revision)
+            drafts = _drafts(str(module.get("kind") or ""), entries)
+            request = _request_digest(
+                {
+                    "op": "workspace-revision",
+                    "module_id": module_id,
+                    "base": base_revision,
+                    "entries": _rows(drafts),
+                }
+            )
+            updated_at = module.get("updated_at")
+            revision = self._publish_unlocked(
+                module, drafts, key=key, request=request, parent_revision=base_revision
+            )
+            module["updated_at"] = updated_at
+            self.storage.write_module(module_id, module)
+            return revision
+
     def fork(
         self,
         *,
@@ -320,6 +355,7 @@ class ModuleLibrary:
         cursor: str | None = None,
         limit: int = DEFAULT_PAGE_SIZE,
         include_deleted: bool = False,
+        include_preview: bool = False,
     ) -> dict[str, object]:
         """分页列出实例；已删除的默认不出现，也不进入新装入候选。"""
         if kind is not None:
@@ -347,6 +383,9 @@ class ModuleLibrary:
             rows.append(row)
         rows.sort(key=lambda item: (str(item["updated_at"]), str(item["module_id"])), reverse=True)
         page = rows[offset : offset + size]
+        if include_preview:
+            for row in page:
+                row["preview"] = self._preview(row)
         next_offset = offset + size
         return {
             "items": page,
@@ -494,7 +533,13 @@ class ModuleLibrary:
             return revision
 
     def _publish_unlocked(
-        self, module: dict[str, Any], drafts: tuple[EntryDraft, ...], *, key: str, request: str
+        self,
+        module: dict[str, Any],
+        drafts: tuple[EntryDraft, ...],
+        *,
+        key: str,
+        request: str,
+        parent_revision: str | None = None,
     ) -> RevisionInfo:
         """写入版本目录并登记请求结果；调用方负责持有模块锁与推进 head。"""
         module_id = str(module["module_id"])
@@ -530,7 +575,7 @@ class ModuleLibrary:
             manifest = _manifest(
                 module_id=module_id,
                 revision_id=revision_id,
-                parent=module.get("head"),
+                parent=parent_revision or module.get("head"),
                 created_at=created,
                 request_key=key,
                 request_digest=request,
@@ -602,6 +647,26 @@ class ModuleLibrary:
                 )
             texts[entry_id] = text
         return texts
+
+    def _preview(self, row: Mapping[str, object]) -> str:
+        """只供作者界面预览；模型的库目录不隐含读取正文。"""
+        if not row.get("head"):
+            return ""
+        try:
+            revision = self.revision(module_id=str(row["module_id"]), revision_id=str(row["head"]))
+            if revision.entries:
+                entry = revision.entries[0]
+                text, digest = self.storage.read_entry(
+                    str(row["module_id"]), str(row["head"]), entry.entry_id
+                )
+                if digest == entry.digest:
+                    body = parse_entry(text, module_kind=str(row["kind"])).body
+                    plain = re.sub(r"(?m)^\s*#{1,6}\s+", "", body)
+                    return " ".join(plain.split())[:120]
+        except WorkspaceError:
+            # 列表保留定位，内容损坏在打开模块时报告，不用旧缓存伪造预览。
+            pass
+        return ""
 
     def _matches(self, info: ModuleInfo, needle: str) -> bool:
         if needle in info.name.lower():

@@ -14,7 +14,7 @@ async function focusWithin(page: Page, dialog: Locator) {
   }
 }
 async function shot(page: Page, name: string) {
-  const output = resolve("../dev-notes/v0.8/artifacts/frontend-experience/screenshots");
+  const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v0.8/artifacts/frontend-experience/screenshots");
   mkdirSync(output, { recursive: true }); await page.screenshot({ path: `${output}/H5-${name}.png` });
 }
 

@@ -73,6 +73,15 @@ class ImportLegacyRequest(BaseModel):
     request_key: str
 
 
+class SaveContentRequest(BaseModel):
+    module_id: str
+    base_revision: str
+    name: str
+    entries: list[EntryPayload]
+    expected_digest: str | None = None
+    request_key: str
+
+
 def create_assembly_router(
     workspaces: RecentWorkspaces,
     library: ModuleLibrary,
@@ -177,6 +186,21 @@ def create_assembly_router(
     @router.get("/{workspace_id}/library-imports")
     def read_imports(workspace_id: str) -> dict[str, object]:
         return read_import_info(workspaces.workspace(workspace_id))
+
+    @router.put("/{workspace_id}/assembly/{binding_id}/content")
+    def save_content(
+        workspace_id: str, binding_id: str, payload: SaveContentRequest
+    ) -> dict[str, object]:
+        require_idle(workspace_id)
+        return service_for(workspace_id).save_content(
+            binding_id=binding_id,
+            module_id=payload.module_id,
+            base_revision=payload.base_revision,
+            name=payload.name,
+            entries=[entry.model_dump() for entry in payload.entries],
+            expected_digest=payload.expected_digest,
+            request_key=payload.request_key,
+        )
 
     @router.post("/{workspace_id}/library-imports")
     def import_legacy(workspace_id: str, payload: ImportLegacyRequest) -> dict[str, object]:

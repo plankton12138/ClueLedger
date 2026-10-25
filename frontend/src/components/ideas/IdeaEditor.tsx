@@ -15,7 +15,7 @@ import { useWorkspaceStore } from "../../state/workspace";
 import IdeaActivityList from "./IdeaActivityList";
 import IdeaHistory from "./IdeaHistory";
 
-interface Props {
+export interface IdeaActions {
   /** 有脏稿时由上层先保存，再用保存结果的具体修订引用。 */
   onTakeToChat: (id: string) => void;
   /** 一次点击发起只读展开；已有讨论时打开它继续。 */
@@ -27,12 +27,23 @@ interface Props {
   onOpenSource?: (path: string) => void;
 }
 
+interface Props extends IdeaActions {
+  onClose: () => void;
+  referenceState: "add" | "added" | "update";
+  actionBusy: boolean;
+  showMore: boolean;
+}
+
 export default function IdeaEditor({
   onTakeToChat,
   onExpand,
   onOpenConversation,
   onUseForWriting,
   onOpenSource,
+  onClose,
+  referenceState,
+  actionBusy,
+  showMore,
 }: Props) {
   const scope = useIdeaScope();
   const reading = useIdeasStore(state => state.reading);
@@ -52,12 +63,17 @@ export default function IdeaEditor({
   }
 
   const body = draft?.body ?? selected.body;
-  const heading = body.split("\n").find(line => line.trim()) ?? "";
+  const save = () => void store.saveEntry(selected.idea_id).then(result => {
+    const current = useIdeasStore.getState();
+    const currentScope = current.scopes[store.workspaceId ?? ""];
+    const latest = currentScope?.editing[selected.idea_id];
+    if (result.status !== "failed" && current.workspaceId === store.workspaceId && currentScope?.activeId === selected.idea_id && latest && !draftDirty(latest)) onClose();
+  });
 
   return (
     <div className="idea-editor">
       <header className="idea-editor-heading">
-        <h2 className="idea-editor-title">{heading || "（没有正文）"}</h2>
+        <Button size="compact" variant="quiet" onClick={onClose}>收起修改</Button>
         {!selected.deleted && (
           <>
             <Button
@@ -65,7 +81,7 @@ export default function IdeaEditor({
               disabled={!dirty}
               busy={busy}
               disabledReason="没有需要保存的修改"
-              onClick={() => void store.saveEntry(selected.idea_id)}
+              onClick={save}
             >
               完成
             </Button>
@@ -81,6 +97,8 @@ export default function IdeaEditor({
       </label>
       <textarea
         id="idea-body"
+        autoFocus
+        rows={3}
         aria-label="灵感正文"
         className="ui-input idea-body"
         value={body}
@@ -90,7 +108,7 @@ export default function IdeaEditor({
           if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
           if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && dirty && !busy && !selected.deleted) {
             event.preventDefault();
-            void store.saveEntry(selected.idea_id);
+            save();
           }
         }}
       />
@@ -106,12 +124,20 @@ export default function IdeaEditor({
         {!selected.deleted && (
           <>
             <Button
-              disabled={busy}
-              busy={busy}
+              disabled={busy || actionBusy || referenceState === "added"}
+              busy={actionBusy}
               onClick={() => onTakeToChat(selected.idea_id)}
             >
-              带到对话
+              {referenceState === "added" ? "✓ 已加入" : referenceState === "update" ? "更新引用" : "加入对话"}
             </Button>
+          </>
+        )}
+      </div>
+
+      <details className="idea-entry-more" open={showMore || undefined}>
+        <summary>更多操作</summary>
+        <div className="idea-editor-meta">
+          {!selected.deleted && <>
             <Button
               disabled={busy || !modelReady || busyElsewhere !== null}
               disabledReason={
@@ -137,18 +163,12 @@ export default function IdeaEditor({
             <Button variant="danger" disabled={busy} onClick={() => (dirty ? setConfirmDiscard(true) : void store.trashEntry(selected.idea_id))}>
               删除
             </Button>
-          </>
-        )}
+          </>}
         {selected.deleted && (
           <>
             <Button disabled={busy} onClick={() => void store.restoreEntry(selected.idea_id)}>
               恢复
             </Button>
-            {scope.lastTrashed === selected.idea_id && (
-              <Button variant="quiet" disabled={busy} onClick={() => void store.undoTrash()}>
-                撤销删除
-              </Button>
-            )}
           </>
         )}
       </div>
@@ -162,6 +182,7 @@ export default function IdeaEditor({
           <pre>{JSON.stringify(selected.origin, null, 2)}</pre>
         </details>
       )}
+      </details>
 
       <AppDialog title="把这条灵感用到哪一章" open={writing} onOpenChange={setWriting}>
         <div className="ui-action-list">

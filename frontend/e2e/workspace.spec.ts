@@ -107,6 +107,9 @@ test.beforeAll(async () => {
 async function open(page: Page) {
   await page.goto("/");
   await expect(page.getByLabel("选择作品目录")).toHaveValue(bindingId, { timeout: 10_000 });
+  const legacy = page.locator(".workspace-legacy-materials");
+  await expect(legacy).toBeVisible();
+  if (!await legacy.evaluate(el => (el as HTMLDetailsElement).open)) await legacy.locator("summary").click();
 }
 
 /** 对话栏根节点：以「选择对话」为内部锚点，不依赖面板的标签结构。 */
@@ -127,11 +130,11 @@ async function dragHandle(page: Page, name: string, deltaX: number) {
   await page.mouse.up();
 }
 
-test("目录打开后显示章节、角色分组与固定设定", async ({ page }) => {
+test("目录显示章节与模块，已有设定可从原有资料打开", async ({ page }) => {
   await open(page);
   // 目录行与行内的「加入对话」是两个按钮：按行定位，避免名字里带章名时命中两个。
   await expect(page.locator(".toc-row").filter({ hasText: "雨夜" })).toBeVisible();
-  await expect(page.locator("summary").filter({ hasText: "角色小传" })).toBeVisible();
+  await expect(page.locator("summary").filter({ hasText: "原有资料" })).toBeVisible();
   for (const title of ["林远", "线索", "真相"]) {
     await expect(page.getByRole("button", { name: title, exact: true })).toBeVisible();
   }
@@ -398,12 +401,13 @@ test("故事资料页叠加已装模块的计划，并可按模块筛选", async
   await expect(
     page.getByRole("heading", { name: /计划叠加/ }),
   ).toBeVisible();
-  await expect(page.getByText("第9章误导")).toBeVisible();
+  const materials=page.locator(".materials-page");
+  await expect(materials.getByText("第9章误导")).toBeVisible();
 
   await page.getByRole("button", { name: "主线时间", exact: true }).click();
-  await expect(page.getByText("第9章误导")).toHaveCount(0);
+  await expect(materials.getByText("第9章误导")).toHaveCount(0);
   await page.getByRole("button", { name: "主线时间", exact: true }).click();
-  await expect(page.getByText("第9章误导")).toBeVisible();
+  await expect(materials.getByText("第9章误导")).toBeVisible();
 });
 
 test("灵感面板：记录、删除撤销恢复并带到对话", async ({ page }) => {
@@ -413,32 +417,32 @@ test("灵感面板：记录、删除撤销恢复并带到对话", async ({ page 
   await page.getByLabel("记录灵感", { exact: true }).fill(body);
   await page.getByRole("button", { name: "记下", exact: true }).click();
   await expect(page.getByText("已记录。", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue(body);
+  await expect(page.locator(".idea-note-text").filter({hasText:body})).toBeVisible();
 
-  // 展开查看只是更大的区域，内容与草稿不重建。
+  // 最近灵感与全部灵感复用同一个可移动容器。
   const surface = page.getByRole("complementary", { name: "灵感", exact: true });
-  await expect(surface).toHaveAttribute("data-presentation", "panel");
-  await page.getByRole("button", { name: "展开查看", exact: true }).click();
-  await expect(surface).toHaveAttribute("data-presentation", "expanded");
-  await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue(body);
-  await page.getByRole("button", { name: "收起为侧栏", exact: true }).click();
-  await expect(surface).toHaveAttribute("data-presentation", "panel");
+  await expect(surface).toHaveAttribute("data-presentation", "floating");
+  await page.getByRole("button", { name: "搜索灵感", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "搜索灵感", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "回到最近灵感", exact: true }).click();
+  await expect(surface).toHaveAttribute("data-presentation", "floating");
 
   // 收起再打开：已保存记录仍在，快速记录输入框是空的。
-  await page.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("button", { name: "收起灵感", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "灵感", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "灵感", exact: true }).click();
   await expect(page.getByLabel("记录灵感", { exact: true })).toHaveValue("");
   await page.getByRole("complementary", { name: "灵感列表", exact: true }).getByRole("button", { name: /^老板娘认识死者/ }).click();
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue(body);
 
+  await page.locator(".idea-entry-more > summary").click();
   await page.getByRole("button", { name: "删除", exact: true }).click();
   await expect(page.getByText("已移到最近删除。", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "恢复", exact: true }).click();
   await expect(page.getByText("已恢复；恢复会生成一条新修订。", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "带到对话", exact: true }).click();
+  await page.getByRole("button", { name: "加入对话", exact: true }).click();
   await expect(page.getByText("本轮灵感：", { exact: true })).toBeVisible();
-  await expect(page.getByText(body, { exact: true })).toBeVisible();
+  await expect(page.locator(".writing-chat")).toContainText(body);
 });
 
 test("新建作品用系统窗口选位置，界面不再出现路径输入框", async ({ page }) => {

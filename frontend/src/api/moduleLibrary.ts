@@ -36,6 +36,7 @@ export interface ModuleInfo {
   updated_at: string;
   forked_from: { module_id: string; revision_id: string } | null;
   revision_count?: number;
+  preview?: string;
 }
 
 export interface ModulePage {
@@ -367,6 +368,20 @@ export function restoreModule(
 
 export function fetchAssembly(workspaceId: string): Promise<AssemblyView> {
   return request<AssemblyView>(`${WORKSPACES}/${workspaceId}/assembly`);
+}
+
+/** 作品内保存不推进模块库的最新版本。 */
+export function saveWorkspaceModule(workspaceId: string, bindingId: string, input: {
+  module_id: string;
+  base_revision: string;
+  name: string;
+  entries: EntryInput[];
+  expected_digest: string | null;
+  request_key: string;
+}): Promise<AssemblyView> {
+  return request(`${WORKSPACES}/${workspaceId}/assembly/${bindingId}/content`, {
+    method: "PUT", body: JSON.stringify(input),
+  });
 }
 
 export function putAssembly(

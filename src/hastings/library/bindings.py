@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -264,6 +265,78 @@ class AssemblyService:
                 "binding_updated": False,
                 "error": _error_view(exc),
             }
+
+    def save_content(
+        self,
+        *,
+        binding_id: str,
+        module_id: str,
+        base_revision: str,
+        name: str,
+        entries: Sequence[Mapping[str, object]],
+        expected_digest: str | None,
+        request_key: str,
+    ) -> dict[str, object]:
+        """只更新本作品使用的版本与名称，不发布到库的最新内容。"""
+        assembly = self.store.read()
+        target = assembly.binding(binding_id)
+        if target is None or target.module.module_id != module_id:
+            raise WorkspaceError(
+                code="ASSEMBLY_TARGET_CONFLICT",
+                where="assembly.content",
+                why="这个模块的作品绑定已变化或已被移除",
+                fix="重新读取作品模块后再保存；未保存内容仍可保留",
+            )
+        if target.module.library_id != self.library.library_id:
+            raise WorkspaceError(
+                code="LIBRARY_MISMATCH",
+                where="assembly.content",
+                why="作品挂载的模块来自另一个模块库",
+                fix="重新连接原模块库后再保存，保留当前草稿",
+            )
+        label = name.strip()
+        if not label or len(label) > 80:
+            raise WorkspaceError(
+                code="MODULE_NAME_INVALID",
+                where="assembly.content",
+                why="模块名称需要为 1–80 个字符",
+                fix="缩短名称；详细内容写在正文里",
+            )
+        if not 8 <= len(request_key) <= 120:
+            raise WorkspaceError(
+                code="REQUEST_KEY_INVALID",
+                where="assembly.content",
+                why="请求键长度需要在 8–120 字符之间",
+                fix="为这次保存生成稳定且不重复的请求键",
+            )
+        token = hashlib.sha256(
+            f"{self.workspace.root}:{binding_id}:{request_key}".encode()
+        ).hexdigest()
+        revision = self.library.save_workspace_revision(
+            module_id=module_id,
+            base_revision=base_revision,
+            entries=entries,
+            request_key=f"workspace-{token}",
+        )
+        if target.module.revision_id == revision.revision_id and target.label == label:
+            return self.view()
+        if target.module.revision_id != base_revision:
+            raise WorkspaceError(
+                code="ASSEMBLY_STALE_CONFLICT",
+                where="assembly.content",
+                why="作品正在使用的内容版本已变化",
+                fix="保留草稿，重新读取当前版本后再保存",
+            )
+        ref = self._checked_ref(module_id, revision.revision_id)
+        return self._commit(
+            [
+                Binding(id=item.id, module=ref, label=label) if item.id == binding_id else item
+                for item in assembly.bindings
+            ],
+            links=assembly.links,
+            expected_digest=expected_digest,
+            request_key=f"content-{token}",
+        )
 
     # -- 内部 ---------------------------------------------------------------
 

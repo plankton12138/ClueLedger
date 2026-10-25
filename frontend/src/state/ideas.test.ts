@@ -245,6 +245,29 @@ describe("灵感草稿保护", () => {
     expect(createIdea).toHaveBeenCalledTimes(1);
   });
 
+  it("刚记录的灵感不切换其他条目也能立即修改并保存到同一条记录", async () => {
+    await useIdeasStore.getState().load("workspace-a");
+    const created = { ...saved, idea_id: "idea-new", body: "刚记下的船票" };
+    vi.mocked(createIdea).mockResolvedValue(created);
+    useIdeasStore.getState().setCaptureBody(created.body);
+    await useIdeasStore.getState().capture();
+
+    // 保存结果已被选中，但干净的新记录此前还没有建立编辑草稿。
+    await useIdeasStore.getState().select(created.idea_id);
+    useIdeasStore.getState().setEntryBody(created.idea_id, "补充船票上的日期");
+    expect(scope().editing[created.idea_id]?.body).toBe("补充船票上的日期");
+    expect(scope().editing[created.idea_id]?.base).toEqual({
+      revisionId: created.revision_id, digest: created.digest, body: created.body,
+    });
+
+    vi.mocked(updateIdea).mockResolvedValue({ ...created, body: "补充船票上的日期", revision_id: "revision-2", digest: "digest-2" });
+    expect((await useIdeasStore.getState().saveEntry(created.idea_id)).status).toBe("saved");
+    expect(updateIdea).toHaveBeenCalledWith("workspace-a", created.idea_id, expect.objectContaining({
+      body: "补充船票上的日期", expected_revision: created.revision_id, expected_digest: created.digest,
+    }));
+    expect(createIdea).toHaveBeenCalledTimes(1);
+  });
+
   it("保存响应到达前的新输入不被清空", async () => {
     await useIdeasStore.getState().load("workspace-a");
     await useIdeasStore.getState().select(saved.idea_id);
@@ -377,6 +400,34 @@ describe("灵感草稿保护", () => {
 });
 
 describe("引用前的固定版本", () => {
+  it("列表直接引用读取全文，不选中条目或加载历史", async () => {
+    await useIdeasStore.getState().load("workspace-a");
+    const body="完整原文。".repeat(300);
+    vi.mocked(getIdea).mockResolvedValue({...saved,body});
+    const result=await useIdeasStore.getState().prepareReference(saved.idea_id);
+    expect(result?.body).toBe(body);
+    expect(scope().activeId).toBeNull();
+    expect(scope().selected).toBeNull();
+    expect(listIdeaRevisions).not.toHaveBeenCalled();
+  });
+  it("直接引用读取期间切换作品，迟到结果不返回给新作品", async () => {
+    await useIdeasStore.getState().load("workspace-a");
+    let resolve!: (view:IdeaView)=>void;
+    vi.mocked(getIdea).mockReturnValue(new Promise(done=>{resolve=done;}));
+    const pending=useIdeasStore.getState().prepareReference(saved.idea_id);
+    await useIdeasStore.getState().load("workspace-b");
+    resolve(saved);
+    expect(await pending).toBeNull();
+    expect(scope("workspace-b").selected).toBeNull();
+  });
+  it("列表出现更新版本时，显式更新引用读取新原文而非旧编辑基线", async () => {
+    await useIdeasStore.getState().load("workspace-a");
+    await useIdeasStore.getState().select(saved.idea_id);
+    useIdeasStore.setState({items:[{...summary(saved.idea_id),head_revision_id:"r2"}]});
+    vi.mocked(getIdea).mockResolvedValue({...saved,revision_id:"r2",body:"外部更新"});
+    expect(await useIdeasStore.getState().prepareReference(saved.idea_id)).toMatchObject({revisionId:"r2",body:"外部更新"});
+    expect(scope().editing[saved.idea_id].base?.revisionId).toBe(saved.revision_id);
+  });
   it("有脏稿先保存，返回保存结果的新修订", async () => {
     await useIdeasStore.getState().load("workspace-a");
     await useIdeasStore.getState().select(saved.idea_id);

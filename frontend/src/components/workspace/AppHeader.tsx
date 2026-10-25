@@ -1,6 +1,6 @@
 import { useState } from "react";
+import { BookOpen, FolderOpen, LibraryBig, Settings } from "lucide-react";
 import { pageHash, type AppPage, type WorkspacePage } from "../../state/navigation";
-import { useIdeasSurfaceStore } from "../../state/ideasSurface";
 import { useWorkspaceStore } from "../../state/workspace";
 import { useModelsStore } from "../../state/models";
 import { usePagePositions } from "../../state/pagePositions";
@@ -10,22 +10,19 @@ import FontSizeControl from "./FontSizeControl";
 
 export function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; workspaceId: string | null }) {
   const positions = usePagePositions(state => workspaceId ? state.pages[workspaceId] : undefined);
-  const ideasOpen = useIdeasSurfaceStore(state => state.open);
-  const showIdeas = useIdeasSurfaceStore(state => state.show);
-  const hideIdeas = useIdeasSurfaceStore(state => state.hide);
   const writing: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId } : null;
   const materials: WorkspacePage | null = workspaceId
     ? { kind: "materials", workspaceId, section: "story", chapter: null, order: "chapter" }
     : null;
   return <nav className="workspace-navigation" aria-label="作品页面">
     {writing
-      ? <a href={pageHash(positions?.writing ?? writing)} aria-current={page?.kind === "writing" ? "page" : undefined}>写作</a>
-      : <span aria-disabled="true">写作</span>}
-    <button type="button" className="ui-nav-link" aria-pressed={ideasOpen} aria-current={page?.kind === "ideas" ? "page" : undefined}
-      disabled={!workspaceId} title="灵感（Alt+I）" onClick={() => { if (ideasOpen) hideIdeas(); else showIdeas(); }}>灵感</button>
+      ? <a className="ui-nav-link" href={pageHash(positions?.writing ?? writing)} aria-current={page?.kind === "writing" ? "page" : undefined}>
+        <BookOpen size={16} strokeWidth={2} aria-hidden="true" />写作</a>
+      : <span aria-disabled="true"><BookOpen size={16} strokeWidth={2} aria-hidden="true" />写作</span>}
     {materials
-      ? <a href={pageHash(positions?.materials ?? materials)} aria-current={page?.kind === "materials" ? "page" : undefined}>故事资料</a>
-      : <span aria-disabled="true">故事资料</span>}
+      ? <a className="ui-nav-link" href={pageHash(positions?.materials ?? materials)} aria-current={page?.kind === "materials" ? "page" : undefined}>
+        <FolderOpen size={16} strokeWidth={2} aria-hidden="true" />故事资料</a>
+      : <span aria-disabled="true"><FolderOpen size={16} strokeWidth={2} aria-hidden="true" />故事资料</span>}
   </nav>;
 }
 
@@ -54,8 +51,10 @@ export default function AppHeader({ page, onOpen, onSelect }: { page: AppPage | 
       </select><WorkspaceMenu onOpen={onOpen} />
     </div>
     <WorkspaceNavigation page={page} workspaceId={currentId} />
-    <div className="app-tools"><a className="ui-nav-link" href={pageHash({ kind: "library", workspaceContextId: currentId ?? undefined })} aria-current={page?.kind === "library" ? "page" : undefined}>模块库</a>
-      <AppDialog title="设置" open={settings} onOpenChange={setSettings} trigger={<Button size="compact" data-dialog-return="settings">设置</Button>}>
+    <div className="app-tools"><a className="ui-nav-link" href={pageHash({ kind: "library", workspaceContextId: currentId ?? undefined })} aria-current={page?.kind === "library" ? "page" : undefined}>
+      <LibraryBig size={16} strokeWidth={2} aria-hidden="true" />模块库</a>
+      <AppDialog title="设置" open={settings} onOpenChange={setSettings} trigger={<Button size="compact" data-dialog-return="settings">
+        <Settings size={16} strokeWidth={2} aria-hidden="true" />设置</Button>}>
         <div className="ui-action-list"><Button onClick={() => { setSettings(false); openModels(); }}>模型设置</Button><FontSizeControl /></div>
       </AppDialog>
     </div>

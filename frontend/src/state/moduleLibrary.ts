@@ -157,6 +157,7 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
   async openDrawer(workspaceId) {
     set({
       open: true,
+      kind: "all",
       busy: false,
       workspaceId,
       detail: null, bodies: {}, selectedModuleId: null, selectedInfo: null, selectedRevisionId: null,
@@ -338,7 +339,7 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
       const created = await createModule(command.input);
       set({ creations: { ...get().creations, [signature]: { ...command, running: false, result: created } } });
       if (ownsView()) {
-        set({ busy: false, notice: "已新建模块并发布第一版。" });
+        set({ busy: false, notice: "已保存到模块库。" });
         await get().refresh();
         if (ownsView()) await get().selectModule(created.module.module_id, created.module.head);
       }
@@ -395,13 +396,10 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
     const operationSession = get().session;
     const { workspaceId, assembly, detail } = get();
     if (!workspaceId) return;
-    const libraryId = assembly?.library_id ?? detail?.library_id ?? "";
-    if (!libraryId) {
-      set({ error: "还没有模块库，无法绑定模块" });
-      return;
-    }
     set({ busy: true, error: null, notice: null });
     try {
+      const libraryId = assembly?.library_id ?? detail?.library_id ?? (await fetchRevision(moduleId,revisionId)).library_id;
+      if (get().session !== operationSession) return;
       const next = await putAssembly(workspaceId, {
         bindings: [
           ...(assembly?.bindings ?? []).map((item) => ({
@@ -650,6 +648,8 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
   },
 
   async trackAssembly(workspaceId) {
+    // 后台作品刷新不能改变已打开模块库的上下文或正在读取的详情。
+    if (get().open) return;
     if (get().workspaceId === workspaceId && get().assembly) return;
     set({ workspaceId, assembly: null, detail: null, bodies: {}, selectedModuleId: null,
       selectedRevisionId: null, detailLoading: false, selectionEpoch: get().selectionEpoch + 1,

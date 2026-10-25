@@ -34,7 +34,7 @@ test("控件完整状态与键盘浮层行为", async ({ page }) => {
 });
 
 async function shot(page: Page, name: string) {
-  const path = resolve("../dev-notes/v0.8/artifacts/frontend-experience/screenshots");
+  const path = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v0.8/artifacts/frontend-experience/screenshots");
   mkdirSync(path, { recursive: true }); await page.screenshot({ path: `${path}/H2-${name}.png` });
 }
 async function chooseChapter(page: Page) {
@@ -140,26 +140,26 @@ test("模块库精确链接、前进后退、作品内同一入口与未登记�
   await page.goto(`/#/workspaces/${book.id}/writing`); await chooseChapter(page);
   await page.locator(".paper-sheet").evaluate(el => { el.scrollTop = 500; });
   const scroll = await page.locator(".paper-sheet").evaluate(el => el.scrollTop);
-  await page.getByRole("link", { name: "作品模块", exact: true }).click();
+  await page.getByRole("button", { name: "添加模块", exact: true }).click();
   await expect(page).toHaveURL(/#\/library/);
   const library = page.getByRole("region", { name: "模块库", exact: true });
   await library.getByLabel("搜索模块").fill(book.id); await library.getByLabel("搜索模块").press("Enter");
   await library.getByRole("button", { name: new RegExp(`长记录-${book.id}`) }).click();
   await expect(page).toHaveURL(/\/revisions\//);
   await library.getByRole("button", { name: "编辑", exact: true }).click();
-  await library.getByLabel("条目正文").last().fill("前进后退保留的模块草稿");
+  await library.getByLabel("模块正文").last().fill("前进后退保留的模块草稿");
   await page.getByRole("link", { name: "写作", exact: true }).click();
   await expect(page.locator(".paper-sheet")).toContainText("侦探抵达港口");
   expect(await page.locator(".paper-sheet").evaluate(el => el.scrollTop)).toBe(scroll);
   await page.goBack();
   await library.getByRole("button", { name: "继续编辑", exact: true }).click();
-  await expect(library.getByLabel("条目正文").last()).toHaveValue("前进后退保留的模块草稿");
+  await expect(library.getByLabel("模块正文").last()).toHaveValue("前进后退保留的模块草稿");
   await page.goForward(); await expect(page.getByRole("region", { name: "正文阅读", exact: true })).toBeVisible();
   // hash切换保持同一应用文档，不能用整页重载验证会话草稿。
   await page.evaluate(url => { location.hash = url; }, `#/library/modules/${book.moduleId}/revisions/${book.revisionId}?workspace=not_registered`);
   await expect(library.locator(".module-preview")).toContainText(book.body);
   await expect(page).not.toHaveURL(/not_registered/);
-  await expect(library.getByRole("button", { name: "装入本作品", exact: true })).toBeDisabled();
+  await expect(library.getByRole("button", { name: "添加到作品", exact: true })).toBeDisabled();
 });
 
 test("未打开作品仍能读取和发布库内容，应用动作说明缺少作品", async ({ page, book, request }) => {
@@ -167,15 +167,16 @@ test("未打开作品仍能读取和发布库内容，应用动作说明缺少�
   await page.goto(`/#/library/modules/${book.moduleId}/revisions/${book.revisionId}`);
   const library = page.getByRole("region", { name: "模块库", exact: true });
   await expect(library.locator(".module-preview")).toContainText(book.body);
-  await expect(library).toContainText("选择作品后可装入模块或派生作品");
-  await expect(library.getByRole("button", { name: "装入本作品", exact: true })).toBeDisabled();
+  await expect(library.getByRole("button", { name: "添加到作品", exact: true })).toHaveAttribute("title", "先打开一个作品");
+  await expect(library.getByRole("button", { name: "添加到作品", exact: true })).toBeDisabled();
   // 先转到head，历史版本不直接覆盖。
   const modules = await request.get("/api/module-library/modules?limit=50").then(r => r.json());
   const head = modules.items.find((item: { module_id: string }) => item.module_id === book.moduleId).head;
+  await library.locator(".library-detail-toolbar > .library-more > summary").click();
   await library.getByLabel("模块版本", { exact: true }).selectOption(head);
   await library.getByRole("button", { name: "编辑", exact: true }).click();
-  await library.getByLabel("条目正文").last().fill("没有作品时保存的全局资料");
-  await library.getByRole("button", { name: "保存新版本", exact: true }).click();
+  await library.getByLabel("模块正文").last().fill("没有作品时保存的全局资料");
+  await library.getByRole("button", { name: "保存", exact: true }).click();
   await expect(library.getByText("已保存到模块库；其他作品保持原版本。", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/#\/library/);
 });

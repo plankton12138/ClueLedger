@@ -954,7 +954,8 @@ def _digest_of_document(document: Mapping[str, Any]) -> str:
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    # 连续快速记录也要按真实创建先后排列，不能让同一秒内的随机标识决定顺序。
+    return datetime.now(UTC).isoformat(timespec="microseconds")
 
 
 def _request_digest(payload: Mapping[str, object]) -> str:

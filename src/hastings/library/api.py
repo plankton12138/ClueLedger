@@ -73,7 +73,12 @@ def create_library_router(library: ModuleLibrary) -> APIRouter:
         include_deleted: bool = False,
     ) -> dict[str, object]:
         return library.modules(
-            kind=kind, q=q, cursor=cursor, limit=limit, include_deleted=include_deleted
+            kind=kind,
+            q=q,
+            cursor=cursor,
+            limit=limit,
+            include_deleted=include_deleted,
+            include_preview=True,
         )
 
     @router.post("/modules")

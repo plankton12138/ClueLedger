@@ -34,6 +34,8 @@ import {
 } from "../api/workspace";
 import { errorMessage } from "../api/errors";
 import { registerRunFinished, useConversationsStore } from "./conversations";
+import { useWorkspaceModulesStore } from "./workspaceModules";
+import { useModuleLibraryStore } from "./moduleLibrary";
 
 const EMPTY_CATALOG: Catalog = { chapters: [], characters: [], settings: [] };
 
@@ -66,7 +68,7 @@ interface WorkspaceStore {
   pruneMissing(): Promise<void>;
   refreshAll(): Promise<void>;
   refreshGit(): Promise<void>;
-  openPath(path: string): Promise<void>;
+  openPath(path: string, preserveModule?: boolean): Promise<void>;
   runSearch(query: string): Promise<void>;
   clearSearch(): void;
   upload(file: File): Promise<void>;
@@ -213,13 +215,20 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       const [catalog, git] = await Promise.all([listFiles(id), gitStatus(id)]);
       if (get().currentId !== id || get().workspaceEpoch !== epoch) return;
       set({ catalog, git });
+      const modules = useModuleLibraryStore.getState();
+      if (modules.workspaceId===id) await modules.loadAssembly();
+      else if (!modules.open) await modules.trackAssembly(id);
+      if (get().currentId !== id || get().workspaceEpoch !== epoch) return;
+      const selectedModule = useWorkspaceModulesStore.getState().selected;
+      const assembly = useModuleLibraryStore.getState().assembly;
+      if (assembly && selectedModule?.workspaceId===id && !assembly.bindings.some(item=>item.id===selectedModule.bindingId)) useWorkspaceModulesStore.getState().close();
       // 外部编辑后回读当前文件；文件已不存在时清空选择。
       const path = get().selectedPath;
       if (path) {
         const stillThere = [...catalog.chapters, ...catalog.characters, ...catalog.settings].some(
           (entry) => entry.path === path && entry.exists,
         );
-        if (stillThere) await get().openPath(path);
+        if (stillThere) await get().openPath(path,true);
         else set({ selectedPath: null, file: null });
       }
     } catch (error) {
@@ -240,7 +249,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     }
   },
 
-  async openPath(path) {
+  async openPath(path,preserveModule) {
+    if (!preserveModule) useWorkspaceModulesStore.getState().close();
     const id = get().currentId;
     if (!id) return;
     const epoch = get().fileEpoch + 1;

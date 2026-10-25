@@ -100,13 +100,16 @@ function readLayout(): LayoutPrefs {
 function writeLayout(prefs: LayoutPrefs): void {
   if (typeof localStorage === "undefined") return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    const { sidebarWidth, chatWidth, sidebarVisible, chatVisible, fontScale } = prefs;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sidebarWidth, chatWidth, sidebarVisible, chatVisible, fontScale }));
   } catch {
     // 存储不可写（隐私模式、配额满）时只丢偏好，不影响本次使用
   }
 }
 
 interface LayoutStore extends LayoutPrefs {
+  chatReveal: number;
+  revealChat(): void;
   setSidebarWidth(width: number): void;
   setChatWidth(width: number): void;
   toggleChat(): void;
@@ -116,6 +119,11 @@ interface LayoutStore extends LayoutPrefs {
 
 export const useLayoutStore = create<LayoutStore>()((set, get) => ({
   ...readLayout(),
+  chatReveal: 0,
+  revealChat() {
+    set(state => ({ chatVisible: true, chatReveal: state.chatReveal + 1 }));
+    writeLayout(get());
+  },
 
   setFontScale(scale) {
     set({ fontScale: clampWidth(scale, FONT_SCALE) });

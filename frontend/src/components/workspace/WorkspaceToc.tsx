@@ -2,8 +2,9 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { useWorkspaceStore } from "../../state/workspace";
 import { useConversationsStore } from "../../state/conversations";
 import { usePagePositions } from "../../state/pagePositions";
-import { pageHash } from "../../state/navigation";
 import CharacterBadges from "./CharacterBadges";
+import WorkspaceModules from "./WorkspaceModules";
+import { useWorkspaceModulesStore } from "../../state/workspaceModules";
 
 function TocLine({
   path,
@@ -41,8 +42,10 @@ function TocLine({
 }
 
 export default function WorkspaceToc({ onChoose }: { onChoose?: () => void }) {
-  const { bindings, currentId, catalog, selectedPath, search, openPath, runSearch, clearSearch, upload } = useWorkspaceStore();
-  const current = bindings.find(item => item.id === currentId);
+  const { currentId, catalog, selectedPath, search, openPath, runSearch, clearSearch, upload } = useWorkspaceStore();
+  const moduleSelection = useWorkspaceModulesStore(state => state.selected);
+  const fileActive = moduleSelection?.workspaceId !== currentId;
+  const legacy = [...catalog.characters,...catalog.settings].filter(entry => entry.exists);
   const positionKey = `${currentId}:toc`;
   const query = usePagePositions(state => state.queries[positionKey] ?? "");
   const setQuery = (value: string) => usePagePositions.getState().query(positionKey, value);
@@ -96,7 +99,7 @@ export default function WorkspaceToc({ onChoose }: { onChoose?: () => void }) {
                     返回目录
                   </button>
                 </div>
-                <ul className="space-y-1">
+                <ul className="toc-group">
                   {search.hits.map((hit) => (
                     <li key={`${hit.path}:${hit.line}`}>
                       <button
@@ -143,12 +146,12 @@ export default function WorkspaceToc({ onChoose }: { onChoose?: () => void }) {
                       }}
                     />
                   </div>
-                  <ul className="space-y-0.5">
+                  <ul className="toc-group">
                     {catalog.chapters.map((entry) => (
                       <TocLine
                         key={entry.path}
                         path={entry.path}
-                        active={selectedPath === entry.path}
+                        active={fileActive && selectedPath === entry.path}
                         onOpen={() => choose(entry.path)}
                         onReference={() => addReference(entry.path)}
                       >
@@ -163,55 +166,15 @@ export default function WorkspaceToc({ onChoose }: { onChoose?: () => void }) {
                   </ul>
                 </section>
 
-                <section className="mt-3">
-                  <h2 className="toc-head px-1 py-2 text-sm font-bold tracking-wide">设定集</h2>
-                  <details open className="mb-1">
-                    <summary className="px-2 py-1 text-sm font-bold">角色小传</summary>
-                    <ul className="ml-2 space-y-0.5">
-                      {catalog.characters.map((entry) => (
-                        <TocLine
-                          key={entry.path}
-                          path={entry.path}
-                          active={selectedPath === entry.path}
-                          onOpen={() => choose(entry.path)}
-                          onReference={() => addReference(entry.path)}
-                        >
-                          {entry.display_title}
-                          <CharacterBadges roles={entry.roles} compact />
-                        </TocLine>
-                      ))}
-                      {catalog.characters.length === 0 && (
-                        <li className="px-2 py-1 text-sm text-mute">
-                          还没有角色。可在对话中要求创建人物小传。
-                        </li>
-                      )}
-                    </ul>
-                  </details>
-                  <ul className="space-y-0.5">
-                    {catalog.settings.map((entry) => (
-                      <TocLine
-                        key={entry.path}
-                        path={entry.path}
-                        active={selectedPath === entry.path}
-                        onOpen={() => choose(entry.path)}
-                        onReference={() => addReference(entry.path)}
-                      >
-                        {entry.display_title}
-                        {!entry.exists && (
-                          <span className="ml-2 text-xs text-mute">（缺失）</span>
-                        )}
-                      </TocLine>
-                    ))}
-                  </ul>
-                </section>
+                {currentId && <WorkspaceModules workspaceId={currentId} onChoose={onChoose} />}
+                {legacy.length > 0 && <details className="workspace-legacy-materials"><summary>原有资料</summary>
+                  <ul className="toc-group">{legacy.map(entry => <TocLine key={entry.path} path={entry.path} active={fileActive && selectedPath===entry.path}
+                    onOpen={() => choose(entry.path)} onReference={() => addReference(entry.path)}>{entry.display_title}<CharacterBadges roles={entry.roles} compact /></TocLine>)}</ul>
+                </details>}
               </>
             )}
           </div>
 
-          <a className="ui-library-entry" href={pageHash({ kind: "library", workspaceContextId: currentId ?? undefined })}>作品模块</a>
-          <div className="toc-foot flex-none break-words px-3 py-2 text-xs">
-            {current ? current.path : "未打开目录"}
-          </div>
         </nav>
   );
 }

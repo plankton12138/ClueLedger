@@ -4,13 +4,13 @@ import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
 
 async function screenshot(page: Page, name: string) {
-  const output = resolve("../dev-notes/v0.8/artifacts/frontend-experience/screenshots");
+  const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v0.8/artifacts/frontend-experience/screenshots");
   mkdirSync(output, { recursive: true });
   await page.screenshot({ path: `${output}/H2-${name}.png` });
 }
 
 async function ideaShot(page: Page, name: string) {
-  const output = resolve("../dev-notes/v0.8/artifacts/ideas-experience/screenshots");
+  const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v0.8/artifacts/ideas-experience/screenshots");
   mkdirSync(output, { recursive: true });
   await page.screenshot({ path: `${output}/${name}.png` });
 }
@@ -53,10 +53,10 @@ test("隔离基线：主要页面与窄窗口正文", async ({ page, book }) => 
   await page.getByRole("link", { name: "模块库", exact: true }).click();
   const dialog = page.getByRole("region", { name: "模块库", exact: true });
   await dialog.getByRole("button", { name: new RegExp(`长记录-${book.id}`) }).click();
-  await expect(dialog.getByLabel("条目正文").first()).toBeVisible();
-  console.log(`baseline module codepoints: ${Array.from(await dialog.getByLabel("条目正文").last().inputValue()).length}/${Array.from(book.body).length}`);
+  await expect(dialog.getByLabel("模块正文").first()).toBeVisible();
+  console.log(`baseline module codepoints: ${Array.from(await dialog.getByLabel("模块正文").last().inputValue()).length}/${Array.from(book.body).length}`);
   await page.screenshot({ path: `${output}/module-1440.png` });
-  await dialog.getByRole("button", { name: "返回", exact: true }).click();
+  await dialog.getByRole("button", { name: "返回写作", exact: true }).click();
   await page.getByRole("button", { name: "模型设置", exact: true }).click();
   await page.screenshot({ path: `${output}/settings-1440.png` });
   await page.getByRole("dialog", { name: "模型设置", exact: true }).getByRole("button", { name: "关闭", exact: true }).click();
@@ -66,22 +66,24 @@ test("隔离基线：主要页面与窄窗口正文", async ({ page, book }) => 
 
 test("B04/B06：长原文完整，关闭重开和版本切换保留草稿", async ({ page, book }) => {
   const dialog = await openModule(page, book);
-  const body = dialog.getByLabel("条目正文", { exact: true }).last();
+  const body = dialog.getByLabel("模块正文", { exact: true }).last();
   await expect(body).toHaveValue(book.body);
   await body.fill(`${book.body}未发布结尾`);
-  await dialog.getByRole("button", { name: "返回", exact: true }).click();
+  await dialog.getByRole("button", { name: "返回写作", exact: true }).click();
   await page.getByRole("link", { name: "模块库", exact: true }).click();
   await dialog.getByRole("button", { name: new RegExp(`长记录-${book.id}`) }).click();
   await editModule(dialog);
   await expect(body).toHaveValue(`${book.body}未发布结尾`);
   await screenshot(page, "module-draft-1440");
   const latest = await dialog.getByLabel("模块版本", { exact: true }).inputValue();
+  await dialog.locator(".library-detail-toolbar > .library-more > summary").click();
   await dialog.getByLabel("模块版本", { exact: true }).selectOption(book.revisionId);
   await expect(dialog.locator(".module-preview")).toContainText(book.body);
+  await dialog.locator(".library-detail-toolbar > .library-more > summary").click();
   await dialog.getByLabel("模块版本", { exact: true }).selectOption(latest);
   await editModule(dialog);
   await expect(body).toHaveValue(`${book.body}未发布结尾`);
-  await dialog.getByRole("button", { name: "返回", exact: true }).click();
+  await dialog.getByRole("button", { name: "返回写作", exact: true }).click();
   await page.getByLabel("选择作品目录").selectOption(book.otherId);
   await page.getByRole("link", { name: "模块库", exact: true }).click();
   await dialog.getByRole("button", { name: new RegExp(`长记录-${book.id}`) }).click();
@@ -91,19 +93,18 @@ test("B04/B06：长原文完整，关闭重开和版本切换保留草稿", asyn
 
 test("B06：完整发布往返保持长原文、多个条目和字段", async ({ page, book, request }) => {
   const dialog = await openModule(page, book);
-  const body = dialog.getByLabel("条目正文").last();
+  const body = dialog.getByLabel("模块正文").last();
   await expect(body).toHaveValue(book.body);
   await body.fill(`${book.body}尾声`);
-  await dialog.getByLabel("条目别名").last().fill("雨, 雨夜");
-  await dialog.getByRole("button", { name: "保存新版本", exact: true }).click();
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(dialog.getByText("已保存到模块库；其他作品保持原版本。", { exact: true })).toBeVisible();
-  await expect(body).toHaveValue(`${book.body}尾声`);
+  await expect(dialog.locator(".module-preview")).toContainText(`${book.body}尾声`);
   const revisions = await request.get(`/api/module-library/modules/${book.moduleId}/revisions`).then(r => r.json());
   expect(revisions.total).toBe(3);
   const savedRevision = await dialog.getByLabel("模块版本", { exact: true }).inputValue();
   const detail = await request.get(`/api/module-library/modules/${book.moduleId}/revisions/${savedRevision}`).then(r => r.json());
   expect(detail.entries).toHaveLength(2);
-  expect(detail.entries.find((e: { entry_id: string }) => e.entry_id === "rain").aliases).toEqual(["雨", "雨夜"]);
+  expect(detail.entries.find((e: { entry_id: string }) => e.entry_id === "rain").aliases).toEqual([]);
 });
 
 test("B06：第二段失败时不显示编辑器，不产生截断版本", async ({ page, book, request }) => {
@@ -113,8 +114,8 @@ test("B06：第二段失败时不显示编辑器，不产生截断版本", async
   });
   const dialog = await openModule(page, book, false);
   await expect(dialog.getByText(/MODULE_REQUEST_FAILED/)).toBeVisible();
-  await expect(dialog.getByLabel("条目正文")).toHaveCount(0);
-  await expect(dialog.getByRole("button", { name: "保存新版本", exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("模块正文")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "保存", exact: true })).toHaveCount(0);
   const revisions = await request.get(`/api/module-library/modules/${book.moduleId}/revisions`).then(r => r.json());
   expect(revisions.total).toBe(2);
 });
@@ -129,6 +130,7 @@ test("B05：A慢B快，迟到原文不会切回A", async ({ page, book }) => {
   });
   const dialog = await openModule(page, book, false);
   await pending;
+  await dialog.getByRole("button",{name:"返回列表",exact:true}).click();
   await dialog.getByRole("button", { name: new RegExp(`海上城市-${book.id}`) }).click();
   await expect(dialog.getByText("终年起雾。", { exact: true })).toBeVisible();
   const lateResponse = page.waitForResponse(response => response.url().includes(`/modules/${book.moduleId}/`) && response.url().endsWith("records/rain?start=0"));
@@ -148,7 +150,7 @@ test("B03：640px正文可达", async ({ page, book }) => {
 
 test("未保存内容刷新前提示，取消后仍可编辑", async ({ page, book }) => {
   const dialog = await openModule(page, book);
-  const body = dialog.getByLabel("条目正文").last();
+  const body = dialog.getByLabel("模块正文").last();
   await expect(body).toHaveValue(book.body);
   await body.fill("会话草稿");
   const shown = page.waitForEvent("dialog");
@@ -169,36 +171,32 @@ test("UI08：发布响应丢失后同键重试只产生一个新版本", async (
     else await route.continue();
   });
   const dialog = await openModule(page, book);
-  await dialog.getByLabel("条目正文").last().fill("响应丢失后的同一次提交");
-  await dialog.getByRole("button", { name: "保存新版本", exact: true }).click();
+  await dialog.getByLabel("模块正文").last().fill("响应丢失后的同一次提交");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(dialog.getByText(/MODULE_REQUEST_FAILED/)).toBeVisible();
-  await dialog.getByRole("button", { name: "保存新版本", exact: true }).click();
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(dialog.getByText("已保存到模块库；其他作品保持原版本。", { exact: true })).toBeVisible();
   expect(requests).toHaveLength(2); expect(requests[0]).toEqual(requests[1]);
   const revisions = await request.get(`/api/module-library/modules/${book.moduleId}/revisions`).then(r => r.json());
   expect(revisions.total).toBe(3);
 });
 
-test("UI09：真实发布部分成功后，只重试应用已发布版本", async ({ page, book, request }) => {
-  let publications = 0;
-  await page.route(`**/api/file-workspaces/${book.id}/module-updates`, async route => {
-    publications++;
-    const response = await route.fetch({ postData: JSON.stringify({ ...route.request().postDataJSON(), expected_digest: "stale-fixture" }) });
-    await route.fulfill({ response });
-  });
-  const dialog = await openModule(page, book);
-  await dialog.getByLabel("条目正文").last().fill("发布成功，应用需要重试");
-  await dialog.getByRole("checkbox", { name: /同时用于/ }).check();
-  await dialog.getByRole("button", { name: "保存新版本", exact: true }).click();
-  await expect(dialog.getByText(/本作品绑定没有更新/)).toBeVisible();
-  await screenshot(page, "published-pending-application-1440");
-  await dialog.getByRole("button", { name: "重试应用已发布版本", exact: true }).click();
-  await expect(dialog.getByText("已将已发布版本用于本作品。", { exact: true })).toBeVisible();
-  expect(publications).toBe(1);
-  const revisions = await request.get(`/api/module-library/modules/${book.moduleId}/revisions`).then(r => r.json());
-  expect(revisions.total).toBe(3);
-  const assembly = await request.get(`/api/file-workspaces/${book.id}/assembly`).then(r => r.json());
-  expect(assembly.bindings[0].module.revision_id).toBe(await dialog.getByLabel("模块版本", { exact: true }).inputValue());
+test("作品中的内容可显式另存到库，原稿保持原版本", async ({ page, book, request }) => {
+  const revision=await request.get(`/api/module-library/modules/${book.moduleId}/revisions/${book.revisionId}`).then(r=>r.json());
+  const ref={library_id:revision.library_id,module_id:book.moduleId,revision_id:book.revisionId};
+  await request.put(`/api/file-workspaces/${book.id}/assembly`,{data:{bindings:[{module:ref}],expected_digest:null,request_key:crypto.randomUUID()}});
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button",{name:`长记录-${book.id}`,exact:true}).click();
+  const paper=page.getByRole("article",{name:"模块内容",exact:true});
+  await expect(paper).toContainText(book.body);
+  const before=await request.get(`/api/module-library/modules?q=${book.id}`).then(r=>r.json());
+  await page.getByRole("button",{name:`管理长记录-${book.id}`,exact:true}).click();
+  await page.getByRole("dialog").getByRole("button",{name:"另存到模块库",exact:true}).click();
+  await expect(paper).toContainText("已另存一份到模块库。");
+  const after=await request.get(`/api/module-library/modules?q=${book.id}`).then(r=>r.json());
+  expect(after.total).toBe(before.total+1);
+  const assembly=await request.get(`/api/file-workspaces/${book.id}/assembly`).then(r=>r.json());
+  expect(assembly.bindings[0].module).toEqual(ref);
 });
 
 test("B12：撤销先展示提交和文件，取消不执行，确认期间只提交一次", async ({ page, book }) => {
@@ -249,7 +247,7 @@ test("灵感：快速记录与条目修改稿分开保留，无模型保存", as
   await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("侦探认出了雨衣。");
   await page.getByLabel("灵感正文", { exact: true }).fill("未保存的旧识");
-  await page.getByRole("button", { name: "返回列表", exact: true }).click();
+  await page.getByRole("button", { name: "收起修改", exact: true }).click();
   await page.getByLabel("记录灵感", { exact: true }).fill("临时草稿");
   await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
   await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("未保存的旧识");
@@ -257,7 +255,6 @@ test("灵感：快速记录与条目修改稿分开保留，无模型保存", as
   await page.getByRole("button", { name: "完成", exact: true }).click();
   await expect(page.getByText("已保存为新的灵感修订。", { exact: true })).toBeVisible();
   await screenshot(page, "idea-selected-1440");
-  await page.getByRole("button", { name: "返回列表", exact: true }).click();
   await expect(list.getByRole("button", { name: /^未保存的旧识/ })).toBeVisible();
   await expect(page.getByLabel("记录灵感", { exact: true })).toHaveValue("临时草稿");
 });
@@ -353,7 +350,7 @@ test("引用显示原文预览，作者明确更新到最新版本", async ({ pa
   await page.getByRole("button", { name: "灵感", exact: true }).click();
   const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
   await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
-  await page.getByRole("button", { name: "带到对话", exact: true }).click();
+  await page.getByRole("button", { name: "加入对话", exact: true }).click();
 
   const chip = page.getByRole("button", { name: /^查看引用的灵感：侦探认出了雨衣/ });
   await expect(chip).toBeVisible();
@@ -417,13 +414,14 @@ test("展开讨论在未连接模型时说明原因，选择与草稿保留", as
   await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
   await page.getByLabel("灵感正文", { exact: true }).fill("改了一半的正文");
 
+  await page.locator(".idea-entry-more > summary").click();
   const expand = page.getByRole("button", { name: "展开讨论", exact: true });
   await expect(expand).toBeDisabled();
   await expect(expand).toHaveAttribute("title", "先连接模型再展开");
   expect(posts).toBe(0);
 
   // 收起再打开：未保存的修改仍在，不会因为按钮不可用被丢掉。
-  await page.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("button", { name: "收起灵感", exact: true }).click();
   await page.getByRole("button", { name: "灵感", exact: true }).click();
   await page
     .getByRole("complementary", { name: "灵感列表", exact: true })
@@ -505,6 +503,7 @@ test("展开灵感：一次点击只读讨论，再次点击打开同一次讨�
   await page.getByRole("button", { name: "灵感", exact: true }).click();
   const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
   await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
+  await page.locator(".idea-entry-more > summary").click();
   await page.getByRole("button", { name: "展开讨论", exact: true }).click();
 
   // 面板收起，写作页显示这次只读讨论的回答。
@@ -525,6 +524,7 @@ test("展开灵感：一次点击只读讨论，再次点击打开同一次讨�
   await list2.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
   // 有记录时默认展开，不需要再点一次 summary（再点会收起）。
   const activity = page.locator(".idea-activity");
+  await page.locator(".idea-entry-more > summary").click();
   await expect(activity).toContainText("展开讨论");
   await activity.getByRole("button", { name: "展开这条灵感", exact: true }).click();
   await expect(page.locator(".chat-reply")).toContainText("三个方向");
@@ -533,6 +533,7 @@ test("展开灵感：一次点击只读讨论，再次点击打开同一次讨�
   await page.getByRole("button", { name: "灵感", exact: true }).click();
   const list3 = page.getByRole("complementary", { name: "灵感列表", exact: true });
   await list3.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
+  await page.locator(".idea-entry-more > summary").click();
   await page.getByRole("button", { name: "展开讨论", exact: true }).click();
   await expect(page.locator(".chat-reply")).toContainText("三个方向");
   expect(posts).toHaveLength(1);
@@ -597,6 +598,7 @@ test("用于写作：选定章节后按普通写作用途提交，带固定灵�
     .getByRole("complementary", { name: "灵感列表", exact: true })
     .getByRole("button", { name: /^侦探认出了雨衣/ })
     .click();
+  await page.locator(".idea-entry-more > summary").click();
   await page.getByRole("button", { name: "用于写作", exact: true }).click();
 
   const dialog = page.getByRole("dialog", { name: "把这条灵感用到哪一章", exact: true });
