@@ -1,3 +1,6 @@
+import RevertConfirmation from "../chat/RevertConfirmation";
+import { gitCommitDiff } from "../../api/workspace";
+import { Button } from "../ui/Button";
 /**
  * 改动与历史抽屉（0.4 V04-4）。
  *
@@ -42,37 +45,37 @@ export default function ChangesDrawer({ embedded = false }: { embedded?: boolean
         {!embedded && <div className="flex flex-none items-center gap-2 border-b border-[#e2dbc6] px-4 py-3">
           <h2 className="font-serif text-base font-bold text-sheetInk">改动与历史</h2>
           <div className="flex-1" />
-          <button className="btn btn-gray px-2 py-1 text-[11px]" onClick={close}>
+          <Button className="px-2 py-1 text-sm" onClick={close}>
             关闭
-          </button>
+          </Button>
         </div>}
 
         <div className="min-h-0 flex-1 space-y-5 overflow-auto px-4 py-4 text-xs text-[#4b4737]">
           {!git || !git.initialized ? (
             <section>
               <h3 className="font-bold">还没有版本记录</h3>
-              <p className="mt-1 leading-6 text-[#6b6555]">
+              <p className="mt-1 leading-6 text-ui-muted">
                 启用后会把当前内容记成第一个提交，之后的修改各记一次，可以查看差异与撤销。
               </p>
-              <button
-                className="btn btn-gold mt-2 px-3 py-1 text-[11px]"
+              <Button
+                variant="primary" className="mt-2 px-3 py-1 text-sm"
                 onClick={() => void initGit()}
               >
                 启用版本记录
-              </button>
+              </Button>
             </section>
           ) : (
             <>
               <section>
                 <h3 className="font-bold">
                   未记录的改动
-                  {git.clean && <span className="ml-2 font-normal text-[#6b6555]">（干净）</span>}
+                  {git.clean && <span className="ml-2 font-normal text-ui-muted">（干净）</span>}
                 </h3>
                 {git.changes.length > 0 && (
                   <ul className="mt-1 space-y-1">
                     {git.changes.map((change) => (
                       <li key={change.path} className="flex items-center gap-2">
-                        <span className="w-14 shrink-0 text-[10px] text-[#8a8371]">
+                        <span className="w-14 shrink-0 text-[12px] text-ui-muted">
                           {changeLabel(change.code)}
                         </span>
                         <span className="min-w-0 flex-1 truncate">{change.path}</span>
@@ -86,22 +89,22 @@ export default function ChangesDrawer({ embedded = false }: { embedded?: boolean
                   </p>
                 )}
                 {!git.clean && (
-                  <button
-                    className="btn btn-gray mt-2 px-3 py-1 text-[11px]"
+                  <Button
+                    className="mt-2 px-3 py-1 text-sm"
                     onClick={() => void recordChanges()}
                   >
                     把这些改动记为一次提交
-                  </button>
+                  </Button>
                 )}
               </section>
 
               {diff && (
                 <section>
                   <h3 className="font-bold">工作区差异</h3>
-                  <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded border border-[#e2dbc6] bg-white/70 p-2 text-[11px] leading-5">
+                  <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded border border-[#e2dbc6] bg-white/70 p-2 text-sm leading-5">
                     {diff}
                   </pre>
-                  <p className="mt-1 text-[10px] text-[#8a8371]">
+                  <p className="mt-1 text-[12px] text-ui-muted">
                     新章节还没被跟踪，所以不出现在这里；提交后可在历史里看到完整差异。
                   </p>
                 </section>
@@ -112,36 +115,36 @@ export default function ChangesDrawer({ embedded = false }: { embedded?: boolean
                 <ul className="mt-1 divide-y divide-[#e2dbc6]">
                   {log.map((commit) => (
                     <li key={commit.commit} className="flex items-center gap-2 py-2">
-                      <button
+                      <Button
                         className="min-w-0 flex-1 truncate text-left hover:underline"
                         onClick={() => void showCommit(commit)}
                       >
                         {commit.subject}
-                      </button>
-                      <code className="shrink-0 text-[10px] text-[#8a8371]">
+                      </Button>
+                      <code className="shrink-0 text-[12px] text-ui-muted">
                         {commit.commit.slice(0, 7)}
                       </code>
-                      <span className="shrink-0 text-[10px] text-[#8a8371]">
+                      <span className="shrink-0 text-[12px] text-ui-muted">
                         {commit.at.slice(0, 16).replace("T", " ")}
                       </span>
                       {log[0]?.commit === commit.commit && (
-                        <button
-                          className="btn btn-gray shrink-0 px-2 py-0.5 text-[10px]"
-                          onClick={() => void revert(commit.commit)}
-                        >
-                          撤销
-                        </button>
+                        <RevertConfirmation commit={commit.commit} paths={[]} triggerLabel="撤销"
+                          loadPaths={async () => {
+                            const workspaceId = useWorkspaceStore.getState().currentId;
+                            if (!workspaceId) throw new Error("作品未打开");
+                            return (await gitCommitDiff(workspaceId, commit.commit)).paths;
+                          }} onConfirm={revert} />
                       )}
                     </li>
                   ))}
-                  {log.length === 0 && <li className="py-2 text-[#8a8371]">还没有提交。</li>}
+                  {log.length === 0 && <li className="py-2 text-ui-muted">还没有提交。</li>}
                 </ul>
               </section>
 
               {selectedCommit && (
                 <section>
                   <h3 className="font-bold">提交差异 · {selectedCommit.subject}</h3>
-                  <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded border border-[#e2dbc6] bg-white/70 p-2 text-[11px] leading-5">
+                  <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded border border-[#e2dbc6] bg-white/70 p-2 text-sm leading-5">
                     {commitDiff || "（这次提交没有可显示的差异）"}
                   </pre>
                 </section>

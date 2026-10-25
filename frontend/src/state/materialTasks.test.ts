@@ -118,6 +118,26 @@ describe("materialTasks store", () => {
     expect(useMaterialTasksStore.getState().pendingKey).toBeNull();
   });
 
+  it("同范围的新内容指纹不复用旧请求键", async () => {
+    mockedStart.mockRejectedValue(new TypeError("network down"));
+    await useMaterialTasksStore.getState().start("ws1", scope, "时间线");
+    const first = mockedStart.mock.calls[0][1].requestKey;
+    await useMaterialTasksStore.getState().start("ws1", { ...scope, observed_digests: { [scope.chapter_paths[0]]: "d2" } }, "时间线");
+    expect(mockedStart.mock.calls[1][1].requestKey).not.toBe(first);
+  });
+
+  it("切作品后再返回，旧受理响应不会覆盖新会话的任务状态", async () => {
+    let resolve!: (value: typeof accepted) => void;
+    mockedStart.mockReturnValueOnce(new Promise(done => { resolve = done; }));
+    const pending = useMaterialTasksStore.getState().start("ws1", scope, "时间线");
+    useMaterialTasksStore.getState().reset("ws2");
+    useMaterialTasksStore.getState().reset("ws1");
+    resolve(accepted);
+    expect(await pending).toBeNull();
+    expect(useMaterialTasksStore.getState().tasks).toEqual({});
+    expect(mockedStream).not.toHaveBeenCalled();
+  });
+
   it("按事件累加进度，结束后以任务详情为准", async () => {
     mockedStart.mockResolvedValueOnce(accepted);
     mockedDetail.mockResolvedValueOnce(finishedTask);

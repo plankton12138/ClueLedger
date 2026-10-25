@@ -4,6 +4,15 @@
 // index.css 的组件类（.panel / .btn / .pill …），令牌只承载纯色。
 export const theme = {
   colors: {
+    ui: {
+      canvas: "#ECEEEB", surface: "#FFFFFF", surfaceLow: "#F3F5F4", paper: "#F7F3E8",
+      text: "#273B4B", secondaryText: "#53626D", edge: "#788A94",
+      accent: "#365F7E", accentHover: "#2B506C", onAccent: "#FFFFFF",
+      selected: "#DEEAF1", onSelected: "#273B4B", focus: "#275C83",
+      danger: "#8A302B", dangerSurface: "#FFF0ED", success: "#325F37", successSurface: "#EAF4E8",
+      warning: "#75551F", warningSurface: "#FFF4DE", disabledText: "#596770", disabledSurface: "#E3E7E8",
+      overlay: "rgba(25, 40, 50, 0.38)",
+    },
     // --- 页面与织物工作台 ---
     page: "#E7EAEB", // 页面外底
     workbench: "#E4E8E9", // 工作区织物底（纹理见 index.css）
@@ -11,8 +20,8 @@ export const theme = {
     fg: "#273B4B", // 主文字（蓝灰墨）
     fgStrong: "#2B485D", // 标题
     sub: "#626F7B", // 次级文字（V03-8.5 走查：4.82:1 on panel，达 WCAG AA）
-    mute: "#6E7F8B", // 弱提示（占位符/旧版聊天元信息；V03-8.5 走查压暗）
-    faint: "#7A90A0", // eyebrow 小标
+    mute: "#53626D", // 弱提示（占位符/旧版聊天元信息；V03-8.5 走查压暗）
+    faint: "#53626D", // eyebrow 小标
     // --- 金属顶栏 / 导航 ---
     chromeHigh: "#BAD0E2",
     chromeMid: "#8EAFC9",
@@ -38,24 +47,31 @@ export const theme = {
     btnGrayEdge: "#A8B7BF",
     btnGoldEdge: "#9E783E",
     btnGoldHigh: "#F1DCA4",
-    btnGoldLow: "#A87432",
+    btnGoldLow: "#C99D5D",
+    btnGoldMid: "#DFC08A",
+    btnGoldText: "#392506",
+    btnGoldHoverHigh: "#F5E2B2",
+    btnGoldHoverLow: "#D4AD72",
+    selectedHigh: "#426F91",
+    selectedLow: "#315B7C",
+    onSelected: "#FFFFFF",
     // --- 徽章 / 状态 ---
     live: "#A9DF83", // 连接呼吸点
     liveEdge: "#538A42",
     badge: "#CA7550", // 导航角标（橙红）
     count: "#6D92AA", // 计数丸
     // --- 语义色（pill / 指标 / 审计）---
-    green: "#5D875C",
+    green: "#325F37",
     greenSoft: "#5D875C",
     greenBg: "#EAF4E8",
     greenEdge: "#A6C4A2",
-    amber: "#A1783B",
+    amber: "#75551F",
     amberBg: "#FFF4DE",
     amberEdge: "#D7BC83",
-    red: "#A86152",
+    red: "#8A302B",
     redBg: "#FFF0ED",
     redEdge: "#D6A69B",
-    blue: "#477FA4",
+    blue: "#365F7E",
     blueBg: "#EAF4FB",
     blueEdge: "#A8C5D7",
     // --- 提示条（系统提醒黄）---
@@ -76,7 +92,7 @@ export const theme = {
     // --- 正文纸面（浅米，创作台中心）---
     sheet: "#F7F3E8",
     sheetInk: "#3D4C55",
-    sheetMute: "#8A9AA6",
+    sheetMute: "#53626D",
     sheetLine: "#E3DCC8",
     // --- 选中 ---
     selHigh: "#EBF4FA",

@@ -7,7 +7,30 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CHAT, DEFAULT_LAYOUT, FONT_SCALE, SIDEBAR, clampWidth, parseLayout, useLayoutStore } from "./layout";
+import { CHAT, DEFAULT_LAYOUT, FONT_SCALE, SIDEBAR, clampWidth, parseLayout, useLayoutStore, writingLayout } from "./layout";
+
+describe("空间分配", () => {
+  it("1440三栏、1024两栏、640单栏，正文预算不被偏好挤占", () => {
+    expect(writingLayout(1416, DEFAULT_LAYOUT).kind).toBe("three");
+    expect(writingLayout(1000, DEFAULT_LAYOUT).kind).toBe("two");
+    expect(writingLayout(616, DEFAULT_LAYOUT).kind).toBe("single");
+    const extreme = { ...DEFAULT_LAYOUT, sidebarWidth: 400, chatWidth: 560 };
+    const result = writingLayout(1416, extreme);
+    expect(1416 - result.sidebar - result.chat - 12).toBeGreaterThanOrEqual(560);
+    expect(extreme.chatWidth).toBe(560);
+  });
+  it("放大字体提高正文预算，收起辅助模块不反写偏好", () => {
+    const prefs = { ...DEFAULT_LAYOUT, fontScale: 150 };
+    expect(writingLayout(1416, prefs).kind).toBe("two");
+    expect(writingLayout(1000, prefs).kind).toBe("single");
+    expect(prefs).toMatchObject({ chatWidth: 380, sidebarWidth: 260, chatVisible: true });
+  });
+  it("关闭对话后优先阅读，只有空间足够才显示目录", () => {
+    const prefs = { ...DEFAULT_LAYOUT, chatVisible: false };
+    expect(writingLayout(1000, prefs).kind).toBe("reading");
+    expect(writingLayout(616, prefs).kind).toBe("single");
+  });
+});
 
 describe("clampWidth", () => {
   it("取整并限制在区间内", () => {

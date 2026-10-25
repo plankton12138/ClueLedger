@@ -1,3 +1,5 @@
+import { Button } from "../ui/Button";
+import { errorMessage } from "../../api/errors";
 /**
  * 连接表单（0.4 V04-9C 第二、三步）。
  *
@@ -13,7 +15,6 @@ import { useMemo, useState } from "react";
 
 import {
   discoverModels,
-  ModelApiError,
   probeModel,
   type ConnectionDraft,
   type ModelConnection,
@@ -45,8 +46,7 @@ const API_LABEL: Record<ProviderApi, string> = {
 };
 
 function describe(error: unknown): string {
-  if (error instanceof ModelApiError) return `${error.why}。${error.fix}`;
-  return error instanceof Error ? error.message : "请求失败";
+  return errorMessage(error, "模型连接");
 }
 
 export default function ConnectionForm({ connection, preset, onBack, onDone }: Props) {
@@ -177,11 +177,11 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
 
   const next = () => {
     if (!baseUrl.trim().startsWith("http")) {
-      setError("连接地址必须以 http:// 或 https:// 开头。");
+      setError("[MODEL_URL_INVALID] 模型连接：连接地址无效。建议：使用以 http:// 或 https:// 开头的地址。");
       return;
     }
     if (!connection && !apiKey.trim()) {
-      setError("新增连接需要填写 API Key。");
+      setError("[MODEL_KEY_REQUIRED] 模型连接：未填写 API Key。建议：填写供应商提供的 API Key。");
       return;
     }
     setError(null);
@@ -190,7 +190,7 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
 
   const save = async () => {
     if (models.length === 0) {
-      setError("先勾选或手动添加至少一个模型。");
+      setError("[MODEL_REQUIRED] 模型连接：未选择模型。建议：勾选或手动添加至少一个模型。");
       return;
     }
     setBusy("save");
@@ -209,14 +209,14 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
   return (
     <div>
       <div className="flex items-center gap-2">
-        <button className="text-[11px] text-[#6b6555] underline" onClick={onBack}>
+        <Button className="text-sm text-ui-muted underline" onClick={onBack}>
           ← 换供应商
-        </button>
-        <span className="text-[11px] text-[#8a8371]">
+        </Button>
+        <span className="text-sm text-ui-muted">
           {connection ? "编辑连接" : "新增连接"} · {preset.display_name}
         </span>
         <div className="flex-1" />
-        <span className="text-[10px] text-[#8a8371]">
+        <span className="text-sm text-ui-muted">
           {stage === "connect" ? "第 2 步 / 3" : "第 3 步 / 3"}
         </span>
       </div>
@@ -234,7 +234,7 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
             />
-            <p className="mt-1 text-[10px] text-[#8a8371]">
+            <p className="mt-1 text-sm text-ui-muted">
               默认用供应商名称，可以改成「我的 DeepSeek」这类更好认的名字；随时能改。
             </p>
           </div>
@@ -252,7 +252,7 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}
             />
-            <p className="mt-1 text-[10px] text-[#8a8371]">
+            <p className="mt-1 text-sm text-ui-muted">
               Key 保存在本机系统凭据存储，不写进作品目录。
             </p>
           </div>
@@ -279,16 +279,16 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
           )}
 
           <div>
-            <button
-              className="text-[11px] text-[#6b6555] underline"
+            <Button
+              className="text-sm text-ui-muted underline"
               onClick={() => setAdvanced((current) => !current)}
             >
               {advanced ? "收起高级设置" : "高级设置（地址与协议）"}
-            </button>
+            </Button>
             {advanced && (
               <div className="mt-2 space-y-2 rounded border border-[#e2dbc6] bg-white/60 p-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-[#4b4737]" htmlFor="connection-url">
+                  <label className="block text-sm font-bold text-[#4b4737]" htmlFor="connection-url">
                     基础地址
                   </label>
                   <input
@@ -299,7 +299,7 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
                   />
                   {preset.docs_url && (
                     <a
-                      className="mt-1 inline-block text-[10px] text-[#3a6b8c] underline"
+                      className="mt-1 inline-block text-sm text-[#3a6b8c] underline"
                       href={preset.docs_url}
                       target="_blank"
                       rel="noreferrer"
@@ -309,7 +309,7 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
                   )}
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-[#4b4737]" htmlFor="connection-api">
+                  <label className="block text-sm font-bold text-[#4b4737]" htmlFor="connection-api">
                     接口类型
                   </label>
                   <select
@@ -333,23 +333,23 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
             )}
           </div>
 
-          {preset.note && <p className="text-[10px] leading-4 text-[#8a8371]">{preset.note}</p>}
+          {preset.note && <p className="text-sm leading-4 text-ui-muted">{preset.note}</p>}
         </div>
       ) : (
         <div className="mt-3 space-y-3">
           <div className="flex items-center gap-2">
             <div className="text-xs font-bold text-[#4b4737]">可选模型</div>
             <div className="flex-1" />
-            <button
-              className="btn btn-gray px-2 py-1 text-[11px]"
+            <Button
+              className="px-2 py-1 text-sm"
               disabled={busy === "discover"}
               onClick={() => void runDiscover()}
             >
               {busy === "discover" ? "获取中…" : "获取模型列表"}
-            </button>
+            </Button>
           </div>
 
-          {discoveryNote && <p className="text-[10px] leading-4 text-[#8a6d3b]">{discoveryNote}</p>}
+          {discoveryNote && <p className="text-sm leading-4 text-[#8a6d3b]">{discoveryNote}</p>}
 
           <ul className="max-h-52 space-y-0.5 overflow-auto rounded border border-[#e2dbc6] bg-white/60 p-2">
             {candidates.map((model) => {
@@ -364,14 +364,14 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
                     />
                     <span className="min-w-0 flex-1 truncate font-mono">{model}</span>
                     {missing && (
-                      <span className="text-[10px] text-[#a08050]">本次列表未返回</span>
+                      <span className="text-sm text-[#a08050]">本次列表未返回</span>
                     )}
                   </label>
                 </li>
               );
             })}
             {candidates.length === 0 && (
-              <li className="px-1 py-1 text-[11px] text-[#8a8371]">
+              <li className="px-1 py-1 text-sm text-ui-muted">
                 还没有模型：先获取列表，或在下面手动添加。
               </li>
             )}
@@ -391,9 +391,9 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
                 }
               }}
             />
-            <button className="btn btn-gray px-2 py-1 text-[11px]" onClick={addManual}>
+            <Button className="px-2 py-1 text-sm" onClick={addManual}>
               添加
-            </button>
+            </Button>
           </div>
 
           <div>
@@ -413,54 +413,54 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-[10px] text-[#8a8371]">
+            <p className="mt-1 text-sm text-ui-muted">
               保存连接不会自动切换到它；配好后用「设为当前」或右上角选择器切换。
             </p>
           </div>
 
           <div className="rounded border border-[#e2dbc6] bg-white/60 p-2">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-[#4b4737]">连接测试</span>
+              <span className="text-sm font-bold text-[#4b4737]">连接测试</span>
               <div className="flex-1" />
-              <button
-                className="btn btn-gray px-2 py-0.5 text-[10px]"
+              <Button
+                className="px-2 py-0.5 text-sm"
                 disabled={!testModel || busy === "response"}
                 onClick={() => void runProbe("response")}
               >
                 {busy === "response" ? "测试中…" : "测试响应"}
-              </button>
-              <button
-                className="btn btn-gray px-2 py-0.5 text-[10px]"
+              </Button>
+              <Button
+                className="px-2 py-0.5 text-sm"
                 disabled={!testModel || busy === "tool"}
                 onClick={() => void runProbe("tool")}
               >
                 {busy === "tool" ? "测试中…" : "测试工具调用"}
-              </button>
+              </Button>
             </div>
-            <p className="mt-1 text-[10px] text-[#8a8371]">
+            <p className="mt-1 text-sm text-ui-muted">
               测试会向该供应商发出少量请求；不读取作品，也不产生文件改动。
             </p>
-            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-[11px]">
-              <dt className="text-[#6b6555]">响应</dt>
+            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-sm">
+              <dt className="text-ui-muted">响应</dt>
               <dd data-testid="probe-response">{statusText(tested?.response)}</dd>
-              <dt className="text-[#6b6555]">工具调用</dt>
+              <dt className="text-ui-muted">工具调用</dt>
               <dd data-testid="probe-tool">{statusText(tested?.toolCall)}</dd>
             </dl>
             {tested?.message && (
-              <p className="mt-1 text-[10px] leading-4 text-[#6b6555]">{tested.message}</p>
+              <p className="mt-1 text-sm leading-4 text-ui-muted">{tested.message}</p>
             )}
             {tested && tested.toolCall !== "passed" && (
-              <p className="mt-1 text-[10px] text-[#a06030]">尚未验证可用于文件操作。</p>
+              <p className="mt-1 text-sm text-[#a06030]">尚未验证可用于文件操作。</p>
             )}
           </div>
         </div>
       )}
 
       {(error || conflict) && (
-        <div role="alert" className="mt-3 rounded border border-[#c98b8b] bg-[#f7e6e6] px-3 py-2 text-[11px] text-[#8a3b3b]">
-          {conflict ? "配置文件已被其他页面或手工编辑改动，请重新读取后再保存。" : error}
+        <div role="alert" className="mt-3 rounded border border-[#c98b8b] bg-[#f7e6e6] px-3 py-2 text-sm text-[#8a3b3b]">
+          {conflict ? "[MODEL_CONFIG_CONFLICT] 模型连接：配置已被其他页面或手工编辑改动。建议：保留当前输入，重新读取后再保存。" : error}
           {conflict && (
-            <button
+            <Button
               className="ml-2 underline"
               onClick={() => {
                 void refresh();
@@ -468,27 +468,27 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
               }}
             >
               重新读取
-            </button>
+            </Button>
           )}
         </div>
       )}
 
       <div className="mt-4 flex justify-end gap-2">
-        <button className="btn btn-gray px-3 py-1 text-xs" onClick={onDone}>
+        <Button className="px-3 py-1 text-xs" onClick={onDone}>
           取消
-        </button>
+        </Button>
         {stage === "connect" ? (
-          <button className="btn btn-gold px-3 py-1 text-xs" onClick={next}>
+          <Button variant="primary" className="px-3 py-1 text-xs" onClick={next}>
             下一步：选择模型
-          </button>
+          </Button>
         ) : (
-          <button
-            className="btn btn-gold px-3 py-1 text-xs"
+          <Button
+            variant="primary" className="px-3 py-1 text-xs"
             disabled={busy === "save" || models.length === 0}
             onClick={() => void save()}
           >
             {busy === "save" ? "保存中…" : "保存连接"}
-          </button>
+          </Button>
         )}
       </div>
     </div>

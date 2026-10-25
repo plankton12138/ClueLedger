@@ -12,6 +12,9 @@ import {
   deriveWorkspace,
   entryBody,
   fetchAssembly,
+  fetchCompleteRecord,
+  findModuleInfo,
+  fetchPresets,
   listModules,
   postModuleUpdate,
   publishRevision,
@@ -30,7 +33,70 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("完整原文读取（B06）", () => {
+  const text = "正文🌧𠮷".repeat(9000);
+  function serve(change?: (page: Record<string, unknown>, start: number) => void) {
+    vi.stubGlobal("fetch", async (url: string) => {
+      const start = Number(new URL(url, "http://test").searchParams.get("start") ?? 0);
+      const points = Array.from(text);
+      const end = Math.min(start + 16000, points.length);
+      const page = { entry_id: "rain", title: "雨", kind: "note", aliases: [], fields: {}, text: points.slice(start, end).join(""), start, end, length: points.length, digest: "d", truncated: end < points.length, next_cursor: end < points.length ? end : null };
+      change?.(page, start);
+      return jsonResponse(page);
+    });
+  }
+  it("跨多段按码点拼接，保持非BMP字符与全文", async () => {
+    serve();
+    const result = await fetchCompleteRecord("mod", "rev", "rain", { chars: Array.from(text).length, digest: "d" });
+    expect(result.text).toBe(text);
+    expect(result.truncated).toBe(false);
+  });
+  it.each(["cursor", "start", "digest", "length", "text", "entry_id", "truncated"])("分段%s不一致时拒绝作为可编辑原文", async (field) => {
+    serve((page, start) => {
+      if (start === 0) return;
+      if (field === "cursor") page.next_cursor = start;
+      else if (field === "start") page.start = 0;
+      else if (field === "digest") page.digest = "changed";
+      else if (field === "length") page.length = 1;
+      else if (field === "text") page.text = "缺字";
+      else if (field === "entry_id") page.entry_id = "other";
+      else page.truncated = false;
+    });
+    await expect(fetchCompleteRecord("mod", "rev", "rain", { chars: Array.from(text).length, digest: "d" })).rejects.toThrow();
+  });
+  it("后续分段网络失败不返回截断内容", async () => {
+    let calls = 0;
+    serve();
+    const fetchPage = fetch;
+    vi.stubGlobal("fetch", async (...args: Parameters<typeof fetch>) => {
+      if (++calls === 2) throw new TypeError("network");
+      return fetchPage(...args);
+    });
+    await expect(fetchCompleteRecord("mod", "rev", "rain")).rejects.toThrow("network");
+  });
+});
+
 describe("库列表", () => {
+  it("预设响应完整保留服务端允许字段，不建立另一份允许字段表", async () => {
+    const presets = [{ kind: "world", label: "世界设定", source_kinds: ["place"], organize_domain: null, allowed_fields: ["region", "scope"] }];
+    vi.stubGlobal("fetch", async () => jsonResponse(presets));
+    expect(await fetchPresets()).toEqual(presets);
+  });
+  it("精确模块链接跨页查找，不用当前筛选结果猜测head", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      calls.push(url);
+      return jsonResponse(url.includes("cursor=c2") ? { items: [{ module_id: "mod_target", head: "rev_exact" }], next_cursor: null }
+        : { items: [{ module_id: "mod_other" }], next_cursor: "c2" });
+    });
+    expect(await findModuleInfo("mod_target")).toMatchObject({ module_id: "mod_target", head: "rev_exact" });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toContain("include_deleted=true");
+  });
+  it("查找目标遇到重复游标时结束并报告读取失败", async () => {
+    vi.stubGlobal("fetch", async () => jsonResponse({ items: [], next_cursor: "repeat" }));
+    await expect(findModuleInfo("mod_missing")).rejects.toThrow("MODULE_CURSOR_INVALID");
+  });
   it("把类型、搜索、分页与已删除过滤拼成查询参数", async () => {
     const calls: string[] = [];
     vi.stubGlobal("fetch", async (url: string) => {

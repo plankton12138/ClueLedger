@@ -1,3 +1,4 @@
+import { errorMessage } from "../api/errors";
 /**
  * 会话状态（0.4 V04-10）。
  *
@@ -117,10 +118,7 @@ export interface ConversationsStore {
 }
 
 function describe(error: unknown): string {
-  if (error instanceof WorkspaceApiError) {
-    return `${error.why}。${error.fix}`;
-  }
-  return error instanceof Error ? error.message : "请求失败";
+  return errorMessage(error, "对话操作");
 }
 
 function entryKey(conversationId: string | null): string {
@@ -175,6 +173,7 @@ function isCurrentSubscription(key: string, generation: number): boolean {
   return generations.get(key) === generation;
 }
 
+let workspaceLoadEpoch = 0;
 let draftTimer: ReturnType<typeof setTimeout> | null = null;
 /** 草稿写入串行队列：保证同一窗口同时只有一个 PATCH 在途。 */
 let draftQueue: Promise<void> = Promise.resolve();
@@ -414,11 +413,13 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     async load(workspaceId) {
       get().reset();
       set({ workspaceId });
+      const loadEpoch = workspaceLoadEpoch;
       try {
         const [list, ui] = await Promise.all([
           listConversations(workspaceId),
           fetchConversationUi(workspaceId),
         ]);
+        if (workspaceLoadEpoch !== loadEpoch || get().workspaceId !== workspaceId) return;
         set({
           items: list.items,
           recentId: list.recent_id,
@@ -435,11 +436,12 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         const target = list.recent_id ?? list.items[0]?.id ?? null;
         if (target && get().selectedId === null) await get().select(target);
       } catch (error) {
-        set({ error: describe(error) });
+        if (workspaceLoadEpoch === loadEpoch && get().workspaceId === workspaceId) set({ error: describe(error) });
       }
     },
 
     reset() {
+      workspaceLoadEpoch += 1;
       for (const controller of controllers.values()) controller.abort();
       controllers.clear();
       generations.clear();
@@ -467,15 +469,17 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     async refreshList() {
       const workspaceId = get().workspaceId;
       if (!workspaceId) return;
+      const loadEpoch = workspaceLoadEpoch;
       try {
         const list = await listConversations(workspaceId);
+        if (workspaceLoadEpoch !== loadEpoch || get().workspaceId !== workspaceId) return;
         set({ items: list.items, recentId: list.recent_id });
         const active = list.active_turn;
         if (active) {
           patchEntry(active.conversation_id, { running: true, activeTurn: active });
         }
       } catch (error) {
-        set({ error: describe(error) });
+        if (workspaceLoadEpoch === loadEpoch && get().workspaceId === workspaceId) set({ error: describe(error) });
       }
     },
 

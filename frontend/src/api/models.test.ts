@@ -150,6 +150,7 @@ describe("错误信封", () => {
         {
           error: {
             code: "MODEL_CONFIG_CONFLICT",
+            where: "model_connections.save",
             why: "配置文件已被改过",
             fix: "重新读取后再提交",
           },
@@ -162,6 +163,7 @@ describe("错误信封", () => {
     await expect(readConfig()).rejects.toMatchObject({
       code: "MODEL_CONFIG_CONFLICT",
       status: 409,
+      where: "model_connections.save",
       fix: "重新读取后再提交",
     });
   });

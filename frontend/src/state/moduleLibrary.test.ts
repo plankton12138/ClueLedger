@@ -1,8 +1,7 @@
 /**
  * 模块库界面状态（0.8 D）。
  *
- * 只验证三件容易出错的事：查询参数跟着类型与搜索走、选中版本会把条目正文读进来、
- * 「保存并用于本作品」在绑定失败时保留发布结果而不是报成整体失败。
+ * 验证查询与详情归属、完整读取的接线、保存快照及部分成功恢复；原文分段异常由客户端测试覆盖。
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +14,8 @@ vi.mock("../api/moduleLibrary", () => ({
   fetchImportInfo: vi.fn(),
   fetchPresets: vi.fn(),
   fetchRecord: vi.fn(),
+  fetchCompleteRecord: vi.fn(),
+  findModuleInfo: vi.fn(),
   fetchRevision: vi.fn(),
   fetchRevisions: vi.fn(),
   forkModule: vi.fn(),
@@ -34,14 +35,18 @@ import {
   fetchImportInfo,
   fetchPresets,
   fetchRecord,
+  fetchCompleteRecord,
+  findModuleInfo,
   fetchRevision,
   fetchRevisions,
   importLegacyMaterials,
   listModules,
   postModuleUpdate,
+  publishRevision,
   putAssembly,
 } from "../api/moduleLibrary";
 import { useModuleLibraryStore } from "./moduleLibrary";
+import { useModuleEditorStore, moduleDraftKey, draftEntries } from "./moduleEditor";
 
 const listMock = vi.mocked(listModules);
 const presetsMock = vi.mocked(fetchPresets);
@@ -51,6 +56,7 @@ const importMock = vi.mocked(importLegacyMaterials);
 const revisionMock = vi.mocked(fetchRevision);
 const revisionsMock = vi.mocked(fetchRevisions);
 const recordMock = vi.mocked(fetchRecord);
+const completeRecordMock = vi.mocked(fetchCompleteRecord);
 const updateMock = vi.mocked(postModuleUpdate);
 const putMock = vi.mocked(putAssembly);
 const deriveMock = vi.mocked(deriveWorkspace);
@@ -64,9 +70,12 @@ function reset(): void {
   revisionMock.mockReset();
   revisionsMock.mockReset();
   recordMock.mockReset();
+  completeRecordMock.mockReset();
   updateMock.mockReset();
   putMock.mockReset();
   deriveMock.mockReset();
+  vi.mocked(publishRevision).mockReset();
+  useModuleEditorStore.setState(useModuleEditorStore.getInitialState(), true);
   useModuleLibraryStore.setState(useModuleLibraryStore.getInitialState(), true);
 }
 
@@ -82,7 +91,65 @@ const moduleInfo = {
   revision_count: 1,
 };
 
-beforeEach(reset);
+beforeEach(() => {
+  reset();
+  vi.mocked(findModuleInfo).mockImplementation(async id => ({ ...moduleInfo, module_id: id }));
+  completeRecordMock.mockImplementation((...args) => fetchRecord(...args.slice(0, 3) as [string, string, string]));
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+describe("详情与列表归属（B05）", () => {
+  const detail = (id: string) => ({ library_id: "lib_1", module_id: id, revision_id: "rev", kind: "characters" as const, name: id, entries: [] });
+  it("A慢B快，A的成功不能覆盖B", async () => {
+    const a = deferred<ReturnType<typeof detail>>();
+    revisionMock.mockImplementation(id => id === "A" ? a.promise : Promise.resolve(detail(id)));
+    revisionsMock.mockResolvedValue({ items: [], total: 0, next_cursor: null });
+    useModuleLibraryStore.setState({ workspaceId: "ws1", open: true });
+    const pending = useModuleLibraryStore.getState().selectModule("A", "rev");
+    await vi.waitFor(() => expect(revisionMock).toHaveBeenCalledTimes(1));
+    await useModuleLibraryStore.getState().selectModule("B", "rev");
+    a.resolve(detail("A")); await pending;
+    expect(useModuleLibraryStore.getState().detail?.module_id).toBe("B");
+  });
+  it("A→B→A，第一轮A的失败不能覆盖最后A的loading与错误", async () => {
+    const first = deferred<ReturnType<typeof detail>>();
+    revisionMock.mockReturnValueOnce(first.promise).mockResolvedValue(detail("B")).mockResolvedValue(detail("A"));
+    revisionsMock.mockResolvedValue({ items: [], total: 0, next_cursor: null });
+    useModuleLibraryStore.setState({ workspaceId: "ws1", open: true });
+    const pending = useModuleLibraryStore.getState().selectModule("A", "rev");
+    await vi.waitFor(() => expect(revisionMock).toHaveBeenCalledTimes(1));
+    await useModuleLibraryStore.getState().selectModule("B", "rev");
+    await useModuleLibraryStore.getState().selectModule("A", "rev");
+    first.reject(new Error("old failure")); await pending;
+    expect(useModuleLibraryStore.getState().error).toBeNull();
+    expect(useModuleLibraryStore.getState().detail?.module_id).toBe("A");
+  });
+  it("关闭后旧结果不能重新装入详情", async () => {
+    const a = deferred<ReturnType<typeof detail>>();
+    revisionMock.mockReturnValue(a.promise);
+    revisionsMock.mockResolvedValue({ items: [], total: 0, next_cursor: null });
+    useModuleLibraryStore.setState({ workspaceId: "ws1", open: true });
+    const pending = useModuleLibraryStore.getState().selectModule("A", "rev");
+    useModuleLibraryStore.getState().closeDrawer();
+    a.resolve(detail("A")); await pending;
+    expect(useModuleLibraryStore.getState().detail).toBeNull();
+  });
+  it("搜索A→B→A，第一轮列表结果不能替换最后查询", async () => {
+    const a = deferred<{ items: typeof moduleInfo[]; total: number; next_cursor: null }>();
+    listMock.mockReturnValueOnce(a.promise).mockResolvedValue({ items: [], total: 0, next_cursor: null });
+    useModuleLibraryStore.setState({ workspaceId: "ws1", query: "A" });
+    const pending = useModuleLibraryStore.getState().refresh();
+    useModuleLibraryStore.setState({ query: "B" }); await useModuleLibraryStore.getState().refresh();
+    useModuleLibraryStore.setState({ query: "A" }); await useModuleLibraryStore.getState().refresh();
+    a.resolve({ items: [moduleInfo], total: 1, next_cursor: null }); await pending;
+    expect(useModuleLibraryStore.getState().modules).toEqual([]);
+  });
+});
 
 describe("浏览", () => {
   it("按类型与搜索刷新列表，并保留分页游标", async () => {
@@ -518,6 +585,7 @@ describe("打开抽屉", () => {
         label: "人物",
         source_kinds: ["character"],
         organize_domain: "characters",
+        allowed_fields: ["roles", "surface", "revealed", "planned"],
       },
     ]);
     listMock.mockResolvedValue({ items: [], total: 0, next_cursor: null });
@@ -538,5 +606,81 @@ describe("打开抽屉", () => {
     expect(state.presets).toHaveLength(1);
     expect(listMock).toHaveBeenCalled();
     expect(assemblyMock).toHaveBeenCalledWith("ws1");
+  });
+});
+
+
+describe("发布命令与部分成功恢复（UI08/UI09）", () => {
+  const baseDetail = { library_id: "lib_1", module_id: "mod_1", revision_id: "rev_1", kind: "characters" as const, name: "主角团", entries: [{ entry_id: "lin", kind: "character", title: "林静", fields: {}, aliases: [], chars: 3, digest: "d" }] };
+  const original = { id: "target", label: "主角", module: { library_id: "lib_1", module_id: "mod_1", revision_id: "rev_1" } };
+  const unrelated = { id: "other", label: "港口", module: { library_id: "lib_1", module_id: "mod_2", revision_id: "rev_9" } };
+  const assembly = { schema_version: 1, library_id: "lib_1", digest: "d1", bindings: [original, unrelated], links: [["target", "other"]] as [string, string][] };
+  function prepare() {
+    useModuleEditorStore.getState().ensure(baseDetail, { lin: "原文" });
+    const key = moduleDraftKey(baseDetail);
+    useModuleEditorStore.getState().edit(key, rows => rows.map(row => ({ ...row, body: "提交内容" })));
+    useModuleLibraryStore.setState({ workspaceId: "ws1", open: true, modules: [moduleInfo], selectedModuleId: "mod_1", selectedRevisionId: "rev_1", detail: baseDetail, assembly });
+    listMock.mockResolvedValue({ items: [{ ...moduleInfo, head: "rev_2" }], total: 1, next_cursor: null });
+    revisionMock.mockResolvedValue({ ...baseDetail, revision_id: "rev_2", entries: [] });
+    revisionsMock.mockResolvedValue({ items: [], total: 0, next_cursor: null });
+    assemblyMock.mockResolvedValue(assembly);
+    return key;
+  }
+  it("网络结果未知，同键同体重试；保存中新增输入在新基版上保留", async () => {
+    const key = prepare();
+    const entries = draftEntries(useModuleEditorStore.getState().drafts[key].rows);
+    vi.mocked(publishRevision).mockRejectedValueOnce(new TypeError("network")).mockResolvedValue({ revision_id: "rev_2", parent: "rev_1", created_at: "t", entry_ids: ["lin"] });
+    await useModuleLibraryStore.getState().saveToLibrary(entries);
+    const pending = useModuleLibraryStore.getState().saveToLibrary(entries);
+    useModuleEditorStore.getState().edit(key, rows => rows.map(row => ({ ...row, body: "后来输入" })));
+    await pending;
+    expect(vi.mocked(publishRevision).mock.calls[0]).toEqual(vi.mocked(publishRevision).mock.calls[1]);
+    const next = moduleDraftKey({ ...baseDetail, revision_id: "rev_2" });
+    expect(useModuleEditorStore.getState().drafts[next].rows[0].body).toBe("后来输入");
+    expect(useModuleEditorStore.getState().drafts[next].baseline[0].body).toBe("提交内容");
+  });
+  it("保存中切换作品，成功与失败都不替换新作品的详情和错误", async () => {
+    const key = prepare();
+    const deferredResult = deferred<{ revision_id: string; parent: string; created_at: string; entry_ids: string[] }>();
+    vi.mocked(publishRevision).mockReturnValue(deferredResult.promise);
+    const pending = useModuleLibraryStore.getState().saveToLibrary(draftEntries(useModuleEditorStore.getState().drafts[key].rows));
+    useModuleLibraryStore.setState({ workspaceId: "ws2", session: 1, selectedModuleId: "B", detail: { ...baseDetail, module_id: "B" }, error: "新作品错误" });
+    deferredResult.resolve({ revision_id: "rev_2", parent: "rev_1", created_at: "t", entry_ids: ["lin"] }); await pending;
+    expect(useModuleLibraryStore.getState()).toMatchObject({ workspaceId: "ws2", detail: { module_id: "B" }, error: "新作品错误" });
+    expect(useModuleEditorStore.getState().drafts[moduleDraftKey({ ...baseDetail, revision_id: "rev_2" })]).toBeDefined();
+  });
+  it("已发布后只重试装配，保留其他绑定、标签、links与最新digest", async () => {
+    const key = prepare();
+    updateMock.mockResolvedValue({ published: true, binding_updated: false, module: { ...original.module, revision_id: "rev_2" } });
+    await useModuleLibraryStore.getState().saveAndUse(draftEntries(useModuleEditorStore.getState().drafts[key].rows));
+    const command = Object.values(useModuleLibraryStore.getState().publications)[0];
+    const latest = { ...assembly, digest: "d3", bindings: [original, { ...unrelated, label: "新标签" }] };
+    assemblyMock.mockResolvedValue(latest);
+    putMock.mockResolvedValue({ ...latest, digest: "d4" });
+    await useModuleLibraryStore.getState().retryApplication(command.id);
+    expect(updateMock).toHaveBeenCalledTimes(1);
+    expect(publishRevision).not.toHaveBeenCalled();
+    expect(putMock.mock.calls[0][1]).toMatchObject({ expected_digest: "d3", links: assembly.links, bindings: [{ id: "target", label: "主角", module: { revision_id: "rev_2" } }, { id: "other", label: "新标签", module: unrelated.module }] });
+  });
+  it("目标已被更换时阻止重试覆盖，不再发布", async () => {
+    const key = prepare();
+    updateMock.mockResolvedValue({ published: true, binding_updated: false, module: { ...original.module, revision_id: "rev_2" } });
+    await useModuleLibraryStore.getState().saveAndUse(draftEntries(useModuleEditorStore.getState().drafts[key].rows));
+    const command = Object.values(useModuleLibraryStore.getState().publications)[0];
+    assemblyMock.mockResolvedValue({ ...assembly, bindings: [{ ...original, module: { ...original.module, revision_id: "someone-else" } }, unrelated] });
+    expect(await useModuleLibraryStore.getState().retryApplication(command.id)).toBe(false);
+    expect(putMock).not.toHaveBeenCalled();
+    expect(useModuleLibraryStore.getState().error).toContain("ASSEMBLY_TARGET_CONFLICT");
+  });
+  it("装配网络结果未知时重试保持同一PUT请求体", async () => {
+    const key = prepare();
+    updateMock.mockResolvedValue({ published: true, binding_updated: false, module: { ...original.module, revision_id: "rev_2" } });
+    await useModuleLibraryStore.getState().saveAndUse(draftEntries(useModuleEditorStore.getState().drafts[key].rows));
+    const command = Object.values(useModuleLibraryStore.getState().publications)[0];
+    putMock.mockRejectedValueOnce(new TypeError("network")).mockResolvedValue(assembly);
+    await useModuleLibraryStore.getState().retryApplication(command.id);
+    await useModuleLibraryStore.getState().retryApplication(command.id);
+    expect(putMock.mock.calls[0]).toEqual(putMock.mock.calls[1]);
+    expect(updateMock).toHaveBeenCalledTimes(1);
   });
 });

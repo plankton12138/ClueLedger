@@ -182,6 +182,25 @@ describe("目录与文件", () => {
 });
 
 describe("Git 动作", () => {
+  it("打开目录失败返回失败并保留当前作品", async () => {
+    await useWorkspaceStore.getState().init();
+    api.openWorkspace.mockRejectedValueOnce(new Error("不可用"));
+    expect(await useWorkspaceStore.getState().open("C:/不存在的作品", false)).toBe(false);
+    expect(useWorkspaceStore.getState().currentId).toBe("w1");
+    expect(useWorkspaceStore.getState().error).toMatch(/^\[REQUEST_FAILED\]/);
+  });
+
+  it("旧作品的回读失败不会写入切换后的错误区", async () => {
+    await useWorkspaceStore.getState().init();
+    let reject!: (reason: Error) => void;
+    api.listFiles.mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail; }));
+    const pending = useWorkspaceStore.getState().refreshAll();
+    await useWorkspaceStore.getState().selectWorkspace("w2");
+    reject(new Error("旧失败")); await pending;
+    expect(useWorkspaceStore.getState().currentId).toBe("w2");
+    expect(useWorkspaceStore.getState().error).toBeNull();
+  });
+
   it("补记后刷新状态与历史", async () => {
     await useWorkspaceStore.getState().init();
     api.gitRecord.mockResolvedValue({ commit: "abc1234" });

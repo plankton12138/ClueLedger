@@ -8,7 +8,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { AppDialog } from "../ui/AppDialog";
+import { Button } from "../ui/Button";
+import { useModelsStore } from "../../state/models";
 import type { MaterialChapter, MaterialEntry, MaterialEntity } from "../../api/storyMaterials";
+const NO_ENTITIES: MaterialEntity[] = [];
 
 interface Props {
   open: boolean;
@@ -29,7 +33,7 @@ export default function ChapterRangePicker({
   actionLabel,
   chapters,
   entries,
-  entities = [],
+  entities = NO_ENTITIES,
   entitiesRequired = false,
   maxChapters = 10,
   onCancel,
@@ -58,7 +62,8 @@ export default function ChapterRangePicker({
     setSelectedEntities(entitiesRequired && entities.length ? [entities[0].path] : []);
   }, [open, defaults, entitiesRequired, entities]);
 
-  if (!open) return null;
+  const available = useModelsStore(state => state.selection.available);
+  const openModels = useModelsStore(state => state.openSettings);
 
   const toggle = (path: string) => {
     setSelected((current) => {
@@ -78,20 +83,8 @@ export default function ChapterRangePicker({
     selected.length > 0 && (!entitiesRequired || selectedEntities.length > 0);
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-start justify-center bg-black/25 pt-16"
-      role="dialog"
-      aria-label={title}
-    >
-      <div className="flex max-h-[76vh] w-[min(560px,92vw)] flex-col rounded border border-panel-edge bg-surface shadow-xl">
-        <div className="flex flex-none items-center gap-2 border-b border-panel-edge px-3 py-2">
-          <h2 className="min-w-0 flex-1 text-sm font-bold">{title}</h2>
-          <button className="btn btn-gray px-2 py-0.5 text-[11px]" onClick={onCancel}>
-            取消
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-auto px-3 py-2 text-[11px]">
+    <AppDialog title={title} open={open} onOpenChange={value => { if (!value) onCancel(); }}>
+        <div className="min-h-0 flex-1 overflow-auto px-3 py-2 text-sm">
           {entitiesRequired && (
             <section className="mb-3">
               <h3 className="mb-1 font-bold text-sub">人物（至少一个）</h3>
@@ -130,7 +123,7 @@ export default function ChapterRangePicker({
                   const checked = selected.includes(chapter.path);
                   return (
                     <li key={chapter.path}>
-                      <label className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-panel-head">
+                      <label className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-sel-high hover:text-fg">
                         <input
                           type="checkbox"
                           checked={checked}
@@ -140,7 +133,7 @@ export default function ChapterRangePicker({
                           第 {chapter.chapter} 章｜{chapter.title}
                         </span>
                         {!checked && selected.length >= maxChapters && (
-                          <span className="text-[10px] text-mute">已满</span>
+                          <span className="text-xs text-sub">已满</span>
                         )}
                       </label>
                     </li>
@@ -151,26 +144,26 @@ export default function ChapterRangePicker({
           </section>
 
           {selected.length > 0 && (
-            <p className="mt-2 text-[10px] text-mute">
+            <p className="mt-2 text-xs text-mute">
               本次整理：{selected.length} 章
               {entitiesRequired && ` · ${selectedEntities.length} 人`}
             </p>
           )}
         </div>
 
-        <div className="flex flex-none items-center gap-2 border-t border-panel-edge px-3 py-2">
-          <span className="min-w-0 flex-1 text-[10px] text-mute">
+        {!available && <div className="ui-status"><p>连接模型后可启动整理。</p><Button size="compact" onClick={() => { onCancel(); openModels(); }}>连接模型</Button></div>}
+        <div className="flex flex-none flex-wrap items-center gap-2 border-t border-panel-edge px-3 py-2">
+          <span className="min-w-0 flex-1 text-xs text-mute">
             一次最多 {maxChapters} 章；整理只发布派生资料，不改正文。
           </span>
-          <button
-            className="btn btn-gold px-3 py-1 text-[11px]"
-            disabled={!ready}
+          <Button
+            className="btn btn-gold px-3 py-1 text-sm"
+            disabled={!ready || !available} disabledReason={!available ? "连接模型后才可启动整理" : "先选择任务范围"}
             onClick={() => onConfirm(selected, selectedEntities)}
           >
             {actionLabel}
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+    </AppDialog>
   );
 }

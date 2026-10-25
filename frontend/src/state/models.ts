@@ -1,3 +1,4 @@
+import { errorMessage } from "../api/errors";
 /**
  * 模型设置状态（0.4 V04-9C）。
  *
@@ -58,8 +59,7 @@ interface ModelsStore {
 }
 
 function describe(error: unknown): string {
-  if (error instanceof ModelApiError) return `${error.why}。${error.fix}`;
-  return error instanceof Error ? error.message : "请求失败";
+  return errorMessage(error, "模型连接");
 }
 
 function isConflict(error: unknown): boolean {

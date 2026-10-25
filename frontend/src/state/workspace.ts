@@ -25,7 +25,6 @@ import {
   pruneStaleWorkspaces,
   readFile,
   searchText,
-  WorkspaceApiError,
   type Catalog,
   type FileView,
   type GitCommit,
@@ -33,11 +32,16 @@ import {
   type SearchResult,
   type WorkspaceBinding,
 } from "../api/workspace";
+import { errorMessage } from "../api/errors";
 import { registerRunFinished, useConversationsStore } from "./conversations";
 
 const EMPTY_CATALOG: Catalog = { chapters: [], characters: [], settings: [] };
 
 interface WorkspaceStore {
+  ready: boolean;
+  positions: Record<string, { path: string | null; search: SearchResult | null }>;
+  workspaceEpoch: number;
+  fileEpoch: number;
   bindings: WorkspaceBinding[];
   currentId: string | null;
   catalog: Catalog;
@@ -55,8 +59,8 @@ interface WorkspaceStore {
   selectedCommit: GitCommit | null;
   commitDiff: string;
 
-  init(): Promise<void>;
-  open(path: string, create: boolean): Promise<void>;
+  init(preferredId?: string | null): Promise<void>;
+  open(path: string, create: boolean): Promise<boolean>;
   selectWorkspace(id: string): Promise<void>;
   refreshBindings(): Promise<void>;
   pruneMissing(): Promise<void>;
@@ -71,6 +75,7 @@ interface WorkspaceStore {
   closeDrawer(): void;
   initGit(): Promise<void>;
   recordChanges(): Promise<void>;
+  reverting: boolean;
   revert(commit: string): Promise<void>;
   showCommit(commit: GitCommit): Promise<void>;
   reportError(message: string): void;
@@ -81,13 +86,11 @@ interface WorkspaceStore {
 let initializing = false;
 
 function describe(error: unknown): string {
-  if (error instanceof WorkspaceApiError) {
-    return `${error.why}。${error.fix}`;
-  }
-  return error instanceof Error ? error.message : "请求失败";
+  return errorMessage(error, "作品操作");
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
+  ready: false, positions: {}, workspaceEpoch: 0, fileEpoch: 0,
   bindings: [],
   currentId: null,
   catalog: EMPTY_CATALOG,
@@ -95,6 +98,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   selectedPath: null,
   search: null,
   loading: false,
+  reverting: false,
   error: null,
   notice: null,
 
@@ -105,18 +109,19 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   selectedCommit: null,
   commitDiff: "",
 
-  async init() {
+  async init(preferredId) {
     if (initializing) return;
     initializing = true;
     try {
       const bindings = await listWorkspaces();
       set({ bindings });
-      const current = bindings.find((item) => item.exists);
+      const current = bindings.find(item => item.id === preferredId && item.exists) ?? bindings.find((item) => item.exists);
       if (current) await get().selectWorkspace(current.id);
     } catch (error) {
       set({ error: describe(error) });
     } finally {
       initializing = false;
+      set({ ready: true });
     }
   },
 
@@ -126,8 +131,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       const binding = await openWorkspace(path, create);
       set({ bindings: await listWorkspaces() });
       await get().selectWorkspace(binding.id);
+      return true;
     } catch (error) {
       set({ error: describe(error) });
+      return false;
     } finally {
       set({ loading: false });
     }
@@ -143,12 +150,16 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   },
 
   async selectWorkspace(id) {
+    const previous = get();
+    const positions = { ...previous.positions };
+    if (previous.currentId) positions[previous.currentId] = { path: previous.selectedPath, search: previous.search };
     set({
+      positions, workspaceEpoch: previous.workspaceEpoch + 1, fileEpoch: previous.fileEpoch + 1,
       currentId: id,
       catalog: EMPTY_CATALOG,
       file: null,
-      selectedPath: null,
-      search: null,
+      selectedPath: positions[id]?.path ?? null,
+      search: positions[id]?.search ?? null,
       git: null,
       diff: "",
       log: [],
@@ -158,7 +169,9 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       notice: null,
     });
     // 会话按作品各自加载：切作品不把上一部作品的会话带过来。
+    const epoch = get().workspaceEpoch;
     await useConversationsStore.getState().load(id);
+    if (get().currentId !== id || get().workspaceEpoch !== epoch) return;
     await get().refreshAll();
   },
 
@@ -195,8 +208,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   async refreshAll() {
     const id = get().currentId;
     if (!id) return;
+    const epoch = get().workspaceEpoch;
     try {
       const [catalog, git] = await Promise.all([listFiles(id), gitStatus(id)]);
+      if (get().currentId !== id || get().workspaceEpoch !== epoch) return;
       set({ catalog, git });
       // 外部编辑后回读当前文件；文件已不存在时清空选择。
       const path = get().selectedPath;
@@ -208,28 +223,34 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
         else set({ selectedPath: null, file: null });
       }
     } catch (error) {
-      set({ error: describe(error) });
+      if (get().currentId === id && get().workspaceEpoch === epoch) set({ error: describe(error) });
     }
   },
 
   async refreshGit() {
     const id = get().currentId;
     if (!id) return;
+    const epoch = get().workspaceEpoch;
     try {
       const [git, diff, log] = await Promise.all([gitStatus(id), gitDiff(id), gitLog(id)]);
+      if (get().currentId !== id || get().workspaceEpoch !== epoch) return;
       set({ git, diff: diff.diff, log: log.commits });
     } catch (error) {
-      set({ error: describe(error) });
+      if (get().currentId === id && get().workspaceEpoch === epoch) set({ error: describe(error) });
     }
   },
 
   async openPath(path) {
     const id = get().currentId;
     if (!id) return;
+    const epoch = get().fileEpoch + 1;
+    set({ fileEpoch: epoch });
     try {
       const file = await readFile(id, path);
+      if (get().currentId !== id || get().fileEpoch !== epoch) return;
       set({ file, selectedPath: path, error: null });
     } catch (error) {
+      if (get().currentId !== id || get().fileEpoch !== epoch) return;
       set({ error: describe(error) });
     }
   },
@@ -298,14 +319,18 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
 
   async revert(commit) {
     const id = get().currentId;
-    if (!id) return;
+    if (!id || get().reverting) return;
+    set({ reverting: true });
     try {
       await gitRevert(id, commit);
+      if (get().currentId !== id) return;
       set({ notice: "已撤销这次修改", selectedCommit: null, commitDiff: "" });
       await get().refreshGit();
       await get().refreshAll();
     } catch (error) {
-      set({ error: describe(error) });
+      if (get().currentId === id) set({ error: describe(error) });
+    } finally {
+      set({ reverting: false });
     }
   },
 

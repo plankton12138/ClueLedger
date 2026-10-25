@@ -1,9 +1,8 @@
+import { errorMessage } from "./errors";
 import { WorkspaceApiError } from "./workspace";
 
 export function activityError(reason: unknown): string {
-  if (reason instanceof WorkspaceApiError) return `[${reason.code}] 活动记录：${reason.why}。建议：${reason.fix}`;
-  const message = reason instanceof Error ? reason.message : String(reason);
-  return message.startsWith("[ACTIVITY_") ? message : `[ACTIVITY_VIEW_FAILED] 活动记录：${message}。建议：重新连接后查看记录。`;
+  return errorMessage(reason, "活动记录");
 }
 
 export interface ActivityEvent {
@@ -67,7 +66,7 @@ async function checked(response: Response): Promise<Response> {
   if (!response.ok) {
     const error = (await response.json().catch(() => null))?.error;
     throw new WorkspaceApiError(error?.code ?? `HTTP_${response.status}`,
-      error?.why ?? "活动记录请求失败", error?.fix ?? "检查服务连接后重新连接", response.status);
+      error?.why ?? "活动记录请求失败", error?.fix ?? "检查服务连接后重新连接", response.status, error?.where ?? "活动记录");
   }
   return response;
 }

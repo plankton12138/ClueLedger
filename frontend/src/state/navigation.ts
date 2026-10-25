@@ -41,6 +41,9 @@ export type WorkspacePage =
       entryId?: string;
     };
 
+export type LibraryPage = { kind: "library"; moduleId?: string; revisionId?: string; workspaceContextId?: string };
+export type AppPage = WorkspacePage | LibraryPage;
+
 const WORKSPACE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const ENTRY_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SECTIONS = new Set<string>(MATERIAL_SECTIONS.map((item) => item.key));
@@ -52,10 +55,24 @@ function resolveSection(value: string): { section: MaterialSection; order: Story
   return LEGACY_SECTIONS[value] ?? null;
 }
 
-export function parseHash(hash: string): WorkspacePage | null {
+export function parseHash(hash: string): AppPage | null {
   const raw = hash.startsWith("#") ? hash.slice(1) : hash;
   const [path, query = ""] = raw.split("?", 2);
   const parts = path.split("/").filter(Boolean);
+  if (parts[0] === "library") {
+    const params = new URLSearchParams(query);
+    const context = params.get("workspace");
+    if (context !== null && !WORKSPACE_ID.test(context)) return null;
+    const page: LibraryPage = { kind: "library" };
+    if (context) page.workspaceContextId = context;
+    if (parts.length === 1) return page;
+    if (parts[1] !== "modules" || !ENTRY_ID.test(parts[2] ?? "")) return null;
+    page.moduleId = parts[2];
+    if (parts.length === 3) return page;
+    if (parts.length !== 5 || parts[3] !== "revisions" || !ENTRY_ID.test(parts[4])) return null;
+    page.revisionId = parts[4];
+    return page;
+  }
   if (parts.length < 3 || parts[0] !== "workspaces") return null;
   const workspaceId = parts[1];
   if (!WORKSPACE_ID.test(workspaceId)) return null;
@@ -70,7 +87,7 @@ export function parseHash(hash: string): WorkspacePage | null {
     if (entryRaw) page.ideaId = entryRaw;
     return page;
   }
-  if (parts[2] !== "materials" || parts.length < 4) return null;
+  if (parts[2] !== "materials" || parts.length !== 4) return null;
   const resolved = resolveSection(parts[3]);
   if (resolved === null) return null;
   const params = new URLSearchParams(query);
@@ -94,7 +111,11 @@ export function parseHash(hash: string): WorkspacePage | null {
   return page;
 }
 
-export function pageHash(page: WorkspacePage): string {
+export function pageHash(page: AppPage): string {
+  if (page.kind === "library") {
+    const resource = page.moduleId ? `/modules/${page.moduleId}${page.revisionId ? `/revisions/${page.revisionId}` : ""}` : "";
+    return `#/library${resource}${page.workspaceContextId ? `?workspace=${encodeURIComponent(page.workspaceContextId)}` : ""}`;
+  }
   if (page.kind === "writing") return `#/workspaces/${page.workspaceId}/writing`;
   if (page.kind === "ideas") {
     const suffix = page.ideaId ? `?entry=${encodeURIComponent(page.ideaId)}` : "";
@@ -118,13 +139,16 @@ function snapshot(): string {
   return typeof window === "undefined" ? "" : window.location.hash;
 }
 
-export function useWorkspacePage(): WorkspacePage | null {
+export function useWorkspacePage(): AppPage | null {
   const hash = useSyncExternalStore(subscribe, snapshot, () => "");
   return useMemo(() => parseHash(hash), [hash]);
 }
 
-export function navigate(page: WorkspacePage): void {
+export function navigate(page: AppPage, replace = false): void {
   if (typeof window === "undefined") return;
   const next = pageHash(page);
-  if (window.location.hash !== next) window.location.hash = next;
+  if (window.location.hash !== next) {
+    if (replace) { window.history.replaceState(null, "", next); window.dispatchEvent(new HashChangeEvent("hashchange")); }
+    else window.location.hash = next;
+  }
 }

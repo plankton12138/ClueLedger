@@ -1,3 +1,4 @@
+import { errorMessage } from "../api/errors";
 /**
  * 资料任务状态（0.7）。
  *
@@ -28,6 +29,7 @@ interface PendingKey {
 }
 
 interface MaterialTasksStore {
+  session: number;
   workspaceId: string | null;
   tasks: Record<string, MaterialTask>;
   /** 按最近开始时间排列的任务 ID。 */
@@ -48,8 +50,7 @@ interface MaterialTasksStore {
 }
 
 function describe(error: unknown): string {
-  if (error instanceof WorkspaceApiError) return `${error.why}。${error.fix}`;
-  return error instanceof Error ? error.message : "资料任务没有成功";
+  return errorMessage(error, "资料整理");
 }
 
 function newKey(): string {
@@ -67,11 +68,12 @@ export function scopeSignature(scope: MaterialScope): string {
     [...scope.chapter_paths],
     [...scope.entity_paths],
     scope.as_of_chapter,
+    Object.entries(scope.observed_digests).sort(([a], [b]) => a.localeCompare(b)),
   ]);
 }
 
 export const useMaterialTasksStore = create<MaterialTasksStore>()((set, get) => ({
-  workspaceId: null,
+  session: 0, workspaceId: null,
   tasks: {},
   order: [],
   active: {},
@@ -82,7 +84,7 @@ export const useMaterialTasksStore = create<MaterialTasksStore>()((set, get) => 
   async load(workspaceId, domain) {
     if (get().workspaceId !== workspaceId) {
       set({
-        workspaceId,
+        session: get().session + 1, workspaceId,
         tasks: {},
         order: [],
         active: {},
@@ -91,9 +93,10 @@ export const useMaterialTasksStore = create<MaterialTasksStore>()((set, get) => 
         pendingKey: null,
       });
     }
+    const session = get().session;
     try {
       const { items } = await listMaterialTasks(workspaceId, domain);
-      if (get().workspaceId !== workspaceId) return;
+      if (get().workspaceId !== workspaceId || get().session !== session) return;
       set((state) => {
         const tasks = { ...state.tasks };
         const active = { ...state.active };
@@ -118,18 +121,22 @@ export const useMaterialTasksStore = create<MaterialTasksStore>()((set, get) => 
         }
       }
     } catch (error) {
-      if (get().workspaceId !== workspaceId) return;
+      if (get().workspaceId !== workspaceId || get().session !== session) return;
       set({ error: describe(error) });
     }
   },
 
   async start(workspaceId, scope, label) {
+    if (get().workspaceId !== workspaceId) return null;
+    const session = get().session;
+    scope = structuredClone(scope);
     const signature = scopeSignature(scope);
     const pending = get().pendingKey;
     const key = pending?.signature === signature ? pending.key : newKey();
     set({ pendingKey: { signature, key }, error: null });
     try {
       const accepted = await startMaterialTask(workspaceId, { requestKey: key, scope });
+      if (get().session !== session || get().workspaceId !== workspaceId) return null;
       set((state) => {
         const total = scope.entity_paths.length
           ? scope.entity_paths.length * scope.chapter_paths.length
@@ -159,6 +166,7 @@ export const useMaterialTasksStore = create<MaterialTasksStore>()((set, get) => 
       void get().observe(workspaceId, accepted.conversation_id, accepted.turn_id);
       return get().tasks[accepted.turn_id] ?? null;
     } catch (error) {
+      if (get().session !== session || get().workspaceId !== workspaceId) return null;
       // 明确拒绝（4xx）说明这次请求不会被受理：换一次操作重新生成键。
       if (error instanceof WorkspaceApiError && error.status >= 400 && error.status < 500) {
         set({ pendingKey: null });
@@ -169,13 +177,14 @@ export const useMaterialTasksStore = create<MaterialTasksStore>()((set, get) => 
   },
 
   async observe(workspaceId, conversationId, turnId) {
+    const session = get().session;
     const generation = (generations.get(turnId) ?? 0) + 1;
     generations.set(turnId, generation);
     const seen = new Set<string>();
     try {
       for await (const event of streamEvents(workspaceId, conversationId, 0)) {
         if (generations.get(turnId) !== generation) return;
-        if (get().workspaceId !== workspaceId) return;
+        if (get().workspaceId !== workspaceId || get().session !== session) return;
         if (event.type === "material_target_published") {
           const marker = `${event.path}\u0000${event.entity}`;
           if (seen.has(marker)) continue;
@@ -197,6 +206,7 @@ export const useMaterialTasksStore = create<MaterialTasksStore>()((set, get) => 
           });
         } else if (event.type === "run_finished") {
           const detail = await fetchMaterialTask(workspaceId, turnId).catch(() => null);
+          if (get().session !== session || generations.get(turnId) !== generation) return;
           set((state) => {
             const task = detail ?? state.tasks[turnId];
             if (!task) return state;
@@ -212,29 +222,31 @@ export const useMaterialTasksStore = create<MaterialTasksStore>()((set, get) => 
         }
       }
     } catch (error) {
-      if (generations.get(turnId) !== generation) return;
+      if (generations.get(turnId) !== generation || get().session !== session) return;
       // 连接断开不等于任务失败：保留运行状态，页面可重新读取任务列表。
-      set({ error: `进度连接中断：${describe(error)}` });
+      set({ error: describe(error) });
     }
   },
 
   async stop(workspaceId, turnId) {
+    const session = get().session;
     try {
       await stopMaterialTask(workspaceId, turnId);
+      if (get().session !== session || get().workspaceId !== workspaceId) return;
       set((state) => ({
         tasks: state.tasks[turnId]
           ? { ...state.tasks, [turnId]: { ...state.tasks[turnId], status: "stopped" } }
           : state.tasks,
       }));
     } catch (error) {
-      set({ error: describe(error) });
+      if (get().session === session && get().workspaceId === workspaceId) set({ error: describe(error) });
     }
   },
 
   reset(workspaceId) {
     generations.clear();
     set({
-      workspaceId,
+      session: get().session + 1, workspaceId,
       tasks: {},
       order: [],
       active: {},

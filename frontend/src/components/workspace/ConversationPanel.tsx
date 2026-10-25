@@ -82,7 +82,7 @@ export default function ConversationPanel() {
 
   const running = entry.running;
   const otherRunning = busyElsewhere !== null && busyElsewhere.id !== selectedId;
-  const canSend = Boolean(draft.trim()) && !running && !pending && !otherRunning;
+  const canSend = selectionAvailable && Boolean(draft.trim()) && !running && !pending && !otherRunning;
 
   const expandedMessage: ChatMessage | null = useMemo(() => {
     if (!expanded || expanded.conversationId !== selectedId) return null;
@@ -102,7 +102,7 @@ export default function ConversationPanel() {
     setExpanded({ conversationId: selectedId, messageId: message.id });
   }, [selectedId]);
 
-  const onRevert = useCallback((commit: string) => void revert(commit), [revert]);
+  const onRevert = useCallback((commit: string) => revert(commit), [revert]);
   const onRecord = useCallback(() => void recordChanges(), [recordChanges]);
 
   // 只检查仍然存在的文件：已删除的路径不能作为检查目标。
@@ -320,7 +320,7 @@ export default function ConversationPanel() {
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
               event.preventDefault();
               void submit();
             }

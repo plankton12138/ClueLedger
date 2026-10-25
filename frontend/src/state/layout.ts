@@ -35,6 +35,31 @@ export const DEFAULT_LAYOUT: LayoutPrefs = {
   fontScale: FONT_SCALE.default,
 };
 
+export interface WritingPlan {
+  kind: "three" | "two" | "reading" | "single";
+  sidebar: number;
+  chat: number;
+  paperMin: number;
+}
+/** 只计算实际显示宽度，不把自动收起或宽度钳制写入长期偏好。 */
+export function writingLayout(width: number, prefs: LayoutPrefs): WritingPlan {
+  const scale = Math.max(1, prefs.fontScale / 100);
+  const sidebar = clampWidth(prefs.sidebarWidth, SIDEBAR);
+  const chatMin = CHAT.min * scale;
+  const preferredChat = Math.max(chatMin, clampWidth(prefs.chatWidth, CHAT));
+  const widePaper = 560 * scale, compactPaper = 420 * scale, handle = 6;
+  if (!prefs.chatVisible) return width >= sidebar + widePaper + handle
+    ? { kind: "reading", sidebar, chat: 0, paperMin: widePaper }
+    : { kind: "single", sidebar: 0, chat: 0, paperMin: 0 };
+  if (width >= 1280 * scale && width >= sidebar + chatMin + widePaper + handle * 2) {
+    return { kind: "three", sidebar, chat: Math.min(preferredChat, width - sidebar - widePaper - handle * 2), paperMin: widePaper };
+  }
+  if (width >= 900 && width >= chatMin + compactPaper + handle) {
+    return { kind: "two", sidebar: 0, chat: Math.min(preferredChat, width - compactPaper - handle), paperMin: compactPaper };
+  }
+  return { kind: "single", sidebar: 0, chat: 0, paperMin: 0 };
+}
+
 /** 栏宽及字号百分比钳制到区间内；非数值按默认值处理。 */
 export function clampWidth(value: unknown, range: WidthRange): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return range.default;

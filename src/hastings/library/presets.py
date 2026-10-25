@@ -119,6 +119,7 @@ def preset_view(item: ModuleSpec) -> dict[str, object]:
         "label": item.label,
         "source_kinds": list(item.source_kinds),
         "organize_domain": item.organize_domain,
+        "allowed_fields": list(item.allowed_fields),
     }
 
 

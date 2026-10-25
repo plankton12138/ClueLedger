@@ -19,7 +19,7 @@ export default function MaterialTaskBar({ task, onStop, onOpenActivity }: Props)
   const running = task.status === "accepted" || task.status === "running";
   return (
     <div
-      className="flex flex-none flex-wrap items-center gap-x-3 gap-y-1 border-b border-panel-edge bg-panel-head px-3 py-1.5 text-[11px]"
+      className="flex flex-none flex-wrap items-center gap-x-3 gap-y-1 border-b border-panel-edge bg-ui-selected px-3 py-1.5 text-sm"
       role="status"
     >
       <span className="font-bold">{task.label}</span>
@@ -33,7 +33,7 @@ export default function MaterialTaskBar({ task, onStop, onOpenActivity }: Props)
         查看活动记录
       </button>
       {running && (
-        <button className="btn btn-gray px-2 py-0.5 text-[11px]" onClick={onStop}>
+        <button className="btn btn-gray px-2 py-0.5 text-sm" onClick={onStop}>
           停止
         </button>
       )}

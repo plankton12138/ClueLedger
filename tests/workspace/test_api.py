@@ -295,6 +295,7 @@ def test_git_diff_record_and_commit_diff(tmp_path: Path) -> None:
     commit_diff = client.get(f"/api/file-workspaces/{workspace_id}/git/commits/{commit}/diff")
     assert commit_diff.status_code == 200
     assert "+侦探抵达旅馆。" in commit_diff.json()["diff"]
+    assert commit_diff.json()["paths"] == ["正文/0001 雨夜.md"]
 
     again = client.post(f"/api/file-workspaces/{workspace_id}/git/record", json={})
     assert again.json()["commit"] is None

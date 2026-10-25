@@ -12,9 +12,10 @@ import {
   type MaterialDomain,
   type StoryMaterials,
 } from "../api/storyMaterials";
-import { WorkspaceApiError } from "../api/workspace";
+import { errorMessage } from "../api/errors";
 
 interface StoryMaterialsStore {
+  generation: number;
   workspaceId: string | null;
   cache: Record<string, StoryMaterials>;
   loading: Record<string, boolean>;
@@ -38,13 +39,13 @@ export function materialsKey(
 }
 
 function describe(error: unknown): string {
-  if (error instanceof WorkspaceApiError) return `${error.why}。${error.fix}`;
-  return error instanceof Error ? error.message : "资料读取失败";
+  return errorMessage(error, "故事资料");
 }
 
 const inFlight = new Map<string, Promise<void>>();
 
 export const useStoryMaterialsStore = create<StoryMaterialsStore>()((set, get) => ({
+  generation: 0,
   workspaceId: null,
   cache: {},
   loading: {},
@@ -55,11 +56,12 @@ export const useStoryMaterialsStore = create<StoryMaterialsStore>()((set, get) =
     const key = materialsKey(domain, asOfChapter, query);
     const state = get();
     if (state.workspaceId !== workspaceId) {
-      set({ workspaceId, cache: {}, loading: {}, error: null });
+      set({ workspaceId, generation: state.generation + 1, cache: {}, loading: {}, error: null });
     } else if (state.cache[key] && !refresh) {
       return;
     }
-    const flightKey = `${workspaceId}|${key}`;
+    const generation = get().generation;
+    const flightKey = `${generation}|${workspaceId}|${key}`;
     const existing = inFlight.get(flightKey);
     if (existing) return existing;
     const task = (async () => {
@@ -67,13 +69,13 @@ export const useStoryMaterialsStore = create<StoryMaterialsStore>()((set, get) =
       try {
         const data = await fetchMaterials(workspaceId, domain, { asOfChapter, query });
         // 迟到的响应：作品已经切换时丢弃，不把旧作品的结果写进当前页。
-        if (get().workspaceId !== workspaceId) return;
+        if (get().workspaceId !== workspaceId || get().generation !== generation) return;
         set((current) => ({
           cache: { ...current.cache, [key]: data },
           loading: { ...current.loading, [key]: false },
         }));
       } catch (error) {
-        if (get().workspaceId !== workspaceId) return;
+        if (get().workspaceId !== workspaceId || get().generation !== generation) return;
         set((current) => ({
           loading: { ...current.loading, [key]: false },
           error: describe(error),
@@ -88,7 +90,7 @@ export const useStoryMaterialsStore = create<StoryMaterialsStore>()((set, get) =
 
   reset(workspaceId) {
     inFlight.clear();
-    set({ workspaceId, cache: {}, loading: {}, error: null });
+    set({ workspaceId, generation: get().generation + 1, cache: {}, loading: {}, error: null });
   },
 
   clearError() {

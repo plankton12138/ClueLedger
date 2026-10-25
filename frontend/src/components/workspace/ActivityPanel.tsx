@@ -1,3 +1,4 @@
+import { Button } from "../ui/Button";
 /**
  * 活动记录（0.8）：按任务分组的事件流。
  *
@@ -11,6 +12,7 @@ import { activityError, activityPage, activityRequest, activityStream, exportAct
   type ActivityEvent, type ActivityFilters, type ActivityPage } from "../../api/activity";
 import { useWorkspaceStore } from "../../state/workspace";
 import { useConversationsStore } from "../../state/conversations";
+import { AppDialog } from "../ui/AppDialog";
 import ChangesDrawer from "./ChangesDrawer";
 import FontSizeControl from "./FontSizeControl";
 import {
@@ -43,7 +45,7 @@ const duration = (band: ActivityBand) => {
 
 function ActionChip({ action }: { action: string }) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${ACTION_TONE[action] ?? ACTION_TONE.other}`}>
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-sm ${ACTION_TONE[action] ?? ACTION_TONE.other}`}>
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
       {ACTION_LABEL[action] ?? action}
     </span>
@@ -70,20 +72,20 @@ function Detail({ workspace, event, jump, showVersions }: {
   }
   return <div className="space-y-2 border-t border-[#e2dbc6] bg-white/70 p-3">
     <div className="flex flex-wrap gap-2">
-      {event.conversation_id && <button className="btn btn-gray px-2 py-1"
-        onClick={() => jump(event.conversation_id)}>跳转对话</button>}
-      {typeof detail?.path === "string" && <button className="btn btn-gray px-2 py-1"
-        onClick={() => { void useWorkspaceStore.getState().openPath(detail.path as string); useWorkspaceStore.getState().closeDrawer(); }}>打开文件</button>}
-      {typeof detail?.commit === "string" && <button className="btn btn-gray px-2 py-1"
+      {event.conversation_id && <Button className="px-2 py-1"
+        onClick={() => jump(event.conversation_id)}>跳转对话</Button>}
+      {typeof detail?.path === "string" && <Button className="px-2 py-1"
+        onClick={() => { void useWorkspaceStore.getState().openPath(detail.path as string); useWorkspaceStore.getState().closeDrawer(); }}>打开文件</Button>}
+      {typeof detail?.commit === "string" && <Button className="px-2 py-1"
         onClick={() => { void useWorkspaceStore.getState().showCommit({ commit: detail.commit as string,
-          subject: "关联提交", at: event.at }); showVersions(); }}>查看关联版本差异</button>}
+          subject: "关联提交", at: event.at }); showVersions(); }}>查看关联版本差异</Button>}
       {["input_detail", "result_detail"].map(key => typeof detail?.[key] === "string" &&
-        <button key={key} className="btn btn-gray px-2 py-1"
+        <Button key={key} className="px-2 py-1"
           onClick={() => void load(detail[key] as string)}>
-          {key === "input_detail" ? "查看输入详情" : "查看结果详情"}</button>)}
+          {key === "input_detail" ? "查看输入详情" : "查看结果详情"}</Button>)}
     </div>
     {error && <p role="alert" className="text-red-700">{error}</p>}
-    <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-5">
+    <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all text-sm leading-5">
       {detail ? JSON.stringify(detail, null, 2) : "正在读取详情…"}
     </pre>
     {attachment !== null && <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all border-t pt-2">
@@ -95,19 +97,19 @@ function BandHeader({ band }: { band: ActivityBand }) {
   return <div className="border-y border-[#d8d0bb] bg-[#eee8d8] px-3 py-2">
     <div className="flex items-baseline gap-2">
       <span className="text-[13px] font-bold">{band.label}</span>
-      {band.model && <span className="text-[#8a8371]">{band.model}</span>}
+      {band.model && <span className="text-ui-muted">{band.model}</span>}
       <span className={`ml-auto whitespace-nowrap font-bold ${PHASE_TONE[band.status] ?? "text-mute"}`}>
         {STATUS[band.status] ?? band.status}
       </span>
     </div>
-    <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] text-[#6b6553]">
+    <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm text-ui-muted">
       {band.subject && <span className="min-w-0 flex-1 truncate">{band.subject}</span>}
-      <span className="whitespace-nowrap text-[#8a8371]">
+      <span className="whitespace-nowrap text-ui-muted">
         {duration(band)}{band.note ? ` · ${band.note}` : ""}
       </span>
     </div>
     {!band.complete && (
-      <p className="mt-0.5 text-[11px] text-[#a1783b]">
+      <p className="mt-0.5 text-sm text-[#a1783b]">
         这一任务的开始事件在更早的记录里，先加载更早记录再看次数
       </p>
     )}
@@ -145,33 +147,11 @@ export default function ActivityPanel() {
   const epoch = useRef(0);
   const browsing = useRef(false);
   const settingsEpoch = useRef(0);
-  const dialog = useRef<HTMLElement>(null);
   const scope = JSON.stringify(filters);
   const bands = useMemo(() => buildActivity(events), [events]);
   const counts = useMemo(() => actionCounts(bands), [bands]);
   const legacy = useMemo(() => hasLegacyEvents(events), [events]);
   const peak = Math.max(1, ...counts.map(item => item.count));
-
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.activeElement;
-    dialog.current?.focus();
-    function keydown(event: KeyboardEvent) {
-      if (event.key === "Escape") { event.preventDefault(); useWorkspaceStore.getState().closeDrawer(); }
-      if (event.key !== "Tab") return;
-      const controls = [...(dialog.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]') ?? [])]
-        .filter(node => node.getClientRects().length > 0);
-      const first = controls[0], last = controls[controls.length - 1];
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) {
-        event.preventDefault(); last?.focus();
-      } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) {
-        event.preventDefault(); first?.focus();
-      }
-    }
-    document.addEventListener("keydown", keydown);
-    return () => { document.removeEventListener("keydown", keydown); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
-  }, [open]);
 
   useEffect(() => {
     if (!open || !workspace) return;
@@ -276,61 +256,57 @@ export default function ActivityPanel() {
     setExpanded(next);
     setDetailEvent(next ? (row.events[row.events.length - 1]?.event_id ?? "") : "");
   }
-  return <div className="fixed inset-0 z-40 bg-black/30 p-2 sm:p-5">
-    <section ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="活动记录"
-      className="flex h-full flex-col rounded border border-[#cfc7ae] bg-[#fbf8ef] text-[13px] text-[#4b4737] shadow-2xl">
-      <header className="flex flex-none flex-wrap items-center gap-3 border-b border-[#e2dbc6] px-4 py-3">
-        <h2 className="font-serif text-lg font-bold">活动记录</h2>
-        <button className={`btn px-3 py-1 ${tab === "events" ? "btn-gold" : "btn-gray"}`}
-          onClick={() => setTab("events")}>事件流</button>
-        <button className={`btn px-3 py-1 ${tab === "versions" ? "btn-gold" : "btn-gray"}`}
-          onClick={() => setTab("versions")}>文件版本</button>
+  return <AppDialog open={open} onOpenChange={value => { if (!value) useWorkspaceStore.getState().closeDrawer(); }} title="活动记录" className="activity-dialog">
+      <header className="flex flex-none flex-wrap items-center gap-3 border-b border-ui-edge px-4 py-3">
+        <Button variant={tab === "events" ? "primary" : "secondary"} aria-pressed={tab === "events"}
+          onClick={() => setTab("events")}>事件流</Button>
+        <Button variant={tab === "versions" ? "primary" : "secondary"} aria-pressed={tab === "versions"}
+          onClick={() => setTab("versions")}>文件版本</Button>
         <div className="flex-1" />
         <FontSizeControl />
-        <button className="btn btn-gray px-3 py-1" onClick={() => useWorkspaceStore.getState().closeDrawer()}>关闭</button>
       </header>
       {tab === "versions" ? <ChangesDrawer embedded /> : <>
         <div className="flex min-h-0 flex-1 flex-col-reverse md:flex-row">
           <main ref={scroll} className="min-h-0 min-w-0 flex-1 overflow-auto"
             onScroll={() => { const el = scroll.current; if (el && el.scrollHeight - el.scrollTop - el.clientHeight > 80) setFollow(false); }}>
-            <div className="sticky top-0 z-10 grid grid-cols-[86px_58px_1fr_92px] gap-2 border-b border-[#e2dbc6] bg-[#fbf8ef] px-3 py-2 font-bold sm:grid-cols-[96px_66px_1fr_104px]">
+            <div className="sticky top-0 z-10 activity-columns gap-2 border-b border-[#e2dbc6] bg-[#fbf8ef] px-3 py-2 font-bold">
               <span>时间</span><span>类型</span><span>事件内容</span><span className="text-right">状态</span>
             </div>
             {legacy && <p className="border-b border-[#e6d9b8] bg-[#fff4de] px-3 py-2 text-[12px] text-[#a1783b]">
                 这份索引由旧版本服务生成，只有摘要与状态。重启服务后会重建索引，显示动作标签、对象与耗时。
               </p>}
-            {before !== null && <button className="btn btn-gray m-3 px-3 py-1" disabled={loading}
-              onClick={() => void older()}>加载更早记录</button>}
+            {before !== null && <Button className="m-3 px-3 py-1" disabled={loading}
+              onClick={() => void older()}>加载更早记录</Button>}
             {events.length === 0 && <p className="p-6">{connection === "连接中" ? "正在读取记录…" : "没有符合条件的事件。"}</p>}
             {bands.map(band => <section key={band.key}>
               <BandHeader band={band} />
               {band.rows.map(row => <article key={row.key}>
-                <button aria-expanded={expanded === row.key}
-                  className={`grid w-full grid-cols-[86px_58px_1fr_92px] items-start gap-2 border-b border-[#e2dbc6] px-3 py-2.5 text-left hover:bg-white/60 sm:grid-cols-[96px_66px_1fr_104px] ${
+                <Button aria-expanded={expanded === row.key}
+                  className={`activity-columns w-full items-start gap-2 border-b border-[#e2dbc6] px-3 py-2.5 text-left hover:bg-white/60 ${
                     row.phase === "failed" ? "border-l-2 border-l-red" : ""}`}
                   onClick={() => toggle(row)}>
-                  <time title={row.at} className="whitespace-nowrap text-[11px] text-[#8a8371]">{clock(row.at)}</time>
+                  <time title={row.at} className="whitespace-nowrap text-sm text-ui-muted">{clock(row.at)}</time>
                   <span><ActionChip action={row.action} /></span>
                   <span className="min-w-0">
                     <span className="font-bold">{row.title}</span>
                     {row.subject && <span className="ml-1 break-all">{row.subject}</span>}
-                    {row.note && <span className="ml-1 text-[#8a8371]">· {row.note}</span>}
-                    {row.count > 1 && <span className="ml-1 text-[#8a8371]">· {row.count} 次</span>}
+                    {row.note && <span className="ml-1 text-ui-muted">· {row.note}</span>}
+                    {row.count > 1 && <span className="ml-1 text-ui-muted">· {row.count} 次</span>}
                   </span>
                   <span className={`whitespace-nowrap text-right ${PHASE_TONE[row.phase] ?? "text-mute"}`}>
                     {PHASE_LABEL[row.phase] ?? row.phase}
                   </span>
-                </button>
+                </Button>
                 {expanded === row.key && <div className="border-b border-[#e2dbc6] bg-white/50 px-3 py-2">
                   <ul className="space-y-1">
                     {row.events.map(item => <li key={item.event_id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <time className="text-[#8a8371]">{clock(item.at)}</time>
+                      <time className="text-ui-muted">{clock(item.at)}</time>
                       <span className="font-bold">{ACTION_LABEL[item.action] ?? item.action}</span>
                       <span>{item.title}</span>
-                      {item.subject && <span className="break-all text-[#6b6553]">{item.subject}</span>}
-                      {item.note && <span className="text-[#8a8371]">{item.note}</span>}
-                      <button className="btn btn-gray ml-auto px-2 py-0.5 text-[10px]"
-                        onClick={() => setDetailEvent(item.event_id)}>详情</button>
+                      {item.subject && <span className="break-all text-ui-muted">{item.subject}</span>}
+                      {item.note && <span className="text-ui-muted">{item.note}</span>}
+                      <Button className="ml-auto px-2 py-0.5 text-sm"
+                        onClick={() => setDetailEvent(item.event_id)}>详情</Button>
                     </li>)}
                   </ul>
                   {detailEvent && row.events.some(item => item.event_id === detailEvent) &&
@@ -349,13 +325,13 @@ export default function ActivityPanel() {
             <div className="grid grid-cols-4 gap-2 md:grid-cols-2">
               {([["事件", stats.events], ["模型请求", stats.models], ["工具调用", stats.tools], ["失败事件", stats.errors]] as const).map(([label, value]) =>
                 <div key={label} className="rounded border border-[#e2dbc6] p-2.5">
-                  <span className="text-[11px] text-[#8a8371]">{label}</span>
+                  <span className="text-sm text-ui-muted">{label}</span>
                   <strong className="block text-2xl leading-tight">{value}</strong>
                 </div>)}
             </div>
             <div>
               <strong className="mb-2 block">动作分布</strong>
-              {counts.length === 0 ? <p className="text-[11px] text-[#8a8371]">当前范围没有可统计的动作。</p> :
+              {counts.length === 0 ? <p className="text-sm text-ui-muted">当前范围没有可统计的动作。</p> :
                 <ul className="space-y-1.5">
                   {counts.map(item => {
                     return <li key={item.action}>
@@ -382,36 +358,39 @@ export default function ActivityPanel() {
                   onChange={e => setFilters(current => ({ ...current, verbose: e.target.checked }))} /> 显示文字分片事件</label>
                 <label className="block"><input type="checkbox" checked={capture} disabled={!settingsReady || savingSettings}
                   onChange={e => void configure(e.target.checked)} /> 保存后续模型输入快照</label>
-                <p className="text-[11px] leading-5 text-[#8a8371]">快照保存在本机，可能包含作品正文。清理详情保留事件摘要与版本关联。</p>
+                <p className="text-sm leading-5 text-ui-muted">快照保存在本机，可能包含作品正文。清理详情保留事件摘要与版本关联。</p>
                 <label className="block">详情保留时间<select aria-label="详情保留时间" className="mt-1 w-full rounded border p-2" value={retention} disabled={!settingsReady || savingSettings}
                   onChange={e => void configure(capture, Number(e.target.value))}>
                   <option value={7}>7 天</option><option value={30}>30 天</option><option value={0}>直到手动清理</option>
                   {![0, 7, 30].includes(retention) && <option value={retention}>{retention} 天</option>}
                 </select></label>
-                {!confirmClear ? <button className="btn btn-gray px-3 py-1" onClick={() => setConfirmClear(true)}>清理已保存详情</button> :
+              </div>
+            </details>
+            <details className="border-t border-ui-edge pt-3"><summary className="cursor-pointer font-bold">维护工具</summary>
+              <div className="mt-2 space-y-2">
+                {!confirmClear ? <Button className="px-3 py-1" onClick={() => setConfirmClear(true)}>清理已保存详情</Button> :
                   <div><p className="mb-2">输入与工具结果详情将被删除，无法恢复。</p>
-                    <button className="btn btn-gray mr-2 px-3 py-1" onClick={() => setConfirmClear(false)}>取消</button>
-                    <button className="btn btn-gold px-3 py-1" onClick={() => void activityRequest<{ removed: number }>(workspace, "/details", { method: "DELETE" })
+                    <Button className="mr-2 px-3 py-1" onClick={() => setConfirmClear(false)}>取消</Button>
+                    <Button variant="primary" className="px-3 py-1" onClick={() => void activityRequest<{ removed: number }>(workspace, "/details", { method: "DELETE" })
                       .then(value => { setNotice(`已清理 ${value.removed} 份详情。`); setExpanded(""); setConfirmClear(false); })
-                      .catch(reason => setError(activityError(reason)))}>确认清理详情</button></div>}
-                <button className="btn btn-gray px-3 py-1" onClick={() => void activityRequest(workspace, "/rebuild", { method: "POST" })
-                  .then(() => setGeneration(value => value + 1)).catch(reason => setError(activityError(reason)))}>重建查询索引</button>
+                      .catch(reason => setError(activityError(reason)))}>确认清理详情</Button></div>}
+                <Button className="px-3 py-1" onClick={() => void activityRequest(workspace, "/rebuild", { method: "POST" })
+                  .then(() => setGeneration(value => value + 1)).catch(reason => setError(activityError(reason)))}>重建查询索引</Button>
               </div>
             </details>
           </aside>
         </div>
         <footer className="flex flex-none flex-wrap items-center gap-3 border-t border-[#e2dbc6] px-4 py-3">
           <span role="status">{connection}</span><span>已载入 {events.length} 条{unseen ? " · 有新事件" : ""}</span>
-          <button className="btn btn-gray px-2 py-1" onClick={() => setGeneration(value => value + 1)}>重新连接</button>
+          <Button className="px-2 py-1" onClick={() => setGeneration(value => value + 1)}>重新连接</Button>
           <div className="flex-1" />
           <label><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)} /> 自动跟随</label>
-          <button className="btn btn-gray px-2 py-1" onClick={() => { if (browsing.current) setGeneration(value => value + 1); setFollow(true); }}>回到最新</button>
+          <Button className="px-2 py-1" onClick={() => { if (browsing.current) setGeneration(value => value + 1); setFollow(true); }}>回到最新</Button>
           <label><input type="checkbox" checked={exportDetails} onChange={e => setExportDetails(e.target.checked)} /> 导出包含已保存详情</label>
-          <button className="btn btn-gold px-3 py-1" onClick={() => void download()}>导出事件日志</button>
+          <Button variant="primary" className="px-3 py-1" onClick={() => void download()}>导出事件日志</Button>
         </footer>
       </>}
       {error && <p role="alert" className="max-h-24 overflow-auto border-t p-3 text-red-700">{error}</p>}
       {notice && <p role="status" className="border-t p-3">{notice}</p>}
-    </section>
-  </div>;
+  </AppDialog>;
 }

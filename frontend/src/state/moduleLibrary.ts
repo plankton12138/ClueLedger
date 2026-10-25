@@ -1,10 +1,10 @@
 /**
  * 模块库与装配的界面状态（0.8 D）。
  *
- * 两件事放在一个 store 里，是因为界面总是一起用：浏览库、选中版本、装入或保存并用于
- * 本作品。库原文只在详情里按版本读一次，装配只保存精确引用。
+ * 本状态装配库浏览、精确版本读取和作品绑定；原始编辑草稿归 moduleEditor，
+ * 发布与应用命令归 modulePublication。原文完整读取后才开放编辑，装配只保存精确引用。
  *
- * 迟到的响应按作品与模块丢弃：切换作品后旧结果不能写进新作品的装配。
+ * 迟到响应同时核对资源与请求代次，切换后不能覆盖当前详情或装配。
  */
 
 import { create } from "zustand";
@@ -16,14 +16,13 @@ import {
   fetchAssembly,
   fetchImportInfo,
   fetchPresets,
-  fetchRecord,
+  fetchCompleteRecord,
+  findModuleInfo,
   fetchRevision,
   fetchRevisions,
   forkModule,
   importLegacyMaterials,
   listModules,
-  postModuleUpdate,
-  publishRevision,
   putAssembly,
   restoreModule,
   requestKey,
@@ -38,11 +37,19 @@ import {
   type RevisionDetail,
   type RevisionSummary,
 } from "../api/moduleLibrary";
-import { WorkspaceApiError } from "../api/workspace";
+import { useModuleEditorStore } from "./moduleEditor";
+import { publishEntries, retryApplication, publicationError, type Publication } from "./modulePublication";
 
 type KindFilter = ModuleKind | "all";
 
-interface ModuleLibraryStore {
+export interface ModuleLibraryStore {
+  publications: Record<string, Publication>;
+  creations: Record<string, { input: Parameters<typeof createModule>[0]; running: boolean; result?: Awaited<ReturnType<typeof createModule>> }>;
+  retryApplication(commandId: string): Promise<boolean>;
+  selectionEpoch: number;
+  queryEpoch: number;
+  session: number;
+  assemblyEpoch: number;
   open: boolean;
   workspaceId: string | null;
   kind: KindFilter;
@@ -58,8 +65,12 @@ interface ModuleLibraryStore {
   notice: string | null;
 
   selectedModuleId: string | null;
+  selectedInfo: ModuleInfo | null;
   selectedRevisionId: string | null;
   revisions: RevisionSummary[];
+  revisionsCursor: string | null;
+  revisionsLoading: boolean;
+  loadMoreRevisions(): Promise<void>;
   detail: RevisionDetail | null;
   bodies: Record<string, string>;
   detailLoading: boolean;
@@ -67,7 +78,7 @@ interface ModuleLibraryStore {
   importInfo: ImportInfo | null;
   busy: boolean;
 
-  openDrawer(workspaceId: string): Promise<void>;
+  openDrawer(workspaceId: string | null): Promise<void>;
   closeDrawer(): void;
   setKind(kind: KindFilter): void;
   setIncludeDeleted(value: boolean): void;
@@ -76,7 +87,7 @@ interface ModuleLibraryStore {
   loadMore(): Promise<void>;
   selectModule(moduleId: string, revisionId?: string | null): Promise<void>;
   selectRevision(revisionId: string): Promise<void>;
-  create(input: { kind: ModuleKind; name: string; title: string; body: string }): Promise<boolean>;
+  create(input: { kind: ModuleKind; name: string; title: string; body: string; draftId?: string }): Promise<boolean>;
   fork(name: string): Promise<boolean>;
   trashSelected(): Promise<void>;
   restoreSelected(): Promise<void>;
@@ -99,8 +110,7 @@ interface ModuleLibraryStore {
 }
 
 function describe(error: unknown): string {
-  if (error instanceof WorkspaceApiError) return `${error.why}。${error.fix}`;
-  return error instanceof Error ? error.message : "操作没有完成";
+  return publicationError(error);
 }
 
 function selected(modules: ModuleInfo[], moduleId: string): ModuleInfo | undefined {
@@ -108,6 +118,12 @@ function selected(modules: ModuleInfo[], moduleId: string): ModuleInfo | undefin
 }
 
 const initial = {
+  publications: {} as Record<string, Publication>,
+  creations: {} as ModuleLibraryStore["creations"],
+  selectionEpoch: 0,
+  queryEpoch: 0,
+  session: 0,
+  assemblyEpoch: 0,
   open: false,
   workspaceId: null as string | null,
   kind: "all" as KindFilter,
@@ -122,8 +138,11 @@ const initial = {
   error: null as string | null,
   notice: null as string | null,
   selectedModuleId: null as string | null,
+  selectedInfo: null as ModuleInfo | null,
   selectedRevisionId: null as string | null,
   revisions: [] as RevisionSummary[],
+  revisionsCursor: null as string | null,
+  revisionsLoading: false,
   detail: null as RevisionDetail | null,
   bodies: {} as Record<string, string>,
   detailLoading: false,
@@ -137,23 +156,35 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
 
   async openDrawer(workspaceId) {
     set({
-      ...initial,
       open: true,
+      busy: false,
       workspaceId,
+      detail: null, bodies: {}, selectedModuleId: null, selectedInfo: null, selectedRevisionId: null,
+      detailLoading: false, loadingMore: false, error: null, notice: null,
+      assembly: get().workspaceId === workspaceId ? get().assembly : null,
+      importInfo: null,
+      selectionEpoch: get().selectionEpoch + 1,
+      queryEpoch: get().queryEpoch + 1,
+      session: get().session + 1,
     });
+    const session = get().session;
     try {
       if (get().presets.length === 0) {
         const presets = await fetchPresets();
+        if (get().session !== session) return;
         set({ presets });
       }
     } catch (error) {
+      if (get().session !== session) return;
       set({ error: describe(error) });
     }
     await Promise.all([get().refresh(), get().loadAssembly(), get().loadImportInfo()]);
   },
 
   closeDrawer() {
-    set({ open: false, selectedModuleId: null, detail: null, bodies: {}, error: null });
+    set({ open: false, selectedModuleId: null, detail: null, bodies: {}, detailLoading: false, error: null,
+      loading: false, loadingMore: false, selectionEpoch: get().selectionEpoch + 1,
+      queryEpoch: get().queryEpoch + 1, session: get().session + 1 });
   },
 
   setKind(kind) {
@@ -173,8 +204,8 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
 
   async refresh() {
     const { workspaceId, kind, query, includeDeleted } = get();
-    if (!workspaceId) return;
-    set({ loading: true, error: null });
+    const epoch = get().queryEpoch + 1;
+    set({ loading: true, loadingMore: false, error: null, queryEpoch: epoch });
     try {
       const page = await listModules({
         kind: kind === "all" ? null : kind,
@@ -182,17 +213,17 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         limit: 20,
         includeDeleted,
       });
-      if (get().workspaceId !== workspaceId) return;
+      if (get().workspaceId !== workspaceId || get().queryEpoch !== epoch) return;
       set({ modules: page.items, cursor: page.next_cursor, total: page.total, loading: false });
     } catch (error) {
-      if (get().workspaceId !== workspaceId) return;
+      if (get().workspaceId !== workspaceId || get().queryEpoch !== epoch) return;
       set({ loading: false, error: describe(error) });
     }
   },
 
   async loadMore() {
-    const { workspaceId, kind, query, cursor, modules, loadingMore, includeDeleted } = get();
-    if (!workspaceId || !cursor || loadingMore) return;
+    const { workspaceId, kind, query, cursor, modules, loadingMore, includeDeleted, queryEpoch: epoch } = get();
+    if (!cursor || loadingMore) return;
     set({ loadingMore: true });
     try {
       const page = await listModules({
@@ -202,7 +233,7 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         limit: 20,
         includeDeleted,
       });
-      if (get().workspaceId !== workspaceId) return;
+      if (get().workspaceId !== workspaceId || get().queryEpoch !== epoch || get().cursor !== cursor) return;
       set({
         modules: [...modules, ...page.items],
         cursor: page.next_cursor,
@@ -210,18 +241,29 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         loadingMore: false,
       });
     } catch (error) {
-      if (get().workspaceId !== workspaceId) return;
+      if (get().workspaceId !== workspaceId || get().queryEpoch !== epoch) return;
       set({ loadingMore: false, error: describe(error) });
     }
   },
 
   async selectModule(moduleId, revisionId) {
     const { workspaceId, modules } = get();
-    if (!workspaceId) return;
-    const info = selected(modules, moduleId);
+    const epoch = get().selectionEpoch + 1;
+    set({ selectionEpoch: epoch, selectedModuleId: moduleId, selectedRevisionId: revisionId ?? null,
+      selectedInfo: null, detail: null, bodies: {}, revisions: [], revisionsCursor: null, revisionsLoading: false, detailLoading: true, error: null });
+    let info = selected(modules, moduleId);
+    if (!info) {
+      try { info = await findModuleInfo(moduleId) ?? undefined; }
+      catch (error) {
+        if (get().selectionEpoch === epoch) set({ detailLoading: false, error: describe(error) });
+        return;
+      }
+      if (get().selectionEpoch !== epoch) return;
+    }
+    set({ selectedInfo: info ?? null });
     const revision = revisionId ?? info?.head ?? null;
     if (!revision) {
-      set({ selectedModuleId: moduleId, selectedRevisionId: null, detail: null, bodies: {} });
+      set({ selectedModuleId: moduleId, selectedRevisionId: null, detail: null, bodies: {}, detailLoading: false });
       return;
     }
     set({
@@ -235,21 +277,27 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         fetchRevision(moduleId, revision),
         fetchRevisions(moduleId),
       ]);
+      if (get().workspaceId !== workspaceId || get().selectionEpoch !== epoch) return;
+      if (detail.module_id !== moduleId || detail.revision_id !== revision) {
+        throw new Error("[MODULE_IDENTITY_MISMATCH] 模块详情：返回版本与选择不一致。建议：重新读取模块。");
+      }
       const records = await Promise.all(
-        detail.entries.map((entry) => fetchRecord(moduleId, revision, entry.entry_id)),
+        detail.entries.map((entry) => fetchCompleteRecord(moduleId, revision, entry.entry_id, entry)),
       );
-      if (get().workspaceId !== workspaceId) return;
+      if (get().workspaceId !== workspaceId || get().selectionEpoch !== epoch) return;
       const bodies: Record<string, string> = {};
       for (const record of records) bodies[record.entry_id] = entryBody(record.text);
+      useModuleEditorStore.getState().ensure(detail, bodies);
       set({
         detail,
         bodies,
         revisions: history.items,
+        revisionsCursor: history.next_cursor,
         selectedRevisionId: revision,
         detailLoading: false,
       });
     } catch (error) {
-      if (get().workspaceId !== workspaceId) return;
+      if (get().workspaceId !== workspaceId || get().selectionEpoch !== epoch) return;
       set({ detailLoading: false, error: describe(error) });
     }
   },
@@ -260,96 +308,64 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
     await get().selectModule(moduleId, revisionId);
   },
 
-  async create(input) {
-    const { workspaceId } = get();
-    if (!workspaceId) return false;
-    set({ busy: true, error: null, notice: null });
+  async loadMoreRevisions() {
+    const { selectedModuleId: moduleId, selectionEpoch, revisionsCursor: cursor, revisionsLoading } = get();
+    if (!moduleId || !cursor || revisionsLoading) return;
+    set({ revisionsLoading: true });
     try {
-      const created = await createModule({
-        kind: input.kind,
-        name: input.name,
-        entries: [
-          {
-            entry_id: "first",
-            title: input.title || input.name,
-            body: input.body,
-          },
-        ],
-        request_key: requestKey("create"),
-      });
-      set({ busy: false, notice: "已新建模块并发布第一版。" });
-      await get().refresh();
-      await get().selectModule(created.module.module_id, created.module.head);
+      const page = await fetchRevisions(moduleId, { cursor });
+      if (get().selectionEpoch !== selectionEpoch) return;
+      const merged = new Map([...get().revisions, ...page.items].map(item => [item.revision_id, item]));
+      set({ revisions: [...merged.values()], revisionsCursor: page.next_cursor, revisionsLoading: false });
+    } catch (error) {
+      if (get().selectionEpoch === selectionEpoch) set({ revisionsLoading: false, error: describe(error) });
+    }
+  },
+
+  async create(input) {
+    const { session, selectionEpoch } = get();
+    const signature = JSON.stringify(input);
+    let command = get().creations[signature];
+    if (command?.running) return false;
+    if (command?.result) return true;
+    command ??= { input: { kind: input.kind, name: input.name,
+      entries: [{ entry_id: "first", title: input.title || input.name, body: input.body }],
+      request_key: requestKey("create") }, running: false };
+    command = { ...command, running: true };
+    set({ busy: true, error: null, notice: null, creations: { ...get().creations, [signature]: command } });
+    const ownsView = () => get().session === session && get().selectionEpoch === selectionEpoch;
+    try {
+      const created = await createModule(command.input);
+      set({ creations: { ...get().creations, [signature]: { ...command, running: false, result: created } } });
+      if (ownsView()) {
+        set({ busy: false, notice: "已新建模块并发布第一版。" });
+        await get().refresh();
+        if (ownsView()) await get().selectModule(created.module.module_id, created.module.head);
+      }
       return true;
     } catch (error) {
-      set({ busy: false, error: describe(error) });
+      set({ creations: { ...get().creations, [signature]: { ...command, running: false } } });
+      if (ownsView()) set({ busy: false, error: describe(error) });
       return false;
+    } finally {
+      if (get().session === session) set({ busy: false });
     }
   },
 
   async saveToLibrary(entries) {
-    const { workspaceId, selectedModuleId, detail, selectedRevisionId, modules } = get();
-    if (!workspaceId || !selectedModuleId || !detail) return false;
-    const info = selected(modules, selectedModuleId);
-    set({ busy: true, error: null, notice: null });
-    try {
-      const revision = await publishRevision(selectedModuleId, {
-        base_revision: selectedRevisionId,
-        expected_head: info?.head ?? null,
-        entries,
-        request_key: requestKey("publish"),
-      });
-      set({ busy: false, notice: "已保存到模块库；其他作品保持原版本。" });
-      await get().refresh();
-      await get().selectModule(selectedModuleId, revision.revision_id);
-      return true;
-    } catch (error) {
-      set({ busy: false, error: describe(error) });
-      return false;
-    }
+    return publishEntries(get, set, entries, false);
   },
 
   async saveAndUse(entries) {
-    const { workspaceId, selectedModuleId, detail, selectedRevisionId, assembly, modules } = get();
-    if (!workspaceId || !selectedModuleId || !detail) return false;
-    const info = selected(modules, selectedModuleId);
-    set({ busy: true, error: null, notice: null });
-    try {
-      const result = await postModuleUpdate(workspaceId, {
-        module_id: selectedModuleId,
-        base_revision: selectedRevisionId,
-        expected_head: info?.head ?? null,
-        entries,
-        expected_digest: assembly?.digest ?? null,
-        request_key: requestKey("save-and-use"),
-      });
-      if (!result.published) {
-        set({
-          busy: false,
-          error: result.error ? `${result.error.why}。${result.error.fix}` : "发布没有完成",
-        });
-        return false;
-      }
-      await get().loadAssembly();
-      await get().refresh();
-      if (result.binding_updated) {
-        set({ busy: false, notice: "已发布并用于本作品。" });
-        await get().selectModule(selectedModuleId, result.module?.revision_id ?? null);
-        return true;
-      }
-      set({
-        busy: false,
-        notice: "已发布新版本，但本作品绑定没有更新。可以只重试绑定。",
-        error: result.error ? `${result.error.why}。${result.error.fix}` : null,
-      });
-      return false;
-    } catch (error) {
-      set({ busy: false, error: describe(error) });
-      return false;
-    }
+    return publishEntries(get, set, entries, true);
+  },
+
+  async retryApplication(commandId) {
+    return retryApplication(get, set, commandId);
   },
 
   async derive(name, replacements = {}) {
+    const operationSession = get().session;
     const { workspaceId, assembly } = get();
     const trimmed = name.trim();
     if (!workspaceId || !assembly) return null;
@@ -365,15 +381,18 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         expected_digest: assembly.digest,
         request_key: requestKey("derive"),
       });
+      if (get().session !== operationSession) return null;
       set({ busy: false, notice: `已用当前组合新建作品：${result.workspace.name}。` });
       return result.workspace;
     } catch (error) {
+      if (get().session !== operationSession) return null;
       set({ busy: false, error: describe(error) });
       return null;
     }
   },
 
   async bind(moduleId, revisionId) {
+    const operationSession = get().session;
     const { workspaceId, assembly, detail } = get();
     if (!workspaceId) return;
     const libraryId = assembly?.library_id ?? detail?.library_id ?? "";
@@ -396,13 +415,16 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         expected_digest: assembly?.digest ?? null,
         request_key: requestKey("bind"),
       });
-      set({ assembly: next, busy: false, notice: "已装入本作品。" });
+      if (get().session !== operationSession) return;
+      set({ assembly: next, assemblyEpoch: get().assemblyEpoch + 1, busy: false, notice: "已装入本作品。" });
     } catch (error) {
+      if (get().session !== operationSession) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   async unbind(bindingId) {
+    const operationSession = get().session;
     const { workspaceId, assembly } = get();
     if (!workspaceId || !assembly) return;
     set({ busy: true, error: null, notice: null });
@@ -418,13 +440,16 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         expected_digest: assembly.digest,
         request_key: requestKey("unbind"),
       });
-      set({ assembly: next, busy: false, notice: "已卸下；后续查询不再包含这个模块。" });
+      if (get().session !== operationSession) return;
+      set({ assembly: next, assemblyEpoch: get().assemblyEpoch + 1, busy: false, notice: "已卸下；后续查询不再包含这个模块。" });
     } catch (error) {
+      if (get().session !== operationSession) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   async upgrade(bindingId, revisionId) {
+    const operationSession = get().session;
     const { workspaceId, assembly } = get();
     if (!workspaceId || !assembly) return;
     const binding = assembly.bindings.find((item) => item.id === bindingId);
@@ -448,13 +473,16 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         expected_digest: assembly.digest,
         request_key: requestKey("upgrade"),
       });
-      set({ assembly: next, busy: false, notice: "已切换本作品使用的版本。" });
+      if (get().session !== operationSession) return;
+      set({ assembly: next, assemblyEpoch: get().assemblyEpoch + 1, busy: false, notice: "已切换本作品使用的版本。" });
     } catch (error) {
+      if (get().session !== operationSession) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   async reorder(bindingId, direction) {
+    const operationSession = get().session;
     const { workspaceId, assembly } = get();
     if (!workspaceId || !assembly) return;
     const index = assembly.bindings.findIndex((item) => item.id === bindingId);
@@ -474,15 +502,18 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         expected_digest: assembly.digest,
         request_key: requestKey("reorder"),
       });
-      set({ assembly: next, busy: false, notice: "已调整装配顺序。" });
+      if (get().session !== operationSession) return;
+      set({ assembly: next, assemblyEpoch: get().assemblyEpoch + 1, busy: false, notice: "已调整装配顺序。" });
     } catch (error) {
+      if (get().session !== operationSession) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   async fork(name) {
-    const { workspaceId, selectedModuleId, selectedRevisionId } = get();
-    if (!workspaceId || !selectedModuleId || !selectedRevisionId) return false;
+    const operationSession = get().session;
+    const { selectedModuleId, selectedRevisionId } = get();
+    if (!selectedModuleId || !selectedRevisionId) return false;
     if (!name.trim()) {
       set({ error: "变体需要一个名称" });
       return false;
@@ -494,51 +525,66 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         name: name.trim(),
         request_key: requestKey("fork"),
       });
+      if (get().session !== operationSession) return false;
       set({ busy: false, notice: "已另存变体；原模块与已绑定作品不受影响。" });
       await get().refresh();
+      if (get().session !== operationSession) return false;
       await get().selectModule(created.module.module_id, created.module.head);
+      if (get().session !== operationSession) return false;
       return true;
     } catch (error) {
+      if (get().session !== operationSession) return false;
       set({ busy: false, error: describe(error) });
       return false;
     }
   },
 
   async trashSelected() {
+    const operationSession = get().session;
     const { selectedModuleId, modules } = get();
-    const info = selectedModuleId ? selected(modules, selectedModuleId) : undefined;
+    const info = selectedModuleId ? selected(modules, selectedModuleId) ?? get().selectedInfo : undefined;
     if (!selectedModuleId || !info) return;
     set({ busy: true, error: null, notice: null });
     try {
-      await trashModule(selectedModuleId, {
+      const updated = await trashModule(selectedModuleId, {
         expected_head: info.head,
         request_key: requestKey("trash"),
       });
+      if (get().session !== operationSession) return;
+      if (get().selectedModuleId === selectedModuleId) set({ selectedInfo: updated });
       set({ busy: false, notice: "已删除；已绑定这个版本的作品仍可读取。" });
       await get().refresh();
+      if (get().session !== operationSession) return;
     } catch (error) {
+      if (get().session !== operationSession) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   async restoreSelected() {
+    const operationSession = get().session;
     const { selectedModuleId, modules } = get();
-    const info = selectedModuleId ? selected(modules, selectedModuleId) : undefined;
+    const info = selectedModuleId ? selected(modules, selectedModuleId) ?? get().selectedInfo : undefined;
     if (!selectedModuleId || !info) return;
     set({ busy: true, error: null, notice: null });
     try {
-      await restoreModule(selectedModuleId, {
+      const updated = await restoreModule(selectedModuleId, {
         expected_head: info.head,
         request_key: requestKey("restore"),
       });
+      if (get().session !== operationSession) return;
+      if (get().selectedModuleId === selectedModuleId) set({ selectedInfo: updated });
       set({ busy: false, notice: "已恢复，可以重新装入作品。" });
       await get().refresh();
+      if (get().session !== operationSession) return;
     } catch (error) {
+      if (get().session !== operationSession) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   async importLegacy() {
+    const operationSession = get().session;
     const { workspaceId, importInfo } = get();
     if (!workspaceId) return;
     set({ busy: true, error: null, notice: null });
@@ -547,6 +593,7 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
         expected_digest: importInfo?.digest ?? null,
         request_key: requestKey("import"),
       });
+      if (get().session !== operationSession) return;
       if (get().workspaceId !== workspaceId) return;
       const created = result.items.filter((item) => item.action === "created").length;
       const published = result.items.filter((item) => item.action === "published").length;
@@ -560,33 +607,43 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
             : `已导入 ${result.items.length} 项旧资料（新建 ${created}、更新 ${published}、无变化 ${unchanged}）。`,
       });
       await Promise.all([get().refresh(), get().loadImportInfo()]);
+      if (get().session !== operationSession) return;
     } catch (error) {
+      if (get().session !== operationSession) return;
       if (get().workspaceId !== workspaceId) return;
       set({ busy: false, error: describe(error) });
     }
   },
 
   async loadAssembly() {
+    const operationSession = get().session;
     const { workspaceId } = get();
     if (!workspaceId) return;
+    const assemblyEpoch = get().assemblyEpoch + 1;
+    set({ assemblyEpoch });
     try {
       const assembly = await fetchAssembly(workspaceId);
+      if (get().session !== operationSession || get().assemblyEpoch !== assemblyEpoch) return;
       if (get().workspaceId !== workspaceId) return;
       set({ assembly });
     } catch (error) {
+      if (get().session !== operationSession || get().assemblyEpoch !== assemblyEpoch) return;
       if (get().workspaceId !== workspaceId) return;
       set({ error: describe(error) });
     }
   },
 
   async loadImportInfo() {
+    const operationSession = get().session;
     const { workspaceId } = get();
     if (!workspaceId) return;
     try {
       const importInfo = await fetchImportInfo(workspaceId);
+      if (get().session !== operationSession) return;
       if (get().workspaceId !== workspaceId) return;
       set({ importInfo });
     } catch (error) {
+      if (get().session !== operationSession) return;
       if (get().workspaceId !== workspaceId) return;
       set({ error: describe(error) });
     }
@@ -594,9 +651,15 @@ export const useModuleLibraryStore = create<ModuleLibraryStore>()((set, get) => 
 
   async trackAssembly(workspaceId) {
     if (get().workspaceId === workspaceId && get().assembly) return;
-    set({ workspaceId });
+    set({ workspaceId, assembly: null, detail: null, bodies: {}, selectedModuleId: null,
+      selectedRevisionId: null, detailLoading: false, selectionEpoch: get().selectionEpoch + 1,
+      queryEpoch: get().queryEpoch + 1, session: get().session + 1 });
+    const operationSession = get().session;
+    const assemblyEpoch = get().assemblyEpoch + 1;
+    set({ assemblyEpoch });
     try {
       const assembly = await fetchAssembly(workspaceId);
+      if (get().session !== operationSession || get().assemblyEpoch !== assemblyEpoch) return;
       if (get().workspaceId !== workspaceId) return;
       set({ assembly });
     } catch {

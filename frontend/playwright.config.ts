@@ -1,6 +1,8 @@
 import { defineConfig } from "@playwright/test";
+import { resolve } from "node:path";
 
 const port = Number(process.env.HASTINGS_E2E_PORT ?? "8931");
+const dataDir = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e");
 
 /**
  * E2E 配置：单进程真服务——webServer 先 build 前端再启动 `hastings.server`
@@ -32,7 +34,7 @@ export default defineConfig({
   projects: [
     {
       name: "workspace",
-      testMatch: ["workspace.spec.ts", "chat-rendering.spec.ts"],
+      testMatch: ["workspace.spec.ts", "chat-rendering.spec.ts", "frontend-experience.spec.ts", "frontend-foundation.spec.ts", "module-editor.spec.ts", "core-pages.spec.ts", "shared-interactions.spec.ts"],
       timeout: 30_000,
     },
     {
@@ -42,7 +44,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run build && uv run --directory .. python -m hastings.server --port ${port} --state-dir ../data/test-tmp/e2e-state`,
+    command: `npm run build && uv run --directory .. python -m hastings.server --port ${port} --state-dir "${dataDir}/state" --library-dir "${dataDir}/library"`,
     url: `http://127.0.0.1:${port}/api/health`,
     reuseExistingServer: !process.env.CI && !process.env.HASTINGS_E2E_PORT,
     timeout: 120_000,

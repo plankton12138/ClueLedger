@@ -1,3 +1,4 @@
+import { Button } from "../ui/Button";
 /**
  * 作品位置（0.4 V04-8）：用系统文件夹对话框选位置，不再手抄路径。
  *
@@ -14,8 +15,10 @@ import { useEffect, useState } from "react";
 import {
   fetchDefaultLocation,
   pickDirectory,
-  WorkspaceApiError,
 } from "../../api/workspace";
+import { AppDialog } from "../ui/AppDialog";
+import { Tabs } from "../ui/Tabs";
+import { errorMessage } from "../../api/errors";
 import { useWorkspaceStore } from "../../state/workspace";
 
 /** 新作品的占位名：与「新的对话」同一类占位，作者可以随手改掉。 */
@@ -27,8 +30,7 @@ function joinPath(root: string, name: string): string {
 }
 
 function describePickerError(error: unknown): string {
-  if (error instanceof WorkspaceApiError) return `${error.why}。${error.fix}`;
-  return error instanceof Error ? error.message : "打不开文件夹选择窗口";
+  return errorMessage(error, "作品位置");
 }
 
 interface Props {
@@ -89,64 +91,37 @@ export default function DirectoryDialog({ open, onClose }: Props) {
   };
 
   const submit = async () => {
-    if (!target) return;
-    await openWorkspace(target, mode === "create");
-    onClose();
+    if (!target || !canSubmit) return;
+    const success = await openWorkspace(target, mode === "create");
+    if (success) onClose();
+    else setPickerError(useWorkspaceStore.getState().error);
   };
 
-  const tabClass = (active: boolean) =>
-    `flex-1 rounded px-3 py-1.5 text-xs font-bold ${
-      active ? "bg-[#efe6cd] text-sheetInk shadow-inner" : "text-[#6b6555] hover:bg-[#f3ecd8]"
-    }`;
-
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="作品位置"
-    >
-      <div className="w-full max-w-lg rounded-md border border-[#cfc7ae] bg-[#fbf8ef] p-5 shadow-xl">
-        <h2 className="font-serif text-lg font-bold text-sheetInk">作品位置</h2>
-        <p className="mt-1 text-xs text-[#6b6555]">
-          作品保存在本机文件夹里。位置用系统窗口选择，不用抄路径。
-        </p>
-
-        <div role="tablist" aria-label="选择方式" className="mt-4 flex gap-1 rounded border border-[#e2dbc6] bg-white/60 p-1">
-          <button role="tab" aria-selected={mode === "open"} className={tabClass(mode === "open")} onClick={() => setMode("open")}>
-            打开已有
-          </button>
-          <button
-            role="tab"
-            aria-selected={mode === "create"}
-            className={tabClass(mode === "create")}
-            onClick={() => setMode("create")}
-          >
-            新建作品
-          </button>
-        </div>
+    <AppDialog open={open} onOpenChange={value => { if (!value) onClose(); }} title="作品位置" returnFocus={() => document.querySelector<HTMLElement>('[data-dialog-return="workspace"]')}>
+        <Tabs label="选择方式" value={mode} onValueChange={value => setMode(value as "open" | "create")} items={[{ value: "open", label: "打开已有", content: null }, { value: "create", label: "新建作品", content: null }]} />
 
         {mode === "open" ? (
           <div className="mt-4">
-            <div className="text-xs font-bold text-[#4b4737]">作品文件夹</div>
+            <div className="text-sm font-bold text-[#4b4737]">作品文件夹</div>
             <div className="mt-1 min-h-[38px] break-all rounded border border-[#cfc7ae] bg-white px-3 py-2 text-sm">
-              {pickedPath ?? <span className="text-[#8a8371]">还没有选择文件夹</span>}
+              {pickedPath ?? <span className="text-ui-muted">还没有选择文件夹</span>}
             </div>
-            <button className="btn btn-gray mt-2 px-3 py-1 text-xs" disabled={picking} onClick={() => void choose()}>
+            <Button className="mt-2 px-3 py-1 text-sm" disabled={picking} onClick={() => void choose()}>
               {picking ? "等待选择…" : "选择作品文件夹…"}
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="mt-4">
-            <div className="text-xs font-bold text-[#4b4737]">存放位置</div>
+            <div className="text-sm font-bold text-[#4b4737]">存放位置</div>
             <div className="mt-1 min-h-[38px] break-all rounded border border-[#cfc7ae] bg-white px-3 py-2 text-sm">
-              {location ?? <span className="text-[#8a8371]">读取默认位置…</span>}
+              {location ?? <span className="text-ui-muted">读取默认位置…</span>}
             </div>
-            <button className="btn btn-gray mt-2 px-3 py-1 text-xs" disabled={picking} onClick={() => void choose()}>
+            <Button className="mt-2 px-3 py-1 text-sm" disabled={picking} onClick={() => void choose()}>
               {picking ? "等待选择…" : "更改位置…"}
-            </button>
+            </Button>
 
-            <label className="mt-3 block text-xs font-bold text-[#4b4737]" htmlFor="workspace-name">
+            <label className="mt-3 block text-sm font-bold text-[#4b4737]" htmlFor="workspace-name">
               作品名
             </label>
             <input
@@ -156,32 +131,32 @@ export default function DirectoryDialog({ open, onClose }: Props) {
               value={name}
               onChange={(event) => setName(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") void submit();
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) void submit();
               }}
             />
-            {target && <p className="mt-1 text-[11px] text-[#8a8371]">将创建：{target}</p>}
+            {target && <p className="mt-1 text-sm text-ui-muted">将创建：{target}</p>}
           </div>
         )}
 
-        {pickerError && <p className="mt-3 text-[11px] text-[#a33]">{pickerError}</p>}
+        {pickerError && <p role="alert" className="mt-3 text-sm text-[#a33]">{pickerError}</p>}
 
         {bindings.length > 0 && (
           <div className="mt-4">
-            <div className="text-xs font-bold text-[#4b4737]">最近打开</div>
+            <div className="text-sm font-bold text-[#4b4737]">最近打开</div>
             <ul className="mt-1 max-h-40 overflow-auto rounded border border-[#e2dbc6] bg-white/60">
               {bindings.map((binding) => (
                 <li key={binding.id}>
-                  <button
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-[#f3ecd8]"
+                  <Button
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[#f3ecd8]"
                     onClick={() => {
                       setMode("open");
                       setPickedPath(binding.path);
                     }}
                   >
                     <span className="min-w-0 flex-1 truncate">{binding.name}</span>
-                    <span className="truncate text-[10px] text-[#8a8371]">{binding.path}</span>
-                    {!binding.exists && <span className="text-[10px] text-[#a33]">目录已不在</span>}
-                  </button>
+                    <span className="truncate text-[12px] text-ui-muted">{binding.path}</span>
+                    {!binding.exists && <span className="text-[12px] text-[#a33]">目录已不在</span>}
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -189,14 +164,13 @@ export default function DirectoryDialog({ open, onClose }: Props) {
         )}
 
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn btn-gray px-3 py-1 text-xs" onClick={onClose}>
+          <Button className="px-3 py-1 text-sm" onClick={onClose}>
             取消
-          </button>
-          <button className="btn btn-gold px-3 py-1 text-xs" disabled={!canSubmit} onClick={() => void submit()}>
+          </Button>
+          <Button variant="primary" className="px-3 py-1 text-sm" disabled={!canSubmit} onClick={() => void submit()}>
             {mode === "create" ? "新建并打开" : "打开"}
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+    </AppDialog>
   );
 }

@@ -2,9 +2,14 @@
 
 import { describe, expect, it } from "vitest";
 
-import { pageHash, parseHash } from "./navigation";
+import { pageHash, parseHash, type AppPage } from "./navigation";
 
 describe("parseHash", () => {
+  it("应用级模块库可携带精确版本与作品ID，拒绝路径或无效URI", () => {
+    const pages: AppPage[] = [{ kind: "library" }, { kind: "library", moduleId: "mod_1" }, { kind: "library", moduleId: "mod_1", revisionId: "rev_2", workspaceContextId: "ws1" }];
+    for (const page of pages) expect(parseHash(pageHash(page))).toEqual(page);
+    for (const hash of ["#/library/modules/%ZZ", "#/library/modules/../revisions/x", "#/library?workspace=C:/books", "#/library/modules/mod_1/extra", "#/workspaces/ws1/materials/story/extra"]) expect(parseHash(hash)).toBeNull();
+  });
   it("解析写作页、灵感页与资料页", () => {
     expect(parseHash("#/workspaces/ws1/writing")).toEqual({
       kind: "writing",

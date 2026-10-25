@@ -33,6 +33,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
         String(error.why ?? ""),
         String(error.fix ?? ""),
         response.status,
+        String(error.where ?? "灵感请求"),
       );
     }
     throw new Error(`请求失败：${response.status}`);

@@ -15,6 +15,7 @@ import TaskCard from "./TaskCard";
 import ToolActivity from "./ToolActivity";
 import TurnContextSummary from "./TurnContextSummary";
 import TurnMaterials from "./TurnMaterials";
+import RevertConfirmation from "./RevertConfirmation";
 
 const STATUS_LABEL: Record<string, string> = {
   completed: "完成",
@@ -37,7 +38,7 @@ interface Props {
   phase: RunPhase | null;
   onExpand: (message: ChatMessage) => void;
   onCopyFailed: (message: ChatMessage) => void;
-  onRevert: (commit: string) => void;
+  onRevert: (commit: string) => void | Promise<void>;
   onRecord: () => void;
   /** 对本轮改动发起一次只读检查；没有可检查的文件时为 null。 */
   onReview: (() => void) | null;
@@ -113,13 +114,7 @@ function ChatTurnView({
           {result.note && <p className="mt-1 text-amber">{result.note}</p>}
           <div className="mt-2 flex gap-2">
             {result.recording === "committed" && result.commit && (
-              <button
-                type="button"
-                className="btn btn-gray px-2 py-0.5 text-[10px]"
-                onClick={() => onRevert(result.commit!)}
-              >
-                撤销这次修改
-              </button>
+              <RevertConfirmation commit={result.commit} paths={result.changed_paths} onConfirm={onRevert} />
             )}
             {result.recording === "unrecorded" && (
               <button

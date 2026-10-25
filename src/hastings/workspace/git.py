@@ -286,6 +286,27 @@ class GitRepo:
             self._git("show", "--no-color", "--no-ext-diff", "--format=", sha, "--", *MANAGED_DIRS)
         )
 
+    def commit_paths(self, sha: str) -> tuple[str, ...]:
+        """供撤销确认展示的受管文件；零字节分隔保留空格和中文路径。"""
+        self.require_repository()
+        if not _SHA.match(sha):
+            raise _unknown_commit(sha)
+        code, _, _ = self._exec("cat-file", "-e", f"{sha}^{{commit}}")
+        if code:
+            raise _unknown_commit(sha)
+        out = self._git(
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            "-z",
+            sha,
+            "--",
+            *MANAGED_DIRS,
+        )
+        return tuple(path for path in _decode(out).split("\0") if path)
+
     def log(self, limit: int = 50) -> tuple[CommitInfo, ...]:
         """作品仓库的全部提交，最新在前。
 

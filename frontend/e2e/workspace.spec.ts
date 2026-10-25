@@ -185,6 +185,7 @@ test("字号调整同步到正文与活动日志，刷新保留并可恢复默�
     font: parseFloat(getComputedStyle(element).fontSize),
     line: parseFloat(getComputedStyle(element).lineHeight),
   }));
+  await page.getByRole("button", { name: "阅读显示", exact: true }).click();
   const choice = page.getByLabel("调整字体大小");
   await choice.selectOption("150");
   await expect.poll(() => paragraph.evaluate(element => parseFloat(getComputedStyle(element).fontSize)))
@@ -192,11 +193,14 @@ test("字号调整同步到正文与活动日志，刷新保留并可恢复默�
   expect(await paragraph.evaluate(element => parseFloat(getComputedStyle(element).lineHeight)))
     .toBeCloseTo(original.line * 1.5);
   expect(await page.locator(".chat-input").evaluate(element => parseFloat(getComputedStyle(element).fontSize)))
-    .toBeCloseTo(13 * 1.5);
+    .toBeCloseTo(14 * 1.5);
   // 调字号不缩放窗口和栏宽，顶栏允许换行。
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.getByRole("dialog", { name: "阅读显示", exact: true }).getByRole("button", { name: "关闭", exact: true }).click();
   await page.reload();
+  await page.getByRole("button", { name: "阅读显示", exact: true }).click();
   await expect(choice).toHaveValue("150");
+  await page.getByRole("dialog", { name: "阅读显示", exact: true }).getByRole("button", { name: "关闭", exact: true }).click();
   await page.getByRole("button", { name: "活动记录", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "活动记录" });
   await expect(panel.getByLabel("调整字体大小")).toHaveValue("150");
@@ -215,10 +219,11 @@ test("字号调整同步到正文与活动日志，刷新保留并可恢复默�
   await panel.getByRole("button", { name: "详情", exact: true }).first().click();
   const detail = panel.locator("pre").first();
   await expect(detail).toBeVisible();
-  expect(await detail.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(11 * 1.2);
+  expect(await detail.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(14 * 1.2);
   await panel.getByRole("button", { name: "恢复默认字号" }).click();
   await expect(panel.getByLabel("调整字体大小")).toHaveValue("100");
   await panel.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("button", { name: "阅读显示", exact: true }).click();
   await expect(choice).toHaveValue("100");
 });
 
@@ -229,7 +234,10 @@ test("改动与历史列出提交，撤销后内容回退", async ({ page }) => 
   await expect(page.getByText("补充线索")).toBeVisible();
   await expect(page.getByText("写入第一章")).toBeVisible();
 
-  await page.getByRole("button", { name: "撤销" }).first().click();
+  await page.getByRole("button", { name: "撤销", exact: true }).first().click();
+  const confirmation = page.getByRole("alertdialog", { name: "撤销这次修改", exact: true });
+  await expect(confirmation).toContainText("设定集/线索.md");
+  await confirmation.getByRole("button", { name: "确认撤销", exact: true }).click();
   await expect(page.getByText(/Revert/)).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "关闭" }).click();
   await page.getByRole("button", { name: "线索", exact: true }).click();
@@ -249,6 +257,7 @@ test("搜索定位到正文，外部改动刷新后可见", async ({ page }) => 
     "# 来信\n\n早上，信封从门缝里塞进来。\n",
     "utf-8",
   );
+  await page.getByRole("button", { name: "作品", exact: true }).click();
   await page.getByRole("button", { name: "重新读取文件" }).click();
   await expect(page.locator(".toc-row").filter({ hasText: "来信" })).toBeVisible();
 });
@@ -261,6 +270,7 @@ test("章名带章序，人物标签在目录与稿纸一致", async ({ page }) 
     "utf-8",
   );
   await open(page);
+  await page.getByRole("button", { name: "作品", exact: true }).click();
   await page.getByRole("button", { name: "重新读取文件" }).click();
 
   // 章序来自文件编号，不按列表位置重排。
@@ -288,13 +298,13 @@ test("章名带章序，人物标签在目录与稿纸一致", async ({ page }) 
 test("对话栏可隐藏，隐藏状态刷新后保持", async ({ page }) => {
   await open(page);
   const panel = chatPanel(page);
-  const section = page.locator("main > section");
+  const section = page.getByRole("region", { name: "正文阅读", exact: true });
   await expect(panel).toBeVisible();
   const narrow = (await section.boundingBox())!.width;
 
   // 顶栏开关与面板里的「新对话」按钮同名不同义，必须精确匹配。
   await page.getByRole("button", { name: "对话", exact: true }).click();
-  await expect(panel).toHaveCount(0);
+  await expect(panel).toBeHidden();
 
   // 收起后稿纸区接过对话栏与把手的宽度。
   await expect
@@ -303,7 +313,7 @@ test("对话栏可隐藏，隐藏状态刷新后保持", async ({ page }) => {
 
   await page.reload();
   await expect(page.getByLabel("选择作品目录")).not.toHaveValue("", { timeout: 10_000 });
-  await expect(chatPanel(page)).toHaveCount(0);
+  await expect(chatPanel(page)).toBeHidden();
 
   await page.getByRole("button", { name: "对话", exact: true }).click();
   await expect(chatPanel(page)).toBeVisible();
@@ -311,7 +321,7 @@ test("对话栏可隐藏，隐藏状态刷新后保持", async ({ page }) => {
 
 test("拖拽把手改栏宽，刷新后保持，双击恢复默认", async ({ page }) => {
   await open(page);
-  const nav = page.locator("main > nav");
+  const nav = page.locator(".writing-toc");
   const before = (await nav.boundingBox())!.width;
 
   await dragHandle(page, "目录栏宽度", 60);
@@ -347,7 +357,8 @@ test("对话栏宽度可拖拽，且不超过上限", async ({ page }) => {
   await dragHandle(page, "对话栏宽度", -400);
   await expect
     .poll(async () => Math.round((await panel.boundingBox())!.width))
-    .toBe(560);
+    .toBeLessThanOrEqual(560);
+  expect((await page.getByRole("region", { name: "正文阅读", exact: true }).boundingBox())!.width).toBeGreaterThanOrEqual(560);
 });
 
 test("稿纸横线随内容滚动", async ({ page }) => {
@@ -357,6 +368,7 @@ test("稿纸横线随内容滚动", async ({ page }) => {
   writeFileSync(join(workspaceRoot, "正文", "0003 长夜.md"), `# 长夜\n\n${long}\n`, "utf-8");
 
   await open(page);
+  await page.getByRole("button", { name: "作品", exact: true }).click();
   await page.getByRole("button", { name: "重新读取文件" }).click();
   await page.locator(".toc-row").filter({ hasText: "长夜" }).click();
   await expect(page.getByText("第 1 段")).toBeVisible();
@@ -382,7 +394,7 @@ test("稿纸横线随内容滚动", async ({ page }) => {
 
 test("故事资料页叠加已装模块的计划，并可按模块筛选", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "故事资料", exact: true }).click();
+  await page.getByRole("link", { name: "故事资料", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: /计划叠加/ }),
   ).toBeVisible();
@@ -396,27 +408,28 @@ test("故事资料页叠加已装模块的计划，并可按模块筛选", async
 
 test("灵感草稿切页返回后保留，保存后可删除恢复并带到对话", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  await page.getByRole("link", { name: "灵感", exact: true }).click();
   await page.getByRole("button", { name: "新建", exact: true }).click();
   await page.getByLabel("灵感标题").fill("旧识");
   await page.getByLabel("灵感正文").fill("老板娘认识死者，这层关系暂时不揭穿。");
-  await page.getByRole("button", { name: "写作", exact: true }).click();
-  await page.getByRole("button", { name: "灵感", exact: true }).click();
+  await page.getByRole("link", { name: "写作", exact: true }).click();
+  await page.getByRole("link", { name: "灵感", exact: true }).click();
   await expect(page.getByLabel("灵感标题")).toHaveValue("旧识");
   await expect(page.getByLabel("灵感正文")).toHaveValue("老板娘认识死者，这层关系暂时不揭穿。");
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByText("已保存为新的灵感修订")).toBeVisible();
-  await expect(page.locator(".toc-row").filter({ hasText: "旧识" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /旧识/ })).toBeVisible();
 
+  await page.getByRole("button", { name: "条目操作", exact: true }).click();
   await page.getByRole("button", { name: "删除", exact: true }).click();
   await expect(page.getByText("已移到最近删除")).toBeVisible();
-  await page.getByRole("button", { name: /最近删除/ }).click();
-  await page.locator(".toc-row").filter({ hasText: "旧识" }).click();
+  await page.getByRole("tab", { name: /最近删除/ }).click();
+  await page.getByRole("button", { name: /旧识/ }).click();
   await page.getByRole("button", { name: "恢复", exact: true }).click();
   await expect(page.getByText("已恢复；恢复会生成一条新修订")).toBeVisible();
   await page.getByRole("button", { name: "带到对话", exact: true }).click();
   await expect(page.getByText("本轮灵感：")).toBeVisible();
-  await expect(page.getByText("旧识")).toBeVisible();
+  await expect(page.getByText("旧识", { exact: true })).toBeVisible();
 });
 
 test("新建作品用系统窗口选位置，界面不再出现路径输入框", async ({ page }) => {
@@ -424,6 +437,7 @@ test("新建作品用系统窗口选位置，界面不再出现路径输入框",
     route.fulfill({ json: { root: "C:\\Users\\someone\\Documents" } }),
   );
   await open(page);
+  await page.getByRole("button", { name: "作品", exact: true }).click();
   await page.getByRole("button", { name: "打开 / 新建" }).click();
   await page.getByRole("tab", { name: "新建作品" }).click();
 
@@ -437,6 +451,7 @@ test("选好位置并起名后新建作品，建立版本记录", async ({ page 
   const parent = mkdtempSync(join(tmpdir(), "hastings-e2e-new-"));
   await page.route("**/pick-directory", (route) => route.fulfill({ json: { path: parent } }));
   await open(page);
+  await page.getByRole("button", { name: "作品", exact: true }).click();
   await page.getByRole("button", { name: "打开 / 新建" }).click();
   await page.getByRole("tab", { name: "新建作品" }).click();
   await page.getByRole("button", { name: "更改位置…" }).click();

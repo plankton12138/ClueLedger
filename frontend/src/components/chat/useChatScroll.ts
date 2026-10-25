@@ -38,7 +38,7 @@ export function useChatScroll(token: number, conversationId: string | null): Cha
 
   const onScroll = useCallback(() => {
     const element = ref.current;
-    if (!element) return;
+    if (!element || element.clientHeight === 0) return;
     const near =
       element.scrollHeight - element.scrollTop - element.clientHeight <= BOTTOM_MARGIN;
     following.current = near;
@@ -56,6 +56,7 @@ export function useChatScroll(token: number, conversationId: string | null): Cha
     const frame = requestAnimationFrame(() => {
       const element = ref.current;
       if (!element) return;
+      if (element.clientHeight === 0) { setHasNew(true); return; }
       if (!following.current || selectionInside(element)) {
         setHasNew(true);
         return;

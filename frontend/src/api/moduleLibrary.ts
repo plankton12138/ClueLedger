@@ -23,6 +23,7 @@ export interface ModuleSpec {
   label: string;
   source_kinds: string[];
   organize_domain: string | null;
+  allowed_fields: string[];
 }
 
 export interface ModuleInfo {
@@ -182,7 +183,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
-      error?: { code?: string; why?: string; fix?: string };
+      error?: { code?: string; where?: string; why?: string; fix?: string };
     } | null;
     const error = body?.error;
     throw new WorkspaceApiError(
@@ -190,6 +191,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       error?.why ?? `请求没有成功（HTTP ${response.status}）`,
       error?.fix ?? "稍后重试；若持续失败，按状态码查后端日志",
       response.status,
+      error?.where ?? "模块请求",
     );
   }
   if (response.status === 204) return undefined as T;
@@ -242,6 +244,21 @@ export function createModule(input: {
   });
 }
 
+/** 精确链接不假设目标位于当前筛选的第一页；复用现有有界分页。 */
+export async function findModuleInfo(moduleId: string): Promise<ModuleInfo | null> {
+  let cursor: string | null = null;
+  const visited = new Set<string>();
+  do {
+    const page = await listModules({ includeDeleted: true, limit: 50, cursor });
+    const found = page.items.find(item => item.module_id === moduleId);
+    if (found) return found;
+    cursor = page.next_cursor;
+    if (cursor && visited.has(cursor)) throw new Error("[MODULE_CURSOR_INVALID] 模块目录：分页游标重复。建议：重新读取模块库。");
+    if (cursor) visited.add(cursor);
+  } while (cursor);
+  return null;
+}
+
 export function fetchRevisions(
   moduleId: string,
   options: { cursor?: string | null; limit?: number } = {},
@@ -262,10 +279,43 @@ export function fetchRecord(
   moduleId: string,
   revisionId: string,
   entryId: string,
+  range: { start?: number; end?: number } = {},
 ): Promise<EntryRecord> {
   return request<EntryRecord>(
-    `${LIBRARY}/modules/${moduleId}/revisions/${revisionId}/records/${entryId}`,
+    `${LIBRARY}/modules/${moduleId}/revisions/${revisionId}/records/${entryId}${query(range)}`,
   );
+}
+
+/** 只有全部分段连续、版本一致且码点数吻合时，才把原文交给编辑器。 */
+export async function fetchCompleteRecord(
+  moduleId: string,
+  revisionId: string,
+  entryId: string,
+  expected?: { chars: number; digest: string },
+): Promise<EntryRecord> {
+  let start = 0;
+  let first: EntryRecord | null = null;
+  const chunks: string[] = [];
+  for (;;) {
+    const part = await fetchRecord(moduleId, revisionId, entryId, { start });
+    first ??= part;
+    const end = part.end;
+    const length = part.length;
+    const valid = part.entry_id === entryId && part.start === start
+      && Number.isSafeInteger(end) && Number.isSafeInteger(length) && length >= 0
+      && end >= start && end <= length && (end > start || length === 0)
+      && Array.from(part.text).length === end - start
+      && part.digest === first.digest && length === first.length
+      && (!expected || (part.digest === expected.digest && length === expected.chars))
+      && part.truncated === (end < length)
+      && part.next_cursor === (end < length ? end : null);
+    if (!valid) {
+      throw new Error("[MODULE_RECORD_INCOMPLETE] 模块原文：分段内容不完整或版本不一致。建议：重新读取完整版本后再编辑。");
+    }
+    chunks.push(part.text);
+    if (!part.truncated) return { ...first, text: chunks.join(""), start: 0, end: length, truncated: false, next_cursor: null };
+    start = end;
+  }
 }
 
 export function publishRevision(

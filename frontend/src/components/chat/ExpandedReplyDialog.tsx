@@ -6,7 +6,7 @@
  * 不显示错会话的内容。
  */
 
-import * as Dialog from "@radix-ui/react-dialog";
+import { AppDialog } from "../ui/AppDialog";
 
 import type { ChatMessage } from "../../state/chatMessages";
 import { publicText } from "../../state/chatMessages";
@@ -30,13 +30,8 @@ export default function ExpandedReplyDialog({
 }: Props) {
   const text = message ? publicText(message) : "";
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="chat-dialog-overlay" />
-        <Dialog.Content className="chat-dialog" aria-describedby={undefined}>
-          <div className="chat-dialog-head">
-            <Dialog.Title className="chat-dialog-title">阅读这条回复</Dialog.Title>
-            <div className="chat-dialog-tools">
+    <AppDialog open={open} onOpenChange={next => { if (!next) onClose(); }} title="阅读这条回复" className="reply-dialog">
+          <div className="chat-dialog-tools">
               <button
                 type="button"
                 className="btn btn-gray px-2 py-0.5 text-[11px]"
@@ -48,12 +43,6 @@ export default function ExpandedReplyDialog({
               >
                 复制原文
               </button>
-              <Dialog.Close asChild>
-                <button type="button" className="btn btn-gray px-2 py-0.5 text-[11px]">
-                  关闭
-                </button>
-              </Dialog.Close>
-            </div>
           </div>
           {copyHint && (
             <p className="chat-dialog-hint">
@@ -72,8 +61,6 @@ export default function ExpandedReplyDialog({
               </pre>
             )}
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </AppDialog>
   );
 }

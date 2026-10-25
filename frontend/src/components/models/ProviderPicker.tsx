@@ -1,3 +1,4 @@
+import { Button } from "../ui/Button";
 /**
  * 供应商选择（0.4 V04-9C 第一步）。
  *
@@ -47,7 +48,7 @@ export default function ProviderPicker({ presets, onPick }: Props) {
       <ul className="mt-3 grid max-h-72 grid-cols-1 gap-1 overflow-auto sm:grid-cols-2">
         {matched.map((item) => (
           <li key={item.id}>
-            <button
+            <Button
               className="w-full rounded border border-[#e2dbc6] bg-white/70 px-3 py-2 text-left hover:bg-[#f3ecd8]"
               onClick={() => onPick(item)}
             >
@@ -56,19 +57,19 @@ export default function ProviderPicker({ presets, onPick }: Props) {
                   {item.display_name}
                 </span>
                 {item.custom && (
-                  <span className="rounded bg-[#e8e0c8] px-1.5 py-0.5 text-[10px] text-[#6b6555]">
+                  <span className="rounded bg-[#e8e0c8] px-1.5 py-0.5 text-sm text-ui-muted">
                     手动
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 truncate text-[10px] text-[#8a8371]">
+              <div className="mt-0.5 truncate text-sm text-ui-muted">
                 {item.custom ? "填写完整地址并选择协议" : item.base_url}
               </div>
-            </button>
+            </Button>
           </li>
         ))}
         {matched.length === 0 && (
-          <li className="px-2 py-1 text-xs text-[#8a8371]">没有匹配的供应商。</li>
+          <li className="px-2 py-1 text-xs text-ui-muted">没有匹配的供应商。</li>
         )}
       </ul>
     </div>

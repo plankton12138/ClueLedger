@@ -7,15 +7,17 @@
 
 import type { MaterialEntry } from "../../api/storyMaterials";
 import { FRESHNESS_LABEL, FRESHNESS_TONE } from "./labels";
+import { Button } from "../ui/Button";
 
 interface Props {
   entry: MaterialEntry;
   onOpenSource: (path: string) => void;
   onTakeToChat: (path: string) => void;
   onClose: () => void;
+  showClose?: boolean;
 }
 
-export default function EvidencePane({ entry, onOpenSource, onTakeToChat, onClose }: Props) {
+export default function EvidencePane({ entry, onOpenSource, onTakeToChat, onClose, showClose = true }: Props) {
   const sourcePath = entry.evidence[0]?.path ?? entry.entity_path ?? null;
   return (
     <aside className="flex min-h-0 w-full flex-1 flex-col border-t border-panel-edge bg-surface md:border-t-0">
@@ -24,16 +26,16 @@ export default function EvidencePane({ entry, onOpenSource, onTakeToChat, onClos
           <h2 className="truncate text-sm font-bold" title={entry.title}>
             {entry.title}
           </h2>
-          {entry.subtitle && <p className="truncate text-[10px] text-sub">{entry.subtitle}</p>}
+          {entry.subtitle && <p className="truncate text-xs text-sub">{entry.subtitle}</p>}
         </div>
-        <button className="btn btn-gray px-2 py-0.5 text-[11px]" onClick={onClose}>
+        {showClose && <Button size="compact" onClick={onClose}>
           关闭
-        </button>
+        </Button>}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-2 text-[11px]">
+      <div className="min-h-0 flex-1 overflow-auto px-3 py-2 text-sm">
         {entry.notes.length > 0 && (
-          <ul className="mb-2 space-y-1 text-[10px] text-amber">
+          <ul className="mb-2 space-y-1 text-xs text-amber">
             {entry.notes.map((note, index) => (
               <li key={index}>{note}</li>
             ))}
@@ -53,7 +55,7 @@ export default function EvidencePane({ entry, onOpenSource, onTakeToChat, onClos
           <ul className="space-y-2">
             {entry.evidence.map((evidence, index) => (
               <li key={`${evidence.path}:${evidence.start}:${index}`} className="rounded border border-row-edge p-2">
-                <div className="flex items-center gap-2 text-[10px] text-mute">
+                <div className="flex items-center gap-2 text-xs text-mute">
                   <span className="min-w-0 flex-1 truncate" title={evidence.path}>
                     {evidence.chapter !== null ? `第 ${evidence.chapter} 章｜` : ""}
                     {evidence.path}
@@ -64,11 +66,11 @@ export default function EvidencePane({ entry, onOpenSource, onTakeToChat, onClos
                     </span>
                   )}
                 </div>
-                <blockquote className="mt-1 border-l-2 border-sheet-line pl-2 font-serif text-[12px] leading-6 text-fg">
+                <blockquote className="mt-1 border-l-2 border-sheet-line pl-2 font-serif text-sm leading-6 text-fg">
                   {evidence.quote}
                 </blockquote>
                 {evidence.freshness === "stale" && (
-                  <p className="mt-1 text-[10px] text-amber">
+                  <p className="mt-1 text-xs text-amber">
                     这是整理时保存的引文；原文已经改过，不能按旧位置高亮当前内容。
                   </p>
                 )}
@@ -80,14 +82,14 @@ export default function EvidencePane({ entry, onOpenSource, onTakeToChat, onClos
 
       <div className="flex flex-none flex-wrap gap-2 border-t border-panel-edge px-3 py-2">
         <button
-          className="btn btn-gray px-2 py-1 text-[11px]"
+          className="btn btn-gray px-2 py-1 text-sm"
           disabled={!sourcePath}
           onClick={() => sourcePath && onOpenSource(sourcePath)}
         >
           打开原文
         </button>
         <button
-          className="btn btn-gray px-2 py-1 text-[11px]"
+          className="btn btn-gray px-2 py-1 text-sm"
           disabled={!sourcePath}
           onClick={() => sourcePath && onTakeToChat(sourcePath)}
           title="把这份原文加入写作草稿的参考，不自动发送"

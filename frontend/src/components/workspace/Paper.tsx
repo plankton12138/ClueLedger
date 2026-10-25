@@ -7,6 +7,9 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useLayoutEffect, useRef } from "react";
+import { useWorkspaceStore } from "../../state/workspace";
+import { usePagePositions } from "../../state/pagePositions";
 
 import type { FileView } from "../../api/workspace";
 import CharacterBadges from "./CharacterBadges";
@@ -17,6 +20,12 @@ interface Props {
 }
 
 export default function Paper({ file, loading }: Props) {
+  const workspaceId = useWorkspaceStore(state => state.currentId);
+  const positionKey = `${workspaceId}:paper:${file?.path ?? ""}`;
+  const scroll = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (scroll.current) scroll.current.scrollTop = usePagePositions.getState().offsets[positionKey] ?? 0;
+  }, [positionKey]);
   if (!file) {
     return (
       <div className="grid h-full place-items-center px-8 text-center text-sm text-sub">
@@ -46,7 +55,7 @@ export default function Paper({ file, loading }: Props) {
           </p>
         )}
       </header>
-      <div className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm">
+      <div ref={scroll} className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm" onScroll={event => { if (event.currentTarget.clientHeight) usePagePositions.getState().offset(positionKey, event.currentTarget.scrollTop); }}>
         <div className="paper-lined min-h-full px-8 py-6">
           {file.display_text.trim() ? (
             <div className="prose-paper text-[15px] leading-8">

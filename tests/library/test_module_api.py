@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from hastings.library import ModuleLibrary
+from hastings.library.presets import PRESETS
 from hastings.server.file_app import create_workspace_app
 from hastings.workspace.state import RecentWorkspaces
 
@@ -63,6 +64,9 @@ def test_presets_expose_seven_kinds(tmp_path: Path) -> None:
     assert response.status_code == 200
     kinds = [item["kind"] for item in response.json()]
     assert kinds == ["characters", "world", "clues", "truth", "timeline", "plot", "reference"]
+    assert {item["kind"]: item["allowed_fields"] for item in response.json()} == {
+        item.kind: list(item.allowed_fields) for item in PRESETS
+    }
 
 
 def test_create_and_list_modules(tmp_path: Path) -> None:

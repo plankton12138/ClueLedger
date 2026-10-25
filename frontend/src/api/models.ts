@@ -102,6 +102,7 @@ export class ModelApiError extends Error {
     readonly why: string,
     readonly fix: string,
     readonly status: number,
+    readonly where: string = "模型连接",
   ) {
     super(why);
     this.name = "ModelApiError";
@@ -115,7 +116,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
-      error?: { code?: string; why?: string; fix?: string };
+      error?: { code?: string; where?: string; why?: string; fix?: string };
     } | null;
     const error = body?.error;
     throw new ModelApiError(
@@ -123,6 +124,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       error?.why ?? `请求没有成功（HTTP ${response.status}）`,
       error?.fix ?? "稍后重试；若持续失败，按状态码查后端日志",
       response.status,
+      error?.where ?? "模型连接",
     );
   }
   return (await response.json()) as T;

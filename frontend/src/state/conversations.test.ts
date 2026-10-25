@@ -134,6 +134,19 @@ describe("加载与恢复", () => {
 });
 
 describe("新对话与首次发送", () => {
+  it("A 到 B 再到 A 后，第一次 A 的列表不能覆盖新列表", async () => {
+    let resolve!: (value: ReturnType<typeof list>) => void;
+    api.listConversations.mockReturnValueOnce(new Promise(done => { resolve = done; }));
+    const old = useConversationsStore.getState().load("w1");
+    await useConversationsStore.getState().load("w2");
+    api.listConversations.mockResolvedValueOnce(list([], null));
+    await useConversationsStore.getState().load("w1");
+    resolve(list()); await old;
+    expect(useConversationsStore.getState().workspaceId).toBe("w1");
+    expect(useConversationsStore.getState().items).toEqual([]);
+    expect(useConversationsStore.getState().selectedId).toBeNull();
+  });
+
   it("点新对话只切到临时状态，不请求后端", async () => {
     await useConversationsStore.getState().load("w1");
 
@@ -193,7 +206,7 @@ describe("新对话与首次发送", () => {
     await useConversationsStore.getState().load("w1");
     useConversationsStore.getState().newConversation();
     useConversationsStore.getState().setDraft("写第一章");
-    api.createConversationWithText.mockRejectedValue(new Error("作品忙碌"));
+    api.createConversationWithText.mockRejectedValue(new WorkspaceApiError("WORKSPACE_BUSY", "作品忙碌", "等待当前任务结束", 409, "对话受理"));
 
     await useConversationsStore.getState().send("写第一章");
 

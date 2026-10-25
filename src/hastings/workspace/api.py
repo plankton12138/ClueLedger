@@ -584,6 +584,7 @@ class GitStatusView(BaseModel):
 
 class GitDiffView(BaseModel):
     diff: str
+    paths: list[str] = Field(default_factory=list)
 
 
 class GitCommitView(BaseModel):
@@ -1228,7 +1229,7 @@ def create_file_workspace_router(
     @router.get("/{workspace_id}/git/commits/{commit}/diff", response_model=GitDiffView)
     def git_commit_diff(workspace_id: str, commit: str) -> GitDiffView:
         repo = GitRepo(workspaces.workspace(workspace_id).root)
-        return GitDiffView(diff=repo.commit_diff(commit))
+        return GitDiffView(diff=repo.commit_diff(commit), paths=list(repo.commit_paths(commit)))
 
     @router.post("/{workspace_id}/git/init", response_model=GitStatusView)
     def git_init(workspace_id: str) -> GitStatusView:

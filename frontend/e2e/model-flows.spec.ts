@@ -288,7 +288,7 @@ test.describe("在线模型", () => {
   test("故事资料整理、外部改源失效与重新读取", async ({ page, request }) => {
     await prepareWorkspace(request);
     await openWorkspace(page);
-    await page.getByRole("button", { name: "故事资料", exact: true }).click();
+    await page.getByRole("link", { name: "故事资料", exact: true }).click();
     await expect(page.locator(".materials-nav")).toBeVisible();
     await page.getByRole("button", { name: "整理所选章节", exact: true }).click();
     const picker = page.getByRole("dialog", { name: "整理章节索引" });
@@ -312,7 +312,7 @@ test.describe("在线模型", () => {
     await expect(row).toContainText("依据已改动", { timeout: 30_000 });
 
     // 回到写作页：资料页的浏览不改变写作草稿与当前文件。
-    await page.getByRole("button", { name: "写作", exact: true }).click();
+    await page.getByRole("link", { name: "写作", exact: true }).click();
     const prompt = "第一章被外部修改了。读取当前原文后，只把第三章末句改成『窗外的雪已经停了三天』。";
     await send(page, prompt);
     const next = await waitForRun(request, 180_000);

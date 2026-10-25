@@ -1,3 +1,4 @@
+import { Button } from "../ui/Button";
 /**
  * 模型设置对话框（0.4 V04-9C）。
  *
@@ -12,6 +13,7 @@ import { useEffect, useState } from "react";
 
 import type { ModelConnection, ProviderPreset } from "../../api/models";
 import { useModelsStore } from "../../state/models";
+import { AppDialog } from "../ui/AppDialog";
 import ConnectionForm from "./ConnectionForm";
 import ProviderPicker from "./ProviderPicker";
 
@@ -58,50 +60,30 @@ export default function ModelSettingsDialog() {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="模型设置"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") close();
-      }}
-    >
-      <div className="flex max-h-[88vh] w-full max-w-3xl flex-col rounded-md border border-[#cfc7ae] bg-[#fbf8ef] shadow-xl">
-        <header className="flex flex-none items-center gap-3 border-b border-[#e2dbc6] px-5 py-3">
-          <h2 className="font-serif text-lg font-bold text-sheetInk">模型设置</h2>
-          <span className="text-[10px] text-[#8a8371]">
-            连接保存在本机配置里，写入作品之外
-          </span>
-          <div className="flex-1" />
-          <button className="btn btn-gray px-2 py-1 text-[11px]" onClick={close}>
-            关闭
-          </button>
-        </header>
-
+    <AppDialog open={open} onOpenChange={value => { if (!value) close(); }} title="模型设置" returnFocus={() => document.querySelector<HTMLElement>('[data-dialog-return="settings"]')} className="model-settings-dialog">
         {sessionOnly && (
-          <p className="flex-none border-b border-[#e5d3a8] bg-[#f7efd9] px-5 py-2 text-[11px] text-[#6b5525]">
+          <p className="flex-none border-b border-[#e5d3a8] bg-[#f7efd9] px-5 py-2 text-sm text-[#6b5525]">
             系统凭据存储不可用：API Key 只在本次运行有效，重启后需要重新填写。
           </p>
         )}
         {error && (
-          <p role="alert" className="flex-none border-b border-[#c98b8b] bg-[#f7e6e6] px-5 py-2 text-[11px] text-[#8a3b3b]">
+          <p role="alert" className="flex-none border-b border-[#c98b8b] bg-[#f7e6e6] px-5 py-2 text-sm text-[#8a3b3b]">
             {error}
           </p>
         )}
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden sm:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="model-settings-grid">
           <aside className="min-h-0 overflow-auto border-r border-[#e2dbc6] bg-white/40 p-3">
             <div className="flex items-center gap-2">
-              <h3 className="flex-1 text-[11px] font-bold tracking-wide text-[#6b6555]">
+              <h3 className="flex-1 text-sm font-bold tracking-wide text-ui-muted">
                 连接（{connections.length}）
               </h3>
-              <button
-                className="btn btn-gray px-2 py-0.5 text-[10px]"
+              <Button
+                className="px-2 py-0.5 text-sm"
                 onClick={() => setMode({ kind: "provider" })}
               >
                 新增
-              </button>
+              </Button>
             </div>
 
             <ul className="mt-2 space-y-1">
@@ -119,32 +101,32 @@ export default function ModelSettingsDialog() {
                         {connection.display_name}
                       </span>
                       {current && (
-                        <span className="rounded bg-[#d7e6f0] px-1 py-0.5 text-[9px] text-[#2f5570]">
+                        <span className="rounded bg-[#d7e6f0] px-1 py-0.5 text-[12px] text-[#2f5570]">
                           当前
                         </span>
                       )}
                     </div>
-                    <div className="mt-0.5 truncate text-[10px] text-[#8a8371]">
+                    <div className="mt-0.5 truncate text-sm text-ui-muted">
                       {connection.models.length} 个模型 ·{" "}
                       {connection.has_key ? `Key ${connection.masked_key}` : "未配置 Key"}
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[10px]">
-                      <button
+                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-sm">
+                      <Button
                         className="underline text-[#3a6b8c]"
                         disabled={loading || !connection.has_key}
                         onClick={() => void choose(connection.name, connection.default_model)}
                       >
                         设为当前
-                      </button>
-                      <button className="underline text-[#6b6555]" onClick={() => startEdit(connection)}>
+                      </Button>
+                      <Button className="underline text-ui-muted" onClick={() => startEdit(connection)}>
                         编辑
-                      </button>
+                      </Button>
                       {confirming === connection.name ? (
                         <>
                           <span className="text-[#8a3b3b]">
                             {current ? "会清空当前选择，确认删除？" : "确认删除？"}
                           </span>
-                          <button
+                          <Button
                             className="underline text-[#8a3b3b]"
                             onClick={() => {
                               setConfirming(null);
@@ -152,25 +134,25 @@ export default function ModelSettingsDialog() {
                             }}
                           >
                             删除
-                          </button>
-                          <button className="underline" onClick={() => setConfirming(null)}>
+                          </Button>
+                          <Button className="underline" onClick={() => setConfirming(null)}>
                             取消
-                          </button>
+                          </Button>
                         </>
                       ) : (
-                        <button
+                        <Button
                           className="underline text-[#8a3b3b]"
                           onClick={() => setConfirming(connection.name)}
                         >
                           删除
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </li>
                 );
               })}
               {connections.length === 0 && (
-                <li className="px-1 py-2 text-[11px] leading-5 text-[#8a8371]">
+                <li className="px-1 py-2 text-sm leading-5 text-ui-muted">
                   还没有连接。点「新增」选择一个供应商，填入 API Key 后即可开始对话。
                 </li>
               )}
@@ -184,15 +166,15 @@ export default function ModelSettingsDialog() {
                   <p className="font-serif text-base text-[#3f3a2c]">
                     {connections.length === 0 ? "连接一个模型供应商" : "选择左侧连接进行编辑"}
                   </p>
-                  <p className="mt-1 text-[11px] leading-5 text-[#8a8371]">
+                  <p className="mt-1 text-sm leading-5 text-ui-muted">
                     「连接」是你在某家服务的账号；同一个供应商可以建多个连接。
                   </p>
-                  <button
-                    className="btn btn-gold mt-3 px-3 py-1 text-xs"
+                  <Button
+                    variant="primary" className="mt-3 px-3 py-1 text-xs"
                     onClick={() => setMode({ kind: "provider" })}
                   >
                     新增连接
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -215,7 +197,6 @@ export default function ModelSettingsDialog() {
             )}
           </section>
         </div>
-      </div>
-    </div>
+    </AppDialog>
   );
 }

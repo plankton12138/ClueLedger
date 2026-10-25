@@ -507,6 +507,7 @@ export class WorkspaceApiError extends Error {
     readonly why: string,
     readonly fix: string,
     readonly status: number,
+    readonly where: string = "作品操作",
   ) {
     super(why);
     this.name = "WorkspaceApiError";
@@ -522,7 +523,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
-      error?: { code?: string; why?: string; fix?: string };
+      error?: { code?: string; where?: string; why?: string; fix?: string };
     } | null;
     const error = body?.error;
     throw new WorkspaceApiError(
@@ -532,6 +533,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       error?.why ?? `请求没有成功（HTTP ${response.status}）`,
       error?.fix ?? "稍后重试；若持续失败，按状态码查后端日志",
       response.status,
+      error?.where ?? "作品请求",
     );
   }
   if (response.status === 204) return undefined as T;
@@ -611,8 +613,8 @@ export function gitLog(workspaceId: string): Promise<{ commits: GitCommit[] }> {
   return request<{ commits: GitCommit[] }>(`/${workspaceId}/git/log`);
 }
 
-export function gitCommitDiff(workspaceId: string, commit: string): Promise<{ diff: string }> {
-  return request<{ diff: string }>(`/${workspaceId}/git/commits/${commit}/diff`);
+export function gitCommitDiff(workspaceId: string, commit: string): Promise<{ diff: string; paths: string[] }> {
+  return request<{ diff: string; paths: string[] }>(`/${workspaceId}/git/commits/${commit}/diff`);
 }
 
 export function gitInit(workspaceId: string): Promise<GitStatus> {

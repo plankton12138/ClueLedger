@@ -74,4 +74,14 @@ describe("storyMaterials store", () => {
     expect(state.workspaceId).toBe("ws2");
     expect(state.cache[materialsKey("timeline", 1)]).toBeUndefined();
   });
+  it("A→B→A不复用第一轮A请求，旧失败不能覆盖新资料", async () => {
+    const slow = deferred<typeof sample>();
+    mocked.mockReturnValueOnce(slow.promise).mockResolvedValue(sample);
+    const pending = useStoryMaterialsStore.getState().load("A", "timeline", { asOfChapter: 1 });
+    useStoryMaterialsStore.getState().reset("B");
+    await useStoryMaterialsStore.getState().load("A", "timeline", { asOfChapter: 1 });
+    slow.reject(new Error("旧读取失败")); await pending;
+    expect(useStoryMaterialsStore.getState().cache[materialsKey("timeline", 1)]).toEqual(sample);
+    expect(useStoryMaterialsStore.getState().error).toBeNull();
+  });
 });

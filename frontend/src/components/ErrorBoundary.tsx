@@ -37,13 +37,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
     return (
       <div className="flex flex-1 items-center justify-center p-6">
         <div className="max-w-md rounded border border-red-edge bg-red-bg px-4 py-3">
-          <div className="text-sm font-bold text-red">「{this.props.label}」面板崩溃了</div>
-          <p className="mt-1 text-xs leading-relaxed text-fg/75">
-            {this.state.error.message}
-          </p>
-          <p className="mt-2 text-xs leading-relaxed text-fg/50">
-            建议：点下方重试；若反复崩溃，检查服务端日志或刷新页面。
-          </p>
+          <p role="alert" className="text-sm text-red">[PANEL_RENDER_FAILED] {this.props.label}：面板暂时无法显示。建议：重试；持续失败时查看活动记录或刷新页面。</p>
           <button
             type="button"
             className="btn btn-gray mt-3 px-3 py-1 text-xs"
