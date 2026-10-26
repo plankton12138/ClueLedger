@@ -204,7 +204,11 @@ class RunContext:
         执行，因此越界操作先报「不被允许」，不会先被指纹错误掩盖。
         """
         self.require_writable(f"task_scope:{operation.path}")
-        self.scope.require(operation)
+        self.scope.require(
+            operation,
+            author_texts=self.author_messages,
+            module_content_available=self.library is not None,
+        )
         if preflight is not None:
             preflight()
         self.materials.require_target_read(self.workspace, required_read)
@@ -691,7 +695,11 @@ def build_tools(
             extend_actions=_action_list_argument(arguments, "extend_actions"),
             note=_optional_text_argument(arguments, "note"),
         )
-        scope = run.scope.set_scope(draft, author_texts=run.author_messages)
+        scope = run.scope.set_scope(
+            draft,
+            author_texts=run.author_messages,
+            module_content_available=run.library is not None,
+        )
         # 范围是这一轮的实际权限记录：写进事件，界面与回读都按同一份内容展示。
         run.record("task_scope_set", scope.to_dict())
         return _json(scope.to_dict())
@@ -719,6 +727,7 @@ def build_tools(
             evidence_path=evidence_path,
             evidence=evidence,
             author_texts=run.author_messages,
+            module_content_available=run.library is not None,
         )
         run.record("task_scope_extended", scope.to_dict())
         return _json(scope.to_dict())
@@ -1043,7 +1052,7 @@ def build_tools(
             name="set_task_scope",
             label="登记修改范围",
             description=(
-                "登记这一轮要做什么、作者在哪句话里授权、允许改哪些确切文件。"
+                "登记这一轮要做什么、作者在哪句话里授权、允许改哪些确切文件或模块内容。"
                 "没有登记范围的写工具会被拒绝；纯讨论不必登记。"
             ),
             parameters={
@@ -1165,6 +1174,8 @@ def build_tools(
             prompt_guidelines=(
                 "要改文件时先登记；作者没明确要求修改时用 read_only 或干脆不登记。",
                 "grants 只写确切路径，不要写目录或通配符。",
+                "普通资料创作登记 module_content_grants；"
+                "旧设定文件须有作者明确指定文件或沿用旧目录的要求。",
             ),
             execution_mode="sequential",
         ),
@@ -1248,8 +1259,8 @@ def build_tools(
             name="write_file",
             label="写入文件",
             description=(
-                "整体写入一个受管文件。新建文件不带 digest；改写已有文件必须带 read_file "
-                "得到的 digest。"
+                "整体写入章节或作者明确要求使用的旧设定文件。新建文件不带 digest；"
+                "改写已有文件必须带 read_file 得到的 digest。模块内容用 prepare_module_changes。"
             ),
             parameters={
                 "type": "object",
@@ -1269,7 +1280,8 @@ def build_tools(
             name="edit_file",
             label="局部修改",
             description=(
-                "用唯一匹配的原文替换完成局部修改，返回新的 digest。原文出现 0 次或多次都会失败。"
+                "局部修改章节或作者明确要求使用的旧设定文件，返回新的 digest。"
+                "原文出现 0 次或多次都会失败。模块条目的局部修改用 prepare_module_changes。"
             ),
             parameters={
                 "type": "object",
@@ -1283,7 +1295,10 @@ def build_tools(
                 "additionalProperties": False,
             },
             execute_fn=edit_file,
-            prompt_guidelines=("改一句话、补一段时使用；不要为小改动重写整章。",),
+            prompt_guidelines=(
+                "只对本轮获准修改的文件使用；不要为小改动重写整章。",
+                "已有模块可承接的资料修改在原模块内完成，不改同名旧文件或相关章节代替。",
+            ),
             execution_mode="sequential",
         ),
         AgentTool(
@@ -2413,8 +2428,11 @@ def build_tools(
                     execute_fn=prepare_module_changes,
                     prompt_guidelines=(
                         "先用 set_task_scope 登记 module_content_grants，再提交内容。",
+                        "本轮全部新建与修改操作放在同一个 operations 中，准备完整后统一应用。",
+                        "准备尚未应用时可另备完整变更集修订，包含全部操作，再应用完整结果。",
                         "新建正文由服务适配为自由资料；不要为每个字段建模块，也不建空模块。",
                         "修改前必须读取实际条目与版本，并带上 base_digest。",
+                        "局部修改也使用本工具；只改作者指定的信息，保留其他条目、字段与原文。",
                     ),
                     execution_mode="sequential",
                 )
@@ -2444,6 +2462,7 @@ def build_tools(
                     },
                     execute_fn=apply_module_changes,
                     prompt_guidelines=(
+                        "调用前确认变更集已包含本轮全部内容；应用成功后本轮只读，无法再准备遗漏内容。",
                         "内容保存失败时保留生成稿，按返回的阶段说明可继续的范围。",
                         "应用成功后不要继续改文件；用实际结果说明已用于本作品的内容。",
                     ),
@@ -3483,9 +3502,9 @@ def build_tools(
                 name="ask_author",
                 label="询问作者",
                 description=(
-                    "只在任务目标不明或创作取舍无法确定时使用：把问题、可选答案和关联内容"
-                    "记录下来并结束本轮。作者回答后会在下一轮继续原请求；"
-                    "模块拆分、命名与已授权的人物创作不需要问。"
+                    "读取相关材料后，目标仍无法唯一定位或本轮要求存在未决冲突时，"
+                    "记录一个必须由作者决定的问题并结束本轮，回答后继续原请求。"
+                    "作者已明确的新值直接采用；模块拆分、命名与已授权的人物创作不需要问。"
                 ),
                 parameters={
                     "type": "object",
@@ -3511,6 +3530,8 @@ def build_tools(
                 execute_fn=ask_author,
                 prompt_guidelines=(
                     "能自行判断的不要问；一次只问一个必须由作者决定的问题。",
+                    "作者明确要求先提问时按要求提问；明确的局部替换不需要重复确认。",
+                    "「其余不变」时保留范围外资料，不因旧文件或章节的潜在影响阻断修改。",
                     "调用后本轮结束，不要再写入或假装已经继续。",
                 ),
                 execution_mode="sequential",

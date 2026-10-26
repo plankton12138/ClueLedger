@@ -19,6 +19,7 @@ from typing import Literal
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import is_managed_path
+from hastings.workspace.legacy_files import require_legacy_file_authorization
 
 __all__ = [
     "ModuleAction",
@@ -257,6 +258,7 @@ class ScopeController:
         draft: ScopeDraft,
         *,
         author_texts: Sequence[tuple[int, str]],
+        module_content_available: bool = False,
     ) -> TaskScope:
         """登记本轮范围；重复登记生成新版本，不修改旧版本记录。
 
@@ -267,6 +269,13 @@ class ScopeController:
         _validate_draft(draft, author_texts)
         if self._current is not None:
             _validate_reregistration(self._current, draft)
+        if module_content_available:
+            require_legacy_file_authorization(
+                draft.grants,
+                author_texts=author_texts,
+                carried_from_seq=draft.carried_from_seq,
+                where="task_scope.set",
+            )
         scope = TaskScope(
             version=(self._current.version + 1) if self._current is not None else 1,
             draft=draft,
@@ -289,6 +298,7 @@ class ScopeController:
         evidence_path: str,
         evidence: str,
         author_texts: Sequence[tuple[int, str]],
+        module_content_available: bool = False,
     ) -> TaskScope:
         """在可发现范围内追加具体路径；保留原禁止项与操作类别限制。
 
@@ -375,6 +385,13 @@ class ScopeController:
             note=evidence.strip()[:200],
         )
         _validate_draft(draft, author_texts)
+        if module_content_available:
+            require_legacy_file_authorization(
+                draft.grants,
+                author_texts=author_texts,
+                carried_from_seq=draft.carried_from_seq,
+                where="task_scope.extend",
+            )
         scope = TaskScope(
             version=current.version + 1,
             draft=draft,
@@ -388,7 +405,13 @@ class ScopeController:
         self._current = scope
         return scope
 
-    def require(self, operation: Mutation) -> None:
+    def require(
+        self,
+        operation: Mutation,
+        *,
+        author_texts: Sequence[tuple[int, str]] = (),
+        module_content_available: bool = False,
+    ) -> None:
         """写工具的统一入口：没有范围、只读、越界都给出可修正的具体错误。"""
         current = self._current
         if current is None:
@@ -410,6 +433,13 @@ class ScopeController:
                 details={"operation": operation.to_dict(), "version": current.version},
             )
         if current.scope.permits(operation):
+            if module_content_available:
+                require_legacy_file_authorization(
+                    (operation,),
+                    author_texts=author_texts,
+                    carried_from_seq=current.draft.carried_from_seq,
+                    where=f"task_scope:{operation.path}",
+                )
             return
         touched = [operation.path]
         if operation.target is not None:

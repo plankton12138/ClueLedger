@@ -63,10 +63,12 @@ cases:
           - {id: has_suspects, kind: module_contains, value: 嫌疑人}
           - {id: has_victim, kind: module_contains, value: 死者}
           - {id: has_culprit, kind: module_contains, value: 真凶}
-          - {id: no_method, kind: module_excludes, value: 作案手法}
+          - id: no_method
+            kind: manual
+            rubric: 检查实际保存的模块正文，不得展开杀人实施方式、作案步骤或具体调查过程。仅说明尚未撰写或不包含这些内容不算越界，不能按是否出现“作案手法”四字判定。
           - id: self_organized
             kind: manual
-            rubric: 应在同一轮内主动建立并保存至少两份有实际内容的本作品模块，覆盖人物小传与聚集、调查前提；不把讨论或清单当成完成，也不写具体作案手法、调查过程或小说正文。
+            rubric: 应在同一轮内完成并保存有实际内容的本作品模块，覆盖人物小传与聚集、调查前提，并实际用于本作品；允许合并为一份或拆成多份，按内容完整性验收，不按模块数量判定。不得把讨论或清单当成完成，也不写具体作案手法、调查过程或小说正文。
 
   - id: v08_module_update
     title: 下一轮定位已有模块并局部修改
@@ -89,9 +91,10 @@ cases:
           - {id: still_bound, kind: module_bound, value: 人物设定}
           - {id: has_sister, kind: module_contains, value: 姐姐}
           - {id: keeps_butler, kind: module_contains, value: 管家负责钥匙}
+          - {id: no_question_or_file_write, kind: tool_not_called, value: "ask_author,write_file,edit_file"}
           - id: local_update
             kind: manual
-            rubric: 应读取并修改已装的「人物设定」，只改医生这一条；保留管家内容与未涉及信息，不新建重复模块，不改其他模块。
+            rubric: 应读取并修改已装的「人物设定」，只将医生与死者的关系改为姐姐；诊室信息、管家原文及条目 ID 和字段保留，不新建重复模块，不改其他模块或文件。
 
   - id: v08_module_discuss
     title: 讨论点子时不保存模块
