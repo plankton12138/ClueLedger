@@ -417,6 +417,8 @@ export interface ModuleChangeOperation {
   action: "create" | "update";
   status?: "pending" | "saved";
   name?: string;
+  /** 只在读取变更集详情时返回；新建操作的内容正文。 */
+  body?: string;
   chars?: number;
   binding_id?: string;
   module_id?: string;

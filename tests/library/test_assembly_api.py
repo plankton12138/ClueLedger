@@ -114,6 +114,11 @@ def test_module_change_set_prepare_apply_and_undo(tmp_path: Path) -> None:
         "cast",
         "premise",
     ]
+    # 应用前的预览入口：详情返回新建正文，界面不必等装配完成才能读。
+    assert [item["body"] for item in detail.json()["operations"]] == [
+        "七名嫌疑人。",
+        "暴雪封山。",
+    ]
 
     applied = client.post(
         f"/api/file-workspaces/{workspace_id}/module-change-sets/{change_set_id}/apply",

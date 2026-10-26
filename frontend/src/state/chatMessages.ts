@@ -122,7 +122,7 @@ export interface TurnQuestion {
   answer: string;
 }
 
-export type ModuleChangeStatus = "prepared" | "applied" | "failed" | "reverted";
+export type ModuleChangeStatus = "prepared" | "applied" | "failed" | "reverted" | "superseded";
 
 export interface TurnModuleChange {
   changeSetId: string;
@@ -684,13 +684,34 @@ export function appendEvent(turns: ChatTurn[], event: WorkspaceEvent): ChatTurn[
       });
     }
     case "module_changes_applied": {
-      return withModuleChange(turns, event.turn_id, event.change_set_id, event.at, (current) => ({
-        ...current,
-        status: "applied",
-        operations: event.operations ?? current.operations,
-        saved: event.saved ?? current.saved,
-        digest: event.assembly?.digest ?? current.digest,
-      }));
+      return withTurn(
+        turns,
+        event.turn_id,
+        (turn) => {
+          const index = turn.moduleChanges.findIndex(
+            (item) => item.changeSetId === event.change_set_id,
+          );
+          const current: TurnModuleChange =
+            index < 0 ? newModuleChange(event.change_set_id) : turn.moduleChanges[index]!;
+          const next: TurnModuleChange = {
+            ...current,
+            status: "applied",
+            operations: event.operations ?? current.operations,
+            saved: event.saved ?? current.saved,
+            digest: event.assembly?.digest ?? current.digest,
+          };
+          // 同轮更早准备、仍未应用的变更集已被这次应用取代：保留记录，但不再提供继续保存或预览。
+          const moduleChanges = turn.moduleChanges.map((item, position) =>
+            position < index && item.status === "prepared"
+              ? { ...item, status: "superseded" as const }
+              : item,
+          );
+          if (index < 0) moduleChanges.push(next);
+          else moduleChanges[index] = next;
+          return { ...turn, moduleChanges };
+        },
+        event.at,
+      );
     }
     case "module_changes_failed": {
       return withModuleChange(turns, event.turn_id, event.change_set_id, event.at, (current) => ({
@@ -764,6 +785,19 @@ function lastChangeIndex(turn: ChatTurn): number {
   return -1;
 }
 
+function newModuleChange(changeSetId: string): TurnModuleChange {
+  return {
+    changeSetId,
+    status: "prepared",
+    operations: [],
+    saved: [],
+    digest: null,
+    stage: "",
+    error: "",
+    note: "",
+  };
+}
+
 function withModuleChange(
   turns: ChatTurn[],
   turnId: string,
@@ -777,18 +811,7 @@ function withModuleChange(
     (turn) => {
       const index = turn.moduleChanges.findIndex((item) => item.changeSetId === changeSetId);
       const current: TurnModuleChange =
-        index < 0
-          ? {
-              changeSetId,
-              status: "prepared",
-              operations: [],
-              saved: [],
-              digest: null,
-              stage: "",
-              error: "",
-              note: "",
-            }
-          : turn.moduleChanges[index]!;
+        index < 0 ? newModuleChange(changeSetId) : turn.moduleChanges[index]!;
       const next = update(current);
       if (next === current && index >= 0) return turn;
       const moduleChanges = turn.moduleChanges.slice();

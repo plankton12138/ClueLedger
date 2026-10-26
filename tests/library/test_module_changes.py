@@ -262,6 +262,52 @@ def test_undo_removes_created_modules_and_keeps_library_copies(tmp_path: Path) -
     assert len(library.modules()["items"]) == 2
 
 
+def test_apply_discards_other_prepared_change_sets_from_the_same_turn(tmp_path: Path) -> None:
+    _, _, service = _setup(tmp_path)
+    abandoned = service.prepare(
+        turn_id="turn-8",
+        operations=(ChangeOperation("cast", "create", name="人物小传（笔误）", body="七名嫌犯。"),),
+        base_digest=None,
+    )
+    failed = service.prepare(
+        turn_id="turn-8",
+        operations=(ChangeOperation("premise", "create", name="聚集缘由", body="暴雪封山。"),),
+        base_digest=None,
+    )
+    failed_result = service.apply(
+        change_set_id=str(failed["change_set_id"]),
+        turn_id="turn-8",
+        expected_digest="stale-digest",
+    )
+    assert failed_result["stage"] == "precondition"
+    other_turn = service.prepare(
+        turn_id="turn-9",
+        operations=(ChangeOperation("cast", "create", name="另一轮内容", body="另一轮。"),),
+        base_digest=None,
+    )
+    applied = service.prepare(
+        turn_id="turn-8",
+        operations=(ChangeOperation("cast", "create", name="人物小传", body="七名嫌疑人。"),),
+        base_digest=None,
+    )
+
+    result = service.apply(
+        change_set_id=str(applied["change_set_id"]),
+        turn_id="turn-8",
+        expected_digest=None,
+    )
+
+    assert result["applied"] is True
+    assert result["discarded"] == [abandoned["change_set_id"]]
+    assert result["discard_failed"] == []
+    store = service.store
+    assert not store.path(str(abandoned["change_set_id"])).exists()
+    # 已应用、失败与其他轮的进度文件都保留，不能按「同轮」一概删除。
+    assert store.path(str(applied["change_set_id"])).is_file()
+    assert store.path(str(failed["change_set_id"])).is_file()
+    assert store.path(str(other_turn["change_set_id"])).is_file()
+
+
 def test_undo_restores_the_previous_revision_and_refuses_later_edits(tmp_path: Path) -> None:
     library, workspace, service = _setup(tmp_path)
     module_id, base_revision_id, binding_id = _bound_module(library, workspace)

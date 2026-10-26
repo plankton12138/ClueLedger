@@ -1,6 +1,33 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { resolve, join } from "node:path";
+
+interface PreloadedChanges {
+  conversation_id: string;
+  turn_id: string;
+  change_set_id: string;
+  base_digest: string | null;
+  module_names: string[];
+}
+
+/** 用真实变更集服务预置一轮会话事件；不调用模型，界面按同一套事件投影。 */
+function preloadChanges(
+  book: { id: string; path: string },
+  mode: "create_applied" | "update_prepared",
+  ref?: { module_id: string; revision_id: string },
+  bindingId?: string,
+): PreloadedChanges {
+  const dataDir = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e");
+  const args = [book.path, resolve(dataDir, "state"), book.id, mode];
+  if (ref) args.push(ref.module_id, ref.revision_id, bindingId ?? "");
+  const output = execFileSync(
+    "uv",
+    ["run", "--directory", "..", "python", resolve("e2e/fixtures/module_changes.py"), ...args],
+    { windowsHide: true, encoding: "utf8" },
+  );
+  return JSON.parse(output.trim()) as PreloadedChanges;
+}
 
 async function fixture(request: APIRequestContext) {
   const parent = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "books");
@@ -95,7 +122,12 @@ test("作品内容保存响应丢失后重试不重复创建版本", async ({ pa
   await paper.getByLabel("模块正文", { exact: true }).fill("保存响应丢失时保留草稿。");
   await paper.getByRole("button", { name: "保存", exact: true }).click();
   await expect(paper.getByRole("alert")).toBeVisible();
-  await expect(paper.getByLabel("模块正文", { exact: true })).toHaveValue("保存响应丢失时保留草稿。");
+  // 服务端已保存但响应丢失：界面可能按外部版本变化切回阅读态，草稿必须还在。
+  const resume = paper.getByRole("button", { name: "继续编辑", exact: true });
+  const body = paper.getByLabel("模块正文", { exact: true });
+  await expect(resume.or(body)).toBeVisible();
+  if (await resume.isVisible()) await resume.click();
+  await expect(body).toHaveValue("保存响应丢失时保留草稿。");
   await paper.getByRole("button", { name: "保存", exact: true }).click();
   await expect(paper).toContainText("已保存到当前作品。");
   expect(inputs).toHaveLength(2);
@@ -127,7 +159,85 @@ test("外部版本变化时保留草稿，重新读取后可以另存而不覆�
   expect(current.bindings[0].module).toEqual(currentRef);
 });
 
-test("模块库窄窗口和大字号下可浏览、添加和编辑", async ({ page,request }) => {
+test("应用后的模块变更可撤销，刷新后仍显示撤销结果且库副本保留", async ({ page, request }) => {
+  const { book } = await fixture(request);
+  const preloaded = preloadChanges(book, "create_applied");
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  const card = page.getByTestId("module-change-card");
+  const directory = page.getByRole("navigation", { name: "作品目录", exact: true });
+  await expect(card).toContainText("已用于本作品");
+  await expect(directory.getByRole("button", { name: preloaded.module_names[0], exact: true })).toBeVisible();
+  await expect(directory.getByRole("button", { name: preloaded.module_names[1], exact: true })).toBeVisible();
+
+  await card.getByRole("button", { name: "撤销本次修改", exact: true }).click();
+  await expect(
+    card.getByText("已撤销本次模块修改；库内新增副本仍保留。", { exact: true }),
+  ).toBeVisible();
+
+  // 刷新后状态由会话事件重建，不依赖撤销动作留在内存里的结果。
+  await page.reload();
+  await expect(card).toContainText("已撤销本次修改");
+  await expect(directory.getByRole("button", { name: preloaded.module_names[0], exact: true })).toHaveCount(0);
+  await expect(directory.getByRole("button", { name: preloaded.module_names[1], exact: true })).toHaveCount(0);
+  const assembly = await request
+    .get(`/api/file-workspaces/${book.id}/assembly`)
+    .then((response) => response.json());
+  expect(assembly.bindings).toEqual([]);
+
+  // 撤销只撤回作品装配；新建时保存到库的副本仍在。
+  const listing = await request
+    .get(`/api/module-library/modules?q=${encodeURIComponent(preloaded.module_names[0]!)}`)
+    .then((response) => response.json());
+  expect(listing.items.length).toBeGreaterThan(0);
+});
+
+test("应用前可预览修改内容；继续保存不覆盖未保存草稿", async ({ page, request }) => {
+  const { book, ref, created } = await fixture(request);
+  const bound = await request
+    .put(`/api/file-workspaces/${book.id}/assembly`, {
+      data: { bindings: [{ module: ref }], expected_digest: null, request_key: crypto.randomUUID() },
+    })
+    .then((response) => response.json());
+  preloadChanges(book, "update_prepared", ref, bound.bindings[0].id);
+
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  const card = page.getByTestId("module-change-card");
+  await expect(card).toContainText("内容已准备，尚未用于本作品");
+
+  // 应用前点名称读取准备内容：原文与替换内容都能看到。
+  await card.getByRole("button", { name: created.module.name, exact: true }).click();
+  const preview = page.getByRole("dialog", { name: "内容预览", exact: true });
+  await expect(preview).toContainText("陈默修理码头的钟。");
+  await expect(preview).toContainText("陈默改行做了渡轮检修员。");
+  await preview.getByRole("button", { name: "关闭", exact: true }).click();
+
+  // 作者先在本作品里写了一份未保存草稿，再让模型准备的内容落盘。
+  const directory = page.getByRole("navigation", { name: "作品目录", exact: true });
+  await directory.getByRole("button", { name: created.module.name, exact: true }).click();
+  const paper = page.getByRole("article", { name: "模块内容", exact: true });
+  await paper.getByRole("button", { name: "编辑", exact: true }).click();
+  await paper.getByLabel("模块正文", { exact: true }).fill("尚未保存的手工草稿。");
+
+  await card.getByRole("button", { name: "继续保存", exact: true }).click();
+  await expect(card.getByText("已用于当前作品。", { exact: true })).toBeVisible();
+
+  // 装配换了新版本，但草稿没有被模型结果覆盖；继续编辑时仍是作者刚写的文字。
+  const resume = paper.getByRole("button", { name: "继续编辑", exact: true });
+  if (await resume.isVisible()) await resume.click();
+  await expect(paper.getByLabel("模块正文", { exact: true })).toHaveValue("尚未保存的手工草稿。");
+
+  const assembly = await request
+    .get(`/api/file-workspaces/${book.id}/assembly`)
+    .then((response) => response.json());
+  expect(assembly.bindings[0].module.revision_id).not.toBe(ref.revision_id);
+  // 作品内修改不推进库原稿的 head。
+  const listing = await request
+    .get(`/api/module-library/modules?q=${encodeURIComponent(created.module.name)}`)
+    .then((response) => response.json());
+  expect(listing.items.find((item: { module_id: string }) => item.module_id === ref.module_id).head).toBe(ref.revision_id);
+});
+
+test("模块库窄窗口和大字号下可浏览、添加和编辑", async ({ page, request }) => {
   test.setTimeout(60_000);
   const { book,created } = await fixture(request);
   const output = resolve("../data/test-tmp/module-experience-screenshots");

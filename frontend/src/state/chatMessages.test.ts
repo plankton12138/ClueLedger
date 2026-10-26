@@ -145,6 +145,46 @@ describe("模块变更结果", () => {
     expect(change.operations[0]!.status).toBe("saved");
   });
 
+  it("同轮后续应用把更早的准备结果标为已被取代，失败记录保留", () => {
+    reset();
+    const prepared = (id: string, name: string) =>
+      next({
+        type: "module_changes_prepared",
+        turn_id: "t1",
+        change_set_id: id,
+        status: "prepared",
+        base_assembly_digest: null,
+        operations: [{ operation_id: "cast", action: "create", name }],
+      });
+    const turns = fold([
+      turnStarted(),
+      prepared("chs_old", "人物小传（笔误）"),
+      prepared("chs_failed", "聚集缘由"),
+      next({
+        type: "module_changes_failed",
+        turn_id: "t1",
+        change_set_id: "chs_failed",
+        stage: "assembly",
+        error: { code: "ASSEMBLY_STALE_CONFLICT", where: "changes.apply", why: "装配已变" },
+      }),
+      prepared("chs_new", "人物小传"),
+      next({
+        type: "module_changes_applied",
+        turn_id: "t1",
+        change_set_id: "chs_new",
+        assembly: { digest: "digest-1" },
+        operations: [{ operation_id: "cast", action: "create", name: "人物小传" }],
+        saved: [],
+      }),
+    ]);
+
+    expect(turns[0]!.moduleChanges.map((change) => change.status)).toEqual([
+      "superseded",
+      "failed",
+      "applied",
+    ]);
+  });
+
   it("撤销后保留变更集并记录新装配指纹", () => {
     reset();
     const turns = fold([

@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import secrets
+import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -336,6 +337,7 @@ class ModuleChangeService:
             self.store.write(payload)
             return dict(payload["result"])
 
+        discarded, discard_failed = self._discard_superseded(change_set_id, turn_id)
         result = {
             "applied": True,
             "change_set_id": change_set_id,
@@ -345,6 +347,8 @@ class ModuleChangeService:
             "saved": [_saved_view(item) for item in operations if item.get("saved")],
             "saved_events": saved_events,
             "undo": {"available": True, "change_set_id": change_set_id},
+            "discarded": discarded,
+            "discard_failed": discard_failed,
         }
         payload["status"] = "applied"
         payload["result"] = result
@@ -517,6 +521,42 @@ class ModuleChangeService:
                 details={"change_set_id": change_set_id, "turn_id": turn_id},
             )
         return payload
+
+    def _discard_superseded(self, keep_id: str, turn_id: str) -> tuple[list[str], list[str]]:
+        """删除同一轮里仍为 prepared 的其它变更集：本次应用已取代它们。
+
+        只删除从未应用过的进度文件；失败与已应用的记录保留。清理失败不影响已经完成的
+        应用，失败项写入结果并在 stderr 留一条可观测记录。
+        """
+        removed: list[str] = []
+        failed: list[str] = []
+        if not turn_id or not self.store.root.is_dir():
+            return removed, failed
+        for path in sorted(self.store.root.glob("chs_*.json")):
+            if path.stem == keep_id:
+                continue
+            try:
+                item = json.loads(path.read_bytes().decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if not isinstance(item, dict):
+                continue
+            if item.get("status") != "prepared" or str(item.get("turn_id") or "") != turn_id:
+                continue
+            change_set_id = str(item.get("change_set_id") or path.stem)
+            try:
+                path.unlink()
+            except OSError as exc:
+                failed.append(change_set_id)
+                print(
+                    f"[MODULE_CHANGES_DISCARD_FAILED] changes.discard："
+                    f"无法删除已放弃的变更集 {change_set_id}：{exc.strerror or exc}。"
+                    f"建议：检查作品目录权限；本次应用不受影响。",
+                    file=sys.stderr,
+                )
+                continue
+            removed.append(change_set_id)
+        return removed, failed
 
     def _apply_operation(
         self,
