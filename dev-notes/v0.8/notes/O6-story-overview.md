@@ -1,5 +1,7 @@
 # O0–O6 故事总览实施与验证
 
+2026-10-26 状态变更：整个故事总览模块已撤除，本文保留为当时的实施与验证记录；当前行为与检查见[下线记录](story-overview-retirement.md)。
+
 日期：2026-10-25。运行版本保持 `0.8.0`。O0–O5 已接线，O6 本轮验证完成；未覆盖范围列于文末。
 
 ## 结果与设计取舍
@@ -83,7 +85,7 @@ uv run pytest tests/workspace/test_story_overview.py tests/workspace/test_story_
 
 ## 在线语义结果与修正
 
-通过 [story-overview 套件](../../../eval/suites/story-overview.json)执行实际 `organize_overview` 用途，
+当时通过 `eval/suites/story-overview.json` 执行实际 `organize_overview` 用途（套件现已撤除），
 不是发送普通聊天来模拟整理。执行器保存当前故事索引和总览派生结果用于复核。
 
 - [首次复核](../../../eval/runs/context-20261025-211828-108744/rescored.md)：3 通过、1 失败。失败案例把夹有未来计划的明确人物和钥匙判为空发现。

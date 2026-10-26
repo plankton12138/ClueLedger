@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -30,6 +30,7 @@ test.beforeAll(async () => {
     body: JSON.stringify({ path: workspaceRoot, create: true }),
   });
   bindingId = (await open.json()).id;
+  mkdirSync(join(workspaceRoot, "设定集", "角色小传"), { recursive: true });
   writeFileSync(
     join(workspaceRoot, "正文", "0001 雨夜.md"),
     "# 雨夜\n\n侦探抵达旅馆时，雪已经下了三天。\n",
@@ -397,8 +398,7 @@ test("稿纸横线随内容滚动", async ({ page }) => {
 
 test("故事资料页叠加已装模块的计划，并可按模块筛选", async ({ page }) => {
   await open(page);
-  await page.getByRole("link", { name: "故事总览", exact: true }).click();
-  await page.evaluate(() => { location.hash = location.hash.replace(/overview.*$/, "materials/legacy-story"); });
+  await page.goto(`/#/workspaces/${bindingId}/materials/legacy-story`);
   await expect(
     page.getByRole("heading", { name: /计划叠加/ }),
   ).toBeVisible();
@@ -448,14 +448,14 @@ test("灵感面板：记录、删除撤销恢复并带到对话", async ({ page 
 
 test("新建作品用系统窗口选位置，界面不再出现路径输入框", async ({ page }) => {
   await page.route("**/default-location", (route) =>
-    route.fulfill({ json: { root: "C:\\Users\\someone\\Documents" } }),
+    route.fulfill({ json: { root: "C:\\Users\\someone\\Documents\\ClueLedger\\作品" } }),
   );
   await open(page);
   await page.getByRole("button", { name: "作品", exact: true }).click();
   await page.getByRole("button", { name: "打开 / 新建" }).click();
   await page.getByRole("tab", { name: "新建作品" }).click();
 
-  await expect(page.getByText("C:\\Users\\someone\\Documents", { exact: true })).toBeVisible();
+  await expect(page.getByText("C:\\Users\\someone\\Documents\\ClueLedger\\作品", { exact: true })).toBeVisible();
   await expect(page.getByLabel("作品名")).toHaveValue("未命名作品");
   // 路径只能来自系统对话框：界面上没有可手输的路径框。
   await expect(page.getByLabel("目录路径")).toHaveCount(0);
@@ -465,6 +465,7 @@ test("选好位置并起名后新建作品，建立版本记录", async ({ page 
   const parent = mkdtempSync(join(tmpdir(), "hastings-e2e-new-"));
   await page.route("**/pick-directory", (route) => route.fulfill({ json: { path: parent } }));
   await open(page);
+  const previous = await page.getByLabel("选择作品目录").inputValue();
   await page.getByRole("button", { name: "作品", exact: true }).click();
   await page.getByRole("button", { name: "打开 / 新建" }).click();
   await page.getByRole("tab", { name: "新建作品" }).click();
@@ -477,8 +478,126 @@ test("选好位置并起名后新建作品，建立版本记录", async ({ page 
   await page.waitForFunction((path) => document.body.innerText.includes(path), created, {
     timeout: 10_000,
   });
+  // 新建不只是登记：作品选择器与地址栏都要落到新作品上。
+  await expect(page.getByLabel("选择作品目录").locator("option:checked")).toHaveText("新作品");
+  await expect.poll(() => page.getByLabel("选择作品目录").inputValue()).not.toBe(previous);
+  await expect(page).toHaveURL(/#\/workspaces\/[^/]+\/writing/);
   await page.getByRole("button", { name: "活动记录", exact: true }).click();
   await page.getByRole("button", { name: "文件版本", exact: true }).click();
   await expect(page.getByText("初始化作品目录")).toBeVisible();
   expect(existsSync(join(created, ".git"))).toBe(true);
+  expect(existsSync(join(created, "设定集"))).toBe(false);
+});
+
+test("使用默认总目录新建作品，自动建立父目录且不生成设定集", async ({ page }) => {
+  const documents = mkdtempSync(join(tmpdir(), "clueledger-e2e-default-"));
+  const location = join(documents, "ClueLedger", "作品");
+  await page.route("**/default-location", route => route.fulfill({ json: { root: location } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "作品", exact: true }).click();
+  await page.getByRole("button", { name: "打开 / 新建", exact: true }).click();
+  await page.getByRole("tab", { name: "新建作品", exact: true }).click();
+  await expect(page.getByText(location, { exact: true })).toBeVisible();
+  await page.getByLabel("作品名", { exact: true }).fill("默认位置作品");
+  await page.getByRole("button", { name: "新建并打开", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "作品位置", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("选择作品目录").locator("option:checked")).toHaveText("默认位置作品");
+  const root = join(location, "默认位置作品");
+  expect(existsSync(join(root, "正文"))).toBe(true);
+  expect(existsSync(join(root, ".git"))).toBe(true);
+  expect(existsSync(join(root, "设定集"))).toBe(false);
+});
+
+test("删除作品需确认，取消保留文件，确认后真实删除", async ({ page }) => {
+  const parent = mkdtempSync(join(tmpdir(), "hastings-e2e-remove-"));
+  const target = join(parent, "待删除作品");
+  const created = (await fetch(`${BASE}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: target, create: true }),
+  }).then((response) => response.json())) as { id: string; name: string };
+
+  await page.goto("/");
+  await expect(page.getByLabel("选择作品目录")).toHaveValue(created.id, { timeout: 10_000 });
+  await page.getByRole("button", { name: "作品", exact: true }).click();
+  await page.getByRole("button", { name: "删除作品…", exact: true }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "删除作品", exact: true });
+  await expect(confirmation).toContainText(created.name);
+  await expect(confirmation).toContainText(target);
+  await expect(confirmation).toContainText("共享模块库保留");
+  await confirmation.getByRole("button", { name: "取消", exact: true }).click();
+  expect(existsSync(join(target, "正文"))).toBe(true);
+  expect(existsSync(join(target, ".git"))).toBe(true);
+  await expect(page.getByLabel("选择作品目录")).toHaveValue(created.id);
+  await page.getByRole("button", { name: "作品", exact: true }).click();
+  await page.getByRole("button", { name: "删除作品…", exact: true }).click();
+  await confirmation.getByRole("button", { name: "删除作品及文件", exact: true }).click();
+
+  await expect(page.getByLabel("选择作品目录")).not.toHaveValue(created.id);
+  await expect(page.getByLabel("选择作品目录")).not.toHaveValue("");
+  await expect(page.getByText(`已删除作品「${created.name}」及本地文件。`, { exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(new RegExp(created.id));
+  expect(existsSync(target)).toBe(false);
+});
+
+test("从作品列表删除未打开的旧作品，当前作品保持选中", async ({ page }) => {
+  const parent = mkdtempSync(join(tmpdir(), "hastings-e2e-list-delete-"));
+  const create = async (name: string) => {
+    const response = await fetch(BASE, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: join(parent, name), create: true }),
+    });
+    expect(response.ok).toBe(true);
+    return response.json() as Promise<{ id: string; name: string }>;
+  };
+  const old = await create("旧测试作品");
+  const current = await create("当前作品");
+  await page.goto("/");
+  await expect(page.getByLabel("选择作品目录")).toHaveValue(current.id);
+  await page.getByRole("button", { name: "作品", exact: true }).click();
+  await page.getByRole("button", { name: "打开 / 新建", exact: true }).click();
+  const directory = page.getByRole("dialog", { name: "作品位置", exact: true });
+  await directory.getByRole("button", { name: `删除作品「${old.name}」`, exact: true }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "删除作品", exact: true });
+  await expect(confirmation).toContainText(join(parent, old.name));
+  await confirmation.getByRole("button", { name: "删除作品及文件", exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(directory.getByRole("button", { name: `删除作品「${old.name}」`, exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("选择作品目录")).toHaveValue(current.id);
+  expect(existsSync(join(parent, old.name))).toBe(false);
+  expect(existsSync(join(parent, current.name, "正文"))).toBe(true);
+});
+
+test("重命名作品会同时改磁盘目录并切到新标识", async ({ page }) => {
+  const parent = mkdtempSync(join(tmpdir(), "hastings-e2e-rename-"));
+  const oldPath = join(parent, "改名前的作品");
+  const created = (await fetch(`${BASE}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: oldPath, create: true }),
+  }).then((response) => response.json())) as { id: string; name: string };
+
+  await page.goto("/");
+  await expect(page.getByLabel("选择作品目录")).toHaveValue(created.id, { timeout: 10_000 });
+  await page.getByRole("button", { name: "作品", exact: true }).click();
+  await page.getByRole("button", { name: "重命名作品…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "重命名作品", exact: true });
+  const nameInput = dialog.getByLabel("新作品名", { exact: true });
+  await expect(nameInput).toHaveValue(created.name);
+  await nameInput.fill("改名后的作品");
+  await dialog.getByRole("button", { name: "重命名", exact: true }).click();
+
+  const newPath = join(parent, "改名后的作品");
+  await expect(page.getByLabel("选择作品目录").locator("option:checked")).toHaveText(
+    "改名后的作品",
+  );
+  await expect(page.getByLabel("选择作品目录")).not.toHaveValue(created.id);
+  const newId = await page.getByLabel("选择作品目录").inputValue();
+  await expect(page).toHaveURL(new RegExp(`#/workspaces/${newId}/writing`));
+  await expect(page.getByText("已把作品重命名为「改名后的作品」")).toBeVisible();
+  // 目录连同正文与版本记录一起改名，旧路径不再存在。
+  expect(existsSync(newPath)).toBe(true);
+  expect(existsSync(oldPath)).toBe(false);
+  expect(existsSync(join(newPath, "正文"))).toBe(true);
+  expect(existsSync(join(newPath, ".git"))).toBe(true);
 });

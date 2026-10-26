@@ -120,7 +120,11 @@ def client_factory(tmp_path: Path) -> Iterator[Callable[[ProviderFactory], TestC
 
 def _workspace(client: TestClient, tmp_path: Path) -> str:
     root = tmp_path / "雪山旅馆"
-    response = client.post("/api/file-workspaces", json={"path": str(root), "create": True})
+    if root.exists():
+        GitRepo(root).init()
+    response = client.post(
+        "/api/file-workspaces", json={"path": str(root), "create": not root.exists()}
+    )
     assert response.status_code == 200, response.text
     return str(response.json()["id"])
 
@@ -291,7 +295,8 @@ def test_injection_event_matches_the_system_prompt(
     system = provider.requests[0]["system"]
     for part in injected["parts"]:
         assert f"chars={part['chars']}" not in system  # 事件只记规模，不复制正文
-    assert "## 设定集内容" in system
+    assert "## 设定集内容" not in system
+    assert "settings" not in {part["key"] for part in injected["parts"]}
     assert "## 当前作品" in system
 
 

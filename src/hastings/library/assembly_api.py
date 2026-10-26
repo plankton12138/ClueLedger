@@ -25,6 +25,7 @@ from hastings.library.imports import import_legacy_materials, read_import_info
 from hastings.library.modules import ModuleLibrary
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.git import GitRepo
+from hastings.workspace.locations import default_workspace_root
 from hastings.workspace.module_assembly import Binding, ModuleRef
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 
@@ -185,7 +186,7 @@ def create_assembly_router(
         target = (
             Path(payload.directory).expanduser()
             if payload.directory
-            else Path(source.root).parent / name
+            else default_workspace_root() / name
         )
         result = derive_workspace(
             library,

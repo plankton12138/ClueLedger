@@ -1,0 +1,30 @@
+import { test, expect } from "@playwright/test";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { resolve, join } from "node:path";
+
+test("总览入口和接口已移除，旧对象链接返回写作且正文可读", async ({ page, request }) => {
+  const parent = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "books");
+  mkdirSync(parent, { recursive: true });
+  const root = join(mkdtempSync(join(parent, "overview-removed-")), "作品");
+  const opened = await request.post("/api/file-workspaces", { data: { path: root, create: true } });
+  expect(opened.ok(), await opened.text()).toBeTruthy();
+  const book = await opened.json();
+  writeFileSync(join(root, "正文", "0001 雨夜.md"), "# 雨夜\n\n侦探抵达港口。", "utf8");
+  const overviewRequests: string[] = [];
+  page.on("request", r => { if (r.url().includes("/story-overview")) overviewRequests.push(r.url()); });
+  await page.goto(`/#/workspaces/${book.id}/overview?binding=old&facet=old&view=characters`);
+  await expect(page).toHaveURL(new RegExp(`/workspaces/${book.id}/writing$`));
+  await expect(page.getByRole("link", { name: "故事总览", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "故事总览", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "第一章 雨夜", exact: true }).click();
+  await expect(page.locator(".paper-sheet")).toContainText("侦探抵达港口。");
+  await page.getByRole("link", { name: "模块库", exact: true }).click();
+  await expect(page.getByRole("region", { name: "模块库", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "返回写作", exact: true }).click();
+  await expect(page.locator(".paper-sheet")).toContainText("侦探抵达港口。");
+  await page.reload();
+  await expect(page.getByRole("link", { name: "故事总览", exact: true })).toHaveCount(0);
+  expect(overviewRequests).toEqual([]);
+  expect((await request.get(`/api/file-workspaces/${book.id}/story-overview`)).status()).toBe(404);
+  expect((await request.post(`/api/file-workspaces/${book.id}/story-overview/updates`, { data: {} })).status()).toBeGreaterThanOrEqual(400);
+});

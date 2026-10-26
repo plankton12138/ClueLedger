@@ -90,7 +90,7 @@ def test_linked_character_directory_is_rejected(tmp_path: Path, inside: bool) ->
     target.mkdir()
     (target / "林远.md").write_text("不可读取\n", encoding="utf-8")
     roles = workspace.root / "设定集/角色小传"
-    roles.rmdir()
+    roles.parent.mkdir()
     try:
         roles.symlink_to(target, target_is_directory=True)
     except OSError:
@@ -145,7 +145,7 @@ async def test_agent_can_create_read_rename_and_delete_a_character(tmp_path: Pat
     digest = json.loads(created.text)["digest"]
     listing = json.loads((await tools["list_files"].execute("list", {})).text)
     assert listing["characters"][0]["path"] == ROLE
-    assert len(listing["settings"]) == 2
+    assert listing["settings"] == []
     assert "侦探" in (await tools["read_file"].execute("read", {"path": ROLE})).text
     moved = await tools["move_file"].execute(
         "move", {"source": ROLE, "target": "设定集/角色小传/林医生.md", "digest": digest}
@@ -172,6 +172,7 @@ def test_character_http_catalog_read_search_and_legacy_rejection(tmp_path: Path)
         wid = client.post("/api/file-workspaces", json={"path": str(root), "create": True}).json()[
             "id"
         ]
+        (root / ROLE).parent.mkdir(parents=True)
         (root / ROLE).write_text("# 林侦探\n\n别名：林医生。\n", encoding="utf-8")
         catalog = client.get(f"/api/file-workspaces/{wid}/files").json()
         assert [(entry["path"], entry["kind"]) for entry in catalog["characters"]] == [

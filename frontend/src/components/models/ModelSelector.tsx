@@ -8,6 +8,11 @@
  */
 
 import { useModelsStore } from "../../state/models";
+import type { ThinkingLevel } from "../../api/models";
+
+const THINKING_LABELS: Record<ThinkingLevel, string> = {
+  off: "关闭", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最大",
+};
 
 export default function ModelSelector() {
   const connections = useModelsStore((state) => state.connections);
@@ -15,6 +20,9 @@ export default function ModelSelector() {
   const loading = useModelsStore((state) => state.loading);
   const choose = useModelsStore((state) => state.choose);
   const openSettings = useModelsStore((state) => state.openSettings);
+  const error = useModelsStore((state) => state.error);
+  const conflict = useModelsStore((state) => state.conflict);
+  const refresh = useModelsStore((state) => state.refresh);
 
   if (connections.length === 0) {
     return (
@@ -40,10 +48,10 @@ export default function ModelSelector() {
         : "";
 
   return (
-    <div className="flex min-w-0 items-center gap-1">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
       <select
         aria-label="当前连接与模型"
-        className="well-input min-w-0 max-w-[220px] px-2 py-1 text-[11px]"
+        className="well-input min-w-0 flex-1 basis-[9em] px-2 py-1 text-[11px]"
         value={value}
         disabled={loading}
         onChange={(event) => {
@@ -65,6 +73,27 @@ export default function ModelSelector() {
           </optgroup>
         ))}
       </select>
+      <div className="flex shrink-0 items-center gap-1">
+      <select
+        aria-label="思考深度"
+        className="well-input w-[7.5em] px-1 py-1 text-[11px]"
+        value={selection.thinking_level ?? ""}
+        disabled={loading || !selection.available || !selection.thinking_levels?.length}
+        title={selection.thinking_levels?.length
+          ? "默认沿用供应商设置；修改从下一轮生效"
+          : "当前模型尚未提供可调思考深度"}
+        onChange={(event) => {
+          if (selection.connection_id) {
+            void choose(selection.connection_id, selection.model,
+              (event.target.value || null) as ThinkingLevel | null);
+          }
+        }}
+      >
+        <option value="">思考：默认</option>
+        {(selection.thinking_levels ?? []).map((level) => (
+          <option key={level} value={level}>思考：{THINKING_LABELS[level]}</option>
+        ))}
+      </select>
       <button
         className="px-1 py-1 text-[10px] font-bold text-blue hover:underline"
         onClick={openSettings}
@@ -72,6 +101,17 @@ export default function ModelSelector() {
       >
         管理
       </button>
+      </div>
+      {error && (
+        <div role="alert" className="basis-full text-xs text-[#8a3b3b]">
+          {error}
+          {conflict && (
+            <button className="ml-1 underline" disabled={loading} onClick={() => void refresh()}>
+              重新读取
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

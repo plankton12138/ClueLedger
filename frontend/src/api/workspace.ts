@@ -22,6 +22,18 @@ export interface PruneWorkspacesResult {
   workspaces: WorkspaceBinding[];
 }
 
+/** 实际删除后的作品与剩余列表。 */
+export interface RemovedWorkspaceResult {
+  removed: WorkspaceBinding;
+  workspaces: WorkspaceBinding[];
+}
+
+/** 重命名后的结果：换绑后的作品与更新后的登记列表。 */
+export interface RenamedWorkspaceResult {
+  workspace: WorkspaceBinding;
+  workspaces: WorkspaceBinding[];
+}
+
 /** 新作品的默认父目录（服务端解析出的「文档」目录）。 */
 export interface DefaultLocation {
   root: string;
@@ -701,6 +713,23 @@ export function pickDirectory(initial = ""): Promise<PickedDirectory> {
   return request<PickedDirectory>("/pick-directory", {
     method: "POST",
     body: JSON.stringify({ initial }),
+  });
+}
+
+export function removeWorkspace(workspaceId: string, confirmedPath: string): Promise<RemovedWorkspaceResult> {
+  return request<RemovedWorkspaceResult>(`/${workspaceId}`, {
+    method: "DELETE",
+    body: JSON.stringify({ confirmed_path: confirmedPath }),
+  });
+}
+
+export function renameWorkspace(
+  workspaceId: string,
+  name: string,
+): Promise<RenamedWorkspaceResult> {
+  return request<RenamedWorkspaceResult>(`/${workspaceId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
   });
 }
 

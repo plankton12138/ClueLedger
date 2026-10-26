@@ -1,6 +1,6 @@
 """作品默认存放位置（V04-7）。
 
-新作品默认落在作者的「文档」目录：那是作者自己找得到、也会一起备份的地方。
+作品与共享模块默认归入作者「文档」目录下的 ClueLedger 总目录。
 应用源码目录、临时目录都不该用来放作品——作品是长期资产，位置要稳定。
 
 位置由服务端解析：浏览器不知道本机的主目录，跑在同一台机器上的服务知道。
@@ -14,7 +14,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-__all__ = ["default_workspace_root", "documents_dir"]
+__all__ = ["default_data_root", "default_workspace_root", "documents_dir"]
 
 
 def documents_dir() -> Path | None:
@@ -39,6 +39,11 @@ def _windows_documents() -> Path | None:
     return path if path.is_dir() else None
 
 
+def default_data_root() -> Path:
+    """用户内容总目录；取不到系统文档目录时使用主目录下的 ClueLedger。"""
+    return (documents_dir() or Path.home()) / "ClueLedger"
+
+
 def default_workspace_root() -> Path:
-    """新作品的默认父目录：文档目录，取不到则用户主目录。"""
-    return documents_dir() or Path.home()
+    """新作品的默认父目录；实际新建时才创建，不因查询位置写入磁盘。"""
+    return default_data_root() / "作品"

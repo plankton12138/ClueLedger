@@ -3,7 +3,7 @@
 契约：正文每章一个 Markdown，角色小传一人一文件，线索与真相固定。
 本文件只验证文件层——不涉及 Git（V04-2）、模型（V04-3）和界面（V04-4）：
 
-- 新建目录建立正文、角色目录与两份空设定，不创建任何数据库；
+- 新建目录只建立正文，设定通过模块装卸，不预建空设定目录；
 - 写入按「上次读到的指纹」生效，过期或被外部改动一律拒绝；
 - 路径校验拒绝绝对路径、上级跳转、盘符、反斜杠、``.git`` 与设定集旁路文件；
 - 读取接受 BOM 与 CRLF，指纹按实际字节计算，外部编辑因此可被识别；
@@ -48,13 +48,11 @@ def _code(exc_info: pytest.ExceptionInfo[WorkspaceError]) -> str:
 # -- 建立与打开 -------------------------------------------------------------
 
 
-def test_create_builds_character_directory_without_forced_settings(tmp_path: Path) -> None:
+def test_create_builds_only_body_directory(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
 
     assert (workspace.root / "正文").is_dir()
-    assert (workspace.root / "设定集").is_dir()
-    assert sorted(path.name for path in (workspace.root / "设定集").iterdir()) == ["角色小传"]
-    assert (workspace.root / "设定集/角色小传").is_dir()
+    assert not (workspace.root / "设定集").exists()
     # 新作品不再强制创建线索与真相文件；已有作品里这两份文件仍按原路径读取。
     for path in SETTING_PATHS:
         assert not (workspace.root / path).exists()

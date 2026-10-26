@@ -317,7 +317,7 @@ describe("切换会话", () => {
     expect(api.stopTurn).not.toHaveBeenCalled();
   });
 
-  it("停止只发请求，状态等终态事件再变", async () => {
+  it("停止立即标为请求中，仍等待终态，并避免重复提交", async () => {
     api.streamEvents.mockImplementation(async function* () {
       yield { seq: 1, at: "", type: "turn_started", text: "写第一章" };
       await new Promise(() => undefined);
@@ -326,10 +326,35 @@ describe("切换会话", () => {
     void useConversationsStore.getState().send("写第一章");
     await flush();
 
+    let resolve: () => void = () => undefined;
+    api.stopTurn.mockImplementation(() => new Promise<void>(done => { resolve = done; }));
+    const pending = useConversationsStore.getState().stop();
+
+    expect(useConversationsStore.getState().entries.c1?.activeTurn?.state).toBe("stop_requested");
     await useConversationsStore.getState().stop();
+    expect(api.stopTurn).toHaveBeenCalledTimes(1);
+    resolve();
+    await pending;
 
     expect(api.stopTurn).toHaveBeenCalledWith("w1", "t1");
     expect(useConversationsStore.getState().entries.c1?.running).toBe(true);
+  });
+
+  it("停止请求失败时保留运行状态并恢复重试入口", async () => {
+    api.streamEvents.mockImplementation(async function* () {
+      yield { seq: 1, at: "", type: "turn_started", text: "写第一章" };
+      await new Promise(() => undefined);
+    });
+    await useConversationsStore.getState().load("w1");
+    void useConversationsStore.getState().send("写第一章");
+    await flush();
+    api.stopTurn.mockRejectedValue(new Error("network"));
+
+    await useConversationsStore.getState().stop();
+
+    expect(useConversationsStore.getState().entries.c1?.activeTurn?.state).not.toBe("stop_requested");
+    expect(useConversationsStore.getState().entries.c1?.running).toBe(true);
+    expect(useConversationsStore.getState().error).toContain("[REQUEST_FAILED]");
   });
 });
 

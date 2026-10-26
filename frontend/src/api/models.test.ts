@@ -8,13 +8,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  cancelAuthSession,
   createConnection,
   deleteConnection,
   discoverModels,
   ModelApiError,
   probeModel,
+  readAuthSession,
   readConfig,
   selectModel,
+  startAuthSession,
   updateConnection,
 } from "./models";
 
@@ -86,6 +89,22 @@ describe("连接写入", () => {
     await selectModel(null, "", "r1");
 
     expect(bodies[0]).toEqual({ connection_id: null, model: "" });
+  });
+
+  it("思考深度和恢复默认提交给同一个选择接口", async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return jsonResponse({ revision: "r2", selection: {}, connections: [] });
+    });
+
+    await selectModel("c", "gpt-6.1-sol", "r1", "high");
+    await selectModel("c", "gpt-6.1-sol", "r2", null);
+
+    expect(bodies).toEqual([
+      { connection_id: "c", model: "gpt-6.1-sol", thinking_level: "high" },
+      { connection_id: "c", model: "gpt-6.1-sol", thinking_level: null },
+    ]);
   });
 });
 
@@ -172,5 +191,74 @@ describe("错误信封", () => {
     vi.stubGlobal("fetch", async () => new Response("boom", { status: 500 }));
 
     await expect(readConfig()).rejects.toMatchObject({ code: "HTTP_500", status: 500 });
+  });
+});
+
+
+describe("订阅授权会话", () => {
+  const SESSION = {
+    id: "s1",
+    provider_id: "chatgpt",
+    provider_name: "ChatGPT 订阅",
+    status: "pending" as const,
+    auth_url: "https://auth.openai.com/api/accounts/authorize?state=x",
+    user_code: "",
+    instructions: "",
+    expires_at: 1800000000,
+    account: "",
+    code: "",
+    message: "",
+  };
+
+  it("创建会话只提交来源", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return jsonResponse(SESSION, 201);
+    });
+
+    const session = await startAuthSession("chatgpt");
+
+    expect(calls[0].url).toBe("/api/model-auth/sessions");
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ provider_id: "chatgpt" });
+    expect(session.auth_url).toContain("authorize");
+  });
+
+  it("读取与取消都按会话 ID 拼路径", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return jsonResponse(SESSION);
+    });
+
+    await readAuthSession("s1");
+    await cancelAuthSession("s1");
+
+    expect(calls[0].url).toBe("/api/model-auth/sessions/s1");
+    expect(calls[0].init?.method).toBeUndefined();
+    expect(calls[1].url).toBe("/api/model-auth/sessions/s1");
+    expect(calls[1].init?.method).toBe("DELETE");
+  });
+
+  it("会话不存在转成带 code 的异常", async () => {
+    vi.stubGlobal("fetch", async () =>
+      jsonResponse(
+        {
+          error: {
+            code: "MODEL_AUTH_SESSION_NOT_FOUND",
+            where: "model.auth",
+            why: "授权会话不存在",
+            fix: "重新发起一次登录",
+          },
+        },
+        404,
+      ),
+    );
+
+    await expect(readAuthSession("gone")).rejects.toMatchObject({
+      code: "MODEL_AUTH_SESSION_NOT_FOUND",
+      status: 404,
+    });
   });
 });

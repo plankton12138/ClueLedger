@@ -27,6 +27,8 @@ from hastings.infrastructure.credentials import build_credential_store
 from hastings.library.modules import ModuleLibrary
 from hastings.library.storage import DEFAULT_LIBRARY_DIR
 from hastings.server.file_app import configured_provider_factory, create_workspace_app
+from hastings.server.model_auth import ModelAuthService
+from hastings.server.model_auth_chatgpt import ChatGPTCodexAuthProvider, ChatGPTHostIdentity
 from hastings.server.model_connections import ModelConnectionService
 from hastings.server.provider_config import (
     DEFAULT_CONFIG_PATH,
@@ -124,7 +126,10 @@ class AssembledServer:
 
 
 def load_provider_book(
-    config_path: Path, model: str | None, credentials: object
+    config_path: Path,
+    model: str | None,
+    credentials: object,
+    auth: object | None = None,
 ) -> tuple[ProviderBook, str, str]:
     """读取模型连接并选出启动连接；没有可用连接时返回空引导，不阻止启动。"""
     server_config: ServerConfig = load_server_config(config_path)
@@ -139,6 +144,7 @@ def load_provider_book(
         config_path=config_path,
         credentials=credentials,
         cli_model=model or "",
+        auth=auth,
     )
     return book, boot_name, boot_model
 
@@ -178,13 +184,22 @@ def assemble_server(
 
     config_path = Path(config).expanduser() if config is not None else DEFAULT_CONFIG_PATH
     credentials = build_credential_store()
-    book, boot_profile, boot_model = load_provider_book(config_path, model, credentials)
+    recent = RecentWorkspaces(state_root)
+    # 订阅登录的本机身份落在应用状态目录：换机器会重新注册一次，属于预期行为。
+    # 会话服务同时被连接管理（登录/保存）与运行时（续期）使用。
+    auth = ModelAuthService(
+        providers={
+            "chatgpt": ChatGPTCodexAuthProvider(
+                identity=ChatGPTHostIdentity(recent.root / "chatgpt-host.json")
+            )
+        }
+    )
+    book, boot_profile, boot_model = load_provider_book(config_path, model, credentials, auth)
     # 设置页与写作轮次共用这一个服务：保存的连接就是下一轮实际调用的连接。
     model_service = ModelConnectionService(
-        book=book, config_path=config_path, credentials=credentials
+        book=book, config_path=config_path, credentials=credentials, auth=auth
     )
 
-    recent = RecentWorkspaces(state_root)
     if opened is not None:
         binding = recent.bind(opened)
         binding_id = binding.id

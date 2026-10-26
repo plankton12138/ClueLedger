@@ -154,7 +154,7 @@ async def discover_models(
             code="MODEL_DISCOVERY_UNSUPPORTED",
             message="这家服务没有可用的模型列表接口；请手动填写模型 ID。",
         )
-    key = profile.resolved_api_key()
+    key = _bearer(profile)
     base = profile.base_url.rstrip("/")
     try:
         async with _client(base, timeout, transport) as client:
@@ -262,16 +262,51 @@ def _json(response: httpx.Response) -> dict[str, object]:
 
 
 def _ids_from_data(payload: dict[str, object]) -> list[str]:
+    """取模型 ID。
+
+    两种形状都要认，且字段名不同：
+
+    - 普通接口：``data`` 数组，每项 ``id``。
+    - 订阅目录：``models`` 数组，每项 ``slug``（不是 ``id``），并带 ``visibility``；
+      只有 ``visibility == "list"`` 的模型才该出现在选择器里，顺序沿用服务端的。
+
+    订阅那次「拿到了列表却像是空的」就是这里只认了 ``id``。
+    """
     raw = payload.get("data")
-    if not isinstance(raw, list):
-        return []
+    if isinstance(raw, list):
+        return _collect_ids(raw, key="id", visible_only=False)
+    raw = payload.get("models")
+    if isinstance(raw, list):
+        return _collect_ids(raw, key="slug", visible_only=True)
+    return []
+
+
+def _collect_ids(raw: list[object], *, key: str, visible_only: bool) -> list[str]:
     ids: list[str] = []
     for item in raw:
-        if isinstance(item, dict):
-            identifier = item.get("id")
-            if isinstance(identifier, str) and identifier:
-                ids.append(identifier)
+        if isinstance(item, str):
+            # Google 风格的名字带 ``models/`` 前缀；其它来源是裸 ID。
+            ids.append(item.split("/")[-1] if item else "")
+            continue
+        if not isinstance(item, dict):
+            continue
+        if visible_only and item.get("visibility") not in (None, "list"):
+            continue
+        value = item.get(key) or item.get("id") or item.get("name")
+        if isinstance(value, str) and value:
+            ids.append(value.split("/")[-1] if "/" in value else value)
     return ids
+
+
+def _bearer(profile: ProfileLike) -> str:
+    """读取请求凭据：订阅连接用访问令牌，其余用 API Key。
+
+    两者在 HTTP 上都是 Bearer，区别只在来源与续期方式；这里只挑值，不管刷新。
+    """
+    if getattr(profile, "auth_method", "api_key") == "subscription":
+        credential = getattr(profile, "subscription", None)
+        return credential.access_token if credential is not None else ""
+    return profile.resolved_api_key()
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -448,8 +483,13 @@ async def _collect_message(
     if failed:
         raise _ProbeFailure("MODEL_CALL_FAILED", f"模型调用失败：{failed}")
     if result is None:
-        # 没有结束事件时用已收到的文本拼一条，避免把「流断了」说成成功。
-        return AssistantMessage(content=[TextContent(text="".join(text))], stop_reason="error")
+        # 没有结束事件：连接中断、流被截断，或供应商在流里报了错却没给终止事件。
+        # 已经收到的半段文字不能算通过——写作轮次里这就是「写到一半没了」。
+        raise _ProbeFailure(
+            "MODEL_STREAM_INCOMPLETE",
+            "模型响应没有正常结束（连接中断或流被截断），本次不计为通过。"
+            "建议：重试；若持续出现，检查网络或该模型的可用性。",
+        )
     return result
 
 

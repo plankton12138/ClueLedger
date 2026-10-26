@@ -193,6 +193,8 @@ def test_selection_endpoints_persist_choice(tmp_path: Path) -> None:
         "source": "saved",
         "available": True,
         "reason": "",
+        "thinking_level": None,
+        "thinking_levels": [],
     }
     read = client.get("/api/model-selection").json()
     assert read["selection"]["model"] == "deepseek-reasoner"
@@ -351,7 +353,9 @@ def test_accepted_turn_keeps_its_snapshot_after_switching(
     built = iter([provider])
 
     # 让设置接口保存的连接在装配时构造出记录型假 provider。
-    def fake_snapshot(profile: Any, model: str, *, worker: bool = True) -> Any:
+    def fake_snapshot(
+        profile: Any, model: str, *, worker: bool = True, thinking_level: str | None = None
+    ) -> Any:
         from hastings.server.provider_runtime import ModelSnapshot
 
         return ModelSnapshot(

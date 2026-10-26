@@ -23,13 +23,18 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from hastings.server.model_thinking import ThinkingLevel, is_deepseek, thinking_levels
 from hastings.server.provider_catalog import ProviderApi
 from tau_agent.messages import AgentMessage
 from tau_agent.provider import CancellationToken
 from tau_agent.provider_events import AssistantMessageEvent
 from tau_agent.tools import AgentTool
 from tau_ai.anthropic import AnthropicProvider
-from tau_ai.env import AnthropicConfig, OpenAICompatibleConfig
+from tau_ai.env import (
+    AnthropicConfig,
+    OpenAICompatibleConfig,
+    RuntimeProviderAuthResolver,
+)
 from tau_ai.google import GoogleGenerativeAIProvider
 from tau_ai.openai_compatible import OpenAICompatibleProvider
 
@@ -41,6 +46,7 @@ __all__ = [
     "build_provider",
     "is_loopback_url",
     "snapshot",
+    "subscription_provider_config",
 ]
 
 #: 连接可保存的四类协议；与 provider_catalog.ProviderApi 同一个集合。
@@ -99,12 +105,30 @@ def build_provider(
     worker: bool = False,
     max_retries: int | None = None,
     timeout_seconds: float | None = None,
+    credential_resolver: RuntimeProviderAuthResolver | None = None,
+    model: str = "",
+    thinking_level: ThinkingLevel | None = None,
 ) -> ManagedModelProvider:
     """按连接保存的协议构造实例。
 
     ``worker`` 是写作轮次的预算（本机端点更长、重试关闭）；探针与列表请求显式给出
     更短的超时并且不重试——一次点击不该悄悄产生多次付费调用。
+    订阅连接另走一条：只发 Responses 请求，凭据在每次请求前由 ``credential_resolver``
+    解析（快过期就先续期）。
     """
+    if thinking_level is not None and thinking_level not in thinking_levels(profile, model):
+        raise ValueError(f"模型 {model!r} 不支持思考深度 {thinking_level!r}")
+    if getattr(profile, "auth_method", "api_key") == "subscription":
+        return OpenAICompatibleProvider(
+            subscription_provider_config(
+                profile,
+                worker=worker,
+                max_retries=max_retries,
+                timeout_seconds=timeout_seconds,
+                credential_resolver=credential_resolver,
+                thinking_level=thinking_level,
+            )
+        )
     if profile.api == "anthropic-messages":
         return AnthropicProvider(
             AnthropicConfig(
@@ -126,7 +150,11 @@ def build_provider(
             )
         )
     return _openai_compatible(
-        profile, worker=worker, max_retries=max_retries, timeout_seconds=timeout_seconds
+        profile,
+        worker=worker,
+        max_retries=max_retries,
+        timeout_seconds=timeout_seconds,
+        thinking_level=thinking_level,
     )
 
 
@@ -142,6 +170,7 @@ def _compatible_config(
     worker: bool,
     max_retries: int | None,
     timeout_seconds: float | None,
+    thinking_level: ThinkingLevel | None = None,
 ) -> OpenAICompatibleConfig:
     key = profile.resolved_api_key()
     loopback = is_loopback_url(profile.base_url)
@@ -158,6 +187,12 @@ def _compatible_config(
         max_retries=_retries(max_retries, worker),
         timeout_seconds=timeout_seconds or ((180.0 if loopback else 45.0) if worker else 60.0),
         max_tokens=4096 if worker else None,
+        reasoning_effort="none" if thinking_level == "off" else thinking_level,
+        include_reasoning_effort_none=thinking_level == "off",
+        # 默认不发送开关；DeepSeek 的默认行为应由服务自身决定。
+        thinking_format=(
+            "deepseek" if thinking_level is not None and is_deepseek(profile) else "openai"
+        ),
     )
 
 
@@ -167,12 +202,51 @@ def _openai_compatible(
     worker: bool,
     max_retries: int | None,
     timeout_seconds: float | None,
+    thinking_level: ThinkingLevel | None = None,
 ) -> ManagedModelProvider:
     config = _compatible_config(
-        profile, worker=worker, max_retries=max_retries, timeout_seconds=timeout_seconds
+        profile,
+        worker=worker,
+        max_retries=max_retries,
+        timeout_seconds=timeout_seconds,
+        thinking_level=thinking_level,
     )
     provider_cls = _LocalProvider if is_loopback_url(profile.base_url) else OpenAICompatibleProvider
     return provider_cls(config)
+
+
+def subscription_provider_config(
+    profile: ProfileLike,
+    *,
+    worker: bool,
+    max_retries: int | None,
+    timeout_seconds: float | None,
+    credential_resolver: RuntimeProviderAuthResolver | None,
+    thinking_level: ThinkingLevel | None = None,
+) -> OpenAICompatibleConfig:
+    """订阅连接的请求配置。
+
+    三件与按量付费不同的事：只走 Responses；不带 ``max_output_tokens``（订阅侧不接受
+    这个字段）；凭据不固定在构造时，而是每次请求前解析一次，过期就先续期。
+    """
+    credential = getattr(profile, "subscription", None)
+    if credential is None:
+        raise RuntimeError(
+            "这条订阅连接没有可用的凭据；需要重新登录后再使用"
+        )
+    return OpenAICompatibleConfig(
+        api_key=credential.access_token,
+        base_url=profile.base_url.rstrip("/"),
+        api="openai-responses",
+        # 协议由订阅决定，不按模型名推断：订阅只有 Responses 一条路。
+        infer_api_from_model=False,
+        max_tokens=None,
+        max_retries=_retries(max_retries, worker),
+        timeout_seconds=timeout_seconds or (180.0 if worker else 45.0),
+        credential_resolver=credential_resolver,
+        provider_name="chatgpt-subscription",
+        reasoning_effort="none" if thinking_level == "off" else thinking_level,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,12 +261,14 @@ class ModelSnapshot:
     display_name: str
     model: str
     provider: ManagedModelProvider
+    thinking_level: ThinkingLevel | None = None
 
     def describe(self) -> dict[str, str]:
         return {
             "connection_id": self.connection_id,
             "connection_name": self.display_name,
             "model": self.model,
+            **({"thinking_level": self.thinking_level} if self.thinking_level is not None else {}),
         }
 
     async def aclose(self) -> None:
@@ -203,7 +279,14 @@ class ModelSnapshot:
         await close()
 
 
-def snapshot(profile: ProfileLike, model: str, *, worker: bool = True) -> ModelSnapshot:
+def snapshot(
+    profile: ProfileLike,
+    model: str,
+    *,
+    worker: bool = True,
+    credential_resolver: RuntimeProviderAuthResolver | None = None,
+    thinking_level: ThinkingLevel | None = None,
+) -> ModelSnapshot:
     """由连接事实构造一轮快照（新实例，调用方负责关闭）。"""
     connection_id = getattr(profile, "name", "")
     display_name = getattr(profile, "display_name", "") or connection_id
@@ -211,5 +294,12 @@ def snapshot(profile: ProfileLike, model: str, *, worker: bool = True) -> ModelS
         connection_id=connection_id,
         display_name=display_name,
         model=model,
-        provider=build_provider(profile, worker=worker),
+        thinking_level=thinking_level,
+        provider=build_provider(
+            profile,
+            worker=worker,
+            credential_resolver=credential_resolver,
+            model=model,
+            thinking_level=thinking_level,
+        ),
     )

@@ -122,9 +122,7 @@ class Step(Spec):
     references: list[str] = Field(default_factory=list)
     idea_references: list[str] = Field(default_factory=list)
     state_chapter: int | None = Field(default=None, ge=0)
-    purpose: Literal[
-        "chat", "update_chapter_index", "organize_materials", "expand_idea", "organize_overview"
-    ] = "chat"
+    purpose: Literal["chat", "update_chapter_index", "organize_materials", "expand_idea"] = "chat"
     index_paths: list[str] = Field(default_factory=list)
     material_scope: dict[str, Any] | None = None
     external_updates: dict[str, str] = Field(default_factory=dict)
@@ -165,10 +163,6 @@ class Step(Spec):
             from hastings.workspace.material_tasks import MaterialTaskScope
 
             MaterialTaskScope.model_validate(self.material_scope)
-        if self.purpose == "organize_overview" and (
-            self.references or self.selected or self.index_paths or self.material_scope
-        ):
-            raise ValueError("总览评测范围由当前作品和 state_chapter 冻结，不接受手工伪造范围")
         if len({c.id for c in self.checks}) != len(self.checks):
             raise ValueError("同一步的检查 ID 不得重复")
         return self

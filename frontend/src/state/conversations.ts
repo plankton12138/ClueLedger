@@ -269,7 +269,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
 
   function applyEvents(conversationId: string, events: WorkspaceEvent[]): void {
     const entry = get().entries[conversationId] ?? EMPTY_ENTRY;
-    let { turns, lastSeq, phase } = entry;
+    let { turns, lastSeq, phase, activeTurn } = entry;
     let needsReload = false;
     for (const event of events) {
       // 每批内部也按 seq 去重，分片仍逐条归并；只在全部处理后通知一次界面。
@@ -283,11 +283,14 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       }
       lastSeq = event.seq;
       if (event.type === "run_phase") phase = event.phase;
+      if (event.type === "stop_requested" && activeTurn?.turn_id === event.turn_id) {
+        activeTurn = { ...activeTurn, state: "stop_requested" };
+      }
       if (event.type.startsWith("module_changes_") && get().workspaceId) {
         onModuleChanges?.(get().workspaceId!, event);
       }
     }
-    if (lastSeq !== entry.lastSeq) patchEntry(conversationId, { turns, lastSeq, phase });
+    if (lastSeq !== entry.lastSeq) patchEntry(conversationId, { turns, lastSeq, phase, activeTurn });
     if (needsReload) void reloadLog(conversationId);
   }
 
@@ -748,11 +751,19 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       if (!workspaceId || !selected) return;
       const entry = get().entries[selected];
       const turnId = entry?.activeTurn?.turn_id;
-      if (!turnId) return;
+      const active = entry?.activeTurn;
+      if (!turnId || !active || active.state === "stop_requested") return;
+      patchEntry(selected, { activeTurn: { ...active, state: "stop_requested" } });
       try {
         await stopTurn(workspaceId, turnId);
       } catch (error) {
-        set({ error: describe(error) });
+        // 迟到的请求结果不能覆盖已经结束的轮次、另一作品或另一轮次。
+        if (get().workspaceId !== workspaceId) return;
+        const current = get().entries[selected];
+        if (current?.activeTurn?.turn_id === turnId) {
+          patchEntry(selected, { activeTurn: active });
+          set({ error: describe(error) });
+        }
       }
     },
 

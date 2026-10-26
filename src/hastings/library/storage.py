@@ -26,6 +26,7 @@ from typing import Any
 
 from hastings.library.ids import is_id, new_id
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.locations import default_data_root
 
 __all__ = [
     "DEFAULT_LIBRARY_DIR",
@@ -38,7 +39,7 @@ __all__ = [
 
 LIBRARY_FORMAT = 1
 LIBRARY_FILE = "library.json"
-DEFAULT_LIBRARY_DIR = Path.home() / "Documents" / "ClueLedger" / "ModuleLibrary"
+DEFAULT_LIBRARY_DIR = default_data_root() / "ModuleLibrary"
 
 _THREAD_LOCKS: dict[str, threading.Lock] = {}
 _THREAD_LOCKS_GUARD = threading.Lock()

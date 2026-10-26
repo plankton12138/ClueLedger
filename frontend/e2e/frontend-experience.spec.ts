@@ -48,7 +48,7 @@ test("隔离基线：主要页面与窄窗口正文", async ({ page, book }) => 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole("button", { name: "灵感", exact: true }).click();
   await page.screenshot({ path: `${output}/ideas-1440.png` });
-  await page.getByRole("link", { name: "故事总览", exact: true }).click();
+  await page.goto(`/#/workspaces/${book.id}/materials/legacy-story`);
   await page.screenshot({ path: `${output}/materials-1440.png` });
   await page.getByRole("link", { name: "模块库", exact: true }).click();
   const dialog = page.getByRole("region", { name: "模块库", exact: true });
@@ -271,7 +271,6 @@ test("中文输入法确认不发送，章节范围悬停仍可读", async ({ pa
   await page.locator(".chat-input").dispatchEvent("keydown", { key: "Enter", code: "Enter", isComposing: true, keyCode: 229 });
   expect(sends).toBe(0);
   await expect(page.locator(".chat-input")).toHaveValue("中文候选");
-  await page.getByRole("link", { name: "故事总览", exact: true }).click();
   await page.goto(`/#/workspaces/${book.id}/materials/legacy-story`);
   await page.getByRole("button", { name: "整理所选章节", exact: true }).click();
   const range = page.getByRole("dialog", { name: "整理章节索引", exact: true });

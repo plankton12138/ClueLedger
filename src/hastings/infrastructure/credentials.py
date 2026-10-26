@@ -44,6 +44,11 @@ class InMemoryCredentialStore:
         with self._lock:
             self._secrets.pop(ref, None)
 
+    def refs(self) -> set[str]:
+        """当前存在的引用（不含值）；用于诊断与断言，不对外暴露密钥。"""
+        with self._lock:
+            return set(self._secrets)
+
 
 class KeyringCredentialStore:
     """经 keyring 库的操作系统凭据存储；库缺失或后端故障按环境失败处理。"""

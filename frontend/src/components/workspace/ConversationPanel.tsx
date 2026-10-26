@@ -102,6 +102,7 @@ export default function ConversationPanel() {
   const openModelSettings = useModelsStore((state) => state.openSettings);
 
   const running = entry.running;
+  const stopping = entry.activeTurn?.state === "stop_requested";
   const otherRunning = busyElsewhere !== null && busyElsewhere.id !== selectedId;
   const canSend = selectionAvailable && Boolean(draft.trim()) && !running && !pending && !otherRunning;
 
@@ -293,7 +294,6 @@ export default function ConversationPanel() {
       )}
 
       <div className="chat-bar flex flex-none items-center gap-2 px-3 py-1.5 text-[10px]">
-        <span>模型</span>
         <ModelSelector />
       </div>
 
@@ -430,8 +430,9 @@ export default function ConversationPanel() {
         />
         <div className="mt-2 flex items-center justify-end gap-2">
           {running ? (
-            <button className="btn btn-gray px-3 py-1 text-[11px]" onClick={() => void stop()}>
-              停止
+            <button className="btn btn-gray px-3 py-1 text-[11px]" disabled={stopping}
+              onClick={() => void stop()}>
+              {stopping ? "正在停止…" : "停止"}
             </button>
           ) : (
             <button

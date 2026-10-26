@@ -257,6 +257,7 @@ def test_invalid_roles_are_rejected_before_writing(tmp_path: Path) -> None:
 def test_externally_broken_metadata_stays_readable(tmp_path: Path) -> None:
     workspace = Workspace.create(tmp_path / "雪山旅馆")
     target = workspace.root / "设定集/角色小传/许衡.md"
+    target.parent.mkdir(parents=True)
     target.write_text("---\nroles: [wizard]\n---\n# 许衡\n\n正文。\n", encoding="utf-8")
 
     entry = workspace.catalog().characters[0]

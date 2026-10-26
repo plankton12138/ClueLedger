@@ -241,5 +241,5 @@ def test_retry_does_not_create_a_second_workspace(tmp_path: Path) -> None:
 
     assert first.root == second.root
     assert second.recovered is False
-    assert sorted(item.name for item in target.iterdir()) == [".clueledger", "正文", "设定集"]
+    assert sorted(item.name for item in target.iterdir()) == [".clueledger", "正文"]
     assert len([item for item in tmp_path.iterdir() if item.name == "新作品"]) == 1

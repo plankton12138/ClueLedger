@@ -539,6 +539,19 @@ class _ChatStreamParser:
         return events, False
 
     def finalize(self) -> list[ProviderEvent]:
+        if self._finish_reason is None:
+            # Chat Completions terminates with finish_reason, rather than
+            # the response.completed event used by Responses.
+            # Partial text already streamed is not a completed answer.
+            return [
+                ProviderErrorEvent(
+                    message=(
+                        "模型响应没有正常结束（缺少 finish_reason）：连接可能中断，"
+                        "或服务端在流中途终止了这次请求。"
+                    ),
+                    data={"finish_reason": self._finish_reason, "incomplete_stream": True},
+                )
+            ]
         tool_calls = [
             builder.build(index) for index, builder in sorted(self._tool_call_builders.items())
         ]
@@ -578,11 +591,14 @@ class _ResponsesStreamParser:
         self._tool_call_builders: dict[str, _ResponsesToolCallBuilder] = {}
         self._status: str | None = None
         self._usage: Usage | None = None
+        self._terminal = False
 
     def feed(self, event: str) -> tuple[list[ProviderEvent], bool]:
         # The Responses API has no [DONE] sentinel; it ends with a terminal
-        # event (completed/incomplete/failed) handled below.
+        # event (completed/incomplete/failed) handled below. Some proxies still
+        # send [DONE], so treat it as terminal rather than as a dropped stream.
         if event == "[DONE]":
+            self._terminal = True
             return [], False
 
         chunk = _loads_object(event)
@@ -648,15 +664,18 @@ class _ResponsesStreamParser:
             )
 
         elif chunk_type in ("response.completed", "response.incomplete"):
+            self._terminal = True
             self._status = _responses_finish_reason(chunk)
             self._usage = _usage_from_responses_event(chunk) or self._usage
             return [], True
 
         elif chunk_type == "response.failed":
+            self._terminal = True
             self.fatal = True
             return [_responses_failure_event(chunk)], True
 
         elif chunk_type == "error":
+            self._terminal = True
             self.fatal = True
             return [
                 ProviderErrorEvent(message=_responses_error_message(chunk), data={"event": chunk})
@@ -665,6 +684,19 @@ class _ResponsesStreamParser:
         return [], False
 
     def finalize(self) -> list[ProviderEvent]:
+        if not self._terminal:
+            # The stream closed without ``response.completed``: a dropped
+            # connection, a truncated body, or a proxy that cut the response.
+            # Partial text already streamed is not a completed answer.
+            return [
+                ProviderErrorEvent(
+                    message=(
+                        "模型响应没有正常结束（缺少 response.completed）：连接可能中断，"
+                        "或服务端在流中途终止了这次请求。"
+                    ),
+                    data={"finish_reason": self._status, "incomplete_stream": True},
+                )
+            ]
         tool_calls = [
             builder.build(index)
             for index, builder in enumerate(_ordered_builders(self._tool_call_builders))
@@ -930,7 +962,10 @@ def _build_responses_payload(
         # ``summary: auto`` streams ``response.reasoning_summary_text.delta``
         # events so the agent's thinking is visible, mirroring the reasoning
         # deltas surfaced on the chat-completions path.
-        payload["reasoning"] = {"effort": effort, "summary": "auto"}
+        payload["reasoning"] = {
+            "effort": effort,
+            **({"summary": "auto"} if effort != "none" else {}),
+        }
     if tools:
         payload["tools"] = [_tool_to_responses(tool) for tool in tools]
     return payload
@@ -941,7 +976,7 @@ def _normalize_responses_effort(reasoning_effort: str | None) -> str | None:
     if reasoning_effort is None:
         return None
     normalized = reasoning_effort.strip().lower()
-    if normalized in ("", "none"):
+    if not normalized:
         return None
     return normalized
 

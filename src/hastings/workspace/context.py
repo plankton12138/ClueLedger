@@ -1,16 +1,9 @@
-"""作品材料与写作要求（0.5）。
+"""按任务用途装配作品目录、已装模块、参考材料与写作要求。
 
-模型需要知道「有哪些文件、设定写了什么、这次从哪一章入手」，但整本书不该塞进提示词。
-这里提供两件事：
-
-- **目录**：两块内容的文件清单与标题，始终完整（很小）；
-- **设定**：线索与真相按字符预算装入；角色只列名称与路径，涉及人物时读取小传。
-  固定设定超出预算时明确写出「已截断、还剩多少」，
-  并让模型自己用工具分段读取。不静默截断后宣称读过全文。
-
-创作要求（线索是读者可观察的信息、真相是实际经过）写在系统提示里，不引入第四份
-「本书约定」文件，也不建立读者披露状态机：区分「作者知道」与「正文已经告诉读者」
-是写作要求，由模型在生成与检查时自行遵守。
+模块只注入精确版本的短目录，原文通过模块工具读取。作品文件目录只列实际存在的文件；
+旧版线索、真相与小传仅作兼容来源，不为新作品注入缺失文件或旧结构创建提示。
+分区按渲染后的字符数计预算；旧设定过长时给出截断说明与继续读取入口。
+作者设定、未来计划和正文已经披露的事实分别处理，不互相推断。
 """
 
 from __future__ import annotations
@@ -54,7 +47,7 @@ from hastings.workspace.disclosure import (
     state_section,
 )
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.files import SETTING_FILES, Workspace
+from hastings.workspace.files import Workspace
 from hastings.workspace.glossary import GlossaryStore, build_glossary, glossary_section
 from hastings.workspace.materials import (
     IDEA_PREREAD_CHARS,
@@ -97,9 +90,6 @@ _INSTRUCTIONS = """\
 ## 作品结构
 - `正文/` 下一章一个 Markdown 文件，按文件名排序；新章由你创建，文件名用「四位序号 + 标题」。
 - 需要持续使用的设定、人物小传、线索、真相与创作约定，保存为本作品的模块。
-- 旧版固定文件 `设定集/角色小传/姓名.md`、`设定集/线索.md`、`设定集/真相.md` 仍可读写；
-  只有作者明确提到这些文件或要求沿用旧结构时才使用，不自动迁移，也不把新建内容默认写成旧文件。
-  写到旧版角色小传里的人物前先读取其小传；目录不包含小传全文，未读取不能声称已读。
 
 ## 确定修改目标
 - 作者明确指定模块、条目或文件时，按指定目标读取和修改。没有指定存储位置的资料修改，
@@ -137,17 +127,19 @@ _INSTRUCTIONS = """\
   准备不等于已应用；发现遗漏时重新准备包含全部操作的完整变更集，再应用这份完整结果。
   应用成功会结束本轮写入，不能先应用一部分再继续准备其余内容。
 - 普通创作不更新已有库原稿、不搜索未授权的库内容、不修改其他作品。
-- 章节与旧设定文件仍用 `read_file` / `write_file` / `edit_file`。改文件前先读，
+- 章节文件用 `read_file` / `write_file` / `edit_file`。改文件前先读，
   `read_file` 返回的 `digest` 是写入凭据；新建不需要 `digest`，已存在的文件不能当新文件写。
 - `read_file` 的 `truncated` 为真表示还有没读到的部分，按返回的 `next_cursor` 继续；
   单次最多 16000 字符。目录、搜索摘录、界面上打开文件都不算读过原文。
 - 章节与获准修改的旧文件内，局部替换优先用 `edit_file`（原文必须唯一匹配）；
   模块条目的局部替换仍用 `prepare_module_changes` / `apply_module_changes`。
-- 人物身份的披露进度用 `read_state` 查：不带参数给概览，带 `entity` 给该角色已披露条目与
-  原文依据。写作视图不返回计划披露；定位不明确时用 `as_of_chapter` 指明本轮所写章号。
-  写到某个人物前先看这份状态，不要凭印象推断「读者现在知不知道」。
+- 人物设定从已装模块中定位，用 `query_records` / `read_record` 读取；模块人物没有对应的文件路径。
+- `read_state` 只查询已有的章节状态与旧文件身份记录，不读取模块人物设定。没有记录是合法空结果，
+  不代表人物不存在；不要按人物姓名拼接路径反复查询。需要核对读者已知信息时读取对应章节原文；
+  尚无正文的新作品不要求先查身份状态才能写第一章。
 - 不确定有哪些文件时先 `list_files`；找具体文字用 `search_text`；看历史用 `git_log` / `git_diff`。
-- 文件路径只能是 `正文/xxx.md`、`设定集/角色小传/姓名.md`、`设定集/线索.md`、`设定集/真相.md`。
+- 文件路径以 `list_files` 返回的实际文件为准；新章使用 `正文/四位序号 标题.md`。
+  模块用完整模块引用定位，不把模块名或条目名转换成作品文件路径。
 
 ## 写作要求
 - 正文只写读者能看到的内容。真相用于规划和自查，不能因为「作者知道」就让角色或叙述者说出来。
@@ -182,6 +174,15 @@ _INSTRUCTIONS = """\
   模块怎么拆、条目怎么命名、已授权的人物细节都由你决定，不需要提问。
 - 保存未成功时不能声称完成；保留已生成内容，说明可继续处理的范围。
 - 以工具返回的实际结果说明哪些已保存、哪些已用于本作品、哪些仍未完成。
+"""
+
+_LEGACY_INSTRUCTIONS = """\
+## 已存在的旧版文件
+本作品仍有未导入模块的旧版设定文件，目录中只列出实际存在的文件。
+- 旧文件仅作兼容来源；作者明确指定这些文件或要求沿用旧结构时才修改，不为新资料创建旧结构。
+- 涉及旧角色文件中的人物时，先读取其小传。
+- 旧文件用 `read_file` 读取；目录不等于全文。`read_state` 的人物身份只覆盖旧版角色小传，
+  先不带 `entity` 查看概览，再使用返回的确切 `path`，不套用模块人物姓名。
 """
 
 
@@ -255,7 +256,7 @@ IDEA_INSTRUCTIONS = """\
 def settings_section(
     workspace: Workspace, *, budget: int = SETTINGS_BUDGET, title: str = "设定集内容"
 ) -> str:
-    """线索与真相的文本块；角色全文只通过文件工具按需读取。
+    """仅为实际存在且未导入模块的旧版线索、真相生成文本块。
 
     ``budget`` 是这一分区**渲染后**的字符上限，标题行也算在内。正文按剩余空间分配：
     放得下就整段装入，放不下就截短并写明还剩多少，读取入口始终保留——长设定不能让
@@ -264,9 +265,9 @@ def settings_section(
     available = body_budget(title, budget)
     imported = imported_paths(workspace)
     sources = [
-        _setting_source(workspace, path, label)
-        for path, label in SETTING_FILES
-        if path not in imported
+        _setting_source(workspace, entry.path, entry.title)
+        for entry in workspace.catalog().settings
+        if entry.exists and entry.path not in imported
     ]
     longest = max((len(source.text) for source in sources), default=0)
     if longest == 0:
@@ -332,12 +333,17 @@ def _settings_read_entry(sources: list[_SettingSource]) -> str:
 
 
 def catalog_section(workspace: Workspace) -> str:
-    """章节与角色按文件名列出，线索和真相使用固定路径；名称与标签取服务端同一份结果。
+    """章节按文件名列出；旧版设定仅列出实际存在且未导入模块的文件。
 
     条目过多时按行截断并说明还剩多少：目录只是定位材料，模型可以用 ``list_files``
     分页看其余条目，不必把整本书的文件名一次塞进提示词。
     """
     catalog = workspace.catalog()
+    imported = imported_paths(workspace)
+    characters = [
+        entry for entry in catalog.characters if entry.exists and entry.path not in imported
+    ]
+    settings = [entry for entry in catalog.settings if entry.exists and entry.path not in imported]
     lines = ["### 正文"]
     if catalog.chapters:
         for entry in catalog.chapters:
@@ -347,19 +353,17 @@ def catalog_section(workspace: Workspace) -> str:
                 lines.append(f"  （命名提示：{warning}）")
     else:
         lines.append("- （还没有章节）")
-    lines.append("")
-    lines.append("### 设定集")
-    lines.append("#### 角色小传（按需读取原文）")
-    if catalog.characters:
-        for entry in catalog.characters:
+    if characters or settings:
+        lines.extend(["", "### 旧版文件（兼容读取）"])
+    if characters:
+        lines.append("#### 角色小传（按需读取原文）")
+        for entry in characters:
             roles = "、".join(ROLE_LABELS[role] for role in entry.roles)
             lines.append(f"- {entry.path}｜{entry.title}" + (f"｜{roles}" if roles else ""))
-    else:
-        lines.append("（尚无角色；需要时在角色小传目录创建一人一个 Markdown 文件。）")
-    lines.append("#### 固定设定")
-    for entry in catalog.settings:
-        state = "" if entry.exists else "（缺失）"
-        lines.append(f"- {entry.path}｜{entry.title}{state}")
+    if settings:
+        lines.append("#### 旧版设定")
+        for entry in settings:
+            lines.append(f"- {entry.path}｜{entry.title}")
     text = "\n".join(lines)
     if len(text) <= LIST_PREVIEW_CHARS:
         return text
@@ -370,7 +374,7 @@ def catalog_section(workspace: Workspace) -> str:
             break
         kept.append(line)
         used += len(line) + 1
-    total_entries = len(catalog.chapters) + len(catalog.characters) + len(catalog.settings)
+    total_entries = len(catalog.chapters) + len(characters) + len(settings)
     kept_entries = sum(1 for line in kept if line.startswith("- ") and line.count("｜") >= 1)
     kept.append(
         f"（目录较长：共 {total_entries} 个文件，这里只列出前 {kept_entries} 个；"
@@ -476,11 +480,20 @@ def build_assembled_context(
     自己的旧摘要）；检查给设定，不给索引摘要（避免用摘要替代原文证据）；写正文全部装。
     """
     cutoff = state_chapter(workspace, selected_path=selected_path, explicit=as_of_chapter)
+    task_instructions = instructions.strip() or _default_instructions(profile)
+    if profile == "writer" and not instructions.strip():
+        imported = imported_paths(workspace)
+        legacy_catalog = workspace.catalog()
+        if any(
+            entry.exists and entry.path not in imported
+            for entry in (*legacy_catalog.characters, *legacy_catalog.settings)
+        ):
+            task_instructions = f"{task_instructions}\n\n{_LEGACY_INSTRUCTIONS}"
     parts: list[Partition] = [
         Partition(
             key="instructions",
             title="写作约定" if profile == "writer" else "本任务要求",
-            text=instructions.strip() or _default_instructions(profile),
+            text=task_instructions,
             budget=INSTRUCTIONS_BUDGET,
             required=True,
         )
@@ -601,14 +614,16 @@ def build_assembled_context(
             )
     if profile in ("writer", "review"):
         settings_title = "设定集内容"
-        parts.append(
-            Partition(
-                key="settings",
-                title=settings_title,
-                text=settings_section(workspace, budget=SETTINGS_BUDGET, title=settings_title),
-                budget=SETTINGS_BUDGET,
+        settings = settings_section(workspace, budget=SETTINGS_BUDGET, title=settings_title)
+        if settings.strip():
+            parts.append(
+                Partition(
+                    key="settings",
+                    title=settings_title,
+                    text=settings,
+                    budget=SETTINGS_BUDGET,
+                )
             )
-        )
     if history_facts.strip():
         # 应用记录的执行事实，不是作者的要求：让模型知道上一轮到底成了没有。
         parts.append(

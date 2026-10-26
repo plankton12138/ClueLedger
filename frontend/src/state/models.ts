@@ -16,16 +16,19 @@ import { create } from "zustand";
 import {
   createConnection,
   deleteConnection,
+  listAuthProviders,
   listProviders,
   ModelApiError,
   readConfig,
   selectModel,
   updateConnection,
+  type AuthProvider,
   type ConnectionDraft,
   type ModelConfig,
   type ModelConnection,
   type ModelSelection,
   type ProviderPreset,
+  type ThinkingLevel,
 } from "../api/models";
 
 const EMPTY_SELECTION: ModelSelection = {
@@ -34,10 +37,14 @@ const EMPTY_SELECTION: ModelSelection = {
   source: "none",
   available: false,
   reason: "还没有可用的模型连接",
+  thinking_level: null,
+  thinking_levels: [],
 };
 
 interface ModelsStore {
   presets: ProviderPreset[];
+  /** 可以登录的订阅来源；与 API Key 预设分开，界面按供应商名显示。 */
+  authProviders: AuthProvider[];
   connections: ModelConnection[];
   selection: ModelSelection;
   revision: string;
@@ -54,7 +61,11 @@ interface ModelsStore {
   create(draft: ConnectionDraft): Promise<boolean>;
   update(name: string, draft: ConnectionDraft): Promise<boolean>;
   remove(name: string): Promise<boolean>;
-  choose(connectionId: string | null, model: string): Promise<boolean>;
+  choose(
+    connectionId: string | null,
+    model: string,
+    thinkingLevel?: ThinkingLevel | null,
+  ): Promise<boolean>;
   dismissError(): void;
 }
 
@@ -68,6 +79,7 @@ function isConflict(error: unknown): boolean {
 
 export const useModelsStore = create<ModelsStore>()((set, get) => ({
   presets: [],
+  authProviders: [],
   connections: [],
   selection: EMPTY_SELECTION,
   revision: "",
@@ -84,6 +96,12 @@ export const useModelsStore = create<ModelsStore>()((set, get) => ({
       set({ presets: await listProviders() });
     } catch (error) {
       set({ error: describe(error) });
+    }
+    try {
+      set({ authProviders: await listAuthProviders() });
+    } catch {
+      // 没有可登录的订阅来源时后端不挂这组接口：不是错误，界面按「只能填 Key」显示。
+      set({ authProviders: [] });
     }
   },
 
@@ -120,8 +138,8 @@ export const useModelsStore = create<ModelsStore>()((set, get) => ({
     return write(set, () => deleteConnection(name, get().revision));
   },
 
-  async choose(connectionId, model) {
-    return write(set, () => selectModel(connectionId, model, get().revision));
+  async choose(connectionId, model, thinkingLevel) {
+    return write(set, () => selectModel(connectionId, model, get().revision, thinkingLevel));
   },
 
   dismissError() {

@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from hastings.server.file_app import create_workspace_app
 from hastings.workspace.directory_dialog import DirectoryPickerError
 from hastings.workspace.files import Workspace
-from hastings.workspace.state import RecentWorkspaces
+from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 
 
 def _unconfigured_model() -> tuple[object, str]:
@@ -37,7 +37,7 @@ def _created(client: TestClient, root: Path) -> str:
     return workspace_id
 
 
-def test_create_workspace_makes_two_blocks(tmp_path: Path) -> None:
+def test_create_workspace_makes_only_body_directory(tmp_path: Path) -> None:
     client = _client(tmp_path)
     root = tmp_path / "雪山旅馆"
 
@@ -49,6 +49,7 @@ def test_create_workspace_makes_two_blocks(tmp_path: Path) -> None:
     assert body["exists"] is True
     assert body["path"] == str(root.resolve())
     assert (root / "正文").is_dir()
+    assert not (root / "设定集").exists()
     # 新作品不预建线索与真相文件；作者按需创建或改用模块库。
     assert not (root / "设定集/真相.md").exists()
     assert not (root / "设定集/线索.md").exists()
@@ -74,6 +75,133 @@ def test_prune_stale_workspaces_removes_missing_binding(tmp_path: Path) -> None:
     assert [item["id"] for item in body["removed"]] == [gone["id"]]
     assert [item["id"] for item in body["workspaces"]] == [kept["id"]]
     assert client.get("/api/file-workspaces").json() == [kept]
+
+
+def test_remove_workspace_deletes_files_and_clears_app_state(tmp_path: Path) -> None:
+    book = RecentWorkspaces(tmp_path / "state")
+    client = TestClient(
+        create_workspace_app(workspaces=book, provider_factory=_unconfigured_model)  # type: ignore[arg-type]
+    )
+    root = tmp_path / "雪山旅馆"
+    created = client.post("/api/file-workspaces", json={"path": str(root), "create": True}).json()
+    state_root = conversation_root(book.root, created["id"])
+    ConversationStore(state_root).create_with_first_turn(
+        text="写第一章", request_key="k1", turn_id="t1"
+    )
+
+    response = client.request(
+        "DELETE", f"/api/file-workspaces/{created['id']}", json={"confirmed_path": str(root)}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["removed"]["id"] == created["id"]
+    assert body["workspaces"] == []
+    assert client.get("/api/file-workspaces").json() == []
+    # 应用内的会话与活动记录随登记一起清理。
+    assert not state_root.exists()
+    assert not root.exists()
+    assert body["removed"]["exists"] is False
+
+
+def test_remove_workspace_rejects_running_turn(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    root = tmp_path / "雪山旅馆"
+    created = client.post("/api/file-workspaces", json={"path": str(root), "create": True}).json()
+    client.app.state.run_registry.mark(root, "t1")  # type: ignore[attr-defined]
+
+    response = client.request(
+        "DELETE", f"/api/file-workspaces/{created['id']}", json={"confirmed_path": str(root)}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "WORKSPACE_BUSY_CONFLICT"
+    assert [item["id"] for item in client.get("/api/file-workspaces").json()] == [created["id"]]
+
+
+def test_remove_unknown_workspace_returns_not_found(tmp_path: Path) -> None:
+    response = _client(tmp_path).request(
+        "DELETE", "/api/file-workspaces/not-registered", json={"confirmed_path": str(tmp_path)}
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "WORKSPACE_NOT_FOUND"
+
+
+def test_rename_workspace_renames_directory_and_migrates_state(tmp_path: Path) -> None:
+    book = RecentWorkspaces(tmp_path / "state")
+    client = TestClient(
+        create_workspace_app(workspaces=book, provider_factory=_unconfigured_model)  # type: ignore[arg-type]
+    )
+    parent = tmp_path / "书架"
+    parent.mkdir()
+    old_root = parent / "旧名"
+    created = client.post(
+        "/api/file-workspaces", json={"path": str(old_root), "create": True}
+    ).json()
+    old_state = conversation_root(book.root, created["id"])
+    ConversationStore(old_state).create_with_first_turn(
+        text="写第一章", request_key="k1", turn_id="t1"
+    )
+
+    response = client.patch(f"/api/file-workspaces/{created['id']}", json={"name": "新名"})
+
+    assert response.status_code == 200
+    body = response.json()
+    renamed = body["workspace"]
+    new_root = parent / "新名"
+    assert (renamed["name"], renamed["path"]) == ("新名", str(new_root))
+    assert renamed["id"] != created["id"]
+    assert body["workspaces"] == [renamed]
+    assert client.get("/api/file-workspaces").json() == [renamed]
+    # 目录连同正文与版本记录一起改名，旧路径不再存在。
+    assert not old_root.exists()
+    assert (new_root / "正文").is_dir()
+    assert (new_root / ".git").is_dir()
+    # 会话与活动记录迁到新标识下，仍能按新标识读取作品。
+    new_state = conversation_root(book.root, renamed["id"])
+    assert not old_state.exists()
+    assert ConversationStore(new_state).conversations()[0].title == "写第一章"
+    assert client.get(f"/api/file-workspaces/{renamed['id']}/files").status_code == 200
+
+
+def test_rename_workspace_rejects_existing_directory(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    root = tmp_path / "旧名"
+    created = client.post("/api/file-workspaces", json={"path": str(root), "create": True}).json()
+    (tmp_path / "已有目录").mkdir()
+
+    response = client.patch(f"/api/file-workspaces/{created['id']}", json={"name": "已有目录"})
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "WORKSPACE_NAME_CONFLICT"
+    assert root.is_dir()
+    assert client.get("/api/file-workspaces").json()[0]["id"] == created["id"]
+
+
+def test_rename_workspace_rejects_invalid_name(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    root = tmp_path / "旧名"
+    created = client.post("/api/file-workspaces", json={"path": str(root), "create": True}).json()
+
+    response = client.patch(f"/api/file-workspaces/{created['id']}", json={"name": "一层/二层"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "WORKSPACE_NAME_INVALID"
+    assert root.is_dir()
+
+
+def test_rename_workspace_rejects_running_turn(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    root = tmp_path / "旧名"
+    created = client.post("/api/file-workspaces", json={"path": str(root), "create": True}).json()
+    client.app.state.run_registry.mark(root, "t1")  # type: ignore[attr-defined]
+
+    response = client.patch(f"/api/file-workspaces/{created['id']}", json={"name": "新名"})
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "WORKSPACE_BUSY_CONFLICT"
+    assert root.is_dir()
 
 
 def test_open_existing_directory_does_not_create_content(tmp_path: Path) -> None:
@@ -177,6 +305,7 @@ def test_read_file_returns_text_digest_and_kind(tmp_path: Path) -> None:
     assert chapter.json()["text"].startswith("# 雨夜")
     assert len(chapter.json()["digest"]) == 64
 
+    (root / "设定集").mkdir()
     (root / "设定集/真相.md").write_text("", encoding="utf-8")
     setting = client.get(
         f"/api/file-workspaces/{workspace_id}/file", params={"path": "设定集/真相.md"}
@@ -491,6 +620,7 @@ def test_state_endpoint_lists_declared_identity(tmp_path: Path) -> None:
     root = tmp_path / "雪山旅馆"
     workspace_id = _created(client, root)
     (root / "正文/0001 雨夜.md").write_text("第一章 雨夜\n\n雪。\n", encoding="utf-8")
+    (root / "设定集/角色小传").mkdir(parents=True)
     (root / "设定集/角色小传/林静.md").write_text(
         "---\n"
         "roles: [suspect]\n"
@@ -525,6 +655,7 @@ def test_state_endpoint_switches_domains(tmp_path: Path) -> None:
     root = tmp_path / "雪山旅馆"
     workspace_id = _created(client, root)
     (root / "正文/0001 雨夜.md").write_text("第一章 雨夜\n\n雪。\n", encoding="utf-8")
+    (root / "设定集/角色小传").mkdir(parents=True)
     (root / "设定集/角色小传/林静.md").write_text(
         "---\nroles: [suspect]\naliases: [林医生]\n---\n\n# 林静\n", encoding="utf-8"
     )

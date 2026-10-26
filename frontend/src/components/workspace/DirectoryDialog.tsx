@@ -2,7 +2,7 @@ import { Button } from "../ui/Button";
 /**
  * 作品位置（0.4 V04-8）：用系统文件夹对话框选位置，不再手抄路径。
  *
- * 打开已有作品选「作品文件夹」本身；新建作品分两步：选「存放位置」（默认文档目录），
+ * 打开已有作品选「作品文件夹」本身；新建默认归入文档 / ClueLedger / 作品，
  * 再起一个作品名，最终目录是「位置 / 作品名」。路径由对话框给出，界面只显示结果，
  * 因此不需要、也不接受手输路径。
  *
@@ -19,7 +19,10 @@ import {
 import { AppDialog } from "../ui/AppDialog";
 import { Tabs } from "../ui/Tabs";
 import { errorMessage } from "../../api/errors";
+import { navigate } from "../../state/navigation";
 import { useWorkspaceStore } from "../../state/workspace";
+import RemoveWorkspaceDialog from "./RemoveWorkspaceDialog";
+import type { WorkspaceBinding } from "../../api/workspace";
 
 /** 新作品的占位名：与「新的对话」同一类占位，作者可以随手改掉。 */
 const DEFAULT_NAME = "未命名作品";
@@ -48,6 +51,7 @@ export default function DirectoryDialog({ open, onClose }: Props) {
   const [name, setName] = useState(DEFAULT_NAME);
   const [picking, setPicking] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<WorkspaceBinding | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -71,7 +75,9 @@ export default function DirectoryDialog({ open, onClose }: Props) {
 
   const target =
     mode === "create" ? (location && name.trim() ? joinPath(location, name.trim()) : null) : pickedPath;
-  const canSubmit = Boolean(target) && !loading && !picking;
+  const invalidName = mode === "create" && Boolean(name.trim()) &&
+    (/[/\\<>:"|?*\x00-\x1f]/.test(name) || /[. ]$/.test(name) || name.trim() === "." || name.trim() === "..");
+  const canSubmit = Boolean(target) && !invalidName && !loading && !picking;
 
   const choose = async () => {
     setPicking(true);
@@ -92,12 +98,15 @@ export default function DirectoryDialog({ open, onClose }: Props) {
 
   const submit = async () => {
     if (!target || !canSubmit) return;
-    const success = await openWorkspace(target, mode === "create");
-    if (success) onClose();
-    else setPickerError(useWorkspaceStore.getState().error);
+    const id = await openWorkspace(target, mode === "create");
+    if (id) {
+      // 作品切换后地址栏也要跟着走：路由仍指向旧作品时，顶层同步会把当前作品切回去。
+      navigate({ kind: "writing", workspaceId: id });
+      onClose();
+    } else setPickerError(useWorkspaceStore.getState().error);
   };
 
-  return (
+  return (<>
     <AppDialog open={open} onOpenChange={value => { if (!value) onClose(); }} title="作品位置" returnFocus={() => document.querySelector<HTMLElement>('[data-dialog-return="workspace"]')}>
         <Tabs label="选择方式" value={mode} onValueChange={value => setMode(value as "open" | "create")} items={[{ value: "open", label: "打开已有", content: null }, { value: "create", label: "新建作品", content: null }]} />
 
@@ -135,6 +144,7 @@ export default function DirectoryDialog({ open, onClose }: Props) {
               }}
             />
             {target && <p className="mt-1 text-sm text-ui-muted">将创建：{target}</p>}
+            {invalidName && <p role="alert" className="mt-1 text-sm text-[#a33]">[WORKSPACE_NAME_INVALID] 作品名：名称包含路径分隔符或系统不允许的字符，或以空格、点结尾。建议：使用单个文件夹名称。</p>}
           </div>
         )}
 
@@ -145,9 +155,9 @@ export default function DirectoryDialog({ open, onClose }: Props) {
             <div className="text-sm font-bold text-[#4b4737]">最近打开</div>
             <ul className="mt-1 max-h-40 overflow-auto rounded border border-[#e2dbc6] bg-white/60">
               {bindings.map((binding) => (
-                <li key={binding.id}>
+                <li key={binding.id} className="flex items-center">
                   <Button
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[#f3ecd8]"
+                    className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[#f3ecd8]"
                     onClick={() => {
                       setMode("open");
                       setPickedPath(binding.path);
@@ -157,6 +167,7 @@ export default function DirectoryDialog({ open, onClose }: Props) {
                     <span className="truncate text-[12px] text-ui-muted">{binding.path}</span>
                     {!binding.exists && <span className="text-[12px] text-[#a33]">目录已不在</span>}
                   </Button>
+                  <Button variant="danger" size="compact" aria-label={`删除作品「${binding.name}」`} disabled={loading} onClick={() => setRemoving(binding)}>删除</Button>
                 </li>
               ))}
             </ul>
@@ -172,5 +183,6 @@ export default function DirectoryDialog({ open, onClose }: Props) {
           </Button>
         </div>
     </AppDialog>
-  );
+    <RemoveWorkspaceDialog open={Boolean(removing)} workspace={removing} onOpenChange={value => { if (!value) setRemoving(null); }} />
+  </>);
 }
