@@ -11,6 +11,7 @@ import type {
   ReviewStatus,
   RunStatus,
   TaskGrant,
+  TaskModuleContentGrant,
   TaskModuleGrant,
 } from "../../api/workspace";
 import { hasTaskCard, taskCardFacts, type ChatTurn } from "../../state/chatMessages";
@@ -28,6 +29,7 @@ const STATUS_LABEL: Record<RunStatus, string> = {
   failed: "失败",
   stopped: "已停止",
   interrupted: "中断",
+  needs_input: "等待你回答",
 };
 
 const RECORDING_LABEL: Record<Recording, string> = {
@@ -56,11 +58,19 @@ function moduleGrantLabel(grant: TaskModuleGrant): string {
   return `卸下 ${grant.binding_id ?? ""}`;
 }
 
+function contentGrantLabel(grant: TaskModuleContentGrant): string {
+  if (grant.action === "create") return `新建模块 ${grant.slot ?? ""}`;
+  return `修改 ${grant.module_id ?? ""}@${grant.base_revision ?? ""}`;
+}
+
 function titleOf(turn: ChatTurn): string {
   const scope = turn.scope;
   if (scope === null) return "任务卡";
   if (scope.mode === "read_only") return "任务卡 · 只读";
-  const count = scope.grants.length + (scope.module_grants?.length ?? 0);
+  const count =
+    scope.grants.length +
+    (scope.module_grants?.length ?? 0) +
+    (scope.module_content_grants?.length ?? 0);
   return `任务卡 v${scope.version} · ${count} 项`;
 }
 
@@ -99,6 +109,11 @@ export default function TaskCard({ turn }: { turn: ChatTurn }) {
         {facts.moduleGrants.map((grant) => (
           <li key={`${grant.action}:${grant.module_id ?? ""}:${grant.binding_id ?? ""}`}>
             允许{moduleGrantLabel(grant)}
+          </li>
+        ))}
+        {facts.moduleContentGrants.map((grant) => (
+          <li key={`${grant.action}:${grant.slot ?? ""}:${grant.binding_id ?? ""}`}>
+            允许{contentGrantLabel(grant)}
           </li>
         ))}
         {facts.libraryPublish && <li>允许发布到模块库</li>}

@@ -1,0 +1,14 @@
+{
+  "v08_author_question--current--1/step-1/asks_one": {
+    "verdict": "pass",
+    "reviewer": "Trae Agent（人工复核）",
+    "reason": "只提出一个必须由作者决定的取舍：旧真相与新说法冲突时如何处理；给出四个可选项并结束本轮，状态为 needs_input，未改动任何文件，也未声称已完成。",
+    "evidence": "step-1.json：author_input_requested 问题「现有真相.md 已写定『管家是真凶，也是失踪的医生』……这一项要怎么处理？」含 4 个选项；run_finished status=needs_input；file_changed 为空；assistant_message 明确说明本轮没有改动文件。"
+  },
+  "v08_author_question--current--1/step-2/continues": {
+    "verdict": "pass",
+    "reviewer": "Trae Agent（人工复核）",
+    "reason": "承接原请求并采用「真相悬置」这一回答：重写第八章与真相，把管家的凶手身份降为嫌疑并清空披露标记，不再重复提问；同时说明未改动的文件与后续可选工作。",
+    "evidence": "step-2.json：author_replied 携带同一 question_id；run_finished status=completed；file_changed 只有 正文/0008 揭晓.md、设定集/真相.md、设定集/角色小传/管家.md；assistant_message 转述作者选择并说明线索与前四章未动。"
+  }
+}

@@ -67,7 +67,7 @@ def deliver(item: dict[str, Any], tool: str, payload: dict[str, Any], key: str) 
 
 def test_all_cases_and_suites_are_loadable() -> None:
     cases, digest = load_cases()
-    assert len(cases) == 24 and len(digest) == 64
+    assert len(cases) == 28 and len(digest) == 64
     for case in cases:
         assert fixture_files(case) or case.modules
     for suite in (ROOT / "suites").glob("*.json"):
@@ -219,6 +219,25 @@ def test_extra_edit_on_allowed_path_fails_exact_replacement() -> None:
     )
     rows = grade_step(step, item, "k/step-1", {})
     assert next(r for r in rows if r["id"].startswith("exact_replace"))["status"] == "fail"
+
+
+def test_needs_input_counts_only_when_the_step_expects_a_pause() -> None:
+    item = evidence()
+    item["events"] = [
+        {
+            "type": "author_input_requested",
+            "question_id": "q_1",
+            "question": "凶手选谁？",
+            "options": ["管家", "医生"],
+        },
+        {"type": "run_finished", "status": "needs_input"},
+    ]
+    paused = grade_step(Step(text="先问我", expect_needs_input=True), item, "k/step-1", {})
+    assert next(r for r in paused if r["id"] == "terminal")["status"] == "pass"
+    assert next(r for r in paused if r["id"] == "public_answer")["status"] == "pass"
+
+    unexpected = grade_step(Step(text="先问我"), item, "k/step-1", {})
+    assert next(r for r in unexpected if r["id"] == "terminal")["status"] == "fail"
 
 
 def test_manual_semantics_require_named_evidence_based_review() -> None:

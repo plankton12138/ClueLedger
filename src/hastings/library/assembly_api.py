@@ -11,13 +11,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from hastings.library.api import EntryPayload
 from hastings.library.bindings import AssemblyService
+from hastings.library.changes import ChangeEdit, ChangeOperation, ModuleChangeService
 from hastings.library.derive import derive_workspace
 from hastings.library.ids import new_id
 from hastings.library.imports import import_legacy_materials, read_import_info
@@ -25,7 +26,7 @@ from hastings.library.modules import ModuleLibrary
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.git import GitRepo
 from hastings.workspace.module_assembly import Binding, ModuleRef
-from hastings.workspace.state import RecentWorkspaces
+from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 
 __all__ = ["create_assembly_router"]
 
@@ -80,6 +81,45 @@ class SaveContentRequest(BaseModel):
     entries: list[EntryPayload]
     expected_digest: str | None = None
     request_key: str
+
+
+class ChangeEditPayload(BaseModel):
+    entry_id: str
+    base_digest: str
+    find: str = ""
+    replace: str = ""
+    body: str | None = None
+
+
+class ChangeOperationPayload(BaseModel):
+    operation_id: str
+    action: Literal["create", "update"]
+    name: str = ""
+    body: str = ""
+    binding_id: str = ""
+    module_id: str = ""
+    base_revision: str = ""
+    edits: list[ChangeEditPayload] = Field(default_factory=list)
+
+
+class PrepareChangesRequest(BaseModel):
+    operations: list[ChangeOperationPayload]
+    base_digest: str | None = None
+    request_key: str
+    #: 可选：把准备结果写进这条对话，刷新后仍能回看实际进度。
+    conversation_id: str | None = None
+
+
+class ApplyChangesRequest(BaseModel):
+    expected_digest: str | None = None
+    request_key: str
+    conversation_id: str | None = None
+
+
+class UndoChangesRequest(BaseModel):
+    expected_digest: str | None = None
+    request_key: str
+    conversation_id: str | None = None
 
 
 def create_assembly_router(
@@ -212,7 +252,172 @@ def create_assembly_router(
             request_key=payload.request_key,
         )
 
+    def changes_for(workspace_id: str) -> ModuleChangeService:
+        return ModuleChangeService(library, workspaces.workspace(workspace_id))
+
+    @router.post("/{workspace_id}/module-change-sets")
+    def prepare_changes(workspace_id: str, payload: PrepareChangesRequest) -> dict[str, object]:
+        require_idle(workspace_id)
+        _checked_request_key(payload.request_key, where="changes.prepare")
+        service = changes_for(workspace_id)
+        base_digest = payload.base_digest or service.assembly.store.digest()
+        view = service.prepare(
+            turn_id=f"http:{payload.request_key}",
+            operations=_change_operations(payload.operations),
+            base_digest=base_digest,
+            request_key=payload.request_key,
+        )
+        _append_change_event(
+            workspaces,
+            workspace_id,
+            payload.conversation_id,
+            "module_changes_prepared",
+            {"turn_id": f"http:{payload.request_key}", **view},
+        )
+        return view
+
+    @router.get("/{workspace_id}/module-change-sets/{change_set_id}")
+    def read_change_set(workspace_id: str, change_set_id: str) -> dict[str, object]:
+        return changes_for(workspace_id).view(change_set_id=change_set_id)
+
+    @router.post("/{workspace_id}/module-change-sets/{change_set_id}/apply")
+    def apply_changes(
+        workspace_id: str, change_set_id: str, payload: ApplyChangesRequest
+    ) -> dict[str, object]:
+        require_idle(workspace_id)
+        _checked_request_key(payload.request_key, where="changes.apply")
+        service = changes_for(workspace_id)
+        prepared = service.view(change_set_id=change_set_id)
+        turn_id = str(prepared.get("turn_id") or "")
+        result = service.apply(
+            change_set_id=change_set_id,
+            turn_id=turn_id,
+            expected_digest=payload.expected_digest,
+        )
+        if payload.conversation_id:
+            saved_events = cast(list[object], result.get("saved_events") or [])
+            for saved in saved_events:
+                if isinstance(saved, dict):
+                    _append_change_event(
+                        workspaces,
+                        workspace_id,
+                        payload.conversation_id,
+                        "module_content_saved",
+                        {"turn_id": turn_id, **saved},
+                    )
+            if result.get("applied"):
+                _append_change_event(
+                    workspaces,
+                    workspace_id,
+                    payload.conversation_id,
+                    "module_changes_applied",
+                    {
+                        "turn_id": turn_id,
+                        "change_set_id": change_set_id,
+                        "assembly": result.get("assembly"),
+                        "operations": result.get("operations"),
+                        "saved": result.get("saved"),
+                        "undo": result.get("undo"),
+                    },
+                )
+            else:
+                _append_change_event(
+                    workspaces,
+                    workspace_id,
+                    payload.conversation_id,
+                    "module_changes_failed",
+                    {
+                        "turn_id": turn_id,
+                        "change_set_id": change_set_id,
+                        "stage": result.get("stage"),
+                        "error": result.get("error"),
+                        "operations": result.get("operations"),
+                        "saved": result.get("saved"),
+                    },
+                )
+        return result
+
+    @router.post("/{workspace_id}/module-change-sets/{change_set_id}/undo")
+    def undo_changes(
+        workspace_id: str, change_set_id: str, payload: UndoChangesRequest
+    ) -> dict[str, object]:
+        require_idle(workspace_id)
+        _checked_request_key(payload.request_key, where="changes.undo")
+        service = changes_for(workspace_id)
+        prepared = service.view(change_set_id=change_set_id)
+        result = service.undo(
+            change_set_id=change_set_id,
+            expected_digest=payload.expected_digest,
+        )
+        _append_change_event(
+            workspaces,
+            workspace_id,
+            payload.conversation_id,
+            "module_changes_reverted",
+            {
+                "turn_id": str(prepared.get("turn_id") or ""),
+                "change_set_id": change_set_id,
+                "assembly": result.get("assembly"),
+                "operations": result.get("operations"),
+                "note": result.get("note"),
+            },
+        )
+        return result
+
     return router
+
+
+def _append_change_event(
+    workspaces: RecentWorkspaces,
+    workspace_id: str,
+    conversation_id: str | None,
+    event_type: str,
+    payload: dict[str, object],
+) -> None:
+    """HTTP 路径的继续应用与撤销也要留下同一条会话事件；没有对话就只返回结果。"""
+    if not conversation_id:
+        return
+    store = ConversationStore(conversation_root(workspaces.root, workspace_id))
+    store.append(conversation_id, {"type": event_type, **payload})
+
+
+def _change_operations(
+    payloads: list[ChangeOperationPayload],
+) -> tuple[ChangeOperation, ...]:
+    return tuple(
+        ChangeOperation(
+            operation_id=item.operation_id,
+            action=item.action,
+            name=item.name,
+            body=item.body,
+            binding_id=item.binding_id,
+            module_id=item.module_id,
+            base_revision=item.base_revision,
+            edits=tuple(
+                ChangeEdit(
+                    entry_id=edit.entry_id,
+                    base_digest=edit.base_digest,
+                    find=edit.find,
+                    replace=edit.replace,
+                    body=edit.body,
+                )
+                for edit in item.edits
+            ),
+        )
+        for item in payloads
+    )
+
+
+def _checked_request_key(key: str, *, where: str) -> str:
+    text = str(key or "").strip()
+    if not 8 <= len(text) <= 120:
+        raise WorkspaceError(
+            code="REQUEST_KEY_INVALID",
+            where=where,
+            why="请求键长度需要在 8–120 字符之间",
+            fix="为这次操作生成稳定且不重复的请求键",
+        )
+    return text
 
 
 def _checked_name(name: str) -> str:

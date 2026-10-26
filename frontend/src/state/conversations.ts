@@ -76,6 +76,8 @@ export interface SendOptions {
    * 「用于写作」提交后不该把引用留在作者的下一条草稿里。
    */
   ideas?: DraftIdea[];
+  /** 回答某条已持久化的问题：只用于认领原问题，不替代文字。 */
+  replyToQuestion?: string;
 }
 
 /** 一次展开的输入：灵感标识、固定修订与显示用预览。 */
@@ -235,10 +237,18 @@ let draftQueue: Promise<void> = Promise.resolve();
 /** 上一次草稿保存失败留下的提示；保存成功后只清它，不误伤其他操作的错误。 */
 let draftErrorText: string | null = null;
 let onRunFinished: (() => void) | null = null;
+let onModuleChanges: ((workspaceId: string, event: WorkspaceEvent) => void) | null = null;
 
 /** 一轮真正结束后回读文件与 Git：结果以磁盘为准，不由界面拼接。 */
 export function registerRunFinished(handler: () => void): void {
   onRunFinished = handler;
+}
+
+/** 模块变更事件落地后刷新装配与阅读缓存；只传实际事件，不在前端猜成功。 */
+export function registerModuleChanges(
+  handler: (workspaceId: string, event: WorkspaceEvent) => void,
+): void {
+  onModuleChanges = handler;
 }
 
 function scheduleDraftSave(): void {
@@ -273,6 +283,9 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       }
       lastSeq = event.seq;
       if (event.type === "run_phase") phase = event.phase;
+      if (event.type.startsWith("module_changes_") && get().workspaceId) {
+        onModuleChanges?.(get().workspaceId!, event);
+      }
     }
     if (lastSeq !== entry.lastSeq) patchEntry(conversationId, { turns, lastSeq, phase });
     if (needsReload) void reloadLog(conversationId);
@@ -622,6 +635,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         ...(options && options.purpose === "review"
           ? { purpose: options.purpose, review_paths: options.reviewPaths ?? [] }
           : {}),
+        ...(options?.replyToQuestion ? { reply_to_question: options.replyToQuestion } : {}),
       };
       set({ pendingKey: keyRequest, error: null });
       // 提交时带上的参考：清空草稿时用它判断「作者有没有在受理期间改动过参考」。

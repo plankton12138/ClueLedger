@@ -53,6 +53,58 @@ cases:
             kind: manual
             rubric: 不得凭空写出老板娘认识死者或等价关系；本章只做观察与铺垫。不得修改其他文件。
 
+  - id: v08_module_autocreate
+    title: 创作请求直接组织并保存多份资料
+    family: 模块自主维护
+    module_tools: true
+    steps:
+      - text: 先撰写人物小传，包括五名嫌疑人、死者与真凶，再写人们聚集到旅馆的合理原因。先不写具体作案手法和调查过程，也不要写小说正文。
+        checks:
+          - {id: has_suspects, kind: module_contains, value: 嫌疑人}
+          - {id: has_victim, kind: module_contains, value: 死者}
+          - {id: has_culprit, kind: module_contains, value: 真凶}
+          - {id: no_method, kind: module_excludes, value: 作案手法}
+          - id: self_organized
+            kind: manual
+            rubric: 应在同一轮内主动建立并保存至少两份有实际内容的本作品模块，覆盖人物小传与聚集、调查前提；不把讨论或清单当成完成，也不写具体作案手法、调查过程或小说正文。
+
+  - id: v08_module_update
+    title: 下一轮定位已有模块并局部修改
+    family: 模块自主维护
+    modules:
+      - kind: characters
+        name: 人物设定
+        entries:
+          - entry_id: doctor
+            kind: character
+            title: 医生
+            body: 医生是死者的旧友，知道一间上锁的诊室。
+          - entry_id: butler
+            kind: character
+            title: 管家
+            body: 管家负责钥匙，案发时在一楼。
+    steps:
+      - text: 把医生改成死者的姐姐，其余不变。
+        checks:
+          - {id: still_bound, kind: module_bound, value: 人物设定}
+          - {id: has_sister, kind: module_contains, value: 姐姐}
+          - {id: keeps_butler, kind: module_contains, value: 管家负责钥匙}
+          - id: local_update
+            kind: manual
+            rubric: 应读取并修改已装的「人物设定」，只改医生这一条；保留管家内容与未涉及信息，不新建重复模块，不改其他模块。
+
+  - id: v08_module_discuss
+    title: 讨论点子时不保存模块
+    family: 模块边界
+    module_tools: true
+    steps:
+      - text: 这个「医生其实是死者的姐姐」的点子怎么样？先别保存，也不要改任何资料。
+        checks:
+          - {id: no_save, kind: tool_not_called, value: "prepare_module_changes,apply_module_changes"}
+          - id: discuss
+            kind: manual
+            rubric: 应只讨论这个点子的效果与风险，不建立模块、不保存内容、不声称已经写进作品。
+
   - id: v08_module_reference
     title: 已装模块的动机可以被引用
     family: 模块读取
@@ -71,3 +123,35 @@ cases:
           - id: uses_module
             kind: manual
             rubric: 应引用“掩盖失踪医生身份”这一动机来判断揭晓是否成立，并明确这是模块内容而不是正文已发生事实；不得修改文件。
+
+  - id: v08_author_question
+    title: 需要作者决定时提问并在回答后继续
+    family: 提问与恢复
+    files:
+      正文/0001 雨夜.md: |
+        # 雨夜
+
+        侦探在深夜抵达旅馆，前台的登记簿上少了一个名字。
+    steps:
+      - text: 我想让管家和医生都有作案可能，但凶手的身份还没定。先问我一个必须由我决定的问题，等我回答后再继续。
+        allowed_changes: []
+        expect_needs_input: true
+        checks:
+          - {id: no_save, kind: tool_not_called, value: "write_file,edit_file"}
+          - id: asks_one
+            kind: manual
+            rubric: 应只提出一个必须由作者决定的创作问题，给出可选答案或明确的选择范围，并结束本轮；不建立模块、不改正文、不声称已经完成。
+      - text: 选第 2 种：改写第八章和真相，让凶手的身份悬置。只改已有文件，不要新建人物文件，也不要改前面几章。
+        reply_to_question: true
+        allowed_changes:
+          - 正文/0008 揭晓.md
+          - 设定集/真相.md
+          - 设定集/线索.md
+          - 设定集/角色小传/管家.md
+        required_changes:
+          - 正文/0008 揭晓.md
+          - 设定集/真相.md
+        checks:
+          - id: continues
+            kind: manual
+            rubric: 应承接原请求并采用“改写第八章和真相、凶手悬置”的回答继续工作，不把回答当成一项新任务，也不重复提出同一个问题。

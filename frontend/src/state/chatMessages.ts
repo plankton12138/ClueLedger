@@ -17,11 +17,15 @@
 import type {
   BlockKind,
   Completion,
+  ModuleChangeError,
+  ModuleChangeOperation,
+  ModuleChangeSaved,
   ReviewFinding,
   ReviewStatus,
   RunPhase,
   RunResult,
   TaskGrant,
+  TaskModuleContentGrant,
   TaskModuleGrant,
   TaskScope,
   WorkspaceEvent,
@@ -102,6 +106,34 @@ export interface ChatTurn {
   injection: TurnInjection | null;
   /** 受理时固定的灵感引用；只表示「带上了这一版」，不表示模型读完了全文。 */
   ideas: TurnIdea[];
+  /** 模型提交的模块变化；按变更集保留准备、应用、失败与撤销的实际结果。 */
+  moduleChanges: TurnModuleChange[];
+  /** 模型向作者提出的问题；没有提问时为 null。 */
+  question: TurnQuestion | null;
+}
+
+/** 一轮里持久化的问题：回答为空表示仍在等待作者。 */
+export interface TurnQuestion {
+  questionId: string;
+  question: string;
+  options: string[];
+  related: string[];
+  createdAt: string;
+  answer: string;
+}
+
+export type ModuleChangeStatus = "prepared" | "applied" | "failed" | "reverted";
+
+export interface TurnModuleChange {
+  changeSetId: string;
+  status: ModuleChangeStatus;
+  operations: ModuleChangeOperation[];
+  saved: ModuleChangeSaved[];
+  /** 当前作品装配指纹；撤销时用它核对，不覆盖之后的编辑。 */
+  digest: string | null;
+  stage: string;
+  error: string;
+  note: string;
 }
 
 export interface TurnIdea {
@@ -171,6 +203,7 @@ export interface TaskCardFacts {
   mode: "read_only" | "edit" | null;
   grants: TaskGrant[];
   moduleGrants: TaskModuleGrant[];
+  moduleContentGrants: TaskModuleContentGrant[];
   libraryPublish: boolean;
   deniedPaths: string[];
   extendable: boolean;
@@ -196,6 +229,7 @@ export function taskCardFacts(turn: ChatTurn): TaskCardFacts {
     mode: scope?.mode ?? null,
     grants: scope?.grants ?? [],
     moduleGrants: scope?.module_grants ?? [],
+    moduleContentGrants: scope?.module_content_grants ?? [],
     libraryPublish: scope?.library_publish ?? false,
     deniedPaths: scope?.denied_paths ?? [],
     extendable: scope?.extendable ?? false,
@@ -218,7 +252,8 @@ export function hasTaskCard(facts: TaskCardFacts): boolean {
     facts.mode !== null ||
     facts.requiredCount > 0 ||
     facts.status !== null ||
-    facts.reviewStatus !== null
+    facts.reviewStatus !== null ||
+    facts.moduleContentGrants.length > 0
   );
 }
 
@@ -243,6 +278,8 @@ const EMPTY_TURN = (id: string, at: string): ChatTurn => ({
   review: null,
   injection: null,
   ideas: [],
+  moduleChanges: [],
+  question: null,
 });
 
 // -- 结构更新：只替换受影响的节点 -------------------------------------------
@@ -608,6 +645,92 @@ export function appendEvent(turns: ChatTurn[], event: WorkspaceEvent): ChatTurn[
         ],
       }));
     }
+    case "module_changes_prepared": {
+      return withModuleChange(turns, event.turn_id, event.change_set_id, event.at, (current) => ({
+        ...current,
+        status: "prepared",
+        operations: event.operations ?? [],
+        digest: event.base_assembly_digest,
+        note: event.note ?? "",
+      }));
+    }
+    case "module_content_saved": {
+      return withTurn(turns, event.turn_id, (turn) => {
+        const index = lastChangeIndex(turn);
+        if (index < 0) return turn;
+        const current = turn.moduleChanges[index]!;
+        const saved: ModuleChangeSaved = {
+          operation_id: event.operation_id,
+          module_id: event.module_id,
+          revision_id: event.revision_id,
+          binding_id: event.binding_id ?? null,
+          name: event.name ?? null,
+          created: event.created ?? false,
+        };
+        const moduleChanges = turn.moduleChanges.slice();
+        moduleChanges[index] = {
+          ...current,
+          operations: current.operations.map((operation) =>
+            operation.operation_id === event.operation_id
+              ? { ...operation, status: "saved", saved }
+              : operation,
+          ),
+          saved: [
+            ...current.saved.filter((item) => item.operation_id !== event.operation_id),
+            saved,
+          ],
+        };
+        return { ...turn, moduleChanges };
+      });
+    }
+    case "module_changes_applied": {
+      return withModuleChange(turns, event.turn_id, event.change_set_id, event.at, (current) => ({
+        ...current,
+        status: "applied",
+        operations: event.operations ?? current.operations,
+        saved: event.saved ?? current.saved,
+        digest: event.assembly?.digest ?? current.digest,
+      }));
+    }
+    case "module_changes_failed": {
+      return withModuleChange(turns, event.turn_id, event.change_set_id, event.at, (current) => ({
+        ...current,
+        status: "failed",
+        operations: event.operations ?? current.operations,
+        saved: event.saved ?? current.saved,
+        stage: event.stage ?? "",
+        error: changeErrorText(event.error),
+      }));
+    }
+    case "module_changes_reverted": {
+      return withModuleChange(turns, event.turn_id, event.change_set_id, event.at, (current) => ({
+        ...current,
+        status: "reverted",
+        operations: event.operations ?? current.operations,
+        digest: event.assembly?.digest ?? current.digest,
+        note: event.note ?? current.note,
+      }));
+    }
+    case "author_input_requested": {
+      return withTurn(turns, event.turn_id, (turn) => ({
+        ...turn,
+        question: {
+          questionId: event.question_id,
+          question: event.question,
+          options: event.options ?? [],
+          related: event.related ?? [],
+          createdAt: event.created_at ?? event.at,
+          answer: "",
+        },
+      }));
+    }
+    case "author_replied": {
+      // 回答属于提问那一轮：在原位置标记已回答，新轮次的提示才是作者的文字。
+      return withTurn(turns, event.turn_id, (turn) => {
+        if (!turn.question || turn.question.questionId !== event.question_id) return turn;
+        return { ...turn, question: { ...turn.question, answer: event.answer } };
+      });
+    }
     case "run_finished": {
       return withTurn(turns, event.turn_id, (turn) => ({
         ...turn,
@@ -623,6 +746,58 @@ export function appendEvent(turns: ChatTurn[], event: WorkspaceEvent): ChatTurn[
     default:
       return turns;
   }
+}
+
+function changeErrorText(error: ModuleChangeError | null | undefined): string {
+  if (!error) return "";
+  const code = error.code ? `[${error.code}] ` : "";
+  const where = error.where ? `${error.where}：` : "";
+  const why = error.why ?? "";
+  const fix = error.fix ? `建议：${error.fix}` : "";
+  return `${code}${where}${why}${why && fix ? "。" : ""}${fix}`.trim();
+}
+
+function lastChangeIndex(turn: ChatTurn): number {
+  for (let index = turn.moduleChanges.length - 1; index >= 0; index -= 1) {
+    if (turn.moduleChanges[index]!.status !== "reverted") return index;
+  }
+  return -1;
+}
+
+function withModuleChange(
+  turns: ChatTurn[],
+  turnId: string,
+  changeSetId: string,
+  at: string,
+  update: (change: TurnModuleChange) => TurnModuleChange,
+): ChatTurn[] {
+  return withTurn(
+    turns,
+    turnId,
+    (turn) => {
+      const index = turn.moduleChanges.findIndex((item) => item.changeSetId === changeSetId);
+      const current: TurnModuleChange =
+        index < 0
+          ? {
+              changeSetId,
+              status: "prepared",
+              operations: [],
+              saved: [],
+              digest: null,
+              stage: "",
+              error: "",
+              note: "",
+            }
+          : turn.moduleChanges[index]!;
+      const next = update(current);
+      if (next === current && index >= 0) return turn;
+      const moduleChanges = turn.moduleChanges.slice();
+      if (index < 0) moduleChanges.push(next);
+      else moduleChanges[index] = next;
+      return { ...turn, moduleChanges };
+    },
+    at,
+  );
 }
 
 function findRunningTool(turn: ChatTurn, callId: string | undefined, name: string): number {

@@ -173,6 +173,21 @@ def evaluate_rule(
             if not item.get("problems")
         }
         return check_row(rule.id, rule.value in names, sorted(names))
+    if rule.kind in {"module_contains", "module_excludes"}:
+        modules = evidence.get("modules", [])
+        haystack = "\n".join(
+            [str(module.get("name") or "") for module in modules if not module.get("deleted")]
+            + [
+                str(entry.get("text") or "")
+                for module in modules
+                if not module.get("deleted")
+                for revision in module.get("revisions", [module])
+                for entry in revision.get("entries", [])
+            ]
+        )
+        found = rule.value in haystack
+        ok = found if rule.kind == "module_contains" else not found
+        return check_row(rule.id, ok, {"value": rule.value, "modules": len(modules)})
     if rule.kind == "idea_contains":
         rows = evidence.get("ideas", [])
         ok = any(
@@ -223,15 +238,25 @@ def grade_step(
 ) -> list[dict[str, Any]]:
     events = evidence["events"]
     terminals = [e for e in events if e["type"] == "run_finished"]
+    asked = any(e.get("type") == "author_input_requested" for e in events)
+    final = terminals[-1]["status"] if terminals else ""
     rows = [
         check_row(
             "terminal",
-            bool(terminals) and terminals[-1]["status"] == "completed",
+            bool(terminals)
+            and (final == "completed" or (step.expect_needs_input and final == "needs_input")),
             terminals[-1] if terminals else "缺少终态",
         )
     ]
     answer = "\n".join(e.get("text", "") for e in events if e["type"] == "assistant_message")
-    rows.append(check_row("public_answer", bool(answer.strip()), answer))
+    # 提问暂停的一轮，公开输出就是问题本身；不要求另有一段助手文字。
+    rows.append(
+        check_row(
+            "public_answer",
+            bool(answer.strip()) or (step.expect_needs_input and asked),
+            answer or ("已向作者提问" if asked else ""),
+        )
+    )
     before, after = evidence["before"], evidence["after"]
     changed = {
         p

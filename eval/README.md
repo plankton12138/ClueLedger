@@ -12,7 +12,7 @@
 | 修改首批案例及作者请求 | [案例集](cases/core.yaml) |
 | 修改 0.8 灵感与模块案例 | [0.8 案例](cases/v08.yaml) |
 | 修改模型可见的作品初态 | [作品材料](fixtures/inn.json) |
-| 选择本次运行的题目 | [冒烟集](suites/smoke.json)、[核心集](suites/core.json)、[0.8 冒烟集](suites/v08-smoke.json)、[I6 只读与授权集](suites/i06.json) |
+| 选择本次运行的题目 | [冒烟集](suites/smoke.json)、[核心集](suites/core.json)、[0.8 冒烟集](suites/v08-smoke.json)、[0.8 模块自主维护集](suites/v08-modules.json)、[I6 只读与授权集](suites/i06.json) |
 | 修改故事总览的真实用途评测 | [总览案例](cases/story_overview.yaml)、[总览套件](suites/story-overview.json) |
 | 修改 I6 只读展开与禁止授权案例 | [I6 案例](cases/i06.yaml) |
 | 修改执行、取证、评分与报告 | [执行代码](harness/) |

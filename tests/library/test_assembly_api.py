@@ -14,6 +14,26 @@ from hastings.server.file_app import create_workspace_app
 from hastings.workspace.state import RecentWorkspaces
 
 
+def _changes_payload() -> dict:
+    return {
+        "operations": [
+            {
+                "operation_id": "cast",
+                "action": "create",
+                "name": "人物小传",
+                "body": "七名嫌疑人。",
+            },
+            {
+                "operation_id": "premise",
+                "action": "create",
+                "name": "聚集与调查前提",
+                "body": "暴雪封山。",
+            },
+        ],
+        "request_key": "changes-http-1",
+    }
+
+
 def _unconfigured_model() -> object:
     raise AssertionError("这些用例只走装配接口，不应该调用模型")
 
@@ -68,6 +88,88 @@ def _binding(library: ModuleLibrary, module: dict, revision: str | None = None) 
             "revision_id": revision or module["head"],
         },
     }
+
+
+def test_module_change_set_prepare_apply_and_undo(tmp_path: Path) -> None:
+    client, workspace_id, _ = _client(tmp_path)
+
+    prepared = client.post(
+        f"/api/file-workspaces/{workspace_id}/module-change-sets",
+        json=_changes_payload(),
+    )
+    assert prepared.status_code == 200, prepared.text
+    change_set_id = prepared.json()["change_set_id"]
+    assert prepared.json()["status"] == "prepared"
+
+    # 同一请求键重放同一个变更集，不写第二份进度。
+    replay = client.post(
+        f"/api/file-workspaces/{workspace_id}/module-change-sets",
+        json=_changes_payload(),
+    )
+    assert replay.json()["change_set_id"] == change_set_id
+
+    detail = client.get(f"/api/file-workspaces/{workspace_id}/module-change-sets/{change_set_id}")
+    assert detail.status_code == 200
+    assert [item["operation_id"] for item in detail.json()["operations"]] == [
+        "cast",
+        "premise",
+    ]
+
+    applied = client.post(
+        f"/api/file-workspaces/{workspace_id}/module-change-sets/{change_set_id}/apply",
+        json={"request_key": "changes-http-apply-1"},
+    )
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["applied"] is True
+    bindings = client.get(f"/api/file-workspaces/{workspace_id}/assembly").json()["bindings"]
+    assert [row["name"] for row in bindings] == ["人物小传", "聚集与调查前提"]
+
+    undone = client.post(
+        f"/api/file-workspaces/{workspace_id}/module-change-sets/{change_set_id}/undo",
+        json={"request_key": "changes-http-undo-1"},
+    )
+    assert undone.status_code == 200, undone.text
+    assert undone.json()["reverted"] is True
+    assert client.get(f"/api/file-workspaces/{workspace_id}/assembly").json()["bindings"] == []
+
+
+def test_module_change_set_apply_rejects_a_stale_digest(tmp_path: Path) -> None:
+    client, workspace_id, library = _client(tmp_path)
+    prepared = client.post(
+        f"/api/file-workspaces/{workspace_id}/module-change-sets",
+        json=_changes_payload(),
+    ).json()
+    module = _module(client)
+    client.put(
+        f"/api/file-workspaces/{workspace_id}/assembly",
+        json={
+            "bindings": [
+                {
+                    "id": "",
+                    "label": "主角团",
+                    "module": {
+                        "library_id": library.library_id,
+                        "module_id": module["module_id"],
+                        "revision_id": module["head"],
+                    },
+                }
+            ],
+            "expected_digest": None,
+            "request_key": "assembly-http-changes-1",
+        },
+    )
+    applied = client.post(
+        f"/api/file-workspaces/{workspace_id}/module-change-sets/{prepared['change_set_id']}/apply",
+        json={
+            "request_key": "changes-http-apply-2",
+            "expected_digest": client.get(f"/api/file-workspaces/{workspace_id}/assembly").json()[
+                "digest"
+            ],
+        },
+    )
+    assert applied.status_code == 200
+    assert applied.json()["applied"] is False
+    assert applied.json()["stage"] == "precondition"
 
 
 def test_assembly_starts_empty(tmp_path: Path) -> None:

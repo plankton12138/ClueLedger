@@ -30,6 +30,7 @@ _STATUS_LABEL = {
     "failed": "失败",
     "stopped": "作者停止",
     "interrupted": "中断",
+    "needs_input": "等待作者回答",
 }
 
 _RECORDING_LABEL = {
@@ -86,6 +87,11 @@ def execution_facts(events: Sequence[dict[str, Any]]) -> str:
             turns.append(current)
         elif kind == "run_finished" and current is not None and current["result"] is None:
             current["result"] = event
+        elif kind == "author_input_requested" and current is not None:
+            # 问题与回答都是执行事实：模型下一轮要看到自己问过什么、作者答了什么。
+            current["question"] = event.get("question")
+        elif kind == "author_replied" and current is not None and not current.get("answer"):
+            current["answer"] = event.get("answer")
     finished = [turn for turn in turns if turn["result"] is not None]
     if not finished:
         return ""
@@ -102,4 +108,11 @@ def execution_facts(events: Sequence[dict[str, Any]]) -> str:
         paths = result.get("changed_paths") or []
         changed = "、".join(str(path) for path in paths) if paths else "没有改动文件"
         lines.append(f"- 「{prompt}」：{status}；{changed}；{recording}")
+        question = turn.get("question")
+        if question:
+            answer = str(turn.get("answer") or "")
+            if answer:
+                lines.append(f"- 该轮向作者提问：「{question}」；作者回答：「{answer}」")
+            else:
+                lines.append(f"- 该轮向作者提问：「{question}」；尚未回答")
     return "\n".join(lines)

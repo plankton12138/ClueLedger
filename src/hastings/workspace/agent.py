@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -19,6 +20,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from hastings.library.bindings import AssemblyService
+from hastings.library.changes import ChangeEdit, ChangeOperation, ModuleChangeService
 from hastings.library.modules import ModuleLibrary
 from hastings.library.records import EntryDraft
 from hastings.workspace.assembly import AssembledContext, Exclusion, Profile
@@ -59,7 +61,7 @@ from hastings.workspace.disclosure import (
     publish_observed,
 )
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.files import Workspace
+from hastings.workspace.files import Workspace, is_managed_path
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import (
     GlossaryStore,
@@ -87,6 +89,7 @@ from hastings.workspace.materials import (
     require_read_quote,
 )
 from hastings.workspace.module_assembly import Assembly
+from hastings.workspace.questions import QuestionStore
 from hastings.workspace.retrieval import MaterialQuery, catalog_brief, query_materials
 from hastings.workspace.review import (
     REVIEW_INSTRUCTIONS,
@@ -102,6 +105,8 @@ from hastings.workspace.service import WriteSession
 from hastings.workspace.story_materials import DOMAIN_LABEL, CoverageStore
 from hastings.workspace.task_scope import (
     ModuleAction,
+    ModuleChangeTarget,
+    ModuleContentGrant,
     ModuleGrant,
     Mutation,
     MutationAction,
@@ -171,6 +176,16 @@ class RunContext:
     state_root: Path | None = None
     #: 当前受理轮次的作者原话；灵感许可不能从历史授权中继承。
     current_author_text: str | None = None
+    #: 本轮的模块内容已经应用：只允许读取结果并给完成回复，不再继续写入。
+    finalizing: bool = False
+    #: 本轮所属会话：提问记录要能按会话找回。
+    conversation_id: str = ""
+    #: 受理时冻结的装配指纹：回答问题前核对目标版本是否仍是当时那一份。
+    assembly_digest: str = ""
+    #: 受理时冻结的材料身份；提问恢复时据此承接原请求。
+    request_context: Mapping[str, Any] = field(default_factory=dict)
+    #: 本轮已经向作者提问：写入被阻止，收尾状态为 needs_input。
+    pending_question: dict[str, Any] | None = None
 
     def record(self, event_type: str, payload: Mapping[str, Any]) -> None:
         if self.emit is not None:
@@ -188,6 +203,7 @@ class RunContext:
         ``preflight`` 是文件层的无副作用意图核对（指纹与目标存在性）；它在范围检查之后
         执行，因此越界操作先报「不被允许」，不会先被指纹错误掩盖。
         """
+        self.require_writable(f"task_scope:{operation.path}")
         self.scope.require(operation)
         if preflight is not None:
             preflight()
@@ -205,6 +221,24 @@ class RunContext:
             )
         # Git 准备期间可能有外部程序改动文件：落盘前再复核一次依赖版本。
         self.materials.verify_current(self.workspace)
+
+    def require_writable(self, where: str) -> None:
+        """应用完成后本任务进入收尾；提问后只等作者回答：两种情况都不再继续写入。"""
+        if self.pending_question is not None:
+            raise WorkspaceError(
+                code="TASK_AWAITING_INPUT_CONFLICT",
+                where=where,
+                why="本轮已经向作者提问，正在等待回答",
+                fix="只读取现有内容并简短说明；作者回答后会在下一轮继续原请求",
+            )
+        if not self.finalizing:
+            return
+        raise WorkspaceError(
+            code="TASK_FINALIZING_CONFLICT",
+            where=where,
+            why="本轮的模块内容已经应用，任务正在收尾",
+            fix="只读取本次结果并给出完成回复；新的修改请由作者在下一轮提出",
+        )
 
 
 def build_tools(
@@ -649,6 +683,9 @@ def build_tools(
             required_references=_string_list_argument(arguments, "required_references"),
             library_search=bool(arguments.get("library_search", False)),
             module_grants=_module_grant_arguments(arguments.get("module_grants")),
+            module_content_grants=_module_content_grant_arguments(
+                arguments.get("module_content_grants")
+            ),
             library_publish=bool(arguments.get("library_publish", False)),
             extendable=bool(arguments.get("extendable", False)),
             extend_actions=_action_list_argument(arguments, "extend_actions"),
@@ -1075,6 +1112,29 @@ def build_tools(
                                 "module_id": {"type": "string"},
                                 "revision_id": {"type": "string"},
                                 "binding_id": {"type": "string"},
+                            },
+                            "required": ["action"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "module_content_grants": {
+                        "type": "array",
+                        "description": (
+                            "本轮要保存到当前作品的内容操作：新建用稳定槽位，"
+                            "修改用绑定、模块与基础版本"
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {"type": "string", "enum": ["create", "update"]},
+                                "slot": {
+                                    "type": "string",
+                                    "description": "新建：本任务稳定的槽位，与 operation_id 一致",
+                                },
+                                "purpose": {"type": "string", "description": "这次内容用来做什么"},
+                                "binding_id": {"type": "string"},
+                                "module_id": {"type": "string"},
+                                "base_revision": {"type": "string"},
                             },
                             "required": ["action"],
                             "additionalProperties": False,
@@ -1760,6 +1820,7 @@ def build_tools(
             on_update: ToolUpdateCallback | None = None,
         ) -> AgentToolResult:
             del tool_call_id, signal, on_update
+            run.require_writable("tools.attach_module")
             if run.library is None:
                 raise WorkspaceError(
                     code="MODULE_ACCESS_DENIED",
@@ -1804,6 +1865,7 @@ def build_tools(
             on_update: ToolUpdateCallback | None = None,
         ) -> AgentToolResult:
             del tool_call_id, signal, on_update
+            run.require_writable("tools.detach_module")
             if run.library is None:
                 raise WorkspaceError(
                     code="MODULE_ACCESS_DENIED",
@@ -1839,6 +1901,7 @@ def build_tools(
             on_update: ToolUpdateCallback | None = None,
         ) -> AgentToolResult:
             del tool_call_id, signal, on_update
+            run.require_writable("tools.publish_module")
             if run.library is None:
                 raise WorkspaceError(
                     code="MODULE_ACCESS_DENIED",
@@ -1874,7 +1937,7 @@ def build_tools(
                     kind=kind,
                     name=name,
                     entries=entries,
-                    request_key=f"{run.turn_id}:publish:new",
+                    request_key=_hashed_key("publish-new", run.turn_id, kind, name),
                 )
                 revision_row = cast(Mapping[str, object], created.get("revision") or {})
                 view = {
@@ -1898,6 +1961,91 @@ def build_tools(
                     "note": "已发布新版本；不自动装入本作品，也不改其他作品的绑定。",
                 }
             )
+
+        async def prepare_module_changes(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            """把一次创作里的多份内容写成任务进度；不改库装配，也不提前结束本轮。"""
+            del tool_call_id, signal, on_update
+            run.require_writable("tools.prepare_module_changes")
+            if run.library is None:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="tools.prepare_module_changes",
+                    why="这一轮没有可用的模块库",
+                    fix="确认应用已配置模块库后再保存内容",
+                )
+            operations = _change_operations_argument(arguments.get("operations"))
+            service = ModuleChangeService(run.library, workspace)
+            run.scope.check_module_changes(_change_targets(operations))
+            base_digest = _optional_text_argument(arguments, "base_digest")
+            view = service.prepare(
+                turn_id=run.turn_id,
+                operations=operations,
+                base_digest=base_digest or service.assembly.store.digest(),
+            )
+            run.record("module_changes_prepared", view)
+            return _json(view)
+
+        async def apply_module_changes(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            """保存已准备的内容并一次性提交本作品装配；成功后本轮进入收尾。"""
+            del tool_call_id, signal, on_update
+            run.require_writable("tools.apply_module_changes")
+            if run.library is None:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="tools.apply_module_changes",
+                    why="这一轮没有可用的模块库",
+                    fix="确认应用已配置模块库后再应用内容",
+                )
+            change_set_id = _text_argument(arguments, "change_set_id")
+            service = ModuleChangeService(run.library, workspace)
+            prepared = service.view(change_set_id=change_set_id)
+            run.scope.check_module_changes(_targets_from_view(prepared.get("operations")))
+            result = service.apply(
+                change_set_id=change_set_id,
+                turn_id=run.turn_id,
+                ledger=run.materials,
+                expected_digest=_optional_text_argument(arguments, "expected_digest")
+                or service.assembly.store.digest(),
+            )
+            saved_events = cast(list[object], result.get("saved_events") or [])
+            for saved in saved_events:
+                if isinstance(saved, dict):
+                    run.record("module_content_saved", saved)
+            if result.get("applied"):
+                run.record(
+                    "module_changes_applied",
+                    {
+                        "change_set_id": change_set_id,
+                        "assembly": result.get("assembly"),
+                        "operations": result.get("operations"),
+                        "saved": result.get("saved"),
+                        "undo": result.get("undo"),
+                    },
+                )
+                # 同一轮不再继续创作写入，避免后续工具按旧装配继续。
+                run.finalizing = True
+            else:
+                run.record(
+                    "module_changes_failed",
+                    {
+                        "change_set_id": change_set_id,
+                        "stage": result.get("stage"),
+                        "error": result.get("error"),
+                        "operations": result.get("operations"),
+                        "saved": result.get("saved"),
+                    },
+                )
+            return _json(result)
 
         tools.extend(
             [
@@ -2178,6 +2326,126 @@ def build_tools(
                     prompt_guidelines=(
                         "只在作者明确要求保存或发布到模块库、且范围已登记 library_publish 时使用。",
                         "发布不隐含装入；要用于本作品时另行登记装配操作。",
+                    ),
+                    execution_mode="sequential",
+                )
+            )
+            tools.append(
+                AgentTool(
+                    name="prepare_module_changes",
+                    label="准备模块内容",
+                    description=(
+                        "把本次创作的多份内容写成任务进度：可同时新建多份或修改已有模块。"
+                        "只校验结构与目标，不改库装配；随后用 apply_module_changes 一次应用。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "operations": {
+                                "type": "array",
+                                "description": "本次要新建或修改的内容；每份一个独立 operation_id",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "operation_id": {
+                                            "type": "string",
+                                            "description": "本任务稳定的操作与槽位标识",
+                                        },
+                                        "action": {
+                                            "type": "string",
+                                            "enum": ["create", "update"],
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "description": "模块显示名；新建时必填",
+                                        },
+                                        "body": {
+                                            "type": "string",
+                                            "description": "新建模块的完整正文",
+                                        },
+                                        "binding_id": {
+                                            "type": "string",
+                                            "description": "修改：本作品的绑定 ID",
+                                        },
+                                        "module_id": {"type": "string"},
+                                        "base_revision": {
+                                            "type": "string",
+                                            "description": "修改：读取到的基础版本",
+                                        },
+                                        "edits": {
+                                            "type": "array",
+                                            "description": "修改：按条目给出唯一替换或整份正文",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "entry_id": {"type": "string"},
+                                                    "base_digest": {
+                                                        "type": "string",
+                                                        "description": "读取该条目时返回的 digest",
+                                                    },
+                                                    "find": {
+                                                        "type": "string",
+                                                        "description": "条目正文里唯一出现的原文",
+                                                    },
+                                                    "replace": {"type": "string"},
+                                                    "body": {
+                                                        "type": "string",
+                                                        "description": "整份重写；需已读全文",
+                                                    },
+                                                },
+                                                "required": ["entry_id", "base_digest"],
+                                                "additionalProperties": False,
+                                            },
+                                        },
+                                    },
+                                    "required": ["operation_id", "action"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "base_digest": {
+                                "type": "string",
+                                "description": "可选：读取到的装配指纹；省略时用当前值",
+                            },
+                        },
+                        "required": ["operations"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=prepare_module_changes,
+                    prompt_guidelines=(
+                        "先用 set_task_scope 登记 module_content_grants，再提交内容。",
+                        "新建正文由服务适配为自由资料；不要为每个字段建模块，也不建空模块。",
+                        "修改前必须读取实际条目与版本，并带上 base_digest。",
+                    ),
+                    execution_mode="sequential",
+                )
+            )
+            tools.append(
+                AgentTool(
+                    name="apply_module_changes",
+                    label="应用模块内容",
+                    description=(
+                        "保存已准备的内容并一次性更新当前作品装配。成功后本轮进入收尾："
+                        "只读取结果并回复，不再继续写入。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "change_set_id": {
+                                "type": "string",
+                                "description": "prepare_module_changes 返回的变更集 ID",
+                            },
+                            "expected_digest": {
+                                "type": "string",
+                                "description": "可选：提交前的装配指纹",
+                            },
+                        },
+                        "required": ["change_set_id"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=apply_module_changes,
+                    prompt_guidelines=(
+                        "内容保存失败时保留生成稿，按返回的阶段说明可继续的范围。",
+                        "应用成功后不要继续改文件；用实际结果说明已用于本作品的内容。",
                     ),
                     execution_mode="sequential",
                 )
@@ -3155,6 +3423,99 @@ def build_tools(
                 execution_mode="sequential",
             ),
         ]
+    if mode == "write":
+
+        async def ask_author(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            """把必须由作者决定的问题记下来，并结束本轮等待回答。"""
+            del tool_call_id, signal, on_update
+            run.require_writable("tools.ask_author")
+            if run.state_root is None or not run.conversation_id:
+                raise WorkspaceError(
+                    code="AUTHOR_QUESTION_UNAVAILABLE",
+                    where="tools.ask_author",
+                    why="这一轮没有可记录问题的作品状态目录",
+                    fix="改为在回复里直接提问；不要假定问题已经保存",
+                )
+            if run.pending_question is not None:
+                # 同一轮重复调用不再新建问题：前一条仍在等回答。
+                return _json(
+                    {
+                        **run.pending_question,
+                        "note": "本轮已经记录过问题并等待回答；不要再问第二个。",
+                    },
+                    terminate=True,
+                )
+            question = _text_argument(arguments, "question")
+            options = _string_list_argument(arguments, "options")
+            if len(options) > 5:
+                raise _input_error("options", "最多给 5 个选项；更多分支请让作者自由回答")
+            related = _string_list_argument(arguments, "paths")
+            for path in related:
+                if not is_managed_path(path):
+                    raise _input_error("paths", f"必须是作品内的受管路径：{path}")
+            record = QuestionStore(run.state_root).create(
+                conversation_id=run.conversation_id,
+                turn_id=run.turn_id,
+                question=question,
+                options=options,
+                related=related,
+                assembly_digest=run.assembly_digest,
+                context=dict(run.request_context),
+            )
+            view = record.view()
+            run.pending_question = view
+            run.record("author_input_requested", view)
+            return _json(
+                {
+                    **view,
+                    "note": "问题已记录，本轮到此结束；作者回答后会开启新一轮，带着原请求继续。",
+                },
+                terminate=True,
+            )
+
+        tools.append(
+            AgentTool(
+                name="ask_author",
+                label="询问作者",
+                description=(
+                    "只在任务目标不明或创作取舍无法确定时使用：把问题、可选答案和关联内容"
+                    "记录下来并结束本轮。作者回答后会在下一轮继续原请求；"
+                    "模块拆分、命名与已授权的人物创作不需要问。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "需要作者决定的具体问题，一句话说清",
+                        },
+                        "options": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "可选答案；作者仍可自由回答",
+                        },
+                        "paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "与问题有关的作品内路径，便于作者对照",
+                        },
+                    },
+                    "required": ["question"],
+                    "additionalProperties": False,
+                },
+                execute_fn=ask_author,
+                prompt_guidelines=(
+                    "能自行判断的不要问；一次只问一个必须由作者决定的问题。",
+                    "调用后本轮结束，不要再写入或假装已经继续。",
+                ),
+                execution_mode="sequential",
+            )
+        )
     return tools
 
 
@@ -3834,6 +4195,172 @@ def _module_grant_arguments(value: JSONValue) -> tuple[ModuleGrant, ...]:
             )
         )
     return tuple(grants)
+
+
+def _module_content_grant_arguments(value: JSONValue) -> tuple[ModuleContentGrant, ...]:
+    """内容操作参数：新建要稳定槽位，修改要精确到绑定、模块与基础版本。"""
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise _input_error("module_content_grants", "必须是数组")
+    grants: list[ModuleContentGrant] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise _input_error("module_content_grants", "每一项必须是对象")
+        action = item.get("action")
+        if action not in ("create", "update"):
+            raise _input_error("module_content_grants", f"包含不支持的操作：{action}")
+        slot = item.get("slot", "")
+        purpose = item.get("purpose", "")
+        binding_id = item.get("binding_id", "")
+        module_id = item.get("module_id", "")
+        base_revision = item.get("base_revision", "")
+        if not (
+            isinstance(slot, str)
+            and isinstance(purpose, str)
+            and isinstance(binding_id, str)
+            and isinstance(module_id, str)
+            and isinstance(base_revision, str)
+        ):
+            raise _input_error("module_content_grants", "各字段必须是字符串")
+        grants.append(
+            ModuleContentGrant(
+                action=cast(Any, action),
+                slot=slot,
+                purpose=purpose,
+                binding_id=binding_id,
+                module_id=module_id,
+                base_revision=base_revision,
+            )
+        )
+    return tuple(grants)
+
+
+def _change_operations_argument(value: JSONValue) -> tuple[ChangeOperation, ...]:
+    """把变更集工具参数整理成操作；缺字段或类型不对时在服务调用前拒绝。"""
+    if not isinstance(value, list) or not value:
+        raise _input_error("operations", "必须是非空数组")
+    operations: list[ChangeOperation] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise _input_error("operations", "每一项必须是对象")
+        operation_id = item.get("operation_id")
+        action = item.get("action")
+        if not isinstance(operation_id, str) or not operation_id:
+            raise _input_error("operations", "每一项都要有非空 operation_id")
+        if action not in ("create", "update"):
+            raise _input_error("operations", f"包含不支持的操作：{action}")
+        name = item.get("name", "")
+        body = item.get("body", "")
+        if not isinstance(name, str) or not isinstance(body, str):
+            raise _input_error("operations", "name 与 body 必须是字符串")
+        if action == "create":
+            operations.append(
+                ChangeOperation(
+                    operation_id=operation_id,
+                    action="create",
+                    name=name,
+                    body=body,
+                )
+            )
+            continue
+        binding_id = item.get("binding_id", "")
+        module_id = item.get("module_id", "")
+        base_revision = item.get("base_revision", "")
+        if not (
+            isinstance(binding_id, str)
+            and binding_id
+            and isinstance(module_id, str)
+            and module_id
+            and isinstance(base_revision, str)
+            and base_revision
+        ):
+            raise _input_error(
+                "operations", "修改操作要给出 binding_id、module_id 与 base_revision"
+            )
+        raw_edits = item.get("edits")
+        if not isinstance(raw_edits, list) or not raw_edits:
+            raise _input_error("operations", "修改操作要给出非空 edits")
+        edits: list[ChangeEdit] = []
+        for raw in raw_edits:
+            if not isinstance(raw, dict):
+                raise _input_error("edits", "每一项必须是对象")
+            entry_id = raw.get("entry_id")
+            base_digest = raw.get("base_digest")
+            find = raw.get("find", "")
+            replace = raw.get("replace", "")
+            rewrite = raw.get("body")
+            if not isinstance(entry_id, str) or not entry_id:
+                raise _input_error("edits", "每一项都要有非空 entry_id")
+            if not isinstance(base_digest, str) or not base_digest:
+                raise _input_error("edits", "每一项都要有读取时拿到的 base_digest")
+            if not isinstance(find, str) or not isinstance(replace, str):
+                raise _input_error("edits", "find 与 replace 必须是字符串")
+            if rewrite is not None and not isinstance(rewrite, str):
+                raise _input_error("edits", "body 必须是字符串")
+            edits.append(
+                ChangeEdit(
+                    entry_id=entry_id,
+                    base_digest=base_digest,
+                    find=find,
+                    replace=replace,
+                    body=rewrite,
+                )
+            )
+        operations.append(
+            ChangeOperation(
+                operation_id=operation_id,
+                action="update",
+                name=name,
+                binding_id=binding_id,
+                module_id=module_id,
+                base_revision=base_revision,
+                edits=tuple(edits),
+            )
+        )
+    return tuple(operations)
+
+
+def _change_targets(operations: Sequence[ChangeOperation]) -> tuple[ModuleChangeTarget, ...]:
+    return tuple(
+        ModuleChangeTarget(
+            operation_id=operation.operation_id,
+            action=operation.action,
+            binding_id=operation.binding_id,
+            module_id=operation.module_id,
+            base_revision=operation.base_revision,
+        )
+        for operation in operations
+    )
+
+
+def _targets_from_view(value: object) -> tuple[ModuleChangeTarget, ...]:
+    """从已持久化的变更集视图恢复操作目标，供应用前的范围复核。"""
+    if not isinstance(value, list):
+        raise _input_error("change_set_id", "变更集缺少操作清单")
+    targets: list[ModuleChangeTarget] = []
+    for row in value:
+        if not isinstance(row, dict):
+            continue
+        action = row.get("action")
+        operation_id = row.get("operation_id")
+        if action not in ("create", "update") or not isinstance(operation_id, str):
+            continue
+        targets.append(
+            ModuleChangeTarget(
+                operation_id=operation_id,
+                action=cast(Any, action),
+                binding_id=str(row.get("binding_id") or ""),
+                module_id=str(row.get("module_id") or ""),
+                base_revision=str(row.get("base_revision") or ""),
+            )
+        )
+    return tuple(targets)
+
+
+def _hashed_key(prefix: str, *parts: str) -> str:
+    digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    return f"{prefix}-{digest[:40]}"
 
 
 def _entry_drafts_argument(value: JSONValue) -> list[EntryDraft]:

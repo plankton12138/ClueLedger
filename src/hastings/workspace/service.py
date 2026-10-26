@@ -66,6 +66,7 @@ from hastings.workspace.materials import (
 )
 from hastings.workspace.model_activity import RecordedProvider
 from hastings.workspace.module_assembly import Assembly, AssemblyStore
+from hastings.workspace.questions import AuthorQuestion, QuestionStore
 from hastings.workspace.retrieval import module_overview
 from hastings.workspace.review import ReviewStore, target_digests
 from hastings.workspace.run_registry import RunRegistry
@@ -106,7 +107,7 @@ __all__ = [
     "WriteSession",
 ]
 
-RunStatus = Literal["completed", "partial", "failed", "stopped", "interrupted"]
+RunStatus = Literal["completed", "partial", "failed", "stopped", "interrupted", "needs_input"]
 Recording = Literal["committed", "no_change", "unrecorded"]
 
 #: 取得「这一轮用哪个连接、哪个模型、哪个实例」；未配置时抛带 code 的错误。
@@ -122,6 +123,7 @@ _STATUS_LABEL: dict[str, str] = {
     "failed": "失败",
     "stopped": "已停止",
     "interrupted": "中断",
+    "needs_input": "等待作者回答",
 }
 
 _MAX_SUMMARY = 40
@@ -302,6 +304,39 @@ def _append_event(
 ) -> None:
     """材料与范围事件先落盘再推送；返回值不参与判断。"""
     store.append_batch(conversation_id, [{"type": kind, "turn_id": turn_id, **payload}])
+
+
+def _context_is_empty(request: ContextRequest) -> bool:
+    """本次是否真的带了材料选择；只有为空时才承接问题记录里的原请求。"""
+    return not (
+        request.selected_path
+        or request.reference_paths
+        or request.idea_references
+        or request.observed_digests
+        or request.state_chapter is not None
+    )
+
+
+def _context_from_question(snapshot: Mapping[str, Any]) -> ContextRequest:
+    """承接原请求的路径与灵感修订；客户端当时看到的版本不跨轮沿用。"""
+    raw_pairs = snapshot.get("idea_references")
+    ideas: list[tuple[str, str]] = []
+    if isinstance(raw_pairs, list):
+        for item in raw_pairs:
+            if isinstance(item, list) and len(item) == 2:
+                ideas.append((str(item[0]), str(item[1])))
+    raw_paths = snapshot.get("reference_paths")
+    chapter = snapshot.get("state_chapter")
+    return ContextRequest(
+        selected_path=str(snapshot.get("selected_path") or "") or None,
+        reference_paths=(
+            tuple(str(path) for path in raw_paths) if isinstance(raw_paths, list) else ()
+        ),
+        idea_references=tuple(ideas),
+        state_chapter=(
+            chapter if isinstance(chapter, int) and not isinstance(chapter, bool) else None
+        ),
+    )
 
 
 def _same_materials(
@@ -521,6 +556,7 @@ class TurnService:
         index_paths: Sequence[str] = (),
         review_paths: Sequence[str] = (),
         material_scope: MaterialTaskScope | Mapping[str, object] | None = None,
+        reply_to_question: str = "",
     ) -> TurnInfo:
         """受理一轮并立即返回；``conversation_id`` 为空表示「首次发送即建会话」。
 
@@ -584,6 +620,8 @@ class TurnService:
                         "turn_id": self._active.turn_id,
                     },
                 )
+            # 回答问题时先把问题找回并核对归属与目标版本：旧按钮不能当成新的授权。
+            question = self._reply_question(reply_to_question, conversation_id)
             if conversation_id is None:
                 # 先做空提示校验，再决定是否生成会话 ID：拒绝时不留任何记录。
                 clean = text.strip()
@@ -594,6 +632,9 @@ class TurnService:
                         why="提示词是空的",
                         fix="写下要让模型做什么，再发送",
                     )
+            if question is not None and _context_is_empty(context or ContextRequest()):
+                # 承接原请求的材料身份：回答只补作者的决定，不要求重新选一遍参考。
+                context = _context_from_question(question.context)
             # 冻结材料版本：缺失或超限在这里失败，此时还没有写任何记录。
             frozen = freeze_context(self.workspace, context or ContextRequest())
             if purpose == "expand_idea":
@@ -626,6 +667,19 @@ class TurnService:
                 review_targets = ()
             else:
                 targets, review_targets = self._purpose_targets(purpose, index_paths, review_paths)
+            if question is not None:
+                # 回答先落进事件流：下一轮的历史回放与执行事实都要能看到这次问答。
+                _append_event(
+                    self.store,
+                    str(conversation_id),
+                    question.turn_id,
+                    "author_replied",
+                    {
+                        "question_id": question.question_id,
+                        "question": question.question,
+                        "answer": text.strip(),
+                    },
+                )
             history_seq = self._history_cursor(conversation_id)
             turn_id = f"t_{os.urandom(4).hex()}"
             # 受理时固定这一轮的模型事实：之后切换、编辑或删除连接都不影响它。
@@ -663,6 +717,11 @@ class TurnService:
                     material_scope=frozen_scope,
                     origin="materials" if frozen_scope is not None else "writing",
                 )
+                if question is not None:
+                    # 轮次已经建立才把问题标记为已回答：受理失败时仍然可以再答一次。
+                    QuestionStore(self.store.root).answer(
+                        question.question_id, answer=text.strip(), turn_id=turn_id
+                    )
             # 旧记录的占位标题在首次受理时补上；作者改过的标题不动。
             if accepted.title == "新的对话":
                 with suppress(WorkspaceError):
@@ -905,6 +964,55 @@ class TurnService:
         target_digests(self.workspace, targets)
         return targets
 
+    def _reply_question(
+        self, question_id: str, conversation_id: str | None
+    ) -> AuthorQuestion | None:
+        """找回待答问题并核对归属与目标版本；不合法就拒绝，不猜作者意图。"""
+        if not question_id:
+            return None
+        if conversation_id is None:
+            raise WorkspaceError(
+                code="AUTHOR_QUESTION_CONVERSATION_CONFLICT",
+                where="turns.accept",
+                why="回答作者问题必须回到提问所在的会话",
+                fix="打开原会话再回答；不要在新对话里回答旧问题",
+            )
+        question = QuestionStore(self.store.root).get(question_id)
+        if question is None:
+            raise WorkspaceError(
+                code="AUTHOR_QUESTION_NOT_FOUND",
+                where="turns.accept",
+                why=f"没有找到这个问题：{question_id}",
+                fix="刷新对话后按当前显示的问题回答；失效的问题不要再用旧选项",
+                details={"question_id": question_id},
+            )
+        if question.conversation_id != conversation_id:
+            raise WorkspaceError(
+                code="AUTHOR_QUESTION_CONVERSATION_CONFLICT",
+                where="turns.accept",
+                why="这个问题属于另一个会话",
+                fix="回到提问所在的会话回答；跨会话回答不会承接原任务",
+                details={"conversation": question.conversation_id},
+            )
+        if question.answered:
+            raise WorkspaceError(
+                code="AUTHOR_QUESTION_ANSWERED_CONFLICT",
+                where="turns.accept",
+                why="这个问题已经回答过",
+                fix="直接提出新的要求；重复点击不会再开启一轮",
+                details={"question_id": question_id},
+            )
+        current = AssemblyStore(self.workspace.root).digest() or ""
+        if question.assembly_digest != current:
+            raise WorkspaceError(
+                code="AUTHOR_QUESTION_STALE_CONFLICT",
+                where="turns.accept",
+                why="提问之后作品装配已经变化，旧问题不再对应当前内容",
+                fix="重新提出要求，让模型按当前装配再确认一次",
+                details={"question_id": question_id},
+            )
+        return question
+
     def _history_cursor(self, conversation_id: str | None) -> int:
         if conversation_id is None:
             return 0
@@ -1082,6 +1190,9 @@ class TurnService:
                     library=self.library,
                     idea_references=info.context.ideas if info.context else (),
                     state_root=self.store.root,
+                    conversation_id=info.conversation_id,
+                    assembly_digest=info.assembly_digest or "",
+                    request_context=info.context.to_dict() if info.context else {},
                 )
                 review_store = ReviewStore(self.store.root)
                 if info.purpose == "review":
@@ -1193,6 +1304,9 @@ class TurnService:
                     status = "partial"
                 else:
                     status = "completed"
+                if status == "completed" and run.pending_question is not None:
+                    # 已记录问题并等作者回答：这不是「完成」，也不在该轮继续写入。
+                    status = "needs_input"
                 # 只读检查没有报告，就等于没有检查结论：记为部分完成并说明原因。
                 if (
                     status == "completed"

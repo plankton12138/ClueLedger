@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "run_id": "context-20261025-232618-728694",
+  "started_at": "2026-10-25T23:26:18.732214+08:00",
+  "model": "deepseek-flash",
+  "connection_id": "eval-env",
+  "provider_api": "openai-completions",
+  "model_source": ".env",
+  "provider_mode": "product_worker",
+  "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+  "git_commit": "ce1582db53dc7eef560424539d3cf6bb21eab5ac",
+  "git_dirty": true,
+  "source_sha256": "04f69893f1e08181a54208e60decde9d6169612cb3f394b7a23a039ed9c9e9d0",
+  "cases_sha256": "6ba3fef811723966c0367c539f1a9d6b7c6b33cb127b6dffd5d34e108a3cb775",
+  "suite": "v08-modules",
+  "jobs": [
+    {
+      "key": "v08_module_autocreate--current--1",
+      "case": "v08_module_autocreate",
+      "family": "模块自主维护",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v08_module_update--current--1",
+      "case": "v08_module_update",
+      "family": "模块自主维护",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v08_module_discuss--current--1",
+      "case": "v08_module_discuss",
+      "family": "模块边界",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    }
+  ],
+  "max_turns": 16,
+  "step_timeout_seconds": 180,
+  "max_provider_calls": 60,
+  "runner_retries": 0,
+  "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261025-232618-728694",
+  "evidence_format": 1,
+  "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+  "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+  "observed_provider_parameters": {
+    "max_tokens": 4096,
+    "timeout_seconds": 45.0,
+    "max_retries": 0
+  },
+  "provider_calls_used": 18
+}

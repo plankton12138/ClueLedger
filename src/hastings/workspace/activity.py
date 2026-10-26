@@ -114,6 +114,7 @@ _TOOL_VERBS = {
     "read_idea": "读取灵感",
     "search_ideas": "查找灵感",
     "save_idea": "保存灵感",
+    "ask_author": "询问作者",
 }
 _FILE_VERBS = {
     "create": "新建文件",
@@ -359,6 +360,12 @@ def classify(event: dict[str, Any], event_id: str = "") -> ActivityText:
             phase = "completed" if done >= total else "partial"
     elif kind == "stop_requested":
         action, title = "conversation", "请求停止"
+    elif kind == "author_input_requested":
+        action, title = "conversation", "等待作者回答"
+        subject = _squash(event.get("question"), 60)
+    elif kind == "author_replied":
+        action, title = "conversation", "作者已回答"
+        subject = _squash(event.get("answer"), 60)
     elif kind == "error":
         action, title = "error", "错误"
         subject = str(event.get("code") or "")

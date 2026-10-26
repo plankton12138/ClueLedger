@@ -331,6 +331,8 @@ class TurnRequest(TurnPurposeMixin):
     text: str = Field(min_length=1)
     request_key: str = Field(min_length=1)
     context: ContextInput = Field(default_factory=ContextInput)
+    #: 回答某条已持久化的问题：只用来认领原问题，不替代本轮文字。
+    reply_to_question: str = Field(default="", max_length=64)
 
 
 class TurnView(BaseModel):
@@ -1425,6 +1427,7 @@ def create_file_workspace_router(
             purpose=body.purpose,
             index_paths=tuple(body.index_paths),
             review_paths=tuple(body.review_paths),
+            reply_to_question=body.reply_to_question,
         )
         return TurnView(
             turn_id=info.turn_id,

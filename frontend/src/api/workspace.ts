@@ -86,7 +86,13 @@ export interface SearchResult {
   truncated: boolean;
 }
 
-export type RunStatus = "completed" | "partial" | "failed" | "stopped" | "interrupted";
+export type RunStatus =
+  | "completed"
+  | "partial"
+  | "failed"
+  | "stopped"
+  | "interrupted"
+  | "needs_input";
 export type Recording = "committed" | "no_change" | "unrecorded";
 
 export interface RunResult {
@@ -172,6 +178,8 @@ export interface TurnInput {
   index_paths?: string[];
   /** 检查用途要核对的文件。 */
   review_paths?: string[];
+  /** 回答某条已持久化的问题；只用来认领原问题，不替代本轮文字。 */
+  reply_to_question?: string;
 }
 
 /** 没有选择任何材料时的空上下文。 */
@@ -413,6 +421,72 @@ export type WorkspaceEvent =
       note?: string;
     })
   | (EventBase & {
+      type: "module_changes_prepared";
+      turn_id: string;
+      change_set_id: string;
+      status: string;
+      base_assembly_digest: string | null;
+      operations: ModuleChangeOperation[];
+      content_ref?: { change_set_id: string; operations: string[] };
+      note?: string;
+    })
+  | (EventBase & {
+      type: "module_content_saved";
+      turn_id: string;
+      operation_id: string;
+      module_id: string | null;
+      revision_id: string | null;
+      binding_id?: string | null;
+      name?: string | null;
+      created?: boolean;
+    })
+  | (EventBase & {
+      type: "module_changes_applied";
+      turn_id: string;
+      change_set_id: string;
+      assembly?: ModuleChangeAssembly | null;
+      operations?: ModuleChangeOperation[];
+      saved?: ModuleChangeSaved[];
+      undo?: { available: boolean; change_set_id: string };
+    })
+  | (EventBase & {
+      type: "module_changes_failed";
+      turn_id: string;
+      change_set_id: string;
+      stage?: string;
+      error?: ModuleChangeError | null;
+      operations?: ModuleChangeOperation[];
+      saved?: ModuleChangeSaved[];
+    })
+  | (EventBase & {
+      type: "module_changes_reverted";
+      turn_id: string;
+      change_set_id: string;
+      assembly?: ModuleChangeAssembly | null;
+      operations?: ModuleChangeOperation[];
+      saved?: ModuleChangeSaved[];
+      note?: string;
+    })
+  | (EventBase & {
+      type: "author_input_requested";
+      turn_id: string;
+      question_id: string;
+      conversation_id: string;
+      question: string;
+      options?: string[];
+      related?: string[];
+      created_at?: string;
+      answered?: boolean;
+      answer?: string;
+    })
+  | (EventBase & {
+      type: "author_replied";
+      turn_id: string;
+      question_id: string;
+      question?: string;
+      answer: string;
+    })
+  | (EventBase & {
       type: "run_finished";
       turn_id: string;
       status: RunStatus;
@@ -421,6 +495,47 @@ export type WorkspaceEvent =
       commit?: string | null;
       note?: string;
     });
+
+/** 模型提交的模块变化：只保留展示与撤销需要的结构，不含正文。 */
+export interface ModuleChangeOperation {
+  operation_id: string;
+  action: "create" | "update";
+  status?: "pending" | "saved";
+  name?: string;
+  chars?: number;
+  binding_id?: string;
+  module_id?: string;
+  base_revision?: string;
+  edits?: number;
+  saved?: ModuleChangeSaved;
+}
+
+export interface ModuleChangeSaved {
+  operation_id: string;
+  module_id: string | null;
+  revision_id: string | null;
+  binding_id?: string | null;
+  name?: string | null;
+  created?: boolean;
+}
+
+export interface ModuleChangeError {
+  code?: string;
+  where?: string;
+  why?: string;
+  fix?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ModuleChangeAssembly {
+  digest: string | null;
+  library_id?: string | null;
+  bindings?: {
+    id: string;
+    label: string;
+    module: { library_id: string; module_id: string; revision_id: string };
+  }[];
+}
 
 /** 本轮范围里的一条允许操作。 */
 export interface TaskGrant {
@@ -437,6 +552,16 @@ export interface TaskModuleGrant {
   binding_id?: string;
 }
 
+/** 一项作品内内容操作：新建槽位或更新精确版本。 */
+export interface TaskModuleContentGrant {
+  action: "create" | "update";
+  slot?: string;
+  purpose?: string;
+  binding_id?: string;
+  module_id?: string;
+  base_revision?: string;
+}
+
 /** 本轮修改范围：模型登记的内容与应用保存的版本。 */
 export interface TaskScope {
   version: number;
@@ -449,6 +574,7 @@ export interface TaskScope {
   denied_paths: string[];
   required_references: string[];
   module_grants?: TaskModuleGrant[];
+  module_content_grants?: TaskModuleContentGrant[];
   library_publish?: boolean;
   extendable: boolean;
   extend_actions: string[];

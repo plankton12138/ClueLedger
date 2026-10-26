@@ -33,7 +33,7 @@ import {
   type WorkspaceBinding,
 } from "../api/workspace";
 import { errorMessage } from "../api/errors";
-import { registerRunFinished, useConversationsStore } from "./conversations";
+import { registerModuleChanges, registerRunFinished, useConversationsStore } from "./conversations";
 import { useWorkspaceModulesStore } from "./workspaceModules";
 import { useModuleLibraryStore } from "./moduleLibrary";
 
@@ -372,4 +372,18 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
 registerRunFinished(() => {
   void useWorkspaceStore.getState().refreshAll();
   void useWorkspaceStore.getState().refreshGit();
+});
+
+registerModuleChanges((workspaceId, event) => {
+  const library = useModuleLibraryStore.getState();
+  if (library.workspaceId === workspaceId) void library.loadAssembly();
+  else if (!library.open) void library.trackAssembly(workspaceId);
+  if (event.type !== "module_changes_applied" && event.type !== "module_changes_reverted") return;
+  const ids = new Set<string>();
+  for (const saved of event.saved ?? []) if (saved.module_id) ids.add(saved.module_id);
+  for (const operation of event.operations ?? []) {
+    if (operation.saved?.module_id) ids.add(operation.saved.module_id);
+    if (!operation.saved && operation.module_id) ids.add(operation.module_id);
+  }
+  useWorkspaceModulesStore.getState().invalidateChanged([...ids]);
 });

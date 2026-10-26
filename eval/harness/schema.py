@@ -44,6 +44,8 @@ class Check(Spec):
         "part_excludes",
         "coverage",
         "module_bound",
+        "module_contains",
+        "module_excludes",
         "idea_contains",
         "tool_not_called",
         "manual",
@@ -78,6 +80,8 @@ class Check(Spec):
                 "part_excludes",
                 "coverage",
                 "module_bound",
+                "module_contains",
+                "module_excludes",
                 "idea_contains",
             }
             and not self.value
@@ -127,6 +131,10 @@ class Step(Spec):
     allowed_changes: list[str] = Field(default_factory=list)
     required_changes: list[str] = Field(default_factory=list)
     exact_replacements: dict[str, dict[str, str]] = Field(default_factory=dict)
+    #: 这一步预期以「等待作者回答」结束：终态检查接受 needs_input。
+    expect_needs_input: bool = False
+    #: 这一步回答上一轮的问题：驱动按会话里未回答的那一条自动认领。
+    reply_to_question: bool = False
     checks: list[Check] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -185,6 +193,8 @@ class Case(Spec):
     filler_turns: int = Field(default=0, ge=0, le=100)
     fail_first_read: str | None = None
     modules: list[ModuleSeed] = Field(default_factory=list)
+    #: 没有预置模块时也挂一个空模块库，让自主新建与讨论边界案例能用模块工具。
+    module_tools: bool = False
     ideas: list[IdeaSeed] = Field(default_factory=list)
     steps: list[Step] = Field(min_length=1)
 

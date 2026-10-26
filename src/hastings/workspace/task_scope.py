@@ -22,6 +22,9 @@ from hastings.workspace.files import is_managed_path
 
 __all__ = [
     "ModuleAction",
+    "ModuleChangeAction",
+    "ModuleChangeTarget",
+    "ModuleContentGrant",
     "ModuleGrant",
     "Mutation",
     "MutationAction",
@@ -33,6 +36,7 @@ __all__ = [
 
 MutationAction = Literal["create", "update", "delete", "move"]
 ModuleAction = Literal["attach", "detach"]
+ModuleChangeAction = Literal["create", "update"]
 ScopeMode = Literal["read_only", "edit"]
 
 _ACTION_LABEL: dict[str, str] = {
@@ -100,6 +104,56 @@ class ModuleGrant:
 
 
 @dataclass(frozen=True, slots=True)
+class ModuleContentGrant:
+    """一次作品内模块内容操作。
+
+    新建还没有真实 ID，用本任务稳定的 ``slot`` 表示目标，由应用在提交时分配；
+    已有内容更新必须精确到绑定、模块与基础版本，避免只凭名称改错对象。
+    """
+
+    action: ModuleChangeAction
+    slot: str = ""
+    purpose: str = ""
+    binding_id: str = ""
+    module_id: str = ""
+    base_revision: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        payload: dict[str, str] = {"action": self.action}
+        if self.action == "create":
+            payload["slot"] = self.slot
+            if self.purpose:
+                payload["purpose"] = self.purpose
+            return payload
+        payload.update(
+            {
+                "binding_id": self.binding_id,
+                "module_id": self.module_id,
+                "base_revision": self.base_revision,
+            }
+        )
+        if self.purpose:
+            payload["purpose"] = self.purpose
+        return payload
+
+    def describe(self) -> str:
+        if self.action == "create":
+            return f"新建模块 {self.slot}"
+        return f"修改绑定 {self.binding_id}（{self.module_id}@{self.base_revision}）"
+
+
+@dataclass(frozen=True, slots=True)
+class ModuleChangeTarget:
+    """变更集里实际提交的一项操作目标；校验时与登记内容逐项对照。"""
+
+    operation_id: str
+    action: ModuleChangeAction
+    binding_id: str = ""
+    module_id: str = ""
+    base_revision: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class WriteScope:
     """校验用的不可变范围：模式、允许的操作集合、禁止路径。"""
 
@@ -140,6 +194,8 @@ class ScopeDraft:
     library_search: bool = False
     #: 本作品装配操作：装入精确版本或卸下确切绑定；只在专用装配轮使用。
     module_grants: tuple[ModuleGrant, ...] = ()
+    #: 本作品模块内容操作：新建槽位或更新精确版本；普通创作任务用它登记。
+    module_content_grants: tuple[ModuleContentGrant, ...] = ()
     #: 作者明确要求把内容发布到全局模块库；不隐含装入或改正文。
     library_publish: bool = False
     extendable: bool = False
@@ -169,6 +225,7 @@ class TaskScope:
             "required_references": list(self.draft.required_references),
             "library_search": self.draft.library_search,
             "module_grants": [item.to_dict() for item in self.draft.module_grants],
+            "module_content_grants": [item.to_dict() for item in self.draft.module_content_grants],
             "library_publish": self.draft.library_publish,
             "extendable": self.draft.extendable,
             "extend_actions": list(self.draft.extend_actions),
@@ -310,6 +367,7 @@ class ScopeController:
             required_references=current.draft.required_references,
             library_search=current.draft.library_search,
             module_grants=current.draft.module_grants,
+            module_content_grants=current.draft.module_content_grants,
             library_publish=current.draft.library_publish,
             extendable=True,
             extend_actions=current.draft.extend_actions,
@@ -380,6 +438,55 @@ class ScopeController:
             },
         )
 
+    def check_module_changes(self, targets: Sequence[ModuleChangeTarget]) -> None:
+        """变更集提交前逐项核对：新建槽位或更新的绑定、模块与基础版本都必须已登记。"""
+        current = self._require_scope()
+        if current.scope.mode == "read_only":
+            raise WorkspaceError(
+                code="TASK_SCOPE_DENIED_CONFLICT",
+                where="task_scope.module_changes",
+                why="这一轮登记为只读任务",
+                fix="只在回复里说明结论；需要保存内容时由作者提出新的创作要求",
+                details={"version": current.version},
+            )
+        grants = current.draft.module_content_grants
+        for target in targets:
+            matched = any(
+                (
+                    grant.action == "create"
+                    and target.action == "create"
+                    and grant.slot == target.operation_id
+                )
+                or (
+                    grant.action == "update"
+                    and target.action == "update"
+                    and grant.binding_id == target.binding_id
+                    and grant.module_id == target.module_id
+                    and grant.base_revision == target.base_revision
+                )
+                for grant in grants
+            )
+            if matched:
+                continue
+            raise WorkspaceError(
+                code="TASK_SCOPE_DENIED_CONFLICT",
+                where=f"task_scope.module_changes:{target.operation_id}",
+                why=f"本轮范围不包含这次内容操作：{target.action} {target.operation_id}",
+                fix=(
+                    "新建按登记过的 slot 提交；更新按登记过的绑定、模块与基础版本提交。"
+                    "需要新增对象时说明理由并请作者明确要求"
+                ),
+                details={
+                    "operation_id": target.operation_id,
+                    "action": target.action,
+                    "binding_id": target.binding_id,
+                    "module_id": target.module_id,
+                    "base_revision": target.base_revision,
+                    "granted": [item.to_dict() for item in grants],
+                    "version": current.version,
+                },
+            )
+
     def _require_scope(self) -> TaskScope:
         if self._current is None:
             raise WorkspaceError(
@@ -396,14 +503,31 @@ def _validate_draft(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) 
     if not draft.summary.strip():
         raise _evidence_error("没有写清这一轮要做什么")
     if draft.mode == "read_only":
-        if draft.grants or draft.module_grants or draft.library_publish:
-            raise _evidence_error("只读任务不能登记写操作、装配变更或库发布")
-    elif not draft.grants and not draft.module_grants and not draft.library_publish:
-        raise _evidence_error("修改任务至少要登记一个确切的路径、装配操作或库发布")
+        if (
+            draft.grants
+            or draft.module_grants
+            or draft.module_content_grants
+            or draft.library_publish
+        ):
+            raise _evidence_error("只读任务不能登记写操作、装配变更、内容保存或库发布")
+    elif (
+        not draft.grants
+        and not draft.module_grants
+        and not draft.module_content_grants
+        and not draft.library_publish
+    ):
+        raise _evidence_error("修改任务至少要登记一个确切的路径、装配操作、内容保存或库发布")
     for grant in draft.grants:
         _validate_mutation(grant, where="task_scope.set")
     for module_grant in draft.module_grants:
         _validate_module_grant(module_grant)
+    seen_slots: set[str] = set()
+    for content_grant in draft.module_content_grants:
+        _validate_module_content_grant(content_grant)
+        if content_grant.action == "create" and content_grant.slot in seen_slots:
+            raise _evidence_error(f"新建模块的槽位重复：{content_grant.slot}")
+        if content_grant.action == "create":
+            seen_slots.add(content_grant.slot)
     for path in draft.denied_paths:
         _validate_path(path, where="task_scope.set")
     for path in draft.required_references:
@@ -425,6 +549,22 @@ def _validate_module_grant(grant: ModuleGrant) -> None:
             raise _evidence_error("装入模块要写清模块 ID 与精确版本")
     elif not grant.binding_id.strip():
         raise _evidence_error("卸下模块要写清本作品的绑定 ID")
+
+
+def _validate_module_content_grant(grant: ModuleContentGrant) -> None:
+    """新建用稳定槽位；更新必须精确到绑定、模块与基础版本，不接受只给名称。"""
+    if grant.action == "create":
+        if not grant.slot.strip():
+            raise _evidence_error("新建模块要给出本任务稳定的槽位名称")
+        if len(grant.slot) > 64 or not all(char.isalnum() or char in "-_" for char in grant.slot):
+            raise _evidence_error("新建模块的槽位只能用字母、数字、连字符与下划线，最长 64 字符")
+        return
+    if (
+        not grant.binding_id.strip()
+        or not grant.module_id.strip()
+        or not grant.base_revision.strip()
+    ):
+        raise _evidence_error("修改已有模块要写清绑定 ID、模块 ID 与基础版本")
 
 
 def _validate_module_authorization(
@@ -491,6 +631,22 @@ def _validate_reregistration(current: TaskScope, draft: ScopeDraft) -> None:
             fix="装配变更一次登记完整；中途扩大装卸范围需要作者新的明确要求",
             details={
                 "added": [grant.to_dict() for grant in added_modules],
+                "version": current.version,
+            },
+        )
+    added_content = [
+        grant
+        for grant in draft.module_content_grants
+        if grant not in current.draft.module_content_grants
+    ]
+    if added_content:
+        raise WorkspaceError(
+            code="TASK_SCOPE_DENIED_CONFLICT",
+            where="task_scope.set",
+            why=f"重新登记只能收窄范围，这次新增了内容操作：{added_content[0].describe()}",
+            fix="本轮要保存的内容一次登记完整；中途新增模块需要作者新的明确要求",
+            details={
+                "added": [item.to_dict() for item in added_content],
                 "version": current.version,
             },
         )

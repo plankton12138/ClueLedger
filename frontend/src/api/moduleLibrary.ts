@@ -384,6 +384,127 @@ export function saveWorkspaceModule(workspaceId: string, bindingId: string, inpu
   });
 }
 
+export interface ChangeEditInput {
+  entry_id: string;
+  base_digest: string;
+  find?: string;
+  replace?: string;
+  body?: string;
+}
+
+export interface ChangeOperationInput {
+  operation_id: string;
+  action: "create" | "update";
+  name?: string;
+  body?: string;
+  binding_id?: string;
+  module_id?: string;
+  base_revision?: string;
+  edits?: ChangeEditInput[];
+}
+
+export interface ModuleChangeSaved {
+  operation_id: string;
+  module_id: string | null;
+  revision_id: string | null;
+  binding_id?: string | null;
+  name?: string | null;
+  created?: boolean;
+}
+
+export interface ModuleChangeOperation {
+  operation_id: string;
+  action: "create" | "update";
+  status?: "pending" | "saved";
+  name?: string;
+  chars?: number;
+  binding_id?: string;
+  module_id?: string;
+  base_revision?: string;
+  edits?: number | ChangeEditInput[];
+  saved?: ModuleChangeSaved;
+}
+
+export interface ModuleChangePrepared {
+  change_set_id: string;
+  status: string;
+  base_assembly_digest: string | null;
+  operations: ModuleChangeOperation[];
+  content_ref?: { change_set_id: string; operations: string[] };
+  note?: string;
+}
+
+export interface ModuleChangeError {
+  code: string;
+  where: string;
+  why: string;
+  fix: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ModuleChangeResult {
+  applied?: boolean;
+  reverted?: boolean;
+  change_set_id: string;
+  stage?: string;
+  assembly?: AssemblyView;
+  operations?: ModuleChangeOperation[];
+  saved?: ModuleChangeSaved[];
+  error?: ModuleChangeError;
+  undo?: { available: boolean; change_set_id: string };
+  note?: string;
+}
+
+export interface ModuleChangeSetView extends ModuleChangePrepared {
+  turn_id: string;
+  saved: ModuleChangeSaved[];
+  result: ModuleChangeResult | null;
+}
+
+export function prepareModuleChanges(
+  workspaceId: string,
+  input: {
+    operations: ChangeOperationInput[];
+    base_digest?: string | null;
+    request_key: string;
+    conversation_id?: string;
+  },
+): Promise<ModuleChangePrepared> {
+  return request(`${WORKSPACES}/${workspaceId}/module-change-sets`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchModuleChangeSet(
+  workspaceId: string,
+  changeSetId: string,
+): Promise<ModuleChangeSetView> {
+  return request(`${WORKSPACES}/${workspaceId}/module-change-sets/${changeSetId}`);
+}
+
+export function applyModuleChangeSet(
+  workspaceId: string,
+  changeSetId: string,
+  input: { expected_digest?: string | null; request_key: string; conversation_id?: string },
+): Promise<ModuleChangeResult> {
+  return request(`${WORKSPACES}/${workspaceId}/module-change-sets/${changeSetId}/apply`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function undoModuleChangeSet(
+  workspaceId: string,
+  changeSetId: string,
+  input: { expected_digest?: string | null; request_key: string; conversation_id?: string },
+): Promise<ModuleChangeResult> {
+  return request(`${WORKSPACES}/${workspaceId}/module-change-sets/${changeSetId}/undo`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function putAssembly(
   workspaceId: string,
   input: {

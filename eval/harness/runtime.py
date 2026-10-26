@@ -27,6 +27,7 @@ from hastings.workspace.git import GitRepo
 from hastings.workspace.ideas import IdeaStore
 from hastings.workspace.materials import ContextRequest
 from hastings.workspace.module_assembly import AssemblyStore
+from hastings.workspace.questions import QuestionStore
 from hastings.workspace.service import ProviderFactory, TurnService
 from hastings.workspace.state import ConversationStore, conversation_root
 from hastings.workspace.story_materials import CoverageStore
@@ -164,6 +165,76 @@ def _idea_rows(workspace: Workspace) -> list[dict[str, object]]:
     return rows
 
 
+def _module_rows(library: ModuleLibrary | None) -> list[dict[str, object]]:
+    """当前库里的模块与最新版本正文；只作评测证据，不进入模型上下文。"""
+    if library is None:
+        return []
+    rows: list[dict[str, object]] = []
+    listed = library.modules(include_deleted=True, limit=200).get("items")
+    for item in listed if isinstance(listed, list) else []:
+        info = library.module(str(item["module_id"]))
+        if not info.head:
+            continue
+        revision = library.revision(module_id=info.module_id, revision_id=info.head)
+        entries = _revision_entries(library, info.module_id, info.head, revision)
+        # 作品内修改不推进库 head：把每个版本都留作证据，评测才能看到实际绑定内容。
+        revisions = [
+            {
+                "revision_id": revision_id,
+                "entries": _revision_entries(
+                    library,
+                    info.module_id,
+                    revision_id,
+                    library.revision(module_id=info.module_id, revision_id=revision_id),
+                ),
+            }
+            for revision_id in library.storage.revision_ids(info.module_id)
+        ]
+        rows.append(
+            {
+                "module_id": info.module_id,
+                "name": info.name,
+                "kind": info.kind,
+                "head": info.head,
+                "deleted": info.deleted,
+                "entries": entries,
+                "revisions": revisions,
+            }
+        )
+    return rows
+
+
+def _revision_entries(
+    library: ModuleLibrary,
+    module_id: str,
+    revision_id: str,
+    revision: Any,
+) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for entry in revision.entries:
+        parts: list[str] = []
+        start = 0
+        while True:
+            detail = library.read_entry(
+                module_id=module_id,
+                revision_id=revision_id,
+                entry_id=entry.entry_id,
+                start=start,
+            )
+            parts.append(str(detail["text"]))
+            if not detail["truncated"]:
+                break
+            start = int(detail["next_cursor"] or detail["end"])
+        entries.append(
+            {
+                "entry_id": entry.entry_id,
+                "title": entry.title,
+                "text": "".join(parts),
+            }
+        )
+    return entries
+
+
 def capture(
     workspace: Workspace,
     service: TurnService,
@@ -171,6 +242,7 @@ def capture(
     before: dict[str, Any],
     tid: str,
     trace: dict[str, Any],
+    library: ModuleLibrary | None = None,
 ) -> dict[str, Any]:
     after = snapshot_files(workspace)
     details = {}
@@ -223,6 +295,7 @@ def capture(
         "details": details,
         "derived": derived,
         "assembly": AssemblyStore(workspace.root).read().view(),
+        "modules": _module_rows(library),
         "ideas": _idea_rows(workspace),
         "index_status": {
             entry.path: record.status
@@ -257,7 +330,7 @@ async def run_attempt(
     workspace = Workspace.create(work / key / "作品")
     seed_files(workspace, fixture_files(case))
     library: ModuleLibrary | None = None
-    if case.modules:
+    if case.modules or case.module_tools:
         library = ModuleLibrary(work / key / "库")
         service_assembly = AssemblyService(library, workspace)
         for index, seed in enumerate(case.modules):
@@ -314,6 +387,12 @@ async def run_attempt(
             info = None
             try:
                 material_scope = step.material_scope
+                reply_to = ""
+                if step.reply_to_question:
+                    pending = QuestionStore(store.root).pending(cid) if cid else ()
+                    if not pending:
+                        raise RuntimeError("这一步要回答问题，但会话里没有待答问题")
+                    reply_to = pending[-1].question_id
                 if step.purpose == "organize_overview":
                     from hastings.workspace.story_overview import StoryOverview
 
@@ -346,6 +425,7 @@ async def run_attempt(
                     purpose=step.purpose,
                     index_paths=step.index_paths,
                     material_scope=material_scope,
+                    reply_to_question=reply_to,
                 )
                 cid = info.conversation_id
                 try:
@@ -367,12 +447,22 @@ async def run_attempt(
                 else []
             )
             evidence = capture(
-                workspace, service, events, before, info.turn_id if info else "", trace
+                workspace,
+                service,
+                events,
+                before,
+                info.turn_id if info else "",
+                trace,
+                library=library,
             )
             evidences.append(evidence)
             write_json(folder / f"step-{i + 1}.json", evidence)
             terminals = [e for e in events if e["type"] == "run_finished"]
-            if error or not terminals or terminals[-1]["status"] != "completed":
+            if error or not terminals:
+                break
+            final = terminals[-1]["status"]
+            # 提问暂停是预期终态：后面还有回答步骤时继续执行。
+            if final != "completed" and not (step.expect_needs_input and final == "needs_input"):
                 break
     result = grade_attempt(case, evidences, key)
     if error:

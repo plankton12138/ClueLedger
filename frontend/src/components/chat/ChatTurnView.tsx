@@ -10,6 +10,8 @@ import { memo } from "react";
 import type { RunPhase } from "../../api/workspace";
 import { phaseLabel, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import AssistantMessageView from "./AssistantMessageView";
+import AuthorQuestionCard from "./AuthorQuestionCard";
+import ModuleChangeCard from "./ModuleChangeCard";
 import ReviewReportView from "./ReviewReport";
 import TaskCard from "./TaskCard";
 import ToolActivity from "./ToolActivity";
@@ -24,6 +26,7 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "失败",
   stopped: "已停止",
   interrupted: "中断",
+  needs_input: "等待你回答",
 };
 
 const RECORDING_LABEL: Record<string, string> = {
@@ -45,6 +48,9 @@ interface Props {
   onRecord: () => void;
   /** 对本轮改动发起一次只读检查；没有可检查的文件时为 null。 */
   onReview: (() => void) | null;
+  /** 模块变更结果与撤销需要定位作品与会话；缺失时只展示事实。 */
+  workspaceId: string | null;
+  conversationId: string | null;
 }
 
 function ChatTurnView({
@@ -57,6 +63,8 @@ function ChatTurnView({
   onRevert,
   onRecord,
   onReview,
+  workspaceId,
+  conversationId,
 }: Props) {
   const result = turn.result;
 
@@ -70,6 +78,7 @@ function ChatTurnView({
       <TurnIdeas ideas={turn.ideas} />
       {turn.injection && <TurnContextSummary injection={turn.injection} />}
       <TaskCard turn={turn} />
+      <ModuleChangeCard turn={turn} workspaceId={workspaceId} conversationId={conversationId} />
 
       {turn.items.map((item) =>
         item.kind === "message" ? (
@@ -89,6 +98,8 @@ function ChatTurnView({
       {turn.incomplete && (
         <p className="chat-note">这段记录不完整：部分内容没有保存下来，以上的文字就是全部。</p>
       )}
+
+      <AuthorQuestionCard turn={turn} running={running} />
 
       {turn.errors.map((error) => (
         <div key={error.key} className="chat-error">

@@ -94,6 +94,218 @@ function fold(events: WorkspaceEvent[]): ChatTurn[] {
   return events.reduce<ChatTurn[]>((turns, event) => appendEvent(turns, event), []);
 }
 
+describe("模块变更结果", () => {
+  it("按变更集归并准备、保存与应用结果", () => {
+    reset();
+    const turns = fold([
+      turnStarted("t1", "先撰写人物小传"),
+      next({
+        type: "module_changes_prepared",
+        turn_id: "t1",
+        change_set_id: "chs_1",
+        status: "prepared",
+        base_assembly_digest: null,
+        operations: [
+          { operation_id: "cast", action: "create", name: "人物小传", chars: 20 },
+        ],
+        note: "内容已保存为任务进度",
+      }),
+      next({
+        type: "module_content_saved",
+        turn_id: "t1",
+        operation_id: "cast",
+        module_id: "mod_1",
+        revision_id: "rev_1",
+        name: "人物小传",
+        created: true,
+      }),
+      next({
+        type: "module_changes_applied",
+        turn_id: "t1",
+        change_set_id: "chs_1",
+        assembly: { digest: "digest-1" },
+        saved: [
+          {
+            operation_id: "cast",
+            module_id: "mod_1",
+            revision_id: "rev_1",
+            binding_id: "bnd_1",
+            name: "人物小传",
+            created: true,
+          },
+        ],
+        undo: { available: true, change_set_id: "chs_1" },
+      }),
+    ]);
+
+    const change = turns[0]!.moduleChanges[0]!;
+    expect(change.status).toBe("applied");
+    expect(change.digest).toBe("digest-1");
+    expect(change.saved[0]!.binding_id).toBe("bnd_1");
+    expect(change.operations[0]!.status).toBe("saved");
+  });
+
+  it("撤销后保留变更集并记录新装配指纹", () => {
+    reset();
+    const turns = fold([
+      turnStarted(),
+      next({
+        type: "module_changes_applied",
+        turn_id: "t1",
+        change_set_id: "chs_1",
+        assembly: { digest: "digest-1" },
+        operations: [{ operation_id: "cast", action: "create", name: "人物小传" }],
+        saved: [],
+      }),
+      next({
+        type: "module_changes_reverted",
+        turn_id: "t1",
+        change_set_id: "chs_1",
+        assembly: { digest: "digest-2" },
+        note: "库内新增副本仍保留",
+      }),
+    ]);
+
+    const change = turns[0]!.moduleChanges[0]!;
+    expect(change.status).toBe("reverted");
+    expect(change.digest).toBe("digest-2");
+    expect(change.note).toBe("库内新增副本仍保留");
+  });
+
+  it("失败事件展示错误三要素，不把已保存内容当成完成", () => {
+    reset();
+    const turns = fold([
+      turnStarted(),
+      next({
+        type: "module_changes_prepared",
+        turn_id: "t1",
+        change_set_id: "chs_1",
+        status: "prepared",
+        base_assembly_digest: null,
+        operations: [{ operation_id: "cast", action: "create", name: "人物小传" }],
+      }),
+      next({
+        type: "module_changes_failed",
+        turn_id: "t1",
+        change_set_id: "chs_1",
+        stage: "assembly",
+        error: {
+          code: "ASSEMBLY_STALE_CONFLICT",
+          where: "changes.apply",
+          why: "装配已经被改过",
+          fix: "刷新后重试",
+        },
+        saved: [
+          {
+            operation_id: "cast",
+            module_id: "mod_1",
+            revision_id: "rev_1",
+            name: "人物小传",
+            created: true,
+          },
+        ],
+      }),
+    ]);
+
+    const change = turns[0]!.moduleChanges[0]!;
+    expect(change.status).toBe("failed");
+    expect(change.stage).toBe("assembly");
+    expect(change.error).toContain("[ASSEMBLY_STALE_CONFLICT]");
+    expect(change.saved).toHaveLength(1);
+  });
+});
+
+describe("作者提问", () => {
+  it("提问按轮次保留问题与选项，回答回到原轮次", () => {
+    reset();
+    const turns = fold([
+      turnStarted("t1", "先确定人物关系"),
+      next({
+        type: "author_input_requested",
+        turn_id: "t1",
+        conversation_id: "c1",
+        question_id: "q_1",
+        question: "死者与医生的关系选哪一种？",
+        options: ["旧识", "亲姐弟"],
+        related: ["正文/0001 雨夜.md"],
+        created_at: "2026-10-25T12:00:00+08:00",
+        answered: false,
+        answer: "",
+      }),
+      next({
+        type: "run_finished",
+        turn_id: "t1",
+        status: "needs_input",
+        recording: "no_change",
+        changed_paths: [],
+      }),
+      // 回答开启新轮次，但事件归属于提问那一轮。
+      next({
+        type: "author_replied",
+        turn_id: "t1",
+        question_id: "q_1",
+        question: "死者与医生的关系选哪一种？",
+        answer: "亲姐弟",
+      }),
+      turnStarted("t2", "亲姐弟"),
+    ]);
+
+    expect(turns).toHaveLength(2);
+    const question = turns[0]!.question!;
+    expect(question.question).toBe("死者与医生的关系选哪一种？");
+    expect(question.options).toEqual(["旧识", "亲姐弟"]);
+    expect(question.related).toEqual(["正文/0001 雨夜.md"]);
+    expect(question.answer).toBe("亲姐弟");
+    expect(turns[0]!.result!.status).toBe("needs_input");
+    expect(turns[1]!.question).toBeNull();
+    expect(turns[1]!.prompt).toBe("亲姐弟");
+  });
+
+  it("其他问题的回答不改动这一轮", () => {
+    reset();
+    const turns = fold([
+      turnStarted(),
+      next({
+        type: "author_input_requested",
+        turn_id: "t1",
+        conversation_id: "c1",
+        question_id: "q_1",
+        question: "选哪一种？",
+        options: [],
+        related: [],
+      }),
+      next({
+        type: "author_replied",
+        turn_id: "t1",
+        question_id: "q_other",
+        answer: "别的回答",
+      }),
+    ]);
+
+    expect(turns[0]!.question!.answer).toBe("");
+  });
+
+  it("回放与实时接收得到相同的问答状态", () => {
+    reset();
+    const events = [
+      turnStarted("t1", "先确定人物关系"),
+      next({
+        type: "author_input_requested",
+        turn_id: "t1",
+        conversation_id: "c1",
+        question_id: "q_1",
+        question: "选哪一种？",
+        options: ["A"],
+        related: [],
+      }),
+      next({ type: "author_replied", turn_id: "t1", question_id: "q_1", answer: "A" }),
+    ];
+    const live = fold(events);
+
+    expect(buildTurns(events)).toEqual(live);
+  });
+});
+
 describe("归并：同一条回复持续更新", () => {
   it("多次增量更新同一条消息，不新增气泡", () => {
     reset();

@@ -325,6 +325,8 @@ export default function ConversationPanel() {
               onRevert={onRevert}
               onRecord={onRecord}
               onReview={reviewHandler(turn)}
+              workspaceId={workspaceId}
+              conversationId={selectedId}
             />
           ))}
 
