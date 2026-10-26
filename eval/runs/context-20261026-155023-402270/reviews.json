@@ -1,0 +1,50 @@
+{
+  "v08_module_autocreate--current--1/step-1/no_method": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "当前旅馆案死者聂鸿生的具体杀人方式、现场与调查步骤均未展开。沉船旧案作为人物前史和动机背景，不是本案实施手法；否定说明和留待规划的条目不判为本案手法。",
+    "evidence": "evidence/v08_module_autocreate--current--1/step-1.json：modules 中人物小传：雁回旅馆众人与雁回旅馆与聚合理由全文；本案现场与手段明确留空，没有正文文件修改。"
+  },
+  "v08_module_autocreate--current--1/step-1/self_organized": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "同轮保存并应用两份实际模块，完整覆盖五名嫌疑人、死者、真凶与旅馆召集及封闭前提；未把清单或讨论当成果，未改旧文件和正文。",
+    "evidence": "evidence/v08_module_autocreate--current--1/step-1.json：module_changes_applied 18305 一次应用两份内容，modules 与 assembly 有两份实际成果；diffs 为空，run_finished 18886 为 completed。"
+  },
+  "v08_module_autocreate--current--2/step-1/no_method": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "模块只写身份、人物前史、动机、嫌疑依据与到场及封闭条件；虽写晚饭后的行踪空档，没有给出本案杀人实施方式或调查步骤。作案手法的字面出现为明确排除说明。",
+    "evidence": "evidence/v08_module_autocreate--current--2/step-1.json：modules 中青鸟旅馆人物与聚集设定全文，末尾明确手法与调查另定；diffs 为空。"
+  },
+  "v08_module_autocreate--current--2/step-1/self_organized": {
+    "verdict": "fail",
+    "reviewer": "Codex",
+    "reason": "按本次运行冻结的旧契约要求至少两份模块，实际将人物和聚集原因合并为一份完整模块，因此此项保留失败。作者随后明确按内容完整性验收、允许合并，已在新运行使用新契约验证，不改写本次旧契约结果。该次未修改旧目录。",
+    "evidence": "evidence/v08_module_autocreate--current--2/case.json 的 self_organized 仍要求至少两份；step-1.json 的 module_changes_applied 10575 与 assembly 仅一份绑定，完整正文在 modules 中；run_finished 11239 为 completed，diffs 为空。"
+  },
+  "v08_module_update--current--1/step-1/local_update": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "在原人物设定模块内只将旧友替换为姐姐；诊室信息、管家原文、条目 ID 与字段保留，没有重复模块，没有提问或旧文件写入。",
+    "evidence": "evidence/v08_module_update--current--1/step-1.json：read_record 1294；module_changes_applied 1990；assembly 绑定 rev_323d19cebe2e70c4，库 head 仍为 rev_450670c2c60b349c；两版条目可对照，diffs 为空，run_finished 2197 为 completed。"
+  },
+  "v08_module_update--current--2/step-1/local_update": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "读取原条目后仅改医生与死者的关系；管家、诊室信息和条目字段不变，使用作品内新版本而不推进库 head，无重复模块及文件改动。",
+    "evidence": "evidence/v08_module_update--current--2/step-1.json：read_record 1099/1102；module_changes_applied 1681；assembly 绑定 rev_dfb9fbd4262d3f53，库 head 为 rev_4c6c47a55abd2af9；diffs 为空，run_finished 1954 为 completed。"
+  },
+  "v08_module_discuss--current--1/step-1/discuss": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "仅讨论关系设定的效果、风险、披露与动机，只读资料，没有保存或声称已写入作品。",
+    "evidence": "evidence/v08_module_discuss--current--1/step-1.json：assistant_message 2149；工具均为 read_file，modules 与 diffs 为空，run_finished 2154 为 completed。"
+  },
+  "v08_module_discuss--current--2/step-1/discuss": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "评估点子的节奏、性别称谓和动机影响并提出替代方案，遵守暂不保存，只读相关资料，没有修改作品。",
+    "evidence": "evidence/v08_module_discuss--current--2/step-1.json：assistant_message 1795；工具均为 read_file，modules 与 diffs 为空，run_finished 1800 为 completed。"
+  }
+}

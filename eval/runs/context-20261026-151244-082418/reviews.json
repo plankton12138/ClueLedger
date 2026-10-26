@@ -1,0 +1,14 @@
+{
+  "v08_author_question--current--1/step-1/asks_one": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "按作者先提问的要求，读取现有真相、管家资料与第八章后，仅提出一个取舍问题：拆分管家与医生，还是保留同一人但悬置凶手身份。给出三种明确选项，记录结构化问题后等待回答，没有写入文件或建立模块。",
+    "evidence": "evidence/v08_author_question--current--1/step-1.json：author_input_requested 519，question_id 为 q_77b03de76fa224ce；ask_author 523 仅调用一次；diffs 为空，run_finished 710 为 needs_input。"
+  },
+  "v08_author_question--current--1/step-2/continues": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "承接第 2 种选择，保留管家即失踪医生，改写第八章与真相以悬置凶手身份。两份要求修改的已有文件均已保存，没有再调用 ask_author，没有新建人物或修改前面章节；回复列明实际保存结果与保留内容。",
+    "evidence": "evidence/v08_author_question--current--1/step-2.json：file_changed 3846/3847 及 diffs 仅含正文/0008 揭晓.md 和设定集/真相.md，删除承认杀人的确定结论并保留医生身份；assistant_message 4185 明确按第 2 种方案完成，run_finished 4190 为 completed。"
+  }
+}

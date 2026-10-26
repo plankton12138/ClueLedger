@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "run_id": "context-20261026-155023-402270",
+  "started_at": "2026-10-26T15:50:23.403817+08:00",
+  "model": "deepseek-flash",
+  "connection_id": "eval-env",
+  "provider_api": "openai-completions",
+  "model_source": ".env",
+  "provider_mode": "product_worker",
+  "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+  "git_commit": "2daad9b48247a188b528ae45ca8a8fbcee3c79d3",
+  "git_dirty": true,
+  "source_sha256": "428a25406285c46c1d76a394a80732a9756dececf71abe504006e6ef5af8921f",
+  "cases_sha256": "6b17fd6a33141271838bdd328ed59377cf608e30309f5654d2b83afdb453f390",
+  "suite": "v08-modules",
+  "jobs": [
+    {
+      "key": "v08_module_autocreate--current--1",
+      "case": "v08_module_autocreate",
+      "family": "模块自主维护",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v08_module_update--current--1",
+      "case": "v08_module_update",
+      "family": "模块自主维护",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v08_module_discuss--current--1",
+      "case": "v08_module_discuss",
+      "family": "模块边界",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v08_module_autocreate--current--2",
+      "case": "v08_module_autocreate",
+      "family": "模块自主维护",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v08_module_update--current--2",
+      "case": "v08_module_update",
+      "family": "模块自主维护",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v08_module_discuss--current--2",
+      "case": "v08_module_discuss",
+      "family": "模块边界",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    }
+  ],
+  "max_turns": 24,
+  "step_timeout_seconds": 240,
+  "max_provider_calls": 200,
+  "runner_retries": 0,
+  "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261026-155023-402270",
+  "evidence_format": 1,
+  "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+  "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+  "observed_provider_parameters": {
+    "max_tokens": 4096,
+    "timeout_seconds": 45.0,
+    "max_retries": 0
+  },
+  "provider_calls_used": 39
+}

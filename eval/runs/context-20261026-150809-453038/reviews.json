@@ -1,0 +1,50 @@
+{
+  "v08_module_autocreate--current--1/step-1/no_method": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "实际保存的聚集缘由模块只写旧事、邀约、到场理由、封闭条件和到死亡为止的时间安排，没有杀人实施步骤或调查过程；结尾的不写具体作案手法是范围说明。该项通过不代表创建任务整体通过，人物小传写入旧目录的问题单独判失败。",
+    "evidence": "evidence/v08_module_autocreate--current--1/step-1.json：modules 中聚集缘由全文；module_changes_applied 8319；人物旧文件写入由 file_changed 与 diffs 另行记录。"
+  },
+  "v08_module_autocreate--current--1/step-1/self_organized": {
+    "verdict": "fail",
+    "reviewer": "Codex",
+    "reason": "只保存并应用一份聚集缘由模块，人物小传被写入旧设定目录（新建六份并修改管家）。未按要求把两类成果组织为本作品模块，并产生本例不允许的文件改动。",
+    "evidence": "evidence/v08_module_autocreate--current--1/step-1.json：write_file 8152 至 8163、edit_file 8212；module_changes_applied 8319 只有聚集缘由；diffs 含七份角色小传，assistant_message 8844 列出实际写入结果。"
+  },
+  "v08_module_autocreate--current--2/step-1/no_method": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "两份模块提供人物身份、往事、动机、嫌疑依据和旅馆邀约及封闭条件，没有展开本案杀人实施方式或调查步骤。人物的药学知识、钥匙和字迹作为嫌疑依据，不构成已经设计出的具体杀人手法；未写内容的否定说明不判越界。",
+    "evidence": "evidence/v08_module_autocreate--current--2/step-1.json：modules 中旅馆案人物小传和旅馆案：聚集缘由全文；末尾明确保留动手时间、方式和布置未定；diffs 为空。"
+  },
+  "v08_module_autocreate--current--2/step-1/self_organized": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "同轮完成两份有实际内容的模块并成组应用，覆盖五名标为嫌疑人的人物、死者、真凶及各人的到场理由和封闭前提；没有把讨论当保存，没有改正文或旧文件。",
+    "evidence": "evidence/v08_module_autocreate--current--2/step-1.json：prepare_module_changes 5657/5752 后，module_changes_applied 5760 一次应用两份内容；modules 与 assembly 有两份实际成果；diffs 为空，run_finished 6170 为 completed。"
+  },
+  "v08_module_update--current--1/step-1/local_update": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "读取已有模块后仅把医生与死者的关系由旧友改为姐姐，诊室信息、管家正文和全部条目字段保留；作品绑定指向新版本，库 head 仍是原版，无重复模块或文件改动。",
+    "evidence": "evidence/v08_module_update--current--1/step-1.json：read_record 858/861；module_changes_applied 1398；绑定 rev_506d5b5543426e60 与库 head rev_6c402762a2a31663 可对照；diffs 为空，run_finished 1590 为 completed；新增禁用工具断言通过。"
+  },
+  "v08_module_update--current--2/step-1/local_update": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "仍在原人物设定模块内完成关系替换，诊室信息与管家原文不变，条目 ID 和字段保留；没有重复模块、文件写入或不必要提问。",
+    "evidence": "evidence/v08_module_update--current--2/step-1.json：read_record 853/856；module_changes_applied 1572；绑定 rev_1d943b77f0009359 与库 head rev_c155b95d94bf3f21 的条目正文对照；diffs 为空，run_finished 2018 为 completed；新增禁用工具断言通过。"
+  },
+  "v08_module_discuss--current--1/step-1/discuss": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "只讨论身份、动机、伏笔与不同方案的影响，没有保存模块、写文件或声称内容已写入作品。",
+    "evidence": "evidence/v08_module_discuss--current--1/step-1.json：assistant_message 2420；全部 tool_started 为 read_file；modules 和 diffs 为空，run_finished 2425 为 completed。"
+  },
+  "v08_module_discuss--current--2/step-1/discuss": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "只读真相、人物与章节后评估点子，提出可能方向和待决定内容，没有建立模块、保存内容或修改文件。",
+    "evidence": "evidence/v08_module_discuss--current--2/step-1.json：assistant_message 2623；工具仅 read_file 和 read_state；modules 和 diffs 为空，run_finished 2627 为 completed。"
+  }
+}

@@ -1,0 +1,376 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261026-145633-527421",
+    "started_at": "2026-10-26T14:56:33.528422+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "2daad9b48247a188b528ae45ca8a8fbcee3c79d3",
+    "git_dirty": true,
+    "source_sha256": "60bc950066d9873ef77c6daa5c7a160eead362a105507d5bd30b14f8bf2e63b4",
+    "cases_sha256": "43901ad114585bb8107e7e50e49fe4030501b8f4c7e41e4cec8b012ff9fee12d",
+    "suite": "v08-modules",
+    "jobs": [
+      {
+        "key": "v08_module_autocreate--current--1",
+        "case": "v08_module_autocreate",
+        "family": "模块自主维护",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v08_module_update--current--1",
+        "case": "v08_module_update",
+        "family": "模块自主维护",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v08_module_discuss--current--1",
+        "case": "v08_module_discuss",
+        "family": "模块边界",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v08_module_autocreate--current--2",
+        "case": "v08_module_autocreate",
+        "family": "模块自主维护",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 2
+      },
+      {
+        "key": "v08_module_update--current--2",
+        "case": "v08_module_update",
+        "family": "模块自主维护",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 2
+      },
+      {
+        "key": "v08_module_discuss--current--2",
+        "case": "v08_module_discuss",
+        "family": "模块边界",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 2
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 200,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261026-145633-527421",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 6
+  },
+  "summary": {
+    "planned": 6,
+    "executed": 1,
+    "counts": {
+      "fail": 1,
+      "not_run": 5
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": 89.656,
+    "duration_p95_seconds": 89.656,
+    "input_tokens": null,
+    "output_tokens": null,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 6,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 5
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 89.656,
+        "duration_p95_seconds": 89.656,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "模块自主维护": {
+        "planned": 4,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 3
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 89.656,
+        "duration_p95_seconds": 89.656,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "模块边界": {
+        "planned": 2,
+        "executed": 0,
+        "counts": {
+          "not_run": 2
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 6,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 5
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 89.656,
+        "duration_p95_seconds": 89.656,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v08_module_autocreate": {
+        "planned": 2,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 89.656,
+        "duration_p95_seconds": 89.656,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v08_module_update": {
+        "planned": 2,
+        "executed": 0,
+        "counts": {
+          "not_run": 2
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v08_module_discuss": {
+        "planned": 2,
+        "executed": 0,
+        "counts": {
+          "not_run": 2
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "fail",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "fail",
+          "detail": {
+            "seq": 8524,
+            "at": "2026-10-26T14:58:03.363+08:00",
+            "event_version": 1,
+            "event_id": "c_53711da768ac:8524",
+            "conversation_id": "c_53711da768ac",
+            "type": "run_finished",
+            "turn_id": "t_638614fb",
+            "status": "failed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读现有的设定与正文（尤其第八章已披露的内容），再决定人物小传怎么写。\n现有材料已读完：管家被标为凶手，但真实身份在第8章才揭示；林远是寻找失踪弟弟的侦探；铜钥匙与「青鸟归巢」暗号目前尚未解释。我按「五名客人是嫌疑人、管家是真凶且不在名单里、外加死者」来写，并另建一份关于人们为何聚集到旅馆的设定说明。本轮只新建模块，不改正文与旧设定文件，也不写作案手法和调查过程。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/has_suspects",
+          "status": "fail",
+          "detail": {
+            "value": "嫌疑人",
+            "modules": 0
+          }
+        },
+        {
+          "id": "step-1/has_victim",
+          "status": "fail",
+          "detail": {
+            "value": "死者",
+            "modules": 0
+          }
+        },
+        {
+          "id": "step-1/has_culprit",
+          "status": "fail",
+          "detail": {
+            "value": "真凶",
+            "modules": 0
+          }
+        },
+        {
+          "id": "step-1/no_method",
+          "status": "pass",
+          "detail": {
+            "value": "作案手法",
+            "modules": 0
+          }
+        },
+        {
+          "id": "step-1/self_organized",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "应在同一轮内主动建立并保存至少两份有实际内容的本作品模块，覆盖人物小传与聚集、调查前提；不把讨论或清单当成完成，也不写具体作案手法、调查过程或小说正文。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 6,
+        "model_finished": 6,
+        "tool_calls": 11,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": false,
+        "usage_reported_requests": 5,
+        "fresh_input_tokens": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "request_sizes": [
+          {
+            "system_chars": 3602,
+            "messages_json_chars": 122,
+            "tools_json_chars": 14735
+          },
+          {
+            "system_chars": 3602,
+            "messages_json_chars": 5212,
+            "tools_json_chars": 14735
+          },
+          {
+            "system_chars": 3602,
+            "messages_json_chars": 8017,
+            "tools_json_chars": 14735
+          },
+          {
+            "system_chars": 3602,
+            "messages_json_chars": 11856,
+            "tools_json_chars": 14735
+          },
+          {
+            "system_chars": 3602,
+            "messages_json_chars": 15393,
+            "tools_json_chars": 14735
+          },
+          {
+            "system_chars": 3602,
+            "messages_json_chars": 19481,
+            "tools_json_chars": 14735
+          }
+        ],
+        "max_request_json_chars": 37818,
+        "cost": null
+      },
+      "key": "v08_module_autocreate--current--1",
+      "case": "v08_module_autocreate",
+      "title": "创作请求直接组织并保存多份资料",
+      "family": "模块自主维护",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 89.656,
+      "evidence": "evidence/v08_module_autocreate--current--1",
+      "model_error": true
+    }
+  ],
+  "unexecuted": [
+    "v08_module_update--current--1",
+    "v08_module_discuss--current--1",
+    "v08_module_autocreate--current--2",
+    "v08_module_update--current--2",
+    "v08_module_discuss--current--2"
+  ]
+}

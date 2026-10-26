@@ -1,0 +1,32 @@
+# 线簿上下文评测
+
+运行：`context-20261026-155922-803099`；模型：`deepseek-flash`。
+
+计划 2 次，执行 2 次；结果：{'pass': 1, 'fail': 1, 'not_run': 0}。
+
+成功率以本次计划的全部尝试为分母，待复核、失败和未运行均不计成功。
+
+| 案例 | 方案 | 次数 | 结果 | 耗时（秒） | 模型请求 | 工具调用 |
+|---|---|---:|---|---:|---:|---:|
+| v08_module_autocreate | current | 1 | pass | 113.344 | 8 | 16 |
+| v08_module_autocreate | current | 2 | fail | 10.282 | 5 | 11 |
+
+## v08_module_autocreate--current--1
+
+证据目录：`evidence/v08_module_autocreate--current--1`。
+
+
+## v08_module_autocreate--current--2
+
+证据目录：`evidence/v08_module_autocreate--current--2`。
+
+- fail：`step-1/terminal`：{'seq': 743, 'at': '2026-10-26T16:01:27.358+08:00', 'event_version': 1, 'event_id': 'c_f93ec6b36880:743', 'conversation_id': 'c_f93ec6b36880', 'type': 'run_finished', 'turn_id': 't_f4f8d369', 'status': 'failed', 'recording': 'no_change', 'changed_paths': [], 'commit': None, 'note': ''}
+- fail：`step-1/has_suspects`：{'value': '嫌疑人', 'modules': 0}
+- fail：`step-1/has_victim`：{'value': '死者', 'modules': 0}
+- fail：`step-1/has_culprit`：{'value': '真凶', 'modules': 0}
+- pending_review：`step-1/no_method`：{'rubric': '检查实际保存的模块正文，不得展开杀人实施方式、作案步骤或具体调查过程。仅说明尚未撰写或不包含这些内容不算越界，不能按是否出现“作案手法”四字判定。', 'review': {'verdict': 'uncertain', 'reviewer': 'Codex', 'reason': '模型在线调用在生成完成前中断，没有保存模块，不能据空结果判断创作内容符合范围。保留连接失败记录。', 'evidence': 'evidence/v08_module_autocreate--current--2/step-1.json：model_request_finished 726 为 failed，message 为 incomplete chunked read；error 740 为 MODEL_CALL_FAILED，modules 为空。'}}
+- pending_review：`step-1/self_organized`：{'rubric': '应在同一轮内完成并保存有实际内容的本作品模块，覆盖人物小传与聚集、调查前提，并实际用于本作品；允许合并为一份或拆成多份，按内容完整性验收，不按模块数量判定。不得把讨论或清单当成完成，也不写具体作案手法、调查过程或小说正文。', 'review': {'verdict': 'uncertain', 'reviewer': 'Codex', 'reason': '在线连接中断，尚未形成可复核的保存成果，不能判断模型是否完整组织并保存。另开单案重试，不将此尝试改记成功。', 'evidence': 'evidence/v08_module_autocreate--current--2/step-1.json：error 740 与 run_finished 743 为 failed，modules 为空；失败原因见同目录原始报告。'}}
+
+用量缺失时 token 统计为 null；输入规模为保存快照的字符数，不是 token。
+费用未接定价，保持 null。小样本的耗时分位数只描述本次运行。
+人工复核必须填写评分人、理由与证据；评分答案不进入 Agent 的作品或输入。

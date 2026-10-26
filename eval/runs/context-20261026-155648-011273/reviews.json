@@ -1,0 +1,14 @@
+{
+  "v08_author_question--current--1/step-1/asks_one": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "读取现有真相、人物和第八章后，按作者要求仅提出一个是否保留已定凶手结局的取舍问题，给出三个明确选项，记录后等待；没有写文件或建立模块。",
+    "evidence": "evidence/v08_author_question--current--1/step-1.json：author_input_requested 686，question_id 为 q_4670efc020cb12ff；ask_author 692 仅一次，diffs 为空，run_finished 925 为 needs_input。"
+  },
+  "v08_author_question--current--1/step-2/continues": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "采纳第 2 种选择改写第八章与真相，移除确定的凶手结论、保留双方嫌疑；只修改两份指定已有文件，没有新建人物或修改前面章节，没有重复提问。后端旧文件策略没有阻断作者明确的文件修改请求。",
+    "evidence": "evidence/v08_author_question--current--1/step-2.json：write_file 2771/2774；diffs 仅正文/0008 揭晓.md 与设定集/真相.md，assistant_message 3136 说明按第 2 种完成，run_finished 3141 为 completed。"
+  }
+}

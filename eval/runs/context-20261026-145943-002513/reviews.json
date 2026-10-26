@@ -1,0 +1,14 @@
+{
+  "v08_module_update--current--1/step-1/local_update": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "读取已有条目后在原人物设定模块内局部更新：仅把医生是死者的旧友替换为医生是死者的姐姐；诊室信息、管家条目及元信息保留。作品绑定切换到新版本，库 head 保持原版本，没有新建重复模块，没有修改文件或提问。",
+    "evidence": "evidence/v08_module_update--current--1/step-1.json：tool_started 1329/1353 读取条目；module_changes_applied 2808 为一次 update；assembly 绑定 rev_fc0cc42525c55b82，modules 中库 head 为 rev_511b1bd76638d543，两个版本正文可直接对照；diffs 为空，run_finished 3020 为 completed。"
+  },
+  "v08_module_update--current--2/step-1/local_update": {
+    "verdict": "pass",
+    "reviewer": "Codex",
+    "reason": "再次读取并更新原模块，仅修改医生与死者的关系，诊室信息和管家原文保留；条目 ID、标题与字段不变，无重复模块，无文件改动，无 ask_author。",
+    "evidence": "evidence/v08_module_update--current--2/step-1.json：module_changes_applied 1901；assembly 绑定 rev_3c2523d7214c9446，modules 中库 head 保持 rev_4ed49e9576f67405；bound revision 的 doctor 仅将旧友改为姐姐，butler 原文不变；diffs 为空，run_finished 2188 为 completed。"
+  }
+}
