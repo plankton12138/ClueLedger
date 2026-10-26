@@ -271,3 +271,74 @@ async def test_read_record_rejects_versions_outside_the_assembly(tmp_path: Path)
     )
     assert body["text"]
     assert body["module_ref"][2] == facts["revision_id"]
+
+
+@pytest.mark.anyio
+async def test_required_module_reference_must_be_fully_read_before_chapter_write(
+    tmp_path: Path,
+) -> None:
+    workspace, tools, _, reference = _setup(tmp_path)
+    GitRepo(workspace.root).init()
+    path = "正文/0002 次日.md"
+    scope = await _call(
+        tools["set_task_scope"],
+        mode="edit",
+        summary="按人物资料写第一章",
+        authorization="写第一章",
+        grants=[{"action": "create", "path": path}],
+        required_module_references=[reference],
+    )
+    assert scope["required_module_references"] == [reference]
+    for read_end in (None, 3):
+        if read_end is not None:
+            await _call(tools["read_record"], **reference, end=read_end)
+        with pytest.raises(WorkspaceError) as unread:
+            await _call(tools["write_file"], path=path, text="# 次日\n")
+        assert unread.value.code == "REFERENCE_NOT_FULLY_READ_CONFLICT"
+        assert not (workspace.root / path).exists()
+    await _call(tools["read_record"], **reference)
+    await _call(tools["write_file"], path=path, text="# 次日\n")
+    assert (workspace.root / path).exists()
+    # 读取参考不会授权修改设定或其他章节。
+    with pytest.raises(WorkspaceError) as denied:
+        await _call(
+            tools["write_file"], path=CHAPTER, text="覆盖", digest=workspace.read(CHAPTER).digest
+        )
+    assert denied.value.code == "TASK_SCOPE_DENIED_CONFLICT"
+
+
+@pytest.mark.anyio
+async def test_invalid_module_reference_does_not_register_scope(tmp_path: Path) -> None:
+    _, tools, _, reference = _setup(tmp_path)
+    for invalid in (
+        {**reference, "revision_id": "unmounted"},
+        {**reference, "entry_id": "missing"},
+        {"module_id": "主角团"},
+    ):
+        with pytest.raises(WorkspaceError):
+            await _call(
+                tools["set_task_scope"],
+                mode="edit",
+                summary="写第一章",
+                authorization="写第一章",
+                grants=[{"action": "create", "path": "正文/0002 次日.md"}],
+                required_module_references=[invalid],
+            )
+    # 无效登记不能占用范围；同轮可用正确引用重试。
+    scope = await _call(
+        tools["set_task_scope"],
+        mode="edit",
+        summary="写第一章",
+        authorization="写第一章",
+        grants=[{"action": "create", "path": "正文/0002 次日.md"}],
+        required_module_references=[reference],
+    )
+    assert scope["version"] == 1
+    with pytest.raises(WorkspaceError):
+        await _call(
+            tools["set_task_scope"],
+            mode="edit",
+            summary="写第一章",
+            authorization="写第一章",
+            grants=[{"action": "create", "path": "正文/0002 次日.md"}],
+        )

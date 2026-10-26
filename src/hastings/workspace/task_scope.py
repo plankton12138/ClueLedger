@@ -27,6 +27,7 @@ __all__ = [
     "ModuleChangeTarget",
     "ModuleContentGrant",
     "ModuleGrant",
+    "ModuleReference",
     "Mutation",
     "MutationAction",
     "ScopeController",
@@ -102,6 +103,22 @@ class ModuleGrant:
         if self.action == "attach":
             return f"装入 {self.module_id}@{self.revision_id}"
         return f"卸下 {self.binding_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class ModuleReference:
+    """必读的已装模块条目；名称只供展示，不作为定位依据。"""
+
+    module_id: str
+    revision_id: str
+    entry_id: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "module_id": self.module_id,
+            "revision_id": self.revision_id,
+            "entry_id": self.entry_id,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +208,7 @@ class ScopeDraft:
     authorization_seq: int | None = None
     carried_from_seq: int | None = None
     required_references: tuple[str, ...] = ()
+    required_module_references: tuple[ModuleReference, ...] = ()
     #: 作者明确要求从全局模块库查找时登记；只开搜索，不自动装入或发布。
     library_search: bool = False
     #: 本作品装配操作：装入精确版本或卸下确切绑定；只在专用装配轮使用。
@@ -224,6 +242,9 @@ class TaskScope:
             "grants": [item.to_dict() for item in self.draft.grants],
             "denied_paths": list(self.draft.denied_paths),
             "required_references": list(self.draft.required_references),
+            "required_module_references": [
+                item.to_dict() for item in self.draft.required_module_references
+            ],
             "library_search": self.draft.library_search,
             "module_grants": [item.to_dict() for item in self.draft.module_grants],
             "module_content_grants": [item.to_dict() for item in self.draft.module_content_grants],
@@ -248,6 +269,7 @@ class ScopeController:
     def __init__(self) -> None:
         self._current: TaskScope | None = None
         self._history: list[TaskScope] = []
+        self._created_chapters: set[str] = set()
 
     @property
     def current(self) -> TaskScope | None:
@@ -375,6 +397,7 @@ class ScopeController:
             authorization_seq=current.draft.authorization_seq,
             carried_from_seq=current.draft.carried_from_seq,
             required_references=current.draft.required_references,
+            required_module_references=current.draft.required_module_references,
             library_search=current.draft.library_search,
             module_grants=current.draft.module_grants,
             module_content_grants=current.draft.module_content_grants,
@@ -432,7 +455,12 @@ class ScopeController:
                 fix="只在回复里说明结论；需要改动时由作者提出新的修改要求",
                 details={"operation": operation.to_dict(), "version": current.version},
             )
-        if current.scope.permits(operation):
+        created_chapter_update = (
+            operation.action == "update"
+            and operation.path in self._created_chapters
+            and current.scope.permits(Mutation("create", operation.path))
+        )
+        if current.scope.permits(operation) or created_chapter_update:
             if module_content_available:
                 require_legacy_file_authorization(
                     (operation,),
@@ -467,6 +495,11 @@ class ScopeController:
                 "version": current.version,
             },
         )
+
+    def record_created_chapter(self, path: str) -> None:
+        """仅在新建实际成功后调用；当前范围仍需保留该章的新建授权。"""
+        if path.startswith("正文/"):
+            self._created_chapters.add(path)
 
     def check_module_changes(self, targets: Sequence[ModuleChangeTarget]) -> None:
         """变更集提交前逐项核对：新建槽位或更新的绑定、模块与基础版本都必须已登记。"""
@@ -562,6 +595,11 @@ def _validate_draft(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) 
         _validate_path(path, where="task_scope.set")
     for path in draft.required_references:
         _validate_path(path, where="task_scope.set")
+    for reference in draft.required_module_references:
+        if not all(
+            (reference.module_id.strip(), reference.revision_id.strip(), reference.entry_id.strip())
+        ):
+            raise _evidence_error("必读模块条目要写清模块 ID、精确版本与条目 ID")
     if not set(draft.extend_actions) <= {"create", "update", "delete", "move"}:
         raise _evidence_error("可追加的操作类别不合法")
     if draft.extendable and not draft.extend_actions:
@@ -627,6 +665,10 @@ def _validate_reregistration(current: TaskScope, draft: ScopeDraft) -> None:
     改成只读时禁止项随之失去意义，不再要求保留；但只读范围没有写权限，重新登记回
     修改范围仍要过「不新增操作」这一关。
     """
+    if draft.mode == "edit" and not set(current.draft.required_module_references) <= set(
+        draft.required_module_references
+    ):
+        raise _evidence_error("重新登记不能撤掉本轮已明确的必读模块参考")
     added = [grant for grant in draft.grants if grant not in current.draft.grants]
     if added:
         raise WorkspaceError(
@@ -737,7 +779,11 @@ def _validate_path(path: str, *, where: str) -> None:
             code="TASK_SCOPE_DENIED_CONFLICT",
             where=where,
             why=f"范围只能登记作品内的确切文件路径：{path}",
-            fix="用 正文/xxx.md、设定集/角色小传/姓名.md、设定集/线索.md 或 设定集/真相.md",
+            fix=(
+                "文件填写 正文/xxx.md、设定集/角色小传/姓名.md、设定集/线索.md 或 "
+                "设定集/真相.md；必读模块请在 required_module_references 中填写"
+                "模块 ID、版本与条目 ID"
+            ),
             details={"path": path},
         )
 

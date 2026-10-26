@@ -159,6 +159,11 @@ _INSTRUCTIONS = """\
 ## 修改范围
 - 要写作品前先用 `set_task_scope` 登记：一句话说明这一轮做什么、作者原话里的短引文、
   允许的操作。写模块内容时登记 `module_content_grants`；写章节或旧设定文件时登记确切路径与操作类别。
+- `required_references` 与 `denied_paths` 只接受确切文件路径，不能填模块名称。
+  必读模块用 `required_module_references`，填写 `query_records` 返回的模块 ID、版本与条目 ID，
+  并用 `read_record` 读完原文；登记参考不产生模块修改权限。
+- 本轮成功新建的章节可在同轮继续校订，无需重新登记修改权限；使用写工具返回的最新 `digest`。
+  已有章节仍须单独登记修改，删除与移动也仍需单独授权。
 - 只是讨论、回答问题或只读检查时不必登记，也不要写。
 - 登记为固定范围时不能自行扩大；作者说「同步相关章节」这类任务才登记 `extendable`，
   发现相关文件后用 `extend_task_scope` 追加具体路径：先 `read_file` 读到那份文件，

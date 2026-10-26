@@ -255,3 +255,34 @@ async def test_apply_enters_finalizing_and_blocks_further_writes(tmp_path: Path)
         await _call(tools["write_file"], path="正文/0001 新章.md", text="正文")
     assert blocked.value.code == "TASK_FINALIZING_CONFLICT"
     assert AssemblyStore(workspace.root).read().bindings
+
+
+@pytest.mark.anyio
+async def test_apply_waits_for_required_module_reference(tmp_path: Path) -> None:
+    workspace, tools, _, facts, _ = _setup(
+        tmp_path, author_text="按已有小传写场景设定。", bind=True
+    )
+    reference = {key: facts[key] for key in ("module_id", "revision_id")}
+    reference["entry_id"] = "lin"
+    await _call(
+        tools["set_task_scope"],
+        mode="edit",
+        summary="写场景设定",
+        authorization="写场景设定",
+        module_content_grants=[{"action": "create", "slot": "scene"}],
+        required_module_references=[reference],
+    )
+    prepared = await _call(
+        tools["prepare_module_changes"],
+        operations=[
+            {"operation_id": "scene", "action": "create", "name": "场景", "body": "旅馆书房。"}
+        ],
+    )
+    before = AssemblyStore(workspace.root).digest()
+    with pytest.raises(WorkspaceError) as unread:
+        await _call(tools["apply_module_changes"], change_set_id=prepared["change_set_id"])
+    assert unread.value.code == "REFERENCE_NOT_FULLY_READ_CONFLICT"
+    assert AssemblyStore(workspace.root).digest() == before
+    await _call(tools["read_record"], **reference)
+    result = await _call(tools["apply_module_changes"], change_set_id=prepared["change_set_id"])
+    assert result["applied"] is True

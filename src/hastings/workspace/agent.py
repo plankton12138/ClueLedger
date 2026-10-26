@@ -21,6 +21,7 @@ from typing import Any, Literal, cast
 
 from hastings.library.bindings import AssemblyService
 from hastings.library.changes import ChangeEdit, ChangeOperation, ModuleChangeService
+from hastings.library.ids import source_path
 from hastings.library.modules import ModuleLibrary
 from hastings.library.records import EntryDraft
 from hastings.workspace.assembly import AssembledContext, Exclusion, Profile
@@ -108,6 +109,7 @@ from hastings.workspace.task_scope import (
     ModuleChangeTarget,
     ModuleContentGrant,
     ModuleGrant,
+    ModuleReference,
     Mutation,
     MutationAction,
     ScopeController,
@@ -213,6 +215,7 @@ class RunContext:
             preflight()
         self.materials.require_target_read(self.workspace, required_read)
         self.materials.require_references_complete(self.workspace)
+        self.check_module_references(require_complete=True)
         self.materials.verify_current(self.workspace)
         if not self.session.prepared:
             self.session.prepare()
@@ -225,6 +228,64 @@ class RunContext:
             )
         # Git 准备期间可能有外部程序改动文件：落盘前再复核一次依赖版本。
         self.materials.verify_current(self.workspace)
+
+    def check_module_references(
+        self,
+        references: Sequence[ModuleReference] | None = None,
+        *,
+        require_complete: bool = False,
+    ) -> None:
+        """登记时核对装配身份；写前再核对不可变版本与实际提供的全文区间。"""
+        if references is None:
+            scope = self.scope.current
+            references = scope.draft.required_module_references if scope is not None else ()
+        for reference in references:
+            binding = next(
+                (
+                    item
+                    for item in self.assembly.bindings
+                    if item.module.module_id == reference.module_id
+                    and item.module.revision_id == reference.revision_id
+                ),
+                None,
+            )
+            if self.library is None or binding is None:
+                raise WorkspaceError(
+                    code="MODULE_ACCESS_DENIED",
+                    where="task_scope.module_references",
+                    why="必读模块版本不在本轮装配里",
+                    fix="用 query_records 取得已装条目的精确引用，不要填模块名称或未装版本",
+                    details=reference.to_dict(),
+                )
+            # end=0 不提供原文，也不向读取记录登记；不能将内部核验算作模型已读。
+            detail = self.library.read_entry(
+                module_id=reference.module_id,
+                revision_id=reference.revision_id,
+                entry_id=reference.entry_id,
+                end=0,
+            )
+            if not require_complete:
+                continue
+            path = source_path(
+                binding.module.library_id,
+                reference.module_id,
+                reference.revision_id,
+                reference.entry_id,
+            )
+            coverage = self.materials.coverage(path)
+            if (
+                coverage is None
+                or not coverage.complete
+                or coverage.ref.digest != detail["digest"]
+                or coverage.length != detail["length"]
+            ):
+                raise WorkspaceError(
+                    code="REFERENCE_NOT_FULLY_READ_CONFLICT",
+                    where="task_scope.module_references",
+                    why="指定的模块参考还没有读完当前版本",
+                    fix="用 read_record 按 start/end 读完该条目，再写入作品",
+                    details=reference.to_dict(),
+                )
 
     def require_writable(self, where: str) -> None:
         """应用完成后本任务进入收尾；提问后只等作者回答：两种情况都不再继续写入。"""
@@ -685,6 +746,9 @@ def build_tools(
             authorization_seq=_optional_int_argument(arguments, "authorization_seq", minimum=0),
             carried_from_seq=_optional_int_argument(arguments, "carried_from_seq", minimum=0),
             required_references=_string_list_argument(arguments, "required_references"),
+            required_module_references=_module_reference_arguments(
+                arguments.get("required_module_references")
+            ),
             library_search=bool(arguments.get("library_search", False)),
             module_grants=_module_grant_arguments(arguments.get("module_grants")),
             module_content_grants=_module_content_grant_arguments(
@@ -695,6 +759,7 @@ def build_tools(
             extend_actions=_action_list_argument(arguments, "extend_actions"),
             note=_optional_text_argument(arguments, "note"),
         )
+        run.check_module_references(draft.required_module_references)
         scope = run.scope.set_scope(
             draft,
             author_texts=run.author_messages,
@@ -752,6 +817,8 @@ def build_tools(
             preflight=lambda: workspace.check_write_intent(path, expected_digest=digest),
         )
         view = workspace.write(path, text, expected_digest=digest)
+        if action == "create":
+            run.scope.record_created_chapter(view.path)
         run.record(
             "file_changed",
             {
@@ -1103,7 +1170,26 @@ def build_tools(
                     "required_references": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "写作品前必须读完的参考文件",
+                        "description": (
+                            "必读的作品文件确切路径；模块条目填 "
+                            "required_module_references，不能填名称"
+                        ),
+                    },
+                    "required_module_references": {
+                        "type": "array",
+                        "description": (
+                            "必读的已装模块条目，引用来自 query_records；写入前须读完精确版本"
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "module_id": {"type": "string"},
+                                "revision_id": {"type": "string"},
+                                "entry_id": {"type": "string"},
+                            },
+                            "required": ["module_id", "revision_id", "entry_id"],
+                            "additionalProperties": False,
+                        },
                     },
                     "library_search": {
                         "type": "boolean",
@@ -1173,7 +1259,9 @@ def build_tools(
             execute_fn=set_task_scope,
             prompt_guidelines=(
                 "要改文件时先登记；作者没明确要求修改时用 read_only 或干脆不登记。",
-                "grants 只写确切路径，不要写目录或通配符。",
+                "grants、denied_paths、required_references 只写确切文件路径，不要填模块名称。",
+                "模块必读参考用 required_module_references，按模块、版本与条目 ID 登记。",
+                "本轮成功新建的章节可继续校订，无需追加 update；已有章节仍需登记 update。",
                 "普通资料创作登记 module_content_grants；"
                 "旧设定文件须有作者明确指定文件或沿用旧目录的要求。",
             ),
@@ -2025,6 +2113,7 @@ def build_tools(
             service = ModuleChangeService(run.library, workspace)
             prepared = service.view(change_set_id=change_set_id)
             run.scope.check_module_changes(_targets_from_view(prepared.get("operations")))
+            run.check_module_references(require_complete=True)
             result = service.apply(
                 change_set_id=change_set_id,
                 turn_id=run.turn_id,
@@ -4216,6 +4305,24 @@ def _module_grant_arguments(value: JSONValue) -> tuple[ModuleGrant, ...]:
             )
         )
     return tuple(grants)
+
+
+def _module_reference_arguments(value: JSONValue) -> tuple[ModuleReference, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise _input_error("required_module_references", "必须是数组")
+    references: list[ModuleReference] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise _input_error("required_module_references", "每一项必须是对象")
+        values = [item.get(key) for key in ("module_id", "revision_id", "entry_id")]
+        if not all(isinstance(part, str) and part.strip() for part in values):
+            raise _input_error(
+                "required_module_references", "模块 ID、版本与条目 ID 必须是非空字符串"
+            )
+        references.append(ModuleReference(*(cast(str, part) for part in values)))
+    return tuple(references)
 
 
 def _module_content_grant_arguments(value: JSONValue) -> tuple[ModuleContentGrant, ...]:

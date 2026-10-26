@@ -728,3 +728,67 @@ def test_continue_must_carry_an_earlier_author_request() -> None:
         author_texts=authors,
     )
     assert scope.draft.carried_from_seq == 1
+
+
+@pytest.mark.anyio
+async def test_new_chapter_can_be_corrected_in_same_turn(tmp_path: Path) -> None:
+    workspace, tools, run = _tools(tmp_path)
+    await _call(
+        tools["set_task_scope"],
+        mode="edit",
+        summary="写第三章",
+        authorization="只改第三章",
+        grants=[{"action": "create", "path": _CHAPTER}],
+    )
+    written = await _call(tools["write_file"], path=_CHAPTER, text="# 书房\n十三个人。\n")
+    edited = await _call(
+        tools["edit_file"],
+        path=_CHAPTER,
+        old_text="十三个人",
+        new_text="十四个人",
+        digest=written["digest"],
+    )
+    rewritten = await _call(
+        tools["write_file"],
+        path=_CHAPTER,
+        text="# 书房\n十四个人到齐了。\n",
+        digest=edited["digest"],
+    )
+    assert "十四个人到齐了" in workspace.read(_CHAPTER).text
+    with pytest.raises(WorkspaceError) as stale:
+        await _call(tools["write_file"], path=_CHAPTER, text="旧版本", digest=written["digest"])
+    assert stale.value.code == "FILE_STALE_CONFLICT"
+    for action in ("delete", "move"):
+        with pytest.raises(WorkspaceError) as denied:
+            run.scope.require(
+                Mutation(action, _CHAPTER, "正文/0004 新名.md" if action == "move" else None)
+            )
+        assert denied.value.code == "TASK_SCOPE_DENIED_CONFLICT"
+    assert rewritten["digest"] == workspace.read(_CHAPTER).digest
+    # 下一轮没有继承创建记录，即使再次登记 create 也不能修改已有章。
+    fresh = RunContext(
+        workspace, WriteSession(workspace, instruction="只改第三章"), author_messages=_AUTHOR
+    )
+    fresh.scope.set_scope(_edit(Mutation("create", _CHAPTER)), author_texts=_AUTHOR)
+    with pytest.raises(WorkspaceError):
+        fresh.scope.require(Mutation("update", _CHAPTER))
+
+
+@pytest.mark.anyio
+async def test_failed_create_does_not_allow_updating_existing_chapter(tmp_path: Path) -> None:
+    workspace, tools, run = _tools(tmp_path)
+    view = workspace.write(_CHAPTER, "已有正文", expected_digest=None)
+    await _call(
+        tools["set_task_scope"],
+        mode="edit",
+        summary="写第三章",
+        authorization="只改第三章",
+        grants=[{"action": "create", "path": _CHAPTER}],
+    )
+    with pytest.raises(WorkspaceError):
+        await _call(tools["write_file"], path=_CHAPTER, text="覆盖")
+    with pytest.raises(WorkspaceError) as denied:
+        await _call(tools["write_file"], path=_CHAPTER, text="覆盖", digest=view.digest)
+    assert denied.value.code == "TASK_SCOPE_DENIED_CONFLICT"
+    assert workspace.read(_CHAPTER).text == "已有正文"
+    assert not run.session.prepared

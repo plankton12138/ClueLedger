@@ -573,6 +573,11 @@ export interface TaskScope {
   grants: TaskGrant[];
   denied_paths: string[];
   required_references: string[];
+  required_module_references?: {
+    module_id: string;
+    revision_id: string;
+    entry_id: string;
+  }[];
   module_grants?: TaskModuleGrant[];
   module_content_grants?: TaskModuleContentGrant[];
   library_publish?: boolean;
