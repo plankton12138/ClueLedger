@@ -8,7 +8,7 @@
 
 你决定故事往哪里走，线簿帮助你把创作要求、已有内容和原文依据放在一起。
 
-线簿底层基于 [Tau Agent](https://github.com/huggingface/tau)，在其基础上构建面向悬疑小说的创作体验。
+线簿底层基于 [Tau Agent](https://github.com/huggingface/tau)，在其基础上构建面向悬疑小说的创作体验。Tau 的 MIT 许可证与版权信息见[第三方许可声明](THIRD_PARTY_NOTICES.md)。
 
 ![线簿写作台：左侧浏览章节和模块，中间阅读正文，右侧讨论情节](docs/screenshots/readme/writing.png)
 

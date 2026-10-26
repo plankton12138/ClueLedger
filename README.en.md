@@ -8,7 +8,7 @@ ClueLedger is an AI writing workspace for mystery fiction. Capture ideas, discus
 
 You decide where the story goes. ClueLedger brings your writing goals, existing material, and source passages together.
 
-ClueLedger is built on [Tau Agent](https://github.com/huggingface/tau), with a writing experience designed for mystery fiction.
+ClueLedger is built on [Tau Agent](https://github.com/huggingface/tau), with a writing experience designed for mystery fiction. Tau's MIT license and copyright information are preserved in the [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ![ClueLedger writing workspace: chapters and modules on the left, the manuscript in the center, and a story discussion on the right](docs/screenshots/readme/writing.png)
 
