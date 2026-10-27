@@ -533,6 +533,9 @@ def test_second_turn_replays_public_history(
     # 执行事实通过应用说明进入系统提示，不冒充作者要求。
     assert "本会话此前的轮次" in second["system"]
     assert "完成" in second["system"]
+    # 文件现状符合要求 ≠ 任务执行过：这条区分决定模型会不会把「现状达标」说成「已完成」。
+    assert "不等于这项任务已经执行过" in second["system"]
+    assert "不要用文件现状反推" in second["system"]
 
 
 def test_new_conversation_has_no_history_from_another(
