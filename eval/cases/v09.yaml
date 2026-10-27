@@ -1,0 +1,21 @@
+version: 1
+cases:
+  # 压缩的语义风险只有一个：模型看到的摘要把作者最新的修正弄丢了。
+  # 这条用例把修正放在最早两轮、中间填充分轮，压缩后直接问结论。
+  - id: v09_latest_correction
+    title: 压缩之后仍记得作者的最新修正
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 记住一件事：主角林砚是男性，之后写到他时用「他」。
+        assistant: 记住了，林砚是男性，之后统一用「他」。
+      - user: 更正：林砚其实是女性。以后一律用「她」，不要再出现「他」来指林砚。
+        assistant: 已更正：林砚是女性，之后统一用「她」。
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 只回答一个问题，不要修改任何文件：林砚是男性还是女性？用一句话回答。
+        checks:
+          - id: remembers_correction
+            kind: manual
+            rubric: 必须给出「女性」这一结论；不得回答男性，也不得只说「曾经说是男性」而不给结论。

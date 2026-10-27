@@ -370,6 +370,17 @@ async def run_attempt(
     service.activity.configure(capture_inputs=True, retention_days=0)
     evidences: list[dict[str, Any]] = []
     trace: dict[str, Any] = {"assemblies": [], "faults": []}
+    if case.compact_before_steps and cid:
+        # 压缩失败不中断评测：那本身就是「旧投影照常可用」的证据。
+        try:
+            record = await service.compact(cid, reason="eval")
+            trace["compaction"] = {
+                "compaction_id": record.compaction_id if record is not None else None,
+                "estimated_before": record.estimated_before if record is not None else None,
+                "estimated_after": record.estimated_after if record is not None else None,
+            }
+        except Exception as exc:  # noqa: BLE001 - 记录原因即可
+            trace["compaction"] = {"error": str(exc)}
     error = None
     started = time.monotonic()
     with intervention(case, variant, trace):

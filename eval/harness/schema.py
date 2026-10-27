@@ -189,6 +189,8 @@ class Case(Spec):
     modules: list[ModuleSeed] = Field(default_factory=list)
     #: 没有预置模块时也挂一个空模块库，让自主新建与讨论边界案例能用模块工具。
     module_tools: bool = False
+    #: 在第一步之前整理一次会话：用来验证压缩之后模型仍能接上原来的任务。
+    compact_before_steps: bool = False
     ideas: list[IdeaSeed] = Field(default_factory=list)
     steps: list[Step] = Field(min_length=1)
 
