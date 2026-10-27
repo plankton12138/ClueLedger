@@ -26,7 +26,7 @@ import hashlib
 import os
 from asyncio import AbstractEventLoop, get_running_loop
 from collections.abc import MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal
@@ -42,6 +42,7 @@ from hastings.server.model_credential import (
     load_subscription,
     save_subscription,
 )
+from hastings.server.model_limits import ModelLimitOverride, resolve_model_limits
 from hastings.server.model_thinking import ThinkingLevel, thinking_levels
 from hastings.server.provider_catalog import ProviderApi
 from hastings.server.provider_runtime import ModelSnapshot, build_provider, snapshot
@@ -75,6 +76,9 @@ class ProviderProfile(BaseModel):
     default_model: str = ""
     #: 作者勾选为日常可用的模型；旧档案没有该字段时由 default_model 推导（见 models_for）。
     models: list[str] = Field(default_factory=list)
+    #: 按精确模型名保存的容量。未配置的模型按未知处理，不按名称前缀推断。
+    #: 旧配置没有该字段时为空，读取不受影响。
+    model_limits: dict[str, ModelLimitOverride] = Field(default_factory=dict)
     # 免密端点（本机兼容服务）：无 key 也可用；空 key 本就不发 Authorization 头。
     no_auth: bool = False
     #: 供应商预设 ID；未知值按自定义服务展示，不阻止读取。
@@ -384,6 +388,17 @@ def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
         "default_model": profile.default_model,
         **({"display_name": profile.display_name} if profile.display_name else {}),
         **({"models": list(profile.models)} if profile.models else {}),
+        # 容量按精确模型写入；未填的项不落盘，文件里只看得到作者真的填过的值。
+        **(
+            {
+                "model_limits": {
+                    name: limit.model_dump(exclude_none=True)
+                    for name, limit in profile.model_limits.items()
+                }
+            }
+            if profile.model_limits
+            else {}
+        ),
         # 免密字段按需写入：False 不落盘
         **({"no_auth": True} if profile.no_auth else {}),
         **({"catalog_id": profile.catalog_id} if profile.catalog_id else {}),
@@ -694,13 +709,19 @@ def snapshot_for(selection: ModelSelection, book: ProviderBook) -> ModelSnapshot
                 "这一轮不会调用模型，也不会有任何文件改动。"
                 "建议：在「模型设置」里重新登录这个连接，或改选别的连接。"
             )
-        return snapshot(
-            profile,
-            selection.model,
-            thinking_level=selection.thinking_level,
-            credential_resolver=book.subscription_resolver(profile),
+        return replace(
+            snapshot(
+                profile,
+                selection.model,
+                thinking_level=selection.thinking_level,
+                credential_resolver=book.subscription_resolver(profile),
+            ),
+            limits=resolve_model_limits(profile, selection.model),
         )
-    return snapshot(profile, selection.model, thinking_level=selection.thinking_level)
+    return replace(
+        snapshot(profile, selection.model, thinking_level=selection.thinking_level),
+        limits=resolve_model_limits(profile, selection.model),
+    )
 
 
 _REFRESH_LOCKS: MutableMapping[AbstractEventLoop, dict[str, asyncio.Lock]] = WeakKeyDictionary()

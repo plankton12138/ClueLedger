@@ -130,7 +130,15 @@ from tau_agent.provider import ModelProvider
 from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
 from tau_agent.types import JSONValue
 
-__all__ = ["MAX_TURNS", "RunContext", "ToolMode", "build_harness", "build_tools"]
+__all__ = [
+    "MAX_TURNS",
+    "RequestInputs",
+    "RunContext",
+    "ToolMode",
+    "build_harness",
+    "build_tools",
+    "prepare_request_inputs",
+]
 
 #: 工具集合：普通写作、索引任务、只读检查，或只读展开一条灵感。
 ToolMode = Literal["write", "index", "review", "state", "materials", "idea"]
@@ -3704,6 +3712,84 @@ def build_turn_assembly(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class RequestInputs:
+    """一次请求真正发给模型的两样东西：系统提示与工具定义。
+
+    估算与执行都从这里取。两处各装配一次的结果往往只在细节上不同，而「界面说
+    还剩很多」与「模型收到的其实是另一份」恰恰最难靠肉眼发现。
+    """
+
+    system: str
+    tools: list[AgentTool]
+
+
+def prepare_request_inputs(
+    *,
+    workspace: Workspace,
+    run: RunContext,
+    selected_path: str | None = None,
+    history_facts: str = "",
+    materials: str = "",
+    ideas: str = "",
+    modules: str = "",
+    index_notes: str = "",
+    mode: ToolMode = "write",
+    index_allowed: Sequence[str] = (),
+    index_store: ChapterIndexStore | None = None,
+    review_targets: Sequence[str] = (),
+    review_store: ReviewStore | None = None,
+    disclosure_store: DisclosureStore | None = None,
+    glossary_store: GlossaryStore | None = None,
+    roster_store: CharacterStateStore | None = None,
+    timeline_store: TimelineStore | None = None,
+    clue_store: ClueStore | None = None,
+    material_scope: Mapping[str, object] | None = None,
+    coverage_store: CoverageStore | None = None,
+    assembly: AssembledContext | None = None,
+) -> RequestInputs:
+    """构造本轮的系统提示与工具定义，不执行模型、不写会话事件。
+
+    只读是指不产生作品改动与执行记录；装配本身会读当前资料版本，因此同一组参数
+    在不同资料版本下会得到不同结果——那正是估算需要跟着失效的原因。
+    """
+    resolved = assembly or build_turn_assembly(
+        workspace,
+        as_of_chapter=run.state_chapter,
+        mode=mode,
+        selected_path=selected_path,
+        history_facts=history_facts,
+        materials=materials,
+        ideas=ideas,
+        modules=modules,
+        index_notes=index_notes,
+        disclosure_store=disclosure_store,
+        glossary_store=glossary_store,
+        roster_store=roster_store,
+        timeline_store=timeline_store,
+        clue_store=clue_store,
+    )
+    return RequestInputs(
+        system=resolved.text,
+        tools=build_tools(
+            workspace,
+            run,
+            mode=mode,
+            index_allowed=index_allowed,
+            index_store=index_store,
+            review_targets=review_targets,
+            review_store=review_store,
+            disclosure_store=disclosure_store,
+            glossary_store=glossary_store,
+            roster_store=roster_store,
+            timeline_store=timeline_store,
+            clue_store=clue_store,
+            material_scope=material_scope,
+            coverage_store=coverage_store,
+        ),
+    )
+
+
 def build_harness(
     *,
     provider: ModelProvider,
@@ -3738,43 +3824,35 @@ def build_harness(
     ``prompt()`` 追加一次，不能已经包含在 ``history`` 里，否则模型会收到两遍。
     ``assembly`` 由调用方传入时直接使用，避免同一轮装配两次、结果不一致。
     """
-    resolved = assembly or build_turn_assembly(
-        workspace,
-        as_of_chapter=run.state_chapter,
-        mode=mode,
+    inputs = prepare_request_inputs(
+        workspace=workspace,
+        run=run,
         selected_path=selected_path,
         history_facts=history_facts,
         materials=materials,
         ideas=ideas,
         modules=modules,
         index_notes=index_notes,
+        mode=mode,
+        index_allowed=index_allowed,
+        index_store=index_store,
+        review_targets=review_targets,
+        review_store=review_store,
         disclosure_store=disclosure_store,
         glossary_store=glossary_store,
         roster_store=roster_store,
         timeline_store=timeline_store,
         clue_store=clue_store,
+        material_scope=material_scope,
+        coverage_store=coverage_store,
+        assembly=assembly,
     )
     return AgentHarness(
         AgentHarnessConfig(
             provider=provider,
             model=model,
-            system=resolved.text,
-            tools=build_tools(
-                workspace,
-                run,
-                mode=mode,
-                index_allowed=index_allowed,
-                index_store=index_store,
-                review_targets=review_targets,
-                review_store=review_store,
-                disclosure_store=disclosure_store,
-                glossary_store=glossary_store,
-                roster_store=roster_store,
-                timeline_store=timeline_store,
-                clue_store=clue_store,
-                material_scope=material_scope,
-                coverage_store=coverage_store,
-            ),
+            system=inputs.system,
+            tools=inputs.tools,
             max_turns=max_turns,
         ),
         messages=history,

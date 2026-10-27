@@ -35,6 +35,7 @@ from hastings.server.model_credential import (
     mask_account,
     save_subscription,
 )
+from hastings.server.model_limits import ModelLimitOverride
 from hastings.server.model_probe import DiscoveryResult, ProbeResult, discover_models
 from hastings.server.model_probe import probe_response as run_response_probe
 from hastings.server.model_probe import probe_tool as run_tool_probe
@@ -72,6 +73,9 @@ class ConnectionDraft:
     api: ProviderApi = "openai-completions"
     models: list[str] = field(default_factory=list)
     default_model: str = ""
+    #: 按精确模型名保存的容量；``None`` 表示沿用已保存的值，``{}`` 表示清空。
+    #: 与模型列表分开保存：移除模型不删除它的容量，换回来还能继续用。
+    model_limits: dict[str, ModelLimitOverride] | None = None
     api_key: str | None = None
     auth_method: AuthMethod = "api_key"
     #: 订阅来源标识（如 ``chatgpt``）；API Key 连接为空。
@@ -101,6 +105,8 @@ class ConnectionView:
     account: str = ""
     #: ``ready`` / ``expired`` / ``missing``：过期仍可续期，缺失则不可调用。
     auth_status: str = "missing"
+    #: 作者填写的容量；未配置的模型按未知处理，界面据此给出设置入口。
+    model_limits: dict[str, ModelLimitOverride] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -576,6 +582,12 @@ class ModelConnectionService:
             api=draft.api,
             models=models,
             default_model=default_model,
+            # 提交里没有容量表示沿用已保存的：旧界面保存连接不该把容量抹掉。
+            model_limits=(
+                dict(draft.model_limits)
+                if draft.model_limits is not None
+                else dict(current.model_limits) if current is not None else {}
+            ),
             api_key=draft.api_key,
             auth_method=draft.auth_method,
             auth_provider=draft.auth_provider.strip(),
@@ -612,6 +624,7 @@ class ModelConnectionService:
             credential_ref=credential_ref,
             default_model=clean.default_model,
             models=list(clean.models),
+            model_limits=dict(clean.model_limits or {}),
             catalog_id=clean.catalog_id,
             api=clean.api,
             auth_method=clean.auth_method,
@@ -641,6 +654,7 @@ class ModelConnectionService:
             auth_provider=profile.auth_provider,
             account=account,
             auth_status=profile.auth_status,
+            model_limits=dict(profile.model_limits),
         )
 
     def _discovery_for(self, catalog_id: str, api: str) -> str | None:

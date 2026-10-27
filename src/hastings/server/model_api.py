@@ -25,6 +25,7 @@ from hastings.server.model_connections import (
     ConnectionDraft,
     ModelConnectionService,
 )
+from hastings.server.model_limits import ModelLimitOverride
 from hastings.server.model_thinking import ThinkingLevel
 from hastings.server.provider_catalog import ProviderApi, ProviderPreset
 from hastings.server.provider_config import AuthMethod, ModelSelection
@@ -75,6 +76,8 @@ class ConnectionView(BaseModel):
     account: str
     #: ``ready`` 可调用、``expired`` 需要续期、``missing`` 没有凭据。
     auth_status: Literal["ready", "expired", "missing"]
+    #: 按精确模型名保存的容量；未出现的模型按未知处理。
+    model_limits: dict[str, ModelLimitOverride] = Field(default_factory=dict)
 
 
 class SelectionView(BaseModel):
@@ -115,6 +118,8 @@ class ConnectionRequest(BaseModel):
     auth_method: AuthMethod = "api_key"
     auth_provider: str = ""
     auth_session_id: str = ""
+    #: 按精确模型名提交的容量；省略表示沿用已保存的配置，传 ``{}`` 才是清空。
+    model_limits: dict[str, ModelLimitOverride] | None = None
 
 
 class SelectionRequest(BaseModel):
@@ -234,6 +239,7 @@ def _config_view(view: ConfigView) -> ModelConfigView:
                 auth_provider=item.auth_provider,
                 account=item.account,
                 auth_status=item.auth_status,  # type: ignore[arg-type]
+                model_limits=dict(item.model_limits),
             )
             for item in view.connections
         ],
@@ -271,6 +277,9 @@ def _draft_from_form(body: ConnectionRequest) -> ConnectionDraft:
         auth_method=body.auth_method,
         auth_provider=body.auth_provider,
         auth_session_id=body.auth_session_id,
+        model_limits=(
+            dict(body.model_limits) if body.model_limits is not None else None
+        ),
     )
 
 

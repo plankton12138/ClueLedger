@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from hastings.server.model_limits import WORKER_OUTPUT_TOKENS, ModelLimits
 from hastings.server.model_thinking import ThinkingLevel, is_deepseek, thinking_levels
 from hastings.server.provider_catalog import ProviderApi
 from tau_agent.messages import AgentMessage
@@ -136,7 +137,7 @@ def build_provider(
                 base_url=profile.base_url.rstrip("/"),
                 max_retries=_retries(max_retries, worker),
                 timeout_seconds=timeout_seconds or (180.0 if worker else 60.0),
-                max_tokens=4096 if worker else None,
+                max_tokens=WORKER_OUTPUT_TOKENS if worker else None,
             )
         )
     if profile.api == "google-generative-ai":
@@ -186,7 +187,7 @@ def _compatible_config(
         infer_api_from_model=False,
         max_retries=_retries(max_retries, worker),
         timeout_seconds=timeout_seconds or ((180.0 if loopback else 45.0) if worker else 60.0),
-        max_tokens=4096 if worker else None,
+        max_tokens=WORKER_OUTPUT_TOKENS if worker else None,
         reasoning_effort="none" if thinking_level == "off" else thinking_level,
         include_reasoning_effort_none=thinking_level == "off",
         # 默认不发送开关；DeepSeek 的默认行为应由服务自身决定。
@@ -262,6 +263,9 @@ class ModelSnapshot:
     model: str
     provider: ManagedModelProvider
     thinking_level: ThinkingLevel | None = None
+    #: 受理时冻结的容量；只由 ``provider_config.snapshot_for`` 填入，界面显示与实际
+    #: 预算共用这一份，避免「显示 8K、实际只允许 4K」。
+    limits: ModelLimits | None = None
 
     def describe(self) -> dict[str, str]:
         return {
