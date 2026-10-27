@@ -2,12 +2,13 @@
 
 > 2026-10-27 版本调整：原 1.0 修订学习计划顺延为 1.1 预留；优先完成 [1.0 悬疑线索设计与写作联动](../../product-design/v1.0/README.md)。本计划尚未实施，实施前按 1.0 实际交付重新核对基线。
 
-日期：2026-10-26。状态：**设计示例，尚未接入生产**。
+初稿：2026-10-26；更新：2026-10-27。状态：**设计示例，尚未接入生产**。
 
 目的在于把模块边界和失败处理具体化。标注 Protocol 的依赖需在生产中用真实文件、Git、记录库和
 provider 适配；示例不能替代[数据契约](data-and-recovery.md)、[接口](api-and-frontend.md)或正式验收。
 Python 示例分别检查语法，纯逻辑块另做独立验证；TypeScript 块按各自作用域检查。
 本文不包含生产迁移和所有平台处理，不宣称可直接复制后发布。
+写作约定新增示例见第 17 节；会改 STYLE.md 的决策必须走文件阶段编排，第 3、9 节的事务函数仅为其内部步骤。
 
 ## 1. 编辑与结果类型
 
@@ -118,8 +119,8 @@ class WriteCoordinator:
 
 ## 3. 短事务与决策幂等
 
-网络请求和 Git 操作都不放入数据库事务。下面 once 只用于同事务可完成的作者决策，
-文件保存要用下一节的阶段意图，不能用 once 包住所有外部副作用。
+网络请求和 Git 操作都不放入数据库事务。下面 once 只用于可在同一短事务完成的内部状态步骤，
+正文和 STYLE.md 保存及候选确认要用阶段意图，不能用 once 包住所有外部副作用。
 
 ```python
 from __future__ import annotations
@@ -464,7 +465,8 @@ running 重启若已发送则 interrupted，需显式 retry；未发送可退回
 ## 9. 决策版本与忘记
 
 同一事务中进行条件更新、epoch、排除和 outbox。外部清理稍后执行，但排除先立即生效。
-示例聚焦状态转换；生产保存完整确认快照、历史版本和人物/章界校验。
+示例仅展示数据库内部状态转换，不是可独立调用的完整决策服务；
+生产先核对 STYLE.md 指纹并按阶段保存文件，再完成对应索引及决策。忘记的排除步骤须先于文件清理。
 
 ```python
 import sqlite3
@@ -530,7 +532,9 @@ def apply_decision(
     return receipt
 ```
 
-生产在 transaction 内使用 once 包装 apply_decision。
+生产只在编排器的对应短事务内使用 once 包装 apply_decision；
+confirm/revise 不能仅更新 preferences 就返回成功，必须核对写回文件和当前索引指纹。
+暂停或忘记可先提交排除，恢复仍须核对当前文件；文件冲突不撤销排除。
 遗忘后重放旧确认只返回无正文的原决策回执，详情按当前忘记状态脱敏，不能从请求缓存复活旧规则。
 revise 已停用规则保持停用，避免修改文字时无意重新启用。
 
@@ -834,12 +838,80 @@ steps:
 ```
 
 rubric、期望和判定只由评测器读取，不进入模型证据包或提示。
+直接声明入口拟新增 `style_document_save`，载荷为 `text`，由运行时读取当前 digest 后调用生产保存服务；
+缺失文件使用 null 基线，不把文件写入标记为正文人工证据。实现后再登记 schema，不直接把下列步骤当作可运行能力：
+
+```yaml
+id: style_declaration
+steps:
+  - action: style_document_save
+    text: |
+      # 写作约定
+
+      ## 情绪表达
+      人物回避追问时优先使用动作和对白。重要情绪转折允许直接心理描写。
+  - action: writer
+    text: 续写许砚拿出收据之后的对话，保留收据上的日期。
+    selected: 正文/0007 暗潮.md
+```
+
 三个变体为 no_preferences / rules_only / rules_with_examples，
 必须在 schema、runtime 和报告中显式登记，并保留每个实际请求的选择回执。
 
-## 17. 本轮检查结果
+## 17. 写作约定输入与请求前过滤
 
-2026-10-26 本轮实际完成：
+文档保存不接收任意文件路径，expected_digest 为 null 仅表示预期文件不存在。
+解析、范围核验和完整块预算在独立服务完成，保存复用第 4 节的阶段意图，不能只更新记录库。
+
+```python
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class StyleSaveInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expected_digest: str | None = Field(..., min_length=1)
+    text: str
+    client_sequence: int = Field(ge=0)
+    request_key: str = Field(min_length=1, max_length=128)
+```
+
+下面只展示「本轮不增加新块」与「文件当前有效」的交集；块指纹须覆盖正文、条件、例外、范围和声明性质。
+传入的 current 来自本次磁盘核对，不能是未经核对的旧索引。语义选择不能跳过这些过滤。
+
+```python
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class StyleBlock:
+    identity: str
+    fingerprint: str
+
+
+def retain_allowed_style_blocks(
+    accepted: tuple[StyleBlock, ...],
+    current: tuple[StyleBlock, ...],
+    *,
+    current_usable: bool,
+    excluded_ids: frozenset[str],
+) -> tuple[StyleBlock, ...]:
+    if not current_usable:
+        return ()
+    current_versions = {(block.identity, block.fingerprint) for block in current}
+    return tuple(
+        block for block in accepted
+        if block.identity not in excluded_ids
+        and (block.identity, block.fingerprint) in current_versions
+    )
+```
+
+无稳定 ID 的块按文件版本和块位置引用，文件变化后无法证明对应关系则保守排除。
+过滤后再检查人物、章界、优先级、冲突和预算；选中与排除结果携带 style_digest 进入第 11 节同源编译与回执。
+磁盘删除/非法或索引待恢复时 current_usable 为 false，不能继续采用 accepted 缓存。
+
+## 18. 示例检查记录
+
+2026-10-26 原方案检查记录（不覆盖 2026-10-27 新增的 STYLE.md 示例）：
 
 - 7 份新增计划文档的本地链接、代码围栏、编码和格式检查通过。
 - 12 段 Python 示例语法和定义加载通过；另检查原始指纹、并发 claim、幂等和回滚、
@@ -849,3 +921,11 @@ rubric、期望和判定只由评测器读取，不进入模型证据包或提�
 
 这些结果仅证明设计示例的上述检查，不包含生产集成、完整静态类型检查、
 浏览器业务、桌面或在线语义验收，不能作为功能交付证据。
+
+2026-10-27 写作约定计划更新检查：
+
+- 检查本版 8 份计划文档的 39 个本地链接、代码围栏和 UTF-8 读取，均通过。
+- 14 段 Python 示例语法、4 段 JSON 和 2 段 YAML 解析通过；未重跑原方案 TypeScript 类型检查。
+- 新增文档输入示例通过 6 个有效/无效载荷检查，请求前过滤通过 5 个场景检查，
+  覆盖新增规则不进入当前轮、规则改写/移除、排除标识和文件不可用。
+- 以上为文档和独立示例检查，STYLE.md 服务、真实浏览器、桌面与在线语义验收仍未实施。

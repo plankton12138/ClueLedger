@@ -5,8 +5,9 @@
 1.1面板需与1.0的对话、本章线索共同使用辅助区，保留各自输入、位置与焦点；来源定位和精确线索引用沿用1.0。
 本文其余接口为原方案预留，不能用于覆盖1.0的章界、引用或正文修改权限。
 
-日期：2026-10-26。状态：**全部待实施**。
+初稿：2026-10-26；更新：2026-10-27。状态：**全部待实施**。
 领域和恢复以[数据契约](data-and-recovery.md)为准，本文负责 HTTP、界面动作和异步归属对齐。
+STYLE.md 统一维护、生效与外部修改见[文档契约](style-document.md)。
 
 ## 1. 接口总表
 
@@ -15,6 +16,14 @@
 
 | 方法与路径 | 请求要点 | 返回/前端动作 |
 |---|---|---|
+| GET /style-document | 无；固定作品根目录，不接任意路径 | 文件状态、完整文本、digest、解析问题、块引用和同步状态；缺失为空视图 |
+| PUT /style-document | expected_digest（首次创建为 null）、text、client_sequence、request_key | 保存操作、文件/Git/索引独立结果、change_seq；整份约定保存 |
+| GET /style-document/draft | editor_id | 当前编辑客户端的基线、草稿版本、序号；刷新恢复 |
+| PUT /style-document/draft | editor_id、base_digest、base_text、expected_draft_revision、client_sequence、text、request_key | 持久化草稿版本/时间；初次核验基线，后续不偷换基线 |
+| POST /style-document/draft/actions | editor_id、discard、expected_draft_revision、request_key | 明确放弃文档草稿；关闭面板不隐式丢弃 |
+| GET /style-document/operations | request_key?、cursor、limit | 响应丢失后的文档保存或决策操作查询，不返回已忘记正文 |
+| POST /style-document/operations/{operation_id}/reconcile | request_key | 显式本地核对并补索引/决策阶段，不覆盖文件、不自动创建 Git 提交、不调用模型 |
+| POST /style-document/operations/{operation_id}/recording | request_key | 核对/补记 STYLE.md 历史，不重写文件或调用模型 |
 | POST /file-edit-sessions | path、expected_digest、request_key | 201，会话、基线、完整原文、稳定 UID；进入编辑 |
 | GET /file-edit-sessions | path?、status?、cursor、limit | 编辑/草稿摘要；恢复入口 |
 | GET /file-edit-sessions/{session_id} | 无 | 基线、草稿、最新操作状态；刷新恢复 |
@@ -30,12 +39,14 @@
 | POST /revision-learning/operations/{job_id}/actions | retry/cancel、expected_revision、request_key | 操作当前版本和状态 |
 | GET /writing-preferences | status?、document_uid?、cursor、limit | 待确认/启用/停用列表 |
 | GET /writing-preferences/{preference_id} | 无 | 精确版本、来源、条件、例外、冲突、清理状态 |
-| POST /writing-preferences/{preference_id}/decisions | expected_revision、action、rule?、scope?、request_key | 决策回执与新版本 |
+| POST /writing-preferences/{preference_id}/decisions | expected_revision、expected_style_digest、action、rule?、conditions?、exceptions?、scope?、request_key | 决策回执、新版本、文档保存/索引结果；会改文件时共用文档保存服务 |
 | GET /writing-preferences/usage | turn_id/request_id、cursor、limit | 请求实际选中及排除明细；路由在动态 ID 前声明 |
 
 现有 /file GET、Git 状态/历史/撤销、活动订阅不删除。人工补记操作和一般 git/record 的语义不同：
 前者定位已知 edit_id，后者不能把所有未知文件自动认定为该 edit 的人工来源。
 所有现有写入口改用同一 claim，不仅给新接口加锁。
+约定文件不经过仅支持 chapter 的 /file-edit-sessions；文档专用路由仍复用保存与冲突基础能力。
+通用文件、导入、Git 恢复等入口遇到 STYLE.md 时必须重新核对索引和撤销过滤，不能留下旧生效缓存。
 
 ## 2. 类型与示意响应
 
@@ -103,6 +114,26 @@ scope 示例：
 完整人物版本和来源在详情另存，不让客户端用 display_name 建身份。
 条件与例外作为可编辑内容保存，场景锚点由服务器核对现有文档及版本。
 
+文档读取与保存视图至少包含：
+
+```json
+{
+  "path": "STYLE.md",
+  "file": {"status": "ready", "digest": "sha256:style", "text": "# 写作约定\n\n## 叙述\n使用第三人称限知视角。\n"},
+  "index": {"status": "synchronized", "digest": "sha256:style"},
+  "issues": [],
+  "change_seq": 24
+}
+```
+
+missing 时 digest 为 null、text 为空；invalid/needs_review 保留可读原文和具体问题，不回传旧规则冒充当前有效内容。
+保存另带 operation_id、request_key、client_sequence、文件 saved/no_change/not_saved、
+recording 和 recovery；读取的 ready 与操作的 saved 分开，不混用状态。
+file.saved + index.synchronized 可用于后续相关请求，Git 失败单列 unrecorded；
+index_pending/recovery_needed 不报告已生效。202 返回操作引用，原请求键用于查询或重放。
+草稿归属为 (workspace_uid, editor_id)，两窗口独立保留；同一客户端仍用序号和版本防迟到覆盖。
+直接声明无需候选或证据 ID；候选确认同时核验候选 revision 和当前文件 digest。
+
 ## 3. 状态、错误与并发
 
 错误沿用 `{"error":{"code","where","why","fix","details"}}`。
@@ -110,6 +141,10 @@ scope 示例：
 
 | 错误码 | 条件 | 界面行为 |
 |---|---|---|
+| STYLE_DOCUMENT_INVALID | 编码/结构、重复 ID、大小或元信息非法 | 保留原文，显示问题位置和修正入口，写作可跳过该文件 |
+| STYLE_SCOPE_REVIEW_REQUIRED | 范围丢失或人物/场景身份无法核对 | 排除相关块，保留内容供作者明确范围 |
+| STYLE_DOCUMENT_STALE_CONFLICT | 约定文件与预期 digest 不符 | 基础/草稿/磁盘对照，不覆盖外部更新 |
+| STYLE_INDEX_PENDING | 文件已保存但索引未完成 | 显示已保存与尚未生效，提供操作状态及本地恢复入口 |
 | WORKSPACE_BUSY_CONFLICT | 正文或管理操作已占用 | 保留草稿，等待或停止原任务后重试 |
 | FILE_STALE_CONFLICT | 磁盘字节与基线不符 | 基础/草稿/最新正文对照，不能强覆盖 |
 | EDIT_SESSION_CONFLICT | 会话、base 或文档身份不一致 | 保留输入，重新核对会话 |
@@ -127,6 +162,7 @@ scope 示例：
 ```text
 [FILE_STALE_CONFLICT] 正文保存：文件已在其他位置更新。建议：对照最新内容后重新保存，当前草稿已保留。
 [REVISION_ANALYSIS_FAILED] 修订学习：本次分析未完成。建议：稍后重试，正文和版本记录已保留。
+[STYLE_DOCUMENT_STALE_CONFLICT] 写作约定：STYLE.md 已在其他位置更新。建议：对照最新文件后合并保存，当前草稿已保留。
 ```
 
 不存在「忽略指纹直接覆盖」端点。确认人工合并后创建基于最新内容的新编辑基线，再保存明确合并的文本。
@@ -171,10 +207,14 @@ file_status / recording_status / learning_status / conflict / recovery
 未保存规则编辑保留于候选 ID 和 revision 下，不被后台刷新覆盖。
 
 作者可以查看来源、改规则/条件/例外、改作品内范围、确认、仅本次、停用、恢复和忘记。
+面板内提供「写作约定」整份编辑与「待确认」入口，约定编辑和详情操作均读取同一文件 digest。
+应用补稳定 ID 只修改必要元信息，不在只读打开时格式化整份文档；未知范围不按标题猜测。
+文档草稿保留基础文本、digest、客户端序号和未保存状态，外部变化不覆盖草稿；冲突沿用三份对照。
+外部修改通知显示可更新状态，实际受理与每次请求仍由服务端核对磁盘。
 候选后台增加证据或规则版本变化，不自动勾选、确认或清空正在修改的内容。
 如果已经忘记，旧请求或旧面板必须显示失效，不能重新激活。
 
-变更通知复用作品活动流，新增类型可聚合但状态权威在学习记录库。
+变更通知复用作品活动流，新增类型可聚合；约定文本权威在 STYLE.md，候选与生命周期权威在记录库。
 每次 payload 携带 workspace_uid、entity_id、revision、change_seq、operation_id。
 断线后从 GET /revision-learning 和对应列表重建，不能依赖短期活动附件。
 隐藏或未打开面板不持续轮询；打开且存在 pending/running 时用有界刷新，终态停止，
@@ -192,6 +232,7 @@ file_status / recording_status / learning_status / conflict / recovery
 
 偏好使用按 request_id 展示，轮次摘要只聚合已发送请求。
 同时显示被选择与被排除的原因，例如范围不符、目标未知、章界不符、证据失效、预算不足和已撤销。
+同时显示 style_digest 与规则块版本；文件缺失/非法、文件变化、索引待恢复也是实际排除原因。
 无 Usage 显示未上报，不能显示零；分析按作品操作统计，不累加到当前随意打开的会话。
 输入捕获关闭仍有数值与来源回执；不为该功能强制开启完整输入捕获。
 
@@ -200,4 +241,5 @@ file_status / recording_status / learning_status / conflict / recovery
 G0 建 OpenAPI/前端 DTO 契约检查；领域枚举只保留一个权威定义，变更同步消费端。
 E1–W1 每个接口有对应页面动作、恢复路径和错误分支。
 X1 用真实接口验证：保存、补记、候选、决策、忘记、重启、改名/删除、任务详情。
+S1–X1 增加文档读写、独立草稿、外部变化、候选写回同一文件、文档补记、操作查询与本地恢复，均有对应页面动作与错误分支。
 不把演示动画和静态候选计为接线成功。
