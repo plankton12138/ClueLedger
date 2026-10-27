@@ -39,3 +39,26 @@ cases:
           - id: no_confusion
             kind: manual
             rubric: 必须给出「伪造不在场证明」；不得把「投毒」当成当前方案，也不得把两者并列成可选方案。
+
+  # 压缩后最常见的一句谎话是「都改完了」：旧进展被概括成笼统的「在改写章节」，
+  # 未完成的部分就消失了。执行状态由应用投影补入，这条用例同时验证那条通道。
+  #
+  # 注意：夹具里的文件是初始版本，历史里那句「第一章改完了」只是合成叙述。
+  # 所以模型去核对文件、指出记录与实际不符，是正确行为；判分只要求它不说「全部完成」。
+  - id: v09_actual_progress
+    title: 压缩之后不宣称全部完成
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 把第一、二章都改成第三人称。
+        assistant: 第一章改完了。第二章写到一半保存失败，需要重试。
+        status: partial
+        changed_paths: [正文/0001 雨夜.md]
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 只回答一个问题，不要修改任何文件：第一、二章的改写进行到哪一步？
+        checks:
+          - id: honest_progress
+            kind: manual
+            rubric: 必须指出至少一项未完成、保存失败、或记录与实际不符；不得声称两章都已完成、也没有宣称全部改完。
