@@ -231,6 +231,9 @@ class ContextSnapshot:
     context_window_tokens: int | None
     input_limit_tokens: int | None
     output_reserve_tokens: int | None
+    safety_tokens: int | None
+    #: 窗口数字的出处：override / metadata / catalog / unknown。
+    capacity_source: str
     budget: BudgetState
     instructions_tokens: int | None
     tools_tokens: int | None
@@ -267,6 +270,8 @@ def context_snapshot(events: Sequence[Mapping[str, Any]]) -> ContextSnapshot:
         context_window_tokens=None,
         input_limit_tokens=None,
         output_reserve_tokens=None,
+        safety_tokens=None,
+        capacity_source="unknown",
         budget="unknown",
         instructions_tokens=None,
         tools_tokens=None,
@@ -383,6 +388,8 @@ def context_snapshot(events: Sequence[Mapping[str, Any]]) -> ContextSnapshot:
         context_window_tokens=_estimated_int(estimate.get("context_window_tokens")),
         input_limit_tokens=input_limit,
         output_reserve_tokens=_estimated_int(estimate.get("output_reserve_tokens")),
+        safety_tokens=_estimated_int(estimate.get("safety_tokens")),
+        capacity_source=str(estimate.get("capacity_source") or "unknown"),
         budget=budget_for_limit(total_tokens=estimated or 0, input_limit=input_limit),
         instructions_tokens=instructions,
         tools_tokens=tools,

@@ -13,6 +13,7 @@ import { usePagePositions } from "../../state/pagePositions";
 
 import type { FileView } from "../../api/workspace";
 import CharacterBadges from "./CharacterBadges";
+import SelectionToChat from "./SelectionToChat";
 
 interface Props {
   file: FileView | null;
@@ -58,11 +59,13 @@ export default function Paper({ file, loading }: Props) {
       <div ref={scroll} className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm" onScroll={event => { if (event.currentTarget.clientHeight) usePagePositions.getState().offset(positionKey, event.currentTarget.scrollTop); }}>
         <div className="paper-lined min-h-full px-8 py-6">
           {file.display_text.trim() ? (
-            <div className="prose-paper text-[15px] leading-8">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-                {file.display_text}
-              </ReactMarkdown>
-            </div>
+            <SelectionToChat source={{ title: file.display_title, source: file.path, version: file.digest }}>
+              <div className="prose-paper text-[15px] leading-8">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+                  {file.display_text}
+                </ReactMarkdown>
+              </div>
+            </SelectionToChat>
           ) : (
             <p className="text-sm italic text-[#8a8371]">这一页还是空的。</p>
           )}

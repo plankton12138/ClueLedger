@@ -45,6 +45,7 @@ __all__ = [
     "ReviewStore",
     "publish_report",
     "validate_report",
+    "validate_review_targets",
 ]
 
 #: 单份报告最多几条问题；超出说明检查没有收敛，应当缩小范围。
@@ -314,17 +315,7 @@ def validate_report(
         raise _invalid("没有给出检查目标")
     if not draft.requirement.strip():
         raise _invalid("没有记录作者的检查要求")
-    for path in draft.target_paths:
-        if not is_managed_path(path):
-            raise _invalid(f"检查目标不是作品受管路径：{path}")
-        if allowed_targets and path not in allowed_targets:
-            raise WorkspaceError(
-                code="REVIEW_SCOPE_INVALID",
-                where=f"review.validate:{path}",
-                why="这个文件不在本轮允许检查的范围内",
-                fix="只检查作者指定的文件；需要更多文件时由作者重新发起",
-                details={"path": path, "allowed": list(allowed_targets)},
-            )
+    validate_review_targets(draft.target_paths, allowed_targets=allowed_targets)
     if draft.status == "findings" and not draft.findings:
         raise _invalid("状态是「发现问题」却没有列出任何问题")
     if draft.status == "no_findings" and draft.findings:
@@ -337,6 +328,23 @@ def validate_report(
         _validate_finding(finding, workspace=workspace, ledger=ledger)
     if draft.status == "no_findings":
         _require_full_coverage(draft.target_paths, workspace=workspace, ledger=ledger)
+
+
+def validate_review_targets(targets: Sequence[str], *, allowed_targets: Sequence[str]) -> None:
+    """先校验授权范围，再读取版本；参考文件不自动成为检查目标。"""
+    for path in targets:
+        if not is_managed_path(path):
+            raise _invalid(f"检查目标不是作品受管路径：{path}")
+        if allowed_targets and path not in allowed_targets:
+            raise WorkspaceError(
+                code="REVIEW_SCOPE_INVALID",
+                where=f"review.validate:{path}",
+                why="这个文件不在本轮允许检查的范围内",
+                fix="target_paths 只能从以下路径选择："
+                f"{json.dumps(list(allowed_targets), ensure_ascii=False)}；"
+                "参考文件只放入 evidence；扩大检查范围需由作者重新发起",
+                details={"path": path, "allowed": list(allowed_targets)},
+            )
 
 
 def publish_report(

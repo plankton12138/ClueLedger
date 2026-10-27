@@ -26,6 +26,7 @@ vi.mock("../api/workspace", async () => {
 
 import { useConversationsStore } from "./conversations";
 import { WorkspaceApiError } from "../api/workspace";
+import type { TextReference } from "./textReferences";
 
 const CONVERSATION = {
   id: "c1",
@@ -1066,5 +1067,69 @@ describe("用于写作（I5）", () => {
     expect(request.context.selected_path).toBe("正文/0001 雨夜.md");
     // 还没读到目标版本就不带指纹，由服务端按当前内容冻结。
     expect(request.context.observed_digests).toEqual({});
+  });
+});
+
+
+describe("正文与装载模块的选段引用", () => {
+  const quote: TextReference = { id: "quote-1", text: "原文第一行。\n原文第二行。", title: "雨夜", source: "正文/0001 雨夜.md", version: "digest-1" };
+  const moduleQuote: TextReference = { id: "quote-2", text: "钟慢了七分钟。", title: "港口线索", source: "module:library/module (binding:binding-1)", version: "rev-1" };
+
+  it("添加去重、切会话隔离，修改文件参考不丢选段，草稿保存包含原文", async () => {
+    await useConversationsStore.getState().load("w1");
+    const store = useConversationsStore.getState();
+    expect(store.addTextReference(quote)).toBe(true);
+    expect(store.addTextReference({ ...quote, id: "duplicate" })).toBe(true);
+    store.setDraftContext(null, ["正文/0002 来信.md"]);
+    await store.saveDraft();
+    expect(useConversationsStore.getState().draftContexts.c1.text_references).toEqual([quote]);
+    expect(api.patchConversationUi.mock.calls.at(-1)?.[1].draft_text_references).toEqual([quote]);
+    store.newConversation();
+    expect(useConversationsStore.getState().draftContexts.new?.text_references ?? []).toEqual([]);
+    store.addTextReference(moduleQuote);
+    store.removeTextReference(moduleQuote.id);
+    expect(useConversationsStore.getState().draftContexts.new?.text_references).toEqual([]);
+    expect(useConversationsStore.getState().draftContexts.c1.text_references).toEqual([quote]);
+  });
+
+  it("受理失败保留引用，成功后原文与来源进入历史请求并清除已提交引用", async () => {
+    await useConversationsStore.getState().load("w1");
+    const store = useConversationsStore.getState();
+    store.setDraft("请核对这两段");
+    store.addTextReference(quote); store.addTextReference(moduleQuote);
+    api.startTurn.mockRejectedValueOnce(new Error("断线"));
+    await store.send("请核对这两段");
+    expect(useConversationsStore.getState().draftContexts.c1.text_references).toHaveLength(2);
+    await store.send("请核对这两段");
+    const request = api.startTurn.mock.calls.at(-1)?.[2];
+    expect(request.text).toContain("请核对这两段");
+    expect(request.text).toContain("> 原文第一行。\n> 原文第二行。");
+    expect(request.text).toContain(moduleQuote.source);
+    expect(request.text).toContain("版本 rev-1");
+    expect(request.text).toContain("> 钟慢了七分钟。");
+    expect(useConversationsStore.getState().draftContexts.c1).toBeUndefined();
+  });
+
+  it("受理期间新增选段不会被旧响应清除", async () => {
+    await useConversationsStore.getState().load("w1");
+    const store = useConversationsStore.getState();
+    store.setDraft("核对"); store.addTextReference(quote);
+    let accept!: (value: { turn_id: string; conversation_id: string; started_at: string }) => void;
+    api.startTurn.mockImplementationOnce(() => new Promise(resolve => { accept = resolve; }));
+    const sending = store.send("核对");
+    store.addTextReference(moduleQuote);
+    accept({ turn_id: "t2", conversation_id: "c1", started_at: "" });
+    await sending;
+    expect(api.startTurn.mock.calls[0][2].text).not.toContain(moduleQuote.text);
+    expect(useConversationsStore.getState().draftContexts.c1.text_references).toEqual([quote, moduleQuote]);
+  });
+
+  it("拒绝过长选段和第十一个选段，保留已有引用", async () => {
+    await useConversationsStore.getState().load("w1");
+    const store = useConversationsStore.getState();
+    expect(store.addTextReference({ ...quote, text: "字".repeat(20_001) })).toBe(false);
+    for (let i = 0; i < 10; i++) expect(store.addTextReference({ ...quote, id: `q${i}`, text: `选段${i}` })).toBe(true);
+    expect(store.addTextReference(moduleQuote)).toBe(false);
+    expect(useConversationsStore.getState().draftContexts.c1.text_references).toHaveLength(10);
   });
 });

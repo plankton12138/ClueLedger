@@ -370,15 +370,17 @@ class DraftContext:
 
     selected_path: str | None = None
     reference_paths: tuple[str, ...] = ()
+    text_references: tuple[dict[str, str], ...] = ()
 
     @property
     def empty(self) -> bool:
-        return self.selected_path is None and not self.reference_paths
+        return self.selected_path is None and not self.reference_paths and not self.text_references
 
     def to_dict(self) -> dict[str, object]:
         return {
             "selected_path": self.selected_path,
             "reference_paths": list(self.reference_paths),
+            "text_references": list(self.text_references),
         }
 
     @classmethod
@@ -387,6 +389,18 @@ class DraftContext:
             return cls()
         selected = raw.get("selected_path")
         paths = raw.get("reference_paths")
+        selections = raw.get("text_references")
+        text_references: list[dict[str, str]] = []
+        if isinstance(selections, list):
+            limits = {"id": 64, "text": 20_000, "title": 256, "source": 1024, "version": 128}
+            for selection in selections[:10]:
+                if not isinstance(selection, dict):
+                    continue
+                if all(
+                    isinstance(selection.get(key), str) and 0 < len(selection[key]) <= limit
+                    for key, limit in limits.items()
+                ):
+                    text_references.append({key: selection[key] for key in limits})
         references: list[str] = []
         if isinstance(paths, list):
             for item in paths:
@@ -395,6 +409,7 @@ class DraftContext:
         return cls(
             selected_path=selected if isinstance(selected, str) and selected else None,
             reference_paths=tuple(references),
+            text_references=tuple(text_references),
         )
 
 
@@ -1115,10 +1130,10 @@ class ConversationUiStore:
             for key, value in contexts_raw.items():
                 if not isinstance(key, str):
                     continue
-                # 没有文字草稿的参考不保留：仅选文件不构成待发送的内容。
-                if key not in drafts:
-                    continue
                 context = DraftContext.from_raw(value)
+                # 已选原文本身就是草稿内容；单独的文件路径仍沿用旧规则。
+                if key not in drafts and not context.text_references:
+                    continue
                 if not context.empty:
                     contexts[key] = context
         return ConversationUi(

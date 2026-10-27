@@ -30,6 +30,7 @@ import { useWorkspaceStore } from "../../state/workspace";
 import ModelSelector from "../models/ModelSelector";
 import ChatTurnView from "../chat/ChatTurnView";
 import IdeaReferenceChip from "../chat/IdeaReferenceChip";
+import TextReferenceChip from "../chat/TextReferenceChip";
 import ExpandedReplyDialog from "../chat/ExpandedReplyDialog";
 import { useChatScroll } from "../chat/useChatScroll";
 import ReferencePicker from "./ReferencePicker";
@@ -219,6 +220,7 @@ export default function ConversationPanel() {
 
   // 参考只影响这一轮的材料；顺序即作者选择顺序，取消选择不影响已经打开的文件。
   const references = draftContext?.reference_paths ?? [];
+  const textReferences = draftContext?.text_references ?? [];
   const toggleReference = (path: string) => {
     const next = references.includes(path)
       ? references.filter((item) => item !== path)
@@ -405,6 +407,10 @@ export default function ConversationPanel() {
             ))}
           </div>
         )}
+        {textReferences.length > 0 && <div className="text-reference-list" aria-label="引用选段">
+          {textReferences.map(reference => <TextReferenceChip key={reference.id} reference={reference}
+            onRemove={() => useConversationsStore.getState().removeTextReference(reference.id)} />)}
+        </div>}
         <ReferencePicker
           catalog={catalog}
           selected={references}
@@ -434,7 +440,6 @@ export default function ConversationPanel() {
             workspaceId={workspaceId}
             conversationId={selectedId}
             refreshKey={entry.lastSeq}
-            onOpenModelSettings={openModelSettings}
           />
           {running ? (
             <button className="btn btn-gray px-3 py-1 text-[11px]" disabled={stopping}

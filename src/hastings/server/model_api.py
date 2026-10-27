@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from hastings.server.model_auth import AuthSessionView as AuthSession
 from hastings.server.model_auth import AuthStatus
@@ -25,7 +25,7 @@ from hastings.server.model_connections import (
     ConnectionDraft,
     ModelConnectionService,
 )
-from hastings.server.model_limits import ModelLimitOverride
+from hastings.server.model_limits import ModelCapacity, ModelLimitOverride
 from hastings.server.model_thinking import ThinkingLevel
 from hastings.server.provider_catalog import ProviderApi, ProviderPreset
 from hastings.server.provider_config import AuthMethod, ModelSelection
@@ -78,6 +78,8 @@ class ConnectionView(BaseModel):
     auth_status: Literal["ready", "expired", "missing"]
     #: 按精确模型名保存的容量；未出现的模型按未知处理。
     model_limits: dict[str, ModelLimitOverride] = Field(default_factory=dict)
+    #: 服务商在模型列表里返回的容量；与作者手填的容量分开。
+    model_metadata: dict[str, ModelCapacity] = Field(default_factory=dict)
 
 
 class SelectionView(BaseModel):
@@ -118,8 +120,7 @@ class ConnectionRequest(BaseModel):
     auth_method: AuthMethod = "api_key"
     auth_provider: str = ""
     auth_session_id: str = ""
-    #: 按精确模型名提交的容量；省略表示沿用已保存的配置，传 ``{}`` 才是清空。
-    model_limits: dict[str, ModelLimitOverride] | None = None
+    model_config = ConfigDict(extra="forbid")
 
 
 class SelectionRequest(BaseModel):
@@ -144,6 +145,8 @@ class DiscoveryView(BaseModel):
     revision: str
     connection_id: str | None
     models: list[str]
+    #: 供应商在列表里明确给出的容量；只有名字的供应商这里是空映射。
+    limits: dict[str, ModelCapacity] = Field(default_factory=dict)
     complete: bool
     code: str | None
     message: str
@@ -240,6 +243,7 @@ def _config_view(view: ConfigView) -> ModelConfigView:
                 account=item.account,
                 auth_status=item.auth_status,  # type: ignore[arg-type]
                 model_limits=dict(item.model_limits),
+                model_metadata=dict(item.model_metadata),
             )
             for item in view.connections
         ],
@@ -277,9 +281,6 @@ def _draft_from_form(body: ConnectionRequest) -> ConnectionDraft:
         auth_method=body.auth_method,
         auth_provider=body.auth_provider,
         auth_session_id=body.auth_session_id,
-        model_limits=(
-            dict(body.model_limits) if body.model_limits is not None else None
-        ),
     )
 
 
@@ -331,6 +332,7 @@ def create_model_router(service: ModelConnectionService) -> APIRouter:
             revision=service.revision,
             connection_id=body.connection_id,
             models=list(result.models),
+            limits=dict(result.limits),
             complete=result.complete,
             code=result.code,
             message=result.message,
@@ -381,9 +383,7 @@ def create_model_router(service: ModelConnectionService) -> APIRouter:
         def list_auth_providers() -> list[AuthProviderView]:
             return [AuthProviderView(id=item.id, name=item.name) for item in auth.providers()]
 
-        @router.post(
-            "/model-auth/sessions", response_model=AuthSessionResponse, status_code=201
-        )
+        @router.post("/model-auth/sessions", response_model=AuthSessionResponse, status_code=201)
         async def start_auth_session(body: AuthSessionStartRequest) -> AuthSessionResponse:
             return _auth_session_view(await auth.create(body.provider_id))
 

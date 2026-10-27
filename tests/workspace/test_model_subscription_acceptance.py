@@ -26,7 +26,10 @@ from hastings.server.provider_config import (
     ServerConfig,
     load_server_config,
 )
-from hastings.server.provider_runtime import subscription_provider_config
+from hastings.server.provider_runtime import (
+    WORKER_CONNECT_RETRIES,
+    subscription_provider_config,
+)
 from tau_ai.openai_compatible import OpenAICompatibleProvider
 
 ACCESS = "access-token-live"
@@ -174,6 +177,18 @@ def _factory(transport: httpx.AsyncBaseTransport) -> Any:
     return build
 
 
+def _worker_factory(transport: httpx.AsyncBaseTransport) -> Any:
+    """写作轮配置：常规重试关闭，只保留连接级重试。"""
+
+    def build(profile: Any) -> OpenAICompatibleProvider:
+        config = subscription_provider_config(
+            profile, worker=True, max_retries=None, timeout_seconds=10.0, credential_resolver=None
+        )
+        return _TransportProvider(config, transport)
+
+    return build
+
+
 def _book(
     tmp_path: Path, *, credential: bool = True
 ) -> tuple[ProviderBook, InMemoryCredentialStore]:
@@ -220,6 +235,7 @@ def test_tool_call_round_trip_completes() -> None:
         assert request["body"]["stream"] is True
         assert "max_output_tokens" not in request["body"]
         assert any(tool.get("name") == PROBE_TOOL_NAME for tool in request["body"]["tools"])
+        assert all(tool["strict"] is False for tool in request["body"]["tools"])
     # 第二轮必须把工具结果带回去，否则「闭环」只是第一轮的重放。
     outputs = [
         item
@@ -266,6 +282,45 @@ def test_truncated_stream_is_failure_not_success() -> None:
 
     assert result.response == "failed"
     assert "没有正常结束" in result.message
+
+
+# -- 连接级重试 -------------------------------------------------------------
+
+
+class _ConnectFails:
+    """前几次连接就断开，之后正常回放；模拟代理握手失败。"""
+
+    def __init__(self, failures: int) -> None:
+        self._failures = failures
+        self.calls = 0
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.calls += 1
+        if self.calls <= self._failures:
+            raise httpx.ConnectError("连接被拒绝", request=request)
+        return httpx.Response(200, content=_sse(*_final_events("写完了。")))
+
+
+def test_worker_round_retries_connect_failure() -> None:
+    flaky = _ConnectFails(failures=1)
+
+    result = asyncio.run(
+        probe_response(_profile(), MODEL, factory=_worker_factory(httpx.MockTransport(flaky)))
+    )
+
+    assert result.response == "passed", result.message
+    assert flaky.calls == 2
+
+
+def test_worker_round_gives_up_after_connect_retries() -> None:
+    flaky = _ConnectFails(failures=10)
+
+    result = asyncio.run(
+        probe_response(_profile(), MODEL, factory=_worker_factory(httpx.MockTransport(flaky)))
+    )
+
+    assert result.response == "failed"
+    assert flaky.calls == WORKER_CONNECT_RETRIES + 1
 
 
 # -- 重启与退出 -------------------------------------------------------------

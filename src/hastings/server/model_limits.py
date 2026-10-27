@@ -3,14 +3,16 @@
 容量回答的是「这一轮最多能带多少输入」，它必须同时服务于两个地方：界面上的占比，
 和真正发出请求之前的预算检查。两处各算一套，就会出现「界面说还能写、请求被拒」。
 
-三条取舍：
+四条取舍：
 
-- **不猜窗口。** 模型发现列表只有名字，名称前缀相同也不代表容量相同。没有配置就是未知，
-  不填 128K 之类的默认值；未知时界面不显示百分比，自动整理停用。
-- **回复预预留对齐实际请求。** 写作用途的回复上限是运行时固定的 4096，容量配置里的
-  预留在未显式设置时就用它。显示 8K 而实际只允许 4K，会让占比看起来比真实情况宽松。
+- **不猜窗口。** 模型发现列表只有名字，名称前缀相同也不代表容量相同。服务商未返回且没有
+  目录条目时就是未知，不填 128K 之类的默认值；未知时界面不显示百分比，自动压缩停用。
+- **来源有优先级。** 服务商在模型列表里返回的有效容量 →
+  内置模型目录 → 未知。逐字段补齐：服务商未返回的字段可由目录补上。
+- **回复预留对齐实际请求。** 写作用途的回复上限是运行时固定的 4096，预算中的
+  回复预留与它保持一致。显示 8K 而实际只允许 4K，会让占比看起来比真实情况宽松。
 - **按精确模型名匹配。** 配置以模型名为键，`deepseek-chat` 的容量不会顺带给
-  `deepseek-chat-v2`。
+  `deepseek-chat-v2`；自定义中转也不套用原厂目录，因为中转可能改写窗口。
 
 ``revision`` 把容量事实压成一个短标识，供估算指纹使用：改容量即换指纹，旧估算失效。
 """
@@ -19,14 +21,16 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from hastings.server.model_catalog import catalog_capacity
 from hastings.server.provider_catalog import ProviderApi
 
 __all__ = [
     "WORKER_OUTPUT_TOKENS",
+    "ModelCapacity",
     "ModelLimitOverride",
     "ModelLimits",
     "resolve_model_limits",
@@ -47,6 +51,18 @@ _CAPACITY_FIELDS = (
 )
 
 
+def _validate_integer(value: object, info: Any) -> object:
+    if value is None:
+        return None
+    # ``True`` 在 Python 里等于 1，当成容量会算出毫无意义的预算。
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(_invalid(f"{info.field_name} 必须是整数"))
+    floor = 0 if info.field_name == "safety_tokens" else 1
+    if value < floor:
+        raise ValueError(_invalid(f"{info.field_name} 不能小于 {floor}"))
+    return value
+
+
 class ModelLimitOverride(BaseModel):
     """作者为某个精确模型填的容量；未填的项保持未知。"""
 
@@ -63,15 +79,7 @@ class ModelLimitOverride(BaseModel):
     @field_validator(*_CAPACITY_FIELDS, "safety_tokens", mode="before")
     @classmethod
     def _positive_integer(cls, value: object, info: Any) -> object:
-        if value is None:
-            return None
-        # ``True`` 在 Python 里等于 1，当成容量会算出毫无意义的预算。
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise ValueError(_invalid(f"{info.field_name} 必须是整数"))
-        floor = 0 if info.field_name == "safety_tokens" else 1
-        if value < floor:
-            raise ValueError(_invalid(f"{info.field_name} 不能小于 {floor}"))
-        return value
+        return _validate_integer(value, info)
 
     @model_validator(mode="after")
     def _reserve_within_output(self) -> ModelLimitOverride:
@@ -82,6 +90,25 @@ class ModelLimitOverride(BaseModel):
         ):
             raise ValueError(_invalid("回复预留超过模型的最大输出"))
         return self
+
+
+class ModelCapacity(BaseModel):
+    """供应商在模型列表里返回的有效容量。
+
+    只含三个上限，不含回复预留与安全余量：那两项是线簿的运行时策略，
+    不是供应商对模型的描述。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    context_window_tokens: int | None = None
+    max_input_tokens: int | None = None
+    max_output_tokens: int | None = None
+
+    @field_validator(*_CAPACITY_FIELDS[:3], mode="before")
+    @classmethod
+    def _positive_integer(cls, value: object, info: Any) -> object:
+        return _validate_integer(value, info)
 
 
 def _invalid(why: str) -> str:
@@ -101,7 +128,8 @@ class ModelLimits:
     #: 实际为本轮回复预留的空间；未知窗口时也给出运行时上限。
     output_reserve_tokens: int
     safety_tokens: int
-    source: Literal["override", "metadata", "unknown"]
+    #: 窗口数字的来源；界面在展开明细时显示它，避免把目录值当成作者填的。
+    source: Literal["override", "metadata", "catalog", "unknown"]
     revision: str
 
     def input_limit(self) -> int | None:
@@ -142,7 +170,9 @@ class _LimitProfile(Protocol):
 
     name: str
     api: ProviderApi
+    catalog_id: str
     model_limits: dict[str, ModelLimitOverride]
+    model_metadata: dict[str, ModelCapacity]
 
 
 def resolve_model_limits(
@@ -151,36 +181,39 @@ def resolve_model_limits(
     *,
     output_reserve_tokens: int = WORKER_OUTPUT_TOKENS,
 ) -> ModelLimits:
-    """按精确模型名解析容量；未配置即未知，不做名称推断。"""
-    override = profile.model_limits.get(model)
-    if override is None:
-        return _limits(
-            profile,
-            model,
-            context_window=None,
-            max_input=None,
-            max_output=None,
-            reserve=output_reserve_tokens,
-            safety=0,
-            source="unknown",
-        )
+    """按精确模型名解析容量；依次查服务商返回、内置目录；旧手工覆盖不再生效，都没有就是未知。"""
+    reported = profile.model_metadata.get(model)
+    builtin = catalog_capacity(profile.catalog_id, model)
 
-    window = override.context_window_tokens
-    reserve = override.output_reserve_tokens or output_reserve_tokens
-    safety = override.safety_tokens
-    if safety is None:
-        safety = min(_MAX_AUTO_SAFETY, window // _SAFETY_SHARE) if window else 0
+    def pick(field: str) -> tuple[int | None, Literal["override", "metadata", "catalog"] | None]:
+        for source, holder in (
+            ("metadata", reported),
+            ("catalog", builtin),
+        ):
+            value = getattr(holder, field, None) if holder is not None else None
+            if value is not None:
+                return cast(int, value), cast(Literal["override", "metadata", "catalog"], source)
+        return None, None
+
+    window, window_source = pick("context_window_tokens")
+    max_input, input_source = pick("max_input_tokens")
+    max_output, output_source = pick("max_output_tokens")
+    # 来源按窗口判定：界面上的占比以窗口为分母，它的出处比附属字段更能解释数字。
+    source = window_source or input_source or output_source or "unknown"
+
+    reserve = output_reserve_tokens
+    safety = min(_MAX_AUTO_SAFETY, window // _SAFETY_SHARE) if window else 0
     if window is not None and window - reserve - safety <= 0:
         raise ValueError(_invalid("回复预留与安全余量吃掉了整个窗口"))
     return _limits(
         profile,
         model,
         context_window=window,
-        max_input=override.max_input_tokens,
-        max_output=override.max_output_tokens,
+        max_input=max_input,
+        max_output=max_output,
         reserve=reserve,
         safety=safety,
-        source="override",
+        source=source,
     )
 
 
@@ -193,7 +226,7 @@ def _limits(
     max_output: int | None,
     reserve: int,
     safety: int,
-    source: Literal["override", "metadata", "unknown"],
+    source: Literal["override", "metadata", "catalog", "unknown"],
 ) -> ModelLimits:
     identity = "|".join(
         [

@@ -31,9 +31,7 @@ def _setup(tmp_path: Path) -> tuple[TestClient, ConversationStore, str, str]:
     assert opened.status_code == 200
     workspace_id = str(opened.json()["id"])
     store = ConversationStore(conversation_root(state_root, workspace_id))
-    accepted = store.create_with_first_turn(
-        text="写第一章", request_key="k1", turn_id="t1"
-    )
+    accepted = store.create_with_first_turn(text="写第一章", request_key="k1", turn_id="t1")
     # 补一条终态：否则第一次读取时服务会把「没有结束事件的轮次」按中断收尾，
     # 那是恢复逻辑的正常行为，和用量读取无关。
     store.append_batch(
@@ -123,9 +121,7 @@ def test_usage_adds_up_across_requests(tmp_path: Path) -> None:
 
 def test_partial_usage_keeps_known_total(tmp_path: Path) -> None:
     client, store, workspace_id, conversation_id = _setup(tmp_path)
-    _request(
-        store, conversation_id, operation="op1", usage={"input": 100, "output": 20}
-    )
+    _request(store, conversation_id, operation="op1", usage={"input": 100, "output": 20})
     _request(store, conversation_id, operation="op2", usage=None)
 
     usage = client.get(
@@ -152,9 +148,7 @@ def test_reading_usage_does_not_append_events(tmp_path: Path) -> None:
 def test_unknown_conversation_is_not_found(tmp_path: Path) -> None:
     client, _store, workspace_id, _conversation_id = _setup(tmp_path)
 
-    response = client.get(
-        f"/api/file-workspaces/{workspace_id}/conversations/c-missing/usage"
-    )
+    response = client.get(f"/api/file-workspaces/{workspace_id}/conversations/c-missing/usage")
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "CONVERSATION_NOT_FOUND"
@@ -164,12 +158,16 @@ def test_usage_reports_context_state(tmp_path: Path) -> None:
     """新会话的上下文是待计算；有请求后给出估算与容量。"""
     client, store, workspace_id, conversation_id = _setup(tmp_path)
 
-    pending = client.get(
+    payload = client.get(
         f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/usage"
-    ).json()["context"]
+    ).json()
+    pending = payload["context"]
     assert pending["status"] == "pending"
     assert pending["estimated_active_tokens"] is None
     assert pending["budget"] == "unknown"
+    assert pending["capacity_source"] == "unknown"
+    # 自动整理策略随视图返回，界面据此说明「什么时候需要整理」。
+    assert payload["policy"] == {"auto_compaction": True, "threshold": 0.9}
 
     store.append_batch(
         conversation_id,
@@ -192,6 +190,8 @@ def test_usage_reports_context_state(tmp_path: Path) -> None:
                     "context_window_tokens": 64_000,
                     "input_limit_tokens": 56_000,
                     "output_reserve_tokens": 4096,
+                    "safety_tokens": 2048,
+                    "capacity_source": "catalog",
                     "limits_revision": "r1",
                 },
             },
@@ -214,6 +214,8 @@ def test_usage_reports_context_state(tmp_path: Path) -> None:
     assert ready["estimated_active_tokens"] == 5000
     assert ready["last_request_input_tokens"] == 5200
     assert ready["context_window_tokens"] == 64_000
+    assert ready["safety_tokens"] == 2048
+    assert ready["capacity_source"] == "catalog"
     assert ready["budget"] == "ok"
     assert ready["limits_revision"] == "r1"
     assert ready["instructions_tokens"] == 1000

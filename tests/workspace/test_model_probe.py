@@ -69,8 +69,69 @@ def test_openai_style_discovery_reads_ids_with_bearer_auth() -> None:
     assert result.models == ["m1", "m2"]
     assert result.complete is True
     assert result.code is None
+    assert result.limits == {}
     assert str(calls[0].url) == "https://api.example.test/v1/models"
     assert calls[0].headers["authorization"] == "Bearer sk-test"
+
+
+def test_openai_style_discovery_reads_reported_capacity() -> None:
+    """网关给出窗口与输出上限时一并带回；转发商更小的窗口优先。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "m1",
+                        "context_length": 128_000,
+                        "top_provider": {
+                            "context_length": 64_000,
+                            "max_completion_tokens": 8_192,
+                        },
+                    }
+                ]
+            },
+        )
+
+    result = _run(
+        discover_models(_profile(), discovery="openai-models", transport=_transport(handler, []))
+    )
+
+    capacity = result.limits["m1"]
+    assert capacity.context_window_tokens == 64_000
+    assert capacity.max_output_tokens == 8_192
+
+
+def test_google_discovery_reads_input_and_output_limits() -> None:
+    """Google 分别公布输入与输出上限；窗口取两者之和，输入上限单独保留。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {
+                        "name": "models/gemini-a",
+                        "inputTokenLimit": 1_048_576,
+                        "outputTokenLimit": 65_536,
+                    }
+                ]
+            },
+        )
+
+    result = _run(
+        discover_models(
+            _profile("google-generative-ai"),
+            discovery="google-models",
+            transport=_transport(handler, []),
+        )
+    )
+
+    capacity = result.limits["gemini-a"]
+    assert capacity.context_window_tokens == 1_114_112
+    assert capacity.max_input_tokens == 1_048_576
+    assert capacity.max_output_tokens == 65_536
 
 
 def test_anthropic_discovery_paginates_with_last_id() -> None:

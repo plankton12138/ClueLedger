@@ -129,6 +129,21 @@ class _FailingServer:
         return httpx.Response(self.status, json={"error": "invalid_grant"})
 
 
+class _FlakyServer:
+    """替身令牌端点：前几次连接失败，之后交给正常端点。"""
+
+    def __init__(self, failures: int = 1) -> None:
+        self.failures = failures
+        self.calls = 0
+        self.inner = _TokenServer()
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise httpx.ConnectError("连接被拒绝", request=request)
+        return self.inner(request)
+
+
 def _b64(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
@@ -383,6 +398,36 @@ def test_refresh_error_is_reported(tmp_path: Path) -> None:
         asyncio.run(provider.refresh(_stored_credential()))
 
     assert "400" in str(caught.value)
+
+
+def test_refresh_retries_after_connection_failure(tmp_path: Path, monkeypatch: Any) -> None:
+    # 代理握手失败是间歇性的；连接没建立时服务端没收到请求，重发不会多花刷新令牌。
+    monkeypatch.setattr(
+        "hastings.server.model_auth_chatgpt.TOKEN_CONNECT_RETRY_DELAYS", (0.0, 0.0)
+    )
+    server = _FlakyServer(failures=1)
+    provider, _listener, _identity = _provider(tmp_path, server)
+
+    refreshed = asyncio.run(provider.refresh(_stored_credential()))
+
+    assert server.calls == 2
+    assert refreshed.refresh_token == "refresh-token-2"
+
+
+def test_refresh_reports_attempts_when_connection_never_opens(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(
+        "hastings.server.model_auth_chatgpt.TOKEN_CONNECT_RETRY_DELAYS", (0.0, 0.0)
+    )
+    server = _FlakyServer(failures=10)
+    provider, _listener, _identity = _provider(tmp_path, server)
+
+    with pytest.raises(RuntimeError) as caught:
+        asyncio.run(provider.refresh(_stored_credential()))
+
+    assert server.calls == 3
+    assert "已尝试 3 次" in str(caught.value)
 
 
 def test_credential_repr_never_carries_tokens(tmp_path: Path) -> None:

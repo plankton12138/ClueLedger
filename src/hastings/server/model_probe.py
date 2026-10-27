@@ -24,6 +24,7 @@ from typing import Literal
 
 import httpx
 
+from hastings.server.model_limits import ModelCapacity
 from hastings.server.provider_runtime import (
     ManagedModelProvider,
     ProfileLike,
@@ -70,9 +71,14 @@ PROBE_TOOL_VALUE = "pong"
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryResult:
-    """一次模型发现的结果；``complete`` 为假表示分页没走完或结果被截断。"""
+    """一次模型发现的结果；``complete`` 为假表示分页没走完或结果被截断。
+
+    ``limits`` 是供应商在列表里明确给出的容量（例如 OpenRouter 的 context_length、
+    Google 的 inputTokenLimit）。列表只有名字时不编造容量，这一项就是空的。
+    """
 
     models: list[str] = field(default_factory=list)
+    limits: dict[str, ModelCapacity] = field(default_factory=dict)
     complete: bool = True
     code: str | None = None
     message: str = ""
@@ -168,19 +174,28 @@ async def discover_models(
         return DiscoveryResult(models=[], complete=False, code=code, message=message)
 
 
+@dataclass(frozen=True, slots=True)
+class _Entries:
+    """一次响应里的模型条目：ID 与供应商给出的容量分开收集。"""
+
+    models: list[str]
+    limits: dict[str, ModelCapacity]
+
+
 async def _discover_openai(client: httpx.AsyncClient, base: str, key: str) -> DiscoveryResult:
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     return await _paged(
         client,
         url=f"{base}/models",
         headers=headers,
-        extract=lambda payload: _ids_from_data(payload),
+        extract=lambda payload: _entries_from_data(payload),
     )
 
 
 async def _discover_anthropic(client: httpx.AsyncClient, base: str, key: str) -> DiscoveryResult:
     headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
     models: list[str] = []
+    limits: dict[str, ModelCapacity] = {}
     after: str | None = None
     complete = True
     for _ in range(MAX_PAGES):
@@ -191,24 +206,27 @@ async def _discover_anthropic(client: httpx.AsyncClient, base: str, key: str) ->
             response = await client.get(f"{base}/models", headers=headers, params=params)
         except Exception as exc:
             code, message = _transport_failure(exc, action="获取模型列表")
-            return DiscoveryResult(models=models, complete=False, code=code, message=message)
+            return _finish(models, limits, complete=False, code=code, message=message)
         if response.status_code >= 400:
             code, message = _http_failure(response.status_code, action="获取模型列表")
-            return DiscoveryResult(models=models, complete=False, code=code, message=message)
+            return _finish(models, limits, complete=False, code=code, message=message)
         payload = _json(response)
-        models.extend(_ids_from_data(payload))
+        entries = _entries_from_data(payload)
+        models.extend(entries.models)
+        limits.update(entries.limits)
         if not payload.get("has_more"):
-            return DiscoveryResult(models=_dedupe(models), complete=complete)
+            return _finish(models, limits, complete=complete)
         last_id = payload.get("last_id")
         after = last_id if isinstance(last_id, str) and last_id else ""
         if not after:
             complete = False
             break
-    return DiscoveryResult(models=_dedupe(models), complete=False)
+    return _finish(models, limits, complete=False)
 
 
 async def _discover_google(client: httpx.AsyncClient, base: str, key: str) -> DiscoveryResult:
     models: list[str] = []
+    limits: dict[str, ModelCapacity] = {}
     token: str | None = None
     for _ in range(MAX_PAGES):
         params: dict[str, str | int] = {"key": key, "pageSize": PAGE_SIZE}
@@ -218,24 +236,21 @@ async def _discover_google(client: httpx.AsyncClient, base: str, key: str) -> Di
             response = await client.get(f"{base}/models", params=params)
         except Exception as exc:
             code, message = _transport_failure(exc, action="获取模型列表")
-            return DiscoveryResult(models=models, complete=False, code=code, message=message)
+            return _finish(models, limits, complete=False, code=code, message=message)
         if response.status_code >= 400:
             code, message = _http_failure(response.status_code, action="获取模型列表")
-            return DiscoveryResult(models=models, complete=False, code=code, message=message)
+            return _finish(models, limits, complete=False, code=code, message=message)
         payload = _json(response)
         raw = payload.get("models")
         if isinstance(raw, list):
-            for item in raw:
-                if isinstance(item, dict):
-                    name = item.get("name")
-                    if isinstance(name, str) and name:
-                        # Google 用 models/<id> 作资源名；调用时只认 <id>。
-                        models.append(name.removeprefix("models/"))
+            entries = _google_entries(raw)
+            models.extend(entries.models)
+            limits.update(entries.limits)
         next_token = payload.get("nextPageToken")
         token = next_token if isinstance(next_token, str) and next_token else None
         if not token:
-            return DiscoveryResult(models=_dedupe(models), complete=True)
-    return DiscoveryResult(models=_dedupe(models), complete=False)
+            return _finish(models, limits, complete=True)
+    return _finish(models, limits, complete=False)
 
 
 async def _paged(
@@ -243,7 +258,7 @@ async def _paged(
     *,
     url: str,
     headers: Mapping[str, str],
-    extract: Callable[[dict[str, object]], list[str]],
+    extract: Callable[[dict[str, object]], _Entries],
 ) -> DiscoveryResult:
     try:
         response = await client.get(url, headers=headers)
@@ -253,7 +268,28 @@ async def _paged(
     if response.status_code >= 400:
         code, message = _http_failure(response.status_code, action="获取模型列表")
         return DiscoveryResult(models=[], code=code, message=message)
-    return DiscoveryResult(models=_dedupe(extract(_json(response))), complete=True)
+    entries = extract(_json(response))
+    return _finish(entries.models, entries.limits, complete=True)
+
+
+def _finish(
+    models: list[str],
+    limits: dict[str, ModelCapacity],
+    *,
+    complete: bool = True,
+    code: str | None = None,
+    message: str = "",
+) -> DiscoveryResult:
+    """去重后返回；没出现在列表里的容量条目一并丢掉，避免留下孤立事实。"""
+    unique = _dedupe(models)
+    kept = set(unique)
+    return DiscoveryResult(
+        models=unique,
+        limits={model: capacity for model, capacity in limits.items() if model in kept},
+        complete=complete,
+        code=code,
+        message=message,
+    )
 
 
 def _json(response: httpx.Response) -> dict[str, object]:
@@ -261,8 +297,8 @@ def _json(response: httpx.Response) -> dict[str, object]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _ids_from_data(payload: dict[str, object]) -> list[str]:
-    """取模型 ID。
+def _entries_from_data(payload: dict[str, object]) -> _Entries:
+    """取模型 ID 与供应商给出的容量。
 
     两种形状都要认，且字段名不同：
 
@@ -274,28 +310,117 @@ def _ids_from_data(payload: dict[str, object]) -> list[str]:
     """
     raw = payload.get("data")
     if isinstance(raw, list):
-        return _collect_ids(raw, key="id", visible_only=False)
+        return _collect_entries(raw, key="id", visible_only=False)
     raw = payload.get("models")
     if isinstance(raw, list):
-        return _collect_ids(raw, key="slug", visible_only=True)
-    return []
+        return _collect_entries(raw, key="slug", visible_only=True)
+    return _Entries(models=[], limits={})
 
 
-def _collect_ids(raw: list[object], *, key: str, visible_only: bool) -> list[str]:
-    ids: list[str] = []
+def _collect_entries(raw: list[object], *, key: str, visible_only: bool) -> _Entries:
+    models: list[str] = []
+    limits: dict[str, ModelCapacity] = {}
     for item in raw:
         if isinstance(item, str):
             # Google 风格的名字带 ``models/`` 前缀；其它来源是裸 ID。
-            ids.append(item.split("/")[-1] if item else "")
+            models.append(item.split("/")[-1] if item else "")
             continue
         if not isinstance(item, dict):
             continue
         if visible_only and item.get("visibility") not in (None, "list"):
             continue
         value = item.get(key) or item.get("id") or item.get("name")
-        if isinstance(value, str) and value:
-            ids.append(value.split("/")[-1] if "/" in value else value)
-    return ids
+        if not isinstance(value, str) or not value:
+            continue
+        model = value.split("/")[-1] if "/" in value else value
+        models.append(model)
+        capacity = _reported_capacity(item)
+        if capacity is not None:
+            limits[model] = capacity
+    return _Entries(models=models, limits=limits)
+
+
+def _google_entries(raw: list[object]) -> _Entries:
+    models: list[str] = []
+    limits: dict[str, ModelCapacity] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        # Google 用 models/<id> 作资源名；调用时只认 <id>。
+        model = name.removeprefix("models/")
+        models.append(model)
+        input_limit = _positive_int(item.get("inputTokenLimit"))
+        output_limit = _positive_int(item.get("outputTokenLimit"))
+        if input_limit is None and output_limit is None:
+            continue
+        # Google 分别公布输入与输出上限；两者相加才是这个模型的完整窗口。
+        window = input_limit + output_limit if input_limit and output_limit else input_limit
+        limits[model] = ModelCapacity(
+            context_window_tokens=window,
+            max_input_tokens=input_limit,
+            max_output_tokens=output_limit,
+        )
+    return _Entries(models=models, limits=limits)
+
+
+def _reported_capacity(item: Mapping[str, object]) -> ModelCapacity | None:
+    """从一条模型记录里读供应商声明的容量；只有名字时返回 ``None``。
+
+    常见两类形状：
+
+    - OpenRouter 一类网关：顶层 ``context_length``，``top_provider`` 里给出
+      实际转发商的 ``context_length`` 与 ``max_completion_tokens``。
+    - 少数兼容接口：顶层 ``max_input_tokens`` / ``max_output_tokens``。
+
+    只读取明确的字段，不根据模型名推断。
+    """
+    top = item.get("top_provider")
+    top_window = top.get("context_length") if isinstance(top, Mapping) else None
+    top_output = top.get("max_completion_tokens") if isinstance(top, Mapping) else None
+    # 网关同时给出模型与转发商的窗口时取更小的那个：路由到较小窗口的供应商也装得下。
+    window = _smaller(
+        _positive_int(item.get("context_length")),
+        _positive_int(item.get("context_window")),
+        _positive_int(top_window),
+    )
+    output = _smaller(
+        _positive_int(item.get("max_completion_tokens")),
+        _positive_int(item.get("max_output_tokens")),
+        _positive_int(top_output),
+    )
+    input_limit = _positive_int(item.get("max_input_tokens"))
+    if window is None and input_limit is None and output is None:
+        return None
+    return ModelCapacity(
+        context_window_tokens=window,
+        max_input_tokens=input_limit,
+        max_output_tokens=output,
+    )
+
+
+def _smaller(*values: int | None) -> int | None:
+    known = [value for value in values if value is not None]
+    return min(known) if known else None
+
+
+def _positive_int(value: object) -> int | None:
+    """只接受正整数；布尔、字符串与 0 都按未知处理。"""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            unique.append(value)
+    return unique
 
 
 def _bearer(profile: ProfileLike) -> str:
@@ -307,16 +432,6 @@ def _bearer(profile: ProfileLike) -> str:
         credential = getattr(profile, "subscription", None)
         return credential.access_token if credential is not None else ""
     return profile.resolved_api_key()
-
-
-def _dedupe(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    unique: list[str] = []
-    for value in values:
-        if value not in seen:
-            seen.add(value)
-            unique.append(value)
-    return unique
 
 
 # -- 连接测试 ---------------------------------------------------------------

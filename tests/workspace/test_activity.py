@@ -631,7 +631,7 @@ def test_every_writing_tool_has_a_readable_verb(tmp_path: Path) -> None:
 
 
 def _limits(window: int | None):
-    from hastings.server.model_limits import ModelLimitOverride, resolve_model_limits
+    from hastings.server.model_limits import ModelCapacity, resolve_model_limits
     from hastings.server.provider_config import ProviderProfile
 
     profile = ProviderProfile(
@@ -639,8 +639,8 @@ def _limits(window: int | None):
         base_url="https://api.deepseek.com",
         api="openai-completions",
         default_model="deepseek-chat",
-        model_limits=(
-            {"deepseek-chat": ModelLimitOverride(context_window_tokens=window)} if window else {}
+        model_metadata=(
+            {"deepseek-chat": ModelCapacity(context_window_tokens=window)} if window else {}
         ),
     )
     return resolve_model_limits(profile, "deepseek-chat")

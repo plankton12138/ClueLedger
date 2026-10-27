@@ -1,849 +1,470 @@
 # 1.0 分模块实现示例
 
-日期：2026-10-26。状态：**设计示例，尚未接入生产**。
+日期：2026-10-27。状态：**评审用示例，未接入业务**。
+对应职责见[开发计划](development-plan.md)，完整数据和接口以[数据契约](data-and-recovery.md)、[接口契约](api-and-frontend.md)为准。
+以下重点展示容易出错的边界；HTTP装配、完整记录校验、跨进程锁工厂和实际模型调用在实施阶段接入。
+Python段落按本页顺序共享类型；前端段落分别为独立模块。示例检查不代替生产验收。
 
-目的在于把模块边界和失败处理具体化。标注 Protocol 的依赖需在生产中用真实文件、Git、记录库和
-provider 适配；示例不能替代[数据契约](data-and-recovery.md)、[接口](api-and-frontend.md)或正式验收。
-Python 示例分别检查语法，纯逻辑块另做独立验证；TypeScript 块按各自作用域检查。
-本文不包含生产迁移和所有平台处理，不宣称可直接复制后发布。
+## 1. 领域：观察、来源与引用
 
-## 1. 编辑与结果类型
-
-完整字节指纹用于并发，规范化文本用于展示，不能混用两者。
+身份不能随名称变化，人物表述不能直接变成作者真相。位置使用服务端全文码点，保留证据章号。
 
 ```python
+# example: clue_models.py
 from __future__ import annotations
-
 from dataclasses import dataclass
-from hashlib import sha256
 from typing import Literal
 
-FileState = Literal["saved", "no_change", "not_saved"]
-RecordingState = Literal["committed", "no_change", "unrecorded"]
-
-
 @dataclass(frozen=True)
-class TextSnapshot:
-    raw: bytes
-    text: str
+class Anchor:
+    evidence_id: str
+    path: str
     digest: str
-
-    @classmethod
-    def read(cls, raw: bytes) -> TextSnapshot:
-        text = raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
-        return cls(raw=raw, text=text, digest=sha256(raw).hexdigest())
-
-
-@dataclass(frozen=True)
-class SaveCommand:
-    session_id: str
-    base_id: str
-    expected_digest: str
-    text: str
-    client_sequence: int
-    request_key: str
-
-
-@dataclass(frozen=True)
-class SaveResult:
-    edit_id: str
-    file_status: FileState
-    recording_status: RecordingState
-    digest: str | None
-    commit: str | None
-    recovery: Literal["not_needed", "required"]
-```
-
-生产输入仍复用 Workspace 的 NUL、路径、编码、元信息与大小校验。
-来源由具体服务写入，SaveCommand 不接收 human/actor 之类可提升来源的客户端字段。
-
-## 2. 原子写入占用
-
-这里的锁只保护登记操作，持续占用通过 owner 表表达；不会一直持 threading 锁等待模型。
-所有写入口共用同一实例，不再各自先 is_busy 再 mark。
-
-```python
-from contextlib import contextmanager
-from pathlib import Path
-from threading import RLock
-from collections.abc import Iterator
-
-
-class Busy(RuntimeError):
-    pass
-
-
-class WriteCoordinator:
-    def __init__(self) -> None:
-        self._guard = RLock()
-        self._owners: dict[str, str] = {}
-
-    @staticmethod
-    def key(root: Path) -> str:
-        return str(root.resolve())
-
-    def claim(self, root: Path, owner: str) -> None:
-        key = self.key(root)
-        with self._guard:
-            if key in self._owners:
-                raise Busy("WORKSPACE_BUSY_CONFLICT")
-            self._owners[key] = owner
-
-    def release(self, root: Path, owner: str) -> None:
-        key = self.key(root)
-        with self._guard:
-            if self._owners.get(key) == owner:
-                del self._owners[key]
-
-    def require_owner(self, root: Path, owner: str) -> None:
-        with self._guard:
-            if self._owners.get(self.key(root)) != owner:
-                raise Busy("WORKSPACE_OWNER_CONFLICT")
-
-    @contextmanager
-    def reserve(self, root: Path, owner: str) -> Iterator[None]:
-        self.claim(root, owner)
-        try:
-            yield
-        finally:
-            self.release(root, owner)
-```
-
-前台轮次受理成功后保留 owner 至 finally 收尾；受理失败释放。
-轮内工具使用 require_owner，不重复 claim；人工保存使用 reserve 包裹保存阶段。
-跨进程和外部工具仍需指纹/HEAD 核对，不能由此声称全部互斥。
-改名/删除另用生命周期 generation 封住后台发布，不能只调用 is_busy。
-
-## 3. 短事务与决策幂等
-
-网络请求和 Git 操作都不放入数据库事务。下面 once 只用于同事务可完成的作者决策，
-文件保存要用下一节的阶段意图，不能用 once 包住所有外部副作用。
-
-```python
-from __future__ import annotations
-
-import json
-import sqlite3
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from hashlib import sha256
-from pathlib import Path
-
-
-@contextmanager
-def transaction(path: Path) -> Iterator[sqlite3.Connection]:
-    con = sqlite3.connect(path, timeout=1.5, isolation_level=None)
-    con.row_factory = sqlite3.Row
-    try:
-        con.execute("PRAGMA foreign_keys=ON")
-        con.execute("PRAGMA synchronous=FULL")
-        con.execute("BEGIN IMMEDIATE")
-        yield con
-        con.commit()
-    except BaseException:
-        con.rollback()
-        raise
-    finally:
-        con.close()
-
-
-def payload_hash(payload: dict[str, object]) -> str:
-    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    return sha256(raw.encode("utf-8")).hexdigest()
-
-
-def once(
-    con: sqlite3.Connection,
-    key: str,
-    payload: dict[str, object],
-    apply: Callable[[], dict[str, object]],
-) -> dict[str, object]:
-    digest = payload_hash(payload)
-    old = con.execute(
-        "SELECT payload_hash, receipt_json FROM decisions WHERE request_key=?",
-        (key,),
-    ).fetchone()
-    if old:
-        if old["payload_hash"] != digest:
-            raise ValueError("REQUEST_KEY_CONFLICT")
-        return json.loads(old["receipt_json"])
-    receipt = apply()
-    # receipt 只保存决策 ID、规则 ID、版本和提交时状态，不缓存可被忘记的规则正文。
-    con.execute(
-        "INSERT INTO decisions VALUES(?, ?, ?)",
-        (key, digest, json.dumps(receipt, ensure_ascii=False)),
-    )
-    return receipt
-```
-
-表 DDL、格式迁移和 journal_mode 在显式初始化中执行；GET 不通过 connect 创建空库。
-SQLite 的事务和备份行为以 [Python 3.12 文档](https://docs.python.org/3.12/library/sqlite3.html)核对，
-实现时不混用默认隐式事务与显式 BEGIN。
-
-## 4. 文件保存编排
-
-下例定义必要适配边界，展示「同键不再次写入」「意图先于文件」「写后异常返回实际状态」。
-生产 journal 必须在 prepared 阶段保存完整快照和预期 HEAD，reconcile 不产生外部写入。
-
-```python
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Protocol
-
-
-@dataclass(frozen=True)
-class Command:
-    key: str
-    payload_hash: str
-    base_digest: str
-    text: str
-
-
-@dataclass(frozen=True)
-class Result:
-    edit_id: str
-    file: str
-    recording: str
-    recovery: str
-
-
-class Journal(Protocol):
-    def lookup(self, key: str, payload_hash: str) -> str | None: ...
-    def prepare(self, command: Command, before: bytes, head: str | None) -> str: ...
-    def file_written(self, edit_id: str, digest: str) -> None: ...
-    def finish(self, edit_id: str, commit: str | None) -> Result: ...
-    def reconcile(self, edit_id: str) -> Result: ...
-
-
-class Files(Protocol):
-    def read_raw(self) -> tuple[bytes, str]: ...
-    def write_cas(self, text: str, expected_digest: str) -> str: ...
-
-
-class Versions(Protocol):
-    def prepare_baseline(self) -> str | None: ...
-    def record_verified(self, edit_id: str, expected_head: str | None) -> str | None: ...
-
-
-def save_under_claim(
-    command: Command, journal: Journal, files: Files, versions: Versions
-) -> Result:
-    previous = journal.lookup(command.key, command.payload_hash)
-    if previous is not None:
-        return journal.reconcile(previous)  # 包含已完成重放，不重写或再次提交
-    raw, current_digest = files.read_raw()
-    if current_digest != command.base_digest:
-        raise ValueError("FILE_STALE_CONFLICT")
-    # adapter 单独标记未知改动；Git 不可用允许 head=None 并留下原因。
-    head = versions.prepare_baseline()
-    raw_after_baseline, digest_after_baseline = files.read_raw()
-    if digest_after_baseline != current_digest or raw_after_baseline != raw:
-        raise ValueError("FILE_STALE_CONFLICT")
-    edit_id = journal.prepare(command, raw, head)
-    try:
-        digest = files.write_cas(command.text, current_digest)
-        journal.file_written(edit_id, digest)
-        commit = versions.record_verified(edit_id, head)
-        return journal.finish(edit_id, commit)
-    except Exception:
-        # 文件或 Git 可能已经改变，由原文、快照、提交核对实际结果。
-        # 即使这里状态库不可写，reconcile 也需返回可验证结果和 recovery=required。
-        return journal.reconcile(edit_id)
-```
-
-adapter 不得将所有 Git 错误都当可提交；暂存区/外部 HEAD 竞争保持未记录。
-write_cas 复用 Workspace.write，但外部软件不受本锁控制，写前/写后检查不能消除所有竞争窗口。
-服务器异常中断后的恢复走同一个 reconcile，不调用 save_under_claim 重做。
-无变化快速路径在生产入口中先完成，不在本片段重复。
-
-## 5. 段落对齐和字符差异
-
-精细差异有界，保留 Unicode code point 坐标。下面是核心对齐示例；
-生产还需基于唯一删除/插入段匹配移动，保留重复段消歧、拆并关系及 coarse 状态。
-
-```python
-from dataclasses import dataclass
-from difflib import SequenceMatcher
-import re
-
-
-@dataclass(frozen=True)
-class Paragraph:
+    chapter: int
     start: int
     end: int
+    quote: str
+
+@dataclass(frozen=True)
+class Observation:
+    observation_id: str
+    clue_id: str
+    kind: Literal["plant", "mention", "advance", "resolve"]
+    mode: Literal["narration", "testimony", "recollection", "hypothesis", "dream", "unknown"]
     text: str
-
-
-def paragraphs(text: str) -> list[Paragraph]:
-    return [
-        Paragraph(m.start(), m.end(), m.group())
-        for m in re.finditer(r"\S.*?(?=\n[ \t]*\n|\Z)", text, flags=re.S)
-    ]
-
-
-def align(before: str, after: str) -> list[dict[str, object]]:
-    left, right = paragraphs(before), paragraphs(after)
-    if len(left) + len(right) > 2000:
-        return [{"kind": "coarse", "before": before, "after": after}]
-    matcher = SequenceMatcher(None, [p.text for p in left], [p.text for p in right],
-                              autojunk=False)
-    return [
-        {"kind": tag, "before": left[i:j], "after": right[k:l]}
-        for tag, i, j, k, l in matcher.get_opcodes()
-        if tag != "equal"
-    ]
-
-
-def inline(before: str, after: str) -> list[tuple[str, str, str]]:
-    if max(len(before), len(after)) > 4000:
-        return [("coarse", before, after)]
-    return [
-        (tag, before[i:j], after[k:l])
-        for tag, i, j, k, l in SequenceMatcher(
-            None, before, after, autojunk=False
-        ).get_opcodes()
-    ]
-```
-
-SequenceMatcher 的最坏开销仍需在 D1 量测，生产增加全文字符预算和总耗时预算，
-不能把每段各未超限当作整章总成本可接受。差异异步生成，不阻塞文件保存。
-
-## 6. 同处修改的证据沿革
-
-组的身份来自文档和对齐沿革，不能仅用相同句子 hash；无法确定关联时先需核对。
-
-```python
-from dataclasses import dataclass, replace
-from typing import Literal
-
+    anchor: Anchor
 
 @dataclass(frozen=True)
-class EvidenceGroup:
-    group_id: str
-    baseline_hash: str
-    latest_hash: str
-    status: Literal["valid", "no_net_change", "needs_review"]
-    independent_support: int
-
-
-def advance(group: EvidenceGroup, before_hash: str, after_hash: str) -> EvidenceGroup:
-    if before_hash != group.latest_hash:
-        return replace(group, status="needs_review", independent_support=0)
-    changed = after_hash != group.baseline_hash
-    return replace(
-        group,
-        latest_hash=after_hash,
-        status="valid" if changed else "no_net_change",
-        independent_support=int(changed),
-    )
+class ClueReference:
+    workspace_lineage: str
+    clue_id: str
+    clue_revision: str
+    browse_as_of_chapter: int
+    inference_id: str | None = None
+    inference_revision: str | None = None
+    report_id: str | None = None
 ```
 
-三次保存仍至多一组独立支持，改回起点为零；外部或模型变化不能借这段函数变成人工来源。
-归并任务只分析组的当前净变化，不能让中间候选继续贡献额外支持。
+## 2. 旧记录身份迁移
 
-## 7. 只读分析输出与证据核对
-
-分类和规则分开，模型不能返回 active 状态。程序核对引文，作者与在线评测判断理解是否成立。
+仅迁移旧版本已按文字归为同组的记录。新建线索绝不调用这个按文字归组的兼容函数。
+本函数只构建候选；完整迁移还需复制并核对覆盖、保留备份，最终与本次操作一次提交。
 
 ```python
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Literal
+# example: clue_migration.py
+from copy import deepcopy
+from hashlib import sha1
+from collections.abc import Callable, Mapping, Sequence
 
-
-class Citation(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    source_id: str
-    start: int = Field(ge=0)
-    end: int = Field(ge=0)
-    quote: str = Field(min_length=1)
-
-
-class Candidate(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    rule: str = Field(min_length=1, max_length=220)
-    conditions: list[str] = Field(max_length=5)
-    exceptions: list[str] = Field(max_length=5)
-    citations: list[Citation] = Field(min_length=1, max_length=8)
-
-
-class Analysis(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    classification: Literal["expression", "correction", "plot", "format", "uncertain"]
-    candidates: list[Candidate] = Field(max_length=3)
-    insufficient_context: bool = False
-
-
-def validate_analysis(raw: str, sources: dict[str, str]) -> Analysis:
-    output = Analysis.model_validate_json(raw)
-    if output.classification != "expression" and output.candidates:
-        raise ValueError("NON_STYLE_CANDIDATE")
-    for candidate in output.candidates:
-        for cite in candidate.citations:
-            source = sources.get(cite.source_id)
-            if source is None or not 0 <= cite.start < cite.end <= len(source):
-                raise ValueError("EVIDENCE_RANGE_INVALID")
-            if source[cite.start:cite.end] != cite.quote:
-                raise ValueError("EVIDENCE_QUOTE_INVALID")
-    return output
+def migrate_legacy_identity(
+    rows: Sequence[Mapping[str, object]],
+    create_id: Callable[[], str],
+) -> tuple[dict[str, dict[str, object]], list[dict[str, object]], dict[str, str]]:
+    clues: dict[str, dict[str, object]] = {}
+    contributions: list[dict[str, object]] = []
+    aliases: dict[str, str] = {}
+    by_old_key: dict[str, str] = {}
+    for raw in rows:
+        key = str(raw.get("clue", "")).strip()
+        if not key:
+            raise ValueError("旧线索缺少描述，迁移不能跳过后覆盖原文件")
+        if key not in by_old_key:
+            clue_id = create_id()
+            if clue_id in clues:
+                raise ValueError("线索身份生成器返回重复标识")
+            by_old_key[key] = clue_id
+            clues[clue_id] = {"clue_id": clue_id, "title": key, "identity": "legacy_unverified"}
+            aliases[sha1(("clues\x1f" + key).encode("utf-8")).hexdigest()[:16]] = clue_id
+        contribution = deepcopy(dict(raw))
+        contribution["clue_id"] = by_old_key[key]
+        contributions.append(contribution)
+    return clues, contributions, aliases
 ```
 
-生产按片段分别分类；一个批次可同时包含事实和表达修改，只把后者的引用交给候选。
-sources 必须来自冻结包的精确版本和可用区间，不能用当前磁盘内容替代。
-人物范围由已知引用和作者决策确定，不让模型提供任意跨作品 ID。
+外层用标准UUID生成 clue_id，校验原记录证据与版本；ValueError 转为统一迁移错误。
+不将无法解释的旧条目静默丢弃，不因格式迁移调用模型补真相。
 
-## 8. 可取消的后台执行
+## 3. 来源定位：指纹、换行与区间
 
-下面展示领取与发布边界。实际 dispatcher 负责前台优先与事件取消；
-analyze 适配器复用 RecordedProvider、固定模型和真实 request_id，内部不持数据库事务。
+evidence_id 必须先从本作品已登记记录解析出 Anchor；本函数不接受客户端给的任意路径读取文件。
+过期引文允许阅读，但不返回可供高亮的旧坐标。
 
 ```python
-from __future__ import annotations
-
-import asyncio
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from typing import Protocol
-
+# example: source_locations.py
+from hashlib import sha256
+from hastings.workspace.errors import WorkspaceError
 
 @dataclass(frozen=True)
-class Lease:
-    job_id: str
-    fence: int
-    source_epoch: int
-    generation: int
+class Location:
+    freshness: Literal["valid", "stale"]
+    quote: str
+    start: int | None
+    end: int | None
 
+def normalized_text(raw: bytes) -> str:
+    return raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
 
-class JobStore(Protocol):
-    def claim(self) -> Lease | None: ...
-    def defer(self, lease: Lease, reason: str) -> None: ...
-    def was_sent(self, lease: Lease) -> bool: ...
-    def publish_if_current(self, lease: Lease, value: dict[str, object]) -> bool: ...
-    def interrupt(self, lease: Lease, sent: bool) -> None: ...
-    def fail(self, lease: Lease, reason: str) -> None: ...
-
-
-async def run_one(
-    store: JobStore,
-    foreground_pending: Callable[[], bool],
-    cancel: asyncio.Event,
-    analyze: Callable[[Lease, asyncio.Event], Awaitable[dict[str, object]]],
-) -> bool:
-    if foreground_pending():
-        return False
-    lease = store.claim()
-    if lease is None:
-        return False
-    if foreground_pending() or cancel.is_set():
-        store.defer(lease, "foreground")
-        return False
-    try:
-        async with asyncio.timeout(120):
-            value = await analyze(lease, cancel)
-        if cancel.is_set():
-            store.interrupt(lease, sent=store.was_sent(lease))
-            return False
-        # 事务中核对 fence、取消、generation、证据有效性和预算占用。
-        return store.publish_if_current(lease, value)
-    except asyncio.CancelledError:
-        store.interrupt(lease, sent=store.was_sent(lease))
-        raise
-    except Exception as error:
-        store.fail(lease, type(error).__name__)
-        return False
+def resolve_anchor(raw: bytes, anchor: Anchor) -> Location:
+    if sha256(raw).hexdigest() != anchor.digest:
+        return Location("stale", anchor.quote, None, None)
+    text = normalized_text(raw)
+    if not (0 <= anchor.start < anchor.end <= len(text)) or text[anchor.start:anchor.end] != anchor.quote:
+        raise WorkspaceError(
+            code="CLUE_SCOPE_INVALID", where="线索依据",
+            why="引文与原文区间不符", fix="重新读取实际原文并核对引用",
+        )
+    return Location("valid", anchor.quote, anchor.start, anchor.end)
 ```
 
-dispatcher 在前台请求受理时设置 cancel 并停止新的后台发出；
-发布时再次检查持久取消状态，避免检查与取消之间的竞争。
-实际发送位置登记 was_sent，不能把拿到租约等同已调用模型。
-running 重启若已发送则 interrupted，需显式 retry；未发送可退回 pending。
-清理模型快照用 finally/aclose，实际用量即使停止也要留下，不依赖输入附件。
+模块来源用精确四段引用解析实际文本后做相同区间核对，另检查当前绑定状态。
+不把旧修订仍能读取当成当前计划关联仍有效。
 
-## 9. 决策版本与忘记
+## 4. 存储：查重、版本与原子发布
 
-同一事务中进行条件更新、epoch、排除和 outbox。外部清理稍后执行，但排除先立即生效。
-示例聚焦状态转换；生产保存完整确认快照、历史版本和人物/章界校验。
+本例展示已存在的新账本的关键写事务。`locked` 必须由应用提供跨进程互斥；
+`validate` 必须校验完整账本和关系，不能以简单“JSON可解析”代替。初始化和迁移走同一锁定服务。
 
 ```python
-import sqlite3
+# example: clue_store.py
 import json
+import os
+import tempfile
+from pathlib import Path
+from typing import Any, ContextManager
 from uuid import uuid4
 
+class ClueFileStore:
+    def __init__(self, path: Path, locked: Callable[[], ContextManager[None]], validate: Callable[[dict[str, Any]], None]):
+        self.path, self.locked, self.validate = path, locked, validate
 
-TRANSITIONS = {
-    "confirm": {"pending": "active"},
-    "revise": {"active": "active", "paused": "paused"},
-    "dismiss": {"pending": "dismissed"},
-    "pause": {"active": "paused"},
-    "resume": {"paused": "active"},
-    "forget": {s: "forgotten" for s in ("pending", "active", "paused", "dismissed", "superseded")},
-}
-
-
-def apply_decision(
-    con: sqlite3.Connection,
-    preference_id: str,
-    expected_revision: int,
-    action: str,
-    rule: str | None = None,
-) -> dict[str, object]:
-    row = con.execute(
-        "SELECT revision, status, rule FROM preferences WHERE preference_id=?",
-        (preference_id,),
-    ).fetchone()
-    if row is None:
-        raise ValueError("PREFERENCE_NOT_FOUND")
-    if row["revision"] != expected_revision:
-        raise ValueError("PREFERENCE_REVISION_CONFLICT")
-    next_status = TRANSITIONS.get(action, {}).get(row["status"])
-    if next_status is None:
-        raise ValueError("PREFERENCE_TRANSITION_INVALID")
-    next_rule = rule if rule is not None else row["rule"]
-    if action in ("confirm", "revise") and not str(next_rule or "").strip():
-        raise ValueError("PREFERENCE_RULE_EMPTY")
-    if action == "forget":
-        con.execute(
-            "INSERT OR IGNORE INTO exclusions(group_id) "
-            "SELECT group_id FROM preference_evidence WHERE preference_id=?",
-            (preference_id,),
-        )
-        next_rule = None
-        con.execute("DELETE FROM preference_versions WHERE preference_id=?", (preference_id,))
-    changed = con.execute(
-        "UPDATE preferences SET revision=revision+1, status=?, rule=? "
-        "WHERE preference_id=? AND revision=?",
-        (next_status, next_rule, preference_id, expected_revision),
-    )
-    if changed.rowcount != 1:
-        raise ValueError("PREFERENCE_REVISION_CONFLICT")
-    con.execute("UPDATE meta SET preference_epoch=preference_epoch+1")
-    decision_id = "decision_" + uuid4().hex
-    receipt = {"decision_id": decision_id, "preference_id": preference_id,
-               "revision": expected_revision + 1, "status_at_commit": next_status}
-    con.execute(
-        "INSERT INTO outbox(kind, payload) VALUES(?, ?)",
-        ("preference_cleanup" if action == "forget" else "preference_changed",
-         json.dumps(receipt)),
-    )
-    return receipt
+    def mutate(self, *, expected_revision: str, request_key: str, kind: str,
+               payload: dict[str, Any], update: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, Any]:
+        identity = json.dumps({"kind": kind, "payload": payload, "expected_revision": expected_revision}, sort_keys=True, ensure_ascii=False, allow_nan=False)
+        fingerprint = sha256(identity.encode("utf-8")).hexdigest()
+        with self.locked():
+            try:
+                current = json.loads(self.path.read_text(encoding="utf-8"))
+                self.validate(current)
+            except (OSError, ValueError, TypeError) as exc:
+                raise WorkspaceError(code="CLUE_LEDGER_READ_FAILED", where="线索记录",
+                                     why="现有记录无法读取或校验", fix="保留原文件并检查备份后重试") from exc
+            previous = current["requests"].get(request_key)
+            if previous is not None:
+                if previous["fingerprint"] != fingerprint:
+                    raise WorkspaceError(code="CLUE_REVISION_CONFLICT", where="线索操作",
+                                         why="同一请求键对应不同内容", fix="重新读取记录并为新操作创建请求键")
+                return deepcopy(previous["result"])
+            if current["ledger_revision"] != expected_revision:
+                raise WorkspaceError(code="CLUE_REVISION_CONFLICT", where="线索记录",
+                                     why="记录版本已变化", fix="重新读取后继续，保留当前草稿")
+            candidate = deepcopy(current)
+            result = update(candidate)
+            candidate["ledger_revision"] = "rev_" + uuid4().hex
+            result = {**result, "ledger_revision": candidate["ledger_revision"]}
+            candidate["requests"][request_key] = {"fingerprint": fingerprint, "result": result}
+            self.validate(candidate)
+            handle, temporary = tempfile.mkstemp(dir=self.path.parent, prefix=".clues-", suffix=".tmp")
+            try:
+                with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
+                    json.dump(candidate, stream, ensure_ascii=False, allow_nan=False)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, self.path)
+            except OSError as exc:
+                raise WorkspaceError(code="CLUE_LEDGER_WRITE_FAILED", where="线索记录",
+                                     why="本次记录未发布", fix="检查目录权限与磁盘后使用原请求重试") from exc
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+            return deepcopy(result)
 ```
 
-生产在 transaction 内使用 once 包装 apply_decision。
-遗忘后重放旧确认只返回无正文的原决策回执，详情按当前忘记状态脱敏，不能从请求缓存复活旧规则。
-revise 已停用规则保持停用，避免修改文字时无意重新启用。
+实际记录校验应以专门模型实现，未知格式报明确的 schema 错误；迁移不能在读失败分支初始化空文件。
+request_key、目标和版本由业务服务登记；HTTP与模型工具共用 mutate，不各写一份发布逻辑。
+新贡献与 coverage 在同一个 update 内修改，从而一次提交。
 
-## 10. 按范围选择及预算
+## 5. 视图：按实际提及与截止章投影
 
-条件标签来自任务明确信息或已登记范围，不让模型以相似人名证明身份。
-语义相关性可以帮助排序，但不能越过状态、作品、人物和章界这些确定性过滤。
+按每条观察过滤后再计算回收状态，避免后章回收信息出现在前章。
+本章列表用实际来源路径筛选，能够找到早章埋设、当前章推进的线索。
 
 ```python
-from dataclasses import dataclass
+# example: clue_views.py
+def visible_observations(
+    observations: Sequence[Observation], *, as_of_chapter: int,
+    source_is_current: Callable[[Anchor], bool],
+) -> tuple[Observation, ...]:
+    return tuple(sorted(
+        (item for item in observations
+         if item.anchor.chapter <= as_of_chapter and source_is_current(item.anchor)),
+        key=lambda item: (item.anchor.chapter, item.anchor.start, item.observation_id),
+    ))
 
+def chapter_clue_ids(observations: Sequence[Observation], chapter_path: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(item.clue_id for item in observations if item.anchor.path == chapter_path))
 
-@dataclass(frozen=True)
-class Rule:
-    id: str
-    revision: int
-    workspace_uid: str
-    text: str
-    chapter_from: int
-    character_ref: str | None = None
-    required_tags: frozenset[str] = frozenset()
-
-
-@dataclass(frozen=True)
-class Target:
-    workspace_uid: str
-    purpose: str
-    chapter: int | None
-    characters: frozenset[str]
-    tags: frozenset[str]
-
-
-def select_rules(
-    frozen: tuple[Rule, ...],
-    currently_active: set[tuple[str, int]],
-    target: Target,
-    budget: int,
-) -> tuple[list[Rule], list[tuple[str, str]]]:
-    selected: list[Rule] = []
-    excluded: list[tuple[str, str]] = []
-    used = len("写作偏好\n")
-    for rule in frozen:
-        reason = ""
-        if target.purpose != "writer":
-            reason = "purpose"
-        elif rule.workspace_uid != target.workspace_uid:
-            reason = "workspace"
-        elif (rule.id, rule.revision) not in currently_active:
-            reason = "revoked"
-        elif target.chapter is None or target.chapter < rule.chapter_from:
-            reason = "chapter"
-        elif rule.character_ref and rule.character_ref not in target.characters:
-            reason = "character"
-        elif not rule.required_tags <= target.tags:
-            reason = "condition"
-        block = "- " + rule.text + "\n"
-        if not reason and used + len(block) > budget:
-            reason = "budget"
-        if reason:
-            excluded.append((rule.id, reason))
-        else:
-            selected.append(rule)
-            used += len(block)
-    return selected, excluded
+def observed_status(observations: Sequence[Observation]) -> Literal["open", "resolved"]:
+    return "resolved" if any(item.kind == "resolve" for item in observations) else "open"
 ```
 
-生产扩展 chapter_to、场景锚点、声明优先级、有效证据、冲突和示例过滤。
-排序在选择前固定，超限整条排除，不截断规则。这里的字符预算仅是分区上限，
-真实请求仍通过 0.9 的完整输入/token 预算。后文示例另行过滤，不能因规则通过就一并装入。
+完整业务还要叠加按有效章保存的废弃决定与作者计划，不能把作者计划的回收章当已回收。
+失效观察另列供作者查看，不进入上面这份可用于当前推理的投影。
 
-## 11. 请求编译与回执同源
+## 6. 核对：实际提供的原文与报告完成条件
 
-现有 harness 的 system 不能被后台直接改写。由应用层请求编译器替换自己拥有的分区，
-再交给 0.9 的预算与压缩处理；不能仅在任务开始注入一次便声称之后的实际使用正确。
+读取记录来自现有 MaterialLedger 的真实模型输入，不从浏览器或模型自述生成。
+此例验证 file 证据；计划引用应单独放作者目标区，不进入 reader_sources 来证明前提已交代。
 
 ```python
-from dataclasses import dataclass
-
+# example: clue_reviews.py
+@dataclass(frozen=True)
+class ReadSource:
+    raw: bytes
+    chapter: int
+    ranges: tuple[tuple[int, int], ...]
 
 @dataclass(frozen=True)
-class Partition:
-    key: str
-    text: str
-    refs: tuple[tuple[str, int], ...] = ()
+class Finding:
+    kind: Literal["inference_gap", "alternative_open", "premise_undisclosed", "counter_evidence"]
+    certainty: Literal["supported", "suspected"]
+    description: str
+    evidence: tuple[Anchor, ...]
 
+def covered(ranges: Sequence[tuple[int, int]], start: int, end: int) -> bool:
+    cursor = start
+    for left, right in sorted(ranges):
+        if right <= cursor:
+            continue
+        if left > cursor:
+            return False
+        cursor = right
+        if cursor >= end:
+            return True
+    return cursor >= end
 
-def compile_preferences(
-    existing: tuple[Partition, ...],
-    selected: tuple[tuple[str, int, str], ...],
-) -> tuple[Partition, ...]:
-    kept = tuple(p for p in existing if p.key != "writing_preferences")
-    if not selected:
-        return kept
-    text = "写作偏好（适用于正文；当前任务、事实与范围要求优先）\n"
-    text += "".join("- " + body + "\n" for _, _, body in selected)
-    return kept + (Partition(
-        key="writing_preferences",
-        text=text,
-        refs=tuple((identity, revision) for identity, revision, _ in selected),
-    ),)
+def validate_clue_report(
+    *, status: Literal["findings", "no_findings", "incomplete"], findings: Sequence[Finding],
+    targets: Mapping[str, str], as_of_chapter: int, reader_sources: Mapping[str, ReadSource],
+) -> tuple[str, ...]:
+    if not targets:
+        raise ValueError("正文核对目标不能为空")
+    uncovered: list[str] = []
+    for path, expected_digest in targets.items():
+        source = reader_sources.get(path)
+        if (source is None or source.chapter > as_of_chapter
+                or sha256(source.raw).hexdigest() != expected_digest
+                or not covered(source.ranges, 0, len(normalized_text(source.raw)))):
+            uncovered.append(path)
+    if (status == "no_findings" and findings) or (status == "findings" and not findings):
+        raise ValueError("报告状态与问题清单不符")
+    if status != "incomplete" and uncovered:
+        raise ValueError("尚有未完整提供的目标，不能报告完成")
+    for finding in findings:
+        if not finding.evidence:
+            raise ValueError("每条问题需要可核对依据")
+        for anchor in finding.evidence:
+            source = reader_sources.get(anchor.path)
+            if (source is None or source.chapter != anchor.chapter or anchor.chapter > as_of_chapter
+                    or not covered(source.ranges, anchor.start, anchor.end)
+                    or resolve_anchor(source.raw, anchor).freshness != "valid"):
+                raise ValueError("报告引用不属于本次实际提供的有效范围")
+    return tuple(uncovered)
 ```
 
-同一编译结果同时产生 provider 输入和 request_id 回执；重复编译只保留一个偏好分区。
-忘记相关来源段和旧摘要由有效上下文投影排除，而不是只删除这个新分区。
-目标后来确定时可在受理 allowlist 内重选，每次发送前重新检查撤销状态。
+外层同时核对目标／模块修订、停止信号、真实目标与参考的读取覆盖以及目录清单，
+以统一错误信封返回。充分支持、合理怀疑和有意开放的语义判断由独立在线样本复核，
+不能仅从以上结构校验宣称“推理正确”。
 
-## 12. 路由输入
+## 7. 对话快照：真实版本与请求身份
 
-输入只暴露作者操作需要的字段，来源、快照、可生效状态由服务器决定。
-错误转为现有 WorkspaceError 信封，不能把 Python ValueError 原样泄漏给界面。
+在首次受理时核对引用，重试先查询已受理的幂等记录。引用不是授权，传入越界版本时保留草稿并报冲突。
 
 ```python
-from pydantic import BaseModel, ConfigDict, Field
+# example: clue_context.py
+def freeze_reference(reference: ClueReference, *, lineage: str, clue_id: str,
+                     revision: str, writer_cutoff: int, observations: Sequence[Observation]) -> dict[str, object]:
+    if reference.workspace_lineage != lineage or reference.clue_id != clue_id:
+        raise WorkspaceError(code="CLUE_ACCESS_DENIED", where="线索引用",
+                             why="引用不属于当前作品", fix="从当前作品重新选择线索")
+    if reference.clue_revision != revision:
+        raise WorkspaceError(code="CLUE_REFERENCE_STALE_CONFLICT", where="线索引用",
+                             why="引用版本已变化", fix="保留草稿并重新读取引用")
+    cutoff = min(reference.browse_as_of_chapter, writer_cutoff)
+    if cutoff < 0:
+        raise ValueError("截止章不能小于零")
+    visible = [item for item in observations if item.anchor.chapter <= cutoff]
+    return {"clue_id": clue_id, "clue_revision": revision, "reader_cutoff": cutoff,
+            "reader_observation_ids": [item.observation_id for item in visible]}
 
-
-class SaveInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    session_id: str = Field(min_length=1)
-    base_id: str = Field(min_length=1)
-    expected_digest: str = Field(min_length=1)
-    text: str
-    client_sequence: int = Field(ge=0)
-    request_key: str = Field(min_length=1, max_length=128)
-
-
-class DraftInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    expected_draft_revision: int = Field(ge=0)
-    client_sequence: int = Field(ge=0)
-    text: str
-    request_key: str = Field(min_length=1, max_length=128)
+def request_fingerprint(payload: Mapping[str, object]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    return sha256(canonical.encode("utf-8")).hexdigest()
 ```
 
-路由首先根据当前 workspace_id 找到绑定与服务，再校验 session 属于其稳定 UID。
-响应不返回主机凭据，路径仍由 Workspace 受管规则核对。
+输入 observations 必须是已经核对版本的投影。作者计划独立按精确模块读取并冻结，不放入 reader_observation_ids。
+request_fingerprint 的 payload 必须包含作者消息、用途、context全部引用、核对目标和版本，不能只散列文字。
+0.9摘要可以保留这些身份及待处理事项，实际证据仍需当前版本原文。
 
-## 13. 草稿自动保存
+## 8. 前端：Unicode与安全高亮
 
-正文草稿存在服务端，避免桌面动态端口带来的 browser origin 变化。
-输入合并，但已发出且响应未知的请求保留原请求键与载荷，先核对原请求再推进新文本。
+真实正文 digest 由服务端按字节计算，浏览器不得对渲染文本散列后代替。
+下例产生源文本索引；最终 DOM 定位仍通过 Markdown 源位置映射完成。
 
 ```typescript
-type Snapshot = { text: string; sequence: number };
-type DraftRequest = Snapshot & { expectedRevision: number; requestKey: string };
-type DraftAck = { revision: number; sequence: number };
-type Persist = (request: DraftRequest) => Promise<DraftAck>;
-
-export class DraftAutosaver {
-  private pending: Snapshot | null = null;
-  private attempt: DraftRequest | null = null;
-  private running: Promise<void> | null = null;
-  private timer: ReturnType<typeof setTimeout> | undefined;
-  private revision = 0;
-  public persistedSequence = 0;
-
-  constructor(
-    private persist: Persist,
-    private onError: (error: unknown) => void,
-  ) {}
-
-  enqueue(snapshot: Snapshot): void {
-    this.pending = snapshot;
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => { void this.flush().catch(this.onError); }, 300);
-  }
-
-  flush(): Promise<void> {
-    if (this.running) return this.running;
-    this.running = this.drain().finally(() => { this.running = null; });
-    return this.running;
-  }
-
-  private async drain(): Promise<void> {
-    while (this.attempt || this.pending) {
-      if (!this.attempt) {
-        const next = this.pending!;
-        this.pending = null;
-        this.attempt = { ...next, expectedRevision: this.revision,
-          requestKey: crypto.randomUUID() };
-      }
-      const attempt = this.attempt;
-      // persist 的未知结果恢复必须重放同键；不能暗中换 expectedRevision 后覆盖。
-      const ack = await this.persist(attempt);
-      if (ack.sequence !== attempt.sequence) throw new Error("DRAFT_ACK_MISMATCH");
-      this.revision = ack.revision;
-      this.persistedSequence = Math.max(this.persistedSequence, ack.sequence);
-      this.attempt = null;
-    }
-  }
-}
-```
-
-生产增加连续输入 2s 的最迟持久化、初始化 revision、停用/关闭清理和已持久化状态通知。
-失败时 attempt 保留，用户重试继续同键；服务端冲突需查询并保留副本，不自动提高期望版本。
-定时器异常必须消费，不能造成未处理 Promise rejection。
-
-## 14. 保存响应不能清掉新输入
-
-归属与请求键同时匹配才消费成功响应，较高 sequence 的输入继续保留。
-
-```typescript
-type Submitted = { key: string; sequence: number; text: string };
-type Editor = {
-  identity: string;
-  sequence: number;
-  text: string;
-  baseText: string;
-  baseDigest: string;
-  submitted: Submitted | null;
-};
-type SaveAck = {
-  identity: string;
-  requestKey: string;
-  clientSequence: number;
+// example: sourceLocation.ts
+export interface SourceAnchor {
   digest: string;
-};
-
-export function applySaved(current: Editor, ack: SaveAck): Editor {
-  const sent = current.submitted;
-  if (!sent || ack.identity !== current.identity || ack.requestKey !== sent.key
-      || ack.clientSequence !== sent.sequence) return current;
-  return {
-    ...current,
-    baseText: sent.text,
-    baseDigest: ack.digest,
-    text: current.sequence > sent.sequence ? current.text : sent.text,
-    submitted: null,
-  };
+  start: number;
+  end: number;
+  quote: string;
+  freshness: "valid" | "stale" | "source_missing";
+}
+export function sourceRange(text: string, digest: string, anchor: SourceAnchor): [number, number] | null {
+  if (anchor.freshness !== "valid" || digest !== anchor.digest) return null;
+  const points = Array.from(text);
+  if (!Number.isInteger(anchor.start) || !Number.isInteger(anchor.end) ||
+      anchor.start < 0 || anchor.end <= anchor.start || anchor.end > points.length) return null;
+  if (points.slice(anchor.start, anchor.end).join("") !== anchor.quote) return null;
+  const from = points.slice(0, anchor.start).join("").length;
+  return [from, from + anchor.quote.length];
 }
 ```
 
-ack.identity 是客户端请求归属与服务端 UID/session 共同核对后的键，不能取界面当前项目临时拼接。
-file.saved 但 recording.unrecorded 同样推进文件基线，另外保留补记状态。
-not_saved 不调用 applySaved；recovery_required 不伪装正常全部成功。
+## 9. 前端：阅读、浏览和任务时点
 
-## 15. 编辑组件的可见状态
+定位原文只改变阅读位置；服务响应按作品和请求序号接收，避免切作品后旧结果覆盖当前详情。
 
-组件消费领域状态，不自行推测「保存完成」或把分析失败写成正文失败。
-生产使用已有 Button、错误信封和字号体系；下面只展示数据与动作关系。
+```typescript
+// example: cluesState.ts
+export interface PanelState {
+  workspaceId: string;
+  requestId: number;
+  selectedPath: string | null;
+  browseAsOf: number;
+  taskStateChapter: number | null;
+  selectedClueId: string | null;
+}
+export function locateSource(state: PanelState, path: string): PanelState {
+  return { ...state, selectedPath: path };
+}
+export function acceptsResponse(state: PanelState, response: { workspaceId: string; requestId: number }): boolean {
+  return state.workspaceId === response.workspaceId && state.requestId === response.requestId;
+}
+```
+
+## 10. 前端：加入草稿保留已有输入
+
+同一线索版本去重，不同版本要求明确处理；精确引用与已有参考一起保存，不自动发送。
+
+```typescript
+// example: clueDraft.ts
+export interface ClueRef {
+  workspace_lineage: string;
+  clue_id: string;
+  clue_revision: string;
+  browse_as_of_chapter: number;
+}
+export interface Draft {
+  text: string;
+  reference_paths: string[];
+  clue_references: ClueRef[];
+}
+export function addClueToDraft(draft: Draft, ref: ClueRef): Draft {
+  const prior = draft.clue_references.find(item =>
+    item.workspace_lineage === ref.workspace_lineage && item.clue_id === ref.clue_id);
+  if (prior) {
+    if (prior.clue_revision !== ref.clue_revision || prior.browse_as_of_chapter !== ref.browse_as_of_chapter) {
+      throw new Error("[CLUE_REFERENCE_STALE_CONFLICT] 线索引用：草稿已有另一版本或时点。建议：查看差异后选择保留的引用。");
+    }
+    return draft;
+  }
+  if (draft.clue_references.length >= 10) throw new Error("[CLUE_SCOPE_INVALID] 线索引用：已达到本次10条上限。建议：分组讨论或移除部分引用。");
+  return { ...draft, clue_references: [...draft.clue_references, { ...ref }] };
+}
+```
+
+真实UI更新须使用当前store的函数式更新或草稿revision，持久化冲突时保留本地草稿。
+“讨论设计”可准备一段消息建议，已有输入不被直接覆盖；作者选择插入或自行输入后再发送。
+
+## 11. 共享详情组件
+
+列表和写作辅助区使用同一组件与服务字段。下例省略样式，按阅读顺序呈现，不用连续状态徽标代替内容。
 
 ```tsx
-import { useId } from "react";
-
-type Props = {
-  text: string;
-  draftPersisted: boolean;
-  fileSaved: boolean;
-  recording: "committed" | "unrecorded" | "no_change";
-  saving: boolean;
-  onText: (text: string) => void;
-  onSave: () => void;
-  onRecord: () => void;
-};
-
-export function ManuscriptEditor(props: Props) {
-  const inputId = useId();
-  return <section aria-label="正文编辑">
-    <label htmlFor={inputId}>正文</label>
-    <textarea id={inputId} value={props.text}
-      onChange={event => props.onText(event.target.value)} />
-    <p role="status">{props.draftPersisted ? "草稿已保存" : "草稿尚未持久化"}</p>
-    <button type="button" onClick={props.onSave} disabled={props.saving}>
-      {props.saving ? "保存中…" : "保存正文"}
-    </button>
-    {props.fileSaved && props.recording === "unrecorded" &&
-      <div role="status">正文已保存，版本尚未记录。
-        <button type="button" onClick={props.onRecord}>补记版本</button>
-      </div>}
+// example: ClueDetail.tsx
+interface Detail {
+  clue_id: string;
+  title: string;
+  observations: { observation_id: string; mode: string; text: string; evidence_ids: string[] }[];
+  reader_seen: { text: string; basis_ids: string[] }[];
+  author_designs: { link_id: string; summary: string }[];
+  inferences: { inference_id: string }[];
+}
+interface Props {
+  detail: Detail;
+  onLocate: (evidenceId: string) => void;
+  onDiscuss: (clueId: string) => void;
+  onReview: (inferenceId: string) => void;
+}
+export function ClueDetail({ detail, onLocate, onDiscuss, onReview }: Props) {
+  return <section aria-label="线索详情">
+    <h2>{detail.title}</h2>
+    <h3>正文依据</h3>
+    {detail.observations.map(item => <div key={item.observation_id}>
+      <p>{item.text}</p>
+      {item.mode === "testimony" && <p>人物表述，信息来源需结合原文判断。</p>}
+      {item.evidence_ids.map(id => <button type="button" key={id} onClick={() => onLocate(id)}>查看原文</button>)}
+    </div>)}
+    <h3>读者已见</h3>
+    {detail.reader_seen.map(item => <p key={item.basis_ids.join(":") + item.text}>{item.text}</p>)}
+    {detail.author_designs.length > 0 && <details>
+      <summary>作者计划</summary>
+      {detail.author_designs.map(plan => <p key={plan.link_id}>{plan.summary}</p>)}
+    </details>}
+    <button type="button" onClick={() => onDiscuss(detail.clue_id)}>讨论设计</button>
+    {detail.inferences.map(item => <button type="button" key={item.inference_id}
+      onClick={() => onReview(item.inference_id)}>核对推理</button>)}
   </section>;
 }
 ```
 
-偏好面板复用同样的受控模式：value 绑定精确 preference_id/revision，
-决定提交后保留新输入，冲突不清空；不能从后台候选变更自动调用确认。
+实际组件还需支持来源变化、无正文计划、覆盖、任务与报告、返回焦点和多目标的明确标题。
+没有目标时显示构思入口；后端未接通的关联或核对动作不开放占位按钮。
 
-## 16. 评测接线
+## 12. 评测接线示意
 
-拟扩展 step action，保留旧案例缺省为 writer。新增手工编辑通过生产编辑服务执行；
-不能把 external_updates 写进文件后标记成人工来源。以下为新 schema 的目标写法，当前尚不能运行：
+下面是待扩展schema的目标表达，当前评测器尚不支持这些新action，不能直接作为可运行套件。
 
 ```yaml
-id: revision_emotion
+id: clue_note_photo
 steps:
-  - action: manual_edit
-    path: 正文/0007 暗潮.md
-    replace:
-      before: 林岚很紧张，她害怕许砚继续追问。
-      after: 林岚把杯沿转了半圈。「你刚才说到哪儿了？」
-  - action: analyze_revisions
-    expected_terminal: completed
-  - action: preference_decision
-    select_by_source: latest_edit
-    decision: confirm
-  - action: writer
-    text: 续写许砚拿出收据之后的对话，保留收据上的日期。
-    selected: 正文/0007 暗潮.md
+  - action: organize_clues
+    chapters: [正文/0002 遗书.md]
+  - action: save_clue_inference
+    select_by_fixture: letter_back
+    intent: deduce
+    goal: 林岚在案发前接触过遗书原件
+  - action: review_clue_inference
+    as_of_chapter: 2
     checks:
-      - id: preference_applied
+      - id: premise_gap
         kind: manual
-        rubric: 新对白采用已确认的条件化表达，未改变人物事实或提前披露。
+        rubric: 指出照片或转述仍是可能的信息来源，不直接定罪；引用真实正文。
+  - action: prepare_clue_discussion
+    expected: draft_only
 ```
 
-rubric、期望和判定只由评测器读取，不进入模型证据包或提示。
-三个变体为 no_preferences / rules_only / rules_with_examples，
-必须在 schema、runtime 和报告中显式登记，并保留每个实际请求的选择回执。
+select_by_fixture 由评测器映射生产服务返回的实际ID；rubric留在评测器，不进入作者消息或模型证据。
+实施时注册schema、runtime、断言、成本和报告，保持旧案例缺省行为不变。
 
-## 17. 本轮检查结果
+## 13. 本轮计划检查
 
-2026-10-26 本轮实际完成：
+2026-10-27实际完成：
 
-- 7 份新增计划文档的本地链接、代码围栏、编码和格式检查通过。
-- 12 段 Python 示例语法和定义加载通过；另检查原始指纹、并发 claim、幂等和回滚、
-  中文差异、证据沿革、伪造引文拒绝、停用规则修改、忘记、章界/撤销过滤和来源字段拒绝。
-- 2 段 TypeScript 和 1 段 TSX 示例在项目现有类型依赖下通过 strict、noEmit 检查。
-- JSON 与 YAML 示意内容可解析；YAML 新评测 schema 尚未接入生产。
+- 20份相关文档的220个本地链接、代码围栏和编码检查通过；版本导航已更新。
+- 新1.0的7段Python示例加载与关键逻辑检查通过：身份兼容、原始指纹、Unicode坐标、来源失效、章界、幂等、版本冲突、原子替换失败、坏记录保护、核对覆盖和精确引用。
+- 连同顺延至1.1的原12段，共19段Python语法检查通过；1.1旧执行检查仍保留原2026-10-26日期，不冒充本轮业务验证。
+- 新1.0的3段TypeScript与1段TSX通过strict/noEmit检查；另外检查码点转换、来源版本、阅读与任务时点、迟到响应、草稿保留和引用去重。
+- JSON与YAML示意可解析；新评测action尚未接入。根README和当前0.9.0包声明未因本轮计划调整而修改。
 
-这些结果仅证明设计示例的上述检查，不包含生产集成、完整静态类型检查、
-浏览器业务、桌面或在线语义验收，不能作为功能交付证据。
+以上仅是文档与示例检查，不包含完整记录校验器、跨进程锁、生产接口、浏览器业务、在线模型或桌面验收。
+S0—S8均待实施，正式验收状态仍见验收文档的待执行约定。

@@ -7,12 +7,17 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { CompactionOperation, ContextView, UsageTotals } from "./contextUsage";
+import type { CompactionOperation, CompactionPolicy, ContextView, UsageTotals } from "./contextUsage";
 import {
+  autoCompactionNote,
   breakdown,
+  capacitySourceLabel,
   compactionNote,
+  contextAmount,
   contextLabel,
+  formatCount,
   formatTokens,
+  hasCapacity,
   isCompactionFinished,
   usageDisplayState,
   usageLabel,
@@ -86,6 +91,8 @@ describe("fetchConversationUsage", () => {
         context_window_tokens: 131_072,
         input_limit_tokens: 122_880,
         output_reserve_tokens: 4096,
+        safety_tokens: 4096,
+        capacity_source: "catalog",
         budget: "ok",
         instructions_tokens: 1200,
         tools_tokens: 900,
@@ -94,6 +101,7 @@ describe("fetchConversationUsage", () => {
         fingerprint: "f",
         limits_revision: "r",
       },
+      policy: { auto_compaction: true, threshold: 0.9 },
       diagnostics: [],
       revision: "r1",
     };
@@ -127,6 +135,8 @@ describe("用量文案", () => {
     context_window_tokens: 131_072,
     input_limit_tokens: 122_880,
     output_reserve_tokens: 4096,
+    safety_tokens: 4096,
+    capacity_source: "catalog",
     budget: "ok",
     instructions_tokens: 4000,
     tools_tokens: 2500,
@@ -146,7 +156,7 @@ describe("用量文案", () => {
   it("窗口未知时只给 token 数，不给百分比", () => {
     const label = contextLabel(context({ context_window_tokens: null }));
 
-    expect(label).toBe("上下文 ≈1.3 万");
+    expect(label).toBe("上下文 ≈1.3 万 tokens");
   });
 
   it("有窗口时给出占比", () => {
@@ -192,9 +202,42 @@ describe("用量文案", () => {
     expect(items.map((item) => item.label)).toEqual(["约定与资料", "工具定义", "对话与结果"]);
     expect(items[1].tokens).toBeNull();
   });
+
+  it("浮层首行同时给出已用与总量，并加千分位", () => {
+    expect(formatCount(128_000)).toBe("128,000");
+    expect(formatCount(null)).toBe("—");
+    expect(contextAmount(context())).toBe("≈12,800 / 131,072 tokens");
+  });
+
+  it("总量未知时说明未知，不给出分母", () => {
+    const unknown = context({ context_window_tokens: null });
+
+    expect(hasCapacity(unknown)).toBe(false);
+    expect(contextAmount(unknown)).toBe("≈12,800 tokens · 总容量未知");
+  });
+
+  it("容量来源用可读名称，未知值不冒充", () => {
+    expect(capacitySourceLabel("override")).toBe("旧配置（已停用）");
+    expect(capacitySourceLabel("metadata")).toBe("服务商返回");
+    expect(capacitySourceLabel("catalog")).toBe("内置目录");
+    expect(capacitySourceLabel("unknown")).toBe("未知");
+    expect(capacitySourceLabel("something-else")).toBe("未知");
+  });
+
+  it("自动压缩触发点按可用输入预算计算", () => {
+    const policy: CompactionPolicy = { auto_compaction: true, threshold: 0.9 };
+
+    expect(autoCompactionNote(context(), policy)).toBe(
+      "达到 110,592 tokens（可用输入预算的 90%）时自动压缩",
+    );
+    expect(autoCompactionNote(context({ input_limit_tokens: null }), policy)).toBeNull();
+    expect(autoCompactionNote(context(), { auto_compaction: false, threshold: 0.9 })).toBe(
+      "自动压缩已关闭",
+    );
+  });
 });
 
-describe("整理结果文案", () => {
+describe("压缩结果文案", () => {
   const operation = (overrides: Partial<CompactionOperation> = {}): CompactionOperation => ({
     operation_id: "op1",
     conversation_id: "c1",
@@ -210,11 +253,11 @@ describe("整理结果文案", () => {
     ...overrides,
   });
 
-  it("成功时给整理前后的规模", () => {
-    expect(compactionNote(operation())).toBe("已整理：4.2 万 → 1.2 万");
+  it("成功时给压缩前后的规模", () => {
+    expect(compactionNote(operation())).toBe("已压缩：4.2 万 → 1.2 万");
   });
 
-  it("没有可整理内容时说清楚，不是失败", () => {
+  it("没有可压缩内容时说清楚，不是失败", () => {
     expect(compactionNote(operation({ state: "noop", record: null, note: "没有较早内容。" }))).toBe(
       "没有较早内容。",
     );

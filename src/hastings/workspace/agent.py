@@ -102,6 +102,7 @@ from hastings.workspace.review import (
     ReviewStore,
     publish_report,
     target_digests,
+    validate_review_targets,
 )
 from hastings.workspace.service import WriteSession
 from hastings.workspace.story_materials import DOMAIN_LABEL, CoverageStore
@@ -550,6 +551,7 @@ def build_tools(
         if review_store is None:
             raise _input_error("review_store", "本轮没有开启检查保存")
         targets = _string_list_argument(arguments, "target_paths")
+        validate_review_targets(targets, allowed_targets=review_targets)
         status = _text_argument(arguments, "status")
         if status not in ("findings", "no_findings", "incomplete"):
             raise _input_error("status", "只能是 findings、no_findings 或 incomplete")
@@ -743,13 +745,18 @@ def build_tools(
         mode = _text_argument(arguments, "mode")
         if mode not in ("read_only", "edit"):
             raise _input_error("mode", "只能是 read_only 或 edit")
+        authorization = _text_argument(arguments, "authorization")
         draft = ScopeDraft(
             mode=cast(ScopeMode, mode),
             grants=_mutation_arguments(arguments.get("grants")),
             denied_paths=_string_list_argument(arguments, "denied_paths"),
             summary=_text_argument(arguments, "summary"),
-            authorization=_text_argument(arguments, "authorization"),
-            authorization_seq=_optional_int_argument(arguments, "authorization_seq", minimum=0),
+            authorization=authorization,
+            authorization_seq=_resolve_authorization_seq(
+                _optional_int_argument(arguments, "authorization_seq", minimum=0),
+                authorization,
+                run.author_messages,
+            ),
             carried_from_seq=_optional_int_argument(arguments, "carried_from_seq", minimum=0),
             required_references=_string_list_argument(arguments, "required_references"),
             required_module_references=_module_reference_arguments(
@@ -1144,12 +1151,15 @@ def build_tools(
                     "authorization_seq": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "可选：授权那句话所在事件的 seq",
+                        "description": "可选：授权那句话所在事件的 seq；不确定就省略",
                     },
                     "carried_from_seq": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "可选：说「继续」时，被承接的作者请求所在事件的 seq",
+                        "description": (
+                            "仅承接旧请求时填写那条作者消息的 seq；独立任务省略，"
+                            "不要用 0 占位，也不要填写当前授权消息的序号"
+                        ),
                     },
                     "grants": {
                         "type": "array",
@@ -1162,7 +1172,10 @@ def build_tools(
                                     "enum": ["create", "update", "delete", "move"],
                                 },
                                 "path": {"type": "string"},
-                                "target": {"type": "string"},
+                                "target": {
+                                    "type": "string",
+                                    "description": "仅 move 时填目标路径；其他操作省略",
+                                },
                             },
                             "required": ["action", "path"],
                             "additionalProperties": False,
@@ -1294,7 +1307,10 @@ def build_tools(
                                     "enum": ["create", "update", "delete", "move"],
                                 },
                                 "path": {"type": "string"},
-                                "target": {"type": "string"},
+                                "target": {
+                                    "type": "string",
+                                    "description": "仅 move 时填目标路径；其他操作省略",
+                                },
                             },
                             "required": ["action", "path"],
                             "additionalProperties": False,
@@ -2862,14 +2878,22 @@ def build_tools(
                 description=(
                     "发布这一轮的检查报告：目标、状态、问题与未覆盖部分。"
                     "每条问题都要引用实际读到的原文；没读完就报告为未完成。"
+                    "target_paths 仅填写本轮检查目标，参考文件只作为 evidence。"
+                    + (
+                        f"本轮允许的目标：{json.dumps(list(review_targets), ensure_ascii=False)}。"
+                        if review_targets else ""
+                    )
                 ),
                 parameters={
                     "type": "object",
                     "properties": {
                         "target_paths": {
                             "type": "array",
-                            "items": {"type": "string"},
-                            "description": "这次检查的文件",
+                            "items": {
+                                "type": "string",
+                                **({"enum": list(review_targets)} if review_targets else {}),
+                            },
+                            "description": "本轮允许的检查目标；参考文件不放入此列表",
                         },
                         "requirement": {
                             "type": "string",
@@ -4308,6 +4332,23 @@ def _optional_int_argument(
     return value
 
 
+def _resolve_authorization_seq(
+    seq: int | None, authorization: str, author_messages: Sequence[tuple[int, str]]
+) -> int | None:
+    """把授权序号落到实际的作者消息上。
+
+    模型看不到事件序号，填错只会让整轮登记白跑；引文才是定位依据，序号只用于展示。
+    填的值本轮存在就保留；否则按引文匹配唯一一条作者消息，匹配不到就按没填处理。
+    """
+    if seq is None or seq in {item for item, _ in author_messages}:
+        return seq
+    quote = " ".join(authorization.split())
+    matches = [
+        item for item, text in author_messages if quote and quote in " ".join(text.split())
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
 def _digest_argument(arguments: Mapping[str, JSONValue], *, required: bool = False) -> str | None:
     value = arguments.get("digest")
     if value is None:
@@ -4376,6 +4417,9 @@ def _mutation_arguments(value: JSONValue) -> tuple[Mutation, ...]:
             raise _input_error("grants", f"包含不支持的操作：{action}")
         if not isinstance(path, str) or not path:
             raise _input_error("grants", "每一项都要有非空 path")
+        # 可选字段给空串是常见写法，按「没填」处理：否则模型删掉值却留下字段，会被反复拒绝。
+        if isinstance(target, str) and not target.strip():
+            target = None
         if target is not None and (not isinstance(target, str) or not target):
             raise _input_error("grants", "target 必须是非空字符串")
         grants.append(Mutation(action=cast(MutationAction, action), path=path, target=target))

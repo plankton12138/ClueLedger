@@ -846,7 +846,7 @@ class TurnService:
                     code="COMPACTION_FAILED",
                     where="conversation.compaction",
                     why=f"摘要请求失败：{type(exc).__name__}",
-                    fix="保留当前上下文，稍后重新整理",
+                    fix="保留当前上下文，稍后重新压缩",
                 ) from exc
 
         parsed = await summarize_history(snapshot, events, plan, previous, generate)
@@ -915,7 +915,7 @@ class TurnService:
                         code="COMPACTION_FAILED",
                         where="conversation.compaction",
                         why=event.error.error_message or "摘要请求未完成",
-                        fix="保留当前上下文，稍后重新整理",
+                        fix="保留当前上下文，稍后重新压缩",
                     )
                 if isinstance(event, AssistantDoneEvent):
                     completed = event.reason == "stop"
@@ -927,7 +927,7 @@ class TurnService:
                 code="COMPACTION_FAILED",
                 where="conversation.compaction",
                 why="摘要没有完整结束，本次没有启用摘要",
-                fix="保留当前上下文，稍后重新整理",
+                fix="保留当前上下文，稍后重新压缩",
             )
         return final
 
@@ -1526,6 +1526,8 @@ class TurnService:
             # 已知业务错误，自带稳定 code；作者主动停止时抛出的收尾错误不记为失败。
             status = "stopped" if info.turn_id in self._stopped else "failed"
             if status == "failed":
+                if info.purpose == "review":
+                    self._append_review_incomplete(info, exc.message)
                 self.store.append(
                     conversation_id,
                     {
@@ -1692,11 +1694,13 @@ class TurnService:
         request = run.review_request
         if request is None:
             return False
+        targets = request.targets or _written_targets(run)
         remaining = max(self.max_turns - turns_used, 0)
         if remaining <= 0:
-            self._append_review_incomplete(info, "写作阶段已用完本轮的回合上限，没有进入检查阶段")
+            self._append_review_incomplete(
+                info, "写作阶段已用完本轮的回合上限，没有进入检查阶段", targets=targets
+            )
             return False
-        targets = request.targets or _written_targets(run)
         if not targets:
             self._append_review_incomplete(info, "没有可检查的目标")
             return False
@@ -1753,10 +1757,10 @@ class TurnService:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # 检查失败不能吞掉已完成的修改
-            self._append_review_incomplete(info, f"检查没有完成：{exc}")
+            self._append_review_incomplete(info, f"检查没有完成：{exc}", targets=targets)
             return False
         if not self._has_review_report(info):
-            self._append_review_incomplete(info, "检查阶段没有生成报告")
+            self._append_review_incomplete(info, "检查阶段没有生成报告", targets=targets)
             return False
         return True
 
@@ -1783,7 +1787,9 @@ class TurnService:
                 return True
         return False
 
-    def _append_review_incomplete(self, info: TurnInfo, note: str) -> None:
+    def _append_review_incomplete(
+        self, info: TurnInfo, note: str, *, targets: Sequence[str] | None = None
+    ) -> None:
         """没有报告也要留下记录：界面据此说明「检查未完成」，不冒充通过。"""
         _append_event(
             self.store,
@@ -1793,7 +1799,7 @@ class TurnService:
             {
                 "report_id": None,
                 "status": "incomplete",
-                "targets": list(info.review_paths),
+                "targets": list(info.review_paths if targets is None else targets),
                 "findings": [],
                 "uncovered": [note],
             },
@@ -1841,6 +1847,7 @@ class TurnService:
 
         reader = asyncio.create_task(pump())
         tools: dict[str, tuple[dict[str, Any], float]] = {}
+        scope_failures: dict[str, int] = {}
         truncated = False
         try:
             while True:
@@ -1867,6 +1874,22 @@ class TurnService:
                     or truncated
                 )
                 bridge.flush_due()
+                if (
+                    isinstance(event, ToolExecutionEndEvent)
+                    and event.tool_name == "save_review_report"
+                ):
+                    if event.is_error and "[REVIEW_SCOPE_INVALID]" in event.result.text:
+                        key = event.result.text
+                        scope_failures[key] = scope_failures.get(key, 0) + 1
+                        if scope_failures[key] >= 3:
+                            raise WorkspaceError(
+                                code="REVIEW_SCOPE_INVALID",
+                                where="review.save",
+                                why="同一检查范围错误已重复出现 3 次，检查未完成",
+                                fix="核对本轮目标后单独重新发起检查；已保存的修改可以保留",
+                            )
+                    else:
+                        scope_failures.clear()
             # 模型循环自己抛错时，先封口已收到的内容再向上抛，由 _run 记为失败。
             if failure:
                 raise failure[0]
@@ -1925,6 +1948,14 @@ class TurnService:
                     return False
                 # 先封口已收到的内容，再让这一轮落成失败。
                 bridge.close_open("failed")
+                if (message.error_message or "").startswith("Agent stopped after max_turns="):
+                    raise WorkspaceError(
+                        code="TURN_LIMIT_REACHED",
+                        where="turn.agent",
+                        why="已达到当前阶段可用的模型回合上限，任务未完成",
+                        fix="缩小任务范围后重试；若修改已保存，可单独发起检查",
+                        details={"reason": message.error_message},
+                    )
                 raise WorkspaceError(
                     code="MODEL_CALL_FAILED",
                     where="turn.model",

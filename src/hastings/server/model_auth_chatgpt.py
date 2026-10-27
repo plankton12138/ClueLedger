@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -85,6 +86,11 @@ CALLBACK_PORT = 0
 
 #: 换取令牌的超时；这一步短，卡住通常意味着网络问题而不是模型慢。
 TOKEN_TIMEOUT_SECONDS = 30.0
+
+#: 连接没有建立时的重试次数与间隔：连接失败意味着服务端没收到请求，重发不会多花刷新令牌；
+#: 代理握手失败是间歇性的，重试一次往往就能成功。
+TOKEN_CONNECT_ATTEMPTS = 3
+TOKEN_CONNECT_RETRY_DELAYS = (0.5, 1.5)
 
 
 class ChatGPTAuthError(RuntimeError):
@@ -480,20 +486,35 @@ class ChatGPTCodexAuthProvider:
     # -- 内部 -------------------------------------------------------------
 
     async def _post(self, data: dict[str, str], action: str) -> dict[str, Any]:
-        try:
-            async with httpx.AsyncClient(
-                transport=self._transport, timeout=TOKEN_TIMEOUT_SECONDS
-            ) as client:
-                response = await client.post(
-                    TOKEN_URL,
-                    data=data,
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
-        except httpx.HTTPError as exc:
-            raise _error(
-                "CHATGPT_AUTH_EXCHANGE_FAILED",
-                f"{action}没有完成：{type(exc).__name__}。建议：检查网络后重新登录。",
-            ) from exc
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                async with httpx.AsyncClient(
+                    transport=self._transport, timeout=TOKEN_TIMEOUT_SECONDS
+                ) as client:
+                    response = await client.post(
+                        TOKEN_URL,
+                        data=data,
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    )
+                break
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                # 只重试「连接没建立」：这时服务端没收到请求，刷新令牌不会被多花一次。
+                # 读超时不重试——请求可能已经在服务端处理完，重发会撞上已轮换的令牌。
+                if attempts >= TOKEN_CONNECT_ATTEMPTS:
+                    raise _error(
+                        "CHATGPT_AUTH_EXCHANGE_FAILED",
+                        f"{action}没有完成：{type(exc).__name__}（已尝试 {attempts} 次）。"
+                        "建议：检查代理或网络后重新登录。",
+                    ) from exc
+                await asyncio.sleep(TOKEN_CONNECT_RETRY_DELAYS[attempts - 1])
+            except httpx.HTTPError as exc:
+                raise _error(
+                    "CHATGPT_AUTH_EXCHANGE_FAILED",
+                    f"{action}没有完成：{type(exc).__name__}。建议：检查网络后重新登录。",
+                ) from exc
+
         if response.status_code >= 400:
             raise _error(
                 "CHATGPT_AUTH_EXCHANGE_FAILED",

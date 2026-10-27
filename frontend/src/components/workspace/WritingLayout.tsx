@@ -35,6 +35,9 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const canDockDirectory = capacity.sidebar > 0;
   const compact = capacity.kind === "single";
   const chat = Boolean(currentId && (compact ? compactChat : prefs.chatVisible));
+  useLayoutEffect(() => {
+    if (chat && prefs.chatReveal > 0) container.current?.querySelector<HTMLTextAreaElement>(".chat-input")?.focus();
+  }, [chat, prefs.chatReveal]);
   const plan = writingLayout(width, { ...prefs, chatVisible: chat });
   const sidebar = plan.sidebar > 0;
   const directoryVisible = canDockDirectory ? sidebar : directory;

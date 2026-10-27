@@ -41,9 +41,17 @@ export interface ConversationUsageView {
   through_seq: number;
   usage: UsageTotals;
   context: ContextView;
+  /** 自动压缩策略；说明「什么时候需要压缩」，不是容量事实。 */
+  policy: CompactionPolicy;
   diagnostics: string[];
   revision: string;
   compaction?: CompactionOperation | null;
+}
+
+export interface CompactionPolicy {
+  auto_compaction: boolean;
+  /** 可用输入预算的比例；触发点据此计算。 */
+  threshold: number;
 }
 
 export function usageDisplayState(totals: UsageTotals): UsageDisplayState {
@@ -72,6 +80,9 @@ export interface ContextView {
   context_window_tokens: number | null;
   input_limit_tokens: number | null;
   output_reserve_tokens: number | null;
+  safety_tokens: number | null;
+  /** 窗口数字的出处；展开明细时显示，避免把目录值当成作者填的。 */
+  capacity_source: CapacitySource;
   budget: "unknown" | "ok" | "near" | "over";
   instructions_tokens: number | null;
   tools_tokens: number | null;
@@ -80,6 +91,8 @@ export interface ContextView {
   fingerprint: string;
   limits_revision: string;
 }
+
+export type CapacitySource = "override" | "metadata" | "catalog" | "unknown";
 
 /** 一万以下给原数，以上给「万」：窄栏里长数字会挤掉发送按钮。 */
 export function formatTokens(value: number | null): string {
@@ -109,6 +122,69 @@ export function formatPercent(share: number | null): string {
   return `${percent < 1 ? percent.toFixed(1) : Math.round(percent)}%`;
 }
 
+/** 浮层内的精确数字：加千分位，避免 128000 与 12800 看混。 */
+export function formatCount(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+  return Math.round(value)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/** 窗口已知才谈占比与进度条；只有已用量没有分母时不猜。 */
+export function hasCapacity(context: ContextView): boolean {
+  return context.context_window_tokens !== null && context.context_window_tokens > 0;
+}
+
+/** 浮层首行：已用与总量；总量未知时如实说未知，不画进度条。 */
+export function contextAmount(context: ContextView): string {
+  const used = context.estimated_active_tokens;
+  if (used === null) {
+    return "—";
+  }
+  if (!hasCapacity(context)) {
+    return `≈${formatCount(used)} tokens · 总容量未知`;
+  }
+  return `≈${formatCount(used)} / ${formatCount(context.context_window_tokens)} tokens`;
+}
+
+export const CAPACITY_SOURCE_LABEL: Record<CapacitySource, string> = {
+  override: "旧配置（已停用）",
+  metadata: "服务商返回",
+  catalog: "内置目录",
+  unknown: "未知",
+};
+
+export function capacitySourceLabel(source: CapacitySource | string): string {
+  return CAPACITY_SOURCE_LABEL[source as CapacitySource] ?? "未知";
+}
+
+/**
+ * 自动压缩的触发点。
+ *
+ * 阈值是可用输入预算的比例，不是窗口比例：压缩本身也要预留空间。
+ * 预算未知或自动压缩关闭时不给数字，避免给出一个不存在的边界。
+ */
+export function autoCompactionNote(
+  context: ContextView,
+  policy: CompactionPolicy | null | undefined,
+): string | null {
+  if (!policy) {
+    return null;
+  }
+  if (!policy.auto_compaction) {
+    return "自动压缩已关闭";
+  }
+  if (context.input_limit_tokens === null || context.input_limit_tokens <= 0) {
+    return null;
+  }
+  const trigger = Math.floor(context.input_limit_tokens * policy.threshold);
+  return `达到 ${formatCount(trigger)} tokens（可用输入预算的 ${Math.round(
+    policy.threshold * 100,
+  )}%）时自动压缩`;
+}
+
 /** 上下文入口的常驻文案：先是状态，再是数字。 */
 export function contextLabel(context: ContextView | null): string {
   if (!context || context.status === "pending" || context.estimated_active_tokens === null) {
@@ -116,7 +192,8 @@ export function contextLabel(context: ContextView | null): string {
   }
   const tokens = `≈${formatTokens(context.estimated_active_tokens)}`;
   const share = contextShare(context);
-  return share === null ? `上下文 ${tokens}` : `上下文 ${formatPercent(share)}`;
+  // 没有分母时把单位说清楚，避免「约 2716」被当成百分比或字数。
+  return share === null ? `上下文 ${tokens} tokens` : `上下文 ${formatPercent(share)}`;
 }
 
 /** 累计入口的常驻文案；零、未知、部分必须分开说。 */
@@ -166,9 +243,9 @@ export function formatDuration(ms: number | null): string {
 }
 
 /**
- * 手动整理操作；`completed` 时才带记录，`failed` 时带错误。
+ * 手动压缩操作；`completed` 时才带记录，`failed` 时带错误。
  *
- * 整理不是创作轮次：它没有作者消息，也不产生作品提交，所以单独一套状态。
+ * 压缩不是创作轮次：它没有作者消息，也不产生作品提交，所以单独一套状态。
  */
 export interface CompactionOperation {
   operation_id: string;
@@ -189,23 +266,23 @@ export function isCompactionFinished(operation: CompactionOperation): boolean {
   return ["completed", "noop", "failed", "stopped"].includes(operation.state);
 }
 
-/** 整理结束后的简短说明；成功给前后规模，失败说原因，取消说没变化。 */
+/** 压缩结束后的简短说明；成功给前后规模，失败说原因，取消说没变化。 */
 export function compactionNote(operation: CompactionOperation): string {
   if (operation.state === "completed") {
     const before = formatTokens(operation.record?.estimated_before ?? null);
     const after = formatTokens(operation.record?.estimated_after ?? null);
-    return `已整理：${before} → ${after}`;
+    return `已压缩：${before} → ${after}`;
   }
   if (operation.state === "noop") {
-    return operation.note || "当前没有需要整理的较早内容。";
+    return operation.note || "当前没有需要压缩的较早内容。";
   }
   if (operation.state === "failed") {
     const error = operation.error;
     return error ? `[${error.code}] ${error.where}：${error.why}。建议：${error.fix}。`
-      : "[COMPACTION_FAILED] 上下文整理：这次没有整理。建议：保留当前上下文，稍后重试。";
+      : "[COMPACTION_FAILED] 上下文压缩：这次没有压缩。建议：保留当前上下文，稍后重试。";
   }
   if (operation.state === "stopped") {
-    return operation.note || "整理已取消；当前上下文没有变化。";
+    return operation.note || "压缩已取消；当前上下文没有变化。";
   }
   return "";
 }

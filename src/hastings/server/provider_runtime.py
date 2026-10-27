@@ -58,6 +58,10 @@ MANAGED_APIS = (
     "google-generative-ai",
 )
 
+#: 写作轮的连接级重试次数：连接没建立时服务端还没收到请求，重发不会产生费用。
+#: 代理握手失败与 DNS 抖动都是间歇性的，一次就放弃会让整轮写作作废。
+WORKER_CONNECT_RETRIES = 2
+
 
 @runtime_checkable
 class ManagedModelProvider(Protocol):
@@ -186,6 +190,8 @@ def _compatible_config(
         # 端点并不相同，猜错的表现是「模型存在但调用 404」。
         infer_api_from_model=False,
         max_retries=_retries(max_retries, worker),
+        # 本机服务没有代理与 DNS 环节，连接失败通常是服务没起，重试没有意义。
+        max_connect_retries=WORKER_CONNECT_RETRIES if worker and not loopback else 0,
         timeout_seconds=timeout_seconds or ((180.0 if loopback else 45.0) if worker else 60.0),
         max_tokens=WORKER_OUTPUT_TOKENS if worker else None,
         reasoning_effort="none" if thinking_level == "off" else thinking_level,
@@ -243,6 +249,7 @@ def subscription_provider_config(
         infer_api_from_model=False,
         max_tokens=None,
         max_retries=_retries(max_retries, worker),
+        max_connect_retries=WORKER_CONNECT_RETRIES if worker else 0,
         timeout_seconds=timeout_seconds or (180.0 if worker else 45.0),
         credential_resolver=credential_resolver,
         provider_name="chatgpt-subscription",

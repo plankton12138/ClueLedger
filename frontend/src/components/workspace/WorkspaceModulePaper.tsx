@@ -6,6 +6,7 @@ import { workspaceDraftKey, workspaceModuleDirty, useWorkspaceModulesStore } fro
 import ModuleContent from "../library/ModuleContent";
 import { Button } from "../ui/Button";
 import { StatusMessage } from "../ui/StatusMessage";
+import SelectionToChat from "./SelectionToChat";
 
 export default function WorkspaceModulePaper({ workspaceId,binding }: { workspaceId: string; binding: AssemblyBinding }) {
   const store = useWorkspaceModulesStore();
@@ -49,7 +50,9 @@ export default function WorkspaceModulePaper({ workspaceId,binding }: { workspac
           <textarea aria-label={draft.entries.length > 1 ? `模块正文 ${entry.title}` : "模块正文"} rows={14} disabled={busy} value={entry.body}
             onChange={event => store.edit(draftKey,{ entries: draft.entries.map((item,i) => i===index ? { ...item,body:event.target.value } : item) })} />
         </div>)}
-      </div> : document ? <ModuleContent document={document} /> : null}
+      </div> : document ? <SelectionToChat source={{ title: bindingLabel(binding),
+        source: `module:${binding.module.library_id}/${binding.module.module_id} (binding:${binding.id})`,
+        version: binding.module.revision_id }}><ModuleContent document={document} /></SelectionToChat> : null}
     </div>
   </article>;
 }

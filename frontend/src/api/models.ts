@@ -63,6 +63,15 @@ export interface ModelConnection {
   auth_status: AuthStatus;
   /** 按精确模型名保存的容量；未出现的模型按未知处理，界面不显示百分比。 */
   model_limits: Record<string, ModelLimitInput>;
+  /** 服务商在模型列表里返回的容量；与作者手填的容量分开。 */
+  model_metadata: Record<string, ModelCapacityInput>;
+}
+
+/** 供应商返回的容量；只含三个上限，不含线簿的运行时预留。 */
+export interface ModelCapacityInput {
+  context_window_tokens?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
 }
 
 /** 一个模型的容量；只填知道的项，空缺表示未知。 */
@@ -108,14 +117,15 @@ export interface ConnectionDraft {
   auth_provider?: string;
   /** 一次已完成的授权会话；保存成功后凭据归属这个连接。 */
   auth_session_id?: string;
-  /** 省略表示沿用已保存的容量；传空对象才是清空。 */
-  model_limits?: Record<string, ModelLimitInput>;
+
 }
 
 export interface DiscoveryResult {
   revision: string;
   connection_id: string | null;
   models: string[];
+  /** 供应商在列表里明确给出的容量；只有名字的供应商这里是空映射。 */
+  limits: Record<string, ModelCapacityInput>;
   complete: boolean;
   code: string | null;
   message: string;

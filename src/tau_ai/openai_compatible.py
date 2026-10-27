@@ -352,14 +352,19 @@ class OpenAICompatibleProvider:
                             yield parser_event
                         return
                 except httpx.HTTPError as exc:
-                    if not parser.emitted_content and self._should_retry(attempt):
+                    # 连接没建立（DNS、拒绝连接、代理握手失败）时服务端还没收到请求，
+                    # 重发不会重复计费；这类失败按 max_connect_retries 单独放宽。
+                    retry_limit = self._config.max_retries
+                    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+                        retry_limit = max(retry_limit, self._config.max_connect_retries)
+                    if not parser.emitted_content and attempt < retry_limit:
                         delay = retry_delay_seconds(
                             attempt,
                             max_delay_seconds=self._config.max_retry_delay_seconds,
                         )
                         yield provider_retry_event(
                             attempt=attempt,
-                            max_retries=self._config.max_retries,
+                            max_retries=retry_limit,
                             delay_seconds=delay,
                             reason="network error",
                             data={
@@ -1059,6 +1064,9 @@ def _tool_to_responses(tool: AgentTool) -> dict[str, JSONValue]:
         "name": tool.name,
         "description": tool.description,
         "parameters": dict(tool.input_schema),
+        # Responses may otherwise normalize optional properties into required fields.
+        # Tools validate their own inputs; preserve their declared optional semantics.
+        "strict": False,
     }
 
 

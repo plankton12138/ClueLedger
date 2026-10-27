@@ -584,7 +584,11 @@ def test_conversation_ui_keeps_draft_references(tmp_path: Path) -> None:
     )
     assert saved.status_code == 200, saved.text
     assert saved.json()["draft_contexts"] == {
-        "new": {"selected_path": "正文/0001 雨夜.md", "reference_paths": ["正文/0001 雨夜.md"]}
+        "new": {
+            "selected_path": "正文/0001 雨夜.md",
+            "reference_paths": ["正文/0001 雨夜.md"],
+            "text_references": [],
+        }
     }
 
     cleared = client.patch(
@@ -691,3 +695,68 @@ def test_state_endpoint_lists_clue_ledger(tmp_path: Path) -> None:
     assert empty["domain"] == "clues"
     assert empty["entries"] == []
     assert empty["overdue"] == []
+
+
+def test_text_selection_drafts_survive_reload_without_creating_conversation(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    workspace_id = _created(client, tmp_path / "选段作品")
+    url = f"/api/file-workspaces/{workspace_id}/conversation-ui"
+    references = [
+        {
+            "id": "file-quote",
+            "text": "雨仍未停。\n第二行。",
+            "title": "雨夜",
+            "source": "正文/0001 雨夜.md",
+            "version": "d1",
+        },
+        {
+            "id": "module-quote",
+            "text": "钟慢了七分钟。",
+            "title": "港口",
+            "source": "module:library/module (binding:one)",
+            "version": "rev1",
+        },
+    ]
+    response = client.patch(
+        url,
+        json={
+            "set_draft": True,
+            "draft_text": "",
+            "draft_target": "new",
+            "set_draft_context": True,
+            "draft_text_references": references,
+        },
+        headers={"If-Match": client.get(url).json()["revision"]},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["draft_contexts"]["new"]["text_references"] == references
+    refreshed = _client(tmp_path).get(url).json()
+    assert refreshed["draft_contexts"]["new"]["text_references"] == references
+    assert refreshed["drafts"] == {}
+    assert client.get(f"/api/file-workspaces/{workspace_id}/conversations").json()["items"] == []
+
+
+@pytest.mark.parametrize(
+    "references",
+    [
+        [{"id": "q", "text": "x" * 20_001, "title": "章", "source": "正文/a.md", "version": "d1"}],
+        [
+            {"id": str(i), "text": "x", "title": "章", "source": "正文/a.md", "version": "d1"}
+            for i in range(11)
+        ],
+    ],
+)
+def test_text_selection_draft_limits(tmp_path: Path, references: list[dict[str, str]]) -> None:
+    client = _client(tmp_path)
+    workspace_id = _created(client, tmp_path / "选段作品")
+    url = f"/api/file-workspaces/{workspace_id}/conversation-ui"
+    response = client.patch(
+        url,
+        json={
+            "set_draft_context": True,
+            "draft_target": "new",
+            "draft_text_references": references,
+        },
+    )
+    assert response.status_code == 422
+    assert client.get(url).json()["draft_contexts"] == {}

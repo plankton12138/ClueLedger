@@ -124,6 +124,9 @@ def _request_estimate(
         "context_window_tokens": limits.context_window_tokens if limits else None,
         "input_limit_tokens": limits.input_limit() if limits else None,
         "output_reserve_tokens": limits.output_reserve_tokens if limits else None,
+        "safety_tokens": limits.safety_tokens if limits else None,
+        # 容量出处：界面展开明细时显示，避免把目录值当成作者填的。
+        "capacity_source": limits.source if limits else "unknown",
         "limits_revision": limits.revision if limits else "",
     }
 

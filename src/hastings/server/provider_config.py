@@ -42,7 +42,7 @@ from hastings.server.model_credential import (
     load_subscription,
     save_subscription,
 )
-from hastings.server.model_limits import ModelLimitOverride, resolve_model_limits
+from hastings.server.model_limits import ModelCapacity, ModelLimitOverride, resolve_model_limits
 from hastings.server.model_thinking import ThinkingLevel, thinking_levels
 from hastings.server.provider_catalog import ProviderApi
 from hastings.server.provider_runtime import ModelSnapshot, build_provider, snapshot
@@ -79,6 +79,9 @@ class ProviderProfile(BaseModel):
     #: 按精确模型名保存的容量。未配置的模型按未知处理，不按名称前缀推断。
     #: 旧配置没有该字段时为空，读取不受影响。
     model_limits: dict[str, ModelLimitOverride] = Field(default_factory=dict)
+    #: 服务商在模型列表里返回的有效容量；这是供应商事实，不是作者的设置。
+    #: 解析时排在手工容量之后、内置目录之前。旧配置没有该字段时为空。
+    model_metadata: dict[str, ModelCapacity] = Field(default_factory=dict)
     # 免密端点（本机兼容服务）：无 key 也可用；空 key 本就不发 Authorization 头。
     no_auth: bool = False
     #: 供应商预设 ID；未知值按自定义服务展示，不阻止读取。
@@ -399,6 +402,17 @@ def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
             if profile.model_limits
             else {}
         ),
+        # 服务商返回的容量单独保存：它随「获取模型列表」更新，不与作者手填的值混写。
+        **(
+            {
+                "model_metadata": {
+                    name: capacity.model_dump(exclude_none=True)
+                    for name, capacity in profile.model_metadata.items()
+                }
+            }
+            if profile.model_metadata
+            else {}
+        ),
         # 免密字段按需写入：False 不落盘
         **({"no_auth": True} if profile.no_auth else {}),
         **({"catalog_id": profile.catalog_id} if profile.catalog_id else {}),
@@ -686,10 +700,7 @@ class ProviderBook:
         if not self._config.providers:
             return "还没有可用的模型连接；先在模型设置里添加一个连接"
         titles = "、".join(f"「{item.title}」" for item in self._config.providers)
-        return (
-            f"连接{titles}还没有可用的凭据；"
-            "订阅连接需要重新登录，API Key 连接需要填写 Key"
-        )
+        return f"连接{titles}还没有可用的凭据；订阅连接需要重新登录，API Key 连接需要填写 Key"
 
 
 def snapshot_for(selection: ModelSelection, book: ProviderBook) -> ModelSnapshot:

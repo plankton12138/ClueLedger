@@ -446,13 +446,13 @@ def validate_candidate(
         raise _invalid(
             "COMPACTION_NOT_EFFECTIVE",
             "摘要为空或没有减少输入",
-            "保留当前上下文或缩小整理范围",
+            "保留当前上下文或缩小压缩范围",
         )
     if not 0 <= candidate.covered_through_seq <= candidate.source_head_seq:
         raise _invalid(
             "COMPACTION_SOURCE_INVALID",
             "摘要覆盖范围无效",
-            "重新读取原会话后再整理",
+            "重新读取原会话后再压缩",
         )
     for item in candidate.items:
         if not item.source_event_ids or not set(item.source_event_ids) <= allowed_sources:
@@ -464,7 +464,7 @@ def validate_candidate(
     if input_limit is not None and candidate.estimated_after > input_limit:
         raise _invalid(
             "CONTEXT_REQUIRED_INPUT_TOO_LARGE",
-            "整理后仍超出输入预算",
+            "压缩后仍超出输入预算",
             "缩小本次处理范围，或选择容量更大的模型",
         )
 

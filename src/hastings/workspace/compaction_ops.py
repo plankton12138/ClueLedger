@@ -1,9 +1,9 @@
-"""手动整理上下文的后台操作（0.9 C1）。
+"""手动压缩上下文的后台操作（0.9 C1）。
 
-整理不是创作轮次：它不注入作者消息，不产生作品提交，也不占用「一轮」的位置。
-所以它有自己的操作标识与状态，作者看到的是「正在整理」而不是一条假的助手回复。
+压缩不是创作轮次：它不注入作者消息，不产生作品提交，也不占用「一轮」的位置。
+所以它有自己的操作标识与状态，作者看到的是「正在压缩」而不是一条假的助手回复。
 
-一次操作只有四种终态：``completed``（提交了新记录）、``noop``（没有可整理的较早内容）、
+一次操作只有四种终态：``completed``（提交了新记录）、``noop``（没有可压缩的较早内容）、
 ``failed``（摘要不成立，旧投影保留）、``stopped``（作者取消）。``queued`` 与 ``running``
 是过程状态。
 
@@ -116,7 +116,7 @@ class CompactionRunner:
             for operation in self._operations.values():
                 if operation.conversation_id == conversation.id and not operation.finished:
                     operation.state = "stopped"
-                    operation.note = "服务重启，整理已中断；没有自动重新调用模型。"
+                    operation.note = "服务重启，压缩已中断；没有自动重新调用模型。"
                     self._save(operation)
             for op, event in pending.items():
                 self.service.store.append(
@@ -144,7 +144,7 @@ class CompactionRunner:
         )
 
     async def submit(self, conversation_id: str, request_key: str) -> CompactionOperation:
-        """受理一次整理；同一个键只受理一次。"""
+        """受理一次压缩；同一个键只受理一次。"""
         self.service.store.get(conversation_id)
         async with self._lock:
             existing = self._by_key.get((conversation_id, request_key))
@@ -176,14 +176,14 @@ class CompactionRunner:
             raise WorkspaceError(
                 code="CONTEXT_COMPACTION_NOT_FOUND",
                 where="conversation.compaction",
-                why="找不到这次整理操作",
-                fix="确认当前会话，或重新发起整理",
+                why="找不到这次压缩操作",
+                fix="确认当前会话，或重新发起压缩",
                 details={"operation_id": operation_id},
             )
         return operation
 
     async def stop(self, conversation_id: str, operation_id: str) -> CompactionOperation:
-        """取消排队或运行中的整理；已完成的操作保持原状。"""
+        """取消排队或运行中的压缩；已完成的操作保持原状。"""
         operation = self.get(conversation_id, operation_id)
         if operation.finished:
             return operation
@@ -195,7 +195,7 @@ class CompactionRunner:
                 await task
         if operation.state == "queued":
             operation.state = "stopped"
-            operation.note = "整理已取消；当前上下文没有变化。"
+            operation.note = "压缩已取消；当前上下文没有变化。"
             self._save(operation)
             self._tasks.pop(operation_id, None)
             # 任务可能在第一次调度前被取消，此时 _run 的 finally 尚未进入。
@@ -266,7 +266,7 @@ class CompactionRunner:
             )
         except asyncio.CancelledError:
             operation.state = "stopped"
-            operation.note = "整理已取消；当前上下文没有变化。"
+            operation.note = "压缩已取消；当前上下文没有变化。"
             if not operation.signal.is_cancelled() or (signal and signal.is_cancelled()):
                 raise
         except WorkspaceError as exc:
@@ -277,7 +277,7 @@ class CompactionRunner:
                 "why": exc.why,
                 "fix": exc.fix,
             }
-        except Exception as exc:  # 未预计的失败同样不能让作者以为整理成功了
+        except Exception as exc:  # 未预计的失败同样不能让作者以为压缩成功了
             operation.state = "failed"
             operation.error = {
                 "code": "COMPACTION_FAILED",
@@ -288,12 +288,12 @@ class CompactionRunner:
         else:
             if record is None:
                 operation.state = "noop"
-                operation.note = "当前没有需要整理的较早内容。"
+                operation.note = "当前没有需要压缩的较早内容。"
             else:
                 operation.state = "completed"
                 operation.record = record.as_dict()
         finally:
             if operation.signal.is_cancelled() or (signal and signal.is_cancelled()):
                 operation.state = "stopped"
-                operation.note = "整理已取消；未完成的摘要没有启用。"
+                operation.note = "压缩已取消；未完成的摘要没有启用。"
             self._save(operation)

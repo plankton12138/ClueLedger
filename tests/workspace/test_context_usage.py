@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from hastings.server.model_limits import ModelLimitOverride, resolve_model_limits
+from hastings.server.model_limits import ModelCapacity, resolve_model_limits
 from hastings.server.provider_config import ProviderProfile
 from hastings.workspace.context_usage import (
     MESSAGE_OVERHEAD_TOKENS,
@@ -24,13 +24,13 @@ from hastings.workspace.context_usage import (
 
 
 def profile(window: int | None = None) -> ProviderProfile:
-    limits = {"deepseek-chat": ModelLimitOverride(context_window_tokens=window)} if window else {}
+    limits = {"deepseek-chat": ModelCapacity(context_window_tokens=window)} if window else {}
     return ProviderProfile(
         name="deepseek",
         base_url="https://api.deepseek.com",
         api="openai-completions",
         default_model="deepseek-chat",
-        model_limits=limits,
+        model_metadata=limits,
     )
 
 

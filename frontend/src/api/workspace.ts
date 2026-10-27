@@ -205,9 +205,19 @@ export const EMPTY_CONTEXT: ContextInput = {
 };
 
 /** 草稿携带的参考：只选文件、还没写文字时也保留。 */
+export interface TextReference {
+  id: string;
+  text: string;
+  title: string;
+  source: string;
+  version: string;
+}
+
+/** 文件参考与选段按草稿保存；选段保留加入时的文本与来源版本。 */
 export interface DraftContext {
   selected_path: string | null;
   reference_paths: string[];
+  text_references?: TextReference[];
 }
 
 /** 界面状态：上次看的正式会话、各会话草稿与草稿携带的参考（`new` 是未发送的新对话槽位）。 */
@@ -227,6 +237,7 @@ export interface ConversationUiPatch {
   set_draft_context?: boolean;
   draft_selected_path?: string | null;
   draft_reference_paths?: string[];
+  draft_text_references?: TextReference[];
 }
 
 /** 单条回复的完整性：块与响应各自成立，不代替整轮结果。 */

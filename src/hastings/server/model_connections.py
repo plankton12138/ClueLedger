@@ -35,7 +35,7 @@ from hastings.server.model_credential import (
     mask_account,
     save_subscription,
 )
-from hastings.server.model_limits import ModelLimitOverride
+from hastings.server.model_limits import ModelCapacity, ModelLimitOverride
 from hastings.server.model_probe import DiscoveryResult, ProbeResult, discover_models
 from hastings.server.model_probe import probe_response as run_response_probe
 from hastings.server.model_probe import probe_tool as run_tool_probe
@@ -76,6 +76,9 @@ class ConnectionDraft:
     #: 按精确模型名保存的容量；``None`` 表示沿用已保存的值，``{}`` 表示清空。
     #: 与模型列表分开保存：移除模型不删除它的容量，换回来还能继续用。
     model_limits: dict[str, ModelLimitOverride] | None = None
+    #: 服务商在模型列表里返回的容量；``None`` 表示沿用已保存的值。
+    #: 它不是作者设置，而是最近一次「获取模型列表」读到的供应商事实。
+    model_metadata: dict[str, ModelCapacity] | None = None
     api_key: str | None = None
     auth_method: AuthMethod = "api_key"
     #: 订阅来源标识（如 ``chatgpt``）；API Key 连接为空。
@@ -107,6 +110,8 @@ class ConnectionView:
     auth_status: str = "missing"
     #: 作者填写的容量；未配置的模型按未知处理，界面据此给出设置入口。
     model_limits: dict[str, ModelLimitOverride] = field(default_factory=dict)
+    #: 服务商返回的容量；界面把它作为「自动识别」的来源展示。
+    model_metadata: dict[str, ModelCapacity] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +155,7 @@ class ModelConnectionService:
         self._probe_factory = probe_factory
         self._transport = transport
         self._lock = asyncio.Lock()
+        self._discovered_capacity: dict[tuple[str, str, str], dict[str, ModelCapacity]] = {}
 
     # -- 读取 -------------------------------------------------------------
 
@@ -310,12 +316,16 @@ class ModelConnectionService:
         self, draft: ConnectionDraft, *, connection_id: str | None = None
     ) -> DiscoveryResult:
         profile, resolved_id = await self._fresh_probe_profile(draft, connection_id)
-        return await discover_models(
+        result = await discover_models(
             profile,
             discovery=self._discovery_for(draft.catalog_id, draft.api),
             connection_id=resolved_id,
             transport=self._transport,
         )
+        if result.limits:
+            key = (profile.catalog_id, profile.api, profile.base_url.rstrip("/"))
+            self._discovered_capacity[key] = dict(result.limits)
+        return result
 
     async def probe(
         self,
@@ -582,11 +592,18 @@ class ModelConnectionService:
             api=draft.api,
             models=models,
             default_model=default_model,
-            # 提交里没有容量表示沿用已保存的：旧界面保存连接不该把容量抹掉。
-            model_limits=(
-                dict(draft.model_limits)
-                if draft.model_limits is not None
-                else dict(current.model_limits) if current is not None else {}
+            # 容量只能来自服务端发现；旧手动覆盖在保存时清空。
+            model_limits={},
+            model_metadata=dict(
+                self._discovered_capacity.get(
+                    (draft.catalog_id.strip(), draft.api, base_url.rstrip("/")),
+                    current.model_metadata
+                    if current is not None
+                    and current.base_url.rstrip("/") == base_url.rstrip("/")
+                    and current.api == draft.api
+                    and current.catalog_id == draft.catalog_id.strip()
+                    else {},
+                )
             ),
             api_key=draft.api_key,
             auth_method=draft.auth_method,
@@ -625,6 +642,7 @@ class ModelConnectionService:
             default_model=clean.default_model,
             models=list(clean.models),
             model_limits=dict(clean.model_limits or {}),
+            model_metadata=dict(clean.model_metadata or {}),
             catalog_id=clean.catalog_id,
             api=clean.api,
             auth_method=clean.auth_method,
@@ -655,6 +673,7 @@ class ModelConnectionService:
             account=account,
             auth_status=profile.auth_status,
             model_limits=dict(profile.model_limits),
+            model_metadata=dict(profile.model_metadata),
         )
 
     def _discovery_for(self, catalog_id: str, api: str) -> str | None:

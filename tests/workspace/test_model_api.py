@@ -393,64 +393,67 @@ def test_accepted_turn_keeps_its_snapshot_after_switching(
     assert service.view().selection.connection_id == first
 
 
-# -- 容量配置 ---------------------------------------------------------------
+# -- 系统识别容量 -----------------------------------------------------------
 
 
-def test_capacity_is_saved_per_model_and_exposed(tmp_path: Path) -> None:
-    """容量按精确模型保存，写入配置文件，并出现在连接视图里。"""
+@pytest.mark.parametrize("field", ["model_limits", "model_metadata"])
+def test_client_cannot_submit_capacity_on_create_or_update(tmp_path: Path, field: str) -> None:
     client, _service, _book, path = _build(tmp_path)
-
-    body = _create(client, model_limits={"deepseek-chat": {"context_window_tokens": 131_072}})
-
-    connection = body["connections"][0]
-    assert connection["model_limits"]["deepseek-chat"]["context_window_tokens"] == 131_072
-    assert "131072" in path.read_text(encoding="utf-8")
-
-
-def test_edit_without_capacity_field_keeps_saved_limits(tmp_path: Path) -> None:
-    """保存连接时没提交容量，不能把已配置的容量清掉。"""
-    client, _service, _book, _path = _build(tmp_path)
-    name = _create(
-        client, model_limits={"deepseek-chat": {"context_window_tokens": 131_072}}
-    )["connections"][0]["name"]
-
-    updated = client.patch(
-        f"/api/model-connections/{name}",
-        json={**DRAFT, "display_name": "改名", "api_key": None},
-        headers={"If-Match": _revision(client)},
-    )
-
-    assert updated.status_code == 200
-    limits = updated.json()["connections"][0]["model_limits"]
-    assert limits["deepseek-chat"]["context_window_tokens"] == 131_072
-
-
-def test_explicit_empty_capacity_map_clears_limits(tmp_path: Path) -> None:
-    """显式提交空映射才是清空：省略与清空是两种意图。"""
-    client, _service, _book, _path = _build(tmp_path)
-    name = _create(
-        client, model_limits={"deepseek-chat": {"context_window_tokens": 131_072}}
-    )["connections"][0]["name"]
-
-    updated = client.patch(
-        f"/api/model-connections/{name}",
-        json={**DRAFT, "api_key": None, "model_limits": {}},
-        headers={"If-Match": _revision(client)},
-    )
-
-    assert updated.status_code == 200
-    assert updated.json()["connections"][0]["model_limits"] == {}
-
-
-def test_invalid_capacity_is_rejected_before_saving(tmp_path: Path) -> None:
-    client, _service, _book, path = _build(tmp_path)
-
+    payload = {field: {"deepseek-chat": {"context_window_tokens": 131_072}}}
     response = client.post(
-        "/api/model-connections",
-        json={**DRAFT, "model_limits": {"deepseek-chat": {"context_window_tokens": 0}}},
+        "/api/model-connections", json={**DRAFT, **payload}, headers={"If-Match": _revision(client)}
+    )
+    assert response.status_code == 422
+    assert not path.exists()
+    name = _create(client)["connections"][0]["name"]
+    before = path.read_bytes()
+    response = client.patch(
+        f"/api/model-connections/{name}",
+        json={**DRAFT, **payload},
         headers={"If-Match": _revision(client)},
     )
-
     assert response.status_code == 422
-    assert "MODEL_LIMITS_INVALID" in response.text
-    assert not path.exists()
+    assert path.read_bytes() == before
+
+
+def test_server_discovery_capacity_is_saved_without_client_roundtrip(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "deepseek-chat", "context_window": 64_000},
+                ]
+            },
+        )
+
+    client, _service, _book, _path = _build(tmp_path, transport=httpx.MockTransport(handler))
+    discovered = client.post(
+        "/api/model-connections/discover",
+        json={
+            "catalog_id": DRAFT["catalog_id"],
+            "base_url": DRAFT["base_url"],
+            "api": DRAFT["api"],
+            "api_key": DRAFT["api_key"],
+        },
+    )
+    assert discovered.status_code == 200
+    assert discovered.json()["limits"]["deepseek-chat"]["context_window_tokens"] == 64_000
+    connection = _create(client)["connections"][0]
+    assert connection["model_limits"] == {}
+    assert connection["model_metadata"]["deepseek-chat"]["context_window_tokens"] == 64_000
+    name = connection["name"]
+    updated = client.patch(
+        f"/api/model-connections/{name}",
+        json={**DRAFT, "api_key": None},
+        headers={"If-Match": _revision(client)},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["connections"][0]["model_metadata"] == connection["model_metadata"]
+    moved = client.patch(
+        f"/api/model-connections/{name}",
+        json={**DRAFT, "base_url": "https://other.example/v1", "api_key": None},
+        headers={"If-Match": _revision(client)},
+    )
+    assert moved.status_code == 200
+    assert moved.json()["connections"][0]["model_metadata"] == {}

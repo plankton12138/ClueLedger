@@ -234,6 +234,27 @@ def test_authorization_quote_must_come_from_author_message() -> None:
     assert _code(no_messages) == "TASK_SCOPE_EVIDENCE_INVALID"
 
 
+def test_authorization_seq_must_match_a_visible_message_and_hints_the_seqs() -> None:
+    controller = ScopeController()
+
+    with pytest.raises(WorkspaceError) as unknown_seq:
+        controller.set_scope(
+            ScopeDraft(
+                mode="edit",
+                grants=(Mutation("update", _CHAPTER),),
+                summary="改写第三章",
+                authorization="只改第三章",
+                authorization_seq=7,
+            ),
+            author_texts=_AUTHOR,
+        )
+
+    assert _code(unknown_seq) == "TASK_SCOPE_EVIDENCE_INVALID"
+    # 引文已能定位消息；提示要给出可用的 seq 并允许省略，否则模型只能继续猜。
+    assert "1" in unknown_seq.value.fix
+    assert "省略" in unknown_seq.value.fix
+
+
 # -- 重复登记 ---------------------------------------------------------------
 
 
@@ -558,6 +579,38 @@ async def test_tool_rejects_bad_grants_shape(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_tool_treats_blank_target_as_absent(tmp_path: Path) -> None:
+    """可选字段给空串按没填处理：模型删掉值却留下字段时不该反复被拒绝。"""
+    _, tools, _ = _tools(tmp_path)
+
+    await _call(
+        tools["set_task_scope"],
+        mode="edit",
+        summary="改写第三章的问询",
+        authorization="只改第三章",
+        grants=[{"action": "update", "path": _CHAPTER, "target": ""}],
+    )
+
+
+@pytest.mark.anyio
+async def test_tool_resolves_authorization_seq_from_the_quote(tmp_path: Path) -> None:
+    """模型看不到事件序号：填错的序号按引文落到实际作者消息，不让整轮白跑。"""
+    _, tools, run = _tools(tmp_path)
+
+    await _call(
+        tools["set_task_scope"],
+        mode="edit",
+        summary="改写第三章的问询",
+        authorization="只改第三章",
+        authorization_seq=7,
+        grants=[{"action": "update", "path": _CHAPTER}],
+    )
+
+    assert run.scope.current is not None
+    assert run.scope.current.draft.authorization_seq == 1
+
+
+@pytest.mark.anyio
 async def test_tool_reregistration_cannot_bypass_a_fixed_scope(tmp_path: Path) -> None:
     """复现路径：登记固定范围后再次调用 set_task_scope 换范围。"""
     workspace, tools, _ = _tools(tmp_path)
@@ -701,6 +754,8 @@ def test_continue_must_carry_an_earlier_author_request() -> None:
             author_texts=authors,
         )
     assert _code(same_message) == "TASK_SCOPE_EVIDENCE_INVALID"
+    # 拒绝时要告诉模型可用的序号，否则它只能继续猜。
+    assert "1、2" in same_message.value.fix
 
     with pytest.raises(WorkspaceError) as unknown:
         controller.set_scope(
@@ -715,6 +770,7 @@ def test_continue_must_carry_an_earlier_author_request() -> None:
             author_texts=authors,
         )
     assert _code(unknown) == "TASK_SCOPE_EVIDENCE_INVALID"
+    assert "1、2" in unknown.value.fix
 
     scope = controller.set_scope(
         ScopeDraft(

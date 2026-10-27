@@ -765,12 +765,25 @@ def _validate_mutation(grant: Mutation, *, where: str) -> None:
     _validate_path(grant.path, where=where)
     if grant.action == "move":
         if grant.target is None:
-            raise _evidence_error("移动操作必须给出目标路径", where=where)
+            raise WorkspaceError(
+                code="TASK_SCOPE_EVIDENCE_INVALID",
+                where=where,
+                why="移动操作必须给出目标路径",
+                fix="给这次移动补上 target：移动后的新路径；其余操作只登记 path",
+                details={"path": grant.path},
+            )
         _validate_path(grant.target, where=where)
         if grant.target == grant.path:
             raise _evidence_error("移动的源与目标是同一个文件", where=where)
     elif grant.target is not None:
-        raise _evidence_error("只有移动操作可以带目标路径", where=where)
+        # 提示要指明「删掉哪个字段」，否则模型会去掉值却留着字段，反复被拒。
+        raise WorkspaceError(
+            code="TASK_SCOPE_EVIDENCE_INVALID",
+            where=where,
+            why="只有移动操作可以带目标路径",
+            fix=f"去掉这次登记里的 target，{_ACTION_LABEL[grant.action]}只登记 path",
+            details={"path": grant.path, "target": grant.target},
+        )
 
 
 def _validate_path(path: str, *, where: str) -> None:
@@ -808,13 +821,37 @@ def _validate_authorization(draft: ScopeDraft, author_texts: Sequence[tuple[int,
     if not author_texts:
         raise _evidence_error("这一轮没有可核对的作者消息，不能登记写权限")
     known = {seq for seq, _ in author_texts}
+    seqs = "、".join(str(seq) for seq in sorted(known))
     if draft.authorization_seq is not None and draft.authorization_seq not in known:
-        raise _evidence_error("授权引文定位到的不是本轮可见的作者消息")
+        # 引文本身已经能定位消息，这个字段填错只会白跑一趟：直接告诉模型可用的序号，
+        # 并说明可以不填，否则它会继续猜。
+        raise WorkspaceError(
+            code="TASK_SCOPE_EVIDENCE_INVALID",
+            where="task_scope.set",
+            why="授权引文定位到的不是本轮可见的作者消息",
+            fix=f"省略 authorization_seq（引文已能定位）；确需填写时用作者消息的 seq {seqs}",
+            details={"seq": draft.authorization_seq, "author_seq": sorted(known)},
+        )
     if draft.carried_from_seq is not None:
         if draft.carried_from_seq not in known:
-            raise _evidence_error("承接的作者请求不在本轮可见的作者消息里")
+            raise WorkspaceError(
+                code="TASK_SCOPE_EVIDENCE_INVALID",
+                where="task_scope.set",
+                why="承接的作者请求不在本轮可见的作者消息里",
+                fix=(
+                    f"carried_from_seq 只填作者消息的 seq {seqs}；"
+                    "不确定就省略，找不到承接对象先向作者确认"
+                ),
+                details={"seq": draft.carried_from_seq, "author_seq": sorted(known)},
+            )
         if draft.carried_from_seq == draft.authorization_seq:
-            raise _evidence_error("承接对象与授权语句是同一条消息，说明「继续」没有真正承接旧要求")
+            raise WorkspaceError(
+                code="TASK_SCOPE_EVIDENCE_INVALID",
+                where="task_scope.set",
+                why="承接对象与授权语句是同一条消息，说明「继续」没有真正承接旧要求",
+                fix=f"承接对象要选更早的那条作者请求；本轮作者消息的 seq 是 {seqs}",
+                details={"seq": draft.carried_from_seq, "author_seq": sorted(known)},
+            )
     for _, text in author_texts:
         if quote in " ".join(text.split()):
             return

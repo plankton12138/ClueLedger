@@ -337,6 +337,59 @@ async def test_save_review_report_publishes(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_review_scope_error_lists_allowed_targets_before_reading(tmp_path: Path) -> None:
+    workspace, tools, store, _ = _tools(tmp_path)
+    with pytest.raises(WorkspaceError) as rejected:
+        await _call(
+            tools["save_review_report"],
+            target_paths=["正文/9999 不存在.md"],
+            requirement="检查时间线",
+            status="no_findings",
+        )
+    assert rejected.value.code == "REVIEW_SCOPE_INVALID"
+    assert _CHAPTER in rejected.value.message
+    assert rejected.value.details["allowed"] == [_CHAPTER]
+    assert store.reports(workspace) == ()
+
+
+@pytest.mark.anyio
+async def test_review_reference_can_supply_evidence_without_becoming_a_target(
+    tmp_path: Path,
+) -> None:
+    workspace, tools, store, _ = _tools(tmp_path)
+    reference = "正文/0001 雨夜.md"
+    text = "林远在书房。"
+    workspace.write(reference, text, expected_digest=None)
+    source = await _call(tools["read_file"], path=reference)
+    await _call(
+        tools["save_review_report"],
+        target_paths=[_CHAPTER],
+        requirement="检查时间线",
+        status="findings",
+        findings=[
+            {
+                "kind": "continuity",
+                "certainty": "suspected",
+                "description": "需要核对林远所在位置。",
+                "suggestion": "核对时间。",
+                "evidence": [
+                    {
+                        "path": reference,
+                        "digest": source["digest"],
+                        "start": 0,
+                        "end": len(text),
+                        "quote": text,
+                    }
+                ],
+            }
+        ],
+    )
+    report = store.reports(workspace)[0]
+    assert report.target_paths == (_CHAPTER,)
+    assert report.findings[0].evidence[0].path == reference
+
+
+@pytest.mark.anyio
 async def test_request_review_requires_author_quote(tmp_path: Path) -> None:
     workspace, tools, _, run = _tools(tmp_path)
     write_tools = {tool.name: tool for tool in build_tools(workspace, run, mode="write")}

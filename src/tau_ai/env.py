@@ -48,6 +48,8 @@ class OpenAICompatibleConfig:
     timeout_seconds: float = DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_SECONDS
     max_retries: int = DEFAULT_OPENAI_COMPATIBLE_MAX_RETRIES
     max_retry_delay_seconds: float = DEFAULT_OPENAI_COMPATIBLE_MAX_RETRY_DELAY_SECONDS
+    #: 连接没建立时的重试上限；此时请求还没到服务端，重发不会产生费用。0 表示不额外重试。
+    max_connect_retries: int = 0
     api: str = "openai-completions"
     max_tokens: int | None = None
     supports_images: bool = False

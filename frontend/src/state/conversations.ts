@@ -41,6 +41,7 @@ import {
   type ChatTurn,
 } from "./chatMessages";
 import { createStreamBatcher } from "./streamBatcher";
+import { MAX_REFERENCE_TEXT, MAX_TEXT_REFERENCES, sameTextReferences, withTextReferences, type TextReference } from "./textReferences";
 
 export interface ConversationEntry {
   /** 按轮次归并后的展示结构；实时增量与历史回读共用同一套规则。 */
@@ -143,6 +144,8 @@ export interface ConversationsStore {
   setDraftContext(selectedPath: string | null, referencePaths: string[]): void;
   /** 目录里「加入对话」：把一份文件追加到当前草稿的参考，重复点击不重复登记。 */
   addReference(path: string): void;
+  addTextReference(input: TextReference): boolean;
+  removeTextReference(id: string): void;
   /** 灵感「带到对话」：只登记本轮参考，不发送、不改正文。 */
   addIdeaReference(input: IdeaReferenceInput): void;
   /** 作者明确把一条引用换成新修订；同一条目不叠出两个引用。 */
@@ -435,6 +438,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       set_draft_context: true,
       draft_selected_path: context?.selected_path ?? null,
       draft_reference_paths: context?.reference_paths ?? [],
+      draft_text_references: context?.text_references ?? [],
     };
     try {
       const ui: ConversationUi = await patchConversationUi(
@@ -619,8 +623,10 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       // 请求对象在发送前生成一次：重试与回调都复用同一个快照，不把当前选择偷偷带进去。
       // 显式给了随行引用就不读草稿：那次提交不该改动作者正在写的下一条。
       const submittedIdeas = [...(options?.ideas ?? get().draftIdeas[key] ?? [])];
+      // 显式发起的资料任务、灵感展开不携带普通聊天草稿里的选段。
+      const submittedTextReferences = options ? [] : [...(get().draftContexts[key]?.text_references ?? [])];
       const request: TurnInput = {
-        text: trimmed,
+        text: withTextReferences(trimmed, submittedTextReferences),
         request_key: keyRequest,
         context: {
           ...(context ?? EMPTY_CONTEXT),
@@ -700,7 +706,8 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
               delete next[NEW_DRAFT];
               const contexts = { ...state.draftContexts };
               const current = contexts[NEW_DRAFT];
-              if (!current || samePathList(current.reference_paths ?? [], submittedRefs)) {
+              if (!current || (samePathList(current.reference_paths ?? [], submittedRefs)
+                && sameTextReferences(current.text_references, submittedTextReferences))) {
                 // 新草稿连同它的参考一起交给正式会话，不在槽位里留下悬空引用。
                 delete contexts[NEW_DRAFT];
               }
@@ -722,7 +729,8 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
             const contexts = { ...state.draftContexts };
             // 参考随文字一起交给这一轮；发送期间新选的参考要留下，不能被旧响应擦掉。
             const current = contexts[key];
-            if (!current || samePathList(current.reference_paths ?? [], submittedRefs)) {
+            if (!current || (samePathList(current.reference_paths ?? [], submittedRefs)
+              && sameTextReferences(current.text_references, submittedTextReferences))) {
               delete contexts[key];
             }
             const ideas = { ...state.draftIdeas };
@@ -813,7 +821,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       set((state) => ({
         draftContexts: {
           ...state.draftContexts,
-          [key]: { selected_path: selectedPath, reference_paths: [...referencePaths] },
+          [key]: { ...state.draftContexts[key], selected_path: selectedPath, reference_paths: [...referencePaths] },
         },
       }));
       scheduleDraftSave();
@@ -826,6 +834,32 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       // 目录入口只是追加：已经选过的路径不重复登记，也不打乱作者的选择顺序。
       if (current.includes(path)) return;
       get().setDraftContext(context?.selected_path ?? null, [...current, path]);
+    },
+
+    addTextReference(input) {
+      const key = entryKey(get().selectedId);
+      if (!get().workspaceId || !input.text.trim()) return false;
+      const current = get().draftContexts[key]?.text_references ?? [];
+      if (current.some(item => item.source === input.source && item.version === input.version && item.text === input.text)) return true;
+      if (input.text.length > MAX_REFERENCE_TEXT || current.length >= MAX_TEXT_REFERENCES) {
+        set({ error: `[TEXT_REFERENCE_LIMIT] 添加到对话：最多添加 ${MAX_TEXT_REFERENCES} 个选段，每段不超过 ${MAX_REFERENCE_TEXT.toLocaleString()} 字符。建议：移除部分选段或缩小选择范围。` });
+        return false;
+      }
+      set(state => ({ draftContexts: { ...state.draftContexts, [key]: {
+        ...(state.draftContexts[key] ?? { selected_path: null, reference_paths: [] }),
+        text_references: [...current, { ...input }],
+      } } }));
+      scheduleDraftSave();
+      return true;
+    },
+
+    removeTextReference(id) {
+      const key = entryKey(get().selectedId);
+      set(state => ({ draftContexts: { ...state.draftContexts, [key]: {
+        ...(state.draftContexts[key] ?? { selected_path: null, reference_paths: [] }),
+        text_references: (state.draftContexts[key]?.text_references ?? []).filter(item => item.id !== id),
+      } } }));
+      scheduleDraftSave();
     },
 
     addIdeaReference(input) {

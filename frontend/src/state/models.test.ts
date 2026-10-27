@@ -69,6 +69,7 @@ const CONNECTED = {
       account: "",
       auth_status: "ready" as const,
       model_limits: {},
+      model_metadata: {},
     },
   ],
 };

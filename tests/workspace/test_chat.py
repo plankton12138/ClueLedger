@@ -1555,9 +1555,198 @@ def test_check_phase_shares_the_turn_budget(tmp_path: Path) -> None:
     review = next(event for event in events if event["type"] == "review_finished")
     assert review["status"] == "incomplete"
     assert "回合" in review["uncovered"][0]
+    assert review["targets"] == [chapter]
     assert events[-1]["status"] == "partial"
     # 写作阶段的结果保留：检查没进入不能撤销已落盘的修改。
     assert "两枚脚印" in workspace.read(chapter).text
+
+
+@pytest.mark.parametrize("failure", ["limit", "scope"])
+def test_review_failure_has_actionable_reason(tmp_path: Path, failure: str) -> None:
+    chapter = "正文/0003 书房.md"
+    workspace = _create_workspace(tmp_path)
+    workspace.write(chapter, "侦探来到书房。", expected_digest=None)
+    if failure == "limit":
+        turns = [_tool_turn(ToolCall(id="r1", name="read_file", arguments={"path": chapter}))]
+        expected = "TURN_LIMIT_REACHED"
+    else:
+        turns = [
+            _tool_turn(
+                ToolCall(
+                    id=f"s{i}",
+                    name="save_review_report",
+                    arguments={
+                        "target_paths": ["正文/9999 不存在.md"],
+                        "requirement": "检查时间线",
+                        "status": "no_findings",
+                    },
+                )
+            )
+            for i in range(3)
+        ]
+        turns.append(_text_turn("结束。"))
+        expected = "REVIEW_SCOPE_INVALID"
+    provider = ScriptedProvider(turns)
+    store = ConversationStore(conversation_root(tmp_path / "state", "w1"))
+    service = TurnService(
+        workspace, store, lambda: _snapshot(provider), max_turns=1 if failure == "limit" else 8
+    )
+
+    async def scenario() -> list[dict[str, Any]]:
+        info = await service.accept(
+            "检查第三章", "review-failure", purpose="review", review_paths=[chapter]
+        )
+        await service.wait(info.turn_id)
+        return list(store.events(info.conversation_id))
+
+    events = asyncio.run(scenario())
+    error = next(event for event in events if event["type"] == "error")
+    assert error["code"] == expected
+    assert "api_key" not in error["message"]
+    if failure == "scope":
+        assert "3 次" in error["message"]
+    review = next(event for event in events if event["type"] == "review_finished")
+    assert review["status"] == "incomplete"
+    assert review["targets"] == [chapter]
+    assert expected in review["uncovered"][0]
+    assert events[-1]["status"] == "failed"
+
+
+@pytest.mark.parametrize("failure", ["limit", "scope"])
+def test_failed_review_preserves_written_changes(tmp_path: Path, failure: str) -> None:
+    chapter = "正文/0003 书房.md"
+    workspace = _create_workspace(tmp_path)
+    GitRepo(workspace.root).init()
+    created = workspace.write(chapter, "侦探来到书房。", expected_digest=None)
+    turns = [
+        _tool_turn(
+            ToolCall(id="read", name="read_file", arguments={"path": chapter}),
+            ToolCall(
+                id="scope",
+                name="set_task_scope",
+                arguments={
+                    "mode": "edit",
+                    "summary": "改写并检查",
+                    "authorization": "改完检查时间线",
+                    "grants": [{"action": "update", "path": chapter}],
+                },
+            ),
+            ToolCall(
+                id="request",
+                name="request_review",
+                arguments={
+                    "requirement": "检查时间线",
+                    "authorization": "改完检查时间线",
+                },
+            ),
+            ToolCall(
+                id="write",
+                name="write_file",
+                arguments={
+                    "path": chapter,
+                    "text": "侦探发现两枚脚印。",
+                    "digest": created.digest,
+                },
+            ),
+        ),
+        _text_turn("改好了。"),
+    ]
+    if failure == "limit":
+        turns.append(_tool_turn(ToolCall(id="r2", name="read_file", arguments={"path": chapter})))
+        expected = "TURN_LIMIT_REACHED"
+    else:
+        turns.extend(
+            [
+                _tool_turn(
+                    ToolCall(
+                        id=f"s{i}",
+                        name="save_review_report",
+                        arguments={
+                            "target_paths": ["正文/9999 不存在.md"],
+                            "requirement": "检查时间线",
+                            "status": "no_findings",
+                        },
+                    )
+                )
+                for i in range(3)
+            ]
+        )
+        turns.append(_text_turn("结束。"))
+        expected = "REVIEW_SCOPE_INVALID"
+    store = ConversationStore(conversation_root(tmp_path / "state", "w1"))
+    service = TurnService(
+        workspace,
+        store,
+        lambda: _snapshot(ScriptedProvider(turns)),
+        max_turns=3 if failure == "limit" else 8,
+    )
+
+    async def scenario() -> list[dict[str, Any]]:
+        info = await service.accept("只改第三章，改完检查时间线", "write-review-failure")
+        await service.wait(info.turn_id)
+        return list(store.events(info.conversation_id))
+
+    events = asyncio.run(scenario())
+    review = next(event for event in events if event["type"] == "review_finished")
+    assert review["status"] == "incomplete"
+    assert review["targets"] == [chapter]
+    assert expected in review["uncovered"][0]
+    assert "api_key" not in review["uncovered"][0]
+    assert events[-1]["status"] == "partial"
+    assert events[-1]["recording"] == "committed"
+    assert workspace.read(chapter).text == "侦探发现两枚脚印。"
+
+
+def test_review_can_correct_target_after_scope_rejection(tmp_path: Path) -> None:
+    chapter = "正文/0003 书房.md"
+    workspace = _create_workspace(tmp_path)
+    workspace.write(chapter, "侦探来到书房。", expected_digest=None)
+    provider = ScriptedProvider(
+        [
+            _tool_turn(
+                ToolCall(
+                    id="bad",
+                    name="save_review_report",
+                    arguments={
+                        "target_paths": ["正文/9999 不存在.md"],
+                        "requirement": "检查时间线",
+                        "status": "no_findings",
+                    },
+                )
+            ),
+            _tool_turn(ToolCall(id="read", name="read_file", arguments={"path": chapter})),
+            _tool_turn(
+                ToolCall(
+                    id="good",
+                    name="save_review_report",
+                    arguments={
+                        "target_paths": [chapter],
+                        "requirement": "检查时间线",
+                        "status": "no_findings",
+                    },
+                )
+            ),
+            _text_turn("检查完成。"),
+        ]
+    )
+    store = ConversationStore(conversation_root(tmp_path / "state", "w1"))
+    service = TurnService(workspace, store, lambda: _snapshot(provider))
+
+    async def scenario() -> list[dict[str, Any]]:
+        info = await service.accept(
+            "检查第三章", "correct-review-scope", purpose="review", review_paths=[chapter]
+        )
+        await service.wait(info.turn_id)
+        return list(store.events(info.conversation_id))
+
+    events = asyncio.run(scenario())
+    rejected = next(e for e in events if e["type"] == "tool_finished" and not e["ok"])
+    assert chapter in rejected["summary"]
+    assert events[-1]["status"] == "completed"
+    review = next(e for e in events if e["type"] == "review_finished")
+    assert review["status"] == "no_findings"
+    tool = next(t for t in provider.requests[0]["tools"] if t.name == "save_review_report")
+    assert tool.parameters["properties"]["target_paths"]["items"]["enum"] == [chapter]
 
 
 # -- 展开灵感（0.8 I4） ------------------------------------------------------

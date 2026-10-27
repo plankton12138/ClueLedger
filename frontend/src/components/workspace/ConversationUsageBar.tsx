@@ -12,13 +12,18 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 import type { CompactionOperation, ConversationUsageView } from "../../api/contextUsage";
 import {
+  autoCompactionNote,
   breakdown,
+  capacitySourceLabel,
   compactionNote,
+  contextAmount,
   contextLabel,
   contextShare,
+  formatCount,
   formatDuration,
   formatPercent,
   formatTokens,
+  hasCapacity,
   isCompactionFinished,
   usageDisplayState,
   usageLabel,
@@ -36,7 +41,6 @@ interface Props {
   conversationId: string | null;
   /** 变化即重新读取；父组件传事件游标，流式期间由本组件节流。 */
   refreshKey?: number;
-  onOpenModelSettings?: () => void;
 }
 
 type Panel = "context" | "usage" | null;
@@ -52,17 +56,18 @@ function ScopedUsageBar({
   workspaceId,
   conversationId,
   refreshKey = 0,
-  onOpenModelSettings,
 }: Props) {
   const [view, setView] = useState<ConversationUsageView | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
-  // 整理完成后要重新读一次：占用与累计都会变。
+  // 压缩完成后要重新读一次：占用与累计都会变。
   const [tick, setTick] = useState(0);
   const [operation, setOperation] = useState<CompactionOperation | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const [stopping, setStopping] = useState(false);
+  // 明细收在二级展开里：先让作者看到已用与总量，再按需解释预算构成。
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const root = useRef<HTMLDivElement | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const [position, setPosition] = useState({ bottom: 32, maxHeight: 320, left: 0 });
@@ -148,7 +153,7 @@ function ScopedUsageBar({
         .then((next) => { if (!cancelled) setOperation(next); })
         .catch((error: unknown) => {
           if (!cancelled) {
-            setNote(error instanceof Error ? error.message : "[CONTEXT_STATUS_FAILED] 上下文整理：状态读取失败。建议：稍后重试。");
+            setNote(error instanceof Error ? error.message : "[CONTEXT_STATUS_FAILED] 上下文压缩：状态读取失败。建议：稍后重试。");
             // 临时断线不能把正在运行的操作丢掉；继续按同一标识查询。
             if (error instanceof WorkspaceApiError && error.status === 404) {
               setOperation(null);
@@ -168,7 +173,7 @@ function ScopedUsageBar({
     startCompaction(workspaceId, conversationId, `compact-${Date.now()}`)
       .then(setOperation)
       .catch((error: unknown) => {
-        setNote(error instanceof Error ? error.message : "整理没有开始。");
+        setNote(error instanceof Error ? error.message : "压缩没有开始。");
       })
       .finally(() => { submittingRef.current = false; setSubmitting(false); });
   }, [workspaceId, conversationId]);
@@ -178,7 +183,7 @@ function ScopedUsageBar({
     setStopping(true);
     stopCompaction(workspaceId, conversationId, operation.operation_id)
       .then(setOperation)
-      .catch((error: unknown) => setNote(error instanceof Error ? error.message : "[CONTEXT_STOP_FAILED] 上下文整理：停止失败。建议：重试停止。"))
+      .catch((error: unknown) => setNote(error instanceof Error ? error.message : "[CONTEXT_STOP_FAILED] 上下文压缩：停止失败。建议：重试停止。"))
       .finally(() => setStopping(false));
   }, [workspaceId, conversationId, operation, stopping]);
 
@@ -189,8 +194,10 @@ function ScopedUsageBar({
   const context = view?.context ?? null;
   const totals = view?.usage ?? null;
   const share = context ? contextShare(context) : null;
+  const known = context ? hasCapacity(context) : false;
   const tight = context?.budget === "near" || context?.budget === "over";
   const items = context ? breakdown(context) : [];
+  const compactionHint = context ? autoCompactionNote(context, view?.policy) : null;
 
   return (
     <div className="relative flex min-w-0 items-center gap-1" ref={root}>
@@ -227,32 +234,63 @@ function ScopedUsageBar({
             </p>
           ) : (
             <>
-              <div className="mt-2 flex items-baseline justify-between text-[11px]">
-                <span className="text-fg-strong">
-                  ≈{formatTokens(context.estimated_active_tokens)}
-                  {share !== null && ` / ${formatTokens(context.context_window_tokens)}`}
-                </span>
-                <span className={tight ? "text-amber" : "text-mute"}>
-                  {share === null ? "容量未知" : formatPercent(share)}
-                </span>
+              <div className="mt-2 flex items-baseline justify-between gap-2 text-[11px]">
+                <span className="text-fg-strong">{contextAmount(context)}</span>
+                {known && share !== null && (
+                  <span className={tight ? "text-amber" : "text-mute"}>
+                    {formatPercent(share)}
+                  </span>
+                )}
               </div>
-              <div className="chat-usage-track mt-1" aria-hidden="true">
-                <div
-                  className={`chat-usage-fill${tight ? " tight" : ""}`}
-                  style={{ width: `${Math.min(100, Math.round((share ?? 0) * 100))}%` }}
-                />
-              </div>
+              {known && share !== null && (
+                <div className="chat-usage-track mt-1" aria-hidden="true">
+                  <div
+                    className={`chat-usage-fill${tight ? " tight" : ""}`}
+                    style={{ width: `${Math.min(100, Math.round(share * 100))}%` }}
+                  />
+                </div>
+              )}
               <dl className="mt-2 space-y-0.5 text-[11px] text-mute">
                 {items.map((item) => (
-                  <div className="flex justify-between" key={item.key}>
+                  <div className="flex justify-between gap-2" key={item.key}>
                     <dt>{item.label}</dt>
-                    <dd className="text-fg-strong">{formatTokens(item.tokens)}</dd>
+                    <dd className="text-fg-strong">{formatCount(item.tokens)}</dd>
                   </div>
                 ))}
               </dl>
               <p className="mt-2 text-[10px] leading-4 text-mute">
-                回复预留 {formatTokens(context.output_reserve_tokens)}，不计入已用输入。
+                回复预留 {formatCount(context.output_reserve_tokens)} tokens
               </p>
+              <button
+                type="button"
+                className="mt-1 text-[10px] font-bold text-blue"
+                aria-expanded={detailsOpen}
+                onClick={() => setDetailsOpen((value) => !value)}
+              >
+                {detailsOpen ? "收起明细" : "容量明细"}
+              </button>
+              {detailsOpen && (
+                <div className="mt-1 space-y-0.5 text-[10px] leading-4 text-mute">
+                  <p className="flex justify-between gap-2">
+                    <span>可用输入预算</span>
+                    <span>{formatCount(context.input_limit_tokens)} tokens</span>
+                  </p>
+                  <p className="flex justify-between gap-2">
+                    <span>安全余量</span>
+                    <span>{formatCount(context.safety_tokens)} tokens</span>
+                  </p>
+                  <p className="flex justify-between gap-2">
+                    <span>容量来源</span>
+                    <span>{capacitySourceLabel(context.capacity_source)}</span>
+                  </p>
+                  {compactionHint && <p>{compactionHint}</p>}
+                </div>
+              )}
+              {!known && (
+                <p className="mt-1 text-[10px] leading-4 text-mute">
+                  总量未知时无法判断余量，也不显示百分比。
+                </p>
+              )}
               <div className="mt-2 flex items-center justify-between gap-2 border-t border-panel-head-edge pt-2">
                 <button
                   type="button"
@@ -260,20 +298,12 @@ function ScopedUsageBar({
                   disabled={operation !== null || submitting}
                   onClick={compact}
                 >
-                  {submitting ? "正在受理…" : operation === null ? "整理上下文" : operation.state === "queued" ? "等待整理…" : "正在整理…"}
+                  {submitting ? "正在受理…" : operation === null ? "压缩上下文" : operation.state === "queued" ? "等待压缩…" : "正在压缩…"}
                 </button>
-                {operation && <button type="button" className="text-[10px] font-bold text-blue" disabled={stopping} onClick={stop}>{stopping ? "正在停止…" : "停止整理"}</button>}
+                {operation && <button type="button" className="text-[10px] font-bold text-blue" disabled={stopping} onClick={stop}>{stopping ? "正在停止…" : "停止压缩"}</button>}
               </div>
               {note && <p role="status" className="mt-1 text-[10px] leading-4 text-mute">{note}</p>}
-              {context.context_window_tokens === null && onOpenModelSettings && (
-                <button
-                  type="button"
-                  className="mt-2 text-[10px] font-bold text-blue"
-                  onClick={onOpenModelSettings}
-                >
-                  在模型设置里填写容量
-                </button>
-              )}
+
             </>
           )}
         </div>

@@ -18,7 +18,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
-from hastings.server.model_limits import ModelLimitOverride, resolve_model_limits
+from hastings.server.model_limits import ModelCapacity, resolve_model_limits
 from hastings.server.provider_config import ProviderProfile
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
@@ -70,7 +70,7 @@ def _snapshot(provider: Any) -> ModelSnapshot:
         base_url="https://api.deepseek.com",
         api="openai-completions",
         default_model="fake-model",
-        model_limits={"fake-model": ModelLimitOverride(context_window_tokens=8_000)},
+        model_metadata={"fake-model": ModelCapacity(context_window_tokens=8_000)},
     )
     return ModelSnapshot(
         connection_id="test",

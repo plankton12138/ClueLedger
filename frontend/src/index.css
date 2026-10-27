@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .selection-to-chat {
+    @apply fixed rounded border border-panel-edge bg-page px-3 py-2 text-xs font-semibold text-fg-strong shadow-md;
+    z-index: 80;
+  }
+  .text-reference-list { display: grid; gap: 4px; max-height: 180px; overflow: auto; margin-bottom: 8px; }
+  .text-reference-chip {
+    @apply flex min-w-0 items-start gap-2 rounded border border-panel-edge bg-page px-2 py-1 text-xs;
+  }
+  .text-reference-chip details { flex: 1; min-width: 0; }
+  .text-reference-chip summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .text-reference-chip blockquote { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 120px; overflow: auto; margin-top: 6px; }
+  .text-reference-chip > button { flex: none; padding: 0 4px; font-size: 16px; line-height: 20px; }
+}
+
 @layer base {
   [hidden] { display: none !important; }
   body {

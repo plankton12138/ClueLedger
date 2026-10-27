@@ -35,7 +35,7 @@ async function prepare(page: Page, workspace: string) {
   });
   await page.route(`${prefix}/conversations/${ids[0]}/compactions/op_usage`, route => route.fulfill({ json: operation }));
   await page.route(`${prefix}/conversations/${ids[0]}/compactions/op_usage/stop`, async route => {
-    stops++; operation = { ...operation, state: "stopped", note: "整理已取消；当前上下文没有变化。" };
+    stops++; operation = { ...operation, state: "stopped", note: "压缩已取消；当前上下文没有变化。" };
     await route.fulfill({ json: operation });
   });
   const open = async () => {
@@ -64,17 +64,17 @@ test("用量按会话隔离，低游标及延迟旧响应正常显示", async ({
   await expect(page.getByRole("button", { name: "当前上下文占用" })).toContainText("≈9000");
 });
 
-test("整理可停止，刷新和切回会话后恢复同一操作", async ({ page, book }) => {
+test("压缩可停止，刷新和切回会话后恢复同一操作", async ({ page, book }) => {
   const fixture = await prepare(page, book.id);
   await fixture.open();
   const entry = page.getByRole("button", { name: "当前上下文占用" });
-  await entry.click(); await page.getByRole("button", { name: "整理上下文", exact: true }).click();
-  await expect(page.getByRole("button", { name: "停止整理", exact: true })).toBeVisible();
+  await entry.click(); await page.getByRole("button", { name: "压缩上下文", exact: true }).click();
+  await expect(page.getByRole("button", { name: "停止压缩", exact: true })).toBeVisible();
   await page.getByLabel("选择对话").selectOption(fixture.ids[1]);
   await page.getByLabel("选择对话").selectOption(fixture.ids[0]);
-  await entry.click(); await expect(page.getByRole("button", { name: "停止整理", exact: true })).toBeVisible();
-  await page.reload(); await entry.click(); await page.getByRole("button", { name: "停止整理", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("整理已取消");
+  await entry.click(); await expect(page.getByRole("button", { name: "停止压缩", exact: true })).toBeVisible();
+  await page.reload(); await entry.click(); await page.getByRole("button", { name: "停止压缩", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("压缩已取消");
   expect(fixture.counts()).toEqual({ stops: 1, submissions: 1 });
 });
 

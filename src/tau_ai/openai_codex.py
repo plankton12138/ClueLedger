@@ -528,7 +528,8 @@ def _tool_to_codex(tool: AgentTool) -> dict[str, JSONValue]:
         "name": tool.name,
         "description": tool.description,
         "parameters": dict(tool.input_schema),
-        "strict": None,
+        # Preserve optional properties instead of letting Responses require every field.
+        "strict": False,
     }
 
 

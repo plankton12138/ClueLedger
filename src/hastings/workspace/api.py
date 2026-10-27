@@ -411,6 +411,9 @@ class ContextView(BaseModel):
     context_window_tokens: int | None = None
     input_limit_tokens: int | None = None
     output_reserve_tokens: int | None = None
+    safety_tokens: int | None = None
+    #: 窗口数字的出处：override / metadata / catalog / unknown。
+    capacity_source: Literal["override", "metadata", "catalog", "unknown"] = "unknown"
     budget: Literal["unknown", "ok", "near", "over"] = "unknown"
     instructions_tokens: int | None = None
     tools_tokens: int | None = None
@@ -437,6 +440,16 @@ class CompactionOperationView(BaseModel):
     note: str = ""
 
 
+class CompactionPolicyView(BaseModel):
+    """自动整理策略：界面据此说明「什么时候需要整理」。
+
+    阈值是可用输入预算的比例，不是窗口比例；整理本身也要预留空间。
+    """
+
+    auto_compaction: bool = True
+    threshold: float = 0.9
+
+
 class ConversationUsageView(BaseModel):
     """用量读取视图：只读，不产生模型调用与会话事件。"""
 
@@ -445,10 +458,23 @@ class ConversationUsageView(BaseModel):
     through_seq: int
     usage: UsageTotalsView
     context: ContextView
+    #: 自动整理策略；与这一轮上下文分开，避免把它误读成容量事实。
+    policy: CompactionPolicyView = Field(default_factory=CompactionPolicyView)
     #: 记录链路自身的问题，例如同一请求出现了两个不同终态。
     diagnostics: list[str] = Field(default_factory=list)
     revision: str = ""
     compaction: CompactionOperationView | None = None
+
+
+class TextReferenceView(BaseModel):
+    """作者选中的原文快照；仅作为用户草稿保存，不授权读取来源。"""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=64)
+    text: str = Field(min_length=1, max_length=20_000)
+    title: str = Field(min_length=1, max_length=256)
+    source: str = Field(min_length=1, max_length=1024)
+    version: str = Field(min_length=1, max_length=128)
 
 
 class DraftContextView(BaseModel):
@@ -456,6 +482,7 @@ class DraftContextView(BaseModel):
 
     selected_path: str | None = None
     reference_paths: list[str] = Field(default_factory=list)
+    text_references: list[TextReferenceView] = Field(default_factory=list)
 
 
 class ConversationUiView(BaseModel):
@@ -476,6 +503,7 @@ class ConversationUiPatch(BaseModel):
     set_draft_context: bool = False
     draft_selected_path: str | None = None
     draft_reference_paths: list[str] | None = None
+    draft_text_references: list[TextReferenceView] = Field(default_factory=list, max_length=10)
 
 
 class StopView(BaseModel):
@@ -1669,6 +1697,8 @@ def create_file_workspace_router(
                 context_window_tokens=context.context_window_tokens,
                 input_limit_tokens=context.input_limit_tokens,
                 output_reserve_tokens=context.output_reserve_tokens,
+                safety_tokens=context.safety_tokens,
+                capacity_source=context.capacity_source,  # type: ignore[arg-type]
                 budget=context.budget,
                 instructions_tokens=context.instructions_tokens,
                 tools_tokens=context.tools_tokens,
@@ -1676,6 +1706,10 @@ def create_file_workspace_router(
                 method=context.method,
                 fingerprint=context.fingerprint,
                 limits_revision=context.limits_revision,
+            ),
+            policy=CompactionPolicyView(
+                auto_compaction=service.auto_compaction,
+                threshold=service.compaction_threshold,
             ),
             diagnostics=list(summary.diagnostics),
             revision=service.store.revision(),
@@ -1755,6 +1789,7 @@ def create_file_workspace_router(
             draft_context = DraftContext(
                 selected_path=body.draft_selected_path,
                 reference_paths=tuple(body.draft_reference_paths or ()),
+                text_references=tuple(item.model_dump() for item in body.draft_text_references),
             )
         ui = store.update(
             expected_revision=if_match,
@@ -1896,6 +1931,7 @@ def _ui_view(ui: ConversationUi) -> ConversationUiView:
             key: DraftContextView(
                 selected_path=value.selected_path,
                 reference_paths=list(value.reference_paths),
+                text_references=[TextReferenceView(**item) for item in value.text_references],
             )
             for key, value in ui.draft_contexts.items()
         },
