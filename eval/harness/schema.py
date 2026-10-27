@@ -175,6 +175,8 @@ class History(Spec):
     assistant: str
     status: Literal["completed", "failed", "partial", "stopped", "interrupted"] = "completed"
     changed_paths: list[str] = Field(default_factory=list)
+    #: 这一轮助手向作者提问：用来验证待答问题在压缩后仍能被接上。
+    question: str | None = None
 
 
 class Case(Spec):

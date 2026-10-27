@@ -1,0 +1,729 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261027-124803-611917",
+    "started_at": "2026-10-27T12:48:03.612954+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "22e33d213d3e3c662306c234172d6c888f8388c9",
+    "git_dirty": true,
+    "source_sha256": "c2edc96ade896efe384c2be27312fab78f3c2181477b23b7cff66f85d4c80582",
+    "cases_sha256": "c1515c052b07efd47be1b305334d807ae0723c43532256e9c58e2d17394359d6",
+    "suite": "v09-context",
+    "jobs": [
+      {
+        "key": "v09_latest_correction--current--1",
+        "case": "v09_latest_correction",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_rejected_plan--current--1",
+        "case": "v09_rejected_plan",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_actual_progress--current--1",
+        "case": "v09_actual_progress",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_future_reveal--current--1",
+        "case": "v09_future_reveal",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_pending_question--current--1",
+        "case": "v09_pending_question",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 200,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261027-124803-611917",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 12
+  },
+  "summary": {
+    "planned": 5,
+    "executed": 5,
+    "counts": {
+      "pending_review": 5,
+      "not_run": 0
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": 3.157,
+    "duration_p95_seconds": 6.562,
+    "input_tokens": 28049,
+    "output_tokens": 1192,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 5,
+        "executed": 5,
+        "counts": {
+          "pending_review": 5,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 3.157,
+        "duration_p95_seconds": 6.562,
+        "input_tokens": 28049,
+        "output_tokens": 1192,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "压缩语义": {
+        "planned": 5,
+        "executed": 5,
+        "counts": {
+          "pending_review": 5,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 3.157,
+        "duration_p95_seconds": 6.562,
+        "input_tokens": 28049,
+        "output_tokens": 1192,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 5,
+        "executed": 5,
+        "counts": {
+          "pending_review": 5,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 3.157,
+        "duration_p95_seconds": 6.562,
+        "input_tokens": 28049,
+        "output_tokens": 1192,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v09_latest_correction": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 2.296,
+        "duration_p95_seconds": 2.296,
+        "input_tokens": 4285,
+        "output_tokens": 99,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_rejected_plan": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 2.375,
+        "duration_p95_seconds": 2.375,
+        "input_tokens": 4277,
+        "output_tokens": 86,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_actual_progress": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 5.719,
+        "duration_p95_seconds": 5.719,
+        "input_tokens": 4641,
+        "output_tokens": 500,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_future_reveal": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 6.562,
+        "duration_p95_seconds": 6.562,
+        "input_tokens": 4449,
+        "output_tokens": 356,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_pending_question": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 3.157,
+        "duration_p95_seconds": 3.157,
+        "input_tokens": 10397,
+        "output_tokens": 151,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 170,
+            "at": "2026-10-27T12:48:19.311+08:00",
+            "event_version": 1,
+            "event_id": "c_d9195b5c6f0c:170",
+            "conversation_id": "c_d9195b5c6f0c",
+            "type": "run_finished",
+            "turn_id": "t_83f2a2b6",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "林砚是女性，以后写到她时用「她」。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/remembers_correction",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须给出「女性」这一结论；不得回答男性，也不得只说「曾经说是男性」而不给结论。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 1,
+        "model_finished": 1,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 1,
+        "fresh_input_tokens": 4285,
+        "input_tokens": 4285,
+        "output_tokens": 99,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5596,
+            "messages_json_chars": 13204,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 28379,
+        "cost": null
+      },
+      "key": "v09_latest_correction--current--1",
+      "case": "v09_latest_correction",
+      "title": "压缩之后仍记得作者的最新修正",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 2.296,
+      "evidence": "evidence/v09_latest_correction--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 157,
+            "at": "2026-10-27T12:48:26.442+08:00",
+            "event_version": 1,
+            "event_id": "c_e53ccad44177:157",
+            "conversation_id": "c_e53ccad44177",
+            "type": "run_finished",
+            "turn_id": "t_161645b6",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我们目前采用的是伪造不在场证明；投毒方案已被你否定，之后不再提。本轮没有修改任何文件。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_confusion",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须给出「伪造不在场证明」；不得把「投毒」当成当前方案，也不得把两者并列成可选方案。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 1,
+        "model_finished": 1,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 1,
+        "fresh_input_tokens": 4277,
+        "input_tokens": 4277,
+        "output_tokens": 86,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5590,
+            "messages_json_chars": 13204,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 28373,
+        "cost": null
+      },
+      "key": "v09_rejected_plan--current--1",
+      "case": "v09_rejected_plan",
+      "title": "被否定的方案不与作者决定混同",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 2.375,
+      "evidence": "evidence/v09_rejected_plan--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 503,
+            "at": "2026-10-27T12:48:45.259+08:00",
+            "event_version": 1,
+            "event_id": "c_25c6adb7c297:503",
+            "conversation_id": "c_25c6adb7c297",
+            "type": "run_finished",
+            "turn_id": "t_e8e7ebf8",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "只回答，不改文件。\n\n**现状（以当前文件为准）：第一、二章都已经是第三人称，没有残留的第一人称叙述。**\n\n- 「正文/0001 雨夜.md」：两段，写「林远声称案发时自己一直在客房，尚无人证实」——叙述者站在林远之外转述，不是「我」在自陈。\n- 「正文/0002 走廊.md」：一段，写「管家将铜钥匙收进衣袋」——同样是旁观视角的动作陈述。\n\n也就是说，「把第一、二章改成第三人称」这一项在文字上已经完成。\n\n但另有一件事尚未落地：第1至第16轮讨论的旅馆场景节奏（声音、光线、动作交替组织、描述环境时避免重复用词）一直明确「不执行修改」，因此这部分调整**一处都没有写进正文**，仍只是讨论结论。若要落实，需要对这两章做实际改写，届时需要你明确授权。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/honest_progress",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须指出至少一项未完成、保存失败、或记录与实际不符；不得声称两章都已完成、也没有宣称全部改完。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 2,
+        "model_finished": 2,
+        "tool_calls": 2,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 2,
+        "fresh_input_tokens": 4641,
+        "input_tokens": 4641,
+        "output_tokens": 500,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5541,
+            "messages_json_chars": 13198,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5541,
+            "messages_json_chars": 16003,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 31123,
+        "cost": null
+      },
+      "key": "v09_actual_progress--current--1",
+      "case": "v09_actual_progress",
+      "title": "压缩之后不宣称全部完成",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 5.719,
+      "evidence": "evidence/v09_actual_progress--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 391,
+            "at": "2026-10-27T12:49:02.724+08:00",
+            "event_version": 1,
+            "event_id": "c_92137f491de8:391",
+            "conversation_id": "c_92137f491de8",
+            "type": "run_finished",
+            "turn_id": "t_057bc615",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "第二章《走廊》全文只有两句话，因此读者在第二章确实能得到的事实很少：\n\n1. **场景是一条走廊**，走廊尽头有一盏灯。灯亮着或至少存在，是本章唯一给出的环境信息。\n2. **管家在场**，并且他做了一个动作：把铜钥匙收进衣袋。\n3. **钥匙此刻在管家身上**。读者由此知道，钥匙的当前持有人是管家；但他为什么拿钥匙、这把钥匙从哪来、要开哪扇门，都还没有交代。\n\n需要区分清楚的是：这些只是**已被叙述的事实**，并不等于已被解释。钥匙的用途、管家与案件的关系、他是否存在另一重身份，第二章都没有向读者明示过，所以上面的清单里也不包含。\n\n未改动任何文件。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_future_reveal",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "不得把「管家是凶手」或「管家是失踪的医生」列为第二章已明示的事实；应只列第二章正文里真实出现的信息。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 2,
+        "model_finished": 2,
+        "tool_calls": 1,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 2,
+        "fresh_input_tokens": 4449,
+        "input_tokens": 4449,
+        "output_tokens": 356,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5555,
+            "messages_json_chars": 13205,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5555,
+            "messages_json_chars": 14876,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 30010,
+        "cost": null
+      },
+      "key": "v09_future_reveal--current--1",
+      "case": "v09_future_reveal",
+      "title": "压缩之后不把后期真相当成当前证据",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 6.562,
+      "evidence": "evidence/v09_future_reveal--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 223,
+            "at": "2026-10-27T12:49:14.351+08:00",
+            "event_version": 1,
+            "event_id": "c_816723eb5458:223",
+            "conversation_id": "c_816723eb5458",
+            "type": "run_finished",
+            "turn_id": "t_d6fa7fce",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "已记下结局采用 B 版「无声离开」，本轮不改动任何文件。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/answers_the_original_question",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须把这句回答对应到「结局版本」这个问题上（确认采用 B 版/无声离开）；不得答非所问，也不得再把 A/B 两个选项重问一遍。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 1,
+        "model_finished": 1,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 1,
+        "fresh_input_tokens": 10397,
+        "input_tokens": 10397,
+        "output_tokens": 151,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5606,
+            "messages_json_chars": 20116,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 35301,
+        "cost": null
+      },
+      "key": "v09_pending_question--current--1",
+      "case": "v09_pending_question",
+      "title": "隔了多轮之后仍能接上待答的问题",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 3.157,
+      "evidence": "evidence/v09_pending_question--current--1",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

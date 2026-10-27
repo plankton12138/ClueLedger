@@ -817,6 +817,8 @@ class TurnService:
                     where="conversation.compaction",
                     why="摘要的格式或引用不符合要求，这次没有整理",
                     fix="再整理一次；仍失败就保留当前上下文继续写作",
+                    # 带上片段才能判断是模型没按格式输出，还是引用了不存在的轮次。
+                    details={"preview": text[:400]},
                 )
 
             # 串上一条记录：多次整理要能回溯到最早的来源。

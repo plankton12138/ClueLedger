@@ -360,3 +360,46 @@ def test_candidate_over_the_input_limit_is_rejected() -> None:
         )
 
     assert caught.value.code == "CONTEXT_REQUIRED_INPUT_TOO_LARGE"
+
+
+def test_question_turn_stays_while_earlier_turns_are_covered() -> None:
+    """待答问题的轮次留在保留侧，它之前的普通轮次照常可以被覆盖。
+
+    如果保护范围放大到整段，作者问一个问题就会让压缩永久失效。
+    """
+    events = [
+        {"type": "turn_started", "seq": 1, "turn_id": "t1", "text": "先写第三章开头" * 40},
+        {"type": "assistant_message", "seq": 2, "turn_id": "t1", "text": "写好了" * 40},
+        {"type": "turn_started", "seq": 3, "turn_id": "t2", "text": "结局还没定" * 40},
+        {
+            "type": "author_input_requested",
+            "seq": 4,
+            "turn_id": "t2",
+            "question": "结局用 A 版还是 B 版",
+        },
+        {"type": "assistant_message", "seq": 5, "turn_id": "t2", "text": "等你确认" * 40},
+    ]
+    for index in range(3, 7):
+        events.extend(
+            [
+                {
+                    "type": "turn_started",
+                    "seq": index * 3,
+                    "turn_id": f"t{index}",
+                    "text": "再写" * 40,
+                },
+                {
+                    "type": "assistant_message",
+                    "seq": index * 3 + 1,
+                    "turn_id": f"t{index}",
+                    "text": "写好了" * 40,
+                },
+            ]
+        )
+
+    plan = plan_compaction(events, keep_recent_tokens=1)
+
+    assert plan is not None
+    assert plan.first_kept_turn_id == "t2"
+    assert plan.covered_turns == ("t1",)
+    assert plan.covered_through_seq < 3

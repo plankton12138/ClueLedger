@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "run_id": "context-20261027-125541-071890",
+  "started_at": "2026-10-27T12:55:41.071890+08:00",
+  "model": "deepseek-flash",
+  "connection_id": "eval-env",
+  "provider_api": "openai-completions",
+  "model_source": ".env",
+  "provider_mode": "product_worker",
+  "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+  "git_commit": "22e33d213d3e3c662306c234172d6c888f8388c9",
+  "git_dirty": true,
+  "source_sha256": "6aa77b8a3d88ce78c8d6ff06edb9833e163c606693e919ac6e4210fdd5e6b678",
+  "cases_sha256": "e058bcffb5b0967126353b602d7ad8caf4142e0beb18e69e35c31c80c2c3264a",
+  "suite": "v09-context",
+  "jobs": [
+    {
+      "key": "v09_latest_correction--current--1",
+      "case": "v09_latest_correction",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_rejected_plan--current--1",
+      "case": "v09_rejected_plan",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_actual_progress--current--1",
+      "case": "v09_actual_progress",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_future_reveal--current--1",
+      "case": "v09_future_reveal",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_pending_question--current--1",
+      "case": "v09_pending_question",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    }
+  ],
+  "max_turns": 24,
+  "step_timeout_seconds": 240,
+  "max_provider_calls": 200,
+  "runner_retries": 0,
+  "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261027-125541-071890",
+  "evidence_format": 1,
+  "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+  "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+  "observed_provider_parameters": {
+    "max_tokens": 4096,
+    "timeout_seconds": 45.0,
+    "max_retries": 0
+  },
+  "provider_calls_used": 12
+}

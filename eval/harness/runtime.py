@@ -78,6 +78,15 @@ def seed_history(store: ConversationStore, case: Case) -> str | None:
         else:
             store.append(cid, {"type": "turn_started", "turn_id": tid, "text": item.user})
         store.append(cid, {"type": "assistant_message", "turn_id": tid, "text": item.assistant})
+        if item.question:
+            # 既写事件（执行事实、压缩切点都据此判断），也写问答登记（回答时据此认领）。
+            QuestionStore(store.root).create(
+                conversation_id=cid, turn_id=tid, question=item.question
+            )
+            store.append(
+                cid,
+                {"type": "author_input_requested", "turn_id": tid, "question": item.question},
+            )
         store.append(
             cid,
             {
@@ -303,6 +312,8 @@ def capture(
         ],
         "assemblies": list(trace["assemblies"]),
         "faults": list(trace["faults"]),
+        # 压缩摘要请求的结果（含失败原因）：压缩没发生时，这是唯一的线索。
+        **({"compaction": trace["compaction"]} if "compaction" in trace else {}),
     }
 
 
@@ -380,7 +391,11 @@ async def run_attempt(
                 "estimated_after": record.estimated_after if record is not None else None,
             }
         except Exception as exc:  # noqa: BLE001 - 记录原因即可
-            trace["compaction"] = {"error": str(exc)}
+            detail: dict[str, Any] = {"error": str(exc)}
+            details = getattr(exc, "details", None)
+            if details:
+                detail["details"] = details
+            trace["compaction"] = detail
     error = None
     started = time.monotonic()
     with intervention(case, variant, trace):
