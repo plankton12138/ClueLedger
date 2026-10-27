@@ -5,7 +5,7 @@
  * 五种状态各自有独立文案，不能靠数字是否为 0 来推断。
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { UsageTotals } from "./contextUsage";
 import { usageDisplayState } from "./contextUsage";
@@ -52,5 +52,45 @@ describe("usageDisplayState", () => {
     expect(
       usageDisplayState(totals({ total_tokens: 4200, finished_requests: 3 })),
     ).toBe("known");
+  });
+});
+
+describe("fetchConversationUsage", () => {
+  it("按作品与会话读取，字段原样交给界面", async () => {
+    const body = {
+      conversation_id: "c1",
+      through_seq: 12,
+      usage: {
+        total_tokens: 4200,
+        input_tokens: 4000,
+        output_tokens: 200,
+        cache_read_tokens: 3000,
+        cache_write_tokens: 0,
+        finished_requests: 3,
+        requests_without_usage: 1,
+        requests_in_progress: 0,
+        model_duration_ms: 5300,
+      },
+      diagnostics: [],
+      revision: "r1",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { fetchConversationUsage } = await import("./workspace");
+    const view = await fetchConversationUsage("w1", "c1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/file-workspaces/w1/conversations/c1/usage",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+    expect(view.through_seq).toBe(12);
+    expect(usageDisplayState(view.usage)).toBe("partial");
+    vi.unstubAllGlobals();
   });
 });

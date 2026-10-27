@@ -620,3 +620,70 @@ def test_every_writing_tool_has_a_readable_verb(tmp_path: Path) -> None:
         if classify({"type": "tool_started", "tool": tool.name}).title == tool.name
     ]
     assert missing == []
+
+
+# -- 请求估算与容量（0.9 U2） -----------------------------------------------
+
+
+def _limits(window: int | None):
+    from hastings.server.model_limits import ModelLimitOverride, resolve_model_limits
+    from hastings.server.provider_config import ProviderProfile
+
+    profile = ProviderProfile(
+        name="deepseek",
+        base_url="https://api.deepseek.com",
+        api="openai-completions",
+        default_model="deepseek-chat",
+        model_limits=(
+            {"deepseek-chat": ModelLimitOverride(context_window_tokens=window)} if window else {}
+        ),
+    )
+    return resolve_model_limits(profile, "deepseek-chat")
+
+
+@pytest.mark.parametrize("window", [64_000, None])
+def test_request_record_carries_estimate_and_capacity(tmp_path: Path, window: int | None) -> None:
+    """每次真实请求都留下估算与容量身份；窗口未知时预算只能是 unknown。"""
+
+    async def run() -> None:
+        store = ActivityStore(tmp_path)
+        provider = Provider()
+        records: list[tuple[str, dict[str, Any]]] = []
+        wrapped = RecordedProvider(
+            provider,
+            store,
+            lambda k, p: records.append((k, p)),
+            stage="write",
+            identity="deepseek:deepseek-chat",
+            limits=_limits(window),
+        )
+        async for _ in wrapped.stream_response(
+            model="deepseek-chat",
+            system="实际上下文",
+            messages=[UserMessage(content="检查第一章")],
+            tools=[],
+        ):
+            pass
+
+        started = next(payload for kind, payload in records if kind == "model_request_started")
+        estimate = started["request_estimate"]
+        assert estimate["method"] == "cjk-aware-v1"
+        assert estimate["total_tokens"] > 0
+        assert estimate["model"] == "deepseek:deepseek-chat"
+        assert estimate["fingerprint"]
+        assert estimate["total_tokens"] == (
+            estimate["system_tokens"]
+            + estimate["tool_tokens"]
+            + estimate["message_tokens"]
+            + estimate["protocol_tokens"]
+        )
+        if window is None:
+            assert estimate["budget"] == "unknown"
+            assert estimate["context_window_tokens"] is None
+            assert estimate["input_limit_tokens"] is None
+        else:
+            assert estimate["budget"] in {"ok", "near", "over"}
+            assert estimate["context_window_tokens"] == window
+            assert estimate["input_limit_tokens"] is not None
+
+    asyncio.run(run())

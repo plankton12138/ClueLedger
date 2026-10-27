@@ -13,7 +13,12 @@ from __future__ import annotations
 
 import pytest
 
-from hastings.workspace.conversation_usage import ReportedUsage, UsageTotals, reported_usage
+from hastings.workspace.conversation_usage import (
+    ReportedUsage,
+    UsageTotals,
+    reported_usage,
+    summarize_events,
+)
 
 
 def test_openai_completions_full_usage_merges_cache_into_input() -> None:
@@ -176,3 +181,160 @@ def test_totals_dict_matches_the_agreed_wire_fields() -> None:
         "requests_in_progress": 1,
         "model_duration_ms": 5300,
     }
+
+
+# -- 累计统计 ---------------------------------------------------------------
+
+
+def _started(seq: int, operation: str, *, turn: str = "t1") -> dict[str, object]:
+    return {
+        "type": "model_request_started",
+        "seq": seq,
+        "turn_id": turn,
+        "operation_id": operation,
+        "stage": "write",
+        "model": "deepseek-chat",
+    }
+
+
+def _finished(
+    seq: int,
+    operation: str,
+    *,
+    usage: object = None,
+    duration: int | None = 1200,
+    turn: str = "t1",
+) -> dict[str, object]:
+    return {
+        "type": "model_request_finished",
+        "seq": seq,
+        "turn_id": turn,
+        "operation_id": operation,
+        "stage": "write",
+        "status": "completed",
+        "usage": usage,
+        "duration_ms": duration,
+    }
+
+
+def test_two_requests_add_up() -> None:
+    summary = summarize_events(
+        [
+            _started(1, "op1"),
+            _finished(2, "op1", usage={"input": 100, "output": 20, "total_tokens": 120}),
+            _started(3, "op2"),
+            _finished(4, "op2", usage={"input": 200, "output": 30, "total_tokens": 230}),
+        ]
+    )
+
+    assert summary.totals.finished_requests == 2
+    assert summary.totals.total_tokens == 350
+    assert summary.totals.input_tokens == 300
+    assert summary.totals.output_tokens == 50
+    assert summary.totals.requests_without_usage == 0
+    assert summary.totals.model_duration_ms == 2400
+    assert summary.through_seq == 4
+
+
+def test_repeated_terminals_for_the_same_request_count_once() -> None:
+    """断线重连会重放终态；同一请求不能因为推送两次就翻倍。"""
+    usage = {"input": 100, "output": 20, "total_tokens": 120}
+    summary = summarize_events(
+        [
+            _started(1, "op1"),
+            _finished(2, "op1", usage=usage),
+            _finished(3, "op1", usage=usage),
+        ]
+    )
+
+    assert summary.totals.finished_requests == 1
+    assert summary.totals.total_tokens == 120
+    assert summary.diagnostics == ()
+
+
+def test_conflicting_terminals_keep_the_first_and_report_it() -> None:
+    """两个不同终态只能留一个；另一条作为诊断，不能静默改写。"""
+    summary = summarize_events(
+        [
+            _started(1, "op1"),
+            _finished(2, "op1", usage={"input": 100, "output": 20, "total_tokens": 120}),
+            _finished(3, "op1", usage={"input": 999, "output": 99, "total_tokens": 1098}),
+        ]
+    )
+
+    assert summary.totals.total_tokens == 120
+    assert "op1" in " ".join(summary.diagnostics)
+
+
+def test_started_without_terminal_is_counted_as_in_progress() -> None:
+    summary = summarize_events([_started(1, "op1")])
+
+    assert summary.totals.requests_in_progress == 1
+    assert summary.totals.finished_requests == 0
+    assert summary.totals.total_tokens is None
+
+
+def test_requests_without_usage_are_marked_not_zeroed() -> None:
+    summary = summarize_events(
+        [_started(1, "op1"), _finished(2, "op1", usage=None)]
+    )
+
+    assert summary.totals.finished_requests == 1
+    assert summary.totals.requests_without_usage == 1
+    assert summary.totals.total_tokens is None
+
+
+def test_mixed_usage_reports_known_total_and_marks_gaps() -> None:
+    summary = summarize_events(
+        [
+            _started(1, "op1"),
+            _finished(2, "op1", usage={"input": 100, "output": 20, "total_tokens": 120}),
+            _started(3, "op2"),
+            _finished(4, "op2", usage=None),
+        ]
+    )
+
+    assert summary.totals.total_tokens == 120
+    assert summary.totals.requests_without_usage == 1
+
+
+def test_unknown_durations_leave_the_field_empty() -> None:
+    summary = summarize_events(
+        [
+            _started(1, "op1"),
+            _finished(2, "op1", usage={"output": 10}, duration=None),
+        ]
+    )
+
+    assert summary.totals.model_duration_ms is None
+
+
+def test_other_events_are_ignored() -> None:
+    summary = summarize_events(
+        [
+            {"type": "turn_started", "seq": 1, "text": "写一章"},
+            _started(2, "op1"),
+            _finished(3, "op1", usage={"output": 10}),
+            {"type": "assistant_message", "seq": 4, "text": "好"},
+        ]
+    )
+
+    assert summary.totals.finished_requests == 1
+    assert summary.totals.total_tokens == 10
+    assert summary.through_seq == 4
+
+
+def test_malformed_usage_is_treated_as_unreported() -> None:
+    summary = summarize_events(
+        [_started(1, "op1"), _finished(2, "op1", usage="not-a-mapping")]
+    )
+
+    assert summary.totals.requests_without_usage == 1
+
+
+def test_empty_conversation_has_zero_requests() -> None:
+    summary = summarize_events([])
+
+    assert summary.totals.finished_requests == 0
+    assert summary.totals.total_tokens is None
+    assert summary.through_seq == 0

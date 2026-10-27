@@ -9,6 +9,8 @@
  * 走同一段解析代码，也能带自定义游标与中止信号。
  */
 
+import type { ConversationUsageView } from "./contextUsage";
+
 export interface WorkspaceBinding {
   id: string;
   name: string;
@@ -816,6 +818,21 @@ export function fetchReviews(workspaceId: string, path?: string): Promise<Review
 
 export function listConversations(workspaceId: string): Promise<ConversationList> {
   return request<ConversationList>(`/${workspaceId}/conversations`);
+}
+
+/**
+ * 会话累计用量：服务端聚合，前端不自己累计。
+ *
+ * `through_seq` 是这次统计覆盖到的事件序号；客户端用它判断本地视图是否落后，
+ * 避免一个慢请求把更新的数字覆盖回去。
+ */
+export function fetchConversationUsage(
+  workspaceId: string,
+  conversationId: string,
+): Promise<ConversationUsageView> {
+  return request<ConversationUsageView>(
+    `/${workspaceId}/conversations/${conversationId}/usage`,
+  );
 }
 
 /**

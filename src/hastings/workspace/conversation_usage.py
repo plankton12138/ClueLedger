@@ -19,11 +19,11 @@ OpenAI 两类的 input 已经扣掉缓存读写，Anthropic 的 input 本身就�
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["ReportedUsage", "UsageTotals", "reported_usage"]
+__all__ = ["ReportedUsage", "UsageSummary", "UsageTotals", "reported_usage", "summarize_events"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,3 +119,82 @@ class UsageTotals:
             "model_duration_ms": self.model_duration_ms,
         }
 
+
+
+@dataclass(frozen=True, slots=True)
+class UsageSummary:
+    """一个会话的累计结果，以及它读到的事件游标。"""
+
+    totals: UsageTotals
+    #: 本次统计覆盖到的会话事件序号；客户端据此判断视图是否落后。
+    through_seq: int
+    #: 记录链路自身的问题（例如同一请求出现两个终态）。只作诊断，不参与累计。
+    diagnostics: tuple[str, ...]
+
+
+def summarize_events(events: Sequence[Mapping[str, Any]]) -> UsageSummary:
+    """从会话事件累计用量。
+
+    以请求为单位去重：一个 ``operation_id`` 只算一次。事件日志会被重放（断线重连、
+    客户端带旧游标回读），把重放当成新请求会让累计值凭空翻倍。
+
+    ``model_request_started`` 与 ``model_request_finished`` 各自出场。只出现过开始事件的
+    请求计入「进行中」：它确实发出去了，但还没有终态用量。反过来，只有终态而开始事件
+    被裁剪的记录仍然计入——少一次计数比漏一次消耗更容易误导。
+    """
+    started: set[str] = set()
+    finished: dict[str, tuple[ReportedUsage | None, int | None]] = {}
+    diagnostics: list[str] = []
+    through_seq = 0
+
+    for event in events:
+        seq = event.get("seq")
+        if isinstance(seq, int) and not isinstance(seq, bool):
+            through_seq = max(through_seq, seq)
+        operation = event.get("operation_id")
+        if not isinstance(operation, str) or not operation:
+            continue
+        kind = event.get("type")
+        if kind == "model_request_started":
+            started.add(operation)
+        elif kind == "model_request_finished":
+            duration = event.get("duration_ms")
+            record = (
+                reported_usage(event.get("usage")),
+                duration if isinstance(duration, int) and not isinstance(duration, bool) else None,
+            )
+            previous = finished.get(operation)
+            if previous is not None:
+                # 保留先到的一条：它对应的响应确实完成了；后到的多半是重放或竞态。
+                if previous != record:
+                    diagnostics.append(f"请求 {operation} 存在多个不同的终态，已保留先到的一条")
+                continue
+            finished[operation] = record
+
+    usages = [usage for usage, _duration in finished.values()]
+    known = [usage for usage in usages if usage is not None]
+    durations = [duration for _usage, duration in finished.values() if duration is not None]
+
+    def total_of(field: str) -> int | None:
+        values = [
+            value
+            for usage in known
+            if (value := getattr(usage, field)) is not None
+        ]
+        return sum(values) if values else None
+
+    return UsageSummary(
+        totals=UsageTotals(
+            total_tokens=total_of("total_tokens"),
+            input_tokens=total_of("input_tokens"),
+            output_tokens=total_of("output_tokens"),
+            cache_read_tokens=total_of("cache_read_tokens"),
+            cache_write_tokens=total_of("cache_write_tokens"),
+            finished_requests=len(finished),
+            requests_without_usage=sum(usage is None for usage in usages),
+            requests_in_progress=len(started - set(finished)),
+            model_duration_ms=sum(durations) if durations else None,
+        ),
+        through_seq=through_seq,
+        diagnostics=tuple(diagnostics),
+    )

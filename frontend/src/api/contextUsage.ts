@@ -30,6 +30,20 @@ export interface UsageTotals {
 /** 没有请求的会话显示零；有用量缺失的会话显示未知，两者不能合并。 */
 export type UsageDisplayState = "empty" | "pending" | "unknown" | "partial" | "known";
 
+/**
+ * `GET /api/file-workspaces/{id}/conversations/{id}/usage` 的响应。
+ *
+ * `through_seq` 与 `diagnostics` 一起到达：前者判断视图是否落后，后者说明记录链路
+ * 是否出现过异常（例如同一请求两个终态）。诊断不影响数字，但不能忽略。
+ */
+export interface ConversationUsageView {
+  conversation_id: string;
+  through_seq: number;
+  usage: UsageTotals;
+  diagnostics: string[];
+  revision: string;
+}
+
 export function usageDisplayState(totals: UsageTotals): UsageDisplayState {
   if (totals.finished_requests === 0 && totals.requests_in_progress === 0) {
     return "empty";

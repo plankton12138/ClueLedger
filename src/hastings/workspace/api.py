@@ -36,6 +36,7 @@ from hastings.workspace.character_states import (
     roster_view,
 )
 from hastings.workspace.clues import ClueStore, build_clues, clues_view
+from hastings.workspace.conversation_usage import summarize_events
 from hastings.workspace.deletion import delete_workspace_files
 from hastings.workspace.directory_dialog import DirectoryPickerError, pick_directory
 from hastings.workspace.disclosure import (
@@ -376,6 +377,35 @@ class EventsView(BaseModel):
     events: list[dict[str, object]]
     last_seq: int
     active_turn: ActiveTurnView | None = None
+    revision: str = ""
+
+
+class UsageTotalsView(BaseModel):
+    """会话累计用量；字段名与 ``conversation_usage.UsageTotals`` 一一对应。
+
+    ``null`` 一律表示「没有得到可靠数值」，不是零。没有请求时才全是零。
+    """
+
+    total_tokens: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    finished_requests: int = 0
+    requests_without_usage: int = 0
+    requests_in_progress: int = 0
+    model_duration_ms: int | None = None
+
+
+class ConversationUsageView(BaseModel):
+    """用量读取视图：只读，不产生模型调用与会话事件。"""
+
+    conversation_id: str
+    #: 覆盖到的事件序号；客户端用它判断自己的视图是否落后。
+    through_seq: int
+    usage: UsageTotalsView
+    #: 记录链路自身的问题，例如同一请求出现了两个不同终态。
+    diagnostics: list[str] = Field(default_factory=list)
     revision: str = ""
 
 
@@ -1510,6 +1540,38 @@ def create_file_workspace_router(
             events=[dict(event) for event in events],
             last_seq=last_seq,
             active_turn=active_view(service, conversation_id),
+            revision=service.store.revision(),
+        )
+
+    @router.get(
+        "/{workspace_id}/conversations/{conversation_id}/usage",
+        response_model=ConversationUsageView,
+    )
+    def conversation_usage(workspace_id: str, conversation_id: str) -> ConversationUsageView:
+        """累计用量。
+
+        只从已持久的事件重建，不读活动附件、不触发模型调用、不写任何事件：
+        打开一次用量浮层不应该改变任何数据。
+        """
+        service = service_for(workspace_id)
+        service.store.get(conversation_id)
+        summary = summarize_events(service.store.events(conversation_id))
+        totals = summary.totals
+        return ConversationUsageView(
+            conversation_id=conversation_id,
+            through_seq=summary.through_seq,
+            usage=UsageTotalsView(
+                total_tokens=totals.total_tokens,
+                input_tokens=totals.input_tokens,
+                output_tokens=totals.output_tokens,
+                cache_read_tokens=totals.cache_read_tokens,
+                cache_write_tokens=totals.cache_write_tokens,
+                finished_requests=totals.finished_requests,
+                requests_without_usage=totals.requests_without_usage,
+                requests_in_progress=totals.requests_in_progress,
+                model_duration_ms=totals.model_duration_ms,
+            ),
+            diagnostics=list(summary.diagnostics),
             revision=service.store.revision(),
         )
 

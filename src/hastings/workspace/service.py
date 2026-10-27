@@ -1240,7 +1240,17 @@ class TurnService:
                 # 工具清单由 build_harness 内部调用 build_tools() 注入，_run 不直接持有。
                 harness = build_harness(
                     provider=RecordedProvider(
-                        snapshot.provider, self.activity, run.record, stage=mode
+                        snapshot.provider,
+                        self.activity,
+                        run.record,
+                        stage=mode,
+                        # 请求记录带上身份与容量，用量界面据此判断占比与预算；
+                        # 装配摘要参与估算指纹，资料变了旧估算就失效。
+                        identity=f"{snapshot.connection_id}:{snapshot.model}",
+                        limits=snapshot.limits,
+                        source_revisions=(
+                            {"assembly": info.assembly_digest} if info.assembly_digest else {}
+                        ),
                     ),
                     model=snapshot.model,
                     workspace=self.workspace,

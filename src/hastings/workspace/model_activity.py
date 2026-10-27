@@ -6,10 +6,17 @@ import asyncio
 import json
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Any
 
+from hastings.server.model_limits import ModelLimits
 from hastings.workspace.activity import ActivityStore, redact
+from hastings.workspace.context_usage import (
+    budget_state,
+    count_tokens,
+    estimate_request,
+    wire_overhead,
+)
 from tau_agent.messages import AgentMessage, AssistantMessage
 from tau_agent.provider import CancellationToken, ModelProvider
 from tau_agent.provider_events import AssistantDoneEvent, AssistantErrorEvent, AssistantMessageEvent
@@ -48,6 +55,52 @@ def _request_size(
     }
 
 
+def _request_estimate(
+    *,
+    identity: str,
+    system: str,
+    messages: list[AgentMessage],
+    definitions: list[dict[str, Any]],
+    limits: ModelLimits | None,
+    source_revisions: Mapping[str, str],
+) -> dict[str, object]:
+    """这一轮请求的 token 估算与容量判断。
+
+    与字符数分开记：字符数只说明「装了多少字」，用它判断装不装得下会算错，
+    而估算要给出的是与模型窗口可比的数字。
+    """
+    message_wire = json.dumps(
+        [message.model_dump(mode="json") for message in messages],
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+    tool_wire = json.dumps(definitions, ensure_ascii=False, separators=(",", ":"), default=str)
+    estimate = estimate_request(
+        model_identity=identity,
+        system=system,
+        tool_wire=tool_wire,
+        message_wire=message_wire,
+        source_revisions=source_revisions,
+        protocol_tokens=wire_overhead(messages=len(messages), tools=len(definitions)),
+        count=count_tokens,
+    )
+    return {
+        "model": identity,
+        "total_tokens": estimate.total,
+        "system_tokens": estimate.system_tokens,
+        "tool_tokens": estimate.tool_tokens,
+        "message_tokens": estimate.message_tokens,
+        "protocol_tokens": estimate.protocol_tokens,
+        "method": estimate.method,
+        "fingerprint": estimate.request_fingerprint,
+        "budget": budget_state(total_tokens=estimate.total, limits=limits) if limits else "unknown",
+        "context_window_tokens": limits.context_window_tokens if limits else None,
+        "input_limit_tokens": limits.input_limit() if limits else None,
+        "limits_revision": limits.revision if limits else "",
+    }
+
+
 class RecordedProvider:
     def __init__(
         self,
@@ -56,8 +109,17 @@ class RecordedProvider:
         emit: Callable[[str, dict[str, Any]], None],
         *,
         stage: str,
+        identity: str = "",
+        limits: ModelLimits | None = None,
+        source_revisions: Mapping[str, str] | None = None,
     ) -> None:
         self.provider, self.store, self.emit, self.stage = provider, store, emit, stage
+        #: 本轮实际的模型身份（连接:模型）；用于让估算只对同一模型成立。
+        self.identity = identity
+        #: 受理时冻结的容量；未知时预算只能是 unknown，不能按零处理。
+        self.limits = limits
+        #: 装配结果与资料版本，参与估算指纹。
+        self.source_revisions = dict(source_revisions or {})
         self.capture = store.settings()["capture_inputs"]
 
     async def stream_response(
@@ -95,6 +157,14 @@ class RecordedProvider:
                 "message_count": len(messages),
                 "tools": [t.name for t in tools],
                 "request_size": _request_size(system, messages, definitions),
+                "request_estimate": _request_estimate(
+                    identity=self.identity or model,
+                    system=system,
+                    messages=messages,
+                    definitions=definitions,
+                    limits=self.limits,
+                    source_revisions=self.source_revisions,
+                ),
                 "input_captured": self.capture,
             },
         )
