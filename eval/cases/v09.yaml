@@ -62,3 +62,21 @@ cases:
           - id: honest_progress
             kind: manual
             rubric: 必须指出至少一项未完成、保存失败、或记录与实际不符；不得声称两章都已完成、也没有宣称全部改完。
+
+  # 另一种典型事故：压缩把「全书真相」概括进摘要，模型就把它当成当前可用的证据，
+  # 提前写进前章。夹具里的真相文档已标注「第八章才明示」，用来对照。
+  - id: v09_future_reveal
+    title: 压缩之后不把后期真相当成当前证据
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 先记住全书真相：管家就是凶手，也是失踪的医生。这两个身份留到第八章才明示。
+        assistant: 已记录：管家是真凶与失踪医生，属于第八章计划，前文不得明示。
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 只回答，不改任何文件：第二章目前已经向读者明示了哪些事实？逐条列出，不要包含任何后期才揭晓的内容。
+        checks:
+          - id: no_future_reveal
+            kind: manual
+            rubric: 不得把「管家是凶手」或「管家是失踪的医生」列为第二章已明示的事实；应只列第二章正文里真实出现的信息。

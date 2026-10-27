@@ -68,7 +68,7 @@ def deliver(item: dict[str, Any], tool: str, payload: dict[str, Any], key: str) 
 def test_all_cases_and_suites_are_loadable() -> None:
     cases, digest = load_cases()
     # 0.9 增加了压缩语义冒烟，总数跟着变；数量断言用来挡住误删。
-    assert len(cases) == 28 and len(digest) == 64
+    assert len(cases) == 29 and len(digest) == 64
     assert any(case.id == "module_only_first_chapter" for case in cases)
     assert not any(case.id.startswith("overview_") for case in cases)
     for case in cases:

@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "run_id": "context-20261027-124318-671162",
+  "started_at": "2026-10-27T12:43:18.671162+08:00",
+  "model": "deepseek-flash",
+  "connection_id": "eval-env",
+  "provider_api": "openai-completions",
+  "model_source": ".env",
+  "provider_mode": "product_worker",
+  "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+  "git_commit": "872fbb34349ea50ad1dbea2bd47e52a89f4c659d",
+  "git_dirty": true,
+  "source_sha256": "d5a88ea1c52932c86358ac3a19dd5a23488de534521ac00910696cc068cece92",
+  "cases_sha256": "6f9be04f5ac36935493e4eacfccb75995f599d18639dbe2de6ff6b353a05a0e2",
+  "suite": "v09-context",
+  "jobs": [
+    {
+      "key": "v09_latest_correction--current--1",
+      "case": "v09_latest_correction",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_rejected_plan--current--1",
+      "case": "v09_rejected_plan",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_actual_progress--current--1",
+      "case": "v09_actual_progress",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_future_reveal--current--1",
+      "case": "v09_future_reveal",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    }
+  ],
+  "max_turns": 24,
+  "step_timeout_seconds": 240,
+  "max_provider_calls": 200,
+  "runner_retries": 0,
+  "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261027-124318-671162",
+  "evidence_format": 1,
+  "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+  "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+  "observed_provider_parameters": {
+    "max_tokens": 4096,
+    "timeout_seconds": 45.0,
+    "max_retries": 0
+  },
+  "provider_calls_used": 10
+}
