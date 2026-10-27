@@ -801,6 +801,11 @@ class TurnService:
             plan = plan_compaction(events, keep_recent_tokens=_keep_recent_tokens(input_limit))
             if plan is None:
                 return None
+            previous = active_compaction(events)
+            if previous is not None and plan.covered_through_seq <= previous.covered_through_seq:
+                # 没有新的可整理内容：再压一次只会写出一条覆盖范围相同的重复记录，
+                # 还要白白付一次摘要调用的钱。
+                return None
 
             system, prompt = build_summary_prompt(events, plan)
             text = await self._summarize(snapshot, conversation_id, system, prompt)
@@ -815,7 +820,6 @@ class TurnService:
                 )
 
             # 串上一条记录：多次整理要能回溯到最早的来源。
-            previous = active_compaction(events)
             candidate = build_candidate(
                 plan=plan,
                 parsed=parsed,

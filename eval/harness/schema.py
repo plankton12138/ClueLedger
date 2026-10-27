@@ -133,6 +133,8 @@ class Step(Spec):
     expect_needs_input: bool = False
     #: 这一步回答上一轮的问题：驱动按会话里未回答的那一条自动认领。
     reply_to_question: bool = False
+    #: 这一步之前整理一次上下文：用来验证连续创作中多次压缩后的续接。
+    compact_before: bool = False
     checks: list[Check] = Field(default_factory=list)
 
     @model_validator(mode="after")

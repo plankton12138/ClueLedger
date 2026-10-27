@@ -385,6 +385,12 @@ async def run_attempt(
     started = time.monotonic()
     with intervention(case, variant, trace):
         for i, step in enumerate(case.steps):
+            if step.compact_before and cid:
+                try:
+                    await service.compact(cid, reason="eval")
+                    trace.setdefault("compactions", []).append("ok")
+                except Exception as exc:  # noqa: BLE001 - 失败本身是证据
+                    trace.setdefault("compactions", []).append(str(exc))
             seed_files(workspace, step.external_updates)
             before = snapshot_files(workspace)
             trace["assemblies"].clear()

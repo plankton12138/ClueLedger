@@ -19,3 +19,23 @@ cases:
           - id: remembers_correction
             kind: manual
             rubric: 必须给出「女性」这一结论；不得回答男性，也不得只说「曾经说是男性」而不给结论。
+
+  # 被否定的方案与作者最终决定必须分得开：压缩把两者混成一句「讨论过投毒」是最典型
+  # 的语义事故，模型会据此写进正文。
+  - id: v09_rejected_plan
+    title: 被否定的方案不与作者决定混同
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 我想让凶手先用毒，再伪装成意外。你觉得可行吗？
+        assistant: 可行：把毒下在睡前那杯水里，再让现场看起来像失足。
+      - user: 算了，投毒太容易被查出来。改用伪造不在场证明，别再提毒药。
+        assistant: 明白，放弃投毒方案，改为伪造不在场证明。
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 只回答一个问题，不要修改任何文件：我们现在采用哪个手法？一句话回答。
+        checks:
+          - id: no_confusion
+            kind: manual
+            rubric: 必须给出「伪造不在场证明」；不得把「投毒」当成当前方案，也不得把两者并列成可选方案。

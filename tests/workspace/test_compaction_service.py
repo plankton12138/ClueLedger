@@ -234,6 +234,21 @@ def test_second_compaction_links_to_the_first(tmp_path: Path) -> None:
 
     async def scenario():
         first = await service.compact(conversation_id)
+        # 中间要有新的对话，第二次整理才有新的可覆盖内容。
+        store.append_batch(
+            conversation_id,
+            [
+                {"type": "turn_started", "turn_id": "t5", "text": "再写一段" * 200},
+                {"type": "assistant_message", "turn_id": "t5", "text": "写好了" * 200},
+                {
+                    "type": "run_finished",
+                    "turn_id": "t5",
+                    "status": "completed",
+                    "recording": "committed",
+                    "changed_paths": [],
+                },
+            ],
+        )
         second = await service.compact(conversation_id)
         return first, second
 
@@ -247,3 +262,24 @@ def test_second_compaction_links_to_the_first(tmp_path: Path) -> None:
     assert len([event for event in events if event["type"] == "context_compacted"]) == 2
     messages = replay_public_messages(events, compaction=active_compaction(events))
     assert sum("较早对话摘要" in message_text(message) for message in messages) == 1
+
+
+def test_compact_without_new_material_is_a_noop(tmp_path: Path) -> None:
+    """第二次整理没有新的可覆盖内容时不再提交记录，也不再调用模型。"""
+    provider = _SummaryProvider()
+    store = _store(tmp_path)
+    conversation_id = _seed(store)
+    service = _service(tmp_path, provider, store)
+
+    async def scenario():
+        first = await service.compact(conversation_id)
+        second = await service.compact(conversation_id)
+        return first, second
+
+    first, second = asyncio.run(scenario())
+
+    assert first is not None
+    assert second is None
+    assert provider.requests and len(provider.requests) == 1
+    events = list(store.events(conversation_id))
+    assert len([event for event in events if event["type"] == "context_compacted"]) == 1
