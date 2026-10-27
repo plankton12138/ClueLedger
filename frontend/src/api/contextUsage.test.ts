@@ -7,8 +7,14 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { UsageTotals } from "./contextUsage";
-import { usageDisplayState } from "./contextUsage";
+import type { ContextView, UsageTotals } from "./contextUsage";
+import {
+  breakdown,
+  contextLabel,
+  formatTokens,
+  usageDisplayState,
+  usageLabel,
+} from "./contextUsage";
 
 function totals(overrides: Partial<UsageTotals> = {}): UsageTotals {
   return {
@@ -71,6 +77,21 @@ describe("fetchConversationUsage", () => {
         requests_in_progress: 0,
         model_duration_ms: 5300,
       },
+      context: {
+        status: "ready",
+        estimated_active_tokens: 4200,
+        last_request_input_tokens: 4000,
+        context_window_tokens: 131_072,
+        input_limit_tokens: 122_880,
+        output_reserve_tokens: 4096,
+        budget: "ok",
+        instructions_tokens: 1200,
+        tools_tokens: 900,
+        conversation_tokens: 2100,
+        method: "cjk-aware-v1",
+        fingerprint: "f",
+        limits_revision: "r",
+      },
       diagnostics: [],
       revision: "r1",
     };
@@ -90,7 +111,83 @@ describe("fetchConversationUsage", () => {
       expect.objectContaining({ headers: expect.any(Object) }),
     );
     expect(view.through_seq).toBe(12);
+    expect(contextLabel(view.context)).toBe("上下文 3%");
     expect(usageDisplayState(view.usage)).toBe("partial");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("用量文案", () => {
+  const context = (overrides: Partial<ContextView> = {}): ContextView => ({
+    status: "ready",
+    estimated_active_tokens: 12_800,
+    last_request_input_tokens: 12_000,
+    context_window_tokens: 131_072,
+    input_limit_tokens: 122_880,
+    output_reserve_tokens: 4096,
+    budget: "ok",
+    instructions_tokens: 4000,
+    tools_tokens: 2500,
+    conversation_tokens: 6300,
+    method: "cjk-aware-v1",
+    fingerprint: "f",
+    limits_revision: "r",
+    ...overrides,
+  });
+
+  it("一万以下给原数，以上用万", () => {
+    expect(formatTokens(8420)).toBe("8420");
+    expect(formatTokens(12_800)).toBe("1.3 万");
+    expect(formatTokens(null)).toBe("—");
+  });
+
+  it("窗口未知时只给 token 数，不给百分比", () => {
+    const label = contextLabel(context({ context_window_tokens: null }));
+
+    expect(label).toBe("上下文 ≈1.3 万");
+  });
+
+  it("有窗口时给出占比", () => {
+    expect(contextLabel(context())).toBe("上下文 10%");
+  });
+
+  it("首次请求前是待计算", () => {
+    expect(contextLabel(context({ status: "pending", estimated_active_tokens: null }))).toBe(
+      "上下文 待计算",
+    );
+    expect(contextLabel(null)).toBe("上下文 待计算");
+  });
+
+  it("累计区分零、未知、部分与完整", () => {
+    const base: UsageTotals = {
+      total_tokens: null,
+      input_tokens: null,
+      output_tokens: null,
+      cache_read_tokens: null,
+      cache_write_tokens: null,
+      finished_requests: 0,
+      requests_without_usage: 0,
+      requests_in_progress: 0,
+      model_duration_ms: null,
+    };
+
+    expect(usageLabel(base)).toBe("累计 0");
+    expect(usageLabel({ ...base, requests_in_progress: 1 })).toBe("累计 统计中");
+    expect(usageLabel({ ...base, finished_requests: 2, requests_without_usage: 2 })).toBe(
+      "累计 未知",
+    );
+    expect(
+      usageLabel({ ...base, total_tokens: 42_000, finished_requests: 3, requests_without_usage: 1 }),
+    ).toBe("累计 4.2 万（部分未统计）");
+    expect(usageLabel({ ...base, total_tokens: 42_000, finished_requests: 3 })).toBe(
+      "累计 4.2 万",
+    );
+  });
+
+  it("构成固定三项，缺值留空", () => {
+    const items = breakdown(context({ tools_tokens: null }));
+
+    expect(items.map((item) => item.label)).toEqual(["约定与资料", "工具定义", "对话与结果"]);
+    expect(items[1].tokens).toBeNull();
   });
 });

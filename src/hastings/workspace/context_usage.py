@@ -32,6 +32,7 @@ __all__ = [
     "TOOL_OVERHEAD_TOKENS",
     "BudgetState",
     "ContextEstimate",
+    "budget_for_limit",
     "budget_state",
     "count_tokens",
     "estimate_request",
@@ -137,17 +138,21 @@ def estimate_request(
     )
 
 
+def budget_for_limit(*, total_tokens: int, input_limit: int | None) -> BudgetState:
+    """已知输入上限时的预算判断；没有上限就是 ``unknown``。"""
+    if input_limit is None:
+        return "unknown"
+    if total_tokens > input_limit:
+        return "over"
+    if total_tokens >= input_limit * _NEAR_RATIO:
+        return "near"
+    return "ok"
+
+
 def budget_state(*, total_tokens: int, limits: ModelLimits) -> BudgetState:
     """这一轮装不装得下。
 
     窗口未知时只能给 ``unknown``：没有输入上限就不能声称「还有空间」，
     也不能据此触发自动整理。
     """
-    limit = limits.input_limit()
-    if limit is None:
-        return "unknown"
-    if total_tokens > limit:
-        return "over"
-    if total_tokens >= limit * _NEAR_RATIO:
-        return "near"
-    return "ok"
+    return budget_for_limit(total_tokens=total_tokens, input_limit=limits.input_limit())

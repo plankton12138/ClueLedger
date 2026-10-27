@@ -36,7 +36,7 @@ from hastings.workspace.character_states import (
     roster_view,
 )
 from hastings.workspace.clues import ClueStore, build_clues, clues_view
-from hastings.workspace.conversation_usage import summarize_events
+from hastings.workspace.conversation_usage import context_snapshot, summarize_events
 from hastings.workspace.deletion import delete_workspace_files
 from hastings.workspace.directory_dialog import DirectoryPickerError, pick_directory
 from hastings.workspace.disclosure import (
@@ -397,6 +397,28 @@ class UsageTotalsView(BaseModel):
     model_duration_ms: int | None = None
 
 
+class ContextView(BaseModel):
+    """当前有效上下文；``null`` 表示这一项还没有可靠数值。
+
+    ``pending`` 还没有任何请求，``running`` 有一轮正在跑，``ready`` 最近一轮已结束。
+    容量取自最近一次请求受理时冻结的那份。
+    """
+
+    status: Literal["pending", "running", "ready"]
+    estimated_active_tokens: int | None = None
+    last_request_input_tokens: int | None = None
+    context_window_tokens: int | None = None
+    input_limit_tokens: int | None = None
+    output_reserve_tokens: int | None = None
+    budget: Literal["unknown", "ok", "near", "over"] = "unknown"
+    instructions_tokens: int | None = None
+    tools_tokens: int | None = None
+    conversation_tokens: int | None = None
+    method: str = ""
+    fingerprint: str = ""
+    limits_revision: str = ""
+
+
 class ConversationUsageView(BaseModel):
     """用量读取视图：只读，不产生模型调用与会话事件。"""
 
@@ -404,6 +426,7 @@ class ConversationUsageView(BaseModel):
     #: 覆盖到的事件序号；客户端用它判断自己的视图是否落后。
     through_seq: int
     usage: UsageTotalsView
+    context: ContextView
     #: 记录链路自身的问题，例如同一请求出现了两个不同终态。
     diagnostics: list[str] = Field(default_factory=list)
     revision: str = ""
@@ -1555,7 +1578,9 @@ def create_file_workspace_router(
         """
         service = service_for(workspace_id)
         service.store.get(conversation_id)
-        summary = summarize_events(service.store.events(conversation_id))
+        events = service.store.events(conversation_id)
+        summary = summarize_events(events)
+        context = context_snapshot(events)
         totals = summary.totals
         return ConversationUsageView(
             conversation_id=conversation_id,
@@ -1570,6 +1595,21 @@ def create_file_workspace_router(
                 requests_without_usage=totals.requests_without_usage,
                 requests_in_progress=totals.requests_in_progress,
                 model_duration_ms=totals.model_duration_ms,
+            ),
+            context=ContextView(
+                status=context.status,
+                estimated_active_tokens=context.estimated_active_tokens,
+                last_request_input_tokens=context.last_request_input_tokens,
+                context_window_tokens=context.context_window_tokens,
+                input_limit_tokens=context.input_limit_tokens,
+                output_reserve_tokens=context.output_reserve_tokens,
+                budget=context.budget,
+                instructions_tokens=context.instructions_tokens,
+                tools_tokens=context.tools_tokens,
+                conversation_tokens=context.conversation_tokens,
+                method=context.method,
+                fingerprint=context.fingerprint,
+                limits_revision=context.limits_revision,
             ),
             diagnostics=list(summary.diagnostics),
             revision=service.store.revision(),

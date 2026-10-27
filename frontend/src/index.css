@@ -385,6 +385,44 @@
     border-color: #6f9ab8;
   }
 
+  /* ===== 用量入口（0.9 U3）=====
+     两个低强调入口挤在发送按钮同一行左侧；浮层向上展开，不挡住草稿。
+     正常状态用中性色，接近上限才换提醒色，不靠颜色单独表意。 */
+  .chat-usage-entry {
+    @apply rounded px-1.5 py-0.5 text-[10px] leading-4 text-mute;
+    border: 1px solid transparent;
+    background: transparent;
+  }
+  .chat-usage-entry:hover {
+    border-color: theme("colors.panelHeadEdge");
+    color: theme("colors.fg");
+  }
+  .chat-usage-entry.tight {
+    color: theme("colors.amber");
+  }
+  .chat-usage-entry[aria-expanded="true"] {
+    border-color: theme("colors.panelHeadEdge");
+    background: #fff;
+    color: theme("colors.fg");
+  }
+  .chat-usage-pop {
+    @apply absolute bottom-full left-0 z-20 mb-2 w-64 rounded px-2.5 py-2;
+    border: 1px solid theme("colors.panelHeadEdge");
+    background: #fff;
+    box-shadow: 0 6px 18px rgba(52, 80, 100, 0.16);
+  }
+  .chat-usage-track {
+    @apply h-1 w-full overflow-hidden rounded;
+    background: #e4ebef;
+  }
+  .chat-usage-fill {
+    @apply h-full rounded;
+    background: #6f9ab8;
+  }
+  .chat-usage-fill.tight {
+    background: theme("colors.amber");
+  }
+
   /* ===== 正文纸面 =====
      纸底、边框与投影留在滚动容器上；横线见 .paper-lined（内容层）。 */
   .paper-sheet {

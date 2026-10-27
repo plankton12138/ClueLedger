@@ -16,6 +16,7 @@ import pytest
 from hastings.workspace.conversation_usage import (
     ReportedUsage,
     UsageTotals,
+    context_snapshot,
     reported_usage,
     summarize_events,
 )
@@ -338,3 +339,143 @@ def test_empty_conversation_has_zero_requests() -> None:
     assert summary.totals.finished_requests == 0
     assert summary.totals.total_tokens is None
     assert summary.through_seq == 0
+
+
+# -- 当前上下文（U3） -------------------------------------------------------
+
+
+def _estimate(total: int = 5000, *, window: int | None = 64_000) -> dict[str, object]:
+    return {
+        "model": "deepseek:deepseek-chat",
+        "total_tokens": total,
+        "system_tokens": 1000,
+        "tool_tokens": 500,
+        "message_tokens": 3400,
+        "protocol_tokens": 100,
+        "method": "cjk-aware-v1",
+        "fingerprint": "abc",
+        "budget": "ok",
+        "context_window_tokens": window,
+        "input_limit_tokens": window - 4096 - 3200 if window else None,
+        "output_reserve_tokens": 4096,
+        "limits_revision": "r1",
+    }
+
+
+def _request_with_estimate(  # noqa: PLR0913 - 测试辅助，参数即事件字段
+    seq: int,
+    operation: str,
+    *,
+    estimate: dict[str, object] | None = None,
+    usage: object = None,
+    finished: bool = True,
+) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = [
+        {
+            "type": "model_request_started",
+            "seq": seq,
+            "turn_id": "t1",
+            "operation_id": operation,
+            "stage": "write",
+            "request_estimate": estimate if estimate is not None else _estimate(),
+        }
+    ]
+    if finished:
+        events.append(
+            {
+                "type": "model_request_finished",
+                "seq": seq + 1,
+                "turn_id": "t1",
+                "operation_id": operation,
+                "stage": "write",
+                "status": "completed",
+                "usage": usage,
+                "duration_ms": 1000,
+            }
+        )
+    return events
+
+
+def test_context_is_pending_before_any_request() -> None:
+    """首次请求前没有可估算的输入：显示待计算，不把空对话说成占了很多。"""
+    snapshot = context_snapshot([{"type": "turn_started", "seq": 1, "text": "写一章"}])
+
+    assert snapshot.status == "pending"
+    assert snapshot.estimated_active_tokens is None
+    assert snapshot.context_window_tokens is None
+    assert snapshot.budget == "unknown"
+
+
+def test_context_uses_the_running_request() -> None:
+    snapshot = context_snapshot(_request_with_estimate(1, "op1", finished=False))
+
+    assert snapshot.status == "running"
+    assert snapshot.estimated_active_tokens == 5000
+    assert snapshot.context_window_tokens == 64_000
+    assert snapshot.instructions_tokens == 1000
+    assert snapshot.tools_tokens == 500
+    assert snapshot.conversation_tokens == 3500
+
+
+def test_context_after_a_finished_request_is_ready() -> None:
+    snapshot = context_snapshot(_request_with_estimate(1, "op1"))
+
+    assert snapshot.status == "ready"
+    assert snapshot.estimated_active_tokens == 5000
+    assert snapshot.method == "cjk-aware-v1"
+
+
+def test_new_public_text_after_the_request_adds_to_the_estimate() -> None:
+    """请求之后的公开对话会进入下一次请求，占用要跟着涨。"""
+    events = [
+        *_request_with_estimate(1, "op1"),
+        {"type": "assistant_message", "seq": 3, "text": "写好了"},
+        {"type": "turn_started", "seq": 4, "text": "再多写两句"},
+    ]
+
+    snapshot = context_snapshot(events)
+
+    assert snapshot.estimated_active_tokens is not None
+    assert snapshot.estimated_active_tokens > 5000
+
+
+def test_measured_input_is_preferred_over_the_estimate() -> None:
+    """供应商给过实测输入时，最近一次真实输入用它，而不是估算。"""
+    events = _request_with_estimate(
+        1, "op1", usage={"input": 8000, "output": 200, "total_tokens": 8200}
+    )
+
+    snapshot = context_snapshot(events)
+
+    assert snapshot.last_request_input_tokens == 8000
+
+
+def test_context_without_estimate_data_stays_unknown() -> None:
+    """旧事件没有 request_estimate：有请求但算不出占用，不能填一个数字。"""
+    events = [
+        {
+            "type": "model_request_started",
+            "seq": 1,
+            "turn_id": "t1",
+            "operation_id": "op1",
+            "stage": "write",
+        },
+        {
+            "type": "model_request_finished",
+            "seq": 2,
+            "turn_id": "t1",
+            "operation_id": "op1",
+            "stage": "write",
+            "status": "completed",
+            "usage": {"input": 900, "output": 100, "total_tokens": 1000},
+            "duration_ms": 500,
+        },
+    ]
+
+    snapshot = context_snapshot(events)
+
+    assert snapshot.status == "ready"
+    assert snapshot.estimated_active_tokens is None
+    assert snapshot.last_request_input_tokens == 900
+    assert snapshot.context_window_tokens is None
+    assert snapshot.budget == "unknown"

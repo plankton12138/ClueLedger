@@ -19,6 +19,7 @@ import {
   type AuthMethod,
   type ConnectionDraft,
   type ModelConnection,
+  type ModelLimitInput,
   type ProviderApi,
   type ProviderPreset,
 } from "../../api/models";
@@ -70,6 +71,21 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
   const [apiKey, setApiKey] = useState("");
   const [models, setModels] = useState<string[]>(connection?.models ?? []);
   const [defaultModel, setDefaultModel] = useState(connection?.default_model ?? "");
+  // 容量只填窗口与最大输出；其它项（输入上限、回复预留、安全余量）保存时原样保留。
+  const [limits, setLimits] = useState<Record<string, { window: string; maxOutput: string }>>(
+    () =>
+      Object.fromEntries(
+        Object.entries(connection?.model_limits ?? {}).map(([model, value]) => [
+          model,
+          {
+            window: value.context_window_tokens ? String(value.context_window_tokens) : "",
+            maxOutput: value.max_output_tokens ? String(value.max_output_tokens) : "",
+          },
+        ]),
+      ),
+  );
+  // 没动过容量就不提交这个字段：省略表示沿用，避免旧表单把已保存的容量清空。
+  const [limitsTouched, setLimitsTouched] = useState(false);
   const [manual, setManual] = useState("");
   const [discovered, setDiscovered] = useState<string[] | null>(null);
   const [discoveryNote, setDiscoveryNote] = useState<string | null>(null);
@@ -106,6 +122,7 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
     api,
     models,
     default_model: defaultModel || models[0] || "",
+    ...(limitsTouched ? { model_limits: limitValues() } : {}),
     auth_method: method,
     ...(subscription
       ? {
@@ -116,6 +133,31 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
         ? { api_key: apiKey }
         : {}),
   });
+
+  const setLimit = (model: string, field: "window" | "maxOutput", value: string) => {
+    setLimitsTouched(true);
+    setLimits((current) => {
+      const previous = current[model] ?? { window: "", maxOutput: "" };
+      return { ...current, [model]: { ...previous, [field]: value } };
+    });
+  };
+
+  // 空输入表示「未知」，回到未知就要把这个键去掉，而不是提交 0。
+  const limitValues = (): Record<string, ModelLimitInput> => {
+    const result: Record<string, ModelLimitInput> = {};
+    for (const model of models) {
+      const draft = limits[model] ?? { window: "", maxOutput: "" };
+      const item: ModelLimitInput = { ...(connection?.model_limits?.[model] ?? {}) };
+      const window = draft.window.trim();
+      const maxOutput = draft.maxOutput.trim();
+      if (window) item.context_window_tokens = Number(window);
+      else delete item.context_window_tokens;
+      if (maxOutput) item.max_output_tokens = Number(maxOutput);
+      else delete item.max_output_tokens;
+      if (Object.keys(item).length > 0) result[model] = item;
+    }
+    return result;
+  };
 
   const applyRegion = (regionId: string) => {
     const region = preset.regions.find((item) => item.id === regionId);
@@ -489,6 +531,44 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
             <p className="mt-1 text-sm text-ui-muted">
               保存连接不会自动切换到它；配好后用「设为当前」或右上角选择器切换。
             </p>
+          </div>
+
+          <div className="rounded border border-[#e2dbc6] bg-white/60 p-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-[#4b4737]">模型容量</span>
+              <span className="text-sm text-ui-muted">可选</span>
+            </div>
+            <p className="mt-1 text-sm leading-4 text-ui-muted">
+              填了窗口才显示占比；不知道就留空，界面按未知处理，不填默认值。
+            </p>
+            <ul className="mt-2 space-y-2">
+              {models.map((model) => (
+                <li className="flex items-center gap-2" key={model}>
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{model}</span>
+                  <input
+                    aria-label={`${model} 的上下文窗口`}
+                    className="w-24 rounded border border-[#cfc7ae] bg-white px-1.5 py-1 text-xs"
+                    min={1}
+                    placeholder="窗口"
+                    type="number"
+                    value={limits[model]?.window ?? ""}
+                    onChange={(event) => setLimit(model, "window", event.target.value)}
+                  />
+                  <input
+                    aria-label={`${model} 的最大输出`}
+                    className="w-20 rounded border border-[#cfc7ae] bg-white px-1.5 py-1 text-xs"
+                    min={1}
+                    placeholder="最大输出"
+                    type="number"
+                    value={limits[model]?.maxOutput ?? ""}
+                    onChange={(event) => setLimit(model, "maxOutput", event.target.value)}
+                  />
+                </li>
+              ))}
+              {models.length === 0 && (
+                <li className="text-sm text-ui-muted">先勾选模型，再填容量。</li>
+              )}
+            </ul>
           </div>
 
           <div className="rounded border border-[#e2dbc6] bg-white/60 p-2">

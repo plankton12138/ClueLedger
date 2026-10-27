@@ -68,6 +68,7 @@ const CONNECTED = {
       auth_provider: "",
       account: "",
       auth_status: "ready" as const,
+      model_limits: {},
     },
   ],
 };

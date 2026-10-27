@@ -97,6 +97,7 @@ def _request_estimate(
         "budget": budget_state(total_tokens=estimate.total, limits=limits) if limits else "unknown",
         "context_window_tokens": limits.context_window_tokens if limits else None,
         "input_limit_tokens": limits.input_limit() if limits else None,
+        "output_reserve_tokens": limits.output_reserve_tokens if limits else None,
         "limits_revision": limits.revision if limits else "",
     }
 

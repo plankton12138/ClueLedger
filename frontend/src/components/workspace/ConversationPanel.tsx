@@ -33,6 +33,7 @@ import IdeaReferenceChip from "../chat/IdeaReferenceChip";
 import ExpandedReplyDialog from "../chat/ExpandedReplyDialog";
 import { useChatScroll } from "../chat/useChatScroll";
 import ReferencePicker from "./ReferencePicker";
+import ConversationUsageBar from "./ConversationUsageBar";
 
 function conversationLabel(item: Conversation, running: boolean): string {
   return running ? `${item.title}（进行中）` : item.title;
@@ -428,7 +429,13 @@ export default function ConversationPanel() {
             }
           }}
         />
-        <div className="mt-2 flex items-center justify-end gap-2">
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <ConversationUsageBar
+            workspaceId={workspaceId}
+            conversationId={selectedId}
+            refreshKey={entry.lastSeq}
+            onOpenModelSettings={openModelSettings}
+          />
           {running ? (
             <button className="btn btn-gray px-3 py-1 text-[11px]" disabled={stopping}
               onClick={() => void stop()}>

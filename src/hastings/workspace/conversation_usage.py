@@ -19,11 +19,22 @@ OpenAI 两类的 input 已经扣掉缓存读写，Anthropic 的 input 本身就�
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
-__all__ = ["ReportedUsage", "UsageSummary", "UsageTotals", "reported_usage", "summarize_events"]
+from hastings.workspace.context_usage import METHOD, BudgetState, budget_for_limit, count_tokens
+
+__all__ = [
+    "ContextSnapshot",
+    "ReportedUsage",
+    "UsageSummary",
+    "UsageTotals",
+    "context_snapshot",
+    "reported_usage",
+    "summarize_events",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,4 +208,143 @@ def summarize_events(events: Sequence[Mapping[str, Any]]) -> UsageSummary:
         ),
         through_seq=through_seq,
         diagnostics=tuple(diagnostics),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ContextSnapshot:
+    """当前有效上下文的样子，全部由事件推导。
+
+    ``pending`` 还没有任何请求，谈不上占用；``running`` 有一轮正在跑，取它发出前的
+    估算；``ready`` 最近一轮已结束，估算再加上之后新增的公开对话。
+
+    容量取自最近一次请求受理时冻结的那份，不是现在的模型设置：显示的数字必须与
+    真正发出去的请求一致。作者改了配置也只影响下一轮。
+    """
+
+    status: Literal["pending", "running", "ready"]
+    estimated_active_tokens: int | None
+    last_request_input_tokens: int | None
+    context_window_tokens: int | None
+    input_limit_tokens: int | None
+    output_reserve_tokens: int | None
+    budget: BudgetState
+    instructions_tokens: int | None
+    tools_tokens: int | None
+    conversation_tokens: int | None
+    method: str
+    fingerprint: str
+    limits_revision: str
+
+
+def _estimated_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if value >= 0 else None
+
+
+def _latest_measured_input(events: Sequence[Mapping[str, Any]]) -> int | None:
+    for event in reversed(events):
+        if event.get("type") != "model_request_finished":
+            continue
+        usage = reported_usage(event.get("usage"))
+        if usage is not None and usage.input_tokens is not None:
+            return usage.input_tokens
+    return None
+
+
+def context_snapshot(events: Sequence[Mapping[str, Any]]) -> ContextSnapshot:
+    """把事件还原成「现在大概占多少」。不装配、不读文件、不调用模型。"""
+    empty = ContextSnapshot(
+        status="pending",
+        estimated_active_tokens=None,
+        last_request_input_tokens=None,
+        context_window_tokens=None,
+        input_limit_tokens=None,
+        output_reserve_tokens=None,
+        budget="unknown",
+        instructions_tokens=None,
+        tools_tokens=None,
+        conversation_tokens=None,
+        method="",
+        fingerprint="",
+        limits_revision="",
+    )
+
+    started: list[tuple[int, str]] = []
+    finished: set[str] = set()
+    for event in events:
+        kind = event.get("type")
+        operation = event.get("operation_id")
+        if not isinstance(operation, str) or not operation:
+            continue
+        seq = _estimated_int(event.get("seq")) or 0
+        if kind == "model_request_started":
+            started.append((seq, operation))
+        elif kind == "model_request_finished":
+            finished.add(operation)
+
+    if not started:
+        return empty
+
+    running = started[-1][1] not in finished
+    status: Literal["pending", "running", "ready"] = "running" if running else "ready"
+
+    estimate: Mapping[str, Any] | None = None
+    estimate_seq = 0
+    for event in events:
+        if event.get("type") != "model_request_started":
+            continue
+        candidate = event.get("request_estimate")
+        if isinstance(candidate, Mapping):
+            estimate = candidate
+            estimate_seq = _estimated_int(event.get("seq")) or 0
+
+    measured = _latest_measured_input(events)
+    if estimate is None:
+        return dataclasses.replace(
+            empty,
+            status=status,
+            last_request_input_tokens=measured,
+        )
+
+    method = str(estimate.get("method") or "")
+    instructions = _estimated_int(estimate.get("system_tokens"))
+    tools = _estimated_int(estimate.get("tool_tokens"))
+    message_tokens = _estimated_int(estimate.get("message_tokens"))
+    protocol = _estimated_int(estimate.get("protocol_tokens"))
+    base = _estimated_int(estimate.get("total_tokens"))
+    conversation = (
+        (message_tokens or 0) + (protocol or 0)
+        if message_tokens is not None or protocol is not None
+        else None
+    )
+
+    # 只在本轮结束之后才有「新增对话」：运行中的请求已经包含当时的内容。
+    added = 0
+    if status == "ready" and method == METHOD:
+        added = sum(
+            count_tokens(str(event.get("text")))
+            for event in events
+            if (_estimated_int(event.get("seq")) or 0) > estimate_seq
+            and event.get("type") in ("turn_started", "assistant_message")
+        )
+
+    estimated = (base + added) if base is not None else None
+    input_limit = _estimated_int(estimate.get("input_limit_tokens"))
+    return ContextSnapshot(
+        status=status,
+        estimated_active_tokens=estimated,
+        # 供应商给过实测输入时用它：那是真实发出的大小，比估算更可信。
+        last_request_input_tokens=measured if measured is not None else base,
+        context_window_tokens=_estimated_int(estimate.get("context_window_tokens")),
+        input_limit_tokens=input_limit,
+        output_reserve_tokens=_estimated_int(estimate.get("output_reserve_tokens")),
+        budget=budget_for_limit(total_tokens=estimated or 0, input_limit=input_limit),
+        instructions_tokens=instructions,
+        tools_tokens=tools,
+        conversation_tokens=(conversation + added) if conversation is not None else None,
+        method=method,
+        fingerprint=str(estimate.get("fingerprint") or ""),
+        limits_revision=str(estimate.get("limits_revision") or ""),
     )

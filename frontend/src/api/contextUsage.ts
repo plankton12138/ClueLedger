@@ -40,6 +40,7 @@ export interface ConversationUsageView {
   conversation_id: string;
   through_seq: number;
   usage: UsageTotals;
+  context: ContextView;
   diagnostics: string[];
   revision: string;
 }
@@ -55,4 +56,110 @@ export function usageDisplayState(totals: UsageTotals): UsageDisplayState {
     return "unknown";
   }
   return totals.requests_without_usage > 0 ? "partial" : "known";
+}
+
+/**
+ * 当前有效上下文；`null` 表示这一项没有可靠数值。
+ *
+ * `pending` 还没有请求，`running` 有一轮正在跑，`ready` 最近一轮已结束。
+ * 容量取自最近一次请求受理时冻结的那份，与真正发出去的请求一致。
+ */
+export interface ContextView {
+  status: "pending" | "running" | "ready";
+  estimated_active_tokens: number | null;
+  last_request_input_tokens: number | null;
+  context_window_tokens: number | null;
+  input_limit_tokens: number | null;
+  output_reserve_tokens: number | null;
+  budget: "unknown" | "ok" | "near" | "over";
+  instructions_tokens: number | null;
+  tools_tokens: number | null;
+  conversation_tokens: number | null;
+  method: string;
+  fingerprint: string;
+  limits_revision: string;
+}
+
+/** 一万以下给原数，以上给「万」：窄栏里长数字会挤掉发送按钮。 */
+export function formatTokens(value: number | null): string {
+  if (value === null) {
+    return "—";
+  }
+  if (value < 10_000) {
+    return String(value);
+  }
+  const scaled = value / 10_000;
+  return `${scaled >= 100 ? Math.round(scaled) : scaled.toFixed(1)} 万`;
+}
+
+/** 占比只按窗口算；没有窗口就是没有占比，不做别的分母。 */
+export function contextShare(context: ContextView): number | null {
+  if (!context.context_window_tokens || context.estimated_active_tokens === null) {
+    return null;
+  }
+  return context.estimated_active_tokens / context.context_window_tokens;
+}
+
+export function formatPercent(share: number | null): string {
+  if (share === null) {
+    return "";
+  }
+  const percent = share * 100;
+  return `${percent < 1 ? percent.toFixed(1) : Math.round(percent)}%`;
+}
+
+/** 上下文入口的常驻文案：先是状态，再是数字。 */
+export function contextLabel(context: ContextView | null): string {
+  if (!context || context.status === "pending" || context.estimated_active_tokens === null) {
+    return "上下文 待计算";
+  }
+  const tokens = `≈${formatTokens(context.estimated_active_tokens)}`;
+  const share = contextShare(context);
+  return share === null ? `上下文 ${tokens}` : `上下文 ${formatPercent(share)}`;
+}
+
+/** 累计入口的常驻文案；零、未知、部分必须分开说。 */
+export function usageLabel(totals: UsageTotals | null): string {
+  if (!totals) {
+    return "累计 —";
+  }
+  const state = usageDisplayState(totals);
+  if (state === "empty") {
+    return "累计 0";
+  }
+  if (state === "pending") {
+    return "累计 统计中";
+  }
+  if (state === "unknown") {
+    return "累计 未知";
+  }
+  const known = `累计 ${formatTokens(totals.total_tokens)}`;
+  return state === "partial" ? `${known}（部分未统计）` : known;
+}
+
+export interface BreakdownItem {
+  key: "instructions" | "tools" | "conversation";
+  label: string;
+  tokens: number | null;
+}
+
+/** 浮层里的三项构成：只列这三项，回复预留单独说明。 */
+export function breakdown(context: ContextView): BreakdownItem[] {
+  return [
+    { key: "instructions", label: "约定与资料", tokens: context.instructions_tokens },
+    { key: "tools", label: "工具定义", tokens: context.tools_tokens },
+    { key: "conversation", label: "对话与结果", tokens: context.conversation_tokens },
+  ];
+}
+
+/** 请求耗时之和，不是从打开会话到现在的时长。 */
+export function formatDuration(ms: number | null): string {
+  if (ms === null) {
+    return "—";
+  }
+  if (ms < 60_000) {
+    return `${(ms / 1000).toFixed(1)} 秒`;
+  }
+  const minutes = Math.floor(ms / 60_000);
+  return `${minutes} 分 ${Math.round((ms % 60_000) / 1000)} 秒`;
 }

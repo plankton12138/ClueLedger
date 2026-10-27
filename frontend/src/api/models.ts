@@ -61,6 +61,17 @@ export interface ModelConnection {
   /** 订阅账号的脱敏标识；API Key 连接为空串。 */
   account: string;
   auth_status: AuthStatus;
+  /** 按精确模型名保存的容量；未出现的模型按未知处理，界面不显示百分比。 */
+  model_limits: Record<string, ModelLimitInput>;
+}
+
+/** 一个模型的容量；只填知道的项，空缺表示未知。 */
+export interface ModelLimitInput {
+  context_window_tokens?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
+  output_reserve_tokens?: number;
+  safety_tokens?: number;
 }
 
 export type SelectionSource = "saved" | "startup" | "automatic" | "none";
@@ -97,6 +108,8 @@ export interface ConnectionDraft {
   auth_provider?: string;
   /** 一次已完成的授权会话；保存成功后凭据归属这个连接。 */
   auth_session_id?: string;
+  /** 省略表示沿用已保存的容量；传空对象才是清空。 */
+  model_limits?: Record<string, ModelLimitInput>;
 }
 
 export interface DiscoveryResult {

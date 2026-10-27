@@ -158,3 +158,62 @@ def test_unknown_conversation_is_not_found(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "CONVERSATION_NOT_FOUND"
+
+
+def test_usage_reports_context_state(tmp_path: Path) -> None:
+    """新会话的上下文是待计算；有请求后给出估算与容量。"""
+    client, store, workspace_id, conversation_id = _setup(tmp_path)
+
+    pending = client.get(
+        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/usage"
+    ).json()["context"]
+    assert pending["status"] == "pending"
+    assert pending["estimated_active_tokens"] is None
+    assert pending["budget"] == "unknown"
+
+    store.append_batch(
+        conversation_id,
+        [
+            {
+                "type": "model_request_started",
+                "turn_id": "t1",
+                "operation_id": "op1",
+                "stage": "write",
+                "request_estimate": {
+                    "model": "deepseek:deepseek-chat",
+                    "total_tokens": 5000,
+                    "system_tokens": 1000,
+                    "tool_tokens": 500,
+                    "message_tokens": 3400,
+                    "protocol_tokens": 100,
+                    "method": "cjk-aware-v1",
+                    "fingerprint": "f1",
+                    "budget": "ok",
+                    "context_window_tokens": 64_000,
+                    "input_limit_tokens": 56_000,
+                    "output_reserve_tokens": 4096,
+                    "limits_revision": "r1",
+                },
+            },
+            {
+                "type": "model_request_finished",
+                "turn_id": "t1",
+                "operation_id": "op1",
+                "stage": "write",
+                "status": "completed",
+                "usage": {"input": 5200, "output": 300, "total_tokens": 5500},
+                "duration_ms": 800,
+            },
+        ],
+    )
+
+    ready = client.get(
+        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/usage"
+    ).json()["context"]
+    assert ready["status"] == "ready"
+    assert ready["estimated_active_tokens"] == 5000
+    assert ready["last_request_input_tokens"] == 5200
+    assert ready["context_window_tokens"] == 64_000
+    assert ready["budget"] == "ok"
+    assert ready["limits_revision"] == "r1"
+    assert ready["instructions_tokens"] == 1000
