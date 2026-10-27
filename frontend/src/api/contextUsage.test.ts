@@ -7,11 +7,13 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { ContextView, UsageTotals } from "./contextUsage";
+import type { CompactionOperation, ContextView, UsageTotals } from "./contextUsage";
 import {
   breakdown,
+  compactionNote,
   contextLabel,
   formatTokens,
+  isCompactionFinished,
   usageDisplayState,
   usageLabel,
 } from "./contextUsage";
@@ -189,5 +191,47 @@ describe("用量文案", () => {
 
     expect(items.map((item) => item.label)).toEqual(["约定与资料", "工具定义", "对话与结果"]);
     expect(items[1].tokens).toBeNull();
+  });
+});
+
+describe("整理结果文案", () => {
+  const operation = (overrides: Partial<CompactionOperation> = {}): CompactionOperation => ({
+    operation_id: "op1",
+    conversation_id: "c1",
+    state: "completed",
+    record: {
+      compaction_id: "cmp1",
+      first_kept_turn_id: "t3",
+      estimated_before: 42_000,
+      estimated_after: 12_000,
+    },
+    error: null,
+    note: "",
+    ...overrides,
+  });
+
+  it("成功时给整理前后的规模", () => {
+    expect(compactionNote(operation())).toBe("已整理：4.2 万 → 1.2 万");
+  });
+
+  it("没有可整理内容时说清楚，不是失败", () => {
+    expect(compactionNote(operation({ state: "noop", record: null, note: "没有较早内容。" }))).toBe(
+      "没有较早内容。",
+    );
+  });
+
+  it("失败时用服务端原因", () => {
+    const failed = operation({
+      state: "failed",
+      record: null,
+      error: { code: "COMPACTION_FAILED", where: "x", why: "摘要格式不符合要求", fix: "重试" },
+    });
+
+    expect(compactionNote(failed)).toBe("摘要格式不符合要求");
+  });
+
+  it("终态判断覆盖四种结果", () => {
+    expect(isCompactionFinished(operation({ state: "running" }))).toBe(false);
+    expect(isCompactionFinished(operation({ state: "stopped" }))).toBe(true);
   });
 });

@@ -163,3 +163,46 @@ export function formatDuration(ms: number | null): string {
   const minutes = Math.floor(ms / 60_000);
   return `${minutes} 分 ${Math.round((ms % 60_000) / 1000)} 秒`;
 }
+
+/**
+ * 手动整理操作；`completed` 时才带记录，`failed` 时带错误。
+ *
+ * 整理不是创作轮次：它没有作者消息，也不产生作品提交，所以单独一套状态。
+ */
+export interface CompactionOperation {
+  operation_id: string;
+  conversation_id: string;
+  state: "queued" | "running" | "completed" | "noop" | "failed" | "stopped";
+  record: {
+    compaction_id: string;
+    first_kept_turn_id: string;
+    estimated_before: number;
+    estimated_after: number;
+  } | null;
+  error: { code: string; where: string; why: string; fix: string } | null;
+  note: string;
+}
+
+/** 终态之后不再轮询。 */
+export function isCompactionFinished(operation: CompactionOperation): boolean {
+  return ["completed", "noop", "failed", "stopped"].includes(operation.state);
+}
+
+/** 整理结束后的简短说明；成功给前后规模，失败说原因，取消说没变化。 */
+export function compactionNote(operation: CompactionOperation): string {
+  if (operation.state === "completed") {
+    const before = formatTokens(operation.record?.estimated_before ?? null);
+    const after = formatTokens(operation.record?.estimated_after ?? null);
+    return `已整理：${before} → ${after}`;
+  }
+  if (operation.state === "noop") {
+    return operation.note || "当前没有需要整理的较早内容。";
+  }
+  if (operation.state === "failed") {
+    return operation.error?.why || "这次没有整理。";
+  }
+  if (operation.state === "stopped") {
+    return operation.note || "整理已取消；当前上下文没有变化。";
+  }
+  return "";
+}

@@ -10,18 +10,24 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ConversationUsageView } from "../../api/contextUsage";
+import type { CompactionOperation, ConversationUsageView } from "../../api/contextUsage";
 import {
   breakdown,
+  compactionNote,
   contextLabel,
   contextShare,
   formatDuration,
   formatPercent,
   formatTokens,
+  isCompactionFinished,
   usageDisplayState,
   usageLabel,
 } from "../../api/contextUsage";
-import { fetchConversationUsage } from "../../api/workspace";
+import {
+  fetchConversationUsage,
+  readCompaction,
+  startCompaction,
+} from "../../api/workspace";
 
 interface Props {
   workspaceId: string | null;
@@ -44,6 +50,10 @@ export default function ConversationUsageBar({
 }: Props) {
   const [view, setView] = useState<ConversationUsageView | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
+  // 整理完成后要重新读一次：占用与累计都会变。
+  const [tick, setTick] = useState(0);
+  const [operation, setOperation] = useState<CompactionOperation | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -70,7 +80,7 @@ export default function ConversationUsageBar({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [workspaceId, conversationId, refreshKey]);
+  }, [workspaceId, conversationId, refreshKey, tick]);
 
   useEffect(() => {
     if (panel === null) return;
@@ -87,6 +97,32 @@ export default function ConversationUsageBar({
       document.removeEventListener("mousedown", onClick);
     };
   }, [panel]);
+
+  useEffect(() => {
+    if (!workspaceId || !conversationId || operation === null) return;
+    if (isCompactionFinished(operation)) {
+      setOperation(null);
+      setNote(compactionNote(operation));
+      setTick((value) => value + 1);
+      return;
+    }
+    const timer = setTimeout(() => {
+      readCompaction(workspaceId, conversationId, operation.operation_id)
+        .then(setOperation)
+        .catch(() => setOperation(null));
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [workspaceId, conversationId, operation]);
+
+  const compact = useCallback(() => {
+    if (!workspaceId || !conversationId) return;
+    setNote(null);
+    startCompaction(workspaceId, conversationId, `compact-${Date.now()}`)
+      .then(setOperation)
+      .catch((error: unknown) => {
+        setNote(error instanceof Error ? error.message : "整理没有开始。");
+      });
+  }, [workspaceId, conversationId]);
 
   const toggle = useCallback((next: Panel) => {
     setPanel((current) => (current === next ? null : next));
@@ -159,6 +195,17 @@ export default function ConversationUsageBar({
               <p className="mt-2 text-[10px] leading-4 text-mute">
                 回复预留 {formatTokens(context.output_reserve_tokens)}，不计入已用输入。
               </p>
+              <div className="mt-2 flex items-center justify-between gap-2 border-t border-panel-head-edge pt-2">
+                <button
+                  type="button"
+                  className="text-[10px] font-bold text-blue disabled:text-mute"
+                  disabled={operation !== null}
+                  onClick={compact}
+                >
+                  {operation === null ? "整理上下文" : "正在整理…"}
+                </button>
+                {note && <span className="min-w-0 flex-1 truncate text-[10px] text-mute">{note}</span>}
+              </div>
               {context.context_window_tokens === null && onOpenModelSettings && (
                 <button
                   type="button"

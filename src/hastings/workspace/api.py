@@ -36,6 +36,7 @@ from hastings.workspace.character_states import (
     roster_view,
 )
 from hastings.workspace.clues import ClueStore, build_clues, clues_view
+from hastings.workspace.compaction_ops import CompactionRunner
 from hastings.workspace.conversation_usage import context_snapshot, summarize_events
 from hastings.workspace.deletion import delete_workspace_files
 from hastings.workspace.directory_dialog import DirectoryPickerError, pick_directory
@@ -417,6 +418,23 @@ class ContextView(BaseModel):
     method: str = ""
     fingerprint: str = ""
     limits_revision: str = ""
+
+
+class CompactRequest(BaseModel):
+    """手动整理上下文；``request_key`` 是幂等键，重复提交返回同一个操作。"""
+
+    request_key: str
+
+
+class CompactionOperationView(BaseModel):
+    """整理操作的状态；``completed`` 时才带记录，失败时带错误。"""
+
+    operation_id: str
+    conversation_id: str
+    state: Literal["queued", "running", "completed", "noop", "failed", "stopped"]
+    record: dict[str, object] | None = None
+    error: dict[str, object] | None = None
+    note: str = ""
 
 
 class ConversationUsageView(BaseModel):
@@ -917,6 +935,7 @@ def create_file_workspace_router(
     """绑定最近目录登记与模型来源；每个作品一个轮次服务，按需创建。"""
     router = APIRouter(prefix=PREFIX, tags=["file-workspaces"])
     services: dict[str, TurnService] = {}
+    runners: dict[str, CompactionRunner] = {}
     ui_stores: dict[str, ConversationUiStore] = {}
     activity_stores: dict[str, ActivityStore] = {}
     activity_lock = threading.RLock()
@@ -1565,6 +1584,48 @@ def create_file_workspace_router(
             active_turn=active_view(service, conversation_id),
             revision=service.store.revision(),
         )
+
+    @router.post(
+        "/{workspace_id}/conversations/{conversation_id}/compact",
+        response_model=CompactionOperationView,
+        status_code=202,
+    )
+    async def compact_conversation(
+        workspace_id: str, conversation_id: str, body: CompactRequest
+    ) -> CompactionOperationView:
+        """受理一次手动整理。
+
+        整理在后台跑：它可能调用一次摘要模型，同步等待会让界面卡住。它不占创作轮次，
+        也不产生作品提交，走的是自己的操作标识。
+        """
+        service = service_for(workspace_id)
+        runner = runners.setdefault(workspace_id, CompactionRunner(service))
+        operation = await runner.submit(conversation_id, body.request_key)
+        return CompactionOperationView(**operation.as_dict())
+
+    @router.get(
+        "/{workspace_id}/conversations/{conversation_id}/compactions/{operation_id}",
+        response_model=CompactionOperationView,
+    )
+    def read_compaction(
+        workspace_id: str, conversation_id: str, operation_id: str
+    ) -> CompactionOperationView:
+        """整理操作的状态；读取不触发模型，也不改事件。"""
+        service = service_for(workspace_id)
+        runner = runners.setdefault(workspace_id, CompactionRunner(service))
+        return CompactionOperationView(**runner.get(conversation_id, operation_id).as_dict())
+
+    @router.post(
+        "/{workspace_id}/conversations/{conversation_id}/compactions/{operation_id}/stop",
+        response_model=CompactionOperationView,
+    )
+    async def stop_compaction(
+        workspace_id: str, conversation_id: str, operation_id: str
+    ) -> CompactionOperationView:
+        service = service_for(workspace_id)
+        runner = runners.setdefault(workspace_id, CompactionRunner(service))
+        operation = await runner.stop(conversation_id, operation_id)
+        return CompactionOperationView(**operation.as_dict())
 
     @router.get(
         "/{workspace_id}/conversations/{conversation_id}/usage",

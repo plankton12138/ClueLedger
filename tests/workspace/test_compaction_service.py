@@ -223,3 +223,27 @@ def test_compacted_projection_is_shorter_and_starts_with_the_summary(tmp_path: P
     messages = replay_public_messages(events, compaction=active_compaction(events))
     assert len(messages) == 5  # 摘要 + 保留的 2 轮（3 条公开消息）+ 1 条
     assert "较早对话摘要" in str(messages[0].content)
+
+
+def test_second_compaction_links_to_the_first(tmp_path: Path) -> None:
+    """多次整理要能回溯：第二条记录指向第一条，投影仍只有一份摘要。"""
+    provider = _SummaryProvider()
+    store = _store(tmp_path)
+    conversation_id = _seed(store)
+    service = _service(tmp_path, provider, store)
+
+    async def scenario():
+        first = await service.compact(conversation_id)
+        second = await service.compact(conversation_id)
+        return first, second
+
+    first, second = asyncio.run(scenario())
+
+    assert first is not None and second is not None
+    assert second.previous_id == first.compaction_id
+    assert second.covered_through_seq >= first.covered_through_seq
+
+    events = list(store.events(conversation_id))
+    assert len([event for event in events if event["type"] == "context_compacted"]) == 2
+    messages = replay_public_messages(events, compaction=active_compaction(events))
+    assert sum("较早对话摘要" in message_text(message) for message in messages) == 1

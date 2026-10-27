@@ -783,6 +783,7 @@ class TurnService:
         """
         from hastings.workspace.compaction import (
             PROMPT_VERSION,
+            active_compaction,
             build_candidate,
             build_summary_prompt,
             parse_summary,
@@ -813,11 +814,14 @@ class TurnService:
                     fix="再整理一次；仍失败就保留当前上下文继续写作",
                 )
 
+            # 串上一条记录：多次整理要能回溯到最早的来源。
+            previous = active_compaction(events)
             candidate = build_candidate(
                 plan=plan,
                 parsed=parsed,
                 model=f"{snapshot.connection_id}:{snapshot.model}",
                 digest=source_digest(events, through_seq=plan.covered_through_seq),
+                previous_id=previous.compaction_id if previous is not None else "",
                 reason=reason,
                 prompt_version=PROMPT_VERSION,
                 created_at=datetime.now(UTC).isoformat(timespec="seconds"),

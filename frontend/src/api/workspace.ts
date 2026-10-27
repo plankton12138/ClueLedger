@@ -9,7 +9,7 @@
  * 走同一段解析代码，也能带自定义游标与中止信号。
  */
 
-import type { ConversationUsageView } from "./contextUsage";
+import type { CompactionOperation, ConversationUsageView } from "./contextUsage";
 
 export interface WorkspaceBinding {
   id: string;
@@ -826,6 +826,43 @@ export function listConversations(workspaceId: string): Promise<ConversationList
  * `through_seq` 是这次统计覆盖到的事件序号；客户端用它判断本地视图是否落后，
  * 避免一个慢请求把更新的数字覆盖回去。
  */
+/**
+ * 手动整理上下文：提交即返回，整理在后台跑。
+ *
+ * `requestKey` 是幂等键：同一次点击重试不会发出第二次摘要请求。
+ */
+export function startCompaction(
+  workspaceId: string,
+  conversationId: string,
+  requestKey: string,
+): Promise<CompactionOperation> {
+  return request<CompactionOperation>(
+    `/${workspaceId}/conversations/${conversationId}/compact`,
+    { method: "POST", body: JSON.stringify({ request_key: requestKey }) },
+  );
+}
+
+export function readCompaction(
+  workspaceId: string,
+  conversationId: string,
+  operationId: string,
+): Promise<CompactionOperation> {
+  return request<CompactionOperation>(
+    `/${workspaceId}/conversations/${conversationId}/compactions/${operationId}`,
+  );
+}
+
+export function stopCompaction(
+  workspaceId: string,
+  conversationId: string,
+  operationId: string,
+): Promise<CompactionOperation> {
+  return request<CompactionOperation>(
+    `/${workspaceId}/conversations/${conversationId}/compactions/${operationId}/stop`,
+    { method: "POST" },
+  );
+}
+
 export function fetchConversationUsage(
   workspaceId: string,
   conversationId: string,

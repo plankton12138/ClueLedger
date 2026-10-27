@@ -123,3 +123,52 @@ ruff、mypy                                            → 干净
 
 仍然缺接口与界面：作者现在无法从应用里触发整理。
 
+
+## 9. 第三片：手动整理接口与入口（已完成）
+
+### 接口
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/{workspace_id}/conversations/{conversation_id}/compact` | 受理一次整理，202 返回操作标识 |
+| GET | `.../compactions/{operation_id}` | 查状态；`completed` 带记录，`failed` 带错误 |
+| POST | `.../compactions/{operation_id}/stop` | 取消排队或运行中的整理 |
+
+整理在后台跑：它要调用一次摘要模型，同步等待会让界面卡住。它不占创作轮次、不产生
+作品提交、不注入作者消息——走的是自己的操作标识，不是一条假的助手回复。
+
+同一个 `request_key` 只受理一次：重复点击或重试返回同一个操作，不会发出第二次摘要请求。
+
+状态有四种终态：`completed`（提交了新记录）、`noop`（没有可整理的较早内容）、
+`failed`（摘要不成立，旧投影保留）、`stopped`（作者取消）。`noop` 用一句正常说明表达，
+不报错——「没有需要整理的」不是故障。
+
+### 多次整理
+
+第二条记录用 `previous_id` 指向第一条，覆盖范围只增不减，投影始终只有一份摘要。
+记录链让「这条摘要从哪来」可回溯；本版没有回滚功能，链只用于诊断与将来的来源核对。
+
+### 界面
+
+上下文浮层底部有「整理上下文」：点击后按钮变成「正在整理…」，前端按 800ms 轮询操作状态，
+到终态显示结果（`已整理：4.2 万 → 1.2 万`、没有可整理内容、或失败原因），并重新读取用量。
+
+### 验证
+
+```text
+uv run pytest tests/workspace/test_compaction_api.py      → 5 passed
+uv run pytest tests/workspace/test_compaction_service.py  → 6 passed
+uv run pytest tests/workspace/test_compaction.py          → 24 passed
+npx vitest run（全量）                                     → 295 passed
+npx tsc --noEmit / npm run build                          → 通过
+```
+
+覆盖：202 受理与轮询到 completed、重复键只受理一次、单轮为 noop 且不动模型、
+坏摘要 failed 且不留记录、未知操作 404、多次整理链与单份摘要、整理结果文案。
+
+### C1 剩余
+
+- **自动压缩**（按预算触发）属于 C2，本片只做手动。
+- **操作状态不持久**：服务重启后旧操作查不到（返回 404 并提示重新整理）。已提交的压缩记录
+  不受影响——投影始终从事件重建，这是有意的取舍：操作是短命的，记录才是事实。
+- **浏览器走查未做**：按钮与结果的视觉、窄栏表现待 R1 的 UI 验收。
