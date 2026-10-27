@@ -20,7 +20,12 @@ from hastings.infrastructure.credentials import InMemoryCredentialStore
 from hastings.server.model_auth import AuthOutcome, AuthStart, ModelAuthService
 from hastings.server.model_credential import SubscriptionCredential, load_subscription
 from hastings.server.model_probe import PROBE_TOOL_NAME, probe_response, probe_tool
-from hastings.server.provider_config import ProviderBook, ProviderProfile, ServerConfig, load_server_config
+from hastings.server.provider_config import (
+    ProviderBook,
+    ProviderProfile,
+    ServerConfig,
+    load_server_config,
+)
 from hastings.server.provider_runtime import subscription_provider_config
 from tau_ai.openai_compatible import OpenAICompatibleProvider
 
@@ -169,7 +174,9 @@ def _factory(transport: httpx.AsyncBaseTransport) -> Any:
     return build
 
 
-def _book(tmp_path: Path, *, credential: bool = True) -> tuple[ProviderBook, InMemoryCredentialStore]:
+def _book(
+    tmp_path: Path, *, credential: bool = True
+) -> tuple[ProviderBook, InMemoryCredentialStore]:
     store = InMemoryCredentialStore()
     profile = _profile()
     if credential:
@@ -298,8 +305,9 @@ def test_logout_stops_future_calls(tmp_path: Path) -> None:
     )
 
     assert load_subscription(store, ref) is None
-    from hastings.server.provider_config import ProviderConfigError
     import pytest
+
+    from hastings.server.provider_config import ProviderConfigError
 
     with pytest.raises(ProviderConfigError):
         restarted.snapshot()
