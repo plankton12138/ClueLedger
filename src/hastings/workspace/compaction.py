@@ -32,8 +32,10 @@ __all__ = [
     "CompactionRecord",
     "ParsedSummary",
     "SummaryItem",
+    "PROMPT_VERSION",
     "active_compaction",
     "build_candidate",
+    "build_summary_prompt",
     "parse_summary",
     "plan_compaction",
     "source_digest",
@@ -457,3 +459,45 @@ def _invalid(code: str, why: str, fix: str) -> WorkspaceError:
     return WorkspaceError(
         code=code, where="conversation.compaction", why=why, fix=fix
     )
+
+#: 摘要提示词版本；改提示词要加一，旧记录的摘要不能当成同一种东西比较。
+PROMPT_VERSION = 1
+
+SUMMARY_SYSTEM = """你在为一段写作对话整理可续写的摘要。
+
+只输出一个 JSON 对象，不要解释、不要 Markdown 代码块之外的任何文字：
+
+{
+  "summary": "一段话概括这段讨论",
+  "items": [
+    {"kind": "...", "text": "...", "quote": "...", "sources": ["t1"]}
+  ]
+}
+
+规则：
+- kind 只能是 goal、constraint、author_decision、suggestion、pending、reference；
+- 每条要点必须给出 sources，写它来自哪个轮次 ID（用户消息里用方括号标出）；
+- 只写对话里确实出现过的内容，不要补写、不要推测；
+- 作者确认的决定、助手的建议、尚未确定的事项要分开写；
+- 作者最新的修正与被否定的方案都要保留，不能只留结论；
+- 不要复述改了哪些文件、保存是否成功，那些由应用自己的记录说明。"""
+
+
+def build_summary_prompt(
+    events: Sequence[Mapping[str, Any]], plan: CompactionPlan
+) -> tuple[str, str]:
+    """生成摘要请求的 system 与 user 文本；只包含被覆盖的那些轮次。"""
+    lines: list[str] = []
+    for event in events:
+        turn_id = event.get("turn_id")
+        if not isinstance(turn_id, str) or turn_id not in plan.covered_turns:
+            continue
+        text = event.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        kind = event.get("type")
+        if kind == "turn_started":
+            lines.append(f"[{turn_id}] 作者：{text.strip()}")
+        elif kind == "assistant_message":
+            lines.append(f"[{turn_id}] 助手：{text.strip()}")
+    return SUMMARY_SYSTEM, "\n\n".join(lines)

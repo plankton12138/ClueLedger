@@ -24,7 +24,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from hastings.library.modules import ModuleLibrary
@@ -87,8 +87,10 @@ from tau_agent.messages import AssistantMessage
 
 if TYPE_CHECKING:
     from hastings.workspace.agent import RunContext
+    from hastings.workspace.compaction import CompactionRecord
 
 from tau_agent.provider_events import (
+    AssistantDoneEvent,
     TextDeltaEvent,
     TextEndEvent,
     ThinkingDeltaEvent,
@@ -302,6 +304,22 @@ def _append_event(
 ) -> None:
     """材料与范围事件先落盘再推送；返回值不参与判断。"""
     store.append_batch(conversation_id, [{"type": kind, "turn_id": turn_id, **payload}])
+
+
+#: 近期原样保留的上下限；跨轮整理不能把最近几轮也压掉。
+_MIN_KEEP_TOKENS = 2_000
+_DEFAULT_KEEP_TOKENS = 6_000
+
+
+def _keep_recent_tokens(input_limit: int | None) -> int:
+    """跨轮整理时近期原样保留的规模。
+
+    按可用输入的四分之一取，上下限兜住极端容量：太小会把刚说的话压进摘要，
+    太大则整理不出空间。容量未知时用默认值——它只是保留量，不是预算承诺。
+    """
+    if input_limit is None:
+        return _DEFAULT_KEEP_TOKENS
+    return max(_MIN_KEEP_TOKENS, min(input_limit // 4, _DEFAULT_KEEP_TOKENS * 4))
 
 
 def _context_is_empty(request: ContextRequest) -> bool:
@@ -754,6 +772,96 @@ class TurnService:
         if task is not None:
             with suppress(asyncio.CancelledError):
                 await task
+
+    async def compact(
+        self, conversation_id: str, *, reason: str = "manual"
+    ) -> CompactionRecord | None:
+        """把较早的对话轮次整理成一份摘要记录；没有可整理内容时返回 ``None``。
+
+        与写作共用同一把执行锁：整理会改变下一轮的上下文投影，不能和正在进行的写作
+        交错。整理失败时不提交记录，旧投影照常可用——压缩是优化，不是前提。
+        """
+        from hastings.workspace.compaction import (
+            PROMPT_VERSION,
+            build_candidate,
+            build_summary_prompt,
+            parse_summary,
+            plan_compaction,
+            source_digest,
+            validate_candidate,
+        )
+
+        self.store.get(conversation_id)
+        async with self._lock:
+            events = tuple(self.store.events(conversation_id))
+            snapshot = self.provider_factory()
+            limits = snapshot.limits
+            input_limit = limits.input_limit() if limits is not None else None
+            plan = plan_compaction(events, keep_recent_tokens=_keep_recent_tokens(input_limit))
+            if plan is None:
+                return None
+
+            system, prompt = build_summary_prompt(events, plan)
+            text = await self._summarize(snapshot, conversation_id, system, prompt)
+            allowed = frozenset(plan.covered_turns)
+            parsed = parse_summary(text, allowed_sources=allowed)
+            if parsed is None:
+                raise WorkspaceError(
+                    code="COMPACTION_FAILED",
+                    where="conversation.compaction",
+                    why="摘要的格式或引用不符合要求，这次没有整理",
+                    fix="再整理一次；仍失败就保留当前上下文继续写作",
+                )
+
+            candidate = build_candidate(
+                plan=plan,
+                parsed=parsed,
+                model=f"{snapshot.connection_id}:{snapshot.model}",
+                digest=source_digest(events, through_seq=plan.covered_through_seq),
+                reason=reason,
+                prompt_version=PROMPT_VERSION,
+                created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            )
+            validate_candidate(candidate, allowed_sources=allowed, input_limit=input_limit)
+            _append_event(
+                self.store,
+                conversation_id,
+                "",
+                "context_compacted",
+                {"compaction_id": candidate.compaction_id, "record": candidate.as_dict()},
+            )
+            return candidate
+
+    async def _summarize(
+        self, snapshot: ModelSnapshot, conversation_id: str, system: str, prompt: str
+    ) -> str:
+        """一次无工具的摘要请求；用量照常记录，不挂到任何写作请求下面。"""
+        from tau_agent.messages import UserMessage, message_text
+
+        def emit(kind: str, payload: dict[str, Any]) -> None:
+            _append_event(self.store, conversation_id, "", kind, payload)
+
+        recorded = RecordedProvider(
+            snapshot.provider,
+            self.activity,
+            emit,
+            stage="compaction",
+            identity=f"{snapshot.connection_id}:{snapshot.model}",
+            limits=snapshot.limits,
+        )
+        final = ""
+        async for event in recorded.stream_response(
+            model=snapshot.model,
+            system=system,
+            messages=[UserMessage(content=prompt)],
+            tools=[],
+        ):
+            if isinstance(event, AssistantDoneEvent):
+                final = message_text(event.message) or final
+            elif (partial := getattr(event, "partial", None)) is not None:
+                # 流式片段只用来兜底：没有终态事件时，已收到的文字仍然是候选。
+                final = message_text(partial) or final
+        return final
 
     async def stop(self, turn_id: str) -> bool:
         """请求停止：覆盖「已受理但还没调模型」与「正在跑」两种情况。"""
