@@ -1075,6 +1075,7 @@ class TurnService:
     ) -> None:
         # 局部导入：agent 依赖本模块的 WriteSession，顶层导入会成环。
         from hastings.workspace.agent import RunContext, build_harness, build_turn_assembly
+        from hastings.workspace.compaction import active_compaction
         from hastings.workspace.conversation_context import (
             execution_facts,
             replay_public_messages,
@@ -1256,7 +1257,10 @@ class TurnService:
                     workspace=self.workspace,
                     run=run,
                     max_turns=self.max_turns,
-                    history=replay_public_messages(history_events),
+                    # 已成立的压缩记录把较早轮次换成摘要；没有记录时这就是完整公开历史。
+                    history=replay_public_messages(
+                        history_events, compaction=active_compaction(history_events)
+                    ),
                     history_facts=execution_facts(history_events),
                     materials=turn_materials,
                     index_notes=index_notes,
