@@ -227,7 +227,7 @@ describe("整理结果文案", () => {
       error: { code: "COMPACTION_FAILED", where: "x", why: "摘要格式不符合要求", fix: "重试" },
     });
 
-    expect(compactionNote(failed)).toBe("摘要格式不符合要求");
+    expect(compactionNote(failed)).toBe("[COMPACTION_FAILED] x：摘要格式不符合要求。建议：重试。");
   });
 
   it("终态判断覆盖四种结果", () => {

@@ -128,7 +128,10 @@ async def run(args: argparse.Namespace) -> int:
         "work_root": str(work),
         "evidence_format": 1,
         "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
-        "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+        "variant_policy": (
+            "提示分区变体仅移除所选分区；no_compaction 禁用手动与自动摘要，"
+            "保留轮内裁剪和溢出恢复；公开对话和按需读取工具保留"
+        ),
     }
     write_json(out / "manifest.json", manifest)
     cases_by_id = {c.id: c for c in cases}

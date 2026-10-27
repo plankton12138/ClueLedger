@@ -147,92 +147,94 @@ def _wait(client: TestClient, workspace_id: str, conversation_id: str, operation
 def test_compact_operation_completes_and_reports_the_record(tmp_path: Path) -> None:
     provider = _SummaryProvider()
     client, _store, workspace_id, conversation_id = _setup(tmp_path, provider)
+    with client:
+        accepted = client.post(
+            f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/compact",
+            json={"request_key": "rk1"},
+        )
+        assert accepted.status_code == 202
+        operation = accepted.json()["operation_id"]
 
-    accepted = client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/compact",
-        json={"request_key": "rk1"},
-    )
-    assert accepted.status_code == 202
-    operation = accepted.json()["operation_id"]
+        body = _wait(client, workspace_id, conversation_id, operation)
 
-    body = _wait(client, workspace_id, conversation_id, operation)
-
-    assert body["state"] == "completed"
-    assert body["record"]["items"][0]["quote"] == "别改成第三人称"
-    assert provider.calls == 1
-    # 摘要请求计入会话用量，累计里能看到一次请求。
-    usage = client.get(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/usage"
-    ).json()
-    assert usage["usage"]["finished_requests"] == 1
+        assert body["state"] == "completed"
+        assert body["record"]["items"][0]["quote"] == "别改成第三人称"
+        assert provider.calls == 1
+        # 摘要请求计入会话用量，累计里能看到一次请求。
+        usage = client.get(
+            f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/usage"
+        ).json()
+        assert usage["usage"]["finished_requests"] == 1
 
 
 def test_same_request_key_is_accepted_once(tmp_path: Path) -> None:
     provider = _SummaryProvider()
     client, _store, workspace_id, conversation_id = _setup(tmp_path, provider)
-    url = f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/compact"
+    with client:
+        url = f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/compact"
 
-    first = client.post(url, json={"request_key": "rk1"}).json()["operation_id"]
-    second = client.post(url, json={"request_key": "rk1"}).json()["operation_id"]
+        first = client.post(url, json={"request_key": "rk1"}).json()["operation_id"]
+        second = client.post(url, json={"request_key": "rk1"}).json()["operation_id"]
 
-    assert first == second
-    _wait(client, workspace_id, conversation_id, first)
-    assert provider.calls == 1
+        assert first == second
+        _wait(client, workspace_id, conversation_id, first)
+        assert provider.calls == 1
 
 
 def test_no_earlier_turns_is_a_noop(tmp_path: Path) -> None:
     provider = _SummaryProvider()
     client, store, workspace_id, _conversation_id = _setup(tmp_path, provider)
-    single = store.create_with_first_turn(text="只写一句", request_key="k9", turn_id="t9")
-    store.append_batch(
-        single.conversation_id,
-        [
-            {
-                "type": "run_finished",
-                "turn_id": "t9",
-                "status": "completed",
-                "recording": "no_change",
-                "changed_paths": [],
-            }
-        ],
-    )
+    with client:
+        single = store.create_with_first_turn(text="只写一句", request_key="k9", turn_id="t9")
+        store.append_batch(
+            single.conversation_id,
+            [
+                {
+                    "type": "run_finished",
+                    "turn_id": "t9",
+                    "status": "completed",
+                    "recording": "no_change",
+                    "changed_paths": [],
+                }
+            ],
+        )
 
-    accepted = client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations/{single.conversation_id}/compact",
-        json={"request_key": "rk2"},
-    )
-    body = _wait(client, workspace_id, single.conversation_id, accepted.json()["operation_id"])
+        accepted = client.post(
+            f"/api/file-workspaces/{workspace_id}/conversations/{single.conversation_id}/compact",
+            json={"request_key": "rk2"},
+        )
+        body = _wait(client, workspace_id, single.conversation_id, accepted.json()["operation_id"])
 
-    assert body["state"] == "noop"
-    assert body["note"]
-    assert provider.calls == 0
+        assert body["state"] == "noop"
+        assert body["note"]
+        assert provider.calls == 0
 
 
 def test_bad_summary_fails_and_keeps_the_projection(tmp_path: Path) -> None:
     provider = _SummaryProvider("好的，我整理了一下。")
     client, store, workspace_id, conversation_id = _setup(tmp_path, provider)
+    with client:
+        accepted = client.post(
+            f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/compact",
+            json={"request_key": "rk3"},
+        )
+        body = _wait(client, workspace_id, conversation_id, accepted.json()["operation_id"])
 
-    accepted = client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/compact",
-        json={"request_key": "rk3"},
-    )
-    body = _wait(client, workspace_id, conversation_id, accepted.json()["operation_id"])
-
-    assert body["state"] == "failed"
-    assert body["error"]["code"] == "COMPACTION_FAILED"
-    assert not [
-        event for event in store.events(conversation_id) if event["type"] == "context_compacted"
-    ]
+        assert body["state"] == "failed"
+        assert body["error"]["code"] == "COMPACTION_FAILED"
+        assert not [
+            event for event in store.events(conversation_id) if event["type"] == "context_compacted"
+        ]
 
 
 def test_unknown_operation_is_not_found(tmp_path: Path) -> None:
     provider = _SummaryProvider()
     client, _store, workspace_id, conversation_id = _setup(tmp_path, provider)
+    with client:
+        response = client.get(
+            f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}"
+            "/compactions/op_missing"
+        )
 
-    response = client.get(
-        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}"
-        "/compactions/op_missing"
-    )
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "CONTEXT_COMPACTION_NOT_FOUND"
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "CONTEXT_COMPACTION_NOT_FOUND"

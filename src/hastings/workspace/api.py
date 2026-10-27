@@ -448,6 +448,7 @@ class ConversationUsageView(BaseModel):
     #: 记录链路自身的问题，例如同一请求出现了两个不同终态。
     diagnostics: list[str] = Field(default_factory=list)
     revision: str = ""
+    compaction: CompactionOperationView | None = None
 
 
 class DraftContextView(BaseModel):
@@ -984,6 +985,9 @@ def create_file_workspace_router(
         service.activity = activity_for(workspace_id)
         # 进程重启后，没有正常结束的轮次在这里补一条中断记录；不自动继续。
         service.mark_interrupted()
+        runner = CompactionRunner(service)
+        runner.recover()
+        runners[workspace_id] = runner
         services[workspace_id] = service
         return service
 
@@ -1598,8 +1602,8 @@ def create_file_workspace_router(
         整理在后台跑：它可能调用一次摘要模型，同步等待会让界面卡住。它不占创作轮次，
         也不产生作品提交，走的是自己的操作标识。
         """
-        service = service_for(workspace_id)
-        runner = runners.setdefault(workspace_id, CompactionRunner(service))
+        service_for(workspace_id)
+        runner = runners[workspace_id]
         operation = await runner.submit(conversation_id, body.request_key)
         return CompactionOperationView(**operation.as_dict())
 
@@ -1611,8 +1615,8 @@ def create_file_workspace_router(
         workspace_id: str, conversation_id: str, operation_id: str
     ) -> CompactionOperationView:
         """整理操作的状态；读取不触发模型，也不改事件。"""
-        service = service_for(workspace_id)
-        runner = runners.setdefault(workspace_id, CompactionRunner(service))
+        service_for(workspace_id)
+        runner = runners[workspace_id]
         return CompactionOperationView(**runner.get(conversation_id, operation_id).as_dict())
 
     @router.post(
@@ -1622,8 +1626,8 @@ def create_file_workspace_router(
     async def stop_compaction(
         workspace_id: str, conversation_id: str, operation_id: str
     ) -> CompactionOperationView:
-        service = service_for(workspace_id)
-        runner = runners.setdefault(workspace_id, CompactionRunner(service))
+        service_for(workspace_id)
+        runner = runners[workspace_id]
         operation = await runner.stop(conversation_id, operation_id)
         return CompactionOperationView(**operation.as_dict())
 
@@ -1643,6 +1647,7 @@ def create_file_workspace_router(
         summary = summarize_events(events)
         context = context_snapshot(events)
         totals = summary.totals
+        operation = runners[workspace_id].latest(conversation_id)
         return ConversationUsageView(
             conversation_id=conversation_id,
             through_seq=summary.through_seq,
@@ -1674,6 +1679,7 @@ def create_file_workspace_router(
             ),
             diagnostics=list(summary.diagnostics),
             revision=service.store.revision(),
+            compaction=CompactionOperationView(**operation.as_dict()) if operation else None,
         )
 
     @router.post(

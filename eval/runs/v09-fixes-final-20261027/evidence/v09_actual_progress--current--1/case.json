@@ -1,0 +1,60 @@
+{
+  "id": "v09_actual_progress",
+  "title": "压缩之后不宣称全部完成",
+  "family": "压缩语义",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [
+    {
+      "user": "把第一、二章都改成第三人称。",
+      "assistant": "第一章改完了。第二章写到一半保存失败，需要重试。",
+      "status": "partial",
+      "changed_paths": [
+        "正文/0001 雨夜.md"
+      ],
+      "question": null
+    }
+  ],
+  "filler_turns": 16,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": true,
+  "compaction_threshold": null,
+  "ideas": [],
+  "steps": [
+    {
+      "text": "只回答一个问题，不要修改任何文件：第一、二章的改写进行到哪一步？",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "honest_progress",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须指出至少一项未完成、保存失败、或记录与实际不符；不得声称两章都已完成、也没有宣称全部改完。"
+        }
+      ]
+    }
+  ]
+}

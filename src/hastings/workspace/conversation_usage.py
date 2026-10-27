@@ -20,11 +20,19 @@ OpenAI 两类的 input 已经扣掉缓存读写，Anthropic 的 input 本身就�
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from hastings.workspace.context_usage import METHOD, BudgetState, budget_for_limit, count_tokens
+from hastings.workspace.context_usage import (
+    MESSAGE_OVERHEAD_TOKENS,
+    METHOD,
+    BudgetState,
+    budget_for_limit,
+    count_tokens,
+)
 
 __all__ = [
     "ContextSnapshot",
@@ -131,7 +139,6 @@ class UsageTotals:
         }
 
 
-
 @dataclass(frozen=True, slots=True)
 class UsageSummary:
     """一个会话的累计结果，以及它读到的事件游标。"""
@@ -187,11 +194,7 @@ def summarize_events(events: Sequence[Mapping[str, Any]]) -> UsageSummary:
     durations = [duration for _usage, duration in finished.values() if duration is not None]
 
     def total_of(field: str) -> int | None:
-        values = [
-            value
-            for usage in known
-            if (value := getattr(usage, field)) is not None
-        ]
+        values = [value for usage in known if (value := getattr(usage, field)) is not None]
         return sum(values) if values else None
 
     return UsageSummary(
@@ -247,6 +250,8 @@ def _latest_measured_input(events: Sequence[Mapping[str, Any]]) -> int | None:
     for event in reversed(events):
         if event.get("type") != "model_request_finished":
             continue
+        if event.get("stage") == "compaction":
+            continue
         usage = reported_usage(event.get("usage"))
         if usage is not None and usage.input_tokens is not None:
             return usage.input_tokens
@@ -274,6 +279,8 @@ def context_snapshot(events: Sequence[Mapping[str, Any]]) -> ContextSnapshot:
     started: list[tuple[int, str]] = []
     finished: set[str] = set()
     for event in events:
+        if event.get("stage") == "compaction":
+            continue
         kind = event.get("type")
         operation = event.get("operation_id")
         if not isinstance(operation, str) or not operation:
@@ -293,7 +300,9 @@ def context_snapshot(events: Sequence[Mapping[str, Any]]) -> ContextSnapshot:
     estimate: Mapping[str, Any] | None = None
     estimate_seq = 0
     for event in events:
-        if event.get("type") != "model_request_started":
+        if event.get("type") not in ("model_request_started", "model_request_retried"):
+            continue
+        if event.get("stage") == "compaction":
             continue
         candidate = event.get("request_estimate")
         if isinstance(candidate, Mapping):
@@ -331,6 +340,40 @@ def context_snapshot(events: Sequence[Mapping[str, Any]]) -> ContextSnapshot:
         )
 
     estimated = (base + added) if base is not None else None
+    fingerprint = str(estimate.get("fingerprint") or "")
+    # 请求完成后的工具原文不会跨轮回放；整理后也不能沿用摘要调用的输入。
+    # 使用公开历史的同一投影重新估算消息部分，系统与工具沿用最近写作请求的已知值。
+    if (
+        status == "ready"
+        and method == METHOD
+        and any(
+            event.get("type") in ("run_finished", "context_compacted")
+            and (_estimated_int(event.get("seq")) or 0) > estimate_seq
+            for event in events
+        )
+    ):
+        from hastings.workspace.compaction import active_compaction
+        from hastings.workspace.conversation_context import replay_public_messages
+
+        public = replay_public_messages(
+            [dict(event) for event in events], compaction=active_compaction(events)
+        )
+        wire = json.dumps(
+            [message.model_dump(mode="json") for message in public],
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
+        # 工具开销保持不变，只替换消息开销。
+        tool_overhead = _estimated_int(estimate.get("tool_overhead_tokens")) or 0
+        conversation = count_tokens(wire) + len(public) * MESSAGE_OVERHEAD_TOKENS + tool_overhead
+        added = 0
+        estimated = (
+            instructions + tools + conversation
+            if instructions is not None and tools is not None
+            else None
+        )
+        fingerprint = hashlib.sha256((fingerprint + wire).encode()).hexdigest()
     input_limit = _estimated_int(estimate.get("input_limit_tokens"))
     return ContextSnapshot(
         status=status,
@@ -345,6 +388,6 @@ def context_snapshot(events: Sequence[Mapping[str, Any]]) -> ContextSnapshot:
         tools_tokens=tools,
         conversation_tokens=(conversation + added) if conversation is not None else None,
         method=method,
-        fingerprint=str(estimate.get("fingerprint") or ""),
+        fingerprint=fingerprint,
         limits_revision=str(estimate.get("limits_revision") or ""),
     )

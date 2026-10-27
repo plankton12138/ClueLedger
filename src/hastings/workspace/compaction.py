@@ -24,7 +24,13 @@ from typing import Any, Literal
 
 from hastings.workspace.context_usage import count_tokens
 from hastings.workspace.errors import WorkspaceError
-from tau_agent.messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
+from tau_agent.messages import (
+    AgentMessage,
+    AssistantMessage,
+    ToolResultMessage,
+    UserMessage,
+    message_text,
+)
 
 __all__ = [
     "SUMMARY_PREFIX",
@@ -47,9 +53,7 @@ __all__ = [
 #: 摘要消息的固定标识。它必须一眼看出是应用整理的，不能被当成作者的新要求。
 SUMMARY_PREFIX = "（应用整理的较早对话摘要，供继续任务使用，不是作者的新要求）\n\n"
 
-ItemKind = Literal[
-    "goal", "constraint", "author_decision", "suggestion", "pending", "reference"
-]
+ItemKind = Literal["goal", "constraint", "author_decision", "suggestion", "pending", "reference"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,7 +230,17 @@ def active_compaction(
 
 def summary_message(record: CompactionRecord) -> UserMessage:
     """摘要作为一条带明确标识的应用历史消息，不提升为系统指令。"""
-    return UserMessage(content=f"{SUMMARY_PREFIX}{record.summary.strip()}")
+    return UserMessage(content=summary_text(record.summary, record.items))
+
+
+def summary_text(summary: str, items: Sequence[SummaryItem]) -> str:
+    lines = [SUMMARY_PREFIX + summary.strip()]
+    for item in items:
+        line = f"- [{','.join(item.source_event_ids)}] {item.kind}：{item.text}"
+        if item.quote:
+            line += f"；原话：{item.quote}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,9 +265,7 @@ class _Unit:
     protected: bool = False
 
 
-def _units(
-    events: Sequence[Mapping[str, Any]], count: Callable[[str], int]
-) -> list[_Unit]:
+def _units(events: Sequence[Mapping[str, Any]], count: Callable[[str], int]) -> list[_Unit]:
     """按轮次切单元；一轮的提示与回复不拆分。"""
     units: list[_Unit] = []
     current: _Unit | None = None
@@ -413,7 +425,7 @@ def build_candidate(
         model=model,
         prompt_version=prompt_version,
         estimated_before=plan.tokens_before,
-        estimated_after=plan.tokens_after + count(parsed.summary) + count(SUMMARY_PREFIX),
+        estimated_after=plan.tokens_after + count(summary_text(parsed.summary, parsed.items)),
         reason=reason,
         created_at=created_at,
     )
@@ -458,9 +470,8 @@ def validate_candidate(
 
 
 def _invalid(code: str, why: str, fix: str) -> WorkspaceError:
-    return WorkspaceError(
-        code=code, where="conversation.compaction", why=why, fix=fix
-    )
+    return WorkspaceError(code=code, where="conversation.compaction", why=why, fix=fix)
+
 
 #: 摘要提示词版本；改提示词要加一，旧记录的摘要不能当成同一种东西比较。
 PROMPT_VERSION = 1
@@ -578,4 +589,26 @@ def trim_request_messages(
         accumulated += _unit_tokens(units[index], count)
     if first_kept == 0:
         return None
-    return [message for unit in units[first_kept:] for message in unit]
+    # 当前作者原话是本轮范围与任务的依据，即使其后的工具结果被裁也必须保留。
+    current_user = next(
+        (i for i in range(len(units) - 1, -1, -1) if isinstance(units[i][0], UserMessage)),
+        None,
+    )
+    latest_tool = next(
+        (
+            i
+            for i in range(len(units) - 1, -1, -1)
+            if isinstance(head := units[i][0], AssistantMessage) and head.tool_calls
+        ),
+        None,
+    )
+    kept = [
+        unit
+        for i, unit in enumerate(units)
+        if i >= first_kept
+        or i in (current_user, latest_tool)
+        or (isinstance(unit[0], UserMessage) and message_text(unit[0]).startswith(SUMMARY_PREFIX))
+    ]
+    if sum(len(unit) for unit in kept) >= len(messages):
+        return None
+    return [message for unit in kept for message in unit]

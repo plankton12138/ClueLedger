@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "run_id": "context-20261027-155250-788296",
+  "started_at": "2026-10-27T15:52:50.789816+08:00",
+  "model": "deepseek-flash",
+  "connection_id": "eval-env",
+  "provider_api": "openai-completions",
+  "model_source": ".env",
+  "provider_mode": "product_worker",
+  "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+  "git_commit": "d4c9825c10390ccf519096370f4e0cf748f9e953",
+  "git_dirty": true,
+  "source_sha256": "ac2419eb162bc5e8157685c19ba5cfaa4c8bb9d43b5f0e0ab121138993de8ecf",
+  "cases_sha256": "fab64131460ab1d82c8362e3316ce58041f3d2f98a9f7fef226865f1c48db0e8",
+  "suite": "v09-context",
+  "jobs": [
+    {
+      "key": "v09_latest_correction--current--1",
+      "case": "v09_latest_correction",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_latest_correction--no_compaction--1",
+      "case": "v09_latest_correction",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1
+    },
+    {
+      "key": "v09_rejected_plan--current--1",
+      "case": "v09_rejected_plan",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_rejected_plan--no_compaction--1",
+      "case": "v09_rejected_plan",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1
+    },
+    {
+      "key": "v09_actual_progress--current--1",
+      "case": "v09_actual_progress",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_actual_progress--no_compaction--1",
+      "case": "v09_actual_progress",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1
+    },
+    {
+      "key": "v09_future_reveal--current--1",
+      "case": "v09_future_reveal",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_future_reveal--no_compaction--1",
+      "case": "v09_future_reveal",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1
+    },
+    {
+      "key": "v09_pending_question--current--1",
+      "case": "v09_pending_question",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_pending_question--no_compaction--1",
+      "case": "v09_pending_question",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1
+    },
+    {
+      "key": "v09_multi_compaction--current--1",
+      "case": "v09_multi_compaction",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_multi_compaction--no_compaction--1",
+      "case": "v09_multi_compaction",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1
+    },
+    {
+      "key": "v09_multi_source_module--current--1",
+      "case": "v09_multi_source_module",
+      "family": "模块维护",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_multi_source_module--no_compaction--1",
+      "case": "v09_multi_source_module",
+      "family": "模块维护",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1
+    },
+    {
+      "key": "v09_overflow_and_stop--current--1",
+      "case": "v09_overflow_and_stop",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v09_overflow_and_stop--no_compaction--1",
+      "case": "v09_overflow_and_stop",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1
+    }
+  ],
+  "max_turns": 24,
+  "step_timeout_seconds": 240,
+  "max_provider_calls": 120,
+  "runner_retries": 0,
+  "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261027-155250-788296",
+  "evidence_format": 1,
+  "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+  "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+  "observed_provider_parameters": {
+    "max_tokens": 4096,
+    "timeout_seconds": 45.0,
+    "max_retries": 0
+  },
+  "provider_calls_used": 9
+}

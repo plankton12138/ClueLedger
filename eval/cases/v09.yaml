@@ -110,3 +110,83 @@ cases:
           - id: answers_the_original_question
             kind: manual
             rubric: 必须把这句回答对应到「结局版本」这个问题上（确认采用 B 版/无声离开）；不得答非所问，也不得再把 A/B 两个选项重问一遍。
+
+  # 连续整理三次之后，最早两轮定下的硬约束和当前任务都要还在。
+  # 每一步都不改文件，避免把压缩效果和文件操作混在一起。
+  - id: v09_multi_compaction
+    title: 连续三次整理后仍守住最早约束
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 记两条硬约束，之后每次写作都要守住：一，管家左手有旧伤，不能让他用左手端茶；二，第八章之前不要点明管家就是失踪的医生。
+        assistant: 记住两条：管家左手有旧伤、不用左手端茶；第八章前不点明管家与失踪医生的关系。
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 只写一段约四百字的旅馆走廊场景，只输出正文，不要修改任何文件。
+      - text: 再写一段约四百字的客房场景，只输出正文，不要修改任何文件。
+      - text: 再写一段约四百字的雨夜门口场景，只输出正文，不要修改任何文件。
+        compact_before: true
+      - text: 继续写一段约四百字的餐厅场景，只输出正文，不要修改任何文件。
+      - text: 再写一段约四百字的账房场景，只输出正文，不要修改任何文件。
+      - text: 只回答两个问题，不要写场景也不要改文件：1) 管家端茶时能不能用左手？2) 现在能不能点明管家就是失踪的医生？
+        compact_before: true
+        checks:
+          - {id: three_compactions, kind: compaction_count, value: "3"}
+          - id: keeps_early_constraints
+            kind: manual
+            rubric: 两个问题都要明确回答：管家不能用左手端茶，因为左手有旧伤；现在不能点明管家与失踪医生的关系，要留到第八章。答成可以用左手，或认为现在就可以点明，均不通过。
+
+  # 一次请求里读多份材料并落到指定模块：验证长单轮的工具序列能接上，
+  # 且不会因为改了模块就重复写正文或另建一份。
+  - id: v09_multi_source_module
+    title: 一次请求读多份材料并更新指定模块
+    family: 模块维护
+    fixture: inn.json
+    modules:
+      - kind: clues
+        name: 案件线索
+        entries:
+          - entry_id: code_1
+            kind: clue_plan
+            title: 第一章暗号
+            body: 暗号是「青鸟归巢」。
+    steps:
+      - text: 自己找到并依次读完正文第一章、第二章、第三章和设定集里的线索文件，把第二章铜钥匙的用途、第三章纸条上的暗号更新到已装的「案件线索」模块；用途和暗号现在都没写清，登记为「待补」。不要改任何正文文件，也不要另建模块。
+        checks:
+          - {id: read_ch1, kind: full_read, path: 正文/0001 雨夜.md, value: 青鸟归巢}
+          - {id: read_ch2, kind: full_read, path: 正文/0002 走廊.md, value: 铜钥匙}
+          - {id: read_ch3, kind: full_read, path: 正文/0003 书房.md, value: 待补}
+          - {id: still_bound, kind: module_bound, value: 案件线索}
+          - {id: keeps_old_code, kind: module_contains, value: 青鸟归巢}
+          - {id: records_key, kind: module_contains, value: 铜钥匙}
+          - {id: no_file_write, kind: tool_not_called, value: "write_file,edit_file,delete_file,move_file"}
+          - id: single_source_update
+            kind: manual
+            rubric: 应实际读取或接收四份材料，在「案件线索」里补上第二章铜钥匙用途与第三章暗号，并标为待补或未说明；保留第一章「青鸟归巢」；不得修改正文、不得新建重复模块或条目，也不得把未写清的内容编成确定结论。
+
+  # 两条恢复边界放在同一条用例里：先注入一次明确的上下文超限，验证轮内收紧后重发；
+  # 再在生成中途停止一轮，验证下一轮能接着原任务，而不是重启或宣称已完成。
+  - id: v09_overflow_and_stop
+    title: 上下文超限重发与停止后继续
+    family: 压缩语义
+    fixture: inn.json
+    filler_turns: 16
+    steps:
+      - text: 只回答一个问题，不要修改任何文件：铜钥匙现在在谁手里？
+        inject_overflow: true
+        checks:
+          - {id: overflow_seen, kind: fault_observed}
+          - {id: retried_after_overflow, kind: retry_observed, value: context_overflow}
+          - id: answer_after_retry
+            kind: manual
+            rubric: 必须答出铜钥匙在管家手里；回答未说明、不知道或其他人，均不通过。答案应来自作品正文，而不是猜测。
+      - text: 写一段约八百字的旅馆走廊场景，只输出正文，不要修改任何文件。
+        stop_after_ms: 600
+        expect_stopped: true
+      - text: 接着上一轮继续：如果上一轮已经写出片段，就顺势往下写，不要从头重写；如果上一轮没有留下文字，就补写这一段并说明是补写。不要修改任何文件。
+        checks:
+          - {id: no_file_write, kind: tool_not_called, value: "write_file,edit_file,delete_file,move_file"}
+          - id: continues_after_stop
+            kind: manual
+            rubric: 应识别上一轮是「已停止」而不是「已完成」，并给出与停止状态一致的续写：有片段就接续，没有片段就补写并说明。不得声称上一轮已写完，也不得无视停止重复已有片段。

@@ -24,7 +24,12 @@ from hastings.workspace.model_activity import RecordedProvider
 from hastings.workspace.service import TurnService, WriteSession
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 from tau_agent.messages import AssistantMessage, TextContent, ToolCall, UserMessage
-from tau_agent.provider_events import AssistantDoneEvent, AssistantStartEvent, TextDeltaEvent
+from tau_agent.provider_events import (
+    AssistantDoneEvent,
+    AssistantErrorEvent,
+    AssistantStartEvent,
+    TextDeltaEvent,
+)
 
 
 def write_log(root: Path, name: str, events: list[dict[str, Any]]) -> Path:
@@ -687,6 +692,164 @@ def test_request_record_carries_estimate_and_capacity(tmp_path: Path, window: in
             assert estimate["input_limit_tokens"] is not None
 
     asyncio.run(run())
+
+
+def test_context_overflow_is_retried_once_with_shorter_request(tmp_path: Path) -> None:
+    """供应商明确说超上下文时，收紧近期窗口重发一次；只重发一次。"""
+
+    class OverflowProvider(Provider):
+        async def stream_response(self, **kwargs: Any) -> Any:
+            self.requests.append(kwargs)
+            if len(self.requests) == 1:
+                yield AssistantErrorEvent(
+                    reason="error",
+                    error=AssistantMessage(
+                        error_message=(
+                            "This model's maximum context length is 8192 tokens. "
+                            "However, you requested 9000 tokens."
+                        ),
+                        stop_reason="error",
+                    ),
+                )
+                return
+            yield AssistantStartEvent(partial=AssistantMessage())
+            yield TextDeltaEvent(content_index=0, delta="你好", partial=AssistantMessage())
+            yield AssistantDoneEvent(
+                reason="stop", message=AssistantMessage(content=[TextContent(text="你好")])
+            )
+
+    async def run() -> None:
+        store = ActivityStore(tmp_path)
+        provider = OverflowProvider()
+        records: list[tuple[str, dict[str, Any]]] = []
+        wrapped = RecordedProvider(
+            provider,
+            store,
+            lambda k, p: records.append((k, p)),
+            stage="write",
+            identity="deepseek:deepseek-chat",
+            limits=_limits(20_000),
+            keep_recent_tokens=3_000,
+        )
+        messages = [UserMessage(content="写第一章")]
+        for index in range(4):
+            messages.extend(_tool_round(f"c{index}", "正文" * 300))
+        messages.append(UserMessage(content="继续"))
+        received = [
+            event
+            async for event in wrapped.stream_response(
+                model="deepseek-chat", system="约定", messages=messages, tools=[]
+            )
+        ]
+
+        assert len(provider.requests) == 2
+        assert len(provider.requests[1]["messages"]) < len(provider.requests[0]["messages"])
+        assert provider.requests[1]["messages"][-1].content == "继续"
+        assert received[-1].type == "done"
+        retried = next(payload for kind, payload in records if kind == "model_request_retried")
+        assert retried["reason"] == "context_overflow"
+        assert retried["dropped_messages"] > 0
+        assert retried["tokens_after"] < retried["tokens_before"]
+        assert sum(1 for kind, _ in records if kind == "model_request_retried") == 1
+
+    asyncio.run(run())
+
+
+def test_context_overflow_is_retried_when_capacity_unknown(tmp_path: Path) -> None:
+    """窗口未知时仍可重试：供应商明确拒绝就是装不下的证据，不必先知道确切容量。"""
+
+    class OverflowOnceProvider(Provider):
+        async def stream_response(self, **kwargs: Any) -> Any:
+            self.requests.append(kwargs)
+            if len(self.requests) == 1:
+                yield AssistantErrorEvent(
+                    reason="error",
+                    error=AssistantMessage(
+                        error_message="maximum context length exceeded", stop_reason="error"
+                    ),
+                )
+                return
+            yield AssistantStartEvent(partial=AssistantMessage())
+            yield TextDeltaEvent(content_index=0, delta="你好", partial=AssistantMessage())
+            yield AssistantDoneEvent(
+                reason="stop", message=AssistantMessage(content=[TextContent(text="你好")])
+            )
+
+    async def run() -> None:
+        provider = OverflowOnceProvider()
+        records: list[tuple[str, dict[str, Any]]] = []
+        wrapped = RecordedProvider(
+            provider,
+            ActivityStore(tmp_path),
+            lambda k, p: records.append((k, p)),
+            stage="write",
+            identity="deepseek:deepseek-chat",
+            keep_recent_tokens=3_000,
+        )
+        received = [
+            event
+            async for event in wrapped.stream_response(
+                model="deepseek-chat", system="", messages=_history_messages(), tools=[]
+            )
+        ]
+
+        assert len(provider.requests) == 2
+        assert provider.requests[1]["messages"][-1].content == "继续"
+        assert received[-1].type == "done"
+        retried = next(payload for kind, payload in records if kind == "model_request_retried")
+        assert retried["reason"] == "context_overflow"
+        assert retried["tokens_after"] < retried["tokens_before"]
+
+    asyncio.run(run())
+
+
+def test_context_overflow_is_not_retried_after_content(tmp_path: Path) -> None:
+    """已经输出过内容就不再重发：两段半成品比一次失败更难处理。"""
+
+    class LateOverflowProvider(Provider):
+        async def stream_response(self, **kwargs: Any) -> Any:
+            self.requests.append(kwargs)
+            yield AssistantStartEvent(partial=AssistantMessage())
+            yield TextDeltaEvent(content_index=0, delta="开头", partial=AssistantMessage())
+            yield AssistantErrorEvent(
+                reason="error",
+                error=AssistantMessage(
+                    error_message="maximum context length exceeded", stop_reason="error"
+                ),
+            )
+
+    async def run() -> None:
+        provider = LateOverflowProvider()
+        records: list[tuple[str, dict[str, Any]]] = []
+        wrapped = RecordedProvider(
+            provider,
+            ActivityStore(tmp_path),
+            lambda k, p: records.append((k, p)),
+            stage="write",
+            identity="deepseek:deepseek-chat",
+            limits=_limits(20_000),
+            keep_recent_tokens=3_000,
+        )
+        received = [
+            event
+            async for event in wrapped.stream_response(
+                model="deepseek-chat", system="", messages=_history_messages(), tools=[]
+            )
+        ]
+
+        assert len(provider.requests) == 1
+        assert received[-1].type == "error"
+        assert not any(kind == "model_request_retried" for kind, _ in records)
+
+    asyncio.run(run())
+
+
+def _history_messages() -> list:
+    messages = [UserMessage(content="写第一章")]
+    for index in range(4):
+        messages.extend(_tool_round(f"d{index}", "正文" * 300))
+    messages.append(UserMessage(content="继续"))
+    return messages
 
 
 # -- 轮内裁剪（0.9 C2） -----------------------------------------------------

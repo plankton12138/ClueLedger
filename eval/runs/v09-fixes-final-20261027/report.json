@@ -1,0 +1,3406 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261027-155606-719731",
+    "started_at": "2026-10-27T15:56:06.720392+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "d4c9825c10390ccf519096370f4e0cf748f9e953",
+    "git_dirty": true,
+    "source_sha256": "2f7b0819e50d0c1c21971b1e580dee1550f3f936c8552e2c2ebb8ba6232bdb70",
+    "cases_sha256": "fab64131460ab1d82c8362e3316ce58041f3d2f98a9f7fef226865f1c48db0e8",
+    "suite": "v09-context",
+    "jobs": [
+      {
+        "key": "v09_latest_correction--current--1",
+        "case": "v09_latest_correction",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_latest_correction--no_compaction--1",
+        "case": "v09_latest_correction",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "no_compaction",
+        "repeat": 1
+      },
+      {
+        "key": "v09_rejected_plan--current--1",
+        "case": "v09_rejected_plan",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_rejected_plan--no_compaction--1",
+        "case": "v09_rejected_plan",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "no_compaction",
+        "repeat": 1
+      },
+      {
+        "key": "v09_actual_progress--current--1",
+        "case": "v09_actual_progress",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_actual_progress--no_compaction--1",
+        "case": "v09_actual_progress",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "no_compaction",
+        "repeat": 1
+      },
+      {
+        "key": "v09_future_reveal--current--1",
+        "case": "v09_future_reveal",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_future_reveal--no_compaction--1",
+        "case": "v09_future_reveal",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "no_compaction",
+        "repeat": 1
+      },
+      {
+        "key": "v09_pending_question--current--1",
+        "case": "v09_pending_question",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_pending_question--no_compaction--1",
+        "case": "v09_pending_question",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "no_compaction",
+        "repeat": 1
+      },
+      {
+        "key": "v09_multi_compaction--current--1",
+        "case": "v09_multi_compaction",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_multi_compaction--no_compaction--1",
+        "case": "v09_multi_compaction",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "no_compaction",
+        "repeat": 1
+      },
+      {
+        "key": "v09_multi_source_module--current--1",
+        "case": "v09_multi_source_module",
+        "family": "模块维护",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_multi_source_module--no_compaction--1",
+        "case": "v09_multi_source_module",
+        "family": "模块维护",
+        "layer": "context",
+        "variant": "no_compaction",
+        "repeat": 1
+      },
+      {
+        "key": "v09_overflow_and_stop--current--1",
+        "case": "v09_overflow_and_stop",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v09_overflow_and_stop--no_compaction--1",
+        "case": "v09_overflow_and_stop",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "no_compaction",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 120,
+    "runner_retries": 0,
+    "work_root": "C:\\Users\\plankton\\AppData\\Local\\Temp\\clueledger-v09-eval\\context-20261027-155606-719731",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 73
+  },
+  "summary": {
+    "planned": 16,
+    "executed": 16,
+    "counts": {
+      "pending_review": 16,
+      "not_run": 0
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": 8.203,
+    "duration_p95_seconds": 63.782,
+    "input_tokens": null,
+    "output_tokens": null,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 8,
+        "executed": 8,
+        "counts": {
+          "pending_review": 8,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 9.375,
+        "duration_p95_seconds": 63.782,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "no_compaction": {
+        "planned": 8,
+        "executed": 8,
+        "counts": {
+          "pending_review": 8,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 2.906,
+        "duration_p95_seconds": 36.532,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "压缩语义": {
+        "planned": 14,
+        "executed": 14,
+        "counts": {
+          "pending_review": 14,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 7.907,
+        "duration_p95_seconds": 61.407,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "模块维护": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pending_review": 2,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 28.75,
+        "duration_p95_seconds": 63.782,
+        "input_tokens": 20702,
+        "output_tokens": 12619,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 16,
+        "executed": 16,
+        "counts": {
+          "pending_review": 16,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 8.203,
+        "duration_p95_seconds": 63.782,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v09_latest_correction": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pending_review": 2,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 2.328,
+        "duration_p95_seconds": 9.375,
+        "input_tokens": 572,
+        "output_tokens": 1599,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_rejected_plan": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pending_review": 2,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 1.5,
+        "duration_p95_seconds": 4.609,
+        "input_tokens": 4884,
+        "output_tokens": 643,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_actual_progress": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pending_review": 2,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 5.282,
+        "duration_p95_seconds": 21.547,
+        "input_tokens": 11648,
+        "output_tokens": 3934,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_future_reveal": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pending_review": 2,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 2.906,
+        "duration_p95_seconds": 7.907,
+        "input_tokens": 11319,
+        "output_tokens": 993,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_pending_question": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pending_review": 2,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 2.125,
+        "duration_p95_seconds": 8.203,
+        "input_tokens": 6893,
+        "output_tokens": 1315,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_multi_compaction": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pending_review": 2,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 36.532,
+        "duration_p95_seconds": 61.407,
+        "input_tokens": 73542,
+        "output_tokens": 10579,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_multi_source_module": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pending_review": 2,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 28.75,
+        "duration_p95_seconds": 63.782,
+        "input_tokens": 20702,
+        "output_tokens": 12619,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      },
+      "v09_overflow_and_stop": {
+        "planned": 2,
+        "executed": 2,
+        "counts": {
+          "pending_review": 2,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 22.125,
+        "duration_p95_seconds": 25.875,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 143,
+            "at": "2026-10-27T15:56:17.340+08:00",
+            "event_version": 1,
+            "event_id": "c_90253ecb53af:143",
+            "conversation_id": "c_90253ecb53af",
+            "type": "run_finished",
+            "turn_id": "t_9973a9df",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "林砚是女性。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/remembers_correction",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须给出「女性」这一结论；不得回答男性，也不得只说「曾经说是男性」而不给结论。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 2,
+        "model_finished": 2,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 2,
+        "fresh_input_tokens": 353,
+        "input_tokens": 353,
+        "output_tokens": 1405,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 422,
+            "messages_json_chars": 3229,
+            "tools_json_chars": 2
+          },
+          {
+            "system_chars": 5657,
+            "messages_json_chars": 20170,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 35406,
+        "cost": null,
+        "summary_requests": 1,
+        "summary_duration_ms": 7421,
+        "summary_input_tokens": 134,
+        "summary_output_tokens": 1332
+      },
+      "key": "v09_latest_correction--current--1",
+      "case": "v09_latest_correction",
+      "title": "压缩之后仍记得作者的最新修正",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 9.375,
+      "evidence": "evidence/v09_latest_correction--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 262,
+            "at": "2026-10-27T15:56:20.721+08:00",
+            "event_version": 1,
+            "event_id": "c_3abf5ebc2d02:262",
+            "conversation_id": "c_3abf5ebc2d02",
+            "type": "run_finished",
+            "turn_id": "t_9e341d11",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "按你最新的更正，林砚是女性，之后一律用「她」，不再用「他」指她。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/remembers_correction",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须给出「女性」这一结论；不得回答男性，也不得只说「曾经说是男性」而不给结论。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 1,
+        "model_finished": 1,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 1,
+        "fresh_input_tokens": 219,
+        "input_tokens": 219,
+        "output_tokens": 194,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5657,
+            "messages_json_chars": 20170,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 35406,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v09_latest_correction--no_compaction--1",
+      "case": "v09_latest_correction",
+      "title": "压缩之后仍记得作者的最新修正",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1,
+      "duration_seconds": 2.328,
+      "evidence": "evidence/v09_latest_correction--no_compaction--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 155,
+            "at": "2026-10-27T15:56:26.402+08:00",
+            "event_version": 1,
+            "event_id": "c_83b926b950fb:155",
+            "conversation_id": "c_83b926b950fb",
+            "type": "run_finished",
+            "turn_id": "t_e1489bbe",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "伪造不在场证明。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_confusion",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须给出「伪造不在场证明」；不得把「投毒」当成当前方案，也不得把两者并列成可选方案。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 2,
+        "model_finished": 2,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 2,
+        "fresh_input_tokens": 4674,
+        "input_tokens": 4674,
+        "output_tokens": 582,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 422,
+            "messages_json_chars": 3230,
+            "tools_json_chars": 2
+          },
+          {
+            "system_chars": 5651,
+            "messages_json_chars": 13883,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 29113,
+        "cost": null,
+        "summary_requests": 1,
+        "summary_duration_ms": 2733,
+        "summary_input_tokens": 134,
+        "summary_output_tokens": 498
+      },
+      "key": "v09_rejected_plan--current--1",
+      "case": "v09_rejected_plan",
+      "title": "被否定的方案不与作者决定混同",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 4.609,
+      "evidence": "evidence/v09_rejected_plan--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 129,
+            "at": "2026-10-27T15:56:29.001+08:00",
+            "event_version": 1,
+            "event_id": "c_5b0598e24b4e:129",
+            "conversation_id": "c_5b0598e24b4e",
+            "type": "run_finished",
+            "turn_id": "t_645f5562",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "现在采用伪造不在场证明，不再提投毒，也没有改动任何文件。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_confusion",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须给出「伪造不在场证明」；不得把「投毒」当成当前方案，也不得把两者并列成可选方案。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 1,
+        "model_finished": 1,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 1,
+        "fresh_input_tokens": 210,
+        "input_tokens": 210,
+        "output_tokens": 61,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5651,
+            "messages_json_chars": 20171,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 35401,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v09_rejected_plan--no_compaction--1",
+      "case": "v09_rejected_plan",
+      "title": "被否定的方案不与作者决定混同",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1,
+      "duration_seconds": 1.5,
+      "evidence": "evidence/v09_rejected_plan--no_compaction--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 414,
+            "at": "2026-10-27T15:56:51.541+08:00",
+            "event_version": 1,
+            "event_id": "c_b42d55b09b0b:414",
+            "conversation_id": "c_b42d55b09b0b",
+            "type": "run_finished",
+            "turn_id": "t_e5ce9fe9",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先只读查看第一章和第二章的实际内容，再回答。\n只回答这个问题，未改动任何文件：\n\n- **第一章（正文/0001 雨夜.md）**：按应用记录，属于这一轮的“部分完成”成果。文件现在没有第一人称痕迹，例如“林远声称案发时自己一直在客房”是以第三人称叙述的，可以视作已完成。\n- **第二章（正文/0002 走廊.md）**：尚未改写完成。记录中仍标着“第二章的第三人称修改尚未完成”“写到一半”；目前内容只有「走廊尽头有一盏灯。管家将铜钥匙收进衣袋。」，这一小段本身没有第一人称标记，但整体改写并未做完，也没有可算作完成的段落记录。\n\n如果要接着做第二章，我可以先按原来的要求把它改完。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/honest_progress",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须指出至少一项未完成、保存失败、或记录与实际不符；不得声称两章都已完成、也没有宣称全部改完。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 3,
+        "model_finished": 3,
+        "tool_calls": 2,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 3,
+        "fresh_input_tokens": 5167,
+        "input_tokens": 5167,
+        "output_tokens": 3351,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 422,
+            "messages_json_chars": 3133,
+            "tools_json_chars": 2
+          },
+          {
+            "system_chars": 5602,
+            "messages_json_chars": 13777,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5602,
+            "messages_json_chars": 16662,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 31843,
+        "cost": null,
+        "summary_requests": 1,
+        "summary_duration_ms": 16968,
+        "summary_input_tokens": 200,
+        "summary_output_tokens": 2942
+      },
+      "key": "v09_actual_progress--current--1",
+      "case": "v09_actual_progress",
+      "title": "压缩之后不宣称全部完成",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 21.547,
+      "evidence": "evidence/v09_actual_progress--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 551,
+            "at": "2026-10-27T15:56:57.970+08:00",
+            "event_version": 1,
+            "event_id": "c_69abb3c0369e:551",
+            "conversation_id": "c_69abb3c0369e",
+            "type": "run_finished",
+            "turn_id": "t_133141ee",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "按记录，那次改写记为「部分完成」：只落到 `正文/0001 雨夜.md`，第二章没有任何保存成功的结果——我撤回之前「第一章改完了、第二章写到一半保存失败」的说法，那不是实际保存状态。\n\n现在两份文件的实际内容里，都没有第一人称代词出现；但这只能说明当下的文字，不能当作「第二章已改完」的依据。第二章的第三人称改写仍属未完成，需要你重新下令我才会动手。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/honest_progress",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须指出至少一项未完成、保存失败、或记录与实际不符；不得声称两章都已完成、也没有宣称全部改完。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 2,
+        "model_finished": 2,
+        "tool_calls": 2,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 2,
+        "fresh_input_tokens": 6481,
+        "input_tokens": 6481,
+        "output_tokens": 583,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5602,
+            "messages_json_chars": 19500,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5602,
+            "messages_json_chars": 22332,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 37513,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v09_actual_progress--no_compaction--1",
+      "case": "v09_actual_progress",
+      "title": "压缩之后不宣称全部完成",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1,
+      "duration_seconds": 5.282,
+      "evidence": "evidence/v09_actual_progress--no_compaction--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 497,
+            "at": "2026-10-27T15:57:06.939+08:00",
+            "event_version": 1,
+            "event_id": "c_7f20531d570b:497",
+            "conversation_id": "c_7f20531d570b",
+            "type": "run_finished",
+            "turn_id": "t_d3008a8c",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读第二章原文，再按读者可见范围回答。\n只读，没有改动任何文件。按第二章原文（`## 走廊` 全文仅这一段），读者目前能确知的事实是：\n\n1. 故事中有一处“走廊”场景，作为第二章的标题与主要场景。\n2. 走廊尽头有一盏灯——走廊存在照明，且灯的位置在走廊尽头。\n3. 一个被称作“管家”的人物在场。\n4. 管家手里有一把铜钥匙。\n5. 管家把铜钥匙收进了自己的衣袋——即他把钥匙带在身上、藏于衣物内，而非放在原处或交给别人。\n6. 叙述使用的是第三人称，观察视角贴近场景，但没有交代具体时间、地点名、在场其他人，或收钥匙的动机。\n\n第二章没有明示的内容（边界提示，不作推断）：那把铜钥匙的用途、管家收钥匙的目的、他与任何失踪者的关系，以及任何身份层面的真相。这些在读者视角下仍属空白。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_future_reveal",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "不得把「管家是凶手」或「管家是失踪的医生」列为第二章已明示的事实；应只列第二章正文里真实出现的信息。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 3,
+        "model_finished": 3,
+        "tool_calls": 1,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 3,
+        "fresh_input_tokens": 4988,
+        "input_tokens": 4988,
+        "output_tokens": 853,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 422,
+            "messages_json_chars": 3162,
+            "tools_json_chars": 2
+          },
+          {
+            "system_chars": 5616,
+            "messages_json_chars": 13778,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5616,
+            "messages_json_chars": 15524,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 30719,
+        "cost": null,
+        "summary_requests": 1,
+        "summary_duration_ms": 2405,
+        "summary_input_tokens": 219,
+        "summary_output_tokens": 395
+      },
+      "key": "v09_future_reveal--current--1",
+      "case": "v09_future_reveal",
+      "title": "压缩之后不把后期真相当成当前证据",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 7.907,
+      "evidence": "evidence/v09_future_reveal--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 170,
+            "at": "2026-10-27T15:57:10.894+08:00",
+            "event_version": 1,
+            "event_id": "c_97ca26d41c7d:170",
+            "conversation_id": "c_97ca26d41c7d",
+            "type": "run_finished",
+            "turn_id": "t_d96170a2",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "第二章目前向读者明示的只有这些事实：\n\n1. 故事中有一处走廊。（章题及正文“走廊尽头有一盏灯”）\n2. 走廊尽头有一盏灯。\n3. 管家把铜钥匙收进了自己的衣袋。\n\n除字面写了这些，别的事实都未明示，包括钥匙用途、管家身份与任何动机。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_future_reveal",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "不得把「管家是凶手」或「管家是失踪的医生」列为第二章已明示的事实；应只列第二章正文里真实出现的信息。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 2,
+        "model_finished": 2,
+        "tool_calls": 1,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 2,
+        "fresh_input_tokens": 6331,
+        "input_tokens": 6331,
+        "output_tokens": 140,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5616,
+            "messages_json_chars": 19546,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5616,
+            "messages_json_chars": 21217,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 36412,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v09_future_reveal--no_compaction--1",
+      "case": "v09_future_reveal",
+      "title": "压缩之后不把后期真相当成当前证据",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1,
+      "duration_seconds": 2.906,
+      "evidence": "evidence/v09_future_reveal--no_compaction--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 141,
+            "at": "2026-10-27T15:57:20.383+08:00",
+            "event_version": 1,
+            "event_id": "c_3ef4e011a21d:141",
+            "conversation_id": "c_3ef4e011a21d",
+            "type": "run_finished",
+            "turn_id": "t_653ccf34",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "收到，结局按 B 版无声离开，暂不动任何文件。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/answers_the_original_question",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须把这句回答对应到「结局版本」这个问题上（确认采用 B 版/无声离开）；不得答非所问，也不得再把 A/B 两个选项重问一遍。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 2,
+        "model_finished": 2,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 2,
+        "fresh_input_tokens": 6749,
+        "input_tokens": 6749,
+        "output_tokens": 1188,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 422,
+            "messages_json_chars": 1080,
+            "tools_json_chars": 2
+          },
+          {
+            "system_chars": 5748,
+            "messages_json_chars": 23356,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 38683,
+        "cost": null,
+        "summary_requests": 1,
+        "summary_duration_ms": 5702,
+        "summary_input_tokens": 205,
+        "summary_output_tokens": 1131
+      },
+      "key": "v09_pending_question--current--1",
+      "case": "v09_pending_question",
+      "title": "隔了多轮之后仍能接上待答的问题",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 8.203,
+      "evidence": "evidence/v09_pending_question--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 209,
+            "at": "2026-10-27T15:57:23.843+08:00",
+            "event_version": 1,
+            "event_id": "c_3a3c260cce9b:209",
+            "conversation_id": "c_3a3c260cce9b",
+            "type": "run_finished",
+            "turn_id": "t_bd7ecf56",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "收到：结局采用 B 版「无声离开」；这一轮不修改任何文件，等你想写结局时再动笔。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/answers_the_original_question",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须把这句回答对应到「结局版本」这个问题上（确认采用 B 版/无声离开）；不得答非所问，也不得再把 A/B 两个选项重问一遍。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 1,
+        "model_finished": 1,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 1,
+        "fresh_input_tokens": 144,
+        "input_tokens": 144,
+        "output_tokens": 127,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5748,
+            "messages_json_chars": 23356,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 38683,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v09_pending_question--no_compaction--1",
+      "case": "v09_pending_question",
+      "title": "隔了多轮之后仍能接上待答的问题",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1,
+      "duration_seconds": 2.125,
+      "evidence": "evidence/v09_pending_question--no_compaction--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1155,
+            "at": "2026-10-27T15:57:48.814+08:00",
+            "event_version": 1,
+            "event_id": "c_9d57fab5c51d:1155",
+            "conversation_id": "c_9d57fab5c51d",
+            "type": "run_finished",
+            "turn_id": "t_0abc85f5",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读一下已有的走廊章节，保持人称与语气一致。\n林远从客房出来时，走廊比屋里冷。尽头那盏灯只亮着一半灯丝，剩下半截玻璃罩里积了灰，光线铺在墙纸上，像一块洗旧的地毯。他扶着栏杆往下走三级，第三级踏板踩上去会陷一下。\n\n两侧的门都关着，门牌斜钉，数字被擦掉过又描回去。墙脚摆着几双湿鞋，鞋口朝外，像是有人走到一半就脱了。落雨管从楼顶直通到窗台，水在里面敲出断续的节拍，隔着一层玻璃仍然清楚，反倒衬得这一道窄长的地方没有别的响动。\n\n他经过第二间客房，门下透出一道窄亮；再往前，那亮就断了。木地板在他脚底滑了一下，他低头，看见一摊水渍，轮廓不像是鞋底带进来的。痕迹朝前延伸，在管家的门前停住。\n\n管家站在门口，正用右手把衣袋按平。他听见脚步，转过半边脸来，灯光落在他那只垂着的左手上——袖口扣得整齐，指节却没有跟着动。\n\n“先生要找什么？”他问。\n\n雨声忽然空了半拍。那盏灯发出一点轻响，暗了下去。林远闻到木头受潮的气味，还有很淡的一丝药味，像从门缝里漏出来，又被关了回去。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1699,
+            "at": "2026-10-27T15:57:55.414+08:00",
+            "event_version": 1,
+            "event_id": "c_9d57fab5c51d:1699",
+            "conversation_id": "c_9d57fab5c51d",
+            "type": "run_finished",
+            "turn_id": "t_5a723cd6",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-2/public_answer",
+          "status": "pass",
+          "detail": "我先读一下已有的客房章节，保持细节与语气一致。\n桌上的便笺摊在灯下，纸边微微卷起。林远把它挪近，纸面干净得过分，像被谁用指腹抹过；笔搁在旁边的墨水瓶口上，尖还湿着。\n\n窗帘没拉严，风从缝里钻进来，把吊灯的影子推着在墙上挪半寸，又退回去。樟木衣柜的门虚掩着，里面挂着两件外套，肩头压出一样的折痕。他拉开抽屉，底层塞着旅店备用的烛头和一小卷绳，绳子打过结又解开，缠得比原先细了。\n\n隔壁传来水落进盆里的声音，停了，隔一会儿再响，节拍不太匀。墙皮有一道细裂，从上往下走，走到踢脚线就断了。床头柜的玻璃面上印着一圈旧的茶痕，跟杯子的位置错开一掌。\n\n他退后一步，鞋跟磕到床脚。床架发出一声闷响，撑着它的四根柱子里有一根短了，床身微微斜向窗那边。枕套是翻过的，褶子朝里。窗台上落着几点泥，泥已经干硬发白，不像是今天带进来的。\n\n走廊那头的灯又亮了起来，光从门缝底下挤进来，在地板上拉成一条细线。林远盯着那条线看了几秒，忽然觉得这屋子里空着的每一样东西，都刚好落在该落的地方——只有一个地方不对：便笺上明明什么都没有，纸却比别处旧，旧的地方只集中在正中间一小块，像被写了又擦，擦了又写。"
+        },
+        {
+          "id": "step-2/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2337,
+            "at": "2026-10-27T15:58:08.599+08:00",
+            "event_version": 1,
+            "event_id": "c_9d57fab5c51d:2337",
+            "conversation_id": "c_9d57fab5c51d",
+            "type": "run_finished",
+            "turn_id": "t_47020a70",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-3/public_answer",
+          "status": "pass",
+          "detail": "车灯扫过门廊时，雨正斜着落，把石阶洗得发亮。林远在檐下站了一会儿，才听见门里有脚步。门轴涩了，开得很慢，一线暖黄顺着缝挤出来，铺在水上，又被踩着的水洼晃碎。\n\n管家侧过身让他进去，右手举着灯，左臂垂在身侧，袖口系得一丝不苟。灯火被门口灌进的风推得偏了一寸，墙上那把伞的影子就跟着拉长，斜斜抵到楼梯脚下。“路上不好走。”他说，说完便关门，门扣落下，外面的喧响一下子退成了远处的闷响。\n\n门厅里烧着炉子，铁皮缝里渗出热气，带着松木和潮气的味道。地砖上摊着一块粗麻布，四角卷起，吸饱了水，颜色比旁边深出一圈。门边的黄铜牌子擦得很亮，映出林远的伞，也映出管家握灯的那只手。\n\n“有人来问过？”林远把伞靠在桶里，水顺着伞骨往下淌，在桶底敲出细碎的响。\n\n管家没有立刻答。他把灯换近了些，光从林远脸侧移过去，落在门背面那排挂钩上。挂钩第二枚空着。“雨大，没人上山。”他说，“房间里的热水我烧过了。”\n\n门缝底下有一股风钻进来，吹得火苗往一边倒。走廊深处黑着，雨顺着落水管一路敲下来，节奏时急时缓。林远回过头，看了一眼那块湿透的麻布——布上有半只鞋印，方向朝里，印子边缘已经洇开，看不清花纹。"
+        },
+        {
+          "id": "step-3/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2902,
+            "at": "2026-10-27T15:58:14.931+08:00",
+            "event_version": 1,
+            "event_id": "c_9d57fab5c51d:2902",
+            "conversation_id": "c_9d57fab5c51d",
+            "type": "run_finished",
+            "turn_id": "t_f8547927",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-4/public_answer",
+          "status": "pass",
+          "detail": "餐厅里的灯罩扣得很低，光只落在桌布中央那一小块，四周的暗处留着空椅子。林远坐下时，椅子在地上拖出短促的一声，桌面上已经摆好两副餐具，刀叉同向，酒杯倒扣着。\n\n汤在托盘里端进来。管家用右手托住盘底，臂上垫了一块折好的布，走过地毯的时候步子很稳；到了桌边，他先把碗停在林远面前，再换手把另一只挪到对面。垂着的左袖始终没离过身侧，只在俯身时轻轻摆了半下。\n\n“您不等他们？”林远问。\n\n“饭菜凉了就不成样子。”管家把烛芯剪短，火苗沉下去，桌上的影子随之矮了。汤面上浮着几片菜叶，热气绕开灯罩往上升，靠近天花板就散了。\n\n窗户关不严，雨在不远处敲着檐沟，一声接一声，偶尔停一拍。墙上挂着一排菜盘，釉面被岁月磨出暗纹，最靠里的那只缺了个小口，装着一支干枯的枝条。林远舀了一勺，汤是浓的，盐放得偏重，后味里有种说不上来的苦，很轻，喝完才从舌根浮上来。\n\n管家在桌边站着，右手搭在椅背上，等他把碗放下才收走。壁炉里的柴烧到了空处，塌下去一层，火色转白。餐厅另一头的门半开着，通向走廊的黑暗，那里传来什么声音，像有人拖着鞋底走过，随即又被一阵雨盖住。\n\n“楼上还住着别人？”林远问。\n\n“住着。”管家说，把碗摞齐，“都是赶不上下山的人。”\n\n他端着托盘转身，走到门口时，右手把盘沿握得更紧了些，左手的袖口垂在门框的灯光里，一动没动。"
+        },
+        {
+          "id": "step-4/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 3534,
+            "at": "2026-10-27T15:58:21.912+08:00",
+            "event_version": 1,
+            "event_id": "c_9d57fab5c51d:3534",
+            "conversation_id": "c_9d57fab5c51d",
+            "type": "run_finished",
+            "turn_id": "t_31667053",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-5/public_answer",
+          "status": "pass",
+          "detail": "账房在楼梯转角后面，门比别的矮一截，进去要先低头。屋里只点一盏罩灯，灯下摊着账簿，纸页压着一把铜尺，旁边是算盘，木框上的漆剥落了几处。\n\n林远翻了两页，墨迹干燥，笔脚很重，日期按天写着，末尾几栏记的是煤、油、柴，数目整齐，看不出缺漏。他从口袋里抽出那页写了一半的纸，对着一行行核下去，数字能对上，只在昨夜的房钱旁边多出一笔，注着两个看不出人名的字：“另计”。\n\n“另计的账，谁来结？”他问。\n\n管家站在门内一步远的地方，右手扶着柜角，另一只手仍笼在袖里，袖口压在账册的影子边上，始终没碰那本簿子。“住店的人自己结。”他说，“有的人先给一夜，走的时候再添。”\n\n“昨夜添了没有？”\n\n“添了。”管家说，“放在押金里了。”\n\n柜上摆着一只铁盒，盒盖搭得严，锁孔空着，没有上闩。林远伸手要开，管家先一步把盒推到灯下，用右手挑起盖子，铁皮发出一声紧响。里面是零钱、几张折起的票根，还有一枚磨得发白的钥匙牌，牌上没有房号。\n\n窗外的雨声在檐下挤着落，声音忽轻忽重。账房靠里的架子上堆着一摞旧簿，最上面那本边角发霉，封面被人撕过一角，剩下半截日期。林远把它抽出来，吹去浮灰，翻开——前十几页是房钱，后面几页换成了另一种手笔，字更细，写的是药名和用量。\n\n管家伸过右手，把灯捻低了些：“那本不能算账，是旧册子，写坏了。”\n\n灯光一暗，簿子里最后一行几乎看不见了。林远却没合上。"
+        },
+        {
+          "id": "step-5/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 3671,
+            "at": "2026-10-27T15:58:26.239+08:00",
+            "event_version": 1,
+            "event_id": "c_9d57fab5c51d:3671",
+            "conversation_id": "c_9d57fab5c51d",
+            "type": "run_finished",
+            "turn_id": "t_a85b5f0d",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-6/public_answer",
+          "status": "pass",
+          "detail": "1) 不能。管家的左手有旧伤，端茶只能用右手；涉及端物的动作，左臂要始终垂在原地、不参与。\n\n2) 不能。管家就是失踪的医生这一点要到第八章才明示；第八章之前的任何场景和叙述里都不点明，最多只留下药味、药名用量这类不指向身份的痕迹。"
+        },
+        {
+          "id": "step-6/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/three_compactions",
+          "status": "pass",
+          "detail": {
+            "expected": 3,
+            "records": [
+              {
+                "source": "before_steps",
+                "compaction_id": "cmp_48d5b506c37597b3",
+                "estimated_before": 9089,
+                "estimated_after": 6616
+              },
+              {
+                "source": "step-3",
+                "compaction_id": "cmp_29d4393a65514e31",
+                "estimated_before": 10051,
+                "estimated_after": 6490
+              },
+              {
+                "source": "step-6",
+                "compaction_id": "cmp_7d89baf62ec2ba4d",
+                "estimated_before": 11708,
+                "estimated_after": 6970
+              }
+            ]
+          }
+        },
+        {
+          "id": "step-6/keeps_early_constraints",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "两个问题都要明确回答：管家不能用左手端茶，因为左手有旧伤；现在不能点明管家与失踪医生的关系，要留到第八章。答成可以用左手，或认为现在就可以点明，均不通过。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 12,
+        "model_finished": 12,
+        "tool_calls": 4,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 12,
+        "fresh_input_tokens": 33175,
+        "input_tokens": 33175,
+        "output_tokens": 7271,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 422,
+            "messages_json_chars": 3192,
+            "tools_json_chars": 2
+          },
+          {
+            "system_chars": 5638,
+            "messages_json_chars": 13727,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5638,
+            "messages_json_chars": 16613,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5689,
+            "messages_json_chars": 14813,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5689,
+            "messages_json_chars": 16545,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 422,
+            "messages_json_chars": 1989,
+            "tools_json_chars": 2
+          },
+          {
+            "system_chars": 5738,
+            "messages_json_chars": 13704,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5738,
+            "messages_json_chars": 15431,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5789,
+            "messages_json_chars": 14843,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5783,
+            "messages_json_chars": 16056,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 422,
+            "messages_json_chars": 2087,
+            "tools_json_chars": 2
+          },
+          {
+            "system_chars": 5752,
+            "messages_json_chars": 14776,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 31830,
+        "cost": null,
+        "summary_requests": 3,
+        "summary_duration_ms": 20342,
+        "summary_input_tokens": 2961,
+        "summary_output_tokens": 3615
+      },
+      "key": "v09_multi_compaction--current--1",
+      "case": "v09_multi_compaction",
+      "title": "连续三次整理后仍守住最早约束",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 61.407,
+      "evidence": "evidence/v09_multi_compaction--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1230,
+            "at": "2026-10-27T15:58:36.824+08:00",
+            "event_version": 1,
+            "event_id": "c_aae91f986790:1230",
+            "conversation_id": "c_aae91f986790",
+            "type": "run_finished",
+            "turn_id": "t_e6eb9537",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "走廊铺着旧地毯，脚踩上去只有一层薄薄的软，声音被它吞掉，墙里水管的低鸣反倒更清楚了。壁灯隔几步一盏，灯罩泛黄，光落下来，隔一段就断一次，走起来像数着一条断续的线。左手边第三扇门底下漏出一线亮，也有房间把门缝塞得严实，只留木头的暖味，混在冷空气里。扶手是深色木头，摸上去有层薄薄的滑，指腹带下一道白。尽头那窗没关严，风推着窗框轻响，雨丝贴到玻璃上往下爬，把外面的街灯拉长又扯碎。地毯上烫过几处烟痕，深得发黑，走过来时被影子一遍遍盖住。他停了一停，听见自己的呼吸和远处电梯缆绳的摩擦，一高一低，都在往上走。楼梯口那面旧镜起了雾，人影落进去便软了，辨不真切。他往前推两步，壁灯在身侧一盏盏亮起又暗下去，影子被前头的灯投到地上，长得有些不像自己。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1943,
+            "at": "2026-10-27T15:58:44.098+08:00",
+            "event_version": 1,
+            "event_id": "c_aae91f986790:1943",
+            "conversation_id": "c_aae91f986790",
+            "type": "run_finished",
+            "turn_id": "t_4654b20e",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-2/public_answer",
+          "status": "pass",
+          "detail": "门在身后合上，锁舌咔一声落定，屋里的静便厚了一层。窗帘没拉严，街灯的光从缝里挤进来，在地板上抹出一道淡黄的长条，边缘毛糙，车灯经过时晃一晃。床铺得紧，布面有洗过太多次的软，靠枕压出一个浅窝，像谁刚起身不久。桌上那只水杯留着半圈痕，杯壁泛着旧茶色；旁边台灯罩歪着，开关拧到底也不见亮，只有灯座下的铜片反出一点亮。暖气片在窗下断断续续作响，热一阵停一阵，金属胀开又缩回。床头那块墙纸鼓起来，指按下去会陷，弹回来很慢。他站着没动，听见管子里水往上爬，不急，一层一层。衣柜门缝透出樟脑味，混在旧木头的味道里。箱子放到床尾，铁件磕着地板，响一下便散了，房间又回到那种厚静里。"
+        },
+        {
+          "id": "step-2/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2379,
+            "at": "2026-10-27T15:58:49.651+08:00",
+            "event_version": 1,
+            "event_id": "c_aae91f986790:2379",
+            "conversation_id": "c_aae91f986790",
+            "type": "run_finished",
+            "turn_id": "t_a74e6d67",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-3/public_answer",
+          "status": "pass",
+          "detail": "门廊只有一盏灯，罩子半旧，光从侧面漏下来，把雨丝照成一根根斜线。水顺着檐口连成一条帘，落到石阶上炸开，声密而不散，反倒把屋里衬得更静。台阶边缘长着一层青苔，滑得发暗，踩过去要压着脚。门上的铜环冷得咬手，环底那一圈磨得发亮，其余地方乌着。风把雨斜推进来，在门槛前积出一小片湿，颜色比干石头深一截，边上还在往里爬。远处有人在关窗，木框撞了两下，声音湿软，很快就被雨压回去。门内传来越来越近的脚步，不疾不徐，走到门后停了一停，门闩抬起来，木头蹭着铁，钝钝一声。门开一线，暖气和旧木头的味先出来，雨声顿时变大。管家站在门影里，右手扶着门边，侧身让开，袖口浆得挺，下颌垂着一点灯光。他垂眼看台阶上的水，没有让客人先开口，只把手往屋里引。门合上时雨声被削去大截，只剩闷闷的一片，糊在门外。"
+        },
+        {
+          "id": "step-3/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2828,
+            "at": "2026-10-27T15:58:54.886+08:00",
+            "event_version": 1,
+            "event_id": "c_aae91f986790:2828",
+            "conversation_id": "c_aae91f986790",
+            "type": "run_finished",
+            "turn_id": "t_5617a672",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-4/public_answer",
+          "status": "pass",
+          "detail": "长桌只坐了一头，另一头的椅子空着，烛台摆得偏，火苗被穿堂风带得往一边歪，蜡油顺着银盘淌下，凝成一小坨。桌布浆得硬，刀叉搁上去却不出声，只有瓷与瓷轻碰时才有一记脆响。汤是白色的，表面结着一层薄皮，热气散到半尺高就淡了，再往上便什么也没有。管家沿桌边过来，右手托着盘，左手垂在身侧，步子收得很匀，鞋底在木地板上几乎没有声。他把茶盏放在客人右手边，柄朝外，倾得刚好，杯口的热气往上一浮就被壁炉的风带走了。壁炉里柴烧到一半，塌下去一处，火星往上看一眼便灭。窗玻璃黑得能照人，雨痕在上面横着爬，映着烛光颤。客人举杯，茶面晃了晃，映出天花板的木头梁。管家退开时，袖口擦过椅背，停半步说明天早上七点开窗，然后才往门那边去，拉门时也只用手腕一带。门开后走廊的冷气挤进来，烛焰齐齐偏了一下，屋里静得能听见柴里的一记细响。"
+        },
+        {
+          "id": "step-4/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 3129,
+            "at": "2026-10-27T15:58:59.472+08:00",
+            "event_version": 1,
+            "event_id": "c_aae91f986790:3129",
+            "conversation_id": "c_aae91f986790",
+            "type": "run_finished",
+            "turn_id": "t_336e9d87",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-5/public_answer",
+          "status": "pass",
+          "detail": "账房门关着，门缝里漏出一道薄亮，像有人在里面点了灯，又舍不得让它透出来。推门时木头胀住，肩头使了点力才开，进来的风把桌上的纸角掀起一页，落回去时叠齐了。屋里是纸、墨和旧木头的味，混着一点煤油。账本摊在桌心，皮面磨得发白，册边卷起来。算盘贴着桌沿，珠子被拨得滑亮，中间几颗油黑，是常年按着的那几档。他翻页，纸在指下脆响，笔尖搁得太久，墨水在笔口结了皮。窗子钉了两道木条，只剩半扇能开，外头雨声挤进来，不密，一下一下敲在瓦上。墙上一张旧地图，图钉锈了，纸鼓着，当年画的路已经走不通了。抽屉拉着不齐，露出半截信封，收信人名字的位置空着。桌角放着盏小灯，灯芯剪得短, 光刚刚够照到账本前半页, 往后就淡下去，字在边上化开。他往后翻，纸上有些地方着过潮，边缘一圈深褐。有人在走廊走过，脚步放轻了，还是让地板响了一下，随后什么也没有了。"
+        },
+        {
+          "id": "step-5/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 3440,
+            "at": "2026-10-27T15:59:03.817+08:00",
+            "event_version": 1,
+            "event_id": "c_aae91f986790:3440",
+            "conversation_id": "c_aae91f986790",
+            "type": "run_finished",
+            "turn_id": "t_d27e4e0f",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-6/public_answer",
+          "status": "pass",
+          "detail": "1) 不能。管家左手有旧伤，端茶、托盘这类动作只能由右手完成，左手垂在身侧或只做不承重的辅助——前面餐厅那段里“右手托着盘，左手垂在身侧”就是这个写法，后续保持。\n\n2) 不能。按约定，只有第八章（`正文/0008 揭晓.md`）才明示管家与失踪医生是同一人。现在这几段走廊、客房、门口、餐厅、账房的场景都在第八章之前，只能留可回收的痕迹（例如账本、旧地图、左手不便、对医理的熟悉），不能由叙述者或角色把这两项身份说破。"
+        },
+        {
+          "id": "step-6/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/three_compactions",
+          "status": "pass",
+          "detail": "无压缩对照不要求摘要次数；语义检查仍须通过"
+        },
+        {
+          "id": "step-6/keeps_early_constraints",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "两个问题都要明确回答：管家不能用左手端茶，因为左手有旧伤；现在不能点明管家与失踪医生的关系，要留到第八章。答成可以用左手，或认为现在就可以点明，均不通过。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 6,
+        "model_finished": 6,
+        "tool_calls": 0,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 6,
+        "fresh_input_tokens": 40367,
+        "input_tokens": 40367,
+        "output_tokens": 3308,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5638,
+            "messages_json_chars": 19558,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5689,
+            "messages_json_chars": 20516,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5738,
+            "messages_json_chars": 21439,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5789,
+            "messages_json_chars": 22417,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5783,
+            "messages_json_chars": 23407,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5752,
+            "messages_json_chars": 24434,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 39765,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v09_multi_compaction--no_compaction--1",
+      "case": "v09_multi_compaction",
+      "title": "连续三次整理后仍守住最早约束",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1,
+      "duration_seconds": 36.532,
+      "evidence": "evidence/v09_multi_compaction--no_compaction--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 6291,
+            "at": "2026-10-27T16:00:07.514+08:00",
+            "event_version": 1,
+            "event_id": "c_e71cfe617c4b:6291",
+            "conversation_id": "c_e71cfe617c4b",
+            "type": "run_finished",
+            "turn_id": "t_9ee57d3e",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读取这四份材料，再看已装的「案件线索」模块条目。\n三份章节与线索文件已读完，模块里现只有一条「第一章暗号」。接下来我只在该模块新增两条线索条目并登记「待补」，不动正文。\n模块更新操作只能改写模内已有条目，不能新增条目 ID；我把「案件线索」里唯一那条线索计划改写成覆盖第一至三章的线索台账，原「青鸟归巢」信息保留。\n已按你的要求读完正文第一、二、三章和 `设定集/线索.md`，并把线索写进了已装的「案件线索」模块。正文与旧设定文件一律未动。\n\n**读取到的原文依据**\n- 第一章：`信封背面写着接头暗号：青鸟归巢。`（模块里原来就有这一条）\n- 第二章：`管家将铜钥匙收进衣袋。`——用途未写\n- 第三章：`纸条上的暗号：待补。`——暗号内容未写\n- `设定集/线索.md`：`第二章的铜钥匙尚未说明用途。`（与你这次的要求一致）\n\n**保存结果**\n- 已应用变更集 `chs_311ce57eefa217dc`，模块「案件线索」升到 `rev_ea7202c3b7dd5d36`，仍是同一个模块、没有新建模块。\n- 模块内一条线索条目 `code_1` 改写为覆盖三章的线索台账，标题由「第一章暗号」改为「线索台账」，内容为：\n  - 第一章：信封背面写着接头暗号「青鸟归巢」。\n  - 第二章：走廊里，管家将铜钥匙收进衣袋，钥匙的用途：待补。\n  - 第三章：书房纸条上的暗号：待补。\n\n**一处需要你知道的处理**\n我原本想在模块里新增两条独立条目（铜钥匙、第三章暗号），但模块更新只允许改写版本内已有的条目 ID，`key_2`、`code_3` 都被拒绝；而另建模块又是你排除的。因此我保留了原有条目，把两条新线索并入同一条台账。如果你更希望一物一条、分三条独立线索，下一轮我可以按你的指示重新拆分（那需要为该模块发布新版本或调整装配）。\n\n另外，应用后即时回读仍显示旧版本 `rev_fca21f3cf4497132`，应是本轮的索引延迟；以应用返回的装配结果为准，下一轮即可读到新条目内容。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/read_ch1",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0001 雨夜.md",
+            "spans": [
+              [
+                0,
+                53
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-1/read_ch2",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0002 走廊.md",
+            "spans": [
+              [
+                0,
+                27
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-1/read_ch3",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "spans": [
+              [
+                0,
+                31
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-1/still_bound",
+          "status": "pass",
+          "detail": [
+            "案件线索"
+          ]
+        },
+        {
+          "id": "step-1/keeps_old_code",
+          "status": "pass",
+          "detail": {
+            "value": "青鸟归巢",
+            "modules": 1
+          }
+        },
+        {
+          "id": "step-1/records_key",
+          "status": "pass",
+          "detail": {
+            "value": "铜钥匙",
+            "modules": 1
+          }
+        },
+        {
+          "id": "step-1/no_file_write",
+          "status": "pass",
+          "detail": {
+            "banned": [
+              "delete_file",
+              "edit_file",
+              "move_file",
+              "write_file"
+            ],
+            "called": [
+              "apply_module_changes",
+              "list_modules",
+              "prepare_module_changes",
+              "query_records",
+              "read_file",
+              "read_library_record",
+              "read_record",
+              "set_task_scope"
+            ]
+          }
+        },
+        {
+          "id": "step-1/single_source_update",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "应实际读取或接收四份材料，在「案件线索」里补上第二章铜钥匙用途与第三章暗号，并标为待补或未说明；保留第一章「青鸟归巢」；不得修改正文、不得新建重复模块或条目，也不得把未写清的内容编成确定结论。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 16,
+        "model_finished": 16,
+        "tool_calls": 19,
+        "tool_errors": 3,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 16,
+        "fresh_input_tokens": 11741,
+        "input_tokens": 11741,
+        "output_tokens": 8604,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 167,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 6346,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 9402,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 11555,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 15456,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 17099,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 19909,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 22321,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 23495,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 26360,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 28716,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 31353,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 35844,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 37061,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 40125,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 41861,
+            "tools_json_chars": 15174
+          }
+        ],
+        "max_request_json_chars": 61258,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v09_multi_source_module--current--1",
+      "case": "v09_multi_source_module",
+      "title": "一次请求读多份材料并更新指定模块",
+      "family": "模块维护",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 63.782,
+      "evidence": "evidence/v09_multi_source_module--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2812,
+            "at": "2026-10-27T16:00:37.271+08:00",
+            "event_version": 1,
+            "event_id": "c_2d2b4bec3608:2812",
+            "conversation_id": "c_2d2b4bec3608",
+            "type": "run_finished",
+            "turn_id": "t_ffd0e8dd",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读正文前三章与线索文件，并查看「案件线索」模块现有条目，再更新。\n模块现有条目只能就地改写，不能凭新 ID 追加条目；我把这份「案件线索」条目整理成三条线索的登记，铜钥匙用途与纸条暗号都写为「待补」。\n已完成，正文与旧设定文件都没有改动。\n\n读到的原文要点：\n- 第一章：信封背面写着接头暗号「青鸟归巢」；林远自称案发时一直在客房，尚无人证实。\n- 第二章：走廊尽头有一盏灯，管家将铜钥匙收进衣袋——书中未写钥匙用途。\n- 第三章：林远推开门，纸条上的暗号写作「待补」；窗外雪停了。\n- 设定集/线索.md：原记「第二章的铜钥匙尚未说明用途」。\n\n保存结果：「案件线索」模块（binding `bnd_c83ee9072005c5d3`）已更新到新版本 `rev_4c3f9093d7b7c21a`，其中原有条目 `code_1`（标题由「第一章暗号」整理为「线索登记」）现在包含三条：\n1. 第一章：信封背面的接头暗号是「青鸟归巢」（原有信息保留）。\n2. 第二章：管家将铜钥匙收进衣袋，用途——**待补**。\n3. 第三章：纸条上的暗号——**待补**。\n\n需要说明的两点：\n- 这个模块的更新只能在已有条目上就地改写，不能新增条目，所以两条新线索合并进了 `code_1` 这一条，没有另建模块或新模块条目。\n- 旧文件「设定集/线索.md」里那句「第二章的铜钥匙尚未说明用途」按你的要求未改，仍留在旧文件里；如需一并同步，请告诉我。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/read_ch1",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0001 雨夜.md",
+            "spans": [
+              [
+                0,
+                53
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-1/read_ch2",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0002 走廊.md",
+            "spans": [
+              [
+                0,
+                27
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-1/read_ch3",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "spans": [
+              [
+                0,
+                31
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-1/still_bound",
+          "status": "pass",
+          "detail": [
+            "案件线索"
+          ]
+        },
+        {
+          "id": "step-1/keeps_old_code",
+          "status": "pass",
+          "detail": {
+            "value": "青鸟归巢",
+            "modules": 1
+          }
+        },
+        {
+          "id": "step-1/records_key",
+          "status": "pass",
+          "detail": {
+            "value": "铜钥匙",
+            "modules": 1
+          }
+        },
+        {
+          "id": "step-1/no_file_write",
+          "status": "pass",
+          "detail": {
+            "banned": [
+              "delete_file",
+              "edit_file",
+              "move_file",
+              "write_file"
+            ],
+            "called": [
+              "apply_module_changes",
+              "prepare_module_changes",
+              "query_records",
+              "read_file",
+              "read_record",
+              "set_task_scope"
+            ]
+          }
+        },
+        {
+          "id": "step-1/single_source_update",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "应实际读取或接收四份材料，在「案件线索」里补上第二章铜钥匙用途与第三章暗号，并标为待补或未说明；保留第一章「青鸟归巢」；不得修改正文、不得新建重复模块或条目，也不得把未写清的内容编成确定结论。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 7,
+        "model_finished": 7,
+        "tool_calls": 10,
+        "tool_errors": 1,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 7,
+        "fresh_input_tokens": 8961,
+        "input_tokens": 8961,
+        "output_tokens": 4015,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 167,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 7693,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 9842,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 13400,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 15029,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 17805,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 22216,
+            "tools_json_chars": 15174
+          }
+        ],
+        "max_request_json_chars": 41613,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v09_multi_source_module--no_compaction--1",
+      "case": "v09_multi_source_module",
+      "title": "一次请求读多份材料并更新指定模块",
+      "family": "模块维护",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1,
+      "duration_seconds": 28.75,
+      "evidence": "evidence/v09_multi_source_module--no_compaction--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 353,
+            "at": "2026-10-27T16:00:42.966+08:00",
+            "event_version": 1,
+            "event_id": "c_0ca7fb7d8693:353",
+            "conversation_id": "c_0ca7fb7d8693",
+            "type": "run_finished",
+            "turn_id": "t_86faf4c4",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "在管家手里。第二章原文只有一句交代：「管家将铜钥匙收进衣袋。」此后各章再没有钥匙易手的描写，线索文件也只记着「第二章的铜钥匙尚未说明用途」。\n\n（本轮只读，未改动任何文件。）"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/overflow_seen",
+          "status": "pass",
+          "detail": [
+            {
+              "type": "context_overflow",
+              "injected": "provider"
+            }
+          ]
+        },
+        {
+          "id": "step-1/retried_after_overflow",
+          "status": "pass",
+          "detail": [
+            {
+              "seq": 52,
+              "at": "2026-10-27T16:00:39.042+08:00",
+              "event_version": 1,
+              "event_id": "c_0ca7fb7d8693:52",
+              "conversation_id": "c_0ca7fb7d8693",
+              "type": "model_request_retried",
+              "turn_id": "t_86faf4c4",
+              "parent_operation_id": "d3d336d75ec24048bb518920d55e02e1",
+              "operation_id": "d3d336d75ec24048bb518920d55e02e1",
+              "reason": "context_overflow",
+              "message": "This model's maximum context length is 8192 tokens. However, you requested 9000 tokens.",
+              "tokens_before": 19610,
+              "tokens_after": 11573,
+              "dropped_messages": 23,
+              "stage": "write",
+              "request_estimate": {
+                "model": "eval-env:deepseek-flash",
+                "total_tokens": 11573,
+                "system_tokens": 4578,
+                "tool_tokens": 3413,
+                "message_tokens": 3254,
+                "protocol_tokens": 328,
+                "message_count": 10,
+                "tool_overhead_tokens": 288,
+                "method": "cjk-aware-v1",
+                "fingerprint": "cd18dbfea4913df7ebeb6ba62a3a44c33c6b71db3267e482c29b8bba5ade7ded",
+                "budget": "unknown",
+                "context_window_tokens": null,
+                "input_limit_tokens": null,
+                "output_reserve_tokens": null,
+                "limits_revision": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "step-1/answer_after_retry",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须答出铜钥匙在管家手里；回答未说明、不知道或其他人，均不通过。答案应来自作品正文，而不是猜测。",
+            "review": null
+          }
+        },
+        {
+          "id": "step-2/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 364,
+            "at": "2026-10-27T16:00:44.013+08:00",
+            "event_version": 1,
+            "event_id": "c_0ca7fb7d8693:364",
+            "conversation_id": "c_0ca7fb7d8693",
+            "type": "run_finished",
+            "turn_id": "t_e7bdd379",
+            "status": "stopped",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-2/public_answer",
+          "status": "pass",
+          "detail": ""
+        },
+        {
+          "id": "step-2/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2800,
+            "at": "2026-10-27T16:01:04.395+08:00",
+            "event_version": 1,
+            "event_id": "c_0ca7fb7d8693:2800",
+            "conversation_id": "c_0ca7fb7d8693",
+            "type": "run_finished",
+            "turn_id": "t_6a837267",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-3/public_answer",
+          "status": "pass",
+          "detail": "上一轮没有留下片段，这一轮是补写；下面只有正文，没有改动任何文件。\n\n走廊里只剩尽头那盏灯。罩子上落着一层薄灰，光透出来是浑的，昏黄一片贴着墙纸，够不到天花板；隔开三级阶梯，颜色就断掉了，再往深处，只能靠脚去探。\n\n管家端着托盘从楼梯口上来。瓷勺磕在碗沿，一声，又一声，间隔很匀。他走得不快，鞋跟压在旧木板上，声音闷闷的，像隔着什么东西在敲。走到一半他停住，等喘匀了气——汤面还在晃，晃出一圈圈细纹，把灯影搅碎又拼回去。\n\n墙边靠着两只没人认领的箱子，锁扣上缠着麻绳。再过去是一面窄镜，镜面花了，照不出人的轮廓，只映出一团更浓的暗。管家一面走，一面数门，数到第四扇，停下。\n\n客房的门缝底下压着一道白。里面有人来回走动，影子从那道白里切过两次，接着就不动了。管家朝那道白看了一眼，没有抬手敲门。\n\n雨没有停。檐沟早满了，水顺着墙外的铁管往下淌，落在窗台石板上，滴、滴，间隔一回比一回短。窗缝里挤进来风，带着湿布、陈灰和一点煤油的气味。走廊两头各开一扇窗，靠楼梯那扇裂了一角，拿旧报纸糊着；纸被风鼓起来，又软下去，边角沙沙地响。\n\n挂钟的秒针走得很慢，齿轮里掉出一声轻响，才往前挪过一格。\n\n管家在自己房门前站定。他从衣袋里摸出那把铜钥匙，在掌心掂了掂。齿口有一道磨得发亮的深痕，是被人反复开了许多年的那种。他没急着往锁眼里塞，先把它举到眼前，让那点昏光在铜面上滑过去。铜早乌了，只有棱边还留着亮。\n\n楼下传来一记开门声，很轻，接着是雨水泼在台阶上的哗哗响。有人出去了，或者有人刚进来。铁门自己弹回去，守门的不在。\n\n管家把钥匙握回掌心，转过身，朝楼道深处望。那儿比刚才更暗，灯芯烧出一小截焦头，光缩成一个尖，几乎照不到地面。\n\n客房底下那道白，灭了。\n\n他重新端平托盘，往那边走。瓷器相碰的声响渐渐远了，走廊里只剩水声。"
+        },
+        {
+          "id": "step-3/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/no_file_write",
+          "status": "pass",
+          "detail": {
+            "banned": [
+              "delete_file",
+              "edit_file",
+              "move_file",
+              "write_file"
+            ],
+            "called": [
+              "read_file"
+            ]
+          }
+        },
+        {
+          "id": "step-3/continues_after_stop",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "应识别上一轮是「已停止」而不是「已完成」，并给出与停止状态一致的续写：有片段就接续，没有片段就补写并说明。不得声称上一轮已写完，也不得无视停止重复已有片段。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 5,
+        "model_finished": 5,
+        "tool_calls": 4,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": false,
+        "usage_reported_requests": 4,
+        "fresh_input_tokens": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "request_sizes": [
+          {
+            "system_chars": 5559,
+            "messages_json_chars": 18847,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5559,
+            "messages_json_chars": 21181,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5606,
+            "messages_json_chars": 19576,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5658,
+            "messages_json_chars": 19705,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5658,
+            "messages_json_chars": 22511,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 37748,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": null,
+        "summary_output_tokens": null
+      },
+      "key": "v09_overflow_and_stop--current--1",
+      "case": "v09_overflow_and_stop",
+      "title": "上下文超限重发与停止后继续",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 25.875,
+      "evidence": "evidence/v09_overflow_and_stop--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 429,
+            "at": "2026-10-27T16:01:13.870+08:00",
+            "event_version": 1,
+            "event_id": "c_542ed0c588bd:429",
+            "conversation_id": "c_542ed0c588bd",
+            "type": "run_finished",
+            "turn_id": "t_0d76c619",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "按现有正文，铜钥匙最后一次出现在第二章：**管家把它收进了衣袋**，此后章节（书房、客房、揭晓）都没有再写钥匙转手，所以目前名义上的持有者是管家。\n\n补充两点：\n- 设定集/线索.md 只记了「第二章的铜钥匙尚未说明用途」，没有登记持有者，也没有写转移；\n- 因此这属于「最后一次被写到谁手里」，一旦后续章节安排转移，需要在正文里落笔，现在没有依据说它在别人手上。\n\n本轮只读，未修改任何文件。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/overflow_seen",
+          "status": "pass",
+          "detail": [
+            {
+              "type": "context_overflow",
+              "injected": "provider"
+            }
+          ]
+        },
+        {
+          "id": "step-1/retried_after_overflow",
+          "status": "pass",
+          "detail": [
+            {
+              "seq": 52,
+              "at": "2026-10-27T16:01:05.895+08:00",
+              "event_version": 1,
+              "event_id": "c_542ed0c588bd:52",
+              "conversation_id": "c_542ed0c588bd",
+              "type": "model_request_retried",
+              "turn_id": "t_0d76c619",
+              "parent_operation_id": "e1a43a1e29354984b1179d2dcd9e9d98",
+              "operation_id": "e1a43a1e29354984b1179d2dcd9e9d98",
+              "reason": "context_overflow",
+              "message": "This model's maximum context length is 8192 tokens. However, you requested 9000 tokens.",
+              "tokens_before": 19610,
+              "tokens_after": 11573,
+              "dropped_messages": 23,
+              "stage": "write",
+              "request_estimate": {
+                "model": "eval-env:deepseek-flash",
+                "total_tokens": 11573,
+                "system_tokens": 4578,
+                "tool_tokens": 3413,
+                "message_tokens": 3254,
+                "protocol_tokens": 328,
+                "message_count": 10,
+                "tool_overhead_tokens": 288,
+                "method": "cjk-aware-v1",
+                "fingerprint": "a1dec49e05cc8320fc905531924e3eb1717af11f41afde37215973aedc662237",
+                "budget": "unknown",
+                "context_window_tokens": null,
+                "input_limit_tokens": null,
+                "output_reserve_tokens": null,
+                "limits_revision": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "step-1/answer_after_retry",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须答出铜钥匙在管家手里；回答未说明、不知道或其他人，均不通过。答案应来自作品正文，而不是猜测。",
+            "review": null
+          }
+        },
+        {
+          "id": "step-2/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 440,
+            "at": "2026-10-27T16:01:14.987+08:00",
+            "event_version": 1,
+            "event_id": "c_542ed0c588bd:440",
+            "conversation_id": "c_542ed0c588bd",
+            "type": "run_finished",
+            "turn_id": "t_6044b00e",
+            "status": "stopped",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-2/public_answer",
+          "status": "pass",
+          "detail": ""
+        },
+        {
+          "id": "step-2/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1659,
+            "at": "2026-10-27T16:01:27.518+08:00",
+            "event_version": 1,
+            "event_id": "c_542ed0c588bd:1659",
+            "conversation_id": "c_542ed0c588bd",
+            "type": "run_finished",
+            "turn_id": "t_d98b8686",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-3/public_answer",
+          "status": "pass",
+          "detail": "我先核对一下第二章走廊的现有写法，保证人称、语气与线索一致；这一轮只在对话里给文字，不改任何文件。\n上一轮只回答了铜钥匙的归属，没有留下任何正文片段，所以这一段是**补写**（只在此处给出，未写入任何文件）。\n\n---\n\n走廊比客房冷。林远推开门时，先听见自己的呼吸，随后才是雨——雨脚敲着楼顶的铁皮，声音密而钝，像有人在很高很远的地方筛豆子。\n\n灯只有一盏，挂在走廊尽头，罩子上积了灰，把光压成一小片昏黄，勉强照见对面的墙。墙纸的颜色已经说不清是米色还是脏黄，靠墙脚处起了细微的卷边。他往前走，鞋底在木地板上吃住又松开，一步一声，木板之间有缝，缝里透出黑。他数着门，数到第四扇时，光挪到了肩上。\n\n空气里有股旧棉布和煤油混在一起的味道，不重，但一直贴着鼻子。窗都关着，走廊中段那扇玻璃上凝了一层水汽，外头的雨把院墙和树影糊成一团。远处有水滴落进桶里，隔一会儿一下，节奏比雨慢。\n\n他停在离灯两步远的地方。这一步之内，光线足，再往前，人就会站在灯底下，脸面全亮。\n\n管家的身影出现在走廊另一头，来得无声。他不快，衣服下摆没有响动，走到灯后停住，半个身子仍在阴影里。灯把他的影子推得很长，一直伸到林远脚边，末端被两人的鞋挡住。\n\n\"还没睡？\"管家说。\n\n\"睡不着。\"林远说，\"雨太响。\"\n\n管家朝窗的方向偏了偏头，算是回应。他手里没有东西，两只手垂着，指节很白。林远注意到他右侧衣袋的布料向下坠了一点，形状不圆，像一枚小物件把布撑出一个角。\n\n灯芯忽然爆了一下，光晕抖了抖，两人的影子也跟着晃。\n\n\"下楼要过那道门，\"管家说，\"夜里锁了。\"\n\n\"我知道。\"林远说，\"我不下楼。\"\n\n管家没有再问。他侧身让开半步，又像只是挪动重心。他的脸在灯的光圈边上，一半明，一半被自身的轮廓吃掉，眼睛的部分看不出在看哪儿。\n\n雨声忽然大了一阵，屋顶那片铁皮被砸得连成一片响，走廊尽头的灯光在空气里轻轻颤，仿佛随时会熄。等那阵急雨过去，声音又退回到原来的密度，剩下窗上的水痕一道一道往下爬。\n\n管家说：\"早些回房吧。\"说完先动了，转身往走廊深处走。他的脚步声比来时重，一步、一步，不急。走进没有灯的那一段，轮廓就淡了，最后只剩衣料擦过墙纸的一点轻响。\n\n林远站在原处，又听了一会儿雨。灯还亮着，光圈只到他脚前三寸。他低头看了一眼那条光与暗的界线，然后退回去，绕过第四扇门，摸到自己的门把。铜的，凉的。\n\n他推门进屋前回头看了最后一眼——走廊空着，灯还在，尽头那片黑没有任何动静。"
+        },
+        {
+          "id": "step-3/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/no_file_write",
+          "status": "pass",
+          "detail": {
+            "banned": [
+              "delete_file",
+              "edit_file",
+              "move_file",
+              "write_file"
+            ],
+            "called": [
+              "read_file"
+            ]
+          }
+        },
+        {
+          "id": "step-3/continues_after_stop",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "应识别上一轮是「已停止」而不是「已完成」，并给出与停止状态一致的续写：有片段就接续，没有片段就补写并说明。不得声称上一轮已写完，也不得无视停止重复已有片段。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 8,
+        "model_finished": 8,
+        "tool_calls": 9,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": false,
+        "usage_reported_requests": 7,
+        "fresh_input_tokens": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "request_sizes": [
+          {
+            "system_chars": 5559,
+            "messages_json_chars": 18847,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5559,
+            "messages_json_chars": 21358,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5559,
+            "messages_json_chars": 22813,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5559,
+            "messages_json_chars": 25547,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5559,
+            "messages_json_chars": 28313,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5606,
+            "messages_json_chars": 19690,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5658,
+            "messages_json_chars": 19819,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5658,
+            "messages_json_chars": 22731,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 43451,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": null,
+        "summary_output_tokens": null
+      },
+      "key": "v09_overflow_and_stop--no_compaction--1",
+      "case": "v09_overflow_and_stop",
+      "title": "上下文超限重发与停止后继续",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "no_compaction",
+      "repeat": 1,
+      "duration_seconds": 22.125,
+      "evidence": "evidence/v09_overflow_and_stop--no_compaction--1",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

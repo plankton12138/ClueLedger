@@ -65,9 +65,7 @@ def test_never_leaves_a_call_without_its_result() -> None:
         for block in message.tool_calls
     }
     results = {
-        message.tool_call_id
-        for message in trimmed
-        if isinstance(message, ToolResultMessage)
+        message.tool_call_id for message in trimmed if isinstance(message, ToolResultMessage)
     }
     assert calls == results
 
@@ -101,6 +99,29 @@ def test_nothing_to_trim_when_the_budget_is_large() -> None:
 
 def test_single_unit_is_left_alone() -> None:
     assert trim_request_messages([UserMessage(content="只写一句")], keep_recent_tokens=1) is None
+
+
+def test_current_author_prompt_survives_many_tool_units() -> None:
+    prompt = UserMessage(content="只修改第一章，保留第一人称")
+    messages = [prompt, _call("old"), _result("old"), _call("new"), _result("new")]
+    trimmed = trim_request_messages(messages, keep_recent_tokens=1)
+    assert trimmed is not None
+    assert trimmed[0] is prompt
+    assert {getattr(m, "tool_call_id", "") for m in trimmed} >= {"new"}
+    assert not any(getattr(m, "tool_call_id", "") == "old" for m in trimmed)
+
+
+def test_large_current_prompt_does_not_discard_latest_tool_evidence() -> None:
+    messages = [
+        _call("old"),
+        _result("old"),
+        _call("new"),
+        _result("new"),
+        UserMessage(content="只做讨论" * 1000),
+    ]
+    trimmed = trim_request_messages(messages, keep_recent_tokens=1)
+    assert trimmed is not None
+    assert any(getattr(m, "tool_call_id", "") == "new" for m in trimmed)
 
 
 @pytest.mark.parametrize("keep", [0, -1])

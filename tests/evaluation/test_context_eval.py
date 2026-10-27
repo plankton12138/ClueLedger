@@ -67,8 +67,8 @@ def deliver(item: dict[str, Any], tool: str, payload: dict[str, Any], key: str) 
 
 def test_all_cases_and_suites_are_loadable() -> None:
     cases, digest = load_cases()
-    # 0.9 增加了压缩语义冒烟，总数跟着变；数量断言用来挡住误删。
-    assert len(cases) == 30 and len(digest) == 64
+    # 0.9 增加了压缩语义与模块维护用例，总数跟着变；数量断言用来挡住误删。
+    assert len(cases) == 33 and len(digest) == 64
     assert any(case.id == "module_only_first_chapter" for case in cases)
     assert not any(case.id.startswith("overview_") for case in cases)
     for case in cases:
@@ -108,6 +108,22 @@ def test_tool_not_called_reads_started_tools() -> None:
     row = evaluate_rule(rule, item, None)
     assert row["status"] == "fail"
     assert row["detail"]["called"] == ["save_idea"]
+
+
+def test_compaction_count_only_counts_real_records() -> None:
+    with pytest.raises(ValidationError):
+        Check(id="bad", kind="compaction_count", value="three")
+    rule = Check(id="three", kind="compaction_count", value="3")
+    item = evidence()
+    assert evaluate_rule(rule, item, None)["status"] == "fail"
+    item["compactions"] = [
+        {"source": "before_steps", "compaction_id": None},
+        {"source": "step-3", "compaction_id": "c1"},
+        {"source": "step-6", "compaction_id": "c2"},
+    ]
+    assert evaluate_rule(rule, item, None)["status"] == "fail"
+    item["compactions"].append({"source": "step-9", "compaction_id": "c3"})
+    assert evaluate_rule(rule, item, None)["status"] == "pass"
 
 
 def test_case_rejects_paths_outside_workspace_and_unknown_fields() -> None:

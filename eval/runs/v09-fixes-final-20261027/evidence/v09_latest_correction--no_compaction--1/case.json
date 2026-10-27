@@ -1,0 +1,65 @@
+{
+  "id": "v09_latest_correction",
+  "title": "压缩之后仍记得作者的最新修正",
+  "family": "压缩语义",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [
+    {
+      "user": "记住一件事：主角林砚是男性，之后写到他时用「他」。",
+      "assistant": "记住了，林砚是男性，之后统一用「他」。",
+      "status": "completed",
+      "changed_paths": [],
+      "question": null
+    },
+    {
+      "user": "更正：林砚其实是女性。以后一律用「她」，不要再出现「他」来指林砚。",
+      "assistant": "已更正：林砚是女性，之后统一用「她」。",
+      "status": "completed",
+      "changed_paths": [],
+      "question": null
+    }
+  ],
+  "filler_turns": 16,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": true,
+  "compaction_threshold": null,
+  "ideas": [],
+  "steps": [
+    {
+      "text": "只回答一个问题，不要修改任何文件：林砚是男性还是女性？用一句话回答。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "remembers_correction",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须给出「女性」这一结论；不得回答男性，也不得只说「曾经说是男性」而不给结论。"
+        }
+      ]
+    }
+  ]
+}

@@ -34,7 +34,7 @@ export default defineConfig({
   projects: [
     {
       name: "workspace",
-      testMatch: ["workspace.spec.ts", "chat-rendering.spec.ts", "frontend-experience.spec.ts", "frontend-foundation.spec.ts", "module-editor.spec.ts", "module-workspace.spec.ts", "ideas-companion.spec.ts", "core-pages.spec.ts", "shared-interactions.spec.ts", "story-overview-removal.spec.ts", "model-thinking.spec.ts"],
+      testMatch: ["context-usage.spec.ts", "workspace.spec.ts", "chat-rendering.spec.ts", "frontend-experience.spec.ts", "frontend-foundation.spec.ts", "module-editor.spec.ts", "module-workspace.spec.ts", "ideas-companion.spec.ts", "core-pages.spec.ts", "shared-interactions.spec.ts", "story-overview-removal.spec.ts", "model-thinking.spec.ts"],
       timeout: 30_000,
     },
     {

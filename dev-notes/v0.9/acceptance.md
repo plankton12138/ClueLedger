@@ -1,8 +1,10 @@
 # 0.9 验收与在线评测
 
-日期：2026-10-26。状态：**验收计划；下列项目均未执行**。
+日期：2026-10-26（2026-10-27 更新）。状态：**验收矩阵；已执行项以[运行与验证](release.md)为准**。
 目标是证明统计口径可靠、压缩后仍能继续完成作者任务，且不重复产生作品修改。
 对应[开发计划](development-plan.md)与[产品方案](../../product-design/v0.9/README.md)。
+U/C/R/UI 已建立[逐项证据映射](notes/R1-acceptance-matrix.md)。在线 E01–E08 两方案共 16 次任务，
+18 条语义判定已记录代理复核，复评分通过；独立人工签收与部分专项验收仍待完成。
 
 ## 1. 统计与配置
 
@@ -19,7 +21,7 @@
 | U09 | 本轮多次工具调用及本轮结束 | 轮内更新；结束后按公开历史重建，不无限累加历史工具正文 |
 | U10 | 草稿、临时参考、打开详情、刷新或重启 | 未受理内容不计入；统计读取不产生模型调用、写入凭据或作品修改 |
 
-拟新增重点回归：`tests/workspace/test_context_usage.py`、`test_conversation_usage.py`、
+现有重点回归：`tests/workspace/test_context_usage.py`、`test_conversation_usage.py`、
 `test_compaction_api.py`、`tests/workspace/test_model_service.py` 的容量用例；
 模型 API、旧配置读取与实际 provider 参数均需覆盖，不能仅测独立计算函数。
 
@@ -40,7 +42,7 @@
 | C11 | 手动整理、重复键、忙时排队、noop 与停止 | 操作幂等；与自动整理合并；原轮正常结束或停止均正确处理队列；无假作者提示；全部状态有持久终态 |
 | C12 | 来源与模型配置在摘要期间变化 | 不发布错误快照，不扩大原范围；旧资料项失效与作者约束分别处理 |
 
-重点回归放入 `test_compaction.py`、`test_conversation_context.py`（如拆分现有恢复用例）、
+现有回归包括 `test_compaction.py`、`test_compaction_service.py`、`test_context_boundaries.py`、
 `test_chat.py`、`test_conversations.py`、`test_author_questions.py`。
 程序校验通过只证明结构和执行边界，C03 等语义保留还需第 5 节在线评测。
 
@@ -73,8 +75,8 @@
 | UI06 | 压缩前后展示与累计用量 | 上下文下降可见，摘要调用计入累计，不生成空白助手消息 |
 | UI07 | 键盘、触屏与辅助名称 | 按钮可访问，焦点可恢复，状态变化不过量播报 |
 
-拟新增 `frontend/e2e/context-usage.spec.ts` 并加入 `playwright.config.ts` 的 `workspace.testMatch`；
-当前配置使用显式名单，单独创建文件不会自动进入现有本地回归。
+已新增 `frontend/e2e/context-usage.spec.ts` 并加入 `playwright.config.ts` 的 `workspace.testMatch`；
+三项浏览器回归通过。页面使用受控用量与操作响应，真实后端恢复另由生产服务测试验证。
 前端单元验证聚合视图消费、异步归属与状态展示，浏览器验证真实接口、浮层、缩放和恢复。
 
 ## 5. 在线模型语义评测
@@ -93,8 +95,8 @@
 | E07 长单轮工具过程 | 一次请求读取多份材料并修改指定模块 | 轮内可继续，不漏必要原文，不重复产生修改 |
 | E08 溢出与停止 | 在在线内容任务上注入可确定的拒绝/取消边界 | 恢复边界符合程序验证；在线部分验证整理后语义可继续 |
 
-拟新增 `eval/cases/v09.yaml`、`eval/suites/v09-context.json`。为评测器增加受控的
-压缩触发阈值覆盖和 `no_compaction` 对照；在 schema/runtime 中显式登记，不能假定现有变体已支持。
+已新增 `eval/cases/v09.yaml`、`eval/suites/v09-context.json`，并在 schema/runtime 中登记
+压缩触发阈值覆盖和 `no_compaction` 对照。此次在线窗口未知，使用显式整理，不伪造自动触发。
 阈值覆盖只降低整理触发点，不伪造模型真实容量，两个方案使用同一在线模型和任务。
 确定性错误注入用于精确验证副作用，不能冒称真实供应商在线溢出的覆盖证据。
 
@@ -107,7 +109,7 @@ E01–E08 全部通过，E06 多次整理有证据，且没有新增授权越界
 
 ## 6. 实施时的检查命令
 
-下列包含尚待创建的测试和套件，仅在对应阶段实现后执行；本次制定计划不执行在线调用。
+下列测试和套件已创建；实际执行结果与边界见[运行记录](release.md)。在线命令使用 `.env` 配置。
 
 ```powershell
 uv run pytest tests/workspace/test_context_usage.py tests/workspace/test_conversation_usage.py
@@ -129,7 +131,7 @@ R1 在仓库根执行完整后端回归，并执行已新增的在线套件：
 
 ```powershell
 uv run pytest
-uv run python -m eval run --suite v09-context --env-file .env
+uv run python -m eval run --suite v09-context --env-file .env --variant current --variant no_compaction
 ```
 
 按阶段先做相关验证，只有新变更、失败或未覆盖风险时扩大检查；R1 做一次完整回归与版本检查。

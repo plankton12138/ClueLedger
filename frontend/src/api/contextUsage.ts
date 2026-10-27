@@ -43,6 +43,7 @@ export interface ConversationUsageView {
   context: ContextView;
   diagnostics: string[];
   revision: string;
+  compaction?: CompactionOperation | null;
 }
 
 export function usageDisplayState(totals: UsageTotals): UsageDisplayState {
@@ -199,7 +200,9 @@ export function compactionNote(operation: CompactionOperation): string {
     return operation.note || "当前没有需要整理的较早内容。";
   }
   if (operation.state === "failed") {
-    return operation.error?.why || "这次没有整理。";
+    const error = operation.error;
+    return error ? `[${error.code}] ${error.where}：${error.why}。建议：${error.fix}。`
+      : "[COMPACTION_FAILED] 上下文整理：这次没有整理。建议：保留当前上下文，稍后重试。";
   }
   if (operation.state === "stopped") {
     return operation.note || "整理已取消；当前上下文没有变化。";

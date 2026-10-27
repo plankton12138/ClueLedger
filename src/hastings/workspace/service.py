@@ -22,7 +22,7 @@ import asyncio
 import os
 import time
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import suppress
+from contextlib import aclosing, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -84,13 +84,16 @@ from tau_agent.events import (
 )
 from tau_agent.harness import AgentHarness
 from tau_agent.messages import AssistantMessage
+from tau_agent.provider import CancellationToken
 
 if TYPE_CHECKING:
     from hastings.workspace.agent import RunContext
     from hastings.workspace.compaction import CompactionRecord
+    from hastings.workspace.compaction_ops import CompactionRunner
 
 from tau_agent.provider_events import (
     AssistantDoneEvent,
+    AssistantErrorEvent,
     TextDeltaEvent,
     TextEndEvent,
     ThinkingDeltaEvent,
@@ -535,11 +538,20 @@ class TurnService:
         self._stopped: set[str] = set()
         self._active: ActiveTurn | None = None
         self._request_ids: dict[str, str] = {}
+        self._model_snapshots: dict[str, ModelSnapshot] = {}
+        self.compactions: CompactionRunner | None = None
+        self.auto_compaction = True
+        self.compaction_threshold = 0.9
 
     def _record_activity(self, info: TurnInfo, kind: str, payload: dict[str, Any]) -> None:
-        if kind == "model_request_started":
+        summary = payload.get("stage") == "compaction"
+        if kind == "model_request_started" and not summary:
             self._request_ids[info.turn_id] = str(payload["operation_id"])
-        parent = None if kind == "model_request_started" else self._request_ids.get(info.turn_id)
+        parent = (
+            None
+            if kind == "model_request_started" or summary
+            else self._request_ids.get(info.turn_id)
+        )
         _append_event(
             self.store,
             info.conversation_id,
@@ -550,7 +562,7 @@ class TurnService:
 
     @property
     def busy(self) -> bool:
-        return self._active is not None
+        return self._active is not None or self._lock.locked()
 
     def active_turn(self) -> ActiveTurn | None:
         return self._active
@@ -626,6 +638,10 @@ class TurnService:
                     history_seq=previous.last_seq - 1,
                     title=previous.title,
                 )
+            # 回答问题时先把问题找回并核对归属与目标版本：旧按钮不能当成新的授权。
+            # 这一步排在「作品忙」之前：跨会话回答无论作品是否在跑都是无效请求，
+            # 报错要指向真正原因，不能让忙时状态把它盖住。
+            question = self._reply_question(reply_to_question, conversation_id)
             if self._active is not None:
                 raise WorkspaceError(
                     code="WORKSPACE_BUSY_CONFLICT",
@@ -637,8 +653,6 @@ class TurnService:
                         "turn_id": self._active.turn_id,
                     },
                 )
-            # 回答问题时先把问题找回并核对归属与目标版本：旧按钮不能当成新的授权。
-            question = self._reply_question(reply_to_question, conversation_id)
             if conversation_id is None:
                 # 先做空提示校验，再决定是否生成会话 ID：拒绝时不留任何记录。
                 clean = text.strip()
@@ -764,6 +778,8 @@ class TurnService:
                 self.run_registry.mark(self.workspace.root, turn_id)
             # 初始轮次事件里的模型字段由 store 与提示一起原子写入。
             self._tasks[turn_id] = asyncio.create_task(self._run(info, text, snapshot, failure))
+            if snapshot is not None:
+                self._model_snapshots[turn_id] = snapshot
             return info
 
     async def wait(self, turn_id: str) -> None:
@@ -776,74 +792,97 @@ class TurnService:
     async def compact(
         self, conversation_id: str, *, reason: str = "manual"
     ) -> CompactionRecord | None:
-        """把较早的对话轮次整理成一份摘要记录；没有可整理内容时返回 ``None``。
+        snapshot = self.provider_factory()
+        try:
+            async with self._lock:
+                return await self._compact_locked(conversation_id, reason=reason, snapshot=snapshot)
+        finally:
+            await snapshot.aclose()
 
-        与写作共用同一把执行锁：整理会改变下一轮的上下文投影，不能和正在进行的写作
-        交错。整理失败时不提交记录，旧投影照常可用——压缩是优化，不是前提。
-        """
+    async def _compact_locked(
+        self,
+        conversation_id: str,
+        *,
+        reason: str,
+        snapshot: ModelSnapshot | None,
+        events: tuple[dict[str, Any], ...] | None = None,
+        signal: CancellationToken | None = None,
+    ) -> CompactionRecord | None:
+        """调用方持有作品执行锁；可使用当前轮次冻结的模型与历史。"""
         from hastings.workspace.compaction import (
             PROMPT_VERSION,
             active_compaction,
             build_candidate,
-            build_summary_prompt,
-            parse_summary,
             plan_compaction,
             source_digest,
             validate_candidate,
         )
 
         self.store.get(conversation_id)
-        async with self._lock:
-            events = tuple(self.store.events(conversation_id))
-            snapshot = self.provider_factory()
-            limits = snapshot.limits
-            input_limit = limits.input_limit() if limits is not None else None
-            plan = plan_compaction(events, keep_recent_tokens=_keep_recent_tokens(input_limit))
-            if plan is None:
-                return None
-            previous = active_compaction(events)
-            if previous is not None and plan.covered_through_seq <= previous.covered_through_seq:
-                # 没有新的可整理内容：再压一次只会写出一条覆盖范围相同的重复记录，
-                # 还要白白付一次摘要调用的钱。
-                return None
+        events = events if events is not None else tuple(self.store.events(conversation_id))
+        snapshot = snapshot or self.provider_factory()
+        limits = snapshot.limits
+        input_limit = limits.input_limit() if limits is not None else None
+        plan = plan_compaction(events, keep_recent_tokens=_keep_recent_tokens(input_limit))
+        if plan is None:
+            return None
+        previous = active_compaction(events)
+        if previous is not None and plan.covered_through_seq <= previous.covered_through_seq:
+            # 没有新的可整理内容：再压一次只会写出一条覆盖范围相同的重复记录，
+            # 还要白白付一次摘要调用的钱。
+            return None
 
-            system, prompt = build_summary_prompt(events, plan)
-            text = await self._summarize(snapshot, conversation_id, system, prompt)
-            allowed = frozenset(plan.covered_turns)
-            parsed = parse_summary(text, allowed_sources=allowed)
-            if parsed is None:
+        from hastings.workspace.context_summary import summarize_history
+
+        async def generate(system: str, prompt: str) -> str:
+            try:
+                return await self._summarize(
+                    snapshot, conversation_id, system, prompt, signal=signal
+                )
+            except WorkspaceError:
+                raise
+            except Exception as exc:
                 raise WorkspaceError(
                     code="COMPACTION_FAILED",
                     where="conversation.compaction",
-                    why="摘要的格式或引用不符合要求，这次没有整理",
-                    fix="再整理一次；仍失败就保留当前上下文继续写作",
-                    # 带上片段才能判断是模型没按格式输出，还是引用了不存在的轮次。
-                    details={"preview": text[:400]},
-                )
+                    why=f"摘要请求失败：{type(exc).__name__}",
+                    fix="保留当前上下文，稍后重新整理",
+                ) from exc
 
-            # 串上一条记录：多次整理要能回溯到最早的来源。
-            candidate = build_candidate(
-                plan=plan,
-                parsed=parsed,
-                model=f"{snapshot.connection_id}:{snapshot.model}",
-                digest=source_digest(events, through_seq=plan.covered_through_seq),
-                previous_id=previous.compaction_id if previous is not None else "",
-                reason=reason,
-                prompt_version=PROMPT_VERSION,
-                created_at=datetime.now(UTC).isoformat(timespec="seconds"),
-            )
-            validate_candidate(candidate, allowed_sources=allowed, input_limit=input_limit)
-            _append_event(
-                self.store,
-                conversation_id,
-                "",
-                "context_compacted",
-                {"compaction_id": candidate.compaction_id, "record": candidate.as_dict()},
-            )
-            return candidate
+        parsed = await summarize_history(snapshot, events, plan, previous, generate)
+        allowed = frozenset(plan.covered_turns)
+
+        # 串上一条记录：多次整理要能回溯到最早的来源。
+        candidate = build_candidate(
+            plan=plan,
+            parsed=parsed,
+            model=f"{snapshot.connection_id}:{snapshot.model}",
+            digest=source_digest(events, through_seq=plan.covered_through_seq),
+            previous_id=previous.compaction_id if previous is not None else "",
+            reason=reason,
+            prompt_version=PROMPT_VERSION,
+            created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        )
+        validate_candidate(candidate, allowed_sources=allowed, input_limit=input_limit)
+        if signal is not None and signal.is_cancelled():
+            raise asyncio.CancelledError
+        _append_event(
+            self.store,
+            conversation_id,
+            "",
+            "context_compacted",
+            {"compaction_id": candidate.compaction_id, "record": candidate.as_dict()},
+        )
+        return candidate
 
     async def _summarize(
-        self, snapshot: ModelSnapshot, conversation_id: str, system: str, prompt: str
+        self,
+        snapshot: ModelSnapshot,
+        conversation_id: str,
+        system: str,
+        prompt: str,
+        *,
+        signal: CancellationToken | None = None,
     ) -> str:
         """一次无工具的摘要请求；用量照常记录，不挂到任何写作请求下面。"""
         from tau_agent.messages import UserMessage, message_text
@@ -860,17 +899,36 @@ class TurnService:
             limits=snapshot.limits,
         )
         final = ""
-        async for event in recorded.stream_response(
-            model=snapshot.model,
-            system=system,
-            messages=[UserMessage(content=prompt)],
-            tools=[],
-        ):
-            if isinstance(event, AssistantDoneEvent):
-                final = message_text(event.message) or final
-            elif (partial := getattr(event, "partial", None)) is not None:
-                # 流式片段只用来兜底：没有终态事件时，已收到的文字仍然是候选。
-                final = message_text(partial) or final
+        completed = False
+        async with aclosing(
+            recorded.stream_response(
+                model=snapshot.model,
+                system=system,
+                messages=[UserMessage(content=prompt)],
+                tools=[],
+                signal=signal,
+            )
+        ) as stream:
+            async for event in stream:
+                if isinstance(event, AssistantErrorEvent):
+                    raise WorkspaceError(
+                        code="COMPACTION_FAILED",
+                        where="conversation.compaction",
+                        why=event.error.error_message or "摘要请求未完成",
+                        fix="保留当前上下文，稍后重新整理",
+                    )
+                if isinstance(event, AssistantDoneEvent):
+                    completed = event.reason == "stop"
+                    final = message_text(event.message) or final
+        if signal is not None and signal.is_cancelled():
+            raise asyncio.CancelledError
+        if not completed:
+            raise WorkspaceError(
+                code="COMPACTION_FAILED",
+                where="conversation.compaction",
+                why="摘要没有完整结束，本次没有启用摘要",
+                fix="保留当前上下文，稍后重新整理",
+            )
         return final
 
     async def stop(self, turn_id: str) -> bool:
@@ -1357,6 +1415,8 @@ class TurnService:
                 )
                 # provider、model、system、工具清单和历史在这里合并成一次可执行配置。
                 # 工具清单由 build_harness 内部调用 build_tools() 注入，_run 不直接持有。
+                from hastings.workspace.context_boundary import RequestBoundary
+
                 harness = build_harness(
                     provider=RecordedProvider(
                         snapshot.provider,
@@ -1374,6 +1434,7 @@ class TurnService:
                         keep_recent_tokens=_keep_recent_tokens(
                             snapshot.limits.input_limit() if snapshot.limits else None
                         ),
+                        before_request=RequestBoundary(self, info, snapshot, history_events),
                     ),
                     model=snapshot.model,
                     workspace=self.workspace,
@@ -1491,6 +1552,11 @@ class TurnService:
                     },
                 )
         finally:
+            if self.compactions is not None:
+                await self.compactions.finish_turn(
+                    info.turn_id,
+                    stopped=status in ("stopped", "failed", "interrupted"),
+                )
             if snapshot is not None:
                 # 完成、失败、停止都关闭本轮实例：下一轮重新构造，不复用可能已失效的连接。
                 await snapshot.aclose()
@@ -1530,6 +1596,7 @@ class TurnService:
             self._stopped.discard(info.turn_id)
             self._tasks.pop(info.turn_id, None)
             self._request_ids.pop(info.turn_id, None)
+            self._model_snapshots.pop(info.turn_id, None)
             # 只释放自己占用的那一轮：后面受理的新轮次不能被前一轮的收尾清掉。
             if self._active is not None and self._active.turn_id == info.turn_id:
                 self._active = None
@@ -1656,7 +1723,16 @@ class TurnService:
             )
             harness = build_harness(
                 provider=RecordedProvider(
-                    snapshot.provider, self.activity, run.record, stage="review"
+                    snapshot.provider,
+                    self.activity,
+                    run.record,
+                    stage="review",
+                    identity=f"{snapshot.connection_id}:{snapshot.model}",
+                    limits=snapshot.limits,
+                    keep_recent_tokens=_keep_recent_tokens(
+                        snapshot.limits.input_limit() if snapshot.limits else None
+                    ),
+                    enforce_budget=True,
                 ),
                 model=snapshot.model,
                 workspace=self.workspace,

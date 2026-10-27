@@ -8,7 +8,7 @@
  * 刷新一次就会和实时推送对不上。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { CompactionOperation, ConversationUsageView } from "../../api/contextUsage";
 import {
@@ -27,6 +27,8 @@ import {
   fetchConversationUsage,
   readCompaction,
   startCompaction,
+  stopCompaction,
+  WorkspaceApiError,
 } from "../../api/workspace";
 
 interface Props {
@@ -42,7 +44,11 @@ type Panel = "context" | "usage" | null;
 /** 事件很密，读得太勤没有意义；300ms 足够跟上阅读节奏。 */
 const REFRESH_DELAY_MS = 300;
 
-export default function ConversationUsageBar({
+export default function ConversationUsageBar(props: Props) {
+  return <ScopedUsageBar key={JSON.stringify([props.workspaceId, props.conversationId])} {...props} />;
+}
+
+function ScopedUsageBar({
   workspaceId,
   conversationId,
   refreshKey = 0,
@@ -54,7 +60,28 @@ export default function ConversationUsageBar({
   const [tick, setTick] = useState(0);
   const [operation, setOperation] = useState<CompactionOperation | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const [stopping, setStopping] = useState(false);
   const root = useRef<HTMLDivElement | null>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const [position, setPosition] = useState({ bottom: 32, maxHeight: 320, left: 0 });
+
+  useLayoutEffect(() => {
+    if (!panel || !root.current) return;
+    const node = root.current;
+    const composer = node.closest(".chat-composer") ?? node;
+    const update = () => {
+      const anchor = node.getBoundingClientRect();
+      const top = composer.getBoundingClientRect().top;
+      setPosition({ bottom: anchor.bottom - top + 8, maxHeight: Math.max(80, top - 16), left: Math.max(0, 8 - anchor.left) });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(composer);
+    window.addEventListener("resize", update);
+    return () => { observer.disconnect(); window.removeEventListener("resize", update); };
+  }, [panel]);
 
   useEffect(() => {
     if (!workspaceId || !conversationId) {
@@ -68,7 +95,7 @@ export default function ConversationUsageBar({
           if (cancelled) return;
           // 旧响应不能盖掉更新的游标：流式与手动刷新会并发。
           setView((current) =>
-            current && current.through_seq > next.through_seq ? current : next,
+            current && current.conversation_id === next.conversation_id && current.through_seq > next.through_seq ? current : next,
           );
         })
         .catch(() => {
@@ -85,18 +112,27 @@ export default function ConversationUsageBar({
   useEffect(() => {
     if (panel === null) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPanel(null);
+      if (event.key === "Escape") {
+        setPanel(null);
+        trigger.current?.focus();
+      }
     };
     const onClick = (event: MouseEvent) => {
       if (root.current && !root.current.contains(event.target as Node)) setPanel(null);
     };
     document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onClick);
+    document.addEventListener("pointerdown", onClick);
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("pointerdown", onClick);
     };
   }, [panel]);
+
+  useEffect(() => {
+    if (!view?.compaction) return;
+    if (!isCompactionFinished(view.compaction)) setOperation(view.compaction);
+    else setNote(compactionNote(view.compaction));
+  }, [view]);
 
   useEffect(() => {
     if (!workspaceId || !conversationId || operation === null) return;
@@ -106,23 +142,45 @@ export default function ConversationUsageBar({
       setTick((value) => value + 1);
       return;
     }
+    let cancelled = false;
     const timer = setTimeout(() => {
       readCompaction(workspaceId, conversationId, operation.operation_id)
-        .then(setOperation)
-        .catch(() => setOperation(null));
+        .then((next) => { if (!cancelled) setOperation(next); })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setNote(error instanceof Error ? error.message : "[CONTEXT_STATUS_FAILED] 上下文整理：状态读取失败。建议：稍后重试。");
+            // 临时断线不能把正在运行的操作丢掉；继续按同一标识查询。
+            if (error instanceof WorkspaceApiError && error.status === 404) {
+              setOperation(null);
+              setTick((value) => value + 1);
+            } else setOperation((current) => current ? { ...current } : null);
+          }
+        });
     }, 800);
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [workspaceId, conversationId, operation]);
 
   const compact = useCallback(() => {
-    if (!workspaceId || !conversationId) return;
+    if (!workspaceId || !conversationId || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     setNote(null);
     startCompaction(workspaceId, conversationId, `compact-${Date.now()}`)
       .then(setOperation)
       .catch((error: unknown) => {
         setNote(error instanceof Error ? error.message : "整理没有开始。");
-      });
+      })
+      .finally(() => { submittingRef.current = false; setSubmitting(false); });
   }, [workspaceId, conversationId]);
+
+  const stop = useCallback(() => {
+    if (!workspaceId || !conversationId || !operation || stopping) return;
+    setStopping(true);
+    stopCompaction(workspaceId, conversationId, operation.operation_id)
+      .then(setOperation)
+      .catch((error: unknown) => setNote(error instanceof Error ? error.message : "[CONTEXT_STOP_FAILED] 上下文整理：停止失败。建议：重试停止。"))
+      .finally(() => setStopping(false));
+  }, [workspaceId, conversationId, operation, stopping]);
 
   const toggle = useCallback((next: Panel) => {
     setPanel((current) => (current === next ? null : next));
@@ -141,7 +199,7 @@ export default function ConversationUsageBar({
         className={`chat-usage-entry${tight ? " tight" : ""}`}
         aria-expanded={panel === "context"}
         aria-label="当前上下文占用"
-        onClick={() => toggle("context")}
+        onClick={(event) => { trigger.current = event.currentTarget; toggle("context"); }}
       >
         {contextLabel(context)}
       </button>
@@ -150,13 +208,13 @@ export default function ConversationUsageBar({
         className="chat-usage-entry"
         aria-expanded={panel === "usage"}
         aria-label="本次对话累计用量"
-        onClick={() => toggle("usage")}
+        onClick={(event) => { trigger.current = event.currentTarget; toggle("usage"); }}
       >
         {usageLabel(totals)}
       </button>
 
       {panel === "context" && context && (
-        <div className="chat-usage-pop" role="dialog" aria-label="当前上下文">
+        <div className="chat-usage-pop" style={position} role="dialog" aria-label="当前上下文">
           <div className="flex items-baseline justify-between">
             <span className="text-[11px] font-semibold text-fg-strong">当前上下文</span>
             <span className="text-[11px] text-mute">
@@ -199,13 +257,14 @@ export default function ConversationUsageBar({
                 <button
                   type="button"
                   className="text-[10px] font-bold text-blue disabled:text-mute"
-                  disabled={operation !== null}
+                  disabled={operation !== null || submitting}
                   onClick={compact}
                 >
-                  {operation === null ? "整理上下文" : "正在整理…"}
+                  {submitting ? "正在受理…" : operation === null ? "整理上下文" : operation.state === "queued" ? "等待整理…" : "正在整理…"}
                 </button>
-                {note && <span className="min-w-0 flex-1 truncate text-[10px] text-mute">{note}</span>}
+                {operation && <button type="button" className="text-[10px] font-bold text-blue" disabled={stopping} onClick={stop}>{stopping ? "正在停止…" : "停止整理"}</button>}
               </div>
+              {note && <p role="status" className="mt-1 text-[10px] leading-4 text-mute">{note}</p>}
               {context.context_window_tokens === null && onOpenModelSettings && (
                 <button
                   type="button"
@@ -221,7 +280,7 @@ export default function ConversationUsageBar({
       )}
 
       {panel === "usage" && totals && (
-        <div className="chat-usage-pop" role="dialog" aria-label="本次对话累计用量">
+        <div className="chat-usage-pop" style={position} role="dialog" aria-label="本次对话累计用量">
           <div className="flex items-baseline justify-between">
             <span className="text-[11px] font-semibold text-fg-strong">本次对话</span>
             <span className="text-[11px] text-mute">{totals.finished_requests} 次请求</span>
