@@ -24,7 +24,7 @@ from typing import Any, Literal
 
 from hastings.workspace.context_usage import count_tokens
 from hastings.workspace.errors import WorkspaceError
-from tau_agent.messages import UserMessage
+from tau_agent.messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
 
 __all__ = [
     "SUMMARY_PREFIX",
@@ -40,6 +40,7 @@ __all__ = [
     "plan_compaction",
     "source_digest",
     "summary_message",
+    "trim_request_messages",
     "validate_candidate",
 ]
 
@@ -502,3 +503,79 @@ def build_summary_prompt(
         elif kind == "assistant_message":
             lines.append(f"[{turn_id}] 助手：{text.strip()}")
     return SUMMARY_SYSTEM, "\n\n".join(lines)
+
+
+def _message_units(
+    messages: Sequence[AgentMessage], count: Callable[[str], int]
+) -> list[list[AgentMessage]] | None:
+    """把消息切成完整单元；出现残缺调用关系时返回 ``None``。
+
+    一个单元是「一条助手消息 + 它要求的全部工具结果」。切在单元内部会让供应商收到
+    有调用没有结果、或有结果没有调用的请求，那种请求必然失败，而且失败原因很难看懂。
+    """
+    units: list[list[AgentMessage]] = []
+    index = 0
+    total = len(messages)
+    while index < total:
+        message = messages[index]
+        if isinstance(message, AssistantMessage) and message.tool_calls:
+            expected = {call.id for call in message.tool_calls}
+            unit: list[AgentMessage] = [message]
+            index += 1
+            collected: set[str] = set()
+            while index < total:
+                candidate = messages[index]
+                if not isinstance(candidate, ToolResultMessage):
+                    break
+                if candidate.tool_call_id not in expected:
+                    return None
+                collected.add(candidate.tool_call_id)
+                unit.append(candidate)
+                index += 1
+            if collected != expected:
+                return None
+            units.append(unit)
+            continue
+        if isinstance(message, ToolResultMessage):
+            # 找不到对应调用的结果：这段历史已经不可裁剪。
+            return None
+        units.append([message])
+        index += 1
+    return units
+
+
+def _unit_tokens(unit: Sequence[AgentMessage], count: Callable[[str], int]) -> int:
+    total = 0
+    for message in unit:
+        payload = message.model_dump(mode="json")
+        total += count(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+    return total
+
+
+def trim_request_messages(
+    messages: Sequence[AgentMessage],
+    *,
+    keep_recent_tokens: int,
+    count: Callable[[str], int] = count_tokens,
+) -> list[AgentMessage] | None:
+    """轮内裁剪：丢弃较早的完整单元，保留最近内容；不需要或不能裁时返回 ``None``。
+
+    与跨轮压缩的区别是**不生成摘要**：轮内旧工具结果多是已经过期的文件正文，
+    模型需要时会重新读取；为此再调用一次模型既慢又可能递归触发整理。
+    读取凭据与任务范围保存在应用自己的账本里，不会因为消息被裁掉而失效。
+    """
+    if keep_recent_tokens <= 0 or not messages:
+        return None
+    units = _message_units(messages, count)
+    if units is None or len(units) < 2:
+        return None
+
+    accumulated = 0
+    first_kept = len(units)
+    for index in range(len(units) - 1, -1, -1):
+        if accumulated < keep_recent_tokens:
+            first_kept = index
+        accumulated += _unit_tokens(units[index], count)
+    if first_kept == 0:
+        return None
+    return [message for unit in units[first_kept:] for message in unit]

@@ -11,6 +11,7 @@ from typing import Any
 
 from hastings.server.model_limits import ModelLimits
 from hastings.workspace.activity import ActivityStore, redact
+from hastings.workspace.compaction import trim_request_messages
 from hastings.workspace.context_usage import (
     budget_state,
     count_tokens,
@@ -113,6 +114,7 @@ class RecordedProvider:
         identity: str = "",
         limits: ModelLimits | None = None,
         source_revisions: Mapping[str, str] | None = None,
+        keep_recent_tokens: int | None = None,
     ) -> None:
         self.provider, self.store, self.emit, self.stage = provider, store, emit, stage
         #: 本轮实际的模型身份（连接:模型）；用于让估算只对同一模型成立。
@@ -121,7 +123,54 @@ class RecordedProvider:
         self.limits = limits
         #: 装配结果与资料版本，参与估算指纹。
         self.source_revisions = dict(source_revisions or {})
+        #: 超预算时保留的近期规模；None 表示不裁剪（轮内裁剪由调用方开启）。
+        self.keep_recent_tokens = keep_recent_tokens
         self.capture = store.settings()["capture_inputs"]
+
+    def _trim_if_needed(
+        self,
+        messages: list[AgentMessage],
+        system: str,
+        definitions: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """超预算时裁掉较早的完整工具往返；不超预算或无法裁剪时返回 ``None``。
+
+        窗口未知就不裁：那时没有可比的边界，裁多裁少都是猜。
+        """
+        if self.keep_recent_tokens is None or self.limits is None:
+            return None
+        limit = self.limits.input_limit()
+        if limit is None:
+            return None
+        before = _request_estimate(
+            identity=self.identity,
+            system=system,
+            messages=messages,
+            definitions=definitions,
+            limits=self.limits,
+            source_revisions=self.source_revisions,
+        )
+        total = before["total_tokens"]
+        if not isinstance(total, int) or total <= limit:
+            return None
+        trimmed = trim_request_messages(messages, keep_recent_tokens=self.keep_recent_tokens)
+        if trimmed is None:
+            return None
+        after = _request_estimate(
+            identity=self.identity,
+            system=system,
+            messages=trimmed,
+            definitions=definitions,
+            limits=self.limits,
+            source_revisions=self.source_revisions,
+        )
+        return {
+            "messages": trimmed,
+            "estimate": after,
+            "dropped_messages": len(messages) - len(trimmed),
+            "tokens_before": before["total_tokens"],
+            "tokens_after": after["total_tokens"],
+        }
 
     async def stream_response(
         self,
@@ -138,13 +187,26 @@ class RecordedProvider:
             {"name": tool.name, "description": tool.description, "parameters": tool.parameters}
             for tool in tools
         ]
+        # 只在请求副本上裁剪：harness 手里的消息列表保持原样，下一轮重新判断。
+        working = list(messages)
+        estimate = _request_estimate(
+            identity=self.identity or model,
+            system=system,
+            messages=working,
+            definitions=definitions,
+            limits=self.limits,
+            source_revisions=self.source_revisions,
+        )
+        trim = self._trim_if_needed(working, system, definitions)
+        if trim is not None:
+            working, estimate = trim.pop("messages"), trim.pop("estimate")
         snapshot = None
         if self.capture:
             snapshot = self.store.attachment(
                 {
                     "model": model,
                     "system": system,
-                    "messages": [_message(m) for m in messages],
+                    "messages": [_message(m) for m in working],
                     "tools": definitions,
                 }
             )
@@ -157,15 +219,9 @@ class RecordedProvider:
                 "system_chars": len(system),
                 "message_count": len(messages),
                 "tools": [t.name for t in tools],
-                "request_size": _request_size(system, messages, definitions),
-                "request_estimate": _request_estimate(
-                    identity=self.identity or model,
-                    system=system,
-                    messages=messages,
-                    definitions=definitions,
-                    limits=self.limits,
-                    source_revisions=self.source_revisions,
-                ),
+                "request_size": _request_size(system, working, definitions),
+                "request_estimate": estimate,
+                **({"request_trim": trim} if trim else {}),
                 "input_captured": self.capture,
             },
         )
@@ -178,7 +234,7 @@ class RecordedProvider:
             source = self.provider.stream_response(
                 model=model,
                 system=system,
-                messages=messages,
+                messages=working,
                 tools=tools,
                 signal=signal,
                 session_id=session_id,

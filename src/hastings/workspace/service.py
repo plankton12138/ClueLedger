@@ -1364,6 +1364,10 @@ class TurnService:
                         source_revisions=(
                             {"assembly": info.assembly_digest} if info.assembly_digest else {}
                         ),
+                        # 超预算时丢弃较早的完整工具往返；窗口未知时不裁。
+                        keep_recent_tokens=_keep_recent_tokens(
+                            snapshot.limits.input_limit() if snapshot.limits else None
+                        ),
                     ),
                     model=snapshot.model,
                     workspace=self.workspace,

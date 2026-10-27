@@ -687,3 +687,107 @@ def test_request_record_carries_estimate_and_capacity(tmp_path: Path, window: in
             assert estimate["input_limit_tokens"] is not None
 
     asyncio.run(run())
+
+
+# -- 轮内裁剪（0.9 C2） -----------------------------------------------------
+
+
+def _tool_round(call_id: str, text: str):
+    from tau_agent.messages import ToolCall, ToolResultMessage
+
+    return [
+        AssistantMessage(
+            content=[ToolCall(id=call_id, name="read_file", arguments={"path": "正文/a.md"})],
+            stop_reason="toolUse",
+        ),
+        ToolResultMessage(
+            tool_call_id=call_id, tool_name="read_file", content=[TextContent(text=text)]
+        ),
+    ]
+
+
+@pytest.mark.parametrize("window", [8_000, None])
+def test_over_budget_request_drops_older_tool_rounds(tmp_path: Path, window: int | None) -> None:
+    """超预算时发出的请求不带较早的工具往返；窗口未知时不裁。"""
+
+    async def run() -> None:
+        store = ActivityStore(tmp_path)
+        provider = Provider()
+        records: list[tuple[str, dict[str, Any]]] = []
+        wrapped = RecordedProvider(
+            provider,
+            store,
+            lambda k, p: records.append((k, p)),
+            stage="write",
+            identity="deepseek:deepseek-chat",
+            limits=_limits(window),
+            keep_recent_tokens=200,
+        )
+        messages = [UserMessage(content="写第一章")]
+        for index in range(4):
+            messages.extend(_tool_round(f"c{index}", "正文" * 600))
+        messages.append(UserMessage(content="继续"))
+        async for _ in wrapped.stream_response(
+            model="deepseek-chat", system="约定", messages=messages, tools=[]
+        ):
+            pass
+
+        sent = provider.requests[0]["messages"]
+        started = next(payload for kind, payload in records if kind == "model_request_started")
+        if window is None:
+            assert len(sent) == len(messages)
+            assert "request_trim" not in started
+        else:
+            assert len(sent) < len(messages)
+            assert sent[-1].content == "继续"
+            assert started["request_trim"]["dropped_messages"] > 0
+            trim = started["request_trim"]
+            assert trim["tokens_after"] < trim["tokens_before"]
+            # 裁剪只影响这一份副本，调用方手里的列表不变。
+            assert len(messages) == 10
+
+    asyncio.run(run())
+
+
+def test_incomplete_tool_round_is_sent_untouched(tmp_path: Path) -> None:
+    """调用关系残缺时宁可超限也不裁：残缺请求一定失败，且原因难懂。"""
+
+    async def run() -> None:
+        store = ActivityStore(tmp_path)
+        provider = Provider()
+        records: list[tuple[str, dict[str, Any]]] = []
+        wrapped = RecordedProvider(
+            provider,
+            store,
+            lambda k, p: records.append((k, p)),
+            stage="write",
+            identity="deepseek:deepseek-chat",
+            limits=_limits(8_000),
+            keep_recent_tokens=100,
+        )
+        from tau_agent.messages import ToolCall, ToolResultMessage
+
+        messages = [
+            UserMessage(content="写第一章" + "雨" * 400),
+            AssistantMessage(
+                content=[
+                    ToolCall(id="c1", name="read_file", arguments={}),
+                    ToolCall(id="c2", name="read_file", arguments={}),
+                ],
+                stop_reason="toolUse",
+            ),
+            ToolResultMessage(
+                tool_call_id="c1", tool_name="read_file", content=[TextContent(text="正文")]
+            ),
+            UserMessage(content="继续"),
+        ]
+        async for _ in wrapped.stream_response(
+            model="deepseek-chat", system="约定", messages=messages, tools=[]
+        ):
+            pass
+
+        assert len(provider.requests[0]["messages"]) == len(messages)
+        started = next(payload for kind, payload in records if kind == "model_request_started")
+        assert "request_trim" not in started
+
+    asyncio.run(run())
