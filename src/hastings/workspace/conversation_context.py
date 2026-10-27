@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from hastings.workspace.compaction import CompactionRecord, summary_message
 from tau_agent.messages import AgentMessage, AssistantMessage, TextContent, UserMessage
 
 __all__ = ["execution_facts", "replay_public_messages"]
@@ -44,15 +45,21 @@ _MAX_FACT_TURNS = 20
 _FACT_PROMPT_LIMIT = 60
 
 
-def replay_public_messages(events: Sequence[dict[str, Any]]) -> list[AgentMessage]:
+def replay_public_messages(
+    events: Sequence[dict[str, Any]], *, compaction: CompactionRecord | None = None
+) -> list[AgentMessage]:
     """把事件还原成用户提示与公开回复；工具过程与流式增量不回放。
 
     一轮里可能有多条正式公开文本（多次模型响应，例如先说明再动手）。它们在本轮内
     合并成一条 assistant 消息：上下文看到的仍是「作者说一句、模型答一段」，
     既不会把同一次回复拆成两条，也不会漏掉任何一段。
+
+    ``compaction`` 成立时，被覆盖的较早轮次换一条摘要消息放在最前。摘要来自事实验证
+    过的记录（见 ``compaction.active_compaction``），这里只负责按保留点裁剪。
     """
     messages: list[AgentMessage] = []
     reply: list[str] = []
+    keeping = compaction is None
 
     def flush() -> None:
         if reply:
@@ -62,6 +69,12 @@ def replay_public_messages(events: Sequence[dict[str, Any]]) -> list[AgentMessag
             reply.clear()
 
     for event in events:
+        if compaction is not None and not keeping:
+            # 保留点之前的内容只用于摘要；作者原话仍留在日志里供校验。
+            if event.get("turn_id") == compaction.first_kept_turn_id:
+                keeping = True
+            else:
+                continue
         kind = event.get("type")
         text = event.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -73,6 +86,8 @@ def replay_public_messages(events: Sequence[dict[str, Any]]) -> list[AgentMessag
         elif kind == "assistant_message":
             reply.append(text)
     flush()
+    if compaction is not None:
+        messages.insert(0, summary_message(compaction))
     return messages
 
 

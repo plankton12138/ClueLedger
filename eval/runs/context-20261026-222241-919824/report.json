@@ -1,0 +1,369 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261026-222241-919824",
+    "started_at": "2026-10-26T22:22:41.920833+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "c7bec11f7415428f7afcd9c9d3cefd6b70997854",
+    "git_dirty": true,
+    "source_sha256": "41930667f1f1ccd556db315e3514b4d89afdd7b67b204c65243934b8a7e5c13d",
+    "cases_sha256": "9e05a52b48090e2a47e112a9f536bc7e07345089c7cc1224a289622db286792c",
+    "suite": "core",
+    "jobs": [
+      {
+        "key": "module_only_first_chapter--current--1",
+        "case": "module_only_first_chapter",
+        "family": "模块上下文对齐",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 8,
+    "step_timeout_seconds": 150,
+    "max_provider_calls": 8,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261026-222241-919824",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 8
+  },
+  "summary": {
+    "planned": 1,
+    "executed": 1,
+    "counts": {
+      "fail": 1,
+      "not_run": 0
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": 24.875,
+    "duration_p95_seconds": 24.875,
+    "input_tokens": 10665,
+    "output_tokens": 2549,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 24.875,
+        "duration_p95_seconds": 24.875,
+        "input_tokens": 10665,
+        "output_tokens": 2549,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "模块上下文对齐": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 24.875,
+        "duration_p95_seconds": 24.875,
+        "input_tokens": 10665,
+        "output_tokens": 2549,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 24.875,
+        "duration_p95_seconds": 24.875,
+        "input_tokens": 10665,
+        "output_tokens": 2549,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "module_only_first_chapter": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 24.875,
+        "duration_p95_seconds": 24.875,
+        "input_tokens": 10665,
+        "output_tokens": 2549,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "fail",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "fail",
+          "detail": {
+            "seq": 1147,
+            "at": "2026-10-26T22:23:07.271+08:00",
+            "event_version": 1,
+            "event_id": "c_ac9144b3f067:1147",
+            "conversation_id": "c_ac9144b3f067",
+            "type": "run_finished",
+            "turn_id": "t_b0fc31b5",
+            "status": "failed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0001 雪夜.md"
+            ],
+            "commit": "c933a4f3ac789cd76ef5dfd7fee51acdf4641bf1",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读一下已装模块里的设定和开篇安排。\n设定和开篇目标都已读到：林静、周岚先后抵达，道路封闭，旧电话没有声音；这一章不出命案，也不揭人物秘密。我现在写第一章并保存为 `正文/0001 雪夜.md`。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雪夜.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雪夜.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "fail",
+          "detail": [
+            {
+              "seq": 914,
+              "at": "2026-10-26T22:23:01.850+08:00",
+              "event_version": 1,
+              "event_id": "c_ac9144b3f067:914",
+              "conversation_id": "c_ac9144b3f067",
+              "type": "file_changed",
+              "turn_id": "t_b0fc31b5",
+              "parent_operation_id": "d637d9cbb6d64e86bff4e12db8a146c1",
+              "tool_call_id": "call_00_ET_GumUnqX8ait3WnRWtI1B2163",
+              "action": "create",
+              "path": "正文/0001 雪夜.md",
+              "before_digest": null,
+              "after_digest": "10a965205bf00d88ca388cca92af359c70e3af4eebe8579ee72d2d58876f6708",
+              "changed": true,
+              "size": 1265
+            }
+          ]
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "fail",
+          "detail": [
+            {
+              "seq": 1117,
+              "at": "2026-10-26T22:23:04.710+08:00",
+              "event_version": 1,
+              "event_id": "c_ac9144b3f067:1117",
+              "conversation_id": "c_ac9144b3f067",
+              "type": "file_changed",
+              "turn_id": "t_b0fc31b5",
+              "parent_operation_id": "4ef660d355c5495ca7ab85d6e51fa190",
+              "tool_call_id": "call_00_MKDMLSi5lNFa8MDBgVKH7911",
+              "action": "update",
+              "path": "正文/0001 雪夜.md",
+              "before_digest": "10a965205bf00d88ca388cca92af359c70e3af4eebe8579ee72d2d58876f6708",
+              "after_digest": "d5748b3edceccc811797eaa14ab5d9a97dcde011885d3e5fd8487e9fba1ce13e",
+              "changed": true,
+              "start": 176,
+              "end": 249,
+              "size": 1266
+            },
+            {
+              "seq": 1127,
+              "at": "2026-10-26T22:23:05.774+08:00",
+              "event_version": 1,
+              "event_id": "c_ac9144b3f067:1127",
+              "conversation_id": "c_ac9144b3f067",
+              "type": "file_changed",
+              "turn_id": "t_b0fc31b5",
+              "parent_operation_id": "c5333e6c6a5747a39a77bd2ceb790a16",
+              "tool_call_id": "call_00_ET_EGBmviCsSvsutizT1brC0318",
+              "action": "update",
+              "path": "正文/0001 雪夜.md",
+              "before_digest": "d5748b3edceccc811797eaa14ab5d9a97dcde011885d3e5fd8487e9fba1ce13e",
+              "after_digest": "2f0e6a32760574449f3639709c1329a910a5fd58893c7e5d394d3c9cfd925564",
+              "changed": true,
+              "start": 322,
+              "end": 357,
+              "size": 1266
+            }
+          ]
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_legacy_catalog",
+          "status": "pass",
+          "detail": {
+            "part": "catalog",
+            "assemblies": 1
+          }
+        },
+        {
+          "id": "step-1/no_legacy_settings",
+          "status": "pass",
+          "detail": {
+            "part": "settings",
+            "assemblies": 1
+          }
+        },
+        {
+          "id": "step-1/no_legacy_paths_in_rules",
+          "status": "pass",
+          "detail": {
+            "part": "instructions",
+            "assemblies": 1
+          }
+        },
+        {
+          "id": "step-1/doctor_present",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0001 雪夜.md",
+            "expected": "林静"
+          }
+        },
+        {
+          "id": "step-1/photographer_present",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0001 雪夜.md",
+            "expected": "周岚"
+          }
+        },
+        {
+          "id": "step-1/uses_assembled_modules",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "应读取已装模块再完成正文，保留医生、摄影师和雪夜封路、电话失声的设定；不把计划当成既往正文，不凭空创建或反复查询旧版小传路径，不因缺少旧身份记录阻塞第一章。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 8,
+        "model_finished": 8,
+        "tool_calls": 11,
+        "tool_errors": 1,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 8,
+        "fresh_input_tokens": 10665,
+        "input_tokens": 10665,
+        "output_tokens": 2549,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 3738,
+            "messages_json_chars": 84,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 3738,
+            "messages_json_chars": 3603,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 3738,
+            "messages_json_chars": 8026,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 3738,
+            "messages_json_chars": 13497,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 3738,
+            "messages_json_chars": 16921,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 3738,
+            "messages_json_chars": 18656,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 3738,
+            "messages_json_chars": 20167,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 3738,
+            "messages_json_chars": 21606,
+            "tools_json_chars": 15174
+          }
+        ],
+        "max_request_json_chars": 40518,
+        "cost": null
+      },
+      "key": "module_only_first_chapter--current--1",
+      "case": "module_only_first_chapter",
+      "title": "只有已装模块的新作品直接开始第一章",
+      "family": "模块上下文对齐",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 24.875,
+      "evidence": "evidence/module_only_first_chapter--current--1",
+      "model_error": true
+    }
+  ],
+  "unexecuted": []
+}

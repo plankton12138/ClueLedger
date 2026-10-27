@@ -12,12 +12,13 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ROOT = Path(__file__).resolve().parents[1]
-VARIANTS = ("current", "no_index", "no_state", "no_history_facts")
+VARIANTS = ("current", "no_index", "no_state", "no_history_facts", "no_compaction")
 VARIANT_PARTS = {
     "current": set(),
     "no_index": {"index"},
     "no_state": {"state", "roster", "timeline", "clues", "glossary"},
     "no_history_facts": {"history"},
+    "no_compaction": set(),
 }
 
 
@@ -48,6 +49,8 @@ class Check(Spec):
         "module_excludes",
         "idea_contains",
         "tool_not_called",
+        "compaction_count",
+        "retry_observed",
         "manual",
         "fault_observed",
     ]
@@ -83,10 +86,14 @@ class Check(Spec):
                 "module_contains",
                 "module_excludes",
                 "idea_contains",
+                "compaction_count",
+                "retry_observed",
             }
             and not self.value
         ):
             raise ValueError(f"{self.id} 缺少 value")
+        if self.kind == "compaction_count" and not self.value.isdigit():
+            raise ValueError(f"{self.id} 的 value 必须是整数")
         if self.kind == "manual" and not self.rubric.strip():
             raise ValueError(f"{self.id} 缺少人工评分标准")
         if self.kind == "part_excludes" and not self.part:
@@ -122,9 +129,7 @@ class Step(Spec):
     references: list[str] = Field(default_factory=list)
     idea_references: list[str] = Field(default_factory=list)
     state_chapter: int | None = Field(default=None, ge=0)
-    purpose: Literal[
-        "chat", "update_chapter_index", "organize_materials", "expand_idea", "organize_overview"
-    ] = "chat"
+    purpose: Literal["chat", "update_chapter_index", "organize_materials", "expand_idea"] = "chat"
     index_paths: list[str] = Field(default_factory=list)
     material_scope: dict[str, Any] | None = None
     external_updates: dict[str, str] = Field(default_factory=dict)
@@ -135,6 +140,14 @@ class Step(Spec):
     expect_needs_input: bool = False
     #: 这一步回答上一轮的问题：驱动按会话里未回答的那一条自动认领。
     reply_to_question: bool = False
+    #: 这一步之前整理一次上下文：用来验证连续创作中多次压缩后的续接。
+    compact_before: bool = False
+    #: 这一步的第一次模型请求注入一次「上下文超限」，验证轮内重发。
+    inject_overflow: bool = False
+    #: 受理后延迟多少毫秒停止这一轮；用来验证取消边界。
+    stop_after_ms: int | None = Field(default=None, ge=0)
+    #: 这一步预期以「已停止」结束，终态检查接受 stopped。
+    expect_stopped: bool = False
     checks: list[Check] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -165,10 +178,6 @@ class Step(Spec):
             from hastings.workspace.material_tasks import MaterialTaskScope
 
             MaterialTaskScope.model_validate(self.material_scope)
-        if self.purpose == "organize_overview" and (
-            self.references or self.selected or self.index_paths or self.material_scope
-        ):
-            raise ValueError("总览评测范围由当前作品和 state_chapter 冻结，不接受手工伪造范围")
         if len({c.id for c in self.checks}) != len(self.checks):
             raise ValueError("同一步的检查 ID 不得重复")
         return self
@@ -179,6 +188,8 @@ class History(Spec):
     assistant: str
     status: Literal["completed", "failed", "partial", "stopped", "interrupted"] = "completed"
     changed_paths: list[str] = Field(default_factory=list)
+    #: 这一轮助手向作者提问：用来验证待答问题在压缩后仍能被接上。
+    question: str | None = None
 
 
 class Case(Spec):
@@ -195,6 +206,9 @@ class Case(Spec):
     modules: list[ModuleSeed] = Field(default_factory=list)
     #: 没有预置模块时也挂一个空模块库，让自主新建与讨论边界案例能用模块工具。
     module_tools: bool = False
+    #: 在第一步之前整理一次会话：用来验证压缩之后模型仍能接上原来的任务。
+    compact_before_steps: bool = False
+    compaction_threshold: float | None = Field(default=None, gt=0, le=1)
     ideas: list[IdeaSeed] = Field(default_factory=list)
     steps: list[Step] = Field(min_length=1)
 

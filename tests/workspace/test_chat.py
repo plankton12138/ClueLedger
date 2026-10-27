@@ -120,7 +120,11 @@ def client_factory(tmp_path: Path) -> Iterator[Callable[[ProviderFactory], TestC
 
 def _workspace(client: TestClient, tmp_path: Path) -> str:
     root = tmp_path / "雪山旅馆"
-    response = client.post("/api/file-workspaces", json={"path": str(root), "create": True})
+    if root.exists():
+        GitRepo(root).init()
+    response = client.post(
+        "/api/file-workspaces", json={"path": str(root), "create": not root.exists()}
+    )
     assert response.status_code == 200, response.text
     return str(response.json()["id"])
 
@@ -291,7 +295,8 @@ def test_injection_event_matches_the_system_prompt(
     system = provider.requests[0]["system"]
     for part in injected["parts"]:
         assert f"chars={part['chars']}" not in system  # 事件只记规模，不复制正文
-    assert "## 设定集内容" in system
+    assert "## 设定集内容" not in system
+    assert "settings" not in {part["key"] for part in injected["parts"]}
     assert "## 当前作品" in system
 
 
@@ -528,6 +533,9 @@ def test_second_turn_replays_public_history(
     # 执行事实通过应用说明进入系统提示，不冒充作者要求。
     assert "本会话此前的轮次" in second["system"]
     assert "完成" in second["system"]
+    # 文件现状符合要求 ≠ 任务执行过：这条区分决定模型会不会把「现状达标」说成「已完成」。
+    assert "不等于这项任务已经执行过" in second["system"]
+    assert "不要用文件现状反推" in second["system"]
 
 
 def test_new_conversation_has_no_history_from_another(

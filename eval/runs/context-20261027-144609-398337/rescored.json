@@ -1,0 +1,419 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261027-144609-398337",
+    "started_at": "2026-10-27T14:46:09.400355+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "d4c9825c10390ccf519096370f4e0cf748f9e953",
+    "git_dirty": true,
+    "source_sha256": "e5a8aa1118c9601d3bd1e1bc7952f431fbfe211524ae8b6047a8e4f17588cdbd",
+    "cases_sha256": "8b95f288253535226a69e1050fa28022a089853eb19ad272480eeac2ba1ae42a",
+    "suite": "v09-context",
+    "jobs": [
+      {
+        "key": "v09_overflow_and_stop--current--1",
+        "case": "v09_overflow_and_stop",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 40,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261027-144609-398337",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 5,
+    "rescored_at": "2026-10-27T14:56:51.307684+08:00",
+    "scorer_source_sha256": "e5a8aa1118c9601d3bd1e1bc7952f431fbfe211524ae8b6047a8e4f17588cdbd",
+    "reviews_sha256": "aaee30d0a1cf7b7d23a1c78eb55750fc4a215c03a08ea7039e92adc534e5739a"
+  },
+  "summary": {
+    "planned": 1,
+    "executed": 1,
+    "counts": {
+      "pass": 1,
+      "not_run": 0
+    },
+    "success_rate": 1.0,
+    "duration_p50_seconds": 20.297,
+    "duration_p95_seconds": 20.297,
+    "input_tokens": null,
+    "output_tokens": null,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 20.297,
+        "duration_p95_seconds": 20.297,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "压缩语义": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 20.297,
+        "duration_p95_seconds": 20.297,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 20.297,
+        "duration_p95_seconds": 20.297,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v09_overflow_and_stop": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 20.297,
+        "duration_p95_seconds": 20.297,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 306,
+            "at": "2026-10-27T14:46:14.906+08:00",
+            "event_version": 1,
+            "event_id": "c_94e6a91fef2a:306",
+            "conversation_id": "c_94e6a91fef2a",
+            "type": "run_finished",
+            "turn_id": "t_f4c7d41b",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "按现有正文，读者最后一次看到铜钥匙，是在第二章《走廊》：「管家将铜钥匙收进衣袋。」\n\n此后各章（书房、客房、揭晓）都没有再交代钥匙转手或谁取走。因此，按目前写出的内容看，铜钥匙还在管家手里；不过《线索》也记着「第二章的铜钥匙尚未说明用途」，所以它究竟开什么、后来会不会易手，正文都还没有落笔。\n\n我没有修改任何文件。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/overflow_seen",
+          "status": "pass",
+          "detail": [
+            {
+              "type": "context_overflow",
+              "injected": "provider"
+            }
+          ]
+        },
+        {
+          "id": "step-1/retried_after_overflow",
+          "status": "pass",
+          "detail": [
+            {
+              "seq": 52,
+              "at": "2026-10-27T14:46:10.557+08:00",
+              "event_version": 1,
+              "event_id": "c_94e6a91fef2a:52",
+              "conversation_id": "c_94e6a91fef2a",
+              "type": "model_request_retried",
+              "turn_id": "t_f4c7d41b",
+              "parent_operation_id": "a07352b9007449bea6ec03b85a0ad0f6",
+              "operation_id": "a07352b9007449bea6ec03b85a0ad0f6",
+              "reason": "context_overflow",
+              "message": "This model's maximum context length is 8192 tokens. However, you requested 9000 tokens.",
+              "tokens_before": 19610,
+              "tokens_after": 11573,
+              "dropped_messages": 23
+            }
+          ]
+        },
+        {
+          "id": "step-1/answer_after_retry",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "TRAE",
+            "reason": "回答明确给出铜钥匙在管家手里，并区分「当前正文只写到管家收进衣袋」与「用途仍未说明」，没有猜测转手或用途。答案来自第二章正文，不是臆测。",
+            "evidence": "evidence/v09_overflow_and_stop--current--1/step-1.json：faults 记录一次 provider 注入的 context_overflow；seq 52 的 model_request_retried 记录 tokens_before 19610、tokens_after 11573、dropped_messages 23；重发后 public_answer 引用了第二章「管家将铜钥匙收进衣袋」。"
+          }
+        },
+        {
+          "id": "step-2/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 317,
+            "at": "2026-10-27T14:46:15.895+08:00",
+            "event_version": 1,
+            "event_id": "c_94e6a91fef2a:317",
+            "conversation_id": "c_94e6a91fef2a",
+            "type": "run_finished",
+            "turn_id": "t_65db4e6a",
+            "status": "stopped",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-2/public_answer",
+          "status": "pass",
+          "detail": ""
+        },
+        {
+          "id": "step-2/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1991,
+            "at": "2026-10-27T14:46:30.472+08:00",
+            "event_version": 1,
+            "event_id": "c_94e6a91fef2a:1991",
+            "conversation_id": "c_94e6a91fef2a",
+            "type": "run_finished",
+            "turn_id": "t_24d1f879",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-3/public_answer",
+          "status": "pass",
+          "detail": "上一轮只回答了铜钥匙的问题，没有留下文字，所以这一段是补写；本轮未改动任何文件。\n\n走廊尽头的灯积了灰，光被压得发昏，只照到半截墙裙。再往里去，墙面沉进暗处，地板蜡反着一点微亮。空气里有旧木头的味道，夹着雨水渗进来的潮，还有煤油烧过之后的余味。\n\n林远站在客房门口，门没有关。屋里台灯还亮着，把他的影子推到廊上，又细又长，一直搭到对面墙上。他听了一阵：楼下座钟走得很慢，窗外的雨敲在玻璃上，一阵密一阵疏；某处的水管在墙里响了一声，又没了。\n\n过道另一头传来脚步。不急，也不重，落在木地板上像是量过，一步一寸。管家从灯下走过来，两手空着，制服外面套了件洗得发白的坎肩。\n\n「先生还没睡。」他在几步外停下。\n\n「睡不着。」林远让开半扇门，「这楼里响动太多。」\n\n「老房子都这样。」管家抬眼看了看头顶的电线，「雨停了就好。」\n\n他的衣袋鼓着一小块，隔着布能看出硬边。林远看了一眼，把视线移开。\n\n「二楼的窗子关了吗？」\n\n「关了两扇。靠西那扇插销坏了，我先用木楔顶着。」\n\n「明天修？」\n\n「明天修。」\n\n管家不再多话，从他身边过去。樟脑的气味先到，人影才跟上，然后是布料擦过门框的轻响。走到楼梯口，他停了一下，伸手按了按衣袋，像在确认什么还在。\n\n灯光落在他的肩背上，把轮廓勾出来，又随脚步退回去。楼梯第一级响了一声，第二级没有响。\n\n林远没有马上关门。他留在门口，听那串脚步一级级往下，越来越轻，最后被钟声盖住。头顶的电线忽然暗了一瞬，又亮起来，灯丝嘶嘶作响。他握住门把，等那点声音彻底静下，才把门带上，只留一条缝。"
+        },
+        {
+          "id": "step-3/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/no_file_write",
+          "status": "pass",
+          "detail": {
+            "banned": [
+              "delete_file",
+              "edit_file",
+              "move_file",
+              "write_file"
+            ],
+            "called": [
+              "read_file"
+            ]
+          }
+        },
+        {
+          "id": "step-3/continues_after_stop",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "TRAE",
+            "reason": "第三步先说明上一轮只回答了铜钥匙的问题、没有留下文字，因此是补写；随后重新写出走廊场景。没有声称上一轮已经写完，也没有无视停止重复已有片段，本轮未改文件。",
+            "evidence": "evidence/v09_overflow_and_stop--current--1/step-3.json：step-2 run_finished 为 stopped 且 public_answer 为空；step-3 public_answer 开头明确说明补写；tool_not_called 通过，diffs 为空。"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 5,
+        "model_finished": 5,
+        "tool_calls": 4,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": false,
+        "usage_reported_requests": 4,
+        "fresh_input_tokens": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "request_sizes": [
+          {
+            "system_chars": 5559,
+            "messages_json_chars": 18847,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5559,
+            "messages_json_chars": 21168,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5606,
+            "messages_json_chars": 19649,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5658,
+            "messages_json_chars": 19778,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5658,
+            "messages_json_chars": 22585,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 37822,
+        "cost": null
+      },
+      "key": "v09_overflow_and_stop--current--1",
+      "case": "v09_overflow_and_stop",
+      "title": "上下文超限重发与停止后继续",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 20.297,
+      "evidence": "evidence/v09_overflow_and_stop--current--1",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

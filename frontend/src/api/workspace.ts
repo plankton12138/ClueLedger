@@ -9,6 +9,8 @@
  * 走同一段解析代码，也能带自定义游标与中止信号。
  */
 
+import type { CompactionOperation, ConversationUsageView } from "./contextUsage";
+
 export interface WorkspaceBinding {
   id: string;
   name: string;
@@ -19,6 +21,18 @@ export interface WorkspaceBinding {
 /** 清理失效目录后的结果：被移除的登记与仍在册的作品。 */
 export interface PruneWorkspacesResult {
   removed: WorkspaceBinding[];
+  workspaces: WorkspaceBinding[];
+}
+
+/** 实际删除后的作品与剩余列表。 */
+export interface RemovedWorkspaceResult {
+  removed: WorkspaceBinding;
+  workspaces: WorkspaceBinding[];
+}
+
+/** 重命名后的结果：换绑后的作品与更新后的登记列表。 */
+export interface RenamedWorkspaceResult {
+  workspace: WorkspaceBinding;
   workspaces: WorkspaceBinding[];
 }
 
@@ -704,6 +718,23 @@ export function pickDirectory(initial = ""): Promise<PickedDirectory> {
   });
 }
 
+export function removeWorkspace(workspaceId: string, confirmedPath: string): Promise<RemovedWorkspaceResult> {
+  return request<RemovedWorkspaceResult>(`/${workspaceId}`, {
+    method: "DELETE",
+    body: JSON.stringify({ confirmed_path: confirmedPath }),
+  });
+}
+
+export function renameWorkspace(
+  workspaceId: string,
+  name: string,
+): Promise<RenamedWorkspaceResult> {
+  return request<RenamedWorkspaceResult>(`/${workspaceId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
 export function openWorkspace(path: string, create = false): Promise<WorkspaceBinding> {
   return request<WorkspaceBinding>("", {
     method: "POST",
@@ -787,6 +818,58 @@ export function fetchReviews(workspaceId: string, path?: string): Promise<Review
 
 export function listConversations(workspaceId: string): Promise<ConversationList> {
   return request<ConversationList>(`/${workspaceId}/conversations`);
+}
+
+/**
+ * 会话累计用量：服务端聚合，前端不自己累计。
+ *
+ * `through_seq` 是这次统计覆盖到的事件序号；客户端用它判断本地视图是否落后，
+ * 避免一个慢请求把更新的数字覆盖回去。
+ */
+/**
+ * 手动整理上下文：提交即返回，整理在后台跑。
+ *
+ * `requestKey` 是幂等键：同一次点击重试不会发出第二次摘要请求。
+ */
+export function startCompaction(
+  workspaceId: string,
+  conversationId: string,
+  requestKey: string,
+): Promise<CompactionOperation> {
+  return request<CompactionOperation>(
+    `/${workspaceId}/conversations/${conversationId}/compact`,
+    { method: "POST", body: JSON.stringify({ request_key: requestKey }) },
+  );
+}
+
+export function readCompaction(
+  workspaceId: string,
+  conversationId: string,
+  operationId: string,
+): Promise<CompactionOperation> {
+  return request<CompactionOperation>(
+    `/${workspaceId}/conversations/${conversationId}/compactions/${operationId}`,
+  );
+}
+
+export function stopCompaction(
+  workspaceId: string,
+  conversationId: string,
+  operationId: string,
+): Promise<CompactionOperation> {
+  return request<CompactionOperation>(
+    `/${workspaceId}/conversations/${conversationId}/compactions/${operationId}/stop`,
+    { method: "POST" },
+  );
+}
+
+export function fetchConversationUsage(
+  workspaceId: string,
+  conversationId: string,
+): Promise<ConversationUsageView> {
+  return request<ConversationUsageView>(
+    `/${workspaceId}/conversations/${conversationId}/usage`,
+  );
 }
 
 /**

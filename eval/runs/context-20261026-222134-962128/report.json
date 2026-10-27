@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261026-222134-962128",
+    "started_at": "2026-10-26T22:21:34.964192+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "c7bec11f7415428f7afcd9c9d3cefd6b70997854",
+    "git_dirty": true,
+    "source_sha256": "41930667f1f1ccd556db315e3514b4d89afdd7b67b204c65243934b8a7e5c13d",
+    "cases_sha256": "d1127e81f81c876b2ce5a2326e5073af4386106fcf92b31270cfe45d4bbbc80f",
+    "suite": "core",
+    "jobs": [
+      {
+        "key": "module_only_first_chapter--current--1",
+        "case": "module_only_first_chapter",
+        "family": "模块上下文对齐",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 8,
+    "step_timeout_seconds": 150,
+    "max_provider_calls": 8,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261026-222134-962128",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留"
+  },
+  "summary": {
+    "planned": 1,
+    "executed": 0,
+    "counts": {
+      "not_run": 1
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": null,
+    "duration_p95_seconds": null,
+    "input_tokens": null,
+    "output_tokens": null,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "模块上下文对齐": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "module_only_first_chapter": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [],
+  "unexecuted": [
+    "module_only_first_chapter--current--1"
+  ]
+}

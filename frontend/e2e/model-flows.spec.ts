@@ -288,8 +288,7 @@ test.describe("在线模型", () => {
   test("故事资料整理、外部改源失效与重新读取", async ({ page, request }) => {
     await prepareWorkspace(request);
     await openWorkspace(page);
-    await page.getByRole("link", { name: "故事总览", exact: true }).click();
-    await page.evaluate(() => { location.hash = location.hash.replace(/overview.*$/, "materials/legacy-story"); });
+    await page.goto(`/#/workspaces/${bindingId}/materials/legacy-story`);
     await expect(page.locator(".materials-nav")).toBeVisible();
     await page.getByRole("button", { name: "整理所选章节", exact: true }).click();
     const picker = page.getByRole("dialog", { name: "整理章节索引" });

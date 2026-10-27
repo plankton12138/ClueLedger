@@ -26,6 +26,16 @@ function presetFor(presets: ProviderPreset[], catalogId: string): ProviderPreset
   return presets.find((item) => item.id === catalogId) ?? presets.find((item) => item.custom);
 }
 
+/** 列表项里的凭据摘要：订阅连接显示账号，API Key 连接显示尾四位。 */
+function credentialLabel(connection: ModelConnection): string {
+  if (connection.auth_method === "subscription") {
+    if (connection.auth_status === "missing") return "未登录";
+    const account = connection.account || "已登录";
+    return connection.auth_status === "expired" ? `${account}（待续期）` : account;
+  }
+  return connection.has_key ? `Key ${connection.masked_key}` : "未配置 Key";
+}
+
 export default function ModelSettingsDialog() {
   const open = useModelsStore((state) => state.settingsOpen);
   const presets = useModelsStore((state) => state.presets);
@@ -107,8 +117,7 @@ export default function ModelSettingsDialog() {
                       )}
                     </div>
                     <div className="mt-0.5 truncate text-sm text-ui-muted">
-                      {connection.models.length} 个模型 ·{" "}
-                      {connection.has_key ? `Key ${connection.masked_key}` : "未配置 Key"}
+                      {connection.models.length} 个模型 · {credentialLabel(connection)}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-sm">
                       <Button

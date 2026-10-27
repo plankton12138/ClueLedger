@@ -24,6 +24,8 @@ import {
   openWorkspace,
   pruneStaleWorkspaces,
   readFile,
+  removeWorkspace,
+  renameWorkspace,
   searchText,
   type Catalog,
   type FileView,
@@ -62,8 +64,13 @@ interface WorkspaceStore {
   commitDiff: string;
 
   init(preferredId?: string | null): Promise<void>;
-  open(path: string, create: boolean): Promise<boolean>;
+  /** 打开或新建作品并切过去；成功返回作品标识，失败返回 null。 */
+  open(path: string, create: boolean): Promise<string | null>;
   selectWorkspace(id: string): Promise<void>;
+  /** 明确确认完整路径后删除作品文件与应用记录。 */
+  remove(id: string, confirmedPath: string): Promise<boolean>;
+  /** 重命名作品目录并换绑登记；成功返回新标识，失败返回 null。 */
+  rename(id: string, name: string): Promise<string | null>;
   refreshBindings(): Promise<void>;
   pruneMissing(): Promise<void>;
   refreshAll(): Promise<void>;
@@ -133,10 +140,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       const binding = await openWorkspace(path, create);
       set({ bindings: await listWorkspaces() });
       await get().selectWorkspace(binding.id);
-      return true;
+      return binding.id;
     } catch (error) {
       set({ error: describe(error) });
-      return false;
+      return null;
     } finally {
       set({ loading: false });
     }
@@ -175,6 +182,63 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     await useConversationsStore.getState().load(id);
     if (get().currentId !== id || get().workspaceEpoch !== epoch) return;
     await get().refreshAll();
+  },
+
+  async remove(id, confirmedPath) {
+    set({ loading: true, error: null });
+    try {
+      const result = await removeWorkspace(id, confirmedPath);
+      set({ bindings: result.workspaces });
+      if (get().currentId === id) {
+        const next = result.workspaces.find((item) => item.exists);
+        if (next) await get().selectWorkspace(next.id);
+        else {
+          set({
+            workspaceEpoch: get().workspaceEpoch + 1,
+            fileEpoch: get().fileEpoch + 1,
+            currentId: null,
+            catalog: EMPTY_CATALOG,
+            file: null,
+            selectedPath: null,
+            search: null,
+            git: null,
+            diff: "",
+            log: [],
+            selectedCommit: null,
+            commitDiff: "",
+          });
+          useConversationsStore.getState().reset();
+          useWorkspaceModulesStore.getState().close();
+        }
+      }
+      const positions = { ...get().positions };
+      delete positions[id];
+      set({ positions, notice: `已删除作品「${result.removed.name}」及本地文件。` });
+      return true;
+    } catch (error) {
+      set({ error: describe(error) });
+      return false;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  async rename(id, name) {
+    set({ loading: true, error: null });
+    try {
+      const result = await renameWorkspace(id, name);
+      set({ bindings: result.workspaces });
+      const newId = result.workspace.id;
+      // 标识由路径算出：当前作品的目录名变了，作品标识与地址栏也要跟着换。
+      if (get().currentId === id) await get().selectWorkspace(newId);
+      set({ notice: `已把作品重命名为「${result.workspace.name}」。` });
+      return newId;
+    } catch (error) {
+      set({ error: describe(error) });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
   },
 
   async pruneMissing() {

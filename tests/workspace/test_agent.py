@@ -74,17 +74,14 @@ def _code(exc_info: pytest.ExceptionInfo[WorkspaceError]) -> str:
 
 
 @pytest.mark.anyio
-async def test_list_files_reports_both_blocks(tmp_path: Path) -> None:
+async def test_list_files_does_not_invent_missing_legacy_files(tmp_path: Path) -> None:
     workspace, tools, _ = _setup(tmp_path)
     workspace.create_chapter("雨夜", "# 雨夜\n\n侦探抵达旅馆。\n")
 
     body = await _call(tools["list_files"])
 
     assert [item["path"] for item in body["chapters"]] == ["正文/0001 雨夜.md"]
-    assert [item["path"] for item in body["settings"]] == [
-        "设定集/线索.md",
-        "设定集/真相.md",
-    ]
+    assert body["settings"] == []
     assert body["characters"] == []
 
 

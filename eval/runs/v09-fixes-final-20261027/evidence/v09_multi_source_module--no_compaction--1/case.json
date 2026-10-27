@@ -1,0 +1,127 @@
+{
+  "id": "v09_multi_source_module",
+  "title": "一次请求读多份材料并更新指定模块",
+  "family": "模块维护",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [
+    {
+      "kind": "clues",
+      "name": "案件线索",
+      "entries": [
+        {
+          "entry_id": "code_1",
+          "kind": "clue_plan",
+          "title": "第一章暗号",
+          "body": "暗号是「青鸟归巢」。",
+          "fields": {}
+        }
+      ]
+    }
+  ],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "steps": [
+    {
+      "text": "自己找到并依次读完正文第一章、第二章、第三章和设定集里的线索文件，把第二章铜钥匙的用途、第三章纸条上的暗号更新到已装的「案件线索」模块；用途和暗号现在都没写清，登记为「待补」。不要改任何正文文件，也不要另建模块。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "read_ch1",
+          "kind": "full_read",
+          "path": "正文/0001 雨夜.md",
+          "value": "青鸟归巢",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "read_ch2",
+          "kind": "full_read",
+          "path": "正文/0002 走廊.md",
+          "value": "铜钥匙",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "read_ch3",
+          "kind": "full_read",
+          "path": "正文/0003 书房.md",
+          "value": "待补",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "still_bound",
+          "kind": "module_bound",
+          "path": "",
+          "value": "案件线索",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "keeps_old_code",
+          "kind": "module_contains",
+          "path": "",
+          "value": "青鸟归巢",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "records_key",
+          "kind": "module_contains",
+          "path": "",
+          "value": "铜钥匙",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "no_file_write",
+          "kind": "tool_not_called",
+          "path": "",
+          "value": "write_file,edit_file,delete_file,move_file",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "single_source_update",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "应实际读取或接收四份材料，在「案件线索」里补上第二章铜钥匙用途与第三章暗号，并标为待补或未说明；保留第一章「青鸟归巢」；不得修改正文、不得新建重复模块或条目，也不得把未写清的内容编成确定结论。"
+        }
+      ]
+    }
+  ]
+}

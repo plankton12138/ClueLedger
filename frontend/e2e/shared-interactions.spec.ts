@@ -8,6 +8,54 @@ async function openModels(page: Page) {
   await page.getByRole("dialog", { name: "设置", exact: true }).getByRole("button", { name: "模型设置", exact: true }).click();
   return page.getByRole("dialog", { name: "模型设置", exact: true });
 }
+
+test("停止点击立即反馈，等待服务端收尾后恢复发送入口", async ({ page, book }) => {
+  const active = {
+    conversation_id: "c_stop", turn_id: "t_stop", state: "running", model: "test", connection: "test",
+    started_at: "2026-10-26T22:00:00+08:00",
+  };
+  const item = { id: "c_stop", title: "停止交互验收", created_at: active.started_at, updated_at: active.started_at };
+  const prefix = `**/api/file-workspaces/${book.id}`;
+  let finished = false;
+  let stops = 0;
+  let finishRequest: () => void = () => undefined;
+  let finishEvents: () => void = () => undefined;
+  const requestGate = new Promise<void>(resolve => { finishRequest = resolve; });
+  const eventGate = new Promise<void>(resolve => { finishEvents = resolve; });
+  await page.route(`${prefix}/conversations`, route => route.fulfill({ json: {
+    items: [item], recent_id: item.id, active_turn: finished ? null : active, revision: "r1",
+  } }));
+  await page.route(`${prefix}/conversation-ui`, route => route.fulfill({ json: {
+    recent_id: item.id, drafts: {}, revision: "r1",
+  } }));
+  await page.route(`${prefix}/conversations/${item.id}/messages?*`, route => route.fulfill({ json: {
+    events: [{ seq: 1, at: active.started_at, type: "turn_started", turn_id: active.turn_id, text: "讨论开篇" }],
+    last_seq: 1, active_turn: finished ? null : active, revision: "r1",
+  } }));
+  await page.route(`${prefix}/events?*`, async route => {
+    await eventGate;
+    const events = [
+      { seq: 2, at: active.started_at, type: "stop_requested", turn_id: active.turn_id },
+      { seq: 3, at: active.started_at, type: "run_finished", turn_id: active.turn_id, status: "stopped",
+        recording: "no_change", changed_paths: [], commit: null, note: "" },
+    ];
+    await route.fulfill({ contentType: "text/event-stream", body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("") });
+  });
+  await page.route(`${prefix}/turns/${active.turn_id}/stop`, async route => {
+    stops++;
+    await requestGate;
+    finished = true;
+    await route.fulfill({ json: { stopped: true } });
+    finishEvents();
+  });
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "停止", exact: true }).click();
+  await expect(page.getByRole("button", { name: "正在停止…", exact: true })).toBeDisabled();
+  expect(stops).toBe(1);
+  finishRequest();
+  await expect(page.getByRole("button", { name: "发送", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "正在停止…", exact: true })).toHaveCount(0);
+});
 async function focusWithin(page: Page, dialog: Locator) {
   for (let n = 0; n < 12; n++) {
     await page.keyboard.press("Tab"); expect(await dialog.evaluate(el => el.contains(document.activeElement))).toBe(true);

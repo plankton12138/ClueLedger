@@ -1,6 +1,12 @@
 # 0.8 接口、工具与前端契约
 
-2026-10-25：当前主入口已改为故事总览。新增读取、更新、进度与兼容路由契约见 [故事总览计划](story-overview-plan.md#5-前后端接口对齐)，实际接线与验证见 [O6 记录](notes/O6-story-overview.md)。
+2026-10-26：无旧文件的作品不再注入 `settings` 分区或旧目录创建提示；`list_files` 只向模型列出真实存在的旧文件，`read_state` 无旧身份记录时返回合法空结果。停止接口不变，界面立即显示“正在停止…”，模型等待可主动中断，仍以服务端终态确认结束。依据、兼容边界与验证见[模块上下文与停止响应](notes/module-context-and-stop.md)。
+
+2026-10-26：模型选择新增可空的 `thinking_level`，继续使用 `PUT /api/model-selection` 与 `If-Match`；响应 `selection` 同时给出当前 `thinking_level` 和可选 `thinking_levels`。默认不向供应商发送思考参数，保存后的设置从下一轮生效并在重启后恢复。界面按后端能力列表展示选项，当前接通 DeepSeek 与 OpenAI / ChatGPT 订阅推理模型，其他尚未接线的模型保持默认。范围、请求转换与验证见[模型思考深度](notes/model-thinking.md)。
+
+2026-10-26：作品目录与真实删除已接通。`GET /api/file-workspaces/default-location` 返回 `文档/ClueLedger/作品`，普通新建拒绝已存在的目标，`POST /{id}/derive` 未指定目录时也使用该默认位置。`DELETE /api/file-workspaces/{id}` 必须提供 `{ "confirmed_path": "确认框展示的完整路径" }`；缺失请求体返回 422，路径不匹配返回 `WORKSPACE_CONFIRMATION_CONFLICT`。成功结果沿用 `removed` 与 `workspaces`，`removed.exists` 为 false；成功前清理作品目录和本作品应用记录，不再仅移除登记。产品边界与验证见[实施记录](notes/workspace-storage-and-deletion.md)。
+
+2026-10-26：整个故事总览模块已撤除，页面、专用接口和模型任务一并删除；作者文件与历史数据保留，见[下线记录](notes/story-overview-retirement.md)。2026-10-25 的[故事总览计划](story-overview-plan.md#5-前后端接口对齐)与 [O6 记录](notes/O6-story-overview.md)保留为历史契约与验证。
 
 日期：2026-10-24。状态：待实施。下表为拟新增或修改的接口，不代表当前路由可调用。
 作品接口继续使用 `/api/file-workspaces/{id}`；新增应用级 `/api/module-library`，明确全局库与作品的权限边界。

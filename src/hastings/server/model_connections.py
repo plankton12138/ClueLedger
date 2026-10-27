@@ -26,11 +26,23 @@ from typing import Any
 
 from pydantic import SecretStr
 
+from hastings.server.model_auth import ModelAuthService
+from hastings.server.model_credential import (
+    SUBSCRIPTION_REF_PREFIX,
+    SubscriptionCredential,
+    delete_subscription,
+    load_subscription,
+    mask_account,
+    save_subscription,
+)
+from hastings.server.model_limits import ModelLimitOverride
 from hastings.server.model_probe import DiscoveryResult, ProbeResult, discover_models
 from hastings.server.model_probe import probe_response as run_response_probe
 from hastings.server.model_probe import probe_tool as run_tool_probe
+from hastings.server.model_thinking import ThinkingLevel, thinking_levels
 from hastings.server.provider_catalog import ProviderApi, ProviderPreset, preset
 from hastings.server.provider_config import (
+    AuthMethod,
     ModelSelection,
     ProviderBook,
     ProviderProfile,
@@ -61,7 +73,15 @@ class ConnectionDraft:
     api: ProviderApi = "openai-completions"
     models: list[str] = field(default_factory=list)
     default_model: str = ""
+    #: 按精确模型名保存的容量；``None`` 表示沿用已保存的值，``{}`` 表示清空。
+    #: 与模型列表分开保存：移除模型不删除它的容量，换回来还能继续用。
+    model_limits: dict[str, ModelLimitOverride] | None = None
     api_key: str | None = None
+    auth_method: AuthMethod = "api_key"
+    #: 订阅来源标识（如 ``chatgpt``）；API Key 连接为空。
+    auth_provider: str = ""
+    #: 一次已完成的授权会话；保存成功后凭据归属该连接，会话随即作废。
+    auth_session_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,9 +95,18 @@ class ConnectionView:
     base_url: str
     models: list[str]
     default_model: str
+    #: 凭据是否已经就绪（API Key 或订阅凭据），界面据此判断能否设为当前。
     has_key: bool
     masked_key: str
     credential_storage: str
+    auth_method: str = "api_key"
+    auth_provider: str = ""
+    #: 订阅账号的脱敏标识；API Key 连接为空。
+    account: str = ""
+    #: ``ready`` / ``expired`` / ``missing``：过期仍可续期，缺失则不可调用。
+    auth_status: str = "missing"
+    #: 作者填写的容量；未配置的模型按未知处理，界面据此给出设置入口。
+    model_limits: dict[str, ModelLimitOverride] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +118,8 @@ class ConfigView:
 
 @dataclass(frozen=True, slots=True)
 class StagedKey:
+    """暂存的凭据引用：先写入并回读校验，配置提交成功后才成为唯一引用。"""
+
     ref: str
     secret: str
 
@@ -110,10 +141,12 @@ class ModelConnectionService:
         credentials: Any,
         probe_factory: Any | None = None,
         transport: Any | None = None,
+        auth: ModelAuthService | None = None,
     ) -> None:
         self.book = book
         self.config_path = config_path
         self.credentials = credentials
+        self.auth = auth
         self._probe_factory = probe_factory
         self._transport = transport
         self._lock = asyncio.Lock()
@@ -145,39 +178,46 @@ class ModelConnectionService:
     # -- 写入 -------------------------------------------------------------
 
     async def create(self, draft: ConnectionDraft, *, expected_revision: str) -> ConfigView:
-        """新增连接；不自动改变当前选择。"""
+        """新增连接；不自动改变当前选择。
+
+        订阅连接在这里完成凭据归属：授权会话里的凭据写入系统凭据存储、配置文件只留引用，
+        提交成功后才把这次会话标记为已用——保存失败时作者不必重新登录。
+        """
         async with self._lock:
             self._require_revision(expected_revision)
             clean = self._validate(draft, creating=True)
             name = self._new_name()
-            assert draft.api_key  # _validate(creating=True) 已保证
-            staged = self._stage_key(name, draft.api_key)
+            staged = self._stage(name, clean, current=None)
             profile = self._profile(name, clean, credential_ref=staged.ref)
             persisted = self._book_config()
             persisted = persisted.model_copy(update={"providers": [*persisted.providers, profile]})
-            self._commit(persisted, staged=staged)
+            self._commit(persisted, staged=staged.ref)
+            if clean.auth_method == "subscription" and self.auth is not None:
+                # 归属只在这一步发生：配置已经落盘，这份授权不再属于「未保存的登录」。
+                self.auth.consume(clean.auth_session_id, provider_id=clean.auth_provider)
             return self.view()
 
     async def update(
         self, name: str, draft: ConnectionDraft, *, expected_revision: str
     ) -> ConfigView:
-        """编辑连接；提交里没有 api_key 表示保留旧 key。"""
+        """编辑连接；提交里没有凭据表示沿用原来的认证方式与凭据。"""
         async with self._lock:
             self._require_revision(expected_revision)
             current = self._profile_or_404(name)
             clean = self._validate(draft, creating=False, current=current)
-            staged: StagedKey | None = None
-            if draft.api_key is not None:
-                staged = self._stage_key(name, draft.api_key)
-            updated = self._profile(
-                name,
-                clean,
-                credential_ref=staged.ref if staged else current.credential_ref,
-            )
+            staged = self._stage(name, clean, current=current)
+            updated = self._profile(name, clean, credential_ref=staged.ref)
             persisted = self._book_config()
             providers = [updated if item.name == name else item for item in persisted.providers]
             persisted = persisted.model_copy(update={"providers": providers})
-            self._commit(persisted, staged=staged, replaced=current.credential_ref)
+            replaced = current.credential_ref if staged.ref != current.credential_ref else ""
+            self._commit(persisted, staged=staged.ref, replaced=replaced)
+            if (
+                clean.auth_session_id
+                and clean.auth_method == "subscription"
+                and self.auth is not None
+            ):
+                self.auth.consume(clean.auth_session_id, provider_id=clean.auth_provider)
             return self.view()
 
     async def delete(self, name: str, *, expected_revision: str) -> ConfigView:
@@ -194,6 +234,7 @@ class ModelConnectionService:
                         "providers": remaining,
                         "active_provider": "",
                         "active_model": "",
+                        "active_thinking_level": None,
                         "selection_mode": "none",
                     }
                 )
@@ -204,7 +245,14 @@ class ModelConnectionService:
                 self.book.apply_selection(None, "")
             return self.view()
 
-    async def select(self, connection_id: str, model: str, *, expected_revision: str) -> ConfigView:
+    async def select(
+        self,
+        connection_id: str,
+        model: str,
+        *,
+        expected_revision: str,
+        thinking_level: ThinkingLevel | None = None,
+    ) -> ConfigView:
         """显式选择连接与模型；``model`` 留空表示用该连接的默认模型。"""
         async with self._lock:
             self._require_revision(expected_revision)
@@ -219,10 +267,20 @@ class ModelConnectionService:
                     fix="先在连接编辑里把该模型加入可选列表，或选择列表中的模型",
                     details={"connection": connection_id, "models": allowed},
                 )
+            levels = thinking_levels(profile, chosen)
+            if thinking_level is not None and thinking_level not in levels:
+                raise WorkspaceError(
+                    code="MODEL_THINKING_LEVEL_INVALID",
+                    where="model.selection",
+                    why=f"模型 {chosen!r} 不支持思考深度 {thinking_level!r}",
+                    fix="选择默认，或使用当前模型提供的思考深度",
+                    details={"model": chosen, "thinking_levels": list(levels)},
+                )
             persisted = self._book_config().model_copy(
                 update={
                     "active_provider": connection_id,
                     "active_model": chosen,
+                    "active_thinking_level": thinking_level,
                     "selection_mode": "explicit",
                 }
             )
@@ -235,7 +293,12 @@ class ModelConnectionService:
         async with self._lock:
             self._require_revision(expected_revision)
             persisted = self._book_config().model_copy(
-                update={"active_provider": "", "active_model": "", "selection_mode": "none"}
+                update={
+                    "active_provider": "",
+                    "active_model": "",
+                    "selection_mode": "none",
+                    "active_thinking_level": None,
+                }
             )
             self._commit(persisted)
             self.book.apply_selection(None, "")
@@ -246,7 +309,7 @@ class ModelConnectionService:
     async def discover(
         self, draft: ConnectionDraft, *, connection_id: str | None = None
     ) -> DiscoveryResult:
-        profile, resolved_id = self._probe_profile(draft, connection_id)
+        profile, resolved_id = await self._fresh_probe_profile(draft, connection_id)
         return await discover_models(
             profile,
             discovery=self._discovery_for(draft.catalog_id, draft.api),
@@ -262,7 +325,7 @@ class ModelConnectionService:
         model: str,
         connection_id: str | None = None,
     ) -> ProbeResult:
-        profile, _ = self._probe_profile(draft, connection_id)
+        profile, _ = await self._fresh_probe_profile(draft, connection_id)
         if kind == "tool":
             return await run_tool_probe(profile, model, factory=self._probe_factory)
         if kind == "response":
@@ -296,15 +359,15 @@ class ModelConnectionService:
         self,
         persisted: ServerConfig,
         *,
-        staged: StagedKey | None = None,
+        staged: str = "",
         replaced: str = "",
     ) -> None:
         """先落盘，再发布内存快照，最后清理被替换的旧凭据。"""
         try:
             save_server_config(persisted, self.config_path)
         except OSError as exc:
-            if staged is not None:
-                self._discard(staged.ref)
+            if staged:
+                self._discard(staged)
             raise WorkspaceError(
                 code="MODEL_CONFIG_WRITE_FAILED",
                 where="model.config.write",
@@ -313,9 +376,69 @@ class ModelConnectionService:
             ) from exc
         # 提交后发布内存快照：只把刚写下的内容读回内存，不再做别的写入。
         self.book.reload(load_server_config(self.config_path))
-        if staged is not None and replaced and replaced != staged.ref:
-            # 新 key 已经生效，旧引用可以清理；清理失败只影响存储占用。
+        if replaced and replaced != staged:
+            # 旧引用已经没有任何连接指向它（换凭据或删连接）：可以清理；
+            # 清理失败只影响存储占用，不影响这一轮能否调用。
             self._discard(replaced)
+
+    def _stage(
+        self, name: str, clean: ConnectionDraft, *, current: ProviderProfile | None
+    ) -> StagedKey:
+        """决定这次提交写哪条凭据引用：新凭据先写入并校验，未改动则沿用。"""
+        if clean.auth_method == "subscription":
+            if clean.auth_session_id:
+                return StagedKey(ref=self._write_subscription(name, clean), secret="")
+            if (
+                current is not None
+                and current.auth_method == "subscription"
+                and current.credential_ref
+            ):
+                return StagedKey(ref=current.credential_ref, secret="")
+            raise WorkspaceError(
+                code="MODEL_AUTH_SESSION_REQUIRED",
+                where="model.connections",
+                why="切换到订阅登录需要先完成一次授权",
+                fix="点击「登录」在浏览器里完成授权，再保存这个连接",
+                details={"connection": name},
+            )
+        key = clean.api_key
+        if key is not None and key.strip():
+            return self._stage_key(name, key)
+        if current is not None and current.auth_method == "api_key" and current.credential_ref:
+            return StagedKey(ref=current.credential_ref, secret="")
+        raise WorkspaceError(
+            code="MODEL_CREDENTIAL_REQUIRED",
+            where="model.connections",
+            why="切回 API Key 需要重新填写 Key",
+            fix="填写该服务签发的 API Key；订阅凭据不能当作 API Key 使用",
+            details={"connection": name},
+        )
+
+    def _write_subscription(self, name: str, clean: ConnectionDraft) -> str:
+        """把授权会话里的凭据写成一条独立的引用（先写后校验）。"""
+        if self.auth is None:
+            raise WorkspaceError(
+                code="MODEL_AUTH_UNAVAILABLE",
+                where="model.connections",
+                why="当前进程没有可用的订阅授权服务",
+                fix="重启应用后重试；若持续失败，检查是否在无凭据存储的环境里运行",
+            )
+        credential = self.auth.peek(clean.auth_session_id, provider_id=clean.auth_provider)
+        ref = f"{SUBSCRIPTION_REF_PREFIX}{name}:{os.urandom(4).hex()}"
+        try:
+            save_subscription(self.credentials, ref, credential)
+            if load_subscription(self.credentials, ref) != credential:
+                raise RuntimeError("凭据存储回读校验不一致")
+        except Exception as exc:
+            self._discard(ref)
+            code = getattr(exc, "code", type(exc).__name__)
+            raise WorkspaceError(
+                code="MODEL_CREDENTIAL_FAILED",
+                where="model.credentials",
+                why=f"订阅凭据没有保存成功：{code}",
+                fix="解锁系统凭据管理器后重新登录；当前连接与旧凭据保持不变",
+            ) from exc
+        return ref
 
     def _stage_key(self, name: str, key: str) -> StagedKey:
         """新 key 先写到新引用并回读校验，避免覆盖仍在使用的旧引用。"""
@@ -336,9 +459,16 @@ class ModelConnectionService:
         return StagedKey(ref=ref, secret=key)
 
     def _discard(self, ref: str) -> None:
-        # 清理失败不影响已提交的配置：只占存储空间，不影响这一轮能否调用。
+        """清掉一条不再被引用的凭据。
+
+        订阅凭据是分片存的（系统凭据存储单条装不下），删的时候要连分片一起删；
+        清理失败不影响已提交的配置，只影响存储占用。
+        """
         with contextlib.suppress(Exception):
-            self.credentials.delete(ref)
+            if ref.startswith(SUBSCRIPTION_REF_PREFIX):
+                delete_subscription(self.credentials, ref)
+            else:
+                self.credentials.delete(ref)
 
     def _profile_or_404(self, name: str) -> ProviderProfile:
         profile = self.book.profile(name)
@@ -383,14 +513,42 @@ class ModelConnectionService:
                 why=f"不支持的协议：{draft.api!r}",
                 fix="协议只能从已实现的四类中选择",
             )
-        if creating and not (draft.api_key or "").strip():
+        if draft.auth_method not in ("api_key", "subscription"):
+            raise WorkspaceError(
+                code="MODEL_AUTH_METHOD_INVALID",
+                where="model.connections",
+                why=f"不支持的认证方式：{draft.auth_method!r}",
+                fix="认证方式只能是「API Key」或「订阅登录」",
+            )
+        if draft.auth_method == "subscription":
+            if not draft.auth_provider.strip():
+                raise WorkspaceError(
+                    code="MODEL_AUTH_PROVIDER_REQUIRED",
+                    where="model.connections",
+                    why="订阅登录没有指明订阅来源",
+                    fix="选择一家支持的订阅来源（如 ChatGPT）后重新登录",
+                )
+            if creating and not draft.auth_session_id.strip():
+                raise WorkspaceError(
+                    code="MODEL_AUTH_SESSION_REQUIRED",
+                    where="model.connections",
+                    why="订阅连接必须先完成一次授权",
+                    fix="点击「登录」在浏览器里完成授权，再保存这个连接",
+                )
+        elif creating and not (draft.api_key or "").strip():
             raise WorkspaceError(
                 code="MODEL_CREDENTIAL_REQUIRED",
                 where="model.connections",
                 why="新增连接必须填写 API Key",
-                fix="填写该服务签发的 API Key；已经保存的连接可以留空表示沿用旧 Key",
+                fix="填写该服务签发的 API Key，或改用订阅登录；"
+                "已经保存的连接可以留空表示沿用旧 Key",
             )
-        if draft.api_key is not None and not draft.api_key.strip() and not creating:
+        if (
+            draft.auth_method == "api_key"
+            and draft.api_key is not None
+            and not draft.api_key.strip()
+            and not creating
+        ):
             # 显式空串不当作「清空 key」：删除密钥只能通过删除连接完成。
             raise WorkspaceError(
                 code="MODEL_CREDENTIAL_REQUIRED",
@@ -424,7 +582,16 @@ class ModelConnectionService:
             api=draft.api,
             models=models,
             default_model=default_model,
+            # 提交里没有容量表示沿用已保存的：旧界面保存连接不该把容量抹掉。
+            model_limits=(
+                dict(draft.model_limits)
+                if draft.model_limits is not None
+                else dict(current.model_limits) if current is not None else {}
+            ),
             api_key=draft.api_key,
+            auth_method=draft.auth_method,
+            auth_provider=draft.auth_provider.strip(),
+            auth_session_id=draft.auth_session_id.strip(),
         )
 
     def _reject_model_removal(self, current: ProviderProfile, models: list[str]) -> None:
@@ -453,16 +620,25 @@ class ModelConnectionService:
             name=name,
             display_name=title,
             base_url=clean.base_url,
-            # 写盘只带引用：明文 key 只存在于凭据存储与运行时内存。
+            # 写盘只带引用：明文凭据只存在于凭据存储与运行时内存。
             credential_ref=credential_ref,
             default_model=clean.default_model,
             models=list(clean.models),
+            model_limits=dict(clean.model_limits or {}),
             catalog_id=clean.catalog_id,
             api=clean.api,
+            auth_method=clean.auth_method,
+            auth_provider=clean.auth_provider,
         )
 
     def _view_of(self, profile: ProviderProfile) -> ConnectionView:
         key = profile.resolved_api_key()
+        subscription = profile.subscription
+        account = (
+            mask_account(subscription.account_label, subscription.account_id)
+            if subscription is not None
+            else ""
+        )
         return ConnectionView(
             name=profile.name,
             display_name=profile.title,
@@ -472,8 +648,13 @@ class ModelConnectionService:
             models=profile.models_for(),
             default_model=profile.default_model,
             has_key=profile.available,
-            masked_key=mask_key(key),
+            masked_key=mask_key(key) if profile.auth_method == "api_key" else "",
             credential_storage=self.storage,
+            auth_method=profile.auth_method,
+            auth_provider=profile.auth_provider,
+            account=account,
+            auth_status=profile.auth_status,
+            model_limits=dict(profile.model_limits),
         )
 
     def _discovery_for(self, catalog_id: str, api: str) -> str | None:
@@ -487,13 +668,53 @@ class ModelConnectionService:
             return "anthropic-models"
         return "google-models"
 
+    async def _fresh_probe_profile(
+        self, draft: ConnectionDraft, connection_id: str | None
+    ) -> tuple[ProviderProfile, str | None]:
+        """发现与测试前先确保订阅凭据可用：否则「列表能拿到、写作用不了」很难解释。"""
+        profile, resolved = self._probe_profile(draft, connection_id)
+        credential = profile.subscription
+        if credential is None or not credential.expired():
+            return profile, resolved
+        if self.auth is None:
+            raise WorkspaceError(
+                code="MODEL_AUTH_REFRESH_UNSUPPORTED",
+                where="model.probe",
+                why="订阅凭据已过期，当前进程没有可用的续期能力",
+                fix="在「模型设置」里重新登录这个连接",
+            )
+        try:
+            refreshed = await self.auth.refresh(credential)
+        except WorkspaceError:
+            raise
+        except Exception as exc:  # 续期失败要给可读原因，不要落到「未分类错误」
+            raise WorkspaceError(
+                code="MODEL_AUTH_REFRESH_FAILED",
+                where="model.probe",
+                why=f"订阅凭据续期失败：{exc}",
+                fix="重新登录这个连接后重试",
+            ) from exc
+        if profile.name and profile.name != "draft":
+            # 已保存的连接顺带回写，下一次启动不用再刷一次。
+            self.book.update_subscription(profile.name, refreshed)
+        return profile.model_copy(update={"subscription": refreshed}), resolved
+
     def _probe_profile(
         self, draft: ConnectionDraft, connection_id: str | None
     ) -> tuple[ProviderProfile, str | None]:
-        """草稿也能测试：省略 key 时只允许读该连接自己的旧凭据。"""
+        """草稿也能测试：省略凭据时只允许读该连接自己的旧凭据。
+
+        订阅连接有三种来源：刚完成的授权会话（还没保存）、已保存连接的凭据、
+        以及显式填写的 API Key。三者都不会把凭据带出这一层。
+        """
         key = (draft.api_key or "").strip()
         credential_ref = ""
-        if not key and connection_id:
+        subscription: SubscriptionCredential | None = None
+        auth_provider = draft.auth_provider.strip()
+        if draft.auth_session_id and self.auth is not None:
+            subscription = self.auth.peek(draft.auth_session_id, provider_id=auth_provider)
+            auth_provider = subscription.auth_provider
+        elif not key and connection_id:
             stored = self.book.profile(connection_id)
             if stored is None:
                 raise WorkspaceError(
@@ -503,13 +724,17 @@ class ModelConnectionService:
                     fix="刷新连接列表后重试",
                 )
             credential_ref = stored.credential_ref
-            key = stored.resolved_api_key()
-        if not key:
+            if stored.auth_method == "subscription":
+                subscription = stored.subscription
+                auth_provider = stored.auth_provider
+            else:
+                key = stored.resolved_api_key()
+        if subscription is None and not key:
             raise WorkspaceError(
                 code="MODEL_CREDENTIAL_REQUIRED",
                 where="model.probe",
-                why="这次请求没有可用的 API Key",
-                fix="填写 API Key，或对已保存的连接直接测试",
+                why="这次请求没有可用的凭据",
+                fix="订阅连接先完成登录，或填写 API Key；对已保存的连接可以直接测试",
             )
         profile = ProviderProfile(
             name=connection_id or "draft",
@@ -521,6 +746,9 @@ class ModelConnectionService:
             models=list(draft.models),
             catalog_id=draft.catalog_id,
             api=draft.api,
+            auth_method="subscription" if subscription is not None else "api_key",
+            auth_provider=auth_provider if subscription is not None else "",
+            subscription=subscription,
         )
         return profile, connection_id
 

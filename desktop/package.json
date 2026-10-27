@@ -1,6 +1,6 @@
 {
   "name": "hastings-desktop",
-  "version": "0.7.0",
+  "version": "0.9.0",
   "private": true,
   "description": "Hastings 桌面端：Electron 壳 + sidecar 生命周期",
   "main": "dist/main.js",

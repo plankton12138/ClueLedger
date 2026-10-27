@@ -229,17 +229,17 @@ class Workspace:
     # -- 建立与打开 ---------------------------------------------------------
 
     @classmethod
-    def create(cls, root: Path) -> Workspace:
-        """新建（或补齐）正文与设定目录；不覆盖已有内容，也不预建设定文件。"""
+    def create(cls, root: Path, *, exclusive: bool = False) -> Workspace:
+        """新建正文目录；用户新建入口用 exclusive 拒绝任何已存在的目标。"""
         target = Path(root).expanduser()
         try:
-            target.mkdir(parents=True, exist_ok=True)
+            target.mkdir(parents=True, exist_ok=not exclusive)
         except FileExistsError as exc:
             raise WorkspaceError(
-                code="WORKSPACE_NOT_DIRECTORY",
+                code="WORKSPACE_NAME_CONFLICT" if target.is_dir() else "WORKSPACE_NOT_DIRECTORY",
                 where="workspace.create",
-                why=f"路径已存在且不是目录：{target}",
-                fix="换一个目录名，或打开那个已有的文件所在目录",
+                why=f"目标路径已经存在：{target}",
+                fix="换一个作品名，或使用「打开已有」",
             ) from exc
         except OSError as exc:
             raise WorkspaceError(
@@ -273,13 +273,8 @@ class Workspace:
         return cls(target)
 
     def ensure_structure(self) -> None:
-        """补齐受管目录；不预建线索与真相文件。
-
-        新作品只从正文开始：线索、真相与人物改由模块库或作者按需建立。已有作品里
-        这两份文件继续按原路径读取，不会被删除或迁移。
-        """
-        for name in (BODY_DIR, SETTINGS_DIR, CHARACTERS_DIR):
-            self._writable_directory(name)
+        """只建立正文目录；设定由共享模块装卸，其他作品资料按需保存。"""
+        self._writable_directory(BODY_DIR)
 
     @property
     def name(self) -> str:

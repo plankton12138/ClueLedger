@@ -1,0 +1,14 @@
+{
+  "v09_overflow_and_stop--current--1/step-1/answer_after_retry": {
+    "verdict": "pass",
+    "reviewer": "TRAE",
+    "reason": "回答明确给出铜钥匙在管家手里，并区分「当前正文只写到管家收进衣袋」与「用途仍未说明」，没有猜测转手或用途。答案来自第二章正文，不是臆测。",
+    "evidence": "evidence/v09_overflow_and_stop--current--1/step-1.json：faults 记录一次 provider 注入的 context_overflow；seq 52 的 model_request_retried 记录 tokens_before 19610、tokens_after 11573、dropped_messages 23；重发后 public_answer 引用了第二章「管家将铜钥匙收进衣袋」。"
+  },
+  "v09_overflow_and_stop--current--1/step-3/continues_after_stop": {
+    "verdict": "pass",
+    "reviewer": "TRAE",
+    "reason": "第三步先说明上一轮只回答了铜钥匙的问题、没有留下文字，因此是补写；随后重新写出走廊场景。没有声称上一轮已经写完，也没有无视停止重复已有片段，本轮未改文件。",
+    "evidence": "evidence/v09_overflow_and_stop--current--1/step-3.json：step-2 run_finished 为 stopped 且 public_answer 为空；step-3 public_answer 开头明确说明补写；tool_not_called 通过，diffs 为空。"
+  }
+}

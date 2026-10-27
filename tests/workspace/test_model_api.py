@@ -193,6 +193,8 @@ def test_selection_endpoints_persist_choice(tmp_path: Path) -> None:
         "source": "saved",
         "available": True,
         "reason": "",
+        "thinking_level": None,
+        "thinking_levels": [],
     }
     read = client.get("/api/model-selection").json()
     assert read["selection"]["model"] == "deepseek-reasoner"
@@ -351,7 +353,9 @@ def test_accepted_turn_keeps_its_snapshot_after_switching(
     built = iter([provider])
 
     # 让设置接口保存的连接在装配时构造出记录型假 provider。
-    def fake_snapshot(profile: Any, model: str, *, worker: bool = True) -> Any:
+    def fake_snapshot(
+        profile: Any, model: str, *, worker: bool = True, thinking_level: str | None = None
+    ) -> Any:
         from hastings.server.provider_runtime import ModelSnapshot
 
         return ModelSnapshot(
@@ -387,3 +391,66 @@ def test_accepted_turn_keeps_its_snapshot_after_switching(
     # 事件里不出现连接凭据。
     assert "sk-api-key-4321" not in str(events)
     assert service.view().selection.connection_id == first
+
+
+# -- 容量配置 ---------------------------------------------------------------
+
+
+def test_capacity_is_saved_per_model_and_exposed(tmp_path: Path) -> None:
+    """容量按精确模型保存，写入配置文件，并出现在连接视图里。"""
+    client, _service, _book, path = _build(tmp_path)
+
+    body = _create(client, model_limits={"deepseek-chat": {"context_window_tokens": 131_072}})
+
+    connection = body["connections"][0]
+    assert connection["model_limits"]["deepseek-chat"]["context_window_tokens"] == 131_072
+    assert "131072" in path.read_text(encoding="utf-8")
+
+
+def test_edit_without_capacity_field_keeps_saved_limits(tmp_path: Path) -> None:
+    """保存连接时没提交容量，不能把已配置的容量清掉。"""
+    client, _service, _book, _path = _build(tmp_path)
+    name = _create(
+        client, model_limits={"deepseek-chat": {"context_window_tokens": 131_072}}
+    )["connections"][0]["name"]
+
+    updated = client.patch(
+        f"/api/model-connections/{name}",
+        json={**DRAFT, "display_name": "改名", "api_key": None},
+        headers={"If-Match": _revision(client)},
+    )
+
+    assert updated.status_code == 200
+    limits = updated.json()["connections"][0]["model_limits"]
+    assert limits["deepseek-chat"]["context_window_tokens"] == 131_072
+
+
+def test_explicit_empty_capacity_map_clears_limits(tmp_path: Path) -> None:
+    """显式提交空映射才是清空：省略与清空是两种意图。"""
+    client, _service, _book, _path = _build(tmp_path)
+    name = _create(
+        client, model_limits={"deepseek-chat": {"context_window_tokens": 131_072}}
+    )["connections"][0]["name"]
+
+    updated = client.patch(
+        f"/api/model-connections/{name}",
+        json={**DRAFT, "api_key": None, "model_limits": {}},
+        headers={"If-Match": _revision(client)},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["connections"][0]["model_limits"] == {}
+
+
+def test_invalid_capacity_is_rejected_before_saving(tmp_path: Path) -> None:
+    client, _service, _book, path = _build(tmp_path)
+
+    response = client.post(
+        "/api/model-connections",
+        json={**DRAFT, "model_limits": {"deepseek-chat": {"context_window_tokens": 0}}},
+        headers={"If-Match": _revision(client)},
+    )
+
+    assert response.status_code == 422
+    assert "MODEL_LIMITS_INVALID" in response.text
+    assert not path.exists()

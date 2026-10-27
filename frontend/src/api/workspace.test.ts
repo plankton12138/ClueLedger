@@ -17,6 +17,7 @@ import {
   listFiles,
   openWorkspace,
   readFile,
+  removeWorkspace,
   renameConversation,
   startTurn,
   streamEvents,
@@ -73,6 +74,14 @@ describe("系统文件夹对话框", () => {
 });
 
 describe("请求形状", () => {
+  it("删除必须携带用户确认的完整路径", async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({ removed: {}, workspaces: [] }));
+    vi.stubGlobal("fetch", fetch);
+    await removeWorkspace("w1", "C:/作品/雨夜");
+    expect(fetch).toHaveBeenCalledWith("/api/file-workspaces/w1", expect.objectContaining({
+      method: "DELETE", body: JSON.stringify({ confirmed_path: "C:/作品/雨夜" }),
+    }));
+  });
   it("列出目录与读取文件用 GET，路径做编码", async () => {
     const calls: string[] = [];
     vi.stubGlobal("fetch", async (url: string) => {

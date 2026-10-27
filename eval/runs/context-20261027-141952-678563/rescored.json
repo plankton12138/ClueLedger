@@ -1,0 +1,369 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261027-141952-678563",
+    "started_at": "2026-10-27T14:19:52.678563+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "d4c9825c10390ccf519096370f4e0cf748f9e953",
+    "git_dirty": true,
+    "source_sha256": "fbecd32be81692cf2ec7932406f18beee0d8518b755f8cd4de7d22d37b5fabe8",
+    "cases_sha256": "ea9d75757ce8e984e56bfcc05c7ed845e9397cb5060b49a46f7c39d935ea4293",
+    "suite": "v09-context",
+    "jobs": [
+      {
+        "key": "v09_multi_source_module--current--1",
+        "case": "v09_multi_source_module",
+        "family": "模块维护",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 40,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261027-141952-678563",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 11,
+    "rescored_at": "2026-10-27T14:56:50.434071+08:00",
+    "scorer_source_sha256": "e5a8aa1118c9601d3bd1e1bc7952f431fbfe211524ae8b6047a8e4f17588cdbd",
+    "reviews_sha256": "82db94b3b3f6df3b8640d677bc293b80cf50ef3e9c44d074d83305607fc35c61"
+  },
+  "summary": {
+    "planned": 1,
+    "executed": 1,
+    "counts": {
+      "pass": 1,
+      "not_run": 0
+    },
+    "success_rate": 1.0,
+    "duration_p50_seconds": 39.422,
+    "duration_p95_seconds": 39.422,
+    "input_tokens": 10247,
+    "output_tokens": 5307,
+    "tokens_per_success": 15554.0,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 39.422,
+        "duration_p95_seconds": 39.422,
+        "input_tokens": 10247,
+        "output_tokens": 5307,
+        "tokens_per_success": 15554.0,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "模块维护": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 39.422,
+        "duration_p95_seconds": 39.422,
+        "input_tokens": 10247,
+        "output_tokens": 5307,
+        "tokens_per_success": 15554.0,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 39.422,
+        "duration_p95_seconds": 39.422,
+        "input_tokens": 10247,
+        "output_tokens": 5307,
+        "tokens_per_success": 15554.0,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v09_multi_source_module": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 39.422,
+        "duration_p95_seconds": 39.422,
+        "input_tokens": 10247,
+        "output_tokens": 5307,
+        "tokens_per_success": 15554.0,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 3406,
+            "at": "2026-10-27T14:20:32.245+08:00",
+            "event_version": 1,
+            "event_id": "c_ebc0ba3ede73:3406",
+            "conversation_id": "c_ebc0ba3ede73",
+            "type": "run_finished",
+            "turn_id": "t_50a3a39e",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先通读第一至第三章和线索文件，并查看已装「案件线索」模块的现有条目。\n已读完三章与线索文件。现在把「铜钥匙用途」和「第三章纸条暗号」两条以「待补」登记进已装的「案件线索」模块，不动任何正文与旧设定文件。\n条目级新增不受支持：该版本只能改写已有条目（`code_1`）。我将三条线索按要求写进这份条目，每条一行、各自标为「待补」。\n已完成。\n\n**读取的原文**\n- 第一章：信封背面接头暗号「青鸟归巢」；林远称案发时在客房，无人证实。\n- 第二章：走廊尽头有一盏灯，管家把铜钥匙收进衣袋——用途未交代。\n- 第三章：书房里林远推开门，纸条上的暗号本身就写作「待补」。\n- 设定集/线索.md：只记了「第二章的铜钥匙尚未说明用途」。\n\n**模块更新**\n「案件线索」模块（mod_00fa16ee28e0daf2）从 rev_e7be7e6fa19c0703 升到 rev_8d940f2f38faab87，条目 `code_1` 现为三行台账：\n- 第一章信封背面接头暗号：青鸟归巢。\n- 第二章管家将铜钥匙收进衣袋，铜钥匙用途：待补。\n- 第三章书房纸条上的暗号：待补。\n\n**需要说明的一处偏离**\n这版模块只有 `code_1` 一个条目，工具不支持在已有模块里新增条目（我先试过按 `key_1`／`code_2` 新建，应用时被拒绝：条目不在该版本里）。因此两条新线索是与原有暗号同写进 `code_1` 这一条目、各自独立成行，而不是各自单独一条；条目标题仍是「第一章暗号」。若你希望它们成为独立条目，需要另建一份模块承接，或先允许我把模块整体重建成多条目结构——按你的要求，这两件我这轮都没做。\n\n正文文件与设定集/线索.md 均未改动。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/read_ch1",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0001 雨夜.md",
+            "spans": [
+              [
+                0,
+                53
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-1/read_ch2",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0002 走廊.md",
+            "spans": [
+              [
+                0,
+                27
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-1/read_ch3",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "spans": [
+              [
+                0,
+                31
+              ]
+            ]
+          }
+        },
+        {
+          "id": "step-1/still_bound",
+          "status": "pass",
+          "detail": [
+            "案件线索"
+          ]
+        },
+        {
+          "id": "step-1/keeps_old_code",
+          "status": "pass",
+          "detail": {
+            "value": "青鸟归巢",
+            "modules": 1
+          }
+        },
+        {
+          "id": "step-1/records_key",
+          "status": "pass",
+          "detail": {
+            "value": "铜钥匙",
+            "modules": 1
+          }
+        },
+        {
+          "id": "step-1/no_file_write",
+          "status": "pass",
+          "detail": {
+            "banned": [
+              "delete_file",
+              "edit_file",
+              "move_file",
+              "write_file"
+            ],
+            "called": [
+              "apply_module_changes",
+              "list_modules",
+              "prepare_module_changes",
+              "query_records",
+              "read_file",
+              "read_record",
+              "set_task_scope"
+            ]
+          }
+        },
+        {
+          "id": "step-1/single_source_update",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "TRAE",
+            "reason": "实际读完三章正文与线索文件；在已装的「案件线索」模块里补上第二章铜钥匙用途与第三章暗号，均标为待补；保留第一章「青鸟归巢」；正文与设定集未改。受应用限制无法新增条目，模型把两条线索并入现有 code_1 并如实说明，没有新建重复模块或条目，也没有把未写清的内容编成结论。",
+            "evidence": "evidence/v09_multi_source_module--current--1/step-1.json：read_ch1、read_ch2、read_ch3 分别给出原文区间；still_bound 为「案件线索」；keeps_old_code 找到「青鸟归巢」；records_key 找到「铜钥匙」；no_file_write 通过；public_answer 记录模块 rev_e7be7e6fa19c0703 → rev_8d940f2f38faab87 且两条线索均标待补；terminal seq 3406 为 completed，diffs 为空。"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 11,
+        "model_finished": 11,
+        "tool_calls": 15,
+        "tool_errors": 3,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 11,
+        "fresh_input_tokens": 10247,
+        "input_tokens": 10247,
+        "output_tokens": 5307,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 167,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 8826,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 10976,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 15004,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 16553,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 17750,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 19319,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 22180,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 24524,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 27293,
+            "tools_json_chars": 15174
+          },
+          {
+            "system_chars": 4223,
+            "messages_json_chars": 31808,
+            "tools_json_chars": 15174
+          }
+        ],
+        "max_request_json_chars": 51205,
+        "cost": null
+      },
+      "key": "v09_multi_source_module--current--1",
+      "case": "v09_multi_source_module",
+      "title": "一次请求读多份材料并更新指定模块",
+      "family": "模块维护",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 39.422,
+      "evidence": "evidence/v09_multi_source_module--current--1",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

@@ -36,6 +36,9 @@ from hastings.workspace.character_states import (
     roster_view,
 )
 from hastings.workspace.clues import ClueStore, build_clues, clues_view
+from hastings.workspace.compaction_ops import CompactionRunner
+from hastings.workspace.conversation_usage import context_snapshot, summarize_events
+from hastings.workspace.deletion import delete_workspace_files
 from hastings.workspace.directory_dialog import DirectoryPickerError, pick_directory
 from hastings.workspace.disclosure import (
     DisclosureState as DisclosureStateRecord,
@@ -49,7 +52,7 @@ from hastings.workspace.errors import WorkspaceError, status_for_code
 from hastings.workspace.files import FileEntry, FileKind, Workspace, is_managed_path
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import GlossaryStore, build_glossary, glossary_view
-from hastings.workspace.locations import default_workspace_root
+from hastings.workspace.locations import default_data_root, default_workspace_root, documents_dir
 from hastings.workspace.material_tasks import (
     MaterialTaskScope,
     material_conversation_ids,
@@ -97,6 +100,9 @@ __all__ = [
     "OpenWorkspaceRequest",
     "PickDirectoryRequest",
     "PickedDirectoryView",
+    "RemovedWorkspaceView",
+    "RenameWorkspaceRequest",
+    "RenamedWorkspaceView",
     "SearchResponse",
     "TurnRequest",
     "TurnView",
@@ -109,10 +115,22 @@ PREFIX = "/api/file-workspaces"
 
 
 class OpenWorkspaceRequest(BaseModel):
-    """按服务器本地路径打开或新建；``create`` 为真时补齐两块内容目录。"""
+    """按服务器本地路径打开或新建；新建只建立正文目录，拒绝已有目标。"""
 
     path: str = Field(min_length=1)
     create: bool = False
+
+
+class RenameWorkspaceRequest(BaseModel):
+    """新作品名：单个文件夹名；路径与非法字符由服务端校验。"""
+
+    name: str
+
+
+class DeleteWorkspaceRequest(BaseModel):
+    """用户确认框中展示并明确确认的完整作品路径。"""
+
+    confirmed_path: str = Field(min_length=1)
 
 
 class DefaultLocationView(BaseModel):
@@ -144,6 +162,20 @@ class PruneWorkspacesView(BaseModel):
     """清理结果：被移除的登记与清理后仍在册的作品。"""
 
     removed: list[WorkspaceView]
+    workspaces: list[WorkspaceView]
+
+
+class RemovedWorkspaceView(BaseModel):
+    """实际删除后的作品与剩余列表。"""
+
+    removed: WorkspaceView
+    workspaces: list[WorkspaceView]
+
+
+class RenamedWorkspaceView(BaseModel):
+    """重命名的结果：换绑后的作品与更新后的登记列表。"""
+
+    workspace: WorkspaceView
     workspaces: list[WorkspaceView]
 
 
@@ -347,6 +379,76 @@ class EventsView(BaseModel):
     last_seq: int
     active_turn: ActiveTurnView | None = None
     revision: str = ""
+
+
+class UsageTotalsView(BaseModel):
+    """会话累计用量；字段名与 ``conversation_usage.UsageTotals`` 一一对应。
+
+    ``null`` 一律表示「没有得到可靠数值」，不是零。没有请求时才全是零。
+    """
+
+    total_tokens: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    finished_requests: int = 0
+    requests_without_usage: int = 0
+    requests_in_progress: int = 0
+    model_duration_ms: int | None = None
+
+
+class ContextView(BaseModel):
+    """当前有效上下文；``null`` 表示这一项还没有可靠数值。
+
+    ``pending`` 还没有任何请求，``running`` 有一轮正在跑，``ready`` 最近一轮已结束。
+    容量取自最近一次请求受理时冻结的那份。
+    """
+
+    status: Literal["pending", "running", "ready"]
+    estimated_active_tokens: int | None = None
+    last_request_input_tokens: int | None = None
+    context_window_tokens: int | None = None
+    input_limit_tokens: int | None = None
+    output_reserve_tokens: int | None = None
+    budget: Literal["unknown", "ok", "near", "over"] = "unknown"
+    instructions_tokens: int | None = None
+    tools_tokens: int | None = None
+    conversation_tokens: int | None = None
+    method: str = ""
+    fingerprint: str = ""
+    limits_revision: str = ""
+
+
+class CompactRequest(BaseModel):
+    """手动整理上下文；``request_key`` 是幂等键，重复提交返回同一个操作。"""
+
+    request_key: str
+
+
+class CompactionOperationView(BaseModel):
+    """整理操作的状态；``completed`` 时才带记录，失败时带错误。"""
+
+    operation_id: str
+    conversation_id: str
+    state: Literal["queued", "running", "completed", "noop", "failed", "stopped"]
+    record: dict[str, object] | None = None
+    error: dict[str, object] | None = None
+    note: str = ""
+
+
+class ConversationUsageView(BaseModel):
+    """用量读取视图：只读，不产生模型调用与会话事件。"""
+
+    conversation_id: str
+    #: 覆盖到的事件序号；客户端用它判断自己的视图是否落后。
+    through_seq: int
+    usage: UsageTotalsView
+    context: ContextView
+    #: 记录链路自身的问题，例如同一请求出现了两个不同终态。
+    diagnostics: list[str] = Field(default_factory=list)
+    revision: str = ""
+    compaction: CompactionOperationView | None = None
 
 
 class DraftContextView(BaseModel):
@@ -834,6 +936,7 @@ def create_file_workspace_router(
     """绑定最近目录登记与模型来源；每个作品一个轮次服务，按需创建。"""
     router = APIRouter(prefix=PREFIX, tags=["file-workspaces"])
     services: dict[str, TurnService] = {}
+    runners: dict[str, CompactionRunner] = {}
     ui_stores: dict[str, ConversationUiStore] = {}
     activity_stores: dict[str, ActivityStore] = {}
     activity_lock = threading.RLock()
@@ -852,6 +955,19 @@ def create_file_workspace_router(
             id=binding.id, name=binding.name, path=binding.path, exists=binding.exists
         )
 
+    def ensure_idle(workspace_id: str, binding: WorkspaceBinding, where: str) -> None:
+        """作品还有一轮在写时，不允许删除或改名，避免运行中的轮次失去落脚点。"""
+        service = services.get(workspace_id)
+        running = service is not None and service.active_turn() is not None
+        if running or (run_registry is not None and run_registry.is_busy(Path(binding.path))):
+            raise WorkspaceError(
+                code="WORKSPACE_BUSY_CONFLICT",
+                where=where,
+                why="这部作品还有一轮正在运行",
+                fix="先停止或等待这一轮结束，再整理作品",
+                details={"id": workspace_id},
+            )
+
     def service_for(workspace_id: str) -> TurnService:
         binding = workspaces.get(workspace_id)
         cached = services.get(workspace_id)
@@ -869,6 +985,9 @@ def create_file_workspace_router(
         service.activity = activity_for(workspace_id)
         # 进程重启后，没有正常结束的轮次在这里补一条中断记录；不自动继续。
         service.mark_interrupted()
+        runner = CompactionRunner(service)
+        runner.recover()
+        runners[workspace_id] = runner
         services[workspace_id] = service
         return service
 
@@ -911,9 +1030,68 @@ def create_file_workspace_router(
             workspaces=[view(binding) for binding in workspaces.recent()],
         )
 
+    @router.delete("/{workspace_id}", response_model=RemovedWorkspaceView)
+    async def remove_workspace(
+        workspace_id: str, body: DeleteWorkspaceRequest
+    ) -> RemovedWorkspaceView:
+        """明确确认后删除作品目录和应用记录；与轮次受理在同一事件循环中执行。"""
+        binding = workspaces.get(workspace_id)
+        ensure_idle(workspace_id, binding, "workspace.remove")
+        protected = [
+            Path.home(),
+            Path.cwd(),
+            documents_dir() or Path.home(),
+            default_data_root(),
+            default_workspace_root(),
+            default_data_root() / "ModuleLibrary",
+            workspaces.root,
+            *[Path(item.path) for item in workspaces.recent() if item.id != workspace_id],
+        ]
+        if library is not None:
+            protected.append(library.root)
+        try:
+            delete_workspace_files(
+                Path(binding.path),
+                conversation_root(workspaces.root, workspace_id),
+                confirmed_path=body.confirmed_path,
+                protected_roots=protected,
+            )
+            removed = workspaces.unbind(workspace_id)
+        finally:
+            # 部分删除失败也丢弃旧路径缓存；后续请求必须重新核对目录是否仍存在。
+            services.pop(workspace_id, None)
+            ui_stores.pop(workspace_id, None)
+            with activity_lock:
+                activity_stores.pop(workspace_id, None)
+        return RemovedWorkspaceView(
+            removed=view(removed),
+            workspaces=[view(item) for item in workspaces.recent()],
+        )
+
+    @router.patch("/{workspace_id}", response_model=RenamedWorkspaceView)
+    def rename_workspace(workspace_id: str, body: RenameWorkspaceRequest) -> RenamedWorkspaceView:
+        """重命名作品目录，并把应用内状态迁到新路径对应的登记下。
+
+        目录名就是作品名：改名会同时改磁盘文件夹与登记标识，正文、Git 历史、
+        会话与活动记录随目录和状态一起迁移。正在写作的作品不能改名。
+        """
+        binding = workspaces.get(workspace_id)
+        ensure_idle(workspace_id, binding, "workspace.rename")
+        renamed = workspaces.rename(workspace_id, body.name)
+        # 新旧标识的缓存都不能留下：服务与状态存储绑定的是旧路径。
+        with activity_lock:
+            for key in {workspace_id, renamed.id}:
+                services.pop(key, None)
+                ui_stores.pop(key, None)
+                activity_stores.pop(key, None)
+        return RenamedWorkspaceView(
+            workspace=view(renamed),
+            workspaces=[view(item) for item in workspaces.recent()],
+        )
+
     @router.get("/default-location", response_model=DefaultLocationView)
     def default_location() -> DefaultLocationView:
-        """新作品的默认父目录（作者的文档目录）；界面用它作为起始位置。"""
+        """新作品默认归入文档 / ClueLedger / 作品；只查询，不创建目录。"""
         return DefaultLocationView(root=str(default_workspace_root()))
 
     @router.post("/pick-directory", response_model=PickedDirectoryView)
@@ -943,7 +1121,7 @@ def create_file_workspace_router(
         target = Path(body.path).expanduser()
         if body.create:
             # 新作品同时建立版本记录：历史从第一份内容开始，而不是从某次修改补起。
-            Workspace.create(target)
+            Workspace.create(target, exclusive=True)
             GitRepo(target).init()
         else:
             # 打开已有目录只读检查，不擅自初始化或改写内容。
@@ -1412,6 +1590,99 @@ def create_file_workspace_router(
         )
 
     @router.post(
+        "/{workspace_id}/conversations/{conversation_id}/compact",
+        response_model=CompactionOperationView,
+        status_code=202,
+    )
+    async def compact_conversation(
+        workspace_id: str, conversation_id: str, body: CompactRequest
+    ) -> CompactionOperationView:
+        """受理一次手动整理。
+
+        整理在后台跑：它可能调用一次摘要模型，同步等待会让界面卡住。它不占创作轮次，
+        也不产生作品提交，走的是自己的操作标识。
+        """
+        service_for(workspace_id)
+        runner = runners[workspace_id]
+        operation = await runner.submit(conversation_id, body.request_key)
+        return CompactionOperationView(**operation.as_dict())
+
+    @router.get(
+        "/{workspace_id}/conversations/{conversation_id}/compactions/{operation_id}",
+        response_model=CompactionOperationView,
+    )
+    def read_compaction(
+        workspace_id: str, conversation_id: str, operation_id: str
+    ) -> CompactionOperationView:
+        """整理操作的状态；读取不触发模型，也不改事件。"""
+        service_for(workspace_id)
+        runner = runners[workspace_id]
+        return CompactionOperationView(**runner.get(conversation_id, operation_id).as_dict())
+
+    @router.post(
+        "/{workspace_id}/conversations/{conversation_id}/compactions/{operation_id}/stop",
+        response_model=CompactionOperationView,
+    )
+    async def stop_compaction(
+        workspace_id: str, conversation_id: str, operation_id: str
+    ) -> CompactionOperationView:
+        service_for(workspace_id)
+        runner = runners[workspace_id]
+        operation = await runner.stop(conversation_id, operation_id)
+        return CompactionOperationView(**operation.as_dict())
+
+    @router.get(
+        "/{workspace_id}/conversations/{conversation_id}/usage",
+        response_model=ConversationUsageView,
+    )
+    def conversation_usage(workspace_id: str, conversation_id: str) -> ConversationUsageView:
+        """累计用量。
+
+        只从已持久的事件重建，不读活动附件、不触发模型调用、不写任何事件：
+        打开一次用量浮层不应该改变任何数据。
+        """
+        service = service_for(workspace_id)
+        service.store.get(conversation_id)
+        events = service.store.events(conversation_id)
+        summary = summarize_events(events)
+        context = context_snapshot(events)
+        totals = summary.totals
+        operation = runners[workspace_id].latest(conversation_id)
+        return ConversationUsageView(
+            conversation_id=conversation_id,
+            through_seq=summary.through_seq,
+            usage=UsageTotalsView(
+                total_tokens=totals.total_tokens,
+                input_tokens=totals.input_tokens,
+                output_tokens=totals.output_tokens,
+                cache_read_tokens=totals.cache_read_tokens,
+                cache_write_tokens=totals.cache_write_tokens,
+                finished_requests=totals.finished_requests,
+                requests_without_usage=totals.requests_without_usage,
+                requests_in_progress=totals.requests_in_progress,
+                model_duration_ms=totals.model_duration_ms,
+            ),
+            context=ContextView(
+                status=context.status,
+                estimated_active_tokens=context.estimated_active_tokens,
+                last_request_input_tokens=context.last_request_input_tokens,
+                context_window_tokens=context.context_window_tokens,
+                input_limit_tokens=context.input_limit_tokens,
+                output_reserve_tokens=context.output_reserve_tokens,
+                budget=context.budget,
+                instructions_tokens=context.instructions_tokens,
+                tools_tokens=context.tools_tokens,
+                conversation_tokens=context.conversation_tokens,
+                method=context.method,
+                fingerprint=context.fingerprint,
+                limits_revision=context.limits_revision,
+            ),
+            diagnostics=list(summary.diagnostics),
+            revision=service.store.revision(),
+            compaction=CompactionOperationView(**operation.as_dict()) if operation else None,
+        )
+
+    @router.post(
         "/{workspace_id}/conversations/{conversation_id}/turns",
         response_model=TurnView,
         status_code=202,
@@ -1529,9 +1800,6 @@ def create_file_workspace_router(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    from hastings.workspace.overview_api import create_overview_router
-
-    router.include_router(create_overview_router(workspaces, library, service_for))
     return router
 
 

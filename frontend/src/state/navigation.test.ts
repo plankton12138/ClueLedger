@@ -21,10 +21,12 @@ describe("parseHash", () => {
       ideaId: "idea_123",
     });
     expect(parseHash("#/workspaces/ws1/materials/story?order=story&chapter=8&entry=abc123")).toEqual({
-      kind: "overview",
+      kind: "materials",
       workspaceId: "ws1",
+      section: "story",
       chapter: 8,
       order: "story",
+      entryId: "abc123",
     });
   });
 
@@ -40,12 +42,12 @@ describe("parseHash", () => {
 
   it("旧章节概览与时间线路由落到同一页的不同顺序", () => {
     expect(parseHash("#/workspaces/ws1/materials/chapters?chapter=3")).toMatchObject({
-      kind: "overview",
+      kind: "materials",
       chapter: 3,
       order: "chapter",
     });
     expect(parseHash("#/workspaces/ws1/materials/timeline")).toMatchObject({
-      kind: "overview",
+      kind: "materials",
       chapter: null,
       order: "story",
     });
@@ -77,8 +79,9 @@ describe("pageHash", () => {
         entryId: "deadbeef",
       },
       {
-        kind: "overview" as const,
+        kind: "materials" as const,
         workspaceId: "ws1",
+        section: "story" as const,
         chapter: null,
         order: "story" as const,
       },
@@ -93,5 +96,15 @@ describe("pageHash", () => {
     for (const page of pages) {
       expect(parseHash(pageHash(page))).toEqual(page);
     }
+  });
+});
+
+describe("removed overview links", () => {
+  it("旧总览及对象链接返回写作页，旧资料链接保持独立", () => {
+    for (const query of ["", "?binding=bind_1&facet=facet_1&view=characters&chapter=4", "?order=story&event=event_1"]) {
+      expect(parseHash(`#/workspaces/book-a/overview${query}`)).toEqual({ kind: "writing", workspaceId: "book-a" });
+    }
+    expect(parseHash("#/workspaces/book-a/materials/characters?entry=old&chapter=4")).toMatchObject({ kind: "materials", entryId: "old", chapter: 4 });
+    expect(parseHash("#/workspaces/book-a/overview/extra")).toBeNull();
   });
 });

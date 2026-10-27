@@ -1,0 +1,43 @@
+version: 1
+cases:
+  - id: module_only_first_chapter
+    title: 只有已装模块的新作品直接开始第一章
+    family: 模块上下文对齐
+    fixture: module-only.json
+    modules:
+      - kind: characters
+        name: 人物设定
+        entries:
+          - entry_id: people
+            kind: character
+            title: 两名旅客
+            body: |
+              林静是来旅馆休假的医生，随身带着一个旧药箱，不认识旅馆老板。
+              周岚是来拍摄雪景的摄影师，第一次来到这家旅馆。
+      - kind: world
+        name: 旅馆与环境
+        entries:
+          - entry_id: inn
+            kind: place
+            title: 山中旅馆
+            body: 山中旅馆只有一部旧电话。故事开始于两名旅客抵达的雪夜，通往山下的路刚刚封闭。
+      - kind: plot
+        name: 开篇安排
+        entries:
+          - entry_id: opening
+            kind: plot_plan
+            title: 第一章目标
+            body: 第一章写林静和周岚先后抵达，发现道路封闭和旅馆电话没有声音；暂不发生命案，也不揭示人物秘密。
+    steps:
+      - text: 开始写第一章《雪夜》，300 至 500 字。
+        allowed_changes: [正文/0001 雪夜.md]
+        required_changes: [正文/0001 雪夜.md]
+        checks:
+          - {id: no_legacy_catalog, kind: part_excludes, part: catalog, value: 设定集/}
+          - {id: no_legacy_settings, kind: part_excludes, part: settings, value: 尚未写入}
+          - {id: no_legacy_paths_in_rules, kind: part_excludes, part: instructions, value: 设定集/}
+          - {id: doctor_present, kind: file_contains, path: 正文/0001 雪夜.md, value: 林静}
+          - {id: photographer_present, kind: file_contains, path: 正文/0001 雪夜.md, value: 周岚}
+          - id: uses_assembled_modules
+            kind: manual
+            rubric: 应读取已装模块再完成正文，保留医生、摄影师和雪夜封路、电话失声的设定；不把计划当成既往正文，不凭空创建或反复查询旧版小传路径，不因缺少旧身份记录阻塞第一章。

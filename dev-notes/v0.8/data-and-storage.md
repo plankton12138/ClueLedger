@@ -1,5 +1,7 @@
 # 0.8 数据与存储设计
 
+2026-10-26：作品默认父目录统一为系统文档目录下的 `ClueLedger/作品`，模块库为同总目录下的 `ModuleLibrary`。新建不再创建空设定集；确认删除作品会实际删除作品目录及本作品应用记录，共享模块保留。本轮不迁移旧测试作品。详见[实施记录](notes/workspace-storage-and-deletion.md)。
+
 2026-10-25：作品应用状态新增 `overview/`，保存带精确来源的模块派生对象、正文关联、信息不足尝试和无需更新回执。正文事件继续使用 `story-index.json`。派生 schema 1、recipe 2；作者模块与装配格式不变。详见 [O6 记录](notes/O6-story-overview.md)。
 
 日期：2026-10-24。状态：待实施。产品行为见[产品方案](../../product-design/v0.8/README.md)，
@@ -26,7 +28,7 @@
 
 全局库、不可变版本和作品绑定的详细结构见[全局模块库](library-and-assembly.md)。
 正文保持文本，模块条目仍使用 Markdown＋受控头部，但文件不再强制存在于每部作品的设定集。
-新作品不创建空的《真相.md》《线索.md》，也不强制装入人物或时间线。
+新作品只创建正文目录和版本历史，不创建设定集、角色小传或空设定文件，也不强制装入人物或时间线。
 
 ```text
 全局库/modules/<module_id>/revisions/<revision_id>/entries/<entry_id>.md

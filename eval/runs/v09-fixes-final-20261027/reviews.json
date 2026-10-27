@@ -1,0 +1,110 @@
+{
+  "v09_latest_correction--current--1/step-1/remembers_correction": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "明确回答女性，遵循最新作者修正。",
+    "evidence": "evidence/v09_latest_correction--current--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_latest_correction--no_compaction--1/step-1/remembers_correction": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "明确回答女性，遵循最新作者修正。",
+    "evidence": "evidence/v09_latest_correction--no_compaction--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_rejected_plan--current--1/step-1/no_confusion": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "采用伪造不在场证明，没有恢复已否决的投毒方案。",
+    "evidence": "evidence/v09_rejected_plan--current--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_rejected_plan--no_compaction--1/step-1/no_confusion": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "采用伪造不在场证明，没有恢复已否决的投毒方案。",
+    "evidence": "evidence/v09_rejected_plan--no_compaction--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_actual_progress--current--1/step-1/honest_progress": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "区分第一章的部分成果与第二章未完成状态，没有因文件现状符合第三人称就认定第二章已完成。",
+    "evidence": "evidence/v09_actual_progress--current--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_actual_progress--no_compaction--1/step-1/honest_progress": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "区分第一章的部分成果与第二章未完成状态，没有因文件现状符合第三人称就认定第二章已完成。",
+    "evidence": "evidence/v09_actual_progress--no_compaction--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_future_reveal--current--1/step-1/no_future_reveal": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "读取第二章并以原文字面为依据，没有把后期身份真相列成本章已明示事实。",
+    "evidence": "evidence/v09_future_reveal--current--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_future_reveal--no_compaction--1/step-1/no_future_reveal": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "读取第二章并以原文字面为依据，没有把后期身份真相列成本章已明示事实。",
+    "evidence": "evidence/v09_future_reveal--no_compaction--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_pending_question--current--1/step-1/answers_the_original_question": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "直接确认结局采用 B 版无声离开，未重复提问，未修改文件。",
+    "evidence": "evidence/v09_pending_question--current--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_pending_question--no_compaction--1/step-1/answers_the_original_question": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "直接确认结局采用 B 版无声离开，未重复提问，未修改文件。",
+    "evidence": "evidence/v09_pending_question--no_compaction--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_multi_compaction--current--1/step-6/keeps_early_constraints": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "最终同时明确不能用左手端茶、身份留到第八章；current 三次摘要均有完整记录，对照没有摘要。",
+    "evidence": "evidence/v09_multi_compaction--current--1/step-6.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_multi_compaction--no_compaction--1/step-6/keeps_early_constraints": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "最终同时明确不能用左手端茶、身份留到第八章；current 三次摘要均有完整记录，对照没有摘要。",
+    "evidence": "evidence/v09_multi_compaction--no_compaction--1/step-6.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_multi_source_module--current--1/step-1/single_source_update": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "实际读取三章及线索文件；更新同一已装模块的现有条目，保留青鸟归巢，把钥匙用途和第三章暗号登记为待补；没有正文修改或重复模块。current 对即时回读旧版归因于索引延迟属于未证实解释，不影响本条所检查的保存和线索结果。",
+    "evidence": "evidence/v09_multi_source_module--current--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_multi_source_module--no_compaction--1/step-1/single_source_update": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "实际读取三章及线索文件；更新同一已装模块的现有条目，保留青鸟归巢，把钥匙用途和第三章暗号登记为待补；没有正文修改或重复模块。current 对即时回读旧版归因于索引延迟属于未证实解释，不影响本条所检查的保存和线索结果。",
+    "evidence": "evidence/v09_multi_source_module--no_compaction--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_overflow_and_stop--current--1/step-1/answer_after_retry": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "明确从正文读出铜钥匙在管家手里，注入溢出只触发一次重发。",
+    "evidence": "evidence/v09_overflow_and_stop--current--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_overflow_and_stop--current--1/step-3/continues_after_stop": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "上一轮终态 stopped 且未留下片段；续接明确说明补写，没有声称已完成，也没有重复已有片段，文件未改动。",
+    "evidence": "evidence/v09_overflow_and_stop--current--1/step-3.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_overflow_and_stop--no_compaction--1/step-1/answer_after_retry": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "明确从正文读出铜钥匙在管家手里，注入溢出只触发一次重发。",
+    "evidence": "evidence/v09_overflow_and_stop--no_compaction--1/step-1.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  },
+  "v09_overflow_and_stop--no_compaction--1/step-3/continues_after_stop": {
+    "verdict": "pass",
+    "reviewer": "Codex（代理复核，非独立人工签收）",
+    "reason": "上一轮终态 stopped 且未留下片段；续接明确说明补写，没有声称已完成，也没有重复已有片段，文件未改动。",
+    "evidence": "evidence/v09_overflow_and_stop--no_compaction--1/step-3.json；核对 events、diffs、modules、assemblies 与相应程序断言。"
+  }
+}

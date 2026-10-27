@@ -17,8 +17,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 import threading
+import time
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -161,6 +163,108 @@ class RecentWorkspaces:
             if removed:
                 self._save([item for item in entries if item.exists])
             return removed
+
+    def unbind(self, workspace_id: str) -> WorkspaceBinding:
+        """把作品移出最近列表；只改登记文件，磁盘上的作品目录不动。"""
+        with self._lock:
+            entries = self._load()
+            for binding in entries:
+                if binding.id != workspace_id:
+                    continue
+                self._save([item for item in entries if item.id != workspace_id])
+                return binding
+        raise _unknown_workspace(workspace_id)
+
+    def rename(self, workspace_id: str, name: str) -> WorkspaceBinding:
+        """重命名作品目录，并把应用状态迁到新路径对应的登记下。
+
+        作品标识由路径算出，目录改名后标识随之变化；目录、应用状态与登记三处
+        必须一起换掉，失败时尽量回到原状，不留下只改了一半的结果。
+        """
+        clean = _clean_workspace_name(name)
+        with self._lock:
+            entries = self._load()
+            binding = next((item for item in entries if item.id == workspace_id), None)
+            if binding is None:
+                raise _unknown_workspace(workspace_id)
+            old_root = Path(binding.path)
+            if clean == old_root.name:
+                return binding
+            new_root = old_root.parent / clean
+            if os.path.normcase(str(new_root)) == os.path.normcase(str(old_root)):
+                raise WorkspaceError(
+                    code="WORKSPACE_NAME_INVALID",
+                    where="workspace.rename",
+                    why="新名称与当前名称只有大小写差异",
+                    fix="换一个名称；当前系统的路径不区分大小写",
+                )
+            if not old_root.is_dir():
+                raise WorkspaceError(
+                    code="WORKSPACE_NOT_FOUND",
+                    where="workspace.rename",
+                    why=f"作品目录不存在：{old_root}",
+                    fix="确认目录仍在原位置，或把它移出最近列表",
+                    details={"id": workspace_id, "path": str(old_root)},
+                )
+            if new_root.exists():
+                raise WorkspaceError(
+                    code="WORKSPACE_NAME_CONFLICT",
+                    where="workspace.rename",
+                    why=f"同名目录已经存在：{new_root}",
+                    fix="换一个名称，或先处理已有目录",
+                    details={"path": str(new_root)},
+                )
+            renamed = WorkspaceBinding(
+                id=binding_id(new_root),
+                name=clean,
+                path=str(new_root),
+                opened_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+            )
+            if any(item.id == renamed.id and item.id != workspace_id for item in entries):
+                raise WorkspaceError(
+                    code="WORKSPACE_NAME_CONFLICT",
+                    where="workspace.rename",
+                    why=f"最近列表里已有指向这个路径的作品：{new_root}",
+                    fix="换一个名称，或先把它移出最近列表",
+                    details={"path": str(new_root)},
+                )
+            old_state = workspace_state_root(self.root, binding.id)
+            new_state = workspace_state_root(self.root, renamed.id)
+            moved_state = False
+            try:
+                if new_state.exists():
+                    # 同一路径没有仍在册的作品（上面已核对），留下的只是旧登记的状态。
+                    shutil.rmtree(new_state)
+                if old_state.exists():
+                    _rename_with_retry(old_state, new_state)
+                    moved_state = True
+                _rename_with_retry(old_root, new_root)
+            except OSError as exc:
+                if moved_state:
+                    with suppress(OSError):
+                        _rename_with_retry(new_state, old_state)
+                raise WorkspaceError(
+                    code="WORKSPACE_RENAME_FAILED",
+                    where="workspace.rename",
+                    why=f"无法重命名作品目录：{exc.strerror or exc}",
+                    fix="关闭占用该目录的编辑器后重试；目录、状态与登记不会只改一半",
+                    details={"from": str(old_root), "to": str(new_root)},
+                ) from exc
+            try:
+                self._save(
+                    [
+                        renamed,
+                        *[item for item in entries if item.id not in (workspace_id, renamed.id)],
+                    ][:_MAX_ENTRIES]
+                )
+            except WorkspaceError:
+                with suppress(OSError):
+                    _rename_with_retry(new_root, old_root)
+                if moved_state:
+                    with suppress(OSError):
+                        _rename_with_retry(new_state, old_state)
+                raise
+            return renamed
 
     # -- 内部 ---------------------------------------------------------------
 
@@ -1077,6 +1181,45 @@ def _title_from(text: str) -> str:
     if len(collapsed) <= _TITLE_LIMIT:
         return collapsed
     return collapsed[:_TITLE_LIMIT] + "…"
+
+
+def _rename_with_retry(source: Path, target: Path) -> None:
+    """目录或状态目录改名；Windows 上短暂的文件占用重试后再报错。
+
+    浏览器刚打开作品时，服务端可能还在读目录或跑 git；这些读取很快结束，
+    不应该让一次改名直接失败。真正的持续占用（编辑器开着文件）最终仍会报错。
+    """
+    delay = 0.05
+    for attempt in range(7):
+        try:
+            source.rename(target)
+            return
+        except OSError as exc:
+            transient = os.name == "nt" and getattr(exc, "winerror", None) in {5, 32, 33}
+            if not transient or attempt == 6:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.5)
+
+
+def _clean_workspace_name(name: str) -> str:
+    """作品名必须是单个文件夹名：不带路径分隔符，也不带 Windows 不允许的字符。"""
+    clean = name.strip()
+    invalid = (
+        not clean
+        or clean in {".", ".."}
+        or any(ch in clean for ch in '/\\<>:"|?*')
+        or any(ord(ch) < 32 for ch in clean)
+        or clean != clean.rstrip(" .")
+    )
+    if invalid:
+        raise WorkspaceError(
+            code="WORKSPACE_NAME_INVALID",
+            where="workspace.rename",
+            why="作品名必须是单个文件夹名，不能为空、不能包含路径分隔符或系统不允许的字符，也不能以空格或点结尾",
+            fix="换一个只含普通字符的名称",
+        )
+    return clean
 
 
 def binding_id(path: Path) -> str:

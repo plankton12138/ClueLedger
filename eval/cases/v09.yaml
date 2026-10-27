@@ -1,0 +1,192 @@
+version: 1
+cases:
+  # 压缩的语义风险只有一个：模型看到的摘要把作者最新的修正弄丢了。
+  # 这条用例把修正放在最早两轮、中间填充分轮，压缩后直接问结论。
+  - id: v09_latest_correction
+    title: 压缩之后仍记得作者的最新修正
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 记住一件事：主角林砚是男性，之后写到他时用「他」。
+        assistant: 记住了，林砚是男性，之后统一用「他」。
+      - user: 更正：林砚其实是女性。以后一律用「她」，不要再出现「他」来指林砚。
+        assistant: 已更正：林砚是女性，之后统一用「她」。
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 只回答一个问题，不要修改任何文件：林砚是男性还是女性？用一句话回答。
+        checks:
+          - id: remembers_correction
+            kind: manual
+            rubric: 必须给出「女性」这一结论；不得回答男性，也不得只说「曾经说是男性」而不给结论。
+
+  # 被否定的方案与作者最终决定必须分得开：压缩把两者混成一句「讨论过投毒」是最典型
+  # 的语义事故，模型会据此写进正文。
+  - id: v09_rejected_plan
+    title: 被否定的方案不与作者决定混同
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 我想让凶手先用毒，再伪装成意外。你觉得可行吗？
+        assistant: 可行：把毒下在睡前那杯水里，再让现场看起来像失足。
+      - user: 算了，投毒太容易被查出来。改用伪造不在场证明，别再提毒药。
+        assistant: 明白，放弃投毒方案，改为伪造不在场证明。
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 只回答一个问题，不要修改任何文件：我们现在采用哪个手法？一句话回答。
+        checks:
+          - id: no_confusion
+            kind: manual
+            rubric: 必须给出「伪造不在场证明」；不得把「投毒」当成当前方案，也不得把两者并列成可选方案。
+
+  # 压缩后最常见的一句谎话是「都改完了」：旧进展被概括成笼统的「在改写章节」，
+  # 未完成的部分就消失了。执行状态由应用投影补入，这条用例同时验证那条通道。
+  #
+  # 注意：夹具里的文件是初始版本，历史里那句「第一章改完了」只是合成叙述。
+  # 所以模型去核对文件、指出记录与实际不符，是正确行为；判分只要求它不说「全部完成」。
+  - id: v09_actual_progress
+    title: 压缩之后不宣称全部完成
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 把第一、二章都改成第三人称。
+        assistant: 第一章改完了。第二章写到一半保存失败，需要重试。
+        status: partial
+        changed_paths: [正文/0001 雨夜.md]
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 只回答一个问题，不要修改任何文件：第一、二章的改写进行到哪一步？
+        checks:
+          - id: honest_progress
+            kind: manual
+            rubric: 必须指出至少一项未完成、保存失败、或记录与实际不符；不得声称两章都已完成、也没有宣称全部改完。
+
+  # 另一种典型事故：压缩把「全书真相」概括进摘要，模型就把它当成当前可用的证据，
+  # 提前写进前章。夹具里的真相文档已标注「第八章才明示」，用来对照。
+  - id: v09_future_reveal
+    title: 压缩之后不把后期真相当成当前证据
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 先记住全书真相：管家就是凶手，也是失踪的医生。这两个身份留到第八章才明示。
+        assistant: 已记录：管家是真凶与失踪医生，属于第八章计划，前文不得明示。
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 只回答，不改任何文件：第二章目前已经向读者明示了哪些事实？逐条列出，不要包含任何后期才揭晓的内容。
+        checks:
+          - id: no_future_reveal
+            kind: manual
+            rubric: 不得把「管家是凶手」或「管家是失踪的医生」列为第二章已明示的事实；应只列第二章正文里真实出现的信息。
+
+  # 待答问题是另一种必须穿过压缩的东西：作者隔了很多轮才回答，模型要能接上原问题，
+  # 而不是答非所问或再问一遍。切点保护会把这个轮次留在近期窗口。
+  - id: v09_pending_question
+    title: 隔了多轮之后仍能接上待答的问题
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 先把第三章的开头写一段。
+        assistant: 初稿加了两句环境描写：雨点敲在玻璃上，灯光把走廊分成明暗两截。人物还没动，先让空间站住脚。这样处理的好处是读者一进门就知道自己在什么地方、什么天气、光线够不够看清人脸，后面的对话就不必再交代环境。坏处是节奏偏慢，如果这一章要承接上一章的紧张感，可能需要把这两句压到一段里，或者干脆从动作切进去，让环境从人物的视线里带出来。
+      - user: 雨声想再重一点，别用形容词堆。
+        assistant: 记下了。可以把声音拆成三层：远处闷雷的钝响、檐下滴答的碎响、以及人物走动时鞋底带起的水声。三层交替出现，读者会自己听出雨势，不必写「雨很大」。具体到句子，闷雷那层放在段落开头压住底噪，滴答声插在对话空隙里标记停顿，鞋底带水的声音跟着人物移动，让读者知道谁在靠近。三层不要同时出现，一次给两层就够，第三层留到下一个场景，读者会自己补完。暂不改文件。
+      - user: 第四章的信先别出现。
+        assistant: 明白，第四章不引入信件，保持现状。如果后面确实要用那封信，可以改成口耳相传的转述，让信息晚一点到达读者，也不会打乱现在的节奏。转述还有个额外好处：同一条信息经过别人之口会变形，你可以让两个角色说出不一致的版本，读者不知道该信谁，悬疑就自然长出来了。等第四章的现场写完，再决定这封信以什么措辞第一次出现。
+      - user: 管家的动作要慢一些。
+        assistant: 收到。管家的动作放慢，用停顿代替说明：倒茶时手腕停在半空、擦杯子时反复擦同一个位置。这些动作本身可以承载他的犹疑，不必另外解释心理。要注意的是慢不等于拖，每个停顿都要有触发点，比如听到某个名字、看到某件物品、或者被某个问题问到。没有触发点的停顿会显得做作，读者会当成作者的暗示而不是人物的反应。
+      - user: 侦探的观察别太聪明。
+        assistant: 记下了。侦探的推断会留出误判空间，先抓住一两个不合常理的小事，迟迟不下结论。这样读者和他同步困惑，后面的揭示才有落差。具体做法是让他注意到细节但解释错方向：比如他注意到管家袖口的湿痕，却以为是洗手留下的，实际是刚从外面回来。这类错误解释要写得有说服力，读者当时会认同，回头再看才发现破绽。
+      - user: 结局我还没定，你先别动。
+        assistant: 你想用哪一版？
+        question: 结局用 A 版（雨夜自首）还是 B 版（无声离开）？
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 用 B 版：无声离开。只回一句确认，不要改文件。
+        reply_to_question: true
+        checks:
+          - id: answers_the_original_question
+            kind: manual
+            rubric: 必须把这句回答对应到「结局版本」这个问题上（确认采用 B 版/无声离开）；不得答非所问，也不得再把 A/B 两个选项重问一遍。
+
+  # 连续整理三次之后，最早两轮定下的硬约束和当前任务都要还在。
+  # 每一步都不改文件，避免把压缩效果和文件操作混在一起。
+  - id: v09_multi_compaction
+    title: 连续三次整理后仍守住最早约束
+    family: 压缩语义
+    fixture: inn.json
+    history:
+      - user: 记两条硬约束，之后每次写作都要守住：一，管家左手有旧伤，不能让他用左手端茶；二，第八章之前不要点明管家就是失踪的医生。
+        assistant: 记住两条：管家左手有旧伤、不用左手端茶；第八章前不点明管家与失踪医生的关系。
+    filler_turns: 16
+    compact_before_steps: true
+    steps:
+      - text: 只写一段约四百字的旅馆走廊场景，只输出正文，不要修改任何文件。
+      - text: 再写一段约四百字的客房场景，只输出正文，不要修改任何文件。
+      - text: 再写一段约四百字的雨夜门口场景，只输出正文，不要修改任何文件。
+        compact_before: true
+      - text: 继续写一段约四百字的餐厅场景，只输出正文，不要修改任何文件。
+      - text: 再写一段约四百字的账房场景，只输出正文，不要修改任何文件。
+      - text: 只回答两个问题，不要写场景也不要改文件：1) 管家端茶时能不能用左手？2) 现在能不能点明管家就是失踪的医生？
+        compact_before: true
+        checks:
+          - {id: three_compactions, kind: compaction_count, value: "3"}
+          - id: keeps_early_constraints
+            kind: manual
+            rubric: 两个问题都要明确回答：管家不能用左手端茶，因为左手有旧伤；现在不能点明管家与失踪医生的关系，要留到第八章。答成可以用左手，或认为现在就可以点明，均不通过。
+
+  # 一次请求里读多份材料并落到指定模块：验证长单轮的工具序列能接上，
+  # 且不会因为改了模块就重复写正文或另建一份。
+  - id: v09_multi_source_module
+    title: 一次请求读多份材料并更新指定模块
+    family: 模块维护
+    fixture: inn.json
+    modules:
+      - kind: clues
+        name: 案件线索
+        entries:
+          - entry_id: code_1
+            kind: clue_plan
+            title: 第一章暗号
+            body: 暗号是「青鸟归巢」。
+    steps:
+      - text: 自己找到并依次读完正文第一章、第二章、第三章和设定集里的线索文件，把第二章铜钥匙的用途、第三章纸条上的暗号更新到已装的「案件线索」模块；用途和暗号现在都没写清，登记为「待补」。不要改任何正文文件，也不要另建模块。
+        checks:
+          - {id: read_ch1, kind: full_read, path: 正文/0001 雨夜.md, value: 青鸟归巢}
+          - {id: read_ch2, kind: full_read, path: 正文/0002 走廊.md, value: 铜钥匙}
+          - {id: read_ch3, kind: full_read, path: 正文/0003 书房.md, value: 待补}
+          - {id: still_bound, kind: module_bound, value: 案件线索}
+          - {id: keeps_old_code, kind: module_contains, value: 青鸟归巢}
+          - {id: records_key, kind: module_contains, value: 铜钥匙}
+          - {id: no_file_write, kind: tool_not_called, value: "write_file,edit_file,delete_file,move_file"}
+          - id: single_source_update
+            kind: manual
+            rubric: 应实际读取或接收四份材料，在「案件线索」里补上第二章铜钥匙用途与第三章暗号，并标为待补或未说明；保留第一章「青鸟归巢」；不得修改正文、不得新建重复模块或条目，也不得把未写清的内容编成确定结论。
+
+  # 两条恢复边界放在同一条用例里：先注入一次明确的上下文超限，验证轮内收紧后重发；
+  # 再在生成中途停止一轮，验证下一轮能接着原任务，而不是重启或宣称已完成。
+  - id: v09_overflow_and_stop
+    title: 上下文超限重发与停止后继续
+    family: 压缩语义
+    fixture: inn.json
+    filler_turns: 16
+    steps:
+      - text: 只回答一个问题，不要修改任何文件：铜钥匙现在在谁手里？
+        inject_overflow: true
+        checks:
+          - {id: overflow_seen, kind: fault_observed}
+          - {id: retried_after_overflow, kind: retry_observed, value: context_overflow}
+          - id: answer_after_retry
+            kind: manual
+            rubric: 必须答出铜钥匙在管家手里；回答未说明、不知道或其他人，均不通过。答案应来自作品正文，而不是猜测。
+      - text: 写一段约八百字的旅馆走廊场景，只输出正文，不要修改任何文件。
+        stop_after_ms: 600
+        expect_stopped: true
+      - text: 接着上一轮继续：如果上一轮已经写出片段，就顺势往下写，不要从头重写；如果上一轮没有留下文字，就补写这一段并说明是补写。不要修改任何文件。
+        checks:
+          - {id: no_file_write, kind: tool_not_called, value: "write_file,edit_file,delete_file,move_file"}
+          - id: continues_after_stop
+            kind: manual
+            rubric: 应识别上一轮是「已停止」而不是「已完成」，并给出与停止状态一致的续写：有片段就接续，没有片段就补写并说明。不得声称上一轮已写完，也不得无视停止重复已有片段。

@@ -1,7 +1,6 @@
 """作品默认存放位置（V04-7）。
 
-契约：新作品默认落在作者的「文档」目录；取不到文档目录时退回用户主目录，
-不让「新建作品」因为路径不存在而失败。位置只由服务端解析，界面不猜本机路径。
+契约：作品与模块归入 ClueLedger；系统文档目录不可用时改用主目录下的总目录。
 """
 
 from __future__ import annotations
@@ -21,14 +20,16 @@ def test_default_root_prefers_documents_dir(
     documents.mkdir()
     monkeypatch.setattr(locations, "documents_dir", lambda: documents)
 
-    assert default_workspace_root() == documents
+    assert default_workspace_root() == documents / "ClueLedger" / "作品"
+    assert not (documents / "ClueLedger").exists()
+    assert locations.default_data_root() == documents / "ClueLedger"
 
 
 def test_default_root_falls_back_to_home(monkeypatch: pytest.MonkeyPatch) -> None:
-    """没有文档目录时放主目录：位置要一定存在，作品才能落盘。"""
+    """没有文档目录时仍保持 ClueLedger 总目录结构。"""
     monkeypatch.setattr(locations, "documents_dir", lambda: None)
 
-    assert default_workspace_root() == Path.home()
+    assert default_workspace_root() == Path.home() / "ClueLedger" / "作品"
 
 
 def test_documents_dir_is_an_existing_directory_when_resolved() -> None:

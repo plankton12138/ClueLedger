@@ -20,23 +20,40 @@ key 只进不出：磁盘上可直填 ``api_key``（首次启动后转入系统�
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import hashlib
 import os
-from dataclasses import dataclass
+from asyncio import AbstractEventLoop, get_running_loop
+from collections.abc import MutableMapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal
 from urllib.parse import urlsplit
+from weakref import WeakKeyDictionary
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, model_validator
 
+from hastings.server.model_credential import (
+    SubscriptionCredential,
+    SubscriptionCredentialError,
+    load_subscription,
+    save_subscription,
+)
+from hastings.server.model_limits import ModelLimitOverride, resolve_model_limits
+from hastings.server.model_thinking import ThinkingLevel, thinking_levels
 from hastings.server.provider_catalog import ProviderApi
 from hastings.server.provider_runtime import ModelSnapshot, build_provider, snapshot
+from tau_ai.env import RuntimeProviderAuth, RuntimeProviderAuthResolver
 
 DEFAULT_CONFIG_PATH = Path("config.yaml")
 
 SelectionMode = Literal["auto", "explicit", "none"]
+
+#: 一条连接怎么证明「我是这个账号」：自带 API Key，或登录供应商的订阅账号。
+AuthMethod = Literal["api_key", "subscription"]
 
 
 class ProviderConfigError(ValueError):
@@ -59,25 +76,49 @@ class ProviderProfile(BaseModel):
     default_model: str = ""
     #: 作者勾选为日常可用的模型；旧档案没有该字段时由 default_model 推导（见 models_for）。
     models: list[str] = Field(default_factory=list)
+    #: 按精确模型名保存的容量。未配置的模型按未知处理，不按名称前缀推断。
+    #: 旧配置没有该字段时为空，读取不受影响。
+    model_limits: dict[str, ModelLimitOverride] = Field(default_factory=dict)
     # 免密端点（本机兼容服务）：无 key 也可用；空 key 本就不发 Authorization 头。
     no_auth: bool = False
     #: 供应商预设 ID；未知值按自定义服务展示，不阻止读取。
     catalog_id: str = ""
     api: ProviderApi = "openai-completions"
+    #: 认证方式：API Key 或订阅账号登录。旧配置不写该字段时按 API Key 读。
+    auth_method: AuthMethod = "api_key"
+    #: 订阅来源标识（如 ``chatgpt``）；只有 ``auth_method == "subscription"`` 时有意义。
+    auth_provider: str = ""
+    #: 运行时物化的订阅凭据：磁盘上只有 ``credential_ref``，这里由凭据存储装回。
+    subscription: SubscriptionCredential | None = Field(default=None, exclude=True, repr=False)
 
     def resolved_api_key(self) -> str:
         """解析实际 key：只用连接自身的 key（直填或已物化的凭据）。
 
         ``credential_ref`` 连接在 ProviderBook 物化阶段已把系统凭据装进
         ``api_key``（SecretStr，只进不出）；本方法不直接访问凭据存储，
-        也不读进程环境。
+        也不读进程环境。订阅连接没有 API Key，这里返回空串。
         """
         return self.api_key.get_secret_value()
 
     @property
     def available(self) -> bool:
-        """可用性 = 免密端点，或能解析出非空 key。"""
+        """可用性 = 免密端点能解析出非空 key，或订阅凭据已装回内存。"""
+        if self.auth_method == "subscription":
+            return self.subscription is not None and bool(self.subscription.access_token)
         return self.no_auth or bool(self.resolved_api_key())
+
+    @property
+    def auth_status(self) -> Literal["ready", "expired", "missing"]:
+        """凭据状态：可以调用、需要续期、根本没有。
+
+        「过期」不等于「不可用」：带有刷新令牌的订阅连接在运行时续期；
+        只有完全没有凭据时才是 ``missing``。
+        """
+        if self.auth_method == "subscription":
+            if self.subscription is None or not self.subscription.access_token:
+                return "missing"
+            return "expired" if self.subscription.expired() else "ready"
+        return "ready" if self.resolved_api_key() else "missing"
 
     @property
     def title(self) -> str:
@@ -102,6 +143,7 @@ class ServerConfig(BaseModel):
     providers: list[ProviderProfile]
     active_provider: str = ""
     active_model: str = ""
+    active_thinking_level: ThinkingLevel | None = None
     #: 空选择的持久化语义：auto 沿用启动默认，explicit 用 active_provider，
     # none 表示作者明确清空，重启后保持未选。
     selection_mode: SelectionMode = "auto"
@@ -131,6 +173,8 @@ class ModelSelection:
     source: Literal["saved", "startup", "automatic", "none"]
     available: bool
     reason: str = ""
+    thinking_level: ThinkingLevel | None = None
+    thinking_levels: tuple[ThinkingLevel, ...] = ()
 
     @property
     def display_name(self) -> str:
@@ -220,13 +264,25 @@ def _validation_error_message(path: Path, exc: ValidationError) -> str:
 
 
 def _materialize_credentials(config: ServerConfig, store: Any) -> ServerConfig:
-    """把系统凭据装回内存连接（credential_ref → api_key，SecretStr 只进不出）。
+    """把系统凭据装回内存连接（credential_ref → 凭据，SecretStr 只进不出）。
 
     磁盘元数据不改动；仅运行时视图持有明文（沿既有 SecretStr 泄露防线）。
+    订阅连接装回的是结构化记录；记录损坏按「没有凭据」处理——连接仍可删可改，
+    重登一次即可恢复，不能因为一条坏记录让整个配置读不出来。
     """
     providers = []
     for profile in config.providers:
-        if profile.credential_ref and not profile.api_key.get_secret_value():
+        if not profile.credential_ref:
+            providers.append(profile)
+            continue
+        if profile.auth_method == "subscription":
+            try:
+                credential = load_subscription(store, profile.credential_ref)
+            except SubscriptionCredentialError:
+                credential = None
+            providers.append(profile.model_copy(update={"subscription": credential}))
+            continue
+        if not profile.api_key.get_secret_value():
             secret = store.load(profile.credential_ref)
             if secret:
                 profile = profile.model_copy(update={"api_key": SecretStr(secret)})
@@ -285,7 +341,15 @@ def save_server_config(config: ServerConfig, path: Path) -> Path:
     payload = {
         "providers": [_profile_payload(profile) for profile in config.providers],
         **(
-            {"active_provider": config.active_provider, "active_model": config.active_model}
+            {
+                "active_provider": config.active_provider,
+                "active_model": config.active_model,
+                **(
+                    {"active_thinking_level": config.active_thinking_level}
+                    if config.active_thinking_level is not None
+                    else {}
+                ),
+            }
             if config.selection_mode == "explicit" and config.active_provider
             else {}
         ),
@@ -311,18 +375,36 @@ def save_server_config(config: ServerConfig, path: Path) -> Path:
 
 
 def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
-    """一个连接的磁盘形状：默认值不落盘，旧文件格式零扰动。"""
+    """一个连接的磁盘形状：默认值不落盘，旧文件格式零扰动。
+
+    订阅连接不写 ``api_key``：那条记录里根本没有 key，写一个空串会让手工读配置的人
+    以为「填一下就能用」，而实际需要的是重新登录。
+    """
+    subscription = profile.auth_method == "subscription"
     return {
         "name": profile.name,
         "base_url": profile.base_url,
-        "api_key": profile.api_key.get_secret_value(),
+        **({"api_key": profile.api_key.get_secret_value()} if not subscription else {}),
         "default_model": profile.default_model,
         **({"display_name": profile.display_name} if profile.display_name else {}),
         **({"models": list(profile.models)} if profile.models else {}),
+        # 容量按精确模型写入；未填的项不落盘，文件里只看得到作者真的填过的值。
+        **(
+            {
+                "model_limits": {
+                    name: limit.model_dump(exclude_none=True)
+                    for name, limit in profile.model_limits.items()
+                }
+            }
+            if profile.model_limits
+            else {}
+        ),
         # 免密字段按需写入：False 不落盘
         **({"no_auth": True} if profile.no_auth else {}),
         **({"catalog_id": profile.catalog_id} if profile.catalog_id else {}),
         **({"api": profile.api} if profile.api != "openai-completions" else {}),
+        **({"auth_method": "subscription"} if subscription else {}),
+        **({"auth_provider": profile.auth_provider} if profile.auth_provider else {}),
         # V03-1.3：OS 凭据存储引用按需写入（明文 Key 迁移后为空串）
         **({"credential_ref": profile.credential_ref} if profile.credential_ref else {}),
     }
@@ -360,8 +442,11 @@ class ProviderBook:
         config_path: Path | None = None,
         credentials: Any | None = None,
         cli_model: str = "",
+        auth: Any | None = None,
     ) -> None:
         self._credentials = credentials
+        # 订阅连接的续期由授权服务完成：凭据存储只负责存放，不解释令牌。
+        self._auth = auth
         self.credential_migration: dict[str, list[str]] = {"migrated": [], "failed": []}
         if credentials is not None:
             # 升级顺序（V03-1.3）：新存储写入并验证 → 元数据切换 → 清理旧
@@ -428,6 +513,10 @@ class ProviderBook:
         explicit / none → 仅 auto 模式下的启动默认规则。
         """
         if self._runtime_selection is not None:
+            current = self._runtime_selection
+            profile = self.profile(current.connection_id) if current.connection_id else None
+            if profile is not None:
+                return self._selection_of(profile, current.model, "saved")
             return self._runtime_selection
 
         explicit = self._explicit()
@@ -480,6 +569,75 @@ class ProviderBook:
         profile = self.profile(name)
         return profile.models_for() if profile is not None else []
 
+    def subscription_resolver(self, profile: ProviderProfile) -> RuntimeProviderAuthResolver | None:
+        """订阅连接的请求前凭据解析：快过期就续期，同一账号串行。
+
+        返回值不是「一枚令牌」，而是「每次请求前问一次」：令牌有寿命，快照却活在整轮
+        写作里，把解析推迟到发请求那一刻才是准的。
+        """
+        if profile.subscription is None:
+            return None
+        name = profile.name
+        initial = profile.subscription
+
+        async def resolve() -> RuntimeProviderAuth:
+            current = self._current_subscription(name) or initial
+            if not current.expired():
+                return RuntimeProviderAuth(api_key=current.access_token)
+            # 刷新令牌会轮换：并发请求若都去花同一枚，后到的那次必然失败，
+            # 还可能把已作废的令牌写回磁盘。锁内重读一次，确认仍然过期才真的续期。
+            async with _subscription_refresh_lock(current.account_id or name):
+                current = self._current_subscription(name) or current
+                if current.expired():
+                    refreshed = await self._refresh_subscription(current)
+                    self._store_subscription(name, refreshed)
+                    current = refreshed
+            return RuntimeProviderAuth(api_key=current.access_token)
+
+        return resolve
+
+    def update_subscription(self, name: str, credential: SubscriptionCredential) -> None:
+        """外部（连接服务）续期后回写凭据：存储与内存视图一起更新。"""
+        self._store_subscription(name, credential)
+
+    def _current_subscription(self, name: str) -> SubscriptionCredential | None:
+        profile = self.profile(name)
+        return profile.subscription if profile is not None else None
+
+    async def _refresh_subscription(
+        self, credential: SubscriptionCredential
+    ) -> SubscriptionCredential:
+        refresh = getattr(self._auth, "refresh", None)
+        if refresh is None:
+            raise ProviderConfigError(
+                "订阅凭据需要续期，但当前进程没有可用的续期能力。"
+                "建议：在「模型设置」里重新登录这个连接。"
+            )
+        refreshed = await refresh(credential)
+        if not isinstance(refreshed, SubscriptionCredential):
+            raise ProviderConfigError(
+                "续期返回的不是可用的订阅凭据。建议：在「模型设置」里重新登录这个连接。"
+            )
+        return refreshed
+
+    def _store_subscription(self, name: str, credential: SubscriptionCredential) -> None:
+        """续期结果先落存储再更新内存；写盘失败不打断这一轮。
+
+        写不进去时这一轮仍能用新令牌，但下次启动会拿到旧的刷新令牌而在续期时报错，
+        界面上表现为「需要重新登录」——比让作者丢掉正在写的这一轮更合适。
+        """
+        profile = self.profile(name)
+        if profile is None:
+            return
+        if profile.credential_ref and self._credentials is not None:
+            with contextlib.suppress(Exception):
+                save_subscription(self._credentials, profile.credential_ref, credential)
+        providers = [
+            item.model_copy(update={"subscription": credential}) if item.name == name else item
+            for item in self._config.providers
+        ]
+        self._config = self._config.model_copy(update={"providers": providers})
+
     def snapshot(self, *, worker: bool = True) -> ModelSnapshot:
         """解析当前选择并构造一轮快照；未配置时抛错并说明如何配置。"""
         return snapshot_for(self.selection(), self)
@@ -495,20 +653,43 @@ class ProviderBook:
         model: str,
         source: Literal["saved", "startup", "automatic"],
     ) -> ModelSelection:
+        levels = thinking_levels(profile, model)
+        level = (
+            self._config.active_thinking_level
+            if source == "saved"
+            and self._config.active_provider == profile.name
+            and self._config.active_model == model
+            and self._config.active_thinking_level in levels
+            else None
+        )
         if not profile.available:
             return ModelSelection(
                 profile.name,
                 model,
                 source,
                 False,
-                f"连接「{profile.title}」还没有可用的凭据；填好 API Key 后再发送",
+                f"连接「{profile.title}」还没有可用的凭据；"
+                + (
+                    "订阅账号需要重新登录后再发送"
+                    if profile.auth_method == "subscription"
+                    else "填好 API Key 后再发送"
+                ),
             )
         if not model:
             return ModelSelection(profile.name, "", source, False, "这个连接还没有选择模型")
-        return ModelSelection(profile.name, model, source, True)
+        return ModelSelection(
+            profile.name, model, source, True, thinking_level=level, thinking_levels=levels
+        )
 
     def _no_profile_reason(self) -> str:
-        return "还没有可用的模型连接；先在模型设置里添加一个连接"
+        """没有可用选择时的提示：区分「一个连接都没有」与「连接都在但都缺凭据」。"""
+        if not self._config.providers:
+            return "还没有可用的模型连接；先在模型设置里添加一个连接"
+        titles = "、".join(f"「{item.title}」" for item in self._config.providers)
+        return (
+            f"连接{titles}还没有可用的凭据；"
+            "订阅连接需要重新登录，API Key 连接需要填写 Key"
+        )
 
 
 def snapshot_for(selection: ModelSelection, book: ProviderBook) -> ModelSnapshot:
@@ -521,11 +702,48 @@ def snapshot_for(selection: ModelSelection, book: ProviderBook) -> ModelSnapshot
             "建议：在「模型设置」里添加并选择一个连接与模型，"
             "或在 config.yaml 里补齐 base_url、api_key 与模型名。"
         )
-    return snapshot(profile, selection.model)
+    if profile.auth_method == "subscription":
+        if profile.subscription is None:
+            raise ProviderConfigError(
+                f"连接「{profile.title}」的订阅凭据已经不可用。"
+                "这一轮不会调用模型，也不会有任何文件改动。"
+                "建议：在「模型设置」里重新登录这个连接，或改选别的连接。"
+            )
+        return replace(
+            snapshot(
+                profile,
+                selection.model,
+                thinking_level=selection.thinking_level,
+                credential_resolver=book.subscription_resolver(profile),
+            ),
+            limits=resolve_model_limits(profile, selection.model),
+        )
+    return replace(
+        snapshot(profile, selection.model, thinking_level=selection.thinking_level),
+        limits=resolve_model_limits(profile, selection.model),
+    )
+
+
+_REFRESH_LOCKS: MutableMapping[AbstractEventLoop, dict[str, asyncio.Lock]] = WeakKeyDictionary()
+
+
+def _subscription_refresh_lock(key: str) -> asyncio.Lock:
+    """取本事件循环上某个账号的续期锁。
+
+    锁按事件循环分别缓存：``asyncio.Lock`` 在第一次争用时才绑定循环，跨循环复用会
+    在「无争用」的路径上看起来正常，直到某次真的并发才报错——那种故障最难查。
+    """
+    locks = _REFRESH_LOCKS.setdefault(get_running_loop(), {})
+    lock = locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        locks[key] = lock
+    return lock
 
 
 __all__ = [
     "DEFAULT_CONFIG_PATH",
+    "AuthMethod",
     "ModelSelection",
     "ProviderBook",
     "ProviderConfigError",

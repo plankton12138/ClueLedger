@@ -16,13 +16,16 @@ import { useMemo, useState } from "react";
 import {
   discoverModels,
   probeModel,
+  type AuthMethod,
   type ConnectionDraft,
   type ModelConnection,
+  type ModelLimitInput,
   type ProviderApi,
   type ProviderPreset,
 } from "../../api/models";
 import { useModelsStore } from "../../state/models";
 import { defaultConnectionName } from "./naming";
+import SubscriptionLogin from "./SubscriptionLogin";
 
 interface Props {
   connection: ModelConnection | null;
@@ -56,6 +59,7 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
   const refresh = useModelsStore((state) => state.refresh);
 
   const connections = useModelsStore((state) => state.connections);
+  const authProviders = useModelsStore((state) => state.authProviders);
 
   const [stage, setStage] = useState<"connect" | "models">("connect");
   // 新增时先把名称填好（供应商名，重名加序号）：作者不改也能直接往下走。
@@ -67,6 +71,21 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
   const [apiKey, setApiKey] = useState("");
   const [models, setModels] = useState<string[]>(connection?.models ?? []);
   const [defaultModel, setDefaultModel] = useState(connection?.default_model ?? "");
+  // 容量只填窗口与最大输出；其它项（输入上限、回复预留、安全余量）保存时原样保留。
+  const [limits, setLimits] = useState<Record<string, { window: string; maxOutput: string }>>(
+    () =>
+      Object.fromEntries(
+        Object.entries(connection?.model_limits ?? {}).map(([model, value]) => [
+          model,
+          {
+            window: value.context_window_tokens ? String(value.context_window_tokens) : "",
+            maxOutput: value.max_output_tokens ? String(value.max_output_tokens) : "",
+          },
+        ]),
+      ),
+  );
+  // 没动过容量就不提交这个字段：省略表示沿用，避免旧表单把已保存的容量清空。
+  const [limitsTouched, setLimitsTouched] = useState(false);
   const [manual, setManual] = useState("");
   const [discovered, setDiscovered] = useState<string[] | null>(null);
   const [discoveryNote, setDiscoveryNote] = useState<string | null>(null);
@@ -74,6 +93,13 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
   const [busy, setBusy] = useState<"" | "discover" | "save" | "response" | "tool">("");
   const [error, setError] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(preset.custom);
+  // 支持订阅登录的供应商要选一种接入方式；编辑已有连接时沿用原来的方式。
+  const supportsSubscription = preset.auth_providers.length > 0;
+  const authProviderId = preset.auth_providers[0] ?? "";
+  const [method, setMethod] = useState<AuthMethod>(
+    connection?.auth_method ?? (supportsSubscription ? "subscription" : "api_key"),
+  );
+  const [auth, setAuth] = useState<{ sessionId: string; account: string } | null>(null);
 
   const testModel = defaultModel || models[0] || "";
   const fingerprint = `${baseUrl.trim()}|${api}|${apiKey.length}|${testModel}`;
@@ -85,6 +111,10 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
     return merged;
   }, [models, discovered]);
 
+  const subscription = method === "subscription";
+  // 编辑订阅连接时可以不重新登录：沿用已保存的凭据。
+  const keepsSavedCredential = Boolean(connection) && connection?.auth_method === "subscription";
+
   const draft = (): ConnectionDraft => ({
     display_name: displayName.trim(),
     catalog_id: preset.id,
@@ -92,8 +122,42 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
     api,
     models,
     default_model: defaultModel || models[0] || "",
-    ...(apiKey ? { api_key: apiKey } : {}),
+    ...(limitsTouched ? { model_limits: limitValues() } : {}),
+    auth_method: method,
+    ...(subscription
+      ? {
+          auth_provider: authProviderId,
+          ...(auth ? { auth_session_id: auth.sessionId } : {}),
+        }
+      : apiKey
+        ? { api_key: apiKey }
+        : {}),
   });
+
+  const setLimit = (model: string, field: "window" | "maxOutput", value: string) => {
+    setLimitsTouched(true);
+    setLimits((current) => {
+      const previous = current[model] ?? { window: "", maxOutput: "" };
+      return { ...current, [model]: { ...previous, [field]: value } };
+    });
+  };
+
+  // 空输入表示「未知」，回到未知就要把这个键去掉，而不是提交 0。
+  const limitValues = (): Record<string, ModelLimitInput> => {
+    const result: Record<string, ModelLimitInput> = {};
+    for (const model of models) {
+      const draft = limits[model] ?? { window: "", maxOutput: "" };
+      const item: ModelLimitInput = { ...(connection?.model_limits?.[model] ?? {}) };
+      const window = draft.window.trim();
+      const maxOutput = draft.maxOutput.trim();
+      if (window) item.context_window_tokens = Number(window);
+      else delete item.context_window_tokens;
+      if (maxOutput) item.max_output_tokens = Number(maxOutput);
+      else delete item.max_output_tokens;
+      if (Object.keys(item).length > 0) result[model] = item;
+    }
+    return result;
+  };
 
   const applyRegion = (regionId: string) => {
     const region = preset.regions.find((item) => item.id === regionId);
@@ -129,7 +193,9 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
         catalog_id: preset.id,
         base_url: baseUrl.trim(),
         api,
-        api_key: apiKey || undefined,
+        api_key: subscription ? undefined : apiKey || undefined,
+        auth_provider: subscription ? authProviderId : "",
+        auth_session_id: subscription ? auth?.sessionId : "",
         connection_id: connection?.name ?? null,
       });
       setDiscovered(found.models);
@@ -157,7 +223,9 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
         catalog_id: preset.id,
         base_url: baseUrl.trim(),
         api,
-        api_key: apiKey || undefined,
+        api_key: subscription ? undefined : apiKey || undefined,
+        auth_provider: subscription ? authProviderId : "",
+        auth_session_id: subscription ? auth?.sessionId : "",
         connection_id: connection?.name ?? null,
         kind,
         model: testModel,
@@ -180,7 +248,15 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
       setError("[MODEL_URL_INVALID] 模型连接：连接地址无效。建议：使用以 http:// 或 https:// 开头的地址。");
       return;
     }
-    if (!connection && !apiKey.trim()) {
+    if (subscription) {
+      if (!auth && !keepsSavedCredential) {
+        setError(
+          "[MODEL_AUTH_SESSION_REQUIRED] 模型连接：还没有完成订阅登录。建议：点「登录」在浏览器里完成授权后再继续。",
+        );
+        return;
+      }
+    } else if (!apiKey.trim() && connection?.auth_method !== "api_key") {
+      // 切回 API Key 必须重新填 Key：订阅凭据不能当按量付费的 Key 用。
       setError("[MODEL_KEY_REQUIRED] 模型连接：未填写 API Key。建议：填写供应商提供的 API Key。");
       return;
     }
@@ -239,23 +315,62 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
             </p>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-[#4b4737]" htmlFor="connection-key">
-              API Key
-            </label>
-            <input
-              id="connection-key"
-              type="password"
-              autoComplete="off"
-              className="mt-1 w-full rounded border border-[#cfc7ae] bg-white px-3 py-2 text-sm"
-              placeholder={connection?.has_key ? `已保存 ${connection.masked_key}，留空沿用` : ""}
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
+          {supportsSubscription && (
+            <div className="flex gap-2">
+              <Button
+                variant={subscription ? "primary" : undefined}
+                className="px-2 py-1 text-xs"
+                onClick={() => {
+                  setMethod("subscription");
+                  setError(null);
+                }}
+              >
+                订阅登录
+              </Button>
+              <Button
+                variant={subscription ? undefined : "primary"}
+                className="px-2 py-1 text-xs"
+                onClick={() => {
+                  setMethod("api_key");
+                  setError(null);
+                }}
+              >
+                API Key
+              </Button>
+            </div>
+          )}
+
+          {subscription ? (
+            <SubscriptionLogin
+              providerId={authProviderId}
+              providerName={
+                authProviders.find((item) => item.id === authProviderId)?.name ??
+                preset.display_name
+              }
+              savedAccount={
+                connection?.auth_method === "subscription" ? connection.account : ""
+              }
+              onState={setAuth}
             />
-            <p className="mt-1 text-sm text-ui-muted">
-              Key 保存在本机系统凭据存储，不写进作品目录。
-            </p>
-          </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-bold text-[#4b4737]" htmlFor="connection-key">
+                API Key
+              </label>
+              <input
+                id="connection-key"
+                type="password"
+                autoComplete="off"
+                className="mt-1 w-full rounded border border-[#cfc7ae] bg-white px-3 py-2 text-sm"
+                placeholder={connection?.has_key ? `已保存 ${connection.masked_key}，留空沿用` : ""}
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+              />
+              <p className="mt-1 text-sm text-ui-muted">
+                Key 保存在本机系统凭据存储，不写进作品目录。
+              </p>
+            </div>
+          )}
 
           {preset.regions.length > 0 && (
             <div>
@@ -416,6 +531,44 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
             <p className="mt-1 text-sm text-ui-muted">
               保存连接不会自动切换到它；配好后用「设为当前」或右上角选择器切换。
             </p>
+          </div>
+
+          <div className="rounded border border-[#e2dbc6] bg-white/60 p-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-[#4b4737]">模型容量</span>
+              <span className="text-sm text-ui-muted">可选</span>
+            </div>
+            <p className="mt-1 text-sm leading-4 text-ui-muted">
+              填了窗口才显示占比；不知道就留空，界面按未知处理，不填默认值。
+            </p>
+            <ul className="mt-2 space-y-2">
+              {models.map((model) => (
+                <li className="flex items-center gap-2" key={model}>
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{model}</span>
+                  <input
+                    aria-label={`${model} 的上下文窗口`}
+                    className="w-24 rounded border border-[#cfc7ae] bg-white px-1.5 py-1 text-xs"
+                    min={1}
+                    placeholder="窗口"
+                    type="number"
+                    value={limits[model]?.window ?? ""}
+                    onChange={(event) => setLimit(model, "window", event.target.value)}
+                  />
+                  <input
+                    aria-label={`${model} 的最大输出`}
+                    className="w-20 rounded border border-[#cfc7ae] bg-white px-1.5 py-1 text-xs"
+                    min={1}
+                    placeholder="最大输出"
+                    type="number"
+                    value={limits[model]?.maxOutput ?? ""}
+                    onChange={(event) => setLimit(model, "maxOutput", event.target.value)}
+                  />
+                </li>
+              ))}
+              {models.length === 0 && (
+                <li className="text-sm text-ui-muted">先勾选模型，再填容量。</li>
+              )}
+            </ul>
           </div>
 
           <div className="rounded border border-[#e2dbc6] bg-white/60 p-2">

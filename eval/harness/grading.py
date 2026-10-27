@@ -210,6 +210,16 @@ def evaluate_rule(
         )
     if rule.kind == "fault_observed":
         return check_row(rule.id, bool(evidence.get("faults")), evidence.get("faults", []))
+    if rule.kind == "compaction_count":
+        records = [item for item in evidence.get("compactions", []) if item.get("compaction_id")]
+        expected = int(rule.value)
+        return check_row(
+            rule.id, len(records) >= expected, {"expected": expected, "records": records}
+        )
+    if rule.kind == "retry_observed":
+        rows = [e for e in evidence["events"] if e.get("type") == "model_request_retried"]
+        ok = any(rule.value in str(row.get("reason", "")) for row in rows)
+        return check_row(rule.id, ok, rows)
     if rule.kind == "manual":
         valid = (
             review is not None
@@ -244,7 +254,11 @@ def grade_step(
         check_row(
             "terminal",
             bool(terminals)
-            and (final == "completed" or (step.expect_needs_input and final == "needs_input")),
+            and (
+                final == "completed"
+                or (step.expect_needs_input and final == "needs_input")
+                or (step.expect_stopped and final == "stopped")
+            ),
             terminals[-1] if terminals else "缺少终态",
         )
     ]
@@ -253,7 +267,7 @@ def grade_step(
     rows.append(
         check_row(
             "public_answer",
-            bool(answer.strip()) or (step.expect_needs_input and asked),
+            bool(answer.strip()) or (step.expect_needs_input and asked) or step.expect_stopped,
             answer or ("已向作者提问" if asked else ""),
         )
     )
@@ -317,6 +331,9 @@ def grade_step(
             )
         )
     for rule in step.checks:
+        if rule.kind == "compaction_count" and "--no_compaction--" in prefix:
+            rows.append(check_row(rule.id, True, "无压缩对照不要求摘要次数；语义检查仍须通过"))
+            continue
         rows.append(evaluate_rule(rule, evidence, reviews.get(f"{prefix}/{rule.id}")))
     if step.purpose == "organize_materials":
         requests = [e for e in events if e["type"] == "model_request_started"]
@@ -376,6 +393,24 @@ def metrics(evidences: list[dict[str, Any]]) -> dict[str, Any]:
         "request_sizes": sizes,
         "max_request_json_chars": max((sum(s.values()) for s in sizes), default=None),
         "cost": None,
+        "summary_requests": sum(e.get("stage") == "compaction" for e in started),
+        "summary_duration_ms": sum(
+            e.get("duration_ms") or 0 for e in finished if e.get("stage") == "compaction"
+        ),
+        "summary_input_tokens": sum(
+            u.get("input", 0) + u.get("cache_read", 0) + u.get("cache_write", 0)
+            for e in finished
+            if e.get("stage") == "compaction" and (u := e.get("usage"))
+        )
+        if complete
+        else None,
+        "summary_output_tokens": sum(
+            u.get("output", 0)
+            for e in finished
+            if e.get("stage") == "compaction" and (u := e.get("usage"))
+        )
+        if complete
+        else None,
     }
 
 

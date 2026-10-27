@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import difflib
 import json
 import time
@@ -31,6 +32,36 @@ from hastings.workspace.questions import QuestionStore
 from hastings.workspace.service import ProviderFactory, TurnService
 from hastings.workspace.state import ConversationStore, conversation_root
 from hastings.workspace.story_materials import CoverageStore
+from tau_agent.messages import AssistantMessage
+from tau_agent.provider_events import AssistantErrorEvent
+
+
+class _OverflowOnceProvider:
+    """只在该步骤的第一次模型请求上注入一次超上下文错误，之后透传真实供应商。"""
+
+    def __init__(self, provider: Any, trace: dict[str, Any], gate: dict[str, bool]) -> None:
+        self.provider, self.trace, self.gate = provider, trace, gate
+
+    def stream_response(self, **kwargs: Any) -> Any:
+        if not self.gate["armed"] or self.gate["fired"]:
+            return self.provider.stream_response(**kwargs)
+        self.gate["fired"] = True
+        self.gate["armed"] = False
+        self.trace["faults"].append({"type": "context_overflow", "injected": "provider"})
+
+        async def broken() -> Any:
+            yield AssistantErrorEvent(
+                reason="error",
+                error=AssistantMessage(
+                    error_message=(
+                        "This model's maximum context length is 8192 tokens. "
+                        "However, you requested 9000 tokens."
+                    ),
+                    stop_reason="error",
+                ),
+            )
+
+        return broken()
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -78,6 +109,15 @@ def seed_history(store: ConversationStore, case: Case) -> str | None:
         else:
             store.append(cid, {"type": "turn_started", "turn_id": tid, "text": item.user})
         store.append(cid, {"type": "assistant_message", "turn_id": tid, "text": item.assistant})
+        if item.question:
+            # 既写事件（执行事实、压缩切点都据此判断），也写问答登记（回答时据此认领）。
+            QuestionStore(store.root).create(
+                conversation_id=cid, turn_id=tid, question=item.question
+            )
+            store.append(
+                cid,
+                {"type": "author_input_requested", "turn_id": tid, "question": item.question},
+            )
         store.append(
             cid,
             {
@@ -268,12 +308,6 @@ def capture(
         state_file = service.store.root / name
         if state_file.exists():
             derived[name] = json.loads(state_file.read_text(encoding="utf-8"))
-    overview_dir = service.store.root / "overview"
-    if overview_dir.exists():
-        derived["overview"] = [
-            json.loads(path.read_text(encoding="utf-8"))
-            for path in sorted(overview_dir.glob("*.json"))
-        ]
     diffs = {}
     for path in before.keys() | after.keys():
         old, new = before.get(path, {}).get("text", ""), after.get(path, {}).get("text", "")
@@ -309,6 +343,10 @@ def capture(
         ],
         "assemblies": list(trace["assemblies"]),
         "faults": list(trace["faults"]),
+        # 每次整理的结果：compaction_id 为 None 表示没有可整理内容（noop）。
+        "compactions": list(trace.get("compactions", [])),
+        # 压缩摘要请求的结果（含失败原因）：压缩没发生时，这是唯一的线索。
+        **({"compaction": trace["compaction"]} if "compaction" in trace else {}),
     }
 
 
@@ -372,18 +410,67 @@ async def run_attempt(
         ideas[idea_seed.title] = created
     store = ConversationStore(conversation_root(work / key / "state", "eval"))
     cid = seed_history(store, case)
-    service = TurnService(workspace, store, factory, max_turns=max_turns, library=library)
+    trace: dict[str, Any] = {"assemblies": [], "faults": []}
+    gate = {"armed": False, "fired": False}
+
+    def gated_factory() -> Any:
+        snapshot = factory()
+        return replace(snapshot, provider=_OverflowOnceProvider(snapshot.provider, trace, gate))
+
+    service = TurnService(workspace, store, gated_factory, max_turns=max_turns, library=library)
+    service.auto_compaction = variant != "no_compaction"
+    if case.compaction_threshold is not None:
+        service.compaction_threshold = case.compaction_threshold
     service.activity.configure(capture_inputs=True, retention_days=0)
     evidences: list[dict[str, Any]] = []
-    trace: dict[str, Any] = {"assemblies": [], "faults": []}
-    error = None
+    captured_seq = max((e["seq"] for e in store.events(cid)), default=0) if cid else 0
     started = time.monotonic()
+    if case.compact_before_steps and cid and variant != "no_compaction":
+        # 压缩失败不中断评测：那本身就是「旧投影照常可用」的证据。
+        try:
+            record = await service.compact(cid, reason="eval")
+            detail = {
+                "compaction_id": record.compaction_id if record is not None else None,
+                "estimated_before": record.estimated_before if record is not None else None,
+                "estimated_after": record.estimated_after if record is not None else None,
+            }
+            trace["compaction"] = detail
+            trace.setdefault("compactions", []).append({"source": "before_steps", **detail})
+        except Exception as exc:  # noqa: BLE001 - 记录原因即可
+            detail: dict[str, Any] = {"error": str(exc)}
+            details = getattr(exc, "details", None)
+            if details:
+                detail["details"] = details
+            trace["compaction"] = detail
+            trace.setdefault("compactions", []).append({"source": "before_steps", **detail})
+    error = None
     with intervention(case, variant, trace):
         for i, step in enumerate(case.steps):
+            if step.compact_before and cid and variant != "no_compaction":
+                try:
+                    record = await service.compact(cid, reason="eval")
+                    trace.setdefault("compactions", []).append(
+                        {
+                            "source": f"step-{i + 1}",
+                            "compaction_id": record.compaction_id if record is not None else None,
+                            "estimated_before": (
+                                record.estimated_before if record is not None else None
+                            ),
+                            "estimated_after": (
+                                record.estimated_after if record is not None else None
+                            ),
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001 - 失败本身是证据
+                    trace.setdefault("compactions", []).append(
+                        {"source": f"step-{i + 1}", "error": str(exc)}
+                    )
             seed_files(workspace, step.external_updates)
             before = snapshot_files(workspace)
             trace["assemblies"].clear()
             trace["faults"].clear()
+            gate["armed"] = step.inject_overflow
+            gate["fired"] = False
             info = None
             try:
                 material_scope = step.material_scope
@@ -393,18 +480,6 @@ async def run_attempt(
                     if not pending:
                         raise RuntimeError("这一步要回答问题，但会话里没有待答问题")
                     reply_to = pending[-1].question_id
-                if step.purpose == "organize_overview":
-                    from hastings.workspace.story_overview import StoryOverview
-
-                    overview = StoryOverview(workspace, store.root, library, step.state_chapter)
-                    material_scope = {
-                        "domain": "overview",
-                        "request": {
-                            "request_key": f"eval-overview-{i + 1}",
-                            "observed_generation": overview.generation,
-                            "as_of_chapter": overview.as_of,
-                        },
-                    }
                 info = await service.accept(
                     step.text,
                     f"eval-{i + 1}",
@@ -428,24 +503,48 @@ async def run_attempt(
                     reply_to_question=reply_to,
                 )
                 cid = info.conversation_id
+                stop_task: asyncio.Task[None] | None = None
+                if step.stop_after_ms is not None:
+
+                    async def stop_later(turn_id: str, delay_ms: int) -> None:
+                        await asyncio.sleep(delay_ms / 1000)
+                        # 已经结束就不再停：这一轮的结果由它自己的终态说明。
+                        with contextlib.suppress(Exception):
+                            await service.stop(turn_id)
+
+                    stop_task = asyncio.create_task(stop_later(info.turn_id, step.stop_after_ms))
                 try:
                     await asyncio.wait_for(asyncio.shield(service.wait(info.turn_id)), timeout)
                 except TimeoutError:
                     await service.stop(info.turn_id)
                     await service.wait(info.turn_id)
                     error = "步骤超过评测耗时上限，已停止"
+                finally:
+                    if stop_task is not None:
+                        await asyncio.gather(stop_task, return_exceptions=True)
             except Exception as exc:
                 # 不输出配置对象和 provider 异常原文，业务错误仍保存在本机证据中。
                 error = f"评测执行异常：{type(exc).__name__}"
             events = (
-                [
-                    e
-                    for e in store.events(cid)
-                    if info is not None and e.get("turn_id") == info.turn_id
-                ]
+                [e for e in store.events(cid) if info is not None and e["seq"] > captured_seq]
                 if cid
                 else []
             )
+            captured_seq = max((e["seq"] for e in events), default=captured_seq)
+            known_compactions = {row.get("compaction_id") for row in trace.get("compactions", [])}
+            for event in events:
+                if (
+                    event.get("type") == "context_compacted"
+                    and event.get("compaction_id") not in known_compactions
+                ):
+                    trace.setdefault("compactions", []).append(
+                        {
+                            "source": "request_boundary",
+                            "compaction_id": event["compaction_id"],
+                            "estimated_before": event["record"]["estimated_before"],
+                            "estimated_after": event["record"]["estimated_after"],
+                        }
+                    )
             evidence = capture(
                 workspace,
                 service,
@@ -461,8 +560,11 @@ async def run_attempt(
             if error or not terminals:
                 break
             final = terminals[-1]["status"]
-            # 提问暂停是预期终态：后面还有回答步骤时继续执行。
-            if final != "completed" and not (step.expect_needs_input and final == "needs_input"):
+            # 提问暂停与按预期停止都不是失败：后面还有步骤时继续执行。
+            if final != "completed" and not (
+                (step.expect_needs_input and final == "needs_input")
+                or (step.expect_stopped and final == "stopped")
+            ):
                 break
     result = grade_attempt(case, evidences, key)
     if error:

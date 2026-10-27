@@ -1,0 +1,558 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261027-142043-575644",
+    "started_at": "2026-10-27T14:20:43.579062+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "d4c9825c10390ccf519096370f4e0cf748f9e953",
+    "git_dirty": true,
+    "source_sha256": "fbecd32be81692cf2ec7932406f18beee0d8518b755f8cd4de7d22d37b5fabe8",
+    "cases_sha256": "ea9d75757ce8e984e56bfcc05c7ed845e9397cb5060b49a46f7c39d935ea4293",
+    "suite": "v09-context",
+    "jobs": [
+      {
+        "key": "v09_multi_compaction--current--1",
+        "case": "v09_multi_compaction",
+        "family": "压缩语义",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 300,
+    "max_provider_calls": 40,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261027-142043-575644",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "仅移除所选系统提示分区；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 11
+  },
+  "summary": {
+    "planned": 1,
+    "executed": 1,
+    "counts": {
+      "pending_review": 1,
+      "not_run": 0
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": 49.0,
+    "duration_p95_seconds": 49.0,
+    "input_tokens": 52132,
+    "output_tokens": 2249,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 49.0,
+        "duration_p95_seconds": 49.0,
+        "input_tokens": 52132,
+        "output_tokens": 2249,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "压缩语义": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 49.0,
+        "duration_p95_seconds": 49.0,
+        "input_tokens": 52132,
+        "output_tokens": 2249,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 49.0,
+        "duration_p95_seconds": 49.0,
+        "input_tokens": 52132,
+        "output_tokens": 2249,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v09_multi_compaction": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 49.0,
+        "duration_p95_seconds": 49.0,
+        "input_tokens": 52132,
+        "output_tokens": 2249,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 528,
+            "at": "2026-10-27T14:21:00.153+08:00",
+            "event_version": 1,
+            "event_id": "c_c49b76ddbb4a:528",
+            "conversation_id": "c_c49b76ddbb4a",
+            "type": "run_finished",
+            "turn_id": "t_b07e5279",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "走廊尽头的灯管每隔几秒闪一下，把墙纸上的暗纹照得忽明忽暗。远处传来水管在墙里走动的闷响，像有人隔着几层楼敲木箱。管家从楼梯口过来，右手扶着托盘边缘，左臂贴着身侧，袖口垂得很规整。他脚步不快，鞋底压住地毯的接缝，几乎没有声响；托盘上那只杯子里的水面晃了一圈，又自己静下来。经过第三扇门时，他停了一停，侧耳听里面是否有动静，然后抬右手的两根指头，在门框上轻敲三下。没有人应。灯又闪了一次，他的影子在墙上缩了一下，随即拖长。走廊另一头的挂钟开始报时，铜音从积尘的墙角滚过来，一声比一声近。他从衣袋里摸出那把铜钥匙，握在掌心看了看，又收回去，继续往前，直到身影被尽头的暗处吞掉。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 889,
+            "at": "2026-10-27T14:21:04.709+08:00",
+            "event_version": 1,
+            "event_id": "c_c49b76ddbb4a:889",
+            "conversation_id": "c_c49b76ddbb4a",
+            "type": "run_finished",
+            "turn_id": "t_a323a90f",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-2/public_answer",
+          "status": "pass",
+          "detail": "客房里的窗没关严，风从缝里挤进来，把窗帘下摆吹得一阵一阵往外掀。床铺得平整，被角压得齐整，只有枕头上留着一处浅窝，像方才有人靠过。桌上一盏罩着绿玻璃的台灯亮着，光只落在桌面一圈，杯垫、火柴盒、半张折起的报纸都被照得清楚，其余地方沉在昏黄里。管家把托盘放下，先用右臂把桌沿的东西推开一点，才把杯子稳稳摆到杯垫正中；左臂始终垂着，只在转身时微微一动，像被什么扯了一下。他压低声音问客人今夜是否需要加一床毯子，问完就退到门边，肩背贴着墙，等回话。走廊的脚步声忽然由远及近，停在门外，又迟疑着走开了。台灯的灯丝发了一声细响，光稍微暗了暗。管家抬眼朝门看，右手不着痕迹地把托盘挪到身前，杯沿正对着自己。等那脚步声彻底消失，他才重新把托盘抱回肘弯，说了句明日七点早饭，便拉开门退出去。门合上时没有响，只是门缝里的光被那条窄窄的影子一点点填满。"
+        },
+        {
+          "id": "step-2/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-2/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1234,
+            "at": "2026-10-27T14:21:16.743+08:00",
+            "event_version": 1,
+            "event_id": "c_c49b76ddbb4a:1234",
+            "conversation_id": "c_c49b76ddbb4a",
+            "type": "run_finished",
+            "turn_id": "t_bae4dda5",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-3/public_answer",
+          "status": "pass",
+          "detail": "雨在檐口连成一道细密的水帘，落在台阶下的石板上又溅起来，把门槛内侧擦出一片深色的湿痕。风小的时候，雨声就沉下去，只剩墙外排水管子里的抽动，一阵一阵。林远站在门里，肩头还带着外面的潮气，手按在门板上，没有立刻关。院灯被雨水糊住，光散成一团白，照见门外马车轮子碾过的辙印正慢慢漫平。管家从廊下过来，右手提着一盏马灯，灯罩上落了几点水，光随他走动在墙上游移。他在门边立住，把马灯换到右手举高些，左臂依旧贴着身侧，袖口卷了两道，露出的小臂上缠着旧布。他低声说，这样的雨，路上怕是不好走。林远没有答，只望着水帘外那片黑。有一声闷雷从远处压过来，屋里的玻璃跟着轻轻颤了一下。管家侧身把门掩上，插好闩，动作很稳，右手推到底，才回身道，热水已经送到房里了。"
+        },
+        {
+          "id": "step-3/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-3/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1718,
+            "at": "2026-10-27T14:21:23.051+08:00",
+            "event_version": 1,
+            "event_id": "c_c49b76ddbb4a:1718",
+            "conversation_id": "c_c49b76ddbb4a",
+            "type": "run_finished",
+            "turn_id": "t_d825fac0",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-4/public_answer",
+          "status": "pass",
+          "detail": "餐厅里点着两盏煤油灯，罩子是磨砂的，把光散成一层薄的亮。长桌上铺着洗得发白的桌布，刀叉摆得整齐，银器上没有指纹，只有靠窗那副多摆了一只杯子。窗外的雨还没停，水顺着玻璃往下走，把院里那盏灯拉成长条。管家端着汤盅进来，右手托底，左臂仍旧垂在身侧，走得慢，汤面上几乎没有波纹。他把汤盅放在林远面前，手腕一转，盅沿避开客人的袖口。桌角的壁炉没生火，铁架上还留着上一场的灰。林远坐下，拿起勺子又放下，问昨夜有没有人用过这副多余的餐具。管家停了一停，说没有，昨晚只收拾过桌面，声音压得很低。窗外檐水滴得密了，一下一下砸在铁皮上。灯芯烧出一点黑烟，管家伸手过去，用右手把灯芯拧低了些，屋子里立刻暗下来一截，远角的椅子只剩轮廓。林远没有再问，端起汤喝了一口。"
+        },
+        {
+          "id": "step-4/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-4/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2174,
+            "at": "2026-10-27T14:21:28.667+08:00",
+            "event_version": 1,
+            "event_id": "c_c49b76ddbb4a:2174",
+            "conversation_id": "c_c49b76ddbb4a",
+            "type": "run_finished",
+            "turn_id": "t_e265889e",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-5/public_answer",
+          "status": "pass",
+          "detail": "账房里只有一盏煤油灯放在铁皮灯座上，灯芯拧得很短，光刚够照开桌面那一块。墙上钉着几排木格，格子里塞着账本和票据，纸角都卷了边，压着一张张写着日期的纸条。算盘的漆磨掉了大半，梁上挂着一层薄灰。管家站在桌后，右手翻账，翻一页便用指节压住，左手扶着桌沿，只做支撑，一动不动。他把账本推到林远面前，指着一行说，这是上月的房钱，这是柴炭和灯油。数字写得很齐，笔锋收得干净，只是每隔几页就有一处字迹偏淡，像换了墨，或者换了人写。林远翻开那一页，问他这几处是怎么回事。管家说，那几天笔秃了，勉强记的，声音很低，说完便把手从桌沿收回去，垂在身侧。窗外有风从檐下钻进来，灯苗歪了歪，屋里的影子跟着歪了一下。桌角压着一把铜钥匙，齿口朝里，被灯照出一线黄亮。林远伸指过去，管家先一步把账本合上，正正地压住那处桌面，说对账要紧，钥匙的事明日再说。檐水在窗外停了停，又落下来。"
+        },
+        {
+          "id": "step-5/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-5/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2285,
+            "at": "2026-10-27T14:21:42.860+08:00",
+            "event_version": 1,
+            "event_id": "c_c49b76ddbb4a:2285",
+            "conversation_id": "c_c49b76ddbb4a",
+            "type": "run_finished",
+            "turn_id": "t_94ac8d6d",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-6/public_answer",
+          "status": "pass",
+          "detail": "1) 不能。按已定的硬约束，管家左手有旧伤，端茶、托托盘这类动作都由右手完成，左臂只作支撑或垂在身侧，不能让他用左手端茶。\n\n2) 不能。管家就是失踪的医生这件事，要到第八章才明示；第八章之前只能留线索和可疑的细节，不能让角色或叙述者说破。"
+        },
+        {
+          "id": "step-6/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-6/three_compactions",
+          "status": "pass",
+          "detail": {
+            "expected": 3,
+            "records": [
+              {
+                "source": "before_steps",
+                "compaction_id": "cmp_48d5b506c37597b3",
+                "estimated_before": 9089,
+                "estimated_after": 6331
+              },
+              {
+                "source": "step-3",
+                "compaction_id": "cmp_af0ffdf9b2cdd4f4",
+                "estimated_before": 9799,
+                "estimated_after": 6512
+              },
+              {
+                "source": "step-6",
+                "compaction_id": "cmp_39875d61503bec4c",
+                "estimated_before": 10905,
+                "estimated_after": 6453
+              }
+            ]
+          }
+        },
+        {
+          "id": "step-6/keeps_early_constraints",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "两个问题都要明确回答：管家不能用左手端茶，因为左手有旧伤；现在不能点明管家与失踪医生的关系，要留到第八章。答成可以用左手，或认为现在就可以点明，均不通过。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 8,
+        "model_finished": 8,
+        "tool_calls": 3,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 8,
+        "fresh_input_tokens": 52132,
+        "input_tokens": 52132,
+        "output_tokens": 2249,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5638,
+            "messages_json_chars": 13204,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5638,
+            "messages_json_chars": 14877,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5689,
+            "messages_json_chars": 14128,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5738,
+            "messages_json_chars": 13996,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5789,
+            "messages_json_chars": 14956,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5789,
+            "messages_json_chars": 17823,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5783,
+            "messages_json_chars": 15916,
+            "tools_json_chars": 9579
+          },
+          {
+            "system_chars": 5752,
+            "messages_json_chars": 14570,
+            "tools_json_chars": 9579
+          }
+        ],
+        "max_request_json_chars": 33191,
+        "cost": null
+      },
+      "key": "v09_multi_compaction--current--1",
+      "case": "v09_multi_compaction",
+      "title": "连续三次整理后仍守住最早约束",
+      "family": "压缩语义",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 49.0,
+      "evidence": "evidence/v09_multi_compaction--current--1",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

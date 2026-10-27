@@ -10,6 +10,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   listWorkspaces: vi.fn(),
   openWorkspace: vi.fn(),
+  removeWorkspace: vi.fn(),
+  renameWorkspace: vi.fn(),
   pruneStaleWorkspaces: vi.fn(),
   listFiles: vi.fn(),
   readFile: vi.fn(),
@@ -181,11 +183,101 @@ describe("目录与文件", () => {
   });
 });
 
+describe("删除作品", () => {
+  it("删除当前作品后切到仍在册的作品并提示实际删除", async () => {
+    await useWorkspaceStore.getState().init();
+    const next = { id: "w2", name: "另一条线", path: "C:/另一条线", exists: true };
+    api.removeWorkspace.mockResolvedValue({
+      removed: { id: "w1", name: "雪山旅馆", path: "C:/作品", exists: true },
+      workspaces: [next],
+    });
+
+    expect(await useWorkspaceStore.getState().remove("w1", "C:/作品")).toBe(true);
+    expect(api.removeWorkspace).toHaveBeenCalledWith("w1", "C:/作品");
+    expect(useWorkspaceStore.getState().currentId).toBe("w2");
+    expect(useWorkspaceStore.getState().bindings).toEqual([next]);
+    expect(useWorkspaceStore.getState().notice).toContain("及本地文件");
+    expect(useWorkspaceStore.getState().positions.w1).toBeUndefined();
+  });
+
+  it("删除最后一个作品后清空当前选择与会话", async () => {
+    await useWorkspaceStore.getState().init();
+    api.removeWorkspace.mockResolvedValue({
+      removed: { id: "w1", name: "雪山旅馆", path: "C:/作品", exists: true },
+      workspaces: [],
+    });
+
+    expect(await useWorkspaceStore.getState().remove("w1", "C:/作品")).toBe(true);
+    expect(useWorkspaceStore.getState().currentId).toBeNull();
+    expect(useWorkspaceStore.getState().file).toBeNull();
+    expect(useConversationsStore.getState().workspaceId).toBeNull();
+  });
+
+  it("删除失败时保留当前作品并显示错误", async () => {
+    await useWorkspaceStore.getState().init();
+    api.removeWorkspace.mockRejectedValueOnce(new Error("还在运行"));
+
+    expect(await useWorkspaceStore.getState().remove("w1", "C:/作品")).toBe(false);
+    expect(useWorkspaceStore.getState().currentId).toBe("w1");
+    expect(useWorkspaceStore.getState().error).toMatch(/^\[REQUEST_FAILED\]/);
+  });
+});
+
+describe("重命名作品", () => {
+  it("重命名当前作品后切到新标识", async () => {
+    await useWorkspaceStore.getState().init();
+    const renamed = { id: "w2", name: "新名字", path: "C:/新名字", exists: true };
+    api.renameWorkspace.mockResolvedValue({ workspace: renamed, workspaces: [renamed] });
+
+    expect(await useWorkspaceStore.getState().rename("w1", "新名字")).toBe("w2");
+    expect(useWorkspaceStore.getState().currentId).toBe("w2");
+    expect(useWorkspaceStore.getState().bindings).toEqual([renamed]);
+    expect(useWorkspaceStore.getState().notice).toContain("新名字");
+  });
+
+  it("重命名其他作品时保持当前作品不变", async () => {
+    await useWorkspaceStore.getState().init();
+    const other = { id: "w2", name: "另一条线", path: "C:/另一条线", exists: true };
+    useWorkspaceStore.setState({ bindings: [useWorkspaceStore.getState().bindings[0]!, other] });
+    const renamed = { id: "w3", name: "改名后", path: "C:/改名后", exists: true };
+    api.renameWorkspace.mockResolvedValue({
+      workspace: renamed,
+      workspaces: [useWorkspaceStore.getState().bindings[0]!, renamed],
+    });
+
+    expect(await useWorkspaceStore.getState().rename("w2", "改名后")).toBe("w3");
+    expect(useWorkspaceStore.getState().currentId).toBe("w1");
+    expect(useWorkspaceStore.getState().bindings.map((item) => item.id)).toEqual(["w1", "w3"]);
+  });
+
+  it("重命名失败时保留当前作品并显示错误", async () => {
+    await useWorkspaceStore.getState().init();
+    api.renameWorkspace.mockRejectedValueOnce(new Error("同名目录已经存在"));
+
+    expect(await useWorkspaceStore.getState().rename("w1", "新名字")).toBeNull();
+    expect(useWorkspaceStore.getState().currentId).toBe("w1");
+    expect(useWorkspaceStore.getState().error).toMatch(/^\[REQUEST_FAILED\]/);
+  });
+});
+
 describe("Git 动作", () => {
+  it("新建作品成功后返回作品标识并切到新作品", async () => {
+    await useWorkspaceStore.getState().init();
+    const created = { id: "w2", name: "新作品", path: "C:/新作品", exists: true };
+    api.openWorkspace.mockResolvedValue(created);
+    api.listWorkspaces.mockResolvedValue([
+      { id: "w1", name: "雪山旅馆", path: "C:/作品", exists: true },
+      created,
+    ]);
+
+    expect(await useWorkspaceStore.getState().open("C:/新作品", true)).toBe("w2");
+    expect(useWorkspaceStore.getState().currentId).toBe("w2");
+  });
+
   it("打开目录失败返回失败并保留当前作品", async () => {
     await useWorkspaceStore.getState().init();
     api.openWorkspace.mockRejectedValueOnce(new Error("不可用"));
-    expect(await useWorkspaceStore.getState().open("C:/不存在的作品", false)).toBe(false);
+    expect(await useWorkspaceStore.getState().open("C:/不存在的作品", false)).toBeNull();
     expect(useWorkspaceStore.getState().currentId).toBe("w1");
     expect(useWorkspaceStore.getState().error).toMatch(/^\[REQUEST_FAILED\]/);
   });

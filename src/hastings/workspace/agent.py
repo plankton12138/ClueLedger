@@ -22,6 +22,7 @@ from typing import Any, Literal, cast
 from hastings.library.bindings import AssemblyService
 from hastings.library.changes import ChangeEdit, ChangeOperation, ModuleChangeService
 from hastings.library.ids import source_path
+from hastings.library.imports import imported_paths
 from hastings.library.modules import ModuleLibrary
 from hastings.library.records import EntryDraft
 from hastings.workspace.assembly import AssembledContext, Exclusion, Profile
@@ -129,10 +130,18 @@ from tau_agent.provider import ModelProvider
 from tau_agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolUpdateCallback
 from tau_agent.types import JSONValue
 
-__all__ = ["MAX_TURNS", "RunContext", "ToolMode", "build_harness", "build_tools"]
+__all__ = [
+    "MAX_TURNS",
+    "RequestInputs",
+    "RunContext",
+    "ToolMode",
+    "build_harness",
+    "build_tools",
+    "prepare_request_inputs",
+]
 
 #: 工具集合：普通写作、索引任务、只读检查，或只读展开一条灵感。
-ToolMode = Literal["write", "index", "review", "state", "materials", "idea", "overview"]
+ToolMode = Literal["write", "index", "review", "state", "materials", "idea"]
 
 
 #: 单轮最多的模型回合数；到顶就结束并如实记录，不无限循环。
@@ -328,14 +337,6 @@ def build_tools(
     索引任务只开放目录、搜索、读取与 ``save_chapter_index``：它能保存索引缓存，
     但不能改作品正文，也不准备 Git 基线。
     """
-    if mode == "overview":
-        # 该用途由统一轮次中的逐目标执行器构造受限工具，禁止意外得到写作工具。
-        raise WorkspaceError(
-            code="OVERVIEW_SCOPE_INVALID",
-            where="总览整理",
-            why="缺少冻结的总览目标",
-            fix="从故事总览发起更新",
-        )
     repo = GitRepo(workspace.root)
 
     async def list_files(
@@ -348,6 +349,7 @@ def build_tools(
         offset = _int_argument(arguments, "offset", default=1, minimum=1)
         limit = _int_argument(arguments, "limit", default=_LIST_DEFAULT_ENTRIES, minimum=1)
         catalog = workspace.catalog()
+        imported = imported_paths(workspace)
         # 三块内容按「正文 → 固定设定 → 角色」排成一列再分页：返回结构不变，
         # 超长作品也能用 offset 继续看，不会一次把整本书的条目塞回模型。
         rows: list[tuple[str, dict[str, Any]]] = []
@@ -366,6 +368,8 @@ def build_tools(
                 )
             )
         for entry in catalog.settings:
+            if not entry.exists or entry.path in imported:
+                continue
             rows.append(
                 (
                     "settings",
@@ -373,6 +377,8 @@ def build_tools(
                 )
             )
         for entry in catalog.characters:
+            if not entry.exists or entry.path in imported:
+                continue
             rows.append(
                 (
                     "characters",
@@ -1470,10 +1476,31 @@ def build_tools(
             raise _input_error("domain", "只能是 disclosure / roster / timeline / clues / glossary")
         snapshot = build_disclosure_state(workspace, disclosure_store, **at)
         entity_path = arguments.get("entity")
+        if entity_path is not None and (not isinstance(entity_path, str) or not entity_path):
+            raise _input_error("entity", "必须是身份概览返回的单个 path；不带 entity 查看概览")
+        if not snapshot.entities:
+            return _json(
+                {
+                    "current_chapter": snapshot.current_chapter,
+                    "source": "legacy_character_files",
+                    "status": "not_recorded",
+                    "requested_entity": entity_path,
+                    "entities": [],
+                    "conflicts": [],
+                    "note": (
+                        "当前没有可查询的旧版人物身份记录；这不表示模块中的人物不存在。"
+                        "不要按姓名拼接旧路径重复查询。"
+                    ),
+                    "next_tools": ["query_records", "read_record"]
+                    if run.library is not None and mode in ("write", "review", "materials")
+                    else ["list_files", "read_file"],
+                }
+            )
         if entity_path is None:
             return _json(
                 {
                     "current_chapter": snapshot.current_chapter,
+                    "source": "legacy_character_files",
                     "entities": [
                         {
                             "path": entity.path,
@@ -1498,16 +1525,21 @@ def build_tools(
                     ],
                 }
             )
-        if not isinstance(entity_path, str) or not entity_path:
-            raise _input_error("entity", "必须是小传路径")
+        assert isinstance(entity_path, str)
         entity = next((item for item in snapshot.entities if item.path == entity_path), None)
         if entity is None:
             raise WorkspaceError(
                 code="STATE_NOT_FOUND",
                 where=f"state.read:{entity_path}",
-                why="没有这个角色的身份状态",
-                fix="先用不带 entity 的形式看有哪些角色",
-                details={"path": entity_path},
+                why="这个路径没有旧版人物身份记录",
+                fix=(
+                    "先不带 entity 查询并使用返回的 path；"
+                    "模块人物设定用 query_records 和 read_record"
+                ),
+                details={
+                    "path": entity_path,
+                    "available_paths": [e.path for e in snapshot.entities],
+                },
             )
         entries = disclosure_store.entries() if disclosure_store is not None else ()
         return _json(
@@ -1553,7 +1585,8 @@ def build_tools(
             name="read_state",
             label="查看状态",
             description=(
-                "查看状态层：domain=disclosure（默认）给人物身份，domain=roster 给位置、生死与"
+                "查看已有记录：domain=disclosure（默认）仅给旧版小传的身份披露，不读取模块人物。"
+                "没有身份记录是合法空结果，不要按姓名拼旧路径重试。domain=roster 给位置、生死与"
                 "立场，domain=timeline 给故事时间，domain=clues 给线索台账，domain=glossary 给"
                 "专名。带 entity 可查某个角色的条目与原文依据。"
             ),
@@ -1564,7 +1597,13 @@ def build_tools(
                         "type": "string",
                         "enum": ["disclosure", "roster", "timeline", "clues", "glossary"],
                     },
-                    "entity": {"type": "string", "description": "如 设定集/角色小传/林静.md"},
+                    "entity": {
+                        "type": "string",
+                        "description": (
+                            "仅使用不带 entity 的身份概览实际返回的单个 path，"
+                            "不填人物名或模块引用"
+                        ),
+                    },
                     "as_of_chapter": {
                         "type": "integer",
                         "minimum": 0,
@@ -3673,6 +3712,84 @@ def build_turn_assembly(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class RequestInputs:
+    """一次请求真正发给模型的两样东西：系统提示与工具定义。
+
+    估算与执行都从这里取。两处各装配一次的结果往往只在细节上不同，而「界面说
+    还剩很多」与「模型收到的其实是另一份」恰恰最难靠肉眼发现。
+    """
+
+    system: str
+    tools: list[AgentTool]
+
+
+def prepare_request_inputs(
+    *,
+    workspace: Workspace,
+    run: RunContext,
+    selected_path: str | None = None,
+    history_facts: str = "",
+    materials: str = "",
+    ideas: str = "",
+    modules: str = "",
+    index_notes: str = "",
+    mode: ToolMode = "write",
+    index_allowed: Sequence[str] = (),
+    index_store: ChapterIndexStore | None = None,
+    review_targets: Sequence[str] = (),
+    review_store: ReviewStore | None = None,
+    disclosure_store: DisclosureStore | None = None,
+    glossary_store: GlossaryStore | None = None,
+    roster_store: CharacterStateStore | None = None,
+    timeline_store: TimelineStore | None = None,
+    clue_store: ClueStore | None = None,
+    material_scope: Mapping[str, object] | None = None,
+    coverage_store: CoverageStore | None = None,
+    assembly: AssembledContext | None = None,
+) -> RequestInputs:
+    """构造本轮的系统提示与工具定义，不执行模型、不写会话事件。
+
+    只读是指不产生作品改动与执行记录；装配本身会读当前资料版本，因此同一组参数
+    在不同资料版本下会得到不同结果——那正是估算需要跟着失效的原因。
+    """
+    resolved = assembly or build_turn_assembly(
+        workspace,
+        as_of_chapter=run.state_chapter,
+        mode=mode,
+        selected_path=selected_path,
+        history_facts=history_facts,
+        materials=materials,
+        ideas=ideas,
+        modules=modules,
+        index_notes=index_notes,
+        disclosure_store=disclosure_store,
+        glossary_store=glossary_store,
+        roster_store=roster_store,
+        timeline_store=timeline_store,
+        clue_store=clue_store,
+    )
+    return RequestInputs(
+        system=resolved.text,
+        tools=build_tools(
+            workspace,
+            run,
+            mode=mode,
+            index_allowed=index_allowed,
+            index_store=index_store,
+            review_targets=review_targets,
+            review_store=review_store,
+            disclosure_store=disclosure_store,
+            glossary_store=glossary_store,
+            roster_store=roster_store,
+            timeline_store=timeline_store,
+            clue_store=clue_store,
+            material_scope=material_scope,
+            coverage_store=coverage_store,
+        ),
+    )
+
+
 def build_harness(
     *,
     provider: ModelProvider,
@@ -3707,43 +3824,35 @@ def build_harness(
     ``prompt()`` 追加一次，不能已经包含在 ``history`` 里，否则模型会收到两遍。
     ``assembly`` 由调用方传入时直接使用，避免同一轮装配两次、结果不一致。
     """
-    resolved = assembly or build_turn_assembly(
-        workspace,
-        as_of_chapter=run.state_chapter,
-        mode=mode,
+    inputs = prepare_request_inputs(
+        workspace=workspace,
+        run=run,
         selected_path=selected_path,
         history_facts=history_facts,
         materials=materials,
         ideas=ideas,
         modules=modules,
         index_notes=index_notes,
+        mode=mode,
+        index_allowed=index_allowed,
+        index_store=index_store,
+        review_targets=review_targets,
+        review_store=review_store,
         disclosure_store=disclosure_store,
         glossary_store=glossary_store,
         roster_store=roster_store,
         timeline_store=timeline_store,
         clue_store=clue_store,
+        material_scope=material_scope,
+        coverage_store=coverage_store,
+        assembly=assembly,
     )
     return AgentHarness(
         AgentHarnessConfig(
             provider=provider,
             model=model,
-            system=resolved.text,
-            tools=build_tools(
-                workspace,
-                run,
-                mode=mode,
-                index_allowed=index_allowed,
-                index_store=index_store,
-                review_targets=review_targets,
-                review_store=review_store,
-                disclosure_store=disclosure_store,
-                glossary_store=glossary_store,
-                roster_store=roster_store,
-                timeline_store=timeline_store,
-                clue_store=clue_store,
-                material_scope=material_scope,
-                coverage_store=coverage_store,
-            ),
+            system=inputs.system,
+            tools=inputs.tools,
             max_turns=max_turns,
         ),
         messages=history,
@@ -3751,7 +3860,6 @@ def build_harness(
 
 
 _PROFILE_BY_MODE: dict[ToolMode, Profile] = {
-    "overview": "materials",
     "write": "writer",
     "index": "extract",
     # 核对任务与建索引同类：只读原文、发布派生记录，不注入文风与旧摘要。

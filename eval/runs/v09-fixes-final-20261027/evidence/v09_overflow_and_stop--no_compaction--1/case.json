@@ -1,0 +1,129 @@
+{
+  "id": "v09_overflow_and_stop",
+  "title": "上下文超限重发与停止后继续",
+  "family": "压缩语义",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 16,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "steps": [
+    {
+      "text": "只回答一个问题，不要修改任何文件：铜钥匙现在在谁手里？",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": true,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "overflow_seen",
+          "kind": "fault_observed",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "retried_after_overflow",
+          "kind": "retry_observed",
+          "path": "",
+          "value": "context_overflow",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "answer_after_retry",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须答出铜钥匙在管家手里；回答未说明、不知道或其他人，均不通过。答案应来自作品正文，而不是猜测。"
+        }
+      ]
+    },
+    {
+      "text": "写一段约八百字的旅馆走廊场景，只输出正文，不要修改任何文件。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": 600,
+      "expect_stopped": true,
+      "checks": []
+    },
+    {
+      "text": "接着上一轮继续：如果上一轮已经写出片段，就顺势往下写，不要从头重写；如果上一轮没有留下文字，就补写这一段并说明是补写。不要修改任何文件。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "no_file_write",
+          "kind": "tool_not_called",
+          "path": "",
+          "value": "write_file,edit_file,delete_file,move_file",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "continues_after_stop",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "应识别上一轮是「已停止」而不是「已完成」，并给出与停止状态一致的续写：有片段就接续，没有片段就补写并说明。不得声称上一轮已写完，也不得无视停止重复已有片段。"
+        }
+      ]
+    }
+  ]
+}

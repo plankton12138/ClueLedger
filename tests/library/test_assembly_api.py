@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from hastings.library import ModuleLibrary
@@ -421,7 +422,11 @@ def test_trashed_module_is_flagged_but_still_bound(tmp_path: Path) -> None:
     assert "module_trashed" in body["bindings"][0]["problems"]
 
 
-def test_derive_creates_a_registered_empty_workspace(tmp_path: Path) -> None:
+def test_derive_creates_a_registered_empty_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "ClueLedger" / "作品"
+    monkeypatch.setattr("hastings.library.assembly_api.default_workspace_root", lambda: destination)
     client, workspace_id, library = _client(tmp_path)
     module = _module(client)
     bound = client.put(
@@ -453,10 +458,12 @@ def test_derive_creates_a_registered_empty_workspace(tmp_path: Path) -> None:
     assert assembly["bindings"][0]["module"]["revision_id"] == module["head"]
     assert assembly["bindings"][0]["kind"] == "characters"
 
-    new_root = tmp_path / "雪山旅馆（另一条线）"
+    new_root = destination / "雪山旅馆（另一条线）"
+    assert Path(body["workspace"]["path"]) == new_root
     assert (new_root / "正文").is_dir()
     assert not any((new_root / "正文").iterdir())
     assert not (new_root / "灵感本").exists()
+    assert not (new_root / "设定集").exists()
 
 
 def test_derive_rejects_a_stale_digest(tmp_path: Path) -> None:

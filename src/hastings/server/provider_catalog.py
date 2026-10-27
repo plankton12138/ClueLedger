@@ -62,6 +62,8 @@ class ProviderPreset:
     api_options: tuple[ProviderApi, ...] = ()
     regions: tuple[RegionOption, ...] = ()
     note: str = ""
+    #: 该预设支持哪些「订阅登录」来源；空表示只能填 API Key。
+    auth_providers: tuple[str, ...] = ()
     #: 是否在界面上作为「自定义服务」入口（地址留空，协议自选）。
     custom: bool = False
 
@@ -93,6 +95,17 @@ PRESETS: tuple[ProviderPreset, ...] = (
         discovery="openai-models",
         api_options=("openai-responses", "openai-completions"),
         note="默认走 Responses；旧账号或代理网关不支持时，可在高级设置改用 Completions。",
+    ),
+    ProviderPreset(
+        id="chatgpt",
+        display_name="ChatGPT 订阅",
+        api="openai-responses",
+        base_url="https://api.openai.com/v1",
+        docs_url="https://developers.openai.com/siwc/token-sharing-open-source",
+        discovery="openai-models",
+        # 这个连接用订阅账号登录，不填 API Key。
+        auth_providers=("chatgpt",),
+        note="用 ChatGPT 订阅账号登录；按订阅额度计费，不消耗 API Key 的按量额度。",
     ),
     ProviderPreset(
         id="deepseek",
