@@ -1,0 +1,18 @@
+
+> hastings-frontend@1.0.0 build
+> tsc --noEmit && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 2024 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.43 kB │ gzip:   0.34 kB
+dist/assets/index-DsSU7wSZ.css   74.97 kB │ gzip:  14.41 kB
+dist/assets/index-HSCqHrap.js   711.85 kB │ gzip: 224.94 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 7.51s

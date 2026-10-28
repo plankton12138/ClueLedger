@@ -1,0 +1,13 @@
+[run] C:\Projects\Agent\myagent\eval\runs\context-20261028-131927-641994
+[case] v10_q03_plan_not_text--current--1
+[case] v10_q03_plan_not_text--current--1 -> pending_review (21.062s)
+[case] v10_q13_early_revision--current--1
+[case] v10_q13_early_revision--current--1 -> pending_review (18.891s)
+[case] v10_q03_plan_not_text--current--2
+[case] v10_q03_plan_not_text--current--2 -> pending_review (37.734s)
+[case] v10_q13_early_revision--current--2
+[case] v10_q13_early_revision--current--2 -> pending_review (16.812s)
+[case] v10_q03_plan_not_text--current--3
+[case] v10_q03_plan_not_text--current--3 -> pending_review (20.437s)
+[case] v10_q13_early_revision--current--3
+[case] v10_q13_early_revision--current--3 -> pending_review (13.438s)

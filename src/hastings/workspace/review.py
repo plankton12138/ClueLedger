@@ -44,6 +44,9 @@ __all__ = [
     "ReviewStatus",
     "ReviewStore",
     "publish_report",
+    "require_full_coverage",
+    "target_digests",
+    "validate_evidence",
     "validate_report",
     "validate_review_targets",
 ]
@@ -389,6 +392,20 @@ def publish_report(
         created_at=_now(),
     )
     return store.publish(report)
+
+
+def validate_evidence(
+    evidence: ReviewEvidence, *, workspace: Workspace, ledger: MaterialLedger
+) -> None:
+    """单条证据的结构、版本与读取覆盖校验；线索核对共用同一套规则。"""
+    _validate_evidence(evidence, workspace=workspace, ledger=ledger)
+
+
+def require_full_coverage(
+    targets: Sequence[str], *, workspace: Workspace, ledger: MaterialLedger
+) -> None:
+    """报告「没有发现问题」前，目标当前版本必须完整提供过。"""
+    _require_full_coverage(targets, workspace=workspace, ledger=ledger)
 
 
 def _validate_finding(

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpen, LibraryBig, Settings } from "lucide-react";
+import { BookOpen, Files, LibraryBig, Settings } from "lucide-react";
 import { pageHash, type AppPage, type WorkspacePage } from "../../state/navigation";
 import { useWorkspaceStore } from "../../state/workspace";
 import { useModelsStore } from "../../state/models";
@@ -13,11 +13,18 @@ import RenameWorkspaceDialog from "./RenameWorkspaceDialog";
 export function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; workspaceId: string | null }) {
   const positions = usePagePositions(state => workspaceId ? state.pages[workspaceId] : undefined);
   const writing: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId } : null;
+  const materials: WorkspacePage | null = workspaceId ? { kind: "materials", workspaceId, section: "story", chapter: null, order: "chapter" } : null;
   return <nav className="workspace-navigation" aria-label="作品页面">
     {writing
       ? <a className="ui-nav-link" href={pageHash(positions?.writing ?? writing)} aria-current={page?.kind === "writing" ? "page" : undefined}>
         <BookOpen size={16} strokeWidth={2} aria-hidden="true" />写作</a>
       : <span aria-disabled="true"><BookOpen size={16} strokeWidth={2} aria-hidden="true" />写作</span>}
+    {materials
+      ? <a className="ui-nav-link" href={pageHash(positions?.materials ?? materials)} aria-current={page?.kind === "materials" ? "page" : undefined}>
+        <Files size={16} aria-hidden="true" />故事资料</a>
+      : <span aria-disabled="true"><Files size={16} aria-hidden="true" />故事资料</span>}
+    <a className="ui-nav-link" href={pageHash({ kind: "library", workspaceContextId: workspaceId ?? undefined })} aria-current={page?.kind === "library" ? "page" : undefined}>
+      <LibraryBig size={16} aria-hidden="true" />模块库</a>
   </nav>;
 }
 
@@ -49,14 +56,13 @@ export default function AppHeader({ page, onOpen, onSelect }: { page: AppPage | 
   const [settings, setSettings] = useState(false);
   const openModels = useModelsStore(state => state.openSettings);
   return <header className="app-header">
-    <div className="workspace-picker"><span className="app-name">ClueLedger</span>
+    <div className="workspace-picker"><span className="app-name" title="ClueLedger">线簿</span>
       <select className="ui-input" aria-label="选择作品目录" value={currentId ?? ""} onChange={event => event.target.value && onSelect(event.target.value)}>
         <option value="">（未打开目录）</option>{bindings.map(item => <option key={item.id} value={item.id}>{item.name}{item.exists ? "" : "（目录已不在）"}</option>)}
       </select><WorkspaceMenu onOpen={onOpen} />
     </div>
     <WorkspaceNavigation page={page} workspaceId={currentId} />
-    <div className="app-tools"><a className="ui-nav-link" href={pageHash({ kind: "library", workspaceContextId: currentId ?? undefined })} aria-current={page?.kind === "library" ? "page" : undefined}>
-      <LibraryBig size={16} strokeWidth={2} aria-hidden="true" />模块库</a>
+    <div className="app-tools">
       <AppDialog title="设置" open={settings} onOpenChange={setSettings} trigger={<Button size="compact" data-dialog-return="settings">
         <Settings size={16} strokeWidth={2} aria-hidden="true" />设置</Button>}>
         <div className="ui-action-list"><Button onClick={() => { setSettings(false); openModels(); }}>模型设置</Button><FontSizeControl /></div>

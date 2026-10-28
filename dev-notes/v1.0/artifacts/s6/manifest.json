@@ -1,0 +1,77 @@
+{
+  "completed_at": "2026-10-28T12:33:54+08:00",
+  "scope": "S6 clue references in chat: frozen identity and version, draft persistence, request projection, compaction retention",
+  "runtime_version": "0.9.0",
+  "clue_schema_version": 2,
+  "recipe_version": 1,
+  "head": "591da5214cdf49d7cc03f955755556c9ae4727c0",
+  "checks": [
+    {
+      "command": "uv run pytest -q",
+      "exit_code": 0,
+      "result": "1307 passed, 1 existing Starlette deprecation warning",
+      "evidence": "backend.txt"
+    },
+    {
+      "command": "npm test -- --no-file-parallelism --reporter=dot",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "326 passed in 30 files",
+      "evidence": "frontend-tests.txt"
+    },
+    {
+      "command": "uv run ruff check src tests",
+      "exit_code": 0,
+      "result": "all checks passed",
+      "evidence": "static-checks.txt"
+    },
+    {
+      "command": "uv run mypy",
+      "exit_code": 0,
+      "result": "no issues in 134 source files",
+      "evidence": "type-checks-backend.txt"
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "evidence": "type-checks-frontend.txt"
+    },
+    {
+      "command": "npx playwright test e2e/clue-reference.spec.ts e2e/clue-review.spec.ts --project=workspace",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "6 passed, zero retries; draft references persist across reload, materials entry, inference identity, S5 report regression",
+      "evidence": "browser-s6.txt"
+    },
+    {
+      "command": "npm run build (Playwright webServer)",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "tsc and production build passed; existing large-chunk warning"
+    }
+  ],
+  "browser_environment": {
+    "port": 8931,
+    "data_dir": "data/test-tmp/e2e",
+    "project": "workspace",
+    "viewports": [
+      1440,
+      390
+    ],
+    "screenshots": [
+      "clue-reference-1440.png"
+    ]
+  },
+  "not_executed": [
+    "online model turn with references in a browser (S7)",
+    "semantic evaluation of discussion and rewriting (S7)",
+    "desktop packaging and release verification (S8)"
+  ],
+  "notes": [
+    "The browser suite exercises the real server and draft persistence but sends no model request.",
+    "A scripted provider asserts the system prompt separates reader evidence, author plans, inference goals and prior reports.",
+    "Compaction records keep reference identity and version; summaries are explicitly not evidence.",
+    "Drafts that contain only references are kept; clearing text no longer removes them."
+  ]
+}

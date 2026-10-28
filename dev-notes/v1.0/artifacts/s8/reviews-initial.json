@@ -1,0 +1,326 @@
+{
+  "v10_q01_envelope_gap--current--1/step-1/gap_named": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出知晓暗号与接触原件之间的连接、唯一性及时间前提缺口，保留转述等解释，未直接认定凶手。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q01_envelope_gap--current--1/step-1.json"
+  },
+  "v10_q02_key_witness--current--1/step-1/no_invention": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出钥匙与书房、收钥匙与进入、动作与案发时点之间的缺失连接，没有把作者计划当作正文。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q02_key_witness--current--1/step-1.json"
+  },
+  "v10_q03_plan_not_text--current--1/step-1/plan_is_not_text": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "区分作者侧计划与正文已交代的钥匙用途；指出读者尚无钥匙与书房的对应依据。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q03_plan_not_text--current--1/step-1.json"
+  },
+  "v10_q04_testimony--current--1/step-1/testimony_split": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "将人物自述与客观事实分开，结论停在尚未证实，未直接断定人物说谎。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q04_testimony--current--1/step-1.json"
+  },
+  "v10_q05_combined--current--1/step-1/combined_reasoning": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "核对多线索之间的组合连接与中间前提，没有要求每条线索分别独立证明完整目标。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q05_combined--current--1/step-1.json"
+  },
+  "v10_q06_keep_open--current--1/step-1/keep_open_ok": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "将未排除的解释视为可保留安排，只指出读者尚未得到的前提和可补的验证点。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q06_keep_open--current--1/step-1.json"
+  },
+  "v10_q07_suspect--current--1/step-1/proportionate": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "承认章标题与推门动作提供较弱的起疑方向，将加强空间或纸条关联列为建议，不把怀疑认证为定论。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q07_suspect--current--1/step-1.json"
+  },
+  "v10_q08_future_premise--current--1/step-1/no_future": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出医生身份前提尚未进入前三章，后章揭晓与真相未被用作早章报告证据。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q08_future_premise--current--1/step-1.json"
+  },
+  "v10_q09_flashback--current--1/step-1/order_split": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "明确叙述顺序不能证明获知时间，指出人物知情及早于雨夜的时间依据均缺失。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q09_flashback--current--1/step-1.json"
+  },
+  "v10_q10_missing_target--current--1/step-1/clarify": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "说明纸条来源、笔迹、机会或时间等缺项，只讨论而未发布报告、保存安排或直接确定留下者。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q10_missing_target--current--1/step-1.json"
+  },
+  "v10_q11_alternatives--current--1/step-1/three_ways": {
+    "verdict": "fail",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "原请求没有给出评分侧的禁用来源条件；输出读取并使用真相和后章揭晓，按原评分标准记失败。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q11_alternatives--current--1/step-1.json"
+  },
+  "v10_q12_save_idea--current--1/step-1/only_named": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际模块保存作者点名的日常用途解释，保留其构思性质，正文及其他设定未变。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q12_save_idea--current--1/step-1.json"
+  },
+  "v10_q13_early_revision--current--1/step-1/keeps_suspicion": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只改第三章，以未写完的暗号与人物反应推进怀疑，正文没有管家身份、凶手结论或第八章揭晓。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q13_early_revision--current--1/step-1.json"
+  },
+  "v10_q13_early_revision--current--1/step-1/scoped_rewrite": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只改第三章，以未写完的暗号与人物反应推进怀疑，正文没有管家身份、凶手结论或第八章揭晓。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q13_early_revision--current--1/step-1.json"
+  },
+  "v10_q14_irrelevant_edit--current--1/step-2/unrelated_ok": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "无关小传编辑未被当作所有引用作废；可用性回答保持原范围或提示重读，没有宣称无关编辑改变原报告结论。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q14_irrelevant_edit--current--1/step-2.json"
+  },
+  "v10_q15_insufficient--current--1/step-1/honest": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出身份前提与钥匙连接不足，没有以无法读取后章或工具限制冒充作品矛盾。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q15_insufficient--current--1/step-1.json"
+  },
+  "v10_q16_full_loop--current--1/step-2/scoped": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只补第一章的口误细节；新报告引用改后正文并区分已补的连接与仍缺的原件、时点前提，没有复制旧结论或宣布目标成立。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q16_full_loop--current--1/step-2.json"
+  },
+  "v10_q16_full_loop--current--1/step-3/rereview": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只补第一章的口误细节；新报告引用改后正文并区分已补的连接与仍缺的原件、时点前提，没有复制旧结论或宣布目标成立。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q16_full_loop--current--1/step-3.json"
+  },
+  "v10_q01_envelope_gap--current--2/step-1/gap_named": {
+    "verdict": "fail",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际落库报告是模型用于试坐标的探针占位内容，后续完整报告因同键负载变化被拒；公开解释不能代替有效报告。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q01_envelope_gap--current--2/step-1.json"
+  },
+  "v10_q02_key_witness--current--2/step-1/no_invention": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出钥匙与书房、收钥匙与进入、动作与案发时点之间的缺失连接，没有把作者计划当作正文。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q02_key_witness--current--2/step-1.json"
+  },
+  "v10_q03_plan_not_text--current--2/step-1/plan_is_not_text": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "区分作者侧计划与正文已交代的钥匙用途；指出读者尚无钥匙与书房的对应依据。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q03_plan_not_text--current--2/step-1.json"
+  },
+  "v10_q04_testimony--current--2/step-1/testimony_split": {
+    "verdict": "fail",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "将尚无人证实误分类为与目标相反的 supported 反证，混淆缺少支撑与相反事实。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q04_testimony--current--2/step-1.json"
+  },
+  "v10_q05_combined--current--2/step-1/combined_reasoning": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "核对多线索之间的组合连接与中间前提，没有要求每条线索分别独立证明完整目标。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q05_combined--current--2/step-1.json"
+  },
+  "v10_q06_keep_open--current--2/step-1/keep_open_ok": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "将未排除的解释视为可保留安排，只指出读者尚未得到的前提和可补的验证点。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q06_keep_open--current--2/step-1.json"
+  },
+  "v10_q07_suspect--current--2/step-1/proportionate": {
+    "verdict": "fail",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "对怀疑目标提出过严的空间条件，并将无明确同一时点的天气差异列为反证，判断不与目标强度相称。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q07_suspect--current--2/step-1.json"
+  },
+  "v10_q08_future_premise--current--2/step-1/no_future": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出医生身份前提尚未进入前三章，后章揭晓与真相未被用作早章报告证据。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q08_future_premise--current--2/step-1.json"
+  },
+  "v10_q09_flashback--current--2/step-1/order_split": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "明确叙述顺序不能证明获知时间，指出人物知情及早于雨夜的时间依据均缺失。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q09_flashback--current--2/step-1.json"
+  },
+  "v10_q10_missing_target--current--2/step-1/clarify": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "说明纸条来源、笔迹、机会或时间等缺项，只讨论而未发布报告、保存安排或直接确定留下者。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q10_missing_target--current--2/step-1.json"
+  },
+  "v10_q11_alternatives--current--2/step-1/three_ways": {
+    "verdict": "fail",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "原请求没有给出评分侧的禁用来源条件；输出按第八章真相排列方案，按原评分标准记失败。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q11_alternatives--current--2/step-1.json"
+  },
+  "v10_q12_save_idea--current--2/step-1/only_named": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际模块保存作者点名的日常用途解释，保留其构思性质，正文及其他设定未变。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q12_save_idea--current--2/step-1.json"
+  },
+  "v10_q13_early_revision--current--2/step-1/keeps_suspicion": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只改第三章，以未写完的暗号与人物反应推进怀疑，正文没有管家身份、凶手结论或第八章揭晓。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q13_early_revision--current--2/step-1.json"
+  },
+  "v10_q13_early_revision--current--2/step-1/scoped_rewrite": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只改第三章，以未写完的暗号与人物反应推进怀疑，正文没有管家身份、凶手结论或第八章揭晓。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q13_early_revision--current--2/step-1.json"
+  },
+  "v10_q14_irrelevant_edit--current--2/step-2/unrelated_ok": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "无关小传编辑未被当作所有引用作废；可用性回答保持原范围或提示重读，没有宣称无关编辑改变原报告结论。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q14_irrelevant_edit--current--2/step-2.json"
+  },
+  "v10_q15_insufficient--current--2/step-1/honest": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出身份前提与钥匙连接不足，没有以无法读取后章或工具限制冒充作品矛盾。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q15_insufficient--current--2/step-1.json"
+  },
+  "v10_q16_full_loop--current--2/step-2/scoped": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只补第一章的口误细节；新报告引用改后正文并区分已补的连接与仍缺的原件、时点前提，没有复制旧结论或宣布目标成立。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q16_full_loop--current--2/step-2.json"
+  },
+  "v10_q16_full_loop--current--2/step-3/rereview": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只补第一章的口误细节；新报告引用改后正文并区分已补的连接与仍缺的原件、时点前提，没有复制旧结论或宣布目标成立。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q16_full_loop--current--2/step-3.json"
+  },
+  "v10_q01_envelope_gap--current--3/step-1/gap_named": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出知晓暗号与接触原件之间的连接、唯一性及时间前提缺口，保留转述等解释，未直接认定凶手。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q01_envelope_gap--current--3/step-1.json"
+  },
+  "v10_q02_key_witness--current--3/step-1/no_invention": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出钥匙与书房、收钥匙与进入、动作与案发时点之间的缺失连接，没有把作者计划当作正文。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q02_key_witness--current--3/step-1.json"
+  },
+  "v10_q03_plan_not_text--current--3/step-1/plan_is_not_text": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "区分作者侧计划与正文已交代的钥匙用途；指出读者尚无钥匙与书房的对应依据。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q03_plan_not_text--current--3/step-1.json"
+  },
+  "v10_q04_testimony--current--3/step-1/testimony_split": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "将人物自述与客观事实分开，结论停在尚未证实，未直接断定人物说谎。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q04_testimony--current--3/step-1.json"
+  },
+  "v10_q05_combined--current--3/step-1/combined_reasoning": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "核对多线索之间的组合连接与中间前提，没有要求每条线索分别独立证明完整目标。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q05_combined--current--3/step-1.json"
+  },
+  "v10_q06_keep_open--current--3/step-1/keep_open_ok": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "将未排除的解释视为可保留安排，只指出读者尚未得到的前提和可补的验证点。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q06_keep_open--current--3/step-1.json"
+  },
+  "v10_q07_suspect--current--3/step-1/proportionate": {
+    "verdict": "fail",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "忽略章标题与推门动作的叙述上下文，以没有跨门槛或停留描写否定起疑方向，要求过严。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q07_suspect--current--3/step-1.json"
+  },
+  "v10_q08_future_premise--current--3/step-1/no_future": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出医生身份前提尚未进入前三章，后章揭晓与真相未被用作早章报告证据。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q08_future_premise--current--3/step-1.json"
+  },
+  "v10_q09_flashback--current--3/step-1/order_split": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "明确叙述顺序不能证明获知时间，指出人物知情及早于雨夜的时间依据均缺失。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q09_flashback--current--3/step-1.json"
+  },
+  "v10_q10_missing_target--current--3/step-1/clarify": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "说明纸条来源、笔迹、机会或时间等缺项，只讨论而未发布报告、保存安排或直接确定留下者。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q10_missing_target--current--3/step-1.json"
+  },
+  "v10_q11_alternatives--current--3/step-1/three_ways": {
+    "verdict": "fail",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "原请求没有给出评分侧的禁用来源条件；输出引入后章真相及明示章号，按原评分标准记失败。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q11_alternatives--current--3/step-1.json"
+  },
+  "v10_q12_save_idea--current--3/step-1/only_named": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际模块保存作者点名的日常用途解释，保留其构思性质，正文及其他设定未变。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q12_save_idea--current--3/step-1.json"
+  },
+  "v10_q13_early_revision--current--3/step-1/keeps_suspicion": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只改第三章，以未写完的暗号与人物反应推进怀疑，正文没有管家身份、凶手结论或第八章揭晓。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q13_early_revision--current--3/step-1.json"
+  },
+  "v10_q13_early_revision--current--3/step-1/scoped_rewrite": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只改第三章，以未写完的暗号与人物反应推进怀疑，正文没有管家身份、凶手结论或第八章揭晓。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q13_early_revision--current--3/step-1.json"
+  },
+  "v10_q14_irrelevant_edit--current--3/step-2/unrelated_ok": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "无关小传编辑未被当作所有引用作废；可用性回答保持原范围或提示重读，没有宣称无关编辑改变原报告结论。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q14_irrelevant_edit--current--3/step-2.json"
+  },
+  "v10_q15_insufficient--current--3/step-1/honest": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出身份前提与钥匙连接不足，没有以无法读取后章或工具限制冒充作品矛盾。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q15_insufficient--current--3/step-1.json"
+  },
+  "v10_q16_full_loop--current--3/step-2/scoped": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只补第一章的口误细节；新报告引用改后正文并区分已补的连接与仍缺的原件、时点前提，没有复制旧结论或宣布目标成立。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q16_full_loop--current--3/step-2.json"
+  },
+  "v10_q16_full_loop--current--3/step-3/rereview": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "实际差异只补第一章的口误细节；新报告引用改后正文并区分已补的连接与仍缺的原件、时点前提，没有复制旧结论或宣布目标成立。",
+    "evidence": "eval/runs/v10-final-20261028/evidence/v10_q16_full_loop--current--3/step-3.json"
+  }
+}

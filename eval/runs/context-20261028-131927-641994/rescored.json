@@ -1,0 +1,1193 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261028-131927-641994",
+    "started_at": "2026-10-28T13:19:27.641994+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "591da5214cdf49d7cc03f955755556c9ae4727c0",
+    "git_dirty": true,
+    "source_sha256": "a212cd9e81a3360e8f56274022241dc4dd3c5375e7865887741c6a7933aac1d8",
+    "cases_sha256": "d00cdecf7f8ed4dd6d13d32cb3ec9cc8f1f9b91a3438d50d12f0855500f5280d",
+    "suite": "v10-clue-core",
+    "jobs": [
+      {
+        "key": "v10_q03_plan_not_text--current--1",
+        "case": "v10_q03_plan_not_text",
+        "family": "推理核对",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v10_q13_early_revision--current--1",
+        "case": "v10_q13_early_revision",
+        "family": "改写",
+        "layer": "end_to_end",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v10_q03_plan_not_text--current--2",
+        "case": "v10_q03_plan_not_text",
+        "family": "推理核对",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 2
+      },
+      {
+        "key": "v10_q13_early_revision--current--2",
+        "case": "v10_q13_early_revision",
+        "family": "改写",
+        "layer": "end_to_end",
+        "variant": "current",
+        "repeat": 2
+      },
+      {
+        "key": "v10_q03_plan_not_text--current--3",
+        "case": "v10_q03_plan_not_text",
+        "family": "推理核对",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 3
+      },
+      {
+        "key": "v10_q13_early_revision--current--3",
+        "case": "v10_q13_early_revision",
+        "family": "改写",
+        "layer": "end_to_end",
+        "variant": "current",
+        "repeat": 3
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 200,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261028-131927-641994",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "提示分区变体仅移除所选分区；no_compaction 禁用手动与自动摘要，保留轮内裁剪和溢出恢复；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 32,
+    "rescored_at": "2026-10-28T13:24:03.707863+08:00",
+    "scorer_source_sha256": "a212cd9e81a3360e8f56274022241dc4dd3c5375e7865887741c6a7933aac1d8",
+    "reviews_sha256": "5b7f25959dbd302007033450b81d053501c63a3917699c140e9cacdf24803fd1"
+  },
+  "summary": {
+    "planned": 6,
+    "executed": 6,
+    "counts": {
+      "pass": 6,
+      "not_run": 0
+    },
+    "success_rate": 1.0,
+    "duration_p50_seconds": 18.891,
+    "duration_p95_seconds": 37.734,
+    "input_tokens": 15363,
+    "output_tokens": 20442,
+    "tokens_per_success": 5967.5,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 6,
+        "executed": 6,
+        "counts": {
+          "pass": 6,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 18.891,
+        "duration_p95_seconds": 37.734,
+        "input_tokens": 15363,
+        "output_tokens": 20442,
+        "tokens_per_success": 5967.5,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "推理核对": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 21.062,
+        "duration_p95_seconds": 37.734,
+        "input_tokens": 10258,
+        "output_tokens": 14981,
+        "tokens_per_success": 8413.0,
+        "cost_per_success": null
+      },
+      "改写": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 16.812,
+        "duration_p95_seconds": 18.891,
+        "input_tokens": 5105,
+        "output_tokens": 5461,
+        "tokens_per_success": 3522.0,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 21.062,
+        "duration_p95_seconds": 37.734,
+        "input_tokens": 10258,
+        "output_tokens": 14981,
+        "tokens_per_success": 8413.0,
+        "cost_per_success": null
+      },
+      "end_to_end": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 16.812,
+        "duration_p95_seconds": 18.891,
+        "input_tokens": 5105,
+        "output_tokens": 5461,
+        "tokens_per_success": 3522.0,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v10_q03_plan_not_text": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 21.062,
+        "duration_p95_seconds": 37.734,
+        "input_tokens": 10258,
+        "output_tokens": 14981,
+        "tokens_per_success": 8413.0,
+        "cost_per_success": null
+      },
+      "v10_q13_early_revision": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 16.812,
+        "duration_p95_seconds": 18.891,
+        "input_tokens": 5105,
+        "output_tokens": 5461,
+        "tokens_per_success": 3522.0,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2648,
+            "at": "2026-10-28T13:19:50.405+08:00",
+            "event_version": 1,
+            "event_id": "c_06bdf4acfdde:2648",
+            "conversation_id": "c_06bdf4acfdde",
+            "type": "run_finished",
+            "turn_id": "t_a368a78f",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "核对完成，报告已提交（cr_8fbd4064efa44a88ba7c44a30c342469）。\n\n**结论：读者现在还推不出“铜钥匙能打开书房”。**\n\n已读范围（全文读完）：`正文/0002 走廊.md`（27 字，3 行）、`正文/0001 雨夜.md`（53 字，4 行）；并用全文检索确认“书房”在已见正文中零出现、“钥匙”仅在第二章出现一次。\n\n**问题 1（inference_gap，supported）**\n- 第二章关于钥匙的全部信息只有动作，没有用途：「管家将铜钥匙收进衣袋。」（`正文/0002 走廊.md`，digest cd431fa2…，15–26）。同一章另一句只是环境：「走廊尽头有一盏灯。」（6–15）。\n- 第一章只给了天气与暗号：「雨已经下了三天。信封背面写着接头暗号：青鸟归巢。」（`正文/0001 雨夜.md`，digest a248f006…，6–31）。\n- 因此线索与目标结论之间缺三处必要连接：书房这一场所、书房门/锁的存在、钥匙与那扇门的对应关系。检索“书房”只命中第三章的标题（不在本轮已见范围内），读者在第二章拿不到任何通往“书房”的落点。\n- 建议：在第二章（或第一章末尾）补一笔可见连接（管家拿着钥匙走向书房门／提到书房门上的锁与钥匙），或把目标下调为“读者知道管家持有一把用途不明的钥匙”。\n\n**未列为错误的备选解释**（目标性质为有意保留）：钥匙可开院门、房门、抽屉、箱柜，或只是普通随身钥匙——正文均未排除，按保留处理，仅记录在 clue_analysis.alternatives。\n\n**未覆盖**：第三章及以后章节不属冻结范围，未作为读者已见证据使用（翻阅过第三章，其中同样没有钥匙与书房门的连接）；结论只基于第一、二章。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/cites_key",
+          "status": "pass",
+          "detail": [
+            "管家将铜钥匙收进衣袋。",
+            "走廊尽头有一盏灯。",
+            "雨已经下了三天。信封背面写着接头暗号：青鸟归巢。"
+          ]
+        },
+        {
+          "id": "step-1/plan_is_not_text",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "作者（人工复核）",
+            "reason": "三次都指出计划里的「用途尚未说明」只是作者安排，正文没有读者可知的对应事实；证据只引用正文。",
+            "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q03_plan_not_text--current--1/step-1.json"
+          }
+        },
+        {
+          "id": "step-1/review_tools",
+          "status": "pass",
+          "detail": [
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ]
+          ]
+        }
+      ],
+      "metrics": {
+        "model_requests": 5,
+        "model_finished": 5,
+        "tool_calls": 7,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 5,
+        "fresh_input_tokens": 3592,
+        "input_tokens": 3592,
+        "output_tokens": 3713,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 80,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 2884,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 7735,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 9861,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 13135,
+            "tools_json_chars": 3113
+          }
+        ],
+        "max_request_json_chars": 17730,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v10_q03_plan_not_text--current--1",
+      "case": "v10_q03_plan_not_text",
+      "title": "计划安排不等于正文已经交代",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 21.062,
+      "evidence": "evidence/v10_q03_plan_not_text--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1534,
+            "at": "2026-10-28T13:20:10.806+08:00",
+            "event_version": 1,
+            "event_id": "c_ef22d59e40ff:1534",
+            "conversation_id": "c_ef22d59e40ff",
+            "type": "run_finished",
+            "turn_id": "t_430b3fd0",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0003 书房.md"
+            ],
+            "commit": "aeb9be5e7bac31c578bcc304b66233553f1215d9",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读第三章原文，只改这一章，不动线索、真相和其他章节。\n这一章是简短的骨架，我会在同一风格里重写，只改 `正文/0003 书房.md`。\n第三章已改写并保存到 `正文/0003 书房.md`。\n\n这一章写了什么：\n- 林远在书桌上发现纸条，暗号只写到“青鸟”两个字就停了，笔尖留下墨点；信封背面那个完整的“青鸟归巢”四个字被拿来对照。（信封那个暗号来自第一章，我按要求没有改第一章。）\n- 可验证的细节有：纸条边角齐整、没有署名和日期、墨点比字迹新。这条线索因此具体落在林远眼前的这张纸上。\n- 他起了疑：写字的人是被人打断的，还是只打算写这么多。他把纸条压回原处，没有告诉任何人。\n\n关于范围：\n- 只改了这一章。线索、真相、两份小传、第一章、第二章、第四章、第八章都没有动。\n- 没有写管家是凶手或失踪的医生，也没有提第八章揭晓，纸条上的线索暂时没有指向任何人。\n- 一处顺带的变化：原句“窗外雪停了”改成了“窗外的雨还在下”，好跟第一章“雨已经下了三天”对上。如果你希望保留雪停那句，我可以改回来。\n\n如果想接着往下接，第四章客房可以从“林远记住了纸条没有告诉别人”这条线往下写。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_future_reveal",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "expected": "失踪的医生"
+          }
+        },
+        {
+          "id": "step-1/keeps_suspicion",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "作者（人工复核）",
+            "reason": "三次都停在林远起疑这一层，用未写完的暗号推进；未写管家身份或第八章揭晓。第一次把「雪停了」改成「雨还在下」，属同章内容调整，需作者确认是否接受。",
+            "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--1/step-1.json"
+          }
+        },
+        {
+          "id": "step-1/scoped_rewrite",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "作者（人工复核）",
+            "reason": "只改第三章，未动其他文件；未出现「失踪的医生」。",
+            "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--1/step-1.json"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 5,
+        "model_finished": 5,
+        "tool_calls": 7,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 5,
+        "fresh_input_tokens": 1606,
+        "input_tokens": 1606,
+        "output_tokens": 2220,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 126,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 3268,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 7152,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 10022,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 11709,
+            "tools_json_chars": 12488
+          }
+        ],
+        "max_request_json_chars": 28604,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v10_q13_early_revision--current--1",
+      "case": "v10_q13_early_revision",
+      "title": "前章改写不提前泄露后章信息",
+      "family": "改写",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 18.891,
+      "evidence": "evidence/v10_q13_early_revision--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 3619,
+            "at": "2026-10-28T13:20:50.049+08:00",
+            "event_version": 1,
+            "event_id": "c_657f3c881a30:3619",
+            "conversation_id": "c_657f3c881a30",
+            "type": "run_finished",
+            "turn_id": "t_38159faf",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读目标章与相关正文。\n核对完成，报告已提交（report_id `cr_c83b211d581945e98cc0c228a3e40e10`）。\n\n## 结论：目标尚不被已见正文支撑（status: findings）\n\n已读完目标章 `正文/0002 走廊.md`（27 字，全覆盖），并参照第一章已见内容。\n\n**1. inference_gap（supported）**\n第二章关于钥匙只有一句「管家将铜钥匙收进衣袋。」（字符 6–26 区间内含此句），全章没有书房、门锁、门把等任何能与钥匙连接的物件；第一章只给雨、信封暗号与林远的不在场声明，同样没有“书房”或“锁”。因此读者拿到的是一个用途不明的钥匙，缺“钥匙—书房”这一必要连接，结论只存在于作者侧设定（`设定集/线索.md`：第二章的铜钥匙尚未说明用途）。\n建议：在第二章给一处最小接触——走廊尽头那扇门锁着 / 管家在书房门前停一下再收钥匙 / 有人提到书房近来一直锁着。\n\n**2. alternative_open（suspected，目标为有意保留，故不计错误）**\n钥匙可指向另一间屋子、箱柜抽屉、别人的钥匙被拾起、或与案件无关的随身物件；第二章没有任何描写排除这些方向，所以“读者已经知道它能打开书房”这一认知状态尚未建立。缺的是把“书房上着锁”这一事实层写出来，同时继续留白“谁开的、里面有什么”。\n\n未覆盖部分：无。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/cites_key",
+          "status": "pass",
+          "detail": [
+            "走廊尽头有一盏灯。管家将铜钥匙收进衣袋。",
+            "雨已经下了三天。信封背面写着接头暗号：青鸟归巢。",
+            "管家将铜钥匙收进衣袋。",
+            "走廊尽头有一盏灯。"
+          ]
+        },
+        {
+          "id": "step-1/plan_is_not_text",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "作者（人工复核）",
+            "reason": "三次都指出计划里的「用途尚未说明」只是作者安排，正文没有读者可知的对应事实；证据只引用正文。",
+            "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q03_plan_not_text--current--2/step-1.json"
+          }
+        },
+        {
+          "id": "step-1/review_tools",
+          "status": "pass",
+          "detail": [
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ]
+          ]
+        }
+      ],
+      "metrics": {
+        "model_requests": 7,
+        "model_finished": 7,
+        "tool_calls": 10,
+        "tool_errors": 2,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 7,
+        "fresh_input_tokens": 3772,
+        "input_tokens": 3772,
+        "output_tokens": 7573,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 80,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 2949,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 6192,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 8926,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 12419,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 15659,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 19310,
+            "tools_json_chars": 3113
+          }
+        ],
+        "max_request_json_chars": 23905,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v10_q03_plan_not_text--current--2",
+      "case": "v10_q03_plan_not_text",
+      "title": "计划安排不等于正文已经交代",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2,
+      "duration_seconds": 37.734,
+      "evidence": "evidence/v10_q03_plan_not_text--current--2",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 1186,
+            "at": "2026-10-28T13:21:08.546+08:00",
+            "event_version": 1,
+            "event_id": "c_71ec55a40749:1186",
+            "conversation_id": "c_71ec55a40749",
+            "type": "run_finished",
+            "turn_id": "t_a95e6670",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0003 书房.md"
+            ],
+            "commit": "7e4f9b27ce571c4a96f4d19af05e0cf17ef41be4",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读第三章原文和线索文件，再只改这一章。\n第三章已改写并保存（`正文/0003 书房.md`）。\n\n改动要点：\n- 纸条上的暗号只写到“青鸟”两字和“归”字的一撇就断了，笔痕已干，明确“没写完”。\n- 林远由此起疑：这半截暗号是留给谁看的；他对着光检查纸条，看到字压得深、写字时手很稳，留下一处以后可以验证的细节。\n- 保留了原有的“林远推开门”“窗外雪停了”，以及前两章冷硬短句、逐步放下线索的写法；“青鸟”和第一章信封背面的“青鸟归巢”对得上。\n\n没有涉及管家，没有写管家是凶手或失踪医生，也没有提到第八章的揭晓。其他章节、小传、线索与真相文件都没有改动。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_future_reveal",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "expected": "失踪的医生"
+          }
+        },
+        {
+          "id": "step-1/keeps_suspicion",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "作者（人工复核）",
+            "reason": "三次都停在林远起疑这一层，用未写完的暗号推进；未写管家身份或第八章揭晓。第一次把「雪停了」改成「雨还在下」，属同章内容调整，需作者确认是否接受。",
+            "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--2/step-1.json"
+          }
+        },
+        {
+          "id": "step-1/scoped_rewrite",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "作者（人工复核）",
+            "reason": "只改第三章，未动其他文件；未出现「失踪的医生」。",
+            "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--2/step-1.json"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 6,
+        "model_finished": 6,
+        "tool_calls": 6,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 6,
+        "fresh_input_tokens": 1773,
+        "input_tokens": 1773,
+        "output_tokens": 1798,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 126,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 2941,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 4611,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 6333,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 9324,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 10838,
+            "tools_json_chars": 12488
+          }
+        ],
+        "max_request_json_chars": 27733,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v10_q13_early_revision--current--2",
+      "case": "v10_q13_early_revision",
+      "title": "前章改写不提前泄露后章信息",
+      "family": "改写",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 2,
+      "duration_seconds": 16.812,
+      "evidence": "evidence/v10_q13_early_revision--current--2",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 2692,
+            "at": "2026-10-28T13:21:30.646+08:00",
+            "event_version": 1,
+            "event_id": "c_e39151c10738:2692",
+            "conversation_id": "c_e39151c10738",
+            "type": "run_finished",
+            "turn_id": "t_7c58d6d3",
+            "status": "completed",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "**结论：读者现在（截至第二章）推不出“铜钥匙能打开书房”。**\n\n目标章已整章读完（27/27 字符），另核了第一章全文与全书对“书房/钥匙”的检索，因此报 `findings`，不是 `incomplete`。\n\n两处问题：\n\n1. **前提未交代（premise_undisclosed，supported）**\n   第二章给读者的全部信息是「走廊尽头有一盏灯。管家将铜钥匙收进衣袋。」（`正文/0002 走廊.md`，字符 6–26）。检索显示“书房”在正文中只作为第三章的标题出现，截至第二章读者既不知道有一间书房，也不知道它上锁；钥匙的来源、形状、对应哪扇门锁全无描写。\n\n2. **推理链缺环（inference_gap，supported）**\n   同一句原文只能支撑“管家随身带着一把钥匙”，走廊尽头的灯是环境描写，不指向任何门或锁。从这把钥匙到“书房门”缺少必要连接。\n\n关于 keep_open：铜钥匙开的是别处（抽屉、柜子、其他房门）或它只是普通随身物件，这些替代解释在正文中都没有被排除——按本轮冻结性质，这属于**有意保留**，我没有把它单列为 `alternative_open` 错误，只写进了 `clue_analysis.alternatives`。真正的问题在于目标表述是“读者已经知道”，这与“用途未说明”的现状相反。\n\n建议：把目标改成“读者看到一把用途未说明的铜钥匙”，或保留原目标但在第二章补一处中性连接（如“管家把钥匙伸向走廊尽头那扇门”），不点明书房。\n\n报告已提交：`cr_c351e48c817c42b1882d961f3f0ef9e3`；未改动任何正文、线索或计划文件。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/cites_key",
+          "status": "pass",
+          "detail": [
+            "走廊尽头有一盏灯。管家将铜钥匙收进衣袋。",
+            "走廊尽头有一盏灯。管家将铜钥匙收进衣袋。"
+          ]
+        },
+        {
+          "id": "step-1/plan_is_not_text",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "作者（人工复核）",
+            "reason": "三次都指出计划里的「用途尚未说明」只是作者安排，正文没有读者可知的对应事实；证据只引用正文。",
+            "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q03_plan_not_text--current--3/step-1.json"
+          }
+        },
+        {
+          "id": "step-1/review_tools",
+          "status": "pass",
+          "detail": [
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ]
+          ]
+        }
+      ],
+      "metrics": {
+        "model_requests": 4,
+        "model_finished": 4,
+        "tool_calls": 5,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 4,
+        "fresh_input_tokens": 2894,
+        "input_tokens": 2894,
+        "output_tokens": 3695,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 80,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 2883,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 5007,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1482,
+            "messages_json_chars": 8142,
+            "tools_json_chars": 3113
+          }
+        ],
+        "max_request_json_chars": 12737,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v10_q03_plan_not_text--current--3",
+      "case": "v10_q03_plan_not_text",
+      "title": "计划安排不等于正文已经交代",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3,
+      "duration_seconds": 20.437,
+      "evidence": "evidence/v10_q03_plan_not_text--current--3",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 861,
+            "at": "2026-10-28T13:21:45.664+08:00",
+            "event_version": 1,
+            "event_id": "c_e33ed96b1132:861",
+            "conversation_id": "c_e33ed96b1132",
+            "type": "run_finished",
+            "turn_id": "t_bf17cb03",
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0003 书房.md"
+            ],
+            "commit": "ad676e06c524f5b5bf08186a6e41010b1455db22",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读第三章原文，确认现有内容后再改写。\n第三章已改写并保存到 `正文/0003 书房.md`。其余章节、角色小传、线索与真相均未改动。\n\n具体改动：\n- 纸条上的暗号改为“写到一半停住”，并留下可验证的细节：最后一笔拖出纸边、墨还没干，林远因此起疑。\n- 保留了他推门进入书房和“窗外雪停了”这两处原有内容，语气仍是短句和第三人称，只写林远的感知。\n- 没有提到管家、凶手、失踪的医生或第八章的揭晓，也没有让叙述者道出结论；目前只是林远的怀疑。\n\n可接续的方向（只是提示，没写进任何文件）：这处“没写完”可以在后文由具体人、时间或物件来验证，例如谁最后进过书房、那张纸是从哪里撕下的；铜钥匙的用途仍留着未说明。要处理这些可以再告诉我。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0003 书房.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/no_future_reveal",
+          "status": "pass",
+          "detail": {
+            "path": "正文/0003 书房.md",
+            "expected": "失踪的医生"
+          }
+        },
+        {
+          "id": "step-1/keeps_suspicion",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "作者（人工复核）",
+            "reason": "三次都停在林远起疑这一层，用未写完的暗号推进；未写管家身份或第八章揭晓。第一次把「雪停了」改成「雨还在下」，属同章内容调整，需作者确认是否接受。",
+            "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--3/step-1.json"
+          }
+        },
+        {
+          "id": "step-1/scoped_rewrite",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "作者（人工复核）",
+            "reason": "只改第三章，未动其他文件；未出现「失踪的医生」。",
+            "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--3/step-1.json"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 5,
+        "model_finished": 5,
+        "tool_calls": 7,
+        "tool_errors": 0,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 5,
+        "fresh_input_tokens": 1726,
+        "input_tokens": 1726,
+        "output_tokens": 1443,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 126,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 2974,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 6857,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 9710,
+            "tools_json_chars": 12488
+          },
+          {
+            "system_chars": 4407,
+            "messages_json_chars": 11167,
+            "tools_json_chars": 12488
+          }
+        ],
+        "max_request_json_chars": 28062,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v10_q13_early_revision--current--3",
+      "case": "v10_q13_early_revision",
+      "title": "前章改写不提前泄露后章信息",
+      "family": "改写",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 3,
+      "duration_seconds": 13.438,
+      "evidence": "evidence/v10_q13_early_revision--current--3",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

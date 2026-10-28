@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   renameWorkspace: vi.fn(),
   pruneStaleWorkspaces: vi.fn(),
   listFiles: vi.fn(),
+  fetchReadingPosition: vi.fn(),
   readFile: vi.fn(),
   searchText: vi.fn(),
   importManuscript: vi.fn(),
@@ -76,6 +77,7 @@ beforeEach(() => {
     { id: "w1", name: "雪山旅馆", path: "C:/作品", exists: true },
   ]);
   api.listFiles.mockResolvedValue(CATALOG);
+  api.fetchReadingPosition.mockResolvedValue({ path: null, digest: "", offset: 0 });
   api.listConversations.mockResolvedValue({
     items: [],
     recent_id: null,

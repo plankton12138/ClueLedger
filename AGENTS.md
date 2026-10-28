@@ -20,4 +20,6 @@
 * Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
 * 当需要使用模型进行评测时，使用在线模型（.env），不在使用本地模型
 * 项目根目录的README文档仅在用户要求时修改
+* 开发过程中不用考虑旧数据迁移的问题，直接放弃旧数据
+* 当你需要了解开发者的想法时，可以查看 ./mynotes/目录，但绝不允许修改其中的任何内容
 

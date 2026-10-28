@@ -2,20 +2,21 @@ import tailwindcssAnimate from "tailwindcss-animate";
 import { theme } from "./src/theme";
 
 /**
- * Tailwind 主题（iOS 6 拟物浅色）。
+ * Tailwind 主题（经典 OS X Aqua 浅色，保留复古对话气泡）。
  * 颜色事实源唯一：src/theme.ts。shadcn 语义名（primary/background/...）
  * 只是 theme.ts 色值的别名，供 components/ui/ 消费，不引入第二事实源。
- * 拟物渐变、内阴影、织物纹理不进令牌，落在 index.css 组件类。
+ * 拟物渐变与内阴影不进令牌，落在 index.css 组件类。
  * @type {import('tailwindcss').Config}
  */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      fontSize: { xs: ["13px", "1.6"], sm: ["15px", "1.6"] },
       colors: {
         // CSS theme() 使用令牌原名；工具类同时提供下方 kebab-case 别名。
         ...theme.colors,
-        // --- iOS6 具名令牌（与 theme.ts 一一对应）---
+        // --- 具名令牌（与 theme.ts 一一对应）---
         page: theme.colors.page,
         workbench: theme.colors.workbench,
         fg: theme.colors.fg,

@@ -37,6 +37,15 @@ from hastings.workspace.metadata import (
     parse_character,
 )
 
+
+def has_chapter_content(text: str) -> bool:
+    """空文件、空行和 Markdown 标题不作为可整理的正文。"""
+    return any(
+        line.strip() and not re.match(r"^#{1,6}(?:\s|$)", line.strip())
+        for line in text.splitlines()
+    )
+
+
 __all__ = [
     "BODY_DIR",
     "CHARACTERS_DIR",

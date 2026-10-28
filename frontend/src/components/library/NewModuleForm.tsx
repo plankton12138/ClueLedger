@@ -34,6 +34,6 @@ export default function NewModuleForm({onDone}:{onDone:()=>void}) {
   }
   return <div className="new-module-form module-document-editor"><input aria-label="模块名称" maxLength={80} placeholder="未命名模块" value={form.name} disabled={store.busy} onChange={event=>patch({name:event.target.value})}/>
     <textarea aria-label="模块正文" rows={16} placeholder="直接写下内容…" value={form.body} disabled={store.busy} onChange={event=>patch({body:event.target.value})}/>
-    <div className="module-edit-actions"><Button variant="primary" busy={store.busy} onClick={()=>void save()}>{store.workspaceId?"保存并添加":"保存"}</Button><Button disabled={store.busy} variant="quiet" onClick={()=>{clear();onDone();}}>取消</Button></div>
+    <div className="module-edit-actions"><Button disabled={store.busy} variant="quiet" onClick={()=>{clear();onDone();}}>取消</Button><Button variant="primary" busy={store.busy} onClick={()=>void save()}>{store.workspaceId?"保存并添加":"保存"}</Button></div>
   </div>;
 }

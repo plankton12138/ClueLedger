@@ -304,6 +304,93 @@ def test_complete_segmented_summary_is_committed_once(tmp_path: Path):
     asyncio.run(scenario())
 
 
+def test_clue_identity_survives_service_compaction_and_overflow_retry(tmp_path: Path):
+    from tests.workspace.test_activity import _limits, _tool_round
+
+    from hastings.workspace.activity import ActivityStore
+    from hastings.workspace.compaction import summary_message
+    from hastings.workspace.model_activity import RecordedProvider
+    from tau_agent.messages import UserMessage
+    from tau_agent.provider_events import AssistantErrorEvent
+
+    reference = {
+        "clue_id": "clue_exact",
+        "clue_revision": "rev_exact",
+        "browse_as_of_chapter": 2,
+        "inference_id": "goal_exact",
+        "inference_revision": "goal_revision",
+        "report_id": "cr_exact",
+    }
+
+    class OverflowProvider(BoundaryProvider):
+        async def stream_response(self, **kwargs):
+            self.requests.append(kwargs)
+            if len(self.requests) == 1:
+                yield AssistantErrorEvent(
+                    reason="error",
+                    error=AssistantMessage(
+                        error_message="maximum context length exceeded", stop_reason="error"
+                    ),
+                )
+            else:
+                yield AssistantDoneEvent(
+                    reason="stop",
+                    message=AssistantMessage(
+                        content=[TextContent(text="需要重新读取正文。")], stop_reason="stop"
+                    ),
+                )
+
+    async def scenario():
+        summary_provider = BoundaryProvider()
+        store = _store(tmp_path)
+        cid = _seed(store, context={"clue_references": [reference]})
+        service = _service(tmp_path, summary_provider, store)
+        record = await service.compact(cid)
+        assert record is not None and reference in record.clue_references
+        # 下一轮通过真实服务装配与发送，引用版本与章界进入实际请求。
+        service.auto_compaction = False
+        snapshot = _snapshot(summary_provider)
+        assert snapshot.limits is not None
+        snapshot = replace(snapshot, limits=replace(snapshot.limits, context_window_tokens=64_000))
+        service.provider_factory = lambda: snapshot
+        info = await service.accept("继续讨论，不修改文件", "after-summary", conversation_id=cid)
+        await service.wait(info.turn_id)
+        request = next(row for row in reversed(summary_provider.requests) if row["tools"])
+        actual = "\n".join(message_text(m) for m in request["messages"])
+        assert "clue_exact" in actual and "rev_exact" in actual and "第 2 章截止" in actual
+        assert "不是原文依据" in actual
+        # 供应商明确拒绝后，只压缩完整工具单元；应用摘要与最新作者消息都保留。
+        provider = OverflowProvider()
+        records = []
+        wrapped = RecordedProvider(
+            provider,
+            ActivityStore(tmp_path / "overflow"),
+            lambda k, p: records.append((k, p)),
+            stage="write",
+            identity="test",
+            limits=_limits(20_000),
+            keep_recent_tokens=3000,
+        )
+        messages = [summary_message(record), UserMessage(content="只讨论线索")]
+        for index in range(4):
+            messages.extend(_tool_round(f"read-{index}", "正文" * 300))
+        messages.append(UserMessage(content="继续，不改正文"))
+        _ = [
+            event
+            async for event in wrapped.stream_response(
+                model="test", system="摘要不是原文依据", messages=messages, tools=[]
+            )
+        ]
+        assert len(provider.requests) == 2
+        for row in provider.requests:
+            text = "\n".join(message_text(m) for m in row["messages"])
+            assert "clue_exact" in text and "rev_exact" in text and "cr_exact" in text
+            assert "第 2 章截止" in text and "不是原文依据" in text
+        assert sum(k == "model_request_retried" for k, _ in records) == 1
+
+    asyncio.run(scenario())
+
+
 def test_restart_marks_unfinished_operation_terminal_without_model_call(tmp_path: Path):
     provider = BoundaryProvider()
     service, store, cid, runner = setup(tmp_path, provider)

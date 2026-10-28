@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -200,7 +201,8 @@ def test_same_clue_is_replaced_not_duplicated(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     store = ClueStore(tmp_path / "state")
     publish_clues(workspace, store, (_clue(workspace, due=3),))
-    publish_clues(workspace, store, (_clue(workspace, due=2),))
+    existing = store.entries()[0]
+    publish_clues(workspace, store, (replace(existing, due_chapter=2),))
 
     state = build_clues(workspace, store)
 

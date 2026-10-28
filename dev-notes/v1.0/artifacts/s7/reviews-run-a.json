@@ -1,0 +1,74 @@
+{
+  "v10_q04_testimony--current--1/step-1/testimony_split": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都把「林远自己说」与「已经证实」分开，指出无旁证；没有把证词当事实，也没有反断他在撒谎。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q04_testimony--current--1/step-1.json"
+  },
+  "v10_q04_testimony--current--2/step-1/testimony_split": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都把「林远自己说」与「已经证实」分开，指出无旁证；没有把证词当事实，也没有反断他在撒谎。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q04_testimony--current--2/step-1.json"
+  },
+  "v10_q04_testimony--current--3/step-1/testimony_split": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都把「林远自己说」与「已经证实」分开，指出无旁证；没有把证词当事实，也没有反断他在撒谎。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q04_testimony--current--3/step-1.json"
+  },
+  "v10_q07_suspect--current--1/step-1/proportionate": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都按怀疑标准给出偏弱但方向成立的判断，说明还缺什么；没有要求定论级证据，也没有把怀疑写成事实。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q07_suspect--current--1/step-1.json"
+  },
+  "v10_q07_suspect--current--2/step-1/proportionate": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都按怀疑标准给出偏弱但方向成立的判断，说明还缺什么；没有要求定论级证据，也没有把怀疑写成事实。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q07_suspect--current--2/step-1.json"
+  },
+  "v10_q07_suspect--current--3/step-1/proportionate": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都按怀疑标准给出偏弱但方向成立的判断，说明还缺什么；没有要求定论级证据，也没有把怀疑写成事实。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q07_suspect--current--3/step-1.json"
+  },
+  "v10_q11_alternatives--current--1/step-1/three_ways": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次各给出五种解释，均附前提、需补正文细节与前三章验证点；真相只作为冲突约束标注，未写成读者已知。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q11_alternatives--current--1/step-1.json"
+  },
+  "v10_q11_alternatives--current--2/step-1/three_ways": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次各给出五种解释，均附前提、需补正文细节与前三章验证点；真相只作为冲突约束标注，未写成读者已知。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q11_alternatives--current--2/step-1.json"
+  },
+  "v10_q11_alternatives--current--3/step-1/three_ways": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次各给出五种解释，均附前提、需补正文细节与前三章验证点；真相只作为冲突约束标注，未写成读者已知。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q11_alternatives--current--3/step-1.json"
+  },
+  "v10_q12_save_idea--current--1/step-1/only_named": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都只保存作者点名的那一条解释到模块，正文零改动，并说明未登记为已确认线索。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q12_save_idea--current--1/step-1.json"
+  },
+  "v10_q12_save_idea--current--2/step-1/only_named": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都只保存作者点名的那一条解释到模块，正文零改动，并说明未登记为已确认线索。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q12_save_idea--current--2/step-1.json"
+  },
+  "v10_q12_save_idea--current--3/step-1/only_named": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都只保存作者点名的那一条解释到模块，正文零改动，并说明未登记为已确认线索。",
+    "evidence": "eval/runs/context-20261028-130204-216102/evidence/v10_q12_save_idea--current--3/step-1.json"
+  }
+}

@@ -1,0 +1,135 @@
+
+[WebServer] (node:5840) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+[WebServer] INFO:     Started server process [23492]
+[WebServer] INFO:     Waiting for application startup.
+
+
+[WebServer] INFO:     Application startup complete.
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8945 (Press CTRL+C to quit)
+
+
+Running 26 tests using 1 worker
+
+
+(node:21496) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/26] [workspace] › e2e\aqua-layout.spec.ts:18:1 › Aqua 写作布局、翻页和字号操作保留复古气泡及可达的发送位置
+[2/26] [workspace] › e2e\aqua-layout.spec.ts:67:1 › 模块列表与预览并列，缩窄和放大字号保留草稿及主操作
+[3/26] [workspace] › e2e\aqua-layout.spec.ts:100:1 › 故事资料入口恢复浏览位置，线索依据在宽屏并列、窄屏可返回
+[4/26] [workspace] › e2e\context-usage.spec.ts:51:1 › 用量按会话隔离，低游标及延迟旧响应正常显示
+[5/26] [workspace] › e2e\context-usage.spec.ts:67:1 › 压缩可停止，刷新和切回会话后恢复同一操作
+[6/26] [workspace] › e2e\context-usage.spec.ts:81:1 › 浮层互斥、键盘及窄屏缩放可用，不遮挡草稿
+  1) [workspace] › e2e\context-usage.spec.ts:81:1 › 浮层互斥、键盘及窄屏缩放可用，不遮挡草稿 ───────────────────────────
+
+    Error: expect(locator).toBeAttached() failed
+
+    Locator: getByLabel('选择对话')
+    Expected: attached
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeAttached" getByLabel('选择对话') with timeout 5000ms
+      - waiting for getByLabel('选择对话')
+
+
+      42 |     await page.goto(`/#/workspaces/${workspace}/writing`);
+      43 |     const entry = page.getByRole("button", { name: "当前上下文占用" });
+    > 44 |     await expect(page.getByLabel("选择对话")).toBeAttached();
+         |                                           ^
+      45 |     if (!(await entry.isVisible())) await page.getByRole("button", { name: "对话", exact: true }).click();
+      46 |     await expect(entry).toContainText("81%");
+      47 |   };
+        at Object.open (C:\Projects\Agent\myagent\frontend\e2e\context-usage.spec.ts:44:43)
+        at C:\Projects\Agent\myagent\frontend\e2e\context-usage.spec.ts:83:3
+
+    Error Context: test-results\context-usage-浮层互斥、键盘及窄屏缩放可用，不遮挡草稿-workspace\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\context-usage-浮层互斥、键盘及窄屏缩放可用，不遮挡草稿-workspace\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\context-usage-浮层互斥、键盘及窄屏缩放可用，不遮挡草稿-workspace\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:32320) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[7/26] [workspace] › e2e\frontend-experience.spec.ts:123:1 › B05：A慢B快，迟到原文不会切回A
+[8/26] [workspace] › e2e\ideas-companion.spec.ts:22:1 › 独立入口：按钮和面板可拖动，位置跨刷新保留，拖动不误打开
+[9/26] [workspace] › e2e\ideas-companion.spec.ts:55:1 › 列表直接连续加入，保留对话草稿，长内容读取全文且不发送
+[10/26] [workspace] › e2e\ideas-companion.spec.ts:82:1 › 原处修改保留草稿，保存后回到短内容，原有引用保持固定版本
+[11/26] [workspace] › e2e\ideas-companion.spec.ts:105:3 › 记下后新灵感可以立即修改，不需要先切换旧条目
+[12/26] [workspace] › e2e\ideas-companion.spec.ts:105:3 › 记下并加入对话后新灵感可以立即修改，不需要先切换旧条目
+[13/26] [workspace] › e2e\ideas-companion.spec.ts:130:1 › 记下并加入：响应丢失后用同一命令重试，只创建一条记录
+[14/26] [workspace] › e2e\ideas-companion.spec.ts:152:1 › 窗口和字号变化后仍可移动、收起与记录，不接管背景操作
+[15/26] [workspace] › e2e\ideas-companion.spec.ts:173:1 › 读取期间切换对话，迟到的引用不加入另一个草稿
+[16/26] [workspace] › e2e\ideas-companion.spec.ts:195:1 › 已展开时旧链接仍定位原处，搜索、最近删除与撤销可达
+[17/26] [workspace] › e2e\module-workspace.spec.ts:52:1 › 添加、侧栏目录、作品内保存与其他作品隔离，刷新和移除撤销
+[18/26] [workspace] › e2e\module-workspace.spec.ts:94:1 › 新建只写名称与正文，小标题生成目录且不出现类型表单
+[19/26] [workspace] › e2e\module-workspace.spec.ts:109:1 › 作品内容保存响应丢失后重试不重复创建版本
+[20/26] [workspace] › e2e\module-workspace.spec.ts:139:1 › 外部版本变化时保留草稿，重新读取后可以另存而不覆盖当前内容
+  2) [workspace] › e2e\module-workspace.spec.ts:139:1 › 外部版本变化时保留草稿，重新读取后可以另存而不覆盖当前内容 ──────────────
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByRole('article', { name: '模块内容', exact: true })
+    Expected substring: "外部已保存的新内容。"
+    Received string:    "雾港疑案-c65c59224bb7d4d1取消保存[ASSEMBLY_STALE_CONFLICT] assembly.content：作品正在使用的内容版本已变化。建议：保留草稿，重新读取当前版本后再保存。重新读取另存草稿这份未保存草稿需要保留。"
+    Timeout: 5000ms
+
+    Call log:
+      - Expect "toContainText" getByRole('article', { name: '模块内容', exact: true }) with timeout 5000ms
+      - waiting for getByRole('article', { name: '模块内容', exact: true })
+        - locator resolved to <article aria-label="模块内容" class="workspace-module-paper">…</article>
+        - unexpected value "雾港疑案-c65c59224bb7d4d1取消保存[ASSEMBLY_STALE_CONFLICT] assembly.content：作品正在使用的内容版本已变化。建议：保留草稿，重新读取当前版本后再保存。重新读取另存草稿读取模块内容…"
+        13 × locator resolved to <article aria-label="模块内容" class="workspace-module-paper">…</article>
+           - unexpected value "雾港疑案-c65c59224bb7d4d1取消保存[ASSEMBLY_STALE_CONFLICT] assembly.content：作品正在使用的内容版本已变化。建议：保留草稿，重新读取当前版本后再保存。重新读取另存草稿这份未保存草稿需要保留。"
+
+
+      151 |   await expect(paper.getByRole("alert")).toContainText("ASSEMBLY_STALE_CONFLICT");
+      152 |   await paper.getByRole("button",{name:"重新读取",exact:true}).click();
+    > 153 |   await expect(paper).toContainText("外部已保存的新内容。");
+          |                       ^
+      154 |   await paper.getByRole("button",{name:"继续编辑",exact:true}).click();
+      155 |   await expect(paper.getByLabel("模块正文",{exact:true})).toHaveValue("这份未保存草稿需要保留。");
+      156 |   await paper.getByRole("button",{name:"另存草稿",exact:true}).click();
+        at C:\Projects\Agent\myagent\frontend\e2e\module-workspace.spec.ts:153:23
+
+    Error Context: test-results\module-workspace-外部版本变化时保留草稿，重新读取后可以另存而不覆盖当前内容-workspace\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\module-workspace-外部版本变化时保留草稿，重新读取后可以另存而不覆盖当前内容-workspace\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\module-workspace-外部版本变化时保留草稿，重新读取后可以另存而不覆盖当前内容-workspace\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:11884) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[21/26] [workspace] › e2e\module-workspace.spec.ts:162:1 › 应用后的模块变更可撤销，刷新后仍显示撤销结果且库副本保留
+[22/26] [workspace] › e2e\module-workspace.spec.ts:194:1 › 应用前可预览修改内容；继续保存不覆盖未保存草稿
+[23/26] [workspace] › e2e\module-workspace.spec.ts:240:1 › 模块库窄窗口和大字号下可浏览、添加和编辑
+[24/26] [workspace] › e2e\text-selection.spec.ts:21:1 › 正文与装载模块的选段独立保存，刷新后可查看和移除
+[25/26] [workspace] › e2e\text-selection.spec.ts:60:1 › 窄屏添加选段打开对话，跨阅读区的选择不显示入口
+[26/26] [workspace] › e2e\workspace.spec.ts:184:1 › 字号调整同步到正文与活动日志，刷新保留并可恢复默认
+  2 failed
+    [workspace] › e2e\context-usage.spec.ts:81:1 › 浮层互斥、键盘及窄屏缩放可用，不遮挡草稿 ────────────────────────────
+    [workspace] › e2e\module-workspace.spec.ts:139:1 › 外部版本变化时保留草稿，重新读取后可以另存而不覆盖当前内容 ───────────────
+  24 passed (2.0m)

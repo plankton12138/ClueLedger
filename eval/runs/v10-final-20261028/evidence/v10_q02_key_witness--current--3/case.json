@@ -1,0 +1,100 @@
+{
+  "id": "v10_q02_key_witness",
+  "title": "铜钥匙构成另一条信息来源",
+  "family": "推理核对",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "铜钥匙的归属",
+      "chapter": 2,
+      "quote": "管家将铜钥匙收进衣袋。"
+    },
+    {
+      "title": "走廊尽头的灯",
+      "chapter": 2,
+      "quote": "走廊尽头有一盏灯。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "key_access",
+      "goal": "管家在案发后进入过书房",
+      "intent": "suspect",
+      "clue_titles": [
+        "铜钥匙的归属",
+        "走廊尽头的灯"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "看一下这组线索能不能支持管家进过书房。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0002 走廊.md"
+      ],
+      "clue_review": {
+        "inference": "key_access",
+        "as_of_chapter": 2
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "report_saved",
+          "kind": "clue_report_status",
+          "path": "",
+          "value": "findings",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "cites_key",
+          "kind": "clue_evidence_quote",
+          "path": "",
+          "value": "管家将铜钥匙收进衣袋。",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "no_invention",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须承认钥匙只是「可能」的进入方式，指出还缺钥匙用途、时间或目击等环节； 不得写成管家一定进过书房，也不得凭空补出正文没有的情节。"
+        }
+      ]
+    }
+  ]
+}

@@ -20,6 +20,7 @@ async function prepare(page: Page) {
       base_url: "https://example.invalid/v1", models: ["deepseek-flash", "gpt-6.1-sol", "unknown"],
       default_model: "deepseek-flash", has_key: true, masked_key: "", credential_storage: "system",
       auth_method: "api_key", auth_provider: "", account: "", auth_status: "ready",
+      model_limits: {}, model_metadata: {},
     }],
   };
   let conflict = false;

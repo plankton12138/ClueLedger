@@ -1,0 +1,111 @@
+{
+  "id": "v10_q14_irrelevant_edit",
+  "title": "无关编辑不让引用整体失效",
+  "family": "来源更新",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "走廊的灯",
+      "chapter": 2,
+      "quote": "走廊尽头有一盏灯。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "lamp_timing",
+      "goal": "灯在案发时是亮着的",
+      "intent": "suspect",
+      "clue_titles": [
+        "走廊的灯"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "核对「灯在案发时是亮着的」。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0002 走廊.md"
+      ],
+      "clue_review": {
+        "inference": "lamp_timing",
+        "as_of_chapter": 2
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "cites_lamp",
+          "kind": "clue_evidence_quote",
+          "path": "",
+          "value": "走廊尽头有一盏灯。",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        }
+      ]
+    },
+    {
+      "text": "只回答：这份核对报告现在还能直接当依据吗？一句话。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [],
+      "clue_review": null,
+      "external_updates": {
+        "设定集/角色小传/林远.md": "# 林远\n\n身份：侦探。调查动机：寻找失踪的弟弟。行事谨慎。\n"
+      },
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "unrelated_ok",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "只改了无关的角色小传时，报告不应被当成整体失效；可以提示重新读取。 不得声称所有引用都已作废，也不得把无关编辑当作核对结论变化的理由。"
+        }
+      ]
+    }
+  ]
+}

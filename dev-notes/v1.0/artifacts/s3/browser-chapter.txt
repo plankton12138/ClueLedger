@@ -1,0 +1,23 @@
+[WebServer] (node:20784) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[WebServer] INFO:     Started server process [31956]
+[WebServer] INFO:     Waiting for application startup.
+[WebServer] INFO:     Application startup complete.
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8953 (Press CTRL+C to quit)
+
+Running 5 tests using 1 worker
+
+(node:36592) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 [workspace] › e2e\chapter-clues.spec.ts:16:1 › 本章包含早章线索；切换保留草稿，资料页共用一份详情 (3.5s)
+  ok 2 [workspace] › e2e\chapter-clues.spec.ts:37:1 › 定位早章后保持本章范围，返回恢复详情、原文件与焦点 (3.1s)
+  ok 3 [workspace] › e2e\chapter-clues.spec.ts:52:1 › 未整理、无发现、不足、空正文分别呈现，改稿后要求复核 (3.4s)
+  ok 4 [workspace] › e2e\chapter-clues.spec.ts:69:1 › 窄屏、放大字号与键盘切换使用单区域并保留草稿 (3.3s)
+  ok 5 [workspace] › e2e\chapter-clues.spec.ts:99:1 › 整理本章提交实际范围与指纹；受理冲突保留草稿和既有记录 (3.0s)
+
+  5 passed (33.8s)

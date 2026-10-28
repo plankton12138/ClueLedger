@@ -53,9 +53,7 @@ class _SummaryProvider:
             yield AssistantStartEvent(partial=AssistantMessage())
             yield AssistantDoneEvent(
                 reason="stop",
-                message=AssistantMessage(
-                    content=[TextContent(text=text)], stop_reason="stop"
-                ),
+                message=AssistantMessage(content=[TextContent(text=text)], stop_reason="stop"),
             )
 
         return generator()
@@ -89,10 +87,12 @@ def _store(tmp_path: Path) -> ConversationStore:
     return ConversationStore(conversation_root(tmp_path / "state", "w1"))
 
 
-def _seed(store: ConversationStore, turns: int = 4) -> str:
+def _seed(
+    store: ConversationStore, turns: int = 4, *, context: dict[str, Any] | None = None
+) -> str:
     """直接写公开轮次，跳过真正的写作流程。"""
     accepted = store.create_with_first_turn(
-        text="写第一章" + "雨夜" * 400, request_key="k1", turn_id="t1"
+        text="写第一章" + "雨夜" * 400, request_key="k1", turn_id="t1", context=context
     )
     conversation_id = accepted.conversation_id
     store.append_batch(

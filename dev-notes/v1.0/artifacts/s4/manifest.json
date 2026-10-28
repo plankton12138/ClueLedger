@@ -1,0 +1,103 @@
+{
+  "completed_at": "2026-10-27T23:51:36+08:00",
+  "scope": "S4 author plan links, planned clue identities and structured inference targets",
+  "runtime_version": "0.9.0",
+  "clue_schema_version": 2,
+  "recipe_version": 1,
+  "head": "591da5214cdf49d7cc03f955755556c9ae4727c0",
+  "checks": [
+    {
+      "command": "uv run pytest -q",
+      "exit_code": 0,
+      "result": "1282 passed, 1 existing Starlette deprecation warning",
+      "evidence": "backend.txt"
+    },
+    {
+      "command": "npm test -- --reporter=dot",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "322 passed in 30 files",
+      "evidence": "frontend-tests.txt"
+    },
+    {
+      "command": "uv run ruff check src tests",
+      "exit_code": 0,
+      "result": "all checks passed",
+      "evidence": "static-checks.txt"
+    },
+    {
+      "command": "uv run mypy",
+      "exit_code": 0,
+      "result": "no issues in 132 source files",
+      "evidence": "type-checks-backend.txt"
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "evidence": "type-checks-frontend.txt"
+    },
+    {
+      "command": "npx playwright test e2e/clue-design.spec.ts --project=workspace",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "1 passed, zero retries; setting and module plans, inference with plan basis, 1440 and 390px/150%, no model request",
+      "evidence": "browser-s4.txt"
+    },
+    {
+      "command": "npm run build (Playwright webServer)",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "tsc and production build passed; existing large-chunk warning"
+    }
+  ],
+  "browser_environment": {
+    "port": 8931,
+    "data_dir": "data/test-tmp/e2e",
+    "viewports": [
+      1440,
+      1024,
+      640,
+      390
+    ],
+    "font_scale": 150,
+    "screenshots": [
+      "dev-notes/v1.0/artifacts/s4/clue-design-1440.png",
+      "dev-notes/v1.0/artifacts/s4/clue-design-targets-1440.png",
+      "dev-notes/v1.0/artifacts/s4/clue-design-390-150.png"
+    ]
+  },
+  "source_fingerprints": {
+    "src/hastings/workspace/clue_models.py": "88e81bbdcc3f57840a1b3696b2e2a0f73936e95d627b60f402d37b1c76eb6c2f",
+    "src/hastings/workspace/clue_designs.py": "0e3ea4b20cff9db8a19717ff44a851e63e5a2f3f30c36ad33d5a83dadeb02739",
+    "src/hastings/workspace/clue_views.py": "43e707067a10c2964d1748c528d3edc27f675778bfeb9d7ed0acc676ae6cc3ca",
+    "src/hastings/workspace/clue_api.py": "ee2834f6792aaedb34ba402cf2ce31f4270ba8a8f309efa2d285a22ebc1d8bca",
+    "src/hastings/workspace/clue_api_models.py": "d51d20da75ece9633e10114df16065e4f9a458a33c51d499ddeb3555aaa7ffab",
+    "src/hastings/workspace/source_locations.py": "6386d07eee4638a8c4d8f84953910baa379bac2837642a0019c3a7c3f59b6eb0",
+    "src/hastings/workspace/task_scope.py": "3f16db33fe046934b94257982ca5cdf7889ec20906568e6a22a96c02ac68be53",
+    "src/hastings/workspace/agent.py": "6fa56f2912256a00370e0be14590ea5f0c93a56cb35b90768a0ccd9e6529daaf",
+    "src/hastings/workspace/clues.py": "cbbc8816039c10b9977fb324501e51898a3e1ddd94df2c653e8a9863c9705c9a",
+    "src/hastings/workspace/context.py": "c2fba2ccab19a838d4a675ac9f1e19931a3fea0bdc08c292fe92a98313f572c3",
+    "src/hastings/workspace/activity.py": "22f9665fba60e12b529edaf9a9aa6077a65705ded81e5d10cd6bb5001d2b8688",
+    "tests/workspace/test_clue_designs.py": "f8fe81bddb44afb36a9d1a82d9501449356531b06e70be3c44885d8543c3fe61",
+    "tests/workspace/test_clue_design_tools.py": "da19023a26723cc5505aef2ec3ff5a0cd40e55760d2bc22f4f7f8b51031b9f87",
+    "tests/workspace/test_clue_ledger.py": "22bd0e667a93877a8f3a7d81245feb9a093bb515814d3e172a0d2756da8b21b9",
+    "tests/workspace/test_source_locations.py": "b3fc0b125252a21ec9946a716411f4a9d9bb4d88392ecf0b0e4c04b38007cdec",
+    "frontend/src/api/clues.ts": "f040a431f70d522a1fc42122c2a2e4e454f5cddcc2aecc6e8994cfa79ffe9e8d",
+    "frontend/src/api/workspace.ts": "0a26a839a0c76d43bda5d15c6e7033a70210cc724831d6e29a5f01cf6477790e",
+    "frontend/src/components/clues/ClueDetail.tsx": "bdd14585f94e94c37df00a841a6feac08d0ec14345215e2b2eb605227063c218",
+    "frontend/src/components/clues/ClueDesignPicker.tsx": "ef4baf116b5f2bb202e546537346b3935e16f4ece818ef591385b6e2d5a83b16",
+    "frontend/src/components/clues/ClueInferenceEditor.tsx": "05e425d36dbcdb0355089edbe8e2827c5053fdce298401bcc2d34fb525f6ae91",
+    "frontend/src/components/clues/NewClueDialog.tsx": "ba2be88db7df94fc913987916e029ffa3d0986360a524a31bf3f05b1a745f24e",
+    "frontend/src/components/clues/sourceSelection.ts": "3b02a15f032075a27dcfc5ccd33340b60a5ced76dfb5f9899947e7bc4d52f5ac",
+    "frontend/src/components/clues/sourceSelection.test.ts": "3f4e126d2cf777518b0490788cd1cbe5513df69bd42f71b679b66b0f95008024",
+    "frontend/src/components/materials/StoryMaterialsPage.tsx": "84811556f53121c2d6e573d5e8613c510b15af2fe2d01ddb8ead902354cdb6d9",
+    "frontend/playwright.config.ts": "43731767c9ccdf8853a7c953d8e80771ad832a432e2e03ad9ff45aa478d4b59e",
+    "frontend/e2e/clue-design.spec.ts": "4bcfb33093e244e5f77ddf5ddbb4aea03866626bb3b655d9b2a703c122105d2b"
+  },
+  "not_verified": [
+    "S5 clue review reports and online semantic checks",
+    "S6 discussion draft references and real model requests with clue references",
+    "desktop packaging and 1.0 release versioning"
+  ]
+}

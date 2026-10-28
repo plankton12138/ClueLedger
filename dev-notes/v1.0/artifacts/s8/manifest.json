@@ -1,0 +1,413 @@
+{
+  "completed_at": "2026-10-28T15:23:01.391975+08:00",
+  "runtime_version": "1.0.0",
+  "clue_schema_version": 2,
+  "scope": "browser frontend and local service; desktop application excluded by author on 2026-10-28",
+  "source_sha256": "be98d27b95e52da49e9f70b7fde4bc4d04419e185fc9335d010b1f4349278bd6",
+  "runs": {
+    "v10-final-20261028": {
+      "planned": 48,
+      "executed": 48,
+      "counts": {
+        "pass": 41,
+        "fail": 7,
+        "not_run": 0
+      },
+      "success_rate": 0.8541666666666666,
+      "duration_p50_seconds": 33.047,
+      "duration_p95_seconds": 76.141,
+      "input_tokens": 206288,
+      "output_tokens": 296006,
+      "tokens_per_success": 12251.073170731708,
+      "cost_per_success": null
+    },
+    "v10-q11-explicit-scope-20261028": {
+      "planned": 3,
+      "executed": 3,
+      "counts": {
+        "pass": 3,
+        "not_run": 0
+      },
+      "success_rate": 1.0,
+      "duration_p50_seconds": 28.047,
+      "duration_p95_seconds": 30.266,
+      "input_tokens": 2483,
+      "output_tokens": 9749,
+      "tokens_per_success": 4077.3333333333335,
+      "cost_per_success": null
+    },
+    "v10-intent-fix-20261028": {
+      "planned": 9,
+      "executed": 9,
+      "counts": {
+        "pass": 8,
+        "fail": 1,
+        "not_run": 0
+      },
+      "success_rate": 0.8888888888888888,
+      "duration_p50_seconds": 32.438,
+      "duration_p95_seconds": 52.812,
+      "input_tokens": 33447,
+      "output_tokens": 48001,
+      "tokens_per_success": 10181.0,
+      "cost_per_success": null
+    }
+  },
+  "case_results": {
+    "v10_q01_envelope_gap": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-intent-fix-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-intent-fix-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-intent-fix-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q02_key_witness": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q03_plan_not_text": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q04_testimony": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-intent-fix-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-intent-fix-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-intent-fix-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q05_combined": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q06_keep_open": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q07_suspect": {
+      "pass": 2,
+      "fail": 1,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-intent-fix-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-intent-fix-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-intent-fix-20261028",
+          "status": "fail"
+        }
+      ]
+    },
+    "v10_q08_future_premise": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q09_flashback": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q10_missing_target": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q11_alternatives": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-q11-explicit-scope-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-q11-explicit-scope-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-q11-explicit-scope-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q12_save_idea": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q13_early_revision": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q14_irrelevant_edit": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q15_insufficient": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    },
+    "v10_q16_full_loop": {
+      "pass": 3,
+      "fail": 0,
+      "attempts": [
+        {
+          "repeat": 1,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 2,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        },
+        {
+          "repeat": 3,
+          "run": "v10-final-20261028",
+          "status": "pass"
+        }
+      ]
+    }
+  },
+  "latest_planned": 48,
+  "latest_passed": 47,
+  "all_core_cases_at_least_two_of_three": true,
+  "total_online_attempts": 60,
+  "reviewer": "Codex agent review; independent human signoff not performed",
+  "retained_failure": "v10_q07_suspect--current--3 in v10-intent-fix-20261028: excessive standard for a suspicion goal",
+  "credential_cleanup": "temporary browser acceptance credential deleted; no key in config or evidence",
+  "checks": {
+    "backend": "1323 passed; backend-final.txt",
+    "frontend": "327 passed; frontend-tests-final.txt",
+    "frontend_after_focus_fix": "25 targeted unit tests passed",
+    "browser_local": "20/21 first pass; failed source focus corrected; all 6 source tests pass in browser-source-final.txt",
+    "browser_online": "1 full workflow passed; browser-online-first.txt",
+    "recovery": "5 passed; recovery-final.txt",
+    "review_after_instruction_fix": "27 passed; review-targeted-final.txt",
+    "ruff": "passed; static-checks-final.txt",
+    "mypy": "135 source files; type-checks-backend-final.txt",
+    "build": "passed; frontend-build-final.txt"
+  }
+}

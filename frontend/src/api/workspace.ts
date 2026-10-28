@@ -170,6 +170,7 @@ export interface ContextInput {
   selected_path: string | null;
   /** 顺序即作者选择顺序；服务端按路径去重。 */
   reference_paths: string[];
+  clue_references?: ClueReferenceInput[];
   idea_references?: IdeaReferenceInput[];
   /** 客户端看到的版本，只对应本次当前路径与参考；不是服务端内容依据。 */
   observed_digests: Record<string, string>;
@@ -181,6 +182,12 @@ export interface TurnInput {
   request_key: string;
   context: ContextInput;
   /** 用途：普通对话、按作者选择更新索引，或只读展开一条灵感。 */
+  clue_review?: {
+    inference_id: string;
+    inference_revision: string;
+    clue_ids: string[];
+    as_of_chapter: number;
+  };
   purpose?:
     | "chat"
     | "update_chapter_index"
@@ -218,6 +225,20 @@ export interface DraftContext {
   selected_path: string | null;
   reference_paths: string[];
   text_references?: TextReference[];
+  clue_references?: ClueReferenceInput[];
+}
+
+/** 对话里引用的线索：只给标识与看到的版本，正文由服务端按账本重建。 */
+export interface ClueReferenceInput {
+  workspace_lineage: string;
+  clue_id: string;
+  clue_revision: string;
+  browse_as_of_chapter: number;
+  inference_id?: string | null;
+  inference_revision?: string | null;
+  report_id?: string | null;
+  /** 仅草稿显示用的标题；请求发送时不带。 */
+  title?: string;
 }
 
 /** 界面状态：上次看的正式会话、各会话草稿与草稿携带的参考（`new` 是未发送的新对话槽位）。 */
@@ -238,6 +259,7 @@ export interface ConversationUiPatch {
   draft_selected_path?: string | null;
   draft_reference_paths?: string[];
   draft_text_references?: TextReference[];
+  draft_clue_references?: ClueReferenceInput[];
 }
 
 /** 单条回复的完整性：块与响应各自成立，不代替整轮结果。 */
@@ -587,6 +609,14 @@ export interface TaskModuleContentGrant {
   base_revision?: string;
 }
 
+/** 一项线索设计关系操作：关联计划或保存推理目标。 */
+export interface TaskClueDesignGrant {
+  action: "link" | "inference";
+  clue_id?: string;
+  inference_id?: string;
+  clue_ids?: string[];
+}
+
 /** 本轮修改范围：模型登记的内容与应用保存的版本。 */
 export interface TaskScope {
   version: number;
@@ -605,6 +635,7 @@ export interface TaskScope {
   }[];
   module_grants?: TaskModuleGrant[];
   module_content_grants?: TaskModuleContentGrant[];
+  clue_design_grants?: TaskClueDesignGrant[];
   library_publish?: boolean;
   extendable: boolean;
   extend_actions: string[];
@@ -755,6 +786,16 @@ export function openWorkspace(path: string, create = false): Promise<WorkspaceBi
 
 export function listFiles(workspaceId: string): Promise<Catalog> {
   return request<Catalog>(`/${workspaceId}/files`);
+}
+
+export interface ReadingPosition { path: string | null; digest: string; offset: number }
+export function fetchReadingPosition(workspaceId: string): Promise<ReadingPosition> {
+  return request(`/${workspaceId}/reading-position`);
+}
+export function saveReadingPosition(workspaceId: string, position: ReadingPosition): Promise<ReadingPosition> {
+  return request(`/${workspaceId}/reading-position`, {
+    method: "PATCH", body: JSON.stringify(position), keepalive: true,
+  });
 }
 
 export function readFile(workspaceId: string, path: string): Promise<FileView> {

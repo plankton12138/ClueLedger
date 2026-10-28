@@ -754,6 +754,47 @@ describe("草稿与列表", () => {
     );
   });
 
+  it("线索核对把目标、版本与截止章一起提交", async () => {
+    await useConversationsStore.getState().load("w1");
+    api.createConversationWithText.mockResolvedValue({
+      conversation_id: "c5",
+      turn_id: "t5",
+      started_at: "2026-10-22T12:30:00+08:00",
+      title: "核对推理",
+      request_key: "k5",
+    });
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+    useConversationsStore.getState().newConversation();
+
+    await useConversationsStore.getState().send("核对推理：林岚提前接触过原件", undefined, {
+      purpose: "review",
+      reviewPaths: ["正文/0002 照片.md"],
+      clueReview: {
+        inferenceId: "inference_1",
+        inferenceRevision: "rev_1",
+        clueIds: ["clue_1", "clue_2"],
+        asOfChapter: 2,
+      },
+    });
+
+    expect(api.createConversationWithText).toHaveBeenCalledWith(
+      "w1",
+      expect.objectContaining({
+        purpose: "review",
+        review_paths: ["正文/0002 照片.md"],
+        clue_review: {
+          inference_id: "inference_1",
+          inference_revision: "rev_1",
+          clue_ids: ["clue_1", "clue_2"],
+          as_of_chapter: 2,
+        },
+      }),
+    );
+  });
+
   it("索引任务把用途与目标一起提交", async () => {
     await useConversationsStore.getState().load("w1");
     api.createConversationWithText.mockResolvedValue({
@@ -1133,3 +1174,71 @@ describe("正文与装载模块的选段引用", () => {
     expect(useConversationsStore.getState().draftContexts.c1.text_references).toHaveLength(10);
   });
 });
+
+
+  it("线索引用只进草稿：同版本去重，新版本不静默替换", async () => {
+    await useConversationsStore.getState().load("w1");
+    const store = useConversationsStore.getState();
+    const key = store.selectedId ?? "new";
+    const reference = {
+      workspace_lineage: "ws",
+      clue_id: "clue_1",
+      clue_revision: "rev_1",
+      browse_as_of_chapter: 2,
+    };
+    expect(store.addClueReference(reference, "照片里的时间")).toBe(true);
+    expect(useConversationsStore.getState().draftContexts[key]?.clue_references).toEqual([
+      { ...reference, title: "照片里的时间" },
+    ]);
+    expect(useConversationsStore.getState().addClueReference(reference, "照片里的时间")).toBe(true);
+    expect(useConversationsStore.getState().draftContexts[key]?.clue_references).toHaveLength(1);
+    expect(
+      useConversationsStore.getState().addClueReference({ ...reference, clue_revision: "rev_2" }, "照片里的时间"),
+    ).toBe(false);
+    expect(useConversationsStore.getState().draftContexts[key]?.clue_references?.[0].clue_revision).toBe("rev_1");
+    expect(useConversationsStore.getState().error).toContain("已经有更新的版本");
+    useConversationsStore.getState().removeClueReference("clue_1", "rev_1");
+    expect(useConversationsStore.getState().draftContexts[key]?.clue_references).toEqual([]);
+  });
+
+  it("发送普通消息时带上草稿里的线索引用，明确用途不夹带", async () => {
+    await useConversationsStore.getState().load("w1");
+    useConversationsStore.getState().newConversation();
+    const key = "new";
+    const reference = {
+      workspace_lineage: "ws",
+      clue_id: "clue_1",
+      clue_revision: "rev_1",
+      browse_as_of_chapter: 2,
+    };
+    useConversationsStore.setState(state => ({
+      draftContexts: { ...state.draftContexts, [key]: { ...(state.draftContexts[key] ?? { selected_path: null, reference_paths: [] }), clue_references: [reference] } },
+    }));
+    api.createConversationWithText.mockResolvedValue({
+      conversation_id: "c6",
+      turn_id: "t6",
+      started_at: "2026-10-22T13:00:00+08:00",
+      title: "写下一章",
+      request_key: "k6",
+    });
+    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
+    api.streamEvents.mockImplementation(async function* () {
+      yield { ...FINISHED, seq: 1 };
+    });
+    await useConversationsStore.getState().send("继续写这一章");
+    const request = api.createConversationWithText.mock.calls[0][1] as {
+      context: { clue_references?: unknown[] };
+    };
+    expect(request.context.clue_references).toEqual([reference]);
+
+    api.createConversationWithText.mockClear();
+    useConversationsStore.getState().newConversation();
+    await useConversationsStore.getState().send("检查第三章", undefined, {
+      purpose: "review",
+      reviewPaths: ["正文/0003 书房.md"],
+    });
+    const review = api.createConversationWithText.mock.calls[0][1] as {
+      context: { clue_references?: unknown[] };
+    };
+    expect(review.context.clue_references).toBeUndefined();
+  });

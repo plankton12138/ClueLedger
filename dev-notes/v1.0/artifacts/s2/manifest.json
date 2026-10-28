@@ -1,0 +1,239 @@
+{
+  "completed_at": "2026-10-27T21:33:34+08:00",
+  "scope": "v1.0 S2 source locations and independent reading, browser and task chapters",
+  "baseline_commit": "a651d726826eacac21053ac12a6c09f61d085a98",
+  "baseline_worktree": "S0-S1 changes already present; external AGENTS and prototype work preserved",
+  "runtime_version": "0.9.0",
+  "clue_schema_version": 1,
+  "data_policy": "Current clue-ledger format only for new S2 source IDs; no new legacy migration work",
+  "checks": [
+    {
+      "command": "uv run pytest -q",
+      "exit_code": 0,
+      "result": "1265 passed, 1 existing warning",
+      "evidence": "backend-tests.txt"
+    },
+    {
+      "command": "uv run ruff check src/hastings tests eval/harness eval/__main__.py",
+      "exit_code": 0,
+      "evidence": "static-checks.txt"
+    },
+    {
+      "command": "uv run mypy",
+      "exit_code": 0,
+      "result": "130 source files",
+      "evidence": "type-checks.txt"
+    },
+    {
+      "command": "npm test -- --reporter=dot",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "316 passed in 28 files",
+      "evidence": "frontend-tests.txt"
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "evidence": "frontend-types.txt"
+    },
+    {
+      "command": "npx playwright test --project=workspace clue-source-navigation.spec.ts text-selection.spec.ts",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "7 passed; real server port 8949; zero retries",
+      "evidence": "browser-tests.txt",
+      "build": "Playwright webServer ran npm run build successfully before starting the application"
+    },
+    {
+      "command": "documentation and delivery consistency",
+      "exit_code": 0,
+      "result": "12 documents, 206 local links, JSON, code fences, diff whitespace, root README and version declarations passed"
+    }
+  ],
+  "browser_debug_history": [
+    "Initial five source cases passed before native browser Back was added.",
+    "Native Back exposed stale scroll events overwriting return offsets (expected 432, received 2433).",
+    "An immutable pending return position fixed the race; the targeted case and final seven-case suite passed."
+  ],
+  "source_sha256": [
+    {
+      "path": "src/hastings/workspace/source_locations.py",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "7e0f58a1e9d627e0d280dca4cc6254897a5e6e1a8a1ff8af764774baa495f4f5"
+    },
+    {
+      "path": "src/hastings/workspace/clue_api.py",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "4ecf45e5eda18baba800b311c2ad2b60b2ad4c416a325c3bdcdc49618f9bb429"
+    },
+    {
+      "path": "src/hastings/workspace/story_materials.py",
+      "baseline_origin": "S1 recorded source",
+      "baseline_sha256": "d7714ae9127d372ac137bf5338d04deefe9ac2831c7e85fc234fd68e37b85ec4",
+      "current_sha256": "6c2df2df117b45b45cf511bad2d5f04f3b767d5e0b512e8a3acbbb1d6f41706b"
+    },
+    {
+      "path": "src/hastings/workspace/api.py",
+      "baseline_origin": "S1 recorded source",
+      "baseline_sha256": "78b92ad042f77f7d2e92a0c4d590e0d7a8347e9a3d95338552fcc1abadf06fd9",
+      "current_sha256": "48b4eacaec7066272c4875860d0768fe9734be5775f8f90a22479540abce5b8e"
+    },
+    {
+      "path": "src/hastings/workspace/clue_models.py",
+      "baseline_origin": "S1 recorded source",
+      "baseline_sha256": "233f923b9cabac21795eea09fc10691fa291f2fd4a052c66c80b02bb82fb2e7b",
+      "current_sha256": "108eaa16f5e5e81de570e21ca1f240b45030c1d20983f52af84b3246f5a4d7c9"
+    },
+    {
+      "path": "src/hastings/workspace/errors.py",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "802c39f16b8d3247a75ed27a72bd3c5790e021c721ddee5660913d872f3b7a27",
+      "current_sha256": "69d62141a0c0e1c2d282d51f303d457e8d376460b24983d6e339c38e1c0c572b"
+    },
+    {
+      "path": "src/hastings/server/file_app.py",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "4dc53616cd78bfabca48040e6ab4af8cf3514db7b64316f1cca6e7651fc464c9",
+      "current_sha256": "b6b69aa4af6554df4333820ab843717cfaf2b4fab1c24051a40d2d6a31e1d901"
+    },
+    {
+      "path": "tests/workspace/test_source_locations.py",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "3d2037aa1e5f65136fa1b0cc28c588389bcaf46e327f91c425cc2d6f63840490"
+    },
+    {
+      "path": "frontend/src/api/clues.ts",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "3e0f8763ac4cfdd7cd7744097f0246a512605663c3b6ba1017d53d7471fbcae8"
+    },
+    {
+      "path": "frontend/src/api/storyMaterials.ts",
+      "baseline_origin": "S1 recorded source",
+      "baseline_sha256": "27b192e940519cc27f4feda0b4a467e0c8d8289baed1145e49eea43e4ac91493",
+      "current_sha256": "e2ddc328be1cff65fb4b49b02c2d57469a0cd86ac74809dc88cd08476d7bbc55"
+    },
+    {
+      "path": "frontend/src/state/sourceLocation.ts",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "3347c72e5ad27cb33f61b9a09f80c2aa39330fa59303dc870a8721465979ecf1"
+    },
+    {
+      "path": "frontend/src/state/sourceLocation.test.ts",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "e1bfae3d28e5a4e45a049c437ce354c6a21137807b49aa70c710350f2a7de3b6"
+    },
+    {
+      "path": "frontend/src/state/navigation.ts",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "8bd6bcec1837f6df393a03bba6d95907fa6f20e13651cefd3a42d6a7332de0b9",
+      "current_sha256": "27b39a79cb6145fe61d9f72486a5f7ff5d4392194fad12117169246866a0fced"
+    },
+    {
+      "path": "frontend/src/state/navigation.test.ts",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "5b57e3d571d9de9f38bc6aa9fce58e052ded3549cce186fcd9f2bb1c5b36896d",
+      "current_sha256": "97acb6585eeb174718d7d3d80edde0e411205ad2028e31765b807873257f520d"
+    },
+    {
+      "path": "frontend/src/components/clues/SourceHighlight.tsx",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "ed79e9f4018852642a4364eb1beeb52267e326b30092d1275ea51e63672b2731"
+    },
+    {
+      "path": "frontend/src/components/clues/SourceHighlight.test.tsx",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "77804d1dd6da31b757ddbe8587d7a291ab1c2a1473fa4eeedd0c995aaaf2fbdc"
+    },
+    {
+      "path": "frontend/src/components/clues/SourceReader.tsx",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "9211f037110e8477635e542892220492b3ba988b8642d09e64dd8e5e3bda6bfb"
+    },
+    {
+      "path": "frontend/src/components/workspace/Paper.tsx",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "a9a41bd86702893214b6085a776b88477e9e71958a8a4ea18ed7e51232c99def",
+      "current_sha256": "06b2d953b800ed508fc3a9c1611e8840b980e1c16e6d93e2ceebbd8d9eec629b"
+    },
+    {
+      "path": "frontend/src/components/workspace/WorkspaceShell.tsx",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "b85f3739639d3a793e416d353085882a0520a4485447b3697093cb0d4ae6babc",
+      "current_sha256": "2470d24d8f6ebb143bdfff123937a5f202183ef218b7d309c6fc133c1b4f805f"
+    },
+    {
+      "path": "frontend/src/components/workspace/WritingLayout.tsx",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "71f3fe7ef487bbc57317d7af7d5169e6b4019bb16d5895be335b33d0d5862f20",
+      "current_sha256": "b72a121091189fad9b2f231d8316cf049b8169c3803fa5824455d9ae1e02181c"
+    },
+    {
+      "path": "frontend/src/components/workspace/ConversationPanel.tsx",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "fbc1a9857b1a4e0a40e808e9a2b8c7ed870db204ffea878b92170f1d131ddd30",
+      "current_sha256": "9eeea0e2a83564061f76ecb6f0030c1dbaec10fef6e1fd36574bc14bf3bec09d"
+    },
+    {
+      "path": "frontend/src/components/materials/EvidencePane.tsx",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "9b86778457ad4e425fc7c8f0843493dd243b424446f8b48511395e2f1a28a4e2",
+      "current_sha256": "6a493fdd43bd604a9cf65fc9fa67d6d9eabfb7d29120ac25b5a1fff797114067"
+    },
+    {
+      "path": "frontend/src/components/materials/StoryMaterialsPage.tsx",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "6577331989cfa54fbe8c03c32d0b9fb2e22c5ea6c5e1df23389a7134b22309ff",
+      "current_sha256": "d213cb535beaa041aacd1b8bcc1abc04efba8faa4de3b35849c1e48e4dea3fba"
+    },
+    {
+      "path": "frontend/src/index.css",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "b884ca437c06382ee9d0a2a91f0bbdffe6c0d1e0f07938f48b50969b11b714a8",
+      "current_sha256": "8a902dfe8b31072bfb9ac6231882b7e192b12569f8a08dc96171b796edcb5087"
+    },
+    {
+      "path": "frontend/playwright.config.ts",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": "65eadcb48b8d24ce0fb570c2b9eabaf04b5d9277f7541c1806d94aa1956826ef",
+      "current_sha256": "f6749b0c270419ceb014ffc015a193c130e88587cba0372eb4b0484cb39c277d"
+    },
+    {
+      "path": "frontend/e2e/clue-source-navigation.spec.ts",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "a3c783c43568a54bee8fe856b1700a49d688f6929e76f2e9577fe82efa4ca5a1"
+    },
+    {
+      "path": "frontend/e2e/fixtures/clue_sources.py",
+      "baseline_origin": "HEAD",
+      "baseline_sha256": null,
+      "current_sha256": "0434015b6ee188fed668f309fa958926cb54f6987e76c9ddcb676b3b5def679a"
+    }
+  ],
+  "screenshots": [
+    "source-1440.png",
+    "source-390-150.png"
+  ],
+  "not_run": [
+    "online model semantic evaluation",
+    "S3 complete chapter-clue workflow",
+    "S4 plan-link creation UI",
+    "S6 precise clue-reference sending",
+    "desktop packaging"
+  ],
+  "excluded_external_edits": [
+    "AGENTS.md",
+    "prototypes/README.md",
+    "prototypes/osx-aqua-20261027/"
+  ]
+}

@@ -29,7 +29,7 @@ test.beforeAll(async () => {
   const bundle = result.output.find(output => output.type === "chunk");
   if (!bundle || bundle.type !== "chunk") throw new Error("浏览器夹具缺少脚本");
   script = bundle.code;
-  const assets = resolve(root, "dist/assets");
+  const assets = resolve(process.env.HASTINGS_E2E_STATIC_DIR ?? resolve(root, "dist"), "assets");
   styles = readFileSync(resolve(assets, readdirSync(assets).find(name => name.endsWith(".css"))!), "utf8");
 });
 

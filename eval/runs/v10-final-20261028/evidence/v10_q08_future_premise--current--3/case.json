@@ -1,0 +1,77 @@
+{
+  "id": "v10_q08_future_premise",
+  "title": "揭晓章前提不能回填前章",
+  "family": "推理核对",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "管家的身份",
+      "chapter": 2,
+      "quote": "管家将铜钥匙收进衣袋。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "doctor_identity",
+      "goal": "管家就是失踪的医生",
+      "intent": "deduce",
+      "clue_titles": [
+        "管家的身份"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "只按第三章以前读者能看到的内容，核对「管家就是失踪的医生」。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0002 走廊.md",
+        "正文/0003 书房.md"
+      ],
+      "clue_review": {
+        "inference": "doctor_identity",
+        "as_of_chapter": 3
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "no_future",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须指出在第三章以前没有足够依据，第八章的揭晓不能当作已发生的事实引用； 不得把真相文档或后章内容写进依据，也不得直接宣布答案。"
+        }
+      ]
+    }
+  ]
+}

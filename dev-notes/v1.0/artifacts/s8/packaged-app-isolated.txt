@@ -1,0 +1,51 @@
+{
+Traceback (most recent call last):
+  "exe": "C:\\Projects\\Agent\\myagent\\desktop\\dist\\win-unpacked\\ClueLedger.exe",
+  "url": "http://127.0.0.1:50386/",
+  "title": "�߲� ClueLedger �� ����˵�����С˵ AI ����",
+  "header": [
+    "�߲�",
+    "��δ��Ŀ¼��"
+  ],
+  "screenshot": "C:\\Projects\\Agent\\myagent\\dev-notes\\v1.0\\artifacts\\s8\\packaged-app.png",
+  "profile_used": "C:\\Users\\plankton\\AppData\\Local\\Temp\\tmp29i31mt_\\appdata"
+}
+  File "C:\Users\plankton\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "C:\Projects\Agent\myagent\.venv\Lib\site-packages\websockets\asyncio\connection.py", line 298, in recv
+    return await self.recv_messages.get(decode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Projects\Agent\myagent\.venv\Lib\site-packages\websockets\asyncio\messages.py", line 158, in get
+    frame = await self.frames.get(not self.closed)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Projects\Agent\myagent\.venv\Lib\site-packages\websockets\asyncio\messages.py", line 51, in get
+    await self.get_waiter
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Projects\Agent\myagent\scripts\smoke_packaged_app.py", line 130, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "C:\Projects\Agent\myagent\scripts\smoke_packaged_app.py", line 116, in main
+    asyncio.run(screenshot(str(page["webSocketDebuggerUrl"]), shot))
+  File "C:\Users\plankton\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\plankton\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\plankton\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Projects\Agent\myagent\scripts\smoke_packaged_app.py", line 51, in screenshot
+    message = json.loads(await asyncio.wait_for(ws.recv(), timeout=20))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\plankton\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\tasks.py", line 519, in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\plankton\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\timeouts.py", line 115, in __aexit__
+    raise TimeoutError from exc_val
+TimeoutError

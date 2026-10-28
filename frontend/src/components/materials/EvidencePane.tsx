@@ -12,12 +12,13 @@ import { Button } from "../ui/Button";
 interface Props {
   entry: MaterialEntry;
   onOpenSource: (path: string) => void;
+  onLocateEvidence?: (evidenceId: string) => void;
   onTakeToChat: (path: string) => void;
   onClose: () => void;
   showClose?: boolean;
 }
 
-export default function EvidencePane({ entry, onOpenSource, onTakeToChat, onClose, showClose = true }: Props) {
+export default function EvidencePane({ entry, onOpenSource, onLocateEvidence, onTakeToChat, onClose, showClose = true }: Props) {
   const sourcePath = entry.evidence[0]?.path ?? entry.entity_path ?? null;
   return (
     <aside className="flex min-h-0 w-full flex-1 flex-col border-t border-panel-edge bg-surface md:border-t-0">
@@ -69,6 +70,7 @@ export default function EvidencePane({ entry, onOpenSource, onTakeToChat, onClos
                 <blockquote className="mt-1 border-l-2 border-sheet-line pl-2 font-serif text-sm leading-6 text-fg">
                   {evidence.quote}
                 </blockquote>
+                {evidence.evidence_id && onLocateEvidence && <Button size="compact" variant="quiet" data-source-evidence={evidence.evidence_id} onClick={() => onLocateEvidence(evidence.evidence_id!)}>定位原文</Button>}
                 {evidence.freshness === "stale" && (
                   <p className="mt-1 text-xs text-amber">
                     这是整理时保存的引文；原文已经改过，不能按旧位置高亮当前内容。

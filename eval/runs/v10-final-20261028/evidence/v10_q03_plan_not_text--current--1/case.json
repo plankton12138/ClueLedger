@@ -1,0 +1,85 @@
+{
+  "id": "v10_q03_plan_not_text",
+  "title": "计划安排不等于正文已经交代",
+  "family": "推理核对",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "未说明用途的钥匙",
+      "chapter": 2,
+      "quote": "管家将铜钥匙收进衣袋。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "key_hint",
+      "goal": "读者已经知道铜钥匙能打开书房",
+      "intent": "keep_open",
+      "clue_titles": [
+        "未说明用途的钥匙"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "核对读者现在是否能推出钥匙能打开书房。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0002 走廊.md"
+      ],
+      "clue_review": {
+        "inference": "key_hint",
+        "as_of_chapter": 2
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "cites_key",
+          "kind": "clue_evidence_quote",
+          "path": "",
+          "value": "管家将铜钥匙收进衣袋。",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "plan_is_not_text",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须指出设定或计划里「钥匙用途尚未说明」只是作者安排，正文没有交代读者可知的 对应事实；不得声称读者已经知道钥匙能开书房，也不得把计划文档当作正文证据。"
+        }
+      ]
+    }
+  ]
+}

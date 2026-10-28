@@ -1,0 +1,148 @@
+{
+  "completed_at": "2026-10-27T22:28:00+08:00",
+  "scope": "S3 chapter clues, shared body-evidence details and current-format presentation",
+  "runtime_version": "0.9.0",
+  "clue_schema_version": 2,
+  "recipe_version": 1,
+  "head": "a651d726826eacac21053ac12a6c09f61d085a98",
+  "checks": [
+    {
+      "command": "uv run pytest -q",
+      "exit_code": 0,
+      "result": "1269 passed, 1 existing warning",
+      "evidence": "backend.txt",
+      "snapshot_note": "Completed before final orphan-identity view adjustment; that adjustment and one added regression were then verified in the 73-test targeted run.",
+      "clue_views_sha256": "7d1d28a38795297cd14e8ea1f23e1e74988620b042634ce9dacb11f5918980a6"
+    },
+    {
+      "command": "uv run pytest tests/workspace/test_clue_views.py tests/workspace/test_clue_ledger.py tests/workspace/test_source_locations.py tests/workspace/test_story_materials.py -q",
+      "exit_code": 0,
+      "result": "73 passed, 1 existing warning",
+      "evidence": "backend-targeted.txt"
+    },
+    {
+      "command": "npm test",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "320 passed in 29 files",
+      "evidence": "frontend.txt"
+    },
+    {
+      "command": "uv run ruff check src/hastings tests eval/harness eval/__main__.py",
+      "exit_code": 0,
+      "evidence": "static.txt"
+    },
+    {
+      "command": "uv run mypy",
+      "exit_code": 0,
+      "result": "130 source files",
+      "evidence": "types.txt"
+    },
+    {
+      "command": "npx playwright test --project=workspace chapter-clues.spec.ts",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "5 passed, zero retries; includes 503/409 controlled acceptance failures and request-key retry",
+      "evidence": "browser-chapter.txt"
+    },
+    {
+      "command": "npx playwright test --project=workspace chapter-clues.spec.ts clue-source-navigation.spec.ts text-selection.spec.ts core-pages.spec.ts",
+      "cwd": "frontend",
+      "exit_code": 1,
+      "result": "18 passed; 1 historical screenshot output failed with Windows UNKNOWN/open. The 5 source and 2 selection regressions passed; no application assertion failed in that run.",
+      "followup": "Override HASTINGS_E2E_SCREENSHOT_DIR and rerun core-pages only."
+    },
+    {
+      "command": "npx playwright test --project=workspace core-pages.spec.ts",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "7 passed after output-directory isolation; zero retries"
+    },
+    {
+      "command": "npm run build (Playwright webServer)",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "tsc and production build passed; existing large-chunk warning"
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "browser_environment": {
+    "port": 8953,
+    "data_dir": "data/test-tmp/e2e-clue-s3",
+    "screenshot_override": "data/test-tmp/s3-core-shots",
+    "unique_flows_verified": 19,
+    "new_viewports": [
+      1440,
+      1024,
+      640,
+      390
+    ],
+    "font_scales": [
+      100,
+      150
+    ]
+  },
+  "earlier_attempts": [
+    {
+      "result": "Initial new backend tests: 5 passed, 3 failed",
+      "resolution": "Corrected fixture assertions for preserved insufficient coverage, source chapter and existing HTTP NOT_FOUND mapping."
+    },
+    {
+      "result": "Initial browser run: 7 existing flows passed, 4 new flows timed out selecting chapters",
+      "resolution": "Wait for attached chapter controls before deciding whether the directory needs opening."
+    },
+    {
+      "result": "Second combined browser run: 11 passed, 1 resize assertion failed",
+      "resolution": "Preserve explicitly opened auxiliary pane across responsive layout changes; later new-page runs passed."
+    },
+    {
+      "result": "Broad uv run mypy src included 161 errors in unrelated tau_coding files outside configured package scope",
+      "resolution": "Use project-configured uv run mypy; 130 configured source files passed."
+    }
+  ],
+  "source_sha256": {
+    "src/hastings/workspace/clue_views.py": "8e3ef73104544c6ce17b258cdaff4e8e93eaf74350710338778376291a4de480",
+    "src/hastings/workspace/clue_api.py": "8843b63e333263d67125f1437426e3bf85518b8fd4a54545f324a77f5b23f537",
+    "src/hastings/workspace/clue_models.py": "c0289099ab6aeab45836cf7b656196d783112322f4cff7151d8a7de23ae67c19",
+    "src/hastings/workspace/clue_store.py": "db7fddf911d3f7e14327783b52a6f623ca0ade8528f5b2f22b1c233341959847",
+    "src/hastings/workspace/clues.py": "0fa5a88261b4d215dbe30774394620c6490e8a23e2dbf507240402c4824c2780",
+    "src/hastings/workspace/source_locations.py": "24d851a694ab508589862b4538ae3c57e3dcbca1e651ec5ef4efc7b3ab124979",
+    "src/hastings/workspace/story_materials.py": "694fdf66f0e73ae02c8c31ae6691096864bdafa7fdf5b13ee654b4640e29d676",
+    "src/hastings/workspace/material_tasks.py": "7cd896ae415bacad1c5db66f1e67f45c2c5116d2379df35bdf53e91c21da29d8",
+    "src/hastings/workspace/agent.py": "e5e2b8b32214477fc1fa46e459ca6bd3858d531759a66f0d8fa7b09e5cbd60ae",
+    "src/hastings/workspace/files.py": "3c3cb4647ff0e55cd349048e0043a79ccb23725c40cf64622485e3647977a788",
+    "frontend/src/api/clues.ts": "e430a62c8b5353716e9286fe9ceae5fb0bd60357d2854dad6585941e94170f11",
+    "frontend/src/api/storyMaterials.ts": "a9355dd99bac14b8eddfc47f35c8ba17a6f1ad4ed0f7102391f70a3cb3e741a8",
+    "frontend/src/state/clues.ts": "0584065d2346e2fd967cd8f518ff4e75852bb1370e0c62da0a82e1a67848fac3",
+    "frontend/src/state/clues.test.ts": "e847c6bb34c2d327f1d79ef43bee85eb7da6474d2f482103208c8ecf997b9cae",
+    "frontend/src/components/clues/ChapterClues.tsx": "3d97f164956a7ff1b357793a96ca3f3451e18a7f2727a4642a12f8d4ce28e30a",
+    "frontend/src/components/clues/ClueDetail.tsx": "23637343941f603edfe1eeb1b87c54a601ea9540a1a6ce014f56c0cc72eab710",
+    "frontend/src/components/workspace/WritingLayout.tsx": "1c61efab9f55fca53cfff2b4d68e09b627df47374b090793181e1079ceb9694f",
+    "frontend/src/components/materials/StoryMaterialsPage.tsx": "962a6f91c4094e0a43da945736afdcc96b2554380da6e997a851f6a0f367ae66",
+    "frontend/src/components/materials/MaterialEntries.tsx": "17cb42e96738c2caa42d920705359ec7ad25f4b35c8b611dee9fcad60b7ea579",
+    "frontend/playwright.config.ts": "4865525a0f42ec2fee55f0e31c3ef3032dc390caaa4d3f2ee9fdb4ee45a2fcd0",
+    "frontend/e2e/chapter-clues.spec.ts": "d85fa5b03c385eaf892a26feb5330c910a21c692f9e097b7825e6c7db9a9af9a",
+    "frontend/e2e/fixtures/chapter_clues.py": "62bc041ce7924928f2329c0980d0cf25d3754e549e29b2aed9e74d5ecb4ccea3",
+    "tests/workspace/test_clue_views.py": "1f434ed1ca41efa71ab0e3ef37421938d8f820bd8d4819ed5800ee771dccba44"
+  },
+  "screenshots": [
+    "chapter-clues-1440.png",
+    "chapter-clues-390-150.png"
+  ],
+  "limits": [
+    "No online semantic evaluation or model-quality claim; no local model used.",
+    "Browser acceptance-failure fixture does not count as successful model publication; actual read-validated publication is covered by deterministic backend tests.",
+    "S4-S6 author design, inference review and precise-reference sending remain unimplemented.",
+    "No desktop release or version increment; no old-data migration; no user data deleted.",
+    "Original concentrated materials list keeps existing full projection; new /clues supports bounded pagination and search."
+  ],
+  "preserved_unrelated_work": [
+    "AGENTS.md",
+    "prototypes/README.md",
+    "prototypes/osx-aqua-20261027/"
+  ],
+  "historical_screenshot_policy": "Generated writes to previously clean v0.8 tracked screenshots were restored; final core regression uses an isolated output directory."
+}

@@ -1,0 +1,76 @@
+{
+  "id": "v10_q15_insufficient",
+  "title": "材料不足时如实报未完成",
+  "family": "推理核对",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "失踪的医生",
+      "chapter": 2,
+      "quote": "管家将铜钥匙收进衣袋。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "doctor_link",
+      "goal": "管家与失踪的医生是同一个人",
+      "intent": "deduce",
+      "clue_titles": [
+        "失踪的医生"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "核对「管家与失踪的医生是同一个人」，只用手上能读到的正文。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0002 走廊.md"
+      ],
+      "clue_review": {
+        "inference": "doctor_link",
+        "as_of_chapter": 2
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "honest",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "依据不足时应当报告 findings 或 incomplete 并写明缺什么；不得因为读不到 后章就断言作品逻辑有问题，也不得把工具或读取限制说成情节缺陷。"
+        }
+      ]
+    }
+  ]
+}

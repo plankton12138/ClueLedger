@@ -28,7 +28,7 @@ from typing import Literal, cast
 
 from hastings.workspace.chapter_index import ChapterIndexStore
 from hastings.workspace.character_states import CharacterStateStore, build_roster
-from hastings.workspace.clues import ClueStore
+from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.disclosure import DisclosureStore, build_disclosure_state
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, is_managed_path
@@ -134,12 +134,32 @@ class CoverageStore:
             key="records",
         ):
             parsed = _coverage_from_raw(item)
-            if parsed is not None:
+            if parsed is not None and parsed.domain != "clues":
                 rows.append(parsed)
+        for clue_coverage in ClueLedgerStore(self.root).read().coverage():
+            raw = clue_coverage.model_dump(mode="json", exclude={"chapter", "recipe_version"})
+            parsed = _coverage_from_raw(raw)
+            assert parsed is not None
+            rows.append(parsed)
         return tuple(rows)
 
     def record(self, record: CoverageRecord) -> None:
-        merged = {(item.domain, item.path, item.entity_path): item for item in self.records()}
+        if record.domain == "clues":
+            raise WorkspaceError(
+                code="CLUE_COVERAGE_INVALID",
+                where="materials.coverage",
+                why="线索覆盖需要与本章贡献在同一事务发布",
+                fix="通过线索资料整理提交 found、empty 或 insufficient",
+            )
+        # 线索覆盖仅由账本维护；通用覆盖文件只保留其他资料域。
+        existing = read_records(
+            self.file, record_version=RECORD_VERSION, recipe_version=RECIPE_VERSION, key="records"
+        )
+        merged = {
+            (item.domain, item.path, item.entity_path): item
+            for raw in existing
+            if (item := _coverage_from_raw(raw)) is not None and item.domain != "clues"
+        }
         merged[(record.domain, record.path, record.entity_path)] = record
         write_records(
             self.file,
@@ -575,95 +595,55 @@ def _clue_entries(
     as_of: int,
     coverage: dict[tuple[str, str, str], CoverageRecord],
 ) -> tuple[list[dict[str, object]], list[str]]:
-    store = ClueStore(root)
+    from hastings.workspace.clue_views import ClueReader
+
     entries: list[dict[str, object]] = []
     warnings: list[str] = []
-    for item in store.entries():
-        if item.planted_chapter > as_of:
-            continue
-        status = store.status(workspace, item)
-        freshness: Freshness = cast(Freshness, status)
-        if freshness != "valid":
-            warnings.append(f"线索「{item.clue}」的依据已改过或删除，不再采用。")
-        resolved = (
-            item.status == "resolved"
-            and item.resolution_chapter is not None
-            and item.resolution_chapter <= as_of
-        )
-        status_label = (
-            "已回收" if resolved else ("已废弃" if item.status == "dropped" else "未回收")
-        )
+    for detail in ClueReader(workspace, root, as_of).details():
+        lifecycle = detail.lifecycle
+        label = {
+            "open": "未回收",
+            "resolved": "已回收",
+            "dropped": "已废弃",
+            "unknown": "暂无正文依据",
+        }[lifecycle.status]
         overdue = (
-            not resolved
-            and item.status == "open"
-            and item.due_chapter is not None
-            and item.due_chapter <= as_of
+            lifecycle.status == "open"
+            and lifecycle.due_chapter is not None
+            and lifecycle.due_chapter <= as_of
         )
-        outcome, _, task_id, at = _coverage_of(coverage, workspace, "clues", item.evidence.path)
-        evidence = [
-            _evidence(
-                item.evidence.path,
-                item.evidence.digest,
-                item.planted_chapter,
-                item.evidence.start,
-                item.evidence.end,
-                item.evidence.quote,
-                freshness,
-            )
-        ]
-        if item.resolution_evidence is not None:
-            evidence.append(
-                _evidence(
-                    item.resolution_evidence.path,
-                    item.resolution_evidence.digest,
-                    item.resolution_chapter,
-                    item.resolution_evidence.start,
-                    item.resolution_evidence.end,
-                    item.resolution_evidence.quote,
-                    freshness,
-                )
-            )
-        entries.append(
-            _entry(
-                domain="clues",
-                key=item.clue.strip(),
-                title=item.clue,
-                subtitle=(
-                    f"第{item.planted_chapter}章埋下"
-                    + (f"｜计划第{item.due_chapter}章回收" if item.due_chapter else "｜未定回收章")
-                    + (f"｜{status_label}" if status_label != "未回收" else "")
-                ),
-                chapter=item.planted_chapter,
-                coverage=outcome,
-                freshness=freshness,
-                task_id=task_id,
-                updated_at=at,
-                data={
-                    "clue": item.clue,
-                    "planted_chapter": item.planted_chapter,
-                    "due_chapter": item.due_chapter,
-                    "status": "resolved" if resolved else item.status,
-                    "label": status_label,
-                    "overdue": overdue,
-                    "supports": item.supports,
-                    "resolution_chapter": item.resolution_chapter if resolved else None,
-                },
-                evidence=tuple(evidence),
-            )
+        row = _entry(
+            domain="clues",
+            key=detail.clue_id,
+            title=detail.title,
+            subtitle=(
+                f"第{lifecycle.planted_chapter}章埋下"
+                if lifecycle.planted_chapter
+                else "暂无正文依据"
+            ),
+            chapter=lifecycle.planted_chapter,
+            coverage=detail.coverage.outcome,
+            freshness=detail.freshness,
+            task_id=detail.coverage.task_id,
+            updated_at=detail.coverage.at,
+            data={
+                "clue_id": detail.clue_id,
+                "clue": detail.title,
+                "planted_chapter": lifecycle.planted_chapter,
+                "due_chapter": lifecycle.due_chapter,
+                "status": lifecycle.status,
+                "label": label,
+                "overdue": overdue,
+                "supports": detail.interpretation,
+                "resolution_chapter": lifecycle.resolution_chapter,
+            },
+            evidence=tuple(basis.model_dump() for basis in detail.evidence),
+            notes=tuple(detail.warnings),
         )
-
-    def rank(entry: dict[str, object]) -> tuple[int, int, int]:
-        data = cast(dict[str, object], entry["data"])
-        if data["status"] == "open":
-            if data["overdue"]:
-                return (0, int(cast(int, data["due_chapter"] or 0)), 0)
-            if data["due_chapter"] is None:
-                return (2, 0, -int(cast(int, data["planted_chapter"])))
-            return (1, int(cast(int, data["due_chapter"])), 0)
-        return (3, -int(cast(int, data["planted_chapter"])), 0)
-
-    entries.sort(key=rank)
-    return entries, warnings
+        row["id"] = detail.clue_id
+        entries.append(row)
+        warnings.extend(detail.warnings)
+    return entries, list(dict.fromkeys(warnings))
 
 
 def _glossary_entries(

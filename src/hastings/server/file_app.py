@@ -33,6 +33,7 @@ from hastings.workspace.api import (
     create_file_workspace_router,
     register_workspace_error_handlers,
 )
+from hastings.workspace.clue_api import create_clue_router
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.ideas_api import create_ideas_router
 from hastings.workspace.run_registry import RunRegistry
@@ -86,7 +87,7 @@ def create_workspace_app(
     参数名 ``workspaces`` 是作品登记，``model_service`` 是模型连接：两者曾经都叫
     ``book``，放在一起读不清哪个是哪个。``library`` 是应用级模块库，缺省时库接口不挂载。
     """
-    app = FastAPI(title="Hastings", version=__version__)
+    app = FastAPI(title="线簿 ClueLedger", version=__version__)
     app.state.workspaces = workspaces
     # 写作轮次与装配接口共享同一张占用表：运行中不接受本作品的装卸。
     run_registry = RunRegistry()
@@ -100,6 +101,7 @@ def create_workspace_app(
         )
     )
     app.include_router(create_ideas_router(workspaces))
+    app.include_router(create_clue_router(workspaces, library))
     if model_service is not None:
         app.include_router(create_model_router(model_service))
     if library is not None:

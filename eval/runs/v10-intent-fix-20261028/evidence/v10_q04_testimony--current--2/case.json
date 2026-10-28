@@ -1,0 +1,85 @@
+{
+  "id": "v10_q04_testimony",
+  "title": "证词不等于已经证实的事实",
+  "family": "推理核对",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "不在场证词",
+      "chapter": 1,
+      "quote": "林远声称案发时自己一直在客房，尚无人证实。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "alibi",
+      "goal": "林远案发时确实在客房",
+      "intent": "deduce",
+      "clue_titles": [
+        "不在场证词"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "核对「林远案发时确实在客房」这个结论。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0001 雨夜.md"
+      ],
+      "clue_review": {
+        "inference": "alibi",
+        "as_of_chapter": 1
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "cites_testimony",
+          "kind": "clue_evidence_quote",
+          "path": "",
+          "value": "林远声称案发时自己一直在客房，尚无人证实。",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "testimony_split",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须把「林远自己说」与「已经证实」分开，指出目前没有旁证；不得把证词当作 客观事实，也不得反过来断言他在撒谎。"
+        }
+      ]
+    }
+  ]
+}

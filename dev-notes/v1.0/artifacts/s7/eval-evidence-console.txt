@@ -1,0 +1,31 @@
+[run] C:\Projects\Agent\myagent\eval\runs\context-20261028-132153-748206
+[case] v10_q01_envelope_gap--current--1
+[case] v10_q01_envelope_gap--current--1 -> pending_review (17.609s)
+[case] v10_q02_key_witness--current--1
+[case] v10_q02_key_witness--current--1 -> pending_review (25.031s)
+[case] v10_q05_combined--current--1
+[case] v10_q05_combined--current--1 -> pending_review (22.563s)
+[case] v10_q06_keep_open--current--1
+[case] v10_q06_keep_open--current--1 -> pending_review (22.953s)
+[case] v10_q08_future_premise--current--1
+[case] v10_q08_future_premise--current--1 -> pending_review (26.704s)
+[case] v10_q01_envelope_gap--current--2
+[case] v10_q01_envelope_gap--current--2 -> pending_review (27.562s)
+[case] v10_q02_key_witness--current--2
+[case] v10_q02_key_witness--current--2 -> pending_review (32.313s)
+[case] v10_q05_combined--current--2
+[case] v10_q05_combined--current--2 -> pending_review (30.0s)
+[case] v10_q06_keep_open--current--2
+[case] v10_q06_keep_open--current--2 -> pending_review (40.609s)
+[case] v10_q08_future_premise--current--2
+[case] v10_q08_future_premise--current--2 -> pending_review (38.781s)
+[case] v10_q01_envelope_gap--current--3
+[case] v10_q01_envelope_gap--current--3 -> pending_review (25.062s)
+[case] v10_q02_key_witness--current--3
+[case] v10_q02_key_witness--current--3 -> pending_review (26.766s)
+[case] v10_q05_combined--current--3
+[case] v10_q05_combined--current--3 -> pending_review (27.906s)
+[case] v10_q06_keep_open--current--3
+[case] v10_q06_keep_open--current--3 -> pending_review (21.375s)
+[case] v10_q08_future_premise--current--3
+[case] v10_q08_future_premise--current--3 -> pending_review (30.844s)

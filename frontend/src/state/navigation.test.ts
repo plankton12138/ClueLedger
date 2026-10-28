@@ -65,6 +65,14 @@ describe("parseHash", () => {
 });
 
 describe("pageHash", () => {
+  it("source routes carry safe IDs and independent chapter values", () => {
+    const sourceId = `ev_${"a".repeat(20)}_${"b".repeat(32)}`;
+    const page: AppPage = { kind: "writing", workspaceId: "ws1", sourceId, clueId: "clue_one", asOfChapter: 6, taskChapter: 4 };
+    expect(parseHash(pageHash(page))).toEqual(page);
+    for (const query of ["source=../secret", "source=C:/secret", "as_of=-1", "as_of=1.2", "task_chapter=Infinity", "task_chapter=9007199254740992", "clue=../../x"]) {
+      expect(parseHash(`#/workspaces/ws1/writing?${query}`)).toBeNull();
+    }
+  });
   it("往返一致", () => {
     const pages = [
       { kind: "writing" as const, workspaceId: "ws1" },

@@ -21,10 +21,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Literal
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import FileView, Workspace
+
+if TYPE_CHECKING:
+    from hastings.library.modules import ModuleLibrary
+    from hastings.workspace.clue_context import ClueReferenceInput, ClueReferenceSnapshot
 
 __all__ = [
     "LIST_PREVIEW_CHARS",
@@ -189,6 +194,7 @@ class PreparedReference:
     length: int
     start: int
     end: int
+    text: str = ""
 
     @property
     def truncated(self) -> bool:
@@ -355,7 +361,12 @@ def prepare_references(
         remaining -= end
         prepared.append(
             PreparedReference(
-                path=view.path, digest=view.digest, length=len(view.text), start=0, end=end
+                path=view.path,
+                digest=view.digest,
+                length=len(view.text),
+                start=0,
+                end=end,
+                text=view.text[:end],
             )
         )
     return tuple(prepared)
@@ -394,6 +405,8 @@ class ContextRequest:
     idea_references: tuple[tuple[str, str], ...] = ()
     observed_digests: Mapping[str, str] = field(default_factory=dict)
     state_chapter: int | None = None
+    #: 作者在对话里明确引用的线索；只给标识与看到的版本，正文由服务端重建。
+    clue_references: tuple[ClueReferenceInput, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,6 +422,7 @@ class ContextSnapshot:
     observed_digests: Mapping[str, str]
     state_chapter: int | None = None
     ideas: tuple[IdeaReference, ...] = ()
+    clues: tuple[ClueReferenceSnapshot, ...] = ()
 
     @property
     def reference_paths(self) -> tuple[str, ...]:
@@ -421,6 +435,7 @@ class ContextSnapshot:
             "selected_path": self.selected_path,
             "reference_paths": list(self.reference_paths),
             "idea_references": [[item.idea_id, item.revision_id] for item in self.ideas],
+            "clue_references": [item.identity() for item in self.clues],
             "observed_digests": dict(sorted(self.observed_digests.items())),
         }
 
@@ -429,10 +444,17 @@ class ContextSnapshot:
             **self.identity(),
             "reference_digests": {ref.path: ref.digest for ref in self.references},
             "idea_revisions": [item.view() for item in self.ideas],
+            "clues": [item.to_dict() for item in self.clues],
         }
 
 
-def freeze_context(workspace: Workspace, request: ContextRequest) -> ContextSnapshot:
+def freeze_context(
+    workspace: Workspace,
+    request: ContextRequest,
+    *,
+    state_root: Path | None = None,
+    library: ModuleLibrary | None = None,
+) -> ContextSnapshot:
     """受理时读取显式材料的实际版本；缺失、超限与越界都在这里失败。"""
     if request.state_chapter is not None and (
         isinstance(request.state_chapter, bool)
@@ -505,12 +527,30 @@ def freeze_context(workspace: Workspace, request: ContextRequest) -> ContextSnap
                     body=str(revision.get("body") or ""),
                 )
             )
+    clues: tuple[ClueReferenceSnapshot, ...] = ()
+    if request.clue_references:
+        from hastings.workspace.clue_context import freeze_clue_references
+        from hastings.workspace.state_store import current_chapter
+
+        writer_cutoff = (
+            request.state_chapter
+            if request.state_chapter is not None
+            else current_chapter(workspace)
+        )
+        clues = freeze_clue_references(
+            workspace,
+            state_root,
+            request.clue_references,
+            writer_cutoff=writer_cutoff,
+            library=library,
+        )
     return ContextSnapshot(
         state_chapter=request.state_chapter,
         selected_path=request.selected_path,
         references=tuple(references),
         observed_digests=dict(request.observed_digests),
         ideas=tuple(ideas),
+        clues=clues,
     )
 
 

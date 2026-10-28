@@ -86,6 +86,6 @@ window.chatFixture = {
   text: () => text,
   reset: () => useConversationsStore.getState().reset(),
 };
-useModelsStore.setState({ selection: { connection_id: "test", model: "test", available: true, source: "automatic", reason: "" } });
+useModelsStore.setState({ selection: { connection_id: "test", model: "test", available: true, source: "automatic", reason: "", thinking_level: null, thinking_levels: [] } });
 createRoot(document.getElementById("root")!).render(<ConversationPanel />);
 void useConversationsStore.getState().load("audit");

@@ -1,0 +1,100 @@
+{
+  "id": "v10_q01_envelope_gap",
+  "title": "遗书内容不足以认定提前接触原件",
+  "family": "推理核对",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "信封背面的暗号",
+      "chapter": 1,
+      "quote": "信封背面写着接头暗号：青鸟归巢。"
+    },
+    {
+      "title": "林远的客房证词",
+      "chapter": 1,
+      "quote": "林远声称案发时自己一直在客房，尚无人证实。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "contact",
+      "goal": "林远提前接触过信封原件",
+      "intent": "deduce",
+      "clue_titles": [
+        "信封背面的暗号",
+        "林远的客房证词"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "核对「林远提前接触过信封原件」这组线索是否站得住。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0001 雨夜.md"
+      ],
+      "clue_review": {
+        "inference": "contact",
+        "as_of_chapter": 1
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "report_saved",
+          "kind": "clue_report_status",
+          "path": "",
+          "value": "findings",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "cites_real_source",
+          "kind": "clue_evidence_quote",
+          "path": "",
+          "value": "信封背面写着接头暗号：青鸟归巢。",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "gap_named",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须指出「知道暗号内容」与「提前接触过原件」之间的前提缺口（还可能从别处听到、 有人转述等），并给出可验证的补写方向；不得直接断言林远是凶手，也不得把设定里的 作者计划或真相文档当作读者已经看到的正文。"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "exe": "C:\\Projects\\Agent\\myagent\\desktop\\dist\\win-unpacked\\ClueLedger.exe",
+  "url": "http://127.0.0.1:50062/",
+  "title": "线簿 ClueLedger · 会记账的悬疑小说 AI 主编",
+  "header": [
+    "线簿",
+    "（未打开目录）"
+  ],
+  "screenshot_requested": false,
+  "profile_used": "C:\\Users\\plankton\\AppData\\Local\\Temp\\tmpbtegglcn\\appdata"
+}

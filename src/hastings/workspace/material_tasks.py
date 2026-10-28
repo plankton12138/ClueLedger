@@ -17,8 +17,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -37,7 +37,9 @@ from hastings.workspace.character_states import (
     StateSnapshot,
     publish_states,
 )
-from hastings.workspace.clues import ClueEntry, ClueStore, publish_clues
+from hastings.workspace.clue_models import ClueCoverage
+from hastings.workspace.clue_store import ClueLedgerStore
+from hastings.workspace.clues import ClueEntry, ClueStore, _check_entry, visible_contributions
 from hastings.workspace.disclosure import (
     DisclosureStore,
     ObservedEvidence,
@@ -46,7 +48,7 @@ from hastings.workspace.disclosure import (
     publish_observed,
 )
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.files import Workspace, is_managed_path
+from hastings.workspace.files import Workspace, has_chapter_content, is_managed_path
 from hastings.workspace.glossary import GlossaryStore, GlossaryTerm, publish_terms
 from hastings.workspace.materials import MaterialLedger, ReadRequirement
 from hastings.workspace.metadata import parse_character
@@ -131,7 +133,10 @@ def _dedupe(paths: Sequence[str]) -> tuple[str, ...]:
 
 
 def freeze_material_scope(
-    workspace: Workspace, scope: MaterialTaskScope | Mapping[str, object]
+    workspace: Workspace,
+    scope: MaterialTaskScope | Mapping[str, object],
+    *,
+    root: Path | None = None,
 ) -> dict[str, object]:
     """核对并冻结范围：真实路径、章序、截止章与指纹都由服务端决定。"""
     domain: str
@@ -222,6 +227,8 @@ def freeze_material_scope(
                 fix="重新读取目录后再选择章节",
                 details={"path": path},
             ) from exc
+        if domain == "clues" and not has_chapter_content(view.text):
+            raise _scope_error(f"所选章节没有可整理的正文：{path}", detail={"path": path})
         claimed = observed.get(path)
         if claimed is not None and claimed != view.digest:
             raise WorkspaceError(
@@ -268,7 +275,7 @@ def freeze_material_scope(
     elif entities:
         raise _scope_error("这类资料不接受人物目标")
 
-    return {
+    frozen: dict[str, object] = {
         "domain": domain,
         "chapter_paths": list(chapters),
         "entity_paths": list(entities),
@@ -280,6 +287,11 @@ def freeze_material_scope(
         "chapters": chapters,
         "created_at": _now(),
     }
+    if domain == "clues" and root is not None:
+        snapshot = ClueLedgerStore(root).read()
+        frozen["clue_ledger_revision"] = snapshot.revision
+        frozen["clue_ids"] = list(dict.fromkeys(item.clue_id for item in snapshot.entries()))
+    return frozen
 
 
 def _scope_error(why: str, *, detail: Mapping[str, object] | None = None) -> WorkspaceError:
@@ -336,6 +348,11 @@ _DOMAIN_RULES: dict[str, str] = {
         "计划回收章可以落在本次截止章之后，它是计划不是证据；埋设与回收的原文都必须在"
         "截止章以内。\n"
         "整理回收章时，已有线索要保留并复核原埋设证据，不能顺带改写别的章的埋设事实。"
+        "更新已有线索必须提供已有记录的 clue_id，改标题仍复用该 ID。"
+        "同名不代表同一身份；确实另建同名线索时不提供 clue_id，并明确 new_identity=true。"
+        "本章再次提及或推进已有线索时，保留原埋设依据，并用 mention_evidence 给出本章引文。"
+        "mode 标明原文性质：narration/testimony/recollection/hypothesis/dream/unknown；"
+        "证词不等于事实。"
     ),
     "glossary": (
         "登记正文里确实出现过的专名：地名、组织、物件；人物姓名与别名来自小传，不重复登记。\n"
@@ -443,11 +460,12 @@ def _existing_notes(
                 lines.append(f"- 第{anchor.chapter}章 上次记录的时间：{anchor.when}")
     elif domain == "clues":
         clue_store = ClueStore(root)
-        for clue in clue_store.entries():
-            if clue.planted_chapter > int(str(scope.get("as_of_chapter") or 0)):
-                continue
+        for clue in visible_contributions(
+            clue_store.entries(), int(str(scope.get("as_of_chapter") or 0))
+        ):
             lines.append(
-                f"- 「{clue.clue}」第{clue.planted_chapter}章埋下，状态 {clue.status}；"
+                f"- ID `{clue.clue_id}`｜「{clue.clue}」第{clue.planted_chapter}章埋下，"
+                f"状态 {clue.status}；"
                 f"上次依据：{clue.evidence.quote}"
             )
     elif domain == "glossary":
@@ -503,6 +521,7 @@ def publish_material_result(
     note: str,
     records: Sequence[Mapping[str, object]],
     digest: str,
+    before_commit: Callable[[], None] | None = None,
 ) -> dict[str, object]:
     """发布一个目标的结果，并写入覆盖记录；任一校验不通过都不写。
 
@@ -590,6 +609,29 @@ def publish_material_result(
             fix="用一句话说明这一章没有相关发现或信息不足的原因",
         )
 
+    if domain == "clues":
+        # 在事务内核对原文与读取范围；已提交的同键操作先重放回执，
+        # 后来的正文变化不应使已发布结果变成一次新的发布。
+        chapter_number = int(str(cast(dict[str, object], scope.get("chapters") or {})[path]))
+        as_of = int(str(scope.get("as_of_chapter") or 0))
+        if chapter_number > as_of:
+            raise _result_error("source_chapter", "目标章节超出本次截止章")
+        return _publish_clue_target(
+            workspace=workspace,
+            root=root,
+            scope=scope,
+            ledger=ledger,
+            turn_id=turn_id,
+            path=path,
+            chapter_number=chapter_number,
+            as_of=as_of,
+            outcome=outcome,
+            note=note,
+            records=records,
+            digest=digest,
+            before_commit=before_commit,
+        )
+
     try:
         source = workspace.read(path)
     except WorkspaceError as exc:
@@ -647,8 +689,6 @@ def publish_material_result(
         StoryIndexStore(root).remove(path)
     elif outcome == "empty" and domain == "timeline":
         publish_timeline(workspace, TimelineStore(root), (), source_chapter=chapter_number)
-    elif outcome == "empty" and domain == "clues":
-        publish_clues(workspace, ClueStore(root), (), source_chapter=chapter_number)
     elif outcome == "empty" and domain == "glossary":
         publish_terms(workspace, GlossaryStore(root), (), source_chapter=chapter_number)
 
@@ -670,6 +710,93 @@ def publish_material_result(
         "entity": entity_path,
         "outcome": outcome,
         "published": published,
+        "note": note.strip()[:200],
+    }
+
+
+def _publish_clue_target(
+    *,
+    workspace: Workspace,
+    root: Path,
+    scope: Mapping[str, object],
+    ledger: MaterialLedger,
+    turn_id: str,
+    path: str,
+    chapter_number: int,
+    as_of: int,
+    outcome: str,
+    note: str,
+    records: Sequence[Mapping[str, object]],
+    digest: str,
+    before_commit: Callable[[], None] | None,
+) -> dict[str, object]:
+    store = ClueLedgerStore(root)
+    snapshot = store.read()
+    entries = tuple(
+        replace(_clue_entry(item, as_of), source_chapter=chapter_number) for item in records
+    )
+
+    def preflight() -> None:
+        if before_commit is not None:
+            before_commit()
+        current = workspace.read(path)
+        if (
+            current.digest != digest
+            or cast(dict[str, str], scope.get("digests") or {}).get(path) != digest
+        ):
+            raise WorkspaceError(
+                code="CONTEXT_SOURCE_STALE_CONFLICT",
+                where=f"clues.publish:{path}",
+                why="目标原文在提交前发生变化",
+                fix="重新读取当前内容后再整理",
+            )
+        ledger.require_target_read(workspace, ReadRequirement.full(path))
+        for entry in entries:
+            _check_entry(workspace, entry)
+            if entry.mention_evidence is not None:
+                if entry.mention_evidence.path != path:
+                    raise _result_error("mention_evidence", "提及依据必须来自本次目标章")
+                check_evidence(
+                    workspace, entry.mention_evidence, chapter=chapter_number, ledger=ledger
+                )
+            check_evidence(workspace, entry.evidence, chapter=entry.planted_chapter, ledger=ledger)
+            if entry.resolution_evidence is not None and entry.resolution_chapter is not None:
+                check_evidence(
+                    workspace,
+                    entry.resolution_evidence,
+                    chapter=entry.resolution_chapter,
+                    ledger=ledger,
+                )
+
+    expected = str(scope.get("clue_ledger_revision") or snapshot.revision)
+    # 旧调用者没有冻结身份时仍在当前快照内检查，不依赖标题猜身份。
+    allowed = cast(list[str], scope.get("clue_ids")) if "clue_ids" in scope else None
+    result = store.publish(
+        entries,
+        source_chapter=chapter_number,
+        expected_revision=expected,
+        request_key=f"material:{turn_id}:{path}",
+        task_id=turn_id,
+        allowed_ids=allowed,
+        coverage=ClueCoverage(
+            path=path,
+            digest=digest,
+            outcome=cast(Any, outcome),
+            task_id=turn_id,
+            at=_now(),
+            note=note.strip()[:200],
+            chapter=chapter_number,
+        ),
+        preflight=preflight,
+    )
+    return {
+        "domain": "clues",
+        "path": path,
+        "entity": "",
+        "outcome": outcome,
+        "published": result["published"],
+        "clue_ids": result["clue_ids"],
+        "ledger_revision": result["ledger_revision"],
         "note": note.strip()[:200],
     }
 
@@ -749,19 +876,6 @@ def _dispatch(
             check_evidence(workspace, anchor.evidence, chapter=anchor.chapter, ledger=ledger)
         publish_timeline(workspace, TimelineStore(root), anchors, source_chapter=chapter_number)
         return len(anchors)
-    if domain == "clues":
-        clues = tuple(_clue_entry(item, as_of) for item in records)
-        for clue in clues:
-            check_evidence(workspace, clue.evidence, chapter=clue.planted_chapter, ledger=ledger)
-            if clue.resolution_evidence is not None and clue.resolution_chapter is not None:
-                check_evidence(
-                    workspace,
-                    clue.resolution_evidence,
-                    chapter=clue.resolution_chapter,
-                    ledger=ledger,
-                )
-        publish_clues(workspace, ClueStore(root), clues, source_chapter=chapter_number)
-        return len(clues)
     if domain == "glossary":
         terms = tuple(_glossary_term(item, as_of) for item in records)
         for term in terms:
@@ -954,6 +1068,12 @@ def _clue_entry(item: Mapping[str, object], as_of: int) -> ClueEntry:
         resolution_evidence=(
             _evidence_from(resolution_evidence) if resolution_evidence is not None else None
         ),
+        clue_id=str(item.get("clue_id") or ""),
+        new_identity=item.get("new_identity") is True,
+        mention_evidence=_evidence_from(item["mention_evidence"])
+        if item.get("mention_evidence") is not None
+        else None,
+        mode=cast(ObservationMode, item.get("mode") or "unknown"),
     )
 
 

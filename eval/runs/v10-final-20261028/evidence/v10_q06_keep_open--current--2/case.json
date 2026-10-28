@@ -1,0 +1,76 @@
+{
+  "id": "v10_q06_keep_open",
+  "title": "有意保留的其他解释不算缺陷",
+  "family": "推理核对",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "管家身份",
+      "chapter": 2,
+      "quote": "走廊尽头有一盏灯。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "possible_doctor",
+      "goal": "管家可能是失踪的医生",
+      "intent": "keep_open",
+      "clue_titles": [
+        "管家身份"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "核对「管家可能是失踪的医生」这个开放目标。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0002 走廊.md"
+      ],
+      "clue_review": {
+        "inference": "possible_doctor",
+        "as_of_chapter": 2
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "keep_open_ok",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "开放目标下，存在其他解释本身不是缺陷；可以报告依据不足或指出可补的验证点， 但不得把「还有别的可能」当成必须修改的错误，也不得直接宣布答案。"
+        }
+      ]
+    }
+  ]
+}

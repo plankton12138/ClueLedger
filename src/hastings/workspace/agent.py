@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from pydantic import ValidationError
+
 from hastings.library.bindings import AssemblyService
 from hastings.library.changes import ChangeEdit, ChangeOperation, ModuleChangeService
 from hastings.library.ids import source_path
@@ -41,6 +43,24 @@ from hastings.workspace.character_states import (
     publish_states,
     roster_view,
 )
+from hastings.workspace.clue_designs import (
+    link_clue_design,
+    save_clue_inference,
+)
+from hastings.workspace.clue_models import (
+    DesignSource,
+    FileSource,
+    InferenceIntent,
+    InferenceStatement,
+    ModuleSource,
+)
+from hastings.workspace.clue_reviews import (
+    ClueReviewDraft,
+    ClueReviewFinding,
+    ClueReviewScope,
+    publish_clue_review,
+)
+from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.clues import (
     ClueEntry,
     ClueStore,
@@ -86,6 +106,7 @@ from hastings.workspace.materials import (
     SourceKind,
     SourceRef,
     bounded_search_hits,
+    covers,
     read_slice,
     require_author_quote,
     require_read_quote,
@@ -107,6 +128,7 @@ from hastings.workspace.review import (
 from hastings.workspace.service import WriteSession
 from hastings.workspace.story_materials import DOMAIN_LABEL, CoverageStore
 from hastings.workspace.task_scope import (
+    ClueDesignGrant,
     ModuleAction,
     ModuleChangeTarget,
     ModuleContentGrant,
@@ -325,6 +347,7 @@ def build_tools(
     index_store: ChapterIndexStore | None = None,
     review_targets: Sequence[str] = (),
     review_store: ReviewStore | None = None,
+    clue_review: Mapping[str, object] | None = None,
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
     roster_store: CharacterStateStore | None = None,
@@ -550,6 +573,14 @@ def build_tools(
         del tool_call_id, signal, on_update
         if review_store is None:
             raise _input_error("review_store", "本轮没有开启检查保存")
+        if clue_review is not None:
+            return _publish_clue_analysis(
+                arguments,
+                workspace=workspace,
+                run=run,
+                store_root=run.state_root,
+                scope=ClueReviewScope.from_dict(dict(clue_review)),
+            )
         targets = _string_list_argument(arguments, "target_paths")
         validate_review_targets(targets, allowed_targets=review_targets)
         status = _text_argument(arguments, "status")
@@ -766,6 +797,9 @@ def build_tools(
             module_grants=_module_grant_arguments(arguments.get("module_grants")),
             module_content_grants=_module_content_grant_arguments(
                 arguments.get("module_content_grants")
+            ),
+            clue_design_grants=_clue_design_grant_arguments(
+                arguments.get("clue_design_grants")
             ),
             library_publish=bool(arguments.get("library_publish", False)),
             extendable=bool(arguments.get("extendable", False)),
@@ -1254,6 +1288,34 @@ def build_tools(
                             "additionalProperties": False,
                         },
                     },
+                    "clue_design_grants": {
+                        "type": "array",
+                        "description": (
+                            "作者明确要求关联作者计划或保存推理目标时登记；"
+                            "只改线索关系，不授予模块、正文或其他内容写入"
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {"type": "string", "enum": ["link", "inference"]},
+                                "clue_id": {
+                                    "type": "string",
+                                    "description": "link：要关联计划的线索 ID",
+                                },
+                                "clue_ids": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "inference：本次目标关联的 1—10 条线索",
+                                },
+                                "inference_id": {
+                                    "type": "string",
+                                    "description": "inference 更新已有目标时填写",
+                                },
+                            },
+                            "required": ["action"],
+                            "additionalProperties": False,
+                        },
+                    },
                     "library_publish": {
                         "type": "boolean",
                         "description": "作者明确要求把内容发布到全局模块库时才设 true",
@@ -1283,6 +1345,8 @@ def build_tools(
                 "本轮成功新建的章节可继续校订，无需追加 update；已有章节仍需登记 update。",
                 "普通资料创作登记 module_content_grants；"
                 "旧设定文件须有作者明确指定文件或沿用旧目录的要求。",
+                "作者明确要求关联计划或保存推理目标时登记 clue_design_grants；"
+                "讨论与浏览不自动保存关系。",
             ),
             execution_mode="sequential",
         ),
@@ -1485,7 +1549,12 @@ def build_tools(
         if domain == "timeline":
             return _json(timeline_view(build_timeline(workspace, timeline_store, **at)))
         if domain == "clues":
-            return _json(clues_view(build_clues(workspace, clue_store, **at)))
+            return _json(
+                clues_view(
+                    build_clues(workspace, clue_store, **at),
+                    ledger=clue_store.ledger.read().ledger if clue_store is not None else None,
+                )
+            )
         if domain == "glossary":
             return _json(glossary_view(build_glossary(workspace, glossary_store, **at)))
         if domain != "disclosure":
@@ -1616,8 +1685,7 @@ def build_tools(
                     "entity": {
                         "type": "string",
                         "description": (
-                            "仅使用不带 entity 的身份概览实际返回的单个 path，"
-                            "不填人物名或模块引用"
+                            "仅使用不带 entity 的身份概览实际返回的单个 path，不填人物名或模块引用"
                         ),
                     },
                     "as_of_chapter": {
@@ -2870,6 +2938,81 @@ def build_tools(
             "query_records",
             "read_record",
         }
+        review_parameters: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "target_paths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        **({"enum": list(review_targets)} if review_targets else {}),
+                    },
+                    "description": "本轮允许的检查目标；参考文件不放入此列表",
+                },
+                "requirement": {"type": "string", "description": "作者的检查要求（原话或摘要）"},
+                "status": {
+                    "type": "string",
+                    "enum": ["findings", "no_findings", "incomplete"],
+                },
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"type": "string"},
+                            "certainty": {"type": "string", "enum": ["supported", "suspected"]},
+                            "description": {"type": "string"},
+                            "suggestion": {"type": "string"},
+                            "clue_ids": {"type": "array", "items": {"type": "string"}},
+                            "evidence": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "path": {"type": "string"},
+                                        "digest": {"type": "string"},
+                                        "start": {"type": "integer", "minimum": 0},
+                                        "end": {"type": "integer", "minimum": 0},
+                                        "quote": {"type": "string"},
+                                    },
+                                    "required": ["path", "digest", "start", "end", "quote"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                        },
+                        "required": ["kind", "certainty", "description", "suggestion", "evidence"],
+                        "additionalProperties": False,
+                    },
+                },
+                "uncovered": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "没有覆盖到的部分；状态为 incomplete 时必填",
+                },
+            },
+            "required": ["target_paths", "requirement", "status"],
+            "additionalProperties": False,
+        }
+        if clue_review is not None:
+            kinds = review_parameters["properties"]["findings"]["items"]["properties"]["kind"]
+            kinds["enum"] = [
+                "inference_gap",
+                "alternative_open",
+                "premise_undisclosed",
+                "counter_evidence",
+            ]
+            review_parameters["properties"]["clue_analysis"] = {
+                "type": "object",
+                "description": "线索核对的冻结目标摘要；目标与线索集合以本轮冻结范围为准",
+                "properties": {
+                    "inference_id": {"type": "string"},
+                    "goal_snapshot": {"type": "string"},
+                    "premises": {"type": "array", "items": {"type": "string"}},
+                    "alternatives": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["inference_id", "goal_snapshot"],
+                "additionalProperties": False,
+            }
         return [
             *[tool for tool in tools if tool.name in readonly],
             AgentTool(
@@ -2881,89 +3024,11 @@ def build_tools(
                     "target_paths 仅填写本轮检查目标，参考文件只作为 evidence。"
                     + (
                         f"本轮允许的目标：{json.dumps(list(review_targets), ensure_ascii=False)}。"
-                        if review_targets else ""
+                        if review_targets
+                        else ""
                     )
                 ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "target_paths": {
-                            "type": "array",
-                            "items": {
-                                "type": "string",
-                                **({"enum": list(review_targets)} if review_targets else {}),
-                            },
-                            "description": "本轮允许的检查目标；参考文件不放入此列表",
-                        },
-                        "requirement": {
-                            "type": "string",
-                            "description": "作者的检查要求（原话或摘要）",
-                        },
-                        "status": {
-                            "type": "string",
-                            "enum": ["findings", "no_findings", "incomplete"],
-                        },
-                        "findings": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "kind": {
-                                        "type": "string",
-                                        "enum": [
-                                            "continuity",
-                                            "disclosure",
-                                            "task_mismatch",
-                                            "other",
-                                        ],
-                                    },
-                                    "certainty": {
-                                        "type": "string",
-                                        "enum": ["supported", "suspected"],
-                                    },
-                                    "description": {"type": "string"},
-                                    "suggestion": {"type": "string"},
-                                    "evidence": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "path": {"type": "string"},
-                                                "digest": {"type": "string"},
-                                                "start": {"type": "integer", "minimum": 0},
-                                                "end": {"type": "integer", "minimum": 0},
-                                                "quote": {"type": "string"},
-                                            },
-                                            "required": [
-                                                "path",
-                                                "digest",
-                                                "start",
-                                                "end",
-                                                "quote",
-                                            ],
-                                            "additionalProperties": False,
-                                        },
-                                    },
-                                },
-                                "required": [
-                                    "kind",
-                                    "certainty",
-                                    "description",
-                                    "suggestion",
-                                    "evidence",
-                                ],
-                                "additionalProperties": False,
-                            },
-                        },
-                        "uncovered": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "没有覆盖到的部分；状态为 incomplete 时必填",
-                        },
-                    },
-                    "required": ["target_paths", "requirement", "status"],
-                    "additionalProperties": False,
-                },
+                parameters=review_parameters,
                 execute_fn=save_review_report,
                 prompt_guidelines=(
                     "先读完目标再判断；每条问题至少一处原文证据，跨文件冲突列双方出处。",
@@ -3025,6 +3090,7 @@ def build_tools(
         # 核对身份：只读原文与小传，发布带证据的披露条目；没有作品写工具。
         readonly = {"list_files", "read_file", "search_text", "read_state"}
         allowed = tuple(index_allowed)
+        clue_snapshot = clue_store.ledger.read() if clue_store is not None else None
 
         def require_entity_read(path: str) -> None:
             run.materials.require_target_read(workspace, ReadRequirement.full(path))
@@ -3171,7 +3237,7 @@ def build_tools(
             signal: ToolCancellationToken | None = None,
             on_update: ToolUpdateCallback | None = None,
         ) -> AgentToolResult:
-            del tool_call_id, signal, on_update
+            del on_update
             raw = arguments.get("entries")
             if not isinstance(raw, list) or not raw:
                 raise _input_error("entries", "必须是非空数组")
@@ -3187,7 +3253,34 @@ def build_tools(
                 require_evidence(clue.evidence, clue.planted_chapter)
                 if clue.resolution_evidence is not None and clue.resolution_chapter is not None:
                     require_evidence(clue.resolution_evidence, clue.resolution_chapter)
-            published = publish_clues(workspace, clue_store, entries)
+
+            def check_current() -> None:
+                if signal is not None and signal.is_cancelled():
+                    raise WorkspaceError(
+                        code="CLUE_STOPPED_CONFLICT",
+                        where="clues.publish",
+                        why="任务已停止，不能发布新的线索记录",
+                        fix="保留已发布结果；需要继续时重新发起整理",
+                    )
+                for clue in entries:
+                    require_evidence(clue.evidence, clue.planted_chapter)
+                    if clue.mention_evidence is not None:
+                        require_evidence(clue.mention_evidence, clue.source_chapter)
+                    if clue.resolution_evidence is not None and clue.resolution_chapter is not None:
+                        require_evidence(clue.resolution_evidence, clue.resolution_chapter)
+
+            published = publish_clues(
+                workspace,
+                clue_store,
+                entries,
+                expected_revision=clue_snapshot.revision if clue_snapshot is not None else None,
+                request_key=f"state:{run.turn_id}:{tool_call_id}",
+                task_id=run.turn_id,
+                allowed_ids=[row.clue_id for row in clue_snapshot.entries()]
+                if clue_snapshot is not None
+                else None,
+                preflight=check_current,
+            )
             run.record(
                 "state_published",
                 {
@@ -3472,6 +3565,27 @@ def build_tools(
                                         "type": "string",
                                         "description": "读者能观察到的事实，不是解释",
                                     },
+                                    "clue_id": {
+                                        "type": "string",
+                                        "description": "更新已有线索时复用其稳定 ID",
+                                    },
+                                    "new_identity": {
+                                        "type": "boolean",
+                                        "description": "明确另建同名线索时为 true",
+                                    },
+                                    "source_chapter": {"type": "integer", "minimum": 1},
+                                    "mention_evidence": _EVIDENCE_SCHEMA,
+                                    "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                            "narration",
+                                            "testimony",
+                                            "recollection",
+                                            "hypothesis",
+                                            "dream",
+                                            "unknown",
+                                        ],
+                                    },
                                     "planted_chapter": {"type": "integer", "minimum": 1},
                                     "due_chapter": {
                                         "type": "integer",
@@ -3526,12 +3640,24 @@ def build_tools(
             signal: ToolCancellationToken | None = None,
             on_update: ToolUpdateCallback | None = None,
         ) -> AgentToolResult:
-            del tool_call_id, signal, on_update
+            del tool_call_id, on_update
             if coverage_store is None:
                 raise _input_error("coverage_store", "本轮没有开启资料保存")
             raw_records = arguments.get("records")
             if not isinstance(raw_records, list):
                 raise _input_error("records", "必须是数组；空结果用 []")
+            if any(not isinstance(item, dict) for item in raw_records):
+                raise _input_error("records", "每条记录必须是对象")
+
+            def check_running() -> None:
+                if signal is not None and signal.is_cancelled():
+                    raise WorkspaceError(
+                        code="CLUE_STOPPED_CONFLICT",
+                        where="clues.publish",
+                        why="任务已停止，不能发布新的线索记录",
+                        fix="保留已发布结果；需要继续时重新发起整理",
+                    )
+
             result = publish_material_result(
                 workspace=workspace,
                 root=coverage_store.root,
@@ -3545,6 +3671,7 @@ def build_tools(
                 note=_optional_text_argument(arguments, "note") or "",
                 records=[item for item in raw_records if isinstance(item, dict)],
                 digest=_text_argument(arguments, "digest"),
+                before_commit=check_running,
             )
             run.record("material_target_published", dict(result))
             return _json(result)
@@ -3595,6 +3722,291 @@ def build_tools(
             ),
         ]
     if mode == "write":
+
+        async def link_clue_design_tool(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            """把本轮实际读过的计划条目区间关联到线索；关系授权与内容写入分开。"""
+            del signal, on_update
+            run.require_writable("tools.link_clue_design")
+            if run.state_root is None:
+                raise WorkspaceError(
+                    code="CLUE_STATE_FAILED",
+                    where="tools.link_clue_design",
+                    why="这一轮没有可保存线索关系的作品状态目录",
+                    fix="在作品会话里保存计划；不要在临时请求中写线索关系",
+                )
+            clue_id = _text_argument(arguments, "clue_id")
+            source = _design_source_argument(arguments.get("source"))
+            start = _int_argument(arguments, "start", default=0, minimum=0)
+            end = _int_argument(arguments, "end", default=0, minimum=1)
+            quote = _text_argument(arguments, "quote")
+            relation = _optional_text_argument(arguments, "relation") or ""
+            run.scope.require_clue_design(ClueDesignGrant("link", clue_id=clue_id))
+            digest = (
+                source.digest
+                if isinstance(source, FileSource)
+                else source.content_digest
+            )
+            path = (
+                source.path
+                if isinstance(source, FileSource)
+                else source_path(
+                    source.library_id, source.module_id, source.revision_id, source.entry_id
+                )
+            )
+            coverage = run.materials.coverage(path)
+            if (
+                coverage is None
+                or coverage.ref.digest != digest
+                or not covers(coverage.spans, start, end)
+            ):
+                raise WorkspaceError(
+                    code="REFERENCE_NOT_FULLY_READ_CONFLICT",
+                    where="tools.link_clue_design",
+                    why="计划区间还没有在本轮实际读过",
+                    fix="先用 read_file 或 read_record 读取这段原文，再关联计划",
+                    details={"path": path, "start": start, "end": end},
+                )
+            store = ClueLedgerStore(run.state_root)
+            expected = (
+                _optional_text_argument(arguments, "expected_revision")
+                or store.read().revision
+            )
+            result = link_clue_design(
+                run.workspace,
+                store,
+                clue_id=clue_id,
+                source=source,
+                start=start,
+                end=end,
+                quote=quote,
+                relation=relation,
+                request_key=_tool_request_key(
+                    f"{run.turn_id}:clue-link", tool_call_id, arguments
+                ),
+                expected_revision=expected,
+                created_by=run.turn_id or "agent",
+                library=run.library,
+                assembly=run.assembly,
+            )
+            run.record(
+                "clue_design_linked",
+                {
+                    "clue_id": clue_id,
+                    "link_id": result["link_id"],
+                    "clue_revision": result["clue_revision"],
+                    "duplicate": result.get("duplicate", False),
+                },
+            )
+            return _json(result)
+
+        async def save_clue_inference_tool(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            """保存作者明确要求的推理目标；纯讨论不能自动调用。"""
+            del signal, on_update
+            run.require_writable("tools.save_clue_inference")
+            if run.state_root is None:
+                raise WorkspaceError(
+                    code="CLUE_STATE_FAILED",
+                    where="tools.save_clue_inference",
+                    why="这一轮没有可保存推理目标的作品状态目录",
+                    fix="在作品会话里保存构思；不要在临时请求中写目标",
+                )
+            inference_id = _optional_text_argument(arguments, "inference_id")
+            inference_revision = _optional_text_argument(arguments, "inference_revision")
+            clue_ids = _string_list_argument(arguments, "clue_ids")
+            goal = _text_argument(arguments, "goal")
+            intent = _text_argument(arguments, "intent")
+            if intent not in ("deduce", "suspect", "keep_open", "undecided"):
+                raise _input_error(
+                    "intent", "只能是 deduce、suspect、keep_open 或 undecided"
+                )
+            premises = _inference_statements_argument(arguments.get("premises"), "premises")
+            alternatives = _inference_statements_argument(
+                arguments.get("alternatives"), "alternatives"
+            )
+            design_link_ids = _string_list_argument(arguments, "design_link_ids")
+            run.scope.require_clue_design(
+                ClueDesignGrant(
+                    "inference",
+                    inference_id=inference_id or "",
+                    clue_ids=tuple(clue_ids),
+                )
+            )
+            store = ClueLedgerStore(run.state_root)
+            expected = (
+                _optional_text_argument(arguments, "expected_revision")
+                or store.read().revision
+            )
+            result = save_clue_inference(
+                store,
+                clue_ids=clue_ids,
+                goal=goal,
+                intent=cast(InferenceIntent, intent),
+                premises=premises,
+                alternatives=alternatives,
+                design_link_ids=design_link_ids,
+                request_key=_tool_request_key(
+                    f"{run.turn_id}:clue-inference", tool_call_id, arguments
+                ),
+                expected_revision=expected,
+                inference_id=inference_id,
+                inference_revision=inference_revision,
+                created_by=run.turn_id or "agent",
+                request_source=run.current_author_text or "",
+            )
+            run.record("clue_inference_saved", dict(result))
+            return _json(result)
+
+        tools.extend(
+            [
+                AgentTool(
+                    name="link_clue_design",
+                    label="关联作者计划",
+                    description=(
+                        "把本轮实际读过的已装模块条目或设定文件区间关联到一条线索。"
+                        "只保存关系，不复制或修改计划正文；作者没有明确要求时不要调用。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "clue_id": {"type": "string"},
+                            "source": {
+                                "type": "object",
+                                "properties": {
+                                    "kind": {"type": "string", "enum": ["file", "module"]},
+                                    "path": {"type": "string"},
+                                    "digest": {"type": "string"},
+                                    "library_id": {"type": "string"},
+                                    "module_id": {"type": "string"},
+                                    "revision_id": {"type": "string"},
+                                    "entry_id": {"type": "string"},
+                                    "content_digest": {"type": "string"},
+                                },
+                                "required": ["kind"],
+                                "additionalProperties": False,
+                            },
+                            "start": {"type": "integer", "minimum": 0},
+                            "end": {"type": "integer", "minimum": 1},
+                            "quote": {"type": "string"},
+                            "relation": {
+                                "type": "string",
+                                "description": "这条计划与线索的关系说明；可省略",
+                            },
+                            "expected_revision": {
+                                "type": "string",
+                                "description": "可选：读取到的账本版本；省略时用当前值",
+                            },
+                        },
+                        "required": ["clue_id", "source", "start", "end", "quote"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=link_clue_design_tool,
+                    prompt_guidelines=(
+                        "先 set_task_scope 登记 clue_design_grants 的 link；"
+                        "来源只选已装模块或设定文件，不把正文发言当作者计划。",
+                        "区间必须是本轮真正读过的原文；未读的区间会被拒绝。",
+                        "模块升级或卸下后旧关联会标为待核对；不要按同名或最新版自动重绑。",
+                    ),
+                    execution_mode="sequential",
+                ),
+                AgentTool(
+                    name="save_clue_inference",
+                    label="保存推理目标",
+                    description=(
+                        "保存作者明确要求的一组线索推理目标、前提与其他解释。"
+                        "目标只描述安排，不证明正文前提，也不产生已埋设或已回收记录。"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "inference_id": {
+                                "type": "string",
+                                "description": "更新已有目标时填写",
+                            },
+                            "inference_revision": {
+                                "type": "string",
+                                "description": "更新时带上读取到的目标修订",
+                            },
+                            "clue_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "本次目标关联的 1—10 条线索",
+                            },
+                            "goal": {"type": "string", "description": "要推出的结论"},
+                            "intent": {
+                                "type": "string",
+                                "enum": ["deduce", "suspect", "keep_open", "undecided"],
+                            },
+                            "premises": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "text": {"type": "string"},
+                                        "clue_ids": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                        },
+                                        "design_link_ids": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                        },
+                                    },
+                                    "required": ["text"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "alternatives": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "text": {"type": "string"},
+                                        "clue_ids": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                        },
+                                        "design_link_ids": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                        },
+                                    },
+                                    "required": ["text"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "design_link_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "本目标引用的计划关联；必须属于目标线索",
+                            },
+                            "expected_revision": {
+                                "type": "string",
+                                "description": "可选：读取到的账本版本；省略时用当前值",
+                            },
+                        },
+                        "required": ["clue_ids", "goal", "intent"],
+                        "additionalProperties": False,
+                    },
+                    execute_fn=save_clue_inference_tool,
+                    prompt_guidelines=(
+                        "只保存作者明确要求保存的构思；普通讨论只说明方案，不调用。",
+                        "目标与前提是作者安排，不是正文事实；不要把推测说成已经交代。",
+                        "更新已有目标要带上当前 inference_id 与 inference_revision。",
+                    ),
+                    execution_mode="sequential",
+                ),
+            ]
+        )
 
         async def ask_author(
             tool_call_id: str,
@@ -3763,6 +4175,7 @@ def prepare_request_inputs(
     index_store: ChapterIndexStore | None = None,
     review_targets: Sequence[str] = (),
     review_store: ReviewStore | None = None,
+    clue_review: Mapping[str, object] | None = None,
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
     roster_store: CharacterStateStore | None = None,
@@ -3803,6 +4216,7 @@ def prepare_request_inputs(
             index_store=index_store,
             review_targets=review_targets,
             review_store=review_store,
+            clue_review=clue_review,
             disclosure_store=disclosure_store,
             glossary_store=glossary_store,
             roster_store=roster_store,
@@ -3833,6 +4247,7 @@ def build_harness(
     index_store: ChapterIndexStore | None = None,
     review_targets: Sequence[str] = (),
     review_store: ReviewStore | None = None,
+    clue_review: Mapping[str, object] | None = None,
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
     roster_store: CharacterStateStore | None = None,
@@ -3862,6 +4277,7 @@ def build_harness(
         index_store=index_store,
         review_targets=review_targets,
         review_store=review_store,
+        clue_review=clue_review,
         disclosure_store=disclosure_store,
         glossary_store=glossary_store,
         roster_store=roster_store,
@@ -4025,7 +4441,146 @@ def _clue_from(value: JSONValue) -> ClueEntry:
             if raw_resolution is not None
             else None
         ),
+        clue_id=str(value.get("clue_id") or ""),
+        new_identity=value.get("new_identity") is True,
+        mention_evidence=_evidence_argument(value["mention_evidence"])
+        if value.get("mention_evidence") is not None
+        else None,
+        source_chapter=_int_argument(value, "source_chapter", default=0, minimum=0),
+        mode=cast(Any, value.get("mode") or "unknown"),
     )
+
+
+def _publish_clue_analysis(
+    arguments: Mapping[str, JSONValue],
+    *,
+    workspace: Workspace,
+    run: RunContext,
+    store_root: object,
+    scope: ClueReviewScope,
+) -> AgentToolResult:
+    """发布线索核对报告：目标与范围来自受理时冻结，模型只提交判断与证据。"""
+    if store_root is None:
+        raise WorkspaceError(
+            code="CLUE_STATE_FAILED",
+            where="tools.save_review_report",
+            why="这一轮没有可保存核对报告的作品状态目录",
+            fix="在作品会话里发起核对；临时请求不能保存报告",
+        )
+    from pathlib import Path as _Path
+
+    analysis = arguments.get("clue_analysis")
+    if not isinstance(analysis, dict):
+        raise _input_error("clue_analysis", "线索核对要提交冻结目标摘要")
+    submitted = str(analysis.get("inference_id") or "")
+    # 目标标识由受理时冻结；模型漏填时按冻结范围补齐，填了就必须一致。
+    if submitted and submitted != scope.inference_id:
+        raise _input_error("clue_analysis", "推理目标与受理时冻结的目标不一致")
+    targets = _string_list_argument(arguments, "target_paths")
+    if set(targets) != set(scope.target_paths):
+        frozen = json.dumps(list(scope.target_paths), ensure_ascii=False)
+        raise _input_error("target_paths", f"必须与本轮冻结的核对目标一致：{frozen}")
+    status = _text_argument(arguments, "status")
+    if status not in ("findings", "no_findings", "incomplete"):
+        raise _input_error("status", "只能是 findings、no_findings 或 incomplete")
+    draft = ClueReviewDraft(
+        status=status,
+        findings=_clue_findings(arguments.get("findings")),
+        uncovered=_string_list_argument(arguments, "uncovered"),
+    )
+    report = publish_clue_review(
+        scope,
+        draft,
+        requirement=_text_argument(arguments, "requirement"),
+        workspace=workspace,
+        ledger=run.materials,
+        store=ClueLedgerStore(_Path(str(store_root))),
+        turn_id=run.turn_id,
+    )
+    run.record(
+        "review_finished",
+        {
+            "report_id": report.report_id,
+            "clue_report_id": report.report_id,
+            "inference_id": scope.inference_id,
+            "status": report.status,
+            "targets": list(report.target_paths),
+            "findings": report.findings,
+            "uncovered": list(report.uncovered),
+        },
+    )
+    return _json(
+        {
+            "report_id": report.report_id,
+            "status": report.status,
+            "findings": len(report.findings),
+            "uncovered": list(report.uncovered),
+            "coverage": report.coverage,
+        }
+    )
+
+
+def _clue_findings(value: JSONValue) -> tuple[ClueReviewFinding, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise _input_error("findings", "必须是数组")
+    findings: list[ClueReviewFinding] = []
+    for raw in value:
+        if not isinstance(raw, dict):
+            raise _input_error("findings", "每一项必须是对象")
+        kind = raw.get("kind")
+        certainty = raw.get("certainty")
+        description = raw.get("description")
+        suggestion = raw.get("suggestion")
+        if not isinstance(kind, str) or not isinstance(certainty, str):
+            raise _input_error("findings", "kind 与 certainty 必须是字符串")
+        if not isinstance(description, str) or not isinstance(suggestion, str):
+            raise _input_error("findings", "description 与 suggestion 必须是字符串")
+        clue_ids = raw.get("clue_ids")
+        if clue_ids is not None and not (
+            isinstance(clue_ids, list) and all(isinstance(item, str) for item in clue_ids)
+        ):
+            raise _input_error("findings", "clue_ids 必须是字符串数组")
+        findings.append(
+            ClueReviewFinding(
+                kind=kind,
+                certainty=certainty,
+                description=description,
+                suggestion=suggestion,
+                evidence=_evidence_items(raw.get("evidence"), field="findings"),
+                clue_ids=tuple(cast(list[str], clue_ids or [])),
+            )
+        )
+    return tuple(findings)
+
+
+def _evidence_items(value: JSONValue, *, field: str) -> tuple[ReviewEvidence, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise _input_error(field, "evidence 必须是数组")
+    evidence: list[ReviewEvidence] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise _input_error(field, "evidence 每一项必须是对象")
+        path = item.get("path")
+        digest = item.get("digest")
+        start = item.get("start")
+        end = item.get("end")
+        quote = item.get("quote")
+        if not isinstance(path, str) or not isinstance(digest, str):
+            raise _input_error(field, "证据要带 path 与 digest")
+        if isinstance(start, bool) or not isinstance(start, int):
+            raise _input_error(field, "证据的 start 必须是整数")
+        if isinstance(end, bool) or not isinstance(end, int):
+            raise _input_error(field, "证据的 end 必须是整数")
+        if not isinstance(quote, str):
+            raise _input_error(field, "证据的 quote 必须是字符串")
+        evidence.append(
+            ReviewEvidence(path=path, digest=digest, start=start, end=end, quote=quote)
+        )
+    return tuple(evidence)
 
 
 def _review_findings(value: JSONValue) -> tuple[ReviewFinding, ...]:
@@ -4041,39 +4596,16 @@ def _review_findings(value: JSONValue) -> tuple[ReviewFinding, ...]:
         certainty = raw.get("certainty")
         description = raw.get("description")
         suggestion = raw.get("suggestion")
-        evidence_raw = raw.get("evidence")
         if not isinstance(kind, str) or not isinstance(certainty, str):
             raise _input_error("findings", "kind 与 certainty 必须是字符串")
         if not isinstance(description, str) or not isinstance(suggestion, str):
             raise _input_error("findings", "description 与 suggestion 必须是字符串")
-        if evidence_raw is not None and not isinstance(evidence_raw, list):
-            raise _input_error("findings", "evidence 必须是数组")
-        evidence: list[ReviewEvidence] = []
-        for item in evidence_raw or []:
-            if not isinstance(item, dict):
-                raise _input_error("findings", "evidence 每一项必须是对象")
-            path = item.get("path")
-            digest = item.get("digest")
-            start = item.get("start")
-            end = item.get("end")
-            quote = item.get("quote")
-            if not isinstance(path, str) or not isinstance(digest, str):
-                raise _input_error("findings", "证据要带 path 与 digest")
-            if isinstance(start, bool) or not isinstance(start, int):
-                raise _input_error("findings", "证据的 start 必须是整数")
-            if isinstance(end, bool) or not isinstance(end, int):
-                raise _input_error("findings", "证据的 end 必须是整数")
-            if not isinstance(quote, str):
-                raise _input_error("findings", "证据的 quote 必须是字符串")
-            evidence.append(
-                ReviewEvidence(path=path, digest=digest, start=start, end=end, quote=quote)
-            )
         findings.append(
             ReviewFinding(
                 kind=cast(Any, kind),
                 certainty=cast(Any, certainty),
                 description=description,
-                evidence=tuple(evidence),
+                evidence=_evidence_items(raw.get("evidence"), field="findings"),
                 suggestion=suggestion,
             )
         )
@@ -4215,6 +4747,20 @@ _MATERIAL_RECORD_SCHEMA: dict[str, dict[str, Any]] = {
     "clues": {
         "type": "object",
         "properties": {
+            "clue_id": {"type": "string", "description": "更新已有线索时复用任务中列出的 ID"},
+            "new_identity": {"type": "boolean", "description": "明确另建同名线索，不自动合并"},
+            "mention_evidence": _EVIDENCE_SCHEMA,
+            "mode": {
+                "type": "string",
+                "enum": [
+                    "narration",
+                    "testimony",
+                    "recollection",
+                    "hypothesis",
+                    "dream",
+                    "unknown",
+                ],
+            },
             "clue": {"type": "string", "description": "读者能观察到的事实，不是解释"},
             "planted_chapter": {"type": "integer", "minimum": 1},
             "due_chapter": {"type": "integer", "minimum": 1},
@@ -4343,9 +4889,7 @@ def _resolve_authorization_seq(
     if seq is None or seq in {item for item, _ in author_messages}:
         return seq
     quote = " ".join(authorization.split())
-    matches = [
-        item for item, text in author_messages if quote and quote in " ".join(text.split())
-    ]
+    matches = [item for item, text in author_messages if quote and quote in " ".join(text.split())]
     return matches[0] if len(matches) == 1 else None
 
 
@@ -4514,6 +5058,107 @@ def _module_content_grant_arguments(value: JSONValue) -> tuple[ModuleContentGran
             )
         )
     return tuple(grants)
+
+
+def _clue_design_grant_arguments(value: JSONValue) -> tuple[ClueDesignGrant, ...]:
+    """关系操作参数：关联到确切线索，或保存确切目标。"""
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise _input_error("clue_design_grants", "必须是数组")
+    grants: list[ClueDesignGrant] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise _input_error("clue_design_grants", "每一项必须是对象")
+        action = item.get("action")
+        if action not in ("link", "inference"):
+            raise _input_error("clue_design_grants", f"包含不支持的操作：{action}")
+        clue_id = item.get("clue_id", "")
+        inference_id = item.get("inference_id", "")
+        raw_ids = item.get("clue_ids", [])
+        if not (
+            isinstance(clue_id, str)
+            and isinstance(inference_id, str)
+            and isinstance(raw_ids, list)
+            and all(isinstance(part, str) and part for part in raw_ids)
+        ):
+            raise _input_error(
+                "clue_design_grants", "clue_id、inference_id 与 clue_ids 必须是字符串或字符串数组"
+            )
+        grants.append(
+            ClueDesignGrant(
+                action=cast(Any, action),
+                clue_id=clue_id,
+                inference_id=inference_id,
+                clue_ids=tuple(cast(list[str], raw_ids)),
+            )
+        )
+    return tuple(grants)
+
+
+def _design_source_argument(value: JSONValue) -> DesignSource:
+    """计划来源只接受受管文件或完整模块引用；其他结构在调用服务前拒绝。"""
+    if not isinstance(value, dict):
+        raise _input_error("source", "必须是对象")
+    kind = value.get("kind")
+    if kind == "file":
+        path, digest = value.get("path"), value.get("digest")
+        if not (isinstance(path, str) and path and isinstance(digest, str) and digest):
+            raise _input_error("source", "file 来源要给出 path 与 digest")
+        return FileSource(path=path, digest=digest)
+    if kind == "module":
+        fields = [
+            value.get(name)
+            for name in ("library_id", "module_id", "revision_id", "entry_id", "content_digest")
+        ]
+        if not all(isinstance(part, str) and part for part in fields):
+            raise _input_error(
+                "source", "module 来源要给出库、模块、版本、条目与内容指纹"
+            )
+        return ModuleSource(
+            library_id=cast(str, fields[0]),
+            module_id=cast(str, fields[1]),
+            revision_id=cast(str, fields[2]),
+            entry_id=cast(str, fields[3]),
+            content_digest=cast(str, fields[4]),
+        )
+    raise _input_error("source", "kind 只能是 file 或 module")
+
+
+def _inference_statements_argument(
+    value: JSONValue, name: str
+) -> tuple[InferenceStatement, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise _input_error(name, "必须是数组")
+    statements: list[InferenceStatement] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise _input_error(name, "每一项必须是对象")
+        try:
+            statements.append(
+                InferenceStatement(
+                    text=str(item.get("text") or ""),
+                    clue_ids=list(_string_list_argument(item, "clue_ids")),
+                    design_link_ids=list(_string_list_argument(item, "design_link_ids")),
+                )
+            )
+        except ValidationError as exc:
+            raise _input_error(name, "每条都要有非空 text，且 clue_ids 为字符串数组") from exc
+    return tuple(statements)
+
+
+def _tool_request_key(
+    prefix: str, tool_call_id: str, arguments: Mapping[str, JSONValue]
+) -> str:
+    """同一工具调用重试复用请求键；没有调用 ID 时按参数取稳定摘要。"""
+    suffix = tool_call_id.strip()
+    if not suffix:
+        suffix = hashlib.sha256(
+            json.dumps(arguments, ensure_ascii=False, sort_keys=True).encode()
+        ).hexdigest()[:20]
+    return f"{prefix}:{suffix}"
 
 
 def _change_operations_argument(value: JSONValue) -> tuple[ChangeOperation, ...]:

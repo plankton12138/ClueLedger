@@ -1,0 +1,93 @@
+
+[WebServer] (node:15300) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+[WebServer] 
+[WebServer] (!) outDir C:\Projects\Agent\myagent\data\test-tmp\v10-local-final\frontend is not inside project root and will not be emptied.
+[WebServer] Use --emptyOutDir to override.
+[WebServer] 
+
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+[WebServer] INFO:     Started server process [37488]
+[WebServer] INFO:     Waiting for application startup.
+
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8957 (Press CTRL+C to quit)
+
+
+Running 21 tests using 1 worker
+
+(node:37228) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/21] [workspace] › e2e\chapter-clues.spec.ts:16:1 › 本章包含早章线索；切换保留草稿，资料页共用一份详情
+[2/21] [workspace] › e2e\chapter-clues.spec.ts:37:1 › 定位早章后保持本章范围，返回恢复详情、原文件与焦点
+[3/21] [workspace] › e2e\chapter-clues.spec.ts:52:1 › 未整理、无发现、不足、空正文分别呈现，改稿后要求复核
+[4/21] [workspace] › e2e\chapter-clues.spec.ts:69:1 › 窄屏、放大字号与键盘切换使用单区域并保留草稿
+[5/21] [workspace] › e2e\chapter-clues.spec.ts:99:1 › 整理本章提交实际范围与指纹；受理冲突保留草稿和既有记录
+[6/21] [workspace] › e2e\clue-design.spec.ts:8:1 › 从零建立线索、关联设定计划并保存推理目标
+[7/21] [workspace] › e2e\clue-reference.spec.ts:11:1 › 把线索带进对话只写草稿，刷新后仍在，可移除
+[8/21] [workspace] › e2e\clue-reference.spec.ts:33:1 › 资料页带入线索后回到写作页的草稿
+[9/21] [workspace] › e2e\clue-reference.spec.ts:41:1 › 带入目标时同时记下推理身份
+[10/21] [workspace] › e2e\clue-review.spec.ts:21:1 › 核对报告显示范围、来源状态与具体问题，并能定位原文
+[11/21] [workspace] › e2e\clue-review.spec.ts:50:1 › 正文改稿后旧报告保留并标出需复核
+[12/21] [workspace] › e2e\clue-review.spec.ts:67:1 › 窄屏与放大字号下报告单区域可读
+[13/21] [workspace] › e2e\clue-source-navigation.spec.ts:11:1 › 刷新后从服务端恢复章节与滚动位置
+[14/21] [workspace] › e2e\clue-source-navigation.spec.ts:26:1 › 真实依据定位第二处重复引文，返回后保留草稿、阅读文件、章界和焦点
+  1) [workspace] › e2e\clue-source-navigation.spec.ts:26:1 › 真实依据定位第二处重复引文，返回后保留草稿、阅读文件、章界和焦点 ──────
+
+    Error: expect(locator).toBeFocused() failed
+
+    Locator:  getByRole('button', { name: '定位原文', exact: true })
+    Expected: focused
+    Received: inactive
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toBeFocused" getByRole('button', { name: '定位原文', exact: true }) with timeout 5000ms
+      - waiting for getByRole('button', { name: '定位原文', exact: true })
+        14 × locator resolved to <button type="button" class="ui-button " data-size="compact" data-variant="quiet" data-source-evidence="ev_235baef6132ed1201c64_d0355b156ac8efb9caab0d93ec78191d">定位原文</button>
+           - unexpected value "inactive"
+
+
+      45 |   await page.getByRole("button", { name: "返回资料", exact: true }).click();
+      46 |   await expect(page.getByRole("combobox", { name: "查看截至第几章" })).toHaveValue("1");
+    > 47 |   await expect(action).toBeFocused();
+         |                        ^
+      48 |   await page.getByRole("link", { name: "写作", exact: true }).click();
+      49 |   await expect(page).toHaveURL(new RegExp(`/workspaces/${book.id}/writing$`));
+      50 |   await expect(page.getByLabel("原文定位")).toHaveCount(0);
+        at C:\Projects\Agent\myagent\frontend\e2e\clue-source-navigation.spec.ts:47:24
+
+    Error Context: ..\data\test-tmp\v10-local-final\results\clue-source-navigation-真实依据定位第二处重复引文，返回后保留草稿、阅读文件、章界和焦点-workspace\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\data\test-tmp\v10-local-final\results\clue-source-navigation-真实依据定位第二处重复引文，返回后保留草稿、阅读文件、章界和焦点-workspace\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\data\test-tmp\v10-local-final\results\clue-source-navigation-真实依据定位第二处重复引文，返回后保留草稿、阅读文件、章界和焦点-workspace\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+(node:12708) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[15/21] [workspace] › e2e\clue-source-navigation.spec.ts:55:1 › 来源已改时保留旧引文并展示当前内容，重复句子不重新高亮
+[16/21] [workspace] › e2e\clue-source-navigation.spec.ts:67:1 › 定位同一篇文章后返回，恢复原来的阅读滚动位置
+[17/21] [workspace] › e2e\clue-source-navigation.spec.ts:84:1 › 实体和代码定位到所在段落，窄屏和150%字号下可关闭定位
+[18/21] [workspace] › e2e\clue-source-navigation.spec.ts:110:1 › 未来回收依据在早章范围不可读取，任意路径不能作为来源标识
+[19/21] [workspace] › e2e\clue-workflow.spec.ts:28:1 › 写作者从线索详情走完核对、定位、带入对话，刷新后仍在
+[20/21] [workspace] › e2e\clue-workflow.spec.ts:56:1 › 切到更早章节后，后章报告与依据不再出现在本章区域
+[21/21] [workspace] › e2e\clue-workflow.spec.ts:72:1 › 窄屏与放大字号下核对与引用仍可操作
+  1 failed
+    [workspace] › e2e\clue-source-navigation.spec.ts:26:1 › 真实依据定位第二处重复引文，返回后保留草稿、阅读文件、章界和焦点 ───────
+  20 passed (2.0m)

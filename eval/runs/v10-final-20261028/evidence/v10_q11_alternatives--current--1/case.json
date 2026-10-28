@@ -1,0 +1,54 @@
+{
+  "id": "v10_q11_alternatives",
+  "title": "构思给出不同解释与验证安排",
+  "family": "构思",
+  "layer": "end_to_end",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [],
+  "inferences": [],
+  "steps": [
+    {
+      "text": "不修改任何文件，只给方案：铜钥匙可能是谁收走的，有哪几种不同解释？ 每种解释需要什么正文细节才能成立，又该怎么在前三章里验证？至少给三种，并说明各自的前提。",
+      "selected": "正文/0002 走廊.md",
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [],
+      "clue_review": null,
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "three_ways",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须给出至少三种彼此不同的解释，每种附上成立所需的前提与可在前三章验证的安排； 不得把某一种当成既定答案，也不得引入后章揭晓或真相文档的内容。"
+        }
+      ]
+    }
+  ]
+}

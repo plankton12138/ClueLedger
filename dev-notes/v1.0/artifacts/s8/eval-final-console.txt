@@ -1,0 +1,97 @@
+[run] C:\Projects\Agent\myagent\eval\runs\v10-final-20261028
+[case] v10_q01_envelope_gap--current--1
+[case] v10_q01_envelope_gap--current--1 -> pending_review (50.687s)
+[case] v10_q02_key_witness--current--1
+[case] v10_q02_key_witness--current--1 -> pending_review (30.219s)
+[case] v10_q03_plan_not_text--current--1
+[case] v10_q03_plan_not_text--current--1 -> pending_review (34.796s)
+[case] v10_q04_testimony--current--1
+[case] v10_q04_testimony--current--1 -> pending_review (23.359s)
+[case] v10_q05_combined--current--1
+[case] v10_q05_combined--current--1 -> pending_review (29.531s)
+[case] v10_q06_keep_open--current--1
+[case] v10_q06_keep_open--current--1 -> pending_review (25.734s)
+[case] v10_q07_suspect--current--1
+[case] v10_q07_suspect--current--1 -> pending_review (36.922s)
+[case] v10_q08_future_premise--current--1
+[case] v10_q08_future_premise--current--1 -> pending_review (35.078s)
+[case] v10_q09_flashback--current--1
+[case] v10_q09_flashback--current--1 -> pending_review (26.593s)
+[case] v10_q10_missing_target--current--1
+[case] v10_q10_missing_target--current--1 -> pending_review (26.172s)
+[case] v10_q11_alternatives--current--1
+[case] v10_q11_alternatives--current--1 -> pending_review (33.062s)
+[case] v10_q12_save_idea--current--1
+[case] v10_q12_save_idea--current--1 -> pending_review (19.078s)
+[case] v10_q13_early_revision--current--1
+[case] v10_q13_early_revision--current--1 -> pending_review (14.969s)
+[case] v10_q14_irrelevant_edit--current--1
+[case] v10_q14_irrelevant_edit--current--1 -> pending_review (53.015s)
+[case] v10_q15_insufficient--current--1
+[case] v10_q15_insufficient--current--1 -> pending_review (33.062s)
+[case] v10_q16_full_loop--current--1
+[case] v10_q16_full_loop--current--1 -> pending_review (76.141s)
+[case] v10_q01_envelope_gap--current--2
+[case] v10_q01_envelope_gap--current--2 -> fail (160.219s)
+[case] v10_q02_key_witness--current--2
+[case] v10_q02_key_witness--current--2 -> pending_review (32.016s)
+[case] v10_q03_plan_not_text--current--2
+[case] v10_q03_plan_not_text--current--2 -> pending_review (21.797s)
+[case] v10_q04_testimony--current--2
+[case] v10_q04_testimony--current--2 -> pending_review (23.766s)
+[case] v10_q05_combined--current--2
+[case] v10_q05_combined--current--2 -> pending_review (26.422s)
+[case] v10_q06_keep_open--current--2
+[case] v10_q06_keep_open--current--2 -> pending_review (36.25s)
+[case] v10_q07_suspect--current--2
+[case] v10_q07_suspect--current--2 -> pending_review (40.063s)
+[case] v10_q08_future_premise--current--2
+[case] v10_q08_future_premise--current--2 -> pending_review (43.344s)
+[case] v10_q09_flashback--current--2
+[case] v10_q09_flashback--current--2 -> pending_review (29.468s)
+[case] v10_q10_missing_target--current--2
+[case] v10_q10_missing_target--current--2 -> pending_review (19.078s)
+[case] v10_q11_alternatives--current--2
+[case] v10_q11_alternatives--current--2 -> pending_review (25.891s)
+[case] v10_q12_save_idea--current--2
+[case] v10_q12_save_idea--current--2 -> pending_review (17.64s)
+[case] v10_q13_early_revision--current--2
+[case] v10_q13_early_revision--current--2 -> pending_review (15.766s)
+[case] v10_q14_irrelevant_edit--current--2
+[case] v10_q14_irrelevant_edit--current--2 -> pending_review (48.312s)
+[case] v10_q15_insufficient--current--2
+[case] v10_q15_insufficient--current--2 -> pending_review (35.046s)
+[case] v10_q16_full_loop--current--2
+[case] v10_q16_full_loop--current--2 -> pending_review (78.094s)
+[case] v10_q01_envelope_gap--current--3
+[case] v10_q01_envelope_gap--current--3 -> pending_review (37.844s)
+[case] v10_q02_key_witness--current--3
+[case] v10_q02_key_witness--current--3 -> pending_review (36.765s)
+[case] v10_q03_plan_not_text--current--3
+[case] v10_q03_plan_not_text--current--3 -> pending_review (34.062s)
+[case] v10_q04_testimony--current--3
+[case] v10_q04_testimony--current--3 -> pending_review (24.703s)
+[case] v10_q05_combined--current--3
+[case] v10_q05_combined--current--3 -> pending_review (40.094s)
+[case] v10_q06_keep_open--current--3
+[case] v10_q06_keep_open--current--3 -> pending_review (24.828s)
+[case] v10_q07_suspect--current--3
+[case] v10_q07_suspect--current--3 -> pending_review (36.89s)
+[case] v10_q08_future_premise--current--3
+[case] v10_q08_future_premise--current--3 -> pending_review (33.047s)
+[case] v10_q09_flashback--current--3
+[case] v10_q09_flashback--current--3 -> pending_review (51.484s)
+[case] v10_q10_missing_target--current--3
+[case] v10_q10_missing_target--current--3 -> pending_review (20.219s)
+[case] v10_q11_alternatives--current--3
+[case] v10_q11_alternatives--current--3 -> pending_review (27.36s)
+[case] v10_q12_save_idea--current--3
+[case] v10_q12_save_idea--current--3 -> pending_review (20.875s)
+[case] v10_q13_early_revision--current--3
+[case] v10_q13_early_revision--current--3 -> pending_review (30.953s)
+[case] v10_q14_irrelevant_edit--current--3
+[case] v10_q14_irrelevant_edit--current--3 -> pending_review (46.515s)
+[case] v10_q15_insufficient--current--3
+[case] v10_q15_insufficient--current--3 -> pending_review (40.14s)
+[case] v10_q16_full_loop--current--3
+[case] v10_q16_full_loop--current--3 -> pending_review (64.407s)

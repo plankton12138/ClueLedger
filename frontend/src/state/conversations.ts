@@ -40,6 +40,7 @@ import {
   NeedsConversationReload,
   type ChatTurn,
 } from "./chatMessages";
+import type { ClueReferenceInput } from "../api/workspace";
 import { createStreamBatcher } from "./streamBatcher";
 import { MAX_REFERENCE_TEXT, MAX_TEXT_REFERENCES, sameTextReferences, withTextReferences, type TextReference } from "./textReferences";
 
@@ -72,6 +73,13 @@ export interface SendOptions {
     | "expand_idea";
   indexPaths?: string[];
   reviewPaths?: string[];
+  /** 线索核对：目标、线索集合与截止章一起冻结，不能只发一句「核对」。 */
+  clueReview?: {
+    inferenceId: string;
+    inferenceRevision: string;
+    clueIds: string[];
+    asOfChapter: number;
+  };
   /**
    * 这一轮随行的灵感修订。给定时就不再取当前草稿里的引用：
    * 「用于写作」提交后不该把引用留在作者的下一条草稿里。
@@ -144,6 +152,9 @@ export interface ConversationsStore {
   setDraftContext(selectedPath: string | null, referencePaths: string[]): void;
   /** 目录里「加入对话」：把一份文件追加到当前草稿的参考，重复点击不重复登记。 */
   addReference(path: string): void;
+  /** 把线索引用登记到当前草稿；只保存标识，发送时才由服务端核对版本。 */
+  addClueReference(input: ClueReferenceInput, title: string): boolean;
+  removeClueReference(clueId: string, clueRevision: string): void;
   addTextReference(input: TextReference): boolean;
   removeTextReference(id: string): void;
   /** 灵感「带到对话」：只登记本轮参考，不发送、不改正文。 */
@@ -439,6 +450,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       draft_selected_path: context?.selected_path ?? null,
       draft_reference_paths: context?.reference_paths ?? [],
       draft_text_references: context?.text_references ?? [],
+      draft_clue_references: context?.clue_references ?? [],
     };
     try {
       const ui: ConversationUi = await patchConversationUi(
@@ -625,11 +637,16 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const submittedIdeas = [...(options?.ideas ?? get().draftIdeas[key] ?? [])];
       // 显式发起的资料任务、灵感展开不携带普通聊天草稿里的选段。
       const submittedTextReferences = options ? [] : [...(get().draftContexts[key]?.text_references ?? [])];
+      // 引用只随作者的下一条普通消息提交；明确用途（检查、整理、展开）不夹带草稿引用。
+      const submittedClueReferences = options ? [] : [...(get().draftContexts[key]?.clue_references ?? [])];
       const request: TurnInput = {
         text: withTextReferences(trimmed, submittedTextReferences),
         request_key: keyRequest,
         context: {
           ...(context ?? EMPTY_CONTEXT),
+          ...(submittedClueReferences.length > 0
+            ? { clue_references: submittedClueReferences }
+            : {}),
           idea_references: submittedIdeas.map(({ idea_id, revision_id }) => ({
             idea_id,
             revision_id,
@@ -642,7 +659,20 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           ? { purpose: options.purpose, index_paths: options.indexPaths ?? [] }
           : {}),
         ...(options && options.purpose === "review"
-          ? { purpose: options.purpose, review_paths: options.reviewPaths ?? [] }
+          ? {
+              purpose: options.purpose,
+              review_paths: options.reviewPaths ?? [],
+              ...(options.clueReview
+                ? {
+                    clue_review: {
+                      inference_id: options.clueReview.inferenceId,
+                      inference_revision: options.clueReview.inferenceRevision,
+                      clue_ids: options.clueReview.clueIds,
+                      as_of_chapter: options.clueReview.asOfChapter,
+                    },
+                  }
+                : {}),
+            }
           : {}),
         ...(options?.replyToQuestion ? { reply_to_question: options.replyToQuestion } : {}),
       };
@@ -834,6 +864,50 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       // 目录入口只是追加：已经选过的路径不重复登记，也不打乱作者的选择顺序。
       if (current.includes(path)) return;
       get().setDraftContext(context?.selected_path ?? null, [...current, path]);
+    },
+
+    addClueReference(input, title) {
+      const key = entryKey(get().selectedId);
+      if (!get().workspaceId) return false;
+      const current = get().draftContexts[key]?.clue_references ?? [];
+      const same = current.find(item => item.clue_id === input.clue_id);
+      if (same && same.clue_revision === input.clue_revision) {
+        // 同一版本重复点击不叠加；补上这次带来的目标或报告身份。
+        const merged = { ...same, ...input, ...(title ? { title } : {}) };
+        if (JSON.stringify(merged) === JSON.stringify(same)) return true;
+        set(state => ({ draftContexts: { ...state.draftContexts, [key]: {
+          ...(state.draftContexts[key] ?? { selected_path: null, reference_paths: [] }),
+          clue_references: current.map(item => item.clue_id === same.clue_id ? merged : item),
+        } } }));
+        void persistDraft(key);
+        return true;
+      }
+      if (same) {
+        set({ error: `「${title}」已经有更新的版本：草稿里保留旧版本，确认后移除再引用新版本。` });
+        return false;
+      }
+      if (current.length >= 10) {
+        set({ error: "一次最多引用 10 条线索。建议：先移除部分引用再添加。" });
+        return false;
+      }
+      set(state => ({ draftContexts: { ...state.draftContexts, [key]: {
+        ...(state.draftContexts[key] ?? { selected_path: null, reference_paths: [] }),
+        clue_references: [...current, { ...input, ...(title ? { title } : {}) }],
+      } } }));
+      // 明确加入/移除引用立即落盘：作者可能马上刷新或换页，不依赖输入防抖。
+      void persistDraft(key);
+      return true;
+    },
+
+    removeClueReference(clueId, clueRevision) {
+      const key = entryKey(get().selectedId);
+      const current = get().draftContexts[key]?.clue_references ?? [];
+      const next = current.filter(item => !(item.clue_id === clueId && item.clue_revision === clueRevision));
+      set(state => ({ draftContexts: { ...state.draftContexts, [key]: {
+        ...(state.draftContexts[key] ?? { selected_path: null, reference_paths: [] }),
+        clue_references: next,
+      } } }));
+      void persistDraft(key);
     },
 
     addTextReference(input) {

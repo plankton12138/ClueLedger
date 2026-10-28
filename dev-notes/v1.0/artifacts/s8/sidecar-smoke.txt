@@ -1,0 +1,12 @@
+{
+  "exe": "C:\\Projects\\Agent\\myagent\\build-resources\\sidecar\\hastings-server.exe",
+  "exe_bytes": 25132819,
+  "port": 49398,
+  "boot_ms": 3671,
+  "health": {
+    "status": "ok"
+  },
+  "index_status": 200,
+  "index_has_product_name": true,
+  "state_created": false
+}

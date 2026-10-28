@@ -1,0 +1,411 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261028-124733-880502",
+    "started_at": "2026-10-28T12:47:33.880502+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "591da5214cdf49d7cc03f955755556c9ae4727c0",
+    "git_dirty": true,
+    "source_sha256": "e7f41b6d564431ebdc333a6895eea4b46540ea1b26627ed22dc880b1e7d78012",
+    "cases_sha256": "feab97a2449d0af78a0212cb5c30bf9bee1e47f16932ae52e655240380a6286e",
+    "suite": "v10-clue-smoke",
+    "jobs": [
+      {
+        "key": "v10_q01_envelope_gap--current--1",
+        "case": "v10_q01_envelope_gap",
+        "family": "推理核对",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 200,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261028-124733-880502",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "提示分区变体仅移除所选分区；no_compaction 禁用手动与自动摘要，保留轮内裁剪和溢出恢复；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 15
+  },
+  "summary": {
+    "planned": 1,
+    "executed": 1,
+    "counts": {
+      "fail": 1,
+      "not_run": 0
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": 131.563,
+    "duration_p95_seconds": 131.563,
+    "input_tokens": 9357,
+    "output_tokens": 34011,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 131.563,
+        "duration_p95_seconds": 131.563,
+        "input_tokens": 9357,
+        "output_tokens": 34011,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "推理核对": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 131.563,
+        "duration_p95_seconds": 131.563,
+        "input_tokens": 9357,
+        "output_tokens": 34011,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 131.563,
+        "duration_p95_seconds": 131.563,
+        "input_tokens": 9357,
+        "output_tokens": 34011,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v10_q01_envelope_gap": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "fail": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 131.563,
+        "duration_p95_seconds": 131.563,
+        "input_tokens": 9357,
+        "output_tokens": 34011,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "fail",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "fail",
+          "detail": {
+            "seq": 10919,
+            "at": "2026-10-28T12:49:46.589+08:00",
+            "event_version": 1,
+            "event_id": "c_3c356b439919:10919",
+            "conversation_id": "c_3c356b439919",
+            "type": "run_finished",
+            "turn_id": "t_c27ba932",
+            "status": "partial",
+            "recording": "no_change",
+            "changed_paths": [],
+            "commit": null,
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先列出文件清单并读取第一章正文。\n已读完冻结目标（第一章全文，53 字符，5 行）以及作为参考证据的第二、三、四、八章与两份小传、线索与真相文件。目标只有第一章，但推理要成立必须依赖的「林远接触信封」在任何已见正文里都没有出现，因此报 findings。\n保存报告的接口始终以「推理目标与受理时冻结的目标不一致」为由拒绝受理 `clue_analysis`，我试了多种目标写法（原文短语、「」包裹、完整请求句、未回收线索标签），均被同一条校验挡下，因此这轮无法通过工具发布。核对本身已经完成：冻结目标（第一章全文 53 字符）已全部读完，另外读了第二、三、四、八章与两份小传、线索/真相作为参考证据。下面按要求给出报告内容（含修正后的准确字符区间）。\n\n**目标**：核对「林远提前接触过信封原件」这组线索是否站得住\n**状态**：findings（有发现问题）\n\n---\n\n**1. premise_undisclosed｜certainty: supported**\n核心前提「林远接触过信封原件」在第一章正文完全没有出现。第一章只给出两件事：信封背面写着暗号；林远自称在客房且无人证实。没有一句写到林远看见、拿过、读过这只信封，也没交代信封由谁持有、放在哪。\n- 正文/0001 雨夜.md（digest a248f006d1211d0d2c19bd786fdb14bc1b13cafa8454760a9d3aad71778e2f45，6–30）：「雨已经下了三天。信封背面写着接头暗号：青鸟归巢。」\n- 同上（31–52）：「林远声称案发时自己一直在客房，尚无人证实。」\n- 小传只说明动机（设定集/角色小传/林远.md，digest b45303013d27e4981e2fbedf8dcceb788e042edd44ebaca7b475c1077ea50582，6–25）：「身份：侦探。调查动机：寻找失踪的弟弟。」——不是已交代的前提。\n- 建议：第一章内补一个读者可见的具体动作或痕迹（如林远指认封口折法、说出只有拿在手上才能发现的细节）；若不在此章落实，就把该推理标记为「未交代」。\n\n**2. inference_gap｜certainty: supported**\n从「信封背面写着暗号」推不到「林远提前接触过原件」。缺的连接有三处：谁把信封带到现场、暗号写给谁看、林远如何知道「青鸟归巢」。且「原件」预设了抄件/转述本这一对照物，而正文另有一处暗号载体（纸条），从未说明与信封是否同一件；「提前」也没有时间锚点，第一章未交代案发时刻。\n- 正文/0001 雨夜.md（同上，6–30）：「雨已经下了三天。信封背面写着接头暗号：青鸟归巢。」\n- 正文/0003 书房.md（digest b340f08a3728364c1c6ad9d1a9560a181330ca913eb4b982a982133bc2316c66，13–23）：「纸条上的暗号：待补。」\n- 建议：补一个可验证的中间环节（某人说暗号是听林远转述，或信封上留下只能由林远造成的痕迹），并用一句话点明纸条与信封是同一件／两件，同时给出案发时间点使「提前」可判定。\n\n**3. alternative_open｜certainty: suspected**\n未排除的解释：暗号可以是他人（如管家）转述或抄给林远的，林远只听过说法而从未见实物；也可能是他人书写或放置信封，与林远无关。第一章把暗号当既定事实直接写出，却没交代信息如何到林远（乃至读者）手里。\n- 正文/0001 雨夜.md（同上，6–30）：「雨已经下了三天。信封背面写着接头暗号：青鸟归巢。」\n- 设置集/角色小传/林远.md（同上，6–25）：「身份：侦探。调查动机：寻找失踪的弟弟。」\n- 说明：若作者刻意保持开放，这属于预留，不算错；若要读者认下「接触过原件」，需在正文排掉转述与抄件两条路（例如林远凭纸张手感、封蜡缺口作证，而旁人证明此前只口头提过暗号）。\n\n**4. counter_evidence｜certainty: suspected**\n第一章有一句与目标张力明显的自述：林远「一直在客房」。若成立，这段时间他没有接触信封的机会；但正文未界定「一直」的时段（是否含案发前），且同句已注明「尚无人证实」，这只是说法、不是客观事实——既不能当反证，也不能反过来当已确立的不在场证明使用。\n- 正文/0001 雨夜.md（同上，31–52）：「林远声称案发时自己一直在客房，尚无人证实。」\n\n**未覆盖部分**：无（冻结目标第一章已全文读完；第二、三、四、八章仅作参考证据，未作为检查目标）。**未改动任何文件**。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/report_saved",
+          "status": "fail",
+          "detail": "本轮没有发布线索核对报告"
+        },
+        {
+          "id": "step-1/cites_real_source",
+          "status": "fail",
+          "detail": "本轮没有发布线索核对报告"
+        },
+        {
+          "id": "step-1/gap_named",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "必须指出「知道暗号内容」与「提前接触过原件」之间的前提缺口（还可能从别处听到、 有人转述等），并给出可验证的补写方向；不得直接断言林远是凶手，也不得把设定里的 作者计划或真相文档当作读者已经看到的正文。",
+            "review": null
+          }
+        },
+        {
+          "id": "step-1/review_tools",
+          "status": "pass",
+          "detail": [
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ],
+            [
+              "list_files",
+              "read_file",
+              "search_text",
+              "save_review_report"
+            ]
+          ]
+        }
+      ],
+      "metrics": {
+        "model_requests": 15,
+        "model_finished": 15,
+        "tool_calls": 20,
+        "tool_errors": 12,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 15,
+        "fresh_input_tokens": 9357,
+        "input_tokens": 9357,
+        "output_tokens": 34011,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 86,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 5048,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 12226,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 17025,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 21631,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 26022,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 30064,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 34454,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 38822,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 43216,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 47621,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 52014,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 56398,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 60787,
+            "tools_json_chars": 3113
+          },
+          {
+            "system_chars": 1089,
+            "messages_json_chars": 65177,
+            "tools_json_chars": 3113
+          }
+        ],
+        "max_request_json_chars": 69379,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v10_q01_envelope_gap--current--1",
+      "case": "v10_q01_envelope_gap",
+      "title": "遗书内容不足以认定提前接触原件",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 131.563,
+      "evidence": "evidence/v10_q01_envelope_gap--current--1",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

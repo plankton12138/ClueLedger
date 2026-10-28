@@ -12,9 +12,21 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ROOT = Path(__file__).resolve().parents[1]
-VARIANTS = ("current", "no_index", "no_state", "no_history_facts", "no_compaction")
+VARIANTS = (
+    "current",
+    "presentation_refs",
+    "baseline",
+    "no_index",
+    "no_state",
+    "no_history_facts",
+    "no_compaction",
+)
 VARIANT_PARTS = {
     "current": set(),
+    # 只保留新呈现与精确引用，去掉专门的核对要求与冻结范围；用来衡量提示本身的价值。
+    "presentation_refs": set(),
+    # 0.9 基线：没有线索分区，也没有线索核对要求，只有通用检查。
+    "baseline": {"clues"},
     "no_index": {"index"},
     "no_state": {"state", "roster", "timeline", "clues", "glossary"},
     "no_history_facts": {"history"},
@@ -53,6 +65,9 @@ class Check(Spec):
         "retry_observed",
         "manual",
         "fault_observed",
+        "clue_report_status",
+        "clue_finding_kind",
+        "clue_evidence_quote",
     ]
     path: str = ""
     value: str = ""
@@ -88,6 +103,9 @@ class Check(Spec):
                 "idea_contains",
                 "compaction_count",
                 "retry_observed",
+                "clue_report_status",
+                "clue_finding_kind",
+                "clue_evidence_quote",
             }
             and not self.value
         ):
@@ -123,15 +141,40 @@ class IdeaSeed(Spec):
     tags: list[str] = Field(default_factory=list)
 
 
+class ClueSeed(Spec):
+    """评测初态的线索身份；``quote`` 给出时同时发布该章的正文依据。"""
+
+    title: str = Field(min_length=1)
+    chapter: int = Field(default=1, ge=1)
+    quote: str = ""
+
+
+class InferenceSeed(Spec):
+    """作者已保存的推理目标；步骤通过 ``key`` 引用它，不把目标交给模型自拟。"""
+
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    goal: str = Field(min_length=1)
+    intent: Literal["deduce", "suspect", "keep_open", "undecided"] = "deduce"
+    clue_titles: list[str] = Field(min_length=1)
+    premises: list[str] = Field(default_factory=list)
+    alternatives: list[str] = Field(default_factory=list)
+
+
 class Step(Spec):
     text: str = Field(min_length=1)
     selected: str | None = None
     references: list[str] = Field(default_factory=list)
     idea_references: list[str] = Field(default_factory=list)
     state_chapter: int | None = Field(default=None, ge=0)
-    purpose: Literal["chat", "update_chapter_index", "organize_materials", "expand_idea"] = "chat"
+    purpose: Literal[
+        "chat", "update_chapter_index", "organize_materials", "expand_idea", "review"
+    ] = "chat"
     index_paths: list[str] = Field(default_factory=list)
     material_scope: dict[str, Any] | None = None
+    #: 检查用途的目标章；与 clue_review 一起提交，范围由受理时冻结。
+    review_paths: list[str] = Field(default_factory=list)
+    #: 线索核对：引用 Case.inferences 的 key，并给出截止章与（可选）线索集合。
+    clue_review: dict[str, Any] | None = None
     external_updates: dict[str, str] = Field(default_factory=dict)
     allowed_changes: list[str] = Field(default_factory=list)
     required_changes: list[str] = Field(default_factory=list)
@@ -155,6 +198,7 @@ class Step(Spec):
         for path in [
             *self.references,
             *self.index_paths,
+            *self.review_paths,
             *self.external_updates,
             *self.allowed_changes,
             *self.required_changes,
@@ -178,6 +222,15 @@ class Step(Spec):
             from hastings.workspace.material_tasks import MaterialTaskScope
 
             MaterialTaskScope.model_validate(self.material_scope)
+        if self.purpose == "review":
+            if not self.review_paths:
+                raise ValueError("检查用途需要给出目标章")
+            if not isinstance(self.clue_review, dict) or not self.clue_review.get("inference"):
+                raise ValueError("检查用途要引用一个已保存的推理目标")
+            if self.selected or not set(self.review_paths):
+                raise ValueError("检查用途只提交目标章，不夹带当前章节")
+        elif self.clue_review is not None or self.review_paths:
+            raise ValueError("只有检查用途可以带核对范围")
         if len({c.id for c in self.checks}) != len(self.checks):
             raise ValueError("同一步的检查 ID 不得重复")
         return self
@@ -210,6 +263,9 @@ class Case(Spec):
     compact_before_steps: bool = False
     compaction_threshold: float | None = Field(default=None, gt=0, le=1)
     ideas: list[IdeaSeed] = Field(default_factory=list)
+    #: 线索身份与已保存目标；计划关联与核对都从这里取真实标识。
+    clues: list[ClueSeed] = Field(default_factory=list)
+    inferences: list[InferenceSeed] = Field(default_factory=list)
     steps: list[Step] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -220,10 +276,22 @@ class Case(Spec):
         if self.fail_first_read:
             safe_path(self.fail_first_read)
         idea_titles = {item.title for item in self.ideas}
+        clue_titles = {item.title for item in self.clues}
+        for inference in self.inferences:
+            unknown = [title for title in inference.clue_titles if title not in clue_titles]
+            if unknown:
+                raise ValueError(f"推理目标引用了未登记的线索：{unknown[0]}")
+        inference_keys = {item.key for item in self.inferences}
         for step in self.steps:
             unknown = [title for title in step.idea_references if title not in idea_titles]
             if unknown:
                 raise ValueError(f"引用了不存在的灵感：{unknown[0]}")
+            if step.clue_review is not None:
+                key = str(step.clue_review.get("inference") or "")
+                if key not in inference_keys:
+                    raise ValueError(f"核对引用了未保存的推理目标：{key}")
+        if len({item.key for item in self.inferences}) != len(self.inferences):
+            raise ValueError("推理目标的 key 不得重复")
         return self
 
 

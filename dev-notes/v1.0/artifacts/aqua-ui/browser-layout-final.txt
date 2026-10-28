@@ -1,0 +1,32 @@
+
+[WebServer] (node:33360) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer] (!) outDir C:\Projects\Agent\myagent\data\test-tmp\aqua-ui-20261028\frontend-final is not inside project root and will not be emptied.
+[WebServer] Use --emptyOutDir to override.
+[WebServer] 
+
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+
+[WebServer] INFO:     Started server process [23128]
+[WebServer] INFO:     Waiting for application startup.
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8945 (Press CTRL+C to quit)
+
+
+Running 3 tests using 1 worker
+
+(node:34328) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/3] [workspace] › e2e\aqua-layout.spec.ts:18:1 › Aqua 写作布局、翻页和字号操作保留复古气泡及可达的发送位置
+[2/3] [workspace] › e2e\aqua-layout.spec.ts:67:1 › 模块列表与预览并列，缩窄和放大字号保留草稿及主操作
+[3/3] [workspace] › e2e\aqua-layout.spec.ts:100:1 › 故事资料入口恢复浏览位置，线索依据在宽屏并列、窄屏可返回
+  3 passed (32.0s)

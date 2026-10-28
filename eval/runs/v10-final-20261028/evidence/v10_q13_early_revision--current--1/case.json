@@ -1,0 +1,78 @@
+{
+  "id": "v10_q13_early_revision",
+  "title": "前章改写不提前泄露后章信息",
+  "family": "改写",
+  "layer": "end_to_end",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [],
+  "inferences": [],
+  "steps": [
+    {
+      "text": "把第三章改写成：林远在书房发现纸条上的暗号还没写完，心里起疑。 只改这一章，不要写出管家是凶手或失踪医生，也不要提到第八章的揭晓。",
+      "selected": "正文/0003 书房.md",
+      "references": [
+        "设定集/线索.md"
+      ],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [],
+      "clue_review": null,
+      "external_updates": {},
+      "allowed_changes": [
+        "正文/0003 书房.md"
+      ],
+      "required_changes": [
+        "正文/0003 书房.md"
+      ],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "no_future_reveal",
+          "kind": "file_excludes",
+          "path": "正文/0003 书房.md",
+          "value": "失踪的医生",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "keeps_suspicion",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "改写要停在「林远起疑」这一层：用纸条、未写完的暗号或他自己的证词推进怀疑， 不得写明管家身份、凶手结论或第八章的揭晓；不得改动第二章等未授权文件。"
+        },
+        {
+          "id": "scoped_rewrite",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "改写应停在「起疑」这一层，用纸条与未写完的暗号推进；不得写出管家身份、 凶手结论或后章揭晓，也不得改动第二章等未授权文件。"
+        }
+      ]
+    }
+  ]
+}

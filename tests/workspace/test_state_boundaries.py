@@ -122,9 +122,14 @@ async def test_publication_requires_actual_read_range(setup, tool):
     # 旧规则的缓存不能继续当作已验证状态使用；文件内容保留，读取按空降级。
     store = next(s for s in stores.values() if s.entries())
     old = json.loads(store.file.read_text(encoding="utf-8"))
-    old["recipe_version"] = 1
+    old["recipe_version"] = 999 if tool == "save_clues" else 1
     store.file.write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
-    assert store.entries() == ()
+    if tool == "save_clues":
+        # 1.0 线索包含不可丢弃的身份与关系，未知格式不能按空覆盖。
+        with pytest.raises(WorkspaceError, match="CLUE_STATE_FAILED"):
+            store.entries()
+    else:
+        assert store.entries() == ()
 
 
 @pytest.mark.anyio

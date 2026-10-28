@@ -1,8 +1,8 @@
 # 1.0 分模块实现示例
 
-日期：2026-10-27。状态：**评审用示例，未接入业务**。
+日期：2026-10-27。状态：**评审用示例；S1—S4 的实际实现见阶段记录，S5—S6 示例尚未接入业务**。
 对应职责见[开发计划](development-plan.md)，完整数据和接口以[数据契约](data-and-recovery.md)、[接口契约](api-and-frontend.md)为准。
-以下重点展示容易出错的边界；HTTP装配、完整记录校验、跨进程锁工厂和实际模型调用在实施阶段接入。
+以下重点展示容易出错的边界；S1—S4 已有生产模块，S5—S6 的 HTTP 装配、完整记录校验与报告发布仍在实施阶段接入。
 Python段落按本页顺序共享类型；前端段落分别为独立模块。示例检查不代替生产验收。
 
 ## 1. 领域：观察、来源与引用
@@ -45,44 +45,28 @@ class ClueReference:
     report_id: str | None = None
 ```
 
-## 2. 旧记录身份迁移
+## 2. 当前账本初始化
 
-仅迁移旧版本已按文字归为同组的记录。新建线索绝不调用这个按文字归组的兼容函数。
-本函数只构建候选；完整迁移还需复制并核对覆盖、保留备份，最终与本次操作一次提交。
+只在作者明确发布记录时创建当前账本。旧数据不参与初始化，不生成旧 ID 别名，也不保留迁移备份。
+缺失或已弃用的第 1 版使用空快照；第 2 版损坏必须报错，不按空覆盖。
 
 ```python
-# example: clue_migration.py
+# example: clue_initialization.py
 from copy import deepcopy
-from hashlib import sha1
 from collections.abc import Callable, Mapping, Sequence
 
-def migrate_legacy_identity(
-    rows: Sequence[Mapping[str, object]],
-    create_id: Callable[[], str],
-) -> tuple[dict[str, dict[str, object]], list[dict[str, object]], dict[str, str]]:
-    clues: dict[str, dict[str, object]] = {}
-    contributions: list[dict[str, object]] = []
-    aliases: dict[str, str] = {}
-    by_old_key: dict[str, str] = {}
-    for raw in rows:
-        key = str(raw.get("clue", "")).strip()
-        if not key:
-            raise ValueError("旧线索缺少描述，迁移不能跳过后覆盖原文件")
-        if key not in by_old_key:
-            clue_id = create_id()
-            if clue_id in clues:
-                raise ValueError("线索身份生成器返回重复标识")
-            by_old_key[key] = clue_id
-            clues[clue_id] = {"clue_id": clue_id, "title": key, "identity": "legacy_unverified"}
-            aliases[sha1(("clues\x1f" + key).encode("utf-8")).hexdigest()[:16]] = clue_id
-        contribution = deepcopy(dict(raw))
-        contribution["clue_id"] = by_old_key[key]
-        contributions.append(contribution)
-    return clues, contributions, aliases
+def initialize_ledger(create_id: Callable[[str], str]) -> dict[str, object]:
+    return {
+        "schema_version": 2,
+        "recipe_version": 1,
+        "workspace_lineage": create_id("ws"),
+        "ledger_revision": create_id("rev"),
+        "clues": {}, "contributions": {}, "coverage": {},
+        "design_links": {}, "inferences": {}, "reviews": {}, "requests": {},
+    }
 ```
 
-外层用标准UUID生成 clue_id，校验原记录证据与版本；ValueError 转为统一迁移错误。
-不将无法解释的旧条目静默丢弃，不因格式迁移调用模型补真相。
+初始化、当前操作和请求回执在同一次原子发布中写入；纯读取不调用此函数。
 
 ## 3. 来源定位：指纹、换行与区间
 
@@ -122,7 +106,7 @@ def resolve_anchor(raw: bytes, anchor: Anchor) -> Location:
 ## 4. 存储：查重、版本与原子发布
 
 本例展示已存在的新账本的关键写事务。`locked` 必须由应用提供跨进程互斥；
-`validate` 必须校验完整账本和关系，不能以简单“JSON可解析”代替。初始化和迁移走同一锁定服务。
+`validate` 必须校验完整账本和关系，不能以简单“JSON可解析”代替。初始化与后续写入走同一锁定服务。
 
 ```python
 # example: clue_store.py
@@ -178,7 +162,7 @@ class ClueFileStore:
             return deepcopy(result)
 ```
 
-实际记录校验应以专门模型实现，未知格式报明确的 schema 错误；迁移不能在读失败分支初始化空文件。
+实际记录校验应以专门模型实现，未知格式报明确的 schema 错误；当前格式不能在读失败分支初始化空文件。
 request_key、目标和版本由业务服务登记；HTTP与模型工具共用 mutate，不各写一份发布逻辑。
 新贡献与 coverage 在同一个 update 内修改，从而一次提交。
 
@@ -467,4 +451,5 @@ select_by_fixture 由评测器映射生产服务返回的实际ID；rubric留在
 - JSON与YAML示意可解析；新评测action尚未接入。根README和当前0.9.0包声明未因本轮计划调整而修改。
 
 以上仅是文档与示例检查，不包含完整记录校验器、跨进程锁、生产接口、浏览器业务、在线模型或桌面验收。
-S0—S8均待实施，正式验收状态仍见验收文档的待执行约定。
+上述记录对应计划制定时的示例检查。当前 S0—S4 已实施，生产模块与实际验证见
+[S1 记录](notes/S1-clue-ledger.md)、[S2 记录](notes/S2-source-locations.md)、[S3 记录](notes/S3-chapter-clues.md)、[S4 记录](notes/S4-clue-design.md)；其余阶段和正式发布仍见[验收状态](acceptance.md)。

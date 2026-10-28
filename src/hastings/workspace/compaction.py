@@ -110,6 +110,8 @@ class CompactionRecord:
     prompt_version: int = 1
     estimated_before: int = 0
     estimated_after: int = 0
+    #: 被整理轮次里引用的线索身份与版本；保留标识，不当作原文依据。
+    clue_references: tuple[dict[str, object], ...] = field(default_factory=tuple)
     request_operation_id: str = ""
     reason: str = "manual"
     created_at: str = ""
@@ -124,6 +126,11 @@ class CompactionRecord:
                 for item in self.items
             ),
         )
+        object.__setattr__(
+            self,
+            "clue_references",
+            tuple(dict(item) for item in self.clue_references if isinstance(item, Mapping)),
+        )
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -136,6 +143,7 @@ class CompactionRecord:
             "previous_id": self.previous_id,
             "summary": self.summary,
             "items": [item.as_dict() for item in self.items],
+            "clue_references": [dict(item) for item in self.clue_references],
             "model": self.model,
             "prompt_version": self.prompt_version,
             "estimated_before": self.estimated_before,
@@ -152,6 +160,7 @@ class CompactionRecord:
             return None
         try:
             items = raw.get("items")
+            raw_refs = raw.get("clue_references")
             return cls(
                 compaction_id=str(raw["compaction_id"]),
                 kind=str(raw.get("kind") or "session"),  # type: ignore[arg-type]
@@ -164,6 +173,11 @@ class CompactionRecord:
                 items=tuple(
                     item if isinstance(item, SummaryItem) else SummaryItem(**item)
                     for item in (items if isinstance(items, list) else [])
+                ),
+                clue_references=tuple(
+                    dict(item)
+                    for item in (raw_refs if isinstance(raw_refs, list) else [])
+                    if isinstance(item, Mapping)
                 ),
                 model=str(raw.get("model") or ""),
                 prompt_version=int(raw.get("prompt_version") or 1),
@@ -230,16 +244,37 @@ def active_compaction(
 
 def summary_message(record: CompactionRecord) -> UserMessage:
     """摘要作为一条带明确标识的应用历史消息，不提升为系统指令。"""
-    return UserMessage(content=summary_text(record.summary, record.items))
+    return UserMessage(
+        content=summary_text(record.summary, record.items, record.clue_references)
+    )
 
 
-def summary_text(summary: str, items: Sequence[SummaryItem]) -> str:
+def summary_text(
+    summary: str,
+    items: Sequence[SummaryItem],
+    clue_references: Sequence[dict[str, object]] = (),
+) -> str:
     lines = [SUMMARY_PREFIX + summary.strip()]
     for item in items:
         line = f"- [{','.join(item.source_event_ids)}] {item.kind}：{item.text}"
         if item.quote:
             line += f"；原话：{item.quote}"
         lines.append(line)
+    if clue_references:
+        # 引用身份由应用记录，不依赖摘要模型有没有提到；也不是当前原文依据。
+        lines.append(
+            "- 曾被引用的线索（身份与版本，不是原文依据；需要时重新读取当前正文核对）："
+        )
+        for row in clue_references:
+            parts = [
+                f"`{row.get('clue_id')}`@{row.get('clue_revision')}",
+                f"第 {row.get('browse_as_of_chapter')} 章截止",
+            ]
+            if row.get("inference_id"):
+                parts.append(f"目标 `{row.get('inference_id')}`@{row.get('inference_revision')}")
+            if row.get("report_id"):
+                parts.append(f"报告 `{row.get('report_id')}`")
+            lines.append("  - " + "；".join(parts))
     return "\n".join(lines)
 
 
@@ -406,6 +441,7 @@ def build_candidate(
     digest: str,
     previous_id: str = "",
     reason: str = "manual",
+    clue_references: Sequence[dict[str, object]] = (),
     prompt_version: int = 1,
     created_at: str = "",
     count: Callable[[str], int] = count_tokens,
@@ -422,6 +458,7 @@ def build_candidate(
         previous_id=previous_id,
         summary=parsed.summary,
         items=parsed.items,
+        clue_references=tuple(clue_references),
         model=model,
         prompt_version=prompt_version,
         estimated_before=plan.tokens_before,

@@ -16,7 +16,7 @@ from collections.abc import Mapping
 __all__ = ["WorkspaceError", "status_for_code"]
 
 #: 需要显式给出 403 的错误码：尾缀规则只能推出 404/409/500，访问被拒不属于其中任何一种。
-_FORBIDDEN_CODES = frozenset({"MODULE_ACCESS_DENIED", "IDEA_ACCESS_DENIED"})
+_FORBIDDEN_CODES = frozenset({"MODULE_ACCESS_DENIED", "IDEA_ACCESS_DENIED", "CLUE_ACCESS_DENIED"})
 
 
 class WorkspaceError(Exception):

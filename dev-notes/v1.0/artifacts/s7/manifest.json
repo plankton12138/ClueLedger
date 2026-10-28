@@ -1,0 +1,132 @@
+{
+  "completed_at": "2026-10-28T13:51:40+08:00",
+  "scope": "S7 verification: acceptance matrix gaps, recovery boundaries, full browser flow, online clue-review evaluation and variant comparison",
+  "runtime_version": "0.9.0",
+  "clue_schema_version": 2,
+  "head": "591da5214cdf49d7cc03f955755556c9ae4727c0",
+  "checks": [
+    {
+      "command": "uv run pytest -q",
+      "exit_code": 0,
+      "result": "1315 passed, 1 existing Starlette deprecation warning",
+      "evidence": "backend.txt"
+    },
+    {
+      "command": "npm test -- --no-file-parallelism",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "327 passed in 30 files",
+      "evidence": "frontend-tests.txt"
+    },
+    {
+      "command": "uv run ruff check src tests eval/harness",
+      "exit_code": 0,
+      "result": "all checks passed",
+      "evidence": "static-checks.txt"
+    },
+    {
+      "command": "uv run mypy",
+      "exit_code": 0,
+      "result": "no issues in 134 source files",
+      "evidence": "type-checks-backend.txt"
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "evidence": "type-checks-frontend.txt"
+    },
+    {
+      "command": "npx playwright test e2e/clue-workflow.spec.ts e2e/clue-review.spec.ts e2e/clue-reference.spec.ts --project=workspace",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "9 passed; desktop and 390px, no model request",
+      "evidence": "browser-s7.txt"
+    },
+    {
+      "command": "uv run python -m eval run --suite v10-clue-core --repeat 3",
+      "exit_code": 0,
+      "result": "first pass 33 attempts exposed 2 product defects; after fixes 33/33 attempts pass with human review",
+      "evidence": "eval-core-console.txt"
+    },
+    {
+      "command": "uv run python -m eval run --case v10_q03_plan_not_text --case v10_q13_early_revision --repeat 3",
+      "exit_code": 0,
+      "result": "6/6 pass after evidence rule and case fix",
+      "evidence": "eval-fixes-console.txt"
+    },
+    {
+      "command": "uv run python -m eval run (5 evidence cases, repeat 3)",
+      "exit_code": 0,
+      "result": "15/15 pass, chapter-only evidence",
+      "evidence": "eval-evidence-console.txt"
+    },
+    {
+      "command": "uv run python -m eval run --variant presentation_refs",
+      "exit_code": 1,
+      "result": "0/3 completed: no report published, 8-18 tool errors per attempt",
+      "evidence": "eval-variant-console.txt"
+    },
+    {
+      "command": "uv run python -m eval run --variant baseline",
+      "exit_code": 0,
+      "result": "2/2 writing cases pass; review cases structurally unavailable",
+      "evidence": "eval-baseline-console.txt"
+    },
+    {
+      "command": "uv run python scripts/measure_clue_scale.py",
+      "exit_code": 0,
+      "result": "100 chapters / 500 clues / 20 reports: list 199.7ms, detail 186.7ms, report 135.0ms (median)",
+      "evidence": "perf.json"
+    }
+  ],
+  "evaluation": {
+    "model": "deepseek-flash",
+    "runs": {
+      "first_core": "eval/runs/context-20261028-130204-216102",
+      "fix_rerun": "eval/runs/context-20261028-131927-641994",
+      "evidence_rerun": "eval/runs/context-20261028-132153-748206",
+      "presentation_refs": "eval/runs/context-20261028-132947-165160",
+      "baseline": "eval/runs/context-20261028-133604-843888"
+    },
+    "human_reviews": [
+      "reviews-run-a.json",
+      "reviews-run-b.json",
+      "reviews-run-c.json",
+      "reviews-smoke.json"
+    ],
+    "tokens": {
+      "first_core": {
+        "input": 123537,
+        "output": 176246
+      },
+      "fix_rerun": {
+        "input": 15363,
+        "output": 20442
+      },
+      "evidence_rerun": {
+        "input": 61735,
+        "output": 83002
+      },
+      "presentation_refs": {
+        "input": 22777,
+        "output": 79672
+      },
+      "baseline": {
+        "input": 2972,
+        "output": 5061
+      }
+    }
+  },
+  "not_executed": [
+    "online browser flow (clue-workflow-online.spec.ts) - needs model credentials in the browser service, deferred to S8",
+    "v10 Q09, Q10, Q14, Q15, Q16 semantic runs - declared in v10-clue-all, not run",
+    "desktop packaging, backup restore and dynamic port (DS01-DS05) - S8"
+  ],
+  "notes": [
+    "Two product defects were found only by the online run: the review prompt omitted the frozen inference id, and reports could cite settings/plan files as evidence.",
+    "The first-pass evidence is kept; re-runs happened after product fixes, not to cherry-pick results.",
+    "Reference excerpts are still not injected into the first request although the prompt says they are provided; recorded as a 0.9-era gap, not changed in S7.",
+    "The variant comparison is a single-attempt cost-bounded sample, not a semantic success rate."
+  ]
+}

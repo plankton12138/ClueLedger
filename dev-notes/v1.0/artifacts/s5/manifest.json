@@ -1,0 +1,78 @@
+{
+  "completed_at": "2026-10-28T10:13:41+08:00",
+  "scope": "S5 evidence-based inference review: frozen goal, report validation, ledger persistence, report reading and clue detail entry",
+  "runtime_version": "0.9.0",
+  "clue_schema_version": 2,
+  "recipe_version": 1,
+  "head": "591da5214cdf49d7cc03f955755556c9ae4727c0",
+  "checks": [
+    {
+      "command": "uv run pytest -q",
+      "exit_code": 0,
+      "result": "1298 passed, 1 existing Starlette deprecation warning",
+      "evidence": "backend.txt"
+    },
+    {
+      "command": "npm test -- --no-file-parallelism --reporter=dot",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "324 passed in 30 files",
+      "evidence": "frontend-tests.txt"
+    },
+    {
+      "command": "uv run ruff check src tests",
+      "exit_code": 0,
+      "result": "all checks passed",
+      "evidence": "static-checks.txt"
+    },
+    {
+      "command": "uv run mypy",
+      "exit_code": 0,
+      "result": "no issues in 133 source files",
+      "evidence": "type-checks-backend.txt"
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "evidence": "type-checks-frontend.txt"
+    },
+    {
+      "command": "npx playwright test e2e/clue-review.spec.ts --project=workspace",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "3 passed, zero retries; report scope, findings, source freshness, locator and narrow layout, no model request",
+      "evidence": "browser-s5.txt"
+    },
+    {
+      "command": "npm run build (Playwright webServer)",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "tsc and production build passed; existing large-chunk warning"
+    }
+  ],
+  "browser_environment": {
+    "port": 8931,
+    "data_dir": "data/test-tmp/e2e",
+    "project": "workspace",
+    "viewports": [
+      1440,
+      390
+    ],
+    "screenshots": [
+      "clue-review-1440.png",
+      "clue-review-390.png"
+    ]
+  },
+  "not_executed": [
+    "online semantic evaluation of review accuracy (S7)",
+    "discussion reference sending and compression retention (S6)",
+    "desktop packaging and release verification (S8)"
+  ],
+  "notes": [
+    "Clue reports live in the clue ledger reviews field; the generic 50-report list does not evict them.",
+    "Receipts use one request key per turn, so one turn publishes at most one clue report.",
+    "S5 also added a bounded retry when Windows briefly denies opening the ledger lock file.",
+    "TM04 (targets added or removed within the cutoff) still lacks a directory diff; tracked for S7."
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "v10_q03_plan_not_text--current--1/step-1/plan_is_not_text": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都指出计划里的「用途尚未说明」只是作者安排，正文没有读者可知的对应事实；证据只引用正文。",
+    "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q03_plan_not_text--current--1/step-1.json"
+  },
+  "v10_q03_plan_not_text--current--2/step-1/plan_is_not_text": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都指出计划里的「用途尚未说明」只是作者安排，正文没有读者可知的对应事实；证据只引用正文。",
+    "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q03_plan_not_text--current--2/step-1.json"
+  },
+  "v10_q03_plan_not_text--current--3/step-1/plan_is_not_text": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都指出计划里的「用途尚未说明」只是作者安排，正文没有读者可知的对应事实；证据只引用正文。",
+    "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q03_plan_not_text--current--3/step-1.json"
+  },
+  "v10_q13_early_revision--current--1/step-1/keeps_suspicion": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都停在林远起疑这一层，用未写完的暗号推进；未写管家身份或第八章揭晓。第一次把「雪停了」改成「雨还在下」，属同章内容调整，需作者确认是否接受。",
+    "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--1/step-1.json"
+  },
+  "v10_q13_early_revision--current--2/step-1/keeps_suspicion": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都停在林远起疑这一层，用未写完的暗号推进；未写管家身份或第八章揭晓。第一次把「雪停了」改成「雨还在下」，属同章内容调整，需作者确认是否接受。",
+    "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--2/step-1.json"
+  },
+  "v10_q13_early_revision--current--3/step-1/keeps_suspicion": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都停在林远起疑这一层，用未写完的暗号推进；未写管家身份或第八章揭晓。第一次把「雪停了」改成「雨还在下」，属同章内容调整，需作者确认是否接受。",
+    "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--3/step-1.json"
+  },
+  "v10_q13_early_revision--current--1/step-1/scoped_rewrite": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "只改第三章，未动其他文件；未出现「失踪的医生」。",
+    "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--1/step-1.json"
+  },
+  "v10_q13_early_revision--current--2/step-1/scoped_rewrite": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "只改第三章，未动其他文件；未出现「失踪的医生」。",
+    "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--2/step-1.json"
+  },
+  "v10_q13_early_revision--current--3/step-1/scoped_rewrite": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "只改第三章，未动其他文件；未出现「失踪的医生」。",
+    "evidence": "eval/runs/context-20261028-131927-641994/evidence/v10_q13_early_revision--current--3/step-1.json"
+  }
+}

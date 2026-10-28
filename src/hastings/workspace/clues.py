@@ -13,21 +13,24 @@
   即入账、面板显示原文依据、作者发现误判就让模型改或废弃。代价是误判会占预算，缓解是注入
   有固定上限且超期项排在最前。
 
-记录存作品状态目录的 ``clues.json``，不进作品 Git；埋设或回收的原文改过即失效。
+记录存作品状态目录的 ``clue-ledger.json``，不进作品 Git；只读写当前格式，旧记录不迁移。
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
+from uuid import uuid4
 
 from hastings.workspace.assembly import Exclusion
-from hastings.workspace.disclosure import EntryStatus, ObservedEvidence, check_evidence
+from hastings.workspace.clue_models import ClueEntry, ClueLedger, ClueStatus
+from hastings.workspace.clue_store import ClueLedgerStore
+from hastings.workspace.disclosure import EntryStatus, check_evidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
-from hastings.workspace.state_store import current_chapter, read_records, write_records
+from hastings.workspace.state_store import current_chapter
 
 __all__ = [
     "ClueEntry",
@@ -39,63 +42,11 @@ __all__ = [
     "publish_clues",
 ]
 
-ClueStatus = Literal["open", "resolved", "dropped"]
-
-RECORD_VERSION = 2
-RECIPE_VERSION = 2
-
 STATUS_LABEL: dict[ClueStatus, str] = {
     "open": "未回收",
     "resolved": "已回收",
     "dropped": "已废弃",
 }
-
-
-@dataclass(frozen=True, slots=True)
-class ClueEntry:
-    """一条线索：埋在哪一章、该在哪一章回收、现在什么状态。"""
-
-    clue: str
-    planted_chapter: int
-    due_chapter: int | None
-    status: ClueStatus
-    #: 支撑哪种可能；空表示只记了「有这回事」。不影响是否注入。
-    supports: str
-    evidence: ObservedEvidence
-    resolution_chapter: int | None = None
-    resolution_evidence: ObservedEvidence | None = None
-    #: 这条贡献是哪一章的整理结果；重建一章只替换该章的贡献。
-    source_chapter: int = 0
-
-    @property
-    def key(self) -> str:
-        return self.clue.strip()
-
-    def to_dict(self) -> dict[str, object]:
-        payload: dict[str, object] = {
-            "clue": self.clue,
-            "planted_chapter": self.planted_chapter,
-            "due_chapter": self.due_chapter,
-            "status": self.status,
-            "supports": self.supports,
-            "evidence": _evidence_dict(self.evidence),
-            "source_chapter": self.source_chapter,
-        }
-        if self.resolution_chapter is not None:
-            payload["resolution_chapter"] = self.resolution_chapter
-        if self.resolution_evidence is not None:
-            payload["resolution_evidence"] = _evidence_dict(self.resolution_evidence)
-        return payload
-
-
-def _evidence_dict(evidence: ObservedEvidence) -> dict[str, object]:
-    return {
-        "path": evidence.path,
-        "digest": evidence.digest,
-        "start": evidence.start,
-        "end": evidence.end,
-        "quote": evidence.quote,
-    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,36 +66,22 @@ class ClueState:
 
 
 class ClueStore:
-    """作品状态目录里的 ``clues.json``；同一句线索只留一条，后来的覆盖旧的。"""
+    """线索账本的兼容入口；稳定身份不依赖描述文字。"""
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
-        self.file = self.root / "clues.json"
+        self.ledger = ClueLedgerStore(self.root)
+        self.file = self.ledger.file
 
     def entries(self) -> tuple[ClueEntry, ...]:
-        items: list[ClueEntry] = []
-        for raw in read_records(
-            self.file,
-            record_version=RECORD_VERSION,
-            recipe_version=RECIPE_VERSION,
-            key="entries",
-        ):
-            parsed = _entry_from_payload(raw)
-            if parsed is not None:
-                items.append(parsed)
-        return tuple(items)
+        return self.ledger.read().entries()
 
     def replace(self, entries: tuple[ClueEntry, ...]) -> None:
-        merged = {item.key: item for item in self.entries()}
-        for item in entries:
-            merged[item.key] = item
-        write_records(
-            self.file,
-            prefix=".clues-",
-            record_version=RECORD_VERSION,
-            recipe_version=RECIPE_VERSION,
-            key="entries",
-            entries=[item.to_dict() for item in merged.values()],
+        self.ledger.publish(
+            entries,
+            source_chapter=None,
+            expected_revision=self.ledger.read().revision,
+            request_key="state_" + uuid4().hex,
         )
 
     def replace_source(self, source_chapter: int, entries: tuple[ClueEntry, ...]) -> None:
@@ -153,21 +90,18 @@ class ClueStore:
         同一线索被不同章节各写一份时，两份贡献都留在存储里；``build_clues`` 按
         章节顺序取最新的一份，作者侧不会看到重复行。
         """
-        kept = [item for item in self.entries() if item.source_chapter != source_chapter]
-        merged = {item.key: item for item in entries}
-        rows = [*kept, *merged.values()]
-        write_records(
-            self.file,
-            prefix=".clues-",
-            record_version=RECORD_VERSION,
-            recipe_version=RECIPE_VERSION,
-            key="entries",
-            entries=[item.to_dict() for item in rows],
+        self.ledger.publish(
+            tuple(replace(item, source_chapter=source_chapter) for item in entries),
+            source_chapter=source_chapter,
+            expected_revision=self.ledger.read().revision,
+            request_key="state_" + uuid4().hex,
         )
 
     def status(self, workspace: Workspace, entry: ClueEntry) -> EntryStatus:
         """埋设处与回收处都要对得上原文；任一失效即整条不采用。"""
         checks = [entry.evidence]
+        if entry.mention_evidence is not None:
+            checks.append(entry.mention_evidence)
         if entry.resolution_evidence is not None:
             checks.append(entry.resolution_evidence)
         for evidence in checks:
@@ -177,49 +111,14 @@ class ClueStore:
                 return "source_missing"
             if current != evidence.digest:
                 return "stale"
+        if entry.source_path and entry.source_digest:
+            try:
+                source = workspace.read(entry.source_path)
+            except WorkspaceError:
+                return "source_missing"
+            if source.digest != entry.source_digest:
+                return "stale"
         return "valid"
-
-
-def _entry_from_payload(raw: dict[str, object]) -> ClueEntry | None:
-    status = raw.get("status")
-    if status not in STATUS_LABEL:
-        return None
-    evidence = _evidence_from(raw.get("evidence"))
-    if evidence is None:
-        return None
-    try:
-        due = raw.get("due_chapter")
-        resolution_chapter = raw.get("resolution_chapter")
-        return ClueEntry(
-            clue=str(raw["clue"]),
-            planted_chapter=int(str(raw["planted_chapter"])),
-            due_chapter=int(str(due)) if due is not None else None,
-            status=status,
-            supports=str(raw.get("supports") or ""),
-            evidence=evidence,
-            resolution_chapter=(
-                int(str(resolution_chapter)) if resolution_chapter is not None else None
-            ),
-            resolution_evidence=_evidence_from(raw.get("resolution_evidence")),
-            source_chapter=int(str(raw.get("source_chapter") or 0)),
-        )
-    except (KeyError, TypeError, ValueError):
-        return None
-
-
-def _evidence_from(raw: object) -> ObservedEvidence | None:
-    if not isinstance(raw, dict):
-        return None
-    try:
-        return ObservedEvidence(
-            path=str(raw["path"]),
-            digest=str(raw["digest"]),
-            start=int(str(raw["start"])),
-            end=int(str(raw["end"])),
-            quote=str(raw["quote"]),
-        )
-    except (KeyError, TypeError, ValueError):
-        return None
 
 
 def publish_clues(
@@ -228,29 +127,44 @@ def publish_clues(
     entries: Sequence[ClueEntry],
     *,
     source_chapter: int | None = None,
+    expected_revision: str | None = None,
+    request_key: str | None = None,
+    task_id: str = "",
+    allowed_ids: Sequence[str] | None = None,
+    preflight: Callable[[], None] | None = None,
 ) -> tuple[ClueEntry, ...]:
     """整批发布：任一条不过整批不写，避免半份台账被当成完整清单。
 
     ``source_chapter`` 是这一批来自哪一章的整理结果：给出时只替换该章的贡献，
     空批表示这一章确认没有线索，移除旧贡献而不是把旧记录继续当当前。
     """
-    if not entries:
-        if source_chapter is None:
-            raise WorkspaceError(
-                code="STATE_EVIDENCE_INVALID",
-                where="clues.publish",
-                why="这一批没有线索",
-                fix="至少给出一条带原文依据的线索，或这一轮不登记",
-            )
-        store.replace_source(source_chapter, ())
-        return store.entries()
-    for entry in entries:
-        _check_entry(workspace, entry)
-    if source_chapter is None:
-        store.replace(tuple(entries))
-    else:
-        tagged = tuple(replace(item, source_chapter=source_chapter) for item in entries)
-        store.replace_source(source_chapter, tagged)
+    if not entries and source_chapter is None:
+        raise WorkspaceError(
+            code="STATE_EVIDENCE_INVALID",
+            where="clues.publish",
+            why="这一批没有线索",
+            fix="至少给出一条带原文依据的线索，或这一轮不登记",
+        )
+
+    def check() -> None:
+        if preflight is not None:
+            preflight()
+        for entry in entries:
+            _check_entry(workspace, entry)
+
+    tagged = tuple(
+        replace(item, source_chapter=source_chapter) if source_chapter is not None else item
+        for item in entries
+    )
+    store.ledger.publish(
+        tagged,
+        source_chapter=source_chapter,
+        expected_revision=expected_revision or store.ledger.read().revision,
+        request_key=request_key or "state_" + uuid4().hex,
+        task_id=task_id,
+        allowed_ids=allowed_ids,
+        preflight=check,
+    )
     return store.entries()
 
 
@@ -296,6 +210,8 @@ def _check_entry(workspace: Workspace, entry: ClueEntry) -> None:
             )
         check_evidence(workspace, entry.resolution_evidence, chapter=entry.resolution_chapter)
     check_evidence(workspace, entry.evidence, chapter=entry.planted_chapter)
+    if entry.mention_evidence is not None:
+        check_evidence(workspace, entry.mention_evidence, chapter=entry.source_chapter)
 
 
 def build_clues(
@@ -303,7 +219,14 @@ def build_clues(
 ) -> ClueState:
     """按当前章排出未回收线索；失效条目整条不采用，并说明退回了什么。"""
     current = current_chapter(workspace, as_of_chapter)
-    records = _merged_contributions(store.entries()) if store is not None else ()
+    # 先按贡献章筛选，再合并；不能用后章贡献的 supports 回填早章。
+    records = (
+        visible_contributions(store.entries(), current)
+        if store is not None and as_of_chapter is not None
+        else _merged_contributions(store.entries())
+        if store is not None
+        else ()
+    )
     usable: list[ClueEntry] = []
     warnings: list[str] = []
     dropped: list[str] = []
@@ -339,10 +262,23 @@ def _merged_contributions(entries: Sequence[ClueEntry]) -> tuple[ClueEntry, ...]
     """同一线索的多章贡献只保留最新一章的一份；旧章贡献仍留在存储里供追溯。"""
     latest: dict[str, ClueEntry] = {}
     for item in entries:
-        current = latest.get(item.key)
+        key = item.clue_id or item.key
+        current = latest.get(key)
         if current is None or item.source_chapter >= current.source_chapter:
-            latest[item.key] = item
+            latest[key] = item
     return tuple(latest.values())
+
+
+def visible_contributions(entries: Sequence[ClueEntry], as_of: int) -> tuple[ClueEntry, ...]:
+    return _merged_contributions(
+        tuple(
+            replace(item, status="open", resolution_chapter=None, resolution_evidence=None)
+            if item.resolution_chapter is not None and item.resolution_chapter > as_of
+            else item
+            for item in entries
+            if item.planted_chapter <= as_of and item.source_chapter <= as_of
+        )
+    )
 
 
 def _order(items: list[ClueEntry], current: int) -> list[ClueEntry]:
@@ -430,9 +366,12 @@ def _exclude_clue(
     )
 
 
-def clues_view(state: ClueState) -> dict[str, object]:
+def clues_view(
+    state: ClueState, *, ledger: ClueLedger | None = None
+) -> dict[str, object]:
     def row(item: ClueEntry) -> dict[str, object]:
         return {
+            "clue_id": item.clue_id,
             "clue": item.clue,
             "planted_chapter": item.planted_chapter,
             "due_chapter": item.due_chapter,
@@ -444,10 +383,34 @@ def clues_view(state: ClueState) -> dict[str, object]:
             "quote": item.evidence.quote,
         }
 
-    return {
+    payload: dict[str, object] = {
         "domain": "clues",
         "current_chapter": state.current_chapter,
         "entries": [row(item) for item in (*state.open, *state.closed)],
         "overdue": [item.key for item in state.overdue()],
         "warnings": list(state.warnings),
     }
+    if ledger is not None:
+        payload["design_links"] = [
+            {
+                "link_id": link.link_id,
+                "clue_id": link.clue_id,
+                "relation": link.relation,
+                "quote": link.quote,
+                "source_kind": link.source.kind,
+                "binding_id": link.binding_id,
+            }
+            for link in ledger.design_links.values()
+        ]
+        payload["inferences"] = [
+            {
+                "inference_id": row.inference_id,
+                "inference_revision": row.inference_revision,
+                "goal": row.goal,
+                "intent": row.intent,
+                "clue_ids": list(row.clue_ids),
+                "design_link_ids": list(row.design_link_ids),
+            }
+            for row in ledger.inferences.values()
+        ]
+    return payload

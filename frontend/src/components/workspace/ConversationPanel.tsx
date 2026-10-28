@@ -35,6 +35,8 @@ import ExpandedReplyDialog from "../chat/ExpandedReplyDialog";
 import { useChatScroll } from "../chat/useChatScroll";
 import ReferencePicker from "./ReferencePicker";
 import ConversationUsageBar from "./ConversationUsageBar";
+import { sourceTaskChapter } from "../../state/sourceLocation";
+import { Button } from "../ui/Button";
 
 function conversationLabel(item: Conversation, running: boolean): string {
   return running ? `${item.title}（进行中）` : item.title;
@@ -221,6 +223,7 @@ export default function ConversationPanel() {
   // 参考只影响这一轮的材料；顺序即作者选择顺序，取消选择不影响已经打开的文件。
   const references = draftContext?.reference_paths ?? [];
   const textReferences = draftContext?.text_references ?? [];
+  const clueReferences = draftContext?.clue_references ?? [];
   const toggleReference = (path: string) => {
     const next = references.includes(path)
       ? references.filter((item) => item !== path)
@@ -233,10 +236,11 @@ export default function ConversationPanel() {
     // 组件生成快照：当前阅读位置与参考、以及客户端看到的版本，一起交给受理。
     const context: ContextInput = {
       selected_path: openPath,
+      ...(sourceTaskChapter(workspaceId) !== undefined ? { state_chapter: sourceTaskChapter(workspaceId) } : {}),
       reference_paths: references,
       observed_digests: openFile && openFile.path === openPath ? { [openPath]: openFile.digest } : {},
     };
-    await send(draft, context.selected_path || context.reference_paths.length ? context : EMPTY_CONTEXT);
+    await send(draft, context.selected_path || context.reference_paths.length || context.state_chapter !== undefined ? context : EMPTY_CONTEXT);
   };
 
   const commitRename = async () => {
@@ -407,6 +411,17 @@ export default function ConversationPanel() {
             ))}
           </div>
         )}
+        {clueReferences.length > 0 && <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px]" aria-label="引用线索">
+          <span className="text-mute">本轮线索：</span>
+          {clueReferences.map(item => (
+            <span key={`${item.clue_id}:${item.clue_revision}`} data-clue-reference={item.clue_id}
+              className="inline-flex max-w-[14rem] items-center gap-1 rounded border border-row-edge px-1 py-0.5">
+              <span className="truncate" title={item.title || item.clue_id}>{item.title || "线索"}</span>
+              <button type="button" className="text-mute hover:text-fg" aria-label={`移除引用 ${item.title || item.clue_id}`}
+                onClick={() => useConversationsStore.getState().removeClueReference(item.clue_id, item.clue_revision)}>×</button>
+            </span>
+          ))}
+        </div>}
         {textReferences.length > 0 && <div className="text-reference-list" aria-label="引用选段">
           {textReferences.map(reference => <TextReferenceChip key={reference.id} reference={reference}
             onRemove={() => useConversationsStore.getState().removeTextReference(reference.id)} />)}
@@ -435,25 +450,25 @@ export default function ConversationPanel() {
             }
           }}
         />
-        <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="chat-send-row">
           <ConversationUsageBar
             workspaceId={workspaceId}
             conversationId={selectedId}
             refreshKey={entry.lastSeq}
           />
           {running ? (
-            <button className="btn btn-gray px-3 py-1 text-[11px]" disabled={stopping}
+            <Button disabled={stopping}
               onClick={() => void stop()}>
               {stopping ? "正在停止…" : "停止"}
-            </button>
+            </Button>
           ) : (
-            <button
-              className="btn btn-gold px-3 py-1 text-[11px]"
+            <Button
+              variant="primary"
               disabled={!canSend}
               onClick={() => void submit()}
             >
               发送
-            </button>
+            </Button>
           )}
         </div>
       </div>

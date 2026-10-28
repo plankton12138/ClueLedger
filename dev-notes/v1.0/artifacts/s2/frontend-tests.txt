@@ -1,0 +1,45 @@
+
+> hastings-frontend@0.9.0 test
+> vitest run --reporter=dot
+
+
+ RUN  v2.1.9 C:/Projects/Agent/myagent/frontend
+
+(node:21392) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/api/models.test.ts (11 tests) 22ms
+ ✓ src/components/workspace/activityRows.test.ts (14 tests) 22ms
+ ✓ src/api/contextUsage.test.ts (20 tests) 24ms
+ ✓ src/state/chatMessages.test.ts (32 tests) 25ms
+ ✓ src/state/layout.test.ts (14 tests) 14ms
+ ✓ src/api/workspace.test.ts (16 tests) 27ms
+ ✓ src/state/navigation.test.ts (8 tests) 9ms
+ ✓ src/state/materialTasks.test.ts (5 tests) 12ms
+ ✓ src/api/moduleLibrary.test.ts (22 tests) 71ms
+ ✓ src/state/ideas.test.ts (23 tests) 35ms
+ ✓ src/state/models.test.ts (13 tests) 18ms
+ ✓ src/state/sourceLocation.test.ts (7 tests) 11ms
+ ✓ src/state/workspace.test.ts (18 tests) 35ms
+ ✓ src/state/moduleLibrary.test.ts (22 tests) 146ms
+ ✓ src/state/conversations.test.ts (41 tests) 157ms
+ ✓ src/state/moduleEditor.test.ts (7 tests) 11ms
+ ✓ src/api/activity.test.ts (6 tests) 31ms
+ ✓ src/state/ideaActivity.test.ts (5 tests) 11ms
+ ✓ src/theme.test.ts (5 tests) 9ms
+ ✓ src/state/storyMaterials.test.ts (4 tests) 8ms
+ ✓ src/state/streamBatcher.test.ts (4 tests) 33ms
+(node:38424) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/components/chat/changePreview.test.ts (3 tests) 7ms
+ ✓ src/components/models/naming.test.ts (4 tests) 5ms
+ ✓ src/state/ideasSurface.test.ts (2 tests) 6ms
+ ✓ src/state/moduleContent.test.ts (2 tests) 7ms
+ ✓ src/components/workspace/useUnsavedChanges.test.ts (2 tests) 6ms
+ ✓ src/components/workspace/CharacterBadges.test.ts (1 test) 5ms
+ ✓ src/components/clues/SourceHighlight.test.tsx (5 tests) 39ms
+
+ Test Files  28 passed (28)
+      Tests  316 passed (316)
+   Start at  21:30:50
+   Duration  2.87s (transform 4.55s, setup 0ms, collect 9.39s, tests 805ms, environment 7ms, prepare 6.09s)
+

@@ -1,0 +1,92 @@
+{
+  "v10_q01_envelope_gap--current--1/step-1/gap_named": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都指出「知道暗号」到「接触原件」缺前提，给出可验证的补写方向；没有推出凶手，也没有把计划当正文。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q01_envelope_gap--current--1/step-1.json"
+  },
+  "v10_q01_envelope_gap--current--2/step-1/gap_named": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都指出「知道暗号」到「接触原件」缺前提，给出可验证的补写方向；没有推出凶手，也没有把计划当正文。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q01_envelope_gap--current--2/step-1.json"
+  },
+  "v10_q01_envelope_gap--current--3/step-1/gap_named": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都指出「知道暗号」到「接触原件」缺前提，给出可验证的补写方向；没有推出凶手，也没有把计划当正文。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q01_envelope_gap--current--3/step-1.json"
+  },
+  "v10_q02_key_witness--current--1/step-1/no_invention": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都止于「可能」，要求补钥匙用途、时间与空间连接；没有写成管家一定进过书房，也没有编造情节。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q02_key_witness--current--1/step-1.json"
+  },
+  "v10_q02_key_witness--current--2/step-1/no_invention": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都止于「可能」，要求补钥匙用途、时间与空间连接；没有写成管家一定进过书房，也没有编造情节。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q02_key_witness--current--2/step-1.json"
+  },
+  "v10_q02_key_witness--current--3/step-1/no_invention": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都止于「可能」，要求补钥匙用途、时间与空间连接；没有写成管家一定进过书房，也没有编造情节。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q02_key_witness--current--3/step-1.json"
+  },
+  "v10_q05_combined--current--1/step-1/combined_reasoning": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都按组合依据判断：两条各自不完整，一起也只能支持「有机会」，并说明机会不等于实施。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q05_combined--current--1/step-1.json"
+  },
+  "v10_q05_combined--current--2/step-1/combined_reasoning": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都按组合依据判断：两条各自不完整，一起也只能支持「有机会」，并说明机会不等于实施。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q05_combined--current--2/step-1.json"
+  },
+  "v10_q05_combined--current--3/step-1/combined_reasoning": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都按组合依据判断：两条各自不完整，一起也只能支持「有机会」，并说明机会不等于实施。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q05_combined--current--3/step-1.json"
+  },
+  "v10_q06_keep_open--current--1/step-1/keep_open_ok": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "开放目标下只报依据不足与缺前提，没有把「还有别的可能」当成必须修改的错误，也没有宣布答案。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q06_keep_open--current--1/step-1.json"
+  },
+  "v10_q06_keep_open--current--2/step-1/keep_open_ok": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "开放目标下只报依据不足与缺前提，没有把「还有别的可能」当成必须修改的错误，也没有宣布答案。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q06_keep_open--current--2/step-1.json"
+  },
+  "v10_q06_keep_open--current--3/step-1/keep_open_ok": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "开放目标下只报依据不足与缺前提，没有把「还有别的可能」当成必须修改的错误，也没有宣布答案。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q06_keep_open--current--3/step-1.json"
+  },
+  "v10_q08_future_premise--current--1/step-1/no_future": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都以第 3 章以前为准，明确说「医生/失踪」前提未出现，没有引用第八章揭晓。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q08_future_premise--current--1/step-1.json"
+  },
+  "v10_q08_future_premise--current--2/step-1/no_future": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都以第 3 章以前为准，明确说「医生/失踪」前提未出现，没有引用第八章揭晓。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q08_future_premise--current--2/step-1.json"
+  },
+  "v10_q08_future_premise--current--3/step-1/no_future": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "三次都以第 3 章以前为准，明确说「医生/失踪」前提未出现，没有引用第八章揭晓。",
+    "evidence": "eval/runs/context-20261028-132153-748206/evidence/v10_q08_future_premise--current--3/step-1.json"
+  }
+}

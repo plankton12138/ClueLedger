@@ -588,6 +588,7 @@ def test_conversation_ui_keeps_draft_references(tmp_path: Path) -> None:
             "selected_path": "正文/0001 雨夜.md",
             "reference_paths": ["正文/0001 雨夜.md"],
             "text_references": [],
+            "clue_references": [],
         }
     }
 

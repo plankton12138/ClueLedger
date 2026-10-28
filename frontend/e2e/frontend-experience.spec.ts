@@ -132,12 +132,12 @@ test("B05：A慢B快，迟到原文不会切回A", async ({ page, book }) => {
   await pending;
   await dialog.getByRole("button",{name:"返回列表",exact:true}).click();
   await dialog.getByRole("button", { name: new RegExp(`海上城市-${book.id}`) }).click();
-  await expect(dialog.getByText("终年起雾。", { exact: true })).toBeVisible();
+  await expect(dialog.locator(".module-preview").getByText("终年起雾。", { exact: true })).toBeVisible();
   const lateResponse = page.waitForResponse(response => response.url().includes(`/modules/${book.moduleId}/`) && response.url().endsWith("records/rain?start=0"));
   release(); await lateResponse;
   await page.evaluate(() => new Promise(requestAnimationFrame));
   await expect(dialog.getByRole("heading", { name: `海上城市-${book.id}` })).toBeVisible();
-  await expect(dialog.getByText("终年起雾。", { exact: true })).toBeVisible();
+  await expect(dialog.locator(".module-preview").getByText("终年起雾。", { exact: true })).toBeVisible();
 });
 
 test("B03：640px正文可达", async ({ page, book }) => {

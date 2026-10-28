@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>线簿 · 经典 OS X Aqua 原型</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif; color: #26333f; background: #e8edf2; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 100px; }
+    body { margin: 0; }
+    header { position: sticky; top: 0; z-index: 1; background: #f6f8fa; border-bottom: 1px solid #ccd4dc; }
+    .bar { max-width: 1320px; margin: auto; padding: 18px 28px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 19px; font-weight: 650; }
+    nav { display: flex; gap: 20px; flex-wrap: wrap; margin-left: auto; }
+    a { color: #2462a1; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    a:focus-visible { outline: 2px solid #2673ce; outline-offset: 5px; }
+    main { max-width: 1320px; margin: auto; padding: 28px; }
+    .scope { margin: 0 0 30px; color: #596875; font-size: 14px; line-height: 1.8; }
+    figure { margin: 0 0 48px; }
+    figcaption { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; margin-bottom: 14px; }
+    h2 { font-size: 20px; margin: 0; }
+    figcaption p { margin: 0; color: #596875; font-size: 14px; line-height: 1.8; }
+    img { display: block; width: 100%; height: auto; border: 1px solid #bdc9d4; border-radius: 6px; box-shadow: 0 8px 28px #263c5020; }
+    footer { color: #596875; font-size: 13px; padding: 0 0 24px; }
+    @media (max-width: 660px) { .bar, main { padding: 18px 14px; } nav { margin-left: 0; font-size: 14px; gap: 16px; } figcaption { gap: 6px; } h1 { font-size: 17px; } }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <h1>线簿 · 经典 OS X Aqua</h1>
+      <nav aria-label="原型图导航">
+        <a href="#writing">01 写作台</a>
+        <a href="#clues">02 线索与原文</a>
+        <a href="#library">03 模块库</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <p class="scope">2026-10-27 · 视觉探索，未定稿。示例内容与操作不代表已交付功能；点击图片查看原图。</p>
+    <figure id="writing">
+      <figcaption><h2>01 写作台</h2><p>章节、正文与对话并列；银灰控件与暖白正文区分开。</p></figcaption>
+      <a href="01-writing-desk.png" target="_blank" rel="noopener" aria-label="打开写作台原图"><img src="01-writing-desk.png" width="1586" height="992" alt="线簿经典 OS X Aqua 写作台：章节目录、正文与模型对话三栏。" fetchpriority="high"></a>
+    </figure>
+    <figure id="clues">
+      <figcaption><h2>02 线索与原文对照</h2><p>参照 1.0 计划：同页核对正文依据，单独折叠作者计划。</p></figcaption>
+      <a href="02-clue-evidence.png" target="_blank" rel="noopener" aria-label="打开线索与原文对照原图"><img src="02-clue-evidence.png" width="1586" height="992" alt="线索列表、所选线索的正文依据和右侧原文高亮对照。" loading="lazy"></a>
+    </figure>
+    <figure id="library">
+      <figcaption><h2>03 模块库</h2><p>自由内容模块，列表与文档预览并列，显示当前作品归属。</p></figcaption>
+      <a href="03-module-library.png" target="_blank" rel="noopener" aria-label="打开模块库原图"><img src="03-module-library.png" width="1586" height="992" alt="模块库：左侧作品归属、中间模块列表、右侧文档预览和添加操作。" loading="lazy"></a>
+    </figure>
+    <footer><a href="README.md">设计说明</a> · <a href="prompts.md">完整生成提示词</a></footer>
+  </main>
+</body>
+</html>
+

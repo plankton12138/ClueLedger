@@ -360,6 +360,8 @@ class AcceptedTurn:
     review_paths: tuple[str, ...] = ()
     #: 资料任务的冻结范围；普通写作与旧日志为空。
     material_scope: dict[str, object] | None = None
+    #: 线索核对的冻结范围；只有检查用途会带，旧日志为空。
+    clue_review: dict[str, object] | None = None
     #: 轮次来源：``writing``（写作台）或 ``materials``（故事资料页）。旧日志按写作处理。
     origin: str = "writing"
 
@@ -371,16 +373,24 @@ class DraftContext:
     selected_path: str | None = None
     reference_paths: tuple[str, ...] = ()
     text_references: tuple[dict[str, str], ...] = ()
+    #: 草稿里引用的线索身份与版本；只保存标识，发送时由服务端核对当前状态。
+    clue_references: tuple[dict[str, object], ...] = ()
 
     @property
     def empty(self) -> bool:
-        return self.selected_path is None and not self.reference_paths and not self.text_references
+        return (
+            self.selected_path is None
+            and not self.reference_paths
+            and not self.text_references
+            and not self.clue_references
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
             "selected_path": self.selected_path,
             "reference_paths": list(self.reference_paths),
             "text_references": list(self.text_references),
+            "clue_references": [dict(item) for item in self.clue_references],
         }
 
     @classmethod
@@ -406,10 +416,44 @@ class DraftContext:
             for item in paths:
                 if isinstance(item, str) and item and item not in references:
                     references.append(item)
+        clue_rows: list[dict[str, object]] = []
+        raw_clues = raw.get("clue_references")
+        if isinstance(raw_clues, list):
+            for item in raw_clues[:10]:
+                if not isinstance(item, dict):
+                    continue
+                clue_id = item.get("clue_id")
+                revision = item.get("clue_revision")
+                lineage = item.get("workspace_lineage")
+                chapter = item.get("browse_as_of_chapter")
+                names = (clue_id, revision, lineage)
+                if not all(isinstance(value, str) and value for value in names):
+                    continue
+                if isinstance(chapter, bool) or not isinstance(chapter, int) or chapter < 0:
+                    continue
+                clue_rows.append(
+                    {
+                        "workspace_lineage": lineage,
+                        "clue_id": clue_id,
+                        "clue_revision": revision,
+                        "browse_as_of_chapter": chapter,
+                        **{
+                            key: item[key]
+                            for key in ("inference_id", "inference_revision", "report_id")
+                            if isinstance(item.get(key), str) and item[key]
+                        },
+                        **(
+                            {"title": str(item["title"])[:200]}
+                            if isinstance(item.get("title"), str) and item["title"]
+                            else {}
+                        ),
+                    }
+                )
         return cls(
             selected_path=selected if isinstance(selected, str) and selected else None,
             reference_paths=tuple(references),
             text_references=tuple(text_references),
+            clue_references=tuple(clue_rows),
         )
 
 
@@ -513,6 +557,7 @@ class ConversationStore:
                 paths = event.get("index_paths")
                 review = event.get("review_paths")
                 scope = event.get("material_scope")
+                clue = event.get("clue_review")
                 return AcceptedTurn(
                     conversation_id=conversation.id,
                     turn_id=turn_id,
@@ -529,6 +574,7 @@ class ConversationStore:
                         tuple(str(item) for item in review) if isinstance(review, list) else ()
                     ),
                     material_scope=dict(scope) if isinstance(scope, dict) else None,
+                    clue_review=dict(clue) if isinstance(clue, dict) else None,
                     origin=str(event.get("origin") or "writing"),
                 )
         return None
@@ -553,6 +599,7 @@ class ConversationStore:
         index_paths: Sequence[str] = (),
         review_paths: Sequence[str] = (),
         material_scope: Mapping[str, object] | None = None,
+        clue_review: Mapping[str, object] | None = None,
         origin: str = "writing",
     ) -> AcceptedTurn:
         """建会话与受理首轮合成一步：只留下「至少有一条已受理提示」的正式会话。"""
@@ -602,6 +649,8 @@ class ConversationStore:
                 event["review_paths"] = list(review_paths)
             if material_scope is not None:
                 event["material_scope"] = dict(material_scope)
+            if clue_review is not None:
+                event["clue_review"] = dict(clue_review)
             if origin != "writing":
                 event["origin"] = origin
             self._publish(cid, (meta, event))
@@ -621,6 +670,7 @@ class ConversationStore:
                 tuple(index_paths),
                 tuple(review_paths),
                 dict(material_scope) if material_scope is not None else None,
+                dict(clue_review) if clue_review is not None else None,
                 origin,
             )
 
@@ -637,6 +687,7 @@ class ConversationStore:
         index_paths: Sequence[str] = (),
         review_paths: Sequence[str] = (),
         material_scope: Mapping[str, object] | None = None,
+        clue_review: Mapping[str, object] | None = None,
         origin: str = "writing",
     ) -> AcceptedTurn:
         """在已有会话里受理一轮；同一请求键重复提交返回原来那一轮。"""
@@ -665,6 +716,8 @@ class ConversationStore:
                 event["review_paths"] = list(review_paths)
             if material_scope is not None:
                 event["material_scope"] = dict(material_scope)
+            if clue_review is not None:
+                event["clue_review"] = dict(clue_review)
             if origin != "writing":
                 event["origin"] = origin
             record = self.append(conversation_id, event)
@@ -679,6 +732,7 @@ class ConversationStore:
                 purpose=purpose,
                 index_paths=tuple(index_paths),
                 review_paths=tuple(review_paths),
+                clue_review=dict(clue_review) if clue_review is not None else None,
             )
 
     # -- 事件 ---------------------------------------------------------------
@@ -1100,9 +1154,10 @@ class ConversationUiStore:
                 if text:
                     drafts[draft_target] = text
                 else:
-                    # 删除文字草稿时一并删除它携带的参考：不留没有文字的悬空引用。
+                    # 没有文字时，只有参考也为空才删除；只有引用的草稿仍然保留。
                     drafts.pop(draft_target, None)
-                    contexts.pop(draft_target, None)
+                    if draft_context is None or draft_context.empty:
+                        contexts.pop(draft_target, None)
             if set_draft_context and draft_target:
                 if draft_context is None or draft_context.empty:
                     contexts.pop(draft_target, None)
@@ -1131,8 +1186,12 @@ class ConversationUiStore:
                 if not isinstance(key, str):
                     continue
                 context = DraftContext.from_raw(value)
-                # 已选原文本身就是草稿内容；单独的文件路径仍沿用旧规则。
-                if key not in drafts and not context.text_references:
+                # 已选原文与线索引用本身就是草稿内容；单独的文件路径仍沿用旧规则。
+                if (
+                    key not in drafts
+                    and not context.text_references
+                    and not context.clue_references
+                ):
                     continue
                 if not context.empty:
                     contexts[key] = context

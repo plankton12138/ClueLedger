@@ -1,0 +1,20 @@
+{
+  "v10_q11_alternatives--current--1/step-1/three_ways": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "提出至少三种不同解释，逐项说明前提、正文细节、前三章验证与取舍；明确范围后仅读取前三章，没有使用后章真相。",
+    "evidence": "eval/runs/v10-q11-explicit-scope-20261028/evidence/v10_q11_alternatives--current--1/step-1.json"
+  },
+  "v10_q11_alternatives--current--2/step-1/three_ways": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "提出至少三种不同解释，逐项说明前提、正文细节、前三章验证与取舍；明确范围后仅读取前三章，没有使用后章真相。",
+    "evidence": "eval/runs/v10-q11-explicit-scope-20261028/evidence/v10_q11_alternatives--current--2/step-1.json"
+  },
+  "v10_q11_alternatives--current--3/step-1/three_ways": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "提出至少三种不同解释，逐项说明前提、正文细节、前三章验证与取舍；明确范围后仅读取前三章，没有使用后章真相。",
+    "evidence": "eval/runs/v10-q11-explicit-scope-20261028/evidence/v10_q11_alternatives--current--3/step-1.json"
+  }
+}

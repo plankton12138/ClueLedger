@@ -1,0 +1,85 @@
+{
+  "id": "v10_q07_suspect",
+  "title": "怀疑目标接受较弱依据",
+  "family": "推理核对",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "书房的纸条",
+      "chapter": 3,
+      "quote": "纸条上的暗号：待补。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "lin_visited",
+      "goal": "林远到过书房",
+      "intent": "suspect",
+      "clue_titles": [
+        "书房的纸条"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "以怀疑的标准核对「林远到过书房」。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0003 书房.md"
+      ],
+      "clue_review": {
+        "inference": "lin_visited",
+        "as_of_chapter": 3
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "cites_paper",
+          "kind": "clue_evidence_quote",
+          "path": "",
+          "value": "纸条上的暗号：待补。",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "proportionate",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须按「怀疑」的标准判断：可以认为现有依据偏弱但方向成立，并说明还缺什么； 不得要求达到定论级证据，也不得把怀疑直接写成已经确定的事实。"
+        }
+      ]
+    }
+  ]
+}

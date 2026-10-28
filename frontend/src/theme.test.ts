@@ -10,7 +10,7 @@ function contrast(a: string, b: string): number {
   const x = luminance(a), y = luminance(b);
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
-describe("iOS 6 浅色主题", () => {
+describe("经典 OS X Aqua 浅色主题", () => {
   it("基础控件的文字、状态和焦点满足对比目标", () => {
     const c = theme.colors.ui;
     for (const [fg, bg] of [[c.text, c.surface], [c.secondaryText, c.surfaceLow], [c.text, c.paper],
@@ -27,9 +27,9 @@ describe("iOS 6 浅色主题", () => {
     for (const background of [c.btnGoldHigh, c.btnGoldMid, c.btnGoldLow, c.btnGoldHoverHigh, c.btnGoldHoverLow]) expect(contrast(c.btnGoldText, background)).toBeGreaterThanOrEqual(4.5);
     for (const foreground of [c.fg, c.sub]) expect(contrast(foreground, c.selHigh)).toBeGreaterThanOrEqual(4.5);
   });
-  it("蓝色金属界面与独立正文纸面", () => {
-    expect(theme.colors.page).toBe("#E7EAEB");
-    expect(theme.colors.sheet).toBe("#F7F3E8");
+  it("银灰界面与独立正文纸面", () => {
+    expect(theme.colors.page).toBe(theme.colors.ui.canvas);
+    expect(theme.colors.sheet).toBe(theme.colors.ui.paper);
     expect(theme.colors.fg).not.toBe(theme.colors.page);
     expect(theme.colors.chromeLow).not.toBe(theme.colors.chromeHigh);
   });

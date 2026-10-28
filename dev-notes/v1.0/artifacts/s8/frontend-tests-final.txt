@@ -1,0 +1,47 @@
+
+> hastings-frontend@1.0.0 test
+> vitest run --no-file-parallelism
+
+
+ RUN  v2.1.9 C:/Projects/Agent/myagent/frontend
+
+ ✓ src/state/conversations.test.ts (44 tests) 159ms
+ ✓ src/state/chatMessages.test.ts (32 tests) 12ms
+ ✓ src/state/moduleLibrary.test.ts (22 tests) 138ms
+ ✓ src/state/ideas.test.ts (23 tests) 17ms
+ ✓ src/state/workspace.test.ts (18 tests) 16ms
+ ✓ src/api/workspace.test.ts (16 tests) 19ms
+ ✓ src/api/moduleLibrary.test.ts (22 tests) 43ms
+ ✓ src/components/workspace/activityRows.test.ts (14 tests) 16ms
+ ✓ src/api/contextUsage.test.ts (20 tests) 16ms
+ ✓ src/state/models.test.ts (13 tests) 10ms
+ ✓ src/api/models.test.ts (11 tests) 13ms
+ ✓ src/state/sourceLocation.test.ts (7 tests) 5ms
+(node:29564) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/state/layout.test.ts (14 tests) 8ms
+ ✓ src/state/materialTasks.test.ts (5 tests) 7ms
+ ✓ src/state/clues.test.ts (6 tests) 6ms
+ ✓ src/state/navigation.test.ts (8 tests) 6ms
+ ✓ src/state/ideaActivity.test.ts (5 tests) 5ms
+ ✓ src/api/activity.test.ts (6 tests) 18ms
+ ✓ src/state/moduleEditor.test.ts (7 tests) 5ms
+ ✓ src/state/storyMaterials.test.ts (4 tests) 7ms
+ ✓ src/theme.test.ts (5 tests) 6ms
+ ✓ src/components/clues/SourceHighlight.test.tsx (5 tests) 49ms
+ ✓ src/components/chat/changePreview.test.ts (3 tests) 4ms
+ ✓ src/state/streamBatcher.test.ts (4 tests) 21ms
+ ✓ src/components/workspace/useUnsavedChanges.test.ts (2 tests) 3ms
+(node:35124) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/state/ideasSurface.test.ts (2 tests) 3ms
+ ✓ src/components/models/naming.test.ts (4 tests) 2ms
+ ✓ src/state/moduleContent.test.ts (2 tests) 5ms
+ ✓ src/components/workspace/CharacterBadges.test.ts (1 test) 2ms
+ ✓ src/components/clues/sourceSelection.test.ts (2 tests) 2ms
+
+ Test Files  30 passed (30)
+      Tests  327 passed (327)
+   Start at  14:59:45
+   Duration  26.03s (transform 920ms, setup 0ms, collect 4.93s, tests 621ms, environment 5ms, prepare 3.56s)
+

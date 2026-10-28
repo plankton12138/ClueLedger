@@ -1,0 +1,14 @@
+{
+  "exe": "C:\\Projects\\Agent\\myagent\\build-resources\\sidecar\\hastings-server.exe",
+  "ports": [
+    52616,
+    65227
+  ],
+  "dynamic_port_changed": true,
+  "workspaces_after_restart": [
+    "f0c5298224319b74"
+  ],
+  "draft_after_restart": {
+    "new": "重启后要还在的草稿。"
+  }
+}

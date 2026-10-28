@@ -1,0 +1,160 @@
+{
+  "id": "v10_q16_full_loop",
+  "title": "核对后按建议补写并复查",
+  "family": "完整流程",
+  "layer": "end_to_end",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "信封上的暗号",
+      "chapter": 1,
+      "quote": "信封背面写着接头暗号：青鸟归巢。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "contact_again",
+      "goal": "林远提前接触过信封原件",
+      "intent": "deduce",
+      "clue_titles": [
+        "信封上的暗号"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "核对「林远提前接触过信封原件」，并给出最小补写建议。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0001 雨夜.md"
+      ],
+      "clue_review": {
+        "inference": "contact_again",
+        "as_of_chapter": 1
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "report_saved",
+          "kind": "clue_report_status",
+          "path": "",
+          "value": "findings",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        }
+      ]
+    },
+    {
+      "text": "按上一轮的建议补一处细节：让林远无意中提到「青鸟」后改口，只改第一章，其余不动。",
+      "selected": "正文/0001 雨夜.md",
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [],
+      "clue_review": null,
+      "external_updates": {},
+      "allowed_changes": [
+        "正文/0001 雨夜.md"
+      ],
+      "required_changes": [
+        "正文/0001 雨夜.md"
+      ],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "hint_added",
+          "kind": "file_contains",
+          "path": "正文/0001 雨夜.md",
+          "value": "青鸟",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "scoped",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "只补林远与暗号的联系，不宣布结论；不得写出凶手或后章揭晓，也不得改动其他文件。"
+        }
+      ]
+    },
+    {
+      "text": "用改后的第一章重新核对同一个目标。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0001 雨夜.md"
+      ],
+      "clue_review": {
+        "inference": "contact_again",
+        "as_of_chapter": 1
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "rereview",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须基于改后的正文重新判断：要么指出补写已补上部分缺口，要么说明还缺什么； 不得直接复制上一轮结论，也不得把补写当成已经证明。"
+        }
+      ]
+    }
+  ]
+}

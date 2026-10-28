@@ -1,0 +1,38 @@
+{
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13",
+    "machine": "AMD64"
+  },
+  "scale": {
+    "chapters": 100,
+    "clues": 500,
+    "reports": 20,
+    "build_seconds": 82.0
+  },
+  "catalog": {
+    "median_ms": 41.0,
+    "min_ms": 39.5,
+    "max_ms": 42.0
+  },
+  "clue_list_chapter": {
+    "median_ms": 191.3,
+    "min_ms": 183.6,
+    "max_ms": 219.4
+  },
+  "clue_list_search": {
+    "median_ms": 265.9,
+    "min_ms": 255.0,
+    "max_ms": 283.5
+  },
+  "clue_detail": {
+    "median_ms": 181.9,
+    "min_ms": 172.7,
+    "max_ms": 219.9
+  },
+  "review_report": {
+    "median_ms": 137.4,
+    "min_ms": 133.1,
+    "max_ms": 139.7
+  }
+}

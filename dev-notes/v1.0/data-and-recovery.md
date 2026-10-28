@@ -1,6 +1,6 @@
 # 1.0 数据、身份与恢复契约
 
-日期：2026-10-27。状态：**待实施**。本文是新增线索记录的数据单一出处。
+日期：2026-10-28。状态：**当前格式记录、模块精确修订与浏览器阅读状态恢复已通过自动验收；桌面端暂不纳入范围**。本文是新增线索记录的数据单一出处。
 阶段见[开发计划](development-plan.md)，请求字段见[接口与前端](api-and-frontend.md)。
 
 ## 1. 权威来源与存储取舍
@@ -16,19 +16,35 @@
 
 选择单一版本化 JSON 账本，原因是本版一次更新的数据有限，且按章贡献、覆盖和引用关系需要一起发布。
 不引入修订学习的记录数据库。账本包含不可随意丢弃的作者关系与稳定身份，不能再按纯派生缓存处理。
-其文件和迁移备份必须纳入状态备份、作品改名与删除；“清理可重建资料”不清除作者关系和检查历史。
+其文件必须纳入当前格式状态备份、作品改名与删除；“清理可重建资料”不清除作者关系和检查历史。
 
 ## 2. 账本结构
 
-格式 `schema_version=1`，生成规则 `recipe_version=1`，与产品版本独立。拟议结构：
+S1 实际记录见[实施说明](notes/S1-clue-ledger.md)：contribution 保存 contribution_id、observation_id、
+clue_id、source_path、source_digest、task_id、mode，以及兼容原字段的 content 对象。
+content 包含 source_chapter、埋设／回收、supports、mention_evidence 与对应原文依据；S3 接入 mode，不从标题猜测信息性质。
+identity 保存独立 clue_revision、创建来源与 first_chapter；清空本章贡献时身份仍保留。coverage 按 path 索引，并含 chapter 与 recipe_version。
+S3 的 mention_evidence 使用相同 path/digest/start/end/quote 结构，必须来自目标章、对应实际读取范围，
+并在发布前再次核对指纹与引文。mode 只标明本章主要观察；早章引文优先采用该章原贡献的性质，
+回收引文不继承另一段证词的性质，未分别登记时显示 unknown。每条引文独立验证，失效引文不计入 reader_seen。
+身份没有任何可见贡献时只显示“暂无正文依据”，不据此判定已经埋设或回收。
+新账本所有顶层集合必须存在，缺失字段按损坏报错。计划关联与推理目标已由 S4 扩展；
+核对报告和精确引用发送仍待 S5—S6，当前集合与单章重建不删除其中记录。
+
+S4 实际：`design_links` 与 `inferences` 已改为严格模型。计划关联保存 link_id、clue_id、来源（file 或四段模块引用）、
+绑定身份、区间、引文、关系说明及创建时间／轮次／账本修订；推理目标保存 goal、intent、1—10 条 clue_ids、
+必要前提、其他解释、design_link_ids 与自身修订。计划来源在写入时核对文件指纹或精确模块版本，
+模块升级或卸下后视图标为 detached，不自动重绑。移除计划关联会同步移除目标中的该依据并更新目标修订；
+模块原文与正文不变。创建计划身份不写贡献、覆盖或披露。
+
+格式 `schema_version=2`，生成规则 `recipe_version=1`，与产品版本独立。拟议结构：
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "recipe_version": 1,
   "workspace_lineage": "ws_opaque",
   "ledger_revision": "rev_opaque",
-  "legacy_aliases": {},
   "clues": {},
   "contributions": {},
   "coverage": {},
@@ -46,8 +62,8 @@
 | observation | observation_id、所在章、plant/mention/advance/resolve、信息性质、evidence_id |
 | lifecycle | 状态及有效章、依据或作者明确废弃来源；按浏览章计算，不能拿最终状态回填早章 |
 | coverage | 正文章节、实际指纹、found/empty/insufficient、任务、说明与规则版本 |
-| design_link | link_id、clue_id、来源完整引用、区间、原文引文、绑定身份、创建修订、关系说明 |
-| inference | inference_id、目标结论、目标意图、相关 clue_ids、前提与其他解释、作者请求来源、修订 |
+| design_link | link_id、clue_id、来源完整引用、区间、原文引文、binding_id、created_revision、创建时间与轮次、关系说明 |
+| inference | inference_id、inference_revision、目标结论、目标意图、相关 clue_ids、前提与其他解释、design_link_ids、创建时间与轮次、作者请求来源 |
 | review | report_id、inference_id、冻结目标与意图、线索修订、章界、目录清单、模块依赖、结果、未覆盖及来源 |
 | request | 操作种类、request_key、规范化负载指纹、已提交结果；不接受同键不同内容 |
 
@@ -62,20 +78,15 @@
 ledger_revision是整份账本的事务版本；clue_revision是条目相关内容版本，覆盖标题、贡献、计划和目标关系，
 不随无关线索或任务进度变化。受理时还要重新核对当前源指纹和有效性，不能仅比较存储中的revision。
 
-## 3. 稳定身份和旧格式迁移
+## 3. 当前格式和稳定身份
 
-- clue_id 为作品内不可变的随机标识；不能由标题、章节号或作者姓名生成。
-- workspace_lineage 首次显式持久化时创建，改名迁移状态后不变；复制作品正文默认获得新状态身份。
-- `clues.json` 版本 2 与旧 clues 域覆盖进入兼容读取器。纯 GET 返回旧视图和兼容 revision，不写文件、不运行模型。
-- 首次明确的整理、关联计划或创建推理操作，在锁内同时读取旧线索及旧覆盖，校验结构和指纹。
-- 为旧 key 的已有分组分配 clue_id，保存原资料 `_stable_id("clues", key)` 到新身份的别名。
-  旧 key 的历史同组语义保留并标为未核对身份，不推断新的同名关系。
-- 在内存构建完整新账本；迁移源保留只读备份；完整校验后以一次原子替换发布。
-- 客户端持有 `legacy:<源文件集合指纹>` 时，锁内核对源未变，再将迁移和本次操作一次提交。
-  返回 canonical clue_id 和新 revision；响应丢失可按原 request_key 找回结果，不再迁移或重复创建。
-- 新账本存在后，所有线索读取、整理和线索覆盖只使用新账本；旧文件不再作为回退或双写目标。
-  其他资料域仍沿用原覆盖文件。
-- 损坏、未知更高格式或迁移失败明确报错，保留原文件；不得退回空账本后覆盖。
+- 只使用 `clue-ledger.json` 当前第 2 版，不读取 `clues.json`，不导入通用覆盖文件中的旧线索行。
+- 第 1 版账本直接视为没有当前记录；纯 GET 不改磁盘，首次明确发布时创建全新第 2 版账本。
+- 不转换旧条目、不保留旧 ID 别名、不创建迁移备份、不恢复旧链接；旧记录需要从正文重新整理。
+- 缺失账本返回只读空快照 `empty`。只有显式写操作才创建 lineage、ID 和账本文件。
+- 当前格式账本损坏、字段缺失或未知更高格式明确报错，不当作空记录覆盖。
+- clue_id 为作品内不可变随机标识，不由标题或章号生成；改标题不改 ID。
+- workspace_lineage 首次显式保存时创建；作品改名移动整个状态目录后保持不变。
 
 新任务重建已知线索时从受理快照复用 ID。新描述同名不自动合并；关联不明确则报告身份疑问，
 保留未完成目标，作者可明确继续用某条线索或另建。纯讨论不建立空身份记录。
@@ -99,9 +110,13 @@ ledger_revision是整份账本的事务版本；clue_revision是条目相关内�
 新写入必须使用跨进程文件锁或同等互斥，在锁内读取、检查 ledger_revision、查重、校验再提交。
 临时文件同目录写入并 flush/fsync 后原子替换；替换失败保留旧文件，清理本次临时文件。
 工作区运行占用与账本锁分开：前者约束任务并发，后者保护短写事务；固定先占用、后账本锁的顺序。
-迁移、计划关联、报告发布和作者操作都走同一存储服务，不允许直接整份覆盖旧快照。
+初始化、计划关联、报告发布和作者操作都走同一存储服务，不允许直接整份覆盖旧快照。
 
 ## 5. 原文坐标与定位
+
+S2 实际实现见[来源定位](notes/S2-source-locations.md)：响应以 source.kind 判别 file/module，
+仅 valid 返回 start/end，其他状态保留 quote 并取消坐标。受管移动从成功文件事件解析；
+外部移动不搜索相似文件。当前格式账本才提供 evidence_id；本阶段不扩展旧来源 ID 迁移。
 
 正文来源：受管 path、真实字节 digest、规范化全文的 start/end、quote，左闭右开，`offset_unit=unicode_codepoint`。
 文本使用现有 `Workspace.read().text`，不是去掉元信息或渲染后的 DOM 文本。BOM、换行规范沿用现有解码。
@@ -161,7 +176,7 @@ certainty 继续为 supported/suspected，表示依据充分程度，不是线�
 服务端受理解析为不可变快照，包含实际来源、计划与检查范围；每次真实请求与该快照对应。
 
 加入引用只保存草稿，不发模型请求；保留已有输入、参考和对话归属。草稿按作品与会话保存在现有服务端 UI 状态，
-不依赖桌面动态端口的本地 origin。首次创建与续聊共享同一引用结构与请求键计算。
+不依赖浏览器本地 origin。首次创建与续聊共享同一引用结构与请求键计算。
 同一 request_key 的请求负载包含版本、范围、引用和目标；已受理重试返回原任务，不因材料后来变化重新调用模型。
 尚未受理而引用过期时返回冲突，保留草稿；不得静默替换为新版本发送。
 

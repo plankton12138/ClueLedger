@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useConversationsStore } from "../../state/conversations";
 import { useModuleLibraryStore } from "../../state/moduleLibrary";
 import { useModelsStore } from "../../state/models";
-import { navigate, parseHash, useWorkspacePage, type WorkspacePage } from "../../state/navigation";
+import { navigate, pageHash, parseHash, useWorkspacePage, type WorkspacePage } from "../../state/navigation";
 import { useIdeasSurfaceStore } from "../../state/ideasSurface";
 import { usePagePositions } from "../../state/pagePositions";
 import { useWorkspaceStore } from "../../state/workspace";
@@ -18,6 +18,7 @@ import DirectoryDialog from "./DirectoryDialog";
 import AppHeader from "./AppHeader";
 import WritingLayout from "./WritingLayout";
 import useUnsavedChanges from "./useUnsavedChanges";
+import { sourceTaskChapter, useSourceLocationStore } from "../../state/sourceLocation";
 
 export default function WorkspaceShell() {
   useUnsavedChanges();
@@ -59,6 +60,17 @@ export default function WorkspaceShell() {
   // 旧灵感路由只是打开同一个面板：`?entry=` 定位到具体记录，页面本身仍是写作页。
   const surfaceOpen = useIdeasSurfaceStore(state => state.open);
   const showIdeas = useIdeasSurfaceStore(state => state.show);
+  useEffect(() => {
+    if (!ready || !currentId || page?.kind !== "writing" || page.workspaceId !== currentId) return;
+    if (!page.sourceId) { useSourceLocationStore.getState().clear(); return; }
+    const taskChapter = page.taskChapter ?? sourceTaskChapter(currentId) ?? useWorkspaceStore.getState().file?.chapter_number ?? 0;
+    void useSourceLocationStore.getState().load(currentId, page.sourceId, page.asOfChapter ?? null, taskChapter);
+  }, [ready, currentId, page]);
+  useEffect(() => {
+    const source = useSourceLocationStore.getState();
+    if (source.workspaceId && source.workspaceId !== currentId) source.clear();
+    else if (page?.kind === "materials" && source.evidenceId && source.returnPage && pageHash(page) === pageHash(source.returnPage)) void source.back();
+  }, [currentId, page]);
   useEffect(() => {
     if (page?.kind !== "ideas" || !ready) return;
     showIdeas({ expanded: true, entryId: page.ideaId ?? null });
@@ -107,6 +119,11 @@ export default function WorkspaceShell() {
       <div className="workspace-page" hidden={!writing}><WritingLayout onOpen={() => setDirectory(true)} /></div>
       {currentId && rememberedMaterials && <div key={`${currentId}:materials`} className="workspace-page" hidden={!materials}>
         <StoryMaterialsPage workspaceId={currentId} section={rememberedMaterials.section} chapter={rememberedMaterials.chapter} order={rememberedMaterials.order} entryId={rememberedMaterials.entryId} onNavigate={navigate}
+          onLocateEvidence={evidenceId => {
+            const taskChapter = sourceTaskChapter(currentId) ?? useWorkspaceStore.getState().file?.chapter_number ?? 0;
+            useSourceLocationStore.getState().capture(rememberedMaterials, taskChapter);
+            navigate({ kind: "writing", workspaceId: currentId, sourceId: evidenceId, asOfChapter: rememberedMaterials.chapter ?? undefined, taskChapter });
+          }}
           onOpenSource={path => { void openPath(path).then(() => navigate({ kind: "writing", workspaceId: currentId })); }}
           onTakeToChat={path => { useConversationsStore.getState().addReference(path); void openPath(path).then(() => navigate({ kind: "writing", workspaceId: currentId })); }}
           onOpenActivity={() => void openDrawer()} />

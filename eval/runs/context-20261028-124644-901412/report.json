@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261028-124644-901412",
+    "started_at": "2026-10-28T12:46:44.901412+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "591da5214cdf49d7cc03f955755556c9ae4727c0",
+    "git_dirty": true,
+    "source_sha256": "6904c23d8933275048ccaac1c702a9372e2e0d4840848a89c81f3bf829a71919",
+    "cases_sha256": "feab97a2449d0af78a0212cb5c30bf9bee1e47f16932ae52e655240380a6286e",
+    "suite": "v10-clue-smoke",
+    "jobs": [
+      {
+        "key": "v10_q01_envelope_gap--current--1",
+        "case": "v10_q01_envelope_gap",
+        "family": "推理核对",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 200,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261028-124644-901412",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "提示分区变体仅移除所选分区；no_compaction 禁用手动与自动摘要，保留轮内裁剪和溢出恢复；公开对话和按需读取工具保留"
+  },
+  "summary": {
+    "planned": 1,
+    "executed": 0,
+    "counts": {
+      "not_run": 1
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": null,
+    "duration_p95_seconds": null,
+    "input_tokens": null,
+    "output_tokens": null,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "推理核对": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v10_q01_envelope_gap": {
+        "planned": 1,
+        "executed": 0,
+        "counts": {
+          "not_run": 1
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": null,
+        "duration_p95_seconds": null,
+        "input_tokens": null,
+        "output_tokens": null,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [],
+  "unexecuted": [
+    "v10_q01_envelope_gap--current--1"
+  ]
+}

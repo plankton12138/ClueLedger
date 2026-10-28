@@ -1,0 +1,416 @@
+{
+  "schema_version": 1,
+  "run_id": "context-20261028-144710-165601",
+  "started_at": "2026-10-28T14:47:10.165601+08:00",
+  "model": "deepseek-flash",
+  "connection_id": "eval-env",
+  "provider_api": "openai-completions",
+  "model_source": ".env",
+  "provider_mode": "product_worker",
+  "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+  "git_commit": "591da5214cdf49d7cc03f955755556c9ae4727c0",
+  "git_dirty": true,
+  "source_sha256": "7fec5eb0340939737ed4f23e2aca6d5ece4396a29358f4cb9b32c6c463dc7a22",
+  "cases_sha256": "d00cdecf7f8ed4dd6d13d32cb3ec9cc8f1f9b91a3438d50d12f0855500f5280d",
+  "suite": "v10-clue-all",
+  "jobs": [
+    {
+      "key": "v10_q01_envelope_gap--current--1",
+      "case": "v10_q01_envelope_gap",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q02_key_witness--current--1",
+      "case": "v10_q02_key_witness",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q03_plan_not_text--current--1",
+      "case": "v10_q03_plan_not_text",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q04_testimony--current--1",
+      "case": "v10_q04_testimony",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q05_combined--current--1",
+      "case": "v10_q05_combined",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q06_keep_open--current--1",
+      "case": "v10_q06_keep_open",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q07_suspect--current--1",
+      "case": "v10_q07_suspect",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q08_future_premise--current--1",
+      "case": "v10_q08_future_premise",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q09_flashback--current--1",
+      "case": "v10_q09_flashback",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q10_missing_target--current--1",
+      "case": "v10_q10_missing_target",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q11_alternatives--current--1",
+      "case": "v10_q11_alternatives",
+      "family": "构思",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q12_save_idea--current--1",
+      "case": "v10_q12_save_idea",
+      "family": "构思",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q13_early_revision--current--1",
+      "case": "v10_q13_early_revision",
+      "family": "改写",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q14_irrelevant_edit--current--1",
+      "case": "v10_q14_irrelevant_edit",
+      "family": "来源更新",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q15_insufficient--current--1",
+      "case": "v10_q15_insufficient",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q16_full_loop--current--1",
+      "case": "v10_q16_full_loop",
+      "family": "完整流程",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v10_q01_envelope_gap--current--2",
+      "case": "v10_q01_envelope_gap",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q02_key_witness--current--2",
+      "case": "v10_q02_key_witness",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q03_plan_not_text--current--2",
+      "case": "v10_q03_plan_not_text",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q04_testimony--current--2",
+      "case": "v10_q04_testimony",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q05_combined--current--2",
+      "case": "v10_q05_combined",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q06_keep_open--current--2",
+      "case": "v10_q06_keep_open",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q07_suspect--current--2",
+      "case": "v10_q07_suspect",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q08_future_premise--current--2",
+      "case": "v10_q08_future_premise",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q09_flashback--current--2",
+      "case": "v10_q09_flashback",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q10_missing_target--current--2",
+      "case": "v10_q10_missing_target",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q11_alternatives--current--2",
+      "case": "v10_q11_alternatives",
+      "family": "构思",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q12_save_idea--current--2",
+      "case": "v10_q12_save_idea",
+      "family": "构思",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q13_early_revision--current--2",
+      "case": "v10_q13_early_revision",
+      "family": "改写",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q14_irrelevant_edit--current--2",
+      "case": "v10_q14_irrelevant_edit",
+      "family": "来源更新",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q15_insufficient--current--2",
+      "case": "v10_q15_insufficient",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q16_full_loop--current--2",
+      "case": "v10_q16_full_loop",
+      "family": "完整流程",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 2
+    },
+    {
+      "key": "v10_q01_envelope_gap--current--3",
+      "case": "v10_q01_envelope_gap",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q02_key_witness--current--3",
+      "case": "v10_q02_key_witness",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q03_plan_not_text--current--3",
+      "case": "v10_q03_plan_not_text",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q04_testimony--current--3",
+      "case": "v10_q04_testimony",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q05_combined--current--3",
+      "case": "v10_q05_combined",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q06_keep_open--current--3",
+      "case": "v10_q06_keep_open",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q07_suspect--current--3",
+      "case": "v10_q07_suspect",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q08_future_premise--current--3",
+      "case": "v10_q08_future_premise",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q09_flashback--current--3",
+      "case": "v10_q09_flashback",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q10_missing_target--current--3",
+      "case": "v10_q10_missing_target",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q11_alternatives--current--3",
+      "case": "v10_q11_alternatives",
+      "family": "构思",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q12_save_idea--current--3",
+      "case": "v10_q12_save_idea",
+      "family": "构思",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q13_early_revision--current--3",
+      "case": "v10_q13_early_revision",
+      "family": "改写",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q14_irrelevant_edit--current--3",
+      "case": "v10_q14_irrelevant_edit",
+      "family": "来源更新",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q15_insufficient--current--3",
+      "case": "v10_q15_insufficient",
+      "family": "推理核对",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    },
+    {
+      "key": "v10_q16_full_loop--current--3",
+      "case": "v10_q16_full_loop",
+      "family": "完整流程",
+      "layer": "end_to_end",
+      "variant": "current",
+      "repeat": 3
+    }
+  ],
+  "max_turns": 24,
+  "step_timeout_seconds": 180,
+  "max_provider_calls": 450,
+  "runner_retries": 0,
+  "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261028-144710-165601",
+  "evidence_format": 1,
+  "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+  "variant_policy": "提示分区变体仅移除所选分区；no_compaction 禁用手动与自动摘要，保留轮内裁剪和溢出恢复；公开对话和按需读取工具保留",
+  "observed_provider_parameters": {
+    "max_tokens": 4096,
+    "timeout_seconds": 45.0,
+    "max_retries": 0
+  },
+  "provider_calls_used": 290
+}

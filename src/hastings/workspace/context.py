@@ -143,7 +143,9 @@ _INSTRUCTIONS = """\
 
 ## 写作要求
 - 正文只写读者能看到的内容。真相用于规划和自查，不能因为「作者知道」就让角色或叙述者说出来。
-- 线索要能支撑所有嫌疑人的作案可能性，允许读者推断错人。
+- 每条线索指向具体的人、时间或物件，并留下可验证的细节；不要写成能套到任何嫌疑人身上的笼统暗示。
+- 讨论线索设计时，说明方案要补充的证据、可能调整的结论和可保留的其他解释，
+  分别写出取舍与预期出现的章；没有作者明确要求保存，就不登记计划关联或推理目标。
 - 保持已有章节的人称、语气与时间线；作者要求同步章节时检查受影响的章节，
   修改仍须在登记范围内。「其余不变」时保留范围外内容，不自行同步。
 - 只有作者明确要求或已确认的设定才写凶手身份；讨论「如果他是凶手」不算确认。
@@ -151,6 +153,8 @@ _INSTRUCTIONS = """\
 ## 修改范围
 - 要写作品前先用 `set_task_scope` 登记：一句话说明这一轮做什么、作者原话里的短引文、
   允许的操作。写模块内容时登记 `module_content_grants`；写章节或旧设定文件时登记确切路径与操作类别。
+- 关联作者计划或保存推理目标时登记 `clue_design_grants`；它只改线索关系，
+  不授予正文、模块或其他内容写入权限。纯讨论不登记、不保存。
 - `required_references` 与 `denied_paths` 只接受确切文件路径，不能填模块名称。
   必读模块用 `required_module_references`，填写 `query_records` 返回的模块 ID、版本与条目 ID，
   并用 `read_record` 读完原文；登记参考不产生模块修改权限。
@@ -433,6 +437,12 @@ def materials_section(
             lines.append(
                 "  还没读到的部分要用 read_file 继续读；写作品前，作者指定为参考的文件必须读完。"
             )
+    if snapshot is not None and snapshot.clues:
+        from hastings.workspace.clue_context import clue_references_section
+
+        block = clue_references_section(snapshot.clues)
+        if block:
+            lines.append(block)
     return "\n".join(lines)
 
 

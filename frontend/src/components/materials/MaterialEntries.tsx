@@ -106,6 +106,7 @@ export function CluesList({
     { key: "open", label: "未回收", rows: [] },
     { key: "resolved", label: "已回收", rows: [] },
     { key: "dropped", label: "已废弃", rows: [] },
+    { key: "unknown", label: "暂无正文依据", rows: [] },
   ];
   for (const entry of entries) {
     if (entry.domain !== "clues") continue;

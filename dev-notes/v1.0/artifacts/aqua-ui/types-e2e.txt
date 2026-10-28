@@ -1,0 +1,2 @@
+Command: npx tsc --noEmit --project tsconfig.e2e.json
+Result: PASS (exit code 0). Browser fixtures and configuration type-check.

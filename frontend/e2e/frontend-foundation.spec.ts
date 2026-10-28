@@ -11,7 +11,7 @@ test("控件完整状态与键盘浮层行为", async ({ page }) => {
   if (Array.isArray(result) || !("output" in result)) throw new Error("控件夹具没有构建产物");
   const bundle = result.output.find(output => output.type === "chunk");
   if (!bundle || bundle.type !== "chunk") throw new Error("控件夹具缺少脚本");
-  const assets = resolve("dist/assets");
+  const assets = resolve(process.env.HASTINGS_E2E_STATIC_DIR ?? "dist", "assets");
   const css = readFileSync(resolve(assets, readdirSync(assets).find(name => name.endsWith(".css"))!), "utf8");
   await page.goto("about:blank"); await page.setContent('<div id="root"></div>');
   await page.addStyleTag({ content: css }); await page.addScriptTag({ content: bundle.code });
@@ -89,7 +89,7 @@ test("窗口与字体矩阵：正文、目录、聊天与草稿都可到达，�
       await page.getByRole("button", { name: "对话", exact: true }).click();
     }
     const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem("hastings.workspace.layout")!));
-    expect(prefs).toMatchObject({ sidebarWidth: 260, chatWidth: 380, chatVisible: true, sidebarVisible: true });
+    expect(prefs).toMatchObject({ sidebarWidth: 240, chatWidth: 420, chatVisible: true, sidebarVisible: true });
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await shot(page, "writing-390-150-observation");

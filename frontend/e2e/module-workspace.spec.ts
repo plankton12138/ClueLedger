@@ -24,7 +24,7 @@ function preloadChanges(
   const output = execFileSync(
     "uv",
     ["run", "--directory", "..", "python", resolve("e2e/fixtures/module_changes.py"), ...args],
-    { windowsHide: true, encoding: "utf8" },
+    { windowsHide: true, encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } },
   );
   return JSON.parse(output.trim()) as PreloadedChanges;
 }

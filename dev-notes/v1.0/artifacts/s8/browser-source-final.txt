@@ -1,0 +1,35 @@
+
+[WebServer] (node:15296) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+[WebServer] 
+[WebServer] (!) outDir C:\Projects\Agent\myagent\data\test-tmp\v10-focus-final\frontend is not inside project root and will not be emptied.
+[WebServer] Use --emptyOutDir to override.
+[WebServer] 
+
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+[WebServer] INFO:     Started server process [35072]
+[WebServer] INFO:     Waiting for application startup.
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8959 (Press CTRL+C to quit)
+
+
+Running 6 tests using 1 worker
+
+(node:36796) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/6] [workspace] › e2e\clue-source-navigation.spec.ts:11:1 › 刷新后从服务端恢复章节与滚动位置
+[2/6] [workspace] › e2e\clue-source-navigation.spec.ts:26:1 › 真实依据定位第二处重复引文，返回后保留草稿、阅读文件、章界和焦点
+[3/6] [workspace] › e2e\clue-source-navigation.spec.ts:55:1 › 来源已改时保留旧引文并展示当前内容，重复句子不重新高亮
+[4/6] [workspace] › e2e\clue-source-navigation.spec.ts:67:1 › 定位同一篇文章后返回，恢复原来的阅读滚动位置
+[5/6] [workspace] › e2e\clue-source-navigation.spec.ts:84:1 › 实体和代码定位到所在段落，窄屏和150%字号下可关闭定位
+[6/6] [workspace] › e2e\clue-source-navigation.spec.ts:110:1 › 未来回收依据在早章范围不可读取，任意路径不能作为来源标识
+  6 passed (39.7s)

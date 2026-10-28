@@ -22,6 +22,7 @@ export type CoverageOutcome = "found" | "empty" | "insufficient" | "unrecorded";
 export type MaterialOutcome = "found" | "empty" | "insufficient";
 
 export interface SourceEvidence {
+  evidence_id?: string | null;
   path: string;
   digest: string;
   chapter: number | null;
@@ -60,10 +61,11 @@ export interface TimelineData {
 }
 
 export interface ClueData {
+  clue_id: string;
   clue: string;
-  planted_chapter: number;
+  planted_chapter: number | null;
   due_chapter: number | null;
-  status: "open" | "resolved" | "dropped";
+  status: "open" | "resolved" | "dropped" | "unknown";
   label: string;
   overdue: boolean;
   supports: string;

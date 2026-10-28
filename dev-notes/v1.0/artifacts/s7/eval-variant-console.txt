@@ -1,0 +1,7 @@
+[run] C:\Projects\Agent\myagent\eval\runs\context-20261028-132947-165160
+[case] v10_q01_envelope_gap--presentation_refs--1
+[case] v10_q01_envelope_gap--presentation_refs--1 -> fail (87.485s)
+[case] v10_q02_key_witness--presentation_refs--1
+[case] v10_q02_key_witness--presentation_refs--1 -> fail (147.14s)
+[case] v10_q06_keep_open--presentation_refs--1
+[case] v10_q06_keep_open--presentation_refs--1 -> fail (121.235s)

@@ -1,0 +1,43 @@
+
+> hastings-frontend@0.9.0 test
+> vitest run --no-file-parallelism --reporter=dot
+
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Projects/Agent/myagent/frontend[39m
+
+ [32m✓[39m src/state/conversations.test.ts [2m([22m[2m44 tests[22m[2m)[22m[90m 124[2mms[22m[39m
+ [32m✓[39m src/state/chatMessages.test.ts [2m([22m[2m32 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m src/state/moduleLibrary.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 139[2mms[22m[39m
+ [32m✓[39m src/state/ideas.test.ts [2m([22m[2m23 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m src/state/workspace.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m src/api/workspace.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/api/moduleLibrary.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 58[2mms[22m[39m
+ [32m✓[39m src/components/workspace/activityRows.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m src/api/contextUsage.test.ts [2m([22m[2m20 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m src/state/models.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m src/api/models.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m src/state/sourceLocation.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/state/layout.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/state/materialTasks.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m src/state/navigation.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/state/clues.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m src/state/ideaActivity.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m src/api/activity.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m src/state/moduleEditor.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/state/storyMaterials.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m src/components/clues/SourceHighlight.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[90m 29[2mms[22m[39m
+ [32m✓[39m src/theme.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m src/components/chat/changePreview.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 3[2mms[22m[39m
+ [32m✓[39m src/state/streamBatcher.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m src/components/workspace/useUnsavedChanges.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 3[2mms[22m[39m
+ [32m✓[39m src/state/ideasSurface.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 3[2mms[22m[39m
+ [32m✓[39m src/components/models/naming.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 2[2mms[22m[39m
+ [32m✓[39m src/state/moduleContent.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 4[2mms[22m[39m
+ [32m✓[39m src/components/workspace/CharacterBadges.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 3[2mms[22m[39m
+ [32m✓[39m src/components/clues/sourceSelection.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 2[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m30 passed[39m[22m[90m (30)[39m
+[2m      Tests [22m [1m[32m326 passed[39m[22m[90m (326)[39m
+[2m   Start at [22m 12:08:29
+[2m   Duration [22m 17.70s[2m (transform 887ms, setup 0ms, collect 3.60s, tests 627ms, environment 6ms, prepare 3.91s)[22m
+

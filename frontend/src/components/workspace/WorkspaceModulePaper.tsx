@@ -16,7 +16,8 @@ export default function WorkspaceModulePaper({ workspaceId,binding }: { workspac
   const scroll = useRef<HTMLDivElement>(null);
   const busy = Boolean(store.busy);
   useEffect(() => { void store.load(binding); }, [key,store.load]);
-  useEffect(() => { setEditing(false); }, [draftKey,key]);
+  // 版本刷新不关闭仍在编辑的草稿；保存响应丢失时，原请求仍可继续提交。
+  useEffect(() => { setEditing(value => value && workspaceModuleDirty(useWorkspaceModulesStore.getState().drafts[draftKey])); }, [draftKey,key]);
   useLayoutEffect(() => {
     const anchor = store.selected?.anchor;
     if (!editing && document && scroll.current) {
@@ -29,15 +30,15 @@ export default function WorkspaceModulePaper({ workspaceId,binding }: { workspac
   return <article className="workspace-module-paper" aria-label="模块内容">
     <header className="workspace-module-toolbar"><h2>{bindingLabel(binding)}</h2>
       <div className="module-edit-actions">{editing && draft ? <>
+        <Button variant="quiet" disabled={busy} onClick={() => { store.discard(draftKey); setEditing(false); }}>取消</Button>
         <Button variant="primary" busy={busy} disabled={!workspaceModuleDirty(draft)} onClick={() => {
           store.edit(draftKey,{ name: contentName(draft.name,draft.entries[0]?.body ?? "") });
           void store.save(workspaceId,binding).then(ok => { if (ok) setEditing(false); });
         }}>保存</Button>
-        <Button variant="quiet" disabled={busy} onClick={() => { store.discard(draftKey); setEditing(false); }}>取消</Button>
       </> : <Button disabled={!document || busy} onClick={() => { store.begin(workspaceId,binding); setEditing(true); }}>编辑</Button>}</div>
     </header>
     {message && <StatusMessage tone={message.error ? "error" : "info"} action={message.error ? <div className="module-edit-actions">
-      <Button size="compact" variant="quiet" onClick={() => void useModuleLibraryStore.getState().loadAssembly()}>重新读取</Button>
+      <Button size="compact" variant="quiet" onClick={() => { setEditing(false); void useModuleLibraryStore.getState().loadAssembly(); }}>重新读取</Button>
       {draft && <Button size="compact" disabled={busy} onClick={() => void store.saveToLibrary(workspaceId,binding,draft)}>另存草稿</Button>}
     </div> : <Button size="compact" variant="quiet" onClick={store.clearMessage}>知道了</Button>}>{message.text}</StatusMessage>}
     {!editing && workspaceModuleDirty(draft) && <StatusMessage tone="warning" action={<Button size="compact" onClick={() => setEditing(true)}>继续编辑</Button>}>有未保存修改。</StatusMessage>}

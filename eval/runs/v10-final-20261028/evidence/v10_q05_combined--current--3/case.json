@@ -1,0 +1,92 @@
+{
+  "id": "v10_q05_combined",
+  "title": "多线索共同支持一个结论",
+  "family": "推理核对",
+  "layer": "context",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [
+    {
+      "title": "暗号内容",
+      "chapter": 1,
+      "quote": "信封背面写着接头暗号：青鸟归巢。"
+    },
+    {
+      "title": "铜钥匙",
+      "chapter": 2,
+      "quote": "管家将铜钥匙收进衣袋。"
+    }
+  ],
+  "inferences": [
+    {
+      "key": "butler_access",
+      "goal": "管家有机会接触信封与书房",
+      "intent": "suspect",
+      "clue_titles": [
+        "暗号内容",
+        "铜钥匙"
+      ],
+      "premises": [],
+      "alternatives": []
+    }
+  ],
+  "steps": [
+    {
+      "text": "这两条线索合起来能说明管家有机会吗？",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "review",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [
+        "正文/0001 雨夜.md",
+        "正文/0002 走廊.md"
+      ],
+      "clue_review": {
+        "inference": "butler_access",
+        "as_of_chapter": 2
+      },
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "cites_both",
+          "kind": "clue_evidence_quote",
+          "path": "",
+          "value": "管家将铜钥匙收进衣袋。",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "combined_reasoning",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须按组合依据判断：两条线索各自不完整，但一起能支持「有机会」，同时说明 机会不等于实施；不得要求单条线索单独证明结论，也不得把机会直接写成凶手。"
+        }
+      ]
+    }
+  ]
+}

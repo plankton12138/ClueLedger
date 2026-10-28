@@ -1,0 +1,151 @@
+{
+  "recorded_at": "2026-10-27T20:38:03+08:00",
+  "scope": "v1.0 S0-S1; S2-S8 not implemented",
+  "baseline_commit": "a651d726826eacac21053ac12a6c09f61d085a98",
+  "baseline_worktree": "clean before S0-S1 changes",
+  "runtime_version": "0.9.0",
+  "clue_schema_version": 1,
+  "clue_recipe_version": 1,
+  "checks": [
+    {
+      "command": "uv run pytest tests/workspace/test_clues.py tests/workspace/test_story_materials.py tests/workspace/test_state_boundaries.py -q",
+      "phase": "before changes",
+      "exit_code": 0,
+      "result": "53 passed, 1 existing warning"
+    },
+    {
+      "command": "uv run pytest tests/workspace/test_clue_ledger.py tests/workspace/test_story_materials.py tests/workspace/test_clues.py tests/workspace/test_state_boundaries.py -q",
+      "phase": "final targeted checks",
+      "exit_code": 0,
+      "result": "82 passed, 1 existing warning"
+    },
+    {
+      "command": "uv run pytest -q",
+      "phase": "first full check",
+      "exit_code": 0,
+      "result": "1243 passed, 1 existing warning; followed by final boundary changes and tests"
+    },
+    {
+      "command": "uv run pytest -q",
+      "phase": "final full check",
+      "evidence": "backend-tests.txt",
+      "exit_code": 0,
+      "result": "1251 passed, 1 warning in 255.95s (0:04:15)"
+    },
+    {
+      "command": "uv run ruff check src/hastings tests eval/harness eval/__main__.py",
+      "exit_code": 0,
+      "evidence": "static-checks.txt"
+    },
+    {
+      "command": "uv run mypy",
+      "exit_code": 0,
+      "result": "128 source files",
+      "evidence": "type-checks.txt"
+    },
+    {
+      "command": "npm run build",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "tsc and Vite build passed; existing chunk-size warning",
+      "evidence": "captured tool output in this development session"
+    },
+    {
+      "command": "npm test -- --reporter=dot",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "303 passed in 26 files",
+      "evidence": "captured tool output in this development session"
+    },
+    {
+      "command": "documentation and evidence consistency checks",
+      "exit_code": 0,
+      "result": "11 documents, 192 local links, source SHA-256, git diff --check and protected version files passed"
+    }
+  ],
+  "sources": [
+    {
+      "path": "frontend/src/api/storyMaterials.ts",
+      "baseline_sha256": "4697563280383b7a2408ea51c3235da4dc1bca559d01e5d9e6035a3232b3ace8",
+      "current_sha256": "27b192e940519cc27f4feda0b4a467e0c8d8289baed1145e49eea43e4ac91493"
+    },
+    {
+      "path": "src/hastings/workspace/agent.py",
+      "baseline_sha256": "75e3c69ebffd3f6cddeaf393a42170fd5b66f8ef963d512d636b0e3e81f7ca42",
+      "current_sha256": "f2ef6f068eb8d6af15ff5c7c30b65e4b2098722492353ada0c1088321d70e995"
+    },
+    {
+      "path": "src/hastings/workspace/api.py",
+      "baseline_sha256": "5887ee64780a4d63e5884794af19d243c8d70f21aa74d039966e665f50c80e91",
+      "current_sha256": "78b92ad042f77f7d2e92a0c4d590e0d7a8347e9a3d95338552fcc1abadf06fd9"
+    },
+    {
+      "path": "src/hastings/workspace/clue_migration.py",
+      "baseline_sha256": null,
+      "current_sha256": "c276793375df521e6d55af89e6ea320fa5d3f92e1b303c4739f66c6d592297ae"
+    },
+    {
+      "path": "src/hastings/workspace/clue_models.py",
+      "baseline_sha256": null,
+      "current_sha256": "233f923b9cabac21795eea09fc10691fa291f2fd4a052c66c80b02bb82fb2e7b"
+    },
+    {
+      "path": "src/hastings/workspace/clue_store.py",
+      "baseline_sha256": null,
+      "current_sha256": "dcf2be07601a73e25d3f5e59f00b70dc5d1d98f1fb01f98c75eed0dadee6ea3c"
+    },
+    {
+      "path": "src/hastings/workspace/clues.py",
+      "baseline_sha256": "558a184c33700e7bd783e0f0684ca521c5fa191df0a0a2e73798840087701ee1",
+      "current_sha256": "b6941ef05ae211a55891dc08128872e6ea345009a1820837accc9f41673d1b4c"
+    },
+    {
+      "path": "src/hastings/workspace/material_tasks.py",
+      "baseline_sha256": "4e634548e053ca069fcfd3e9b77ce139f0c9257d3ec133c270de8b9597f0f2e1",
+      "current_sha256": "dc66c8f5cf7a9f6486b05b04427dd9e9f6fe8b6b3149e44897d86db4bb3c99d2"
+    },
+    {
+      "path": "src/hastings/workspace/service.py",
+      "baseline_sha256": "631ddcd90c0824c55c88a8ecb399fe3f3b7f14d5be239e9e2d3ad0d8970ddc93",
+      "current_sha256": "016e7483f4d36712f9ea3d05dcdb1c23368200752549adf14c2015ac12f9fab2"
+    },
+    {
+      "path": "src/hastings/workspace/story_materials.py",
+      "baseline_sha256": "3ea368cf2df564d3e9acae7a8c7faded0c71976b10c2a85ed49a78903765a956",
+      "current_sha256": "d7714ae9127d372ac137bf5338d04deefe9ac2831c7e85fc234fd68e37b85ec4"
+    },
+    {
+      "path": "tests/fixtures/clues/letter-case.json",
+      "baseline_sha256": null,
+      "current_sha256": "31e53cfb4434543cd6b5091fe56ed8c4f1159bafda38541350f844372450265d"
+    },
+    {
+      "path": "tests/workspace/test_clue_ledger.py",
+      "baseline_sha256": null,
+      "current_sha256": "f8bd490a22ccb7585fd6463ca21e3d7ce67556f3064bb0deecede8ccf8b1970d"
+    },
+    {
+      "path": "tests/workspace/test_clues.py",
+      "baseline_sha256": "702709eff133dacff6e9e55ce37743861f5a3cece8d093158592e0fa3d19815f",
+      "current_sha256": "a9c22f0f9e2c43dd3db47487f7def68911fd21ea3341c03f40cffa1197dd2cf2"
+    },
+    {
+      "path": "tests/workspace/test_state_boundaries.py",
+      "baseline_sha256": "bc7c71310242c391af2bfe3ef42a62d3897bfdd4fb926991535f5c67e1acfd5a",
+      "current_sha256": "000a3c12f5607deb545ce1e3dae5c7cbcd5359c3e7f05afcca57d198bef3f9b3"
+    },
+    {
+      "path": "tests/workspace/test_story_materials.py",
+      "baseline_sha256": "1d4ca630cba5c9116b7e78ebff2da2ffaa1827301c223238bfb8427028a8589c",
+      "current_sha256": "48cb36729797a6374177e26a5cec29c97ab277a69e28d6e35e6a4bf29ff894df"
+    }
+  ],
+  "not_run": [
+    "S2 source-location acceptance",
+    "S3 browser workflow",
+    "online model semantic evaluation",
+    "desktop packaging and upgrade acceptance"
+  ],
+  "root_readme_untouched": true,
+  "completed_at": "2026-10-27T20:41:00+08:00"
+}

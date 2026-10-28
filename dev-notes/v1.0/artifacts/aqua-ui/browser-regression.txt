@@ -1,0 +1,306 @@
+
+[WebServer] (node:28660) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[WebServer] INFO:     Started server process [28876]
+
+[WebServer] INFO:     Waiting for application startup.
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8945 (Press CTRL+C to quit)
+
+
+Running 86 tests using 1 worker
+
+
+(node:17492) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/86] [workspace] › e2e\aqua-layout.spec.ts:18:1 › Aqua 写作布局、翻页和字号操作保留复古气泡及可达的发送位置
+[2/86] [workspace] › e2e\aqua-layout.spec.ts:67:1 › 模块列表与预览并列，缩窄和放大字号保留草稿及主操作
+[3/86] [workspace] › e2e\aqua-layout.spec.ts:100:1 › 故事资料入口恢复浏览位置，线索依据在宽屏并列、窄屏可返回
+[4/86] [workspace] › e2e\chapter-clues.spec.ts:16:1 › 本章包含早章线索；切换保留草稿，资料页共用一份详情
+[5/86] [workspace] › e2e\chapter-clues.spec.ts:37:1 › 定位早章后保持本章范围，返回恢复详情、原文件与焦点
+[6/86] [workspace] › e2e\chapter-clues.spec.ts:52:1 › 未整理、无发现、不足、空正文分别呈现，改稿后要求复核
+[7/86] [workspace] › e2e\chapter-clues.spec.ts:69:1 › 窄屏、放大字号与键盘切换使用单区域并保留草稿
+[8/86] [workspace] › e2e\chapter-clues.spec.ts:99:1 › 整理本章提交实际范围与指纹；受理冲突保留草稿和既有记录
+[9/86] [workspace] › e2e\chat-rendering.spec.ts:44:1 › 长思考折叠时不解析正文，突发分片合批且历史轮次不重绘
+[10/86] [workspace] › e2e\chat-rendering.spec.ts:65:3 › 高像素密度下阅读长思考 › 展开后完整保留实时原文，向上阅读与选字不被新内容拉走
+[11/86] [workspace] › e2e\chat-rendering.spec.ts:90:1 › 切换作品后，待刷新的旧分片不能重新填回页面
+[12/86] [workspace] › e2e\clue-source-navigation.spec.ts:11:1 › 真实依据定位第二处重复引文，返回后保留草稿、阅读文件、章界和焦点
+[13/86] [workspace] › e2e\clue-source-navigation.spec.ts:40:1 › 来源已改时保留旧引文并展示当前内容，重复句子不重新高亮
+[14/86] [workspace] › e2e\clue-source-navigation.spec.ts:52:1 › 定位同一篇文章后返回，恢复原来的阅读滚动位置
+[15/86] [workspace] › e2e\clue-source-navigation.spec.ts:69:1 › 实体和代码定位到所在段落，窄屏和150%字号下可关闭定位
+[16/86] [workspace] › e2e\clue-source-navigation.spec.ts:95:1 › 未来回收依据在早章范围不可读取，任意路径不能作为来源标识
+[17/86] [workspace] › e2e\context-usage.spec.ts:51:1 › 用量按会话隔离，低游标及延迟旧响应正常显示
+[18/86] [workspace] › e2e\context-usage.spec.ts:67:1 › 压缩可停止，刷新和切回会话后恢复同一操作
+  1) [workspace] › e2e\context-usage.spec.ts:67:1 › 压缩可停止，刷新和切回会话后恢复同一操作 ───────────────────────────
+
+    Test timeout of 30000ms exceeded.
+
+    Error Context: test-results\context-usage-压缩可停止，刷新和切回会话后恢复同一操作-workspace\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\context-usage-压缩可停止，刷新和切回会话后恢复同一操作-workspace\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\context-usage-压缩可停止，刷新和切回会话后恢复同一操作-workspace\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:18240) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[19/86] [workspace] › e2e\context-usage.spec.ts:81:1 › 浮层互斥、键盘及窄屏缩放可用，不遮挡草稿
+[20/86] [workspace] › e2e\core-pages.spec.ts:21:1 › 灵感面板：真实列表分页、历史预览与删除恢复
+[21/86] [workspace] › e2e\core-pages.spec.ts:65:1 › 灵感面板：长文完整读取后再编辑，保存不改写原文与长度
+[22/86] [workspace] › e2e\core-pages.spec.ts:94:1 › 灵感面板：窄屏草稿与主操作矩阵，引用保留聊天草稿且不发送
+[23/86] [workspace] › e2e\core-pages.spec.ts:121:1 › 资料读取、顺序与范围选择不调用模型，后台筛选不重置任务范围
+[24/86] [workspace] › e2e\core-pages.spec.ts:155:1 › 资料窗口与字号矩阵、无模型范围可查看、合法空结果
+[25/86] [workspace] › e2e\core-pages.spec.ts:179:1 › 资料结果状态、窄屏依据返回位置与读取失败
+[26/86] [workspace] › e2e\core-pages.spec.ts:215:1 › 模块预览与编辑的完整窗口及字号矩阵
+[27/86] [workspace] › e2e\frontend-experience.spec.ts:35:1 › 隔离基线：主要页面与窄窗口正文
+[28/86] [workspace] › e2e\frontend-experience.spec.ts:67:1 › B04/B06：长原文完整，关闭重开和版本切换保留草稿
+[29/86] [workspace] › e2e\frontend-experience.spec.ts:94:1 › B06：完整发布往返保持长原文、多个条目和字段
+[30/86] [workspace] › e2e\frontend-experience.spec.ts:110:1 › B06：第二段失败时不显示编辑器，不产生截断版本
+[31/86] [workspace] › e2e\frontend-experience.spec.ts:123:1 › B05：A慢B快，迟到原文不会切回A
+  2) [workspace] › e2e\frontend-experience.spec.ts:123:1 › B05：A慢B快，迟到原文不会切回A ──────────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('region', { name: '模块库', exact: true }).getByText('终年起雾。', { exact: true })
+    Expected: visible
+    Error: strict mode violation: getByRole('region', { name: '模块库', exact: true }).getByText('终年起雾。', { exact: true }) resolved to 2 elements:
+        1) <p>终年起雾。</p> aka getByRole('region', { name: '浏览模块库' }).getByText('终年起雾。')
+        2) <p>终年起雾。</p> aka getByRole('region', { name: '模块详情' }).getByText('终年起雾。')
+
+    Call log:
+      - Expect "toBeVisible" getByRole('region', { name: '模块库', exact: true }).getByText('终年起雾。', { exact: true }) with timeout 5000ms
+      - waiting for getByRole('region', { name: '模块库', exact: true }).getByText('终年起雾。', { exact: true })
+
+
+      138 |   await page.evaluate(() => new Promise(requestAnimationFrame));
+      139 |   await expect(dialog.getByRole("heading", { name: `海上城市-${book.id}` })).toBeVisible();
+    > 140 |   await expect(dialog.getByText("终年起雾。", { exact: true })).toBeVisible();
+          |                                                            ^
+      141 | });
+      142 |
+      143 | test("B03：640px正文可达", async ({ page, book }) => {
+        at C:\Projects\Agent\myagent\frontend\e2e\frontend-experience.spec.ts:140:60
+
+    Error Context: test-results\frontend-experience-B05：A慢B快，迟到原文不会切回A-workspace\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\frontend-experience-B05：A慢B快，迟到原文不会切回A-workspace\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\frontend-experience-B05：A慢B快，迟到原文不会切回A-workspace\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:34464) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[32/86] [workspace] › e2e\frontend-experience.spec.ts:143:1 › B03：640px正文可达
+[33/86] [workspace] › e2e\frontend-experience.spec.ts:151:1 › 未保存内容刷新前提示，取消后仍可编辑
+[34/86] [workspace] › e2e\frontend-experience.spec.ts:165:1 › UI08：发布响应丢失后同键重试只产生一个新版本
+[35/86] [workspace] › e2e\frontend-experience.spec.ts:184:1 › 作品中的内容可显式另存到库，原稿保持原版本
+[36/86] [workspace] › e2e\frontend-experience.spec.ts:202:1 › B12：撤销先展示提交和文件，取消不执行，确认期间只提交一次
+[37/86] [workspace] › e2e\frontend-experience.spec.ts:231:1 › B11：无模型发送禁用，草稿和连接入口保留
+[38/86] [workspace] › e2e\frontend-experience.spec.ts:242:1 › 灵感：快速记录与条目修改稿分开保留，无模型保存
+[39/86] [workspace] › e2e\frontend-experience.spec.ts:262:1 › 中文输入法确认不发送，章节范围悬停仍可读
+[40/86] [workspace] › e2e\frontend-experience.spec.ts:281:1 › 对话选段记成灵感，来源定位与原文一致
+[41/86] [workspace] › e2e\frontend-experience.spec.ts:347:1 › 引用显示原文预览，作者明确更新到最新版本
+[42/86] [workspace] › e2e\frontend-experience.spec.ts:386:1 › 展开讨论在未连接模型时说明原因，选择与草稿保留
+[43/86] [workspace] › e2e\frontend-experience.spec.ts:434:1 › 展开灵感：一次点击只读讨论，再次点击打开同一次讨论
+[44/86] [workspace] › e2e\frontend-experience.spec.ts:542:1 › 用于写作：选定章节后按普通写作用途提交，带固定灵感与目标
+[45/86] [workspace] › e2e\frontend-foundation.spec.ts:8:1 › 控件完整状态与键盘浮层行为
+[46/86] [workspace] › e2e\frontend-foundation.spec.ts:53:1 › 窗口与字体矩阵：正文、目录、聊天与草稿都可到达，自动适配不改栏宽偏好
+[47/86] [workspace] › e2e\frontend-foundation.spec.ts:98:1 › 目录和对话是固定位置的独立开关，关闭对话不展开目录
+[48/86] [workspace] › e2e\frontend-foundation.spec.ts:139:1 › 模块库精确链接、前进后退、作品内同一入口与未登记上下文
+[49/86] [workspace] › e2e\frontend-foundation.spec.ts:165:1 › 未打开作品仍能读取和发布库内容，应用动作说明缺少作品
+[50/86] [workspace] › e2e\module-editor.spec.ts:9:1 › 七种预设字段按真实契约往返，数字0与布尔false保留
+[51/86] [workspace] › e2e\module-editor.spec.ts:48:1 › 高级字段异常保留输入并阻止发布，标量列表可在修正后发布
+[52/86] [workspace] › e2e\module-editor.spec.ts:93:1 › 窄窗口模块预览与编辑可返回列表，失败变体保留名称
+[53/86] [workspace] › e2e\module-workspace.spec.ts:52:1 › 添加、侧栏目录、作品内保存与其他作品隔离，刷新和移除撤销
+[54/86] [workspace] › e2e\module-workspace.spec.ts:94:1 › 新建只写名称与正文，小标题生成目录且不出现类型表单
+[55/86] [workspace] › e2e\module-workspace.spec.ts:109:1 › 作品内容保存响应丢失后重试不重复创建版本
+  3) [workspace] › e2e\module-workspace.spec.ts:109:1 › 作品内容保存响应丢失后重试不重复创建版本 ───────────────────────
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator: getByRole('article', { name: '模块内容', exact: true }).getByLabel('模块正文', { exact: true })
+    Expected: "保存响应丢失时保留草稿。"
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveValue" getByRole('article', { name: '模块内容', exact: true }).getByLabel('模块正文', { exact: true }) with timeout 5000ms
+      - waiting for getByRole('article', { name: '模块内容', exact: true }).getByLabel('模块正文', { exact: true })
+
+
+      128 |   await expect(resume.or(body)).toBeVisible();
+      129 |   if (await resume.isVisible()) await resume.click();
+    > 130 |   await expect(body).toHaveValue("保存响应丢失时保留草稿。");
+          |                      ^
+      131 |   await paper.getByRole("button", { name: "保存", exact: true }).click();
+      132 |   await expect(paper).toContainText("已保存到当前作品。");
+      133 |   expect(inputs).toHaveLength(2);
+        at C:\Projects\Agent\myagent\frontend\e2e\module-workspace.spec.ts:130:22
+
+    Error Context: test-results\module-workspace-作品内容保存响应丢失后重试不重复创建版本-workspace\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\module-workspace-作品内容保存响应丢失后重试不重复创建版本-workspace\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\module-workspace-作品内容保存响应丢失后重试不重复创建版本-workspace\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+(node:31688) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[56/86] [workspace] › e2e\module-workspace.spec.ts:139:1 › 外部版本变化时保留草稿，重新读取后可以另存而不覆盖当前内容
+[57/86] [workspace] › e2e\module-workspace.spec.ts:162:1 › 应用后的模块变更可撤销，刷新后仍显示撤销结果且库副本保留
+  4) [workspace] › e2e\module-workspace.spec.ts:162:1 › 应用后的模块变更可撤销，刷新后仍显示撤销结果且库副本保留 ───────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('navigation', { name: '作品目录', exact: true }).getByRole('button', { name: '��������С��', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('navigation', { name: '作品目录', exact: true }).getByRole('button', { name: '��������С��', exact: true }) with timeout 5000ms
+      - waiting for getByRole('navigation', { name: '作品目录', exact: true }).getByRole('button', { name: '��������С��', exact: true })
+
+
+      167 |   const directory = page.getByRole("navigation", { name: "作品目录", exact: true });
+      168 |   await expect(card).toContainText("已用于本作品");
+    > 169 |   await expect(directory.getByRole("button", { name: preloaded.module_names[0], exact: true })).toBeVisible();
+          |                                                                                                 ^
+      170 |   await expect(directory.getByRole("button", { name: preloaded.module_names[1], exact: true })).toBeVisible();
+      171 |
+      172 |   await card.getByRole("button", { name: "撤销本次修改", exact: true }).click();
+        at C:\Projects\Agent\myagent\frontend\e2e\module-workspace.spec.ts:169:97
+
+    Error Context: test-results\module-workspace-应用后的模块变更可撤销，刷新后仍显示撤销结果且库副本保留-workspace\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\module-workspace-应用后的模块变更可撤销，刷新后仍显示撤销结果且库副本保留-workspace\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\module-workspace-应用后的模块变更可撤销，刷新后仍显示撤销结果且库副本保留-workspace\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:8196) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[58/86] [workspace] › e2e\module-workspace.spec.ts:194:1 › 应用前可预览修改内容；继续保存不覆盖未保存草稿
+[59/86] [workspace] › e2e\module-workspace.spec.ts:240:1 › 模块库窄窗口和大字号下可浏览、添加和编辑
+[60/86] [workspace] › e2e\shared-interactions.spec.ts:12:1 › 停止点击立即反馈，等待服务端收尾后恢复发送入口
+[61/86] [workspace] › e2e\shared-interactions.spec.ts:69:1 › 目录选择取消不换作品，失败保留位置及错误，键盘焦点留在浮层
+[62/86] [workspace] › e2e\shared-interactions.spec.ts:94:1 › 模型连接临时凭据关闭即清空，不进入浏览器存储；失败保留普通输入
+[63/86] [workspace] › e2e\shared-interactions.spec.ts:118:1 › 设置与活动窗口矩阵，文件版本、导出和维护入口可达
+[64/86] [workspace] › e2e\shared-interactions.spec.ts:157:1 › 宽阅读视图保留同一回复，复制失败提供原文，关闭返回入口
+[65/86] [workspace] › e2e\text-selection.spec.ts:21:1 › 正文与装载模块的选段独立保存，刷新后可查看和移除
+  5) [workspace] › e2e\text-selection.spec.ts:21:1 › 正文与装载模块的选段独立保存，刷新后可查看和移除 ──────────────────────
+
+    Test timeout of 30000ms exceeded.
+
+    Error Context: test-results\text-selection-正文与装载模块的选段独立保存，刷新后可查看和移除-workspace\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\text-selection-正文与装载模块的选段独立保存，刷新后可查看和移除-workspace\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\text-selection-正文与装载模块的选段独立保存，刷新后可查看和移除-workspace\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:8540) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[66/86] [workspace] › e2e\text-selection.spec.ts:60:1 › 窄屏添加选段打开对话，跨阅读区的选择不显示入口
+[67/86] [workspace] › e2e\workspace.spec.ts:134:1 › 目录显示章节与模块，已有设定可从原有资料打开
+[68/86] [workspace] › e2e\workspace.spec.ts:144:1 › 目录里的加入对话把文件放进本轮参考
+[69/86] [workspace] › e2e\workspace.spec.ts:162:1 › 角色小传可阅读并参与搜索
+[70/86] [workspace] › e2e\workspace.spec.ts:174:1 › 稿纸只读显示正文
+[71/86] [workspace] › e2e\workspace.spec.ts:184:1 › 字号调整同步到正文与活动日志，刷新保留并可恢复默认
+  6) [workspace] › e2e\workspace.spec.ts:184:1 › 字号调整同步到正文与活动日志，刷新保留并可恢复默认 ─────────────────────────
+
+    Error: expect(received).toBeCloseTo(expected)
+
+    Expected: 16.8
+    Received: 18
+
+    Expected precision:    2
+    Expected difference: < 0.005
+    Received difference:   1.1999999999999993
+
+      224 |   const detail = panel.locator("pre").first();
+      225 |   await expect(detail).toBeVisible();
+    > 226 |   expect(await detail.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(14 * 1.2);
+          |                                                                                            ^
+      227 |   await panel.getByRole("button", { name: "恢复默认字号" }).click();
+      228 |   await expect(panel.getByLabel("调整字体大小")).toHaveValue("100");
+      229 |   await panel.getByRole("button", { name: "关闭", exact: true }).click();
+        at C:\Projects\Agent\myagent\frontend\e2e\workspace.spec.ts:226:92
+
+    Error Context: test-results\workspace-字号调整同步到正文与活动日志，刷新保留并可恢复默认-workspace\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\workspace-字号调整同步到正文与活动日志，刷新保留并可恢复默认-workspace\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\workspace-字号调整同步到正文与活动日志，刷新保留并可恢复默认-workspace\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+(node:13228) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[72/86] [workspace] › e2e\workspace.spec.ts:234:1 › 改动与历史列出提交，撤销后内容回退
+[73/86] [workspace] › e2e\workspace.spec.ts:251:1 › 搜索定位到正文，外部改动刷新后可见
+[74/86] [workspace] › e2e\workspace.spec.ts:269:1 › 章名带章序，人物标签在目录与稿纸一致
+[75/86] [workspace] › e2e\workspace.spec.ts:302:1 › 对话栏可隐藏，隐藏状态刷新后保持
+[76/86] [workspace] › e2e\workspace.spec.ts:326:1 › 拖拽把手改栏宽，刷新后保持，双击恢复默认
+[77/86] [workspace] › e2e\workspace.spec.ts:349:1 › 对话栏宽度可拖拽，且不超过上限
+[78/86] [workspace] › e2e\workspace.spec.ts:368:1 › 平整稿纸可滚动阅读，不绘制干扰正文的横线
+[79/86] [workspace] › e2e\workspace.spec.ts:396:1 › 故事资料页叠加已装模块的计划，并可按模块筛选
+[80/86] [workspace] › e2e\workspace.spec.ts:411:1 › 灵感面板：记录、删除撤销恢复并带到对话
+[81/86] [workspace] › e2e\workspace.spec.ts:446:1 › 新建作品用系统窗口选位置，界面不再出现路径输入框
+[82/86] [workspace] › e2e\workspace.spec.ts:461:1 › 选好位置并起名后新建作品，建立版本记录
+[83/86] [workspace] › e2e\workspace.spec.ts:489:1 › 使用默认总目录新建作品，自动建立父目录且不生成设定集
+[84/86] [workspace] › e2e\workspace.spec.ts:508:1 › 删除作品需确认，取消保留文件，确认后真实删除
+[85/86] [workspace] › e2e\workspace.spec.ts:540:1 › 从作品列表删除未打开的旧作品，当前作品保持选中
+[86/86] [workspace] › e2e\workspace.spec.ts:568:1 › 重命名作品会同时改磁盘目录并切到新标识
+  6 failed
+    [workspace] › e2e\context-usage.spec.ts:67:1 › 压缩可停止，刷新和切回会话后恢复同一操作 ────────────────────────────
+    [workspace] › e2e\frontend-experience.spec.ts:123:1 › B05：A慢B快，迟到原文不会切回A ───────────────────────
+    [workspace] › e2e\module-workspace.spec.ts:109:1 › 作品内容保存响应丢失后重试不重复创建版本 ────────────────────────
+    [workspace] › e2e\module-workspace.spec.ts:162:1 › 应用后的模块变更可撤销，刷新后仍显示撤销结果且库副本保留 ────────────────
+    [workspace] › e2e\text-selection.spec.ts:21:1 › 正文与装载模块的选段独立保存，刷新后可查看和移除 ───────────────────────
+    [workspace] › e2e\workspace.spec.ts:184:1 › 字号调整同步到正文与活动日志，刷新保留并可恢复默认 ──────────────────────────
+  1 skipped
+  79 passed (6.0m)

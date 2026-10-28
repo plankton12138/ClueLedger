@@ -1,0 +1,23 @@
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+[WebServer] INFO:     Started server process [8040]
+[WebServer] INFO:     Waiting for application startup.
+
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8931 (Press CTRL+C to quit)
+
+
+Running 6 tests using 1 worker
+
+[1/6] [workspace] › e2e\clue-reference.spec.ts:11:1 › 把线索带进对话只写草稿，刷新后仍在，可移除
+[2/6] [workspace] › e2e\clue-reference.spec.ts:33:1 › 资料页带入线索后回到写作页的草稿
+[3/6] [workspace] › e2e\clue-reference.spec.ts:41:1 › 带入目标时同时记下推理身份
+[4/6] [workspace] › e2e\clue-review.spec.ts:21:1 › 核对报告显示范围、来源状态与具体问题，并能定位原文
+[5/6] [workspace] › e2e\clue-review.spec.ts:50:1 › 正文改稿后旧报告保留并标出需复核
+[6/6] [workspace] › e2e\clue-review.spec.ts:67:1 › 窄屏与放大字号下报告单区域可读
+  6 passed (1.2m)

@@ -11,6 +11,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -112,7 +113,7 @@ def _publish(
     outcome: str,
     note: str = "",
     records: list[dict[str, Any]] | None = None,
-    turn_id: str = "t_test",
+    turn_id: str = "",
     domain: str | None = None,
 ) -> dict[str, Any]:
     ledger = _ledger(workspace, path, *([entity] if entity else []))
@@ -121,7 +122,7 @@ def _publish(
         root=root,
         scope=scope,
         ledger=ledger,
-        turn_id=turn_id,
+        turn_id=turn_id or "t_" + uuid4().hex,
         domain=domain or str(scope["domain"]),
         path=path,
         entity_path=entity,
@@ -566,8 +567,9 @@ def test_task_without_result_is_partial_and_hidden_from_writing_list(
     assert client.get(f"/api/file-workspaces/{workspace_id}/conversations").json()["items"] == []
 
 
-def test_task_publishes_timeline_and_completes(
-    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+@pytest.mark.parametrize("domain", ["timeline", "clues"])
+def test_task_publishes_material_and_completes(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient], domain: str
 ) -> None:
     root = tmp_path / "雪山旅馆"
     # 先建作品，拿到真实 digest 再写脚本；provider 在受理时才会被调用。
@@ -575,6 +577,24 @@ def test_task_publishes_timeline_and_completes(
     book.write(FIRST, "# 雨夜\n\n10月21日深夜，林静在书房。\n", expected_digest=None)
     view = book.read(FIRST)
     start = view.text.index("10月21日深夜")
+    record = {
+        **(
+            {"when": "10月21日深夜", "location": "书房"}
+            if domain == "timeline"
+            else {
+                "clue": "深夜书房有人",
+                "planted_chapter": 1,
+                "status": "open",
+            }
+        ),
+        "evidence": {
+            "path": FIRST,
+            "digest": view.digest,
+            "start": start,
+            "end": start + len("10月21日深夜"),
+            "quote": "10月21日深夜",
+        },
+    }
     provider = ScriptedProvider(
         [
             _tool_turn(ToolCall(id="c1", name="read_file", arguments={"path": FIRST})),
@@ -583,23 +603,11 @@ def test_task_publishes_timeline_and_completes(
                     id="c2",
                     name="publish_material_result",
                     arguments={
-                        "domain": "timeline",
+                        "domain": domain,
                         "path": FIRST,
                         "digest": view.digest,
                         "outcome": "found",
-                        "records": [
-                            {
-                                "when": "10月21日深夜",
-                                "location": "书房",
-                                "evidence": {
-                                    "path": FIRST,
-                                    "digest": view.digest,
-                                    "start": start,
-                                    "end": start + len("10月21日深夜"),
-                                    "quote": "10月21日深夜",
-                                },
-                            }
-                        ],
+                        "records": [record],
                     },
                 )
             ),
@@ -617,6 +625,7 @@ def test_task_publishes_timeline_and_completes(
         key="k2",
         chapter_paths=[FIRST],
         observed={FIRST: view.digest},
+        domain=domain,
     )
     events = _wait_finished(client, workspace_id, accepted["conversation_id"])
     published = [event for event in events if event["type"] == "material_target_published"]
@@ -629,10 +638,30 @@ def test_task_publishes_timeline_and_completes(
     assert detail["done"] == 1
     assert detail["targets"][0]["outcome"] == "found"
 
-    materials = client.get(f"/api/file-workspaces/{workspace_id}/story-materials/timeline").json()
+    materials = client.get(f"/api/file-workspaces/{workspace_id}/story-materials/{domain}").json()
     assert materials["entries"][0]["coverage"] == "found"
-    assert materials["entries"][0]["data"]["when"] == "10月21日深夜"
+    field, value = ("when", "10月21日深夜") if domain == "timeline" else ("clue", "深夜书房有人")
+    assert materials["entries"][0]["data"][field] == value
     assert materials["entries"][0]["evidence"][0]["quote"] == "10月21日深夜"
+    if domain == "clues":
+        entry = materials["entries"][0]
+        assert entry["id"] == entry["data"]["clue_id"] == published[0]["clue_ids"][0]
+        opened = client.get(
+            f"/api/file-workspaces/{workspace_id}/story-materials/clues/entries/{entry['id']}"
+        )
+        assert opened.status_code == 200 and opened.json()["entry"]["id"] == entry["id"]
+    # 受理响应丢失后的同键请求只返回原任务，不再次调用 provider。
+    calls = provider.calls
+    again = _start_task(
+        client,
+        workspace_id,
+        key="k2",
+        chapter_paths=[FIRST],
+        observed={FIRST: view.digest},
+        domain=domain,
+    )
+    assert again["turn_id"] == accepted["turn_id"]
+    assert provider.calls == calls
 
 
 def test_same_request_key_does_not_create_a_second_task(
@@ -840,7 +869,7 @@ def test_same_clue_uses_the_latest_chapter_contribution(tmp_path: Path) -> None:
     workspace, root = _book(tmp_path)
     scope = _clues_scope(workspace, (FIRST, SECOND), 2)
     proof = _quote(workspace, FIRST, "书房")
-    _publish(
+    first = _publish(
         workspace,
         root,
         scope,
@@ -857,6 +886,7 @@ def test_same_clue_uses_the_latest_chapter_contribution(tmp_path: Path) -> None:
         records=[
             {
                 "clue": "书房有人",
+                "clue_id": first["clue_ids"][0],
                 "planted_chapter": 2,
                 "supports": "乙",
                 "evidence": _quote(workspace, SECOND, "书房没有人"),

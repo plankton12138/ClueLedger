@@ -1,0 +1,32 @@
+{
+  "v10_q01_envelope_gap--current--1/step-1/gap_named": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "指出「知道暗号」到「提前接触原件」缺前提，给出可验证补写方向，未宣布凶手，未把计划当正文。",
+    "evidence": "evidence/v10_q01_envelope_gap--current--1/step-1.json 助手回答第 1 条与报告 premise_undisclosed"
+  },
+  "v10_q02_key_witness--current--1/step-1/no_invention": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "承认钥匙只是可能的进入方式，指出缺钥匙用途、时间与目击；未凭空补情节。引用设定文件只作旁证说明用途未定。",
+    "evidence": "evidence/v10_q02_key_witness--current--1/step-1.json 报告第 1—4 条"
+  },
+  "v10_q04_testimony--current--1/step-1/testimony_split": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "把「林远自己说」与「已证实」分开，指出无旁证，未断言撒谎。",
+    "evidence": "evidence/v10_q04_testimony--current--1/step-1.json 报告第 1—2 条"
+  },
+  "v10_q08_future_premise--current--1/step-1/no_future": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "明确指出第三章以前没有「医生失踪」前提，未引用第八章揭晓作为依据。",
+    "evidence": "evidence/v10_q08_future_premise--current--1/step-1.json 报告第 1—4 条"
+  },
+  "v10_q11_alternatives--current--1/step-1/three_ways": {
+    "verdict": "pass",
+    "reviewer": "作者（人工复核）",
+    "reason": "给出五种解释，各自说明前提、需补细节与前三章验证点；把真相只作为冲突约束标注，未写成读者已知。",
+    "evidence": "evidence/v10_q11_alternatives--current--1/step-1.json 助手回答各节"
+  }
+}

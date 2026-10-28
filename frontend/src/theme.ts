@@ -1,34 +1,34 @@
-// iOS 6 拟物设计令牌——单一事实来源。
-// 视觉稿：prototypes/ios6（蓝色高光、金属工具栏、分组面板、凸起按钮、织物纹理）。
+// 经典 OS X Aqua 设计令牌——单一事实来源。
+// 视觉稿：prototypes/osx-aqua-20261027；对话保留绿色与银灰复古气泡。
 // Tailwind 主题（tailwind.config.js）从这里取色；复杂渐变与内阴影落在
 // index.css 的组件类（.panel / .btn / .pill …），令牌只承载纯色。
 export const theme = {
   colors: {
     ui: {
-      canvas: "#ECEEEB", surface: "#FFFFFF", surfaceLow: "#F3F5F4", paper: "#F7F3E8",
-      text: "#273B4B", secondaryText: "#53626D", edge: "#788A94",
-      accent: "#365F7E", accentHover: "#2B506C", onAccent: "#FFFFFF",
-      selected: "#DEEAF1", onSelected: "#273B4B", focus: "#275C83",
+      canvas: "#E7EBEF", surface: "#FFFFFF", surfaceLow: "#F1F4F7", paper: "#FFFDF8",
+      text: "#29313A", secondaryText: "#53606D", edge: "#788490",
+      accent: "#2862AD", accentHover: "#1C4F96", onAccent: "#FFFFFF",
+      selected: "#DCE8F8", onSelected: "#29313A", focus: "#2465B5",
       danger: "#8A302B", dangerSurface: "#FFF0ED", success: "#325F37", successSurface: "#EAF4E8",
       warning: "#75551F", warningSurface: "#FFF4DE", disabledText: "#596770", disabledSurface: "#E3E7E8",
       overlay: "rgba(25, 40, 50, 0.38)",
     },
-    // --- 页面与织物工作台 ---
-    page: "#E7EAEB", // 页面外底
-    workbench: "#E4E8E9", // 工作区织物底（纹理见 index.css）
+    // --- 页面与工作区 ---
+    page: "#E7EBEF",
+    workbench: "#DFE5EB",
     // --- 文字 ---
-    fg: "#273B4B", // 主文字（蓝灰墨）
-    fgStrong: "#2B485D", // 标题
+    fg: "#29313A",
+    fgStrong: "#242D37",
     sub: "#626F7B", // 次级文字（V03-8.5 走查：4.82:1 on panel，达 WCAG AA）
     mute: "#53626D", // 弱提示（占位符/旧版聊天元信息；V03-8.5 走查压暗）
     faint: "#53626D", // eyebrow 小标
     // --- 金属顶栏 / 导航 ---
-    chromeHigh: "#BAD0E2",
-    chromeMid: "#8EAFC9",
-    chromeBand: "#648CAD",
-    chromeLow: "#416C90",
-    chromeEdge: "#31546F", // 顶栏下缘
-    chromeShadow: "#2E5677", // 顶栏文字投影
+    chromeHigh: "#F5F5F6",
+    chromeMid: "#E4E5E7",
+    chromeBand: "#D9DADD",
+    chromeLow: "#CED0D4",
+    chromeEdge: "#969DA6",
+    chromeShadow: "#FFFFFF",
     navEdge: "#9AAAB4",
     // --- 面板 ---
     panelEdge: "#A8B7C0",
@@ -40,10 +40,10 @@ export const theme = {
     darkHeadEdge: "#2B536F",
     rowEdge: "#DCE4E8", // 列表行分隔
     // --- 按钮 ---
-    btnEdge: "#366487",
-    btnHigh: "#A5C9DF",
-    btnMid: "#639CC4",
-    btnLow: "#2D6996",
+    btnEdge: "#1C4F96",
+    btnHigh: "#B4D4FF",
+    btnMid: "#316BC1",
+    btnLow: "#2056A1",
     btnGrayEdge: "#A8B7BF",
     btnGoldEdge: "#9E783E",
     btnGoldHigh: "#F1DCA4",
@@ -52,8 +52,8 @@ export const theme = {
     btnGoldText: "#392506",
     btnGoldHoverHigh: "#F5E2B2",
     btnGoldHoverLow: "#D4AD72",
-    selectedHigh: "#426F91",
-    selectedLow: "#315B7C",
+    selectedHigh: "#316BC1",
+    selectedLow: "#2056A1",
     onSelected: "#FFFFFF",
     // --- 徽章 / 状态 ---
     live: "#A9DF83", // 连接呼吸点
@@ -71,7 +71,7 @@ export const theme = {
     red: "#8A302B",
     redBg: "#FFF0ED",
     redEdge: "#D6A69B",
-    blue: "#365F7E",
+    blue: "#2862AD",
     blueBg: "#EAF4FB",
     blueEdge: "#A8C5D7",
     // --- 提示条（系统提醒黄）---
@@ -89,9 +89,9 @@ export const theme = {
     delText: "#A74C3D",
     insBg: "#DAF0DF",
     insText: "#2D7650",
-    // --- 正文纸面（浅米，创作台中心）---
-    sheet: "#F7F3E8",
-    sheetInk: "#3D4C55",
+    // --- 正文纸面 ---
+    sheet: "#FFFDF8",
+    sheetInk: "#30343A",
     sheetMute: "#53626D",
     sheetLine: "#E3DCC8",
     // --- 选中 ---
@@ -106,6 +106,6 @@ export const theme = {
   },
   fonts: {
     sans: ['"Helvetica Neue"', '"PingFang SC"', '"Microsoft YaHei"', "sans-serif"],
-    serif: ["Georgia", '"Songti SC"', '"Noto Serif SC"', "serif"],
+    serif: ["Georgia", '"Songti SC"', '"Noto Serif SC"', '"SimSun"', "serif"],
   },
 } as const;

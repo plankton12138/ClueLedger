@@ -1,0 +1,27 @@
+
+> hastings-desktop@1.0.0 dist
+> npm run build && electron-builder --win --x64
+
+
+> hastings-desktop@1.0.0 build
+> tsc -p tsconfig.json
+
+  • electron-builder  version=25.1.8 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • author is missed in the package.json  appPackageFile=C:\Projects\Agent\myagent\desktop\package.json
+  • executing @electron/rebuild  electronVersion=33.4.11 arch=x64 buildFromSource=false appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=33.4.11 appOutDir=dist\win-unpacked
+  • updating asar integrity executable resource  executablePath=dist\win-unpacked\ClueLedger.exe
+  • default Electron icon is used  reason=application icon is not set
+  • signing with signtool.exe  path=dist\win-unpacked\ClueLedger.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • building        target=nsis file=dist\ClueLedger-Setup-1.0.0.exe archs=x64 oneClick=false perMachine=false
+  • signing with signtool.exe  path=dist\win-unpacked\resources\elevate.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • signing with signtool.exe  path=dist\__uninstaller-nsis-hastings-desktop.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • signing with signtool.exe  path=dist\ClueLedger-Setup-1.0.0.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • building block map  blockMapFile=dist\ClueLedger-Setup-1.0.0.exe.blockmap

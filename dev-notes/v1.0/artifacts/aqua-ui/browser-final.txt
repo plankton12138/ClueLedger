@@ -1,0 +1,37 @@
+
+[WebServer] (node:31092) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer] (!) outDir C:\Projects\Agent\myagent\data\test-tmp\aqua-ui-20261028\frontend is not inside project root and will not be emptied.
+[WebServer] Use --emptyOutDir to override.
+[WebServer] 
+
+
+[WebServer] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+[WebServer] INFO:     Started server process [13856]
+[WebServer] INFO:     Waiting for application startup.
+
+[WebServer] INFO:     Application startup complete.
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8945 (Press CTRL+C to quit)
+
+
+Running 8 tests using 1 worker
+
+(node:10160) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[1/8] [workspace] › e2e\chat-rendering.spec.ts:44:1 › 长思考折叠时不解析正文，突发分片合批且历史轮次不重绘
+[2/8] [workspace] › e2e\chat-rendering.spec.ts:65:3 › 高像素密度下阅读长思考 › 展开后完整保留实时原文，向上阅读与选字不被新内容拉走
+[3/8] [workspace] › e2e\chat-rendering.spec.ts:90:1 › 切换作品后，待刷新的旧分片不能重新填回页面
+[4/8] [workspace] › e2e\context-usage.spec.ts:81:1 › 浮层互斥、键盘及窄屏缩放可用，不遮挡草稿
+[5/8] [workspace] › e2e\frontend-foundation.spec.ts:8:1 › 控件完整状态与键盘浮层行为
+[6/8] [workspace] › e2e\module-workspace.spec.ts:109:1 › 作品内容保存响应丢失后重试不重复创建版本
+[7/8] [workspace] › e2e\module-workspace.spec.ts:139:1 › 外部版本变化时保留草稿，重新读取后可以另存而不覆盖当前内容
+[8/8] [workspace] › e2e\module-workspace.spec.ts:194:1 › 应用前可预览修改内容；继续保存不覆盖未保存草稿
+  8 passed (35.3s)

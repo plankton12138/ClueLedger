@@ -31,7 +31,7 @@ const LEGACY_SECTIONS: Record<string, { section: MaterialSection; order: StoryOr
 };
 
 export type WorkspacePage =
-  | { kind: "writing"; workspaceId: string }
+  | { kind: "writing"; workspaceId: string; sourceId?: string; clueId?: string; asOfChapter?: number; taskChapter?: number }
   | { kind: "ideas"; workspaceId: string; ideaId?: string }
   | {
       kind: "materials";
@@ -78,7 +78,18 @@ export function parseHash(hash: string): AppPage | null {
   const workspaceId = parts[1];
   if (!WORKSPACE_ID.test(workspaceId)) return null;
   if (parts[2] === "writing" && parts.length === 3) {
-    return { kind: "writing", workspaceId };
+    const params = new URLSearchParams(query);
+    const sourceId = params.get("source"), clueId = params.get("clue");
+    const asOf = params.get("as_of"), task = params.get("task_chapter");
+    if (sourceId !== null && !/^ev_[a-f0-9]{20}_[a-f0-9]{32}$/.test(sourceId)) return null;
+    if (clueId !== null && !ENTRY_ID.test(clueId)) return null;
+    for (const value of [asOf, task]) if (value !== null && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return null;
+    const page: WorkspacePage = { kind: "writing", workspaceId };
+    if (sourceId) page.sourceId = sourceId;
+    if (clueId) page.clueId = clueId;
+    if (asOf !== null) page.asOfChapter = Number(asOf);
+    if (task !== null) page.taskChapter = Number(task);
+    return page;
   }
   if (parts[2] === "ideas" && parts.length === 3) {
     const params = new URLSearchParams(query);
@@ -119,7 +130,14 @@ export function pageHash(page: AppPage): string {
     const resource = page.moduleId ? `/modules/${page.moduleId}${page.revisionId ? `/revisions/${page.revisionId}` : ""}` : "";
     return `#/library${resource}${page.workspaceContextId ? `?workspace=${encodeURIComponent(page.workspaceContextId)}` : ""}`;
   }
-  if (page.kind === "writing") return `#/workspaces/${page.workspaceId}/writing`;
+  if (page.kind === "writing") {
+    const params = new URLSearchParams();
+    if (page.sourceId) params.set("source", page.sourceId);
+    if (page.clueId) params.set("clue", page.clueId);
+    if (page.asOfChapter !== undefined) params.set("as_of", String(page.asOfChapter));
+    if (page.taskChapter !== undefined) params.set("task_chapter", String(page.taskChapter));
+    return `#/workspaces/${page.workspaceId}/writing${params.size ? `?${params}` : ""}`;
+  }
   if (page.kind === "ideas") {
     const suffix = page.ideaId ? `?entry=${encodeURIComponent(page.ideaId)}` : "";
     return `#/workspaces/${page.workspaceId}/ideas${suffix}`;

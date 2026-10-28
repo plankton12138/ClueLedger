@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -1020,6 +1021,52 @@ def _create_workspace(tmp_path: Path) -> Any:
 
 
 # -- 本轮材料 ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("length", [40, 3200])
+def test_reference_preparation_matches_actual_request_on_first_and_followup(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient], length: int
+) -> None:
+    from tau_agent.messages import message_text
+
+    workspace = _create_workspace(tmp_path)
+    text = "参考唯一标记🌧️" + "正文" * length
+    ref = workspace.write("正文/0001 参考章.md", text, expected_digest=None)
+    provider = ScriptedProvider([_text_turn("已查看。"), _text_turn("继续查看。")])
+    client = client_factory(lambda: _snapshot(provider))
+    wid = _workspace(client, tmp_path)
+    context = {"reference_paths": [ref.path], "observed_digests": {ref.path: ref.digest}}
+    first = _accept(client, wid, "请查看参考。", context=context)
+    _wait_until(client, wid, first["conversation_id"], _finished)
+    second = client.post(
+        f"/api/file-workspaces/{wid}/conversations/{first['conversation_id']}/turns",
+        json={"text": "继续查看参考。", "request_key": "followup-ref", "context": context},
+    )
+    assert second.status_code == 202, second.text
+    turn_id = second.json()["turn_id"]
+    events = _wait_until(
+        client,
+        wid,
+        first["conversation_id"],
+        lambda rows: any(
+            row["type"] == "run_finished" and row["turn_id"] == turn_id for row in rows
+        ),
+    )
+    for request in provider.requests:
+        blocks = [
+            message_text(m) for m in request["messages"] if "应用提供的参考原文" in message_text(m)
+        ]
+        assert len(blocks) == 1
+        supplied = json.loads(blocks[0].split("\n", 1)[1])[0]
+        assert supplied["text"] == text[:2000]
+        assert supplied["digest"] == ref.digest
+        assert supplied["end"] == len(supplied["text"])
+    assert len(provider.requests) == 2
+    assert all(
+        row["provided"][0]["end"] == min(2000, len(text))
+        for row in events
+        if row["type"] == "context_prepared"
+    )
 
 
 def test_reference_selection_limits_write_until_read(

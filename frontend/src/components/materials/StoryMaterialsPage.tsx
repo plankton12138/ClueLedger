@@ -24,6 +24,8 @@ import { useMaterialTasksStore } from "../../state/materialTasks";
 import { materialsKey, useStoryMaterialsStore } from "../../state/storyMaterials";
 import ChapterRangePicker from "./ChapterRangePicker";
 import EvidencePane from "./EvidencePane";
+import ClueDetail from "../clues/ClueDetail";
+import NewClueDialog from "../clues/NewClueDialog";
 import MaterialTaskBar from "./MaterialTaskBar";
 import StoryEventsPanel from "./StoryEventsPanel";
 import { Row, CharactersList, CluesList, EntryDetail } from "./MaterialEntries";
@@ -31,6 +33,8 @@ import MaterialNavigation from "./MaterialNavigation";
 import MaterialBrowserBar from "./MaterialBrowserBar";
 import OrganizeActions from "./OrganizeActions";
 import { useLayoutStore } from "../../state/layout";
+import { useConversationsStore } from "../../state/conversations";
+import type { ClueReferenceInput } from "../../api/workspace";
 import { Button } from "../ui/Button";
 import { StatusMessage } from "../ui/StatusMessage";
 import { usePagePositions } from "../../state/pagePositions";
@@ -71,6 +75,7 @@ interface Props {
   entryId?: string;
   onNavigate: (page: WorkspacePage) => void;
   onOpenSource: (path: string) => void;
+  onLocateEvidence?: (evidenceId: string) => void;
   onTakeToChat: (path: string) => void;
   onOpenActivity: () => void;
 }
@@ -83,6 +88,7 @@ export default function StoryMaterialsPage({
   entryId,
   onNavigate,
   onOpenSource,
+  onLocateEvidence,
   onTakeToChat,
   onOpenActivity,
 }: Props) {
@@ -114,6 +120,7 @@ export default function StoryMaterialsPage({
   const clearTaskError = useMaterialTasksStore((state) => state.clearError);
 
   const [picker, setPicker] = useState<PickerState | null>(null);
+  const [newClue, setNewClue] = useState(false);
   const lookupKey = `${workspaceId}|${primary}|${chapter ?? ""}|${entryId ?? ""}`;
   const [fetchedEntry, setFetchedEntry] = useState<{ key: string; entry: MaterialEntry } | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -133,6 +140,15 @@ export default function StoryMaterialsPage({
     void loadTasks(workspaceId, primary);
     if (section === "characters") void loadTasks(workspaceId, "roster");
   }, [workspaceId, primary, section, loadTasks]);
+
+  // 资料页只登记引用：切到写作页后由作者决定要不要发送这一轮。
+  async function takeClue(reference: ClueReferenceInput, title: string) {
+    const store = useConversationsStore.getState();
+    if (store.workspaceId !== workspaceId) await store.load(workspaceId);
+    if (useConversationsStore.getState().addClueReference({ ...reference, title }, title)) {
+      onNavigate({ kind: "writing", workspaceId });
+    }
+  }
 
   // 人物页一人一行：身份与状态在详情里分区显示，不把同一个人拆成两条。
   const entries = primaryData?.entries ?? [];
@@ -234,6 +250,11 @@ export default function StoryMaterialsPage({
         ) : (
         <div className="materials-content">
           <div ref={list} className="materials-list" hidden={compact && Boolean(selected)} onScroll={event => { if (event.currentTarget.clientHeight && primaryData) usePagePositions.getState().offset(positionKey, event.currentTarget.scrollTop); }}>
+            {section === "clues" && (
+              <div className="flex justify-end border-b border-row-edge px-3 py-2">
+                <Button size="compact" onClick={() => setNewClue(true)}>新建线索设计</Button>
+              </div>
+            )}
             {loading[materialsKey(primary, chapter)] && !primaryData && (
               <p className="px-3 py-2 text-sm text-mute">正在读取资料…</p>
             )}
@@ -291,7 +312,11 @@ export default function StoryMaterialsPage({
           {selected ? (
             <div className="materials-evidence" data-compact={compact}>
               {compact && <Button size="compact" onClick={() => onNavigate({ kind: "materials", workspaceId, section, chapter, order })}>返回资料列表</Button>}
-              <EntryDetail
+              {selected.domain === "clues" ? <ClueDetail workspaceId={workspaceId} clueId={selected.id} asOf={chapter}
+                refreshKey={`${taskRevision}:${refreshToken}:${selected.freshness}:${selected.updated_at}`}
+                onLocate={onLocateEvidence}
+                onReference={(reference: ClueReferenceInput, title: string) => void takeClue(reference, title)}
+                onClose={compact ? undefined : () => onNavigate({ kind: "materials", workspaceId, section, chapter, order })} /> : <><EntryDetail
                 entry={selected}
                 roster={rosterData?.entries.find(
                   (item) => item.entity_path === selected.entity_path,
@@ -302,11 +327,13 @@ export default function StoryMaterialsPage({
                 entry={selected}
                 showClose={!compact}
                 onOpenSource={onOpenSource}
+                onLocateEvidence={onLocateEvidence}
                 onTakeToChat={onTakeToChat}
                 onClose={() =>
                   onNavigate({ kind: "materials", workspaceId, section, chapter, order })
                 }
               />
+              </>}
             </div>
           ) : null}
         </div>
@@ -326,6 +353,18 @@ export default function StoryMaterialsPage({
           onConfirm={(chapterPaths, entityPaths) =>
             void submitTask(chapterPaths, entityPaths)
           }
+        />
+      )}
+      {newClue && (
+        <NewClueDialog
+          workspaceId={workspaceId}
+          asOf={asOf}
+          onClose={() => setNewClue(false)}
+          onCreated={clueId => {
+            setNewClue(false);
+            setRefreshToken(value => value + 1);
+            onNavigate({ kind: "materials", workspaceId, section, chapter, order, entryId: clueId });
+          }}
         />
       )}
     </div>

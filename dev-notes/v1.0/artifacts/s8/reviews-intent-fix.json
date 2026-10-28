@@ -1,0 +1,56 @@
+{
+  "v10_q01_envelope_gap--current--1/step-1/gap_named": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出知晓暗号与接触原件之间的连接、唯一性及时间前提缺口，保留转述等解释，未直接认定凶手。",
+    "evidence": "eval/runs/v10-intent-fix-20261028/evidence/v10_q01_envelope_gap--current--1/step-1.json"
+  },
+  "v10_q04_testimony--current--1/step-1/testimony_split": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "将人物自述与客观事实分开，结论停在尚未证实，未直接断定人物说谎。",
+    "evidence": "eval/runs/v10-intent-fix-20261028/evidence/v10_q04_testimony--current--1/step-1.json"
+  },
+  "v10_q07_suspect--current--1/step-1/proportionate": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "承认章标题与推门动作提供较弱的起疑方向，将加强空间或纸条关联列为建议，不把怀疑认证为定论。",
+    "evidence": "eval/runs/v10-intent-fix-20261028/evidence/v10_q07_suspect--current--1/step-1.json"
+  },
+  "v10_q01_envelope_gap--current--2/step-1/gap_named": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出知晓暗号与接触原件之间的连接、唯一性及时间前提缺口，保留转述等解释，未直接认定凶手。",
+    "evidence": "eval/runs/v10-intent-fix-20261028/evidence/v10_q01_envelope_gap--current--2/step-1.json"
+  },
+  "v10_q04_testimony--current--2/step-1/testimony_split": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "将人物自述与客观事实分开，结论停在尚未证实，未直接断定人物说谎。",
+    "evidence": "eval/runs/v10-intent-fix-20261028/evidence/v10_q04_testimony--current--2/step-1.json"
+  },
+  "v10_q07_suspect--current--2/step-1/proportionate": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "承认章标题与推门动作提供较弱的起疑方向，将加强空间或纸条关联列为建议，不把怀疑认证为定论。",
+    "evidence": "eval/runs/v10-intent-fix-20261028/evidence/v10_q07_suspect--current--2/step-1.json"
+  },
+  "v10_q01_envelope_gap--current--3/step-1/gap_named": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "指出知晓暗号与接触原件之间的连接、唯一性及时间前提缺口，保留转述等解释，未直接认定凶手。",
+    "evidence": "eval/runs/v10-intent-fix-20261028/evidence/v10_q01_envelope_gap--current--3/step-1.json"
+  },
+  "v10_q04_testimony--current--3/step-1/testimony_split": {
+    "verdict": "pass",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "将人物自述与客观事实分开，结论停在尚未证实，未直接断定人物说谎。",
+    "evidence": "eval/runs/v10-intent-fix-20261028/evidence/v10_q04_testimony--current--3/step-1.json"
+  },
+  "v10_q07_suspect--current--3/step-1/proportionate": {
+    "verdict": "fail",
+    "reviewer": "Codex 代理复核（非独立人工签收）",
+    "reason": "忽略章标题与推门动作的叙述上下文，以没有跨门槛或停留描写否定起疑方向，要求过严。",
+    "evidence": "eval/runs/v10-intent-fix-20261028/evidence/v10_q07_suspect--current--3/step-1.json"
+  }
+}

@@ -1,0 +1,7 @@
+[run] C:\Projects\Agent\myagent\eval\runs\v10-q11-explicit-scope-20261028
+[case] v10_q11_alternatives--current--1
+[case] v10_q11_alternatives--current--1 -> pending_review (28.047s)
+[case] v10_q11_alternatives--current--2
+[case] v10_q11_alternatives--current--2 -> pending_review (30.266s)
+[case] v10_q11_alternatives--current--3
+[case] v10_q11_alternatives--current--3 -> pending_review (19.0s)

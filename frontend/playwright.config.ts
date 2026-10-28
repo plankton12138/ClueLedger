@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 const port = Number(process.env.HASTINGS_E2E_PORT ?? "8931");
 const dataDir = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e");
+const staticDir = resolve(process.env.HASTINGS_E2E_STATIC_DIR ?? "dist");
+const configArg = process.env.HASTINGS_E2E_CONFIG ? ` --config "${process.env.HASTINGS_E2E_CONFIG}"` : "";
 
 /**
  * E2E 配置：单进程真服务——webServer 先 build 前端再启动 `hastings.server`
@@ -34,17 +36,17 @@ export default defineConfig({
   projects: [
     {
       name: "workspace",
-      testMatch: ["text-selection.spec.ts", "context-usage.spec.ts", "workspace.spec.ts", "chat-rendering.spec.ts", "frontend-experience.spec.ts", "frontend-foundation.spec.ts", "module-editor.spec.ts", "module-workspace.spec.ts", "ideas-companion.spec.ts", "core-pages.spec.ts", "shared-interactions.spec.ts", "story-overview-removal.spec.ts", "model-thinking.spec.ts"],
+      testMatch: ["aqua-layout.spec.ts", "chapter-clues.spec.ts", "clue-design.spec.ts", "clue-review.spec.ts", "clue-reference.spec.ts", "clue-workflow.spec.ts", "clue-source-navigation.spec.ts", "text-selection.spec.ts", "context-usage.spec.ts", "workspace.spec.ts", "chat-rendering.spec.ts", "frontend-experience.spec.ts", "frontend-foundation.spec.ts", "module-editor.spec.ts", "module-workspace.spec.ts", "ideas-companion.spec.ts", "core-pages.spec.ts", "shared-interactions.spec.ts", "story-overview-removal.spec.ts", "model-thinking.spec.ts"],
       timeout: 30_000,
     },
     {
       name: "online",
-      testMatch: ["model-flows.spec.ts", "activity.spec.ts"],
+      testMatch: ["clue-workflow-online.spec.ts", "model-flows.spec.ts", "activity.spec.ts"],
       timeout: 240_000,
     },
   ],
   webServer: {
-    command: `npm run build && uv run --directory .. python -m hastings.server --port ${port} --state-dir "${dataDir}/state" --library-dir "${dataDir}/library"`,
+    command: `npm run build -- --outDir "${staticDir}" && uv run --directory .. python -m hastings.server --port ${port} --state-dir "${dataDir}/state" --library-dir "${dataDir}/library" --static-dir "${staticDir}"${configArg}`,
     url: `http://127.0.0.1:${port}/api/health`,
     reuseExistingServer: !process.env.CI && !process.env.HASTINGS_E2E_PORT,
     timeout: 120_000,

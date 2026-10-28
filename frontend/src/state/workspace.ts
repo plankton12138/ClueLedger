@@ -20,6 +20,7 @@ import {
   gitStatus,
   importManuscript,
   listFiles,
+  fetchReadingPosition,
   listWorkspaces,
   openWorkspace,
   pruneStaleWorkspaces,
@@ -38,6 +39,7 @@ import { errorMessage } from "../api/errors";
 import { registerModuleChanges, registerRunFinished, useConversationsStore } from "./conversations";
 import { useWorkspaceModulesStore } from "./workspaceModules";
 import { useModuleLibraryStore } from "./moduleLibrary";
+import { usePagePositions } from "./pagePositions";
 
 const EMPTY_CATALOG: Catalog = { chapters: [], characters: [], settings: [] };
 
@@ -181,6 +183,18 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     const epoch = get().workspaceEpoch;
     await useConversationsStore.getState().load(id);
     if (get().currentId !== id || get().workspaceEpoch !== epoch) return;
+    if (!get().selectedPath) {
+      try {
+        const position = await fetchReadingPosition(id);
+        if (get().currentId !== id || get().workspaceEpoch !== epoch) return;
+        if (position.path) {
+          usePagePositions.getState().offset(`${id}:paper:${position.path}`, position.offset);
+          set({ selectedPath: position.path });
+        }
+      } catch (error) {
+        if (get().currentId === id && get().workspaceEpoch === epoch) set({ notice: describe(error) });
+      }
+    }
     await get().refreshAll();
   },
 

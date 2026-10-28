@@ -197,7 +197,7 @@ test("字号调整同步到正文与活动日志，刷新保留并可恢复默�
   expect(await paragraph.evaluate(element => parseFloat(getComputedStyle(element).lineHeight)))
     .toBeCloseTo(original.line * 1.5);
   expect(await page.locator(".chat-input").evaluate(element => parseFloat(getComputedStyle(element).fontSize)))
-    .toBeCloseTo(14 * 1.5);
+    .toBeCloseTo(16 * 1.5);
   // 调字号不缩放窗口和栏宽，顶栏允许换行。
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole("dialog", { name: "设置", exact: true }).getByRole("button", { name: "关闭", exact: true }).click();
@@ -223,7 +223,7 @@ test("字号调整同步到正文与活动日志，刷新保留并可恢复默�
   await panel.getByRole("button", { name: "详情", exact: true }).first().click();
   const detail = panel.locator("pre").first();
   await expect(detail).toBeVisible();
-  expect(await detail.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(14 * 1.2);
+  expect(await detail.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(15 * 1.2);
   await panel.getByRole("button", { name: "恢复默认字号" }).click();
   await expect(panel.getByLabel("调整字体大小")).toHaveValue("100");
   await panel.getByRole("button", { name: "关闭", exact: true }).click();
@@ -357,15 +357,15 @@ test("对话栏宽度可拖拽，且不超过上限", async ({ page }) => {
     .poll(async () => Math.round((await panel.boundingBox())!.width))
     .toBe(Math.round(before) + 80);
 
-  // 继续向左拖到超过上限，宽度停在 560。
+  // 继续向左拖到超过上限，正文仍保留至少 560px。
   await dragHandle(page, "对话栏宽度", -400);
   await expect
     .poll(async () => Math.round((await panel.boundingBox())!.width))
-    .toBeLessThanOrEqual(560);
+    .toBeLessThanOrEqual(640);
   expect((await page.getByRole("region", { name: "正文阅读", exact: true }).boundingBox())!.width).toBeGreaterThanOrEqual(560);
 });
 
-test("稿纸横线随内容滚动", async ({ page }) => {
+test("平整稿纸可滚动阅读，不绘制干扰正文的横线", async ({ page }) => {
   const long = Array.from({ length: 60 }, (_, index) => `第 ${index + 1} 段：雪还在下。`).join(
     "\n\n",
   );
@@ -380,10 +380,7 @@ test("稿纸横线随内容滚动", async ({ page }) => {
   const lined = page.locator(".paper-lined");
   const sheet = page.locator(".paper-sheet");
 
-  // 横线挂在内容层，不挂在滚动容器上。
-  expect(await lined.evaluate((el) => getComputedStyle(el).backgroundImage)).toContain(
-    "repeating-linear-gradient",
-  );
+  expect(await lined.evaluate((el) => getComputedStyle(el).backgroundImage)).toBe("none");
   expect(await sheet.evaluate((el) => getComputedStyle(el).backgroundImage)).not.toContain(
     "repeating-linear-gradient",
   );

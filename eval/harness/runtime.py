@@ -22,6 +22,10 @@ from hastings.library.records import EntryDraft
 from hastings.workspace import agent
 from hastings.workspace.assembly import assemble
 from hastings.workspace.chapter_index import ChapterIndexStore
+from hastings.workspace.clue_designs import create_clue_identity, save_clue_inference
+from hastings.workspace.clue_models import ClueCoverage, ClueEntry
+from hastings.workspace.clue_store import ClueLedgerStore
+from hastings.workspace.disclosure import ObservedEvidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
@@ -29,6 +33,7 @@ from hastings.workspace.ideas import IdeaStore
 from hastings.workspace.materials import ContextRequest
 from hastings.workspace.module_assembly import AssemblyStore
 from hastings.workspace.questions import QuestionStore
+from hastings.workspace.review import REVIEW_INSTRUCTIONS
 from hastings.workspace.service import ProviderFactory, TurnService
 from hastings.workspace.state import ConversationStore, conversation_root
 from hastings.workspace.story_materials import CoverageStore
@@ -139,8 +144,20 @@ def intervention(case: Case, variant: str, trace: dict[str, Any]) -> Iterator[No
 
     def build_assembly(*args: Any, **kwargs: Any) -> Any:
         result = original_assembly(*args, **kwargs)
-        if removed:
-            filtered = assemble(result.profile, [p for p in result.parts if p.key not in removed])
+        if removed or variant in {"presentation_refs", "baseline"}:
+            parts: list[Any] = []
+            for part in result.parts:
+                if part.key in removed:
+                    continue
+                if (
+                    variant in {"presentation_refs", "baseline"}
+                    and part.key == "instructions"
+                    and "核对作者保存的一组线索推理" in part.text
+                ):
+                    # 对照变体不享受专用核对提示与冻结范围，只保留 0.9 的通用检查要求。
+                    part = replace(part, text=REVIEW_INSTRUCTIONS)
+                parts.append(part)
+            filtered = assemble(result.profile, parts)
             result = replace(filtered, skipped=filtered.skipped + result.skipped)
         trace["assemblies"].append({p.key: p.text for p in result.parts})
         return result
@@ -185,6 +202,89 @@ def intervention(case: Case, variant: str, trace: dict[str, Any]) -> Iterator[No
         patch.object(agent, "build_tools", build_tools),
     ):
         yield
+
+
+def _seed_clues(
+    workspace: Workspace, state_root: Path, case: Case
+) -> dict[str, dict[str, Any]]:
+    """把评测初态的线索身份与作者目标写进真实账本；模型只看到视图与正文。"""
+    if not case.clues and not case.inferences:
+        return {}
+    ledger = ClueLedgerStore(state_root)
+    chapters = {
+        row.chapter_number: row.path
+        for row in workspace.catalog().chapters
+        if row.exists and row.chapter_number is not None
+    }
+    clue_ids: dict[str, str] = {}
+    for index, seed in enumerate(case.clues):
+        clue_ids[seed.title] = str(
+            create_clue_identity(
+                ledger,
+                title=seed.title,
+                request_key=f"eval-clue-{index + 1}",
+                expected_revision=ledger.read().revision,
+            )["clue_id"]
+        )
+    for index, seed in enumerate(case.clues):
+        if not seed.quote:
+            continue
+        path = chapters.get(seed.chapter)
+        if path is None:
+            raise RuntimeError(f"线索 {seed.title} 引用的第 {seed.chapter} 章不存在")
+        view = workspace.read(path)
+        start = view.text.find(seed.quote)
+        if start < 0:
+            raise RuntimeError(f"线索 {seed.title} 的引文不在第 {seed.chapter} 章")
+        ledger.publish(
+            (
+                ClueEntry(
+                    seed.title,
+                    seed.chapter,
+                    None,
+                    "open",
+                    "",
+                    ObservedEvidence(
+                        path, view.digest, start, start + len(seed.quote), seed.quote
+                    ),
+                    source_chapter=seed.chapter,
+                    clue_id=clue_ids[seed.title],
+                    mode="narration",
+                ),
+            ),
+            source_chapter=seed.chapter,
+            expected_revision=ledger.read().revision,
+            request_key=f"eval-clue-publish-{index + 1}",
+            coverage=ClueCoverage(
+                path=path,
+                digest=view.digest,
+                chapter=seed.chapter,
+                outcome="found",
+                task_id="eval-seed",
+                at="2026-10-27T09:00:00+08:00",
+            ),
+        )
+    rows: dict[str, dict[str, Any]] = {}
+    for index, inference in enumerate(case.inferences):
+        created = save_clue_inference(
+            ledger,
+            clue_ids=[clue_ids[title] for title in inference.clue_titles],
+            goal=inference.goal,
+            intent=inference.intent,
+            premises=[],
+            alternatives=[],
+            design_link_ids=[],
+            request_key=f"eval-inference-{index + 1}",
+            expected_revision=ledger.read().revision,
+            created_by="author",
+        )
+        rows[inference.key] = {
+            "inference_id": str(created["inference_id"]),
+            "inference_revision": str(created["inference_revision"]),
+            "clue_ids": [clue_ids[title] for title in inference.clue_titles],
+            "titles": clue_ids,
+        }
+    return rows
 
 
 def _idea_rows(workspace: Workspace) -> list[dict[str, object]]:
@@ -304,6 +404,7 @@ def capture(
         "clues.json",
         "materials-coverage.json",
         "reviews.json",
+        "clue-ledger.json",
     ):
         state_file = service.store.root / name
         if state_file.exists():
@@ -409,6 +510,7 @@ async def run_attempt(
         )
         ideas[idea_seed.title] = created
     store = ConversationStore(conversation_root(work / key / "state", "eval"))
+    inferences = _seed_clues(workspace, store.root, case)
     cid = seed_history(store, case)
     trace: dict[str, Any] = {"assemblies": [], "faults": []}
     gate = {"armed": False, "fired": False}
@@ -474,6 +576,21 @@ async def run_attempt(
             info = None
             try:
                 material_scope = step.material_scope
+                clue_scope = None
+                if step.clue_review is not None:
+                    seeded = inferences[str(step.clue_review["inference"])]
+                    requested = step.clue_review.get("clue_titles")
+                    wanted = (
+                        [seeded["titles"][str(title)] for title in requested]
+                        if isinstance(requested, list) and requested
+                        else list(seeded["clue_ids"])
+                    )
+                    clue_scope = {
+                        "inference_id": seeded["inference_id"],
+                        "inference_revision": seeded["inference_revision"],
+                        "clue_ids": wanted,
+                        "as_of_chapter": int(step.clue_review.get("as_of_chapter") or 0),
+                    }
                 reply_to = ""
                 if step.reply_to_question:
                     pending = QuestionStore(store.root).pending(cid) if cid else ()
@@ -499,7 +616,9 @@ async def run_attempt(
                     ),
                     purpose=step.purpose,
                     index_paths=step.index_paths,
+                    review_paths=tuple(step.review_paths),
                     material_scope=material_scope,
+                    clue_review=clue_scope,
                     reply_to_question=reply_to,
                 )
                 cid = info.conversation_id

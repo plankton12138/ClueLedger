@@ -23,7 +23,7 @@ describe("空间分配", () => {
     const prefs = { ...DEFAULT_LAYOUT, fontScale: 150 };
     expect(writingLayout(1416, prefs).kind).toBe("two");
     expect(writingLayout(1000, prefs).kind).toBe("single");
-    expect(prefs).toMatchObject({ chatWidth: 380, sidebarWidth: 260, chatVisible: true });
+    expect(prefs).toMatchObject({ chatWidth: CHAT.default, sidebarWidth: SIDEBAR.default, chatVisible: true });
   });
   it("关闭对话不把原本收起的目录自动展开", () => {
     const prefs = { ...DEFAULT_LAYOUT, chatVisible: false };

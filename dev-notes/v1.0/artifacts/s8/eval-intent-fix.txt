@@ -1,0 +1,19 @@
+[run] C:\Projects\Agent\myagent\eval\runs\v10-intent-fix-20261028
+[case] v10_q01_envelope_gap--current--1
+[case] v10_q01_envelope_gap--current--1 -> pending_review (32.438s)
+[case] v10_q04_testimony--current--1
+[case] v10_q04_testimony--current--1 -> pending_review (44.469s)
+[case] v10_q07_suspect--current--1
+[case] v10_q07_suspect--current--1 -> pending_review (34.578s)
+[case] v10_q01_envelope_gap--current--2
+[case] v10_q01_envelope_gap--current--2 -> pending_review (21.406s)
+[case] v10_q04_testimony--current--2
+[case] v10_q04_testimony--current--2 -> pending_review (18.797s)
+[case] v10_q07_suspect--current--2
+[case] v10_q07_suspect--current--2 -> pending_review (37.0s)
+[case] v10_q01_envelope_gap--current--3
+[case] v10_q01_envelope_gap--current--3 -> pending_review (24.391s)
+[case] v10_q04_testimony--current--3
+[case] v10_q04_testimony--current--3 -> pending_review (22.172s)
+[case] v10_q07_suspect--current--3
+[case] v10_q07_suspect--current--3 -> pending_review (52.812s)

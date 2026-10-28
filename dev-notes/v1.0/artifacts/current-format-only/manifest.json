@@ -1,0 +1,51 @@
+{
+  "completed_at": "2026-10-27T21:45:27+08:00",
+  "scope": "Remove 1.0 clue-data migration and old aliases",
+  "clue_schema_version": 2,
+  "recipe_version": 1,
+  "runtime_version": "0.9.0",
+  "policy": "Ignore old clues, old clue coverage and schema 1 ledger; initialize fresh schema 2 on explicit publication only; preserve corruption guards for current data",
+  "removed_source_files": [
+    "src/hastings/workspace/clue_migration.py"
+  ],
+  "user_data_deleted": false,
+  "checks": [
+    {
+      "command": "uv run pytest -q",
+      "exit_code": 0,
+      "result": "1260 passed, 1 existing warning",
+      "evidence": "backend-tests.txt"
+    },
+    {
+      "command": "uv run pytest tests/workspace/test_clue_ledger.py tests/workspace/test_source_locations.py tests/workspace/test_clues.py tests/workspace/test_story_materials.py tests/workspace/test_state_boundaries.py -q",
+      "exit_code": 0,
+      "result": "91 passed, 1 existing warning"
+    },
+    {
+      "command": "uv run ruff check src/hastings tests eval/harness eval/__main__.py",
+      "exit_code": 0,
+      "evidence": "static-checks.txt"
+    },
+    {
+      "command": "uv run mypy",
+      "exit_code": 0,
+      "result": "129 source files",
+      "evidence": "type-checks.txt"
+    },
+    {
+      "command": "npx playwright test --project=workspace clue-source-navigation.spec.ts",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "5 passed, no retries; real server and npm build on port 8951",
+      "evidence": "browser-tests.txt"
+    }
+  ],
+  "source_sha256": {
+    "src/hastings/workspace/clue_store.py": "364e755304580b2ebf2a335f3a72d4a3de30de6ecdec224e715581538e548291",
+    "src/hastings/workspace/clue_models.py": "ab558e8551f6e906fca00ce568f5368cda51679359d98255e1ebe92b09a5e8b0",
+    "src/hastings/workspace/clues.py": "a37a12a130ca48239913b56ba46ac0d27b4c05c90aaaa558d0dad0fbab531bef",
+    "src/hastings/workspace/story_materials.py": "9f4e2dcbca12741f9dc181c99eb1039597ba7839f4f2675c92ad13ce8e404bd1",
+    "tests/workspace/test_clue_ledger.py": "ddbc54e5fed80b052fd9cff1fdb62efd35cd1562edc8b7c0f480bb15ba2a4c77"
+  },
+  "historical_evidence": "Earlier S0-S2 manifests retain their original results; this manifest describes the simplified current format."
+}

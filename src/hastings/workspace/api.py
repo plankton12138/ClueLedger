@@ -35,6 +35,7 @@ from hastings.workspace.character_states import (
     build_roster,
     roster_view,
 )
+from hastings.workspace.clue_context import ClueReferenceInput as ClueReferenceRequest
 from hastings.workspace.clues import ClueStore, build_clues, clues_view
 from hastings.workspace.compaction_ops import CompactionRunner
 from hastings.workspace.conversation_usage import context_snapshot, summarize_events
@@ -60,6 +61,7 @@ from hastings.workspace.material_tasks import (
     task_view,
 )
 from hastings.workspace.materials import MAX_REFERENCES, ContextRequest
+from hastings.workspace.reading_position import ReadingPosition, read_position, save_position
 from hastings.workspace.review import ReviewReport, ReviewStore
 from hastings.workspace.run_registry import RunRegistry
 from hastings.workspace.service import ProviderFactory, TurnService
@@ -263,6 +265,38 @@ class AcceptedTurnView(BaseModel):
     request_key: str
 
 
+class ClueReferenceInput(BaseModel):
+    """对话里引用的线索：只给标识与客户端看到的版本，正文由服务端按账本重建。"""
+
+    model_config = ConfigDict(extra="forbid")
+    workspace_lineage: str = Field(min_length=1, max_length=64)
+    clue_id: str = Field(min_length=1, max_length=64)
+    clue_revision: str = Field(min_length=1, max_length=128)
+    browse_as_of_chapter: int = Field(ge=0)
+    inference_id: str | None = Field(default=None, max_length=64)
+    inference_revision: str | None = Field(default=None, max_length=128)
+    report_id: str | None = Field(default=None, max_length=64)
+    #: 仅用于草稿显示；发送时丢弃，服务端不会把它当作线索标题。
+    title: str = Field(default="", max_length=200)
+
+    @model_validator(mode="after")
+    def _check_inference(self) -> ClueReferenceInput:
+        if (self.inference_id is None) != (self.inference_revision is None):
+            raise ValueError("推理身份与修订必须同时提供")
+        return self
+
+    def to_request(self) -> ClueReferenceRequest:
+        return ClueReferenceRequest(
+            workspace_lineage=self.workspace_lineage,
+            clue_id=self.clue_id,
+            clue_revision=self.clue_revision,
+            browse_as_of_chapter=self.browse_as_of_chapter,
+            inference_id=self.inference_id,
+            inference_revision=self.inference_revision,
+            report_id=self.report_id,
+        )
+
+
 class IdeaReferenceInput(BaseModel):
     """作者在对话里明确选中的灵感修订；只给标识，正文由服务端按修订读取。"""
 
@@ -283,6 +317,7 @@ class ContextInput(BaseModel):
     idea_references: list[IdeaReferenceInput] = Field(default_factory=list, max_length=10)
     observed_digests: dict[str, str] = Field(default_factory=dict)
     state_chapter: int | None = Field(default=None, ge=0, strict=True)
+    clue_references: list[ClueReferenceInput] = Field(default_factory=list, max_length=10)
 
     @field_validator("selected_path")
     @classmethod
@@ -308,7 +343,17 @@ class ContextInput(BaseModel):
                 (item.idea_id, item.revision_id) for item in self.idea_references
             ),
             observed_digests=dict(self.observed_digests),
+            clue_references=tuple(item.to_request() for item in self.clue_references),
         )
+
+
+class ClueReviewInput(BaseModel):
+    """一次线索核对：目标、线索集合与截止章都由作者界面选定，服务端再冻结。"""
+
+    inference_id: str = Field(min_length=1, max_length=64)
+    inference_revision: str = Field(min_length=1, max_length=128)
+    clue_ids: list[str] = Field(min_length=1, max_length=10)
+    as_of_chapter: int = Field(ge=0)
 
 
 class TurnPurposeMixin(BaseModel):
@@ -324,6 +369,7 @@ class TurnPurposeMixin(BaseModel):
     ] = "chat"
     index_paths: list[str] = Field(default_factory=list, max_length=MAX_INDEX_CHAPTERS)
     review_paths: list[str] = Field(default_factory=list, max_length=20)
+    clue_review: ClueReviewInput | None = None
 
     @model_validator(mode="after")
     def _check_purpose_targets(self) -> TurnPurposeMixin:
@@ -344,6 +390,8 @@ class TurnPurposeMixin(BaseModel):
                 raise ValueError("检查用途不能带索引目标")
         elif self.index_paths or self.review_paths:
             raise ValueError("普通对话不能带索引或检查目标")
+        if self.clue_review is not None and self.purpose != "review":
+            raise ValueError("线索核对只能在检查用途里发起")
         return self
 
 
@@ -483,6 +531,7 @@ class DraftContextView(BaseModel):
     selected_path: str | None = None
     reference_paths: list[str] = Field(default_factory=list)
     text_references: list[TextReferenceView] = Field(default_factory=list)
+    clue_references: list[dict[str, object]] = Field(default_factory=list)
 
 
 class ConversationUiView(BaseModel):
@@ -504,6 +553,7 @@ class ConversationUiPatch(BaseModel):
     draft_selected_path: str | None = None
     draft_reference_paths: list[str] | None = None
     draft_text_references: list[TextReferenceView] = Field(default_factory=list, max_length=10)
+    draft_clue_references: list[ClueReferenceInput] = Field(default_factory=list, max_length=10)
 
 
 class StopView(BaseModel):
@@ -639,6 +689,7 @@ class GlossaryStateView(BaseModel):
 
 
 class ClueEntryView(BaseModel):
+    clue_id: str = ""
     clue: str
     planted_chapter: int
     due_chapter: int | None = None
@@ -801,6 +852,7 @@ class StoryEventsView(BaseModel):
 class SourceEvidenceView(BaseModel):
     """一处原文依据：路径、版本、章节、区间、引文与当前有效性。"""
 
+    evidence_id: str | None = None
     path: str
     digest: str
     chapter: int | None = None
@@ -1078,13 +1130,14 @@ def create_file_workspace_router(
         if library is not None:
             protected.append(library.root)
         try:
-            delete_workspace_files(
-                Path(binding.path),
-                conversation_root(workspaces.root, workspace_id),
-                confirmed_path=body.confirmed_path,
-                protected_roots=protected,
-            )
-            removed = workspaces.unbind(workspace_id)
+            with activity_lock:
+                delete_workspace_files(
+                    Path(binding.path),
+                    conversation_root(workspaces.root, workspace_id),
+                    confirmed_path=body.confirmed_path,
+                    protected_roots=protected,
+                )
+                removed = workspaces.unbind(workspace_id)
         finally:
             # 部分删除失败也丢弃旧路径缓存；后续请求必须重新核对目录是否仍存在。
             services.pop(workspace_id, None)
@@ -1105,7 +1158,8 @@ def create_file_workspace_router(
         """
         binding = workspaces.get(workspace_id)
         ensure_idle(workspace_id, binding, "workspace.rename")
-        renamed = workspaces.rename(workspace_id, body.name)
+        with activity_lock:
+            renamed = workspaces.rename(workspace_id, body.name)
         # 新旧标识的缓存都不能留下：服务与状态存储绑定的是旧路径。
         with activity_lock:
             for key in {workspace_id, renamed.id}:
@@ -1164,6 +1218,23 @@ def create_file_workspace_router(
             characters=[_entry(entry) for entry in catalog.characters],
             settings=[_entry(entry) for entry in catalog.settings],
         )
+
+    @router.get("/{workspace_id}/reading-position", response_model=ReadingPosition)
+    async def get_reading_position(workspace_id: str) -> ReadingPosition:
+        with activity_lock:
+            return read_position(
+                workspaces.workspace(workspace_id), conversation_root(workspaces.root, workspace_id)
+            )
+
+    @router.patch("/{workspace_id}/reading-position", response_model=ReadingPosition)
+    async def patch_reading_position(
+        workspace_id: str, body: ReadingPosition
+    ) -> ReadingPosition:
+        with activity_lock:
+            return save_position(
+                workspaces.workspace(workspace_id),
+                conversation_root(workspaces.root, workspace_id), body,
+            )
 
     @router.get("/{workspace_id}/file", response_model=FileViewResponse)
     def read_file(workspace_id: str, path: str = Query(min_length=1)) -> FileViewResponse:
@@ -1580,6 +1651,7 @@ def create_file_workspace_router(
             purpose=body.purpose,
             index_paths=tuple(body.index_paths),
             review_paths=tuple(body.review_paths),
+            clue_review=body.clue_review.model_dump() if body.clue_review else None,
         )
         return AcceptedTurnView(
             conversation_id=info.conversation_id,
@@ -1732,6 +1804,7 @@ def create_file_workspace_router(
             purpose=body.purpose,
             index_paths=tuple(body.index_paths),
             review_paths=tuple(body.review_paths),
+            clue_review=body.clue_review.model_dump() if body.clue_review else None,
             reply_to_question=body.reply_to_question,
         )
         return TurnView(
@@ -1790,6 +1863,9 @@ def create_file_workspace_router(
                 selected_path=body.draft_selected_path,
                 reference_paths=tuple(body.draft_reference_paths or ()),
                 text_references=tuple(item.model_dump() for item in body.draft_text_references),
+                clue_references=tuple(
+                    item.model_dump() for item in body.draft_clue_references
+                ),
             )
         ui = store.update(
             expected_revision=if_match,
@@ -1932,6 +2008,7 @@ def _ui_view(ui: ConversationUi) -> ConversationUiView:
                 selected_path=value.selected_path,
                 reference_paths=list(value.reference_paths),
                 text_references=[TextReferenceView(**item) for item in value.text_references],
+                clue_references=[dict(item) for item in value.clue_references],
             )
             for key, value in ui.draft_contexts.items()
         },

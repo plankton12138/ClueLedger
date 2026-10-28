@@ -1,0 +1,63 @@
+{
+  "id": "v10_q12_save_idea",
+  "title": "明确要求后才把方案存进模块",
+  "family": "构思",
+  "layer": "end_to_end",
+  "fixture": "inn.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": true,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [],
+  "inferences": [],
+  "steps": [
+    {
+      "text": "把「铜钥匙可能只是管家日常随身携带」这一种解释，作为一条线索构思保存到模块里， 标题叫「钥匙的日常用途」，正文说明它如何解释第二章的描写。不要改正文。",
+      "selected": "正文/0002 走廊.md",
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "index_paths": [],
+      "material_scope": null,
+      "review_paths": [],
+      "clue_review": null,
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "module_written",
+          "kind": "module_contains",
+          "path": "",
+          "value": "钥匙的日常用途",
+          "part": "",
+          "domain": "",
+          "rubric": ""
+        },
+        {
+          "id": "only_named",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "只需要保存作者点名的这一条解释；不得顺手写入其他候选或改写正文， 也不得把尚未确认的解释写成作品事实。"
+        }
+      ]
+    }
+  ]
+}
