@@ -1,22 +1,44 @@
-/** 悬浮位置以可用区域中的右下角比例保存，缩放和窗口变化只钳制显示位置。 */
+/** 悬浮位置以可视区域中的右下角比例保存，拖动可越过窗口边缘，但始终保留标题栏可抓取。 */
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
-import { useIdeasSurfaceStore, type IdeaPosition } from "../../state/ideasSurface";
+import { MAX_POSITION_RATIO, useIdeasSurfaceStore, type IdeaPosition } from "../../state/ideasSurface";
 
 export interface FloatingBounds { left: number; top: number; right: number; bottom: number }
 export interface FloatingSize { width: number; height: number }
+/** 拖出窗口边缘时至少留在可视区内的宽度或高度，保证标题栏仍可按住拖回。 */
+export const FLOATING_KEEP = 48;
+
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, Math.max(min, max)));
+const keepOf = (size: number) => Math.min(FLOATING_KEEP, size);
 
 export function floatingPoint(bounds: FloatingBounds, size: FloatingSize, position: IdeaPosition) {
+  const keepX = keepOf(size.width);
+  const keepY = keepOf(size.height);
+  const left = position.x > 1
+    ? bounds.right - size.width + (position.x - 1) * Math.max(1, size.width - keepX)
+    : bounds.left + (bounds.right - bounds.left) * position.x - size.width;
+  const top = position.y > 1
+    ? bounds.bottom - size.height + (position.y - 1) * Math.max(1, size.height - keepY)
+    : bounds.top + (bounds.bottom - bounds.top) * position.y - size.height;
   return {
-    left: clamp(bounds.left + (bounds.right - bounds.left) * position.x - size.width, bounds.left, bounds.right - size.width),
-    top: clamp(bounds.top + (bounds.bottom - bounds.top) * position.y - size.height, bounds.top, bounds.bottom - size.height),
+    left: clamp(left, bounds.left, bounds.right - keepX),
+    top: clamp(top, bounds.top, bounds.bottom - keepY),
   };
 }
 
 export function floatingAnchor(bounds: FloatingBounds, size: FloatingSize, point: { left: number; top: number }): IdeaPosition {
+  const keepX = keepOf(size.width);
+  const keepY = keepOf(size.height);
+  const fitRight = bounds.right - size.width;
+  const fitBottom = bounds.bottom - size.height;
+  const x = point.left > fitRight
+    ? 1 + (point.left - fitRight) / Math.max(1, size.width - keepX)
+    : (point.left + size.width - bounds.left) / Math.max(1, bounds.right - bounds.left);
+  const y = point.top > fitBottom
+    ? 1 + (point.top - fitBottom) / Math.max(1, size.height - keepY)
+    : (point.top + size.height - bounds.top) / Math.max(1, bounds.bottom - bounds.top);
   return {
-    x: clamp((point.left + size.width - bounds.left) / Math.max(1, bounds.right - bounds.left), 0, 1),
-    y: clamp((point.top + size.height - bounds.top) / Math.max(1, bounds.bottom - bounds.top), 0, 1),
+    x: clamp(x, 0, MAX_POSITION_RATIO),
+    y: clamp(y, 0, MAX_POSITION_RATIO),
   };
 }
 
@@ -24,9 +46,9 @@ function viewportBounds(): FloatingBounds {
   const view = window.visualViewport;
   const left = (view?.offsetLeft ?? 0) + 10;
   const right = (view?.offsetLeft ?? 0) + (view?.width ?? window.innerWidth) - 10;
+  const top = (view?.offsetTop ?? 0) + 10;
   const bottom = (view?.offsetTop ?? 0) + (view?.height ?? window.innerHeight) - 10;
-  const header = document.querySelector<HTMLElement>(".app-header")?.getBoundingClientRect().bottom ?? 60;
-  return { left, right, bottom, top: Math.min(Math.max(header + 10, (view?.offsetTop ?? 0) + 10), bottom - 44) };
+  return { left, top, right, bottom };
 }
 
 export function useIdeasPosition(element: RefObject<HTMLElement>, open: boolean, workspaceId: string | null) {
@@ -51,8 +73,6 @@ export function useIdeasPosition(element: RefObject<HTMLElement>, open: boolean,
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
-    const header = document.querySelector<HTMLElement>(".app-header");
-    if (header) observer.observe(header);
     window.addEventListener("resize", measure);
     window.visualViewport?.addEventListener("resize", measure);
     window.visualViewport?.addEventListener("scroll", measure);
@@ -109,7 +129,7 @@ export function useIdeasPosition(element: RefObject<HTMLElement>, open: boolean,
         if (event.key === "Home") { useIdeasSurfaceStore.getState().resetPosition(); return; }
         const step = event.shiftKey ? 48 : 16;
         const next = { left: point.left + (event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0), top: point.top + (event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0) };
-        useIdeasSurfaceStore.getState().setPosition(floatingAnchor(geometry.bounds, geometry.size, floatingPoint(geometry.bounds, geometry.size, floatingAnchor(geometry.bounds, geometry.size, next))));
+        useIdeasSurfaceStore.getState().setPosition(floatingAnchor(geometry.bounds, geometry.size, next));
       },
     },
   };

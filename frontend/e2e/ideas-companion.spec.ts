@@ -37,8 +37,9 @@ test("独立入口：按钮和面板可拖动，位置跨刷新保留，拖动�
   expect(Math.abs(restored!.x-moved!.x)).toBeLessThan(2);
   await launcher.click();
   const panel=page.locator(".idea-floating");
+  const handle=page.getByRole("button",{name:"移动灵感面板",exact:true});
   const panelBefore=await panel.boundingBox();
-  await drag(page,page.getByRole("button",{name:"移动灵感面板",exact:true}),-200,60);
+  await drag(page,handle,-200,60);
   const panelAfter=await panel.boundingBox();
   expect(panelAfter!.x).toBeLessThan(panelBefore!.x-120);
   await page.getByLabel("记录灵感",{exact:true}).fill("收起也保留的输入");
@@ -49,6 +50,10 @@ test("独立入口：按钮和面板可拖动，位置跨刷新保留，拖动�
   await launcher.press("ArrowLeft");
   await launcher.press("Enter");
   await expect(page.getByLabel("记录灵感",{exact:true})).toHaveValue("收起也保留的输入");
+  // 面板可越过顶栏，只保留标题栏可抓取，不再被顶栏高度限制。
+  const up=Math.min(600,(await handle.boundingBox())!.y+12);
+  await drag(page,handle,0,-up);
+  expect((await panel.boundingBox())!.y).toBeLessThanOrEqual(12);
   await shot(page,"floating-dragged");
 });
 

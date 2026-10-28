@@ -10,12 +10,14 @@ import { create } from "zustand";
 export interface IdeaPosition { x: number; y: number }
 export const IDEAS_POSITION_KEY = "hastings.ideas.position";
 export const DEFAULT_IDEA_POSITION: IdeaPosition = { x: 1, y: 0.72 };
+/** 拖出窗口边缘时最多只保留标题栏可抓取，比例上限对应这一极限。 */
+export const MAX_POSITION_RATIO = 2;
 
 export function parseIdeaPosition(raw: string | null): IdeaPosition {
   try {
     const value = JSON.parse(raw ?? "null") as IdeaPosition | null;
     if (value && typeof value.x === "number" && Number.isFinite(value.x) && typeof value.y === "number" && Number.isFinite(value.y)) {
-      return { x: Math.max(0, Math.min(1, value.x)), y: Math.max(0, Math.min(1, value.y)) };
+      return { x: Math.max(0, Math.min(MAX_POSITION_RATIO, value.x)), y: Math.max(0, Math.min(MAX_POSITION_RATIO, value.y)) };
     }
   } catch { /* 损坏的偏好使用默认位置。 */ }
   return DEFAULT_IDEA_POSITION;
@@ -49,7 +51,7 @@ export const useIdeasSurfaceStore = create<IdeasSurfaceState>()((set, get) => ({
   position: readPosition(),
   setPosition(position) {
     if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
-    const next = { x: Math.max(0, Math.min(1, position.x)), y: Math.max(0, Math.min(1, position.y)) };
+    const next = { x: Math.max(0, Math.min(MAX_POSITION_RATIO, position.x)), y: Math.max(0, Math.min(MAX_POSITION_RATIO, position.y)) };
     set({ position: next });
     try { localStorage.setItem(IDEAS_POSITION_KEY, JSON.stringify(next)); } catch { /* 位置不可持久保存时仍能拖动。 */ }
   },
