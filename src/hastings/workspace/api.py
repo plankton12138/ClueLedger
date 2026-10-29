@@ -54,13 +54,8 @@ from hastings.workspace.files import FileEntry, FileKind, Workspace, is_managed_
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import GlossaryStore, build_glossary, glossary_view
 from hastings.workspace.locations import default_data_root, default_workspace_root, documents_dir
-from hastings.workspace.material_tasks import (
-    MaterialTaskScope,
-    material_conversation_ids,
-    task_list,
-    task_view,
-)
 from hastings.workspace.materials import MAX_REFERENCES, ContextRequest
+from hastings.workspace.operations import OperationStore
 from hastings.workspace.reading_position import ReadingPosition, read_position, save_position
 from hastings.workspace.review import ReviewReport, ReviewStore
 from hastings.workspace.run_registry import RunRegistry
@@ -75,13 +70,7 @@ from hastings.workspace.state import (
     WorkspaceBinding,
     conversation_root,
 )
-from hastings.workspace.story_index import chapter_view, story_view
-from hastings.workspace.story_materials import (
-    DOMAIN_LABEL,
-    author_view,
-    entry_detail,
-)
-from hastings.workspace.story_plans import planned_overlay
+from hastings.workspace.story_context import StoryRequest
 from hastings.workspace.timeline import TimelineStore, build_timeline, timeline_view
 
 __all__ = [
@@ -246,6 +235,8 @@ class ActiveTurnView(BaseModel):
     model: str
     connection: str
     started_at: str
+    #: 这一轮所属的统一操作：任务控件按它暂停与插话。
+    operation_id: str = ""
 
 
 class ConversationListView(BaseModel):
@@ -263,6 +254,9 @@ class AcceptedTurnView(BaseModel):
     started_at: str
     title: str
     request_key: str
+    #: 统一操作的标识与代次：任务控件用的就是这两个值，不靠「最后一条消息」找任务。
+    operation_id: str = ""
+    generation: int = 1
 
 
 class ClueReferenceInput(BaseModel):
@@ -305,6 +299,28 @@ class IdeaReferenceInput(BaseModel):
     revision_id: str = Field(min_length=1, max_length=64)
 
 
+class StoryContextInput(BaseModel):
+    """这一轮要看的方案与位置；客户端只表达意图，写权限仍由受理流程决定。"""
+
+    model_config = ConfigDict(extra="forbid")
+    variant_id: str = Field(default="", max_length=64)
+    revision: str = Field(default="", max_length=64)
+    node_ids: list[str] = Field(default_factory=list, max_length=50)
+    purpose: Literal[
+        "discuss", "design", "write", "revise", "review", "reader_preview"
+    ] = "write"
+    reader_cutoff: str | None = Field(default=None, max_length=64)
+
+    def to_request(self) -> StoryRequest:
+        return StoryRequest(
+            variant_id=self.variant_id,
+            revision=self.revision,
+            node_ids=tuple(self.node_ids),
+            purpose=self.purpose,
+            reader_cutoff=self.reader_cutoff,
+        )
+
+
 class ContextInput(BaseModel):
     """本轮带上来的材料：当前阅读位置、显式参考与客户端看到的版本。
 
@@ -318,6 +334,7 @@ class ContextInput(BaseModel):
     observed_digests: dict[str, str] = Field(default_factory=dict)
     state_chapter: int | None = Field(default=None, ge=0, strict=True)
     clue_references: list[ClueReferenceInput] = Field(default_factory=list, max_length=10)
+    story: StoryContextInput | None = None
 
     @field_validator("selected_path")
     @classmethod
@@ -344,6 +361,7 @@ class ContextInput(BaseModel):
             ),
             observed_digests=dict(self.observed_digests),
             clue_references=tuple(item.to_request() for item in self.clue_references),
+            story=self.story.to_request() if self.story else None,
         )
 
 
@@ -420,6 +438,8 @@ class TurnView(BaseModel):
     conversation_id: str
     started_at: str
     title: str = ""
+    operation_id: str = ""
+    generation: int = 1
 
 
 class EventsView(BaseModel):
@@ -554,10 +574,6 @@ class ConversationUiPatch(BaseModel):
     draft_reference_paths: list[str] | None = None
     draft_text_references: list[TextReferenceView] = Field(default_factory=list, max_length=10)
     draft_clue_references: list[ClueReferenceInput] = Field(default_factory=list, max_length=10)
-
-
-class StopView(BaseModel):
-    stopped: bool
 
 
 class ChapterIndexEvidenceView(BaseModel):
@@ -830,180 +846,17 @@ class ActivityExport(ActivityFilter):
     include_details: bool = False
 
 
-MaterialDomainName = Literal[
-    "story_index", "chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"
-]
-
-
-class StoryEventsView(BaseModel):
-    """统一事件视图：按章序或可证明的故事先后；两种顺序读同一份投影。"""
-
-    mode: Literal["chapter", "story"]
-    as_of_chapter: int
-    chapters: list[dict[str, Any]] = Field(default_factory=list)
-    groups: list[dict[str, Any]] = Field(default_factory=list)
-    unknown: list[dict[str, Any]] = Field(default_factory=list)
-    conflicts: list[dict[str, Any]] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    plans: list[dict[str, Any]] = Field(default_factory=list)
-    plan_modules: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class SourceEvidenceView(BaseModel):
-    """一处原文依据：路径、版本、章节、区间、引文与当前有效性。"""
-
-    evidence_id: str | None = None
-    path: str
-    digest: str
-    chapter: int | None = None
-    start: int
-    end: int
-    quote: str
-    freshness: Literal["valid", "stale", "source_missing", "unavailable", "none"] = "valid"
-
-
-class MaterialEntryView(BaseModel):
-    """作者视图的一条资料；``data`` 按域区分，前端用域类型收窄。"""
-
-    id: str
-    domain: MaterialDomainName
-    title: str
-    subtitle: str = ""
-    chapter: int | None = None
-    entity_path: str | None = None
-    #: 整理覆盖：有结果、无发现、信息不足或还没整理。
-    coverage: Literal["found", "empty", "insufficient", "unrecorded"] = "unrecorded"
-    #: 版本有效性：与整理覆盖分开表达。
-    freshness: Literal["valid", "stale", "source_missing", "unavailable", "none"] = "none"
-    task_id: str = ""
-    updated_at: str = ""
-    data: dict[str, Any] = Field(default_factory=dict)
-    evidence: list[SourceEvidenceView] = Field(default_factory=list)
-    notes: list[str] = Field(default_factory=list)
-
-
-class MaterialChapterView(BaseModel):
-    path: str
-    chapter: int
-    title: str
-    digest: str
-
-
-class MaterialEntityView(BaseModel):
-    path: str
-    name: str
-
-
-class MaterialCoverageView(BaseModel):
-    total: int = 0
-    found: int = 0
-    empty: int = 0
-    insufficient: int = 0
-    unrecorded: int = 0
-    stale: int = 0
-
-
-class StoryMaterialsView(BaseModel):
-    domain: MaterialDomainName
-    label: str
-    as_of_chapter: int
-    current_chapter: int
-    chapters: list[MaterialChapterView]
-    entities: list[MaterialEntityView]
-    entries: list[MaterialEntryView]
-    total: int
-    next_cursor: str = ""
-    coverage: MaterialCoverageView
-    warnings: list[str] = Field(default_factory=list)
-    conflicts: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class MaterialEntryDetailView(BaseModel):
-    domain: MaterialDomainName
-    as_of_chapter: int
-    entry: MaterialEntryView
-    coverage: MaterialCoverageView
-    warnings: list[str] = Field(default_factory=list)
-    conflicts: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class MaterialScopeInput(BaseModel):
-    """资料页提交的范围：结构校验在模型里，真实路径与指纹在受理时复核。"""
-
-    model_config = ConfigDict(extra="forbid")
-    domain: MaterialDomainName
-    chapter_paths: list[str] = Field(min_length=1, max_length=10)
-    entity_paths: list[str] = Field(default_factory=list, max_length=10)
-    as_of_chapter: int = Field(ge=0)
-    observed_digests: dict[str, str] = Field(default_factory=dict)
-
-    def to_model(self) -> MaterialTaskScope:
-        return MaterialTaskScope(**self.model_dump())
-
-
-class MaterialTaskRequest(BaseModel):
-    request_key: str = Field(min_length=1)
-    scope: MaterialScopeInput
-
-
-class MaterialTaskAcceptedView(BaseModel):
-    """受理结果：HTTP 202 只表示任务已开始，不代表整理完成。"""
-
-    turn_id: str
-    conversation_id: str
-    origin: Literal["materials"] = "materials"
-    domain: MaterialDomainName
-    label: str
-    title: str
-    model: str = ""
-    request_key: str
-    scope: dict[str, Any]
-
-
-class MaterialTargetView(BaseModel):
-    path: str
-    chapter: int
-    entity_path: str = ""
-    outcome: Literal["found", "empty", "insufficient", "unrecorded"] = "unrecorded"
-    freshness: str = "none"
-
-
-class MaterialTaskView(BaseModel):
-    turn_id: str
-    conversation_id: str
-    domain: MaterialDomainName
-    label: str
-    scope: dict[str, Any]
-    status: str
-    model: str = ""
-    started_at: str = ""
-    published: int = 0
-    done: int = 0
-    total: int = 0
-    targets: list[MaterialTargetView] = Field(default_factory=list)
-    unfinished: list[MaterialTargetView] = Field(default_factory=list)
-
-
-class MaterialTaskListView(BaseModel):
-    items: list[MaterialTaskView]
-
-
-def _chapter_number(path: str) -> int:
-    """章号取文件名前四位；目录名不参与，文件名不以数字开头时返回 0。"""
-    name = path.rsplit("/", 1)[-1]
-    return int(name[:4]) if name[:4].isdigit() else 0
-
-
-def _material_prompt(scope: MaterialTaskScope) -> str:
-    """任务提示由冻结范围生成：作者在活动记录里看到的就是这次整理的对象。"""
-    label = DOMAIN_LABEL.get(scope.domain, "资料")
-    numbers = sorted(number for number in map(_chapter_number, scope.chapter_paths) if number)
-    if numbers:
-        span = f"第 {numbers[0]} 章" if len(numbers) == 1 else f"第 {numbers[0]}—{numbers[-1]} 章"
-    else:
-        span = "所选章节"
-    names = "、".join(path.rsplit("/", 1)[-1].removesuffix(".md") for path in scope.entity_paths)
-    return f"整理{label}：{span}" + (f"（{names}）" if names else "")
+def _legacy_task_conversations(store: ConversationStore) -> set[str]:
+    """旧日志里的资料任务会话：写作列表不列它们，活动记录仍可回看。"""
+    hidden: set[str] = set()
+    for conversation in store.conversations():
+        if conversation.id in hidden:
+            continue
+        for event in store.events(conversation.id):
+            if event.get("type") == "turn_started" and event.get("origin") == "materials":
+                hidden.add(conversation.id)
+                break
+    return hidden
 
 
 def create_file_workspace_router(
@@ -1012,10 +865,16 @@ def create_file_workspace_router(
     *,
     library: ModuleLibrary | None = None,
     run_registry: RunRegistry | None = None,
+    services: dict[str, TurnService] | None = None,
+    operations: OperationStore | None = None,
 ) -> APIRouter:
-    """绑定最近目录登记与模型来源；每个作品一个轮次服务，按需创建。"""
+    """绑定最近目录登记与模型来源；每个作品一个轮次服务，按需创建。
+
+    ``services`` 由调用方共享时，操作接口能按工作区找到同一个轮次服务；
+    ``operations`` 是应用级操作目录，缺省放在各作品的状态目录里。
+    """
     router = APIRouter(prefix=PREFIX, tags=["file-workspaces"])
-    services: dict[str, TurnService] = {}
+    services = services if services is not None else {}
     runners: dict[str, CompactionRunner] = {}
     ui_stores: dict[str, ConversationUiStore] = {}
     activity_stores: dict[str, ActivityStore] = {}
@@ -1061,6 +920,8 @@ def create_file_workspace_router(
             provider_factory,
             library=library,
             run_registry=run_registry,
+            workspace_id=workspace_id,
+            operations=operations,
         )
         service.activity = activity_for(workspace_id)
         # 进程重启后，没有正常结束的轮次在这里补一条中断记录；不自动继续。
@@ -1095,6 +956,7 @@ def create_file_workspace_router(
             model=active.model,
             connection=active.connection,
             started_at=active.started_at,
+            operation_id=active.operation_id,
         )
 
     @router.get("", response_model=list[WorkspaceView])
@@ -1345,149 +1207,6 @@ def create_file_workspace_router(
             items=[_review_item(report) for report in store.reports(workspace, path=path)]
         )
 
-    # -- 故事资料：作者视图与整理任务 ---------------------------------------
-
-    @router.get("/{workspace_id}/story-events", response_model=StoryEventsView)
-    def story_events(
-        workspace_id: str,
-        order: Literal["chapter", "story"] = Query(default="chapter"),
-        as_of_chapter: int | None = Query(default=None, ge=0),
-    ) -> StoryEventsView:
-        """统一事件视图：章节顺序按章与原文区间，故事顺序只对可证明的先后排序。
-
-        两种顺序读同一份 `story-index.json` 投影；旧概览与时间锚点只读兼容，
-        不返回第三份独立的时间线正文。
-        """
-        workspace = workspaces.workspace(workspace_id)
-        root = conversation_root(workspaces.root, workspace_id)
-        view = (
-            chapter_view(workspace, root, as_of_chapter=as_of_chapter)
-            if order == "chapter"
-            else story_view(workspace, root, as_of_chapter=as_of_chapter)
-        )
-        overlay = planned_overlay(workspace, library)
-        warnings_raw = view.get("warnings")
-        warnings = [str(item) for item in warnings_raw] if isinstance(warnings_raw, list) else []
-        plan_warnings = overlay.get("warnings")
-        if isinstance(plan_warnings, list):
-            warnings.extend(str(item) for item in plan_warnings)
-        view = {
-            **view,
-            "plans": overlay["plans"],
-            "plan_modules": overlay["plan_modules"],
-            "warnings": warnings,
-        }
-        return StoryEventsView(**view)  # type: ignore[arg-type]
-
-    @router.get("/{workspace_id}/story-materials/{domain}", response_model=StoryMaterialsView)
-    def story_materials(
-        workspace_id: str,
-        domain: MaterialDomainName,
-        as_of_chapter: int | None = Query(default=None, ge=0),
-        q: str = Query(default="", max_length=200),
-        limit: int = Query(default=100, ge=1, le=200),
-        cursor: str = Query(default="", max_length=32),
-    ) -> StoryMaterialsView:
-        """作者视图：条目、证据、覆盖统计与实际采用的时点。
-
-        截止章只影响浏览；服务端按真实文件重算章号，不接受浏览器传来的任意路径。
-        """
-        workspace = workspaces.workspace(workspace_id)
-        root = conversation_root(workspaces.root, workspace_id)
-        view = author_view(
-            workspace,
-            root,
-            domain,
-            as_of_chapter=as_of_chapter,
-            query=q,
-            limit=limit,
-            cursor=cursor,
-        )
-        return StoryMaterialsView(**view)  # type: ignore[arg-type]
-
-    @router.get(
-        "/{workspace_id}/story-materials/{domain}/entries/{entry_id}",
-        response_model=MaterialEntryDetailView,
-    )
-    def story_material_entry(
-        workspace_id: str,
-        domain: MaterialDomainName,
-        entry_id: str,
-        as_of_chapter: int | None = Query(default=None, ge=0),
-    ) -> MaterialEntryDetailView:
-        """按稳定 ID 取完整条目；条目不存在时 404，不返回空对象冒充。"""
-        workspace = workspaces.workspace(workspace_id)
-        root = conversation_root(workspaces.root, workspace_id)
-        view = entry_detail(workspace, root, domain, entry_id, as_of_chapter=as_of_chapter)
-        return MaterialEntryDetailView(**view)  # type: ignore[arg-type]
-
-    @router.post(
-        "/{workspace_id}/material-tasks",
-        response_model=MaterialTaskAcceptedView,
-        status_code=202,
-    )
-    async def create_material_task(
-        workspace_id: str, body: MaterialTaskRequest
-    ) -> MaterialTaskAcceptedView:
-        """受理一次整理：一个任务只更新一个域，返回的是受理结果而不是完成结果。"""
-        service = service_for(workspace_id)
-        scope = body.scope.to_model()
-        info = await service.accept(
-            _material_prompt(scope),
-            body.request_key,
-            purpose="organize_materials",
-            material_scope=scope,
-        )
-        frozen = info.material_scope or {}
-        active = service.active_turn()
-        return MaterialTaskAcceptedView(
-            turn_id=info.turn_id,
-            conversation_id=info.conversation_id,
-            domain=scope.domain,
-            label=DOMAIN_LABEL[scope.domain],
-            title=info.title,
-            model=active.model if active is not None else "",
-            request_key=body.request_key,
-            scope={
-                "domain": frozen.get("domain"),
-                "chapter_paths": frozen.get("chapter_paths", []),
-                "entity_paths": frozen.get("entity_paths", []),
-                "as_of_chapter": frozen.get("as_of_chapter"),
-            },
-        )
-
-    @router.get("/{workspace_id}/material-tasks", response_model=MaterialTaskListView)
-    def list_material_tasks(
-        workspace_id: str,
-        domain: Annotated[MaterialDomainName | None, Query()] = None,
-        limit: int = Query(default=20, ge=1, le=100),
-    ) -> MaterialTaskListView:
-        """本域最近的资料任务；仍在运行的任务也列出来，刷新后能接上。"""
-        service = service_for(workspace_id)
-        active = service.active_turn()
-        items = task_list(
-            service.store,
-            conversation_root(workspaces.root, workspace_id),
-            domain=domain or "",
-            limit=limit,
-            active_turn_id=active.turn_id if active is not None else "",
-        )
-        return MaterialTaskListView(items=items)  # type: ignore[arg-type]
-
-    @router.get("/{workspace_id}/material-tasks/{turn_id}", response_model=MaterialTaskView)
-    def material_task_detail(workspace_id: str, turn_id: str) -> MaterialTaskView:
-        """单个任务的规范化结果：目标、已发布、未完成项与覆盖结果。"""
-        service = service_for(workspace_id)
-        active = service.active_turn()
-        view = task_view(
-            service.store,
-            conversation_root(workspaces.root, workspace_id),
-            service.workspace,
-            turn_id,
-            active_turn_id=active.turn_id if active is not None else "",
-        )
-        return MaterialTaskView(**view)  # type: ignore[arg-type]
-
     # -- Git ---------------------------------------------------------------
 
     @router.get("/{workspace_id}/git/status", response_model=GitStatusView)
@@ -1621,8 +1340,8 @@ def create_file_workspace_router(
     @router.get("/{workspace_id}/conversations", response_model=ConversationListView)
     def list_conversations(workspace_id: str) -> ConversationListView:
         service = service_for(workspace_id)
-        # 资料任务的专用会话不在写作会话列表里出现；它们从资料页与活动记录回看。
-        hidden = material_conversation_ids(service.store)
+        # 旧版本用独立会话跑资料任务；这些会话不再产生，也不再出现在写作列表里。
+        hidden = _legacy_task_conversations(service.store)
         items = sorted(
             (item for item in service.store.conversations() if item.id not in hidden),
             key=lambda item: item.updated_at,
@@ -1659,6 +1378,8 @@ def create_file_workspace_router(
             started_at=info.started_at,
             title=info.title,
             request_key=body.request_key,
+            operation_id=info.operation_id,
+            generation=info.generation,
         )
 
     @router.patch(
@@ -1812,20 +1533,9 @@ def create_file_workspace_router(
             conversation_id=info.conversation_id,
             started_at=info.started_at,
             title=info.title,
+            operation_id=info.operation_id,
+            generation=info.generation,
         )
-
-    @router.post("/{workspace_id}/turns/{turn_id}/stop", response_model=StopView)
-    async def stop_turn(workspace_id: str, turn_id: str) -> StopView:
-        service = service_for(workspace_id)
-        if not await service.stop(turn_id):
-            raise WorkspaceError(
-                code="TURN_NOT_FOUND",
-                where="turns.stop",
-                why=f"这一轮已经结束或不存在：{turn_id}",
-                fix="刷新对话后确认当前是否还有正在进行的轮次",
-                details={"turn_id": turn_id},
-            )
-        return StopView(stopped=True)
 
     @router.get("/{workspace_id}/conversation-ui", response_model=ConversationUiView)
     def read_conversation_ui(workspace_id: str) -> ConversationUiView:

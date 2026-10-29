@@ -48,8 +48,8 @@ test("隔离基线：主要页面与窄窗口正文", async ({ page, book }) => 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole("button", { name: "灵感", exact: true }).click();
   await page.screenshot({ path: `${output}/ideas-1440.png` });
-  await page.goto(`/#/workspaces/${book.id}/materials/legacy-story`);
-  await page.screenshot({ path: `${output}/materials-1440.png` });
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await page.screenshot({ path: `${output}/story-1440.png` });
   await page.getByRole("link", { name: "模块库", exact: true }).click();
   const dialog = page.getByRole("region", { name: "模块库", exact: true });
   await dialog.getByRole("button", { name: new RegExp(`长记录-${book.id}`) }).click();
@@ -259,7 +259,7 @@ test("灵感：快速记录与条目修改稿分开保留，无模型保存", as
   await expect(page.getByLabel("记录灵感", { exact: true })).toHaveValue("临时草稿");
 });
 
-test("中文输入法确认不发送，章节范围悬停仍可读", async ({ page, book }) => {
+test("中文输入法确认不发送，未发送草稿保留在输入框", async ({ page, book }) => {
   await page.goto("/");
   await page.getByLabel("选择作品目录").selectOption(book.id);
   let sends = 0;
@@ -271,11 +271,11 @@ test("中文输入法确认不发送，章节范围悬停仍可读", async ({ pa
   await page.locator(".chat-input").dispatchEvent("keydown", { key: "Enter", code: "Enter", isComposing: true, keyCode: 229 });
   expect(sends).toBe(0);
   await expect(page.locator(".chat-input")).toHaveValue("中文候选");
+  // 资料页已移除：旧地址回落到写作页，草稿仍在输入框里。
   await page.goto(`/#/workspaces/${book.id}/materials/legacy-story`);
-  await page.getByRole("button", { name: "整理所选章节", exact: true }).click();
-  const range = page.getByRole("dialog", { name: "整理章节索引", exact: true });
-  await range.getByText(/雨夜/).hover();
-  await screenshot(page, "chapter-range-hover-1440");
+  await expect(page).toHaveURL(new RegExp(`/workspaces/${book.id}/writing`));
+  await expect(page.locator(".chat-input")).toHaveValue("中文候选");
+  await screenshot(page, "legacy-materials-fallback-1440");
 });
 
 test("对话选段记成灵感，来源定位与原文一致", async ({ page, request, book }) => {
@@ -381,242 +381,4 @@ test("引用显示原文预览，作者明确更新到最新版本", async ({ pa
   await expect(
     page.getByRole("button", { name: /^查看引用的灵感：侦探认出了雨衣，也认出了那把伞/ }),
   ).toBeVisible();
-});
-
-test("展开讨论在未连接模型时说明原因，选择与草稿保留", async ({ page, book }) => {
-  // 把模型配置桩成「没有可用连接」：这条用例只验证未配置时的界面状态。
-  await page.route("**/api/model-connections", async (route) => {
-    await route.fulfill({
-      json: {
-        revision: "r1",
-        connections: [],
-        selection: {
-          connection_id: null,
-          model: "",
-          source: "none",
-          available: false,
-          reason: "还没有可用的模型连接",
-        },
-        providers: [],
-        storage: "system",
-      },
-    });
-  });
-  let posts = 0;
-  page.on("request", req => {
-    if (req.method() === "POST" && /\/conversations$/.test(req.url())) posts++;
-  });
-
-  await page.goto("/");
-  await page.getByLabel("选择作品目录").selectOption(book.id);
-  await page.getByRole("button", { name: "灵感", exact: true }).click();
-  const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
-  await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
-  await page.getByLabel("灵感正文", { exact: true }).fill("改了一半的正文");
-
-  await page.locator(".idea-entry-more > summary").click();
-  const expand = page.getByRole("button", { name: "展开讨论", exact: true });
-  await expect(expand).toBeDisabled();
-  await expect(expand).toHaveAttribute("title", "先连接模型再展开");
-  expect(posts).toBe(0);
-
-  // 收起再打开：未保存的修改仍在，不会因为按钮不可用被丢掉。
-  await page.getByRole("button", { name: "收起灵感", exact: true }).click();
-  await page.getByRole("button", { name: "灵感", exact: true }).click();
-  await page
-    .getByRole("complementary", { name: "灵感列表", exact: true })
-    .getByRole("button", { name: /^侦探认出了雨衣/ })
-    .click();
-  await expect(page.getByLabel("灵感正文", { exact: true })).toHaveValue("改了一半的正文");
-  expect(posts).toBe(0);
-});
-
-test("展开灵感：一次点击只读讨论，再次点击打开同一次讨论", async ({ page, book }) => {
-  const stamp = "2026-10-25T10:00:00+08:00";
-  const events = [
-    { seq: 1, at: stamp, type: "turn_started", turn_id: "t-expand", text: "展开这条灵感：侦探认出了雨衣。" },
-    {
-      seq: 2,
-      at: stamp,
-      type: "assistant_message",
-      turn_id: "t-expand",
-      text: "三个方向：追查雨衣来源、假装没认出、让对方先开口。",
-    },
-    { seq: 3, at: stamp, type: "run_finished", turn_id: "t-expand", status: "completed", recording: "no_change" },
-  ];
-  const accepted = {
-    conversation_id: "c-expand",
-    turn_id: "t-expand",
-    started_at: stamp,
-    title: "展开这条灵感",
-    request_key: "k-expand",
-  };
-  const posts: Record<string, unknown>[] = [];
-
-  await page.route(`**/api/file-workspaces/${book.id}/conversations`, async (route) => {
-    if (route.request().method() === "POST") {
-      posts.push(route.request().postDataJSON() as Record<string, unknown>);
-      await route.fulfill({ status: 202, json: accepted });
-      return;
-    }
-    await route.fulfill({
-      json: {
-        items: [{ id: "c-expand", title: "展开这条灵感", created_at: stamp, updated_at: stamp }],
-        recent_id: "c-expand",
-        active_turn: null,
-        revision: "r1",
-      },
-    });
-  });
-  await page.route(`**/api/file-workspaces/${book.id}/conversations/c-expand/messages*`, async (route) => {
-    await route.fulfill({ json: { events, last_seq: 3, active_turn: null, revision: "r1" } });
-  });
-  await page.route(`**/api/file-workspaces/${book.id}/ideas/*/activity*`, async (route) => {
-    await route.fulfill({
-      json: {
-        items: [
-          {
-            id: "c-expand:1:expanded",
-            kind: "expanded",
-            idea_id: "idea_1",
-            revision_id: "irev_1",
-            conversation_id: "c-expand",
-            conversation_title: "展开这条灵感",
-            conversation_available: true,
-            turn_id: "t-expand",
-            at: stamp,
-          },
-        ],
-        total: 1,
-        complete: true,
-        next_cursor: null,
-      },
-    });
-  });
-  await page.route(`**/api/file-workspaces/${book.id}/events?**`, async (route) => {
-    const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
-    await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body });
-  });
-
-  await page.goto("/");
-  await page.getByLabel("选择作品目录").selectOption(book.id);
-  await page.getByRole("button", { name: "灵感", exact: true }).click();
-  const list = page.getByRole("complementary", { name: "灵感列表", exact: true });
-  await list.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
-  await page.locator(".idea-entry-more > summary").click();
-  await page.getByRole("button", { name: "展开讨论", exact: true }).click();
-
-  // 面板收起，写作页显示这次只读讨论的回答。
-  await expect(page.getByRole("complementary", { name: "灵感", exact: true })).toHaveCount(0);
-  await expect(page.locator(".chat-reply")).toContainText("三个方向");
-  expect(posts).toHaveLength(1);
-  const request = posts[0] as {
-    purpose: string;
-    context: { idea_references: { idea_id: string }[]; selected_path: null };
-  };
-  expect(request.purpose).toBe("expand_idea");
-  expect(request.context.idea_references).toHaveLength(1);
-  expect(request.context.selected_path).toBeNull();
-
-  // 使用记录里能看到这次展开，并能跳回那次讨论。
-  await page.getByRole("button", { name: "灵感", exact: true }).click();
-  const list2 = page.getByRole("complementary", { name: "灵感列表", exact: true });
-  await list2.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
-  // 有记录时默认展开，不需要再点一次 summary（再点会收起）。
-  const activity = page.locator(".idea-activity");
-  await page.locator(".idea-entry-more > summary").click();
-  await expect(activity).toContainText("展开讨论");
-  await activity.getByRole("button", { name: "展开这条灵感", exact: true }).click();
-  await expect(page.locator(".chat-reply")).toContainText("三个方向");
-
-  // 再次点击：打开同一次讨论，不重复发送。
-  await page.getByRole("button", { name: "灵感", exact: true }).click();
-  const list3 = page.getByRole("complementary", { name: "灵感列表", exact: true });
-  await list3.getByRole("button", { name: /^侦探认出了雨衣/ }).click();
-  await page.locator(".idea-entry-more > summary").click();
-  await page.getByRole("button", { name: "展开讨论", exact: true }).click();
-  await expect(page.locator(".chat-reply")).toContainText("三个方向");
-  expect(posts).toHaveLength(1);
-});
-
-test("用于写作：选定章节后按普通写作用途提交，带固定灵感与目标", async ({ page, book }) => {
-  const stamp = "2026-10-25T11:00:00+08:00";
-  const events = [
-    { seq: 1, at: stamp, type: "turn_started", turn_id: "t-write", text: "把这条灵感用到《0001 雨夜》" },
-    {
-      seq: 2,
-      at: stamp,
-      type: "assistant_message",
-      turn_id: "t-write",
-      text: "已登记要改的区间：只在雨衣那段加入旧识的反应。",
-    },
-    { seq: 3, at: stamp, type: "run_finished", turn_id: "t-write", status: "completed", recording: "committed" },
-  ];
-  const accepted = {
-    conversation_id: "c-write",
-    turn_id: "t-write",
-    started_at: stamp,
-    title: "把这条灵感用到《0001 雨夜》",
-    request_key: "k-write",
-  };
-  const posts: Record<string, unknown>[] = [];
-
-  // 用于写作要真的提交一轮：模型必须可用。
-  await page.route("**/api/model-connections", async (route) => {
-    const config = await (await route.fetch()).json();
-    config.selection = { ...config.selection, available: true };
-    await route.fulfill({ json: config });
-  });
-  await page.route(`**/api/file-workspaces/${book.id}/conversations`, async (route) => {
-    if (route.request().method() === "POST") {
-      posts.push(route.request().postDataJSON() as Record<string, unknown>);
-      await route.fulfill({ status: 202, json: accepted });
-      return;
-    }
-    await route.fulfill({
-      json: {
-        // 还没有任何会话：用于写作由这次提交新建一个，而不是接着别人的会话发。
-        items: [],
-        recent_id: null,
-        active_turn: null,
-        revision: "r1",
-      },
-    });
-  });
-  await page.route(`**/api/file-workspaces/${book.id}/conversations/c-write/messages*`, async (route) => {
-    await route.fulfill({ json: { events, last_seq: 3, active_turn: null, revision: "r1" } });
-  });
-  await page.route(`**/api/file-workspaces/${book.id}/events?**`, async (route) => {
-    const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
-    await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body });
-  });
-
-  await page.goto("/");
-  await page.getByLabel("选择作品目录").selectOption(book.id);
-  await page.getByRole("button", { name: "灵感", exact: true }).click();
-  await page
-    .getByRole("complementary", { name: "灵感列表", exact: true })
-    .getByRole("button", { name: /^侦探认出了雨衣/ })
-    .click();
-  await page.locator(".idea-entry-more > summary").click();
-  await page.getByRole("button", { name: "用于写作", exact: true }).click();
-
-  const dialog = page.getByRole("dialog", { name: "把这条灵感用到哪一章", exact: true });
-  await dialog.getByRole("button", { name: /雨夜/ }).click();
-
-  await expect(page.locator(".chat-reply")).toContainText("已登记要改的区间");
-  expect(posts).toHaveLength(1);
-  const request = posts[0] as {
-    purpose?: string;
-    text: string;
-    context: { selected_path: string; reference_paths: string[]; idea_references: unknown[] };
-  };
-  // 用于写作仍是普通写作用途：不是展开，也不带索引或检查参数。
-  expect(request.purpose).toBeUndefined();
-  expect(request.context.selected_path).toBe("正文/0001 雨夜.md");
-  expect(request.context.reference_paths).toEqual([]);
-  expect(request.context.idea_references).toHaveLength(1);
-  expect(request.text).toContain("《");
-  // 面板收起，改动落在写作页。
-  await expect(page.getByRole("complementary", { name: "灵感", exact: true })).toHaveCount(0);
 });

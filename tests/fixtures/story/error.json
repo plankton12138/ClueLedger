@@ -1,0 +1,9 @@
+{
+  "code": "STORY_GRAPH_INVALID",
+  "status": 400,
+  "message": "[STORY_GRAPH_INVALID] story.change：推进顺序存在循环。建议：按提示补齐目标或关系后重新提交",
+  "details": {
+    "variant_id": "main",
+    "base_revision": "rev_blank_1"
+  }
+}

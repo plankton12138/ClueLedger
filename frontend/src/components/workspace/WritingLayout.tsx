@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Clock3, List, MessageSquare, Search } from "lucide-react";
+import { Clock3, List, MessageSquare, Network, Search } from "lucide-react";
 import { CHAT, SIDEBAR, useLayoutStore, writingLayout } from "../../state/layout";
 import { useWorkspaceStore } from "../../state/workspace";
 import { runningConversation, useConversationsStore } from "../../state/conversations";
@@ -17,6 +17,8 @@ import { SourceNotice, ModuleSourceReader } from "../clues/SourceReader";
 import { navigate, parseHash } from "../../state/navigation";
 import { useCluesStore, type CluePane } from "../../state/clues";
 import ChapterClues from "../clues/ChapterClues";
+import StorySurface from "../story/StorySurface";
+import { useStoryStore } from "../../state/story";
 import type { ClueInference } from "../../api/clues";
 import type { ClueReferenceInput } from "../../api/workspace";
 import { sourceTaskChapter } from "../../state/sourceLocation";
@@ -38,6 +40,10 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const chapterPath = !moduleBinding && (sourceId || file?.kind === "chapter") ? chapterContext ?? (file?.kind === "chapter" ? file.path : null) : null;
   const chapterNumber = catalog.chapters.find(item => item.path === chapterPath)?.chapter_number ?? null;
   const [width, setWidth] = useState(0);
+  // 构思与正文共用一个纸面：开关放在 store 里，来源提示的「返回构思」也能打开它。
+  // 只看开关本身：构思面挂载后自己按作品读取，作品切换时上面的一致性检查会复位。
+  const storyView = useStoryStore(state => state.open);
+  const setStoryView = useStoryStore(state => state.setOpen);
   const [directory, setDirectory] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const container = useRef<HTMLDivElement>(null);
@@ -60,7 +66,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const sidebar = plan.sidebar > 0;
   const directoryVisible = canDockDirectory ? sidebar : directory;
   const paper = !compact || !chat;
-  useEffect(() => { setDirectory(false); setCompactChat(false); }, [currentId]);
+  useEffect(() => { setDirectory(false); setCompactChat(false); setStoryView(false); }, [currentId, setStoryView]);
   useEffect(() => { setDirectory(false); }, [canDockDirectory]);
   useEffect(() => { if (prefs.chatReveal > 0) { setCompactChat(true); if (currentId) useCluesStore.getState().setPane(currentId, "chat"); } }, [prefs.chatReveal]);
   useEffect(() => { if (sourceId) setCompactChat(false); }, [sourceId]);
@@ -123,6 +129,8 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       <Button ref={directoryButton} size="compact" variant={directoryVisible ? "primary" : "secondary"} aria-pressed={directoryVisible} aria-expanded={directoryVisible} aria-controls="writing-directory"
         onClick={() => canDockDirectory ? prefs.toggleSidebar() : setDirectory(value => !value)} onKeyDown={event => { if (event.key === "Escape") setDirectory(false); }}>
         <List size={16} strokeWidth={2} aria-hidden="true" />目录</Button>
+      <Button size="compact" variant={storyView ? "primary" : "secondary"} aria-pressed={storyView} onClick={() => setStoryView(!storyView)} disabled={!currentId} disabledReason="先打开作品目录">
+        <Network size={16} strokeWidth={2} aria-hidden="true" />构思</Button>
       <Button size="compact" variant={chat && pane === "chat" ? "primary" : "secondary"} aria-pressed={chat && pane === "chat"} aria-controls="writing-chat" onClick={() => showPane("chat", true)} disabled={!currentId} disabledReason="先打开作品目录">
         <MessageSquare size={16} strokeWidth={2} aria-hidden="true" />{chatLabel}</Button>
       <Button ref={clueButton} size="compact" variant={chat && pane === "clues" ? "primary" : "secondary"} aria-pressed={chat && pane === "clues"} aria-controls="writing-clues" onClick={() => showPane("clues", true)} disabled={!currentId} disabledReason="先打开作品目录"><Search size={16} aria-hidden="true" />本章线索</Button>
@@ -143,9 +151,29 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       </aside>
       {sidebar && <ResizeHandle value={plan.sidebar} min={SIDEBAR.min} max={Math.min(SIDEBAR.max, width - plan.chat - plan.paperMin - 12)} label="目录栏宽度"
           onChange={prefs.setSidebarWidth} onReset={() => prefs.setSidebarWidth(SIDEBAR.default)} />}
-      <section className="writing-paper module" role="region" aria-label="正文阅读" hidden={!paper}>
+      <section className="writing-paper module" role="region" aria-label={storyView ? "构思结构" : "正文阅读"} hidden={!paper}>
         <div className="flex h-full min-h-0 flex-col"><SourceNotice /><div className="min-h-0 flex-1 flex flex-col">
-        {currentId ? source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} loading={loading} /> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
+        {currentId ? storyView ? (
+          <StorySurface
+            workspaceId={currentId}
+            onReference={() => {
+              // 只把对话栏带出来：对话已经在最前时不能再按一次「切换」，否则会被收起。
+              if (!currentId) return;
+              if (!prefs.chatVisible) prefs.toggleChat();
+              if (compactChat) setCompactChat(false);
+              useCluesStore.getState().setPane(currentId, "chat");
+            }}
+            onLocate={binding => {
+              // 从结构跳到正文：先回到正文面，再按结构里记的区间定位。
+              setStoryView(false);
+              void useSourceLocationStore.getState().showLocal(
+                currentId,
+                { path: binding.path, start: binding.start, end: binding.end, quote: binding.quote },
+                { fromStory: true },
+              );
+            }}
+          />
+        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} loading={loading} /> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
         </div></div>
       </section>
       {currentId && <>

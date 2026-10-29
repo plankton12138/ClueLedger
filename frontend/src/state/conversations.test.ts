@@ -14,10 +14,22 @@ const api = vi.hoisted(() => ({
   createConversationWithText: vi.fn(),
   conversationMessages: vi.fn(),
   startTurn: vi.fn(),
-  stopTurn: vi.fn(),
   renameConversation: vi.fn(),
   streamEvents: vi.fn(),
 }));
+
+const ops = vi.hoisted(() => ({
+  readOperation: vi.fn(),
+  pauseOperation: vi.fn(),
+  continueOperation: vi.fn(),
+  interjectOperation: vi.fn(),
+  operationKey: vi.fn(() => "key-1"),
+}));
+
+vi.mock("../api/operations", async () => {
+  const actual = await vi.importActual<typeof import("../api/operations")>("../api/operations");
+  return { ...actual, ...ops };
+});
 
 vi.mock("../api/workspace", async () => {
   const actual = await vi.importActual<typeof import("../api/workspace")>("../api/workspace");
@@ -74,8 +86,47 @@ beforeEach(() => {
     turn_id: "t1",
     conversation_id: "c1",
     started_at: "2026-10-21T10:00:00+08:00",
+    operation_id: "op_1",
+    generation: 1,
   });
-  api.stopTurn.mockResolvedValue({ stopped: true });
+  ops.readOperation.mockResolvedValue({
+    id: "op_1",
+    conversation_id: "c1",
+    turn_id: "t1",
+    purpose: "chat",
+    target: "写作对话",
+    status: "running",
+    generation: 1,
+    phase: "model",
+    model: "",
+    connection: "",
+    note: "",
+    error: null,
+    pending_units: [],
+    last_seq: 0,
+    created_at: "",
+    updated_at: "",
+    capabilities: { pause: true, continue: false, interject: true },
+  });
+  ops.pauseOperation.mockResolvedValue({
+    id: "op_1",
+    conversation_id: "c1",
+    turn_id: "t1",
+    purpose: "chat",
+    target: "写作对话",
+    status: "paused",
+    generation: 1,
+    phase: "paused",
+    model: "",
+    connection: "",
+    note: "",
+    error: null,
+    pending_units: [],
+    last_seq: 0,
+    created_at: "",
+    updated_at: "",
+    capabilities: { pause: false, continue: true, interject: false },
+  });
   api.streamEvents.mockImplementation(async function* () {
     yield { seq: 1, at: "", type: "turn_started", text: "写第一章" };
     yield { seq: 2, at: "", type: "assistant_message", text: "写好了。" };
@@ -302,7 +353,7 @@ describe("切换会话", () => {
     expect(state.entries.c1?.turns[0]?.prompt).toBe("迟到的响应");
   });
 
-  it("切走不停止服务器任务：原会话仍在运行", async () => {
+  it("切走不暂停服务器任务：原会话仍在运行", async () => {
     api.listConversations.mockResolvedValue(list([CONVERSATION, { ...CONVERSATION, id: "c2" }]));
     api.streamEvents.mockImplementation(async function* () {
       yield { seq: 1, at: "", type: "turn_started", text: "写第一章" };
@@ -315,10 +366,10 @@ describe("切换会话", () => {
     await useConversationsStore.getState().select("c2");
 
     expect(useConversationsStore.getState().entries.c1?.running).toBe(true);
-    expect(api.stopTurn).not.toHaveBeenCalled();
+    expect(ops.pauseOperation).not.toHaveBeenCalled();
   });
 
-  it("停止立即标为请求中，仍等待终态，并避免重复提交", async () => {
+  it("暂停立即标为请求中，仍等待终态，并避免重复提交", async () => {
     api.streamEvents.mockImplementation(async function* () {
       yield { seq: 1, at: "", type: "turn_started", text: "写第一章" };
       await new Promise(() => undefined);
@@ -327,17 +378,37 @@ describe("切换会话", () => {
     void useConversationsStore.getState().send("写第一章");
     await flush();
 
-    let resolve: () => void = () => undefined;
-    api.stopTurn.mockImplementation(() => new Promise<void>(done => { resolve = done; }));
-    const pending = useConversationsStore.getState().stop();
+    let resolve: (value: unknown) => void = () => undefined;
+    ops.pauseOperation.mockImplementation(
+      () => new Promise((done) => { resolve = done; }),
+    );
+    const pending = useConversationsStore.getState().pause();
 
     expect(useConversationsStore.getState().entries.c1?.activeTurn?.state).toBe("stop_requested");
-    await useConversationsStore.getState().stop();
-    expect(api.stopTurn).toHaveBeenCalledTimes(1);
-    resolve();
+    await useConversationsStore.getState().pause();
+    expect(ops.pauseOperation).toHaveBeenCalledTimes(1);
+    resolve({
+      id: "op_1",
+      conversation_id: "c1",
+      turn_id: "t1",
+      purpose: "chat",
+      target: "写作对话",
+      status: "paused",
+      generation: 1,
+      phase: "paused",
+      model: "",
+      connection: "",
+      note: "",
+      error: null,
+      pending_units: [],
+      last_seq: 0,
+      created_at: "",
+      updated_at: "",
+      capabilities: { pause: false, continue: true, interject: false },
+    });
     await pending;
 
-    expect(api.stopTurn).toHaveBeenCalledWith("w1", "t1");
+    expect(ops.pauseOperation).toHaveBeenCalledWith("op_1", "key-1");
     expect(useConversationsStore.getState().entries.c1?.running).toBe(true);
   });
 
@@ -349,9 +420,9 @@ describe("切换会话", () => {
     await useConversationsStore.getState().load("w1");
     void useConversationsStore.getState().send("写第一章");
     await flush();
-    api.stopTurn.mockRejectedValue(new Error("network"));
+    ops.pauseOperation.mockRejectedValue(new Error("network"));
 
-    await useConversationsStore.getState().stop();
+    await useConversationsStore.getState().pause();
 
     expect(useConversationsStore.getState().entries.c1?.activeTurn?.state).not.toBe("stop_requested");
     expect(useConversationsStore.getState().entries.c1?.running).toBe(true);
@@ -939,178 +1010,6 @@ describe("灵感引用（I3）", () => {
     expect(useConversationsStore.getState().draftIdeas.new ?? []).toHaveLength(0);
   });
 });
-
-describe("展开灵感（I4）", () => {
-  const ACCEPTED = {
-    conversation_id: "c-expand",
-    turn_id: "t-expand",
-    started_at: "2026-10-25T10:00:00+08:00",
-    title: "展开这条灵感：灯塔在退潮时",
-    request_key: "k-expand",
-  };
-
-  function ready(): void {
-    reset();
-    useConversationsStore.setState({ workspaceId: "w1" });
-    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
-    api.streamEvents.mockImplementation(async function* () {
-      yield { ...FINISHED, seq: 1 };
-    });
-  }
-
-  it("一次点击只带选定的灵感与用途，不动当前聊天草稿", async () => {
-    ready();
-    useConversationsStore.getState().setDraft("还没发出去的草稿");
-    api.createConversationWithText.mockResolvedValue(ACCEPTED);
-
-    const result = await useConversationsStore.getState().expandIdea({
-      ideaId: "idea_1",
-      revisionId: "irev_1",
-      preview: "灯塔在退潮时才会露出第二层台阶。",
-    });
-
-    expect(result).toEqual({ conversationId: "c-expand", turnId: "t-expand" });
-    const [, request] = api.createConversationWithText.mock.calls[0];
-    expect(request.purpose).toBe("expand_idea");
-    expect(request.context.idea_references).toEqual([
-      { idea_id: "idea_1", revision_id: "irev_1" },
-    ]);
-    expect(request.context.selected_path).toBeNull();
-    expect(request.context.reference_paths).toEqual([]);
-    expect(request.text).toContain("灯塔在退潮时");
-    // 当前草稿保持原样：展开用的是独立会话。
-    expect(useConversationsStore.getState().drafts.new).toBe("还没发出去的草稿");
-    expect(useConversationsStore.getState().selectedId).toBe("c-expand");
-  });
-
-  it("结果不明时重试沿用同一个请求键", async () => {
-    ready();
-    api.createConversationWithText
-      .mockRejectedValueOnce(new Error("网络中断"))
-      .mockResolvedValue(ACCEPTED);
-
-    const first = await useConversationsStore.getState().expandIdea({
-      ideaId: "idea_1",
-      revisionId: "irev_1",
-      preview: "预览",
-    });
-    const second = await useConversationsStore.getState().expandIdea({
-      ideaId: "idea_1",
-      revisionId: "irev_1",
-      preview: "预览",
-    });
-
-    expect(first).toBeNull();
-    expect(second?.conversationId).toBe("c-expand");
-    const firstKey = api.createConversationWithText.mock.calls[0][1].request_key;
-    const secondKey = api.createConversationWithText.mock.calls[1][1].request_key;
-    expect(secondKey).toBe(firstKey);
-  });
-
-  it("已有讨论时再次点击只打开它，不重复发送", async () => {
-    ready();
-    api.createConversationWithText.mockResolvedValue(ACCEPTED);
-    await useConversationsStore.getState().expandIdea({
-      ideaId: "idea_1",
-      revisionId: "irev_1",
-      preview: "预览",
-    });
-    useConversationsStore.getState().newConversation();
-
-    const again = await useConversationsStore.getState().expandIdea({
-      ideaId: "idea_1",
-      revisionId: "irev_1",
-      preview: "预览",
-    });
-
-    expect(again?.conversationId).toBe("c-expand");
-    expect(api.createConversationWithText).toHaveBeenCalledTimes(1);
-    expect(useConversationsStore.getState().selectedId).toBe("c-expand");
-  });
-
-  it("已有发送在途时不并发展开", async () => {
-    ready();
-    useConversationsStore.setState({ pendingKey: "k-running" });
-    const result = await useConversationsStore.getState().expandIdea({
-      ideaId: "idea_1",
-      revisionId: "irev_1",
-      preview: "预览",
-    });
-    expect(result).toBeNull();
-    expect(api.createConversationWithText).not.toHaveBeenCalled();
-  });
-});
-
-describe("用于写作（I5）", () => {
-  const ACCEPTED = {
-    conversation_id: "c-write",
-    turn_id: "t-write",
-    started_at: "2026-10-25T10:00:00+08:00",
-    title: "把这条灵感用到《雨夜》",
-    request_key: "k-write",
-  };
-
-  function ready(): void {
-    reset();
-    useConversationsStore.setState({ workspaceId: "w1" });
-    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
-    api.streamEvents.mockImplementation(async function* () {
-      yield { ...FINISHED, seq: 1 };
-    });
-    api.createConversationWithText.mockResolvedValue(ACCEPTED);
-  }
-
-  it("带目标章节与固定修订走普通用途，作者自己的草稿不被动", async () => {
-    ready();
-    useConversationsStore.getState().setDraft("作者正在写的草稿");
-
-    const result = await useConversationsStore.getState().writeFromIdea({
-      ideaId: "idea_1",
-      revisionId: "irev_1",
-      preview: "灯塔在退潮时才会露出第二层台阶。",
-      title: "雨夜",
-      path: "正文/0001 雨夜.md",
-      digest: "d1",
-    });
-
-    expect(result).toEqual({ conversationId: "c-write", turnId: "t-write" });
-    const [, request] = api.createConversationWithText.mock.calls[0];
-    expect(request.purpose).toBeUndefined();
-    expect(request.context.selected_path).toBe("正文/0001 雨夜.md");
-    expect(request.context.observed_digests).toEqual({ "正文/0001 雨夜.md": "d1" });
-    expect(request.context.idea_references).toEqual([
-      { idea_id: "idea_1", revision_id: "irev_1" },
-    ]);
-    expect(request.text).toContain("《雨夜》");
-    expect(request.text).toContain("灯塔在退潮时");
-    // 提交用的是这一次的引用，不把引用留在作者的下一条草稿里。
-    const state = useConversationsStore.getState();
-    expect(state.drafts.new).toBe("作者正在写的草稿");
-    expect(state.draftIdeas.new ?? []).toHaveLength(0);
-  });
-
-  it("已有会话时接着发，不另建会话", async () => {
-    ready();
-    useConversationsStore.setState({ selectedId: "c1" });
-
-    const result = await useConversationsStore.getState().writeFromIdea({
-      ideaId: "idea_1",
-      revisionId: "irev_1",
-      preview: "预览",
-      title: "雨夜",
-      path: "正文/0001 雨夜.md",
-    });
-
-    expect(result).toEqual({ conversationId: "c1", turnId: "t1" });
-    expect(api.createConversationWithText).not.toHaveBeenCalled();
-    const [, conversationId, request] = api.startTurn.mock.calls[0];
-    expect(conversationId).toBe("c1");
-    expect(request.context.selected_path).toBe("正文/0001 雨夜.md");
-    // 还没读到目标版本就不带指纹，由服务端按当前内容冻结。
-    expect(request.context.observed_digests).toEqual({});
-  });
-});
-
 
 describe("正文与装载模块的选段引用", () => {
   const quote: TextReference = { id: "quote-1", text: "原文第一行。\n原文第二行。", title: "雨夜", source: "正文/0001 雨夜.md", version: "digest-1" };

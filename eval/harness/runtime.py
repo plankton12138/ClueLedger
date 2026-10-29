@@ -36,7 +36,6 @@ from hastings.workspace.questions import QuestionStore
 from hastings.workspace.review import REVIEW_INSTRUCTIONS
 from hastings.workspace.service import ProviderFactory, TurnService
 from hastings.workspace.state import ConversationStore, conversation_root
-from hastings.workspace.story_materials import CoverageStore
 from tau_agent.messages import AssistantMessage
 from tau_agent.provider_events import AssistantErrorEvent
 
@@ -392,7 +391,6 @@ def capture(
             if key and key not in details:
                 details[key] = service.activity.detail_attachment(key)
     indexes = ChapterIndexStore(service.store.root)
-    coverage = CoverageStore(service.store.root)
     derived = {}
     for name in (
         "story-index.json",
@@ -438,10 +436,6 @@ def capture(
             else "missing"
             for entry in workspace.catalog().chapters
         },
-        "coverage": [
-            {**record.to_dict(), "freshness": coverage.status(workspace, record)}
-            for record in coverage.records()
-        ],
         "assemblies": list(trace["assemblies"]),
         "faults": list(trace["faults"]),
         # 每次整理的结果：compaction_id 为 None 表示没有可整理内容（noop）。
@@ -575,7 +569,6 @@ async def run_attempt(
             gate["fired"] = False
             info = None
             try:
-                material_scope = step.material_scope
                 clue_scope = None
                 if step.clue_review is not None:
                     seeded = inferences[str(step.clue_review["inference"])]
@@ -617,7 +610,6 @@ async def run_attempt(
                     purpose=step.purpose,
                     index_paths=step.index_paths,
                     review_paths=tuple(step.review_paths),
-                    material_scope=material_scope,
                     clue_review=clue_scope,
                     reply_to_question=reply_to,
                 )

@@ -12,15 +12,8 @@ from hastings.workspace.clue_views import clue_detail, clue_list
 from hastings.workspace.disclosure import ObservedEvidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
-from hastings.workspace.material_tasks import (
-    MaterialTaskScope,
-    freeze_material_scope,
-    publish_material_result,
-)
-from hastings.workspace.materials import MaterialLedger, SourceRef
 from hastings.workspace.source_locations import resolve_source_location
 from hastings.workspace.state import RecentWorkspaces, conversation_root
-from hastings.workspace.story_materials import author_view
 
 FIRST = "正文/0001 雨夜.md"
 SECOND = "正文/0002 证词.md"
@@ -99,11 +92,6 @@ def test_current_chapter_includes_earlier_plant_and_has_traceable_testimony(book
     for basis in detail.evidence:
         source = resolve_source_location(workspace, store.root, basis.evidence_id, as_of_chapter=2)
         assert source.freshness == "valid" and source.quote == basis.quote
-    old = author_view(workspace, store.root, "clues", as_of_chapter=2)["entries"][0]
-    assert old["id"] == identifier and old["title"] == detail.title
-    assert [row["evidence_id"] for row in old["evidence"]] == [
-        row.evidence_id for row in detail.evidence
-    ]
 
 
 def test_future_contribution_does_not_leak_title_interpretation_or_resolution(book):
@@ -160,17 +148,14 @@ def test_empty_and_insufficient_are_completed_coverage_not_unrecorded(book, outc
     assert clue_detail(workspace, store.root, identifier).title == "信封背面的字"
 
 
-def test_empty_body_is_visible_but_cannot_launch_clue_task(book):
+def test_empty_body_is_visible_and_has_nothing_to_read(book):
     workspace, store, _ = book
     view = workspace.read(THIRD)
     workspace.write(THIRD, "# 真相\n\n## 待写\n", expected_digest=view.digest)
-    assert not clue_list(workspace, store.root, chapter_path=THIRD).chapter.has_content
-    with pytest.raises(WorkspaceError, match="没有可整理的正文"):
-        freeze_material_scope(
-            workspace,
-            MaterialTaskScope(domain="clues", chapter_paths=[THIRD], as_of_chapter=3),
-            root=store.root,
-        )
+    chapter = clue_list(workspace, store.root, chapter_path=THIRD).chapter
+    # 正文可以还没写；这一章只是没有可读内容，不伪造「已经看过」。
+    assert not chapter.has_content
+    assert chapter.coverage.outcome == "unrecorded"
 
 
 def test_cursor_is_bounded_and_invalidated_by_query_source_or_ledger_change(book):
@@ -230,61 +215,6 @@ def test_http_contract_no_model_or_write_and_unsafe_chapter_rejected(book, tmp_p
         assert client.get(base, params={"limit": 51}).status_code == 422
         assert client.get(f"{base}/unknown").status_code == 404
     assert {path.name: path.read_bytes() for path in root.iterdir()} == before
-
-
-def test_material_task_publishes_current_mention_only_after_actual_reads(book):
-    workspace, store, identifier = book
-    scope = freeze_material_scope(
-        workspace,
-        MaterialTaskScope(domain="clues", chapter_paths=[SECOND], as_of_chapter=2),
-        root=store.root,
-    )
-    ledger = MaterialLedger()
-    file = workspace.read(SECOND)
-    ledger.record_read(
-        SourceRef(SECOND, file.digest), length=len(file.text), start=0, end=len(file.text)
-    )
-    entry = next(row for row in store.read().entries() if row.source_chapter == 2)
-    args = dict(
-        workspace=workspace,
-        root=store.root,
-        scope=scope,
-        ledger=ledger,
-        turn_id="s3-real",
-        domain="clues",
-        path=SECOND,
-        entity_path="",
-        outcome="found",
-        note="",
-        digest=file.digest,
-    )
-    before = store.file.read_bytes()
-    # 目标章已读，埋设依据未读，仍不能发布。
-    with pytest.raises(WorkspaceError):
-        publish_material_result(**args, records=[entry.to_dict()])
-    assert store.file.read_bytes() == before
-    original = workspace.read(FIRST)
-    ledger.record_read(
-        SourceRef(FIRST, original.digest),
-        length=len(original.text),
-        start=0,
-        end=len(original.text),
-    )
-    # 使用真实引文，但登记成另一章的提及依据，也必须拒绝。
-    with pytest.raises(WorkspaceError):
-        publish_material_result(
-            **args,
-            records=[
-                replace(entry, mention_evidence=proof(workspace, FIRST, "信封背面有字。")).to_dict()
-            ],
-        )
-    assert store.file.read_bytes() == before
-    result = publish_material_result(**args, records=[entry.to_dict()])
-    assert result["clue_ids"] == [identifier]
-    assert (
-        clue_detail(workspace, store.root, identifier, as_of_chapter=2).observations[1].mode
-        == "testimony"
-    )
 
 
 def test_identity_after_empty_rebuild_does_not_claim_planting_or_leak_future_title(book):

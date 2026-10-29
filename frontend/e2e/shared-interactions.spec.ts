@@ -9,12 +9,18 @@ async function openModels(page: Page) {
   return page.getByRole("dialog", { name: "模型设置", exact: true });
 }
 
-test("停止点击立即反馈，等待服务端收尾后恢复发送入口", async ({ page, book }) => {
+test("暂停点击立即反馈，等待服务端收尾后恢复发送入口", async ({ page, book }) => {
   const active = {
     conversation_id: "c_stop", turn_id: "t_stop", state: "running", model: "test", connection: "test",
-    started_at: "2026-10-26T22:00:00+08:00",
+    started_at: "2026-10-26T22:00:00+08:00", operation_id: "op_stop",
   };
-  const item = { id: "c_stop", title: "停止交互验收", created_at: active.started_at, updated_at: active.started_at };
+  const paused = {
+    id: "op_stop", conversation_id: "c_stop", turn_id: "t_stop", purpose: "chat", target: "写作对话",
+    status: "paused", generation: 1, phase: "paused", model: "test", connection: "test", note: "",
+    error: null, pending_units: [], last_seq: 3, created_at: "", updated_at: "",
+    capabilities: { pause: false, continue: false, interject: false },
+  };
+  const item = { id: "c_stop", title: "暂停交互验收", created_at: active.started_at, updated_at: active.started_at };
   const prefix = `**/api/file-workspaces/${book.id}`;
   let finished = false;
   let stops = 0;
@@ -41,20 +47,30 @@ test("停止点击立即反馈，等待服务端收尾后恢复发送入口", as
     ];
     await route.fulfill({ contentType: "text/event-stream", body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("") });
   });
-  await page.route(`${prefix}/turns/${active.turn_id}/stop`, async route => {
-    stops++;
-    await requestGate;
-    finished = true;
-    await route.fulfill({ json: { stopped: true } });
-    finishEvents();
+  // 操作接口是应用级的：列表、快照与暂停都按操作标识定位。
+  await page.route("**/api/operations**", async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/pause")) {
+      stops++;
+      await requestGate;
+      finished = true;
+      await route.fulfill({ json: paused });
+      finishEvents();
+      return;
+    }
+    if (url.pathname === "/api/operations") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    await route.fulfill({ json: paused });
   });
   await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: "停止", exact: true }).click();
-  await expect(page.getByRole("button", { name: "正在停止…", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  await expect(page.getByRole("button", { name: "正在暂停…", exact: true })).toBeDisabled();
   expect(stops).toBe(1);
   finishRequest();
   await expect(page.getByRole("button", { name: "发送", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "正在停止…", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "正在暂停…", exact: true })).toHaveCount(0);
 });
 async function focusWithin(page: Page, dialog: Locator) {
   for (let n = 0; n < 12; n++) {

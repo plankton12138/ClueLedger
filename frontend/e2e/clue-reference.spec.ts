@@ -30,14 +30,6 @@ test("把线索带进对话只写草稿，刷新后仍在，可移除", async ({
   await expect(page.locator('[aria-label="引用线索"]')).toHaveCount(0);
 });
 
-test("资料页带入线索后回到写作页的草稿", async ({ page, book }) => {
-  await page.goto(`/#/workspaces/${book.id}/materials/clues`);
-  await page.getByRole("button", { name: /公开的照片/ }).click();
-  await page.locator(".materials-evidence").getByRole("button", { name: "带入对话", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/workspaces/${book.id}/writing`));
-  await expect(page.getByLabel("引用线索")).toContainText("公开的照片");
-});
-
 test("带入目标时同时记下推理身份", async ({ page, book, request }) => {
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("button", { name: "第二章 照片", exact: true, includeHidden: true }).click();

@@ -258,6 +258,8 @@ def test_deltas_are_readable_before_the_response_ends(
     ]
     assert [event["type"] for event in events] == [
         "turn_started",
+        # 代次开始先落盘：这一代属于哪个操作，在模型输出之前就确定了。
+        "attempt_started",
         # 装配记录先落盘：配置与分区在模型开始输出之前就已经确定。
         "state_injected",
         "run_phase",
@@ -271,14 +273,16 @@ def test_deltas_are_readable_before_the_response_ends(
         "run_finished",
     ]
     assert [event["phase"] for event in _of_type(events, "run_phase")] == ["model", "record"]
-    finished = events[6]
+    # 按类型取事件：位置会随新增的控制事件改变，断言不该依赖下标。
+    finished = _of_type(events, "assistant_block_finished")[0]
     assert finished["text"] == "旅馆的灯熄灭了。"  # 完整结束值覆盖增量
     assert finished["last_part"] == 0
     assert finished["completion"] == "completed"
     assert finished["duration_ms"] >= 0
-    assert events[7]["text"] == "旅馆的灯熄灭了。"
-    assert events[7]["completion"] == "completed"
-    assert events[8]["stop_reason"] == "stop"
+    public = _of_type(events, "assistant_message")[0]
+    assert public["text"] == "旅馆的灯熄灭了。"
+    assert public["completion"] == "completed"
+    assert _of_type(events, "assistant_finished")[0]["stop_reason"] == "stop"
 
 
 def test_idle_timer_flushes_without_waiting_for_the_next_token(
@@ -533,7 +537,10 @@ def test_stop_keeps_partial_text_and_closes_blocks(
     turn = _accept(client, workspace_id)
     conversation_id = turn["conversation_id"]
     _wait_until(client, workspace_id, conversation_id, _has_delta)
-    client.post(f"/api/file-workspaces/{workspace_id}/turns/{turn['turn_id']}/stop")
+    client.post(
+            f"/api/operations/{turn['operation_id']}/pause",
+            json={"request_key": "pause-1"},
+        )
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     # 这一块确实收到了结束事件，所以块本身是完整的；未完整的是整次响应。

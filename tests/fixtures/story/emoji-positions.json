@@ -1,0 +1,20 @@
+{
+  "path": "正文/0001 钥匙.md",
+  "content": "他把钥匙🔑放在窗台，\r\n又退回去看了一眼。",
+  "normalized": "他把钥匙🔑放在窗台，\n又退回去看了一眼。",
+  "digest": "7d5f15a6067ca01a1439827f244da803fda3db9e6de286a11486704618c194e2",
+  "binding": {
+    "id": "b1",
+    "node_id": "n1",
+    "clue_id": null,
+    "document_id": "doc_1",
+    "path": "正文/0001 钥匙.md",
+    "digest": "7d5f15a6067ca01a1439827f244da803fda3db9e6de286a11486704618c194e2",
+    "start": 2,
+    "end": 5,
+    "quote": "钥匙🔑",
+    "observation": "钥匙出现在窗台",
+    "assessment_id": null
+  },
+  "note": "start/end 是规范化（CRLF→LF）后的 Unicode 码点位置；UTF-16 下标会把 emoji 算成两个。"
+}

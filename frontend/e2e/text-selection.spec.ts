@@ -12,6 +12,8 @@ async function selectText(root: Locator, text: string) {
       if (start < 0) continue;
       const range = document.createRange(); range.setStart(current, start); range.setEnd(current, start + wanted.length);
       window.getSelection()?.removeAllRanges(); window.getSelection()?.addRange(range);
+      // 程序化选区不保证同步派发 selectionchange；显式触发，避免用例依赖浏览器时序。
+      document.dispatchEvent(new Event("selectionchange"));
       return;
     }
     throw new Error(`没有找到选段：${wanted}`);

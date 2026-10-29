@@ -24,14 +24,14 @@ import os
 import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import aclosing, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from hastings.library.modules import ModuleLibrary
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.activity import ActivityStore, redact
-from hastings.workspace.assembly import Exclusion
+from hastings.workspace.assembly import STORY_BUDGET, Exclusion
 from hastings.workspace.chapter_index import (
     MAX_INDEX_CHAPTERS,
     ChapterIndexStore,
@@ -53,15 +53,6 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import GlossaryStore
-from hastings.workspace.material_tasks import (
-    MaterialTaskScope,
-    freeze_material_scope,
-    material_instructions,
-    scope_brief,
-)
-from hastings.workspace.material_tasks import (
-    targets as material_targets,
-)
 from hastings.workspace.materials import (
     ContextRequest,
     ContextSnapshot,
@@ -75,13 +66,21 @@ from hastings.workspace.materials import (
 )
 from hastings.workspace.model_activity import RecordedProvider
 from hastings.workspace.module_assembly import Assembly, AssemblyStore
+from hastings.workspace.operations import (
+    OPERATION_TERMINAL,
+    Operation,
+    OperationStore,
+    context_refs_of,
+    new_operation_id,
+    operation_status_for_run,
+    utc_now,
+)
 from hastings.workspace.questions import AuthorQuestion, QuestionStore
 from hastings.workspace.retrieval import module_overview
 from hastings.workspace.review import ReviewStore, target_digests
 from hastings.workspace.run_registry import RunRegistry
 from hastings.workspace.state import ConversationStore
 from hastings.workspace.state_store import state_chapter
-from hastings.workspace.story_materials import CoverageStore
 from hastings.workspace.timeline import TimelineStore
 from tau_agent.events import (
     MessageEndEvent,
@@ -164,15 +163,26 @@ class RunResult:
 
 
 class WriteSession:
-    """一轮写入的 Git 记录。调用顺序：``prepare()`` → 写文件 → ``finish(status)``。"""
+    """一轮写入的 Git 记录。调用顺序：``prepare()`` → 写文件 → ``finish(status)``。
 
-    def __init__(self, workspace: Workspace, *, instruction: str = "") -> None:
+    ``guard`` 是这一代的写入资格检查：暂停之后旧代次的工具调用不能再用「准备基线」
+    拿到写权限，否则作者看到的是「已经暂停，文件却又变了」。
+    """
+
+    def __init__(
+        self,
+        workspace: Workspace,
+        *,
+        instruction: str = "",
+        guard: Callable[[], None] | None = None,
+    ) -> None:
         self.workspace = workspace
         self.repo = GitRepo(workspace.root)
         self.instruction = instruction
         self.baseline_head: str | None = None
         self.external_commit: str | None = None
         self.prepared = False
+        self.guard = guard
 
     def prepare(self) -> str | None:
         """首次实际修改前调用，返回这一轮的内容基线（提交 ID）。
@@ -180,6 +190,8 @@ class WriteSession:
         仓库不可写、有冲突或作者预暂存内容时抛错：此时还没有写任何文件，
         调用方应当停止写入，但阅读与讨论仍然可用。
         """
+        if self.guard is not None:
+            self.guard()
         self.repo.require_ready()
         self.baseline_head = self.repo.head()
         pending = self.repo.changes()
@@ -250,17 +262,69 @@ def _summary(instruction: str) -> str:
     return collapsed[:_MAX_SUMMARY]
 
 
+#: 操作结束时给作者看的一句话；空字符串表示不需要额外说明。
+_OPERATION_NOTE: dict[str, str] = {
+    "completed": "这一轮已经完成。",
+    "paused": "已暂停；已写出的内容与已记录的改动都保留。",
+    "awaiting_answer": "等你回答对话里的问题，这一轮才会继续。",
+    "needs_attention": "这一轮没有全部完成；可以查看结果后继续或重新发起。",
+    "failed": "这一轮失败了；已写出的内容保留。",
+}
+
+
+#: 受理时认识的用途；旧版本的总览与资料整理不在这里，因此不会被当成写作。
+_PURPOSES = frozenset(
+    {
+        "chat",
+        "update_chapter_index",
+        "review",
+        "update_disclosure",
+        "update_state",
+        "expand_idea",
+    }
+)
+
+
+def _operation_target(
+    purpose: str,
+    targets: Sequence[str],
+    review_targets: Sequence[str],
+) -> str:
+    """任务对象只说明「在做什么」，不从当前界面选中项推导。"""
+    if purpose == "review":
+        return f"核对 {len(review_targets)} 个文件" if review_targets else "核对"
+    if purpose == "update_chapter_index":
+        return f"更新索引 · {len(targets)} 章" if targets else "更新索引"
+    if purpose in ("update_disclosure", "update_state"):
+        return f"核对状态 · {len(targets)} 份小传" if targets else "核对状态"
+    first = targets[0].rsplit("/", 1)[-1] if targets else ""
+    return f"写作 · {first}" if first else "写作对话"
+
+
+def _continuation_prompt(text: str) -> str:
+    """继续与插话发给模型的说明；明确标成应用补的，不冒充作者原话。"""
+    if text.strip():
+        return (
+            "（应用转达）作者在生成过程中追加了要求：\n"
+            f"{text.strip()}\n\n"
+            "请在保留已经写出的内容的前提下按这个要求调整；已经完成的段落不要重复。"
+            "还没有写出正文时直接按新要求开始，不要说明进度。"
+        )
+    return (
+        "（应用转达）继续完成上一条要求：已经写出的内容不要重复，也不要重新开始，"
+        "只补完还没完成的部分。如果还没有写出正文，就直接开始写，不要说明进度或道歉。"
+    )
+
+
 def _tool_mode(
     purpose: str,
-) -> Literal["write", "index", "review", "state", "materials", "idea"]:
+) -> Literal["write", "index", "review", "state", "idea"]:
     if purpose == "update_chapter_index":
         return "index"
     if purpose == "review":
         return "review"
     if purpose in ("update_disclosure", "update_state"):
         return "state"
-    if purpose == "organize_materials":
-        return "materials"
     # 展开灵感是只读用途：能力由用途决定，不靠提示词约束。
     if purpose == "expand_idea":
         return "idea"
@@ -460,8 +524,6 @@ def _same_materials(
     purpose: str,
     targets: Sequence[str],
     review: Sequence[str],
-    previous_scope: Mapping[str, object] | None = None,
-    scope: Mapping[str, object] | None = None,
     previous_clue: Mapping[str, object] | None = None,
     clue: Mapping[str, object] | None = None,
 ) -> bool:
@@ -470,16 +532,12 @@ def _same_materials(
     observed = dict(sorted(request.observed_digests.items()))
     if previous_purpose != purpose:
         return False
-    # 资料任务的章节由范围本身比较；写作任务仍按索引目标比较。
-    if purpose != "organize_materials" and tuple(previous_targets) != tuple(targets):
+    if tuple(previous_targets) != tuple(targets):
         return False
     if tuple(previous_review) != tuple(review):
         return False
     # 换了核对目标或目标版本就是另一次核对，不能返回上一轮的报告。
     if _clue_identity(previous_clue) != _clue_identity(clue):
-        return False
-    # 资料任务的范围也是请求身份的一部分：换了章节或人物就是另一次任务，不能返回旧结果。
-    if not _same_scope(previous_scope, scope):
         return False
     if previous is None:
         return (
@@ -525,49 +583,6 @@ def _clue_identity(scope: Mapping[str, object] | None) -> tuple[object, ...]:
     )
 
 
-def _requested_scope(
-    scope: MaterialTaskScope | Mapping[str, object] | None,
-) -> dict[str, object] | None:
-    """把客户端提交的范围收成可比较的四个字段；不含服务端冻结的指纹。"""
-    if scope is None:
-        return None
-    if isinstance(scope, MaterialTaskScope):
-        return {
-            "domain": scope.domain,
-            "chapter_paths": list(scope.chapter_paths),
-            "entity_paths": list(scope.entity_paths),
-            "as_of_chapter": scope.as_of_chapter,
-        }
-    return {
-        "domain": scope.get("domain"),
-        "chapter_paths": list(cast(list[object], scope.get("chapter_paths") or [])),
-        "entity_paths": list(cast(list[object], scope.get("entity_paths") or [])),
-        "as_of_chapter": scope.get("as_of_chapter"),
-    }
-
-
-def _same_scope(
-    previous: Mapping[str, object] | None, current: Mapping[str, object] | None
-) -> bool:
-    if previous is None or current is None:
-        return previous is None and current is None
-    for key in ("domain", "chapter_paths", "entity_paths", "as_of_chapter"):
-        left = previous.get(key)
-        right = current.get(key)
-        if key == "as_of_chapter":
-            # 冻结范围记的是解析后的章号；比较时用客户端原始请求值。
-            left = previous.get("requested_as_of", left)
-        if key == "as_of_chapter":
-            # 冻结范围记的是解析后的章号；比较时用客户端原始请求值。
-            left = previous.get("requested_as_of", left)
-        if isinstance(left, list) or isinstance(right, list):
-            if list(cast(list[object], left or [])) != list(cast(list[object], right or [])):
-                return False
-        elif left != right:
-            return False
-    return True
-
-
 def _dedupe(paths: Sequence[str]) -> tuple[str, ...]:
     ordered: list[str] = []
     for path in paths:
@@ -593,13 +608,14 @@ class TurnInfo:
     purpose: str = "chat"
     index_paths: tuple[str, ...] = ()
     review_paths: tuple[str, ...] = ()
-    #: 资料任务的冻结范围；普通对话为空。
-    material_scope: dict[str, object] | None = None
     #: 线索核对的冻结范围；只有检查用途且指定了推理目标时才有。
     clue_review: dict[str, object] | None = None
     #: 受理时冻结的装配；执行阶段不再反读界面或库的新状态。
     assembly: Assembly | None = None
     assembly_digest: str | None = None
+    #: 这次轮次所属的统一操作与代次；没有登记操作的旧调用为空与 1。
+    operation_id: str = ""
+    generation: int = 1
 
 
 ActiveState = Literal["accepted", "running", "stop_requested"]
@@ -615,6 +631,8 @@ class ActiveTurn:
     model: str
     connection: str
     started_at: str
+    #: 这一轮所属的统一操作：任务控件用它暂停与插话，不靠界面上最后一条消息找任务。
+    operation_id: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -624,6 +642,7 @@ class ActiveTurn:
             "model": self.model,
             "connection": self.connection,
             "started_at": self.started_at,
+            "operation_id": self.operation_id,
         }
 
 
@@ -646,8 +665,11 @@ class TurnService:
         max_turns: int = 24,
         library: ModuleLibrary | None = None,
         run_registry: RunRegistry | None = None,
+        workspace_id: str = "",
+        operations: OperationStore | None = None,
     ) -> None:
         self.workspace = workspace
+        self.workspace_id = workspace_id
         self.store = store
         self.activity = ActivityStore(store.root)
         self.provider_factory = provider_factory
@@ -658,6 +680,8 @@ class TurnService:
         self.run_registry = run_registry
         self._admission = asyncio.Lock()
         self._lock = asyncio.Lock()
+        #: 控制请求的受理锁：暂停、继续、插话与代次收尾共用，避免检查后恰逢暂停。
+        self._control = asyncio.Lock()
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._harnesses: dict[str, AgentHarness] = {}
         self._started: set[str] = set()
@@ -665,6 +689,15 @@ class TurnService:
         self._active: ActiveTurn | None = None
         self._request_ids: dict[str, str] = {}
         self._model_snapshots: dict[str, ModelSnapshot] = {}
+        #: 已撤销写入资格的代次；解码在内存里，持久事实仍是操作文件里的 generation。
+        self._revoked: set[tuple[str, int]] = set()
+        #: 继续要用受理时冻结的请求身份；重启后重建不出来，所以只存在于本进程。
+        self._infos: dict[str, TurnInfo] = {}
+        #: 每个代次的执行任务，继续之前先等上一代真正收尾。
+        self._attempts: dict[tuple[str, int], asyncio.Task[None]] = {}
+        #: 「等上一代收尾再开新一代」的调度任务；被回收会让继续停在半路。
+        self._resume_tasks: set[asyncio.Task[None]] = set()
+        self.operations = operations or OperationStore(store.root)
         self.compactions: CompactionRunner | None = None
         self.auto_compaction = True
         self.compaction_threshold = 0.9
@@ -703,7 +736,6 @@ class TurnService:
         purpose: str = "chat",
         index_paths: Sequence[str] = (),
         review_paths: Sequence[str] = (),
-        material_scope: MaterialTaskScope | Mapping[str, object] | None = None,
         clue_review: Mapping[str, object] | None = None,
         reply_to_question: str = "",
     ) -> TurnInfo:
@@ -711,14 +743,15 @@ class TurnService:
 
         ``context`` 是作者这次的当前阅读位置与显式参考。受理时只冻结路径与服务端指纹；
         自然语言定位和后来发现的材料属于执行阶段记录，不回写这份请求身份。
-        资料任务用 ``material_scope`` 冻结目标与依赖版本，不复用写作任务的索引字段。
         """
-        if purpose == "organize_overview":
+        if purpose not in _PURPOSES:
+            # 旧入口（总览、资料整理）已移除：不认识的用途不能悄悄按普通对话执行。
             raise WorkspaceError(
                 code="TURN_PURPOSE_UNAVAILABLE",
                 where="turns.accept",
-                why="故事总览功能已移除",
-                fix="回到写作页继续创作",
+                why=f"这个用途已经不再支持：{purpose}",
+                fix="回到写作页继续创作；需要整理结构时用构思里的结构工具",
+                details={"purpose": purpose},
             )
         async with self._admission:
             previous = self.store.find_accepted(request_key)
@@ -748,8 +781,6 @@ class TurnService:
                     purpose,
                     tuple(index_paths),
                     tuple(review_paths),
-                    previous.material_scope,
-                    _requested_scope(material_scope),
                     previous.clue_review,
                     dict(clue_review) if clue_review is not None else None,
                 ):
@@ -808,26 +839,7 @@ class TurnService:
             assembly_store = AssemblyStore(self.workspace.root)
             assembly_snapshot = assembly_store.read()
             assembly_digest = assembly_store.digest()
-            frozen_scope: dict[str, object] | None = None
-            targets: tuple[str, ...]
-            review_targets: tuple[str, ...]
-            if purpose == "organize_materials":
-                if material_scope is None:
-                    raise WorkspaceError(
-                        code="MATERIAL_SCOPE_INVALID",
-                        where="turns.accept",
-                        why="资料任务没有给出整理范围",
-                        fix="从资料页选择资料种类、章节与人物后再发起",
-                    )
-                frozen_scope = freeze_material_scope(
-                    self.workspace, material_scope, root=self.store.root
-                )
-                targets = tuple(
-                    str(item) for item in cast(list[object], frozen_scope["chapter_paths"])
-                )
-                review_targets = ()
-            else:
-                targets, review_targets = self._purpose_targets(purpose, index_paths, review_paths)
+            targets, review_targets = self._purpose_targets(purpose, index_paths, review_paths)
             frozen_clue: dict[str, object] | None = None
             if clue_review is not None:
                 if purpose != "review":
@@ -896,9 +908,8 @@ class TurnService:
                     purpose=purpose,
                     index_paths=targets,
                     review_paths=review_targets,
-                    material_scope=frozen_scope,
                     clue_review=frozen_clue,
-                    origin="materials" if frozen_scope is not None else "writing",
+                    origin="writing",
                 )
             else:
                 accepted = self.store.accept_turn(
@@ -911,9 +922,8 @@ class TurnService:
                     purpose=purpose,
                     index_paths=targets,
                     review_paths=review_targets,
-                    material_scope=frozen_scope,
                     clue_review=frozen_clue,
-                    origin="materials" if frozen_scope is not None else "writing",
+                    origin="writing",
                 )
                 if question is not None:
                     # 轮次已经建立才把问题标记为已回答：受理失败时仍然可以再答一次。
@@ -924,6 +934,30 @@ class TurnService:
             if accepted.title == "新的对话":
                 with suppress(WorkspaceError):
                     self.store.rename(accepted.conversation_id, _summary(text) or "新的对话")
+            operation = Operation(
+                id=new_operation_id(),
+                owner=f"workspace:{self.workspace_id or accepted.conversation_id}",
+                workspace_id=self.workspace_id,
+                conversation_id=accepted.conversation_id,
+                turn_id=turn_id,
+                purpose=purpose,
+                target=_operation_target(purpose, targets, review_targets),
+                model=str(model_facts.get("model", "")),
+                connection=str(model_facts.get("connection_name", "")),
+                context_refs=context_refs_of(frozen),
+            )
+            operation.instruction(text.strip(), "author", request_key=request_key)
+            try:
+                self.operations.create(operation)
+            except WorkspaceError as exc:
+                # 操作登记失败时这一轮没有可追踪的任务：落一条终态，不留下假「进行中」。
+                self._record_terminal(
+                    accepted.conversation_id,
+                    turn_id,
+                    "failed",
+                    note=f"这次操作没能登记，没有调用模型：{exc.why}",
+                )
+                raise
             info = TurnInfo(
                 turn_id=turn_id,
                 conversation_id=accepted.conversation_id,
@@ -934,11 +968,13 @@ class TurnService:
                 purpose=purpose,
                 index_paths=targets,
                 review_paths=review_targets,
-                material_scope=frozen_scope,
                 clue_review=frozen_clue,
                 assembly=assembly_snapshot,
                 assembly_digest=assembly_digest,
+                operation_id=operation.id,
+                generation=operation.generation,
             )
+            self._infos[operation.id] = info
             self._active = ActiveTurn(
                 conversation_id=accepted.conversation_id,
                 turn_id=turn_id,
@@ -946,12 +982,15 @@ class TurnService:
                 model=str(model_facts.get("model", "")),
                 connection=str(model_facts.get("connection_name", "")),
                 started_at=accepted.started_at,
+                operation_id=operation.id,
             )
             # 占用登记放在受理成功之后：写初始记录失败不会留下假忙碌。
             if self.run_registry is not None:
                 self.run_registry.mark(self.workspace.root, turn_id)
             # 初始轮次事件里的模型字段由 store 与提示一起原子写入。
-            self._tasks[turn_id] = asyncio.create_task(self._run(info, text, snapshot, failure))
+            task = asyncio.create_task(self._run(info, text, snapshot, failure))
+            self._tasks[turn_id] = task
+            self._attempts[(operation.id, operation.generation)] = task
             if snapshot is not None:
                 self._model_snapshots[turn_id] = snapshot
             return info
@@ -962,6 +1001,390 @@ class TurnService:
         if task is not None:
             with suppress(asyncio.CancelledError):
                 await task
+
+    # -- 统一操作：暂停、继续、插话 ----------------------------------------
+
+    def operation(self, operation_id: str) -> Operation:
+        """读取操作快照；不触发模型，也不改任何事件。"""
+        return self.operations.read(operation_id)
+
+    def _last_seq(self, conversation_id: str) -> int:
+        events = self.store.events(conversation_id)
+        return int(events[-1]["seq"]) if events else 0
+
+    def _append_operation_event(
+        self, info: TurnInfo, kind: str, payload: dict[str, Any]
+    ) -> None:
+        _append_event(
+            self.store,
+            info.conversation_id,
+            info.turn_id,
+            kind,
+            {"operation_id": info.operation_id, "generation": info.generation, **payload},
+        )
+
+    def _begin_attempt(self, info: TurnInfo) -> None:
+        """代次开始执行：先落地状态，再让模型请求出去。"""
+        if not info.operation_id:
+            return
+        last_seq = self._last_seq(info.conversation_id)
+
+        def mutate(operation: Operation) -> None:
+            if operation.generation != info.generation:
+                # 旧代次不能改写操作状态；它的输出也会在发布处被拒收。
+                return
+            operation.status = "running"
+            operation.phase = "running"
+            operation.note = ""
+            operation.last_seq = last_seq
+
+        self.operations.update(info.operation_id, mutate)
+        self._append_operation_event(info, "attempt_started", {})
+
+    def _finish_attempt(
+        self,
+        info: TurnInfo,
+        status: str,
+        *,
+        result: RunResult | None = None,
+        note: str = "",
+    ) -> None:
+        """一代结束：写回操作状态；旧代次只补检查点，不改当前状态。
+
+        这里刻意保持同步：它可能在任务被取消的收尾路径上执行，等待异步锁会立刻
+        被取消打断，作者就看不到这一代的真实终态。
+        """
+        if not info.operation_id:
+            return
+        last_seq = self._last_seq(info.conversation_id)
+
+        def mutate(operation: Operation) -> None:
+            operation.checkpoint(status, generation=info.generation, note=note)
+            if operation.generation != info.generation:
+                operation.last_seq = last_seq
+                return
+            mapped = operation_status_for_run(status)
+            if operation.status == "paused" and mapped != "failed":
+                # 暂停先撤销了资格：收尾不能把它改回「完成」。
+                mapped = "paused"
+            operation.status = mapped
+            operation.phase = mapped
+            operation.note = note or _OPERATION_NOTE.get(mapped, "")
+            if result is not None and result.commit:
+                operation.committed_receipts.append(
+                    {
+                        "kind": "git",
+                        "commit": result.commit,
+                        "paths": list(result.changed_paths),
+                        "recording": result.recording,
+                        "at": utc_now(),
+                    }
+                )
+            operation.last_seq = last_seq
+
+        try:
+            self.operations.update(info.operation_id, mutate)
+        except WorkspaceError:
+            # 操作文件坏了或已被移走：这一轮的终态仍以 run_finished 为准。
+            return
+
+    def _require_control(
+        self, prior: Mapping[str, Any], kind: str, operation: Operation
+    ) -> None:
+        """同一个请求键只能对应同一种控制与同一代次。"""
+        if prior.get("kind") == kind and int(prior.get("generation") or 0) == operation.generation:
+            return
+        raise WorkspaceError(
+            code="OPERATION_REQUEST_CONFLICT",
+            where="operations.control",
+            why="这个请求标识已经用在另一种控制上",
+            fix="换一个请求标识；重试同一动作请保持原来的键",
+            details={"operation_id": operation.id, "kind": prior.get("kind")},
+        )
+
+    def _require_generation(self, operation: Operation, expected: int) -> None:
+        if expected == operation.generation:
+            return
+        raise WorkspaceError(
+            code="OPERATION_GENERATION_CONFLICT",
+            where="operations.control",
+            why=f"这次操作已经是第 {operation.generation} 代，请求里写的是第 {expected} 代",
+            fix="刷新任务状态后按当前代次再操作；旧代次的按钮已经失效",
+            details={"operation_id": operation.id, "generation": operation.generation},
+        )
+
+    def _revoke(self, operation: Operation) -> None:
+        """撤销这一代的写入资格，再取消远端请求。
+
+        顺序不能反：先取消的话，取消之前那一小段时间里的工具结果仍会落到文件上。
+        """
+        self._revoked.add((operation.id, operation.generation))
+        self._stopped.add(operation.turn_id)
+        harness = self._harnesses.get(operation.turn_id)
+        if harness is not None:
+            harness.cancel()
+
+    def _text_guard(self, info: TurnInfo) -> Callable[[], bool]:
+        """文本发布资格：暂停之后不再接受这一代的增量。"""
+        if not info.operation_id:
+            return lambda: True
+        key = (info.operation_id, info.generation)
+        return lambda: key not in self._revoked
+
+    def _write_guard(self, info: TurnInfo) -> Callable[[], None]:
+        """写入资格：旧代次不能通过「准备基线」重新拿到写权限。"""
+
+        def require() -> None:
+            if not info.operation_id:
+                return
+            if (info.operation_id, info.generation) not in self._revoked:
+                return
+            raise WorkspaceError(
+                code="OPERATION_PAUSED_CONFLICT",
+                where="turn.write",
+                why="这次操作已经暂停，这一代不再写入文件",
+                fix="需要继续时用「继续」开启新的一代；已经写出的内容保留",
+                details={"operation_id": info.operation_id, "generation": info.generation},
+            )
+
+        return require
+
+    async def pause_operation(self, operation_id: str, request_key: str) -> Operation:
+        """暂停：先持久撤销代次资格，再取消远端请求；重复请求返回同一结果。"""
+        async with self._control:
+            operation = self.operations.read(operation_id)
+            prior = operation.control(request_key)
+            if prior is not None:
+                self._require_control(prior, "pause", operation)
+                return operation
+            if operation.status in OPERATION_TERMINAL or operation.status == "paused":
+                # 已经结束：返回真实终态，不把「完成」改成「暂停」。
+                return operation
+            operation.status = "paused"
+            operation.phase = "paused"
+            operation.note = "已暂停；已写出的内容与已记录的改动都保留。"
+            operation.record_control(request_key, "pause", generation=operation.generation)
+            self.operations.save(operation)
+            _append_event(
+                self.store,
+                operation.conversation_id,
+                operation.turn_id,
+                "stop_requested",
+                {"operation_id": operation.id, "generation": operation.generation},
+            )
+            if self._active is not None and self._active.turn_id == operation.turn_id:
+                self._active.state = "stop_requested"
+            self._revoke(operation)
+            return operation
+
+    async def continue_operation(
+        self,
+        operation_id: str,
+        request_key: str,
+        *,
+        expected_generation: int,
+        text: str = "",
+    ) -> Operation:
+        """继续或插话：撤销旧代次并登记新代次，两个动作在同一个控制请求里完成。"""
+        kind = "interject" if text.strip() else "continue"
+        async with self._control:
+            operation = self.operations.read(operation_id)
+            prior = operation.control(request_key)
+            if prior is not None:
+                self._require_control(prior, kind, operation)
+                return operation
+            self._require_generation(operation, expected_generation)
+            if not operation.resumable:
+                raise WorkspaceError(
+                    code="OPERATION_RECOVERED_CONFLICT",
+                    where="operations.control",
+                    why="这次操作在服务重启时中断了，没有可以承接的原请求",
+                    fix="按原来的要求重新发起一轮；已写出的内容仍然保留",
+                    details={"operation_id": operation.id},
+                )
+            if operation.status not in ("paused", "awaiting_answer", "needs_attention"):
+                raise WorkspaceError(
+                    code="OPERATION_STATE_CONFLICT",
+                    where="operations.control",
+                    why=f"这次操作当前是「{operation.status}」，不能继续",
+                    fix="先暂停正在执行的任务，或等它结束后再操作",
+                    details={"operation_id": operation.id, "status": operation.status},
+                )
+            info = self._infos.get(operation.id)
+            if info is None:
+                raise WorkspaceError(
+                    code="OPERATION_RECOVERED_CONFLICT",
+                    where="operations.control",
+                    why="没有找到这一轮冻结的请求内容",
+                    fix="重新发起一轮；这次操作不能接着写",
+                    details={"operation_id": operation.id},
+                )
+            if self._active is not None and self._active.turn_id != info.turn_id:
+                raise WorkspaceError(
+                    code="WORKSPACE_BUSY_CONFLICT",
+                    where="operations.control",
+                    why="这部作品已经有新的一轮在运行",
+                    fix="等当前这一轮结束，再回到这次操作",
+                    details={"turn_id": self._active.turn_id},
+                )
+            resumed = self._register_generation(operation, info, kind, text, request_key)
+        self._spawn_attempt(operation, resumed, text)
+        return operation
+
+    async def interject_operation(
+        self,
+        operation_id: str,
+        request_key: str,
+        *,
+        expected_generation: int,
+        text: str,
+    ) -> Operation:
+        """生成中插话：撤销旧代次、登记作者要求与新代次，一次请求完成。
+
+        不能由前端拼「先暂停再发送」两次请求：两步之间会丢掉作者刚写的要求，
+        第二次点击也可能重复受理。
+        """
+        if not text.strip():
+            raise WorkspaceError(
+                code="OPERATION_INPUT_INVALID",
+                where="operations.interject",
+                why="插话是空的",
+                fix="写下要补充的要求，或直接暂停这一轮",
+                details={"operation_id": operation_id},
+            )
+        async with self._control:
+            operation = self.operations.read(operation_id)
+            prior = operation.control(request_key)
+            if prior is not None:
+                self._require_control(prior, "interject", operation)
+                return operation
+            self._require_generation(operation, expected_generation)
+            if not operation.resumable:
+                raise WorkspaceError(
+                    code="OPERATION_RECOVERED_CONFLICT",
+                    where="operations.control",
+                    why="这次操作在服务重启时中断了，没有可以承接的原请求",
+                    fix="按原来的要求重新发起一轮；已写出的内容仍然保留",
+                    details={"operation_id": operation.id},
+                )
+            if operation.status not in ("accepted", "running"):
+                raise WorkspaceError(
+                    code="OPERATION_STATE_CONFLICT",
+                    where="operations.control",
+                    why=f"这次操作当前是「{operation.status}」，不在生成中",
+                    fix="已经暂停的操作用「继续」补充要求",
+                    details={"operation_id": operation.id, "status": operation.status},
+                )
+            info = self._infos.get(operation.id)
+            if info is None:
+                raise WorkspaceError(
+                    code="OPERATION_RECOVERED_CONFLICT",
+                    where="operations.control",
+                    why="没有找到这一轮冻结的请求内容",
+                    fix="重新发起一轮；这次操作不能接着写",
+                    details={"operation_id": operation.id},
+                )
+            # 先撤销旧代次再登记新代次：顺序反了会让旧代次在中间继续写。
+            operation.status = "paused"
+            operation.phase = "paused"
+            operation.record_control(
+                f"{request_key}:revoke", "pause", generation=operation.generation
+            )
+            self.operations.save(operation)
+            _append_event(
+                self.store,
+                operation.conversation_id,
+                operation.turn_id,
+                "stop_requested",
+                {"operation_id": operation.id, "generation": operation.generation},
+            )
+            self._revoke(operation)
+            resumed = self._register_generation(
+                operation, info, "interject", text, request_key
+            )
+        self._spawn_attempt(operation, resumed, text)
+        return operation
+
+    def _register_generation(
+        self,
+        operation: Operation,
+        info: TurnInfo,
+        kind: str,
+        text: str,
+        request_key: str,
+    ) -> TurnInfo:
+        """在锁内推进代次并登记新尝试；真正的任务在锁外启动。"""
+        operation.generation += 1
+        operation.status = "accepted"
+        operation.phase = "accepted"
+        operation.note = ""
+        operation.instruction(text.strip(), kind, request_key=request_key)
+        operation.record_control(request_key, kind, generation=operation.generation)
+        self.operations.save(operation)
+        # 新代次能看到上一代已经写出的内容：历史只止于开始这一代之前。
+        # 插话的文本随这次的提示一起进入模型，不在历史里重复一遍，因此稍后再记。
+        resumed = replace(info, generation=operation.generation)
+        self._infos[operation.id] = resumed
+        self._active = ActiveTurn(
+            conversation_id=info.conversation_id,
+            turn_id=info.turn_id,
+            state="accepted",
+            model=operation.model,
+            connection=operation.connection,
+            started_at=utc_now(),
+            operation_id=operation.id,
+        )
+        if self.run_registry is not None:
+            self.run_registry.mark(self.workspace.root, info.turn_id)
+        return resumed
+
+    def _spawn_attempt(self, operation: Operation, info: TurnInfo, text: str) -> None:
+        """等上一代真正收尾，再用新代次请求模型；不承诺恢复原连接。"""
+        prompt = _continuation_prompt(text)
+        previous = self._attempts.get((operation.id, info.generation - 1))
+
+        async def run_when_previous_finished() -> None:
+            if previous is not None:
+                with suppress(asyncio.CancelledError):
+                    await previous
+            # 历史截止在真正启动时才算：上一代刚写下的回复必须进入新代次的上下文。
+            cut = self._last_seq(info.conversation_id)
+            if text.strip():
+                # 插话在启动前记录：它是作者的话，刷新与回放都能看到；但不进历史，
+                # 否则同一句话会既在历史里又在这次的提示里。
+                self._record_author_interjection(info, text)
+            started = replace(info, history_seq=cut)
+            self._infos[operation.id] = started
+            snapshot: ModelSnapshot | None = None
+            failure: Exception | None = None
+            try:
+                snapshot = self.provider_factory()
+            except Exception as exc:  # 与受理时一致：把配置失败留给 _run 落成事件
+                failure = exc
+            task = asyncio.create_task(
+                self._run(started, prompt, snapshot, failure),
+            )
+            self._tasks[started.turn_id] = task
+            self._attempts[(operation.id, started.generation)] = task
+
+        # 保住调度任务的引用：事件循环只持有弱引用，丢了就可能被回收。
+        waiter = asyncio.create_task(run_when_previous_finished())
+        self._resume_tasks.add(waiter)
+        waiter.add_done_callback(self._resume_tasks.discard)
+
+    def _record_author_interjection(self, info: TurnInfo, text: str) -> None:
+        """插话是作者的话：单独立一条事件，后续历史回放能看到。"""
+        _append_event(
+            self.store,
+            info.conversation_id,
+            info.turn_id,
+            "author_interjected",
+            {
+                "text": text.strip(),
+                "operation_id": info.operation_id,
+                "generation": info.generation,
+            },
+        )
 
     async def compact(
         self, conversation_id: str, *, reason: str = "manual"
@@ -1108,38 +1531,18 @@ class TurnService:
         return final
 
     async def stop(self, turn_id: str) -> bool:
-        """请求停止：覆盖「已受理但还没调模型」与「正在跑」两种情况。"""
-        async with self._admission:
-            active = self._active
-            if active is None or active.turn_id != turn_id:
-                return False
-            if turn_id in self._stopped:
-                return True
-            self._stopped.add(turn_id)
-            self.store.append(
-                active.conversation_id, {"type": "stop_requested", "turn_id": turn_id}
-            )
-            active.state = "stop_requested"
-            harness = self._harnesses.get(turn_id)
-            if harness is not None:
-                harness.cancel()
-                return True
-            if turn_id in self._started:
-                # 已经进了 _run 但还没建好 harness：标志位足以让它跳过模型调用。
-                return True
-            # 还没开始执行：取消排队的任务，由这里直接写终态——别无第二处会写。
-            task = self._tasks.pop(turn_id, None)
-            if task is not None:
-                task.cancel()
-            self._record_terminal(
-                active.conversation_id,
-                turn_id,
-                "stopped",
-                note="在调用模型之前就停止了，没有产生请求",
-            )
-            self._active = None
-            self._stopped.discard(turn_id)
-            return True
+        """旧入口：按轮次暂停，内部统一到操作控制。
+
+        前端迁移完成后这个入口会删除；保留它是为了不让旧调用方在两套语义之间犹豫。
+        """
+        info = next((item for item in self._infos.values() if item.turn_id == turn_id), None)
+        if info is None or not info.operation_id:
+            return False
+        operation = self.operations.try_read(info.operation_id)
+        if operation is None or operation.status in OPERATION_TERMINAL:
+            return False
+        await self.pause_operation(info.operation_id, f"legacy-stop:{turn_id}")
+        return True
 
     def mark_interrupted(self) -> list[str]:
         """进程重启后把没有正常结束的轮次标为中断；不自动继续。
@@ -1148,6 +1551,9 @@ class TurnService:
         同样要被识别。已经有终态的轮次不会再补第二遍。
         """
         interrupted: list[str] = []
+        # 先恢复操作状态：重启后未终结的操作转为「需要作者处理」，不再宣称可以继续。
+        self.operations.recover()
+        operations = {item.turn_id: item for item in self.operations.list() if item.turn_id}
         for conversation in self.store.conversations():
             for turn_id in self.store.unfinished_turns(conversation.id):
                 if turn_id in self._tasks:
@@ -1183,6 +1589,10 @@ class TurnService:
                     {
                         "type": "run_finished",
                         "turn_id": turn_id,
+                        "operation_id": operations[turn_id].id if turn_id in operations else "",
+                        "generation": (
+                            operations[turn_id].generation if turn_id in operations else 0
+                        ),
                         "status": "interrupted",
                         "recording": "unrecorded",
                         "changed_paths": [],
@@ -1364,6 +1774,45 @@ class TurnService:
         events = self.store.events(conversation_id)
         return int(events[-1]["seq"]) if events else 0
 
+    def _prepare_story(self, info: TurnInfo) -> str:
+        """冻结的构思结构 → 这一轮实际要装进去的文本；失败在调用模型之前发生。"""
+        if info.context is None or info.context.story is None:
+            return ""
+        from hastings.workspace.story_context import (
+            READER_PURPOSE,
+            assemble_story_input,
+            verify_story_context,
+        )
+        from hastings.workspace.story_store import StoryStore
+
+        frozen = info.context.story
+        variant = verify_story_context(StoryStore(self.store.root), frozen)
+        if frozen.purpose == READER_PURPOSE:
+            # 试读要独立的请求与工具范围；在页面接通之前不假装已经隔离。
+            raise WorkspaceError(
+                code="STORY_READER_UNSUPPORTED",
+                where="story.reader",
+                why="试读的执行入口还没有接通，这一轮不会发送任何请求",
+                fix="先在正文里阅读；试读在构思页面接通后再用",
+                details={"variant_id": frozen.variant_id},
+            )
+        story = assemble_story_input(variant, frozen, capacity=STORY_BUDGET)
+        if story.empty:
+            return ""
+        # 实际装进去的结构与省略理由一起落盘：界面与日志读同一份结果。
+        _append_event(
+            self.store,
+            info.conversation_id,
+            info.turn_id,
+            "story_context",
+            {
+                **story.summary(),
+                "operation_id": info.operation_id,
+                "generation": info.generation,
+            },
+        )
+        return story.render()
+
     def _prepare_materials(
         self, info: TurnInfo
     ) -> tuple[MaterialLedger, tuple[PreparedReference, ...]]:
@@ -1446,12 +1895,17 @@ class TurnService:
         # _started 与 accept() 里的 _active 不是一回事：
         # 它表示后台任务已经真正开始执行，stop() 据此决定要不要等待收尾。
         self._started.add(info.turn_id)
+        # 先落地这一代的状态，模型请求才有可能被追溯；旧代次不会改写当前状态。
+        self._begin_attempt(info)
         conversation_id = info.conversation_id
         # 先假定正常完成，异常分支再改写；finally 用这个值决定终态。
         status: RunStatus = "completed"
         # 一轮对应一个 WriteSession：Git 基线、外部改动和提交都在这里收口。
         # 「执行是否成功」和「内容是否入库」是两个独立维度，不要合并成一个状态。
-        session = WriteSession(self.workspace, instruction=text)
+        session = WriteSession(
+            self.workspace, instruction=text, guard=self._write_guard(info)
+        )
+        result: RunResult | None = None
         try:
             # stop() 可能发生在任务真正被调度之前，此时还没有发出任何模型请求。
             if info.turn_id in self._stopped:
@@ -1487,6 +1941,7 @@ class TurnService:
                 # 受理之后参考文件被改动：这一轮直接失败，不按旧版本继续，也不偷偷换引用。
                 if info.context is not None:
                     verify_context(self.workspace, info.context)
+                story_text = self._prepare_story(info)
                 ledger, prepared = self._prepare_materials(info)
                 # RunContext 是工具层能看到的运行上下文；
                 # 第一次写文件时它会调用 session.prepare()，只读讨论不会产生提交。
@@ -1494,7 +1949,7 @@ class TurnService:
                 author_messages = tuple(
                     (int(event["seq"]), str(event["text"]))
                     for event in self.store.events(conversation_id)
-                    if event.get("type") == "turn_started"
+                    if event.get("type") in ("turn_started", "author_interjected")
                     and isinstance(event.get("text"), str)
                     and str(event["text"]).strip()
                 )
@@ -1503,7 +1958,7 @@ class TurnService:
                 index_excluded: list[Exclusion] = []
                 index_notes = (
                     ""
-                    if info.purpose in ("update_chapter_index", "organize_materials")
+                    if info.purpose == "update_chapter_index"
                     else index_injection(index_store.valid(self.workspace), excluded=index_excluded)
                 )
                 cutoff = state_chapter(
@@ -1512,9 +1967,6 @@ class TurnService:
                     targets=info.review_paths,
                     explicit=info.context.state_chapter if info.context else None,
                 )
-                if info.material_scope is not None:
-                    # 资料任务按受理时冻结的截止章装配；与写作任务的阅读位置无关。
-                    cutoff = int(str(info.material_scope.get("as_of_chapter") or cutoff))
                 frozen_assembly = info.assembly or Assembly()
                 modules = module_overview(frozen_assembly, self.library)
                 run = RunContext(
@@ -1535,6 +1987,10 @@ class TurnService:
                     conversation_id=info.conversation_id,
                     assembly_digest=info.assembly_digest or "",
                     request_context=info.context.to_dict() if info.context else {},
+                    story=info.context.story if info.context else None,
+                    story_guard=self._write_guard(info),
+                    operation_id=info.operation_id,
+                    generation=info.generation,
                 )
                 review_store = ReviewStore(self.store.root)
                 if info.purpose == "review":
@@ -1557,15 +2013,7 @@ class TurnService:
                 roster_store = CharacterStateStore(self.store.root)
                 timeline_store = TimelineStore(self.store.root)
                 clue_store = ClueStore(self.store.root)
-                coverage_store = CoverageStore(self.store.root)
-                if mode == "materials" and info.material_scope is not None:
-                    # 资料任务的上下文只装与该域有关的内容：范围说明 + 已有记录（待核对）。
-                    domain = str(info.material_scope.get("domain") or "")
-                    instructions = material_instructions(domain)
-                    turn_materials = scope_brief(
-                        self.workspace, self.store.root, info.material_scope
-                    )
-                elif info.clue_review is not None:
+                if info.clue_review is not None:
                     # 线索核对用专用要求：计划只说明安排，读者已见的正文才是依据；
                     # 冻结范围要写进提示，模型才能原样带回目标标识。
                     instructions = (
@@ -1579,13 +2027,14 @@ class TurnService:
                 else:
                     instructions = ""
                     turn_materials = materials_section(info.context, ledger.summaries())
-                turn_ideas = ideas_section(info.context) if mode != "materials" else ""
+                turn_ideas = ideas_section(info.context)
                 assembly = build_turn_assembly(
                     self.workspace,
                     as_of_chapter=run.state_chapter,
                     mode=mode,
                     history_facts=execution_facts(history_events),
                     materials=turn_materials,
+                    story=story_text,
                     ideas=turn_ideas,
                     index_notes=index_notes,
                     index_excluded=index_excluded,
@@ -1657,8 +2106,6 @@ class TurnService:
                     review_targets=info.review_paths,
                     review_store=review_store,
                     clue_review=info.clue_review,
-                    material_scope=info.material_scope,
-                    coverage_store=coverage_store,
                 )
                 # stop() 依靠这张表找到 harness，再通过它的取消令牌中断模型循环。
                 # 原文作为独立的应用材料消息提供，避免系统分区预算截断后仍算已读。
@@ -1717,25 +2164,6 @@ class TurnService:
                 elif status == "completed" and self._clue_review_unfinished(info):
                     # 线索报告可以如实是 incomplete：已经保存，但这一轮不算全部完成。
                     status = "partial"
-                if info.purpose == "organize_materials":
-                    # 完成度由服务端目标清单与已发布结果算；模型说「整理完了」不算完成。
-                    done, total = self._material_progress(info)
-                    _append_event(
-                        self.store,
-                        conversation_id,
-                        info.turn_id,
-                        "material_task_finished",
-                        {
-                            "domain": str((info.material_scope or {}).get("domain") or ""),
-                            "done": done,
-                            "total": total,
-                            "note": (
-                                "" if done >= total else f"还有 {total - done} 个目标没有提交结果"
-                            ),
-                        },
-                    )
-                    if status == "completed" and done < total:
-                        status = "partial"
                 if status == "completed" and run.review_request is not None:
                     # 作者在修改任务里明确要求「改完检查」：同一轮内进入只读检查阶段。
                     published = await self._review_after_write(
@@ -1813,20 +2241,38 @@ class TurnService:
             # 终态事件：前端据此结束「进行中」状态并刷新会话与工作区。
             self.store.append(
                 conversation_id,
-                {"type": "run_finished", "turn_id": info.turn_id, **result.to_dict()},
+                {
+                    "type": "run_finished",
+                    "turn_id": info.turn_id,
+                    "operation_id": info.operation_id,
+                    "generation": info.generation,
+                    **result.to_dict(),
+                },
             )
+            # 操作状态在释放占用之前写回：继续请求看到的一定是这一代的真实终态。
+            self._finish_attempt(
+                info,
+                status,
+                result=result,
+                note="" if result.recording != "unrecorded" else result.note,
+            )
+            # 已经被下一代接管的旧代次不能替新代次释放占用或清空当前任务。
+            latest = self._infos.get(info.operation_id) if info.operation_id else None
+            superseded = latest is not None and latest.generation != info.generation
             # 先释放占用：装配接口不必等到服务内部表格清完才恢复可用。
-            if self.run_registry is not None:
+            if not superseded and self.run_registry is not None:
                 self.run_registry.release(self.workspace.root, info.turn_id)
             # 清理四张按 turn_id 索引的表，防止旧轮次的状态泄漏到后续轮次。
+            # 新代次一定在旧代次收尾之后才启动，所以这些清理不会碰到它。
             self._harnesses.pop(info.turn_id, None)
             self._started.discard(info.turn_id)
             self._stopped.discard(info.turn_id)
             self._tasks.pop(info.turn_id, None)
             self._request_ids.pop(info.turn_id, None)
             self._model_snapshots.pop(info.turn_id, None)
+            self._attempts.pop((info.operation_id, info.generation), None)
             # 只释放自己占用的那一轮：后面受理的新轮次不能被前一轮的收尾清掉。
-            if self._active is not None and self._active.turn_id == info.turn_id:
+            if not superseded and self._active is not None and self._active.turn_id == info.turn_id:
                 self._active = None
 
     def _record_idea_applications(self, info: TurnInfo, result: RunResult) -> None:
@@ -1945,8 +2391,20 @@ class TurnService:
                 "timeline_store": TimelineStore(self.store.root),
                 "clue_store": ClueStore(self.store.root),
             }
+            # 结构核对要求由应用生成：模型只负责逐条判断，不能改要求。
+            story_review_text = self._story_review_block(info, targets)
+            from hastings.workspace.review import REVIEW_INSTRUCTIONS
+
             assembly = build_turn_assembly(
-                self.workspace, mode="review", as_of_chapter=cutoff, **stores
+                self.workspace,
+                mode="review",
+                as_of_chapter=cutoff,
+                instructions=(
+                    f"{REVIEW_INSTRUCTIONS}\n\n{story_review_text}"
+                    if story_review_text
+                    else REVIEW_INSTRUCTIONS
+                ),
+                **stores,
             )
             _append_event(
                 self.store, info.conversation_id, info.turn_id, "state_injected", assembly.summary()
@@ -1992,18 +2450,33 @@ class TurnService:
             return False
         return True
 
-    def _material_progress(self, info: TurnInfo) -> tuple[int, int]:
-        """本次任务的目标数与已发布数：只认提交过的结果，不认回复里的说法。"""
-        scope = info.material_scope or {}
-        total = len(material_targets(scope))
-        seen: set[tuple[str, str]] = set()
-        for event in self.store.events(info.conversation_id):
-            if event.get("type") != "material_target_published":
+    def _story_review_block(self, info: TurnInfo, targets: Sequence[str]) -> str:
+        """把冻结结构变成核对要求，并对候选正文做程序能判断的检查。"""
+        if info.context is None or info.context.story is None or not targets:
+            return ""
+        from hastings.workspace.story_context import verify_story_context
+        from hastings.workspace.story_review import build_story_review
+        from hastings.workspace.story_store import StoryStore
+
+        frozen = info.context.story
+        variant = verify_story_context(StoryStore(self.store.root), frozen)
+        documents: dict[str, str] = {}
+        for path in targets:
+            try:
+                documents[path] = self.workspace.read(path).text
+            except WorkspaceError:
                 continue
-            if event.get("turn_id") != info.turn_id:
-                continue
-            seen.add((str(event.get("path") or ""), str(event.get("entity") or "")))
-        return len(seen), total
+        review = build_story_review(variant, frozen, documents=documents)
+        if review.empty:
+            return ""
+        _append_event(
+            self.store,
+            info.conversation_id,
+            info.turn_id,
+            "story_review_requirements",
+            {**review.summary(), "operation_id": info.operation_id, "generation": info.generation},
+        )
+        return review.text
 
     def _has_review_report(self, info: TurnInfo) -> bool:
         for event in self.store.events(info.conversation_id):
@@ -2065,7 +2538,12 @@ class TurnService:
         返回本轮的回复是否被输出上限截断。``turns_used`` 累计本次消费用掉的模型回合，
         供同一轮的后续阶段接着算剩余预算。
         """
-        bridge = ChatStreamBridge(self.store, info.conversation_id, info.turn_id)
+        bridge = ChatStreamBridge(
+            self.store,
+            info.conversation_id,
+            info.turn_id,
+            guard=self._text_guard(info),
+        )
         queue: asyncio.Queue[tuple[Any, str | None, float, str] | None] = asyncio.Queue()
         failure: list[Exception] = []
 

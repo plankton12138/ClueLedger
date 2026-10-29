@@ -1,0 +1,119 @@
+{
+  "id": "variant_alt",
+  "name": "备选：管家不是凶手",
+  "base_variant_id": "main",
+  "base_revision": "rev_blank_1",
+  "revision": "rev_alt_1",
+  "nodes": {
+    "n1": {
+      "id": "n1",
+      "title": "雨夜的电话",
+      "action": "林岚接到父亲去世的电话，桌上有一封没写完的信。",
+      "thread_ids": [
+        "t1"
+      ],
+      "clue_uses": [
+        {
+          "clue_id": "c1",
+          "presentation": "信封背面有半个指纹",
+          "mode": "narration",
+          "speaker_id": "",
+          "expected_interpretation": "读者会以为指纹是父亲的"
+        }
+      ]
+    },
+    "n2": {
+      "id": "n2",
+      "title": "照片背面",
+      "action": "她在抽屉里找到一张合影，背面写着日期。",
+      "thread_ids": [
+        "t1"
+      ],
+      "clue_uses": [
+        {
+          "clue_id": "c2",
+          "presentation": "照片背面日期早于拍摄",
+          "mode": "narration",
+          "speaker_id": "",
+          "expected_interpretation": "读者先怀疑照片是假的"
+        }
+      ]
+    },
+    "n3": {
+      "id": "n3",
+      "title": "第二次通话（备选）",
+      "action": "对方承认了，但说法和照片矛盾。",
+      "thread_ids": [
+        "t1"
+      ]
+    }
+  },
+  "clues": {
+    "c1": {
+      "id": "c1",
+      "title": "信封上的指纹",
+      "author_truth": null,
+      "intention": "让读者先怀疑遗产纠纷",
+      "resolution": {
+        "intent": "undecided",
+        "node_ids": []
+      },
+      "provenance": "author_request"
+    },
+    "c2": {
+      "id": "c2",
+      "title": "照片的日期",
+      "author_truth": "照片是管家放的，但他是为了掩护别人",
+      "intention": "把怀疑从管家身上引开",
+      "resolution": {
+        "intent": "explain",
+        "node_ids": [
+          "n3"
+        ]
+      },
+      "provenance": "author_request"
+    }
+  },
+  "threads": {
+    "t1": {
+      "id": "t1",
+      "title": "主调查"
+    }
+  },
+  "constraints": {
+    "k1": {
+      "id": "k1",
+      "text": "全书不出现超自然解释",
+      "strength": "required",
+      "scope": {
+        "kind": "book",
+        "target_id": ""
+      },
+      "source_message_id": "",
+      "origin": "author_request",
+      "revision": "rev_c1"
+    }
+  },
+  "edges": {
+    "e1": {
+      "id": "e1",
+      "from_id": "n1",
+      "to_id": "n2",
+      "kind": "next",
+      "reason": ""
+    },
+    "e2": {
+      "id": "e2",
+      "from_id": "n2",
+      "to_id": "n3",
+      "kind": "next",
+      "reason": ""
+    }
+  },
+  "event_times": [
+    {
+      "before_node_id": "n1",
+      "after_node_id": "n2"
+    }
+  ]
+}

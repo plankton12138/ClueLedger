@@ -24,17 +24,7 @@ from hastings.workspace.clues import ClueStore, build_clues, publish_clues
 from hastings.workspace.disclosure import ObservedEvidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
-from hastings.workspace.material_tasks import (
-    MaterialTaskScope,
-    freeze_material_scope,
-    publish_material_result,
-    scope_brief,
-)
-from hastings.workspace.materials import MaterialLedger, SourceRef
 from hastings.workspace.state import RecentWorkspaces, workspace_state_root
-from hastings.workspace.story_materials import (
-    author_view,
-)
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "clues" / "letter-case.json"
 FIRST = "正文/0001 遗书.md"
@@ -42,17 +32,23 @@ SECOND = "正文/0002 照片.md"
 THIRD = "正文/0003 回收.md"
 
 
+def clue_count(store) -> int:
+    """当前账本里的线索条数；资料视图已随资料页移除，测试直接读账本。"""
+    ledger = store.read().ledger
+    return 0 if ledger is None else len(ledger.clues)
+
+
 def test_missing_ledger_read_does_not_initialize_or_read_old_files(book):
     workspace, store = book
     assert not store.root.exists()
-    assert author_view(workspace, store.root, "clues")["entries"] == []
+    assert clue_count(store) == 0
     assert not store.root.exists()
     store.root.mkdir()
     for name in ("clues.json", "materials-coverage.json"):
         (store.root / name).write_text("broken abandoned data", encoding="utf-8")
     assert store.read().entries() == ()
     assert store.read().coverage() == ()
-    assert author_view(workspace, store.root, "clues")["entries"] == []
+    assert clue_count(store) == 0
     assert not store.file.exists()
     assert not store.lock_file.exists()
 
@@ -68,7 +64,7 @@ def test_previous_ledger_format_is_abandoned_without_migration_or_aliases(book):
     store.file.write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
     before = store.file.read_bytes()
     assert store.read().revision == "empty"
-    assert author_view(workspace, store.root, "clues")["entries"] == []
+    assert clue_count(store) == 0
     assert store.file.read_bytes() == before
     result = publish(workspace, store, (clue(workspace),))
     ledger = store.read().ledger
@@ -134,7 +130,7 @@ def test_new_same_title_never_implies_same_identity(book):
     result = publish(workspace, store, (clue(workspace), clue(workspace)))
     first, second = result["clue_ids"]
     assert first != second
-    assert len(author_view(workspace, store.root, "clues")["entries"]) == 2
+    assert clue_count(store) == 2
     before = store.file.read_bytes()
     with pytest.raises(WorkspaceError, match="CLUE_IDENTITY_CONFLICT"):
         publish(workspace, store, (clue(workspace),), key="ambiguous")
@@ -294,7 +290,7 @@ def test_replace_failure_retains_current_state_and_retry_is_possible(book, monke
         return real_replace(source, target)
 
     with monkeypatch.context() as patch:
-        patch.setattr("hastings.workspace.clue_store.os.replace", denied)
+        patch.setattr("hastings.workspace.atomic_io.os.replace", denied)
         with pytest.raises(WorkspaceError, match="CLUE_WRITE_FAILED"):
             publish(workspace, store, entries, key="failure", expected_revision=expected)
     for name, data in old.items():
@@ -318,7 +314,7 @@ def test_corrupt_or_unknown_state_is_never_empty_or_overwritten(book, name, payl
     file.write_text(payload, encoding="utf-8")
     before = file.read_bytes()
     with pytest.raises(WorkspaceError, match="CLUE_STATE_FAILED"):
-        author_view(workspace, store.root, "clues")
+        store.read()
     with pytest.raises(WorkspaceError, match="CLUE_STATE_FAILED"):
         publish(workspace, store, (clue(workspace),))
     assert file.read_bytes() == before
@@ -419,88 +415,6 @@ def test_same_task_can_publish_next_chapter_but_external_change_conflicts(book):
     )
 
 
-def test_actual_material_publication_uses_frozen_identities_and_one_atomic_target(book):
-    workspace, store = book
-    scope = freeze_material_scope(
-        workspace,
-        MaterialTaskScope(domain="clues", chapter_paths=[FIRST, SECOND], as_of_chapter=2),
-        root=store.root,
-    )
-    assert not store.root.exists()
-    ledger = MaterialLedger()
-    for path in (FIRST, SECOND):
-        view = workspace.read(path)
-        ledger.record_read(
-            SourceRef(path, view.digest), length=len(view.text), start=0, end=len(view.text)
-        )
-    result = publish_material_result(
-        workspace=workspace,
-        root=store.root,
-        scope=scope,
-        ledger=ledger,
-        turn_id="actual",
-        domain="clues",
-        path=FIRST,
-        entity_path="",
-        outcome="found",
-        note="",
-        records=[clue(workspace).to_dict()],
-        digest=workspace.read(FIRST).digest,
-    )
-    entry = replace(store.read().entries()[0], source_chapter=2)
-    publish_material_result(
-        workspace=workspace,
-        root=store.root,
-        scope=scope,
-        ledger=ledger,
-        turn_id="actual",
-        domain="clues",
-        path=SECOND,
-        entity_path="",
-        outcome="found",
-        note="",
-        records=[entry.to_dict()],
-        digest=workspace.read(SECOND).digest,
-    )
-    assert list(store.read().ledger.coverage) == [FIRST, SECOND]
-    assert len(store.read().ledger.clues) == 1
-    assert "ID `" + result["clue_ids"][0] + "`" in scope_brief(workspace, store.root, scope)
-    assert not (store.root / "materials-coverage.json").exists()
-
-
-def test_material_publication_replays_receipt_even_after_source_changes(book):
-    workspace, store = book
-    scope = freeze_material_scope(
-        workspace,
-        MaterialTaskScope(domain="clues", chapter_paths=[FIRST], as_of_chapter=1),
-        root=store.root,
-    )
-    view = workspace.read(FIRST)
-    ledger = MaterialLedger()
-    ledger.record_read(
-        SourceRef(FIRST, view.digest), length=len(view.text), start=0, end=len(view.text)
-    )
-    arguments = dict(
-        workspace=workspace,
-        root=store.root,
-        scope=scope,
-        ledger=ledger,
-        turn_id="retry",
-        domain="clues",
-        path=FIRST,
-        entity_path="",
-        outcome="found",
-        note="",
-        records=[clue(workspace).to_dict()],
-        digest=view.digest,
-    )
-    original = publish_material_result(**arguments)
-    before = store.file.read_bytes()
-    workspace.write(FIRST, view.text + "\n原文发生变化。", expected_digest=view.digest)
-    assert publish_material_result(**arguments) == original
-    assert store.file.read_bytes() == before
-
-
 def test_changed_contribution_chapter_invalidates_even_if_planting_still_matches(book):
     workspace, store = book
     identity = publish(workspace, store, (clue(workspace),))["clue_ids"][0]
@@ -563,11 +477,12 @@ def test_early_view_never_uses_future_contribution_or_resolution(book):
         resolution_evidence=proof(workspace, THIRD, "读过那张公开照片"),
     )
     publish(workspace, store, (future,), path=SECOND, key="future")
-    early = author_view(workspace, store.root, "clues", as_of_chapter=1)
-    assert "照片已解释来源" not in json.dumps(early, ensure_ascii=False)
-    assert "读过那张公开照片" not in json.dumps(early, ensure_ascii=False)
-    assert early["entries"][0]["data"]["status"] == "open"
-    assert build_clues(workspace, ClueStore(store.root), as_of_chapter=1).open[0].supports == ""
+    early = build_clues(workspace, ClueStore(store.root), as_of_chapter=1)
+    # 后章才有的解释、状态与回收证据都不能出现在前面的章节视图里。
+    assert early.open[0].clue != "已经证明的真相"
+    assert early.open[0].supports == ""
+    assert early.open[0].status == "open"
+    assert early.closed == ()
 
 
 def test_rename_backup_restore_and_unbind_keep_current_lineage(tmp_path):

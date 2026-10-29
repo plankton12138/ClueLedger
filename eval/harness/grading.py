@@ -375,16 +375,6 @@ def grade_step(
                 [e.get("tools") for e in requests],
             )
         )
-    if step.purpose == "organize_materials":
-        requests = [e for e in events if e["type"] == "model_request_started"]
-        allowed = {"list_files", "search_text", "read_file", "publish_material_result"}
-        rows.append(
-            check_row(
-                "material_tools",
-                bool(requests) and all(set(e.get("tools", [])) <= allowed for e in requests),
-                [e.get("tools") for e in requests],
-            )
-        )
     return rows
 
 

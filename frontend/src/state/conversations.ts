@@ -21,7 +21,6 @@ import {
   patchConversationUi,
   renameConversation,
   startTurn,
-  stopTurn,
   streamEvents,
   WorkspaceApiError,
   EMPTY_CONTEXT,
@@ -35,12 +34,22 @@ import {
   type WorkspaceEvent,
 } from "../api/workspace";
 import {
+  continueOperation,
+  interjectOperation,
+  latestOperation,
+  operationKey,
+  pauseOperation,
+  readOperation,
+  type Operation,
+} from "../api/operations";
+import {
   appendEvent,
   buildTurns,
   NeedsConversationReload,
   type ChatTurn,
 } from "./chatMessages";
 import type { ClueReferenceInput } from "../api/workspace";
+import { useStoryStore } from "./story";
 import { createStreamBatcher } from "./streamBatcher";
 import { MAX_REFERENCE_TEXT, MAX_TEXT_REFERENCES, sameTextReferences, withTextReferences, type TextReference } from "./textReferences";
 
@@ -57,6 +66,8 @@ export interface ConversationEntry {
   error: string | null;
   /** 增量批次缺号，正在回读本会话日志。 */
   needsReload: boolean;
+  /** 最近一次统一操作的快照：暂停后据此显示「继续」，不靠助手的最后一句。 */
+  operation: Operation | null;
 }
 
 /** 新对话草稿的固定槽位。 */
@@ -69,8 +80,7 @@ export interface SendOptions {
     | "update_chapter_index"
     | "review"
     | "update_disclosure"
-    | "update_state"
-    | "expand_idea";
+    | "update_state";
   indexPaths?: string[];
   reviewPaths?: string[];
   /** 线索核对：目标、线索集合与截止章一起冻结，不能只发一句「核对」。 */
@@ -80,37 +90,16 @@ export interface SendOptions {
     clueIds: string[];
     asOfChapter: number;
   };
-  /**
-   * 这一轮随行的灵感修订。给定时就不再取当前草稿里的引用：
-   * 「用于写作」提交后不该把引用留在作者的下一条草稿里。
-   */
+  /** 这一轮显式给出的随行灵感修订；给定时不再取当前草稿里的引用。 */
   ideas?: DraftIdea[];
   /** 回答某条已持久化的问题：只用于认领原问题，不替代文字。 */
   replyToQuestion?: string;
-}
-
-/** 一次展开的输入：灵感标识、固定修订与显示用预览。 */
-export interface ExpandIdeaInput {
-  ideaId: string;
-  revisionId: string;
-  preview: string;
-}
-
-/** 把一条灵感用到哪一章：目标章节与固定修订一起提交。 */
-export interface WriteFromIdeaInput extends ExpandIdeaInput {
-  title: string;
-  path: string;
-  /** 打开目标章节后读到的版本；还没读到就不带，由服务端按当前内容冻结。 */
-  digest?: string;
 }
 
 export interface SendResult {
   conversationId: string;
   turnId: string;
 }
-
-/** 一次展开或一次「用于写作」的受理结果；失败返回 null。 */
-export type ExpansionResult = SendResult;
 
 const EMPTY_ENTRY: ConversationEntry = {
   turns: [],
@@ -121,6 +110,7 @@ const EMPTY_ENTRY: ConversationEntry = {
   loading: false,
   error: null,
   needsReload: false,
+  operation: null,
 };
 
 export interface ConversationsStore {
@@ -135,8 +125,6 @@ export interface ConversationsStore {
   draftContexts: Record<string, DraftContext>;
   /** 草稿携带的灵感修订：只在本机草稿槽位里，发送时随本轮提交。 */
   draftIdeas: Record<string, DraftIdea[]>;
-  /** 已发起过展开的灵感 → 会话：再次点击默认打开它，不自动重发。 */
-  expansions: Record<string, string>;
   revision: string;
   error: string | null;
   pendingKey: string | null;
@@ -162,11 +150,12 @@ export interface ConversationsStore {
   /** 作者明确把一条引用换成新修订；同一条目不叠出两个引用。 */
   updateIdeaReference(input: IdeaReferenceInput): void;
   removeIdeaReference(ideaId: string): void;
-  /** 一次点击展开：固定修订、首次发送即建会话；已受理的重试回到同一轮。 */
-  expandIdea(input: ExpandIdeaInput): Promise<ExpansionResult | null>;
-  /** 「用于写作」：带固定修订与目标章节走普通写作用途，不动当前草稿的文字。 */
-  writeFromIdea(input: WriteFromIdeaInput): Promise<SendResult | null>;
-  stop(): Promise<void>;
+  /** 暂停当前任务：已经写出的内容保留，可以继续。 */
+  pause(): Promise<void>;
+  /** 继续上一次暂停的操作：开新的一代，不重发原来的要求。 */
+  resume(): Promise<void>;
+  /** 生成中插话：暂停、追加要求与新代次是一次请求。 */
+  interject(text: string): Promise<boolean>;
   /** 断线后重新接收：先取活动快照，再从确认过的位置继续。 */
   reconnect(): Promise<void>;
   rename(conversationId: string, title: string): Promise<void>;
@@ -221,9 +210,6 @@ function sleep(ms: number): Promise<void> {
 
 // 网络中断后的有限退避：不做无限重连，连续失败就把入口交给作者。
 const RECONNECT_DELAYS = [0, 1000, 2000, 5000];
-
-/** 展开命令身份：同一条目同一修订的重试复用请求键，受理成功后才丢弃。 */
-const expandCommands = new Map<string, string>();
 
 /** 正在回读日志的会话：缺口一次只补一次，避免重复请求。 */
 const reloading = new Set<string>();
@@ -377,6 +363,8 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     });
     let cursor = after;
     let finished = false;
+    let finishedOperation: string | null = null;
+    let finishedGeneration = 0;
     for (const delay of RECONNECT_DELAYS) {
       if (delay) await sleep(delay);
       if (controller.signal.aborted) break;
@@ -394,6 +382,8 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           cursor = Math.max(cursor, event.seq);
           if (event.type === "run_finished") {
             finished = true;
+            finishedOperation = event.operation_id ?? null;
+            finishedGeneration = event.generation ?? 0;
             break;
           }
         }
@@ -417,11 +407,41 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     if (controllers.get(conversationId) === controller) controllers.delete(conversationId);
     if (!isCurrentSubscription(conversationId, generation)) return;
     if (finished) {
+      // 这一代结束不等于整个操作结束：继续或插话之后，新的一代还在写。
+      // 操作快照是唯一依据，不能凭「收到 run_finished」就宣布整件事做完了。
+      const operation = finishedOperation
+        ? await readOperation(finishedOperation).catch(() => null)
+        : null;
+      if (
+        operation &&
+        (operation.status === "running" || operation.status === "accepted") &&
+        operation.generation > finishedGeneration
+      ) {
+        patchEntry(conversationId, {
+          running: true,
+          operation,
+          activeTurn: {
+            conversation_id: conversationId,
+            turn_id: operation.turn_id,
+            state: "running",
+            model: operation.model,
+            connection: operation.connection,
+            started_at: operation.updated_at,
+            operation_id: operation.id,
+          },
+        });
+        if (isCurrentSubscription(conversationId, generation)) {
+          const latest = get().entries[conversationId]?.lastSeq ?? cursor;
+          void consume(conversationId, latest);
+        }
+        return;
+      }
       patchEntry(conversationId, {
         running: false,
         activeTurn: null,
         phase: null,
         error: null,
+        operation,
       });
       onRunFinished?.();
       void get().refreshList();
@@ -493,7 +513,6 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     drafts: {},
     draftContexts: {},
     draftIdeas: {},
-    expansions: {},
     revision: "0",
     error: null,
     pendingKey: null,
@@ -548,7 +567,6 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         drafts: {},
         draftContexts: {},
         draftIdeas: {},
-    expansions: {},
         revision: "0",
         error: null,
         pendingKey: null,
@@ -604,6 +622,9 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           needsReload: false,
         });
         if (get().selectedId === conversationId) void get().rememberRecent(conversationId);
+        // 打开会话时取最近一次操作：暂停过的任务在刷新之后仍有「继续」入口。
+        const operation = await latestOperation(conversationId).catch(() => null);
+        if (operation) patchEntry(conversationId, { operation });
         if (snapshot.active_turn) await consume(conversationId, snapshot.last_seq);
       } catch (error) {
         patchEntry(conversationId, { loading: false, error: describe(error) });
@@ -633,12 +654,16 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const key = target ?? NEW_DRAFT;
       const keyRequest = `ui-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
       // 请求对象在发送前生成一次：重试与回调都复用同一个快照，不把当前选择偷偷带进去。
-      // 显式给了随行引用就不读草稿：那次提交不该改动作者正在写的下一条。
+      // 显式给了随行引用就不读草稿：这一轮不该改动作者正在写的下一条。
       const submittedIdeas = [...(options?.ideas ?? get().draftIdeas[key] ?? [])];
-      // 显式发起的资料任务、灵感展开不携带普通聊天草稿里的选段。
+      // 显式发起的资料任务不携带普通聊天草稿里的选段。
       const submittedTextReferences = options ? [] : [...(get().draftContexts[key]?.text_references ?? [])];
-      // 引用只随作者的下一条普通消息提交；明确用途（检查、整理、展开）不夹带草稿引用。
+      // 引用只随作者的下一条普通消息提交；明确用途（检查、整理）不夹带草稿引用。
       const submittedClueReferences = options ? [] : [...(get().draftContexts[key]?.clue_references ?? [])];
+      // 构思里的「引用到对话」：只随普通消息提交，明确用途不夹带。
+      // 构思面开着时按 design 语境发送：空白作品也能由此建立第一份结构。
+      const storyReference = options ? null : useStoryStore.getState().reference;
+      const storySurfaceOpen = options ? false : useStoryStore.getState().open;
       const request: TurnInput = {
         text: withTextReferences(trimmed, submittedTextReferences),
         request_key: keyRequest,
@@ -651,6 +676,18 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
             idea_id,
             revision_id,
           })),
+          ...(storyReference
+            ? {
+                story: {
+                  variant_id: storyReference.variantId,
+                  revision: storyReference.revision,
+                  node_ids: [...storyReference.nodeIds],
+                  purpose: "write",
+                },
+              }
+            : storySurfaceOpen
+              ? { story: { variant_id: "", revision: "", node_ids: [], purpose: "design" } }
+              : {}),
         },
         ...(options &&
         (options.purpose === "update_chapter_index" ||
@@ -686,6 +723,8 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         if (conversationId) {
           const turn = await startTurn(workspaceId, conversationId, request);
           turnId = turn.turn_id;
+          // 结构引用随这一条消息走：发送成功后就清掉，下一条不带旧方案。
+          if (storyReference) useStoryStore.getState().clearReference();
           patchEntry(conversationId, {
             running: true,
             activeTurn: {
@@ -695,6 +734,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
               model: "",
               connection: "",
               started_at: turn.started_at,
+              operation_id: turn.operation_id,
             },
           });
         } else {
@@ -702,6 +742,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           conversationId = accepted.conversation_id;
           turnId = accepted.turn_id;
           after = 0;
+          if (storyReference) useStoryStore.getState().clearReference();
           set((state) => ({
             selectedId: conversationId,
             items: [
@@ -726,6 +767,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
               model: "",
               connection: "",
               started_at: accepted.started_at,
+              operation_id: accepted.operation_id,
             },
           });
           // 首次受理把新草稿交给正式会话：不覆盖作者另开的新草稿，也不擦掉发送期间
@@ -783,25 +825,110 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       }
     },
 
-    async stop() {
+    async pause() {
       const workspaceId = get().workspaceId;
       const selected = get().selectedId;
       if (!workspaceId || !selected) return;
       const entry = get().entries[selected];
-      const turnId = entry?.activeTurn?.turn_id;
       const active = entry?.activeTurn;
-      if (!turnId || !active || active.state === "stop_requested") return;
+      const operationId = active?.operation_id ?? entry?.operation?.id;
+      if (!active || !operationId || active.state === "stop_requested") return;
+      const key = operationKey("pause");
       patchEntry(selected, { activeTurn: { ...active, state: "stop_requested" } });
       try {
-        await stopTurn(workspaceId, turnId);
+        const operation = await pauseOperation(operationId, key);
+        if (get().workspaceId !== workspaceId) return;
+        const current = get().entries[selected];
+        if (current?.activeTurn?.turn_id === active.turn_id) {
+          patchEntry(selected, { operation });
+        }
       } catch (error) {
         // 迟到的请求结果不能覆盖已经结束的轮次、另一作品或另一轮次。
         if (get().workspaceId !== workspaceId) return;
         const current = get().entries[selected];
-        if (current?.activeTurn?.turn_id === turnId) {
+        if (current?.activeTurn?.turn_id === active.turn_id) {
           patchEntry(selected, { activeTurn: active });
           set({ error: describe(error) });
         }
+      }
+    },
+
+    async resume() {
+      const workspaceId = get().workspaceId;
+      const selected = get().selectedId;
+      if (!workspaceId || !selected) return;
+      const entry = get().entries[selected];
+      const operation = entry?.operation;
+      if (!operation || !operation.capabilities.continue) return;
+      try {
+        const resumed = await continueOperation(
+          operation.id,
+          operationKey("continue"),
+          operation.generation,
+        );
+        if (get().workspaceId !== workspaceId) return;
+        patchEntry(selected, {
+          running: true,
+          error: null,
+          operation: resumed,
+          activeTurn: {
+            conversation_id: resumed.conversation_id,
+            turn_id: resumed.turn_id,
+            state: "accepted",
+            model: resumed.model,
+            connection: resumed.connection,
+            started_at: resumed.updated_at,
+            operation_id: resumed.id,
+          },
+        });
+        // 新代次的事件接在原来的游标后面；不重读整份日志。
+        void consume(selected, get().entries[selected]?.lastSeq ?? 0);
+      } catch (error) {
+        if (get().workspaceId !== workspaceId) return;
+        set({ error: describe(error) });
+      }
+    },
+
+    async interject(text: string) {
+      const workspaceId = get().workspaceId;
+      const selected = get().selectedId;
+      const clean = text.trim();
+      if (!workspaceId || !selected || !clean) return false;
+      const entry = get().entries[selected];
+      const active = entry?.activeTurn;
+      const operationId = active?.operation_id ?? entry?.operation?.id;
+      if (!active || !operationId) return false;
+      const operation = entry?.operation;
+      const generation = operation?.id === operationId ? operation.generation : 1;
+      try {
+        const changed = await interjectOperation(
+          operationId,
+          operationKey("interject"),
+          generation,
+          clean,
+        );
+        if (get().workspaceId !== workspaceId) return false;
+        patchEntry(selected, {
+          running: true,
+          error: null,
+          operation: changed,
+          activeTurn: {
+            conversation_id: changed.conversation_id,
+            turn_id: changed.turn_id,
+            state: "accepted",
+            model: changed.model,
+            connection: changed.connection,
+            started_at: changed.updated_at,
+            operation_id: changed.id,
+          },
+        });
+        // 插话会先结束旧代次：从当前游标继续接收新代次的事件。
+        void consume(selected, get().entries[selected]?.lastSeq ?? 0);
+        return true;
+      } catch (error) {
+        if (get().workspaceId !== workspaceId) return false;
+        set({ error: describe(error) });
+        return false;
       }
     },
 
@@ -965,109 +1092,6 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           [key]: current.filter((item) => item.idea_id !== ideaId),
         },
       }));
-    },
-
-    async expandIdea(input) {
-      const workspaceId = get().workspaceId;
-      if (!workspaceId || get().pendingKey) return null;
-      // 已有讨论：打开它继续，不自动再发一次同样的展开。
-      const existing = get().expansions[input.ideaId];
-      if (existing) {
-        await get().select(existing);
-        if (get().selectedId === existing && !get().entries[existing]?.error) {
-          return { conversationId: existing, turnId: "" };
-        }
-        // 会话已被删除或读不到：清掉关联，由作者再点一次决定要不要新建讨论。
-        const next = { ...get().expansions };
-        delete next[input.ideaId];
-        set({
-          expansions: next,
-          error: "这次讨论的会话已不可用。再点一次「展开讨论」会新建一个。",
-        });
-        return null;
-      }
-      const signature = `${workspaceId}:${input.ideaId}:${input.revisionId}`;
-      let requestKey = expandCommands.get(signature);
-      if (!requestKey) {
-        requestKey = `expand-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-        expandCommands.set(signature, requestKey);
-      }
-      const request: TurnInput = {
-        text: `展开这条灵感：${input.preview}`,
-        request_key: requestKey,
-        purpose: "expand_idea",
-        context: {
-          ...EMPTY_CONTEXT,
-          idea_references: [{ idea_id: input.ideaId, revision_id: input.revisionId }],
-        },
-      };
-      set({ pendingKey: requestKey, error: null });
-      try {
-        const accepted = await createConversationWithText(workspaceId, request);
-        // 受理成功才丢掉命令身份：结果不明时重试仍用同一个请求键。
-        expandCommands.delete(signature);
-        set((state) => ({
-          selectedId: accepted.conversation_id,
-          expansions: { ...state.expansions, [input.ideaId]: accepted.conversation_id },
-          items: [
-            {
-              id: accepted.conversation_id,
-              title: accepted.title,
-              created_at: accepted.started_at,
-              updated_at: accepted.started_at,
-            },
-            ...state.items.filter((item) => item.id !== accepted.conversation_id),
-          ],
-        }));
-        patchEntry(accepted.conversation_id, {
-          turns: [],
-          lastSeq: 0,
-          phase: null,
-          running: true,
-          activeTurn: {
-            conversation_id: accepted.conversation_id,
-            turn_id: accepted.turn_id,
-            state: "accepted",
-            model: "",
-            connection: "",
-            started_at: accepted.started_at,
-          },
-        });
-        void get().refreshList();
-        await consume(accepted.conversation_id, 0);
-        return { conversationId: accepted.conversation_id, turnId: accepted.turn_id };
-      } catch (error) {
-        set({ error: describe(error) });
-        return null;
-      } finally {
-        set({ pendingKey: null });
-      }
-    },
-
-    async writeFromIdea(input) {
-      const workspaceId = get().workspaceId;
-      if (!workspaceId || get().pendingKey) return null;
-      // 走普通写作用途：显式给出目标章节与固定修订，权限和范围检查沿用既有受理。
-      const result = await get().send(
-        `把这条灵感用到《${input.title}》：${input.preview}。先登记要改的范围，再改正文。`,
-        {
-          selected_path: input.path,
-          reference_paths: [],
-          observed_digests: input.digest ? { [input.path]: input.digest } : {},
-        },
-        {
-          purpose: "chat",
-          ideas: [
-            {
-              idea_id: input.ideaId,
-              revision_id: input.revisionId,
-              preview: input.preview,
-              chars: Array.from(input.preview).length,
-            },
-          ],
-        },
-      );
-      return result;
     },
 
     async saveDraft() {

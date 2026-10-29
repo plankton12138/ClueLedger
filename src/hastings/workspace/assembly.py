@@ -33,6 +33,7 @@ __all__ = [
     "TIMELINE_BUDGET",
     "SETTINGS_BUDGET",
     "STATE_BUDGET",
+    "STORY_BUDGET",
     "AssembledContext",
     "Exclusion",
     "Partition",
@@ -45,13 +46,15 @@ __all__ = [
 #: 用途决定装哪些分区。受理时只知道用途（写正文、建索引、做检查、展开灵感），
 #: 不知道作者这一轮想讨论还是想改稿，所以普通「讨论」不单列类型。
 #: ``idea`` 是「展开一条灵感」的只读用途：只装任务要求与那条灵感的固定版本。
-Profile = Literal["writer", "extract", "review", "materials", "idea"]
+Profile = Literal["writer", "extract", "review", "idea"]
 
 #: 各分区初始预算，集中定义、集中测试，不做成用户配置。单位是渲染后的字符数。
 INSTRUCTIONS_BUDGET = 4_000
 CATALOG_BUDGET = 12_000
 #: 已装模块的短目录；只放实例、精确版本与条目数，不读条目正文。
 MODULES_BUDGET = 2_000
+#: 构思结构的分区预算：必需内容装不下时由装配层报缺口，不截断。
+STORY_BUDGET = 12_000
 MATERIALS_BUDGET = 8_000
 #: 作者本轮明确选中的灵感修订；按修订冻结，和正文材料分开计量。
 IDEAS_BUDGET = 3_000
@@ -72,7 +75,7 @@ CLUES_BUDGET = 500
 
 #: 每种用途的总预算：分区预算之和，超出的判断仍按分区做。
 #:
-#: 这是**字符**预算，不是 token 上限：写作用途合计 49,900 字符，只用来解释这一轮
+#: 这是**字符**预算，不是 token 上限：写作用途合计 61,900 字符，只用来解释这一轮
 #: 装进了多少材料。上游实际消耗的 token 由用量记录单独上报，两者不互相换算，也不能
 #: 拿这里的数字代替 token 统计。
 PROFILE_BUDGETS: dict[Profile, int] = {
@@ -80,6 +83,7 @@ PROFILE_BUDGETS: dict[Profile, int] = {
     + CATALOG_BUDGET
     + MODULES_BUDGET
     + MATERIALS_BUDGET
+    + STORY_BUDGET
     + IDEAS_BUDGET
     + INDEX_BUDGET
     + STATE_BUDGET
@@ -94,14 +98,12 @@ PROFILE_BUDGETS: dict[Profile, int] = {
     + CATALOG_BUDGET
     + MODULES_BUDGET
     + MATERIALS_BUDGET
+    + STORY_BUDGET
     + IDEAS_BUDGET
     + ROSTER_BUDGET
     + TIMELINE_BUDGET
     + CLUES_BUDGET
     + SETTINGS_BUDGET,
-    # 资料整理：任务要求、目录与本次范围；不装设定集与状态分区，避免把谜底和作者计划
-    # 当成「截至这一章的正文事实」。
-    "materials": INSTRUCTIONS_BUDGET + CATALOG_BUDGET + MODULES_BUDGET + MATERIALS_BUDGET,
     # 展开灵感：只装任务要求、作品目录与那条灵感；不装材料、装配、索引与状态分区。
     "idea": INSTRUCTIONS_BUDGET + CATALOG_BUDGET + IDEAS_BUDGET,
 }

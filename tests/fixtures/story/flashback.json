@@ -1,0 +1,67 @@
+{
+  "id": "main",
+  "name": "倒叙",
+  "revision": "rev_flash_1",
+  "nodes": {
+    "f1": {
+      "id": "f1",
+      "title": "现在 审讯室",
+      "action": "她把手里的录音笔放在桌上。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "f2": {
+      "id": "f2",
+      "title": "二十年前 车站",
+      "action": "父亲把钥匙交给陌生人。",
+      "thread_ids": [
+        "t1"
+      ]
+    }
+  },
+  "clues": {
+    "c1": {
+      "id": "c1",
+      "title": "钥匙的来历",
+      "author_truth": "陌生人后来把钥匙寄了回来",
+      "intention": "先看结果再看原因",
+      "resolution": {
+        "intent": "explain",
+        "node_ids": [
+          "f1"
+        ]
+      },
+      "provenance": "author_request"
+    }
+  },
+  "threads": {
+    "t1": {
+      "id": "t1",
+      "title": "主线"
+    }
+  },
+  "constraints": {},
+  "edges": {
+    "e1": {
+      "id": "e1",
+      "from_id": "f1",
+      "to_id": "f2",
+      "kind": "next",
+      "reason": "叙述进入回忆"
+    },
+    "e2": {
+      "id": "e2",
+      "from_id": "f2",
+      "to_id": "f1",
+      "kind": "reframe",
+      "reason": "回忆改变了现在这段对话的解释"
+    }
+  },
+  "event_times": [
+    {
+      "before_node_id": "f2",
+      "after_node_id": "f1"
+    }
+  ]
+}

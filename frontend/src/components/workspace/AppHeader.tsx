@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpen, Files, LibraryBig, Settings } from "lucide-react";
+import { BookOpen, LibraryBig, Settings } from "lucide-react";
 import { pageHash, type AppPage, type WorkspacePage } from "../../state/navigation";
 import { useWorkspaceStore } from "../../state/workspace";
 import { useModelsStore } from "../../state/models";
@@ -13,16 +13,11 @@ import RenameWorkspaceDialog from "./RenameWorkspaceDialog";
 export function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; workspaceId: string | null }) {
   const positions = usePagePositions(state => workspaceId ? state.pages[workspaceId] : undefined);
   const writing: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId } : null;
-  const materials: WorkspacePage | null = workspaceId ? { kind: "materials", workspaceId, section: "story", chapter: null, order: "chapter" } : null;
   return <nav className="workspace-navigation" aria-label="作品页面">
     {writing
       ? <a className="ui-nav-link" href={pageHash(positions?.writing ?? writing)} aria-current={page?.kind === "writing" ? "page" : undefined}>
         <BookOpen size={16} strokeWidth={2} aria-hidden="true" />写作</a>
       : <span aria-disabled="true"><BookOpen size={16} strokeWidth={2} aria-hidden="true" />写作</span>}
-    {materials
-      ? <a className="ui-nav-link" href={pageHash(positions?.materials ?? materials)} aria-current={page?.kind === "materials" ? "page" : undefined}>
-        <Files size={16} aria-hidden="true" />故事资料</a>
-      : <span aria-disabled="true"><Files size={16} aria-hidden="true" />故事资料</span>}
     <a className="ui-nav-link" href={pageHash({ kind: "library", workspaceContextId: workspaceId ?? undefined })} aria-current={page?.kind === "library" ? "page" : undefined}>
       <LibraryBig size={16} aria-hidden="true" />模块库</a>
   </nav>;

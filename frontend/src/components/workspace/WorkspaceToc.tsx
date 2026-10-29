@@ -45,7 +45,6 @@ export default function WorkspaceToc({ onChoose }: { onChoose?: () => void }) {
   const { currentId, catalog, selectedPath, search, openPath, runSearch, clearSearch, upload } = useWorkspaceStore();
   const moduleSelection = useWorkspaceModulesStore(state => state.selected);
   const fileActive = moduleSelection?.workspaceId !== currentId;
-  const legacy = [...catalog.characters,...catalog.settings].filter(entry => entry.exists);
   const positionKey = `${currentId}:toc`;
   const query = usePagePositions(state => state.queries[positionKey] ?? "");
   const setQuery = (value: string) => usePagePositions.getState().query(positionKey, value);
@@ -167,10 +166,16 @@ export default function WorkspaceToc({ onChoose }: { onChoose?: () => void }) {
                 </section>
 
                 {currentId && <WorkspaceModules workspaceId={currentId} onChoose={onChoose} />}
-                {legacy.length > 0 && <details className="workspace-legacy-materials"><summary>原有资料</summary>
-                  <ul className="toc-group">{legacy.map(entry => <TocLine key={entry.path} path={entry.path} active={fileActive && selectedPath===entry.path}
-                    onOpen={() => choose(entry.path)} onReference={() => addReference(entry.path)}>{entry.display_title}<CharacterBadges roles={entry.roles} compact /></TocLine>)}</ul>
-                </details>}
+                {(() => {
+                  // 设定与人物是作者自己的文件：目录里直接列出，不再折进「原有资料」。
+                  const entries = [...catalog.settings, ...catalog.characters].filter(entry => entry.exists);
+                  if (entries.length === 0) return null;
+                  return <section>
+                    <h2 className="toc-head px-1 py-2 text-sm font-bold tracking-wide">设定与人物</h2>
+                    <ul className="toc-group">{entries.map(entry => <TocLine key={entry.path} path={entry.path} active={fileActive && selectedPath === entry.path}
+                      onOpen={() => choose(entry.path)} onReference={() => addReference(entry.path)}>{entry.display_title}<CharacterBadges roles={entry.roles} compact /></TocLine>)}</ul>
+                  </section>;
+                })()}
               </>
             )}
           </div>

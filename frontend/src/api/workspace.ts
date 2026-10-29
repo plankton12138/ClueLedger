@@ -132,6 +132,8 @@ export interface ActiveTurn {
   model: string;
   connection: string;
   started_at: string;
+  /** 这一轮所属的统一操作：暂停与插话都按它发起。 */
+  operation_id?: string;
 }
 
 /** 会话列表：一次读齐列表、上次看的会话与作品当前活动轮次。 */
@@ -148,6 +150,8 @@ export interface AcceptedTurn {
   turn_id: string;
   started_at: string;
   title: string;
+  operation_id?: string;
+  generation?: number;
   request_key: string;
 }
 
@@ -156,6 +160,8 @@ export interface TurnInfo {
   conversation_id: string;
   started_at: string;
   title?: string;
+  operation_id?: string;
+  generation?: number;
 }
 
 /** 本轮明确选中的灵感修订；正文由服务端按修订读取。 */
@@ -172,6 +178,8 @@ export interface ContextInput {
   reference_paths: string[];
   clue_references?: ClueReferenceInput[];
   idea_references?: IdeaReferenceInput[];
+  /** 本轮要看的构思方案与位置：由「引用到对话」写入，服务端按修订复核。 */
+  story?: { variant_id: string; revision: string; node_ids: string[]; purpose?: string };
   /** 客户端看到的版本，只对应本次当前路径与参考；不是服务端内容依据。 */
   observed_digests: Record<string, string>;
 }
@@ -393,7 +401,7 @@ export type WorkspaceEvent =
   | (EventBase & {
       type: "state_injected";
       turn_id: string;
-      profile: "writer" | "extract" | "review" | "materials";
+      profile: "writer" | "extract" | "review" | "idea";
       parts: {
         key: string;
         chars: number;
@@ -536,6 +544,8 @@ export type WorkspaceEvent =
   | (EventBase & {
       type: "run_finished";
       turn_id: string;
+      operation_id?: string;
+      generation?: number;
       status: RunStatus;
       recording: Recording;
       changed_paths?: string[];
@@ -709,22 +719,39 @@ export class WorkspaceApiError extends Error {
     readonly fix: string,
     readonly status: number,
     readonly where: string = "作品操作",
+    //: 服务端给的机器可读明细（冲突对象、计划摘要等）；界面要展示时直接读。
+    readonly details: Record<string, unknown> = {},
   ) {
     super(why);
     this.name = "WorkspaceApiError";
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return send<T>(`${BASE}${path}`, init);
+}
+
+/** 应用级接口（如 `/api/operations`）不在作品前缀下，按绝对路径请求。 */
+export function requestApi<T>(path: string, init?: RequestInit): Promise<T> {
+  return send<T>(path, init);
+}
+
+async function send<T>(url: string, init?: RequestInit): Promise<T> {
   // headers 必须最后合并：`...init` 写在后面会把整个 headers 覆盖掉，
   // 带 If-Match 的写请求就会连 Content-Type 一起丢掉，后端解析不了 body 返回 422。
-  const response = await fetch(`${BASE}${path}`, {
+  const response = await fetch(url, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
-      error?: { code?: string; where?: string; why?: string; fix?: string };
+      error?: {
+        code?: string;
+        where?: string;
+        why?: string;
+        fix?: string;
+        details?: Record<string, unknown>;
+      };
     } | null;
     const error = body?.error;
     throw new WorkspaceApiError(
@@ -735,6 +762,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       error?.fix ?? "稍后重试；若持续失败，按状态码查后端日志",
       response.status,
       error?.where ?? "作品请求",
+      (error?.details as Record<string, unknown> | undefined) ?? {},
     );
   }
   if (response.status === 204) return undefined as T;

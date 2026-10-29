@@ -117,15 +117,6 @@ export default function IdeasSurface() {
     } finally { pendingAttach.current = false; setActionBusy(false); }
   }
 
-  const expand = async (ideaId: string) => {
-    const saved = await useIdeasStore.getState().prepareReference(ideaId);
-    if (!saved || saved.workspaceId !== useWorkspaceStore.getState().currentId) return;
-    const result = await useConversationsStore.getState().expandIdea({ ideaId: saved.ideaId, revisionId: saved.revisionId, preview: referencePreview(saved.body) });
-    if (useWorkspaceStore.getState().currentId !== saved.workspaceId) return;
-    if (!result) { setActionError(useConversationsStore.getState().error ?? "[IDEA_DISCUSSION_FAILED] 展开讨论：讨论未建立。建议：检查模型连接后重试。"); return; }
-    close(); useLayoutStore.getState().revealChat(); navigate({ kind: "writing", workspaceId: saved.workspaceId });
-  };
-
   const openConversation = async (conversationId: string) => {
     const id = workspaceId;
     await useConversationsStore.getState().select(conversationId);
@@ -144,21 +135,6 @@ export default function IdeasSurface() {
       setActionError(`[IDEA_SOURCE_UNAVAILABLE] ${path}：来源文件无法打开。建议：核对文件是否已移动或删除。`); return;
     }
     close(); navigate({ kind: "writing", workspaceId: id });
-  };
-
-  const useForWriting = async (ideaId: string, path: string, title: string) => {
-    const saved = await useIdeasStore.getState().prepareReference(ideaId);
-    if (!saved || saved.workspaceId !== useWorkspaceStore.getState().currentId) return;
-    await useWorkspaceStore.getState().openPath(path);
-    const opened = useWorkspaceStore.getState();
-    if (opened.currentId !== saved.workspaceId) return;
-    if (opened.selectedPath !== path || opened.file?.path !== path) {
-      setActionError(`[IDEA_TARGET_UNAVAILABLE] ${path}：目标章节无法打开。建议：核对文件是否已移动或删除。`); return;
-    }
-    const result = await useConversationsStore.getState().writeFromIdea({ ideaId: saved.ideaId, revisionId: saved.revisionId, preview: referencePreview(saved.body), title, path, digest: opened.file.digest });
-    if (useWorkspaceStore.getState().currentId !== saved.workspaceId) return;
-    if (!result) { setActionError(useConversationsStore.getState().error ?? "[IDEA_WRITING_FAILED] 用于写作：请求未提交成功。建议：检查模型连接后重试。"); return; }
-    close(); useLayoutStore.getState().revealChat(); navigate({ kind: "writing", workspaceId: saved.workspaceId });
   };
 
   if (!workspaceId) return null;
@@ -200,7 +176,7 @@ export default function IdeasSurface() {
           {error ?? actionError ?? notice}
         </StatusMessage></div>}
         {storeWorkspace === workspaceId ? <IdeaList expanded={expanded} onExpandList={() => setExpanded(true)} actionBusy={actionBusy}
-          onTakeToChat={takeToChat} onExpand={expand} onOpenConversation={openConversation} onOpenSource={openSource} onUseForWriting={useForWriting} />
+          onTakeToChat={takeToChat} onOpenConversation={openConversation} onOpenSource={openSource} />
           : <StatusMessage>正在读取灵感…</StatusMessage>}
       </div>
     </section>}

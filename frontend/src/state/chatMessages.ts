@@ -144,7 +144,7 @@ export interface TurnIdea {
 
 /** 本轮注入：只记分区规模、跳过原因与未装入条目，不含注入正文。 */
 export interface TurnInjection {
-  profile: "writer" | "extract" | "review" | "materials";
+  profile: "writer" | "extract" | "review" | "idea";
   parts: TurnInjectionPart[];
   skipped: { key: string; reason: "budget" | "empty"; chars?: number }[];
   limit: number;

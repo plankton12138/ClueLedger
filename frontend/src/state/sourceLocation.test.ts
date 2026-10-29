@@ -29,7 +29,7 @@ beforeEach(() => {
 describe("source navigation", () => {
   it("keeps reading file, browser cutoff and task cutoff separate", async () => {
     api.mockResolvedValue(sample);
-    const page = { kind: "materials" as const, workspaceId: "ws", section: "clues" as const, chapter: 6, order: "chapter" as const };
+    const page = { kind: "writing" as const, workspaceId: "ws", asOfChapter: 6 };
     useSourceLocationStore.getState().capture(page, 4);
     await useSourceLocationStore.getState().load("ws", "ev_first", 6, 4);
     expect(workspace.selectedPath).toBe("正文/0001.md");
@@ -86,7 +86,7 @@ describe("source navigation", () => {
     const restore = pending<void>(); openPath.mockReturnValueOnce(restore.promise);
     const key = "ws:paper:正文/0006.md";
     usePagePositions.getState().offset(key, 432);
-    useSourceLocationStore.getState().capture({ kind: "materials", workspaceId: "ws", section: "clues", chapter: 6, order: "chapter" }, 4);
+    useSourceLocationStore.getState().capture({ kind: "writing", workspaceId: "ws", asOfChapter: 6 }, 4);
     useSourceLocationStore.setState({ workspaceId: "ws", evidenceId: "ev_first" });
     const back = useSourceLocationStore.getState().back();
     // 隐藏阅读区的旧 scroll 事件不能覆盖独立保存的返回指令。

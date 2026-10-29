@@ -1,0 +1,93 @@
+{
+  "id": "main",
+  "name": "伪造证词",
+  "revision": "rev_testimony_1",
+  "nodes": {
+    "t1": {
+      "id": "t1",
+      "title": "客厅",
+      "action": "管家说老爷那晚没有出门。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "t2": {
+      "id": "t2",
+      "title": "厨房",
+      "action": "管家重复同一句话，但换了说法。",
+      "thread_ids": [
+        "t1"
+      ],
+      "clue_uses": [
+        {
+          "clue_id": "c1",
+          "presentation": "管家说信是别人寄来的",
+          "mode": "testimony",
+          "speaker_id": "管家",
+          "expected_interpretation": "读者会相信管家只是转述"
+        }
+      ],
+      "knowledge_changes": [
+        {
+          "subject_id": "林岚",
+          "claim": "信是别人寄来的",
+          "stance": "believes",
+          "source_node_ids": [
+            "t1"
+          ],
+          "effective_event_node_id": "t2"
+        }
+      ]
+    }
+  },
+  "clues": {
+    "c1": {
+      "id": "c1",
+      "title": "信的来源",
+      "author_truth": "信是管家自己藏起来的",
+      "intention": "让读者误信转述",
+      "resolution": {
+        "intent": "explain",
+        "node_ids": [
+          "t2"
+        ]
+      },
+      "provenance": "author_request"
+    }
+  },
+  "threads": {
+    "t1": {
+      "id": "t1",
+      "title": "主线"
+    }
+  },
+  "constraints": {
+    "k1": {
+      "id": "k1",
+      "text": "证词可以撒谎，但叙述不能替角色下结论",
+      "strength": "required",
+      "scope": {
+        "kind": "book",
+        "target_id": ""
+      },
+      "source_message_id": "",
+      "origin": "author_request",
+      "revision": "rev_c1"
+    }
+  },
+  "edges": {
+    "e1": {
+      "id": "e1",
+      "from_id": "t1",
+      "to_id": "t2",
+      "kind": "next",
+      "reason": ""
+    }
+  },
+  "event_times": [
+    {
+      "before_node_id": "t1",
+      "after_node_id": "t2"
+    }
+  ]
+}

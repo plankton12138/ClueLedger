@@ -24,7 +24,7 @@ async function finish(request: APIRequestContext, wid: string, accepted: Accepte
 }
 async function accept(page: Page, action: () => Promise<unknown>): Promise<Accepted> {
   const received = page.waitForResponse(r => r.request().method() === "POST" && r.status() === 202 &&
-    /\/(conversations(?:\/[^/]+\/turns)?|material-tasks)$/.test(new URL(r.url()).pathname), { timeout: 20_000 });
+    /\/(conversations(?:\/[^/]+\/turns)?|operations)$/.test(new URL(r.url()).pathname), { timeout: 20_000 });
   await action();
   return (await received).json();
 }
@@ -51,13 +51,11 @@ test("保存计划、整理、核对、引用改写、复查与停止均落到�
     expect(["localhost", "127.0.0.1", "0.0.0.0"]).not.toContain(new URL(connection.base_url).hostname);
     await page.goto(`/#/workspaces/${book.id}/writing`);
     await page.getByRole("button", { name: "第一章 遗书", exact: true }).click();
-    const plan = await send(page, "创建并装入当前作品一个线索模块，标题叫「遗书构思」，保存一条「照片解释」：林岚可能从公开照片知道遗书背面的句子，需在第二章验证。只保存这一条构思，不改正文，不认定林岚提前接触过原件。");
+    // 资料整理任务已随资料页移除：线索在写作轮里按原文登记，读取与核对不变。
+    const plan = await send(page, "创建并装入当前作品一个线索模块，标题叫「遗书构思」，保存一条「照片解释」：林岚可能从公开照片知道遗书背面的句子，需在第二章验证。同时把这条线索登记进线索台账：open，来源与证据用第一章原文「青鸟归巢」那句。只保存这一条构思与台账记录，不改正文，不认定林岚提前接触过原件。");
     transcript.push(await finish(request, book.id, plan));
     const assembly = await request.get(`${base}/assembly`).then(r => r.json());
     expect(assembly.bindings.length).toBeGreaterThan(0);
-    await page.getByRole("button", { name: "本章线索", exact: true }).click();
-    const organize = await accept(page, () => page.getByRole("button", { name: "整理本章", exact: true }).click());
-    transcript.push(await finish(request, book.id, organize));
     const list = await request.get(`${base}/clues`, { params: { chapter_path: FIRST, as_of_chapter: 1 } }).then(r => r.json());
     expect(list.items.length).toBeGreaterThan(0);
     const clue = list.items[0];

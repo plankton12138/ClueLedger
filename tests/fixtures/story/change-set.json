@@ -1,0 +1,77 @@
+{
+  "id": "change_fixture_1",
+  "base_revision": "rev_blank_1",
+  "operations": [
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n4",
+        "title": "第十七号储物柜",
+        "action": "她按号码找到储物柜。",
+        "thread_ids": [
+          "t1"
+        ]
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e3",
+        "from_id": "n3",
+        "to_id": "n4",
+        "kind": "next",
+        "reason": "顺着号码查下去"
+      }
+    },
+    {
+      "op": "update_clue",
+      "clue_id": "c1",
+      "clue": {
+        "id": "c1",
+        "title": "信封上的指纹",
+        "author_truth": "指纹是管家留下的",
+        "intention": "让读者先怀疑遗产纠纷",
+        "resolution": {
+          "intent": "explain",
+          "node_ids": [
+            "n4"
+          ]
+        },
+        "provenance": "author_request"
+      }
+    },
+    {
+      "op": "set_event_time",
+      "relation": {
+        "before_node_id": "n3",
+        "after_node_id": "n4"
+      }
+    },
+    {
+      "op": "add_constraint",
+      "constraint": {
+        "id": "k2",
+        "text": "指纹的揭示不能早于第十七章",
+        "strength": "preference",
+        "scope": {
+          "kind": "node",
+          "target_id": "n4"
+        },
+        "source_message_id": "",
+        "origin": "author_request",
+        "revision": "rev_c2"
+      }
+    }
+  ],
+  "prose_patches": [],
+  "read_dependencies": [
+    {
+      "kind": "variant",
+      "id": "main",
+      "revision": "rev_blank_1"
+    }
+  ],
+  "requested_scope": "补一章并回收第一条线索",
+  "operation_id": "",
+  "generation": 0
+}

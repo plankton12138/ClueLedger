@@ -83,6 +83,10 @@ def replay_public_messages(
             # 新一轮开始：上一轮的公开文本先落成一条 assistant 消息。
             flush()
             messages.append(UserMessage(content=text))
+        elif kind == "author_interjected":
+            # 生成过程中追加的要求也是作者说的：位置就在它发生的那一刻。
+            flush()
+            messages.append(UserMessage(content=text))
         elif kind == "assistant_message":
             reply.append(text)
     flush()

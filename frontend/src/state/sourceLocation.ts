@@ -21,7 +21,18 @@ interface SourceState {
   restoreEpoch: number;
   returnModule: ReturnType<typeof useWorkspaceModulesStore.getState>["selected"];
   restorePosition: { key: string; offset: number; epoch: number } | null;
+  /** 这次定位来自构思里的正文关联：返回目标是构思面，而不是上一个页面。 */
+  storyReturn: boolean;
   consumeRestore(epoch: number): void;
+  /**
+   * 直接用已知的区间定位（构思里的正文关联）。不请求服务端：区间与引文来自结构本身，
+   * 是否还对得上由当前正文当场核对，对不上就按「已失效」显示，不假装高亮。
+   */
+  showLocal(
+    workspaceId: string,
+    input: { path: string; start: number; end: number; quote: string },
+    options?: { fromStory?: boolean },
+  ): Promise<void>;
   capture(page: WorkspacePage, taskChapter: number): void;
   load(workspaceId: string, evidenceId: string, asOf: number | null, taskChapter: number): Promise<void>;
   clear(): void;
@@ -30,7 +41,7 @@ interface SourceState {
 
 export const useSourceLocationStore = create<SourceState>()((set, get) => ({
   workspaceId: null, evidenceId: null, asOf: null, taskChapter: null, location: null,
-  loading: false, error: null, epoch: 0, returnPage: null, returnPath: null, returnOffset: 0, restoreEpoch: 0, returnModule: null, restorePosition: null,
+  loading: false, error: null, epoch: 0, returnPage: null, returnPath: null, returnOffset: 0, restoreEpoch: 0, returnModule: null, restorePosition: null, storyReturn: false,
   consumeRestore(epoch) { if (get().restorePosition?.epoch === epoch) set({ restorePosition: null }); },
   capture(page, taskChapter) {
     const path = useWorkspaceStore.getState().selectedPath;
@@ -62,7 +73,35 @@ export const useSourceLocationStore = create<SourceState>()((set, get) => ({
     } catch (error) { if (current()) set({ error: errorMessage(error, "原文定位") }); }
     finally { if (current()) set({ loading: false }); }
   },
-  clear() { set({ workspaceId: null, evidenceId: null, location: null, loading: false, error: null, epoch: get().epoch + 1, taskChapter: null, asOf: null, returnPage: null, returnPath: null, returnModule: null }); },
+  clear() { set({ workspaceId: null, evidenceId: null, location: null, loading: false, error: null, epoch: get().epoch + 1, taskChapter: null, asOf: null, returnPage: null, returnPath: null, returnModule: null, storyReturn: false }); },
+  async showLocal(workspaceId, input, options) {
+    const epoch = get().epoch + 1;
+    set({ workspaceId, evidenceId: null, asOf: null, taskChapter: null, epoch, loading: true, error: null, storyReturn: Boolean(options?.fromStory) });
+    await useWorkspaceStore.getState().openPath(input.path);
+    if (get().epoch !== epoch) return;
+    const file = useWorkspaceStore.getState().file;
+    const matched = file?.path === input.path && file.digest !== undefined && Array.from(file.text).slice(input.start, input.end).join("") === input.quote;
+    set({
+      loading: false,
+      location: {
+        evidence_id: "",
+        clue_id: "",
+        source: { kind: "file", path: input.path, digest: file?.digest ?? "" },
+        freshness: matched ? "valid" : "stale",
+        quote: input.quote,
+        chapter: file?.chapter_number ?? null,
+        as_of_chapter: 0,
+        offset_unit: "unicode_codepoint",
+        start: matched ? input.start : null,
+        end: matched ? input.end : null,
+        readable: Boolean(file),
+        current_digest: file?.digest ?? null,
+        excerpt: file?.text ?? "",
+        excerpt_start: 0,
+        saved_path: input.path,
+      },
+    });
+  },
   async back() {
     const { returnPage, returnPath, returnOffset, returnModule, workspaceId, evidenceId } = get();
     const hash = typeof window === "undefined" ? "" : window.location.hash;
@@ -71,7 +110,11 @@ export const useSourceLocationStore = create<SourceState>()((set, get) => ({
     if (!target || useWorkspaceStore.getState().currentId !== target.workspaceId) return;
     if (returnPath) usePagePositions.getState().offset(`${target.workspaceId}:paper:${returnPath}`, returnOffset);
     // 关闭定位后，导航的写作入口恢复普通阅读，不能再次打开刚关闭的来源链接。
-    usePagePositions.getState().remember(target.kind === "materials" ? { kind: "writing", workspaceId: target.workspaceId } : target);
+    usePagePositions.getState().remember(
+      target.kind === "writing"
+        ? { kind: "writing", workspaceId: target.workspaceId }
+        : target,
+    );
     const restoreEpoch = get().restoreEpoch + 1;
     set({ restoreEpoch, restorePosition: returnPath ? { key: `${target.workspaceId}:paper:${returnPath}`, offset: returnOffset, epoch: restoreEpoch } : null });
     const restoreFile = returnPath ? useWorkspaceStore.getState().openPath(returnPath) : Promise.resolve();

@@ -127,8 +127,11 @@ def test_stop_interrupts_silent_provider_without_waiting_for_another_event(
         await asyncio.wait_for(service.wait(info.turn_id), timeout=1)
         assert time.monotonic() - started < 1
         events = store.events(info.conversation_id)
-        assert events[-1]["status"] == "stopped"
+        runs = [event for event in events if event["type"] == "run_finished"]
+        assert runs[-1]["status"] == "stopped"
         assert sum(event["type"] == "stop_requested" for event in events) == 1
+        # 统一操作记录暂停，而不是把这一轮记成完成。
+        assert service.operation(info.operation_id).status == "paused"
         finished = [event for event in events if event["type"] == "model_request_finished"]
         assert len(finished) == 1
         assert finished[0]["status"] == "stopped"

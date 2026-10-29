@@ -62,7 +62,7 @@ test("列表直接连续加入，保留对话草稿，长内容读取全文且�
   const body="长灵感的开头。"+"雨落在旧港的屋顶，没有人抬头。".repeat(500);
   const long=await request.post(base,{data:{body,request_key:`long-ref-${book.id}`}}).then(r=>r.json());
   let starts=0;
-  page.on("request",request=>{if(request.method()==="POST"&&/\/turns|\/material-tasks|\/conversations$/.test(request.url()))starts++;});
+  page.on("request",request=>{if(request.method()==="POST"&&/\/turns|\/operations|\/conversations$/.test(request.url()))starts++;});
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.locator(".chat-input").fill("保留原有要求");
   await page.getByRole("button",{name:"灵感",exact:true}).click();

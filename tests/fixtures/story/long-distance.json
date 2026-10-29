@@ -1,0 +1,437 @@
+{
+  "id": "main",
+  "name": "十七号储物柜",
+  "revision": "rev_long_1",
+  "nodes": {
+    "n01": {
+      "id": "n01",
+      "title": "第一章 车站",
+      "action": "林岚在车站捡到一把钥匙，钥匙牌上刻着数字 17。",
+      "thread_ids": [
+        "t1"
+      ],
+      "clue_uses": [
+        {
+          "clue_id": "c1",
+          "presentation": "钥匙牌上的 17",
+          "mode": "narration",
+          "speaker_id": "",
+          "expected_interpretation": "读者会记住这个数字"
+        }
+      ]
+    },
+    "n02": {
+      "id": "n02",
+      "title": "第2章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n03": {
+      "id": "n03",
+      "title": "第3章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n04": {
+      "id": "n04",
+      "title": "第4章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n05": {
+      "id": "n05",
+      "title": "第5章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n06": {
+      "id": "n06",
+      "title": "第6章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n07": {
+      "id": "n07",
+      "title": "第7章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n08": {
+      "id": "n08",
+      "title": "第8章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n09": {
+      "id": "n09",
+      "title": "第9章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n10": {
+      "id": "n10",
+      "title": "第10章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n11": {
+      "id": "n11",
+      "title": "第11章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n12": {
+      "id": "n12",
+      "title": "第12章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t1"
+      ]
+    },
+    "n13": {
+      "id": "n13",
+      "title": "第13章 调查",
+      "action": "两条调查线在同一间档案室汇合。",
+      "thread_ids": [
+        "t1",
+        "t2"
+      ]
+    },
+    "n14": {
+      "id": "n14",
+      "title": "第14章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t2"
+      ]
+    },
+    "n15": {
+      "id": "n15",
+      "title": "第15章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t2"
+      ]
+    },
+    "n16": {
+      "id": "n16",
+      "title": "第16章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t2"
+      ]
+    },
+    "n17": {
+      "id": "n17",
+      "title": "第17章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t2"
+      ]
+    },
+    "n18": {
+      "id": "n18",
+      "title": "第18章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t2"
+      ]
+    },
+    "n19": {
+      "id": "n19",
+      "title": "第19章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t2"
+      ]
+    },
+    "n20": {
+      "id": "n20",
+      "title": "第20章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t2"
+      ]
+    },
+    "n21": {
+      "id": "n21",
+      "title": "第21章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t2"
+      ]
+    },
+    "n22": {
+      "id": "n22",
+      "title": "第22章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t2"
+      ]
+    },
+    "n23": {
+      "id": "n23",
+      "title": "第23章 调查",
+      "action": "她按线索继续查，问到一个新的人。",
+      "thread_ids": [
+        "t2"
+      ]
+    },
+    "n24": {
+      "id": "n24",
+      "title": "第24章 调查",
+      "action": "钥匙插进 17 号储物柜，里面是父亲留下的录音。",
+      "thread_ids": [
+        "t2"
+      ],
+      "clue_uses": [
+        {
+          "clue_id": "c1",
+          "presentation": "17 号储物柜",
+          "mode": "narration",
+          "speaker_id": "",
+          "expected_interpretation": "数字与第一章的钥匙牌对上"
+        }
+      ]
+    }
+  },
+  "clues": {
+    "c1": {
+      "id": "c1",
+      "title": "钥匙牌上的数字",
+      "author_truth": "17 号储物柜里是父亲留下的录音",
+      "intention": "让读者以为数字是门牌",
+      "resolution": {
+        "intent": "explain",
+        "node_ids": [
+          "n24"
+        ]
+      },
+      "provenance": "author_request"
+    }
+  },
+  "threads": {
+    "t1": {
+      "id": "t1",
+      "title": "车站与旧宅"
+    },
+    "t2": {
+      "id": "t2",
+      "title": "档案室"
+    }
+  },
+  "constraints": {
+    "k1": {
+      "id": "k1",
+      "text": "结局必须回应第一章的钥匙",
+      "strength": "required",
+      "scope": {
+        "kind": "book",
+        "target_id": ""
+      },
+      "source_message_id": "",
+      "origin": "author_request",
+      "revision": "rev_c1"
+    }
+  },
+  "edges": {
+    "e02": {
+      "id": "e02",
+      "from_id": "n01",
+      "to_id": "n02",
+      "kind": "next",
+      "reason": ""
+    },
+    "e03": {
+      "id": "e03",
+      "from_id": "n02",
+      "to_id": "n03",
+      "kind": "next",
+      "reason": ""
+    },
+    "e04": {
+      "id": "e04",
+      "from_id": "n03",
+      "to_id": "n04",
+      "kind": "next",
+      "reason": ""
+    },
+    "e05": {
+      "id": "e05",
+      "from_id": "n04",
+      "to_id": "n05",
+      "kind": "next",
+      "reason": ""
+    },
+    "e06": {
+      "id": "e06",
+      "from_id": "n05",
+      "to_id": "n06",
+      "kind": "next",
+      "reason": ""
+    },
+    "e07": {
+      "id": "e07",
+      "from_id": "n06",
+      "to_id": "n07",
+      "kind": "next",
+      "reason": ""
+    },
+    "e08": {
+      "id": "e08",
+      "from_id": "n07",
+      "to_id": "n08",
+      "kind": "next",
+      "reason": ""
+    },
+    "e09": {
+      "id": "e09",
+      "from_id": "n08",
+      "to_id": "n09",
+      "kind": "next",
+      "reason": ""
+    },
+    "e10": {
+      "id": "e10",
+      "from_id": "n09",
+      "to_id": "n10",
+      "kind": "next",
+      "reason": ""
+    },
+    "e11": {
+      "id": "e11",
+      "from_id": "n10",
+      "to_id": "n11",
+      "kind": "next",
+      "reason": ""
+    },
+    "e12": {
+      "id": "e12",
+      "from_id": "n11",
+      "to_id": "n12",
+      "kind": "next",
+      "reason": ""
+    },
+    "e13": {
+      "id": "e13",
+      "from_id": "n12",
+      "to_id": "n13",
+      "kind": "next",
+      "reason": ""
+    },
+    "e14": {
+      "id": "e14",
+      "from_id": "n13",
+      "to_id": "n14",
+      "kind": "next",
+      "reason": ""
+    },
+    "e15": {
+      "id": "e15",
+      "from_id": "n14",
+      "to_id": "n15",
+      "kind": "next",
+      "reason": ""
+    },
+    "e16": {
+      "id": "e16",
+      "from_id": "n15",
+      "to_id": "n16",
+      "kind": "next",
+      "reason": ""
+    },
+    "e17": {
+      "id": "e17",
+      "from_id": "n16",
+      "to_id": "n17",
+      "kind": "next",
+      "reason": ""
+    },
+    "e18": {
+      "id": "e18",
+      "from_id": "n17",
+      "to_id": "n18",
+      "kind": "next",
+      "reason": ""
+    },
+    "e19": {
+      "id": "e19",
+      "from_id": "n18",
+      "to_id": "n19",
+      "kind": "next",
+      "reason": ""
+    },
+    "e20": {
+      "id": "e20",
+      "from_id": "n19",
+      "to_id": "n20",
+      "kind": "next",
+      "reason": ""
+    },
+    "e21": {
+      "id": "e21",
+      "from_id": "n20",
+      "to_id": "n21",
+      "kind": "next",
+      "reason": ""
+    },
+    "e22": {
+      "id": "e22",
+      "from_id": "n21",
+      "to_id": "n22",
+      "kind": "next",
+      "reason": ""
+    },
+    "e23": {
+      "id": "e23",
+      "from_id": "n22",
+      "to_id": "n23",
+      "kind": "next",
+      "reason": ""
+    },
+    "e24": {
+      "id": "e24",
+      "from_id": "n23",
+      "to_id": "n24",
+      "kind": "next",
+      "reason": ""
+    },
+    "e_answer": {
+      "id": "e_answer",
+      "from_id": "n24",
+      "to_id": "n01",
+      "kind": "answer",
+      "reason": "结局解释第一章那把钥匙的来历"
+    }
+  },
+  "event_times": [
+    {
+      "before_node_id": "n01",
+      "after_node_id": "n12"
+    },
+    {
+      "before_node_id": "n12",
+      "after_node_id": "n24"
+    }
+  ]
+}

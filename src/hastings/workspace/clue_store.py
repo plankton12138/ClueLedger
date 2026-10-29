@@ -4,20 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import tempfile
-import threading
-import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager, suppress
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import BinaryIO, cast
+from typing import cast
 from uuid import uuid4
 
 from pydantic import JsonValue, ValidationError
 
+from hastings.workspace.atomic_io import atomic_write_json, locked
 from hastings.workspace.clue_models import (
     ClueContent,
     ClueContribution,
@@ -129,7 +125,7 @@ class ClueLedgerStore:
             }
         )
         try:
-            with _locked(self.lock_file):
+            with locked(self.lock_file):
                 snapshot = self.read()
                 current = snapshot.ledger
                 if current is not None:
@@ -160,7 +156,9 @@ class ClueLedgerStore:
                 candidate = ClueLedger.model_validate(candidate.model_dump(mode="json"))
                 if preflight is not None:
                     preflight()
-                _atomic_json(self.file, candidate.model_dump(mode="json"))
+                atomic_write_json(
+                    self.file, candidate.model_dump(mode="json"), prefix=".clue-ledger-"
+                )
                 return dict(result)
         except OSError as exc:
             raise WorkspaceError(
@@ -321,83 +319,3 @@ class ClueLedgerStore:
 
 def _conflict(why: str, fix: str) -> WorkspaceError:
     return WorkspaceError(code="CLUE_REVISION_CONFLICT", where="clues.commit", why=why, fix=fix)
-
-
-def _atomic_json(path: Path, value: object) -> None:
-    _atomic_bytes(
-        path, (json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode()
-    )
-
-
-def _atomic_bytes(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=".clue-ledger-", suffix=".tmp")
-    try:
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        _replace(temporary, path)
-    finally:
-        with suppress(FileNotFoundError):
-            os.unlink(temporary)
-
-
-_THREAD_LOCKS: dict[str, threading.Lock] = {}
-_LOCKS_GUARD = threading.Lock()
-
-
-@contextmanager
-def _locked(path: Path) -> Iterator[None]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with _LOCKS_GUARD:
-        lock = _THREAD_LOCKS.setdefault(str(path.resolve()), threading.Lock())
-    with lock, _open_lock(path) as stream:
-        if stream.seek(0, os.SEEK_END) == 0:
-            stream.write(b"\0")
-            stream.flush()
-        _file_lock(stream, unlock=False)
-        try:
-            yield
-        finally:
-            _file_lock(stream, unlock=True)
-
-
-def _open_lock(path: Path) -> BinaryIO:
-    """打开锁文件；Windows 上新建或查毒扫描期间会短暂占用，稍后重试同一操作。"""
-    deadline = time.monotonic() + 2.0
-    while True:
-        try:
-            return path.open("a+b")
-        except PermissionError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(0.05)
-
-
-def _replace(source: str, target: Path) -> None:
-    """原子替换；另一进程正在读旧文件时 Windows 会短暂拒绝，稍后重试同一操作。"""
-    deadline = time.monotonic() + 2.0
-    while True:
-        try:
-            os.replace(source, target)
-            return
-        except PermissionError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(0.02)
-
-
-def _file_lock(stream: BinaryIO, *, unlock: bool) -> None:
-    if os.name == "nt":
-        import msvcrt
-
-        stream.seek(0)
-        msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK if unlock else msvcrt.LK_LOCK, 1)
-    else:
-        import fcntl
-
-        fcntl.flock(  # type: ignore[attr-defined]
-            stream.fileno(),
-            fcntl.LOCK_UN if unlock else fcntl.LOCK_EX,  # type: ignore[attr-defined]
-        )

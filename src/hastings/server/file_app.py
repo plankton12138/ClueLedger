@@ -36,9 +36,12 @@ from hastings.workspace.api import (
 from hastings.workspace.clue_api import create_clue_router
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.ideas_api import create_ideas_router
+from hastings.workspace.operation_api import create_operation_router
+from hastings.workspace.operations import OperationStore
 from hastings.workspace.run_registry import RunRegistry
-from hastings.workspace.service import ProviderFactory
+from hastings.workspace.service import ProviderFactory, TurnService
 from hastings.workspace.state import RecentWorkspaces
+from hastings.workspace.story_api import create_story_router
 
 __all__ = [
     "HealthResponse",
@@ -92,16 +95,24 @@ def create_workspace_app(
     # 写作轮次与装配接口共享同一张占用表：运行中不接受本作品的装卸。
     run_registry = RunRegistry()
     app.state.run_registry = run_registry
+    # 统一操作放在应用级状态目录：控制接口按操作标识定位，不需要先知道是哪个作品。
+    operations = OperationStore(workspaces.root)
+    app.state.operations = operations
+    services: dict[str, TurnService] = {}
     app.include_router(
         create_file_workspace_router(
             workspaces,
             provider_factory,
             library=library,
             run_registry=run_registry,
+            services=services,
+            operations=operations,
         )
     )
+    app.include_router(create_operation_router(workspaces, operations, services))
     app.include_router(create_ideas_router(workspaces))
     app.include_router(create_clue_router(workspaces, library))
+    app.include_router(create_story_router(workspaces))
     if model_service is not None:
         app.include_router(create_model_router(model_service))
     if library is not None:

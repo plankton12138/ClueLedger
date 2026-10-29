@@ -126,7 +126,10 @@ def test_assembly_mutations_are_rejected_while_a_turn_is_running(tmp_path: Path)
         assert response.json()["error"]["code"] == "ASSEMBLY_BUSY_CONFLICT"
         assert client.get(f"/api/file-workspaces/{workspace_id}/assembly").json()["bindings"]
 
-        client.post(f"/api/file-workspaces/{workspace_id}/turns/{accepted['turn_id']}/stop")
+        client.post(
+            f"/api/operations/{accepted['operation_id']}/pause",
+            json={"request_key": "pause-1"},
+        )
         _wait_for(
             lambda: any(
                 event["type"] == "run_finished"
@@ -182,6 +185,9 @@ def test_turn_keeps_the_assembly_frozen_at_acceptance(tmp_path: Path) -> None:
             before.bindings[0].module.revision_id
         )
 
-        client.post(f"/api/file-workspaces/{workspace_id}/turns/{accepted['turn_id']}/stop")
+        client.post(
+            f"/api/operations/{accepted['operation_id']}/pause",
+            json={"request_key": "pause-1"},
+        )
     finally:
         client.__exit__(None, None, None)

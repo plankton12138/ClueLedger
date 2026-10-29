@@ -181,12 +181,22 @@ def _join(*parts: str) -> str:
     return " · ".join(part for part in parts if part)
 
 
+#: 旧日志里资料任务的域名称；这些任务已经不再产生，历史记录按当时的名字显示。
+_LEGACY_DOMAIN_LABEL: dict[str, str] = {
+    "story_index": "章节索引与事件",
+    "chapter_index": "章节概览",
+    "disclosure": "身份披露",
+    "roster": "人物状态",
+    "timeline": "时间线",
+    "clues": "线索与伏笔",
+    "glossary": "名词表",
+}
+
+
 def _domain_label(domain: str) -> str:
     if not domain:
         return "资料"
-    from hastings.workspace.story_materials import DOMAIN_LABEL
-
-    return DOMAIN_LABEL.get(domain, "资料")
+    return _LEGACY_DOMAIN_LABEL.get(domain, "资料")
 
 
 def _status(kind: str, event: Mapping[str, Any]) -> str:

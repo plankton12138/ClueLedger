@@ -108,9 +108,8 @@ test.beforeAll(async () => {
 async function open(page: Page) {
   await page.goto("/");
   await expect(page.getByLabel("选择作品目录")).toHaveValue(bindingId, { timeout: 10_000 });
-  const legacy = page.locator(".workspace-legacy-materials");
-  await expect(legacy).toBeVisible();
-  if (!await legacy.evaluate(el => (el as HTMLDetailsElement).open)) await legacy.locator("summary").click();
+  // 设定与人物直接列在目录里，不再折进「原有资料」。
+  await expect(page.getByRole("heading", { name: "设定与人物", exact: true })).toBeVisible();
 }
 
 /** 对话栏根节点：以「选择对话」为内部锚点，不依赖面板的标签结构。 */
@@ -131,11 +130,11 @@ async function dragHandle(page: Page, name: string, deltaX: number) {
   await page.mouse.up();
 }
 
-test("目录显示章节与模块，已有设定可从原有资料打开", async ({ page }) => {
+test("目录显示章节、模块与设定人物，已有设定可直接打开", async ({ page }) => {
   await open(page);
   // 目录行与行内的「加入对话」是两个按钮：按行定位，避免名字里带章名时命中两个。
   await expect(page.locator(".toc-row").filter({ hasText: "雨夜" })).toBeVisible();
-  await expect(page.locator("summary").filter({ hasText: "原有资料" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "设定与人物", exact: true })).toBeVisible();
   for (const title of ["林远", "线索", "真相"]) {
     await expect(page.getByRole("button", { name: title, exact: true })).toBeVisible();
   }
@@ -391,21 +390,6 @@ test("平整稿纸可滚动阅读，不绘制干扰正文的横线", async ({ pa
   });
   const after = (await lined.boundingBox())!.y;
   expect(Math.round(before - after)).toBeGreaterThan(120);
-});
-
-test("故事资料页叠加已装模块的计划，并可按模块筛选", async ({ page }) => {
-  await open(page);
-  await page.goto(`/#/workspaces/${bindingId}/materials/legacy-story`);
-  await expect(
-    page.getByRole("heading", { name: /计划叠加/ }),
-  ).toBeVisible();
-  const materials=page.locator(".materials-page");
-  await expect(materials.getByText("第9章误导")).toBeVisible();
-
-  await page.getByRole("button", { name: "主线时间", exact: true }).click();
-  await expect(materials.getByText("第9章误导")).toHaveCount(0);
-  await page.getByRole("button", { name: "主线时间", exact: true }).click();
-  await expect(materials.getByText("第9章误导")).toBeVisible();
 });
 
 test("灵感面板：记录、删除撤销恢复并带到对话", async ({ page }) => {

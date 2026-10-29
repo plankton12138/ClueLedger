@@ -35,7 +35,7 @@ test("写作者从线索详情走完核对、定位、带入对话，刷新后�
   await expect(report).toContainText("林岚提前接触过遗书原件");
   await report.getByRole("button", { name: "定位原文", exact: true }).click();
   await expect(page.locator(".writing-paper mark[data-source-target]")).toHaveText(QUOTE);
-  await page.getByRole("button", { name: "关闭定位", exact: true }).click();
+  await page.getByRole("button", { name: "返回原处", exact: true }).click();
 
   await pane.getByRole("button", { name: "带入对话", exact: true }).click();
   const chips = page.locator('[aria-label="引用线索"]');

@@ -93,7 +93,6 @@ from hastings.workspace.glossary import (
     publish_terms,
 )
 from hastings.workspace.ideas import IdeaStore
-from hastings.workspace.material_tasks import publish_material_result
 from hastings.workspace.materials import (
     LIST_RESULT_CHARS,
     READ_MAX_CHARS,
@@ -126,7 +125,8 @@ from hastings.workspace.review import (
     validate_review_targets,
 )
 from hastings.workspace.service import WriteSession
-from hastings.workspace.story_materials import DOMAIN_LABEL, CoverageStore
+from hastings.workspace.story_context import StoryContextSnapshot
+from hastings.workspace.story_tools import StoryToolScope, build_story_tools
 from hastings.workspace.task_scope import (
     ClueDesignGrant,
     ModuleAction,
@@ -164,7 +164,7 @@ __all__ = [
 ]
 
 #: 工具集合：普通写作、索引任务、只读检查，或只读展开一条灵感。
-ToolMode = Literal["write", "index", "review", "state", "materials", "idea"]
+ToolMode = Literal["write", "index", "review", "state", "idea"]
 
 
 #: 单轮最多的模型回合数；到顶就结束并如实记录，不无限循环。
@@ -218,6 +218,13 @@ class RunContext:
     assembly_digest: str = ""
     #: 受理时冻结的材料身份；提问恢复时据此承接原请求。
     request_context: Mapping[str, Any] = field(default_factory=dict)
+    #: 受理时冻结的构思方案；为空表示这一轮不使用结构工具。
+    story: StoryContextSnapshot | None = None
+    #: 结构提交前的代次资格检查；由服务层注入。
+    story_guard: Callable[[], None] | None = None
+    #: 本轮统一操作的标识与代次：结构变更的提交决定要带上它们。
+    operation_id: str = ""
+    generation: int = 0
     #: 本轮已经向作者提问：写入被阻止，收尾状态为 needs_input。
     pending_question: dict[str, Any] | None = None
 
@@ -354,7 +361,6 @@ def build_tools(
     timeline_store: TimelineStore | None = None,
     clue_store: ClueStore | None = None,
     material_scope: Mapping[str, object] | None = None,
-    coverage_store: CoverageStore | None = None,
 ) -> list[AgentTool]:
     """本轮可用的文件工具；Git 提交与撤销不暴露给模型。
 
@@ -1577,7 +1583,7 @@ def build_tools(
                         "不要按姓名拼接旧路径重复查询。"
                     ),
                     "next_tools": ["query_records", "read_record"]
-                    if run.library is not None and mode in ("write", "review", "materials")
+                    if run.library is not None and mode in ("write", "review")
                     else ["list_files", "read_file"],
                 }
             )
@@ -1701,7 +1707,7 @@ def build_tools(
         )
     )
 
-    if run.library is not None and mode in ("write", "review", "materials"):
+    if run.library is not None and mode in ("write", "review"):
 
         async def list_modules(
             tool_call_id: str,
@@ -1743,9 +1749,6 @@ def build_tools(
             include_plans = arguments.get("include_plans", True)
             if not isinstance(include_plans, bool):
                 raise _input_error("include_plans", "必须是布尔值")
-            if mode == "materials":
-                # 整理任务只能核对正文观察，不能把作者计划当成已发生的事实。
-                include_plans = False
             query = MaterialQuery(
                 kinds=_string_list_argument(arguments, "kinds"),
                 module_ids=_string_list_argument(arguments, "module_ids"),
@@ -3621,106 +3624,6 @@ def build_tools(
                 execution_mode="sequential",
             ),
         ]
-    if mode == "materials":
-        # 资料整理：只读目录、搜索、读取，外加本域唯一的结果提交工具；没有作品写工具。
-        readonly = {
-            "list_files",
-            "read_file",
-            "search_text",
-            "list_modules",
-            "query_records",
-            "read_record",
-        }
-        scope = material_scope or {}
-        domain = str(scope.get("domain") or "")
-
-        async def publish_material(
-            tool_call_id: str,
-            arguments: Mapping[str, JSONValue],
-            signal: ToolCancellationToken | None = None,
-            on_update: ToolUpdateCallback | None = None,
-        ) -> AgentToolResult:
-            del tool_call_id, on_update
-            if coverage_store is None:
-                raise _input_error("coverage_store", "本轮没有开启资料保存")
-            raw_records = arguments.get("records")
-            if not isinstance(raw_records, list):
-                raise _input_error("records", "必须是数组；空结果用 []")
-            if any(not isinstance(item, dict) for item in raw_records):
-                raise _input_error("records", "每条记录必须是对象")
-
-            def check_running() -> None:
-                if signal is not None and signal.is_cancelled():
-                    raise WorkspaceError(
-                        code="CLUE_STOPPED_CONFLICT",
-                        where="clues.publish",
-                        why="任务已停止，不能发布新的线索记录",
-                        fix="保留已发布结果；需要继续时重新发起整理",
-                    )
-
-            result = publish_material_result(
-                workspace=workspace,
-                root=coverage_store.root,
-                scope=scope,
-                ledger=run.materials,
-                turn_id=run.turn_id,
-                domain=_text_argument(arguments, "domain"),
-                path=_text_argument(arguments, "path"),
-                entity_path=_optional_text_argument(arguments, "entity") or "",
-                outcome=_text_argument(arguments, "outcome"),
-                note=_optional_text_argument(arguments, "note") or "",
-                records=[item for item in raw_records if isinstance(item, dict)],
-                digest=_text_argument(arguments, "digest"),
-                before_commit=check_running,
-            )
-            run.record("material_target_published", dict(result))
-            return _json(result)
-
-        return [
-            *[tool for tool in tools if tool.name in readonly],
-            AgentTool(
-                name="publish_material_result",
-                label="提交资料结果",
-                description=(
-                    f"提交一个目标的「{DOMAIN_LABEL.get(domain, domain)}」整理结果。"
-                    "有发现用 found 并给出条目；读完确认没有相关发现用 empty；"
-                    "信息不足用 insufficient。空结果也要写一句说明。"
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "domain": {"type": "string", "enum": [domain]},
-                        "path": {
-                            "type": "string",
-                            "description": "本次任务列出的正文章节路径",
-                        },
-                        "digest": {"type": "string", "description": "read_file 得到的 digest"},
-                        "entity": {
-                            "type": "string",
-                            "description": "人物域要填本次选择的小传路径；其他域不要填",
-                        },
-                        "outcome": {
-                            "type": "string",
-                            "enum": ["found", "empty", "insufficient"],
-                        },
-                        "note": {"type": "string", "description": "空结果或信息不足的说明"},
-                        "records": {
-                            "type": "array",
-                            "items": _MATERIAL_RECORD_SCHEMA[domain],
-                        },
-                    },
-                    "required": ["domain", "path", "digest", "outcome", "records"],
-                    "additionalProperties": False,
-                },
-                execute_fn=publish_material,
-                prompt_guidelines=(
-                    "先读完目标当前全文再提交；每条记录都要给原文证据。",
-                    "没有提交结果的目标不算完成；不要用回复代替结果提交。",
-                    "空结果也要写说明，并确认目标已完整读取。",
-                ),
-                execution_mode="sequential",
-            ),
-        ]
     if mode == "write":
 
         async def link_clue_design_tool(
@@ -4111,6 +4014,7 @@ def build_turn_assembly(
     selected_path: str | None = None,
     history_facts: str = "",
     materials: str = "",
+    story: str = "",
     ideas: str = "",
     modules: str = "",
     index_notes: str = "",
@@ -4135,6 +4039,7 @@ def build_turn_assembly(
         selected_path=selected_path,
         history_facts=history_facts,
         materials=materials,
+        story=story,
         ideas=ideas,
         modules=modules,
         index_notes=index_notes,
@@ -4182,7 +4087,6 @@ def prepare_request_inputs(
     timeline_store: TimelineStore | None = None,
     clue_store: ClueStore | None = None,
     material_scope: Mapping[str, object] | None = None,
-    coverage_store: CoverageStore | None = None,
     assembly: AssembledContext | None = None,
 ) -> RequestInputs:
     """构造本轮的系统提示与工具定义，不执行模型、不写会话事件。
@@ -4206,9 +4110,7 @@ def prepare_request_inputs(
         timeline_store=timeline_store,
         clue_store=clue_store,
     )
-    return RequestInputs(
-        system=resolved.text,
-        tools=build_tools(
+    tools = build_tools(
             workspace,
             run,
             mode=mode,
@@ -4221,11 +4123,29 @@ def prepare_request_inputs(
             glossary_store=glossary_store,
             roster_store=roster_store,
             timeline_store=timeline_store,
-            clue_store=clue_store,
-            material_scope=material_scope,
-            coverage_store=coverage_store,
-        ),
+        clue_store=clue_store,
+        material_scope=material_scope,
     )
+    if run.story is not None and run.state_root is not None:
+        # 结构工具跟着这一轮冻结的方案走：不传方案就不开放，避免模型改到别的备选。
+        tools.extend(
+            build_story_tools(
+                StoryToolScope(
+                    state_root=run.state_root,
+                    frozen=run.story,
+                    writable=(
+                        mode == "write"
+                        and run.story.purpose in ("design", "revise", "write")
+                    ),
+                    guard=run.story_guard,
+                    record=run.record,
+                    author_text=run.current_author_text or "",
+                    operation_id=run.operation_id,
+                    generation=run.generation,
+                )
+            )
+        )
+    return RequestInputs(system=resolved.text, tools=tools)
 
 
 def build_harness(
@@ -4254,7 +4174,6 @@ def build_harness(
     timeline_store: TimelineStore | None = None,
     clue_store: ClueStore | None = None,
     material_scope: Mapping[str, object] | None = None,
-    coverage_store: CoverageStore | None = None,
     assembly: AssembledContext | None = None,
 ) -> AgentHarness:
     """单个写作 Agent：系统提示 + 文件工具 + 回合上限。
@@ -4284,7 +4203,6 @@ def build_harness(
         timeline_store=timeline_store,
         clue_store=clue_store,
         material_scope=material_scope,
-        coverage_store=coverage_store,
         assembly=assembly,
     )
     return AgentHarness(
@@ -4306,7 +4224,6 @@ _PROFILE_BY_MODE: dict[ToolMode, Profile] = {
     "state": "extract",
     "review": "review",
     # 资料整理只装任务要求、目录与本次范围；不装设定集、谜底与作者计划。
-    "materials": "materials",
     # 展开灵感：只装任务要求与那条灵感，不注入文风、设定与旧摘要。
     "idea": "idea",
 }
@@ -4649,165 +4566,6 @@ _REF_SCHEMA: dict[str, Any] = {
     "description": "库、模块、修订、条目四段 ID；不知道就省略，不要只写名字",
 }
 
-#: 资料整理每个域的结果条目结构；一次任务只装配对应域的那一份。
-_MATERIAL_RECORD_SCHEMA: dict[str, dict[str, Any]] = {
-    "story_index": {
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string", "description": "这一章发生了什么，≤500 字符"},
-            "events": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string", "description": "这一条观察，≤300 字符"},
-                        "mode": {
-                            "type": "string",
-                            "enum": [
-                                "narration",
-                                "testimony",
-                                "recollection",
-                                "hypothesis",
-                                "dream",
-                                "unknown",
-                            ],
-                            "description": "表达方式；回忆与证词不等于事实",
-                        },
-                        "story_time": {
-                            "type": "object",
-                            "properties": {
-                                "label": {"type": "string", "description": "原文的时间说法"},
-                                "normalized": {
-                                    "type": "string",
-                                    "description": "只有原文明确对应日期时才写 YYYY-MM-DD",
-                                },
-                                "before": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "本事件在哪些观察之前",
-                                },
-                                "after": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "本事件在哪些观察之后",
-                                },
-                            },
-                            "additionalProperties": False,
-                        },
-                        "speaker": _REF_SCHEMA,
-                        "related": {"type": "array", "items": _REF_SCHEMA},
-                        "author_event": _REF_SCHEMA,
-                        "evidence": {"type": "array", "items": _EVIDENCE_SCHEMA},
-                    },
-                    "required": ["text", "mode", "evidence"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-        "required": ["summary", "events"],
-        "additionalProperties": False,
-    },
-    "chapter_index": {
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string", "description": "这一章发生了什么，≤500 字符"},
-            "evidence": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "index": {"type": "integer", "minimum": 1},
-                        "start": {"type": "integer", "minimum": 0},
-                        "end": {"type": "integer", "minimum": 0},
-                        "quote": {"type": "string"},
-                    },
-                    "required": ["index", "start", "end", "quote"],
-                    "additionalProperties": False,
-                },
-            },
-            "events": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
-            "characters": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
-            "places": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
-            "clues": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
-        },
-        "required": ["summary", "evidence"],
-        "additionalProperties": False,
-    },
-    "timeline": {
-        "type": "object",
-        "properties": {
-            "when": {"type": "string", "description": "原文里的时间说法"},
-            "span": {"type": "string", "description": "这一章跨了多久"},
-            "location": {"type": "string", "description": "主要地点"},
-            "evidence": _EVIDENCE_SCHEMA,
-        },
-        "required": ["when", "evidence"],
-        "additionalProperties": False,
-    },
-    "clues": {
-        "type": "object",
-        "properties": {
-            "clue_id": {"type": "string", "description": "更新已有线索时复用任务中列出的 ID"},
-            "new_identity": {"type": "boolean", "description": "明确另建同名线索，不自动合并"},
-            "mention_evidence": _EVIDENCE_SCHEMA,
-            "mode": {
-                "type": "string",
-                "enum": [
-                    "narration",
-                    "testimony",
-                    "recollection",
-                    "hypothesis",
-                    "dream",
-                    "unknown",
-                ],
-            },
-            "clue": {"type": "string", "description": "读者能观察到的事实，不是解释"},
-            "planted_chapter": {"type": "integer", "minimum": 1},
-            "due_chapter": {"type": "integer", "minimum": 1},
-            "status": {"type": "string", "enum": ["open", "resolved", "dropped"]},
-            "supports": {"type": "string"},
-            "resolution_chapter": {"type": "integer", "minimum": 1},
-            "evidence": _EVIDENCE_SCHEMA,
-            "resolution_evidence": _EVIDENCE_SCHEMA,
-        },
-        "required": ["clue", "planted_chapter", "status", "evidence"],
-        "additionalProperties": False,
-    },
-    "glossary": {
-        "type": "object",
-        "properties": {
-            "term": {"type": "string"},
-            "kind": {"type": "string", "enum": ["person", "place", "org", "item"]},
-            "aliases": {"type": "array", "items": {"type": "string"}},
-            "first_chapter": {"type": "integer", "minimum": 1},
-            "evidence": _EVIDENCE_SCHEMA,
-        },
-        "required": ["term", "kind", "first_chapter", "evidence"],
-        "additionalProperties": False,
-    },
-    "disclosure": {
-        "type": "object",
-        "properties": {
-            "fact": {"type": "string", "description": "读者知道了什么"},
-            "chapter": {"type": "integer", "minimum": 1},
-            "evidence": _EVIDENCE_SCHEMA,
-        },
-        "required": ["fact", "chapter", "evidence"],
-        "additionalProperties": False,
-    },
-    "roster": {
-        "type": "object",
-        "properties": {
-            "chapter": {"type": "integer", "minimum": 1},
-            "location": {"type": "string"},
-            "alive": {"type": "boolean"},
-            "stance": {"type": "string"},
-            "evidence": _EVIDENCE_SCHEMA,
-        },
-        "required": ["chapter", "alive", "evidence"],
-        "additionalProperties": False,
-    },
-}
 
 
 def _index_evidence(value: JSONValue) -> tuple[IndexEvidence, ...]:

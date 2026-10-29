@@ -116,6 +116,7 @@ class ChatStreamBridge:
         clock: Callable[[], float] = time.monotonic,
         flush_interval: float = FLUSH_INTERVAL,
         flush_chars: int = FLUSH_CHARS,
+        guard: Callable[[], bool] | None = None,
     ) -> None:
         self.store = store
         self.conversation_id = conversation_id
@@ -123,12 +124,17 @@ class ChatStreamBridge:
         self._clock = clock
         self.flush_interval = flush_interval
         self.flush_chars = flush_chars
+        #: 这一代还能不能发布内容；暂停之后返回假，晚到的增量与完整文本都不再落地。
+        self.guard = guard
         self._buffer: list[dict[str, Any]] = []
         self._buffered_chars = 0
         self._pending_since: float | None = None
         self._response: _Response | None = None
         self._phase = ""
         self.parent_operation_id: str | None = None
+
+    def _eligible(self) -> bool:
+        return self.guard is None or self.guard()
 
     # -- 发布 ---------------------------------------------------------------
 
@@ -187,8 +193,8 @@ class ChatStreamBridge:
         return response.message_id
 
     def append(self, kind: BlockKind, content_index: int, delta: str) -> None:
-        """追加一段真实增量；空片段不生成事件。"""
-        if not delta:
+        """追加一段真实增量；空片段与失效代次都不生成事件。"""
+        if not delta or not self._eligible():
             return
         response = self._ensure_response()
         block = self._block_at(response, kind, content_index, create=True)
@@ -224,6 +230,10 @@ class ChatStreamBridge:
         self, message: AssistantMessage, *, completion: Completion | None = None
     ) -> Completion:
         """响应结束：按完整消息校对块，写出正式公开文本，封口本次响应。"""
+        if not self._eligible():
+            # 暂停之后到达的完整消息不能把晚出的正文补进来：只封口已经展示的内容。
+            self.close_open("stopped")
+            return "stopped"
         response = self._ensure_response()
         resolved = completion or self.completion_of(message)
         covered: set[str] = set()
@@ -330,7 +340,8 @@ class ChatStreamBridge:
         if block.finished:
             return
         block.finished = True
-        block.text = text
+        # 失效代次只保留已经被接受的增量，不拿完整文本覆盖回来。
+        block.text = text if self._eligible() else block.text
         duration = self._elapsed_ms(block.started_at)
         self._push(block.to_event(response.message_id, self.turn_id, text, completion, duration))
 

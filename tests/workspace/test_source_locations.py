@@ -20,13 +20,13 @@ from hastings.workspace.clue_models import (
     FileSource,
     ModuleSource,
 )
+from hastings.workspace.clue_views import clue_detail
 from hastings.workspace.clues import ClueStore, publish_clues
 from hastings.workspace.disclosure import ObservedEvidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.source_locations import evidence_records, resolve_source_location
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
-from hastings.workspace.story_materials import author_view
 
 FIRST = "正文/0001 遗书.md"
 SECOND = "正文/0002 照片.md"
@@ -55,10 +55,16 @@ def book(tmp_path):
     return workspace, store, raw
 
 
+def only_clue_id(store) -> str:
+    ledger = store.ledger.read().ledger
+    assert ledger is not None and ledger.clues
+    return next(iter(ledger.clues))
+
+
 def source_id(workspace, store, as_of=2):
-    return author_view(workspace, store.root, "clues", as_of_chapter=as_of)["entries"][0][
-        "evidence"
-    ][0]["evidence_id"]
+    return clue_detail(
+        workspace, store.root, only_clue_id(store), as_of_chapter=as_of
+    ).evidence[0].evidence_id
 
 
 def test_raw_byte_digest_and_normalized_codepoints_target_second_quote(book):
@@ -89,12 +95,16 @@ def test_future_resolution_not_exposed_even_with_known_identifier(book):
         ),
     )
     publish_clues(workspace, store, (entry,), source_chapter=1)
-    late = author_view(workspace, store.root, "clues", as_of_chapter=2)
-    early = author_view(workspace, store.root, "clues", as_of_chapter=1)
-    assert len(late["entries"][0]["evidence"]) == 2
-    assert len(early["entries"][0]["evidence"]) == 1
-    assert "公开照片也是来源" not in json.dumps(early, ensure_ascii=False)
-    identifier = late["entries"][0]["evidence"][1]["evidence_id"]
+    identifier = only_clue_id(store)
+    late = clue_detail(workspace, store.root, identifier, as_of_chapter=2)
+    early = clue_detail(workspace, store.root, identifier, as_of_chapter=1)
+    assert len(late.evidence) == 2
+    assert len(early.evidence) == 1
+    # 后章才有的回收依据不能出现在前面的详情里。
+    assert "公开照片也是来源" not in json.dumps(
+        early.model_dump(mode="json"), ensure_ascii=False
+    )
+    identifier = late.evidence[1].evidence_id
     with pytest.raises(WorkspaceError, match="CLUE_SOURCE_NOT_FOUND"):
         resolve_source_location(workspace, store.root, identifier, as_of_chapter=1)
 

@@ -28,7 +28,7 @@ const PROFILE_LABEL: Record<TurnInjection["profile"], string> = {
   writer: "写作",
   extract: "建索引",
   review: "检查",
-  materials: "资料整理",
+  idea: "展开灵感",
 };
 
 const SKIP_LABEL: Record<string, string> = {

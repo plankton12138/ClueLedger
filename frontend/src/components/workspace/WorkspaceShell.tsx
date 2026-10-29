@@ -3,11 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { useConversationsStore } from "../../state/conversations";
 import { useModuleLibraryStore } from "../../state/moduleLibrary";
 import { useModelsStore } from "../../state/models";
-import { navigate, pageHash, parseHash, useWorkspacePage, type WorkspacePage } from "../../state/navigation";
+import { navigate, parseHash, useWorkspacePage, type WorkspacePage } from "../../state/navigation";
 import { useIdeasSurfaceStore } from "../../state/ideasSurface";
 import { usePagePositions } from "../../state/pagePositions";
 import { useWorkspaceStore } from "../../state/workspace";
-import StoryMaterialsPage from "../materials/StoryMaterialsPage";
 import IdeasSurface from "../ideas/IdeasSurface";
 import LibraryRoute from "../library/LibraryRoute";
 import ModelSettingsDialog from "../models/ModelSettingsDialog";
@@ -22,13 +21,11 @@ import { sourceTaskChapter, useSourceLocationStore } from "../../state/sourceLoc
 
 export default function WorkspaceShell() {
   useUnsavedChanges();
-  const { bindings, currentId, ready, error, notice, init, selectWorkspace, refreshAll, openPath, openDrawer, dismissError, dismissNotice } = useWorkspaceStore();
+  const { bindings, currentId, ready, error, notice, init, selectWorkspace, refreshAll, dismissError, dismissNotice } = useWorkspaceStore();
   const page = useWorkspacePage();
-  const positions = usePagePositions(state => currentId ? state.pages[currentId] : undefined);
   const [directory, setDirectory] = useState(false);
   const returnPage = useRef<WorkspacePage | null>(null);
   const library = page?.kind === "library" ? page : null;
-  const materials = page?.kind === "materials" ? page : null;
   const contextId = library?.workspaceContextId && bindings.some(item => item.id === library.workspaceContextId && item.exists) ? library.workspaceContextId : null;
   const initModels = useModelsStore(state => state.init);
   useEffect(() => {
@@ -69,8 +66,7 @@ export default function WorkspaceShell() {
   useEffect(() => {
     const source = useSourceLocationStore.getState();
     if (source.workspaceId && source.workspaceId !== currentId) source.clear();
-    else if (page?.kind === "materials" && source.evidenceId && source.returnPage && pageHash(page) === pageHash(source.returnPage)) void source.back();
-  }, [currentId, page]);
+  }, [currentId]);
   useEffect(() => {
     if (page?.kind !== "ideas" || !ready) return;
     showIdeas({ expanded: true, entryId: page.ideaId ?? null });
@@ -110,24 +106,12 @@ export default function WorkspaceShell() {
     else { useModuleLibraryStore.getState().closeDrawer(); window.location.hash = ""; }
   }
   const writing = !page || page.kind === "writing" || page.kind === "ideas";
-  const rememberedMaterials = materials ?? (positions?.materials?.kind === "materials" ? positions.materials : null);
   return <div className="app-shell">
     <AppHeader page={page} onOpen={() => setDirectory(true)} onSelect={select} />
     {error && <StatusMessage tone="error" action={<Button size="compact" variant="quiet" onClick={dismissError}>知道了</Button>}>{error}</StatusMessage>}
     {notice && <StatusMessage tone="warning" action={<Button size="compact" variant="quiet" onClick={dismissNotice}>知道了</Button>}>{notice}</StatusMessage>}
     <main className="app-content">
       <div className="workspace-page" hidden={!writing}><WritingLayout onOpen={() => setDirectory(true)} /></div>
-      {currentId && rememberedMaterials && <div key={`${currentId}:materials`} className="workspace-page" hidden={!materials}>
-        <StoryMaterialsPage workspaceId={currentId} section={rememberedMaterials.section} chapter={rememberedMaterials.chapter} order={rememberedMaterials.order} entryId={rememberedMaterials.entryId} onNavigate={navigate}
-          onLocateEvidence={evidenceId => {
-            const taskChapter = sourceTaskChapter(currentId) ?? useWorkspaceStore.getState().file?.chapter_number ?? 0;
-            useSourceLocationStore.getState().capture(rememberedMaterials, taskChapter);
-            navigate({ kind: "writing", workspaceId: currentId, sourceId: evidenceId, asOfChapter: rememberedMaterials.chapter ?? undefined, taskChapter });
-          }}
-          onOpenSource={path => { void openPath(path).then(() => navigate({ kind: "writing", workspaceId: currentId })); }}
-          onTakeToChat={path => { useConversationsStore.getState().addReference(path); void openPath(path).then(() => navigate({ kind: "writing", workspaceId: currentId })); }}
-          onOpenActivity={() => void openDrawer()} />
-      </div>}
       <div className="workspace-page" hidden={!library}><LibraryRoute page={library} contextId={contextId} onReturn={leaveLibrary} /></div>
     </main>
     <IdeasSurface />

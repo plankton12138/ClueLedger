@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Literal
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import FileView, Workspace
+from hastings.workspace.story_context import StoryContextSnapshot, StoryRequest
 
 if TYPE_CHECKING:
     from hastings.library.modules import ModuleLibrary
@@ -407,6 +408,8 @@ class ContextRequest:
     state_chapter: int | None = None
     #: 作者在对话里明确引用的线索；只给标识与看到的版本，正文由服务端重建。
     clue_references: tuple[ClueReferenceInput, ...] = ()
+    #: 这一轮要看的方案与位置；为空表示不使用构思结构。
+    story: StoryRequest | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -423,6 +426,8 @@ class ContextSnapshot:
     state_chapter: int | None = None
     ideas: tuple[IdeaReference, ...] = ()
     clues: tuple[ClueReferenceSnapshot, ...] = ()
+    #: 受理时冻结的方案与修订；执行时修订已变则这一轮失败。
+    story: StoryContextSnapshot | None = None
 
     @property
     def reference_paths(self) -> tuple[str, ...]:
@@ -437,6 +442,7 @@ class ContextSnapshot:
             "idea_references": [[item.idea_id, item.revision_id] for item in self.ideas],
             "clue_references": [item.identity() for item in self.clues],
             "observed_digests": dict(sorted(self.observed_digests.items())),
+            **({"story": self.story.to_dict()} if self.story is not None else {}),
         }
 
     def to_dict(self) -> dict[str, object]:
@@ -544,6 +550,19 @@ def freeze_context(
             writer_cutoff=writer_cutoff,
             library=library,
         )
+    story: StoryContextSnapshot | None = None
+    if request.story is not None:
+        if state_root is None:
+            raise WorkspaceError(
+                code="STORY_SCOPE_INVALID",
+                where="materials.accept",
+                why="没有应用状态目录，无法读取构思结构",
+                fix="通过应用接口发起这一轮；直接调用需要给出 state_root",
+            )
+        from hastings.workspace.story_context import freeze_story_context
+        from hastings.workspace.story_store import StoryStore
+
+        story = freeze_story_context(StoryStore(state_root), request.story)
     return ContextSnapshot(
         state_chapter=request.state_chapter,
         selected_path=request.selected_path,
@@ -551,6 +570,7 @@ def freeze_context(
         observed_digests=dict(request.observed_digests),
         ideas=tuple(ideas),
         clues=clues,
+        story=story,
     )
 
 

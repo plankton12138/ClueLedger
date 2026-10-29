@@ -364,8 +364,10 @@ def test_stop_does_not_publish_or_retry(
         },
     )
     assert response.status_code == 202, response.text
-    turn_id = str(response.json()["turn_id"])
-    stopped = client.post(f"/api/file-workspaces/{workspace_id}/turns/{turn_id}/stop")
+    accepted = response.json()
+    stopped = client.post(
+        f"/api/operations/{accepted['operation_id']}/pause", json={"request_key": "pause-1"}
+    )
     assert stopped.status_code == 200
     events = _wait_finished(client, workspace_id, response.json()["conversation_id"])
     assert events[-1]["status"] == "stopped"

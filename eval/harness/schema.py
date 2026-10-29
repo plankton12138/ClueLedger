@@ -166,11 +166,8 @@ class Step(Spec):
     references: list[str] = Field(default_factory=list)
     idea_references: list[str] = Field(default_factory=list)
     state_chapter: int | None = Field(default=None, ge=0)
-    purpose: Literal[
-        "chat", "update_chapter_index", "organize_materials", "expand_idea", "review"
-    ] = "chat"
+    purpose: Literal["chat", "update_chapter_index", "expand_idea", "review"] = "chat"
     index_paths: list[str] = Field(default_factory=list)
-    material_scope: dict[str, Any] | None = None
     #: 检查用途的目标章；与 clue_review 一起提交，范围由受理时冻结。
     review_paths: list[str] = Field(default_factory=list)
     #: 线索核对：引用 Case.inferences 的 key，并给出截止章与（可选）线索集合。
@@ -216,12 +213,8 @@ class Step(Spec):
             # 与产品受理规则一致：只读展开必须有且只有一条灵感，且不夹带其他材料。
             if len(self.idea_references) != 1:
                 raise ValueError("expand_idea 需要且只需要一条灵感参考")
-            if self.selected or self.references or self.index_paths or self.material_scope:
+            if self.selected or self.references or self.index_paths:
                 raise ValueError("expand_idea 不夹带当前章节、参考文件或索引目标")
-        if self.purpose == "organize_materials":
-            from hastings.workspace.material_tasks import MaterialTaskScope
-
-            MaterialTaskScope.model_validate(self.material_scope)
         if self.purpose == "review":
             if not self.review_paths:
                 raise ValueError("检查用途需要给出目标章")

@@ -14,6 +14,7 @@ import { useShallow } from "zustand/react/shallow";
 
 import { EMPTY_CONTEXT, type ContextInput, type Conversation } from "../../api/workspace";
 import { errorMessage } from "../../api/errors";
+import { useStoryStore } from "../../state/story";
 import { createIdea, requestKey } from "../../api/ideas";
 import { findMessage, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import {
@@ -69,7 +70,9 @@ export default function ConversationPanel() {
   const select = useConversationsStore((state) => state.select);
   const startNew = useConversationsStore((state) => state.newConversation);
   const send = useConversationsStore((state) => state.send);
-  const stop = useConversationsStore((state) => state.stop);
+  const pause = useConversationsStore((state) => state.pause);
+  const resume = useConversationsStore((state) => state.resume);
+  const interject = useConversationsStore((state) => state.interject);
   const reconnect = useConversationsStore((state) => state.reconnect);
   const setDraft = useConversationsStore((state) => state.setDraft);
   const setDraftContext = useConversationsStore((state) => state.setDraftContext);
@@ -107,6 +110,8 @@ export default function ConversationPanel() {
 
   const running = entry.running;
   const stopping = entry.activeTurn?.state === "stop_requested";
+  // 暂停之后是否还能接着写，由服务端给的能力决定；前端不自行判断。
+  const resumable = !running && Boolean(entry.operation?.capabilities.continue);
   const otherRunning = busyElsewhere !== null && busyElsewhere.id !== selectedId;
   const canSend = selectionAvailable && Boolean(draft.trim()) && !running && !pending && !otherRunning;
 
@@ -224,6 +229,9 @@ export default function ConversationPanel() {
   const references = draftContext?.reference_paths ?? [];
   const textReferences = draftContext?.text_references ?? [];
   const clueReferences = draftContext?.clue_references ?? [];
+  const storyReference = useStoryStore(
+    (state) => (state.workspaceId === workspaceId ? state.reference : null),
+  );
   const toggleReference = (path: string) => {
     const next = references.includes(path)
       ? references.filter((item) => item !== path)
@@ -241,6 +249,13 @@ export default function ConversationPanel() {
       observed_digests: openFile && openFile.path === openPath ? { [openPath]: openFile.digest } : {},
     };
     await send(draft, context.selected_path || context.reference_paths.length || context.state_chapter !== undefined ? context : EMPTY_CONTEXT);
+  };
+
+  // 插话只在受理成功后清空输入：失败时作者的这段文字还在，可以直接重试。
+  const interjectAndClear = async () => {
+    const text = draft.trim();
+    if (!text || !selectedId) return;
+    if (await interject(text)) setDraft("");
   };
 
   const commitRename = async () => {
@@ -422,6 +437,14 @@ export default function ConversationPanel() {
             </span>
           ))}
         </div>}
+        {storyReference && <div className="mb-1 flex items-center gap-1 text-[10px]" aria-label="引用构思">
+          <span className="text-mute">本轮构思：</span>
+          <span className="inline-flex max-w-[14rem] items-center gap-1 rounded border border-row-edge px-1 py-0.5">
+            <span className="truncate" title={storyReference.title}>{storyReference.title}</span>
+            <button type="button" className="text-mute hover:text-fg" aria-label={`移除构思引用 ${storyReference.title}`}
+              onClick={() => useStoryStore.getState().clearReference()}>×</button>
+          </span>
+        </div>}
         {textReferences.length > 0 && <div className="text-reference-list" aria-label="引用选段">
           {textReferences.map(reference => <TextReferenceChip key={reference.id} reference={reference}
             onRemove={() => useConversationsStore.getState().removeTextReference(reference.id)} />)}
@@ -457,18 +480,31 @@ export default function ConversationPanel() {
             refreshKey={entry.lastSeq}
           />
           {running ? (
-            <Button disabled={stopping}
-              onClick={() => void stop()}>
-              {stopping ? "正在停止…" : "停止"}
-            </Button>
+            <>
+              {/* 暂停与插话是同一套控制：插话会先暂停，再把要求交给新的一代。 */}
+              <Button
+                disabled={stopping || !draft.trim()}
+                onClick={() => void interjectAndClear()}
+              >
+                插话
+              </Button>
+              <Button disabled={stopping} onClick={() => void pause()}>
+                {stopping ? "正在暂停…" : "暂停"}
+              </Button>
+            </>
           ) : (
-            <Button
-              variant="primary"
-              disabled={!canSend}
-              onClick={() => void submit()}
-            >
-              发送
-            </Button>
+            <>
+              {resumable && (
+                <Button onClick={() => void resume()}>继续</Button>
+              )}
+              <Button
+                variant="primary"
+                disabled={!canSend}
+                onClick={() => void submit()}
+              >
+                发送
+              </Button>
+            </>
           )}
         </div>
       </div>

@@ -43,7 +43,8 @@ test("Aqua 写作布局、翻页和字号操作保留复古气泡及可达的发
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("button", { name: "第一章 雨夜", exact: true }).click();
   await expect(page.locator(".writing-layout")).toHaveAttribute("data-layout", "three");
-  await expect(page.getByRole("navigation", { name: "作品页面" }).getByRole("link")).toHaveCount(3);
+  // 顶栏只剩写作与模块库：故事资料入口已移除。
+  await expect(page.getByRole("navigation", { name: "作品页面" }).getByRole("link")).toHaveCount(2);
   await expect(page.locator(".chat-msg.mine .chat-bubble")).toContainText("让林岚");
   expect(await page.locator(".chat-msg.mine .chat-bubble").evaluate(el => getComputedStyle(el).backgroundColor)).toBe("rgb(150, 221, 65)");
   expect(await page.locator(".chat-reply").evaluate(el => getComputedStyle(el).backgroundColor)).toBe("rgb(214, 214, 216)");
@@ -95,33 +96,4 @@ test("模块列表与预览并列，缩窄和放大字号保留草稿及主操�
   await detail.getByRole("button", { name: "取消", exact: true }).click();
   await library.getByRole("button", { name: "返回写作", exact: true }).click();
   await expect(page.locator(".chat-input")).toHaveValue("尚未发送的写作要求");
-});
-
-test("故事资料入口恢复浏览位置，线索依据在宽屏并列、窄屏可返回", async ({ page, book }) => {
-  const data = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e");
-  execFileSync("uv", ["run", "--directory", "..", "python", resolve("e2e/fixtures/chapter_clues.py"), book.path, join(data, "state", "workspaces", book.id)], { windowsHide: true, stdio: "pipe" });
-  await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("link", { name: "故事资料", exact: true }).click();
-  await page.getByRole("link", { name: "线索与伏笔", exact: true }).click();
-  await page.locator(".materials-list").getByRole("button", { name: /信封背面的字/ }).click();
-  const evidence = page.locator(".materials-evidence");
-  await expect(evidence).toContainText("信封背面有字。");
-  await expect(page.locator(".materials-list")).toBeVisible();
-  await shot(page, "02-clues-1440");
-  const location = page.url();
-  await page.getByRole("link", { name: "写作", exact: true }).click();
-  await page.getByRole("link", { name: "故事资料", exact: true }).click();
-  await expect(page).toHaveURL(location);
-  await evidence.getByRole("button", { name: "定位原文", exact: true }).first().click();
-  await expect(page.getByLabel("原文定位")).toBeVisible();
-  await page.getByRole("button", { name: "下一章", exact: true }).click();
-  await expect(page.getByLabel("原文定位")).toHaveCount(0);
-  await expect(page.locator(".paper-sheet")).toContainText("照片证明她看过背面");
-  await page.getByRole("link", { name: "故事资料", exact: true }).click();
-  await expect(page).toHaveURL(location);
-  await page.setViewportSize({ width: 390, height: 900 }); await font(page, 150);
-  await expect(evidence).toBeVisible();
-  await expect(page.getByRole("button", { name: "返回资料列表", exact: true })).toBeInViewport();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await shot(page, "clues-390-150");
 });
