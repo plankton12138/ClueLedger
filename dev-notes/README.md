@@ -15,15 +15,17 @@
 - [分模块实现示例](v1.0/implementation-examples.md)、[验收与在线评测](v1.0/acceptance.md)：可审查代码和待执行门槛。
 - [1.0 产品方案](../product-design/v1.0/README.md)：作者流程、悬疑设计深度、范围与界面；方案不代表已实现能力。
 
-## 1.0.1 想法占位
+## 1.0.1 开发计划（实施中）
 
-- [1.0.1 占位入口](v1.0.1/README.md)、[产品想法](../product-design/v1.0.1/README.md)：记录可分支、汇合与收束的悬疑时间线，区分故事内分支与创作备选，再由结构展开正文。
-- 具体开发计划后续编写，尚未实施；本次占位不修改运行版本或重新判定 1.0 的完成状态。
+- [1.0.1 开发入口](v1.0.1/README.md)、[产品方案](../product-design/v1.0.1/README.md)：可分支、汇合与收束的悬疑结构，区分故事内分支与创作备选，再由结构展开正文。
+- [线索结构与 Agent 全流程讨论](../product-design/v1.0.1/structure-and-agent-lifecycle.md)：数据关系、长期连续性、模型输入、对话修改和取消故事资料的完整范围；尚未冻结实现规格。
+- [阶段计划](v1.0.1/development-plan.md)、[数据与恢复](v1.0.1/data-and-runtime.md)、[接口与页面](v1.0.1/api-and-frontend.md)、[代码示例](v1.0.1/implementation-examples.md)、[验收](v1.0.1/acceptance.md)：范围、契约与门槛；运行版本仍为 1.0.0。
+- 阶段记录：[P0 基线、格式与调用清单](v1.0.1/notes/P0-baseline.md)、[全部模型入口](v1.0.1/notes/P0-model-entries.md)、[故事资料移除映射](v1.0.1/notes/P0-materials-removal-map.md)、[P1 结构层](v1.0.1/notes/P1-structure.md)。P0 已完成，P1 结构层已实施，P2—P7 未开始。
 
 ## 1.1 预留计划
 
 - [1.1 开发入口](v1.1/README.md)、[产品方案](../product-design/v1.1/README.md)：原1.0修订学习与写作偏好完整顺延，保留既有详细方案及示例，尚未实施。
-- 实施前按1.0实际交付重新核对编辑、辅助区、来源定位、引用与上下文接入点；当前优先执行1.0计划。
+- 实施前按届时实际交付重新核对编辑、来源定位、引用与上下文接入点；当前优先推进 1.0.1，修订学习继续预留。
 
 ## 0.9 当前入口
 

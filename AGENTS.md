@@ -23,3 +23,11 @@
 * 开发过程中不用考虑旧数据迁移的问题，直接放弃旧数据
 * 当你需要了解开发者的想法时，可以查看 ./mynotes/目录，但绝不允许修改其中的任何内容
 
+<br />
+
+## 索引
+
+- 产品设计 C:\Projects\Agent\myagent\product-design
+- 原型图 C:\Projects\Agent\myagent\prototypes
+- 开发文档 C:\Projects\Agent\myagent\dev-notes
+

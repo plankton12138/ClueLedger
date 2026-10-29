@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>线簿 · 木质古典风格预览</title>
+<style>
+  :root{
+    color-scheme: light;
+    --wood-frame-hi:#4C3321; --wood-frame-lo:#241509;
+    --wood-bar-hi:#7C5635; --wood-bar-lo:#4A3020;
+    --wood-rail-hi:#A87C4C; --wood-rail-lo:#6C4627;
+    --wood-deep-hi:#3A2617; --wood-deep-lo:#1E1108;
+    --paper-hi:#FBF5E6; --paper-lo:#EDE2C9; --paper-edge:#C7B591;
+    --linen-hi:#F5ECD9; --linen-lo:#DFCFAD;
+    --ink:#2B1E13; --ink-soft:#6A563C; --ink-faint:#93805F;
+    --brass-hi:#EDD49B; --brass:#CBA464; --brass-lo:#8B672B; --brass-ink:#2D1F0F;
+    --wax-hi:#C75C46; --wax:#A63A2A; --wax-lo:#742419;
+    --forest:#4C6B4A; --forest-hi:#6D8C68;
+    --font-serif: Georgia, "Songti SC", "Noto Serif SC", "SimSun", serif;
+    --font-sans: "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --grain: repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 1px, rgba(0,0,0,.17) 1px 2px, rgba(0,0,0,0) 2px 9px);
+    --rule: rgba(120,94,58,.20);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:#1E1309; }
+  body{ font-family:var(--font-sans); color:var(--ink); }
+  #app{ width:1600px; height:1000px; overflow:hidden; display:flex; flex-direction:column;
+        background-color:var(--wood-deep-lo);
+        background-image:var(--grain), linear-gradient(180deg,#3B2717,#1B0F06);
+        box-shadow:0 0 0 1px rgba(0,0,0,.6); }
+
+  /* ---------- 顶栏：深胡桃木 ---------- */
+  .topbar{ display:flex; align-items:center; gap:14px; padding:0 18px; height:56px; flex:0 0 56px;
+    background-color:var(--wood-frame-lo);
+    background-image:var(--grain), linear-gradient(180deg,var(--wood-frame-hi),var(--wood-frame-lo));
+    border-bottom:1px solid rgba(0,0,0,.55);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 2px 6px rgba(0,0,0,.35); }
+  .seal{ width:32px; height:32px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-serif); font-size:17px; font-weight:700; color:#F8E6CC;
+    background-color:var(--wax-lo); background-image:linear-gradient(180deg,var(--wax-hi),var(--wax-lo));
+    border:1px solid rgba(255,220,200,.35);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28), 0 1px 3px rgba(0,0,0,.45); }
+  .app-name{ font-family:var(--font-serif); font-size:17px; font-weight:700; color:#F1DFC0; letter-spacing:.14em; }
+  .picker{ display:flex; align-items:center; gap:8px; }
+  .picker select{ font-family:var(--font-sans); font-size:13px; color:#F4E7CE; padding:6px 8px; border-radius:5px;
+    background-color:rgba(0,0,0,.30); border:1px solid rgba(236,214,176,.26); outline:none; }
+  .nav{ display:flex; gap:6px; margin-left:auto; }
+  .nav a{ font-size:13px; color:#DFCCA8; text-decoration:none; padding:6px 13px; border-radius:999px;
+    border:1px solid transparent; }
+  .nav a.on{ color:var(--brass-ink); background-image:linear-gradient(180deg,var(--brass-hi),var(--brass));
+    border-color:rgba(60,40,15,.42); box-shadow:inset 0 1px 0 rgba(255,255,255,.55), 0 1px 2px rgba(0,0,0,.3); }
+  .wood-btn{ font-family:var(--font-sans); font-size:13px; color:#F0E2C6; padding:6px 12px; border-radius:5px;
+    background-color:rgba(255,255,255,.05); border:1px solid rgba(236,214,176,.24);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.10); }
+  .wood-btn.brass{ color:var(--brass-ink); background-image:linear-gradient(180deg,var(--brass-hi),var(--brass));
+    border-color:rgba(60,40,15,.42); font-weight:600; }
+  .wood-btn.wood{ color:#F4E7CE; background-color:rgba(0,0,0,.22); }
+
+  /* ---------- 工具条：浅胡桃木 ---------- */
+  .toolbar{ display:flex; align-items:center; gap:8px; padding:0 18px; height:44px; flex:0 0 44px;
+    background-color:var(--wood-bar-lo);
+    background-image:var(--grain), linear-gradient(180deg,var(--wood-bar-hi),var(--wood-bar-lo));
+    border-bottom:1px solid rgba(0,0,0,.5);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.12); }
+  .tool{ font-size:12.5px; color:#F0E3C9; padding:5px 12px; border-radius:999px;
+    background-color:rgba(0,0,0,.20); border:1px solid rgba(240,218,178,.22); }
+  .tool.on{ color:var(--brass-ink); font-weight:600; background-image:linear-gradient(180deg,var(--brass-hi),var(--brass));
+    border-color:rgba(60,40,15,.45); box-shadow:inset 0 1px 0 rgba(255,255,255,.5); }
+  .toolbar .sep{ width:1px; height:20px; background:rgba(0,0,0,.35); box-shadow:1px 0 0 rgba(255,255,255,.10); margin:0 4px; }
+  .toolbar .right{ margin-left:auto; font-size:12px; color:rgba(240,226,198,.62); }
+
+  /* ---------- 主体三栏 ---------- */
+  .desk{ flex:1 1 auto; display:grid; grid-template-columns:250px minmax(0,1fr) 340px; gap:10px; padding:10px; min-height:0; }
+  .rail{ border-radius:8px; overflow:hidden; display:flex; flex-direction:column;
+    background-color:var(--wood-rail-lo);
+    background-image:var(--grain), linear-gradient(180deg,var(--wood-rail-hi),var(--wood-rail-lo));
+    border:1px solid rgba(0,0,0,.45); box-shadow:inset 0 1px 0 rgba(255,255,255,.12); }
+  .rail-head{ font-family:var(--font-serif); font-size:12px; letter-spacing:.22em; color:rgba(255,236,203,.66);
+    padding:13px 14px 9px; }
+  .rail-row{ font-size:13.5px; color:#F2E4C9; padding:7px 12px; margin:0 6px; border-radius:4px; }
+  .rail-row.on{ color:var(--brass-ink); background:rgba(203,164,100,.32); border-left:3px solid var(--brass);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.16); padding-left:9px; font-weight:600; }
+  .rail-row.sub{ color:rgba(242,228,201,.74); font-size:12.5px; padding-left:26px; }
+  .rail-row.muted{ color:rgba(242,228,201,.55); }
+  .rail-group{ font-family:var(--font-serif); font-size:11.5px; letter-spacing:.20em; color:rgba(255,236,203,.5);
+    padding:16px 14px 6px; }
+
+  .paper-pane{ border-radius:8px; padding:14px; min-height:0; overflow:hidden;
+    background-color:var(--wood-deep-lo);
+    background-image:var(--grain), linear-gradient(180deg,#3D2917,#1C0F05);
+    border:1px solid rgba(0,0,0,.5); box-shadow:inset 0 1px 0 rgba(255,255,255,.08); }
+  .sheet{ height:100%; border-radius:4px; padding:30px 42px; overflow:hidden;
+    background-color:var(--paper-lo);
+    background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0) 0 31px, var(--rule) 31px 32px),
+                      linear-gradient(180deg,var(--paper-hi),var(--paper-lo));
+    border:1px solid var(--paper-edge);
+    box-shadow:0 10px 24px rgba(0,0,0,.45), inset 0 0 60px rgba(150,120,70,.10); }
+  .chapter{ font-family:var(--font-serif); font-size:22px; font-weight:700; color:var(--ink); margin:0 0 6px; letter-spacing:.04em; }
+  .meta{ font-size:12px; color:var(--ink-faint); margin:0 0 18px; letter-spacing:.04em; }
+  .para{ font-family:var(--font-serif); font-size:15px; line-height:32px; color:var(--ink); margin:0 0 4px; text-indent:2em; }
+  .para.first{ text-indent:0; }
+  .para mark{ background:rgba(203,164,100,.42); color:inherit; padding:1px 2px; border-radius:2px; }
+  .inline-note{ font-family:var(--font-sans); font-size:11.5px; color:var(--forest); background:rgba(107,140,104,.16);
+    border-left:2px solid var(--forest-hi); padding:2px 6px; margin-left:6px; border-radius:2px; }
+
+  .chat{ border-radius:8px; padding:14px; display:flex; flex-direction:column; gap:12px; min-height:0;
+    background-color:var(--linen-lo);
+    background-image:linear-gradient(180deg,var(--linen-hi),var(--linen-lo));
+    border:1px solid rgba(120,94,58,.40); box-shadow:inset 0 1px 0 rgba(255,255,255,.6); }
+  .chat-tabs{ display:flex; gap:6px; }
+  .chat-tabs span{ font-size:12px; color:var(--ink-soft); padding:4px 11px; border-radius:999px;
+    border:1px solid rgba(120,94,58,.28); background:rgba(255,255,255,.34); }
+  .chat-tabs span.on{ color:var(--brass-ink); font-weight:600; background-image:linear-gradient(180deg,var(--brass-hi),var(--brass));
+    border-color:rgba(60,40,15,.35); }
+  .msg{ display:flex; flex-direction:column; gap:5px; }
+  .who{ font-size:11.5px; color:var(--ink-faint); letter-spacing:.06em; }
+  .bubble{ font-size:13.5px; line-height:1.75; padding:11px 14px; border-radius:10px; max-width:92%; }
+  .bubble.mine{ align-self:flex-end; color:#FFF1E3;
+    background-color:var(--wax-lo); background-image:linear-gradient(180deg,var(--wax-hi),var(--wax-lo));
+    border:1px solid rgba(60,20,12,.45); box-shadow:inset 0 1px 0 rgba(255,255,255,.25), 0 3px 8px rgba(0,0,0,.22); }
+  .bubble.they{ align-self:flex-start; color:var(--ink);
+    background-color:var(--linen-hi); background-image:linear-gradient(180deg,#FBF5E8,var(--linen-hi));
+    border:1px solid rgba(120,94,58,.34); box-shadow:0 2px 6px rgba(70,50,25,.12); }
+  .composer{ margin-top:auto; border-radius:8px; padding:10px 12px;
+    background-image:linear-gradient(180deg,#241709,#3B2616);
+    border:1px solid rgba(0,0,0,.5); box-shadow:inset 0 3px 6px rgba(0,0,0,.45); }
+  .composer .ph{ font-size:13px; color:rgba(240,226,198,.48); }
+  .composer .row{ display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .send{ margin-left:auto; font-size:12px; font-weight:700; color:var(--brass-ink); padding:6px 16px; border-radius:999px;
+    background-image:linear-gradient(180deg,var(--brass-hi),var(--brass)); border:1px solid rgba(60,40,15,.45);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.55), 0 2px 4px rgba(0,0,0,.3); }
+
+  /* ---------- 第二屏：线索与原文 ---------- */
+  .clue-layout{ flex:1 1 auto; display:grid; grid-template-columns:330px minmax(0,1fr); gap:10px; padding:10px; min-height:0; }
+  .clue-list{ border-radius:8px; padding:14px; overflow:hidden;
+    background-color:var(--linen-lo); background-image:linear-gradient(180deg,var(--linen-hi),var(--linen-lo));
+    border:1px solid rgba(120,94,58,.40); box-shadow:inset 0 1px 0 rgba(255,255,255,.6); }
+  .clue-card{ border-radius:6px; padding:11px 13px; margin-bottom:10px;
+    background:rgba(255,255,255,.46); border:1px solid rgba(120,94,58,.26); }
+  .clue-card.on{ background:rgba(203,164,100,.28); border-color:rgba(139,103,43,.55);
+    box-shadow:inset 3px 0 0 var(--brass); }
+  .clue-card h3{ font-family:var(--font-serif); font-size:14px; margin:0 0 5px; color:var(--ink); }
+  .clue-card p{ font-size:12px; line-height:1.7; margin:0; color:var(--ink-soft); }
+  .tag{ display:inline-block; font-size:10.5px; letter-spacing:.08em; padding:2px 7px; border-radius:999px; margin-right:6px;
+    color:var(--brass-ink); background:rgba(203,164,100,.34); border:1px solid rgba(139,103,43,.4); }
+  .tag.green{ color:#2F4A2C; background:rgba(107,140,104,.26); border-color:rgba(76,107,74,.5); }
+  .side{ display:flex; flex-direction:column; gap:10px; min-height:0; }
+  .plan{ border-radius:8px; padding:12px 14px; font-size:12.5px; line-height:1.7; color:var(--ink-soft);
+    background-color:var(--linen-lo); background-image:linear-gradient(180deg,var(--linen-hi),var(--linen-lo));
+    border:1px solid rgba(120,94,58,.40); }
+  .plan b{ font-family:var(--font-serif); color:var(--ink); display:block; margin-bottom:4px; letter-spacing:.10em; }
+
+  /* ---------- 第三屏：模块库 ---------- */
+  .lib{ flex:1 1 auto; display:grid; grid-template-columns:280px 360px minmax(0,1fr); gap:10px; padding:10px; min-height:0; }
+  .panel{ border-radius:8px; overflow:hidden; display:flex; flex-direction:column;
+    background-color:var(--linen-lo); background-image:linear-gradient(180deg,var(--linen-hi),var(--linen-lo));
+    border:1px solid rgba(120,94,58,.40); box-shadow:inset 0 1px 0 rgba(255,255,255,.6); }
+  .panel-head{ font-family:var(--font-serif); font-size:12px; letter-spacing:.20em; color:var(--ink-soft);
+    padding:13px 15px 10px; border-bottom:1px solid rgba(120,94,58,.26); }
+  .panel-body{ padding:12px 15px; overflow:hidden; }
+  .mod{ border-radius:6px; padding:10px 12px; margin-bottom:8px; font-size:13px; color:var(--ink);
+    background:rgba(255,255,255,.44); border:1px solid rgba(120,94,58,.24); }
+  .mod.on{ background:rgba(203,164,100,.30); border-color:rgba(139,103,43,.55); box-shadow:inset 3px 0 0 var(--brass); }
+  .mod small{ display:block; color:var(--ink-faint); font-size:11px; margin-top:3px; }
+  .doc{ flex:1 1 auto; border-radius:8px; padding:16px; overflow:hidden;
+    background-color:var(--wood-deep-lo); background-image:var(--grain), linear-gradient(180deg,#3D2917,#1C0F05);
+    border:1px solid rgba(0,0,0,.5); }
+  .doc .sheet{ padding:26px 34px; }
+
+  .screen{ display:none; }
+  #app[data-screen="0"] .s1, #app[data-screen="1"] .s2, #app[data-screen="2"] .s3{ display:flex; flex-direction:column; height:100%; }
+</style>
+</head>
+<body>
+<div id="app" data-screen="0">
+
+  <!-- ============ 屏 1：写作台 ============ -->
+  <section class="screen s1">
+    <header class="topbar">
+      <span class="seal">簿</span>
+      <span class="app-name">线簿</span>
+      <div class="picker">
+        <select aria-label="选择作品目录"><option>灯塔守夜人</option></select>
+        <button class="wood-btn">作品</button>
+      </div>
+      <nav class="nav"><a href="#" class="on">写作</a><a href="#">故事资料</a><a href="#">模块库</a></nav>
+      <button class="wood-btn">设置</button>
+    </header>
+    <div class="toolbar">
+      <span class="tool on">目录</span><span class="tool">对话</span><span class="tool">本章线索</span><span class="tool">活动记录</span>
+      <span class="sep"></span>
+      <span class="tool">正文字号</span>
+      <span class="right">第 2 章 · 12 段 · 3,412 字</span>
+    </div>
+    <div class="desk">
+      <aside class="rail">
+        <div class="rail-head">目 录</div>
+        <div class="rail-row muted">第一章 出发前的信</div>
+        <div class="rail-row on">第二章 灯塔守夜人</div>
+        <div class="rail-row sub">场景一 补给船靠岸</div>
+        <div class="rail-row sub">场景二 熄灭的灯</div>
+        <div class="rail-row sub">场景三 两长一短</div>
+        <div class="rail-row">第三章 潮汐表</div>
+        <div class="rail-row muted">第四章 沉船名录</div>
+        <div class="rail-group">人 物</div>
+        <div class="rail-row">陈屿</div>
+        <div class="rail-row">守塔人 老周</div>
+        <div class="rail-group">待 办</div>
+        <div class="rail-row">补写 场景三 结尾</div>
+      </aside>
+      <section class="paper-pane">
+        <div class="sheet">
+          <h1 class="chapter">第二章 灯塔守夜人</h1>
+          <p class="meta">场景二 · 熄灭的灯</p>
+          <p class="para first">补给船靠岸那天，海面上起了白雾，陈屿在栈桥尽头数缆绳上的铁环，一共十一个。他记得上一个数这个的人已经走了四年。</p>
+          <p class="para">老周把灯擦了三遍才肯点。他说灯芯受潮，火苗会往左偏。塔里没有钟表，人靠那点火苗的位置记时间。<span class="inline-note">线索 C-07 潮汐</span></p>
+          <p class="para">夜里三点，海面传来两长一短的敲击声。老周放下灯芯，抄起信号筒：“不是补给船。”</p>
+        </div>
+      </section>
+      <aside class="chat">
+        <div class="chat-tabs"><span class="on">对话</span><span>本章线索</span></div>
+        <div class="msg"><div class="who">我</div><div class="bubble mine">这一章里老周提到“受潮”，和第三章的潮汐表对得上吗？</div></div>
+        <div class="msg"><div class="who">助手</div><div class="bubble they">对得上。老周说的灯芯受潮与灯焰偏左，和第三章潮汐表里“每月十四日夜潮位最高”的记录指向同一时间点，可以作为伏笔回收的候选。</div></div>
+        <div class="composer">
+          <div class="ph">继续写下一段……</div>
+          <div class="row"><span class="tool" style="background:rgba(255,255,255,.08);color:#EFE0C2;border-color:rgba(240,218,178,.24);">引用线索</span><span class="send">发送</span></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ 屏 2：线索与原文 ============ -->
+  <section class="screen s2">
+    <header class="topbar">
+      <span class="seal">簿</span>
+      <span class="app-name">线簿</span>
+      <div class="picker">
+        <select aria-label="选择作品目录"><option>灯塔守夜人</option></select>
+        <button class="wood-btn">作品</button>
+      </div>
+      <nav class="nav"><a href="#">写作</a><a href="#" class="on">故事资料</a><a href="#">模块库</a></nav>
+      <button class="wood-btn">设置</button>
+    </header>
+    <div class="toolbar">
+      <span class="tool">全部线索</span><span class="tool on">本章线索</span><span class="tool">待确认</span>
+      <span class="sep"></span>
+      <span class="tool">状态：已成立</span>
+      <span class="right">共 7 条</span>
+    </div>
+    <div class="clue-layout">
+      <div class="clue-list">
+        <div class="clue-card on">
+          <h3>灯芯受潮，灯焰偏左</h3>
+          <p><span class="tag green">已成立</span><span class="tag">第二章</span></p>
+          <p style="margin-top:6px;">老周提到灯芯受潮、火苗往左偏，与第三章潮汐表互相印证。</p>
+        </div>
+        <div class="clue-card">
+          <h3>两长一短的敲击声</h3>
+          <p><span class="tag">待确认</span><span class="tag">第二章</span></p>
+          <p style="margin-top:6px;">夜间信号，需要在第四章给出对应的回应。</p>
+        </div>
+        <div class="clue-card">
+          <h3>缆绳上的十一个铁环</h3>
+          <p><span class="tag green">已成立</span><span class="tag">第二章</span></p>
+          <p style="margin-top:6px;">数字与第四章沉船名录的十一人一致。</p>
+        </div>
+      </div>
+      <div class="side">
+        <div class="paper-pane" style="flex:1 1 auto;">
+          <div class="sheet">
+            <h1 class="chapter">第二章 灯塔守夜人</h1>
+            <p class="meta">原文依据 · 场景二 熄灭的灯</p>
+            <p class="para first">老周把灯擦了三遍才肯点。他说灯芯受潮，火苗会往左偏。塔里没有钟表，人靠那点火苗的位置记时间。</p>
+            <p class="para">夜里三点，海面传来两长一短的敲击声。老周放下灯芯，抄起信号筒：“不是补给船。”</p>
+            <p class="para">陈屿数到第七下的时候，声音断了。他没有回头看那盏灯。</p>
+          </div>
+        </div>
+        <div class="plan"><b>作 者 计 划</b>场景二不解释敲击声的来源，留到第四章由老周自己说出。灯焰偏左是给读者留的第一个钩子，不要提前点亮。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 屏 3：模块库 ============ -->
+  <section class="screen s3">
+    <header class="topbar">
+      <span class="seal">簿</span>
+      <span class="app-name">线簿</span>
+      <div class="picker">
+        <select aria-label="选择作品目录"><option>灯塔守夜人</option></select>
+        <button class="wood-btn">作品</button>
+      </div>
+      <nav class="nav"><a href="#">写作</a><a href="#">故事资料</a><a href="#" class="on">模块库</a></nav>
+      <button class="wood-btn">设置</button>
+    </header>
+    <div class="toolbar">
+      <span class="tool on">全部模块</span><span class="tool">本作品</span><span class="tool">新建模块</span>
+      <span class="sep"></span>
+      <span class="right">灯塔守夜人 · 12 个模块</span>
+    </div>
+    <div class="lib">
+      <div class="panel">
+        <div class="panel-head">作 品 归 属</div>
+        <div class="panel-body">
+          <div class="mod on">灯塔守夜人<small>12 个模块 · 最近修改 10-28</small></div>
+          <div class="mod">未归属<small>3 个模块</small></div>
+          <div class="mod">白鸦号手稿<small>7 个模块 · 只读</small></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">模 块 列 表</div>
+        <div class="panel-body">
+          <div class="mod on">人物：老周<small>人物 · 620 字</small></div>
+          <div class="mod">地点：北岬灯塔<small>地点 · 340 字</small></div>
+          <div class="mod">物件：信号筒<small>物件 · 180 字</small></div>
+          <div class="mod">时间线：十四日夜潮<small>时间线 · 90 字</small></div>
+        </div>
+      </div>
+      <div class="doc">
+        <div class="sheet">
+          <h1 class="chapter">人物：老周</h1>
+          <p class="meta">灯塔守夜人 · 北岬灯塔 · 最后在岗十七年</p>
+          <p class="para first">老周不承认自己会看潮。他的说法是：灯塔看的是天，不是水。天要变，他不用抬头也知道。</p>
+          <p class="para">他擦灯的顺序固定：先罩，后芯，再玻璃。有人问他为什么不用布，他说布会留下絮。</p>
+          <p class="para">十七年里他点过四千多次灯，熄过两次。第二次之后，值班表上就多了一个人的名字。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+<script>
+  window.renderScreen = function (number) {
+    document.getElementById("app").dataset.screen = String(number);
+  };
+</script>
+</body>
+</html>
