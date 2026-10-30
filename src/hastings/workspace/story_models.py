@@ -138,9 +138,8 @@ class StoryNode(StrictRecord):
     knowledge_changes: list[KnowledgeChange] = Field(default_factory=list)
     #: 关键行动带来的局面或理解变化；未定不等于没有变化。
     change: str | None = Field(default=None, max_length=1000)
-    #: 阶段由作者安排，允许暂不归属；``group_id`` 只供旧画布过渡，P4 移除。
+    #: 阶段由作者安排，允许暂不归属。
     stage_id: str | None = None
-    group_id: str | None = None
 
     @model_validator(mode="after")
     def check_membership(self) -> StoryNode:
@@ -153,8 +152,6 @@ class StoryNode(StrictRecord):
             raise ValueError("关键变化要么留空表示未定，要么写明内容")
         if self.stage_id is not None and not self.stage_id.strip():
             raise ValueError("节点阶段标识不能是空字符串")
-        if self.group_id is not None and not self.group_id.strip():
-            raise ValueError("片段分组标识不能是空字符串")
         return self
 
 

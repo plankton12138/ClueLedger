@@ -58,7 +58,6 @@ export interface StoryNode {
   threads: string[];
   clues: string[];
   time_note: string;
-  group_id: string | null;
 }
 
 export interface StoryEdge {
@@ -146,11 +145,9 @@ export function listStoryVariants(workspaceId: string): Promise<StoryVariantList
 export function readStoryVariant(
   workspaceId: string,
   variantId: string,
-  groupId?: string,
 ): Promise<StoryGraph> {
-  const query = groupId ? `?group_id=${encodeURIComponent(groupId)}` : "";
   return request<StoryGraph>(
-    `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}${query}`,
+    `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}`,
   );
 }
 

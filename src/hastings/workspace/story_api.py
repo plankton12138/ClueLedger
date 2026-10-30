@@ -65,7 +65,6 @@ class StoryNodeView(BaseModel):
     threads: list[str]
     clues: list[str]
     time_note: str
-    group_id: str | None = None
 
 
 class StoryEdgeView(BaseModel):
@@ -176,7 +175,6 @@ def _node_view(variant: StoryVariant, node: StoryNode) -> StoryNodeView:
         threads=[item for item in node.thread_ids if item in variant.threads],
         clues=[use.clue_id for use in node.clue_uses],
         time_note=node.time_note,
-        group_id=node.group_id,
     )
 
 
@@ -274,9 +272,8 @@ def create_story_router(
     def read_variant(
         workspace_id: str,
         variant_id: str,
-        group_id: str | None = Query(default=None),
     ) -> StoryGraphView:
-        """图数据：节点与连接；指定 ``group_id`` 时只返回该片段，其余折叠。"""
+        """图数据：节点与连接；阶段折叠由前端完成，读接口返回完整结构。"""
         store = store_for(workspace_id)
         variant = require_variant(store, variant_id)
         document = store.read().document
@@ -294,15 +291,8 @@ def create_story_router(
             if document
             else None
         )
-        nodes = [
-            node for node in variant.nodes.values() if group_id is None or node.group_id == group_id
-        ]
+        nodes = list(variant.nodes.values())
         shown = {node.id for node in nodes}
-        collapsed = sorted(
-            node.id
-            for node in variant.nodes.values()
-            if group_id is not None and node.id not in shown
-        )
         return StoryGraphView(
             latest_change_id=latest_change,
             variant_id=variant.id,
@@ -349,7 +339,7 @@ def create_story_router(
                 }
                 for constraint in variant.constraints.values()
             ],
-            collapsed=collapsed,
+            collapsed=[],
         )
 
     @router.get("/{workspace_id}/story/nodes/{node_id}", response_model=StoryNodeDetailView)

@@ -38,9 +38,6 @@ interface StoryState {
   nodeId: string | null;
   detail: StoryNodeDetail | null;
   lastChange: StoryChangeRecord | null;
-  groupId: string | null;
-  /** 图里出现过的片段名；折叠时仍保留，片段按钮不会因为当前只剩一段而消失。 */
-  groups: string[];
   loading: boolean;
   busy: boolean;
   error: string | null;
@@ -52,37 +49,22 @@ interface StoryState {
   referenceNode(nodeId: string): void;
   clearReference(): void;
   selectNode(nodeId: string | null): Promise<void>;
-  fold(groupId: string | null): Promise<void>;
   submit(operations: Record<string, unknown>[], note?: string): Promise<boolean>;
   undo(changeId?: string): Promise<boolean>;
   dismissError(): void;
 }
 
 /** 写入后统一按服务端修订重读：图、方案列表与详情都换成本次返回的版本。 */
-function groupsOf(graph: StoryGraph): string[] {
-  return [...new Set(graph.nodes.map((node) => node.group_id).filter((id): id is string => Boolean(id)))].sort();
-}
-
-/** 较长的已分片结构先显示一个片段，作者仍可显式查看全部。 */
 async function initialGraph(workspaceId: string, variantId: string) {
-  const full = await readStoryVariant(workspaceId, variantId);
-  const groups = groupsOf(full);
-  const groupId = full.nodes.length > 60 && groups.length > 1 ? groups[0] : null;
-  if (!groupId) return { graph: full, groups, groupId };
-  const graph = await readStoryVariant(workspaceId, variantId, groupId);
-  if (graph.revision !== full.revision) {
-    throw new Error("[STORY_REVISION_CONFLICT] 构思：读取期间结构发生了变化。建议：重新打开构思。");
-  }
-  return { graph, groups, groupId };
+  return readStoryVariant(workspaceId, variantId);
 }
 
 async function reload(
   workspaceId: string,
   variantId: string,
   nodeId: string | null,
-  groupId: string | null,
 ): Promise<{ graph: StoryGraph; detail: StoryNodeDetail | null }> {
-  const graph = await readStoryVariant(workspaceId, variantId, groupId ?? undefined);
+  const graph = await readStoryVariant(workspaceId, variantId);
   const detail = nodeId ? await readStoryNode(workspaceId, variantId, nodeId) : null;
   return { graph, detail };
 }
@@ -101,8 +83,6 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
   nodeId: null,
   detail: null,
   lastChange: null,
-  groupId: null,
-  groups: [],
   loading: false,
   busy: false,
   error: null,
@@ -121,8 +101,6 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
       detail: null,
 
       lastChange: null,
-      groupId: null,
-      groups: [],
       loading: false,
       busy: false,
       error: null,
@@ -161,7 +139,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
       const list = await listStoryVariants(workspaceId);
       const variantId = list.primary_variant_id || null;
       const initial = variantId ? await initialGraph(workspaceId, variantId) : null;
-      const lastChange = initial?.graph.latest_change_id ? await readStoryChange(workspaceId, initial.graph.latest_change_id) : null;
+      const lastChange = initial?.latest_change_id ? await readStoryChange(workspaceId, initial.latest_change_id) : null;
       // 迟到的响应不能覆盖已经切走的作品。
       if (get().workspaceId !== workspaceId) return;
       set({
@@ -169,9 +147,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
         primaryId: list.primary_variant_id,
         lastChange,
         variantId,
-        graph: initial?.graph ?? null,
-        groups: initial?.groups ?? [],
-        groupId: initial?.groupId ?? null,
+        graph: initial ?? null,
         detail: null,
         nodeId: null,
         loading: false,
@@ -189,20 +165,19 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     try {
       const list = await listStoryVariants(workspaceId);
       const variantId = list.primary_variant_id || null;
-      const graph = variantId ? await readStoryVariant(workspaceId, variantId, before.groupId ?? undefined) : null;
+      const graph = variantId ? await readStoryVariant(workspaceId, variantId) : null;
       const lastChange = graph?.latest_change_id ? await readStoryChange(workspaceId, graph.latest_change_id) : null;
       const detail = variantId && before.nodeId && graph?.nodes.some(node => node.id === before.nodeId)
         ? await readStoryNode(workspaceId, variantId, before.nodeId) : null;
       if (epoch !== refreshEpoch) return;
       const current = get();
       if (current.workspaceId !== workspaceId || current.variantId !== before.variantId
-        || current.nodeId !== before.nodeId || current.groupId !== before.groupId) return;
+        || current.nodeId !== before.nodeId) return;
       // 期间已有别的写入（提交、撤销、切换）落地：旧刷新结果不再覆盖它。
       const currentRevision = current.graph?.revision ?? "";
       if (currentRevision !== beforeRevision && currentRevision !== (graph?.revision ?? "")) return;
       set({ variants: list.variants, primaryId: list.primary_variant_id, variantId, graph, lastChange,
-        detail, nodeId: detail ? before.nodeId : null,
-        groups: before.groupId ? before.groups : graph ? groupsOf(graph) : [], error: null });
+        detail, nodeId: detail ? before.nodeId : null, error: null });
     } catch (cause) {
       if (epoch !== refreshEpoch) return;
       if (get().workspaceId === workspaceId && get().variantId === before.variantId) set({ error: errorMessage(cause, "刷新构思") });
@@ -226,28 +201,8 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     }
   },
 
-  async fold(groupId) {
-    const { workspaceId, variantId } = get();
-    if (!workspaceId || !variantId) return;
-    set({ loading: true, error: null });
-    try {
-      const { graph, detail } = await reload(workspaceId, variantId, get().nodeId, groupId);
-      if (get().workspaceId !== workspaceId) return;
-      // 只在看全部时刷新片段列表：片段视图里没有别的片段，用它覆盖会把按钮清空。
-      set({
-        groupId,
-        graph,
-        detail,
-        groups: groupId === null ? groupsOf(graph) : get().groups,
-        loading: false,
-      });
-    } catch (error) {
-      set({ loading: false, error: errorMessage(error, "折叠片段") });
-    }
-  },
-
   async submit(operations, note = "") {
-    const { workspaceId, variantId, graph, groupId, nodeId } = get();
+    const { workspaceId, variantId, graph, nodeId } = get();
     if (!workspaceId || !variantId || !graph) return false;
     set({ busy: true, error: null });
     try {
@@ -258,13 +213,12 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
         operations,
         note,
       });
-      const { graph: nextGraph, detail } = await reload(workspaceId, variantId, nodeId, groupId);
+      const { graph: nextGraph, detail } = await reload(workspaceId, variantId, nodeId);
       const list = await listStoryVariants(workspaceId);
       if (get().workspaceId !== workspaceId) return false;
       set({
         graph: nextGraph,
         detail,
-        groups: groupId === null ? groupsOf(nextGraph) : get().groups,
         variants: list.variants,
         lastChange: {
           change_id: receipt.change_id,
@@ -286,19 +240,18 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
   },
 
   async undo(changeId) {
-    const { workspaceId, variantId, groupId, nodeId, lastChange } = get();
+    const { workspaceId, variantId, nodeId, lastChange } = get();
     const target = changeId ?? lastChange?.change_id ?? "";
     if (!workspaceId || !variantId || !target) return false;
     set({ busy: true, error: null });
     try {
       await undoStoryChange(workspaceId, target, storyRequestKey("story-undo"));
-      const { graph, detail } = await reload(workspaceId, variantId, nodeId, groupId);
+      const { graph, detail } = await reload(workspaceId, variantId, nodeId);
       const list = await listStoryVariants(workspaceId);
       if (get().workspaceId !== workspaceId) return false;
       set({
         graph,
         detail,
-        groups: groupId === null ? groupsOf(graph) : get().groups,
         variants: list.variants,
         lastChange: null,
 

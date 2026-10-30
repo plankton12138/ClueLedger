@@ -37,8 +37,8 @@ const GRAPH = {
   revision: "rev_1",
   stages: [],
   nodes: [
-    { id: "n1", title: "抵达", action: "走进旅馆", change: null, stage_id: null, threads: [], clues: ["c1"], time_note: "", group_id: null },
-    { id: "n2", title: "对质", action: "他问管家", change: null, stage_id: null, threads: [], clues: [], time_note: "", group_id: null },
+    { id: "n1", title: "抵达", action: "走进旅馆", change: null, stage_id: null, threads: [], clues: ["c1"], time_note: "" },
+    { id: "n2", title: "对质", action: "他问管家", change: null, stage_id: null, threads: [], clues: [], time_note: "" },
   ],
   edges: [{ id: "e1", from_id: "n1", to_id: "n2", kind: "next" as const, reason: "" }],
   threads: [],
@@ -169,25 +169,6 @@ describe("构思状态", () => {
     expect(ok).toBe(true);
     expect(api.undoStoryChange).toHaveBeenCalledWith("w1", "ui_1", expect.any(String));
     expect(useStoryStore.getState().lastChange).toBeNull();
-  });
-
-  it("片段折叠保留片段列表，显示被折叠的节点数", async () => {
-    const groupGraph = {
-      ...GRAPH,
-      nodes: GRAPH.nodes.map((node, index) => ({ ...node, group_id: index === 0 ? "开端" : null })),
-    };
-    api.readStoryVariant.mockResolvedValue(groupGraph);
-    await useStoryStore.getState().load("w1");
-    expect(useStoryStore.getState().groups).toEqual(["开端"]);
-
-    const folded = { ...groupGraph, nodes: [groupGraph.nodes[1]], edges: [], collapsed: ["n1"] };
-    api.readStoryVariant.mockResolvedValue(folded);
-    await useStoryStore.getState().fold("对质");
-
-    const state = useStoryStore.getState();
-    expect(state.groupId).toBe("对质");
-    expect(state.groups).toEqual(["开端"]);
-    expect(state.graph?.collapsed).toEqual(["n1"]);
   });
 
   it("引用到对话登记当前方案的节点，清除后不再带着", async () => {
