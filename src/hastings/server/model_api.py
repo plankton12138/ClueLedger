@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,6 +29,10 @@ from hastings.server.model_limits import ModelCapacity, ModelLimitOverride
 from hastings.server.model_thinking import ThinkingLevel
 from hastings.server.provider_catalog import ProviderApi, ProviderPreset
 from hastings.server.provider_config import AuthMethod, ModelSelection
+from hastings.workspace.errors import WorkspaceError
+
+if TYPE_CHECKING:
+    from hastings.server.probe_ops import ProbeRunner
 
 __all__ = ["create_model_router"]
 
@@ -153,18 +157,22 @@ class DiscoveryView(BaseModel):
 
 
 class ProbeRequest(DiscoverRequest):
+    """连接测试的受理请求；``request_key`` 去重，重复点击不产生第二次付费调用。"""
+
     kind: Literal["response", "tool"]
     model: str = ""
+    request_key: str = Field(default="", max_length=120)
 
 
-class ProbeView(BaseModel):
+class ProbeAcceptedView(BaseModel):
+    """受理结果：测试在后台跑，结果按操作标识读取。
+
+    ``revision`` 就够指向这次提交的配置版本；测试本身不修改配置。
+    """
+
     revision: str
     connection_id: str | None
-    model: str
-    response: Literal["passed", "failed", "untested"]
-    tool_call: Literal["passed", "failed", "untested"]
-    code: str | None
-    message: str
+    operation_id: str
 
 
 class AuthProviderView(BaseModel):
@@ -296,8 +304,16 @@ def _draft_from_probe(body: DiscoverRequest) -> ConnectionDraft:
     )
 
 
-def create_model_router(service: ModelConnectionService) -> APIRouter:
-    """模型设置路由；所有写操作共用一个串行服务。"""
+def create_model_router(
+    service: ModelConnectionService,
+    *,
+    probe_runner: ProbeRunner | None = None,
+) -> APIRouter:
+    """模型设置路由；所有写操作共用一个串行服务。
+
+    ``probe_runner`` 存在时连接测试登记为统一操作；否则该入口明确报不可用，
+    不悄悄退回同步调用。
+    """
     router = APIRouter(prefix=PREFIX, tags=["models"])
 
     @router.get("/model-providers", response_model=list[ProviderPresetView])
@@ -338,22 +354,28 @@ def create_model_router(service: ModelConnectionService) -> APIRouter:
             message=result.message,
         )
 
-    @router.post("/model-connections/probe", response_model=ProbeView)
-    async def probe(body: ProbeRequest) -> ProbeView:
-        result = await service.probe(
-            _draft_from_probe(body),
+    @router.post(
+        "/model-connections/probe", response_model=ProbeAcceptedView, status_code=202
+    )
+    async def probe(body: ProbeRequest) -> ProbeAcceptedView:
+        if probe_runner is None:
+            raise WorkspaceError(
+                code="MODEL_PROBE_UNAVAILABLE",
+                where="model.probe",
+                why="当前进程没有可用的连接测试执行器",
+                fix="重启应用后重试；若持续失败，联系维护者",
+            )
+        operation = await probe_runner.submit(
             kind=body.kind,
             model=body.model,
+            draft=_draft_from_probe(body),
             connection_id=body.connection_id,
+            request_key=body.request_key,
         )
-        return ProbeView(
+        return ProbeAcceptedView(
             revision=service.revision,
             connection_id=body.connection_id,
-            model=result.model,
-            response=result.response,
-            tool_call=result.tool_call,
-            code=result.code,
-            message=result.message,
+            operation_id=operation.id,
         )
 
     @router.get("/model-selection", response_model=SelectionResponse)

@@ -1,0 +1,2777 @@
+{
+  "StoryChangeSet": {
+    "$defs": {
+      "AddClue": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "add_clue",
+            "default": "add_clue",
+            "title": "Op",
+            "type": "string"
+          },
+          "clue": {
+            "$ref": "#/$defs/Clue"
+          }
+        },
+        "required": [
+          "clue"
+        ],
+        "title": "AddClue",
+        "type": "object"
+      },
+      "AddConstraint": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "add_constraint",
+            "default": "add_constraint",
+            "title": "Op",
+            "type": "string"
+          },
+          "constraint": {
+            "$ref": "#/$defs/Constraint"
+          }
+        },
+        "required": [
+          "constraint"
+        ],
+        "title": "AddConstraint",
+        "type": "object"
+      },
+      "AddNode": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "add_node",
+            "default": "add_node",
+            "title": "Op",
+            "type": "string"
+          },
+          "node": {
+            "$ref": "#/$defs/StoryNode"
+          }
+        },
+        "required": [
+          "node"
+        ],
+        "title": "AddNode",
+        "type": "object"
+      },
+      "AddThread": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "add_thread",
+            "default": "add_thread",
+            "title": "Op",
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/StoryThread"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "title": "AddThread",
+        "type": "object"
+      },
+      "Assessment": {
+        "additionalProperties": false,
+        "description": "一次语义核对的结果；不覆盖原记录，作者裁决另记。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "default": "write_check",
+            "enum": [
+              "write_check",
+              "link_check",
+              "manual"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/$defs/AssessmentRequirement"
+            },
+            "title": "Requirements",
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/$defs/AssessmentFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "checked_scope": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Checked Scope",
+            "type": "string"
+          },
+          "structure_revision": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Structure Revision",
+            "type": "string"
+          },
+          "prose_digests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Prose Digests",
+            "type": "object"
+          },
+          "source_operation_id": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Source Operation Id",
+            "type": "string"
+          },
+          "decision_source": {
+            "default": "model",
+            "enum": [
+              "model",
+              "author",
+              "app"
+            ],
+            "title": "Decision Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "structure_revision"
+        ],
+        "title": "Assessment",
+        "type": "object"
+      },
+      "AssessmentFinding": {
+        "additionalProperties": false,
+        "description": "一处具体发现：对应要求、严重性、原文位置与说明。",
+        "properties": {
+          "requirement_id": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Requirement Id",
+            "type": "string"
+          },
+          "severity": {
+            "default": "advisory",
+            "enum": [
+              "blocking",
+              "advisory",
+              "uncertain"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          },
+          "path": {
+            "default": "",
+            "title": "Path",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "End"
+          },
+          "quote": {
+            "default": "",
+            "title": "Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "title": "AssessmentFinding",
+        "type": "object"
+      },
+      "AssessmentRequirement": {
+        "additionalProperties": false,
+        "description": "核对时被逐条对照的要求；来自任务受理时的固定要求，模型不能改写。",
+        "properties": {
+          "requirement_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Requirement Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement_id",
+          "text"
+        ],
+        "title": "AssessmentRequirement",
+        "type": "object"
+      },
+      "BindProse": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "bind_prose",
+            "default": "bind_prose",
+            "title": "Op",
+            "type": "string"
+          },
+          "binding": {
+            "$ref": "#/$defs/ProseBinding"
+          }
+        },
+        "required": [
+          "binding"
+        ],
+        "title": "BindProse",
+        "type": "object"
+      },
+      "Clue": {
+        "additionalProperties": false,
+        "description": "一条线索：作者真相、创作意图与回收位置分开记录。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "author_truth": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Author Truth"
+          },
+          "intention": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Intention",
+            "type": "string"
+          },
+          "resolution": {
+            "$ref": "#/$defs/ClueResolution"
+          },
+          "provenance": {
+            "default": "author_request",
+            "enum": [
+              "author_request",
+              "authorized_creation",
+              "model_suggestion"
+            ],
+            "title": "Provenance",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "Clue",
+        "type": "object"
+      },
+      "ClueResolution": {
+        "additionalProperties": false,
+        "description": "线索的回收意图；``undecided`` 表示作者还没决定，不是「不回收」。",
+        "properties": {
+          "intent": {
+            "default": "undecided",
+            "enum": [
+              "explain",
+              "leave_open",
+              "undecided"
+            ],
+            "title": "Intent",
+            "type": "string"
+          },
+          "node_ids": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Node Ids",
+            "type": "array"
+          }
+        },
+        "title": "ClueResolution",
+        "type": "object"
+      },
+      "ClueUse": {
+        "additionalProperties": false,
+        "description": "一条线索在某个节点里怎么出现；预期理解是创作目标，不是读者的实际认知。",
+        "properties": {
+          "clue_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Clue Id",
+            "type": "string"
+          },
+          "presentation": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Presentation",
+            "type": "string"
+          },
+          "mode": {
+            "default": "unknown",
+            "enum": [
+              "narration",
+              "action",
+              "testimony",
+              "recollection",
+              "hypothesis",
+              "dream",
+              "unknown"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "speaker_id": {
+            "default": "",
+            "title": "Speaker Id",
+            "type": "string"
+          },
+          "expected_interpretation": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Expected Interpretation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clue_id",
+          "presentation"
+        ],
+        "title": "ClueUse",
+        "type": "object"
+      },
+      "Connect": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "connect",
+            "default": "connect",
+            "title": "Op",
+            "type": "string"
+          },
+          "edge": {
+            "$ref": "#/$defs/StoryEdge"
+          }
+        },
+        "required": [
+          "edge"
+        ],
+        "title": "Connect",
+        "type": "object"
+      },
+      "Constraint": {
+        "additionalProperties": false,
+        "description": "作者约定的原文与强度；修订号由应用生成，用于判断依赖是否过期。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "strength": {
+            "default": "required",
+            "enum": [
+              "required",
+              "preference"
+            ],
+            "title": "Strength",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/$defs/ConstraintScope"
+          },
+          "source_message_id": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Source Message Id",
+            "type": "string"
+          },
+          "origin": {
+            "default": "author_request",
+            "enum": [
+              "author_request",
+              "authorized_creation",
+              "model_suggestion"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "revision": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "revision"
+        ],
+        "title": "Constraint",
+        "type": "object"
+      },
+      "ConstraintScope": {
+        "additionalProperties": false,
+        "description": "约定作用在哪儿：全书、某个人物、某个节点或某段正文。",
+        "properties": {
+          "kind": {
+            "default": "book",
+            "enum": [
+              "book",
+              "character",
+              "node",
+              "prose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "target_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "title": "ConstraintScope",
+        "type": "object"
+      },
+      "Disconnect": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "disconnect",
+            "default": "disconnect",
+            "title": "Op",
+            "type": "string"
+          },
+          "edge_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Edge Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge_id"
+        ],
+        "title": "Disconnect",
+        "type": "object"
+      },
+      "EventTimeRelation": {
+        "additionalProperties": false,
+        "description": "实际事件时间：``before_node_id`` 发生在 ``after_node_id`` 之前，与揭示顺序无关。",
+        "properties": {
+          "before_node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Before Node Id",
+            "type": "string"
+          },
+          "after_node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "After Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "before_node_id",
+          "after_node_id"
+        ],
+        "title": "EventTimeRelation",
+        "type": "object"
+      },
+      "KnowledgeChange": {
+        "additionalProperties": false,
+        "description": "某角色在某事件位置之后知道或相信什么；来源可以是多个先前节点。",
+        "properties": {
+          "subject_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "claim": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Claim",
+            "type": "string"
+          },
+          "stance": {
+            "default": "knows",
+            "enum": [
+              "knows",
+              "believes"
+            ],
+            "title": "Stance",
+            "type": "string"
+          },
+          "source_node_ids": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Source Node Ids",
+            "type": "array"
+          },
+          "effective_event_node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Effective Event Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject_id",
+          "claim",
+          "effective_event_node_id"
+        ],
+        "title": "KnowledgeChange",
+        "type": "object"
+      },
+      "ProseBinding": {
+        "additionalProperties": false,
+        "description": "结构节点与正文区间的关联；区间是服务端规范化后的 Unicode 码点。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "clue_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Clue Id"
+          },
+          "document_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Document Id",
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "digest": {
+            "minLength": 1,
+            "title": "Digest",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "end": {
+            "exclusiveMinimum": 0,
+            "title": "End",
+            "type": "integer"
+          },
+          "quote": {
+            "minLength": 1,
+            "title": "Quote",
+            "type": "string"
+          },
+          "observation": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Observation",
+            "type": "string"
+          },
+          "assessment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Assessment Id"
+          }
+        },
+        "required": [
+          "id",
+          "node_id",
+          "document_id",
+          "path",
+          "digest",
+          "start",
+          "end",
+          "quote"
+        ],
+        "title": "ProseBinding",
+        "type": "object"
+      },
+      "ProsePatch": {
+        "additionalProperties": false,
+        "description": "一处正文替换；按规范化字符区间校验原文，由构思存储协调提交。",
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "base_digest": {
+            "minLength": 1,
+            "title": "Base Digest",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "end": {
+            "minimum": 0,
+            "title": "End",
+            "type": "integer"
+          },
+          "replacement": {
+            "title": "Replacement",
+            "type": "string"
+          },
+          "delete": {
+            "default": false,
+            "title": "Delete",
+            "type": "boolean"
+          },
+          "expected": {
+            "default": "",
+            "title": "Expected",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "base_digest",
+          "start",
+          "end",
+          "replacement"
+        ],
+        "title": "ProsePatch",
+        "type": "object"
+      },
+      "ReadDependency": {
+        "additionalProperties": false,
+        "description": "这次变更读过的对象与修订；提交前重查，变了就冲突。",
+        "properties": {
+          "kind": {
+            "enum": [
+              "variant",
+              "prose",
+              "constraint",
+              "module",
+              "conversation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "revision": {
+            "minLength": 1,
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "revision"
+        ],
+        "title": "ReadDependency",
+        "type": "object"
+      },
+      "RecordAssessment": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "record_assessment",
+            "default": "record_assessment",
+            "title": "Op",
+            "type": "string"
+          },
+          "assessment": {
+            "$ref": "#/$defs/Assessment"
+          }
+        },
+        "required": [
+          "assessment"
+        ],
+        "title": "RecordAssessment",
+        "type": "object"
+      },
+      "RemoveAssessment": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "remove_assessment",
+            "default": "remove_assessment",
+            "title": "Op",
+            "type": "string"
+          },
+          "assessment_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Assessment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assessment_id"
+        ],
+        "title": "RemoveAssessment",
+        "type": "object"
+      },
+      "RemoveClue": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "remove_clue",
+            "default": "remove_clue",
+            "title": "Op",
+            "type": "string"
+          },
+          "clue_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Clue Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clue_id"
+        ],
+        "title": "RemoveClue",
+        "type": "object"
+      },
+      "RemoveConstraint": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "remove_constraint",
+            "default": "remove_constraint",
+            "title": "Op",
+            "type": "string"
+          },
+          "constraint_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Constraint Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "constraint_id"
+        ],
+        "title": "RemoveConstraint",
+        "type": "object"
+      },
+      "RemoveNode": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "remove_node",
+            "default": "remove_node",
+            "title": "Op",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id"
+        ],
+        "title": "RemoveNode",
+        "type": "object"
+      },
+      "RemoveThread": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "remove_thread",
+            "default": "remove_thread",
+            "title": "Op",
+            "type": "string"
+          },
+          "thread_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread_id"
+        ],
+        "title": "RemoveThread",
+        "type": "object"
+      },
+      "SetEventTime": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "set_event_time",
+            "default": "set_event_time",
+            "title": "Op",
+            "type": "string"
+          },
+          "relation": {
+            "$ref": "#/$defs/EventTimeRelation"
+          }
+        },
+        "required": [
+          "relation"
+        ],
+        "title": "SetEventTime",
+        "type": "object"
+      },
+      "StoryEdge": {
+        "additionalProperties": false,
+        "description": "节点之间的关系；只有 ``next`` 表示揭示推进。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "from_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "From Id",
+            "type": "string"
+          },
+          "to_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "To Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "next",
+              "reframe",
+              "answer"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from_id",
+          "to_id",
+          "kind"
+        ],
+        "title": "StoryEdge",
+        "type": "object"
+      },
+      "StoryNode": {
+        "additionalProperties": false,
+        "description": "一个创作节点：发生了什么、属于哪些分支、用了哪些线索。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "action": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Action",
+            "type": "string"
+          },
+          "thread_ids": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Thread Ids",
+            "type": "array"
+          },
+          "clue_uses": {
+            "items": {
+              "$ref": "#/$defs/ClueUse"
+            },
+            "title": "Clue Uses",
+            "type": "array"
+          },
+          "time_note": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Time Note",
+            "type": "string"
+          },
+          "knowledge_changes": {
+            "items": {
+              "$ref": "#/$defs/KnowledgeChange"
+            },
+            "title": "Knowledge Changes",
+            "type": "array"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Group Id"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "action"
+        ],
+        "title": "StoryNode",
+        "type": "object"
+      },
+      "StoryThread": {
+        "additionalProperties": false,
+        "description": "一条故事内分支。成员由节点的 ``thread_ids`` 决定，这里不另存一份。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "StoryThread",
+        "type": "object"
+      },
+      "UnbindProse": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "unbind_prose",
+            "default": "unbind_prose",
+            "title": "Op",
+            "type": "string"
+          },
+          "binding_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Binding Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id"
+        ],
+        "title": "UnbindProse",
+        "type": "object"
+      },
+      "UnsetEventTime": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "unset_event_time",
+            "default": "unset_event_time",
+            "title": "Op",
+            "type": "string"
+          },
+          "before_node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Before Node Id",
+            "type": "string"
+          },
+          "after_node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "After Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "before_node_id",
+          "after_node_id"
+        ],
+        "title": "UnsetEventTime",
+        "type": "object"
+      },
+      "UpdateClue": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "update_clue",
+            "default": "update_clue",
+            "title": "Op",
+            "type": "string"
+          },
+          "clue_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Clue Id",
+            "type": "string"
+          },
+          "clue": {
+            "$ref": "#/$defs/Clue"
+          }
+        },
+        "required": [
+          "clue_id",
+          "clue"
+        ],
+        "title": "UpdateClue",
+        "type": "object"
+      },
+      "UpdateConstraint": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "update_constraint",
+            "default": "update_constraint",
+            "title": "Op",
+            "type": "string"
+          },
+          "constraint_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Constraint Id",
+            "type": "string"
+          },
+          "constraint": {
+            "$ref": "#/$defs/Constraint"
+          }
+        },
+        "required": [
+          "constraint_id",
+          "constraint"
+        ],
+        "title": "UpdateConstraint",
+        "type": "object"
+      },
+      "UpdateNode": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "update_node",
+            "default": "update_node",
+            "title": "Op",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "node": {
+            "$ref": "#/$defs/StoryNode"
+          }
+        },
+        "required": [
+          "node_id",
+          "node"
+        ],
+        "title": "UpdateNode",
+        "type": "object"
+      },
+      "UpdateThread": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "update_thread",
+            "default": "update_thread",
+            "title": "Op",
+            "type": "string"
+          },
+          "thread_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/StoryThread"
+          }
+        },
+        "required": [
+          "thread_id",
+          "thread"
+        ],
+        "title": "UpdateThread",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "一次完整变更单元：模型或界面只描述改什么，元数据由应用补齐。",
+    "properties": {
+      "id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Id",
+        "type": "string"
+      },
+      "base_revision": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Base Revision",
+        "type": "string"
+      },
+      "operations": {
+        "items": {
+          "discriminator": {
+            "mapping": {
+              "add_clue": "#/$defs/AddClue",
+              "add_constraint": "#/$defs/AddConstraint",
+              "add_node": "#/$defs/AddNode",
+              "add_thread": "#/$defs/AddThread",
+              "bind_prose": "#/$defs/BindProse",
+              "connect": "#/$defs/Connect",
+              "disconnect": "#/$defs/Disconnect",
+              "record_assessment": "#/$defs/RecordAssessment",
+              "remove_assessment": "#/$defs/RemoveAssessment",
+              "remove_clue": "#/$defs/RemoveClue",
+              "remove_constraint": "#/$defs/RemoveConstraint",
+              "remove_node": "#/$defs/RemoveNode",
+              "remove_thread": "#/$defs/RemoveThread",
+              "set_event_time": "#/$defs/SetEventTime",
+              "unbind_prose": "#/$defs/UnbindProse",
+              "unset_event_time": "#/$defs/UnsetEventTime",
+              "update_clue": "#/$defs/UpdateClue",
+              "update_constraint": "#/$defs/UpdateConstraint",
+              "update_node": "#/$defs/UpdateNode",
+              "update_thread": "#/$defs/UpdateThread"
+            },
+            "propertyName": "op"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AddNode"
+            },
+            {
+              "$ref": "#/$defs/UpdateNode"
+            },
+            {
+              "$ref": "#/$defs/RemoveNode"
+            },
+            {
+              "$ref": "#/$defs/AddClue"
+            },
+            {
+              "$ref": "#/$defs/UpdateClue"
+            },
+            {
+              "$ref": "#/$defs/RemoveClue"
+            },
+            {
+              "$ref": "#/$defs/AddThread"
+            },
+            {
+              "$ref": "#/$defs/UpdateThread"
+            },
+            {
+              "$ref": "#/$defs/RemoveThread"
+            },
+            {
+              "$ref": "#/$defs/Connect"
+            },
+            {
+              "$ref": "#/$defs/Disconnect"
+            },
+            {
+              "$ref": "#/$defs/AddConstraint"
+            },
+            {
+              "$ref": "#/$defs/UpdateConstraint"
+            },
+            {
+              "$ref": "#/$defs/RemoveConstraint"
+            },
+            {
+              "$ref": "#/$defs/SetEventTime"
+            },
+            {
+              "$ref": "#/$defs/UnsetEventTime"
+            },
+            {
+              "$ref": "#/$defs/BindProse"
+            },
+            {
+              "$ref": "#/$defs/UnbindProse"
+            },
+            {
+              "$ref": "#/$defs/RecordAssessment"
+            },
+            {
+              "$ref": "#/$defs/RemoveAssessment"
+            }
+          ]
+        },
+        "title": "Operations",
+        "type": "array"
+      },
+      "prose_patches": {
+        "items": {
+          "$ref": "#/$defs/ProsePatch"
+        },
+        "title": "Prose Patches",
+        "type": "array"
+      },
+      "read_dependencies": {
+        "items": {
+          "$ref": "#/$defs/ReadDependency"
+        },
+        "title": "Read Dependencies",
+        "type": "array"
+      },
+      "requested_scope": {
+        "default": "",
+        "maxLength": 500,
+        "title": "Requested Scope",
+        "type": "string"
+      },
+      "operation_id": {
+        "default": "",
+        "maxLength": 64,
+        "title": "Operation Id",
+        "type": "string"
+      },
+      "generation": {
+        "default": 0,
+        "minimum": 0,
+        "title": "Generation",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "id",
+      "base_revision"
+    ],
+    "title": "StoryChangeSet",
+    "type": "object"
+  },
+  "StoryVariant": {
+    "$defs": {
+      "Assessment": {
+        "additionalProperties": false,
+        "description": "一次语义核对的结果；不覆盖原记录，作者裁决另记。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "default": "write_check",
+            "enum": [
+              "write_check",
+              "link_check",
+              "manual"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/$defs/AssessmentRequirement"
+            },
+            "title": "Requirements",
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/$defs/AssessmentFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "checked_scope": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Checked Scope",
+            "type": "string"
+          },
+          "structure_revision": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Structure Revision",
+            "type": "string"
+          },
+          "prose_digests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Prose Digests",
+            "type": "object"
+          },
+          "source_operation_id": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Source Operation Id",
+            "type": "string"
+          },
+          "decision_source": {
+            "default": "model",
+            "enum": [
+              "model",
+              "author",
+              "app"
+            ],
+            "title": "Decision Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "structure_revision"
+        ],
+        "title": "Assessment",
+        "type": "object"
+      },
+      "AssessmentFinding": {
+        "additionalProperties": false,
+        "description": "一处具体发现：对应要求、严重性、原文位置与说明。",
+        "properties": {
+          "requirement_id": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Requirement Id",
+            "type": "string"
+          },
+          "severity": {
+            "default": "advisory",
+            "enum": [
+              "blocking",
+              "advisory",
+              "uncertain"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          },
+          "path": {
+            "default": "",
+            "title": "Path",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "End"
+          },
+          "quote": {
+            "default": "",
+            "title": "Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "title": "AssessmentFinding",
+        "type": "object"
+      },
+      "AssessmentRequirement": {
+        "additionalProperties": false,
+        "description": "核对时被逐条对照的要求；来自任务受理时的固定要求，模型不能改写。",
+        "properties": {
+          "requirement_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Requirement Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement_id",
+          "text"
+        ],
+        "title": "AssessmentRequirement",
+        "type": "object"
+      },
+      "Clue": {
+        "additionalProperties": false,
+        "description": "一条线索：作者真相、创作意图与回收位置分开记录。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "author_truth": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Author Truth"
+          },
+          "intention": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Intention",
+            "type": "string"
+          },
+          "resolution": {
+            "$ref": "#/$defs/ClueResolution"
+          },
+          "provenance": {
+            "default": "author_request",
+            "enum": [
+              "author_request",
+              "authorized_creation",
+              "model_suggestion"
+            ],
+            "title": "Provenance",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "Clue",
+        "type": "object"
+      },
+      "ClueResolution": {
+        "additionalProperties": false,
+        "description": "线索的回收意图；``undecided`` 表示作者还没决定，不是「不回收」。",
+        "properties": {
+          "intent": {
+            "default": "undecided",
+            "enum": [
+              "explain",
+              "leave_open",
+              "undecided"
+            ],
+            "title": "Intent",
+            "type": "string"
+          },
+          "node_ids": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Node Ids",
+            "type": "array"
+          }
+        },
+        "title": "ClueResolution",
+        "type": "object"
+      },
+      "ClueUse": {
+        "additionalProperties": false,
+        "description": "一条线索在某个节点里怎么出现；预期理解是创作目标，不是读者的实际认知。",
+        "properties": {
+          "clue_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Clue Id",
+            "type": "string"
+          },
+          "presentation": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Presentation",
+            "type": "string"
+          },
+          "mode": {
+            "default": "unknown",
+            "enum": [
+              "narration",
+              "action",
+              "testimony",
+              "recollection",
+              "hypothesis",
+              "dream",
+              "unknown"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "speaker_id": {
+            "default": "",
+            "title": "Speaker Id",
+            "type": "string"
+          },
+          "expected_interpretation": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Expected Interpretation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clue_id",
+          "presentation"
+        ],
+        "title": "ClueUse",
+        "type": "object"
+      },
+      "Constraint": {
+        "additionalProperties": false,
+        "description": "作者约定的原文与强度；修订号由应用生成，用于判断依赖是否过期。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "strength": {
+            "default": "required",
+            "enum": [
+              "required",
+              "preference"
+            ],
+            "title": "Strength",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/$defs/ConstraintScope"
+          },
+          "source_message_id": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Source Message Id",
+            "type": "string"
+          },
+          "origin": {
+            "default": "author_request",
+            "enum": [
+              "author_request",
+              "authorized_creation",
+              "model_suggestion"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "revision": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "revision"
+        ],
+        "title": "Constraint",
+        "type": "object"
+      },
+      "ConstraintScope": {
+        "additionalProperties": false,
+        "description": "约定作用在哪儿：全书、某个人物、某个节点或某段正文。",
+        "properties": {
+          "kind": {
+            "default": "book",
+            "enum": [
+              "book",
+              "character",
+              "node",
+              "prose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "target_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "title": "ConstraintScope",
+        "type": "object"
+      },
+      "EventTimeRelation": {
+        "additionalProperties": false,
+        "description": "实际事件时间：``before_node_id`` 发生在 ``after_node_id`` 之前，与揭示顺序无关。",
+        "properties": {
+          "before_node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Before Node Id",
+            "type": "string"
+          },
+          "after_node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "After Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "before_node_id",
+          "after_node_id"
+        ],
+        "title": "EventTimeRelation",
+        "type": "object"
+      },
+      "KnowledgeChange": {
+        "additionalProperties": false,
+        "description": "某角色在某事件位置之后知道或相信什么；来源可以是多个先前节点。",
+        "properties": {
+          "subject_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "claim": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Claim",
+            "type": "string"
+          },
+          "stance": {
+            "default": "knows",
+            "enum": [
+              "knows",
+              "believes"
+            ],
+            "title": "Stance",
+            "type": "string"
+          },
+          "source_node_ids": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Source Node Ids",
+            "type": "array"
+          },
+          "effective_event_node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Effective Event Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject_id",
+          "claim",
+          "effective_event_node_id"
+        ],
+        "title": "KnowledgeChange",
+        "type": "object"
+      },
+      "ProseBinding": {
+        "additionalProperties": false,
+        "description": "结构节点与正文区间的关联；区间是服务端规范化后的 Unicode 码点。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "clue_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Clue Id"
+          },
+          "document_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Document Id",
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "digest": {
+            "minLength": 1,
+            "title": "Digest",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "end": {
+            "exclusiveMinimum": 0,
+            "title": "End",
+            "type": "integer"
+          },
+          "quote": {
+            "minLength": 1,
+            "title": "Quote",
+            "type": "string"
+          },
+          "observation": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Observation",
+            "type": "string"
+          },
+          "assessment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Assessment Id"
+          }
+        },
+        "required": [
+          "id",
+          "node_id",
+          "document_id",
+          "path",
+          "digest",
+          "start",
+          "end",
+          "quote"
+        ],
+        "title": "ProseBinding",
+        "type": "object"
+      },
+      "StoryEdge": {
+        "additionalProperties": false,
+        "description": "节点之间的关系；只有 ``next`` 表示揭示推进。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "from_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "From Id",
+            "type": "string"
+          },
+          "to_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "To Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "next",
+              "reframe",
+              "answer"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from_id",
+          "to_id",
+          "kind"
+        ],
+        "title": "StoryEdge",
+        "type": "object"
+      },
+      "StoryNode": {
+        "additionalProperties": false,
+        "description": "一个创作节点：发生了什么、属于哪些分支、用了哪些线索。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "action": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Action",
+            "type": "string"
+          },
+          "thread_ids": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Thread Ids",
+            "type": "array"
+          },
+          "clue_uses": {
+            "items": {
+              "$ref": "#/$defs/ClueUse"
+            },
+            "title": "Clue Uses",
+            "type": "array"
+          },
+          "time_note": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Time Note",
+            "type": "string"
+          },
+          "knowledge_changes": {
+            "items": {
+              "$ref": "#/$defs/KnowledgeChange"
+            },
+            "title": "Knowledge Changes",
+            "type": "array"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Group Id"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "action"
+        ],
+        "title": "StoryNode",
+        "type": "object"
+      },
+      "StoryThread": {
+        "additionalProperties": false,
+        "description": "一条故事内分支。成员由节点的 ``thread_ids`` 决定，这里不另存一份。",
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "StoryThread",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "一个完整方案：主方案或备选，各自持有可解析的结构。",
+    "properties": {
+      "id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Id",
+        "type": "string"
+      },
+      "name": {
+        "maxLength": 200,
+        "minLength": 1,
+        "title": "Name",
+        "type": "string"
+      },
+      "base_variant_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Base Variant Id"
+      },
+      "base_revision": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Base Revision"
+      },
+      "revision": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Revision",
+        "type": "string"
+      },
+      "nodes": {
+        "additionalProperties": {
+          "$ref": "#/$defs/StoryNode"
+        },
+        "title": "Nodes",
+        "type": "object"
+      },
+      "clues": {
+        "additionalProperties": {
+          "$ref": "#/$defs/Clue"
+        },
+        "title": "Clues",
+        "type": "object"
+      },
+      "threads": {
+        "additionalProperties": {
+          "$ref": "#/$defs/StoryThread"
+        },
+        "title": "Threads",
+        "type": "object"
+      },
+      "constraints": {
+        "additionalProperties": {
+          "$ref": "#/$defs/Constraint"
+        },
+        "title": "Constraints",
+        "type": "object"
+      },
+      "edges": {
+        "additionalProperties": {
+          "$ref": "#/$defs/StoryEdge"
+        },
+        "title": "Edges",
+        "type": "object"
+      },
+      "event_times": {
+        "items": {
+          "$ref": "#/$defs/EventTimeRelation"
+        },
+        "title": "Event Times",
+        "type": "array"
+      },
+      "bindings": {
+        "additionalProperties": {
+          "$ref": "#/$defs/ProseBinding"
+        },
+        "title": "Bindings",
+        "type": "object"
+      },
+      "assessments": {
+        "additionalProperties": {
+          "$ref": "#/$defs/Assessment"
+        },
+        "title": "Assessments",
+        "type": "object"
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "revision"
+    ],
+    "title": "StoryVariant",
+    "type": "object"
+  },
+  "StoryReceipt": {
+    "$defs": {
+      "JsonValue": {}
+    },
+    "additionalProperties": false,
+    "description": "一次已受理变更的收据；同键同负载返回它，同键异负载报冲突。",
+    "properties": {
+      "fingerprint": {
+        "minLength": 1,
+        "title": "Fingerprint",
+        "type": "string"
+      },
+      "kind": {
+        "minLength": 1,
+        "title": "Kind",
+        "type": "string"
+      },
+      "variant_id": {
+        "minLength": 1,
+        "title": "Variant Id",
+        "type": "string"
+      },
+      "base_revision": {
+        "minLength": 1,
+        "title": "Base Revision",
+        "type": "string"
+      },
+      "revision": {
+        "minLength": 1,
+        "title": "Revision",
+        "type": "string"
+      },
+      "request_key": {
+        "minLength": 1,
+        "title": "Request Key",
+        "type": "string"
+      },
+      "change_id": {
+        "default": "",
+        "title": "Change Id",
+        "type": "string"
+      },
+      "result": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "title": "Result",
+        "type": "object"
+      }
+    },
+    "required": [
+      "fingerprint",
+      "kind",
+      "variant_id",
+      "base_revision",
+      "revision",
+      "request_key"
+    ],
+    "title": "StoryReceipt",
+    "type": "object"
+  },
+  "StoryChangeRequest": {
+    "$defs": {
+      "ProsePatch": {
+        "additionalProperties": false,
+        "description": "一处正文替换；按规范化字符区间校验原文，由构思存储协调提交。",
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "base_digest": {
+            "minLength": 1,
+            "title": "Base Digest",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "end": {
+            "minimum": 0,
+            "title": "End",
+            "type": "integer"
+          },
+          "replacement": {
+            "title": "Replacement",
+            "type": "string"
+          },
+          "delete": {
+            "default": false,
+            "title": "Delete",
+            "type": "boolean"
+          },
+          "expected": {
+            "default": "",
+            "title": "Expected",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "base_digest",
+          "start",
+          "end",
+          "replacement"
+        ],
+        "title": "ProsePatch",
+        "type": "object"
+      },
+      "ReadDependency": {
+        "additionalProperties": false,
+        "description": "这次变更读过的对象与修订；提交前重查，变了就冲突。",
+        "properties": {
+          "kind": {
+            "enum": [
+              "variant",
+              "prose",
+              "constraint",
+              "module",
+              "conversation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "revision": {
+            "minLength": 1,
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "revision"
+        ],
+        "title": "ReadDependency",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "variant_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Variant Id",
+        "type": "string"
+      },
+      "expected_revision": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Expected Revision",
+        "type": "string"
+      },
+      "request_key": {
+        "maxLength": 120,
+        "minLength": 1,
+        "title": "Request Key",
+        "type": "string"
+      },
+      "operations": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "title": "Operations",
+        "type": "array"
+      },
+      "prose_patches": {
+        "items": {
+          "$ref": "#/$defs/ProsePatch"
+        },
+        "title": "Prose Patches",
+        "type": "array"
+      },
+      "read_dependencies": {
+        "items": {
+          "$ref": "#/$defs/ReadDependency"
+        },
+        "title": "Read Dependencies",
+        "type": "array"
+      },
+      "note": {
+        "default": "",
+        "maxLength": 500,
+        "title": "Note",
+        "type": "string"
+      }
+    },
+    "required": [
+      "variant_id",
+      "expected_revision",
+      "request_key"
+    ],
+    "title": "StoryChangeRequest",
+    "type": "object"
+  },
+  "AdoptionRequest": {
+    "additionalProperties": false,
+    "description": "采用备选：明确是整案还是选定片段，以及确定性应用还是交给模型调整。",
+    "properties": {
+      "source_variant_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Source Variant Id",
+        "type": "string"
+      },
+      "source_revision": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Source Revision",
+        "type": "string"
+      },
+      "target_variant_id": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Target Variant Id",
+        "type": "string"
+      },
+      "target_revision": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Target Revision",
+        "type": "string"
+      },
+      "node_ids": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 200,
+        "title": "Node Ids",
+        "type": "array"
+      },
+      "mode": {
+        "default": "exact",
+        "enum": [
+          "exact",
+          "assist"
+        ],
+        "title": "Mode",
+        "type": "string"
+      },
+      "replace": {
+        "default": false,
+        "title": "Replace",
+        "type": "boolean"
+      },
+      "request_key": {
+        "maxLength": 120,
+        "minLength": 1,
+        "title": "Request Key",
+        "type": "string"
+      },
+      "conversation_id": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Conversation Id"
+      }
+    },
+    "required": [
+      "source_variant_id",
+      "source_revision",
+      "target_variant_id",
+      "target_revision",
+      "request_key"
+    ],
+    "title": "AdoptionRequest",
+    "type": "object"
+  },
+  "StoryGraphView": {
+    "$defs": {
+      "StoryEdgeView": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "from_id": {
+            "title": "From Id",
+            "type": "string"
+          },
+          "to_id": {
+            "title": "To Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from_id",
+          "to_id",
+          "kind",
+          "reason"
+        ],
+        "title": "StoryEdgeView",
+        "type": "object"
+      },
+      "StoryNodeView": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "threads": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Threads",
+            "type": "array"
+          },
+          "clues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Clues",
+            "type": "array"
+          },
+          "time_note": {
+            "title": "Time Note",
+            "type": "string"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Group Id"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "action",
+          "threads",
+          "clues",
+          "time_note"
+        ],
+        "title": "StoryNodeView",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "latest_change_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Latest Change Id"
+      },
+      "variant_id": {
+        "title": "Variant Id",
+        "type": "string"
+      },
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "revision": {
+        "title": "Revision",
+        "type": "string"
+      },
+      "nodes": {
+        "items": {
+          "$ref": "#/$defs/StoryNodeView"
+        },
+        "title": "Nodes",
+        "type": "array"
+      },
+      "edges": {
+        "items": {
+          "$ref": "#/$defs/StoryEdgeView"
+        },
+        "title": "Edges",
+        "type": "array"
+      },
+      "threads": {
+        "items": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "title": "Threads",
+        "type": "array"
+      },
+      "event_times": {
+        "items": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "title": "Event Times",
+        "type": "array"
+      },
+      "constraints": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "title": "Constraints",
+        "type": "array"
+      },
+      "collapsed": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Collapsed",
+        "type": "array"
+      }
+    },
+    "required": [
+      "variant_id",
+      "name",
+      "revision",
+      "nodes",
+      "edges",
+      "threads",
+      "event_times",
+      "constraints"
+    ],
+    "title": "StoryGraphView",
+    "type": "object"
+  },
+  "ReaderPreviewRequest": {
+    "additionalProperties": false,
+    "description": "试读受理：方案与截止位置是全部输入；问题、历史与工具范围由应用固定。",
+    "properties": {
+      "request_key": {
+        "minLength": 1,
+        "title": "Request Key",
+        "type": "string"
+      },
+      "variant_id": {
+        "default": "",
+        "maxLength": 64,
+        "title": "Variant Id",
+        "type": "string"
+      },
+      "revision": {
+        "default": "",
+        "maxLength": 64,
+        "title": "Revision",
+        "type": "string"
+      },
+      "cutoff": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Cutoff",
+        "type": "string"
+      }
+    },
+    "required": [
+      "request_key",
+      "cutoff"
+    ],
+    "title": "ReaderPreviewRequest",
+    "type": "object"
+  },
+  "OperationView": {
+    "properties": {
+      "id": {
+        "title": "Id",
+        "type": "string"
+      },
+      "conversation_id": {
+        "title": "Conversation Id",
+        "type": "string"
+      },
+      "turn_id": {
+        "title": "Turn Id",
+        "type": "string"
+      },
+      "purpose": {
+        "title": "Purpose",
+        "type": "string"
+      },
+      "target": {
+        "title": "Target",
+        "type": "string"
+      },
+      "status": {
+        "title": "Status",
+        "type": "string"
+      },
+      "generation": {
+        "title": "Generation",
+        "type": "integer"
+      },
+      "phase": {
+        "title": "Phase",
+        "type": "string"
+      },
+      "model": {
+        "title": "Model",
+        "type": "string"
+      },
+      "connection": {
+        "title": "Connection",
+        "type": "string"
+      },
+      "note": {
+        "title": "Note",
+        "type": "string"
+      },
+      "error": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Error"
+      },
+      "pending_units": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Pending Units",
+        "type": "array"
+      },
+      "last_seq": {
+        "title": "Last Seq",
+        "type": "integer"
+      },
+      "created_at": {
+        "title": "Created At",
+        "type": "string"
+      },
+      "updated_at": {
+        "title": "Updated At",
+        "type": "string"
+      },
+      "capabilities": {
+        "additionalProperties": {
+          "type": "boolean"
+        },
+        "title": "Capabilities",
+        "type": "object"
+      }
+    },
+    "required": [
+      "id",
+      "conversation_id",
+      "turn_id",
+      "purpose",
+      "target",
+      "status",
+      "generation",
+      "phase",
+      "model",
+      "connection",
+      "note",
+      "last_seq",
+      "created_at",
+      "updated_at",
+      "capabilities"
+    ],
+    "title": "OperationView",
+    "type": "object"
+  }
+}

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from hastings.prompts.tasks import summary_instruction_prompt, summary_merge_prompt
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.compaction import (
     CompactionPlan,
@@ -27,7 +28,13 @@ async def summarize_history(
     plan: CompactionPlan,
     previous: CompactionRecord | None,
     generate: Callable[[str, str], Awaitable[str]],
+    *,
+    instruction: str = "",
 ) -> ParsedSummary:
+    """分段摘要；``instruction`` 是作者在这次整理中补充的要求。
+
+    要求进入每一次摘要请求的提示：它决定保留什么、怎么合并，不能只记在操作日志里。
+    """
     system, _ = build_summary_prompt(events, plan)
     limit = snapshot.limits.input_limit() if snapshot.limits else None
     # 已成立的摘要继续作为来源；只重读新覆盖的完整轮次，避免反复支付全部旧历史。
@@ -44,12 +51,10 @@ async def summarize_history(
     def prompt_for(turns: list[str]) -> str:
         selected = tuple(event for event in events if event.get("turn_id") in turns)
         _, text = build_summary_prompt(selected, plan)
-        return (
-            f"先前有效摘要：\n{carry}\n\n合并下列新增完整轮次；保留仍有效的约束、来源和原话，"
-            "根据作者的新修正替换旧决定。\n\n" + text
-            if carry
-            else text
-        )
+        merged = summary_merge_prompt(carry, text) if carry else text
+        if not instruction.strip():
+            return merged
+        return summary_instruction_prompt(instruction, merged)
 
     def fits(prompt: str) -> bool:
         estimate = _request_estimate(

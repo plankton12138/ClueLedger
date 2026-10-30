@@ -31,7 +31,6 @@ const api = vi.hoisted(() => ({
   createConversationWithText: vi.fn(),
   conversationMessages: vi.fn(),
   startTurn: vi.fn(),
-  stopTurn: vi.fn(),
   renameConversation: vi.fn(),
   streamEvents: vi.fn(),
 }));

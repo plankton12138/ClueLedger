@@ -6,6 +6,7 @@
  */
 
 import { request, requestApi } from "./workspace";
+import type { FileView } from "./workspace";
 
 export interface StoryCounts {
   nodes: number;
@@ -51,6 +52,7 @@ export interface StoryEdge {
 }
 
 export interface StoryGraph {
+  latest_change_id?: string | null;
   variant_id: string;
   name: string;
   revision: string;
@@ -123,6 +125,8 @@ export interface StoryAdoptionPlan {
 export interface StoryAdoptionResult {
   plan: StoryAdoptionPlan;
   receipt: StoryReceipt | null;
+  /** assist 受理的可见操作；结构已提交，正文调整由这个任务承接。 */
+  operation_id?: string;
 }
 
 export interface StoryComparison {
@@ -145,6 +149,22 @@ export interface StoryChangeRecord {
   operations: Record<string, unknown>[];
   changed: string[];
   undone_by: string | null;
+}
+
+export interface StoryProse extends FileView {
+  variant_id: string;
+  /** 备选还没写入自己的副本，内容仍来自主方案正文。 */
+  inherited: boolean;
+}
+
+export function readStoryProse(
+  workspaceId: string,
+  variantId: string,
+  path: string,
+): Promise<StoryProse> {
+  return request<StoryProse>(
+    `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/prose?path=${encodeURIComponent(path)}`,
+  );
 }
 
 export function listStoryVariants(workspaceId: string): Promise<StoryVariantList> {
@@ -180,6 +200,8 @@ export function submitStoryChange(
     expected_revision: string;
     request_key: string;
     operations: Record<string, unknown>[];
+    prose_patches?: { path: string; base_digest: string; start: number; end: number; expected: string; replacement: string; delete?: boolean }[];
+    read_dependencies?: { kind: "variant" | "prose" | "constraint" | "module" | "conversation"; id: string; revision: string }[];
     note?: string;
   },
 ): Promise<StoryReceipt> {
@@ -263,4 +285,17 @@ export function readOperationContext(operationId: string): Promise<{
   note: string;
 }> {
   return requestApi(`/api/operations/${encodeURIComponent(operationId)}/context`);
+}
+
+export interface StoryCandidate {
+  id: string;
+  status: string;
+  documents: Record<string, string>;
+  report: { checks: { id: string; status: string; path: string; quote: string; reason: string }[]; approved: boolean } | null;
+  repaired: boolean;
+  author_text: string;
+}
+
+export function listStoryCandidates(workspaceId: string): Promise<StoryCandidate[]> {
+  return request<StoryCandidate[]>(`/${workspaceId}/story/candidates`);
 }

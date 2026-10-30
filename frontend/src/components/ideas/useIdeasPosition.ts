@@ -1,6 +1,6 @@
 /** 悬浮位置以可视区域中的右下角比例保存，拖动可越过窗口边缘，但始终保留标题栏可抓取。 */
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
-import { MAX_POSITION_RATIO, useIdeasSurfaceStore, type IdeaPosition } from "../../state/ideasSurface";
+import { DEFAULT_IDEA_POSITION, MAX_POSITION_RATIO, useIdeasSurfaceStore, type IdeaPosition } from "../../state/ideasSurface";
 
 export interface FloatingBounds { left: number; top: number; right: number; bottom: number }
 export interface FloatingSize { width: number; height: number }
@@ -54,10 +54,15 @@ function viewportBounds(): FloatingBounds {
 export function useIdeasPosition(element: RefObject<HTMLElement>, open: boolean, workspaceId: string | null) {
   const saved = useIdeasSurfaceStore(state => state.position);
   const [moving, setMoving] = useState<IdeaPosition | null>(null);
-  const [geometry, setGeometry] = useState(() => ({ bounds: viewportBounds(), size: { width: 82, height: 44 } }));
+  const [geometry, setGeometry] = useState(() => ({ bounds: viewportBounds(), size: { width: 82, height: 44 }, headerBottom: 0 }));
   const drag = useRef<{ id: number; x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
-  const point = floatingPoint(geometry.bounds, geometry.size, moving ?? saved);
+  const naturalPoint = floatingPoint(geometry.bounds, geometry.size, moving ?? saved);
+  const defaultPlacement = saved.x === DEFAULT_IDEA_POSITION.x && saved.y === DEFAULT_IDEA_POSITION.y;
+  // 仅调整默认展开位置；作者拖动后的位置仍可以越过顶栏。
+  const point = open && defaultPlacement && !moving
+    ? { ...naturalPoint, top: Math.max(naturalPoint.top, geometry.headerBottom + 10) }
+    : naturalPoint;
   const lastPoint = useRef(point);
   lastPoint.current = point;
 
@@ -66,13 +71,17 @@ export function useIdeasPosition(element: RefObject<HTMLElement>, open: boolean,
     if (!node) return;
     const measure = () => {
       const bounds = viewportBounds();
-      node.style.maxHeight = `${Math.max(44, bounds.bottom - bounds.top)}px`;
+      const headerBottom = document.querySelector<HTMLElement>(".app-header")?.getBoundingClientRect().bottom ?? 0;
+      const top = open && defaultPlacement ? Math.max(bounds.top, headerBottom + 10) : bounds.top;
+      node.style.maxHeight = `${Math.max(44, bounds.bottom - top)}px`;
       node.style.maxWidth = `${Math.max(44, bounds.right - bounds.left)}px`;
-      setGeometry({ bounds, size: { width: node.offsetWidth, height: node.offsetHeight } });
+      setGeometry({ bounds, size: { width: node.offsetWidth, height: node.offsetHeight }, headerBottom });
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
+    const header = document.querySelector<HTMLElement>(".app-header");
+    if (header) observer.observe(header);
     window.addEventListener("resize", measure);
     window.visualViewport?.addEventListener("resize", measure);
     window.visualViewport?.addEventListener("scroll", measure);
@@ -82,7 +91,7 @@ export function useIdeasPosition(element: RefObject<HTMLElement>, open: boolean,
       window.visualViewport?.removeEventListener("resize", measure);
       window.visualViewport?.removeEventListener("scroll", measure);
     };
-  }, [element, open, workspaceId]);
+  }, [element, open, workspaceId, defaultPlacement]);
 
   function finish(event: PointerEvent<HTMLElement>, cancelled = false) {
     if (drag.current?.id !== event.pointerId) return;

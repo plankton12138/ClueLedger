@@ -147,28 +147,6 @@ def evaluate_rule(
                         ):
                             ok = True
         return check_row(rule.id, ok, {"path": rule.path, "spans": spans})
-    if rule.kind in {"clue_report_status", "clue_finding_kind", "clue_evidence_quote"}:
-        finished = [
-            e
-            for e in evidence["events"]
-            if e["type"] == "review_finished" and e.get("clue_report_id")
-        ]
-        if not finished:
-            return check_row(rule.id, False, "本轮没有发布线索核对报告")
-        report = finished[-1]
-        if rule.kind == "clue_report_status":
-            return check_row(rule.id, report.get("status") == rule.value, report.get("status"))
-        if rule.kind == "clue_finding_kind":
-            kinds = [str(item.get("kind")) for item in report.get("findings") or []]
-            return check_row(rule.id, rule.value in kinds, kinds)
-        quotes = [
-            str(item.get("quote"))
-            for finding in report.get("findings") or []
-            for item in finding.get("evidence") or []
-        ]
-        # 引文允许比检查值更长：只要真实原文被引用，不要把整行照抄判成失败。
-        ok = any(rule.value in quote for quote in quotes)
-        return check_row(rule.id, ok, quotes)
     if rule.kind == "index_status":
         actual = evidence["index_status"].get(rule.path, "missing")
         return check_row(rule.id, actual == rule.value, actual)

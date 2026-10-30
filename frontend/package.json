@@ -2,7 +2,7 @@
   "name": "hastings-frontend",
   "description": "ClueLedger（线簿）前端：会记账的悬疑小说 AI 主编",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",

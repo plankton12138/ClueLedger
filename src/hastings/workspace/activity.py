@@ -115,8 +115,6 @@ _TOOL_VERBS = {
     "search_ideas": "查找灵感",
     "save_idea": "保存灵感",
     "ask_author": "询问作者",
-    "link_clue_design": "关联计划",
-    "save_clue_inference": "保存推理目标",
 }
 _FILE_VERBS = {
     "create": "新建文件",

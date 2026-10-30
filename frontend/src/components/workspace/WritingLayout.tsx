@@ -19,7 +19,6 @@ import { useCluesStore, type CluePane } from "../../state/clues";
 import ChapterClues from "../clues/ChapterClues";
 import StorySurface from "../story/StorySurface";
 import { useStoryStore } from "../../state/story";
-import type { ClueInference } from "../../api/clues";
 import type { ClueReferenceInput } from "../../api/workspace";
 import { sourceTaskChapter } from "../../state/sourceLocation";
 
@@ -29,6 +28,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const running = useConversationsStore(runningConversation);
   const selectedModule = useWorkspaceModulesStore(state => state.selected);
   const source = useSourceLocationStore(state => state.workspaceId === currentId ? state.location : null);
+  const variantFile = useSourceLocationStore(state => state.workspaceId === currentId ? state.variantFile : null);
   const sourceId = useSourceLocationStore(state => state.workspaceId === currentId ? state.evidenceId : null);
   const restoreEpoch = useSourceLocationStore(state => state.restoreEpoch);
   const pendingRestore = useSourceLocationStore(state => state.restorePosition);
@@ -87,32 +87,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     useSourceLocationStore.getState().capture({ kind: "writing", workspaceId: currentId }, taskChapter);
     navigate({ kind: "writing", workspaceId: currentId, sourceId: evidenceId, asOfChapter: asOf, taskChapter });
   }
-  // 核对推理是一轮真实的只读请求：目标与章节一起提交，不给模型扩大范围的机会。
-  function reviewInference(inference: ClueInference, asOf: number | null) {
-    if (!currentId) return;
-    const cutoff = asOf ?? chapterNumber;
-    const paths = (inference.suggested_chapters.length
-      ? inference.suggested_chapters
-      : chapterPath ? [chapterPath] : []).slice(0, 10);
-    if (cutoff === null || paths.length === 0) return;
-    void useConversationsStore.getState().send(
-      `核对推理：${inference.goal}`,
-      { selected_path: paths[0], reference_paths: paths, observed_digests: {}, state_chapter: cutoff },
-      {
-        purpose: "review",
-        reviewPaths: paths,
-        clueReview: {
-          inferenceId: inference.inference_id,
-          inferenceRevision: inference.inference_revision,
-          clueIds: inference.clue_ids,
-          asOfChapter: cutoff,
-        },
-      },
-    );
-    useCluesStore.getState().setPane(currentId, "chat");
-    setCompactChat(true);
-    if (!compact && !prefs.chatVisible) prefs.toggleChat();
-  }
   // 带上线索只写进消息草稿，不发送；引用版本在发送时才由服务端核对。
   async function referenceClue(reference: ClueReferenceInput, title: string) {
     if (!currentId) return;
@@ -146,6 +120,8 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
           const pending = useSourceLocationStore.getState().restorePosition;
           if (pending) useSourceLocationStore.getState().consumeRestore(pending.epoch);
           if (page?.kind === "writing" && page.sourceId) { useSourceLocationStore.getState().clear(); navigate({ kind: "writing", workspaceId: page.workspaceId }); }
+          // 从备选正文切回目录：这次定位的读取区不再适用。
+          else if (useSourceLocationStore.getState().variantFile) useSourceLocationStore.getState().clear();
           if (!canDockDirectory) { setDirectory(false); setCompactChat(false); directoryButton.current?.focus(); }
         }} />
       </aside>
@@ -160,12 +136,21 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
               // 只把对话栏带出来：对话已经在最前时不能再按一次「切换」，否则会被收起。
               if (!currentId) return;
               if (!prefs.chatVisible) prefs.toggleChat();
-              if (compactChat) setCompactChat(false);
+              setCompactChat(true);
               useCluesStore.getState().setPane(currentId, "chat");
             }}
             onLocate={binding => {
               // 从结构跳到正文：先回到正文面，再按结构里记的区间定位。
               setStoryView(false);
+              if (binding.variantId && binding.variantId !== useStoryStore.getState().primaryId) {
+                // 备选方案的正文在自己的受管副本里，不能打开主方案正式文件。
+                void useSourceLocationStore.getState().showVariant(
+                  currentId,
+                  { variantId: binding.variantId, path: binding.path, start: binding.start, end: binding.end, quote: binding.quote },
+                  { fromStory: true },
+                );
+                return;
+              }
               void useSourceLocationStore.getState().showLocal(
                 currentId,
                 { path: binding.path, start: binding.start, end: binding.end, quote: binding.quote },
@@ -173,7 +158,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
               );
             }}
           />
-        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} loading={loading} /> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
+        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={variantFile ?? file} loading={loading} variant={Boolean(variantFile)} /> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
         </div></div>
       </section>
       {currentId && <>
@@ -191,7 +176,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             <button id="assistant-clues-tab" role="tab" data-pane="clues" aria-selected={pane === "clues"} aria-controls="writing-clues" tabIndex={pane === "clues" ? 0 : -1} className="ui-button" onClick={() => showPane("clues")}>本章线索</button>
           </div>
           <div id="writing-chat" role="tabpanel" aria-labelledby="assistant-chat-tab" hidden={pane !== "chat"} className="min-h-0 flex-1"><ConversationPanel /></div>
-          <div id="writing-clues" role="tabpanel" aria-labelledby="assistant-clues-tab" hidden={pane !== "clues"} className="min-h-0 flex-1"><ChapterClues workspaceId={currentId} chapterPath={chapterPath} asOf={chapterNumber} active={chat && pane === "clues"} onLocate={locate} onReview={reviewInference} onReference={referenceClue} /></div>
+          <div id="writing-clues" role="tabpanel" aria-labelledby="assistant-clues-tab" hidden={pane !== "clues"} className="min-h-0 flex-1"><ChapterClues workspaceId={currentId} chapterPath={chapterPath} asOf={chapterNumber} active={chat && pane === "clues"} onLocate={locate} onReference={referenceClue} /></div>
         </div>
       </>}
     </div>

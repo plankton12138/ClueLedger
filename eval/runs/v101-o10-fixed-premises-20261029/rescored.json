@@ -1,0 +1,660 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261029-235001-893824",
+    "started_at": "2026-10-29T23:50:01.895287+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "027fc13aa63367b83ca99ad0a0e89880a36b174a",
+    "git_dirty": true,
+    "source_sha256": "08362102b1d254d56f9c2691f965f50dc26e8212bca6ac392a3702f0e55e4895",
+    "cases_sha256": "00536c411705a4c1b8657142afbab960865da7c6e3e79cbbebe262747e2030cc",
+    "suite": "v101",
+    "jobs": [
+      {
+        "key": "v101_o10--current--1",
+        "case": "v101_o10",
+        "family": "O10",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      },
+      {
+        "key": "v101_o10--current--2",
+        "case": "v101_o10",
+        "family": "O10",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 2
+      },
+      {
+        "key": "v101_o10--current--3",
+        "case": "v101_o10",
+        "family": "O10",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 3
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 200,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261029-235001-893824",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "提示分区变体仅移除所选分区；no_compaction 禁用手动与自动摘要，保留轮内裁剪和溢出恢复；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 37,
+    "rescored_at": "2026-10-29T23:54:06.484241+08:00",
+    "scorer_source_sha256": "08362102b1d254d56f9c2691f965f50dc26e8212bca6ac392a3702f0e55e4895",
+    "reviews_sha256": "7e43cec372e5e57b377425e48b704ae45811821137538b4d2ad4c59e658d0e26"
+  },
+  "summary": {
+    "planned": 3,
+    "executed": 3,
+    "counts": {
+      "pass": 3,
+      "not_run": 0
+    },
+    "success_rate": 1.0,
+    "duration_p50_seconds": 44.329,
+    "duration_p95_seconds": 50.547,
+    "input_tokens": 36581,
+    "output_tokens": 20040,
+    "tokens_per_success": 18873.666666666668,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 44.329,
+        "duration_p95_seconds": 50.547,
+        "input_tokens": 36581,
+        "output_tokens": 20040,
+        "tokens_per_success": 18873.666666666668,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "O10": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 44.329,
+        "duration_p95_seconds": 50.547,
+        "input_tokens": 36581,
+        "output_tokens": 20040,
+        "tokens_per_success": 18873.666666666668,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 44.329,
+        "duration_p95_seconds": 50.547,
+        "input_tokens": 36581,
+        "output_tokens": 20040,
+        "tokens_per_success": 18873.666666666668,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v101_o10": {
+        "planned": 3,
+        "executed": 3,
+        "counts": {
+          "pass": 3,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 44.329,
+        "duration_p95_seconds": 50.547,
+        "input_tokens": 36581,
+        "output_tokens": 20040,
+        "tokens_per_success": 18873.666666666668,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 3855,
+            "at": "2026-10-29T23:50:45.249+08:00",
+            "event_version": 1,
+            "event_id": "c_7516b22471e2:3855",
+            "conversation_id": "c_7516b22471e2",
+            "type": "run_finished",
+            "turn_id": "t_967abc3e",
+            "operation_id": "op_32ab1ec2a1f4",
+            "generation": 1,
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0001 雨夜.md"
+            ],
+            "commit": "96927c2feac59f5d17a0f964999e3eab12fe21cc",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "已按你的限制完成候选提交（尚未成为正式正文）。这一轮我只动了 `正文/0001 雨夜.md`，并把相关结构一起提出。\n\n## 已提出的正文候选\n\n`正文/0001 雨夜.md`：\n\n> # 雨夜\n>\n> 雪刚停，林砚抵达旅馆。柜台上有一双湿手套，手套还在滴水。管家说自己一直在房间。\n\n- 保留「手套还在滴水」原句。\n- 抵达时间改成「雪刚停」之后。\n- 没有补写弄湿时刻、没有加干燥实验、没有让任何人从滴水推到外出或搬运。\n- 标题「雨夜」与雪停后的天气不贴合，但改标题不在你给的范围内，我没有动；要改再单独说。\n\n## 一起提出的结构候选\n\n- 节点「抵达」(n1)：动作改为「林砚在雪刚停后抵达旅馆，看到还在滴水的湿手套」，时间备注写明：抵达在雪停之后；旧稿没有弄湿时刻与干燥实验，滴水不能限定弄湿发生在雪停后，也不能证明外出或搬运。\n- 节点「对质」(n24)：动作改为「林砚就时间问题与管家对质；目前只能确定抵达在雪停后，指出管家搬过尸体所需的外部时间证据仍待补足」，不再写成「根据时间证据」已经成立。\n- 线索「湿手套」的作者真相与对质回收关系未改，约定「结局必须保留管家搬过尸体这一事实」也未动。\n\n## 这次改动对时间证据的影响\n\n- 原来的写法可以让读者把滴水当成「雪停后刚弄湿」的旁证；改后这条旁证不再成立：只能说林砚抵达时手套仍在滴水，弄湿可能发生在雪停前，也可能更早，无法定时。\n- 唯一新增的确定事实只有一条：抵达发生在雪停之后。它把「管家在雪停前就离店／有不在场」这一类推断的支撑抽掉了，但也同样不指向具体某个人。\n- 对质仍缺少外部时间证据。要补足，至少需要一种不依赖滴水的东西，例如：他人对管家当晚位置的可见记录、旅馆出入或值班时间记录、发现尸体与尸体被移动的时间点。这类证据选哪一种会决定对质时管家能怎样辩解，属于后续设计，这一轮没有写进作品。\n\n## 核对过的其他文件\n\n- `正文/0024 第24章.md`、`正文/0001 第1章.md` 及后续各章目前都是占位式记录，没有引用抵达时刻或手套滴水，与新写法不冲突，因此未修改。\n- 目录提示的第一章重名文件（`正文/0001 第1章.md` 与 `正文/0001 雨夜.md`）仍存在，改名不在本轮授权内，未处理。\n\n正式正文是否已保存：提交的是候选，待核对通过后才会落到正式正文。\n四项核对已全部提交并获通过（approved: true，无 findings）。\n\n- **structure:0「抵达」**：节点 action / time_note 与正文「雪刚停，林砚抵达旅馆……手套还在滴水」一致，只把「抵达在雪停后」定为可确定项，未将滴水升格为证明。\n- **structure:1「对质」**：已修正为仅「抵达在雪停后」可确定，并保留「管家搬过尸体所需的外部时间证据待补足」，未反推弄湿时刻、外出或搬运。\n- **scene:正文/0001 雨夜.md**：两点要求均落实（「手套还在滴水」原样保留、抵达改为雪停后），提交材料中仅此一文件被改，对质时间证据仍属待补足；另附注标题/文件名为「雨夜」与开篇「雪刚停」的遗留称谓不一致，不影响本次要求达成。\n- **constraint:ending**：只改时间锚点与证据口径，「管家说自己一直在房间」为人物陈述，与管家搬过尸体这一保留事实不矛盾，未提前披露或改写结局约定。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雨夜.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雨夜.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/goal",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "Codex 独立证据审阅（非作者体验）",
+            "reason": "实际改写抵达时间并保留滴水和作者真相；后文时间证据区分兼容与已证，其他正文无差异。",
+            "evidence": "eval/runs/v101-o10-fixed-premises-20261029/evidence/v101_o10--current--1/step-1.json：events、details、before/after、diffs、story、operations"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 12,
+        "model_finished": 12,
+        "tool_calls": 13,
+        "tool_errors": 3,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 12,
+        "fresh_input_tokens": 10830,
+        "input_tokens": 10830,
+        "output_tokens": 5626,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 231,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 1246,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 15571,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 17436,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 20242,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 22615,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 25925,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 28141,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 31012,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 32441,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 2042,
+            "tools_json_chars": 516
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 5754,
+            "tools_json_chars": 516
+          }
+        ],
+        "max_request_json_chars": 45289,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v101_o10--current--1",
+      "case": "v101_o10",
+      "title": "前文重写",
+      "family": "O10",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 42.734,
+      "evidence": "evidence/v101_o10--current--1",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 4479,
+            "at": "2026-10-29T23:51:30.307+08:00",
+            "event_version": 1,
+            "event_id": "c_ab47e9e6a338:4479",
+            "conversation_id": "c_ab47e9e6a338",
+            "type": "run_finished",
+            "turn_id": "t_89605ef3",
+            "operation_id": "op_3243e07240ca",
+            "generation": 1,
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0001 雨夜.md"
+            ],
+            "commit": "17db9e04b2bfbc29b3d04ebbb87941032f28bd3c",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读取正式正文与当前结构，确认抵达时间的现有写法和对质的证据。\n结构里 `n1`「抵达」缺时间注记，`n24`「对质」也没有说明时间证据来源；这一轮我会同时提交正文候选和对这两个节点时间注记的结构候选，不改 `glove` 的作者真相。\n本轮已按固定前提提交候选，正式正文尚未改动。\n\n**正文候选**（`正文/0001 雨夜.md`，基于摘要 `7b1e27df…f899a4`）\n\n> # 雨夜\n>\n> 雪刚停，林砚抵达旅馆。柜台上有一双湿手套，手套还在滴水。管家说自己一直在房间。\n\n改动仅是把抵达设为「雪刚停」之后；手套滴水原样保留，没有加任何由滴水推出的时间或行为判断，也未让叙述者解释手套为何湿。\n\n**结构候选**（与正文同一候选 `candidate_5ed60642…` 一起核对）\n\n- `n1`「抵达」时间注记：抵达在雪刚停以后；手套滴水不作为弄湿时刻的依据。\n- `n24`「对质」时间注记：对质所需的外部时间证据仍待补足——只能确定抵达在雪停以后；滴水不能限定弄湿发生在雪停后、不能排除更早弄湿、不能证明外出或搬运。\n- 线索 `glove` 的回收意图补记为「计划在『对质』解释，但滴水本身不构成时间或行为证据，需另补外部时间证据」。`author_truth` 保持「管家在雪停后搬过尸体」，未改。\n\n**对质时间证据的核查结果**\n\n- 旧稿没有记录弄湿时刻，也没有干燥实验或对照，因此不存在可推翻「更早弄湿」的证明；改后仍然如此，滴水既非计时也非行为证据。\n- 新稿唯一能确定的时间事实是抵达晚于雪停。这使「管家说一直在房间」与目睹滴水之间只增加了一个模糊区间，没有把区间收窄到搬尸时刻。\n- 因此 `n24` 的「根据时间证据指出」目前没有支撑：仍需外部证据，如雪停时刻的独立记录、尸体被发现或移动的时间标记、可核对的出入记录等；脚印深浅一类现象不能用来比较先后或推出负重、人数。\n- 其余章节仍是占位段落（`正文/0001 第1章.md`、`正文/0024 第24章.md` 等），不含抵达或弄湿的时间表述，故无后文推断需要连带改写；这两份文件本轮未动。\n\n后续若要补足对质，需要作者指定第几章给出这件外部时间证据，我再登记相应章节范围来写。\n已按五项要求逐项提交核对结论，全部为 pass，并附候选原文依据。\n\n要点：\n- **抵达时间**：候选正文「雪刚停，林砚抵达旅馆」与节点 n1 的 time_note 一致，可确定的事实仅为抵达在雪停后。\n- **滴水现象**：正文仍写「手套还在滴水」，但没有写弄湿时刻、干燥实验，也没有出现外出或搬运的推定；n24 的 time_note 明确把对质所需外部时间证据标为待补足。\n- **线索「湿手套」**：作者真相保留「管家搬过尸体」，意图中注明滴水不构成时间或行为证据，未与固定判定前提冲突。\n- **必需约定**：管家搬过尸体这一事实在结构变更中完整保留；候选正文里「管家说自己一直在房间」是人物自述，不是对真相的改写，也不构成提前披露要求。\n- 另附一条非判定项观察：标题仍作「雨夜」而正文为雪景，不属本轮要求范围，未作为通过依据。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雨夜.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雨夜.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/goal",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "Codex 独立证据审阅（非作者体验）",
+            "reason": "实际改写抵达时间并保留滴水和作者真相；后文时间证据区分兼容与已证，其他正文无差异。",
+            "evidence": "eval/runs/v101-o10-fixed-premises-20261029/evidence/v101_o10--current--2/step-1.json：events、details、before/after、diffs、story、operations"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 12,
+        "model_finished": 12,
+        "tool_calls": 14,
+        "tool_errors": 4,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 12,
+        "fresh_input_tokens": 13218,
+        "input_tokens": 13218,
+        "output_tokens": 6837,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 231,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 14647,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 16513,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 19318,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 22028,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 26179,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 28308,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 30168,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 32591,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 36478,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 2402,
+            "tools_json_chars": 516
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 6682,
+            "tools_json_chars": 516
+          }
+        ],
+        "max_request_json_chars": 49326,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v101_o10--current--2",
+      "case": "v101_o10",
+      "title": "前文重写",
+      "family": "O10",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 2,
+      "duration_seconds": 44.329,
+      "evidence": "evidence/v101_o10--current--2",
+      "model_error": false
+    },
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 5140,
+            "at": "2026-10-29T23:52:21.689+08:00",
+            "event_version": 1,
+            "event_id": "c_a5d6eef8514c:5140",
+            "conversation_id": "c_a5d6eef8514c",
+            "type": "run_finished",
+            "turn_id": "t_885fbb3e",
+            "operation_id": "op_173c59f6a5ed",
+            "generation": 1,
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0001 雨夜.md"
+            ],
+            "commit": "8615058b290c1e2677a3d322247f2790f20bb8c2",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "已读取 `正文/0001 雨夜.md` 与 `正文/0024 第24章.md`，并按「仅改这一文件」登记了修改范围。候选正文和结构变更都已提出，现在等待核对结果；正式正文目前仍没有被替换。\n\n**候选正文（`正文/0001 雨夜.md` 的改动）**\n- 保留「柜台上放着一双湿手套……一滴一滴往下滴水」；\n- 抵达时间写成「雪刚停」之后；\n- 仍只写林砚能看到的动作和听到的对话：管家说「我一直待在自己房间里」。\n\n**这次改动对对质所需时间证据的影响**\n- 新稿只能确立一个时间事实：林砚抵达发生在雪停之后。\n- 手套滴水不能确定是什么时候弄湿的。旧稿里没有弄湿时刻的记录，也没有干燥对照实验；手套可能在雪停前就已经弄湿（雪前外出、曾放在有雪的地方、被水浸过等），所以不能排除更早弄湿。\n- 也就不能仅凭滴水推出「雪停后外出」「雪停后搬过尸体」。滴水既不能证明外出，也不能证明搬运，它至多在读者那里留下一个疑问。\n- 因此第24章「根据时间证据指出管家搬过尸体」所需的外部时间证据仍待补足，至少需要：可核对的雪停钟点（钟表、他人记录、旅馆记录等）、管家房间出入的目击或登记、管家自述与外部时间线的具体冲突点，或同等条件下的对照实验或旁证。这些内容本章没有写，也没有替读者下结论。\n\n**结构变更（与正文一起提交）**\n- 「抵达」：动作补为「林砚在雪停后抵达旅馆，看到柜台上还在滴水的湿手套」，时间注记为「抵达发生在雪停之后（第1章）」，手套线索的照常呈现；\n- 「对质」：动作与手套回收保持不变，时间注记为「对质所需的外部时间证据仍待补足：第1章只能确立抵达在雪停后；滴水不限定弄湿时刻，不能排除更早弄湿，也不能证明外出或搬运」；\n- 未改动线索「湿手套」的作者真相（管家在雪停后搬过尸体）与结局约定。\n\n另外提醒一处未处理的问题：正文里仍有两个第一章文件（`0001 第1章.md` 与 `0001 雨夜.md`），本轮按你的限定只动了后者；是否需要合并或改名，等你另外指定。\n核对已提交，六项均为 pass。\n\n- **present:n1:glove / scene**：正文以「雪刚停。林砚推门走进旅馆」确立抵达在雪停之后，并保留「柜台面上放着一双湿手套，指尖朝外，还在一滴一滴往下滴水」＋「他的目光落在那双手套上」，应用给出的 advisory（按另一种措辞未命中）已用原句对上，非缺失。\n- **hidden:glove**：全篇只有手套滴水的可见现象和管家否认外出的对白，没有任何叙述把「管家在雪停后搬过尸体」写成已发生事实，真相未被提前泄露，也未与该事实冲突（**constraint:ending** 同样只做不矛盾检查）。\n- **structure:0（n1 抵达）**：action 与 time_note 都能在正文找到对应原句，结构变更与正文同步。\n- **structure:1（n24 对质）**：其 time_note 明确写「外部时间证据仍待补足」，并声明滴水不限定弄湿时刻、不能排除更早弄湿、不能证明外出或搬运，符合固定判定前提；action 属对质场景的创作计划，未被当成已证事实。\n\n一点提示性观察（不改判定）：候选对「鞋底湿痕」只作中性描写，未由深浅或湿度推出负重、外出等结论，这与前提一致；但对质所需的独立时间证据仍为空缺，需在后续节点补足后才能支撑「指出管家搬过尸体」的推断。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雨夜.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雨夜.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/goal",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "Codex 独立证据审阅（非作者体验）",
+            "reason": "实际改写抵达时间并保留滴水和作者真相；后文时间证据区分兼容与已证，其他正文无差异。",
+            "evidence": "eval/runs/v101-o10-fixed-premises-20261029/evidence/v101_o10--current--3/step-1.json：events、details、before/after、diffs、story、operations"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 13,
+        "model_finished": 13,
+        "tool_calls": 12,
+        "tool_errors": 4,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 13,
+        "fresh_input_tokens": 12533,
+        "input_tokens": 12533,
+        "output_tokens": 7577,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 231,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 14559,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 16262,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 18686,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 20882,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 23536,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 25401,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 28282,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 30293,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 34092,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 35631,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 2862,
+            "tools_json_chars": 516
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 7200,
+            "tools_json_chars": 516
+          }
+        ],
+        "max_request_json_chars": 48479,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v101_o10--current--3",
+      "case": "v101_o10",
+      "title": "前文重写",
+      "family": "O10",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3,
+      "duration_seconds": 50.547,
+      "evidence": "evidence/v101_o10--current--3",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

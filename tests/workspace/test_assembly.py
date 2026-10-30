@@ -96,31 +96,15 @@ def test_writer_prompt_keeps_partition_headers_and_order(tmp_path: Path) -> None
         _workspace(tmp_path),
         profile="writer",
         materials="- 本轮材料：`正文/0001 雨夜.md`｜已提供全文（12 字符）",
-        index_notes="第一章：雪夜有人敲门。",
     )
     assert [part.key for part in assembled.parts] == [
         "instructions",
         "catalog",
         "materials",
-        "index",
         "settings",
     ]
     assert assembled.text.startswith("## ")
-    assert "## 章节索引" in assembled.text
     assert "## 设定集内容" in assembled.text
-    assert "与原文冲突时以原文为准" in assembled.text
-
-
-def test_extract_profile_leaves_out_settings_and_index(tmp_path: Path) -> None:
-    assembled = build_assembled_context(
-        _workspace(tmp_path),
-        profile="extract",
-        index_notes="第一章：雪夜有人敲门。",
-    )
-    assert [part.key for part in assembled.parts] == ["instructions", "catalog"]
-    assert "凶手从内侧打开了门" not in assembled.text
-    assert "## 章节索引" not in assembled.text
-    assert "建立索引" in assembled.text
 
 
 def test_summary_reports_profile_and_usage(tmp_path: Path) -> None:
@@ -150,27 +134,8 @@ def test_workspace_state_root_keeps_previous_path(tmp_path: Path) -> None:
     assert conversation_root(tmp_path, "w1") == workspace_state_root(tmp_path, "w1")
 
 
-def test_state_mode_assembles_as_extract(tmp_path: Path) -> None:
-    """核对任务与建索引同类：只装要求与目录，不注入文风样本与索引摘要。
-
-    这条用例覆盖一个真实缺陷：``mode="state"`` 曾经没有映射到任何用途，
-    装配时直接抛 KeyError——单元测试都走 ``build_tools``，没人走这条入口。
-    """
-    from hastings.workspace.agent import build_turn_assembly
-
-    assembled = build_turn_assembly(
-        _workspace(tmp_path), mode="state", index_notes="第一章：雪夜有人敲门。"
-    )
-
-    assert assembled.profile == "extract"
-    assert [part.key for part in assembled.parts] == ["instructions", "catalog"]
-    assert "状态记录" in assembled.text
-    assert "## 章节索引" not in assembled.text
-    assert "凶手从内侧打开了门" not in assembled.text
-
-
 def test_roster_and_timeline_partitions_reach_writer_and_review(tmp_path: Path) -> None:
-    """状态分区进写作与检查两种用途；抽取不装。"""
+    """状态分区进写作与检查两种用途。"""
     from hastings.workspace.character_states import CharacterStateStore, StateSnapshot
     from hastings.workspace.disclosure import ObservedEvidence
     from hastings.workspace.timeline import TimelineEntry, TimelineStore
@@ -219,7 +184,6 @@ def test_roster_and_timeline_partitions_reach_writer_and_review(tmp_path: Path) 
 
     writer = build_assembled_context(workspace, profile="writer", as_of_chapter=1, **stores)
     review = build_assembled_context(workspace, profile="review", as_of_chapter=1, **stores)
-    extract = build_assembled_context(workspace, profile="extract", **stores)
 
     for assembled in (writer, review):
         keys = [part.key for part in assembled.parts]
@@ -227,7 +191,6 @@ def test_roster_and_timeline_partitions_reach_writer_and_review(tmp_path: Path) 
         assert "timeline" in keys
         assert "已死亡" in assembled.text
         assert "十月二十日深夜" in assembled.text
-    assert "roster" not in [part.key for part in extract.parts]
 
 
 def test_overdue_clue_reaches_the_writer_context(tmp_path: Path) -> None:

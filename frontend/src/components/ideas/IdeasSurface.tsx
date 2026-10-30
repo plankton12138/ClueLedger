@@ -138,7 +138,7 @@ export default function IdeasSurface() {
   };
 
   if (!workspaceId) return null;
-  return <div ref={frame} className="idea-floating" style={{ ...floating.style, width: open ? 344 * Math.max(1, fontScale / 100) : undefined }}>
+  return <div ref={frame} className={`idea-floating${open ? " is-open" : ""}`} style={{ ...floating.style, width: open ? 344 * Math.max(1, fontScale / 100) : undefined }}>
     {!open ? <button ref={launcher} type="button" className="idea-launcher" aria-label="灵感" aria-expanded={false}
       title="拖动可移动；方向键调整位置，Home 复位；Alt+I 打开" {...floating.handlers}
       onClick={() => { if (!floating.consumeDragClick()) show(); }}>

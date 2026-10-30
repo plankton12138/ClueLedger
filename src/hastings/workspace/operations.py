@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -55,6 +56,9 @@ OPERATION_TERMINAL = frozenset({"completed", "failed"})
 #: 可以由作者继续的状态：暂停、等作者回答、以及「有问题需要处理」。
 RESUMABLE_STATUS = frozenset({"paused", "awaiting_answer", "needs_attention"})
 
+#: 有「补充要求」通道的用途。连接测试没有可解释的自然语言指令，不宣称能插话。
+INTERJECTABLE_PURPOSES = frozenset({"chat", "review", "compaction", "probe"})
+
 _RUN_STATUS: dict[str, OperationStatus] = {
     "completed": "completed",
     "needs_input": "awaiting_answer",
@@ -85,6 +89,8 @@ class Operation:
     conversation_id: str
     turn_id: str
     purpose: str
+    #: 受理时作者给的幂等键。压缩与连接测试没有会话受理记录可查，只能靠它认重复。
+    request_key: str = ""
     target: str = ""
     status: OperationStatus = "accepted"
     generation: int = 1
@@ -110,6 +116,7 @@ class Operation:
     controls: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: 重启后为假：没有冻结的请求身份，继续只能重开一轮。
     resumable: bool = True
+    recovery_request: dict[str, Any] = field(default_factory=dict)
     version: int = 1
 
     # -- 判定 ---------------------------------------------------------------
@@ -122,7 +129,8 @@ class Operation:
         return self.controls.get(request_key) if request_key else None
 
     def record_control(
-        self, request_key: str, kind: str, *, generation: int, note: str = ""
+        self, request_key: str, kind: str, *, generation: int, note: str = "",
+        request_action: str = "", expected_generation: int | None = None, text: str = "",
     ) -> dict[str, Any]:
         receipt = {
             "kind": kind,
@@ -130,6 +138,9 @@ class Operation:
             "status": self.status,
             "at": utc_now(),
             "note": note,
+            "request_action": request_action or kind,
+            "expected_generation": expected_generation,
+            "text": text.strip(),
         }
         if request_key:
             self.controls[request_key] = receipt
@@ -174,9 +185,13 @@ class Operation:
             "updated_at": self.updated_at,
             "capabilities": {
                 "pause": self.status in ("accepted", "running"),
-                # 重启恢复出来的操作没有冻结请求，不能接着写。
+                # 重启恢复后仅冻结请求完整的操作可以尝试继续。
                 "continue": self.status in RESUMABLE_STATUS and self.resumable,
-                "interject": self.status in ("accepted", "running") and self.resumable,
+                "interject": (
+                    self.status in ("accepted", "running")
+                    and self.resumable
+                    and self.purpose in INTERJECTABLE_PURPOSES
+                ),
             },
         }
 
@@ -189,6 +204,7 @@ class Operation:
             "conversation_id": self.conversation_id,
             "turn_id": self.turn_id,
             "purpose": self.purpose,
+            "request_key": self.request_key,
             "target": self.target,
             "status": self.status,
             "generation": self.generation,
@@ -207,6 +223,7 @@ class Operation:
             "error": self.error,
             "controls": self.controls,
             "resumable": self.resumable,
+            "recovery_request": self.recovery_request,
         }
 
     @classmethod
@@ -229,6 +246,7 @@ class Operation:
             conversation_id=str(raw.get("conversation_id") or ""),
             turn_id=str(raw.get("turn_id") or ""),
             purpose=str(raw.get("purpose") or "chat"),
+            request_key=str(raw.get("request_key") or ""),
             target=str(raw.get("target") or ""),
             status=status,  # type: ignore[arg-type]
             generation=max(1, int(raw.get("generation") or 1)),
@@ -251,6 +269,7 @@ class Operation:
                 if isinstance(value, dict)
             },
             resumable=bool(raw.get("resumable", True)),
+            recovery_request=dict(raw.get("recovery_request") or {}),
             version=int(raw.get("version") or 1),
         )
 
@@ -281,6 +300,21 @@ class OperationStore:
 
     def _lock_path(self, operation_id: str) -> Path:
         return self.directory / f"{operation_id}.lock"
+
+    @contextmanager
+    def eligible_generation(self, operation_id: str, generation: int) -> Iterator[None]:
+        """提交决定与暂停共用操作锁，决定前核对该代仍有资格。"""
+        with locked(self._lock_path(operation_id)):
+            operation = self.read(operation_id)
+            if not operation.accepts_output(generation):
+                raise WorkspaceError(
+                    code="OPERATION_PAUSED_CONFLICT",
+                    where="operations.commit",
+                    why="这次操作的代次已不具备提交资格",
+                    fix="读取当前任务状态；需要继续时开启新的代次",
+                    details={"operation_id": operation_id, "generation": generation},
+                )
+            yield
 
     # -- 读 -----------------------------------------------------------------
 
@@ -332,6 +366,21 @@ class OperationStore:
                 items.append(operation)
         return tuple(items)
 
+    def find_by_request_key(
+        self, *, purpose: str, conversation_id: str, request_key: str
+    ) -> Operation | None:
+        """按幂等键找已受理的操作：压缩与连接测试没有会话受理记录可查。"""
+        if not request_key:
+            return None
+        for operation in self.list():
+            if (
+                operation.purpose == purpose
+                and operation.conversation_id == conversation_id
+                and operation.request_key == request_key
+            ):
+                return operation
+        return None
+
     # -- 写 -----------------------------------------------------------------
 
     def create(self, operation: Operation) -> Operation:
@@ -372,24 +421,25 @@ class OperationStore:
             atomic_write_json(path, operation.to_dict())
             return operation
 
-    def recover(self) -> tuple[Operation, ...]:
-        """进程重启：未终结的操作转为需要作者处理，且不再宣称可以继续。
-
-        继续需要受理时冻结的请求身份，那部分只在本进程里；重启后重建不出来的，
-        就不提供「继续」按钮，避免点下去才发现接不上原来的任务。
-        """
+    def recover(self, *, workspace_id: str | None = None) -> tuple[Operation, ...]:
+        """进程重启后撤销旧代次；有冻结身份的操作可在显式请求后尝试继续。"""
         changed: list[Operation] = []
         for operation in self.list():
+            if workspace_id is not None and operation.workspace_id != workspace_id:
+                continue
             if operation.status in OPERATION_TERMINAL:
                 continue
-            if operation.status in ("paused", "awaiting_answer", "needs_attention") and (
-                not operation.resumable
+            if operation.phase == "interrupted" or (
+                operation.status in ("paused", "awaiting_answer", "needs_attention")
+                and not operation.resumable
             ):
                 continue
             operation.status = "needs_attention"
             operation.phase = "interrupted"
-            operation.resumable = False
+            operation.resumable = bool(operation.recovery_request) and operation.purpose != "probe"
             operation.note = (
+                "服务重启时这次操作没有正常结束；可检查结果后继续"
+                if operation.resumable else
                 "服务重启时这次操作没有正常结束；已写出的内容保留，可查看结果后重新发起"
             )
             operation.checkpoint(

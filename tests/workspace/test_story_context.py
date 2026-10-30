@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from hastings.prompts.reading import READER_QUESTION
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.story_context import (
     StoryContextSnapshot,
@@ -19,6 +20,9 @@ from hastings.workspace.story_context import (
     assemble_story_input,
     assert_reader_isolated,
     freeze_story_context,
+    scoped_request,
+    split_story_request,
+    story_required_chars,
     verify_story_context,
 )
 from hastings.workspace.story_models import (
@@ -57,11 +61,7 @@ def commit(
     variant_id: str = MAIN_VARIANT_ID,
 ) -> Any:
     snapshot = store.read()
-    base = (
-        "empty"
-        if snapshot.document is None
-        else snapshot.document.variants[variant_id].revision
-    )
+    base = "empty" if snapshot.document is None else snapshot.document.variants[variant_id].revision
     change = StoryChangeSet(id=change_id(), base_revision=base, operations=operations)
     return store.commit_change(variant_id=variant_id, change=change, request_key=key)
 
@@ -111,9 +111,7 @@ def seed_long_distance(store: StoryStore) -> None:
                 )
             ),
             AddNode(node=node("n2", "走廊", "走廊尽头的灯忽明忽暗")),
-            AddNode(
-                node=node("n24", "对质", "侦探把手套放在管家面前，问他雪夜里搬了什么")
-            ),
+            AddNode(node=node("n24", "对质", "侦探把手套放在管家面前，问他雪夜里搬了什么")),
         ],
         key="seed-nodes",
     )
@@ -325,9 +323,7 @@ def test_unknown_node_is_rejected_at_accept(store: StoryStore) -> None:
     seed_long_distance(store)
 
     with pytest.raises(WorkspaceError) as excinfo:
-        freeze_story_context(
-            store, StoryRequest(variant_id=MAIN_VARIANT_ID, node_ids=("n99",))
-        )
+        freeze_story_context(store, StoryRequest(variant_id=MAIN_VARIANT_ID, node_ids=("n99",)))
 
     assert excinfo.value.code == "STORY_CONTEXT_INCOMPLETE"
 
@@ -369,6 +365,7 @@ class CaptureProvider:
             {
                 "system": kwargs.get("system") or "",
                 "messages": list(kwargs.get("messages") or []),
+                "tools": list(kwargs.get("tools") or []),
             }
         )
         index = len(self.requests) - 1
@@ -498,3 +495,254 @@ def test_stale_structure_revision_is_rejected_at_accept(tmp_path: Path) -> None:
 
     assert excinfo.value.code == "STORY_REVISION_CONFLICT"
     assert provider.requests == []
+
+
+# -- 试读：独立执行入口 ------------------------------------------------------
+
+
+def test_reader_preview_runs_without_tools_history_or_catalog(tmp_path: Path) -> None:
+    import asyncio
+
+    from tau_agent.messages import message_text
+
+    story = StoryStore(tmp_path / "state")
+    seed_long_distance(story)
+    provider = CaptureProvider()
+    workspace, store, service = _service(tmp_path, provider)
+    workspace.write("正文/0001 城门.md", "# 城门\n\n雪夜。\n", expected_digest=None)
+
+    async def scenario() -> Any:
+        info = await service.accept_reader("reader-turn-1", variant_id=MAIN_VARIANT_ID, cutoff="n2")
+        await service.wait(info.turn_id)
+        return info
+
+    info = asyncio.run(scenario())
+
+    request = provider.requests[0]
+    # 读者阶段没有工具、没有作者历史，问题由应用固定。
+    assert request["tools"] == []
+    assert len(request["messages"]) == 1
+    assert message_text(request["messages"][0]) == READER_QUESTION
+    system = request["system"]
+    # 截止节点及其前驱的呈现稿进入请求。
+    assert "前台的手套还在滴水" in system
+    assert "抵达旅馆" not in system
+    # 真相、未来节点、线索标题、正文目录与正文原文都不进入试读。
+    assert "管家在雪地里搬过尸体" not in system
+    assert "对质" not in system
+    assert "城门" not in system
+    assert "雪夜" not in system
+
+    events = list(store.events(info.conversation_id))
+    started = [event for event in events if event["type"] == "turn_started"][0]
+    assert started["origin"] == "reader"
+    story_events = [event for event in events if event["type"] == "story_context"]
+    assert story_events[0]["reader"] is True
+    assert story_events[0]["coverage"]["nodes"] == ["n1", "n2"]
+
+
+def test_reader_preview_rejects_free_question_and_author_materials(tmp_path: Path) -> None:
+    import asyncio
+
+    from hastings.workspace.materials import ContextRequest
+
+    story = StoryStore(tmp_path / "state")
+    seed_long_distance(story)
+    provider = CaptureProvider()
+    workspace, _, service = _service(tmp_path, provider)
+    workspace.write("正文/0001 城门.md", "# 城门\n", expected_digest=None)
+
+    async def free_question() -> None:
+        await service.accept(
+            "作者自己的问题",
+            "reader-free",
+            context=ContextRequest(
+                story=StoryRequest(purpose="reader_preview", reader_cutoff="n2")
+            ),
+        )
+
+    with pytest.raises(WorkspaceError) as excinfo:
+        asyncio.run(free_question())
+    assert excinfo.value.code == "STORY_SCOPE_INVALID"
+    assert provider.requests == []
+
+    async def with_materials() -> None:
+        await service.accept(
+            "reader-materials",
+            "reader-materials-key",
+            context=ContextRequest(
+                selected_path="正文/0001 城门.md",
+                story=StoryRequest(purpose="reader_preview", reader_cutoff="n2"),
+            ),
+        )
+
+    with pytest.raises(WorkspaceError) as excinfo2:
+        asyncio.run(with_materials())
+    assert excinfo2.value.code == "STORY_SCOPE_INVALID"
+    assert provider.requests == []
+
+
+# -- 容量：按节点拆组 --------------------------------------------------------
+
+
+def test_split_groups_fitting_nodes_and_stops_dependents(store: StoryStore) -> None:
+    commit(
+        store,
+        [
+            AddClue(
+                clue=clue(
+                    "clue-a",
+                    "线索甲",
+                    "甲是真的",
+                    resolution=ClueResolution(intent="leave_open"),
+                )
+            ),
+            AddClue(
+                clue=clue(
+                    "clue-b",
+                    "线索乙",
+                    "乙是真的",
+                    resolution=ClueResolution(intent="explain", node_ids=["n_b"]),
+                )
+            ),
+            AddNode(
+                node=node(
+                    "n_a",
+                    "开端",
+                    "开头一句",
+                    clue_uses=[
+                        ClueUse(clue_id="clue-a", presentation="甲被提起", mode="narration")
+                    ],
+                )
+            ),
+            AddNode(node=node("n_b", "转折", "转折一句")),
+        ],
+        key="seed-split",
+    )
+    commit(
+        store,
+        [Connect(edge=StoryEdge(id="e_ab", from_id="n_a", to_id="n_b", kind="next"))],
+        key="seed-split-edge",
+    )
+    frozen = freeze_story_context(
+        store, StoryRequest(variant_id=MAIN_VARIANT_ID, node_ids=("n_a", "n_b"))
+    )
+    variant = verify_story_context(store, frozen)
+    alone_a = story_required_chars(variant, scoped_request(frozen, ("n_a",)))
+    alone_b = story_required_chars(variant, scoped_request(frozen, ("n_b",)))
+    both = story_required_chars(variant, frozen)
+    assert both > alone_b >= alone_a
+
+    fit = split_story_request(variant, frozen, capacity=alone_b)
+    assert [batch.node_ids for batch in fit.batches] == [("n_a",), ("n_b",)]
+    assert fit.stopped == ()
+
+    # 单个节点仍装不下：它和依赖它的后继一起停下，其余节点照常执行。
+    stopped = split_story_request(variant, frozen, capacity=alone_a)
+    assert [batch.node_ids for batch in stopped.batches] == [("n_a",)]
+    assert stopped.stopped == ("n_b",)
+    assert "n_b" in stopped.note()
+
+    with pytest.raises(WorkspaceError) as excinfo:
+        split_story_request(variant, frozen, capacity=alone_a - 1)
+    assert excinfo.value.code == "STORY_CONTEXT_INCOMPLETE"
+
+
+def test_over_capacity_turn_sends_first_batch_and_records_split(tmp_path: Path) -> None:
+    import asyncio
+
+    from hastings.workspace.materials import ContextRequest
+
+    story = StoryStore(tmp_path / "state")
+    seed_long_distance(story)
+    commit(
+        story,
+        [
+            AddClue(
+                clue=clue(
+                    "long-truth",
+                    "长线索",
+                    "LONGTRUTH-" * 1_500,
+                    resolution=ClueResolution(intent="explain", node_ids=["n24"]),
+                )
+            )
+        ],
+        key="seed-long-truth",
+    )
+    provider = CaptureProvider()
+    _, store, service = _service(tmp_path, provider)
+
+    async def scenario() -> Any:
+        info = await service.accept(
+            "把这两场一起写出来",
+            "split-turn-1",
+            context=ContextRequest(
+                story=StoryRequest(variant_id=MAIN_VARIANT_ID, node_ids=("n1", "n24"))
+            ),
+        )
+        await service.wait(info.turn_id)
+        return info
+
+    info = asyncio.run(scenario())
+
+    system = provider.requests[0]["system"]
+    # 只装第 1 组：小节点进入请求，装不下的节点的动作与它的长真相都不进入。
+    assert "抵达旅馆" in system
+    assert "侦探把手套放在管家面前" not in system
+    assert "LONGTRUTH" not in system
+    assert "已拆成" in system
+    events = list(store.events(info.conversation_id))
+    story_event = [event for event in events if event["type"] == "story_context"][0]
+    assert story_event["coverage"]["nodes"] == ["n1"]
+    assert story_event["split"]["stopped"] == ["n24"]
+    assert story_event["split"]["batches"][0]["node_ids"] == ["n1"]
+    finished = [event for event in events if event["type"] == "run_finished"][0]
+    assert finished["status"] == "completed"
+
+
+def test_next_story_batch_survives_refresh_and_deduplicates(tmp_path: Path) -> None:
+    import asyncio
+
+    from hastings.workspace.operations import Operation
+
+    story = StoryStore(tmp_path / "state")
+    seed_long_distance(story)
+    provider = CaptureProvider()
+    _, _, service = _service(tmp_path, provider)
+
+    async def scenario() -> None:
+        first = await service.accept("只讨论场景，不保存", "batch-parent")
+        await service.wait(first.turn_id)
+
+        def defer(operation: Operation) -> None:
+            operation.pending_units = ["n1"]
+            operation.recovery_request["story_batches"] = {
+                "variant_id": "main",
+                "purpose": "discuss",
+                "remaining": [["n1"]],
+                "stopped": [],
+            }
+
+        service.operations.update(first.operation_id, defer)
+        next_info = await service.next_story_batch(first.operation_id)
+        await service.wait(next_info.turn_id)
+        replay = await service.next_story_batch(first.operation_id)
+        assert replay.turn_id == next_info.turn_id
+        assert replay.operation_id == next_info.operation_id
+        assert len(provider.requests) == 2
+        assert next_info.context and next_info.context.story
+        assert next_info.context.story.node_ids == ("n1",)
+
+    asyncio.run(scenario())
+
+
+def test_reader_excludes_author_node_labels(store: StoryStore) -> None:
+    seed_long_distance(store)
+    variant = store.require_variant("main")
+    node = variant.nodes["n1"].model_copy(
+        update={"title": "AUTHOR_SECRET_LABEL", "action": "AUTHOR_SECRET_ACTION"}
+    )
+    variant = variant.model_copy(update={"nodes": {**variant.nodes, "n1": node}})
+    text = assemble_reader_input(variant, "n1").render()
+    assert "AUTHOR_SECRET" not in text
+    assert "前台的手套还在滴水" in text

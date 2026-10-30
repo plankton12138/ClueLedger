@@ -1,6 +1,6 @@
 # 验收与在线评测
 
-日期：2026-10-28。状态：**待执行**。本文件定义完成条件，不记录尚未发生的通过结果。
+日期：2026-10-30。状态：**开发验收完成，待作者体验确认**。本文件定义完成条件；当前证据见[验收矩阵](artifacts/acceptance-matrix.md)和[收尾记录](notes/P7-implementation-and-acceptance.md)。历史修复记录保留原批次结论。
 
 ## 1. 确定性要求
 
@@ -29,7 +29,7 @@
 
 ## 2. 浏览器旅程
 
-拟新增 `story-structure.spec.ts`、`story-operations.spec.ts`、`story-removal.spec.ts` 与 `story-workflow-online.spec.ts`，同时登记 Playwright 的 workspace／online 白名单。旧线索测试按产品变化改写，保留来源、授权和恢复保护。
+实际浏览器用例为 `story-structure.spec.ts`、`story-overview-removal.spec.ts`、`story-workflow-online.spec.ts` 与 `story-scene-online.spec.ts`，已登记 workspace／online 白名单。操作竞态和重启边界另由服务测试验证；旧线索用例按实际入口改写，保留来源、授权和恢复保护。
 
 - 空白作品通过一句话构思，出现分支与汇合，随后写成场景并从节点定位正文。
 - 选中节点讨论，切换正文和备选，草稿不丢、运行目标不改变。
@@ -97,6 +97,6 @@ npm run test:e2e:local
 npx playwright test story-workflow-online.spec.ts --project=online
 ```
 
-语义样例接入现有 eval harness，P0 固定命令、案例目录与结果格式，不在此编造尚不存在的运行子命令。在线用例零自动重试，修正后重新运行保留独立记录。
+语义样例在 `eval/cases/v101.yaml`，运行入口为 `uv run python -m eval run --suite v101 --repeat 3 --out <目录>`；修正后的受影响案用 `--case` 指定，独立编号可用 `--start-repeat`。离线复核使用 `python -m eval score <目录> --reviews <文件>`。在线用例零自动重试，修正后重新运行保留独立记录。
 
 发布判断：D01–D18 全部通过、浏览器旅程通过、在线达到门槛且无严重问题、人工体验确认、文档与版本对齐。尚欠人工验收时只能写“开发完成，待体验验收”，不能标记全部完成。

@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
+from hastings.prompts.sections import GLOSSARY_TAIL, glossary_hidden_note
 from hastings.workspace.assembly import Exclusion
 from hastings.workspace.disclosure import (
     EntryStatus,
@@ -370,9 +371,9 @@ def glossary_section(
             lines.append(f"- {KIND_LABEL[kind]}：{'、'.join(names)}")
     if not lines:
         return ""
-    lines.append("写到的名字用这里的写法；要新增专名时先确认作品里确实用了它。")
+    lines.append(GLOSSARY_TAIL)
     if hidden:
-        lines.append(f"（还有 {hidden} 个专名未列出，用 `read_state` 查看全表。）")
+        lines.append(glossary_hidden_note(hidden))
     return "\n".join(lines)
 
 

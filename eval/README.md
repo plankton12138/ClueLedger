@@ -6,10 +6,8 @@
 
 ## 入口与目录
 
-1.0 的悬疑线索评测已实施：案例见 [v10 线索流程](cases/v10-clue-workflow.yaml)，套件为
-`v10-clue-smoke`、`v10-clue-core`、`v10-clue-all`，范围和门槛见[1.0验收计划](../dev-notes/v1.0/acceptance.md)。
-案例可以预置线索身份与作者目标，并用 `purpose: review` 提交冻结的核对范围；人工评分规则仍是
-`manual`，程序只检查范围、工具集、报告状态与引文是否来自真实正文。原修订学习评测随[1.1预留](../dev-notes/v1.1/acceptance.md)顺延。
+1.0.1 构思与连续写作案例见 [v101](cases/v101.yaml)，完整套件为 `v101`。
+案例覆盖结构、备选、长篇与压缩、候选正文、插话、试读和冲突取舍；预置结构与实际写作服务共用模型和提交路径。旧线索计划／推理案例已随旧功能退出，历史报告保留原始版本身份。
 
 | 需要做什么 | 入口 |
 |---|---|
@@ -50,9 +48,9 @@ uv run python -m eval run --suite core
 uv run python -m eval run --suite v08-smoke
 uv run python -m eval run --suite i06
 uv run python -m eval run --case long_history --max-turns 24 --timeout 240
-uv run python -m eval run --suite v10-clue-smoke
-uv run python -m eval run --suite v10-clue-core --repeat 3
-uv run python -m eval run --suite v10-clue-core --repeat 1 --variant presentation_refs
+uv run python -m eval run --suite v101 --repeat 3
+uv run python -m eval run --suite v101 --repeat 2 --start-repeat 2
+uv run python -m eval run --case v101_o08 --repeat 1
 ```
 
 默认读取仓库根的 `.env`，字段为 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`HASTINGS_MODEL`，

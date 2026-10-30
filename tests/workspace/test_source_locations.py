@@ -10,22 +10,17 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from hastings.library import EntryDraft, ModuleLibrary
-from hastings.library.bindings import AssemblyService
 from hastings.server.file_app import create_workspace_app
 from hastings.workspace.clue_models import (
-    ClueDesignLink,
     ClueEntry,
     ClueReference,
-    FileSource,
-    ModuleSource,
 )
 from hastings.workspace.clue_views import clue_detail
 from hastings.workspace.clues import ClueStore, publish_clues
 from hastings.workspace.disclosure import ObservedEvidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
-from hastings.workspace.source_locations import evidence_records, resolve_source_location
+from hastings.workspace.source_locations import resolve_source_location
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 
 FIRST = "正文/0001 遗书.md"
@@ -211,133 +206,6 @@ def test_bad_saved_range_is_not_highlighted(book):
     )
     result = resolve_source_location(workspace, store.root, source_id(workspace, store))
     assert result.freshness == "invalid_range" and result.start is None
-
-
-def test_character_metadata_uses_full_source_positions(book):
-    workspace, store, _ = book
-    path = "设定集/角色小传/林岚.md"
-    workspace.write(
-        path, "---\nroles: [suspect]\n---\n# 林岚\n\n🔑背面计划。", expected_digest=None
-    )
-    view = workspace.read(path)
-    quote = "🔑背面计划。"
-    start = view.text.index(quote)
-
-    def link(ledger):
-        ledger.design_links["plan"] = ClueDesignLink(
-            link_id="plan",
-            clue_id=store.entries()[0].clue_id,
-            source=FileSource(path=path, digest=view.digest),
-            start=start,
-            end=start + len(quote),
-            quote=quote,
-            created_at="2026-10-27T10:00:00+08:00",
-            created_by="test",
-            created_revision=ledger.ledger_revision,
-        )
-        return {}
-
-    store.ledger.mutate(
-        expected_revision=store.ledger.read().revision,
-        request_key="plan",
-        kind="test",
-        payload={},
-        apply=link,
-    )
-    identifier = next(
-        row.evidence_id
-        for row in evidence_records(workspace, store.ledger.read())
-        if row.chapter is None
-    )
-    result = resolve_source_location(workspace, store.root, identifier)
-    assert view.text != view.display_text and result.start == start
-    assert result.freshness == "valid"
-
-
-@pytest.mark.parametrize("change", ["head_only", "upgrade", "unbind"])
-def test_module_location_reads_exact_revision_and_detects_detachment(book, tmp_path, change):
-    workspace, store, _ = book
-    library = ModuleLibrary(tmp_path / "library", cache_file=tmp_path / "cache.json")
-    created = library.create_module(
-        kind="reference",
-        name="遗书计划",
-        entries=[EntryDraft("letter", "reference", "背面", "原计划🔑背面的字。")],
-        request_key="create-module",
-    )
-    module = created["module"]
-    module_id, revision_id = str(module["module_id"]), str(module["head"])
-    assembly = AssemblyService(library, workspace)
-    mounted = assembly.bind(
-        module_id=module_id,
-        revision_id=revision_id,
-        expected_digest=None,
-        request_key="bind-module",
-    )
-    binding = mounted["bindings"][0]
-    text, digest = library.storage.read_entry(module_id, revision_id, "letter")
-    quote = "原计划🔑背面的字。"
-    start = text.index(quote)
-
-    def link(ledger):
-        ledger.design_links["plan"] = ClueDesignLink(
-            link_id="plan",
-            clue_id=store.entries()[0].clue_id,
-            source=ModuleSource(
-                library_id=str(library.library_id),
-                module_id=module_id,
-                revision_id=revision_id,
-                entry_id="letter",
-                content_digest=digest,
-            ),
-            binding_id=binding["id"],
-            start=start,
-            end=start + len(quote),
-            quote=quote,
-            created_at="2026-10-27T10:00:00+08:00",
-            created_by="test",
-            created_revision=ledger.ledger_revision,
-        )
-        return {}
-
-    store.ledger.mutate(
-        expected_revision=store.ledger.read().revision,
-        request_key="plan",
-        kind="test",
-        payload={},
-        apply=link,
-    )
-    identifier = next(
-        row.evidence_id
-        for row in evidence_records(workspace, store.ledger.read())
-        if row.chapter is None
-    )
-    assert (
-        resolve_source_location(workspace, store.root, identifier, library=library).freshness
-        == "valid"
-    )
-    newer = library.publish(
-        module_id=module_id,
-        base_revision=revision_id,
-        expected_head=revision_id,
-        entries=[EntryDraft("letter", "reference", "背面", "新版秘密不应替换旧依据。")],
-        request_key="new-version",
-    )
-    if change == "upgrade":
-        assembly.upgrade(
-            binding_id=binding["id"],
-            revision_id=newer.revision_id,
-            expected_digest=mounted["digest"],
-            request_key="upgrade-module",
-        )
-    if change == "unbind":
-        assembly.unbind(
-            binding_id=binding["id"], expected_digest=mounted["digest"], request_key="unbind-module"
-        )
-    result = resolve_source_location(workspace, store.root, identifier, library=library)
-    assert result.source.revision_id == revision_id and "新版秘密" not in result.excerpt
-    assert result.freshness == ("valid" if change == "head_only" else "detached")
-    if change != "head_only":
-        assert result.start is None and result.end is None
 
 
 def test_http_source_identifier_boundary_and_no_model_calls(book, tmp_path):

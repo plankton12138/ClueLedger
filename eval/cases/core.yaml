@@ -65,29 +65,6 @@ cases:
           - {id: current_code, kind: file_contains, path: 正文/0003 书房.md, value: 白帆靠岸}
           - {id: current_evidence, kind: source_quote, path: 正文/0001 雨夜.md, value: 白帆靠岸}
 
-  - id: index_stale
-    title: 索引失效后不使用旧摘要
-    family: 来源更新
-    layer: end_to_end
-    steps:
-      - text: 为第一章建立内容索引。
-        purpose: update_chapter_index
-        index_paths: [正文/0001 雨夜.md]
-        checks:
-          - {id: index_published, kind: index_status, path: 正文/0001 雨夜.md, value: valid}
-      - text: 按第一章信封背面现在写着的暗号，只替换第三章纸条上的“待补”。其他内容保持原样。
-        external_updates:
-          正文/0001 雨夜.md: "# 雨夜\n\n雨已经下了三天。信封背面写着接头暗号：渡口无灯。\n"
-        exact_replacements:
-          正文/0003 书房.md: {待补: 渡口无灯}
-        allowed_changes: [正文/0003 书房.md]
-        required_changes: [正文/0003 书房.md]
-        checks:
-          - {id: current_code, kind: file_contains, path: 正文/0003 书房.md, value: 渡口无灯}
-          - {id: current_evidence, kind: source_quote, path: 正文/0001 雨夜.md, value: 渡口无灯}
-          - {id: stale_index, kind: index_status, path: 正文/0001 雨夜.md, value: stale}
-          - {id: old_index_absent, kind: part_excludes, part: index, value: 青鸟归巢}
-
   - id: failed_history
     title: 执行事实纠正此前的完成声明
     family: 失败恢复

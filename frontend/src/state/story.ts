@@ -13,6 +13,7 @@ import {
   createStoryVariant,
   listStoryVariants,
   readStoryNode,
+  readStoryChange,
   readStoryVariant,
   submitStoryChange,
   undoStoryChange,
@@ -34,6 +35,8 @@ export function storyRequestKey(prefix: string): string {
 export interface StoryAdoption {
   plan: StoryAdoptionPlan;
   conflict: boolean;
+  /** assist 受理的操作标识；界面可据此跟随正文调整的流式与暂停。 */
+  operationId?: string;
 }
 
 interface StoryState {
@@ -59,6 +62,7 @@ interface StoryState {
   error: string | null;
 
   load(workspaceId: string): Promise<void>;
+  refresh(workspaceId: string): Promise<void>;
   reset(): void;
   setOpen(open: boolean): void;
   referenceNode(nodeId: string): void;
@@ -69,7 +73,7 @@ interface StoryState {
   submit(operations: Record<string, unknown>[], note?: string): Promise<boolean>;
   fork(name: string): Promise<string | null>;
   compareWithPrimary(): Promise<void>;
-  adopt(nodeIds?: string[], replace?: boolean): Promise<boolean>;
+  adopt(nodeIds?: string[], replace?: boolean, mode?: "exact" | "assist"): Promise<boolean>;
   undo(changeId?: string): Promise<boolean>;
   dismissError(): void;
 }
@@ -77,6 +81,19 @@ interface StoryState {
 /** 写入后统一按服务端修订重读：图、方案列表与详情都换成本次返回的版本。 */
 function groupsOf(graph: StoryGraph): string[] {
   return [...new Set(graph.nodes.map((node) => node.group_id).filter((id): id is string => Boolean(id)))].sort();
+}
+
+/** 较长的已分片结构先显示一个片段，作者仍可显式查看全部。 */
+async function initialGraph(workspaceId: string, variantId: string) {
+  const full = await readStoryVariant(workspaceId, variantId);
+  const groups = groupsOf(full);
+  const groupId = full.nodes.length > 60 && groups.length > 1 ? groups[0] : null;
+  if (!groupId) return { graph: full, groups, groupId };
+  const graph = await readStoryVariant(workspaceId, variantId, groupId);
+  if (graph.revision !== full.revision) {
+    throw new Error("[STORY_REVISION_CONFLICT] 构思：读取期间结构发生了变化。建议：重新打开构思。");
+  }
+  return { graph, groups, groupId };
 }
 
 async function reload(
@@ -153,7 +170,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     set({ reference: null });
   },
 
-  async adopt(nodeIds = [], replace = false) {
+  async adopt(nodeIds = [], replace = false, mode: "exact" | "assist" = "exact") {
     const { workspaceId, variantId, primaryId, graph, variants } = get();
     if (!workspaceId || !variantId || !graph) return false;
     if (variantId === primaryId) {
@@ -173,7 +190,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
         target_variant_id: primaryId,
         target_revision: primary.revision,
         node_ids: nodeIds,
-        mode: "exact",
+        mode,
         replace,
         request_key: storyRequestKey("story-adopt"),
       });
@@ -181,8 +198,12 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
       if (get().workspaceId !== workspaceId) return false;
       set({
         variants: list.variants,
-        adoption: { plan: result.plan, conflict: false },
-        lastChange: result.receipt
+        adoption: {
+          plan: result.plan,
+          conflict: false,
+          operationId: result.operation_id || undefined,
+        },
+        lastChange: result.receipt?.change_id
           ? {
               change_id: result.receipt.change_id,
               variant_id: result.receipt.variant_id,
@@ -222,15 +243,18 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
         get().variantId && list.variants.some((item) => item.id === get().variantId)
           ? get().variantId
           : list.primary_variant_id || list.variants[0]?.id || null;
-      const graph = variantId ? await readStoryVariant(workspaceId, variantId) : null;
+      const initial = variantId ? await initialGraph(workspaceId, variantId) : null;
+      const lastChange = initial?.graph.latest_change_id ? await readStoryChange(workspaceId, initial.graph.latest_change_id) : null;
       // 迟到的响应不能覆盖已经切走的作品。
       if (get().workspaceId !== workspaceId) return;
       set({
         variants: list.variants,
         primaryId: list.primary_variant_id,
+        lastChange,
         variantId,
-        graph,
-        groups: graph ? groupsOf(graph) : [],
+        graph: initial?.graph ?? null,
+        groups: initial?.groups ?? [],
+        groupId: initial?.groupId ?? null,
         detail: null,
         nodeId: null,
         loading: false,
@@ -240,20 +264,42 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     }
   },
 
+  async refresh(workspaceId) {
+    const before = get();
+    if (before.workspaceId !== workspaceId) return;
+    try {
+      const list = await listStoryVariants(workspaceId);
+      const variantId = before.variantId && list.variants.some(item => item.id === before.variantId)
+        ? before.variantId : list.primary_variant_id || list.variants[0]?.id || null;
+      const graph = variantId ? await readStoryVariant(workspaceId, variantId, before.groupId ?? undefined) : null;
+      const lastChange = graph?.latest_change_id ? await readStoryChange(workspaceId, graph.latest_change_id) : null;
+      const detail = variantId && before.nodeId && graph?.nodes.some(node => node.id === before.nodeId)
+        ? await readStoryNode(workspaceId, variantId, before.nodeId) : null;
+      if (get().workspaceId !== workspaceId || get().variantId !== before.variantId || get().nodeId !== before.nodeId) return;
+      set({ variants: list.variants, primaryId: list.primary_variant_id, variantId, graph, lastChange,
+        detail, nodeId: detail ? before.nodeId : null,
+        groups: before.groupId ? before.groups : graph ? groupsOf(graph) : [], error: null });
+    } catch (cause) {
+      if (get().workspaceId === workspaceId && get().variantId === before.variantId) set({ error: errorMessage(cause, "刷新构思") });
+    }
+  },
+
   async selectVariant(variantId) {
     const workspaceId = get().workspaceId;
     if (!workspaceId || variantId === get().variantId) return;
     set({ loading: true, error: null, comparison: null });
     try {
-      const { graph } = await reload(workspaceId, variantId, null, null);
+      const { graph, groups, groupId } = await initialGraph(workspaceId, variantId);
+      const lastChange = graph.latest_change_id ? await readStoryChange(workspaceId, graph.latest_change_id) : null;
       if (get().workspaceId !== workspaceId) return;
       set({
         variantId,
+        lastChange,
         graph,
-        groups: groupsOf(graph),
+        groups,
         nodeId: null,
         detail: null,
-        groupId: null,
+        groupId,
         loading: false,
       });
     } catch (error) {

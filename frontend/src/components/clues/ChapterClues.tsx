@@ -4,7 +4,6 @@ import { useWorkspaceStore } from "../../state/workspace";
 import { Button } from "../ui/Button";
 import { StatusMessage } from "../ui/StatusMessage";
 import ClueDetail, { clueStatus } from "./ClueDetail";
-import type { ClueInference } from "../../api/clues";
 import type { ClueReferenceInput } from "../../api/workspace";
 
 interface Props {
@@ -13,11 +12,10 @@ interface Props {
   asOf: number | null;
   active: boolean;
   onLocate: (id: string, asOf: number) => void;
-  onReview?: (inference: ClueInference, asOf: number | null) => void;
   onReference?: (reference: ClueReferenceInput, title: string) => void;
 }
 
-export default function ChapterClues({ workspaceId, chapterPath, asOf, active, onLocate, onReview, onReference }: Props) {
+export default function ChapterClues({ workspaceId, chapterPath, asOf, active, onLocate, onReference }: Props) {
   const clues = useCluesStore();
   const fileDigest = useWorkspaceStore(state => state.file?.digest);
   const key = clueListKey(chapterPath, asOf);
@@ -48,7 +46,7 @@ export default function ChapterClues({ workspaceId, chapterPath, asOf, active, o
       {status && <p className={`border-b border-row-edge p-3 text-sm ${stale ? "text-amber" : "text-sub"}`}>{status}</p>}
       {coverage?.note && coverage.outcome === "insufficient" && <p className="p-3 text-sm text-sub">{coverage.note}</p>}
       {selected ? <ClueDetail workspaceId={workspaceId} clueId={selected.clue_id} asOf={data!.as_of_chapter} refreshKey={data?.view_revision}
-        onClose={() => clues.select(key, null)} onLocate={id => onLocate(id, data!.as_of_chapter)} onReview={onReview} onReference={onReference} /> : <>
+        onClose={() => clues.select(key, null)} onLocate={id => onLocate(id, data!.as_of_chapter)} onReference={onReference} /> : <>
         <ul className="divide-y divide-row-edge">{data?.items.map(item => <li key={item.clue_id}>
           <button className="w-full px-3 py-3 text-left hover:bg-ui-selected" onClick={() => clues.select(key, item.clue_id)}>
             <span className="block break-words text-sm font-bold">{item.title}</span>

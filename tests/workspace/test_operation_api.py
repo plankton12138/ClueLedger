@@ -14,12 +14,14 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from tests.workspace.test_compaction_api import SUMMARY, _seed
+from tests.workspace.test_compaction_api import _snapshot as _compact_snapshot
 
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.service import ProviderFactory
-from hastings.workspace.state import RecentWorkspaces
-from tau_agent.messages import AssistantMessage, TextContent
+from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
+from tau_agent.messages import AssistantMessage, TextContent, message_text
 from tau_agent.provider_events import (
     AssistantDoneEvent,
     AssistantStartEvent,
@@ -223,6 +225,7 @@ def test_interject_through_the_api_keeps_author_words(
     ).json()
 
     assert changed["generation"] == 2
+    wait_status(client, operation_id, {"completed", "needs_attention", "failed"})
     events = client.get(f"/api/operations/{operation_id}/events").json()["events"]
     interjections = [event for event in events if event["type"] == "author_interjected"]
     assert [event["text"] for event in interjections] == ["语气更克制"]
@@ -369,3 +372,92 @@ def test_pause_rejects_reused_key_for_another_control(
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "OPERATION_REQUEST_CONFLICT"
+
+
+# -- 压缩与连接测试共用同一张操作表 ------------------------------------------
+
+
+class SummaryProvider:
+    """第一次摘要挂起等待取消，第二次返回合法摘要；用来验证暂停与继续。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.requests: list[dict[str, Any]] = []
+
+    def stream_response(self, **kwargs: Any) -> Any:
+        self.requests.append(kwargs)
+        index = self.calls
+        self.calls += 1
+
+        async def generator() -> Any:
+            if index == 0:
+                while True:
+                    await asyncio.sleep(0.02)
+            yield AssistantDoneEvent(
+                reason="stop",
+                message=AssistantMessage(
+                    content=[TextContent(text=SUMMARY)], stop_reason="stop"
+                ),
+            )
+
+        return generator()
+
+    async def aclose(self) -> None:
+        return None
+
+
+def test_compaction_joins_the_unified_operation_api(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    provider = SummaryProvider()
+    client = client_factory(lambda: _compact_snapshot(provider))
+    workspace_id = open_workspace(client, tmp_path)
+    store = ConversationStore(conversation_root(tmp_path / "state", workspace_id))
+    conversation_id = _seed(store)
+
+    accepted = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/compact",
+        json={"request_key": "rk1"},
+    )
+    assert accepted.status_code == 202
+    operation_id = accepted.json()["operation_id"]
+
+    running = wait_status(client, operation_id, {"running"})
+    assert running["purpose"] == "compaction"
+    assert running["model"] == "fake-model"
+    assert running["capabilities"] == {"pause": True, "continue": False, "interject": True}
+
+    paused = client.post(
+        f"/api/operations/{operation_id}/pause", json={"request_key": "p1"}
+    ).json()
+    assert paused["status"] == "paused"
+    assert paused["capabilities"]["continue"] is True
+    # 同一个键重复暂停返回同一结果，不产生第二次取消。
+    again = client.post(
+        f"/api/operations/{operation_id}/pause", json={"request_key": "p1"}
+    ).json()
+    assert (again["status"], again["generation"]) == ("paused", 1)
+
+    # 事件按操作归属：压缩没有轮次，读取时不会混入会话里的写作轮次。
+    events = client.get(f"/api/operations/{operation_id}/events").json()["events"]
+    assert events
+    assert all(event["operation_id"] == operation_id for event in events)
+    assert all(event["turn_id"] == "" for event in events)
+
+    resumed = client.post(
+        f"/api/operations/{operation_id}/continue",
+        json={"request_key": "c1", "expected_generation": 1, "text": "只保留写作决定"},
+    ).json()
+    assert resumed["generation"] == 2
+
+    finished = wait_status(client, operation_id, {"completed", "failed", "paused"})
+    assert finished["status"] == "completed"
+
+    # 插话的要求确实进入摘要提示，而不是只记在操作日志里。
+    prompt = "\n".join(message_text(item) for item in provider.requests[1]["messages"])
+    assert "只保留写作决定" in prompt
+
+    result = client.get(f"/api/operations/{operation_id}/result").json()
+    receipt = next(item for item in result["receipts"] if item["kind"] == "compaction")
+    assert receipt["record"]["items"][0]["quote"] == "别改成第三人称"
+    assert receipt["record"]["request_operation_id"] == operation_id

@@ -22,6 +22,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from hastings.prompts.tasks import SUMMARY_CLUE_REFERENCES_HEAD, SUMMARY_PREFIX, SUMMARY_SYSTEM
 from hastings.workspace.context_usage import count_tokens
 from hastings.workspace.errors import WorkspaceError
 from tau_agent.messages import (
@@ -33,7 +34,6 @@ from tau_agent.messages import (
 )
 
 __all__ = [
-    "SUMMARY_PREFIX",
     "CompactionPlan",
     "CompactionRecord",
     "ParsedSummary",
@@ -50,8 +50,6 @@ __all__ = [
     "validate_candidate",
 ]
 
-#: 摘要消息的固定标识。它必须一眼看出是应用整理的，不能被当成作者的新要求。
-SUMMARY_PREFIX = "（应用整理的较早对话摘要，供继续任务使用，不是作者的新要求）\n\n"
 
 ItemKind = Literal["goal", "constraint", "author_decision", "suggestion", "pending", "reference"]
 
@@ -262,9 +260,7 @@ def summary_text(
         lines.append(line)
     if clue_references:
         # 引用身份由应用记录，不依赖摘要模型有没有提到；也不是当前原文依据。
-        lines.append(
-            "- 曾被引用的线索（身份与版本，不是原文依据；需要时重新读取当前正文核对）："
-        )
+        lines.append(SUMMARY_CLUE_REFERENCES_HEAD)
         for row in clue_references:
             parts = [
                 f"`{row.get('clue_id')}`@{row.get('clue_revision')}",
@@ -443,6 +439,7 @@ def build_candidate(
     reason: str = "manual",
     clue_references: Sequence[dict[str, object]] = (),
     prompt_version: int = 1,
+    request_operation_id: str = "",
     created_at: str = "",
     count: Callable[[str], int] = count_tokens,
 ) -> CompactionRecord:
@@ -461,6 +458,7 @@ def build_candidate(
         clue_references=tuple(clue_references),
         model=model,
         prompt_version=prompt_version,
+        request_operation_id=request_operation_id,
         estimated_before=plan.tokens_before,
         estimated_after=plan.tokens_after + count(summary_text(parsed.summary, parsed.items)),
         reason=reason,
@@ -513,24 +511,6 @@ def _invalid(code: str, why: str, fix: str) -> WorkspaceError:
 #: 摘要提示词版本；改提示词要加一，旧记录的摘要不能当成同一种东西比较。
 PROMPT_VERSION = 1
 
-SUMMARY_SYSTEM = """你在为一段写作对话整理可续写的摘要。
-
-只输出一个 JSON 对象，不要解释、不要 Markdown 代码块之外的任何文字：
-
-{
-  "summary": "一段话概括这段讨论",
-  "items": [
-    {"kind": "...", "text": "...", "quote": "...", "sources": ["t1"]}
-  ]
-}
-
-规则：
-- kind 只能是 goal、constraint、author_decision、suggestion、pending、reference；
-- 每条要点必须给出 sources，写它来自哪个轮次 ID（用户消息里用方括号标出）；
-- 只写对话里确实出现过的内容，不要补写、不要推测；
-- 作者确认的决定、助手的建议、尚未确定的事项要分开写；
-- 作者最新的修正与被否定的方案都要保留，不能只留结论；
-- 不要复述改了哪些文件、保存是否成功，那些由应用自己的记录说明。"""
 
 
 def build_summary_prompt(

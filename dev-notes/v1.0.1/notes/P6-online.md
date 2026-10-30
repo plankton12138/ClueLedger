@@ -1,5 +1,10 @@
 # P6：在线评测（第一轮）
 
+本文件保留分批实施和验证记录；最新实现、已关闭事项及验收结果以[收尾记录](P7-implementation-and-acceptance.md)为准。
+当前收尾（2026-10-30）：在线两条浏览器旅程已通过；12 案逐案最终适用矩阵 33/36 达成，每案至少 2/3。案例及实现批次分别标识，详见[验收矩阵](../artifacts/acceptance-matrix.md)，不将混合批次称为一次冻结版本通过率。独立审阅已登记，作者体验尚未确认。
+
+以下为首轮历史记录，保留原结论：
+
 日期：2026-10-29。状态：**在线浏览器链路已接线并真实运行；语义评测（O01–O12 批量）未开始**。模型：`.env` 指向的 `deepseek-flash`（DeepSeek 在线 API，经 `scripts/online_acceptance_config.py` 隔离配置，密钥只进系统凭据存储）。
 
 ## 1. 本轮做了什么
@@ -34,7 +39,7 @@
 | `npx tsc --noEmit` / `npm run build` | 通过 |
 | 后端全量 | 见 `dev-notes` 收尾补记 |
 
-## 4. 下一步
+## 4. 首轮待办（历史）
 
 1. 重跑 `story-workflow-online`：验证工具说明改进后模型能否一次正确提交（预期消除 create_node/字段发明类失败）。
 2. 跑 `clue-workflow-online` 与 `model-flows`（去整理阶段后的版本）。

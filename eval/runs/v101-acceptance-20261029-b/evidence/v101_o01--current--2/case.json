@@ -1,0 +1,61 @@
+{
+  "story_operations": [],
+  "id": "v101_o01",
+  "title": "空白谜题构思",
+  "family": "O01",
+  "layer": "context",
+  "fixture": "overview-empty.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [],
+  "steps": [
+    {
+      "story": {
+        "variant_id": "main",
+        "purpose": "design",
+        "node_ids": []
+      },
+      "reader_cutoff": null,
+      "new_conversation": false,
+      "filler_before": 0,
+      "interject_after_ms": null,
+      "interjection": "",
+      "text": "从空白构思建立一个山庄谜题：窗台脚印误导读者，安排两条调查分支和一次汇合，真相未定。只保存构思，不写正文。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "review_paths": [],
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "goal",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "必须保存可展开的线索、节点、两条分支及汇合；未知真相保持未定，不虚报保存。"
+        }
+      ]
+    }
+  ]
+}

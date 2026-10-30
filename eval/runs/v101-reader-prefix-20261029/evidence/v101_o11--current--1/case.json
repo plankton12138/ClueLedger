@@ -1,0 +1,500 @@
+{
+  "story_operations": [
+    {
+      "op": "add_clue",
+      "clue": {
+        "id": "glove",
+        "title": "湿手套",
+        "author_truth": "管家在雪停后搬过尸体",
+        "resolution": {
+          "intent": "explain",
+          "node_ids": [
+            "n24"
+          ]
+        }
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n1",
+        "title": "抵达",
+        "action": "林砚看到湿手套",
+        "clue_uses": [
+          {
+            "clue_id": "glove",
+            "presentation": "手套还在滴水",
+            "mode": "narration"
+          }
+        ]
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n2",
+        "title": "调查2",
+        "action": "核对第2项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e2",
+        "from_id": "n1",
+        "to_id": "n2",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n3",
+        "title": "调查3",
+        "action": "核对第3项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e3",
+        "from_id": "n2",
+        "to_id": "n3",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n4",
+        "title": "调查4",
+        "action": "核对第4项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e4",
+        "from_id": "n3",
+        "to_id": "n4",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n5",
+        "title": "调查5",
+        "action": "核对第5项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e5",
+        "from_id": "n4",
+        "to_id": "n5",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n6",
+        "title": "调查6",
+        "action": "核对第6项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e6",
+        "from_id": "n5",
+        "to_id": "n6",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n7",
+        "title": "调查7",
+        "action": "核对第7项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e7",
+        "from_id": "n6",
+        "to_id": "n7",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n8",
+        "title": "调查8",
+        "action": "核对第8项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e8",
+        "from_id": "n7",
+        "to_id": "n8",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n9",
+        "title": "调查9",
+        "action": "核对第9项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e9",
+        "from_id": "n8",
+        "to_id": "n9",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n10",
+        "title": "调查10",
+        "action": "核对第10项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e10",
+        "from_id": "n9",
+        "to_id": "n10",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n11",
+        "title": "调查11",
+        "action": "核对第11项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e11",
+        "from_id": "n10",
+        "to_id": "n11",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n12",
+        "title": "调查12",
+        "action": "核对第12项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e12",
+        "from_id": "n11",
+        "to_id": "n12",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n13",
+        "title": "调查13",
+        "action": "核对第13项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e13",
+        "from_id": "n12",
+        "to_id": "n13",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n14",
+        "title": "调查14",
+        "action": "核对第14项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e14",
+        "from_id": "n13",
+        "to_id": "n14",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n15",
+        "title": "调查15",
+        "action": "核对第15项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e15",
+        "from_id": "n14",
+        "to_id": "n15",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n16",
+        "title": "调查16",
+        "action": "核对第16项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e16",
+        "from_id": "n15",
+        "to_id": "n16",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n17",
+        "title": "调查17",
+        "action": "核对第17项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e17",
+        "from_id": "n16",
+        "to_id": "n17",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n18",
+        "title": "调查18",
+        "action": "核对第18项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e18",
+        "from_id": "n17",
+        "to_id": "n18",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n19",
+        "title": "调查19",
+        "action": "核对第19项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e19",
+        "from_id": "n18",
+        "to_id": "n19",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n20",
+        "title": "调查20",
+        "action": "核对第20项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e20",
+        "from_id": "n19",
+        "to_id": "n20",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n21",
+        "title": "调查21",
+        "action": "核对第21项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e21",
+        "from_id": "n20",
+        "to_id": "n21",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n22",
+        "title": "调查22",
+        "action": "核对第22项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e22",
+        "from_id": "n21",
+        "to_id": "n22",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n23",
+        "title": "调查23",
+        "action": "核对第23项记录"
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e23",
+        "from_id": "n22",
+        "to_id": "n23",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "n24",
+        "title": "对质",
+        "action": "林砚根据时间证据指出管家搬过尸体",
+        "clue_uses": [
+          {
+            "clue_id": "glove",
+            "presentation": "雪停之后还有人穿过庭院",
+            "mode": "narration"
+          }
+        ]
+      }
+    },
+    {
+      "op": "connect",
+      "edge": {
+        "id": "e24",
+        "from_id": "n23",
+        "to_id": "n24",
+        "kind": "next"
+      }
+    },
+    {
+      "op": "add_constraint",
+      "constraint": {
+        "id": "ending",
+        "text": "结局必须保留管家搬过尸体这一事实",
+        "strength": "required",
+        "revision": "r1"
+      }
+    }
+  ],
+  "id": "v101_o11",
+  "title": "受限试读",
+  "family": "O11",
+  "layer": "context",
+  "fixture": "v101.json",
+  "files": {},
+  "long_reference": false,
+  "history": [],
+  "filler_turns": 0,
+  "fail_first_read": null,
+  "modules": [],
+  "module_tools": false,
+  "compact_before_steps": false,
+  "compaction_threshold": null,
+  "ideas": [],
+  "clues": [],
+  "steps": [
+    {
+      "story": {
+        "variant_id": "main",
+        "purpose": "discuss",
+        "node_ids": [
+          "n1"
+        ]
+      },
+      "reader_cutoff": "n1",
+      "new_conversation": false,
+      "filler_before": 0,
+      "interject_after_ms": null,
+      "interjection": "",
+      "text": "固定试读问题由应用生成。",
+      "selected": null,
+      "references": [],
+      "idea_references": [],
+      "state_chapter": null,
+      "purpose": "chat",
+      "review_paths": [],
+      "external_updates": {},
+      "allowed_changes": [],
+      "required_changes": [],
+      "exact_replacements": {},
+      "expect_needs_input": false,
+      "reply_to_question": false,
+      "compact_before": false,
+      "inject_overflow": false,
+      "stop_after_ms": null,
+      "expect_stopped": false,
+      "checks": [
+        {
+          "id": "goal",
+          "kind": "manual",
+          "path": "",
+          "value": "",
+          "part": "",
+          "domain": "",
+          "rubric": "独立读者请求仅有截止前缀，无作者历史、工具、隐藏真相或未来节点；回答引用前缀原文，猜测必须有依据。"
+        }
+      ]
+    }
+  ]
+}

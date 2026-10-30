@@ -1,1 +1,1 @@
-{"version": 1, "cases": ["i06_expand_three_directions", "i06_expand_asks_for_write", "i06_expand_followup", "i06_forbid_idea_tools", "v08_idea_apply"]}
+{"version": 1, "cases": ["i06_forbid_idea_tools", "v08_idea_apply"]}

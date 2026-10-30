@@ -1,10 +1,12 @@
 import { create } from "zustand";
 import { fetchSourceLocation, type SourceLocation } from "../api/clues";
+import { readStoryProse } from "../api/story";
 import { errorMessage } from "../api/errors";
 import { navigate, pageHash, type WorkspacePage } from "./navigation";
 import { useWorkspaceStore } from "./workspace";
 import { usePagePositions } from "./pagePositions";
 import { useWorkspaceModulesStore } from "./workspaceModules";
+import type { FileView } from "../api/workspace";
 
 interface SourceState {
   workspaceId: string | null;
@@ -12,6 +14,8 @@ interface SourceState {
   asOf: number | null;
   taskChapter: number | null;
   location: SourceLocation | null;
+  /** 备选方案实际可见的正文：只用于这次定位的读取区，不改变作品目录里的当前文件。 */
+  variantFile: FileView | null;
   loading: boolean;
   error: string | null;
   epoch: number;
@@ -33,6 +37,12 @@ interface SourceState {
     input: { path: string; start: number; end: number; quote: string },
     options?: { fromStory?: boolean },
   ): Promise<void>;
+  /** 打开备选方案里的正文区间：按方案读取受管副本，而不是作品目录里的主方案正文。 */
+  showVariant(
+    workspaceId: string,
+    input: { variantId: string; path: string; start: number; end: number; quote: string },
+    options?: { fromStory?: boolean },
+  ): Promise<void>;
   capture(page: WorkspacePage, taskChapter: number): void;
   load(workspaceId: string, evidenceId: string, asOf: number | null, taskChapter: number): Promise<void>;
   clear(): void;
@@ -40,7 +50,7 @@ interface SourceState {
 }
 
 export const useSourceLocationStore = create<SourceState>()((set, get) => ({
-  workspaceId: null, evidenceId: null, asOf: null, taskChapter: null, location: null,
+  workspaceId: null, evidenceId: null, asOf: null, taskChapter: null, location: null, variantFile: null,
   loading: false, error: null, epoch: 0, returnPage: null, returnPath: null, returnOffset: 0, restoreEpoch: 0, returnModule: null, restorePosition: null, storyReturn: false,
   consumeRestore(epoch) { if (get().restorePosition?.epoch === epoch) set({ restorePosition: null }); },
   capture(page, taskChapter) {
@@ -51,7 +61,7 @@ export const useSourceLocationStore = create<SourceState>()((set, get) => ({
   async load(workspaceId, evidenceId, asOf, taskChapter) {
     const initial = useWorkspaceStore.getState();
     const epoch = get().epoch + 1;
-    set({ workspaceId, evidenceId, asOf, taskChapter, epoch, location: null, loading: true, error: null });
+    set({ workspaceId, evidenceId, asOf, taskChapter, epoch, location: null, variantFile: null, loading: true, error: null });
     const current = () => get().epoch === epoch && useWorkspaceStore.getState().currentId === workspaceId && useWorkspaceStore.getState().workspaceEpoch === initial.workspaceEpoch;
     try {
       const location = await fetchSourceLocation(workspaceId, evidenceId, asOf);
@@ -73,10 +83,10 @@ export const useSourceLocationStore = create<SourceState>()((set, get) => ({
     } catch (error) { if (current()) set({ error: errorMessage(error, "原文定位") }); }
     finally { if (current()) set({ loading: false }); }
   },
-  clear() { set({ workspaceId: null, evidenceId: null, location: null, loading: false, error: null, epoch: get().epoch + 1, taskChapter: null, asOf: null, returnPage: null, returnPath: null, returnModule: null, storyReturn: false }); },
+  clear() { set({ workspaceId: null, evidenceId: null, location: null, variantFile: null, loading: false, error: null, epoch: get().epoch + 1, taskChapter: null, asOf: null, returnPage: null, returnPath: null, returnModule: null, storyReturn: false }); },
   async showLocal(workspaceId, input, options) {
     const epoch = get().epoch + 1;
-    set({ workspaceId, evidenceId: null, asOf: null, taskChapter: null, epoch, loading: true, error: null, storyReturn: Boolean(options?.fromStory) });
+    set({ workspaceId, evidenceId: null, asOf: null, taskChapter: null, epoch, loading: true, error: null, storyReturn: Boolean(options?.fromStory), variantFile: null });
     await useWorkspaceStore.getState().openPath(input.path);
     if (get().epoch !== epoch) return;
     const file = useWorkspaceStore.getState().file;
@@ -101,6 +111,38 @@ export const useSourceLocationStore = create<SourceState>()((set, get) => ({
         saved_path: input.path,
       },
     });
+  },
+  async showVariant(workspaceId, input, options) {
+    const epoch = get().epoch + 1;
+    set({ workspaceId, evidenceId: null, asOf: null, taskChapter: null, epoch, loading: true, error: null, storyReturn: Boolean(options?.fromStory), variantFile: null, location: null });
+    try {
+      const file = await readStoryProse(workspaceId, input.variantId, input.path);
+      if (get().epoch !== epoch) return;
+      const matched = Array.from(file.text).slice(input.start, input.end).join("") === input.quote;
+      set({
+        loading: false,
+        variantFile: file,
+        location: {
+          evidence_id: "",
+          clue_id: "",
+          source: { kind: "file", path: input.path, digest: file.digest },
+          freshness: matched ? "valid" : "stale",
+          quote: input.quote,
+          chapter: file.chapter_number ?? null,
+          as_of_chapter: 0,
+          offset_unit: "unicode_codepoint",
+          start: matched ? input.start : null,
+          end: matched ? input.end : null,
+          readable: true,
+          current_digest: file.digest,
+          excerpt: file.text,
+          excerpt_start: 0,
+          saved_path: input.path,
+        },
+      });
+    } catch (error) {
+      if (get().epoch === epoch) set({ loading: false, error: errorMessage(error, "正文定位") });
+    }
   },
   async back() {
     const { returnPage, returnPath, returnOffset, returnModule, workspaceId, evidenceId } = get();

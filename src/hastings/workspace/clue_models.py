@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -12,7 +12,6 @@ from hastings.workspace.disclosure import ObservedEvidence
 ClueStatus = Literal["open", "resolved", "dropped"]
 CoverageOutcome = Literal["found", "empty", "insufficient"]
 ClueMode = Literal["narration", "testimony", "recollection", "hypothesis", "dream", "unknown"]
-InferenceIntent = Literal["deduce", "suspect", "keep_open", "undecided"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,113 +59,14 @@ class ClueReference(StrictRecord):
     clue_id: str = Field(min_length=1, max_length=64)
     clue_revision: str = Field(min_length=1, max_length=128)
     browse_as_of_chapter: int = Field(ge=0)
-    inference_id: str | None = None
-    inference_revision: str | None = None
-    report_id: str | None = None
-
-    @model_validator(mode="after")
-    def check_inference(self) -> ClueReference:
-        if (self.inference_id is None) != (self.inference_revision is None):
-            raise ValueError("推理身份与修订必须同时提供")
-        return self
 
 
 class FileSource(StrictRecord):
-    """作品受管文件来源；计划只接受设定与角色小传。"""
+    """作品受管文件来源。"""
 
     kind: Literal["file"] = "file"
     path: str = Field(min_length=1)
     digest: str = Field(min_length=1)
-
-
-class ModuleSource(StrictRecord):
-    """已装模块的精确修订与条目来源。"""
-
-    kind: Literal["module"] = "module"
-    library_id: str = Field(min_length=1)
-    module_id: str = Field(min_length=1)
-    revision_id: str = Field(min_length=1)
-    entry_id: str = Field(min_length=1)
-    content_digest: str = Field(min_length=1)
-
-
-Source = Annotated[FileSource | ModuleSource, Field(discriminator="kind")]
-FileDesignSource = FileSource
-ModuleDesignSource = ModuleSource
-DesignSource = Source
-
-
-class ClueDesignLink(StrictRecord):
-    """一条线索与作者计划条目区间的关联；不复制模块原文。"""
-
-    schema_version: Literal[1] = 1
-    link_id: str = Field(min_length=1)
-    clue_id: str = Field(min_length=1)
-    source: DesignSource
-    binding_id: str = ""
-    start: int = Field(ge=0)
-    end: int = Field(gt=0)
-    quote: str = Field(min_length=1)
-    relation: str = ""
-    created_at: str = Field(min_length=1)
-    created_by: str = Field(min_length=1)
-    created_revision: str = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def check_range(self) -> ClueDesignLink:
-        if self.end <= self.start or self.end - self.start != len(self.quote):
-            raise ValueError("计划引文长度与字符区间不一致")
-        if self.source.kind == "module" and not self.binding_id:
-            raise ValueError("模块计划关联需要本作品绑定身份")
-        if self.source.kind == "file" and self.binding_id:
-            raise ValueError("文件计划关联不应携带模块绑定")
-        return self
-
-
-class InferenceStatement(StrictRecord):
-    """一个前提或其他解释；可指向线索与计划依据。"""
-
-    text: str = Field(min_length=1, max_length=2000)
-    clue_ids: list[str] = Field(default_factory=list)
-    design_link_ids: list[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def check_text(self) -> InferenceStatement:
-        if not self.text.strip():
-            raise ValueError("前提或其他解释不能为空")
-        if len(set(self.clue_ids)) != len(self.clue_ids):
-            raise ValueError("同一依据线索不能重复")
-        if len(set(self.design_link_ids)) != len(self.design_link_ids):
-            raise ValueError("同一计划依据不能重复")
-        return self
-
-
-class ClueInference(StrictRecord):
-    """一个推理目标及其线索、必要前提与其他解释。"""
-
-    schema_version: Literal[1] = 1
-    inference_id: str = Field(min_length=1)
-    inference_revision: str = Field(min_length=1)
-    goal: str = Field(min_length=1, max_length=2000)
-    intent: InferenceIntent
-    clue_ids: list[str] = Field(min_length=1, max_length=10)
-    premises: list[InferenceStatement] = Field(default_factory=list, max_length=10)
-    alternatives: list[InferenceStatement] = Field(default_factory=list, max_length=10)
-    design_link_ids: list[str] = Field(default_factory=list)
-    created_at: str = Field(min_length=1)
-    updated_at: str = Field(min_length=1)
-    created_by: str = Field(min_length=1)
-    request_source: str = ""
-
-    @model_validator(mode="after")
-    def check_target(self) -> ClueInference:
-        if not self.goal.strip():
-            raise ValueError("推理目标不能为空")
-        if len(set(self.clue_ids)) != len(self.clue_ids):
-            raise ValueError("同一推理不能重复关联同一条线索")
-        if len(set(self.design_link_ids)) != len(self.design_link_ids):
-            raise ValueError("同一计划依据不能重复")
-        return self
 
 
 class ClueEvidence(StrictRecord):
@@ -308,16 +208,13 @@ class ClueReceipt(StrictRecord):
 
 
 class ClueLedger(StrictRecord):
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     recipe_version: Literal[1] = 1
     workspace_lineage: str = Field(min_length=1)
     ledger_revision: str = Field(min_length=1)
     clues: dict[str, ClueIdentity] = Field(default_factory=dict)
     contributions: dict[str, ClueContribution] = Field(default_factory=dict)
     coverage: dict[str, ClueCoverage] = Field(default_factory=dict)
-    design_links: dict[str, ClueDesignLink] = Field(default_factory=dict)
-    inferences: dict[str, ClueInference] = Field(default_factory=dict)
-    reviews: dict[str, dict[str, JsonValue]] = Field(default_factory=dict)
     requests: dict[str, ClueReceipt] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -339,21 +236,5 @@ class ClueLedger(StrictRecord):
             observations.add(value.observation_id)
         if any(key != value.path for key, value in self.coverage.items()):
             raise ValueError("覆盖目标与索引不一致")
-        for key, link in self.design_links.items():
-            if key != link.link_id or link.clue_id not in self.clues:
-                raise ValueError("计划关联与索引或线索身份不一致")
-        for key, row in self.inferences.items():
-            if key != row.inference_id or not set(row.clue_ids) <= set(self.clues):
-                raise ValueError("推理目标与索引或线索身份不一致")
-            if not set(row.design_link_ids) <= set(self.design_links):
-                raise ValueError("推理目标引用了不存在的计划关联")
-            for link_id in row.design_link_ids:
-                if self.design_links[link_id].clue_id not in row.clue_ids:
-                    raise ValueError("推理目标的计划关联不属于所关联线索")
-            for statement in (*row.premises, *row.alternatives):
-                if not set(statement.clue_ids) <= set(row.clue_ids):
-                    raise ValueError("前提或其他解释引用了目标之外的线索")
-                if not set(statement.design_link_ids) <= set(row.design_link_ids):
-                    raise ValueError("前提或其他解释引用了目标之外的计划关联")
         return self
 

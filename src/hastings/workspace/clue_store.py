@@ -91,8 +91,8 @@ class ClueLedgerStore:
             # Literal[int] 会接受 True；格式头需要明确排除它。
             if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int:
                 raise ValueError("格式头不完整")
-            # 明确弃用之前的格式，不读旧线索、覆盖、别名或迁移源。
-            if raw["schema_version"] == 1:
+            # 明确弃用旧格式账本（含已退出的计划关联与推理目标），不读取旧数据。
+            if raw["schema_version"] < 3:
                 return ClueSnapshot("empty")
             if type(raw.get("recipe_version")) is not int:
                 raise ValueError("生成规则版本不完整")

@@ -27,7 +27,6 @@ VARIANT_PARTS = {
     "presentation_refs": set(),
     # 0.9 基线：没有线索分区，也没有线索核对要求，只有通用检查。
     "baseline": {"clues"},
-    "no_index": {"index"},
     "no_state": {"state", "roster", "timeline", "clues", "glossary"},
     "no_history_facts": {"history"},
     "no_compaction": set(),
@@ -65,9 +64,6 @@ class Check(Spec):
         "retry_observed",
         "manual",
         "fault_observed",
-        "clue_report_status",
-        "clue_finding_kind",
-        "clue_evidence_quote",
     ]
     path: str = ""
     value: str = ""
@@ -103,9 +99,6 @@ class Check(Spec):
                 "idea_contains",
                 "compaction_count",
                 "retry_observed",
-                "clue_report_status",
-                "clue_finding_kind",
-                "clue_evidence_quote",
             }
             and not self.value
         ):
@@ -149,29 +142,21 @@ class ClueSeed(Spec):
     quote: str = ""
 
 
-class InferenceSeed(Spec):
-    """作者已保存的推理目标；步骤通过 ``key`` 引用它，不把目标交给模型自拟。"""
-
-    key: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
-    goal: str = Field(min_length=1)
-    intent: Literal["deduce", "suspect", "keep_open", "undecided"] = "deduce"
-    clue_titles: list[str] = Field(min_length=1)
-    premises: list[str] = Field(default_factory=list)
-    alternatives: list[str] = Field(default_factory=list)
-
-
 class Step(Spec):
+    story: dict[str, Any] | None = None
+    reader_cutoff: str | None = None
+    new_conversation: bool = False
+    filler_before: int = Field(default=0, ge=0, le=40)
+    interject_after_ms: int | None = Field(default=None, ge=0)
+    interjection: str = ""
     text: str = Field(min_length=1)
     selected: str | None = None
     references: list[str] = Field(default_factory=list)
     idea_references: list[str] = Field(default_factory=list)
     state_chapter: int | None = Field(default=None, ge=0)
-    purpose: Literal["chat", "update_chapter_index", "expand_idea", "review"] = "chat"
-    index_paths: list[str] = Field(default_factory=list)
-    #: 检查用途的目标章；与 clue_review 一起提交，范围由受理时冻结。
+    purpose: Literal["chat", "review"] = "chat"
+    #: 检查用途的目标章；范围由受理时冻结。
     review_paths: list[str] = Field(default_factory=list)
-    #: 线索核对：引用 Case.inferences 的 key，并给出截止章与（可选）线索集合。
-    clue_review: dict[str, Any] | None = None
     external_updates: dict[str, str] = Field(default_factory=dict)
     allowed_changes: list[str] = Field(default_factory=list)
     required_changes: list[str] = Field(default_factory=list)
@@ -194,7 +179,6 @@ class Step(Spec):
     def validate_step(self) -> Step:
         for path in [
             *self.references,
-            *self.index_paths,
             *self.review_paths,
             *self.external_updates,
             *self.allowed_changes,
@@ -209,21 +193,13 @@ class Step(Spec):
             raise ValueError("精确替换只能指定允许修改的文件")
         if any(not old for pairs in self.exact_replacements.values() for old in pairs):
             raise ValueError("精确替换的原文不能为空")
-        if self.purpose == "expand_idea":
-            # 与产品受理规则一致：只读展开必须有且只有一条灵感，且不夹带其他材料。
-            if len(self.idea_references) != 1:
-                raise ValueError("expand_idea 需要且只需要一条灵感参考")
-            if self.selected or self.references or self.index_paths:
-                raise ValueError("expand_idea 不夹带当前章节、参考文件或索引目标")
         if self.purpose == "review":
             if not self.review_paths:
                 raise ValueError("检查用途需要给出目标章")
-            if not isinstance(self.clue_review, dict) or not self.clue_review.get("inference"):
-                raise ValueError("检查用途要引用一个已保存的推理目标")
-            if self.selected or not set(self.review_paths):
+            if self.selected:
                 raise ValueError("检查用途只提交目标章，不夹带当前章节")
-        elif self.clue_review is not None or self.review_paths:
-            raise ValueError("只有检查用途可以带核对范围")
+        elif self.review_paths:
+            raise ValueError("只有检查用途可以带检查范围")
         if len({c.id for c in self.checks}) != len(self.checks):
             raise ValueError("同一步的检查 ID 不得重复")
         return self
@@ -239,6 +215,7 @@ class History(Spec):
 
 
 class Case(Spec):
+    story_operations: list[dict[str, Any]] = Field(default_factory=list)
     id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     title: str
     family: str
@@ -256,9 +233,8 @@ class Case(Spec):
     compact_before_steps: bool = False
     compaction_threshold: float | None = Field(default=None, gt=0, le=1)
     ideas: list[IdeaSeed] = Field(default_factory=list)
-    #: 线索身份与已保存目标；计划关联与核对都从这里取真实标识。
+    #: 评测初态的线索身份；核对与计划已退出，只保留真实标识供观察类检查使用。
     clues: list[ClueSeed] = Field(default_factory=list)
-    inferences: list[InferenceSeed] = Field(default_factory=list)
     steps: list[Step] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -269,22 +245,10 @@ class Case(Spec):
         if self.fail_first_read:
             safe_path(self.fail_first_read)
         idea_titles = {item.title for item in self.ideas}
-        clue_titles = {item.title for item in self.clues}
-        for inference in self.inferences:
-            unknown = [title for title in inference.clue_titles if title not in clue_titles]
-            if unknown:
-                raise ValueError(f"推理目标引用了未登记的线索：{unknown[0]}")
-        inference_keys = {item.key for item in self.inferences}
         for step in self.steps:
             unknown = [title for title in step.idea_references if title not in idea_titles]
             if unknown:
                 raise ValueError(f"引用了不存在的灵感：{unknown[0]}")
-            if step.clue_review is not None:
-                key = str(step.clue_review.get("inference") or "")
-                if key not in inference_keys:
-                    raise ValueError(f"核对引用了未保存的推理目标：{key}")
-        if len({item.key for item in self.inferences}) != len(self.inferences):
-            raise ValueError("推理目标的 key 不得重复")
         return self
 
 

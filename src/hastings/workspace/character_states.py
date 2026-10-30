@@ -17,6 +17,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from hastings.prompts.sections import (
+    ROSTER_TAIL_DEAD,
+    ROSTER_TAIL_UNVERIFIED,
+    roster_head,
+    roster_hidden_note,
+    roster_line,
+)
 from hastings.workspace.assembly import Exclusion
 from hastings.workspace.disclosure import (
     EntryStatus,
@@ -324,11 +331,11 @@ def roster_section(
             -(item.current.chapter if item.current is not None else 0),
         ),
     )
-    header = f"截至第 {state.current_chapter} 章的人物状态（按原文核对，最近一次在前）："
+    header = roster_head(state.current_chapter)
     suffix = [
-        "以上是原文核对到的最近状态；没核对到的章节不要当作已知。",
-        f"（还有 {len(ordered)} 人未列入，用 `read_state` 查具体某人。）",
-        "写已死角色时只能是回忆、转述或尸体；不要让他在新场景里行动。",
+        ROSTER_TAIL_UNVERIFIED,
+        roster_hidden_note(len(ordered)),
+        ROSTER_TAIL_DEAD,
     ]
     reserved = len("\n".join(suffix)) + 1
     lines: list[str] = []
@@ -337,13 +344,14 @@ def roster_section(
     for index, item in enumerate(ordered):
         snapshot = item.current
         assert snapshot is not None  # known() 已过滤
-        parts = [f"- {item.name}", f"｜{snapshot.location or '位置未记'}"]
-        parts.append("｜已死亡" if not snapshot.alive else "｜在世")
-        if snapshot.stance:
-            parts.append(f"｜立场：{snapshot.stance}")
-        parts.append(f"（第{snapshot.chapter}章核对")
-        parts.append("，已落后）" if item.lag else "）")
-        line = "".join(parts)
+        line = roster_line(
+            item.name,
+            snapshot.location,
+            snapshot.alive,
+            snapshot.stance,
+            snapshot.chapter,
+            item.lag,
+        )
         if index >= limit:
             dropped += 1
             _exclude_character(excluded, item, "limit", 0)
@@ -356,10 +364,10 @@ def roster_section(
         used += len(line) + 1
     if not lines:
         return ""
-    lines.append("以上是原文核对到的最近状态；没核对到的章节不要当作已知。")
+    lines.append(ROSTER_TAIL_UNVERIFIED)
     if dropped:
-        lines.append(f"（还有 {dropped} 人未列入，用 `read_state` 查具体某人。）")
-    lines.append("写已死角色时只能是回忆、转述或尸体；不要让他在新场景里行动。")
+        lines.append(roster_hidden_note(dropped))
+    lines.append(ROSTER_TAIL_DEAD)
     return "\n".join([header, *lines])
 
 

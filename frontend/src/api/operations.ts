@@ -50,6 +50,31 @@ export interface Operation {
   capabilities: OperationCapabilities;
 }
 
+/** 已提交的收据：Git 记录、压缩记录或连接测试结果，按用途给不同的字段。 */
+export interface OperationReceipt {
+  kind?: string;
+  at?: string;
+  outcome?: {
+    model?: string;
+    response?: "passed" | "failed" | "untested";
+    tool_call?: "passed" | "failed" | "untested";
+    code?: string | null;
+    message?: string;
+  };
+  record?: unknown;
+  [key: string]: unknown;
+}
+
+export interface OperationResult {
+  operation_id: string;
+  status: OperationStatus;
+  note: string;
+  receipts: OperationReceipt[];
+  pending_units: string[];
+  changed_paths: string[];
+  question: { question?: string; question_id?: string } | null;
+}
+
 /** 控制请求的键：同一次点击重试沿用同一个键，服务端据此去重。 */
 export function operationKey(prefix: string): string {
   const suffix =
@@ -70,6 +95,11 @@ export async function latestOperation(conversationId: string): Promise<Operation
 /** 读取快照：只读，不触发模型。 */
 export function readOperation(operationId: string): Promise<Operation> {
   return requestApi<Operation>(`/api/operations/${encodeURIComponent(operationId)}`);
+}
+
+/** 读取结果：已提交收据、改动路径与待回答问题；同样不触发模型。 */
+export function readOperationResult(operationId: string): Promise<OperationResult> {
+  return requestApi<OperationResult>(`/api/operations/${encodeURIComponent(operationId)}/result`);
 }
 
 /** 暂停：先撤销这一代的写入资格，再取消远端请求。 */

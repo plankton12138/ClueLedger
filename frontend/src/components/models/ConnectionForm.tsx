@@ -11,9 +11,11 @@ import { errorMessage } from "../../api/errors";
  * 编辑已有连接时留空表示沿用旧 Key——界面不会把脱敏值回填进密码框。
  */
 
+import OperationControls from "../workspace/OperationControls";
 import { useMemo, useState } from "react";
 
 import {
+  awaitProbe,
   discoverModels,
   probeModel,
   type AuthMethod,
@@ -22,6 +24,7 @@ import {
   type ProviderApi,
   type ProviderPreset,
 } from "../../api/models";
+import { operationKey, pauseOperation } from "../../api/operations";
 import { useModelsStore } from "../../state/models";
 import { defaultConnectionName } from "./naming";
 import SubscriptionLogin from "./SubscriptionLogin";
@@ -75,6 +78,8 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
   const [discoveryNote, setDiscoveryNote] = useState<string | null>(null);
   const [result, setResult] = useState<TestResult | null>(null);
   const [busy, setBusy] = useState<"" | "discover" | "save" | "response" | "tool">("");
+  const [lastProbe, setLastProbe] = useState<string | null>(null);
+  const [probeOperation, setProbeOperation] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(preset.custom);
   // 支持订阅登录的供应商要选一种接入方式；编辑已有连接时沿用原来的方式。
@@ -180,7 +185,7 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
     setBusy(kind);
     setError(null);
     try {
-      const probe = await probeModel({
+      const accepted = await probeModel({
         catalog_id: preset.id,
         base_url: baseUrl.trim(),
         api,
@@ -190,7 +195,12 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
         connection_id: connection?.name ?? null,
         kind,
         model: testModel,
+        requestKey: operationKey(`probe-${kind}`),
       });
+      // 测试在后台跑；这里跟随操作快照，暂停后明确报告「没有采用这次结果」。
+      setProbeOperation(accepted.operation_id);
+      setLastProbe(accepted.operation_id);
+      const probe = await awaitProbe(accepted.operation_id, kind);
       setResult((current) => ({
         fingerprint,
         response: kind === "response" ? probe.response : (current?.response ?? "untested"),
@@ -200,7 +210,17 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
     } catch (caught) {
       setError(describe(caught));
     } finally {
+      setProbeOperation(null);
       setBusy("");
+    }
+  };
+
+  const pauseProbe = async () => {
+    if (!probeOperation) return;
+    try {
+      await pauseOperation(probeOperation, operationKey("probe-pause"));
+    } catch (caught) {
+      setError(describe(caught));
     }
   };
 
@@ -512,10 +532,19 @@ export default function ConnectionForm({ connection, preset, onBack, onDone }: P
               >
                 {busy === "tool" ? "测试中…" : "测试工具调用"}
               </Button>
+              {probeOperation && (
+                <Button className="px-2 py-0.5 text-sm" onClick={() => void pauseProbe()}>
+                  暂停测试
+                </Button>
+              )}
             </div>
             <p className="mt-1 text-sm text-ui-muted">
               测试会向该供应商发出少量请求；不读取作品，也不产生文件改动。
             </p>
+            {lastProbe && <OperationControls key={lastProbe} operationId={lastProbe} probe onDone={outcome => {
+              const result = [...outcome.receipts].reverse().find(receipt => receipt.kind === "probe")?.outcome;
+              if (result) setResult({ fingerprint, response: result.response ?? "untested", toolCall: result.tool_call ?? "untested", message: result.message ?? "" });
+            }} />}
             <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-sm">
               <dt className="text-ui-muted">响应</dt>
               <dd data-testid="probe-response">{statusText(tested?.response)}</dd>

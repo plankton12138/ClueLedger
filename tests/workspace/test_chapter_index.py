@@ -14,7 +14,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
-from hastings.workspace.agent import RunContext, build_tools
 from hastings.workspace.assembly import Exclusion
 from hastings.workspace.chapter_index import (
     RECIPE_VERSION,
@@ -30,9 +29,7 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
 from hastings.workspace.materials import MaterialLedger, SourceRef
-from hastings.workspace.service import WriteSession
 from hastings.workspace.state import RecentWorkspaces
-from tau_agent.tools import AgentTool
 
 _CHAPTER = "正文/0003 书房里的脚印.md"
 _TEXT = "# 书房\n\n侦探在书房发现一枚脚印。\n\n林远说他一直在客厅。\n"
@@ -278,76 +275,7 @@ def test_injection_stops_at_budget(tmp_path: Path) -> None:
     assert excluded[0].location == f"read_file {_CHAPTER}"
 
 
-# -- 工具与接口 -------------------------------------------------------------
-
-
-def _tools(tmp_path: Path) -> tuple[Workspace, dict[str, AgentTool], ChapterIndexStore]:
-    workspace = _workspace(tmp_path)
-    store = ChapterIndexStore(tmp_path / "state")
-    run = RunContext(
-        workspace,
-        WriteSession(workspace, instruction="更新索引"),
-        author_messages=((1, "更新第三章的索引"),),
-    )
-    tools = {
-        tool.name: tool
-        for tool in build_tools(
-            workspace, run, mode="index", index_allowed=(_CHAPTER,), index_store=store
-        )
-    }
-    return workspace, tools, store
-
-
-async def _call(tool: AgentTool, **arguments: Any) -> dict[str, Any]:
-    result = await tool.execute("call-1", arguments)
-    return json.loads(result.text)
-
-
-@pytest.mark.anyio
-async def test_index_tools_cannot_write_the_manuscript(tmp_path: Path) -> None:
-    workspace, tools, store = _tools(tmp_path)
-
-    assert set(tools) == {"list_files", "read_file", "search_text", "save_chapter_index"}
-    assert "write_file" not in tools
-    assert "edit_file" not in tools
-    assert "delete_file" not in tools
-
-
-@pytest.mark.anyio
-async def test_save_chapter_index_publishes_and_reports(tmp_path: Path) -> None:
-    workspace, tools, store = _tools(tmp_path)
-    view = workspace.read(_CHAPTER)
-    first = await _call(tools["read_file"], path=_CHAPTER)
-    assert first["truncated"] is False
-
-    quote = "侦探在书房发现一枚脚印。"
-    start = view.text.index(quote)
-    saved = await _call(
-        tools["save_chapter_index"],
-        path=_CHAPTER,
-        digest=first["digest"],
-        summary="侦探发现脚印。",
-        evidence=[{"index": 1, "start": start, "end": start + len(quote), "quote": quote}],
-        events=[{"text": "发现脚印", "evidence": [1]}],
-    )
-
-    assert saved["status"] == "valid"
-    assert store.find(workspace, _CHAPTER) is not None
-
-
-@pytest.mark.anyio
-async def test_save_chapter_index_rejects_unread_chapter(tmp_path: Path) -> None:
-    _, tools, _ = _tools(tmp_path)
-    quote = "侦探在书房发现一枚脚印。"
-    with pytest.raises(WorkspaceError) as unread:
-        await _call(
-            tools["save_chapter_index"],
-            path=_CHAPTER,
-            digest="0" * 64,
-            summary="没有读过",
-            evidence=[{"index": 1, "start": 0, "end": len(quote), "quote": quote}],
-        )
-    assert _code(unread) in {"REFERENCE_NOT_FULLY_READ_CONFLICT", "CONTEXT_SOURCE_STALE_CONFLICT"}
+# -- 接口 -------------------------------------------------------------------
 
 
 def _client(tmp_path: Path) -> TestClient:
@@ -393,27 +321,3 @@ def test_chapter_index_endpoint_reports_status(tmp_path: Path) -> None:
     (root / _CHAPTER).write_text(_TEXT + "\n改过。\n", encoding="utf-8")
     stale = client.get(f"/api/file-workspaces/{workspace_id}/chapter-index").json()
     assert stale["items"][0]["status"] == "stale"
-
-
-def test_index_purpose_requires_targets(tmp_path: Path) -> None:
-    client = _client(tmp_path)
-    root = tmp_path / "雪山旅馆"
-    workspace_id = client.post(
-        "/api/file-workspaces", json={"path": str(root), "create": True}
-    ).json()["id"]
-
-    empty = client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations",
-        json={"text": "更新索引", "request_key": "k1", "purpose": "update_chapter_index"},
-    )
-    assert empty.status_code == 422
-
-    mixed = client.post(
-        f"/api/file-workspaces/{workspace_id}/conversations",
-        json={
-            "text": "更新索引",
-            "request_key": "k2",
-            "index_paths": ["正文/0003 书房里的脚印.md"],
-        },
-    )
-    assert mixed.status_code == 422

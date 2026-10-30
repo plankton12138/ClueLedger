@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261029-224924-721567",
+    "started_at": "2026-10-29T22:49:24.722568+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "027fc13aa63367b83ca99ad0a0e89880a36b174a",
+    "git_dirty": true,
+    "source_sha256": "5d13bce1b9df3e7f9df9281a97b688566e963af53c58318fc32397cc781e6cff",
+    "cases_sha256": "0a4bb2b1915f64403fbcdde55ebd0f3b7bb6d18862009f53655e7b9c377cc820",
+    "suite": "core",
+    "jobs": [
+      {
+        "key": "v101_o08--current--1",
+        "case": "v101_o08",
+        "family": "O08",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 1
+      }
+    ],
+    "max_turns": 16,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 30,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261029-224924-721567",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "提示分区变体仅移除所选分区；no_compaction 禁用手动与自动摘要，保留轮内裁剪和溢出恢复；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 7,
+    "rescored_at": "2026-10-29T23:54:04.988589+08:00",
+    "scorer_source_sha256": "08362102b1d254d56f9c2691f965f50dc26e8212bca6ac392a3702f0e55e4895",
+    "reviews_sha256": "eec6f0b78a37d0669fd9ea8c79c463e9b067e906567c90a037977114d263317d"
+  },
+  "summary": {
+    "planned": 1,
+    "executed": 1,
+    "counts": {
+      "pass": 1,
+      "not_run": 0
+    },
+    "success_rate": 1.0,
+    "duration_p50_seconds": 44.5,
+    "duration_p95_seconds": 44.5,
+    "input_tokens": 5811,
+    "output_tokens": 8217,
+    "tokens_per_success": 14028.0,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 44.5,
+        "duration_p95_seconds": 44.5,
+        "input_tokens": 5811,
+        "output_tokens": 8217,
+        "tokens_per_success": 14028.0,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "O08": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 44.5,
+        "duration_p95_seconds": 44.5,
+        "input_tokens": 5811,
+        "output_tokens": 8217,
+        "tokens_per_success": 14028.0,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 44.5,
+        "duration_p95_seconds": 44.5,
+        "input_tokens": 5811,
+        "output_tokens": 8217,
+        "tokens_per_success": 14028.0,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v101_o08": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pass": 1,
+          "not_run": 0
+        },
+        "success_rate": 1.0,
+        "duration_p50_seconds": 44.5,
+        "duration_p95_seconds": 44.5,
+        "input_tokens": 5811,
+        "output_tokens": 8217,
+        "tokens_per_success": 14028.0,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 6778,
+            "at": "2026-10-29T22:50:09.717+08:00",
+            "event_version": 1,
+            "event_id": "c_c5ec44300896:6778",
+            "conversation_id": "c_c5ec44300896",
+            "type": "run_finished",
+            "turn_id": "t_976ca258",
+            "operation_id": "op_ce683bf0946a",
+            "generation": 1,
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0001 雨夜.md"
+            ],
+            "commit": "7f9588db27e8aab0e645a44eb747d4f1e175687a",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读《正文/0001 雨夜.md》原文，再登记本轮范围并提交候选。\n已按你的要求改写，并提交了候选：\n\n- **文件**：`正文/0001 雨夜.md`（只用这一个是相关文件，章节名没有改）\n- **标题**：保留「# 雨夜」\n- **正文**：约 220 字（不含标题），在 180–250 字区间内\n- **场景内容**：林砚推门进旅馆 → 看见柜台上摊着的湿手套、还在滴水 → 问是谁的 → 管家用抹布压住水痕、声称「我一直在房间里，没出过门」→ 林砚伸手要碰被挡下，管家把手套拨进抽屉并催他登记 → 林砚追问房间位置，管家答「在楼下，我守夜」→ 两人隔着柜台对峙\n- **真相处理**：只出现滴水和林砚指腹沾到的那点水（凉的、滑得不像雨水），没有搬尸、雪停后、尸体等任何叙述或对白；管家「一直在房间」仍是他的自述，未被叙述者确认为事实\n\n当前状态：候选已保留（`candidate_8221f2ed464b4c80abfb7b58cd8f2543`），正式正文尚未确认写入，等核对完成后以内文为准。结构节点「抵达」（林砚看到湿手套）和计划中的「对质」都与这份候选一致，没有改动结构。\n\n另外注意到正文里有两个第一章文件（`0001 第1章.md` 与 `0001 雨夜.md`）；本轮只允许改这一个文件，所以我没有动章序或文件名，需要的话可以单独授权整理。\n核对完成，4 项均通过：\n\n- `present:n1:glove`：候选原文“柜台上摊着一双湿手套，手套还在滴水。”已自然呈现。\n- `hidden:glove`：管家“没出过门”仅为角色对白，叙述层未把“搬过尸体”写成已发生事实。\n- `scene:正文/0001 雨夜.md`：保留标题“雨夜”；抵达场景约 180—250 字；有实际动作与言语冲突；林砚尚不知道搬尸真相；仅修改该文件。\n- `constraint:ending`：本次变更未否定或改写“管家搬过尸体”的后续事实，与结局约定不矛盾。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雨夜.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雨夜.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/goal",
+          "status": "pass",
+          "detail": {
+            "verdict": "pass",
+            "reviewer": "Codex 独立证据审阅（非作者体验）",
+            "reason": "实际候选正文有行动和问答冲突，滴水参与场景；未提前写出搬尸真相，核对后真实提交单一文件。",
+            "evidence": "eval/runs/v101-o08-fix-20261029/evidence/v101_o08--current--1/step-1.json：events、details、before/after、diffs、story、operations"
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 7,
+        "model_finished": 7,
+        "tool_calls": 5,
+        "tool_errors": 1,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 7,
+        "fresh_input_tokens": 5811,
+        "input_tokens": 5811,
+        "output_tokens": 8217,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5164,
+            "messages_json_chars": 176,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5164,
+            "messages_json_chars": 1964,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5164,
+            "messages_json_chars": 4456,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5164,
+            "messages_json_chars": 6061,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 1480,
+            "tools_json_chars": 516
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 3393,
+            "tools_json_chars": 516
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 6154,
+            "tools_json_chars": 516
+          }
+        ],
+        "max_request_json_chars": 18743,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v101_o08--current--1",
+      "case": "v101_o08",
+      "title": "场景自然展开",
+      "family": "O08",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1,
+      "duration_seconds": 44.5,
+      "evidence": "evidence/v101_o08--current--1",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

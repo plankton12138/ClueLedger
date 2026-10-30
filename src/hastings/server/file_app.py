@@ -27,6 +27,7 @@ from hastings.library.assembly_api import create_assembly_router
 from hastings.library.modules import ModuleLibrary
 from hastings.server.model_api import create_model_router
 from hastings.server.model_connections import ModelConnectionService
+from hastings.server.probe_ops import ProbeRunner
 from hastings.server.provider_config import ProviderBook, ProviderConfigError
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.api import (
@@ -39,7 +40,8 @@ from hastings.workspace.ideas_api import create_ideas_router
 from hastings.workspace.operation_api import create_operation_router
 from hastings.workspace.operations import OperationStore
 from hastings.workspace.run_registry import RunRegistry
-from hastings.workspace.service import ProviderFactory, TurnService
+from hastings.workspace.service import ProviderFactory
+from hastings.workspace.service_hub import WorkspaceServices
 from hastings.workspace.state import RecentWorkspaces
 from hastings.workspace.story_api import create_story_router
 
@@ -98,23 +100,32 @@ def create_workspace_app(
     # 统一操作放在应用级状态目录：控制接口按操作标识定位，不需要先知道是哪个作品。
     operations = OperationStore(workspaces.root)
     app.state.operations = operations
-    services: dict[str, TurnService] = {}
+    hub = WorkspaceServices(
+        workspaces,
+        provider_factory,
+        library=library,
+        run_registry=run_registry,
+        operations=operations,
+    )
+    app.state.services = hub
+    # 连接测试也登记为统一操作：提交即返回 operation_id，可暂停与被读取。
+    probe_runner = ProbeRunner(operations, model_service) if model_service is not None else None
+    app.state.probe_runner = probe_runner
+    app.include_router(create_file_workspace_router(hub))
     app.include_router(
-        create_file_workspace_router(
+        create_operation_router(
             workspaces,
-            provider_factory,
-            library=library,
-            run_registry=run_registry,
-            services=services,
-            operations=operations,
+            operations,
+            hub.turns,
+            runner_for=hub.runner_for,
+            probe_runner=probe_runner,
         )
     )
-    app.include_router(create_operation_router(workspaces, operations, services))
     app.include_router(create_ideas_router(workspaces))
     app.include_router(create_clue_router(workspaces, library))
-    app.include_router(create_story_router(workspaces))
+    app.include_router(create_story_router(workspaces, hub))
     if model_service is not None:
-        app.include_router(create_model_router(model_service))
+        app.include_router(create_model_router(model_service, probe_runner=probe_runner))
     if library is not None:
         app.include_router(create_library_router(library))
         app.include_router(create_assembly_router(workspaces, library, busy=run_registry.is_busy))

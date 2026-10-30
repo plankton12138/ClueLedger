@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  awaitProbe,
   cancelAuthSession,
   createConnection,
   deleteConnection,
@@ -135,30 +136,77 @@ describe("发现与测试", () => {
     expect(bodies[0]).toMatchObject({ connection_id: null, api_key: "sk-draft" });
   });
 
-  it("测试请求区分 response 与 tool", async () => {
+  it("测试请求区分 response 与 tool，受理即返回操作标识", async () => {
     const bodies: unknown[] = [];
-    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      expect(url).toBe("/api/model-connections/probe");
       bodies.push(JSON.parse(String(init?.body)));
-      return jsonResponse({
-        revision: "r1",
-        connection_id: null,
-        model: "m",
-        response: "passed",
-        tool_call: "untested",
-        code: null,
-        message: "响应测试通过。",
-      });
+      return jsonResponse(
+        { revision: "r1", connection_id: null, operation_id: "op_1" },
+        202,
+      );
     });
 
-    await probeModel({
+    const accepted = await probeModel({
       catalog_id: "deepseek",
       base_url: "https://api.deepseek.com/v1",
       api: "openai-completions",
       kind: "tool",
       model: "m",
+      requestKey: "rk-1",
     });
 
-    expect(bodies[0]).toMatchObject({ kind: "tool", model: "m" });
+    expect(bodies[0]).toMatchObject({ kind: "tool", model: "m", request_key: "rk-1" });
+    expect(accepted.operation_id).toBe("op_1");
+  });
+
+  it("测试结果按操作读取，两条事实保持独立", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      urls.push(url);
+      if (url === "/api/operations/op_1") {
+        return jsonResponse({ id: "op_1", status: "completed", model: "m", note: "测试结束。" });
+      }
+      if (url === "/api/operations/op_1/result") {
+        return jsonResponse({
+          operation_id: "op_1",
+          status: "completed",
+          note: "测试结束。",
+          receipts: [
+            {
+              kind: "probe",
+              outcome: {
+                model: "m",
+                response: "untested",
+                tool_call: "passed",
+                code: null,
+                message: "工具测试通过。",
+              },
+            },
+          ],
+          pending_units: [],
+          changed_paths: [],
+          question: null,
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const probe = await awaitProbe("op_1", "tool");
+
+    expect(urls).toEqual(["/api/operations/op_1", "/api/operations/op_1/result"]);
+    expect(probe.tool_call).toBe("passed");
+    expect(probe.response).toBe("untested");
+  });
+
+  it("暂停的测试不冒充失败或通过", async () => {
+    vi.stubGlobal("fetch", async () =>
+      jsonResponse({ id: "op_1", status: "paused", model: "m", note: "" }),
+    );
+
+    await expect(awaitProbe("op_1", "response")).rejects.toMatchObject({
+      code: "MODEL_PROBE_PAUSED",
+    });
   });
 });
 

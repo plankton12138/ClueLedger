@@ -1,6 +1,10 @@
 # 数据、模型输入与恢复契约
 
-日期：2026-10-28。状态：**拟实施**。本文件定义职责和字段，代码示例解释关键逻辑。
+日期：2026-10-29。状态：**当前实现契约**。本文件定义职责和字段；当前进度见[开发入口](README.md)。
+
+2026-10-29 实施补充：主方案与备选的正文补丁都接入同一提交决定，记录反向正文补丁，支持确定性恢复与成组撤销；作品重新打开先恢复。备选正文写入 `story/variants/{variant_id}/prose/` 的受管副本（写时复制，删除用 `.absent` 标记），主方案正文不受影响。读取依赖覆盖方案、正文、约定、模块修订与会话事件序号；撤销只回退本次改动段落。具体保证与验证见[联合提交记录](notes/P1-joint-commit.md)。
+
+候选流程补充：主方案正文先保存在 `story/candidates/`，逐项核对通过后才通过联合提交发布；修正只允许一次有限局部替换与一次复核。未通过时保留草稿并记录作者问题，暂停后的迟到报告不能触发提交。当前支持新章节创建及其成组撤销；候选与结构关联、重启承接见[候选流程记录](notes/P4-candidate-workflow.md)。
 
 ## 1. 对象与归属
 
@@ -8,7 +12,7 @@
 
 | 对象 | 最小内容 |
 |---|---|
-| StoryVariant | `id, name, base_variant_id, base_revision, revision, node_ids, clue_ids, thread_ids, constraint_ids`；作品另记 `primary_variant_id` |
+| StoryVariant | `id, name, base_variant_id, base_revision, revision, nodes, clues, threads, constraints, edges, event_times, bindings, assessments`；作品另记 `primary_variant_id` |
 | StoryThread | `id, title, node_ids`；节点可属于多条故事内分支 |
 | Clue | `id, title, author_truth: str|null, intention, resolution{intent,node_ids}, provenance` |
 | StoryNode | `id, title, action, thread_ids, clue_uses[], time_note, knowledge_changes[], group_id?` |
@@ -19,7 +23,7 @@
 | Constraint | `id, text, strength: required|preference, scope, source_message_id, origin, revision`；scope 为全书、人物、节点或正文范围 |
 | ProseBinding | `id, node_id, clue_id?, document_id, path, digest, start, end, quote, observation, assessment_id?` |
 | Assessment | `id, kind, requirements[], findings[], checked_scope, structure_revision, prose_digests, source_operation_id, decision_source` |
-| ChangeSet | `id, base_revision, semantic_operations[], prose_patches[], read_dependencies[], requested_scope, operation_id, generation` |
+| ChangeSet | `id, base_revision, operations[], prose_patches[], read_dependencies[], requested_scope, operation_id, generation` |
 
 `resolution.intent` 为 `explain / leave_open / undecided`。真相和目标允许未定，未决定不等于否定事实。预期理解是创作目标，不等于读者或角色的实际认知。
 
@@ -78,17 +82,17 @@ next 表示揭示推进，可分支、汇合且无环；实际时间关系另行
 
 必需项由任务、作用域、明确参考和已知关系递归选取，不能只取一层邻居或只靠相似度。补读中新发现的依赖进入 read set。全局约定保持原文及有效修订，可选背景允许摘要。
 
-先预留输出和工具补读空间。必需集合超限时拆分工作单元；最小单元仍放不下返回 STORY_CONTEXT_INCOMPLETE，不能截断必需要求继续。每个拆分单元仍完整携带其适用约束。
+先预留输出和工具补读空间。必需集合超限时按节点拆组，只装第 1 组并把本轮范围写进请求；单个节点的必需内容仍放不下时，连同依赖它的后继一起停下，全部装不下返回 STORY_CONTEXT_INCOMPLETE，不能截断必需要求继续。每个拆分单元仍完整携带其适用约束。
 
 输入快照记录模板版本、操作代次、模型、实际 messages 或可回读附件、来源修订与内容摘要校验值、覆盖、工具读取和省略理由，不保存凭据与鉴权头。
 
 压缩只整理讨论，当前约定和结构重新装入。新会话与继续使用当前数据；来源变化但不改变创作决定时重装继续，有实质取舍冲突时提问。
 
-试读使用独立请求，过滤真相、未来节点标题、作者对话、方案比较、摘要和缓存，工具同样限制范围。首版读者阶段使用固定中性提问；作者自由表达用于确定位置与任务，不原样传入读者请求，避免问题本身泄露隐藏信息。只能保证作品隐藏内容未被提供，不能保证模型没有外部常识，也不能代表所有读者。
+试读使用独立请求与独立会话（`origin=reader`），过滤真相、未来节点标题、作者对话、方案比较、摘要和缓存，工具同样限制范围。首版读者阶段使用固定中性提问；作者自由表达用于确定位置与任务，不原样传入读者请求，避免问题本身泄露隐藏信息。执行时没有工具、目录、摘要与作者历史，发送前用隐藏字符串自检实际文本。只能保证作品隐藏内容未被提供，不能保证模型没有外部常识，也不能代表所有读者。
 
 ## 6. 操作与代次
 
-Operation 字段：`id, owner, conversation_id?, purpose, status, generation, phase, instruction_log, context_refs, checkpoints, committed_receipts, pending_units, last_seq`。owner 为作品或模型测试对象，来自服务端绑定。
+Operation 字段：`id, owner, conversation_id?, purpose, status, generation, phase, request_key, instruction_log, context_refs, checkpoints, committed_receipts, pending_units, last_seq`。owner 为作品或模型测试对象，来自服务端绑定；`request_key` 是受理时的幂等键，压缩与连接测试没有会话受理记录可查，靠它认重复。
 
 状态主线 accepted → running → completed；运行中可转 paused、awaiting_answer、needs_attention 或 failed。作者继续后重查恢复条件、增加 generation。失败不能伪装为暂停；可恢复失败提供继续入口。
 
@@ -105,3 +109,5 @@ Operation 字段：`id, owner, conversation_id?, purpose, status, generation, ph
 核对覆盖必需呈现、提前披露、角色知情、作者真相与必要前提，输出具体位置、原句、对应要求、不确定项与未覆盖范围。默认一次局部修正和一次复核，关键问题未解决则保留候选并提问。
 
 程序保证结构完整性和执行边界，语义核对存在误判。作者决定保留问题时记录裁决与作用域，不覆盖原核对记录伪装通过。
+
+当前模型字段与请求结构可查[机器可读实现契约](artifacts/implemented-contracts.json)。自动定位、试读来源、拆组继续、作者明确修改与恢复边界见[收尾记录](notes/P7-implementation-and-acceptance.md)。

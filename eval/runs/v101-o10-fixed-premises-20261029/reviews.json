@@ -1,0 +1,20 @@
+{
+  "v101_o10--current--1/step-1/goal": {
+    "verdict": "pass",
+    "reviewer": "Codex 独立证据审阅（非作者体验）",
+    "reason": "实际改写抵达时间并保留滴水和作者真相；后文时间证据区分兼容与已证，其他正文无差异。",
+    "evidence": "eval/runs/v101-o10-fixed-premises-20261029/evidence/v101_o10--current--1/step-1.json：events、details、before/after、diffs、story、operations"
+  },
+  "v101_o10--current--2/step-1/goal": {
+    "verdict": "pass",
+    "reviewer": "Codex 独立证据审阅（非作者体验）",
+    "reason": "实际改写抵达时间并保留滴水和作者真相；后文时间证据区分兼容与已证，其他正文无差异。",
+    "evidence": "eval/runs/v101-o10-fixed-premises-20261029/evidence/v101_o10--current--2/step-1.json：events、details、before/after、diffs、story、operations"
+  },
+  "v101_o10--current--3/step-1/goal": {
+    "verdict": "pass",
+    "reviewer": "Codex 独立证据审阅（非作者体验）",
+    "reason": "实际改写抵达时间并保留滴水和作者真相；后文时间证据区分兼容与已证，其他正文无差异。",
+    "evidence": "eval/runs/v101-o10-fixed-premises-20261029/evidence/v101_o10--current--3/step-1.json：events、details、before/after、diffs、story、operations"
+  }
+}

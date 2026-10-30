@@ -22,9 +22,9 @@ from hastings.library.records import EntryDraft
 from hastings.workspace import agent
 from hastings.workspace.assembly import assemble
 from hastings.workspace.chapter_index import ChapterIndexStore
-from hastings.workspace.clue_designs import create_clue_identity, save_clue_inference
 from hastings.workspace.clue_models import ClueCoverage, ClueEntry
 from hastings.workspace.clue_store import ClueLedgerStore
+from hastings.workspace.clues import create_clue_identity
 from hastings.workspace.disclosure import ObservedEvidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
@@ -33,9 +33,11 @@ from hastings.workspace.ideas import IdeaStore
 from hastings.workspace.materials import ContextRequest
 from hastings.workspace.module_assembly import AssemblyStore
 from hastings.workspace.questions import QuestionStore
-from hastings.workspace.review import REVIEW_INSTRUCTIONS
 from hastings.workspace.service import ProviderFactory, TurnService
 from hastings.workspace.state import ConversationStore, conversation_root
+from hastings.workspace.story_context import StoryRequest
+from hastings.workspace.story_models import StoryChangeSet
+from hastings.workspace.story_store import StoryStore
 from tau_agent.messages import AssistantMessage
 from tau_agent.provider_events import AssistantErrorEvent
 
@@ -94,6 +96,19 @@ def seed_files(workspace: Workspace, files: dict[str, str]) -> None:
         workspace.write(path, text, expected_digest=digest)
 
 
+def story_request(
+    workspace: Workspace, store: ConversationStore, raw: dict[str, Any]
+) -> StoryRequest:
+    data = dict(raw)
+    document = StoryStore(store.root, workspace).read().document
+    if document and data.get("variant_id") not in document.variants:
+        for variant in document.variants.values():
+            if variant.name == data.get("variant_id"):
+                data["variant_id"] = variant.id
+                break
+    return StoryRequest.from_mapping(data)
+
+
 def seed_history(store: ConversationStore, case: Case) -> str | None:
     history = list(case.history)
     for i in range(case.filler_turns):
@@ -143,18 +158,11 @@ def intervention(case: Case, variant: str, trace: dict[str, Any]) -> Iterator[No
 
     def build_assembly(*args: Any, **kwargs: Any) -> Any:
         result = original_assembly(*args, **kwargs)
-        if removed or variant in {"presentation_refs", "baseline"}:
+        if removed:
             parts: list[Any] = []
             for part in result.parts:
                 if part.key in removed:
                     continue
-                if (
-                    variant in {"presentation_refs", "baseline"}
-                    and part.key == "instructions"
-                    and "核对作者保存的一组线索推理" in part.text
-                ):
-                    # 对照变体不享受专用核对提示与冻结范围，只保留 0.9 的通用检查要求。
-                    part = replace(part, text=REVIEW_INSTRUCTIONS)
                 parts.append(part)
             filtered = assemble(result.profile, parts)
             result = replace(filtered, skipped=filtered.skipped + result.skipped)
@@ -203,12 +211,10 @@ def intervention(case: Case, variant: str, trace: dict[str, Any]) -> Iterator[No
         yield
 
 
-def _seed_clues(
-    workspace: Workspace, state_root: Path, case: Case
-) -> dict[str, dict[str, Any]]:
-    """把评测初态的线索身份与作者目标写进真实账本；模型只看到视图与正文。"""
-    if not case.clues and not case.inferences:
-        return {}
+def _seed_clues(workspace: Workspace, state_root: Path, case: Case) -> None:
+    """把评测初态的线索身份写进真实账本；模型只看到视图与正文。"""
+    if not case.clues:
+        return
     ledger = ClueLedgerStore(state_root)
     chapters = {
         row.chapter_number: row.path
@@ -243,9 +249,7 @@ def _seed_clues(
                     None,
                     "open",
                     "",
-                    ObservedEvidence(
-                        path, view.digest, start, start + len(seed.quote), seed.quote
-                    ),
+                    ObservedEvidence(path, view.digest, start, start + len(seed.quote), seed.quote),
                     source_chapter=seed.chapter,
                     clue_id=clue_ids[seed.title],
                     mode="narration",
@@ -263,27 +267,6 @@ def _seed_clues(
                 at="2026-10-27T09:00:00+08:00",
             ),
         )
-    rows: dict[str, dict[str, Any]] = {}
-    for index, inference in enumerate(case.inferences):
-        created = save_clue_inference(
-            ledger,
-            clue_ids=[clue_ids[title] for title in inference.clue_titles],
-            goal=inference.goal,
-            intent=inference.intent,
-            premises=[],
-            alternatives=[],
-            design_link_ids=[],
-            request_key=f"eval-inference-{index + 1}",
-            expected_revision=ledger.read().revision,
-            created_by="author",
-        )
-        rows[inference.key] = {
-            "inference_id": str(created["inference_id"]),
-            "inference_revision": str(created["inference_revision"]),
-            "clue_ids": [clue_ids[title] for title in inference.clue_titles],
-            "titles": clue_ids,
-        }
-    return rows
 
 
 def _idea_rows(workspace: Workspace) -> list[dict[str, object]]:
@@ -421,6 +404,10 @@ def capture(
             )
     return {
         "turn_id": tid,
+        "story": StoryStore(service.store.root, workspace).read().document.model_dump(mode="json")
+        if StoryStore(service.store.root, workspace).read().document
+        else None,
+        "operations": [operation.to_dict() for operation in service.operations.list()],
         "before": before,
         "after": after,
         "diffs": diffs,
@@ -504,7 +491,15 @@ async def run_attempt(
         )
         ideas[idea_seed.title] = created
     store = ConversationStore(conversation_root(work / key / "state", "eval"))
-    inferences = _seed_clues(workspace, store.root, case)
+    _seed_clues(workspace, store.root, case)
+    if case.story_operations:
+        StoryStore(store.root, workspace).commit_change(
+            variant_id="main",
+            request_key="eval-story",
+            change=StoryChangeSet.model_validate(
+                {"id": "eval-story", "base_revision": "empty", "operations": case.story_operations}
+            ),
+        )
     cid = seed_history(store, case)
     trace: dict[str, Any] = {"assemblies": [], "faults": []}
     gate = {"armed": False, "fired": False}
@@ -542,6 +537,35 @@ async def run_attempt(
     error = None
     with intervention(case, variant, trace):
         for i, step in enumerate(case.steps):
+            if cid:
+                for number in range(step.filler_before):
+                    filler_id = f"filler-{i}-{number}"
+                    store.append(
+                        cid,
+                        {
+                            "type": "turn_started",
+                            "turn_id": filler_id,
+                            "text": "只讨论场景节奏，不改既定真相与约定。" * 30,
+                        },
+                    )
+                    store.append(
+                        cid,
+                        {
+                            "type": "assistant_message",
+                            "turn_id": filler_id,
+                            "text": "通过行动、声音与对话交替组织场景；现有结构保持。" * 30,
+                        },
+                    )
+                    store.append(
+                        cid,
+                        {
+                            "type": "run_finished",
+                            "turn_id": filler_id,
+                            "status": "completed",
+                            "recording": "no_change",
+                            "changed_paths": [],
+                        },
+                    )
             if step.compact_before and cid and variant != "no_compaction":
                 try:
                     record = await service.compact(cid, reason="eval")
@@ -569,50 +593,45 @@ async def run_attempt(
             gate["fired"] = False
             info = None
             try:
-                clue_scope = None
-                if step.clue_review is not None:
-                    seeded = inferences[str(step.clue_review["inference"])]
-                    requested = step.clue_review.get("clue_titles")
-                    wanted = (
-                        [seeded["titles"][str(title)] for title in requested]
-                        if isinstance(requested, list) and requested
-                        else list(seeded["clue_ids"])
-                    )
-                    clue_scope = {
-                        "inference_id": seeded["inference_id"],
-                        "inference_revision": seeded["inference_revision"],
-                        "clue_ids": wanted,
-                        "as_of_chapter": int(step.clue_review.get("as_of_chapter") or 0),
-                    }
                 reply_to = ""
                 if step.reply_to_question:
                     pending = QuestionStore(store.root).pending(cid) if cid else ()
                     if not pending:
                         raise RuntimeError("这一步要回答问题，但会话里没有待答问题")
                     reply_to = pending[-1].question_id
-                info = await service.accept(
-                    step.text,
-                    f"eval-{i + 1}",
-                    conversation_id=cid,
-                    context=ContextRequest(
-                        selected_path=step.selected,
-                        reference_paths=tuple(step.references),
-                        idea_references=tuple(
-                            (
-                                str(ideas[title]["idea_id"]),
-                                str(ideas[title]["revision_id"]),
-                            )
-                            for title in step.idea_references
-                            if title in ideas
+                if step.new_conversation:
+                    cid = None
+                    captured_seq = 0
+                if step.reader_cutoff:
+                    captured_seq = 0
+                    info = await service.accept_reader(
+                        f"eval-reader-{i + 1}", cutoff=step.reader_cutoff
+                    )
+                else:
+                    info = await service.accept(
+                        step.text,
+                        f"eval-{i + 1}",
+                        conversation_id=cid,
+                        context=ContextRequest(
+                            selected_path=step.selected,
+                            reference_paths=tuple(step.references),
+                            idea_references=tuple(
+                                (
+                                    str(ideas[title]["idea_id"]),
+                                    str(ideas[title]["revision_id"]),
+                                )
+                                for title in step.idea_references
+                                if title in ideas
+                            ),
+                            state_chapter=step.state_chapter,
+                            story=story_request(workspace, store, step.story)
+                            if step.story
+                            else None,
                         ),
-                        state_chapter=step.state_chapter,
-                    ),
-                    purpose=step.purpose,
-                    index_paths=step.index_paths,
-                    review_paths=tuple(step.review_paths),
-                    clue_review=clue_scope,
-                    reply_to_question=reply_to,
-                )
+                        purpose=step.purpose,
+                        review_paths=tuple(step.review_paths),
+                        reply_to_question=reply_to,
+                    )
                 cid = info.conversation_id
                 stop_task: asyncio.Task[None] | None = None
                 if step.stop_after_ms is not None:
@@ -624,8 +643,35 @@ async def run_attempt(
                             await service.stop(turn_id)
 
                     stop_task = asyncio.create_task(stop_later(info.turn_id, step.stop_after_ms))
+                interject_task: asyncio.Task[Any] | None = None
+                if step.interject_after_ms is not None:
+
+                    async def interject_later(delay: int, op_id: str, key: str, text: str) -> None:
+                        await asyncio.sleep(delay / 1000)
+                        operation = service.operation(op_id)
+                        if operation.status in ("accepted", "running"):
+                            await service.interject_operation(
+                                operation.id,
+                                key,
+                                expected_generation=operation.generation,
+                                text=text,
+                            )
+
+                    interject_task = asyncio.create_task(
+                        interject_later(
+                            step.interject_after_ms,
+                            info.operation_id,
+                            f"eval-interject-{i}",
+                            step.interjection,
+                        )
+                    )
                 try:
                     await asyncio.wait_for(asyncio.shield(service.wait(info.turn_id)), timeout)
+                    if interject_task is not None:
+                        await interject_task
+                        latest = service._tasks.get(info.turn_id)
+                        if latest is not None:
+                            await latest
                 except TimeoutError:
                     await service.stop(info.turn_id)
                     await service.wait(info.turn_id)

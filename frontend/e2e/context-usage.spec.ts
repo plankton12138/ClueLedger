@@ -81,10 +81,11 @@ test("压缩可停止，刷新和切回会话后恢复同一操作", async ({ pa
 test("浮层互斥、键盘及窄屏缩放可用，不遮挡草稿", async ({ page, book }) => {
   const fixture = await prepare(page, book.id);
   await fixture.open();
-  const output = resolve("../dev-notes/v0.9/artifacts/context-fixes"); mkdirSync(output, { recursive: true });
+  const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../data/test-tmp/context-fixes"); mkdirSync(output, { recursive: true });
   for (const [width, height, scale] of [[1440, 900, 1], [1024, 768, 1], [640, 900, 1], [320, 720, 1], [1440, 900, 1.5]]) {
     await page.setViewportSize({ width, height });
     await page.evaluate(value => { document.documentElement.style.zoom = String(value); }, scale);
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     const entry = page.getByRole("button", { name: "当前上下文占用" });
     if (!(await entry.isVisible())) await page.getByRole("button", { name: "对话", exact: true }).click();
     await entry.focus(); await page.keyboard.press("Enter");

@@ -1,0 +1,8 @@
+{
+  "v101_o09--current--1/step-1/goal": {
+    "verdict": "pass",
+    "reviewer": "Codex 独立证据审阅（非作者体验）",
+    "reason": "事件中有生成期间插话及新代次，最终动机转为保护女儿，仍保留搬尸结局；无作品文件改动。",
+    "evidence": "eval/runs/v101-first-continuation-20261029/evidence/v101_o09--current--1/step-1.json：events、details、before/after、diffs、story、operations"
+  }
+}

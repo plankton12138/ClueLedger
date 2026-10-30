@@ -18,6 +18,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from hastings.prompts.sections import (
+    TIMELINE_HEAD,
+    timeline_missing_note,
+    timeline_next_note,
+)
 from hastings.workspace.assembly import Exclusion
 from hastings.workspace.disclosure import EntryStatus, ObservedEvidence, check_evidence
 from hastings.workspace.errors import WorkspaceError
@@ -264,12 +269,12 @@ def timeline_section(
     if limit > 0:
         for entry in state.entries[:-limit]:
             _exclude_anchor(excluded, entry, "limit", 0)
-    header = "故事时间（按原文核对，最近几章）："
+    header = TIMELINE_HEAD
     lines = [header, *(_anchor_line(entry) for entry in recent)]
     if state.missing:
         marks = "、".join(f"第{chapter}章" for chapter in state.missing)
-        lines.append(f"（{marks}还没有时间锚点，时间跨度未知。）")
-    lines.append(f"下一章从第 {recent[-1].chapter} 章之后接着写；写时间词要与这里连续。")
+        lines.append(timeline_missing_note(marks))
+    lines.append(timeline_next_note(recent[-1].chapter))
     text = "\n".join(lines)
     if len(text) > budget and len(recent) > 1:
         # 超预算先丢弃早的锚点：最近一章的时间是「从哪接」的唯一依据。

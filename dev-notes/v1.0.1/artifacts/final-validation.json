@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-30",
+  "version": "1.0.1",
+  "status": "development_complete_pending_author_experience",
+  "backend": {
+    "command": "uv run pytest -q",
+    "passed": 1422,
+    "warnings": 1,
+    "seconds": 275.01
+  },
+  "frontend": {
+    "command": "npm test -- --run",
+    "passed": 324,
+    "files": 30,
+    "build": "npm run build passed"
+  },
+  "static": {
+    "ruff": "passed",
+    "mypy": "147 source files passed",
+    "diff_check": "passed"
+  },
+  "browser_local": {
+    "passed": 98,
+    "skipped": 1,
+    "retries": 0,
+    "minutes": 5.3,
+    "path": "data/test-tmp/v101-release-local-20261029"
+  },
+  "browser_online": [
+    {
+      "case": "story-workflow-online",
+      "seconds": 49.4,
+      "status": "passed"
+    },
+    {
+      "case": "story-scene-online",
+      "seconds": 50.5,
+      "status": "passed"
+    }
+  ],
+  "semantic_review": {
+    "kind": "per-case final applicable evidence across identified versions",
+    "met": 33,
+    "unmet": 3,
+    "minimum_per_case": "2/3",
+    "reviewer": "Codex independent evidence review, not author UX",
+    "details": "online-review.json"
+  },
+  "temporary_credentials": "cleaned",
+  "root_readme": "unchanged",
+  "mynotes": "unchanged",
+  "git_published": false
+}

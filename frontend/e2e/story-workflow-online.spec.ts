@@ -86,7 +86,9 @@ test("构思建立、备选采用与结构引用都进入真实请求", async ({
     expect(variants.primary_variant_id).toBe(main.id);
 
     // 2) 构思面可读；建备选后采用，主方案多出备选的节点。
-    await page.getByRole("button", { name: "构思", exact: true }).click();
+    if (!(await page.getByRole("region", { name: "构思结构" }).isVisible())) {
+      await page.getByRole("button", { name: "构思", exact: true }).click();
+    }
     const surface = page.getByRole("region", { name: "构思结构" });
     await expect(surface.getByRole("button").filter({ hasText: /.+/ }).first()).toBeVisible();
     await surface.getByRole("button", { name: "建备选" }).click();
@@ -99,7 +101,7 @@ test("构思建立、备选采用与结构引用都进入真实请求", async ({
           body.variants.find((item) => !item.primary),
       );
     const altRevision = alt.revision;
-    await request.fetch(`http://127.0.0.1:8931${base}/story/changes`, {
+    await request.fetch(`${base}/story/changes`, {
       method: "post",
       data: {
         variant_id: alt.id,

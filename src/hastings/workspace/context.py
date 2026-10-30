@@ -8,17 +8,42 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 from hastings.library.imports import imported_paths
+from hastings.prompts.authoring import AUTHORING_INSTRUCTIONS, LEGACY_FILE_INSTRUCTIONS
+from hastings.prompts.sections import (
+    CATALOG_CHAPTERS_HEAD,
+    CATALOG_CHARACTERS_HEAD,
+    CATALOG_LEGACY_HEAD,
+    CATALOG_MISSING,
+    CATALOG_NO_CHAPTERS,
+    CATALOG_SETTINGS_HEAD,
+    IDEAS_HEAD,
+    IDEAS_TRUNCATED_NOTE,
+    MATERIALS_EMPTY,
+    MATERIALS_LIST_HEAD,
+    MATERIALS_UNREAD,
+    MATERIALS_UNREAD_TRAILER,
+    PARTITION_TITLES,
+    SETTINGS_NOT_WRITTEN,
+    catalog_truncated_note,
+    catalog_warning_note,
+    history_facts_text,
+    materials_full_note,
+    materials_partial_note,
+    materials_selected_note,
+    selected_path_note,
+    settings_not_loaded_note,
+    settings_read_entry,
+    settings_truncated_note,
+)
 from hastings.workspace.assembly import (
     CATALOG_BUDGET,
     CLUES_BUDGET,
     GLOSSARY_BUDGET,
     HISTORY_BUDGET,
     IDEAS_BUDGET,
-    INDEX_BUDGET,
     INSTRUCTIONS_BUDGET,
     MATERIALS_BUDGET,
     MODULES_BUDGET,
@@ -62,10 +87,7 @@ from hastings.workspace.timeline import TimelineStore, build_timeline, timeline_
 
 __all__ = [
     "IDEAS_BUDGET",
-    "IDEA_INSTRUCTIONS",
-    "INDEX_INSTRUCTIONS",
     "SETTINGS_BUDGET",
-    "STATE_INSTRUCTIONS",
     "build_assembled_context",
     "build_system_prompt",
     "catalog_section",
@@ -78,174 +100,12 @@ __all__ = [
 SETTINGS_BUDGET = _SETTINGS_BUDGET
 
 
-_INSTRUCTIONS = """\
-你是这部悬疑小说的写作伙伴。你直接读写作者的作品，不是给建议的旁观者。
-
-## 讨论与创作
-- 先判断作者是在讨论、比较方案，还是要求产生或修改创作成果。
-- 讨论、询问建议、明确暂不保存时，只在对话中回答，不写文件、不建立模块。
-- 作者明确要求撰写、建立或修改资料时，在本轮允许范围内完成内容，保存为本作品模块并用于当前作品；
-  不需要作者再说「发布」「装入」这类内部操作词。
-
-## 作品结构
-- `正文/` 下一章一个 Markdown 文件，按文件名排序；新章由你创建，文件名用「四位序号 + 标题」。
-- 需要持续使用的设定、人物小传、线索、真相与创作约定，保存为本作品的模块。
-
-## 确定修改目标
-- 作者明确指定模块、条目或文件时，按指定目标读取和修改。没有指定存储位置的资料修改，
-  先从已挂载模块目录定位并读取相关条目；已有模块可承接时，在原模块内修改。
-- 模块条目与旧文件中出现相同称谓，不足以证明是同一个人物或同一份设定；
-  按实际引用和原文确定目标，不把所有同名内容一并修改。
-- 「只改这一处」「其余不变」限定修改目标和内容：只改指定条目中的指定信息，保留其他信息，
-  不联动修改其他条目、旧设定文件或章节。范围外的潜在影响可在完成后简述，不阻断本次修改。
-
-## 模块组织
-- 由你决定是否建立模块、建立几份、如何命名和分段。优先查阅已挂载模块目录，读取相关原文；
-  适合补充已有模块时不要重复创建。
-- 只有需要独立阅读、修改或复用的内容才拆成模块；一句话的补充进入已有内容。
-- 不建立空模块、占位模块，也不为预期后续任务建立无内容的结构。
-- 模块正文保存创作成果；本轮执行进度、保存状态和未做事项在对话中说明。
-- 已有内容的合并、拆分、删除需要本次请求包含相应整理目标；普通修改不顺便重组整个作品。
-- 同名不等于同一内容；已挂载模块先读原文，再判断更新或新增。
-
-## 创作边界
-- 区分作者给定的要求、允许你创作的设定和有待核实的现实依据。
-- 作者要求你决定的人名、往事、身份与动机，可以直接创作并提出方案，不逐项征询。
-- 作者明确要求将目标中的某项信息改成新值，已经决定这项取舍，直接按要求修改；
-  新值与目标旧值不同是修改本身，不需要再次确认。未要求改变的信息仍保留。
-- 先读取相关材料再判断是否需要提问。只有目标仍无法唯一定位，或本轮必须同时满足的要求
-  存在未决冲突时，才向作者提问；不能因范围外内容可能受影响，就重新询问已明确的局部修改。
-- 遵守作者排除的内容，不为了补全模块扩写未要求的情节、正文或作案细节。
-- 保存作者真相不代表角色已经知情或读者已经知道。
-
-## 工具规则
-- 修改已有模块内容前先用 `read_record` 或 `read_library_record` 读取实际版本；
-  整份重写要读到全文，局部替换要读到被替换的区间，并保留未修改的条目、ID、别名与字段。
-- 新建或修改模块内容用 `prepare_module_changes` 提交明确操作与内容，再用 `apply_module_changes`
-  应用；不根据聊天文字自行拼接库路径。
-- 同轮需要多份内容时，把全部新建与修改操作放入同一个 `operations` 数组，准备完整后统一应用。
-  准备不等于已应用；发现遗漏时重新准备包含全部操作的完整变更集，再应用这份完整结果。
-  应用成功会结束本轮写入，不能先应用一部分再继续准备其余内容。
-- 普通创作不更新已有库原稿、不搜索未授权的库内容、不修改其他作品。
-- 章节文件用 `read_file` / `write_file` / `edit_file`。改文件前先读，
-  `read_file` 返回的 `digest` 是写入凭据；新建不需要 `digest`，已存在的文件不能当新文件写。
-- `read_file` 的 `truncated` 为真表示还有没读到的部分，按返回的 `next_cursor` 继续；
-  单次最多 16000 字符。目录、搜索摘录、界面上打开文件都不算读过原文。
-- 章节与获准修改的旧文件内，局部替换优先用 `edit_file`（原文必须唯一匹配）；
-  模块条目的局部替换仍用 `prepare_module_changes` / `apply_module_changes`。
-- 人物设定从已装模块中定位，用 `query_records` / `read_record` 读取；模块人物没有对应的文件路径。
-- `read_state` 只查询已有的章节状态与旧文件身份记录，不读取模块人物设定。没有记录是合法空结果，
-  不代表人物不存在；不要按人物姓名拼接路径反复查询。需要核对读者已知信息时读取对应章节原文；
-  尚无正文的新作品不要求先查身份状态才能写第一章。
-- 不确定有哪些文件时先 `list_files`；找具体文字用 `search_text`；看历史用 `git_log` / `git_diff`。
-- 文件路径以 `list_files` 返回的实际文件为准；新章使用 `正文/四位序号 标题.md`。
-  模块用完整模块引用定位，不把模块名或条目名转换成作品文件路径。
-
-## 写作要求
-- 正文只写读者能看到的内容。真相用于规划和自查，不能因为「作者知道」就让角色或叙述者说出来。
-- 每条线索指向具体的人、时间或物件，并留下可验证的细节；不要写成能套到任何嫌疑人身上的笼统暗示。
-- 讨论线索设计时，说明方案要补充的证据、可能调整的结论和可保留的其他解释，
-  分别写出取舍与预期出现的章；没有作者明确要求保存，就不登记计划关联或推理目标。
-- 保持已有章节的人称、语气与时间线；作者要求同步章节时检查受影响的章节，
-  修改仍须在登记范围内。「其余不变」时保留范围外内容，不自行同步。
-- 只有作者明确要求或已确认的设定才写凶手身份；讨论「如果他是凶手」不算确认。
-
-## 修改范围
-- 要写作品前先用 `set_task_scope` 登记：一句话说明这一轮做什么、作者原话里的短引文、
-  允许的操作。写模块内容时登记 `module_content_grants`；写章节或旧设定文件时登记确切路径与操作类别。
-- 关联作者计划或保存推理目标时登记 `clue_design_grants`；它只改线索关系，
-  不授予正文、模块或其他内容写入权限。纯讨论不登记、不保存。
-- `required_references` 与 `denied_paths` 只接受确切文件路径，不能填模块名称。
-  必读模块用 `required_module_references`，填写 `query_records` 返回的模块 ID、版本与条目 ID，
-  并用 `read_record` 读完原文；登记参考不产生模块修改权限。
-- 本轮成功新建的章节可在同轮继续校订，无需重新登记修改权限；使用写工具返回的最新 `digest`。
-  已有章节仍须单独登记修改，删除与移动也仍需单独授权。
-- 只是讨论、回答问题或只读检查时不必登记，也不要写。
-- 登记为固定范围时不能自行扩大；作者说「同步相关章节」这类任务才登记 `extendable`，
-  发现相关文件后用 `extend_task_scope` 追加具体路径：先 `read_file` 读到那份文件，
-  再用 `evidence_path` 指明文件、用 `evidence` 引用其中一句原文。凭印象写的理由会被拒绝。
-- 「修改」不默认包含删除或改名：删除、移动都要单独登记。作者说「不动人物设定」这类
-  限制写进 `denied_paths`，不要用「保持一致」当理由绕过。
-- 作者把文件当参考、让你「看看」「说说结构」时，只说明材料，不产生修改权限；
-  没有登记范围就不要写。
-- 作者说「继续」时，只有能定位到此前明确的作者请求才承接，并用 `carried_from_seq`
-  记下那条消息；找不到承接对象就先澄清，不要自己挑一个旧任务接着做。
-
-## 工作方式
-- 执行前用一句简短说明告知这次会建立或修改哪些内容，然后继续完成，无需逐份确认。
-- 确实需要作者决定才能继续时，用 `ask_author` 记录一个具体问题与可选答案；这一轮到此结束，
-  不要同时写入，也不要声称已经完成。作者回答后会开启新一轮，带着原请求继续。
-  模块怎么拆、条目怎么命名、已授权的人物细节都由你决定，不需要提问。
-- 保存未成功时不能声称完成；保留已生成内容，说明可继续处理的范围。
-- 以工具返回的实际结果说明哪些已保存、哪些已用于本作品、哪些仍未完成。
-"""
-
-_LEGACY_INSTRUCTIONS = """\
-## 已存在的旧版文件
-本作品仍有未导入模块的旧版设定文件，目录中只列出实际存在的文件。
-- 旧文件仅作兼容来源；作者明确指定这些文件或要求沿用旧结构时才修改，不为新资料创建旧结构。
-- 涉及旧角色文件中的人物时，先读取其小传。
-- 旧文件用 `read_file` 读取；目录不等于全文。`read_state` 的人物身份只覆盖旧版角色小传，
-  先不带 `entity` 查看概览，再使用返回的确切 `path`，不套用模块人物姓名。
-"""
-
-
-#: 索引任务的系统提示：这一轮只读原文并保存索引，不改作品。
-INDEX_INSTRUCTIONS = """\
-你在为作者的章节建立索引，供后续写作定位伏笔、人物与时间地点。
-
-## 这一轮只做索引
-- 只能用目录、搜索、读取和 `save_chapter_index`；不能改正文、设定或任何作品文件。
-- 只处理作者选中的章节，不要顺手扩大范围。
-- 先读完当前全文再发布：摘要只根据这一章的原文写，不要从上一版摘要改写或压缩。
-
-## 索引内容
-- 摘要：这一章实际发生了什么，不超过 500 字符。
-- 事件、人物、时间地点、线索：每条都要引用证据编号。
-- 证据要给出字符区间与引文，区间与引文必须一致；引文只证明原文存在，
-  人物的说法、回忆与推测要写成「某人声称」，不要当成已发生的事实。
-- 线索是读者能观察到的信息，不等于真相。
-"""
-
-
-#: 状态核对任务的系统提示：读原文，发布带证据的状态，不改作品。
-STATE_INSTRUCTIONS = """\
-你在核对作品的状态记录，供后续写作知道「截至这一章已经发生了什么」。这一轮只读并发布，
-不改任何作品文件。
-
-## 这一轮只做核对
-- 只能用目录、搜索、读取和发布类工具；不能改正文、设定或任何作品文件。
-- 只处理作者选中的对象，不要顺手扩大范围。
-- 先读完目标原文再发布：一条记录只写这一章正文里明确写到的事。
-
-## 记什么
-- 身份披露：读者从第几章起知道了什么（`save_disclosure`）。
-- 人物状态：这一章结束时某人在哪、是否还活着、立场（`save_character_state`）。
-- 时间锚点：这一章发生在什么时候、跨了多久、主要在哪（`save_timeline`）。
-- 线索：这一章出现了什么读者能观察到的信息、该在哪一章回收（`save_clues`）。
-- 专名：正文里确实出现过的地名、组织、物件（`save_glossary_term`）。
-
-## 证据
-- 每条都要给路径、版本、字符区间与引文，区间与引文必须一致。
-- 人物说「我当时在客厅」不等于他真在客厅：写成「某人声称」，或者不记。
-- 原文没交代的不要补。缺一条比记错一条安全：缺失会在下一轮核对里补上，错的会被一直注入。
-- 只发布变化过的条目：位置与立场都没变就不必重复记录。
-"""
-
-
-#: 展开灵感的任务要求：只讨论这一版，不碰文件，给方向、影响与待确认问题。
-IDEA_INSTRUCTIONS = """\
-作者选中的一条灵感需要展开成可讨论的方案。
-
-- 只讨论这一条灵感的这一版。需要别的材料时说明要哪一份，由作者在下一轮单独提出。
-- 给出至少三种不同方向的展开，每种写清代价、对已有情节的影响，以及需要作者确认的问题。
-- 灵感是作者笔记，不是已经发生的正文事实；不要把它当成既定设定。
-- 不要修改任何文件，也不要声称已经写入正文。
-"""
-
 
 def settings_section(
-    workspace: Workspace, *, budget: int = SETTINGS_BUDGET, title: str = "设定集内容"
+    workspace: Workspace,
+    *,
+    budget: int = SETTINGS_BUDGET,
+    title: str = PARTITION_TITLES["settings"],
 ) -> str:
     """仅为实际存在且未导入模块的旧版线索、真相生成文本块。
 
@@ -302,25 +162,24 @@ def _render_settings(sources: list[_SettingSource], caps: list[int]) -> str:
     for source, cap in zip(sources, caps, strict=True):
         header = f"### {source.label}（{source.path}）"
         if not source.text:
-            blocks.append(f"{header}\n（尚未写入）")
+            blocks.append(f"{header}\n{SETTINGS_NOT_WRITTEN}")
         elif cap >= len(source.text):
             blocks.append(f"{header}\n{source.text}")
         elif cap > 0:
             remaining = len(source.text) - cap
             blocks.append(
-                f"{header}\n{source.text[:cap]}\n"
-                f"（已截断：还剩约 {remaining} 个字符未装入，用 read_file 继续读）"
+                f"{header}\n{source.text[:cap]}\n{settings_truncated_note(remaining)}"
             )
         else:
             blocks.append(
-                f"{header}\n（未装入正文：共 {len(source.text)} 个字符，用 read_file 读取）"
+                f"{header}\n{settings_not_loaded_note(len(source.text))}"
             )
     return "\n\n".join(blocks)
 
 
 def _settings_read_entry(sources: list[_SettingSource]) -> str:
     paths = "、".join(f"`{source.path}`" for source in sources)
-    return f"（设定较长，未装入正文；用 read_file 读取 {paths}。）"
+    return settings_read_entry(paths)
 
 
 def catalog_section(workspace: Workspace) -> str:
@@ -335,24 +194,24 @@ def catalog_section(workspace: Workspace) -> str:
         entry for entry in catalog.characters if entry.exists and entry.path not in imported
     ]
     settings = [entry for entry in catalog.settings if entry.exists and entry.path not in imported]
-    lines = ["### 正文"]
+    lines = [CATALOG_CHAPTERS_HEAD]
     if catalog.chapters:
         for entry in catalog.chapters:
-            state = "" if entry.exists else "（缺失）"
+            state = "" if entry.exists else CATALOG_MISSING
             lines.append(f"- {entry.path}｜{entry.display_title}{state}")
             for warning in entry.metadata_warnings:
-                lines.append(f"  （命名提示：{warning}）")
+                lines.append(catalog_warning_note(warning))
     else:
-        lines.append("- （还没有章节）")
+        lines.append(CATALOG_NO_CHAPTERS)
     if characters or settings:
-        lines.extend(["", "### 旧版文件（兼容读取）"])
+        lines.extend(["", CATALOG_LEGACY_HEAD])
     if characters:
-        lines.append("#### 角色小传（按需读取原文）")
+        lines.append(CATALOG_CHARACTERS_HEAD)
         for entry in characters:
             roles = "、".join(ROLE_LABELS[role] for role in entry.roles)
             lines.append(f"- {entry.path}｜{entry.title}" + (f"｜{roles}" if roles else ""))
     if settings:
-        lines.append("#### 旧版设定")
+        lines.append(CATALOG_SETTINGS_HEAD)
         for entry in settings:
             lines.append(f"- {entry.path}｜{entry.title}")
     text = "\n".join(lines)
@@ -367,10 +226,7 @@ def catalog_section(workspace: Workspace) -> str:
         used += len(line) + 1
     total_entries = len(catalog.chapters) + len(characters) + len(settings)
     kept_entries = sum(1 for line in kept if line.startswith("- ") and line.count("｜") >= 1)
-    kept.append(
-        f"（目录较长：共 {total_entries} 个文件，这里只列出前 {kept_entries} 个；"
-        "其余用 list_files 分页查看）"
-    )
+    kept.append(catalog_truncated_note(total_entries, kept_entries))
     return "\n".join(kept)
 
 
@@ -378,7 +234,7 @@ def ideas_section(snapshot: ContextSnapshot | None) -> str:
     """作者本轮选中的灵感：按修订冻结，只用于讨论与参考，不是正文事实。"""
     if snapshot is None or not snapshot.ideas:
         return ""
-    lines = ["作者本轮选中的灵感（按修订冻结；是作者笔记，不是正文事实）："]
+    lines = [IDEAS_HEAD]
     used = 0
     for item in snapshot.ideas:
         header = f"- 「{item.title or item.preview}」（{item.idea_id}@{item.revision_id}）"
@@ -387,7 +243,7 @@ def ideas_section(snapshot: ContextSnapshot | None) -> str:
         if remaining <= 0:
             break
         if len(body) > remaining:
-            body = body[: max(0, remaining - 20)].rstrip() + "\n（已截断：用 read_idea 继续读）"
+            body = body[: max(0, remaining - 20)].rstrip() + "\n" + IDEAS_TRUNCATED_NOTE
         lines.append(header)
         lines.append(body)
         used += len(header) + len(body)
@@ -403,27 +259,22 @@ def materials_section(
     这里不复制作者原话——原始要求已经在消息序列里；系统块只给定位与状态。
     """
     if snapshot is None and not summaries:
-        return "（本轮没有指定参考；需要时按需读取原文。）"
+        return MATERIALS_EMPTY
     lines: list[str] = []
     if snapshot is not None and snapshot.selected_path:
-        lines.append(
-            f"- 当前阅读：`{snapshot.selected_path}`（只用于解析「这一章」「这里」，"
-            "不代表已经读过，也不限制可以改哪些文件）"
-        )
+        lines.append(materials_selected_note(snapshot.selected_path))
     if summaries:
-        lines.append("- 本轮材料：")
+        lines.append(MATERIALS_LIST_HEAD)
         for item in summaries:
             if item.status == "已提供全文":
-                detail = f"已提供全文（{item.length} 字符）"
+                detail = materials_full_note(item.length)
             elif item.status == "已提供部分原文":
-                detail = f"已提供部分原文（{item.read_chars}/{item.length} 字符）"
+                detail = materials_partial_note(item.read_chars, item.length)
             else:
-                detail = "已指定，尚未读取"
+                detail = MATERIALS_UNREAD
             lines.append(f"  - `{item.path}`｜{detail}")
         if any(item.status != "已提供全文" for item in summaries):
-            lines.append(
-                "  还没读到的部分要用 read_file 继续读；写作品前，作者指定为参考的文件必须读完。"
-            )
+            lines.append(MATERIALS_UNREAD_TRAILER)
     if snapshot is not None and snapshot.clues:
         from hastings.workspace.clue_context import clue_references_section
 
@@ -439,15 +290,11 @@ def _default_instructions(profile: Profile) -> str:
     检查要求定义在 ``review`` 模块（与报告结构放在一起），这里延迟导入，避免模块
     加载顺序变成隐式契约。
     """
-    if profile == "extract":
-        return INDEX_INSTRUCTIONS
     if profile == "review":
-        from hastings.workspace.review import REVIEW_INSTRUCTIONS
+        from hastings.prompts.reviewing import REVIEW_INSTRUCTIONS
 
         return REVIEW_INSTRUCTIONS
-    if profile == "idea":
-        return IDEA_INSTRUCTIONS
-    return _INSTRUCTIONS
+    return AUTHORING_INSTRUCTIONS
 
 
 def build_assembled_context(
@@ -460,8 +307,6 @@ def build_assembled_context(
     story: str = "",
     ideas: str = "",
     modules: str = "",
-    index_notes: str = "",
-    index_excluded: Sequence[Exclusion] = (),
     instructions: str = "",
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
@@ -472,8 +317,7 @@ def build_assembled_context(
 ) -> AssembledContext:
     """按用途装配系统提示：分区、预算与跳过原因一起返回。
 
-    各用途装的分区不同：建索引只给要求与目录（读原文即可，不需要线索与真相，更不注入
-    自己的旧摘要）；检查给设定，不给索引摘要（避免用摘要替代原文证据）；写正文全部装。
+    各用途装的分区不同：检查给设定与证据相关分区；写正文全部装。
     """
     cutoff = state_chapter(workspace, selected_path=selected_path, explicit=as_of_chapter)
     task_instructions = instructions.strip() or _default_instructions(profile)
@@ -484,11 +328,13 @@ def build_assembled_context(
             entry.exists and entry.path not in imported
             for entry in (*legacy_catalog.characters, *legacy_catalog.settings)
         ):
-            task_instructions = f"{task_instructions}\n\n{_LEGACY_INSTRUCTIONS}"
+            task_instructions = f"{task_instructions}\n\n{LEGACY_FILE_INSTRUCTIONS}"
     parts: list[Partition] = [
         Partition(
             key="instructions",
-            title="写作约定" if profile == "writer" else "本任务要求",
+            title=PARTITION_TITLES[
+                "instructions_writer" if profile == "writer" else "instructions_review"
+            ],
             text=task_instructions,
             budget=INSTRUCTIONS_BUDGET,
             required=True,
@@ -496,48 +342,53 @@ def build_assembled_context(
     ]
     catalog = catalog_section(workspace)
     if selected_path:
-        catalog = (
-            f"{catalog}\n\n作者当前打开的是 `{selected_path}`；这只用来定位，不限制可以改哪些文件。"
-        )
+        catalog = f"{catalog}\n\n{selected_path_note(selected_path)}"
     parts.append(
         Partition(
-            key="catalog", title="当前作品", text=catalog, budget=CATALOG_BUDGET, required=True
+            key="catalog",
+            title=PARTITION_TITLES["catalog"],
+            text=catalog,
+            budget=CATALOG_BUDGET,
+            required=True,
         )
     )
     if profile in ("writer", "review") and modules.strip():
         # 只列已装实例与精确版本；条目正文仍要按需读取。索引任务不装这一块。
         parts.append(
-            Partition(key="modules", title="已装模块", text=modules, budget=MODULES_BUDGET)
+            Partition(
+                key="modules",
+                title=PARTITION_TITLES["modules"],
+                text=modules,
+                budget=MODULES_BUDGET,
+            )
         )
     if profile in ("writer", "review") and materials.strip():
         parts.append(
-            Partition(key="materials", title="本轮材料", text=materials, budget=MATERIALS_BUDGET)
+            Partition(
+                key="materials",
+                title=PARTITION_TITLES["materials"],
+                text=materials,
+                budget=MATERIALS_BUDGET,
+            )
         )
     if profile in ("writer", "review") and story.strip():
         # 必需结构不因预算被丢掉：装不下由装配层报缺口，界面据此让作者缩小范围。
         parts.append(
             Partition(
                 key="story",
-                title="构思结构",
+                title=PARTITION_TITLES["story"],
                 text=story,
                 budget=STORY_BUDGET,
                 required=True,
             )
         )
-    if profile != "extract" and ideas.strip():
-        parts.append(Partition(key="ideas", title="本轮灵感", text=ideas, budget=IDEAS_BUDGET))
-    if profile == "writer" and index_notes.strip():
-        # 只有有效索引会走到这里：过期记录不注入，避免按旧摘要写作。
+    if ideas.strip():
         parts.append(
             Partition(
-                key="index",
-                title="章节索引",
-                text=(
-                    f"{index_notes.strip()}\n\n"
-                    "这些是应用按各章原文生成的索引，用于定位；与原文冲突时以原文为准。"
-                ),
-                budget=INDEX_BUDGET,
-                excluded=tuple(index_excluded),
+                key="ideas",
+                title=PARTITION_TITLES["ideas"],
+                text=ideas,
+                budget=IDEAS_BUDGET,
             )
         )
     if profile == "writer":
@@ -548,7 +399,7 @@ def build_assembled_context(
             parts.append(
                 Partition(
                     key="state",
-                    title="人物身份（已披露）",
+                    title=PARTITION_TITLES["state"],
                     text=state_notes,
                     budget=STATE_BUDGET,
                 )
@@ -558,14 +409,14 @@ def build_assembled_context(
         roster_excluded: list[Exclusion] = []
         roster_notes = roster_section(
             build_roster(workspace, roster_store, as_of_chapter=cutoff),
-            budget=body_budget("人物状态", ROSTER_BUDGET),
+            budget=body_budget(PARTITION_TITLES["roster"], ROSTER_BUDGET),
             excluded=roster_excluded,
         )
         if roster_notes.strip():
             parts.append(
                 Partition(
                     key="roster",
-                    title="人物状态",
+                    title=PARTITION_TITLES["roster"],
                     text=roster_notes,
                     budget=ROSTER_BUDGET,
                     excluded=tuple(roster_excluded),
@@ -574,14 +425,14 @@ def build_assembled_context(
         timeline_excluded: list[Exclusion] = []
         time_notes = timeline_section(
             build_timeline(workspace, timeline_store, as_of_chapter=cutoff),
-            budget=body_budget("故事时间", TIMELINE_BUDGET),
+            budget=body_budget(PARTITION_TITLES["timeline"], TIMELINE_BUDGET),
             excluded=timeline_excluded,
         )
         if time_notes.strip():
             parts.append(
                 Partition(
                     key="timeline",
-                    title="故事时间",
+                    title=PARTITION_TITLES["timeline"],
                     text=time_notes,
                     budget=TIMELINE_BUDGET,
                     excluded=tuple(timeline_excluded),
@@ -590,14 +441,14 @@ def build_assembled_context(
         clue_excluded: list[Exclusion] = []
         clue_notes = clues_section(
             build_clues(workspace, clue_store, as_of_chapter=cutoff),
-            budget=body_budget("未回收线索", CLUES_BUDGET),
+            budget=body_budget(PARTITION_TITLES["clues"], CLUES_BUDGET),
             excluded=clue_excluded,
         )
         if clue_notes.strip():
             parts.append(
                 Partition(
                     key="clues",
-                    title="未回收线索",
+                    title=PARTITION_TITLES["clues"],
                     text=clue_notes,
                     budget=CLUES_BUDGET,
                     excluded=tuple(clue_excluded),
@@ -613,14 +464,14 @@ def build_assembled_context(
             parts.append(
                 Partition(
                     key="glossary",
-                    title="专有名词",
+                    title=PARTITION_TITLES["glossary"],
                     text=names,
                     budget=GLOSSARY_BUDGET,
                     excluded=tuple(glossary_excluded),
                 )
             )
     if profile in ("writer", "review"):
-        settings_title = "设定集内容"
+        settings_title = PARTITION_TITLES["settings"]
         settings = settings_section(workspace, budget=SETTINGS_BUDGET, title=settings_title)
         if settings.strip():
             parts.append(
@@ -636,15 +487,8 @@ def build_assembled_context(
         parts.append(
             Partition(
                 key="history",
-                title="本会话此前的轮次",
-                text=(
-                    f"{history_facts.strip()}\n\n"
-                    "这些是应用按实际结果记录的事实，与你自己记得的说法冲突时以这里为准。"
-                    "文件当前内容符合要求，不等于这项任务已经执行过——它可能本来就是那样；"
-                    "判断「改完了没有」看这里的状态，不要用文件现状反推。"
-                    "需要原文时重新 `read_file`：文件是本作品共享的当前内容，"
-                    "旧轮次读到的内容可能已经变了。"
-                ),
+                title=PARTITION_TITLES["history"],
+                text=history_facts_text(history_facts),
                 budget=HISTORY_BUDGET,
             )
         )
@@ -659,7 +503,6 @@ def build_system_prompt(
     materials: str = "",
     story: str = "",
     modules: str = "",
-    index_notes: str = "",
     instructions: str = "",
 ) -> str:
     """系统提示文本：装配结果里的正文部分，保留给只关心文本的调用方。"""
@@ -671,6 +514,5 @@ def build_system_prompt(
         materials=materials,
         story=story,
         modules=modules,
-        index_notes=index_notes,
         instructions=instructions,
     ).text

@@ -189,22 +189,8 @@ export interface TurnInput {
   text: string;
   request_key: string;
   context: ContextInput;
-  /** 用途：普通对话、按作者选择更新索引，或只读展开一条灵感。 */
-  clue_review?: {
-    inference_id: string;
-    inference_revision: string;
-    clue_ids: string[];
-    as_of_chapter: number;
-  };
-  purpose?:
-    | "chat"
-    | "update_chapter_index"
-    | "review"
-    | "update_disclosure"
-    | "update_state"
-    | "expand_idea";
-  /** 索引用途要更新的章节；普通对话不能带。 */
-  index_paths?: string[];
+  /** 用途：普通对话，或按作者选择检查文件。 */
+  purpose?: "chat" | "review";
   /** 检查用途要核对的文件。 */
   review_paths?: string[];
   /** 回答某条已持久化的问题；只用来认领原问题，不替代本轮文字。 */
@@ -242,9 +228,6 @@ export interface ClueReferenceInput {
   clue_id: string;
   clue_revision: string;
   browse_as_of_chapter: number;
-  inference_id?: string | null;
-  inference_revision?: string | null;
-  report_id?: string | null;
   /** 仅草稿显示用的标题；请求发送时不带。 */
   title?: string;
 }
@@ -619,14 +602,6 @@ export interface TaskModuleContentGrant {
   base_revision?: string;
 }
 
-/** 一项线索设计关系操作：关联计划或保存推理目标。 */
-export interface TaskClueDesignGrant {
-  action: "link" | "inference";
-  clue_id?: string;
-  inference_id?: string;
-  clue_ids?: string[];
-}
-
 /** 本轮修改范围：模型登记的内容与应用保存的版本。 */
 export interface TaskScope {
   version: number;
@@ -645,7 +620,6 @@ export interface TaskScope {
   }[];
   module_grants?: TaskModuleGrant[];
   module_content_grants?: TaskModuleContentGrant[];
-  clue_design_grants?: TaskClueDesignGrant[];
   library_publish?: boolean;
   extendable: boolean;
   extend_actions: string[];
@@ -1016,12 +990,6 @@ export function startTurn(
   return request<TurnInfo>(`/${workspaceId}/conversations/${conversationId}/turns`, {
     method: "POST",
     body: JSON.stringify(turn),
-  });
-}
-
-export function stopTurn(workspaceId: string, turnId: string): Promise<{ stopped: boolean }> {
-  return request<{ stopped: boolean }>(`/${workspaceId}/turns/${turnId}/stop`, {
-    method: "POST",
   });
 }
 

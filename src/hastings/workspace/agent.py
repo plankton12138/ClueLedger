@@ -15,11 +15,10 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
-
-from pydantic import ValidationError
 
 from hastings.library.bindings import AssemblyService
 from hastings.library.changes import ChangeEdit, ChangeOperation, ModuleChangeService
@@ -27,70 +26,94 @@ from hastings.library.ids import source_path
 from hastings.library.imports import imported_paths
 from hastings.library.modules import ModuleLibrary
 from hastings.library.records import EntryDraft
-from hastings.workspace.assembly import AssembledContext, Exclusion, Profile
-from hastings.workspace.chapter_index import (
-    ChapterIndexDraft,
-    ChapterIndexEntry,
-    ChapterIndexStore,
-    EntryKind,
-    IndexEvidence,
-    publish_index,
+from hastings.prompts import tools as prompt_tools
+from hastings.prompts.authoring import CANDIDATE_FLOW_INSTRUCTIONS
+from hastings.prompts.reviewing import REVIEW_INSTRUCTIONS
+from hastings.prompts.tools import (
+    APPLY_MODULE_CHANGES_DESCRIPTION,
+    APPLY_MODULE_CHANGES_GUIDELINES,
+    ASK_AUTHOR_DESCRIPTION,
+    ASK_AUTHOR_GUIDELINES,
+    ATTACH_MODULE_DESCRIPTION,
+    ATTACH_MODULE_GUIDELINES,
+    DELETE_FILE_DESCRIPTION,
+    DETACH_MODULE_DESCRIPTION,
+    DETACH_MODULE_GUIDELINES,
+    EDIT_FILE_DESCRIPTION,
+    EDIT_FILE_GUIDELINES,
+    EXTEND_TASK_SCOPE_DESCRIPTION,
+    EXTEND_TASK_SCOPE_GUIDELINES,
+    GIT_DIFF_DESCRIPTION,
+    GIT_DIFF_GUIDELINES,
+    GIT_LOG_DESCRIPTION,
+    LIST_FILES_DESCRIPTION,
+    LIST_FILES_GUIDELINES,
+    LIST_MODULES_DESCRIPTION,
+    LIST_MODULES_GUIDELINES,
+    MOVE_FILE_DESCRIPTION,
+    PREPARE_MODULE_CHANGES_DESCRIPTION,
+    PREPARE_MODULE_CHANGES_GUIDELINES,
+    PROPOSE_STORY_SCENE_DESCRIPTION,
+    PROPOSE_STORY_STRUCTURE_DESCRIPTION,
+    PUBLISH_MODULE_DESCRIPTION,
+    PUBLISH_MODULE_GUIDELINES,
+    QUERY_RECORDS_DESCRIPTION,
+    QUERY_RECORDS_GUIDELINES,
+    READ_FILE_DESCRIPTION,
+    READ_FILE_GUIDELINES,
+    READ_IDEA_DESCRIPTION,
+    READ_IDEA_GUIDELINES,
+    READ_LIBRARY_RECORD_DESCRIPTION,
+    READ_LIBRARY_RECORD_GUIDELINES,
+    READ_PREVIOUS_STORY_CANDIDATE_DESCRIPTION,
+    READ_RECORD_DESCRIPTION,
+    READ_RECORD_GUIDELINES,
+    READ_STATE_DESCRIPTION,
+    REGISTER_REFERENCES_DESCRIPTION,
+    REGISTER_REFERENCES_GUIDELINES,
+    REQUEST_REVIEW_DESCRIPTION,
+    REQUEST_REVIEW_GUIDELINES,
+    SAVE_IDEA_DESCRIPTION,
+    SAVE_IDEA_GUIDELINES,
+    SAVE_REVIEW_REPORT_GUIDELINES,
+    SEARCH_IDEAS_DESCRIPTION,
+    SEARCH_IDEAS_GUIDELINES,
+    SEARCH_MODULE_LIBRARY_DESCRIPTION,
+    SEARCH_MODULE_LIBRARY_GUIDELINES,
+    SEARCH_TEXT_DESCRIPTION,
+    SEARCH_TEXT_GUIDELINES,
+    SET_TASK_SCOPE_DESCRIPTION,
+    SET_TASK_SCOPE_GUIDELINES,
+    WRITE_FILE_DESCRIPTION,
+    WRITE_FILE_GUIDELINES,
+    save_review_report_description,
 )
+from hastings.workspace.assembly import AssembledContext, Profile
 from hastings.workspace.character_states import (
     CharacterStateStore,
     StateSnapshot,
     build_roster,
-    publish_states,
     roster_view,
 )
-from hastings.workspace.clue_designs import (
-    link_clue_design,
-    save_clue_inference,
-)
-from hastings.workspace.clue_models import (
-    DesignSource,
-    FileSource,
-    InferenceIntent,
-    InferenceStatement,
-    ModuleSource,
-)
-from hastings.workspace.clue_reviews import (
-    ClueReviewDraft,
-    ClueReviewFinding,
-    ClueReviewScope,
-    publish_clue_review,
-)
-from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.clues import (
     ClueEntry,
     ClueStore,
     build_clues,
     clues_view,
-    publish_clues,
 )
-from hastings.workspace.context import (
-    IDEA_INSTRUCTIONS,
-    INDEX_INSTRUCTIONS,
-    STATE_INSTRUCTIONS,
-    build_assembled_context,
-)
+from hastings.workspace.context import build_assembled_context
 from hastings.workspace.disclosure import (
     DisclosureStore,
     ObservedEvidence,
-    ObservedFact,
     build_disclosure_state,
-    check_evidence,
-    publish_observed,
 )
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.files import Workspace, is_managed_path
+from hastings.workspace.files import Workspace, is_managed_path, managed_kind
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import (
     GlossaryStore,
-    GlossaryTerm,
     build_glossary,
     glossary_view,
-    publish_terms,
 )
 from hastings.workspace.ideas import IdeaStore
 from hastings.workspace.materials import (
@@ -105,7 +128,6 @@ from hastings.workspace.materials import (
     SourceKind,
     SourceRef,
     bounded_search_hits,
-    covers,
     read_slice,
     require_author_quote,
     require_read_quote,
@@ -114,7 +136,6 @@ from hastings.workspace.module_assembly import Assembly
 from hastings.workspace.questions import QuestionStore
 from hastings.workspace.retrieval import MaterialQuery, catalog_brief, query_materials
 from hastings.workspace.review import (
-    REVIEW_INSTRUCTIONS,
     ReviewDraft,
     ReviewEvidence,
     ReviewFinding,
@@ -125,10 +146,11 @@ from hastings.workspace.review import (
     validate_review_targets,
 )
 from hastings.workspace.service import WriteSession
+from hastings.workspace.story_candidate import StoryCandidate
 from hastings.workspace.story_context import StoryContextSnapshot
+from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 from hastings.workspace.story_tools import StoryToolScope, build_story_tools
 from hastings.workspace.task_scope import (
-    ClueDesignGrant,
     ModuleAction,
     ModuleChangeTarget,
     ModuleContentGrant,
@@ -144,7 +166,6 @@ from hastings.workspace.timeline import (
     TimelineEntry,
     TimelineStore,
     build_timeline,
-    publish_timeline,
     timeline_view,
 )
 from tau_agent.harness import AgentHarness, AgentHarnessConfig
@@ -163,8 +184,8 @@ __all__ = [
     "prepare_request_inputs",
 ]
 
-#: 工具集合：普通写作、索引任务、只读检查，或只读展开一条灵感。
-ToolMode = Literal["write", "index", "review", "state", "idea"]
+#: 工具集合：普通写作与只读检查。
+ToolMode = Literal["write", "review"]
 
 
 #: 单轮最多的模型回合数；到顶就结束并如实记录，不无限循环。
@@ -220,8 +241,10 @@ class RunContext:
     request_context: Mapping[str, Any] = field(default_factory=dict)
     #: 受理时冻结的构思方案；为空表示这一轮不使用结构工具。
     story: StoryContextSnapshot | None = None
+    story_candidate: StoryCandidate | None = None
     #: 结构提交前的代次资格检查；由服务层注入。
     story_guard: Callable[[], None] | None = None
+    story_decision_guard: Callable[[], AbstractContextManager[None]] | None = None
     #: 本轮统一操作的标识与代次：结构变更的提交决定要带上它们。
     operation_id: str = ""
     generation: int = 0
@@ -238,12 +261,22 @@ class RunContext:
         *,
         required_read: ReadRequirement | None = None,
         preflight: Callable[[], None] | None = None,
+        candidate_proposal: bool = False,
     ) -> None:
         """统一写前检查：范围 → 目标现状 → 读取前提 → 参考完整性 → 版本 → 准备 Git。
 
         ``preflight`` 是文件层的无副作用意图核对（指纹与目标存在性）；它在范围检查之后
         执行，因此越界操作先报「不被允许」，不会先被指纹错误掩盖。
         """
+        touches_prose = managed_kind(operation.path) == "chapter" or (
+            operation.target is not None and managed_kind(operation.target) == "chapter")
+        if (self.story_candidate is not None or (self.story is not None and touches_prose)) \
+                and not candidate_proposal:
+            raise WorkspaceError(
+                code="STORY_CANDIDATE_REQUIRED", where="story.write",
+                why="本轮正文必须先提交候选并通过核对，尚未修改正式文件",
+                fix="使用 propose_story_scene 提交候选正文",
+            )
         self.require_writable(f"task_scope:{operation.path}")
         self.scope.require(
             operation,
@@ -267,6 +300,8 @@ class RunContext:
             )
         # Git 准备期间可能有外部程序改动文件：落盘前再复核一次依赖版本。
         self.materials.verify_current(self.workspace)
+        if self.session.guard is not None:
+            self.session.guard()
 
     def check_module_references(
         self,
@@ -328,6 +363,8 @@ class RunContext:
 
     def require_writable(self, where: str) -> None:
         """应用完成后本任务进入收尾；提问后只等作者回答：两种情况都不再继续写入。"""
+        if self.session.guard is not None:
+            self.session.guard()
         if self.pending_question is not None:
             raise WorkspaceError(
                 code="TASK_AWAITING_INPUT_CONFLICT",
@@ -350,24 +387,29 @@ def build_tools(
     run: RunContext,
     *,
     mode: ToolMode = "write",
-    index_allowed: Sequence[str] = (),
-    index_store: ChapterIndexStore | None = None,
     review_targets: Sequence[str] = (),
     review_store: ReviewStore | None = None,
-    clue_review: Mapping[str, object] | None = None,
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
     roster_store: CharacterStateStore | None = None,
     timeline_store: TimelineStore | None = None,
     clue_store: ClueStore | None = None,
-    material_scope: Mapping[str, object] | None = None,
 ) -> list[AgentTool]:
-    """本轮可用的文件工具；Git 提交与撤销不暴露给模型。
-
-    索引任务只开放目录、搜索、读取与 ``save_chapter_index``：它能保存索引缓存，
-    但不能改作品正文，也不准备 Git 基线。
-    """
+    """本轮可用的文件工具；Git 提交与撤销不暴露给模型。"""
     repo = GitRepo(workspace.root)
+
+    def visible_prose(path: str) -> tuple[str, str]:
+        """当前方案实际可见的正文：备选读它的受管副本，其他文件照常读作品目录。"""
+        frozen = run.story
+        if (
+            frozen is None
+            or frozen.variant_id in ("", MAIN_VARIANT_ID)
+            or managed_kind(path) != "chapter"
+            or run.state_root is None
+        ):
+            view = workspace.read(path)
+            return view.digest, view.text
+        return StoryStore(run.state_root, workspace).read_prose(path, frozen.variant_id)
 
     async def list_files(
         tool_call_id: str,
@@ -459,9 +501,9 @@ def build_tools(
         offset = _int_argument(arguments, "offset", default=1, minimum=1)
         limit = _int_argument(arguments, "limit", default=_READ_DEFAULT_LINES, minimum=1)
         cursor = _optional_int_argument(arguments, "cursor", minimum=0)
-        view = workspace.read(path)
+        digest, text = visible_prose(path)
         chunk = read_slice(
-            view.text,
+            text,
             cursor=cursor,
             offset=offset,
             limit=limit,
@@ -469,28 +511,28 @@ def build_tools(
         )
         # 只有真正返回给模型的区间才计入读取记录；UI 打开文件不走这里。
         run.materials.record_read(
-            SourceRef(view.path, view.digest),
-            length=len(view.text),
+            SourceRef(path, digest),
+            length=len(text),
             start=chunk.start_char,
             end=chunk.end_char,
         )
         run.record(
             "material_read",
             {
-                "path": view.path,
-                "digest": view.digest,
+                "path": path,
+                "digest": digest,
                 "start_char": chunk.start_char,
                 "end_char": chunk.end_char,
                 "start_line": chunk.start_line,
                 "end_line": chunk.end_line,
-                "total_chars": len(view.text),
+                "total_chars": len(text),
             },
         )
         payload: dict[str, Any] = {
-            "path": view.path,
-            "digest": view.digest,
-            "total_lines": view.text.count("\n") + 1,
-            "total_chars": len(view.text),
+            "path": path,
+            "digest": digest,
+            "total_lines": text.count("\n") + 1,
+            "total_chars": len(text),
             "offset": chunk.start_line,
             "start_char": chunk.start_char,
             "end_char": chunk.end_char,
@@ -579,14 +621,6 @@ def build_tools(
         del tool_call_id, signal, on_update
         if review_store is None:
             raise _input_error("review_store", "本轮没有开启检查保存")
-        if clue_review is not None:
-            return _publish_clue_analysis(
-                arguments,
-                workspace=workspace,
-                run=run,
-                store_root=run.state_root,
-                scope=ClueReviewScope.from_dict(dict(clue_review)),
-            )
         targets = _string_list_argument(arguments, "target_paths")
         validate_review_targets(targets, allowed_targets=review_targets)
         status = _text_argument(arguments, "status")
@@ -624,55 +658,6 @@ def build_tools(
                 "status": report.status,
                 "findings": len(report.findings),
                 "uncovered": list(report.uncovered),
-            }
-        )
-
-    async def save_chapter_index(
-        tool_call_id: str,
-        arguments: Mapping[str, JSONValue],
-        signal: ToolCancellationToken | None = None,
-        on_update: ToolUpdateCallback | None = None,
-    ) -> AgentToolResult:
-        """发布一章索引；范围、全文覆盖与引文匹配由索引模块统一核对。"""
-        del tool_call_id, signal, on_update
-        if index_store is None:
-            raise _input_error("index_store", "本轮没有开启索引保存")
-        path = _text_argument(arguments, "path")
-        digest = _required_digest(arguments)
-        draft = ChapterIndexDraft(
-            source_path=path,
-            source_digest=digest,
-            summary=_text_argument(arguments, "summary"),
-            evidence=_index_evidence(arguments.get("evidence")),
-            events=_index_entries(arguments.get("events"), "event"),
-            characters=_index_entries(arguments.get("characters"), "character"),
-            places=_index_entries(arguments.get("places"), "place"),
-            clues=_index_entries(arguments.get("clues"), "clue"),
-        )
-        record = publish_index(
-            draft,
-            workspace=workspace,
-            ledger=run.materials,
-            store=index_store,
-            allowed_paths=index_allowed,
-        )
-        run.record(
-            "chapter_index_updated",
-            {
-                "path": record.source_path,
-                "source_digest": record.source_digest,
-                "recipe_version": record.recipe_version,
-                "entries": len(record.entries()),
-                "status": "valid",
-            },
-        )
-        return _json(
-            {
-                "path": record.source_path,
-                "digest": record.source_digest,
-                "summary": record.summary,
-                "entries": len(record.entries()),
-                "status": record.status,
             }
         )
 
@@ -715,7 +700,7 @@ def build_tools(
             if seq is not None and (isinstance(seq, bool) or not isinstance(seq, int)):
                 raise _input_error("references", "seq 必须是整数")
             try:
-                view = workspace.read(path)
+                digest, text = visible_prose(path)
             except WorkspaceError as exc:
                 raise WorkspaceError(
                     code="REFERENCE_UNRESOLVED_CONFLICT",
@@ -746,10 +731,12 @@ def build_tools(
                     path=path,
                     quote=quote,
                     where=f"tools.register_references:{path}",
+                    digest=digest,
+                    text=text,
                 )
             reference = run.materials.register(
                 Reference(
-                    ref=SourceRef(view.path, view.digest),
+                    ref=SourceRef(path, digest),
                     kind=cast(SourceKind, kind),
                     required=required,
                     quote=quote.strip(),
@@ -804,9 +791,6 @@ def build_tools(
             module_content_grants=_module_content_grant_arguments(
                 arguments.get("module_content_grants")
             ),
-            clue_design_grants=_clue_design_grant_arguments(
-                arguments.get("clue_design_grants")
-            ),
             library_publish=bool(arguments.get("library_publish", False)),
             extendable=bool(arguments.get("extendable", False)),
             extend_actions=_action_list_argument(arguments, "extend_actions"),
@@ -832,12 +816,15 @@ def build_tools(
         evidence_path = _text_argument(arguments, "evidence_path")
         evidence = _text_argument(arguments, "evidence")
         # 依据必须来自本轮真正提供给模型的原文：先读、后引，且引文在已提供的区间里。
+        digest, text = visible_prose(evidence_path)
         require_read_quote(
             workspace,
             run.materials,
             path=evidence_path,
             quote=evidence,
             where=f"tools.extend_task_scope:{evidence_path}",
+            digest=digest,
+            text=text,
         )
         scope = run.scope.extend(
             version=_int_argument(arguments, "version", default=0, minimum=0),
@@ -1044,88 +1031,89 @@ def build_tools(
         AgentTool(
             name="list_files",
             label="文件目录",
-            description=(
-                "列出正文章节、角色小传以及线索与真相文件的路径和标题（只读）。"
-                "条目很多时用 offset 继续看其余部分。"
-            ),
+            description=LIST_FILES_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
                     "offset": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "从第几条开始，默认 1",
+                        "description": prompt_tools.LIST_FILES_OFFSET_PARAM_DESCRIPTION,
                     },
                     "limit": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "最多返回多少条，默认 200",
+                        "description": prompt_tools.LIST_FILES_LIMIT_PARAM_DESCRIPTION,
                     },
                 },
                 "additionalProperties": False,
             },
             execute_fn=list_files,
-            prompt_guidelines=("不确定有哪些文件时先调用；无参数。",),
+            prompt_guidelines=LIST_FILES_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
             name="read_file",
             label="读取文件",
-            description=(
-                "读取受管文件的文本，返回内容、实际字符区间、行号、总行数与 digest。"
-                "digest 是后续写入的凭据。长文用 offset/limit 按行分页，或带上一次返回的 "
-                "next_cursor 按字符继续；单次最多 16000 字符。"
-            ),
+            description=READ_FILE_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "如 正文/0001 雨夜.md"},
-                    "offset": {"type": "integer", "minimum": 1, "description": "起始行号，默认 1"},
-                    "limit": {"type": "integer", "minimum": 1, "description": "读取行数，默认 200"},
+                    "path": {
+                        "type": "string",
+                        "description": prompt_tools.READ_FILE_PATH_PARAM_DESCRIPTION,
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": prompt_tools.READ_FILE_OFFSET_PARAM_DESCRIPTION,
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": prompt_tools.READ_FILE_LIMIT_PARAM_DESCRIPTION,
+                    },
                     "cursor": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "字符游标：上次返回的 next_cursor，用于继续读同一位置之后",
+                        "description": prompt_tools.READ_FILE_CURSOR_PARAM_DESCRIPTION,
                     },
                 },
                 "required": ["path"],
                 "additionalProperties": False,
             },
             execute_fn=read_file,
-            prompt_guidelines=(
-                "改写前必须读；读完保留返回的 digest 供写入使用。",
-                "truncated 为真时按 next_cursor 继续读，不要假设已看完全文。",
-            ),
+            prompt_guidelines=READ_FILE_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
             name="search_text",
             label="搜索文本",
-            description="在正文与设定中逐行搜索关键词，返回路径、行号与摘录（只读）。",
+            description=SEARCH_TEXT_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "要查找的文字"},
+                    "query": {
+                        "type": "string",
+                        "description": prompt_tools.SEARCH_TEXT_QUERY_PARAM_DESCRIPTION,
+                    },
                     "limit": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "最多条数，默认 20，上限 50",
+                        "description": prompt_tools.SEARCH_TEXT_LIMIT_PARAM_DESCRIPTION,
                     },
                 },
                 "required": ["query"],
                 "additionalProperties": False,
             },
             execute_fn=search_text,
-            prompt_guidelines=("找伏笔、人物首次出现等具体内容时使用。",),
+            prompt_guidelines=SEARCH_TEXT_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
             name="register_references",
             label="登记参考",
-            description=(
-                "登记作者在消息里明确要求参考的文件，或任务中发现的相关材料。"
-                "作者文本来源要带作者原话短引文；发现的材料要先读过并引用其中一句原文。"
-            ),
+            description=REGISTER_REFERENCES_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
@@ -1141,16 +1129,18 @@ def build_tools(
                                 },
                                 "required": {
                                     "type": "boolean",
-                                    "description": "写作品前是否必须读完；作者明确说「参考」时为真",
+                                    "description": (
+                                        prompt_tools.REFERENCE_REQUIRED_PARAM_DESCRIPTION
+                                    ),
                                 },
                                 "quote": {
                                     "type": "string",
-                                    "description": "作者原话短引文，或文件里的一句原文",
+                                    "description": prompt_tools.REFERENCE_QUOTE_PARAM_DESCRIPTION,
                                 },
                                 "seq": {
                                     "type": "integer",
                                     "minimum": 0,
-                                    "description": "可选：作者消息所在事件的 seq",
+                                    "description": prompt_tools.REFERENCE_SEQ_PARAM_DESCRIPTION,
                                 },
                             },
                             "required": ["path", "kind"],
@@ -1162,48 +1152,42 @@ def build_tools(
                 "additionalProperties": False,
             },
             execute_fn=register_references,
-            prompt_guidelines=(
-                "作者说「参考第一章」时登记它，并设 required；只是自己搜到的线索不必设 required。",
-                "客户端已选的参考由应用登记，不要重复登记。",
-            ),
+            prompt_guidelines=REGISTER_REFERENCES_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
             name="set_task_scope",
             label="登记修改范围",
-            description=(
-                "登记这一轮要做什么、作者在哪句话里授权、允许改哪些确切文件或模块内容。"
-                "没有登记范围的写工具会被拒绝；纯讨论不必登记。"
-            ),
+            description=SET_TASK_SCOPE_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
                     "mode": {
                         "type": "string",
                         "enum": ["read_only", "edit"],
-                        "description": "read_only 只读；edit 允许按 grants 修改",
+                        "description": prompt_tools.TASK_MODE_PARAM_DESCRIPTION,
                     },
-                    "summary": {"type": "string", "description": "一句话说明本轮任务理解"},
+                    "summary": {
+                        "type": "string",
+                        "description": prompt_tools.TASK_SUMMARY_PARAM_DESCRIPTION,
+                    },
                     "authorization": {
                         "type": "string",
-                        "description": "作者原话里的短引文，必须与作者消息一致",
+                        "description": prompt_tools.AUTHORIZATION_PARAM_DESCRIPTION,
                     },
                     "authorization_seq": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "可选：授权那句话所在事件的 seq；不确定就省略",
+                        "description": prompt_tools.AUTHORIZATION_SEQ_PARAM_DESCRIPTION,
                     },
                     "carried_from_seq": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": (
-                            "仅承接旧请求时填写那条作者消息的 seq；独立任务省略，"
-                            "不要用 0 占位，也不要填写当前授权消息的序号"
-                        ),
+                        "description": prompt_tools.CARRIED_FROM_SEQ_PARAM_DESCRIPTION,
                     },
                     "grants": {
                         "type": "array",
-                        "description": "允许的操作与确切路径；移动另带 target",
+                        "description": prompt_tools.TASK_GRANTS_PARAM_DESCRIPTION,
                         "items": {
                             "type": "object",
                             "properties": {
@@ -1214,7 +1198,7 @@ def build_tools(
                                 "path": {"type": "string"},
                                 "target": {
                                     "type": "string",
-                                    "description": "仅 move 时填目标路径；其他操作省略",
+                                    "description": prompt_tools.GRANT_TARGET_PARAM_DESCRIPTION,
                                 },
                             },
                             "required": ["action", "path"],
@@ -1224,20 +1208,19 @@ def build_tools(
                     "denied_paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "明确不许改的路径，例如「不动人物设定」时的小传",
+                        "description": prompt_tools.TASK_DENIED_PATHS_PARAM_DESCRIPTION,
                     },
                     "required_references": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": (
-                            "必读的作品文件确切路径；模块条目填 "
-                            "required_module_references，不能填名称"
+                            prompt_tools.TASK_REQUIRED_REFERENCES_PARAM_DESCRIPTION
                         ),
                     },
                     "required_module_references": {
                         "type": "array",
                         "description": (
-                            "必读的已装模块条目，引用来自 query_records；写入前须读完精确版本"
+                            prompt_tools.TASK_REQUIRED_MODULE_REFERENCES_PARAM_DESCRIPTION
                         ),
                         "items": {
                             "type": "object",
@@ -1252,13 +1235,11 @@ def build_tools(
                     },
                     "library_search": {
                         "type": "boolean",
-                        "description": "作者明确要求从全局模块库查找时才设 true；只开搜索",
+                        "description": prompt_tools.LIBRARY_SEARCH_PARAM_DESCRIPTION,
                     },
                     "module_grants": {
                         "type": "array",
-                        "description": (
-                            "作者明确要求装卸时才登记；装入给模块与精确版本，卸下给绑定 ID"
-                        ),
+                        "description": prompt_tools.MODULE_GRANTS_PARAM_DESCRIPTION,
                         "items": {
                             "type": "object",
                             "properties": {
@@ -1273,19 +1254,19 @@ def build_tools(
                     },
                     "module_content_grants": {
                         "type": "array",
-                        "description": (
-                            "本轮要保存到当前作品的内容操作：新建用稳定槽位，"
-                            "修改用绑定、模块与基础版本"
-                        ),
+                        "description": prompt_tools.MODULE_CONTENT_GRANTS_PARAM_DESCRIPTION,
                         "items": {
                             "type": "object",
                             "properties": {
                                 "action": {"type": "string", "enum": ["create", "update"]},
                                 "slot": {
                                     "type": "string",
-                                    "description": "新建：本任务稳定的槽位，与 operation_id 一致",
+                                    "description": prompt_tools.MODULE_SLOT_PARAM_DESCRIPTION,
                                 },
-                                "purpose": {"type": "string", "description": "这次内容用来做什么"},
+                                "purpose": {
+                                    "type": "string",
+                                    "description": prompt_tools.MODULE_PURPOSE_PARAM_DESCRIPTION,
+                                },
                                 "binding_id": {"type": "string"},
                                 "module_id": {"type": "string"},
                                 "base_revision": {"type": "string"},
@@ -1294,41 +1275,17 @@ def build_tools(
                             "additionalProperties": False,
                         },
                     },
-                    "clue_design_grants": {
+                    "clue_design_grants_removed": {
                         "type": "array",
-                        "description": (
-                            "作者明确要求关联作者计划或保存推理目标时登记；"
-                            "只改线索关系，不授予模块、正文或其他内容写入"
-                        ),
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "action": {"type": "string", "enum": ["link", "inference"]},
-                                "clue_id": {
-                                    "type": "string",
-                                    "description": "link：要关联计划的线索 ID",
-                                },
-                                "clue_ids": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "inference：本次目标关联的 1—10 条线索",
-                                },
-                                "inference_id": {
-                                    "type": "string",
-                                    "description": "inference 更新已有目标时填写",
-                                },
-                            },
-                            "required": ["action"],
-                            "additionalProperties": False,
-                        },
+                        "items": {"type": "string"},
                     },
                     "library_publish": {
                         "type": "boolean",
-                        "description": "作者明确要求把内容发布到全局模块库时才设 true",
+                        "description": prompt_tools.LIBRARY_PUBLISH_PARAM_DESCRIPTION,
                     },
                     "extendable": {
                         "type": "boolean",
-                        "description": "任务允许发现相关文件后追加范围（例如「同步相关章节」）",
+                        "description": prompt_tools.EXTENDABLE_PARAM_DESCRIPTION,
                     },
                     "extend_actions": {
                         "type": "array",
@@ -1336,37 +1293,32 @@ def build_tools(
                             "type": "string",
                             "enum": ["create", "update", "delete", "move"],
                         },
-                        "description": "可追加范围时允许的操作类别",
+                        "description": prompt_tools.EXTEND_ACTIONS_PARAM_DESCRIPTION,
                     },
-                    "note": {"type": "string", "description": "可选说明"},
+                    "note": {
+                        "type": "string",
+                        "description": prompt_tools.TASK_NOTE_PARAM_DESCRIPTION,
+                    },
                 },
                 "required": ["mode", "summary", "authorization"],
                 "additionalProperties": False,
             },
             execute_fn=set_task_scope,
-            prompt_guidelines=(
-                "要改文件时先登记；作者没明确要求修改时用 read_only 或干脆不登记。",
-                "grants、denied_paths、required_references 只写确切文件路径，不要填模块名称。",
-                "模块必读参考用 required_module_references，按模块、版本与条目 ID 登记。",
-                "本轮成功新建的章节可继续校订，无需追加 update；已有章节仍需登记 update。",
-                "普通资料创作登记 module_content_grants；"
-                "旧设定文件须有作者明确指定文件或沿用旧目录的要求。",
-                "作者明确要求关联计划或保存推理目标时登记 clue_design_grants；"
-                "讨论与浏览不自动保存关系。",
-            ),
+            prompt_guidelines=SET_TASK_SCOPE_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
             name="extend_task_scope",
             label="追加修改范围",
-            description=(
-                "在可发现范围内追加与原目标有关的具体文件；必须给出这句原文来自哪份文件、"
-                "原文本身，并带上当前范围版本。"
-            ),
+            description=EXTEND_TASK_SCOPE_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
-                    "version": {"type": "integer", "minimum": 0, "description": "当前范围版本"},
+                    "version": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": prompt_tools.SCOPE_VERSION_PARAM_DESCRIPTION,
+                    },
                     "grants": {
                         "type": "array",
                         "items": {
@@ -1379,7 +1331,7 @@ def build_tools(
                                 "path": {"type": "string"},
                                 "target": {
                                     "type": "string",
-                                    "description": "仅 move 时填目标路径；其他操作省略",
+                                    "description": prompt_tools.GRANT_TARGET_PARAM_DESCRIPTION,
                                 },
                             },
                             "required": ["action", "path"],
@@ -1388,103 +1340,109 @@ def build_tools(
                     },
                     "evidence_path": {
                         "type": "string",
-                        "description": "这句原文来自哪份文件：必须本轮已读过",
+                        "description": prompt_tools.EVIDENCE_PATH_PARAM_DESCRIPTION,
                     },
                     "evidence": {
                         "type": "string",
-                        "description": "为什么这个文件属于本次任务：引用实际读到的原文",
+                        "description": prompt_tools.EVIDENCE_PARAM_DESCRIPTION,
                     },
                 },
                 "required": ["version", "grants", "evidence_path", "evidence"],
                 "additionalProperties": False,
             },
             execute_fn=extend_task_scope,
-            prompt_guidelines=("只在登记时标记了 extendable 的任务里使用；固定范围会被拒绝。",),
+            prompt_guidelines=EXTEND_TASK_SCOPE_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
             name="request_review",
             label="要求写后检查",
-            description=(
-                "作者明确说「改完检查」时登记检查要求；修改完成后会进入只读检查阶段。"
-                "没有这句话就不要调用。"
-            ),
+            description=REQUEST_REVIEW_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
-                    "requirement": {"type": "string", "description": "要检查什么"},
+                    "requirement": {
+                        "type": "string",
+                        "description": prompt_tools.REVIEW_REQUIREMENT_PARAM_DESCRIPTION,
+                    },
                     "authorization": {
                         "type": "string",
-                        "description": "作者原话里的短引文，必须与作者消息一致",
+                        "description": prompt_tools.AUTHORIZATION_PARAM_DESCRIPTION,
                     },
                     "seq": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "可选：那句话所在事件的 seq",
+                        "description": prompt_tools.REVIEW_SEQ_PARAM_DESCRIPTION,
                     },
                     "paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "可选：要检查的文件；不填按本轮修改的目标推断",
+                        "description": prompt_tools.REVIEW_PATHS_PARAM_DESCRIPTION,
                     },
                 },
                 "required": ["requirement", "authorization"],
                 "additionalProperties": False,
             },
             execute_fn=request_review,
-            prompt_guidelines=("只在作者明确要求检查时使用；普通修改不隐含开启检查。",),
+            prompt_guidelines=REQUEST_REVIEW_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
             name="write_file",
             label="写入文件",
-            description=(
-                "整体写入章节或作者明确要求使用的旧设定文件。新建文件不带 digest；"
-                "改写已有文件必须带 read_file 得到的 digest。模块内容用 prepare_module_changes。"
-            ),
+            description=WRITE_FILE_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
-                    "text": {"type": "string", "description": "完整的新内容（UTF-8 文本）"},
-                    "digest": {"type": "string", "description": "改写已有文件时必填"},
+                    "text": {
+                        "type": "string",
+                        "description": prompt_tools.WRITE_FILE_TEXT_PARAM_DESCRIPTION,
+                    },
+                    "digest": {
+                        "type": "string",
+                        "description": prompt_tools.WRITE_FILE_DIGEST_PARAM_DESCRIPTION,
+                    },
                 },
                 "required": ["path", "text"],
                 "additionalProperties": False,
             },
             execute_fn=write_file,
-            prompt_guidelines=("适合新建章节或整章重写；局部修改优先 edit_file。",),
+            prompt_guidelines=WRITE_FILE_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
             name="edit_file",
             label="局部修改",
-            description=(
-                "局部修改章节或作者明确要求使用的旧设定文件，返回新的 digest。"
-                "原文出现 0 次或多次都会失败。模块条目的局部修改用 prepare_module_changes。"
-            ),
+            description=EDIT_FILE_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
-                    "old_text": {"type": "string", "description": "要被替换的原文，必须唯一"},
-                    "new_text": {"type": "string", "description": "替换后的文字"},
-                    "digest": {"type": "string", "description": "read_file 得到的 digest"},
+                    "old_text": {
+                        "type": "string",
+                        "description": prompt_tools.EDIT_FILE_OLD_TEXT_PARAM_DESCRIPTION,
+                    },
+                    "new_text": {
+                        "type": "string",
+                        "description": prompt_tools.EDIT_FILE_NEW_TEXT_PARAM_DESCRIPTION,
+                    },
+                    "digest": {
+                        "type": "string",
+                        "description": prompt_tools.EDIT_FILE_DIGEST_PARAM_DESCRIPTION,
+                    },
                 },
                 "required": ["path", "old_text", "new_text", "digest"],
                 "additionalProperties": False,
             },
             execute_fn=edit_file,
-            prompt_guidelines=(
-                "只对本轮获准修改的文件使用；不要为小改动重写整章。",
-                "已有模块可承接的资料修改在原模块内完成，不改同名旧文件或相关章节代替。",
-            ),
+            prompt_guidelines=EDIT_FILE_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
             name="move_file",
             label="重命名文件",
-            description="在同类目录内重命名章节或角色小传（线索、真相不可移动），需要 digest。",
+            description=MOVE_FILE_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
@@ -1501,7 +1459,7 @@ def build_tools(
         AgentTool(
             name="delete_file",
             label="删除文件",
-            description="删除章节或单个角色小传（线索、真相不可删除），需要 digest。",
+            description=DELETE_FILE_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {"path": {"type": "string"}, "digest": {"type": "string"}},
@@ -1514,16 +1472,16 @@ def build_tools(
         AgentTool(
             name="git_diff",
             label="查看差异",
-            description="查看工作区相对上次提交的差异（只读）。",
+            description=GIT_DIFF_DESCRIPTION,
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
             execute_fn=git_diff,
-            prompt_guidelines=("确认自己改了什么时使用；新文件不出现在工作区差异里。",),
+            prompt_guidelines=GIT_DIFF_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
             name="git_log",
             label="查看历史",
-            description="查看最近的提交标题与时间（只读）。",
+            description=GIT_LOG_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {"limit": {"type": "integer", "minimum": 1}},
@@ -1555,12 +1513,7 @@ def build_tools(
         if domain == "timeline":
             return _json(timeline_view(build_timeline(workspace, timeline_store, **at)))
         if domain == "clues":
-            return _json(
-                clues_view(
-                    build_clues(workspace, clue_store, **at),
-                    ledger=clue_store.ledger.read().ledger if clue_store is not None else None,
-                )
-            )
+            return _json(clues_view(build_clues(workspace, clue_store, **at)))
         if domain == "glossary":
             return _json(glossary_view(build_glossary(workspace, glossary_store, **at)))
         if domain != "disclosure":
@@ -1675,12 +1628,7 @@ def build_tools(
         AgentTool(
             name="read_state",
             label="查看状态",
-            description=(
-                "查看已有记录：domain=disclosure（默认）仅给旧版小传的身份披露，不读取模块人物。"
-                "没有身份记录是合法空结果，不要按姓名拼旧路径重试。domain=roster 给位置、生死与"
-                "立场，domain=timeline 给故事时间，domain=clues 给线索台账，domain=glossary 给"
-                "专名。带 entity 可查某个角色的条目与原文依据。"
-            ),
+            description=READ_STATE_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
@@ -1690,14 +1638,14 @@ def build_tools(
                     },
                     "entity": {
                         "type": "string",
-                        "description": (
-                            "仅使用不带 entity 的身份概览实际返回的单个 path，不填人物名或模块引用"
-                        ),
+                        "description": prompt_tools.READ_STATE_ENTITY_PARAM_DESCRIPTION,
                     },
                     "as_of_chapter": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "本轮所写章号；不会超过已固定的任务时点",
+                        "description": (
+                            prompt_tools.READ_STATE_AS_OF_CHAPTER_PARAM_DESCRIPTION
+                        ),
                     },
                 },
                 "additionalProperties": False,
@@ -2282,7 +2230,7 @@ def build_tools(
                 AgentTool(
                     name="list_modules",
                     label="查看已装模块",
-                    description=("列出本轮装配里的模块实例与精确版本，含条目数；不接受未装模块。"),
+                    description=LIST_MODULES_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
@@ -2290,70 +2238,80 @@ def build_tools(
                             "offset": {
                                 "type": "integer",
                                 "minimum": 0,
-                                "description": "从第几个模块开始；用上一页的 next_cursor",
+                                "description": (
+                                    prompt_tools.LIST_MODULES_OFFSET_PARAM_DESCRIPTION
+                                ),
                             },
                         },
                         "additionalProperties": False,
                     },
                     execute_fn=list_modules,
-                    prompt_guidelines=("只在这里出现的模块版本可以读取；不要按名字去库里找。",),
+                    prompt_guidelines=LIST_MODULES_GUIDELINES,
                     execution_mode="sequential",
                 ),
                 AgentTool(
                     name="query_records",
                     label="检索资料",
-                    description=(
-                        "查询本轮已装模块的条目与本作品观察：可按模块、人物、章区间与关键词。"
-                        "返回来源、版本、命中原因与扫描量；命中不等于读过全文。"
-                    ),
+                    description=QUERY_RECORDS_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "关键词或别名"},
+                            "query": {
+                                "type": "string",
+                                "description": prompt_tools.QUERY_RECORDS_QUERY_PARAM_DESCRIPTION,
+                            },
                             "kinds": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "条目种类，如 character、author_event",
+                                "description": prompt_tools.QUERY_RECORDS_KINDS_PARAM_DESCRIPTION,
                             },
                             "module_ids": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "只查这些已装实例",
+                                "description": (
+                                    prompt_tools.QUERY_RECORDS_MODULE_IDS_PARAM_DESCRIPTION
+                                ),
                             },
                             "entity_ids": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "人物或作者事件的条目 ID",
+                                "description": (
+                                    prompt_tools.QUERY_RECORDS_ENTITY_IDS_PARAM_DESCRIPTION
+                                ),
                             },
                             "chapter_paths": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "只看这些正文观察",
+                                "description": (
+                                    prompt_tools.QUERY_RECORDS_CHAPTER_PATHS_PARAM_DESCRIPTION
+                                ),
                             },
                             "include_plans": {
                                 "type": "boolean",
-                                "description": "是否返回计划类模块；默认 true",
+                                "description": (
+                                    prompt_tools.QUERY_RECORDS_INCLUDE_PLANS_PARAM_DESCRIPTION
+                                ),
                             },
-                            "cursor": {"type": "string", "description": "上一页的 next_cursor"},
+                            "cursor": {
+                                "type": "string",
+                                "description": prompt_tools.QUERY_RECORDS_CURSOR_PARAM_DESCRIPTION,
+                            },
                             "limit": {
                                 "type": "integer",
                                 "minimum": 1,
-                                "description": "默认 20，最多 50",
+                                "description": prompt_tools.QUERY_RECORDS_LIMIT_PARAM_DESCRIPTION,
                             },
                         },
                         "additionalProperties": False,
                     },
                     execute_fn=query_records,
-                    prompt_guidelines=(
-                        "先给具体模块、人物、章区间或关键词；没有命中时看 scope 与 warnings。",
-                        "命中只用于定位；原文用 read_record 或 read_file，不要凭摘要写作。",
-                    ),
+                    prompt_guidelines=QUERY_RECORDS_GUIDELINES,
                     execution_mode="sequential",
                 ),
                 AgentTool(
                     name="read_record",
                     label="读取模块条目",
-                    description=("按本轮装配的完整引用读取模块条目原文与区间；未装版本会被拒绝。"),
+                    description=READ_RECORD_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
@@ -2367,11 +2325,7 @@ def build_tools(
                         "additionalProperties": False,
                     },
                     execute_fn=read_record,
-                    prompt_guidelines=(
-                        "module_ref 四段必须来自 list_modules/query_records；"
-                        "不要用库 head 代替精确版本。",
-                        "truncated 为真时按 next_cursor 用 start 继续读。",
-                    ),
+                    prompt_guidelines=READ_RECORD_GUIDELINES,
                     execution_mode="sequential",
                 ),
             ]
@@ -2381,14 +2335,16 @@ def build_tools(
                 AgentTool(
                     name="search_module_library",
                     label="搜索全局模块库",
-                    description=(
-                        "仅在作者明确要求从模块库挑选模块时使用；返回有界候选与精确版本，"
-                        "不自动装入、升级或修改任何内容。"
-                    ),
+                    description=SEARCH_MODULE_LIBRARY_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "名称或关键词"},
+                            "query": {
+                                "type": "string",
+                                "description": (
+                                    prompt_tools.SEARCH_MODULE_LIBRARY_QUERY_PARAM_DESCRIPTION
+                                ),
+                            },
                             "kind": {
                                 "type": "string",
                                 "enum": [
@@ -2407,10 +2363,7 @@ def build_tools(
                         "additionalProperties": False,
                     },
                     execute_fn=search_module_library,
-                    prompt_guidelines=(
-                        "先在范围里登记 library_search；作者没有明确要求就不要搜索。",
-                        "搜索结果只是候选；装入要由作者确认，不能自己改装配。",
-                    ),
+                    prompt_guidelines=SEARCH_MODULE_LIBRARY_GUIDELINES,
                     execution_mode="sequential",
                 )
             )
@@ -2418,21 +2371,18 @@ def build_tools(
                 AgentTool(
                     name="read_library_record",
                     label="单轮读取库记录",
-                    description=(
-                        "作者明确要求参考库内容时，只读一个精确版本的目录或条目原文；"
-                        "不自动装入，也不开放其他模块。"
-                    ),
+                    description=READ_LIBRARY_RECORD_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
                             "module_id": {"type": "string"},
                             "revision_id": {
                                 "type": "string",
-                                "description": "省略时读取当前 head；写入前仍应确认版本",
+                                "description": prompt_tools.LIBRARY_REVISION_PARAM_DESCRIPTION,
                             },
                             "entry_id": {
                                 "type": "string",
-                                "description": "省略时只返回该版本的条目标题目录",
+                                "description": prompt_tools.LIBRARY_ENTRY_PARAM_DESCRIPTION,
                             },
                             "start": {"type": "integer", "minimum": 0},
                             "end": {"type": "integer", "minimum": 0},
@@ -2441,10 +2391,7 @@ def build_tools(
                         "additionalProperties": False,
                     },
                     execute_fn=read_library_record,
-                    prompt_guidelines=(
-                        "只在作者明确要求引用模块库内容且已登记 library_search 时使用。",
-                        "单轮引用不改变装配；要长期使用仍需作者确认装入。",
-                    ),
+                    prompt_guidelines=READ_LIBRARY_RECORD_GUIDELINES,
                     execution_mode="sequential",
                 )
             )
@@ -2452,26 +2399,22 @@ def build_tools(
                 AgentTool(
                     name="attach_module",
                     label="装入模块",
-                    description=(
-                        "把本轮范围登记过的精确模块版本装入本作品；只改装配清单，不改库与正文。"
-                        "提交后本轮结束。"
-                    ),
+                    description=ATTACH_MODULE_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
                             "module_id": {"type": "string"},
                             "revision_id": {"type": "string"},
-                            "label": {"type": "string", "description": "可选：界面显示名"},
+                            "label": {
+                                "type": "string",
+                                "description": prompt_tools.ATTACH_MODULE_LABEL_PARAM_DESCRIPTION,
+                            },
                         },
                         "required": ["module_id", "revision_id"],
                         "additionalProperties": False,
                     },
                     execute_fn=attach_module,
-                    prompt_guidelines=(
-                        "只在作者明确要求装入、且范围已登记这个精确版本时使用。",
-                        "不要按模块名猜版本；版本应从 list_modules/query_records 或库搜索里取。",
-                        "提交装配后本轮结束；写作下一轮才会看到新模块。",
-                    ),
+                    prompt_guidelines=ATTACH_MODULE_GUIDELINES,
                     execution_mode="sequential",
                 )
             )
@@ -2479,23 +2422,20 @@ def build_tools(
                 AgentTool(
                     name="detach_module",
                     label="卸下模块",
-                    description=(
-                        "把本轮范围登记过的绑定从本作品卸下；后续默认查询与依赖展开都会排除它。"
-                        "正文事实不受影响，提交后本轮结束。"
-                    ),
+                    description=DETACH_MODULE_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
-                            "binding_id": {"type": "string", "description": "本作品的绑定 ID"},
+                            "binding_id": {
+                                "type": "string",
+                                "description": prompt_tools.DETACH_MODULE_BINDING_PARAM_DESCRIPTION,
+                            },
                         },
                         "required": ["binding_id"],
                         "additionalProperties": False,
                     },
                     execute_fn=detach_module,
-                    prompt_guidelines=(
-                        "先用 list_modules 拿到绑定 ID；不要按模块名猜。",
-                        "卸下只影响后续查询；已经写进正文的事实仍然保留。",
-                    ),
+                    prompt_guidelines=DETACH_MODULE_GUIDELINES,
                     execution_mode="sequential",
                 )
             )
@@ -2503,16 +2443,13 @@ def build_tools(
                 AgentTool(
                     name="publish_module",
                     label="发布模块",
-                    description=(
-                        "把作者要求的条目发布到全局模块库：已有模块发布新版本，或新建一个实例。"
-                        "不自动装入本作品，也不改其他作品的绑定。"
-                    ),
+                    description=PUBLISH_MODULE_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
                             "module_id": {
                                 "type": "string",
-                                "description": "已有模块：发布新版本；省略时按 kind 与 name 新建",
+                                "description": prompt_tools.PUBLISH_MODULE_ID_PARAM_DESCRIPTION,
                             },
                             "kind": {
                                 "type": "string",
@@ -2553,10 +2490,7 @@ def build_tools(
                         "additionalProperties": False,
                     },
                     execute_fn=publish_module,
-                    prompt_guidelines=(
-                        "只在作者明确要求保存或发布到模块库、且范围已登记 library_publish 时使用。",
-                        "发布不隐含装入；要用于本作品时另行登记装配操作。",
-                    ),
+                    prompt_guidelines=PUBLISH_MODULE_GUIDELINES,
                     execution_mode="sequential",
                 )
             )
@@ -2564,22 +2498,21 @@ def build_tools(
                 AgentTool(
                     name="prepare_module_changes",
                     label="准备模块内容",
-                    description=(
-                        "把本次创作的多份内容写成任务进度：可同时新建多份或修改已有模块。"
-                        "只校验结构与目标，不改库装配；随后用 apply_module_changes 一次应用。"
-                    ),
+                    description=PREPARE_MODULE_CHANGES_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
                             "operations": {
                                 "type": "array",
-                                "description": "本次要新建或修改的内容；每份一个独立 operation_id",
+                                "description": prompt_tools.PREPARE_OPERATIONS_PARAM_DESCRIPTION,
                                 "items": {
                                     "type": "object",
                                     "properties": {
                                         "operation_id": {
                                             "type": "string",
-                                            "description": "本任务稳定的操作与槽位标识",
+                                            "description": (
+                                                prompt_tools.PREPARE_OPERATION_ID_PARAM_DESCRIPTION
+                                            ),
                                         },
                                         "action": {
                                             "type": "string",
@@ -2587,40 +2520,56 @@ def build_tools(
                                         },
                                         "name": {
                                             "type": "string",
-                                            "description": "模块显示名；新建时必填",
+                                            "description": (
+                                                prompt_tools.PREPARE_NAME_PARAM_DESCRIPTION
+                                            ),
                                         },
                                         "body": {
                                             "type": "string",
-                                            "description": "新建模块的完整正文",
+                                            "description": (
+                                                prompt_tools.PREPARE_BODY_PARAM_DESCRIPTION
+                                            ),
                                         },
                                         "binding_id": {
                                             "type": "string",
-                                            "description": "修改：本作品的绑定 ID",
+                                            "description": (
+                                                prompt_tools.PREPARE_BINDING_PARAM_DESCRIPTION
+                                            ),
                                         },
                                         "module_id": {"type": "string"},
                                         "base_revision": {
                                             "type": "string",
-                                            "description": "修改：读取到的基础版本",
+                                            "description": (
+                                                prompt_tools.PREPARE_BASE_REVISION_PARAM_DESCRIPTION
+                                            ),
                                         },
                                         "edits": {
                                             "type": "array",
-                                            "description": "修改：按条目给出唯一替换或整份正文",
+                                            "description": (
+                                                prompt_tools.PREPARE_EDITS_PARAM_DESCRIPTION
+                                            ),
                                             "items": {
                                                 "type": "object",
                                                 "properties": {
                                                     "entry_id": {"type": "string"},
                                                     "base_digest": {
                                                         "type": "string",
-                                                        "description": "读取该条目时返回的 digest",
+                                                        "description": (
+                                                            prompt_tools.EDIT_BASE_DIGEST_PARAM_DESCRIPTION
+                                                        ),
                                                     },
                                                     "find": {
                                                         "type": "string",
-                                                        "description": "条目正文里唯一出现的原文",
+                                                        "description": (
+                                                            prompt_tools.EDIT_FIND_PARAM_DESCRIPTION
+                                                        ),
                                                     },
                                                     "replace": {"type": "string"},
                                                     "body": {
                                                         "type": "string",
-                                                        "description": "整份重写；需已读全文",
+                                                        "description": (
+                                                            prompt_tools.EDIT_BODY_PARAM_DESCRIPTION
+                                                        ),
                                                     },
                                                 },
                                                 "required": ["entry_id", "base_digest"],
@@ -2634,21 +2583,14 @@ def build_tools(
                             },
                             "base_digest": {
                                 "type": "string",
-                                "description": "可选：读取到的装配指纹；省略时用当前值",
+                                "description": prompt_tools.ASSEMBLY_DIGEST_PARAM_DESCRIPTION,
                             },
                         },
                         "required": ["operations"],
                         "additionalProperties": False,
                     },
                     execute_fn=prepare_module_changes,
-                    prompt_guidelines=(
-                        "先用 set_task_scope 登记 module_content_grants，再提交内容。",
-                        "本轮全部新建与修改操作放在同一个 operations 中，准备完整后统一应用。",
-                        "准备尚未应用时可另备完整变更集修订，包含全部操作，再应用完整结果。",
-                        "新建正文由服务适配为自由资料；不要为每个字段建模块，也不建空模块。",
-                        "修改前必须读取实际条目与版本，并带上 base_digest。",
-                        "局部修改也使用本工具；只改作者指定的信息，保留其他条目、字段与原文。",
-                    ),
+                    prompt_guidelines=PREPARE_MODULE_CHANGES_GUIDELINES,
                     execution_mode="sequential",
                 )
             )
@@ -2656,36 +2598,29 @@ def build_tools(
                 AgentTool(
                     name="apply_module_changes",
                     label="应用模块内容",
-                    description=(
-                        "保存已准备的内容并一次性更新当前作品装配。成功后本轮进入收尾："
-                        "只读取结果并回复，不再继续写入。"
-                    ),
+                    description=APPLY_MODULE_CHANGES_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
                             "change_set_id": {
                                 "type": "string",
-                                "description": "prepare_module_changes 返回的变更集 ID",
+                                "description": prompt_tools.APPLY_CHANGE_SET_ID_PARAM_DESCRIPTION,
                             },
                             "expected_digest": {
                                 "type": "string",
-                                "description": "可选：提交前的装配指纹",
+                                "description": prompt_tools.APPLY_EXPECTED_DIGEST_PARAM_DESCRIPTION,
                             },
                         },
                         "required": ["change_set_id"],
                         "additionalProperties": False,
                     },
                     execute_fn=apply_module_changes,
-                    prompt_guidelines=(
-                        "调用前确认变更集已包含本轮全部内容；应用成功后本轮只读，无法再准备遗漏内容。",
-                        "内容保存失败时保留生成稿，按返回的阶段说明可继续的范围。",
-                        "应用成功后不要继续改文件；用实际结果说明已用于本作品的内容。",
-                    ),
+                    prompt_guidelines=APPLY_MODULE_CHANGES_GUIDELINES,
                     execution_mode="sequential",
                 )
             )
 
-    if mode in ("write", "idea"):
+    if mode == "write":
         search_phrases = (
             "找灵感",
             "搜灵感",
@@ -2845,91 +2780,62 @@ def build_tools(
                 AgentTool(
                     name="read_idea",
                     label="读取灵感",
-                    description=(
-                        "读取作者本轮选中、或本轮明确搜索到的灵感修订；未授权的灵感拒绝。"
-                    ),
+                    description=READ_IDEA_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
                             "idea_id": {"type": "string"},
                             "revision_id": {
                                 "type": "string",
-                                "description": "省略时使用本轮选中的那个修订",
+                                "description": prompt_tools.READ_IDEA_REVISION_PARAM_DESCRIPTION,
                             },
                         },
                         "required": ["idea_id"],
                         "additionalProperties": False,
                     },
                     execute_fn=read_idea,
-                    prompt_guidelines=(
-                        "只读本轮选中的修订；作者改过之后不要拿旧修订当当前。",
-                        "灵感是作者笔记，不是已发生的事实。",
-                    ),
+                    prompt_guidelines=READ_IDEA_GUIDELINES,
                     execution_mode="sequential",
                 ),
                 AgentTool(
                     name="search_ideas",
                     label="搜索灵感本",
-                    description=(
-                        "仅在作者明确要求找灵感时使用；返回摘要与当前修订，不自动写入作品。"
-                    ),
+                    description=SEARCH_IDEAS_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "关键词或标签"},
+                            "query": {
+                                "type": "string",
+                                "description": prompt_tools.SEARCH_IDEAS_QUERY_PARAM_DESCRIPTION,
+                            },
                         },
                         "additionalProperties": False,
                     },
                     execute_fn=search_ideas,
-                    prompt_guidelines=(
-                        "作者没有明确要求就不要搜索灵感；普通目录与文件工具读不到灵感。",
-                        "搜索结果只在本轮可见，下一轮要重新获得许可。",
-                    ),
+                    prompt_guidelines=SEARCH_IDEAS_GUIDELINES,
                     execution_mode="sequential",
                 ),
                 AgentTool(
                     name="save_idea",
                     label="记成灵感",
-                    description=(
-                        "把作者明确要求记下的内容保存为灵感；不改成正式设定，也不自动采用。"
-                    ),
+                    description=SAVE_IDEA_DESCRIPTION,
                     parameters={
                         "type": "object",
                         "properties": {
                             "body": {
                                 "type": "string",
-                                "description": "作者要求记下的原文；照抄，不要改写或补充",
+                                "description": prompt_tools.SAVE_IDEA_BODY_PARAM_DESCRIPTION,
                             },
                         },
                         "required": ["body"],
                         "additionalProperties": False,
                     },
                     execute_fn=save_idea,
-                    prompt_guidelines=(
-                        "只在作者说记下来、保存为灵感时使用；不要自动收集讨论内容。",
-                        "保存后告诉作者已记录，但不要把它当成正文设定。",
-                    ),
+                    prompt_guidelines=SAVE_IDEA_GUIDELINES,
                     execution_mode="sequential",
                 ),
             ]
         )
-
-    if mode == "idea":
-        # 展开讨论：只读原文、只读本轮固定的灵感；白名单之外的写入、装配、发布、
-        # 索引与状态工具一律不返回。新增工具默认不进入这个用途。
-        readonly = {
-            "list_files",
-            "read_file",
-            "search_text",
-            "list_modules",
-            "query_records",
-            "read_record",
-            "read_state",
-            "read_idea",
-            "search_ideas",
-            "save_idea",
-        }
-        return [tool for tool in tools if tool.name in readonly]
 
     if mode == "review":
         # 检查任务：只读原文与搜索，加保存报告；没有作品写工具。
@@ -2950,9 +2856,12 @@ def build_tools(
                         "type": "string",
                         **({"enum": list(review_targets)} if review_targets else {}),
                     },
-                    "description": "本轮允许的检查目标；参考文件不放入此列表",
+                    "description": prompt_tools.REVIEW_TARGET_PATHS_PARAM_DESCRIPTION,
                 },
-                "requirement": {"type": "string", "description": "作者的检查要求（原话或摘要）"},
+                "requirement": {
+                    "type": "string",
+                    "description": prompt_tools.REVIEW_PARAMETERS_REQUIREMENT_PARAM_DESCRIPTION,
+                },
                 "status": {
                     "type": "string",
                     "enum": ["findings", "no_findings", "incomplete"],
@@ -2990,926 +2899,25 @@ def build_tools(
                 "uncovered": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "没有覆盖到的部分；状态为 incomplete 时必填",
+                    "description": prompt_tools.REVIEW_UNCOVERED_PARAM_DESCRIPTION,
                 },
             },
             "required": ["target_paths", "requirement", "status"],
             "additionalProperties": False,
         }
-        if clue_review is not None:
-            kinds = review_parameters["properties"]["findings"]["items"]["properties"]["kind"]
-            kinds["enum"] = [
-                "inference_gap",
-                "alternative_open",
-                "premise_undisclosed",
-                "counter_evidence",
-            ]
-            review_parameters["properties"]["clue_analysis"] = {
-                "type": "object",
-                "description": "线索核对的冻结目标摘要；目标与线索集合以本轮冻结范围为准",
-                "properties": {
-                    "inference_id": {"type": "string"},
-                    "goal_snapshot": {"type": "string"},
-                    "premises": {"type": "array", "items": {"type": "string"}},
-                    "alternatives": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": ["inference_id", "goal_snapshot"],
-                "additionalProperties": False,
-            }
         return [
             *[tool for tool in tools if tool.name in readonly],
             AgentTool(
                 name="save_review_report",
                 label="保存检查报告",
-                description=(
-                    "发布这一轮的检查报告：目标、状态、问题与未覆盖部分。"
-                    "每条问题都要引用实际读到的原文；没读完就报告为未完成。"
-                    "target_paths 仅填写本轮检查目标，参考文件只作为 evidence。"
-                    + (
-                        f"本轮允许的目标：{json.dumps(list(review_targets), ensure_ascii=False)}。"
-                        if review_targets
-                        else ""
-                    )
-                ),
+                description=save_review_report_description(review_targets),
                 parameters=review_parameters,
                 execute_fn=save_review_report,
-                prompt_guidelines=(
-                    "先读完目标再判断；每条问题至少一处原文证据，跨文件冲突列双方出处。",
-                    "没读完或来源不可用时用 incomplete，并写明未覆盖的部分。",
-                ),
-                execution_mode="sequential",
-            ),
-        ]
-    if mode == "index":
-        # 索引任务：目录、搜索、读取加保存索引，没有作品写工具，也不准备 Git 基线。
-        readonly = {"list_files", "read_file", "search_text"}
-        return [
-            *[tool for tool in tools if tool.name in readonly],
-            AgentTool(
-                name="save_chapter_index",
-                label="保存章节索引",
-                description=(
-                    "发布一章的索引：摘要、事件、人物、时间地点与线索，每条都要引用原文证据。"
-                    "只对本轮作者选中的章节有效，且必须先读完当前全文。"
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string", "description": "如 正文/0003 书房.md"},
-                        "digest": {"type": "string", "description": "read_file 得到的 digest"},
-                        "summary": {"type": "string", "description": "这一章发生了什么，≤500 字符"},
-                        "evidence": {
-                            "type": "array",
-                            "description": "原文依据：编号从 1 连续递增，区间与引文一致",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "index": {"type": "integer", "minimum": 1},
-                                    "start": {"type": "integer", "minimum": 0},
-                                    "end": {"type": "integer", "minimum": 0},
-                                    "quote": {"type": "string", "description": "≤160 字符"},
-                                },
-                                "required": ["index", "start", "end", "quote"],
-                                "additionalProperties": False,
-                            },
-                        },
-                        "events": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
-                        "characters": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
-                        "places": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
-                        "clues": {"type": "array", "items": _INDEX_ENTRY_SCHEMA},
-                    },
-                    "required": ["path", "digest", "summary", "evidence"],
-                    "additionalProperties": False,
-                },
-                execute_fn=save_chapter_index,
-                prompt_guidelines=(
-                    "先读完这一章再发布；摘要只写这一章，不要从旧摘要改写。",
-                    "证据区间用 read_file 返回的字符位置，引文要与区间一致。",
-                ),
-                execution_mode="sequential",
-            ),
-        ]
-    if mode == "state":
-        # 核对身份：只读原文与小传，发布带证据的披露条目；没有作品写工具。
-        readonly = {"list_files", "read_file", "search_text", "read_state"}
-        allowed = tuple(index_allowed)
-        clue_snapshot = clue_store.ledger.read() if clue_store is not None else None
-
-        def require_entity_read(path: str) -> None:
-            run.materials.require_target_read(workspace, ReadRequirement.full(path))
-
-        def require_evidence(evidence: ObservedEvidence, chapter: int) -> None:
-            check_evidence(workspace, evidence, chapter=chapter, ledger=run.materials)
-
-        async def save_glossary_term(
-            tool_call_id: str,
-            arguments: Mapping[str, JSONValue],
-            signal: ToolCancellationToken | None = None,
-            on_update: ToolUpdateCallback | None = None,
-        ) -> AgentToolResult:
-            del tool_call_id, signal, on_update
-            kind = _text_argument(arguments, "kind")
-            if kind not in ("person", "place", "org", "item"):
-                raise _input_error("kind", "只能是 person / place / org / item")
-            evidence_raw = arguments.get("evidence")
-            if not isinstance(evidence_raw, dict):
-                raise _input_error("evidence", "必须是对象")
-            raw_aliases = arguments.get("aliases")
-            aliases: tuple[str, ...] = ()
-            if raw_aliases is not None:
-                if not isinstance(raw_aliases, list):
-                    raise _input_error("aliases", "必须是字符串数组")
-                aliases = tuple(str(item) for item in raw_aliases if str(item).strip())
-            term = GlossaryTerm(
-                term=_text_argument(arguments, "term"),
-                kind=kind,  # type: ignore[arg-type]
-                aliases=aliases,
-                first_chapter=_int_argument(arguments, "first_chapter", default=0, minimum=1),
-                source="text",
-                evidence=ObservedEvidence(
-                    path=_text_argument(evidence_raw, "path"),
-                    digest=_text_argument(evidence_raw, "digest"),
-                    start=_int_argument(evidence_raw, "start", default=0, minimum=0),
-                    end=_int_argument(evidence_raw, "end", default=0, minimum=0),
-                    quote=_text_argument(evidence_raw, "quote"),
-                ),
-            )
-            if glossary_store is None:
-                raise WorkspaceError(
-                    code="STATE_STORE_MISSING",
-                    where="glossary.save",
-                    why="没有可写的状态目录",
-                    fix="从作品状态目录重新发起核对",
-                )
-            assert term.evidence is not None
-            require_evidence(term.evidence, term.first_chapter)
-            published = publish_terms(workspace, glossary_store, (term,))
-            run.record(
-                "state_published",
-                {
-                    "domain": "glossary",
-                    "term": term.term,
-                    "published": 1,
-                    "total": len(published),
-                    "evidence": arguments.get("evidence"),
-                },
-            )
-            return _json({"term": term.term, "total": len(published)})
-
-        async def save_character_state(
-            tool_call_id: str,
-            arguments: Mapping[str, JSONValue],
-            signal: ToolCancellationToken | None = None,
-            on_update: ToolUpdateCallback | None = None,
-        ) -> AgentToolResult:
-            del tool_call_id, signal, on_update
-            entity = _text_argument(arguments, "entity")
-            entity_digest = _text_argument(arguments, "entity_digest")
-            if allowed and entity not in allowed:
-                raise WorkspaceError(
-                    code="STATE_ENTITY_INVALID",
-                    where=f"roster.save:{entity}",
-                    why="这一轮没有选择这份小传",
-                    fix="只核对作者选中的小传；需要更多时让作者重新发起核对",
-                    details={"path": entity},
-                )
-            raw = arguments.get("states")
-            if not isinstance(raw, list) or not raw:
-                raise _input_error("states", "必须是非空数组")
-            snapshots = tuple(
-                _snapshot_from(item, entity=entity, entity_digest=entity_digest) for item in raw
-            )
-            if roster_store is None:
-                raise WorkspaceError(
-                    code="STATE_STORE_MISSING",
-                    where="roster.save",
-                    why="没有可写的状态目录",
-                    fix="从作品状态目录重新发起核对",
-                )
-            require_entity_read(entity)
-            for item in snapshots:
-                require_evidence(item.evidence, item.chapter)
-            published = publish_states(workspace, roster_store, snapshots)
-            run.record(
-                "state_published",
-                {
-                    "domain": "roster",
-                    "entity": entity,
-                    "published": len(snapshots),
-                    "total": len(published),
-                    "records": arguments.get("states"),
-                },
-            )
-            return _json({"entity": entity, "published": len(snapshots), "total": len(published)})
-
-        async def save_timeline(
-            tool_call_id: str,
-            arguments: Mapping[str, JSONValue],
-            signal: ToolCancellationToken | None = None,
-            on_update: ToolUpdateCallback | None = None,
-        ) -> AgentToolResult:
-            del tool_call_id, signal, on_update
-            raw = arguments.get("entries")
-            if not isinstance(raw, list) or not raw:
-                raise _input_error("entries", "必须是非空数组")
-            entries = tuple(_timeline_from(item) for item in raw)
-            if timeline_store is None:
-                raise WorkspaceError(
-                    code="STATE_STORE_MISSING",
-                    where="timeline.save",
-                    why="没有可写的状态目录",
-                    fix="从作品状态目录重新发起核对",
-                )
-            for entry in entries:
-                require_evidence(entry.evidence, entry.chapter)
-            published = publish_timeline(workspace, timeline_store, entries)
-            run.record(
-                "state_published",
-                {
-                    "domain": "timeline",
-                    "published": len(entries),
-                    "total": len(published),
-                    "records": arguments.get("entries"),
-                },
-            )
-            return _json({"published": len(entries), "total": len(published)})
-
-        async def save_clues(
-            tool_call_id: str,
-            arguments: Mapping[str, JSONValue],
-            signal: ToolCancellationToken | None = None,
-            on_update: ToolUpdateCallback | None = None,
-        ) -> AgentToolResult:
-            del on_update
-            raw = arguments.get("entries")
-            if not isinstance(raw, list) or not raw:
-                raise _input_error("entries", "必须是非空数组")
-            entries = tuple(_clue_from(item) for item in raw)
-            if clue_store is None:
-                raise WorkspaceError(
-                    code="STATE_STORE_MISSING",
-                    where="clues.save",
-                    why="没有可写的状态目录",
-                    fix="从作品状态目录重新发起核对",
-                )
-            for clue in entries:
-                require_evidence(clue.evidence, clue.planted_chapter)
-                if clue.resolution_evidence is not None and clue.resolution_chapter is not None:
-                    require_evidence(clue.resolution_evidence, clue.resolution_chapter)
-
-            def check_current() -> None:
-                if signal is not None and signal.is_cancelled():
-                    raise WorkspaceError(
-                        code="CLUE_STOPPED_CONFLICT",
-                        where="clues.publish",
-                        why="任务已停止，不能发布新的线索记录",
-                        fix="保留已发布结果；需要继续时重新发起整理",
-                    )
-                for clue in entries:
-                    require_evidence(clue.evidence, clue.planted_chapter)
-                    if clue.mention_evidence is not None:
-                        require_evidence(clue.mention_evidence, clue.source_chapter)
-                    if clue.resolution_evidence is not None and clue.resolution_chapter is not None:
-                        require_evidence(clue.resolution_evidence, clue.resolution_chapter)
-
-            published = publish_clues(
-                workspace,
-                clue_store,
-                entries,
-                expected_revision=clue_snapshot.revision if clue_snapshot is not None else None,
-                request_key=f"state:{run.turn_id}:{tool_call_id}",
-                task_id=run.turn_id,
-                allowed_ids=[row.clue_id for row in clue_snapshot.entries()]
-                if clue_snapshot is not None
-                else None,
-                preflight=check_current,
-            )
-            run.record(
-                "state_published",
-                {
-                    "domain": "clues",
-                    "published": len(entries),
-                    "total": len(published),
-                    "records": arguments.get("entries"),
-                },
-            )
-            return _json({"published": len(entries), "total": len(published)})
-
-        async def save_disclosure(
-            tool_call_id: str,
-            arguments: Mapping[str, JSONValue],
-            signal: ToolCancellationToken | None = None,
-            on_update: ToolUpdateCallback | None = None,
-        ) -> AgentToolResult:
-            del tool_call_id, signal, on_update
-            entity = _text_argument(arguments, "entity")
-            entity_digest = _text_argument(arguments, "entity_digest")
-            if allowed and entity not in allowed:
-                raise WorkspaceError(
-                    code="STATE_ENTITY_INVALID",
-                    where=f"disclosure.save:{entity}",
-                    why="这一轮没有选择这份小传",
-                    fix="只核对作者选中的小传；需要更多时让作者重新发起核对",
-                    details={"path": entity},
-                )
-            raw = arguments.get("facts")
-            if not isinstance(raw, list) or not raw:
-                raise _input_error("facts", "必须是非空数组")
-            facts = tuple(
-                _observed_from(item, entity=entity, entity_digest=entity_digest) for item in raw
-            )
-            if disclosure_store is None:
-                raise WorkspaceError(
-                    code="STATE_STORE_MISSING",
-                    where="disclosure.save",
-                    why="没有可写的状态目录",
-                    fix="从作品状态目录重新发起核对",
-                )
-            require_entity_read(entity)
-            for fact in facts:
-                require_evidence(fact.evidence, fact.chapter)
-            published = publish_observed(workspace, disclosure_store, facts)
-            run.record(
-                "state_published",
-                {
-                    "domain": "disclosure",
-                    "entity": entity,
-                    "published": len(facts),
-                    "total": len(published),
-                    "records": arguments.get("facts"),
-                },
-            )
-            return _json(
-                {
-                    "entity": entity,
-                    "published": len(facts),
-                    "total": len(published),
-                }
-            )
-
-        return [
-            *[tool for tool in tools if tool.name in readonly],
-            AgentTool(
-                name="save_disclosure",
-                label="保存身份核对",
-                description=(
-                    "记录一条或多条「读者从第几章起知道什么」，每条都要给出正文原文依据。"
-                    "只对作者选中核对的小传有效，必须先读完该小传与相关章节。"
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "entity": {"type": "string", "description": "如 设定集/角色小传/林静.md"},
-                        "entity_digest": {
-                            "type": "string",
-                            "description": "read_file 读到的小传 digest",
-                        },
-                        "facts": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "fact": {"type": "string", "description": "读者知道了什么"},
-                                    "chapter": {"type": "integer", "minimum": 1},
-                                    "evidence": {
-                                        "type": "object",
-                                        "properties": {
-                                            "path": {"type": "string"},
-                                            "digest": {"type": "string"},
-                                            "start": {"type": "integer", "minimum": 0},
-                                            "end": {"type": "integer", "minimum": 0},
-                                            "quote": {"type": "string", "description": "≤160 字符"},
-                                        },
-                                        "required": ["path", "digest", "start", "end", "quote"],
-                                        "additionalProperties": False,
-                                    },
-                                },
-                                "required": ["fact", "chapter", "evidence"],
-                                "additionalProperties": False,
-                            },
-                        },
-                    },
-                    "required": ["entity", "entity_digest", "facts"],
-                    "additionalProperties": False,
-                },
-                execute_fn=save_disclosure,
-                prompt_guidelines=(
-                    "只记录正文里确实写到的披露；凭设定推测的不要发布。",
-                    "证据区间用 read_file 返回的字符位置，引文要与区间完全一致。",
-                ),
-                execution_mode="sequential",
-            ),
-            AgentTool(
-                name="save_glossary_term",
-                label="登记专有名词",
-                description=(
-                    "登记正文里确实出现过的专名（地名、组织、物件），带一处原文依据。"
-                    "人物姓名与别名来自小传，不需要重复登记。"
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "term": {"type": "string"},
-                        "kind": {"type": "string", "enum": ["person", "place", "org", "item"]},
-                        "aliases": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "同一事物的其他写法",
-                        },
-                        "first_chapter": {"type": "integer", "minimum": 1},
-                        "evidence": {
-                            "type": "object",
-                            "properties": {
-                                "path": {"type": "string"},
-                                "digest": {"type": "string"},
-                                "start": {"type": "integer", "minimum": 0},
-                                "end": {"type": "integer", "minimum": 0},
-                                "quote": {"type": "string", "description": "≤160 字符"},
-                            },
-                            "required": ["path", "digest", "start", "end", "quote"],
-                            "additionalProperties": False,
-                        },
-                    },
-                    "required": ["term", "kind", "first_chapter", "evidence"],
-                    "additionalProperties": False,
-                },
-                execute_fn=save_glossary_term,
-                prompt_guidelines=(
-                    "只登记正文出现过的名字；同义写法放进 aliases。",
-                    "证据区间用 read_file 返回的字符位置，引文要与区间完全一致。",
-                ),
-                execution_mode="sequential",
-            ),
-            AgentTool(
-                name="save_character_state",
-                label="保存人物状态",
-                description=(
-                    "记录某人在某一章结束时的状态：位置、是否还活着、立场。"
-                    "每条都要给出正文原文依据；只对作者选中核对的小传有效。"
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "entity": {"type": "string", "description": "如 设定集/角色小传/林静.md"},
-                        "entity_digest": {
-                            "type": "string",
-                            "description": "read_file 读到的小传 digest",
-                        },
-                        "states": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "chapter": {"type": "integer", "minimum": 1},
-                                    "location": {
-                                        "type": "string",
-                                        "description": "这一章结束时在哪",
-                                    },
-                                    "alive": {"type": "boolean"},
-                                    "stance": {
-                                        "type": "string",
-                                        "description": "这一章结束时的立场，可为空",
-                                    },
-                                    "evidence": {
-                                        "type": "object",
-                                        "properties": {
-                                            "path": {"type": "string"},
-                                            "digest": {"type": "string"},
-                                            "start": {"type": "integer", "minimum": 0},
-                                            "end": {"type": "integer", "minimum": 0},
-                                            "quote": {"type": "string", "description": "≤160 字符"},
-                                        },
-                                        "required": ["path", "digest", "start", "end", "quote"],
-                                        "additionalProperties": False,
-                                    },
-                                },
-                                "required": ["chapter", "alive", "evidence"],
-                                "additionalProperties": False,
-                            },
-                        },
-                    },
-                    "required": ["entity", "entity_digest", "states"],
-                    "additionalProperties": False,
-                },
-                execute_fn=save_character_state,
-                prompt_guidelines=(
-                    "只记这一章正文明确写到的事；人物说自己在某处不等于他真在。",
-                    "位置与立场至少要有一个；都没有就不要发布这一条。",
-                    "死亡只在正文确实写到死亡时记 alive=false。",
-                ),
-                execution_mode="sequential",
-            ),
-            AgentTool(
-                name="save_timeline",
-                label="保存时间锚点",
-                description=(
-                    "记录一章的时间锚点：原文怎么说的时间、跨了多久、主要在哪。"
-                    "一章一条，后来的覆盖旧的。"
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "entries": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "chapter": {"type": "integer", "minimum": 1},
-                                    "when": {
-                                        "type": "string",
-                                        "description": "原文里的时间说法，如「10月21日深夜」",
-                                    },
-                                    "span": {"type": "string", "description": "这一章跨了多久"},
-                                    "location": {"type": "string", "description": "主要地点"},
-                                    "evidence": {
-                                        "type": "object",
-                                        "properties": {
-                                            "path": {"type": "string"},
-                                            "digest": {"type": "string"},
-                                            "start": {"type": "integer", "minimum": 0},
-                                            "end": {"type": "integer", "minimum": 0},
-                                            "quote": {"type": "string", "description": "≤160 字符"},
-                                        },
-                                        "required": ["path", "digest", "start", "end", "quote"],
-                                        "additionalProperties": False,
-                                    },
-                                },
-                                "required": ["chapter", "when", "evidence"],
-                                "additionalProperties": False,
-                            },
-                        }
-                    },
-                    "required": ["entries"],
-                    "additionalProperties": False,
-                },
-                execute_fn=save_timeline,
-                prompt_guidelines=(
-                    "时间写原文的说法，不要换算成自己推的日期。",
-                    "跨度只在原文给了线索时写，例如「次日清晨」就是一夜。",
-                ),
-                execution_mode="sequential",
-            ),
-            AgentTool(
-                name="save_clues",
-                label="登记线索",
-                description=(
-                    "登记读者看到过的线索：埋在哪一章、计划哪一章回收、现在什么状态。"
-                    "每条都要给出埋设处的原文依据；标为已回收时还要给出回收处。"
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "entries": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "clue": {
-                                        "type": "string",
-                                        "description": "读者能观察到的事实，不是解释",
-                                    },
-                                    "clue_id": {
-                                        "type": "string",
-                                        "description": "更新已有线索时复用其稳定 ID",
-                                    },
-                                    "new_identity": {
-                                        "type": "boolean",
-                                        "description": "明确另建同名线索时为 true",
-                                    },
-                                    "source_chapter": {"type": "integer", "minimum": 1},
-                                    "mention_evidence": _EVIDENCE_SCHEMA,
-                                    "mode": {
-                                        "type": "string",
-                                        "enum": [
-                                            "narration",
-                                            "testimony",
-                                            "recollection",
-                                            "hypothesis",
-                                            "dream",
-                                            "unknown",
-                                        ],
-                                    },
-                                    "planted_chapter": {"type": "integer", "minimum": 1},
-                                    "due_chapter": {
-                                        "type": "integer",
-                                        "minimum": 1,
-                                        "description": "计划回收章；不确定就不填",
-                                    },
-                                    "status": {
-                                        "type": "string",
-                                        "enum": ["open", "resolved", "dropped"],
-                                    },
-                                    "supports": {
-                                        "type": "string",
-                                        "description": "这条线索指向哪种可能，可为空",
-                                    },
-                                    "resolution_chapter": {"type": "integer", "minimum": 1},
-                                    "evidence": _EVIDENCE_SCHEMA,
-                                    "resolution_evidence": _EVIDENCE_SCHEMA,
-                                },
-                                "required": ["clue", "planted_chapter", "status", "evidence"],
-                                "additionalProperties": False,
-                            },
-                        }
-                    },
-                    "required": ["entries"],
-                    "additionalProperties": False,
-                },
-                execute_fn=save_clues,
-                prompt_guidelines=(
-                    "线索是读者看到的事实，不是它的解释；解释属于设定，不写进台账。",
-                    "只有正文确实写了回收过程才标 resolved，并给出回收处原文。",
-                    "作者已经放弃的线索标 dropped，不要删掉：删掉等于下次又会被当成新线索。",
-                ),
+                prompt_guidelines=SAVE_REVIEW_REPORT_GUIDELINES,
                 execution_mode="sequential",
             ),
         ]
     if mode == "write":
-
-        async def link_clue_design_tool(
-            tool_call_id: str,
-            arguments: Mapping[str, JSONValue],
-            signal: ToolCancellationToken | None = None,
-            on_update: ToolUpdateCallback | None = None,
-        ) -> AgentToolResult:
-            """把本轮实际读过的计划条目区间关联到线索；关系授权与内容写入分开。"""
-            del signal, on_update
-            run.require_writable("tools.link_clue_design")
-            if run.state_root is None:
-                raise WorkspaceError(
-                    code="CLUE_STATE_FAILED",
-                    where="tools.link_clue_design",
-                    why="这一轮没有可保存线索关系的作品状态目录",
-                    fix="在作品会话里保存计划；不要在临时请求中写线索关系",
-                )
-            clue_id = _text_argument(arguments, "clue_id")
-            source = _design_source_argument(arguments.get("source"))
-            start = _int_argument(arguments, "start", default=0, minimum=0)
-            end = _int_argument(arguments, "end", default=0, minimum=1)
-            quote = _text_argument(arguments, "quote")
-            relation = _optional_text_argument(arguments, "relation") or ""
-            run.scope.require_clue_design(ClueDesignGrant("link", clue_id=clue_id))
-            digest = (
-                source.digest
-                if isinstance(source, FileSource)
-                else source.content_digest
-            )
-            path = (
-                source.path
-                if isinstance(source, FileSource)
-                else source_path(
-                    source.library_id, source.module_id, source.revision_id, source.entry_id
-                )
-            )
-            coverage = run.materials.coverage(path)
-            if (
-                coverage is None
-                or coverage.ref.digest != digest
-                or not covers(coverage.spans, start, end)
-            ):
-                raise WorkspaceError(
-                    code="REFERENCE_NOT_FULLY_READ_CONFLICT",
-                    where="tools.link_clue_design",
-                    why="计划区间还没有在本轮实际读过",
-                    fix="先用 read_file 或 read_record 读取这段原文，再关联计划",
-                    details={"path": path, "start": start, "end": end},
-                )
-            store = ClueLedgerStore(run.state_root)
-            expected = (
-                _optional_text_argument(arguments, "expected_revision")
-                or store.read().revision
-            )
-            result = link_clue_design(
-                run.workspace,
-                store,
-                clue_id=clue_id,
-                source=source,
-                start=start,
-                end=end,
-                quote=quote,
-                relation=relation,
-                request_key=_tool_request_key(
-                    f"{run.turn_id}:clue-link", tool_call_id, arguments
-                ),
-                expected_revision=expected,
-                created_by=run.turn_id or "agent",
-                library=run.library,
-                assembly=run.assembly,
-            )
-            run.record(
-                "clue_design_linked",
-                {
-                    "clue_id": clue_id,
-                    "link_id": result["link_id"],
-                    "clue_revision": result["clue_revision"],
-                    "duplicate": result.get("duplicate", False),
-                },
-            )
-            return _json(result)
-
-        async def save_clue_inference_tool(
-            tool_call_id: str,
-            arguments: Mapping[str, JSONValue],
-            signal: ToolCancellationToken | None = None,
-            on_update: ToolUpdateCallback | None = None,
-        ) -> AgentToolResult:
-            """保存作者明确要求的推理目标；纯讨论不能自动调用。"""
-            del signal, on_update
-            run.require_writable("tools.save_clue_inference")
-            if run.state_root is None:
-                raise WorkspaceError(
-                    code="CLUE_STATE_FAILED",
-                    where="tools.save_clue_inference",
-                    why="这一轮没有可保存推理目标的作品状态目录",
-                    fix="在作品会话里保存构思；不要在临时请求中写目标",
-                )
-            inference_id = _optional_text_argument(arguments, "inference_id")
-            inference_revision = _optional_text_argument(arguments, "inference_revision")
-            clue_ids = _string_list_argument(arguments, "clue_ids")
-            goal = _text_argument(arguments, "goal")
-            intent = _text_argument(arguments, "intent")
-            if intent not in ("deduce", "suspect", "keep_open", "undecided"):
-                raise _input_error(
-                    "intent", "只能是 deduce、suspect、keep_open 或 undecided"
-                )
-            premises = _inference_statements_argument(arguments.get("premises"), "premises")
-            alternatives = _inference_statements_argument(
-                arguments.get("alternatives"), "alternatives"
-            )
-            design_link_ids = _string_list_argument(arguments, "design_link_ids")
-            run.scope.require_clue_design(
-                ClueDesignGrant(
-                    "inference",
-                    inference_id=inference_id or "",
-                    clue_ids=tuple(clue_ids),
-                )
-            )
-            store = ClueLedgerStore(run.state_root)
-            expected = (
-                _optional_text_argument(arguments, "expected_revision")
-                or store.read().revision
-            )
-            result = save_clue_inference(
-                store,
-                clue_ids=clue_ids,
-                goal=goal,
-                intent=cast(InferenceIntent, intent),
-                premises=premises,
-                alternatives=alternatives,
-                design_link_ids=design_link_ids,
-                request_key=_tool_request_key(
-                    f"{run.turn_id}:clue-inference", tool_call_id, arguments
-                ),
-                expected_revision=expected,
-                inference_id=inference_id,
-                inference_revision=inference_revision,
-                created_by=run.turn_id or "agent",
-                request_source=run.current_author_text or "",
-            )
-            run.record("clue_inference_saved", dict(result))
-            return _json(result)
-
-        tools.extend(
-            [
-                AgentTool(
-                    name="link_clue_design",
-                    label="关联作者计划",
-                    description=(
-                        "把本轮实际读过的已装模块条目或设定文件区间关联到一条线索。"
-                        "只保存关系，不复制或修改计划正文；作者没有明确要求时不要调用。"
-                    ),
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "clue_id": {"type": "string"},
-                            "source": {
-                                "type": "object",
-                                "properties": {
-                                    "kind": {"type": "string", "enum": ["file", "module"]},
-                                    "path": {"type": "string"},
-                                    "digest": {"type": "string"},
-                                    "library_id": {"type": "string"},
-                                    "module_id": {"type": "string"},
-                                    "revision_id": {"type": "string"},
-                                    "entry_id": {"type": "string"},
-                                    "content_digest": {"type": "string"},
-                                },
-                                "required": ["kind"],
-                                "additionalProperties": False,
-                            },
-                            "start": {"type": "integer", "minimum": 0},
-                            "end": {"type": "integer", "minimum": 1},
-                            "quote": {"type": "string"},
-                            "relation": {
-                                "type": "string",
-                                "description": "这条计划与线索的关系说明；可省略",
-                            },
-                            "expected_revision": {
-                                "type": "string",
-                                "description": "可选：读取到的账本版本；省略时用当前值",
-                            },
-                        },
-                        "required": ["clue_id", "source", "start", "end", "quote"],
-                        "additionalProperties": False,
-                    },
-                    execute_fn=link_clue_design_tool,
-                    prompt_guidelines=(
-                        "先 set_task_scope 登记 clue_design_grants 的 link；"
-                        "来源只选已装模块或设定文件，不把正文发言当作者计划。",
-                        "区间必须是本轮真正读过的原文；未读的区间会被拒绝。",
-                        "模块升级或卸下后旧关联会标为待核对；不要按同名或最新版自动重绑。",
-                    ),
-                    execution_mode="sequential",
-                ),
-                AgentTool(
-                    name="save_clue_inference",
-                    label="保存推理目标",
-                    description=(
-                        "保存作者明确要求的一组线索推理目标、前提与其他解释。"
-                        "目标只描述安排，不证明正文前提，也不产生已埋设或已回收记录。"
-                    ),
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "inference_id": {
-                                "type": "string",
-                                "description": "更新已有目标时填写",
-                            },
-                            "inference_revision": {
-                                "type": "string",
-                                "description": "更新时带上读取到的目标修订",
-                            },
-                            "clue_ids": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "本次目标关联的 1—10 条线索",
-                            },
-                            "goal": {"type": "string", "description": "要推出的结论"},
-                            "intent": {
-                                "type": "string",
-                                "enum": ["deduce", "suspect", "keep_open", "undecided"],
-                            },
-                            "premises": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "text": {"type": "string"},
-                                        "clue_ids": {
-                                            "type": "array",
-                                            "items": {"type": "string"},
-                                        },
-                                        "design_link_ids": {
-                                            "type": "array",
-                                            "items": {"type": "string"},
-                                        },
-                                    },
-                                    "required": ["text"],
-                                    "additionalProperties": False,
-                                },
-                            },
-                            "alternatives": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "text": {"type": "string"},
-                                        "clue_ids": {
-                                            "type": "array",
-                                            "items": {"type": "string"},
-                                        },
-                                        "design_link_ids": {
-                                            "type": "array",
-                                            "items": {"type": "string"},
-                                        },
-                                    },
-                                    "required": ["text"],
-                                    "additionalProperties": False,
-                                },
-                            },
-                            "design_link_ids": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "本目标引用的计划关联；必须属于目标线索",
-                            },
-                            "expected_revision": {
-                                "type": "string",
-                                "description": "可选：读取到的账本版本；省略时用当前值",
-                            },
-                        },
-                        "required": ["clue_ids", "goal", "intent"],
-                        "additionalProperties": False,
-                    },
-                    execute_fn=save_clue_inference_tool,
-                    prompt_guidelines=(
-                        "只保存作者明确要求保存的构思；普通讨论只说明方案，不调用。",
-                        "目标与前提是作者安排，不是正文事实；不要把推测说成已经交代。",
-                        "更新已有目标要带上当前 inference_id 与 inference_revision。",
-                    ),
-                    execution_mode="sequential",
-                ),
-            ]
-        )
 
         async def ask_author(
             tool_call_id: str,
@@ -3968,39 +2976,30 @@ def build_tools(
             AgentTool(
                 name="ask_author",
                 label="询问作者",
-                description=(
-                    "读取相关材料后，目标仍无法唯一定位或本轮要求存在未决冲突时，"
-                    "记录一个必须由作者决定的问题并结束本轮，回答后继续原请求。"
-                    "作者已明确的新值直接采用；模块拆分、命名与已授权的人物创作不需要问。"
-                ),
+                description=ASK_AUTHOR_DESCRIPTION,
                 parameters={
                     "type": "object",
                     "properties": {
                         "question": {
                             "type": "string",
-                            "description": "需要作者决定的具体问题，一句话说清",
+                            "description": prompt_tools.ASK_AUTHOR_QUESTION_PARAM_DESCRIPTION,
                         },
                         "options": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "可选答案；作者仍可自由回答",
+                            "description": prompt_tools.ASK_AUTHOR_OPTIONS_PARAM_DESCRIPTION,
                         },
                         "paths": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "与问题有关的作品内路径，便于作者对照",
+                            "description": prompt_tools.ASK_AUTHOR_PATHS_PARAM_DESCRIPTION,
                         },
                     },
                     "required": ["question"],
                     "additionalProperties": False,
                 },
                 execute_fn=ask_author,
-                prompt_guidelines=(
-                    "能自行判断的不要问；一次只问一个必须由作者决定的问题。",
-                    "作者明确要求先提问时按要求提问；明确的局部替换不需要重复确认。",
-                    "「其余不变」时保留范围外资料，不因旧文件或章节的潜在影响阻断修改。",
-                    "调用后本轮结束，不要再写入或假装已经继续。",
-                ),
+                prompt_guidelines=ASK_AUTHOR_GUIDELINES,
                 execution_mode="sequential",
             )
         )
@@ -4017,8 +3016,6 @@ def build_turn_assembly(
     story: str = "",
     ideas: str = "",
     modules: str = "",
-    index_notes: str = "",
-    index_excluded: Sequence[Exclusion] = (),
     instructions: str = "",
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
@@ -4042,8 +3039,6 @@ def build_turn_assembly(
         story=story,
         ideas=ideas,
         modules=modules,
-        index_notes=index_notes,
-        index_excluded=index_excluded,
         instructions=instructions or _instructions_for(mode),
         disclosure_store=disclosure_store,
         glossary_store=glossary_store,
@@ -4074,19 +3069,14 @@ def prepare_request_inputs(
     materials: str = "",
     ideas: str = "",
     modules: str = "",
-    index_notes: str = "",
     mode: ToolMode = "write",
-    index_allowed: Sequence[str] = (),
-    index_store: ChapterIndexStore | None = None,
     review_targets: Sequence[str] = (),
     review_store: ReviewStore | None = None,
-    clue_review: Mapping[str, object] | None = None,
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
     roster_store: CharacterStateStore | None = None,
     timeline_store: TimelineStore | None = None,
     clue_store: ClueStore | None = None,
-    material_scope: Mapping[str, object] | None = None,
     assembly: AssembledContext | None = None,
 ) -> RequestInputs:
     """构造本轮的系统提示与工具定义，不执行模型、不写会话事件。
@@ -4103,7 +3093,6 @@ def prepare_request_inputs(
         materials=materials,
         ideas=ideas,
         modules=modules,
-        index_notes=index_notes,
         disclosure_store=disclosure_store,
         glossary_store=glossary_store,
         roster_store=roster_store,
@@ -4111,26 +3100,23 @@ def prepare_request_inputs(
         clue_store=clue_store,
     )
     tools = build_tools(
-            workspace,
-            run,
-            mode=mode,
-            index_allowed=index_allowed,
-            index_store=index_store,
-            review_targets=review_targets,
-            review_store=review_store,
-            clue_review=clue_review,
-            disclosure_store=disclosure_store,
-            glossary_store=glossary_store,
-            roster_store=roster_store,
-            timeline_store=timeline_store,
+        workspace,
+        run,
+        mode=mode,
+        review_targets=review_targets,
+        review_store=review_store,
+        disclosure_store=disclosure_store,
+        glossary_store=glossary_store,
+        roster_store=roster_store,
+        timeline_store=timeline_store,
         clue_store=clue_store,
-        material_scope=material_scope,
     )
     if run.story is not None and run.state_root is not None:
         # 结构工具跟着这一轮冻结的方案走：不传方案就不开放，避免模型改到别的备选。
         tools.extend(
             build_story_tools(
                 StoryToolScope(
+                    workspace=workspace,
                     state_root=run.state_root,
                     frozen=run.story,
                     writable=(
@@ -4138,6 +3124,7 @@ def prepare_request_inputs(
                         and run.story.purpose in ("design", "revise", "write")
                     ),
                     guard=run.story_guard,
+                    decision_guard=run.story_decision_guard,
                     record=run.record,
                     author_text=run.current_author_text or "",
                     operation_id=run.operation_id,
@@ -4145,7 +3132,81 @@ def prepare_request_inputs(
                 )
             )
         )
-    return RequestInputs(system=resolved.text, tools=tools)
+    if run.story_candidate is not None:
+        candidate = run.story_candidate
+        async def propose_scene(
+            tool_call_id: str, arguments: Mapping[str, Any],
+            signal: Any = None, on_update: Any = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            path = _text_argument(arguments, "path")
+            digest = _text_argument(arguments, "base_digest")
+            text = _text_argument(arguments, "text", allow_empty=True)
+            run.before_mutation(
+                Mutation(action="create" if digest == "absent" else "update", path=path),
+                required_read=None if digest == "absent" else ReadRequirement.full(path),
+                candidate_proposal=True,
+                preflight=lambda: workspace.check_write_intent(
+                    path, expected_digest=None if digest == "absent" else digest),
+            )
+            candidate.propose(path, digest, text)
+            return _json({"candidate_id": candidate.id, "status": "draft",
+                          "note": "候选已保留，正式正文未修改；应用将在本轮结束时核对。"})
+        tools = [tool for tool in tools if tool.name.startswith(("read_", "search_", "list_"))
+                 or tool.name in ("set_task_scope", "extend_task_scope", "ask_author")]
+        async def read_previous_candidate(
+            tool_call_id: str, arguments: Mapping[str, Any],
+            signal: Any = None, on_update: Any = None,
+        ) -> AgentToolResult:
+            del tool_call_id, arguments, signal, on_update
+            previous = candidate.previous()
+            if previous and isinstance(previous.get("author_text"), str):
+                original_request = previous["author_text"].strip()
+                if original_request and original_request not in candidate.author_text:
+                    candidate.author_text = original_request + "\n" + candidate.author_text
+            return _json({"candidate": previous,
+                          "note": "候选仅供参考；重新提交仍需当前轮作者授权与原文读取。"})
+        if candidate.source_candidate_id or candidate.generation > 1:
+            tools.append(AgentTool(
+                name="read_previous_story_candidate", label="读取保留的候选正文",
+                description=READ_PREVIOUS_STORY_CANDIDATE_DESCRIPTION,
+                parameters={"type": "object", "properties": {}, "additionalProperties": False},
+                execute_fn=read_previous_candidate, execution_mode="sequential"))
+        async def propose_structure(
+            tool_call_id: str, arguments: Mapping[str, Any],
+            signal: Any = None, on_update: Any = None,
+        ) -> AgentToolResult:
+            del tool_call_id, signal, on_update
+            rows = arguments.get("operations")
+            if not isinstance(rows, list) or not rows:
+                raise WorkspaceError(
+                    code="STORY_CHANGE_INVALID",
+                    where="story.candidate",
+                    why="结构变更需要非空的 operations 列表",
+                    fix="按 update_story 的操作格式提交；只改作者本轮点到的对象",
+                )
+            return _json(candidate.propose_structure(rows))
+        tools.append(AgentTool(
+            name="propose_story_structure", label="登记候选结构变更",
+            description=PROPOSE_STORY_STRUCTURE_DESCRIPTION,
+            parameters={"type": "object", "properties": {
+                "operations": {"type": "array", "items": {"type": "object"},
+                               "description": (
+                                   prompt_tools.PROPOSE_STORY_STRUCTURE_OPERATIONS_PARAM_DESCRIPTION
+                               )}},
+                "required": ["operations"], "additionalProperties": False},
+            execute_fn=propose_structure, execution_mode="sequential"))
+        tools.append(AgentTool(
+            name="propose_story_scene", label="提交候选正文",
+            description=PROPOSE_STORY_SCENE_DESCRIPTION,
+            parameters={"type": "object", "properties": {
+                name: {"type": "string"} for name in ("path", "base_digest", "text")},
+                "required": ["path", "base_digest", "text"], "additionalProperties": False},
+            execute_fn=propose_scene, execution_mode="sequential"))
+    system = resolved.text
+    if run.story_candidate is not None:
+        system += CANDIDATE_FLOW_INSTRUCTIONS
+    return RequestInputs(system=system, tools=tools)
 
 
 def build_harness(
@@ -4161,19 +3222,14 @@ def build_harness(
     materials: str = "",
     ideas: str = "",
     modules: str = "",
-    index_notes: str = "",
     mode: ToolMode = "write",
-    index_allowed: Sequence[str] = (),
-    index_store: ChapterIndexStore | None = None,
     review_targets: Sequence[str] = (),
     review_store: ReviewStore | None = None,
-    clue_review: Mapping[str, object] | None = None,
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
     roster_store: CharacterStateStore | None = None,
     timeline_store: TimelineStore | None = None,
     clue_store: ClueStore | None = None,
-    material_scope: Mapping[str, object] | None = None,
     assembly: AssembledContext | None = None,
 ) -> AgentHarness:
     """单个写作 Agent：系统提示 + 文件工具 + 回合上限。
@@ -4190,19 +3246,14 @@ def build_harness(
         materials=materials,
         ideas=ideas,
         modules=modules,
-        index_notes=index_notes,
         mode=mode,
-        index_allowed=index_allowed,
-        index_store=index_store,
         review_targets=review_targets,
         review_store=review_store,
-        clue_review=clue_review,
         disclosure_store=disclosure_store,
         glossary_store=glossary_store,
         roster_store=roster_store,
         timeline_store=timeline_store,
         clue_store=clue_store,
-        material_scope=material_scope,
         assembly=assembly,
     )
     return AgentHarness(
@@ -4219,25 +3270,13 @@ def build_harness(
 
 _PROFILE_BY_MODE: dict[ToolMode, Profile] = {
     "write": "writer",
-    "index": "extract",
-    # 核对任务与建索引同类：只读原文、发布派生记录，不注入文风与旧摘要。
-    "state": "extract",
     "review": "review",
-    # 资料整理只装任务要求、目录与本次范围；不装设定集、谜底与作者计划。
-    # 展开灵感：只装任务要求与那条灵感，不注入文风、设定与旧摘要。
-    "idea": "idea",
 }
 
 
 def _instructions_for(mode: ToolMode) -> str:
-    if mode == "index":
-        return INDEX_INSTRUCTIONS
-    if mode == "state":
-        return STATE_INSTRUCTIONS
     if mode == "review":
         return REVIEW_INSTRUCTIONS
-    if mode == "idea":
-        return IDEA_INSTRUCTIONS
     return ""
 
 
@@ -4271,19 +3310,6 @@ def _int_argument(
     if value < minimum:
         raise _input_error(name, f"必须 ≥ {minimum}")
     return value
-
-
-def _observed_from(value: JSONValue, *, entity: str, entity_digest: str) -> ObservedFact:
-    """把一条披露参数转成记录；缺字段或类型不对时按可修正的输入错误返回。"""
-    if not isinstance(value, dict):
-        raise _input_error("facts", "每一项必须是对象")
-    return ObservedFact(
-        entity_path=entity,
-        entity_digest=entity_digest,
-        fact=_text_argument(value, "fact"),
-        chapter=_int_argument(value, "chapter", default=0, minimum=1),
-        evidence=_evidence_argument(value.get("evidence")),
-    )
 
 
 def _evidence_argument(value: JSONValue, name: str = "evidence") -> ObservedEvidence:
@@ -4368,110 +3394,6 @@ def _clue_from(value: JSONValue) -> ClueEntry:
     )
 
 
-def _publish_clue_analysis(
-    arguments: Mapping[str, JSONValue],
-    *,
-    workspace: Workspace,
-    run: RunContext,
-    store_root: object,
-    scope: ClueReviewScope,
-) -> AgentToolResult:
-    """发布线索核对报告：目标与范围来自受理时冻结，模型只提交判断与证据。"""
-    if store_root is None:
-        raise WorkspaceError(
-            code="CLUE_STATE_FAILED",
-            where="tools.save_review_report",
-            why="这一轮没有可保存核对报告的作品状态目录",
-            fix="在作品会话里发起核对；临时请求不能保存报告",
-        )
-    from pathlib import Path as _Path
-
-    analysis = arguments.get("clue_analysis")
-    if not isinstance(analysis, dict):
-        raise _input_error("clue_analysis", "线索核对要提交冻结目标摘要")
-    submitted = str(analysis.get("inference_id") or "")
-    # 目标标识由受理时冻结；模型漏填时按冻结范围补齐，填了就必须一致。
-    if submitted and submitted != scope.inference_id:
-        raise _input_error("clue_analysis", "推理目标与受理时冻结的目标不一致")
-    targets = _string_list_argument(arguments, "target_paths")
-    if set(targets) != set(scope.target_paths):
-        frozen = json.dumps(list(scope.target_paths), ensure_ascii=False)
-        raise _input_error("target_paths", f"必须与本轮冻结的核对目标一致：{frozen}")
-    status = _text_argument(arguments, "status")
-    if status not in ("findings", "no_findings", "incomplete"):
-        raise _input_error("status", "只能是 findings、no_findings 或 incomplete")
-    draft = ClueReviewDraft(
-        status=status,
-        findings=_clue_findings(arguments.get("findings")),
-        uncovered=_string_list_argument(arguments, "uncovered"),
-    )
-    report = publish_clue_review(
-        scope,
-        draft,
-        requirement=_text_argument(arguments, "requirement"),
-        workspace=workspace,
-        ledger=run.materials,
-        store=ClueLedgerStore(_Path(str(store_root))),
-        turn_id=run.turn_id,
-    )
-    run.record(
-        "review_finished",
-        {
-            "report_id": report.report_id,
-            "clue_report_id": report.report_id,
-            "inference_id": scope.inference_id,
-            "status": report.status,
-            "targets": list(report.target_paths),
-            "findings": report.findings,
-            "uncovered": list(report.uncovered),
-        },
-    )
-    return _json(
-        {
-            "report_id": report.report_id,
-            "status": report.status,
-            "findings": len(report.findings),
-            "uncovered": list(report.uncovered),
-            "coverage": report.coverage,
-        }
-    )
-
-
-def _clue_findings(value: JSONValue) -> tuple[ClueReviewFinding, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise _input_error("findings", "必须是数组")
-    findings: list[ClueReviewFinding] = []
-    for raw in value:
-        if not isinstance(raw, dict):
-            raise _input_error("findings", "每一项必须是对象")
-        kind = raw.get("kind")
-        certainty = raw.get("certainty")
-        description = raw.get("description")
-        suggestion = raw.get("suggestion")
-        if not isinstance(kind, str) or not isinstance(certainty, str):
-            raise _input_error("findings", "kind 与 certainty 必须是字符串")
-        if not isinstance(description, str) or not isinstance(suggestion, str):
-            raise _input_error("findings", "description 与 suggestion 必须是字符串")
-        clue_ids = raw.get("clue_ids")
-        if clue_ids is not None and not (
-            isinstance(clue_ids, list) and all(isinstance(item, str) for item in clue_ids)
-        ):
-            raise _input_error("findings", "clue_ids 必须是字符串数组")
-        findings.append(
-            ClueReviewFinding(
-                kind=kind,
-                certainty=certainty,
-                description=description,
-                suggestion=suggestion,
-                evidence=_evidence_items(raw.get("evidence"), field="findings"),
-                clue_ids=tuple(cast(list[str], clue_ids or [])),
-            )
-        )
-    return tuple(findings)
-
-
 def _evidence_items(value: JSONValue, *, field: str) -> tuple[ReviewEvidence, ...]:
     if value is None:
         return ()
@@ -4527,99 +3449,6 @@ def _review_findings(value: JSONValue) -> tuple[ReviewFinding, ...]:
             )
         )
     return tuple(findings)
-
-
-_INDEX_ENTRY_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "text": {"type": "string", "description": "条目内容"},
-        "evidence": {
-            "type": "array",
-            "items": {"type": "integer", "minimum": 1},
-            "description": "引用哪些证据编号",
-        },
-    },
-    "required": ["text", "evidence"],
-    "additionalProperties": False,
-}
-
-#: 一处原文依据的 JSON Schema。发布类工具共用同一份：字段少一个就等于少一道校验。
-_EVIDENCE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "path": {"type": "string"},
-        "digest": {"type": "string"},
-        "start": {"type": "integer", "minimum": 0},
-        "end": {"type": "integer", "minimum": 0},
-        "quote": {"type": "string", "description": "≤160 字符"},
-    },
-    "required": ["path", "digest", "start", "end", "quote"],
-    "additionalProperties": False,
-}
-
-#: 完整模块身份：库、模块、修订、条目。四段缺一不算引用。
-_REF_SCHEMA: dict[str, Any] = {
-    "type": "array",
-    "items": {"type": "string"},
-    "minItems": 4,
-    "maxItems": 4,
-    "description": "库、模块、修订、条目四段 ID；不知道就省略，不要只写名字",
-}
-
-
-
-def _index_evidence(value: JSONValue) -> tuple[IndexEvidence, ...]:
-    if not isinstance(value, list) or not value:
-        raise _input_error("evidence", "必须是非空数组")
-    items: list[IndexEvidence] = []
-    for raw in value:
-        if not isinstance(raw, dict):
-            raise _input_error("evidence", "每一项必须是对象")
-        index = raw.get("index")
-        start = raw.get("start")
-        end = raw.get("end")
-        quote = raw.get("quote")
-        for name, item in (("index", index), ("start", start), ("end", end)):
-            if isinstance(item, bool) or not isinstance(item, int):
-                raise _input_error("evidence", f"{name} 必须是整数")
-        if not isinstance(quote, str):
-            raise _input_error("evidence", "quote 必须是字符串")
-        items.append(
-            IndexEvidence(
-                index=cast(int, index),
-                start=cast(int, start),
-                end=cast(int, end),
-                quote=quote,
-            )
-        )
-    return tuple(items)
-
-
-def _index_entries(value: JSONValue, kind: EntryKind) -> tuple[ChapterIndexEntry, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise _input_error(kind, "必须是数组")
-    items: list[ChapterIndexEntry] = []
-    for raw in value:
-        if not isinstance(raw, dict):
-            raise _input_error(kind, "每一项必须是对象")
-        text = raw.get("text")
-        evidence = raw.get("evidence")
-        if not isinstance(text, str) or not text:
-            raise _input_error(kind, "每一项都要有非空 text")
-        if not isinstance(evidence, list) or not evidence:
-            raise _input_error(kind, "每一项都要引用证据编号")
-        if not all(isinstance(index, int) and not isinstance(index, bool) for index in evidence):
-            raise _input_error(kind, "evidence 只能包含整数编号")
-        items.append(
-            ChapterIndexEntry(
-                kind=kind,
-                text=text,
-                evidence=tuple(cast(list[int], evidence)),
-            )
-        )
-    return tuple(items)
 
 
 def _optional_int_argument(
@@ -4816,95 +3645,6 @@ def _module_content_grant_arguments(value: JSONValue) -> tuple[ModuleContentGran
             )
         )
     return tuple(grants)
-
-
-def _clue_design_grant_arguments(value: JSONValue) -> tuple[ClueDesignGrant, ...]:
-    """关系操作参数：关联到确切线索，或保存确切目标。"""
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise _input_error("clue_design_grants", "必须是数组")
-    grants: list[ClueDesignGrant] = []
-    for item in value:
-        if not isinstance(item, dict):
-            raise _input_error("clue_design_grants", "每一项必须是对象")
-        action = item.get("action")
-        if action not in ("link", "inference"):
-            raise _input_error("clue_design_grants", f"包含不支持的操作：{action}")
-        clue_id = item.get("clue_id", "")
-        inference_id = item.get("inference_id", "")
-        raw_ids = item.get("clue_ids", [])
-        if not (
-            isinstance(clue_id, str)
-            and isinstance(inference_id, str)
-            and isinstance(raw_ids, list)
-            and all(isinstance(part, str) and part for part in raw_ids)
-        ):
-            raise _input_error(
-                "clue_design_grants", "clue_id、inference_id 与 clue_ids 必须是字符串或字符串数组"
-            )
-        grants.append(
-            ClueDesignGrant(
-                action=cast(Any, action),
-                clue_id=clue_id,
-                inference_id=inference_id,
-                clue_ids=tuple(cast(list[str], raw_ids)),
-            )
-        )
-    return tuple(grants)
-
-
-def _design_source_argument(value: JSONValue) -> DesignSource:
-    """计划来源只接受受管文件或完整模块引用；其他结构在调用服务前拒绝。"""
-    if not isinstance(value, dict):
-        raise _input_error("source", "必须是对象")
-    kind = value.get("kind")
-    if kind == "file":
-        path, digest = value.get("path"), value.get("digest")
-        if not (isinstance(path, str) and path and isinstance(digest, str) and digest):
-            raise _input_error("source", "file 来源要给出 path 与 digest")
-        return FileSource(path=path, digest=digest)
-    if kind == "module":
-        fields = [
-            value.get(name)
-            for name in ("library_id", "module_id", "revision_id", "entry_id", "content_digest")
-        ]
-        if not all(isinstance(part, str) and part for part in fields):
-            raise _input_error(
-                "source", "module 来源要给出库、模块、版本、条目与内容指纹"
-            )
-        return ModuleSource(
-            library_id=cast(str, fields[0]),
-            module_id=cast(str, fields[1]),
-            revision_id=cast(str, fields[2]),
-            entry_id=cast(str, fields[3]),
-            content_digest=cast(str, fields[4]),
-        )
-    raise _input_error("source", "kind 只能是 file 或 module")
-
-
-def _inference_statements_argument(
-    value: JSONValue, name: str
-) -> tuple[InferenceStatement, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise _input_error(name, "必须是数组")
-    statements: list[InferenceStatement] = []
-    for item in value:
-        if not isinstance(item, dict):
-            raise _input_error(name, "每一项必须是对象")
-        try:
-            statements.append(
-                InferenceStatement(
-                    text=str(item.get("text") or ""),
-                    clue_ids=list(_string_list_argument(item, "clue_ids")),
-                    design_link_ids=list(_string_list_argument(item, "design_link_ids")),
-                )
-            )
-        except ValidationError as exc:
-            raise _input_error(name, "每条都要有非空 text，且 clue_ids 为字符串数组") from exc
-    return tuple(statements)
 
 
 def _tool_request_key(

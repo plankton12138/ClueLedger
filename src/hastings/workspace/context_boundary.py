@@ -103,6 +103,7 @@ class RequestBoundary:
                     snapshot=self.snapshot,
                     events=self.events(),
                     signal=signal,
+                    operation_id=self.info.operation_id,
                 )
             except WorkspaceError as exc:
                 self.service.store.append(

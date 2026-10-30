@@ -254,6 +254,15 @@ describe("构思状态", () => {
       }),
     );
     expect(useStoryStore.getState().adoption?.conflict).toBe(false);
+    api.adoptStoryVariant.mockResolvedValueOnce({
+      plan: { source: "variant_alt", target: "main", node_ids: ["n3"], copied: {},
+        unchanged: ["node:n3"], pulled_in: [], skipped_edges: [], conflicts: [],
+        operations: 0, note: "" },
+      receipt: { variant_id: "main", base_revision: "rev_2", revision: "rev_2",
+        change_id: "", request_key: "noop", result: {}, changed: [] },
+    });
+    expect(await useStoryStore.getState().adopt(["n3"])).toBe(true);
+    expect(useStoryStore.getState().lastChange?.change_id).toBe("c1");
 
     api.adoptStoryVariant.mockRejectedValue(
       new WorkspaceApiError("STORY_ADOPTION_CONFLICT", "目标已有同 ID 对象", "确认覆盖", 409, "采用", {
@@ -283,4 +292,15 @@ describe("构思状态", () => {
     expect(useStoryStore.getState().nodeId).toBeNull();
     expect(useStoryStore.getState().detail).toBeNull();
   });
+  it("模型保存后刷新空白构思，不重置当前浏览方案", async () => {
+    api.listStoryVariants.mockResolvedValueOnce({ revision: "empty", primary_variant_id: "", variants: [] });
+    await useStoryStore.getState().load("w1");
+    await useStoryStore.getState().refresh("w1");
+    expect(useStoryStore.getState().graph?.nodes).toHaveLength(2);
+    expect(useStoryStore.getState().variantId).toBe("main");
+    await useStoryStore.getState().selectNode("n1");
+    await useStoryStore.getState().refresh("w1");
+    expect(useStoryStore.getState().nodeId).toBe("n1");
+  });
+
 });

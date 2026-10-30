@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -334,12 +335,17 @@ class ModelConnectionService:
         kind: str,
         model: str,
         connection_id: str | None = None,
+        on_text: Callable[[str], None] | None = None,
     ) -> ProbeResult:
         profile, _ = await self._fresh_probe_profile(draft, connection_id)
         if kind == "tool":
-            return await run_tool_probe(profile, model, factory=self._probe_factory)
+            return await run_tool_probe(
+                profile, model, factory=self._probe_factory, on_text=on_text
+            )
         if kind == "response":
-            return await run_response_probe(profile, model, factory=self._probe_factory)
+            return await run_response_probe(
+                profile, model, factory=self._probe_factory, on_text=on_text
+            )
         raise WorkspaceError(
             code="MODEL_PROBE_KIND_INVALID",
             where="model.probe",

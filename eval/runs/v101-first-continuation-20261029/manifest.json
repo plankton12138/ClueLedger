@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "run_id": "context-20261029-230004-727666",
+  "started_at": "2026-10-29T23:00:04.729372+08:00",
+  "model": "deepseek-flash",
+  "connection_id": "eval-env",
+  "provider_api": "openai-completions",
+  "model_source": ".env",
+  "provider_mode": "product_worker",
+  "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+  "git_commit": "027fc13aa63367b83ca99ad0a0e89880a36b174a",
+  "git_dirty": true,
+  "source_sha256": "5d13bce1b9df3e7f9df9281a97b688566e963af53c58318fc32397cc781e6cff",
+  "cases_sha256": "0a4bb2b1915f64403fbcdde55ebd0f3b7bb6d18862009f53655e7b9c377cc820",
+  "suite": "v101-pending-first",
+  "jobs": [
+    {
+      "key": "v101_o09--current--1",
+      "case": "v101_o09",
+      "family": "O09",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v101_o10--current--1",
+      "case": "v101_o10",
+      "family": "O10",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v101_o11--current--1",
+      "case": "v101_o11",
+      "family": "O11",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    },
+    {
+      "key": "v101_o12--current--1",
+      "case": "v101_o12",
+      "family": "O12",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 1
+    }
+  ],
+  "max_turns": 16,
+  "step_timeout_seconds": 240,
+  "max_provider_calls": 90,
+  "runner_retries": 0,
+  "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261029-230004-727666",
+  "evidence_format": 1,
+  "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+  "variant_policy": "提示分区变体仅移除所选分区；no_compaction 禁用手动与自动摘要，保留轮内裁剪和溢出恢复；公开对话和按需读取工具保留",
+  "observed_provider_parameters": {
+    "max_tokens": 4096,
+    "timeout_seconds": 45.0,
+    "max_retries": 0
+  },
+  "provider_calls_used": 22
+}

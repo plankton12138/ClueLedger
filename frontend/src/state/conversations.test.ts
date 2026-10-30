@@ -36,6 +36,7 @@ vi.mock("../api/workspace", async () => {
   return { ...actual, ...api };
 });
 
+import { useStoryStore } from "./story";
 import { useConversationsStore } from "./conversations";
 import { WorkspaceApiError } from "../api/workspace";
 import type { TextReference } from "./textReferences";
@@ -72,6 +73,7 @@ const FINISHED = {
 
 beforeEach(() => {
   reset();
+  useStoryStore.getState().reset();
   vi.clearAllMocks();
   api.listConversations.mockResolvedValue(list());
   api.fetchConversationUi.mockResolvedValue({ recent_id: "c1", drafts: {}, revision: "r1" });
@@ -825,133 +827,6 @@ describe("草稿与列表", () => {
     );
   });
 
-  it("线索核对把目标、版本与截止章一起提交", async () => {
-    await useConversationsStore.getState().load("w1");
-    api.createConversationWithText.mockResolvedValue({
-      conversation_id: "c5",
-      turn_id: "t5",
-      started_at: "2026-10-22T12:30:00+08:00",
-      title: "核对推理",
-      request_key: "k5",
-    });
-    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
-    api.streamEvents.mockImplementation(async function* () {
-      yield { ...FINISHED, seq: 1 };
-    });
-    useConversationsStore.getState().newConversation();
-
-    await useConversationsStore.getState().send("核对推理：林岚提前接触过原件", undefined, {
-      purpose: "review",
-      reviewPaths: ["正文/0002 照片.md"],
-      clueReview: {
-        inferenceId: "inference_1",
-        inferenceRevision: "rev_1",
-        clueIds: ["clue_1", "clue_2"],
-        asOfChapter: 2,
-      },
-    });
-
-    expect(api.createConversationWithText).toHaveBeenCalledWith(
-      "w1",
-      expect.objectContaining({
-        purpose: "review",
-        review_paths: ["正文/0002 照片.md"],
-        clue_review: {
-          inference_id: "inference_1",
-          inference_revision: "rev_1",
-          clue_ids: ["clue_1", "clue_2"],
-          as_of_chapter: 2,
-        },
-      }),
-    );
-  });
-
-  it("索引任务把用途与目标一起提交", async () => {
-    await useConversationsStore.getState().load("w1");
-    api.createConversationWithText.mockResolvedValue({
-      conversation_id: "c3",
-      turn_id: "t3",
-      started_at: "2026-10-22T11:00:00+08:00",
-      title: "更新章节索引",
-      request_key: "k2",
-    });
-    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
-    api.streamEvents.mockImplementation(async function* () {
-      yield { ...FINISHED, seq: 1 };
-    });
-    useConversationsStore.getState().newConversation();
-
-    await useConversationsStore.getState().send("更新章节索引：第三章", undefined, {
-      purpose: "update_chapter_index",
-      indexPaths: ["正文/0003 书房.md"],
-    });
-
-    expect(api.createConversationWithText).toHaveBeenCalledWith(
-      "w1",
-      expect.objectContaining({
-        purpose: "update_chapter_index",
-        index_paths: ["正文/0003 书房.md"],
-      }),
-    );
-  });
-
-  it("身份核对把用途与小传一起提交", async () => {
-    await useConversationsStore.getState().load("w1");
-    api.createConversationWithText.mockResolvedValue({
-      conversation_id: "c4",
-      turn_id: "t4",
-      started_at: "2026-10-23T10:00:00+08:00",
-      title: "核对人物身份",
-      request_key: "k3",
-    });
-    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
-    api.streamEvents.mockImplementation(async function* () {
-      yield { ...FINISHED, seq: 1 };
-    });
-    useConversationsStore.getState().newConversation();
-
-    await useConversationsStore.getState().send("核对人物身份：林静", undefined, {
-      purpose: "update_disclosure",
-      indexPaths: ["设定集/角色小传/林静.md"],
-    });
-
-    expect(api.createConversationWithText).toHaveBeenCalledWith(
-      "w1",
-      expect.objectContaining({
-        purpose: "update_disclosure",
-        index_paths: ["设定集/角色小传/林静.md"],
-      }),
-    );
-  });
-
-  it("人物状态核对用 update_state 提交同一批小传", async () => {
-    await useConversationsStore.getState().load("w1");
-    api.createConversationWithText.mockResolvedValue({
-      conversation_id: "c5",
-      turn_id: "t5",
-      started_at: "2026-10-23T11:00:00+08:00",
-      title: "核对人物状态",
-      request_key: "k4",
-    });
-    api.conversationMessages.mockResolvedValue({ events: [], last_seq: 0, active_turn: null });
-    api.streamEvents.mockImplementation(async function* () {
-      yield { ...FINISHED, seq: 1 };
-    });
-    useConversationsStore.getState().newConversation();
-
-    await useConversationsStore.getState().send("核对人物状态与时间：林静", undefined, {
-      purpose: "update_state",
-      indexPaths: ["设定集/角色小传/林静.md"],
-    });
-
-    expect(api.createConversationWithText).toHaveBeenCalledWith(
-      "w1",
-      expect.objectContaining({
-        purpose: "update_state",
-        index_paths: ["设定集/角色小传/林静.md"],
-      }),
-    );
-  });
 });
 
 describe("灵感引用（I3）", () => {
@@ -1141,3 +1016,17 @@ describe("正文与装载模块的选段引用", () => {
     };
     expect(review.context.clue_references).toBeUndefined();
   });
+
+
+it("构思面普通消息冻结当前备选和节点，浏览不会改到主方案", async () => {
+  await useConversationsStore.getState().load("w1");
+  useConversationsStore.getState().newConversation();
+  useStoryStore.setState({ open: true, variantId: "alt", nodeId: "n2", graph: {
+    variant_id: "alt", name: "备选", revision: "alt-r1", nodes: [], edges: [], threads: [],
+    event_times: [], constraints: [], collapsed: [],
+  } });
+  await useConversationsStore.getState().send("调整所选节点");
+  expect(api.createConversationWithText.mock.calls[0][1].context.story).toEqual({
+    variant_id: "alt", revision: "alt-r1", node_ids: ["n2"], purpose: "design",
+  });
+});

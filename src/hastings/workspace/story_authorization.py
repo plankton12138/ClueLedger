@@ -1,0 +1,450 @@
+"""对象级授权：把作者本轮的话变成可核对的许可集合（1.0.1 P4）。
+
+模型能做什么由应用决定，不由模型自述。这里不猜测任务意图，只把两件确定的事合起来：
+
+* 界面冻结的节点范围（``StoryContextSnapshot.node_ids``）；
+* 作者本轮原话里出现的对象名称。
+
+从这些对象出发，再把它们直接依存的对象（所属分支、使用的线索、正文关联、两端都在
+范围内的关系、指向这些节点的约定）纳入范围。范围外的已有对象只能读，不能改、不能删；
+新建对象本身是作者要求的创作，允许提交。引用文字里写着「把所有线索都改掉」也不会扩大
+范围——授权只来自作者消息中的对象名称与界面选择。
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.story_context import StoryContextSnapshot
+from hastings.workspace.story_models import (
+    AddClue,
+    AddConstraint,
+    AddNode,
+    AddThread,
+    BindProse,
+    Connect,
+    Disconnect,
+    RecordAssessment,
+    RemoveAssessment,
+    RemoveClue,
+    RemoveConstraint,
+    RemoveNode,
+    RemoveThread,
+    SetEventTime,
+    StoryChangeSet,
+    StoryOperation,
+    StoryVariant,
+    UnbindProse,
+    UnsetEventTime,
+    UpdateClue,
+    UpdateConstraint,
+    UpdateNode,
+    UpdateThread,
+)
+from hastings.workspace.story_store import new_id
+
+__all__ = ["StoryAuthority", "build_authority"]
+
+_LABEL = {
+    "node": "节点",
+    "clue": "线索",
+    "thread": "分支",
+    "constraint": "约定",
+    "edge": "关系",
+    "binding": "正文关联",
+    "assessment": "核对记录",
+}
+
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _flat(text: str) -> str:
+    return _WHITESPACE.sub(" ", text).strip()
+
+
+def _named(title: str, text: str) -> bool:
+    """名称至少两个字，按原样出现在作者话里才算点到；单字名称容易误配。"""
+    name = _flat(title)
+    return len(name) >= 2 and name in text
+
+
+@dataclass(frozen=True)
+class StoryAuthority:
+    """本轮允许模型触及的既有对象；``permitted`` 为空表示只允许新建。"""
+
+    variant_id: str
+    revision: str
+    permitted: frozenset[tuple[str, str]]
+
+    def covers(self, kind: str, object_id: str) -> bool:
+        return (kind, object_id) in self.permitted
+
+    def require(self, operation: StoryOperation) -> None:
+        """范围外的既有对象一律拒绝；新建对象与范围内的修改照常提交。"""
+        for kind, object_id in self._targets(operation):
+            if self.covers(kind, object_id):
+                continue
+            raise WorkspaceError(
+                code="STORY_AUTHORIZATION_CONFLICT",
+                where="story.update",
+                why=f"作者本轮没有要求修改{_LABEL[kind]}「{object_id}」，这次变更没有保存",
+                fix=(
+                    "只改作者明确点到或界面选中的对象；需要改其他对象时先让作者说明要改哪个，"
+                    "或用 read_story 确认名称后再提交"
+                ),
+                details={"object_kind": kind, "object_id": object_id},
+            )
+
+    def describe(self) -> list[dict[str, str]]:
+        return [{"kind": kind, "id": object_id} for kind, object_id in sorted(self.permitted)]
+
+    def _targets(self, operation: StoryOperation) -> list[tuple[str, str]]:
+        if isinstance(operation, (AddNode, AddClue, AddThread, AddConstraint, RecordAssessment)):
+            return []
+        if isinstance(operation, (BindProse, Connect)):
+            return self._creation_targets(operation)
+        if isinstance(operation, UpdateNode | RemoveNode):
+            return [("node", operation.node_id)]
+        if isinstance(operation, UpdateClue | RemoveClue):
+            return [("clue", operation.clue_id)]
+        if isinstance(operation, UpdateThread | RemoveThread):
+            return [("thread", operation.thread_id)]
+        if isinstance(operation, UpdateConstraint | RemoveConstraint):
+            return [("constraint", operation.constraint_id)]
+        if isinstance(operation, Disconnect):
+            return [("edge", operation.edge_id)]
+        if isinstance(operation, UnbindProse):
+            return [("binding", operation.binding_id)]
+        if isinstance(operation, RemoveAssessment):
+            return [("assessment", operation.assessment_id)]
+        if isinstance(operation, (SetEventTime, UnsetEventTime)):
+            # 实际时间表述的是两个节点之间的先后，至少要有一个节点在本轮范围内。
+            if isinstance(operation, SetEventTime):
+                ends = (operation.relation.before_node_id, operation.relation.after_node_id)
+            else:
+                ends = (operation.before_node_id, operation.after_node_id)
+            if any(self.covers("node", node_id) for node_id in ends):
+                return []
+            return [("node", node_id) for node_id in ends]
+        return []  # pragma: no cover - 联合类型穷尽，新增操作必须先补这里
+
+    def _creation_targets(self, operation: BindProse | Connect) -> list[tuple[str, str]]:
+        """新建关系或正文关联：锚点必须是范围内的既有对象。"""
+        if isinstance(operation, BindProse):
+            ends: tuple[str, ...] = (operation.binding.node_id,)
+            kind = "node"
+        else:
+            ends = (operation.edge.from_id, operation.edge.to_id)
+            kind = "node"
+        if any(self.covers(kind, object_id) for object_id in ends):
+            return []
+        return [(kind, object_id) for object_id in ends]
+
+
+def build_authority(
+    variant: StoryVariant,
+    frozen: StoryContextSnapshot,
+    author_text: str,
+) -> StoryAuthority:
+    """按冻结范围与作者原话生成许可集合；不读正文、不调模型。"""
+    text = _flat(author_text)
+    permitted: set[tuple[str, str]] = {
+        ("node", node_id) for node_id in frozen.node_ids if node_id in variant.nodes
+    }
+    for node in variant.nodes.values():
+        if _named(node.title, text):
+            permitted.add(("node", node.id))
+    for clue in variant.clues.values():
+        if _named(clue.title, text):
+            permitted.add(("clue", clue.id))
+    for thread in variant.threads.values():
+        if _named(thread.title, text):
+            permitted.add(("thread", thread.id))
+    for constraint in variant.constraints.values():
+        if _named(constraint.text, text):
+            permitted.add(("constraint", constraint.id))
+
+    # 设计用途且没有选中对象时，作者在整份结构上工作；写入和修订仍只认明确点到或选中的对象。
+    if frozen.purpose == "design" and not frozen.node_ids:
+        for collection, kind in (
+            (variant.nodes, "node"),
+            (variant.clues, "clue"),
+            (variant.threads, "thread"),
+            (variant.constraints, "constraint"),
+            (variant.bindings, "binding"),
+            (variant.edges, "edge"),
+        ):
+            permitted.update((kind, object_id) for object_id in collection)
+
+    prior = -1
+    while prior != len(permitted):
+        prior = len(permitted)
+        for kind, object_id in list(permitted):
+            if kind != "node":
+                continue
+            node = variant.nodes[object_id]
+            permitted.update(("thread", thread_id) for thread_id in node.thread_ids)
+            permitted.update(
+                ("clue", use.clue_id) for use in node.clue_uses if use.clue_id in variant.clues
+            )
+        for clue_id in [oid for kind, oid in permitted if kind == "clue"]:
+            permitted.update(
+                ("node", node_id)
+                for node_id in variant.clues[clue_id].resolution.node_ids
+                if node_id in variant.nodes
+            )
+        for binding in variant.bindings.values():
+            if ("node", binding.node_id) in permitted:
+                permitted.add(("binding", binding.id))
+        for edge in variant.edges.values():
+            if ("node", edge.from_id) in permitted and ("node", edge.to_id) in permitted:
+                permitted.add(("edge", edge.id))
+        for constraint in variant.constraints.values():
+            if (
+                constraint.scope.kind == "node"
+                and ("node", constraint.scope.target_id) in permitted
+            ):
+                permitted.add(("constraint", constraint.id))
+
+    return StoryAuthority(
+        variant_id=variant.id,
+        revision=variant.revision,
+        permitted=frozenset(permitted),
+    )
+
+
+def authorize_change(
+    variant: StoryVariant, frozen: StoryContextSnapshot, author_text: str, change: StoryChangeSet
+) -> None:
+    if frozen.structure_readonly and any(
+        not isinstance(operation, (BindProse, UnbindProse, RecordAssessment))
+        for operation in change.operations
+    ):
+        raise WorkspaceError(
+            code="STORY_AUTHORIZATION_CONFLICT",
+            where="story.update",
+            why="本轮结构只读，候选不能再次改动已经采用的结构",
+            fix="只调整正文及其呈现；结构修改另行提出",
+        )
+    if any(
+        word in author_text for word in ("只讨论", "不保存", "只分析", "不要修改", "不执行修改")
+    ):
+        raise WorkspaceError(
+            code="STORY_AUTHORIZATION_CONFLICT",
+            where="story.update",
+            why="作者本轮要求只讨论，没有保存结构变更的授权",
+            fix="返回讨论结果，不提交变更",
+        )
+    authority = build_authority(variant, frozen, author_text)
+    created = set(authority.permitted)
+    for operation in change.operations:
+        for cls, kind, field in (
+            (AddNode, "node", "node"),
+            (AddClue, "clue", "clue"),
+            (AddThread, "thread", "thread"),
+            (AddConstraint, "constraint", "constraint"),
+        ):
+            if isinstance(operation, cls):
+                created.add((kind, getattr(operation, field).id))
+    authority = StoryAuthority(authority.variant_id, authority.revision, frozenset(created))
+    for operation in change.operations:
+        authority.require(operation)
+
+
+def _explicit(
+    author_text: str, subject: str, category: str, value: str = "", *, remove: bool = False
+) -> bool:
+    """只接受作者直接给出的对象、动作和新值；引用、假设与否定不授予权限。"""
+    text = re.sub(r"```[\s\S]*?```", "", author_text)
+    text = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith(">"))
+    for clause in re.split(r"[。；;\n]", text):
+        if any(
+            word in clause
+            for word in (
+                "不要",
+                "不改",
+                "不能",
+                "禁止",
+                "不许",
+                "只讨论",
+                "不保存",
+                "假设",
+                "如果",
+                "引用",
+                "原文",
+                "转述",
+            )
+        ):
+            continue
+        actions = (
+            ("删除", "移除", "取消")
+            if remove
+            else (
+                "改为",
+                "改成",
+                "设为",
+                "设成",
+                "修改为",
+                "新增",
+                "添加",
+                "增加",
+                "约定：",
+                "约定:",
+            )
+        )
+        if subject and subject not in clause:
+            continue
+        if category not in clause or not any(word in clause for word in actions):
+            continue
+        if remove or (value and value in clause):
+            return True
+    return False
+
+
+def validate_model_change(
+    variant: StoryVariant, change: StoryChangeSet, author_text: str = ""
+) -> None:
+    """统一保护作者真相、必需约定与裁决来源，并由应用固定来源。"""
+    for operation in change.operations:
+        if isinstance(operation, UpdateClue) and operation.clue_id in variant.clues:
+            existing = variant.clues[operation.clue_id]
+            if operation.clue.author_truth != existing.author_truth and not _explicit(
+                author_text, existing.title, "真相", operation.clue.author_truth or ""
+            ):
+                raise WorkspaceError(
+                    code="STORY_AUTHORIZATION_CONFLICT",
+                    where="story.update",
+                    why="本轮无法验证对已有线索真相的对象级修改授权，没有保存变更",
+                    fix="保留原真相；由作者明确说明对象和新的真相内容",
+                )
+        if (
+            isinstance(operation, RemoveClue)
+            and operation.clue_id in variant.clues
+            and variant.clues[operation.clue_id].author_truth is not None
+            and not _explicit(
+                author_text, variant.clues[operation.clue_id].title, "线索", remove=True
+            )
+        ):
+            raise WorkspaceError(
+                code="STORY_AUTHORIZATION_CONFLICT",
+                where="story.update",
+                why="本轮无法验证删除已有线索真相的对象级授权，没有保存变更",
+                fix="保留线索；由作者明确说明对象和新的真相内容",
+            )
+        if (
+            isinstance(operation, RecordAssessment)
+            and operation.assessment.decision_source != "model"
+        ):
+            raise WorkspaceError(
+                code="STORY_AUTHORIZATION_CONFLICT",
+                where="story.update",
+                why="模型不能把核对结论标记为作者或应用裁决",
+                fix="保留模型来源；作者裁决应由作者操作记录",
+            )
+        if (
+            isinstance(operation, RemoveAssessment)
+            and operation.assessment_id in variant.assessments
+            and variant.assessments[operation.assessment_id].decision_source != "model"
+        ):
+            raise WorkspaceError(
+                code="STORY_AUTHORIZATION_CONFLICT",
+                where="story.update",
+                why="模型不能删除作者或应用的核对裁决",
+                fix="保留原裁决，并在新的核对记录中说明变化",
+            )
+        protected = (
+            (isinstance(operation, AddConstraint) and operation.constraint.strength == "required")
+            or (
+                isinstance(operation, UpdateConstraint)
+                and (
+                    operation.constraint.strength == "required"
+                    or (
+                        operation.constraint_id in variant.constraints
+                        and variant.constraints[operation.constraint_id].strength == "required"
+                    )
+                )
+            )
+            or (
+                isinstance(operation, RemoveConstraint)
+                and operation.constraint_id in variant.constraints
+                and variant.constraints[operation.constraint_id].strength == "required"
+            )
+        )
+        allowed_constraint = False
+        if isinstance(operation, AddConstraint):
+            allowed_constraint = _explicit(author_text, "", "约定", operation.constraint.text)
+        elif (
+            isinstance(operation, UpdateConstraint)
+            and operation.constraint_id in variant.constraints
+        ):
+            allowed_constraint = _explicit(
+                author_text,
+                variant.constraints[operation.constraint_id].text,
+                "约定",
+                operation.constraint.text,
+            )
+        elif (
+            isinstance(operation, RemoveConstraint)
+            and operation.constraint_id in variant.constraints
+        ):
+            allowed_constraint = _explicit(
+                author_text, variant.constraints[operation.constraint_id].text, "约定", remove=True
+            )
+        if protected and not allowed_constraint:
+            raise WorkspaceError(
+                code="STORY_AUTHORIZATION_CONFLICT",
+                where="story.update",
+                why="本轮无法验证模型对必需约定的修改授权，没有保存变更",
+                fix="保留现有必需约定，由作者明确说明约定原文和修改后的内容",
+            )
+
+    # 来源和约定修订由应用填入，不能由模型自报为作者原话。
+    for index, operation in enumerate(change.operations):
+        if isinstance(operation, AddClue):
+            change.operations[index] = operation.model_copy(
+                update={
+                    "clue": operation.clue.model_copy(update={"provenance": "authorized_creation"}),
+                }
+            )
+        elif isinstance(operation, UpdateClue) and operation.clue_id in variant.clues:
+            change.operations[index] = operation.model_copy(
+                update={
+                    "clue": operation.clue.model_copy(
+                        update={
+                            "provenance": variant.clues[operation.clue_id].provenance,
+                        }
+                    ),
+                }
+            )
+        elif isinstance(operation, AddConstraint):
+            change.operations[index] = operation.model_copy(
+                update={
+                    "constraint": operation.constraint.model_copy(
+                        update={
+                            "origin": "author_request"
+                            if operation.constraint.strength == "required"
+                            else "model_suggestion",
+                            "source_message_id": "",
+                            "revision": new_id("rev"),
+                        }
+                    ),
+                }
+            )
+        elif (
+            isinstance(operation, UpdateConstraint)
+            and operation.constraint_id in variant.constraints
+        ):
+            original = variant.constraints[operation.constraint_id]
+            change.operations[index] = operation.model_copy(
+                update={
+                    "constraint": operation.constraint.model_copy(
+                        update={
+                            "origin": original.origin,
+                            "source_message_id": original.source_message_id,
+                            "revision": new_id("rev"),
+                        }
+                    ),
+                }
+            )

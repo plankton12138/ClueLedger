@@ -141,7 +141,13 @@ async function waitForRun(
   return { conversationId, events };
 }
 
-test(code) || /连接|端点|凭据|key/i.test(message)) {
+/** 事件只能给出初步分类，断言失败仍需结合页面和脚本判读。 */
+function classify(events: WorkspaceEvent[]): string {
+  const error = events.find((event) => event.type === "error");
+  if (error) {
+    const code = String(error.code ?? "");
+    const message = String(error.message ?? "");
+    if (/MODEL_|PROVIDER|CONNECT/i.test(code) || /连接|端点|凭据|key/i.test(message)) {
       return "端点或网络";
     }
     return "产品接线或规则";

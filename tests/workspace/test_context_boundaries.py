@@ -14,6 +14,7 @@ from hastings.workspace.compaction import active_compaction
 from hastings.workspace.compaction_ops import CompactionRunner
 from hastings.workspace.conversation_usage import context_snapshot, summarize_events
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.operations import Operation
 from tau_agent.messages import AssistantMessage, TextContent, ToolCall, message_text
 from tau_agent.provider_events import AssistantDoneEvent
 
@@ -394,21 +395,72 @@ def test_clue_identity_survives_service_compaction_and_overflow_retry(tmp_path: 
 def test_restart_marks_unfinished_operation_terminal_without_model_call(tmp_path: Path):
     provider = BoundaryProvider()
     service, store, cid, runner = setup(tmp_path, provider)
+    service.operations.create(
+        Operation(
+            id="crashed",
+            owner="test",
+            workspace_id="",
+            conversation_id=cid,
+            turn_id="",
+            purpose="compaction",
+            request_key="same",
+            status="running",
+            phase="running",
+        )
+    )
     store.append(
         cid,
         {
-            "type": "context_compaction_queued",
+            "type": "model_request_started",
             "turn_id": "",
-            "operation": {
-                "operation_id": "crashed",
-                "request_key": "same",
-                "state": "queued",
-            },
+            "operation_id": "crashed",
+            "stage": "compaction",
+            "model": "fake-model",
         },
     )
     runner.recover()
     assert runner.get(cid, "crashed").state == "stopped"
     assert not provider.requests
+    # 重启后没有冻结的摘要请求可以承接：不宣称为可继续，也不自动重新调用模型。
+    stored = service.operations.read("crashed")
+    assert stored.status == "paused"
+    assert not stored.resumable
+    # 没有结束的摘要请求补成中断，累计用量不会再显示「还在进行」。
+    interrupted = [
+        event
+        for event in store.events(cid)
+        if event["type"] == "model_request_finished" and event.get("operation_id") == "crashed"
+    ]
+    assert len(interrupted) == 1
+    assert interrupted[0]["status"] == "interrupted"
     before = len(tuple(store.events(cid)))
     runner.recover()
     assert len(tuple(store.events(cid))) == before
+
+
+def test_compaction_restart_can_continue_frozen_source(tmp_path: Path):
+    async def scenario():
+        provider = BoundaryProvider(hang_summary=True)
+        service, _, cid, runner = setup(tmp_path, provider)
+        operation = await runner.submit(cid, "restart-summary")
+        await asyncio.wait_for(provider.summary_started.wait(), 5)
+        await runner.pause_operation(operation.operation_id, "pause")
+        service.operations.update(
+            operation.operation_id, lambda stored: setattr(stored, "status", "running")
+        )
+        recovered = CompactionRunner(service)
+        recovered.recover()
+        stored = service.operations.read(operation.operation_id)
+        assert stored.status == "paused" and stored.resumable
+        assert len(provider.requests) == 1
+        provider.hang_summary = False
+        await recovered.continue_operation(
+            stored.id, "continue", expected_generation=stored.generation
+        )
+        task = recovered._tasks.get(stored.id)
+        if task:
+            await task
+        assert service.operations.read(stored.id).status == "completed"
+        assert len(provider.requests) == 2
+
+    asyncio.run(scenario())

@@ -1,7 +1,7 @@
 """1.0.1 P5：备选的整案与片段采用。
 
 采用是确定性的结构复制：选中范围、必需前提、冲突与覆盖都要能说清楚，不静默改写目标。
-需要模型按依赖调整正文的 ``assist`` 在这一版明确拒绝。
+``assist`` 在结构采用后受理一次可见操作，由模型按依赖调整正文。
 """
 
 from __future__ import annotations
@@ -20,9 +20,11 @@ from hastings.workspace.story_models import StoryChangeSet
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 
 
-class _NoModel:
+class _NoStream:
+    """不产出内容的模型替身：assist 只验证受理与操作登记，不验证语义。"""
+
     def stream_response(self, **_: Any) -> Any:
-        raise AssertionError("采用接口不应调用模型")
+        raise AssertionError("这一轮不产出内容")
 
 
 @pytest.fixture()
@@ -31,7 +33,7 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     app = create_workspace_app(
         workspaces=book,
         provider_factory=lambda: ModelSnapshot(
-            connection_id="test", display_name="测试连接", model="fake", provider=_NoModel()
+            connection_id="test", display_name="测试连接", model="fake", provider=_NoStream()
         ),
     )
     with TestClient(app) as opened:
@@ -299,11 +301,60 @@ def test_whole_variant_adoption_and_idempotent_retry(client: TestClient, tmp_pat
     again = client.post(f"/api/file-workspaces/{workspace_id}/story/adoptions", json=body)
     assert again.status_code == 200
     assert again.json()["receipt"]["revision"] == revision
+    assert again.json()["plan"] == first.json()["plan"]
+    altered = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/adoptions",
+        json={**body, "node_ids": ["n1"]},
+    )
+    assert altered.status_code == 409
+    assert altered.json()["error"]["code"] == "STORY_REQUEST_CONFLICT"
+    changed_mode = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/adoptions", json={**body, "mode": "assist"}
+    )
+    assert changed_mode.status_code == 409
+    assert changed_mode.json()["error"]["code"] == "STORY_REQUEST_CONFLICT"
     merged = store.read().variant(MAIN_VARIANT_ID)
     assert merged is not None and set(merged.nodes) == {"n1", "n2", "n3"}
 
 
-def test_stale_revision_and_assist_are_rejected(client: TestClient, tmp_path: Path) -> None:
+def test_noop_adoption_reserves_request_key_and_rechecks_revision(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store, alt_id = seed_both(tmp_path, workspace_id)
+    current = revisions(client, workspace_id)
+    url = f"/api/file-workspaces/{workspace_id}/story/adoptions"
+    body = {
+        "source_variant_id": alt_id,
+        "source_revision": current[alt_id],
+        "target_variant_id": MAIN_VARIANT_ID,
+        "target_revision": current[MAIN_VARIANT_ID],
+        "node_ids": ["n1"],
+        "request_key": "no-change",
+    }
+    first = client.post(url, json=body)
+    assert first.status_code == 200, first.text
+    assert first.json()["plan"]["operations"] == 0
+    assert client.post(url, json=body).json() == first.json()
+    different = client.post(url, json={**body, "replace": True})
+    assert different.status_code == 409
+    assert different.json()["error"]["code"] == "STORY_REQUEST_CONFLICT"
+    # 无改动也要验证作者看到的目标修订。
+    main = store.require_variant(MAIN_VARIANT_ID)
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        change=change(
+            [{"op": "add_node", "node": {"id": "later", "title": "后续", "action": "继续调查"}}],
+            key="later", base=main.revision,
+        ),
+        request_key="later",
+    )
+    stale = client.post(url, json={**body, "request_key": "new-request"})
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "STORY_REVISION_CONFLICT"
+
+
+def test_stale_revision_is_rejected(client: TestClient, tmp_path: Path) -> None:
     workspace_id = open_workspace(client, tmp_path)
     store, alt_id = seed_both(tmp_path, workspace_id)
     current = revisions(client, workspace_id)
@@ -321,13 +372,68 @@ def test_stale_revision_and_assist_are_rejected(client: TestClient, tmp_path: Pa
     )
     assert stale.status_code == 409
     assert stale.json()["error"]["code"] == "STORY_REVISION_CONFLICT"
-
-    assist = client.post(
-        f"/api/file-workspaces/{workspace_id}/story/adoptions",
-        json={**base, "mode": "assist", "request_key": "adopt-assist"},
-    )
-    assert assist.status_code == 400
-    assert assist.json()["error"]["code"] == "STORY_ADOPTION_UNAVAILABLE"
-    # 明确拒绝时不写任何结构。
     before = store.read().variant(MAIN_VARIANT_ID)
     assert before is not None and set(before.nodes) == {"n1", "n2"}
+
+
+def test_assist_adopts_structure_and_accepts_visible_operation(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store, alt_id = seed_both(tmp_path, workspace_id)
+    current = revisions(client, workspace_id)
+    body = {
+        "source_variant_id": alt_id,
+        "source_revision": current[alt_id],
+        "target_variant_id": MAIN_VARIANT_ID,
+        "target_revision": current[MAIN_VARIANT_ID],
+        "node_ids": ["n3"],
+        "mode": "assist",
+        "request_key": "assist-n3",
+    }
+
+    first = client.post(f"/api/file-workspaces/{workspace_id}/story/adoptions", json=body)
+    assert first.status_code == 200, first.text
+    result = first.json()
+    assert result["plan"]["copied"]["nodes"] == ["n3"]
+    assert result["receipt"]["revision"]
+    merged = store.read().variant(MAIN_VARIANT_ID)
+    assert merged is not None and "n3" in merged.nodes
+
+    operation_id = result["operation_id"]
+    assert operation_id
+    operations = client.app.state.operations  # type: ignore[attr-defined]
+    operation = operations.read(operation_id)
+    assert operation.turn_id
+    assert operation.purpose == "chat"
+    assert operation.recovery_request["context"]["story"]["structure_readonly"] is True
+
+    # 同键重试返回同一个操作，不重复受理。
+    again = client.post(f"/api/file-workspaces/{workspace_id}/story/adoptions", json=body)
+    assert again.status_code == 200
+    assert again.json()["operation_id"] == operation_id
+
+
+def test_assist_without_changes_does_not_start_a_model_turn(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store, alt_id = seed_both(tmp_path, workspace_id)
+    current = revisions(client, workspace_id)
+    url = f"/api/file-workspaces/{workspace_id}/story/adoptions"
+    # n1 在主方案与备选里一致：没有可复制的对象，也就不需要模型调整正文。
+    body = {
+        "source_variant_id": alt_id,
+        "source_revision": current[alt_id],
+        "target_variant_id": MAIN_VARIANT_ID,
+        "target_revision": current[MAIN_VARIANT_ID],
+        "node_ids": ["n1"],
+        "mode": "assist",
+        "request_key": "assist-noop",
+    }
+    response = client.post(url, json=body)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["plan"]["operations"] == 0
+    assert result["operation_id"] == ""
+    assert "没有启动正文调整" in result["plan"]["note"]

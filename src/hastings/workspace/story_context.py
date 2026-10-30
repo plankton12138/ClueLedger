@@ -23,6 +23,30 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
+from hastings.prompts.story import (
+    AUTHOR_WRITING_CHECKS,
+    CLUE_INTENT_UNWRITTEN,
+    CLUE_RESOLUTION_OPEN,
+    CLUE_RESOLUTION_UNDECIDED,
+    DEFAULT_SPEAKER,
+    EMPTY_PLAN_TEXT,
+    SECTION_LABELS,
+    clue_plan_line,
+    clue_resolution_explained,
+    clue_truth_line,
+    constraint_line,
+    judgement_line,
+    knowledge_line,
+    prerequisite_line,
+    prose_binding_line,
+    reader_speaker_prefix,
+    split_note,
+    story_head,
+    story_overview_line,
+    story_plan_line,
+    testimony_narration_line,
+    testimony_speech_line,
+)
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.story_models import (
     Clue,
@@ -39,15 +63,20 @@ from hastings.workspace.story_store import (
 
 __all__ = [
     "READER_PURPOSE",
-    "READER_QUESTION",
+    "SPLIT_MARGIN",
+    "StoryBatch",
     "StoryContextSnapshot",
     "StoryInput",
     "StoryRequest",
     "StorySection",
+    "StorySplit",
     "assemble_reader_input",
     "assemble_story_input",
     "assert_reader_isolated",
     "freeze_story_context",
+    "scoped_request",
+    "split_story_request",
+    "story_required_chars",
     "verify_story_context",
 ]
 
@@ -55,10 +84,7 @@ StoryPurpose = Literal["discuss", "design", "write", "revise", "review", "reader
 
 READER_PURPOSE: StoryPurpose = "reader_preview"
 
-#: 试读的问题由应用固定，不接收作者的自由提问：问题本身会泄露隐藏信息。
-READER_QUESTION = (
-    "根据已经读到的内容，你认为接下来最可能发生什么？只依据读到的部分，并引用一两处原文。"
-)
+
 
 #: 标题短于这个长度不参与泄露检查：单字标题在正常行文里出现不算泄露。
 _MIN_FORBIDDEN = 2
@@ -73,6 +99,7 @@ class StoryRequest:
     node_ids: tuple[str, ...] = ()
     purpose: StoryPurpose = "write"
     reader_cutoff: str | None = None
+    structure_readonly: bool = False
 
     def identity(self) -> dict[str, object]:
         return {
@@ -81,6 +108,7 @@ class StoryRequest:
             "node_ids": list(self.node_ids),
             "purpose": self.purpose,
             "reader_cutoff": self.reader_cutoff,
+            "structure_readonly": self.structure_readonly,
         }
 
     @classmethod
@@ -109,6 +137,7 @@ class StoryRequest:
             node_ids=tuple(str(item) for item in nodes),
             purpose=purpose,  # type: ignore[arg-type]
             reader_cutoff=str(cutoff) if cutoff else None,
+            structure_readonly=bool(raw.get("structure_readonly", False)),
         )
 
 
@@ -121,6 +150,7 @@ class StoryContextSnapshot:
     node_ids: tuple[str, ...] = ()
     purpose: StoryPurpose = "write"
     reader_cutoff: str | None = None
+    structure_readonly: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -129,6 +159,7 @@ class StoryContextSnapshot:
             "node_ids": list(self.node_ids),
             "purpose": self.purpose,
             "reader_cutoff": self.reader_cutoff,
+            "structure_readonly": self.structure_readonly,
         }
 
     @classmethod
@@ -145,6 +176,7 @@ class StoryContextSnapshot:
             node_ids=tuple(str(item) for item in nodes) if isinstance(nodes, list) else (),
             purpose=purpose,  # type: ignore[arg-type]
             reader_cutoff=str(cutoff) if cutoff else None,
+            structure_readonly=bool(raw.get("structure_readonly", False)),
         )
 
 
@@ -169,6 +201,12 @@ class StorySection:
         }
 
 
+def _section(key: str, text: str, *, required: bool = True) -> StorySection:
+    """按分区键取标题与说明，避免标题和说明散落在装配代码里。"""
+    title, note = SECTION_LABELS[key]
+    return StorySection(key=key, title=title, note=note, text=text, required=required)
+
+
 @dataclass(frozen=True, slots=True)
 class StoryInput:
     """一次装配的结果：实际进入请求的块、被省略的内容与覆盖范围。"""
@@ -185,15 +223,10 @@ class StoryInput:
         return not any(section.text.strip() for section in self.sections)
 
     def render(self) -> str:
-        head = (
-            "## 构思结构\n"
-            f"方案 `{self.variant_id}` · 修订 `{self.revision}`。"
-            "以下分栏说明每种内容是什么；不要把一个角色说的话当成作者真相，"
-            "也不要把创作目标当成读者已经产生的理解。"
-        )
-        body = "\n\n".join(
-            section.render() for section in self.sections if section.text.strip()
-        )
+        head = story_head(self.variant_id, self.revision)
+        if not self.reader:
+            head += AUTHOR_WRITING_CHECKS
+        body = "\n\n".join(section.render() for section in self.sections if section.text.strip())
         return f"{head}\n\n{body}" if body else ""
 
     def summary(self) -> dict[str, object]:
@@ -210,9 +243,7 @@ class StoryInput:
 # -- 冻结与复核 -------------------------------------------------------------
 
 
-def freeze_story_context(
-    store: StoryStore, request: StoryRequest
-) -> StoryContextSnapshot:
+def freeze_story_context(store: StoryStore, request: StoryRequest) -> StoryContextSnapshot:
     """受理时固定方案与位置；方案或节点不存在当场失败。"""
     snapshot = store.read()
     if snapshot.document is None:
@@ -239,6 +270,7 @@ def freeze_story_context(
             node_ids=(),
             purpose=request.purpose,
             reader_cutoff=None,
+            structure_readonly=request.structure_readonly,
         )
     variant_id = request.variant_id or snapshot.document.primary_variant_id
     variant = snapshot.variant(variant_id)
@@ -289,6 +321,7 @@ def freeze_story_context(
         node_ids=request.node_ids,
         purpose=request.purpose,
         reader_cutoff=request.reader_cutoff,
+        structure_readonly=request.structure_readonly,
     )
 
 
@@ -387,9 +420,7 @@ def _thread_titles(variant: StoryVariant, node: StoryNode) -> str:
     return "、".join(names)
 
 
-def _involved_clues(
-    variant: StoryVariant, nodes: Iterable[StoryNode]
-) -> list[Clue]:
+def _involved_clues(variant: StoryVariant, nodes: Iterable[StoryNode]) -> list[Clue]:
     """必需线索：被选中节点用到的，以及明确回收在这些节点上的。"""
     selected_ids = {node.id for node in nodes}
     wanted: list[str] = []
@@ -405,15 +436,10 @@ def _involved_clues(
     return [variant.clues[clue_id] for clue_id in wanted if clue_id in variant.clues]
 
 
-def _applicable_constraints(
-    variant: StoryVariant, nodes: Iterable[StoryNode]
-) -> list[Constraint]:
+def _applicable_constraints(variant: StoryVariant, nodes: Iterable[StoryNode]) -> list[Constraint]:
     node_ids = {node.id for node in nodes}
-    subjects = {
-        change.subject_id
-        for node in nodes
-        for change in node.knowledge_changes
-    }
+    subjects = {change.subject_id for node in nodes for change in node.knowledge_changes}
+
     def applies(scope: object) -> bool:
         kind = getattr(scope, "kind", "")
         target = getattr(scope, "target_id", "")
@@ -425,11 +451,7 @@ def _applicable_constraints(
             return target in subjects
         return False
 
-    return [
-        constraint
-        for constraint in variant.constraints.values()
-        if applies(constraint.scope)
-    ]
+    return [constraint for constraint in variant.constraints.values() if applies(constraint.scope)]
 
 
 def _knowledge_lines(
@@ -438,9 +460,7 @@ def _knowledge_lines(
     ancestors: Mapping[str, frozenset[str]],
 ) -> list[str]:
     """角色在当前位置知道什么：只看能到达选中节点的变化，不拿后章状态写前章。"""
-    subjects = {
-        change.subject_id for node in nodes for change in node.knowledge_changes
-    }
+    subjects = {change.subject_id for node in nodes for change in node.knowledge_changes}
     if not subjects:
         return []
     visible: set[str] = set()
@@ -459,8 +479,7 @@ def _knowledge_lines(
             if key in seen:
                 continue
             seen.add(key)
-            stance = "知道" if change.stance == "knows" else "相信"
-            lines.append(f"- {change.subject_id} {stance}：{change.claim}")
+            lines.append(knowledge_line(change.subject_id, change.stance == "knows", change.claim))
     return lines
 
 
@@ -475,16 +494,10 @@ def assemble_story_input(
     if not nodes:
         # 没有指定节点：只给方案概况，够讨论用，不假装知道作者在写哪一段。
         lines = [
-            f"- 「{node.title}」（{len(node.clue_uses)} 条线索）"
+            story_overview_line(node.title, len(node.clue_uses))
             for node in list(variant.nodes.values())[:40]
         ]
-        section = StorySection(
-            key="overview",
-            title="方案概况",
-            note="这一轮没有指定节点，只列已有节点标题；需要细节时先选定节点。",
-            text="\n".join(lines),
-            required=False,
-        )
+        section = _section("overview", "\n".join(lines), required=False)
         return StoryInput(
             variant_id=variant.id,
             revision=variant.revision,
@@ -499,28 +512,23 @@ def assemble_story_input(
     plan_lines: list[str] = []
     for node in nodes:
         threads = _thread_titles(variant, node)
-        suffix = f"（分支：{threads}）" if threads else ""
-        time_note = f"；时间：{node.time_note}" if node.time_note else ""
-        plan_lines.append(f"- 「{node.title}」{suffix}：{node.action}{time_note}")
+        plan_lines.append(story_plan_line(node.title, threads, node.action, node.time_note))
     for clue in clues:
-        intent = clue.intention.strip() or "未写回收意图"
+        intent = clue.intention.strip() or CLUE_INTENT_UNWRITTEN
         if clue.resolution.intent == "explain":
             targets = "、".join(
                 variant.nodes[item].title
                 for item in clue.resolution.node_ids
                 if item in variant.nodes
             )
-            resolution = f"计划在「{targets}」解释"
+            resolution = clue_resolution_explained(targets)
         elif clue.resolution.intent == "leave_open":
-            resolution = "计划保持不解释"
+            resolution = CLUE_RESOLUTION_OPEN
         else:
-            resolution = "回收方式未定"
-        plan_lines.append(f"- 线索「{clue.title}」：{intent}；{resolution}")
+            resolution = CLUE_RESOLUTION_UNDECIDED
+        plan_lines.append(clue_plan_line(clue.title, intent, resolution))
 
-    truth_lines = [
-        f"- 「{clue.title}」：{'未定' if clue.author_truth is None else clue.author_truth}"
-        for clue in clues
-    ]
+    truth_lines = [clue_truth_line(clue.title, clue.author_truth) for clue in clues]
 
     testimony_lines: list[str] = []
     judgement_lines: list[str] = []
@@ -529,20 +537,17 @@ def assemble_story_input(
             used_clue = variant.clues.get(use.clue_id)
             title = used_clue.title if used_clue is not None else use.clue_id
             if use.mode == "testimony":
-                speaker = use.speaker_id or "某个角色"
+                speaker = use.speaker_id or DEFAULT_SPEAKER
                 testimony_lines.append(
-                    f"- 在「{node.title}」里 {speaker} 说：{use.presentation}"
-                    "（这是角色的话，不等于作者真相）"
+                    testimony_speech_line(node.title, speaker, use.presentation)
                 )
             elif use.mode in ("hypothesis", "recollection", "dream"):
                 testimony_lines.append(
-                    f"- 在「{node.title}」里以 {use.mode} 呈现「{title}」：{use.presentation}"
-                    "（这是叙述中的推测或回忆，不等于事实）"
+                    testimony_narration_line(node.title, use.mode, title, use.presentation)
                 )
             if use.expected_interpretation.strip():
                 judgement_lines.append(
-                    f"- 「{node.title}」想引导读者理解为：{use.expected_interpretation}"
-                    "（这是创作目标，不表示读者已经这样理解）"
+                    judgement_line(node.title, use.expected_interpretation)
                 )
 
     plan_ids = {node.id for node in nodes}
@@ -559,8 +564,9 @@ def assemble_story_input(
                 if use.clue_id != clue.id:
                     continue
                 prerequisite_lines.append(
-                    f"- 线索「{clue.title}」在「{node.title}」里已经这样出现：{use.presentation}"
-                    f"（{use.mode}）"
+                    prerequisite_line(
+                        clue.title, node.title, use.presentation, use.mode
+                    )
                 )
 
     knowledge_lines = _knowledge_lines(variant, nodes, ancestors)
@@ -569,91 +575,31 @@ def assemble_story_input(
         for binding in variant.bindings.values():
             if binding.node_id != node.id:
                 continue
-            observation = binding.observation.strip() or "尚未记录观察"
             prose_lines.append(
-                f"- 「{node.title}」在 `{binding.path}` 的原文：{binding.quote}"
-                f"（观察：{observation}）"
+                prose_binding_line(node.title, binding.path, binding.quote, binding.observation)
             )
 
     constraint_lines = [
-        f"- {constraint.text}"
-        + ("" if constraint.strength == "required" else "（偏好，可权衡）")
+        constraint_line(constraint.text, constraint.strength == "required")
         for constraint in constraints
     ]
 
     sections: list[StorySection] = []
     if truth_lines:
-        sections.append(
-            StorySection(
-                key="truth",
-                title="作者真相",
-                note="只有作者知道的事实；角色与读者未必知道，写场景时不要直接说出来。",
-                text="\n".join(truth_lines),
-            )
-        )
-    sections.append(
-        StorySection(
-            key="plan",
-            title="创作计划",
-            note="作者打算怎么安排；这是计划，不是已经写出来的正文。",
-            text="\n".join(plan_lines) or "（没有可用的计划内容）",
-        )
-    )
+        sections.append(_section("truth", "\n".join(truth_lines)))
+    sections.append(_section("plan", "\n".join(plan_lines) or EMPTY_PLAN_TEXT))
     if prerequisite_lines:
-        sections.append(
-            StorySection(
-                key="prerequisites",
-                title="必需前提",
-                note="这些内容在前面已经出现，回收或回应时要与之相符；不含后面的安排。",
-                text="\n".join(prerequisite_lines),
-            )
-        )
+        sections.append(_section("prerequisites", "\n".join(prerequisite_lines)))
     if constraint_lines:
-        sections.append(
-            StorySection(
-                key="constraints",
-                title="本作品约定",
-                note="作者定下的约束；与计划冲突时以约定为准。",
-                text="\n".join(constraint_lines),
-            )
-        )
+        sections.append(_section("constraints", "\n".join(constraint_lines)))
     if knowledge_lines:
-        sections.append(
-            StorySection(
-                key="knowledge",
-                title="角色知情（按位置）",
-                note="只列与当前节点相关的知情变化；后面才发生的变化不能用在这一段。",
-                text="\n".join(knowledge_lines),
-            )
-        )
+        sections.append(_section("knowledge", "\n".join(knowledge_lines)))
     if prose_lines:
-        sections.append(
-            StorySection(
-                key="prose",
-                title="正文观察",
-                note="读者已经读到的原句与当时的观察；与计划冲突时以原文为准。",
-                text="\n".join(prose_lines),
-            )
-        )
+        sections.append(_section("prose", "\n".join(prose_lines)))
     if testimony_lines:
-        sections.append(
-            StorySection(
-                key="testimony",
-                title="角色证词与推测",
-                note="角色说出来的话；可以是假话或误信，不能当成作者真相。",
-                text="\n".join(testimony_lines),
-            )
-        )
+        sections.append(_section("testimony", "\n".join(testimony_lines)))
     if judgement_lines:
-        sections.append(
-            StorySection(
-                key="judgement",
-                title="创作目标",
-                note="作者希望读者产生的理解；可以实现得更好或更含蓄，但不是既成事实。",
-                text="\n".join(judgement_lines),
-                required=False,
-            )
-        )
+        sections.append(_section("judgement", "\n".join(judgement_lines), required=False))
 
     omitted: list[dict[str, str]] = []
     rendered = sum(len(section.text) for section in sections)
@@ -693,10 +639,148 @@ def assemble_story_input(
     )
 
 
+# -- 任务拆分 ---------------------------------------------------------------
+
+#: 拆分时给「本轮只处理第几组」的说明预留的字符数：说明也进入结构分区。
+SPLIT_MARGIN = 600
+
+#: 拆分说明里最多直接列出的节点标识；其余用「等」收口，避免说明本身过长。
+_SPLIT_ID_LIMIT = 12
+
+
+def story_required_chars(variant: StoryVariant, frozen: StoryContextSnapshot) -> int:
+    """必需分区在装配里占用的字符数；不应用容量，因此不会抛出缺口错误。"""
+    assembled = assemble_story_input(variant, frozen)
+    return sum(len(section.text) for section in assembled.sections if section.required)
+
+
+@dataclass(frozen=True, slots=True)
+class StoryBatch:
+    """拆分后的一组节点：整组一起发起时必需内容放得下。"""
+
+    node_ids: tuple[str, ...]
+    required: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {"node_ids": list(self.node_ids), "required": self.required}
+
+
+@dataclass(frozen=True, slots=True)
+class StorySplit:
+    """一次超过容量的任务被拆成的若干组，以及因容量停下的节点。"""
+
+    batches: tuple[StoryBatch, ...]
+    stopped: tuple[str, ...]
+    capacity: int
+
+    def summary(self) -> dict[str, object]:
+        return {
+            "capacity": self.capacity,
+            "batches": [batch.to_dict() for batch in self.batches],
+            "stopped": list(self.stopped),
+        }
+
+    def note(self) -> str:
+        """这一轮只说第 1 组：模型不能把没装进来的节点当成同一轮的目标。"""
+        first = _ids_text(self.batches[0].node_ids)
+        stopped = _ids_text(self.stopped) if self.stopped else ""
+        return split_note(self.capacity, len(self.batches), first, stopped)
+
+
+def _ids_text(node_ids: Iterable[str]) -> str:
+    ids = list(node_ids)
+    head = "、".join(ids[:_SPLIT_ID_LIMIT])
+    return f"{head} 等 {len(ids)} 个" if len(ids) > _SPLIT_ID_LIMIT else head
+
+
+def split_story_request(
+    variant: StoryVariant, frozen: StoryContextSnapshot, *, capacity: int
+) -> StorySplit:
+    """按必需内容把一次多节点任务拆成能单独发起的组。
+
+    单个节点装不下时连同依赖它的后继一起停下：那些节点的前提不全，不能继续写。
+    所有节点都装不下时不再拆分，直接报缺口，避免给出一个实际无法执行的计划。
+    """
+    selected = list(dict.fromkeys(frozen.node_ids))
+    if len(selected) < 2:
+        required = story_required_chars(variant, frozen)
+        raise WorkspaceError(
+            code="STORY_CONTEXT_INCOMPLETE",
+            where="story.split",
+            why=f"单个节点的必需内容需要 {required} 字符，超出本次容量 {capacity}，无法再拆分",
+            fix="缩小这个节点的结构内容，或把它拆成几个更小的任务",
+            details={"required": required, "capacity": capacity},
+        )
+
+    ancestors = _ancestors(variant)
+    stopped: set[str] = {
+        node_id
+        for node_id in selected
+        if story_required_chars(variant, scoped_request(frozen, (node_id,))) > capacity
+    }
+    # 依赖被停下节点的后继也必须停下：后面的内容缺了前提。
+    changed = True
+    while changed:
+        changed = False
+        for node_id in selected:
+            if node_id in stopped:
+                continue
+            if ancestors.get(node_id, frozenset()) & stopped:
+                stopped.add(node_id)
+                changed = True
+
+    batches: list[StoryBatch] = []
+    current: tuple[str, ...] = ()
+    for node_id in selected:
+        if node_id in stopped:
+            continue
+        candidate = (*current, node_id)
+        if story_required_chars(variant, scoped_request(frozen, candidate)) <= capacity:
+            current = candidate
+            continue
+        if current:
+            batches.append(
+                StoryBatch(current, story_required_chars(variant, scoped_request(frozen, current)))
+            )
+        current = (node_id,)
+    if current:
+        batches.append(
+            StoryBatch(current, story_required_chars(variant, scoped_request(frozen, current)))
+        )
+    if not batches:
+        required = story_required_chars(variant, frozen)
+        raise WorkspaceError(
+            code="STORY_CONTEXT_INCOMPLETE",
+            where="story.split",
+            why=f"每个节点的必需内容都超出本次容量 {capacity} 字符",
+            fix="缩小节点范围，或把结构内容拆成更小的任务",
+            details={"required": required, "capacity": capacity, "stopped": sorted(stopped)},
+        )
+    return StorySplit(
+        batches=tuple(batches),
+        stopped=tuple(node_id for node_id in selected if node_id in stopped),
+        capacity=capacity,
+    )
+
+
+def scoped_request(frozen: StoryContextSnapshot, node_ids: tuple[str, ...]) -> StoryContextSnapshot:
+    """同一方案与修订下的另一个节点范围；拆分与装配共用同一份冻结身份。"""
+    return StoryContextSnapshot(
+        variant_id=frozen.variant_id,
+        revision=frozen.revision,
+        node_ids=node_ids,
+        purpose=frozen.purpose,
+        reader_cutoff=frozen.reader_cutoff,
+        structure_readonly=frozen.structure_readonly,
+    )
+
+
 # -- 试读 -------------------------------------------------------------------
 
 
-def assemble_reader_input(variant: StoryVariant, cutoff: str) -> StoryInput:
+def assemble_reader_input(
+    variant: StoryVariant, cutoff: str, *, prose: Mapping[str, tuple[str, str]] | None = None
+) -> StoryInput:
     """读者阶段能看到的内容：截止节点及其前驱的呈现稿，不含真相、计划与约定。"""
     ancestors = _ancestors(variant)
     if cutoff not in variant.nodes:
@@ -712,17 +796,31 @@ def assemble_reader_input(variant: StoryVariant, cutoff: str) -> StoryInput:
 
     lines: list[str] = []
     for node in ordered:
-        lines.append(f"- 「{node.title}」：{node.action}")
+        bindings = [binding for binding in variant.bindings.values() if binding.node_id == node.id]
+        if bindings and prose is not None:
+            for binding in bindings:
+                digest, text = prose.get(binding.path, ("", ""))
+                if digest != binding.digest or text[binding.start : binding.end] != binding.quote:
+                    raise WorkspaceError(
+                        code="STORY_READER_SOURCE_CONFLICT",
+                        where="story.reader",
+                        why="试读关联的正文已经变化",
+                        fix="重新核对正文关联后再试读",
+                    )
+                lines.append(binding.quote)
+            continue
         for use in node.clue_uses:
-            speaker = f"{use.speaker_id} 说：" if use.speaker_id else ""
+            speaker = reader_speaker_prefix(use.speaker_id) if use.speaker_id else ""
             # 不打印线索标题：标题常常直接写着答案，读者阶段看不到它。
             lines.append(f"  - {speaker}{use.presentation}")
-    section = StorySection(
-        key="reader_prefix",
-        title="已读到的内容",
-        note="只包含截止位置之前读者能看到的呈现稿，不含作者真相、计划与约定。",
-        text="\n".join(lines),
-    )
+    if not any(line.strip() for line in lines):
+        raise WorkspaceError(
+            code="STORY_CONTEXT_INCOMPLETE",
+            where="story.reader",
+            why="截止位置之前没有可试读的正文关联或呈现稿",
+            fix="先写场景或补充读者实际可见的呈现",
+        )
+    section = _section("reader_prefix", "\n".join(lines))
     hidden = _hidden_strings(variant, allowed)
     return StoryInput(
         variant_id=variant.id,

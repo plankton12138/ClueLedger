@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,32 @@ class _NoModel:
 
     def stream_response(self, **_: Any) -> Any:
         raise AssertionError("结构接口不应调用模型")
+
+
+class _ScriptedModel:
+    """试读用例的受控回复；不访问网络，只证明请求确实发出并收到结果。"""
+
+    def __init__(self) -> None:
+        self.requests: list[dict[str, Any]] = []
+
+    def stream_response(self, **kwargs: Any) -> Any:
+        from tau_agent.messages import AssistantMessage, TextContent
+        from tau_agent.provider_events import AssistantDoneEvent, AssistantStartEvent
+
+        self.requests.append(
+            {"system": kwargs.get("system") or "", "tools": list(kwargs.get("tools") or [])}
+        )
+
+        async def generator() -> Any:
+            yield AssistantStartEvent(partial=AssistantMessage(content=[]))
+            yield AssistantDoneEvent(
+                reason="stop",
+                message=AssistantMessage(
+                    content=[TextContent(text="我猜管家有问题。")], stop_reason="stop"
+                ),
+            )
+
+        return generator()
 
 
 @pytest.fixture()
@@ -108,6 +135,35 @@ def test_empty_structure_is_an_empty_list_not_an_error(
     assert response.json() == {"revision": "", "primary_variant_id": "", "variants": []}
 
 
+def test_changes_with_common_request_key_prefix_keep_both_receipts(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    seed(tmp_path, workspace_id)
+    url = f"/api/file-workspaces/{workspace_id}/story/changes"
+    prefix = "a" * 24
+    first = client.post(url, json={
+        "variant_id": MAIN_VARIANT_ID,
+        "expected_revision": revision_of(client, workspace_id),
+        "request_key": prefix + "1",
+        "operations": [{"op": "add_node", "node": {"id": "n3", "title": "三", "action": "行动"}}],
+    })
+    assert first.status_code == 201, first.text
+    second = client.post(url, json={
+        "variant_id": MAIN_VARIANT_ID,
+        "expected_revision": first.json()["revision"],
+        "request_key": prefix + "2",
+        "operations": [{"op": "add_node", "node": {"id": "n4", "title": "四", "action": "行动"}}],
+    })
+    assert second.status_code == 201, second.text
+    assert first.json()["change_id"] != second.json()["change_id"]
+    store = StoryStore(conversation_root(tmp_path / "state", workspace_id))
+    document = store.read().document
+    assert document is not None
+    assert first.json()["change_id"] in document.changes
+    assert second.json()["change_id"] in document.changes
+
+
 def test_variants_graph_and_node_detail(client: TestClient, tmp_path: Path) -> None:
     workspace_id = open_workspace(client, tmp_path)
     seed(tmp_path, workspace_id)
@@ -134,6 +190,43 @@ def test_variants_graph_and_node_detail(client: TestClient, tmp_path: Path) -> N
     assert detail["clue_uses"][0]["author_truth"] == "管家搬过尸体"
     assert [edge["id"] for edge in detail["outgoing"]] == ["e1"]
     assert detail["incoming"] == []
+
+
+def test_variant_prose_route_reads_variant_copy(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    seed(tmp_path, workspace_id)
+    workspace = RecentWorkspaces(tmp_path / "state").workspace(workspace_id)
+    view = workspace.write("正文/0001 雨夜.md", "# 雨夜\n\n甲😀乙。", expected_digest=None)
+    primary = client.get(f"/api/file-workspaces/{workspace_id}/story/variants").json()
+    source_revision = primary["variants"][0]["revision"]
+    fork = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/variants",
+        json={
+            "name": "备选",
+            "source_variant_id": MAIN_VARIANT_ID,
+            "source_revision": source_revision,
+            "request_key": "fork-api",
+        },
+    )
+    assert fork.status_code == 201, fork.text
+    variant_id = fork.json()["result"]["variant_id"]
+    response = client.get(
+        f"/api/file-workspaces/{workspace_id}/story/variants/{variant_id}/prose",
+        params={"path": view.path},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["variant_id"] == variant_id
+    assert body["inherited"] is True
+    assert body["digest"] == view.digest
+    assert body["text"] == "# 雨夜\n\n甲😀乙。"
+    missing = client.get(
+        f"/api/file-workspaces/{workspace_id}/story/variants/{variant_id}/prose",
+        params={"path": "正文/没有这一章.md"},
+    )
+    assert missing.status_code == 404
 
 
 def test_change_commit_is_idempotent_and_revision_checked(
@@ -272,3 +365,47 @@ def test_missing_variant_and_node_are_reported(client: TestClient, tmp_path: Pat
     )
     assert node.status_code == 400
     assert node.json()["error"]["code"] == "STORY_CONTEXT_INCOMPLETE"
+
+
+def test_reader_preview_route_keeps_its_own_conversation(tmp_path: Path) -> None:
+    book = RecentWorkspaces(tmp_path / "state")
+    provider = _ScriptedModel()
+    app = create_workspace_app(
+        workspaces=book,
+        provider_factory=lambda: ModelSnapshot(
+            connection_id="test", display_name="测试连接", model="fake", provider=provider
+        ),
+    )
+    with TestClient(app) as client:
+        workspace_id = open_workspace(client, tmp_path)
+        seed(tmp_path, workspace_id)
+        revision = revision_of(client, workspace_id)
+        response = client.post(
+            f"/api/file-workspaces/{workspace_id}/reader-previews",
+            json={
+                "request_key": "reader-api-1",
+                "variant_id": MAIN_VARIANT_ID,
+                "revision": revision,
+                "cutoff": "n1",
+            },
+        )
+        assert response.status_code == 202, response.text
+        body = response.json()
+        assert body["conversation_id"]
+        assert body["operation_id"]
+        # 试读会话不出现在写作对话列表里：作者讨论与读者请求各自独立。
+        listed = client.get(f"/api/file-workspaces/{workspace_id}/conversations").json()
+        assert [item["id"] for item in listed["items"]] == []
+        events: list[dict[str, Any]] = []
+        for _ in range(100):
+            events = client.get(
+                f"/api/file-workspaces/{workspace_id}/conversations/"
+                f"{body['conversation_id']}/messages"
+            ).json()["events"]
+            if any(event["type"] == "run_finished" for event in events):
+                break
+            time.sleep(0.02)
+        story_events = [event for event in events if event["type"] == "story_context"]
+        assert story_events[0]["reader"] is True
+        assert provider.requests
+        assert provider.requests[0]["tools"] == []

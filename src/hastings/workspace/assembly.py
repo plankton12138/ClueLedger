@@ -43,10 +43,9 @@ __all__ = [
     "body_budget",
 ]
 
-#: 用途决定装哪些分区。受理时只知道用途（写正文、建索引、做检查、展开灵感），
-#: 不知道作者这一轮想讨论还是想改稿，所以普通「讨论」不单列类型。
-#: ``idea`` 是「展开一条灵感」的只读用途：只装任务要求与那条灵感的固定版本。
-Profile = Literal["writer", "extract", "review", "idea"]
+#: 用途决定装哪些分区。受理时只知道用途（写正文、做检查），不知道作者这一轮想讨论
+#: 还是想改稿，所以普通「讨论」不单列类型。
+Profile = Literal["writer", "review"]
 
 #: 各分区初始预算，集中定义、集中测试，不做成用户配置。单位是渲染后的字符数。
 INSTRUCTIONS_BUDGET = 4_000
@@ -93,7 +92,6 @@ PROFILE_BUDGETS: dict[Profile, int] = {
     + CLUES_BUDGET
     + SETTINGS_BUDGET
     + HISTORY_BUDGET,
-    "extract": INSTRUCTIONS_BUDGET + CATALOG_BUDGET,
     "review": INSTRUCTIONS_BUDGET
     + CATALOG_BUDGET
     + MODULES_BUDGET
@@ -104,8 +102,6 @@ PROFILE_BUDGETS: dict[Profile, int] = {
     + TIMELINE_BUDGET
     + CLUES_BUDGET
     + SETTINGS_BUDGET,
-    # 展开灵感：只装任务要求、作品目录与那条灵感；不装材料、装配、索引与状态分区。
-    "idea": INSTRUCTIONS_BUDGET + CATALOG_BUDGET + IDEAS_BUDGET,
 }
 
 

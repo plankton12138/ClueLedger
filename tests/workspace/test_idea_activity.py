@@ -39,7 +39,7 @@ def _index(workspace: Workspace, tmp_path: Path) -> IdeaActivityIndex:
     return IdeaActivityIndex(workspace, conversation_root(tmp_path / STATE, "w1"))
 
 
-def test_references_and_expansions_come_from_accepted_events(tmp_path: Path) -> None:
+def test_references_come_from_accepted_events(tmp_path: Path) -> None:
     workspace, service, _ = _setup(tmp_path)
     idea = IdeaStore(workspace).create(
         body="灯塔在退潮时露出第二层台阶。", request_key="idea-key-1"
@@ -53,21 +53,14 @@ def test_references_and_expansions_come_from_accepted_events(tmp_path: Path) -> 
             context=ContextRequest(idea_references=(reference,)),
         )
         await service.wait(first.turn_id)
-        second = await service.accept(
-            "展开这条灵感",
-            "k-expand-0001",
-            context=ContextRequest(idea_references=(reference,)),
-            purpose="expand_idea",
-        )
-        await service.wait(second.turn_id)
 
     asyncio.run(scenario())
 
     page = _index(workspace, tmp_path).page(str(idea["idea_id"]))
     kinds = sorted(str(item["kind"]) for item in page["items"])
-    assert kinds == ["expanded", "referenced"]
+    assert kinds == ["referenced"]
     assert page["complete"] is True
-    assert page["total"] == 2
+    assert page["total"] == 1
     for item in page["items"]:
         assert item["revision_id"] == idea["revision_id"]
         assert item["conversation_id"]

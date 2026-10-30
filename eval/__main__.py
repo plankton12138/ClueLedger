@@ -85,7 +85,10 @@ async def run(args: argparse.Namespace) -> int:
     variants = list(dict.fromkeys(args.variant or ["current"]))
     jobs = []
     # 同题各方案交错运行；重复轮换起始方案，避免方案顺序完全固定。
-    for repeat in range(1, args.repeat + 1):
+    start_repeat = getattr(args, "start_repeat", 1)
+    if start_repeat < 1:
+        raise ValueError("起始编号必须大于零")
+    for repeat in range(start_repeat, start_repeat + args.repeat):
         ordered = (
             variants[(repeat - 1) % len(variants) :] + variants[: (repeat - 1) % len(variants)]
         )
@@ -264,6 +267,7 @@ def main() -> int:
         command.add_argument("--case", action="append", default=[])
     running.add_argument("--variant", choices=VARIANTS, action="append")
     running.add_argument("--repeat", type=positive, default=1)
+    running.add_argument("--start-repeat", type=int, default=1, help="独立初态的起始编号")
     sources = running.add_mutually_exclusive_group()
     sources.add_argument("--env-file", type=Path, help="在线模型 .env，默认仓库根目录 .env")
     sources.add_argument("--config", type=Path, help="显式改用产品模型配置文件")

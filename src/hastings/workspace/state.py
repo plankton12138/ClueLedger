@@ -115,7 +115,7 @@ class RecentWorkspaces:
         """按绑定 ID 打开作品；目录已被移动或删除时给出可理解的失败。"""
         binding = self.get(workspace_id)
         try:
-            return Workspace.open(Path(binding.path))
+            workspace = Workspace.open(Path(binding.path))
         except WorkspaceError as exc:
             raise WorkspaceError(
                 code="WORKSPACE_NOT_FOUND",
@@ -124,6 +124,12 @@ class RecentWorkspaces:
                 fix="确认目录仍在原位置，或在顶栏重新打开目录",
                 details={"id": workspace_id, "path": binding.path},
             ) from exc
+        # 作品重新进入读取／写入流程之前，先补完已决定的正文与结构提交。
+        from hastings.workspace.story_store import StoryStore
+
+        StoryStore(conversation_root(self.root, workspace_id), workspace).read()
+        return workspace
+
 
     # -- 登记 ---------------------------------------------------------------
 

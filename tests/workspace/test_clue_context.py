@@ -17,13 +17,9 @@ from hastings.workspace.clue_context import (
     clue_references_section,
     freeze_clue_references,
 )
-from hastings.workspace.clue_designs import (
-    create_clue_identity,
-    link_clue_design,
-    save_clue_inference,
-)
-from hastings.workspace.clue_models import ClueCoverage, ClueEntry, FileSource
+from hastings.workspace.clue_models import ClueCoverage, ClueEntry
 from hastings.workspace.clue_store import ClueLedgerStore
+from hastings.workspace.clues import create_clue_identity
 from hastings.workspace.compaction import CompactionRecord, SummaryItem, summary_text
 from hastings.workspace.context import materials_section
 from hastings.workspace.disclosure import ObservedEvidence
@@ -84,40 +80,12 @@ def book(tmp_path: Path) -> tuple[Workspace, ClueLedgerStore, dict[str, Any]]:
             at="2026-10-28T10:00:00+08:00",
         ),
     )
-    plan_quote = "原计划：第二章让照片出现。"
-    plan_view = workspace.read(PLAN)
-    linked = link_clue_design(
-        workspace,
-        store,
-        clue_id=clue_id,
-        source=FileSource(path=PLAN, digest=plan_view.digest),
-        start=plan_view.text.index(plan_quote),
-        end=plan_view.text.index(plan_quote) + len(plan_quote),
-        quote=plan_quote,
-        relation="第二章让照片出现",
-        request_key="ref-link",
-        expected_revision=store.read().revision,
-        created_by="author",
-    )
-    inference = save_clue_inference(
-        store,
-        clue_ids=[clue_id],
-        goal="林岚在案发当晚去过书房",
-        intent="deduce",
-        premises=[],
-        alternatives=[],
-        design_link_ids=[str(linked["link_id"])],
-        request_key="ref-inference",
-        expected_revision=store.read().revision,
-        created_by="author",
-    )
     ledger = store.read().ledger
     assert ledger is not None
     return workspace, store, {
         "clue_id": clue_id,
         "clue_revision": ledger.clues[clue_id].clue_revision,
         "lineage": ledger.workspace_lineage,
-        "inference": inference,
     }
 
 
@@ -137,7 +105,7 @@ def _code(info: pytest.ExceptionInfo[WorkspaceError]) -> str:
     return info.value.code
 
 
-def test_reference_freezes_reader_quotes_and_keeps_plan_separate(book):
+def test_reference_freezes_reader_quotes(book):
     workspace, store, state = book
     (snapshot,) = freeze_clue_references(
         workspace, store.root, (_reference(book),), writer_cutoff=3
@@ -147,31 +115,20 @@ def test_reference_freezes_reader_quotes_and_keeps_plan_separate(book):
     assert [row["quote"] for row in snapshot.reader] == [QUOTE]
     assert snapshot.reader[0]["usable"] is True
     assert snapshot.reader[0]["mode"] == "testimony"
-    assert [row["quote"] for row in snapshot.plan] == ["原计划：第二章让照片出现。"]
-    assert snapshot.plan[0]["relation"] == "第二章让照片出现"
-    assert snapshot.inference is None
 
     section = clue_references_section((snapshot,))
     assert "读者已见" in section and QUOTE in section
-    assert "作者计划（说明作者打算怎么写，不是读者已见）" in section
     assert "引用不授予任何写入权限" in section
 
 
-def test_reference_clips_cutoff_and_includes_inference(book):
-    workspace, store, state = book
-    reference = _reference(
-        book,
-        browse_as_of_chapter=3,
-        inference_id=str(state["inference"]["inference_id"]),
-        inference_revision=str(state["inference"]["inference_revision"]),
-    )
+def test_reference_clips_browse_chapter_to_writer_cutoff(book):
+    workspace, store, _ = book
+    reference = _reference(book, browse_as_of_chapter=3)
     (snapshot,) = freeze_clue_references(workspace, store.root, (reference,), writer_cutoff=2)
     assert snapshot.browse_as_of_chapter == 3
     assert snapshot.reader_cutoff == 2
-    assert snapshot.inference is not None
-    assert snapshot.inference["goal"] == "林岚在案发当晚去过书房"
     section = clue_references_section((snapshot,))
-    assert "作者推理目标（计划判断，不是正文事实）" in section
+    assert "读者已见" in section
 
 
 def test_reference_rejects_other_workspace_and_stale_revision(book):
@@ -209,22 +166,6 @@ def test_reference_rejects_other_workspace_and_stale_revision(book):
     assert len(deduped) == 1
 
 
-def test_reference_rejects_unknown_inference_and_mismatched_clue(book):
-    workspace, store, _ = book
-    with pytest.raises(WorkspaceError) as missing:
-        freeze_clue_references(
-            workspace,
-            store.root,
-            (
-                _reference(
-                    book, inference_id="inference_missing", inference_revision="rev_x"
-                ),
-            ),
-            writer_cutoff=2,
-        )
-    assert _code(missing) == "CLUE_NOT_FOUND"
-
-
 def test_context_snapshot_carries_reference_identity_and_renders_section(book):
     workspace, store, _ = book
     request = ContextRequest(
@@ -241,7 +182,6 @@ def test_context_snapshot_carries_reference_identity_and_renders_section(book):
     section = materials_section(frozen, ())
     assert "本轮线索引用" in section
     assert QUOTE in section
-    assert "作者计划" in section
 
 
 def test_compaction_record_keeps_reference_identity(book):
@@ -422,21 +362,6 @@ def _seed(root: Path, workspace: Workspace) -> None:
             at="2026-10-28T10:00:00+08:00",
         ),
     )
-    plan_quote = "原计划：第二章让照片出现。"
-    plan_view = workspace.read(PLAN)
-    link_clue_design(
-        workspace,
-        store,
-        clue_id=clue_id,
-        source=FileSource(path=PLAN, digest=plan_view.digest),
-        start=plan_view.text.index(plan_quote),
-        end=plan_view.text.index(plan_quote) + len(plan_quote),
-        quote=plan_quote,
-        relation="第二章让照片出现",
-        request_key="http-link",
-        expected_revision=store.read().revision,
-        created_by="author",
-    )
 
 
 def _snapshot(provider: Any) -> ModelSnapshot:
@@ -476,7 +401,7 @@ def _wait_finished(client: TestClient, workspace_id: str, conversation_id: str) 
     raise AssertionError("引用轮次没有结束")
 
 
-def test_turn_with_reference_sends_reader_and_plan_separately(
+def test_turn_with_reference_sends_reader_section(
     tmp_path: Path, live_client: Callable[[ProviderFactory], TestClient]
 ) -> None:
     from tests.workspace.test_chat import ScriptedProvider, _text_turn
@@ -517,8 +442,6 @@ def test_turn_with_reference_sends_reader_and_plan_separately(
     system = provider.requests[0]["system"]
     assert "本轮线索引用" in system
     assert QUOTE in system
-    assert "作者计划（说明作者打算怎么写，不是读者已见）" in system
-    assert "原计划：第二章让照片出现。" in system
     assert "引用不授予任何写入权限" in system
     events = client.get(
         f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/messages"

@@ -437,13 +437,14 @@ def _require_acyclic(predecessors: dict[str, set[str]], message: str) -> None:
 
 
 class ProsePatch(StrictRecord):
-    """一处正文替换；P1 只校验形状，真正写入由提交协调器负责。"""
+    """一处正文替换；按规范化字符区间校验原文，由构思存储协调提交。"""
 
     path: str = Field(min_length=1)
     base_digest: str = Field(min_length=1)
     start: int = Field(ge=0)
     end: int = Field(ge=0)
     replacement: str
+    delete: bool = False
     expected: str = ""
 
     @model_validator(mode="after")
@@ -666,6 +667,7 @@ class StoryChangeRecord(StrictRecord):
     operations: list[StoryOperation]
     #: 撤销用的反向操作；提交时按前后状态差生成，不靠事后重算。
     inverse_operations: list[StoryOperation] = Field(default_factory=list)
+    inverse_prose_patches: list[ProsePatch] = Field(default_factory=list)
     #: 本次改动的对象 → 提交后的内容摘要；撤销前重查，变了就冲突。
     touched: dict[str, str] = Field(default_factory=dict)
     undone_by: str | None = None

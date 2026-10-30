@@ -10,16 +10,36 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import json
+import re
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from hastings.prompts.story import (
+    ADOPTION_NOTHING_COPIED,
+    adoption_instruction,
+    adoption_pulled_text,
+    adoption_scope,
+)
+from hastings.workspace.api import FileViewResponse
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.state import RecentWorkspaces, conversation_root
-from hastings.workspace.story_adoption import adoption_plan
-from hastings.workspace.story_models import StoryChangeSet, StoryNode, StoryVariant
-from hastings.workspace.story_store import StoryStore
+from hastings.workspace.materials import ContextRequest
+from hastings.workspace.service_hub import WorkspaceServices
+from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
+from hastings.workspace.story_context import StoryRequest
+from hastings.workspace.story_models import (
+    ProsePatch,
+    ReadDependency,
+    StoryChangeSet,
+    StoryNode,
+    StoryVariant,
+)
+from hastings.workspace.story_store import StoryStore, new_id
+
+if TYPE_CHECKING:
+    from hastings.workspace.service import TurnService
 
 __all__ = ["create_story_router"]
 
@@ -68,6 +88,7 @@ class StoryEdgeView(BaseModel):
 
 
 class StoryGraphView(BaseModel):
+    latest_change_id: str | None = None
     variant_id: str
     name: str
     revision: str
@@ -101,14 +122,29 @@ class StoryNodeDetailView(BaseModel):
     outgoing: list[StoryEdgeView]
 
 
+class StoryProseView(FileViewResponse):
+    """备选方案的正文：与普通文件相同，另带方案标识与「是否沿用主方案」。"""
+
+    variant_id: str
+    inherited: bool
+
+
 class StoryChangeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     variant_id: str = Field(min_length=1, max_length=64)
     expected_revision: str = Field(min_length=1, max_length=64)
     request_key: str = Field(min_length=1, max_length=120)
-    operations: list[dict[str, Any]] = Field(min_length=1)
+    operations: list[dict[str, Any]] = Field(default_factory=list)
+    prose_patches: list[ProsePatch] = Field(default_factory=list)
+    read_dependencies: list[ReadDependency] = Field(default_factory=list)
     note: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def require_changes(self) -> StoryChangeRequest:
+        if not self.operations and not self.prose_patches:
+            raise ValueError("变更没有任何操作")
+        return self
 
 
 class StoryReceiptView(BaseModel):
@@ -156,6 +192,8 @@ class AdoptionRequest(BaseModel):
     #: 目标里已有同名对象且内容不同时，是否覆盖。默认不覆盖。
     replace: bool = False
     request_key: str = Field(min_length=1, max_length=120)
+    #: ``assist`` 时写入哪个会话；留空表示新建一个会话承载这次调整。
+    conversation_id: str | None = Field(default=None, max_length=64)
 
 
 class AdoptionPlanView(BaseModel):
@@ -172,10 +210,14 @@ class AdoptionPlanView(BaseModel):
 
 
 class AdoptionResultView(BaseModel):
-    """采用结果：先给计划（复制了什么、哪些冲突），再给提交收据。"""
+    """采用结果：先给计划（复制了什么、哪些冲突），再给提交收据。
+
+    ``assist`` 还会给出承接正文调整的操作标识；界面按这个标识跟随流式与暂停。
+    """
 
     plan: AdoptionPlanView
     receipt: StoryReceiptView | None = None
+    operation_id: str = ""
 
 
 class StoryChangeRecordView(BaseModel):
@@ -230,28 +272,72 @@ def _receipt_view(receipt: Any, changed: list[str]) -> StoryReceiptView:
     )
 
 
-def _plan_view(plan: Any) -> AdoptionPlanView:
-    summary = plan.summary()
-    return AdoptionPlanView(
-        **summary,
-        note="只复制结构；正文关联仍指向原方案的正文副本，需要单独绑定。",
-    )
-
-
 def _changed_ids(store: StoryStore, change_id: str) -> list[str]:
     snapshot = store.read()
     if snapshot.document is None or not change_id:
         return []
     record = snapshot.document.changes.get(change_id)
-    return sorted(record.touched) if record is not None else []
+    if record is None:
+        return []
+    return sorted([*record.touched, *(f"prose:{p.path}" for p in record.inverse_prose_patches)])
 
 
-def create_story_router(workspaces: RecentWorkspaces) -> APIRouter:
+def _ids(items: object, limit: int = 20) -> str:
+    listed = [str(item) for item in items] if isinstance(items, list) else []
+    shown = "、".join(listed[:limit])
+    return f"{shown}（共 {len(listed)} 个）" if len(listed) > limit else shown
+
+
+def _assist_instruction(
+    *,
+    source_name: str,
+    target_name: str,
+    node_ids: list[str],
+    summary: dict[str, Any],
+) -> str:
+    """写给模型的采用说明：结构已提交，只差正文按依赖调整。"""
+    scope = adoption_scope(len(node_ids))
+    copied = summary.get("copied") or {}
+    parts = []
+    for name, label in (
+        ("nodes", "节点"), ("clues", "线索"), ("threads", "分支"), ("constraints", "约定")
+    ):
+        if isinstance(copied, dict) and copied.get(name):
+            parts.append(f"{label} {_ids(copied.get(name))}")
+    copied_text = "；".join(parts) if parts else ADOPTION_NOTHING_COPIED
+    pulled = summary.get("pulled_in") or []
+    pulled_text = adoption_pulled_text(_ids(pulled)) if pulled else ""
+    return adoption_instruction(source_name, target_name, scope, copied_text, pulled_text)
+
+
+def _operation_id_for_turn(hub: WorkspaceServices, turn_id: str) -> str:
+    """同键重试返回原轮次时也要给出操作标识，界面才能继续跟随同一个任务。"""
+    for operation in hub.operations.list() if hub.operations is not None else ():
+        if operation.turn_id == turn_id:
+            return operation.id
+    return ""
+
+
+def create_story_router(
+    workspaces: RecentWorkspaces, hub: WorkspaceServices | None = None
+) -> APIRouter:
     router = APIRouter(prefix="/api/file-workspaces", tags=["story"])
 
     def store_for(workspace_id: str) -> StoryStore:
         workspaces.get(workspace_id)
-        return StoryStore(conversation_root(workspaces.root, workspace_id))
+
+        def conversation_seq(conversation_id: str) -> str | None:
+            """会话依赖按受理时的事件序号核对：有更新事件即视为变化。"""
+            store = ConversationStore(conversation_root(workspaces.root, workspace_id))
+            events = store.events(conversation_id)
+            return str(events[-1]["seq"]) if events else "0"
+
+        return StoryStore(
+            conversation_root(workspaces.root, workspace_id),
+            workspaces.workspace(workspace_id),
+            library=hub.library if hub is not None else None,
+            conversation_seq=conversation_seq,
+        )
 
     def require_variant(store: StoryStore, variant_id: str) -> StoryVariant:
         snapshot = store.read()
@@ -298,7 +384,12 @@ def create_story_router(workspaces: RecentWorkspaces) -> APIRouter:
         group_id: str | None = Query(default=None),
     ) -> StoryGraphView:
         """图数据：节点与连接；指定 ``group_id`` 时只返回该片段，其余折叠。"""
-        variant = require_variant(store_for(workspace_id), variant_id)
+        store = store_for(workspace_id)
+        variant = require_variant(store, variant_id)
+        document = store.read().document
+        latest_change = next((record.change_id for record in document.changes.values()
+            if record.variant_id == variant.id and record.revision == variant.revision
+            and record.undone_by is None), None) if document else None
         nodes = [
             node
             for node in variant.nodes.values()
@@ -311,6 +402,7 @@ def create_story_router(workspaces: RecentWorkspaces) -> APIRouter:
             if group_id is not None and node.id not in shown
         )
         return StoryGraphView(
+            latest_change_id=latest_change,
             variant_id=variant.id,
             name=variant.name,
             revision=variant.revision,
@@ -340,6 +432,45 @@ def create_story_router(workspaces: RecentWorkspaces) -> APIRouter:
                 for constraint in variant.constraints.values()
             ],
             collapsed=collapsed,
+        )
+
+    @router.get(
+        "/{workspace_id}/story/variants/{variant_id}/prose",
+        response_model=StoryProseView,
+    )
+    def read_variant_prose(
+        workspace_id: str,
+        variant_id: str,
+        path: str = Query(min_length=1),
+    ) -> StoryProseView:
+        """方案实际可见的正文：主方案读正式文件，备选读它的受管副本。"""
+        store = store_for(workspace_id)
+        require_variant(store, variant_id)
+        digest, text, inherited = store.prose_state(path, variant_id)
+        if digest == "absent":
+            raise WorkspaceError(
+                code="STORY_PROSE_NOT_FOUND",
+                where="story.prose",
+                why=f"这个方案里没有这份正文：{path}",
+                fix="确认文件仍存在，或切换方案后重新定位",
+                details={"variant_id": variant_id, "path": path},
+            )
+        entry = workspaces.workspace(workspace_id).describe(path)
+        return StoryProseView(
+            variant_id=variant_id,
+            inherited=inherited,
+            path=path,
+            kind=entry.kind,
+            title=entry.title,
+            display_title=entry.display_title,
+            text=text,
+            display_text=text,
+            digest=digest,
+            size=len(text.encode("utf-8")),
+            chapter_number=entry.chapter_number,
+            chapter_type=entry.chapter_type,
+            roles=list(entry.roles),
+            metadata_warnings=list(entry.metadata_warnings),
         )
 
     @router.get(
@@ -409,10 +540,12 @@ def create_story_router(workspaces: RecentWorkspaces) -> APIRouter:
         """界面发起的确定性结构变更；不接受伪造的授权字段。"""
         store = store_for(workspace_id)
         change = StoryChangeSet(
-            id=f"ui_{body.request_key[:24]}",
+            id=new_id("ui"),
             base_revision=body.expected_revision,
             operations=body.operations,  # type: ignore[arg-type]
             requested_scope=body.note,
+            prose_patches=body.prose_patches,
+            read_dependencies=body.read_dependencies,
         )
         receipt = store.commit_change(
             variant_id=body.variant_id, change=change, request_key=body.request_key
@@ -434,65 +567,88 @@ def create_story_router(workspaces: RecentWorkspaces) -> APIRouter:
         return _receipt_view(receipt, [])
 
     @router.post("/{workspace_id}/story/adoptions", response_model=AdoptionResultView)
-    def adopt(workspace_id: str, body: AdoptionRequest) -> AdoptionResultView:
-        """采用备选：整案或选定片段；只复制结构，冲突时不静默覆盖。
+    async def adopt(workspace_id: str, body: AdoptionRequest) -> AdoptionResultView:
+        """采用备选：整案或选定片段；冲突时不静默覆盖。
 
-        没有可复制的对象时不写任何变更，返回空收据；冲突返回 409 与逐项原因。
-        ``assist`` 需要模型按依赖改写，这一版没有接通，明确拒绝而不是假装完成。
+        ``exact`` 只复制结构并返回收据。``assist`` 先完成同样的结构采用，再受理一次
+        可见操作，由模型按依赖调整受影响正文；没有产生结构变化时不请求模型。
         """
         store = store_for(workspace_id)
-        source = require_variant(store, body.source_variant_id)
-        target = require_variant(store, body.target_variant_id)
-        # 源方案必须仍是作者看到的那个；目标修订交给提交时的查重与修订检查：
-        # 同键重试会先命中收据，不会因为上一轮已经改过目标而报冲突。
-        if source.revision != body.source_revision:
-            raise WorkspaceError(
-                code="STORY_REVISION_CONFLICT",
-                where="story.adoption",
-                why="采用时方案已经变化",
-                fix="刷新构思后重新确认要采用的内容",
-                details={"source_revision": source.revision},
-            )
+        service: TurnService | None = None
         if body.mode == "assist":
-            raise WorkspaceError(
-                code="STORY_ADOPTION_UNAVAILABLE",
-                where="story.adoption",
-                why="需要模型按依赖改写正文的采用还没有接通",
-                fix="先用局部采用复制确定的结构；要改写正文请在对话里说明要求",
-            )
-        plan = adoption_plan(
-            source, target, node_ids=tuple(body.node_ids), replace=body.replace
-        )
-        view = _plan_view(plan)
-        if plan.conflicts:
-            raise WorkspaceError(
-                code="STORY_ADOPTION_CONFLICT",
-                where="story.adoption",
-                why=f"目标方案里已有 {len(plan.conflicts)} 个同 ID 但内容不同的对象",
-                fix="确认要覆盖时勾选覆盖重试，或先改名再采用",
-                details=view.model_dump(mode="json"),
-            )
-        if not plan.operations:
-            # 同键重试：这一轮之前已经应用过，返回当时的收据而不是「什么都没做」。
-            document = store.read().document
-            prior = document.requests.get(body.request_key) if document else None
-            if prior is not None and prior.variant_id == body.target_variant_id:
-                return AdoptionResultView(
-                    plan=view,
-                    receipt=_receipt_view(prior, _changed_ids(store, prior.change_id)),
+            if hub is None:
+                raise WorkspaceError(
+                    code="STORY_ADOPTION_UNAVAILABLE",
+                    where="story.adoption",
+                    why="这个服务实例没有接入写作操作",
+                    fix="在完整应用里使用采用；需要改写正文请在对话里说明要求",
                 )
-            return AdoptionResultView(plan=view)
-        change = StoryChangeSet(
-            id=f"adopt_{body.request_key[:24]}",
-            base_revision=body.target_revision,
-            operations=list(plan.operations),  # type: ignore[arg-type]
-            requested_scope=f"采用 {source.name}"[:500],
+            service = hub.service_for(workspace_id)
+            if service.active_turn() is not None:
+                raise WorkspaceError(
+                    code="WORKSPACE_BUSY_CONFLICT",
+                    where="story.adoption",
+                    why="这部作品还有一轮正在运行",
+                    fix="等当前这轮结束或暂停它，再采用备选",
+                    details={"id": workspace_id},
+                )
+        receipt = store.adopt(
+            source_variant_id=body.source_variant_id,
+            source_revision=body.source_revision,
+            target_variant_id=body.target_variant_id,
+            target_revision=body.target_revision,
+            node_ids=tuple(body.node_ids),
+            replace=body.replace,
+            request_key=body.request_key,
+            mode=body.mode,
         )
-        receipt = store.commit_change(
-            variant_id=target.id, change=change, request_key=body.request_key
-        )
+        raw_summary = receipt.result.get("adoption_plan")
+        if not isinstance(raw_summary, dict):
+            raise WorkspaceError(
+                code="STORY_STATE_FAILED",
+                where="story.adoption",
+                why="采用收据缺少计划",
+                fix="检查构思状态并从有效快照恢复",
+            )
+        summary = cast(dict[str, Any], raw_summary)
+        view = AdoptionPlanView.model_validate({
+            **summary,
+            "note": "只复制结构；正文关联仍指向原方案的正文副本，需要单独绑定。",
+        })
+        operation_id = ""
+        if body.mode == "assist" and int(summary.get("operations") or 0) > 0:
+            assert service is not None
+            source = require_variant(store, body.source_variant_id)
+            target = require_variant(store, body.target_variant_id)
+            text = _assist_instruction(
+                source_name=source.name,
+                target_name=target.name,
+                node_ids=body.node_ids,
+                summary=summary,
+            )
+            info = await service.accept(
+                text,
+                body.request_key,
+                conversation_id=body.conversation_id,
+                context=ContextRequest(
+                    story=StoryRequest(
+                        variant_id=target.id,
+                        revision=target.revision,
+                        node_ids=tuple(summary.get("node_ids") or ()),
+                        purpose="revise",
+                        structure_readonly=True,
+                    )
+                ),
+            )
+            operation_id = info.operation_id or (
+                _operation_id_for_turn(hub, info.turn_id) if hub is not None else ""
+            )
+        elif body.mode == "assist":
+            view.note = "采用没有产生结构变化；没有启动正文调整。"
         return AdoptionResultView(
-            plan=view, receipt=_receipt_view(receipt, _changed_ids(store, receipt.change_id))
+            plan=view,
+            receipt=_receipt_view(receipt, _changed_ids(store, receipt.change_id)),
+            operation_id=operation_id,
         )
 
     @router.get("/{workspace_id}/story/comparison", response_model=StoryComparisonView)
@@ -532,6 +688,41 @@ def create_story_router(workspaces: RecentWorkspaces) -> APIRouter:
             note="只比较对象与内容；跨边界依赖与语义是否成立需要单独核对。",
         )
 
+    def candidate_view(workspace_id: str, candidate_id: str) -> dict[str, Any]:
+        store = store_for(workspace_id)
+        snapshot = store.read()
+        if not re.fullmatch(r"candidate_[a-f0-9]{32}", candidate_id):
+            raise WorkspaceError(code="STORY_CANDIDATE_NOT_FOUND", where="story.candidate",
+                                 why="候选标识无效", fix="重新打开候选列表")
+        path = store.dir / "candidates" / f"{candidate_id}.json"
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict) or raw.get("id") != candidate_id:
+                raise ValueError("候选身份不一致")
+        except FileNotFoundError as exc:
+            raise WorkspaceError(code="STORY_CANDIDATE_NOT_FOUND", where="story.candidate",
+                                 why="找不到这份候选", fix="刷新候选列表") from exc
+        except (OSError, ValueError) as exc:
+            raise WorkspaceError(code="STORY_STATE_FAILED", where="story.candidate",
+                                 why="候选文件无法读取", fix="检查作品状态目录后重试") from exc
+        status = raw.get("status", "draft")
+        if snapshot.document and f"candidate:{candidate_id}" in snapshot.document.requests:
+            status = "committed"
+        return {key: raw.get(key) for key in ("id", "documents", "report", "repaired",
+                    "operations", "operation_id", "generation", "author_text")} | {
+                    "status": status}
+
+    @router.get("/{workspace_id}/story/candidates")
+    def list_candidates(workspace_id: str) -> list[dict[str, Any]]:
+        store = store_for(workspace_id)
+        paths = sorted((store.dir / "candidates").glob("candidate_*.json"),
+                       key=lambda p: p.stat().st_mtime_ns, reverse=True)[:20]
+        return [candidate_view(workspace_id, path.stem) for path in paths]
+
+    @router.get("/{workspace_id}/story/candidates/{candidate_id}")
+    def get_candidate(workspace_id: str, candidate_id: str) -> dict[str, Any]:
+        return candidate_view(workspace_id, candidate_id)
+
     @router.get(
         "/{workspace_id}/story/changes/{change_id}", response_model=StoryChangeRecordView
     )
@@ -554,7 +745,8 @@ def create_story_router(workspaces: RecentWorkspaces) -> APIRouter:
             revision=record.revision,
             created_at=record.created_at,
             operations=[item.model_dump(mode="json") for item in record.operations],
-            changed=sorted(record.touched),
+            changed=sorted([*record.touched,
+                            *(f"prose:{p.path}" for p in record.inverse_prose_patches)]),
             undone_by=record.undone_by,
         )
 

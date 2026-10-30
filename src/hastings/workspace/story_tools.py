@@ -17,18 +17,31 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ValidationError
 
+from hastings.prompts import tools as prompt_tools
+from hastings.prompts.tools import (
+    READ_STORY_DESCRIPTION,
+    READ_STORY_GUIDELINES,
+    UPDATE_STORY_DESCRIPTION,
+    UPDATE_STORY_GUIDELINES,
+    variant_tool_description,
+)
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.files import Workspace
+from hastings.workspace.story_authorization import authorize_change, validate_model_change
 from hastings.workspace.story_context import StoryContextSnapshot
-from hastings.workspace.story_models import StoryChangeSet, StoryVariant
-from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, StoryStore
+from hastings.workspace.story_models import (
+    StoryChangeSet,
+    StoryVariant,
+)
+from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, StoryStore, new_id
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult
 
@@ -47,6 +60,8 @@ class StoryToolScope:
     writable: bool = False
     #: 代次资格检查：暂停后由服务层抛错，工具不再写入。
     guard: Callable[[], None] | None = None
+    #: 提交决定与暂停共用操作锁。
+    decision_guard: Callable[[], AbstractContextManager[None]] | None = None
     #: 事件出口：提交结果写进本轮记录。
     record: Callable[[str, Mapping[str, Any]], None] | None = None
     #: 本轮作者原话：只记录授权来源，不参与判断。
@@ -54,10 +69,11 @@ class StoryToolScope:
     #: 统一操作的标识与代次：应用填进变更集，模型看不到也不需要知道。
     operation_id: str = ""
     generation: int = 0
+    workspace: Workspace | None = None
     store: StoryStore = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "store", StoryStore(self.state_root))
+        object.__setattr__(self, "store", StoryStore(self.state_root, self.workspace))
 
 
 def _json(payload: Mapping[str, Any]) -> AgentToolResult:
@@ -102,9 +118,7 @@ def _node_summary(variant: StoryVariant, node_id: str) -> dict[str, Any] | None:
         "title": node.title,
         "action": node.action,
         "threads": [
-            variant.threads[item].title
-            for item in node.thread_ids
-            if item in variant.threads
+            variant.threads[item].title for item in node.thread_ids if item in variant.threads
         ],
         "clues": [use.clue_id for use in node.clue_uses],
         "time_note": node.time_note,
@@ -141,10 +155,15 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 details={"node_id": unknown[0]},
             )
         nodes = [item for item in (_node_summary(variant, node_id) for node_id in node_ids) if item]
+        document = scope.store.read().document
         payload: dict[str, Any] = {
             "variant_id": variant.id,
             "revision": variant.revision,
             "nodes": nodes,
+            "variants": [
+                {"id": item.id, "name": item.name, "revision": item.revision}
+                for item in (document.variants.values() if document else ())
+            ],
             "clues": [
                 {
                     "id": clue.id,
@@ -163,12 +182,15 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                     "id": constraint.id,
                     "text": constraint.text,
                     "strength": constraint.strength,
-                    "scope": {"kind": constraint.scope.kind, "target": constraint.scope.target_id},
+                    "scope": {
+                        "kind": constraint.scope.kind,
+                        "target_id": constraint.scope.target_id,
+                    },
                 }
                 for constraint in variant.constraints.values()
             ],
             "edges": [
-                {"id": edge.id, "from": edge.from_id, "to": edge.to_id, "kind": edge.kind}
+                {"id": edge.id, "from_id": edge.from_id, "to_id": edge.to_id, "kind": edge.kind}
                 for edge in variant.edges.values()
             ],
             "note": (
@@ -180,9 +202,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
         if size > _READ_LIMIT:
             payload["nodes"] = nodes[:20]
             payload["truncated"] = True
-            payload["note"] = (
-                "节点较多，这里只列前 20 个；用 node_ids 指定要看的节点再看其余部分。"
-            )
+            payload["note"] = "节点较多，这里只列前 20 个；用 node_ids 指定要看的节点再看其余部分。"
         return _json(payload)
 
     async def update_story(
@@ -213,7 +233,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
         variant = _variant(scope)
         try:
             change = StoryChangeSet(
-                id=f"agent_{os.urandom(4).hex()}",
+                id=new_id("agent"),
                 base_revision=variant.revision,
                 operations=raw_operations,
                 requested_scope=(scope.author_text or "")[:500],
@@ -231,6 +251,11 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 details={"field": where},
             ) from exc
 
+        # 先按作者本轮的对象范围收口，再检查真相、约定与裁决这些不能由模型自行扩大的部分。
+        authorize_change(variant, scope.frozen, scope.author_text, change)
+
+        validate_model_change(variant, change, scope.author_text)
+
         guard = scope.guard
         if guard is not None:
             guard()
@@ -245,6 +270,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             request_key=f"agent:{change.id}:{variant.revision}",
             # 提交决定落在锁内再查一次：读结构到写盘之间可能刚好暂停。
             require_eligible=require_eligible if guard is not None else None,
+            decision_guard=scope.decision_guard,
         )
         after = scope.store.read()
         record = after.document.changes.get(receipt.change_id) if after.document else None
@@ -268,48 +294,156 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             )
         return _json(result)
 
+    async def fork_story(
+        tool_call_id: str, arguments: Mapping[str, Any], signal: Any = None, on_update: Any = None
+    ) -> AgentToolResult:
+        del signal, on_update
+        if not any(word in scope.author_text for word in ("备选", "另一方案", "另一个方案")):
+            raise WorkspaceError(
+                code="STORY_AUTHORIZATION_CONFLICT",
+                where="story.fork",
+                why="作者没有要求创建备选方案",
+                fix="先讨论当前方案，待作者明确要求备选后创建",
+            )
+        variant = _variant(scope)
+        with scope.decision_guard() if scope.decision_guard else nullcontext():
+            if scope.guard:
+                scope.guard()
+            receipt = scope.store.create_variant(
+                name=str(arguments.get("name") or "备选"),
+                source_variant_id=variant.id,
+                source_revision=variant.revision,
+                request_key=f"{scope.operation_id}:fork:{tool_call_id}",
+            )
+        return _json(
+            {
+                "variant_id": receipt.result["variant_id"],
+                "revision": receipt.revision,
+                "copied_counts": {
+                    "nodes": len(variant.nodes),
+                    "clues": len(variant.clues),
+                    "constraints": len(variant.constraints),
+                },
+                "note": "备选已经从当前方案完整复制，并非空白；主方案没有变化。"
+                "修改备选需在对应方案语境发起后续任务。",
+            }
+        )
+
+    async def adopt_story(
+        tool_call_id: str, arguments: Mapping[str, Any], signal: Any = None, on_update: Any = None
+    ) -> AgentToolResult:
+        del signal, on_update
+        if "采用" not in scope.author_text or any(
+            word in scope.author_text for word in ("不要采用", "只讨论", "不保存")
+        ):
+            raise WorkspaceError(
+                code="STORY_AUTHORIZATION_CONFLICT",
+                where="story.adopt",
+                why="作者没有明确要求采用方案",
+                fix="先说明差异，等待作者决定采用范围",
+            )
+        target = _variant(scope)
+        source = scope.store.require_variant(str(arguments.get("source_variant_id") or ""))
+        selected = tuple(str(item) for item in arguments.get("node_ids", []))
+        if scope.frozen.node_ids and not set(selected) <= set(scope.frozen.node_ids):
+            raise WorkspaceError(
+                code="STORY_AUTHORIZATION_CONFLICT",
+                where="story.adopt",
+                why="采用范围超过本轮选中的节点",
+                fix="只采用所选节点，其他范围由作者另行指定",
+            )
+        with scope.decision_guard() if scope.decision_guard else nullcontext():
+            if scope.guard:
+                scope.guard()
+            receipt = scope.store.adopt(
+                source_variant_id=source.id,
+                source_revision=source.revision,
+                target_variant_id=target.id,
+                target_revision=target.revision,
+                node_ids=selected,
+                replace=True,
+                request_key=f"{scope.operation_id}:adopt:{tool_call_id}",
+                mode="exact",
+            )
+        return _json(
+            {
+                "revision": receipt.revision,
+                "change_id": receipt.change_id,
+                "plan": receipt.result.get("adoption_plan"),
+                "note": "结构采用已保存；正文尚未调整。",
+            }
+        )
+
     tools = [
         AgentTool(
             name="read_story",
             label="读取构思",
-            description=(
-                "读取当前方案的节点、线索、关系与约定，返回精确 ID 与修订（只读）。"
-                "改结构之前先读一次，避免凭标题猜目标。"
-            ),
+            description=READ_STORY_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
                     "node_ids": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "只看这些节点；省略时返回整个方案的概览",
+                        "description": (
+                            prompt_tools.READ_STORY_NODE_IDS_PARAM_DESCRIPTION
+                        ),
                     }
                 },
                 "additionalProperties": False,
             },
             execute_fn=read_story,
-            prompt_guidelines=("要改结构或核对线索时先读；不要凭标题猜 ID。",),
+            prompt_guidelines=READ_STORY_GUIDELINES,
             execution_mode="sequential",
         )
     ]
-    if scope.writable:
+    if (
+        scope.writable
+        and not scope.frozen.structure_readonly
+        and not any(
+            word in scope.author_text
+            for word in ("只讨论", "不保存", "只分析", "不要修改", "不执行修改")
+        )
+    ):
+        for name, label, execute, properties, required in (
+            (
+                "create_story_variant",
+                "创建备选",
+                fork_story,
+                {"name": {"type": "string"}},
+                ["name"],
+            ),
+            (
+                "adopt_story_variant",
+                "采用备选结构",
+                adopt_story,
+                {
+                    "source_variant_id": {"type": "string"},
+                    "node_ids": {"type": "array", "items": {"type": "string"}},
+                },
+                ["source_variant_id"],
+            ),
+        ):
+            tools.append(
+                AgentTool(
+                    name=name,
+                    label=label,
+                    description=variant_tool_description(label),
+                    parameters={
+                        "type": "object",
+                        "properties": cast(Any, properties),
+                        "required": cast(Any, required),
+                        "additionalProperties": False,
+                    },
+                    execute_fn=execute,
+                    execution_mode="sequential",
+                )
+            )
         tools.append(
             AgentTool(
                 name="update_story",
                 label="修改构思",
-                description=(
-                    "提交一组结构变更。operations 的每项必须有 op 字段，取值只能是："
-                    "add_node、update_node、remove_node、add_clue、update_clue、remove_clue、"
-                    "add_thread、update_thread、remove_thread、connect、disconnect、"
-                    "add_constraint、update_constraint、remove_constraint、set_event_time、"
-                    "unset_event_time、bind_prose、unbind_prose、record_assessment、"
-                    "remove_assessment。"
-                    "add_node/update_node 的 node 必须含 id、title、action；"
-                    "add_clue/update_clue 的 clue 必须含 id、title（update 还要有原 clue_id）；"
-                    "connect 的 edge 必须含 id、from_id、to_id、kind。"
-                    "字段名与 read_story 返回完全一致，不要发明 description、summary 等额外字段；"
-                    "一次调用只描述这一批变更，失败会返回原因，可修正后重试。"
-                ),
+                description=UPDATE_STORY_DESCRIPTION,
                 parameters={
                     "type": "object",
                     "properties": {
@@ -317,25 +451,26 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                             "type": "array",
                             "items": {"type": "object"},
                             "description": (
-                                "语义变更列表；每项形如 "
-                                "{\"op\": \"add_node\", \"node\": {\"id\": \"n1\", "
-                                "\"title\": \"抵达\", \"action\": \"侦探看到手套\"}}，"
-                                "op 只能用 description 里列出的那几个值"
+                                prompt_tools.UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION
                             ),
                         },
                         "note": {
                             "type": "string",
-                            "description": "这次修改对作者的一句话说明（可选）",
+                            "description": prompt_tools.UPDATE_STORY_NOTE_PARAM_DESCRIPTION,
                         },
                     },
                     "required": ["operations"],
                     "additionalProperties": False,
                 },
                 execute_fn=update_story,
-                prompt_guidelines=(
-                    "作者明确要求改结构时用；只改他要求的对象，不顺手重组整份方案。",
-                ),
+                prompt_guidelines=UPDATE_STORY_GUIDELINES,
                 execution_mode="sequential",
             )
         )
+    schema = StoryChangeSet.model_json_schema()
+    for tool in tools:
+        if tool.name == "update_story":
+            parameters = cast(dict[str, Any], tool.parameters)
+            parameters["$defs"] = schema["$defs"]
+            parameters["properties"]["operations"] = schema["properties"]["operations"]
     return tools

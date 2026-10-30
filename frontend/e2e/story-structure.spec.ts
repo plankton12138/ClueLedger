@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/frontendExperience";
-import { mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 /**
@@ -64,10 +65,16 @@ test("构思面显示结构、节点详情与备选差异", async ({ page, book 
   await expect(surface.getByText("侦探在前台看到一双手套")).toBeVisible();
   await expect(surface.getByText("真相：管家在雪地里搬过尸体")).toBeVisible();
 
+  await surface.getByRole("button", { name: "试读", exact: true }).click();
+  const reader = page.getByRole("dialog", { name: "试读", exact: true });
+  await expect(reader.getByRole("button", { name: "试读到所选节点" })).toBeEnabled();
+  await page.keyboard.press("Escape");
+
   // 建备选：只复制基线，不改主方案。
   await surface.getByRole("button", { name: "建备选" }).click();
   await expect(surface.getByRole("tab", { name: /备选/ })).toBeVisible();
   await expect(surface.getByRole("button", { name: "与主方案比较" })).toBeVisible();
+  await expect(surface.getByRole("button", { name: "采用并调整正文", exact: true })).toBeVisible();
 
   await surface.getByRole("button", { name: "与主方案比较" }).click();
   await expect(surface.getByRole("region", { name: "与主方案的差异" })).toBeVisible();
@@ -81,7 +88,7 @@ test("构思面显示结构、节点详情与备选差异", async ({ page, book 
 
 test("片段折叠、采用备选与引用到对话", async ({ page, book }) => {
   const api = (path: string, init?: Parameters<ReturnType<typeof page.request.get>>[1]) =>
-    page.request.fetch(`http://127.0.0.1:8931/api/file-workspaces/${book.id}${path}`, init);
+    page.request.fetch(`/api/file-workspaces/${book.id}${path}`, init);
   // 每个用例都是新作品：先按同一份种子建立基础结构，再做片段与采用。
   await api("/story/changes", {
     method: "post",
@@ -182,7 +189,7 @@ test("片段折叠、采用备选与引用到对话", async ({ page, book }) => 
 
 test("窄屏与大字号下构思面可读，结构不横向溢出", async ({ page, book }) => {
   const api = (path: string, init?: Parameters<ReturnType<typeof page.request.get>>[1]) =>
-    page.request.fetch(`http://127.0.0.1:8931/api/file-workspaces/${book.id}${path}`, init);
+    page.request.fetch(`/api/file-workspaces/${book.id}${path}`, init);
   await api("/story/changes", {
     method: "post",
     data: {
@@ -208,14 +215,81 @@ test("窄屏与大字号下构思面可读，结构不横向溢出", async ({ pa
   await expect(surface.getByRole("button", { name: "对质" })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await page.getByRole("combobox", { name: "调整字体大小" }).selectOption("150");
   await page.keyboard.press("Escape");
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   // 详情在窄屏下移到图下方：点开节点后仍能读到安排与操作按钮。
   await surface.getByRole("button", { name: "对质" }).click();
   await expect(surface.getByRole("heading", { name: "对质" })).toBeVisible();
   await expect(surface.getByRole("button", { name: "引用到对话" })).toBeInViewport();
   await page.screenshot({ path: join(output, "story-390-150.png") });
+});
+
+test("长篇结构默认只展开一个片段，切换片段可查看跨片段关系", async ({ page, book }) => {
+  test.setTimeout(120_000);
+  const nodes = Array.from({ length: 300 }, (_, index) => {
+    const number = String(index + 1).padStart(3, "0");
+    const chapter = String(Math.floor(index / 10) + 1).padStart(2, "0");
+    return { op: "add_node", node: { id: `node-${number}`, title: `节点 ${number}`,
+      action: `第 ${chapter} 章发生的事 ${number}`, group_id: `片段 ${chapter}` } };
+  });
+  const edges = Array.from({ length: 299 }, (_, index) => ({
+    op: "connect", edge: { id: `edge-${index + 1}`,
+      from_id: `node-${String(index + 1).padStart(3, "0")}`,
+      to_id: `node-${String(index + 2).padStart(3, "0")}`, kind: "next" },
+  }));
+  edges.push({ op: "connect", edge: { id: "cross-reframe", from_id: "node-300",
+    to_id: "node-001", kind: "reframe" } });
+  for (let chapter = 1; chapter <= 30; chapter++) {
+    const label = String(chapter).padStart(4, "0");
+    writeFileSync(join(book.path, "正文", `${label} 章节.md`), `# 第 ${chapter} 章\n\n正文。\n`, "utf8");
+  }
+  const seeded = await page.request.post(`/api/file-workspaces/${book.id}/story/changes`, {
+    data: { variant_id: "main", expected_revision: "empty", request_key: `long-${book.id}`,
+      operations: [...nodes, ...edges] },
+  });
+  expect(seeded.ok(), await seeded.text()).toBeTruthy();
+
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  const surface = page.getByRole("region", { name: "构思结构" });
+  const choice = surface.getByRole("combobox", { name: "选择片段" });
+  await expect(choice).toHaveValue("片段 01");
+  await expect(surface.locator(".story-node")).toHaveCount(10);
+  await expect(surface).toContainText("290 个节点不在这个片段里");
+  await choice.selectOption("片段 30");
+  await expect(surface.locator(".story-node")).toHaveCount(10);
+  await surface.getByRole("button", { name: "节点 300", exact: true }).click();
+  await expect(surface.getByLabel("节点详情")).toContainText("node-001");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("combobox", { name: "调整字体大小" }).selectOption("150");
+  await page.keyboard.press("Escape");
+  await expect(choice).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+
+test("候选正文可从构思页读取，正式正文保持原样", async ({ page, book }) => {
+  const seeded = await page.request.post(`/api/file-workspaces/${book.id}/story/changes`, {
+    data: { variant_id: "main", expected_revision: "empty", request_key: "candidate-seed", operations: NODES },
+  });
+  expect(seeded.ok(), await seeded.text()).toBeTruthy();
+  const root = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e");
+  execFileSync("uv", ["run", "--directory", "..", "python", resolve("e2e/fixtures/story_candidate.py"),
+    book.path, join(root, "state", "workspaces", book.id)], { windowsHide: true, stdio: "pipe" });
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await page.getByRole("button", { name: "候选正文", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "候选正文", exact: true });
+  await expect(dialog.getByText("等待作者处理", { exact: true })).toBeVisible();
+  await dialog.locator("summary", { hasText: "正文/0001 雨夜.md" }).click();
+  await expect(dialog).toContainText("候选里侦探收起了湿伞。");
+  const original = await page.request.get(`/api/file-workspaces/${book.id}/file`, {
+    params: { path: "正文/0001 雨夜.md" },
+  });
+  expect((await original.json()).text).not.toContain("候选里侦探收起了湿伞。");
 });

@@ -9,12 +9,16 @@
 import { useEffect, useMemo } from "react";
 import { CheckCheck, GitFork, MessageSquarePlus, Undo2 } from "lucide-react";
 
+import ReaderPreview from "./ReaderPreview";
+import StoryBatches from "./StoryBatches";
+import StoryCandidates from "./StoryCandidates";
 import { useStoryStore } from "../../state/story";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/StatusMessage";
 import type { StoryEdge, StoryGraph } from "../../api/story";
 
 export interface StoryBindingLocator {
+  variantId: string;
   path: string;
   start: number;
   end: number;
@@ -159,6 +163,8 @@ export default function StorySurface({
           ))}
         </div>
         <div className="story-actions">
+          <ReaderPreview key={`reader-${workspaceId}`} workspaceId={workspaceId} variantId={state.variantId ?? state.primaryId} revision={graph.revision} cutoff={state.nodeId} />
+          <StoryCandidates key={workspaceId} workspaceId={workspaceId} />
           <Button
             size="compact"
             disabled={state.busy}
@@ -180,6 +186,7 @@ export default function StorySurface({
               >
                 <CheckCheck size={16} strokeWidth={2} aria-hidden="true" />采用此方案
               </Button>
+              <Button size="compact" disabled={state.busy} onClick={() => void adopt([], false, "assist")}>采用并调整正文</Button>
             </>
           )}
           {state.lastChange && (
@@ -190,9 +197,18 @@ export default function StorySurface({
         </div>
       </header>
 
+      <StoryBatches key={workspaceId} workspaceId={workspaceId} />
       {state.groups.length > 0 && (
         <div className="story-groups" role="group" aria-label="片段">
-          <button
+          {state.groups.length > 8 ? <select
+            className="ui-input"
+            aria-label="选择片段"
+            value={state.groupId ?? ""}
+            onChange={(event) => void fold(event.target.value || null)}
+          >
+            <option value="">全部</option>
+            {state.groups.map((group) => <option key={group} value={group}>{group}</option>)}
+          </select> : <><button
             type="button"
             className="ui-button"
             aria-pressed={!state.groupId}
@@ -210,7 +226,7 @@ export default function StorySurface({
             >
               {group}
             </button>
-          ))}
+          ))}</>}
           {state.groupId && graph.collapsed.length > 0 && (
             <span className="story-hint">{graph.collapsed.length} 个节点不在这个片段里</span>
           )}
@@ -269,10 +285,20 @@ export default function StorySurface({
                   </li>
                 ))}
               </ul>
-              <Button size="compact" disabled={state.busy} onClick={() => void adopt(state.adoption?.plan.node_ids ?? [], true)}>
-                覆盖后重试
-              </Button>
+              <div className="story-adoption-actions">
+                <Button size="compact" disabled={state.busy} onClick={() => void adopt(state.adoption?.plan.node_ids ?? [], true)}>
+                  覆盖后重试
+                </Button>
+                <Button size="compact" disabled={state.busy} onClick={() => void adopt(state.adoption?.plan.node_ids ?? [], true, "assist")}>
+                  覆盖并调整正文
+                </Button>
+              </div>
             </>
+          )}
+          {state.adoption.operationId && (
+            <p className="story-hint">
+              正文调整已受理；可在任务面板暂停、继续或插话。
+            </p>
           )}
           <p className="story-hint">{state.adoption.plan.note}</p>
         </section>
@@ -381,6 +407,7 @@ export default function StorySurface({
                       title={`${binding.path} · ${binding.start}–${binding.end}`}
                       onClick={() =>
                         onLocate({
+                          variantId: state.variantId ?? state.primaryId,
                           path: binding.path,
                           start: binding.start,
                           end: binding.end,
@@ -405,14 +432,17 @@ export default function StorySurface({
                   <MessageSquarePlus size={16} strokeWidth={2} aria-hidden="true" />引用到对话
                 </Button>
                 {state.variantId !== state.primaryId && (
-                  <Button
+                  <><Button
                     size="compact"
                     disabled={state.busy}
                     onClick={() => void adopt([detail.node.id])}
                     title="只把这个节点与它的必需前提复制到主方案"
                   >
                     采用此节点
-                  </Button>
+                  </Button><Button size="compact" disabled={state.busy}
+                    onClick={() => void adopt([detail.node.id], false, "assist")}>
+                    采用此节点并调整正文
+                  </Button></>
                 )}
               </div>
               {detail.outgoing.length + detail.incoming.length > 0 && (

@@ -22,12 +22,13 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 | 一轮请求的受理、执行与记录 | `workspace/service.py` | [写作 Agent 与对话](../../dev-notes/v0.4/modules/agent-and-chat.md)，回复展示见[对话展示](../../dev-notes/v0.5/modules/chat-display.md) |
 | 模型增量到会话事件的桥接、合批与中断修复 | `workspace/chat_stream.py` | [对话展示与流式回复](../../dev-notes/v0.5/modules/chat-display.md) |
 | 章序、章节显示名与人物身份标签的解析和写入检查 | `workspace/metadata.py` | [文件工作区与角色小传](../../dev-notes/v0.5/modules/file-workspace.md) |
-| 文件工具与系统提示 | `workspace/agent.py`、`workspace/context.py` | [人物按需读取与文件工具](../../dev-notes/v0.5/modules/file-workspace.md) |
+| 文件工具与系统提示 | `workspace/agent.py`、`prompts/` | [人物按需读取与文件工具](../../dev-notes/v0.5/modules/file-workspace.md) |
+| 发送给模型的提示词文本 | `prompts/` | 系统提示、一次性任务提示、工具用途与分栏说明都在这里；业务代码只决定装什么，不写文案 |
 | 材料来源、读取区间、受理快照与有界输出 | `workspace/materials.py` | [V06-A1 读取与材料基础](../../dev-notes/v0.6/notes/V06-A1-materials.md)、[V06-A2 可选参考闭环](../../dev-notes/v0.6/notes/V06-A2-references.md) |
 | 章节索引的生成、发布与状态 | `workspace/chapter_index.py` | [V06-A3 章节索引](../../dev-notes/v0.6/notes/V06-A3-chapter-index.md) |
-| 故事资料的作者视图、证据与覆盖记录 | `workspace/story_materials.py` | [故事资料](../../dev-notes/v0.7/modules/story-materials.md) |
+| 构思、方案隔离、来源与成组提交 | `workspace/story_models.py`、`workspace/story_store.py`、`workspace/story_candidate.py` | [当前实现与验收](../../dev-notes/v1.0.1/notes/P7-implementation-and-acceptance.md) |
 | L0 短目录、L1 有界查询与来源标签（0.8 F1） | `workspace/retrieval.py` | [F1 检索基础](../../dev-notes/v0.8/notes/F1-retrieval.md) |
-| 资料任务的范围、域权限、发布与完成度 | `workspace/material_tasks.py` | [故事资料](../../dev-notes/v0.7/modules/story-materials.md) |
+| 统一模型操作、暂停、继续与恢复 | `workspace/operations.py`、`workspace/compaction_ops.py`、`server/probe_ops.py` | [操作记录](../../dev-notes/v1.0.1/notes/P2-operations.md) |
 | 只读检查、报告与失效 | `workspace/review.py` | [V06-C1 只读检查](../../dev-notes/v0.6/notes/V06-C1-review.md) |
 | 本轮修改范围、操作检查与承接规则 | `workspace/task_scope.py` | [V06-B1 任务范围基础](../../dev-notes/v0.6/notes/V06-B1-task-scope.md)、[V06-B2 范围事件](../../dev-notes/v0.6/notes/V06-B2-scope-events.md) |
 | HTTP 接口（文件、Git、对话、事件） | `workspace/api.py` | [模块导航](../../dev-notes/v0.5/modules/README.md) |
@@ -38,13 +39,14 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 | 模型设置接口 | `server/model_api.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
 | 正文导入解析（遗留，仍在使用） | `interfaces/importers/manuscript_text.py` | [文件工作区](../../dev-notes/v0.5/modules/file-workspace.md) |
 
-前端壳层在 `frontend/src/components/workspace/`，故事资料在 `frontend/src/components/materials/`，对话展示组件在 `frontend/src/components/chat/`，作品状态在 `frontend/src/state/workspace.ts`，页面位置在 `frontend/src/state/navigation.ts`，资料数据与任务在 `frontend/src/state/storyMaterials.ts`、`materialTasks.ts`，会话与草稿在 `frontend/src/state/conversations.ts`，事件归并在 `frontend/src/state/chatMessages.ts`，客户端在 `frontend/src/api/workspace.ts` 与 `api/storyMaterials.ts`。角色分组见[当前文件规则](../../dev-notes/v0.5/modules/file-workspace.md)，其余布局见[写作台界面](../../dev-notes/v0.4/modules/desk.md)。
+前端壳层在 `frontend/src/components/workspace/`，构思页面在 `frontend/src/components/story/`，对话展示在 `frontend/src/components/chat/`。构思状态在 `frontend/src/state/story.ts`，会话与草稿在 `conversations.ts`，事件归并在 `chatMessages.ts`；客户端入口为 `frontend/src/api/story.ts` 与 `workspace.ts`。当前接口见[接口与页面契约](../../dev-notes/v1.0.1/api-and-frontend.md)。
 
 ## 包职责
 
 | 包 | 职责 |
 |---|---|
 | `workspace/` | 文件工作区与资料层：章节与人物文件、读写指纹、搜索、导入、最近目录、Git 历史、写作 Agent、对话与事件、故事资料作者视图与资料任务 |
+| `prompts/` | 进入模型请求的固定文本：系统提示、试读与核对说明、摘要与连接测试提示、工具用途与使用时机、结构分栏说明 |
 | `server/` | 启动入口、文件应用装配、供应商预设与连接配置、模型设置接口、协议构造与连接测试 |
 | `infrastructure/` | 凭据存储（系统凭据存储优先，回落内存） |
 | `domain/` | 仍在使用的遗留文件：`manuscript/diff.py`（导入切段）、`repository/serialization.py`（内容散列） |

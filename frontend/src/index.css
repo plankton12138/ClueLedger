@@ -8,7 +8,7 @@
     /* 选段动作是临时浮层：必须压在灵感悬浮按钮等活动元素之上，否则点不到。 */
     z-index: 120;
   }
-  .text-reference-list { display: grid; gap: 4px; max-height: 180px; overflow: auto; margin-bottom: 8px; }
+  .text-reference-list { position: relative; z-index: 41; display: grid; gap: 4px; max-height: 180px; overflow: auto; margin-bottom: 8px; }
   .text-reference-chip {
     @apply flex min-w-0 items-start gap-2 rounded border border-panel-edge bg-page px-2 py-1 text-xs;
   }
@@ -981,6 +981,7 @@
 
 @layer components {
   .idea-floating { position: fixed; z-index: 40; display: flex; width: max-content; max-width: calc(100vw - 20px); color: theme("colors.ui.text"); }
+  .idea-floating.is-open { z-index: 50; }
   .idea-launcher { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 13px; min-height: 44px; border: 1px solid theme("colors.amberEdge"); border-radius: 24px; background: linear-gradient(theme("colors.noticeHigh"), theme("colors.noticeLow")); color: theme("colors.noticeText"); box-shadow: 0 3px 10px #273b4b26; font-size: 14px; cursor: grab; touch-action: none; user-select: none; }
   .idea-launcher:active, .idea-drag-handle:active { cursor: grabbing; }
   .idea-surface { display: flex; flex-direction: column; min-width: 0; min-height: 0; width: 100%; max-height: inherit; border: 1px solid theme("colors.amberEdge"); border-radius: 14px; background: theme("colors.ui.surface"); color: theme("colors.ui.text"); box-shadow: 0 12px 32px #273b4b26, 0 2px 6px #273b4b18; }
@@ -1168,10 +1169,10 @@ mark[data-source-target], .source-highlight-block { background: #f6d87680; color
   .story-surface { display: flex; flex-direction: column; height: 100%; min-height: 0; background: theme("colors.ui.paper"); }
   .story-surface-empty { align-items: center; justify-content: center; padding: 32px; }
   .story-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid theme("colors.panelEdge"); background: theme("colors.ui.surfaceLow"); }
-  .story-variants { display: flex; flex-wrap: wrap; gap: 4px; }
+  .story-variants { min-width: 0; max-width: 100%; display: flex; flex-wrap: wrap; gap: 4px; }
   .story-variants .ui-button[aria-selected="true"] { background: linear-gradient(theme("colors.selectedHigh"), theme("colors.selectedLow")); color: theme("colors.onSelected"); border-color: #477fa4; }
   .story-variants .ui-button[data-primary="true"]::after { content: "主"; margin-left: 6px; font-size: 11px; opacity: 0.7; }
-  .story-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+  .story-actions { min-width: 0; max-width: 100%; display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
   .story-error { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 16px; color: #8a2c2c; background: #f7e7e7; border-bottom: 1px solid #e2c4c4; }
   .story-comparison { padding: 10px 16px; border-bottom: 1px solid theme("colors.rowEdge"); background: theme("colors.ui.surface"); }
   .story-comparison p { margin: 0 0 4px; font-size: 13px; }
@@ -1207,5 +1208,6 @@ mark[data-source-target], .source-highlight-block { background: #f6d87680; color
   .story-adoption { margin: 0 16px 8px; padding: 8px 12px; border: 1px solid theme("colors.rowEdge"); border-radius: 6px; background: theme("colors.ui.surfaceLow"); font-size: 13px; }
   .story-adoption p { margin: 0 0 4px; }
   .story-conflicts { margin: 4px 0 8px; padding-left: 18px; }
+  .story-adoption-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
   .story-detail-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 }

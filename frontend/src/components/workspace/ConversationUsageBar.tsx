@@ -8,6 +8,7 @@
  * 刷新一次就会和实时推送对不上。
  */
 
+import OperationControls from "./OperationControls";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { CompactionOperation, ConversationUsageView } from "../../api/contextUsage";
@@ -61,6 +62,7 @@ function ScopedUsageBar({
   const [panel, setPanel] = useState<Panel>(null);
   // 压缩完成后要重新读一次：占用与累计都会变。
   const [tick, setTick] = useState(0);
+  const [lastOperation, setLastOperation] = useState<string | null>(null);
   const [operation, setOperation] = useState<CompactionOperation | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -135,6 +137,7 @@ function ScopedUsageBar({
 
   useEffect(() => {
     if (!view?.compaction) return;
+    setLastOperation(view.compaction.operation_id);
     if (!isCompactionFinished(view.compaction)) setOperation(view.compaction);
     else setNote(compactionNote(view.compaction));
   }, [view]);
@@ -171,7 +174,7 @@ function ScopedUsageBar({
     setSubmitting(true);
     setNote(null);
     startCompaction(workspaceId, conversationId, `compact-${Date.now()}`)
-      .then(setOperation)
+      .then(value => { setOperation(value); setLastOperation(value.operation_id); })
       .catch((error: unknown) => {
         setNote(error instanceof Error ? error.message : "压缩没有开始。");
       })
@@ -182,7 +185,7 @@ function ScopedUsageBar({
     if (!workspaceId || !conversationId || !operation || stopping) return;
     setStopping(true);
     stopCompaction(workspaceId, conversationId, operation.operation_id)
-      .then(setOperation)
+      .then(value => { setOperation(value); setLastOperation(value.operation_id); })
       .catch((error: unknown) => setNote(error instanceof Error ? error.message : "[CONTEXT_STOP_FAILED] 上下文压缩：停止失败。建议：重试停止。"))
       .finally(() => setStopping(false));
   }, [workspaceId, conversationId, operation, stopping]);
@@ -302,6 +305,7 @@ function ScopedUsageBar({
                 </button>
                 {operation && <button type="button" className="text-[10px] font-bold text-blue" disabled={stopping} onClick={stop}>{stopping ? "正在停止…" : "停止压缩"}</button>}
               </div>
+              {lastOperation && <OperationControls key={lastOperation} operationId={lastOperation} onDone={() => setTick(value => value + 1)} />}
               {note && <p role="status" className="mt-1 text-[10px] leading-4 text-mute">{note}</p>}
 
             </>

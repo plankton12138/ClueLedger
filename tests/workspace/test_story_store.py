@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import json
 import multiprocessing
+import threading
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.operations import Operation, OperationStore
 from hastings.workspace.story_changes import apply_change_set, diff_variant
 from hastings.workspace.story_models import (
     AddClue,
@@ -23,6 +25,8 @@ from hastings.workspace.story_models import (
     ClueUse,
     Connect,
     EventTimeRelation,
+    ProsePatch,
+    ReadDependency,
     RemoveClue,
     RemoveNode,
     SetEventTime,
@@ -264,6 +268,188 @@ def test_decided_commit_is_completed_after_head_write_failure(
     document = store.read().document
     assert document is not None and document.changes
     assert (store.revisions / f"{document.revision}.json").exists()
+
+
+def test_decided_variant_creation_recovers_after_head_write_failure(
+    store: StoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commit(store, [AddNode(node=node("n1"))], key="one")
+    base = store.require_variant(MAIN_VARIANT_ID).revision
+    real_write = __import__("hastings.workspace.story_store", fromlist=["x"]).atomic_write_json
+
+    def fail_head(path: Path, value: object, **kwargs: Any) -> None:
+        if path == store.file:
+            raise OSError("injected head failure")
+        real_write(path, value, **kwargs)
+
+    monkeypatch.setattr("hastings.workspace.story_store.atomic_write_json", fail_head)
+    with pytest.raises(WorkspaceError):
+        store.create_variant(
+            name="备选", source_variant_id=MAIN_VARIANT_ID,
+            source_revision=base, request_key="create-after-crash",
+        )
+    monkeypatch.undo()
+    receipt = store.create_variant(
+        name="备选", source_variant_id=MAIN_VARIANT_ID,
+        source_revision=base, request_key="create-after-crash",
+    )
+    assert store.require_variant(str(receipt.result["variant_id"])).name == "备选"
+    assert not store.decision.exists()
+
+
+def test_decided_recovery_preserves_external_edit(
+    store: StoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commit(store, [AddNode(node=node("n1"))], key="one")
+    real_write = __import__("hastings.workspace.story_store", fromlist=["x"]).atomic_write_json
+
+    def fail_head(path: Path, value: object, **kwargs: Any) -> None:
+        if path == store.file:
+            raise OSError("injected head failure")
+        real_write(path, value, **kwargs)
+
+    monkeypatch.setattr("hastings.workspace.story_store.atomic_write_json", fail_head)
+    with pytest.raises(WorkspaceError):
+        commit(store, [AddNode(node=node("n2"))], key="two")
+    monkeypatch.undo()
+    external = b"external edit that is not either committed version"
+    store.file.write_bytes(external)
+    with pytest.raises(WorkspaceError) as caught:
+        store.read()
+    assert caught.value.code == "STORY_WRITE_CONFLICT"
+    assert store.file.read_bytes() == external
+    assert store.pending.exists() and store.decision.exists()
+
+
+def test_recovery_refuses_modified_pending_payload_and_digest(
+    store: StoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+
+    commit(store, [AddNode(node=node("n1"))], key="one")
+    before = store.file.read_bytes()
+    real_write = __import__("hastings.workspace.story_store", fromlist=["x"]).atomic_write_json
+
+    def fail_head(path: Path, value: object, **kwargs: Any) -> None:
+        if path == store.file:
+            raise OSError("injected head failure")
+        real_write(path, value, **kwargs)
+
+    monkeypatch.setattr("hastings.workspace.story_store.atomic_write_json", fail_head)
+    with pytest.raises(WorkspaceError):
+        commit(store, [AddNode(node=node("n2"))], key="two")
+    monkeypatch.undo()
+    pending = json.loads(store.pending.read_text(encoding="utf-8"))
+    pending["document"]["variants"]["main"]["nodes"]["n2"]["action"] = "外部修改"
+    encoded = (json.dumps(pending["document"], ensure_ascii=False, indent=2) + "\n").encode()
+    pending["target_digest"] = hashlib.sha256(encoded).hexdigest()
+    store.pending.write_text(json.dumps(pending, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(WorkspaceError) as caught:
+        store.read()
+    assert caught.value.code == "STORY_STATE_FAILED"
+    assert store.file.read_bytes() == before
+    assert store.pending.exists() and store.decision.exists()
+
+
+def test_unimplemented_joint_change_does_not_report_success(store: StoryStore) -> None:
+    commit(store, [AddNode(node=node("n1"))], key="one")
+    before = store.file.read_bytes()
+    revision = store.require_variant(MAIN_VARIANT_ID).revision
+    for extra in (
+        {"prose_patches": [ProsePatch(path="正文/a.md", base_digest="abc", start=0, end=1,
+                                      expected="甲", replacement="乙")]},
+        {"read_dependencies": [ReadDependency(kind="prose", id="正文/a.md", revision="abc")]},
+    ):
+        with pytest.raises(WorkspaceError) as caught:
+            store.commit_change(
+                variant_id=MAIN_VARIANT_ID,
+                change=change([AddNode(node=node("n2"))], revision, **extra),
+                request_key=f"rejected-{len(extra)}",
+            )
+        assert caught.value.code == "STORY_CHANGE_UNAVAILABLE"
+        assert store.file.read_bytes() == before
+
+
+def test_pause_and_structure_decision_share_a_lock(
+    store: StoryStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commit(store, [AddNode(node=node("n1"))], key="one")
+    revision = store.require_variant(MAIN_VARIANT_ID).revision
+    operations = OperationStore(tmp_path / "operation-state")
+    operations.create(Operation(
+        id="op_test", owner="workspace:one", workspace_id="one", conversation_id="c",
+        turn_id="t", purpose="chat", status="running",
+    ))
+    real_write = __import__("hastings.workspace.story_store", fromlist=["x"]).atomic_write_bytes
+    at_decision = threading.Event()
+    allow_decision = threading.Event()
+    pause_finished = threading.Event()
+    failures: list[BaseException] = []
+
+    def wait_before_decision(path: Path, data: bytes, **kwargs: Any) -> None:
+        if path == store.decision:
+            at_decision.set()
+            if not allow_decision.wait(5):
+                raise TimeoutError("decision was not released")
+        real_write(path, data, **kwargs)
+
+    def submit() -> None:
+        try:
+            store.commit_change(
+                variant_id=MAIN_VARIANT_ID,
+                change=change([AddNode(node=node("n2"))], revision,
+                              operation_id="op_test", generation=1),
+                request_key="protected-commit",
+                decision_guard=lambda: operations.eligible_generation("op_test", 1),
+            )
+        except BaseException as exc:
+            failures.append(exc)
+
+    def pause() -> None:
+        try:
+            operations.update("op_test", lambda operation: setattr(operation, "status", "paused"))
+            pause_finished.set()
+        except BaseException as exc:
+            failures.append(exc)
+
+    monkeypatch.setattr("hastings.workspace.story_store.atomic_write_bytes", wait_before_decision)
+    writer = threading.Thread(target=submit)
+    pauser = threading.Thread(target=pause)
+    writer.start()
+    try:
+        assert at_decision.wait(5)
+        pauser.start()
+        assert not pause_finished.wait(0.1)
+    finally:
+        allow_decision.set()
+        writer.join(5)
+        if pauser.ident is not None:
+            pauser.join(5)
+    assert not failures
+    assert pause_finished.is_set()
+    assert operations.read("op_test").status == "paused"
+    assert "n2" in store.require_variant(MAIN_VARIANT_ID).nodes
+
+
+def test_pause_before_structure_decision_prevents_commit(store: StoryStore, tmp_path: Path) -> None:
+    commit(store, [AddNode(node=node("n1"))], key="one")
+    revision = store.require_variant(MAIN_VARIANT_ID).revision
+    operations = OperationStore(tmp_path / "operation-state")
+    operations.create(Operation(
+        id="op_test", owner="workspace:one", workspace_id="one", conversation_id="c",
+        turn_id="t", purpose="chat", status="paused",
+    ))
+    with pytest.raises(WorkspaceError) as caught:
+        store.commit_change(
+            variant_id=MAIN_VARIANT_ID,
+            change=change([AddNode(node=node("n2"))], revision,
+                          operation_id="op_test", generation=1),
+            request_key="revoked-commit",
+            decision_guard=lambda: operations.eligible_generation("op_test", 1),
+        )
+    assert caught.value.code == "OPERATION_PAUSED_CONFLICT"
+    assert not store.decision.exists()
+    assert set(store.require_variant(MAIN_VARIANT_ID).nodes) == {"n1"}
 
 
 def test_snapshot_and_log_failure_is_repaired_on_next_read(

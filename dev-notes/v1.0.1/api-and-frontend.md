@@ -1,6 +1,12 @@
 # 接口、事件与页面契约
 
-日期：2026-10-28。状态：**拟实施接口，当前尚不存在新增能力**。
+日期：2026-10-29。状态：**当前实现契约**；当前进度与验收状态见[开发入口](README.md)。
+
+2026-10-29 实施补充：构思变更接口已接受 `prose_patches` 与 `read_dependencies`，与前端请求类型对齐；正文／结构均为空时拒绝。读取依赖覆盖方案、正文、约定、模块与会话；依赖入口缺失时明确拒绝。收据的 `result.prose_paths` 和 `changed` 中的 `prose:路径` 表示正文目标。对象级授权与候选携带结构变更已接通，详见[候选流程记录](notes/P4-candidate-workflow.md)；备选正文受管副本与方案正文读取见[联合提交记录](notes/P1-joint-commit.md)。
+
+方案正文读取：`GET W/story/variants/{variant_id}/prose?path=...` 返回文件视图加 `variant_id` 与 `inherited`；副本被标记删除时返回 404 `STORY_PROSE_NOT_FOUND`。前端方案节点定位走该接口，正文预览不写阅读位置。
+
+候选流程补充：带构思语境的 `write/revise` 已接入候选提交、隔离核对、一次局部修正与复核；构思页可通过 `GET /story/candidates` 和 `GET /story/candidates/{candidate_id}` 查看保留的全文与报告。新正文补丁用 `base_digest=absent` 表示创建，`delete` 用于受版本保护的删除／撤销。当前边界见[候选流程记录](notes/P4-candidate-workflow.md)。
 
 ## 1. 统一规则
 
@@ -15,6 +21,7 @@
 | 打开构思／方案切换 | `GET W/story/variants`；`GET W/story/variants/{id}?group_id=...` | 版本化结构、片段摘要与当前状态；story store |
 | 点节点或线索 | `GET W/story/variants/{id}/nodes/{node_id}` | 安排、相关线索、真实作用、来源与正文入口；NodeDetail |
 | 看正文关联 | `GET W/story/bindings/{binding_id}` | 校验后的位置、修订与失效状态；现有 Paper／SourceHighlight |
+| 看方案正文 | `GET W/story/variants/{id}/prose?path=...` | 该方案实际可见的正文、摘要与是否沿用主方案；Paper 以方案模式呈现 |
 | 确定性结构操作 | `POST W/story/variants/{id}/changes` | 完整 ChangeSet 与新修订；只接受当前 UI 明确支持的动作，不接受伪造授权 |
 | 从某版建备选 | `POST W/story/variants` | 名称、source_variant_id、source_revision、request_key；只复制确定基线，无模型 |
 | 看差异 | `GET W/story/comparison?base=...&candidate=...` | 双方明确修订、对象差异与已记录依赖，不宣称全书语义完整检查 |
@@ -26,7 +33,7 @@
 | 查看结果／草稿 | `GET /api/operations/{id}/result` | 已提交收据、候选、未完成项与变更位置 |
 | 查看改动／撤销 | `GET W/story/changes/{change_id}`；`POST W/story/changes/{change_id}/undo` | 精确变更与反向提交；冲突时返回受影响目标 |
 
-采用流程用显式 `mode: exact|assist` 区分确定性应用与需要模型的调整。exact 无法安全完成时返回冲突和可选 assist 动作；选择 assist 或明确要求同步调整才启动模型。两种路径均由 UI 呈现实际结果，不让“点比较”偷偷生成。
+采用流程用显式 `mode: exact|assist` 区分确定性应用与需要模型的调整。exact 无法安全完成时返回冲突和可选 assist 动作；选择 assist 时结构仍按同一计划确定性提交，随后受理一次可见 operation 调整正文，响应带 `operation_id`。两种路径均由 UI 呈现实际结果，不让“点比较”偷偷生成。
 
 可提议的语义操作包括 add/update/remove node、add/update/remove clue、connect/disconnect、update constraint、bind/unbind prose。模型通过专用工具提出 ChangeSet，应用补齐范围与元数据；不暴露无限制覆盖整个状态文件的工具。
 
@@ -52,15 +59,21 @@
 
 purpose 为 discuss、design、write、revise、review 或 reader_preview。客户端 purpose 只表达意图，不能单独授予写权限；正文范围与授权仍由现有受理流程和本轮作者指令确定。试读必须有明确截止与呈现来源。
 
+试读使用独立入口 `POST W/reader-previews`：请求只有 `request_key / variant_id / revision / cutoff`，不接收文字、选中材料、检查目标或回答。它建立 `origin=reader` 的独立会话，问题由应用固定；执行时没有工具、目录、摘要与作者历史。写作对话列表不列读者会话。
+
 continue 提交 request_key、expected_generation；interject 再带 text。后端一次完成旧代次撤销和新指令受理，返回新的 generation。不能先 stop 再 send，避免中途丢要求或重复继续。
+
+超容量任务的后续组使用 `POST W/story-batches/{operation_id}/continue`，无模型提供的范围参数。后端从父操作读取剩余组、原要求与当前有效方案，返回同一个父任务对应的唯一后继；重复点击不重跑。`Operation.pending_units` 和说明提供未完成范围。
+
+候选使用 `GET W/story/candidates` 与 `GET W/story/candidates/{id}` 回看；图响应的 `latest_change_id` 指向当前方案最近提交，页面据此读取变更并恢复撤销入口。`context.story.structure_readonly` 只能收紧结构权限，assist 由应用固定为真；正文关联仍可随候选提交。
 
 ## 4. 操作与现有轮次的接入
 
-统一 Operation 是已有轮次和非会话模型任务的共同生命周期。作品操作复用现有会话事件存储，operation_id 与 turn_id 建立服务端映射；新操作接口读取同一事件源，不维护第二份独立执行记录。模型测试没有作品时使用独立 owner，仍使用相同事件契约。
+统一 Operation 是已有轮次和非会话模型任务的共同生命周期。作品操作复用现有会话事件存储，operation_id 与 turn_id 建立服务端映射；新操作接口读取同一事件源，不维护第二份独立执行记录。压缩没有轮次，事件在写入时带 `compaction_operation_id`，按它归属；连接测试不写会话事件，实际增量存于操作事件中，结果以操作收据（`kind=probe`）返回。模型测试没有作品时使用独立 owner。
 
-现有会话 `/events` 保留对话回放用途；工作区任务控件订阅 operation 流，不能同时对同一任务重复归并两个流。原 `/turns/{id}/stop` 的内部行为统一到 pause；前端迁移完成后删除已无调用方的旧控制路由。压缩原专用停止接口同样处理，不保留两套状态机。
+现有会话 `/events` 保留对话回放用途；工作区任务控件订阅 operation 流，不能同时对同一任务重复归并两个流。原 `/turns/{id}/stop` 的内部行为统一到 pause；前端迁移完成后删除已无调用方的旧控制路由。压缩原专用停止接口同样处理，不保留两套状态机：现在只是同一暂停语义的薄别名。
 
-原会话流以 run_finished 结束，新的 operation 流不能把一次模型阶段或旧代次的 run_finished 当成整个操作完成。以当前操作状态和 operation_finished 为准，paused 结束本次跟随但可从游标恢复。
+原会话流以 run_finished 结束，新的 operation 流不能把一次模型阶段或旧代次的 run_finished 当成整个操作完成。以当前操作快照为准，paused 结束本次跟随但可从游标恢复。
 
 ## 5. 事件契约
 
@@ -68,15 +81,16 @@ continue 提交 request_key、expected_generation；interject 再带 text。后�
 
 | 事件 | 页面含义 |
 |---|---|
-| operation_accepted / attempt_started | 固定任务归属，开启新代次；保留前代已显示内容 |
-| phase_started | 正在构思、写作、核对、压缩等明确目的 |
-| text_delta | 当前 block_id 的真实输出增量；不把转圈或计数当流式 |
-| tool_progress | 读取、检查或提交的实际进展；不暴露凭据与内部思考 |
-| candidate_ready | 完整候选可预览，尚未表示提交 |
-| changes_committed | 正式变更与收据已完成，刷新对应结构／正文 |
-| question_asked | 原对话中出现具体问题，保留自由回答 |
-| operation_paused / operation_failed | 保留草稿与已提交单元，显示继续或处理入口 |
-| operation_finished | 记录完成、未完成范围与结果，不依据助手文字猜成功 |
+| turn_started / attempt_started | 固定任务归属，开启新代次；保留前代已显示内容 |
+| run_phase / model_request_started | 正在构思、写作、核对、压缩等明确目的 |
+| story_context | 本次实际装入的结构分区、覆盖节点与来源、省略原因与拆组结果；试读为 `reader=true` |
+| assistant_block_delta / text_delta | 当前 block_id 的真实输出增量；不把转圈或计数当流式 |
+| tool_started / tool_finished | 读取、检查或提交的实际进展；不暴露凭据与内部思考 |
+| story_candidate_saved | 完整候选可预览，尚未表示提交 |
+| story_changes_committed / story_candidate_committed / version_finished | 正式变更与收据已完成，刷新对应结构／正文 |
+| author_input_requested | 原对话中出现具体问题，保留自由回答 |
+| stop_requested / error | 保留草稿与已提交单元，显示继续或处理入口 |
+| run_finished + 操作快照 | 记录完成、未完成范围与结果，不依据助手文字猜成功 |
 
 断线重连携带 after。无法覆盖的旧游标返回需要读取快照的信号，客户端先恢复快照再接流，不丢事件也不从头重跑任务。
 
@@ -87,8 +101,8 @@ continue 提交 request_key、expected_generation；interject 再带 text。后�
 | 构思、写作、对话修改、模块生成、灵感的模型操作 | 原会话受理返回 operation_id，同一任务控件 |
 | 写后核对、语义关联、模型摘要 | 作为已声明创作任务的可见阶段；不得夹带未授权的新任务 |
 | 手动／自动会话压缩 | 独立可见操作或当前操作的阶段，流式显示摘要候选，可暂停与插话；中断不启用半成品摘要 |
-| 试读 | 独立输入范围，同一流式与控制方式 |
-| 模型连接的生成／工具能力测试 | probe 返回 202 与 operation_id；设置内嵌同一控件，支持调整测试目标 |
+| 试读 | 已实施：独立会话与固定问题，空工具与空历史，系统提示只含读者说明和截止前缀，发送前自检隐藏内容；构思页试读面板读取独立会话结果 |
+| 模型连接的生成／工具能力测试 | 已实施：probe 返回 202 与 operation_id；设置页跟随操作快照并在结束后读取 probe 收据，可暂停；不伪造通过结果 |
 | 模型列表发现、打开页面、普通预览、移动选择、读文件 | 非模型请求，不伪装为生成，也不隐含启动模型 |
 
 全部调用必须先登记操作再请求模型。供应商无法提供真实流式时显示能力限制并让作者更换适合的连接，不能用完成后的打字动画冒充实时输出。

@@ -17,6 +17,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from hastings.prompts.story import (
+    REVIEW_FINDINGS_HEAD,
+    REVIEW_REQUIREMENTS_HEAD,
+    TRUTH_WRITTEN_FINDING,
+    knowledge_boundary_requirement,
+    missing_presentation_finding,
+    present_requirement,
+    review_requirements_intro,
+    truth_boundary_requirement,
+)
 from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_models import StoryNode, StoryVariant
 
@@ -98,7 +108,7 @@ def build_story_review(
             checks.append(
                 StoryCheck(
                     requirement_id=requirement_id,
-                    text=f"「{node.title}」要呈现：{use.presentation}",
+                    text=present_requirement(node.title, use.presentation),
                     kind="present",
                     needle=use.presentation,
                 )
@@ -108,10 +118,7 @@ def build_story_review(
                     {
                         "requirement_id": requirement_id,
                         "severity": "advisory",
-                        "note": (
-                            f"候选正文里没有找到这处呈现：{use.presentation}。"
-                            "如果改用别的写法，请在报告里说明对应的原句。"
-                        ),
+                        "note": missing_presentation_finding(use.presentation),
                         "decision_source": "app",
                     }
                 )
@@ -125,7 +132,7 @@ def build_story_review(
         checks.append(
             StoryCheck(
                 requirement_id=requirement_id,
-                text=f"作者真相不能被写成已经发生的事实：{truth}",
+                text=truth_boundary_requirement(truth),
                 kind="hidden",
                 needle=truth,
             )
@@ -138,10 +145,7 @@ def build_story_review(
                 {
                     "requirement_id": requirement_id,
                     "severity": "blocking",
-                    "note": (
-                        "正文直接写出了作者真相。角色可以说、可以猜，"
-                        "但叙述不能把它当成已经确认的事实。"
-                    ),
+                    "note": TRUTH_WRITTEN_FINDING,
                     "path": path,
                     "start": index,
                     "end": index + len(truth),
@@ -155,10 +159,11 @@ def build_story_review(
             checks.append(
                 StoryCheck(
                     requirement_id=f"knowledge:{node.id}:{change.subject_id}",
-                    text=(
-                        f"{change.subject_id} 在「{node.title}」时"
-                        f"{'知道' if change.stance == 'knows' else '相信'}：{change.claim}"
-                        "（要判断：正文是否让这个角色越过了这条边界）"
+                    text=knowledge_boundary_requirement(
+                        change.subject_id,
+                        node.title,
+                        change.stance == "knows",
+                        change.claim,
                     ),
                     kind="semantic",
                 )
@@ -174,15 +179,14 @@ def _render(
     if not checks and not findings:
         return ""
     lines = [
-        "## 结构核对要求（由应用生成，不能改写或跳过）",
-        f"方案 `{variant.id}` · 修订 `{variant.revision}`。逐条核对下面的要求，"
-        "在报告里用要求编号说明覆盖情况；不能修改要求本身。",
+        REVIEW_REQUIREMENTS_HEAD,
+        review_requirements_intro(variant.id, variant.revision),
     ]
     for item in checks:
         lines.append(f"- [{item.requirement_id}] {item.text}")
     if findings:
         lines.append("")
-        lines.append("## 应用已经发现的问题（必须处理或说明）")
+        lines.append(REVIEW_FINDINGS_HEAD)
         for finding in findings:
             where = ""
             if finding.get("path"):

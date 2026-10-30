@@ -36,12 +36,12 @@ export default defineConfig({
   projects: [
     {
       name: "workspace",
-      testMatch: ["aqua-layout.spec.ts", "chapter-clues.spec.ts", "clue-review.spec.ts", "clue-reference.spec.ts", "clue-workflow.spec.ts", "clue-source-navigation.spec.ts", "text-selection.spec.ts", "context-usage.spec.ts", "workspace.spec.ts", "chat-rendering.spec.ts", "frontend-experience.spec.ts", "frontend-foundation.spec.ts", "module-editor.spec.ts", "module-workspace.spec.ts", "ideas-companion.spec.ts", "core-pages.spec.ts", "shared-interactions.spec.ts", "story-overview-removal.spec.ts", "story-structure.spec.ts", "story-structure.spec.ts", "model-thinking.spec.ts"],
+      testMatch: ["aqua-layout.spec.ts", "chapter-clues.spec.ts", "clue-reference.spec.ts", "clue-source-navigation.spec.ts", "text-selection.spec.ts", "context-usage.spec.ts", "workspace.spec.ts", "chat-rendering.spec.ts", "frontend-experience.spec.ts", "frontend-foundation.spec.ts", "module-editor.spec.ts", "module-workspace.spec.ts", "ideas-companion.spec.ts", "core-pages.spec.ts", "shared-interactions.spec.ts", "story-overview-removal.spec.ts", "story-structure.spec.ts", "model-thinking.spec.ts"],
       timeout: 30_000,
     },
     {
       name: "online",
-      testMatch: ["clue-workflow-online.spec.ts", "model-flows.spec.ts", "activity.spec.ts", "story-workflow-online.spec.ts"],
+      testMatch: ["model-flows.spec.ts", "activity.spec.ts", "story-workflow-online.spec.ts", "story-scene-online.spec.ts"],
       timeout: 240_000,
     },
   ],

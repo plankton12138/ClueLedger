@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "run_id": "context-20261029-234809-502974",
+  "started_at": "2026-10-29T23:48:09.502974+08:00",
+  "model": "deepseek-flash",
+  "connection_id": "eval-env",
+  "provider_api": "openai-completions",
+  "model_source": ".env",
+  "provider_mode": "product_worker",
+  "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+  "git_commit": "027fc13aa63367b83ca99ad0a0e89880a36b174a",
+  "git_dirty": true,
+  "source_sha256": "08362102b1d254d56f9c2691f965f50dc26e8212bca6ac392a3702f0e55e4895",
+  "cases_sha256": "b2f2454d3582cf023d84182a2ac8767cb6fde7d101ea135e397827ddcef50c98",
+  "suite": "v101",
+  "jobs": [
+    {
+      "key": "v101_o10--current--3",
+      "case": "v101_o10",
+      "family": "O10",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3
+    }
+  ],
+  "max_turns": 24,
+  "step_timeout_seconds": 240,
+  "max_provider_calls": 200,
+  "runner_retries": 0,
+  "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261029-234809-502974",
+  "evidence_format": 1,
+  "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+  "variant_policy": "提示分区变体仅移除所选分区；no_compaction 禁用手动与自动摘要，保留轮内裁剪和溢出恢复；公开对话和按需读取工具保留",
+  "observed_provider_parameters": {
+    "max_tokens": 4096,
+    "timeout_seconds": 45.0,
+    "max_retries": 0
+  },
+  "provider_calls_used": 10
+}

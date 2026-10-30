@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -306,22 +307,130 @@ def test_probe_endpoint_reports_two_independent_facts(tmp_path: Path) -> None:
 
     service._probe_factory = lambda _profile: _Provider()  # noqa: SLF001 - 测试注入
 
-    response = client.post(
-        "/api/model-connections/probe",
-        json={
-            "kind": "response",
-            "model": "deepseek-chat",
-            "catalog_id": "deepseek",
-            "base_url": "https://api.deepseek.com/v1",
-            "api": "openai-completions",
-            "api_key": "sk-draft",
-        },
-    )
+    with client:
+        accepted = client.post(
+            "/api/model-connections/probe",
+            json={
+                "kind": "response",
+                "model": "deepseek-chat",
+                "catalog_id": "deepseek",
+                "base_url": "https://api.deepseek.com/v1",
+                "api": "openai-completions",
+                "api_key": "sk-draft",
+            },
+        )
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["response"] == "passed"
-    assert body["tool_call"] == "untested"
+        # 受理即返回操作标识；测试本身在后台跑，结果按操作读取。
+        assert accepted.status_code == 202
+        body = accepted.json()
+        assert body["connection_id"] is None
+        operation = body["operation_id"]
+
+        snapshot = _wait_operation(client, operation)
+        assert snapshot["status"] == "completed"
+
+        result = client.get(f"/api/operations/{operation}/result").json()
+        receipt = next(item for item in result["receipts"] if item["kind"] == "probe")
+        assert receipt["outcome"]["response"] == "passed"
+        assert receipt["outcome"]["tool_call"] == "untested"
+
+
+def _wait_operation(
+    client: TestClient, operation_id: str, statuses: set[str] | None = None
+) -> dict[str, Any]:
+    import time
+
+    wanted = statuses or {"completed", "failed", "paused"}
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        body = client.get(f"/api/operations/{operation_id}").json()
+        if body["status"] in wanted:
+            return body
+        time.sleep(0.05)
+    raise AssertionError("连接测试没有在预期时间内结束")
+
+
+class _SlowThenFastProvider:
+    """第一次响应挂起等待取消，第二次直接通过；用来验证暂停与继续。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def stream_response(self, **kwargs: Any) -> AsyncIterator[Any]:
+        index = self.calls
+        self.calls += 1
+
+        async def generator() -> AsyncIterator[Any]:
+            if index == 0:
+                while True:
+                    await asyncio.sleep(0.02)
+            yield AssistantDoneEvent(
+                reason="stop",
+                message=AssistantMessage(content=[TextContent(text="你好")], stop_reason="stop"),
+            )
+
+        return generator()
+
+    async def aclose(self) -> None:
+        return None
+
+
+def test_probe_can_be_paused_and_continued_without_a_fake_result(tmp_path: Path) -> None:
+    client, service, _book, _path = _build(tmp_path)
+    provider = _SlowThenFastProvider()
+    service._probe_factory = lambda _profile: provider  # noqa: SLF001 - 测试注入
+
+    payload = {
+        "kind": "response",
+        "model": "deepseek-chat",
+        "catalog_id": "deepseek",
+        "base_url": "https://api.deepseek.com/v1",
+        "api": "openai-completions",
+        "api_key": "sk-draft",
+        "request_key": "pr1",
+    }
+    with client:
+        accepted = client.post("/api/model-connections/probe", json=payload)
+        assert accepted.status_code == 202
+        operation = accepted.json()["operation_id"]
+
+        running = _wait_operation(client, operation, {"running"})
+        assert running["purpose"] == "probe"
+        # 连接测试没有可解释的补充要求，不宣称能插话。
+        assert running["capabilities"]["interject"] is True
+
+        paused = client.post(
+            f"/api/operations/{operation}/pause", json={"request_key": "p1"}
+        ).json()
+        assert paused["status"] == "paused"
+        assert paused["capabilities"]["continue"] is True
+
+        # 取消不等于通过：结果里没有伪造的测试收据。
+        result = client.get(f"/api/operations/{operation}/result").json()
+        assert result["status"] == "paused"
+        assert [item for item in result["receipts"] if item["kind"] == "probe"] == []
+
+        rejected = client.post(
+            f"/api/operations/{operation}/interject",
+            json={"request_key": "i1", "expected_generation": 1, "text": "更慢一点"},
+        )
+        assert rejected.status_code == 400
+        assert rejected.json()["error"]["code"] == "OPERATION_INPUT_INVALID"
+
+        resumed = client.post(
+            f"/api/operations/{operation}/continue",
+            json={"request_key": "c1", "expected_generation": 1},
+        ).json()
+        assert resumed["generation"] == 2
+
+        done = _wait_operation(client, operation)
+        assert done["status"] == "completed"
+        receipt = next(
+            item
+            for item in client.get(f"/api/operations/{operation}/result").json()["receipts"]
+            if item["kind"] == "probe"
+        )
+        assert receipt["outcome"]["response"] == "passed"
 
 
 # -- 与写作轮次共用同一配置 --------------------------------------------------
@@ -457,3 +566,38 @@ def test_server_discovery_capacity_is_saved_without_client_roundtrip(tmp_path: P
     )
     assert moved.status_code == 200
     assert moved.json()["connections"][0]["model_metadata"] == {}
+
+
+def test_probe_interjection_retargets_without_changing_credentials(tmp_path: Path) -> None:
+    client, service, _, _ = _build(tmp_path)
+    provider = _SlowThenFastProvider()
+    service._probe_factory = lambda _profile: provider
+    payload = {
+        "kind": "response",
+        "model": "deepseek-chat",
+        "catalog_id": "deepseek",
+        "base_url": "https://api.deepseek.com/v1",
+        "api": "openai-completions",
+        "api_key": "sk-draft",
+        "request_key": "retarget",
+    }
+    with client:
+        operation_id = client.post("/api/model-connections/probe", json=payload).json()[
+            "operation_id"
+        ]
+        _wait_operation(client, operation_id, {"running"})
+        response = client.post(
+            f"/api/operations/{operation_id}/interject",
+            json={"request_key": "target", "expected_generation": 1, "text": "响应测试"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["generation"] == 2
+        assert _wait_operation(client, operation_id)["status"] == "completed"
+        replay = client.post(
+            f"/api/operations/{operation_id}/interject",
+            json={"request_key": "target", "expected_generation": 1, "text": "响应测试"},
+        )
+        assert replay.status_code == 200
+        assert provider.calls == 2
+        persisted = str(client.app.state.operations.read(operation_id).to_dict())
+        assert "sk-draft" not in persisted

@@ -14,10 +14,8 @@ import pytest
 
 from hastings.workspace.clue_models import (
     ClueCoverage,
-    ClueDesignLink,
     ClueEntry,
     ClueIdentity,
-    FileSource,
 )
 from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.clues import ClueStore, build_clues, publish_clues
@@ -68,7 +66,7 @@ def test_previous_ledger_format_is_abandoned_without_migration_or_aliases(book):
     assert store.file.read_bytes() == before
     result = publish(workspace, store, (clue(workspace),))
     ledger = store.read().ledger
-    assert ledger is not None and ledger.schema_version == 2
+    assert ledger is not None and ledger.schema_version == 3
     assert list(ledger.clues) == result["clue_ids"] and "clue_old" not in ledger.clues
     assert "legacy_aliases" not in ledger.model_dump()
     assert not (store.root / "clue-migration-backups").exists()
@@ -174,40 +172,14 @@ def test_rename_and_rebuild_keep_identity_and_unrelated_revision(book):
     assert len(store.read().ledger.contributions) == 3
 
 
-def test_empty_is_atomic_and_retains_identity_relations_and_other_chapter(book):
+def test_empty_is_atomic_and_retains_identity_and_other_chapter(book):
     workspace, store = book
     first = publish(workspace, store, (clue(workspace),))["clue_ids"][0]
     second_entry = replace(clue(workspace, "另一线索"), source_chapter=2)
     publish(workspace, store, (second_entry,), path=SECOND, key="second")
-    revision = store.read().revision
-    view = workspace.read(FIRST)
-    quote = "背面还写着一句话"
-    start = view.text.index(quote)
-    store.mutate(
-        expected_revision=revision,
-        request_key="design",
-        kind="fixture_relation",
-        payload={},
-        apply=lambda ledger: ledger.design_links.update(
-            {
-                "link": ClueDesignLink(
-                    link_id="link",
-                    clue_id=first,
-                    source=FileSource(path=FIRST, digest=view.digest),
-                    start=start,
-                    end=start + len(quote),
-                    quote=quote,
-                    created_at="2026-10-27T10:00:00+08:00",
-                    created_by="test",
-                    created_revision=ledger.ledger_revision,
-                )
-            }
-        )
-        or {},
-    )
     publish(workspace, store, (), outcome="empty", key="empty")
     ledger = store.read().ledger
-    assert first in ledger.clues and ledger.design_links["link"].clue_id == first
+    assert first in ledger.clues
     assert ledger.coverage[FIRST].outcome == "empty"
     assert {row.content.source_chapter for row in ledger.contributions.values()} == {2}
 

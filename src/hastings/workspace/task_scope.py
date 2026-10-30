@@ -22,8 +22,6 @@ from hastings.workspace.files import is_managed_path
 from hastings.workspace.legacy_files import require_legacy_file_authorization
 
 __all__ = [
-    "ClueDesignAction",
-    "ClueDesignGrant",
     "ModuleAction",
     "ModuleChangeAction",
     "ModuleChangeTarget",
@@ -41,7 +39,6 @@ __all__ = [
 MutationAction = Literal["create", "update", "delete", "move"]
 ModuleAction = Literal["attach", "detach"]
 ModuleChangeAction = Literal["create", "update"]
-ClueDesignAction = Literal["link", "inference"]
 ScopeMode = Literal["read_only", "edit"]
 
 _ACTION_LABEL: dict[str, str] = {
@@ -57,10 +54,6 @@ _MODULE_PHRASES: dict[str, tuple[str, ...]] = {
     "detach": ("卸下", "移除", "拆下", "卸载", "解绑"),
 }
 _PUBLISH_PHRASES = ("发布", "存成模块", "保存到模块库", "存进模块库", "放进模块库", "另存为模块")
-_CLUE_DESIGN_PHRASES: dict[str, tuple[str, ...]] = {
-    "link": ("关联计划", "关联作者计划", "挂到线索", "接到线索", "设计关联", "关联到线索"),
-    "inference": ("推理", "目标", "结论", "构思", "设想"),
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,35 +161,6 @@ class ModuleContentGrant:
 
 
 @dataclass(frozen=True, slots=True)
-class ClueDesignGrant:
-    """一次线索设计关系操作：关联作者计划或保存推理目标。
-
-    关系授权与模块／正文写入分开：它只允许改账本中的计划与目标，不授予任何内容写权限。
-    """
-
-    action: ClueDesignAction
-    clue_id: str = ""
-    inference_id: str = ""
-    clue_ids: tuple[str, ...] = ()
-
-    def to_dict(self) -> dict[str, object]:
-        payload: dict[str, object] = {"action": self.action}
-        if self.clue_id:
-            payload["clue_id"] = self.clue_id
-        if self.inference_id:
-            payload["inference_id"] = self.inference_id
-        if self.clue_ids:
-            payload["clue_ids"] = list(self.clue_ids)
-        return payload
-
-    def describe(self) -> str:
-        if self.action == "link":
-            return f"关联线索 {self.clue_id} 的作者计划"
-        target = self.inference_id or "新建推理目标"
-        return f"保存推理目标（{target}）"
-
-
-@dataclass(frozen=True, slots=True)
 class ModuleChangeTarget:
     """变更集里实际提交的一项操作目标；校验时与登记内容逐项对照。"""
 
@@ -251,8 +215,6 @@ class ScopeDraft:
     module_grants: tuple[ModuleGrant, ...] = ()
     #: 本作品模块内容操作：新建槽位或更新精确版本；普通创作任务用它登记。
     module_content_grants: tuple[ModuleContentGrant, ...] = ()
-    #: 线索计划与推理目标操作；只改关系，不授予模块、正文或其他内容写入。
-    clue_design_grants: tuple[ClueDesignGrant, ...] = ()
     #: 作者明确要求把内容发布到全局模块库；不隐含装入或改正文。
     library_publish: bool = False
     extendable: bool = False
@@ -286,7 +248,6 @@ class TaskScope:
             "library_search": self.draft.library_search,
             "module_grants": [item.to_dict() for item in self.draft.module_grants],
             "module_content_grants": [item.to_dict() for item in self.draft.module_content_grants],
-            "clue_design_grants": [item.to_dict() for item in self.draft.clue_design_grants],
             "library_publish": self.draft.library_publish,
             "extendable": self.draft.extendable,
             "extend_actions": list(self.draft.extend_actions),
@@ -589,47 +550,6 @@ class ScopeController:
                 },
             )
 
-    def require_clue_design(self, grant: ClueDesignGrant) -> None:
-        """关系写工具的统一入口：只允许本轮登记过的身份、关联或目标。"""
-        current = self._require_scope()
-        if current.scope.mode == "read_only":
-            raise WorkspaceError(
-                code="TASK_SCOPE_DENIED_CONFLICT",
-                where="task_scope.clue_design",
-                why="这一轮登记为只读任务",
-                fix="只在回复里说明构思方案；作者明确要求保存时再登记关系操作",
-                details={"version": current.version},
-            )
-        matched = any(
-            self._clue_design_matches(grant, item) for item in current.draft.clue_design_grants
-        )
-        if matched:
-            return
-        raise WorkspaceError(
-            code="TASK_SCOPE_DENIED_CONFLICT",
-            where="task_scope.clue_design",
-            why=f"本轮范围不包含这次关系操作：{grant.describe()}",
-            fix=(
-                "作者明确要求创建、关联或保存构思后，在 set_task_scope 的 "
-                "clue_design_grants 一次登记完整；讨论本身不自动保存"
-            ),
-            details={
-                "operation": grant.to_dict(),
-                "granted": [item.to_dict() for item in current.draft.clue_design_grants],
-                "version": current.version,
-            },
-        )
-
-    @staticmethod
-    def _clue_design_matches(actual: ClueDesignGrant, granted: ClueDesignGrant) -> bool:
-        if actual.action != granted.action:
-            return False
-        if actual.action == "link":
-            return actual.clue_id == granted.clue_id
-        if granted.inference_id and granted.inference_id != actual.inference_id:
-            return False
-        return set(granted.clue_ids) == set(actual.clue_ids)
-
     def _require_scope(self) -> TaskScope:
         if self._current is None:
             raise WorkspaceError(
@@ -650,19 +570,17 @@ def _validate_draft(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) 
             draft.grants
             or draft.module_grants
             or draft.module_content_grants
-            or draft.clue_design_grants
             or draft.library_publish
         ):
-            raise _evidence_error("只读任务不能登记写操作、装配变更、内容保存、关系操作或库发布")
+            raise _evidence_error("只读任务不能登记写操作、装配变更、内容保存或库发布")
     elif (
         not draft.grants
         and not draft.module_grants
         and not draft.module_content_grants
-        and not draft.clue_design_grants
         and not draft.library_publish
     ):
         raise _evidence_error(
-            "修改任务至少要登记一个确切的路径、装配操作、内容保存、关系操作或库发布"
+            "修改任务至少要登记一个确切的路径、装配操作、内容保存或库发布"
         )
     for grant in draft.grants:
         _validate_mutation(grant, where="task_scope.set")
@@ -675,8 +593,6 @@ def _validate_draft(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) 
             raise _evidence_error(f"新建模块的槽位重复：{content_grant.slot}")
         if content_grant.action == "create":
             seen_slots.add(content_grant.slot)
-    for design_grant in draft.clue_design_grants:
-        _validate_clue_design_grant(design_grant)
     for path in draft.denied_paths:
         _validate_path(path, where="task_scope.set")
     for path in draft.required_references:
@@ -692,33 +608,8 @@ def _validate_draft(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) 
         raise _evidence_error("可发现范围要写明允许追加哪类操作")
     _validate_authorization(draft, author_texts)
     _validate_module_authorization(draft, author_texts)
-    _validate_clue_design_authorization(draft, author_texts)
     if draft.library_search and not _library_search_authorized(draft, author_texts):
         raise _evidence_error("作者没有明确要求从全局模块库查找，不能登记库搜索权限")
-
-
-def _validate_clue_design_grant(grant: ClueDesignGrant) -> None:
-    """关系操作必须给到精确身份或目标，不接受「保存所有构思」这种模糊授权。"""
-    if grant.action == "link":
-        if not grant.clue_id.strip():
-            raise _evidence_error("关联线索计划要写清线索 ID")
-        return
-    if not 1 <= len(grant.clue_ids) <= 10:
-        raise _evidence_error("推理目标要关联 1—10 条线索")
-    if len(set(grant.clue_ids)) != len(grant.clue_ids):
-        raise _evidence_error("推理目标的线索不能重复")
-
-
-def _validate_clue_design_authorization(
-    draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]
-) -> None:
-    text = _quoted_author_text(draft, author_texts)
-    for grant in draft.clue_design_grants:
-        phrases = _CLUE_DESIGN_PHRASES[grant.action]
-        if not any(phrase in text for phrase in phrases):
-            raise _evidence_error(
-                f"作者没有明确要求「{grant.describe()}」；普通写作授权不能代替计划或目标操作"
-            )
 
 
 def _validate_module_grant(grant: ModuleGrant) -> None:
@@ -830,22 +721,6 @@ def _validate_reregistration(current: TaskScope, draft: ScopeDraft) -> None:
             fix="本轮要保存的内容一次登记完整；中途新增模块需要作者新的明确要求",
             details={
                 "added": [item.to_dict() for item in added_content],
-                "version": current.version,
-            },
-        )
-    added_design = [
-        grant
-        for grant in draft.clue_design_grants
-        if grant not in current.draft.clue_design_grants
-    ]
-    if added_design:
-        raise WorkspaceError(
-            code="TASK_SCOPE_DENIED_CONFLICT",
-            where="task_scope.set",
-            why=f"重新登记只能收窄范围，这次新增了关系操作：{added_design[0].describe()}",
-            fix="本轮要保存的计划与目标一次登记完整；中途扩大范围需要作者新的明确要求",
-            details={
-                "added": [item.to_dict() for item in added_design],
                 "version": current.version,
             },
         )

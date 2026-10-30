@@ -17,14 +17,11 @@ from eval.harness.grading import (
     status,
 )
 from eval.harness.reporting import aggregate, build_report
-from eval.harness.runtime import intervention, run_attempt
+from eval.harness.runtime import run_attempt
 from eval.harness.schema import ROOT, Case, Check, Step, fixture_files, load_cases
 from pydantic import ValidationError
 
 from hastings.server.provider_runtime import ModelSnapshot
-from hastings.workspace import agent
-from hastings.workspace.context import build_assembled_context
-from hastings.workspace.files import Workspace
 from tau_agent.messages import AssistantMessage, TextContent, ToolCall, Usage
 from tau_agent.provider_events import AssistantDoneEvent, AssistantStartEvent
 
@@ -67,37 +64,15 @@ def deliver(item: dict[str, Any], tool: str, payload: dict[str, Any], key: str) 
 
 def test_all_cases_and_suites_are_loadable() -> None:
     cases, digest = load_cases()
-    # 1.0 增加 16 条线索流程用例，总数跟着变；数量断言用来挡住误删。
-    assert len(cases) == 48 and len(digest) == 64
+    # 线索核对、索引与只读展开已退出，数量断言仍用来挡住误删。
+    assert len(cases) == 40 and len(digest) == 64
     assert any(case.id == "module_only_first_chapter" for case in cases)
     assert not any(case.id.startswith("overview_") for case in cases)
     for case in cases:
-        assert fixture_files(case) or case.modules
+        assert fixture_files(case) or case.modules or case.id == "v101_o01"
     for suite in (ROOT / "suites").glob("*.json"):
         data = json.loads(suite.read_text(encoding="utf-8"))
         assert set(data["cases"]) <= {c.id for c in cases}
-
-
-def test_expand_step_requires_exactly_one_idea_and_no_other_material() -> None:
-    """只读展开的受理条件与产品一致：一条灵感，且不夹带章节或索引目标。"""
-
-    with pytest.raises(ValidationError):
-        Step(text="展开", purpose="expand_idea")
-    with pytest.raises(ValidationError):
-        Step(
-            text="展开",
-            purpose="expand_idea",
-            idea_references=["老板娘的旧识", "灯塔"],
-        )
-    with pytest.raises(ValidationError):
-        Step(
-            text="展开",
-            purpose="expand_idea",
-            idea_references=["老板娘的旧识"],
-            selected=FIRST,
-        )
-    step = Step(text="展开", purpose="expand_idea", idea_references=["老板娘的旧识"])
-    assert step.purpose == "expand_idea"
 
 
 def test_tool_not_called_reads_started_tools() -> None:
@@ -334,21 +309,6 @@ def test_unrun_jobs_are_visible() -> None:
     report = build_report({"jobs": [job]}, [])
     assert report["unexecuted"] == ["x"]
     assert report["groups"]["variant"]["current"]["counts"]["not_run"] == 1
-
-
-def test_ablation_changes_actual_assembly_and_restores_builder(tmp_path: Path) -> None:
-    workspace = Workspace.create(tmp_path / "book")
-    original = agent.build_turn_assembly
-    case = Case(id="ablation", title="x", family="x", steps=[Step(text="x")])
-    trace: dict[str, Any] = {"assemblies": [], "faults": []}
-    with intervention(case, "no_index", trace):
-        result = agent.build_turn_assembly(workspace, index_notes="索引内容")
-        assert "index" not in {p.key for p in result.parts}
-        assert "索引内容" not in result.text
-        assert trace["assemblies"][0] == {p.key: p.text for p in result.parts}
-    assert agent.build_turn_assembly is original
-    assert "index" in {p.key for p in original(workspace, index_notes="索引内容").parts}
-    assert build_assembled_context(workspace).profile == "writer"
 
 
 class ScriptedProvider:

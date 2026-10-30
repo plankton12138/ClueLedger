@@ -6,7 +6,6 @@ from hastings.workspace.agent import RunContext, build_tools, build_turn_assembl
 from hastings.workspace.character_states import (
     CharacterStateStore,
     StateSnapshot,
-    build_roster,
     publish_states,
 )
 from hastings.workspace.clues import ClueEntry, ClueStore, publish_clues
@@ -17,7 +16,6 @@ from hastings.workspace.disclosure import (
     build_disclosure_state,
     publish_observed,
 )
-from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.glossary import GlossaryStore
 from hastings.workspace.service import WriteSession
@@ -48,7 +46,7 @@ def setup(tmp_path):
     }
     tools = {
         t.name: t
-        for t in build_tools(workspace, run, mode="state", index_allowed=(PERSON,), **stores)
+        for t in build_tools(workspace, run, mode="state", **stores)
     }
     return workspace, run, stores, tools
 
@@ -57,109 +55,6 @@ def evidence(workspace, path=FIRST):
     src = workspace.read(path)
     start = src.text.index("\n\n") + 2
     return ObservedEvidence(path, src.digest, start, len(src.text), src.text[start:])
-
-
-def payload(ev):
-    return {
-        "path": ev.path,
-        "digest": ev.digest,
-        "start": ev.start,
-        "end": ev.end,
-        "quote": ev.quote,
-    }
-
-
-def arguments(workspace, tool, ev):
-    entity = {"entity": PERSON, "entity_digest": workspace.read(PERSON).digest}
-    proof = payload(ev)
-    return {
-        "save_disclosure": {
-            **entity,
-            "facts": [{"fact": "书房里的身份", "chapter": 1, "evidence": proof}],
-        },
-        "save_character_state": {
-            **entity,
-            "states": [{"chapter": 1, "location": "书房", "alive": True, "evidence": proof}],
-        },
-        "save_timeline": {"entries": [{"chapter": 1, "when": "雨夜", "evidence": proof}]},
-        "save_clues": {
-            "entries": [
-                {"clue": "书房里的人", "planted_chapter": 1, "status": "open", "evidence": proof}
-            ]
-        },
-        "save_glossary_term": {
-            "term": "书房",
-            "kind": "place",
-            "first_chapter": 1,
-            "evidence": proof,
-        },
-    }[tool]
-
-
-PUBLISHERS = (
-    "save_disclosure",
-    "save_character_state",
-    "save_timeline",
-    "save_clues",
-    "save_glossary_term",
-)
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("tool", PUBLISHERS)
-async def test_publication_requires_actual_read_range(setup, tool):
-    workspace, _, stores, tools = setup
-    await tools["read_file"].execute("entity", {"path": PERSON})
-    await tools["read_file"].execute("prefix", {"path": FIRST, "limit": 1})
-    args = arguments(workspace, tool, evidence(workspace))
-    with pytest.raises(WorkspaceError, match="REFERENCE_NOT_FULLY_READ_CONFLICT"):
-        await tools[tool].execute("unread", args)
-    assert all(not store.entries() for store in stores.values())
-    await tools["read_file"].execute("full", {"path": FIRST})
-    await tools[tool].execute("read", args)
-    import json
-
-    # 旧规则的缓存不能继续当作已验证状态使用；文件内容保留，读取按空降级。
-    store = next(s for s in stores.values() if s.entries())
-    old = json.loads(store.file.read_text(encoding="utf-8"))
-    old["recipe_version"] = 999 if tool == "save_clues" else 1
-    store.file.write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
-    if tool == "save_clues":
-        # 1.0 线索包含不可丢弃的身份与关系，未知格式不能按空覆盖。
-        with pytest.raises(WorkspaceError, match="CLUE_STATE_FAILED"):
-            store.entries()
-    else:
-        assert store.entries() == ()
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("tool", PUBLISHERS)
-async def test_setting_and_wrong_chapter_cannot_be_published(setup, tool):
-    workspace, _, stores, tools = setup
-    truth = "设定集/真相.md"
-    workspace.write(truth, "幕后主使是林静。", expected_digest=None)
-    await tools["read_file"].execute("entity", {"path": PERSON})
-    for path in (truth, LATER):
-        await tools["read_file"].execute("source", {"path": path})
-        src = workspace.read(path)
-        ev = ObservedEvidence(path, src.digest, 0, len(src.text), src.text)
-        with pytest.raises(WorkspaceError, match="STATE_EVIDENCE_INVALID"):
-            await tools[tool].execute("wrong", arguments(workspace, tool, ev))
-    assert all(not store.entries() for store in stores.values())
-
-
-@pytest.mark.anyio
-async def test_missing_alive_cannot_overwrite_death(setup):
-    workspace, _, stores, tools = setup
-    for path in (PERSON, FIRST):
-        await tools["read_file"].execute("read", {"path": path})
-    args = arguments(workspace, "save_character_state", evidence(workspace))
-    args["states"][0]["alive"] = False
-    await tools["save_character_state"].execute("death", args)
-    del args["states"][0]["alive"]
-    with pytest.raises(WorkspaceError):
-        await tools["save_character_state"].execute("omit", args)
-    assert build_roster(workspace, stores["roster_store"]).characters[0].dead
 
 
 def test_one_stale_fact_does_not_drop_independent_valid_fact(setup):
@@ -267,14 +162,12 @@ def test_cutoff_input_is_validated_and_preserved(setup):
     request = ContextInput(state_chapter=1).to_request()
     snapshot = freeze_context(workspace, request)
     assert snapshot.to_dict()["state_chapter"] == 1
-    assert _same_materials(snapshot.to_dict(), request, "chat", (), (), "chat", (), ())
+    assert _same_materials(snapshot.to_dict(), request, "chat", (), "chat", ())
     assert not _same_materials(
         snapshot.to_dict(),
         ContextInput(state_chapter=9).to_request(),
         "chat",
         (),
-        (),
         "chat",
-        (),
         (),
     )

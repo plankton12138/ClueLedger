@@ -20,13 +20,26 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+from pydantic import JsonValue
+
+from hastings.prompts.sections import (
+    CLUE_DUE_UNDECIDED,
+    CLUE_SUPPORTS_PREFIX,
+    CLUES_TAIL_OPEN,
+    clue_due_overdue,
+    clue_due_planned,
+    clue_hidden_note,
+    clue_planted_note,
+    clues_head,
+)
 from hastings.workspace.assembly import Exclusion
-from hastings.workspace.clue_models import ClueEntry, ClueLedger, ClueStatus
-from hastings.workspace.clue_store import ClueLedgerStore
+from hastings.workspace.clue_models import ClueEntry, ClueIdentity, ClueLedger, ClueStatus
+from hastings.workspace.clue_store import ClueLedgerStore, new_id
 from hastings.workspace.disclosure import EntryStatus, check_evidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
@@ -39,6 +52,7 @@ __all__ = [
     "build_clues",
     "clues_section",
     "clues_view",
+    "create_clue_identity",
     "publish_clues",
 ]
 
@@ -310,10 +324,10 @@ def clues_section(
     """
     if not state.open:
         return ""
-    header = f"尚未回收的线索（截至第 {state.current_chapter} 章）："
+    header = clues_head(state.current_chapter)
     suffix = [
-        "这些是读者看到过的线索，不等于真相；这一章要么推进，要么明确不推进。",
-        f"（还有 {len(state.open)} 条未列入，用 `read_state` 的 `domain=clues` 查看。）",
+        CLUES_TAIL_OPEN,
+        clue_hidden_note(len(state.open)),
     ]
     reserved = len("\n".join(suffix)) + 1
     lines: list[str] = []
@@ -324,15 +338,15 @@ def clues_section(
             hidden += 1
             _exclude_clue(excluded, item, "limit", 0)
             continue
-        marks = [f"第{item.planted_chapter}章埋下：{item.key}"]
+        marks = [clue_planted_note(item.planted_chapter, item.key)]
         if item.due_chapter is None:
-            marks.append("｜未定回收章")
+            marks.append(CLUE_DUE_UNDECIDED)
         elif item.due_chapter <= state.current_chapter:
-            marks.append(f"｜计划第{item.due_chapter}章回收，已超期")
+            marks.append(clue_due_overdue(item.due_chapter))
         else:
-            marks.append(f"｜计划第{item.due_chapter}章回收")
+            marks.append(clue_due_planned(item.due_chapter))
         if item.supports:
-            marks.append(f"｜指向：{item.supports}")
+            marks.append(f"{CLUE_SUPPORTS_PREFIX}{item.supports}")
         line = "- " + "".join(marks)
         if used + len(line) + 1 > budget - reserved:
             hidden += 1
@@ -342,9 +356,9 @@ def clues_section(
         used += len(line) + 1
     if not lines:
         return ""
-    lines.append("这些是读者看到过的线索，不等于真相；这一章要么推进，要么明确不推进。")
+    lines.append(CLUES_TAIL_OPEN)
     if hidden:
-        lines.append(f"（还有 {hidden} 条未列入，用 `read_state` 的 `domain=clues` 查看。）")
+        lines.append(clue_hidden_note(hidden))
     return "\n".join([header, *lines])
 
 
@@ -366,9 +380,7 @@ def _exclude_clue(
     )
 
 
-def clues_view(
-    state: ClueState, *, ledger: ClueLedger | None = None
-) -> dict[str, object]:
+def clues_view(state: ClueState) -> dict[str, object]:
     def row(item: ClueEntry) -> dict[str, object]:
         return {
             "clue_id": item.clue_id,
@@ -390,27 +402,51 @@ def clues_view(
         "overdue": [item.key for item in state.overdue()],
         "warnings": list(state.warnings),
     }
-    if ledger is not None:
-        payload["design_links"] = [
-            {
-                "link_id": link.link_id,
-                "clue_id": link.clue_id,
-                "relation": link.relation,
-                "quote": link.quote,
-                "source_kind": link.source.kind,
-                "binding_id": link.binding_id,
-            }
-            for link in ledger.design_links.values()
-        ]
-        payload["inferences"] = [
-            {
-                "inference_id": row.inference_id,
-                "inference_revision": row.inference_revision,
-                "goal": row.goal,
-                "intent": row.intent,
-                "clue_ids": list(row.clue_ids),
-                "design_link_ids": list(row.design_link_ids),
-            }
-            for row in ledger.inferences.values()
-        ]
     return payload
+
+
+def create_clue_identity(
+    store: ClueLedgerStore,
+    *,
+    title: str,
+    request_key: str,
+    expected_revision: str,
+    created_by: str = "author",
+) -> dict[str, JsonValue]:
+    """从零建立线索身份；不写贡献、覆盖或披露，也不伪造埋设章。"""
+    clean = title.strip()
+    if not clean:
+        raise WorkspaceError(
+            code="CLUE_SCOPE_INVALID",
+            where="clues.create",
+            why="线索标题不能为空",
+            fix="给出一个作者能辨认的标题",
+        )
+    if len(clean) > 200:
+        raise WorkspaceError(
+            code="CLUE_SCOPE_INVALID",
+            where="clues.create",
+            why="线索标题过长",
+            fix="把标题缩短到 200 字以内",
+        )
+
+    def apply(ledger: ClueLedger) -> dict[str, JsonValue]:
+        clue_id = new_id("clue")
+        revision = new_id("rev")
+        ledger.clues[clue_id] = ClueIdentity(
+            clue_id=clue_id,
+            title=clean,
+            clue_revision=revision,
+            created_at=datetime.now().astimezone().isoformat(timespec="microseconds"),
+            created_by=created_by,
+            first_chapter=None,
+        )
+        return {"clue_id": clue_id, "clue_revision": revision, "title": clean}
+
+    return store.mutate(
+        expected_revision=expected_revision,
+        request_key=request_key,
+        kind="create_clue",
+        payload={"title": clean},
+        apply=apply,
+    )

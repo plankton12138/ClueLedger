@@ -7,34 +7,23 @@ import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from hastings.library.modules import ModuleLibrary
 from hastings.workspace.clue_models import (
     ClueContribution,
-    ClueDesignLink,
     ClueEvidence,
-    ClueInference,
     ClueMode,
-    FileSource,
-    InferenceIntent,
-    ModuleSource,
-    Source,
 )
-from hastings.workspace.clue_reviews import ClueReviewSummaryView, clue_review_summaries
 from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import FileView, Workspace, has_chapter_content
-from hastings.workspace.module_assembly import Assembly, AssemblyStore
-from hastings.workspace.source_locations import design_evidence_id, file_evidence_id
+from hastings.workspace.source_locations import file_evidence_id
 from hastings.workspace.state_store import current_chapter
 
 Freshness = Literal["valid", "stale", "source_missing", "unavailable", "none"]
-DesignFreshness = Literal[
-    "valid", "stale", "detached", "source_missing", "unavailable", "invalid_range"
-]
 Outcome = Literal["found", "empty", "insufficient", "unrecorded"]
 
 
@@ -81,43 +70,6 @@ class ReaderSeen(BaseModel):
     basis_ids: list[str]
 
 
-class ClueDesignView(BaseModel):
-    link_id: str
-    relation: str = ""
-    source: Source
-    freshness: DesignFreshness
-    quote: str
-    evidence_id: str
-    label: str = ""
-
-
-class InferenceClue(BaseModel):
-    clue_id: str
-    title: str
-
-
-class InferenceStatementView(BaseModel):
-    text: str
-    clue_ids: list[str] = Field(default_factory=list)
-    design_link_ids: list[str] = Field(default_factory=list)
-
-
-class ClueInferenceView(BaseModel):
-    inference_id: str
-    inference_revision: str
-    goal: str
-    intent: InferenceIntent
-    clue_ids: list[str]
-    clues: list[InferenceClue]
-    premises: list[InferenceStatementView]
-    alternatives: list[InferenceStatementView]
-    design_link_ids: list[str] = Field(default_factory=list)
-    updated_at: str = ""
-    warnings: list[str] = Field(default_factory=list)
-    #: 目标线索已有的正文章节（截止章内）；核对界面用它作为默认目标，不替作者扩大范围。
-    suggested_chapters: list[str] = Field(default_factory=list)
-
-
 class ClueSummary(BaseModel):
     clue_id: str
     clue_revision: str
@@ -138,10 +90,6 @@ class ClueDetail(ClueSummary):
     evidence: list[ClueBasis]
     interpretation: str = ""
     observations_truncated: bool = False
-    author_designs: list[ClueDesignView] = Field(default_factory=list)
-    inferences: list[ClueInferenceView] = Field(default_factory=list)
-    #: 已有核对报告的摘要；完整报告按 report_id 单独读取，不随详情一起下发。
-    reviews: list[ClueReviewSummaryView] = Field(default_factory=list)
 
 
 class ClueChapter(BaseModel):
@@ -255,173 +203,7 @@ class ClueReader:
             )
         return result
 
-    def _module_label(self, source: ModuleSource) -> str:
-        if self.library is None or self.library.library_id != source.library_id:
-            return f"{source.module_id} · {source.entry_id}"
-        try:
-            module = self.library.module(source.module_id)
-            entry = self.library.read_entry(
-                module_id=source.module_id,
-                revision_id=source.revision_id,
-                entry_id=source.entry_id,
-                end=0,
-            )
-            return f"{module.name} · {entry['title']}"
-        except WorkspaceError:
-            return f"{source.module_id} · {source.entry_id}"
-
-    def _design_source(
-        self, link: ClueDesignLink, assembly: Assembly
-    ) -> tuple[DesignFreshness, str]:
-        source = link.source
-        if isinstance(source, FileSource):
-            freshness, _ = self.status(source.path, source.digest)
-            status = cast(DesignFreshness, freshness)
-            file = self.file(source.path)
-            if (
-                status == "valid"
-                and isinstance(file, FileView)
-                and file.text[link.start : link.end] != link.quote
-            ):
-                status = "unavailable"
-            label = file.path if isinstance(file, FileView) else source.path
-            return status, label
-        label = self._module_label(source)
-        binding = next((item for item in assembly.bindings if item.id == link.binding_id), None)
-        if (
-            binding is None
-            or binding.module.library_id != source.library_id
-            or binding.module.module_id != source.module_id
-            or binding.module.revision_id != source.revision_id
-        ):
-            return "detached", label
-        if self.library is None or self.library.library_id != source.library_id:
-            return "unavailable", label
-        try:
-            checked = self.library.read_entry(
-                module_id=source.module_id,
-                revision_id=source.revision_id,
-                entry_id=source.entry_id,
-                end=0,
-            )
-            text, digest = self.library.storage.read_entry(
-                source.module_id, source.revision_id, source.entry_id
-            )
-        except WorkspaceError:
-            return "unavailable", label
-        if digest != str(checked["digest"]) or digest != source.content_digest:
-            return "stale", label
-        if not (0 <= link.start < link.end <= len(text)) or (
-            text[link.start : link.end] != link.quote
-        ):
-            return "invalid_range", label
-        return "valid", label
-
-    def _design_views(self, clue_id: str) -> tuple[list[ClueDesignView], list[str]]:
-        ledger = self.snapshot.ledger
-        if ledger is None:
-            return [], []
-        assembly = AssemblyStore(self.workspace.root).read()
-        views: list[ClueDesignView] = []
-        warnings: list[str] = []
-        for link in sorted(
-            (row for row in ledger.design_links.values() if row.clue_id == clue_id),
-            key=lambda row: (row.created_at, row.link_id),
-        ):
-            freshness, label = self._design_source(link, assembly)
-            views.append(
-                ClueDesignView(
-                    link_id=link.link_id,
-                    relation=link.relation,
-                    source=link.source,
-                    freshness=freshness,
-                    quote=link.quote,
-                    evidence_id=design_evidence_id(self.workspace, self.snapshot, link),
-                    label=label,
-                )
-            )
-            if freshness != "valid":
-                warnings.append("作者计划关联的来源已变化或模块已调整，请核对后重新关联。")
-        return views, list(dict.fromkeys(warnings))
-
-    def _inference_view(
-        self, row: ClueInference, assembly: Assembly
-    ) -> tuple[ClueInferenceView, list[str]]:
-        ledger = self.snapshot.ledger
-        assert ledger is not None
-        linked = [
-            ledger.design_links[link_id]
-            for link_id in row.design_link_ids
-            if link_id in ledger.design_links
-        ]
-        changed = [
-            link for link in linked if self._design_source(link, assembly)[0] != "valid"
-        ]
-        warnings = (
-            [f"推理目标「{row.goal[:40]}」引用的计划来源已变化，请核对。"] if changed else []
-        )
-        suggested: list[str] = []
-        for clue_id in row.clue_ids:
-            for contribution in self.rows.get(clue_id, []):
-                path = contribution.source_path
-                if (
-                    path
-                    and contribution.content.source_chapter <= self.as_of
-                    and path not in suggested
-                ):
-                    suggested.append(path)
-        view = ClueInferenceView(
-            inference_id=row.inference_id,
-            inference_revision=row.inference_revision,
-            goal=row.goal,
-            intent=row.intent,
-            clue_ids=list(row.clue_ids),
-            suggested_chapters=suggested[:10],
-            clues=[
-                InferenceClue(clue_id=item, title=ledger.clues[item].title)
-                for item in row.clue_ids
-                if item in ledger.clues
-            ],
-            premises=[
-                InferenceStatementView(
-                    text=item.text,
-                    clue_ids=list(item.clue_ids),
-                    design_link_ids=list(item.design_link_ids),
-                )
-                for item in row.premises
-            ],
-            alternatives=[
-                InferenceStatementView(
-                    text=item.text,
-                    clue_ids=list(item.clue_ids),
-                    design_link_ids=list(item.design_link_ids),
-                )
-                for item in row.alternatives
-            ],
-            design_link_ids=list(row.design_link_ids),
-            updated_at=row.updated_at,
-            warnings=(
-                ["引用的计划来源已变化，请核对后再把它视为当前安排。"] if changed else []
-            ),
-        )
-        return view, warnings
-
-    def _inference_views(self, clue_id: str) -> tuple[list[ClueInferenceView], list[str]]:
-        ledger = self.snapshot.ledger
-        if ledger is None:
-            return [], []
-        assembly = AssemblyStore(self.workspace.root).read()
-        views: list[ClueInferenceView] = []
-        warnings: list[str] = []
-        for row in ledger.inferences.values():
-            if clue_id not in row.clue_ids:
-                continue
-            view, rows = self._inference_view(row, assembly)
-            views.append(view)
-            warnings.extend(rows)
-        return views, list(dict.fromkeys(warnings))
-
-    def detail(self, clue_id: str, *, include_designs: bool = False) -> ClueDetail | None:
+    def detail(self, clue_id: str) -> ClueDetail | None:
         ledger = self.snapshot.ledger
         if ledger is None or clue_id not in ledger.clues:
             return None
@@ -543,13 +325,6 @@ class ClueReader:
             for row in observations
             if all(value in valid_ids for value in row.evidence_ids)
         ]
-        author_designs: list[ClueDesignView] = []
-        inferences: list[ClueInferenceView] = []
-        if include_designs:
-            author_designs, design_warnings = self._design_views(clue_id)
-            inferences, inference_warnings = self._inference_views(clue_id)
-            warnings.extend(design_warnings)
-            warnings.extend(inference_warnings)
         return ClueDetail(
             clue_id=clue_id,
             clue_revision=identity.clue_revision,
@@ -571,8 +346,6 @@ class ClueReader:
             evidence=bases,
             interpretation=latest.supports if latest else "",
             observations_truncated=len(seen) > len(observations),
-            author_designs=author_designs,
-            inferences=inferences,
         )
 
     def details(self) -> list[ClueDetail]:
@@ -601,20 +374,7 @@ def clue_detail(
     as_of_chapter: int | None = None,
     library: ModuleLibrary | None = None,
 ) -> ClueDetail:
-    detail = ClueReader(workspace, root, as_of_chapter, library=library).detail(
-        clue_id, include_designs=True
-    )
-    if detail is not None:
-        detail = detail.model_copy(
-            update={
-                "reviews": clue_review_summaries(
-                    workspace,
-                    ClueLedgerStore(root),
-                    clue_ids=[clue_id],
-                    as_of_chapter=detail.as_of_chapter,
-                )
-            }
-        )
+    detail = ClueReader(workspace, root, as_of_chapter, library=library).detail(clue_id)
     if detail is None:
         raise WorkspaceError(
             code="CLUE_NOT_FOUND",
@@ -623,27 +383,6 @@ def clue_detail(
             fix="重新读取当前线索列表后选择",
         )
     return detail
-
-
-def clue_inference_view(
-    workspace: Workspace,
-    root: Path,
-    inference_id: str,
-    *,
-    library: ModuleLibrary | None = None,
-) -> ClueInferenceView:
-    reader = ClueReader(workspace, root, None, library=library)
-    ledger = reader.snapshot.ledger
-    row = ledger.inferences.get(inference_id) if ledger is not None else None
-    if row is None:
-        raise WorkspaceError(
-            code="CLUE_NOT_FOUND",
-            where="clues.inference",
-            why="当前账本没有这个推理目标",
-            fix="重新读取线索详情后选择目标",
-        )
-    view, _ = reader._inference_view(row, AssemblyStore(workspace.root).read())
-    return view
 
 
 def clue_list(

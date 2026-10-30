@@ -1,0 +1,8 @@
+{
+  "v101_o08--current--1/step-1/goal": {
+    "verdict": "pass",
+    "reviewer": "Codex 独立证据审阅（非作者体验）",
+    "reason": "实际候选正文有行动和问答冲突，滴水参与场景；未提前写出搬尸真相，核对后真实提交单一文件。",
+    "evidence": "eval/runs/v101-o08-fix-20261029/evidence/v101_o08--current--1/step-1.json：events、details、before/after、diffs、story、operations"
+  }
+}

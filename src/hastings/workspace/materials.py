@@ -562,7 +562,7 @@ def freeze_context(
         from hastings.workspace.story_context import freeze_story_context
         from hastings.workspace.story_store import StoryStore
 
-        story = freeze_story_context(StoryStore(state_root), request.story)
+        story = freeze_story_context(StoryStore(state_root, workspace), request.story)
     return ContextSnapshot(
         state_chapter=request.state_chapter,
         selected_path=request.selected_path,
@@ -609,9 +609,13 @@ def require_read_quote(
     path: str,
     quote: str,
     where: str,
+    digest: str | None = None,
+    text: str | None = None,
 ) -> None:
     """核验一段引文确实来自本轮提供给模型的原文。
 
+    ``digest`` 与 ``text`` 供备选方案的正文使用：那一份内容不在作品目录里，
+    由调用方按方案读取后传入；不给时照常读作品目录。
     检查顺序是「非空 → 文件存在 → 这个版本读过 → 引文落在已提供的区间里」。凭记忆写一句、
     读过文件开头却引用后面一段、引用一个本轮没打开过的文件，都过不了。这段原文是否真的
     「与任务相关」属于任务理解，不在程序判断范围内。
@@ -625,18 +629,20 @@ def require_read_quote(
             fix="先 read_file 读取该文件，再引用其中一句原文；不要用自己的概括",
             details={"path": path},
         )
-    try:
-        view = workspace.read(path)
-    except WorkspaceError as exc:
-        raise WorkspaceError(
-            code="CONTEXT_SOURCE_NOT_FOUND",
-            where=where,
-            why=f"引文所在文件当前不可用：{path}（{exc.why}）",
-            fix="刷新目录后重新读取；文件可能已被移动或删除",
-            details={"path": path},
-        ) from exc
+    if digest is None or text is None:
+        try:
+            view = workspace.read(path)
+        except WorkspaceError as exc:
+            raise WorkspaceError(
+                code="CONTEXT_SOURCE_NOT_FOUND",
+                where=where,
+                why=f"引文所在文件当前不可用：{path}（{exc.why}）",
+                fix="刷新目录后重新读取；文件可能已被移动或删除",
+                details={"path": path},
+            ) from exc
+        digest, text = view.digest, view.text
     coverage = ledger.coverage(path)
-    if coverage is None or coverage.ref.digest != view.digest:
+    if coverage is None or coverage.ref.digest != digest:
         raise WorkspaceError(
             code="REFERENCE_EVIDENCE_INVALID",
             where=where,
@@ -644,7 +650,7 @@ def require_read_quote(
             fix="先 read_file 读取当前内容，再引用其中的原文",
             details={"path": path},
         )
-    if clean not in " ".join(view.text.split()):
+    if clean not in " ".join(text.split()):
         raise WorkspaceError(
             code="REFERENCE_EVIDENCE_INVALID",
             where=where,
@@ -652,7 +658,7 @@ def require_read_quote(
             fix="引用该文件里确实存在的一句原文；不要凭记忆写",
             details={"path": path},
         )
-    if not any(clean in " ".join(view.text[start:end].split()) for start, end in coverage.spans):
+    if not any(clean in " ".join(text[start:end].split()) for start, end in coverage.spans):
         raise WorkspaceError(
             code="REFERENCE_EVIDENCE_INVALID",
             where=where,

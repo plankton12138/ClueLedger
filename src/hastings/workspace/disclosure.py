@@ -16,6 +16,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from hastings.prompts.sections import (
+    STATE_KNOWN_PREFIX,
+    STATE_SURFACE_PREFIX,
+    STATE_TAIL,
+    state_head,
+    state_revealed_note,
+)
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, is_managed_path
 from hastings.workspace.materials import MaterialLedger, ReadRequirement
@@ -494,17 +501,19 @@ def state_section(state: DisclosureState) -> str:
     visible = state.visible()
     if not visible:
         return ""
-    lines = [f"截至第 {state.current_chapter} 章，读者已知的人物身份："]
+    lines = [state_head(state.current_chapter)]
     for entity in visible:
         parts = [f"- {entity.name}"]
         if entity.aliases:
             parts.append(f"（{'、'.join(entity.aliases)}）")
         if entity.surface:
-            parts.append(f"｜社会身份：{entity.surface}")
-        facts = "、".join(f"{item.fact}（第{item.chapter}章起）" for item in entity.revealed)
-        parts.append(f"｜读者已知：{facts}")
+            parts.append(f"{STATE_SURFACE_PREFIX}{entity.surface}")
+        facts = "、".join(
+            state_revealed_note(item.fact, item.chapter) for item in entity.revealed
+        )
+        parts.append(f"{STATE_KNOWN_PREFIX}{facts}")
         lines.append("".join(parts))
-    lines.append("以上只写正文已经交代给读者的内容；未列出的信息这一轮不要写出来。")
+    lines.append(STATE_TAIL)
     return "\n".join(lines)
 
 

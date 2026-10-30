@@ -473,7 +473,6 @@ def test_review_purpose_requires_targets(tmp_path: Path) -> None:
             "text": "检查第三章",
             "request_key": "k2",
             "review_paths": ["正文/0003 书房.md"],
-            "index_paths": ["正文/0003 书房.md"],
         },
     )
     assert mixed.status_code == 422

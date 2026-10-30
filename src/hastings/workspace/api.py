@@ -12,20 +12,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
 from fastapi import APIRouter, FastAPI, File, Header, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from hastings.library.modules import ModuleLibrary
-from hastings.workspace.activity import ActivityStore
 from hastings.workspace.chapter_index import (
-    MAX_INDEX_CHAPTERS,
     ChapterIndexEntry,
     ChapterIndexRecord,
     ChapterIndexStore,
@@ -37,7 +33,6 @@ from hastings.workspace.character_states import (
 )
 from hastings.workspace.clue_context import ClueReferenceInput as ClueReferenceRequest
 from hastings.workspace.clues import ClueStore, build_clues, clues_view
-from hastings.workspace.compaction_ops import CompactionRunner
 from hastings.workspace.conversation_usage import context_snapshot, summarize_events
 from hastings.workspace.deletion import delete_workspace_files
 from hastings.workspace.directory_dialog import DirectoryPickerError, pick_directory
@@ -55,18 +50,16 @@ from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import GlossaryStore, build_glossary, glossary_view
 from hastings.workspace.locations import default_data_root, default_workspace_root, documents_dir
 from hastings.workspace.materials import MAX_REFERENCES, ContextRequest
-from hastings.workspace.operations import OperationStore
 from hastings.workspace.reading_position import ReadingPosition, read_position, save_position
 from hastings.workspace.review import ReviewReport, ReviewStore
-from hastings.workspace.run_registry import RunRegistry
-from hastings.workspace.service import ProviderFactory, TurnService
+from hastings.workspace.service import TurnService
+from hastings.workspace.service_hub import WorkspaceServices
 from hastings.workspace.state import (
     Conversation,
     ConversationStore,
     ConversationUi,
     ConversationUiStore,
     DraftContext,
-    RecentWorkspaces,
     WorkspaceBinding,
     conversation_root,
 )
@@ -259,6 +252,17 @@ class AcceptedTurnView(BaseModel):
     generation: int = 1
 
 
+class ReaderPreviewRequest(BaseModel):
+    """试读受理：方案与截止位置是全部输入；问题、历史与工具范围由应用固定。"""
+
+    model_config = ConfigDict(extra="forbid")
+    request_key: str = Field(min_length=1)
+    variant_id: str = Field(default="", max_length=64)
+    revision: str = Field(default="", max_length=64)
+    cutoff: str = Field(min_length=1, max_length=64)
+
+
+
 class ClueReferenceInput(BaseModel):
     """对话里引用的线索：只给标识与客户端看到的版本，正文由服务端按账本重建。"""
 
@@ -267,17 +271,8 @@ class ClueReferenceInput(BaseModel):
     clue_id: str = Field(min_length=1, max_length=64)
     clue_revision: str = Field(min_length=1, max_length=128)
     browse_as_of_chapter: int = Field(ge=0)
-    inference_id: str | None = Field(default=None, max_length=64)
-    inference_revision: str | None = Field(default=None, max_length=128)
-    report_id: str | None = Field(default=None, max_length=64)
     #: 仅用于草稿显示；发送时丢弃，服务端不会把它当作线索标题。
     title: str = Field(default="", max_length=200)
-
-    @model_validator(mode="after")
-    def _check_inference(self) -> ClueReferenceInput:
-        if (self.inference_id is None) != (self.inference_revision is None):
-            raise ValueError("推理身份与修订必须同时提供")
-        return self
 
     def to_request(self) -> ClueReferenceRequest:
         return ClueReferenceRequest(
@@ -285,9 +280,6 @@ class ClueReferenceInput(BaseModel):
             clue_id=self.clue_id,
             clue_revision=self.clue_revision,
             browse_as_of_chapter=self.browse_as_of_chapter,
-            inference_id=self.inference_id,
-            inference_revision=self.inference_revision,
-            report_id=self.report_id,
         )
 
 
@@ -310,6 +302,7 @@ class StoryContextInput(BaseModel):
         "discuss", "design", "write", "revise", "review", "reader_preview"
     ] = "write"
     reader_cutoff: str | None = Field(default=None, max_length=64)
+    structure_readonly: bool = False
 
     def to_request(self) -> StoryRequest:
         return StoryRequest(
@@ -318,6 +311,7 @@ class StoryContextInput(BaseModel):
             node_ids=tuple(self.node_ids),
             purpose=self.purpose,
             reader_cutoff=self.reader_cutoff,
+            structure_readonly=self.structure_readonly,
         )
 
 
@@ -365,51 +359,19 @@ class ContextInput(BaseModel):
         )
 
 
-class ClueReviewInput(BaseModel):
-    """一次线索核对：目标、线索集合与截止章都由作者界面选定，服务端再冻结。"""
-
-    inference_id: str = Field(min_length=1, max_length=64)
-    inference_revision: str = Field(min_length=1, max_length=128)
-    clue_ids: list[str] = Field(min_length=1, max_length=10)
-    as_of_chapter: int = Field(ge=0)
-
-
 class TurnPurposeMixin(BaseModel):
-    """首次与续聊共用的用途字段：索引任务必须选章节，普通对话不能带。"""
+    """首次与续聊共用的用途字段：检查必须选文件，普通对话不能带目标。"""
 
-    purpose: Literal[
-        "chat",
-        "update_chapter_index",
-        "review",
-        "update_disclosure",
-        "update_state",
-        "expand_idea",
-    ] = "chat"
-    index_paths: list[str] = Field(default_factory=list, max_length=MAX_INDEX_CHAPTERS)
+    purpose: Literal["chat", "review"] = "chat"
     review_paths: list[str] = Field(default_factory=list, max_length=20)
-    clue_review: ClueReviewInput | None = None
 
     @model_validator(mode="after")
-    def _check_purpose_targets(self) -> TurnPurposeMixin:
-        if self.purpose == "update_chapter_index":
-            if not self.index_paths:
-                raise ValueError("索引用途需要选择至少一章")
-            if self.review_paths:
-                raise ValueError("索引用途不能带检查目标")
-        elif self.purpose in ("update_disclosure", "update_state"):
-            if not self.index_paths:
-                raise ValueError("核对状态需要选择至少一份角色小传")
-            if self.review_paths:
-                raise ValueError("核对身份不能带检查目标")
-        elif self.purpose == "review":
+    def check_purpose_targets(self) -> Self:
+        if self.purpose == "review":
             if not self.review_paths:
                 raise ValueError("检查用途需要选择至少一个文件")
-            if self.index_paths:
-                raise ValueError("检查用途不能带索引目标")
-        elif self.index_paths or self.review_paths:
-            raise ValueError("普通对话不能带索引或检查目标")
-        if self.clue_review is not None and self.purpose != "review":
-            raise ValueError("线索核对只能在检查用途里发起")
+        elif self.review_paths:
+            raise ValueError("普通对话不能带检查目标")
         return self
 
 
@@ -846,48 +808,36 @@ class ActivityExport(ActivityFilter):
     include_details: bool = False
 
 
-def _legacy_task_conversations(store: ConversationStore) -> set[str]:
-    """旧日志里的资料任务会话：写作列表不列它们，活动记录仍可回看。"""
+def _hidden_conversations(store: ConversationStore) -> set[str]:
+    """不进入写作对话列表的会话：旧资料任务与读者试读各有独立历史。"""
     hidden: set[str] = set()
     for conversation in store.conversations():
         if conversation.id in hidden:
             continue
         for event in store.events(conversation.id):
-            if event.get("type") == "turn_started" and event.get("origin") == "materials":
+            if event.get("type") == "turn_started" and event.get("origin") in (
+                "materials",
+                "reader",
+            ):
                 hidden.add(conversation.id)
                 break
     return hidden
 
 
-def create_file_workspace_router(
-    workspaces: RecentWorkspaces,
-    provider_factory: ProviderFactory,
-    *,
-    library: ModuleLibrary | None = None,
-    run_registry: RunRegistry | None = None,
-    services: dict[str, TurnService] | None = None,
-    operations: OperationStore | None = None,
-) -> APIRouter:
+def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
     """绑定最近目录登记与模型来源；每个作品一个轮次服务，按需创建。
 
-    ``services`` 由调用方共享时，操作接口能按工作区找到同一个轮次服务；
-    ``operations`` 是应用级操作目录，缺省放在各作品的状态目录里。
+    服务实例由 ``hub`` 统一持有，构思采用与操作接口因此能取到同一个轮次服务。
     """
     router = APIRouter(prefix=PREFIX, tags=["file-workspaces"])
-    services = services if services is not None else {}
-    runners: dict[str, CompactionRunner] = {}
+    workspaces = hub.workspaces
+    library = hub.library
+    run_registry = hub.run_registry
+    services = hub.turns
     ui_stores: dict[str, ConversationUiStore] = {}
-    activity_stores: dict[str, ActivityStore] = {}
-    activity_lock = threading.RLock()
-
-    def activity_for(workspace_id: str) -> ActivityStore:
-        workspaces.get(workspace_id)
-        with activity_lock:
-            if workspace_id not in activity_stores:
-                store = ActivityStore(conversation_root(workspaces.root, workspace_id))
-                store.recover()
-                activity_stores[workspace_id] = store
-            return activity_stores[workspace_id]
+    activity_lock = hub.lock
+    activity_for = hub.activity_for
+    service_for = hub.service_for
 
     def view(binding: WorkspaceBinding) -> WorkspaceView:
         return WorkspaceView(
@@ -906,31 +856,6 @@ def create_file_workspace_router(
                 fix="先停止或等待这一轮结束，再整理作品",
                 details={"id": workspace_id},
             )
-
-    def service_for(workspace_id: str) -> TurnService:
-        binding = workspaces.get(workspace_id)
-        cached = services.get(workspace_id)
-        if cached is not None and str(cached.workspace.root) == binding.path:
-            return cached
-        workspace = workspaces.workspace(workspace_id)
-        store = ConversationStore(conversation_root(workspaces.root, workspace_id))
-        service = TurnService(
-            workspace,
-            store,
-            provider_factory,
-            library=library,
-            run_registry=run_registry,
-            workspace_id=workspace_id,
-            operations=operations,
-        )
-        service.activity = activity_for(workspace_id)
-        # 进程重启后，没有正常结束的轮次在这里补一条中断记录；不自动继续。
-        service.mark_interrupted()
-        runner = CompactionRunner(service)
-        runner.recover()
-        runners[workspace_id] = runner
-        services[workspace_id] = service
-        return service
 
     def ui_for(workspace_id: str) -> ConversationUiStore:
         workspaces.get(workspace_id)
@@ -1002,10 +927,8 @@ def create_file_workspace_router(
                 removed = workspaces.unbind(workspace_id)
         finally:
             # 部分删除失败也丢弃旧路径缓存；后续请求必须重新核对目录是否仍存在。
-            services.pop(workspace_id, None)
+            hub.forget(workspace_id)
             ui_stores.pop(workspace_id, None)
-            with activity_lock:
-                activity_stores.pop(workspace_id, None)
         return RemovedWorkspaceView(
             removed=view(removed),
             workspaces=[view(item) for item in workspaces.recent()],
@@ -1025,9 +948,8 @@ def create_file_workspace_router(
         # 新旧标识的缓存都不能留下：服务与状态存储绑定的是旧路径。
         with activity_lock:
             for key in {workspace_id, renamed.id}:
-                services.pop(key, None)
+                hub.forget(key)
                 ui_stores.pop(key, None)
-                activity_stores.pop(key, None)
         return RenamedWorkspaceView(
             workspace=view(renamed),
             workspaces=[view(item) for item in workspaces.recent()],
@@ -1341,7 +1263,7 @@ def create_file_workspace_router(
     def list_conversations(workspace_id: str) -> ConversationListView:
         service = service_for(workspace_id)
         # 旧版本用独立会话跑资料任务；这些会话不再产生，也不再出现在写作列表里。
-        hidden = _legacy_task_conversations(service.store)
+        hidden = _hidden_conversations(service.store)
         items = sorted(
             (item for item in service.store.conversations() if item.id not in hidden),
             key=lambda item: item.updated_at,
@@ -1368,9 +1290,42 @@ def create_file_workspace_router(
             body.request_key,
             context=body.context.to_request(),
             purpose=body.purpose,
-            index_paths=tuple(body.index_paths),
             review_paths=tuple(body.review_paths),
-            clue_review=body.clue_review.model_dump() if body.clue_review else None,
+        )
+        return AcceptedTurnView(
+            conversation_id=info.conversation_id,
+            turn_id=info.turn_id,
+            started_at=info.started_at,
+            title=info.title,
+            request_key=body.request_key,
+            operation_id=info.operation_id,
+            generation=info.generation,
+        )
+
+    @router.post(
+        "/{workspace_id}/story-batches/{operation_id}/continue",
+        response_model=AcceptedTurnView,
+        status_code=202,
+    )
+    async def next_story_batch(workspace_id: str, operation_id: str) -> AcceptedTurnView:
+        info = await service_for(workspace_id).next_story_batch(operation_id)
+        return AcceptedTurnView(conversation_id=info.conversation_id, turn_id=info.turn_id,
+            started_at=info.started_at, title=info.title, request_key=f"story-next:{operation_id}",
+            operation_id=info.operation_id, generation=info.generation)
+
+    @router.post(
+        "/{workspace_id}/reader-previews", response_model=AcceptedTurnView, status_code=202
+    )
+    async def start_reader_preview(
+        workspace_id: str, body: ReaderPreviewRequest
+    ) -> AcceptedTurnView:
+        """受理一次试读：独立会话、固定问题、无工具与作者历史。"""
+        service = service_for(workspace_id)
+        info = await service.accept_reader(
+            body.request_key,
+            variant_id=body.variant_id,
+            revision=body.revision,
+            cutoff=body.cutoff,
         )
         return AcceptedTurnView(
             conversation_id=info.conversation_id,
@@ -1423,8 +1378,7 @@ def create_file_workspace_router(
         整理在后台跑：它可能调用一次摘要模型，同步等待会让界面卡住。它不占创作轮次，
         也不产生作品提交，走的是自己的操作标识。
         """
-        service_for(workspace_id)
-        runner = runners[workspace_id]
+        runner = hub.runner_for(workspace_id)
         operation = await runner.submit(conversation_id, body.request_key)
         return CompactionOperationView(**operation.as_dict())
 
@@ -1436,8 +1390,7 @@ def create_file_workspace_router(
         workspace_id: str, conversation_id: str, operation_id: str
     ) -> CompactionOperationView:
         """整理操作的状态；读取不触发模型，也不改事件。"""
-        service_for(workspace_id)
-        runner = runners[workspace_id]
+        runner = hub.runner_for(workspace_id)
         return CompactionOperationView(**runner.get(conversation_id, operation_id).as_dict())
 
     @router.post(
@@ -1447,8 +1400,7 @@ def create_file_workspace_router(
     async def stop_compaction(
         workspace_id: str, conversation_id: str, operation_id: str
     ) -> CompactionOperationView:
-        service_for(workspace_id)
-        runner = runners[workspace_id]
+        runner = hub.runner_for(workspace_id)
         operation = await runner.stop(conversation_id, operation_id)
         return CompactionOperationView(**operation.as_dict())
 
@@ -1468,7 +1420,7 @@ def create_file_workspace_router(
         summary = summarize_events(events)
         context = context_snapshot(events)
         totals = summary.totals
-        operation = runners[workspace_id].latest(conversation_id)
+        operation = hub.runner_for(workspace_id).latest(conversation_id)
         return ConversationUsageView(
             conversation_id=conversation_id,
             through_seq=summary.through_seq,
@@ -1523,9 +1475,7 @@ def create_file_workspace_router(
             conversation_id=conversation_id,
             context=body.context.to_request(),
             purpose=body.purpose,
-            index_paths=tuple(body.index_paths),
             review_paths=tuple(body.review_paths),
-            clue_review=body.clue_review.model_dump() if body.clue_review else None,
             reply_to_question=body.reply_to_question,
         )
         return TurnView(

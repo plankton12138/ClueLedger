@@ -73,23 +73,10 @@ export interface ConversationEntry {
 /** 新对话草稿的固定槽位。 */
 export const NEW_DRAFT = "new";
 
-/** 发送选项：索引、检查与身份核对都由界面明确发起，不靠模型从文字里猜。 */
+/** 发送选项：检查由界面明确发起，不靠模型从文字里猜。 */
 export interface SendOptions {
-  purpose:
-    | "chat"
-    | "update_chapter_index"
-    | "review"
-    | "update_disclosure"
-    | "update_state";
-  indexPaths?: string[];
+  purpose: "chat" | "review";
   reviewPaths?: string[];
-  /** 线索核对：目标、线索集合与截止章一起冻结，不能只发一句「核对」。 */
-  clueReview?: {
-    inferenceId: string;
-    inferenceRevision: string;
-    clueIds: string[];
-    asOfChapter: number;
-  };
   /** 这一轮显式给出的随行灵感修订；给定时不再取当前草稿里的引用。 */
   ideas?: DraftIdea[];
   /** 回答某条已持久化的问题：只用于认领原问题，不替代文字。 */
@@ -292,6 +279,12 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     }
     if (lastSeq !== entry.lastSeq) patchEntry(conversationId, { turns, lastSeq, phase, activeTurn });
     if (needsReload) void reloadLog(conversationId);
+    const story = useStoryStore.getState();
+    const workspaceId = get().workspaceId;
+    if (workspaceId && story.workspaceId === workspaceId && story.open
+      && events.some(event => ["story_changes_committed", "story_candidate_committed", "run_finished"].includes(event.type))) {
+      void story.refresh(workspaceId);
+    }
   }
 
   function appendEventsTo(conversationId: string, events: WorkspaceEvent[]): void {
@@ -663,7 +656,8 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       // 构思里的「引用到对话」：只随普通消息提交，明确用途不夹带。
       // 构思面开着时按 design 语境发送：空白作品也能由此建立第一份结构。
       const storyReference = options ? null : useStoryStore.getState().reference;
-      const storySurfaceOpen = options ? false : useStoryStore.getState().open;
+      const currentStory = useStoryStore.getState();
+      const storySurfaceOpen = options ? false : currentStory.open;
       const request: TurnInput = {
         text: withTextReferences(trimmed, submittedTextReferences),
         request_key: keyRequest,
@@ -686,30 +680,11 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
                 },
               }
             : storySurfaceOpen
-              ? { story: { variant_id: "", revision: "", node_ids: [], purpose: "design" } }
+              ? { story: { variant_id: currentStory.variantId ?? "", revision: currentStory.graph?.revision ?? "", node_ids: currentStory.nodeId ? [currentStory.nodeId] : [], purpose: "design" } }
               : {}),
         },
-        ...(options &&
-        (options.purpose === "update_chapter_index" ||
-          options.purpose === "update_disclosure" ||
-          options.purpose === "update_state")
-          ? { purpose: options.purpose, index_paths: options.indexPaths ?? [] }
-          : {}),
         ...(options && options.purpose === "review"
-          ? {
-              purpose: options.purpose,
-              review_paths: options.reviewPaths ?? [],
-              ...(options.clueReview
-                ? {
-                    clue_review: {
-                      inference_id: options.clueReview.inferenceId,
-                      inference_revision: options.clueReview.inferenceRevision,
-                      clue_ids: options.clueReview.clueIds,
-                      as_of_chapter: options.clueReview.asOfChapter,
-                    },
-                  }
-                : {}),
-            }
+          ? { purpose: options.purpose, review_paths: options.reviewPaths ?? [] }
           : {}),
         ...(options?.replyToQuestion ? { reply_to_question: options.replyToQuestion } : {}),
       };
@@ -999,7 +974,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const current = get().draftContexts[key]?.clue_references ?? [];
       const same = current.find(item => item.clue_id === input.clue_id);
       if (same && same.clue_revision === input.clue_revision) {
-        // 同一版本重复点击不叠加；补上这次带来的目标或报告身份。
+        // 同一版本重复点击不叠加；只补上这次带来的标题。
         const merged = { ...same, ...input, ...(title ? { title } : {}) };
         if (JSON.stringify(merged) === JSON.stringify(same)) return true;
         set(state => ({ draftContexts: { ...state.draftContexts, [key]: {

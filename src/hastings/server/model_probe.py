@@ -24,6 +24,9 @@ from typing import Literal
 
 import httpx
 
+from hastings.prompts import tools as prompt_tools
+from hastings.prompts.tasks import PROBE_PROMPT, PROBE_SYSTEM, probe_tool_prompt
+from hastings.prompts.tools import PROBE_TOOL_DESCRIPTION
 from hastings.server.model_limits import ModelCapacity
 from hastings.server.provider_runtime import (
     ManagedModelProvider,
@@ -62,10 +65,6 @@ MAX_PAGES = 10
 PAGE_SIZE = 100
 
 PROBE_TOOL_NAME = "connection_probe"
-PROBE_PROMPT = "请只回答两个字：你好。"
-PROBE_TOOL_PROMPT = (
-    f"调用 {PROBE_TOOL_NAME} 工具，参数 echo 传「ping」，然后根据工具结果用一句话说明你收到了什么。"
-)
 PROBE_TOOL_VALUE = "pong"
 
 
@@ -445,6 +444,7 @@ async def probe_response(
     *,
     timeout: float = RESPONSE_TIMEOUT_SECONDS,
     factory: ProviderFactory | None = None,
+    on_text: Callable[[str], None] | None = None,
 ) -> ProbeResult:
     """发一句固定短句，要求非空文本回复。"""
     if not model:
@@ -452,7 +452,7 @@ async def probe_response(
     provider = (factory or _build)(profile)
     try:
         text = await asyncio.wait_for(
-            _collect_text(provider, model, PROBE_PROMPT, tools=[]), timeout=timeout
+            _collect_text(provider, model, PROBE_PROMPT, tools=[], on_text=on_text), timeout=timeout
         )
     except TimeoutError:
         return ProbeResult(
@@ -483,6 +483,7 @@ async def probe_tool(
     *,
     timeout: float = TOOL_TIMEOUT_SECONDS,
     factory: ProviderFactory | None = None,
+    on_text: Callable[[str], None] | None = None,
 ) -> ProbeResult:
     """验证工具名、参数、结果回传与最终回复的完整往返（最多两次模型响应）。"""
     if not model:
@@ -491,7 +492,14 @@ async def probe_tool(
     tool = _probe_tool()
     try:
         first = await asyncio.wait_for(
-            _collect_message(provider, model, PROBE_TOOL_PROMPT, tools=[tool]), timeout=timeout
+            _collect_message(
+                provider,
+                model,
+                probe_tool_prompt(PROBE_TOOL_NAME),
+                tools=[tool],
+                on_text=on_text,
+            ),
+            timeout=timeout,
         )
         call = _first_tool_call(first)
         if call is None:
@@ -517,9 +525,14 @@ async def probe_tool(
             _collect_message(
                 provider,
                 model,
-                PROBE_TOOL_PROMPT,
+                probe_tool_prompt(PROBE_TOOL_NAME),
                 tools=[tool],
-                history=[UserMessage(content=PROBE_TOOL_PROMPT), first, tool_result],
+                history=[
+                    UserMessage(content=probe_tool_prompt(PROBE_TOOL_NAME)),
+                    first,
+                    tool_result,
+                ],
+                on_text=on_text,
             ),
             timeout=timeout,
         )
@@ -565,9 +578,14 @@ async def _close(provider: ManagedModelProvider) -> None:
 
 
 async def _collect_text(
-    provider: ManagedModelProvider, model: str, prompt: str, *, tools: list[AgentTool]
+    provider: ManagedModelProvider,
+    model: str,
+    prompt: str,
+    *,
+    tools: list[AgentTool],
+    on_text: Callable[[str], None] | None = None,
 ) -> str:
-    message = await _collect_message(provider, model, prompt, tools=tools)
+    message = await _collect_message(provider, model, prompt, tools=tools, on_text=on_text)
     return _text_of(message)
 
 
@@ -578,6 +596,7 @@ async def _collect_message(
     *,
     tools: list[AgentTool],
     history: list[AgentMessage] | None = None,
+    on_text: Callable[[str], None] | None = None,
 ) -> AssistantMessage:
     messages: list[AgentMessage] = list(history) if history else [UserMessage(content=prompt)]
     text: list[str] = []
@@ -585,12 +604,14 @@ async def _collect_message(
     result: AssistantMessage | None = None
     async for event in provider.stream_response(
         model=model,
-        system="你是一个简洁的连接测试助手，只回答被要求的最小内容。",
+        system=PROBE_SYSTEM,
         messages=messages,
         tools=tools,
     ):
         if isinstance(event, TextDeltaEvent):
             text.append(event.delta)
+            if on_text is not None:
+                on_text(event.delta)
         elif isinstance(event, AssistantErrorEvent):
             failed = event.error.error_message or "厂商没有返回可用回复"
         elif isinstance(event, AssistantDoneEvent):
@@ -634,10 +655,15 @@ def _probe_tool() -> AgentTool:
     return AgentTool(
         name=PROBE_TOOL_NAME,
         label="连接探针",
-        description="连接测试用的固定工具：无论收到什么参数，都返回 pong。",
+        description=PROBE_TOOL_DESCRIPTION,
         parameters={
             "type": "object",
-            "properties": {"echo": {"type": "string", "description": "任意字符串"}},
+            "properties": {
+                "echo": {
+                    "type": "string",
+                    "description": prompt_tools.PROBE_ECHO_PARAM_DESCRIPTION,
+                }
+            },
             "additionalProperties": False,
         },
         execute_fn=execute,

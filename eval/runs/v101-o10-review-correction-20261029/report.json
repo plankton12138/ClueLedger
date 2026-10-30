@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "scorer_version": "2",
+  "manifest": {
+    "schema_version": 1,
+    "run_id": "context-20261029-234809-502974",
+    "started_at": "2026-10-29T23:48:09.502974+08:00",
+    "model": "deepseek-flash",
+    "connection_id": "eval-env",
+    "provider_api": "openai-completions",
+    "model_source": ".env",
+    "provider_mode": "product_worker",
+    "model_sampling_parameters": "未单独覆盖；使用当前产品 provider 默认值，见源代码指纹",
+    "git_commit": "027fc13aa63367b83ca99ad0a0e89880a36b174a",
+    "git_dirty": true,
+    "source_sha256": "08362102b1d254d56f9c2691f965f50dc26e8212bca6ac392a3702f0e55e4895",
+    "cases_sha256": "b2f2454d3582cf023d84182a2ac8767cb6fde7d101ea135e397827ddcef50c98",
+    "suite": "v101",
+    "jobs": [
+      {
+        "key": "v101_o10--current--3",
+        "case": "v101_o10",
+        "family": "O10",
+        "layer": "context",
+        "variant": "current",
+        "repeat": 3
+      }
+    ],
+    "max_turns": 24,
+    "step_timeout_seconds": 240,
+    "max_provider_calls": 200,
+    "runner_retries": 0,
+    "work_root": "C:\\Projects\\Agent\\myagent\\data\\eval\\context-20261029-234809-502974",
+    "evidence_format": 1,
+    "history": "案例可使用明确标注的合成公开历史，不是实际执行轨迹",
+    "variant_policy": "提示分区变体仅移除所选分区；no_compaction 禁用手动与自动摘要，保留轮内裁剪和溢出恢复；公开对话和按需读取工具保留",
+    "observed_provider_parameters": {
+      "max_tokens": 4096,
+      "timeout_seconds": 45.0,
+      "max_retries": 0
+    },
+    "provider_calls_used": 10
+  },
+  "summary": {
+    "planned": 1,
+    "executed": 1,
+    "counts": {
+      "pending_review": 1,
+      "not_run": 0
+    },
+    "success_rate": 0.0,
+    "duration_p50_seconds": 47.75,
+    "duration_p95_seconds": 47.75,
+    "input_tokens": 9995,
+    "output_tokens": 7151,
+    "tokens_per_success": null,
+    "cost_per_success": null
+  },
+  "groups": {
+    "variant": {
+      "current": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 47.75,
+        "duration_p95_seconds": 47.75,
+        "input_tokens": 9995,
+        "output_tokens": 7151,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "family": {
+      "O10": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 47.75,
+        "duration_p95_seconds": 47.75,
+        "input_tokens": 9995,
+        "output_tokens": 7151,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "layer": {
+      "context": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 47.75,
+        "duration_p95_seconds": 47.75,
+        "input_tokens": 9995,
+        "output_tokens": 7151,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    },
+    "case": {
+      "v101_o10": {
+        "planned": 1,
+        "executed": 1,
+        "counts": {
+          "pending_review": 1,
+          "not_run": 0
+        },
+        "success_rate": 0.0,
+        "duration_p50_seconds": 47.75,
+        "duration_p95_seconds": 47.75,
+        "input_tokens": 9995,
+        "output_tokens": 7151,
+        "tokens_per_success": null,
+        "cost_per_success": null
+      }
+    }
+  },
+  "results": [
+    {
+      "status": "pending_review",
+      "checks": [
+        {
+          "id": "step-1/terminal",
+          "status": "pass",
+          "detail": {
+            "seq": 5372,
+            "at": "2026-10-29T23:48:57.603+08:00",
+            "event_version": 1,
+            "event_id": "c_8f11f26babe7:5372",
+            "conversation_id": "c_8f11f26babe7",
+            "type": "run_finished",
+            "turn_id": "t_399b0646",
+            "operation_id": "op_242e48a3d3e5",
+            "generation": 1,
+            "status": "completed",
+            "recording": "committed",
+            "changed_paths": [
+              "正文/0001 雨夜.md"
+            ],
+            "commit": "a6cd634e6f22f04f0e5f9c1c8e8886b0ffff0540",
+            "note": ""
+          }
+        },
+        {
+          "id": "step-1/public_answer",
+          "status": "pass",
+          "detail": "我先读取这一章原文和当前结构，确认「抵达」节点以及对质的证据链。\n已读到原文（仅 42 字，是短章）和结构：抵达节点 `n1` 的 `time_note` 为空，对质节点 `n24` 依靠「时间证据」；第24章正文目前也是占位内容，没有已经写成的时间推断句式需要同步。我登记范围后把正文候选与结构变更一起提交。\n结构操作需要把字段放在 `node` 里，我按正确字段重新提交一次。\n已提交。以下是改动内容与核对结论。\n\n**正文候选（`正文/0001 雨夜.md`）**\n> # 雨夜\n>\n> 雪刚停，林砚抵达旅馆。柜台上有一双湿手套，手套还在滴水。管家说自己一直在房间。\n\n只加了「雪刚停」这个时间限定，湿手套、滴水、管家「一直在房间」的说法都原样保留。\n\n**结构变更（与正文一起提交）**\n- `n1 抵达`：`time_note` 记为「雪刚停后不久，林砚抵达旅馆；柜台上手套仍在滴水」；action 仍是「林砚看到湿手套」，没有改。\n- `n24 对质`：`time_note` 记入这次改动带出的证据范围——只能用「雪停时刻／抵达时刻／手套仍未干」三者对照，加上调查里真正取得的旁证；滴水本身不能单独推出弄湿时刻或外出搬尸。\n- 线索「湿手套」的作者真相、回收节点、结局约定都没动。\n\n**这次改动对对质时间证据的影响**\n1. 时间窗口从「未定」收窄成「雪停之后到林砚抵达之间」这一小段。手套还在滴水说明它弄湿得离抵达很近，因此排除了「更早弄湿、慢慢干了」这类解释——但只能是排除，不是正面证明。\n2. 关键差距仍在：滴水不能证明管家出过门。对质要让「管家搬过尸体」站住，还需要第一章之外的实据，例如能确认雪停时刻的旅馆记录、柜台或地面的水迹、以及管家「一直在房间」与这些记录之间的出入。这些本该由 `n2`–`n23` 的调查节点提供，目前那些章节还是占位内容，所以现在只是把它记成待证条件，没有当成已取得的证明。\n3. 与既定真相相容且更紧：「管家在雪停后搬过尸体」正好落在新窗口内，所以不需要改动真相，也不需要改线索回收位置。原先抵达时刻含糊时，真相与文本只是不冲突；现在才多了一点时间上的贴合，但仍不等于证据齐全。\n\n**需要你知道的两点**\n- 本轮以候选形式提交（`candidate_bd46d81404484de78817c13f31da9af1`），正文与结构一起核对；我没有拿到「正式正文已改写」的确认回执，所以只能报告为已提出候选，如果核对没通过可以继续处理。\n- 目录里第一章有两个文件：`正文/0001 第1章.md` 与 `正文/0001 雨夜.md`，这次按你的指定只动了后者。另外该文件标题是「雨夜」，正文写的却是雪，我没有改动——要不要统一，由你决定。\n已完成四项核对并提交，全部为 pass：\n\n- **structure:0（抵达）**：候选「雪刚停，林砚抵达旅馆」配合「手套还在滴水」，与节点的时间说明一致。\n- **structure:1（对质）**：该节点属后续场景，正文未写；其时间证据限定（雪停、抵达、手套仍未干三相对照 + 实际取得的旁证，滴水不单独证明弄湿时刻或搬尸）与候选事实不冲突，未提前认定结论。\n- **scene:正文/0001 雨夜.md**：保留「手套还在滴水」，抵达改为雪刚停之后，改动仅限本文件；对质的证据范围已随正文同期以结构变更提出，兼容性与已取得证明被区分开。\n- **constraint:ending**：本次改动不触及结局，「管家说自己一直在房间」是人物自述而非常作者真相，不构成对「管家搬过尸体」的否定；按约定范围只检查不矛盾，未要求本场景提前披露。\n\n无待处理发现项。"
+        },
+        {
+          "id": "step-1/allowed_final_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雨夜.md"
+          ]
+        },
+        {
+          "id": "step-1/required_changes",
+          "status": "pass",
+          "detail": [
+            "正文/0001 雨夜.md"
+          ]
+        },
+        {
+          "id": "step-1/trajectory_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/decision_scope",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/scope_before_write",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/preread_delivered",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "id": "step-1/goal",
+          "status": "pending_review",
+          "detail": {
+            "rubric": "前文真实改写且保留线索与真相；需要失效的时间推断不能宣称继续有效，范围外正文不被改动。",
+            "review": null
+          }
+        }
+      ],
+      "metrics": {
+        "model_requests": 10,
+        "model_finished": 10,
+        "tool_calls": 11,
+        "tool_errors": 3,
+        "blocked_write_calls": 0,
+        "usage_complete": true,
+        "usage_reported_requests": 10,
+        "fresh_input_tokens": 9995,
+        "input_tokens": 9995,
+        "output_tokens": 7151,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "request_sizes": [
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 149,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 14566,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 16798,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 19472,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 22516,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 25244,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 27105,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 5330,
+            "messages_json_chars": 29971,
+            "tools_json_chars": 7518
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 1912,
+            "tools_json_chars": 516
+          },
+          {
+            "system_chars": 99,
+            "messages_json_chars": 5318,
+            "tools_json_chars": 516
+          }
+        ],
+        "max_request_json_chars": 42819,
+        "cost": null,
+        "summary_requests": 0,
+        "summary_duration_ms": 0,
+        "summary_input_tokens": 0,
+        "summary_output_tokens": 0
+      },
+      "key": "v101_o10--current--3",
+      "case": "v101_o10",
+      "title": "前文重写",
+      "family": "O10",
+      "layer": "context",
+      "variant": "current",
+      "repeat": 3,
+      "duration_seconds": 47.75,
+      "evidence": "evidence/v101_o10--current--3",
+      "model_error": false
+    }
+  ],
+  "unexecuted": []
+}

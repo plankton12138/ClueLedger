@@ -8,6 +8,8 @@
  * 这一层不保存 Key：`api_key` 只在一次请求里出现，进入全局状态的一律是脱敏视图。
  */
 
+import { readOperation, readOperationResult } from "./operations";
+
 export type ProviderApi =
   | "openai-completions"
   | "openai-responses"
@@ -132,13 +134,18 @@ export interface DiscoveryResult {
 }
 
 export interface ProbeResult {
-  revision: string;
-  connection_id: string | null;
   model: string;
   response: "passed" | "failed" | "untested";
   tool_call: "passed" | "failed" | "untested";
   code: string | null;
   message: string;
+}
+
+/** 受理结果：测试作为统一操作在后台跑，结果按操作读取。 */
+export interface ProbeAccepted {
+  revision: string;
+  connection_id: string | null;
+  operation_id: string;
 }
 
 /** 一家可以「登录订阅账号」的来源；与 API Key 预设是两件事。 */
@@ -278,9 +285,11 @@ export function probeModel(
     connection_id?: string | null;
     kind: "response" | "tool";
     model: string;
+    /** 同一次点击重试沿用同一个键，服务端据此去重。 */
+    requestKey?: string;
   },
-): Promise<ProbeResult> {
-  return request<ProbeResult>("/model-connections/probe", {
+): Promise<ProbeAccepted> {
+  return request<ProbeAccepted>("/model-connections/probe", {
     method: "POST",
     body: JSON.stringify({
       connection_id: draft.connection_id ?? null,
@@ -292,8 +301,60 @@ export function probeModel(
       auth_session_id: draft.auth_session_id ?? "",
       kind: draft.kind,
       model: draft.model,
+      request_key: draft.requestKey ?? "",
     }),
   });
+}
+
+/** 测试轮询间隔与上限：一次点击必须有终点，不能无限转圈。 */
+const PROBE_POLL_MS = 400;
+const PROBE_DEADLINE_MS = 120_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 跟进一次连接测试：按操作快照读状态，结束后从结果收据还原两条独立事实。
+ *
+ * 暂停会被明确报告为「没有采用这次结果」，不会把取消说成失败或通过。
+ */
+export async function awaitProbe(
+  operationId: string,
+  kind: "response" | "tool",
+): Promise<ProbeResult> {
+  const deadline = Date.now() + PROBE_DEADLINE_MS;
+  while (Date.now() < deadline) {
+    const operation = await readOperation(operationId);
+    if (operation.status === "completed" || operation.status === "failed") {
+      const result = await readOperationResult(operationId);
+      const outcome = result.receipts.find((item) => item.kind === "probe")?.outcome;
+      return {
+        model: outcome?.model || operation.model,
+        response: outcome?.response ?? (kind === "response" ? "failed" : "untested"),
+        tool_call: outcome?.tool_call ?? (kind === "tool" ? "failed" : "untested"),
+        code: outcome?.code ?? operation.error?.code ?? null,
+        message: outcome?.message || operation.note,
+      };
+    }
+    if (operation.status === "paused") {
+      throw new ModelApiError(
+        "MODEL_PROBE_PAUSED",
+        "连接测试已暂停；没有采用这次结果。",
+        "重新测试，或先保存连接再测试",
+        409,
+        "模型连接",
+      );
+    }
+    await sleep(PROBE_POLL_MS);
+  }
+  throw new ModelApiError(
+    "MODEL_PROBE_TIMEOUT",
+    "连接测试没有在规定时间内结束。",
+    "稍后重试；若持续失败，检查网络与供应商状态",
+    504,
+    "模型连接",
+  );
 }
 
 export function listAuthProviders(): Promise<AuthProvider[]> {
