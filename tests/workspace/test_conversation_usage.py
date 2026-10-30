@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import pytest
 
+from hastings.server.model_limits import ModelCapacity, ModelLimits, resolve_model_limits
+from hastings.server.provider_config import ProviderProfile
 from hastings.workspace.conversation_usage import (
     ReportedUsage,
     UsageTotals,
@@ -276,9 +278,7 @@ def test_started_without_terminal_is_counted_as_in_progress() -> None:
 
 
 def test_requests_without_usage_are_marked_not_zeroed() -> None:
-    summary = summarize_events(
-        [_started(1, "op1"), _finished(2, "op1", usage=None)]
-    )
+    summary = summarize_events([_started(1, "op1"), _finished(2, "op1", usage=None)])
 
     assert summary.totals.finished_requests == 1
     assert summary.totals.requests_without_usage == 1
@@ -326,9 +326,7 @@ def test_other_events_are_ignored() -> None:
 
 
 def test_malformed_usage_is_treated_as_unreported() -> None:
-    summary = summarize_events(
-        [_started(1, "op1"), _finished(2, "op1", usage="not-a-mapping")]
-    )
+    summary = summarize_events([_started(1, "op1"), _finished(2, "op1", usage="not-a-mapping")])
 
     assert summary.totals.requests_without_usage == 1
 
@@ -479,3 +477,107 @@ def test_context_without_estimate_data_stays_unknown() -> None:
     assert snapshot.last_request_input_tokens == 900
     assert snapshot.context_window_tokens is None
     assert snapshot.budget == "unknown"
+
+
+def _selected_limits(
+    *,
+    connection: str = "deepseek",
+    model: str = "deepseek-chat",
+    project_limit: int = 128_000,
+    known: bool = True,
+) -> ModelLimits:
+    return resolve_model_limits(
+        ProviderProfile(
+            name=connection,
+            base_url="https://example.com/v1",
+            model_metadata={model: ModelCapacity(context_window_tokens=131_072)} if known else {},
+        ),
+        model,
+        project_limit=project_limit,
+    )
+
+
+def test_idle_context_refreshes_unknown_capacity_for_the_same_model() -> None:
+    events = _request_with_estimate(1, "op1", estimate=_estimate(window=None))
+    current = _selected_limits()
+
+    snapshot = context_snapshot(events, current=current)
+
+    assert snapshot.status == "ready"
+    assert snapshot.estimated_active_tokens == 5000
+    assert snapshot.context_window_tokens == 131_072
+    assert snapshot.input_limit_tokens == 122_880
+    assert snapshot.capacity_source == "metadata"
+    assert snapshot.budget == "ok"
+    assert snapshot.limits_revision == current.revision
+    assert snapshot.fingerprint != "abc"
+
+
+def test_idle_context_with_unknown_capacity_still_has_project_budget() -> None:
+    events = _request_with_estimate(1, "op1", estimate=_estimate(window=None))
+
+    snapshot = context_snapshot(events, current=_selected_limits(known=False))
+
+    assert snapshot.context_window_tokens is None
+    assert snapshot.input_limit_tokens == 128_000
+    assert snapshot.model_input_limit_tokens is None
+    assert snapshot.capacity_source == "unknown"
+    assert snapshot.budget == "ok"
+
+
+def test_idle_context_rechecks_budget_after_policy_changes() -> None:
+    events = _request_with_estimate(1, "op1")
+    larger = context_snapshot(events, current=_selected_limits())
+    smaller = context_snapshot(events, current=_selected_limits(project_limit=5000))
+
+    assert larger.estimated_active_tokens == smaller.estimated_active_tokens == 5000
+    assert larger.budget == "ok"
+    assert smaller.input_limit_tokens == 5000
+    assert smaller.budget == "near"
+    assert larger.policy_revision != smaller.policy_revision
+    assert larger.fingerprint != smaller.fingerprint
+
+
+@pytest.mark.parametrize("connection,model", [("deepseek", "other"), ("relay", "deepseek-chat")])
+def test_idle_context_does_not_reuse_input_for_a_different_model_or_connection(
+    connection: str,
+    model: str,
+) -> None:
+    events = _request_with_estimate(1, "op1", usage={"input": 5200, "output": 100})
+    current = _selected_limits(connection=connection, model=model)
+
+    snapshot = context_snapshot(events, current=current)
+
+    assert snapshot.status == "ready"
+    assert snapshot.model_identity == f"{connection}:{model}"
+    assert snapshot.context_window_tokens == 131_072
+    assert snapshot.estimated_active_tokens is None
+    assert snapshot.instructions_tokens is None
+    assert snapshot.last_request_input_tokens == 5200
+    assert snapshot.budget == "unknown"
+    assert snapshot.fingerprint == ""
+
+
+@pytest.mark.parametrize("finished_request", [False, True])
+def test_running_turn_keeps_frozen_limits_even_between_model_requests(
+    finished_request: bool,
+) -> None:
+    events = [
+        {"type": "turn_started", "seq": 1, "turn_id": "t1", "text": "继续"},
+        *_request_with_estimate(
+            2,
+            "op1",
+            estimate=_estimate(window=None),
+            finished=finished_request,
+        ),
+    ]
+    current = _selected_limits()
+
+    running = context_snapshot(events, current=current)
+
+    assert running.status == "running"
+    assert running.context_window_tokens is None
+    assert running.input_limit_tokens is None
+    assert running.estimated_active_tokens == 5000
+    assert running.limits_revision == "r1"
+    assert running.fingerprint == "abc"

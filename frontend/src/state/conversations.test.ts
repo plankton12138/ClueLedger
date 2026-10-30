@@ -38,7 +38,7 @@ vi.mock("../api/workspace", async () => {
 
 import { useStoryStore } from "./story";
 import { useConversationsStore } from "./conversations";
-import { WorkspaceApiError } from "../api/workspace";
+import { EMPTY_CONTEXT, WorkspaceApiError } from "../api/workspace";
 import type { TextReference } from "./textReferences";
 
 const CONVERSATION = {
@@ -1029,4 +1029,28 @@ it("构思面普通消息冻结当前备选和节点，浏览不会改到主方�
   expect(api.createConversationWithText.mock.calls[0][1].context.story).toEqual({
     variant_id: "alt", revision: "alt-r1", node_ids: ["n2"], purpose: "design",
   });
+});
+
+it("构思表单受理后即显示任务，不等待模型结束且保留普通草稿", async () => {
+  await useConversationsStore.getState().load("w1");
+  const text = "创建构思：\n湿手套的发现与对质";
+  useConversationsStore.getState().setDraft(text);
+  let finish: () => void = () => undefined;
+  const gate = new Promise<void>(resolve => { finish = resolve; });
+  api.streamEvents.mockImplementation(async function* () {
+    await gate;
+    yield FINISHED;
+  });
+  const accepted = vi.fn();
+  const submitted = useConversationsStore.getState().send(text, {
+    ...EMPTY_CONTEXT,
+    story: { variant_id: "", revision: "", node_ids: [], purpose: "design" },
+  }, { purpose: "chat", storyAction: "create", preserveDraft: true, onAccepted: accepted });
+  await flush();
+  expect(accepted).toHaveBeenCalledWith({ conversationId: "c1", turnId: "t1" });
+  expect(api.startTurn.mock.calls[0][2].story_action).toBe("create");
+  expect(useConversationsStore.getState().drafts.c1).toBe(text);
+  finish();
+  await submitted;
+  expect(useConversationsStore.getState().drafts.c1).toBe(text);
 });

@@ -304,3 +304,26 @@ describe("构思状态", () => {
   });
 
 });
+
+describe("构思刷新并发", () => {
+  beforeEach(reset);
+
+  it("并发刷新只采用最新结果，旧快照不覆盖新修订", async () => {
+    await useStoryStore.getState().load("w1");
+    let resolveOld: (value: unknown) => void = () => undefined;
+    let resolveNew: (value: unknown) => void = () => undefined;
+    api.readStoryVariant
+      .mockImplementationOnce(() => new Promise((done) => { resolveOld = done; }))
+      .mockImplementationOnce(() => new Promise((done) => { resolveNew = done; }));
+
+    const older = useStoryStore.getState().refresh("w1");
+    const newer = useStoryStore.getState().refresh("w1");
+    await Promise.resolve();
+    resolveNew({ ...GRAPH, revision: "rev_new" });
+    await newer;
+    resolveOld({ ...GRAPH, revision: "rev_old" });
+    await older;
+
+    expect(useStoryStore.getState().graph?.revision).toBe("rev_new");
+  });
+});

@@ -107,6 +107,9 @@ async function reload(
   return { graph, detail };
 }
 
+/** 刷新序号：并发刷新只让最新一次落地，旧快照不能覆盖新结果。 */
+let refreshEpoch = 0;
+
 export const useStoryStore = create<StoryState>()((set, get) => ({
   workspaceId: null,
   open: false,
@@ -127,6 +130,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
   error: null,
 
   reset() {
+    refreshEpoch += 1;
     set({
       workspaceId: null,
       adoption: null,
@@ -265,8 +269,10 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
   },
 
   async refresh(workspaceId) {
+    const epoch = ++refreshEpoch;
     const before = get();
     if (before.workspaceId !== workspaceId) return;
+    const beforeRevision = before.graph?.revision ?? "";
     try {
       const list = await listStoryVariants(workspaceId);
       const variantId = before.variantId && list.variants.some(item => item.id === before.variantId)
@@ -275,11 +281,18 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
       const lastChange = graph?.latest_change_id ? await readStoryChange(workspaceId, graph.latest_change_id) : null;
       const detail = variantId && before.nodeId && graph?.nodes.some(node => node.id === before.nodeId)
         ? await readStoryNode(workspaceId, variantId, before.nodeId) : null;
-      if (get().workspaceId !== workspaceId || get().variantId !== before.variantId || get().nodeId !== before.nodeId) return;
+      if (epoch !== refreshEpoch) return;
+      const current = get();
+      if (current.workspaceId !== workspaceId || current.variantId !== before.variantId
+        || current.nodeId !== before.nodeId || current.groupId !== before.groupId) return;
+      // 期间已有别的写入（提交、撤销、切换）落地：旧刷新结果不再覆盖它。
+      const currentRevision = current.graph?.revision ?? "";
+      if (currentRevision !== beforeRevision && currentRevision !== (graph?.revision ?? "")) return;
       set({ variants: list.variants, primaryId: list.primary_variant_id, variantId, graph, lastChange,
         detail, nodeId: detail ? before.nodeId : null,
         groups: before.groupId ? before.groups : graph ? groupsOf(graph) : [], error: null });
     } catch (cause) {
+      if (epoch !== refreshEpoch) return;
       if (get().workspaceId === workspaceId && get().variantId === before.variantId) set({ error: errorMessage(cause, "刷新构思") });
     }
   },

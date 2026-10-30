@@ -81,6 +81,12 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     setCompactChat(true);
     if (!compact && !prefs.chatVisible) prefs.toggleChat();
   }
+  function openStoryConversation() {
+    if (!currentId) return;
+    useCluesStore.getState().setPane(currentId, "chat");
+    setCompactChat(true);
+    prefs.revealChat();
+  }
   function locate(evidenceId: string, asOf: number) {
     if (!currentId) return;
     const taskChapter = sourceTaskChapter(currentId) ?? file?.chapter_number ?? 0;
@@ -132,13 +138,8 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
         {currentId ? storyView ? (
           <StorySurface
             workspaceId={currentId}
-            onReference={() => {
-              // 只把对话栏带出来：对话已经在最前时不能再按一次「切换」，否则会被收起。
-              if (!currentId) return;
-              if (!prefs.chatVisible) prefs.toggleChat();
-              setCompactChat(true);
-              useCluesStore.getState().setPane(currentId, "chat");
-            }}
+            onStart={openStoryConversation}
+            onReference={openStoryConversation}
             onLocate={binding => {
               // 从结构跳到正文：先回到正文面，再按结构里记的区间定位。
               setStoryView(false);

@@ -147,6 +147,94 @@ def test_paused_generation_cannot_commit(store: StoryStore, tmp_path: Path) -> N
     assert variant is not None and "n9" not in variant.nodes
 
 
+def test_structure_tool_obeys_task_finalizing(store: StoryStore, tmp_path: Path) -> None:
+    def finalizing(where: str) -> None:
+        raise WorkspaceError(
+            code="TASK_FINALIZING_CONFLICT",
+            where=where,
+            why="本轮的模块内容已经应用，任务正在收尾",
+            fix="只读取结果并回复；新的修改由作者在下一轮提出",
+        )
+
+    scope = StoryToolScope(
+        state_root=tmp_path / "state",
+        frozen=StoryContextSnapshot(
+            variant_id=MAIN_VARIANT_ID, revision="rev_1", purpose="design"
+        ),
+        writable=True,
+        write_guard=finalizing,
+        operation_id="op_1",
+        generation=1,
+        author_text="加一个节点",
+    )
+    with pytest.raises(WorkspaceError) as caught:
+        _call(
+            _tool(build_story_tools(scope), "update_story"),
+            {
+                "operations": [
+                    {
+                        "op": "add_node",
+                        "node": {"id": "n8", "title": "收尾后", "action": "不写"},
+                    }
+                ]
+            },
+        )
+    assert caught.value.code == "TASK_FINALIZING_CONFLICT"
+    assert store.read().variant(MAIN_VARIANT_ID).nodes.get("n8") is None
+
+
+def test_candidate_text_extends_objects_but_not_truth_authority(
+    store: StoryStore, tmp_path: Path
+) -> None:
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        request_key="candidate-seed",
+        change=StoryChangeSet(
+            id="candidate-seed",
+            base_revision=variant.revision,
+            operations=[
+                {"op": "add_node", "node": {"id": "n2", "title": "对质", "action": "开口"}},
+                {
+                    "op": "add_clue",
+                    "clue": {"id": "glove", "title": "手套", "author_truth": "管家所留"},
+                },
+            ],
+        ),
+    )
+    node = store.require_variant(MAIN_VARIANT_ID).nodes["n2"].model_dump(mode="json")
+    scope = StoryToolScope(
+        state_root=tmp_path / "state",
+        frozen=StoryContextSnapshot(
+            variant_id=MAIN_VARIANT_ID, revision="rev_1", purpose="design", node_ids=("n1",)
+        ),
+        writable=True,
+        author_text="用这个",
+        candidate_text="建议把「对质」改成他先沉默，手套的真相改为客人所留。",
+        operation_id="op_1",
+        generation=1,
+    )
+    result = _call(
+        _tool(build_story_tools(scope), "update_story"),
+        {
+            "operations": [
+                {"op": "update_node", "node_id": "n2", "node": {**node, "action": "先沉默"}}
+            ]
+        },
+    )
+    assert result.details["ok"] is True
+    assert store.require_variant(MAIN_VARIANT_ID).nodes["n2"].action == "先沉默"
+
+    clue = store.require_variant(MAIN_VARIANT_ID).clues["glove"].model_dump(mode="json")
+    clue["author_truth"] = "客人所留"
+    with pytest.raises(WorkspaceError, match="STORY_AUTHORIZATION_CONFLICT"):
+        _call(
+            _tool(build_story_tools(scope), "update_story"),
+            {"operations": [{"op": "update_clue", "clue_id": "glove", "clue": clue}]},
+        )
+    assert store.require_variant(MAIN_VARIANT_ID).clues["glove"].author_truth == "管家所留"
+
+
 def test_read_only_scope_has_no_update_tool(tmp_path: Path) -> None:
     tools = build_story_tools(_scope(tmp_path, writable=False))
 
@@ -595,3 +683,277 @@ def test_author_can_add_required_constraint(store: StoryStore, tmp_path: Path) -
     constraint = store.require_variant("main").constraints["open"]
     assert constraint.origin == "author_request"
     assert constraint.revision != "fake"
+
+
+# -- 采用备选：范围由应用确定，权限与普通修改共用 ---------------------------
+
+
+def _seed_adoption(tmp_path: Path, *, clue_on_n1: bool = False) -> tuple[StoryStore, str]:
+    """主方案 n1/n2 + 手套；备选改了 n1、n2 与手套真相。"""
+    store = StoryStore(tmp_path / "state")
+    node1: dict[str, Any] = {"id": "n1", "title": "入场", "action": "走进门厅"}
+    if clue_on_n1:
+        node1["clue_uses"] = [
+            {"clue_id": "glove", "presentation": "手套在滴水", "mode": "narration"}
+        ]
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        request_key="seed",
+        change=StoryChangeSet(
+            id="seed",
+            base_revision="empty",
+            operations=[
+                {"op": "add_node", "node": node1},
+                {"op": "add_node", "node": {"id": "n2", "title": "结局", "action": "保持原结局"}},
+                {
+                    "op": "add_clue",
+                    "clue": {"id": "glove", "title": "手套", "author_truth": "管家所留"},
+                },
+            ],
+        ),
+    )
+    main = store.require_variant(MAIN_VARIANT_ID)
+    fork = store.create_variant(
+        name="备选",
+        source_variant_id=MAIN_VARIANT_ID,
+        source_revision=main.revision,
+        request_key="fork",
+    )
+    alternative_id = str(fork.result["variant_id"])
+    alternative = store.require_variant(alternative_id)
+    clue = alternative.clues["glove"].model_dump(mode="json")
+    store.commit_change(
+        variant_id=alternative_id,
+        request_key="alt-edit",
+        change=StoryChangeSet(
+            id="alt-edit",
+            base_revision=alternative.revision,
+            operations=[
+                {
+                    "op": "update_node",
+                    "node_id": "n1",
+                    "node": {
+                        **alternative.nodes["n1"].model_dump(mode="json"),
+                        "action": "新的入场",
+                    },
+                },
+                {
+                    "op": "update_node",
+                    "node_id": "n2",
+                    "node": {
+                        **alternative.nodes["n2"].model_dump(mode="json"),
+                        "action": "未授权的新结局",
+                    },
+                },
+                {
+                    "op": "update_clue",
+                    "clue_id": "glove",
+                    "clue": {**clue, "author_truth": "客人所留"},
+                },
+            ],
+        ),
+    )
+    return store, alternative_id
+
+
+def _adoption_tool(
+    store: StoryStore, *, author_text: str, node_ids: tuple[str, ...] = ()
+) -> Any:
+    scope = StoryToolScope(
+        state_root=store.root,
+        frozen=StoryContextSnapshot(
+            variant_id=MAIN_VARIANT_ID,
+            revision=store.require_variant(MAIN_VARIANT_ID).revision,
+            node_ids=node_ids,
+            purpose="design",
+        ),
+        writable=True,
+        author_text=author_text,
+        operation_id="op_adopt",
+        generation=1,
+    )
+    return _tool(build_story_tools(scope), "adopt_story_variant")
+
+
+def test_adoption_tool_uses_frozen_selection_when_node_ids_omitted(tmp_path: Path) -> None:
+    store, alternative_id = _seed_adoption(tmp_path)
+
+    result = _call(
+        _adoption_tool(
+            store,
+            author_text="只采用备选中选中的入场节点，保留其他内容",
+            node_ids=("n1",),
+        ),
+        {"source_variant_id": alternative_id},
+    )
+
+    main = store.require_variant(MAIN_VARIANT_ID)
+    assert result.details["plan"]["copied"]["nodes"] == ["n1"]
+    assert main.nodes["n1"].action == "新的入场"
+    # 没选中的节点与线索真相都不动。
+    assert main.nodes["n2"].action == "保持原结局"
+    assert main.clues["glove"].author_truth == "管家所留"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["采用这个备选", "不要整案采用，只挑一点", "只采用整案里的一部分"],
+)
+def test_adoption_tool_requires_explicit_whole_case_without_selection(
+    tmp_path: Path, text: str
+) -> None:
+    store, alternative_id = _seed_adoption(tmp_path)
+    tool = _adoption_tool(store, author_text=text)
+
+    with pytest.raises(WorkspaceError) as caught:
+        _call(tool, {"source_variant_id": alternative_id})
+
+    assert caught.value.code == "STORY_AUTHORIZATION_CONFLICT"
+    assert store.require_variant(MAIN_VARIANT_ID).nodes["n2"].action == "保持原结局"
+
+
+def test_adoption_tool_rejects_unpublished_truth_change(tmp_path: Path) -> None:
+    store, alternative_id = _seed_adoption(tmp_path, clue_on_n1=True)
+    tool = _adoption_tool(
+        store, author_text="只采用备选里选中的入场节点", node_ids=("n1",)
+    )
+
+    with pytest.raises(WorkspaceError) as caught:
+        _call(tool, {"source_variant_id": alternative_id})
+
+    assert caught.value.code == "STORY_AUTHORIZATION_CONFLICT"
+    # 采用与普通修改共用真相保护：整组不保存。
+    assert store.require_variant(MAIN_VARIANT_ID).clues["glove"].author_truth == "管家所留"
+
+
+def test_adoption_tool_allows_truth_when_author_states_it(tmp_path: Path) -> None:
+    store, alternative_id = _seed_adoption(tmp_path, clue_on_n1=True)
+    tool = _adoption_tool(
+        store,
+        author_text="采用选中的入场，把手套的真相改为客人所留",
+        node_ids=("n1",),
+    )
+
+    _call(tool, {"source_variant_id": alternative_id})
+
+    assert store.require_variant(MAIN_VARIANT_ID).clues["glove"].author_truth == "客人所留"
+
+
+def test_adoption_tool_does_not_change_required_constraint_without_authorization(
+    tmp_path: Path,
+) -> None:
+    store = StoryStore(tmp_path / "state")
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        request_key="seed-constraint",
+        change=StoryChangeSet(
+            id="seed-constraint",
+            base_revision="empty",
+            operations=[
+                {"op": "add_node", "node": {"id": "n1", "title": "入场", "action": "走进门厅"}},
+                {
+                    "op": "add_constraint",
+                    "constraint": {
+                        "id": "open",
+                        "text": "结局保留开放",
+                        "strength": "required",
+                        "revision": "r1",
+                    },
+                },
+            ],
+        ),
+    )
+    main = store.require_variant(MAIN_VARIANT_ID)
+    fork = store.create_variant(
+        name="备选",
+        source_variant_id=MAIN_VARIANT_ID,
+        source_revision=main.revision,
+        request_key="fork-constraint",
+    )
+    alternative_id = str(fork.result["variant_id"])
+    alternative = store.require_variant(alternative_id)
+    constraint = alternative.constraints["open"].model_dump(mode="json")
+    store.commit_change(
+        variant_id=alternative_id,
+        request_key="alt-constraint",
+        change=StoryChangeSet(
+            id="alt-constraint",
+            base_revision=alternative.revision,
+            operations=[
+                {
+                    "op": "update_constraint",
+                    "constraint_id": "open",
+                    "constraint": {**constraint, "text": "结局必须圆满"},
+                }
+            ],
+        ),
+    )
+
+    tool = _adoption_tool(
+        store, author_text="只采用选中的入场节点", node_ids=("n1",)
+    )
+    with pytest.raises(WorkspaceError) as caught:
+        _call(tool, {"source_variant_id": alternative_id})
+
+    assert caught.value.code == "STORY_AUTHORIZATION_CONFLICT"
+    assert store.require_variant(MAIN_VARIANT_ID).constraints["open"].text == "结局保留开放"
+
+
+def test_adoption_tool_returns_noop_receipt_for_unchanged_selection(tmp_path: Path) -> None:
+    store, _ = _seed_adoption(tmp_path)
+    main = store.require_variant(MAIN_VARIANT_ID)
+    fork = store.create_variant(
+        name="空备选",
+        source_variant_id=MAIN_VARIANT_ID,
+        source_revision=main.revision,
+        request_key="fork-noop",
+    )
+    empty_id = str(fork.result["variant_id"])
+
+    result = _call(
+        _adoption_tool(store, author_text="只采用选中的入场节点", node_ids=("n1",)),
+        {"source_variant_id": empty_id},
+    )
+
+    assert result.details["plan"]["operations"] == 0
+    assert store.require_variant(MAIN_VARIANT_ID).nodes["n1"].action == "走进门厅"
+
+
+def test_quoted_or_discussed_command_keeps_structure_read_only(tmp_path: Path) -> None:
+    _seed_adoption(tmp_path)
+    for text in (
+        "请解释“把手套的真相改为客人所留”这句话的意思。",
+        "解释一下把手套的真相改为客人所留是什么意思",
+    ):
+        tools = build_story_tools(_scope(tmp_path, author_text=text))
+        assert [tool.name for tool in tools] == ["read_story"]
+
+
+def test_direct_command_with_quoted_value_still_authorizes_truth(
+    store: StoryStore, tmp_path: Path
+) -> None:
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        request_key="seed-quoted-value",
+        change=StoryChangeSet(
+            id="seed-quoted-value",
+            base_revision=variant.revision,
+            operations=[
+                {
+                    "op": "add_clue",
+                    "clue": {"id": "glove", "title": "手套", "author_truth": "管家所留"},
+                }
+            ],
+        ),
+    )
+    clue = store.require_variant(MAIN_VARIANT_ID).clues["glove"].model_dump(mode="json")
+    clue["author_truth"] = "客人所留"
+    tools = build_story_tools(_scope(tmp_path, author_text="把手套的真相改为“客人所留”"))
+
+    _call(
+        _tool(tools, "update_story"),
+        {"operations": [{"op": "update_clue", "clue_id": "glove", "clue": clue}]},
+    )
+
+    assert store.require_variant(MAIN_VARIANT_ID).clues["glove"].author_truth == "客人所留"

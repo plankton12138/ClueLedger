@@ -219,7 +219,8 @@ def test_variant_prose_route_reads_variant_copy(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["variant_id"] == variant_id
-    assert body["inherited"] is True
+    # 创建备选时就复制了来源实际可见的正文，不再回退到主方案当前内容。
+    assert body["inherited"] is False
     assert body["digest"] == view.digest
     assert body["text"] == "# 雨夜\n\n甲😀乙。"
     missing = client.get(
@@ -409,3 +410,50 @@ def test_reader_preview_route_keeps_its_own_conversation(tmp_path: Path) -> None
         assert story_events[0]["reader"] is True
         assert provider.requests
         assert provider.requests[0]["tools"] == []
+
+
+def test_comparison_reports_event_time_differences(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    seed(tmp_path, workspace_id)
+    revision = revision_of(client, workspace_id)
+    created = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/variants",
+        json={
+            "name": "倒叙备选",
+            "source_variant_id": MAIN_VARIANT_ID,
+            "source_revision": revision,
+            "request_key": "compare-times",
+        },
+    )
+    assert created.status_code == 201, created.text
+    alternative_id = created.json()["result"]["variant_id"]
+    alternative_revision = next(
+        item["revision"]
+        for item in client.get(
+            f"/api/file-workspaces/{workspace_id}/story/variants"
+        ).json()["variants"]
+        if item["id"] == alternative_id
+    )
+    submitted = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": alternative_id,
+            "expected_revision": alternative_revision,
+            "request_key": "compare-times-change",
+            "operations": [
+                {
+                    "op": "set_event_time",
+                    "relation": {"before_node_id": "n2", "after_node_id": "n1"},
+                }
+            ],
+        },
+    )
+    assert submitted.status_code == 201, submitted.text
+
+    comparison = client.get(
+        f"/api/file-workspaces/{workspace_id}/story/comparison",
+        params={"base": MAIN_VARIANT_ID, "candidate": alternative_id},
+    ).json()
+
+    assert comparison["added"]["event_times"] == ["n2->n1"]
+    assert comparison["removed"]["event_times"] == []

@@ -38,6 +38,75 @@ const NODES = [
   },
 ];
 
+for (const width of [1440, 390]) {
+  test(`空白构思在 ${width} 宽度下打开创建表单，提交失败保留要求与原草稿`, async ({ page, book }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.route("**/api/model-connections", route => route.fulfill({ json: {
+      revision: "story-start-model", connections: [],
+      selection: { connection_id: "test", model: "test-model", source: "saved",
+        available: true, reason: "", thinking_level: null, thinking_levels: [] },
+    } }));
+    const submissions: { text: string; story_action?: string; context: { story?: unknown } }[] = [];
+    await page.route(`**/api/file-workspaces/${book.id}/conversations`, async route => {
+      if (route.request().method() !== "POST") return route.fallback();
+      submissions.push(route.request().postDataJSON());
+      // 只核对真实前端生成的请求，不把隔离测试发送给模型。
+      await route.fulfill({ status: 422, json: { error: {
+        code: "TEST_REQUEST_CAPTURED", where: "test.story_start", why: "隔离受理失败",
+        fix: "保留要求后重试",
+      } } });
+    });
+
+    await page.goto(`/#/workspaces/${book.id}/writing`);
+    if (!(await page.locator(".chat-input").isVisible())) await page.getByRole("button", { name: "对话", exact: true }).click();
+    await page.locator(".chat-input").fill("普通对话还没发送的草稿");
+    if (width < 600) await page.getByRole("button", { name: "对话", exact: true }).click();
+    await page.getByRole("button", { name: "构思", exact: true }).click();
+    const surface = page.getByRole("region", { name: "构思结构" });
+    const start = surface.getByRole("button", { name: "创建构思", exact: true });
+    await expect(start).toBeVisible();
+    await expect(surface.getByRole("tablist", { name: "方案" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "构思", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await start.click();
+    const dialog = page.getByRole("dialog", { name: "创建构思", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("创作要求")).toBeFocused();
+    expect(submissions).toHaveLength(0);
+    await dialog.getByLabel("创作要求").fill("根据人物设定模块，建立湿手套的发现与对质。");
+    await dialog.getByRole("button", { name: "创建构思", exact: true }).click();
+    await expect.poll(() => submissions.length).toBe(1);
+    expect(submissions[0].context.story).toEqual({
+      variant_id: "", revision: "", node_ids: [], purpose: "design",
+    });
+    expect(submissions[0].story_action).toBe("create");
+    await expect(dialog.getByRole("alert")).toContainText("隔离受理失败");
+    await expect(dialog.getByLabel("创作要求")).toHaveValue("根据人物设定模块，建立湿手套的发现与对质。");
+    await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(page.locator(".chat-input")).toHaveValue("普通对话还没发送的草稿");
+    const variants = await page.request.get(`/api/file-workspaces/${book.id}/story/variants`);
+    expect((await variants.json()).variants).toEqual([]);
+  });
+}
+
+test("空白构思读取失败时显示错误并可重新读取", async ({ page, book }) => {
+  let failRead = true;
+  await page.route(`**/api/file-workspaces/${book.id}/story/variants`, async route => {
+    if (!failRead) return route.fallback();
+    await route.fulfill({ status: 503, json: { error: {
+      code: "STORY_READ_FAILED", where: "构思", why: "隔离读取失败", fix: "重新读取构思",
+    } } });
+  });
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  const surface = page.getByRole("region", { name: "构思结构" });
+  await expect(surface.getByRole("alert")).toContainText("隔离读取失败");
+  await expect(surface.getByRole("button", { name: "创建构思", exact: true })).toHaveCount(0);
+  failRead = false;
+  await surface.getByRole("button", { name: "重新读取", exact: true }).click();
+  await expect(surface.getByRole("button", { name: "创建构思", exact: true })).toBeVisible();
+});
+
 test("构思面显示结构、节点详情与备选差异", async ({ page, book }) => {
   const prefix = `**/api/file-workspaces/${book.id}/story`;
   const seeded = await page.request.post(
@@ -207,7 +276,9 @@ test("窄屏与大字号下构思面可读，结构不横向溢出", async ({ pa
     },
   });
 
-  const output = resolve("../data/test-tmp/story-structure");
+  const output = resolve(
+    process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../data/test-tmp/story-structure",
+  );
   mkdirSync(output, { recursive: true });
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("button", { name: "构思", exact: true }).click();

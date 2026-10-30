@@ -338,13 +338,23 @@ class ModelConnectionService:
         on_text: Callable[[str], None] | None = None,
     ) -> ProbeResult:
         profile, _ = await self._fresh_probe_profile(draft, connection_id)
+        # 连接测试也是生成请求：预算取当前磁盘配置里的项目上限，不另立一套。
+        project_limit = self._book_config().context_policy.max_input_tokens
         if kind == "tool":
             return await run_tool_probe(
-                profile, model, factory=self._probe_factory, on_text=on_text
+                profile,
+                model,
+                factory=self._probe_factory,
+                on_text=on_text,
+                project_limit=project_limit,
             )
         if kind == "response":
             return await run_response_probe(
-                profile, model, factory=self._probe_factory, on_text=on_text
+                profile,
+                model,
+                factory=self._probe_factory,
+                on_text=on_text,
+                project_limit=project_limit,
             )
         raise WorkspaceError(
             code="MODEL_PROBE_KIND_INVALID",

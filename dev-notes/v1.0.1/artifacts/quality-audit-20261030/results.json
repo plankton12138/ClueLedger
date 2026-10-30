@@ -1,0 +1,69 @@
+{
+  "run_dir": "data\\test-tmp\\v101-quality-audit-20261030\\probes-0d70be6ca60345e292859dddb1667296",
+  "source_sha256": {
+    "src/hastings/workspace/story_tools.py": "00bbf0beeb277b8b6adf7300986953d3f6a53f7fecee5168afec7a6e28d0a139",
+    "src/hastings/workspace/story_authorization.py": "a6e58ad3865b5886fa08d95cdde0c3caa9451e29982ba4f4864283a7164d7e2d",
+    "src/hastings/workspace/story_adoption.py": "17769a04826e304e894692abcdfbda2490a7cb0dcd8e8ce70ce38e4b17da4f7c",
+    "src/hastings/workspace/story_store.py": "8ccf7dc2c51461ecd62dd30d8876fe9e3115b868001a04e2aeb3480ddeee5cc7",
+    "src/hastings/workspace/story_context.py": "850c3a097a6cb2a5f3a7d1844422ad28c753adb4acb7ecd447b897dbdd04eb4b"
+  },
+  "results": {
+    "F1_model_adoption_empty_scope": {
+      "tool_ok": true,
+      "selected": [
+        "n1"
+      ],
+      "unselected_n2": "未授权的新结局",
+      "truth": "客人所留"
+    },
+    "F2_quoted_truth_command": {
+      "tool_ok": true,
+      "truth": "客人所留"
+    },
+    "F3_unrelated_adoption_edge": {
+      "selected": [
+        "n3"
+      ],
+      "unrelated_edge_copied": true,
+      "plan": {
+        "source": "variant_277bd30296fe41eb8b0a82102f35e3ec",
+        "target": "main",
+        "node_ids": [
+          "n3"
+        ],
+        "copied": {
+          "nodes": [
+            "n3"
+          ],
+          "clues": [],
+          "threads": [],
+          "constraints": []
+        },
+        "unchanged": [],
+        "pulled_in": [],
+        "skipped_edges": [],
+        "conflicts": [],
+        "operations": 2
+      }
+    },
+    "F4_adoption_event_times": {
+      "receipt_kind": "adoption",
+      "source_times": [
+        {
+          "before_node_id": "n2",
+          "after_node_id": "n1"
+        }
+      ],
+      "target_times": []
+    },
+    "F5_fork_from_alternative_prose": {
+      "source_text": "# 入场\n\n备选甲的不同原文。",
+      "fork_text": "# 入场\n\n主方案原文。",
+      "fork_after_main_edit": "# 入场\n\n主方案后来修改。"
+    },
+    "F6_reader_revealed_truth": {
+      "error": "STORY_READER_LEAK",
+      "prefix": "# 揭示\n\n侦探说：凶手是一直守在门口的管家。"
+    }
+  }
+}

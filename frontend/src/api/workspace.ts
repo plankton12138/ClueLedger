@@ -186,6 +186,8 @@ export interface ContextInput {
 
 /** 首次发送与续聊共用同一个请求：界面生成快照，重试复用同一个对象。 */
 export interface TurnInput {
+  /** 作者从创建构思入口明确发起的结构任务。 */
+  story_action?: "create";
   text: string;
   request_key: string;
   context: ContextInput;
@@ -457,6 +459,51 @@ export type WorkspaceEvent =
       done: number;
       total: number;
       note?: string;
+    })
+  | (EventBase & {
+      type: "task_intent";
+      action?: "create";
+      turn_id: string;
+      kind: "discussion" | "structure" | "module" | "mixed" | "clarify";
+      structure: boolean;
+      module: boolean;
+      reason?: string;
+      author_text?: string;
+      candidate?: {
+        turn_id: string;
+        seq: number;
+        digest: string;
+        text: string;
+        multiple?: boolean;
+        truncated?: boolean;
+      } | null;
+      operation_id?: string;
+      generation?: number;
+    })
+  | (EventBase & {
+      type: "story_changes_committed";
+      turn_id: string;
+      variant_id: string;
+      base_revision: string;
+      revision: string;
+      change_id: string;
+      operations: number;
+      operation_types?: string[];
+      changed?: string[];
+      labels?: string[];
+      operation_id?: string;
+      generation?: number;
+    })
+  | (EventBase & {
+      type: "story_change_noop";
+      turn_id: string;
+      variant_id: string;
+      base_revision?: string;
+      revision: string;
+      objects: { kind: string; id: string; label?: string }[];
+      reason: string;
+      operation_id?: string;
+      generation?: number;
     })
   | (EventBase & {
       type: "module_changes_prepared";

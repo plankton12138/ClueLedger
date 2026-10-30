@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
+from hastings.server.model_limits import DEFAULT_PROJECT_INPUT_TOKENS
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.activity import ActivityStore, classify
 from hastings.workspace.agent import RunContext, build_tools
@@ -648,7 +649,7 @@ def _limits(window: int | None):
 
 @pytest.mark.parametrize("window", [64_000, None])
 def test_request_record_carries_estimate_and_capacity(tmp_path: Path, window: int | None) -> None:
-    """每次真实请求都留下估算与容量身份；窗口未知时预算只能是 unknown。"""
+    """每次真实请求都留下估算与容量身份；窗口未知时预算退到项目上限。"""
 
     async def run() -> None:
         store = ActivityStore(tmp_path)
@@ -675,6 +676,7 @@ def test_request_record_carries_estimate_and_capacity(tmp_path: Path, window: in
         assert estimate["method"] == "cjk-aware-v1"
         assert estimate["total_tokens"] > 0
         assert estimate["model"] == "deepseek:deepseek-chat"
+        assert estimate["model_identity"] == "deepseek:deepseek-chat"
         assert estimate["fingerprint"]
         assert estimate["total_tokens"] == (
             estimate["system_tokens"]
@@ -682,14 +684,20 @@ def test_request_record_carries_estimate_and_capacity(tmp_path: Path, window: in
             + estimate["message_tokens"]
             + estimate["protocol_tokens"]
         )
+        assert estimate["project_input_limit_tokens"] == DEFAULT_PROJECT_INPUT_TOKENS
+        assert estimate["policy_revision"]
         if window is None:
-            assert estimate["budget"] == "unknown"
+            # 模型容量未知，但项目预算仍然给出边界；预算状态不再停在 unknown。
             assert estimate["context_window_tokens"] is None
-            assert estimate["input_limit_tokens"] is None
+            assert estimate["model_input_limit_tokens"] is None
+            assert estimate["input_limit_tokens"] == DEFAULT_PROJECT_INPUT_TOKENS
+            assert estimate["input_limit_source"] == "project"
+            assert estimate["budget"] in {"ok", "near", "over"}
         else:
             assert estimate["budget"] in {"ok", "near", "over"}
             assert estimate["context_window_tokens"] == window
             assert estimate["input_limit_tokens"] is not None
+            assert estimate["model_input_limit_tokens"] is not None
 
     asyncio.run(run())
 

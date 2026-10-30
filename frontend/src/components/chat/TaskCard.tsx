@@ -14,7 +14,15 @@ import type {
   TaskModuleContentGrant,
   TaskModuleGrant,
 } from "../../api/workspace";
-import { hasTaskCard, taskCardFacts, type ChatTurn } from "../../state/chatMessages";
+import { hasSavedStoryChanges, hasTaskCard, taskCardFacts, type ChatTurn, type TaskIntentKind } from "../../state/chatMessages";
+
+const INTENT_LABEL: Record<TaskIntentKind, string> = {
+  discussion: "讨论",
+  structure: "构思结构",
+  module: "资料模块",
+  mixed: "构思结构 + 资料模块",
+  clarify: "等待指定候选",
+};
 
 const ACTION_LABEL: Record<TaskGrant["action"], string> = {
   create: "新建",
@@ -77,10 +85,12 @@ function titleOf(turn: ChatTurn): string {
 export default function TaskCard({ turn }: { turn: ChatTurn }) {
   const facts = taskCardFacts(turn);
   if (!hasTaskCard(facts)) return null;
+  const recordingLabel = facts.recording === "no_change" && hasSavedStoryChanges(turn)
+    ? "构思已保存" : RECORDING_LABEL[facts.recording ?? "no_change"];
   const execution =
     facts.status === null
       ? ""
-      : `${STATUS_LABEL[facts.status]}｜${RECORDING_LABEL[facts.recording ?? "no_change"]}`;
+      : `${STATUS_LABEL[facts.status]}｜${recordingLabel}`;
   return (
     <details className="mt-1 text-[11px] text-sub" data-testid="task-card">
       <summary className="cursor-pointer text-[10px] text-mute">
@@ -90,6 +100,7 @@ export default function TaskCard({ turn }: { turn: ChatTurn }) {
       </summary>
       <ul className="mt-1 flex flex-col gap-0.5">
         {facts.summary && <li>任务：{facts.summary}</li>}
+        {facts.intentKind && <li>本轮目标：{INTENT_LABEL[facts.intentKind]}</li>}
         {facts.authorization && (
           <li className="min-w-0 truncate" title={facts.authorization}>
             授权原话：{facts.authorization}
@@ -133,6 +144,18 @@ export default function TaskCard({ turn }: { turn: ChatTurn }) {
             {facts.changedPaths.length > 0 && `｜改动 ${facts.changedPaths.length} 个文件`}
           </li>
         )}
+        {facts.storyCommits.map((commit) => (
+          <li key={commit.changeId} className="min-w-0 truncate">
+            {commit.noChange
+              ? "构思结构：已核对，无需改动"
+              : `构思结构：已保存 ${commit.operations} 项`}
+            {commit.labels.length > 0 && `｜${commit.labels.join("、")}`}
+            {commit.noChange && commit.reason && (
+              <span className="text-mute" title={commit.reason}>（{commit.reason}）</span>
+            )}
+          </li>
+        ))}
+        {facts.note && <li className="text-mute">{facts.note}</li>}
         {facts.changedPaths.map((path) => (
           <li key={path} className="pl-3 text-mute">
             · {path}

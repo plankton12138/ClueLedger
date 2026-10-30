@@ -33,7 +33,7 @@ from pydantic import JsonValue, ValidationError
 from hastings.workspace.atomic_io import atomic_write_bytes, atomic_write_json, locked
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, digest_bytes, managed_kind, normalize_newlines
-from hastings.workspace.story_adoption import adoption_plan
+from hastings.workspace.story_adoption import AdoptionPlan, adoption_plan
 from hastings.workspace.story_changes import (
     StoryInvalid,
     apply_change_set,
@@ -46,6 +46,7 @@ from hastings.workspace.story_models import (
     StoryChangeRecord,
     StoryChangeSet,
     StoryDocument,
+    StoryOperation,
     StoryReceipt,
     StoryVariant,
 )
@@ -311,6 +312,16 @@ class StoryStore:
                 },
             )
             document.requests[request_key] = receipt
+            try:
+                self._copy_prose_baseline(source.id, variant.id)
+            except OSError as exc:
+                raise WorkspaceError(
+                    code="STORY_WRITE_FAILED",
+                    where="story.variant",
+                    why="备选的正文基线无法写入",
+                    fix="检查状态目录权限与可用空间后重新创建备选",
+                    details={"variant_id": variant.id},
+                ) from exc
             self._persist_locked(document, None, expected_head_digest=head_digest)
             return receipt
 
@@ -325,8 +336,16 @@ class StoryStore:
         replace: bool,
         request_key: str,
         mode: str = "exact",
+        prepare: Callable[[AdoptionPlan, StoryVariant, StoryVariant], list[StoryOperation]]
+        | None = None,
+        require_eligible: Callable[[str, int], None] | None = None,
+        decision_guard: Callable[[], AbstractContextManager[None]] | None = None,
     ) -> StoryReceipt:
-        """在同一锁内查重、检查两端修订、计算并提交采用计划。"""
+        """在同一锁内查重、检查两端修订、计算并提交采用计划。
+
+        ``prepare`` 由模型入口提供：拿到锁内算出的计划后，按普通结构变更的规则检查
+        对象、真相与约定权限，并返回真正要提交的操作。界面发起的采用不需要它。
+        """
         fingerprint = _fingerprint({
             "kind": "adoption",
             "source_variant_id": source_variant_id,
@@ -367,11 +386,14 @@ class StoryStore:
                     details={**summary, "note": "只复制结构；正文关联需要单独绑定。"},
                 )
             document = document.model_copy(deep=True)
-            if plan.operations:
+            operations = (
+                prepare(plan, source, target) if prepare is not None else list(plan.operations)
+            )
+            if operations:
                 change = StoryChangeSet(
                     id=new_id("adopt"),
                     base_revision=target_revision,
-                    operations=list(plan.operations),  # type: ignore[arg-type]
+                    operations=operations,
                     requested_scope=f"采用 {source.name}"[:500],
                 )
                 return self._commit_locked(
@@ -383,6 +405,8 @@ class StoryStore:
                     fingerprint=fingerprint,
                     result_extra={"adoption_plan": summary},
                     expected_head_digest=head_digest,
+                    require_eligible=require_eligible,
+                    decision_guard=decision_guard,
                 )
             # 即使无需改动也登记请求，后续不同负载不能复用这个键。
             document.revision = new_id("rev")
@@ -731,6 +755,46 @@ class StoryStore:
     @staticmethod
     def _prose_marker(copy: Path) -> Path:
         return copy.with_name(copy.name + ".absent")
+
+    def _variant_prose_paths(self, variant_id: str) -> list[str]:
+        """来源方案此刻可能可见的章节：主方案文件加上备选自己的副本与删除标记。"""
+        paths: set[str] = set()
+        if self.workspace is not None:
+            paths.update(
+                entry.path for entry in self.workspace.catalog().chapters if entry.exists
+            )
+        if variant_id != MAIN_VARIANT_ID:
+            root = self.dir / "variants" / variant_id / "prose"
+            if root.exists():
+                for item in root.rglob("*"):
+                    if not item.is_file():
+                        continue
+                    relative = item.relative_to(root).as_posix()
+                    if relative.endswith(".absent"):
+                        relative = relative[: -len(".absent")]
+                    paths.add(relative)
+        return sorted(path for path in paths if managed_kind(path) == "chapter")
+
+    def _copy_prose_baseline(self, source_variant_id: str, target_variant_id: str) -> None:
+        """把来源实际可见的正文完整复制给新备选，包括「这一章已删除」的状态。
+
+        首版按作者要求选择完整复制：来源清楚、恢复简单，代价是额外的存储开销。
+        没有复制到的路径只可能是创建之后才出现的新章节，不在这次基线范围内。
+        """
+        if self.workspace is None:
+            return
+        for path in self._variant_prose_paths(source_variant_id):
+            digest, text, _ = self._prose_snapshot(path, source_variant_id)
+            copy = self._prose_copy(target_variant_id, path)
+            marker = self._prose_marker(copy)
+            if digest == "absent":
+                atomic_write_bytes(marker, b"")
+                with suppress(FileNotFoundError):
+                    copy.unlink()
+                continue
+            atomic_write_bytes(copy, text.encode("utf-8"))
+            with suppress(FileNotFoundError):
+                marker.unlink()
 
     def _prose_state(
         self, path: str, variant_id: str = MAIN_VARIANT_ID,

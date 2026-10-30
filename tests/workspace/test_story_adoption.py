@@ -437,3 +437,292 @@ def test_assist_without_changes_does_not_start_a_model_turn(
     assert result["plan"]["operations"] == 0
     assert result["operation_id"] == ""
     assert "没有启动正文调整" in result["plan"]["note"]
+
+
+# -- 关系与实际时间：只采用所选内容及其获准依赖 -----------------------------
+
+
+def commit_alt(
+    store: StoryStore, alternative_id: str, operations: list[dict[str, Any]], key: str
+) -> None:
+    alternative = store.require_variant(alternative_id)
+    store.commit_change(
+        variant_id=alternative_id,
+        change=change(operations, key=key, base=alternative.revision),
+        request_key=key,
+    )
+
+
+def test_fragment_adoption_keeps_relations_between_unselected_nodes(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store, alt_id = seed_both(tmp_path, workspace_id)
+    commit_alt(
+        store,
+        alt_id,
+        [
+            {
+                "op": "connect",
+                "edge": {"id": "e9", "from_id": "n1", "to_id": "n2", "kind": "reframe"},
+            }
+        ],
+        "alt-unrelated-edge",
+    )
+    current = revisions(client, workspace_id)
+
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/adoptions",
+        json={
+            "source_variant_id": alt_id,
+            "source_revision": current[alt_id],
+            "target_variant_id": MAIN_VARIANT_ID,
+            "target_revision": current[MAIN_VARIANT_ID],
+            "node_ids": ["n3"],
+            "request_key": "adopt-n3-relations",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    plan = response.json()["plan"]
+    assert plan["copied"]["nodes"] == ["n3"]
+    # n2 → n3 是所选节点的跨边界关系：复制并单列；n1 → n2 在范围外，保持原样。
+    assert plan["copied"]["edges"] == ["e2"]
+    assert plan["boundary_edges"] == ["e2"]
+    assert "edge:e2" in plan["pulled_in"]
+    assert plan["skipped_edges"] == ["e9"]
+    merged = store.require_variant(MAIN_VARIANT_ID)
+    assert "e2" in merged.edges
+    assert "e9" not in merged.edges
+
+
+def seed_times(
+    tmp_path: Path,
+    workspace_id: str,
+    *,
+    times: tuple[tuple[str, str], ...] = (),
+) -> tuple[StoryStore, str]:
+    """主方案三个节点；可按需先写入实际时间，再从主方案建立备选。"""
+    store = StoryStore(conversation_root(tmp_path / "state", workspace_id))
+    main = store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        change=change(
+            [
+                {"op": "add_node", "node": {"id": "n1", "title": "一", "action": "第一件事"}},
+                {"op": "add_node", "node": {"id": "n2", "title": "二", "action": "第二件事"}},
+                {"op": "add_node", "node": {"id": "n3", "title": "三", "action": "第三件事"}},
+            ],
+            key="times-main",
+            base="empty",
+        ),
+        request_key="seed-times-main",
+    )
+    if times:
+        main = store.commit_change(
+            variant_id=MAIN_VARIANT_ID,
+            change=change(
+                [
+                    {
+                        "op": "set_event_time",
+                        "relation": {"before_node_id": before, "after_node_id": after},
+                    }
+                    for before, after in times
+                ],
+                key="times-seed",
+                base=main.revision,
+            ),
+            request_key="seed-times-relations",
+        )
+    fork = store.create_variant(
+        name="时间备选",
+        source_variant_id=MAIN_VARIANT_ID,
+        source_revision=main.revision,
+        request_key="times-fork",
+    )
+    return store, str(fork.result["variant_id"])
+
+
+def adopt_whole(
+    client: TestClient,
+    workspace_id: str,
+    alt_id: str,
+    *,
+    key: str,
+    replace: bool = True,
+) -> Any:
+    current = revisions(client, workspace_id)
+    return client.post(
+        f"/api/file-workspaces/{workspace_id}/story/adoptions",
+        json={
+            "source_variant_id": alt_id,
+            "source_revision": current[alt_id],
+            "target_variant_id": MAIN_VARIANT_ID,
+            "target_revision": current[MAIN_VARIANT_ID],
+            "node_ids": [],
+            "replace": replace,
+            "request_key": key,
+        },
+    )
+
+
+def test_whole_adoption_adds_event_time(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store, alt_id = seed_times(tmp_path, workspace_id, times=(("n1", "n2"),))
+    commit_alt(
+        store,
+        alt_id,
+        [{"op": "set_event_time", "relation": {"before_node_id": "n2", "after_node_id": "n3"}}],
+        "alt-add-time",
+    )
+
+    response = adopt_whole(client, workspace_id, alt_id, key="adopt-add-time")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["plan"]["copied"]["event_times"] == ["n2->n3"]
+    merged = store.require_variant(MAIN_VARIANT_ID)
+    assert {(row.before_node_id, row.after_node_id) for row in merged.event_times} == {
+        ("n1", "n2"),
+        ("n2", "n3"),
+    }
+
+
+def test_whole_adoption_adjusts_reversed_event_time(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store, alt_id = seed_times(tmp_path, workspace_id, times=(("n1", "n2"),))
+    commit_alt(
+        store,
+        alt_id,
+        [
+            {"op": "unset_event_time", "before_node_id": "n1", "after_node_id": "n2"},
+            {"op": "set_event_time", "relation": {"before_node_id": "n2", "after_node_id": "n1"}},
+        ],
+        "alt-reverse-time",
+    )
+
+    response = adopt_whole(client, workspace_id, alt_id, key="adopt-reverse-time")
+
+    assert response.status_code == 200, response.text
+    plan = response.json()["plan"]
+    assert plan["copied"]["event_times"] == ["n2->n1"]
+    assert plan["removed_event_times"] == []
+    merged = store.require_variant(MAIN_VARIANT_ID)
+    assert [(row.before_node_id, row.after_node_id) for row in merged.event_times] == [
+        ("n2", "n1")
+    ]
+
+
+def test_whole_adoption_removes_event_time_absent_from_source(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store, alt_id = seed_times(
+        tmp_path, workspace_id, times=(("n1", "n2"), ("n2", "n3"))
+    )
+    commit_alt(
+        store,
+        alt_id,
+        [{"op": "unset_event_time", "before_node_id": "n2", "after_node_id": "n3"}],
+        "alt-drop-time",
+    )
+
+    response = adopt_whole(client, workspace_id, alt_id, key="adopt-drop-time")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["plan"]["removed_event_times"] == ["n2->n3"]
+    merged = store.require_variant(MAIN_VARIANT_ID)
+    assert [(row.before_node_id, row.after_node_id) for row in merged.event_times] == [
+        ("n1", "n2")
+    ]
+
+
+def test_whole_adoption_without_replace_reports_leftover_event_time(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store, alt_id = seed_times(
+        tmp_path, workspace_id, times=(("n1", "n2"), ("n2", "n3"))
+    )
+    commit_alt(
+        store,
+        alt_id,
+        [{"op": "unset_event_time", "before_node_id": "n2", "after_node_id": "n3"}],
+        "alt-drop-time-keep",
+    )
+
+    response = adopt_whole(
+        client, workspace_id, alt_id, key="adopt-drop-time-keep", replace=False
+    )
+
+    assert response.status_code == 200, response.text
+    plan = response.json()["plan"]
+    assert plan["removed_event_times"] == []
+    assert plan["skipped_event_times"] == ["n2->n3"]
+    merged = store.require_variant(MAIN_VARIANT_ID)
+    assert {(row.before_node_id, row.after_node_id) for row in merged.event_times} == {
+        ("n1", "n2"),
+        ("n2", "n3"),
+    }
+
+
+def test_fragment_adoption_adds_boundary_event_time(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store, alt_id = seed_times(tmp_path, workspace_id)
+    commit_alt(
+        store,
+        alt_id,
+        [{"op": "set_event_time", "relation": {"before_node_id": "n2", "after_node_id": "n3"}}],
+        "alt-boundary-time",
+    )
+    current = revisions(client, workspace_id)
+
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/adoptions",
+        json={
+            "source_variant_id": alt_id,
+            "source_revision": current[alt_id],
+            "target_variant_id": MAIN_VARIANT_ID,
+            "target_revision": current[MAIN_VARIANT_ID],
+            "node_ids": ["n3"],
+            "request_key": "adopt-boundary-time",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    plan = response.json()["plan"]
+    assert plan["copied"]["event_times"] == ["n2->n3"]
+    assert "event_time:n2->n3" in plan["pulled_in"]
+    merged = store.require_variant(MAIN_VARIANT_ID)
+    assert [(row.before_node_id, row.after_node_id) for row in merged.event_times] == [
+        ("n2", "n3")
+    ]
+
+
+def test_adoption_event_time_cycle_rejects_the_whole_group(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store, alt_id = seed_times(tmp_path, workspace_id, times=(("n1", "n2"),))
+    commit_alt(
+        store,
+        alt_id,
+        [
+            {"op": "unset_event_time", "before_node_id": "n1", "after_node_id": "n2"},
+            {"op": "set_event_time", "relation": {"before_node_id": "n2", "after_node_id": "n3"}},
+            {"op": "set_event_time", "relation": {"before_node_id": "n3", "after_node_id": "n1"}},
+        ],
+        "alt-cycle-time",
+    )
+    before = store.require_variant(MAIN_VARIANT_ID).event_times
+
+    response = adopt_whole(
+        client, workspace_id, alt_id, key="adopt-cycle-time", replace=False
+    )
+
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "STORY_GRAPH_INVALID"
+    after = store.require_variant(MAIN_VARIANT_ID).event_times
+    assert after == before

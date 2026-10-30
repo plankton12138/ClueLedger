@@ -338,7 +338,8 @@ def variant_setup(
 
 def test_variant_prose_written_to_managed_copy(tmp_path: Path) -> None:
     workspace, store, path, digest, variant_id = variant_setup(tmp_path)
-    assert store.prose_state(path, variant_id) == (digest, MAIN_TEXT, True)
+    # 创建备选时已复制基线：正文来自受管副本，而不是继续沿用主方案。
+    assert store.prose_state(path, variant_id) == (digest, MAIN_TEXT, False)
     revision = store.require_variant(variant_id).revision
     change = StoryChangeSet(
         id="variant-prose",
@@ -381,6 +382,96 @@ def test_variant_prose_delete_leaves_main_file(tmp_path: Path) -> None:
     marker = store.dir / "variants" / variant_id / "prose" / "正文" / "0001 雨夜.md.absent"
     assert marker.exists()
     assert workspace.read(path).text == MAIN_TEXT
+
+
+# -- 备选正文基线：创建时固定来源实际可见的内容 -----------------------------
+
+ALTERNATIVE_TEXT = "# 雨夜\n\n备选甲的不同原文。"
+
+
+def write_variant_prose(
+    store: StoryStore, variant_id: str, path: str, text: str, key: str
+) -> None:
+    digest, current, _ = store.prose_state(path, variant_id)
+    revision = store.require_variant(variant_id).revision
+    store.commit_change(
+        variant_id=variant_id,
+        request_key=key,
+        change=StoryChangeSet(
+            id=key,
+            base_revision=revision,
+            prose_patches=[
+                ProsePatch(
+                    path=path,
+                    base_digest=digest,
+                    start=0,
+                    end=len(current),
+                    expected=current,
+                    replacement=text,
+                )
+            ],
+        ),
+    )
+
+
+def test_fork_copies_the_source_variant_visible_prose(tmp_path: Path) -> None:
+    workspace, store, path, digest, alternative_id = variant_setup(tmp_path)
+    write_variant_prose(store, alternative_id, path, ALTERNATIVE_TEXT, "alt-prose")
+    alternative = store.require_variant(alternative_id)
+
+    second = store.create_variant(
+        name="乙",
+        source_variant_id=alternative_id,
+        source_revision=alternative.revision,
+        request_key="fork-from-alternative",
+    )
+    second_id = str(second.result["variant_id"])
+
+    assert store.read_prose(path, second_id)[1] == ALTERNATIVE_TEXT
+    assert store.prose_state(path, second_id)[2] is False
+    # 修改主方案与来源备选，都不改变乙的正文。
+    workspace.write(path, "# 雨夜\n\n主方案后来修改。", expected_digest=digest)
+    assert store.read_prose(path, second_id)[1] == ALTERNATIVE_TEXT
+    write_variant_prose(store, alternative_id, path, "# 雨夜\n\n备选甲又改了。", "alt-again")
+    assert store.read_prose(path, second_id)[1] == ALTERNATIVE_TEXT
+
+
+def test_fork_keeps_deleted_prose_absent(tmp_path: Path) -> None:
+    workspace, store, path, digest, alternative_id = variant_setup(tmp_path)
+    revision = store.require_variant(alternative_id).revision
+    store.commit_change(
+        variant_id=alternative_id,
+        request_key="alt-delete",
+        change=StoryChangeSet(
+            id="alt-delete",
+            base_revision=revision,
+            prose_patches=[
+                ProsePatch(
+                    path=path,
+                    base_digest=digest,
+                    start=0,
+                    end=len(MAIN_TEXT),
+                    expected=MAIN_TEXT,
+                    replacement="",
+                    delete=True,
+                )
+            ],
+        ),
+    )
+    alternative = store.require_variant(alternative_id)
+
+    second = store.create_variant(
+        name="乙",
+        source_variant_id=alternative_id,
+        source_revision=alternative.revision,
+        request_key="fork-deleted-prose",
+    )
+    second_id = str(second.result["variant_id"])
+
+    assert store.prose_state(path, second_id)[0] == "absent"
+    assert workspace.read(path).text == MAIN_TEXT
+    marker = store.dir / "variants" / second_id / "prose" / "正文" / "0001 雨夜.md.absent"
+    assert marker.exists()
 
 
 def test_undo_preserves_later_edit_in_same_file(tmp_path: Path) -> None:

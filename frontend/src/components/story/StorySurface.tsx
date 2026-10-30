@@ -6,15 +6,17 @@
  * 不显示假结构，只说明可以怎么开始。
  */
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCheck, GitFork, MessageSquarePlus, Undo2 } from "lucide-react";
 
 import ReaderPreview from "./ReaderPreview";
 import StoryBatches from "./StoryBatches";
 import StoryCandidates from "./StoryCandidates";
+import StoryCreationDialog, { type StoryCreationTarget } from "./StoryCreationDialog";
+import { useConversationsStore } from "../../state/conversations";
 import { useStoryStore } from "../../state/story";
 import { Button } from "../ui/Button";
-import { EmptyState } from "../ui/StatusMessage";
+import { EmptyState, StatusMessage } from "../ui/StatusMessage";
 import type { StoryEdge, StoryGraph } from "../../api/story";
 
 export interface StoryBindingLocator {
@@ -100,10 +102,13 @@ function edgePath(edge: StoryEdge, from: Positioned, to: Positioned): string {
 
 export default function StorySurface({
   workspaceId,
+  onStart,
   onReference,
   onLocate,
 }: {
   workspaceId: string;
+  /** 创建请求受理后打开对话，显示实际任务进度。 */
+  onStart: () => void;
   /** 把选中的节点带进对话：作者不用再复述结构，下一轮请求会带上它。 */
   onReference: () => void;
   /** 在正文里打开这条关联的区间；返回由来源提示负责。 */
@@ -119,8 +124,10 @@ export default function StorySurface({
   const fold = useStoryStore((store) => store.fold);
   const adopt = useStoryStore((store) => store.adopt);
   const referenceNode = useStoryStore((store) => store.referenceNode);
+  const [creationTarget, setCreationTarget] = useState<StoryCreationTarget | null>(null);
 
   useEffect(() => {
+    setCreationTarget(null);
     void load(workspaceId);
   }, [load, workspaceId]);
 
@@ -137,9 +144,24 @@ export default function StorySurface({
   if (!graph || graph.nodes.length === 0) {
     return (
       <div className="story-surface story-surface-empty">
-        <EmptyState>
-          还没有构思。在右侧对话里说出谜题、场景或结局，Agent 会建立节点与线索。
-        </EmptyState>
+        {state.error ? (
+          <StatusMessage tone="error" action={<Button onClick={() => void load(workspaceId)}>重新读取</Button>}>
+            {state.error}
+          </StatusMessage>
+        ) : (
+          <EmptyState action={<Button variant="primary" onClick={() => setCreationTarget({
+            workspaceId,
+            conversationId: useConversationsStore.getState().selectedId,
+            variantId: state.variantId ?? "",
+            revision: graph?.revision ?? "",
+            name: state.variants.find(variant => variant.id === state.variantId)?.name ?? "主方案",
+          })}>创建构思</Button>}>
+            还没有构思。根据创作要求或已有对话，建立节点、线索与连接。
+          </EmptyState>
+        )}
+        {creationTarget && <StoryCreationDialog target={creationTarget}
+          onClose={() => setCreationTarget(null)}
+          onAccepted={() => { setCreationTarget(null); onStart(); }} />}
       </div>
     );
   }
@@ -244,7 +266,7 @@ export default function StorySurface({
 
       {state.comparison && (
         <section className="story-comparison" aria-label="与主方案的差异">
-          {(["nodes", "clues", "constraints", "edges"] as const).map((kind) => {
+          {(["nodes", "clues", "constraints", "edges", "event_times"] as const).map((kind) => {
             const added = state.comparison?.added[kind] ?? [];
             const removed = state.comparison?.removed[kind] ?? [];
             const updated = state.comparison?.updated[kind] ?? [];

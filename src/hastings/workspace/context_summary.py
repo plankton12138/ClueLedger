@@ -16,7 +16,7 @@ from hastings.workspace.compaction import (
     summary_text,
 )
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.model_activity import _request_estimate
+from hastings.workspace.model_activity import request_estimate
 from tau_agent.messages import UserMessage
 
 MAX_SUMMARY_REQUESTS = 4
@@ -57,7 +57,7 @@ async def summarize_history(
         return summary_instruction_prompt(instruction, merged)
 
     def fits(prompt: str) -> bool:
-        estimate = _request_estimate(
+        estimate = request_estimate(
             identity=f"{snapshot.connection_id}:{snapshot.model}",
             system=system,
             messages=[UserMessage(content=prompt)],

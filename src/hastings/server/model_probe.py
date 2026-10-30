@@ -20,20 +20,27 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, cast
 
 import httpx
 
 from hastings.prompts import tools as prompt_tools
 from hastings.prompts.tasks import PROBE_PROMPT, PROBE_SYSTEM, probe_tool_prompt
 from hastings.prompts.tools import PROBE_TOOL_DESCRIPTION
-from hastings.server.model_limits import ModelCapacity
+from hastings.server.model_limits import (
+    DEFAULT_PROJECT_INPUT_TOKENS,
+    LimitProfile,
+    ModelCapacity,
+    ModelLimits,
+    resolve_model_limits,
+)
 from hastings.server.provider_runtime import (
     ManagedModelProvider,
     ProfileLike,
     build_provider,
     is_loopback_url,
 )
+from hastings.workspace.model_activity import request_estimate
 from tau_agent.messages import (
     AgentMessage,
     AssistantMessage,
@@ -445,14 +452,23 @@ async def probe_response(
     timeout: float = RESPONSE_TIMEOUT_SECONDS,
     factory: ProviderFactory | None = None,
     on_text: Callable[[str], None] | None = None,
+    project_limit: int = DEFAULT_PROJECT_INPUT_TOKENS,
 ) -> ProbeResult:
-    """发一句固定短句，要求非空文本回复。"""
+    """发一句固定短句，要求非空文本回复。
+
+    连接测试同样是生成请求，因此也走同一份输入预算；固定短句通常远低于上限，
+    检查在这里的作用是让「小预算」不至于绕过探针。
+    """
     if not model:
         return ProbeResult(model=model, code="MODEL_NOT_SELECTED", message="先选择要测试的模型。")
+    limits = _probe_limits(profile, model, project_limit)
     provider = (factory or _build)(profile)
     try:
         text = await asyncio.wait_for(
-            _collect_text(provider, model, PROBE_PROMPT, tools=[], on_text=on_text), timeout=timeout
+            _collect_text(
+                provider, model, PROBE_PROMPT, tools=[], on_text=on_text, limits=limits
+            ),
+            timeout=timeout,
         )
     except TimeoutError:
         return ProbeResult(
@@ -484,10 +500,12 @@ async def probe_tool(
     timeout: float = TOOL_TIMEOUT_SECONDS,
     factory: ProviderFactory | None = None,
     on_text: Callable[[str], None] | None = None,
+    project_limit: int = DEFAULT_PROJECT_INPUT_TOKENS,
 ) -> ProbeResult:
     """验证工具名、参数、结果回传与最终回复的完整往返（最多两次模型响应）。"""
     if not model:
         return ProbeResult(model=model, code="MODEL_NOT_SELECTED", message="先选择要测试的模型。")
+    limits = _probe_limits(profile, model, project_limit)
     provider = (factory or _build)(profile)
     tool = _probe_tool()
     try:
@@ -498,6 +516,7 @@ async def probe_tool(
                 probe_tool_prompt(PROBE_TOOL_NAME),
                 tools=[tool],
                 on_text=on_text,
+                limits=limits,
             ),
             timeout=timeout,
         )
@@ -533,6 +552,7 @@ async def probe_tool(
                     tool_result,
                 ],
                 on_text=on_text,
+                limits=limits,
             ),
             timeout=timeout,
         )
@@ -567,8 +587,12 @@ class _ProbeFailure(Exception):
 
 
 def _build(profile: ProfileLike) -> ManagedModelProvider:
-    """探针用自己的短预算：不开重试，按测试类型给定超时。"""
-    return build_provider(profile, worker=False, max_retries=0)
+    """探针用自己的短预算：不开重试，按测试类型给定超时。
+
+    回复额度仍取写作轮的固定值：预算里的回复预留与实际请求参数必须是同一个数，
+    否则探针报出来的预算会比真实请求宽松。
+    """
+    return build_provider(profile, worker=True, max_retries=0)
 
 
 async def _close(provider: ManagedModelProvider) -> None:
@@ -584,9 +608,32 @@ async def _collect_text(
     *,
     tools: list[AgentTool],
     on_text: Callable[[str], None] | None = None,
+    limits: ModelLimits | None = None,
 ) -> str:
-    message = await _collect_message(provider, model, prompt, tools=tools, on_text=on_text)
+    message = await _collect_message(
+        provider, model, prompt, tools=tools, on_text=on_text, limits=limits
+    )
     return _text_of(message)
+
+
+def _probe_limits(
+    profile: ProfileLike, model: str, project_limit: int
+) -> ModelLimits | None:
+    """探针的输入预算：与写作轮次同一套解析，不另立一套口径。"""
+    try:
+        return resolve_model_limits(
+            cast(LimitProfile, profile), model, project_limit=project_limit
+        )
+    except ValueError:
+        # 容量配置本身矛盾时，由发送路径给出统一报错；探针不抢先解释。
+        return None
+
+
+def _definitions(tools: list[AgentTool]) -> list[dict[str, object]]:
+    return [
+        {"name": tool.name, "description": tool.description, "parameters": tool.parameters}
+        for tool in tools
+    ]
 
 
 async def _collect_message(
@@ -597,8 +644,25 @@ async def _collect_message(
     tools: list[AgentTool],
     history: list[AgentMessage] | None = None,
     on_text: Callable[[str], None] | None = None,
+    limits: ModelLimits | None = None,
 ) -> AssistantMessage:
     messages: list[AgentMessage] = list(history) if history else [UserMessage(content=prompt)]
+    if limits is not None:
+        estimate = request_estimate(
+            identity=f"{limits.connection_id}:{model}",
+            system=PROBE_SYSTEM,
+            messages=messages,
+            definitions=_definitions(tools),
+            limits=limits,
+            source_revisions={},
+        )
+        total = estimate["total_tokens"]
+        if isinstance(total, int) and total > limits.input_limit():
+            raise _ProbeFailure(
+                "CONTEXT_REQUIRED_INPUT_TOO_LARGE",
+                "连接测试的请求超过输入预算，没有发出。"
+                "建议：调大项目输入上限，或选择容量更大的模型后重试。",
+            )
     text: list[str] = []
     failed: str | None = None
     result: AssistantMessage | None = None

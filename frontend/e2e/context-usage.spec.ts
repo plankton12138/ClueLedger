@@ -11,6 +11,7 @@ async function prepare(page: Page, workspace: string) {
   let operation: Record<string, unknown> | null = null;
   let stops = 0;
   let submissions = 0;
+  let firstContext: Record<string, unknown> = {};
   await page.route(`${prefix}/conversations`, route => route.fulfill({ json: { items, recent_id: ids[0], active_turn: null, revision: "r1" } }));
   await page.route(`${prefix}/conversation-ui`, route => route.fulfill({ json: { recent_id: ids[0], drafts: {}, revision: "r1" } }));
   for (const [i, id] of ids.entries()) {
@@ -21,9 +22,20 @@ async function prepare(page: Page, workspace: string) {
     } }));
     await page.route(`${prefix}/conversations/${id}/usage`, route => route.fulfill({ json: {
       conversation_id: id, through_seq: i === 0 ? 100 : 2, revision: "r1", diagnostics: [], compaction: i === 0 ? operation : null,
-      context: { status: "ready", estimated_active_tokens: i === 0 ? 52000 : 9000, context_window_tokens: i === 0 ? 64000 : null,
-        input_limit_tokens: 56000, output_reserve_tokens: 4096, budget: i === 0 ? "near" : "unknown", instructions_tokens: 1000,
-        tools_tokens: 500, conversation_tokens: i === 0 ? 50500 : 7500, method: "cjk-aware-v1", fingerprint: id, limits_revision: "r1", last_request_input_tokens: 52000 },
+      // 第一个会话有模型容量：主进度按有效输入预算 56000（模型一侧更小）。
+      // 第二个会话没有可用模型，只有已用量：没有分母就不给百分比。
+      context: { status: "ready", estimated_active_tokens: i === 0 ? 52000 : 9000,
+        context_window_tokens: i === 0 ? 64000 : null,
+        input_limit_tokens: i === 0 ? 56000 : null,
+        project_input_limit_tokens: i === 0 ? 128000 : null,
+        model_input_limit_tokens: i === 0 ? 56000 : null,
+        input_limit_source: "model", model_identity: i === 0 ? "deepseek:deepseek-chat" : "",
+        output_reserve_tokens: 4096, safety_tokens: i === 0 ? 3904 : null,
+        capacity_source: i === 0 ? "catalog" : "unknown",
+        budget: i === 0 ? "near" : "unknown", instructions_tokens: 1000,
+        tools_tokens: 500, conversation_tokens: i === 0 ? 50500 : 7500, method: "cjk-aware-v1",
+        fingerprint: id, limits_revision: "r1", policy_revision: "p1", last_request_input_tokens: 52000,
+        ...(i === 0 ? firstContext : {}) },
       usage: { total_tokens: i === 0 ? 54800 : null, input_tokens: i === 0 ? 54000 : null, output_tokens: i === 0 ? 800 : null,
         cache_read_tokens: 0, cache_write_tokens: 0, finished_requests: 1, requests_without_usage: i === 0 ? 0 : 1, requests_in_progress: 0, model_duration_ms: 900 },
     } }));
@@ -43,10 +55,46 @@ async function prepare(page: Page, workspace: string) {
     const entry = page.getByRole("button", { name: "当前上下文占用" });
     await expect(page.getByLabel("选择对话")).toBeAttached();
     if (!(await entry.isVisible())) await page.getByRole("button", { name: "对话", exact: true }).click();
-    await expect(entry).toContainText("81%");
+    await expect(entry).toContainText("93%");
   };
-  return { ids, open, counts: () => ({ stops, submissions }) };
+  return { ids, open, counts: () => ({ stops, submissions }),
+    setContext: (context: Record<string, unknown>) => { firstContext = context; } };
 }
+
+test("打开上下文面板会重新读取容量，不依赖新增对话事件", async ({ page, book }) => {
+  const fixture = await prepare(page, book.id);
+  await fixture.open();
+  fixture.setContext({
+    estimated_active_tokens: 20331, context_window_tokens: 1048576,
+    input_limit_tokens: 128000, project_input_limit_tokens: 128000,
+    model_input_limit_tokens: 1040384, input_limit_source: "project",
+    model_identity: "deepseek:deepseek-flash", capacity_source: "catalog",
+    safety_tokens: 4096, budget: "ok", limits_revision: "r2",
+  });
+
+  await page.getByRole("button", { name: "当前上下文占用" }).click();
+  const dialog = page.getByRole("dialog", { name: "当前上下文", exact: true });
+  await expect(dialog).toContainText("≈20,331 / 128,000 tokens");
+  await expect(dialog).toContainText("16%");
+  await page.getByRole("button", { name: "容量明细", exact: true }).click();
+  await expect(dialog).toContainText("1,048,576 tokens");
+  await expect(dialog).toContainText("内置目录");
+  await expect(dialog).not.toContainText("输入预算未知");
+});
+
+test("切换模型后的待估算状态不显示首次请求说明", async ({ page, book }) => {
+  const fixture = await prepare(page, book.id);
+  await fixture.open();
+  fixture.setContext({ estimated_active_tokens: null, instructions_tokens: null,
+    tools_tokens: null, conversation_tokens: null });
+
+  await page.getByRole("button", { name: "当前上下文占用" }).click();
+  const dialog = page.getByRole("dialog", { name: "当前上下文", exact: true });
+  await expect(dialog).toContainText("待估算 / 56,000 tokens");
+  await expect(dialog).toContainText("当前模型的上下文待估算");
+  await expect(dialog).not.toContainText("还没有发出请求");
+  await expect(dialog).not.toContainText("93%");
+});
 
 test("用量按会话隔离，低游标及延迟旧响应正常显示", async ({ page, book }) => {
   const fixture = await prepare(page, book.id);

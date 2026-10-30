@@ -26,6 +26,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from hastings.server.model_limits import ModelLimits
 from hastings.workspace.context_usage import (
     MESSAGE_OVERHEAD_TOKENS,
     METHOD,
@@ -221,15 +222,28 @@ class ContextSnapshot:
     ``pending`` 还没有任何请求，谈不上占用；``running`` 有一轮正在跑，取它发出前的
     估算；``ready`` 最近一轮已结束，估算再加上之后新增的公开对话。
 
-    容量取自最近一次请求受理时冻结的那份，不是现在的模型设置：显示的数字必须与
-    真正发出去的请求一致。作者改了配置也只影响下一轮。
+    运行中的容量取自请求受理时冻结的那份；空闲后按当前选择读取容量与预算。
+    同一连接、同一模型可以保留输入估算；切换模型后要重新估算，不能拼接旧占用。
+
+    ``pending`` 时没有可读的冻结事实，容量字段改由调用方传入的当前选择填充——
+    这样首次进入也能显示「待估算 / 项目上限」，但估算值仍为 null。
     """
 
     status: Literal["pending", "running", "ready"]
     estimated_active_tokens: int | None
     last_request_input_tokens: int | None
+    #: 模型总窗口；未知时为 null，绝不写入项目预算。
     context_window_tokens: int | None
+    #: 有效输入预算：主进度、自动压缩与请求检查共用的那个数。
     input_limit_tokens: int | None
+    #: 项目策略上限；已绑定有效模型时是正整数。
+    project_input_limit_tokens: int | None
+    #: 由已知模型容量算出的可用输入；模型容量未知时为 null。
+    model_input_limit_tokens: int | None
+    #: 有效上限的出处：project / model / both。
+    input_limit_source: str
+    #: 连接与精确模型 ID，用于归属；不含密钥或账号凭据。
+    model_identity: str
     output_reserve_tokens: int | None
     safety_tokens: int | None
     #: 窗口数字的出处：override / metadata / catalog / unknown。
@@ -241,6 +255,7 @@ class ContextSnapshot:
     method: str
     fingerprint: str
     limits_revision: str
+    policy_revision: str
 
 
 def _estimated_int(value: object) -> int | None:
@@ -261,45 +276,47 @@ def _latest_measured_input(events: Sequence[Mapping[str, Any]]) -> int | None:
     return None
 
 
-def context_snapshot(events: Sequence[Mapping[str, Any]]) -> ContextSnapshot:
-    """把事件还原成「现在大概占多少」。不装配、不读文件、不调用模型。"""
-    empty = ContextSnapshot(
-        status="pending",
-        estimated_active_tokens=None,
-        last_request_input_tokens=None,
-        context_window_tokens=None,
-        input_limit_tokens=None,
-        output_reserve_tokens=None,
-        safety_tokens=None,
-        capacity_source="unknown",
-        budget="unknown",
-        instructions_tokens=None,
-        tools_tokens=None,
-        conversation_tokens=None,
-        method="",
-        fingerprint="",
-        limits_revision="",
-    )
+def context_snapshot(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    current: ModelLimits | None = None,
+) -> ContextSnapshot:
+    """把事件还原成「现在大概占多少」。不装配、不读文件、不调用模型。
+
+    ``current`` 是当前选择的容量与预算。请求运行中保持冻结值；空闲时采用当前值，
+    仅在连接与模型身份一致时复用输入估算。未提供当前选择时保留事件视图。
+    """
+    empty = _pending_snapshot(current)
 
     started: list[tuple[int, str]] = []
     finished: set[str] = set()
+    open_turns: set[str] = set()
+    request_turn: str | None = None
     for event in events:
         if event.get("stage") == "compaction":
             continue
         kind = event.get("type")
+        turn = event.get("turn_id")
+        if isinstance(turn, str):
+            if kind == "turn_started":
+                open_turns.add(turn)
+            elif kind == "run_finished":
+                open_turns.discard(turn)
         operation = event.get("operation_id")
         if not isinstance(operation, str) or not operation:
             continue
         seq = _estimated_int(event.get("seq")) or 0
         if kind == "model_request_started":
             started.append((seq, operation))
+            request_turn = turn if isinstance(turn, str) and turn in open_turns else None
         elif kind == "model_request_finished":
             finished.add(operation)
 
     if not started:
         return empty
 
-    running = started[-1][1] not in finished
+    # 一轮可能有多次模型请求；工具执行期间仍属于同一轮，不能提前换成新选择的预算。
+    running = started[-1][1] not in finished or request_turn in open_turns
     status: Literal["pending", "running", "ready"] = "running" if running else "ready"
 
     estimate: Mapping[str, Any] | None = None
@@ -380,13 +397,17 @@ def context_snapshot(events: Sequence[Mapping[str, Any]]) -> ContextSnapshot:
         )
         fingerprint = hashlib.sha256((fingerprint + wire).encode()).hexdigest()
     input_limit = _estimated_int(estimate.get("input_limit_tokens"))
-    return ContextSnapshot(
+    snapshot = ContextSnapshot(
         status=status,
         estimated_active_tokens=estimated,
         # 供应商给过实测输入时用它：那是真实发出的大小，比估算更可信。
         last_request_input_tokens=measured if measured is not None else base,
         context_window_tokens=_estimated_int(estimate.get("context_window_tokens")),
         input_limit_tokens=input_limit,
+        project_input_limit_tokens=_estimated_int(estimate.get("project_input_limit_tokens")),
+        model_input_limit_tokens=_estimated_int(estimate.get("model_input_limit_tokens")),
+        input_limit_source=str(estimate.get("input_limit_source") or "project"),
+        model_identity=str(estimate.get("model_identity") or estimate.get("model") or ""),
         output_reserve_tokens=_estimated_int(estimate.get("output_reserve_tokens")),
         safety_tokens=_estimated_int(estimate.get("safety_tokens")),
         capacity_source=str(estimate.get("capacity_source") or "unknown"),
@@ -397,4 +418,71 @@ def context_snapshot(events: Sequence[Mapping[str, Any]]) -> ContextSnapshot:
         method=method,
         fingerprint=fingerprint,
         limits_revision=str(estimate.get("limits_revision") or ""),
+        policy_revision=str(estimate.get("policy_revision") or ""),
+    )
+    if running or current is None:
+        return snapshot
+    return _idle_snapshot(snapshot, current)
+
+
+def _idle_snapshot(snapshot: ContextSnapshot, current: ModelLimits) -> ContextSnapshot:
+    """空闲视图采用当前预算，不修改历史请求；不同模型的输入估算不复用。"""
+    selected = _pending_snapshot(current)
+    if snapshot.model_identity != selected.model_identity:
+        return dataclasses.replace(
+            selected,
+            status=snapshot.status,
+            last_request_input_tokens=snapshot.last_request_input_tokens,
+        )
+
+    fingerprint = snapshot.fingerprint
+    if fingerprint and (
+        snapshot.limits_revision != current.revision
+        or snapshot.policy_revision != current.policy_revision
+    ):
+        fingerprint = hashlib.sha256(f"{fingerprint}|{current.revision}".encode()).hexdigest()
+    return dataclasses.replace(
+        selected,
+        status=snapshot.status,
+        estimated_active_tokens=snapshot.estimated_active_tokens,
+        last_request_input_tokens=snapshot.last_request_input_tokens,
+        budget=(
+            budget_for_limit(
+                total_tokens=snapshot.estimated_active_tokens, input_limit=current.input_limit()
+            )
+            if snapshot.estimated_active_tokens is not None
+            else "unknown"
+        ),
+        instructions_tokens=snapshot.instructions_tokens,
+        tools_tokens=snapshot.tools_tokens,
+        conversation_tokens=snapshot.conversation_tokens,
+        method=snapshot.method,
+        fingerprint=fingerprint,
+    )
+
+
+def _pending_snapshot(current: ModelLimits | None) -> ContextSnapshot:
+    """还没有请求时的空视图；有当前选择就带上容量与预算，估算仍为 null。"""
+    return ContextSnapshot(
+        status="pending",
+        estimated_active_tokens=None,
+        last_request_input_tokens=None,
+        context_window_tokens=current.context_window_tokens if current else None,
+        input_limit_tokens=current.input_limit() if current else None,
+        project_input_limit_tokens=current.project_input_limit_tokens if current else None,
+        model_input_limit_tokens=current.model_input_limit_tokens if current else None,
+        input_limit_source=current.input_limit_source if current else "project",
+        model_identity=(f"{current.connection_id}:{current.model}" if current is not None else ""),
+        output_reserve_tokens=current.output_reserve_tokens if current else None,
+        safety_tokens=current.safety_tokens if current else None,
+        capacity_source=current.source if current else "unknown",
+        # 没有估算就不判断占比：既不是 0%，也不是占满。
+        budget="unknown",
+        instructions_tokens=None,
+        tools_tokens=None,
+        conversation_tokens=None,
+        method="",
+        fingerprint="",
+        limits_revision=current.revision if current else "",
+        policy_revision=current.policy_revision if current else "",
     )

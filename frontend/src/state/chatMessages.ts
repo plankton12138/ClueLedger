@@ -110,6 +110,29 @@ export interface ChatTurn {
   moduleChanges: TurnModuleChange[];
   /** 模型向作者提出的问题；没有提问时为 null。 */
   question: TurnQuestion | null;
+  /** 受理时确定的任务目标；只用于说明这一轮要做什么。 */
+  intentKind: TaskIntentKind | null;
+  /** 这一轮实际提交的构思结构与无需改动记录。 */
+  storyCommits: TurnStoryCommit[];
+}
+
+/** 正文未改动时，结构提交仍然是已保存的创作结果。 */
+export function hasSavedStoryChanges(turn: ChatTurn): boolean {
+  return turn.storyCommits.some(commit => !commit.noChange && commit.operations > 0);
+}
+
+export type TaskIntentKind = "discussion" | "structure" | "module" | "mixed" | "clarify";
+
+export interface TurnStoryCommit {
+  changeId: string;
+  variantId: string;
+  revision: string;
+  baseRevision: string;
+  labels: string[];
+  changed: string[];
+  operations: number;
+  noChange: boolean;
+  reason: string;
 }
 
 /** 一轮里持久化的问题：回答为空表示仍在等待作者。 */
@@ -214,6 +237,9 @@ export interface TaskCardFacts {
   recording: RunResult["recording"] | null;
   changedPaths: string[];
   reviewStatus: ReviewStatus | null;
+  intentKind: TaskIntentKind | null;
+  storyCommits: TurnStoryCommit[];
+  note: string;
 }
 
 export function taskCardFacts(turn: ChatTurn): TaskCardFacts {
@@ -243,6 +269,9 @@ export function taskCardFacts(turn: ChatTurn): TaskCardFacts {
     recording: turn.result?.recording ?? null,
     changedPaths: turn.result?.changed_paths ?? [],
     reviewStatus: turn.review?.status ?? null,
+    intentKind: turn.intentKind,
+    storyCommits: turn.storyCommits,
+    note: turn.result?.note ?? "",
   };
 }
 
@@ -253,6 +282,7 @@ export function hasTaskCard(facts: TaskCardFacts): boolean {
     facts.requiredCount > 0 ||
     facts.status !== null ||
     facts.reviewStatus !== null ||
+    facts.storyCommits.length > 0 ||
     facts.moduleContentGrants.length > 0
   );
 }
@@ -280,6 +310,8 @@ const EMPTY_TURN = (id: string, at: string): ChatTurn => ({
   ideas: [],
   moduleChanges: [],
   question: null,
+  intentKind: null,
+  storyCommits: [],
 });
 
 // -- 结构更新：只替换受影响的节点 -------------------------------------------
@@ -642,6 +674,52 @@ export function appendEvent(turns: ChatTurn[], event: WorkspaceEvent): ChatTurn[
             code: event.code ?? "TURN_FAILED",
             message: event.message ?? "这一轮没有完成",
           },
+        ],
+      }));
+    }
+    case "task_intent": {
+      return withTurn(turns, event.turn_id, (turn) => ({
+        ...turn,
+        intentKind: event.kind,
+      }));
+    }
+    case "story_changes_committed": {
+      const commit: TurnStoryCommit = {
+        changeId: event.change_id,
+        variantId: event.variant_id,
+        revision: event.revision,
+        baseRevision: event.base_revision,
+        labels: event.labels ?? [],
+        changed: event.changed ?? [],
+        operations: event.operations,
+        noChange: false,
+        reason: "",
+      };
+      return withTurn(turns, event.turn_id, (turn) => ({
+        ...turn,
+        storyCommits: [
+          ...turn.storyCommits.filter((item) => item.changeId !== commit.changeId),
+          commit,
+        ],
+      }));
+    }
+    case "story_change_noop": {
+      const commit: TurnStoryCommit = {
+        changeId: `noop:${event.seq}`,
+        variantId: event.variant_id,
+        revision: event.revision,
+        baseRevision: event.base_revision ?? "",
+        labels: event.objects.map((item) => item.label ?? item.id),
+        changed: event.objects.map((item) => `${item.kind}:${item.id}`),
+        operations: 0,
+        noChange: true,
+        reason: event.reason,
+      };
+      return withTurn(turns, event.turn_id, (turn) => ({
+        ...turn,
+        storyCommits: [
+          ...turn.storyCommits.filter((item) => item.changeId !== commit.changeId),
+          commit,
         ],
       }));
     }

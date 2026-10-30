@@ -11,16 +11,19 @@ from __future__ import annotations
 import pytest
 
 from hastings.server.model_limits import (
+    DEFAULT_PROJECT_INPUT_TOKENS,
     WORKER_OUTPUT_TOKENS,
     ModelCapacity,
     ModelLimitOverride,
     resolve_model_limits,
 )
 from hastings.server.provider_config import (
+    ContextPolicy,
     ProviderBook,
     ProviderProfile,
     ServerConfig,
     load_server_config,
+    save_server_config,
 )
 
 
@@ -42,15 +45,22 @@ def profile(
 
 
 def test_unconfigured_model_reports_unknown_window_without_guessing() -> None:
-    """没有容量配置时不填默认 128K：猜一个窗口会让占比看起来可信。"""
+    """容量未知不填默认窗口：猜一个窗口会让占比看起来可信。
+
+    但预算不能因此停摆——有效上限退到项目策略，界面与请求检查都还能工作。
+    """
     limits = resolve_model_limits(profile(), "deepseek-chat")
 
     assert limits.context_window_tokens is None
     assert limits.max_input_tokens is None
-    assert limits.input_limit() is None
+    assert limits.model_input_limit_tokens is None
+    assert limits.input_limit() == DEFAULT_PROJECT_INPUT_TOKENS
+    assert limits.input_limit_source == "project"
     assert limits.source == "unknown"
     # 回复预留与运行时实际请求上限一致，未知窗口时也不假装成 8K。
     assert limits.output_reserve_tokens == WORKER_OUTPUT_TOKENS
+    # 项目预算绝不写进模型窗口。
+    assert limits.project_input_limit_tokens == DEFAULT_PROJECT_INPUT_TOKENS
 
 
 def test_reported_capacity_supplies_window_and_reserve() -> None:
@@ -141,6 +151,91 @@ def test_catalog_does_not_apply_to_custom_relay_or_sibling_models() -> None:
     assert relay.source == "unknown"
     assert sibling.source == "unknown"
     assert relay.context_window_tokens is None
+
+
+# -- 1.0.2 容量目录与项目预算 ------------------------------------------------
+
+
+def test_official_deepseek_models_get_capacity_from_catalog() -> None:
+    """官方模型没有已存元数据时也能从目录拿到窗口与输出上限（A02）。"""
+    for model in ("deepseek-flash", "deepseek-v4-pro"):
+        limits = resolve_model_limits(profile(catalog_id="deepseek"), model)
+
+        assert limits.source == "catalog"
+        assert limits.context_window_tokens == 1_048_576
+        assert limits.max_output_tokens == 393_216
+
+
+def test_small_window_is_not_enlarged_by_project_budget() -> None:
+    """小窗口的供应商不会被项目预算放大（A05）：W=16000、R=4096 → S=800，B=11104。"""
+    limits = resolve_model_limits(
+        profile(metadata={"m": ModelCapacity(context_window_tokens=16_000)}), "m"
+    )
+
+    assert limits.safety_tokens == 800
+    assert limits.model_input_limit_tokens == 16_000 - WORKER_OUTPUT_TOKENS - 800
+    assert limits.input_limit() == 11_104
+    assert limits.input_limit_source == "model"
+
+
+def test_known_input_limit_without_window_keeps_window_unknown() -> None:
+    """只已知输入上限时窗口仍未知，有效上限取两者较小值（A06）。"""
+    limits = resolve_model_limits(
+        profile(metadata={"m": ModelCapacity(max_input_tokens=64_000)}), "m"
+    )
+
+    assert limits.context_window_tokens is None
+    assert limits.model_input_limit_tokens == 64_000
+    assert limits.input_limit() == 64_000
+    assert limits.input_limit_source == "model"
+
+
+def test_project_budget_binds_when_model_capacity_is_larger() -> None:
+    """模型能装一百万，项目只开 128K：有效上限是项目值，窗口仍是模型值。"""
+    limits = resolve_model_limits(
+        profile(catalog_id="deepseek"), "deepseek-flash"
+    )
+
+    assert limits.context_window_tokens == 1_048_576
+    assert limits.project_input_limit_tokens == DEFAULT_PROJECT_INPUT_TOKENS
+    assert limits.input_limit() == DEFAULT_PROJECT_INPUT_TOKENS
+    assert limits.input_limit_source == "project"
+
+
+def test_equal_project_and_model_limits_report_both() -> None:
+    limits = resolve_model_limits(
+        profile(metadata={"m": ModelCapacity(context_window_tokens=16_000)}),
+        "m",
+        project_limit=16_000 - WORKER_OUTPUT_TOKENS - 800,
+    )
+
+    assert limits.input_limit_source == "both"
+
+
+def test_project_limit_changes_revision_and_policy_revision() -> None:
+    """改项目预算必须让旧估算失效，策略版本也要跟着变。"""
+    base = resolve_model_limits(profile(catalog_id="deepseek"), "deepseek-flash")
+    tighter = resolve_model_limits(
+        profile(catalog_id="deepseek"), "deepseek-flash", project_limit=64_000
+    )
+
+    assert base.revision != tighter.revision
+    assert base.policy_revision != tighter.policy_revision
+
+
+@pytest.mark.parametrize("value", [0, -1, True, "128000", 128_000.5])
+def test_project_budget_rejects_non_positive_integers(value: object) -> None:
+    """bool、字符串、零与负数都不是可用预算（A07）。"""
+    with pytest.raises(ValueError, match="CONTEXT_POLICY_INVALID"):
+        ContextPolicy(max_input_tokens=value)  # type: ignore[arg-type]
+
+
+def test_window_smaller_than_reserve_and_safety_is_a_config_error() -> None:
+    """已知窗口放不下回复预留与安全余量时明确失败，不静默退到项目预算（A07）。"""
+    with pytest.raises(ValueError, match="CONTEXT_POLICY_INVALID"):
+        resolve_model_limits(
+            profile(metadata={"m": ModelCapacity(context_window_tokens=4_096)}), "m"
+        )
 
 
 def test_provider_reported_capacity_beats_catalog_and_fills_remaining_fields() -> None:
@@ -243,7 +338,7 @@ def test_booleans_are_not_accepted_as_capacity() -> None:
 
 
 def test_limits_dict_keeps_null_for_unknown_fields() -> None:
-    """对外视图用 null 表示未知，前端据此不显示百分比。"""
+    """对外视图用 null 表示未知；项目预算单独一栏，不冒充模型窗口。"""
     limits = resolve_model_limits(profile(), "deepseek-chat")
 
     assert limits.as_dict() == {
@@ -255,7 +350,12 @@ def test_limits_dict_keeps_null_for_unknown_fields() -> None:
         "max_output_tokens": None,
         "output_reserve_tokens": WORKER_OUTPUT_TOKENS,
         "safety_tokens": 0,
+        "project_input_limit_tokens": DEFAULT_PROJECT_INPUT_TOKENS,
+        "model_input_limit_tokens": None,
+        "input_limit_tokens": DEFAULT_PROJECT_INPUT_TOKENS,
+        "input_limit_source": "project",
         "source": "unknown",
+        "policy_revision": limits.policy_revision,
         "revision": limits.revision,
     }
 
@@ -291,6 +391,41 @@ def test_config_without_limits_still_loads(tmp_path) -> None:
 
     assert config.providers[0].model_limits == {}
     assert config.providers[0].model_metadata == {}
+    # 没有 context_policy 时取默认值：null 不等于关闭保护。
+    assert config.context_policy.max_input_tokens == DEFAULT_PROJECT_INPUT_TOKENS
+
+
+def test_config_policy_round_trips_and_survives_connection_edit(tmp_path) -> None:
+    """项目预算能加载、能保存，编辑连接不会把它丢掉（A15）。"""
+    path = tmp_path / "config.yaml"
+    path.write_text(LEGACY + "context_policy:\n  max_input_tokens: 64000\n", encoding="utf-8")
+
+    config = load_server_config(path)
+    assert config.context_policy.max_input_tokens == 64_000
+
+    edited = config.model_copy(
+        update={
+            "providers": [
+                profile.model_copy(update={"display_name": "改过的名字"})
+                for profile in config.providers
+            ]
+        }
+    )
+    save_server_config(edited, path)
+
+    reloaded = load_server_config(path)
+    assert reloaded.context_policy.max_input_tokens == 64_000
+    assert reloaded.providers[0].display_name == "改过的名字"
+
+
+def test_default_policy_is_written_explicitly(tmp_path) -> None:
+    """默认值也落盘：读者不必从缺省推断当前生效的上限。"""
+    path = tmp_path / "config.yaml"
+    path.write_text(LEGACY, encoding="utf-8")
+
+    save_server_config(load_server_config(path), path)
+
+    assert "max_input_tokens: 128000" in path.read_text(encoding="utf-8")
 
 
 WITH_REPORTED = """providers:

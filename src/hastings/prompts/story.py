@@ -26,6 +26,7 @@ __all__ = [
     "CLUE_RESOLUTION_UNDECIDED",
     "DEFAULT_SPEAKER",
     "EMPTY_PLAN_TEXT",
+    "EMPTY_VARIANT_TEXT",
     "JUDGEMENT_NOTE",
     "KNOWLEDGE_JUDGE_NOTE",
     "NO_OBSERVATION_TEXT",
@@ -47,6 +48,7 @@ __all__ = [
     "constraint_line",
     "constraint_requirement",
     "describe_story_operation",
+    "empty_variant_text",
     "judgement_line",
     "knowledge_boundary_requirement",
     "knowledge_line",
@@ -111,6 +113,10 @@ SECTION_LABELS: dict[str, tuple[str, str]] = {
         "正文观察",
         "读者已经读到的原句与当时的观察；与计划冲突时以原文为准。",
     ),
+    "empty": (
+        "空白方案",
+        "当前方案还没有节点；这一轮可以依据作者已确认的内容建立结构。",
+    ),
     "testimony": (
         "角色证词与推测",
         "角色说出来的话；可以是假话或误信，不能当成作者真相。",
@@ -168,6 +174,20 @@ CLUE_INTENT_UNWRITTEN = "未写回收意图"
 CLUE_RESOLUTION_OPEN = "计划保持不解释"
 CLUE_RESOLUTION_UNDECIDED = "回收方式未定"
 EMPTY_PLAN_TEXT = "（没有可用的计划内容）"
+EMPTY_VARIANT_TEXT = (
+    "当前方案为空。可以从作者已确认的讨论与资料建立节点、线索与关系；"
+    "作者真相未定时保持未定，不要自行补全。"
+)
+
+
+def empty_variant_text(clue_count: int, constraint_count: int) -> str:
+    """空白方案的说明；已有零散线索或约定时一并说明，避免模型以为一切都要重建。"""
+    if clue_count or constraint_count:
+        return (
+            f"{EMPTY_VARIANT_TEXT}当前还有 {clue_count} 条线索、"
+            f"{constraint_count} 条约定，不需要重复建立。"
+        )
+    return EMPTY_VARIANT_TEXT
 DEFAULT_SPEAKER = "某个角色"
 NO_OBSERVATION_TEXT = "尚未记录观察"
 PREFERENCE_NOTE = "（偏好，可权衡）"

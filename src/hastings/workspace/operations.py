@@ -107,6 +107,9 @@ class Operation:
     committed_receipts: list[dict[str, Any]] = field(default_factory=list)
     #: 没有完成的单元；空列表表示没有未完成项。
     pending_units: list[str] = field(default_factory=list)
+    #: 受理时冻结的任务目标：区分讨论、结构修改、模块保存与待澄清。
+    #: 它只用于判断完成，不授予写权限。
+    intent: dict[str, Any] = field(default_factory=dict)
     last_seq: int = 0
     created_at: str = ""
     updated_at: str = ""
@@ -216,6 +219,7 @@ class Operation:
             "checkpoints": self.checkpoints,
             "committed_receipts": self.committed_receipts,
             "pending_units": self.pending_units,
+            "intent": self.intent,
             "last_seq": self.last_seq,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -258,6 +262,7 @@ class Operation:
             checkpoints=list(raw.get("checkpoints") or []),
             committed_receipts=list(raw.get("committed_receipts") or []),
             pending_units=[str(item) for item in raw.get("pending_units") or []],
+            intent=dict(raw.get("intent") or {}),
             last_seq=int(raw.get("last_seq") or 0),
             created_at=str(raw.get("created_at") or ""),
             updated_at=str(raw.get("updated_at") or ""),

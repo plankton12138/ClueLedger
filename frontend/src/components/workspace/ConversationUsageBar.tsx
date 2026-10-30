@@ -10,6 +10,7 @@
 
 import OperationControls from "./OperationControls";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useModelsStore } from "../../state/models";
 
 import type { CompactionOperation, ConversationUsageView } from "../../api/contextUsage";
 import {
@@ -25,7 +26,10 @@ import {
   formatPercent,
   formatTokens,
   hasCapacity,
+  inputLimitSourceLabel,
   isCompactionFinished,
+  modelInputNote,
+  modelWindowNote,
   usageDisplayState,
   usageLabel,
 } from "../../api/contextUsage";
@@ -59,6 +63,7 @@ function ScopedUsageBar({
   refreshKey = 0,
 }: Props) {
   const [view, setView] = useState<ConversationUsageView | null>(null);
+  const modelRevision = useModelsStore((state) => state.revision);
   const [panel, setPanel] = useState<Panel>(null);
   // 压缩完成后要重新读一次：占用与累计都会变。
   const [tick, setTick] = useState(0);
@@ -114,7 +119,11 @@ function ScopedUsageBar({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [workspaceId, conversationId, refreshKey, tick]);
+  }, [workspaceId, conversationId, refreshKey, tick, modelRevision]);
+
+  useEffect(() => {
+    if (panel !== null) setTick((value) => value + 1);
+  }, [panel]);
 
   useEffect(() => {
     if (panel === null) return;
@@ -201,6 +210,7 @@ function ScopedUsageBar({
   const tight = context?.budget === "near" || context?.budget === "over";
   const items = context ? breakdown(context) : [];
   const compactionHint = context ? autoCompactionNote(context, view?.policy) : null;
+  const modelInput = context ? modelInputNote(context) : null;
 
   return (
     <div className="relative flex min-w-0 items-center gap-1" ref={root}>
@@ -231,85 +241,104 @@ function ScopedUsageBar({
               {context.status === "running" ? "本轮进行中" : "估算"}
             </span>
           </div>
-          {context.status === "pending" ? (
+          <div className="mt-2 flex items-baseline justify-between gap-2 text-[11px]">
+            <span className="text-fg-strong">{contextAmount(context)}</span>
+            {known && share !== null && (
+              <span className={tight ? "text-amber" : "text-mute"}>
+                {formatPercent(share)}
+              </span>
+            )}
+          </div>
+          {known && share !== null && (
+            <div className="chat-usage-track mt-1" aria-hidden="true">
+              <div
+                className={`chat-usage-fill${tight ? " tight" : ""}`}
+                style={{ width: `${Math.min(100, Math.max(0, Math.round(share * 100)))}%` }}
+              />
+            </div>
+          )}
+          {context.estimated_active_tokens === null ? (
             <p className="mt-2 text-[11px] leading-5 text-mute">
-              还没有发出请求。首次发送后按实际装配估算占用。
+              {known
+                ? context.status === "pending"
+                  ? "还没有发出请求；首次发送后按实际装配估算占用。"
+                  : "当前模型的上下文待估算；下次发送时更新。"
+                : "还没有可用的模型；先选择连接与模型。"}
             </p>
           ) : (
-            <>
-              <div className="mt-2 flex items-baseline justify-between gap-2 text-[11px]">
-                <span className="text-fg-strong">{contextAmount(context)}</span>
-                {known && share !== null && (
-                  <span className={tight ? "text-amber" : "text-mute"}>
-                    {formatPercent(share)}
-                  </span>
-                )}
-              </div>
-              {known && share !== null && (
-                <div className="chat-usage-track mt-1" aria-hidden="true">
-                  <div
-                    className={`chat-usage-fill${tight ? " tight" : ""}`}
-                    style={{ width: `${Math.min(100, Math.round(share * 100))}%` }}
-                  />
+            <dl className="mt-2 space-y-0.5 text-[11px] text-mute">
+              {items.map((item) => (
+                <div className="flex justify-between gap-2" key={item.key}>
+                  <dt>{item.label}</dt>
+                  <dd className="text-fg-strong">{formatCount(item.tokens)}</dd>
                 </div>
-              )}
-              <dl className="mt-2 space-y-0.5 text-[11px] text-mute">
-                {items.map((item) => (
-                  <div className="flex justify-between gap-2" key={item.key}>
-                    <dt>{item.label}</dt>
-                    <dd className="text-fg-strong">{formatCount(item.tokens)}</dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="mt-2 text-[10px] leading-4 text-mute">
-                回复预留 {formatCount(context.output_reserve_tokens)} tokens
+              ))}
+            </dl>
+          )}
+          {context.output_reserve_tokens !== null && (
+            <p className="mt-2 text-[10px] leading-4 text-mute">
+              回复预留 {formatCount(context.output_reserve_tokens)} tokens
+            </p>
+          )}
+          <button
+            type="button"
+            className="mt-1 text-[10px] font-bold text-blue"
+            aria-expanded={detailsOpen}
+            onClick={() => setDetailsOpen((value) => !value)}
+          >
+            {detailsOpen ? "收起明细" : "容量明细"}
+          </button>
+          {detailsOpen && (
+            <div className="mt-1 space-y-0.5 text-[10px] leading-4 text-mute">
+              <p className="flex justify-between gap-2">
+                <span>输入预算</span>
+                <span>{formatCount(context.project_input_limit_tokens)} tokens</span>
               </p>
-              <button
-                type="button"
-                className="mt-1 text-[10px] font-bold text-blue"
-                aria-expanded={detailsOpen}
-                onClick={() => setDetailsOpen((value) => !value)}
-              >
-                {detailsOpen ? "收起明细" : "容量明细"}
-              </button>
-              {detailsOpen && (
-                <div className="mt-1 space-y-0.5 text-[10px] leading-4 text-mute">
-                  <p className="flex justify-between gap-2">
-                    <span>可用输入预算</span>
-                    <span>{formatCount(context.input_limit_tokens)} tokens</span>
-                  </p>
-                  <p className="flex justify-between gap-2">
-                    <span>安全余量</span>
-                    <span>{formatCount(context.safety_tokens)} tokens</span>
-                  </p>
-                  <p className="flex justify-between gap-2">
-                    <span>容量来源</span>
-                    <span>{capacitySourceLabel(context.capacity_source)}</span>
-                  </p>
-                  {compactionHint && <p>{compactionHint}</p>}
-                </div>
-              )}
-              {!known && (
-                <p className="mt-1 text-[10px] leading-4 text-mute">
-                  总量未知时无法判断余量，也不显示百分比。
+              <p className="flex justify-between gap-2">
+                <span>模型窗口</span>
+                <span>{modelWindowNote(context)}</span>
+              </p>
+              {modelInput !== null && (
+                <p className="flex justify-between gap-2">
+                  <span>模型可用输入</span>
+                  <span>{modelInput}</span>
                 </p>
               )}
-              <div className="mt-2 flex items-center justify-between gap-2 border-t border-panel-head-edge pt-2">
-                <button
-                  type="button"
-                  className="text-[10px] font-bold text-blue disabled:text-mute"
-                  disabled={operation !== null || submitting}
-                  onClick={compact}
-                >
-                  {submitting ? "正在受理…" : operation === null ? "压缩上下文" : operation.state === "queued" ? "等待压缩…" : "正在压缩…"}
-                </button>
-                {operation && <button type="button" className="text-[10px] font-bold text-blue" disabled={stopping} onClick={stop}>{stopping ? "正在停止…" : "停止压缩"}</button>}
-              </div>
-              {lastOperation && <OperationControls key={lastOperation} operationId={lastOperation} onDone={() => setTick(value => value + 1)} />}
-              {note && <p role="status" className="mt-1 text-[10px] leading-4 text-mute">{note}</p>}
-
-            </>
+              <p className="flex justify-between gap-2">
+                <span>安全余量</span>
+                <span>{formatCount(context.safety_tokens)} tokens</span>
+              </p>
+              <p className="flex justify-between gap-2">
+                <span>生效上限</span>
+                <span>{inputLimitSourceLabel(context.input_limit_source)}</span>
+              </p>
+              <p className="flex justify-between gap-2">
+                <span>容量来源</span>
+                <span>{capacitySourceLabel(context.capacity_source)}</span>
+              </p>
+              {compactionHint && <p>{compactionHint}</p>}
+            </div>
           )}
+          {!known && (
+            <p className="mt-1 text-[10px] leading-4 text-mute">
+              当前输入预算未获取，暂不显示百分比。
+            </p>
+          )}
+          {context.status !== "pending" && (
+            <div className="mt-2 flex items-center justify-between gap-2 border-t border-panel-head-edge pt-2">
+              <button
+                type="button"
+                className="text-[10px] font-bold text-blue disabled:text-mute"
+                disabled={operation !== null || submitting}
+                onClick={compact}
+              >
+                {submitting ? "正在受理…" : operation === null ? "压缩上下文" : operation.state === "queued" ? "等待压缩…" : "正在压缩…"}
+              </button>
+              {operation && <button type="button" className="text-[10px] font-bold text-blue" disabled={stopping} onClick={stop}>{stopping ? "正在停止…" : "停止压缩"}</button>}
+            </div>
+          )}
+          {context.status !== "pending" && lastOperation && <OperationControls key={lastOperation} operationId={lastOperation} onDone={() => setTick(value => value + 1)} />}
+          {context.status !== "pending" && note && <p role="status" className="mt-1 text-[10px] leading-4 text-mute">{note}</p>}
         </div>
       )}
 

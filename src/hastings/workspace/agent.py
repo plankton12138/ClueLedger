@@ -27,7 +27,7 @@ from hastings.library.imports import imported_paths
 from hastings.library.modules import ModuleLibrary
 from hastings.library.records import EntryDraft
 from hastings.prompts import tools as prompt_tools
-from hastings.prompts.authoring import CANDIDATE_FLOW_INSTRUCTIONS
+from hastings.prompts.authoring import CANDIDATE_FLOW_INSTRUCTIONS, story_design_instructions
 from hastings.prompts.reviewing import REVIEW_INSTRUCTIONS
 from hastings.prompts.tools import (
     APPLY_MODULE_CHANGES_DESCRIPTION,
@@ -150,6 +150,7 @@ from hastings.workspace.story_candidate import StoryCandidate
 from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 from hastings.workspace.story_tools import StoryToolScope, build_story_tools
+from hastings.workspace.task_intent import TaskIntent
 from hastings.workspace.task_scope import (
     ModuleAction,
     ModuleChangeTarget,
@@ -186,6 +187,11 @@ __all__ = [
 
 #: 工具集合：普通写作与只读检查。
 ToolMode = Literal["write", "review"]
+
+#: 会保存资料内容的工具；结构任务与讨论轮不开放，避免用模块成功代替结构完成。
+_MODULE_CONTENT_TOOLS = frozenset(
+    {"prepare_module_changes", "apply_module_changes", "publish_module"}
+)
 
 
 #: 单轮最多的模型回合数；到顶就结束并如实记录，不无限循环。
@@ -241,6 +247,8 @@ class RunContext:
     request_context: Mapping[str, Any] = field(default_factory=dict)
     #: 受理时冻结的构思方案；为空表示这一轮不使用结构工具。
     story: StoryContextSnapshot | None = None
+    #: 受理时确定的任务目标：只用于阅读指引与完成判定，不授予写权限。
+    intent: TaskIntent | None = None
     story_candidate: StoryCandidate | None = None
     #: 结构提交前的代次资格检查；由服务层注入。
     story_guard: Callable[[], None] | None = None
@@ -3113,25 +3121,37 @@ def prepare_request_inputs(
     )
     if run.story is not None and run.state_root is not None:
         # 结构工具跟着这一轮冻结的方案走：不传方案就不开放，避免模型改到别的备选。
+        intent = run.intent
+        writable = (
+            mode == "write"
+            and run.story.purpose in ("design", "revise", "write")
+            and (intent is None or intent.allows_structure_write)
+        )
         tools.extend(
             build_story_tools(
                 StoryToolScope(
                     workspace=workspace,
                     state_root=run.state_root,
                     frozen=run.story,
-                    writable=(
-                        mode == "write"
-                        and run.story.purpose in ("design", "revise", "write")
-                    ),
+                    writable=writable,
                     guard=run.story_guard,
+                    write_guard=run.require_writable,
                     decision_guard=run.story_decision_guard,
                     record=run.record,
                     author_text=run.current_author_text or "",
+                    candidate_text=(
+                        intent.candidate.text
+                        if intent is not None and intent.candidate is not None
+                        else ""
+                    ),
                     operation_id=run.operation_id,
                     generation=run.generation,
                 )
             )
         )
+    if run.intent is not None and not run.intent.allows_module_write:
+        # 结构任务与讨论轮不开放模块内容写入：模块成功不能代替结构完成。
+        tools = [tool for tool in tools if tool.name not in _MODULE_CONTENT_TOOLS]
     if run.story_candidate is not None:
         candidate = run.story_candidate
         async def propose_scene(
@@ -3204,6 +3224,21 @@ def prepare_request_inputs(
                 "required": ["path", "base_digest", "text"], "additionalProperties": False},
             execute_fn=propose_scene, execution_mode="sequential"))
     system = resolved.text
+    if (
+        run.story is not None
+        and run.story.purpose == "design"
+        and run.story_candidate is None
+    ):
+        intent = run.intent
+        candidate_source = intent.candidate if intent is not None else None
+        system += story_design_instructions(
+            intent.kind if intent is not None else "discussion",
+            candidate_text=candidate_source.text if candidate_source is not None else "",
+            candidate_seq=candidate_source.seq if candidate_source is not None else 0,
+            multiple=(
+                bool(candidate_source.multiple) if candidate_source is not None else False
+            ),
+        )
     if run.story_candidate is not None:
         system += CANDIDATE_FLOW_INSTRUCTIONS
     return RequestInputs(system=system, tools=tools)

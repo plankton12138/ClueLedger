@@ -8,7 +8,7 @@
 import { memo } from "react";
 
 import type { RunPhase } from "../../api/workspace";
-import { phaseLabel, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
+import { hasSavedStoryChanges, phaseLabel, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import AssistantMessageView from "./AssistantMessageView";
 import AuthorQuestionCard from "./AuthorQuestionCard";
 import ModuleChangeCard from "./ModuleChangeCard";
@@ -117,7 +117,8 @@ function ChatTurnView({
         <div className={`chat-card ${result.status === "completed" ? "result" : "warn"}`} data-testid="turn-result" data-status={result.status}>
           <div className="flex items-center gap-2">
             <span className="font-bold">{STATUS_LABEL[result.status] ?? result.status}</span>
-            <span className="text-sub">{RECORDING_LABEL[result.recording] ?? result.recording}</span>
+            <span className="text-sub">{result.recording === "no_change" && hasSavedStoryChanges(turn)
+              ? "构思已保存" : RECORDING_LABEL[result.recording] ?? result.recording}</span>
             {result.commit && (
               <code className="text-[10px] text-mute">{result.commit.slice(0, 7)}</code>
             )}

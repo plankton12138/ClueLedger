@@ -19,6 +19,8 @@ __all__ = [
     "ASK_AUTHOR_OPTIONS_PARAM_DESCRIPTION",
     "ASK_AUTHOR_PATHS_PARAM_DESCRIPTION",
     "ASK_AUTHOR_QUESTION_PARAM_DESCRIPTION",
+    "ADOPT_STORY_DESCRIPTION",
+    "ADOPT_STORY_NODE_IDS_PARAM_DESCRIPTION",
     "ASSEMBLY_DIGEST_PARAM_DESCRIPTION",
     "ATTACH_MODULE_DESCRIPTION",
     "ATTACH_MODULE_GUIDELINES",
@@ -152,6 +154,7 @@ __all__ = [
     "TASK_SUMMARY_PARAM_DESCRIPTION",
     "UPDATE_STORY_DESCRIPTION",
     "UPDATE_STORY_GUIDELINES",
+    "UPDATE_STORY_NO_CHANGE_PARAM_DESCRIPTION",
     "UPDATE_STORY_NOTE_PARAM_DESCRIPTION",
     "UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION",
     "WRITE_FILE_DESCRIPTION",
@@ -428,10 +431,13 @@ UPDATE_STORY_DESCRIPTION = (
     "connect 的 edge 必须含 id、from_id、to_id、kind。"
     "字段名与 read_story 返回完全一致，不要发明 description、summary 等额外字段；"
     "一次调用只描述这一批变更，失败会返回原因，可修正后重试。"
+    "确认无需改动时改传 no_change，列出本轮读过的对象与理由，不要传空 operations。"
 )
 
 UPDATE_STORY_GUIDELINES = (
     "作者明确要求改结构时用；只改他要求的对象，不顺手重组整份方案。",
+    "确认作者要求已经满足、确实无需改动时，用 no_change 列出本轮读过的对象与理由；"
+    "不能只回复「已经存在」。",
 )
 
 SUBMIT_STORY_CANDIDATE_REVIEW_DESCRIPTION = (
@@ -555,6 +561,14 @@ ASK_AUTHOR_PATHS_PARAM_DESCRIPTION = "与问题有关的作品内路径，便于
 PROPOSE_STORY_STRUCTURE_OPERATIONS_PARAM_DESCRIPTION = "语义变更列表，字段与 update_story 一致"
 
 READ_STORY_NODE_IDS_PARAM_DESCRIPTION = "只看这些节点；省略时返回整个方案的概览"
+ADOPT_STORY_DESCRIPTION = (
+    "采用备选结构；只在作者明确要求采用时使用。"
+    "省略 node_ids 表示采用本轮界面选中的全部节点，不会扩大到整案；"
+    "没有选中节点时，只有作者明确要求整案采用才会采用整个方案。"
+)
+ADOPT_STORY_NODE_IDS_PARAM_DESCRIPTION = (
+    "要采用的节点；只能小于或等于本轮界面选中的范围，省略表示采用选中范围"
+)
 UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION = (
     "语义变更列表；每项形如 "
     '{"op": "add_node", "node": {"id": "n1", '
@@ -562,6 +576,10 @@ UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION = (
     "op 只能用 description 里列出的那几个值"
 )
 UPDATE_STORY_NOTE_PARAM_DESCRIPTION = "这次修改对作者的一句话说明（可选）"
+UPDATE_STORY_NO_CHANGE_PARAM_DESCRIPTION = (
+    "本轮确认无需改动时使用：objects 列出本轮实际读过的目标对象，reason 说明作者要求"
+    "已经如何得到满足。与 operations 二选一；没有实际读取或对象不存在会被拒绝。"
+)
 
 PROBE_ECHO_PARAM_DESCRIPTION = "任意字符串"
 

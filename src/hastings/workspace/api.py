@@ -363,10 +363,13 @@ class TurnPurposeMixin(BaseModel):
     """首次与续聊共用的用途字段：检查必须选文件，普通对话不能带目标。"""
 
     purpose: Literal["chat", "review"] = "chat"
+    story_action: Literal["create"] | None = None
     review_paths: list[str] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
     def check_purpose_targets(self) -> Self:
+        if self.story_action is not None and self.purpose != "chat":
+            raise ValueError("创建构思需要使用对话用途")
         if self.purpose == "review":
             if not self.review_paths:
                 raise ValueError("检查用途需要选择至少一个文件")
@@ -432,7 +435,11 @@ class ContextView(BaseModel):
     """当前有效上下文；``null`` 表示这一项还没有可靠数值。
 
     ``pending`` 还没有任何请求，``running`` 有一轮正在跑，``ready`` 最近一轮已结束。
-    容量取自最近一次请求受理时冻结的那份。
+    容量取自最近一次请求受理时冻结的那份；还没有请求时取当前选择的容量。
+
+    三个上限分开表达：``project_input_limit_tokens`` 是项目策略，
+    ``model_input_limit_tokens`` 是模型允许的输入，``input_limit_tokens`` 是两者较小值——
+    主进度与请求检查只用最后这个。
     """
 
     status: Literal["pending", "running", "ready"]
@@ -440,6 +447,12 @@ class ContextView(BaseModel):
     last_request_input_tokens: int | None = None
     context_window_tokens: int | None = None
     input_limit_tokens: int | None = None
+    project_input_limit_tokens: int | None = None
+    model_input_limit_tokens: int | None = None
+    #: 有效上限的出处：project / model / both。
+    input_limit_source: Literal["project", "model", "both"] = "project"
+    #: 连接与精确模型 ID；不含密钥或账号凭据。
+    model_identity: str = ""
     output_reserve_tokens: int | None = None
     safety_tokens: int | None = None
     #: 窗口数字的出处：override / metadata / catalog / unknown。
@@ -451,6 +464,7 @@ class ContextView(BaseModel):
     method: str = ""
     fingerprint: str = ""
     limits_revision: str = ""
+    policy_revision: str = ""
 
 
 class CompactRequest(BaseModel):
@@ -838,6 +852,7 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
     activity_lock = hub.lock
     activity_for = hub.activity_for
     service_for = hub.service_for
+    current_limits = hub.current_limits
 
     def view(binding: WorkspaceBinding) -> WorkspaceView:
         return WorkspaceView(
@@ -1290,6 +1305,7 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
             body.request_key,
             context=body.context.to_request(),
             purpose=body.purpose,
+            story_action=body.story_action,
             review_paths=tuple(body.review_paths),
         )
         return AcceptedTurnView(
@@ -1418,7 +1434,8 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
         service.store.get(conversation_id)
         events = service.store.events(conversation_id)
         summary = summarize_events(events)
-        context = context_snapshot(events)
+        # 运行中的请求保留冻结预算；空闲时读取当前容量，同一模型才复用输入估算。
+        context = context_snapshot(events, current=current_limits())
         totals = summary.totals
         operation = hub.runner_for(workspace_id).latest(conversation_id)
         return ConversationUsageView(
@@ -1441,6 +1458,10 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
                 last_request_input_tokens=context.last_request_input_tokens,
                 context_window_tokens=context.context_window_tokens,
                 input_limit_tokens=context.input_limit_tokens,
+                project_input_limit_tokens=context.project_input_limit_tokens,
+                model_input_limit_tokens=context.model_input_limit_tokens,
+                input_limit_source=context.input_limit_source,  # type: ignore[arg-type]
+                model_identity=context.model_identity,
                 output_reserve_tokens=context.output_reserve_tokens,
                 safety_tokens=context.safety_tokens,
                 capacity_source=context.capacity_source,  # type: ignore[arg-type]
@@ -1451,6 +1472,7 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
                 method=context.method,
                 fingerprint=context.fingerprint,
                 limits_revision=context.limits_revision,
+                policy_revision=context.policy_revision,
             ),
             policy=CompactionPolicyView(
                 auto_compaction=service.auto_compaction,
@@ -1475,6 +1497,7 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
             conversation_id=conversation_id,
             context=body.context.to_request(),
             purpose=body.purpose,
+            story_action=body.story_action,
             review_paths=tuple(body.review_paths),
             reply_to_question=body.reply_to_question,
         )

@@ -50,6 +50,56 @@ async function send(page: Page, text: string): Promise<Accepted> {
   return accept(page, () => page.getByRole("button", { name: "发送", exact: true }).click());
 }
 
+test("创建表单实际保存节点线索并在刷新后显示", async ({ page, request }, info) => {
+  test.setTimeout(300_000);
+  const root = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "online-books");
+  mkdirSync(root, { recursive: true });
+  const path = join(mkdtempSync(join(root, "story-form-")), "空白构思");
+  const created = await request.post("/api/file-workspaces", { data: { path, create: true } });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  const book = await created.json();
+  const base = `/api/file-workspaces/${book.id}`;
+  const config = await request.get("/api/model-connections").then(r => r.json());
+  expect(config.selection.available).toBe(true);
+  const model = config.connections.find((item: { name: string }) => item.name === config.selection.connection_id);
+  expect(["localhost", "127.0.0.1", "0.0.0.0"]).not.toContain(new URL(model.base_url).hostname);
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await page.getByRole("region", { name: "构思结构" }).getByRole("button", { name: "创建构思", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "创建构思", exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("创作要求").fill(
+    "建立一个很小的构思：只有「发现」和「对质」两个事件节点，一条「湿手套」线索。发现时侦探在前台看见滴水的手套，对质时询问管家；两个节点以前后推进连接。真相尚未确定，保持未定。只保存这些节点、线索和连接。",
+  );
+  await page.screenshot({ path: info.outputPath("creation-form.png") });
+  const accepted = await accept(page, () => dialog.getByRole("button", { name: "创建构思", exact: true }).click());
+  await expect(dialog).not.toBeVisible();
+  const rows = await finish(request, book.id, accepted);
+  const turn = rows.filter(row => row.turn_id === accepted.turn_id);
+  expect(turn.find(row => row.type === "task_intent")?.kind).toBe("structure");
+  expect(turn.find(row => row.type === "task_intent")?.action).toBe("create");
+  expect(turn.some(row => row.type === "module_changes_applied")).toBe(false);
+  expect(turn.some(row => row.type === "story_changes_committed")).toBe(true);
+  const graph = await request.get(`${base}/story/variants/main`).then(r => r.json());
+  expect(graph.nodes).toHaveLength(2);
+  expect(graph.nodes.map((node: { title: string }) => node.title)).toEqual(expect.arrayContaining(["发现", "对质"]));
+  expect(graph.edges.length).toBeGreaterThanOrEqual(1);
+  const variants = await request.get(`${base}/story/variants`).then(r => r.json());
+  expect(variants.variants[0].counts.clues).toBe(1);
+  const surface = page.getByRole("region", { name: "构思结构" });
+  await expect(surface.getByRole("button", { name: /^发现(?:\s|$)/ })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await expect(surface.getByRole("button", { name: /^对质(?:\s|$)/ })).toBeVisible();
+  await surface.getByRole("button", { name: /^发现(?:\s|$)/ }).click();
+  await expect(surface.getByText("湿手套", { exact: false }).first()).toBeVisible();
+  await page.screenshot({ path: info.outputPath("created-structure.png") });
+  await info.attach("creation-evidence", { body: JSON.stringify({
+    model: config.selection.model, accepted, graph,
+    events: turn.filter(row => ["task_intent", "story_changes_committed", "run_finished", "error", "model_request_finished"].includes(row.type)),
+  }, null, 2), contentType: "application/json" });
+});
+
 test("构思建立、备选采用与结构引用都进入真实请求", async ({ page, request }, info) => {
   test.setTimeout(720_000);
   const root = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "online-books");

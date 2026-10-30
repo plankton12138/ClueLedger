@@ -26,7 +26,11 @@ from fastapi import FastAPI
 from hastings.infrastructure.credentials import build_credential_store
 from hastings.library.modules import ModuleLibrary
 from hastings.library.storage import DEFAULT_LIBRARY_DIR
-from hastings.server.file_app import configured_provider_factory, create_workspace_app
+from hastings.server.file_app import (
+    configured_limits_factory,
+    configured_provider_factory,
+    create_workspace_app,
+)
 from hastings.server.model_auth import ModelAuthService
 from hastings.server.model_auth_chatgpt import ChatGPTCodexAuthProvider, ChatGPTHostIdentity
 from hastings.server.model_connections import ModelConnectionService
@@ -212,6 +216,7 @@ def assemble_server(
     app = create_workspace_app(
         workspaces=recent,
         provider_factory=configured_provider_factory(book),
+        limits_factory=configured_limits_factory(book),
         model_service=model_service,
         static_dir=resolved_static,
         library=library,

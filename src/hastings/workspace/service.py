@@ -72,6 +72,14 @@ from hastings.workspace.review import ReviewStore, target_digests
 from hastings.workspace.run_registry import RunRegistry
 from hastings.workspace.state import ConversationStore
 from hastings.workspace.state_store import state_chapter
+from hastings.workspace.task_intent import (
+    TaskIntent,
+    assess_story_goal,
+    classify_design_intent,
+    discussion_intent,
+    last_candidate_source,
+    named_objects,
+)
 from hastings.workspace.timeline import TimelineStore
 from tau_agent.events import (
     MessageEndEvent,
@@ -90,8 +98,9 @@ if TYPE_CHECKING:
     from hastings.workspace.compaction import CompactionRecord
     from hastings.workspace.compaction_ops import CompactionRunner
     from hastings.workspace.story_candidate import StoryCandidate
-    from hastings.workspace.story_context import StoryInput
+    from hastings.workspace.story_context import StoryContextSnapshot, StoryInput
     from hastings.workspace.story_models import StoryVariant
+    from hastings.workspace.story_store import StoryStore
 
 from tau_agent.provider_events import (
     AssistantDoneEvent,
@@ -531,6 +540,8 @@ class TurnInfo:
     title: str = ""
     #: 受理时冻结的材料身份；执行阶段按它复核版本，不反读当前界面。
     context: ContextSnapshot | None = None
+    #: 受理时确定的任务目标：只用于完成判定，不授予写权限。
+    intent: TaskIntent | None = None
     #: 本轮用途：普通对话或只读检查。
     purpose: str = "chat"
     review_paths: tuple[str, ...] = ()
@@ -661,6 +672,7 @@ class TurnService:
         purpose: str = "chat",
         review_paths: Sequence[str] = (),
         reply_to_question: str = "",
+        story_action: Literal["create"] | None = None,
     ) -> TurnInfo:
         """受理一轮并立即返回；``conversation_id`` 为空表示「首次发送即建会话」。
 
@@ -774,6 +786,36 @@ class TurnService:
                 prompt = READER_QUESTION
             else:
                 prompt = text
+            # 任务目标在受理时固定：后面工具是否开放、结束时是否算完成，都读这一份。
+            intent = self._task_intent(
+                prompt, frozen, conversation_id, story_action=story_action
+            )
+            if (
+                intent is not None
+                and frozen.story is not None
+                and frozen.story.purpose == "design"
+            ):
+                from hastings.workspace.story_store import StoryStore
+
+                story_snapshot = StoryStore(self.store.root, self.workspace).read()
+                variant = (
+                    story_snapshot.variant(frozen.story.variant_id)
+                    if story_snapshot.document is not None
+                    else None
+                )
+                if variant is not None:
+                    # 预期对象按受理时的方案冻结；本轮自己提交的新修订不改变这份名单。
+                    intent = replace(
+                        intent,
+                        expected=tuple(named_objects(variant, prompt)),
+                    )
+            intent_record = intent.to_dict() if intent is not None else {}
+            if story_action is not None:
+                intent_record["action"] = story_action
+            if intent is not None and frozen.story is not None:
+                # 目标绑定受理时的方案与修订，完成核对用同一身份。
+                intent_record["variant_id"] = frozen.story.variant_id
+                intent_record["revision"] = frozen.story.revision
             # 装配也属于这一轮的输入：受理后作者再装卸、库再发布都不改变本轮。
             assembly_store = AssemblyStore(self.workspace.root)
             assembly_snapshot = assembly_store.read()
@@ -853,6 +895,7 @@ class TurnService:
                 model=str(model_facts.get("model", "")),
                 connection=str(model_facts.get("connection_name", "")),
                 context_refs=context_refs_of(frozen),
+                intent=intent_record,
                 recovery_request={
                     "context": frozen.to_dict(), "assembly_digest": assembly_digest,
                     "selected_digest": selected_digest,
@@ -880,6 +923,19 @@ class TurnService:
                     note=f"这次操作没能登记，没有调用模型：{exc.why}",
                 )
                 raise
+            if intent is not None:
+                # 目标与作者原话一起落盘，后续回看能说明「这一轮为什么这样执行」。
+                _append_event(
+                    self.store,
+                    accepted.conversation_id,
+                    turn_id,
+                    "task_intent",
+                    {
+                        **intent_record,
+                        "operation_id": operation.id,
+                        "generation": operation.generation,
+                    },
+                )
             info = TurnInfo(
                 turn_id=turn_id,
                 conversation_id=accepted.conversation_id,
@@ -887,6 +943,7 @@ class TurnService:
                 history_seq=history_seq,
                 title=accepted.title,
                 context=frozen,
+                intent=intent,
                 source_candidate_id=(
                     str(question.context.get("candidate_id") or "") if question else ""
                 ),
@@ -1033,6 +1090,130 @@ class TurnService:
             {"operation_id": info.operation_id, "generation": info.generation, **payload},
         )
 
+    def _turn_receipts(self, info: TurnInfo) -> list[dict[str, Any]]:
+        """这一轮（含继续代次）实际提交的结构与模块收据；只认事件里的结果。"""
+        story: list[dict[str, Any]] = []
+        module_saved: list[dict[str, Any]] = []
+        module_applied: list[dict[str, Any]] = []
+        for event in self.store.events(info.conversation_id):
+            if str(event.get("turn_id") or "") != info.turn_id:
+                continue
+            event_operation = str(event.get("operation_id") or "")
+            if info.operation_id and event_operation and event_operation != info.operation_id:
+                continue
+            kind = event.get("type")
+            seq = int(event.get("seq") or 0)
+            if kind == "story_changes_committed":
+                story.append(
+                    {
+                        "kind": "story",
+                        "event_seq": seq,
+                        "variant_id": str(event.get("variant_id") or ""),
+                        "base_revision": str(event.get("base_revision") or ""),
+                        "revision": str(event.get("revision") or ""),
+                        "change_id": str(event.get("change_id") or ""),
+                        "changed": [str(item) for item in event.get("changed") or []],
+                        "labels": [str(item) for item in event.get("labels") or []],
+                        "operations": int(event.get("operations") or 0),
+                        "operation_types": [
+                            str(item) for item in event.get("operation_types") or []
+                        ],
+                    }
+                )
+            elif kind == "story_change_noop":
+                story.append(
+                    {
+                        "kind": "story_noop",
+                        "event_seq": seq,
+                        "variant_id": str(event.get("variant_id") or ""),
+                        "base_revision": str(event.get("base_revision") or ""),
+                        "revision": str(event.get("revision") or ""),
+                        "objects": [
+                            dict(item)
+                            for item in event.get("objects") or []
+                            if isinstance(item, Mapping)
+                        ],
+                        "reason": str(event.get("reason") or ""),
+                        "operations": 0,
+                    }
+                )
+            elif kind == "module_content_saved":
+                module_saved.append(
+                    {
+                        "operation_id": str(event.get("operation_id") or ""),
+                        "module_id": event.get("module_id"),
+                        "revision_id": event.get("revision_id"),
+                        "name": event.get("name"),
+                        "created": bool(event.get("created", False)),
+                        "event_seq": seq,
+                    }
+                )
+            elif kind == "module_changes_applied":
+                module_applied.append(
+                    {
+                        "kind": "module",
+                        "event_seq": seq,
+                        "change_set_id": str(event.get("change_set_id") or ""),
+                        "saved": [
+                            dict(item)
+                            for item in event.get("saved") or []
+                            if isinstance(item, Mapping)
+                        ],
+                        "operations": len(event.get("operations") or []),
+                    }
+                )
+        receipts = list(story)
+        if module_applied:
+            receipts.extend(module_applied)
+        elif module_saved:
+            # 内容写进了库，但装配提交没有完成：只能算部分保存，不能当成模块目标已完成。
+            receipts.append(
+                {
+                    "kind": "module_partial",
+                    "event_seq": module_saved[-1]["event_seq"],
+                    "change_set_id": "",
+                    "saved": module_saved,
+                    "operations": len(module_saved),
+                }
+            )
+        return receipts
+
+    def _assess_story_completion(
+        self, info: TurnInfo, run: RunContext
+    ) -> tuple[str, str]:
+        """按任务目标与实际收据判定完成；没有结构提交就不能报整体完成。"""
+        intent = info.intent
+        if intent is None or run.story is None or intent.kind == "discussion":
+            return "completed", ""
+        if intent.kind == "clarify":
+            if run.pending_question is not None or intent.requires_structure is False:
+                return "completed", ""
+            return "partial", "需要你指定要写入哪一份候选；这一轮没有提交结构。"
+        from hastings.workspace.story_store import StoryStore
+
+        snapshot = StoryStore(self.store.root, self.workspace).read()
+        variant = snapshot.variant(run.story.variant_id) if snapshot.document else None
+        receipts = self._turn_receipts(info)
+        assessment = assess_story_goal(
+            intent,
+            variant=variant,
+            receipts=receipts,
+            structure_readonly=run.story.structure_readonly,
+        )
+        if not assessment.complete:
+            return "partial", assessment.note()
+        if intent.requires_structure and not run.story.structure_readonly:
+            story_receipts = [
+                receipt
+                for receipt in receipts
+                if receipt.get("kind") in ("story", "story_noop")
+            ]
+            if any(receipt.get("kind") == "story_noop" for receipt in story_receipts):
+                return "completed", "已记录无需改动及依据；创作意图是否完整仍需你核对。"
+            count = sum(int(receipt.get("operations") or 0) for receipt in story_receipts)
+            return "completed", f"构思结构已提交 {count} 项；创作意图是否完整仍需你核对。"
+        return "completed", ""
+
     def _begin_attempt(self, info: TurnInfo) -> None:
         """代次开始执行：先落地状态，再让模型请求出去。"""
         if not info.operation_id:
@@ -1067,8 +1248,20 @@ class TurnService:
         if not info.operation_id:
             return
         last_seq = self._last_seq(info.conversation_id)
+        receipts = self._turn_receipts(info)
 
         def mutate(operation: Operation) -> None:
+            # 收据按事件序号去重：继续或重试不会把同一笔提交记两遍。
+            known = {
+                int(item.get("event_seq") or 0)
+                for item in operation.committed_receipts
+                if item.get("event_seq") is not None
+            }
+            for receipt in receipts:
+                seq = int(receipt.get("event_seq") or 0)
+                if seq and seq not in known:
+                    operation.committed_receipts.append(receipt)
+                    known.add(seq)
             operation.checkpoint(status, generation=info.generation, note=note)
             if operation.generation != info.generation:
                 operation.last_seq = last_seq
@@ -1233,7 +1426,8 @@ class TurnService:
         info = TurnInfo(
             turn_id=operation.turn_id, conversation_id=operation.conversation_id,
             started_at=operation.created_at, history_seq=self._last_seq(operation.conversation_id),
-            context=frozen, purpose=operation.purpose,
+            context=frozen, intent=TaskIntent.from_dict(operation.intent),
+            purpose=operation.purpose,
             review_paths=tuple(raw.get("review_paths") or ()),
             assembly=assembly_store.read(),
             assembly_digest=str(raw.get("assembly_digest") or ""),
@@ -1899,6 +2093,83 @@ class TurnService:
         events = self.store.events(conversation_id)
         return int(events[-1]["seq"]) if events else 0
 
+    def _task_intent(
+        self,
+        text: str,
+        frozen: ContextSnapshot,
+        conversation_id: str | None,
+        *,
+        story_action: Literal["create"] | None = None,
+    ) -> TaskIntent | None:
+        """受理时确定这一轮要什么；只对构思语境生效，不改变其它入口的授权。"""
+        story = frozen.story
+        if story_action is not None and (story is None or story.purpose != "design"):
+            raise WorkspaceError(
+                code="STORY_SCOPE_INVALID",
+                where="构思创建",
+                why="创建请求缺少目标方案或构思用途",
+                fix="重新打开构思创建表单后提交",
+            )
+        if story is None:
+            return None
+        if story.purpose == "discuss":
+            return discussion_intent(text, "这一轮明确为讨论用途")
+        if story.purpose != "design":
+            return None
+        events = self.store.events(conversation_id) if conversation_id else ()
+        candidate = last_candidate_source(events)
+        return classify_design_intent(
+            text, candidate=candidate, explicit_creation=story_action == "create"
+        )
+
+    def _own_story_revision(self, operation_id: str, variant_id: str) -> str:
+        """本操作自己提交出的方案修订；没有提交过时为空。"""
+        if not operation_id:
+            return ""
+        operation = self.operations.try_read(operation_id)
+        if operation is None:
+            return ""
+        for receipt in reversed(operation.committed_receipts):
+            if (
+                receipt.get("kind") in ("story", "story_noop")
+                and str(receipt.get("variant_id") or "") == variant_id
+            ):
+                return str(receipt.get("revision") or "")
+        return ""
+
+    def _verify_story_for_turn(
+        self,
+        store: StoryStore,
+        info: TurnInfo,
+        frozen: StoryContextSnapshot,
+    ) -> tuple[StoryVariant, TurnInfo]:
+        """核对冻结方案；本操作刚提交过新修订时按那一版继续，不把旧修订当冲突。"""
+        from hastings.workspace.story_context import verify_story_context
+
+        try:
+            return verify_story_context(store, frozen), info
+        except WorkspaceError as exc:
+            if (
+                exc.code != "STORY_REVISION_CONFLICT"
+                or not info.operation_id
+                or info.context is None
+            ):
+                raise
+            revision = self._own_story_revision(info.operation_id, frozen.variant_id)
+            snapshot = store.read()
+            current = snapshot.variant(frozen.variant_id) if snapshot.document else None
+            if not revision or current is None or current.revision != revision:
+                raise
+            updated = replace(
+                info,
+                context=replace(
+                    info.context, story=replace(frozen, revision=current.revision)
+                ),
+            )
+            # 新修订来自本操作自己的提交：后续代次按它工作，原始受理记录保持不变。
+            self._infos[info.operation_id] = updated
+            return current, updated
+
     def _prepare_story(self, info: TurnInfo) -> tuple[str, TurnInfo]:
         """冻结的构思结构 → 这一轮实际要装进去的文本；失败在调用模型之前发生。
 
@@ -1912,12 +2183,14 @@ class TurnService:
             assemble_story_input,
             scoped_request,
             split_story_request,
-            verify_story_context,
         )
         from hastings.workspace.story_store import StoryStore
 
         frozen = info.context.story
-        variant = verify_story_context(StoryStore(self.store.root, self.workspace), frozen)
+        store = StoryStore(self.store.root, self.workspace)
+        variant, info = self._verify_story_for_turn(store, info, frozen)
+        assert info.context is not None and info.context.story is not None
+        frozen = info.context.story
         split = None
         try:
             story = assemble_story_input(variant, frozen, capacity=STORY_BUDGET)
@@ -1969,6 +2242,7 @@ class TurnService:
             "story_context",
             {
                 **payload,
+                "intent": info.intent.to_dict() if info.intent is not None else None,
                 "operation_id": info.operation_id,
                 "generation": info.generation,
             },
@@ -2100,8 +2374,13 @@ class TurnService:
         )
         system = f"{READER_INSTRUCTIONS}\n\n{reader_input.render()}"
         # 实际发送前再自检一次：装配正确不代表拼装过程没有混入隐藏内容。
-        assert_reader_isolated(system, variant, cutoff or "")
-        assert_reader_isolated(text, variant, cutoff or "")
+        # 截止前经核验的正文已经公开，不算隐藏；其余真相与未来内容仍然拦截。
+        assert_reader_isolated(
+            system, variant, cutoff or "", published=reader_input.published
+        )
+        assert_reader_isolated(
+            text, variant, cutoff or "", published=reader_input.published
+        )
         # 读者阶段没有写权限：这一轮不会准备 Git 基线，也不产生正文改动。
         run = RunContext(
             workspace=self.workspace,
@@ -2160,6 +2439,8 @@ class TurnService:
         conversation_id = info.conversation_id
         # 先假定正常完成，异常分支再改写；finally 用这个值决定终态。
         status: RunStatus = "completed"
+        # 目标核对留下的说明：部分完成时告诉作者还缺什么，不把模块或文字当成全部完成。
+        completion_note = ""
         # 一轮对应一个 WriteSession：Git 基线、外部改动和提交都在这里收口。
         # 「执行是否成功」和「内容是否入库」是两个独立维度，不要合并成一个状态。
         session = WriteSession(
@@ -2251,6 +2532,7 @@ class TurnService:
                     assembly_digest=info.assembly_digest or "",
                     request_context=info.context.to_dict() if info.context else {},
                     story=info.context.story if info.context else None,
+                    intent=info.intent,
                     story_guard=self._write_guard(info),
                     story_decision_guard=(
                         lambda: self.operations.eligible_generation(
@@ -2424,6 +2706,11 @@ class TurnService:
                     and not await self._finalize_story_candidate(info, run, snapshot, turns_used)
                 ):
                     status = "needs_input"
+                if status == "completed":
+                    goal_status, goal_note = self._assess_story_completion(info, run)
+                    completion_note = goal_note
+                    if goal_status == "partial":
+                        status = "partial"
                 if status == "completed" and run.review_request is not None:
                     # 作者在修改任务里明确要求「改完检查」：同一轮内进入只读检查阶段。
                     published = await self._review_after_write(
@@ -2489,6 +2776,9 @@ class TurnService:
                 [{"type": "run_phase", "turn_id": info.turn_id, "phase": "record"}],
             )
             result = session.finish(status)
+            notes = [part for part in (completion_note, result.note) if part]
+            if notes:
+                result = replace(result, note="；".join(notes))
             self.store.append_batch(
                 conversation_id,
                 [
@@ -2520,7 +2810,7 @@ class TurnService:
                 info,
                 status,
                 result=result,
-                note="" if result.recording != "unrecorded" else result.note,
+                note=result.note,
             )
             # 已经被下一代接管的旧代次不能替新代次释放占用或清空当前任务。
             latest = self._infos.get(info.operation_id) if info.operation_id else None

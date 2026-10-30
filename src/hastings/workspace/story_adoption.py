@@ -23,7 +23,11 @@ from hastings.workspace.story_models import (
     AddNode,
     AddThread,
     Connect,
+    EventTimeRelation,
+    SetEventTime,
+    StoryOperation,
     StoryVariant,
+    UnsetEventTime,
     UpdateClue,
     UpdateConstraint,
     UpdateNode,
@@ -35,7 +39,7 @@ __all__ = [
     "adoption_plan",
 ]
 
-ObjectKind = Literal["node", "clue", "thread", "constraint", "edge"]
+ObjectKind = Literal["node", "clue", "thread", "constraint", "edge", "event_time"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,13 +59,19 @@ class AdoptionPlan:
     source: str
     target: str
     node_ids: tuple[str, ...] = ()
-    operations: tuple[object, ...] = ()
+    operations: tuple[StoryOperation, ...] = ()
     copied: dict[str, list[str]] = field(default_factory=dict)
     unchanged: list[str] = field(default_factory=list)
     #: 为了支撑所选节点额外带入的对象：作者只选了一个节点，线索与约定也要跟过来。
     pulled_in: list[str] = field(default_factory=list)
     #: 指向未选节点的连接：不复制，也不当成失败。
     skipped_edges: list[str] = field(default_factory=list)
+    #: 跨边界连接：一端在所选范围、另一端是目标里已有的对象；已复制并在收据里单列。
+    boundary_edges: list[str] = field(default_factory=list)
+    #: 整案覆盖时被移除的目标实际时间关系。
+    removed_event_times: list[str] = field(default_factory=list)
+    #: 两端都不在本次范围、或端点不在目标里的实际时间关系。
+    skipped_event_times: list[str] = field(default_factory=list)
     conflicts: tuple[AdoptionConflict, ...] = ()
 
     @property
@@ -77,6 +87,9 @@ class AdoptionPlan:
             "unchanged": list(self.unchanged),
             "pulled_in": list(self.pulled_in),
             "skipped_edges": list(self.skipped_edges),
+            "boundary_edges": list(self.boundary_edges),
+            "removed_event_times": list(self.removed_event_times),
+            "skipped_event_times": list(self.skipped_event_times),
             "conflicts": [item.to_dict() for item in self.conflicts],
             "operations": len(self.operations),
         }
@@ -130,10 +143,10 @@ def _diff(
     *,
     incoming: object,
     existing: object | None,
-    add: object,
-    update: object | None,
+    add: StoryOperation,
+    update: StoryOperation | None,
     replace: bool,
-) -> tuple[object | None, str | None]:
+) -> tuple[StoryOperation | None, str | None]:
     """一个对象的处理决定：新增、跳过（已一致）或冲突。"""
     if existing is None:
         return add, None
@@ -161,16 +174,25 @@ def adoption_plan(
             details={"variant_id": source.id},
         )
     nodes, clues, threads, constraints = _closure(source, node_ids)
+    selected_nodes = set(nodes)
+    fragment = bool(node_ids)
     pulled_in: list[str] = []
-    if node_ids:
+    if fragment:
         pulled_in = sorted(
             [f"clue:{item}" for item in clues]
             + [f"thread:{item}" for item in threads]
             + [f"constraint:{item}" for item in constraints]
         )
-    operations: list[object] = []
+    operations: list[StoryOperation] = []
     conflicts: list[AdoptionConflict] = []
-    copied: dict[str, list[str]] = {"nodes": [], "clues": [], "threads": [], "constraints": []}
+    copied: dict[str, list[str]] = {
+        "nodes": [],
+        "clues": [],
+        "threads": [],
+        "constraints": [],
+        "edges": [],
+        "event_times": [],
+    }
     plural = {"node": "nodes", "clue": "clues", "thread": "threads", "constraint": "constraints"}
     unchanged: list[str] = []
 
@@ -178,8 +200,8 @@ def adoption_plan(
         kind: ObjectKind,
         incoming: object,
         existing: object | None,
-        add: object,
-        update: object | None,
+        add: StoryOperation,
+        update: StoryOperation | None,
         label: str,
     ) -> None:
         operation, decision = _diff(
@@ -248,12 +270,21 @@ def adoption_plan(
             node_id,
         )
 
-    # 连接只在两端都已存在于目标（含本次新增）时才可能复制。
+    # 连接属于「所选内容及其获准依赖」：两端都在范围内的照常复制；一端在范围内的
+    # 是跨边界关系，复制并在收据里单列；两端都在范围外的既有关系保持原样。
     present = set(target.nodes) | nodes
     skipped_edges: list[str] = []
+    boundary_edges: list[str] = []
     for edge in sorted(source.edges.values(), key=lambda item: item.id):
         if edge.from_id not in present or edge.to_id not in present:
             skipped_edges.append(edge.id)
+            continue
+        if fragment and edge.from_id not in selected_nodes and edge.to_id not in selected_nodes:
+            # 两端都不在本次范围：与目标一致就是没变化；确实不同也不复制，列入未覆盖。
+            if target.edges.get(edge.id) == edge:
+                unchanged.append(f"edge:{edge.id}")
+            else:
+                skipped_edges.append(edge.id)
             continue
         operation, decision = _diff(
             incoming=edge,
@@ -274,6 +305,75 @@ def adoption_plan(
             unchanged.append(f"edge:{edge.id}")
         elif operation is not None:
             operations.append(operation)
+            copied["edges"].append(edge.id)
+            if fragment and (
+                edge.from_id not in selected_nodes or edge.to_id not in selected_nodes
+            ):
+                boundary_edges.append(edge.id)
+                pulled_in.append(f"edge:{edge.id}")
+
+    # 实际事件时间：与揭示顺序分别校验，只复制与所选内容相关的关系。
+    target_pairs = {(row.before_node_id, row.after_node_id) for row in target.event_times}
+    source_pairs = {(row.before_node_id, row.after_node_id) for row in source.event_times}
+    unsets: list[StoryOperation] = []
+    sets: list[StoryOperation] = []
+    unset_pairs: set[tuple[str, str]] = set()
+    removed_event_times: list[str] = []
+    skipped_event_times: list[str] = []
+    for relation in sorted(
+        source.event_times, key=lambda row: (row.before_node_id, row.after_node_id)
+    ):
+        pair = (relation.before_node_id, relation.after_node_id)
+        label = f"{pair[0]}->{pair[1]}"
+        if pair in target_pairs:
+            unchanged.append(f"event_time:{label}")
+            continue
+        if pair[0] not in present or pair[1] not in present:
+            skipped_event_times.append(label)
+            continue
+        if fragment and pair[0] not in selected_nodes and pair[1] not in selected_nodes:
+            skipped_event_times.append(label)
+            continue
+        reverse = (pair[1], pair[0])
+        if reverse in target_pairs:
+            if not replace:
+                conflicts.append(
+                    AdoptionConflict(
+                        kind="event_time",
+                        id=label,
+                        reason="目标方案里已有相反的实际时间关系",
+                    )
+                )
+                continue
+            unsets.append(
+                UnsetEventTime(before_node_id=reverse[0], after_node_id=reverse[1])
+            )
+            unset_pairs.add(reverse)
+        sets.append(SetEventTime(relation=EventTimeRelation(
+            before_node_id=pair[0], after_node_id=pair[1]
+        )))
+        copied["event_times"].append(label)
+        if fragment and (pair[0] not in selected_nodes or pair[1] not in selected_nodes):
+            pulled_in.append(f"event_time:{label}")
+
+    # 整案覆盖时，目标里与来源不一致的实际时间关系按来源收口；片段采用不动范围外关系。
+    if not fragment:
+        for pair in sorted(target_pairs - source_pairs):
+            if pair in unset_pairs:
+                continue
+            if pair[0] not in nodes or pair[1] not in nodes:
+                continue
+            if replace:
+                unsets.append(
+                    UnsetEventTime(before_node_id=pair[0], after_node_id=pair[1])
+                )
+                removed_event_times.append(f"{pair[0]}->{pair[1]}")
+            else:
+                # 不覆盖时保留目标的旧关系，但要在收据里说明它没有跟着来源走。
+                skipped_event_times.append(f"{pair[0]}->{pair[1]}")
+
+    operations.extend(unsets)
+    operations.extend(sets)
 
     return AdoptionPlan(
         source=source.id,
@@ -284,6 +384,9 @@ def adoption_plan(
         unchanged=unchanged,
         pulled_in=pulled_in,
         skipped_edges=skipped_edges,
+        boundary_edges=boundary_edges,
+        removed_event_times=removed_event_times,
+        skipped_event_times=skipped_event_times,
         conflicts=tuple(conflicts),
     )
 

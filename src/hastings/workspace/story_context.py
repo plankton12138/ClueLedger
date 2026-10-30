@@ -35,6 +35,7 @@ from hastings.prompts.story import (
     clue_resolution_explained,
     clue_truth_line,
     constraint_line,
+    empty_variant_text,
     judgement_line,
     knowledge_line,
     prerequisite_line,
@@ -217,6 +218,8 @@ class StoryInput:
     omitted: tuple[dict[str, str], ...] = ()
     coverage: dict[str, object] = field(default_factory=dict)
     reader: bool = False
+    #: 试读时截止前经核验的正文：已经公开的内容不再算隐藏，供发送前自检使用。
+    published: str = ""
 
     @property
     def empty(self) -> bool:
@@ -492,6 +495,24 @@ def assemble_story_input(
     """按任务装配结构内容；必需项装不下时报缺口，不截断。"""
     nodes = _selected_nodes(variant, frozen.node_ids)
     if not nodes:
+        if not variant.nodes:
+            # 空白方案也要实际告诉模型「现在是空的、可以建立什么」，不能靠界面提示代替。
+            section = _section(
+                "empty",
+                empty_variant_text(len(variant.clues), len(variant.constraints)),
+                required=False,
+            )
+            return StoryInput(
+                variant_id=variant.id,
+                revision=variant.revision,
+                sections=(section,),
+                coverage={
+                    "nodes": [],
+                    "clues": sorted(variant.clues),
+                    "constraints": sorted(variant.constraints),
+                    "empty_plan": True,
+                },
+            )
         # 没有指定节点：只给方案概况，够讨论用，不假装知道作者在写哪一段。
         lines = [
             story_overview_line(node.title, len(node.clue_uses))
@@ -795,6 +816,7 @@ def assemble_reader_input(
     ordered = [variant.nodes[node_id] for node_id in variant.nodes if node_id in allowed]
 
     lines: list[str] = []
+    published_parts: list[str] = []
     for node in ordered:
         bindings = [binding for binding in variant.bindings.values() if binding.node_id == node.id]
         if bindings and prose is not None:
@@ -808,6 +830,7 @@ def assemble_reader_input(
                         fix="重新核对正文关联后再试读",
                     )
                 lines.append(binding.quote)
+                published_parts.append(binding.quote)
             continue
         for use in node.clue_uses:
             speaker = reader_speaker_prefix(use.speaker_id) if use.speaker_id else ""
@@ -820,45 +843,69 @@ def assemble_reader_input(
             why="截止位置之前没有可试读的正文关联或呈现稿",
             fix="先写场景或补充读者实际可见的呈现",
         )
+    published = "\n".join(published_parts)
     section = _section("reader_prefix", "\n".join(lines))
-    hidden = _hidden_strings(variant, allowed)
+    hidden = _hidden_strings(variant, allowed, published)
     return StoryInput(
         variant_id=variant.id,
         revision=variant.revision,
         sections=(section,),
-        coverage={"nodes": sorted(allowed), "hidden": len(hidden)},
+        coverage={
+            "nodes": sorted(allowed),
+            "hidden": len(hidden),
+            "published_chars": len(published),
+        },
         reader=True,
+        published=published,
     )
 
 
-def _hidden_strings(variant: StoryVariant, allowed: set[str]) -> list[str]:
-    """读者还不该看到的内容：作者真相、未出现的节点与线索标题、约定原文。"""
+def _hidden_strings(variant: StoryVariant, allowed: set[str], published: str = "") -> list[str]:
+    """读者还不该看到的内容：作者真相、未出现的节点与线索标题、约定原文。
+
+    ``published`` 是截止前经核验的正文。已经出现在这段正文里的内容读者早已读到，
+    不再算隐藏；未公开的真相、作者侧资料与未来内容仍然拦截。
+    """
+
+    def public(value: str) -> bool:
+        return bool(published) and value in published
+
     hidden: list[str] = []
     for clue in variant.clues.values():
-        if clue.author_truth and len(clue.author_truth.strip()) >= _MIN_FORBIDDEN:
-            hidden.append(clue.author_truth.strip())
+        truth = clue.author_truth.strip() if clue.author_truth else ""
+        if len(truth) >= _MIN_FORBIDDEN and not public(truth):
+            hidden.append(truth)
     for node in variant.nodes.values():
-        if node.id not in allowed and len(node.title.strip()) >= _MIN_FORBIDDEN:
-            hidden.append(node.title.strip())
+        title = node.title.strip()
+        if node.id not in allowed and len(title) >= _MIN_FORBIDDEN and not public(title):
+            hidden.append(title)
     for clue in variant.clues.values():
         used = any(
             use.clue_id == clue.id and node.id in allowed
             for node in variant.nodes.values()
             for use in node.clue_uses
         )
-        if not used and len(clue.title.strip()) >= _MIN_FORBIDDEN:
-            hidden.append(clue.title.strip())
+        title = clue.title.strip()
+        if not used and len(title) >= _MIN_FORBIDDEN and not public(title):
+            hidden.append(title)
     for constraint in variant.constraints.values():
-        if len(constraint.text.strip()) >= _MIN_FORBIDDEN:
-            hidden.append(constraint.text.strip())
+        text = constraint.text.strip()
+        if len(text) >= _MIN_FORBIDDEN and not public(text):
+            hidden.append(text)
     return hidden
 
 
-def assert_reader_isolated(text: str, variant: StoryVariant, cutoff: str) -> None:
-    """试读请求的自检：隐藏内容不能出现在实际发送的文本里。"""
+def assert_reader_isolated(
+    text: str, variant: StoryVariant, cutoff: str, *, published: str = ""
+) -> None:
+    """试读请求的自检：隐藏内容不能出现在实际发送的文本里。
+
+    ``published`` 由装配给出，只包含截止前经核验的正文；不要用未核验的呈现稿或
+    作者侧资料扩大可见范围。
+    """
     ancestors = _ancestors(variant)
     allowed = {cutoff, *ancestors.get(cutoff, frozenset())}
-    for value in _hidden_strings(variant, allowed):
+    for value in _hidden_strings(variant, allowed, published):
         if value in text:
             raise WorkspaceError(
                 code="STORY_READER_LEAK",

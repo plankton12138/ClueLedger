@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-30",
+  "source_revision": "41b2b768ee178345fac2be8ce05b5940d8d8a299",
+  "initial_worktree": "clean",
+  "conclusion": "required_quality_gaps_reproduced",
+  "findings": {"P1": 3, "P2": 3},
+  "backend": {
+    "command": ".\\.venv\\Scripts\\python.exe -m pytest -q --basetemp=data/test-tmp/v101-quality-audit-20261030/pytest-full",
+    "passed": 1422,
+    "warnings": 1,
+    "seconds": 559.09,
+    "exit_code": 0
+  },
+  "frontend": {"passed": 324, "files": 30, "exit_code": 0, "build": "passed"},
+  "static": {"ruff": "passed", "mypy": "155 source files passed"},
+  "browser_local": {
+    "command": "npm run test:e2e:local",
+    "port": 8967,
+    "data_dir": "data/test-tmp/v101-quality-browser-20261030",
+    "assertions_passed": 98,
+    "skipped": 1,
+    "retries": 0,
+    "status": "all_case_logs_finished_but_teardown_did_not_exit",
+    "termination": "interrupted_after_all_cases_finished",
+    "exit_code": 1,
+    "cause": "not established",
+    "generated_historical_pngs_restored": 67,
+    "capture_archive": "data/test-tmp/v101-quality-audit-20261030/browser-captures"
+  },
+  "online": {
+    "executed_this_audit": false,
+    "existing_review_records": 36,
+    "existing_pass": 33,
+    "existing_fail": 3,
+    "implementation_hashes": 5,
+    "case_hashes": 3,
+    "referenced_run_directories_exist": true
+  },
+  "author_experience_confirmed": false,
+  "business_source_modified": false,
+  "root_readme_modified": false,
+  "mynotes_modified": false
+}

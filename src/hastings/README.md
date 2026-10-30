@@ -26,9 +26,12 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 | 发送给模型的提示词文本 | `prompts/` | 系统提示、一次性任务提示、工具用途与分栏说明都在这里；业务代码只决定装什么，不写文案 |
 | 材料来源、读取区间、受理快照与有界输出 | `workspace/materials.py` | [V06-A1 读取与材料基础](../../dev-notes/v0.6/notes/V06-A1-materials.md)、[V06-A2 可选参考闭环](../../dev-notes/v0.6/notes/V06-A2-references.md) |
 | 章节索引的生成、发布与状态 | `workspace/chapter_index.py` | [V06-A3 章节索引](../../dev-notes/v0.6/notes/V06-A3-chapter-index.md) |
-| 构思、方案隔离、来源与成组提交 | `workspace/story_models.py`、`workspace/story_store.py`、`workspace/story_candidate.py` | [当前实现与验收](../../dev-notes/v1.0.1/notes/P7-implementation-and-acceptance.md) |
+| 构思、方案隔离、来源与成组提交 | `workspace/story_models.py`、`workspace/story_store.py`、`workspace/story_changes.py` | [当前实现与验收](../../dev-notes/v1.0.1/notes/P7-implementation-and-acceptance.md) |
+| 采用的授权、范围、关系与实际时间 | `workspace/story_adoption.py`、`workspace/story_authorization.py`、`workspace/story_tools.py` | [授权与采用修复](../../dev-notes/v1.0.1/notes/2026-10-30-authorization-adoption-fixes.md) |
+| 试读输入、可见性与已公开正文 | `workspace/story_context.py` | [授权与采用修复](../../dev-notes/v1.0.1/notes/2026-10-30-authorization-adoption-fixes.md) |
 | L0 短目录、L1 有界查询与来源标签（0.8 F1） | `workspace/retrieval.py` | [F1 检索基础](../../dev-notes/v0.8/notes/F1-retrieval.md) |
 | 统一模型操作、暂停、继续与恢复 | `workspace/operations.py`、`workspace/compaction_ops.py`、`server/probe_ops.py` | [操作记录](../../dev-notes/v1.0.1/notes/P2-operations.md) |
+| 构思任务目标、候选确认与完成判定 | `workspace/task_intent.py` | [构思创作路由修复](../../dev-notes/v1.0.1/notes/2026-10-30-story-creation-routing-fixes.md) |
 | 只读检查、报告与失效 | `workspace/review.py` | [V06-C1 只读检查](../../dev-notes/v0.6/notes/V06-C1-review.md) |
 | 本轮修改范围、操作检查与承接规则 | `workspace/task_scope.py` | [V06-B1 任务范围基础](../../dev-notes/v0.6/notes/V06-B1-task-scope.md)、[V06-B2 范围事件](../../dev-notes/v0.6/notes/V06-B2-scope-events.md) |
 | HTTP 接口（文件、Git、对话、事件） | `workspace/api.py` | [模块导航](../../dev-notes/v0.5/modules/README.md) |

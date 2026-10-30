@@ -18,7 +18,10 @@ import {
   formatCount,
   formatTokens,
   hasCapacity,
+  inputLimitSourceLabel,
   isCompactionFinished,
+  modelInputNote,
+  modelWindowNote,
   usageDisplayState,
   usageLabel,
 } from "./contextUsage";
@@ -134,6 +137,10 @@ describe("用量文案", () => {
     last_request_input_tokens: 12_000,
     context_window_tokens: 131_072,
     input_limit_tokens: 122_880,
+    project_input_limit_tokens: 128_000,
+    model_input_limit_tokens: 122_880,
+    input_limit_source: "model",
+    model_identity: "deepseek:deepseek-chat",
     output_reserve_tokens: 4096,
     safety_tokens: 4096,
     capacity_source: "catalog",
@@ -144,6 +151,7 @@ describe("用量文案", () => {
     method: "cjk-aware-v1",
     fingerprint: "f",
     limits_revision: "r",
+    policy_revision: "p",
     ...overrides,
   });
 
@@ -153,13 +161,26 @@ describe("用量文案", () => {
     expect(formatTokens(null)).toBe("—");
   });
 
-  it("窗口未知时只给 token 数，不给百分比", () => {
-    const label = contextLabel(context({ context_window_tokens: null }));
+  it("模型窗口未知时主进度仍按项目预算", () => {
+    const label = contextLabel(
+      context({
+        context_window_tokens: null,
+        model_input_limit_tokens: null,
+        input_limit_tokens: 128_000,
+        input_limit_source: "project",
+      }),
+    );
+
+    expect(label).toBe("上下文 10%");
+  });
+
+  it("没有输入预算时只给 token 数，不给百分比", () => {
+    const label = contextLabel(context({ input_limit_tokens: null }));
 
     expect(label).toBe("上下文 ≈1.3 万 tokens");
   });
 
-  it("有窗口时给出占比", () => {
+  it("有预算时给出占比", () => {
     expect(contextLabel(context())).toBe("上下文 10%");
   });
 
@@ -203,17 +224,40 @@ describe("用量文案", () => {
     expect(items[1].tokens).toBeNull();
   });
 
-  it("浮层首行同时给出已用与总量，并加千分位", () => {
+  it("浮层首行同时给出已用与有效输入预算，并加千分位", () => {
     expect(formatCount(128_000)).toBe("128,000");
     expect(formatCount(null)).toBe("—");
-    expect(contextAmount(context())).toBe("≈12,800 / 131,072 tokens");
+    expect(contextAmount(context())).toBe("≈12,800 / 122,880 tokens");
   });
 
-  it("总量未知时说明未知，不给出分母", () => {
-    const unknown = context({ context_window_tokens: null });
+  it("还没有估算时给分母，不显示 0%", () => {
+    const pending = context({ status: "pending", estimated_active_tokens: null });
+
+    expect(contextAmount(pending)).toBe("待估算 / 122,880 tokens");
+  });
+
+  it("没有输入预算时说明未知，不给出分母", () => {
+    const unknown = context({ input_limit_tokens: null });
 
     expect(hasCapacity(unknown)).toBe(false);
-    expect(contextAmount(unknown)).toBe("≈12,800 tokens · 总容量未知");
+    expect(contextAmount(unknown)).toBe("≈12,800 tokens · 输入预算未知");
+  });
+
+  it("模型窗口未知时明细说明按项目预算控制", () => {
+    expect(modelWindowNote(context({ context_window_tokens: null }))).toBe(
+      "未获取；按项目预算控制",
+    );
+    expect(modelWindowNote(context())).toBe("131,072 tokens");
+    // 只有窗口与输入换算都存在时才展示可用输入。
+    expect(modelInputNote(context({ context_window_tokens: null }))).toBeNull();
+    expect(modelInputNote(context())).toBe("122,880 tokens");
+  });
+
+  it("生效上限说明由谁决定", () => {
+    expect(inputLimitSourceLabel("project")).toBe("项目预算");
+    expect(inputLimitSourceLabel("model")).toBe("模型容量");
+    expect(inputLimitSourceLabel("both")).toBe("项目与模型相同");
+    expect(inputLimitSourceLabel("something-else")).toBe("项目预算");
   });
 
   it("容量来源用可读名称，未知值不冒充", () => {
@@ -224,11 +268,11 @@ describe("用量文案", () => {
     expect(capacitySourceLabel("something-else")).toBe("未知");
   });
 
-  it("自动压缩触发点按可用输入预算计算", () => {
+  it("自动压缩触发点按有效输入预算计算", () => {
     const policy: CompactionPolicy = { auto_compaction: true, threshold: 0.9 };
 
     expect(autoCompactionNote(context(), policy)).toBe(
-      "达到 110,592 tokens（可用输入预算的 90%）时自动压缩",
+      "达到 110,592 tokens（有效输入预算的 90%）时自动压缩",
     );
     expect(autoCompactionNote(context({ input_limit_tokens: null }), policy)).toBeNull();
     expect(autoCompactionNote(context(), { auto_compaction: false, threshold: 0.9 })).toBe(

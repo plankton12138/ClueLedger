@@ -45,7 +45,7 @@ from hastings.workspace.story_models import (
 )
 from hastings.workspace.story_store import new_id
 
-__all__ = ["StoryAuthority", "build_authority"]
+__all__ = ["StoryAuthority", "blocks_writes", "build_authority", "is_discussion"]
 
 _LABEL = {
     "node": "节点",
@@ -59,6 +59,61 @@ _LABEL = {
 
 _WHITESPACE = re.compile(r"\s+")
 
+#: 讨论与追问的标记。它们出现在命令动词之前时，这一轮按只读处理。
+_DISCUSSION = ("解释", "什么意思", "含义", "指的是", "怎么理解", "为什么", "为何")
+
+#: 命令动词。只用来判断作者先说讨论还是先下命令，不单独授予任何权限。
+_COMMAND = (
+    "采用",
+    "改为",
+    "改成",
+    "设为",
+    "设成",
+    "修改为",
+    "新增",
+    "添加",
+    "增加",
+    "删除",
+    "移除",
+    "取消",
+    "创建",
+    "建立",
+    "保存",
+    "写下",
+    "写入",
+    "改",
+)
+
+_NEGATION = (
+    "不要",
+    "不改",
+    "不能",
+    "禁止",
+    "不许",
+    "只讨论",
+    "不保存",
+    "只分析",
+    "不要修改",
+    "不执行修改",
+)
+_HYPOTHETICAL = ("假设", "如果", "假如", "要是")
+_QUOTED = ("引用", "原文", "转述")
+
+#: 明确只读的说法；与讨论标记一起决定这一轮是否允许写入。
+_READ_ONLY = (
+    "只讨论",
+    "不保存",
+    "只分析",
+    "不要修改",
+    "不执行修改",
+    "不要改",
+    "别改",
+    "不用改",
+)
+
+#: 成对引号。引号里本身是一句命令时，它是被引用的内容，不是作者的命令。
+_QUOTE_PAIRS = {"“": "”", "「": "」", "『": "』", "\"": "\"", "‘": "’"}
+
 
 def _flat(text: str) -> str:
     return _WHITESPACE.sub(" ", text).strip()
@@ -68,6 +123,85 @@ def _named(title: str, text: str) -> bool:
     """名称至少两个字，按原样出现在作者话里才算点到；单字名称容易误配。"""
     name = _flat(title)
     return len(name) >= 2 and name in text
+
+
+def _quoted_spans(text: str) -> list[tuple[int, int, str]]:
+    """按出现顺序给出成对引号覆盖的区间与内容；落单的引号按普通字符处理。"""
+    spans: list[tuple[int, int, str]] = []
+    index = 0
+    while index < len(text):
+        close = _QUOTE_PAIRS.get(text[index])
+        if close is None:
+            index += 1
+            continue
+        end = text.find(close, index + 1)
+        if end < 0:
+            index += 1
+            continue
+        spans.append((index, end + 1, text[index + 1 : end]))
+        index = end + 1
+    return spans
+
+
+def _without_quoted(text: str) -> str:
+    """去掉引号内容：判断讨论还是命令时，引文里的词不算作者自己的话。"""
+    parts: list[str] = []
+    last = 0
+    for start, end, _ in _quoted_spans(text):
+        parts.append(text[last:start])
+        last = end
+    parts.append(text[last:])
+    return "".join(parts)
+
+
+def _plain(text: str) -> str:
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    text = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith(">"))
+    return _without_quoted(text)
+
+
+def _first(text: str, words: tuple[str, ...]) -> int:
+    found = [text.find(word) for word in words if word in text]
+    return min(found) if found else -1
+
+
+def is_discussion(author_text: str) -> bool:
+    """作者是在解释、追问或讨论，而不是下命令。
+
+    只看引号外的文字，并比较讨论标记与命令动词的先后：``解释“把真相改为…”`` 是讨论，
+    ``把真相改为…，再解释一下`` 仍然是命令。关键词只用于定位，最终判断依赖这个顺序。
+    """
+    text = _plain(author_text)
+    discussion = _first(text, _DISCUSSION)
+    if discussion < 0:
+        return False
+    command = _first(text, _COMMAND)
+    return command < 0 or discussion < command
+
+
+def blocks_writes(author_text: str) -> bool:
+    """这一轮只允许讨论与读取：讨论、解释或作者明确说不要改。"""
+    text = _plain(author_text)
+    return is_discussion(author_text) or any(word in text for word in _READ_ONLY)
+
+
+def _strip_quoted_commands(
+    text: str, subject: str, category: str, actions: tuple[str, ...]
+) -> str:
+    """把「引号里的完整命令」从授权判断中拿掉；引号里只有新值时保留。"""
+    parts: list[str] = []
+    last = 0
+    for start, end, inner in _quoted_spans(text):
+        if (
+            category in inner
+            and any(action in inner for action in actions)
+            and (not subject or subject in inner)
+        ):
+            parts.append(text[last:start])
+            parts.append(" ")
+            last = end
+    parts.append(text[last:])
+    return "".join(parts)
 
 
 @dataclass(frozen=True)
@@ -147,27 +281,38 @@ def build_authority(
     variant: StoryVariant,
     frozen: StoryContextSnapshot,
     author_text: str,
+    *,
+    design_wide: bool = True,
+    candidate_text: str = "",
 ) -> StoryAuthority:
-    """按冻结范围与作者原话生成许可集合；不读正文、不调模型。"""
+    """按冻结范围与作者原话生成许可集合；不读正文、不调模型。
+
+    ``design_wide`` 只对「设计用途且没有选中节点」生效：普通修改按整份结构工作，
+    采用备选时必须先由作者明确要求整案，不能把「没选节点」当成整案授权。
+
+    ``candidate_text`` 是作者确认的上一轮候选原文。它只把其中点到的既有对象纳入
+    可修改范围，不参与作者真相与约定授权的判断：候选里的命令不是作者的命令。
+    """
     text = _flat(author_text)
+    naming_text = f"{text}\n{_flat(candidate_text)}" if candidate_text.strip() else text
     permitted: set[tuple[str, str]] = {
         ("node", node_id) for node_id in frozen.node_ids if node_id in variant.nodes
     }
     for node in variant.nodes.values():
-        if _named(node.title, text):
+        if _named(node.title, naming_text):
             permitted.add(("node", node.id))
     for clue in variant.clues.values():
-        if _named(clue.title, text):
+        if _named(clue.title, naming_text):
             permitted.add(("clue", clue.id))
     for thread in variant.threads.values():
-        if _named(thread.title, text):
+        if _named(thread.title, naming_text):
             permitted.add(("thread", thread.id))
     for constraint in variant.constraints.values():
-        if _named(constraint.text, text):
+        if _named(constraint.text, naming_text):
             permitted.add(("constraint", constraint.id))
 
-    # 设计用途且没有选中对象时，作者在整份结构上工作；写入和修订仍只认明确点到或选中的对象。
-    if frozen.purpose == "design" and not frozen.node_ids:
+    # 设计用途且没有选中对象时，作者在整份结构上工作；采用备选要单独确认整案。
+    if design_wide and frozen.purpose == "design" and not frozen.node_ids:
         for collection, kind in (
             (variant.nodes, "node"),
             (variant.clues, "clue"),
@@ -216,7 +361,13 @@ def build_authority(
 
 
 def authorize_change(
-    variant: StoryVariant, frozen: StoryContextSnapshot, author_text: str, change: StoryChangeSet
+    variant: StoryVariant,
+    frozen: StoryContextSnapshot,
+    author_text: str,
+    change: StoryChangeSet,
+    *,
+    design_wide: bool = True,
+    candidate_text: str = "",
 ) -> None:
     if frozen.structure_readonly and any(
         not isinstance(operation, (BindProse, UnbindProse, RecordAssessment))
@@ -228,16 +379,16 @@ def authorize_change(
             why="本轮结构只读，候选不能再次改动已经采用的结构",
             fix="只调整正文及其呈现；结构修改另行提出",
         )
-    if any(
-        word in author_text for word in ("只讨论", "不保存", "只分析", "不要修改", "不执行修改")
-    ):
+    if blocks_writes(author_text):
         raise WorkspaceError(
             code="STORY_AUTHORIZATION_CONFLICT",
             where="story.update",
-            why="作者本轮要求只讨论，没有保存结构变更的授权",
-            fix="返回讨论结果，不提交变更",
+            why="作者本轮在解释或讨论，没有保存结构变更的授权",
+            fix="返回讨论结果；作者明确要求修改时再提交变更",
         )
-    authority = build_authority(variant, frozen, author_text)
+    authority = build_authority(
+        variant, frozen, author_text, design_wide=design_wide, candidate_text=candidate_text
+    )
     created = set(authority.permitted)
     for operation in change.operations:
         for cls, kind, field in (
@@ -256,44 +407,32 @@ def authorize_change(
 def _explicit(
     author_text: str, subject: str, category: str, value: str = "", *, remove: bool = False
 ) -> bool:
-    """只接受作者直接给出的对象、动作和新值；引用、假设与否定不授予权限。"""
+    """只接受作者直接给出的对象、动作和新值；引用、假设、讨论与否定不授予权限。"""
     text = re.sub(r"```[\s\S]*?```", "", author_text)
     text = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith(">"))
+    actions = (
+        ("删除", "移除", "取消")
+        if remove
+        else (
+            "改为",
+            "改成",
+            "设为",
+            "设成",
+            "修改为",
+            "新增",
+            "添加",
+            "增加",
+            "约定：",
+            "约定:",
+        )
+    )
     for clause in re.split(r"[。；;\n]", text):
-        if any(
-            word in clause
-            for word in (
-                "不要",
-                "不改",
-                "不能",
-                "禁止",
-                "不许",
-                "只讨论",
-                "不保存",
-                "假设",
-                "如果",
-                "引用",
-                "原文",
-                "转述",
-            )
+        markers = _plain(clause)
+        if is_discussion(clause) or any(
+            word in markers for word in _NEGATION + _HYPOTHETICAL + _QUOTED
         ):
             continue
-        actions = (
-            ("删除", "移除", "取消")
-            if remove
-            else (
-                "改为",
-                "改成",
-                "设为",
-                "设成",
-                "修改为",
-                "新增",
-                "添加",
-                "增加",
-                "约定：",
-                "约定:",
-            )
-        )
+        clause = _strip_quoted_commands(clause, subject, category, actions)
         if subject and subject not in clause:
             continue
         if category not in clause or not any(word in clause for word in actions):

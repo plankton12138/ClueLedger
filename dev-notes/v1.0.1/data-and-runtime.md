@@ -2,6 +2,8 @@
 
 日期：2026-10-29。状态：**当前实现契约**。本文件定义职责和字段；当前进度见[开发入口](README.md)。
 
+2026-10-30 实施补充：受理时保存任务目标 `TaskIntent`（discussion、structure、module、mixed、clarify）及目标方案与修订；作者确认候选时绑定最近一条可定位的助手回复。候选原文只扩展可修改的既有对象，不参与作者真相与约定授权。结构收据记录基础修订、改动对象、作者可读标签、操作类型、操作与代次；`no_change` 必须指向本轮实际读过、当前存在且在授权范围内的对象，否则不能作为完成依据。任务结束按当前操作代次与收据核对：结构目标没有提交时，模块保存或文字回复只记部分完成；语义完整性仍由作者核对，程序不宣称已经理解全部创作意图。
+
 2026-10-29 实施补充：主方案与备选的正文补丁都接入同一提交决定，记录反向正文补丁，支持确定性恢复与成组撤销；作品重新打开先恢复。备选正文写入 `story/variants/{variant_id}/prose/` 的受管副本（写时复制，删除用 `.absent` 标记），主方案正文不受影响。读取依赖覆盖方案、正文、约定、模块修订与会话事件序号；撤销只回退本次改动段落。具体保证与验证见[联合提交记录](notes/P1-joint-commit.md)。
 
 候选流程补充：主方案正文先保存在 `story/candidates/`，逐项核对通过后才通过联合提交发布；修正只允许一次有限局部替换与一次复核。未通过时保留草稿并记录作者问题，暂停后的迟到报告不能触发提交。当前支持新章节创建及其成组撤销；候选与结构关联、重启承接见[候选流程记录](notes/P4-candidate-workflow.md)。
@@ -92,7 +94,7 @@ next 表示揭示推进，可分支、汇合且无环；实际时间关系另行
 
 ## 6. 操作与代次
 
-Operation 字段：`id, owner, conversation_id?, purpose, status, generation, phase, request_key, instruction_log, context_refs, checkpoints, committed_receipts, pending_units, last_seq`。owner 为作品或模型测试对象，来自服务端绑定；`request_key` 是受理时的幂等键，压缩与连接测试没有会话受理记录可查，靠它认重复。
+Operation 字段：`id, owner, conversation_id?, purpose, status, generation, phase, request_key, instruction_log, context_refs, intent, checkpoints, committed_receipts, pending_units, last_seq`。owner 为作品或模型测试对象，来自服务端绑定；`request_key` 是受理时的幂等键，压缩与连接测试没有会话受理记录可查，靠它认重复。`intent` 记录受理时确定的任务目标与方案身份，只用于判定完成。
 
 状态主线 accepted → running → completed；运行中可转 paused、awaiting_answer、needs_attention 或 failed。作者继续后重查恢复条件、增加 generation。失败不能伪装为暂停；可恢复失败提供继续入口。
 
@@ -104,7 +106,7 @@ Operation 字段：`id, owner, conversation_id?, purpose, status, generation, ph
 
 ## 7. 授权与核对
 
-讨论可保存候选，正式修改需明确创作要求。已明确请求直接执行范围内改动，不逐字段确认。授权由应用持有，模型不得自行修改范围、代次、原始要求或检查结论来源。
+讨论可保存候选，正式修改需明确创作要求。已明确请求直接执行范围内改动，不逐字段确认。授权由应用持有，模型不得自行修改范围、代次、原始要求或检查结论来源。作者确认上一轮候选时，候选原文只把其中点到的既有对象纳入可修改范围；作者真相与必需约定仍须作者原话直接给出，候选里的命令句不构成授权。
 
 核对覆盖必需呈现、提前披露、角色知情、作者真相与必要前提，输出具体位置、原句、对应要求、不确定项与未覆盖范围。默认一次局部修正和一次复核，关键问题未解决则保留候选并提问。
 

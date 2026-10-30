@@ -13,6 +13,7 @@ import pytest
 
 from hastings.prompts.reading import READER_QUESTION
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.files import digest_bytes
 from hastings.workspace.story_context import (
     StoryContextSnapshot,
     StoryRequest,
@@ -28,14 +29,17 @@ from hastings.workspace.story_context import (
 from hastings.workspace.story_models import (
     AddClue,
     AddNode,
+    BindProse,
     Clue,
     ClueResolution,
     ClueUse,
     Connect,
     KnowledgeChange,
+    ProseBinding,
     StoryChangeSet,
     StoryEdge,
     StoryNode,
+    StoryVariant,
     UpdateNode,
 )
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
@@ -133,6 +137,22 @@ def assemble(store: StoryStore, node_ids: list[str], **kwargs: Any) -> Any:
     )
     variant = verify_story_context(store, frozen)
     return assemble_story_input(variant, frozen, **kwargs)
+
+
+def test_blank_plan_still_sends_a_usable_context() -> None:
+    """空白方案也要实际告诉模型现在能建立什么，不能只靠界面提示。"""
+    variant = StoryVariant(id=MAIN_VARIANT_ID, name="主方案", revision="empty")
+    frozen = StoryContextSnapshot(
+        variant_id=MAIN_VARIANT_ID, revision="empty", purpose="design"
+    )
+
+    story = assemble_story_input(variant, frozen)
+
+    assert story.empty is False
+    assert story.coverage["empty_plan"] is True
+    text = story.render()
+    assert "当前方案为空" in text
+    assert "未定" in text
 
 
 def test_long_distance_clue_reaches_required_content(store: StoryStore) -> None:
@@ -746,3 +766,86 @@ def test_reader_excludes_author_node_labels(store: StoryStore) -> None:
     text = assemble_reader_input(variant, "n1").render()
     assert "AUTHOR_SECRET" not in text
     assert "前台的手套还在滴水" in text
+
+
+def test_reader_allows_truth_already_published_in_verified_prose(store: StoryStore) -> None:
+    truth = "凶手是一直守在门口的管家"
+    text = f"侦探说：{truth}。"
+    path = "正文/0001 揭示.md"
+    digest = digest_bytes(text.encode("utf-8"))
+    commit(
+        store,
+        [
+            AddClue(clue=clue("glove", "手套", truth)),
+            AddNode(
+                node=node(
+                    "n1",
+                    "揭示",
+                    "侦探公开结论",
+                    clue_uses=[
+                        ClueUse(clue_id="glove", presentation=text, mode="narration")
+                    ],
+                )
+            ),
+            BindProse(
+                binding=ProseBinding(
+                    id="revealed",
+                    node_id="n1",
+                    document_id="document-1",
+                    path=path,
+                    digest=digest,
+                    start=0,
+                    end=len(text),
+                    quote=text,
+                )
+            ),
+        ],
+        key="reader-revealed",
+    )
+    variant = store.require_variant(MAIN_VARIANT_ID)
+
+    reader = assemble_reader_input(variant, "n1", prose={path: (digest, text)})
+    actual = reader.render()
+
+    assert truth in actual
+    assert reader.published == text
+    assert reader.coverage["published_chars"] == len(text)
+    # 同一句真相已经由截止前经核验的正文公开，可以正常发送。
+    assert_reader_isolated(actual, variant, "n1", published=reader.published)
+    # 没有已公开正文作为依据时仍然隔离：不能靠关闭自检来放行。
+    with pytest.raises(WorkspaceError) as caught:
+        assert_reader_isolated(actual, variant, "n1")
+    assert caught.value.code == "STORY_READER_LEAK"
+
+
+def test_reader_still_rejects_stale_prose_binding(store: StoryStore) -> None:
+    truth = "凶手是一直守在门口的管家"
+    text = f"侦探说：{truth}。"
+    path = "正文/0001 揭示.md"
+    digest = digest_bytes(text.encode("utf-8"))
+    commit(
+        store,
+        [
+            AddClue(clue=clue("glove", "手套", truth)),
+            AddNode(node=node("n1", "揭示", "侦探公开结论")),
+            BindProse(
+                binding=ProseBinding(
+                    id="revealed",
+                    node_id="n1",
+                    document_id="document-1",
+                    path=path,
+                    digest=digest,
+                    start=0,
+                    end=len(text),
+                    quote=text,
+                )
+            ),
+        ],
+        key="reader-stale",
+    )
+    variant = store.require_variant(MAIN_VARIANT_ID)
+
+    with pytest.raises(WorkspaceError) as caught:
+        assemble_reader_input(variant, "n1", prose={path: ("stale", text)})
+
+    assert caught.value.code == "STORY_READER_SOURCE_CONFLICT"

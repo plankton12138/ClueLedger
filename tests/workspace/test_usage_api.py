@@ -20,11 +20,32 @@ def _unconfigured_model() -> tuple[object, str]:
     raise AssertionError("用量读取不应该调用模型")
 
 
-def _setup(tmp_path: Path) -> tuple[TestClient, ConversationStore, str, str]:
+def _current_limits():
+    """当前选择的容量与预算；只读配置，不构造 provider。"""
+    from hastings.server.model_limits import resolve_model_limits
+    from hastings.server.provider_config import ProviderProfile
+
+    profile = ProviderProfile(
+        name="deepseek",
+        base_url="https://api.deepseek.com",
+        api="openai-completions",
+        default_model="deepseek-flash",
+        catalog_id="deepseek",
+    )
+    return resolve_model_limits(profile, "deepseek-flash")
+
+
+def _setup(
+    tmp_path: Path, *, limits_factory=None
+) -> tuple[TestClient, ConversationStore, str, str]:
     state_root = tmp_path / "state"
     workspaces = RecentWorkspaces(state_root)
     client = TestClient(
-        create_workspace_app(workspaces=workspaces, provider_factory=_unconfigured_model)  # type: ignore[arg-type]
+        create_workspace_app(
+            workspaces=workspaces,
+            provider_factory=_unconfigured_model,  # type: ignore[arg-type]
+            limits_factory=limits_factory,
+        )
     )
     root = tmp_path / "雪山旅馆"
     opened = client.post("/api/file-workspaces", json={"path": str(root), "create": True})
@@ -166,6 +187,10 @@ def test_usage_reports_context_state(tmp_path: Path) -> None:
     assert pending["estimated_active_tokens"] is None
     assert pending["budget"] == "unknown"
     assert pending["capacity_source"] == "unknown"
+    # 没有可用模型时预算视图为空，页面提示先选择模型。
+    assert pending["input_limit_tokens"] is None
+    assert pending["project_input_limit_tokens"] is None
+    assert pending["model_identity"] == ""
     # 自动整理策略随视图返回，界面据此说明「什么时候需要整理」。
     assert payload["policy"] == {"auto_compaction": True, "threshold": 0.9}
 
@@ -219,3 +244,84 @@ def test_usage_reports_context_state(tmp_path: Path) -> None:
     assert ready["budget"] == "ok"
     assert ready["limits_revision"] == "r1"
     assert ready["instructions_tokens"] == 1000
+
+
+def test_pending_context_shows_current_budget_without_an_estimate(tmp_path: Path) -> None:
+    """首次进入就能看到分母：项目上限与模型窗口都来自当前选择，估算是空的。"""
+    client, store, workspace_id, conversation_id = _setup(tmp_path, limits_factory=_current_limits)
+    before = len(store.events(conversation_id))
+
+    context = client.get(
+        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/usage"
+    ).json()["context"]
+
+    assert context["status"] == "pending"
+    # 缺估算不等于零占用：没有数值，也不给百分比。
+    assert context["estimated_active_tokens"] is None
+    assert context["budget"] == "unknown"
+    assert context["input_limit_tokens"] == 128_000
+    assert context["project_input_limit_tokens"] == 128_000
+    assert context["model_input_limit_tokens"] == 1_048_576 - 4096 - 4096
+    assert context["context_window_tokens"] == 1_048_576
+    assert context["input_limit_source"] == "project"
+    assert context["capacity_source"] == "catalog"
+    assert context["model_identity"] == "deepseek:deepseek-flash"
+    assert context["policy_revision"]
+    # 读取仍然只读：不写事件，也不构造 provider。
+    assert len(store.events(conversation_id)) == before
+
+
+def test_idle_usage_resolves_capacity_without_another_model_request(tmp_path: Path) -> None:
+    """已结束会话的未知容量不能阻止当前目录生效；读取不重写旧事件。"""
+    client, store, workspace_id, conversation_id = _setup(tmp_path, limits_factory=_current_limits)
+    store.append_batch(
+        conversation_id,
+        [
+            {
+                "type": "model_request_started",
+                "turn_id": "t1",
+                "operation_id": "op1",
+                "stage": "write",
+                "request_estimate": {
+                    "model_identity": "deepseek:deepseek-flash",
+                    "total_tokens": 20331,
+                    "system_tokens": 3298,
+                    "tool_tokens": 10580,
+                    "message_tokens": 6453,
+                    "protocol_tokens": 0,
+                    "method": "cjk-aware-v1",
+                    "fingerprint": "old",
+                    "context_window_tokens": None,
+                    "input_limit_tokens": None,
+                    "output_reserve_tokens": 4096,
+                    "safety_tokens": 0,
+                    "capacity_source": "unknown",
+                    "limits_revision": "old",
+                },
+            },
+            {
+                "type": "model_request_finished",
+                "turn_id": "t1",
+                "operation_id": "op1",
+                "stage": "write",
+                "status": "completed",
+                "usage": {"input": 1616},
+            },
+        ],
+    )
+    before = store.events(conversation_id)
+
+    payload = client.get(
+        f"/api/file-workspaces/{workspace_id}/conversations/{conversation_id}/usage"
+    ).json()
+    context = payload["context"]
+
+    assert context["status"] == "ready"
+    assert context["estimated_active_tokens"] == 20331
+    assert context["context_window_tokens"] == 1_048_576
+    assert context["project_input_limit_tokens"] == context["input_limit_tokens"] == 128_000
+    assert context["capacity_source"] == "catalog"
+    assert context["safety_tokens"] == 4096
+    assert context["budget"] == "ok"
+    assert payload["usage"]["finished_requests"] == 1
+    assert store.events(conversation_id) == before

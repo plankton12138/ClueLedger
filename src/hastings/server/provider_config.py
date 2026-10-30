@@ -34,7 +34,15 @@ from urllib.parse import urlsplit
 from weakref import WeakKeyDictionary
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from hastings.server.model_credential import (
     SubscriptionCredential,
@@ -42,7 +50,13 @@ from hastings.server.model_credential import (
     load_subscription,
     save_subscription,
 )
-from hastings.server.model_limits import ModelCapacity, ModelLimitOverride, resolve_model_limits
+from hastings.server.model_limits import (
+    DEFAULT_PROJECT_INPUT_TOKENS,
+    ModelCapacity,
+    ModelLimitOverride,
+    ModelLimits,
+    resolve_model_limits,
+)
 from hastings.server.model_thinking import ThinkingLevel, thinking_levels
 from hastings.server.provider_catalog import ProviderApi
 from hastings.server.provider_runtime import ModelSnapshot, build_provider, snapshot
@@ -138,8 +152,31 @@ class ProviderProfile(BaseModel):
         return [self.default_model] if self.default_model else []
 
 
+class ContextPolicy(BaseModel):
+    """项目对单次请求输入的预算。
+
+    这是应用策略，不是模型容量：同一个模型，作者可以为了成本与响应时间只开一部分窗口。
+    配置为 null 不表示关闭保护——读取时缺省即默认值，写入时总是落盘，避免「看不见的
+    上限」和「以为没开」两种误解。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_input_tokens: int = DEFAULT_PROJECT_INPUT_TOKENS
+
+    @field_validator("max_input_tokens", mode="before")
+    @classmethod
+    def _positive_integer(cls, value: object) -> object:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(
+                "[CONTEXT_POLICY_INVALID] 模型设置：max_input_tokens 必须是正整数。"
+                "建议：填写一个大于零的整数后重试。"
+            )
+        return value
+
+
 class ServerConfig(BaseModel):
-    """服务级配置根：连接目录。连接名唯一（工作区设置按名引用）。"""
+    """服务级配置根：连接目录与项目输入预算。连接名唯一（工作区设置按名引用）。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -150,6 +187,8 @@ class ServerConfig(BaseModel):
     #: 空选择的持久化语义：auto 沿用启动默认，explicit 用 active_provider，
     # none 表示作者明确清空，重启后保持未选。
     selection_mode: SelectionMode = "auto"
+    #: 项目输入预算；旧配置没有该字段时取默认值，不影响读取。
+    context_policy: ContextPolicy = Field(default_factory=ContextPolicy)
 
     @model_validator(mode="before")
     @classmethod
@@ -343,6 +382,8 @@ def save_server_config(config: ServerConfig, path: Path) -> Path:
     """
     payload = {
         "providers": [_profile_payload(profile) for profile in config.providers],
+        # 项目预算总是写出来：读者不必从默认值推断当前生效的上限。
+        "context_policy": {"max_input_tokens": config.context_policy.max_input_tokens},
         **(
             {
                 "active_provider": config.active_provider,
@@ -583,6 +624,25 @@ class ProviderBook:
         profile = self.profile(name)
         return profile.models_for() if profile is not None else []
 
+    @property
+    def project_input_limit(self) -> int:
+        """当前生效的项目输入预算；界面与请求检查读同一份。"""
+        return self._config.context_policy.max_input_tokens
+
+    def current_limits(self) -> ModelLimits | None:
+        """当前选择的容量与预算，只读配置、不构造 provider。
+
+        用量面板在首次发送前与空闲时用它显示当前容量与预算；读取不写事件、
+        不读凭据存储、不调用模型。选择不可用时返回 ``None``，页面提示先选模型。
+        """
+        selection = self.selection()
+        profile = self.profile(selection.connection_id) if selection.connection_id else None
+        if profile is None or not selection.available or not selection.model:
+            return None
+        return resolve_model_limits(
+            profile, selection.model, project_limit=self.project_input_limit
+        )
+
     def subscription_resolver(self, profile: ProviderProfile) -> RuntimeProviderAuthResolver | None:
         """订阅连接的请求前凭据解析：快过期就续期，同一账号串行。
 
@@ -713,6 +773,11 @@ def snapshot_for(selection: ModelSelection, book: ProviderBook) -> ModelSnapshot
             "建议：在「模型设置」里添加并选择一个连接与模型，"
             "或在 config.yaml 里补齐 base_url、api_key 与模型名。"
         )
+    limits = resolve_model_limits(
+        profile,
+        selection.model,
+        project_limit=book.config.context_policy.max_input_tokens,
+    )
     if profile.auth_method == "subscription":
         if profile.subscription is None:
             raise ProviderConfigError(
@@ -727,11 +792,11 @@ def snapshot_for(selection: ModelSelection, book: ProviderBook) -> ModelSnapshot
                 thinking_level=selection.thinking_level,
                 credential_resolver=book.subscription_resolver(profile),
             ),
-            limits=resolve_model_limits(profile, selection.model),
+            limits=limits,
         )
     return replace(
         snapshot(profile, selection.model, thinking_level=selection.thinking_level),
-        limits=resolve_model_limits(profile, selection.model),
+        limits=limits,
     )
 
 
@@ -755,6 +820,7 @@ def _subscription_refresh_lock(key: str) -> asyncio.Lock:
 __all__ = [
     "DEFAULT_CONFIG_PATH",
     "AuthMethod",
+    "ContextPolicy",
     "ModelSelection",
     "ProviderBook",
     "ProviderConfigError",

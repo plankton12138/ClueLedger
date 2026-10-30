@@ -35,10 +35,16 @@ class CatalogEntry:
 #:
 #: Google 只公布输入上限与输出上限；两者相加得到窗口，输入上限单独保留，
 #: 因此输入预算不会被输出预留误伤。
+#:
+#: 每条数字都注明来源与核对日期。价格页用「1M / 384K」表达规模，目录取接口
+#: 示例里的精确整数；输出上限是模型能力，不代表本项目要请求这么长的回复。
 CATALOG: dict[str, dict[str, CatalogEntry]] = {
     "deepseek": {
         "deepseek-chat": CatalogEntry(131_072, max_output_tokens=8_192),
         "deepseek-reasoner": CatalogEntry(131_072, max_output_tokens=65_536),
+        # https://api-docs.deepseek.com/zh-cn/api/list-models/  核对日期 2026-10-30
+        "deepseek-flash": CatalogEntry(1_048_576, max_output_tokens=393_216),
+        "deepseek-v4-pro": CatalogEntry(1_048_576, max_output_tokens=393_216),
     },
     "openai": {
         "gpt-5": CatalogEntry(400_000, max_output_tokens=128_000),

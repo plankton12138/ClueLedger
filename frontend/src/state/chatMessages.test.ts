@@ -19,6 +19,7 @@ import {
   phaseLabel,
   publicText,
   hasTaskCard,
+  hasSavedStoryChanges,
   taskCardFacts,
   type ChatTurn,
 } from "./chatMessages";
@@ -33,6 +34,20 @@ function next(extra: Record<string, unknown>): WorkspaceEvent {
 function reset(): void {
   seq = 0;
 }
+
+it("结构提交收据表示已保存，正文无改动与助手声称保存不能替代收据", () => {
+  reset();
+  const rows = [turnStarted(), next({
+    type: "run_finished", turn_id: "t1", status: "completed", recording: "no_change", changed_paths: [],
+  })];
+  expect(hasSavedStoryChanges(buildTurns(rows)[0])).toBe(false);
+  rows.splice(1, 0, next({
+    type: "story_changes_committed", turn_id: "t1", change_id: "story-save", variant_id: "main",
+    revision: "r1", base_revision: "empty", operations: 4, changed: ["node:discover", "clue:gloves"],
+    labels: ["发现", "湿手套"],
+  }));
+  expect(hasSavedStoryChanges(buildTurns(rows)[0])).toBe(true);
+});
 
 function turnStarted(id = "t1", text = "写第一章"): WorkspaceEvent {
   return next({ type: "turn_started", turn_id: id, text });
@@ -923,5 +938,88 @@ describe("本轮灵感引用（I3）", () => {
       },
     ]);
     expect(turns[1]?.ideas).toEqual([]);
+  });
+});
+
+describe("构思任务结果（1.0.1 路由修复）", () => {
+  it("任务卡显示本轮目标与结构提交的具体对象", () => {
+    reset();
+    let turns = buildTurns([turnStarted("t1", "构建线索和调查推进")]);
+    turns = appendEvent(
+      turns,
+      next({
+        type: "task_intent",
+        turn_id: "t1",
+        kind: "structure",
+        structure: true,
+        module: false,
+      }),
+    );
+    const commit = next({
+      type: "story_changes_committed",
+      turn_id: "t1",
+      variant_id: "main",
+      base_revision: "empty",
+      revision: "rev_1",
+      change_id: "change_1",
+      operations: 2,
+      changed: ["clue:board", "node:observe"],
+      labels: ["线索「没有响的木板」", "节点「发现异样」"],
+    });
+    turns = appendEvent(turns, commit);
+    turns = appendEvent(turns, commit);
+    turns = appendEvent(
+      turns,
+      next({
+        type: "run_finished",
+        turn_id: "t1",
+        status: "completed",
+        recording: "no_change",
+        changed_paths: [],
+        commit: null,
+      }),
+    );
+
+    const facts = taskCardFacts(turns[0]!);
+    expect(facts.intentKind).toBe("structure");
+    expect(facts.storyCommits).toHaveLength(1);
+    expect(facts.storyCommits[0]?.labels).toEqual([
+      "线索「没有响的木板」",
+      "节点「发现异样」",
+    ]);
+    expect(hasTaskCard(facts)).toBe(true);
+  });
+
+  it("无需改动保留对象与理由，失败说明留在任务卡", () => {
+    reset();
+    let turns = buildTurns([turnStarted("t1", "把「抵达」补一个细节")]);
+    turns = appendEvent(
+      turns,
+      next({
+        type: "story_change_noop",
+        turn_id: "t1",
+        variant_id: "main",
+        revision: "rev_1",
+        objects: [{ kind: "node", id: "n1", label: "节点「抵达」" }],
+        reason: "现有安排已经包含该细节。",
+      }),
+    );
+    turns = appendEvent(
+      turns,
+      next({
+        type: "run_finished",
+        turn_id: "t1",
+        status: "partial",
+        recording: "no_change",
+        changed_paths: [],
+        commit: null,
+        note: "构思结构没有提交。已提交的内容保留。",
+      }),
+    );
+
+    const facts = taskCardFacts(turns[0]!);
+    expect(facts.storyCommits[0]?.noChange).toBe(true);
+    expect(facts.storyCommits[0]?.labels).toEqual(["节点「抵达」"]);
+    expect(facts.note).toContain("构思结构没有提交");
   });
 });

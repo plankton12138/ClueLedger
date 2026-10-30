@@ -94,6 +94,7 @@ class OperationResultView(BaseModel):
     operation_id: str
     status: str
     note: str
+    intent: dict[str, Any] = Field(default_factory=dict)
     receipts: list[dict[str, Any]]
     pending_units: list[str]
     changed_paths: list[str]
@@ -396,6 +397,7 @@ def create_operation_router(
             operation_id=operation.id,
             status=operation.status,
             note=operation.note,
+            intent=operation.intent,
             receipts=operation.committed_receipts,
             pending_units=operation.pending_units,
             changed_paths=changed,

@@ -117,6 +117,11 @@ export interface StoryAdoptionPlan {
   unchanged: string[];
   pulled_in: string[];
   skipped_edges: string[];
+  /** 跨边界关系：一端在所选范围、另一端是目标里已有的对象。 */
+  boundary_edges?: string[];
+  /** 整案覆盖时被移除的实际时间关系。 */
+  removed_event_times?: string[];
+  skipped_event_times?: string[];
   conflicts: { kind: string; id: string; reason: string }[];
   operations: number;
   note: string;

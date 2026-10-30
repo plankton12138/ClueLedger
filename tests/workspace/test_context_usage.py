@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from hastings.server.model_limits import ModelCapacity, resolve_model_limits
+from hastings.server.model_limits import (
+    DEFAULT_PROJECT_INPUT_TOKENS,
+    ModelCapacity,
+    resolve_model_limits,
+)
 from hastings.server.provider_config import ProviderProfile
 from hastings.workspace.context_usage import (
     MESSAGE_OVERHEAD_TOKENS,
@@ -130,11 +134,13 @@ def test_any_change_invalidates_the_fingerprint(field: str, value: object) -> No
 # -- 预算状态 ---------------------------------------------------------------
 
 
-def test_budget_is_unknown_without_capacity() -> None:
-    """窗口未知时不给百分比，也不能声称还有多少空间。"""
+def test_budget_uses_project_limit_when_capacity_is_unknown() -> None:
+    """模型容量未知不再等于「无法判断」：项目上限仍然给出明确边界。"""
     limits = resolve_model_limits(profile(), "deepseek-chat")
 
-    assert budget_state(total_tokens=50_000, limits=limits) == "unknown"
+    assert limits.input_limit() == DEFAULT_PROJECT_INPUT_TOKENS
+    assert budget_state(total_tokens=50_000, limits=limits) == "ok"
+    assert budget_state(total_tokens=DEFAULT_PROJECT_INPUT_TOKENS + 1, limits=limits) == "over"
 
 
 def test_budget_is_over_when_estimate_exceeds_the_limit() -> None:

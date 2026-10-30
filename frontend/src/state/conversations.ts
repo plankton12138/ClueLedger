@@ -81,6 +81,11 @@ export interface SendOptions {
   ideas?: DraftIdea[];
   /** 回答某条已持久化的问题：只用于认领原问题，不替代文字。 */
   replyToQuestion?: string;
+  storyAction?: "create";
+  /** 独立创建表单的提交不消耗普通对话草稿。 */
+  preserveDraft?: boolean;
+  /** 受理成功即通知调用方；模型流仍由共享会话状态继续跟随。 */
+  onAccepted?: (result: SendResult) => void;
 }
 
 export interface SendResult {
@@ -661,6 +666,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const request: TurnInput = {
         text: withTextReferences(trimmed, submittedTextReferences),
         request_key: keyRequest,
+        ...(options?.storyAction ? { story_action: options.storyAction } : {}),
         context: {
           ...(context ?? EMPTY_CONTEXT),
           ...(submittedClueReferences.length > 0
@@ -747,7 +753,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           });
           // 首次受理把新草稿交给正式会话：不覆盖作者另开的新草稿，也不擦掉发送期间
           // 新选的参考——只有参考仍是这次提交的那一份时，才随文字一起清掉。
-          if (get().drafts[NEW_DRAFT] === trimmed) {
+          if (!options?.preserveDraft && get().drafts[NEW_DRAFT] === trimmed) {
             set((state) => {
               const next = { ...state.drafts };
               delete next[NEW_DRAFT];
@@ -769,7 +775,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           }
         }
         // 只清除「仍然等于提交文本」的草稿：受理期间作者新输入的字不能被旧响应擦掉。
-        if ((get().drafts[key] ?? "") === trimmed) {
+        if (!options?.preserveDraft && (get().drafts[key] ?? "") === trimmed) {
           set((state) => {
             const next = { ...state.drafts };
             delete next[key];
@@ -789,6 +795,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           });
           void persistDraft(key);
         }
+        options?.onAccepted?.({ conversationId, turnId });
         await consume(conversationId, after);
         return { conversationId, turnId };
       } catch (error) {

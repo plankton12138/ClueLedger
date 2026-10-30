@@ -1,0 +1,26 @@
+{
+  "health": {
+    "status": "ok"
+  },
+  "selection": {
+    "model": "deepseek-flash",
+    "available": true
+  },
+  "context": {
+    "status": "ready",
+    "estimated_active_tokens": 20331,
+    "context_window_tokens": 1048576,
+    "input_limit_tokens": 128000,
+    "project_input_limit_tokens": 128000,
+    "model_input_limit_tokens": 1040384,
+    "input_limit_source": "project",
+    "output_reserve_tokens": 4096,
+    "safety_tokens": 4096,
+    "capacity_source": "catalog",
+    "budget": "ok",
+    "instructions_tokens": 3298,
+    "tools_tokens": 10580,
+    "conversation_tokens": 6453
+  },
+  "finished_requests": 16
+}

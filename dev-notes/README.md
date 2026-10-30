@@ -1,8 +1,6 @@
 # 开发文档导航
 
-当前主包与前端版本为 **1.0.0（交互整改中）**，尚未完成发布验收。作者要求取消故事资料、大幅简化线索操作，
-并统一所有模型节点的流式输出、立即暂停、继续与插话，见[整改方案](../product-design/v1.0/interaction-redesign.md)。
-原实现与自动验收结果见 [S8 记录](v1.0/notes/S8-web-delivery.md)，不能替代本轮新增体验门槛。
+当前主包与前端版本为 **1.0.1**。1.0.1 的构思结构、备选与采用已实施，质量复查发现的 F1—F6 已修复，六项复现、受影响回归、后端全量与浏览器复验通过；在线受影响场景和作者体验仍待执行。发布判断以 [1.0.1 开发入口](v1.0.1/README.md)为准；1.0 的[整改方案](../product-design/v1.0/interaction-redesign.md)与 [S8 记录](v1.0/notes/S8-web-delivery.md)保留为历史结果。
 
 ## 1.0 计划入口
 
@@ -15,12 +13,18 @@
 - [分模块实现示例](v1.0/implementation-examples.md)、[验收与在线评测](v1.0/acceptance.md)：可审查代码和待执行门槛。
 - [1.0 产品方案](../product-design/v1.0/README.md)：作者流程、悬疑设计深度、范围与界面；方案不代表已实现能力。
 
-## 1.0.1 开发计划（实施中）
+## 1.0.1 开发计划（修复复验中）
 
 - [1.0.1 开发入口](v1.0.1/README.md)、[产品方案](../product-design/v1.0.1/README.md)：可分支、汇合与收束的悬疑结构，区分故事内分支与创作备选，再由结构展开正文。
 - [线索结构与 Agent 全流程讨论](../product-design/v1.0.1/structure-and-agent-lifecycle.md)：数据关系、长期连续性、模型输入、对话修改和取消故事资料的完整范围；尚未冻结实现规格。
-- [阶段计划](v1.0.1/development-plan.md)、[数据与恢复](v1.0.1/data-and-runtime.md)、[接口与页面](v1.0.1/api-and-frontend.md)、[代码示例](v1.0.1/implementation-examples.md)、[验收](v1.0.1/acceptance.md)：范围、契约与门槛；运行版本仍为 1.0.0。
-- 阶段记录：[P0 基线、格式与调用清单](v1.0.1/notes/P0-baseline.md)、[全部模型入口](v1.0.1/notes/P0-model-entries.md)、[故事资料移除映射](v1.0.1/notes/P0-materials-removal-map.md)、[P1 结构层](v1.0.1/notes/P1-structure.md)。P0 已完成，P1 结构层已实施，P2—P7 未开始。
+- [阶段计划](v1.0.1/development-plan.md)、[数据与恢复](v1.0.1/data-and-runtime.md)、[接口与页面](v1.0.1/api-and-frontend.md)、[代码示例](v1.0.1/implementation-examples.md)、[验收](v1.0.1/acceptance.md)：范围、契约与门槛；运行版本为 1.0.1。
+- 阶段记录：[P0 基线、格式与调用清单](v1.0.1/notes/P0-baseline.md)、[全部模型入口](v1.0.1/notes/P0-model-entries.md)、[故事资料移除映射](v1.0.1/notes/P0-materials-removal-map.md)、[P1 结构层](v1.0.1/notes/P1-structure.md)。P0—P5 已实施，P6 在线受影响场景待执行，P7 文档已同步。
+- 质量复查与修复：[阶段质量检查](v1.0.1/notes/2026-10-30-quality-audit.md)记录修复前的六项缺口；[授权与采用修复](v1.0.1/notes/2026-10-30-authorization-adoption-fixes.md)记录 F1—F6 的统一规则、逐项修复与复现结果；[构思创作路由修复](v1.0.1/notes/2026-10-30-story-creation-routing-fixes.md)记录任务目标、候选确认、空白方案输入与收据判定。
+
+## 1.0.2 上下文容量与输入预算（已接入，待验收）
+
+- [开发入口](v1.0.2/README.md)、[产品方案](../product-design/v1.0.2/README.md)：补齐 DeepSeek 官方容量，区分模型窗口和项目输入上限；目标版本 1.0.2，运行版本仍为 1.0.1。
+- [开发计划](v1.0.2/development-plan.md)、[分模块示例](v1.0.2/implementation-examples.md)、[验收计划](v1.0.2/acceptance.md)：容量与预算已接入；空闲容量刷新和相关页面回归通过，完整在线预算链路与作者体验仍待验收。
 
 ## 1.1 预留计划
 

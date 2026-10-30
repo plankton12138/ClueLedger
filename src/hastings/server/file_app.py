@@ -14,6 +14,7 @@ V04-9 起多挂一组应用级 ``/api/model-*`` 路由。它们与写作轮次�
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -27,6 +28,7 @@ from hastings.library.assembly_api import create_assembly_router
 from hastings.library.modules import ModuleLibrary
 from hastings.server.model_api import create_model_router
 from hastings.server.model_connections import ModelConnectionService
+from hastings.server.model_limits import ModelLimits
 from hastings.server.probe_ops import ProbeRunner
 from hastings.server.provider_config import ProviderBook, ProviderConfigError
 from hastings.server.provider_runtime import ModelSnapshot
@@ -47,6 +49,7 @@ from hastings.workspace.story_api import create_story_router
 
 __all__ = [
     "HealthResponse",
+    "configured_limits_factory",
     "configured_provider_factory",
     "create_workspace_app",
 ]
@@ -79,6 +82,19 @@ def configured_provider_factory(book: ProviderBook) -> ProviderFactory:
     return factory
 
 
+def configured_limits_factory(book: ProviderBook) -> Callable[[], ModelLimits | None]:
+    """当前选择的容量与预算，只读配置：首次发送前与空闲时都能显示当前分母。"""
+
+    def factory() -> ModelLimits | None:
+        try:
+            return book.current_limits()
+        except ValueError:
+            # 容量配置本身矛盾时由发送路径报错；读取面板不该因此失败。
+            return None
+
+    return factory
+
+
 def create_workspace_app(
     *,
     workspaces: RecentWorkspaces,
@@ -86,11 +102,13 @@ def create_workspace_app(
     model_service: ModelConnectionService | None = None,
     static_dir: Path | None = None,
     library: ModuleLibrary | None = None,
+    limits_factory: Callable[[], ModelLimits | None] | None = None,
 ) -> FastAPI:
     """装配文件工作区应用；``model_service`` 存在时同时挂模型设置接口。
 
     参数名 ``workspaces`` 是作品登记，``model_service`` 是模型连接：两者曾经都叫
     ``book``，放在一起读不清哪个是哪个。``library`` 是应用级模块库，缺省时库接口不挂载。
+    ``limits_factory`` 只读当前选择的容量，供用量面板在首次发送前与空闲时显示分母。
     """
     app = FastAPI(title="线簿 ClueLedger", version=__version__)
     app.state.workspaces = workspaces
@@ -106,6 +124,7 @@ def create_workspace_app(
         library=library,
         run_registry=run_registry,
         operations=operations,
+        limits_factory=limits_factory,
     )
     app.state.services = hub
     # 连接测试也登记为统一操作：提交即返回 operation_id，可暂停与被读取。

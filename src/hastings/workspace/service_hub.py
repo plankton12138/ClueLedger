@@ -10,8 +10,10 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 
 from hastings.library.modules import ModuleLibrary
+from hastings.server.model_limits import ModelLimits
 from hastings.workspace.activity import ActivityStore
 from hastings.workspace.compaction_ops import CompactionRunner
 from hastings.workspace.operations import OperationStore
@@ -34,17 +36,27 @@ class WorkspaceServices:
         run_registry: RunRegistry | None = None,
         operations: OperationStore | None = None,
         turns: dict[str, TurnService] | None = None,
+        limits_factory: Callable[[], ModelLimits | None] | None = None,
     ) -> None:
         self.workspaces = workspaces
         self.provider_factory = provider_factory
         self.library = library
         self.run_registry = run_registry
         self.operations = operations
+        #: 当前选择的容量与预算（只读配置，不构造 provider）；供用量面板的空闲视图读取。
+        self._limits_factory = limits_factory
         #: 与操作接口共享：按作品标识直接取到同一个轮次服务。
         self.turns: dict[str, TurnService] = turns if turns is not None else {}
         self.runners: dict[str, CompactionRunner] = {}
         self.lock = threading.RLock()
         self._activity: dict[str, ActivityStore] = {}
+
+    def current_limits(self) -> ModelLimits | None:
+        """当前选择的容量与预算；未接装配时返回 ``None``。"""
+        if self._limits_factory is None:
+            return None
+        return self._limits_factory()
+
 
     # -- 读写服务 -----------------------------------------------------------
 

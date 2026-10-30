@@ -79,7 +79,7 @@ def _request_size(
     }
 
 
-def _request_estimate(
+def request_estimate(
     *,
     identity: str,
     system: str,
@@ -92,6 +92,9 @@ def _request_estimate(
 
     与字符数分开记：字符数只说明「装了多少字」，用它判断装不装得下会算错，
     而估算要给出的是与模型窗口可比的数字。
+
+    容量与项目预算都进估算指纹：换模型、改容量或改项目上限之后，上一轮的估算
+    不再成立，界面不能继续拿旧数字当占比。
     """
     message_wire = json.dumps(
         [message.model_dump(mode="json") for message in messages],
@@ -100,17 +103,21 @@ def _request_estimate(
         default=str,
     )
     tool_wire = json.dumps(definitions, ensure_ascii=False, separators=(",", ":"), default=str)
+    revisions = dict(source_revisions)
+    if limits is not None:
+        revisions["limits"] = limits.revision
     estimate = estimate_request(
         model_identity=identity,
         system=system,
         tool_wire=tool_wire,
         message_wire=message_wire,
-        source_revisions=source_revisions,
+        source_revisions=revisions,
         protocol_tokens=wire_overhead(messages=len(messages), tools=len(definitions)),
         count=count_tokens,
     )
     return {
         "model": identity,
+        "model_identity": identity,
         "total_tokens": estimate.total,
         "system_tokens": estimate.system_tokens,
         "tool_tokens": estimate.tool_tokens,
@@ -122,11 +129,15 @@ def _request_estimate(
         "fingerprint": estimate.request_fingerprint,
         "budget": budget_state(total_tokens=estimate.total, limits=limits) if limits else "unknown",
         "context_window_tokens": limits.context_window_tokens if limits else None,
+        "model_input_limit_tokens": limits.model_input_limit_tokens if limits else None,
+        "project_input_limit_tokens": limits.project_input_limit_tokens if limits else None,
         "input_limit_tokens": limits.input_limit() if limits else None,
+        "input_limit_source": limits.input_limit_source if limits else "project",
         "output_reserve_tokens": limits.output_reserve_tokens if limits else None,
         "safety_tokens": limits.safety_tokens if limits else None,
         # 容量出处：界面展开明细时显示，避免把目录值当成作者填的。
         "capacity_source": limits.source if limits else "unknown",
+        "policy_revision": limits.policy_revision if limits else "",
         "limits_revision": limits.revision if limits else "",
     }
 
@@ -171,14 +182,13 @@ class RecordedProvider:
     ) -> dict[str, Any] | None:
         """超预算时裁掉较早的完整工具往返；不超预算或无法裁剪时返回 ``None``。
 
-        窗口未知就不裁：那时没有可比的边界，裁多裁少都是猜。
+        边界是有效输入预算：模型容量未知时它就是项目上限，同样要裁。未知容量不再
+        等于「没有边界」，否则一次请求会把全部历史发出去。
         """
         if self.keep_recent_tokens is None or self.limits is None:
             return None
         limit = self.limits.input_limit()
-        if limit is None:
-            return None
-        before = _request_estimate(
+        before = request_estimate(
             identity=self.identity,
             system=system,
             messages=messages,
@@ -192,7 +202,7 @@ class RecordedProvider:
         trimmed = trim_request_messages(messages, keep_recent_tokens=self.keep_recent_tokens)
         if trimmed is None:
             return None
-        after = _request_estimate(
+        after = request_estimate(
             identity=self.identity,
             system=system,
             messages=trimmed,
@@ -229,7 +239,7 @@ class RecordedProvider:
         trimmed = trim_request_messages(messages, keep_recent_tokens=keep)
         if trimmed is None or len(trimmed) >= len(working):
             return None
-        before = _request_estimate(
+        before = request_estimate(
             identity=self.identity,
             system=system,
             messages=working,
@@ -237,7 +247,7 @@ class RecordedProvider:
             limits=self.limits,
             source_revisions=self.source_revisions,
         )
-        after = _request_estimate(
+        after = request_estimate(
             identity=self.identity,
             system=system,
             messages=trimmed,
@@ -279,7 +289,7 @@ class RecordedProvider:
         working = list(messages)
         if self.before_request is not None:
             working = await self.before_request(working, system, definitions, signal)
-        estimate = _request_estimate(
+        estimate = request_estimate(
             identity=self.identity or model,
             system=system,
             messages=working,

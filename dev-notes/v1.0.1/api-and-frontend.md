@@ -2,6 +2,10 @@
 
 日期：2026-10-29。状态：**当前实现契约**；当前进度与验收状态见[开发入口](README.md)。
 
+2026-10-30 创建入口补充：首次与续聊请求均可携带 `story_action: create`，必须同时提供 `context.story` 的方案、修订和 `purpose=design`。该动作明确要求结构成果，资料名称不开放模块内容写入；缺少构思目标时返回 `STORY_SCOPE_INVALID`。空白构思通过创建表单提交，请求受理后在原对话跟随进度；失败保留要求和普通草稿，完成依据结构收据。详见[创建流程](notes/2026-10-30-story-empty-entry.md)。
+
+2026-10-30 实施补充：构思页普通对话按受理时确定的任务目标区分讨论、结构修改、资料模块与待澄清。`task_intent` 事件记录目标、作者原话、方案与修订，以及作者确认时绑定的上一轮候选；候选只扩展可修改对象，不授予真相或约定修改。结构任务与讨论轮不开放模块内容写入，资料任务与讨论轮不开放结构写入。`story_changes_committed` 增加基础修订、改动对象、作者可读标签、操作类型与代次；新增 `story_change_noop` 记录经核验的无需改动。任务卡按这些事件显示本轮目标、已保存结构与未完成说明；`GET /api/operations/{id}/result` 同时返回 `intent` 与结构／模块收据。
+
 2026-10-29 实施补充：构思变更接口已接受 `prose_patches` 与 `read_dependencies`，与前端请求类型对齐；正文／结构均为空时拒绝。读取依赖覆盖方案、正文、约定、模块与会话；依赖入口缺失时明确拒绝。收据的 `result.prose_paths` 和 `changed` 中的 `prose:路径` 表示正文目标。对象级授权与候选携带结构变更已接通，详见[候选流程记录](notes/P4-candidate-workflow.md)；备选正文受管副本与方案正文读取见[联合提交记录](notes/P1-joint-commit.md)。
 
 方案正文读取：`GET W/story/variants/{variant_id}/prose?path=...` 返回文件视图加 `variant_id` 与 `inherited`；副本被标记删除时返回 404 `STORY_PROSE_NOT_FOUND`。前端方案节点定位走该接口，正文预览不写阅读位置。
@@ -57,7 +61,7 @@
 }
 ```
 
-purpose 为 discuss、design、write、revise、review 或 reader_preview。客户端 purpose 只表达意图，不能单独授予写权限；正文范围与授权仍由现有受理流程和本轮作者指令确定。试读必须有明确截止与呈现来源。
+purpose 为 discuss、design、write、revise、review 或 reader_preview。客户端 purpose 只表达意图，不能单独授予写权限；正文范围与授权仍由现有受理流程和本轮作者指令确定。构思页的 design 仍表示工作语境：讨论、比较与明确暂不保存保持只读；明确建立或修改结构时才形成结构目标，作者确认候选时只采用最近一条可定位的候选。试读必须有明确截止与呈现来源。
 
 试读使用独立入口 `POST W/reader-previews`：请求只有 `request_key / variant_id / revision / cutoff`，不接收文字、选中材料、检查目标或回答。它建立 `origin=reader` 的独立会话，问题由应用固定；执行时没有工具、目录、摘要与作者历史。写作对话列表不列读者会话。
 
@@ -87,7 +91,9 @@ continue 提交 request_key、expected_generation；interject 再带 text。后�
 | assistant_block_delta / text_delta | 当前 block_id 的真实输出增量；不把转圈或计数当流式 |
 | tool_started / tool_finished | 读取、检查或提交的实际进展；不暴露凭据与内部思考 |
 | story_candidate_saved | 完整候选可预览，尚未表示提交 |
-| story_changes_committed / story_candidate_committed / version_finished | 正式变更与收据已完成，刷新对应结构／正文 |
+| task_intent | 本轮目标（讨论／结构／资料／混合／待澄清）、作者原话、方案与修订、可选候选来源；只用于说明与判定，不授予权限 |
+| story_changes_committed / story_candidate_committed / version_finished | 正式变更与收据已完成，刷新对应结构／正文；结构收据带改动对象、标签与代次 |
+| story_change_noop | 经核验的无需改动：对象在本轮实际读过、当前存在且在授权范围内，附理由 |
 | author_input_requested | 原对话中出现具体问题，保留自由回答 |
 | stop_requested / error | 保留草稿与已提交单元，显示继续或处理入口 |
 | run_finished + 操作快照 | 记录完成、未完成范围与结果，不依据助手文字猜成功 |
@@ -113,7 +119,7 @@ continue 提交 request_key、expected_generation；interject 再带 text。后�
 
 构思主区显示节点与连接，详情就近展开；正文沿用现有渲染与源定位。未知位置或过期关联保留原文入口并说明需要核对，不静默高亮相似句。
 
-对话顶部显示实际任务对象，生成时输入可用。窄屏在构思或正文中保留暂停／继续入口。语义问题与失败在同一对话处理，不新增复杂管理页。
+对话顶部显示实际任务对象，生成时输入可用。窄屏在构思或正文中保留暂停／继续入口。语义问题与失败在同一对话处理，不新增复杂管理页。任务卡按 `task_intent`、结构收据与 `story_change_noop` 显示本轮目标、已保存的具体对象或「无需改动」；结构与模块各自说明结果，未完成时同时显示原因，不把模块保存当成结构完成。
 
 前端不显示哈希、代次和权限配置等内部字段。查看依据、详细核对和历史按需展开。页面更新只能由实际结果和版本驱动，不能解析助手最后一句“完成”来刷新状态。
 

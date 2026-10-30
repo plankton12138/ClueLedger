@@ -24,7 +24,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from hastings.server.model_limits import ModelLimits
+from hastings.server.model_limits import AUTO_COMPACTION_THRESHOLD, ModelLimits
 
 __all__ = [
     "METHOD",
@@ -48,7 +48,8 @@ MESSAGE_OVERHEAD_TOKENS = 4
 TOOL_OVERHEAD_TOKENS = 16
 
 #: 接近预算的比例。到这个程度就不再自动追加资料，避免下一次请求立即溢出。
-_NEAR_RATIO = 0.9
+#: 与自动压缩起点同一个数：两处各写一份，迟早会出现「提示接近了但不压缩」。
+_NEAR_RATIO = AUTO_COMPACTION_THRESHOLD
 
 BudgetState = Literal["unknown", "ok", "near", "over"]
 
@@ -152,7 +153,7 @@ def budget_for_limit(*, total_tokens: int, input_limit: int | None) -> BudgetSta
 def budget_state(*, total_tokens: int, limits: ModelLimits) -> BudgetState:
     """这一轮装不装得下。
 
-    窗口未知时只能给 ``unknown``：没有输入上限就不能声称「还有空间」，
-    也不能据此触发自动整理。
+    边界是有效输入预算，不是模型窗口：模型容量未知时项目上限仍然成立，
+    所以这里不再有「无法判断」这一档。
     """
     return budget_for_limit(total_tokens=total_tokens, input_limit=limits.input_limit())

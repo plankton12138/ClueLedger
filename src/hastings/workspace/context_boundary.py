@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any
 
 from hastings.workspace.compaction import active_compaction
 from hastings.workspace.conversation_context import replay_public_messages
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.model_activity import _request_estimate
+from hastings.workspace.model_activity import request_estimate
 from tau_agent.messages import AgentMessage
 from tau_agent.provider import CancellationToken
 
@@ -69,7 +70,7 @@ class RequestBoundary:
         working = self.project(messages)
         limits = self.snapshot.limits
         limit = limits.input_limit() if limits else None
-        estimate = _request_estimate(
+        estimate = request_estimate(
             identity=f"{self.snapshot.connection_id}:{self.snapshot.model}",
             system=system,
             messages=working,
@@ -78,13 +79,17 @@ class RequestBoundary:
             source_revisions={},
         )
         total = estimate["total_tokens"]
+        # 自动压缩起点按有效输入预算算：模型容量未知时项目上限就是边界。
+        trigger = (
+            math.ceil(limit * self.service.compaction_threshold) if limit is not None else None
+        )
         if (
             self.service.auto_compaction
             and not self.attempted
             and not handled
-            and limit is not None
+            and trigger is not None
             and isinstance(total, int)
-            and total >= limit * self.service.compaction_threshold
+            and total >= trigger
         ):
             # 同一受理历史最多自动尝试一次；失败不能在每个工具往返重复收费。
             self.attempted = True

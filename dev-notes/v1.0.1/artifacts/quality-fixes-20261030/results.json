@@ -1,0 +1,85 @@
+{
+  "run_dir": "data\\test-tmp\\v101-quality-fixes-20261030\\probes-1d6642cf380841f58eee6c8634076477",
+  "source_sha256": {
+    "src/hastings/workspace/story_tools.py": "4c4caeb80c8c3878c267a0eb1054dfd365b934c5daea52974e2a2d468cb35fed",
+    "src/hastings/workspace/story_authorization.py": "3238586f421178fa2f07daa5a394d2403f211475493d67cd693ede6cb1cad484",
+    "src/hastings/workspace/story_adoption.py": "003f306d2fda40ac04072e88e94c1205c6d83a5dd14c788619e3a9962c4ec356",
+    "src/hastings/workspace/story_store.py": "f5bef17cf1dbfacda5c551936cfb9d4db32f921b55198975e8e9d5205801812a",
+    "src/hastings/workspace/story_context.py": "a5b415bdd30b3cc4fb81f148b040a363eb36a4526093b1b9c0fce0644cf29e53"
+  },
+  "results": {
+    "F1_model_adoption_empty_scope": {
+      "tool_ok": true,
+      "selected": [
+        "n1"
+      ],
+      "unselected_n2": "保持原结局",
+      "truth": "管家所留"
+    },
+    "F3_unrelated_adoption_edge": {
+      "selected": [
+        "n3"
+      ],
+      "unrelated_edge_copied": false,
+      "plan": {
+        "source": "variant_e211ef8da5b749b7aa2e70be295d9c52",
+        "target": "main",
+        "node_ids": [
+          "n3"
+        ],
+        "copied": {
+          "nodes": [
+            "n3"
+          ],
+          "clues": [],
+          "threads": [],
+          "constraints": [],
+          "edges": [],
+          "event_times": []
+        },
+        "unchanged": [],
+        "pulled_in": [],
+        "skipped_edges": [
+          "unrelated"
+        ],
+        "boundary_edges": [],
+        "removed_event_times": [],
+        "skipped_event_times": [],
+        "conflicts": [],
+        "operations": 1
+      }
+    },
+    "F4_adoption_event_times": {
+      "receipt_kind": "adoption",
+      "source_times": [
+        {
+          "before_node_id": "n2",
+          "after_node_id": "n1"
+        }
+      ],
+      "target_times": [
+        {
+          "before_node_id": "n2",
+          "after_node_id": "n1"
+        }
+      ]
+    },
+    "F5_fork_from_alternative_prose": {
+      "source_text": "# 入场\n\n备选甲的不同原文。",
+      "fork_text": "# 入场\n\n备选甲的不同原文。",
+      "fork_after_main_edit": "# 入场\n\n备选甲的不同原文。"
+    },
+    "F6_reader_revealed_truth": {
+      "error": null,
+      "prefix": "# 揭示\n\n侦探说：凶手是一直守在门口的管家。",
+      "published_chars": 23
+    },
+    "F2_quoted_truth_command": {
+      "write_tool_available": false,
+      "tools": [
+        "read_story"
+      ],
+      "truth": "管家所留"
+    }
+  }
+}

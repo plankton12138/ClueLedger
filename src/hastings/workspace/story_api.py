@@ -204,6 +204,9 @@ class AdoptionPlanView(BaseModel):
     unchanged: list[str] = Field(default_factory=list)
     pulled_in: list[str] = Field(default_factory=list)
     skipped_edges: list[str] = Field(default_factory=list)
+    boundary_edges: list[str] = Field(default_factory=list)
+    removed_event_times: list[str] = Field(default_factory=list)
+    skipped_event_times: list[str] = Field(default_factory=list)
     conflicts: list[dict[str, str]] = Field(default_factory=list)
     operations: int = 0
     note: str = ""
@@ -300,7 +303,12 @@ def _assist_instruction(
     copied = summary.get("copied") or {}
     parts = []
     for name, label in (
-        ("nodes", "节点"), ("clues", "线索"), ("threads", "分支"), ("constraints", "约定")
+        ("nodes", "节点"),
+        ("clues", "线索"),
+        ("threads", "分支"),
+        ("constraints", "约定"),
+        ("edges", "关系"),
+        ("event_times", "实际时间"),
     ):
         if isinstance(copied, dict) and copied.get(name):
             parts.append(f"{label} {_ids(copied.get(name))}")
@@ -664,6 +672,12 @@ def create_story_router(
         added: dict[str, list[str]] = {}
         removed: dict[str, list[str]] = {}
         updated: dict[str, list[str]] = {}
+        source_times = {
+            f"{row.before_node_id}->{row.after_node_id}": row for row in source.event_times
+        }
+        target_times = {
+            f"{row.before_node_id}->{row.after_node_id}": row for row in target.event_times
+        }
         for name, left, right in (
             ("nodes", source.nodes, target.nodes),
             ("clues", source.clues, target.clues),
@@ -671,6 +685,7 @@ def create_story_router(
             ("constraints", source.constraints, target.constraints),
             ("edges", source.edges, target.edges),
             ("bindings", source.bindings, target.bindings),
+            ("event_times", source_times, target_times),
         ):
             added[name] = sorted(set(right) - set(left))
             removed[name] = sorted(set(left) - set(right))

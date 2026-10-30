@@ -71,7 +71,10 @@ export function usageDisplayState(totals: UsageTotals): UsageDisplayState {
  * 当前有效上下文；`null` 表示这一项没有可靠数值。
  *
  * `pending` 还没有请求，`running` 有一轮正在跑，`ready` 最近一轮已结束。
- * 容量取自最近一次请求受理时冻结的那份，与真正发出去的请求一致。
+ * 运行中采用请求冻结的容量，空闲时读取当前容量；切换模型后等待新的输入估算。
+ *
+ * 三个上限分开表达：`project_input_limit_tokens` 是项目策略，`model_input_limit_tokens`
+ * 是模型允许的输入，`input_limit_tokens` 是两者较小值——主进度只用最后这个。
  */
 export interface ContextView {
   status: "pending" | "running" | "ready";
@@ -79,6 +82,11 @@ export interface ContextView {
   last_request_input_tokens: number | null;
   context_window_tokens: number | null;
   input_limit_tokens: number | null;
+  project_input_limit_tokens: number | null;
+  model_input_limit_tokens: number | null;
+  input_limit_source: InputLimitSource;
+  /** 连接与精确模型 ID；不含密钥或账号凭据。 */
+  model_identity: string;
   output_reserve_tokens: number | null;
   safety_tokens: number | null;
   /** 窗口数字的出处；展开明细时显示，避免把目录值当成作者填的。 */
@@ -90,9 +98,13 @@ export interface ContextView {
   method: string;
   fingerprint: string;
   limits_revision: string;
+  policy_revision: string;
 }
 
 export type CapacitySource = "override" | "metadata" | "catalog" | "unknown";
+
+/** 有效输入预算最后由谁决定；未知模型时只能是项目预算。 */
+export type InputLimitSource = "project" | "model" | "both";
 
 /** 一万以下给原数，以上给「万」：窄栏里长数字会挤掉发送按钮。 */
 export function formatTokens(value: number | null): string {
@@ -106,12 +118,12 @@ export function formatTokens(value: number | null): string {
   return `${scaled >= 100 ? Math.round(scaled) : scaled.toFixed(1)} 万`;
 }
 
-/** 占比只按窗口算；没有窗口就是没有占比，不做别的分母。 */
+/** 占比只按有效输入预算算：模型窗口放明细，不再当主分母。 */
 export function contextShare(context: ContextView): number | null {
-  if (!context.context_window_tokens || context.estimated_active_tokens === null) {
+  if (!context.input_limit_tokens || context.estimated_active_tokens === null) {
     return null;
   }
-  return context.estimated_active_tokens / context.context_window_tokens;
+  return context.estimated_active_tokens / context.input_limit_tokens;
 }
 
 export function formatPercent(share: number | null): string {
@@ -132,21 +144,23 @@ export function formatCount(value: number | null | undefined): string {
     .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-/** 窗口已知才谈占比与进度条；只有已用量没有分母时不猜。 */
+/** 有有效输入预算才谈占比与进度条；只有已用量没有分母时不猜。 */
 export function hasCapacity(context: ContextView): boolean {
-  return context.context_window_tokens !== null && context.context_window_tokens > 0;
+  return context.input_limit_tokens !== null && context.input_limit_tokens > 0;
 }
 
-/** 浮层首行：已用与总量；总量未知时如实说未知，不画进度条。 */
+/** 浮层首行：已用与有效输入预算；没有预算时如实说未知，不画进度条。 */
 export function contextAmount(context: ContextView): string {
   const used = context.estimated_active_tokens;
+  const limit = context.input_limit_tokens;
   if (used === null) {
-    return "—";
+    // 还没有估算时给分母，不给 0%：缺估算不等于没占用。
+    return limit === null ? "—" : `待估算 / ${formatCount(limit)} tokens`;
   }
-  if (!hasCapacity(context)) {
-    return `≈${formatCount(used)} tokens · 总容量未知`;
+  if (!hasCapacity(context) || limit === null) {
+    return `≈${formatCount(used)} tokens · 输入预算未知`;
   }
-  return `≈${formatCount(used)} / ${formatCount(context.context_window_tokens)} tokens`;
+  return `≈${formatCount(used)} / ${formatCount(limit)} tokens`;
 }
 
 export const CAPACITY_SOURCE_LABEL: Record<CapacitySource, string> = {
@@ -160,10 +174,41 @@ export function capacitySourceLabel(source: CapacitySource | string): string {
   return CAPACITY_SOURCE_LABEL[source as CapacitySource] ?? "未知";
 }
 
+export const INPUT_LIMIT_SOURCE_LABEL: Record<InputLimitSource, string> = {
+  project: "项目预算",
+  model: "模型容量",
+  both: "项目与模型相同",
+};
+
+export function inputLimitSourceLabel(source: InputLimitSource | string): string {
+  return INPUT_LIMIT_SOURCE_LABEL[source as InputLimitSource] ?? "项目预算";
+}
+
+/**
+ * 模型窗口一行。
+ *
+ * 窗口未知时说明「按项目预算控制」，而不是让整个上下文状态停在未知：
+ * 预算仍然成立，只是没有模型那一侧的换算。
+ */
+export function modelWindowNote(context: ContextView): string {
+  if (context.context_window_tokens === null) {
+    return "未获取；按项目预算控制";
+  }
+  return `${formatCount(context.context_window_tokens)} tokens`;
+}
+
+/** 模型可用输入只在窗口与输入换算都存在时出现，不伪造未知字段。 */
+export function modelInputNote(context: ContextView): string | null {
+  if (context.context_window_tokens === null || context.model_input_limit_tokens === null) {
+    return null;
+  }
+  return `${formatCount(context.model_input_limit_tokens)} tokens`;
+}
+
 /**
  * 自动压缩的触发点。
  *
- * 阈值是可用输入预算的比例，不是窗口比例：压缩本身也要预留空间。
+ * 阈值是有效输入预算的比例，不是窗口比例：压缩本身也要预留空间。
  * 预算未知或自动压缩关闭时不给数字，避免给出一个不存在的边界。
  */
 export function autoCompactionNote(
@@ -179,8 +224,8 @@ export function autoCompactionNote(
   if (context.input_limit_tokens === null || context.input_limit_tokens <= 0) {
     return null;
   }
-  const trigger = Math.floor(context.input_limit_tokens * policy.threshold);
-  return `达到 ${formatCount(trigger)} tokens（可用输入预算的 ${Math.round(
+  const trigger = Math.ceil(context.input_limit_tokens * policy.threshold);
+  return `达到 ${formatCount(trigger)} tokens（有效输入预算的 ${Math.round(
     policy.threshold * 100,
   )}%）时自动压缩`;
 }

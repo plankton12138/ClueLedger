@@ -113,7 +113,8 @@ def test_candidate_proposes_to_variant_copy(tmp_path: Path) -> None:
         "改写第一章",
     )
     digest, _, inherited = store.prose_state(PATH, variant_id)
-    assert inherited is True
+    # 创建备选时已复制正文基线；候选改的是受管副本，不是主方案文件。
+    assert inherited is False
     item.propose(PATH, digest, NEW)
     assert workspace.read(PATH).text == TEXT
     item.approved = True
