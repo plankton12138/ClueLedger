@@ -22,6 +22,7 @@ from hastings.workspace.story_models import (
     AddClue,
     AddConstraint,
     AddNode,
+    AddStage,
     AddThread,
     BindProse,
     Connect,
@@ -32,6 +33,7 @@ from hastings.workspace.story_models import (
     RemoveClue,
     RemoveConstraint,
     RemoveNode,
+    RemoveStage,
     RemoveThread,
     SetEventTime,
     StoryChangeSet,
@@ -42,6 +44,7 @@ from hastings.workspace.story_models import (
     UpdateClue,
     UpdateConstraint,
     UpdateNode,
+    UpdateStage,
     UpdateThread,
     validate_story_variant,
 )
@@ -76,6 +79,7 @@ def apply_change_set(variant: StoryVariant, change: StoryChangeSet) -> StoryVari
 
 
 def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
+    stages = cast(dict[str, Any], data["stages"])
     nodes = cast(dict[str, Any], data["nodes"])
     clues = cast(dict[str, Any], data["clues"])
     threads = cast(dict[str, Any], data["threads"])
@@ -85,7 +89,23 @@ def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
     assessments = cast(dict[str, Any], data["assessments"])
     event_times = cast(list[dict[str, Any]], data["event_times"])
 
-    if isinstance(operation, AddNode):
+    if isinstance(operation, AddStage):
+        _require_new(stages, operation.stage.id, "阶段")
+        stages[operation.stage.id] = operation.stage.model_dump(mode="json")
+    elif isinstance(operation, UpdateStage):
+        _require_existing(stages, operation.stage_id, "阶段")
+        stages[operation.stage_id] = operation.stage.model_dump(mode="json")
+    elif isinstance(operation, RemoveStage):
+        _require_existing(stages, operation.stage_id, "阶段")
+        affected = [
+            node["id"] for node in nodes.values() if node.get("stage_id") == operation.stage_id
+        ]
+        if affected:
+            raise StoryInvalid(
+                "删除阶段前，先在同一变更中调整或解除这些节点的阶段：" + "、".join(affected)
+            )
+        del stages[operation.stage_id]
+    elif isinstance(operation, AddNode):
         _require_new(nodes, operation.node.id, "节点")
         nodes[operation.node.id] = operation.node.model_dump(mode="json")
     elif isinstance(operation, UpdateNode):
@@ -184,6 +204,7 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
 
     只比较内容，不比较修订号：修订号由提交生成，不属于对象内容。
     """
+    added_stages, updated_stages, removed_stages = _partition(source.stages, target.stages)
     added_nodes, updated_nodes, removed_nodes = _partition(source.nodes, target.nodes)
     added_clues, updated_clues, removed_clues = _partition(source.clues, target.clues)
     added_threads, updated_threads, removed_threads = _partition(source.threads, target.threads)
@@ -206,6 +227,7 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
     )
     operations.extend(UnbindProse(binding_id=key) for key in removed_binds)
     operations.extend(RemoveAssessment(assessment_id=key) for key in removed_checks)
+    operations.extend(AddStage(stage=target.stages[key]) for key in added_stages)
     operations.extend(AddThread(thread=target.threads[key]) for key in added_threads)
     operations.extend(AddConstraint(constraint=target.constraints[key]) for key in added_rules)
     operations.extend(AddClue(clue=target.clues[key]) for key in added_clues)
@@ -215,6 +237,9 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
     )
     operations.extend(
         UpdateClue(clue_id=key, clue=target.clues[key]) for key in updated_clues
+    )
+    operations.extend(
+        UpdateStage(stage_id=key, stage=target.stages[key]) for key in updated_stages
     )
     operations.extend(
         UpdateThread(thread_id=key, thread=target.threads[key]) for key in updated_threads
@@ -244,6 +269,7 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
     operations.extend(RemoveNode(node_id=key) for key in removed_nodes)
     operations.extend(RemoveClue(clue_id=key) for key in removed_clues)
     operations.extend(RemoveThread(thread_id=key) for key in removed_threads)
+    operations.extend(RemoveStage(stage_id=key) for key in removed_stages)
     operations.extend(RemoveConstraint(constraint_id=key) for key in removed_rules)
     return operations
 
@@ -273,6 +299,8 @@ def object_digest(value: object) -> str:
 def variant_digests(variant: StoryVariant) -> dict[str, str]:
     """按对象拆开的内容摘要表；撤销前与当前状态逐项比对。"""
     digests: dict[str, str] = {}
+    for key, stage in variant.stages.items():
+        digests[f"stage:{key}"] = object_digest(stage.model_dump(mode="json"))
     for key, node in variant.nodes.items():
         digests[f"node:{key}"] = object_digest(node.model_dump(mode="json"))
     for key, clue in variant.clues.items():

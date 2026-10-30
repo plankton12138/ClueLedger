@@ -14,11 +14,15 @@ from typing import Any
 import pytest
 
 from hastings.workspace.errors import WorkspaceError, status_for_code
-from hastings.workspace.story_changes import apply_change_set, diff_variant
+from hastings.workspace.story_changes import StoryInvalid, apply_change_set, diff_variant
 from hastings.workspace.story_models import (
+    AddStage,
     ProseBinding,
+    RemoveStage,
     StoryChangeSet,
+    StoryStage,
     StoryVariant,
+    UpdateNode,
     validate_story_variant,
 )
 
@@ -42,6 +46,84 @@ def test_blank_mystery_has_no_prose_and_allows_undecided_truth() -> None:
     assert item.clues["c1"].resolution.intent == "undecided"
     assert item.clues["c2"].resolution.intent == "leave_open"
     assert item.nodes["n1"].clue_uses[0].mode == "narration"
+
+
+def test_stage_order_and_membership_are_explicit() -> None:
+    item = variant("blank-mystery.json")
+    assert item.stages["s1"].order == 0
+    assert {node.stage_id for node in item.nodes.values()} == {"s1"}
+
+    raw = load("blank-mystery.json")
+    raw["stages"]["s2"] = {"id": "s2", "title": "第二幕", "order": 0}
+    with pytest.raises(ValueError, match="阶段顺序不能重复"):
+        StoryVariant.model_validate(raw)
+
+    raw = load("blank-mystery.json")
+    raw["nodes"]["n1"]["stage_id"] = "missing"
+    with pytest.raises(ValueError, match="节点引用了不存在的阶段"):
+        StoryVariant.model_validate(raw)
+
+
+def test_next_edge_cannot_return_to_an_earlier_stage() -> None:
+    raw = load("blank-mystery.json")
+    raw["stages"]["s2"] = {"id": "s2", "title": "第二幕", "order": 1}
+    raw["nodes"]["n2"]["stage_id"] = "s2"
+    raw["edges"]["e3"] = {
+        "id": "e3", "from_id": "n2", "to_id": "n1", "kind": "next", "reason": "回退"
+    }
+    item = StoryVariant.model_validate(raw)
+    with pytest.raises(ValueError, match="较后阶段"):
+        validate_story_variant(item)
+
+
+def test_removing_a_stage_requires_reassigning_its_nodes_first() -> None:
+    base = variant("blank-mystery.json")
+    change = StoryChangeSet.model_validate(
+        {
+            "id": "change_remove_stage",
+            "base_revision": base.revision,
+            "operations": [{"op": "remove_stage", "stage_id": "s1"}],
+        }
+    )
+    with pytest.raises(StoryInvalid, match="删除阶段前"):
+        apply_change_set(base, change)
+
+    updates = [
+        UpdateNode(node_id=node.id, node=node.model_copy(update={"stage_id": None}))
+        for node in base.nodes.values()
+    ]
+    change = StoryChangeSet(
+        id="change_remove_stage_after_move",
+        base_revision=base.revision,
+        operations=[*updates, RemoveStage(stage_id="s1")],
+    )
+    updated = apply_change_set(base, change)
+    assert not updated.stages
+    assert set(updated.nodes) == set(base.nodes)
+
+
+def test_stage_roundtrip_through_diff() -> None:
+    base = variant("blank-mystery.json")
+    change = StoryChangeSet(
+        id="change_add_stage",
+        base_revision=base.revision,
+        operations=[
+            AddStage(stage=StoryStage(id="s2", title="第二幕", order=1)),
+            UpdateNode(
+                node_id="n3",
+                node=base.nodes["n3"].model_copy(update={"stage_id": "s2"}),
+            ),
+        ],
+    )
+    updated = apply_change_set(base, change)
+    assert updated.nodes["n3"].stage_id == "s2"
+    inverse = diff_variant(updated, base)
+    restored = apply_change_set(
+        updated,
+        StoryChangeSet(id="change_undo_stage", base_revision=updated.revision, operations=inverse),
+    )
+    assert set(restored.stages) == set(base.stages)
+    assert restored.nodes["n3"].stage_id == "s1"
 
 
 def test_long_distance_clue_is_planted_first_and_resolved_last() -> None:

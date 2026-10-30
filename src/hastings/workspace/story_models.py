@@ -43,6 +43,7 @@ __all__ = [
     "StoryNode",
     "StoryOperation",
     "StoryReceipt",
+    "StoryStage",
     "StoryThread",
     "StoryVariant",
     "validate_story_variant",
@@ -122,6 +123,10 @@ class StoryNode(StrictRecord):
     clue_uses: list[ClueUse] = Field(default_factory=list)
     time_note: str = Field(default="", max_length=500)
     knowledge_changes: list[KnowledgeChange] = Field(default_factory=list)
+    #: 关键行动带来的局面或理解变化；未定不等于没有变化。
+    change: str | None = Field(default=None, max_length=1000)
+    #: 阶段由作者安排，允许暂不归属；``group_id`` 只供旧画布过渡，P4 移除。
+    stage_id: str | None = None
     group_id: str | None = None
 
     @model_validator(mode="after")
@@ -131,6 +136,10 @@ class StoryNode(StrictRecord):
         used = [use.clue_id for use in self.clue_uses]
         if len(set(used)) != len(used):
             raise ValueError("同一节点不能重复使用同一条线索")
+        if self.change is not None and not self.change.strip():
+            raise ValueError("关键变化要么留空表示未定，要么写明内容")
+        if self.stage_id is not None and not self.stage_id.strip():
+            raise ValueError("节点阶段标识不能是空字符串")
         if self.group_id is not None and not self.group_id.strip():
             raise ValueError("片段分组标识不能是空字符串")
         return self
@@ -199,11 +208,44 @@ class EventTimeRelation(StrictRecord):
         return self
 
 
-class StoryThread(StrictRecord):
-    """一条故事内分支。成员由节点的 ``thread_ids`` 决定，这里不另存一份。"""
+class StoryStage(StrictRecord):
+    """一段揭示推进；摘要用于折叠，不写入节点或关系。"""
 
     id: StoryId
     title: ShortText
+    order: int = Field(ge=0)
+    summary: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def check_summary(self) -> StoryStage:
+        if self.summary is not None and not self.summary.strip():
+            raise ValueError("阶段摘要要么留空表示未写，要么写明内容")
+        return self
+
+
+class StoryThread(StrictRecord):
+    """一条故事线；成员由节点的 ``thread_ids`` 决定，这里不另存一份。
+
+    目标、阻力与计划收束可以暂时未定。``order`` 决定画布列顺序，不是剧情顺序。
+    """
+
+    id: StoryId
+    title: ShortText
+    order: int = Field(ge=0)
+    goal: str | None = Field(default=None, max_length=1000)
+    obstacle: str | None = Field(default=None, max_length=1000)
+    intended_resolution: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def check_plan(self) -> StoryThread:
+        for label, value in (
+            ("目标", self.goal),
+            ("主要阻力", self.obstacle),
+            ("计划收束", self.intended_resolution),
+        ):
+            if value is not None and not value.strip():
+                raise ValueError(f"{label}要么留空表示未定，要么写明内容")
+        return self
 
 
 class ConstraintScope(StrictRecord):
@@ -325,6 +367,7 @@ class StoryVariant(StrictRecord):
     base_variant_id: str | None = None
     base_revision: str | None = None
     revision: str = Field(min_length=1, max_length=64)
+    stages: dict[str, StoryStage] = Field(default_factory=dict)
     nodes: dict[str, StoryNode] = Field(default_factory=dict)
     clues: dict[str, Clue] = Field(default_factory=dict)
     threads: dict[str, StoryThread] = Field(default_factory=dict)
@@ -337,6 +380,7 @@ class StoryVariant(StrictRecord):
     @model_validator(mode="after")
     def check_indexes(self) -> StoryVariant:
         for name, items in (
+            ("阶段", self.stages),
             ("节点", self.nodes),
             ("线索", self.clues),
             ("分支", self.threads),
@@ -347,11 +391,17 @@ class StoryVariant(StrictRecord):
         ):
             if any(key != value.id for key, value in items.items()):
                 raise ValueError(f"{name}的索引与自身标识不一致")
+        for label, items in (("阶段", self.stages), ("故事线", self.threads)):
+            orders = [item.order for item in items.values()]
+            if len(set(orders)) != len(orders):
+                raise ValueError(f"{label}顺序不能重复")
         if (self.base_variant_id is None) != (self.base_revision is None):
             raise ValueError("备选的来源方案与来源修订必须同时给出")
         if self.base_variant_id == self.id:
             raise ValueError("备选不能以自己为来源")
         for node in self.nodes.values():
+            if node.stage_id is not None and node.stage_id not in self.stages:
+                raise ValueError(f"节点引用了不存在的阶段：{node.stage_id}")
             missing = [value for value in node.thread_ids if value not in self.threads]
             if missing:
                 raise ValueError(f"节点引用了不存在的分支：{missing[0]}")
@@ -402,12 +452,21 @@ def validate_story_variant(variant: StoryVariant) -> None:
     """
     predecessors: dict[str, set[str]] = {node: set() for node in variant.nodes}
     seen: set[str] = set()
+    stage_order = {stage.id: stage.order for stage in variant.stages.values()}
     for edge in variant.edges.values():
         if edge.id in seen:
             raise ValueError("关系标识重复")
         seen.add(edge.id)
         if edge.kind == "next":
             predecessors[edge.to_id].add(edge.from_id)
+            source = variant.nodes[edge.from_id]
+            target = variant.nodes[edge.to_id]
+            if (
+                source.stage_id is not None
+                and target.stage_id is not None
+                and stage_order[target.stage_id] < stage_order[source.stage_id]
+            ):
+                raise ValueError("推进关系不能从较后阶段回到较前阶段")
     _require_acyclic(predecessors, "推进顺序存在循环")
 
     time_predecessors: dict[str, set[str]] = {node: set() for node in variant.nodes}
@@ -502,6 +561,28 @@ class RemoveClue(StrictRecord):
     clue_id: StoryId
 
 
+class AddStage(StrictRecord):
+    op: Literal["add_stage"] = "add_stage"
+    stage: StoryStage
+
+
+class UpdateStage(StrictRecord):
+    op: Literal["update_stage"] = "update_stage"
+    stage_id: StoryId
+    stage: StoryStage
+
+    @model_validator(mode="after")
+    def check_identity(self) -> UpdateStage:
+        if self.stage.id != self.stage_id:
+            raise ValueError("更新阶段的目标与阶段自身标识不一致")
+        return self
+
+
+class RemoveStage(StrictRecord):
+    op: Literal["remove_stage"] = "remove_stage"
+    stage_id: StoryId
+
+
 class AddThread(StrictRecord):
     op: Literal["add_thread"] = "add_thread"
     thread: StoryThread
@@ -591,6 +672,9 @@ StoryOperation = Annotated[
     AddNode
     | UpdateNode
     | RemoveNode
+    | AddStage
+    | UpdateStage
+    | RemoveStage
     | AddClue
     | UpdateClue
     | RemoveClue

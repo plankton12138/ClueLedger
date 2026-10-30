@@ -6,6 +6,7 @@ from hastings.workspace.story_models import (
     AddClue,
     AddConstraint,
     AddNode,
+    AddStage,
     AddThread,
     BindProse,
     Connect,
@@ -15,6 +16,7 @@ from hastings.workspace.story_models import (
     UpdateClue,
     UpdateConstraint,
     UpdateNode,
+    UpdateStage,
     UpdateThread,
 )
 
@@ -306,6 +308,9 @@ def knowledge_line(subject: str, knows: bool, claim: str) -> str:
 def describe_story_operation(operation: StoryOperation) -> str:
     """把一处结构变更说成作者看得懂的一句话，用于核对要求。"""
     op = operation.op
+    if op in ("add_stage", "update_stage"):
+        assert isinstance(operation, (AddStage, UpdateStage))
+        return f"{'新增' if op == 'add_stage' else '修改'}阶段「{operation.stage.title}」"
     if op in ("add_node", "update_node"):
         assert isinstance(operation, (AddNode, UpdateNode))
         return f"{'新增' if op == 'add_node' else '修改'}节点「{operation.node.title}」"
@@ -337,6 +342,7 @@ def describe_story_operation(operation: StoryOperation) -> str:
         (
             value
             for value in (
+                getattr(operation, "stage_id", ""),
                 getattr(operation, "node_id", ""),
                 getattr(operation, "clue_id", ""),
                 getattr(operation, "thread_id", ""),

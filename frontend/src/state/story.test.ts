@@ -27,7 +27,7 @@ const VARIANT = {
   primary: true,
   base_variant_id: null,
   base_revision: null,
-  counts: { nodes: 2, clues: 1, threads: 0, constraints: 0, edges: 1, bindings: 0 },
+  counts: { stages: 0, nodes: 2, clues: 1, threads: 0, constraints: 0, edges: 1, bindings: 0 },
 };
 
 
@@ -35,9 +35,10 @@ const GRAPH = {
   variant_id: "main",
   name: "主方案",
   revision: "rev_1",
+  stages: [],
   nodes: [
-    { id: "n1", title: "抵达", action: "走进旅馆", threads: [], clues: ["c1"], time_note: "", group_id: null },
-    { id: "n2", title: "对质", action: "他问管家", threads: [], clues: [], time_note: "", group_id: null },
+    { id: "n1", title: "抵达", action: "走进旅馆", change: null, stage_id: null, threads: [], clues: ["c1"], time_note: "", group_id: null },
+    { id: "n2", title: "对质", action: "他问管家", change: null, stage_id: null, threads: [], clues: [], time_note: "", group_id: null },
   ],
   edges: [{ id: "e1", from_id: "n1", to_id: "n2", kind: "next" as const, reason: "" }],
   threads: [],

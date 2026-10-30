@@ -8,6 +8,7 @@
 import { request } from "./workspace";
 
 export interface StoryCounts {
+  stages: number;
   nodes: number;
   clues: number;
   threads: number;
@@ -32,10 +33,28 @@ export interface StoryVariantList {
   variants: StoryVariantSummary[];
 }
 
+export interface StoryStage {
+  id: string;
+  title: string;
+  order: number;
+  summary: string | null;
+}
+
+export interface StoryThread {
+  id: string;
+  title: string;
+  order: number;
+  goal: string | null;
+  obstacle: string | null;
+  intended_resolution: string | null;
+}
+
 export interface StoryNode {
   id: string;
   title: string;
   action: string;
+  change: string | null;
+  stage_id: string | null;
   threads: string[];
   clues: string[];
   time_note: string;
@@ -55,9 +74,10 @@ export interface StoryGraph {
   variant_id: string;
   name: string;
   revision: string;
+  stages: StoryStage[];
   nodes: StoryNode[];
   edges: StoryEdge[];
-  threads: { id: string; title: string }[];
+  threads: StoryThread[];
   event_times: { before: string; after: string }[];
   constraints: {
     id: string;

@@ -263,6 +263,7 @@ class StoryStore:
                 base_variant_id=source.id,
                 base_revision=source.revision,
                 revision=new_id("rev"),
+                stages=dict(source.stages),
                 nodes=dict(source.nodes),
                 clues=dict(source.clues),
                 threads=dict(source.threads),

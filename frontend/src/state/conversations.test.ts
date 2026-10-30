@@ -1022,7 +1022,7 @@ it("构思面普通消息冻结当前备选和节点，浏览不会改到主方�
   await useConversationsStore.getState().load("w1");
   useConversationsStore.getState().newConversation();
   useStoryStore.setState({ open: true, variantId: "alt", nodeId: "n2", graph: {
-    variant_id: "alt", name: "备选", revision: "alt-r1", nodes: [], edges: [], threads: [],
+    variant_id: "alt", name: "备选", revision: "alt-r1", stages: [], nodes: [], edges: [], threads: [],
     event_times: [], constraints: [], collapsed: [],
   } });
   await useConversationsStore.getState().send("调整所选节点");

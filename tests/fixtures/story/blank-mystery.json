@@ -18,7 +18,8 @@
           "speaker_id": "",
           "expected_interpretation": "读者会以为指纹是父亲的"
         }
-      ]
+      ],
+      "stage_id": "s1"
     },
     "n2": {
       "id": "n2",
@@ -35,7 +36,8 @@
           "speaker_id": "",
           "expected_interpretation": "读者先怀疑照片是假的"
         }
-      ]
+      ],
+      "stage_id": "s1"
     },
     "n3": {
       "id": "n3",
@@ -43,7 +45,8 @@
       "action": "她回拨那个号码，对方没有否认。",
       "thread_ids": [
         "t1"
-      ]
+      ],
+      "stage_id": "s1"
     }
   },
   "clues": {
@@ -73,7 +76,8 @@
   "threads": {
     "t1": {
       "id": "t1",
-      "title": "主调查"
+      "title": "主调查",
+      "order": 0
     }
   },
   "constraints": {
@@ -111,5 +115,12 @@
       "before_node_id": "n1",
       "after_node_id": "n2"
     }
-  ]
+  ],
+  "stages": {
+    "s1": {
+      "id": "s1",
+      "title": "第一幕",
+      "order": 0
+    }
+  }
 }

@@ -123,6 +123,8 @@ def _node_summary(variant: StoryVariant, node_id: str) -> dict[str, Any] | None:
         "id": node.id,
         "title": node.title,
         "action": node.action,
+        "change": node.change,
+        "stage_id": node.stage_id,
         "threads": [
             variant.threads[item].title for item in node.thread_ids if item in variant.threads
         ],
@@ -132,9 +134,10 @@ def _node_summary(variant: StoryVariant, node_id: str) -> dict[str, Any] | None:
 
 
 _KIND_LABELS = {
+    "stage": "阶段",
     "node": "节点",
     "clue": "线索",
-    "thread": "分支",
+    "thread": "故事线",
     "constraint": "约定",
     "edge": "关系",
     "binding": "正文关联",
@@ -145,12 +148,14 @@ _KIND_LABELS = {
 
 def _object_label(variant: StoryVariant, kind: str, object_id: str) -> str:
     """收据里的对象标签：作者看到标题，不看到内部标识。"""
+    if kind == "stage" and object_id in variant.stages:
+        return f"阶段「{variant.stages[object_id].title}」"
     if kind == "node" and object_id in variant.nodes:
         return f"节点「{variant.nodes[object_id].title}」"
     if kind == "clue" and object_id in variant.clues:
         return f"线索「{variant.clues[object_id].title}」"
     if kind == "thread" and object_id in variant.threads:
-        return f"分支「{variant.threads[object_id].title}」"
+        return f"故事线「{variant.threads[object_id].title}」"
     if kind == "constraint" and object_id in variant.constraints:
         text = variant.constraints[object_id].text.strip()
         return f"约定「{text[:20]}」" if text else "约定"
@@ -224,6 +229,28 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
         payload: dict[str, Any] = {
             "variant_id": variant.id,
             "revision": variant.revision,
+            "stages": [
+                {
+                    "id": stage.id,
+                    "title": stage.title,
+                    "order": stage.order,
+                    "summary": stage.summary,
+                }
+                for stage in sorted(variant.stages.values(), key=lambda item: (item.order, item.id))
+            ],
+            "threads": [
+                {
+                    "id": thread.id,
+                    "title": thread.title,
+                    "order": thread.order,
+                    "goal": thread.goal,
+                    "obstacle": thread.obstacle,
+                    "intended_resolution": thread.intended_resolution,
+                }
+                for thread in sorted(
+                    variant.threads.values(), key=lambda item: (item.order, item.id)
+                )
+            ],
             "nodes": nodes,
             "variants": [
                 {"id": item.id, "name": item.name, "revision": item.revision}

@@ -9,7 +9,8 @@
       "action": "她把手里的录音笔放在桌上。",
       "thread_ids": [
         "t1"
-      ]
+      ],
+      "stage_id": "s1"
     },
     "f2": {
       "id": "f2",
@@ -17,7 +18,8 @@
       "action": "父亲把钥匙交给陌生人。",
       "thread_ids": [
         "t1"
-      ]
+      ],
+      "stage_id": "s2"
     }
   },
   "clues": {
@@ -38,7 +40,8 @@
   "threads": {
     "t1": {
       "id": "t1",
-      "title": "主线"
+      "title": "主线",
+      "order": 0
     }
   },
   "constraints": {},
@@ -63,5 +66,17 @@
       "before_node_id": "f2",
       "after_node_id": "f1"
     }
-  ]
+  ],
+  "stages": {
+    "s1": {
+      "id": "s1",
+      "title": "现在",
+      "order": 0
+    },
+    "s2": {
+      "id": "s2",
+      "title": "过去",
+      "order": 1
+    }
+  }
 }

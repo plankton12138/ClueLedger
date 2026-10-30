@@ -22,6 +22,7 @@ from hastings.workspace.story_models import (
     AddClue,
     AddConstraint,
     AddNode,
+    AddStage,
     AddThread,
     BindProse,
     Connect,
@@ -31,6 +32,7 @@ from hastings.workspace.story_models import (
     RemoveClue,
     RemoveConstraint,
     RemoveNode,
+    RemoveStage,
     RemoveThread,
     SetEventTime,
     StoryChangeSet,
@@ -41,6 +43,7 @@ from hastings.workspace.story_models import (
     UpdateClue,
     UpdateConstraint,
     UpdateNode,
+    UpdateStage,
     UpdateThread,
 )
 from hastings.workspace.story_store import new_id
@@ -48,9 +51,10 @@ from hastings.workspace.story_store import new_id
 __all__ = ["StoryAuthority", "blocks_writes", "build_authority", "is_discussion"]
 
 _LABEL = {
+    "stage": "阶段",
     "node": "节点",
     "clue": "线索",
-    "thread": "分支",
+    "thread": "故事线",
     "constraint": "约定",
     "edge": "关系",
     "binding": "正文关联",
@@ -235,11 +239,15 @@ class StoryAuthority:
         return [{"kind": kind, "id": object_id} for kind, object_id in sorted(self.permitted)]
 
     def _targets(self, operation: StoryOperation) -> list[tuple[str, str]]:
-        if isinstance(operation, (AddNode, AddClue, AddThread, AddConstraint, RecordAssessment)):
+        if isinstance(
+            operation, (AddNode, AddClue, AddStage, AddThread, AddConstraint, RecordAssessment)
+        ):
             return []
         if isinstance(operation, (BindProse, Connect)):
             return self._creation_targets(operation)
-        if isinstance(operation, UpdateNode | RemoveNode):
+        if isinstance(operation, (UpdateStage, RemoveStage)):
+            return [("stage", operation.stage_id)]
+        if isinstance(operation, (UpdateNode | RemoveNode)):
             return [("node", operation.node_id)]
         if isinstance(operation, UpdateClue | RemoveClue):
             return [("clue", operation.clue_id)]
@@ -298,6 +306,9 @@ def build_authority(
     permitted: set[tuple[str, str]] = {
         ("node", node_id) for node_id in frozen.node_ids if node_id in variant.nodes
     }
+    for stage in variant.stages.values():
+        if _named(stage.title, naming_text):
+            permitted.add(("stage", stage.id))
     for node in variant.nodes.values():
         if _named(node.title, naming_text):
             permitted.add(("node", node.id))
@@ -314,6 +325,7 @@ def build_authority(
     # 设计用途且没有选中对象时，作者在整份结构上工作；采用备选要单独确认整案。
     if design_wide and frozen.purpose == "design" and not frozen.node_ids:
         for collection, kind in (
+            (variant.stages, "stage"),
             (variant.nodes, "node"),
             (variant.clues, "clue"),
             (variant.threads, "thread"),
@@ -327,9 +339,17 @@ def build_authority(
     while prior != len(permitted):
         prior = len(permitted)
         for kind, object_id in list(permitted):
+            if kind == "stage":
+                permitted.update(
+                    ("node", node.id)
+                    for node in variant.nodes.values()
+                    if node.stage_id == object_id
+                )
             if kind != "node":
                 continue
             node = variant.nodes[object_id]
+            if node.stage_id is not None:
+                permitted.add(("stage", node.stage_id))
             permitted.update(("thread", thread_id) for thread_id in node.thread_ids)
             permitted.update(
                 ("clue", use.clue_id) for use in node.clue_uses if use.clue_id in variant.clues
@@ -393,6 +413,7 @@ def authorize_change(
     for operation in change.operations:
         for cls, kind, field in (
             (AddNode, "node", "node"),
+            (AddStage, "stage", "stage"),
             (AddClue, "clue", "clue"),
             (AddThread, "thread", "thread"),
             (AddConstraint, "constraint", "constraint"),

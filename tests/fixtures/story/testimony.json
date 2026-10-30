@@ -9,7 +9,8 @@
       "action": "管家说老爷那晚没有出门。",
       "thread_ids": [
         "t1"
-      ]
+      ],
+      "stage_id": "s1"
     },
     "t2": {
       "id": "t2",
@@ -37,7 +38,8 @@
           ],
           "effective_event_node_id": "t2"
         }
-      ]
+      ],
+      "stage_id": "s1"
     }
   },
   "clues": {
@@ -58,7 +60,8 @@
   "threads": {
     "t1": {
       "id": "t1",
-      "title": "主线"
+      "title": "主线",
+      "order": 0
     }
   },
   "constraints": {
@@ -89,5 +92,12 @@
       "before_node_id": "t1",
       "after_node_id": "t2"
     }
-  ]
+  ],
+  "stages": {
+    "s1": {
+      "id": "s1",
+      "title": "第一幕",
+      "order": 0
+    }
+  }
 }

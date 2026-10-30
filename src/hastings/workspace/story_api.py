@@ -29,6 +29,7 @@ __all__ = ["create_story_router"]
 
 
 class StoryCountsView(BaseModel):
+    stages: int = 0
     nodes: int = 0
     clues: int = 0
     threads: int = 0
@@ -57,6 +58,8 @@ class StoryNodeView(BaseModel):
     id: str
     title: str
     action: str
+    change: str | None = None
+    stage_id: str | None = None
     threads: list[str]
     clues: list[str]
     time_note: str
@@ -76,9 +79,10 @@ class StoryGraphView(BaseModel):
     variant_id: str
     name: str
     revision: str
+    stages: list[dict[str, Any]]
     nodes: list[StoryNodeView]
     edges: list[StoryEdgeView]
-    threads: list[dict[str, str]]
+    threads: list[dict[str, Any]]
     event_times: list[dict[str, str]]
     constraints: list[dict[str, Any]]
     collapsed: list[str] = Field(default_factory=list)
@@ -147,6 +151,7 @@ class StoryChangeRecordView(BaseModel):
 
 def _counts(variant: StoryVariant) -> StoryCountsView:
     return StoryCountsView(
+        stages=len(variant.stages),
         nodes=len(variant.nodes),
         clues=len(variant.clues),
         threads=len(variant.threads),
@@ -161,6 +166,8 @@ def _node_view(variant: StoryVariant, node: StoryNode) -> StoryNodeView:
         id=node.id,
         title=node.title,
         action=node.action,
+        change=node.change,
+        stage_id=node.stage_id,
         threads=[item for item in node.thread_ids if item in variant.threads],
         clues=[use.clue_id for use in node.clue_uses],
         time_note=node.time_note,
@@ -294,6 +301,15 @@ def create_story_router(
             variant_id=variant.id,
             name=variant.name,
             revision=variant.revision,
+            stages=[
+                {
+                    "id": stage.id,
+                    "title": stage.title,
+                    "order": stage.order,
+                    "summary": stage.summary,
+                }
+                for stage in sorted(variant.stages.values(), key=lambda item: (item.order, item.id))
+            ],
             nodes=[_node_view(variant, node) for node in sorted(nodes, key=lambda item: item.id)],
             edges=[
                 _edge_view(edge)
@@ -301,7 +317,17 @@ def create_story_router(
                 if edge.from_id in shown and edge.to_id in shown
             ],
             threads=[
-                {"id": thread.id, "title": thread.title} for thread in variant.threads.values()
+                {
+                    "id": thread.id,
+                    "title": thread.title,
+                    "order": thread.order,
+                    "goal": thread.goal,
+                    "obstacle": thread.obstacle,
+                    "intended_resolution": thread.intended_resolution,
+                }
+                for thread in sorted(
+                    variant.threads.values(), key=lambda item: (item.order, item.id)
+                )
             ],
             event_times=[
                 {"before": row.before_node_id, "after": row.after_node_id}

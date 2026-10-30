@@ -96,6 +96,7 @@ def variant_summary(
     ]
     return {
         "revision": variant.revision,
+        "stages": len(variant.stages),
         "nodes": len(variant.nodes),
         "clues": len(variant.clues),
         "threads": len(variant.threads),
