@@ -1,0 +1,19 @@
+{
+  "schema_version": 3,
+  "recipe_version": 1,
+  "workspace_lineage": "ws_57526288a124475a8ca3c84ae323321d",
+  "ledger_revision": "rev_a71ad3507f8e47ffa68e1d3306f89a6b",
+  "clues": {
+    "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25": {
+      "clue_id": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25",
+      "title": "湿手套",
+      "clue_revision": "rev_486914490d5e40169eb48e07640a78df",
+      "created_at": "2026-10-30T23:25:15.491470+08:00",
+      "created_by": "story_change",
+      "first_chapter": null
+    }
+  },
+  "contributions": {},
+  "coverage": {},
+  "requests": {}
+}

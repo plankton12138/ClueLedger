@@ -394,3 +394,187 @@ def test_create_identity_is_joint_and_undo_restores_ledger(
         f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
     )
     assert listing.json()["items"] == []
+
+
+def test_stale_expected_ledger_revision_writes_nothing(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    seed(tmp_path, workspace_id)
+    revision = revision_of(client, workspace_id)
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": revision,
+            "expected_ledger_revision": "stale-ledger",
+            "request_key": "stale-ledger-change",
+            "operations": [
+                {"op": "add_node", "node": {"id": "n9", "title": "九", "action": "不写"}}
+            ],
+        },
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "STORY_CLUE_REVISION_CONFLICT"
+    variant = StoryStore(conversation_root(tmp_path / "state", workspace_id)).require_variant(
+        MAIN_VARIANT_ID
+    )
+    assert "n9" not in variant.nodes
+
+
+def test_story_clue_cursor_conflicts_after_view_changes(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    revision = "empty"
+    seeded = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": revision,
+            "request_key": "cursor-seed",
+            "operations": [
+                {"op": "create_clue_identity", "temp_id": "a", "title": "甲"},
+                {"op": "create_clue_identity", "temp_id": "b", "title": "乙"},
+                {"op": "upsert_clue_plan", "clue_id": "a", "plan": {}},
+                {"op": "upsert_clue_plan", "clue_id": "b", "plan": {}},
+            ],
+        },
+    )
+    assert seeded.status_code == 201, seeded.text
+    first = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues",
+        params={"scope": "story", "limit": 1},
+    )
+    assert first.status_code == 200, first.text
+    cursor = first.json()["next_cursor"]
+    assert cursor
+
+    stable = seeded.json()["id_map"]["a"]
+    changed = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": seeded.json()["revision"],
+            "expected_ledger_revision": seeded.json()["ledger_revision"],
+            "request_key": "cursor-change",
+            "operations": [
+                {
+                    "op": "upsert_clue_plan",
+                    "clue_id": stable,
+                    "plan": {"intention": "改了计划"},
+                }
+            ],
+        },
+    )
+    assert changed.status_code == 201, changed.text
+    stale = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues",
+        params={"scope": "story", "limit": 1, "cursor": cursor},
+    )
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error"]["code"] == "CLUE_CURSOR_CONFLICT"
+
+
+def test_undo_creation_conflicts_when_identity_is_used_later(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    created = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": "empty",
+            "request_key": "undo-create",
+            "operations": [
+                {"op": "create_clue_identity", "temp_id": "c", "title": "手套"},
+                {"op": "upsert_clue_plan", "clue_id": "c", "plan": {}},
+                {
+                    "op": "add_node",
+                    "node": {
+                        "id": "n1",
+                        "title": "抵达",
+                        "action": "进门",
+                        "clue_uses": [{"clue_id": "c", "presentation": "手套"}],
+                    },
+                },
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    stable = created.json()["id_map"]["c"]
+    later = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": created.json()["revision"],
+            "expected_ledger_revision": created.json()["ledger_revision"],
+            "request_key": "later-use",
+            "operations": [
+                {
+                    "op": "add_node",
+                    "node": {
+                        "id": "n2",
+                        "title": "对质",
+                        "action": "追问",
+                        "clue_uses": [{"clue_id": stable, "presentation": "手套"}],
+                    },
+                }
+            ],
+        },
+    )
+    assert later.status_code == 201, later.text
+
+    undone = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes/{created.json()['change_id']}/undo",
+        params={"request_key": "undo-later-use"},
+    )
+    assert undone.status_code in (400, 409), undone.text
+    assert undone.json()["error"]["code"] == "STORY_CLUE_REFERENCE_INVALID"
+    variant = StoryStore(conversation_root(tmp_path / "state", workspace_id)).require_variant(
+        MAIN_VARIANT_ID
+    )
+    assert "n2" in variant.nodes
+    assert stable in variant.clue_plans
+    listing = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
+    )
+    assert [row["clue_id"] for row in listing.json()["items"]] == [stable]
+
+
+def test_removing_identity_with_plan_is_blocked(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    created = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": "empty",
+            "request_key": "identity-plan-seed",
+            "operations": [
+                {"op": "create_clue_identity", "temp_id": "c", "title": "手套"},
+                {"op": "upsert_clue_plan", "clue_id": "c", "plan": {}},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    stable = created.json()["id_map"]["c"]
+    blocked = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": created.json()["revision"],
+            "expected_ledger_revision": created.json()["ledger_revision"],
+            "request_key": "identity-plan-remove",
+            "operations": [{"op": "remove_clue_identity", "clue_id": stable}],
+        },
+    )
+    assert blocked.status_code == 400, blocked.text
+    assert blocked.json()["error"]["code"] == "STORY_CLUE_REFERENCE_INVALID"
+    variant = StoryStore(conversation_root(tmp_path / "state", workspace_id)).require_variant(
+        MAIN_VARIANT_ID
+    )
+    assert stable in variant.clue_plans
+    listing = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
+    )
+    assert [row["clue_id"] for row in listing.json()["items"]] == [stable]

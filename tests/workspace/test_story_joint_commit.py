@@ -601,3 +601,68 @@ def test_unavailable_dependency_entry_is_reported(tmp_path: Path) -> None:
             ),
         )
     assert not store.file.exists()
+
+
+def test_ledger_target_recovers_after_write_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hastings.workspace.clue_store import ClueLedgerStore
+    from hastings.workspace.story_clue_commit import prepare_clue_joint
+    from hastings.workspace.story_models import (
+        CluePlanInput,
+        ClueUse,
+        CreateClueIdentity,
+        UpsertCluePlan,
+    )
+    import hastings.workspace.story_store as story_store_module
+
+    store = StoryStore(tmp_path / "state")
+    change = StoryChangeSet(
+        id="ledger-recovery",
+        base_revision="empty",
+        operations=[
+            CreateClueIdentity(temp_id="c1", title="手套"),
+            UpsertCluePlan(clue_id="c1", plan=CluePlanInput()),
+            AddNode(
+                node=StoryNode(
+                    id="n1",
+                    title="抵达",
+                    action="进门",
+                    clue_uses=[ClueUse(clue_id="c1", presentation="手套还在滴水")],
+                )
+            ),
+        ],
+    )
+    real_write = story_store_module.atomic_write_json
+
+    def fail_ledger(path: Path, *args: object, **kwargs: object) -> None:
+        if str(path).endswith("clue-ledger.json"):
+            raise OSError("模拟账本写入失败")
+        real_write(path, *args, **kwargs)
+
+    monkeypatch.setattr(story_store_module, "atomic_write_json", fail_ledger)
+    with pytest.raises(WorkspaceError) as caught:
+        store.commit_change(
+            variant_id="main",
+            change=change,
+            request_key="ledger-recovery",
+            prepare_joint=prepare_clue_joint(
+                tmp_path / "state", variant_id="main", change=change
+            ),
+        )
+    assert caught.value.code == "STORY_WRITE_FAILED"
+    assert store.pending.exists()
+    assert store.decision.exists()
+
+    monkeypatch.setattr(story_store_module, "atomic_write_json", real_write)
+    snapshot = store.read()
+    assert snapshot.document is not None
+    variant = snapshot.variant("main")
+    assert variant is not None
+    assert len(variant.clue_plans) == 1
+    ledger = ClueLedgerStore(tmp_path / "state").read()
+    assert ledger.ledger is not None
+    assert len(ledger.ledger.clues) == 1
+    receipt = snapshot.document.requests["ledger-recovery"]
+    assert receipt.ledger_revision
+    assert receipt.id_map["c1"].startswith("clue_")

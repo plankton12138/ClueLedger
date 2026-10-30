@@ -273,3 +273,25 @@ def test_change_set_must_change_something() -> None:
         ],
     )
     assert prose_only.operations == []
+
+
+def test_removing_a_thread_only_clears_membership() -> None:
+    from hastings.workspace.story_models import RemoveThread
+
+    base = variant("blank-mystery.json")
+    change = StoryChangeSet(
+        id="remove-thread",
+        base_revision=base.revision,
+        operations=[RemoveThread(thread_id="t1")],
+    )
+    updated = apply_change_set(base, change)
+    assert not updated.threads
+    assert set(updated.nodes) == set(base.nodes)
+    assert all(node.thread_ids == [] for node in updated.nodes.values())
+    inverse = diff_variant(updated, base)
+    restored = apply_change_set(
+        updated,
+        StoryChangeSet(id="restore-thread", base_revision=updated.revision, operations=inverse),
+    )
+    assert "t1" in restored.threads
+    assert restored.nodes["n1"].thread_ids == ["t1"]

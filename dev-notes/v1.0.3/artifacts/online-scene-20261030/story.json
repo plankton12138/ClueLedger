@@ -1,0 +1,291 @@
+{
+  "schema_version": 1,
+  "workspace_lineage": "ws_d6341012d3a14f5b827209f9dc3877e3",
+  "revision": "rev_b8916a0aca57485eb2c356c223c140fa",
+  "primary_variant_id": "main",
+  "variants": {
+    "main": {
+      "id": "main",
+      "name": "主方案",
+      "base_variant_id": null,
+      "base_revision": null,
+      "revision": "rev_99ae34df37784c1bb0c426e62473377c",
+      "stages": {},
+      "nodes": {
+        "arrival": {
+          "id": "arrival",
+          "title": "抵达",
+          "action": "林砚看到湿手套",
+          "thread_ids": [],
+          "clue_uses": [
+            {
+              "clue_id": "clue_da1ffe62f7c949cd845e2611413c06a9",
+              "roles": [],
+              "presentation": "手套还在滴水",
+              "mode": "narration",
+              "speaker_id": "",
+              "expected_interpretation": ""
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": null,
+          "stage_id": null,
+          "group_id": null
+        }
+      },
+      "clue_plans": {
+        "clue_da1ffe62f7c949cd845e2611413c06a9": {
+          "clue_id": "clue_da1ffe62f7c949cd845e2611413c06a9",
+          "author_truth": "管家在雪停后搬过尸体",
+          "intention": "",
+          "resolution_intent": "undecided"
+        }
+      },
+      "threads": {},
+      "constraints": {},
+      "edges": {},
+      "event_times": [],
+      "bindings": {},
+      "assessments": {}
+    }
+  },
+  "changes": {
+    "ui_6b716f2ea8c84fda88bac31e5a0c1013": {
+      "change_id": "ui_6b716f2ea8c84fda88bac31e5a0c1013",
+      "variant_id": "main",
+      "base_revision": "empty",
+      "revision": "rev_2e57d76a56224c4fad897c69cab2a6b0",
+      "request_key": "scene-seed",
+      "created_at": "2026-10-30T23:05:38.819873+08:00",
+      "operations": [
+        {
+          "op": "create_clue_identity",
+          "temp_id": "glove",
+          "title": "湿手套"
+        },
+        {
+          "op": "upsert_clue_plan",
+          "clue_id": "clue_da1ffe62f7c949cd845e2611413c06a9",
+          "plan": {
+            "author_truth": "管家在雪停后搬过尸体",
+            "intention": "",
+            "resolution_intent": "undecided"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "arrival",
+            "title": "抵达",
+            "action": "林砚看到湿手套",
+            "thread_ids": [],
+            "clue_uses": [
+              {
+                "clue_id": "clue_da1ffe62f7c949cd845e2611413c06a9",
+                "roles": [],
+                "presentation": "手套还在滴水",
+                "mode": "narration",
+                "speaker_id": "",
+                "expected_interpretation": ""
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": null,
+            "stage_id": null,
+            "group_id": null
+          }
+        }
+      ],
+      "inverse_operations": [
+        {
+          "op": "remove_node",
+          "node_id": "arrival"
+        },
+        {
+          "op": "remove_clue_plan",
+          "clue_id": "clue_da1ffe62f7c949cd845e2611413c06a9"
+        }
+      ],
+      "inverse_ledger": [
+        {
+          "op": "inverse_remove",
+          "clue_id": "clue_da1ffe62f7c949cd845e2611413c06a9"
+        }
+      ],
+      "inverse_prose_patches": [],
+      "touched": {
+        "node:arrival": "903bfea3a481c67228fc2b092ee9707e2bf71435c02ccd8b4bd4e130eb379a55",
+        "clue_plan:clue_da1ffe62f7c949cd845e2611413c06a9": "bbbf9b27043f88195e84320d299964facd02a82bec44a99de55a5c8c4cc3fc90"
+      },
+      "undone_by": null
+    },
+    "candidate_aaf68086212e4d28886d2890c5e097d3": {
+      "change_id": "candidate_aaf68086212e4d28886d2890c5e097d3",
+      "variant_id": "main",
+      "base_revision": "rev_2e57d76a56224c4fad897c69cab2a6b0",
+      "revision": "rev_1b2e1b48938346fea16f941a163cec3c",
+      "request_key": "candidate:candidate_aaf68086212e4d28886d2890c5e097d3",
+      "created_at": "2026-10-30T23:07:39.390898+08:00",
+      "operations": [
+        {
+          "op": "bind_prose",
+          "binding": {
+            "id": "binding_aaf68086212e4d28886d2890c5e097d3",
+            "node_id": "arrival",
+            "clue_id": null,
+            "document_id": "doc_2858734f5c2f990982b254ed",
+            "path": "正文/0001 雨夜.md",
+            "digest": "0757a98f1acb8d30b588803adcc2875bc1bbdb67cd9051b0db9fda58e731d15e",
+            "start": 6,
+            "end": 206,
+            "quote": "林砚是踩着最后一班车的泥水走进旅馆的。门一推开，风把雨丝斜着灌进来，柜台上那盏罩灯的火苗缩了一缩。大堂不大，前厅只亮着这一盏灯，地板刚拖过，水光还没退尽，照得出灯罩的形状。他把行李靠在门边的矮柜上，甩了两下伞，水珠顺着墙面往下淌。柜台上有一双皮手套。深色的，掌心朝下摊着，指头蜷起来，像刚从谁手上脱下来就搁在了那儿。水正从指尖一滴一滴往下落，柜面已经洇出一小片深色，边缘还在一圈圈往外扩；那片深色的下",
+            "observation": "本轮核对通过的场景原文。",
+            "assessment_id": null
+          }
+        }
+      ],
+      "inverse_operations": [
+        {
+          "op": "unbind_prose",
+          "binding_id": "binding_aaf68086212e4d28886d2890c5e097d3"
+        }
+      ],
+      "inverse_ledger": [],
+      "inverse_prose_patches": [
+        {
+          "path": "正文/0001 雨夜.md",
+          "base_digest": "0757a98f1acb8d30b588803adcc2875bc1bbdb67cd9051b0db9fda58e731d15e",
+          "start": 0,
+          "end": 910,
+          "replacement": "# 雨夜\n\n林砚抵达旅馆。柜台上一双湿手套，手套还在滴水。管家说自己一直在房间。\n",
+          "delete": false,
+          "expected": "# 雨夜\n\n林砚是踩着最后一班车的泥水走进旅馆的。门一推开，风把雨丝斜着灌进来，柜台上那盏罩灯的火苗缩了一缩。大堂不大，前厅只亮着这一盏灯，地板刚拖过，水光还没退尽，照得出灯罩的形状。他把行李靠在门边的矮柜上，甩了两下伞，水珠顺着墙面往下淌。柜台上有一双皮手套。深色的，掌心朝下摊着，指头蜷起来，像刚从谁手上脱下来就搁在了那儿。水正从指尖一滴一滴往下落，柜面已经洇出一小片深色，边缘还在一圈圈往外扩；那片深色的下沿积起一条细水线，顺着木沿爬过去，末了落在地砖上，地砖上那一小摊也在慢慢变大。手套的袖口湿得很透，不像只淋了几滴雨。林砚往柜台边看了看，伞架上只挂着一把收得齐整的弯柄伞，伞面摸不出多少潮气。\n\n“住店？”管家从柜台后面那扇挂着布帘的门里出来。五十上下，背有点驼，袖子卷到小臂，一双手是干的，头发也是干的。\n\n“订了一间，姓林。”\n\n管家低头翻登记簿，翻了小半本才找到那一页。林砚没急着报名字，先指了指柜台上那双手套：“这个，是您刚才戴过的？”\n\n管家顺着他的手指看过去，停了一下，像是才注意到那摊水。“库房里翻出来的旧东西，一直搁在这儿。”\n\n“它还在滴水。”\n\n“下午外头下雨，我出去收了一趟柴。柴房漏雨。”管家把登记簿推过来，笔也一并推过来。\n\n林砚接过笔，没有立刻往下写。“您方才说，您一直在房间里。”\n\n“我人是在房间里。”\n\n“手套搁在这儿几个钟头，水还能滴到这个地步？”林砚用笔杆隔着一段距离点了点柜面上那摊深色，“柜面上这摊水一直没干，看着像搁下没多久——不过光凭这一点也说不准。您要真在房里，是谁把手套搁在这儿的？”\n\n管家的手指在柜台边上轻敲了两下。“许是伙计。”\n\n“门口的地垫上只现出一双鞋印。”话出口林砚就知道自己说急了——地砖上的水太杂，他其实分不清哪个印子是新的。他把话往下压了压，“雨这么大，总得有人出门，有人进门。我不想多事，只问一句：这楼里夜里还有别人走动吗？”\n\n管家没接这一句，只把登记簿又往前推了半寸：“二楼靠里那间，热水在走廊尽头。别的话，明天再说。”\n\n林砚付了钱，写下名字。落笔的时候，那副手套还在滴，一声一声砸在柜面的木头上，声音不大，倒把整个大堂都填满了。\n"
+        }
+      ],
+      "touched": {
+        "binding:binding_aaf68086212e4d28886d2890c5e097d3": "9f30495e95afa5ae297480f0b1cdbb56b33960cdeca5b54d72e0d787f553d846"
+      },
+      "undone_by": "change_fedac35c430b4eeb9934093fe86666e7"
+    },
+    "change_fedac35c430b4eeb9934093fe86666e7": {
+      "change_id": "change_fedac35c430b4eeb9934093fe86666e7",
+      "variant_id": "main",
+      "base_revision": "rev_1b2e1b48938346fea16f941a163cec3c",
+      "revision": "rev_99ae34df37784c1bb0c426e62473377c",
+      "request_key": "story-undo-1793372862089-6f9e777e",
+      "created_at": "2026-10-30T23:07:42.101551+08:00",
+      "operations": [
+        {
+          "op": "unbind_prose",
+          "binding_id": "binding_aaf68086212e4d28886d2890c5e097d3"
+        }
+      ],
+      "inverse_operations": [
+        {
+          "op": "bind_prose",
+          "binding": {
+            "id": "binding_aaf68086212e4d28886d2890c5e097d3",
+            "node_id": "arrival",
+            "clue_id": null,
+            "document_id": "doc_2858734f5c2f990982b254ed",
+            "path": "正文/0001 雨夜.md",
+            "digest": "0757a98f1acb8d30b588803adcc2875bc1bbdb67cd9051b0db9fda58e731d15e",
+            "start": 6,
+            "end": 206,
+            "quote": "林砚是踩着最后一班车的泥水走进旅馆的。门一推开，风把雨丝斜着灌进来，柜台上那盏罩灯的火苗缩了一缩。大堂不大，前厅只亮着这一盏灯，地板刚拖过，水光还没退尽，照得出灯罩的形状。他把行李靠在门边的矮柜上，甩了两下伞，水珠顺着墙面往下淌。柜台上有一双皮手套。深色的，掌心朝下摊着，指头蜷起来，像刚从谁手上脱下来就搁在了那儿。水正从指尖一滴一滴往下落，柜面已经洇出一小片深色，边缘还在一圈圈往外扩；那片深色的下",
+            "observation": "本轮核对通过的场景原文。",
+            "assessment_id": null
+          }
+        }
+      ],
+      "inverse_ledger": [],
+      "inverse_prose_patches": [
+        {
+          "path": "正文/0001 雨夜.md",
+          "base_digest": "b418871cdb21d1b10ef4ccfea561b1eb820269182a93d9d410fd4942d47bf1d1",
+          "start": 0,
+          "end": 41,
+          "replacement": "# 雨夜\n\n林砚是踩着最后一班车的泥水走进旅馆的。门一推开，风把雨丝斜着灌进来，柜台上那盏罩灯的火苗缩了一缩。大堂不大，前厅只亮着这一盏灯，地板刚拖过，水光还没退尽，照得出灯罩的形状。他把行李靠在门边的矮柜上，甩了两下伞，水珠顺着墙面往下淌。柜台上有一双皮手套。深色的，掌心朝下摊着，指头蜷起来，像刚从谁手上脱下来就搁在了那儿。水正从指尖一滴一滴往下落，柜面已经洇出一小片深色，边缘还在一圈圈往外扩；那片深色的下沿积起一条细水线，顺着木沿爬过去，末了落在地砖上，地砖上那一小摊也在慢慢变大。手套的袖口湿得很透，不像只淋了几滴雨。林砚往柜台边看了看，伞架上只挂着一把收得齐整的弯柄伞，伞面摸不出多少潮气。\n\n“住店？”管家从柜台后面那扇挂着布帘的门里出来。五十上下，背有点驼，袖子卷到小臂，一双手是干的，头发也是干的。\n\n“订了一间，姓林。”\n\n管家低头翻登记簿，翻了小半本才找到那一页。林砚没急着报名字，先指了指柜台上那双手套：“这个，是您刚才戴过的？”\n\n管家顺着他的手指看过去，停了一下，像是才注意到那摊水。“库房里翻出来的旧东西，一直搁在这儿。”\n\n“它还在滴水。”\n\n“下午外头下雨，我出去收了一趟柴。柴房漏雨。”管家把登记簿推过来，笔也一并推过来。\n\n林砚接过笔，没有立刻往下写。“您方才说，您一直在房间里。”\n\n“我人是在房间里。”\n\n“手套搁在这儿几个钟头，水还能滴到这个地步？”林砚用笔杆隔着一段距离点了点柜面上那摊深色，“柜面上这摊水一直没干，看着像搁下没多久——不过光凭这一点也说不准。您要真在房里，是谁把手套搁在这儿的？”\n\n管家的手指在柜台边上轻敲了两下。“许是伙计。”\n\n“门口的地垫上只现出一双鞋印。”话出口林砚就知道自己说急了——地砖上的水太杂，他其实分不清哪个印子是新的。他把话往下压了压，“雨这么大，总得有人出门，有人进门。我不想多事，只问一句：这楼里夜里还有别人走动吗？”\n\n管家没接这一句，只把登记簿又往前推了半寸：“二楼靠里那间，热水在走廊尽头。别的话，明天再说。”\n\n林砚付了钱，写下名字。落笔的时候，那副手套还在滴，一声一声砸在柜面的木头上，声音不大，倒把整个大堂都填满了。\n",
+          "delete": false,
+          "expected": "# 雨夜\n\n林砚抵达旅馆。柜台上一双湿手套，手套还在滴水。管家说自己一直在房间。\n"
+        }
+      ],
+      "touched": {
+        "binding:binding_aaf68086212e4d28886d2890c5e097d3": ""
+      },
+      "undone_by": null
+    }
+  },
+  "requests": {
+    "scene-seed": {
+      "fingerprint": "4691def42a3ebcd34139d842a659d340caf7219cda51b733b315abb696a37f1a",
+      "kind": "change",
+      "variant_id": "main",
+      "base_revision": "empty",
+      "revision": "rev_2e57d76a56224c4fad897c69cab2a6b0",
+      "ledger_revision": "rev_087e23bf003e4254a584c088581fa2b7",
+      "request_key": "scene-seed",
+      "change_id": "ui_6b716f2ea8c84fda88bac31e5a0c1013",
+      "id_map": {
+        "glove": "clue_da1ffe62f7c949cd845e2611413c06a9"
+      },
+      "result": {
+        "change_id": "ui_6b716f2ea8c84fda88bac31e5a0c1013",
+        "revision": "rev_2e57d76a56224c4fad897c69cab2a6b0",
+        "operations": 3,
+        "prose_paths": [],
+        "ledger_revision": "rev_087e23bf003e4254a584c088581fa2b7",
+        "id_map": {
+          "glove": "clue_da1ffe62f7c949cd845e2611413c06a9"
+        },
+        "inverse_ledger": [
+          {
+            "op": "inverse_remove",
+            "clue_id": "clue_da1ffe62f7c949cd845e2611413c06a9"
+          }
+        ]
+      }
+    },
+    "candidate:candidate_aaf68086212e4d28886d2890c5e097d3": {
+      "fingerprint": "5e56ee258d1457be0c836c600f8aead2115f00664e3791e71a4a44dbc680ca01",
+      "kind": "change",
+      "variant_id": "main",
+      "base_revision": "rev_2e57d76a56224c4fad897c69cab2a6b0",
+      "revision": "rev_1b2e1b48938346fea16f941a163cec3c",
+      "ledger_revision": "",
+      "request_key": "candidate:candidate_aaf68086212e4d28886d2890c5e097d3",
+      "change_id": "candidate_aaf68086212e4d28886d2890c5e097d3",
+      "id_map": {},
+      "result": {
+        "change_id": "candidate_aaf68086212e4d28886d2890c5e097d3",
+        "revision": "rev_1b2e1b48938346fea16f941a163cec3c",
+        "operations": 1,
+        "prose_paths": [
+          "正文/0001 雨夜.md"
+        ]
+      }
+    },
+    "story-undo-1793372862089-6f9e777e": {
+      "fingerprint": "d3bb307a0b8a27ae666df547aece8360f1bebd7dad6cdcccb247899b3b7cb0c2",
+      "kind": "undo",
+      "variant_id": "main",
+      "base_revision": "rev_1b2e1b48938346fea16f941a163cec3c",
+      "revision": "rev_99ae34df37784c1bb0c426e62473377c",
+      "ledger_revision": "rev_087e23bf003e4254a584c088581fa2b7",
+      "request_key": "story-undo-1793372862089-6f9e777e",
+      "change_id": "change_fedac35c430b4eeb9934093fe86666e7",
+      "id_map": {},
+      "result": {
+        "change_id": "change_fedac35c430b4eeb9934093fe86666e7",
+        "revision": "rev_99ae34df37784c1bb0c426e62473377c",
+        "operations": 1,
+        "prose_paths": [
+          "正文/0001 雨夜.md"
+        ],
+        "ledger_revision": "rev_087e23bf003e4254a584c088581fa2b7"
+      }
+    }
+  }
+}

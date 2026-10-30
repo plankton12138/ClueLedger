@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "workspace_lineage": "ws_d6b738b9b6fd4a0a8a4809b71cc6abb3",
+  "revision": "rev_2078deea5e9a42dc8b60d47ac3c3296e",
+  "primary_variant_id": "main",
+  "variants": {
+    "main": {
+      "id": "main",
+      "name": "主方案",
+      "base_variant_id": null,
+      "base_revision": null,
+      "revision": "rev_5022d06dea0b400f96900e24ffeec5c6",
+      "stages": {},
+      "nodes": {
+        "node-discovery": {
+          "id": "node-discovery",
+          "title": "发现",
+          "action": "侦探在前台看见一副滴水的手套",
+          "thread_ids": [],
+          "clue_uses": [
+            {
+              "clue_id": "clue_a271f017f2074f9ebe61c745808eba89",
+              "roles": [
+                "plant"
+              ],
+              "presentation": "前台放着一副正在滴水的手套",
+              "mode": "action",
+              "speaker_id": "",
+              "expected_interpretation": ""
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "侦探注意到这副手套是湿的，并把它记在心里",
+          "stage_id": null,
+          "group_id": null
+        },
+        "node-confrontation": {
+          "id": "node-confrontation",
+          "title": "对质",
+          "action": "侦探向管家询问那副湿手套的来历",
+          "thread_ids": [],
+          "clue_uses": [
+            {
+              "clue_id": "clue_a271f017f2074f9ebe61c745808eba89",
+              "roles": [
+                "develop"
+              ],
+              "presentation": "侦探拿手套的事追问管家",
+              "mode": "action",
+              "speaker_id": "",
+              "expected_interpretation": ""
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": null,
+          "stage_id": null,
+          "group_id": null
+        }
+      },
+      "clue_plans": {
+        "clue_a271f017f2074f9ebe61c745808eba89": {
+          "clue_id": "clue_a271f017f2074f9ebe61c745808eba89",
+          "author_truth": null,
+          "intention": "",
+          "resolution_intent": "undecided"
+        }
+      },
+      "threads": {},
+      "constraints": {},
+      "edges": {
+        "edge-discovery-confrontation": {
+          "id": "edge-discovery-confrontation",
+          "from_id": "node-discovery",
+          "to_id": "node-confrontation",
+          "kind": "next",
+          "reason": "前台看见的湿手套促使侦探去找管家对质"
+        }
+      },
+      "event_times": [],
+      "bindings": {},
+      "assessments": {}
+    }
+  },
+  "changes": {
+    "agent_35d83b4e045d47cab7d8d07b80887c19": {
+      "change_id": "agent_35d83b4e045d47cab7d8d07b80887c19",
+      "variant_id": "main",
+      "base_revision": "empty",
+      "revision": "rev_5022d06dea0b400f96900e24ffeec5c6",
+      "request_key": "agent:agent_35d83b4e045d47cab7d8d07b80887c19:empty",
+      "created_at": "2026-10-30T23:04:58.078965+08:00",
+      "operations": [
+        {
+          "op": "create_clue_identity",
+          "temp_id": "clue-wet-gloves",
+          "title": "湿手套"
+        },
+        {
+          "op": "upsert_clue_plan",
+          "clue_id": "clue_a271f017f2074f9ebe61c745808eba89",
+          "plan": {
+            "author_truth": null,
+            "intention": "",
+            "resolution_intent": "undecided"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-discovery",
+            "title": "发现",
+            "action": "侦探在前台看见一副滴水的手套",
+            "thread_ids": [],
+            "clue_uses": [
+              {
+                "clue_id": "clue_a271f017f2074f9ebe61c745808eba89",
+                "roles": [
+                  "plant"
+                ],
+                "presentation": "前台放着一副正在滴水的手套",
+                "mode": "action",
+                "speaker_id": "",
+                "expected_interpretation": ""
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "侦探注意到这副手套是湿的，并把它记在心里",
+            "stage_id": null,
+            "group_id": null
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-confrontation",
+            "title": "对质",
+            "action": "侦探向管家询问那副湿手套的来历",
+            "thread_ids": [],
+            "clue_uses": [
+              {
+                "clue_id": "clue_a271f017f2074f9ebe61c745808eba89",
+                "roles": [
+                  "develop"
+                ],
+                "presentation": "侦探拿手套的事追问管家",
+                "mode": "action",
+                "speaker_id": "",
+                "expected_interpretation": ""
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": null,
+            "stage_id": null,
+            "group_id": null
+          }
+        },
+        {
+          "op": "connect",
+          "edge": {
+            "id": "edge-discovery-confrontation",
+            "from_id": "node-discovery",
+            "to_id": "node-confrontation",
+            "kind": "next",
+            "reason": "前台看见的湿手套促使侦探去找管家对质"
+          }
+        }
+      ],
+      "inverse_operations": [
+        {
+          "op": "disconnect",
+          "edge_id": "edge-discovery-confrontation"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-discovery"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-confrontation"
+        },
+        {
+          "op": "remove_clue_plan",
+          "clue_id": "clue_a271f017f2074f9ebe61c745808eba89"
+        }
+      ],
+      "inverse_ledger": [
+        {
+          "op": "inverse_remove",
+          "clue_id": "clue_a271f017f2074f9ebe61c745808eba89"
+        }
+      ],
+      "inverse_prose_patches": [],
+      "touched": {
+        "node:node-discovery": "f443ba95b727a1a091b0515108f4619fd8f22db78dfd67f84df6aa4e607e692b",
+        "node:node-confrontation": "887647f0eb6f32f962764c9e794e5c8ae65e4730600d02c484adc478714ece14",
+        "clue_plan:clue_a271f017f2074f9ebe61c745808eba89": "2b41b63e191e43a6da878e4cb29551c5e4c4fc97f621723a48df8d79f5cd3bfb",
+        "edge:edge-discovery-confrontation": "85380cba1cfaa80763a2ad74d62f1ff33c0bb8e4bede4b68cd41fabb957f68b7"
+      },
+      "undone_by": null
+    }
+  },
+  "requests": {
+    "agent:agent_35d83b4e045d47cab7d8d07b80887c19:empty": {
+      "fingerprint": "5e61944fa06713276ba7164d32a083eb440d6ca7521df15e41ab4f8e7e31d6ca",
+      "kind": "change",
+      "variant_id": "main",
+      "base_revision": "empty",
+      "revision": "rev_5022d06dea0b400f96900e24ffeec5c6",
+      "ledger_revision": "rev_2ff060919866496892ce6abf4016a382",
+      "request_key": "agent:agent_35d83b4e045d47cab7d8d07b80887c19:empty",
+      "change_id": "agent_35d83b4e045d47cab7d8d07b80887c19",
+      "id_map": {
+        "clue-wet-gloves": "clue_a271f017f2074f9ebe61c745808eba89"
+      },
+      "result": {
+        "change_id": "agent_35d83b4e045d47cab7d8d07b80887c19",
+        "revision": "rev_5022d06dea0b400f96900e24ffeec5c6",
+        "operations": 5,
+        "prose_paths": [],
+        "ledger_revision": "rev_2ff060919866496892ce6abf4016a382",
+        "id_map": {
+          "clue-wet-gloves": "clue_a271f017f2074f9ebe61c745808eba89"
+        },
+        "inverse_ledger": [
+          {
+            "op": "inverse_remove",
+            "clue_id": "clue_a271f017f2074f9ebe61c745808eba89"
+          }
+        ]
+      }
+    }
+  }
+}

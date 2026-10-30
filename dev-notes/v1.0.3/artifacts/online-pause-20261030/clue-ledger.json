@@ -1,0 +1,59 @@
+{
+  "schema_version": 3,
+  "recipe_version": 1,
+  "workspace_lineage": "ws_fa7916096fbd418d84d9f13226c67123",
+  "ledger_revision": "rev_a73555ddaf9b40b99f0660c5a0baa7ed",
+  "clues": {
+    "clue_bfd5b900f3d644699fbb78f0cce49283": {
+      "clue_id": "clue_bfd5b900f3d644699fbb78f0cce49283",
+      "title": "停在四点二十的挂钟",
+      "clue_revision": "rev_0dd39dd42380456a80c156e81dc3b67d",
+      "created_at": "2026-10-30T23:28:12.573642+08:00",
+      "created_by": "story_change",
+      "first_chapter": null
+    },
+    "clue_030853fab07c46edb420110bee5337e5": {
+      "clue_id": "clue_030853fab07c46edb420110bee5337e5",
+      "title": "各说各的时间来源",
+      "clue_revision": "rev_cc889bae671445ea8c1f8b916d8e22f5",
+      "created_at": "2026-10-30T23:28:12.573642+08:00",
+      "created_by": "story_change",
+      "first_chapter": null
+    },
+    "clue_e4a46ed4ba004400b103a8ec39318783": {
+      "clue_id": "clue_e4a46ed4ba004400b103a8ec39318783",
+      "title": "雪地上浅深不一的脚印",
+      "clue_revision": "rev_19efc44af3f24cc3ae97ebd5acef1b08",
+      "created_at": "2026-10-30T23:28:12.573642+08:00",
+      "created_by": "story_change",
+      "first_chapter": null
+    },
+    "clue_9e714ee13de741d9ac826362f8ccbe2b": {
+      "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+      "title": "登记簿上被划掉的名字",
+      "clue_revision": "rev_a88bdc59f2bc444c913142d63d4e96a2",
+      "created_at": "2026-10-30T23:28:12.573642+08:00",
+      "created_by": "story_change",
+      "first_chapter": null
+    },
+    "clue_fff747bac9974cb7a2ad0599a8959010": {
+      "clue_id": "clue_fff747bac9974cb7a2ad0599a8959010",
+      "title": "楼梯间门响的回声",
+      "clue_revision": "rev_1e76b0d1bc174a41b6a1a92fadff2814",
+      "created_at": "2026-10-30T23:28:12.573642+08:00",
+      "created_by": "story_change",
+      "first_chapter": null
+    },
+    "clue_6817c849308e4586a10ab9ba25542a4a": {
+      "clue_id": "clue_6817c849308e4586a10ab9ba25542a4a",
+      "title": "被拨到常亮的定时灯",
+      "clue_revision": "rev_bc1affb2379842628e89c4aa91d9073a",
+      "created_at": "2026-10-30T23:28:12.573642+08:00",
+      "created_by": "story_change",
+      "first_chapter": null
+    }
+  },
+  "contributions": {},
+  "coverage": {},
+  "requests": {}
+}

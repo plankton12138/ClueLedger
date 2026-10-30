@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures/frontendExperience";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 /**
@@ -454,6 +454,12 @@ test("全书线索与阶段联动：节点到线索到另一节点再到正文�
   expect(seeded.ok(), await seeded.text()).toBeTruthy();
 
   await page.goto(`/#/workspaces/${book.id}/writing`);
+  const writes: string[] = [];
+  page.on("request", request => {
+    if (request.method() !== "GET" && /\/(story\/changes|conversations)/.test(request.url())) {
+      writes.push(request.url());
+    }
+  });
   await page.getByRole("button", { name: "构思", exact: true }).click();
   const surface = page.getByRole("region", { name: "构思结构" });
   await surface.getByRole("button", { name: "发现异样", exact: true }).click();
@@ -470,4 +476,80 @@ test("全书线索与阶段联动：节点到线索到另一节点再到正文�
   await surface.locator(".story-binding").click();
   await page.getByRole("button", { name: "返回构思", exact: true }).click();
   await expect(surface).toBeVisible();
+  expect(writes).toEqual([]);
+});
+
+
+test("三线总览在 1440 与 1024 宽度可读", async ({ page, book }) => {
+  const seeded = await page.request.post(`/api/file-workspaces/${book.id}/story/changes`, {
+    data: {
+      variant_id: "main",
+      expected_revision: "empty",
+      request_key: `author-${book.id}`,
+      operations: [
+        { op: "add_stage", stage: { id: "s1", title: "开端", order: 0, summary: "三条线分别建立" } },
+        { op: "add_stage", stage: { id: "s2", title: "调查", order: 1, summary: "两线汇合" } },
+        { op: "add_stage", stage: { id: "s3", title: "收束", order: 2, summary: "共同指向结局" } },
+        { op: "add_thread", thread: { id: "t1", title: "物证", order: 0, goal: "找到与证词不符的物证" } },
+        { op: "add_thread", thread: { id: "t2", title: "证词", order: 1, goal: "核对每个人的时间" } },
+        { op: "add_thread", thread: { id: "t3", title: "调查", order: 2, goal: "把线索放到同一时间线" } },
+        { op: "add_node", node: { id: "n1", title: "发现异样", action: "木板没有响", change: "开始怀疑有人熟悉走廊", stage_id: "s1", thread_ids: ["t1"] } },
+        { op: "add_node", node: { id: "n2", title: "核对证词", action: "两名证人的时间对不上", change: "时间差成为问题", stage_id: "s1", thread_ids: ["t2"] } },
+        { op: "add_node", node: { id: "n3", title: "重问目击者", action: "目击者承认只听到声音", change: "目击证词被削弱", stage_id: "s1", thread_ids: ["t3"] } },
+        { op: "add_node", node: { id: "n4", title: "汇合时间线", action: "三线结果放在一起核对", change: "指向同一段无人经过的时间", stage_id: "s2", thread_ids: ["t1", "t2", "t3"] } },
+        { op: "add_node", node: { id: "n5", title: "确认路线", action: "调查者还原当晚路线", change: "熟悉走廊的人被锁定", stage_id: "s3", thread_ids: ["t3"] } },
+        { op: "connect", edge: { id: "e1", from_id: "n1", to_id: "n4", kind: "next", reason: "物证进入汇合核对" } },
+        { op: "connect", edge: { id: "e2", from_id: "n2", to_id: "n4", kind: "next", reason: "证词进入汇合核对" } },
+        { op: "connect", edge: { id: "e3", from_id: "n3", to_id: "n5", kind: "next", reason: "目击说法收束" } },
+        { op: "connect", edge: { id: "e4", from_id: "n4", to_id: "n5", kind: "next", reason: "汇合结果指向路线" } },
+      ],
+    },
+  });
+  expect(seeded.ok(), await seeded.text()).toBeTruthy();
+
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  const surface = page.getByRole("region", { name: "构思结构" });
+  await expect(surface.getByRole("button", { name: "汇合时间线" })).toHaveCount(1);
+  await expect(surface.getByRole("group", { name: "阶段" }).getByRole("button")).toHaveCount(4);
+  await page.screenshot({ path: resolve("../data/test-tmp/story-structure/v103-author-1440.png") });
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(surface.getByRole("button", { name: "汇合时间线" })).toBeVisible();
+  await page.screenshot({ path: resolve("../data/test-tmp/story-structure/v103-author-1024.png") });
+});
+
+
+test("快速切换作品不会把上一本的节点带到当前构思", async ({ page, book }) => {
+  const parent = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "switch-books");
+  mkdirSync(parent, { recursive: true });
+  const second = await page.request.post("/api/file-workspaces", {
+    data: { path: join(mkdtempSync(join(parent, "second-")), "第二本"), create: true },
+  });
+  expect(second.ok(), await second.text()).toBeTruthy();
+  const other = await second.json();
+  const seed = async (workspaceId: string, title: string) => {
+    const response = await page.request.post(`/api/file-workspaces/${workspaceId}/story/changes`, {
+      data: { variant_id: "main", expected_revision: "empty", request_key: `switch-${workspaceId}`,
+        operations: [{ op: "add_node", node: { id: "only", title, action: "只属于这一本" } }] },
+    });
+    expect(response.ok(), await response.text()).toBeTruthy();
+  };
+  await seed(book.id, "第一本节点");
+  await seed(other.id, "第二本节点");
+
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  const surface = page.getByRole("region", { name: "构思结构" });
+  await expect(surface.getByRole("button", { name: "第一本节点" })).toBeVisible();
+
+  await page.goto(`/#/workspaces/${other.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await expect(surface.getByRole("button", { name: "第二本节点" })).toBeVisible();
+  await expect(surface.getByRole("button", { name: "第一本节点" })).toHaveCount(0);
+
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await expect(surface.getByRole("button", { name: "第一本节点" })).toBeVisible();
+  await expect(surface.getByRole("button", { name: "第二本节点" })).toHaveCount(0);
 });

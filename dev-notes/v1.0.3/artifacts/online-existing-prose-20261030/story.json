@@ -1,0 +1,445 @@
+{
+  "schema_version": 1,
+  "workspace_lineage": "ws_212cbed18b4841bb8ebcdde011b1bf1b",
+  "revision": "rev_cd267a7f276a4210a3caec95b3ce835c",
+  "primary_variant_id": "main",
+  "variants": {
+    "main": {
+      "id": "main",
+      "name": "主方案",
+      "base_variant_id": null,
+      "base_revision": null,
+      "revision": "rev_e134d705fdbe4dd0b66bf2c64c1503b1",
+      "stages": {
+        "stage-rainy-night": {
+          "id": "stage-rainy-night",
+          "title": "旅馆雨夜",
+          "order": 0,
+          "summary": "雨夜旅馆内已经写到的两件事：林砚抵达，前台有一双滴水的手套；管家自述整夜没有离开房间。此阶段只收正文已发生的内容，真相与后续调查未定。"
+        }
+      },
+      "nodes": {
+        "node-arrival": {
+          "id": "node-arrival",
+          "title": "抵达",
+          "action": "林砚在雨夜抵达旅馆；旅馆前台放着一双湿手套，边缘还在滴水。",
+          "thread_ids": [
+            "thread-whereabouts"
+          ],
+          "clue_uses": [
+            {
+              "clue_id": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25",
+              "roles": [
+                "plant"
+              ],
+              "presentation": "林砚在前台看到一双湿手套，边缘还在滴水。",
+              "mode": "narration",
+              "speaker_id": "",
+              "expected_interpretation": "读者会怀疑刚有人从雨里回来，但说不出是谁、是什么时候"
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "林砚开始怀疑管家隐瞒了离开房间的时间。",
+          "stage_id": "stage-rainy-night"
+        },
+        "node-confrontation": {
+          "id": "node-confrontation",
+          "title": "对质",
+          "action": "管家在旅馆自述自己整夜没有离开房间。",
+          "thread_ids": [
+            "thread-whereabouts"
+          ],
+          "clue_uses": [],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "林砚手上多了一份关于当夜位置的自述，尚未核实；这份说法与前台那双湿手套之间是什么关系，目前未定。",
+          "stage_id": "stage-rainy-night"
+        }
+      },
+      "clue_plans": {
+        "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25": {
+          "clue_id": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25",
+          "author_truth": null,
+          "intention": "让读者和林砚留意前台那双仍在滴水的手套，把注意力引向谁在雨夜外出过；同时保留它可以有无关解释的空间（例如他人带来、别处放置），单凭滴水不构成时间或行为证明",
+          "resolution_intent": "undecided"
+        }
+      },
+      "threads": {
+        "thread-whereabouts": {
+          "id": "thread-whereabouts",
+          "title": "当夜行踪",
+          "order": 0,
+          "goal": "核实管家当夜是否真的一直留在房间",
+          "obstacle": "目前只有管家自己的说法；手套滴水只能说明它湿着，不能确定弄湿的时刻，也不能说明谁外出过",
+          "intended_resolution": null
+        }
+      },
+      "constraints": {},
+      "edges": {
+        "edge-arrival-confrontation": {
+          "id": "edge-arrival-confrontation",
+          "from_id": "node-arrival",
+          "to_id": "node-confrontation",
+          "kind": "next",
+          "reason": "林砚抵达并看到手套之后，才在旅馆内听到管家关于整夜未离房间的说法"
+        }
+      },
+      "event_times": [
+        {
+          "before_node_id": "node-arrival",
+          "after_node_id": "node-confrontation"
+        }
+      ],
+      "bindings": {},
+      "assessments": {}
+    }
+  },
+  "changes": {
+    "agent_1bac5d6eadc24e24bd58d46ae3b66a24": {
+      "change_id": "agent_1bac5d6eadc24e24bd58d46ae3b66a24",
+      "variant_id": "main",
+      "base_revision": "empty",
+      "revision": "rev_7d1994765e58471ebd0d07e0e386addd",
+      "request_key": "agent:agent_1bac5d6eadc24e24bd58d46ae3b66a24:empty",
+      "created_at": "2026-10-30T23:25:15.491986+08:00",
+      "operations": [
+        {
+          "op": "add_stage",
+          "stage": {
+            "id": "stage-rainy-night",
+            "title": "旅馆雨夜",
+            "order": 0,
+            "summary": "雨夜旅馆内已经写到的两件事：林砚抵达，前台有一双滴水的手套；管家自述整夜没有离开房间。此阶段只收正文已发生的内容，真相与后续调查未定。"
+          }
+        },
+        {
+          "op": "add_thread",
+          "thread": {
+            "id": "thread-whereabouts",
+            "title": "当夜行踪",
+            "order": 0,
+            "goal": "核实管家当夜是否真的一直留在房间",
+            "obstacle": "目前只有管家自己的说法；手套滴水只能说明它湿着，不能确定弄湿的时刻，也不能说明谁外出过",
+            "intended_resolution": null
+          }
+        },
+        {
+          "op": "create_clue_identity",
+          "temp_id": "clue-wet-gloves",
+          "title": "湿手套"
+        },
+        {
+          "op": "upsert_clue_plan",
+          "clue_id": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25",
+          "plan": {
+            "author_truth": null,
+            "intention": "让读者和林砚留意前台那双仍在滴水的手套，把注意力引向谁在雨夜外出过；同时保留它可以有无关解释的空间（例如他人带来、别处放置），单凭滴水不构成时间或行为证明",
+            "resolution_intent": "undecided"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-arrival",
+            "title": "抵达",
+            "action": "林砚在雨夜抵达旅馆；旅馆前台放着一双湿手套，边缘还在滴水。",
+            "thread_ids": [
+              "thread-whereabouts"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25",
+                "roles": [
+                  "plant"
+                ],
+                "presentation": "前台放着一双湿手套，边缘还在滴水",
+                "mode": "narration",
+                "speaker_id": "",
+                "expected_interpretation": "读者会怀疑刚有人从雨里回来，但说不出是谁、是什么时候"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "林砚面前出现一件与雨夜沾边的物证，它的来历和弄湿的时刻都还没有说明。",
+            "stage_id": "stage-rainy-night"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-confrontation",
+            "title": "对质",
+            "action": "管家在旅馆自述自己整夜没有离开房间。",
+            "thread_ids": [
+              "thread-whereabouts"
+            ],
+            "clue_uses": [],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "林砚手上多了一份关于当夜位置的自述，尚未核实；这份说法与前台那双湿手套之间是什么关系，目前未定。",
+            "stage_id": "stage-rainy-night"
+          }
+        },
+        {
+          "op": "connect",
+          "edge": {
+            "id": "edge-arrival-confrontation",
+            "from_id": "node-arrival",
+            "to_id": "node-confrontation",
+            "kind": "next",
+            "reason": "林砚抵达并看到手套之后，才在旅馆内听到管家关于整夜未离房间的说法"
+          }
+        },
+        {
+          "op": "set_event_time",
+          "relation": {
+            "before_node_id": "node-arrival",
+            "after_node_id": "node-confrontation"
+          }
+        }
+      ],
+      "inverse_operations": [
+        {
+          "op": "disconnect",
+          "edge_id": "edge-arrival-confrontation"
+        },
+        {
+          "op": "unset_event_time",
+          "before_node_id": "node-arrival",
+          "after_node_id": "node-confrontation"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-arrival"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-confrontation"
+        },
+        {
+          "op": "remove_clue_plan",
+          "clue_id": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25"
+        },
+        {
+          "op": "remove_thread",
+          "thread_id": "thread-whereabouts"
+        },
+        {
+          "op": "remove_stage",
+          "stage_id": "stage-rainy-night"
+        }
+      ],
+      "inverse_ledger": [
+        {
+          "op": "inverse_remove",
+          "clue_id": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25"
+        }
+      ],
+      "inverse_prose_patches": [],
+      "touched": {
+        "stage:stage-rainy-night": "f3963bfc1bc6605d9dfe988398faddb0a9a9c2639e854f5336c37b7cfebe95bd",
+        "node:node-arrival": "30135060451319e332c0401f718d90be9bcab365578e6eabbdff077f79fe1396",
+        "node:node-confrontation": "5f887d7872c9016a139279edfb4f6dcc052e694486f8f62fd8b3915a4bf8eb5f",
+        "clue_plan:clue_c088d1c4473a4f2ba2f92e5fcc0ecc25": "e21e505d623bfbe0c60d3012ef446247c72ddba51af422b5c4f645a0646e7a15",
+        "thread:thread-whereabouts": "4e4449804051d351d1e167aba1340f4cf773bdc309ba3de7b3926325f0c860e2",
+        "edge:edge-arrival-confrontation": "b4d39493c848eef3aeb0664d824e2eb851ca4c23cbd6263b8a812b6d79a8c095",
+        "time:node-arrival>node-confrontation": "9d714feb675a73102468c9e23f4d58e5c01999c489b3c767d70f0a02dc88de40"
+      },
+      "undone_by": null
+    },
+    "agent_d16bd64ec787428bb399cb0ede3bffc7": {
+      "change_id": "agent_d16bd64ec787428bb399cb0ede3bffc7",
+      "variant_id": "main",
+      "base_revision": "rev_7d1994765e58471ebd0d07e0e386addd",
+      "revision": "rev_cedd16846ed34d2db54a80f94ed45507",
+      "request_key": "agent:agent_d16bd64ec787428bb399cb0ede3bffc7:rev_7d1994765e58471ebd0d07e0e386addd",
+      "created_at": "2026-10-30T23:25:30.184375+08:00",
+      "operations": [
+        {
+          "op": "update_node",
+          "node_id": "node-arrival",
+          "node": {
+            "id": "node-arrival",
+            "title": "抵达",
+            "action": "林砚在雨夜抵达旅馆；旅馆前台放着一双湿手套，边缘还在滴水。",
+            "thread_ids": [
+              "thread-whereabouts"
+            ],
+            "clue_uses": [],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "林砚开始怀疑管家隐瞒了离开房间的时间。",
+            "stage_id": "stage-rainy-night"
+          }
+        }
+      ],
+      "inverse_operations": [
+        {
+          "op": "update_node",
+          "node_id": "node-arrival",
+          "node": {
+            "id": "node-arrival",
+            "title": "抵达",
+            "action": "林砚在雨夜抵达旅馆；旅馆前台放着一双湿手套，边缘还在滴水。",
+            "thread_ids": [
+              "thread-whereabouts"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25",
+                "roles": [
+                  "plant"
+                ],
+                "presentation": "前台放着一双湿手套，边缘还在滴水",
+                "mode": "narration",
+                "speaker_id": "",
+                "expected_interpretation": "读者会怀疑刚有人从雨里回来，但说不出是谁、是什么时候"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "林砚面前出现一件与雨夜沾边的物证，它的来历和弄湿的时刻都还没有说明。",
+            "stage_id": "stage-rainy-night"
+          }
+        }
+      ],
+      "inverse_ledger": [],
+      "inverse_prose_patches": [],
+      "touched": {
+        "node:node-arrival": "251c8bcb431a254c45b81f5b306b68ae9f0a9d829e245c36829bef1f9de2a5ae"
+      },
+      "undone_by": null
+    },
+    "agent_819f595cf8aa4d55b6060106f1ee0a93": {
+      "change_id": "agent_819f595cf8aa4d55b6060106f1ee0a93",
+      "variant_id": "main",
+      "base_revision": "rev_cedd16846ed34d2db54a80f94ed45507",
+      "revision": "rev_e134d705fdbe4dd0b66bf2c64c1503b1",
+      "request_key": "agent:agent_819f595cf8aa4d55b6060106f1ee0a93:rev_cedd16846ed34d2db54a80f94ed45507",
+      "created_at": "2026-10-30T23:25:34.362281+08:00",
+      "operations": [
+        {
+          "op": "update_node",
+          "node_id": "node-arrival",
+          "node": {
+            "id": "node-arrival",
+            "title": "抵达",
+            "action": "林砚在雨夜抵达旅馆；旅馆前台放着一双湿手套，边缘还在滴水。",
+            "thread_ids": [
+              "thread-whereabouts"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25",
+                "roles": [
+                  "plant"
+                ],
+                "presentation": "林砚在前台看到一双湿手套，边缘还在滴水。",
+                "mode": "narration",
+                "speaker_id": "",
+                "expected_interpretation": "读者会怀疑刚有人从雨里回来，但说不出是谁、是什么时候"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "林砚开始怀疑管家隐瞒了离开房间的时间。",
+            "stage_id": "stage-rainy-night"
+          }
+        }
+      ],
+      "inverse_operations": [
+        {
+          "op": "update_node",
+          "node_id": "node-arrival",
+          "node": {
+            "id": "node-arrival",
+            "title": "抵达",
+            "action": "林砚在雨夜抵达旅馆；旅馆前台放着一双湿手套，边缘还在滴水。",
+            "thread_ids": [
+              "thread-whereabouts"
+            ],
+            "clue_uses": [],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "林砚开始怀疑管家隐瞒了离开房间的时间。",
+            "stage_id": "stage-rainy-night"
+          }
+        }
+      ],
+      "inverse_ledger": [],
+      "inverse_prose_patches": [],
+      "touched": {
+        "node:node-arrival": "4a2655533353b77e369284bab15fcb656dc60a35353882c935eef456bffc81c8"
+      },
+      "undone_by": null
+    }
+  },
+  "requests": {
+    "agent:agent_1bac5d6eadc24e24bd58d46ae3b66a24:empty": {
+      "fingerprint": "f14d96a9206d6df86057fd23f651f10eb915a69dc97b33b6dc227830cdfaf0cb",
+      "kind": "change",
+      "variant_id": "main",
+      "base_revision": "empty",
+      "revision": "rev_7d1994765e58471ebd0d07e0e386addd",
+      "ledger_revision": "rev_a71ad3507f8e47ffa68e1d3306f89a6b",
+      "request_key": "agent:agent_1bac5d6eadc24e24bd58d46ae3b66a24:empty",
+      "change_id": "agent_1bac5d6eadc24e24bd58d46ae3b66a24",
+      "id_map": {
+        "clue-wet-gloves": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25"
+      },
+      "result": {
+        "change_id": "agent_1bac5d6eadc24e24bd58d46ae3b66a24",
+        "revision": "rev_7d1994765e58471ebd0d07e0e386addd",
+        "operations": 8,
+        "prose_paths": [],
+        "ledger_revision": "rev_a71ad3507f8e47ffa68e1d3306f89a6b",
+        "id_map": {
+          "clue-wet-gloves": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25"
+        },
+        "inverse_ledger": [
+          {
+            "op": "inverse_remove",
+            "clue_id": "clue_c088d1c4473a4f2ba2f92e5fcc0ecc25"
+          }
+        ]
+      }
+    },
+    "agent:agent_d16bd64ec787428bb399cb0ede3bffc7:rev_7d1994765e58471ebd0d07e0e386addd": {
+      "fingerprint": "88011350f7d866c70ecd2444d0025544db4e28f7af3d8803a3281bf0b940af3a",
+      "kind": "change",
+      "variant_id": "main",
+      "base_revision": "rev_7d1994765e58471ebd0d07e0e386addd",
+      "revision": "rev_cedd16846ed34d2db54a80f94ed45507",
+      "ledger_revision": "rev_a71ad3507f8e47ffa68e1d3306f89a6b",
+      "request_key": "agent:agent_d16bd64ec787428bb399cb0ede3bffc7:rev_7d1994765e58471ebd0d07e0e386addd",
+      "change_id": "agent_d16bd64ec787428bb399cb0ede3bffc7",
+      "id_map": {},
+      "result": {
+        "change_id": "agent_d16bd64ec787428bb399cb0ede3bffc7",
+        "revision": "rev_cedd16846ed34d2db54a80f94ed45507",
+        "operations": 1,
+        "prose_paths": [],
+        "ledger_revision": "rev_a71ad3507f8e47ffa68e1d3306f89a6b"
+      }
+    },
+    "agent:agent_819f595cf8aa4d55b6060106f1ee0a93:rev_cedd16846ed34d2db54a80f94ed45507": {
+      "fingerprint": "d71b64cd2d1c4b8e151c6006b81a7c3b76da9efe780c747024f7dc70529d272d",
+      "kind": "change",
+      "variant_id": "main",
+      "base_revision": "rev_cedd16846ed34d2db54a80f94ed45507",
+      "revision": "rev_e134d705fdbe4dd0b66bf2c64c1503b1",
+      "ledger_revision": "rev_a71ad3507f8e47ffa68e1d3306f89a6b",
+      "request_key": "agent:agent_819f595cf8aa4d55b6060106f1ee0a93:rev_cedd16846ed34d2db54a80f94ed45507",
+      "change_id": "agent_819f595cf8aa4d55b6060106f1ee0a93",
+      "id_map": {},
+      "result": {
+        "change_id": "agent_819f595cf8aa4d55b6060106f1ee0a93",
+        "revision": "rev_e134d705fdbe4dd0b66bf2c64c1503b1",
+        "operations": 1,
+        "prose_paths": [],
+        "ledger_revision": "rev_a71ad3507f8e47ffa68e1d3306f89a6b"
+      }
+    }
+  }
+}

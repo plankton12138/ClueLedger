@@ -475,3 +475,33 @@ def test_rename_backup_restore_and_unbind_keep_current_lineage(tmp_path):
     assert restored.read().ledger == before
     registry.unbind(renamed.id)
     assert moved.read().ledger == before
+
+
+def test_ledger_write_takes_story_lock_before_ledger_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextlib import contextmanager
+
+    import hastings.workspace.clue_store as clue_store_module
+
+    entered: list[str] = []
+
+    @contextmanager
+    def recording_lock(path: Path):
+        entered.append(Path(path).name)
+        yield
+
+    monkeypatch.setattr(clue_store_module, "locked", recording_lock)
+    store = ClueLedgerStore(tmp_path / "state")
+
+    def apply(ledger: Any) -> dict[str, str]:
+        return {"ok": "1"}
+
+    store.mutate(
+        expected_revision="empty",
+        request_key="lock-order",
+        kind="test",
+        payload={},
+        apply=apply,
+    )
+    assert entered == [".story.lock", ".clue-ledger.lock"]

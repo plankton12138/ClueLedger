@@ -1,0 +1,1088 @@
+{
+  "schema_version": 1,
+  "workspace_lineage": "ws_d41a249e6a6a48b383e4146787a43e01",
+  "revision": "rev_ee8bd9608b244bb4a078e2b32996bcb8",
+  "primary_variant_id": "main",
+  "variants": {
+    "main": {
+      "id": "main",
+      "name": "主方案",
+      "base_variant_id": null,
+      "base_revision": null,
+      "revision": "rev_bc2bf36c3c804d9cb6f488771bb1c900",
+      "stages": {
+        "stage-first-day": {
+          "id": "stage-first-day",
+          "title": "失踪次日：时间开始散开",
+          "order": 0,
+          "summary": "沈砚接手周慕青失踪的报案，分别从修表铺、邻居和院子雪地拿到第一批材料。每一处都说得出一个说法，但没有一处能单独确定时刻。"
+        },
+        "stage-second-night": {
+          "id": "stage-second-night",
+          "title": "第二天夜里到第三天：三线对到同一张纸上",
+          "order": 1,
+          "summary": "被划掉的名字、楼道里的声音重演、铺子定时灯的核对各自收窄了范围；三条线最后被放到同一段时间里比对。"
+        }
+      },
+      "nodes": {
+        "node-clocks": {
+          "id": "node-clocks",
+          "title": "停在四点二十的挂钟",
+          "action": "沈砚清点修表铺：柜台上七只待修的钟各停在不同的时刻，墙上那口挂钟的指针却指在四点二十，背面调时的小孔有新磨痕。",
+          "thread_ids": [
+            "thread-time"
+          ],
+          "clue_uses": [
+            {
+              "clue_id": "clue_bfd5b900f3d644699fbb78f0cce49283",
+              "roles": [
+                "plant"
+              ],
+              "presentation": "挂钟停在四点二十，背面调时的小孔有新的磨痕，其他七只钟停在各自的时间里",
+              "mode": "narration",
+              "speaker_id": "",
+              "expected_interpretation": "有人动过其中一只钟，铺里的时间不可信"
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "铺子里的时间不能当作参照，调查者必须先找到一个不依赖这些钟的时刻。",
+          "stage_id": "stage-first-day"
+        },
+        "node-two-clocks": {
+          "id": "node-two-clocks",
+          "title": "两个邻居的十分钟",
+          "action": "吴阿姨说她六点听见楼上有脚步，陈立说他六点二十还看见铺子亮着灯；一个用电视里的报时、一个用手机，说法差出远远不止十分钟。",
+          "thread_ids": [
+            "thread-time"
+          ],
+          "clue_uses": [
+            {
+              "clue_id": "clue_030853fab07c46edb420110bee5337e5",
+              "roles": [
+                "plant"
+              ],
+              "presentation": "两人的时间分别来自电视报时与手机，各自都说得很肯定",
+              "mode": "testimony",
+              "speaker_id": "",
+              "expected_interpretation": "证词的时间依据本身就不一致"
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "失踪时间从“一个时刻”变成一段说不清长度的区间，两个人的话开始互相排斥。",
+          "stage_id": "stage-first-day"
+        },
+        "node-prints": {
+          "id": "node-prints",
+          "title": "雪地上的两行脚印",
+          "action": "院子里一行进、一行出的脚印被后来的雪盖掉一半：屋檐下的还算清楚，空地上的已经塌软，深浅完全对不上。",
+          "thread_ids": [
+            "thread-traces"
+          ],
+          "clue_uses": [
+            {
+              "clue_id": "clue_e4a46ed4ba004400b103a8ec39318783",
+              "roles": [
+                "plant"
+              ],
+              "presentation": "屋檐下脚印清楚、空地上塌软，深浅不一",
+              "mode": "narration",
+              "speaker_id": "",
+              "expected_interpretation": "先以为能据此推算负重，随后被告知两处雪面条件不同"
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "调查者看出这两段雪面不是同样条件，脚印深浅不能用来判断谁背过东西，只能确认有人在天黑后进出过院子。",
+          "stage_id": "stage-first-day"
+        },
+        "node-ledger": {
+          "id": "node-ledger",
+          "title": "登记簿的最后一笔",
+          "action": "沈砚翻修表登记簿，最后一笔是当天下午有人送修一只老怀表，客户名被人划掉，只剩一个偏旁还认得出。",
+          "thread_ids": [
+            "thread-knowledge"
+          ],
+          "clue_uses": [
+            {
+              "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+              "roles": [
+                "plant"
+              ],
+              "presentation": "最后一笔的送修时间明确，客户名被划掉只剩一个偏旁",
+              "mode": "narration",
+              "speaker_id": "",
+              "expected_interpretation": "有人不想让这一笔被查到"
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "出现一个当天与周慕青有过直接接触的具体的人，但名字需要先复原。",
+          "stage_id": "stage-first-day"
+        },
+        "node-struck-name": {
+          "id": "node-struck-name",
+          "title": "替人捎表的人",
+          "action": "循着复原的名字找到本人，对方承认当天没来过铺子，只是替别人捎过一只怀表，还顺口说出那人知道铺子晚上不收门。",
+          "thread_ids": [
+            "thread-knowledge"
+          ],
+          "clue_uses": [
+            {
+              "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+              "roles": [
+                "develop"
+              ],
+              "presentation": "被划掉的客户说自己只是跑腿，捎表的另有其人",
+              "mode": "testimony",
+              "speaker_id": "",
+              "expected_interpretation": "划名的人不是唯一知情者，知情范围更大"
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "知情范围从楼里的邻居扩到楼外一个知道铺子习惯的人；登记簿上的送修时间成为可以核对的锚点。",
+          "stage_id": "stage-second-night"
+        },
+        "node-stairwell": {
+          "id": "node-stairwell",
+          "title": "楼道里的重演",
+          "action": "沈砚在各层反复开关楼梯间的门、上下走一遍，请吴阿姨在自家屋里隔门辨认哪一种声音是她那晚听到的。",
+          "thread_ids": [
+            "thread-time"
+          ],
+          "clue_uses": [
+            {
+              "clue_id": "clue_fff747bac9974cb7a2ad0599a8959010",
+              "roles": [
+                "develop",
+                "reinterpret"
+              ],
+              "presentation": "同一种门响在不同楼层听起来像脚步",
+              "mode": "action",
+              "speaker_id": "",
+              "expected_interpretation": "原来的证词被换成一条可以被计时的声音"
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "吴阿姨承认听见的是楼梯间门响，不是楼上的脚步；“六点”这个说法因此挪到一次具体门响之后，时刻线收窄一段。",
+          "stage_id": "stage-second-night"
+        },
+        "node-lamp": {
+          "id": "node-lamp",
+          "title": "铺子里的定时灯",
+          "action": "沈砚核对铺子的开关：往常由一只旧定时器控制，每晚十点十分自己灭；失踪当晚定时器被人拨到了“常亮”。",
+          "thread_ids": [
+            "thread-traces"
+          ],
+          "clue_uses": [
+            {
+              "clue_id": "clue_6817c849308e4586a10ab9ba25542a4a",
+              "roles": [
+                "develop",
+                "reinterpret"
+              ],
+              "presentation": "定时器的拨钮停在“常亮”，而往常十点十分就会自己灭",
+              "mode": "narration",
+              "speaker_id": "",
+              "expected_interpretation": "灯的开与关成了另一个人的动作痕迹"
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "“灯亮着”不再等于“人在里面”，唯一看似支持周慕青当晚还在铺子的证据失效，剩下能确定的是有人在某个时刻站到过开关前。",
+          "stage_id": "stage-second-night"
+        },
+        "node-converge": {
+          "id": "node-converge",
+          "title": "只剩一段没人说得清的时间",
+          "action": "沈砚把痕迹能成立的走法、吴阿姨改口后的门响时刻、登记簿上的送修时间与定时器被拨的时间画在同一张纸上对照。",
+          "thread_ids": [
+            "thread-time",
+            "thread-traces",
+            "thread-knowledge"
+          ],
+          "clue_uses": [
+            {
+              "clue_id": "clue_e4a46ed4ba004400b103a8ec39318783",
+              "roles": [
+                "resolve"
+              ],
+              "presentation": "只有一种走法能同时放进这段空档，其余走法都被时间挤掉",
+              "mode": "action",
+              "speaker_id": "",
+              "expected_interpretation": "痕迹最多只能确定时段与路线，不能确定是谁"
+            },
+            {
+              "clue_id": "clue_6817c849308e4586a10ab9ba25542a4a",
+              "roles": [
+                "resolve"
+              ],
+              "presentation": "定时器被拨的时间落在这段空档里",
+              "mode": "action",
+              "speaker_id": "",
+              "expected_interpretation": "有一个知情者在这个时刻到过开关前"
+            },
+            {
+              "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+              "roles": [
+                "resolve"
+              ],
+              "presentation": "送修时间与门响、开关时刻排在同一条线上",
+              "mode": "action",
+              "speaker_id": "",
+              "expected_interpretation": "接触者的时间与现场的时间互相咬合"
+            },
+            {
+              "clue_id": "clue_fff747bac9974cb7a2ad0599a8959010",
+              "roles": [
+                "resolve"
+              ],
+              "presentation": "门响的时刻成为这段时间唯一能被两家共同确认的一端",
+              "mode": "recollection",
+              "speaker_id": "",
+              "expected_interpretation": "证词被换成一个可计时的端点"
+            }
+          ],
+          "time_note": "",
+          "knowledge_changes": [],
+          "change": "三条线只在一段十几分钟的空档里同时成立，范围收窄到一个知道铺子晚上不收门、也知道灯该由谁去拨的人；脚印深浅与开关是谁拨的仍为待证。",
+          "stage_id": "stage-second-night"
+        }
+      },
+      "clue_plans": {
+        "clue_bfd5b900f3d644699fbb78f0cce49283": {
+          "clue_id": "clue_bfd5b900f3d644699fbb78f0cce49283",
+          "author_truth": null,
+          "intention": "让调查者先意识到铺子里的时间本身可能被人动过，一切时刻都要另找参照。",
+          "resolution_intent": "undecided"
+        },
+        "clue_030853fab07c46edb420110bee5337e5": {
+          "clue_id": "clue_030853fab07c46edb420110bee5337e5",
+          "author_truth": null,
+          "intention": "把失踪时刻扩成一段说不清长度的区间，让两个邻居的证词互相排斥。",
+          "resolution_intent": "undecided"
+        },
+        "clue_e4a46ed4ba004400b103a8ec39318783": {
+          "clue_id": "clue_e4a46ed4ba004400b103a8ec39318783",
+          "author_truth": null,
+          "intention": "先让调查者与读者以为能凭脚印深浅判断负重和人数，再用雪面条件不同推翻这个用法。",
+          "resolution_intent": "explain"
+        },
+        "clue_9e714ee13de741d9ac826362f8ccbe2b": {
+          "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+          "author_truth": null,
+          "intention": "引入一位当天与周慕青有直接接触的具体的人，并给出可核对的送修时间。",
+          "resolution_intent": "explain"
+        },
+        "clue_fff747bac9974cb7a2ad0599a8959010": {
+          "clue_id": "clue_fff747bac9974cb7a2ad0599a8959010",
+          "author_truth": null,
+          "intention": "修正目击者所依据的声音，把她的时间从模糊的整点挪到一次具体的门响之后。",
+          "resolution_intent": "explain"
+        },
+        "clue_6817c849308e4586a10ab9ba25542a4a": {
+          "clue_id": "clue_6817c849308e4586a10ab9ba25542a4a",
+          "author_truth": null,
+          "intention": "让最直观的在场证据失效：灯亮着不等于人在里面，只剩一个能被拨动的开关。",
+          "resolution_intent": "explain"
+        }
+      },
+      "threads": {
+        "thread-time": {
+          "id": "thread-time",
+          "title": "时刻表",
+          "order": 0,
+          "goal": "确定周慕青最后一次被他人证实的准确时刻，把当夜的时间窗收窄成可核对的一段。",
+          "obstacle": "修表铺里的钟全部停摆，其中一只被人为拨过；每个证人的时间都来自各自的手机或家电，无法互相对照。",
+          "intended_resolution": "用楼道里的声音重演与铺子定时灯被拨的时刻，把互相排斥的证词压成一段可核对的时间。"
+        },
+        "thread-traces": {
+          "id": "thread-traces",
+          "title": "痕迹",
+          "order": 1,
+          "goal": "用院子雪地与楼道的痕迹还原当夜进出的次数与路线。",
+          "obstacle": "屋檐下与空地上的雪面结得不一样，脚印深浅不能据以判断负重、人数或搬过什么；痕迹只能证明有人走过，不能证明是谁。",
+          "intended_resolution": "把痕迹能成立的时段与另两线的时间窗比对，只保留能同时成立的走法，其余留作待证。"
+        },
+        "thread-knowledge": {
+          "id": "thread-knowledge",
+          "title": "知情范围",
+          "order": 2,
+          "goal": "查清谁知道周慕青的作息、铺子晚上不收门的习惯和灯的用法。",
+          "obstacle": "每个被问到的人都说与他只是点头之交，彼此的说法又互相掩护；修理登记簿上最后一笔客户名被人划掉。",
+          "intended_resolution": "顺着被划掉的名字找到替人捎表的中间人，把知情范围从楼内扩到楼外，再与另两线的时间窗对照。"
+        }
+      },
+      "constraints": {},
+      "edges": {
+        "edge-clocks-two": {
+          "id": "edge-clocks-two",
+          "from_id": "node-clocks",
+          "to_id": "node-two-clocks",
+          "kind": "next",
+          "reason": "铺内的钟不可靠，只能转向问邻居各自凭什么报时。"
+        },
+        "edge-clocks-ledger": {
+          "id": "edge-clocks-ledger",
+          "from_id": "node-clocks",
+          "to_id": "node-ledger",
+          "kind": "next",
+          "reason": "清点铺面时一并翻到修理登记簿。"
+        },
+        "edge-two-stairwell": {
+          "id": "edge-two-stairwell",
+          "from_id": "node-two-clocks",
+          "to_id": "node-stairwell",
+          "kind": "next",
+          "reason": "两个说法差得太远，得先弄清吴阿姨听到的到底是什么声音。"
+        },
+        "edge-prints-lamp": {
+          "id": "edge-prints-lamp",
+          "from_id": "node-prints",
+          "to_id": "node-lamp",
+          "kind": "next",
+          "reason": "痕迹确认有人在天黑后进出，促使核对铺内的灯到底何时熄灭。"
+        },
+        "edge-ledger-name": {
+          "id": "edge-ledger-name",
+          "from_id": "node-ledger",
+          "to_id": "node-struck-name",
+          "kind": "next",
+          "reason": "被划掉的名字必须复原并找到本人。"
+        },
+        "edge-name-converge": {
+          "id": "edge-name-converge",
+          "from_id": "node-struck-name",
+          "to_id": "node-converge",
+          "kind": "next",
+          "reason": "登记簿上的送修时间成为汇合时的锚点。"
+        },
+        "edge-stairwell-converge": {
+          "id": "edge-stairwell-converge",
+          "from_id": "node-stairwell",
+          "to_id": "node-converge",
+          "kind": "next",
+          "reason": "收窄后的门响时刻进入同一张纸比对。"
+        },
+        "edge-lamp-converge": {
+          "id": "edge-lamp-converge",
+          "from_id": "node-lamp",
+          "to_id": "node-converge",
+          "kind": "next",
+          "reason": "灯的证据失效后，只剩定时器被拨的时刻可用。"
+        }
+      },
+      "event_times": [],
+      "bindings": {},
+      "assessments": {}
+    }
+  },
+  "changes": {
+    "agent_2683fe4942d14fce91e5ee90d0e7089e": {
+      "change_id": "agent_2683fe4942d14fce91e5ee90d0e7089e",
+      "variant_id": "main",
+      "base_revision": "empty",
+      "revision": "rev_bc2bf36c3c804d9cb6f488771bb1c900",
+      "request_key": "agent:agent_2683fe4942d14fce91e5ee90d0e7089e:empty",
+      "created_at": "2026-10-30T23:28:12.578198+08:00",
+      "operations": [
+        {
+          "op": "add_stage",
+          "stage": {
+            "id": "stage-first-day",
+            "title": "失踪次日：时间开始散开",
+            "order": 0,
+            "summary": "沈砚接手周慕青失踪的报案，分别从修表铺、邻居和院子雪地拿到第一批材料。每一处都说得出一个说法，但没有一处能单独确定时刻。"
+          }
+        },
+        {
+          "op": "add_stage",
+          "stage": {
+            "id": "stage-second-night",
+            "title": "第二天夜里到第三天：三线对到同一张纸上",
+            "order": 1,
+            "summary": "被划掉的名字、楼道里的声音重演、铺子定时灯的核对各自收窄了范围；三条线最后被放到同一段时间里比对。"
+          }
+        },
+        {
+          "op": "add_thread",
+          "thread": {
+            "id": "thread-time",
+            "title": "时刻表",
+            "order": 0,
+            "goal": "确定周慕青最后一次被他人证实的准确时刻，把当夜的时间窗收窄成可核对的一段。",
+            "obstacle": "修表铺里的钟全部停摆，其中一只被人为拨过；每个证人的时间都来自各自的手机或家电，无法互相对照。",
+            "intended_resolution": "用楼道里的声音重演与铺子定时灯被拨的时刻，把互相排斥的证词压成一段可核对的时间。"
+          }
+        },
+        {
+          "op": "add_thread",
+          "thread": {
+            "id": "thread-traces",
+            "title": "痕迹",
+            "order": 1,
+            "goal": "用院子雪地与楼道的痕迹还原当夜进出的次数与路线。",
+            "obstacle": "屋檐下与空地上的雪面结得不一样，脚印深浅不能据以判断负重、人数或搬过什么；痕迹只能证明有人走过，不能证明是谁。",
+            "intended_resolution": "把痕迹能成立的时段与另两线的时间窗比对，只保留能同时成立的走法，其余留作待证。"
+          }
+        },
+        {
+          "op": "add_thread",
+          "thread": {
+            "id": "thread-knowledge",
+            "title": "知情范围",
+            "order": 2,
+            "goal": "查清谁知道周慕青的作息、铺子晚上不收门的习惯和灯的用法。",
+            "obstacle": "每个被问到的人都说与他只是点头之交，彼此的说法又互相掩护；修理登记簿上最后一笔客户名被人划掉。",
+            "intended_resolution": "顺着被划掉的名字找到替人捎表的中间人，把知情范围从楼内扩到楼外，再与另两线的时间窗对照。"
+          }
+        },
+        {
+          "op": "create_clue_identity",
+          "temp_id": "clue-clock",
+          "title": "停在四点二十的挂钟"
+        },
+        {
+          "op": "upsert_clue_plan",
+          "clue_id": "clue_bfd5b900f3d644699fbb78f0cce49283",
+          "plan": {
+            "author_truth": null,
+            "intention": "让调查者先意识到铺子里的时间本身可能被人动过，一切时刻都要另找参照。",
+            "resolution_intent": "undecided"
+          }
+        },
+        {
+          "op": "create_clue_identity",
+          "temp_id": "clue-time-sources",
+          "title": "各说各的时间来源"
+        },
+        {
+          "op": "upsert_clue_plan",
+          "clue_id": "clue_030853fab07c46edb420110bee5337e5",
+          "plan": {
+            "author_truth": null,
+            "intention": "把失踪时刻扩成一段说不清长度的区间，让两个邻居的证词互相排斥。",
+            "resolution_intent": "undecided"
+          }
+        },
+        {
+          "op": "create_clue_identity",
+          "temp_id": "clue-prints",
+          "title": "雪地上浅深不一的脚印"
+        },
+        {
+          "op": "upsert_clue_plan",
+          "clue_id": "clue_e4a46ed4ba004400b103a8ec39318783",
+          "plan": {
+            "author_truth": null,
+            "intention": "先让调查者与读者以为能凭脚印深浅判断负重和人数，再用雪面条件不同推翻这个用法。",
+            "resolution_intent": "explain"
+          }
+        },
+        {
+          "op": "create_clue_identity",
+          "temp_id": "clue-ledger",
+          "title": "登记簿上被划掉的名字"
+        },
+        {
+          "op": "upsert_clue_plan",
+          "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+          "plan": {
+            "author_truth": null,
+            "intention": "引入一位当天与周慕青有直接接触的具体的人，并给出可核对的送修时间。",
+            "resolution_intent": "explain"
+          }
+        },
+        {
+          "op": "create_clue_identity",
+          "temp_id": "clue-door-echo",
+          "title": "楼梯间门响的回声"
+        },
+        {
+          "op": "upsert_clue_plan",
+          "clue_id": "clue_fff747bac9974cb7a2ad0599a8959010",
+          "plan": {
+            "author_truth": null,
+            "intention": "修正目击者所依据的声音，把她的时间从模糊的整点挪到一次具体的门响之后。",
+            "resolution_intent": "explain"
+          }
+        },
+        {
+          "op": "create_clue_identity",
+          "temp_id": "clue-lamp",
+          "title": "被拨到常亮的定时灯"
+        },
+        {
+          "op": "upsert_clue_plan",
+          "clue_id": "clue_6817c849308e4586a10ab9ba25542a4a",
+          "plan": {
+            "author_truth": null,
+            "intention": "让最直观的在场证据失效：灯亮着不等于人在里面，只剩一个能被拨动的开关。",
+            "resolution_intent": "explain"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-clocks",
+            "title": "停在四点二十的挂钟",
+            "action": "沈砚清点修表铺：柜台上七只待修的钟各停在不同的时刻，墙上那口挂钟的指针却指在四点二十，背面调时的小孔有新磨痕。",
+            "thread_ids": [
+              "thread-time"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_bfd5b900f3d644699fbb78f0cce49283",
+                "roles": [
+                  "plant"
+                ],
+                "presentation": "挂钟停在四点二十，背面调时的小孔有新的磨痕，其他七只钟停在各自的时间里",
+                "mode": "narration",
+                "speaker_id": "",
+                "expected_interpretation": "有人动过其中一只钟，铺里的时间不可信"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "铺子里的时间不能当作参照，调查者必须先找到一个不依赖这些钟的时刻。",
+            "stage_id": "stage-first-day"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-two-clocks",
+            "title": "两个邻居的十分钟",
+            "action": "吴阿姨说她六点听见楼上有脚步，陈立说他六点二十还看见铺子亮着灯；一个用电视里的报时、一个用手机，说法差出远远不止十分钟。",
+            "thread_ids": [
+              "thread-time"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_030853fab07c46edb420110bee5337e5",
+                "roles": [
+                  "plant"
+                ],
+                "presentation": "两人的时间分别来自电视报时与手机，各自都说得很肯定",
+                "mode": "testimony",
+                "speaker_id": "",
+                "expected_interpretation": "证词的时间依据本身就不一致"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "失踪时间从“一个时刻”变成一段说不清长度的区间，两个人的话开始互相排斥。",
+            "stage_id": "stage-first-day"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-prints",
+            "title": "雪地上的两行脚印",
+            "action": "院子里一行进、一行出的脚印被后来的雪盖掉一半：屋檐下的还算清楚，空地上的已经塌软，深浅完全对不上。",
+            "thread_ids": [
+              "thread-traces"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_e4a46ed4ba004400b103a8ec39318783",
+                "roles": [
+                  "plant"
+                ],
+                "presentation": "屋檐下脚印清楚、空地上塌软，深浅不一",
+                "mode": "narration",
+                "speaker_id": "",
+                "expected_interpretation": "先以为能据此推算负重，随后被告知两处雪面条件不同"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "调查者看出这两段雪面不是同样条件，脚印深浅不能用来判断谁背过东西，只能确认有人在天黑后进出过院子。",
+            "stage_id": "stage-first-day"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-ledger",
+            "title": "登记簿的最后一笔",
+            "action": "沈砚翻修表登记簿，最后一笔是当天下午有人送修一只老怀表，客户名被人划掉，只剩一个偏旁还认得出。",
+            "thread_ids": [
+              "thread-knowledge"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+                "roles": [
+                  "plant"
+                ],
+                "presentation": "最后一笔的送修时间明确，客户名被划掉只剩一个偏旁",
+                "mode": "narration",
+                "speaker_id": "",
+                "expected_interpretation": "有人不想让这一笔被查到"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "出现一个当天与周慕青有过直接接触的具体的人，但名字需要先复原。",
+            "stage_id": "stage-first-day"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-struck-name",
+            "title": "替人捎表的人",
+            "action": "循着复原的名字找到本人，对方承认当天没来过铺子，只是替别人捎过一只怀表，还顺口说出那人知道铺子晚上不收门。",
+            "thread_ids": [
+              "thread-knowledge"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+                "roles": [
+                  "develop"
+                ],
+                "presentation": "被划掉的客户说自己只是跑腿，捎表的另有其人",
+                "mode": "testimony",
+                "speaker_id": "",
+                "expected_interpretation": "划名的人不是唯一知情者，知情范围更大"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "知情范围从楼里的邻居扩到楼外一个知道铺子习惯的人；登记簿上的送修时间成为可以核对的锚点。",
+            "stage_id": "stage-second-night"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-stairwell",
+            "title": "楼道里的重演",
+            "action": "沈砚在各层反复开关楼梯间的门、上下走一遍，请吴阿姨在自家屋里隔门辨认哪一种声音是她那晚听到的。",
+            "thread_ids": [
+              "thread-time"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_fff747bac9974cb7a2ad0599a8959010",
+                "roles": [
+                  "develop",
+                  "reinterpret"
+                ],
+                "presentation": "同一种门响在不同楼层听起来像脚步",
+                "mode": "action",
+                "speaker_id": "",
+                "expected_interpretation": "原来的证词被换成一条可以被计时的声音"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "吴阿姨承认听见的是楼梯间门响，不是楼上的脚步；“六点”这个说法因此挪到一次具体门响之后，时刻线收窄一段。",
+            "stage_id": "stage-second-night"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-lamp",
+            "title": "铺子里的定时灯",
+            "action": "沈砚核对铺子的开关：往常由一只旧定时器控制，每晚十点十分自己灭；失踪当晚定时器被人拨到了“常亮”。",
+            "thread_ids": [
+              "thread-traces"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_6817c849308e4586a10ab9ba25542a4a",
+                "roles": [
+                  "develop",
+                  "reinterpret"
+                ],
+                "presentation": "定时器的拨钮停在“常亮”，而往常十点十分就会自己灭",
+                "mode": "narration",
+                "speaker_id": "",
+                "expected_interpretation": "灯的开与关成了另一个人的动作痕迹"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "“灯亮着”不再等于“人在里面”，唯一看似支持周慕青当晚还在铺子的证据失效，剩下能确定的是有人在某个时刻站到过开关前。",
+            "stage_id": "stage-second-night"
+          }
+        },
+        {
+          "op": "add_node",
+          "node": {
+            "id": "node-converge",
+            "title": "只剩一段没人说得清的时间",
+            "action": "沈砚把痕迹能成立的走法、吴阿姨改口后的门响时刻、登记簿上的送修时间与定时器被拨的时间画在同一张纸上对照。",
+            "thread_ids": [
+              "thread-time",
+              "thread-traces",
+              "thread-knowledge"
+            ],
+            "clue_uses": [
+              {
+                "clue_id": "clue_e4a46ed4ba004400b103a8ec39318783",
+                "roles": [
+                  "resolve"
+                ],
+                "presentation": "只有一种走法能同时放进这段空档，其余走法都被时间挤掉",
+                "mode": "action",
+                "speaker_id": "",
+                "expected_interpretation": "痕迹最多只能确定时段与路线，不能确定是谁"
+              },
+              {
+                "clue_id": "clue_6817c849308e4586a10ab9ba25542a4a",
+                "roles": [
+                  "resolve"
+                ],
+                "presentation": "定时器被拨的时间落在这段空档里",
+                "mode": "action",
+                "speaker_id": "",
+                "expected_interpretation": "有一个知情者在这个时刻到过开关前"
+              },
+              {
+                "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+                "roles": [
+                  "resolve"
+                ],
+                "presentation": "送修时间与门响、开关时刻排在同一条线上",
+                "mode": "action",
+                "speaker_id": "",
+                "expected_interpretation": "接触者的时间与现场的时间互相咬合"
+              },
+              {
+                "clue_id": "clue_fff747bac9974cb7a2ad0599a8959010",
+                "roles": [
+                  "resolve"
+                ],
+                "presentation": "门响的时刻成为这段时间唯一能被两家共同确认的一端",
+                "mode": "recollection",
+                "speaker_id": "",
+                "expected_interpretation": "证词被换成一个可计时的端点"
+              }
+            ],
+            "time_note": "",
+            "knowledge_changes": [],
+            "change": "三条线只在一段十几分钟的空档里同时成立，范围收窄到一个知道铺子晚上不收门、也知道灯该由谁去拨的人；脚印深浅与开关是谁拨的仍为待证。",
+            "stage_id": "stage-second-night"
+          }
+        },
+        {
+          "op": "connect",
+          "edge": {
+            "id": "edge-clocks-two",
+            "from_id": "node-clocks",
+            "to_id": "node-two-clocks",
+            "kind": "next",
+            "reason": "铺内的钟不可靠，只能转向问邻居各自凭什么报时。"
+          }
+        },
+        {
+          "op": "connect",
+          "edge": {
+            "id": "edge-clocks-ledger",
+            "from_id": "node-clocks",
+            "to_id": "node-ledger",
+            "kind": "next",
+            "reason": "清点铺面时一并翻到修理登记簿。"
+          }
+        },
+        {
+          "op": "connect",
+          "edge": {
+            "id": "edge-two-stairwell",
+            "from_id": "node-two-clocks",
+            "to_id": "node-stairwell",
+            "kind": "next",
+            "reason": "两个说法差得太远，得先弄清吴阿姨听到的到底是什么声音。"
+          }
+        },
+        {
+          "op": "connect",
+          "edge": {
+            "id": "edge-prints-lamp",
+            "from_id": "node-prints",
+            "to_id": "node-lamp",
+            "kind": "next",
+            "reason": "痕迹确认有人在天黑后进出，促使核对铺内的灯到底何时熄灭。"
+          }
+        },
+        {
+          "op": "connect",
+          "edge": {
+            "id": "edge-ledger-name",
+            "from_id": "node-ledger",
+            "to_id": "node-struck-name",
+            "kind": "next",
+            "reason": "被划掉的名字必须复原并找到本人。"
+          }
+        },
+        {
+          "op": "connect",
+          "edge": {
+            "id": "edge-name-converge",
+            "from_id": "node-struck-name",
+            "to_id": "node-converge",
+            "kind": "next",
+            "reason": "登记簿上的送修时间成为汇合时的锚点。"
+          }
+        },
+        {
+          "op": "connect",
+          "edge": {
+            "id": "edge-stairwell-converge",
+            "from_id": "node-stairwell",
+            "to_id": "node-converge",
+            "kind": "next",
+            "reason": "收窄后的门响时刻进入同一张纸比对。"
+          }
+        },
+        {
+          "op": "connect",
+          "edge": {
+            "id": "edge-lamp-converge",
+            "from_id": "node-lamp",
+            "to_id": "node-converge",
+            "kind": "next",
+            "reason": "灯的证据失效后，只剩定时器被拨的时刻可用。"
+          }
+        }
+      ],
+      "inverse_operations": [
+        {
+          "op": "disconnect",
+          "edge_id": "edge-clocks-two"
+        },
+        {
+          "op": "disconnect",
+          "edge_id": "edge-clocks-ledger"
+        },
+        {
+          "op": "disconnect",
+          "edge_id": "edge-two-stairwell"
+        },
+        {
+          "op": "disconnect",
+          "edge_id": "edge-prints-lamp"
+        },
+        {
+          "op": "disconnect",
+          "edge_id": "edge-ledger-name"
+        },
+        {
+          "op": "disconnect",
+          "edge_id": "edge-name-converge"
+        },
+        {
+          "op": "disconnect",
+          "edge_id": "edge-stairwell-converge"
+        },
+        {
+          "op": "disconnect",
+          "edge_id": "edge-lamp-converge"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-clocks"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-two-clocks"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-prints"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-ledger"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-struck-name"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-stairwell"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-lamp"
+        },
+        {
+          "op": "remove_node",
+          "node_id": "node-converge"
+        },
+        {
+          "op": "remove_clue_plan",
+          "clue_id": "clue_bfd5b900f3d644699fbb78f0cce49283"
+        },
+        {
+          "op": "remove_clue_plan",
+          "clue_id": "clue_030853fab07c46edb420110bee5337e5"
+        },
+        {
+          "op": "remove_clue_plan",
+          "clue_id": "clue_e4a46ed4ba004400b103a8ec39318783"
+        },
+        {
+          "op": "remove_clue_plan",
+          "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b"
+        },
+        {
+          "op": "remove_clue_plan",
+          "clue_id": "clue_fff747bac9974cb7a2ad0599a8959010"
+        },
+        {
+          "op": "remove_clue_plan",
+          "clue_id": "clue_6817c849308e4586a10ab9ba25542a4a"
+        },
+        {
+          "op": "remove_thread",
+          "thread_id": "thread-time"
+        },
+        {
+          "op": "remove_thread",
+          "thread_id": "thread-traces"
+        },
+        {
+          "op": "remove_thread",
+          "thread_id": "thread-knowledge"
+        },
+        {
+          "op": "remove_stage",
+          "stage_id": "stage-first-day"
+        },
+        {
+          "op": "remove_stage",
+          "stage_id": "stage-second-night"
+        }
+      ],
+      "inverse_ledger": [
+        {
+          "op": "inverse_remove",
+          "clue_id": "clue_bfd5b900f3d644699fbb78f0cce49283"
+        },
+        {
+          "op": "inverse_remove",
+          "clue_id": "clue_030853fab07c46edb420110bee5337e5"
+        },
+        {
+          "op": "inverse_remove",
+          "clue_id": "clue_e4a46ed4ba004400b103a8ec39318783"
+        },
+        {
+          "op": "inverse_remove",
+          "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b"
+        },
+        {
+          "op": "inverse_remove",
+          "clue_id": "clue_fff747bac9974cb7a2ad0599a8959010"
+        },
+        {
+          "op": "inverse_remove",
+          "clue_id": "clue_6817c849308e4586a10ab9ba25542a4a"
+        }
+      ],
+      "inverse_prose_patches": [],
+      "touched": {
+        "stage:stage-first-day": "e17316b74e805885b5bc29d45dfed5fda3bc4c3500ad15b5305294ab3110e23d",
+        "stage:stage-second-night": "ac809fa8cf34dda6994459288f911e82e05c371006e0fad822ee055b162293c7",
+        "node:node-clocks": "5d639f65ab800023ef114013f7b01ba9e62cb045c1ad0db146bb8c206eedffb1",
+        "node:node-two-clocks": "d37124019de75d2c59ca268e0316aebff2b70043fcfa4565b9887f37e4fa1fb4",
+        "node:node-prints": "0b5c2f4c72325ab80631847e6cac5a905e843f069a27137de5c6a4b907eaf076",
+        "node:node-ledger": "75df766ac045c90a56d432eb2960cd74beb19365a053973182ad5c54217e353f",
+        "node:node-struck-name": "79a76ff5c70bb9d842ed097b8427e7e378ea45164ff5e8617ada32aabbf8a648",
+        "node:node-stairwell": "f72a064fe61d4a55748069e06a53e53481008bb088457e12f8e2fded16bb946c",
+        "node:node-lamp": "3f9f5490e044bd74f0f4aea12d76bca89aca57d7827361c9e7760c5af6f88376",
+        "node:node-converge": "c0539c51939de7610e60f5cac4055864288c8017e37db3684e288aada7b3f810",
+        "clue_plan:clue_bfd5b900f3d644699fbb78f0cce49283": "5b0bb14dadfd476b8837d4cf87b42394ad621ad2d43b8738f34d9ac433442b1d",
+        "clue_plan:clue_030853fab07c46edb420110bee5337e5": "7b4570aede31416c30e30936b22cf7ce0753743c288a819228b3aba56da67971",
+        "clue_plan:clue_e4a46ed4ba004400b103a8ec39318783": "cd05a472986c4e1ec73b6249667e07fc54d124d975666eb6bba107f3d121a9be",
+        "clue_plan:clue_9e714ee13de741d9ac826362f8ccbe2b": "516d6a5705e5e6bddf6fb72e63ed59cb53bdea7bfe8e30b9a448a1645f9cebf3",
+        "clue_plan:clue_fff747bac9974cb7a2ad0599a8959010": "e76387c4d45df88020a06188dde8eee0afea092416043b8ad0f5c52055dd0106",
+        "clue_plan:clue_6817c849308e4586a10ab9ba25542a4a": "6f44f226bddf42c3ecee28a4058c24b14981b9bf63a37dfdbc6cf72bc9fa9192",
+        "thread:thread-time": "07f891bdbed0def584e46f5425b8b34bb3ff982517c98b5759bf30ce07cd2cdd",
+        "thread:thread-traces": "b92c96b1c2e0e3eca9fce21c11524287961dd80593d302062c073e45f7a28cd4",
+        "thread:thread-knowledge": "f182c0132a520a10ef57eccc9f3c55b87ce51710dc740feccbd8954149f70e1a",
+        "edge:edge-clocks-two": "34e89396a409638f862983f2cc7ae2d0a238ebacb50c8d1b8a27472b049fba87",
+        "edge:edge-clocks-ledger": "35e035a9d4482f369bd447d1764932cfcbe34d3a4ab31990fe2138b0affa0b9d",
+        "edge:edge-two-stairwell": "6aa33541a5c8a46161475ef2b49cc2ea95997498e950b9dd7ae48cb9a0c39f36",
+        "edge:edge-prints-lamp": "a36d8ed7e20e7dc82a2fe253fb01ed02e874f732bac772e9e0bdd411308277f1",
+        "edge:edge-ledger-name": "b3a458a0e25ac02ae0ed15da16d036736f0eebc87a9b817775123b8cfa0927b9",
+        "edge:edge-name-converge": "0a0405b641e97c2879c4988c94ea033f9dbb3e72700a8ed8894caf858b9a4543",
+        "edge:edge-stairwell-converge": "6924c6ddcda8db6aa427552380f38fe036889c496b3f4c329c01327fca9a2b87",
+        "edge:edge-lamp-converge": "2580712fd922943accfe61b9357a9a2c52de8effdd63c481905facc91d973a31"
+      },
+      "undone_by": null
+    }
+  },
+  "requests": {
+    "agent:agent_2683fe4942d14fce91e5ee90d0e7089e:empty": {
+      "fingerprint": "4b0b4750d24bc704343541e3794cd1ae915583e41fc6cad576edda3775e16fa7",
+      "kind": "change",
+      "variant_id": "main",
+      "base_revision": "empty",
+      "revision": "rev_bc2bf36c3c804d9cb6f488771bb1c900",
+      "ledger_revision": "rev_a73555ddaf9b40b99f0660c5a0baa7ed",
+      "request_key": "agent:agent_2683fe4942d14fce91e5ee90d0e7089e:empty",
+      "change_id": "agent_2683fe4942d14fce91e5ee90d0e7089e",
+      "id_map": {
+        "clue-clock": "clue_bfd5b900f3d644699fbb78f0cce49283",
+        "clue-time-sources": "clue_030853fab07c46edb420110bee5337e5",
+        "clue-prints": "clue_e4a46ed4ba004400b103a8ec39318783",
+        "clue-ledger": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+        "clue-door-echo": "clue_fff747bac9974cb7a2ad0599a8959010",
+        "clue-lamp": "clue_6817c849308e4586a10ab9ba25542a4a"
+      },
+      "result": {
+        "change_id": "agent_2683fe4942d14fce91e5ee90d0e7089e",
+        "revision": "rev_bc2bf36c3c804d9cb6f488771bb1c900",
+        "operations": 33,
+        "prose_paths": [],
+        "ledger_revision": "rev_a73555ddaf9b40b99f0660c5a0baa7ed",
+        "id_map": {
+          "clue-clock": "clue_bfd5b900f3d644699fbb78f0cce49283",
+          "clue-time-sources": "clue_030853fab07c46edb420110bee5337e5",
+          "clue-prints": "clue_e4a46ed4ba004400b103a8ec39318783",
+          "clue-ledger": "clue_9e714ee13de741d9ac826362f8ccbe2b",
+          "clue-door-echo": "clue_fff747bac9974cb7a2ad0599a8959010",
+          "clue-lamp": "clue_6817c849308e4586a10ab9ba25542a4a"
+        },
+        "inverse_ledger": [
+          {
+            "op": "inverse_remove",
+            "clue_id": "clue_bfd5b900f3d644699fbb78f0cce49283"
+          },
+          {
+            "op": "inverse_remove",
+            "clue_id": "clue_030853fab07c46edb420110bee5337e5"
+          },
+          {
+            "op": "inverse_remove",
+            "clue_id": "clue_e4a46ed4ba004400b103a8ec39318783"
+          },
+          {
+            "op": "inverse_remove",
+            "clue_id": "clue_9e714ee13de741d9ac826362f8ccbe2b"
+          },
+          {
+            "op": "inverse_remove",
+            "clue_id": "clue_fff747bac9974cb7a2ad0599a8959010"
+          },
+          {
+            "op": "inverse_remove",
+            "clue_id": "clue_6817c849308e4586a10ab9ba25542a4a"
+          }
+        ]
+      }
+    }
+  }
+}
