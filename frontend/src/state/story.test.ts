@@ -9,9 +9,6 @@ const api = vi.hoisted(() => ({
   readStoryVariant: vi.fn(),
   readStoryNode: vi.fn(),
   submitStoryChange: vi.fn(),
-  createStoryVariant: vi.fn(),
-  compareStoryVariants: vi.fn(),
-  adoptStoryVariant: vi.fn(),
   undoStoryChange: vi.fn(),
 }));
 
@@ -33,7 +30,6 @@ const VARIANT = {
   counts: { nodes: 2, clues: 1, threads: 0, constraints: 0, edges: 1, bindings: 0 },
 };
 
-const ALT = { ...VARIANT, id: "variant_alt", name: "备选", revision: "rev_alt", primary: false };
 
 const GRAPH = {
   variant_id: "main",
@@ -208,90 +204,6 @@ describe("构思状态", () => {
     expect(useStoryStore.getState().reference).toBeNull();
   });
 
-  it("采用把备选结构复制到主方案，冲突时保留服务端的逐项原因", async () => {
-    api.listStoryVariants.mockResolvedValue({
-      revision: "doc_1",
-      primary_variant_id: "main",
-      variants: [VARIANT, ALT],
-    });
-    await useStoryStore.getState().load("w1");
-    await useStoryStore.getState().selectVariant("variant_alt");
-    api.adoptStoryVariant.mockResolvedValue({
-      plan: {
-        source: "variant_alt",
-        target: "main",
-        node_ids: ["n3"],
-        copied: { nodes: ["n3"], clues: [], threads: [], constraints: [] },
-        unchanged: [],
-        pulled_in: [],
-        skipped_edges: [],
-        conflicts: [],
-        operations: 1,
-        note: "",
-      },
-      receipt: {
-        variant_id: "main",
-        base_revision: "rev_1",
-        revision: "rev_2",
-        change_id: "c1",
-        request_key: "k",
-        result: {},
-        changed: ["node:n3"],
-      },
-    });
-    api.readStoryVariant.mockResolvedValue({ ...GRAPH, variant_id: "variant_alt" });
-
-    const ok = await useStoryStore.getState().adopt(["n3"]);
-
-    expect(ok).toBe(true);
-    expect(api.adoptStoryVariant).toHaveBeenCalledWith(
-      "w1",
-      expect.objectContaining({
-        source_variant_id: "variant_alt",
-        target_variant_id: "main",
-        node_ids: ["n3"],
-        mode: "exact",
-      }),
-    );
-    expect(useStoryStore.getState().adoption?.conflict).toBe(false);
-    api.adoptStoryVariant.mockResolvedValueOnce({
-      plan: { source: "variant_alt", target: "main", node_ids: ["n3"], copied: {},
-        unchanged: ["node:n3"], pulled_in: [], skipped_edges: [], conflicts: [],
-        operations: 0, note: "" },
-      receipt: { variant_id: "main", base_revision: "rev_2", revision: "rev_2",
-        change_id: "", request_key: "noop", result: {}, changed: [] },
-    });
-    expect(await useStoryStore.getState().adopt(["n3"])).toBe(true);
-    expect(useStoryStore.getState().lastChange?.change_id).toBe("c1");
-
-    api.adoptStoryVariant.mockRejectedValue(
-      new WorkspaceApiError("STORY_ADOPTION_CONFLICT", "目标已有同 ID 对象", "确认覆盖", 409, "采用", {
-        conflicts: [{ kind: "node", id: "n2", reason: "内容不同" }],
-      }),
-    );
-    const failed = await useStoryStore.getState().adopt(["n3"]);
-
-    expect(failed).toBe(false);
-    const adoption = useStoryStore.getState().adoption;
-    expect(adoption?.conflict).toBe(true);
-    expect(adoption?.plan.conflicts[0]?.id).toBe("n2");
-  });
-
-  it("从备选切回主方案时清空选中节点", async () => {
-    api.listStoryVariants.mockResolvedValue({
-      revision: "doc_1",
-      primary_variant_id: "main",
-      variants: [VARIANT, ALT],
-    });
-    await useStoryStore.getState().load("w1");
-    await useStoryStore.getState().selectNode("n1");
-
-    await useStoryStore.getState().selectVariant("variant_alt");
-
-    expect(useStoryStore.getState().variantId).toBe("variant_alt");
-    expect(useStoryStore.getState().nodeId).toBeNull();
-    expect(useStoryStore.getState().detail).toBeNull();
-  });
   it("模型保存后刷新空白构思，不重置当前浏览方案", async () => {
     api.listStoryVariants.mockResolvedValueOnce({ revision: "empty", primary_variant_id: "", variants: [] });
     await useStoryStore.getState().load("w1");

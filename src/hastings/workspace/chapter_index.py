@@ -37,7 +37,6 @@ __all__ = [
     "ENTRY_MAX",
     "EVIDENCE_MAX_CHARS",
     "INDEX_BUDGET",
-    "MAX_INDEX_CHAPTERS",
     "RECIPE_VERSION",
     "SUMMARY_MAX_CHARS",
     "ChapterIndexDraft",
@@ -53,9 +52,6 @@ __all__ = [
 
 #: 生成规则版本：解析或校验规则变化时递增，旧记录按过期处理，不猜测兼容。
 RECIPE_VERSION = 1
-
-#: 一轮最多更新的章节数；作者明确选择要更新的章节。
-MAX_INDEX_CHAPTERS = 10
 
 #: 单章摘要、单条引文与单类条目上限。
 SUMMARY_MAX_CHARS = 500

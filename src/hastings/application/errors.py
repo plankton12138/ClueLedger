@@ -17,44 +17,7 @@ __all__ = [
     "EnvironmentFailure",
     "HastingsError",
     "ResultCategory",
-    "ViolationError",
-    "V03_ERROR_CODES",
 ]
-
-#: 0.3 目标错误码集中登记（计划 §4.4、执行指导 §3.1）：每新增一个错误码
-#: 在此登记，并同次补三类测试——领域抛出、API 映射 HTTP、前端按 code 分支。
-V03_ERROR_CODES: tuple[str, ...] = (
-    "EDIT_SAVE_CONFLICT",
-    "MANUSCRIPT_BASE_CONFLICT",
-    "EDIT_SESSION_BLOCKS_PUBLISH",
-    "SOURCE_NEEDS_RECHECK",
-    "IMPORT_PREVIEW_STALE",
-    "IMPORT_DUPLICATE_CONTENT",
-    "EXECUTION_NOT_AUTHORIZED",
-    "INTENT_WRITE_SCOPE_INVALID",
-    "TASK_BUDGET_EXHAUSTED",
-    "UNDO_DEPENDENCY_CONFLICT",
-    "EDIT_SESSION_UNFLUSHED",
-    "EDIT_SESSION_MERGE_CONFLICT",
-    "EDIT_SNAPSHOT_CONFLICT",
-    "EDIT_SNAPSHOT_NOT_FOUND",
-    "OPERATION_KEY_REUSED",
-    "AGREEMENT_TOPIC_CONFLICT",
-    "AGREEMENT_REVISION_CONFLICT",
-    "AGREEMENT_NOT_FOUND",
-    "BACKGROUND_SCOPE_INVALID",
-    "BACKGROUND_BUDGET_INVALID",
-    "BACKGROUND_BUDGET_TOO_SMALL",
-    "SUMMARY_CHAPTER_NOT_FOUND",
-    "SUMMARY_NOT_AVAILABLE",
-    "SUMMARY_EMPTY_RESULT",
-    "SUMMARY_JOB_NOT_FOUND",
-    "SUMMARY_JOB_CANCELLED",
-    "SUGGESTION_CHAPTER_NOT_FOUND",
-    "SUGGESTION_NOT_AVAILABLE",
-    "DISCLOSURE_NEEDS_AUTHORIZATION",
-    "CONVERSATION_NOT_FOUND",
-)
 
 
 class ResultCategory(StrEnum):
@@ -97,28 +60,6 @@ class HastingsError(Exception):
 
     def __str__(self) -> str:
         return self.message
-
-
-class ViolationError(HastingsError):
-    """违规：应纠正输入后重试（ResultCategory.VIOLATION）。"""
-
-    def __init__(
-        self,
-        *,
-        code: str,
-        where: str,
-        why: str,
-        fix: str,
-        details: Mapping[str, object] | None = None,
-    ) -> None:
-        super().__init__(
-            code=code,
-            category=ResultCategory.VIOLATION,
-            where=where,
-            why=why,
-            fix=fix,
-            details=details,
-        )
 
 
 class EnvironmentFailure(HastingsError):

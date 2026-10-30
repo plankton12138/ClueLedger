@@ -19,8 +19,6 @@ __all__ = [
     "ASK_AUTHOR_OPTIONS_PARAM_DESCRIPTION",
     "ASK_AUTHOR_PATHS_PARAM_DESCRIPTION",
     "ASK_AUTHOR_QUESTION_PARAM_DESCRIPTION",
-    "ADOPT_STORY_DESCRIPTION",
-    "ADOPT_STORY_NODE_IDS_PARAM_DESCRIPTION",
     "ASSEMBLY_DIGEST_PARAM_DESCRIPTION",
     "ATTACH_MODULE_DESCRIPTION",
     "ATTACH_MODULE_GUIDELINES",
@@ -162,7 +160,6 @@ __all__ = [
     "WRITE_FILE_GUIDELINES",
     "WRITE_FILE_TEXT_PARAM_DESCRIPTION",
     "save_review_report_description",
-    "variant_tool_description",
 ]
 
 LIST_FILES_DESCRIPTION = (
@@ -561,14 +558,6 @@ ASK_AUTHOR_PATHS_PARAM_DESCRIPTION = "与问题有关的作品内路径，便于
 PROPOSE_STORY_STRUCTURE_OPERATIONS_PARAM_DESCRIPTION = "语义变更列表，字段与 update_story 一致"
 
 READ_STORY_NODE_IDS_PARAM_DESCRIPTION = "只看这些节点；省略时返回整个方案的概览"
-ADOPT_STORY_DESCRIPTION = (
-    "采用备选结构；只在作者明确要求采用时使用。"
-    "省略 node_ids 表示采用本轮界面选中的全部节点，不会扩大到整案；"
-    "没有选中节点时，只有作者明确要求整案采用才会采用整个方案。"
-)
-ADOPT_STORY_NODE_IDS_PARAM_DESCRIPTION = (
-    "要采用的节点；只能小于或等于本轮界面选中的范围，省略表示采用选中范围"
-)
 UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION = (
     "语义变更列表；每项形如 "
     '{"op": "add_node", "node": {"id": "n1", '
@@ -582,11 +571,6 @@ UPDATE_STORY_NO_CHANGE_PARAM_DESCRIPTION = (
 )
 
 PROBE_ECHO_PARAM_DESCRIPTION = "任意字符串"
-
-
-def variant_tool_description(label: str) -> str:
-    """备选结构工具的描述：以工具标签开头，并限定只在作者明确要求时使用。"""
-    return label + "；只在作者明确要求时使用。"
 
 
 def save_review_report_description(review_targets: Sequence[str]) -> str:

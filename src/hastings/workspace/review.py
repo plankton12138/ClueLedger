@@ -28,7 +28,7 @@ from typing import Literal, cast
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, is_managed_path
-from hastings.workspace.materials import MaterialLedger, SourceRef, covers
+from hastings.workspace.materials import MaterialLedger, covers
 
 __all__ = [
     "DESCRIPTION_MAX_CHARS",
@@ -43,9 +43,7 @@ __all__ = [
     "ReviewStatus",
     "ReviewStore",
     "publish_report",
-    "require_full_coverage",
     "target_digests",
-    "validate_evidence",
     "validate_report",
     "validate_review_targets",
 ]
@@ -369,20 +367,6 @@ def publish_report(
     return store.publish(report)
 
 
-def validate_evidence(
-    evidence: ReviewEvidence, *, workspace: Workspace, ledger: MaterialLedger
-) -> None:
-    """单条证据的结构、版本与读取覆盖校验；线索核对共用同一套规则。"""
-    _validate_evidence(evidence, workspace=workspace, ledger=ledger)
-
-
-def require_full_coverage(
-    targets: Sequence[str], *, workspace: Workspace, ledger: MaterialLedger
-) -> None:
-    """报告「没有发现问题」前，目标当前版本必须完整提供过。"""
-    _require_full_coverage(targets, workspace=workspace, ledger=ledger)
-
-
 def _validate_finding(
     finding: ReviewFinding, *, workspace: Workspace, ledger: MaterialLedger
 ) -> None:
@@ -590,9 +574,3 @@ def target_digests(workspace: Workspace, paths: Sequence[str]) -> tuple[tuple[st
             ) from exc
         pairs.append((view.path, view.digest))
     return tuple(pairs)
-
-
-def evidence_ref(workspace: Workspace, path: str) -> SourceRef:
-    """证据校验用的版本引用；调用方已确认文件存在。"""
-    view = workspace.read(path)
-    return SourceRef(view.path, view.digest)

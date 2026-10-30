@@ -5,7 +5,7 @@ import { DEFAULT_IDEA_POSITION, MAX_POSITION_RATIO, useIdeasSurfaceStore, type I
 export interface FloatingBounds { left: number; top: number; right: number; bottom: number }
 export interface FloatingSize { width: number; height: number }
 /** 拖出窗口边缘时至少留在可视区内的宽度或高度，保证标题栏仍可按住拖回。 */
-export const FLOATING_KEEP = 48;
+const FLOATING_KEEP = 48;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, Math.max(min, max)));
 const keepOf = (size: number) => Math.min(FLOATING_KEEP, size);

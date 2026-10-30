@@ -29,7 +29,6 @@ __all__ = [
     "EntryDraft",
     "entry_digest",
     "entry_markdown",
-    "entry_view",
     "parse_entry",
     "validate_entries",
 ]
@@ -115,17 +114,6 @@ def validate_entries(drafts: list[EntryDraft], *, module_kind: str) -> tuple[Ent
         seen.add(normalized.entry_id)
         checked.append(normalized)
     return tuple(checked)
-
-
-def entry_view(draft: EntryDraft) -> dict[str, object]:
-    return {
-        "entry_id": draft.entry_id,
-        "kind": draft.kind,
-        "title": draft.title,
-        "aliases": list(draft.aliases),
-        "fields": dict(draft.fields),
-        "chars": draft.chars,
-    }
 
 
 def _parse(text: str) -> EntryDraft:

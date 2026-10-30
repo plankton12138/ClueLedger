@@ -100,7 +100,7 @@ test("创建表单实际保存节点线索并在刷新后显示", async ({ page,
   }, null, 2), contentType: "application/json" });
 });
 
-test("构思建立、备选采用与结构引用都进入真实请求", async ({ page, request }, info) => {
+test("构思建立与结构引用进入真实请求", async ({ page, request }, info) => {
   test.setTimeout(720_000);
   const root = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "online-books");
   mkdirSync(root, { recursive: true });
@@ -135,49 +135,16 @@ test("构思建立、备选采用与结构引用都进入真实请求", async ({
     expect(main.counts.clues).toBeGreaterThanOrEqual(1);
     expect(variants.primary_variant_id).toBe(main.id);
 
-    // 2) 构思面可读；建备选后采用，主方案多出备选的节点。
-    if (!(await page.getByRole("region", { name: "构思结构" }).isVisible())) {
-      await page.getByRole("button", { name: "构思", exact: true }).click();
-    }
+    // 2) 直接在唯一构思中引用节点。
     const surface = page.getByRole("region", { name: "构思结构" });
-    await expect(surface.getByRole("button").filter({ hasText: /.+/ }).first()).toBeVisible();
-    await surface.getByRole("button", { name: "建备选" }).click();
-    await expect(surface.getByRole("tab", { name: /备选/ })).toBeVisible();
-    const alt = await request
-      .get(`${base}/story/variants`)
-      .then((r) => r.json())
-      .then(
-        (body: { variants: { id: string; revision: string; primary: boolean }[] }) =>
-          body.variants.find((item) => !item.primary),
-      );
-    const altRevision = alt.revision;
-    await request.fetch(`${base}/story/changes`, {
-      method: "post",
-      data: {
-        variant_id: alt.id,
-        expected_revision: altRevision,
-        request_key: `story-online-alt-${book.id}`,
-        operations: [{ op: "add_node", node: { id: "n9", title: "尾声", action: "雪停了，脚印被扫掉" } }],
-      },
-    });
-    await page.reload();
-    await page.getByRole("button", { name: "构思", exact: true }).click();
-    const surface2 = page.getByRole("region", { name: "构思结构" });
-    await surface2.getByRole("tab", { name: /备选/ }).click();
-    await surface2.getByRole("button", { name: "采用此方案" }).click();
-    await expect(surface2.getByRole("region", { name: "采用结果" })).toContainText("已复制到主方案");
-    const merged = await request
-      .get(`${base}/story/variants/${main.id}`)
-      .then((r) => r.json());
-    expect(merged.nodes.some((node: { id: string }) => node.id === "n9")).toBe(true);
-
+    await expect(surface.getByRole("button", { name: "晚宴", exact: true })).toBeVisible();
     // 3) 引用到对话：下一条请求真的带上结构注入（读操作上下文，不猜）。
-    await surface2.getByRole("button", { name: "尾声", exact: true }).click();
-    await surface2.getByRole("button", { name: "引用到对话" }).click();
-    await expect(page.getByLabel("引用构思")).toContainText("尾声");
+    await surface.getByRole("button", { name: "晚宴", exact: true }).click();
+    await surface.getByRole("button", { name: "引用到对话" }).click();
+    await expect(page.getByLabel("引用构思")).toContainText("晚宴");
     const discussed = await send(
       page,
-      "只讨论、不保存：以「尾声」这个节点为基点，说明如果雪停时间被目击者推翻，哪些节点和线索需要联动调整。给出需要改动的对象清单即可。",
+      "只讨论、不保存：以「晚宴」这个节点为基点，说明如果雪停时间被目击者推翻，哪些节点和线索需要联动调整。给出需要改动的对象清单即可。",
     );
     const rows = await finish(request, book.id, discussed);
     const operationId = rows.find((e) => e.type === "operation_started")?.operation_id;

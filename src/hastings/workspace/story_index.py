@@ -458,16 +458,6 @@ def _ref_from_raw(raw: object) -> RecordRef | None:
     return cast(RecordRef, parts)
 
 
-def _projection_status(projection: ChapterProjection, digest: str) -> str:
-    if projection.recipe_version != RECIPE_VERSION:
-        return "stale"
-    return "valid" if projection.digest == digest else "stale"
-
-
-def _has_story_time(projection: ChapterProjection) -> bool:
-    return any(item.story_time.label or item.story_time.normalized for item in projection.events)
-
-
 # -- 工具 -------------------------------------------------------------------
 
 
@@ -514,13 +504,6 @@ def _is_record_ref(ref: Sequence[str]) -> bool:
         isinstance(part, str) and part.startswith(prefix) and len(part) > len(prefix)
         for part, prefix in zip(ref, _REF_PREFIX, strict=True)
     )
-
-
-def _date_or_none(value: str) -> date | None:
-    try:
-        return _parse_date(value)
-    except WorkspaceError:
-        return None
 
 
 def _parse_date(value: str) -> date | None:

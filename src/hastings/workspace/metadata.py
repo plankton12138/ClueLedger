@@ -21,7 +21,6 @@ from typing import Literal
 
 __all__ = [
     "ROLE_LABELS",
-    "ROLE_VALUES",
     "ChapterMeta",
     "ChapterType",
     "CharacterMeta",
@@ -48,8 +47,6 @@ ROLE_LABELS: dict[Role, str] = {
     "suspect": "嫌疑人",
     "victim": "受害者",
 }
-ROLE_VALUES: tuple[Role, ...] = tuple(ROLE_LABELS)
-
 PLACEHOLDER_TITLE = "（未命名）"
 
 _ORDER = re.compile(r"^(\d{4})(?!\d)")

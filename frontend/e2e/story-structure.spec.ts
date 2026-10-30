@@ -38,6 +38,109 @@ const NODES = [
   },
 ];
 
+test("长线路可用双向滚动条导航，缩放可查看完整全貌并恢复原尺寸", async ({ page, book }) => {
+  const chain = Array.from({ length: 30 }, (_, index) => ({ op: "add_node", node: {
+    id: `long-${index}`, title: `长线路 ${index + 1}`, action: "保留这一处的安排。",
+  } }));
+  const branches = Array.from({ length: 8 }, (_, index) => ({ op: "add_node", node: {
+    id: `branch-${index}`, title: `并行安排 ${index + 1}`, action: "在结尾共同回应。",
+  } }));
+  const links = Array.from({ length: 29 }, (_, index) => ({ op: "connect", edge: {
+    id: `long-edge-${index}`, from_id: `long-${index}`, to_id: `long-${index + 1}`, kind: "next",
+  } }));
+  const branchLinks = branches.flatMap((branch, index) => [
+    { op: "connect", edge: { id: `branch-in-${index}`, from_id: "long-0", to_id: branch.node.id, kind: "next" } },
+    { op: "connect", edge: { id: `branch-out-${index}`, from_id: branch.node.id, to_id: "long-29", kind: "next" } },
+  ]);
+  const seeded = await page.request.post(`/api/file-workspaces/${book.id}/story/changes`, { data: {
+    variant_id: "main", expected_revision: "empty", request_key: `scroll-${book.id}`,
+    operations: [...chain, ...branches, ...links, ...branchLinks],
+  } });
+  expect(seeded.ok(), await seeded.text()).toBeTruthy();
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  const canvas = page.locator(".story-canvas");
+  const horizontal = canvas.getByRole("region", { name: "画布横向滚动" });
+  const vertical = canvas.getByRole("region", { name: "画布纵向滚动" });
+  const viewport = () => canvas.locator(".react-flow__viewport").evaluate(element => {
+    const matrix = new DOMMatrix(getComputedStyle(element).transform);
+    return { x: matrix.m41, y: matrix.m42, zoom: matrix.a };
+  });
+  await expect.poll(() => vertical.evaluate(element => element.scrollHeight - element.clientHeight)).toBeGreaterThan(2000);
+  await expect.poll(() => horizontal.evaluate(element => element.scrollWidth - element.clientWidth)).toBeGreaterThan(1000);
+  const before = await viewport();
+  await vertical.press("End");
+  await expect.poll(async () => (await viewport()).y).toBeLessThan(before.y - 2000);
+  expect((await viewport()).zoom).toBeCloseTo(before.zoom);
+  const bottom = await vertical.evaluate(element => element.scrollTop);
+  const canvasBounds = (await canvas.boundingBox())!;
+  await page.mouse.move(canvasBounds.x + canvasBounds.width / 2, canvasBounds.y + 60);
+  await page.mouse.wheel(0, -200);
+  await expect.poll(() => vertical.evaluate(element => element.scrollTop)).toBeLessThan(bottom);
+  const previousX = (await viewport()).x;
+  await horizontal.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+  await expect.poll(async () => (await viewport()).x).toBeLessThan(previousX - 200);
+  await canvas.getByRole("button", { name: "查看全貌", exact: true }).click();
+  await expect.poll(async () => (await viewport()).zoom).toBeLessThan(0.6);
+  await expect.poll(() => canvas.locator(".react-flow__node").evaluateAll(elements => {
+    const frame = elements[0].closest(".react-flow")!.getBoundingClientRect();
+    return elements.every(element => {
+      const rect = element.getBoundingClientRect();
+      return rect.left >= frame.left && rect.right <= frame.right && rect.top >= frame.top && rect.bottom <= frame.bottom;
+    });
+  })).toBeTruthy();
+  await page.screenshot({ path: "test-results/story-canvas-overview.png" });
+  await canvas.getByRole("button", { name: "恢复100%缩放", exact: true }).click();
+  await expect.poll(async () => (await viewport()).zoom).toBeCloseTo(1);
+  for (let index = 0; index < 6; index++) await canvas.getByRole("button", { name: "放大画布", exact: true }).click();
+  await expect.poll(async () => (await viewport()).zoom).toBeGreaterThan(1.6);
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect(vertical).toBeVisible();
+  await expect(horizontal).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+});
+
+test("纵向画布展开分支并汇合，详情在下方且专注模式扩大画布", async ({ page, book }) => {
+  const seeded = await page.request.post(`/api/file-workspaces/${book.id}/story/changes`, { data: {
+    variant_id: "main", expected_revision: "empty", request_key: `vertical-${book.id}`,
+    operations: [...NODES,
+      { op: "add_node", node: { id: "n3", title: "核对订房记录与入住经过", action: "核对账簿记录。".repeat(30) } },
+      { op: "add_node", node: { id: "n4", title: "行动机会汇合", action: "一起核对案发夜的行动机会" } },
+      ...[["fork", "n1", "n3"], ["join1", "n2", "n4"], ["join2", "n3", "n4"]].map(([id, from_id, to_id]) => ({ op: "connect", edge: { id, from_id, to_id, kind: "next" } })),
+      { op: "connect", edge: { id: "answer", from_id: "n4", to_id: "n1", kind: "answer", reason: "后文回应湿手套" } },
+    ],
+  } });
+  expect(seeded.ok(), await seeded.text()).toBeTruthy();
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  const surface = page.getByRole("region", { name: "构思结构" });
+  const positions = () => surface.locator(".react-flow__node").evaluateAll(elements => Object.fromEntries(elements.map(element => {
+    const bounds = element.getBoundingClientRect();
+    return [element.getAttribute("data-id"), { x: bounds.x, y: bounds.y, w: bounds.width, h: bounds.height }];
+  })));
+  await expect.poll(async () => { const nodes = await positions(); return Boolean(nodes.n4 && nodes.n4.y > nodes.n2.y && nodes.n2.y > nodes.n1.y); }).toBeTruthy();
+  const nodes = await positions();
+  expect(Math.abs(nodes.n2.y + nodes.n2.h / 2 - nodes.n3.y - nodes.n3.h / 2)).toBeLessThan(2);
+  expect(Math.abs(nodes.n2.x - nodes.n3.x)).toBeGreaterThanOrEqual(280);
+  expect(nodes.n4.y).toBeGreaterThan(nodes.n3.y + nodes.n3.h);
+  await expect(page.locator("#writing-directory")).toBeHidden();
+  await surface.getByRole("button", { name: "抵达", exact: true }).click();
+  const canvas = surface.locator(".story-canvas");
+  const detail = surface.getByLabel("节点详情", { exact: true });
+  await expect(detail).toBeVisible();
+  const canvasBounds = (await canvas.boundingBox())!;
+  expect((await detail.boundingBox())!.y).toBeGreaterThanOrEqual(canvasBounds.y + canvasBounds.height);
+  await page.getByRole("button", { name: "专注构思", exact: true }).click();
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThan(canvasBounds.width + 200);
+  await expect(surface.getByRole("button", { name: "抵达", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await detail.getByRole("button", { name: "收起节点详情" }).click();
+  await expect(detail).toBeHidden();
+  await page.screenshot({ path: "test-results/story-vertical-1440.png" });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await expect(canvas).toBeVisible();
+});
+
 for (const width of [1440, 390]) {
   test(`空白构思在 ${width} 宽度下打开创建表单，提交失败保留要求与原草稿`, async ({ page, book }) => {
     await page.setViewportSize({ width, height: 900 });
@@ -107,8 +210,7 @@ test("空白构思读取失败时显示错误并可重新读取", async ({ page,
   await expect(surface.getByRole("button", { name: "创建构思", exact: true })).toBeVisible();
 });
 
-test("构思面显示结构、节点详情与备选差异", async ({ page, book }) => {
-  const prefix = `**/api/file-workspaces/${book.id}/story`;
+test("构思面显示节点详情且不再提供备选、试读和候选入口", async ({ page, book }) => {
   const seeded = await page.request.post(
     `/api/file-workspaces/${book.id}/story/changes`,
     {
@@ -131,34 +233,20 @@ test("构思面显示结构、节点详情与备选差异", async ({ page, book 
 
   await surface.getByRole("button", { name: "抵达" }).click();
   await expect(surface.getByRole("heading", { name: "抵达" })).toBeVisible();
-  await expect(surface.getByText("侦探在前台看到一双手套")).toBeVisible();
+  await expect(surface.getByLabel("节点详情", { exact: true }).getByText("侦探在前台看到一双手套")).toBeVisible();
+  await surface.getByText("真实作用与后续回应", { exact: true }).click();
   await expect(surface.getByText("真相：管家在雪地里搬过尸体")).toBeVisible();
 
-  await surface.getByRole("button", { name: "试读", exact: true }).click();
-  const reader = page.getByRole("dialog", { name: "试读", exact: true });
-  await expect(reader.getByRole("button", { name: "试读到所选节点" })).toBeEnabled();
-  await page.keyboard.press("Escape");
-
-  // 建备选：只复制基线，不改主方案。
-  await surface.getByRole("button", { name: "建备选" }).click();
-  await expect(surface.getByRole("tab", { name: /备选/ })).toBeVisible();
-  await expect(surface.getByRole("button", { name: "与主方案比较" })).toBeVisible();
-  await expect(surface.getByRole("button", { name: "采用并调整正文", exact: true })).toBeVisible();
-
-  await surface.getByRole("button", { name: "与主方案比较" }).click();
-  await expect(surface.getByRole("region", { name: "与主方案的差异" })).toBeVisible();
-
-  // 主方案仍是原来的两个节点。
-  await surface.getByRole("tab", { name: /主方案/ }).click();
-  await expect(surface.getByRole("button", { name: "抵达" })).toBeVisible();
+  await expect(surface.getByRole("button", { name: /备选|试读|候选正文|采用|比较/ })).toHaveCount(0);
+  await expect(surface.getByRole("tablist", { name: "方案" })).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`/workspaces/${book.id}/writing`));
-  void prefix;
+
 });
 
-test("片段折叠、采用备选与引用到对话", async ({ page, book }) => {
+test("片段折叠与引用到对话", async ({ page, book }) => {
   const api = (path: string, init?: Parameters<ReturnType<typeof page.request.get>>[1]) =>
     page.request.fetch(`/api/file-workspaces/${book.id}${path}`, init);
-  // 每个用例都是新作品：先按同一份种子建立基础结构，再做片段与采用。
+  // 每个用例都是新作品：先按同一份种子建立基础结构，再做片段浏览。
   await api("/story/changes", {
     method: "post",
     data: {
@@ -222,38 +310,12 @@ test("片段折叠、采用备选与引用到对话", async ({ page, book }) => 
   await groups.getByRole("button", { name: "全部", exact: true }).click();
   await expect(surface.getByRole("button", { name: "对质" })).toBeVisible();
 
-  // 建备选后给它加一个节点，再采用到主方案。
-  await surface.getByRole("button", { name: "建备选" }).click();
-  await expect(surface.getByRole("tab", { name: /备选/ })).toBeVisible();
-  const alt = await api("/story/variants").then((r) => r.json()).then(
-    (body: { variants: { id: string; revision: string; primary: boolean }[] }) =>
-      body.variants.find((item) => !item.primary),
-  );
-  await api("/story/changes", {
-    method: "post",
-    data: {
-      variant_id: alt.id,
-      expected_revision: alt.revision,
-      request_key: `alt-node-${book.id}`,
-      operations: [{ op: "add_node", node: { id: "n9", title: "尾声", action: "雪停了" } }],
-    },
-  });
-
-  await page.reload();
-  await page.getByRole("button", { name: "构思", exact: true }).click();
-  const surface2 = page.getByRole("region", { name: "构思结构" });
-  await surface2.getByRole("tab", { name: /备选/ }).click();
-  await surface2.getByRole("button", { name: "采用此方案" }).click();
-  await expect(surface2.getByRole("region", { name: "采用结果" })).toContainText(
-    "已复制到主方案",
-  );
-
-  // 引用到对话：草稿区出现构思引用，可移除。
-  await surface2.getByRole("button", { name: "尾声", exact: true }).click();
-  await surface2.getByRole("button", { name: "引用到对话" }).click();
-  await expect(page.getByLabel("引用构思")).toContainText("尾声");
-  await page.getByRole("button", { name: "移除构思引用 尾声", exact: true }).click();
+  await surface.getByRole("button", { name: "抵达", exact: true }).click();
+  await surface.getByRole("button", { name: "引用到对话" }).click();
+  await expect(page.getByLabel("引用构思")).toContainText("抵达");
+  await page.getByRole("button", { name: "移除构思引用 抵达", exact: true }).click();
   await expect(page.getByLabel("引用构思")).toHaveCount(0);
+
 });
 
 test("窄屏与大字号下构思面可读，结构不横向溢出", async ({ page, book }) => {
@@ -333,7 +395,7 @@ test("长篇结构默认只展开一个片段，切换片段可查看跨片段�
   await choice.selectOption("片段 30");
   await expect(surface.locator(".story-node")).toHaveCount(10);
   await surface.getByRole("button", { name: "节点 300", exact: true }).click();
-  await expect(surface.getByLabel("节点详情")).toContainText("node-001");
+  await expect(surface.getByLabel("节点详情", { exact: true })).toContainText("node-001");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "设置", exact: true }).click();
@@ -341,26 +403,4 @@ test("长篇结构默认只展开一个片段，切换片段可查看跨片段�
   await page.keyboard.press("Escape");
   await expect(choice).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-});
-
-
-test("候选正文可从构思页读取，正式正文保持原样", async ({ page, book }) => {
-  const seeded = await page.request.post(`/api/file-workspaces/${book.id}/story/changes`, {
-    data: { variant_id: "main", expected_revision: "empty", request_key: "candidate-seed", operations: NODES },
-  });
-  expect(seeded.ok(), await seeded.text()).toBeTruthy();
-  const root = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e");
-  execFileSync("uv", ["run", "--directory", "..", "python", resolve("e2e/fixtures/story_candidate.py"),
-    book.path, join(root, "state", "workspaces", book.id)], { windowsHide: true, stdio: "pipe" });
-  await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: "构思", exact: true }).click();
-  await page.getByRole("button", { name: "候选正文", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "候选正文", exact: true });
-  await expect(dialog.getByText("等待作者处理", { exact: true })).toBeVisible();
-  await dialog.locator("summary", { hasText: "正文/0001 雨夜.md" }).click();
-  await expect(dialog).toContainText("候选里侦探收起了湿伞。");
-  const original = await page.request.get(`/api/file-workspaces/${book.id}/file`, {
-    params: { path: "正文/0001 雨夜.md" },
-  });
-  expect((await original.json()).text).not.toContain("候选里侦探收起了湿伞。");
 });

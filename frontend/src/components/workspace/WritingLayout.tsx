@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Clock3, List, MessageSquare, Network, Search } from "lucide-react";
+import { Clock3, List, MessageSquare, Network, Search, Maximize2 } from "lucide-react";
 import { CHAT, SIDEBAR, useLayoutStore, writingLayout } from "../../state/layout";
 import { useWorkspaceStore } from "../../state/workspace";
 import { runningConversation, useConversationsStore } from "../../state/conversations";
@@ -28,7 +28,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const running = useConversationsStore(runningConversation);
   const selectedModule = useWorkspaceModulesStore(state => state.selected);
   const source = useSourceLocationStore(state => state.workspaceId === currentId ? state.location : null);
-  const variantFile = useSourceLocationStore(state => state.workspaceId === currentId ? state.variantFile : null);
   const sourceId = useSourceLocationStore(state => state.workspaceId === currentId ? state.evidenceId : null);
   const restoreEpoch = useSourceLocationStore(state => state.restoreEpoch);
   const pendingRestore = useSourceLocationStore(state => state.restorePosition);
@@ -44,6 +43,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   // 只看开关本身：构思面挂载后自己按作品读取，作品切换时上面的一致性检查会复位。
   const storyView = useStoryStore(state => state.open);
   const setStoryView = useStoryStore(state => state.setOpen);
+  const [storyDirectory, setStoryDirectory] = useState(false);
   const [directory, setDirectory] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const container = useRef<HTMLDivElement>(null);
@@ -55,14 +55,15 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     const observer = new ResizeObserver(entries => { if (entries[0].contentRect.width > 0) setWidth(entries[0].contentRect.width); });
     observer.observe(node); return () => observer.disconnect();
   }, []);
-  const capacity = writingLayout(width, { ...prefs, sidebarVisible: true, chatVisible: true });
+  const viewPrefs = { ...prefs, sidebarVisible: storyView ? storyDirectory : prefs.sidebarVisible };
+  const capacity = writingLayout(width, { ...viewPrefs, sidebarVisible: true, chatVisible: true });
   const canDockDirectory = capacity.sidebar > 0;
   const compact = capacity.kind === "single";
   const chat = Boolean(currentId && (compact ? compactChat : prefs.chatVisible));
   useLayoutEffect(() => {
     if (chat && prefs.chatReveal > 0) container.current?.querySelector<HTMLTextAreaElement>(".chat-input")?.focus();
   }, [chat, prefs.chatReveal]);
-  const plan = writingLayout(width, { ...prefs, chatVisible: chat });
+  const plan = writingLayout(width, { ...viewPrefs, chatVisible: chat });
   const sidebar = plan.sidebar > 0;
   const directoryVisible = canDockDirectory ? sidebar : directory;
   const paper = !compact || !chat;
@@ -107,13 +108,14 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   return <div className="writing-layout" ref={container} data-layout={plan.kind}>
     <div className="writing-tools">
       <Button ref={directoryButton} size="compact" variant={directoryVisible ? "primary" : "secondary"} aria-pressed={directoryVisible} aria-expanded={directoryVisible} aria-controls="writing-directory"
-        onClick={() => canDockDirectory ? prefs.toggleSidebar() : setDirectory(value => !value)} onKeyDown={event => { if (event.key === "Escape") setDirectory(false); }}>
+        onClick={() => canDockDirectory ? storyView ? setStoryDirectory(value => !value) : prefs.toggleSidebar() : setDirectory(value => !value)} onKeyDown={event => { if (event.key === "Escape") setDirectory(false); }}>
         <List size={16} strokeWidth={2} aria-hidden="true" />目录</Button>
       <Button size="compact" variant={storyView ? "primary" : "secondary"} aria-pressed={storyView} onClick={() => setStoryView(!storyView)} disabled={!currentId} disabledReason="先打开作品目录">
         <Network size={16} strokeWidth={2} aria-hidden="true" />构思</Button>
       <Button size="compact" variant={chat && pane === "chat" ? "primary" : "secondary"} aria-pressed={chat && pane === "chat"} aria-controls="writing-chat" onClick={() => showPane("chat", true)} disabled={!currentId} disabledReason="先打开作品目录">
         <MessageSquare size={16} strokeWidth={2} aria-hidden="true" />{chatLabel}</Button>
       <Button ref={clueButton} size="compact" variant={chat && pane === "clues" ? "primary" : "secondary"} aria-pressed={chat && pane === "clues"} aria-controls="writing-clues" onClick={() => showPane("clues", true)} disabled={!currentId} disabledReason="先打开作品目录"><Search size={16} aria-hidden="true" />本章线索</Button>
+      {storyView && <Button size="compact" aria-pressed={!chat && !directoryVisible} onClick={() => { setStoryDirectory(false); setDirectory(false); if (chat) { setCompactChat(false); if (!compact) prefs.toggleChat(); } else { showPane("chat"); } }}><Maximize2 size={16} aria-hidden="true" />专注构思</Button>}
       <Button className="writing-activity" size="compact" disabled={!currentId} disabledReason="先打开作品目录" onClick={() => void openDrawer()}>
         <Clock3 size={16} strokeWidth={2} aria-hidden="true" />活动记录</Button>
     </div>
@@ -126,8 +128,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
           const pending = useSourceLocationStore.getState().restorePosition;
           if (pending) useSourceLocationStore.getState().consumeRestore(pending.epoch);
           if (page?.kind === "writing" && page.sourceId) { useSourceLocationStore.getState().clear(); navigate({ kind: "writing", workspaceId: page.workspaceId }); }
-          // 从备选正文切回目录：这次定位的读取区不再适用。
-          else if (useSourceLocationStore.getState().variantFile) useSourceLocationStore.getState().clear();
           if (!canDockDirectory) { setDirectory(false); setCompactChat(false); directoryButton.current?.focus(); }
         }} />
       </aside>
@@ -143,15 +143,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             onLocate={binding => {
               // 从结构跳到正文：先回到正文面，再按结构里记的区间定位。
               setStoryView(false);
-              if (binding.variantId && binding.variantId !== useStoryStore.getState().primaryId) {
-                // 备选方案的正文在自己的受管副本里，不能打开主方案正式文件。
-                void useSourceLocationStore.getState().showVariant(
-                  currentId,
-                  { variantId: binding.variantId, path: binding.path, start: binding.start, end: binding.end, quote: binding.quote },
-                  { fromStory: true },
-                );
-                return;
-              }
               void useSourceLocationStore.getState().showLocal(
                 currentId,
                 { path: binding.path, start: binding.start, end: binding.end, quote: binding.quote },
@@ -159,7 +150,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
               );
             }}
           />
-        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={variantFile ?? file} loading={loading} variant={Boolean(variantFile)} /> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
+        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} loading={loading} /> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
         </div></div>
       </section>
       {currentId && <>

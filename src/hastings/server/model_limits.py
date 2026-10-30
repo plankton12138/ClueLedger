@@ -249,12 +249,6 @@ class ModelLimits:
         """这一轮可用的输入上限；模型容量未知时就是项目预算。"""
         return self.input_limit_tokens
 
-    def window_share(self, estimated_tokens: int) -> float | None:
-        """估算量占窗口的比例；窗口未知时不给数字。"""
-        if not self.context_window_tokens:
-            return None
-        return estimated_tokens / self.context_window_tokens
-
     def as_dict(self) -> dict[str, object]:
         return {
             "connection_id": self.connection_id,

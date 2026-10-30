@@ -19,7 +19,6 @@ from hastings.workspace.story_models import (
 )
 
 __all__ = [
-    "ADOPTION_NOTHING_COPIED",
     "AUTHOR_WRITING_CHECKS",
     "CLUE_INTENT_UNWRITTEN",
     "CLUE_RESOLUTION_OPEN",
@@ -39,9 +38,6 @@ __all__ = [
     "TESTIMONY_SPEECH_NOTE",
     "TRUTH_UNDECIDED",
     "TRUTH_WRITTEN_FINDING",
-    "adoption_instruction",
-    "adoption_pulled_text",
-    "adoption_scope",
     "clue_plan_line",
     "clue_resolution_explained",
     "clue_truth_line",
@@ -364,36 +360,6 @@ def structure_change_requirement(description: str) -> str:
 def scene_requirement(path: str, author_text: str) -> str:
     """每个候选文件都要核对作者本轮要求在该文件的完成情况。"""
     return f"核对作者本轮要求在 {path} 的完成情况：{author_text}"
-
-
-ADOPTION_NOTHING_COPIED = "没有新增对象"
-
-
-def adoption_scope(node_count: int) -> str:
-    """采用说明里的范围：整案或选中的节点数。"""
-    return "整案" if node_count == 0 else f"{node_count} 个节点"
-
-
-def adoption_pulled_text(ids: str) -> str:
-    """为支撑所选内容额外带入的对象；没有带入时为空。"""
-    return f"为支撑所选内容带入 {ids}。" if ids else ""
-
-
-def adoption_instruction(
-    source_name: str,
-    target_name: str,
-    scope: str,
-    copied_text: str,
-    pulled_text: str,
-) -> str:
-    """采用备选方案后发给模型的任务说明：结构已提交，只差正文按依赖调整。"""
-    return (
-        f"（应用转达）作者采用备选方案《{source_name}》的{scope}到当前方案《{target_name}》，"
-        f"结构已按采用计划提交：{copied_text}。{pulled_text}\n"
-        "请只处理正文：读取受影响的节点及其已关联正文，补足采用片段缺少的铺垫，"
-        "更新不再成立的呈现与关联。不要改动采用范围之外的既有内容，不要改写作者真相。"
-        "需要改正文时按现有流程提交候选并核对；没有需要改写的地方就直接说明，不提交空变更。"
-    )
 
 
 def constraint_requirement(text: str, scope_kind: str, target_id: str) -> str:

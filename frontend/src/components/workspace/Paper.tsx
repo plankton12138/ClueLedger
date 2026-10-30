@@ -25,11 +25,9 @@ import { RawSourceHighlight, sourceHighlightPlugin, sourceRange } from "../clues
 interface Props {
   file: FileView | null;
   loading: boolean;
-  /** 显示的是备选方案自己的正文：不写阅读位置，它不属于作品目录里的那个文件。 */
-  variant?: boolean;
 }
 
-export default function Paper({ file, loading, variant = false }: Props) {
+export default function Paper({ file, loading }: Props) {
   const workspaceId = useWorkspaceStore(state => state.currentId);
   const chapters = useWorkspaceStore(state => state.catalog.chapters);
   const openPath = useWorkspaceStore(state => state.openPath);
@@ -45,9 +43,6 @@ export default function Paper({ file, loading, variant = false }: Props) {
     if (page?.kind === "writing" && page.sourceId) {
       source.clear();
       navigate({ kind: "writing", workspaceId: page.workspaceId });
-    } else if (source.variantFile) {
-      // 备选正文里的翻页回到主方案正文：这次方案定位不再适用。
-      source.clear();
     }
     void openPath(path);
   }
@@ -55,7 +50,7 @@ export default function Paper({ file, loading, variant = false }: Props) {
   const scroll = useRef<HTMLDivElement>(null);
   const [positionError, setPositionError] = useState<string | null>(null);
   useEffect(() => {
-    if (!workspaceId || !file || variant) return;
+    if (!workspaceId || !file) return;
     const id = workspaceId, source = file;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let active = true;
@@ -75,7 +70,7 @@ export default function Paper({ file, loading, variant = false }: Props) {
     save();
     window.addEventListener("pagehide", save);
     return () => { active = false; clearTimeout(timer); save(); unsubscribe(); window.removeEventListener("pagehide", save); };
-  }, [workspaceId, file?.path, file?.digest, positionKey, variant]);
+  }, [workspaceId, file?.path, file?.digest, positionKey]);
   const [paragraphLocation, setParagraphLocation] = useState(false);
   const restoreEpoch = useSourceLocationStore(state => state.restoreEpoch);
   const location = useSourceLocationStore(state => state.workspaceId === workspaceId ? state.location : null);

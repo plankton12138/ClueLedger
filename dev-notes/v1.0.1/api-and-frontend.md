@@ -1,6 +1,6 @@
 # 接口、事件与页面契约
 
-日期：2026-10-29。状态：**当前实现契约**；当前进度与验收状态见[开发入口](README.md)。
+日期：2026-10-30。状态：**当前实现契约**；备选、试读和独立候选正文已退出公开入口。阶段补充保留历史，现行能力以第 2、3 节和[构思简化记录](notes/2026-10-30-story-simplification.md)为准。
 
 2026-10-30 创建入口补充：首次与续聊请求均可携带 `story_action: create`，必须同时提供 `context.story` 的方案、修订和 `purpose=design`。该动作明确要求结构成果，资料名称不开放模块内容写入；缺少构思目标时返回 `STORY_SCOPE_INVALID`。空白构思通过创建表单提交，请求受理后在原对话跟随进度；失败保留要求和普通草稿，完成依据结构收据。详见[创建流程](notes/2026-10-30-story-empty-entry.md)。
 
@@ -22,22 +22,16 @@
 
 | 页面动作 | 接口 | 结果及调用方 |
 |---|---|---|
-| 打开构思／方案切换 | `GET W/story/variants`；`GET W/story/variants/{id}?group_id=...` | 版本化结构、片段摘要与当前状态；story store |
-| 点节点或线索 | `GET W/story/variants/{id}/nodes/{node_id}` | 安排、相关线索、真实作用、来源与正文入口；NodeDetail |
-| 看正文关联 | `GET W/story/bindings/{binding_id}` | 校验后的位置、修订与失效状态；现有 Paper／SourceHighlight |
-| 看方案正文 | `GET W/story/variants/{id}/prose?path=...` | 该方案实际可见的正文、摘要与是否沿用主方案；Paper 以方案模式呈现 |
-| 确定性结构操作 | `POST W/story/variants/{id}/changes` | 完整 ChangeSet 与新修订；只接受当前 UI 明确支持的动作，不接受伪造授权 |
-| 从某版建备选 | `POST W/story/variants` | 名称、source_variant_id、source_revision、request_key；只复制确定基线，无模型 |
-| 看差异 | `GET W/story/comparison?base=...&candidate=...` | 双方明确修订、对象差异与已记录依赖，不宣称全书语义完整检查 |
-| 采用方案／片段 | `POST W/story/adoptions` | source/target 修订与选中 ID；无模型的完整既定替换返回收据，需语义整理则受理可见 operation；不得隐含调用 |
-| 对话构思、写作、核对、试读 | 扩展现有 `POST W/conversations` 和 `POST W/conversations/{id}/turns` | 返回 conversation_id、turn_id、operation_id；ConversationPanel 共用 |
+| 打开唯一构思 | `GET W/story/variants`；`GET W/story/variants/{id}?group_id=...` | 版本化结构、片段摘要与当前状态；story store |
+| 点节点或线索 | `GET W/story/nodes/{node_id}?variant_id=main` | 安排、相关线索、真实作用、来源与正文入口；NodeDetail |
+| 看正文关联 | `GET W/file?path=...` | 用节点关联的区间和引文核对当前正文；现有 Paper／SourceHighlight |
+| 确定性结构操作 | `POST W/story/changes` | 完整 ChangeSet 与新修订；只接受当前 UI 明确支持的动作，不接受伪造授权 |
+| 对话构思、写作、核对 | 扩展现有 `POST W/conversations` 和 `POST W/conversations/{id}/turns` | 返回 conversation_id、turn_id、operation_id；ConversationPanel 共用 |
 | 暂停／继续／插话 | `POST /api/operations/{id}/pause|continue|interject` | 原子控制、代次、状态与收据；共享 OperationControls |
 | 回看与重连 | `GET /api/operations/{id}`；`GET /api/operations/{id}/events?after=...` | 操作快照和游标事件，无执行副作用 |
 | 查看本次依据 | `GET /api/operations/{id}/context` | 各阶段实际输入与来源，按需读取 |
 | 查看结果／草稿 | `GET /api/operations/{id}/result` | 已提交收据、候选、未完成项与变更位置 |
 | 查看改动／撤销 | `GET W/story/changes/{change_id}`；`POST W/story/changes/{change_id}/undo` | 精确变更与反向提交；冲突时返回受影响目标 |
-
-采用流程用显式 `mode: exact|assist` 区分确定性应用与需要模型的调整。exact 无法安全完成时返回冲突和可选 assist 动作；选择 assist 时结构仍按同一计划确定性提交，随后受理一次可见 operation 调整正文，响应带 `operation_id`。两种路径均由 UI 呈现实际结果，不让“点比较”偷偷生成。
 
 可提议的语义操作包括 add/update/remove node、add/update/remove clue、connect/disconnect、update constraint、bind/unbind prose。模型通过专用工具提出 ChangeSet，应用补齐范围与元数据；不暴露无限制覆盖整个状态文件的工具。
 
@@ -54,22 +48,19 @@
       "variant_id": "main",
       "revision": "r12",
       "node_ids": ["lin-reaction"],
-      "purpose": "revise",
-      "reader_cutoff": null
+      "purpose": "revise"
     }
   }
 }
 ```
 
-purpose 为 discuss、design、write、revise、review 或 reader_preview。客户端 purpose 只表达意图，不能单独授予写权限；正文范围与授权仍由现有受理流程和本轮作者指令确定。构思页的 design 仍表示工作语境：讨论、比较与明确暂不保存保持只读；明确建立或修改结构时才形成结构目标，作者确认候选时只采用最近一条可定位的候选。试读必须有明确截止与呈现来源。
-
-试读使用独立入口 `POST W/reader-previews`：请求只有 `request_key / variant_id / revision / cutoff`，不接收文字、选中材料、检查目标或回答。它建立 `origin=reader` 的独立会话，问题由应用固定；执行时没有工具、目录、摘要与作者历史。写作对话列表不列读者会话。
+purpose 为 discuss、design、write、revise、review。客户端 purpose 只表达意图，不能单独授予写权限；正文范围与授权仍由现有受理流程和本轮作者指令确定。构思页的 design 仍表示工作语境：讨论、比较与明确暂不保存保持只读；明确建立或修改结构时才形成结构目标，作者确认候选时只采用最近一条可定位的候选。
 
 continue 提交 request_key、expected_generation；interject 再带 text。后端一次完成旧代次撤销和新指令受理，返回新的 generation。不能先 stop 再 send，避免中途丢要求或重复继续。
 
 超容量任务的后续组使用 `POST W/story-batches/{operation_id}/continue`，无模型提供的范围参数。后端从父操作读取剩余组、原要求与当前有效方案，返回同一个父任务对应的唯一后继；重复点击不重跑。`Operation.pending_units` 和说明提供未完成范围。
 
-候选使用 `GET W/story/candidates` 与 `GET W/story/candidates/{id}` 回看；图响应的 `latest_change_id` 指向当前方案最近提交，页面据此读取变更并恢复撤销入口。`context.story.structure_readonly` 只能收紧结构权限，assist 由应用固定为真；正文关联仍可随候选提交。
+内部草稿随写作任务核对，不提供独立候选正文列表；图响应的 `latest_change_id` 指向当前方案最近提交，页面据此读取变更并恢复撤销入口。`context.story.structure_readonly` 只能收紧结构权限，assist 由应用固定为真；正文关联仍可随候选提交。
 
 ## 4. 操作与现有轮次的接入
 

@@ -8,7 +8,7 @@
 import { create } from "zustand";
 
 export interface IdeaPosition { x: number; y: number }
-export const IDEAS_POSITION_KEY = "hastings.ideas.position";
+const IDEAS_POSITION_KEY = "hastings.ideas.position";
 export const DEFAULT_IDEA_POSITION: IdeaPosition = { x: 1, y: 0.72 };
 /** 拖出窗口边缘时最多只保留标题栏可抓取，比例上限对应这一极限。 */
 export const MAX_POSITION_RATIO = 2;

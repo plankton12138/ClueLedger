@@ -157,30 +157,6 @@ class AssemblyService:
             request_key=request_key,
         )
 
-    def reorder(
-        self,
-        *,
-        binding_ids: Sequence[str],
-        expected_digest: str | None,
-        request_key: str,
-    ) -> dict[str, object]:
-        assembly = self.store.read()
-        by_id = {item.id: item for item in assembly.bindings}
-        if sorted(binding_ids) != sorted(by_id):
-            raise WorkspaceError(
-                code="ASSEMBLY_INVALID",
-                where="assembly.reorder",
-                why="排序请求与当前绑定不一致",
-                fix="提交当前全部绑定 ID 的一个排列；不要漏掉或新增绑定",
-                details={"given": list(binding_ids), "current": sorted(by_id)},
-            )
-        return self._commit(
-            [by_id[binding_id] for binding_id in binding_ids],
-            links=assembly.links,
-            expected_digest=expected_digest,
-            request_key=request_key,
-        )
-
     def replace(
         self,
         *,

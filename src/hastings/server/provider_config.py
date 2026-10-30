@@ -547,13 +547,6 @@ class ProviderBook:
                 return profile
         return None
 
-    def update_config(self, new: ServerConfig) -> None:
-        """替换磁盘事实（提交后的内存快照）。
-
-        不做可能失败的凭据读取：需要明文 key 时由快照构造阶段从存储里取。
-        """
-        self._config = new
-
     def reload(self, new: ServerConfig) -> ServerConfig:
         """装入新配置并装回系统凭据，返回运行时视图。"""
         if self._credentials is not None:
@@ -619,10 +612,6 @@ class ProviderBook:
         chosen = model or profile.default_model
         self._runtime_selection = self._selection_of(profile, chosen, "saved")
         return self._runtime_selection
-
-    def available_models(self, name: str) -> list[str]:
-        profile = self.profile(name)
-        return profile.models_for() if profile is not None else []
 
     @property
     def project_input_limit(self) -> int:

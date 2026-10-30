@@ -20,7 +20,6 @@
 
 from __future__ import annotations
 
-import codecs
 import re
 from dataclasses import dataclass
 from pathlib import PurePath
@@ -29,14 +28,10 @@ from hastings.domain.manuscript.diff import split_paragraphs
 from hastings.domain.repository.serialization import content_hash
 
 __all__ = [
-    "SUPPORTED_SUFFIXES",
     "ParsedChapter",
     "ParsedManuscript",
-    "decode_manuscript_bytes",
     "parse_manuscript_text",
 ]
-
-SUPPORTED_SUFFIXES = (".txt", ".md", ".markdown")
 
 _MD_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 _CHAPTER_LINE = re.compile(
@@ -65,23 +60,6 @@ class ParsedManuscript:
     chapters: tuple[ParsedChapter, ...]
     batch_hash: str
     format: str
-
-
-def decode_manuscript_bytes(data: bytes) -> str:
-    """按 UTF-8 / UTF-8 BOM 解码；其他编码显式失败，不静默乱码。"""
-    from hastings.application.errors import ViolationError
-
-    if data.startswith(codecs.BOM_UTF8):
-        return data.decode("utf-8-sig")
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ViolationError(
-            code="IMPORT_ENCODING_UNSUPPORTED",
-            where="imports.decode",
-            why=f"文件不是 UTF-8（第 {exc.start} 字节起无法解码）",
-            fix="先用编辑器把稿件另存为 UTF-8 再导入；本版不做自动转码",
-        ) from exc
 
 
 def parse_manuscript_text(text: str, *, filename: str) -> ParsedManuscript:

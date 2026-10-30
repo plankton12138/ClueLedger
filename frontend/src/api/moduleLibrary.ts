@@ -463,21 +463,6 @@ export interface ModuleChangeSetView extends ModuleChangePrepared {
   result: ModuleChangeResult | null;
 }
 
-export function prepareModuleChanges(
-  workspaceId: string,
-  input: {
-    operations: ChangeOperationInput[];
-    base_digest?: string | null;
-    request_key: string;
-    conversation_id?: string;
-  },
-): Promise<ModuleChangePrepared> {
-  return request(`${WORKSPACES}/${workspaceId}/module-change-sets`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
 export function fetchModuleChangeSet(
   workspaceId: string,
   changeSetId: string,

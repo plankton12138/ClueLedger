@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from pydantic import JsonValue, ValidationError
@@ -33,7 +33,6 @@ from pydantic import JsonValue, ValidationError
 from hastings.workspace.atomic_io import atomic_write_bytes, atomic_write_json, locked
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, digest_bytes, managed_kind, normalize_newlines
-from hastings.workspace.story_adoption import AdoptionPlan, adoption_plan
 from hastings.workspace.story_changes import (
     StoryInvalid,
     apply_change_set,
@@ -46,7 +45,6 @@ from hastings.workspace.story_models import (
     StoryChangeRecord,
     StoryChangeSet,
     StoryDocument,
-    StoryOperation,
     StoryReceipt,
     StoryVariant,
 )
@@ -99,12 +97,6 @@ class StorySnapshot:
             return None
         return self.document.variants.get(variant_id)
 
-    def primary(self) -> StoryVariant | None:
-        if self.document is None:
-            return None
-        return self.document.variants.get(self.document.primary_variant_id)
-
-
 class StoryStore:
     def __init__(
         self,
@@ -155,20 +147,6 @@ class StoryStore:
                 details={"variant_id": variant_id},
             )
         return variant
-
-    def require_unused_request_key(self, request_key: str) -> None:
-        """尚未支持的动作也不能复用已经属于其他请求的键。"""
-        with locked(self.lock_file):
-            self._recover_locked()
-            document = self._read_head()
-            if document is not None and request_key in document.requests:
-                raise WorkspaceError(
-                    code="STORY_REQUEST_CONFLICT",
-                    where="story.request",
-                    why="同一请求键的内容发生了变化",
-                    fix="使用新的请求键提交新操作",
-                    details={"request_key": request_key},
-                )
 
     # -- 写入 ---------------------------------------------------------------
 
@@ -322,104 +300,6 @@ class StoryStore:
                     fix="检查状态目录权限与可用空间后重新创建备选",
                     details={"variant_id": variant.id},
                 ) from exc
-            self._persist_locked(document, None, expected_head_digest=head_digest)
-            return receipt
-
-    def adopt(
-        self,
-        *,
-        source_variant_id: str,
-        source_revision: str,
-        target_variant_id: str,
-        target_revision: str,
-        node_ids: tuple[str, ...],
-        replace: bool,
-        request_key: str,
-        mode: str = "exact",
-        prepare: Callable[[AdoptionPlan, StoryVariant, StoryVariant], list[StoryOperation]]
-        | None = None,
-        require_eligible: Callable[[str, int], None] | None = None,
-        decision_guard: Callable[[], AbstractContextManager[None]] | None = None,
-    ) -> StoryReceipt:
-        """在同一锁内查重、检查两端修订、计算并提交采用计划。
-
-        ``prepare`` 由模型入口提供：拿到锁内算出的计划后，按普通结构变更的规则检查
-        对象、真相与约定权限，并返回真正要提交的操作。界面发起的采用不需要它。
-        """
-        fingerprint = _fingerprint({
-            "kind": "adoption",
-            "source_variant_id": source_variant_id,
-            "source_revision": source_revision,
-            "target_variant_id": target_variant_id,
-            "target_revision": target_revision,
-            "node_ids": list(node_ids),
-            "replace": replace,
-            "mode": mode,
-        })
-        with locked(self.lock_file):
-            self._recover_locked()
-            head_digest = self._head_digest()
-            document = self._read_head()
-            prior = self._receipt(document, request_key, fingerprint)
-            if prior is not None:
-                return prior
-            if document is None:
-                raise _variant_missing(source_variant_id)
-            source = document.variants.get(source_variant_id)
-            target = document.variants.get(target_variant_id)
-            if source is None:
-                raise _variant_missing(source_variant_id)
-            if target is None:
-                raise _variant_missing(target_variant_id)
-            if source.revision != source_revision:
-                raise _revision_conflict(source_revision, source.revision)
-            if target.revision != target_revision:
-                raise _revision_conflict(target_revision, target.revision)
-            plan = adoption_plan(source, target, node_ids=node_ids, replace=replace)
-            summary = cast(dict[str, JsonValue], plan.summary())
-            if plan.conflicts:
-                raise WorkspaceError(
-                    code="STORY_ADOPTION_CONFLICT",
-                    where="story.adoption",
-                    why=f"目标方案里已有 {len(plan.conflicts)} 个同 ID 但内容不同的对象",
-                    fix="确认要覆盖时勾选覆盖重试，或先改名再采用",
-                    details={**summary, "note": "只复制结构；正文关联需要单独绑定。"},
-                )
-            document = document.model_copy(deep=True)
-            operations = (
-                prepare(plan, source, target) if prepare is not None else list(plan.operations)
-            )
-            if operations:
-                change = StoryChangeSet(
-                    id=new_id("adopt"),
-                    base_revision=target_revision,
-                    operations=operations,
-                    requested_scope=f"采用 {source.name}"[:500],
-                )
-                return self._commit_locked(
-                    document,
-                    variant_id=target_variant_id,
-                    change=change,
-                    request_key=request_key,
-                    kind="adoption",
-                    fingerprint=fingerprint,
-                    result_extra={"adoption_plan": summary},
-                    expected_head_digest=head_digest,
-                    require_eligible=require_eligible,
-                    decision_guard=decision_guard,
-                )
-            # 即使无需改动也登记请求，后续不同负载不能复用这个键。
-            document.revision = new_id("rev")
-            receipt = StoryReceipt(
-                fingerprint=fingerprint,
-                kind="adoption",
-                variant_id=target_variant_id,
-                base_revision=target_revision,
-                revision=target_revision,
-                request_key=request_key,
-                result={"adoption_plan": summary},
-            )
-            document.requests[request_key] = receipt
             self._persist_locked(document, None, expected_head_digest=head_digest)
             return receipt
 
@@ -1133,11 +1013,3 @@ def _revision_conflict(expected: str, current: str) -> WorkspaceError:
         fix="刷新当前结构后重新发起这次修改",
         details={"expected_revision": expected, "current_revision": current},
     )
-
-
-def iter_change_ids(store: StoryStore) -> Iterator[str]:
-    """按提交顺序列出变更标识；查看改动与影响分析共用。"""
-    snapshot = store.read()
-    if snapshot.document is None:
-        return
-    yield from snapshot.document.changes

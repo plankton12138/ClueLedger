@@ -39,7 +39,7 @@ export function draftEntries(rows: EntryRow[]): EntryInput[] {
     fields,
   }); });
 }
-export function draftFields(row: EntryRow): Record<string, unknown> | null {
+function draftFields(row: EntryRow): Record<string, unknown> | null {
   const fields = parseFields(row.fieldsText);
   if (!fields) return null;
   for (const [key, type] of Object.entries(row.fieldTypes ?? {})) {

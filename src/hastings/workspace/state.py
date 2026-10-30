@@ -830,10 +830,6 @@ class ConversationStore:
                 records.append(record)
         return tuple(records)
 
-    def last_event(self, conversation_id: str) -> dict[str, Any] | None:
-        events = self.events(conversation_id)
-        return events[-1] if events else None
-
     def unfinished_turns(self, conversation_id: str) -> list[str]:
         """有过 ``turn_started`` 却没有终态的轮次，按出现顺序。
 

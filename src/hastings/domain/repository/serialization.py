@@ -12,10 +12,6 @@
 - float：使用 repr 的最短往返表示；NaN/Inf 无法稳定序列化，直接拒绝；
 - bool/int/str/None：原样；其他类型（set、自定义对象）拒绝，不给隐式降级。
 
-`normalize_json` 返回全新规范值树：与调用者传入对象零共享引用，Revision、
-Relation metadata、Event payload 一律保存该树的拷贝——Revision 创建后不可
-被调用者后续修改（不变量 1）。
-
 哈希为 SHA-256，输入是规范 JSON 的 UTF-8 编码。
 """
 
@@ -27,7 +23,7 @@ import math
 from datetime import UTC, datetime
 from typing import Any
 
-__all__ = ["canonical_json", "content_hash", "normalize_json"]
+__all__ = ["canonical_json", "content_hash"]
 
 
 def _norm(value: Any) -> Any:
@@ -63,15 +59,6 @@ def _norm(value: Any) -> Any:
         f"类型 {type(value).__name__} 不支持规范序列化，没有明确的全局规则。"
         "建议：先转换为 JSON 兼容结构，集合先排序为 list"
     )
-
-
-def normalize_json(value: object) -> Any:
-    """返回与调用者对象零共享引用的规范值树（键排序、tuple→list、UTC 归一）。
-
-    无法稳定规范化的输入（非 str 键、naive datetime、set、NaN/Inf 等）抛
-    TypeError/ValueError，不做隐式降级。
-    """
-    return _norm(value)
 
 
 def canonical_json(value: object) -> str:

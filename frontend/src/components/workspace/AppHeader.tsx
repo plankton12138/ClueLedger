@@ -10,7 +10,7 @@ import FontSizeControl from "./FontSizeControl";
 import RemoveWorkspaceDialog from "./RemoveWorkspaceDialog";
 import RenameWorkspaceDialog from "./RenameWorkspaceDialog";
 
-export function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; workspaceId: string | null }) {
+function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; workspaceId: string | null }) {
   const positions = usePagePositions(state => workspaceId ? state.pages[workspaceId] : undefined);
   const writing: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId } : null;
   return <nav className="workspace-navigation" aria-label="作品页面">
@@ -23,7 +23,7 @@ export function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | nul
   </nav>;
 }
 
-export function WorkspaceMenu({ onOpen }: { onOpen: () => void }) {
+function WorkspaceMenu({ onOpen }: { onOpen: () => void }) {
   const [open, setOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [renaming, setRenaming] = useState(false);

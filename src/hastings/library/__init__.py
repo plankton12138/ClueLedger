@@ -6,7 +6,7 @@
 
 from hastings.library.catalog import CatalogEntry, CatalogRevision, LibraryCatalog
 from hastings.library.modules import ModuleInfo, ModuleLibrary, RevisionInfo
-from hastings.library.presets import PRESETS, ModuleSpec, is_kind, presets_view, spec
+from hastings.library.presets import PRESETS, ModuleSpec, presets_view, spec
 from hastings.library.records import EntryDraft, entry_markdown, parse_entry
 from hastings.library.storage import DEFAULT_LIBRARY_DIR, LibraryStorage
 
@@ -23,7 +23,6 @@ __all__ = [
     "ModuleSpec",
     "RevisionInfo",
     "entry_markdown",
-    "is_kind",
     "parse_entry",
     "presets_view",
     "spec",

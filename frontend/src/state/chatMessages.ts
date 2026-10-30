@@ -957,15 +957,6 @@ export function findMessage(turns: ChatTurn[], messageId: string): ChatMessage |
   return null;
 }
 
-/** 这一轮是否有可观看的运行过程（思考或工具）。 */
-export function hasProcess(turn: ChatTurn): boolean {
-  return turn.items.some(
-    (item) =>
-      item.kind === "tool" ||
-      (item.kind === "message" && item.message.blocks.some((block) => block.kind === "thinking")),
-  );
-}
-
 const PHASE_LABEL: Record<RunPhase, string> = {
   model: "等待模型响应",
   tool: "正在执行工具",

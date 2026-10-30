@@ -2,11 +2,10 @@
  * 构思结构的作品接口（1.0.1 P5）。
  *
  * 与后端 `workspace/story_api.py` 一一对应：读取方案、图与节点详情，提交确定性变更，
- * 建备选、看差异、回看与撤销。这里不做语义推断，也不在客户端拼 ID——所有标识来自服务端。
+ * 回看与撤销。这里不做语义推断，也不在客户端拼 ID——所有标识来自服务端。
  */
 
-import { request, requestApi } from "./workspace";
-import type { FileView } from "./workspace";
+import { request } from "./workspace";
 
 export interface StoryCounts {
   nodes: number;
@@ -109,42 +108,6 @@ export interface StoryReceipt {
   changed: string[];
 }
 
-export interface StoryAdoptionPlan {
-  source: string;
-  target: string;
-  node_ids: string[];
-  copied: Record<string, string[]>;
-  unchanged: string[];
-  pulled_in: string[];
-  skipped_edges: string[];
-  /** 跨边界关系：一端在所选范围、另一端是目标里已有的对象。 */
-  boundary_edges?: string[];
-  /** 整案覆盖时被移除的实际时间关系。 */
-  removed_event_times?: string[];
-  skipped_event_times?: string[];
-  conflicts: { kind: string; id: string; reason: string }[];
-  operations: number;
-  note: string;
-}
-
-export interface StoryAdoptionResult {
-  plan: StoryAdoptionPlan;
-  receipt: StoryReceipt | null;
-  /** assist 受理的可见操作；结构已提交，正文调整由这个任务承接。 */
-  operation_id?: string;
-}
-
-export interface StoryComparison {
-  base: string;
-  base_revision: string;
-  candidate: string;
-  candidate_revision: string;
-  added: Record<string, string[]>;
-  removed: Record<string, string[]>;
-  updated: Record<string, string[]>;
-  note: string;
-}
-
 export interface StoryChangeRecord {
   change_id: string;
   variant_id: string;
@@ -154,22 +117,6 @@ export interface StoryChangeRecord {
   operations: Record<string, unknown>[];
   changed: string[];
   undone_by: string | null;
-}
-
-export interface StoryProse extends FileView {
-  variant_id: string;
-  /** 备选还没写入自己的副本，内容仍来自主方案正文。 */
-  inherited: boolean;
-}
-
-export function readStoryProse(
-  workspaceId: string,
-  variantId: string,
-  path: string,
-): Promise<StoryProse> {
-  return request<StoryProse>(
-    `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/prose?path=${encodeURIComponent(path)}`,
-  );
 }
 
 export function listStoryVariants(workspaceId: string): Promise<StoryVariantList> {
@@ -216,30 +163,6 @@ export function submitStoryChange(
   });
 }
 
-export function createStoryVariant(
-  workspaceId: string,
-  body: {
-    name: string;
-    source_variant_id: string;
-    source_revision: string;
-    request_key: string;
-  },
-): Promise<StoryReceipt> {
-  return request<StoryReceipt>(`/${workspaceId}/story/variants`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export function compareStoryVariants(
-  workspaceId: string,
-  base: string,
-  candidate: string,
-): Promise<StoryComparison> {
-  const query = `?base=${encodeURIComponent(base)}&candidate=${encodeURIComponent(candidate)}`;
-  return request<StoryComparison>(`/${workspaceId}/story/comparison${query}`);
-}
-
 export function readStoryChange(
   workspaceId: string,
   changeId: string,
@@ -258,49 +181,4 @@ export function undoStoryChange(
     `/${workspaceId}/story/changes/${encodeURIComponent(changeId)}/undo?request_key=${encodeURIComponent(requestKey)}`,
     { method: "POST" },
   );
-}
-
-/** 采用备选：整案或选定片段；只复制结构，冲突由服务端逐项返回。 */
-export function adoptStoryVariant(
-  workspaceId: string,
-  input: {
-    source_variant_id: string;
-    source_revision: string;
-    target_variant_id: string;
-    target_revision: string;
-    node_ids?: string[];
-    mode?: "exact" | "assist";
-    replace?: boolean;
-    request_key: string;
-  },
-): Promise<StoryAdoptionResult> {
-  return request<StoryAdoptionResult>(`/${workspaceId}/story/adoptions`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-/** 操作上下文里的结构注入：查看「这一轮实际用了哪些结构」。 */
-export function readOperationContext(operationId: string): Promise<{
-  operation_id: string;
-  model: string;
-  connection: string;
-  refs: Record<string, unknown>[];
-  injections: Record<string, unknown>[];
-  note: string;
-}> {
-  return requestApi(`/api/operations/${encodeURIComponent(operationId)}/context`);
-}
-
-export interface StoryCandidate {
-  id: string;
-  status: string;
-  documents: Record<string, string>;
-  report: { checks: { id: string; status: string; path: string; quote: string; reason: string }[]; approved: boolean } | null;
-  repaired: boolean;
-  author_text: string;
-}
-
-export function listStoryCandidates(workspaceId: string): Promise<StoryCandidate[]> {
-  return request<StoryCandidate[]>(`/${workspaceId}/story/candidates`);
 }

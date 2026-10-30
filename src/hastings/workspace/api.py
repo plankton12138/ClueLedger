@@ -252,17 +252,6 @@ class AcceptedTurnView(BaseModel):
     generation: int = 1
 
 
-class ReaderPreviewRequest(BaseModel):
-    """试读受理：方案与截止位置是全部输入；问题、历史与工具范围由应用固定。"""
-
-    model_config = ConfigDict(extra="forbid")
-    request_key: str = Field(min_length=1)
-    variant_id: str = Field(default="", max_length=64)
-    revision: str = Field(default="", max_length=64)
-    cutoff: str = Field(min_length=1, max_length=64)
-
-
-
 class ClueReferenceInput(BaseModel):
     """对话里引用的线索：只给标识与客户端看到的版本，正文由服务端按账本重建。"""
 
@@ -298,10 +287,7 @@ class StoryContextInput(BaseModel):
     variant_id: str = Field(default="", max_length=64)
     revision: str = Field(default="", max_length=64)
     node_ids: list[str] = Field(default_factory=list, max_length=50)
-    purpose: Literal[
-        "discuss", "design", "write", "revise", "review", "reader_preview"
-    ] = "write"
-    reader_cutoff: str | None = Field(default=None, max_length=64)
+    purpose: Literal["discuss", "design", "write", "revise", "review"] = "write"
     structure_readonly: bool = False
 
     def to_request(self) -> StoryRequest:
@@ -310,7 +296,6 @@ class StoryContextInput(BaseModel):
             revision=self.revision,
             node_ids=tuple(self.node_ids),
             purpose=self.purpose,
-            reader_cutoff=self.reader_cutoff,
             structure_readonly=self.structure_readonly,
         )
 
@@ -1026,13 +1011,12 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
             )
 
     @router.patch("/{workspace_id}/reading-position", response_model=ReadingPosition)
-    async def patch_reading_position(
-        workspace_id: str, body: ReadingPosition
-    ) -> ReadingPosition:
+    async def patch_reading_position(workspace_id: str, body: ReadingPosition) -> ReadingPosition:
         with activity_lock:
             return save_position(
                 workspaces.workspace(workspace_id),
-                conversation_root(workspaces.root, workspace_id), body,
+                conversation_root(workspaces.root, workspace_id),
+                body,
             )
 
     @router.get("/{workspace_id}/file", response_model=FileViewResponse)
@@ -1325,30 +1309,12 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
     )
     async def next_story_batch(workspace_id: str, operation_id: str) -> AcceptedTurnView:
         info = await service_for(workspace_id).next_story_batch(operation_id)
-        return AcceptedTurnView(conversation_id=info.conversation_id, turn_id=info.turn_id,
-            started_at=info.started_at, title=info.title, request_key=f"story-next:{operation_id}",
-            operation_id=info.operation_id, generation=info.generation)
-
-    @router.post(
-        "/{workspace_id}/reader-previews", response_model=AcceptedTurnView, status_code=202
-    )
-    async def start_reader_preview(
-        workspace_id: str, body: ReaderPreviewRequest
-    ) -> AcceptedTurnView:
-        """受理一次试读：独立会话、固定问题、无工具与作者历史。"""
-        service = service_for(workspace_id)
-        info = await service.accept_reader(
-            body.request_key,
-            variant_id=body.variant_id,
-            revision=body.revision,
-            cutoff=body.cutoff,
-        )
         return AcceptedTurnView(
             conversation_id=info.conversation_id,
             turn_id=info.turn_id,
             started_at=info.started_at,
             title=info.title,
-            request_key=body.request_key,
+            request_key=f"story-next:{operation_id}",
             operation_id=info.operation_id,
             generation=info.generation,
         )
@@ -1546,9 +1512,7 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
                 selected_path=body.draft_selected_path,
                 reference_paths=tuple(body.draft_reference_paths or ()),
                 text_references=tuple(item.model_dump() for item in body.draft_text_references),
-                clue_references=tuple(
-                    item.model_dump() for item in body.draft_clue_references
-                ),
+                clue_references=tuple(item.model_dump() for item in body.draft_clue_references),
             )
         ui = store.update(
             expected_revision=if_match,

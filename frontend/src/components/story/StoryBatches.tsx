@@ -20,7 +20,7 @@ export default function StoryBatches({ workspaceId }: { workspaceId: string }) {
     } catch (cause) { setError(errorMessage(cause, "继续构思任务")); }
     finally { setBusy(false); }
   }
-  return <div className="story-comparison">
+  return <div className="story-batches">
     <Button size="compact" disabled={busy} onClick={() => void next()}>继续下一组</Button>
     <span>还有 {operation.pending_units.length} 个节点待处理</span>
     {error && <p role="alert">{error}</p>}

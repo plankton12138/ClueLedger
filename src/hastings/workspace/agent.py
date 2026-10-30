@@ -91,12 +91,10 @@ from hastings.prompts.tools import (
 from hastings.workspace.assembly import AssembledContext, Profile
 from hastings.workspace.character_states import (
     CharacterStateStore,
-    StateSnapshot,
     build_roster,
     roster_view,
 )
 from hastings.workspace.clues import (
-    ClueEntry,
     ClueStore,
     build_clues,
     clues_view,
@@ -104,7 +102,6 @@ from hastings.workspace.clues import (
 from hastings.workspace.context import build_assembled_context
 from hastings.workspace.disclosure import (
     DisclosureStore,
-    ObservedEvidence,
     build_disclosure_state,
 )
 from hastings.workspace.errors import WorkspaceError
@@ -164,7 +161,6 @@ from hastings.workspace.task_scope import (
     ScopeMode,
 )
 from hastings.workspace.timeline import (
-    TimelineEntry,
     TimelineStore,
     build_timeline,
     timeline_view,
@@ -3171,7 +3167,7 @@ def prepare_request_inputs(
             )
             candidate.propose(path, digest, text)
             return _json({"candidate_id": candidate.id, "status": "draft",
-                          "note": "候选已保留，正式正文未修改；应用将在本轮结束时核对。"})
+                          "note": "正文草稿已保留，正式正文未修改；本轮结束时核对。"})
         tools = [tool for tool in tools if tool.name.startswith(("read_", "search_", "list_"))
                  or tool.name in ("set_task_scope", "extend_task_scope", "ask_author")]
         async def read_previous_candidate(
@@ -3188,7 +3184,7 @@ def prepare_request_inputs(
                           "note": "候选仅供参考；重新提交仍需当前轮作者授权与原文读取。"})
         if candidate.source_candidate_id or candidate.generation > 1:
             tools.append(AgentTool(
-                name="read_previous_story_candidate", label="读取保留的候选正文",
+                name="read_previous_story_candidate", label="读取正文草稿",
                 description=READ_PREVIOUS_STORY_CANDIDATE_DESCRIPTION,
                 parameters={"type": "object", "properties": {}, "additionalProperties": False},
                 execute_fn=read_previous_candidate, execution_mode="sequential"))
@@ -3217,7 +3213,7 @@ def prepare_request_inputs(
                 "required": ["operations"], "additionalProperties": False},
             execute_fn=propose_structure, execution_mode="sequential"))
         tools.append(AgentTool(
-            name="propose_story_scene", label="提交候选正文",
+            name="propose_story_scene", label="保存正文草稿",
             description=PROPOSE_STORY_SCENE_DESCRIPTION,
             parameters={"type": "object", "properties": {
                 name: {"type": "string"} for name in ("path", "base_digest", "text")},
@@ -3345,88 +3341,6 @@ def _int_argument(
     if value < minimum:
         raise _input_error(name, f"必须 ≥ {minimum}")
     return value
-
-
-def _evidence_argument(value: JSONValue, name: str = "evidence") -> ObservedEvidence:
-    if not isinstance(value, dict):
-        raise _input_error(name, "必须是对象")
-    return ObservedEvidence(
-        path=_text_argument(value, "path"),
-        digest=_text_argument(value, "digest"),
-        start=_int_argument(value, "start", default=0, minimum=0),
-        end=_int_argument(value, "end", default=0, minimum=0),
-        quote=_text_argument(value, "quote"),
-    )
-
-
-def _snapshot_from(value: JSONValue, *, entity: str, entity_digest: str) -> StateSnapshot:
-    """把一条人物状态参数转成记录；缺字段按可修正的输入错误返回。"""
-    if not isinstance(value, dict):
-        raise _input_error("states", "每一项必须是对象")
-    alive = value.get("alive")
-    if not isinstance(alive, bool):
-        raise _input_error("alive", "必须是布尔值")
-    return StateSnapshot(
-        entity_path=entity,
-        entity_digest=entity_digest,
-        chapter=_int_argument(value, "chapter", default=0, minimum=1),
-        location=str(value.get("location") or ""),
-        alive=alive,
-        stance=str(value.get("stance") or ""),
-        evidence=_evidence_argument(value.get("evidence")),
-    )
-
-
-def _timeline_from(value: JSONValue) -> TimelineEntry:
-    """把一条时间锚点参数转成记录。"""
-    if not isinstance(value, dict):
-        raise _input_error("entries", "每一项必须是对象")
-    return TimelineEntry(
-        chapter=_int_argument(value, "chapter", default=0, minimum=1),
-        when=_text_argument(value, "when"),
-        span=str(value.get("span") or ""),
-        location=str(value.get("location") or ""),
-        evidence=_evidence_argument(value.get("evidence")),
-    )
-
-
-def _clue_from(value: JSONValue) -> ClueEntry:
-    """把一条线索参数转成记录；状态取值不合法时按可修正的输入错误返回。"""
-    if not isinstance(value, dict):
-        raise _input_error("entries", "每一项必须是对象")
-    status = value.get("status")
-    if status not in ("open", "resolved", "dropped"):
-        raise _input_error("status", "只能是 open / resolved / dropped")
-    due = value.get("due_chapter")
-    resolution_chapter = value.get("resolution_chapter")
-    raw_resolution = value.get("resolution_evidence")
-    return ClueEntry(
-        clue=_text_argument(value, "clue"),
-        planted_chapter=_int_argument(value, "planted_chapter", default=0, minimum=1),
-        due_chapter=(
-            _int_argument(value, "due_chapter", default=0, minimum=1) if due is not None else None
-        ),
-        status=status,  # type: ignore[arg-type]
-        supports=str(value.get("supports") or ""),
-        evidence=_evidence_argument(value.get("evidence")),
-        resolution_chapter=(
-            _int_argument(value, "resolution_chapter", default=0, minimum=1)
-            if resolution_chapter is not None
-            else None
-        ),
-        resolution_evidence=(
-            _evidence_argument(raw_resolution, "resolution_evidence")
-            if raw_resolution is not None
-            else None
-        ),
-        clue_id=str(value.get("clue_id") or ""),
-        new_identity=value.get("new_identity") is True,
-        mention_evidence=_evidence_argument(value["mention_evidence"])
-        if value.get("mention_evidence") is not None
-        else None,
-        source_chapter=_int_argument(value, "source_chapter", default=0, minimum=0),
-        mode=cast(Any, value.get("mode") or "unknown"),
-    )
 
 
 def _evidence_items(value: JSONValue, *, field: str) -> tuple[ReviewEvidence, ...]:
@@ -3680,18 +3594,6 @@ def _module_content_grant_arguments(value: JSONValue) -> tuple[ModuleContentGran
             )
         )
     return tuple(grants)
-
-
-def _tool_request_key(
-    prefix: str, tool_call_id: str, arguments: Mapping[str, JSONValue]
-) -> str:
-    """同一工具调用重试复用请求键；没有调用 ID 时按参数取稳定摘要。"""
-    suffix = tool_call_id.strip()
-    if not suffix:
-        suffix = hashlib.sha256(
-            json.dumps(arguments, ensure_ascii=False, sort_keys=True).encode()
-        ).hexdigest()[:20]
-    return f"{prefix}:{suffix}"
 
 
 def _change_operations_argument(value: JSONValue) -> tuple[ChangeOperation, ...]:

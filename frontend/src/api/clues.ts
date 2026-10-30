@@ -71,40 +71,6 @@ export function fetchClueDetail(workspaceId: string, clueId: string, asOf: numbe
   return clueRequest(`/api/file-workspaces/${encodeURIComponent(workspaceId)}/clues/${encodeURIComponent(clueId)}${asOf === null ? "" : `?as_of_chapter=${asOf}`}`);
 }
 
-async function clueWrite<T>(path: string, method: "POST" | "PUT", body: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    const error = payload?.error;
-    throw new WorkspaceApiError(error?.code ?? `HTTP_${response.status}`, error?.why ?? "线索操作没有完成", error?.fix ?? "重新读取线索后重试", response.status, error?.where);
-  }
-  return response.json() as Promise<T>;
-}
-
-export function clueRequestKey(prefix: string): string {
-  const random = Math.random().toString(36).slice(2, 10);
-  return `${prefix}-${Date.now().toString(36)}-${random}`;
-}
-
-function asOfQuery(asOf: number | null): string {
-  return asOf === null ? "" : `?as_of_chapter=${asOf}`;
-}
-
-export function createClue(
-  workspaceId: string,
-  input: { title: string; requestKey: string; expectedRevision: string; asOf: number | null },
-): Promise<ClueDetail> {
-  return clueWrite(
-    `/api/file-workspaces/${encodeURIComponent(workspaceId)}/clues${asOfQuery(input.asOf)}`,
-    "POST",
-    { title: input.title, request_key: input.requestKey, expected_revision: input.expectedRevision },
-  );
-}
-
 export type SourceRef =
   | { kind: "file"; path: string; digest: string }
   | { kind: "module"; library_id: string; module_id: string; revision_id: string; entry_id: string; content_digest: string };

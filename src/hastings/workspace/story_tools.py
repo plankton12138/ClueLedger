@@ -1,15 +1,12 @@
 """构思结构的模型工具：读取方案、提议变更并提交（1.0.1 P4）。
 
-工具只做三件事，边界都很窄：
+工具只做两件事，边界都很窄：
 
 - ``read_story``：读当前方案的节点、线索、关系与约定。返回的是精确 ID 与修订，
   模型不需要（也不允许）靠标题猜目标。
 - ``update_story``：提交一组语义变更。基础修订由应用填，``operation_id`` 与代次由
   应用填，模型提交的字段只描述「改什么」。提交前先过代次资格检查：暂停之后旧代次
   即使还在跑工具，也拿不到写权限。
-- ``create_story_variant`` / ``adopt_story_variant``：只在作者明确要求时创建备选或
-  采用；实际采用范围由冻结选择与作者原话决定，采用产生的变更走同一套对象、真相与
-  约定检查，不绕过普通修改的权限。
 
 工具失败一律抛带错误码的异常，由执行层转成一次工具失败；模型能看到原因并重试，
 但拿不到「已成功」的假回执。
@@ -19,7 +16,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -28,17 +25,13 @@ from pydantic import ValidationError
 
 from hastings.prompts import tools as prompt_tools
 from hastings.prompts.tools import (
-    ADOPT_STORY_DESCRIPTION,
-    ADOPT_STORY_NODE_IDS_PARAM_DESCRIPTION,
     READ_STORY_DESCRIPTION,
     READ_STORY_GUIDELINES,
     UPDATE_STORY_DESCRIPTION,
     UPDATE_STORY_GUIDELINES,
-    variant_tool_description,
 )
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
-from hastings.workspace.story_adoption import AdoptionPlan
 from hastings.workspace.story_authorization import (
     authorize_change,
     blocks_writes,
@@ -48,7 +41,6 @@ from hastings.workspace.story_authorization import (
 from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_models import (
     StoryChangeSet,
-    StoryOperation,
     StoryVariant,
 )
 from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, StoryStore, new_id
@@ -185,89 +177,6 @@ def _require_write_state(scope: StoryToolScope, where: str) -> None:
     if scope.guard is not None:
         # 先查资格再读结构：暂停之后旧代次不能靠一次工具调用拿到写入。
         scope.guard()
-
-
-#: 作者明确要求整案采用时的说法；没有这些说法就不能把空选择当成整案。
-_WHOLE_ADOPTION = (
-    "整案",
-    "整份",
-    "整个方案",
-    "整份方案",
-    "整个备选",
-    "整份备选",
-    "整个结构",
-    "全部采用",
-    "采用全部",
-    "采用整个",
-    "全部内容",
-)
-
-
-def _whole_requested(author_text: str) -> bool:
-    """作者是否明确要求整案，而不是只采用其中一部分或明确不要整案。"""
-    if not any(word in author_text for word in _WHOLE_ADOPTION):
-        return False
-    narrowing = ("只采用", "仅采用", "局部", "一部分", "其中", "不要整案", "不整案", "别整案")
-    return not any(word in author_text for word in narrowing)
-
-
-def _adoption_scope(
-    scope: StoryToolScope, selected: tuple[str, ...]
-) -> tuple[tuple[str, ...], bool]:
-    """由应用确定实际采用范围；模型传的节点只能收窄，不能借空值扩大。
-
-    返回 ``(范围, 是否整案)``。界面选中了节点时，范围就是选中的节点；没有选中时，
-    只有作者明确要求整案才采用整个方案，否则要求作者说明要采用哪一部分。
-    """
-    frozen = tuple(dict.fromkeys(scope.frozen.node_ids))
-    if frozen:
-        if selected and not set(selected) <= set(frozen):
-            raise WorkspaceError(
-                code="STORY_AUTHORIZATION_CONFLICT",
-                where="story.adopt",
-                why="采用范围超过本轮选中的节点",
-                fix="只采用所选节点，其他范围由作者另行指定",
-            )
-        return (selected or frozen), False
-    if selected:
-        return selected, False
-    if _whole_requested(scope.author_text):
-        return (), True
-    raise WorkspaceError(
-        code="STORY_AUTHORIZATION_CONFLICT",
-        where="story.adopt",
-        why="作者没有指定采用哪些内容，也没有要求整案采用",
-        fix="只采用界面选中的节点，或请作者明确说明要整案采用",
-    )
-
-
-def _prepare_adoption(
-    scope: StoryToolScope, *, whole: bool
-) -> Callable[[AdoptionPlan, StoryVariant, StoryVariant], list[StoryOperation]]:
-    """采用产生的变更走与普通修改相同的对象、真相与约定检查。"""
-
-    def prepare(
-        plan: AdoptionPlan, source: StoryVariant, target: StoryVariant
-    ) -> list[StoryOperation]:
-        del source
-        if not plan.operations:
-            # 没有可复制的对象：不构造空变更，交给存储登记一次无改动收据。
-            return []
-        change = StoryChangeSet(
-            id=new_id("adopt"),
-            base_revision=target.revision,
-            operations=list(plan.operations),
-            requested_scope=(scope.author_text or "")[:500],
-            operation_id=scope.operation_id,
-            generation=scope.generation,
-        )
-        authorize_change(
-            target, scope.frozen, scope.author_text, change, design_wide=whole
-        )
-        validate_model_change(target, change, scope.author_text)
-        return list(change.operations)
-
-    return prepare
 
 
 def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
@@ -591,114 +500,6 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             )
         return _json(result)
 
-    async def fork_story(
-        tool_call_id: str, arguments: Mapping[str, Any], signal: Any = None, on_update: Any = None
-    ) -> AgentToolResult:
-        del signal, on_update
-        if blocks_writes(scope.author_text) or not any(
-            word in scope.author_text for word in ("备选", "另一方案", "另一个方案")
-        ):
-            raise WorkspaceError(
-                code="STORY_AUTHORIZATION_CONFLICT",
-                where="story.fork",
-                why="作者没有要求创建备选方案",
-                fix="先讨论当前方案，待作者明确要求备选后创建",
-            )
-        if scope.frozen.structure_readonly:
-            raise WorkspaceError(
-                code="STORY_AUTHORIZATION_CONFLICT",
-                where="story.fork",
-                why="本轮结构只读，不能创建备选",
-                fix="只调整正文；需要备选时另起一轮",
-            )
-        variant = _variant(scope)
-        with scope.decision_guard() if scope.decision_guard else nullcontext():
-            if scope.guard:
-                scope.guard()
-            receipt = scope.store.create_variant(
-                name=str(arguments.get("name") or "备选"),
-                source_variant_id=variant.id,
-                source_revision=variant.revision,
-                request_key=f"{scope.operation_id}:fork:{tool_call_id}",
-            )
-        return _json(
-            {
-                "variant_id": receipt.result["variant_id"],
-                "revision": receipt.revision,
-                "copied_counts": {
-                    "nodes": len(variant.nodes),
-                    "clues": len(variant.clues),
-                    "constraints": len(variant.constraints),
-                },
-                "note": "备选已经从当前方案完整复制，并非空白；主方案没有变化。"
-                "修改备选需在对应方案语境发起后续任务。",
-            }
-        )
-
-    async def adopt_story(
-        tool_call_id: str, arguments: Mapping[str, Any], signal: Any = None, on_update: Any = None
-    ) -> AgentToolResult:
-        del signal, on_update
-        if "采用" not in scope.author_text or blocks_writes(scope.author_text) or any(
-            word in scope.author_text for word in ("不要采用", "不采用", "别采用", "不用采用")
-        ):
-            raise WorkspaceError(
-                code="STORY_AUTHORIZATION_CONFLICT",
-                where="story.adopt",
-                why="作者没有明确要求采用方案",
-                fix="先说明差异，等待作者决定采用范围",
-            )
-        if scope.frozen.structure_readonly:
-            raise WorkspaceError(
-                code="STORY_AUTHORIZATION_CONFLICT",
-                where="story.adopt",
-                why="本轮结构只读，不能采用备选",
-                fix="只调整正文；需要采用时另起一轮",
-            )
-        target = _variant(scope)
-        source = scope.store.require_variant(str(arguments.get("source_variant_id") or ""))
-        raw_selected = arguments.get("node_ids") or []
-        if not isinstance(raw_selected, list):
-            raise WorkspaceError(
-                code="STORY_SCOPE_INVALID",
-                where="story.adopt",
-                why="node_ids 不是数组",
-                fix="传一个节点标识数组，或省略它采用本轮选中的节点",
-            )
-        selected = tuple(str(item) for item in raw_selected)
-        actual, whole = _adoption_scope(scope, selected)
-        prepare = _prepare_adoption(scope, whole=whole)
-
-        def require_eligible(operation_id: str, generation: int) -> None:
-            del operation_id, generation
-            if scope.guard is not None:
-                scope.guard()
-
-        with scope.decision_guard() if scope.decision_guard else nullcontext():
-            if scope.guard:
-                scope.guard()
-            receipt = scope.store.adopt(
-                source_variant_id=source.id,
-                source_revision=source.revision,
-                target_variant_id=target.id,
-                target_revision=target.revision,
-                node_ids=actual,
-                replace=True,
-                request_key=f"{scope.operation_id}:adopt:{tool_call_id}",
-                mode="exact",
-                prepare=prepare,
-                require_eligible=require_eligible if scope.guard is not None else None,
-                decision_guard=scope.decision_guard,
-            )
-        return _json(
-            {
-                "revision": receipt.revision,
-                "change_id": receipt.change_id,
-                "plan": receipt.result.get("adoption_plan"),
-                "note": "结构采用已保存；正文尚未调整。",
-            }
-        )
-
     tools = [
         AgentTool(
             name="read_story",
@@ -710,9 +511,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                     "node_ids": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": (
-                            prompt_tools.READ_STORY_NODE_IDS_PARAM_DESCRIPTION
-                        ),
+                        "description": (prompt_tools.READ_STORY_NODE_IDS_PARAM_DESCRIPTION),
                     }
                 },
                 "additionalProperties": False,
@@ -727,46 +526,6 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
         and not scope.frozen.structure_readonly
         and not blocks_writes(scope.author_text)
     ):
-        for name, label, execute, properties, required, description in (
-            (
-                "create_story_variant",
-                "创建备选",
-                fork_story,
-                {"name": {"type": "string"}},
-                ["name"],
-                variant_tool_description("创建备选"),
-            ),
-            (
-                "adopt_story_variant",
-                "采用备选结构",
-                adopt_story,
-                {
-                    "source_variant_id": {"type": "string"},
-                    "node_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": ADOPT_STORY_NODE_IDS_PARAM_DESCRIPTION,
-                    },
-                },
-                ["source_variant_id"],
-                ADOPT_STORY_DESCRIPTION,
-            ),
-        ):
-            tools.append(
-                AgentTool(
-                    name=name,
-                    label=label,
-                    description=description,
-                    parameters={
-                        "type": "object",
-                        "properties": cast(Any, properties),
-                        "required": cast(Any, required),
-                        "additionalProperties": False,
-                    },
-                    execute_fn=execute,
-                    execution_mode="sequential",
-                )
-            )
         tools.append(
             AgentTool(
                 name="update_story",
@@ -778,9 +537,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                         "operations": {
                             "type": "array",
                             "items": {"type": "object"},
-                            "description": (
-                                prompt_tools.UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION
-                            ),
+                            "description": (prompt_tools.UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION),
                         },
                         "no_change": {
                             "type": "object",

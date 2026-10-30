@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -484,15 +484,3 @@ def context_refs_of(context: Any) -> list[dict[str, Any]]:
             }
         )
     return refs
-
-
-def dedupe_refs(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: set[tuple[object, object]] = set()
-    ordered: list[dict[str, Any]] = []
-    for item in items:
-        key = (item.get("kind"), item.get("path"))
-        if key in seen:
-            continue
-        seen.add(key)
-        ordered.append(item)
-    return ordered

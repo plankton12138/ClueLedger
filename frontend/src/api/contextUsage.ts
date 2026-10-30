@@ -163,7 +163,7 @@ export function contextAmount(context: ContextView): string {
   return `≈${formatCount(used)} / ${formatCount(limit)} tokens`;
 }
 
-export const CAPACITY_SOURCE_LABEL: Record<CapacitySource, string> = {
+const CAPACITY_SOURCE_LABEL: Record<CapacitySource, string> = {
   override: "旧配置（已停用）",
   metadata: "服务商返回",
   catalog: "内置目录",
@@ -174,7 +174,7 @@ export function capacitySourceLabel(source: CapacitySource | string): string {
   return CAPACITY_SOURCE_LABEL[source as CapacitySource] ?? "未知";
 }
 
-export const INPUT_LIMIT_SOURCE_LABEL: Record<InputLimitSource, string> = {
+const INPUT_LIMIT_SOURCE_LABEL: Record<InputLimitSource, string> = {
   project: "项目预算",
   model: "模型容量",
   both: "项目与模型相同",

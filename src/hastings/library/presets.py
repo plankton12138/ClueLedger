@@ -15,7 +15,6 @@ __all__ = [
     "PRESETS",
     "ModuleKind",
     "ModuleSpec",
-    "is_kind",
     "preset_view",
     "presets_view",
     "spec",
@@ -93,10 +92,6 @@ PRESETS: tuple[ModuleSpec, ...] = (
 )
 
 _BY_KIND: dict[str, ModuleSpec] = {item.kind: item for item in PRESETS}
-
-
-def is_kind(value: object) -> bool:
-    return isinstance(value, str) and value in _BY_KIND
 
 
 def spec(kind: str) -> ModuleSpec:

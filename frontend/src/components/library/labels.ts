@@ -9,13 +9,3 @@ export const KIND_LABEL: Record<ModuleKind, string> = {
   plot: "剧情安排",
   reference: "自由资料",
 };
-
-export const KIND_OPTIONS: ModuleKind[] = [
-  "characters",
-  "world",
-  "clues",
-  "truth",
-  "timeline",
-  "plot",
-  "reference",
-];

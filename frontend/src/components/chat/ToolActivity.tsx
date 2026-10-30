@@ -25,7 +25,7 @@ const TOOL_LABEL: Record<string, string> = {
   search_module_library: "搜索模块库",
 };
 
-export function toolLine(tool: ChatTool): string {
+function toolLine(tool: ChatTool): string {
   const name = TOOL_LABEL[tool.name] ?? tool.name;
   const path = typeof tool.args.path === "string" ? tool.args.path : "";
   const source = typeof tool.args.source === "string" ? tool.args.source : "";

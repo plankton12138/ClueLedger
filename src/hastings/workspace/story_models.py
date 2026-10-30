@@ -382,14 +382,8 @@ class StoryVariant(StrictRecord):
     def node_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self.nodes))
 
-    def clue_ids(self) -> tuple[str, ...]:
-        return tuple(sorted(self.clues))
-
     def thread_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self.threads))
-
-    def constraint_ids(self) -> tuple[str, ...]:
-        return tuple(sorted(self.constraints))
 
     def members(self, thread_id: str) -> tuple[str, ...]:
         """某条分支的成员；按节点声明导出，不依赖另一份成员表。"""

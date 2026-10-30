@@ -59,8 +59,6 @@ __all__ = [
     "SearchHit",
     "SearchResult",
     "Workspace",
-    "chapter_title",
-    "character_title",
     "digest_bytes",
     "is_managed_path",
     "managed_kind",
@@ -162,16 +160,6 @@ def decode_text(data: bytes, *, where: str) -> str:
             fix="用编辑器把文件另存为 UTF-8；本版不做自动转码",
         ) from exc
     return normalize_newlines(text)
-
-
-def chapter_title(text: str, filename: str) -> str:
-    """章节标题：与目录共用同一套解析，避免界面、工具与导入各拼一套规则。"""
-    return parse_chapter(f"{BODY_DIR}/{filename}", text).title
-
-
-def character_title(text: str, filename: str) -> str:
-    """角色名优先取一级标题，缺失时使用完整文件名，不剥离数字。"""
-    return parse_character(f"{CHARACTERS_DIR}/{filename}", text).title
 
 
 @dataclass(frozen=True, slots=True)

@@ -402,10 +402,6 @@ def _ancestors(variant: StoryVariant) -> dict[str, frozenset[str]]:
     return memo
 
 
-def _precedes(ancestors: Mapping[str, frozenset[str]], before: str, after: str) -> bool:
-    return before in ancestors.get(after, frozenset())
-
-
 # -- 装配 -------------------------------------------------------------------
 
 
