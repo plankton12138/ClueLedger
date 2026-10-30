@@ -5,11 +5,13 @@ import {
   type EdgeProps, type Node, type NodeProps, type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { StoryGraph, StoryNode } from "../../api/story";
+import type { StoryGraph, StoryNode, StoryStage } from "../../api/story";
 import type { ELK } from "elkjs/lib/elk-api";
 import CanvasScrollbars from "./CanvasScrollbars";
 
 type CardNode = Node<{ story: StoryNode; choose: (id: string) => void }, "story">;
+type StageNode = Node<{ stage: StoryStage }, "stage">;
+type CanvasNode = CardNode | StageNode;
 const views = new Map<string, Viewport>();
 let engine: Promise<ELK> | undefined;
 function layoutEngine() {
@@ -35,30 +37,45 @@ function ResponseEdge(props: EdgeProps) {
   return <BaseEdge {...props} path={path} />;
 }
 
-const nodeTypes = { story: StoryCard };
+function StageBand({ data }: NodeProps<StageNode>) {
+  return <div className="story-stage-band" aria-label={`阶段 ${data.stage.title}`}>
+    <strong>{data.stage.title}</strong>
+    {data.stage.summary && <span>{data.stage.summary}</span>}
+  </div>;
+}
+
+const nodeTypes = { story: StoryCard, stage: StageBand };
 const edgeTypes = { response: ResponseEdge };
 
 function Canvas({ graph, nodeId, onSelect, viewKey }: {
   graph: StoryGraph; nodeId: string | null; onSelect: (id: string | null) => void; viewKey: string;
 }) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<CardNode>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<string | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const started = useRef(false);
-  const flow = useReactFlow<CardNode>();
+  const flow = useReactFlow<CanvasNode>();
   useEffect(() => {
-    setNodes(previous => graph.nodes.map(story => {
-      const existing = previous.find(node => node.id === story.id);
-      return { ...existing, id: story.id, type: "story", position: existing?.position ?? { x: 0, y: 0 },
-        data: { story, choose: id => onSelect(id) } };
-    }));
+    setNodes(previous => [
+      ...graph.nodes.map(story => {
+        const existing = previous.find(node => node.id === story.id);
+        return { ...existing, id: story.id, type: "story" as const, position: existing?.position ?? { x: 0, y: 0 },
+          data: { story, choose: (id: string) => onSelect(id) } } as CanvasNode;
+      }),
+      ...graph.stages.map(stage => {
+        const id = `stage:${stage.id}`;
+        const existing = previous.find(node => node.id === id);
+        return { ...existing, id, type: "stage" as const, draggable: false, selectable: false, connectable: false,
+          position: existing?.position ?? { x: 0, y: 0 }, data: { stage } } as CanvasNode;
+      }),
+    ]);
   }, [graph, onSelect, setNodes]);
-  const sizes = nodes.map(node => `${node.id}:${node.measured?.width ?? 280}:${node.measured?.height ?? 112}`).join("|");
+  const sizes = nodes.filter(node => node.type === "story").map(node => `${node.id}:${node.measured?.width ?? 280}:${node.measured?.height ?? 112}`).join("|");
   useEffect(() => {
-    if (nodes.length !== graph.nodes.length || !nodes.length) return;
+    if (nodes.filter(node => node.type === "story").length !== graph.nodes.length || !graph.nodes.length) return;
     let cancelled = false;
-    const dimensions = nodes.map(node => ({ id: node.id, width: node.measured?.width ?? 280, height: node.measured?.height ?? 112 }));
+    const dimensions = nodes.filter(node => node.type === "story").map(node => ({ id: node.id, width: node.measured?.width ?? 280, height: node.measured?.height ?? 112 }));
     void layoutEngine().then(elk => elk.layout({
       id: "story", layoutOptions: { "elk.algorithm": "layered", "elk.direction": "DOWN",
         "elk.spacing.nodeNode": "48", "elk.layered.spacing.nodeNodeBetweenLayers": "64",
@@ -69,7 +86,15 @@ function Canvas({ graph, nodeId, onSelect, viewKey }: {
       if (cancelled) return;
       setError(null);
       const positions = new Map(result.children?.map(node => [node.id, { x: node.x ?? 0, y: node.y ?? 0 }]));
-      setNodes(previous => previous.map(node => ({ ...node, position: positions.get(node.id) ?? node.position })));
+      setNodes(previous => previous.map(node => {
+        if (node.type !== "stage") return { ...node, position: positions.get(node.id) ?? node.position };
+        const stageId = node.id.slice("stage:".length);
+        const members = graph.nodes.filter(item => item.stage_id === stageId).map(item => positions.get(item.id)).filter(Boolean) as { x: number; y: number }[];
+        if (members.length === 0) return node;
+        const x = Math.min(...members.map(item => item.x)) - 12;
+        const y = Math.min(...members.map(item => item.y)) - 52;
+        return { ...node, position: { x, y } };
+      }));
       if (!started.current) {
         const first = result.children?.slice().sort((left, right) => (left.y ?? 0) - (right.y ?? 0))[0];
         const width = host.current?.clientWidth ?? 800;
@@ -81,6 +106,16 @@ function Canvas({ graph, nodeId, onSelect, viewKey }: {
     // 尺寸决定排布；选中、拖动或缩放不触发重排。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, sizes, flow, setNodes, viewKey]);
+  useEffect(() => {
+    if (!nodeId) return;
+    const target = flow.getNode(nodeId);
+    if (!target) return;
+    const width = target.measured?.width ?? 280;
+    const height = target.measured?.height ?? 112;
+    void flow.setCenter(target.position.x + width / 2, target.position.y + height / 2, {
+      zoom: Math.max(0.8, Math.min(1.4, flow.getZoom())), duration: 240,
+    });
+  }, [nodeId, flow, nodes]);
   const edges = useMemo(() => graph.edges.map(edge => {
     const related = edge.from_id === nodeId || edge.to_id === nodeId;
     return { id: edge.id, source: edge.from_id, target: edge.to_id,
@@ -94,7 +129,7 @@ function Canvas({ graph, nodeId, onSelect, viewKey }: {
   return <div className="story-canvas" ref={host} role="group" aria-label="结构图">
     {error && <p role="alert" className="story-canvas-message">{error}</p>}
     {connection && <button type="button" className="story-connection" onClick={() => setConnection(null)}>{connection} · 关闭</button>}
-    <ReactFlow<CardNode> nodes={nodes.map(node => ({ ...node, selected: node.id === nodeId }))} edges={edges}
+    <ReactFlow<CanvasNode> nodes={nodes.map(node => ({ ...node, selected: node.type === "story" && node.id === nodeId }))} edges={edges}
       nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange}
       nodesConnectable={false} elementsSelectable={false} deleteKeyCode={null}
       onPaneClick={() => { onSelect(null); setConnection(null); }}

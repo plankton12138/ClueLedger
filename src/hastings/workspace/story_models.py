@@ -8,8 +8,9 @@
 
 * 推进顺序与实际时间分开。``StoryEdge.kind == "next"`` 才参与无环校验；
   ``reframe`` 和 ``answer`` 允许从后文指向前文，因为重新解释和回收本来就发生在后面。
-* 真相允许未定。``Clue.author_truth`` 可以是 ``None``，``resolution.intent`` 可以是
-  ``undecided``——未决定不等于否定事实，模型也不能把它填成空字符串来「表示没有」。
+* 真相允许未定。``StoryCluePlan.author_truth`` 可以是 ``None``，
+  ``resolution_intent`` 可以是 ``undecided``——未决定不等于否定事实，模型也不能把它
+  填成空字符串来「表示没有」。
 * 分支成员只由节点持有（``StoryNode.thread_ids``）。线程上的 ``node_ids`` 由节点导出，
   不再存一份，避免两处真相在编辑后分叉。
 * 知情按事件位置取值。``KnowledgeChange.effective_event_node_id`` 决定「读到哪一章时
@@ -26,18 +27,22 @@ __all__ = [
     "Assessment",
     "AssessmentFinding",
     "AssessmentRequirement",
-    "Clue",
-    "ClueResolution",
+    "CluePlanInput",
     "ClueUse",
     "Constraint",
     "ConstraintScope",
+    "CreateClueIdentity",
     "EventTimeRelation",
     "KnowledgeChange",
     "ProseBinding",
     "ProsePatch",
     "ReadDependency",
+    "RemoveClueIdentity",
+    "RemoveCluePlan",
+    "RenameClueIdentity",
     "StoryChangeRecord",
     "StoryChangeSet",
+    "StoryCluePlan",
     "StoryDocument",
     "StoryEdge",
     "StoryNode",
@@ -46,6 +51,7 @@ __all__ = [
     "StoryStage",
     "StoryThread",
     "StoryVariant",
+    "UpsertCluePlan",
     "validate_story_variant",
 ]
 
@@ -65,6 +71,7 @@ PresentationMode = Literal[
 ]
 EdgeKind = Literal["next", "reframe", "answer"]
 ResolutionIntent = Literal["explain", "leave_open", "undecided"]
+ClueRole = Literal["plant", "develop", "misdirect", "reinterpret", "resolve"]
 Provenance = Literal["author_request", "authorized_creation", "model_suggestion"]
 ConstraintStrength = Literal["required", "preference"]
 ConstraintScopeKind = Literal["book", "character", "node", "prose"]
@@ -78,9 +85,13 @@ class StrictRecord(BaseModel):
 
 
 class ClueUse(StrictRecord):
-    """一条线索在某个节点里怎么出现；预期理解是创作目标，不是读者的实际认知。"""
+    """一条线索在某个节点里怎么出现；预期理解是创作目标，不是读者的实际认知。
+
+    ``roles`` 只描述作者计划，不推导正文里的实际埋设或回收。
+    """
 
     clue_id: StoryId
+    roles: list[ClueRole] = Field(default_factory=list)
     presentation: LongText
     mode: PresentationMode = "unknown"
     speaker_id: str = ""
@@ -90,6 +101,8 @@ class ClueUse(StrictRecord):
     def check_presentation(self) -> ClueUse:
         if not self.presentation.strip():
             raise ValueError("线索呈现不能为空")
+        if len(set(self.roles)) != len(self.roles):
+            raise ValueError("同一次使用不能重复登记相同作用")
         if self.mode != "testimony" and self.speaker_id:
             raise ValueError("只有证词需要指明说话人")
         return self
@@ -145,35 +158,30 @@ class StoryNode(StrictRecord):
         return self
 
 
-class ClueResolution(StrictRecord):
-    """线索的回收意图；``undecided`` 表示作者还没决定，不是「不回收」。"""
+class StoryCluePlan(StrictRecord):
+    """构思里的线索计划；标题与身份在账本，这里只保存作者安排。"""
 
-    intent: ResolutionIntent = "undecided"
-    node_ids: list[StoryId] = Field(default_factory=list)
+    clue_id: StoryId
+    author_truth: str | None = None
+    intention: str = Field(default="", max_length=2000)
+    resolution_intent: ResolutionIntent = "undecided"
 
     @model_validator(mode="after")
-    def check_intent(self) -> ClueResolution:
-        if len(set(self.node_ids)) != len(self.node_ids):
-            raise ValueError("同一线索不能重复指向同一回收节点")
-        if self.intent == "explain" and not self.node_ids:
-            raise ValueError("明确解释的线索需要至少一个回收节点")
-        if self.intent != "explain" and self.node_ids:
-            raise ValueError("未解释或未定的线索不应指向回收节点")
+    def check_truth(self) -> StoryCluePlan:
+        if self.author_truth is not None and not self.author_truth.strip():
+            raise ValueError("作者真相要么留空表示未定，要么写明内容")
         return self
 
 
-class Clue(StrictRecord):
-    """一条线索：作者真相、创作意图与回收位置分开记录。"""
+class CluePlanInput(StrictRecord):
+    """写入计划的公开字段；``clue_id`` 由操作目标给出，不在计划里重复。"""
 
-    id: StoryId
-    title: ShortText
     author_truth: str | None = None
     intention: str = Field(default="", max_length=2000)
-    resolution: ClueResolution = Field(default_factory=ClueResolution)
-    provenance: Provenance = "author_request"
+    resolution_intent: ResolutionIntent = "undecided"
 
     @model_validator(mode="after")
-    def check_truth(self) -> Clue:
+    def check_truth(self) -> CluePlanInput:
         if self.author_truth is not None and not self.author_truth.strip():
             raise ValueError("作者真相要么留空表示未定，要么写明内容")
         return self
@@ -369,7 +377,7 @@ class StoryVariant(StrictRecord):
     revision: str = Field(min_length=1, max_length=64)
     stages: dict[str, StoryStage] = Field(default_factory=dict)
     nodes: dict[str, StoryNode] = Field(default_factory=dict)
-    clues: dict[str, Clue] = Field(default_factory=dict)
+    clue_plans: dict[str, StoryCluePlan] = Field(default_factory=dict)
     threads: dict[str, StoryThread] = Field(default_factory=dict)
     constraints: dict[str, Constraint] = Field(default_factory=dict)
     edges: dict[str, StoryEdge] = Field(default_factory=dict)
@@ -382,7 +390,6 @@ class StoryVariant(StrictRecord):
         for name, items in (
             ("阶段", self.stages),
             ("节点", self.nodes),
-            ("线索", self.clues),
             ("分支", self.threads),
             ("约定", self.constraints),
             ("关系", self.edges),
@@ -391,6 +398,8 @@ class StoryVariant(StrictRecord):
         ):
             if any(key != value.id for key, value in items.items()):
                 raise ValueError(f"{name}的索引与自身标识不一致")
+        if any(key != value.clue_id for key, value in self.clue_plans.items()):
+            raise ValueError("线索计划的索引与自身标识不一致")
         for label, items in (("阶段", self.stages), ("故事线", self.threads)):
             orders = [item.order for item in items.values()]
             if len(set(orders)) != len(orders):
@@ -405,9 +414,6 @@ class StoryVariant(StrictRecord):
             missing = [value for value in node.thread_ids if value not in self.threads]
             if missing:
                 raise ValueError(f"节点引用了不存在的分支：{missing[0]}")
-            unknown = [use.clue_id for use in node.clue_uses if use.clue_id not in self.clues]
-            if unknown:
-                raise ValueError(f"节点引用了不存在的线索：{unknown[0]}")
             unknown_nodes = [
                 change.effective_event_node_id
                 for change in node.knowledge_changes
@@ -415,18 +421,27 @@ class StoryVariant(StrictRecord):
             ]
             if unknown_nodes:
                 raise ValueError(f"知情变化引用了不存在的节点：{unknown_nodes[0]}")
-        for clue in self.clues.values():
-            missing = [value for value in clue.resolution.node_ids if value not in self.nodes]
-            if missing:
-                raise ValueError(f"线索回收指向不存在的节点：{missing[0]}")
         for edge in self.edges.values():
             if edge.from_id not in self.nodes or edge.to_id not in self.nodes:
                 raise ValueError(f"关系指向不存在的节点：{edge.id}")
+        for plan in self.clue_plans.values():
+            resolve_nodes = [
+                node
+                for node in self.nodes.values()
+                if any(
+                    use.clue_id == plan.clue_id and "resolve" in use.roles
+                    for use in node.clue_uses
+                )
+            ]
+            if plan.resolution_intent == "explain" and not resolve_nodes:
+                raise ValueError("明确解释的线索需要至少一个安排为回收的节点")
+            if plan.resolution_intent != "explain" and resolve_nodes:
+                raise ValueError("未计划解释或仍待定的线索不能安排回收作用")
         for binding in self.bindings.values():
             if binding.node_id not in self.nodes:
                 raise ValueError(f"正文关联指向不存在的节点：{binding.id}")
-            if binding.clue_id is not None and binding.clue_id not in self.clues:
-                raise ValueError(f"正文关联指向不存在的线索：{binding.id}")
+            if binding.clue_id is not None and not binding.clue_id.strip():
+                raise ValueError("正文关联的线索要么留空，要么给出标识")
         return self
 
     def node_ids(self) -> tuple[str, ...]:
@@ -539,25 +554,31 @@ class RemoveNode(StrictRecord):
     node_id: StoryId
 
 
-class AddClue(StrictRecord):
-    op: Literal["add_clue"] = "add_clue"
-    clue: Clue
+class CreateClueIdentity(StrictRecord):
+    op: Literal["create_clue_identity"] = "create_clue_identity"
+    temp_id: StoryId
+    title: ShortText
 
 
-class UpdateClue(StrictRecord):
-    op: Literal["update_clue"] = "update_clue"
+class RenameClueIdentity(StrictRecord):
+    op: Literal["rename_clue_identity"] = "rename_clue_identity"
     clue_id: StoryId
-    clue: Clue
-
-    @model_validator(mode="after")
-    def check_identity(self) -> UpdateClue:
-        if self.clue.id != self.clue_id:
-            raise ValueError("更新线索的目标与线索自身标识不一致")
-        return self
+    title: ShortText
 
 
-class RemoveClue(StrictRecord):
-    op: Literal["remove_clue"] = "remove_clue"
+class RemoveClueIdentity(StrictRecord):
+    op: Literal["remove_clue_identity"] = "remove_clue_identity"
+    clue_id: StoryId
+
+
+class UpsertCluePlan(StrictRecord):
+    op: Literal["upsert_clue_plan"] = "upsert_clue_plan"
+    clue_id: StoryId
+    plan: CluePlanInput
+
+
+class RemoveCluePlan(StrictRecord):
+    op: Literal["remove_clue_plan"] = "remove_clue_plan"
     clue_id: StoryId
 
 
@@ -675,9 +696,11 @@ StoryOperation = Annotated[
     | AddStage
     | UpdateStage
     | RemoveStage
-    | AddClue
-    | UpdateClue
-    | RemoveClue
+    | CreateClueIdentity
+    | RenameClueIdentity
+    | RemoveClueIdentity
+    | UpsertCluePlan
+    | RemoveCluePlan
     | AddThread
     | UpdateThread
     | RemoveThread
@@ -727,9 +750,11 @@ class StoryReceipt(StrictRecord):
     variant_id: str = Field(min_length=1)
     base_revision: str = Field(min_length=1)
     revision: str = Field(min_length=1)
+    ledger_revision: str = ""
     request_key: str = Field(min_length=1)
     #: 建方案这类没有结构变更的受理为空字符串，不用假标识占位。
     change_id: str = ""
+    id_map: dict[str, str] = Field(default_factory=dict)
     result: dict[str, JsonValue] = Field(default_factory=dict)
 
 
@@ -745,6 +770,7 @@ class StoryChangeRecord(StrictRecord):
     operations: list[StoryOperation]
     #: 撤销用的反向操作；提交时按前后状态差生成，不靠事后重算。
     inverse_operations: list[StoryOperation] = Field(default_factory=list)
+    inverse_ledger: list[dict[str, JsonValue]] = Field(default_factory=list)
     inverse_prose_patches: list[ProsePatch] = Field(default_factory=list)
     #: 本次改动的对象 → 提交后的内容摘要；撤销前重查，变了就冲突。
     touched: dict[str, str] = Field(default_factory=dict)

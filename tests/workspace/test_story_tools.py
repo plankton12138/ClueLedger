@@ -19,6 +19,33 @@ from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 from hastings.workspace.story_tools import StoryToolScope, build_story_tools
 
 
+def _seed_identity(tmp_path: Path, clue_id: str = "glove", title: str = "手套") -> None:
+    from uuid import uuid4
+
+    from hastings.workspace.clue_models import ClueIdentity
+    from hastings.workspace.clue_store import ClueLedgerStore
+
+    ledger = ClueLedgerStore(tmp_path / "state")
+
+    def apply(store: Any) -> dict[str, str]:
+        store.clues[clue_id] = ClueIdentity(
+            clue_id=clue_id,
+            title=title,
+            clue_revision=f"rev_{uuid4().hex}",
+            created_at="2026-10-30T00:00:00+08:00",
+            created_by="author",
+        )
+        return {"clue_id": clue_id}
+
+    ledger.mutate(
+        expected_revision=ledger.read().revision,
+        request_key=f"identity-{clue_id}",
+        kind="test_identity",
+        payload={},
+        apply=apply,
+    )
+
+
 def _tool(tools: list[Any], name: str) -> Any:
     return next(tool for tool in tools if tool.name == name)
 
@@ -203,12 +230,14 @@ def test_candidate_text_extends_objects_but_not_truth_authority(
             operations=[
                 {"op": "add_node", "node": {"id": "n2", "title": "对质", "action": "开口"}},
                 {
-                    "op": "add_clue",
-                    "clue": {"id": "glove", "title": "手套", "author_truth": "管家所留"},
+                    "op": "upsert_clue_plan",
+                    "clue_id": "glove",
+                    "plan": {"author_truth": "管家所留"},
                 },
             ],
         ),
     )
+    _seed_identity(tmp_path)
     node = store.require_variant(MAIN_VARIANT_ID).nodes["n2"].model_dump(mode="json")
     scope = StoryToolScope(
         state_root=tmp_path / "state",
@@ -232,14 +261,23 @@ def test_candidate_text_extends_objects_but_not_truth_authority(
     assert result.details["ok"] is True
     assert store.require_variant(MAIN_VARIANT_ID).nodes["n2"].action == "先沉默"
 
-    clue = store.require_variant(MAIN_VARIANT_ID).clues["glove"].model_dump(mode="json")
-    clue["author_truth"] = "客人所留"
     with pytest.raises(WorkspaceError, match="STORY_AUTHORIZATION_CONFLICT"):
         _call(
             _tool(build_story_tools(scope), "update_story"),
-            {"operations": [{"op": "update_clue", "clue_id": "glove", "clue": clue}]},
+            {
+                "operations": [
+                    {
+                        "op": "upsert_clue_plan",
+                        "clue_id": "glove",
+                        "plan": {"author_truth": "客人所留"},
+                    }
+                ]
+            },
         )
-    assert store.require_variant(MAIN_VARIANT_ID).clues["glove"].author_truth == "管家所留"
+    assert (
+        store.require_variant(MAIN_VARIANT_ID).clue_plans["glove"].author_truth
+        == "管家所留"
+    )
 
 
 def test_read_only_scope_has_no_update_tool(tmp_path: Path) -> None:
@@ -273,15 +311,13 @@ def test_model_cannot_create_required_rules_or_forge_author_decision(
     assert store.file.read_bytes() == before
 
 
-def test_model_cannot_forge_creation_provenance(store: StoryStore, tmp_path: Path) -> None:
+def test_model_cannot_forge_constraint_provenance(store: StoryStore, tmp_path: Path) -> None:
     result = _call(
         _tool(build_story_tools(_scope(tmp_path)), "update_story"),
         {
             "operations": [
-                {
-                    "op": "add_clue",
-                    "clue": {"id": "c1", "title": "脚印", "provenance": "author_request"},
-                },
+                {"op": "create_clue_identity", "temp_id": "c1", "title": "脚印"},
+                {"op": "upsert_clue_plan", "clue_id": "c1", "plan": {}},
                 {
                     "op": "add_constraint",
                     "constraint": {
@@ -298,27 +334,12 @@ def test_model_cannot_forge_creation_provenance(store: StoryStore, tmp_path: Pat
     )
     assert result.details["ok"] is True
     variant = store.require_variant(MAIN_VARIANT_ID)
-    assert variant.clues["c1"].provenance == "authorized_creation"
+    assert len(variant.clue_plans) == 1
+    assert next(iter(variant.clue_plans.values())).author_truth is None
     constraint = variant.constraints["p1"]
     assert constraint.origin == "model_suggestion"
     assert constraint.source_message_id == ""
     assert constraint.revision != "model-version"
-    _call(
-        _tool(
-            build_story_tools(_scope(tmp_path, author_text="把脚印线索改个名字")),
-            "update_story",
-        ),
-        {
-            "operations": [
-                {
-                    "op": "update_clue",
-                    "clue_id": "c1",
-                    "clue": {"id": "c1", "title": "泥脚印", "provenance": "author_request"},
-                }
-            ],
-        },
-    )
-    assert store.require_variant(MAIN_VARIANT_ID).clues["c1"].provenance == "authorized_creation"
 
 
 def test_model_cannot_remove_author_assessment(store: StoryStore, tmp_path: Path) -> None:
@@ -526,26 +547,29 @@ def test_model_cannot_change_existing_clue_truth_without_object_authorization(
         base_revision=variant.revision,
         operations=[
             {
-                "op": "add_clue",
-                "clue": {"id": "glove", "title": "手套", "author_truth": "管家所留"},
+                "op": "upsert_clue_plan",
+                "clue_id": "glove",
+                "plan": {"author_truth": "管家所留"},
             },
         ],
     )
     store.commit_change(variant_id="main", change=seed, request_key="truth_seed")
-    variant = store.require_variant("main")
-    clue = variant.clues["glove"].model_dump(mode="json")
-    clue["author_truth"] = "客人所留"
+    _seed_identity(tmp_path)
     tools = build_story_tools(_scope(tmp_path, author_text="把手套的真相改一下"))
     with pytest.raises(WorkspaceError, match="STORY_AUTHORIZATION_CONFLICT"):
         _call(
             _tool(tools, "update_story"),
             {
                 "operations": [
-                    {"op": "update_clue", "clue_id": "glove", "clue": clue},
+                    {
+                        "op": "upsert_clue_plan",
+                        "clue_id": "glove",
+                        "plan": {"author_truth": "客人所留"},
+                    },
                 ]
             },
         )
-    assert store.require_variant("main").clues["glove"].author_truth == "管家所留"
+    assert store.require_variant("main").clue_plans["glove"].author_truth == "管家所留"
 
 
 def test_model_cannot_modify_node_outside_author_scope(store: StoryStore, tmp_path: Path) -> None:
@@ -614,27 +638,30 @@ def test_model_cannot_replace_truth_by_removing_and_recreating_clue(
             base_revision=variant.revision,
             operations=[
                 {
-                    "op": "add_clue",
-                    "clue": {"id": "glove", "title": "手套", "author_truth": "管家所留"},
+                    "op": "upsert_clue_plan",
+                    "clue_id": "glove",
+                    "plan": {"author_truth": "管家所留"},
                 },
             ],
         ),
     )
+    _seed_identity(tmp_path)
     tools = build_story_tools(_scope(tmp_path, author_text="把原来的手套线索换掉"))
     with pytest.raises(WorkspaceError, match="STORY_AUTHORIZATION_CONFLICT"):
         _call(
             _tool(tools, "update_story"),
             {
                 "operations": [
-                    {"op": "remove_clue", "clue_id": "glove"},
+                    {"op": "remove_clue_plan", "clue_id": "glove"},
                     {
-                        "op": "add_clue",
-                        "clue": {"id": "glove", "title": "手套", "author_truth": "客人所留"},
+                        "op": "upsert_clue_plan",
+                        "clue_id": "glove",
+                        "plan": {"author_truth": "客人所留"},
                     },
                 ]
             },
         )
-    assert store.require_variant("main").clues["glove"].author_truth == "管家所留"
+    assert store.require_variant("main").clue_plans["glove"].author_truth == "管家所留"
 
 
 @pytest.mark.parametrize("prefix", ["", "> ", "如果", "不要"])
@@ -650,23 +677,31 @@ def test_explicit_author_truth_requires_direct_command(
             base_revision=variant.revision,
             operations=[
                 {
-                    "op": "add_clue",
-                    "clue": {"id": "glove", "title": "手套", "author_truth": "管家所留"},
+                    "op": "upsert_clue_plan",
+                    "clue_id": "glove",
+                    "plan": {"author_truth": "管家所留"},
                 }
             ],
         ),
     )
-    clue = store.require_variant("main").clues["glove"].model_dump(mode="json")
-    clue["author_truth"] = "客人所留"
+    _seed_identity(tmp_path)
     tools = build_story_tools(_scope(tmp_path, author_text=prefix + "把手套的真相改为客人所留"))
-    args = {"operations": [{"op": "update_clue", "clue_id": "glove", "clue": clue}]}
+    args = {
+        "operations": [
+            {
+                "op": "upsert_clue_plan",
+                "clue_id": "glove",
+                "plan": {"author_truth": "客人所留"},
+            }
+        ]
+    }
     if prefix:
         with pytest.raises(WorkspaceError, match="STORY_AUTHORIZATION_CONFLICT"):
             _call(_tool(tools, "update_story"), args)
-        assert store.require_variant("main").clues["glove"].author_truth == "管家所留"
+        assert store.require_variant("main").clue_plans["glove"].author_truth == "管家所留"
     else:
         _call(_tool(tools, "update_story"), args)
-        assert store.require_variant("main").clues["glove"].author_truth == "客人所留"
+        assert store.require_variant("main").clue_plans["glove"].author_truth == "客人所留"
 
 
 def test_author_can_add_required_constraint(store: StoryStore, tmp_path: Path) -> None:
@@ -716,19 +751,29 @@ def test_direct_command_with_quoted_value_still_authorizes_truth(
             base_revision=variant.revision,
             operations=[
                 {
-                    "op": "add_clue",
-                    "clue": {"id": "glove", "title": "手套", "author_truth": "管家所留"},
+                    "op": "upsert_clue_plan",
+                    "clue_id": "glove",
+                    "plan": {"author_truth": "管家所留"},
                 }
             ],
         ),
     )
-    clue = store.require_variant(MAIN_VARIANT_ID).clues["glove"].model_dump(mode="json")
-    clue["author_truth"] = "客人所留"
+    _seed_identity(tmp_path)
     tools = build_story_tools(_scope(tmp_path, author_text="把手套的真相改为“客人所留”"))
 
     _call(
         _tool(tools, "update_story"),
-        {"operations": [{"op": "update_clue", "clue_id": "glove", "clue": clue}]},
+        {
+            "operations": [
+                {
+                    "op": "upsert_clue_plan",
+                    "clue_id": "glove",
+                    "plan": {"author_truth": "客人所留"},
+                }
+            ]
+        },
     )
 
-    assert store.require_variant(MAIN_VARIANT_ID).clues["glove"].author_truth == "客人所留"
+    assert store.require_variant(MAIN_VARIANT_ID).clue_plans["glove"].author_truth == "客人所留"
+
+

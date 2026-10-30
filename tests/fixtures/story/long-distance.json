@@ -233,25 +233,13 @@
           "presentation": "17 号储物柜",
           "mode": "narration",
           "speaker_id": "",
-          "expected_interpretation": "数字与第一章的钥匙牌对上"
+          "expected_interpretation": "数字与第一章的钥匙牌对上",
+          "roles": [
+            "resolve"
+          ]
         }
       ],
       "stage_id": "s3"
-    }
-  },
-  "clues": {
-    "c1": {
-      "id": "c1",
-      "title": "钥匙牌上的数字",
-      "author_truth": "17 号储物柜里是父亲留下的录音",
-      "intention": "让读者以为数字是门牌",
-      "resolution": {
-        "intent": "explain",
-        "node_ids": [
-          "n24"
-        ]
-      },
-      "provenance": "author_request"
     }
   },
   "threads": {
@@ -475,6 +463,14 @@
       "id": "s3",
       "title": "后段",
       "order": 2
+    }
+  },
+  "clue_plans": {
+    "c1": {
+      "clue_id": "c1",
+      "author_truth": "17 号储物柜里是父亲留下的录音",
+      "intention": "让读者以为数字是门牌",
+      "resolution_intent": "explain"
     }
   }
 }

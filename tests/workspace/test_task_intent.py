@@ -144,7 +144,7 @@ def test_goal_requires_a_structure_receipt_not_only_modules() -> None:
         id=MAIN_VARIANT_ID,
         name="主方案",
         revision="rev_1",
-        clues={},
+        clue_plans={},
         nodes={},
     )
     intent = classify_design_intent("写入构思并构建线索")

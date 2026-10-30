@@ -49,30 +49,6 @@
       "stage_id": "s1"
     }
   },
-  "clues": {
-    "c1": {
-      "id": "c1",
-      "title": "信封上的指纹",
-      "author_truth": null,
-      "intention": "让读者先怀疑遗产纠纷",
-      "resolution": {
-        "intent": "undecided",
-        "node_ids": []
-      },
-      "provenance": "author_request"
-    },
-    "c2": {
-      "id": "c2",
-      "title": "照片的日期",
-      "author_truth": "照片是别人后来放进去的",
-      "intention": "制造时间矛盾",
-      "resolution": {
-        "intent": "leave_open",
-        "node_ids": []
-      },
-      "provenance": "author_request"
-    }
-  },
   "threads": {
     "t1": {
       "id": "t1",
@@ -121,6 +97,20 @@
       "id": "s1",
       "title": "第一幕",
       "order": 0
+    }
+  },
+  "clue_plans": {
+    "c1": {
+      "clue_id": "c1",
+      "author_truth": null,
+      "intention": "让读者先怀疑遗产纠纷",
+      "resolution_intent": "undecided"
+    },
+    "c2": {
+      "clue_id": "c2",
+      "author_truth": "照片是别人后来放进去的",
+      "intention": "制造时间矛盾",
+      "resolution_intent": "leave_open"
     }
   }
 }

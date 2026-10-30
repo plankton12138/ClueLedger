@@ -38,6 +38,9 @@ from hastings.workspace.story_authorization import (
     build_authority,
     validate_model_change,
 )
+from hastings.workspace.clue_store import ClueLedgerStore
+from hastings.workspace.story_clue_catalog import StoryClueCatalog
+from hastings.workspace.story_clue_commit import prepare_clue_joint
 from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_models import (
     StoryChangeSet,
@@ -115,6 +118,10 @@ def _variant(scope: StoryToolScope) -> StoryVariant:
     return variant
 
 
+def _catalog(scope: StoryToolScope, variant: StoryVariant) -> StoryClueCatalog:
+    return StoryClueCatalog.from_root(variant, scope.state_root)
+
+
 def _node_summary(variant: StoryVariant, node_id: str) -> dict[str, Any] | None:
     node = variant.nodes.get(node_id)
     if node is None:
@@ -137,6 +144,7 @@ _KIND_LABELS = {
     "stage": "阶段",
     "node": "节点",
     "clue": "线索",
+    "clue_plan": "线索计划",
     "thread": "故事线",
     "constraint": "约定",
     "edge": "关系",
@@ -146,14 +154,21 @@ _KIND_LABELS = {
 }
 
 
-def _object_label(variant: StoryVariant, kind: str, object_id: str) -> str:
+def _object_label(
+    variant: StoryVariant,
+    kind: str,
+    object_id: str,
+    catalog: StoryClueCatalog | None = None,
+) -> str:
     """收据里的对象标签：作者看到标题，不看到内部标识。"""
     if kind == "stage" and object_id in variant.stages:
         return f"阶段「{variant.stages[object_id].title}」"
     if kind == "node" and object_id in variant.nodes:
         return f"节点「{variant.nodes[object_id].title}」"
-    if kind == "clue" and object_id in variant.clues:
-        return f"线索「{variant.clues[object_id].title}」"
+    if kind in ("clue", "clue_plan"):
+        if catalog is not None:
+            return f"线索「{catalog.title(object_id)}」"
+        return f"线索「{object_id}」"
     if kind == "thread" and object_id in variant.threads:
         return f"故事线「{variant.threads[object_id].title}」"
     if kind == "constraint" and object_id in variant.constraints:
@@ -168,11 +183,13 @@ def _object_label(variant: StoryVariant, kind: str, object_id: str) -> str:
     return f"{_KIND_LABELS.get(kind, kind)} {object_id}"
 
 
-def _changed_labels(variant: StoryVariant, keys: list[str]) -> list[str]:
+def _changed_labels(
+    variant: StoryVariant, keys: list[str], catalog: StoryClueCatalog | None = None
+) -> list[str]:
     labels: list[str] = []
     for key in keys:
         kind, _, object_id = key.partition(":")
-        labels.append(_object_label(variant, kind, object_id))
+        labels.append(_object_label(variant, kind, object_id, catalog))
     return labels[:20]
 
 
@@ -222,7 +239,8 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
         read_objects = cast(set[tuple[str, str]], read_state["objects"])
         read_objects.update(("node", node_id) for node_id in node_ids)
         # 返回内容里始终带有全部线索与约定；它们也算实际读到。
-        read_objects.update(("clue", clue_id) for clue_id in variant.clues)
+        catalog = _catalog(scope, variant)
+        read_objects.update(("clue", fact.clue_id) for fact in catalog)
         read_objects.update(("constraint", constraint_id) for constraint_id in variant.constraints)
         nodes = [item for item in (_node_summary(variant, node_id) for node_id in node_ids) if item]
         document = scope.store.read().document
@@ -258,16 +276,16 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             ],
             "clues": [
                 {
-                    "id": clue.id,
-                    "title": clue.title,
-                    "author_truth": clue.author_truth,
-                    "intention": clue.intention,
-                    "resolution": {
-                        "intent": clue.resolution.intent,
-                        "node_ids": list(clue.resolution.node_ids),
-                    },
+                    "id": fact.clue_id,
+                    "title": fact.title,
+                    "has_identity": fact.has_identity,
+                    "author_truth": fact.plan.author_truth if fact.plan else None,
+                    "intention": fact.plan.intention if fact.plan else "",
+                    "resolution_intent": (
+                        fact.plan.resolution_intent if fact.plan else "undecided"
+                    ),
                 }
-                for clue in variant.clues.values()
+                for fact in catalog
             ],
             "constraints": [
                 {
@@ -331,8 +349,13 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 fix="先用 read_story 读取当前方案，再说明哪些对象已经满足要求",
             )
         read_objects = cast(set[tuple[str, str]], read_state["objects"])
+        catalog = _catalog(scope, variant)
         authority = build_authority(
-            variant, scope.frozen, scope.author_text, candidate_text=scope.candidate_text
+            variant,
+            scope.frozen,
+            scope.author_text,
+            catalog=catalog,
+            candidate_text=scope.candidate_text,
         )
         objects: list[dict[str, str]] = []
         seen: set[tuple[str, str]] = set()
@@ -355,7 +378,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 )
             existing = (
                 (kind == "node" and object_id in variant.nodes)
-                or (kind == "clue" and object_id in variant.clues)
+                or (kind == "clue" and catalog.get(object_id) is not None)
                 or (kind == "constraint" and object_id in variant.constraints)
             )
             if not existing:
@@ -386,7 +409,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 {
                     "kind": kind,
                     "id": object_id,
-                    "label": _object_label(variant, kind, object_id),
+                    "label": _object_label(variant, kind, object_id, catalog),
                 }
             )
         payload = {
@@ -467,15 +490,17 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
 
         # 先按作者本轮的对象范围收口，再检查真相、约定与裁决这些不能由模型自行扩大的部分。
         # 作者确认的候选可以扩展可修改对象，但它里面的命令不构成真相授权。
+        catalog = _catalog(scope, variant)
         authorize_change(
             variant,
             scope.frozen,
             scope.author_text,
             change,
+            catalog=catalog,
             candidate_text=scope.candidate_text,
         )
 
-        validate_model_change(variant, change, scope.author_text)
+        validate_model_change(variant, change, scope.author_text, catalog=catalog)
 
         guard = scope.guard
         if guard is not None:
@@ -485,6 +510,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             if guard is not None:
                 guard()
 
+        ledger_revision = ClueLedgerStore(scope.state_root).read().revision
         receipt = scope.store.commit_change(
             variant_id=variant.id,
             change=change,
@@ -492,12 +518,19 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             # 提交决定落在锁内再查一次：读结构到写盘之间可能刚好暂停。
             require_eligible=require_eligible if guard is not None else None,
             decision_guard=scope.decision_guard,
+            prepare_joint=prepare_clue_joint(
+                scope.state_root,
+                variant_id=variant.id,
+                change=change,
+                expected_ledger_revision=ledger_revision,
+            ),
         )
         after = scope.store.read()
         record = after.document.changes.get(receipt.change_id) if after.document else None
         after_variant = after.variant(variant.id) if after.document else None
         changed = sorted(record.touched) if record is not None else []
-        labels = _changed_labels(after_variant or variant, changed)
+        after_catalog = _catalog(scope, after_variant or variant)
+        labels = _changed_labels(after_variant or variant, changed, after_catalog)
         result = {
             "ok": True,
             "variant_id": variant.id,

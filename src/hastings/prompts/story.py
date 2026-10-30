@@ -3,21 +3,24 @@
 from __future__ import annotations
 
 from hastings.workspace.story_models import (
-    AddClue,
     AddConstraint,
     AddNode,
     AddStage,
     AddThread,
     BindProse,
     Connect,
+    CreateClueIdentity,
+    RemoveClueIdentity,
+    RemoveCluePlan,
+    RenameClueIdentity,
     SetEventTime,
     StoryOperation,
     UnsetEventTime,
-    UpdateClue,
     UpdateConstraint,
     UpdateNode,
     UpdateStage,
     UpdateThread,
+    UpsertCluePlan,
 )
 
 __all__ = [
@@ -83,6 +86,10 @@ AUTHOR_WRITING_CHECKS = (
 
 #: 分区标题与给模型的分栏说明，按分区键索引。
 SECTION_LABELS: dict[str, tuple[str, str]] = {
+    "macro": (
+        "全书结构",
+        "阶段、故事线目标与关系；这是作者安排，不是正文已经发生的事实。",
+    ),
     "overview": (
         "方案概况",
         "这一轮没有指定节点，只列已有节点标题；需要细节时先选定节点。",
@@ -200,11 +207,21 @@ def story_overview_line(title: str, clue_count: int) -> str:
     return f"- 「{title}」（{clue_count} 条线索）"
 
 
-def story_plan_line(title: str, branches: str, action: str, time_note: str) -> str:
-    """一个节点的计划行：分支与时间只在有内容时出现。"""
-    suffix = f"（分支：{branches}）" if branches else ""
+def story_plan_line(
+    title: str,
+    branches: str,
+    action: str,
+    time_note: str,
+    *,
+    stage: str = "",
+    change: str = "",
+) -> str:
+    """一个节点的计划行：阶段、分支、变化与时间只在有内容时出现。"""
+    stage_prefix = f"阶段「{stage}」；" if stage else ""
+    suffix = f"（故事线：{branches}）" if branches else ""
     time_suffix = f"；时间：{time_note}" if time_note else ""
-    return f"- 「{title}」{suffix}：{action}{time_suffix}"
+    change_suffix = f"；变化：{change}" if change else ""
+    return f"- {stage_prefix}「{title}」{suffix}：{action}{change_suffix}{time_suffix}"
 
 
 def clue_resolution_explained(targets: str) -> str:
@@ -314,9 +331,21 @@ def describe_story_operation(operation: StoryOperation) -> str:
     if op in ("add_node", "update_node"):
         assert isinstance(operation, (AddNode, UpdateNode))
         return f"{'新增' if op == 'add_node' else '修改'}节点「{operation.node.title}」"
-    if op in ("add_clue", "update_clue"):
-        assert isinstance(operation, (AddClue, UpdateClue))
-        return f"{'新增' if op == 'add_clue' else '修改'}线索「{operation.clue.title}」"
+    if op == "create_clue_identity":
+        assert isinstance(operation, CreateClueIdentity)
+        return f"新增线索「{operation.title}」"
+    if op == "rename_clue_identity":
+        assert isinstance(operation, RenameClueIdentity)
+        return f"重命名线索「{operation.title}」"
+    if op == "remove_clue_identity":
+        assert isinstance(operation, RemoveClueIdentity)
+        return f"删除线索 {operation.clue_id}"
+    if op == "upsert_clue_plan":
+        assert isinstance(operation, UpsertCluePlan)
+        return f"更新线索计划 {operation.clue_id}"
+    if op == "remove_clue_plan":
+        assert isinstance(operation, RemoveCluePlan)
+        return f"移除线索计划 {operation.clue_id}"
     if op in ("add_thread", "update_thread"):
         assert isinstance(operation, (AddThread, UpdateThread))
         return f"{'新增' if op == 'add_thread' else '修改'}分支「{operation.thread.title}」"

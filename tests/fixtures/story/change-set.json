@@ -10,7 +10,28 @@
         "action": "她按号码找到储物柜。",
         "thread_ids": [
           "t1"
+        ],
+        "clue_uses": [
+          {
+            "clue_id": "c1",
+            "roles": [
+              "resolve"
+            ],
+            "presentation": "储物柜里的指纹解释了管家的话",
+            "mode": "narration",
+            "speaker_id": "",
+            "expected_interpretation": ""
+          }
         ]
+      }
+    },
+    {
+      "op": "upsert_clue_plan",
+      "clue_id": "c1",
+      "plan": {
+        "author_truth": "指纹是管家留下的",
+        "intention": "让读者先怀疑遗产纠纷",
+        "resolution_intent": "explain"
       }
     },
     {
@@ -21,23 +42,6 @@
         "to_id": "n4",
         "kind": "next",
         "reason": "顺着号码查下去"
-      }
-    },
-    {
-      "op": "update_clue",
-      "clue_id": "c1",
-      "clue": {
-        "id": "c1",
-        "title": "信封上的指纹",
-        "author_truth": "指纹是管家留下的",
-        "intention": "让读者先怀疑遗产纠纷",
-        "resolution": {
-          "intent": "explain",
-          "node_ids": [
-            "n4"
-          ]
-        },
-        "provenance": "author_request"
       }
     },
     {

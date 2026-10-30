@@ -10,6 +10,21 @@ export interface ClueCoverage {
   at: string;
   note: string;
 }
+export interface CluePlanView {
+  author_truth: string | null;
+  intention: string;
+  resolution_intent: "explain" | "leave_open" | "undecided";
+}
+export interface ClueUsePosition {
+  node_id: string;
+  stage_id: string | null;
+  thread_ids: string[];
+  roles: string[];
+  presentation: string;
+  mode: ClueMode;
+  speaker_id: string;
+  expected_interpretation: string;
+}
 export interface ClueSummary {
   clue_id: string;
   clue_revision: string;
@@ -20,10 +35,15 @@ export interface ClueSummary {
   coverage: ClueCoverage;
   mentioned_chapters: number[];
   warnings: string[];
+  scope: "chapter" | "story";
+  plan: CluePlanView | null;
 }
 export interface ClueDetail extends ClueSummary {
   workspace_lineage: string;
   ledger_revision: string;
+  story_revision: string;
+  view_revision: string;
+  uses: ClueUsePosition[];
   observations: { observation_id: string; chapter: number; kind: "plant" | "mention" | "resolve"; mode: ClueMode; text: string; evidence_ids: string[] }[];
   reader_seen: { text: string; mode: ClueMode; basis_ids: string[] }[];
   evidence: { evidence_id: string; path: string; digest: string; current_digest: string | null; chapter: number; start: number; end: number; quote: string; freshness: ClueFreshness }[];
@@ -69,6 +89,19 @@ export function fetchClues(workspaceId: string, chapterPath: string | null, asOf
 }
 export function fetchClueDetail(workspaceId: string, clueId: string, asOf: number | null): Promise<ClueDetail> {
   return clueRequest(`/api/file-workspaces/${encodeURIComponent(workspaceId)}/clues/${encodeURIComponent(clueId)}${asOf === null ? "" : `?as_of_chapter=${asOf}`}`);
+}
+export function fetchStoryClues(workspaceId: string, variantId: string, nodeId: string | null, asOf: number | null, cursor = "", limit = 20): Promise<ClueList> {
+  const params = new URLSearchParams({ scope: "story", variant_id: variantId });
+  if (nodeId) params.set("node_id", nodeId);
+  if (asOf !== null) params.set("as_of_chapter", String(asOf));
+  if (cursor) params.set("cursor", cursor);
+  if (limit !== 20) params.set("limit", String(limit));
+  return clueRequest(`/api/file-workspaces/${encodeURIComponent(workspaceId)}/clues?${params}`);
+}
+export function fetchStoryClueDetail(workspaceId: string, variantId: string, clueId: string, asOf: number | null): Promise<ClueDetail> {
+  const params = new URLSearchParams({ scope: "story", variant_id: variantId });
+  if (asOf !== null) params.set("as_of_chapter", String(asOf));
+  return clueRequest(`/api/file-workspaces/${encodeURIComponent(workspaceId)}/clues/${encodeURIComponent(clueId)}?${params}`);
 }
 
 export type SourceRef =

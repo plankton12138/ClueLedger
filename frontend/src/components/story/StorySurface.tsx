@@ -43,18 +43,37 @@ export default function StorySurface({
   const load = useStoryStore((store) => store.load);
   const selectNode = useStoryStore((store) => store.selectNode);
   const undo = useStoryStore((store) => store.undo);
-  const fold = useStoryStore((store) => store.fold);
   const referenceNode = useStoryStore((store) => store.referenceNode);
+  const [stageId, setStageId] = useState<string | null>(null);
   const [detailHeight, setDetailHeight] = useState(260);
   const detailDrag = useRef<{ y: number; height: number } | null>(null);
   const [creationTarget, setCreationTarget] = useState<StoryCreationTarget | null>(null);
 
   useEffect(() => {
     setCreationTarget(null);
+    setStageId(null);
     void load(workspaceId);
   }, [load, workspaceId]);
 
   const graph = state.graph;
+  const stages = graph?.stages ?? [];
+  const activeStage = stages.find((stage) => stage.id === stageId) ?? null;
+  const visibleGraph = useMemo(() => {
+    if (!graph || !activeStage) return graph;
+    const shown = graph.nodes.filter((node) => node.stage_id === activeStage.id);
+    const ids = new Set(shown.map((node) => node.id));
+    return {
+      ...graph,
+      nodes: shown,
+      edges: graph.edges.filter((edge) => ids.has(edge.from_id) && ids.has(edge.to_id)),
+      collapsed: graph.nodes.filter((node) => !ids.has(node.id)).map((node) => node.id),
+    };
+  }, [graph, activeStage]);
+  useEffect(() => {
+    if (!graph || !state.nodeId) return;
+    const node = graph.nodes.find((item) => item.id === state.nodeId);
+    if (node?.stage_id && activeStage && node.stage_id !== activeStage.id) setStageId(node.stage_id);
+  }, [graph, state.nodeId, activeStage]);
   const nodesById = useMemo(
     () => new Map((graph?.nodes ?? []).map((node) => [node.id, node])),
     [graph],
@@ -102,38 +121,18 @@ export default function StorySurface({
       </header>}
 
       <StoryBatches key={workspaceId} workspaceId={workspaceId} />
-      {state.groups.length > 0 && (
-        <div className="story-groups" role="group" aria-label="片段">
-          {state.groups.length > 8 ? <select
-            className="ui-input"
-            aria-label="选择片段"
-            value={state.groupId ?? ""}
-            onChange={(event) => void fold(event.target.value || null)}
-          >
-            <option value="">全部</option>
-            {state.groups.map((group) => <option key={group} value={group}>{group}</option>)}
-          </select> : <><button
+      {stages.length > 0 && (
+        <div className="story-groups" role="group" aria-label="阶段">
+          <button type="button" className="ui-button" aria-pressed={!activeStage} onClick={() => setStageId(null)}>全部</button>
+          {stages.map((stage) => <button
+            key={stage.id}
             type="button"
             className="ui-button"
-            aria-pressed={!state.groupId}
-            onClick={() => void fold(null)}
-          >
-            全部
-          </button>
-          {state.groups.map((group) => (
-            <button
-              key={group}
-              type="button"
-              className="ui-button"
-              aria-pressed={state.groupId === group}
-              onClick={() => void fold(group)}
-            >
-              {group}
-            </button>
-          ))}</>}
-          {state.groupId && graph.collapsed.length > 0 && (
-            <span className="story-hint">{graph.collapsed.length} 个节点不在这个片段里</span>
-          )}
+            aria-pressed={activeStage?.id === stage.id}
+            onClick={() => setStageId(activeStage?.id === stage.id ? null : stage.id)}
+          >{stage.title}</button>)}
+          {activeStage && <span className="story-hint">{activeStage.summary || "尚未写阶段摘要"}</span>}
+          {activeStage && (visibleGraph?.collapsed.length ?? 0) > 0 && <span className="story-hint">{visibleGraph?.collapsed.length} 个节点在其他阶段</span>}
         </div>
       )}
 
@@ -147,8 +146,8 @@ export default function StorySurface({
       )}
 
       <div className="story-body">
-        <Suspense fallback={<div className="story-canvas">正在打开构思画布…</div>}><StoryCanvas graph={graph} nodeId={state.nodeId} onSelect={selectNode}
-          viewKey={`${workspaceId}:${graph.variant_id}:${state.groupId ?? "all"}`} /></Suspense>
+        <Suspense fallback={<div className="story-canvas">正在打开构思画布…</div>}><StoryCanvas graph={visibleGraph ?? graph} nodeId={state.nodeId} onSelect={selectNode}
+          viewKey={`${workspaceId}:${graph.variant_id}:${stageId ?? "all"}`} /></Suspense>
 
         {detail && <div role="separator" aria-orientation="horizontal" aria-label="节点详情高度"
           aria-valuemin={140} aria-valuemax={480} aria-valuenow={detailHeight} tabIndex={0}
@@ -162,6 +161,8 @@ export default function StorySurface({
             <>
               <div className="story-detail-heading"><h2>{detail.node.title}</h2><Button size="compact" onClick={() => void selectNode(null)} aria-label="收起节点详情"><X size={16} aria-hidden="true" /></Button></div>
               <p className="story-action">{detail.node.action}</p>
+              {detail.node.change && <p className="story-hint">变化：{detail.node.change}</p>}
+              {detail.node.stage_id && <p className="story-hint">阶段：{graph.stages.find(stage => stage.id === detail.node.stage_id)?.title ?? detail.node.stage_id}</p>}
               {detail.node.threads.length > 0 && (
                 <p className="story-hint">
                   分支：

@@ -27,6 +27,7 @@ from hastings.prompts.story import (
     review_requirements_intro,
     truth_boundary_requirement,
 )
+from hastings.workspace.story_clue_catalog import StoryClueCatalog
 from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_models import StoryNode, StoryVariant
 
@@ -89,8 +90,10 @@ def build_story_review(
     frozen: StoryContextSnapshot,
     *,
     documents: Mapping[str, str],
+    catalog: StoryClueCatalog | None = None,
 ) -> StoryReview:
     """按冻结结构生成核对要求，并对给定的正文做程序能判断的检查。"""
+    catalog = catalog or StoryClueCatalog.from_variant(variant)
     nodes = _selected_nodes(variant, frozen)
     if not nodes:
         return StoryReview()
@@ -124,11 +127,12 @@ def build_story_review(
                 )
 
     for clue_id in used_clues:
-        clue = variant.clues.get(clue_id)
-        if clue is None or not clue.author_truth or len(clue.author_truth.strip()) < 2:
+        fact = catalog.get(clue_id)
+        truth = fact.plan.author_truth if fact and fact.plan else None
+        if truth is None or len(truth.strip()) < 2:
             continue
-        requirement_id = f"hidden:{clue.id}"
-        truth = clue.author_truth.strip()
+        requirement_id = f"hidden:{clue_id}"
+        truth = truth.strip()
         checks.append(
             StoryCheck(
                 requirement_id=requirement_id,

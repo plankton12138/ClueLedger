@@ -795,6 +795,7 @@ class TurnService:
                 and frozen.story is not None
                 and frozen.story.purpose == "design"
             ):
+                from hastings.workspace.story_clue_catalog import StoryClueCatalog
                 from hastings.workspace.story_store import StoryStore
 
                 story_snapshot = StoryStore(self.store.root, self.workspace).read()
@@ -807,7 +808,13 @@ class TurnService:
                     # 预期对象按受理时的方案冻结；本轮自己提交的新修订不改变这份名单。
                     intent = replace(
                         intent,
-                        expected=tuple(named_objects(variant, prompt)),
+                        expected=tuple(
+                            named_objects(
+                                variant,
+                                prompt,
+                                catalog=StoryClueCatalog.from_root(variant, self.store.root),
+                            )
+                        ),
                     )
             intent_record = intent.to_dict() if intent is not None else {}
             if story_action is not None:
@@ -2178,6 +2185,7 @@ class TurnService:
         """
         if info.context is None or info.context.story is None:
             return "", info
+        from hastings.workspace.story_clue_catalog import StoryClueCatalog
         from hastings.workspace.story_context import (
             SPLIT_MARGIN,
             assemble_story_input,
@@ -2191,18 +2199,24 @@ class TurnService:
         variant, info = self._verify_story_for_turn(store, info, frozen)
         assert info.context is not None and info.context.story is not None
         frozen = info.context.story
+        catalog = StoryClueCatalog.from_root(variant, self.store.root)
         split = None
         try:
-            story = assemble_story_input(variant, frozen, capacity=STORY_BUDGET)
+            story = assemble_story_input(
+                variant, frozen, capacity=STORY_BUDGET, catalog=catalog
+            )
         except WorkspaceError as exc:
             if exc.code != "STORY_CONTEXT_INCOMPLETE" or len(frozen.node_ids) < 2:
                 raise
             capacity = STORY_BUDGET - SPLIT_MARGIN
-            split = split_story_request(variant, frozen, capacity=capacity)
+            split = split_story_request(
+                variant, frozen, capacity=capacity, catalog=catalog
+            )
             story = assemble_story_input(
                 variant,
                 scoped_request(frozen, split.batches[0].node_ids),
                 capacity=capacity,
+                catalog=catalog,
             )
         if story.empty and split is None:
             return "", info
@@ -3091,6 +3105,7 @@ class TurnService:
         """把冻结结构变成核对要求，并对候选正文做程序能判断的检查。"""
         if info.context is None or info.context.story is None or not targets:
             return ""
+        from hastings.workspace.story_clue_catalog import StoryClueCatalog
         from hastings.workspace.story_context import verify_story_context
         from hastings.workspace.story_review import build_story_review
         from hastings.workspace.story_store import StoryStore
@@ -3103,7 +3118,12 @@ class TurnService:
                 documents[path] = self.workspace.read(path).text
             except WorkspaceError:
                 continue
-        review = build_story_review(variant, frozen, documents=documents)
+        review = build_story_review(
+            variant,
+            frozen,
+            documents=documents,
+            catalog=StoryClueCatalog.from_root(variant, self.store.root),
+        )
         if review.empty:
             return ""
         _append_event(

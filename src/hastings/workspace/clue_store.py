@@ -125,7 +125,8 @@ class ClueLedgerStore:
             }
         )
         try:
-            with locked(self.lock_file):
+            # 所有交叉写入口固定「构思 → 账本」锁顺序；独立线索写入也先取构思锁。
+            with locked(self.root / "story" / ".story.lock"), locked(self.lock_file):
                 snapshot = self.read()
                 current = snapshot.ledger
                 if current is not None:

@@ -26,12 +26,11 @@ from hastings.workspace.story_context import (
     story_required_chars,
     verify_story_context,
 )
+from hastings.workspace.story_clue_catalog import StoryClueCatalog, StoryClueFact
 from hastings.workspace.story_models import (
-    AddClue,
     AddNode,
     BindProse,
-    Clue,
-    ClueResolution,
+    CluePlanInput,
     ClueUse,
     Connect,
     KnowledgeChange,
@@ -41,9 +40,11 @@ from hastings.workspace.story_models import (
     StoryNode,
     StoryVariant,
     UpdateNode,
+    UpsertCluePlan,
 )
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 
+_TITLES: dict[str, str] = {}
 _counter = {"value": 0}
 
 
@@ -74,8 +75,39 @@ def node(node_id: str, title: str, action: str, **kwargs: Any) -> StoryNode:
     return StoryNode(id=node_id, title=title, action=action, **kwargs)
 
 
-def clue(clue_id: str, title: str, truth: str | None, **kwargs: Any) -> Clue:
-    return Clue(id=clue_id, title=title, author_truth=truth, **kwargs)
+def add_clue(
+    clue_id: str,
+    title: str,
+    truth: str | None,
+    *,
+    intention: str = "",
+    resolution_intent: str = "undecided",
+) -> UpsertCluePlan:
+    _TITLES[clue_id] = title
+    return UpsertCluePlan(
+        clue_id=clue_id,
+        plan=CluePlanInput(
+            author_truth=truth,
+            intention=intention,
+            resolution_intent=resolution_intent,
+        ),
+    )
+
+
+def catalog_for(variant: StoryVariant) -> StoryClueCatalog:
+    ids = set(variant.clue_plans)
+    ids.update(use.clue_id for node in variant.nodes.values() for use in node.clue_uses)
+    return StoryClueCatalog(
+        facts={
+            clue_id: StoryClueFact(
+                clue_id=clue_id,
+                title=_TITLES.get(clue_id, clue_id),
+                plan=variant.clue_plans.get(clue_id),
+                has_identity=True,
+            )
+            for clue_id in ids
+        }
+    )
 
 
 def replace_node(store: StoryStore, node_id: str, **fields: Any) -> UpdateNode:
@@ -90,14 +122,12 @@ def seed_long_distance(store: StoryStore) -> None:
     commit(
         store,
         [
-            AddClue(
-                clue=clue(
-                    "wet-gloves",
-                    "前台的手套",
-                    "管家在雪地里搬过尸体",
-                    intention="让读者以为手套是侦探留下的",
-                    resolution=ClueResolution(intent="explain", node_ids=["n24"]),
-                )
+            add_clue(
+                "wet-gloves",
+                "前台的手套",
+                "管家在雪地里搬过尸体",
+                intention="让读者以为手套是侦探留下的",
+                resolution_intent="explain",
             ),
             AddNode(
                 node=node(
@@ -115,7 +145,21 @@ def seed_long_distance(store: StoryStore) -> None:
                 )
             ),
             AddNode(node=node("n2", "走廊", "走廊尽头的灯忽明忽暗")),
-            AddNode(node=node("n24", "对质", "侦探把手套放在管家面前，问他雪夜里搬了什么")),
+            AddNode(
+                node=node(
+                    "n24",
+                    "对质",
+                    "侦探把手套放在管家面前，问他雪夜里搬了什么",
+                    clue_uses=[
+                        ClueUse(
+                            clue_id="wet-gloves",
+                            roles=["resolve"],
+                            presentation="侦探用雪地里的痕迹说明手套的来历",
+                            mode="narration",
+                        )
+                    ],
+                )
+            ),
         ],
         key="seed-nodes",
     )
@@ -136,6 +180,7 @@ def assemble(store: StoryStore, node_ids: list[str], **kwargs: Any) -> Any:
         store, StoryRequest(variant_id=MAIN_VARIANT_ID, node_ids=tuple(node_ids))
     )
     variant = verify_story_context(store, frozen)
+    kwargs.setdefault("catalog", catalog_for(variant))
     return assemble_story_input(variant, frozen, **kwargs)
 
 
@@ -166,7 +211,7 @@ def test_long_distance_clue_reaches_required_content(store: StoryStore) -> None:
     assert "前台的手套还在滴水" in text
     assert "对质" in text
     keys = [section.key for section in result.sections]
-    assert keys[:3] == ["truth", "plan", "prerequisites"]
+    assert keys[:4] == ["macro", "truth", "plan", "prerequisites"]
     # 所有必需项都在，没有被容量逻辑悄悄丢掉。
     assert result.omitted == ()
 
@@ -176,13 +221,11 @@ def test_future_nodes_are_not_injected(store: StoryStore) -> None:
     commit(
         store,
         [
-            AddClue(
-                clue=clue(
-                    "later-reveal",
-                    "后文的解释",
-                    "管家还有同谋",
-                    resolution=ClueResolution(intent="explain", node_ids=["n24"]),
-                )
+            add_clue(
+                "later-reveal",
+                "后文的解释",
+                "管家还有同谋",
+                resolution_intent="leave_open",
             ),
             AddNode(node=node("n30", "尾声", "同谋在站台等车")),
         ],
@@ -212,7 +255,7 @@ def test_other_variant_is_not_injected(store: StoryStore) -> None:
     commit(
         store,
         [
-            AddClue(clue=clue("alt-clue", "备选线索", "备选方案里管家是无辜的")),
+            add_clue("alt-clue", "备选线索", "备选方案里管家是无辜的"),
             AddNode(node=node("alt-n1", "另一条路", "侦探先去了车站")),
         ],
         key="seed-alt",
@@ -259,17 +302,17 @@ def test_capacity_refuses_to_truncate_required_content(store: StoryStore) -> Non
         store, StoryRequest(variant_id=MAIN_VARIANT_ID, node_ids=("n1", "n24"))
     )
     variant = verify_story_context(store, frozen)
-    full = assemble_story_input(variant, frozen)
+    full = assemble_story_input(variant, frozen, catalog=catalog_for(variant))
     required = sum(len(section.text) for section in full.sections if section.required)
 
     with pytest.raises(WorkspaceError) as excinfo:
-        assemble_story_input(variant, frozen, capacity=required - 1)
+        assemble_story_input(variant, frozen, capacity=required - 1, catalog=catalog_for(variant))
 
     assert excinfo.value.code == "STORY_CONTEXT_INCOMPLETE"
     assert excinfo.value.details["required"] == required
 
     # 容量只够必需项时，可裁的创作目标被省略，并说明原因。
-    roomy = assemble_story_input(variant, frozen, capacity=required + 10)
+    roomy = assemble_story_input(variant, frozen, capacity=required + 10, catalog=catalog_for(variant))
     assert any(item["key"] == "judgement" for item in roomy.omitted)
     assert "管家在雪地里搬过尸体" in roomy.render()
 
@@ -609,21 +652,17 @@ def test_split_groups_fitting_nodes_and_stops_dependents(store: StoryStore) -> N
     commit(
         store,
         [
-            AddClue(
-                clue=clue(
-                    "clue-a",
-                    "线索甲",
-                    "甲是真的",
-                    resolution=ClueResolution(intent="leave_open"),
-                )
+            add_clue(
+                "clue-a",
+                "线索甲",
+                "甲是真的",
+                resolution_intent="leave_open",
             ),
-            AddClue(
-                clue=clue(
-                    "clue-b",
-                    "线索乙",
-                    "乙是真的",
-                    resolution=ClueResolution(intent="explain", node_ids=["n_b"]),
-                )
+            add_clue(
+                "clue-b",
+                "线索乙",
+                "乙是真的",
+                resolution_intent="explain",
             ),
             AddNode(
                 node=node(
@@ -635,7 +674,21 @@ def test_split_groups_fitting_nodes_and_stops_dependents(store: StoryStore) -> N
                     ],
                 )
             ),
-            AddNode(node=node("n_b", "转折", "转折一句")),
+            AddNode(
+                node=node(
+                    "n_b",
+                    "转折",
+                    "转折一句",
+                    clue_uses=[
+                        ClueUse(
+                            clue_id="clue-b",
+                            roles=["resolve"],
+                            presentation="乙在这里得到解释",
+                            mode="narration",
+                        )
+                    ],
+                )
+            ),
         ],
         key="seed-split",
     )
@@ -675,17 +728,32 @@ def test_over_capacity_turn_sends_first_batch_and_records_split(tmp_path: Path) 
 
     story = StoryStore(tmp_path / "state")
     seed_long_distance(story)
+    n24 = story.require_variant(MAIN_VARIANT_ID).nodes["n24"]
     commit(
         story,
         [
-            AddClue(
-                clue=clue(
-                    "long-truth",
-                    "长线索",
-                    "LONGTRUTH-" * 1_500,
-                    resolution=ClueResolution(intent="explain", node_ids=["n24"]),
-                )
-            )
+            add_clue(
+                "long-truth",
+                "长线索",
+                "LONGTRUTH-" * 1_500,
+                resolution_intent="explain",
+            ),
+            UpdateNode(
+                node_id="n24",
+                node=n24.model_copy(
+                    update={
+                        "clue_uses": [
+                            *n24.clue_uses,
+                            ClueUse(
+                                clue_id="long-truth",
+                                roles=["resolve"],
+                                presentation="长线索在这里解释",
+                                mode="narration",
+                            ),
+                        ]
+                    }
+                ),
+            ),
         ],
         key="seed-long-truth",
     )
@@ -776,7 +844,7 @@ def test_reader_allows_truth_already_published_in_verified_prose(store: StorySto
     commit(
         store,
         [
-            AddClue(clue=clue("glove", "手套", truth)),
+            add_clue("glove", "手套", truth),
             AddNode(
                 node=node(
                     "n1",
@@ -826,7 +894,7 @@ def test_reader_still_rejects_stale_prose_binding(store: StoryStore) -> None:
     commit(
         store,
         [
-            AddClue(clue=clue("glove", "手套", truth)),
+            add_clue("glove", "手套", truth),
             AddNode(node=node("n1", "揭示", "侦探公开结论")),
             BindProse(
                 binding=ProseBinding(

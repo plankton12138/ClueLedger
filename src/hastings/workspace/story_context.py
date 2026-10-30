@@ -49,8 +49,8 @@ from hastings.prompts.story import (
     testimony_speech_line,
 )
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.story_clue_catalog import StoryClueCatalog, StoryClueFact
 from hastings.workspace.story_models import (
-    Clue,
     Constraint,
     StoryNode,
     StoryVariant,
@@ -419,20 +419,21 @@ def _thread_titles(variant: StoryVariant, node: StoryNode) -> str:
     return "、".join(names)
 
 
-def _involved_clues(variant: StoryVariant, nodes: Iterable[StoryNode]) -> list[Clue]:
-    """必需线索：被选中节点用到的，以及明确回收在这些节点上的。"""
-    selected_ids = {node.id for node in nodes}
+def _involved_clues(
+    nodes: Iterable[StoryNode],
+    catalog: StoryClueCatalog,
+) -> list[StoryClueFact]:
+    """必需线索：被选中节点用到的；回收位置由节点的 ``resolve`` 作用导出。"""
     wanted: list[str] = []
     for node in nodes:
         for use in node.clue_uses:
             if use.clue_id not in wanted:
                 wanted.append(use.clue_id)
-    for clue_id, clue in variant.clues.items():
-        if clue_id in wanted:
-            continue
-        if selected_ids & set(clue.resolution.node_ids):
-            wanted.append(clue_id)
-    return [variant.clues[clue_id] for clue_id in wanted if clue_id in variant.clues]
+    return [
+        fact
+        for clue_id in wanted
+        if (fact := catalog.get(clue_id)) is not None
+    ]
 
 
 def _applicable_constraints(variant: StoryVariant, nodes: Iterable[StoryNode]) -> list[Constraint]:
@@ -482,20 +483,47 @@ def _knowledge_lines(
     return lines
 
 
+def _macro_lines(variant: StoryVariant) -> list[str]:
+    """全书层面的阶段、故事线目标与关系；不重复每个节点的完整安排。"""
+    lines: list[str] = []
+    for stage in sorted(variant.stages.values(), key=lambda item: (item.order, item.id)):
+        lines.append(
+            f"阶段「{stage.title}」（第 {stage.order + 1} 段）："
+            f"{stage.summary or '摘要未定'}"
+        )
+    for thread in sorted(variant.threads.values(), key=lambda item: (item.order, item.id)):
+        lines.append(
+            f"故事线「{thread.title}」：目标={thread.goal or '未定'}；"
+            f"主要阻力={thread.obstacle or '未定'}；"
+            f"计划收束={thread.intended_resolution or '未定'}"
+        )
+    for edge in variant.edges.values():
+        source = variant.nodes[edge.from_id].title
+        target = variant.nodes[edge.to_id].title
+        reason = f"（{edge.reason}）" if edge.reason else ""
+        if edge.kind == "next":
+            lines.append(f"推进：{source} → {target}{reason}")
+        else:
+            lines.append(f"后文回应：{target} → {source}（{edge.kind}）{reason}")
+    return lines
+
+
 def assemble_story_input(
     variant: StoryVariant,
     frozen: StoryContextSnapshot,
     *,
     capacity: int | None = None,
+    catalog: StoryClueCatalog | None = None,
 ) -> StoryInput:
     """按任务装配结构内容；必需项装不下时报缺口，不截断。"""
+    catalog = catalog or StoryClueCatalog.from_variant(variant)
     nodes = _selected_nodes(variant, frozen.node_ids)
     if not nodes:
         if not variant.nodes:
             # 空白方案也要实际告诉模型「现在是空的、可以建立什么」，不能靠界面提示代替。
             section = _section(
                 "empty",
-                empty_variant_text(len(variant.clues), len(variant.constraints)),
+                empty_variant_text(len(variant.clue_plans), len(variant.constraints)),
                 required=False,
             )
             return StoryInput(
@@ -504,7 +532,7 @@ def assemble_story_input(
                 sections=(section,),
                 coverage={
                     "nodes": [],
-                    "clues": sorted(variant.clues),
+                    "clues": sorted(fact.clue_id for fact in catalog),
                     "constraints": sorted(variant.constraints),
                     "empty_plan": True,
                 },
@@ -514,45 +542,70 @@ def assemble_story_input(
             story_overview_line(node.title, len(node.clue_uses))
             for node in list(variant.nodes.values())[:40]
         ]
-        section = _section("overview", "\n".join(lines), required=False)
+        macro = _macro_lines(variant)
+        sections = ([_section("macro", "\n".join(macro))] if macro else []) + [
+            _section("overview", "\n".join(lines), required=False)
+        ]
         return StoryInput(
             variant_id=variant.id,
             revision=variant.revision,
-            sections=(section,),
-            coverage={"nodes": [], "clues": [], "constraints": []},
+            sections=tuple(sections),
+            coverage={
+                "nodes": [],
+                "clues": [],
+                "constraints": [],
+                "stages": sorted(variant.stages),
+                "threads": sorted(variant.threads),
+            },
         )
 
     ancestors = _ancestors(variant)
-    clues = _involved_clues(variant, nodes)
+    clues = _involved_clues(nodes, catalog)
     constraints = _applicable_constraints(variant, nodes)
 
     plan_lines: list[str] = []
     for node in nodes:
         threads = _thread_titles(variant, node)
-        plan_lines.append(story_plan_line(node.title, threads, node.action, node.time_note))
-    for clue in clues:
-        intent = clue.intention.strip() or CLUE_INTENT_UNWRITTEN
-        if clue.resolution.intent == "explain":
+        stage = variant.stages[node.stage_id].title if node.stage_id in variant.stages else ""
+        plan_lines.append(
+            story_plan_line(
+                node.title,
+                threads,
+                node.action,
+                node.time_note,
+                stage=stage,
+                change=node.change or "",
+            )
+        )
+    for fact in clues:
+        plan = fact.plan
+        intent = (plan.intention if plan else "").strip() or CLUE_INTENT_UNWRITTEN
+        intent_value = plan.resolution_intent if plan else "undecided"
+        if intent_value == "explain":
             targets = "、".join(
-                variant.nodes[item].title
-                for item in clue.resolution.node_ids
-                if item in variant.nodes
+                node.title
+                for node in variant.nodes.values()
+                for use in node.clue_uses
+                if use.clue_id == fact.clue_id and "resolve" in use.roles
             )
             resolution = clue_resolution_explained(targets)
-        elif clue.resolution.intent == "leave_open":
+        elif intent_value == "leave_open":
             resolution = CLUE_RESOLUTION_OPEN
         else:
             resolution = CLUE_RESOLUTION_UNDECIDED
-        plan_lines.append(clue_plan_line(clue.title, intent, resolution))
+        plan_lines.append(clue_plan_line(fact.title, intent, resolution))
 
-    truth_lines = [clue_truth_line(clue.title, clue.author_truth) for clue in clues]
+    truth_lines = [
+        clue_truth_line(fact.title, fact.plan.author_truth if fact.plan else None)
+        for fact in clues
+        if fact.plan is not None
+    ]
 
     testimony_lines: list[str] = []
     judgement_lines: list[str] = []
     for node in nodes:
         for use in node.clue_uses:
-            used_clue = variant.clues.get(use.clue_id)
-            title = used_clue.title if used_clue is not None else use.clue_id
+            title = catalog.title(use.clue_id)
             if use.mode == "testimony":
                 speaker = use.speaker_id or DEFAULT_SPEAKER
                 testimony_lines.append(
@@ -573,16 +626,16 @@ def assemble_story_input(
     for node in nodes:
         visible |= set(ancestors.get(node.id, frozenset()))
     prerequisite_lines: list[str] = []
-    for clue in clues:
+    for fact in clues:
         for node in variant.nodes.values():
             if node.id in plan_ids or node.id not in visible:
                 continue
             for use in node.clue_uses:
-                if use.clue_id != clue.id:
+                if use.clue_id != fact.clue_id:
                     continue
                 prerequisite_lines.append(
                     prerequisite_line(
-                        clue.title, node.title, use.presentation, use.mode
+                        fact.title, node.title, use.presentation, use.mode
                     )
                 )
 
@@ -602,6 +655,9 @@ def assemble_story_input(
     ]
 
     sections: list[StorySection] = []
+    macro = _macro_lines(variant)
+    if macro:
+        sections.append(_section("macro", "\n".join(macro)))
     if truth_lines:
         sections.append(_section("truth", "\n".join(truth_lines)))
     sections.append(_section("plan", "\n".join(plan_lines) or EMPTY_PLAN_TEXT))
@@ -649,8 +705,10 @@ def assemble_story_input(
         omitted=tuple(omitted),
         coverage={
             "nodes": [node.id for node in nodes],
-            "clues": [clue.id for clue in clues],
+            "clues": [fact.clue_id for fact in clues],
             "constraints": [constraint.id for constraint in constraints],
+            "stages": sorted(variant.stages),
+            "threads": sorted(variant.threads),
             "chars": rendered,
         },
     )
@@ -665,9 +723,14 @@ SPLIT_MARGIN = 600
 _SPLIT_ID_LIMIT = 12
 
 
-def story_required_chars(variant: StoryVariant, frozen: StoryContextSnapshot) -> int:
+def story_required_chars(
+    variant: StoryVariant,
+    frozen: StoryContextSnapshot,
+    *,
+    catalog: StoryClueCatalog | None = None,
+) -> int:
     """必需分区在装配里占用的字符数；不应用容量，因此不会抛出缺口错误。"""
-    assembled = assemble_story_input(variant, frozen)
+    assembled = assemble_story_input(variant, frozen, catalog=catalog)
     return sum(len(section.text) for section in assembled.sections if section.required)
 
 
@@ -711,7 +774,11 @@ def _ids_text(node_ids: Iterable[str]) -> str:
 
 
 def split_story_request(
-    variant: StoryVariant, frozen: StoryContextSnapshot, *, capacity: int
+    variant: StoryVariant,
+    frozen: StoryContextSnapshot,
+    *,
+    capacity: int,
+    catalog: StoryClueCatalog | None = None,
 ) -> StorySplit:
     """按必需内容把一次多节点任务拆成能单独发起的组。
 
@@ -720,7 +787,7 @@ def split_story_request(
     """
     selected = list(dict.fromkeys(frozen.node_ids))
     if len(selected) < 2:
-        required = story_required_chars(variant, frozen)
+        required = story_required_chars(variant, frozen, catalog=catalog)
         raise WorkspaceError(
             code="STORY_CONTEXT_INCOMPLETE",
             where="story.split",
@@ -733,7 +800,10 @@ def split_story_request(
     stopped: set[str] = {
         node_id
         for node_id in selected
-        if story_required_chars(variant, scoped_request(frozen, (node_id,))) > capacity
+        if story_required_chars(
+            variant, scoped_request(frozen, (node_id,)), catalog=catalog
+        )
+        > capacity
     }
     # 依赖被停下节点的后继也必须停下：后面的内容缺了前提。
     changed = True
@@ -752,20 +822,35 @@ def split_story_request(
         if node_id in stopped:
             continue
         candidate = (*current, node_id)
-        if story_required_chars(variant, scoped_request(frozen, candidate)) <= capacity:
+        if (
+            story_required_chars(
+                variant, scoped_request(frozen, candidate), catalog=catalog
+            )
+            <= capacity
+        ):
             current = candidate
             continue
         if current:
             batches.append(
-                StoryBatch(current, story_required_chars(variant, scoped_request(frozen, current)))
+                StoryBatch(
+                    current,
+                    story_required_chars(
+                        variant, scoped_request(frozen, current), catalog=catalog
+                    ),
+                )
             )
         current = (node_id,)
     if current:
         batches.append(
-            StoryBatch(current, story_required_chars(variant, scoped_request(frozen, current)))
+            StoryBatch(
+                current,
+                story_required_chars(
+                    variant, scoped_request(frozen, current), catalog=catalog
+                ),
+            )
         )
     if not batches:
-        required = story_required_chars(variant, frozen)
+        required = story_required_chars(variant, frozen, catalog=catalog)
         raise WorkspaceError(
             code="STORY_CONTEXT_INCOMPLETE",
             where="story.split",
@@ -856,7 +941,12 @@ def assemble_reader_input(
     )
 
 
-def _hidden_strings(variant: StoryVariant, allowed: set[str], published: str = "") -> list[str]:
+def _hidden_strings(
+    variant: StoryVariant,
+    allowed: set[str],
+    published: str = "",
+    catalog: StoryClueCatalog | None = None,
+) -> list[str]:
     """读者还不该看到的内容：作者真相、未出现的节点与线索标题、约定原文。
 
     ``published`` 是截止前经核验的正文。已经出现在这段正文里的内容读者早已读到，
@@ -866,22 +956,23 @@ def _hidden_strings(variant: StoryVariant, allowed: set[str], published: str = "
     def public(value: str) -> bool:
         return bool(published) and value in published
 
+    catalog = catalog or StoryClueCatalog.from_variant(variant)
     hidden: list[str] = []
-    for clue in variant.clues.values():
-        truth = clue.author_truth.strip() if clue.author_truth else ""
+    for fact in catalog:
+        truth = fact.plan.author_truth.strip() if fact.plan and fact.plan.author_truth else ""
         if len(truth) >= _MIN_FORBIDDEN and not public(truth):
             hidden.append(truth)
     for node in variant.nodes.values():
         title = node.title.strip()
         if node.id not in allowed and len(title) >= _MIN_FORBIDDEN and not public(title):
             hidden.append(title)
-    for clue in variant.clues.values():
+    for fact in catalog:
         used = any(
-            use.clue_id == clue.id and node.id in allowed
+            use.clue_id == fact.clue_id and node.id in allowed
             for node in variant.nodes.values()
             for use in node.clue_uses
         )
-        title = clue.title.strip()
+        title = fact.title.strip()
         if not used and len(title) >= _MIN_FORBIDDEN and not public(title):
             hidden.append(title)
     for constraint in variant.constraints.values():

@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/frontendExperience";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -11,14 +12,11 @@ import { join, resolve } from "node:path";
  */
 
 const NODES = [
+  { op: "create_clue_identity", temp_id: "gloves", title: "手套" },
   {
-    op: "add_clue",
-    clue: {
-      id: "gloves",
-      title: "手套",
-      author_truth: "管家在雪地里搬过尸体",
-      resolution: { intent: "explain", node_ids: ["n2"] },
-    },
+    op: "upsert_clue_plan",
+    clue_id: "gloves",
+    plan: { author_truth: "管家在雪地里搬过尸体", resolution_intent: "explain" },
   },
   {
     op: "add_node",
@@ -31,7 +29,15 @@ const NODES = [
       ],
     },
   },
-  { op: "add_node", node: { id: "n2", title: "对质", action: "他把手套放在桌上" } },
+  {
+    op: "add_node",
+    node: {
+      id: "n2",
+      title: "对质",
+      action: "他把手套放在桌上",
+      clue_uses: [{ clue_id: "gloves", roles: ["resolve"], presentation: "他说出手套的来历", mode: "narration" }],
+    },
+  },
   {
     op: "connect",
     edge: { id: "e1", from_id: "n1", to_id: "n2", kind: "next" },
@@ -243,7 +249,7 @@ test("构思面显示节点详情且不再提供备选、试读和候选入口",
 
 });
 
-test("片段折叠与引用到对话", async ({ page, book }) => {
+test("阶段折叠与引用到对话", async ({ page, book }) => {
   const api = (path: string, init?: Parameters<ReturnType<typeof page.request.get>>[1]) =>
     page.request.fetch(`/api/file-workspaces/${book.id}${path}`, init);
   // 每个用例都是新作品：先按同一份种子建立基础结构，再做片段浏览。
@@ -254,14 +260,13 @@ test("片段折叠与引用到对话", async ({ page, book }) => {
       expected_revision: "empty",
       request_key: `seed-base-${book.id}`,
       operations: [
+        { op: "add_stage", stage: { id: "s1", title: "开端", order: 0, summary: "抵达与发现" } },
+        { op: "add_stage", stage: { id: "s2", title: "调查", order: 1, summary: "对质" } },
+        { op: "create_clue_identity", temp_id: "gloves", title: "手套" },
         {
-          op: "add_clue",
-          clue: {
-            id: "gloves",
-            title: "手套",
-            author_truth: "管家在雪地里搬过尸体",
-            resolution: { intent: "explain", node_ids: ["n2"] },
-          },
+          op: "upsert_clue_plan",
+          clue_id: "gloves",
+          plan: { author_truth: "管家在雪地里搬过尸体", resolution_intent: "explain" },
         },
         {
           op: "add_node",
@@ -269,30 +274,21 @@ test("片段折叠与引用到对话", async ({ page, book }) => {
             id: "n1",
             title: "抵达",
             action: "侦探在前台看到一双手套",
+            stage_id: "s1",
             clue_uses: [{ clue_id: "gloves", presentation: "手套还在滴水", mode: "narration" }],
           },
         },
-        { op: "add_node", node: { id: "n2", title: "对质", action: "他把手套放在桌上" } },
-        { op: "connect", edge: { id: "e1", from_id: "n1", to_id: "n2", kind: "next" } },
-      ],
-    },
-  });
-  const seeded = await api("/story/variants").then((r) => r.json());
-  const seededMain = seeded.variants[0];
-
-  // 给 n1 分组：片段按钮来自节点上的 group_id。
-  await api("/story/changes", {
-    method: "post",
-    data: {
-      variant_id: seededMain.id,
-      expected_revision: seededMain.revision,
-      request_key: `seed-groups-${book.id}`,
-      operations: [
         {
-          op: "update_node",
-          node_id: "n1",
-          node: { id: "n1", title: "抵达", action: "侦探在前台看到一双手套", group_id: "开端" },
-        },
+    op: "add_node",
+    node: {
+      id: "n2",
+      title: "对质",
+      action: "他把手套放在桌上",
+      stage_id: "s2",
+      clue_uses: [{ clue_id: "gloves", roles: ["resolve"], presentation: "他说出手套的来历", mode: "narration" }],
+    },
+  },
+        { op: "connect", edge: { id: "e1", from_id: "n1", to_id: "n2", kind: "next" } },
       ],
     },
   });
@@ -300,7 +296,7 @@ test("片段折叠与引用到对话", async ({ page, book }) => {
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("button", { name: "构思", exact: true }).click();
   const surface = page.getByRole("region", { name: "构思结构" });
-  const groups = surface.getByRole("group", { name: "片段" });
+  const groups = surface.getByRole("group", { name: "阶段" });
   await expect(groups).toBeVisible();
 
   await groups.getByRole("button", { name: "开端", exact: true }).click();
@@ -328,11 +324,16 @@ test("窄屏与大字号下构思面可读，结构不横向溢出", async ({ pa
       expected_revision: "empty",
       request_key: `seed-narrow-${book.id}`,
       operations: [
+        { op: "add_stage", stage: { id: "s1", title: "开端", order: 0 } },
+        { op: "add_stage", stage: { id: "s2", title: "调查", order: 1 } },
         {
           op: "add_node",
-          node: { id: "n1", title: "抵达", action: "侦探在前台看到一双手套", group_id: "开端" },
+          node: { id: "n1", title: "抵达", action: "侦探在前台看到一双手套", stage_id: "s1" },
         },
-        { op: "add_node", node: { id: "n2", title: "对质", action: "他把手套放在桌上" } },
+        {
+          op: "add_node",
+          node: { id: "n2", title: "对质", action: "他把手套放在桌上", stage_id: "s2" },
+        },
         { op: "connect", edge: { id: "e1", from_id: "n1", to_id: "n2", kind: "next" } },
       ],
     },
@@ -360,13 +361,17 @@ test("窄屏与大字号下构思面可读，结构不横向溢出", async ({ pa
   await page.screenshot({ path: join(output, "story-390-150.png") });
 });
 
-test("长篇结构默认只展开一个片段，切换片段可查看跨片段关系", async ({ page, book }) => {
+test("长篇结构按阶段折叠，切换阶段可查看跨阶段关系", async ({ page, book }) => {
   test.setTimeout(120_000);
+  const stages = Array.from({ length: 30 }, (_, index) => {
+    const order = index;
+    return { op: "add_stage", stage: { id: `stage-${order + 1}`, title: `章节 ${String(order + 1).padStart(2, "0")}`, order } };
+  });
   const nodes = Array.from({ length: 300 }, (_, index) => {
     const number = String(index + 1).padStart(3, "0");
-    const chapter = String(Math.floor(index / 10) + 1).padStart(2, "0");
+    const stage = Math.floor(index / 10) + 1;
     return { op: "add_node", node: { id: `node-${number}`, title: `节点 ${number}`,
-      action: `第 ${chapter} 章发生的事 ${number}`, group_id: `片段 ${chapter}` } };
+      action: `第 ${stage} 段发生的事 ${number}`, stage_id: `stage-${stage}` } };
   });
   const edges = Array.from({ length: 299 }, (_, index) => ({
     op: "connect", edge: { id: `edge-${index + 1}`,
@@ -377,30 +382,92 @@ test("长篇结构默认只展开一个片段，切换片段可查看跨片段�
     to_id: "node-001", kind: "reframe" } });
   for (let chapter = 1; chapter <= 30; chapter++) {
     const label = String(chapter).padStart(4, "0");
-    writeFileSync(join(book.path, "正文", `${label} 章节.md`), `# 第 ${chapter} 章\n\n正文。\n`, "utf8");
+    writeFileSync(join(book.path, "正文", `${label} 章节.md`), `# 第 ${chapter} 章
+
+正文。
+`, "utf8");
   }
   const seeded = await page.request.post(`/api/file-workspaces/${book.id}/story/changes`, {
     data: { variant_id: "main", expected_revision: "empty", request_key: `long-${book.id}`,
-      operations: [...nodes, ...edges] },
+      operations: [...stages, ...nodes, ...edges] },
   });
   expect(seeded.ok(), await seeded.text()).toBeTruthy();
 
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("button", { name: "构思", exact: true }).click();
   const surface = page.getByRole("region", { name: "构思结构" });
-  const choice = surface.getByRole("combobox", { name: "选择片段" });
-  await expect(choice).toHaveValue("片段 01");
+  const groups = surface.getByRole("group", { name: "阶段" });
+  await groups.getByRole("button", { name: "章节 01", exact: true }).click();
   await expect(surface.locator(".story-node")).toHaveCount(10);
-  await expect(surface).toContainText("290 个节点不在这个片段里");
-  await choice.selectOption("片段 30");
+  await expect(surface).toContainText("290 个节点在其他阶段");
+  await groups.getByRole("button", { name: "章节 30", exact: true }).click();
   await expect(surface.locator(".story-node")).toHaveCount(10);
   await surface.getByRole("button", { name: "节点 300", exact: true }).click();
-  await expect(surface.getByLabel("节点详情", { exact: true })).toContainText("node-001");
+  await expect(surface.getByLabel("节点详情", { exact: true })).toContainText("节点 001");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await page.getByRole("combobox", { name: "调整字体大小" }).selectOption("150");
   await page.keyboard.press("Escape");
-  await expect(choice).toBeVisible();
+  await expect(groups).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+
+test("全书线索与阶段联动：节点到线索到另一节点再到正文并返回", async ({ page, book }) => {
+  const api = (path: string, init?: Parameters<ReturnType<typeof page.request.get>>[1]) =>
+    page.request.fetch(`/api/file-workspaces/${book.id}${path}`, init);
+  const prose = "侦探在走廊看到没有响的木板。";
+  const quote = "没有响的木板";
+  const path = "正文/0001 走廊.md";
+  mkdirSync(join(book.path, "正文"), { recursive: true });
+  writeFileSync(join(book.path, path), prose, "utf8");
+  const digest = createHash("sha256").update(prose, "utf8").digest("hex");
+  const start = prose.indexOf(quote);
+  const seeded = await api("/story/changes", {
+    method: "post",
+    data: {
+      variant_id: "main",
+      expected_revision: "empty",
+      request_key: `linkage-${book.id}`,
+      operations: [
+        { op: "add_stage", stage: { id: "s1", title: "当晚", order: 0, summary: "发现异样" } },
+        { op: "add_stage", stage: { id: "s2", title: "调查", order: 1, summary: "核对路线" } },
+        { op: "add_thread", thread: { id: "t1", title: "物证", order: 0, goal: "确认走廊是否有人经过" } },
+        { op: "add_thread", thread: { id: "t2", title: "调查", order: 1, goal: "核对路线" } },
+        { op: "create_clue_identity", temp_id: "board", title: "没有响的木板" },
+        { op: "upsert_clue_plan", clue_id: "board", plan: {
+          author_truth: null, intention: "让调查者怀疑有人熟悉走廊结构", resolution_intent: "explain",
+        } },
+        { op: "add_node", node: { id: "n1", title: "发现异样", action: "调查者注意到木板没有响",
+          change: "调查者开始怀疑有人熟悉走廊结构", stage_id: "s1", thread_ids: ["t1"],
+          clue_uses: [{ clue_id: "board", roles: ["plant"], presentation: quote, mode: "narration" }] } },
+        { op: "add_node", node: { id: "n2", title: "核对路线", action: "调查者比较不同人的路线",
+          change: "时间差指向熟悉走廊的人", stage_id: "s2", thread_ids: ["t2"],
+          clue_uses: [{ clue_id: "board", roles: ["resolve"], presentation: "木板解释了路线差", mode: "narration" }] } },
+        { op: "connect", edge: { id: "e1", from_id: "n1", to_id: "n2", kind: "next", reason: "物证引出路线核对" } },
+        { op: "bind_prose", binding: { id: "b1", node_id: "n1", document_id: "doc", path,
+          digest, start, end: start + quote.length, quote, observation: "走廊木板" } },
+      ],
+    },
+  });
+  expect(seeded.ok(), await seeded.text()).toBeTruthy();
+
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  const surface = page.getByRole("region", { name: "构思结构" });
+  await surface.getByRole("button", { name: "发现异样", exact: true }).click();
+  await page.getByRole("button", { name: "全书线索", exact: true }).click();
+  const clues = page.getByRole("region", { name: "全书线索" });
+  await expect(clues.getByRole("button", { name: /^没有响的木板/ })).toBeVisible();
+  await clues.getByRole("button", { name: /^没有响的木板/ }).click();
+  await expect(clues.getByRole("heading", { name: "没有响的木板" })).toBeVisible();
+  await clues.getByRole("button", { name: "核对路线", exact: true }).click();
+  await expect(surface.getByRole("heading", { name: "核对路线" })).toBeVisible();
+
+  await surface.getByRole("button", { name: "发现异样", exact: true }).click();
+  await expect(surface.locator(".story-binding")).toContainText(quote);
+  await surface.locator(".story-binding").click();
+  await page.getByRole("button", { name: "返回构思", exact: true }).click();
+  await expect(surface).toBeVisible();
 });

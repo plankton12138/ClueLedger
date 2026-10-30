@@ -17,11 +17,14 @@ from hastings.workspace.clue_models import (
     ClueEvidence,
     ClueMode,
 )
-from hastings.workspace.clue_store import ClueLedgerStore
+from hastings.workspace.clue_store import ClueLedgerStore, ClueSnapshot
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import FileView, Workspace, has_chapter_content
 from hastings.workspace.source_locations import file_evidence_id
 from hastings.workspace.state_store import current_chapter
+from hastings.workspace.story_clue_catalog import StoryClueCatalog
+from hastings.workspace.story_models import StoryVariant
+from hastings.workspace.story_store import StoryStore
 
 Freshness = Literal["valid", "stale", "source_missing", "unavailable", "none"]
 Outcome = Literal["found", "empty", "insufficient", "unrecorded"]
@@ -70,6 +73,23 @@ class ReaderSeen(BaseModel):
     basis_ids: list[str]
 
 
+class CluePlanView(BaseModel):
+    author_truth: str | None = None
+    intention: str = ""
+    resolution_intent: Literal["explain", "leave_open", "undecided"] = "undecided"
+
+
+class ClueUsePosition(BaseModel):
+    node_id: str
+    stage_id: str | None = None
+    thread_ids: list[str] = Field(default_factory=list)
+    roles: list[str] = Field(default_factory=list)
+    presentation: str
+    mode: ClueMode = "unknown"
+    speaker_id: str = ""
+    expected_interpretation: str = ""
+
+
 class ClueSummary(BaseModel):
     clue_id: str
     clue_revision: str
@@ -80,11 +100,16 @@ class ClueSummary(BaseModel):
     coverage: ClueCoverageView
     mentioned_chapters: list[int]
     warnings: list[str] = Field(default_factory=list)
+    scope: Literal["chapter", "story"] = "chapter"
+    plan: CluePlanView | None = None
 
 
 class ClueDetail(ClueSummary):
     workspace_lineage: str
     ledger_revision: str = ""
+    story_revision: str = ""
+    view_revision: str = ""
+    uses: list[ClueUsePosition] = Field(default_factory=list)
     observations: list[ClueObservation]
     reader_seen: list[ReaderSeen]
     evidence: list[ClueBasis]
@@ -123,10 +148,11 @@ class ClueReader:
         as_of_chapter: int | None,
         *,
         library: ModuleLibrary | None = None,
+        snapshot: ClueSnapshot | None = None,
     ) -> None:
         self.workspace = workspace
         self.library = library
-        self.snapshot = ClueLedgerStore(root).read()
+        self.snapshot = snapshot if snapshot is not None else ClueLedgerStore(root).read()
         self.latest = current_chapter(workspace)
         self.as_of = (
             self.latest if as_of_chapter is None else min(self.latest, max(0, as_of_chapter))

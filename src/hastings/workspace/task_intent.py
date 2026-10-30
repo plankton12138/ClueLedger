@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from hastings.workspace.story_authorization import blocks_writes
+from hastings.workspace.story_clue_catalog import StoryClueCatalog
 from hastings.workspace.story_models import Constraint, StoryVariant
 
 __all__ = [
@@ -479,7 +480,12 @@ def _named(title: str, text: str) -> bool:
     return len(name) >= 2 and name in text
 
 
-def named_objects(variant: StoryVariant, author_text: str) -> list[tuple[str, str]]:
+def named_objects(
+    variant: StoryVariant,
+    author_text: str,
+    *,
+    catalog: StoryClueCatalog | None = None,
+) -> list[tuple[str, str]]:
     """作者点到的既有对象：``(kind:id, 展示标签)``，用于核对预期目标。"""
     text = _flat(author_text)
     found: list[tuple[str, str]] = []
@@ -491,7 +497,10 @@ def named_objects(variant: StoryVariant, author_text: str) -> list[tuple[str, st
                 found.append((f"{kind}:{object_id}", f"{label}「{title}」"))
 
     add("node", variant.nodes, "节点")
-    add("clue", variant.clues, "线索")
+    if catalog is not None:
+        for fact in catalog:
+            if _named(fact.title, text):
+                found.append((f"clue:{fact.clue_id}", f"线索「{fact.title}」"))
     add("thread", variant.threads, "分支")
     for constraint in variant.constraints.values():
         if _named(_constraint_text(constraint), text):

@@ -410,7 +410,7 @@ PROPOSE_STORY_SCENE_DESCRIPTION = (
 )
 
 READ_STORY_DESCRIPTION = (
-    "读取当前方案的节点、线索、关系与约定，返回精确 ID 与修订（只读）。"
+    "读取当前方案的阶段、故事线目标、节点、线索计划、关系与约定，返回精确 ID 与修订（只读）。"
     "改结构之前先读一次，避免凭标题猜目标。"
 )
 
@@ -418,14 +418,17 @@ READ_STORY_GUIDELINES = ("要改结构或核对线索时先读；不要凭标题
 
 UPDATE_STORY_DESCRIPTION = (
     "提交一组结构变更。operations 的每项必须有 op 字段，取值只能是："
-    "add_node、update_node、remove_node、add_clue、update_clue、remove_clue、"
-    "add_thread、update_thread、remove_thread、connect、disconnect、"
-    "add_constraint、update_constraint、remove_constraint、set_event_time、"
-    "unset_event_time、bind_prose、unbind_prose、record_assessment、"
-    "remove_assessment。"
-    "add_node/update_node 的 node 必须含 id、title、action；"
-    "add_clue/update_clue 的 clue 必须含 id、title（update 还要有原 clue_id）；"
-    "connect 的 edge 必须含 id、from_id、to_id、kind。"
+    "add_stage、update_stage、remove_stage、add_node、update_node、remove_node、"
+    "create_clue_identity、rename_clue_identity、remove_clue_identity、"
+    "upsert_clue_plan、remove_clue_plan、add_thread、update_thread、remove_thread、"
+    "connect、disconnect、add_constraint、update_constraint、remove_constraint、"
+    "set_event_time、unset_event_time、bind_prose、unbind_prose、"
+    "record_assessment、remove_assessment。"
+    "add_node/update_node 的 node 必须含 id、title、action，可选 stage_id、thread_ids、"
+    "change、clue_uses；add_thread 的 thread 必须含 id、title、order，可选 goal、"
+    "obstacle、intended_resolution；create_clue_identity 用 temp_id 与 title，"
+    "upsert_clue_plan 用同一请求里的 temp_id 或已有 clue_id，plan 只含 author_truth、"
+    "intention、resolution_intent；connect 的 edge 必须含 id、from_id、to_id、kind。"
     "字段名与 read_story 返回完全一致，不要发明 description、summary 等额外字段；"
     "一次调用只描述这一批变更，失败会返回原因，可修正后重试。"
     "确认无需改动时改传 no_change，列出本轮读过的对象与理由，不要传空 operations。"

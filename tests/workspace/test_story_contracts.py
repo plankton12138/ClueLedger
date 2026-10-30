@@ -42,9 +42,9 @@ def variant(name: str) -> StoryVariant:
 def test_blank_mystery_has_no_prose_and_allows_undecided_truth() -> None:
     item = variant("blank-mystery.json")
     assert not item.bindings
-    assert item.clues["c1"].author_truth is None
-    assert item.clues["c1"].resolution.intent == "undecided"
-    assert item.clues["c2"].resolution.intent == "leave_open"
+    assert item.clue_plans["c1"].author_truth is None
+    assert item.clue_plans["c1"].resolution_intent == "undecided"
+    assert item.clue_plans["c2"].resolution_intent == "leave_open"
     assert item.nodes["n1"].clue_uses[0].mode == "narration"
 
 
@@ -131,7 +131,13 @@ def test_long_distance_clue_is_planted_first_and_resolved_last() -> None:
     assert len(item.nodes) == 24
     planted = [node for node in item.nodes.values() if node.clue_uses]
     assert {node.id for node in planted} == {"n01", "n24"}
-    assert item.clues["c1"].resolution.node_ids == ["n24"]
+    resolve_nodes = [
+        node.id
+        for node in item.nodes.values()
+        if any(use.clue_id == "c1" and "resolve" in use.roles for use in node.clue_uses)
+    ]
+    assert resolve_nodes == ["n24"]
+    assert item.clue_plans["c1"].resolution_intent == "explain"
     assert item.members("t1")[0] == "n01"
     assert item.members("t2")[-1] == "n24"
     assert "n13" in item.members("t1") and "n13" in item.members("t2")
@@ -154,8 +160,8 @@ def test_testimony_keeps_truth_and_belief_apart() -> None:
     assert use.speaker_id == "管家"
     change = item.nodes["t2"].knowledge_changes[0]
     assert change.stance == "believes"
-    assert item.clues["c1"].author_truth == "信是管家自己藏起来的"
-    assert change.claim != item.clues["c1"].author_truth
+    assert item.clue_plans["c1"].author_truth == "信是管家自己藏起来的"
+    assert change.claim != item.clue_plans["c1"].author_truth
 
 
 def test_alternative_records_its_baseline() -> None:
@@ -164,7 +170,7 @@ def test_alternative_records_its_baseline() -> None:
     assert item.base_revision == "rev_blank_1"
     main = variant("blank-mystery.json")
     assert item.nodes["n1"].title == main.nodes["n1"].title
-    assert item.clues["c2"].author_truth != main.clues["c2"].author_truth
+    assert item.clue_plans["c2"].author_truth != main.clue_plans["c2"].author_truth
 
 
 def test_emoji_and_crlf_positions_use_code_points() -> None:
@@ -185,8 +191,11 @@ def test_change_set_applies_to_the_blank_fixture() -> None:
     assert change.base_revision == base.revision
     updated = apply_change_set(base, change)
     assert "n4" in updated.nodes
-    assert updated.clues["c1"].resolution.intent == "explain"
-    assert updated.clues["c1"].resolution.node_ids == ["n4"]
+    assert updated.clue_plans["c1"].resolution_intent == "explain"
+    assert any(
+        use.clue_id == "c1" and "resolve" in use.roles
+        for use in updated.nodes["n4"].clue_uses
+    )
     assert updated.constraints["k2"].strength == "preference"
     assert updated.edges["e3"].kind == "next"
     # 原样例不被修改：应用是纯函数。
@@ -196,7 +205,7 @@ def test_change_set_applies_to_the_blank_fixture() -> None:
         id="change_undo", base_revision=updated.revision, operations=inverse
     ))
     assert set(restored.nodes) == set(base.nodes)
-    assert restored.clues["c1"].resolution.intent == "undecided"
+    assert restored.clue_plans["c1"].resolution_intent == "undecided"
 
 
 def test_error_sample_matches_the_shared_message_format() -> None:
@@ -233,10 +242,16 @@ def test_self_reference_is_rejected() -> None:
         StoryVariant.model_validate(raw)
 
 
-def test_resolution_intent_and_nodes_must_agree() -> None:
+def test_resolution_intent_and_roles_must_agree() -> None:
     raw = load("blank-mystery.json")
-    raw["clues"]["c1"]["resolution"] = {"intent": "explain", "node_ids": []}
-    with pytest.raises(ValueError, match="明确解释的线索需要至少一个回收节点"):
+    raw["clue_plans"]["c1"]["resolution_intent"] = "explain"
+    with pytest.raises(ValueError, match="明确解释的线索需要至少一个安排为回收的节点"):
+        StoryVariant.model_validate(raw)
+
+    raw = load("blank-mystery.json")
+    raw["clue_plans"]["c2"]["resolution_intent"] = "leave_open"
+    raw["nodes"]["n2"]["clue_uses"][0]["roles"] = ["resolve"]
+    with pytest.raises(ValueError, match="未计划解释或仍待定的线索不能安排回收作用"):
         StoryVariant.model_validate(raw)
 
 

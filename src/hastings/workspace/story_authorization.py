@@ -18,33 +18,36 @@ from dataclasses import dataclass
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.story_context import StoryContextSnapshot
+from hastings.workspace.story_clue_catalog import StoryClueCatalog
 from hastings.workspace.story_models import (
-    AddClue,
     AddConstraint,
     AddNode,
     AddStage,
     AddThread,
     BindProse,
     Connect,
+    CreateClueIdentity,
     Disconnect,
     RecordAssessment,
     RemoveAssessment,
-    RemoveClue,
+    RemoveClueIdentity,
+    RemoveCluePlan,
     RemoveConstraint,
     RemoveNode,
     RemoveStage,
     RemoveThread,
+    RenameClueIdentity,
     SetEventTime,
     StoryChangeSet,
     StoryOperation,
     StoryVariant,
     UnbindProse,
     UnsetEventTime,
-    UpdateClue,
     UpdateConstraint,
     UpdateNode,
     UpdateStage,
     UpdateThread,
+    UpsertCluePlan,
 )
 from hastings.workspace.story_store import new_id
 
@@ -240,7 +243,8 @@ class StoryAuthority:
 
     def _targets(self, operation: StoryOperation) -> list[tuple[str, str]]:
         if isinstance(
-            operation, (AddNode, AddClue, AddStage, AddThread, AddConstraint, RecordAssessment)
+            operation,
+            (AddNode, AddStage, AddThread, AddConstraint, RecordAssessment, CreateClueIdentity),
         ):
             return []
         if isinstance(operation, (BindProse, Connect)):
@@ -249,9 +253,12 @@ class StoryAuthority:
             return [("stage", operation.stage_id)]
         if isinstance(operation, (UpdateNode | RemoveNode)):
             return [("node", operation.node_id)]
-        if isinstance(operation, UpdateClue | RemoveClue):
+        if isinstance(
+            operation,
+            (UpsertCluePlan, RemoveCluePlan, RenameClueIdentity, RemoveClueIdentity),
+        ):
             return [("clue", operation.clue_id)]
-        if isinstance(operation, UpdateThread | RemoveThread):
+        if isinstance(operation, (UpdateThread | RemoveThread)):
             return [("thread", operation.thread_id)]
         if isinstance(operation, UpdateConstraint | RemoveConstraint):
             return [("constraint", operation.constraint_id)]
@@ -290,6 +297,7 @@ def build_authority(
     frozen: StoryContextSnapshot,
     author_text: str,
     *,
+    catalog: StoryClueCatalog | None = None,
     design_wide: bool = True,
     candidate_text: str = "",
 ) -> StoryAuthority:
@@ -301,6 +309,7 @@ def build_authority(
     ``candidate_text`` 是作者确认的上一轮候选原文。它只把其中点到的既有对象纳入
     可修改范围，不参与作者真相与约定授权的判断：候选里的命令不是作者的命令。
     """
+    catalog = catalog or StoryClueCatalog.from_variant(variant)
     text = _flat(author_text)
     naming_text = f"{text}\n{_flat(candidate_text)}" if candidate_text.strip() else text
     permitted: set[tuple[str, str]] = {
@@ -312,9 +321,9 @@ def build_authority(
     for node in variant.nodes.values():
         if _named(node.title, naming_text):
             permitted.add(("node", node.id))
-    for clue in variant.clues.values():
-        if _named(clue.title, naming_text):
-            permitted.add(("clue", clue.id))
+    for fact in catalog:
+        if _named(fact.title, naming_text):
+            permitted.add(("clue", fact.clue_id))
     for thread in variant.threads.values():
         if _named(thread.title, naming_text):
             permitted.add(("thread", thread.id))
@@ -327,7 +336,7 @@ def build_authority(
         for collection, kind in (
             (variant.stages, "stage"),
             (variant.nodes, "node"),
-            (variant.clues, "clue"),
+            (variant.clue_plans, "clue"),
             (variant.threads, "thread"),
             (variant.constraints, "constraint"),
             (variant.bindings, "binding"),
@@ -352,13 +361,7 @@ def build_authority(
                 permitted.add(("stage", node.stage_id))
             permitted.update(("thread", thread_id) for thread_id in node.thread_ids)
             permitted.update(
-                ("clue", use.clue_id) for use in node.clue_uses if use.clue_id in variant.clues
-            )
-        for clue_id in [oid for kind, oid in permitted if kind == "clue"]:
-            permitted.update(
-                ("node", node_id)
-                for node_id in variant.clues[clue_id].resolution.node_ids
-                if node_id in variant.nodes
+                ("clue", use.clue_id) for use in node.clue_uses
             )
         for binding in variant.bindings.values():
             if ("node", binding.node_id) in permitted:
@@ -386,6 +389,7 @@ def authorize_change(
     author_text: str,
     change: StoryChangeSet,
     *,
+    catalog: StoryClueCatalog | None = None,
     design_wide: bool = True,
     candidate_text: str = "",
 ) -> None:
@@ -407,19 +411,25 @@ def authorize_change(
             fix="返回讨论结果；作者明确要求修改时再提交变更",
         )
     authority = build_authority(
-        variant, frozen, author_text, design_wide=design_wide, candidate_text=candidate_text
+        variant,
+        frozen,
+        author_text,
+        catalog=catalog,
+        design_wide=design_wide,
+        candidate_text=candidate_text,
     )
     created = set(authority.permitted)
     for operation in change.operations:
         for cls, kind, field in (
             (AddNode, "node", "node"),
             (AddStage, "stage", "stage"),
-            (AddClue, "clue", "clue"),
             (AddThread, "thread", "thread"),
             (AddConstraint, "constraint", "constraint"),
         ):
             if isinstance(operation, cls):
                 created.add((kind, getattr(operation, field).id))
+        if isinstance(operation, CreateClueIdentity):
+            created.add(("clue", operation.temp_id))
     authority = StoryAuthority(authority.variant_id, authority.revision, frozenset(created))
     for operation in change.operations:
         authority.require(operation)
@@ -464,14 +474,22 @@ def _explicit(
 
 
 def validate_model_change(
-    variant: StoryVariant, change: StoryChangeSet, author_text: str = ""
+    variant: StoryVariant,
+    change: StoryChangeSet,
+    author_text: str = "",
+    *,
+    catalog: StoryClueCatalog | None = None,
 ) -> None:
     """统一保护作者真相、必需约定与裁决来源，并由应用固定来源。"""
+    catalog = catalog or StoryClueCatalog.from_variant(variant)
     for operation in change.operations:
-        if isinstance(operation, UpdateClue) and operation.clue_id in variant.clues:
-            existing = variant.clues[operation.clue_id]
-            if operation.clue.author_truth != existing.author_truth and not _explicit(
-                author_text, existing.title, "真相", operation.clue.author_truth or ""
+        if isinstance(operation, UpsertCluePlan) and operation.clue_id in variant.clue_plans:
+            existing = variant.clue_plans[operation.clue_id]
+            if operation.plan.author_truth != existing.author_truth and not _explicit(
+                author_text,
+                catalog.title(operation.clue_id),
+                "真相",
+                operation.plan.author_truth or "",
             ):
                 raise WorkspaceError(
                     code="STORY_AUTHORIZATION_CONFLICT",
@@ -479,20 +497,17 @@ def validate_model_change(
                     why="本轮无法验证对已有线索真相的对象级修改授权，没有保存变更",
                     fix="保留原真相；由作者明确说明对象和新的真相内容",
                 )
-        if (
-            isinstance(operation, RemoveClue)
-            and operation.clue_id in variant.clues
-            and variant.clues[operation.clue_id].author_truth is not None
-            and not _explicit(
-                author_text, variant.clues[operation.clue_id].title, "线索", remove=True
-            )
-        ):
-            raise WorkspaceError(
-                code="STORY_AUTHORIZATION_CONFLICT",
-                where="story.update",
-                why="本轮无法验证删除已有线索真相的对象级授权，没有保存变更",
-                fix="保留线索；由作者明确说明对象和新的真相内容",
-            )
+        if isinstance(operation, RemoveCluePlan) and operation.clue_id in variant.clue_plans:
+            existing = variant.clue_plans[operation.clue_id]
+            if existing.author_truth is not None and not _explicit(
+                author_text, catalog.title(operation.clue_id), "线索", remove=True
+            ):
+                raise WorkspaceError(
+                    code="STORY_AUTHORIZATION_CONFLICT",
+                    where="story.update",
+                    why="本轮无法验证删除已有线索真相的对象级授权，没有保存变更",
+                    fix="保留线索；由作者明确说明对象和新的真相内容",
+                )
         if (
             isinstance(operation, RecordAssessment)
             and operation.assessment.decision_source != "model"
@@ -560,25 +575,9 @@ def validate_model_change(
                 fix="保留现有必需约定，由作者明确说明约定原文和修改后的内容",
             )
 
-    # 来源和约定修订由应用填入，不能由模型自报为作者原话。
+    # 约定修订由应用填入，不能由模型自报为作者原话。
     for index, operation in enumerate(change.operations):
-        if isinstance(operation, AddClue):
-            change.operations[index] = operation.model_copy(
-                update={
-                    "clue": operation.clue.model_copy(update={"provenance": "authorized_creation"}),
-                }
-            )
-        elif isinstance(operation, UpdateClue) and operation.clue_id in variant.clues:
-            change.operations[index] = operation.model_copy(
-                update={
-                    "clue": operation.clue.model_copy(
-                        update={
-                            "provenance": variant.clues[operation.clue_id].provenance,
-                        }
-                    ),
-                }
-            )
-        elif isinstance(operation, AddConstraint):
+        if isinstance(operation, AddConstraint):
             change.operations[index] = operation.model_copy(
                 update={
                     "constraint": operation.constraint.model_copy(

@@ -19,33 +19,37 @@ from typing import Any, cast
 from pydantic import BaseModel, ValidationError
 
 from hastings.workspace.story_models import (
-    AddClue,
     AddConstraint,
     AddNode,
     AddStage,
     AddThread,
     BindProse,
+    CluePlanInput,
     Connect,
+    CreateClueIdentity,
     Disconnect,
     EventTimeRelation,
     RecordAssessment,
     RemoveAssessment,
-    RemoveClue,
+    RemoveClueIdentity,
+    RemoveCluePlan,
     RemoveConstraint,
     RemoveNode,
     RemoveStage,
     RemoveThread,
+    RenameClueIdentity,
     SetEventTime,
     StoryChangeSet,
+    StoryCluePlan,
     StoryOperation,
     StoryVariant,
     UnbindProse,
     UnsetEventTime,
-    UpdateClue,
     UpdateConstraint,
     UpdateNode,
     UpdateStage,
     UpdateThread,
+    UpsertCluePlan,
     validate_story_variant,
 )
 
@@ -81,7 +85,7 @@ def apply_change_set(variant: StoryVariant, change: StoryChangeSet) -> StoryVari
 def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
     stages = cast(dict[str, Any], data["stages"])
     nodes = cast(dict[str, Any], data["nodes"])
-    clues = cast(dict[str, Any], data["clues"])
+    clue_plans = cast(dict[str, Any], data["clue_plans"])
     threads = cast(dict[str, Any], data["threads"])
     constraints = cast(dict[str, Any], data["constraints"])
     edges = cast(dict[str, Any], data["edges"])
@@ -122,21 +126,17 @@ def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
             if operation.node_id
             not in (row["before_node_id"], row["after_node_id"])
         ]
-    elif isinstance(operation, AddClue):
-        _require_new(clues, operation.clue.id, "线索")
-        clues[operation.clue.id] = operation.clue.model_dump(mode="json")
-    elif isinstance(operation, UpdateClue):
-        _require_existing(clues, operation.clue_id, "线索")
-        clues[operation.clue_id] = operation.clue.model_dump(mode="json")
-    elif isinstance(operation, RemoveClue):
-        _require_existing(clues, operation.clue_id, "线索")
-        del clues[operation.clue_id]
-        stale = [key for key, row in bindings.items() if row.get("clue_id") == operation.clue_id]
-        for key in stale:
-            del bindings[key]
-        for node in nodes.values():
-            uses = cast(list[dict[str, Any]], node["clue_uses"])
-            uses[:] = [use for use in uses if use["clue_id"] != operation.clue_id]
+    elif isinstance(operation, (CreateClueIdentity, RenameClueIdentity, RemoveClueIdentity)):
+        # 身份由账本保存；故事侧只负责引用解析和最终一致性检查。
+        pass
+    elif isinstance(operation, UpsertCluePlan):
+        plan = StoryCluePlan(
+            clue_id=operation.clue_id, **operation.plan.model_dump(mode="json")
+        )
+        clue_plans[operation.clue_id] = plan.model_dump(mode="json")
+    elif isinstance(operation, RemoveCluePlan):
+        _require_existing(clue_plans, operation.clue_id, "线索计划")
+        del clue_plans[operation.clue_id]
     elif isinstance(operation, AddThread):
         _require_new(threads, operation.thread.id, "分支")
         threads[operation.thread.id] = operation.thread.model_dump(mode="json")
@@ -206,7 +206,9 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
     """
     added_stages, updated_stages, removed_stages = _partition(source.stages, target.stages)
     added_nodes, updated_nodes, removed_nodes = _partition(source.nodes, target.nodes)
-    added_clues, updated_clues, removed_clues = _partition(source.clues, target.clues)
+    added_plans, updated_plans, removed_plans = _partition(
+        source.clue_plans, target.clue_plans
+    )
     added_threads, updated_threads, removed_threads = _partition(source.threads, target.threads)
     added_rules, updated_rules, removed_rules = _partition(
         source.constraints, target.constraints
@@ -230,13 +232,31 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
     operations.extend(AddStage(stage=target.stages[key]) for key in added_stages)
     operations.extend(AddThread(thread=target.threads[key]) for key in added_threads)
     operations.extend(AddConstraint(constraint=target.constraints[key]) for key in added_rules)
-    operations.extend(AddClue(clue=target.clues[key]) for key in added_clues)
+    operations.extend(
+        UpsertCluePlan(
+            clue_id=key,
+            plan=CluePlanInput(
+                author_truth=target.clue_plans[key].author_truth,
+                intention=target.clue_plans[key].intention,
+                resolution_intent=target.clue_plans[key].resolution_intent,
+            ),
+        )
+        for key in added_plans
+    )
     operations.extend(AddNode(node=target.nodes[key]) for key in added_nodes)
     operations.extend(
         UpdateNode(node_id=key, node=target.nodes[key]) for key in updated_nodes
     )
     operations.extend(
-        UpdateClue(clue_id=key, clue=target.clues[key]) for key in updated_clues
+        UpsertCluePlan(
+            clue_id=key,
+            plan=CluePlanInput(
+                author_truth=target.clue_plans[key].author_truth,
+                intention=target.clue_plans[key].intention,
+                resolution_intent=target.clue_plans[key].resolution_intent,
+            ),
+        )
+        for key in updated_plans
     )
     operations.extend(
         UpdateStage(stage_id=key, stage=target.stages[key]) for key in updated_stages
@@ -267,7 +287,7 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
         for pair in sorted(target_times - source_times)
     )
     operations.extend(RemoveNode(node_id=key) for key in removed_nodes)
-    operations.extend(RemoveClue(clue_id=key) for key in removed_clues)
+    operations.extend(RemoveCluePlan(clue_id=key) for key in removed_plans)
     operations.extend(RemoveThread(thread_id=key) for key in removed_threads)
     operations.extend(RemoveStage(stage_id=key) for key in removed_stages)
     operations.extend(RemoveConstraint(constraint_id=key) for key in removed_rules)
@@ -303,8 +323,8 @@ def variant_digests(variant: StoryVariant) -> dict[str, str]:
         digests[f"stage:{key}"] = object_digest(stage.model_dump(mode="json"))
     for key, node in variant.nodes.items():
         digests[f"node:{key}"] = object_digest(node.model_dump(mode="json"))
-    for key, clue in variant.clues.items():
-        digests[f"clue:{key}"] = object_digest(clue.model_dump(mode="json"))
+    for key, plan in variant.clue_plans.items():
+        digests[f"clue_plan:{key}"] = object_digest(plan.model_dump(mode="json"))
     for key, thread in variant.threads.items():
         digests[f"thread:{key}"] = object_digest(thread.model_dump(mode="json"))
     for key, constraint in variant.constraints.items():

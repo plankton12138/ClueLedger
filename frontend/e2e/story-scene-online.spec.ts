@@ -19,7 +19,8 @@ test("真实正文保存、节点定位与成组撤销", async ({ page, request 
   writeFileSync(join(root, path), original, "utf8");
   const seeded = await request.post(`${base}/story/changes`, { data: {
     variant_id: "main", expected_revision: "empty", request_key: "scene-seed", operations: [
-      { op: "add_clue", clue: { id: "glove", title: "湿手套", author_truth: "管家在雪停后搬过尸体" } },
+      { op: "create_clue_identity", temp_id: "glove", title: "湿手套" },
+      { op: "upsert_clue_plan", clue_id: "glove", plan: { author_truth: "管家在雪停后搬过尸体", resolution_intent: "undecided" } },
       { op: "add_node", node: { id: "arrival", title: "抵达", action: "林砚看到湿手套", clue_uses: [{ clue_id: "glove", presentation: "手套还在滴水", mode: "narration" }] } },
     ],
   } });

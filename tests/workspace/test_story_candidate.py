@@ -679,8 +679,9 @@ def test_candidate_cannot_change_truth_or_remove_required_constraint(tmp_path: P
             base_revision=frozen.revision,
             operations=[
                 {
-                    "op": "add_clue",
-                    "clue": {"id": "glove", "title": "手套", "author_truth": "管家所留"},
+                    "op": "upsert_clue_plan",
+                    "clue_id": "glove",
+                    "plan": {"author_truth": "管家所留"},
                 },
                 {"op": "update_node", "node_id": "n1", "node": node},
                 {
@@ -706,16 +707,18 @@ def test_candidate_cannot_change_truth_or_remove_required_constraint(tmp_path: P
         lambda *args: None,
         "只写天气，不改真相和约定",
     )
-    clue = store.require_variant("main").clues["glove"].model_dump(mode="json")
-    clue["author_truth"] = "客人所留"
     for operation in [
-        {"op": "update_clue", "clue_id": "glove", "clue": clue},
+        {
+            "op": "upsert_clue_plan",
+            "clue_id": "glove",
+            "plan": {"author_truth": "客人所留"},
+        },
         {"op": "remove_constraint", "constraint_id": "hard"},
     ]:
         with pytest.raises(WorkspaceError, match="STORY_AUTHORIZATION_CONFLICT"):
             item.propose_structure([operation])
     assert item.operations == []
-    assert store.require_variant("main").clues["glove"].author_truth == "管家所留"
+    assert store.require_variant("main").clue_plans["glove"].author_truth == "管家所留"
     assert "hard" in store.require_variant("main").constraints
 
 
@@ -724,18 +727,15 @@ def test_candidate_does_not_accept_forged_author_provenance(tmp_path: Path) -> N
     item.propose_structure(
         [
             {
-                "op": "add_clue",
-                "clue": {
-                    "id": "glove",
-                    "title": "手套",
-                    "provenance": "author_request",
-                },
+                "op": "create_clue_identity",
+                "temp_id": "glove",
+                "title": "手套",
             }
         ]
     )
     operation = item.operations[0]
-    assert operation.op == "add_clue"
-    assert operation.clue.provenance == "authorized_creation"
+    assert operation.op == "create_clue_identity"
+    assert operation.title == "手套"
 
 
 def test_future_book_constraint_checks_non_contradiction(tmp_path: Path) -> None:

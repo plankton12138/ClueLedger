@@ -17,6 +17,7 @@ import { SourceNotice, ModuleSourceReader } from "../clues/SourceReader";
 import { navigate, parseHash } from "../../state/navigation";
 import { useCluesStore, type CluePane } from "../../state/clues";
 import ChapterClues from "../clues/ChapterClues";
+import StoryClues from "../story/StoryClues";
 import StorySurface from "../story/StorySurface";
 import { useStoryStore } from "../../state/story";
 import type { ClueReferenceInput } from "../../api/workspace";
@@ -43,10 +44,14 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   // 只看开关本身：构思面挂载后自己按作品读取，作品切换时上面的一致性检查会复位。
   const storyView = useStoryStore(state => state.open);
   const setStoryView = useStoryStore(state => state.setOpen);
+  const storyGraph = useStoryStore(state => state.graph);
+  const storyVariantId = useStoryStore(state => state.variantId);
+  const storyNodeId = useStoryStore(state => state.nodeId);
   const [storyDirectory, setStoryDirectory] = useState(false);
   const [directory, setDirectory] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const container = useRef<HTMLDivElement>(null);
+  const previousWorkspace = useRef<string | null>(null);
   const directoryButton = useRef<HTMLButtonElement>(null);
   const clueButton = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
@@ -67,7 +72,13 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const sidebar = plan.sidebar > 0;
   const directoryVisible = canDockDirectory ? sidebar : directory;
   const paper = !compact || !chat;
-  useEffect(() => { setDirectory(false); setCompactChat(false); setStoryView(false); }, [currentId, setStoryView]);
+  useEffect(() => {
+    // 初次加载不清掉用户刚打开的面；只有真正切换作品时才复位。
+    if (previousWorkspace.current && previousWorkspace.current !== currentId) {
+      setDirectory(false); setCompactChat(false); setStoryView(false);
+    }
+    previousWorkspace.current = currentId;
+  }, [currentId, setStoryView]);
   useEffect(() => { setDirectory(false); }, [canDockDirectory]);
   useEffect(() => { if (prefs.chatReveal > 0) { setCompactChat(true); if (currentId) useCluesStore.getState().setPane(currentId, "chat"); } }, [prefs.chatReveal]);
   useEffect(() => { if (sourceId) setCompactChat(false); }, [sourceId]);
@@ -94,6 +105,13 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     useSourceLocationStore.getState().capture({ kind: "writing", workspaceId: currentId }, taskChapter);
     navigate({ kind: "writing", workspaceId: currentId, sourceId: evidenceId, asOfChapter: asOf, taskChapter });
   }
+  async function locateStoryEvidence(evidenceId: string, asOf: number) {
+    if (!currentId) return;
+    const taskChapter = sourceTaskChapter(currentId) ?? file?.chapter_number ?? 0;
+    useSourceLocationStore.getState().capture({ kind: "writing", workspaceId: currentId }, taskChapter);
+    await useSourceLocationStore.getState().load(currentId, evidenceId, asOf, taskChapter);
+    useSourceLocationStore.setState({ storyReturn: true });
+  }
   // 带上线索只写进消息草稿，不发送；引用版本在发送时才由服务端核对。
   async function referenceClue(reference: ClueReferenceInput, title: string) {
     if (!currentId) return;
@@ -114,7 +132,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
         <Network size={16} strokeWidth={2} aria-hidden="true" />构思</Button>
       <Button size="compact" variant={chat && pane === "chat" ? "primary" : "secondary"} aria-pressed={chat && pane === "chat"} aria-controls="writing-chat" onClick={() => showPane("chat", true)} disabled={!currentId} disabledReason="先打开作品目录">
         <MessageSquare size={16} strokeWidth={2} aria-hidden="true" />{chatLabel}</Button>
-      <Button ref={clueButton} size="compact" variant={chat && pane === "clues" ? "primary" : "secondary"} aria-pressed={chat && pane === "clues"} aria-controls="writing-clues" onClick={() => showPane("clues", true)} disabled={!currentId} disabledReason="先打开作品目录"><Search size={16} aria-hidden="true" />本章线索</Button>
+      <Button ref={clueButton} size="compact" variant={chat && pane === "clues" ? "primary" : "secondary"} aria-pressed={chat && pane === "clues"} aria-controls="writing-clues" onClick={() => showPane("clues")} disabled={!currentId} disabledReason="先打开作品目录"><Search size={16} aria-hidden="true" />{storyView ? "全书线索" : "本章线索"}</Button>
       {storyView && <Button size="compact" aria-pressed={!chat && !directoryVisible} onClick={() => { setStoryDirectory(false); setDirectory(false); if (chat) { setCompactChat(false); if (!compact) prefs.toggleChat(); } else { showPane("chat"); } }}><Maximize2 size={16} aria-hidden="true" />专注构思</Button>}
       <Button className="writing-activity" size="compact" disabled={!currentId} disabledReason="先打开作品目录" onClick={() => void openDrawer()}>
         <Clock3 size={16} strokeWidth={2} aria-hidden="true" />活动记录</Button>
@@ -165,10 +183,22 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             showPane(next); event.currentTarget.querySelector<HTMLButtonElement>(`[data-pane="${next}"]`)?.focus();
           }}>
             <button id="assistant-chat-tab" role="tab" data-pane="chat" aria-selected={pane === "chat"} aria-controls="writing-chat" tabIndex={pane === "chat" ? 0 : -1} className="ui-button" onClick={() => showPane("chat")}>对话</button>
-            <button id="assistant-clues-tab" role="tab" data-pane="clues" aria-selected={pane === "clues"} aria-controls="writing-clues" tabIndex={pane === "clues" ? 0 : -1} className="ui-button" onClick={() => showPane("clues")}>本章线索</button>
+            <button id="assistant-clues-tab" role="tab" data-pane="clues" aria-selected={pane === "clues"} aria-controls="writing-clues" tabIndex={pane === "clues" ? 0 : -1} className="ui-button" onClick={() => showPane("clues")}>{storyView ? "全书线索" : "本章线索"}</button>
           </div>
           <div id="writing-chat" role="tabpanel" aria-labelledby="assistant-chat-tab" hidden={pane !== "chat"} className="min-h-0 flex-1"><ConversationPanel /></div>
-          <div id="writing-clues" role="tabpanel" aria-labelledby="assistant-clues-tab" hidden={pane !== "clues"} className="min-h-0 flex-1"><ChapterClues workspaceId={currentId} chapterPath={chapterPath} asOf={chapterNumber} active={chat && pane === "clues"} onLocate={locate} onReference={referenceClue} /></div>
+          <div id="writing-clues" role="tabpanel" aria-labelledby="assistant-clues-tab" hidden={pane !== "clues"} className="min-h-0 flex-1">
+            {storyView && storyVariantId ? <StoryClues
+              workspaceId={currentId}
+              variantId={storyVariantId}
+              nodeId={storyNodeId}
+              asOf={null}
+              active={chat && pane === "clues"}
+              nodeTitle={id => storyGraph?.nodes.find(node => node.id === id)?.title ?? id}
+              onLocateNode={id => { useStoryStore.getState().selectNode(id); }}
+              onLocateEvidence={(id, asOf) => void locateStoryEvidence(id, asOf)}
+              onReference={referenceClue}
+            /> : <ChapterClues workspaceId={currentId} chapterPath={chapterPath} asOf={chapterNumber} active={chat && pane === "clues"} onLocate={locate} onReference={referenceClue} />}
+          </div>
         </div>
       </>}
     </div>

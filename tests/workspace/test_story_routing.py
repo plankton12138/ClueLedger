@@ -181,7 +181,8 @@ def test_creation_action_commits_structure_and_never_opens_module_writes(tmp_pat
                     name="update_story",
                     arguments={
                         "operations": [
-                            {"op": "add_clue", "clue": {"id": "glove", "title": "湿手套"}},
+                            {"op": "create_clue_identity", "temp_id": "glove", "title": "湿手套"},
+                            {"op": "upsert_clue_plan", "clue_id": "glove", "plan": {}},
                             {
                                 "op": "add_node",
                                 "node": {
@@ -243,7 +244,9 @@ def test_creation_action_commits_structure_and_never_opens_module_writes(tmp_pat
     assert not any(receipt["kind"] == "module" for receipt in operation.committed_receipts)
     variant = StoryStore(service.store.root).require_variant(MAIN_VARIANT_ID)
     assert set(variant.nodes) == {"find", "question"}
-    assert "glove" in variant.clues and "next" in variant.edges
+    assert len(variant.clue_plans) == 1
+    assert variant.nodes["find"].clue_uses[0].clue_id in variant.clue_plans
+    assert "next" in variant.edges
     assert service.store.events(info.conversation_id)[-1]["status"] == "completed"
 
 
@@ -269,8 +272,14 @@ def test_confirmation_binds_last_candidate_and_keeps_module_writes_closed(
                     arguments={
                         "operations": [
                             {
-                                "op": "add_clue",
-                                "clue": {"id": "board", "title": "没有响的木板"},
+                                "op": "create_clue_identity",
+                                "temp_id": "board",
+                                "title": "没有响的木板",
+                            },
+                            {
+                                "op": "upsert_clue_plan",
+                                "clue_id": "board",
+                                "plan": {},
                             },
                             {
                                 "op": "add_node",
@@ -342,7 +351,8 @@ def test_confirmation_binds_last_candidate_and_keeps_module_writes_closed(
     variant = StoryStore(conversation_root(tmp_path / "state", "w1")).require_variant(
         MAIN_VARIANT_ID
     )
-    assert "board" in variant.clues and "observe" in variant.nodes
+    assert len(variant.clue_plans) == 1
+    assert "observe" in variant.nodes
     assert "check" in variant.nodes
     assert "edge-observe" in variant.edges
 
@@ -417,8 +427,14 @@ def test_structure_commit_completes_and_records_receipt(tmp_path: Path) -> None:
                     arguments={
                         "operations": [
                             {
-                                "op": "add_clue",
-                                "clue": {"id": "board", "title": "没有响的木板"},
+                                "op": "create_clue_identity",
+                                "temp_id": "board",
+                                "title": "没有响的木板",
+                            },
+                            {
+                                "op": "upsert_clue_plan",
+                                "clue_id": "board",
+                                "plan": {},
                             },
                             {
                                 "op": "add_node",
@@ -453,7 +469,7 @@ def test_structure_commit_completes_and_records_receipt(tmp_path: Path) -> None:
     finished = next(event for event in events if event["type"] == "run_finished")
     assert finished["status"] == "completed"
     committed = next(event for event in events if event["type"] == "story_changes_committed")
-    assert "clue:board" in committed["changed"]
+    assert any(key.startswith("clue_plan:") for key in committed["changed"])
     assert "node:observe" in committed["changed"]
     assert any("没有响的木板" in label for label in committed["labels"])
     operation = service.operations.read(info.operation_id)
@@ -463,7 +479,8 @@ def test_structure_commit_completes_and_records_receipt(tmp_path: Path) -> None:
     variant = StoryStore(conversation_root(tmp_path / "state", "w1")).require_variant(
         MAIN_VARIANT_ID
     )
-    assert "board" in variant.clues and "observe" in variant.nodes
+    assert len(variant.clue_plans) == 1
+    assert "observe" in variant.nodes
 
 
 def test_continue_after_own_commit_uses_the_new_revision(tmp_path: Path) -> None:

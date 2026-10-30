@@ -92,13 +92,15 @@ def variant_summary(
     bindings = [binding_state(item, read(item.path)) for item in variant.bindings.values()]
     checks = [assessment_state(item, variant, read) for item in variant.assessments.values()]
     unresolved = [
-        clue.id for clue in variant.clues.values() if clue.resolution.intent != "explain"
+        plan.clue_id
+        for plan in variant.clue_plans.values()
+        if plan.resolution_intent != "explain"
     ]
     return {
         "revision": variant.revision,
         "stages": len(variant.stages),
         "nodes": len(variant.nodes),
-        "clues": len(variant.clues),
+        "clues": len(variant.clue_plans),
         "threads": len(variant.threads),
         "constraints": len(variant.constraints),
         "unresolved_clue_ids": sorted(unresolved),

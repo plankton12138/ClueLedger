@@ -10,7 +10,19 @@
       "thread_ids": [
         "t1"
       ],
-      "stage_id": "s1"
+      "stage_id": "s1",
+      "clue_uses": [
+        {
+          "clue_id": "c1",
+          "roles": [
+            "resolve"
+          ],
+          "presentation": "线索在这里得到解释",
+          "mode": "narration",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ]
     },
     "f2": {
       "id": "f2",
@@ -20,21 +32,6 @@
         "t1"
       ],
       "stage_id": "s2"
-    }
-  },
-  "clues": {
-    "c1": {
-      "id": "c1",
-      "title": "钥匙的来历",
-      "author_truth": "陌生人后来把钥匙寄了回来",
-      "intention": "先看结果再看原因",
-      "resolution": {
-        "intent": "explain",
-        "node_ids": [
-          "f1"
-        ]
-      },
-      "provenance": "author_request"
     }
   },
   "threads": {
@@ -77,6 +74,14 @@
       "id": "s2",
       "title": "过去",
       "order": 1
+    }
+  },
+  "clue_plans": {
+    "c1": {
+      "clue_id": "c1",
+      "author_truth": "陌生人后来把钥匙寄了回来",
+      "intention": "先看结果再看原因",
+      "resolution_intent": "explain"
     }
   }
 }

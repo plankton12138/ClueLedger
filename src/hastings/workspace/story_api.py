@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.service_hub import WorkspaceServices
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
+from hastings.workspace.story_clue_catalog import StoryClueCatalog
+from hastings.workspace.story_clue_commit import prepare_clue_joint, prepare_clue_undo
 from hastings.workspace.story_models import (
     ProsePatch,
     ReadDependency,
@@ -115,6 +117,7 @@ class StoryChangeRequest(BaseModel):
 
     variant_id: str = Field(min_length=1, max_length=64)
     expected_revision: str = Field(min_length=1, max_length=64)
+    expected_ledger_revision: str = ""
     request_key: str = Field(min_length=1, max_length=120)
     operations: list[dict[str, Any]] = Field(default_factory=list)
     prose_patches: list[ProsePatch] = Field(default_factory=list)
@@ -132,8 +135,10 @@ class StoryReceiptView(BaseModel):
     variant_id: str
     base_revision: str
     revision: str
+    ledger_revision: str = ""
     change_id: str = ""
     request_key: str
+    id_map: dict[str, str] = Field(default_factory=dict)
     result: dict[str, Any] = Field(default_factory=dict)
     changed: list[str] = Field(default_factory=list)
 
@@ -153,7 +158,7 @@ def _counts(variant: StoryVariant) -> StoryCountsView:
     return StoryCountsView(
         stages=len(variant.stages),
         nodes=len(variant.nodes),
-        clues=len(variant.clues),
+        clues=len(variant.clue_plans),
         threads=len(variant.threads),
         constraints=len(variant.constraints),
         edges=len(variant.edges),
@@ -186,8 +191,10 @@ def _receipt_view(receipt: Any, changed: list[str]) -> StoryReceiptView:
         variant_id=receipt.variant_id,
         base_revision=receipt.base_revision,
         revision=receipt.revision,
+        ledger_revision=receipt.ledger_revision,
         change_id=receipt.change_id,
         request_key=receipt.request_key,
+        id_map=dict(receipt.id_map),
         result=dict(receipt.result),
         changed=changed,
     )
@@ -362,15 +369,19 @@ def create_story_router(
                 fix="刷新构思后重新选择节点",
                 details={"node_id": node_id},
             )
+        catalog = StoryClueCatalog.from_root(
+            variant, conversation_root(workspaces.root, workspace_id)
+        )
         uses: list[StoryClueUseView] = []
         for use in node.clue_uses:
-            clue = variant.clues.get(use.clue_id)
+            fact = catalog.get(use.clue_id)
+            plan = fact.plan if fact is not None else None
             uses.append(
                 StoryClueUseView(
                     clue_id=use.clue_id,
-                    title=clue.title if clue is not None else use.clue_id,
-                    author_truth=clue.author_truth if clue is not None else None,
-                    intention=clue.intention if clue is not None else "",
+                    title=fact.title if fact is not None else use.clue_id,
+                    author_truth=plan.author_truth if plan is not None else None,
+                    intention=plan.intention if plan is not None else "",
                     presentation=use.presentation,
                     mode=use.mode,
                     speaker_id=use.speaker_id,
@@ -416,7 +427,15 @@ def create_story_router(
             read_dependencies=body.read_dependencies,
         )
         receipt = store.commit_change(
-            variant_id=body.variant_id, change=change, request_key=body.request_key
+            variant_id=body.variant_id,
+            change=change,
+            request_key=body.request_key,
+            prepare_joint=prepare_clue_joint(
+                conversation_root(workspaces.root, workspace_id),
+                variant_id=body.variant_id,
+                change=change,
+                expected_ledger_revision=body.expected_ledger_revision,
+            ),
         )
         return _receipt_view(receipt, _changed_ids(store, receipt.change_id))
 
@@ -456,7 +475,29 @@ def create_story_router(
     ) -> StoryReceiptView:
         """撤销一次改动：只恢复当时涉及的对象，后续无关编辑保留。"""
         store = store_for(workspace_id)
-        receipt = store.undo(change_id=change_id, request_key=request_key)
+        snapshot = store.read()
+        record = (
+            snapshot.document.changes.get(change_id)
+            if snapshot.document is not None
+            else None
+        )
+        if record is None:
+            raise WorkspaceError(
+                code="STORY_CHANGE_NOT_FOUND",
+                where="story.api",
+                why=f"没有这次改动：{change_id}",
+                fix="刷新改动列表后重试",
+                details={"change_id": change_id},
+            )
+        receipt = store.undo(
+            change_id=change_id,
+            request_key=request_key,
+            prepare_joint=prepare_clue_undo(
+                conversation_root(workspaces.root, workspace_id),
+                variant_id=record.variant_id,
+                inverse_ledger=list(record.inverse_ledger),
+            ),
+        )
         return _receipt_view(receipt, _changed_ids(store, receipt.change_id))
 
     return router

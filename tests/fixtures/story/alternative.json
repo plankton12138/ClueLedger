@@ -48,33 +48,19 @@
       "thread_ids": [
         "t1"
       ],
-      "stage_id": "s1"
-    }
-  },
-  "clues": {
-    "c1": {
-      "id": "c1",
-      "title": "信封上的指纹",
-      "author_truth": null,
-      "intention": "让读者先怀疑遗产纠纷",
-      "resolution": {
-        "intent": "undecided",
-        "node_ids": []
-      },
-      "provenance": "author_request"
-    },
-    "c2": {
-      "id": "c2",
-      "title": "照片的日期",
-      "author_truth": "照片是管家放的，但他是为了掩护别人",
-      "intention": "把怀疑从管家身上引开",
-      "resolution": {
-        "intent": "explain",
-        "node_ids": [
-          "n3"
-        ]
-      },
-      "provenance": "author_request"
+      "stage_id": "s1",
+      "clue_uses": [
+        {
+          "clue_id": "c2",
+          "roles": [
+            "resolve"
+          ],
+          "presentation": "线索在这里得到解释",
+          "mode": "narration",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ]
     }
   },
   "threads": {
@@ -125,6 +111,20 @@
       "id": "s1",
       "title": "第一幕",
       "order": 0
+    }
+  },
+  "clue_plans": {
+    "c1": {
+      "clue_id": "c1",
+      "author_truth": null,
+      "intention": "让读者先怀疑遗产纠纷",
+      "resolution_intent": "undecided"
+    },
+    "c2": {
+      "clue_id": "c2",
+      "author_truth": "照片是管家放的，但他是为了掩护别人",
+      "intention": "把怀疑从管家身上引开",
+      "resolution_intent": "explain"
     }
   }
 }

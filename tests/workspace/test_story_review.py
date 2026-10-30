@@ -12,15 +12,14 @@ from hastings.workspace.story_context import (
     verify_story_context,
 )
 from hastings.workspace.story_models import (
-    AddClue,
     AddNode,
-    Clue,
-    ClueResolution,
+    CluePlanInput,
     ClueUse,
     KnowledgeChange,
     StoryChangeSet,
     StoryNode,
     UpdateNode,
+    UpsertCluePlan,
 )
 from hastings.workspace.story_review import build_story_review
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
@@ -52,13 +51,12 @@ def seed(store: StoryStore) -> None:
     _commit(
         store,
         [
-            AddClue(
-                clue=Clue(
-                    id="wet-gloves",
-                    title="前台的手套",
+            UpsertCluePlan(
+                clue_id="wet-gloves",
+                plan=CluePlanInput(
                     author_truth=TRUTH,
-                    resolution=ClueResolution(intent="explain", node_ids=["n2"]),
-                )
+                    resolution_intent="explain",
+                ),
             ),
             AddNode(
                 node=StoryNode(
@@ -74,7 +72,21 @@ def seed(store: StoryStore) -> None:
                     ],
                 )
             ),
-            AddNode(node=StoryNode(id="n2", title="对质", action="侦探把手套放在桌上")),
+            AddNode(
+                node=StoryNode(
+                    id="n2",
+                    title="对质",
+                    action="侦探把手套放在桌上",
+                    clue_uses=[
+                        ClueUse(
+                            clue_id="wet-gloves",
+                            roles=["resolve"],
+                            presentation="侦探说明了手套的来历",
+                            mode="narration",
+                        )
+                    ],
+                )
+            ),
         ],
         "seed",
     )

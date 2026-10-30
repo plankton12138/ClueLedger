@@ -54,6 +54,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "EMPTY_REVISION",
+    "JointTarget",
     "MAIN_VARIANT_ID",
     "StorySnapshot",
     "StoryStore",
@@ -96,6 +97,17 @@ class StorySnapshot:
         if self.document is None:
             return None
         return self.document.variants.get(variant_id)
+
+
+@dataclass(frozen=True)
+class JointTarget:
+    """与构思一起提交的另一个状态文件；内容与提交决定同生共死。"""
+
+    path: Path
+    lock_path: Path
+    before: str
+    after: str
+    payload: dict[str, Any]
 
 class StoryStore:
     def __init__(
@@ -160,6 +172,13 @@ class StoryStore:
         require_eligible: Callable[[str, int], None] | None = None,
         decision_guard: Callable[[], AbstractContextManager[None]] | None = None,
         prose_shift: bool = False,
+        prepare_joint: (
+            Callable[
+                [StoryDocument | None],
+                tuple[StoryChangeSet, JointTarget | None, dict[str, Any]],
+            ]
+            | None
+        ) = None,
     ) -> StoryReceipt:
         """应用一次结构变更；同键同负载返回同一收据，同键异负载报冲突。
 
@@ -182,6 +201,10 @@ class StoryStore:
             prior = self._receipt(document, request_key, fingerprint)
             if prior is not None:
                 return prior
+            joint_target: JointTarget | None = None
+            result_extra: dict[str, Any] = {}
+            if prepare_joint is not None:
+                change, joint_target, result_extra = prepare_joint(document)
             if (change.prose_patches or change.read_dependencies) and self.workspace is None:
                 raise WorkspaceError(
                     code="STORY_CHANGE_UNAVAILABLE",
@@ -224,6 +247,8 @@ class StoryStore:
                 require_eligible=require_eligible,
                 decision_guard=decision_guard,
                 prose_shift=prose_shift,
+                joint_target=joint_target,
+                result_extra=result_extra,
             )
 
     def create_variant(
@@ -265,7 +290,7 @@ class StoryStore:
                 revision=new_id("rev"),
                 stages=dict(source.stages),
                 nodes=dict(source.nodes),
-                clues=dict(source.clues),
+                clue_plans=dict(source.clue_plans),
                 threads=dict(source.threads),
                 constraints=dict(source.constraints),
                 edges=dict(source.edges),
@@ -304,7 +329,19 @@ class StoryStore:
             self._persist_locked(document, None, expected_head_digest=head_digest)
             return receipt
 
-    def undo(self, *, change_id: str, request_key: str) -> StoryReceipt:
+    def undo(
+        self,
+        *,
+        change_id: str,
+        request_key: str,
+        prepare_joint: (
+            Callable[
+                [StoryDocument, StoryChangeSet],
+                tuple[StoryChangeSet, JointTarget | None, dict[str, Any]],
+            ]
+            | None
+        ) = None,
+    ) -> StoryReceipt:
         """撤销一次提交：只反向恢复当时改动过的对象，后续无关编辑保留。"""
         fingerprint = _fingerprint({"kind": "undo", "change_id": change_id})
         with locked(self.lock_file):
@@ -344,7 +381,11 @@ class StoryStore:
                     fix="先处理这些目标的后续修改，再撤销这一次变更",
                     details={"change_id": change_id, "targets": sorted(stale)},
                 )
-            if not record.inverse_operations and not record.inverse_prose_patches:
+            if (
+                not record.inverse_operations
+                and not record.inverse_prose_patches
+                and not record.inverse_ledger
+            ):
                 raise WorkspaceError(
                     code="STORY_CHANGE_CONFLICT",
                     where="story.undo",
@@ -358,6 +399,10 @@ class StoryStore:
                 operations=record.inverse_operations,
                 prose_patches=record.inverse_prose_patches,
             )
+            joint_target: JointTarget | None = None
+            result_extra: dict[str, Any] = {}
+            if prepare_joint is not None:
+                change, joint_target, result_extra = prepare_joint(document, change)
             document = document.model_copy(deep=True)
             receipt = self._commit_locked(
                 document,
@@ -369,6 +414,8 @@ class StoryStore:
                 undone_by=change_id,
                 expected_head_digest=head_digest,
                 prose_shift=True,
+                joint_target=joint_target,
+                result_extra=result_extra,
             )
             return receipt
 
@@ -389,6 +436,7 @@ class StoryStore:
         require_eligible: Callable[[str, int], None] | None = None,
         decision_guard: Callable[[], AbstractContextManager[None]] | None = None,
         prose_shift: bool = False,
+        joint_target: JointTarget | None = None,
     ) -> StoryReceipt:
         variant = document.variants[variant_id]
         self._validate_dependencies(document, change, variant_id)
@@ -415,6 +463,9 @@ class StoryStore:
             created_at=_now(),
             operations=change.operations,
             inverse_operations=diff_variant(updated, variant),
+            inverse_ledger=[
+                dict(row) for row in (result_extra or {}).get("inverse_ledger", [])
+            ],
             inverse_prose_patches=inverse,
             touched=touched_objects(variant, updated),
         )
@@ -429,8 +480,13 @@ class StoryStore:
             variant_id=variant_id,
             base_revision=change.base_revision,
             revision=updated.revision,
+            ledger_revision=str((result_extra or {}).get("ledger_revision", "")),
             request_key=request_key,
             change_id=change.id,
+            id_map={
+                str(key): str(value)
+                for key, value in dict((result_extra or {}).get("id_map", {})).items()
+            },
             result={
                 "change_id": change.id,
                 "revision": updated.revision,
@@ -441,8 +497,11 @@ class StoryStore:
         )
         document.requests[request_key] = receipt
         self._persist_locked(
-            document, record, expected_head_digest=expected_head_digest,
+            document,
+            record,
+            expected_head_digest=expected_head_digest,
             prose=prose,
+            joint_target=joint_target,
             pre_decision=lambda: self._validate_commit(change, require_eligible, variant_id),
             decision_guard=decision_guard,
         )
@@ -452,11 +511,23 @@ class StoryStore:
         self, document: StoryDocument, record: StoryChangeRecord | None,
         *, expected_head_digest: str | None,
         prose: list[dict[str, str]] | None = None,
+        joint_target: JointTarget | None = None,
         pre_decision: Callable[[], None] | None = None,
         decision_guard: Callable[[], AbstractContextManager[None]] | None = None,
     ) -> None:
         payload = document.model_dump(mode="json")
         prose = prose or []
+        joint = (
+            {
+                "path": str(joint_target.path),
+                "lock_path": str(joint_target.lock_path),
+                "before": joint_target.before,
+                "after": joint_target.after,
+                "payload": joint_target.payload,
+            }
+            if joint_target is not None
+            else None
+        )
         try:
             if self._head_digest() != expected_head_digest:
                 raise self._external_change()
@@ -468,25 +539,29 @@ class StoryStore:
                 self.pending,
                 {"change_id": decision_id, "document": payload,
                  "previous_digest": expected_head_digest,
-                 "target_digest": hashlib.sha256(encoded).hexdigest(), "prose": prose},
+                 "target_digest": hashlib.sha256(encoded).hexdigest(), "prose": prose,
+                 "joint": joint},
                 prefix=".story-pending-",
             )
             with decision_guard() if decision_guard else nullcontext():
                 if self._head_digest() != expected_head_digest:
                     raise self._external_change()
                 self._check_prose(prose, allow_applied=False)
+                self._check_joint(joint_target, allow_applied=False)
                 if pre_decision is not None:
                     pre_decision()
                 atomic_write_bytes(
                     self.decision,
                     json.dumps({"change_id": decision_id,
                                 "target_digest": hashlib.sha256(encoded).hexdigest(),
-                                "prose_digest": _fingerprint(prose)}).encode(),
+                                "prose_digest": _fingerprint(prose),
+                                "joint_digest": _fingerprint(joint)}).encode(),
                     prefix=".story-decision-",
                 )
             if self._head_digest() != expected_head_digest:
                 raise self._external_change()
             self._apply_prose(prose)
+            self._apply_joint(joint_target)
             atomic_write_json(self.file, payload, prefix=".story-")
             self._write_snapshot(document.revision, payload)
             if record is not None:
@@ -526,6 +601,24 @@ class StoryStore:
                 decision.get("prose_digest") != _fingerprint(prose)
             ):
                 raise ValueError("正文提交内容与决定不一致")
+            joint_raw = raw.get("joint")
+            if "joint_digest" in decision and decision.get("joint_digest") != _fingerprint(
+                joint_raw
+            ):
+                raise ValueError("联合提交内容与决定不一致")
+            joint: JointTarget | None = None
+            if joint_raw is not None:
+                if not isinstance(joint_raw, dict) or not isinstance(
+                    joint_raw.get("payload"), dict
+                ):
+                    raise ValueError("联合提交目标格式不完整")
+                joint = JointTarget(
+                    path=Path(str(joint_raw["path"])),
+                    lock_path=Path(str(joint_raw["lock_path"])),
+                    before=str(joint_raw["before"]),
+                    after=str(joint_raw["after"]),
+                    payload=joint_raw["payload"],
+                )
             document = StoryDocument.model_validate(raw["document"])
             encoded = (
                 json.dumps(document.model_dump(mode="json"), ensure_ascii=False,
@@ -541,6 +634,7 @@ class StoryStore:
             if current_digest not in (raw["previous_digest"], raw["target_digest"]):
                 raise self._external_change()
             self._apply_prose(prose)
+            self._apply_joint(joint)
             if current_digest != raw["target_digest"]:
                 atomic_write_json(self.file, document.model_dump(mode="json"), prefix=".story-")
             self._write_snapshot(document.revision, document.model_dump(mode="json"))
@@ -809,6 +903,44 @@ class StoryStore:
                                    expected=patch.replacement, replacement=patch.expected))
             offset += len(patch.replacement) - len(patch.expected)
         return rows
+
+    def _joint_digest(self, target: JointTarget) -> str:
+        try:
+            return hashlib.sha256(target.path.read_bytes()).hexdigest()
+        except FileNotFoundError:
+            return ""
+
+    def _check_joint(self, target: JointTarget | None, *, allow_applied: bool) -> None:
+        if target is None:
+            return
+        with locked(target.lock_path):
+            current = self._joint_digest(target)
+            accepted = (target.before, target.after) if allow_applied else (target.before,)
+            if current not in accepted:
+                raise WorkspaceError(
+                    code="STORY_CLUE_REVISION_CONFLICT",
+                    where="story.commit",
+                    why="联合提交的目标在提交期间被外部修改",
+                    fix="保留外部内容，重新读取后核对再提交",
+                    details={"path": str(target.path)},
+                )
+
+    def _apply_joint(self, target: JointTarget | None) -> None:
+        if target is None:
+            return
+        with locked(target.lock_path):
+            current = self._joint_digest(target)
+            if current == target.after:
+                return
+            if current != target.before:
+                raise WorkspaceError(
+                    code="STORY_CLUE_REVISION_CONFLICT",
+                    where="story.commit",
+                    why="联合提交的目标在提交期间被外部修改",
+                    fix="保留外部内容，重新读取后核对再提交",
+                    details={"path": str(target.path)},
+                )
+            atomic_write_json(target.path, target.payload, prefix=".story-joint-")
 
     def _check_prose(
         self, rows: list[dict[str, Any]], *, allow_applied: bool = True,

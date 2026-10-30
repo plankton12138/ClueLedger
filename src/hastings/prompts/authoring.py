@@ -129,11 +129,18 @@ CANDIDATE_FLOW_INSTRUCTIONS = (
     "若提供 read_previous_story_candidate，先读取保留候选，并按当前作者要求继续。"
 )
 
-STORY_DESIGN_INSTRUCTIONS = """\
+STORY_DESIGN_INSTRUCTIONS = """
 
 ## 构思任务
 - 当前在构思页。作者要求建立或修改结构时，先用 `read_story` 读取当前方案，
-  再用 `update_story` 提交线索、节点、关系与约定。
+  再用 `update_story` 提交阶段、故事线、节点、线索计划、关系与约定。
+- 先形成阶段、各线目标／阻力／计划收束、关键变化和汇合，再细化线索使用；
+  不要按章节逐一追加节点，也不强制所有作品使用同一套阶段和线数。
+- 节点只写关键行动带来的局面或理解变化；作者未定的目标、真相或结局保持 null，
+  空字符串不能表示「未定」。只有零散片段时允许先保存未分阶段节点。
+- 汇合节点只建一次并加入相关故事线；关系理由说明影响，不只写「发生在前」。
+- 线索身份用 `create_clue_identity` 的 `temp_id` 建立，计划和节点使用在同一请求里
+  引用这个临时 ID；不要复制线索标题，也不要把角色说法写成作者真相。
 - 线索、真相、节点与关系属于构思结构，不要保存为模块；
   只有作者明确要求另存资料时才使用模块工具。
 - 空白方案没有节点：从作者已确认的讨论与资料建立第一批结构；
@@ -150,16 +157,47 @@ STORY_DESIGN_INSTRUCTIONS = """\
 ```json
 {
   "operations": [
-    {"op": "add_clue", "clue": {"id": "clue-board", "title": "没有响的木板",
-      "author_truth": null, "intention": "引出对走廊脚步的调查"}},
+    {"op": "add_stage", "stage": {"id": "stage-night", "title": "失踪当晚", "order": 0,
+      "summary": "三条线分别建立时间、物证与目击说法"}},
+    {"op": "add_stage", "stage": {"id": "stage-search", "title": "第一轮调查", "order": 1,
+      "summary": "各线结果汇合，时间差成为共同问题"}},
+    {"op": "add_thread", "thread": {"id": "thread-alibi", "title": "不在场证明", "order": 0,
+      "goal": "确认每个人当晚的位置", "obstacle": "证词互相矛盾",
+      "intended_resolution": "在汇合节点用时间差收束"}},
+    {"op": "add_thread", "thread": {"id": "thread-physical", "title": "物证", "order": 1,
+      "goal": "找出与证词不符的物证", "obstacle": "物证只能证明发生过，不能证明是谁",
+      "intended_resolution": "与不在场证明汇合"}},
+    {"op": "add_thread", "thread": {"id": "thread-witness", "title": "目击说法", "order": 2,
+      "goal": "核实目击者看到的时间", "obstacle": "目击者可能记错",
+      "intended_resolution": "在第二轮排除错误时间"}},
+    {"op": "create_clue_identity", "temp_id": "clue-board", "title": "没有响的木板"},
+    {"op": "upsert_clue_plan", "clue_id": "clue-board",
+      "plan": {"author_truth": null, "intention": "让调查者怀疑有人熟悉走廊结构",
+               "resolution_intent": "undecided"}},
     {"op": "add_node", "node": {"id": "node-observe", "title": "发现异样",
-      "action": "调查者注意到走廊木板没有响",
-      "clue_uses": [{"clue_id": "clue-board",
+      "action": "调查者注意到走廊木板没有响", "change": "调查者开始怀疑有人熟悉走廊结构",
+      "stage_id": "stage-night", "thread_ids": ["thread-physical"],
+      "clue_uses": [{"clue_id": "clue-board", "roles": ["plant"],
         "presentation": "有人经过时木板没有响", "mode": "action"}]}},
-    {"op": "add_node", "node": {"id": "node-check", "title": "核对路线",
-      "action": "调查者比较不同人的经过路线"}},
-    {"op": "connect", "edge": {"id": "edge-check", "from_id": "node-observe",
-      "to_id": "node-check", "kind": "next", "reason": "无声经过引出路线核对"}}
+    {"op": "add_node", "node": {"id": "node-alibi", "title": "核对证词",
+      "action": "调查者比较两名证人的时间", "change": "两名证人的时间对不上",
+      "stage_id": "stage-night", "thread_ids": ["thread-alibi"]}},
+    {"op": "add_node", "node": {"id": "node-witness", "title": "重问目击者",
+      "action": "调查者追问目击者实际听到的内容", "change": "目击者承认只听到声音",
+      "stage_id": "stage-night", "thread_ids": ["thread-witness"]}},
+    {"op": "add_node", "node": {"id": "node-converge", "title": "汇合时间线",
+      "action": "三条线的结果放到同一时间线上核对",
+      "change": "三线结果指向同一段无人经过的时间",
+      "stage_id": "stage-search",
+      "thread_ids": ["thread-alibi", "thread-physical", "thread-witness"]}},
+    {"op": "connect", "edge": {"id": "edge-observe-alibi", "from_id": "node-observe",
+      "to_id": "node-alibi", "kind": "next", "reason": "物证促使调查者核对证词"}},
+    {"op": "connect", "edge": {"id": "edge-physical-converge", "from_id": "node-observe",
+      "to_id": "node-converge", "kind": "next", "reason": "物证结果进入汇合核对"}},
+    {"op": "connect", "edge": {"id": "edge-alibi-converge", "from_id": "node-alibi",
+      "to_id": "node-converge", "kind": "next", "reason": "时间矛盾需要共同核对"}},
+    {"op": "connect", "edge": {"id": "edge-witness-converge", "from_id": "node-witness",
+      "to_id": "node-converge", "kind": "next", "reason": "目击说法进入共同时间线"}}
   ]
 }
 ```

@@ -20,6 +20,33 @@ from hastings.workspace.story_models import StoryChangeSet
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 
 
+def seed_identity(tmp_path: Path, workspace_id: str) -> None:
+    from uuid import uuid4
+
+    from hastings.workspace.clue_models import ClueIdentity
+    from hastings.workspace.clue_store import ClueLedgerStore
+
+    ledger = ClueLedgerStore(conversation_root(tmp_path / "state", workspace_id))
+
+    def apply(store: Any) -> dict[str, str]:
+        store.clues["gloves"] = ClueIdentity(
+            clue_id="gloves",
+            title="手套",
+            clue_revision=f"rev_{uuid4().hex}",
+            created_at="2026-10-30T00:00:00+08:00",
+            created_by="author",
+        )
+        return {"clue_id": "gloves"}
+
+    ledger.mutate(
+        expected_revision=ledger.read().revision,
+        request_key="seed-identity",
+        kind="test_identity",
+        payload={},
+        apply=apply,
+    )
+
+
 class _NoModel:
     """接口用例不该走到模型；真被调用就说明接线错了。"""
 
@@ -97,12 +124,11 @@ def seed(tmp_path: Path, workspace_id: str) -> None:
             base_revision="empty",
             operations=[
                 {
-                    "op": "add_clue",
-                    "clue": {
-                        "id": "gloves",
-                        "title": "手套",
+                    "op": "upsert_clue_plan",
+                    "clue_id": "gloves",
+                    "plan": {
                         "author_truth": "管家搬过尸体",
-                        "resolution": {"intent": "explain", "node_ids": ["n2"]},
+                        "resolution_intent": "explain",
                     },
                 },
                 {
@@ -120,7 +146,22 @@ def seed(tmp_path: Path, workspace_id: str) -> None:
                         ],
                     },
                 },
-                {"op": "add_node", "node": {"id": "n2", "title": "对质", "action": "他问管家"}},
+                {
+                    "op": "add_node",
+                    "node": {
+                        "id": "n2",
+                        "title": "对质",
+                        "action": "他问管家",
+                        "clue_uses": [
+                            {
+                                "clue_id": "gloves",
+                                "roles": ["resolve"],
+                                "presentation": "他说出手套的来历",
+                                "mode": "narration",
+                            }
+                        ],
+                    },
+                },
                 {
                     "op": "connect",
                     "edge": {"id": "e1", "from_id": "n1", "to_id": "n2", "kind": "next"},
@@ -129,6 +170,7 @@ def seed(tmp_path: Path, workspace_id: str) -> None:
         ),
         request_key="seed-api",
     )
+    seed_identity(tmp_path, workspace_id)
 
 
 def revision_of(client: TestClient, workspace_id: str) -> str:
@@ -241,7 +283,7 @@ def test_change_commit_is_idempotent_and_revision_checked(
     # 用旧修订再改一次：冲突，不写入。
     stale = dict(body, request_key="ui-change-2")
     conflict = client.post(f"/api/file-workspaces/{workspace_id}/story/changes", json=stale)
-    assert conflict.status_code == 409
+    assert conflict.status_code == 409, conflict.text
     assert conflict.json()["error"]["code"] == "STORY_REVISION_CONFLICT"
 
 
@@ -259,3 +301,96 @@ def test_missing_variant_and_node_are_reported(client: TestClient, tmp_path: Pat
     )
     assert node.status_code == 400
     assert node.json()["error"]["code"] == "STORY_CONTEXT_INCOMPLETE"
+
+
+def test_story_scope_clue_reads_plan_and_uses(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    seed(tmp_path, workspace_id)
+
+    listing = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues",
+        params={"scope": "story"},
+    )
+    assert listing.status_code == 200, listing.text
+    body = listing.json()
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["title"] == "手套"
+    assert item["plan"]["author_truth"] == "管家搬过尸体"
+    assert item["scope"] == "story"
+
+    related = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues",
+        params={"scope": "story", "node_id": "n1"},
+    )
+    assert related.status_code == 200
+    assert [row["clue_id"] for row in related.json()["items"]] == ["gloves"]
+
+    detail = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues/gloves",
+        params={"scope": "story"},
+    )
+    assert detail.status_code == 200, detail.text
+    detail_body = detail.json()
+    assert detail_body["plan"]["resolution_intent"] == "explain"
+    assert [use["node_id"] for use in detail_body["uses"]] == ["n1", "n2"]
+    assert detail_body["uses"][1]["roles"] == ["resolve"]
+
+    invalid = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues",
+        params={"scope": "story", "node_id": "missing"},
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "STORY_CONTEXT_INCOMPLETE"
+
+
+def test_create_identity_is_joint_and_undo_restores_ledger(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    revision = "empty"
+    created = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": revision,
+            "request_key": "identity-create",
+            "operations": [
+                {"op": "create_clue_identity", "temp_id": "board", "title": "没有响的木板"},
+                {"op": "upsert_clue_plan", "clue_id": "board",
+                 "plan": {"author_truth": None, "resolution_intent": "undecided"}},
+                {"op": "add_node", "node": {
+                    "id": "observe", "title": "发现异样", "action": "木板没有响",
+                    "clue_uses": [{"clue_id": "board", "presentation": "木板没有响",
+                                   "mode": "narration"}],
+                }},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    receipt = created.json()
+    stable = receipt["id_map"]["board"]
+    assert stable.startswith("clue_")
+    assert receipt["ledger_revision"]
+
+    listing = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
+    )
+    assert [row["title"] for row in listing.json()["items"]] == ["没有响的木板"]
+    store = StoryStore(conversation_root(tmp_path / "state", workspace_id))
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    assert stable in variant.clue_plans
+    assert variant.nodes["observe"].clue_uses[0].clue_id == stable
+
+    undid = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes/{receipt['change_id']}/undo",
+        params={"request_key": "identity-undo"},
+    )
+    assert undid.status_code == 201, undid.text
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    assert "observe" not in variant.nodes
+    assert stable not in variant.clue_plans
+    listing = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
+    )
+    assert listing.json()["items"] == []

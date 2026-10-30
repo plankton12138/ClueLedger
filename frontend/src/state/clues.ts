@@ -1,9 +1,11 @@
 import { create } from "zustand";
-import { fetchClueDetail, fetchClues, type ClueDetail, type ClueList } from "../api/clues";
+import { fetchClueDetail, fetchClues, fetchStoryClueDetail, fetchStoryClues, type ClueDetail, type ClueList } from "../api/clues";
 import { errorMessage } from "../api/errors";
 
 export const clueListKey = (path: string | null, asOf: number | null) => JSON.stringify(["list", path, asOf]);
 export const clueDetailKey = (id: string, asOf: number | null) => JSON.stringify(["detail", id, asOf]);
+export const storyListKey = (variantId: string, nodeId: string | null, asOf: number | null) => JSON.stringify(["story-list", variantId, nodeId, asOf]);
+export const storyDetailKey = (variantId: string, clueId: string, asOf: number | null) => JSON.stringify(["story-detail", variantId, clueId, asOf]);
 export type CluePane = "chat" | "clues";
 interface CluesState {
   workspaceId: string | null;
@@ -21,6 +23,8 @@ interface CluesState {
   reset(workspaceId: string | null): void;
   loadList(workspaceId: string, path: string | null, asOf: number | null, more?: boolean): Promise<void>;
   loadDetail(workspaceId: string, clueId: string, asOf: number | null): Promise<void>;
+  loadStoryList(workspaceId: string, variantId: string, nodeId: string | null, asOf: number | null, more?: boolean): Promise<void>;
+  loadStoryDetail(workspaceId: string, variantId: string, clueId: string, asOf: number | null): Promise<void>;
 }
 let serial = 0;
 const requests = new Map<string, number>();
@@ -55,6 +59,35 @@ export const useCluesStore = create<CluesState>()((set, get) => ({
     const current = () => get().workspaceId === workspaceId && get().session === session && requests.get(key) === token;
     try {
       const detail = await fetchClueDetail(workspaceId, clueId, asOf);
+      if (current()) set(state => ({ details: { ...state.details, [key]: detail } }));
+    } catch (error) { if (current()) set(state => ({ errors: { ...state.errors, [key]: errorMessage(error, "线索详情") } })); }
+    finally { if (current()) set(state => ({ loading: { ...state.loading, [key]: false } })); }
+  },
+  async loadStoryList(workspaceId, variantId, nodeId, asOf, more = false) {
+    if (get().workspaceId !== workspaceId) get().reset(workspaceId);
+    const key = storyListKey(variantId, nodeId, asOf), session = get().session, token = ++serial;
+    const cursor = more ? get().lists[key]?.next_cursor ?? "" : "";
+    if (more && !cursor) return;
+    requests.set(key, token);
+    set(state => ({ loading: { ...state.loading, [key]: true }, errors: { ...state.errors, [key]: "" } }));
+    const current = () => get().workspaceId === workspaceId && get().session === session && requests.get(key) === token;
+    try {
+      const data = await fetchStoryClues(workspaceId, variantId, nodeId, asOf, cursor);
+      if (!current()) return;
+      const previous = more ? get().lists[key]?.items ?? [] : [];
+      const items = [...new Map([...previous, ...data.items].map(item => [item.clue_id, item])).values()];
+      set(state => ({ lists: { ...state.lists, [key]: { ...data, items } } }));
+    } catch (error) { if (current()) set(state => ({ errors: { ...state.errors, [key]: errorMessage(error, "全书线索") } })); }
+    finally { if (current()) set(state => ({ loading: { ...state.loading, [key]: false } })); }
+  },
+  async loadStoryDetail(workspaceId, variantId, clueId, asOf) {
+    if (get().workspaceId !== workspaceId) get().reset(workspaceId);
+    const key = storyDetailKey(variantId, clueId, asOf), session = get().session, token = ++serial;
+    requests.set(key, token);
+    set(state => ({ loading: { ...state.loading, [key]: true }, errors: { ...state.errors, [key]: "" } }));
+    const current = () => get().workspaceId === workspaceId && get().session === session && requests.get(key) === token;
+    try {
+      const detail = await fetchStoryClueDetail(workspaceId, variantId, clueId, asOf);
       if (current()) set(state => ({ details: { ...state.details, [key]: detail } }));
     } catch (error) { if (current()) set(state => ({ errors: { ...state.errors, [key]: errorMessage(error, "线索详情") } })); }
     finally { if (current()) set(state => ({ loading: { ...state.loading, [key]: false } })); }

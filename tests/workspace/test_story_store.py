@@ -18,23 +18,23 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.operations import Operation, OperationStore
 from hastings.workspace.story_changes import apply_change_set, diff_variant
 from hastings.workspace.story_models import (
-    AddClue,
     AddNode,
-    Clue,
-    ClueResolution,
+    CluePlanInput,
     ClueUse,
     Connect,
     EventTimeRelation,
     ProsePatch,
     ReadDependency,
-    RemoveClue,
+    RemoveCluePlan,
     RemoveNode,
     SetEventTime,
     StoryChangeSet,
+    StoryCluePlan,
     StoryEdge,
     StoryNode,
     StoryVariant,
     UpdateNode,
+    UpsertCluePlan,
 )
 from hastings.workspace.story_store import (
     EMPTY_REVISION,
@@ -65,10 +65,10 @@ def node(node_id: str, **kwargs: Any) -> StoryNode:
     return StoryNode(**payload)
 
 
-def clue(clue_id: str, **kwargs: Any) -> Clue:
-    payload: dict[str, Any] = {"id": clue_id, "title": kwargs.pop("title", f"线索 {clue_id}")}
+def clue_plan(clue_id: str, **kwargs: Any) -> StoryCluePlan:
+    payload: dict[str, Any] = {"clue_id": clue_id}
     payload.update(kwargs)
-    return Clue(**payload)
+    return StoryCluePlan(**payload)
 
 
 def change(operations: list[Any], base_revision: str, **kwargs: Any) -> StoryChangeSet:
@@ -97,15 +97,15 @@ def test_blank_structure_needs_no_prose_and_allows_undecided_truth(store: StoryS
         store,
         [
             AddNode(node=node("n1")),
-            AddClue(clue=clue("c1", author_truth=None, resolution=ClueResolution())),
+            UpsertCluePlan(clue_id="c1", plan=CluePlanInput()),
         ],
         key="first",
     )
     variant = store.require_variant(MAIN_VARIANT_ID)
     assert variant.revision == receipt.revision
     assert variant.nodes["n1"].title == "节点 n1"
-    assert variant.clues["c1"].author_truth is None
-    assert variant.clues["c1"].resolution.intent == "undecided"
+    assert variant.clue_plans["c1"].author_truth is None
+    assert variant.clue_plans["c1"].resolution_intent == "undecided"
     assert store.read().document is not None
     assert store.read().document.changes[receipt.change_id].operations
 
@@ -508,14 +508,23 @@ def test_removing_node_cascades_relations_but_refuses_authored_references(
     commit(
         store,
         [
-            AddNode(node=node("a")),
+            AddNode(
+                node=node(
+                    "a",
+                    clue_uses=[
+                        ClueUse(
+                            clue_id="c1",
+                            roles=["resolve"],
+                            presentation="线索在这里解释",
+                        )
+                    ],
+                )
+            ),
             AddNode(node=node("b")),
             Connect(edge=StoryEdge(id="e1", from_id="a", to_id="b", kind="next")),
-            AddClue(
-                clue=clue(
-                    "c1",
-                    resolution=ClueResolution(intent="explain", node_ids=["a"]),
-                )
+            UpsertCluePlan(
+                clue_id="c1",
+                plan=CluePlanInput(resolution_intent="explain"),
             ),
         ],
         key="base",
@@ -523,11 +532,11 @@ def test_removing_node_cascades_relations_but_refuses_authored_references(
     with pytest.raises(WorkspaceError) as caught:
         commit(store, [RemoveNode(node_id="a")], key="remove-with-clue")
     assert caught.value.code == "STORY_GRAPH_INVALID"
-    assert "线索回收指向不存在的节点" in caught.value.why
+    assert "明确解释的线索需要至少一个安排为回收的节点" in caught.value.why
 
     commit(
         store,
-        [RemoveClue(clue_id="c1"), RemoveNode(node_id="a")],
+        [RemoveCluePlan(clue_id="c1"), RemoveNode(node_id="a")],
         key="remove-together",
     )
     variant = store.require_variant(MAIN_VARIANT_ID)
@@ -570,19 +579,24 @@ def test_apply_is_pure_and_diff_round_trips() -> None:
     inverse = diff_variant(updated, variant)
     restored = apply_change_set(updated, change(inverse, updated.revision))
     assert not restored.nodes
-    assert restored.clues == variant.clues
+    assert restored.clue_plans == variant.clue_plans
     assert restored.edges == variant.edges
 
 
-def test_clue_use_requires_existing_clue(store: StoryStore) -> None:
-    with pytest.raises(WorkspaceError) as caught:
-        commit(
-            store,
-            [AddNode(node=node("n1", clue_uses=[ClueUse(clue_id="missing", presentation="出现")]))],
-            key="bad-use",
-        )
-    assert caught.value.code == "STORY_GRAPH_INVALID"
-    assert "节点引用了不存在的线索" in caught.value.why
+def test_clue_use_may_reference_an_identity_before_a_plan_exists(store: StoryStore) -> None:
+    commit(
+        store,
+        [AddNode(node=node("n1", clue_uses=[ClueUse(clue_id="body-only", presentation="出现")]))],
+        key="body-only-use",
+    )
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    assert "body-only" not in variant.clue_plans
+    assert variant.nodes["n1"].clue_uses[0].clue_id == "body-only"
+
+
+def test_clue_use_roles_must_be_unique() -> None:
+    with pytest.raises(ValueError, match="同一次使用不能重复登记相同作用"):
+        ClueUse(clue_id="c1", roles=["plant", "plant"], presentation="出现")
 
 
 def test_change_set_rejects_unknown_operation() -> None:
