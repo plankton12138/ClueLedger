@@ -71,6 +71,7 @@ async function reload(
 
 /** 刷新序号：并发刷新只让最新一次落地，旧快照不能覆盖新结果。 */
 let refreshEpoch = 0;
+let loadEpoch = 0;
 
 export const useStoryStore = create<StoryState>()((set, get) => ({
   workspaceId: null,
@@ -89,6 +90,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
 
   reset() {
     refreshEpoch += 1;
+    loadEpoch += 1;
     set({
       workspaceId: null,
 
@@ -131,6 +133,8 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
   },
 
   async load(workspaceId) {
+    const epoch = ++loadEpoch;
+    ++refreshEpoch;
     if (get().workspaceId !== workspaceId) {
       set({ workspaceId, variants: [], variantId: null, graph: null, detail: null, nodeId: null });
     }
@@ -141,7 +145,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
       const initial = variantId ? await initialGraph(workspaceId, variantId) : null;
       const lastChange = initial?.latest_change_id ? await readStoryChange(workspaceId, initial.latest_change_id) : null;
       // 迟到的响应不能覆盖已经切走的作品。
-      if (get().workspaceId !== workspaceId) return;
+      if (get().workspaceId !== workspaceId || epoch !== loadEpoch) return;
       set({
         variants: list.variants,
         primaryId: list.primary_variant_id,
@@ -153,6 +157,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
         loading: false,
       });
     } catch (error) {
+      if (get().workspaceId !== workspaceId || epoch !== loadEpoch) return;
       set({ loading: false, error: errorMessage(error, "读取构思") });
     }
   },
@@ -194,9 +199,10 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     set({ nodeId });
     try {
       const detail = await readStoryNode(workspaceId, variantId, nodeId);
-      if (get().nodeId !== nodeId) return;
+      if (get().workspaceId !== workspaceId || get().variantId !== variantId || get().nodeId !== nodeId) return;
       set({ detail });
     } catch (error) {
+      if (get().workspaceId !== workspaceId || get().variantId !== variantId || get().nodeId !== nodeId) return;
       set({ error: errorMessage(error, "读取节点") });
     }
   },

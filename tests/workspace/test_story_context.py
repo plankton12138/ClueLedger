@@ -285,7 +285,9 @@ def test_knowledge_uses_only_earlier_changes(store: StoryStore) -> None:
                         effective_event_node_id="n2",
                     )
                 ],
-            )
+            ),
+            {"op": "set_event_time", "relation": {"before_node_id": "n1", "after_node_id": "n2"}},
+            {"op": "set_event_time", "relation": {"before_node_id": "n2", "after_node_id": "n24"}},
         ],
         key="seed-knowledge",
     )

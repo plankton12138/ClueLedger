@@ -55,8 +55,11 @@ export interface StoryNode {
   action: string;
   change: string | null;
   stage_id: string | null;
-  threads: string[];
-  clues: string[];
+  thread_ids: string[];
+  clue_ids: string[];
+  primary_thread_id?: string | null;
+  is_convergence?: boolean;
+  reveal_order?: number | null;
   time_note: string;
 }
 

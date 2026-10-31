@@ -121,6 +121,16 @@ export function hasSavedStoryChanges(turn: ChatTurn): boolean {
   return turn.storyCommits.some(commit => !commit.noChange && commit.operations > 0);
 }
 
+/** 仅在完整任务已有正式收据且后续提交成功时，将参数/结构校验作为过程记录。 */
+export function hasLaterStorySubmission(turn: ChatTurn, itemIndex: number): boolean {
+  const item = turn.items[itemIndex];
+  if (turn.result?.status !== "completed" || !hasSavedStoryChanges(turn)
+    || item?.kind !== "tool" || item.tool.name !== "update_story" || item.tool.ok !== false
+    || !/^\[STORY_(ARGUMENTS_INVALID|CHANGE_INVALID|GRAPH_INVALID)\]/.test(item.tool.summary)) return false;
+  return turn.items.slice(itemIndex + 1).some(next => next.kind === "tool"
+    && next.tool.name === "update_story" && next.tool.ok === true && next.tool.args.mode !== "prepare");
+}
+
 export type TaskIntentKind = "discussion" | "structure" | "module" | "mixed" | "clarify";
 
 export interface TurnStoryCommit {

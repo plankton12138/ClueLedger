@@ -273,11 +273,14 @@ class RunContext:
         执行，因此越界操作先报「不被允许」，不会先被指纹错误掩盖。
         """
         touches_prose = managed_kind(operation.path) == "chapter" or (
-            operation.target is not None and managed_kind(operation.target) == "chapter")
-        if (self.story_candidate is not None or (self.story is not None and touches_prose)) \
-                and not candidate_proposal:
+            operation.target is not None and managed_kind(operation.target) == "chapter"
+        )
+        if (
+            self.story_candidate is not None or (self.story is not None and touches_prose)
+        ) and not candidate_proposal:
             raise WorkspaceError(
-                code="STORY_CANDIDATE_REQUIRED", where="story.write",
+                code="STORY_CANDIDATE_REQUIRED",
+                where="story.write",
                 why="本轮正文必须先提交候选并通过核对，尚未修改正式文件",
                 fix="使用 propose_story_scene 提交候选正文",
             )
@@ -1217,9 +1220,7 @@ def build_tools(
                     "required_references": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": (
-                            prompt_tools.TASK_REQUIRED_REFERENCES_PARAM_DESCRIPTION
-                        ),
+                        "description": (prompt_tools.TASK_REQUIRED_REFERENCES_PARAM_DESCRIPTION),
                     },
                     "required_module_references": {
                         "type": "array",
@@ -1647,9 +1648,7 @@ def build_tools(
                     "as_of_chapter": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": (
-                            prompt_tools.READ_STATE_AS_OF_CHAPTER_PARAM_DESCRIPTION
-                        ),
+                        "description": (prompt_tools.READ_STATE_AS_OF_CHAPTER_PARAM_DESCRIPTION),
                     },
                 },
                 "additionalProperties": False,
@@ -2242,9 +2241,7 @@ def build_tools(
                             "offset": {
                                 "type": "integer",
                                 "minimum": 0,
-                                "description": (
-                                    prompt_tools.LIST_MODULES_OFFSET_PARAM_DESCRIPTION
-                                ),
+                                "description": (prompt_tools.LIST_MODULES_OFFSET_PARAM_DESCRIPTION),
                             },
                         },
                         "additionalProperties": False,
@@ -3129,6 +3126,8 @@ def prepare_request_inputs(
                     workspace=workspace,
                     state_root=run.state_root,
                     frozen=run.story,
+                    library=run.library,
+                    module_refs=tuple(binding.module for binding in run.assembly.bindings),
                     writable=writable,
                     guard=run.story_guard,
                     write_guard=run.require_writable,
@@ -3148,11 +3147,23 @@ def prepare_request_inputs(
     if run.intent is not None and not run.intent.allows_module_write:
         # 结构任务与讨论轮不开放模块内容写入：模块成功不能代替结构完成。
         tools = [tool for tool in tools if tool.name not in _MODULE_CONTENT_TOOLS]
+        if (
+            run.story is not None
+            and run.story.revision == "empty"
+            and "正文" not in (run.current_author_text or "")
+        ):
+            tools = [
+                tool for tool in tools if tool.name not in ("set_task_scope", "extend_task_scope")
+            ]
+
     if run.story_candidate is not None:
         candidate = run.story_candidate
+
         async def propose_scene(
-            tool_call_id: str, arguments: Mapping[str, Any],
-            signal: Any = None, on_update: Any = None,
+            tool_call_id: str,
+            arguments: Mapping[str, Any],
+            signal: Any = None,
+            on_update: Any = None,
         ) -> AgentToolResult:
             del tool_call_id, signal, on_update
             path = _text_argument(arguments, "path")
@@ -3163,16 +3174,30 @@ def prepare_request_inputs(
                 required_read=None if digest == "absent" else ReadRequirement.full(path),
                 candidate_proposal=True,
                 preflight=lambda: workspace.check_write_intent(
-                    path, expected_digest=None if digest == "absent" else digest),
+                    path, expected_digest=None if digest == "absent" else digest
+                ),
             )
             candidate.propose(path, digest, text)
-            return _json({"candidate_id": candidate.id, "status": "draft",
-                          "note": "正文草稿已保留，正式正文未修改；本轮结束时核对。"})
-        tools = [tool for tool in tools if tool.name.startswith(("read_", "search_", "list_"))
-                 or tool.name in ("set_task_scope", "extend_task_scope", "ask_author")]
+            return _json(
+                {
+                    "candidate_id": candidate.id,
+                    "status": "draft",
+                    "note": "正文草稿已保留，正式正文未修改；本轮结束时核对。",
+                }
+            )
+
+        tools = [
+            tool
+            for tool in tools
+            if tool.name.startswith(("read_", "search_", "list_"))
+            or tool.name in ("set_task_scope", "extend_task_scope", "ask_author")
+        ]
+
         async def read_previous_candidate(
-            tool_call_id: str, arguments: Mapping[str, Any],
-            signal: Any = None, on_update: Any = None,
+            tool_call_id: str,
+            arguments: Mapping[str, Any],
+            signal: Any = None,
+            on_update: Any = None,
         ) -> AgentToolResult:
             del tool_call_id, arguments, signal, on_update
             previous = candidate.previous()
@@ -3180,17 +3205,30 @@ def prepare_request_inputs(
                 original_request = previous["author_text"].strip()
                 if original_request and original_request not in candidate.author_text:
                     candidate.author_text = original_request + "\n" + candidate.author_text
-            return _json({"candidate": previous,
-                          "note": "候选仅供参考；重新提交仍需当前轮作者授权与原文读取。"})
+            return _json(
+                {
+                    "candidate": previous,
+                    "note": "候选仅供参考；重新提交仍需当前轮作者授权与原文读取。",
+                }
+            )
+
         if candidate.source_candidate_id or candidate.generation > 1:
-            tools.append(AgentTool(
-                name="read_previous_story_candidate", label="读取正文草稿",
-                description=READ_PREVIOUS_STORY_CANDIDATE_DESCRIPTION,
-                parameters={"type": "object", "properties": {}, "additionalProperties": False},
-                execute_fn=read_previous_candidate, execution_mode="sequential"))
+            tools.append(
+                AgentTool(
+                    name="read_previous_story_candidate",
+                    label="读取正文草稿",
+                    description=READ_PREVIOUS_STORY_CANDIDATE_DESCRIPTION,
+                    parameters={"type": "object", "properties": {}, "additionalProperties": False},
+                    execute_fn=read_previous_candidate,
+                    execution_mode="sequential",
+                )
+            )
+
         async def propose_structure(
-            tool_call_id: str, arguments: Mapping[str, Any],
-            signal: Any = None, on_update: Any = None,
+            tool_call_id: str,
+            arguments: Mapping[str, Any],
+            signal: Any = None,
+            on_update: Any = None,
         ) -> AgentToolResult:
             del tool_call_id, signal, on_update
             rows = arguments.get("operations")
@@ -3202,41 +3240,83 @@ def prepare_request_inputs(
                     fix="按 update_story 的操作格式提交；只改作者本轮点到的对象",
                 )
             return _json(candidate.propose_structure(rows))
-        tools.append(AgentTool(
-            name="propose_story_structure", label="登记候选结构变更",
-            description=PROPOSE_STORY_STRUCTURE_DESCRIPTION,
-            parameters={"type": "object", "properties": {
-                "operations": {"type": "array", "items": {"type": "object"},
-                               "description": (
-                                   prompt_tools.PROPOSE_STORY_STRUCTURE_OPERATIONS_PARAM_DESCRIPTION
-                               )}},
-                "required": ["operations"], "additionalProperties": False},
-            execute_fn=propose_structure, execution_mode="sequential"))
-        tools.append(AgentTool(
-            name="propose_story_scene", label="保存正文草稿",
-            description=PROPOSE_STORY_SCENE_DESCRIPTION,
-            parameters={"type": "object", "properties": {
-                name: {"type": "string"} for name in ("path", "base_digest", "text")},
-                "required": ["path", "base_digest", "text"], "additionalProperties": False},
-            execute_fn=propose_scene, execution_mode="sequential"))
+
+        tools.append(
+            AgentTool(
+                name="propose_story_structure",
+                label="登记候选结构变更",
+                description=PROPOSE_STORY_STRUCTURE_DESCRIPTION,
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "operations": {
+                            "type": "array",
+                            "items": {"type": "object"},
+                            "description": (
+                                prompt_tools.PROPOSE_STORY_STRUCTURE_OPERATIONS_PARAM_DESCRIPTION
+                            ),
+                        }
+                    },
+                    "required": ["operations"],
+                    "additionalProperties": False,
+                },
+                execute_fn=propose_structure,
+                execution_mode="sequential",
+            )
+        )
+        tools.append(
+            AgentTool(
+                name="propose_story_scene",
+                label="保存正文草稿",
+                description=PROPOSE_STORY_SCENE_DESCRIPTION,
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        name: {"type": "string"} for name in ("path", "base_digest", "text")
+                    },
+                    "required": ["path", "base_digest", "text"],
+                    "additionalProperties": False,
+                },
+                execute_fn=propose_scene,
+                execution_mode="sequential",
+            )
+        )
     system = resolved.text
-    if (
-        run.story is not None
-        and run.story.purpose == "design"
-        and run.story_candidate is None
-    ):
+    if run.story is not None and run.story.purpose == "design" and run.story_candidate is None:
         intent = run.intent
         candidate_source = intent.candidate if intent is not None else None
         system += story_design_instructions(
             intent.kind if intent is not None else "discussion",
             candidate_text=candidate_source.text if candidate_source is not None else "",
             candidate_seq=candidate_source.seq if candidate_source is not None else 0,
-            multiple=(
-                bool(candidate_source.multiple) if candidate_source is not None else False
-            ),
+            multiple=(bool(candidate_source.multiple) if candidate_source is not None else False),
         )
     if run.story_candidate is not None:
         system += CANDIDATE_FLOW_INSTRUCTIONS
+    if run.story is not None and run.state_root is not None and run.operation_id:
+        from hastings.workspace.story_drafts import StoryDraftStore
+
+        draft = StoryDraftStore(run.state_root, run.operation_id, run.story.variant_id).read()
+        if draft and not draft.get("committed"):
+            system += "\n应用恢复检查点：本任务已有未提交草稿，不能重新创建或重复追加既有对象。"
+            system += (
+                "先 read_story(source=draft) 读取当前草稿；"
+                "按 target_id 精确读取需修正对象，使用 node_patches 局部修改。"
+            )
+            system += (
+                "若已完整，直接用现有 draft_revision 整体提交；作者已在界面确认的约定无需重新提问。"
+            )
+            system += json.dumps(
+                {
+                    "draft_revision": draft["digest"],
+                    "operation_count": len(draft["operations"]),
+                    "base_revision": draft["base_revision"],
+                    "author_confirmed_constraint_count": len(
+                        draft.get("confirmed_constraints", [])
+                    ),
+                },
+                ensure_ascii=False,
+            )
     return RequestInputs(system=system, tools=tools)
 
 
@@ -3287,7 +3367,7 @@ def build_harness(
         clue_store=clue_store,
         assembly=assembly,
     )
-    return AgentHarness(
+    harness = AgentHarness(
         AgentHarnessConfig(
             provider=provider,
             model=model,
@@ -3297,6 +3377,61 @@ def build_harness(
         ),
         messages=history,
     )
+
+    if run.story is not None and run.intent is not None and run.intent.requires_structure:
+        from hastings.workspace.tool_feedback import structure_feedback
+
+        rounds = [0]
+        paused = [""]
+
+        class BudgetProvider:
+            def stream_response(self, **kwargs: Any) -> Any:
+                if paused[0]:
+                    raise WorkspaceError(
+                        code=paused[0],
+                        where="story.task",
+                        why=(
+                            "草稿中的必需约定尚待作者确认，草稿已保留"
+                            if paused[0] == "STORY_APPROVAL_PENDING"
+                            else "本代准备预算已用完，草稿已保留"
+                        ),
+                        fix=(
+                            "在草稿中确认来源约定后继续同一任务"
+                            if paused[0] == "STORY_APPROVAL_PENDING"
+                            else "继续同一任务补齐安排并提交"
+                        ),
+                    )
+                rounds[0] += 1
+                return provider.stream_response(**kwargs)
+
+        harness.config.provider = BudgetProvider()
+
+        async def budget_after_tool(
+            call: Any, result: AgentToolResult, is_error: bool
+        ) -> tuple[AgentToolResult, bool]:
+            remaining = max(0, max_turns - rounds[0])
+            budget = {"remaining_model_rounds": remaining, "reserved_for_commit_and_reply": 3}
+            if (
+                isinstance(result.details, dict)
+                and result.details.get("prepared")
+                and remaining <= 3
+            ):
+                paused[0] = "STORY_BUDGET_PAUSED"
+            result = structure_feedback(
+                call.name, result, is_error, {tool.name for tool in inputs.tools}, budget
+            )
+            if paused[0] == "STORY_BUDGET_PAUSED":
+                payload = json.loads(result.text)
+                payload["next_step"] = "草稿已保留，继续同一任务补齐安排并提交"
+                result.content = [TextContent(text=json.dumps(payload, ensure_ascii=False))]
+            if is_error and isinstance(result.details, dict) and (
+                result.details.get("code") == "STORY_AUTHORIZATION_CONFLICT"
+            ):
+                paused[0] = "STORY_APPROVAL_PENDING"
+            return result, is_error
+
+        harness.config.after_tool_call = budget_after_tool
+    return harness
 
 
 _PROFILE_BY_MODE: dict[ToolMode, Profile] = {
@@ -3365,9 +3500,7 @@ def _evidence_items(value: JSONValue, *, field: str) -> tuple[ReviewEvidence, ..
             raise _input_error(field, "证据的 end 必须是整数")
         if not isinstance(quote, str):
             raise _input_error(field, "证据的 quote 必须是字符串")
-        evidence.append(
-            ReviewEvidence(path=path, digest=digest, start=start, end=end, quote=quote)
-        )
+        evidence.append(ReviewEvidence(path=path, digest=digest, start=start, end=end, quote=quote))
     return tuple(evidence)
 
 

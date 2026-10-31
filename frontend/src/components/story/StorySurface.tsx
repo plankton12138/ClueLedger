@@ -9,6 +9,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { MessageSquarePlus, Undo2, X } from "lucide-react";
 
+import { collapseStages } from "./storyLayout";
+import StoryDraft from "./StoryDraft";
 import StoryBatches from "./StoryBatches";
 import StoryCreationDialog, { type StoryCreationTarget } from "./StoryCreationDialog";
 import { useConversationsStore } from "../../state/conversations";
@@ -60,14 +62,7 @@ export default function StorySurface({
   const activeStage = stages.find((stage) => stage.id === stageId) ?? null;
   const visibleGraph = useMemo(() => {
     if (!graph || !activeStage) return graph;
-    const shown = graph.nodes.filter((node) => node.stage_id === activeStage.id);
-    const ids = new Set(shown.map((node) => node.id));
-    return {
-      ...graph,
-      nodes: shown,
-      edges: graph.edges.filter((edge) => ids.has(edge.from_id) && ids.has(edge.to_id)),
-      collapsed: graph.nodes.filter((node) => !ids.has(node.id)).map((node) => node.id),
-    };
+    return collapseStages(graph, activeStage.id);
   }, [graph, activeStage]);
   useEffect(() => {
     if (!graph || !state.nodeId) return;
@@ -85,6 +80,7 @@ export default function StorySurface({
   if (!graph || graph.nodes.length === 0) {
     return (
       <div className="story-surface story-surface-empty">
+        <StoryDraft key={workspaceId} workspaceId={workspaceId} />
         {state.error ? (
           <StatusMessage tone="error" action={<Button onClick={() => void load(workspaceId)}>重新读取</Button>}>
             {state.error}
@@ -120,6 +116,7 @@ export default function StorySurface({
         </div>
       </header>}
 
+      <StoryDraft key={workspaceId} workspaceId={workspaceId} />
       <StoryBatches key={workspaceId} workspaceId={workspaceId} />
       {stages.length > 0 && (
         <div className="story-groups" role="group" aria-label="阶段">
@@ -163,10 +160,10 @@ export default function StorySurface({
               <p className="story-action">{detail.node.action}</p>
               {detail.node.change && <p className="story-hint">变化：{detail.node.change}</p>}
               {detail.node.stage_id && <p className="story-hint">阶段：{graph.stages.find(stage => stage.id === detail.node.stage_id)?.title ?? detail.node.stage_id}</p>}
-              {detail.node.threads.length > 0 && (
+              {detail.node.thread_ids.length > 0 && (
                 <p className="story-hint">
                   分支：
-                  {detail.node.threads
+                  {detail.node.thread_ids
                     .map((id) => graph.threads.find((item) => item.id === id)?.title ?? id)
                     .join("、")}
                 </p>
@@ -238,15 +235,14 @@ export default function StorySurface({
                 </Button>
               </div>
               {detail.outgoing.length + detail.incoming.length > 0 && (
-                <p className="story-hint">
-                  连接：
-                  {detail.incoming
-                    .map((edge) => `${nodesById.get(edge.from_id)?.title ?? edge.from_id} →`)
-                    .join(" ")}
-                  {detail.outgoing
-                    .map((edge) => `→ ${nodesById.get(edge.to_id)?.title ?? edge.to_id}`)
-                    .join(" ")}
-                </p>
+                <nav className="story-node-links" aria-label="节点连接">
+                  {detail.incoming.map(edge => <button key={edge.id} type="button" className="ui-button"
+                    aria-label={`定位到${nodesById.get(edge.from_id)?.title ?? edge.from_id}`}
+                    onClick={() => void selectNode(edge.from_id)}>← {nodesById.get(edge.from_id)?.title ?? edge.from_id}</button>)}
+                  {detail.outgoing.map(edge => <button key={edge.id} type="button" className="ui-button"
+                    aria-label={`定位到${nodesById.get(edge.to_id)?.title ?? edge.to_id}`}
+                    onClick={() => void selectNode(edge.to_id)}>{nodesById.get(edge.to_id)?.title ?? edge.to_id} →</button>)}
+                </nav>
               )}
             </>
           )}

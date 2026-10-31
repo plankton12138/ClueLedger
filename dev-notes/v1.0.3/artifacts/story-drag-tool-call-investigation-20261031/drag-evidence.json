@@ -1,0 +1,71 @@
+{
+  "isolated": true,
+  "book_id": "7ba1c56f659b5c66",
+  "before": {
+    "cardStyle": "z-index: 0; transform: translate(112px, 87px); pointer-events: all; visibility: visible; width: 276px;",
+    "card": {
+      "x": 120,
+      "y": 303.390625,
+      "width": 276,
+      "height": 85.984375
+    },
+    "heading": {
+      "x": 120,
+      "y": 236.390625,
+      "width": 276,
+      "height": 43
+    }
+  },
+  "after": {
+    "cardStyle": "z-index: 0; transform: translate(416px, 144px); pointer-events: all; visibility: visible; width: 276px;",
+    "card": {
+      "x": 424,
+      "y": 360.390625,
+      "width": 276,
+      "height": 85.984375
+    },
+    "heading": {
+      "x": 120,
+      "y": 236.390625,
+      "width": 276,
+      "height": 43
+    }
+  },
+  "reloaded": {
+    "cardStyle": "z-index: 0; transform: translate(112px, 87px); pointer-events: all; visibility: visible; width: 276px;",
+    "card": {
+      "x": 120,
+      "y": 303.390625,
+      "width": 276,
+      "height": 85.984375
+    },
+    "heading": {
+      "x": 120,
+      "y": 236.390625,
+      "width": 276,
+      "height": 43
+    }
+  },
+  "card_heading_offset": {
+    "before": 0,
+    "after": 304,
+    "reloaded": 0
+  },
+  "revision_unchanged": true,
+  "persisted_node_unchanged": true,
+  "formal_node": {
+    "id": "n-a",
+    "title": "节点 a",
+    "action": "归属保持明确",
+    "change": null,
+    "stage_id": "s1",
+    "thread_ids": [
+      "a"
+    ],
+    "clue_ids": [],
+    "primary_thread_id": "a",
+    "is_convergence": false,
+    "reveal_order": null,
+    "time_note": ""
+  }
+}

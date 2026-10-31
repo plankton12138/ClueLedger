@@ -1,0 +1,18 @@
+{
+  "version": "1.0.3",
+  "frontend_unit_passed": 16,
+  "typescript": "passed",
+  "production_build": "passed; existing chunk warning",
+  "browser_initial": {
+    "passed": 15,
+    "failed": 1,
+    "reason": "old pan test started in new fixed heading region"
+  },
+  "browser_followup": {
+    "passed": 2,
+    "includes": "freeze/alignment and corrected pan interaction; overlaps initial suite"
+  },
+  "data_modified": false,
+  "backend_changes": false,
+  "online_calls": 0
+}

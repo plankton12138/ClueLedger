@@ -1,0 +1,500 @@
+{
+  "id": "main",
+  "name": "主方案",
+  "base_variant_id": null,
+  "base_revision": null,
+  "revision": "rev_3cc92c30f42749bc815b79ae834e0328",
+  "stages": {
+    "stage-stoppage": {
+      "id": "stage-stoppage",
+      "title": "停航当天",
+      "order": 0,
+      "summary": "港口停航，三条线各自起步：侦探查值班记录，姐姐收到要求她离开的信，记者追遗失的报关单。三条线互不知情，各自拿到第一手材料。"
+    },
+    "stage-outbound": {
+      "id": "stage-outbound",
+      "title": "午夜出港前",
+      "order": 1,
+      "summary": "各线突破阻力取得结论：侦探拿到货轮编号，姐姐解出仓库坐标，记者确定午夜出港时限。两条结论先交到侦探手上，三方再把编号、坐标、时限合用于营救。"
+    }
+  },
+  "nodes": {
+    "node-det-log": {
+      "id": "node-det-log",
+      "title": "调值班记录",
+      "action": "停航当天，侦探到港务处取当晚值班记录，逐格比对停航时段的船舶进出。",
+      "thread_ids": [
+        "thread-detective"
+      ],
+      "primary_thread_id": "thread-detective",
+      "is_convergence": false,
+      "reveal_order": 0,
+      "clue_uses": [
+        {
+          "clue_id": "clue_77b79729e56848ad8e2f12a42fcda6f4",
+          "roles": [
+            "plant"
+          ],
+          "presentation": "侦探调出停航当晚的值班记录，发现夜间调度一栏的字迹和格式都与前后行不一致，船名与时间被重写过",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ],
+      "time_note": "",
+      "knowledge_changes": [],
+      "change": "记录与停航公告对不上，他确认有人改过夜间调度，据此要去找没被碰过的底本。",
+      "stage_id": "stage-stoppage"
+    },
+    "node-fam-letter": {
+      "id": "node-fam-letter",
+      "title": "收到那封信",
+      "action": "姐姐在停航当天收到一封信，要求她这几天就离开港口；她认出笔迹是弟弟的，也认出只有两人懂的暗号。",
+      "thread_ids": [
+        "thread-family"
+      ],
+      "primary_thread_id": "thread-family",
+      "is_convergence": false,
+      "reveal_order": 1,
+      "clue_uses": [
+        {
+          "clue_id": "clue_5b6cca2519ff4279b63098094ca43960",
+          "roles": [
+            "plant"
+          ],
+          "presentation": "信上要她离开港口，措辞像弟弟，但末尾一句里夹着两人小时候的称呼",
+          "mode": "testimony",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ],
+      "time_note": "",
+      "knowledge_changes": [],
+      "change": "「弟弟自己走的」这个前提开始站不住：他走了却要她走，信里还留着只有她能读懂的东西。",
+      "stage_id": "stage-stoppage"
+    },
+    "node-rep-copy": {
+      "id": "node-rep-copy",
+      "title": "找到报关单复印件",
+      "action": "记者独立追查一票遗失的报关单，在经手公司的废纸里找到了复印件。",
+      "thread_ids": [
+        "thread-reporter"
+      ],
+      "primary_thread_id": "thread-reporter",
+      "is_convergence": false,
+      "reveal_order": 2,
+      "clue_uses": [
+        {
+          "clue_id": "clue_9c7a00d1795e41ef8e486136635f885c",
+          "roles": [
+            "plant"
+          ],
+          "presentation": "她在一堆废纸里抽出一份报关单复印件，单子上的货物与海关登记对不上",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ],
+      "time_note": "",
+      "knowledge_changes": [],
+      "change": "她手里第一次有了能证明走私链存在的单据，不再只有口头传闻。",
+      "stage_id": "stage-stoppage"
+    },
+    "node-det-copy": {
+      "id": "node-det-copy",
+      "title": "核对原始副本",
+      "action": "侦探要求调阅值班记录的原始底本；港务员以停航期间档案封存为由拖延，他改为从交接班留下的油印副本入手，与接手的那本并排核对。",
+      "thread_ids": [
+        "thread-detective"
+      ],
+      "primary_thread_id": "thread-detective",
+      "is_convergence": false,
+      "reveal_order": 3,
+      "clue_uses": [
+        {
+          "clue_id": "clue_5bb330b4a2d741889187bb0f874947af",
+          "roles": [
+            "resolve"
+          ],
+          "presentation": "原始底单与被改的记录并排摆着，被换掉的那一格正好对得上一艘货轮的靠离时间",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        },
+        {
+          "clue_id": "clue_77b79729e56848ad8e2f12a42fcda6f4",
+          "roles": [
+            "reinterpret"
+          ],
+          "presentation": "两本逐格对照后，涂改的那一行反成了指向",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        },
+        {
+          "clue_id": "clue_72148b8006954dbead2d11dcc2a001c0",
+          "roles": [
+            "plant"
+          ],
+          "presentation": "底单上记着证人当晚登船，船名旁有编号",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ],
+      "time_note": "",
+      "knowledge_changes": [],
+      "change": "底单显示证人当晚登上一艘货轮，他拿到了货轮编号，而被人换掉的那一格也正是这条船。",
+      "stage_id": "stage-outbound"
+    },
+    "node-fam-code": {
+      "id": "node-fam-code",
+      "title": "解暗号",
+      "action": "姐姐拿信去对两人小时候共用的暗号表，缺页正好卡在坐标那几节，她靠弟弟留在别处的几张旧留言把缺的那几段补齐。",
+      "thread_ids": [
+        "thread-family"
+      ],
+      "primary_thread_id": "thread-family",
+      "is_convergence": false,
+      "reveal_order": 4,
+      "clue_uses": [
+        {
+          "clue_id": "clue_5b6cca2519ff4279b63098094ca43960",
+          "roles": [
+            "resolve"
+          ],
+          "presentation": "信里那段暗号按表逐段对它，拼出的不是一句家常话，而是一组数字",
+          "mode": "testimony",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        },
+        {
+          "clue_id": "clue_df4abcec65d94ce8b67f41afbe3171ad",
+          "roles": [
+            "develop"
+          ],
+          "presentation": "暗号表正好缺了坐标那一页，只剩前几页的对应关系",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        },
+        {
+          "clue_id": "clue_66afb0f47eea4f87aa9198d2f7a9abac",
+          "roles": [
+            "plant"
+          ],
+          "presentation": "拿前几页的规则硬套，缺的那一段只能靠弟弟以前的留言补",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ],
+      "time_note": "",
+      "knowledge_changes": [],
+      "change": "她解出一组坐标，也读出了暗号里「有人看着」的意思——弟弟不是自己走的，是被挟持着关在某处。",
+      "stage_id": "stage-outbound"
+    },
+    "node-rep-forwarder": {
+      "id": "node-rep-forwarder",
+      "title": "货代松口",
+      "action": "记者拿着复印件去找经手的货代；对方怕报复不肯开口，她把复印件和停航那几天的港口记录一并摆在桌上，只换来一句船什么时候走。",
+      "thread_ids": [
+        "thread-reporter"
+      ],
+      "primary_thread_id": "thread-reporter",
+      "is_convergence": false,
+      "reveal_order": 5,
+      "clue_uses": [
+        {
+          "clue_id": "clue_9c7a00d1795e41ef8e486136635f885c",
+          "roles": [
+            "resolve"
+          ],
+          "presentation": "她把复印件推过去，问这批货是从哪条船走的",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        },
+        {
+          "clue_id": "clue_f36907a629e9406f8bce1dfeb1e52973",
+          "roles": [
+            "plant"
+          ],
+          "presentation": "货代只肯说一句：船今晚午夜走，货已经上了码头",
+          "mode": "testimony",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ],
+      "time_note": "",
+      "knowledge_changes": [],
+      "change": "她确认货轮午夜出港，货物还在港区，这是能拦下它的最后一个窗口。",
+      "stage_id": "stage-outbound"
+    },
+    "node-fam-handoff": {
+      "id": "node-fam-handoff",
+      "title": "坐标交给侦探",
+      "action": "姐姐带着信和暗号表找到侦探，把仓库坐标交给他，说明弟弟是被挟持，不是自己走的。",
+      "thread_ids": [
+        "thread-family",
+        "thread-detective"
+      ],
+      "primary_thread_id": "thread-family",
+      "is_convergence": false,
+      "reveal_order": 6,
+      "clue_uses": [
+        {
+          "clue_id": "clue_66afb0f47eea4f87aa9198d2f7a9abac",
+          "roles": [
+            "develop"
+          ],
+          "presentation": "坐标写在纸上推给侦探，旁边是她抄下的暗号对照",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ],
+      "time_note": "",
+      "knowledge_changes": [],
+      "change": "侦探手里同时有了一个船号和一个关着人的地点，方向从「查一条船」变成「在船走之前先去仓库」。",
+      "stage_id": "stage-outbound"
+    },
+    "node-rep-handoff": {
+      "id": "node-rep-handoff",
+      "title": "时限交给二人",
+      "action": "记者找到侦探和姐姐，交出午夜出港的时限，并说明消息来源不能署名。",
+      "thread_ids": [
+        "thread-reporter",
+        "thread-detective",
+        "thread-family"
+      ],
+      "primary_thread_id": "thread-reporter",
+      "is_convergence": false,
+      "reveal_order": 7,
+      "clue_uses": [
+        {
+          "clue_id": "clue_f36907a629e9406f8bce1dfeb1e52973",
+          "roles": [
+            "develop"
+          ],
+          "presentation": "记者把货代说的话复述一遍，强调消息来源不能署名",
+          "mode": "testimony",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ],
+      "time_note": "",
+      "knowledge_changes": [],
+      "change": "三人第一次对着同一张时间表：船午夜走，救人的事必须赶在午夜前。",
+      "stage_id": "stage-outbound"
+    },
+    "node-rescue": {
+      "id": "node-rescue",
+      "title": "午夜前救人",
+      "action": "三人把编号、坐标、时限摆在一起分工：侦探用编号向港区说明目标船只，姐姐按坐标带路，记者守在能喊人的位置，把消息搅到不能私下了结。",
+      "thread_ids": [
+        "thread-detective",
+        "thread-family",
+        "thread-reporter"
+      ],
+      "primary_thread_id": "thread-detective",
+      "is_convergence": true,
+      "reveal_order": 8,
+      "clue_uses": [
+        {
+          "clue_id": "clue_72148b8006954dbead2d11dcc2a001c0",
+          "roles": [
+            "resolve"
+          ],
+          "presentation": "编号报过去，目标船当场被锁定",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        },
+        {
+          "clue_id": "clue_66afb0f47eea4f87aa9198d2f7a9abac",
+          "roles": [
+            "resolve"
+          ],
+          "presentation": "坐标让搜查落在那扇门上，而不是把整片港区惊动",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        },
+        {
+          "clue_id": "clue_f36907a629e9406f8bce1dfeb1e52973",
+          "roles": [
+            "resolve"
+          ],
+          "presentation": "倒计时压着所有人，没时间再等一天的手续",
+          "mode": "action",
+          "speaker_id": "",
+          "expected_interpretation": ""
+        }
+      ],
+      "time_note": "",
+      "knowledge_changes": [],
+      "change": "证人在货轮午夜出港前被从仓库救出，三条线各自的材料拼成了同一个结论。",
+      "stage_id": "stage-outbound"
+    }
+  },
+  "clue_plans": {
+    "clue_77b79729e56848ad8e2f12a42fcda6f4": {
+      "clue_id": "clue_77b79729e56848ad8e2f12a42fcda6f4",
+      "author_truth": null,
+      "intention": "让侦探察觉停航当天的夜间调度被人动过，停航公告与记录对不上，从而怀疑有人不希望当晚的船被查",
+      "resolution_intent": "leave_open"
+    },
+    "clue_5bb330b4a2d741889187bb0f874947af": {
+      "clue_id": "clue_5bb330b4a2d741889187bb0f874947af",
+      "author_truth": "交接班留下的原始底单未经涂改，上面记着证人当晚登上一艘货轮",
+      "intention": "给出可核对的对照本，让被改的那一栏反推成指向具体船只的缺口",
+      "resolution_intent": "explain"
+    },
+    "clue_5b6cca2519ff4279b63098094ca43960": {
+      "clue_id": "clue_5b6cca2519ff4279b63098094ca43960",
+      "author_truth": "信是证人被挟持期间写下的，表面要求姐姐离开，里头夹着两人幼时的暗号",
+      "intention": "把「弟弟主动离开」这个前提撬开一道缝，同时把家属线引向暗号",
+      "resolution_intent": "explain"
+    },
+    "clue_df4abcec65d94ce8b67f41afbe3171ad": {
+      "clue_id": "clue_df4abcec65d94ce8b67f41afbe3171ad",
+      "author_truth": null,
+      "intention": "给解暗号设一道具体阻力，缺的正好是坐标那几页，让结论不是一次性送到手上",
+      "resolution_intent": "leave_open"
+    },
+    "clue_9c7a00d1795e41ef8e486136635f885c": {
+      "clue_id": "clue_9c7a00d1795e41ef8e486136635f885c",
+      "author_truth": "复印件上的货物不在海关登记范围，走货渠道不合法，这是走私链唯一留存的纸面痕迹",
+      "intention": "让记者拿到能证明走私链的单据，而不是只有传闻",
+      "resolution_intent": "explain"
+    },
+    "clue_72148b8006954dbead2d11dcc2a001c0": {
+      "clue_id": "clue_72148b8006954dbead2d11dcc2a001c0",
+      "author_truth": "编号对应的是那条将在午夜出港的走私货轮；把证人带走的通道就是这条船，证人此刻还被关在岸上等它",
+      "intention": "把侦探线的结论变成营救时能报出口的目标，而不是笼统的「一条船」",
+      "resolution_intent": "explain"
+    },
+    "clue_66afb0f47eea4f87aa9198d2f7a9abac": {
+      "clue_id": "clue_66afb0f47eea4f87aa9198d2f7a9abac",
+      "author_truth": "坐标指向港区一处仓库，证人被关在那里等船",
+      "intention": "给营救提供地点，同时让姐姐确认弟弟是被挟持而非自愿离开",
+      "resolution_intent": "explain"
+    },
+    "clue_f36907a629e9406f8bce1dfeb1e52973": {
+      "clue_id": "clue_f36907a629e9406f8bce1dfeb1e52973",
+      "author_truth": "货轮定于午夜出港，出港前是还能在岸上找到人的最后窗口",
+      "intention": "给第三幕加一个硬时限，让三条线的成果必须同时用上",
+      "resolution_intent": "explain"
+    }
+  },
+  "threads": {
+    "thread-detective": {
+      "id": "thread-detective",
+      "title": "侦探线",
+      "order": 0,
+      "goal": "找到失踪证人的下落",
+      "obstacle": "港务员隐瞒夜间调度，值班记录被动过",
+      "intended_resolution": "核对原始副本，确定证人乘某条货轮离开，交出该货轮编号"
+    },
+    "thread-family": {
+      "id": "thread-family",
+      "title": "家属线",
+      "order": 1,
+      "goal": "弄清弟弟为什么主动离开",
+      "obstacle": "信里的暗号需要暗号表，暗号表缺页",
+      "intended_resolution": "补齐暗号解出仓库坐标，确认弟弟是被挟持，交出藏身地点"
+    },
+    "thread-reporter": {
+      "id": "thread-reporter",
+      "title": "记者线",
+      "order": 2,
+      "goal": "证明走私链存在",
+      "obstacle": "经手货代害怕报复，不肯开口",
+      "intended_resolution": "用报关单复印件让货代松口，拿到货轮午夜出港的时限"
+    }
+  },
+  "constraints": {},
+  "edges": {
+    "edge-det-log-copy": {
+      "id": "edge-det-log-copy",
+      "from_id": "node-det-log",
+      "to_id": "node-det-copy",
+      "kind": "next",
+      "reason": "被改的那一栏让侦探只能转而去找没被碰过的底本"
+    },
+    "edge-fam-letter-code": {
+      "id": "edge-fam-letter-code",
+      "from_id": "node-fam-letter",
+      "to_id": "node-fam-code",
+      "kind": "next",
+      "reason": "信里的暗号必须按暗号表才能解出，缺页构成具体阻力"
+    },
+    "edge-rep-copy-forwarder": {
+      "id": "edge-rep-copy-forwarder",
+      "from_id": "node-rep-copy",
+      "to_id": "node-rep-forwarder",
+      "kind": "next",
+      "reason": "复印件上的经手方是记者唯一能找上货代的门路"
+    },
+    "edge-fam-code-handoff": {
+      "id": "edge-fam-code-handoff",
+      "from_id": "node-fam-code",
+      "to_id": "node-fam-handoff",
+      "kind": "next",
+      "reason": "解出坐标之后，她才知道自己手里有可以交出去的地点"
+    },
+    "edge-rep-forwarder-handoff": {
+      "id": "edge-rep-forwarder-handoff",
+      "from_id": "node-rep-forwarder",
+      "to_id": "node-rep-handoff",
+      "kind": "next",
+      "reason": "拿到时限之后，她才明白必须在今夜把消息交出去"
+    },
+    "edge-det-copy-rescue": {
+      "id": "edge-det-copy-rescue",
+      "from_id": "node-det-copy",
+      "to_id": "node-rescue",
+      "kind": "next",
+      "reason": "编号让营救有可报出的目标船只，而不只是怀疑有人上了船"
+    },
+    "edge-fam-handoff-rescue": {
+      "id": "edge-fam-handoff-rescue",
+      "from_id": "node-fam-handoff",
+      "to_id": "node-rescue",
+      "kind": "next",
+      "reason": "坐标把侦探从「守船」拉到仓库，营救有了地点"
+    },
+    "edge-rep-handoff-rescue": {
+      "id": "edge-rep-handoff-rescue",
+      "from_id": "node-rep-handoff",
+      "to_id": "node-rescue",
+      "kind": "next",
+      "reason": "午夜出港的时限压出营救的时间窗，三个人才必须当夜动手"
+    }
+  },
+  "event_times": [
+    {
+      "before_node_id": "node-fam-handoff",
+      "after_node_id": "node-rep-handoff"
+    },
+    {
+      "before_node_id": "node-det-copy",
+      "after_node_id": "node-rescue"
+    },
+    {
+      "before_node_id": "node-fam-handoff",
+      "after_node_id": "node-rescue"
+    },
+    {
+      "before_node_id": "node-rep-handoff",
+      "after_node_id": "node-rescue"
+    },
+    {
+      "before_node_id": "node-det-copy",
+      "after_node_id": "node-fam-handoff"
+    }
+  ],
+  "bindings": {},
+  "assessments": {}
+}

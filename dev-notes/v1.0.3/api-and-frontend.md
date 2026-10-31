@@ -1,6 +1,6 @@
 # 1.0.3 接口与页面契约
 
-日期：2026-10-30。状态：**待实现**。基于当前接口增补，当前构思的内部 `variant_id` 路径暂时沿用；产品仍只有一份构思。
+更新：2026-10-31。图读取、固定列布局、真实阶段折叠、完整节点读取与任务草稿已接入，复验见[改造记录](notes/2026-10-31-story-remediation-implementation.md)。内部 `variant_id` 路径沿用，产品仍只有一份构思。下文其余目标字段以实际响应和验收记录为准；图响应中的账本修订参数尚未全部对齐。
 
 ## 1. 接口与使用方
 
@@ -16,6 +16,8 @@
 | 现有 `GET /clues`、`GET /clues/{clue_id}` | scope 缺省为 chapter，保留章界读取；不自动加入作者未来计划 | `ChapterClues` |
 | `POST /clues` | 保留新建身份，经相同提交和恢复边界处理 | 现有新建线索调用方 |
 | `POST /story/changes` | 增加阶段、身份和计划操作，相关账本修订与回执映射 | Agent `update_story`、确定性页面动作 |
+| `GET /story/drafts/{operation_id}` | 读取未整体提交草稿的必需约定和精确摘要 | `StoryDraft` |
+| `POST /story/drafts/{operation_id}/confirm-constraints` | 作者确认屏幕中显示的来源约定，核验冻结版本；不直接提交故事 | `StoryDraft` |
 | 现有改动读取、撤销、原文定位和任务接口 | 覆盖新增对象与账本依赖，保持既有交互 | 当前调用方 |
 
 不添加备选、试读、独立候选正文或重复资料接口。扩展 scope 是读取范围，不是授权凭据。node_id 必须与当前作品和构思匹配，仅在 story 范围接受；非法组合返回明确错误。
@@ -36,6 +38,7 @@ interface StoryGraph {
   nodes: {
     id: string; title: string; action: string; change: string | null;
     stage_id: string | null; thread_ids: string[]; clue_ids: string[];
+    primary_thread_id: string | null; is_convergence: boolean; reveal_order: number | null;
   }[];
   edges: {
     id: string; from_id: string; to_id: string;
@@ -88,6 +91,8 @@ ClueDetail 共用标题、正文依据和原文定位，story 范围增加计划
 
 ## 6. 布局与定位
 
+2026-10-31 补充：故事线表头固定在画布顶部，横向平移、列宽和缩放与节点同步；目标与阻力可展开。内部保留隐藏测量占位，不增加结构数据或写接口。无故事线时不占用冻结区域，详见[冻结表头记录](notes/2026-10-31-story-frozen-headings.md)。
+
 布局输入为阶段、故事线、节点尺寸和真实关系。横向固定线顺序，纵向按阶段及阶段内推进排列。计算高度采用实际文字尺寸，不能靠缩字维持固定卡高。无归属片段有明确区域，空列合法。
 
 共同节点采用公共行且唯一绘制，列明参与故事线；不得为每条线复制一个节点。阶段折叠聚合边只表达原有连接，不补造不存在的因果，展开后恢复真实节点和边。
@@ -103,3 +108,17 @@ read_story 读取当前阶段、线程目标、节点、线索计划和边 reaso
 任务受理、继续、暂停、插话和上下文预算沿用现有入口。结构新增后实际发送内容必须包含必要关系，容量不足采用已有预算约束和有覆盖记录的拆分。
 
 P0 固定空白、未定、多线、纯计划、已有正文、冲突和临时身份的 JSON 样例。后端响应模型、前端类型、工具 schema 和样例同时验证；每个新按钮登记使用的读取或写入能力，清理已经不再被调用的旧 group 参数与客户端方法。
+
+## 8. 2026-10-31 已接入的草稿与布局补充
+
+约定确认补充：confirm-constraints 现在支持作者审阅无模块来源的新增必需约定；非空模块来源继续核验原文。确认绑定当前任务草稿摘要，内容变更后失效，不扩大已有约定修改权限。前端不再以全部 source_ref 非空作为按钮条件。草稿读取与恢复输入带 author_confirmed_constraint_count。详见[创建构思确认修复](notes/2026-10-31-story-required-review-fix.md)。
+
+后续修复：画布单卡禁止拖动及键盘移动，保留点击详情与整图导航；坐标不作为写入接口。结构任务工具结果统一为单个 JSON，包含执行预算和机器诊断；工具事件 summary 仅取作者摘要，result_detail 保留完整反馈。追加校验的问题列表同时返回 operation_index、batch_index 和 object_id。实现与验证见[交互约束与工具反馈](notes/2026-10-31-story-drag-and-feedback-implementation.md)。
+
+普通对话明确要求创建构思时，受理层补入结构目标，不依赖前端是否打开构思面。结构工具的草稿读取支持 `source="draft", target_id="节点或其他对象 ID"`，返回匹配操作及索引；准备支持 `node_patches=[{node_id, fields}]`，仅修改唯一匹配的既有节点。两者是模型工具参数，不新增另一套 HTTP 写入入口。HTTP 草稿展示与确认仍使用任务草稿接口，确认只读取候选最终有效约定。
+
+准备返回 `prepared`、`draft_revision`、`operations`（操作数）、`issues`、`pending_dependencies` 和 `next_step`。字段或操作应用错误保留失败标记，机器问题列表同时进入模型可见文本；准备中的尚缺引用列入 pending_dependencies，正式提交继续做完整验证。工具返回另带剩余模型回合和预留信息。
+
+有未提交草稿的预算停止落为需处理，可继续同一任务；来源确认停止显示草稿及确认入口；failed 中已有草稿也可读取，但不因此授予所有旧 failed 操作继续能力。恢复输入带草稿检查点，服务重启后允许冻结合法空白 `empty` 修订。
+
+画布采用左阶段栏 88、列间 20、行间 32，列宽按可用区域在 240—380 内计算。同行顶部对齐，跨列汇合唯一绘制；阶段摘要在提示或阶段详情中显示。初次视口为 100%，尺寸变化不将浏览器自动截断滚动范围写回视口。当前验证与规划边界见[后续实施记录](notes/2026-10-31-story-followup-implementation.md)。

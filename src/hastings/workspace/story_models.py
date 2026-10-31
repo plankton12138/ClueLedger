@@ -72,7 +72,7 @@ PresentationMode = Literal[
 EdgeKind = Literal["next", "reframe", "answer"]
 ResolutionIntent = Literal["explain", "leave_open", "undecided"]
 ClueRole = Literal["plant", "develop", "misdirect", "reinterpret", "resolve"]
-Provenance = Literal["author_request", "authorized_creation", "model_suggestion"]
+Provenance = Literal["author_request", "authorized_creation", "model_suggestion", "author_module"]
 ConstraintStrength = Literal["required", "preference"]
 ConstraintScopeKind = Literal["book", "character", "node", "prose"]
 Stance = Literal["knows", "believes"]
@@ -114,6 +114,13 @@ class KnowledgeChange(StrictRecord):
     subject_id: StoryId
     claim: LongText
     stance: Stance = "knows"
+    source_kind: Literal["observation", "inference"] = Field(
+        default="observation",
+        description=(
+            "observation 为现场观察，可来自生效事件自身；"
+            "inference 为推断，来源必须在实际事件时间中先发生"
+        ),
+    )
     source_node_ids: list[StoryId] = Field(default_factory=list)
     effective_event_node_id: StoryId
 
@@ -121,8 +128,8 @@ class KnowledgeChange(StrictRecord):
     def check_sources(self) -> KnowledgeChange:
         if len(set(self.source_node_ids)) != len(self.source_node_ids):
             raise ValueError("同一知情变化的来源节点不能重复")
-        if self.effective_event_node_id in self.source_node_ids:
-            raise ValueError("知情生效节点不能同时是自己的来源")
+        if self.source_kind == "inference" and self.effective_event_node_id in self.source_node_ids:
+            raise ValueError("推断不能把生效节点作为已有证据；现场获知请使用 observation")
         return self
 
 
@@ -133,6 +140,15 @@ class StoryNode(StrictRecord):
     title: ShortText
     action: LongText
     thread_ids: list[StoryId] = Field(default_factory=list)
+    primary_thread_id: StoryId | None = Field(
+        default=None, description="主要推进哪条故事线；必须属于 thread_ids，涉及多线不自动成为汇合"
+    )
+    is_convergence: bool = Field(
+        default=False, description="多条故事线取得的成果在此共同作用；仅多重归属不属于汇合"
+    )
+    reveal_order: int | None = Field(
+        default=None, ge=0, description="阶段内可选的展示顺序，不产生推进依赖；未定可留空"
+    )
     clue_uses: list[ClueUse] = Field(default_factory=list)
     time_note: str = Field(default="", max_length=500)
     knowledge_changes: list[KnowledgeChange] = Field(default_factory=list)
@@ -145,6 +161,10 @@ class StoryNode(StrictRecord):
     def check_membership(self) -> StoryNode:
         if len(set(self.thread_ids)) != len(self.thread_ids):
             raise ValueError("同一节点不能重复加入同一条分支")
+        if self.primary_thread_id is not None and self.primary_thread_id not in self.thread_ids:
+            raise ValueError("主要故事线必须属于节点涉及的故事线")
+        if self.is_convergence and len(self.thread_ids) < 2:
+            raise ValueError("汇合节点需要至少两条参与故事线")
         used = [use.clue_id for use in self.clue_uses]
         if len(set(used)) != len(used):
             raise ValueError("同一节点不能重复使用同一条线索")
@@ -268,6 +288,14 @@ class ConstraintScope(StrictRecord):
         return self
 
 
+class ConstraintSourceRef(StrictRecord):
+    library_id: StoryId
+    module_id: StoryId
+    revision_id: StoryId
+    entry_id: StoryId
+    digest: str = Field(min_length=64, max_length=64)
+
+
 class Constraint(StrictRecord):
     """作者约定的原文与强度；修订号由应用生成，用于判断依赖是否过期。"""
 
@@ -277,6 +305,7 @@ class Constraint(StrictRecord):
     scope: ConstraintScope = Field(default_factory=ConstraintScope)
     source_message_id: str = Field(default="", max_length=64)
     origin: Provenance = "author_request"
+    source_ref: ConstraintSourceRef | None = None
     revision: str = Field(min_length=1, max_length=64)
 
     @model_validator(mode="after")
@@ -418,6 +447,12 @@ class StoryVariant(StrictRecord):
             ]
             if unknown_nodes:
                 raise ValueError(f"知情变化引用了不存在的节点：{unknown_nodes[0]}")
+            for knowledge in node.knowledge_changes:
+                missing_sources = set(knowledge.source_node_ids) - self.nodes.keys()
+                if missing_sources:
+                    raise ValueError(
+                        f"节点 {node.id} 的知情来源不存在：{sorted(missing_sources)[0]}"
+                    )
         for edge in self.edges.values():
             if edge.from_id not in self.nodes or edge.to_id not in self.nodes:
                 raise ValueError(f"关系指向不存在的节点：{edge.id}")
@@ -426,14 +461,16 @@ class StoryVariant(StrictRecord):
                 node
                 for node in self.nodes.values()
                 if any(
-                    use.clue_id == plan.clue_id and "resolve" in use.roles
-                    for use in node.clue_uses
+                    use.clue_id == plan.clue_id and "resolve" in use.roles for use in node.clue_uses
                 )
             ]
             if plan.resolution_intent == "explain" and not resolve_nodes:
-                raise ValueError("明确解释的线索需要至少一个安排为回收的节点")
+                raise ValueError(f"线索 {plan.clue_id}：明确解释的线索需要至少一个安排为回收的节点")
             if plan.resolution_intent != "explain" and resolve_nodes:
-                raise ValueError("未计划解释或仍待定的线索不能安排回收作用")
+                raise ValueError(
+                    f"线索 {plan.clue_id}／节点 {', '.join(n.id for n in resolve_nodes)}："
+                    "未计划解释或仍待定的线索不能安排回收作用"
+                )
         for binding in self.bindings.values():
             if binding.node_id not in self.nodes:
                 raise ValueError(f"正文关联指向不存在的节点：{binding.id}")
@@ -450,9 +487,7 @@ class StoryVariant(StrictRecord):
     def members(self, thread_id: str) -> tuple[str, ...]:
         """某条分支的成员；按节点声明导出，不依赖另一份成员表。"""
         return tuple(
-            sorted(
-                node.id for node in self.nodes.values() if thread_id in node.thread_ids
-            )
+            sorted(node.id for node in self.nodes.values() if thread_id in node.thread_ids)
         )
 
 
@@ -484,12 +519,20 @@ def validate_story_variant(variant: StoryVariant) -> None:
     time_predecessors: dict[str, set[str]] = {node: set() for node in variant.nodes}
     pairs: set[tuple[str, str]] = set()
     for relation in variant.event_times:
+        if (
+            relation.before_node_id not in variant.nodes
+            or relation.after_node_id not in variant.nodes
+        ):
+            raise ValueError("实际时间关系引用了不存在的节点")
         pair = (relation.before_node_id, relation.after_node_id)
         if pair in pairs:
             raise ValueError("实际时间关系重复")
         pairs.add(pair)
         time_predecessors[relation.after_node_id].add(relation.before_node_id)
     _require_acyclic(time_predecessors, "实际事件时间存在循环")
+    from hastings.workspace.story_knowledge import validate_knowledge
+
+    validate_knowledge(variant)
 
 
 def _require_acyclic(predecessors: dict[str, set[str]], message: str) -> None:

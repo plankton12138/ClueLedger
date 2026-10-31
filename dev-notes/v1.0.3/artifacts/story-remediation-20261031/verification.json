@@ -1,0 +1,186 @@
+{
+  "date": "2026-10-31",
+  "version": "1.0.3",
+  "baseline": "efc9609",
+  "scope": "代码已接入，针对性验收通过；未发布新版",
+  "tests": {
+    "backend_story_suite": {
+      "passed": 237,
+      "scope": "tests/workspace/test_story_*.py 与 test_task_intent.py；补充保护测试之前的批次"
+    },
+    "backend_final_supplement": {
+      "passed": 13,
+      "scope": "test_story_remediation.py，包含新增语义保护、非法局部替换与中断回执恢复；与前项部分重叠"
+    },
+    "frontend_unit": {
+      "passed": 51,
+      "scope": "storyLayout、story、chatMessages"
+    },
+    "browser_story": {
+      "passed": 13,
+      "geometry_matrix": {
+        "width": [
+          1440,
+          1024,
+          390
+        ],
+        "product_font_scale": [
+          1,
+          1.5,
+          2
+        ]
+      },
+      "prior_failures": [
+        "节点已移出视口后，测试直接点击；增加相邻节点定位入口并改为通过该入口定位",
+        "作品切换时开关与复位时机冲突；绘制前复位并等待新作品身份"
+      ]
+    },
+    "browser_chat": {
+      "passed": 3,
+      "scope": "chat-rendering.spec.ts，长思考、增量与切换作品回归"
+    },
+    "online_final": {
+      "passed": 1,
+      "remote_endpoint_verified": true,
+      "fixture": "隔离真实模块：港口失踪案；在线模型，非本地模型",
+      "rounds": [
+        {
+          "operation_id": "op_c28e842f0c51",
+          "workspace_id": "62b863efa02a4bcc",
+          "conversation_id": "c_c0944a1aa575",
+          "model": "deepseek-flash",
+          "operation_status": "needs_attention",
+          "note": "资料模块没有保存。已提交的内容保留。",
+          "stages": 2,
+          "threads": 3,
+          "nodes": 10,
+          "next_edges": 11,
+          "convergence_nodes": [
+            "node-converge"
+          ],
+          "max_incoming_next": 3,
+          "max_outgoing_next": 2,
+          "draft_preparations": 5,
+          "formal_commits": 1,
+          "committed_operations": 42,
+          "tool_calls": 17,
+          "intermediate_failures": [
+            {
+              "seq": 15052,
+              "tool": "update_story",
+              "summary": "[STORY_ARGUMENTS_INVALID] 构思提交参数第 715 列：JSON 语法不完整。建议：补齐对象括号后重新提交当前批次；保留草稿，减少单批操作"
+            },
+            {
+              "seq": 15082,
+              "tool": "update_story",
+              "summary": "[STORY_ARGUMENTS_INVALID] 构思提交参数第 690 列：JSON 语法不完整。建议：补齐对象括号后重新提交当前批次；保留草稿，减少单批操作"
+            }
+          ],
+          "finished": [
+            {
+              "seq": 15941,
+              "at": "2026-10-31T11:42:00.044+08:00",
+              "status": "partial",
+              "note": "资料模块没有保存。已提交的内容保留。"
+            }
+          ],
+          "source_state_root": "C:\\Projects\\Agent\\myagent\\data\\test-tmp\\story-remediation-online\\state\\workspaces\\62b863efa02a4bcc"
+        },
+        {
+          "operation_id": "op_18d63260a360",
+          "workspace_id": "5b361f257a3f2c21",
+          "conversation_id": "c_6dfffe31c857",
+          "model": "deepseek-flash",
+          "operation_status": "completed",
+          "note": "构思结构已提交 43 项；创作意图是否完整仍需你核对。",
+          "stages": 2,
+          "threads": 3,
+          "nodes": 9,
+          "next_edges": 8,
+          "convergence_nodes": [
+            "node-rescue"
+          ],
+          "max_incoming_next": 3,
+          "max_outgoing_next": 1,
+          "draft_preparations": 8,
+          "formal_commits": 1,
+          "committed_operations": 43,
+          "tool_calls": 21,
+          "intermediate_failures": [
+            {
+              "seq": 7756,
+              "tool": "update_story",
+              "summary": "[STORY_CHANGE_INVALID] story.draft：草稿字段校验未通过。建议：按问题列表局部修正，已有草稿保留"
+            },
+            {
+              "seq": 8851,
+              "tool": "update_story",
+              "summary": "[STORY_ARGUMENTS_INVALID] 构思提交参数第 802 列：JSON 语法不完整。建议：补齐对象括号后重新提交当前批次；保留草稿，减少单批操作"
+            }
+          ],
+          "finished": [
+            {
+              "seq": 10667,
+              "at": "2026-10-31T11:51:31.122+08:00",
+              "status": "completed",
+              "note": "构思结构已提交 43 项；创作意图是否完整仍需你核对。"
+            }
+          ],
+          "source_state_root": "C:\\Projects\\Agent\\myagent\\data\\test-tmp\\story-remediation-online\\state\\workspaces\\5b361f257a3f2c21",
+          "threads_evidence": [
+            {
+              "id": "thread-detective",
+              "title": "侦探线",
+              "primary_nodes": [
+                "node-det-log",
+                "node-det-copy"
+              ]
+            },
+            {
+              "id": "thread-family",
+              "title": "家属线",
+              "primary_nodes": [
+                "node-fam-letter",
+                "node-fam-code",
+                "node-fam-handoff"
+              ]
+            },
+            {
+              "id": "thread-reporter",
+              "title": "记者线",
+              "primary_nodes": [
+                "node-rep-copy",
+                "node-rep-forwarder",
+                "node-rep-handoff"
+              ]
+            }
+          ]
+        }
+      ],
+      "intermediate_errors_retained": true
+    }
+  },
+  "not_run": [
+    "后端全量",
+    "所有旧在线正文写作流程",
+    "作者文学质量签收",
+    "桌面打包",
+    "旧数据迁移"
+  ],
+  "preserved_user_data": true,
+  "uncommitted": true,
+  "preexisting_dirt_untouched": [
+    "AGENTS.md",
+    "mynotes/dev-log.md",
+    "package.json",
+    "package-lock.json",
+    "scripts/recover_v103_story.py"
+  ],
+  "checks": {
+    "frontend_typescript": "passed",
+    "frontend_production_build": "passed",
+    "ruff_changed_backend": "passed",
+    "mypy_changed_modules": 7,
+    "git_diff_check": "passed"
+  }
+}

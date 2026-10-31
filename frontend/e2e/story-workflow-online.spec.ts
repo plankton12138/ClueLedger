@@ -6,7 +6,7 @@
  * 断言只放可判定的事实；语义质量由 eval harness 的 O01/O06 等样例单独评。
  */
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 type Accepted = { conversation_id: string; turn_id: string; operation_id?: string };
@@ -49,6 +49,92 @@ async function send(page: Page, text: string): Promise<Accepted> {
   await page.locator(".chat-input").fill(text);
   return accept(page, () => page.getByRole("button", { name: "发送", exact: true }).click());
 }
+
+test("真实模块生成三线构思，草稿整体提交且各线独立推进后汇合", async ({ page, request }, info) => {
+  test.setTimeout(600_000);
+  const root = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "online-books");
+  mkdirSync(root, { recursive: true });
+  const created = await request.post("/api/file-workspaces", { data: { path: join(mkdtempSync(join(root, "multiline-")), "港口失踪案"), create: true } });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  const book = await created.json();
+  const base = `/api/file-workspaces/${book.id}`;
+  const config = await request.get("/api/model-connections").then(r => r.json());
+  const connection = config.connections.find((c: { name: string }) => c.name === config.selection.connection_id);
+  expect(connection).toBeTruthy();
+  expect(["localhost", "127.0.0.1", "0.0.0.0"]).not.toContain(new URL(connection.base_url).hostname);
+  const material = await request.post("/api/module-library/modules", { data: {
+    kind: process.env.HASTINGS_STORY_SOURCE_FIXTURE ? "reference" : "plot", name: `三线港口案-${book.id}`, request_key: `multiline-source-${book.id}`,
+    entries: process.env.HASTINGS_STORY_SOURCE_FIXTURE ? JSON.parse(readFileSync(process.env.HASTINGS_STORY_SOURCE_FIXTURE, "utf8")) : [
+      { entry_id: "detective", title: "侦探线", body: "侦探要找到失踪证人。第一阶段港口停航时取得值班记录，发现记录被改；第二阶段核对原始副本，确定证人乘了货轮。阻力是港务员隐瞒夜间调度。收束为提供货轮编号。" },
+      { entry_id: "family", title: "家属线", body: "姐姐要弄清弟弟主动离开的原因。第一阶段收到一封要求她离开的信，她认出暗号；第二阶段解出暗号里的仓库坐标，得知弟弟被挟持。阻力是暗号表缺页。收束为提供藏身地点。" },
+      { entry_id: "reporter", title: "记者线", body: "记者要证明走私链。第一阶段独立调查遗失的报关单，找到复印件；第二阶段联系货代确定货轮将于午夜出港。阻力是货代害怕报复。收束为提供出港时限。" },
+      { entry_id: "structure", title: "阶段与交汇", body: "第一阶段为停航当天，第二阶段为午夜出港前。三条线各自独立推进，姐姐把仓库坐标交给侦探，记者把出港时限交给二人；最后三方把编号、坐标、时限共同用于营救，救出证人。三条线都要在构思中看清关键变化和真实影响。" },
+    ],
+  } });
+  expect(material.ok(), await material.text()).toBeTruthy();
+  const source = await material.json();
+  const sourceRevision = await request.get(`/api/module-library/modules/${source.module.module_id}/revisions/${source.module.head}`).then(r => r.json());
+  const bound = await request.put(`${base}/assembly`, { data: { bindings: [{ module: { library_id: sourceRevision.library_id, module_id: source.module.module_id, revision_id: source.module.head } }], expected_digest: null, request_key: `bind-multiline-${book.id}` } });
+  expect(bound.ok(), await bound.text()).toBeTruthy();
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  const accepted = await send(page, "根据现有模块生成构思");
+  let rows: Event[] = [];
+  try {
+    let operation: { status: string; note?: string; generation?: number } = { status: "accepted" };
+    await expect.poll(async () => {
+      operation = await request.get(`/api/operations/${accepted.operation_id}`).then(r => r.json());
+      return ["completed", "needs_attention", "failed", "awaiting_answer", "paused"].includes(operation.status);
+    }, { timeout: 540_000, intervals: [1000, 2000] }).toBe(true);
+    for (let continuation = 0; continuation < 3 && operation.status !== "completed"; continuation++) {
+      expect(["needs_attention", "awaiting_answer"]).toContain(operation.status);
+      const draftResponse = await request.get(`${base}/story/drafts/${accepted.operation_id}`).then(r => r.json());
+      expect(draftResponse.draft).toBeTruthy();
+      const draft = draftResponse.draft;
+      if (draft.constraints.length) {
+        expect(draft.constraints.every((c: { source_ref: unknown }) => c.source_ref)).toBe(true);
+        const confirm = await request.post(`${base}/story/drafts/${accepted.operation_id}/confirm-constraints`, { data: { draft_revision: draft.revision } });
+        expect(confirm.ok(), await confirm.text()).toBeTruthy();
+      }
+      operation = await request.get(`/api/operations/${accepted.operation_id}`).then(r => r.json());
+      const resumed = await request.post(`/api/operations/${accepted.operation_id}/continue`, { data: { request_key: `online-continue-${book.id}-${continuation}`, expected_generation: operation.generation } });
+      expect(resumed.ok(), await resumed.text()).toBeTruthy();
+      await expect.poll(async () => {
+        operation = await request.get(`/api/operations/${accepted.operation_id}`).then(r => r.json());
+        return ["completed", "needs_attention", "failed", "awaiting_answer", "paused"].includes(operation.status);
+      }, { timeout: 240_000, intervals: [1000, 2000] }).toBe(true);
+    }
+    rows = await events(request, book.id, accepted);
+    const graph = await request.get(`${base}/story/variants/main`).then(r => r.json());
+    await info.attach("persisted-graph", { body: JSON.stringify(graph, null, 2), contentType: "application/json" });
+    expect(operation.status, operation.note).toBe("completed");
+    expect(graph.threads.length).toBeGreaterThanOrEqual(3);
+    expect(graph.stages.length).toBeGreaterThanOrEqual(2);
+    expect(graph.nodes.length).toBeGreaterThanOrEqual(7);
+    for (const thread of graph.threads) {
+      expect(thread.goal).toBeTruthy(); expect(thread.obstacle).toBeTruthy(); expect(thread.intended_resolution).toBeTruthy();
+      expect(graph.nodes.filter((n: { primary_thread_id: string; is_convergence: boolean; change: string }) => n.primary_thread_id === thread.id && !n.is_convergence && n.change).length).toBeGreaterThanOrEqual(process.env.HASTINGS_STORY_SOURCE_FIXTURE ? 1 : 2);
+    }
+    expect(graph.nodes.some((n: { is_convergence: boolean }) => n.is_convergence)).toBe(true);
+    const turn = rows.filter(r => r.turn_id === accepted.turn_id);
+    expect(turn.some(r => r.type === "story_draft_prepared")).toBe(true);
+    expect(turn.filter(r => r.type === "story_changes_committed")).toHaveLength(1);
+    const incoming = new Map<string, number>(), outgoing = new Map<string, number>();
+    for (const edge of graph.edges.filter((e: { kind: string }) => e.kind === "next")) {
+      incoming.set(edge.to_id, (incoming.get(edge.to_id) ?? 0) + 1);
+      outgoing.set(edge.from_id, (outgoing.get(edge.from_id) ?? 0) + 1);
+    }
+    expect(Math.max(...incoming.values(), ...outgoing.values())).toBeGreaterThan(1);
+    await page.reload();
+    await page.getByRole("button", { name: "构思", exact: true }).click();
+    await expect(page.locator(".story-thread-heading")).toHaveCount(graph.threads.length);
+    await page.getByRole("button", { name: "查看全貌", exact: true }).click();
+    await page.screenshot({ path: info.outputPath("multiline-generated.png") });
+  } finally {
+    await info.attach("first-run-evidence", { body: JSON.stringify({ accepted, model: config.selection.model,
+      events: rows.filter(r => ["task_intent", "story_draft_prepared", "story_changes_committed", "run_finished", "error", "tool_finished", "model_request_finished"].includes(r.type)),
+    }, null, 2), contentType: "application/json" });
+  }
+});
 
 test("创建表单实际保存节点线索并在刷新后显示", async ({ page, request }, info) => {
   test.setTimeout(300_000);

@@ -14,11 +14,15 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.module_assembly import AssemblyStore, ModuleRef
 from hastings.workspace.service_hub import WorkspaceServices
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 from hastings.workspace.story_clue_catalog import StoryClueCatalog
 from hastings.workspace.story_clue_commit import prepare_clue_joint, prepare_clue_undo
+from hastings.workspace.story_constraint_sources import ConstraintSources, source_key
+from hastings.workspace.story_drafts import StoryDraftStore, candidate_data
 from hastings.workspace.story_models import (
+    Constraint,
     ProsePatch,
     ReadDependency,
     StoryChangeSet,
@@ -28,6 +32,12 @@ from hastings.workspace.story_models import (
 from hastings.workspace.story_store import StoryStore, new_id
 
 __all__ = ["create_story_router"]
+
+
+class ConfirmDraftConstraints(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    draft_revision: str
+    variant_id: str = "main"
 
 
 class StoryCountsView(BaseModel):
@@ -62,8 +72,11 @@ class StoryNodeView(BaseModel):
     action: str
     change: str | None = None
     stage_id: str | None = None
-    threads: list[str]
-    clues: list[str]
+    thread_ids: list[str]
+    clue_ids: list[str]
+    primary_thread_id: str | None = None
+    is_convergence: bool = False
+    reveal_order: int | None = None
     time_note: str
 
 
@@ -172,8 +185,11 @@ def _node_view(variant: StoryVariant, node: StoryNode) -> StoryNodeView:
         action=node.action,
         change=node.change,
         stage_id=node.stage_id,
-        threads=[item for item in node.thread_ids if item in variant.threads],
-        clues=[use.clue_id for use in node.clue_uses],
+        primary_thread_id=node.primary_thread_id,
+        is_convergence=node.is_convergence,
+        reveal_order=node.reveal_order,
+        thread_ids=[item for item in node.thread_ids if item in variant.threads],
+        clue_ids=[use.clue_id for use in node.clue_uses],
         time_note=node.time_note,
     )
 
@@ -243,6 +259,121 @@ def create_story_router(
                 details={"variant_id": variant_id},
             )
         return variant
+
+    def task_draft(workspace_id: str, operation_id: str, variant_id: str) -> dict[str, Any] | None:
+        workspaces.get(workspace_id)
+        if hub is None:
+            return None
+        operation = hub.service_for(workspace_id).operations.read(operation_id)
+        if operation.workspace_id != workspace_id:
+            raise WorkspaceError(
+                code="STORY_DRAFT_NOT_FOUND",
+                where="story.draft",
+                why="本作品没有这份任务草稿",
+                fix="重新打开当前作品的任务",
+            )
+        return StoryDraftStore(
+            conversation_root(workspaces.root, workspace_id), operation_id, variant_id
+        ).read()
+
+    @router.get("/{workspace_id}/story/drafts/{operation_id}")
+    def read_draft(
+        workspace_id: str, operation_id: str, variant_id: str = "main"
+    ) -> dict[str, Any]:
+        draft = task_draft(workspace_id, operation_id, variant_id)
+        if not draft or draft.get("committed"):
+            return {"draft": None}
+        snapshot = store_for(workspace_id).read()
+        variant = (
+            snapshot.variant(variant_id)
+            if snapshot.document
+            else StoryVariant(id=variant_id, name="构思", revision="empty")
+        )
+        assert variant is not None
+        data = candidate_data(
+            variant,
+            StoryChangeSet(
+                id=draft["change_id"],
+                base_revision=draft["base_revision"],
+                operations=draft["operations"],
+            ),
+        )
+        constraints = [row for row in data["constraints"].values() if row["strength"] == "required"]
+        return {
+            "draft": {
+                "revision": draft["digest"],
+                "constraints": constraints,
+                "operations": len(draft["operations"]),
+            }
+        }
+
+    @router.post("/{workspace_id}/story/drafts/{operation_id}/confirm-constraints")
+    def confirm_draft_constraints(
+        workspace_id: str, operation_id: str, body: ConfirmDraftConstraints
+    ) -> dict[str, Any]:
+        draft = task_draft(workspace_id, operation_id, body.variant_id)
+        if not draft or draft.get("committed") or draft["digest"] != body.draft_revision:
+            raise WorkspaceError(
+                code="STORY_DRAFT_CONFLICT",
+                where="story.draft",
+                why="待确认草稿已变化",
+                fix="刷新列表后核对当前约定",
+            )
+        assert hub is not None
+        operation = hub.service_for(workspace_id).operations.read(operation_id)
+        if operation.status not in ("paused", "awaiting_answer", "needs_attention"):
+            raise WorkspaceError(
+                code="STORY_DRAFT_CONFLICT",
+                where="story.draft",
+                why="任务尚未停下供作者核对",
+                fix="等待任务需要处理后再确认",
+            )
+        root = conversation_root(workspaces.root, workspace_id)
+        store = store_for(workspace_id)
+        snapshot = store.read()
+        variant = snapshot.variant(body.variant_id) if snapshot.document else None
+        revision = variant.revision if variant else "empty"
+        if revision != draft["base_revision"]:
+            raise WorkspaceError(
+                code="STORY_DRAFT_CONFLICT",
+                where="story.draft",
+                why="正式结构已变化",
+                fix="重新核对当前结构，不能确认过期草稿",
+            )
+        current = variant or StoryVariant(id=body.variant_id, name="构思", revision="empty")
+        data = candidate_data(
+            current,
+            StoryChangeSet(
+                id=draft["change_id"],
+                base_revision=draft["base_revision"],
+                operations=draft["operations"],
+            ),
+        )
+        constraints = [
+            Constraint.model_validate(row)
+            for row in data["constraints"].values()
+            if row["strength"] == "required"
+        ]
+        modules = tuple(
+            binding.module
+            for binding in AssemblyStore(workspaces.workspace(workspace_id).root).read().bindings
+        )
+        frozen_modules = tuple(ModuleRef(**row) for row in draft.get("module_refs", []))
+        if any(m not in modules for m in frozen_modules):
+            raise WorkspaceError(
+                code="STORY_SOURCE_CONFLICT",
+                where="story.draft",
+                why="草稿采用的模块版本已不在当前装配中",
+                fix="保留草稿，核对模块变化后重新发起任务",
+            )
+        # 模块来源仍校验原文；无来源条目由作者逐项审阅当前草稿后明确采用。
+        ConstraintSources(root).confirm(
+            [c for c in constraints if c.source_ref is not None], hub.library, frozen_modules
+        )
+        StoryDraftStore(root, operation_id, body.variant_id).confirm_constraints(
+            draft["digest"], [source_key(c) for c in constraints]
+        )
+        return {"confirmed": len(constraints), "draft_revision": draft["digest"]}
 
     @router.get("/{workspace_id}/story/variants", response_model=StoryVariantListView)
     def list_variants(workspace_id: str) -> StoryVariantListView:
@@ -466,11 +597,7 @@ def create_story_router(
         """撤销一次改动：只恢复当时涉及的对象，后续无关编辑保留。"""
         store = store_for(workspace_id)
         snapshot = store.read()
-        record = (
-            snapshot.document.changes.get(change_id)
-            if snapshot.document is not None
-            else None
-        )
+        record = snapshot.document.changes.get(change_id) if snapshot.document is not None else None
         if record is None:
             raise WorkspaceError(
                 code="STORY_CHANGE_NOT_FOUND",

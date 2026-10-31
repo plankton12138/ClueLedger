@@ -1,0 +1,28 @@
+{
+  "version": "1.0.3",
+  "date": "2026-10-31",
+  "backend": {
+    "passed": 56,
+    "files": [
+      "test_story_remediation.py",
+      "test_story_routing.py",
+      "test_activity.py"
+    ]
+  },
+  "frontend": {
+    "passed": 52,
+    "filter": "story chatMessages"
+  },
+  "browser": {
+    "passed": 14,
+    "file": "story-structure.spec.ts",
+    "root": "data/test-tmp/story-drag-fix-final-20261031",
+    "initial_failures": "data/test-tmp/story-drag-fix-20261031 (pointer events disabled after drag disabled; corrected and rerun whole suite)"
+  },
+  "ruff": "passed",
+  "mypy": "5 source files passed",
+  "build": "passed with existing chunk warning",
+  "online_evaluation": "not run",
+  "full_backend": "not run",
+  "real_workspace_modified": false
+}

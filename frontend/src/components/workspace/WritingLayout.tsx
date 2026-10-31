@@ -72,7 +72,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const sidebar = plan.sidebar > 0;
   const directoryVisible = canDockDirectory ? sidebar : directory;
   const paper = !compact || !chat;
-  useEffect(() => {
+  useLayoutEffect(() => {
     // 初次加载不清掉用户刚打开的面；只有真正切换作品时才复位。
     if (previousWorkspace.current && previousWorkspace.current !== currentId) {
       setDirectory(false); setCompactChat(false); setStoryView(false);
@@ -122,13 +122,15 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     setCompactChat(true);
     if (!compact && !prefs.chatVisible) prefs.toggleChat();
   }
+  const route = parseHash(window.location.hash);
+  const workspaceReady = route?.kind === "writing" && route.workspaceId === currentId;
   const chatLabel = running ? "对话 · 进行中" : "对话";
   return <div className="writing-layout" ref={container} data-layout={plan.kind}>
     <div className="writing-tools">
       <Button ref={directoryButton} size="compact" variant={directoryVisible ? "primary" : "secondary"} aria-pressed={directoryVisible} aria-expanded={directoryVisible} aria-controls="writing-directory"
         onClick={() => canDockDirectory ? storyView ? setStoryDirectory(value => !value) : prefs.toggleSidebar() : setDirectory(value => !value)} onKeyDown={event => { if (event.key === "Escape") setDirectory(false); }}>
         <List size={16} strokeWidth={2} aria-hidden="true" />目录</Button>
-      <Button size="compact" variant={storyView ? "primary" : "secondary"} aria-pressed={storyView} onClick={() => setStoryView(!storyView)} disabled={!currentId} disabledReason="先打开作品目录">
+      <Button size="compact" variant={storyView ? "primary" : "secondary"} aria-pressed={storyView} onClick={() => setStoryView(!storyView)} disabled={!currentId || !workspaceReady} disabledReason="先打开作品目录">
         <Network size={16} strokeWidth={2} aria-hidden="true" />构思</Button>
       <Button size="compact" variant={chat && pane === "chat" ? "primary" : "secondary"} aria-pressed={chat && pane === "chat"} aria-controls="writing-chat" onClick={() => showPane("chat", true)} disabled={!currentId} disabledReason="先打开作品目录">
         <MessageSquare size={16} strokeWidth={2} aria-hidden="true" />{chatLabel}</Button>

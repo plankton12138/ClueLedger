@@ -64,9 +64,7 @@ class StoryReview:
 
     def summary(self) -> dict[str, object]:
         return {
-            "checks": [
-                {"id": item.requirement_id, "kind": item.kind} for item in self.checks
-            ],
+            "checks": [{"id": item.requirement_id, "kind": item.kind} for item in self.checks],
             "findings": len(self.findings),
         }
 
@@ -75,14 +73,8 @@ def _normalize(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _selected_nodes(
-    variant: StoryVariant, frozen: StoryContextSnapshot
-) -> list[StoryNode]:
-    return [
-        variant.nodes[node_id]
-        for node_id in frozen.node_ids
-        if node_id in variant.nodes
-    ]
+def _selected_nodes(variant: StoryVariant, frozen: StoryContextSnapshot) -> list[StoryNode]:
+    return [variant.nodes[node_id] for node_id in frozen.node_ids if node_id in variant.nodes]
 
 
 def build_story_review(
@@ -158,8 +150,10 @@ def build_story_review(
                 }
             )
 
+    from hastings.workspace.story_knowledge import effective_knowledge
+
     for node in nodes:
-        for change in node.knowledge_changes:
+        for change in effective_knowledge(variant, [node.id]):
             checks.append(
                 StoryCheck(
                     requirement_id=f"knowledge:{node.id}:{change.subject_id}",
@@ -177,9 +171,7 @@ def build_story_review(
     return StoryReview(checks=tuple(checks), findings=tuple(findings), text=text)
 
 
-def _render(
-    variant: StoryVariant, checks: list[StoryCheck], findings: list[dict[str, Any]]
-) -> str:
+def _render(variant: StoryVariant, checks: list[StoryCheck], findings: list[dict[str, Any]]) -> str:
     if not checks and not findings:
         return ""
     lines = [

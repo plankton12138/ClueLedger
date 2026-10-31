@@ -392,8 +392,26 @@ def classify_design_intent(
         return discussion_intent(raw, "作者在提问")
 
     # 创建入口已经明确成果类型；要求里点到的人物设定或模块属于资料来源。
-    module_target = not explicit_creation and (
-        _has(raw, _MODULE_TARGETS) or _has(raw, _SAVE_MODULE)
+    # 资料来源与写入目标分开。参考模块不能因另一句「提交构思」而变成模块保存任务。
+    clauses = re.split(r"[。；;，,\n]", raw)
+    module_clauses = [
+        clause
+        for clause in clauses
+        if _has(clause, _SAVE_MODULE)
+        or not (
+            (
+                re.match(r"\s*(?:根据|参考|依据|参照|使用|按照|基于|利用|用)", clause)
+                and _has(clause, _STRUCTURE_TARGETS)
+            )
+            or (
+                clause.lstrip().startswith("把")
+                and re.search(r"(?:整理进|写入|转成|导入|归入).*(?:构思|结构)", clause)
+            )
+        )
+    ]
+    module_target = not explicit_creation and any(
+        _has(clause, _SAVE_MODULE) or (_has(clause, _MODULE_TARGETS) and _write_command(clause))
+        for clause in module_clauses
     )
     structure_target = explicit_creation or _has(raw, _STRUCTURE_TARGETS)
 

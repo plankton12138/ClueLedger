@@ -8,7 +8,7 @@
 import { memo } from "react";
 
 import type { RunPhase } from "../../api/workspace";
-import { hasSavedStoryChanges, phaseLabel, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
+import { hasLaterStorySubmission, hasSavedStoryChanges, phaseLabel, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import AssistantMessageView from "./AssistantMessageView";
 import AuthorQuestionCard from "./AuthorQuestionCard";
 import ModuleChangeCard from "./ModuleChangeCard";
@@ -80,7 +80,7 @@ function ChatTurnView({
       <TaskCard turn={turn} />
       <ModuleChangeCard turn={turn} workspaceId={workspaceId} conversationId={conversationId} />
 
-      {turn.items.map((item) =>
+      {turn.items.map((item, index) =>
         item.kind === "message" ? (
           <AssistantMessageView
             key={item.key}
@@ -91,7 +91,7 @@ function ChatTurnView({
             onCopyFailed={onCopyFailed}
           />
         ) : (
-          <ToolActivity key={item.key} tool={item.tool} />
+          <ToolActivity key={item.key} tool={item.tool} submittedLater={hasLaterStorySubmission(turn, index)} />
         ),
       )}
 

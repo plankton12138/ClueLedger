@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -705,3 +706,100 @@ def test_result_endpoint_returns_intent_and_story_receipt(tmp_path: Path) -> Non
         story = next(item for item in result["receipts"] if item["kind"] == "story")
         assert story["variant_id"] == MAIN_VARIANT_ID
         assert story["labels"] == ["节点「抵达」"]
+
+
+def test_plain_chat_resolves_story_and_stops_with_recoverable_draft(tmp_path: Path) -> None:
+    provider = RoutingProvider(
+        [
+            _tool_turn(
+                ToolCall(
+                    id="prepare",
+                    name="update_story",
+                    arguments={
+                        "mode": "prepare",
+                        "operations": [
+                            {
+                                "op": "add_node",
+                                "node": {"id": "n1", "title": "发现", "action": "发现矛盾"},
+                            }
+                        ],
+                    },
+                )
+            )
+        ]
+    )
+    service, _ = _service(tmp_path, provider)
+    service.max_turns = 4
+
+    async def scenario() -> Any:
+        info = await service.accept("根据现有模块生成构思", "plain-create")
+        await service.wait(info.turn_id)
+        return info
+
+    info = asyncio.run(scenario())
+    tools = provider.requests[0]["tools"]
+    assert "update_story" in tools and "prepare_module_changes" not in tools
+    assert "set_task_scope" not in tools
+    operation = service.operations.read(info.operation_id)
+    assert operation.status == "needs_attention"
+    assert operation.as_view()["capabilities"]["continue"]
+    assert service._restore_operation_info(operation).context.story.revision == "empty"
+    assert StoryStore(service.store.root).read().document is None
+
+
+def test_unknown_tool_feedback_has_recovery_and_separate_author_summary(tmp_path: Path) -> None:
+    from tau_agent.messages import ToolResultMessage
+
+    provider = RoutingProvider(
+        [
+            _tool_turn(
+                ToolCall(id="bad", name="draft_revision", arguments={}),
+                ToolCall(
+                    id="bad-fields",
+                    name="update_story",
+                    arguments={
+                        "mode": "prepare",
+                        "operations": [{"op": "add_node", "id": "n2"}],
+                    },
+                ),
+            ),
+            _text_turn("读取草稿后继续。"),
+        ]
+    )
+    service, _ = _service(tmp_path, provider)
+
+    async def scenario() -> Any:
+        info = await service.accept("根据现有模块生成构思", "unknown-tool")
+        await service.wait(info.turn_id)
+        return info
+
+    info = asyncio.run(scenario())
+    event = next(
+        e for e in service.store.events(info.conversation_id) if e["type"] == "tool_finished"
+    )
+    assert not event["ok"] and "[TOOL_NOT_FOUND]" in event["summary"]
+    assert "建议：" in event["summary"] and "update_story" in event["summary"]
+    assert "execution_budget" not in event["summary"]
+    message = next(m for m in provider.requests[1]["messages"] if isinstance(m, ToolResultMessage))
+    payload = json.loads(message.content[0].text)
+    assert message.is_error and payload["code"] == "TOOL_NOT_FOUND"
+    assert payload["execution_budget"]["remaining_model_rounds"] == 23
+    assert "draft_revision" not in payload["available_tools"]
+    invalid = next(
+        m
+        for m in provider.requests[1]["messages"]
+        if isinstance(m, ToolResultMessage) and m.tool_name == "update_story"
+    )
+    diagnostic = json.loads(invalid.content[0].text)
+    assert invalid.is_error and diagnostic["code"] == "STORY_CHANGE_INVALID"
+    assert diagnostic["issues"][0]["object_id"] == "n2"
+    assert "execution_budget" in diagnostic
+    field_event = next(
+        e
+        for e in service.store.events(info.conversation_id)
+        if e["type"] == "tool_finished" and e["tool"] == "update_story"
+    )
+    assert "[STORY_CHANGE_INVALID]" in field_event["summary"]
+    assert "execution_budget" not in field_event["summary"]
+    assert '"issues"' not in field_event["summary"]
+    assert StoryStore(service.store.root).read().document is None

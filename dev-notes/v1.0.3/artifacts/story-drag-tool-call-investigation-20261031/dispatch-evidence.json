@@ -1,0 +1,8 @@
+{
+  "tool": "draft_revision",
+  "args": {},
+  "ok": false,
+  "summary": "Tool draft_revision not found{\"execution_budget\": {\"remaining_model_rounds\": 18, \"reserved_for_commit_and_reply\": 3}}",
+  "duration_ms": 0,
+  "method": "deterministic tool injection through actual service; no model/network request"
+}

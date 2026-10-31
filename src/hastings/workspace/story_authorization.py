@@ -14,11 +14,13 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_clue_catalog import StoryClueCatalog
+from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_models import (
     AddConstraint,
     AddNode,
@@ -119,7 +121,7 @@ _READ_ONLY = (
 )
 
 #: 成对引号。引号里本身是一句命令时，它是被引用的内容，不是作者的命令。
-_QUOTE_PAIRS = {"“": "”", "「": "」", "『": "』", "\"": "\"", "‘": "’"}
+_QUOTE_PAIRS = {"“": "”", "「": "」", "『": "』", '"': '"', "‘": "’"}
 
 
 def _flat(text: str) -> str:
@@ -192,9 +194,7 @@ def blocks_writes(author_text: str) -> bool:
     return is_discussion(author_text) or any(word in text for word in _READ_ONLY)
 
 
-def _strip_quoted_commands(
-    text: str, subject: str, category: str, actions: tuple[str, ...]
-) -> str:
+def _strip_quoted_commands(text: str, subject: str, category: str, actions: tuple[str, ...]) -> str:
     """把「引号里的完整命令」从授权判断中拿掉；引号里只有新值时保留。"""
     parts: list[str] = []
     last = 0
@@ -360,9 +360,7 @@ def build_authority(
             if node.stage_id is not None:
                 permitted.add(("stage", node.stage_id))
             permitted.update(("thread", thread_id) for thread_id in node.thread_ids)
-            permitted.update(
-                ("clue", use.clue_id) for use in node.clue_uses
-            )
+            permitted.update(("clue", use.clue_id) for use in node.clue_uses)
         for binding in variant.bindings.values():
             if ("node", binding.node_id) in permitted:
                 permitted.add(("binding", binding.id))
@@ -479,10 +477,32 @@ def validate_model_change(
     author_text: str = "",
     *,
     catalog: StoryClueCatalog | None = None,
+    confirmed_sources: Mapping[str, Any] | None = None,
+    confirmed_constraints: frozenset[str] = frozenset(),
 ) -> None:
     """统一保护作者真相、必需约定与裁决来源，并由应用固定来源。"""
+    from hastings.workspace.story_constraint_sources import source_key
+
     catalog = catalog or StoryClueCatalog.from_variant(variant)
+    confirmed_sources = confirmed_sources or {}
     for operation in change.operations:
+        if isinstance(operation, AddConstraint) and operation.constraint.source_ref is not None:
+            inherited = operation.constraint
+            source_ref = operation.constraint.source_ref
+            for row in confirmed_sources.values():
+                if (
+                    row["source_ref"] == source_ref.model_dump()
+                    and row["text"] == inherited.text
+                    and row["scope"] == inherited.scope.model_dump()
+                    and row["strength"] == "required"
+                    and inherited.strength != "required"
+                ):
+                    raise WorkspaceError(
+                        code="STORY_AUTHORIZATION_CONFLICT",
+                        where="story.update",
+                        why="继承的模块必需约定被改成了偏好",
+                        fix="保持来源约定的 required 强度",
+                    )
         if isinstance(operation, UpsertCluePlan) and operation.clue_id in variant.clue_plans:
             existing = variant.clue_plans[operation.clue_id]
             if operation.plan.author_truth != existing.author_truth and not _explicit(
@@ -549,7 +569,14 @@ def validate_model_change(
         )
         allowed_constraint = False
         if isinstance(operation, AddConstraint):
-            allowed_constraint = _explicit(author_text, "", "约定", operation.constraint.text)
+            allowed_constraint = (
+                _explicit(author_text, "", "约定", operation.constraint.text)
+                or (
+                    operation.constraint.source_ref is not None
+                    and source_key(operation.constraint) in confirmed_sources
+                )
+                or source_key(operation.constraint) in confirmed_constraints
+            )
         elif (
             isinstance(operation, UpdateConstraint)
             and operation.constraint_id in variant.constraints
@@ -572,7 +599,10 @@ def validate_model_change(
                 code="STORY_AUTHORIZATION_CONFLICT",
                 where="story.update",
                 why="本轮无法验证模型对必需约定的修改授权，没有保存变更",
-                fix="保留现有必需约定，由作者明确说明约定原文和修改后的内容",
+                fix=(
+                    "保留必需约定和草稿；在界面逐项核对并确认当前草稿，"
+                    "或由作者明确说明原文，不要降为 preference"
+                ),
             )
 
     # 约定修订由应用填入，不能由模型自报为作者原话。
@@ -582,9 +612,14 @@ def validate_model_change(
                 update={
                     "constraint": operation.constraint.model_copy(
                         update={
-                            "origin": "author_request"
-                            if operation.constraint.strength == "required"
-                            else "model_suggestion",
+                            "origin": (
+                                "author_module"
+                                if operation.constraint.source_ref is not None
+                                and source_key(operation.constraint) in confirmed_sources
+                                else "author_request"
+                                if operation.constraint.strength == "required"
+                                else "model_suggestion"
+                            ),
                             "source_message_id": "",
                             "revision": new_id("rev"),
                         }

@@ -44,6 +44,158 @@ const NODES = [
   },
 ];
 
+test("故事线表头纵向冻结，横向滚动和缩放保持列对齐", async ({ page, book }) => {
+  const threads = ["a", "b", "c", "d"];
+  const operations = [
+    ...threads.map((id, order) => ({ op: "add_thread", thread: { id, title: `故事线 ${id}`, order, goal: "核对时间与证据", obstacle: "关键记录缺失" } })),
+    ...threads.flatMap(t => Array.from({ length: 20 }, (_, i) => ({ op: "add_node", node: {
+      id: `${t}${i}`, title: `${t} 的推进 ${i}`, action: "继续核对本条故事线中的证据。", thread_ids: [t], primary_thread_id: t, reveal_order: i,
+    } }))),
+  ];
+  const base = `/api/file-workspaces/${book.id}/story`;
+  const saved = await page.request.post(`${base}/changes`, { data: { variant_id: "main", expected_revision: "empty", request_key: `frozen-${book.id}`, operations } });
+  expect(saved.ok(), await saved.text()).toBeTruthy();
+  const before = await page.request.get(`${base}/variants/main`).then(r => r.json());
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  const canvas = page.locator(".story-canvas");
+  const header = canvas.getByRole("region", { name: "故事线表头" });
+  const heading = header.locator('[data-thread-id="c"]');
+  const card = canvas.locator('.react-flow__node[data-id="c19"]');
+  await expect(header).toBeVisible();
+  const geometry = async () => {
+    const h = (await heading.boundingBox())!, c = (await card.boundingBox())!;
+    return { top: h.y, left: h.x, width: h.width, cardLeft: c.x, cardWidth: c.width };
+  };
+  await expect.poll(async () => Math.abs((await geometry()).left - (await geometry()).cardLeft)).toBeLessThan(1);
+  const first = await geometry();
+  await canvas.getByRole("region", { name: "画布纵向滚动" }).press("End");
+  await expect.poll(async () => Math.abs((await geometry()).top - first.top)).toBeLessThan(1);
+  const horizontal = canvas.getByRole("region", { name: "画布横向滚动" });
+  await horizontal.evaluate(element => { element.scrollLeft += 150; });
+  await expect.poll(async () => (await geometry()).left).toBeLessThan(first.left - 100);
+  await expect.poll(async () => { const g = await geometry(); return Math.abs(g.left - g.cardLeft); }).toBeLessThan(1);
+  await canvas.getByRole("button", { name: "放大画布", exact: true }).click();
+  await expect.poll(async () => (await geometry()).width).toBeGreaterThan(first.width + 20);
+  await expect.poll(async () => { const g = await geometry(); return Math.abs(g.width - g.cardWidth) + Math.abs(g.left - g.cardLeft); }).toBeLessThan(2);
+  await heading.locator("summary").click();
+  await expect(heading).toContainText("关键记录缺失");
+  await expect(heading.locator("details")).toHaveAttribute("open", "");
+  await page.screenshot({ path: "test-results/story-frozen-headings.png" });
+  expect(await page.request.get(`${base}/variants/main`).then(r => r.json())).toEqual(before);
+});
+
+test("无模块来源的草稿约定可由作者确认，不自动调用模型", async ({ page, book }) => {
+  const state = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "state");
+  execFileSync("uv", ["run", "--directory", "..", "python", resolve("e2e/fixtures/story_draft_review.py"), state, book.id], { windowsHide: true });
+  await page.route("**/api/operations/op-review/continue", route => route.fulfill({
+    status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "TEST_STOP", message: "测试在作者确认后停止" } }),
+  }));
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await expect(page.locator(".story-draft")).toContainText("至少六名嫌疑人");
+  const response = page.waitForResponse(r => r.url().endsWith("/confirm-constraints"));
+  await page.getByRole("button", { name: "确认这些必需约定并继续" }).click();
+  const confirmed = await response;
+  expect(confirmed.ok(), await confirmed.text()).toBeTruthy();
+  expect((await confirmed.json()).confirmed).toBe(1);
+});
+
+test("单卡拖动与键盘移动保持列归属，整图仍可平移和选中", async ({ page, book }) => {
+  const operations = [
+    ...["a", "b", "c"].map((id, order) => ({ op: "add_thread", thread: { id, title: `线 ${id}`, order } })),
+    ...["a", "b", "c"].map(id => ({ op: "add_node", node: { id, title: `节点 ${id}`, action: "保留归属", thread_ids: [id], primary_thread_id: id } })),
+  ];
+  const base = `/api/file-workspaces/${book.id}/story`;
+  const saved = await page.request.post(`${base}/changes`, { data: { variant_id: "main", expected_revision: "empty", request_key: `no-drag-${book.id}`, operations } });
+  expect(saved.ok(), await saved.text()).toBeTruthy();
+  const graph = await page.request.get(`${base}/variants/main`).then(r => r.json());
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  const surface = page.getByRole("region", { name: "构思结构" });
+  const card = surface.locator('.react-flow__node[data-id="a"]');
+  const heading = surface.locator('.react-flow__node[data-id="thread:a"]');
+  await expect(card).toBeVisible();
+  const offset = async () => {
+    const a = await card.boundingBox(), h = await heading.boundingBox();
+    return [Math.round(a!.x - h!.x), Math.round(a!.y - h!.y)];
+  };
+  await expect.poll(async () => (await offset())[0]).toBe(0);
+  const initial = await offset();
+  const box = (await card.boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 340, box.y + 120, { steps: 15 });
+  await page.mouse.up();
+  await expect.poll(offset).toEqual(initial);
+  await card.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(offset).toEqual(initial);
+  const viewport = surface.locator(".react-flow__viewport");
+  const oldViewport = await viewport.getAttribute("style");
+  const canvas = (await surface.locator(".story-canvas").boundingBox())!;
+  // 表头区域现在固定；从表头下方的画布空白处平移。
+  await page.mouse.move(canvas.x + 30, canvas.y + 180);
+  await page.mouse.down();
+  await page.mouse.move(canvas.x + 90, canvas.y + 220, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => viewport.getAttribute("style")).not.toBe(oldViewport);
+  await expect.poll(offset).toEqual(initial);
+  await surface.getByRole("button", { name: "节点 a", exact: true }).click();
+  await expect(surface.getByRole("complementary", { name: "节点详情" })).toContainText("保留归属");
+  const after = await page.request.get(`${base}/variants/main`).then(r => r.json());
+  expect(after).toEqual(graph);
+});
+
+test("多线长摘要在各字号和窄屏下无矩形遮挡，折叠保留跨阶段连接", async ({ page, book }) => {
+  test.setTimeout(90_000);
+  const operations = [
+    ...["a", "b", "c"].map((id, order) => ({ op: "add_thread", thread: { id, title: `故事线 ${id}`, order, goal: "追查各自的问题", obstacle: "证据不全", intended_resolution: "共同解释" } })),
+    ...["s1", "s2", "empty"].map((id, order) => ({ op: "add_stage", stage: { id, title: `阶段 ${id}`, order, summary: "大雪封路，调查各自推进，每一条线都改变另一条线的判断。".repeat(8) } })),
+    ...["a", "b", "c"].flatMap(id => [1, 2].map(i => ({ op: "add_node", node: { id: `${id}${i}`, title: `${id} 的变化 ${i}`, action: "完整行动留在详情。".repeat(30), change: "关键证据改变了当前判断。", stage_id: `s${i}`, thread_ids: [id, ...["a", "b", "c"].filter(t => t !== id)], primary_thread_id: id, reveal_order: i } }))),
+    { op: "add_node", node: { id: "join", title: "三线共同收束", action: "核对全部证据", change: "共同确定行动机会", stage_id: "s2", thread_ids: ["a", "b", "c"], primary_thread_id: "a", is_convergence: true } },
+    ...["a", "b", "c"].flatMap(id => [
+      { op: "connect", edge: { id: `${id}-progress`, from_id: `${id}1`, to_id: `${id}2`, kind: "next", reason: "该线的证据推动下一次行动" } },
+      { op: "connect", edge: { id: `${id}-join`, from_id: `${id}2`, to_id: "join", kind: "next", reason: "共同作用于结论" } },
+    ]),
+  ];
+  const saved = await page.request.post(`/api/file-workspaces/${book.id}/story/changes`, { data: { variant_id: "main", expected_revision: "empty", request_key: `geometry-${book.id}`, operations } });
+  expect(saved.ok(), await saved.text()).toBeTruthy();
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.getByRole("button", { name: "构思", exact: true }).click();
+  const surface = page.getByRole("region", { name: "构思结构" });
+  await expect(surface.locator(".story-node")).toHaveCount(7);
+  const stageLeft = async () => {
+    const canvas = await surface.locator(".story-canvas").boundingBox();
+    const stage = await surface.locator(".story-stage-band").first().boundingBox();
+    return Math.round(stage!.x - canvas!.x);
+  };
+  await expect.poll(stageLeft).toBe(20);
+  const overlap = () => surface.locator(".react-flow__node").evaluateAll(elements => {
+    const boxes = elements.map(e => ({ id: e.getAttribute("data-id"), r: e.getBoundingClientRect() }));
+    return boxes.flatMap((a, i) => boxes.slice(i + 1).filter(b => a.r.left < b.r.right - 1 && b.r.left < a.r.right - 1 && a.r.top < b.r.bottom - 1 && b.r.top < a.r.bottom - 1).map(b => `${a.id}/${b.id}`));
+  });
+  for (const width of [1440, 1024, 390]) for (const scale of [1, 1.5, 2]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(scale => document.documentElement.style.setProperty("--font-scale", String(scale)), scale);
+    await expect.poll(overlap, { message: `width=${width} scale=${scale}` }).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => document.documentElement.style.setProperty("--font-scale", "1"));
+  await expect.poll(stageLeft).toBe(20);
+  await surface.getByRole("button", { name: "阶段 s2", exact: true }).click();
+  await expect(surface.locator(".story-node")).toHaveCount(4);
+  await expect(surface.locator('.react-flow__edge[data-id="a-progress"]')).toHaveCount(1);
+  await expect.poll(overlap).toEqual([]);
+  await surface.getByRole("button", { name: "全部", exact: true }).click();
+  await expect(surface.locator(".story-node")).toHaveCount(7);
+  await expect(surface.getByRole("button", { name: "三线共同收束", exact: true })).toHaveCount(1);
+  await expect.poll(overlap).toEqual([]);
+  await page.screenshot({ path: "test-results/story-multiline-remediation.png" });
+});
+
 test("长线路可用双向滚动条导航，缩放可查看完整全貌并恢复原尺寸", async ({ page, book }) => {
   const chain = Array.from({ length: 30 }, (_, index) => ({ op: "add_node", node: {
     id: `long-${index}`, title: `长线路 ${index + 1}`, action: "保留这一处的安排。",
@@ -126,7 +278,7 @@ test("纵向画布展开分支并汇合，详情在下方且专注模式扩大�
   })));
   await expect.poll(async () => { const nodes = await positions(); return Boolean(nodes.n4 && nodes.n4.y > nodes.n2.y && nodes.n2.y > nodes.n1.y); }).toBeTruthy();
   const nodes = await positions();
-  expect(Math.abs(nodes.n2.y + nodes.n2.h / 2 - nodes.n3.y - nodes.n3.h / 2)).toBeLessThan(2);
+  expect(Math.abs(nodes.n2.y - nodes.n3.y)).toBeLessThan(2);
   expect(Math.abs(nodes.n2.x - nodes.n3.x)).toBeGreaterThanOrEqual(280);
   expect(nodes.n4.y).toBeGreaterThan(nodes.n3.y + nodes.n3.h);
   await expect(page.locator("#writing-directory")).toBeHidden();
@@ -471,7 +623,7 @@ test("全书线索与阶段联动：节点到线索到另一节点再到正文�
   await clues.getByRole("button", { name: "核对路线", exact: true }).click();
   await expect(surface.getByRole("heading", { name: "核对路线" })).toBeVisible();
 
-  await surface.getByRole("button", { name: "发现异样", exact: true }).click();
+  await surface.getByRole("button", { name: "定位到发现异样", exact: true }).click();
   await expect(surface.locator(".story-binding")).toContainText(quote);
   await surface.locator(".story-binding").click();
   await page.getByRole("button", { name: "返回构思", exact: true }).click();

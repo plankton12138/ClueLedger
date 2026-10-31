@@ -4,7 +4,7 @@
 
 **Keep ideas, characters, and clues connected to their sources throughout your novel.**
 
-ClueLedger is an AI writing workspace for mystery fiction. Capture ideas, discuss your plot, read and revise chapters, save character profiles and worldbuilding notes, and review events, relationships, and clues in Story Overview—all in one place.
+ClueLedger is an AI writing workspace for mystery fiction. Capture ideas, discuss your plot, read and revise chapters, save character profiles and worldbuilding notes, and review story development through a structure map and book-wide clues—all in one place.
 
 You decide where the story goes. ClueLedger brings your writing goals, existing material, and source passages together.
 
@@ -12,7 +12,7 @@ ClueLedger is built on [Tau Agent](https://github.com/huggingface/tau), with a w
 
 ![ClueLedger writing workspace: chapters and modules on the left, the manuscript in the center, and a story discussion on the right](docs/screenshots/readme/writing.png)
 
-*These screenshots show the current Chinese-language interface using the sample novel Letters on a Snowy Night (《雪夜来信》). English feature names below describe the corresponding Chinese controls.*
+*Screenshots use example content in the Chinese-language interface. The structure screenshot demonstrates multiple storylines and frozen column headings. English feature names below describe the corresponding Chinese controls.*
 
 [Capture ideas](#capture-ideas) · [Write through conversation](#write-through-conversation) · [Save and reuse story material](#save-and-reuse-story-material) · [Review the whole story](#review-the-whole-story) · [Get started](#get-started)
 
@@ -60,25 +60,23 @@ Everyday edits affect only the current project. Choose **Save a copy to Module L
 
 ## Review the whole story
 
-Open **Story Overview (故事总览)** to start with the timeline, then explore characters and clues. As the novel grows, follow an event to the people involved or check which chapters contain a particular clue.
+Open **Story Structure (构思)** in the writing workspace to review how the story develops across stages and storylines. Start from a blank structure, or ask the conversation to create one from your existing modules, organizing the material into event nodes, clues, and connections.
 
-### Follow chapter order or story chronology
+### Follow parallel storylines and their convergence
 
-Use chapter order to review how the narrative unfolds, or story chronology to examine when events happen. The **View up to (查看到)** selector limits the chapter range so you can revisit the story at an earlier point.
+Storylines appear in columns, with stages progressing downward. Each card shows a key action or change, while connections explain how developments affect one another. A shared convergence appears once across the participating columns. Select a node to read its full arrangement below and open related clues.
 
-Inspect the source passages behind events and open related characters or clues. Statements, recollections, and conjectures retain their distinctions, helping you separate what someone says from established facts.
+Column headings stay at the top of the canvas as you scroll down. They follow horizontal movement and zoom to stay aligned with their cards. Expand **Goals and obstacles (目标与阻力)**, focus on a stage, or use **Focus on Structure (专注构思)** for more space. Cards are arranged automatically; pan, scroll, and zoom the whole canvas to navigate.
 
-![Story Overview timeline: review chapter events and open related characters, clues, and source passages](docs/screenshots/readme/story-overview.png)
+![Frozen storyline headings remain visible and aligned with their node columns while scrolling through the structure](docs/screenshots/readme/story-structure.png)
 
-### Explore relationships and clue progress
+### Connect plans to clues and manuscript evidence
 
-The modules used by your project appear in Story Overview. Character material can be viewed as cards and relationship graphs; clue material shows its appearances and development. Other material remains available as readable text.
+After selecting a node, choose **View related clues (查看相关线索)** to see its arrangements on the right. With no node selected, browse book-wide clues. Follow a clue to another planned use or an existing manuscript passage, then return to your place in the structure.
 
-Author-defined details, future plans, and events already written in the manuscript are presented separately. Open a relationship's supporting passage to see where it comes from.
+Author truth, future plans, and material already written in the manuscript are presented separately. You can plan clues before drafting prose; planned introductions and resolutions do not become manuscript facts automatically.
 
-![Character cards and relationship graph: inspect Sakakibara's friendships, invitation, and supporting author notes](docs/screenshots/readme/characters.png)
-
-After adding chapters or revising material, click **Update Overview (更新总览)** to organize the changes. Material remains readable before it has been organized, and changed sources are marked as needing an update. Opening the page or switching views does not start this work.
+Larger creation tasks can prepare a draft in batches before committing the complete structure. If a task needs attention, its draft remains with the original task. Review required constraints and their strength before confirming and continuing. Whether a setting or style preference becomes a requirement remains your decision.
 
 ## Get started
 
@@ -86,7 +84,7 @@ After adding chapters or revising material, click **Update Overview (更新总�
 2. **Choose a model.** Connect and select your model in **Settings → Model Settings (设置 → 模型设置)**. You can still record ideas, edit modules, and read existing material before connecting.
 3. **Capture your first idea.** Open Ideas and write down a story concept. Add it to a conversation when you want to discuss it.
 4. **Set the goal for this request.** Ask for discussion, new writing, revisions to specific chapters, or a review. Add reference material when needed.
-5. **Keep your notes and review progress.** Add reusable story material as modules. Visit Story Overview after writing to update and check events, characters, and clues.
+5. **Build a structure and check clues.** Keep reusable material in modules, organize story development in Story Structure, and inspect plans and manuscript evidence through book-wide clues.
 
 ## A few things to know
 
@@ -95,5 +93,5 @@ After adding chapters or revising material, click **Update Overview (更新总�
 | Does saving an idea automatically put it into the novel? | No. Add it to a conversation and explain how you want to use it. |
 | Will discussing a possibility change the manuscript? | Ordinary discussion does not edit it. You can also explicitly say, “Let's discuss this first; don't make changes yet.” |
 | Will editing a module affect other projects? | Saving within a project affects only that project. Save a copy to Module Library when you want to reuse the changes. |
-| Does opening Story Overview start organizing the story? | No. Click Update Overview to start; you can stop it while it runs. |
-| Can Story Overview decide whether my story makes sense? | It helps you explore relationships, review progress, and check source passages. Character motives, deductions, and the ending still need your judgment. |
+| Will an interrupted structure task lose its draft? | Prepared work stays with the original task. Follow its instructions to complete arrangements or confirm constraints and continue; it becomes a formal structure only after the complete commit. |
+| Can the structure map decide whether my story makes sense? | It helps you review development, follow clues, and check source passages. Character motives, deductions, and the ending still need your judgment. |

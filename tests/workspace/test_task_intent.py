@@ -67,6 +67,18 @@ def test_generic_material_words_do_not_create_a_module_goal() -> None:
     assert intent.requires_module is False
 
 
+def test_bound_modules_are_sources_when_only_story_is_submitted() -> None:
+    for text in (
+        "根据现有模块开始构思。保留三条线的独立推进；只建立构思结构，不写正文。用任务草稿分批准备，核对后整体提交。",
+        "参考人物设定模块，建立多线构思",
+        "把已有模块里的安排整理进构思",
+        "人物设定变了，更新构思",
+    ):
+        intent = classify_design_intent(text)
+        assert intent.kind == "structure", text
+        assert not intent.allows_module_write
+
+
 def test_creation_action_keeps_named_modules_as_sources() -> None:
     intent = classify_design_intent(
         "创建构思：根据人物设定模块和线索档案，建立发现与对质两个节点。",

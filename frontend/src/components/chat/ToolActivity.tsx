@@ -23,6 +23,8 @@ const TOOL_LABEL: Record<string, string> = {
   query_records: "检索资料",
   read_record: "读取资料",
   search_module_library: "搜索模块库",
+  read_story: "读取构思",
+  update_story: "修改构思",
 };
 
 function toolLine(tool: ChatTool): string {
@@ -41,9 +43,10 @@ function toolLine(tool: ChatTool): string {
 
 interface Props {
   tool: ChatTool;
+  submittedLater?: boolean;
 }
 
-function ToolActivity({ tool }: Props) {
+function ToolActivity({ tool, submittedLater = false }: Props) {
   const running = tool.ok === null;
   const mark = running ? "·" : tool.ok ? "✓" : "✗";
   const duration = formatDuration(tool.durationMs);
@@ -52,13 +55,14 @@ function ToolActivity({ tool }: Props) {
     .map(([key, value]) => [key, String(value)]);
 
   return (
-    <details className={`chat-tool ${tool.ok === false ? "bad" : ""}`}>
+    <details className={`chat-tool ${tool.ok === false && !submittedLater ? "bad" : ""}`}>
       <summary className="chat-tool-line">
         <span className="chat-tool-mark">{mark}</span>
         <span className="chat-tool-name">{toolLine(tool)}</span>
         {running && <span className="chat-tool-note">进行中</span>}
         {duration && <span className="chat-tool-note">{duration}</span>}
-        {tool.ok === false && tool.summary && (
+        {submittedLater && <span className="chat-tool-note">提交前校验记录 · 后续已提交</span>}
+        {tool.ok === false && !submittedLater && tool.summary && (
           <span className="chat-tool-fail">{tool.summary}</span>
         )}
       </summary>

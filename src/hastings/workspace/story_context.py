@@ -86,7 +86,6 @@ StoryPurpose = Literal["discuss", "design", "write", "revise", "review", "reader
 READER_PURPOSE: StoryPurpose = "reader_preview"
 
 
-
 #: 标题短于这个长度不参与泄露检查：单字标题在正常行文里出现不算泄露。
 _MIN_FORBIDDEN = 2
 
@@ -252,7 +251,11 @@ def freeze_story_context(store: StoryStore, request: StoryRequest) -> StoryConte
     if snapshot.document is None:
         # 空白构思也允许进对话：没有点名别的方案、也没带修订时，
         # 按空的「主方案（empty 修订）」冻结，模型用结构工具建立第一份结构。
-        if request.variant_id not in ("", MAIN_VARIANT_ID) or request.revision:
+        if (
+            request.variant_id not in ("", MAIN_VARIANT_ID)
+            or request.revision not in ("", EMPTY_REVISION)
+            or request.node_ids
+        ):
             raise WorkspaceError(
                 code="STORY_VARIANT_NOT_FOUND",
                 where="story.accept",
@@ -429,11 +432,7 @@ def _involved_clues(
         for use in node.clue_uses:
             if use.clue_id not in wanted:
                 wanted.append(use.clue_id)
-    return [
-        fact
-        for clue_id in wanted
-        if (fact := catalog.get(clue_id)) is not None
-    ]
+    return [fact for clue_id in wanted if (fact := catalog.get(clue_id)) is not None]
 
 
 def _applicable_constraints(variant: StoryVariant, nodes: Iterable[StoryNode]) -> list[Constraint]:
@@ -460,24 +459,15 @@ def _knowledge_lines(
     ancestors: Mapping[str, frozenset[str]],
 ) -> list[str]:
     """角色在当前位置知道什么：只看能到达选中节点的变化，不拿后章状态写前章。"""
-    subjects = {change.subject_id for node in nodes for change in node.knowledge_changes}
-    if not subjects:
-        return []
-    visible: set[str] = set()
-    for node in nodes:
-        visible.add(node.id)
-        visible |= set(ancestors.get(node.id, frozenset()))
+    from hastings.workspace.story_knowledge import effective_knowledge
+
+    del ancestors  # 推进先后不等于角色经历先后。
+    selected = list(nodes)
     lines: list[str] = []
-    seen: set[tuple[str, str]] = set()
-    for node in variant.nodes.values():
-        if node.id not in visible:
-            continue
-        for change in node.knowledge_changes:
-            if change.subject_id not in subjects:
-                continue
-            key = (change.subject_id, change.claim)
-            if key in seen:
-                continue
+    seen: set[tuple[str, str, str]] = set()
+    for change in effective_knowledge(variant, (node.id for node in selected)):
+        key = (change.subject_id, change.stance, change.claim)
+        if key not in seen:
             seen.add(key)
             lines.append(knowledge_line(change.subject_id, change.stance == "knows", change.claim))
     return lines
@@ -488,8 +478,7 @@ def _macro_lines(variant: StoryVariant) -> list[str]:
     lines: list[str] = []
     for stage in sorted(variant.stages.values(), key=lambda item: (item.order, item.id)):
         lines.append(
-            f"阶段「{stage.title}」（第 {stage.order + 1} 段）："
-            f"{stage.summary or '摘要未定'}"
+            f"阶段「{stage.title}」（第 {stage.order + 1} 段）：{stage.summary or '摘要未定'}"
         )
     for thread in sorted(variant.threads.values(), key=lambda item: (item.order, item.id)):
         lines.append(
@@ -543,13 +532,13 @@ def assemble_story_input(
             for node in list(variant.nodes.values())[:40]
         ]
         macro = _macro_lines(variant)
-        sections = ([_section("macro", "\n".join(macro))] if macro else []) + [
+        overview_sections = ([_section("macro", "\n".join(macro))] if macro else []) + [
             _section("overview", "\n".join(lines), required=False)
         ]
         return StoryInput(
             variant_id=variant.id,
             revision=variant.revision,
-            sections=tuple(sections),
+            sections=tuple(overview_sections),
             coverage={
                 "nodes": [],
                 "clues": [],
@@ -608,17 +597,13 @@ def assemble_story_input(
             title = catalog.title(use.clue_id)
             if use.mode == "testimony":
                 speaker = use.speaker_id or DEFAULT_SPEAKER
-                testimony_lines.append(
-                    testimony_speech_line(node.title, speaker, use.presentation)
-                )
+                testimony_lines.append(testimony_speech_line(node.title, speaker, use.presentation))
             elif use.mode in ("hypothesis", "recollection", "dream"):
                 testimony_lines.append(
                     testimony_narration_line(node.title, use.mode, title, use.presentation)
                 )
             if use.expected_interpretation.strip():
-                judgement_lines.append(
-                    judgement_line(node.title, use.expected_interpretation)
-                )
+                judgement_lines.append(judgement_line(node.title, use.expected_interpretation))
 
     plan_ids = {node.id for node in nodes}
     # 读者/作者走到这一位置时已经经过的节点：只用它们做前提，不含后面的安排。
@@ -634,9 +619,7 @@ def assemble_story_input(
                 if use.clue_id != fact.clue_id:
                     continue
                 prerequisite_lines.append(
-                    prerequisite_line(
-                        fact.title, node.title, use.presentation, use.mode
-                    )
+                    prerequisite_line(fact.title, node.title, use.presentation, use.mode)
                 )
 
     knowledge_lines = _knowledge_lines(variant, nodes, ancestors)
@@ -800,9 +783,7 @@ def split_story_request(
     stopped: set[str] = {
         node_id
         for node_id in selected
-        if story_required_chars(
-            variant, scoped_request(frozen, (node_id,)), catalog=catalog
-        )
+        if story_required_chars(variant, scoped_request(frozen, (node_id,)), catalog=catalog)
         > capacity
     }
     # 依赖被停下节点的后继也必须停下：后面的内容缺了前提。
@@ -823,9 +804,7 @@ def split_story_request(
             continue
         candidate = (*current, node_id)
         if (
-            story_required_chars(
-                variant, scoped_request(frozen, candidate), catalog=catalog
-            )
+            story_required_chars(variant, scoped_request(frozen, candidate), catalog=catalog)
             <= capacity
         ):
             current = candidate
@@ -834,9 +813,7 @@ def split_story_request(
             batches.append(
                 StoryBatch(
                     current,
-                    story_required_chars(
-                        variant, scoped_request(frozen, current), catalog=catalog
-                    ),
+                    story_required_chars(variant, scoped_request(frozen, current), catalog=catalog),
                 )
             )
         current = (node_id,)
@@ -844,9 +821,7 @@ def split_story_request(
         batches.append(
             StoryBatch(
                 current,
-                story_required_chars(
-                    variant, scoped_request(frozen, current), catalog=catalog
-                ),
+                story_required_chars(variant, scoped_request(frozen, current), catalog=catalog),
             )
         )
     if not batches:

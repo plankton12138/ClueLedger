@@ -425,12 +425,35 @@ UPDATE_STORY_DESCRIPTION = (
     "set_event_time、unset_event_time、bind_prose、unbind_prose、"
     "record_assessment、remove_assessment。"
     "add_node/update_node 的 node 必须含 id、title、action，可选 stage_id、thread_ids、"
-    "change、clue_uses；add_thread 的 thread 必须含 id、title、order，可选 goal、"
+    "change、clue_uses、primary_thread_id、is_convergence、reveal_order；"
+    "add_thread 的 thread 必须含 id、title、order，可选 goal、"
     "obstacle、intended_resolution；create_clue_identity 用 temp_id 与 title，"
     "upsert_clue_plan 用同一请求里的 temp_id 或已有 clue_id，plan 只含 author_truth、"
     "intention、resolution_intent；connect 的 edge 必须含 id、from_id、to_id、kind。"
     "字段名与 read_story 返回完全一致，不要发明 description、summary 等额外字段；"
-    "一次调用只描述这一批变更，失败会返回原因，可修正后重试。"
+    "创建完整构思时先 mode=prepare 分批保存任务草稿（骨架、线索与知情细节），"
+    "按输出长度和对象完整性分批，简单身份可以合并；不要逐个节点调用。"
+    "先准备阶段、故事线、事件节点与真实依赖，再细化线索计划。"
+    "后续 prepare 携带返回的 draft_revision；它是参数，不是工具名。"
+    '最小追加样例：update_story({"mode":"prepare","draft_revision":"读取到的版本",'
+    '"operations":[{"op":"add_node","node":{"id":"n1","title":"发现","action":"发现异常",'
+    '"is_convergence":false,"knowledge_changes":[]}}]})。'
+    '整体提交样例：update_story({"mode":"commit","draft_revision":"最新版本"})。'
+    "节点字段必须放在 node 内；修正已有项用 replace_operations=[{index,operation}]，不要重发全部。"
+    "read_story(source=draft,target_id=目标ID) 精确读取待改对象及操作索引；"
+    "pending_dependencies 是阶段待办，补齐骨架后集中处理，不要逐项停下来反复读整图；"
+    "全部核对后 mode=commit 加 draft_revision 一次整体提交。"
+    "prepare 允许暂缺引用与回收安排，commit 必须完整；"
+    "不得为通过校验移动知情时点、改变结局或把 required 降为 preference。"
+    "每个节点明确主要推进的 primary_thread_id，必须属于 thread_ids；涉及多线不等于 is_convergence。"
+    "reveal_order 表示展示顺序，next 只表达推进依赖或跨线影响，不用它串联单纯的发生先后。"
+    "角色知识 source_kind=observation 可同场获知；inference 必须依赖先前事件，"
+    "并用 set_event_time 登记实际先后。"
+    "普通情节、阶段和线索安排直接记录在对应对象中，不必另行创建必需约定；只有作者明确列出的约定才需继承或确认。"
+    "模块普通文字不是必需约定的作者确认；约定逐字引用来源原文，"
+    "并填 source_ref={library_id,module_id,revision_id,entry_id,digest}。"
+    "read_story 的 confirmed_module_constraints 是应用已核验来源的作者确认约定，可以保留强度继承。"
+    "首次未获确认的 required 保留草稿，说明可在构思页集中确认并结束本轮，不降低强度。"
     "确认无需改动时改传 no_change，列出本轮读过的对象与理由，不要传空 operations。"
 )
 

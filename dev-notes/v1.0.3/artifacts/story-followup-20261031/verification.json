@@ -1,0 +1,219 @@
+{
+  "date": "2026-10-31",
+  "version": "1.0.3",
+  "environment": "isolated local test state; online model from .env",
+  "online": {
+    "workspace_id": "a52587d27df10ce9",
+    "operation_id": "op_5c1bc0ca1108",
+    "conversation_id": "c_0e3909b49738",
+    "model": "deepseek-flash",
+    "author_text": "根据现有模块生成构思",
+    "entry": "plain conversation without story surface/context",
+    "sources": {
+      "modules": 3,
+      "body_characters": 13878,
+      "storage": "data/test-tmp/story-followup-real-source.json (ignored; source bodies not copied)"
+    },
+    "final_status": "completed",
+    "final_generation": 3,
+    "finished_at": "2026-10-31T16:22:41.294+08:00",
+    "graph_counts": {
+      "stages": 4,
+      "threads": 5,
+      "nodes": 20,
+      "edges": 23,
+      "constraints": 7
+    },
+    "events": {
+      "model_request_started": 33,
+      "story_draft_prepared": 6,
+      "story_changes_committed": 1
+    },
+    "run_outcomes": [
+      {
+        "seq": 22302,
+        "at": "2026-10-31T16:15:57.178+08:00",
+        "status": "partial",
+        "generation": 1
+      },
+      {
+        "seq": 33813,
+        "at": "2026-10-31T16:22:40.649+08:00",
+        "status": "completed",
+        "generation": 3
+      }
+    ],
+    "tool_errors": [
+      {
+        "seq": 13429,
+        "at": "2026-10-31T16:13:28.241+08:00",
+        "tool": "set_task_scope",
+        "codes": [
+          "TASK_SCOPE_EVIDENCE_INVALID"
+        ]
+      },
+      {
+        "seq": 13694,
+        "at": "2026-10-31T16:13:54.236+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_CHANGE_INVALID"
+        ]
+      },
+      {
+        "seq": 13895,
+        "at": "2026-10-31T16:14:03.650+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_CHANGE_INVALID"
+        ]
+      },
+      {
+        "seq": 16131,
+        "at": "2026-10-31T16:14:54.483+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_AUTHORIZATION_CONFLICT"
+        ]
+      },
+      {
+        "seq": 16669,
+        "at": "2026-10-31T16:15:01.519+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_AUTHORIZATION_CONFLICT"
+        ]
+      },
+      {
+        "seq": 18767,
+        "at": "2026-10-31T16:15:22.958+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_DRAFT_TARGET_CONFLICT"
+        ]
+      },
+      {
+        "seq": 20055,
+        "at": "2026-10-31T16:15:33.281+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_AUTHORIZATION_CONFLICT"
+        ]
+      },
+      {
+        "seq": 21634,
+        "at": "2026-10-31T16:15:52.060+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_AUTHORIZATION_CONFLICT"
+        ]
+      },
+      {
+        "seq": 29595,
+        "at": "2026-10-31T16:21:44.053+08:00",
+        "tool": "set_task_scope",
+        "codes": [
+          "TASK_SCOPE_EVIDENCE_INVALID"
+        ]
+      },
+      {
+        "seq": 29598,
+        "at": "2026-10-31T16:21:44.054+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_ARGUMENTS_INVALID"
+        ]
+      },
+      {
+        "seq": 29825,
+        "at": "2026-10-31T16:21:50.475+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_DRAFT_CONFLICT"
+        ]
+      },
+      {
+        "seq": 32062,
+        "at": "2026-10-31T16:22:16.150+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_DRAFT_CONFLICT"
+        ]
+      },
+      {
+        "seq": 32214,
+        "at": "2026-10-31T16:22:24.239+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_DRAFT_CONFLICT"
+        ]
+      },
+      {
+        "seq": 32484,
+        "at": "2026-10-31T16:22:29.993+08:00",
+        "tool": "update_story",
+        "codes": [
+          "STORY_DRAFT_CONFLICT"
+        ]
+      }
+    ],
+    "interpretation": "Initial run paused with source constraints; test author confirmed 7 effective constraints; restart recovery fixed, same operation continued and committed once. Not an uninterrupted first-pass success.",
+    "latest_followups_after_online_run": [
+      "resume checkpoint prompt",
+      "pure structure scope tool removal",
+      "ordinary arrangements not required constraints prompt",
+      "stop at first source authorization conflict",
+      "viewport resize guard"
+    ]
+  },
+  "checks": {
+    "backend": {
+      "command": "uv run pytest tests/workspace/test_story_remediation.py tests/workspace/test_story_routing.py tests/workspace/test_story_context.py tests/workspace/test_task_intent.py -q",
+      "passed": 70,
+      "warnings": [
+        "existing Starlette/httpx deprecation"
+      ]
+    },
+    "frontend": {
+      "command": "npm test -- story chatMessages",
+      "passed": 52
+    },
+    "typescript": "passed",
+    "ruff": "passed",
+    "mypy": "6 source files passed",
+    "browser": {
+      "command": "playwright test e2e/story-structure.spec.ts --project=workspace",
+      "passed": 13,
+      "geometry_matrix": {
+        "width": [
+          1440,
+          1024,
+          390
+        ],
+        "font_scale": [
+          1,
+          1.5,
+          2
+        ]
+      }
+    },
+    "build": "passed; existing chunk-size warning",
+    "final_scroll_followup": {
+      "passed": 2,
+      "overlaps_browser_suite": true,
+      "covers": [
+        "resizing viewport left position",
+        "geometry/font matrix",
+        "long chain scroll and zoom"
+      ]
+    }
+  },
+  "limits": [
+    "No full backend run",
+    "No package/release validation",
+    "No author literary-quality signoff",
+    "No complete entry matrix/source-change/revoke matrix in this followup",
+    "Online real-size completion used author confirmation and continuation; latest followups have deterministic coverage only"
+  ],
+  "original_workspace": "169171e19631ac5e; unchanged by this implementation/evaluation"
+}

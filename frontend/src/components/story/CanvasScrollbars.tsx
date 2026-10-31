@@ -44,6 +44,8 @@ export default function CanvasScrollbars({ nodes }: { nodes: Node[] }) {
   return <>
     <div ref={horizontal} className="story-scrollbar story-scrollbar-x" role="region" aria-label="画布横向滚动" tabIndex={0}
       onScroll={event => {
+        // 窗口变化时浏览器会先压缩滚动范围，再通知尺寸观察器；不把自动截断当作拖动。
+        if (Math.abs(event.currentTarget.clientWidth - size.width) > 1) return;
         const current = flow.getViewport();
         const next = -limits.current.left - event.currentTarget.scrollLeft;
         // 同步视口触发的原生 scroll 事件不再回写，保留亚像素位置，避免反馈循环。
@@ -53,6 +55,7 @@ export default function CanvasScrollbars({ nodes }: { nodes: Node[] }) {
     </div>
     <div ref={vertical} className="story-scrollbar story-scrollbar-y" role="region" aria-label="画布纵向滚动" tabIndex={0}
       onScroll={event => {
+        if (Math.abs(event.currentTarget.clientHeight - size.height) > 1) return;
         const current = flow.getViewport();
         const next = -limits.current.top - event.currentTarget.scrollTop;
         if (Math.abs(next - current.y) > 1) void flow.setViewport({ ...current, y: next });

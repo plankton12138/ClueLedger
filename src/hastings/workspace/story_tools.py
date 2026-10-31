@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
 from pydantic import ValidationError
 
+from hastings.library.modules import ModuleLibrary
 from hastings.prompts import tools as prompt_tools
 from hastings.prompts.tools import (
     READ_STORY_DESCRIPTION,
@@ -30,23 +31,32 @@ from hastings.prompts.tools import (
     UPDATE_STORY_DESCRIPTION,
     UPDATE_STORY_GUIDELINES,
 )
+from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
+from hastings.workspace.module_assembly import ModuleRef
 from hastings.workspace.story_authorization import (
     authorize_change,
     blocks_writes,
     build_authority,
     validate_model_change,
 )
-from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.story_clue_catalog import StoryClueCatalog
 from hastings.workspace.story_clue_commit import prepare_clue_joint
+from hastings.workspace.story_constraint_sources import ConstraintSources
 from hastings.workspace.story_context import StoryContextSnapshot
+from hastings.workspace.story_drafts import (
+    StoryDraftStore,
+    candidate_data,
+    check_candidate,
+    validation_issues,
+)
 from hastings.workspace.story_models import (
     StoryChangeSet,
     StoryVariant,
 )
 from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, StoryStore, new_id
+from hastings.workspace.story_structure import structure_diagnostics
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult
 
@@ -79,6 +89,8 @@ class StoryToolScope:
     operation_id: str = ""
     generation: int = 0
     workspace: Workspace | None = None
+    library: ModuleLibrary | None = None
+    module_refs: tuple[ModuleRef, ...] = ()
     store: StoryStore = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -126,18 +138,7 @@ def _node_summary(variant: StoryVariant, node_id: str) -> dict[str, Any] | None:
     node = variant.nodes.get(node_id)
     if node is None:
         return None
-    return {
-        "id": node.id,
-        "title": node.title,
-        "action": node.action,
-        "change": node.change,
-        "stage_id": node.stage_id,
-        "threads": [
-            variant.threads[item].title for item in node.thread_ids if item in variant.threads
-        ],
-        "clues": [use.clue_id for use in node.clue_uses],
-        "time_note": node.time_note,
-    }
+    return node.model_dump(mode="json")
 
 
 _KIND_LABELS = {
@@ -206,6 +207,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
 
     #: 本轮实际读过的对象与修订；no_change 只能用这里出现过的对象作依据。
     read_state: dict[str, Any] = {"revision": "", "objects": set()}
+    drafts = StoryDraftStore(scope.state_root, scope.operation_id, scope.frozen.variant_id)
 
     async def read_story(
         tool_call_id: str,
@@ -214,6 +216,101 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
         on_update: Any = None,
     ) -> AgentToolResult:
         del tool_call_id, signal, on_update
+        if arguments.get("source") == "draft":
+            draft = drafts.read()
+            if draft is None:
+                return _json({"draft": None, "note": "本任务尚无草稿"})
+            variant = _variant(scope)
+            start = arguments.get("operation_start", 0)
+            if type(start) is not int or start < 0:
+                raise WorkspaceError(
+                    code="STORY_SCOPE_INVALID",
+                    where="story.read_story",
+                    why="操作起点不是非负整数",
+                    fix="使用 operation_start 指定草稿操作索引",
+                )
+            target_id = arguments.get("target_id")
+            if target_id:
+                matches = [
+                    i
+                    for i, row in enumerate(draft["operations"])
+                    if any(isinstance(v, dict) and v.get("id") == target_id for v in row.values())
+                    or row.get("clue_id") == target_id
+                    or row.get("temp_id") == target_id
+                ]
+                return _json(
+                    {
+                        "draft_revision": draft["digest"],
+                        "operations": [
+                            {"index": i, "operation": draft["operations"][i]} for i in matches
+                        ],
+                        "coverage": {"target_id": target_id, "complete": True},
+                    }
+                )
+            operations = draft["operations"][start : start + 12]
+            draft_payload: dict[str, Any] = {
+                "draft_revision": draft["digest"],
+                "base_revision": draft["base_revision"],
+                "author_confirmed_constraint_count": len(draft.get("confirmed_constraints", [])),
+                "operations": [
+                    {"index": start + i, "operation": row} for i, row in enumerate(operations)
+                ],
+                "operation_start": start,
+                "operation_total": len(draft["operations"]),
+                "next_operation_start": start + len(operations)
+                if start + len(operations) < len(draft["operations"])
+                else None,
+                "coverage": {
+                    "operations_complete": start == 0
+                    and len(operations) == len(draft["operations"])
+                },
+                "note": "这是任务草稿，尚未整体提交；按操作 index 用 replace_operations 局部替换。",
+            }
+            if draft["committed"]:
+                return _json({"committed": True, "receipt": draft["receipt"]})
+            if draft["base_revision"] != variant.revision:
+                return _json(
+                    {**draft_payload, "conflict": True, "note": "正式结构已变化，草稿尚未提交"}
+                )
+            change = StoryChangeSet(
+                id=draft["change_id"],
+                base_revision=variant.revision,
+                operations=draft["operations"],
+            )
+            try:
+                data = candidate_data(variant, change)
+            except WorkspaceError as exc:
+                return _json(
+                    {
+                        **draft_payload,
+                        "issues": [{"code": exc.code, "message": exc.why, **exc.details}],
+                    }
+                )
+            wanted = arguments.get("node_ids") or []
+            shown = (
+                {key: value for key, value in data["nodes"].items() if key in wanted}
+                if wanted
+                else {}
+            )
+            draft_payload.update(
+                {
+                    "candidate": {**data, "nodes": shown},
+                    "node_index": [
+                        {
+                            "id": n["id"],
+                            "title": n["title"],
+                            "stage_id": n["stage_id"],
+                            "primary_thread_id": n["primary_thread_id"],
+                        }
+                        for n in data["nodes"].values()
+                    ],
+                    "issues": check_candidate(data),
+                }
+            )
+            draft_payload["coverage"]["node_ids"] = list(shown)
+            draft_payload["coverage"]["nodes_complete"] = len(shown) == len(data["nodes"])
+            return _json(draft_payload)
+
         variant = _variant(scope)
         wanted = arguments.get("node_ids") or []
         if not isinstance(wanted, list):
@@ -237,7 +334,6 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             read_state["revision"] = variant.revision
             read_state["objects"] = set()
         read_objects = cast(set[tuple[str, str]], read_state["objects"])
-        read_objects.update(("node", node_id) for node_id in node_ids)
         # 返回内容里始终带有全部线索与约定；它们也算实际读到。
         catalog = _catalog(scope, variant)
         read_objects.update(("clue", fact.clue_id) for fact in catalog)
@@ -270,6 +366,12 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 )
             ],
             "nodes": nodes,
+            "event_times": [item.model_dump(mode="json") for item in variant.event_times],
+            "coverage": {
+                "node_ids": node_ids,
+                "total": len(variant.nodes),
+                "complete": len(node_ids) == len(variant.nodes),
+            },
             "variants": [
                 {"id": item.id, "name": item.name, "revision": item.revision}
                 for item in (document.variants.values() if document else ())
@@ -287,32 +389,42 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 }
                 for fact in catalog
             ],
+            "confirmed_module_constraints": list(
+                ConstraintSources(scope.state_root)
+                .verified(scope.library, scope.module_refs)
+                .values()
+            ),
             "constraints": [
-                {
-                    "id": constraint.id,
-                    "text": constraint.text,
-                    "strength": constraint.strength,
-                    "scope": {
-                        "kind": constraint.scope.kind,
-                        "target_id": constraint.scope.target_id,
-                    },
-                }
-                for constraint in variant.constraints.values()
+                constraint.model_dump(mode="json") for constraint in variant.constraints.values()
             ],
-            "edges": [
-                {"id": edge.id, "from_id": edge.from_id, "to_id": edge.to_id, "kind": edge.kind}
-                for edge in variant.edges.values()
-            ],
+            "edges": [edge.model_dump(mode="json") for edge in variant.edges.values()],
             "note": (
                 "这些是当前方案的全部结构；改结构用 update_story，正文用 write/edit。"
                 "不要凭标题猜 ID，也不要把 author_truth 写进角色的台词。"
             ),
         }
-        size = len(json.dumps(payload, ensure_ascii=False))
-        if size > _READ_LIMIT:
-            payload["nodes"] = nodes[:20]
-            payload["truncated"] = True
-            payload["note"] = "节点较多，这里只列前 20 个；用 node_ids 指定要看的节点再看其余部分。"
+        if not wanted and len(json.dumps(payload, ensure_ascii=False)) > _READ_LIMIT:
+            saved_nodes: list[dict[str, Any]] = []
+            used = 0
+            for node in nodes:
+                size = len(json.dumps(node, ensure_ascii=False))
+                if saved_nodes and used + size > _READ_LIMIT:
+                    break
+                saved_nodes.append(node)
+                used += size
+            payload["nodes"] = saved_nodes
+            payload["truncated"] = len(saved_nodes) < len(nodes)
+            payload["coverage"] = {
+                "node_ids": [n["id"] for n in saved_nodes],
+                "total": len(variant.nodes),
+                "complete": len(saved_nodes) == len(variant.nodes),
+            }
+            payload["remaining_node_ids"] = [n["id"] for n in nodes[len(saved_nodes) :]]
+            payload["note"] = (
+                "节点按完整对象分批返回；用 node_ids 精确读取剩余节点。"
+                "不要把 author_truth 写进角色台词。"
+            )
+        read_objects.update(("node", n["id"]) for n in payload["nodes"])
         return _json(payload)
 
     def record_no_change(raw: Any) -> AgentToolResult:
@@ -449,7 +561,240 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 fix="作者明确要求修改时，从构思里选定节点再发起一轮",
             )
         _require_write_state(scope, "story.update")
-        raw_operations = arguments.get("operations")
+        if "_raw_arguments" in arguments:
+            raw = str(arguments["_raw_arguments"])
+            try:
+                json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise WorkspaceError(
+                    code="STORY_ARGUMENTS_INVALID",
+                    where=f"构思提交参数第 {exc.colno} 列",
+                    why=f"JSON 语法无效（{exc.msg}）",
+                    fix="核对该位置的逗号、引号与括号后重新提交当前批次；保留草稿，减少单批操作",
+                    details={
+                        "offset": exc.pos,
+                        "line": exc.lineno,
+                        "column": exc.colno,
+                        "parser_message": exc.msg,
+                        "argument_chars": len(raw),
+                        "context": raw[max(0, exc.pos - 60) : exc.pos + 60],
+                    },
+                ) from exc
+            raise WorkspaceError(
+                code="STORY_ARGUMENTS_INVALID",
+                where="story.update",
+                why="工具参数没有解析成对象",
+                fix="按 schema 提交一个 JSON 对象",
+            )
+        mode = arguments.get("mode", "commit")
+        if mode not in ("prepare", "commit"):
+            raise WorkspaceError(
+                code="STORY_CHANGE_INVALID",
+                where="story.update.mode",
+                why="不支持的提交模式",
+                fix="使用 prepare 或 commit",
+            )
+        draft = drafts.read()
+        if mode == "prepare":
+            if not scope.operation_id:
+                raise WorkspaceError(
+                    code="STORY_DRAFT_INVALID",
+                    where="story.draft",
+                    why="本轮缺少任务标识",
+                    fix="从构思界面重新发起任务",
+                )
+            raw_rows = arguments.get("operations", [])
+            replacements_raw = arguments.get("replace_operations", [])
+            if not isinstance(raw_rows, list) or not isinstance(replacements_raw, list):
+                raise WorkspaceError(
+                    code="STORY_CHANGE_INVALID",
+                    where="story.draft",
+                    why="草稿操作不是数组",
+                    fix="按 operations 与 replace_operations 数组提交",
+                )
+            replacements: dict[int, Any] = {}
+            for row in replacements_raw:
+                if (
+                    not isinstance(row, dict)
+                    or type(row.get("index")) is not int
+                    or not isinstance(row.get("operation"), dict)
+                    or row["index"] in replacements
+                ):
+                    raise WorkspaceError(
+                        code="STORY_CHANGE_INVALID",
+                        where="story.draft.replace_operations",
+                        why="替换项缺少唯一整数 index 或 operation",
+                        fix="每项指定一个已有操作索引及完整替换操作",
+                    )
+                replacements[row["index"]] = row["operation"]
+            for patch in arguments.get("node_patches", []):
+                node_id = patch.get("node_id")
+                fields = patch.get("fields", {})
+                if not isinstance(fields, dict) or "id" in fields:
+                    raise WorkspaceError(
+                        code="STORY_CHANGE_INVALID",
+                        where="story.draft",
+                        why="节点补丁不能修改身份",
+                        fix="只提交待修改字段",
+                    )
+                matches = [
+                    (i, row)
+                    for i, row in enumerate((draft or {}).get("operations", []))
+                    if isinstance(row.get("node"), dict) and row["node"]["id"] == node_id
+                ]
+                if len(matches) != 1:
+                    raise WorkspaceError(
+                        code="STORY_DRAFT_TARGET_CONFLICT",
+                        where="story.draft",
+                        why="节点补丁没有唯一草稿目标",
+                        fix="用 target_id 读取目标后核对",
+                    )
+                index, original = matches[0]
+                if index in replacements:
+                    raise WorkspaceError(
+                        code="STORY_CHANGE_INVALID",
+                        where="story.draft",
+                        why="同一对象重复修正",
+                        fix="每批只给同一节点一个补丁",
+                    )
+                replacements[index] = {**original, "node": {**original["node"], **fields}}
+            if not raw_rows and not replacements:
+                raise WorkspaceError(
+                    code="STORY_CHANGE_INVALID",
+                    where="story.draft",
+                    why="没有草稿变更",
+                    fix="提供新增 operations 或局部 replace_operations",
+                )
+            with scope.decision_guard() if scope.decision_guard else nullcontext():
+                _require_write_state(scope, "story.draft")
+                try:
+                    draft = drafts.prepare(
+                        variant=_variant(scope),
+                        operation_id=scope.operation_id,
+                        generation=scope.generation,
+                        operations=raw_rows,
+                        replacements=replacements,
+                        expected=str(arguments.get("draft_revision") or ""),
+                        module_refs=scope.module_refs,
+                    )
+                except ValidationError as exc:
+                    issues = validation_issues(exc, raw_rows)
+                    raise WorkspaceError(
+                        code="STORY_CHANGE_INVALID",
+                        where="story.draft",
+                        why="草稿字段校验未通过",
+                        fix="按问题列表局部修正，已有草稿保留",
+                        details={"issues": issues},
+                    ) from exc
+            if scope.record:
+                scope.record(
+                    "story_draft_prepared",
+                    {"draft_revision": draft["digest"], "operations": len(draft["operations"])},
+                )
+            change = StoryChangeSet(
+                id=draft["change_id"],
+                base_revision=draft["base_revision"],
+                operations=draft["operations"],
+            )
+            data = candidate_data(_variant(scope), change)
+            issues = check_candidate(data)
+            return _json(
+                {
+                    "prepared": True,
+                    "committed": False,
+                    "draft_revision": draft["digest"],
+                    "operations": len(change.operations),
+                    "issues": [],
+                    "pending_dependencies": issues,
+                    "next_step": "先补齐事件节点"
+                    if not data.get("nodes")
+                    else "补齐真实推进关系"
+                    if len(data["nodes"]) > 1 and not data.get("edges")
+                    else "集中补齐待办后检查并提交"
+                    if issues
+                    else "核对并整体提交",
+                    "note": (
+                        "本批已准备；pending_dependencies 为尚待补齐的安排，不是本批字段错误。"
+                        "正式提交会执行完整校验。"
+                    ),
+                }
+            )
+        use_draft = arguments.get("draft_revision") is not None
+        if use_draft:
+            if draft is None or arguments["draft_revision"] != draft["digest"]:
+                raise WorkspaceError(
+                    code="STORY_DRAFT_CONFLICT",
+                    where="story.draft",
+                    why="草稿版本不匹配",
+                    fix="先 read_story(source=draft) 读取当前草稿",
+                )
+            if (
+                arguments.get("operations")
+                or arguments.get("replace_operations")
+                or arguments.get("node_patches")
+                or arguments.get("no_change")
+            ):
+                raise WorkspaceError(
+                    code="STORY_CHANGE_INVALID",
+                    where="story.draft",
+                    why="草稿提交混入了其他操作",
+                    fix="先 prepare 修改草稿，提交时只传 draft_revision 与 mode",
+                )
+            if draft.get("committed"):
+                return _json(draft["receipt"])
+            if draft.get("module_refs", []) != [m.view() for m in scope.module_refs]:
+                raise WorkspaceError(
+                    code="STORY_SOURCE_CONFLICT",
+                    where="story.draft",
+                    why="草稿的冻结模块版本与本轮不一致",
+                    fix="保留草稿，核对来源后重新发起任务",
+                )
+            snapshot = scope.store.read()
+            previous = (
+                snapshot.document.changes.get(draft["change_id"]) if snapshot.document else None
+            )
+            if previous and previous.request_key == f"draft:{draft['change_id']}:{draft['digest']}":
+                result = {
+                    "ok": True,
+                    "variant_id": draft["variant_id"],
+                    "revision": previous.revision,
+                    "change_id": previous.change_id,
+                    "changed": sorted(previous.touched),
+                    "note": "草稿已经提交",
+                }
+                if scope.record is not None:
+                    scope.record(
+                        "story_changes_committed",
+                        {
+                            "variant_id": draft["variant_id"],
+                            "base_revision": previous.base_revision,
+                            "revision": previous.revision,
+                            "change_id": previous.change_id,
+                            "operations": len(previous.operations),
+                            "operation_types": [op.op for op in previous.operations],
+                            "changed": sorted(previous.touched),
+                            "labels": [],
+                            "operation_id": scope.operation_id,
+                            "generation": scope.generation,
+                        },
+                    )
+                drafts.mark_committed(draft["digest"], result)
+                return _json(result)
+            if draft["base_revision"] != _variant(scope).revision:
+                raise WorkspaceError(
+                    code="STORY_DRAFT_CONFLICT",
+                    where="story.draft",
+                    why="正式结构在准备草稿后已变化",
+                    fix="读取正式结构，在新任务中核对修改",
+                )
+        elif draft and not draft.get("committed"):
+            raise WorkspaceError(
+                code="STORY_DRAFT_CONFLICT",
+                where="story.draft",
+                why="任务已有未提交草稿",
+                fix="先 prepare 局部修正，再用 draft_revision 整体提交，不能绕过草稿单独写入",
+            )
+        raw_operations = draft["operations"] if use_draft and draft else arguments.get("operations")
         raw_no_change = arguments.get("no_change")
         if raw_no_change is not None:
             if isinstance(raw_operations, list) and raw_operations:
@@ -470,7 +815,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
         variant = _variant(scope)
         try:
             change = StoryChangeSet(
-                id=new_id("agent"),
+                id=draft["change_id"] if use_draft and draft else new_id("agent"),
                 base_revision=variant.revision,
                 operations=raw_operations,
                 requested_scope=(scope.author_text or "")[:500],
@@ -478,15 +823,26 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 generation=scope.generation,
             )
         except ValidationError as exc:
-            first = exc.errors()[0]
-            where = ".".join(str(part) for part in first.get("loc", ()))
+            issues = validation_issues(exc, raw_operations)
+            first = issues[0]
             raise WorkspaceError(
                 code="STORY_CHANGE_INVALID",
-                where=f"story.update:{where}",
-                why=str(first.get("msg") or "变更字段不合法"),
-                fix="按工具参数的字段名与类型重新提交；先用 read_story 确认现有 ID",
-                details={"field": where},
+                where=f"story.update:{first['field']}",
+                why=first["message"],
+                fix=first["suggestion"],
+                details={"issues": issues},
             ) from exc
+
+        data = candidate_data(variant, change)
+        issues = check_candidate(data)
+        if issues:
+            raise WorkspaceError(
+                code="STORY_GRAPH_INVALID",
+                where="story.change",
+                why=issues[0]["message"],
+                fix=issues[0]["suggestion"],
+                details={"issues": issues},
+            )
 
         # 先按作者本轮的对象范围收口，再检查真相、约定与裁决这些不能由模型自行扩大的部分。
         # 作者确认的候选可以扩展可修改对象，但它里面的命令不构成真相授权。
@@ -500,7 +856,22 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             candidate_text=scope.candidate_text,
         )
 
-        validate_model_change(variant, change, scope.author_text, catalog=catalog)
+        for operation in change.operations:
+            constraint = getattr(operation, "constraint", None)
+            if constraint is not None and constraint.source_ref is not None:
+                ConstraintSources.verify(constraint, scope.library, scope.module_refs)
+        validate_model_change(
+            variant,
+            change,
+            scope.author_text,
+            catalog=catalog,
+            confirmed_sources=ConstraintSources(scope.state_root).verified(
+                scope.library, scope.module_refs
+            ),
+            confirmed_constraints=frozenset(draft.get("confirmed_constraints", []))
+            if use_draft and draft
+            else frozenset(),
+        )
 
         guard = scope.guard
         if guard is not None:
@@ -509,14 +880,25 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
         def require_eligible(operation_id: str, generation: int) -> None:
             if guard is not None:
                 guard()
+            if use_draft and draft:
+                latest = drafts.read()
+                if latest is None or latest["digest"] != draft["digest"]:
+                    raise WorkspaceError(
+                        code="STORY_DRAFT_CONFLICT",
+                        where="story.commit",
+                        why="草稿在提交前已变化",
+                        fix="读取最新草稿并重新核对",
+                    )
 
         ledger_revision = ClueLedgerStore(scope.state_root).read().revision
         receipt = scope.store.commit_change(
             variant_id=variant.id,
             change=change,
-            request_key=f"agent:{change.id}:{variant.revision}",
+            request_key=f"draft:{change.id}:{draft['digest']}"
+            if use_draft and draft
+            else f"agent:{change.id}:{variant.revision}",
             # 提交决定落在锁内再查一次：读结构到写盘之间可能刚好暂停。
-            require_eligible=require_eligible if guard is not None else None,
+            require_eligible=require_eligible if guard is not None or use_draft else None,
             decision_guard=scope.decision_guard,
             prepare_joint=prepare_clue_joint(
                 scope.state_root,
@@ -538,6 +920,7 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             "change_id": receipt.change_id,
             "changed": changed,
             "labels": labels,
+            "structure_issues": structure_diagnostics(after_variant) if after_variant else [],
             "note": "结构已经保存；正文改动仍要另行写入正文文件。",
         }
         if scope.record is not None:
@@ -558,6 +941,8 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                     "generation": scope.generation,
                 },
             )
+        if use_draft and draft:
+            drafts.mark_committed(draft["digest"], result)
         return _json(result)
 
     tools = [
@@ -568,11 +953,25 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             parameters={
                 "type": "object",
                 "properties": {
+                    "target_id": {
+                        "type": "string",
+                        "description": "草稿中按稳定对象 ID 精确读取操作及索引，不必遍历分页",
+                    },
+                    "operation_start": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "草稿操作分页起点；每页 12 项，返回原始 index",
+                    },
+                    "source": {
+                        "type": "string",
+                        "enum": ["saved", "draft"],
+                        "description": "saved 正式构思；draft 本任务草稿及操作索引",
+                    },
                     "node_ids": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": (prompt_tools.READ_STORY_NODE_IDS_PARAM_DESCRIPTION),
-                    }
+                    },
                 },
                 "additionalProperties": False,
             },
@@ -594,6 +993,38 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 parameters={
                     "type": "object",
                     "properties": {
+                        "mode": {"type": "string", "enum": ["prepare", "commit"]},
+                        "draft_revision": {
+                            "type": "string",
+                            "description": "已有草稿的精确版本；prepare 和 commit 均需携带",
+                        },
+                        "node_patches": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "node_id": {"type": "string"},
+                                    "fields": {
+                                        "type": "object",
+                                        "description": "待修改节点字段，例如 stage_id；不可修改 id",
+                                    },
+                                },
+                                "required": ["node_id", "fields"],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "replace_operations": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "index": {"type": "integer", "minimum": 0},
+                                    "operation": {"type": "object"},
+                                },
+                                "required": ["index", "operation"],
+                                "additionalProperties": False,
+                            },
+                        },
                         "operations": {
                             "type": "array",
                             "items": {"type": "object"},
@@ -641,4 +1072,36 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             parameters = cast(dict[str, Any], tool.parameters)
             parameters["$defs"] = schema["$defs"]
             parameters["properties"]["operations"] = schema["properties"]["operations"]
-    return tools
+            parameters["properties"]["replace_operations"]["items"]["properties"]["operation"] = (
+                schema["properties"]["operations"]["items"]
+            )
+    from dataclasses import replace
+
+    def with_diagnostics(tool: AgentTool) -> AgentTool:
+        execute = tool.execute_fn
+
+        async def wrapped(*args: Any, **kwargs: Any) -> AgentToolResult:
+            try:
+                return await execute(*args, **kwargs)
+            except WorkspaceError as exc:
+
+                class DiagnosticError(WorkspaceError):
+                    def __str__(self) -> str:
+                        return json.dumps(
+                            {
+                                "ok": False,
+                                "code": self.code,
+                                "summary": self.message,
+                                **self.details,
+                            },
+                            ensure_ascii=False,
+                            default=str,
+                        )
+
+                raise DiagnosticError(
+                    code=exc.code, where=exc.where, why=exc.why, fix=exc.fix, details=exc.details
+                ) from exc
+
+        return replace(tool, execute_fn=wrapped)
+
+    return [with_diagnostics(tool) for tool in tools]

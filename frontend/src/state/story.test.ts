@@ -37,8 +37,8 @@ const GRAPH = {
   revision: "rev_1",
   stages: [],
   nodes: [
-    { id: "n1", title: "抵达", action: "走进旅馆", change: null, stage_id: null, threads: [], clues: ["c1"], time_note: "" },
-    { id: "n2", title: "对质", action: "他问管家", change: null, stage_id: null, threads: [], clues: [], time_note: "" },
+    { id: "n1", title: "抵达", action: "走进旅馆", change: null, stage_id: null, thread_ids: [], clue_ids: ["c1"], time_note: "" },
+    { id: "n2", title: "对质", action: "他问管家", change: null, stage_id: null, thread_ids: [], clue_ids: [], time_note: "" },
   ],
   edges: [{ id: "e1", from_id: "n1", to_id: "n2", kind: "next" as const, reason: "" }],
   threads: [],
@@ -91,6 +91,30 @@ describe("构思状态", () => {
     expect(state.variantId).toBe("main");
     expect(state.graph?.nodes).toHaveLength(2);
     expect(api.readStoryVariant).toHaveBeenCalledWith("w1", "main");
+  });
+
+  it("同一本再次加载后，首次迟到的失败不覆盖新图", async () => {
+    let reject: (error: Error) => void = () => undefined;
+    api.listStoryVariants.mockImplementationOnce(() => new Promise((_, no) => { reject = no; }));
+    const old = useStoryStore.getState().load("w1");
+    await useStoryStore.getState().load("w1");
+    reject(new Error("旧请求失败"));
+    await old;
+    expect(useStoryStore.getState().graph).toEqual(GRAPH);
+    expect(useStoryStore.getState().error).toBeNull();
+  });
+
+  it("不同作品具有相同节点 ID 时，迟到详情不覆盖当前作品", async () => {
+    await useStoryStore.getState().load("w1");
+    let resolve: (value: unknown) => void = () => undefined;
+    api.readStoryNode.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    const old = useStoryStore.getState().selectNode("n1");
+    await useStoryStore.getState().load("w2");
+    const current = { ...DETAIL, node: { ...DETAIL.node, title: "第二本节点" } };
+    api.readStoryNode.mockResolvedValueOnce(current);
+    await useStoryStore.getState().selectNode("n1");
+    resolve(DETAIL); await old;
+    expect(useStoryStore.getState().detail?.node.title).toBe("第二本节点");
   });
 
   it("选中节点读详情；切走后迟到的详情不覆盖", async () => {

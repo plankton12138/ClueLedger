@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-31",
+  "version": "1.0.3",
+  "status": "investigation complete; production fixes not implemented",
+  "source_log": "C:\\Users\\plankton\\.hastings\\workspaces\\101020a266ebc4d4\\c_6a27cc2d4248.jsonl",
+  "source_log_sha256": "38ac2f3f714a52a856b9152348f97de890ac524783767511e22aaa580ba56210",
+  "source_last_seq": 16923,
+  "workspace_id": "101020a266ebc4d4",
+  "conversation_id": "c_6a27cc2d4248",
+  "operation_id": "op_b2b12365a928",
+  "turn_id": "t_851ac3a0",
+  "model": "deepseek-flash",
+  "invalid_tool": {
+    "seq": 9204,
+    "at": "2026-10-31T16:47:14.264+08:00",
+    "tool": "draft_revision",
+    "ok": false,
+    "summary": "Tool draft_revision not found{\"execution_budget\": {\"remaining_model_rounds\": 18, \"reserved_for_commit_and_reply\": 3}}",
+    "duration_ms": 0,
+    "actual_arguments": {},
+    "result_detail": "b01921ca039d48fda9797a543ac60377"
+  },
+  "run_outcomes": [
+    {
+      "at": "2026-10-31T16:49:41.869+08:00",
+      "seq": 16923,
+      "status": "completed",
+      "generation": 1
+    }
+  ],
+  "counts": {
+    "model_requests": 16,
+    "tool_calls": 17,
+    "tool_failures": 5,
+    "formal_story_commits": 1
+  },
+  "final_graph_counts": {
+    "stages": 4,
+    "threads": 6,
+    "nodes": 20,
+    "edges": 21
+  },
+  "failures": [
+    {
+      "seq": 9204,
+      "at": "2026-10-31T16:47:14.264+08:00",
+      "tool": "draft_revision",
+      "ok": false,
+      "input_detail": null,
+      "result_detail": "b01921ca039d48fda9797a543ac60377",
+      "summary": "Tool draft_revision not found{\"execution_budget\": {\"remaining_model_rounds\": 18, \"reserved_for_commit_and_reply\": 3}}"
+    },
+    {
+      "seq": 13421,
+      "at": "2026-10-31T16:48:08.633+08:00",
+      "tool": "update_story",
+      "ok": false,
+      "input_detail": null,
+      "result_detail": "2e99aa190bea40a88a73925b5dedbe08",
+      "summary": "[STORY_CHANGE_INVALID] story.draft：草稿字段校验未通过。建议：按问题列表局部修正，已有草稿保留 {\"ok\": false, \"code\": \"STORY_CHANGE_INVALID\", \"issues\": [{\"code\": \"STORY_CHANGE_INVALID\", \"operation_index\": 38, \"object_id\": \"\", \"field\": \"operations.38\", \"related_ids\": [], "
+    },
+    {
+      "seq": 14479,
+      "at": "2026-10-31T16:48:28.586+08:00",
+      "tool": "update_story",
+      "ok": false,
+      "input_detail": null,
+      "result_detail": "26ab5587c5db4b97b17829669f00e533",
+      "summary": "[STORY_CHANGE_INVALID] story.draft：草稿字段校验未通过。建议：按问题列表局部修正，已有草稿保留 {\"ok\": false, \"code\": \"STORY_CHANGE_INVALID\", \"issues\": [{\"code\": \"STORY_CHANGE_INVALID\", \"operation_index\": 42, \"object_id\": \"\", \"field\": \"operations.42.add_node.node.clue_us"
+    },
+    {
+      "seq": 15714,
+      "at": "2026-10-31T16:49:04.823+08:00",
+      "tool": "update_story",
+      "ok": false,
+      "input_detail": null,
+      "result_detail": "2958bba001bc45a7aa57fe367b5f1fd4",
+      "summary": "[STORY_CHANGE_INVALID] story.draft：草稿字段校验未通过。建议：按问题列表局部修正，已有草稿保留 {\"ok\": false, \"code\": \"STORY_CHANGE_INVALID\", \"issues\": [{\"code\": \"STORY_CHANGE_INVALID\", \"operation_index\": 71, \"object_id\": \"\", \"field\": \"operations.71.add_node.is_convergen"
+    },
+    {
+      "seq": 15771,
+      "at": "2026-10-31T16:49:17.549+08:00",
+      "tool": "update_story",
+      "ok": false,
+      "input_detail": null,
+      "result_detail": "dec88705b93448dfac0ba34c9e1ec5d0",
+      "summary": "[STORY_CHANGE_INVALID] story.draft：草稿字段校验未通过。建议：按问题列表局部修正，已有草稿保留 {\"ok\": false, \"code\": \"STORY_CHANGE_INVALID\", \"issues\": [{\"code\": \"STORY_CHANGE_INVALID\", \"operation_index\": 68, \"object_id\": \"\", \"field\": \"operations.68.add_node.knowledge_ch"
+    }
+  ],
+  "probes": {
+    "drag": "drag-evidence.json",
+    "tool_dispatch": "dispatch-evidence.json",
+    "method": "isolated browser and scripted tool injection; no online/local model evaluated"
+  },
+  "known_limits": [
+    "Original provider raw stream not captured; cannot attribute invalid name to specific upstream stage",
+    "No production code/data changes",
+    "No full tests or online model calls in this investigation"
+  ],
+  "source_pointers": {
+    "drag": "frontend/src/components/story/StoryCanvas.tsx:70,77,83,130-139",
+    "layout": "frontend/src/components/story/storyLayout.ts:35,45,58",
+    "unknown_tool": "src/tau_agent/loop.py:308-310",
+    "budget_append": "src/hastings/workspace/agent.py:3406-3413",
+    "text_join": "src/tau_agent/tools.py:41-42",
+    "ui_summary": "src/hastings/workspace/service.py:3500",
+    "render": "frontend/src/components/chat/ToolActivity.tsx:66",
+    "issue_lookup": "src/hastings/workspace/story_drafts.py:19-26"
+  }
+}

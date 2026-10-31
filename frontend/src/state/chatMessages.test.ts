@@ -20,6 +20,7 @@ import {
   publicText,
   hasTaskCard,
   hasSavedStoryChanges,
+  hasLaterStorySubmission,
   taskCardFacts,
   type ChatTurn,
 } from "./chatMessages";
@@ -47,6 +48,25 @@ it("结构提交收据表示已保存，正文无改动与助手声称保存不�
     labels: ["发现", "湿手套"],
   }));
   expect(hasSavedStoryChanges(buildTurns(rows)[0])).toBe(true);
+});
+
+it("提交前校验保留原失败，后续正式保存完成后才可折叠原因", () => {
+  reset();
+  const turn = buildTurns([
+    turnStarted(),
+    next({ type: "tool_finished", turn_id: "t1", tool_call_id: "bad", tool: "update_story", ok: false, summary: "[STORY_ARGUMENTS_INVALID] 参数语法不完整" }),
+    next({ type: "tool_finished", turn_id: "t1", tool_call_id: "good", tool: "update_story", args: { mode: "commit" }, ok: true }),
+    next({ type: "story_changes_committed", turn_id: "t1", change_id: "save", variant_id: "main", revision: "r1", base_revision: "empty", operations: 4, changed: [], labels: [] }),
+    next({ type: "run_finished", turn_id: "t1", status: "completed", recording: "no_change", changed_paths: [] }),
+  ])[0];
+  expect(hasLaterStorySubmission(turn, 0)).toBe(true);
+  expect(turn.items[0].kind === "tool" && turn.items[0].tool.ok).toBe(false);
+  expect(hasLaterStorySubmission({ ...turn, storyCommits: [] }, 0)).toBe(false);
+  expect(hasLaterStorySubmission({ ...turn, result: { ...turn.result!, status: "partial" } }, 0)).toBe(false);
+  const first = turn.items[0];
+  if (first.kind !== "tool") throw new Error("工具记录缺失");
+  expect(hasLaterStorySubmission({ ...turn, items: [{ ...first, tool: { ...first.tool, summary: "[STORY_AUTHORIZATION_CONFLICT] 未获授权" } }, turn.items[1]] }, 0)).toBe(false);
+  expect(hasLaterStorySubmission({ ...turn, items: [turn.items[1], turn.items[0]] }, 1)).toBe(false);
 });
 
 function turnStarted(id = "t1", text = "写第一章"): WorkspaceEvent {

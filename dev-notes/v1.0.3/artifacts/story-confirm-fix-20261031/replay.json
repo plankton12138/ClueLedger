@@ -1,0 +1,16 @@
+{
+  "isolated_root": "data\\test-tmp\\story-confirm-replay-20261031\\22905fc98b3e47e1982f0a38bbb76af5",
+  "input_operations": 87,
+  "pending_before_commit": 0,
+  "simulated_author_confirmation": 8,
+  "committed": true,
+  "counts": {
+    "stages": 4,
+    "threads": 5,
+    "nodes": 17,
+    "edges": 17,
+    "constraints": 8
+  },
+  "changes": 1,
+  "original_task_modified": false
+}
