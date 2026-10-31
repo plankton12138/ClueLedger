@@ -12,7 +12,7 @@ ClueLedger is built on [Tau Agent](https://github.com/huggingface/tau), with a w
 
 ![ClueLedger writing workspace: chapters and modules on the left, the manuscript in the center, and a story discussion on the right](docs/screenshots/readme/writing.png)
 
-*Screenshots use example content in the Chinese-language interface. The structure screenshot demonstrates multiple storylines and frozen column headings. English feature names below describe the corresponding Chinese controls.*
+*Screenshots were captured on 2026-10-31 using the current Chinese-language interface and the sample novel Letters on a Snowy Night (《雪夜来信》). English feature names below describe the corresponding Chinese controls.*
 
 [Capture ideas](#capture-ideas) · [Write through conversation](#write-through-conversation) · [Save and reuse story material](#save-and-reuse-story-material) · [Review the whole story](#review-the-whole-story) · [Get started](#get-started)
 
@@ -68,13 +68,15 @@ Storylines appear in columns, with stages progressing downward. Each card shows 
 
 Column headings stay at the top of the canvas as you scroll down. They follow horizontal movement and zoom to stay aligned with their cards. Expand **Goals and obstacles (目标与阻力)**, focus on a stage, or use **Focus on Structure (专注构思)** for more space. Cards are arranged automatically; pan, scroll, and zoom the whole canvas to navigate.
 
-![Frozen storyline headings remain visible and aligned with their node columns while scrolling through the structure](docs/screenshots/readme/story-structure.png)
+![Multiple storylines, stages, a shared convergence, and book-wide clues in the current structure view](docs/screenshots/readme/story-structure.png)
 
 ### Connect plans to clues and manuscript evidence
 
-After selecting a node, choose **View related clues (查看相关线索)** to see its arrangements on the right. With no node selected, browse book-wide clues. Follow a clue to another planned use or an existing manuscript passage, then return to your place in the structure.
+After selecting a node, open **Book-wide clues (全书线索)** to see its arrangements on the right. With no node selected, browse book-wide clues. Follow a clue to another planned use or an existing manuscript passage, then return to your place in the structure.
 
 Author truth, future plans, and material already written in the manuscript are presented separately. You can plan clues before drafting prose; planned introductions and resolutions do not become manuscript facts automatically.
+
+![A selected structure node alongside its clue plan and book-wide uses](docs/screenshots/readme/story-clues.png)
 
 Larger creation tasks can prepare a draft in batches before committing the complete structure. If a task needs attention, its draft remains with the original task. Review required constraints and their strength before confirming and continuing. Whether a setting or style preference becomes a requirement remains your decision.
 
