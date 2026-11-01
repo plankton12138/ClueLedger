@@ -202,6 +202,66 @@ test("已有正文的文章在读取期间显示载入提示", async ({ page }) 
   await expect(page.getByText("身份：私家侦探。曾经担任刑警。")).toBeVisible();
 });
 
+test("切回已读文章直接用缓存显示，不再等待回读", async ({ page }) => {
+  await open(page);
+  await page.locator(".toc-row").filter({ hasText: "雨夜" }).click();
+  await expect(page.getByText("侦探抵达旅馆时")).toBeVisible();
+  await page.locator(".toc-row").filter({ hasText: "林远" }).click();
+  await expect(page.getByText("身份：私家侦探。曾经担任刑警。")).toBeVisible();
+
+  // 回读变慢时，已读文章仍应立即出现，且不显示载入提示。
+  await page.route(/\/api\/file-workspaces\/[^/]+\/file\?path=/, async route => {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  await page.locator(".toc-row").filter({ hasText: "雨夜" }).click();
+  await expect(page.getByText("侦探抵达旅馆时")).toBeVisible();
+  await expect(page.getByText("正在读取文章…", { exact: true })).toHaveCount(0);
+});
+
+test("切回文章时恢复上次的阅读位置", async ({ page }) => {
+  const long = Array.from({ length: 120 }, (_, index) => `第 ${index + 1} 段：雪还在下。`).join("\n\n");
+  writeFileSync(join(workspaceRoot, "正文", "0009 雪夜长卷.md"), `# 雪夜长卷\n\n${long}\n`, "utf-8");
+  await open(page);
+  await page.getByRole("button", { name: "作品", exact: true }).click();
+  await page.getByRole("button", { name: "重新读取文件" }).click();
+
+  await page.locator(".toc-row").filter({ hasText: "雪夜长卷" }).click();
+  await expect(page.getByText("第 1 段")).toBeVisible();
+  const sheet = page.locator(".paper-sheet");
+  await expect.poll(() => sheet.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+  await sheet.evaluate(element => { element.scrollTop = 900; });
+  await expect.poll(() => sheet.evaluate(element => element.scrollTop)).toBeGreaterThan(800);
+
+  await page.locator(".toc-row").filter({ hasText: "雨夜" }).click();
+  await expect(page.getByText("侦探抵达旅馆时")).toBeVisible();
+  await page.locator(".toc-row").filter({ hasText: "雪夜长卷" }).click();
+  await expect(page.getByText("第 1 段")).toBeVisible();
+  await expect.poll(() => sheet.evaluate(element => element.scrollTop)).toBeGreaterThan(800);
+});
+
+test("后台刷新不覆盖正在切换的文章", async ({ page }) => {
+  await open(page);
+  await page.locator(".toc-row").filter({ hasText: "雨夜" }).click();
+  await expect(page.getByText("侦探抵达旅馆时")).toBeVisible();
+
+  // 目录刷新先返回、文章读取后返回：此时用户已经点了另一篇。
+  await page.route(/\/api\/file-workspaces\/[^/]+\/files$/, async route => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    await route.continue();
+  });
+  await page.route(/\/api\/file-workspaces\/[^/]+\/file\?path=/, async route => {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "作品", exact: true }).click();
+  await page.getByRole("button", { name: "重新读取文件" }).click();
+  await page.waitForTimeout(100);
+  await page.locator(".toc-row").filter({ hasText: "林远" }).click();
+
+  await expect(page.getByText("身份：私家侦探。曾经担任刑警。")).toBeVisible({ timeout: 5000 });
+});
+
 test("字号调整同步到正文与活动日志，刷新保留并可恢复默认", async ({ page }) => {
   await open(page);
   await page.locator(".toc-row").filter({ hasText: "雨夜" }).click();

@@ -154,6 +154,33 @@ describe("目录与文件", () => {
     expect(useWorkspaceStore.getState().file?.path).toBe("正文/0001 雨夜.md");
   });
 
+  it("切回已读文章时先显示缓存，再回读校验", async () => {
+    await useWorkspaceStore.getState().init();
+    await useWorkspaceStore.getState().openPath("正文/0001 雨夜.md");
+    await useWorkspaceStore.getState().openPath("设定集/角色小传/林远.md");
+
+    let finish!: (value: unknown) => void;
+    api.readFile.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const reading = useWorkspaceStore.getState().openPath("正文/0001 雨夜.md");
+
+    // 缓存命中：正文与选中行立即回到这一篇，不再进入载入态。
+    expect(useWorkspaceStore.getState().file?.path).toBe("正文/0001 雨夜.md");
+    expect(useWorkspaceStore.getState().selectedPath).toBe("正文/0001 雨夜.md");
+    expect(useWorkspaceStore.getState().fileLoading).toBe(false);
+    expect(api.readFile).toHaveBeenLastCalledWith("w1", "正文/0001 雨夜.md");
+
+    finish({
+      path: "正文/0001 雨夜.md", kind: "chapter", title: "雨夜", text: "# 雨夜\n\n改过的正文。",
+      display_text: "# 雨夜\n\n改过的正文。", digest: "d2", size: 10, chapter_number: 1,
+      chapter_type: "regular", roles: [], metadata_warnings: [],
+    });
+    await reading;
+
+    // 后台回读完成后用磁盘版本替换缓存内容。
+    expect(useWorkspaceStore.getState().file?.digest).toBe("d2");
+    expect(useWorkspaceStore.getState().file?.display_text).toContain("改过的正文");
+  });
+
   it("读取失败后清除载入标记并保留错误", async () => {
     await useWorkspaceStore.getState().init();
     api.readFile.mockRejectedValueOnce(new Error("磁盘不可读"));
@@ -163,6 +190,32 @@ describe("目录与文件", () => {
     expect(useWorkspaceStore.getState().fileLoading).toBe(false);
     expect(useWorkspaceStore.getState().openingPath).toBeNull();
     expect(useWorkspaceStore.getState().error).toMatch(/^\[REQUEST_FAILED\]/);
+  });
+
+  it("后台回读不覆盖正在切换的文章", async () => {
+    await useWorkspaceStore.getState().init();
+    await useWorkspaceStore.getState().openPath("正文/0001 雨夜.md");
+
+    let finish!: (value: unknown) => void;
+    api.readFile.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const reading = useWorkspaceStore.getState().openPath("设定集/角色小传/林远.md");
+    const readsBeforeRefresh = api.readFile.mock.calls.length;
+
+    await useWorkspaceStore.getState().refreshAll();
+
+    // 新文章还在读时，后台回读不能改开目录里记录的上一篇。
+    expect(api.readFile.mock.calls.length).toBe(readsBeforeRefresh);
+    expect(useWorkspaceStore.getState().file?.path).toBe("正文/0001 雨夜.md");
+
+    finish({
+      path: "设定集/角色小传/林远.md", kind: "character", title: "林远",
+      text: "# 林远", display_text: "# 林远", digest: "d3", size: 5,
+      roles: ["detective"], metadata_warnings: [],
+    });
+    await reading;
+
+    expect(useWorkspaceStore.getState().file?.path).toBe("设定集/角色小传/林远.md");
+    expect(useWorkspaceStore.getState().selectedPath).toBe("设定集/角色小传/林远.md");
   });
 
   it("换目录清空旧文件与对话，不把上一部作品带过去", async () => {

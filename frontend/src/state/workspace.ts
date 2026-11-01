@@ -52,11 +52,13 @@ interface WorkspaceStore {
   currentId: string | null;
   catalog: Catalog;
   file: FileView | null;
+  /** 按作品与路径缓存已读正文：切回时先显示，后台回读校验磁盘版本。 */
+  fileCache: Record<string, FileView>;
   selectedPath: string | null;
   search: SearchResult | null;
   /** 作品级操作（打开、导入、删除）进行中；阅读区不看它。 */
   loading: boolean;
-  /** 有文章正文正在读取；`openingPath` 是读取目标，恢复上次位置时可能先为空。 */
+  /** 当前选择还没有可显示的正文（缓存未命中）；后台回读校验不算载入。 */
   fileLoading: boolean;
   openingPath: string | null;
   error: string | null;
@@ -101,6 +103,28 @@ interface WorkspaceStore {
 }
 
 let initializing = false;
+const FILE_CACHE_LIMIT = 20;
+
+function fileCacheKey(workspaceId: string, path: string): string {
+  return `${workspaceId}\u0000${path}`;
+}
+
+function cacheFile(cache: Record<string, FileView>, key: string, file: FileView): Record<string, FileView> {
+  const next = { ...cache, [key]: file };
+  const keys = Object.keys(next);
+  // 对象键保持插入顺序：超过上限时丢弃最早读入的一篇。
+  if (keys.length > FILE_CACHE_LIMIT) delete next[keys[0]!];
+  return next;
+}
+
+function dropWorkspaceFiles(cache: Record<string, FileView>, workspaceId: string): Record<string, FileView> {
+  const prefix = `${workspaceId}\u0000`;
+  const keys = Object.keys(cache).filter(key => key.startsWith(prefix));
+  if (!keys.length) return cache;
+  const next = { ...cache };
+  for (const key of keys) delete next[key];
+  return next;
+}
 
 function describe(error: unknown): string {
   return errorMessage(error, "作品操作");
@@ -112,6 +136,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   currentId: null,
   catalog: EMPTY_CATALOG,
   file: null,
+  fileCache: {},
   selectedPath: null,
   search: null,
   loading: false,
@@ -219,7 +244,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     set({ loading: true, error: null });
     try {
       const result = await removeWorkspace(id, confirmedPath);
-      set({ bindings: result.workspaces });
+      set(state => ({ bindings: result.workspaces, fileCache: dropWorkspaceFiles(state.fileCache, id) }));
       if (get().currentId === id) {
         const next = result.workspaces.find((item) => item.exists);
         if (next) await get().selectWorkspace(next.id);
@@ -260,7 +285,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     set({ loading: true, error: null });
     try {
       const result = await renameWorkspace(id, name);
-      set({ bindings: result.workspaces });
+      set(state => ({ bindings: result.workspaces, fileCache: dropWorkspaceFiles(state.fileCache, id) }));
       const newId = result.workspace.id;
       // 标识由路径算出：当前作品的目录名变了，作品标识与地址栏也要跟着换。
       if (get().currentId === id) await get().selectWorkspace(newId);
@@ -277,7 +302,11 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   async pruneMissing() {
     try {
       const result = await pruneStaleWorkspaces();
-      set({ bindings: result.workspaces, error: null });
+      set(state => ({
+        bindings: result.workspaces,
+        error: null,
+        fileCache: result.removed.reduce((cache, item) => dropWorkspaceFiles(cache, item.id), state.fileCache),
+      }));
       const currentId = get().currentId;
       if (currentId && !result.workspaces.some((item) => item.id === currentId)) {
         const next = result.workspaces.find((item) => item.exists);
@@ -340,8 +369,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
         const stillThere = [...catalog.chapters, ...catalog.characters, ...catalog.settings].some(
           (entry) => entry.path === path && entry.exists,
         );
-        if (stillThere) await get().openPath(path,true);
-        else set({ selectedPath: null, file: null });
+        // 用户刚点的文章还在读（openingPath 指向另一篇）时，这次回读不能顶掉它。
+        const opening = get().openingPath;
+        if (!stillThere) set({ selectedPath: null, file: null });
+        else if (opening === null || opening === path) await get().openPath(path,true);
       }
     } catch (error) {
       if (get().currentId === id && get().workspaceEpoch === epoch) set({ error: describe(error) });
@@ -366,11 +397,19 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     const id = get().currentId;
     if (!id) return;
     const epoch = get().fileEpoch + 1;
-    set({ fileEpoch: epoch, fileLoading: true, openingPath: path });
+    const key = fileCacheKey(id, path);
+    const cached = get().fileCache[key];
+    // 已读过的文章先显示缓存，避免切回时整屏等待；网络回读只用于校验磁盘版本。
+    set({
+      fileEpoch: epoch,
+      fileLoading: !cached,
+      openingPath: path,
+      ...(cached ? { file: cached, selectedPath: path } : {}),
+    });
     try {
       const file = await readFile(id, path);
       if (get().currentId !== id || get().fileEpoch !== epoch) return;
-      set({ file, selectedPath: path, error: null });
+      set(state => ({ file, selectedPath: path, error: null, fileCache: cacheFile(state.fileCache, key, file) }));
     } catch (error) {
       if (get().currentId !== id || get().fileEpoch !== epoch) return;
       set({ error: describe(error) });
