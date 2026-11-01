@@ -112,12 +112,13 @@ def _events(client: TestClient, workspace_id: str, conversation_id: str) -> list
 
 
 def _wait_finished(
-    client: TestClient, workspace_id: str, conversation_id: str
+    client: TestClient, workspace_id: str, conversation_id: str, finished: int = 1
 ) -> list[dict[str, Any]]:
     deadline = time.monotonic() + 10.0
     while time.monotonic() < deadline:
         events = _events(client, workspace_id, conversation_id)
-        if any(event["type"] == "run_finished" for event in events):
+        # 同一个会话会有多轮：等到第 ``finished`` 个 run_finished，而不是第一个就返回。
+        if sum(1 for event in events if event["type"] == "run_finished") >= finished:
             return events
         time.sleep(0.05)
     raise AssertionError(f"等待超时：{_events(client, workspace_id, conversation_id)}")
@@ -179,7 +180,7 @@ def test_ask_author_pauses_then_reply_continues(
     response = _reply(client, workspace_id, conversation_id, "选亲姐弟", asked["question_id"])
     assert response.status_code == 202, response.text
 
-    events = _wait_finished(client, workspace_id, conversation_id)
+    events = _wait_finished(client, workspace_id, conversation_id, finished=2)
     replied = next(event for event in events if event["type"] == "author_replied")
     assert replied["question_id"] == asked["question_id"]
     assert replied["answer"] == "选亲姐弟"
@@ -219,7 +220,7 @@ def test_answering_twice_is_rejected(
     )
 
     assert _reply(client, workspace_id, conversation_id, "第一人称", question_id).status_code == 202
-    _wait_finished(client, workspace_id, conversation_id)
+    _wait_finished(client, workspace_id, conversation_id, finished=2)
     repeat = _reply(client, workspace_id, conversation_id, "第三人称", question_id)
 
     assert repeat.status_code == 409
