@@ -132,6 +132,39 @@ describe("目录与文件", () => {
     expect(useWorkspaceStore.getState().file?.path).toBe("正文/0001 雨夜.md");
   });
 
+  it("读取文章期间标记载入，读取完成后清除", async () => {
+    await useWorkspaceStore.getState().init();
+    let finish!: (value: unknown) => void;
+    api.readFile.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+
+    const reading = useWorkspaceStore.getState().openPath("正文/0001 雨夜.md");
+
+    expect(useWorkspaceStore.getState().fileLoading).toBe(true);
+    expect(useWorkspaceStore.getState().openingPath).toBe("正文/0001 雨夜.md");
+
+    finish({
+      path: "正文/0001 雨夜.md", kind: "chapter", title: "雨夜", text: "# 雨夜",
+      display_text: "# 雨夜", digest: "d1", size: 4, chapter_number: 1,
+      chapter_type: "regular", roles: [], metadata_warnings: [],
+    });
+    await reading;
+
+    expect(useWorkspaceStore.getState().fileLoading).toBe(false);
+    expect(useWorkspaceStore.getState().openingPath).toBeNull();
+    expect(useWorkspaceStore.getState().file?.path).toBe("正文/0001 雨夜.md");
+  });
+
+  it("读取失败后清除载入标记并保留错误", async () => {
+    await useWorkspaceStore.getState().init();
+    api.readFile.mockRejectedValueOnce(new Error("磁盘不可读"));
+
+    await useWorkspaceStore.getState().openPath("正文/0001 雨夜.md");
+
+    expect(useWorkspaceStore.getState().fileLoading).toBe(false);
+    expect(useWorkspaceStore.getState().openingPath).toBeNull();
+    expect(useWorkspaceStore.getState().error).toMatch(/^\[REQUEST_FAILED\]/);
+  });
+
   it("换目录清空旧文件与对话，不把上一部作品带过去", async () => {
     await useWorkspaceStore.getState().init();
     await useWorkspaceStore.getState().openPath("正文/0001 雨夜.md");
@@ -143,6 +176,24 @@ describe("目录与文件", () => {
     expect(useWorkspaceStore.getState().selectedPath).toBeNull();
     // 会话由单独的 store 管理：换作品时它自己重新加载，不留在文件状态里。
     expect(useConversationsStore.getState().workspaceId).toBe("w1");
+  });
+
+  it("切换作品时先按载入中呈现，确认没有要恢复的文章后结束", async () => {
+    await useWorkspaceStore.getState().init();
+    let finishCatalog!: (value: unknown) => void;
+    api.listFiles.mockReturnValueOnce(new Promise((resolve) => { finishCatalog = resolve; }));
+    api.fetchReadingPosition.mockResolvedValueOnce({ path: null, digest: "", offset: 0 });
+
+    const switching = useWorkspaceStore.getState().selectWorkspace("w2");
+    expect(useWorkspaceStore.getState().fileLoading).toBe(true);
+    expect(useWorkspaceStore.getState().openingPath).toBeNull();
+    await vi.waitFor(() => expect(api.listFiles).toHaveBeenCalled());
+
+    finishCatalog({ chapters: [], characters: [], settings: [] });
+    await switching;
+
+    expect(useWorkspaceStore.getState().fileLoading).toBe(false);
+    expect(useWorkspaceStore.getState().openingPath).toBeNull();
   });
 
   it("清理失效目录后切到仍在册的作品并提示数量", async () => {

@@ -180,6 +180,28 @@ test("稿纸只读显示正文", async ({ page }) => {
   ).toHaveCount(0);
 });
 
+test("已有正文的文章在读取期间显示载入提示", async ({ page }) => {
+  await open(page);
+  await page.locator(".toc-row").filter({ hasText: "雨夜" }).click();
+  await expect(page.getByText("侦探抵达旅馆时")).toBeVisible();
+
+  // 放慢文件读取，读取期间应看到提示，而不是上一篇正文或「还没有打开文章」。
+  await page.route(/\/api\/file-workspaces\/[^/]+\/file\?path=/, async route => {
+    await new Promise(resolve => setTimeout(resolve, 900));
+    await route.continue();
+  });
+  await page.locator(".toc-row").filter({ hasText: "林远" }).click();
+  await expect(page.getByText("正在读取文章…", { exact: true })).toBeVisible();
+  await expect(page.getByText("侦探抵达旅馆时")).toBeHidden();
+  await expect(page.getByText("身份：私家侦探。曾经担任刑警。")).toBeVisible();
+  await expect(page.getByText("正在读取文章…", { exact: true })).toBeHidden();
+
+  // 重载后恢复上次阅读位置，同样先显示读取提示。
+  await page.reload();
+  await expect(page.getByText("正在读取文章…", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("身份：私家侦探。曾经担任刑警。")).toBeVisible();
+});
+
 test("字号调整同步到正文与活动日志，刷新保留并可恢复默认", async ({ page }) => {
   await open(page);
   await page.locator(".toc-row").filter({ hasText: "雨夜" }).click();

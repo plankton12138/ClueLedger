@@ -54,7 +54,11 @@ interface WorkspaceStore {
   file: FileView | null;
   selectedPath: string | null;
   search: SearchResult | null;
+  /** 作品级操作（打开、导入、删除）进行中；阅读区不看它。 */
   loading: boolean;
+  /** 有文章正文正在读取；`openingPath` 是读取目标，恢复上次位置时可能先为空。 */
+  fileLoading: boolean;
+  openingPath: string | null;
   error: string | null;
   notice: string | null;
 
@@ -109,6 +113,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   selectedPath: null,
   search: null,
   loading: false,
+  fileLoading: false,
+  openingPath: null,
   reverting: false,
   error: null,
   notice: null,
@@ -164,12 +170,13 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     const previous = get();
     const positions = { ...previous.positions };
     if (previous.currentId) positions[previous.currentId] = { path: previous.selectedPath, search: previous.search };
+    const selectedPath = positions[id]?.path ?? null;
     set({
       positions, workspaceEpoch: previous.workspaceEpoch + 1, fileEpoch: previous.fileEpoch + 1,
       currentId: id,
       catalog: EMPTY_CATALOG,
       file: null,
-      selectedPath: positions[id]?.path ?? null,
+      selectedPath,
       search: positions[id]?.search ?? null,
       git: null,
       diff: "",
@@ -178,6 +185,9 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       commitDiff: "",
       error: null,
       notice: null,
+      // 目录与上次阅读位置还没回来之前，先按载入中显示，避免误报「没有打开文章」。
+      fileLoading: true,
+      openingPath: selectedPath,
     });
     // 会话按作品各自加载：切作品不把上一部作品的会话带过来。
     const epoch = get().workspaceEpoch;
@@ -189,13 +199,18 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
         if (get().currentId !== id || get().workspaceEpoch !== epoch) return;
         if (position.path) {
           usePagePositions.getState().offset(`${id}:paper:${position.path}`, position.offset);
-          set({ selectedPath: position.path });
+          set({ selectedPath: position.path, openingPath: position.path });
         }
       } catch (error) {
         if (get().currentId === id && get().workspaceEpoch === epoch) set({ notice: describe(error) });
       }
     }
+    const readEpoch = get().fileEpoch;
     await get().refreshAll();
+    // 目录里没有可打开的文章时不会发起读取；此时由这里结束载入。读取请求会自己收尾。
+    if (get().currentId === id && get().workspaceEpoch === epoch && get().fileEpoch === readEpoch) {
+      set({ fileLoading: false, openingPath: null });
+    }
   },
 
   async remove(id, confirmedPath) {
@@ -215,6 +230,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
             file: null,
             selectedPath: null,
             search: null,
+            fileLoading: false,
+            openingPath: null,
             git: null,
             diff: "",
             log: [],
@@ -270,6 +287,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
             file: null,
             selectedPath: null,
             search: null,
+            fileLoading: false,
+            openingPath: null,
             git: null,
             diff: "",
             log: [],
@@ -332,7 +351,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     const id = get().currentId;
     if (!id) return;
     const epoch = get().fileEpoch + 1;
-    set({ fileEpoch: epoch });
+    set({ fileEpoch: epoch, fileLoading: true, openingPath: path });
     try {
       const file = await readFile(id, path);
       if (get().currentId !== id || get().fileEpoch !== epoch) return;
@@ -340,6 +359,9 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     } catch (error) {
       if (get().currentId !== id || get().fileEpoch !== epoch) return;
       set({ error: describe(error) });
+    } finally {
+      // 后发的读取或作品切换会接管载入态；只有本次仍是最新请求时才收起。
+      if (get().currentId === id && get().fileEpoch === epoch) set({ fileLoading: false, openingPath: null });
     }
   },
 

@@ -24,16 +24,28 @@ import { RawSourceHighlight, sourceHighlightPlugin, sourceRange } from "../clues
 
 interface Props {
   file: FileView | null;
-  loading: boolean;
+  /** 正在读取的文章路径；null 表示没有读取请求在途。 */
+  openingPath: string | null;
+  /** 有正文正在读取；恢复上次阅读位置时路径可能还没确定。 */
+  fileLoading: boolean;
+  /** 作品级操作进行中：翻章按钮在此期间禁用。 */
+  busy: boolean;
 }
 
-export default function Paper({ file, loading }: Props) {
+export default function Paper({ file, openingPath, fileLoading, busy }: Props) {
   const workspaceId = useWorkspaceStore(state => state.currentId);
-  const chapters = useWorkspaceStore(state => state.catalog.chapters);
+  const catalog = useWorkspaceStore(state => state.catalog);
+  const chapters = catalog.chapters;
   const openPath = useWorkspaceStore(state => state.openPath);
   const fontScale = useLayoutStore(state => state.fontScale);
   const setFontScale = useLayoutStore(state => state.setFontScale);
-  const chapterIndex = file?.kind === "chapter" ? chapters.findIndex(chapter => chapter.path === file.path) : -1;
+  const openingEntry = openingPath
+    ? [...catalog.chapters, ...catalog.characters, ...catalog.settings].find(entry => entry.path === openingPath)
+    : undefined;
+  // 读取同一篇时保留现有正文（回读刷新）；换成另一篇或首次打开时才显示载入。
+  const waiting = fileLoading && (!file || openingPath !== file.path);
+  const activePath = waiting ? openingPath : file?.path;
+  const chapterIndex = activePath ? chapters.findIndex(chapter => chapter.path === activePath) : -1;
   const previous = chapterIndex > 0 ? chapters[chapterIndex - 1] : undefined;
   const next = chapterIndex >= 0 ? chapters[chapterIndex + 1] : undefined;
   function readChapter(path: string) {
@@ -111,6 +123,13 @@ export default function Paper({ file, loading }: Props) {
     return () => observer.disconnect();
   }, [positionKey, range?.start, range?.end]);
   if (!file) {
+    if (waiting) {
+      return (
+        <div className="grid h-full place-items-center px-8 text-center text-sm text-sub">
+          <p role="status">{openingPath ? "正在读取文章…" : "正在载入作品…"}</p>
+        </div>
+      );
+    }
     return (
       <div className="grid h-full place-items-center px-8 text-center text-sm text-sub">
         <div>
@@ -123,46 +142,53 @@ export default function Paper({ file, loading }: Props) {
     );
   }
 
+  const title = waiting && openingEntry ? openingEntry.display_title : file.display_title;
+  const roles = waiting && openingEntry ? openingEntry.roles : file.roles;
+
   return (
-    <article className="reader-document">
+    <article className="reader-document" aria-busy={waiting}>
       <header className="paper-toolbar">
         <div className="paper-navigation" aria-label="章节翻页">
-          <Button size="compact" aria-label="上一章" title={previous?.display_title ?? "没有上一章"} disabled={!previous || loading} onClick={() => previous && readChapter(previous.path)}><ChevronLeft aria-hidden="true" size={18} /></Button>
-          <Button size="compact" aria-label="下一章" title={next?.display_title ?? "没有下一章"} disabled={!next || loading} onClick={() => next && readChapter(next.path)}><ChevronRight aria-hidden="true" size={18} /></Button>
+          <Button size="compact" aria-label="上一章" title={previous?.display_title ?? "没有上一章"} disabled={!previous || busy || waiting} onClick={() => previous && readChapter(previous.path)}><ChevronLeft aria-hidden="true" size={18} /></Button>
+          <Button size="compact" aria-label="下一章" title={next?.display_title ?? "没有下一章"} disabled={!next || busy || waiting} onClick={() => next && readChapter(next.path)}><ChevronRight aria-hidden="true" size={18} /></Button>
         </div>
-        <h2 title={file.display_title}>
-          {file.display_title}
-        </h2>
-        <CharacterBadges roles={file.roles} />
+        <h2 title={title}>{title}</h2>
+        <CharacterBadges roles={roles} />
         <div className="paper-reading-tools" aria-label="阅读设置">
           <Button size="compact" aria-label="减小字号" title="减小字号" disabled={fontScale <= FONT_SCALE.min} onClick={() => setFontScale(fontScale - 10)}>A−</Button>
           <Button size="compact" aria-label="增大字号" title="增大字号" disabled={fontScale >= FONT_SCALE.max} onClick={() => setFontScale(fontScale + 10)}>A+</Button>
-          <details className="paper-file-info"><summary aria-label="文件信息" title="文件信息"><Info aria-hidden="true" size={17} /></summary><div>{file.path}<br />{file.size} 字节</div></details>
+          {!waiting && <details className="paper-file-info"><summary aria-label="文件信息" title="文件信息"><Info aria-hidden="true" size={17} /></summary><div>{file.path}<br />{file.size} 字节</div></details>}
         </div>
-        {loading && <span className="text-[11px]">读取中…</span>}
-        {file.metadata_warnings.length > 0 && (
+        {busy && <span className="text-[11px]">读取中…</span>}
+        {!waiting && file.metadata_warnings.length > 0 && (
           <p className="meta-warning basis-full">
             {file.metadata_warnings.join("；")}
           </p>
         )}
       </header>
-      {matched && paragraphLocation && <p className="mb-2 text-xs text-sub" role="status">已定位至所在段落。</p>}
-      {positionError && <p role="status" className="text-xs text-amber">{positionError}</p>}
-      <div ref={scroll} className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm" onScroll={event => { if (event.currentTarget.clientHeight) usePagePositions.getState().offset(positionKey, event.currentTarget.scrollTop); }}>
-        <div className="paper-lined min-h-full px-8 py-6">
-          {file.display_text.trim() || (matched && file.text.trim()) ? (
-            <SelectionToChat source={{ title: file.display_title, source: file.path, version: file.digest }}>
-              <div className="prose-paper">
-                {matched && file.text !== file.display_text ? <RawSourceHighlight text={file.text} range={range} /> : <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[sourceHighlightPlugin, { text: file.display_text, range }]]} skipHtml>
-                  {file.display_text}
-                </ReactMarkdown>}
-              </div>
-            </SelectionToChat>
-          ) : (
-            <p className="text-sm italic text-[#8a8371]">这一页还是空的。</p>
-          )}
+      {!waiting && matched && paragraphLocation && <p className="mb-2 text-xs text-sub" role="status">已定位至所在段落。</p>}
+      {!waiting && positionError && <p role="status" className="text-xs text-amber">{positionError}</p>}
+      {waiting ? (
+        <div className="paper-sheet grid min-h-0 flex-1 place-items-center rounded-sm" role="status">
+          <p className="text-sm text-[#8a8371]">正在读取文章…</p>
         </div>
-      </div>
+      ) : (
+        <div ref={scroll} className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm" onScroll={event => { if (event.currentTarget.clientHeight) usePagePositions.getState().offset(positionKey, event.currentTarget.scrollTop); }}>
+          <div className="paper-lined min-h-full px-8 py-6">
+            {file.display_text.trim() || (matched && file.text.trim()) ? (
+              <SelectionToChat source={{ title: file.display_title, source: file.path, version: file.digest }}>
+                <div className="prose-paper">
+                  {matched && file.text !== file.display_text ? <RawSourceHighlight text={file.text} range={range} /> : <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[sourceHighlightPlugin, { text: file.display_text, range }]]} skipHtml>
+                    {file.display_text}
+                  </ReactMarkdown>}
+                </div>
+              </SelectionToChat>
+            ) : (
+              <p className="text-sm italic text-[#8a8371]">这一页还是空的。</p>
+            )}
+          </div>
+        </div>
+      )}
     </article>
   );
 }

@@ -25,7 +25,7 @@ import { sourceTaskChapter } from "../../state/sourceLocation";
 
 export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const prefs = useLayoutStore();
-  const { file, loading, currentId, openDrawer } = useWorkspaceStore();
+  const { file, loading, currentId, fileLoading, openingPath, ready, openDrawer } = useWorkspaceStore();
   const running = useConversationsStore(runningConversation);
   const selectedModule = useWorkspaceModulesStore(state => state.selected);
   const source = useSourceLocationStore(state => state.workspaceId === currentId ? state.location : null);
@@ -170,7 +170,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
               );
             }}
           />
-        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} loading={loading} /> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
+        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} /> : !ready ? <div className="ui-empty" role="status"><p>正在载入作品…</p></div> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
         </div></div>
       </section>
       {currentId && <>
