@@ -7,7 +7,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Highlighter, Info } from "lucide-react";
 import { useWorkspaceStore } from "../../state/workspace";
 import { usePagePositions } from "../../state/pagePositions";
@@ -17,11 +17,13 @@ import { Button } from "../ui/Button";
 
 import { saveReadingPosition, type FileView } from "../../api/workspace";
 import { fetchClueMarks, type ClueMarks } from "../../api/clueMarks";
+import { readStoryProseMarks, type ProseMark, type ProseMarks } from "../../api/story";
 import { errorMessage } from "../../api/errors";
 import CharacterBadges from "./CharacterBadges";
 import SelectionToChat from "./SelectionToChat";
 import { useSourceLocationStore } from "../../state/sourceLocation";
-import { RawSourceHighlight, sourceHighlightPlugin, sourceRange } from "../clues/SourceHighlight";
+import { useStoryStore } from "../../state/story";
+import { RawSourceHighlight, sourceHighlightPlugin, sourceRange, type SourceRange } from "../clues/SourceHighlight";
 import { clueMarksPlugin } from "./ClueMarks";
 
 interface Props {
@@ -90,6 +92,9 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
   const [clueMarks, setClueMarks] = useState<ClueMarks | null>(null);
   const [marksError, setMarksError] = useState<string | null>(null);
   const [showMarks, setShowMarks] = useState(true);
+  const [proseMarks, setProseMarks] = useState<ProseMarks | null>(null);
+  const [originRange, setOriginRange] = useState<SourceRange | null>(null);
+  const storyVariantId = useStoryStore(state => state.workspaceId === workspaceId ? state.variantId : null);
   useEffect(() => {
     if (!workspaceId || !file || file.kind !== "chapter" || waiting) {
       setClueMarks(null);
@@ -108,12 +113,41 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
       });
     return () => { cancelled = true; };
   }, [workspaceId, file?.path, file?.digest, file?.kind, file?.chapter_number, waiting]);
+  useEffect(() => {
+    setOriginRange(null);
+  }, [file?.path, file?.digest]);
+  useEffect(() => {
+    if (!workspaceId || !storyVariantId || !file || file.kind !== "chapter" || waiting) {
+      setProseMarks(null);
+      return;
+    }
+    let cancelled = false;
+    void readStoryProseMarks(workspaceId, storyVariantId, file.path)
+      .then(data => { if (!cancelled) setProseMarks(data); })
+      .catch(() => { if (!cancelled) setProseMarks(null); });
+    return () => { cancelled = true; };
+  }, [workspaceId, storyVariantId, file?.path, file?.digest, file?.kind, waiting]);
   const restoreEpoch = useSourceLocationStore(state => state.restoreEpoch);
   const location = useSourceLocationStore(state => state.workspaceId === workspaceId ? state.location : null);
   const matched = location?.source.kind === "file" && location.source.path === file?.path && location.freshness === "valid" && file.digest === location.current_digest && file.digest === location.source.digest;
   const range = matched ? sourceRange(file.text, location.start, location.end, location.quote) : null;
   const currentMarks = clueMarks && clueMarks.path === file?.path && clueMarks.digest === file?.digest ? clueMarks : null;
-  const activeMarks = showMarks && !range && currentMarks?.state === "ready" ? currentMarks.marks : [];
+  const currentProseMarks = proseMarks && proseMarks.path === file?.path && proseMarks.digest === file?.digest ? proseMarks : null;
+  const proseMarkChips = useMemo(() => {
+    if (!currentProseMarks) return [];
+    const totals = new Map<string, number>();
+    for (const mark of currentProseMarks.marks) {
+      totals.set(mark.title, (totals.get(mark.title) ?? 0) + 1);
+    }
+    const seen = new Map<string, number>();
+    return currentProseMarks.marks.map(mark => {
+      const ordinal = (seen.get(mark.title) ?? 0) + 1;
+      seen.set(mark.title, ordinal);
+      const label = (totals.get(mark.title) ?? 0) > 1 ? `${mark.title} · ${ordinal}` : mark.title;
+      return { mark, label };
+    });
+  }, [currentProseMarks]);
+  const activeMarks = showMarks && !range && !originRange && currentMarks?.state === "ready" ? currentMarks.marks : [];
   useLayoutEffect(() => {
     const node = scroll.current;
     if (!node || range) return;
@@ -148,6 +182,14 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
     observer.observe(node);
     return () => observer.disconnect();
   }, [positionKey, range?.start, range?.end]);
+  useLayoutEffect(() => {
+    const node = scroll.current;
+    if (!node || !originRange) return;
+    const target = node.querySelector<HTMLElement>("[data-source-target]");
+    if (!target) return;
+    node.scrollTop += target.getBoundingClientRect().top - node.getBoundingClientRect().top - 36;
+    target.focus({ preventScroll: true });
+  }, [originRange?.start, originRange?.end, file?.digest]);
   if (!file) {
     if (waiting) {
       return (
@@ -170,12 +212,29 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
 
   const title = waiting && openingEntry ? openingEntry.display_title : file.display_title;
   const roles = waiting && openingEntry ? openingEntry.roles : file.roles;
+  const highlightRange = originRange ?? range;
+  const rawHighlight = (matched || originRange !== null) && file.text !== file.display_text;
 
   function openClueFromTarget(target: EventTarget | null) {
     if (!(target instanceof Element)) return;
     const clue = target.closest<HTMLElement>("[data-clue-id]");
     const clueId = clue?.dataset.clueId;
     if (clueId) onOpenClue?.(clueId);
+  }
+
+  function focusProseMark(mark: ProseMark) {
+    if (!file) return;
+    const direct = sourceRange(file.display_text, mark.start, mark.end, mark.quote);
+    const fallbackStart = file.display_text.indexOf(mark.quote);
+    const next = direct ?? (fallbackStart >= 0
+      ? { start: fallbackStart, end: fallbackStart + mark.quote.length }
+      : null);
+    if (!next) return;
+    if (originRange && originRange.start === next.start && originRange.end === next.end) {
+      setOriginRange(null);
+      return;
+    }
+    setOriginRange(next);
   }
 
   return (
@@ -210,6 +269,23 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
           </p>
         )}
       </header>
+      {!waiting && currentProseMarks && currentProseMarks.marks.length > 0 && (
+        <div className="paper-prose-origin" aria-label="构思出处">
+          <span className="paper-prose-origin-label">构思出处</span>
+          {proseMarkChips.map(({ mark, label }) => (
+            <button
+              key={`${mark.node_id}:${mark.start}`}
+              type="button"
+              className="paper-prose-origin-chip"
+              title={mark.quote}
+              onClick={() => focusProseMark(mark)}
+            >
+              {label}
+              <i className={`paper-prose-origin-dot ${mark.state}`} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      )}
       {!waiting && currentMarks?.state === "stale" && (
         <p className="paper-clue-state" role="status">正文已修改，线索标注暂不可用。</p>
       )}
@@ -239,9 +315,11 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
                     openClueFromTarget(event.target);
                   }}
                 >
-                  {matched && file.text !== file.display_text ? <RawSourceHighlight text={file.text} range={range} /> : <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={activeMarks.length > 0
-                    ? [[clueMarksPlugin, { text: file.display_text, marks: activeMarks }]]
-                    : [[sourceHighlightPlugin, { text: file.display_text, range }]]} skipHtml>
+                  {rawHighlight ? <RawSourceHighlight text={file.text} range={highlightRange} /> : <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={originRange
+                    ? [[sourceHighlightPlugin, { text: file.display_text, range: originRange }]]
+                    : activeMarks.length > 0
+                      ? [[clueMarksPlugin, { text: file.display_text, marks: activeMarks }]]
+                      : [[sourceHighlightPlugin, { text: file.display_text, range }]]} skipHtml>
                     {file.display_text}
                   </ReactMarkdown>}
                 </div>

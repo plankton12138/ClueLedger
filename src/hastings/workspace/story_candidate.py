@@ -472,14 +472,14 @@ class StoryCandidate:
         if not self.approved or self.status != "reviewing":
             raise conflict("候选没有通过完整核对，不能提交")
         operations = list(self.operations)
+        node_ids = self.frozen.node_ids
         if (
-            len(self.frozen.node_ids) == 1
+            node_ids
             and len(self.documents) == 1
             and not any(
                 isinstance(op, (BindProse, UnbindProse, AddNode, RemoveNode)) for op in operations
             )
         ):
-            node_id = self.frozen.node_ids[0]
             variant = StoryStore(self.state_root, self.workspace).require_variant(
                 self.frozen.variant_id
             )
@@ -496,19 +496,29 @@ class StoryCandidate:
                 if operations
                 else variant
             )
-            node = after.nodes.get(node_id)
-            quote = (
-                next((use.presentation for use in node.clue_uses if use.presentation in text), "")
-                if node
-                else ""
-            )
-            start = (
-                text.find(quote)
-                if quote
-                else (text.find("\n\n") + 2 if text.startswith("#") and "\n\n" in text else 0)
-            )
-            quote = quote or text[start : start + 200].rstrip()
-            if node is not None and quote:
+            used_quotes: set[str] = set()
+            for index, node_id in enumerate(node_ids):
+                node = after.nodes.get(node_id)
+                if node is None:
+                    continue
+                quote = next(
+                    (use.presentation for use in node.clue_uses if use.presentation in text),
+                    "",
+                )
+                if not quote and len(node_ids) == 1:
+                    # 单节点候选保留粗锚点；多节点必须由模型用实际引文分别提交。
+                    start = (
+                        text.find("\n\n") + 2
+                        if text.startswith("#") and "\n\n" in text
+                        else 0
+                    )
+                    quote = text[start : start + 200].rstrip()
+                if not quote or quote in used_quotes:
+                    continue
+                start = text.find(quote)
+                if start < 0:
+                    continue
+                used_quotes.add(quote)
                 operations.extend(
                     UnbindProse(binding_id=binding.id)
                     for binding in after.bindings.values()
@@ -517,11 +527,13 @@ class StoryCandidate:
                 operations.append(
                     BindProse(
                         binding=ProseBinding(
-                            id="binding_" + self.id.removeprefix("candidate_"),
+                            id="binding_" + self.id.removeprefix("candidate_") + f"_{index}",
                             node_id=node_id,
                             document_id="doc_" + hashlib.sha256(path.encode()).hexdigest()[:24],
                             path=path,
                             digest=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                            span_digest=hashlib.sha256(quote.encode("utf-8")).hexdigest(),
+                            source="candidate",
                             start=start,
                             end=start + len(quote),
                             quote=quote,

@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.files import Workspace
 from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_models import StoryChangeSet
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
@@ -116,6 +117,57 @@ def test_read_story_returns_exact_ids(store: StoryStore, tmp_path: Path) -> None
     assert payload["revision"] == store.read().variant(MAIN_VARIANT_ID).revision
     # 提示里明确要求不要拿真相当台词。
     assert "author_truth" in payload["note"]
+
+
+def test_update_story_expands_quote_only_binding(
+    store: StoryStore, tmp_path: Path
+) -> None:
+    book = tmp_path / "book"
+    (book / "正文").mkdir(parents=True)
+    path = "正文/0001 抵达.md"
+    quote = "侦探走进旅馆。"
+    (book / path).write_text(f"# 第一章\n\n{quote}\n", encoding="utf-8")
+    scope = StoryToolScope(
+        state_root=tmp_path / "state",
+        workspace=Workspace(book),
+        frozen=StoryContextSnapshot(
+            variant_id=MAIN_VARIANT_ID, revision="rev", purpose="design", node_ids=("n1",)
+        ),
+        writable=True,
+        operation_id="op_bind",
+        generation=1,
+        author_text="核对第一章并绑定正文",
+    )
+
+    result = _call(
+        _tool(build_story_tools(scope), "update_story"),
+        {
+            "operations": [
+                {
+                    "op": "bind_prose",
+                    "binding": {
+                        "node_id": "n1",
+                        "path": path,
+                        "quote": quote,
+                        "observation": "第一章开篇",
+                    },
+                }
+            ]
+        },
+    )
+
+    assert result.details["ok"] is True
+    variant = store.read().variant(MAIN_VARIANT_ID)
+    assert variant is not None
+    binding = next(iter(variant.bindings.values()))
+    view = Workspace(book).read(path)
+    assert binding.quote == quote
+    assert binding.digest == view.digest
+    assert binding.span_digest
+    assert binding.source == "outline_from_prose"
+    assert binding.start == view.text.find(quote)
+    assert binding.end == binding.start + len(quote)
+    assert binding.contract_digest
 
 
 def test_update_story_commits_with_app_metadata(store: StoryStore, tmp_path: Path) -> None:

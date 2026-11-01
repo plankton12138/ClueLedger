@@ -21,7 +21,7 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.source_locations import SourceLocation, resolve_source_location
 from hastings.workspace.state import RecentWorkspaces, conversation_root
 from hastings.workspace.story_clue_views import story_clue_detail, story_clue_list
-from hastings.workspace.story_store import StoryStore
+from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 
 
 def create_clue_router(
@@ -100,12 +100,16 @@ def create_clue_router(
         chapter_path: str = Query(min_length=1, max_length=512),
         as_of_chapter: int | None = Query(default=None, ge=0),
     ) -> ClueMarksView:
-        """本章正文里的线索下划线；只从已提交的账本证据生成。"""
+        """本章正文里的线索下划线；优先用账本证据，缺失时回退到正文锚点。"""
+        root = conversation_root(workspaces.root, workspace_id)
+        snapshot = StoryStore(root).read()
+        variant = snapshot.variant(MAIN_VARIANT_ID) if snapshot.document is not None else None
         return build_clue_marks(
             workspaces.workspace(workspace_id),
-            conversation_root(workspaces.root, workspace_id),
+            root,
             chapter_path=chapter_path,
             as_of_chapter=as_of_chapter,
+            variant=variant,
         )
 
     @router.get("/{workspace_id}/clues/{clue_id}", response_model=ClueDetail)

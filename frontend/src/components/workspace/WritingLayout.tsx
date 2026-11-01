@@ -151,7 +151,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     if (store.workspaceId !== currentId) await store.load(currentId);
     openChat();
     await useConversationsStore.getState().send(
-      "根据正文校准当前构思：逐章读取现有正文，抽取能核对的事件、实际时间、线索出现位置和角色知情，并注明章节与原文引文。与当前构思逐项对照，只修改或补充有明显依据的缺口；作者真相未在正文明示时保持未定，逐项说明依据。",
+      "根据正文校准当前构思：逐章读取现有正文，抽取能核对的事件、实际时间、线索出现位置和角色知情，并注明章节与原文引文。与当前构思逐项对照，只修改或补充有明显依据的缺口；作者真相未在正文明示时保持未定，逐项说明依据。节点在正文里有对应段落的，提交 bind_prose（node_id、path、quote 用正文原句），让构思与正文建立关联；没有对应段落的节点不要绑定。",
       {
         ...EMPTY_CONTEXT,
         story: {

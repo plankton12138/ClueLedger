@@ -48,6 +48,7 @@ function syncLabel(state: StorySyncNodeState): string {
     unchecked: "未核对",
     waived: "已确认差异",
     outline_only: "未写",
+    unlinked: "待核对",
   }[state];
 }
 
@@ -66,6 +67,7 @@ export default function StoryMysteryView({
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [collapsedLanes, setCollapsedLanes] = useState<Set<"detective" | "reader" | "clue">>(new Set());
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [syncFocus, setSyncFocus] = useState<StorySyncFocus | null>(null);
   const selectedClueRef = useRef(selectedClueId);
   selectedClueRef.current = selectedClueId;
@@ -132,11 +134,17 @@ export default function StoryMysteryView({
       ? new Set(["outline_ahead", "prose_ahead", "unchecked"])
       : syncFocus === "outline_only"
         ? new Set(["outline_only"])
-        : new Set([syncFocus]);
+        : syncFocus === "unlinked"
+          ? new Set(["unlinked"])
+          : new Set([syncFocus]);
     return new Set((sync?.nodes ?? []).filter((node) => wanted.has(node.state)).map((node) => node.node_id));
   }, [sync, syncFocus]);
   const unboundChapters = useMemo(
     () => (sync?.chapters ?? []).filter((chapter) => chapter.state === "unbound"),
+    [sync],
+  );
+  const partialChapters = useMemo(
+    () => (sync?.chapters ?? []).filter((chapter) => chapter.state === "partial"),
     [sync],
   );
   const stageGroups = useMemo(() => {
@@ -163,6 +171,14 @@ export default function StoryMysteryView({
       const next = new Set(previous);
       if (next.has(lane)) next.delete(lane);
       else next.add(lane);
+      return next;
+    });
+  }
+  function toggleNodeExpanded(nodeId: string) {
+    setExpandedNodes((previous) => {
+      const next = new Set(previous);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
       return next;
     });
   }
@@ -218,6 +234,12 @@ export default function StoryMysteryView({
       {syncFocus === "unbound" && unboundChapters.length > 0 && (
         <p className="story-sync-focus-note">
           未纳入构思：{unboundChapters.map((chapter) => chapter.title).join("、")}
+        </p>
+      )}
+      {syncFocus === "partial" && partialChapters.length > 0 && (
+        <p className="story-sync-focus-note">
+          部分归属：{partialChapters.map((chapter) => chapter.title).join("、")}
+          还有正文没有归属到构思节点。
         </p>
       )}
 
@@ -280,6 +302,9 @@ export default function StoryMysteryView({
             <div className="story-mystery-label">实际发生</div>
             {ordered.map((item) => {
               const syncNode = syncNodes.get(item.node.id);
+              const actionText = item.node.action;
+              const actionExpandable = Array.from(actionText).length > 36;
+              const actionExpanded = expandedNodes.has(item.node.id);
               return (
                 <div
                   className="story-mystery-cell"
@@ -302,7 +327,19 @@ export default function StoryMysteryView({
                     >
                       {item.node.title}
                     </button>
-                    <p className="story-mystery-action">{item.node.action}</p>
+                    <p className="story-mystery-action" data-expanded={actionExpanded ? "true" : undefined}>
+                      {actionText}
+                    </p>
+                    {actionExpandable && (
+                      <button
+                        type="button"
+                        className="story-node-expand"
+                        aria-expanded={actionExpanded}
+                        onClick={() => toggleNodeExpanded(item.node.id)}
+                      >
+                        {actionExpanded ? "收起" : "展开"}
+                      </button>
+                    )}
                     {syncNode && (
                       <div className="story-node-sync-line" title={syncNode.bound_quote}>
                         {syncNode.bound_chapter && <span className="story-node-chapter">{syncNode.bound_chapter}</span>}

@@ -15,7 +15,8 @@ function syncStatusLabel(state: string): string {
     diverged: "构思与正文都需要重新对齐",
     unchecked: "这一章还没有同步核对",
     waived: "已确认差异",
-    unbound: "这一章尚未纳入构思",
+    unbound: "这一章有正文，还没有归属到构思节点",
+    partial: "这一章还有部分正文没有归属到构思节点",
   }[state] ?? "同步状态";
 }
 

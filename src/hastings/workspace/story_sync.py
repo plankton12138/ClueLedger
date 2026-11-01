@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -39,6 +41,7 @@ __all__ = [
     "build_sync_view",
     "contract_digest",
     "contract_projection",
+    "current_span",
     "detect_sync_conflicts",
     "require_sync_decision",
     "sync_conflict_digest",
@@ -53,6 +56,8 @@ NodeSyncState = Literal[
     "unchecked",
     "waived",
     "outline_only",
+    #: 有正文章节尚未归属到任何节点；节点是否有正文还无法判定。
+    "unlinked",
 ]
 ChapterSyncState = Literal[
     "aligned",
@@ -62,6 +67,8 @@ ChapterSyncState = Literal[
     "unchecked",
     "waived",
     "unbound",
+    #: 章节已有锚点，但仍有正文没有归属到任何节点。
+    "partial",
 ]
 #: 绑定正文的状态；「只有构思、没有正文」属于节点/章节层面，不由绑定产生。
 BindingSyncState = Literal[
@@ -82,7 +89,9 @@ class SyncCounts(BaseModel):
     unchecked: int = 0
     waived: int = 0
     outline_only: int = 0
+    unlinked: int = 0
     unbound_prose: int = 0
+    partial_prose: int = 0
 
 
 class SyncNodeView(BaseModel):
@@ -206,6 +215,74 @@ def sync_fingerprint(binding: ProseBinding, contract: str, prose: str) -> str:
     )
 
 
+def _digest_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _binding_span(binding: ProseBinding, text: str) -> tuple[int, int] | None:
+    """区间仍可用时返回当前位置；位置失效后只在引文唯一出现时重新定位。"""
+    if 0 <= binding.start < binding.end <= len(text):
+        return binding.start, binding.end
+    if binding.quote and text.count(binding.quote) == 1:
+        start = text.find(binding.quote)
+        if start >= 0:
+            return start, start + len(binding.quote)
+    return None
+
+
+def _current_span(binding: ProseBinding, text: str) -> tuple[int, int, str] | None:
+    if (
+        0 <= binding.start < binding.end <= len(text)
+        and text[binding.start : binding.end] == binding.quote
+    ):
+        return binding.start, binding.end, _digest_text(binding.quote)
+    if binding.quote and text.count(binding.quote) == 1:
+        start = text.find(binding.quote)
+        if start >= 0:
+            return start, start + len(binding.quote), _digest_text(binding.quote)
+    return None
+
+
+def current_span(binding: ProseBinding, text: str) -> tuple[int, int, str] | None:
+    """锚点在当前正文里的位置与区间摘要；位置失效时返回 None。"""
+    return _current_span(binding, text)
+
+
+def _bound_digest(binding: ProseBinding) -> str:
+    # 旧记录没有区间摘要时，用引文本身作为区间摘要，避免整章改动误伤锚点。
+    return binding.span_digest or _digest_text(binding.quote)
+
+
+def _binding_prose_digest(binding: ProseBinding, file: _ChapterFile | None) -> str:
+    if file is None:
+        return ""
+    span = _current_span(binding, file.text)
+    if span is not None:
+        return span[2]
+    # 新记录有区间摘要时，引文缺失就是正文已改；旧记录才退回整份文件摘要。
+    return "" if binding.span_digest else file.digest
+
+
+_HEADING_RE = re.compile(r"(?m)^#{1,6}\s.*$")
+_WORD_RE = re.compile(r"\w")
+
+
+def _has_uncovered_prose(text: str, bindings: list[ProseBinding]) -> bool:
+    """锚点区间之外是否还有实质正文；标题、空白和纯标点不算未归属内容。"""
+    content = _HEADING_RE.sub(lambda match: " " * len(match.group(0)), text)
+    intervals = sorted(
+        span for binding in bindings if (span := _binding_span(binding, text)) is not None
+    )
+    cursor = 0
+    for start, end in intervals:
+        if start < cursor:
+            start = cursor
+        if _WORD_RE.search(content[cursor:start]):
+            return True
+        cursor = max(cursor, end)
+    return bool(_WORD_RE.search(content[cursor:]))
+
+
 def binding_state(binding: ProseBinding, contract: str, prose: str) -> BindingSyncState:
     fingerprint = sync_fingerprint(binding, contract, prose)
     if binding.waived_digest and binding.waived_digest == fingerprint:
@@ -213,7 +290,7 @@ def binding_state(binding: ProseBinding, contract: str, prose: str) -> BindingSy
     if not binding.contract_digest:
         return "unchecked"
     outline_changed = binding.contract_digest != contract
-    prose_changed = binding.digest != prose
+    prose_changed = _bound_digest(binding) != prose
     if outline_changed and prose_changed:
         return "diverged"
     if outline_changed:
@@ -257,6 +334,7 @@ def _count(nodes: list[SyncNodeView], chapters: list[SyncChapterView]) -> SyncCo
         else:
             setattr(counts, node.state, getattr(counts, node.state) + 1)
     counts.unbound_prose = sum(1 for chapter in chapters if chapter.state == "unbound")
+    counts.partial_prose = sum(1 for chapter in chapters if chapter.state == "partial")
     return counts
 
 
@@ -305,6 +383,19 @@ def build_sync_view(
             bindings_by_path[binding.path].append(binding)
 
     files: dict[str, _ChapterFile | None] = {}
+    #: 有正文尚未归属（整章未绑定，或只绑定了部分区间）；此时没有锚点的节点不能被判定为「未写」。
+    uncovered_paths: set[str] = set()
+    for entry in entries:
+        if entry.size <= 0:
+            continue
+        bindings = bindings_by_path.get(entry.path, [])
+        if not bindings:
+            uncovered_paths.add(entry.path)
+            continue
+        file = _read_chapter(workspace, entry.path, files)
+        if file is not None and _has_uncovered_prose(file.text, bindings):
+            uncovered_paths.add(entry.path)
+
     contracts: dict[str, str] = {}
     nodes: list[SyncNodeView] = []
     conflicts: dict[str, SyncConflictView] = {}
@@ -319,7 +410,7 @@ def build_sync_view(
         states: list[BindingSyncState] = []
         for binding in bindings:
             file = _read_chapter(workspace, binding.path, files)
-            prose = file.digest if file is not None else ""
+            prose = _binding_prose_digest(binding, file)
             state = binding_state(binding, contract, prose)
             states.append(state)
             if state in ("outline_ahead", "prose_ahead", "diverged"):
@@ -368,7 +459,11 @@ def build_sync_view(
                                 options=["follow_outline", "follow_prose", "defer"],
                             )
                         )
-        node_state: NodeSyncState = _aggregate(states) if bindings else "outline_only"
+        node_state: NodeSyncState = (
+            _aggregate(states)
+            if bindings
+            else ("unlinked" if uncovered_paths else "outline_only")
+        )
         first = bindings[0] if bindings else None
         chapter_entry = entry_by_path.get(first.path) if first is not None else None
         nodes.append(
@@ -408,22 +503,28 @@ def build_sync_view(
             )
             continue
         file = _read_chapter(workspace, entry.path, files)
-        prose = file.digest if file is not None else ""
+        prose_digest = file.digest if file is not None else ""
         states = [
-            binding_state(binding, contracts[binding.node_id], prose)
+            binding_state(binding, contracts[binding.node_id], _binding_prose_digest(binding, file))
             for binding in bindings
             if binding.node_id in contracts
         ]
-        checked = {binding.digest for binding in bindings}
+        chapter_state = _chapter_state(states)
+        if (
+            chapter_state == "aligned"
+            and file is not None
+            and _has_uncovered_prose(file.text, bindings)
+        ):
+            chapter_state = "partial"
         chapters.append(
             SyncChapterView(
                 path=entry.path,
                 chapter=entry.chapter_number or 0,
                 title=entry.display_title,
-                state=_chapter_state(states),
+                state=chapter_state,
                 node_ids=sorted({binding.node_id for binding in bindings}),
-                prose_digest=prose,
-                checked_digest=next(iter(checked)) if len(checked) == 1 else "",
+                prose_digest=prose_digest,
+                checked_digest=prose_digest,
             )
         )
 
@@ -471,7 +572,7 @@ def detect_sync_conflicts(
             if binding.node_id != node_id or binding.id not in before_binding_ids:
                 continue
             file = _read_chapter(workspace, binding.path, files)
-            prose = file.digest if file is not None else ""
+            prose = _binding_prose_digest(binding, file)
             state = binding_state(binding, after_contract, prose)
             if state == "aligned" or state == "waived":
                 continue
@@ -581,7 +682,7 @@ def _resolve_sync_bindings(
             continue
         contract = contract_digest(after, node)
         file = _read_chapter(workspace, binding.path, files)
-        prose = file.digest if file is not None else ""
+        prose = _binding_prose_digest(binding, file)
         update: dict[str, object] = {}
         if decision.choice == "follow_prose":
             update = {"contract_digest": contract, "waived_digest": "", "waived_note": ""}

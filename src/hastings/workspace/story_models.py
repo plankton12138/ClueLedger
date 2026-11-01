@@ -324,6 +324,10 @@ class ProseBinding(StrictRecord):
     document_id: StoryId
     path: str = Field(min_length=1)
     digest: str = Field(min_length=1)
+    #: 绑定时的区间摘要；空串表示旧记录，旧记录按整份文件摘要比较。
+    span_digest: str = Field(default="", max_length=128)
+    #: 这条正文关联由哪种写入路径产生，用于区分自动候选、从正文反建和手工补录。
+    source: Literal["candidate", "outline_from_prose", "manual", "inferred"] = "manual"
     start: int = Field(ge=0)
     end: int = Field(gt=0)
     quote: str = Field(min_length=1)

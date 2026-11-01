@@ -15,7 +15,9 @@ const sync: StorySync = {
     unchecked: 0,
     waived: 1,
     outline_only: 3,
+    unlinked: 2,
     unbound_prose: 2,
+    partial_prose: 1,
   },
   nodes: [],
   chapters: [],
@@ -31,7 +33,9 @@ describe("StorySyncStrip", () => {
     expect(html).toContain(">3<");
     expect(html).toContain("冲突");
     expect(html).toContain(">1<");
+    expect(html).toContain("待核对");
     expect(html).toContain("未纳入构思");
+    expect(html).toContain("部分归属");
     expect(html).toContain(">2<");
     expect(html).toContain("已确认差异");
   });

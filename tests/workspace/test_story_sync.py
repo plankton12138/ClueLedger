@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -135,33 +136,37 @@ def write_chapter(tmp_path: Path, text: str) -> tuple[str, str, str]:
     return path, view.digest, view.text
 
 
-def bind_first_node(
+def bind_node(
     store: StoryStore,
     *,
+    binding_id: str,
+    node_id: str,
     path: str,
     digest: str,
     text: str,
-    quote: str = "有人经过时木板没有响",
+    quote: str,
 ) -> None:
     variant = store.read().variant(MAIN_VARIANT_ID)
     assert variant is not None
-    node = variant.nodes["n1"]
+    node = variant.nodes[node_id]
     start = text.find(quote)
     assert start >= 0
     store.commit_change(
         variant_id=MAIN_VARIANT_ID,
         change=StoryChangeSet(
-            id="bind_sync",
+            id=binding_id,
             base_revision=variant.revision,
             operations=[
                 {
                     "op": "bind_prose",
                     "binding": {
-                        "id": "b1",
-                        "node_id": "n1",
+                        "id": binding_id,
+                        "node_id": node_id,
                         "document_id": "doc_1",
                         "path": path,
                         "digest": digest,
+                        "span_digest": hashlib.sha256(quote.encode("utf-8")).hexdigest(),
+                        "source": "manual",
                         "start": start,
                         "end": start + len(quote),
                         "quote": quote,
@@ -170,7 +175,26 @@ def bind_first_node(
                 }
             ],
         ),
-        request_key="bind-sync-prose",
+        request_key=f"bind-{binding_id}",
+    )
+
+
+def bind_first_node(
+    store: StoryStore,
+    *,
+    path: str,
+    digest: str,
+    text: str,
+    quote: str = "有人经过时木板没有响",
+) -> None:
+    bind_node(
+        store,
+        binding_id="b1",
+        node_id="n1",
+        path=path,
+        digest=digest,
+        text=text,
+        quote=quote,
     )
 
 
@@ -183,7 +207,7 @@ def sync(client: TestClient, workspace_id: str, **params: str) -> dict[str, Any]
     return response.json()
 
 
-def test_sync_view_reports_outline_only_and_unbound_prose(
+def test_sync_view_marks_unlinked_when_chapter_has_prose_without_binding(
     client: TestClient, tmp_path: Path
 ) -> None:
     workspace_id = open_workspace(client, tmp_path)
@@ -193,12 +217,106 @@ def test_sync_view_reports_outline_only_and_unbound_prose(
     body = sync(client, workspace_id)
 
     assert body["variant_id"] == MAIN_VARIANT_ID
-    assert body["counts"]["outline_only"] == 2
+    assert body["counts"]["outline_only"] == 0
+    assert body["counts"]["unlinked"] == 2
     assert body["counts"]["unbound_prose"] == 1
-    assert {node["state"] for node in body["nodes"]} == {"outline_only"}
+    assert {node["state"] for node in body["nodes"]} == {"unlinked"}
     chapter = next(row for row in body["chapters"] if row["path"] == path)
     assert chapter["state"] == "unbound"
     assert [row["kind"] for row in body["conflicts"]] == ["unbound_prose"]
+
+
+def test_sync_view_marks_partial_chapter_and_unlinked_nodes(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store = seed_story(tmp_path, workspace_id)
+    path, digest, text = write_chapter(
+        tmp_path, "# 第一章\n\n有人经过时木板没有响。\n\n侦探比较证人的时间。\n"
+    )
+    bind_first_node(store, path=path, digest=digest, text=text)
+
+    body = sync(client, workspace_id)
+
+    chapter = next(row for row in body["chapters"] if row["path"] == path)
+    assert chapter["state"] == "partial"
+    assert body["counts"]["partial_prose"] == 1
+    assert body["counts"]["aligned"] == 1
+    assert body["counts"]["unlinked"] == 1
+    node = next(row for row in body["nodes"] if row["node_id"] == "n2")
+    assert node["state"] == "unlinked"
+
+
+def test_span_binding_only_marks_the_edited_anchor(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store = seed_story(tmp_path, workspace_id)
+    path, digest, text = write_chapter(
+        tmp_path, "# 第一章\n\n有人经过时木板没有响。\n\n侦探比较证人的时间。\n"
+    )
+    bind_node(
+        store,
+        binding_id="b1",
+        node_id="n1",
+        path=path,
+        digest=digest,
+        text=text,
+        quote="有人经过时木板没有响",
+    )
+    bind_node(
+        store,
+        binding_id="b2",
+        node_id="n2",
+        path=path,
+        digest=digest,
+        text=text,
+        quote="侦探比较证人的时间",
+    )
+
+    aligned = sync(client, workspace_id)
+
+    assert aligned["counts"]["aligned"] == 2
+    chapter = next(row for row in aligned["chapters"] if row["path"] == path)
+    assert chapter["state"] == "aligned"
+
+    target = tmp_path / "book" / path
+    target.write_text(
+        text.replace("侦探比较证人的时间。", "侦探反复比较证人的时间。"),
+        encoding="utf-8",
+    )
+    changed = sync(client, workspace_id)
+
+    first = next(row for row in changed["nodes"] if row["node_id"] == "n1")
+    second = next(row for row in changed["nodes"] if row["node_id"] == "n2")
+    assert first["state"] == "aligned"
+    assert second["state"] == "prose_ahead"
+    assert [row["node_id"] for row in changed["conflicts"]] == ["n2"]
+
+
+def test_prose_marks_return_anchored_ranges(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    store = seed_story(tmp_path, workspace_id)
+    path, digest, text = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
+    bind_first_node(store, path=path, digest=digest, text=text)
+
+    response = client.get(
+        f"/api/file-workspaces/{workspace_id}/story/variants/{MAIN_VARIANT_ID}/prose-marks",
+        params={"chapter_path": path},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["path"] == path
+    assert body["digest"] == digest
+    assert len(body["marks"]) == 1
+    mark = body["marks"][0]
+    assert mark["node_id"] == "n1"
+    assert mark["title"] == "发现异样"
+    assert mark["quote"] == "有人经过时木板没有响"
+    assert mark["state"] == "aligned"
+    assert mark["start"] == text.find(mark["quote"])
+    assert mark["end"] == mark["start"] + len(mark["quote"])
 
 
 def test_sync_view_reports_aligned_binding_and_outline_change(
@@ -248,7 +366,7 @@ def test_sync_view_reports_aligned_binding_and_outline_change(
     ]
 
 
-def test_sync_view_reports_prose_change_and_chapter_filter(
+def test_sync_view_reports_unanchored_prose_and_chapter_filter(
     client: TestClient, tmp_path: Path
 ) -> None:
     workspace_id = open_workspace(client, tmp_path)
@@ -260,13 +378,16 @@ def test_sync_view_reports_prose_change_and_chapter_filter(
 
     body = sync(client, workspace_id)
     node = next(row for row in body["nodes"] if row["node_id"] == "n1")
-    assert node["state"] == "prose_ahead"
-    assert body["counts"]["prose_ahead"] == 1
+    assert node["state"] == "aligned"
+    assert body["counts"]["aligned"] == 1
+    assert body["counts"]["partial_prose"] == 1
+    chapter = next(row for row in body["chapters"] if row["path"] == path)
+    assert chapter["state"] == "partial"
 
     filtered = sync(client, workspace_id, chapter_path=path)
     assert [row["node_id"] for row in filtered["nodes"]] == ["n1"]
     assert [row["path"] for row in filtered["chapters"]] == [path]
-    assert [row["kind"] for row in filtered["conflicts"]] == ["prose_ahead"]
+    assert filtered["conflicts"] == []
 
 
 def action_change_body(store: StoryStore, action: str, request_key: str) -> dict[str, Any]:

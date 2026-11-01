@@ -1,6 +1,14 @@
 import type { StorySync } from "../../api/story";
 
-export type StorySyncFocus = "aligned" | "pending" | "conflict" | "outline_only" | "unbound" | "waived";
+export type StorySyncFocus =
+  | "aligned"
+  | "pending"
+  | "conflict"
+  | "outline_only"
+  | "unlinked"
+  | "unbound"
+  | "partial"
+  | "waived";
 
 interface Props {
   sync: StorySync;
@@ -39,6 +47,13 @@ export default function StorySyncStrip({ sync, focus, onFocus }: Props) {
       title: "构思和正文需要重新对齐，或有线索呈现句缺失",
     },
     {
+      key: "unlinked",
+      label: "待核对",
+      count: counts.unlinked,
+      tone: "pending",
+      title: "有正文还没有归属到构思节点",
+    },
+    {
       key: "outline_only",
       label: "待写",
       count: counts.outline_only,
@@ -51,6 +66,13 @@ export default function StorySyncStrip({ sync, focus, onFocus }: Props) {
       count: counts.unbound_prose,
       tone: "unbound",
       title: "有正文，但没有绑定到构思节点",
+    },
+    {
+      key: "partial",
+      label: "部分归属",
+      count: counts.partial_prose,
+      tone: "unbound",
+      title: "章节已有锚点，但仍有正文没有归属到节点",
     },
   ];
   if (counts.waived > 0) {

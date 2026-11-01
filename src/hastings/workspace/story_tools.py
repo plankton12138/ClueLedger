@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
@@ -58,7 +59,11 @@ from hastings.workspace.story_models import (
 )
 from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, StoryStore, new_id
 from hastings.workspace.story_structure import structure_diagnostics
-from hastings.workspace.story_sync import build_sync_view, require_sync_decision
+from hastings.workspace.story_sync import (
+    build_sync_view,
+    contract_digest,
+    require_sync_decision,
+)
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult
 
@@ -134,6 +139,66 @@ def _variant(scope: StoryToolScope) -> StoryVariant:
 
 def _catalog(scope: StoryToolScope, variant: StoryVariant) -> StoryClueCatalog:
     return StoryClueCatalog.from_root(variant, scope.state_root)
+
+
+def _expand_bindings(
+    rows: list[Any],
+    variant: StoryVariant,
+    workspace: Workspace,
+    *,
+    default_source: str = "manual",
+) -> list[Any]:
+    """把只给出 node_id / path / quote 的 bind_prose 展开成完整记录。
+
+    模型不需要计算正文偏移和摘要；这些由服务端按当前正文重新计算。
+    引文必须唯一出现，避免把不同段落的同一句话绑到错误位置。
+    """
+    result: list[Any] = []
+    for row in rows:
+        if not isinstance(row, Mapping) or row.get("op") != "bind_prose":
+            result.append(row)
+            continue
+        binding = dict(row.get("binding") or {})
+        node_id = str(binding.get("node_id") or "")
+        path = str(binding.get("path") or "")
+        quote = str(binding.get("quote") or "").strip()
+        node = variant.nodes.get(node_id)
+        if not path or not quote or node is None:
+            result.append(row)
+            continue
+        view = workspace.read(path)
+        start = view.text.find(quote)
+        if start < 0:
+            raise WorkspaceError(
+                code="STORY_BINDING_QUOTE_NOT_FOUND",
+                where="story.update.bind_prose",
+                why=f"引文不在当前正文里：{quote[:40]}",
+                fix="读取正文原文，quote 使用实际出现的完整句子",
+                details={"path": path, "node_id": node_id},
+            )
+        if view.text.count(quote) != 1:
+            raise WorkspaceError(
+                code="STORY_BINDING_QUOTE_NOT_UNIQUE",
+                where="story.update.bind_prose",
+                why=f"引文在正文里出现多次：{quote[:40]}",
+                fix="把 quote 扩展到前后相邻的一句，保证只出现一次",
+                details={"path": path, "node_id": node_id},
+            )
+        binding.update(
+            id=binding.get("id")
+            or "binding_"
+            + hashlib.sha256(f"{node_id}:{path}:{quote}".encode()).hexdigest()[:24],
+            document_id=binding.get("document_id")
+            or "doc_" + hashlib.sha256(path.encode()).hexdigest()[:24],
+            digest=view.digest,
+            span_digest=hashlib.sha256(quote.encode("utf-8")).hexdigest(),
+            source=str(binding.get("source") or default_source),
+            start=start,
+            end=start + len(quote),
+            contract_digest=contract_digest(variant, node),
+        )
+        result.append({**row, "binding": binding})
+    return result
 
 
 def _node_summary(variant: StoryVariant, node_id: str) -> dict[str, Any] | None:
@@ -857,6 +922,15 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 fix="用 operations 描述至少一项变更；确实无需改动时用 no_change 列出依据",
             )
         variant = _variant(scope)
+        if scope.workspace is not None:
+            raw_operations = _expand_bindings(
+                raw_operations,
+                variant,
+                scope.workspace,
+                default_source=(
+                    "outline_from_prose" if scope.frozen.purpose == "design" else "manual"
+                ),
+            )
         raw_sync = arguments.get("sync")
         sync = None
         if raw_sync is not None:
@@ -1178,6 +1252,10 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
             )
         )
     schema = StoryChangeSet.model_json_schema()
+    #: bind_prose 只要求模型给出目标与引文；偏移、摘要由服务端补全。
+    binding_schema = schema["$defs"].get("ProseBinding")
+    if isinstance(binding_schema, dict):
+        binding_schema["required"] = ["node_id", "path", "quote"]
     for tool in tools:
         if tool.name == "update_story":
             parameters = cast(dict[str, Any], tool.parameters)

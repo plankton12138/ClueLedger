@@ -176,7 +176,9 @@ export interface StorySyncCounts {
   unchecked: number;
   waived: number;
   outline_only: number;
+  unlinked: number;
   unbound_prose: number;
+  partial_prose: number;
 }
 
 export type StorySyncNodeState =
@@ -186,7 +188,8 @@ export type StorySyncNodeState =
   | "diverged"
   | "unchecked"
   | "waived"
-  | "outline_only";
+  | "outline_only"
+  | "unlinked";
 
 export type StorySyncChapterState =
   | "aligned"
@@ -195,7 +198,8 @@ export type StorySyncChapterState =
   | "diverged"
   | "unchecked"
   | "waived"
-  | "unbound";
+  | "unbound"
+  | "partial";
 
 export interface StorySyncNode {
   node_id: string;
@@ -241,6 +245,22 @@ export interface StorySync {
   nodes: StorySyncNode[];
   chapters: StorySyncChapter[];
   conflicts: StorySyncConflict[];
+}
+
+export interface ProseMark {
+  node_id: string;
+  title: string;
+  start: number;
+  end: number;
+  quote: string;
+  state: StorySyncNodeState;
+  source: "candidate" | "outline_from_prose" | "manual" | "inferred";
+}
+
+export interface ProseMarks {
+  path: string;
+  digest: string;
+  marks: ProseMark[];
 }
 
 export interface StoryReceipt {
@@ -300,6 +320,16 @@ export function readStorySync(
   const query = chapterPath ? `?chapter_path=${encodeURIComponent(chapterPath)}` : "";
   return request<StorySync>(
     `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/sync${query}`,
+  );
+}
+
+export function readStoryProseMarks(
+  workspaceId: string,
+  variantId: string,
+  chapterPath: string,
+): Promise<ProseMarks> {
+  return request<ProseMarks>(
+    `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/prose-marks?chapter_path=${encodeURIComponent(chapterPath)}`,
   );
 }
 

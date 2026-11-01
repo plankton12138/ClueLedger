@@ -31,6 +31,7 @@ from hastings.workspace.story_models import (
     SyncDecision,
 )
 from hastings.workspace.story_mystery import build_mystery_view
+from hastings.workspace.story_prose_marks import ProseMarksView, build_prose_marks
 from hastings.workspace.story_store import StoryStore, new_id
 from hastings.workspace.story_sync import StorySyncView, build_sync_view, require_sync_decision
 
@@ -502,6 +503,28 @@ def create_story_router(
                 fix="从作品工作区重新打开构思",
             )
         return build_sync_view(workspace, variant, chapter_path=chapter_path)
+
+    @router.get(
+        "/{workspace_id}/story/variants/{variant_id}/prose-marks",
+        response_model=ProseMarksView,
+    )
+    def read_prose_marks(
+        workspace_id: str,
+        variant_id: str,
+        chapter_path: str = Query(min_length=1, max_length=512),
+    ) -> ProseMarksView:
+        """正文里的构思出处标记；只从当前绑定生成。"""
+        store = store_for(workspace_id)
+        variant = require_variant(store, variant_id)
+        workspace = store.workspace
+        if workspace is None:
+            raise WorkspaceError(
+                code="STORY_SYNC_UNAVAILABLE",
+                where="prose.marks",
+                why="当前读取没有作品目录，无法核对正文",
+                fix="从作品工作区重新打开构思",
+            )
+        return build_prose_marks(workspace, variant, chapter_path=chapter_path)
 
     @router.post("/{workspace_id}/story/changes", response_model=StoryReceiptView, status_code=201)
     def submit_change(workspace_id: str, body: StoryChangeRequest) -> StoryReceiptView:

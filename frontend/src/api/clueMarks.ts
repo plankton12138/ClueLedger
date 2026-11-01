@@ -11,6 +11,7 @@ export interface ClueMark {
   role: ClueMarkRole;
   mode: string;
   chapter: number;
+  source?: "ledger" | "anchor";
 }
 
 export interface ClueMarks {
