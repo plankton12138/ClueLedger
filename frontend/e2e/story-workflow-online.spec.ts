@@ -2,7 +2,7 @@
  * 构思在线完整流程（1.0.1 P6）：真实服务、真实模型、真实文件。
  *
  * 验证三件事：模型通过结构工具建立方案与线索；备选的确定采用落到主方案；
- * 「引用到对话」让下一轮请求真的带上结构注入（读操作上下文，不猜）。
+ * 选中的时间轴节点让下一轮请求真的带上结构注入（读操作上下文，不猜）。
  * 断言只放可判定的事实；语义质量由 eval harness 的 O01/O06 等样例单独评。
  */
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
@@ -125,9 +125,9 @@ test("真实模块生成三线构思，草稿整体提交且各线独立推进�
     }
     expect(Math.max(...incoming.values(), ...outgoing.values())).toBeGreaterThan(1);
     await page.reload();
-    await page.getByRole("button", { name: "构思", exact: true }).click();
-    await expect(page.locator(".story-thread-heading")).toHaveCount(graph.threads.length);
-    await page.getByRole("button", { name: "查看全貌", exact: true }).click();
+    await page.getByRole("link", { name: "构思", exact: true }).click();
+    await expect(page.locator(".story-mystery-node-link")).toHaveCount(graph.nodes.length);
+    await expect(page.locator(".story-mystery-stage-group").first()).toBeVisible();
     await page.screenshot({ path: info.outputPath("multiline-generated.png") });
   } finally {
     await info.attach("first-run-evidence", { body: JSON.stringify({ accepted, model: config.selection.model,
@@ -150,7 +150,7 @@ test("创建表单实际保存节点线索并在刷新后显示", async ({ page,
   const model = config.connections.find((item: { name: string }) => item.name === config.selection.connection_id);
   expect(["localhost", "127.0.0.1", "0.0.0.0"]).not.toContain(new URL(model.base_url).hostname);
   await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await page.getByRole("link", { name: "构思", exact: true }).click();
   await page.getByRole("region", { name: "构思结构" }).getByRole("button", { name: "创建构思", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "创建构思", exact: true });
   await expect(dialog).toBeVisible();
@@ -175,9 +175,8 @@ test("创建表单实际保存节点线索并在刷新后显示", async ({ page,
   const surface = page.getByRole("region", { name: "构思结构" });
   await expect(surface.getByRole("button", { name: /^发现(?:\s|$)/ })).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await page.getByRole("link", { name: "构思", exact: true }).click();
   await expect(surface.getByRole("button", { name: /^对质(?:\s|$)/ })).toBeVisible();
-  await surface.getByRole("button", { name: /^发现(?:\s|$)/ }).click();
   await expect(surface.getByText("湿手套", { exact: false }).first()).toBeVisible();
   await page.screenshot({ path: info.outputPath("created-structure.png") });
   await info.attach("creation-evidence", { body: JSON.stringify({
@@ -186,7 +185,7 @@ test("创建表单实际保存节点线索并在刷新后显示", async ({ page,
   }, null, 2), contentType: "application/json" });
 });
 
-test("构思建立与结构引用进入真实请求", async ({ page, request }, info) => {
+test("构思建立与选中节点进入真实请求", async ({ page, request }, info) => {
   test.setTimeout(720_000);
   const root = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "online-books");
   mkdirSync(root, { recursive: true });
@@ -207,7 +206,7 @@ test("构思建立与结构引用进入真实请求", async ({ page, request }, 
 
     await page.goto(`/#/workspaces/${book.id}/writing`);
     // 打开构思面：这一轮按 design 语境发送，空白作品也能建立第一份结构。
-    await page.getByRole("button", { name: "构思", exact: true }).click();
+    await page.getByRole("link", { name: "构思", exact: true }).click();
 
     // 1) 从空白构思：模型用结构工具建立线索与两个节点。
     const plan = await send(
@@ -221,13 +220,10 @@ test("构思建立与结构引用进入真实请求", async ({ page, request }, 
     expect(main.counts.clues).toBeGreaterThanOrEqual(1);
     expect(variants.primary_variant_id).toBe(main.id);
 
-    // 2) 直接在唯一构思中引用节点。
+    // 2) 在时间轴选中节点，下一轮按 design 语境带上这个节点。
     const surface = page.getByRole("region", { name: "构思结构" });
     await expect(surface.getByRole("button", { name: "晚宴", exact: true })).toBeVisible();
-    // 3) 引用到对话：下一条请求真的带上结构注入（读操作上下文，不猜）。
     await surface.getByRole("button", { name: "晚宴", exact: true }).click();
-    await surface.getByRole("button", { name: "引用到对话" }).click();
-    await expect(page.getByLabel("引用构思")).toContainText("晚宴");
     const discussed = await send(
       page,
       "只讨论、不保存：以「晚宴」这个节点为基点，说明如果雪停时间被目击者推翻，哪些节点和线索需要联动调整。给出需要改动的对象清单即可。",
@@ -239,7 +235,7 @@ test("构思建立与结构引用进入真实请求", async ({ page, request }, 
         .get(`/api/operations/${operationId}/context`)
         .then((r) => r.json());
       const injected = JSON.stringify(context.injections ?? []);
-      // 结构真的进入了这一轮的输入；没有就说明「引用到对话」是假的。
+      // 结构真的进入了这一轮的输入；没有就说明选中节点没有生效。
       expect(injected).toContain("story");
     } else {
       // 旧事件流没有 operation_started 时，退回断言请求确实带了 story 上下文：
@@ -276,7 +272,7 @@ test("已有正文归纳结构，并在局部修改中只动选中节点", async
   expect(config.selection.available).toBe(true);
 
   await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await page.getByRole("link", { name: "构思", exact: true }).click();
   const surface = page.getByRole("region", { name: "构思结构" });
   await surface.getByRole("button", { name: "创建构思", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "创建构思", exact: true });
@@ -333,7 +329,7 @@ test("暂停、继续并在重载后恢复构思", async ({ page, request }, inf
   expect(config.selection.available).toBe(true);
 
   await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await page.getByRole("link", { name: "构思", exact: true }).click();
   const surface = page.getByRole("region", { name: "构思结构" });
   await surface.getByRole("button", { name: "创建构思", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "创建构思", exact: true });
@@ -373,7 +369,7 @@ test("暂停、继续并在重载后恢复构思", async ({ page, request }, inf
   expect(new Set(graph.nodes.map((node: { id: string }) => node.id)).size).toBe(graph.nodes.length);
 
   await page.reload();
-  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await page.getByRole("link", { name: "构思", exact: true }).click();
   await expect(surface.getByRole("button", { name: new RegExp(`^${graph.nodes[0].title}`) }).first()).toBeVisible();
   await info.attach("pause-resume-evidence", { body: JSON.stringify({
     model: config.selection.model, accepted, paused: view, graph,
@@ -456,7 +452,7 @@ test("模型提交悬空线索引用时服务端拒绝且不落半份结构", as
   expect(config.selection.available).toBe(true);
 
   await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: "构思", exact: true }).click();
+  await page.getByRole("link", { name: "构思", exact: true }).click();
   const accepted = await send(
     page,
     "本轮只做一次结构提交测试：调用 update_story 新增节点 n1，并在 clue_uses 中引用 clue_id「missing-clue」，不要先创建这条线索。服务端拒绝后不要重试，直接说明失败原因。",

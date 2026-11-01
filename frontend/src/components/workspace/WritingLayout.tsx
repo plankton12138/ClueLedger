@@ -141,7 +141,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   }
   function openStoryNode(nodeId: string) {
     if (!currentId) return;
-    void useStoryStore.getState().selectNode(nodeId);
+    useStoryStore.getState().selectNode(nodeId);
     navigate({ kind: "writing", workspaceId: currentId, mode: "story" });
   }
   // 带上线索只写进消息草稿，不发送；引用版本在发送时才由服务端核对。
@@ -151,30 +151,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     if (store.workspaceId !== currentId) await store.load(currentId);
     if (!useConversationsStore.getState().addClueReference(reference, title)) return;
     openChat();
-  }
-  async function writeStoryNode(nodeId: string) {
-    if (!currentId) return;
-    const story = useStoryStore.getState();
-    const graph = story.graph;
-    const node = graph?.nodes.find(item => item.id === nodeId);
-    if (!graph || !story.variantId || !node) return;
-    const store = useConversationsStore.getState();
-    if (store.workspaceId !== currentId) await store.load(currentId);
-    navigate({ kind: "writing", workspaceId: currentId });
-    openChat();
-    await useConversationsStore.getState().send(
-      `写这一段正文：${node.title}。按构思里的行动、变化和线索呈现来写，不要提前写出作者真相。`,
-      {
-        ...EMPTY_CONTEXT,
-        story: {
-          variant_id: story.variantId,
-          revision: graph.revision,
-          node_ids: [node.id],
-          purpose: "write",
-        },
-      },
-      { purpose: "chat", preserveDraft: true },
-    );
   }
   async function calibrateStoryFromProse() {
     if (!currentId) return;
@@ -252,7 +228,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
               onLocateNode={openStoryNode}
               onLocateEvidence={(id, asOf) => void locateStoryEvidence(id, asOf)}
               onReference={referenceClue}
-              onClearNodeFilter={() => void useStoryStore.getState().selectNode(null)}
+              onClearNodeFilter={() => useStoryStore.getState().selectNode(null)}
             />
           ) : (
             <div className="writing-side-empty">
@@ -269,18 +245,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
           <StorySurface
             workspaceId={currentId}
             onStart={openStoryConversation}
-            onReference={openStoryConversation}
-            onWriteScene={(nodeId) => void writeStoryNode(nodeId)}
             onCalibrate={() => void calibrateStoryFromProse()}
-            onLocate={binding => {
-              useSourceLocationStore.setState({ storyReturn: true });
-              navigate({ kind: "writing", workspaceId: currentId });
-              void useSourceLocationStore.getState().showLocal(
-                currentId,
-                { path: binding.path, start: binding.start, end: binding.end, quote: binding.quote },
-                { fromStory: true },
-              );
-            }}
           />
         ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} /> : !ready ? <div className="ui-empty" role="status"><p>正在载入作品…</p></div> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
         </div></div>

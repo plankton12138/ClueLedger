@@ -7,7 +7,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   listStoryVariants: vi.fn(),
   readStoryVariant: vi.fn(),
-  readStoryNode: vi.fn(),
   submitStoryChange: vi.fn(),
   undoStoryChange: vi.fn(),
 }));
@@ -47,28 +46,6 @@ const GRAPH = {
   collapsed: [],
 };
 
-const DETAIL = {
-  variant_id: "main",
-  revision: "rev_1",
-  node: GRAPH.nodes[0],
-  clue_uses: [
-    {
-      clue_id: "c1",
-      title: "手套",
-      author_truth: "管家搬过尸体",
-      intention: "",
-      presentation: "手套还在滴水",
-      mode: "narration",
-      speaker_id: "",
-      expected_interpretation: "",
-    },
-  ],
-  knowledge_changes: [],
-  bindings: [],
-  incoming: [],
-  outgoing: GRAPH.edges,
-};
-
 function reset(): void {
   useStoryStore.getState().reset();
   vi.clearAllMocks();
@@ -78,7 +55,6 @@ function reset(): void {
     variants: [VARIANT],
   });
   api.readStoryVariant.mockResolvedValue(GRAPH);
-  api.readStoryNode.mockResolvedValue(DETAIL);
 }
 
 describe("构思状态", () => {
@@ -104,32 +80,23 @@ describe("构思状态", () => {
     expect(useStoryStore.getState().error).toBeNull();
   });
 
-  it("不同作品具有相同节点 ID 时，迟到详情不覆盖当前作品", async () => {
+  it("切换作品会清空当前节点选择", async () => {
     await useStoryStore.getState().load("w1");
-    let resolve: (value: unknown) => void = () => undefined;
-    api.readStoryNode.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
-    const old = useStoryStore.getState().selectNode("n1");
+    useStoryStore.getState().selectNode("n1");
+    expect(useStoryStore.getState().nodeId).toBe("n1");
+
     await useStoryStore.getState().load("w2");
-    const current = { ...DETAIL, node: { ...DETAIL.node, title: "第二本节点" } };
-    api.readStoryNode.mockResolvedValueOnce(current);
-    await useStoryStore.getState().selectNode("n1");
-    resolve(DETAIL); await old;
-    expect(useStoryStore.getState().detail?.node.title).toBe("第二本节点");
+    expect(useStoryStore.getState().nodeId).toBeNull();
   });
 
-  it("选中节点读详情；切走后迟到的详情不覆盖", async () => {
+  it("节点选择可清除，只保留节点标识供左栏过滤", async () => {
     await useStoryStore.getState().load("w1");
-    let resolve: (value: unknown) => void = () => undefined;
-    api.readStoryNode.mockImplementationOnce(
-      () => new Promise((done) => { resolve = done; }),
-    );
 
-    void useStoryStore.getState().selectNode("n1");
-    await useStoryStore.getState().selectNode(null);
-    resolve(DETAIL);
+    useStoryStore.getState().selectNode("n1");
+    expect(useStoryStore.getState().nodeId).toBe("n1");
 
+    useStoryStore.getState().selectNode(null);
     expect(useStoryStore.getState().nodeId).toBeNull();
-    expect(useStoryStore.getState().detail).toBeNull();
   });
 
   it("提交变更用当前修订，成功后按服务端结果重读", async () => {
@@ -195,28 +162,13 @@ describe("构思状态", () => {
     expect(useStoryStore.getState().lastChange).toBeNull();
   });
 
-  it("引用到对话登记当前方案的节点，清除后不再带着", async () => {
-    await useStoryStore.getState().load("w1");
-
-    useStoryStore.getState().referenceNode("n1");
-    expect(useStoryStore.getState().reference).toMatchObject({
-      variantId: "main",
-      revision: "rev_1",
-      nodeIds: ["n1"],
-      title: "抵达",
-    });
-
-    useStoryStore.getState().clearReference();
-    expect(useStoryStore.getState().reference).toBeNull();
-  });
-
   it("模型保存后刷新空白构思，不重置当前浏览方案", async () => {
     api.listStoryVariants.mockResolvedValueOnce({ revision: "empty", primary_variant_id: "", variants: [] });
     await useStoryStore.getState().load("w1");
     await useStoryStore.getState().refresh("w1");
     expect(useStoryStore.getState().graph?.nodes).toHaveLength(2);
     expect(useStoryStore.getState().variantId).toBe("main");
-    await useStoryStore.getState().selectNode("n1");
+    useStoryStore.getState().selectNode("n1");
     await useStoryStore.getState().refresh("w1");
     expect(useStoryStore.getState().nodeId).toBe("n1");
   });

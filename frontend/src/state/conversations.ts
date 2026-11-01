@@ -658,9 +658,7 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const submittedTextReferences = options ? [] : [...(get().draftContexts[key]?.text_references ?? [])];
       // 引用只随作者的下一条普通消息提交；明确用途（检查、整理）不夹带草稿引用。
       const submittedClueReferences = options ? [] : [...(get().draftContexts[key]?.clue_references ?? [])];
-      // 构思里的「引用到对话」：只随普通消息提交，明确用途不夹带。
       // 构思面开着时按 design 语境发送：空白作品也能由此建立第一份结构。
-      const storyReference = options ? null : useStoryStore.getState().reference;
       const currentStory = useStoryStore.getState();
       const storySurfaceOpen = options ? false : currentStory.open;
       const request: TurnInput = {
@@ -676,18 +674,9 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
             idea_id,
             revision_id,
           })),
-          ...(storyReference
-            ? {
-                story: {
-                  variant_id: storyReference.variantId,
-                  revision: storyReference.revision,
-                  node_ids: [...storyReference.nodeIds],
-                  purpose: "write",
-                },
-              }
-            : storySurfaceOpen
-              ? { story: { variant_id: currentStory.variantId ?? "", revision: currentStory.graph?.revision ?? "", node_ids: currentStory.nodeId ? [currentStory.nodeId] : [], purpose: "design" } }
-              : {}),
+          ...(storySurfaceOpen
+            ? { story: { variant_id: currentStory.variantId ?? "", revision: currentStory.graph?.revision ?? "", node_ids: currentStory.nodeId ? [currentStory.nodeId] : [], purpose: "design" } }
+            : {}),
         },
         ...(options && options.purpose === "review"
           ? { purpose: options.purpose, review_paths: options.reviewPaths ?? [] }
@@ -704,8 +693,6 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
         if (conversationId) {
           const turn = await startTurn(workspaceId, conversationId, request);
           turnId = turn.turn_id;
-          // 结构引用随这一条消息走：发送成功后就清掉，下一条不带旧方案。
-          if (storyReference) useStoryStore.getState().clearReference();
           patchEntry(conversationId, {
             running: true,
             activeTurn: {
@@ -723,7 +710,6 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           conversationId = accepted.conversation_id;
           turnId = accepted.turn_id;
           after = 0;
-          if (storyReference) useStoryStore.getState().clearReference();
           set((state) => ({
             selectedId: conversationId,
             items: [

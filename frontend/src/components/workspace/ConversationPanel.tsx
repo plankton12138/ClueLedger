@@ -14,7 +14,6 @@ import { useShallow } from "zustand/react/shallow";
 
 import { EMPTY_CONTEXT, type ContextInput, type Conversation } from "../../api/workspace";
 import { errorMessage } from "../../api/errors";
-import { useStoryStore } from "../../state/story";
 import { createIdea, requestKey } from "../../api/ideas";
 import { findMessage, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import {
@@ -229,9 +228,6 @@ export default function ConversationPanel() {
   const references = draftContext?.reference_paths ?? [];
   const textReferences = draftContext?.text_references ?? [];
   const clueReferences = draftContext?.clue_references ?? [];
-  const storyReference = useStoryStore(
-    (state) => (state.workspaceId === workspaceId ? state.reference : null),
-  );
   const toggleReference = (path: string) => {
     const next = references.includes(path)
       ? references.filter((item) => item !== path)
@@ -436,14 +432,6 @@ export default function ConversationPanel() {
                 onClick={() => useConversationsStore.getState().removeClueReference(item.clue_id, item.clue_revision)}>×</button>
             </span>
           ))}
-        </div>}
-        {storyReference && <div className="mb-1 flex items-center gap-1 text-[10px]" aria-label="引用构思">
-          <span className="text-mute">本轮构思：</span>
-          <span className="inline-flex max-w-[14rem] items-center gap-1 rounded border border-row-edge px-1 py-0.5">
-            <span className="truncate" title={storyReference.title}>{storyReference.title}</span>
-            <button type="button" className="text-mute hover:text-fg" aria-label={`移除构思引用 ${storyReference.title}`}
-              onClick={() => useStoryStore.getState().clearReference()}>×</button>
-          </span>
         </div>}
         {textReferences.length > 0 && <div className="text-reference-list" aria-label="引用选段">
           {textReferences.map(reference => <TextReferenceChip key={reference.id} reference={reference}

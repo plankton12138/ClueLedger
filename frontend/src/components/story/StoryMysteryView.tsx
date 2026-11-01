@@ -25,10 +25,9 @@ interface Props {
   variantId: string;
   revision: string;
   graph: StoryGraph;
-  stageId: string | null;
   selectedClueId: string | null;
   onSelectClue: (clueId: string | null) => void;
-  onOpenNode: (nodeId: string) => void;
+  onSelectNode: (nodeId: string) => void;
 }
 
 function stanceLabel(stances: string[]): string {
@@ -41,10 +40,9 @@ export default function StoryMysteryView({
   variantId,
   revision,
   graph,
-  stageId,
   selectedClueId,
   onSelectClue,
-  onOpenNode,
+  onSelectNode,
 }: Props) {
   const [mystery, setMystery] = useState<StoryMystery | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,8 +82,8 @@ export default function StoryMysteryView({
   }, [workspaceId, variantId, revision, reloadKey, onSelectClue]);
 
   const ordered = useMemo(
-    () => orderedMysteryNodes(graph, mystery, stageId),
-    [graph, mystery, stageId],
+    () => orderedMysteryNodes(graph, mystery),
+    [graph, mystery],
   );
   const selectedClue = useMemo(
     () => mystery?.clues.find((clue) => clue.clue_id === selectedClueId) ?? null,
@@ -203,9 +201,7 @@ export default function StoryMysteryView({
       )}
 
       {ordered.length === 0 ? (
-        <div className="story-mystery-empty">
-          {stageId ? "当前阶段没有节点。" : "还没有构思结构。"}
-        </div>
+        <div className="story-mystery-empty">还没有构思结构。</div>
       ) : (
         <div className="story-mystery-scroll" aria-label="实际时间轴">
           <div className="story-mystery-grid" style={gridStyle} role="group" aria-label="时间轴泳道">
@@ -239,8 +235,8 @@ export default function StoryMysteryView({
                 <button
                   type="button"
                   className="story-mystery-node-link"
-                  onClick={() => onOpenNode(item.node.id)}
-                  title="在结构图中查看"
+                  onClick={() => onSelectNode(item.node.id)}
+                  title="只看与此节点相关的线索"
                 >
                   {item.node.title}
                 </button>

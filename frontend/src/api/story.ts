@@ -168,35 +168,6 @@ export interface StoryMystery {
   };
 }
 
-export interface StoryClueUse {
-  clue_id: string;
-  title: string;
-  author_truth: string | null;
-  intention: string;
-  presentation: string;
-  mode: string;
-  speaker_id: string;
-  expected_interpretation: string;
-}
-
-export interface StoryNodeDetail {
-  variant_id: string;
-  revision: string;
-  node: StoryNode;
-  clue_uses: StoryClueUse[];
-  knowledge_changes: Record<string, unknown>[];
-  bindings: {
-    id: string;
-    path: string;
-    start: number;
-    end: number;
-    quote: string;
-    observation: string;
-  }[];
-  incoming: StoryEdge[];
-  outgoing: StoryEdge[];
-}
-
 export interface StoryReceipt {
   variant_id: string;
   base_revision: string;
@@ -237,16 +208,6 @@ export function readStoryMystery(
 ): Promise<StoryMystery> {
   return request<StoryMystery>(
     `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/mystery`,
-  );
-}
-
-export function readStoryNode(
-  workspaceId: string,
-  variantId: string,
-  nodeId: string,
-): Promise<StoryNodeDetail> {
-  return request<StoryNodeDetail>(
-    `/${workspaceId}/story/nodes/${encodeURIComponent(nodeId)}?variant_id=${encodeURIComponent(variantId)}`,
   );
 }
 

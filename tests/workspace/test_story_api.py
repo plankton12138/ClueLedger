@@ -244,15 +244,6 @@ def test_variants_graph_and_node_detail(client: TestClient, tmp_path: Path) -> N
     assert graph["edges"][0]["from_id"] == "n1"
     assert graph["collapsed"] == []
 
-    detail = client.get(
-        f"/api/file-workspaces/{workspace_id}/story/nodes/n1",
-        params={"variant_id": MAIN_VARIANT_ID},
-    ).json()
-    assert detail["node"]["title"] == "抵达"
-    assert detail["clue_uses"][0]["author_truth"] == "管家搬过尸体"
-    assert [edge["id"] for edge in detail["outgoing"]] == ["e1"]
-    assert detail["incoming"] == []
-
 
 def test_mystery_projection_returns_timeline_and_clues(
     client: TestClient, tmp_path: Path
@@ -315,7 +306,7 @@ def test_change_commit_is_idempotent_and_revision_checked(
     assert conflict.json()["error"]["code"] == "STORY_REVISION_CONFLICT"
 
 
-def test_missing_variant_and_node_are_reported(client: TestClient, tmp_path: Path) -> None:
+def test_missing_variant_is_reported(client: TestClient, tmp_path: Path) -> None:
     workspace_id = open_workspace(client, tmp_path)
     seed(tmp_path, workspace_id)
 
@@ -328,13 +319,6 @@ def test_missing_variant_and_node_are_reported(client: TestClient, tmp_path: Pat
     )
     assert missing_mystery.status_code == 404
     assert missing_mystery.json()["error"]["code"] == "STORY_VARIANT_NOT_FOUND"
-
-    node = client.get(
-        f"/api/file-workspaces/{workspace_id}/story/nodes/n99",
-        params={"variant_id": MAIN_VARIANT_ID},
-    )
-    assert node.status_code == 400
-    assert node.json()["error"]["code"] == "STORY_CONTEXT_INCOMPLETE"
 
 
 def test_story_scope_clue_reads_plan_and_uses(client: TestClient, tmp_path: Path) -> None:

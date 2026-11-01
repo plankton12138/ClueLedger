@@ -60,7 +60,6 @@ export function timeLabel(item: MysteryNodeItem): string {
 export function orderedMysteryNodes(
   graph: StoryGraph,
   mystery: StoryMystery | null,
-  stageId: string | null,
 ): MysteryNodeItem[] {
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   const extras = new Map((mystery?.nodes ?? []).map((node) => [node.id, node]));
@@ -86,7 +85,6 @@ export function orderedMysteryNodes(
         registered: extra?.time_status === "registered",
       };
     })
-    .filter((item) => !stageId || item.node.stage_id === stageId);
 }
 
 export interface SubjectReading {

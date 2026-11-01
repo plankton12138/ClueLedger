@@ -172,19 +172,14 @@ const MYSTERY: StoryMystery = {
 
 describe("悬疑视图排序与聚合", () => {
   it("按投影顺序排列，未登记节点在末尾", () => {
-    const ordered = orderedMysteryNodes(GRAPH, MYSTERY, null);
+    const ordered = orderedMysteryNodes(GRAPH, MYSTERY);
     expect(ordered.map((item) => item.node.id)).toEqual(["n2", "n1", "n3"]);
     expect(ordered[2].extra?.time_status).toBe("unregistered");
     expect(ordered[0].stageTitle).toBe("第一幕");
   });
 
-  it("按阶段过滤，不改动投影顺序", () => {
-    const ordered = orderedMysteryNodes(GRAPH, MYSTERY, "s1");
-    expect(ordered.map((item) => item.node.id)).toEqual(["n2", "n1"]);
-  });
-
   it("没有投影时按节点 ID 回退", () => {
-    const ordered = orderedMysteryNodes(GRAPH, null, null);
+    const ordered = orderedMysteryNodes(GRAPH, null);
     expect(ordered.map((item) => item.node.id)).toEqual(["n1", "n2", "n3"]);
   });
 

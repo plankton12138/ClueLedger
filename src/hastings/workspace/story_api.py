@@ -115,28 +115,6 @@ class StoryMysteryView(BaseModel):
     counts: dict[str, int]
 
 
-class StoryClueUseView(BaseModel):
-    clue_id: str
-    title: str
-    author_truth: str | None = None
-    intention: str
-    presentation: str
-    mode: str
-    speaker_id: str
-    expected_interpretation: str
-
-
-class StoryNodeDetailView(BaseModel):
-    variant_id: str
-    revision: str
-    node: StoryNodeView
-    clue_uses: list[StoryClueUseView]
-    knowledge_changes: list[dict[str, Any]]
-    bindings: list[dict[str, Any]]
-    incoming: list[StoryEdgeView]
-    outgoing: list[StoryEdgeView]
-
-
 class StoryChangeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -498,66 +476,6 @@ def create_story_router(
             variant, conversation_root(workspaces.root, workspace_id)
         )
         return StoryMysteryView(**build_mystery_view(variant, catalog))
-
-    @router.get("/{workspace_id}/story/nodes/{node_id}", response_model=StoryNodeDetailView)
-    def read_node(
-        workspace_id: str,
-        node_id: str,
-        variant_id: str = Query(min_length=1),
-    ) -> StoryNodeDetailView:
-        """节点详情：安排、线索的真实作用、知情与正文入口；就近展开用。"""
-        variant = require_variant(store_for(workspace_id), variant_id)
-        node = variant.nodes.get(node_id)
-        if node is None:
-            raise WorkspaceError(
-                code="STORY_CONTEXT_INCOMPLETE",
-                where="story.api",
-                why=f"没有这个节点：{node_id}",
-                fix="刷新构思后重新选择节点",
-                details={"node_id": node_id},
-            )
-        catalog = StoryClueCatalog.from_root(
-            variant, conversation_root(workspaces.root, workspace_id)
-        )
-        uses: list[StoryClueUseView] = []
-        for use in node.clue_uses:
-            fact = catalog.get(use.clue_id)
-            plan = fact.plan if fact is not None else None
-            uses.append(
-                StoryClueUseView(
-                    clue_id=use.clue_id,
-                    title=fact.title if fact is not None else use.clue_id,
-                    author_truth=plan.author_truth if plan is not None else None,
-                    intention=plan.intention if plan is not None else "",
-                    presentation=use.presentation,
-                    mode=use.mode,
-                    speaker_id=use.speaker_id,
-                    expected_interpretation=use.expected_interpretation,
-                )
-            )
-        return StoryNodeDetailView(
-            variant_id=variant.id,
-            revision=variant.revision,
-            node=_node_view(variant, node),
-            clue_uses=uses,
-            knowledge_changes=[change.model_dump(mode="json") for change in node.knowledge_changes],
-            bindings=[
-                {
-                    "id": binding.id,
-                    "path": binding.path,
-                    "start": binding.start,
-                    "end": binding.end,
-                    "quote": binding.quote,
-                    "observation": binding.observation,
-                }
-                for binding in variant.bindings.values()
-                if binding.node_id == node.id
-            ],
-            incoming=[_edge_view(edge) for edge in variant.edges.values() if edge.to_id == node.id],
-            outgoing=[
-                _edge_view(edge) for edge in variant.edges.values() if edge.from_id == node.id
-            ],
-        )
 
     @router.post("/{workspace_id}/story/changes", response_model=StoryReceiptView, status_code=201)
     def submit_change(workspace_id: str, body: StoryChangeRequest) -> StoryReceiptView:
