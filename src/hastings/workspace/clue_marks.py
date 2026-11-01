@@ -1,40 +1,54 @@
-"""正文线索下划线的只读投影：优先使用已提交账本证据，缺失时回退到正文段落锚点。"""
+"""正文里的线索标记：只投影已经登记的精确出处，不做词项猜测。
+
+标记有两个来源，合并后按 ``clue_id + 区间`` 去重：
+
+* 作者或候选登记的正文本关联（``ProseBinding.clue_id``），带精确码点区间；
+* 账本里已提交的正文观察，只在当前正文仍与该贡献记录的摘要一致时显示。
+
+引文在当前正文里找不到或出现多次时，不猜测位置，改为返回失效条目说明原因。
+"""
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from hastings.workspace.clue_models import ClueContent, ClueEvidence, ClueMode
+from hastings.workspace.clue_models import ClueContent, ClueEvidence
 from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
-from hastings.workspace.story_clue_catalog import StoryClueCatalog
-from hastings.workspace.story_models import StoryNode, StoryVariant
-from hastings.workspace.story_sync import current_span
+from hastings.workspace.story_bindings import anchor_state
+from hastings.workspace.story_models import ClueKind, StoryVariant
 
-__all__ = ["ClueMark", "ClueMarksView", "build_clue_marks"]
+__all__ = ["ClueMark", "ClueMarksView", "InvalidClueMark", "build_clue_marks"]
 
-MarkRole = Literal["plant", "mention", "resolve"]
+MarkSource = Literal["binding", "ledger"]
 MarkState = Literal["ready", "empty", "stale", "unrecorded"]
-
-_ROLE_PRIORITY = {"plant": 3, "resolve": 2, "mention": 1}
 
 
 class ClueMark(BaseModel):
+    """一处可见标记；同一区间同时来自作者关联与账本观察时合并成一条。"""
+
     clue_id: str
     title: str
+    kind: ClueKind | None = None
     start: int = Field(ge=0)
     end: int = Field(gt=0)
     quote: str
-    role: MarkRole
-    mode: ClueMode = "unknown"
-    chapter: int
-    #: ledger 来自已提交账本证据；anchor 来自正文段落锚点与节点线索用途。
-    source: Literal["ledger", "anchor"] = "ledger"
+    mode: str = "unknown"
+    chapter: int = 0
+    sources: list[MarkSource] = Field(default_factory=list)
+
+
+class InvalidClueMark(BaseModel):
+    """引文失效或有多处匹配：保留原引用与原因，不给猜测位置。"""
+
+    clue_id: str
+    title: str
+    quote: str
+    reason: Literal["missing", "ambiguous", "unavailable"]
 
 
 class ClueMarksView(BaseModel):
@@ -42,105 +56,32 @@ class ClueMarksView(BaseModel):
     digest: str
     state: MarkState
     marks: list[ClueMark] = Field(default_factory=list)
+    invalid: list[InvalidClueMark] = Field(default_factory=list)
     ledger_revision: str = ""
+    variant_revision: str = ""
 
 
-def _proofs(content: ClueContent, path: str) -> list[tuple[MarkRole, ClueEvidence]]:
-    result: list[tuple[MarkRole, ClueEvidence]] = []
+def _invalid_reason(state: str) -> Literal["missing", "ambiguous", "unavailable"]:
+    if state == "ambiguous":
+        return "ambiguous"
+    if state == "unavailable":
+        return "unavailable"
+    return "missing"
+
+
+def _proofs(content: ClueContent, path: str) -> list[ClueEvidence]:
+    rows: list[ClueEvidence] = []
     if content.evidence.path == path:
-        role: MarkRole = "plant" if content.source_chapter == content.planted_chapter else "mention"
-        result.append((role, content.evidence))
+        rows.append(content.evidence)
     if content.mention_evidence is not None and content.mention_evidence.path == path:
-        result.append(("mention", content.mention_evidence))
+        rows.append(content.mention_evidence)
     if (
         content.resolution_evidence is not None
         and content.resolution_evidence.path == path
         and content.resolution_chapter == content.source_chapter
     ):
-        result.append(("resolve", content.resolution_evidence))
-    return result
-
-
-def _use_role(roles: list[str]) -> MarkRole:
-    if any(role in ("resolve", "reinterpret") for role in roles):
-        return "resolve"
-    if any(role in ("plant", "misdirect") for role in roles):
-        return "plant"
-    return "mention"
-
-
-_CJK_RE = re.compile(r"[\u4e00-\u9fff]+")
-_STOP_CHARS = set("的了与和在地是有无不可他她它我你这那一个又再就都也很更最一二三四五六七八九十")
-_STOP_BIGRAMS = {
-    "第1",
-    "一章",
-    "一个",
-    "没有",
-    "什么",
-    "现在",
-    "他们",
-    "我们",
-    "自己",
-    "这个",
-    "那个",
-    "可以",
-    "已经",
-    "因为",
-    "所以",
-    "就是",
-    "不是",
-    "只是",
-    "如果",
-    "但是",
-    "然后",
-    "以及",
-    "当时",
-    "之前",
-    "之后",
-}
-
-
-def _clue_tokens(node: StoryNode, catalog: StoryClueCatalog) -> dict[str, dict[str, int]]:
-    """按节点内的线索用途提取区分性词；出现于多条线索的词不参与匹配。"""
-    raw: dict[str, dict[str, int]] = {}
-    texts = {
-        use.clue_id: f"{catalog.title(use.clue_id)} {use.presentation}" for use in node.clue_uses
-    }
-    for use in node.clue_uses:
-        title = catalog.title(use.clue_id)
-        other = " ".join(text for clue_id, text in texts.items() if clue_id != use.clue_id)
-        tokens: dict[str, int] = {}
-        for run in _CJK_RE.findall(f"{title} {use.presentation}"):
-            for index in range(len(run) - 1):
-                bigram = run[index : index + 2]
-                if bigram not in _STOP_BIGRAMS:
-                    tokens[bigram] = 2
-        for char in title:
-            if char in _STOP_CHARS or not _CJK_RE.match(char) or char in other:
-                continue
-            tokens.setdefault(char, 1)
-        raw[use.clue_id] = tokens
-    counts: dict[str, int] = {}
-    for tokens in raw.values():
-        for token in tokens:
-            counts[token] = counts.get(token, 0) + 1
-    return {
-        clue_id: {token: weight for token, weight in tokens.items() if counts[token] == 1}
-        for clue_id, tokens in raw.items()
-    }
-
-
-def _best_clue(segment: str, token_maps: dict[str, dict[str, int]]) -> str | None:
-    best_id = ""
-    best_score = 0
-    tied = False
-    for clue_id, tokens in token_maps.items():
-        score = sum(weight for token, weight in tokens.items() if token in segment)
-        if score > best_score:
-            best_id, best_score, tied = clue_id, score, False
-        elif score == best_score and score > 0:
-            tied = True
-    return "" if tied else best_id or None
+        rows.append(content.resolution_evidence)
+    return rows
 
 
 def build_clue_marks(
@@ -166,85 +107,83 @@ def build_clue_marks(
     file = workspace.read(chapter_path)
     snapshot = ClueLedgerStore(root).read()
     ledger = snapshot.ledger
+    chapter_number = entry.chapter_number
     marks: dict[tuple[str, int, int], ClueMark] = {}
+    invalid: list[InvalidClueMark] = []
+
+    def title_of(clue_id: str) -> str:
+        identity = ledger.clues.get(clue_id) if ledger is not None else None
+        return identity.title if identity is not None else clue_id
+
+    def kind_of(clue_id: str) -> ClueKind | None:
+        if variant is None:
+            return None
+        plan = variant.clue_plans.get(clue_id)
+        return plan.kind if plan is not None else None
+
+    def add(mark: ClueMark) -> None:
+        key = (mark.clue_id, mark.start, mark.end)
+        previous = marks.get(key)
+        if previous is None:
+            marks[key] = mark
+            return
+        merged = sorted({*previous.sources, *mark.sources})
+        marks[key] = previous.model_copy(update={"sources": merged})
+
+    if variant is not None and (as_of_chapter is None or chapter_number <= as_of_chapter):
+        for binding in variant.bindings.values():
+            if binding.clue_id is None or binding.path != chapter_path:
+                continue
+            anchor = anchor_state(binding, file.text, file.digest)
+            if anchor.span is None:
+                invalid.append(
+                    InvalidClueMark(
+                        clue_id=binding.clue_id,
+                        title=title_of(binding.clue_id),
+                        quote=binding.quote,
+                        reason=_invalid_reason(anchor.state),
+                    )
+                )
+                continue
+            add(
+                ClueMark(
+                    clue_id=binding.clue_id,
+                    title=title_of(binding.clue_id),
+                    kind=kind_of(binding.clue_id),
+                    start=anchor.span.start,
+                    end=anchor.span.end,
+                    quote=anchor.span.quote,
+                    chapter=chapter_number,
+                    sources=["binding"],
+                )
+            )
+
     if ledger is not None:
-        identities = ledger.clues
         for contribution in ledger.contributions.values():
             content = contribution.content
-            if as_of_chapter is not None and content.source_chapter > as_of_chapter:
-                continue
             if contribution.source_path != chapter_path:
+                continue
+            if as_of_chapter is not None and content.source_chapter > as_of_chapter:
                 continue
             if contribution.source_digest != file.digest:
                 continue
-            identity = identities.get(contribution.clue_id)
-            title = identity.title if identity is not None else content.clue
-            for role, proof in _proofs(content, chapter_path):
+            for proof in _proofs(content, chapter_path):
                 if file.text[proof.start : proof.end] != proof.quote:
                     continue
-                key = (contribution.clue_id, proof.start, proof.end)
-                previous = marks.get(key)
-                if previous is not None and _ROLE_PRIORITY[previous.role] >= _ROLE_PRIORITY[role]:
-                    continue
-                marks[key] = ClueMark(
-                    clue_id=contribution.clue_id,
-                    title=title,
-                    start=proof.start,
-                    end=proof.end,
-                    quote=proof.quote,
-                    role=role,
-                    mode=contribution.mode,
-                    chapter=content.source_chapter or entry.chapter_number,
+                add(
+                    ClueMark(
+                        clue_id=contribution.clue_id,
+                        title=title_of(contribution.clue_id),
+                        kind=kind_of(contribution.clue_id),
+                        start=proof.start,
+                        end=proof.end,
+                        quote=proof.quote,
+                        mode=contribution.mode,
+                        chapter=content.source_chapter or chapter_number,
+                        sources=["ledger"],
+                    )
                 )
-    if variant is not None:
-        catalog = StoryClueCatalog.from_root(variant, root)
-        chapter_number = entry.chapter_number or 0
-        if as_of_chapter is not None and chapter_number > as_of_chapter:
-            chapter_number = 0
-        for binding in variant.bindings.values():
-            if not chapter_number or binding.path != chapter_path:
-                continue
-            node = variant.nodes.get(binding.node_id)
-            if node is None:
-                continue
-            span = current_span(binding, file.text)
-            if span is None:
-                continue
-            start, end, _ = span
-            segment = file.text[start:end]
-            token_maps = _clue_tokens(node, catalog)
-            best_clue = _best_clue(segment, token_maps)
-            explicit = binding.clue_id if binding.clue_id in token_maps else ""
-            for use in node.clue_uses:
-                presentation = use.presentation.strip()
-                local = segment.find(presentation) if presentation else -1
-                if local >= 0:
-                    mark_start = start + local
-                    mark_end = mark_start + len(presentation)
-                    mark_quote = presentation
-                elif (
-                    (explicit and use.clue_id == explicit)
-                    or len(node.clue_uses) == 1
-                    or best_clue == use.clue_id
-                ):
-                    # 构思里的呈现句常是摘要；匹配到具体线索时退到已锚定的正文句子。
-                    mark_start, mark_end, mark_quote = start, end, binding.quote
-                else:
-                    continue
-                key = (use.clue_id, mark_start, mark_end)
-                if key in marks:
-                    continue
-                marks[key] = ClueMark(
-                    clue_id=use.clue_id,
-                    title=catalog.title(use.clue_id),
-                    start=mark_start,
-                    end=mark_end,
-                    quote=mark_quote,
-                    role=_use_role(use.roles),
-                    mode=use.mode,
-                    chapter=entry.chapter_number or 0,
-                    source="anchor",
-                )
+
     ordered = sorted(marks.values(), key=lambda row: (row.start, row.end, row.title))
     coverage = ledger.coverage.get(chapter_path) if ledger is not None else None
     if ordered:
@@ -260,5 +199,7 @@ def build_clue_marks(
         digest=file.digest,
         state=state,
         marks=ordered,
+        invalid=invalid,
         ledger_revision=snapshot.revision,
+        variant_revision=variant.revision if variant is not None else "",
     )

@@ -49,7 +49,11 @@ from hastings.workspace.files import FileEntry, FileKind, Workspace, is_managed_
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import GlossaryStore, build_glossary, glossary_view
 from hastings.workspace.locations import default_data_root, default_workspace_root, documents_dir
-from hastings.workspace.materials import MAX_REFERENCES, ContextRequest
+from hastings.workspace.materials import (
+    MAX_REFERENCES,
+    ContextRequest,
+    StoryReconcileRequest,
+)
 from hastings.workspace.reading_position import ReadingPosition, read_position, save_position
 from hastings.workspace.review import ReviewReport, ReviewStore
 from hastings.workspace.service import TurnService
@@ -300,6 +304,17 @@ class StoryContextInput(BaseModel):
         )
 
 
+class StoryReconcileInput(BaseModel):
+    """核对讨论的目标与提醒指纹；点击前不创建会话，点击后服务端核对仍适用。"""
+
+    model_config = ConfigDict(extra="forbid")
+    variant_id: str = Field(min_length=1, max_length=64)
+    variant_revision: str = Field(min_length=1, max_length=64)
+    node_id: str = Field(min_length=1, max_length=64)
+    binding_ids: list[str] = Field(default_factory=list, max_length=50)
+    warning_fingerprint: str = Field(min_length=1, max_length=128)
+
+
 class ContextInput(BaseModel):
     """本轮带上来的材料：当前阅读位置、显式参考与客户端看到的版本。
 
@@ -314,6 +329,7 @@ class ContextInput(BaseModel):
     state_chapter: int | None = Field(default=None, ge=0, strict=True)
     clue_references: list[ClueReferenceInput] = Field(default_factory=list, max_length=10)
     story: StoryContextInput | None = None
+    story_reconcile: StoryReconcileInput | None = None
 
     @field_validator("selected_path")
     @classmethod
@@ -341,6 +357,17 @@ class ContextInput(BaseModel):
             observed_digests=dict(self.observed_digests),
             clue_references=tuple(item.to_request() for item in self.clue_references),
             story=self.story.to_request() if self.story else None,
+            story_reconcile=(
+                StoryReconcileRequest(
+                    variant_id=self.story_reconcile.variant_id,
+                    variant_revision=self.story_reconcile.variant_revision,
+                    node_id=self.story_reconcile.node_id,
+                    binding_ids=tuple(self.story_reconcile.binding_ids),
+                    warning_fingerprint=self.story_reconcile.warning_fingerprint,
+                )
+                if self.story_reconcile
+                else None
+            ),
         )
 
 
@@ -857,6 +884,36 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
                 details={"id": workspace_id},
             )
 
+    def require_current_attention(
+        workspace_id: str, target: StoryReconcileInput | None
+    ) -> None:
+        """核对讨论的目标必须仍然存在且提醒没有变化；点击前不创建任何东西。"""
+        if target is None:
+            return
+        from hastings.workspace.story_store import StoryStore
+        from hastings.workspace.story_sync import build_attention_view
+
+        root = conversation_root(workspaces.root, workspace_id)
+        workspace = workspaces.workspace(workspace_id)
+        variant = StoryStore(root, workspace).read().variant(target.variant_id)
+        if variant is None:
+            raise WorkspaceError(
+                code="STORY_VARIANT_NOT_FOUND",
+                where="story.reconcile",
+                why="这次讨论对应的构思已经不存在",
+                fix="刷新构思后重新打开提醒",
+            )
+        view = build_attention_view(workspace, variant)
+        row = next((item for item in view.nodes if item.node_id == target.node_id), None)
+        if row is None or row.fingerprint != target.warning_fingerprint:
+            raise WorkspaceError(
+                code="STORY_ATTENTION_STALE",
+                where="story.reconcile",
+                why="提醒在开启讨论前已经变化",
+                fix="读取当前差异后重新打开核对讨论",
+                details={"node_id": target.node_id},
+            )
+
     def ui_for(workspace_id: str) -> ConversationUiStore:
         workspaces.get(workspace_id)
         cached = ui_stores.get(workspace_id)
@@ -1284,6 +1341,7 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
     ) -> AcceptedTurnView:
         """首次发送：一次请求同时建会话与受理首轮，不再有「空会话」这一步。"""
         service = service_for(workspace_id)
+        require_current_attention(workspace_id, body.context.story_reconcile)
         info = await service.accept(
             body.text,
             body.request_key,
@@ -1701,3 +1759,4 @@ def _entry(entry: FileEntry) -> FileEntryView:
         size=entry.size,
         metadata_warnings=list(entry.metadata_warnings),
     )
+

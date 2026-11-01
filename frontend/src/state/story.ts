@@ -1,28 +1,42 @@
 /**
- * 构思页的状态。
+ * 构思、时间轴与三状态的作品状态。
  *
- * 只放「当前看哪个方案、选中哪个节点、图」这三件事。所有标识与修订来自服务端；
- * 写入成功后按服务端返回的修订重读，不在本地拼一份「大概是这样」的结构。
+ * 只放「当前看哪个方案、选中哪个节点或线索、服务端返回的投影」。所有标识与修订来自
+ * 服务端；写入成功后按服务端返回的修订重读，不在本地拼一份「大概是这样」的结构。
  */
 
 import { create } from "zustand";
 
 import {
   listStoryVariants,
+  readClueRelations,
+  readStoryAttention,
   readStoryChange,
-  readStorySync,
+  readStoryTimeline,
   readStoryVariant,
   submitStoryChange,
   undoStoryChange,
+  type ClueRelations,
+  type StoryAttention,
   type StoryChangeRecord,
   type StoryGraph,
-  type StorySync,
+  type StoryTimeline,
   type StoryVariantSummary,
 } from "../api/story";
 import { errorMessage } from "../api/errors";
 
 function storyRequestKey(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+export interface SelectionMark {
+  path: string;
+  digest: string;
+  quote: string;
+  start: number;
+  end: number;
+  kind: "truth" | "mislead";
+  title: string;
 }
 
 interface StoryState {
@@ -33,7 +47,9 @@ interface StoryState {
   primaryId: string;
   variantId: string | null;
   graph: StoryGraph | null;
-  sync: StorySync | null;
+  attention: StoryAttention | null;
+  timeline: StoryTimeline | null;
+  relations: ClueRelations | null;
   nodeId: string | null;
   clueId: string | null;
   lastChange: StoryChangeRecord | null;
@@ -47,14 +63,21 @@ interface StoryState {
   setOpen(open: boolean): void;
   selectNode(nodeId: string | null): void;
   selectClue(clueId: string | null): void;
+  loadRelations(workspaceId: string, focusClueId: string | null): Promise<void>;
+  markSelection(mark: SelectionMark): Promise<boolean>;
+  acknowledge(nodeId: string, fingerprint: string): Promise<boolean>;
   submit(operations: Record<string, unknown>[], note?: string): Promise<boolean>;
   undo(changeId?: string): Promise<boolean>;
   dismissError(): void;
 }
 
-/** 写入后统一按服务端修订重读：图与方案列表都换成本次返回的版本。 */
-async function initialGraph(workspaceId: string, variantId: string) {
-  return readStoryVariant(workspaceId, variantId);
+async function readProjections(workspaceId: string, variantId: string) {
+  const [graph, attention, timeline] = await Promise.all([
+    readStoryVariant(workspaceId, variantId),
+    readStoryAttention(workspaceId, variantId).catch(() => null),
+    readStoryTimeline(workspaceId, variantId).catch(() => null),
+  ]);
+  return { graph, attention, timeline };
 }
 
 /** 刷新序号：并发刷新只让最新一次落地，旧快照不能覆盖新结果。 */
@@ -68,7 +91,9 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
   primaryId: "",
   variantId: null,
   graph: null,
-  sync: null,
+  attention: null,
+  timeline: null,
+  relations: null,
   nodeId: null,
   clueId: null,
   lastChange: null,
@@ -86,7 +111,9 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
       primaryId: "",
       variantId: null,
       graph: null,
-      sync: null,
+      attention: null,
+      timeline: null,
+      relations: null,
       nodeId: null,
       clueId: null,
 
@@ -105,17 +132,28 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     const epoch = ++loadEpoch;
     ++refreshEpoch;
     if (get().workspaceId !== workspaceId) {
-      set({ workspaceId, variants: [], variantId: null, graph: null, sync: null, nodeId: null, clueId: null });
+      set({
+        workspaceId,
+        variants: [],
+        variantId: null,
+        graph: null,
+        attention: null,
+        timeline: null,
+        relations: null,
+        nodeId: null,
+        clueId: null,
+      });
     }
     set({ loading: true, error: null });
     try {
       const list = await listStoryVariants(workspaceId);
       const variantId = list.primary_variant_id || null;
-      const [initial, sync] = await Promise.all([
-        variantId ? initialGraph(workspaceId, variantId) : Promise.resolve(null),
-        variantId ? readStorySync(workspaceId, variantId).catch(() => null) : Promise.resolve(null),
-      ]);
-      const lastChange = initial?.latest_change_id ? await readStoryChange(workspaceId, initial.latest_change_id) : null;
+      const projections = variantId
+        ? await readProjections(workspaceId, variantId)
+        : { graph: null, attention: null, timeline: null };
+      const lastChange = projections.graph?.latest_change_id
+        ? await readStoryChange(workspaceId, projections.graph.latest_change_id)
+        : null;
       // 迟到的响应不能覆盖已经切走的作品。
       if (get().workspaceId !== workspaceId || epoch !== loadEpoch) return;
       set({
@@ -123,10 +161,11 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
         primaryId: list.primary_variant_id,
         lastChange,
         variantId,
-        graph: initial ?? null,
-        sync,
-        nodeId: null,
-        clueId: null,
+        graph: projections.graph,
+        attention: projections.attention,
+        timeline: projections.timeline,
+        relations: null,
+        // 选中的节点与线索由路由决定；重新读取同一作品不能清掉刚做的选择。
         loading: false,
       });
     } catch (error) {
@@ -143,24 +182,42 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     try {
       const list = await listStoryVariants(workspaceId);
       const variantId = list.primary_variant_id || null;
-      const [graph, sync] = await Promise.all([
-        variantId ? readStoryVariant(workspaceId, variantId) : Promise.resolve(null),
-        variantId ? readStorySync(workspaceId, variantId).catch(() => null) : Promise.resolve(null),
-      ]);
-      const lastChange = graph?.latest_change_id ? await readStoryChange(workspaceId, graph.latest_change_id) : null;
+      const projections = variantId
+        ? await readProjections(workspaceId, variantId)
+        : { graph: null, attention: null, timeline: null };
+      const lastChange = projections.graph?.latest_change_id
+        ? await readStoryChange(workspaceId, projections.graph.latest_change_id)
+        : null;
       if (epoch !== refreshEpoch) return;
       const current = get();
-      if (current.workspaceId !== workspaceId || current.variantId !== before.variantId
-        || current.nodeId !== before.nodeId) return;
+      if (
+        current.workspaceId !== workspaceId ||
+        current.variantId !== before.variantId ||
+        current.nodeId !== before.nodeId
+      )
+        return;
       // 期间已有别的写入（提交、撤销、切换）落地：旧刷新结果不再覆盖它。
       const currentRevision = current.graph?.revision ?? "";
-      if (currentRevision !== beforeRevision && currentRevision !== (graph?.revision ?? "")) return;
-      set({ variants: list.variants, primaryId: list.primary_variant_id, variantId, graph, sync, lastChange,
-        nodeId: before.nodeId && graph?.nodes.some(node => node.id === before.nodeId) ? before.nodeId : null,
-        error: null });
+      if (currentRevision !== beforeRevision && currentRevision !== (projections.graph?.revision ?? ""))
+        return;
+      set({
+        variants: list.variants,
+        primaryId: list.primary_variant_id,
+        variantId,
+        graph: projections.graph,
+        attention: projections.attention,
+        timeline: projections.timeline,
+        lastChange,
+        nodeId:
+          before.nodeId && projections.graph?.nodes.some(node => node.id === before.nodeId)
+            ? before.nodeId
+            : null,
+        error: null,
+      });
     } catch (cause) {
       if (epoch !== refreshEpoch) return;
-      if (get().workspaceId === workspaceId && get().variantId === before.variantId) set({ error: errorMessage(cause, "刷新构思") });
+      if (get().workspaceId === workspaceId && get().variantId === before.variantId)
+        set({ error: errorMessage(cause, "刷新构思") });
     }
   },
 
@@ -170,6 +227,98 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
 
   selectClue(clueId) {
     set({ clueId });
+  },
+
+  async loadRelations(workspaceId, focusClueId) {
+    const variantId = get().variantId;
+    if (!variantId) return;
+    try {
+      const relations = await readClueRelations(workspaceId, variantId, focusClueId);
+      if (get().workspaceId !== workspaceId || get().variantId !== variantId) return;
+      set({ relations });
+    } catch (cause) {
+      if (get().workspaceId === workspaceId)
+        set({ error: errorMessage(cause, "读取线索关系") });
+    }
+  },
+
+  async markSelection(mark) {
+    const { workspaceId, variantId, graph } = get();
+    if (!workspaceId) return false;
+    set({ busy: true, error: null });
+    try {
+      const tempId = `new-clue-${Date.now().toString(36)}`;
+      const receipt = await submitStoryChange(workspaceId, {
+        variant_id: variantId ?? "main",
+        expected_revision: graph?.revision ?? "empty",
+        request_key: storyRequestKey("mark-selection"),
+        operations: [
+          { op: "create_clue_identity", temp_id: tempId, title: mark.title },
+          {
+            op: "upsert_clue_plan",
+            clue_id: tempId,
+            plan: { kind: mark.kind, author_truth: null, intention: "", resolution_intent: "undecided" },
+          },
+          {
+            op: "bind_prose",
+            binding: {
+              id: `binding-${Date.now().toString(36)}`,
+              clue_id: tempId,
+              node_id: null,
+              document_id: "",
+              path: mark.path,
+              digest: mark.digest,
+              start: mark.start,
+              end: mark.end,
+              quote: mark.quote,
+            },
+          },
+        ],
+        note: mark.kind === "truth" ? "作者把选段标记为真相线索" : "作者把选段标记为误导线索",
+      });
+      // 首次标记会建立空主方案，重读一次拿到新修订与线索身份。
+      const nextVariantId = receipt.variant_id || variantId;
+      const list = await listStoryVariants(workspaceId);
+      const projections = nextVariantId
+        ? await readProjections(workspaceId, nextVariantId)
+        : { graph: null, attention: null, timeline: null };
+      if (get().workspaceId !== workspaceId) return false;
+      set({
+        variants: list.variants,
+        primaryId: list.primary_variant_id,
+        variantId: nextVariantId,
+        graph: projections.graph,
+        attention: projections.attention,
+        timeline: projections.timeline,
+        busy: false,
+      });
+      return true;
+    } catch (error) {
+      set({ busy: false, error: errorMessage(error, "标记选段") });
+      return false;
+    }
+  },
+
+  async acknowledge(nodeId, fingerprint) {
+    const { workspaceId, variantId, graph } = get();
+    if (!workspaceId || !variantId || !graph) return false;
+    set({ busy: true, error: null });
+    try {
+      await submitStoryChange(workspaceId, {
+        variant_id: variantId,
+        expected_revision: graph.revision,
+        request_key: storyRequestKey("acknowledge"),
+        operations: [{ op: "acknowledge_attention", node_id: nodeId, fingerprint }],
+        note: "作者选择稍后处理这条提醒",
+      });
+      const projections = await readProjections(workspaceId, variantId);
+      if (get().workspaceId !== workspaceId) return false;
+      set({ graph: projections.graph, attention: projections.attention, timeline: projections.timeline, busy: false });
+      return true;
+    } catch (error) {
+      set({ busy: false, error: errorMessage(error, "稍后处理") });
+      return false;
+    }
   },
 
   async submit(operations, note = "") {
@@ -184,15 +333,15 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
         operations,
         note,
       });
-      const [nextGraph, list, nextSync] = await Promise.all([
-        readStoryVariant(workspaceId, variantId),
+      const [list, projections] = await Promise.all([
         listStoryVariants(workspaceId),
-        readStorySync(workspaceId, variantId).catch(() => null),
+        readProjections(workspaceId, variantId),
       ]);
       if (get().workspaceId !== workspaceId) return false;
       set({
-        graph: nextGraph,
-        sync: nextSync,
+        graph: projections.graph,
+        attention: projections.attention,
+        timeline: projections.timeline,
         variants: list.variants,
         lastChange: {
           change_id: receipt.change_id,
@@ -220,15 +369,15 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     set({ busy: true, error: null });
     try {
       await undoStoryChange(workspaceId, target, storyRequestKey("story-undo"));
-      const [graph, list, nextSync] = await Promise.all([
-        readStoryVariant(workspaceId, variantId),
+      const [list, projections] = await Promise.all([
         listStoryVariants(workspaceId),
-        readStorySync(workspaceId, variantId).catch(() => null),
+        readProjections(workspaceId, variantId),
       ]);
       if (get().workspaceId !== workspaceId) return false;
       set({
-        graph,
-        sync: nextSync,
+        graph: projections.graph,
+        attention: projections.attention,
+        timeline: projections.timeline,
         variants: list.variants,
         lastChange: null,
 

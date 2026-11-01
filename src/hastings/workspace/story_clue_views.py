@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 from pathlib import Path
+from typing import Literal
 
 from hastings.library.modules import ModuleLibrary
 from hastings.workspace.clue_store import ClueLedgerStore
@@ -14,18 +15,121 @@ from hastings.workspace.clue_views import (
     ClueDetail,
     ClueLifecycle,
     ClueList,
+    ClueOccurrence,
     CluePlanView,
     ClueReader,
+    ClueRelationView,
     ClueSummary,
     ClueUsePosition,
 )
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
+from hastings.workspace.story_bindings import anchor_state
 from hastings.workspace.story_clue_catalog import StoryClueCatalog
 from hastings.workspace.story_models import StoryVariant
 from hastings.workspace.story_store import StoryStore
 
 __all__ = ["story_clue_detail", "story_clue_list"]
+
+
+_EVIDENCE_STATE = {
+    "valid": "exact",
+    "stale": "missing",
+    "source_missing": "missing",
+    "unavailable": "unavailable",
+    "none": "unavailable",
+}
+
+
+def _occurrences(
+    reader: ClueReader, variant: StoryVariant, clue_id: str, base: ClueDetail
+) -> list[ClueOccurrence]:
+    """作者关联与账本观察按当前位置合并；同一位置只留一条，来源引用都保留。"""
+    chapters = {
+        entry.path: entry.chapter_number or 0
+        for entry in reader.catalog
+        if entry.path and entry.chapter_number is not None
+    }
+    rows: dict[tuple[str, int | None, int | None], ClueOccurrence] = {}
+
+    def add(row: ClueOccurrence) -> None:
+        key = (row.path, row.start, row.end)
+        current = rows.get(key)
+        if current is None:
+            rows[key] = row
+            return
+        current.origins = sorted({*current.origins, *row.origins})
+        current.binding_ids = sorted({*current.binding_ids, *row.binding_ids})
+        current.evidence_ids = sorted({*current.evidence_ids, *row.evidence_ids})
+        if current.state != "exact" and row.state == "exact":
+            current.state = row.state
+
+    for binding in variant.bindings.values():
+        if binding.clue_id != clue_id:
+            continue
+        file = reader.file(binding.path)
+        state: Literal["exact", "relocated", "missing", "ambiguous", "unavailable"]
+        if isinstance(file, Exception):
+            state, start, end = "unavailable", None, None
+        else:
+            anchor = anchor_state(binding, file.text, file.digest)
+            state = anchor.state
+            start = anchor.span.start if anchor.span is not None else None
+            end = anchor.span.end if anchor.span is not None else None
+        add(
+            ClueOccurrence(
+                path=binding.path,
+                chapter=chapters.get(binding.path, 0),
+                start=start,
+                end=end,
+                quote=binding.quote,
+                state=state,
+                origins=["binding"],
+                binding_ids=[binding.id],
+            )
+        )
+
+    for item in base.evidence:
+        add(
+            ClueOccurrence(
+                path=item.path,
+                chapter=item.chapter,
+                start=item.start,
+                end=item.end,
+                quote=item.quote,
+                state=_EVIDENCE_STATE.get(item.freshness, "unavailable"),  # type: ignore[arg-type]
+                origins=["ledger"],
+                evidence_ids=[item.evidence_id],
+            )
+        )
+
+    return sorted(rows.values(), key=lambda row: (row.path, row.start or 0, row.end or 0))
+
+
+def _relations(variant: StoryVariant, clue_id: str) -> list[ClueRelationView]:
+    rows: list[ClueRelationView] = []
+    for relation in variant.clue_relations.values():
+        if clue_id not in (relation.from_clue_id, relation.to_clue_id):
+            continue
+        if relation.kind != "supports":
+            direction: Literal["outgoing", "incoming", "symmetric"] = "symmetric"
+        elif relation.from_clue_id == clue_id:
+            direction = "outgoing"
+        else:
+            direction = "incoming"
+        rows.append(
+            ClueRelationView(
+                relation_id=relation.id,
+                kind=relation.kind,
+                from_clue_id=relation.from_clue_id,
+                to_clue_id=relation.to_clue_id,
+                reason=relation.reason,
+                direction=direction,
+                basis_source_ids=list(relation.basis_source_ids),
+            )
+        )
+    return sorted(rows, key=lambda row: (row.kind, row.relation_id))
+
 
 
 def _uses(variant: StoryVariant, clue_id: str, node_id: str | None) -> list[ClueUsePosition]:
@@ -74,6 +178,11 @@ def _view_revision(
                         "uses": [use.model_dump(mode="json") for use in row.uses],
                         "observations": len(row.observations),
                         "evidence": [[item.evidence_id, item.freshness] for item in row.evidence],
+                        "occurrences": [
+                            [item.path, item.start, item.end, item.state]
+                            for item in row.occurrences
+                        ],
+                        "relations": [[item.relation_id, item.kind] for item in row.relations],
                     }
                     for row in rows
                 ],
@@ -133,6 +242,8 @@ def _detail(
             if fact.plan is not None
             else None,
             "uses": uses,
+            "occurrences": _occurrences(reader, variant, clue_id, base),
+            "relations": _relations(variant, clue_id),
             "story_revision": variant.revision,
             "view_revision": view_revision,
         }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpenText, Clock3, LayoutGrid, Settings, Sparkles } from "lucide-react";
+import { BookOpenText, Clock3, LayoutGrid, Settings, Sparkles, Tags } from "lucide-react";
 import { pageHash, navigate, type AppPage, type WorkspacePage } from "../../state/navigation";
 import { usePagePositions } from "../../state/pagePositions";
 import { useLayoutStore } from "../../state/layout";
@@ -15,8 +15,10 @@ import RenameWorkspaceDialog from "./RenameWorkspaceDialog";
 function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; workspaceId: string | null }) {
   const writing: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId } : null;
   const story: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId, mode: "story" } : null;
+  const clues: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId, mode: "clues" } : null;
+  const writingActive = page?.kind === "writing" && !page.mode || page?.kind === "ideas";
   const storyActive = page?.kind === "writing" && page.mode === "story";
-  const writingActive = page?.kind === "writing" && page.mode !== "story" || page?.kind === "ideas";
+  const cluesActive = page?.kind === "writing" && page.mode === "clues";
   return <nav className="workspace-navigation" aria-label="作品页面">
     {writing
       ? <a className="ui-nav-link" href={pageHash(writing)} aria-current={writingActive ? "page" : undefined}>
@@ -26,6 +28,10 @@ function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; work
       ? <a className="ui-nav-link" href={pageHash(story)} aria-current={storyActive ? "page" : undefined}>
         <Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />构思</a>
       : <span aria-disabled="true"><Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />构思</span>}
+    {clues
+      ? <a className="ui-nav-link" href={pageHash(clues)} aria-current={cluesActive ? "page" : undefined}>
+        <Tags size={15} strokeWidth={1.8} aria-hidden="true" />线索</a>
+      : <span aria-disabled="true"><Tags size={15} strokeWidth={1.8} aria-hidden="true" />线索</span>}
     <a className="ui-nav-link" href={pageHash({ kind: "library", workspaceContextId: workspaceId ?? undefined })} aria-current={page?.kind === "library" ? "page" : undefined}>
       <LayoutGrid size={15} strokeWidth={1.8} aria-hidden="true" />模块库</a>
   </nav>;
@@ -62,8 +68,8 @@ export default function AppHeader({ page, onOpen, onSelect }: { page: AppPage | 
   function returnToRunning() {
     if (!currentId) return;
     const last = usePagePositions.getState().pages[currentId]?.writing;
-    const target: WorkspacePage = last?.kind === "writing" && last.mode === "story"
-      ? { kind: "writing", workspaceId: currentId, mode: "story" }
+    const target: WorkspacePage = last?.kind === "writing" && last.mode
+      ? { kind: "writing", workspaceId: currentId, mode: last.mode }
       : { kind: "writing", workspaceId: currentId };
     navigate(target);
     useLayoutStore.getState().revealChat();

@@ -1,4 +1,8 @@
-"""1.0.6 P1：构思契约与正文绑定的只读同步视图。"""
+"""v1.0.7 P5：三状态读模型、提醒暂缓与「创作差异不阻止保存」。
+
+这里的用例只判断应用能确定的事实：关联是否可定位、构思或正文是否变化、作者是否暂缓过
+同一份提醒。语义是否真的冲突不在这里判断。
+"""
 
 from __future__ import annotations
 
@@ -12,20 +16,22 @@ from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
-from hastings.workspace.clue_models import ClueIdentity
-from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.files import Workspace
 from hastings.workspace.state import RecentWorkspaces, conversation_root
-from hastings.workspace.story_candidate import StoryCandidate
-from hastings.workspace.story_context import StoryContextSnapshot
-from hastings.workspace.story_models import BindProse, StoryChangeSet
+from hastings.workspace.story_models import (
+    AddNode,
+    BindProse,
+    ProseBinding,
+    StoryChangeSet,
+    StoryNode,
+)
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 from hastings.workspace.story_sync import contract_digest
 
 
 class _NoModel:
     def stream_response(self, **_: Any) -> Any:
-        raise AssertionError("同步视图不应调用模型")
+        raise AssertionError("三状态读模型不应调用模型")
 
 
 @pytest.fixture()
@@ -50,83 +56,6 @@ def open_workspace(client: TestClient, tmp_path: Path) -> str:
     return str(response.json()["id"])
 
 
-def seed_identity(tmp_path: Path, workspace_id: str) -> None:
-    ledger = ClueLedgerStore(conversation_root(tmp_path / "state", workspace_id))
-
-    def apply(store: Any) -> dict[str, str]:
-        store.clues["board"] = ClueIdentity(
-            clue_id="board",
-            title="没有响的木板",
-            clue_revision="rev_board",
-            created_at="2026-11-01T00:00:00+08:00",
-            created_by="author",
-        )
-        return {"clue_id": "board"}
-
-    ledger.mutate(
-        expected_revision=ledger.read().revision,
-        request_key="seed-sync-identity",
-        kind="test_identity",
-        payload={},
-        apply=apply,
-    )
-
-
-def seed_story(tmp_path: Path, workspace_id: str) -> StoryStore:
-    seed_identity(tmp_path, workspace_id)
-    store = StoryStore(conversation_root(tmp_path / "state", workspace_id))
-    store.commit_change(
-        variant_id=MAIN_VARIANT_ID,
-        change=StoryChangeSet(
-            id="seed_sync",
-            base_revision="empty",
-            operations=[
-                {
-                    "op": "upsert_clue_plan",
-                    "clue_id": "board",
-                    "plan": {"intention": "让人怀疑有人熟悉走廊"},
-                },
-                {
-                    "op": "add_node",
-                    "node": {
-                        "id": "n1",
-                        "title": "发现异样",
-                        "action": "侦探发现木板没有响",
-                        "change": "开始怀疑走廊有人经过",
-                        "clue_uses": [
-                            {
-                                "clue_id": "board",
-                                "roles": ["plant"],
-                                "presentation": "有人经过时木板没有响",
-                                "mode": "action",
-                            }
-                        ],
-                    },
-                },
-                {
-                    "op": "add_node",
-                    "node": {
-                        "id": "n2",
-                        "title": "核对证词",
-                        "action": "侦探比较两个证人的时间",
-                    },
-                },
-                {
-                    "op": "connect",
-                    "edge": {
-                        "id": "e1",
-                        "from_id": "n1",
-                        "to_id": "n2",
-                        "kind": "next",
-                    },
-                },
-            ],
-        ),
-        request_key="seed-sync-story",
-    )
-    return store
-
-
 def write_chapter(tmp_path: Path, text: str) -> tuple[str, str, str]:
     path = "正文/0001 雨夜.md"
     target = tmp_path / "book" / path
@@ -136,69 +65,62 @@ def write_chapter(tmp_path: Path, text: str) -> tuple[str, str, str]:
     return path, view.digest, view.text
 
 
-def bind_node(
-    store: StoryStore,
+def store_for(tmp_path: Path, workspace_id: str) -> StoryStore:
+    return StoryStore(
+        conversation_root(tmp_path / "state", workspace_id), Workspace(tmp_path / "book")
+    )
+
+
+def seed(
+    tmp_path: Path,
+    workspace_id: str,
     *,
-    binding_id: str,
-    node_id: str,
-    path: str,
-    digest: str,
-    text: str,
+    node: dict[str, Any],
     quote: str,
-) -> None:
-    variant = store.read().variant(MAIN_VARIANT_ID)
-    assert variant is not None
-    node = variant.nodes[node_id]
-    start = text.find(quote)
+    path: str = "正文/0001 雨夜.md",
+) -> StoryStore:
+    store = store_for(tmp_path, workspace_id)
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        change=StoryChangeSet(
+            id="seed-node",
+            base_revision="empty",
+            operations=[AddNode(node=StoryNode.model_validate(node))],
+        ),
+        request_key="seed-node",
+    )
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    view = Workspace(tmp_path / "book").read(path)
+    start = view.text.find(quote)
     assert start >= 0
     store.commit_change(
         variant_id=MAIN_VARIANT_ID,
         change=StoryChangeSet(
-            id=binding_id,
+            id="seed-binding",
             base_revision=variant.revision,
             operations=[
-                {
-                    "op": "bind_prose",
-                    "binding": {
-                        "id": binding_id,
-                        "node_id": node_id,
-                        "document_id": "doc_1",
-                        "path": path,
-                        "digest": digest,
-                        "span_digest": hashlib.sha256(quote.encode("utf-8")).hexdigest(),
-                        "source": "manual",
-                        "start": start,
-                        "end": start + len(quote),
-                        "quote": quote,
-                        "contract_digest": contract_digest(variant, node),
-                    },
-                }
+                BindProse(
+                    binding=ProseBinding(
+                        id="b1",
+                        node_id=str(node["id"]),
+                        document_id="doc_" + hashlib.sha256(path.encode()).hexdigest()[:24],
+                        path=path,
+                        digest=view.digest,
+                        span_digest=hashlib.sha256(quote.encode()).hexdigest(),
+                        start=start,
+                        end=start + len(quote),
+                        quote=quote,
+                        contract_digest=contract_digest(variant, variant.nodes[str(node["id"])]),
+                    )
+                )
             ],
         ),
-        request_key=f"bind-{binding_id}",
+        request_key="seed-binding",
     )
+    return store
 
 
-def bind_first_node(
-    store: StoryStore,
-    *,
-    path: str,
-    digest: str,
-    text: str,
-    quote: str = "有人经过时木板没有响",
-) -> None:
-    bind_node(
-        store,
-        binding_id="b1",
-        node_id="n1",
-        path=path,
-        digest=digest,
-        text=text,
-        quote=quote,
-    )
-
-
-def sync(client: TestClient, workspace_id: str, **params: str) -> dict[str, Any]:
+def attention(client: TestClient, workspace_id: str, **params: Any) -> dict[str, Any]:
     response = client.get(
         f"/api/file-workspaces/{workspace_id}/story/variants/{MAIN_VARIANT_ID}/sync",
         params=params,
@@ -207,378 +129,266 @@ def sync(client: TestClient, workspace_id: str, **params: str) -> dict[str, Any]
     return response.json()
 
 
-def test_sync_view_marks_unlinked_when_chapter_has_prose_without_binding(
-    client: TestClient, tmp_path: Path
-) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    seed_story(tmp_path, workspace_id)
-    path, _, _ = write_chapter(tmp_path, "# 第一章\n\n没有人经过。\n")
-
-    body = sync(client, workspace_id)
-
-    assert body["variant_id"] == MAIN_VARIANT_ID
-    assert body["counts"]["outline_only"] == 0
-    assert body["counts"]["unlinked"] == 2
-    assert body["counts"]["unbound_prose"] == 1
-    assert {node["state"] for node in body["nodes"]} == {"unlinked"}
-    chapter = next(row for row in body["chapters"] if row["path"] == path)
-    assert chapter["state"] == "unbound"
-    assert [row["kind"] for row in body["conflicts"]] == ["unbound_prose"]
+def node_row(body: dict[str, Any], node_id: str) -> dict[str, Any]:
+    return next(row for row in body["nodes"] if row["node_id"] == node_id)
 
 
-def test_sync_view_marks_partial_chapter_and_unlinked_nodes(
-    client: TestClient, tmp_path: Path
-) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    path, digest, text = write_chapter(
-        tmp_path, "# 第一章\n\n有人经过时木板没有响。\n\n侦探比较证人的时间。\n"
-    )
-    bind_first_node(store, path=path, digest=digest, text=text)
-
-    body = sync(client, workspace_id)
-
-    chapter = next(row for row in body["chapters"] if row["path"] == path)
-    assert chapter["state"] == "partial"
-    assert body["counts"]["partial_prose"] == 1
-    assert body["counts"]["aligned"] == 1
-    assert body["counts"]["unlinked"] == 1
-    node = next(row for row in body["nodes"] if row["node_id"] == "n2")
-    assert node["state"] == "unlinked"
-
-
-def test_span_binding_only_marks_the_edited_anchor(
-    client: TestClient, tmp_path: Path
-) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    path, digest, text = write_chapter(
-        tmp_path, "# 第一章\n\n有人经过时木板没有响。\n\n侦探比较证人的时间。\n"
-    )
-    bind_node(
-        store,
-        binding_id="b1",
-        node_id="n1",
-        path=path,
-        digest=digest,
-        text=text,
-        quote="有人经过时木板没有响",
-    )
-    bind_node(
-        store,
-        binding_id="b2",
-        node_id="n2",
-        path=path,
-        digest=digest,
-        text=text,
-        quote="侦探比较证人的时间",
-    )
-
-    aligned = sync(client, workspace_id)
-
-    assert aligned["counts"]["aligned"] == 2
-    chapter = next(row for row in aligned["chapters"] if row["path"] == path)
-    assert chapter["state"] == "aligned"
-
-    target = tmp_path / "book" / path
-    target.write_text(
-        text.replace("侦探比较证人的时间。", "侦探反复比较证人的时间。"),
-        encoding="utf-8",
-    )
-    changed = sync(client, workspace_id)
-
-    first = next(row for row in changed["nodes"] if row["node_id"] == "n1")
-    second = next(row for row in changed["nodes"] if row["node_id"] == "n2")
-    assert first["state"] == "aligned"
-    assert second["state"] == "prose_ahead"
-    assert [row["node_id"] for row in changed["conflicts"]] == ["n2"]
-
-
-def test_prose_marks_return_anchored_ranges(client: TestClient, tmp_path: Path) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    path, digest, text = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
-    bind_first_node(store, path=path, digest=digest, text=text)
-
-    response = client.get(
-        f"/api/file-workspaces/{workspace_id}/story/variants/{MAIN_VARIANT_ID}/prose-marks",
-        params={"chapter_path": path},
-    )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["path"] == path
-    assert body["digest"] == digest
-    assert len(body["marks"]) == 1
-    mark = body["marks"][0]
-    assert mark["node_id"] == "n1"
-    assert mark["title"] == "发现异样"
-    assert mark["quote"] == "有人经过时木板没有响"
-    assert mark["state"] == "aligned"
-    assert mark["start"] == text.find(mark["quote"])
-    assert mark["end"] == mark["start"] + len(mark["quote"])
-
-
-def test_sync_view_reports_aligned_binding_and_outline_change(
-    client: TestClient, tmp_path: Path
-) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    path, digest, text = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
-    bind_first_node(store, path=path, digest=digest, text=text)
-
-    aligned = sync(client, workspace_id)
-    node = next(row for row in aligned["nodes"] if row["node_id"] == "n1")
-    assert node["state"] == "aligned"
-    assert node["bound_quote"] == "有人经过时木板没有响"
-    chapter = next(row for row in aligned["chapters"] if row["path"] == path)
-    assert chapter["state"] == "aligned"
-    assert chapter["checked_digest"] == digest
-    assert aligned["counts"]["aligned"] == 1
-    assert aligned["counts"]["outline_only"] == 1
-
-    variant = store.read().variant(MAIN_VARIANT_ID)
-    assert variant is not None
-    node_model = variant.nodes["n1"].model_copy(
-        update={"action": "侦探发现木板没有响，并确认有人走过"}
-    )
-    store.commit_change(
-        variant_id=MAIN_VARIANT_ID,
-        change=StoryChangeSet(
-            id="change_action",
-            base_revision=variant.revision,
-            operations=[
-                {"op": "update_node", "node_id": "n1", "node": node_model.model_dump(mode="json")}
-            ],
-        ),
-        request_key="change-action-sync",
-    )
-
-    changed = sync(client, workspace_id)
-    node = next(row for row in changed["nodes"] if row["node_id"] == "n1")
-    assert node["state"] == "outline_ahead"
-    assert changed["counts"]["outline_ahead"] == 1
-    assert changed["conflicts"][0]["kind"] == "outline_ahead"
-    assert changed["conflicts"][0]["options"] == [
-        "follow_outline",
-        "follow_prose",
-        "defer",
-    ]
-
-
-def test_sync_view_reports_unanchored_prose_and_chapter_filter(
-    client: TestClient, tmp_path: Path
-) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    path, digest, text = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
-    bind_first_node(store, path=path, digest=digest, text=text)
-
-    write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。后来，门外传来脚步声。\n")
-
-    body = sync(client, workspace_id)
-    node = next(row for row in body["nodes"] if row["node_id"] == "n1")
-    assert node["state"] == "aligned"
-    assert body["counts"]["aligned"] == 1
-    assert body["counts"]["partial_prose"] == 1
-    chapter = next(row for row in body["chapters"] if row["path"] == path)
-    assert chapter["state"] == "partial"
-
-    filtered = sync(client, workspace_id, chapter_path=path)
-    assert [row["node_id"] for row in filtered["nodes"]] == ["n1"]
-    assert [row["path"] for row in filtered["chapters"]] == [path]
-    assert filtered["conflicts"] == []
-
-
-def action_change_body(store: StoryStore, action: str, request_key: str) -> dict[str, Any]:
-    variant = store.read().variant(MAIN_VARIANT_ID)
-    assert variant is not None
-    node = variant.nodes["n1"].model_copy(update={"action": action})
-    return {
-        "variant_id": MAIN_VARIANT_ID,
-        "expected_revision": variant.revision,
-        "request_key": request_key,
-        "operations": [
-            {"op": "update_node", "node_id": "n1", "node": node.model_dump(mode="json")}
-        ],
-    }
-
-
-def test_structure_change_requires_sync_decision_and_follow_prose_resolves(
-    client: TestClient, tmp_path: Path
-) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    path, digest, text = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
-    bind_first_node(store, path=path, digest=digest, text=text)
-
-    url = f"/api/file-workspaces/{workspace_id}/story/changes"
-    blocked = client.post(url, json=action_change_body(store, "侦探确认有人走过", "sync-gate-1"))
-    assert blocked.status_code == 400, blocked.text
-    error = blocked.json()["error"]
-    assert error["code"] == "STORY_SYNC_CONFIRM_REQUIRED"
-    details = error["details"]
-    assert details["conflicts"][0]["binding_id"] == "b1"
-    digest = details["conflict_digest"]
-
-    body = action_change_body(store, "侦探确认有人走过", "sync-gate-2")
-    body["sync"] = {
-        "conflict_digest": digest,
-        "choice": "follow_prose",
-        "note": "作者选择以正文为准",
-    }
-    accepted = client.post(url, json=body)
-    assert accepted.status_code == 201, accepted.text
-
-    body = sync(client, workspace_id)
-    node = next(row for row in body["nodes"] if row["node_id"] == "n1")
-    assert node["state"] == "aligned"
-    assert body["counts"]["outline_ahead"] == 0
-    assert body["conflicts"] == []
-
-
-def test_stale_sync_decision_is_rejected(client: TestClient, tmp_path: Path) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    path, digest, text = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
-    bind_first_node(store, path=path, digest=digest, text=text)
-
-    body = action_change_body(store, "侦探确认有人走过", "sync-stale")
-    body["sync"] = {
-        "conflict_digest": "0" * 64,
-        "choice": "follow_prose",
-        "note": "过期确认",
-    }
-    response = client.post(
-        f"/api/file-workspaces/{workspace_id}/story/changes",
-        json=body,
-    )
-    assert response.status_code == 400, response.text
-    assert response.json()["error"]["code"] == "STORY_SYNC_CONFLICT_STALE"
-
-
-def test_defer_marks_binding_waived(client: TestClient, tmp_path: Path) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    path, digest, text = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
-    bind_first_node(store, path=path, digest=digest, text=text)
-
-    url = f"/api/file-workspaces/{workspace_id}/story/changes"
-    blocked = client.post(url, json=action_change_body(store, "侦探确认有人走过", "sync-defer-1"))
-    details = blocked.json()["error"]["details"]
-    body = action_change_body(store, "侦探确认有人走过", "sync-defer-2")
-    body["sync"] = {
-        "conflict_digest": details["conflict_digest"],
-        "choice": "defer",
-        "note": "作者选择暂不处理",
-    }
-    accepted = client.post(url, json=body)
-    assert accepted.status_code == 201, accepted.text
-
-    view = sync(client, workspace_id)
-    node = next(row for row in view["nodes"] if row["node_id"] == "n1")
-    assert node["state"] == "waived"
-    assert view["counts"]["waived"] == 1
-    assert view["conflicts"] == []
-
-
-def test_title_only_change_does_not_require_sync(client: TestClient, tmp_path: Path) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    path, digest, text = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
-    bind_first_node(store, path=path, digest=digest, text=text)
-
-    variant = store.read().variant(MAIN_VARIANT_ID)
-    assert variant is not None
-    node = variant.nodes["n1"].model_copy(update={"title": "改了标题"})
+def update_action(client: TestClient, workspace_id: str, store: StoryStore, action: str) -> None:
     response = client.post(
         f"/api/file-workspaces/{workspace_id}/story/changes",
         json={
             "variant_id": MAIN_VARIANT_ID,
-            "expected_revision": variant.revision,
-            "request_key": "sync-title-only",
+            "expected_revision": store.require_variant(MAIN_VARIANT_ID).revision,
+            "request_key": action,
             "operations": [
-                {"op": "update_node", "node_id": "n1", "node": node.model_dump(mode="json")}
+                {
+                    "op": "update_node",
+                    "node_id": "n1",
+                    "node": {"id": "n1", "title": "发现异样", "action": action},
+                }
             ],
         },
     )
     assert response.status_code == 201, response.text
-    node = next(row for row in sync(client, workspace_id)["nodes"] if row["node_id"] == "n1")
-    assert node["state"] == "aligned"
 
 
-def test_candidate_structure_requires_sync_and_accepts_follow_prose(
+def acknowledge(client: TestClient, workspace_id: str, store: StoryStore, fingerprint: str) -> None:
+    response = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": store.require_variant(MAIN_VARIANT_ID).revision,
+            "request_key": f"defer-{fingerprint[:8]}",
+            "operations": [
+                {
+                    "op": "acknowledge_attention",
+                    "node_id": "n1",
+                    "fingerprint": fingerprint,
+                }
+            ],
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_attention_view_reports_ready_draft_and_attention(
     client: TestClient, tmp_path: Path
 ) -> None:
     workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    path, digest, text = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
-    bind_first_node(store, path=path, digest=digest, text=text)
-    variant = store.require_variant(MAIN_VARIANT_ID)
-    node = variant.nodes["n1"].model_copy(update={"action": "侦探确认有人走过"})
-    candidate = StoryCandidate(
-        Workspace(tmp_path / "book"),
-        store.root,
-        StoryContextSnapshot(
-            variant_id=MAIN_VARIANT_ID,
-            revision=variant.revision,
-            purpose="write",
-            node_ids=("n1",),
+    write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
+    store = seed(
+        tmp_path,
+        workspace_id,
+        node={"id": "n1", "title": "发现异样", "action": "木板没有响"},
+        quote="有人经过时木板没有响",
+    )
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        change=StoryChangeSet(
+            id="second-node",
+            base_revision=store.require_variant(MAIN_VARIANT_ID).revision,
+            operations=[AddNode(node=StoryNode(id="n2", title="未写节点", action="还没写"))],
         ),
-        "op_sync",
-        1,
-        lambda: None,
-        lambda kind, payload: None,
-        "把发现异样的行动改成侦探确认有人走过",
+        request_key="second-node",
     )
-    operations = [{"op": "update_node", "node_id": "n1", "node": node.model_dump(mode="json")}]
 
-    with pytest.raises(Exception) as exc:
-        candidate.propose_structure(operations)
-    error = exc.value
-    assert getattr(error, "code", "") == "STORY_SYNC_CONFIRM_REQUIRED"
-    conflict_digest = error.details["conflict_digest"]  # type: ignore[attr-defined]
+    body = attention(client, workspace_id)
 
-    result = candidate.propose_structure(
-        operations,
-        {
-            "conflict_digest": conflict_digest,
-            "choice": "follow_prose",
-            "note": "作者选择以正文为准",
-        },
+    assert node_row(body, "n1")["status"] == "ready"
+    assert node_row(body, "n1")["reasons"] == []
+    assert node_row(body, "n2")["status"] == "draft"
+    assert body["counts"]["ready"] == 1
+    assert body["counts"]["draft"] == 1
+    assert node_row(body, "n1")["reminder_visible"] is True
+    assert node_row(body, "n1")["fingerprint"]
+
+
+def test_plan_change_saves_and_leaves_an_alert(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
+    store = seed(
+        tmp_path,
+        workspace_id,
+        node={"id": "n1", "title": "发现异样", "action": "木板没有响"},
+        quote="有人经过时木板没有响",
     )
-    assert result["candidate_id"] == candidate.id
-    assert candidate.sync is not None
-    assert candidate.sync.choice == "follow_prose"
-    assert any(isinstance(op, BindProse) for op in candidate.operations)
+    before = node_row(attention(client, workspace_id), "n1")
+
+    update_action(client, workspace_id, store, "侦探确认有人走过")
+
+    after = node_row(attention(client, workspace_id), "n1")
+    assert after["status"] == "attention"
+    assert "plan_changed" in after["reasons"]
+    assert after["reminder_visible"] is True
+    assert after["fingerprint"] != before["fingerprint"]
 
 
-def test_contract_digest_ignores_display_fields_and_tracks_content(
-    tmp_path: Path, client: TestClient
+def test_acknowledging_keeps_attention_but_hides_the_reminder(
+    client: TestClient, tmp_path: Path
 ) -> None:
     workspace_id = open_workspace(client, tmp_path)
-    store = seed_story(tmp_path, workspace_id)
-    variant = store.read().variant(MAIN_VARIANT_ID)
-    assert variant is not None
-    node = variant.nodes["n1"]
-    baseline = contract_digest(variant, node)
-
-    renamed = variant.model_copy(
-        update={
-            "nodes": {
-                **variant.nodes,
-                "n1": node.model_copy(update={"title": "改了标题"}),
-            }
-        }
+    write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
+    store = seed(
+        tmp_path,
+        workspace_id,
+        node={"id": "n1", "title": "发现异样", "action": "木板没有响"},
+        quote="有人经过时木板没有响",
     )
-    assert contract_digest(renamed, renamed.nodes["n1"]) == baseline
+    update_action(client, workspace_id, store, "侦探确认有人走过")
+    current = node_row(attention(client, workspace_id), "n1")
+    acknowledge(client, workspace_id, store, current["fingerprint"])
 
-    changed = variant.model_copy(
-        update={
-            "nodes": {
-                **variant.nodes,
-                "n1": node.model_copy(update={"action": "侦探确认木板是被人踩住的"}),
-            }
-        }
+    deferred = attention(client, workspace_id)
+    row = node_row(deferred, "n1")
+    assert row["status"] == "attention"
+    assert row["reminder_visible"] is False
+    assert deferred["counts"]["deferred"] == 1
+
+
+def test_title_change_keeps_the_deferred_reminder_hidden(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
+    store = seed(
+        tmp_path,
+        workspace_id,
+        node={"id": "n1", "title": "发现异样", "action": "木板没有响"},
+        quote="有人经过时木板没有响",
     )
-    assert contract_digest(changed, changed.nodes["n1"]) != baseline
+    update_action(client, workspace_id, store, "侦探确认有人走过")
+    current = node_row(attention(client, workspace_id), "n1")
+    acknowledge(client, workspace_id, store, current["fingerprint"])
+    renamed = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": store.require_variant(MAIN_VARIANT_ID).revision,
+            "request_key": "rename",
+            "operations": [
+                {
+                    "op": "update_node",
+                    "node_id": "n1",
+                    "node": {"id": "n1", "title": "改了标题", "action": "侦探确认有人走过"},
+                }
+            ],
+        },
+    )
+    assert renamed.status_code == 201, renamed.text
+
+    row = node_row(attention(client, workspace_id), "n1")
+    assert row["status"] == "attention"
+    assert row["reminder_visible"] is False
+
+
+def test_relevant_change_brings_the_reminder_back(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
+    store = seed(
+        tmp_path,
+        workspace_id,
+        node={"id": "n1", "title": "发现异样", "action": "木板没有响"},
+        quote="有人经过时木板没有响",
+    )
+    update_action(client, workspace_id, store, "侦探确认有人走过")
+    current = node_row(attention(client, workspace_id), "n1")
+    acknowledge(client, workspace_id, store, current["fingerprint"])
+
+    target = tmp_path / "book" / "正文/0001 雨夜.md"
+    target.write_text("# 第一章\n\n有人经过时地板没有响。\n", encoding="utf-8")
+
+    row = node_row(attention(client, workspace_id), "n1")
+    assert row["status"] == "attention"
+    assert "anchor_missing" in row["reasons"]
+    assert row["reminder_visible"] is True
+
+
+def test_stale_prose_patch_is_still_rejected(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    path, digest, _ = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
+    store = seed(
+        tmp_path,
+        workspace_id,
+        node={"id": "n1", "title": "发现异样", "action": "木板没有响"},
+        quote="有人经过时木板没有响",
+    )
+    rejected = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": store.require_variant(MAIN_VARIANT_ID).revision,
+            "request_key": "stale-patch",
+            "prose_patches": [
+                {
+                    "path": path,
+                    "base_digest": "0" * 64,
+                    "start": 0,
+                    "end": 2,
+                    "replacement": "夜",
+                    "expected": "# ",
+                }
+            ],
+        },
+    )
+    assert rejected.status_code != 201, rejected.text
+
+
+def test_attention_view_can_be_scoped_to_one_chapter(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    path, digest, _ = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
+    store = seed(
+        tmp_path,
+        workspace_id,
+        node={"id": "n1", "title": "发现异样", "action": "木板没有响"},
+        quote="有人经过时木板没有响",
+    )
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        change=StoryChangeSet(
+            id="other-node",
+            base_revision=store.require_variant(MAIN_VARIANT_ID).revision,
+            operations=[AddNode(node=StoryNode(id="n2", title="别的章", action="还没写"))],
+        ),
+        request_key="other-node",
+    )
+
+    scoped = attention(client, workspace_id, chapter_path=path)
+
+    assert [row["node_id"] for row in scoped["nodes"]] == ["n1"]
+
+
+def test_opening_a_discussion_with_a_stale_fingerprint_is_rejected(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    path, digest, _ = write_chapter(tmp_path, "# 第一章\n\n有人经过时木板没有响。\n")
+    store = seed(
+        tmp_path,
+        workspace_id,
+        node={"id": "n1", "title": "发现异样", "action": "木板没有响"},
+        quote="有人经过时木板没有响",
+    )
+    update_action(client, workspace_id, store, "侦探确认有人走过")
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    rejected = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={
+            "text": "请核对这条提醒",
+            "request_key": "reconcile-1",
+            "purpose": "review",
+            "review_paths": [path],
+            "context": {
+                "selected_path": path,
+                "reference_paths": [path],
+                "story_reconcile": {
+                    "variant_id": MAIN_VARIANT_ID,
+                    "variant_revision": variant.revision,
+                    "node_id": "n1",
+                    "binding_ids": ["b1"],
+                    "warning_fingerprint": "0" * 64,
+                },
+            },
+        },
+    )
+    assert rejected.status_code >= 400, rejected.text
+    assert rejected.json()["error"]["code"] == "STORY_ATTENTION_STALE"

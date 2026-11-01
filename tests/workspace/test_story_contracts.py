@@ -299,3 +299,61 @@ def test_removing_a_thread_only_clears_membership() -> None:
     )
     assert "t1" in restored.threads
     assert restored.nodes["n1"].thread_ids == ["t1"]
+
+
+def test_clue_plan_kind_is_optional_and_has_two_values() -> None:
+    from hastings.workspace.story_models import StoryCluePlan
+
+    assert StoryCluePlan(clue_id="c1").kind is None
+    assert StoryCluePlan(clue_id="c1", kind="truth").kind == "truth"
+    assert StoryCluePlan(clue_id="c1", kind="mislead").kind == "mislead"
+    with pytest.raises(ValueError):
+        StoryCluePlan(clue_id="c1", kind="red_herring")  # type: ignore[arg-type]
+
+
+def test_event_span_rejects_reversed_range_and_keeps_instants() -> None:
+    from hastings.workspace.story_models import StoryEventSpan
+
+    instant = StoryEventSpan(start_minute=-10, end_minute=-10)
+    assert instant.approximate is False
+    with pytest.raises(ValueError, match="结束时间早于开始时间"):
+        StoryEventSpan(start_minute=10, end_minute=-10)
+
+
+def test_node_time_and_planned_chapter_are_optional() -> None:
+    from hastings.workspace.story_models import StoryEventSpan, StoryNode
+
+    node = StoryNode(
+        id="n1",
+        title="雨夜",
+        action="抵达",
+        planned_chapter_number=3,
+        event_span=StoryEventSpan(start_minute=-10, end_minute=10),
+    )
+    assert node.planned_chapter_number == 3
+    assert node.event_span is not None
+    plain = StoryNode(id="n2", title="次日", action="离开")
+    assert (plain.planned_chapter_number, plain.event_span) == (None, None)
+    with pytest.raises(ValueError):
+        StoryNode(id="n3", title="错误章节", action="无", planned_chapter_number=0)
+
+
+def test_time_origin_label_roundtrips_through_diff() -> None:
+    from hastings.workspace.story_models import SetTimeOrigin
+
+    base = variant("blank-mystery.json")
+    started = apply_change_set(
+        base,
+        StoryChangeSet(
+            id="origin",
+            base_revision=base.revision,
+            operations=[SetTimeOrigin(label="案发当天 00:00")],
+        ),
+    )
+    assert started.time_origin_label == "案发当天 00:00"
+    inverse = diff_variant(started, base)
+    restored = apply_change_set(
+        started,
+        StoryChangeSet(id="origin-undo", base_revision=started.revision, operations=inverse),
+    )
+    assert restored.time_origin_label == ""

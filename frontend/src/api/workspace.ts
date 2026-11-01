@@ -180,6 +180,14 @@ export interface ContextInput {
   idea_references?: IdeaReferenceInput[];
   /** 本轮要看的构思方案与位置：由「引用到对话」写入，服务端按修订复核。 */
   story?: { variant_id: string; revision: string; node_ids: string[]; purpose?: string };
+  /** 作者主动开启核对讨论时的提醒目标；服务端核对指纹后才受理。 */
+  story_reconcile?: {
+    variant_id: string;
+    variant_revision: string;
+    node_id: string;
+    binding_ids: string[];
+    warning_fingerprint: string;
+  };
   /** 客户端看到的版本，只对应本次当前路径与参考；不是服务端内容依据。 */
   observed_digests: Record<string, string>;
 }

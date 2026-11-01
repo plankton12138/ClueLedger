@@ -9,16 +9,16 @@ test.beforeEach(async ({ book }) => {
   execFileSync("uv", ["run", "--directory", "..", "python", resolve("e2e/fixtures/story_variant_seed.py"), resolve(root, "state"), book.id], { windowsHide: true, stdio: "pipe" });
 });
 
-async function openClueDetail(page: import("@playwright/test").Page) {
-  await page.getByRole("tab", { name: "全书线索", exact: true }).click();
-  const pane = page.getByRole("region", { name: "全书线索", exact: true });
-  await pane.getByRole("button", { name: /公开的照片/ }).click();
-  return pane;
+async function openClueDetail(page: import("@playwright/test").Page, book: { id: string }) {
+  // 线索入口移到主导航；详情与列表分在同一页。
+  await page.goto(`/#/workspaces/${book.id}/writing?mode=clues`);
+  const list = page.getByRole("region", { name: "线索列表" });
+  await list.getByRole("button", { name: /公开的照片/ }).click();
+  return page.getByRole("region", { name: "详情" });
 }
 
 test("把线索带进对话只写草稿，刷新后仍在，可移除", async ({ page, book }) => {
-  await page.goto(`/#/workspaces/${book.id}/writing`);
-  const pane = await openClueDetail(page);
+  const pane = await openClueDetail(page, book);
   await pane.getByRole("button", { name: "带入对话", exact: true }).click();
 
   const clues = page.locator('[aria-label="引用线索"]');
@@ -36,8 +36,7 @@ test("把线索带进对话只写草稿，刷新后仍在，可移除", async ({
 });
 
 test("草稿里的线索引用只保存标识与阅读版本", async ({ page, book, request }) => {
-  await page.goto(`/#/workspaces/${book.id}/writing`);
-  const pane = await openClueDetail(page);
+  const pane = await openClueDetail(page, book);
   await pane.getByRole("button", { name: "带入对话", exact: true }).click();
   await expect(page.locator('[aria-label="引用线索"]')).toContainText("公开的照片");
   await expect

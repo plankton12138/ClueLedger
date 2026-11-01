@@ -13,10 +13,12 @@ from typing import Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.module_assembly import AssemblyStore, ModuleRef
 from hastings.workspace.service_hub import WorkspaceServices
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
+from hastings.workspace.story_bindings import normalize_bindings
 from hastings.workspace.story_clue_catalog import StoryClueCatalog
 from hastings.workspace.story_clue_commit import prepare_clue_joint, prepare_clue_undo
 from hastings.workspace.story_constraint_sources import ConstraintSources, source_key
@@ -33,7 +35,8 @@ from hastings.workspace.story_models import (
 from hastings.workspace.story_mystery import build_mystery_view
 from hastings.workspace.story_prose_marks import ProseMarksView, build_prose_marks
 from hastings.workspace.story_store import StoryStore, new_id
-from hastings.workspace.story_sync import StorySyncView, build_sync_view, require_sync_decision
+from hastings.workspace.story_sync import StoryAttentionView, build_attention_view
+from hastings.workspace.story_timeline import StoryTimelineView, build_timeline
 
 __all__ = ["create_story_router"]
 
@@ -484,25 +487,67 @@ def create_story_router(
 
     @router.get(
         "/{workspace_id}/story/variants/{variant_id}/sync",
-        response_model=StorySyncView,
+        response_model=StoryAttentionView,
     )
     def read_sync(
         workspace_id: str,
         variant_id: str,
         chapter_path: str | None = Query(default=None, max_length=512),
-    ) -> StorySyncView:
-        """构思与正文的机械同步状态；语义冲突留给模型核对。"""
+    ) -> StoryAttentionView:
+        """节点的三状态与提醒；语义差异留给作者主动开启的讨论。"""
+        store = store_for(workspace_id)
+        variant = require_variant(store, variant_id)
+        workspace = store.workspace
+        if workspace is None:
+            raise WorkspaceError(
+                code="STORY_ATTENTION_UNAVAILABLE",
+                where="story.sync",
+                why="当前读取没有作品目录，无法核对正文",
+                fix="从作品工作区重新打开构思",
+            )
+        ledger = ClueLedgerStore(store.root).read()
+        return build_attention_view(
+            workspace,
+            variant,
+            chapter_path=chapter_path,
+            ledger_revision=ledger.revision,
+        )
+
+    @router.get("/{workspace_id}/story/variants/{variant_id}/nodes/{node_id}")
+    def read_node(
+        workspace_id: str, variant_id: str, node_id: str
+    ) -> dict[str, Any]:
+        """单个节点的完整字段；详情面板编辑时整份提交，不能丢掉没显示的线索用途。"""
+        variant = require_variant(store_for(workspace_id), variant_id)
+        node = variant.nodes.get(node_id)
+        if node is None:
+            raise WorkspaceError(
+                code="STORY_NODE_NOT_FOUND",
+                where="story.node",
+                why=f"找不到节点：{node_id}",
+                fix="刷新构思后重新选择节点",
+                details={"node_id": node_id},
+            )
+        return node.model_dump(mode="json")
+
+    @router.get(
+        "/{workspace_id}/story/variants/{variant_id}/timeline",
+        response_model=StoryTimelineView,
+    )
+    def read_timeline(workspace_id: str, variant_id: str) -> StoryTimelineView:
+        """只读故事时间轴：按披露章节分组的节点与时间位置。"""
         store = store_for(workspace_id)
         variant = require_variant(store, variant_id)
         workspace = store.workspace
         if workspace is None:
             raise WorkspaceError(
                 code="STORY_SYNC_UNAVAILABLE",
-                where="story.sync",
-                why="当前读取没有作品目录，无法核对正文",
+                where="story.timeline",
+                why="当前读取没有作品目录，无法核对披露章节",
                 fix="从作品工作区重新打开构思",
             )
-        return build_sync_view(workspace, variant, chapter_path=chapter_path)
+        ledger = ClueLedgerStore(store.root).read()
+        return build_timeline(workspace, variant, ledger_revision=ledger.revision)
 
     @router.get(
         "/{workspace_id}/story/variants/{variant_id}/prose-marks",
@@ -543,13 +588,8 @@ def create_story_router(
             read_dependencies=body.read_dependencies,
             sync=body.sync,
         )
-        if variant is not None:
-            change = require_sync_decision(
-                workspaces.workspace(workspace_id),
-                root,
-                variant,
-                change,
-            )
+        # 界面只给引文与选区；区间、摘要与目标由服务端按当前正文重算。
+        change = normalize_bindings(workspaces.workspace(workspace_id), variant, change)
         receipt = store.commit_change(
             variant_id=body.variant_id,
             change=change,

@@ -140,46 +140,6 @@ test("空白构思读取失败时显示错误并可重新读取", async ({ page,
   await expect(surface.getByRole("button", { name: "创建构思", exact: true })).toBeVisible();
 });
 
-test("构思面只保留悬疑视图，时间轴节点用于过滤左栏线索", async ({ page, book }) => {
-  const seeded = await page.request.post(
-    `/api/file-workspaces/${book.id}/story/changes`,
-    {
-      data: {
-        variant_id: "main",
-        expected_revision: "empty",
-        request_key: `seed-story-${book.id}`,
-        operations: NODES,
-      },
-    },
-  );
-  expect(seeded.ok(), await seeded.text()).toBeTruthy();
-
-  await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("link", { name: "构思", exact: true }).click();
-
-  const surface = page.getByRole("region", { name: "构思结构" });
-  await expect(surface.getByRole("button", { name: "抵达" })).toBeVisible();
-  await expect(surface.getByRole("button", { name: "对质" })).toBeVisible();
-  await expect(surface.getByRole("button", { name: "结构视图" })).toHaveCount(0);
-  await expect(surface.getByRole("group", { name: "阶段" })).toHaveCount(0);
-  await expect(surface.getByLabel("节点详情", { exact: true })).toHaveCount(0);
-  await expect(surface.getByRole("button", { name: /备选|试读|候选正文|采用|比较/ })).toHaveCount(0);
-  await expect(surface.getByRole("tablist", { name: "方案" })).toHaveCount(0);
-
-  const clues = page.getByRole("region", { name: "全书线索" });
-  await surface.getByRole("button", { name: /^手套/ }).click();
-  await expect(clues.getByRole("heading", { name: "手套" })).toBeVisible();
-  await surface.getByRole("button", { name: "抵达" }).click();
-  await expect(clues.getByText("与「抵达」相关")).toBeVisible();
-  await expect(clues.getByRole("heading", { name: "手套" })).toBeVisible();
-
-  await surface.getByRole("button", { name: "对质" }).click();
-  await expect(clues.getByText("与「对质」相关")).toBeVisible();
-  await expect(clues.getByRole("heading", { name: "手套" })).toHaveCount(0);
-  await expect(clues.getByText("钥匙")).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`/workspaces/${book.id}/writing`));
-});
-
 test("窄屏与大字号下构思时间轴可读，页面不横向溢出", async ({ page, book }) => {
   const api = (path: string, init?: Parameters<ReturnType<typeof page.request.get>>[1]) =>
     page.request.fetch(`/api/file-workspaces/${book.id}${path}`, init);
@@ -213,7 +173,7 @@ test("窄屏与大字号下构思时间轴可读，页面不横向溢出", async
   await page.getByRole("link", { name: "构思", exact: true }).click();
   const surface = page.getByRole("region", { name: "构思结构" });
   await expect(surface.getByRole("button", { name: "对质" })).toBeVisible();
-  await expect(surface.locator(".story-mystery-stage-group")).toHaveCount(2);
+  await expect(surface.getByRole("list", { name: "故事时间轴" })).toHaveCount(1);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -223,70 +183,6 @@ test("窄屏与大字号下构思时间轴可读，页面不横向溢出", async
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(surface.getByRole("button", { name: "对质" })).toBeVisible();
   await page.screenshot({ path: join(output, "story-390-150.png") });
-});
-
-test("全书线索与时间轴节点联动：节点筛选线索，使用位置可回到另一节点", async ({ page, book }) => {
-  const api = (path: string, init?: Parameters<ReturnType<typeof page.request.get>>[1]) =>
-    page.request.fetch(`/api/file-workspaces/${book.id}${path}`, init);
-  const prose = "侦探在走廊看到没有响的木板。";
-  const quote = "没有响的木板";
-  const path = "正文/0001 走廊.md";
-  mkdirSync(join(book.path, "正文"), { recursive: true });
-  writeFileSync(join(book.path, path), prose, "utf8");
-  const digest = createHash("sha256").update(prose, "utf8").digest("hex");
-  const start = prose.indexOf(quote);
-  const seeded = await api("/story/changes", {
-    method: "post",
-    data: {
-      variant_id: "main",
-      expected_revision: "empty",
-      request_key: `linkage-${book.id}`,
-      operations: [
-        { op: "add_stage", stage: { id: "s1", title: "当晚", order: 0, summary: "发现异样" } },
-        { op: "add_stage", stage: { id: "s2", title: "调查", order: 1, summary: "核对路线" } },
-        { op: "add_thread", thread: { id: "t1", title: "物证", order: 0, goal: "确认走廊是否有人经过" } },
-        { op: "add_thread", thread: { id: "t2", title: "调查", order: 1, goal: "核对路线" } },
-        { op: "create_clue_identity", temp_id: "board", title: "没有响的木板" },
-        { op: "upsert_clue_plan", clue_id: "board", plan: {
-          author_truth: null, intention: "让调查者怀疑有人熟悉走廊结构", resolution_intent: "explain",
-        } },
-        { op: "add_node", node: { id: "n1", title: "发现异样", action: "调查者注意到木板没有响",
-          change: "调查者开始怀疑有人熟悉走廊结构", stage_id: "s1", thread_ids: ["t1"],
-          clue_uses: [{ clue_id: "board", roles: ["plant"], presentation: quote, mode: "narration" }] } },
-        { op: "add_node", node: { id: "n2", title: "核对路线", action: "调查者比较不同人的路线",
-          change: "时间差指向熟悉走廊的人", stage_id: "s2", thread_ids: ["t2"],
-          clue_uses: [{ clue_id: "board", roles: ["resolve"], presentation: "木板解释了路线差", mode: "narration" }] } },
-        { op: "connect", edge: { id: "e1", from_id: "n1", to_id: "n2", kind: "next", reason: "物证引出路线核对" } },
-        { op: "bind_prose", binding: { id: "b1", node_id: "n1", document_id: "doc", path,
-          digest, start, end: start + quote.length, quote, observation: "走廊木板" } },
-      ],
-    },
-  });
-  expect(seeded.ok(), await seeded.text()).toBeTruthy();
-
-  await page.goto(`/#/workspaces/${book.id}/writing`);
-  const writes: string[] = [];
-  page.on("request", request => {
-    if (request.method() !== "GET" && /\/(story\/changes|conversations)/.test(request.url())) {
-      writes.push(request.url());
-    }
-  });
-  await page.getByRole("link", { name: "构思", exact: true }).click();
-  const surface = page.getByRole("region", { name: "构思结构" });
-  const clues = page.getByRole("region", { name: "全书线索" });
-
-  await surface.getByRole("button", { name: "发现异样", exact: true }).click();
-  await expect(clues.getByText("与「发现异样」相关")).toBeVisible();
-  // 悬疑视图读取完成后会自动选中第一条可用线索；读到之前先手动打开列表项。
-  if (!(await clues.getByRole("heading", { name: "没有响的木板" }).isVisible())) {
-    await clues.getByRole("button", { name: /没有响的木板/ }).click();
-  }
-  await expect(clues.getByRole("heading", { name: "没有响的木板" })).toBeVisible();
-  await expect(clues.getByRole("button", { name: "核对路线", exact: true })).toBeVisible();
-  await clues.getByRole("button", { name: "核对路线", exact: true }).click();
-  await clues.getByRole("button", { name: "返回列表", exact: true }).click();
-  await expect(clues.getByRole("heading", { name: "与「核对路线」相关" })).toBeVisible();
-  expect(writes).toEqual([]);
 });
 
 test("三线总览在 1440 与 1024 宽度可读", async ({ page, book }) => {
@@ -320,7 +216,7 @@ test("三线总览在 1440 与 1024 宽度可读", async ({ page, book }) => {
   await page.getByRole("link", { name: "构思", exact: true }).click();
   const surface = page.getByRole("region", { name: "构思结构" });
   await expect(surface.getByRole("button", { name: "汇合时间线" })).toHaveCount(1);
-  await expect(surface.locator(".story-mystery-stage-group")).toHaveCount(3);
+  await expect(surface.getByRole("list", { name: "故事时间轴" })).toHaveCount(1);
   await page.screenshot({ path: resolve("../data/test-tmp/story-structure/v103-author-1440.png") });
   await page.setViewportSize({ width: 1024, height: 800 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

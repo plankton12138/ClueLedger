@@ -19,7 +19,6 @@ from hastings.workspace.files import Workspace
 from hastings.workspace.state import RecentWorkspaces, conversation_root
 from hastings.workspace.story_models import StoryChangeSet
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
-from hastings.workspace.story_sync import contract_digest
 
 
 class _NoModel:
@@ -145,14 +144,16 @@ def test_marks_report_plant_mention_and_resolve(client: TestClient, tmp_path: Pa
 
     first_marks = marks(client, workspace_id, path1)
     assert first_marks["state"] == "ready"
-    assert [(row["role"], row["quote"]) for row in first_marks["marks"]] == [
-        ("plant", "有人经过时木板没有响")
+    assert [(row["quote"], row["sources"]) for row in first_marks["marks"]] == [
+        ("有人经过时木板没有响", ["ledger"])
     ]
 
     second_marks = marks(client, workspace_id, path2)
     assert second_marks["state"] == "ready"
-    assert sorted(row["role"] for row in second_marks["marks"]) == ["mention", "resolve"]
+    assert sorted(row["quote"] for row in second_marks["marks"]) == ["木板没有响", "第二具尸体"]
     assert {row["title"] for row in second_marks["marks"]} == {"没有响的木板"}
+    # 没有作者计划时用途未定，标记仍是普通线索样式。
+    assert {row["kind"] for row in second_marks["marks"]} == {None}
 
 
 def test_marks_are_hidden_when_prose_digest_changed(client: TestClient, tmp_path: Path) -> None:
@@ -214,7 +215,107 @@ def seed_clue_identity(root: Path, *, clue_id: str, title: str, key: str) -> Non
     )
 
 
-def test_marks_fall_back_to_anchor_without_ledger_contribution(
+def test_marks_come_from_explicit_clue_bindings(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    path, digest, text = write_chapter(
+        tmp_path, "0001 雨夜.md", "# 第一章\n\n有人经过时木板没有响。\n"
+    )
+    root = conversation_root(tmp_path / "state", workspace_id)
+    seed_clue_identity(root, clue_id="board", title="没有响的木板", key="binding-mark-identity")
+    store = StoryStore(root, Workspace(tmp_path / "book"))
+    quote = "有人经过时木板没有响"
+    start_offset = text.find(quote)
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        request_key="binding-mark",
+        change=StoryChangeSet(
+            id="binding-mark",
+            base_revision="empty",
+            operations=[
+                {
+                    "op": "upsert_clue_plan",
+                    "clue_id": "board",
+                    "plan": {"kind": "mislead", "intention": "让人以为走廊里没人"},
+                },
+                {
+                    "op": "bind_prose",
+                    "binding": {
+                        "id": "b1",
+                        "clue_id": "board",
+                        "document_id": "doc_1",
+                        "path": path,
+                        "digest": digest,
+                        "span_digest": hashlib.sha256(quote.encode("utf-8")).hexdigest(),
+                        "start": start_offset,
+                        "end": start_offset + len(quote),
+                        "quote": quote,
+                    },
+                },
+            ],
+        ),
+    )
+
+    body = marks(client, workspace_id, path)
+
+    assert body["state"] == "ready"
+    assert body["invalid"] == []
+    mark = body["marks"][0]
+    assert (mark["clue_id"], mark["kind"], mark["title"]) == ("board", "mislead", "没有响的木板")
+    assert (mark["start"], mark["end"], mark["quote"]) == (
+        start_offset,
+        start_offset + len(quote),
+        quote,
+    )
+    assert mark["sources"] == ["binding"]
+
+
+def test_overlapping_clue_marks_are_kept_separately(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    path, digest, text = write_chapter(
+        tmp_path, "0001 雨夜.md", "# 第一章\n\n钟停在23:00。他没有抬头。\n"
+    )
+    root = conversation_root(tmp_path / "state", workspace_id)
+    seed_clue_identity(root, clue_id="clock", title="停住的钟", key="overlap-clock")
+    seed_clue_identity(root, clue_id="silence", title="反常的沉默", key="overlap-silence")
+    store = StoryStore(root, Workspace(tmp_path / "book"))
+    spans = {"clock": "钟停在23:00。", "silence": "钟停在23:00。他没有抬头。"}
+    operations: list[dict[str, Any]] = [
+        {"op": "upsert_clue_plan", "clue_id": "clock", "plan": {"kind": "truth"}},
+        {"op": "upsert_clue_plan", "clue_id": "silence", "plan": {"kind": "mislead"}},
+    ]
+    for index, (clue_id, quote) in enumerate(spans.items(), start=1):
+        offset = text.find(quote)
+        operations.append(
+            {
+                "op": "bind_prose",
+                "binding": {
+                    "id": f"b{index}",
+                    "clue_id": clue_id,
+                    "document_id": "doc_1",
+                    "path": path,
+                    "digest": digest,
+                    "span_digest": hashlib.sha256(quote.encode("utf-8")).hexdigest(),
+                    "start": offset,
+                    "end": offset + len(quote),
+                    "quote": quote,
+                },
+            }
+        )
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        request_key="overlap-marks",
+        change=StoryChangeSet(id="overlap-marks", base_revision="empty", operations=operations),
+    )
+
+    body = marks(client, workspace_id, path)
+
+    assert [(row["clue_id"], row["kind"]) for row in body["marks"]] == [
+        ("clock", "truth"),
+        ("silence", "mislead"),
+    ]
+
+
+def test_lost_binding_quote_is_reported_instead_of_guessed(
     client: TestClient, tmp_path: Path
 ) -> None:
     workspace_id = open_workspace(client, tmp_path)
@@ -222,178 +323,41 @@ def test_marks_fall_back_to_anchor_without_ledger_contribution(
         tmp_path, "0001 雨夜.md", "# 第一章\n\n有人经过时木板没有响。\n"
     )
     root = conversation_root(tmp_path / "state", workspace_id)
-    seed_clue_identity(root, clue_id="board", title="没有响的木板", key="anchor-mark-identity")
+    seed_clue_identity(root, clue_id="board", title="没有响的木板", key="lost-quote-identity")
     store = StoryStore(root, Workspace(tmp_path / "book"))
     quote = "有人经过时木板没有响"
+    offset = text.find(quote)
     store.commit_change(
         variant_id=MAIN_VARIANT_ID,
-        request_key="anchor-mark-node",
+        request_key="lost-quote",
         change=StoryChangeSet(
-            id="anchor-mark-node",
+            id="lost-quote",
             base_revision="empty",
-            operations=[
-                {
-                    "op": "upsert_clue_plan",
-                    "clue_id": "board",
-                    "plan": {"intention": "让人怀疑有人熟悉走廊"},
-                },
-                {
-                    "op": "add_node",
-                    "node": {
-                        "id": "n1",
-                        "title": "发现异样",
-                        "action": "侦探发现木板没有响",
-                        "clue_uses": [
-                            {
-                                "clue_id": "board",
-                                "roles": ["plant"],
-                                "presentation": quote,
-                                "mode": "action",
-                            }
-                        ],
-                    },
-                },
-            ],
-        ),
-    )
-    variant = store.read().variant(MAIN_VARIANT_ID)
-    assert variant is not None
-    start = text.find(quote)
-    store.commit_change(
-        variant_id=MAIN_VARIANT_ID,
-        request_key="anchor-mark-bind",
-        change=StoryChangeSet(
-            id="anchor-mark-bind",
-            base_revision=variant.revision,
             operations=[
                 {
                     "op": "bind_prose",
                     "binding": {
                         "id": "b1",
-                        "node_id": "n1",
+                        "clue_id": "board",
                         "document_id": "doc_1",
                         "path": path,
                         "digest": digest,
                         "span_digest": hashlib.sha256(quote.encode("utf-8")).hexdigest(),
-                        "source": "manual",
-                        "start": start,
-                        "end": start + len(quote),
+                        "start": offset,
+                        "end": offset + len(quote),
                         "quote": quote,
-                        "contract_digest": contract_digest(variant, variant.nodes["n1"]),
                     },
                 }
             ],
         ),
     )
+    (tmp_path / "book" / path).write_text("# 第一章\n\n门外的脚步声停了。\n", encoding="utf-8")
 
     body = marks(client, workspace_id, path)
 
-    assert body["state"] == "ready"
-    assert len(body["marks"]) == 1
-    mark = body["marks"][0]
-    assert mark["clue_id"] == "board"
-    assert mark["title"] == "没有响的木板"
-    assert mark["role"] == "plant"
-    assert mark["quote"] == quote
-    assert mark["source"] == "anchor"
-
-
-def test_anchor_marks_match_each_clue_to_its_own_segment(
-    client: TestClient, tmp_path: Path
-) -> None:
-    workspace_id = open_workspace(client, tmp_path)
-    path, digest, text = write_chapter(
-        tmp_path,
-        "0001 雨夜.md",
-        "# 第一章\n\n颈侧有两个小孔。\n\n鞋底沾着白粉，没有湿泥。\n\n他身上的血似乎少得不寻常。\n",
-    )
-    root = conversation_root(tmp_path / "state", workspace_id)
-    seed_clue_identity(root, clue_id="double", title="双孔与失血", key="anchor-mark-double")
-    seed_clue_identity(root, clue_id="powder", title="鞋底白粉", key="anchor-mark-powder")
-    store = StoryStore(root, Workspace(tmp_path / "book"))
-    store.commit_change(
-        variant_id=MAIN_VARIANT_ID,
-        request_key="anchor-mark-two-clues",
-        change=StoryChangeSet(
-            id="anchor-mark-two-clues",
-            base_revision="empty",
-            operations=[
-                {
-                    "op": "upsert_clue_plan",
-                    "clue_id": "double",
-                    "plan": {"intention": "先保留死因疑问"},
-                },
-                {
-                    "op": "upsert_clue_plan",
-                    "clue_id": "powder",
-                    "plan": {"intention": "留下地点线索"},
-                },
-                {
-                    "op": "add_node",
-                    "node": {
-                        "id": "n1",
-                        "title": "验尸",
-                        "action": "两人检查尸体和鞋底",
-                        "clue_uses": [
-                            {
-                                "clue_id": "double",
-                                "roles": ["plant"],
-                                "presentation": "颈侧小孔与失血",
-                                "mode": "action",
-                            },
-                            {
-                                "clue_id": "powder",
-                                "roles": ["plant"],
-                                "presentation": "鞋底白粉，没有湿泥",
-                                "mode": "action",
-                            },
-                        ],
-                    },
-                },
-            ],
-        ),
-    )
-    variant = store.read().variant(MAIN_VARIANT_ID)
-    assert variant is not None
-    quotes = ["颈侧有两个小孔", "鞋底沾着白粉", "他身上的血似乎少得不寻常"]
-    bindings = []
-    for index, quote in enumerate(quotes, start=1):
-        start = text.find(quote)
-        bindings.append(
-            {
-                "op": "bind_prose",
-                "binding": {
-                    "id": f"b{index}",
-                    "node_id": "n1",
-                    "document_id": "doc_1",
-                    "path": path,
-                    "digest": digest,
-                    "span_digest": hashlib.sha256(quote.encode("utf-8")).hexdigest(),
-                    "source": "manual",
-                    "start": start,
-                    "end": start + len(quote),
-                    "quote": quote,
-                    "contract_digest": contract_digest(variant, variant.nodes["n1"]),
-                },
-            }
-        )
-    store.commit_change(
-        variant_id=MAIN_VARIANT_ID,
-        request_key="anchor-mark-two-clues-bind",
-        change=StoryChangeSet(
-            id="anchor-mark-two-clues-bind",
-            base_revision=variant.revision,
-            operations=bindings,
-        ),
-    )
-
-    body = marks(client, workspace_id, path)
-
-    assert body["state"] == "ready"
-    assert [(row["clue_id"], row["quote"]) for row in body["marks"]] == [
-        ("double", "颈侧有两个小孔"),
-        ("powder", "鞋底沾着白粉"),
-        ("double", "他身上的血似乎少得不寻常"),
+    assert body["marks"] == []
+    assert body["invalid"] == [
+        {"clue_id": "board", "title": "没有响的木板", "quote": quote, "reason": "missing"}
     ]
 
 
@@ -421,3 +385,93 @@ def test_marks_report_unrecorded_and_empty(client: TestClient, tmp_path: Path) -
         task_id="marks",
     )
     assert marks(client, workspace_id, path)["state"] == "empty"
+
+
+def test_marking_a_selection_saves_identity_kind_and_precise_span(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    path, digest, text = write_chapter(
+        tmp_path, "0001 雨夜.md", "# 第一章\n\n有人经过时木板没有响。\n"
+    )
+    quote = "有人经过时木板没有响"
+    offset = text.find(quote)
+    created = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": "empty",
+            "request_key": "mark-selection-01",
+            "operations": [
+                {"op": "create_clue_identity", "temp_id": "new-board", "title": "没有响的木板"},
+                {
+                    "op": "upsert_clue_plan",
+                    "clue_id": "new-board",
+                    "plan": {"kind": "truth", "intention": "读者开始怀疑走廊是否有人"},
+                },
+                {
+                    "op": "bind_prose",
+                    "binding": {
+                        "id": "b-mark",
+                        "clue_id": "new-board",
+                        "document_id": "",
+                        "path": path,
+                        "digest": digest,
+                        "start": offset,
+                        "end": offset + len(quote),
+                        "quote": quote,
+                    },
+                },
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    stable = created.json()["id_map"]["new-board"]
+    store = StoryStore(conversation_root(tmp_path / "state", workspace_id))
+    binding = next(iter(store.require_variant(MAIN_VARIANT_ID).bindings.values()))
+    assert binding.clue_id == stable
+    assert binding.document_id.startswith("doc_")
+
+    body = marks(client, workspace_id, path)
+    assert [(row["clue_id"], row["kind"], row["quote"]) for row in body["marks"]] == [
+        (stable, "truth", quote)
+    ]
+
+
+def test_stale_selection_is_rejected_without_writing(client: TestClient, tmp_path: Path) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    path, digest, text = write_chapter(
+        tmp_path, "0001 雨夜.md", "# 第一章\n\n有人经过时木板没有响。\n"
+    )
+    quote = "有人经过时木板没有响"
+    offset = text.find(quote)
+    (tmp_path / "book" / path).write_text(
+        "# 第一章\n\n有人经过时木板没有响。后来门外有脚步声。\n", encoding="utf-8"
+    )
+    rejected = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": "empty",
+            "request_key": "mark-stale",
+            "operations": [
+                {"op": "create_clue_identity", "temp_id": "new-board", "title": "没有响的木板"},
+                {
+                    "op": "bind_prose",
+                    "binding": {
+                        "id": "b-mark",
+                        "clue_id": "new-board",
+                        "document_id": "",
+                        "path": path,
+                        "digest": digest,
+                        "start": offset,
+                        "end": offset + len(quote),
+                        "quote": quote,
+                    },
+                },
+            ],
+        },
+    )
+    assert rejected.status_code == 400, rejected.text
+    assert rejected.json()["error"]["code"] == "PROSE_SOURCE_STALE"
+    assert not StoryStore(conversation_root(tmp_path / "state", workspace_id)).read().document

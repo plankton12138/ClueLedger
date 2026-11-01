@@ -15,6 +15,7 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.story_changes import StoryInvalid, apply_change_set
 from hastings.workspace.story_models import (
     AddNode,
+    BindProse,
     CreateClueIdentity,
     RemoveClueIdentity,
     RenameClueIdentity,
@@ -23,6 +24,7 @@ from hastings.workspace.story_models import (
     StoryVariant,
     UpdateNode,
     UpsertCluePlan,
+    UpsertClueRelation,
 )
 from hastings.workspace.story_store import (
     EMPTY_REVISION,
@@ -30,7 +32,7 @@ from hastings.workspace.story_store import (
     JointTarget,
 )
 
-__all__ = ["prepare_clue_joint", "prepare_clue_undo"]
+__all__ = ["prepare_clue_joint", "prepare_clue_undo", "resolve_clue_references"]
 
 
 def _encoded(payload: dict[str, Any]) -> bytes:
@@ -44,7 +46,12 @@ def _digest_file(path: Path) -> str:
         return ""
 
 
-def _resolve_change(change: StoryChangeSet, mapping: dict[str, str]) -> StoryChangeSet:
+def resolve_clue_references(change: StoryChangeSet, mapping: dict[str, str]) -> StoryChangeSet:
+    """把同一请求里的临时线索标识换成账本分配的真实标识。
+
+    计划、节点用途、正文关联和关系两端都要替换；只改计划会让绑定和关系指向不存在的
+    临时标识，提交后留下一半引用。
+    """
     operations: list[StoryOperation] = []
     for operation in change.operations:
         if isinstance(operation, UpsertCluePlan):
@@ -60,6 +67,36 @@ def _resolve_change(change: StoryChangeSet, mapping: dict[str, str]) -> StoryCha
             ]
             node = operation.node.model_copy(update={"clue_uses": uses})
             operations.append(operation.model_copy(update={"node": node}))
+        elif isinstance(operation, BindProse):
+            binding = operation.binding
+            if binding.clue_id is None:
+                operations.append(operation)
+                continue
+            operations.append(
+                operation.model_copy(
+                    update={
+                        "binding": binding.model_copy(
+                            update={"clue_id": mapping.get(binding.clue_id, binding.clue_id)}
+                        )
+                    }
+                )
+            )
+        elif isinstance(operation, UpsertClueRelation):
+            relation = operation.relation
+            operations.append(
+                operation.model_copy(
+                    update={
+                        "relation": relation.model_copy(
+                            update={
+                                "from_clue_id": mapping.get(
+                                    relation.from_clue_id, relation.from_clue_id
+                                ),
+                                "to_clue_id": mapping.get(relation.to_clue_id, relation.to_clue_id),
+                            }
+                        )
+                    }
+                )
+            )
         else:
             operations.append(operation)
     return change.model_copy(update={"operations": operations})
@@ -201,7 +238,7 @@ def prepare_clue_joint(
                             fix="为每条新线索使用不同的临时引用",
                         )
                     mapping[operation.temp_id] = new_id("clue")
-            resolved = _resolve_change(change, mapping)
+            resolved = resolve_clue_references(change, mapping)
             has_identity_ops = any(
                 isinstance(operation, CreateClueIdentity) for operation in change.operations
             ) or any(

@@ -3,7 +3,7 @@ import { List, MessageSquare } from "lucide-react";
 import { CHAT, SIDEBAR, useLayoutStore, writingLayout } from "../../state/layout";
 import { useWorkspaceStore } from "../../state/workspace";
 import { runningConversation, useConversationsStore } from "../../state/conversations";
-import { EMPTY_CONTEXT, type ClueReferenceInput } from "../../api/workspace";
+import { EMPTY_CONTEXT } from "../../api/workspace";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/StatusMessage";
 import WorkspaceToc from "./WorkspaceToc";
@@ -16,12 +16,10 @@ import { useModuleLibraryStore } from "../../state/moduleLibrary";
 import { useSourceLocationStore } from "../../state/sourceLocation";
 import { SourceNotice, ModuleSourceReader } from "../clues/SourceReader";
 import { navigate, useWorkspacePage } from "../../state/navigation";
-import StoryClues from "../story/StoryClues";
 import StorySurface from "../story/StorySurface";
+import ClueSurface from "../clues/ClueSurface";
+import WorkspaceDetail from "./WorkspaceDetail";
 import { useStoryStore } from "../../state/story";
-import { sourceTaskChapter } from "../../state/sourceLocation";
-
-type SidebarTab = "directory" | "story";
 
 export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const prefs = useLayoutStore();
@@ -31,18 +29,14 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const selectedModule = useWorkspaceModulesStore(state => state.selected);
   const source = useSourceLocationStore(state => state.workspaceId === currentId ? state.location : null);
   const sourceId = useSourceLocationStore(state => state.workspaceId === currentId ? state.evidenceId : null);
-  const moduleAssembly = useModuleLibraryStore(state => state.workspaceId===currentId ? state.assembly : null);
-  const moduleBinding = selectedModule?.workspaceId===currentId ? moduleAssembly?.bindings.find(binding => binding.id===selectedModule.bindingId) : undefined;
+  const moduleAssembly = useModuleLibraryStore(state => state.workspaceId === currentId ? state.assembly : null);
+  const moduleBinding = selectedModule?.workspaceId === currentId ? moduleAssembly?.bindings.find(binding => binding.id === selectedModule.bindingId) : undefined;
   const [width, setWidth] = useState(0);
-  const storyView = page?.kind === "writing" && page.workspaceId === currentId && page.mode === "story";
-  const storyGraph = useStoryStore(state => state.graph);
-  const storyVariantId = useStoryStore(state => state.variantId);
+  const mode = page?.kind === "writing" && page.workspaceId === currentId ? page.mode ?? "prose" : "prose";
+  const storyView = mode === "story";
+  const cluesView = mode === "clues";
   const storyNodeId = useStoryStore(state => state.nodeId);
   const storyClueId = useStoryStore(state => state.clueId);
-  const storyLoading = useStoryStore(state => state.loading);
-  const storyError = useStoryStore(state => state.error);
-  const selectStoryClue = useStoryStore(state => state.selectClue);
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("directory");
   const [directory, setDirectory] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const container = useRef<HTMLDivElement>(null);
@@ -53,56 +47,60 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     const observer = new ResizeObserver(entries => { if (entries[0].contentRect.width > 0) setWidth(entries[0].contentRect.width); });
     observer.observe(node); return () => observer.disconnect();
   }, []);
-  // 线索详情比目录需要更宽的阅读栏；不改写用户保存的目录宽度，只在本模式下临时加宽。
-  const sidebarPreferred = sidebarTab === "story"
-    ? Math.max(prefs.sidebarWidth, 320 * Math.max(1, prefs.fontScale / 100))
-    : prefs.sidebarWidth;
-  const capacity = writingLayout(width, { ...prefs, sidebarWidth: sidebarPreferred, sidebarVisible: true, chatVisible: true });
+  const capacity = writingLayout(width, { ...prefs, sidebarVisible: true, chatVisible: true });
   const canDockDirectory = capacity.sidebar > 0;
   const compact = capacity.kind === "single";
   const chat = Boolean(currentId && (compact ? compactChat : prefs.chatVisible));
   useLayoutEffect(() => {
     if (chat && prefs.chatReveal > 0) container.current?.querySelector<HTMLTextAreaElement>(".chat-input")?.focus();
   }, [chat, prefs.chatReveal]);
-  const plan = writingLayout(width, { ...prefs, sidebarWidth: sidebarPreferred, chatVisible: chat });
+  const plan = writingLayout(width, { ...prefs, chatVisible: chat });
   const sidebar = plan.sidebar > 0;
   const directoryVisible = canDockDirectory ? sidebar : directory;
   const paper = !compact || !chat;
+  const detailOpen = Boolean(currentId) && (
+    (storyView && Boolean(storyNodeId)) ||
+    Boolean(storyClueId && (cluesView || !storyView))
+  );
   useEffect(() => {
-    // 会话受理仍按构思页判断用途；路由模式是唯一来源，进入/离开构思时同步一次。
+    // 会话受理仍按构思页判断用途；路由模式是唯一来源。
     useStoryStore.getState().setOpen(storyView);
   }, [storyView]);
   useLayoutEffect(() => {
     if (previousWorkspace.current && previousWorkspace.current !== currentId) {
       setDirectory(false);
       setCompactChat(false);
-      setSidebarTab("directory");
+      useStoryStore.getState().selectNode(null);
+      useStoryStore.getState().selectClue(null);
     }
     previousWorkspace.current = currentId;
   }, [currentId]);
   useEffect(() => { setDirectory(false); }, [canDockDirectory]);
-  useEffect(() => { setSidebarTab(storyView ? "story" : "directory"); }, [storyView]);
+  // 路由是选中状态的来源：直接打开链接、前进后退与刷新都回到同一个对象。
   useEffect(() => {
-    if (storyView && storyClueId) setSidebarTab("story");
-  }, [storyClueId, storyView]);
+    if (!page || page.kind !== "writing" || page.workspaceId !== currentId) return;
+    const store = useStoryStore.getState();
+    const nextNode = page.mode === "story" ? page.nodeId ?? null : null;
+    const nextClue = page.clueId ?? null;
+    if (store.nodeId !== nextNode) store.selectNode(nextNode);
+    if (store.clueId !== nextClue) store.selectClue(nextClue);
+  }, [page, currentId]);
   useEffect(() => {
-    if (sidebarTab !== "story" || !currentId) return;
-    const state = useStoryStore.getState();
-    if (state.workspaceId !== currentId || !state.graph) void state.load(currentId);
-  }, [sidebarTab, currentId]);
-  useEffect(() => {
-    if (!storyView) return;
+    if (!storyView && !cluesView) return;
     const sourceState = useSourceLocationStore.getState();
     if (sourceState.evidenceId || sourceState.storyReturn || sourceState.location) sourceState.clear();
-  }, [storyView]);
+  }, [storyView, cluesView]);
   useEffect(() => { if (prefs.chatReveal > 0) setCompactChat(true); }, [prefs.chatReveal]);
   useEffect(() => { if (sourceId) setCompactChat(false); }, [sourceId]);
+  useEffect(() => {
+    if (cluesView && currentId) void useStoryStore.getState().loadRelations(currentId, storyClueId);
+  }, [cluesView, currentId, storyClueId]);
   function toggleSidebar() {
-    if (canDockDirectory) prefs.toggleSidebar(); else setDirectory((value) => !value);
+    if (canDockDirectory) prefs.toggleSidebar(); else setDirectory(value => !value);
   }
   function toggleChat() {
     if (compact) {
-      setCompactChat((value) => !value);
+      setCompactChat(value => !value);
       return;
     }
     if (prefs.chatVisible) prefs.toggleChat();
@@ -115,33 +113,23 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   function openStoryConversation() {
     openChat();
   }
-  async function openClueFromProse(clueId: string) {
-    if (!currentId) return;
-    const story = useStoryStore.getState();
-    if (story.workspaceId !== currentId || !story.graph) await story.load(currentId);
-    useStoryStore.getState().selectNode(null);
-    useStoryStore.getState().selectClue(clueId);
-    setSidebarTab("story");
-    setDirectory(true);
-  }
-  async function locateStoryEvidence(evidenceId: string, asOf: number) {
-    if (!currentId) return;
-    const taskChapter = sourceTaskChapter(currentId) ?? file?.chapter_number ?? 0;
-    useSourceLocationStore.setState({ storyReturn: true });
-    navigate({ kind: "writing", workspaceId: currentId, sourceId: evidenceId, asOfChapter: asOf, taskChapter });
-  }
-  function openStoryNode(nodeId: string) {
+  function selectNode(nodeId: string | null) {
     if (!currentId) return;
     useStoryStore.getState().selectNode(nodeId);
-    navigate({ kind: "writing", workspaceId: currentId, mode: "story" });
+    navigate({ kind: "writing", workspaceId: currentId, mode: "story", nodeId: nodeId ?? undefined }, true);
   }
-  // 带上线索只写进消息草稿，不发送；引用版本在发送时才由服务端核对。
-  async function referenceClue(reference: ClueReferenceInput, title: string) {
+  function selectClue(clueId: string | null) {
     if (!currentId) return;
-    const store = useConversationsStore.getState();
-    if (store.workspaceId !== currentId) await store.load(currentId);
-    if (!useConversationsStore.getState().addClueReference(reference, title)) return;
-    openChat();
+    useStoryStore.getState().selectClue(clueId);
+    navigate(
+      {
+        kind: "writing",
+        workspaceId: currentId,
+        mode: cluesView ? "clues" : undefined,
+        clueId: clueId ?? undefined,
+      },
+      true,
+    );
   }
   async function calibrateStoryFromProse() {
     if (!currentId) return;
@@ -164,10 +152,27 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       { purpose: "chat", preserveDraft: true },
     );
   }
-  const tabs: { id: SidebarTab; label: string }[] = [
-    { id: "directory", label: "目录" },
-    { id: "story", label: "全书线索" },
-  ];
+  function openClueFromProse(clueId: string) {
+    selectClue(clueId);
+  }
+  function locateProse(target: { path: string; evidence_id?: string; chapter?: number }) {
+    if (!currentId) return;
+    if (target.evidence_id) {
+      // 账本证据交给现有来源阅读；返回时回到刚才那一页。
+      const taskChapter = file?.chapter_number ?? 0;
+      useSourceLocationStore.setState({ storyReturn: true });
+      navigate({
+        kind: "writing",
+        workspaceId: currentId,
+        sourceId: target.evidence_id,
+        asOfChapter: file?.chapter_number ?? undefined,
+        taskChapter,
+      });
+      return;
+    }
+    navigate({ kind: "writing", workspaceId: currentId });
+    void useWorkspaceStore.getState().openPath(target.path);
+  }
   const chatLabel = running ? "对话 · 进行中" : "对话";
   return <div className="writing-layout" ref={container} data-layout={plan.kind}>
     <div className="writing-tools">
@@ -181,54 +186,23 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       </Button>
     </div>
     <div className="writing-panes workbench">
-      <aside id="writing-sidebar" role="region" aria-label={sidebarTab === "directory" ? "目录" : "全书线索"} className="writing-toc module" data-overlay={!canDockDirectory} hidden={!directoryVisible}
-        style={{ width: sidebar ? plan.sidebar : Math.max(sidebarPreferred, SIDEBAR.min * Math.max(1, prefs.fontScale / 100)) }}
+      <aside id="writing-sidebar" role="region" aria-label="目录" className="writing-toc module" data-overlay={!canDockDirectory} hidden={!directoryVisible}
+        style={{ width: sidebar ? plan.sidebar : Math.max(prefs.sidebarWidth, SIDEBAR.min * Math.max(1, prefs.fontScale / 100)) }}
         onKeyDown={event => { if (!canDockDirectory && event.key === "Escape") { event.stopPropagation(); setDirectory(false); } }}>
-        <div className="writing-side-tabs" role="tablist" aria-label="侧栏内容" onKeyDown={event => {
-          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-          event.preventDefault();
-          const index = tabs.findIndex(tab => tab.id === sidebarTab);
-          const next = event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[tabs.length - 1]
-            : tabs[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
-          setSidebarTab(next.id);
-          event.currentTarget.querySelector<HTMLButtonElement>(`[data-side-tab="${next.id}"]`)?.focus();
-        }}>
-          {tabs.map(tab => <button key={tab.id} type="button" role="tab" data-side-tab={tab.id} aria-selected={sidebarTab === tab.id}
-            tabIndex={sidebarTab === tab.id ? 0 : -1} className="writing-side-tab" onClick={() => setSidebarTab(tab.id)}>{tab.label}</button>)}
-        </div>
         <div className="writing-side-body">
-          {sidebarTab === "directory" ? <WorkspaceToc onChoose={() => {
+          <WorkspaceToc onChoose={() => {
             const pending = useSourceLocationStore.getState().restorePosition;
             if (pending) useSourceLocationStore.getState().consumeRestore(pending.epoch);
             const sourceState = useSourceLocationStore.getState();
             if (sourceState.evidenceId || sourceState.storyReturn || (page?.kind === "writing" && page.sourceId)) sourceState.clear();
-            if (storyView && currentId) navigate({ kind: "writing", workspaceId: currentId });
+            if ((storyView || cluesView) && currentId) navigate({ kind: "writing", workspaceId: currentId });
             if (!canDockDirectory) { setDirectory(false); setCompactChat(false); }
-          }} /> : storyVariantId ? (
-            <StoryClues
-              workspaceId={currentId ?? ""}
-              variantId={storyVariantId}
-              nodeId={storyNodeId}
-              asOf={null}
-              active={directoryVisible}
-              selectedClueId={storyClueId}
-              onSelectClue={selectStoryClue}
-              nodeTitle={id => storyGraph?.nodes.find(node => node.id === id)?.title ?? id}
-              onLocateNode={openStoryNode}
-              onLocateEvidence={(id, asOf) => void locateStoryEvidence(id, asOf)}
-              onReference={referenceClue}
-              onClearNodeFilter={() => useStoryStore.getState().selectNode(null)}
-            />
-          ) : (
-            <div className="writing-side-empty">
-              <p>{storyLoading ? "正在读取构思…" : storyError ?? "还没有构思。切到构思模式建立结构与线索。"}</p>
-            </div>
-          )}
+          }} />
         </div>
       </aside>
       {sidebar && <ResizeHandle value={plan.sidebar} min={SIDEBAR.min} max={Math.min(SIDEBAR.max, width - plan.chat - plan.paperMin - 12)} label="侧栏宽度"
           onChange={prefs.setSidebarWidth} onReset={() => prefs.setSidebarWidth(SIDEBAR.default)} />}
-      <section className="writing-paper module" role="region" aria-label={storyView ? "构思结构" : "正文阅读"} hidden={!paper}>
+      <section className="writing-paper module" role="region" aria-label={storyView ? "构思结构" : cluesView ? "全书线索" : "正文阅读"} hidden={!paper}>
         <div className="flex h-full min-h-0 flex-col"><SourceNotice /><div className="min-h-0 flex-1 flex flex-col">
         {currentId ? storyView ? (
           <StorySurface
@@ -236,9 +210,30 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             onStart={openStoryConversation}
             onCalibrate={() => void calibrateStoryFromProse()}
           />
-        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} onOpenClue={clueId => void openClueFromProse(clueId)} /> : !ready ? <div className="ui-empty" role="status"><p>正在载入作品…</p></div> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
+        ) : cluesView ? (
+          <ClueSurface
+            workspaceId={currentId}
+            selectedClueId={storyClueId}
+            onSelectClue={selectClue}
+          />
+        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} onOpenClue={openClueFromProse} /> : !ready ? <div className="ui-empty" role="status"><p>正在载入作品…</p></div> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
         </div></div>
       </section>
+      {detailOpen && currentId && (
+        <aside className="writing-detail module" role="region" aria-label="详情">
+          <WorkspaceDetail
+            workspaceId={currentId}
+            mode={storyView ? "story" : cluesView ? "clues" : "prose"}
+            nodeId={storyNodeId}
+            clueId={storyClueId}
+            onClose={() => {
+              if (storyView) selectNode(null);
+              else selectClue(null);
+            }}
+            onLocateProse={locateProse}
+          />
+        </aside>
+      )}
       {currentId && <>
         {chat && !compact && <ResizeHandle value={plan.chat} min={CHAT.min} max={Math.min(CHAT.max, width - plan.sidebar - plan.paperMin - (sidebar ? 12 : 6))}
           invert label="对话栏宽度" onChange={prefs.setChatWidth} onReset={() => prefs.setChatWidth(CHAT.default)} />}

@@ -27,8 +27,16 @@ __all__ = [
     "Assessment",
     "AssessmentFinding",
     "AssessmentRequirement",
+    "AttentionReceipt",
+    "AcknowledgeAttention",
+    "BindingAlignment",
+    "ClearAttentionReceipt",
+    "ClueKind",
     "CluePlanInput",
+    "ClueRelation",
+    "ClueRelationKind",
     "ClueUse",
+    "ConfirmAlignment",
     "Constraint",
     "ConstraintScope",
     "CreateClueIdentity",
@@ -39,12 +47,15 @@ __all__ = [
     "ReadDependency",
     "RemoveClueIdentity",
     "RemoveCluePlan",
+    "RemoveClueRelation",
     "RenameClueIdentity",
+    "SetTimeOrigin",
     "StoryChangeRecord",
     "StoryChangeSet",
     "StoryCluePlan",
     "StoryDocument",
     "StoryEdge",
+    "StoryEventSpan",
     "StoryNode",
     "StoryOperation",
     "StoryReceipt",
@@ -52,6 +63,7 @@ __all__ = [
     "StoryThread",
     "StoryVariant",
     "UpsertCluePlan",
+    "UpsertClueRelation",
     "validate_story_variant",
 ]
 
@@ -71,6 +83,10 @@ PresentationMode = Literal[
 ]
 EdgeKind = Literal["next", "reframe", "answer"]
 ResolutionIntent = Literal["explain", "leave_open", "undecided"]
+#: 线索主用途：作者希望它指向正确理解，还是引出错误理解。``None`` 表示尚未决定。
+ClueKind = Literal["truth", "mislead"]
+#: 线索之间由作者登记的关系；``supports`` 有方向，另两类无方向。
+ClueRelationKind = Literal["supports", "contradicts", "co_misdirects"]
 ClueRole = Literal["plant", "develop", "misdirect", "reinterpret", "resolve"]
 Provenance = Literal["author_request", "authorized_creation", "model_suggestion", "author_module"]
 ConstraintStrength = Literal["required", "preference"]
@@ -133,6 +149,24 @@ class KnowledgeChange(StrictRecord):
         return self
 
 
+class StoryEventSpan(StrictRecord):
+    """故事内发生时间：相对当前方案时间基准的分钟数，闭区间 ``[start, end]``。
+
+    结束早于开始不是「时长未知」，而是写错了；相等表示瞬时事件。跨午夜使用连续分钟，
+    不把次日零点排回前一天之前。
+    """
+
+    start_minute: int
+    end_minute: int
+    approximate: bool = False
+
+    @model_validator(mode="after")
+    def check_order(self) -> StoryEventSpan:
+        if self.end_minute < self.start_minute:
+            raise ValueError("事件结束时间早于开始时间")
+        return self
+
+
 class StoryNode(StrictRecord):
     """一个创作节点：发生了什么、属于哪些分支、用了哪些线索。"""
 
@@ -151,6 +185,10 @@ class StoryNode(StrictRecord):
     )
     clue_uses: list[ClueUse] = Field(default_factory=list)
     time_note: str = Field(default="", max_length=500)
+    #: 没有正文时的计划披露章节；有有效绑定时以真实章序为准，不覆盖这个计划值。
+    planned_chapter_number: int | None = Field(default=None, ge=1)
+    #: 作者明确给出的故事内时间；``None`` 表示只有文字描述或完全未定。
+    event_span: StoryEventSpan | None = None
     knowledge_changes: list[KnowledgeChange] = Field(default_factory=list)
     #: 关键行动带来的局面或理解变化；未定不等于没有变化。
     change: str | None = Field(default=None, max_length=1000)
@@ -176,9 +214,14 @@ class StoryNode(StrictRecord):
 
 
 class StoryCluePlan(StrictRecord):
-    """构思里的线索计划；标题与身份在账本，这里只保存作者安排。"""
+    """构思里的线索计划；标题与身份在账本，这里只保存作者安排。
+
+    ``kind`` 是作者希望的用途，``None`` 表示还没决定；它不是第三种分类，也不由模型
+    或界面从标题、颜色反推。
+    """
 
     clue_id: StoryId
+    kind: ClueKind | None = None
     author_truth: str | None = None
     intention: str = Field(default="", max_length=2000)
     resolution_intent: ResolutionIntent = "undecided"
@@ -193,6 +236,7 @@ class StoryCluePlan(StrictRecord):
 class CluePlanInput(StrictRecord):
     """写入计划的公开字段；``clue_id`` 由操作目标给出，不在计划里重复。"""
 
+    kind: ClueKind | None = None
     author_truth: str | None = None
     intention: str = Field(default="", max_length=2000)
     resolution_intent: ResolutionIntent = "undecided"
@@ -316,15 +360,20 @@ class Constraint(StrictRecord):
 
 
 class ProseBinding(StrictRecord):
-    """结构节点与正文区间的关联；区间是服务端规范化后的 Unicode 码点。"""
+    """结构对象与正文区间的关联；区间是服务端规范化后的 Unicode 码点。
+
+    节点和线索至少存在一个：作者可以从正文直接登记线索，不必先建构思节点。两者都给出
+    表示这段正文同时是某个构思节点的出处和某条线索的出处。
+    """
 
     id: StoryId
-    node_id: StoryId
+    node_id: StoryId | None = None
     clue_id: str | None = None
-    document_id: StoryId
+    #: 章节标识与摘要由服务端按受管目录与当前正文填写，调用方可以留空。
+    document_id: str = Field(default="", max_length=64)
     path: str = Field(min_length=1)
-    digest: str = Field(min_length=1)
-    #: 绑定时的区间摘要；空串表示旧记录，旧记录按整份文件摘要比较。
+    digest: str = Field(default="", max_length=128)
+    #: 绑定时的区间摘要；空串表示没有记录过，只能按引文重新定位。
     span_digest: str = Field(default="", max_length=128)
     #: 这条正文关联由哪种写入路径产生，用于区分自动候选、从正文反建和手工补录。
     source: Literal["candidate", "outline_from_prose", "manual", "inferred"] = "manual"
@@ -333,19 +382,56 @@ class ProseBinding(StrictRecord):
     quote: str = Field(min_length=1)
     observation: str = Field(default="", max_length=2000)
     assessment_id: str | None = None
-    #: 最近一次核对通过的节点正文契约；空串表示旧记录或尚未核对。
-    contract_digest: str = Field(default="", max_length=128)
-    #: 作者明确选择暂不处理的冲突摘要；任一侧再变化即失效。
-    waived_digest: str = Field(default="", max_length=128)
-    waived_note: str = Field(default="", max_length=1000)
+    #: 最近一次核对通过的节点正文契约；``None`` 表示没有核对基准，仅线索关联同样为 None。
+    contract_digest: str | None = Field(default=None, max_length=128)
 
     @model_validator(mode="after")
     def check_range(self) -> ProseBinding:
+        if self.node_id is None and self.clue_id is None:
+            raise ValueError("正文关联缺少节点或线索目标")
         if self.end <= self.start or self.end - self.start != len(self.quote):
             raise ValueError("引文长度与字符区间不一致")
         if self.clue_id is not None and not self.clue_id.strip():
             raise ValueError("线索关联要么留空，要么给出线索标识")
         return self
+
+
+class ClueRelation(StrictRecord):
+    """作者登记的两条线索之间的关系；说明是必填项，方向由 ``kind`` 决定。"""
+
+    id: StoryId
+    from_clue_id: StoryId
+    to_clue_id: StoryId
+    kind: ClueRelationKind
+    reason: str = Field(max_length=1000)
+    #: 可选正文依据；由服务端解析为当前绑定或账本证据。
+    basis_source_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_ends(self) -> ClueRelation:
+        if self.from_clue_id == self.to_clue_id:
+            raise ValueError("线索关系不能指向自己")
+        if not self.reason.strip():
+            raise ValueError("线索关系的说明不能为空")
+        if len(set(self.basis_source_ids)) != len(self.basis_source_ids):
+            raise ValueError("同一依据不能重复登记")
+        return self
+
+    def symmetric_key(self) -> tuple[str, str, str]:
+        """去重用的键：``supports`` 保留方向，另两类按端点排序。"""
+        ends = (self.from_clue_id, self.to_clue_id)
+        if self.kind != "supports":
+            ends = tuple(sorted(ends))  # type: ignore[assignment]
+        return (self.kind, ends[0], ends[1])
+
+
+class AttentionReceipt(StrictRecord):
+    """作者对某节点当前提醒的暂缓记录；只影响提醒是否突出展示，不改变状态。"""
+
+    node_id: StoryId
+    fingerprint: str = Field(min_length=1, max_length=128)
+    #: 操作时间，仅用于追溯，不参与指纹比较。
+    noted_at: str = Field(default="", max_length=40)
 
 
 class AssessmentRequirement(StrictRecord):
@@ -410,6 +496,8 @@ class StoryVariant(StrictRecord):
     base_variant_id: str | None = None
     base_revision: str | None = None
     revision: str = Field(min_length=1, max_length=64)
+    #: 故事时间基准的显示说明，例如「案发当天 00:00」；不解析其中的日期。
+    time_origin_label: str = Field(default="", max_length=200)
     stages: dict[str, StoryStage] = Field(default_factory=dict)
     nodes: dict[str, StoryNode] = Field(default_factory=dict)
     clue_plans: dict[str, StoryCluePlan] = Field(default_factory=dict)
@@ -418,6 +506,8 @@ class StoryVariant(StrictRecord):
     edges: dict[str, StoryEdge] = Field(default_factory=dict)
     event_times: list[EventTimeRelation] = Field(default_factory=list)
     bindings: dict[str, ProseBinding] = Field(default_factory=dict)
+    clue_relations: dict[str, ClueRelation] = Field(default_factory=dict)
+    attention_receipts: dict[str, AttentionReceipt] = Field(default_factory=dict)
     assessments: dict[str, Assessment] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -429,6 +519,7 @@ class StoryVariant(StrictRecord):
             ("约定", self.constraints),
             ("关系", self.edges),
             ("正文关联", self.bindings),
+            ("线索关系", self.clue_relations),
             ("核对", self.assessments),
         ):
             if any(key != value.id for key, value in items.items()):
@@ -481,10 +572,23 @@ class StoryVariant(StrictRecord):
                     "未计划解释或仍待定的线索不能安排回收作用"
                 )
         for binding in self.bindings.values():
-            if binding.node_id not in self.nodes:
+            if not binding.document_id.strip() or not binding.digest.strip():
+                raise ValueError(f"正文关联缺少章节标识或摘要：{binding.id}")
+            if binding.node_id is not None and binding.node_id not in self.nodes:
                 raise ValueError(f"正文关联指向不存在的节点：{binding.id}")
             if binding.clue_id is not None and not binding.clue_id.strip():
                 raise ValueError("正文关联的线索要么留空，要么给出标识")
+        if any(key != value.node_id for key, value in self.attention_receipts.items()):
+            raise ValueError("暂缓记录的索引与节点标识不一致")
+        for receipt in self.attention_receipts.values():
+            if receipt.node_id not in self.nodes:
+                raise ValueError(f"暂缓记录指向不存在的节点：{receipt.node_id}")
+        seen_relations: set[tuple[str, str, str]] = set()
+        for relation in self.clue_relations.values():
+            key = relation.symmetric_key()
+            if key in seen_relations:
+                raise ValueError(f"线索关系重复登记：{relation.id}")
+            seen_relations.add(key)
         return self
 
     def node_ids(self) -> tuple[str, ...]:
@@ -738,6 +842,69 @@ class RecordAssessment(StrictRecord):
     assessment: Assessment
 
 
+class UpsertClueRelation(StrictRecord):
+    """新建或改写一条线索关系；标识相同表示改写，端点键相同表示重复。"""
+
+    op: Literal["upsert_clue_relation"] = "upsert_clue_relation"
+    relation: ClueRelation
+
+
+class RemoveClueRelation(StrictRecord):
+    op: Literal["remove_clue_relation"] = "remove_clue_relation"
+    relation_id: StoryId
+
+
+class AcknowledgeAttention(StrictRecord):
+    """作者选择稍后处理当前提醒；写入指纹，不改变三状态。"""
+
+    op: Literal["acknowledge_attention"] = "acknowledge_attention"
+    node_id: StoryId
+    fingerprint: str = Field(min_length=1, max_length=128)
+
+
+class ClearAttentionReceipt(StrictRecord):
+    """清除暂缓记录；撤销一次暂缓时使用，不提供界面入口。"""
+
+    op: Literal["clear_attention_receipt"] = "clear_attention_receipt"
+    node_id: StoryId
+
+
+class SetTimeOrigin(StrictRecord):
+    """设置故事时间基准的显示说明；不解析其中的日期，也不换算节点时间。"""
+
+    op: Literal["set_time_origin"] = "set_time_origin"
+    label: str = Field(max_length=200)
+
+
+class BindingAlignment(StrictRecord):
+    """一条关联的新核对基准；由服务端按当前正文与构思计算后带入。"""
+
+    binding_id: StoryId
+    contract_digest: str = Field(min_length=1, max_length=128)
+    span_digest: str = Field(min_length=1, max_length=128)
+
+
+class ConfirmAlignment(StrictRecord):
+    """作者明确确认关联与当前内容一致，逐条更新核对基准。"""
+
+    op: Literal["confirm_alignment"] = "confirm_alignment"
+    node_id: StoryId
+    #: 作者确认时的提醒指纹；服务端在应用前核对仍适用。
+    fingerprint: str = Field(min_length=1, max_length=128)
+    #: 确认依据：作者原话或可用核对记录，不能由模型伪造「作者已确认」。
+    basis: str = Field(min_length=1, max_length=1000)
+    alignments: list[BindingAlignment] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def check_unique(self) -> ConfirmAlignment:
+        ids = [item.binding_id for item in self.alignments]
+        if len(set(ids)) != len(ids):
+            raise ValueError("同一关联不能重复确认")
+        if not self.basis.strip():
+            raise ValueError("确认依据不能为空")
+        return self
+
+
 StoryOperation = Annotated[
     AddNode
     | UpdateNode
@@ -763,7 +930,13 @@ StoryOperation = Annotated[
     | BindProse
     | UnbindProse
     | RecordAssessment
-    | RemoveAssessment,
+    | RemoveAssessment
+    | UpsertClueRelation
+    | RemoveClueRelation
+    | AcknowledgeAttention
+    | ClearAttentionReceipt
+    | SetTimeOrigin
+    | ConfirmAlignment,
     Field(discriminator="op"),
 ]
 
@@ -841,7 +1014,7 @@ class StoryChangeRecord(StrictRecord):
 class StoryDocument(StrictRecord):
     """状态目录里 ``story/story.json`` 的全部内容。"""
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     workspace_lineage: str = Field(min_length=1)
     revision: str = Field(min_length=1)
     primary_variant_id: str = Field(min_length=1)

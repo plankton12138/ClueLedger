@@ -1,8 +1,8 @@
 /**
- * 构思结构的作品接口（1.0.1 P5）。
+ * 构思结构、时间轴与提醒的作品接口。
  *
- * 与后端 `workspace/story_api.py` 一一对应：读取方案、图与节点详情，提交确定性变更，
- * 回看与撤销。这里不做语义推断，也不在客户端拼 ID——所有标识来自服务端。
+ * 与后端 `workspace/story_api.py` 一一对应：读取方案、图、时间轴与三状态，提交确定性
+ * 变更，回看与撤销。这里不做语义推断，也不在客户端拼 ID——所有标识来自服务端。
  */
 
 import { request } from "./workspace";
@@ -49,6 +49,12 @@ export interface StoryThread {
   intended_resolution: string | null;
 }
 
+export interface StoryEventSpan {
+  start_minute: number;
+  end_minute: number;
+  approximate: boolean;
+}
+
 export interface StoryNode {
   id: string;
   title: string;
@@ -61,6 +67,32 @@ export interface StoryNode {
   is_convergence?: boolean;
   reveal_order?: number | null;
   time_note: string;
+  planned_chapter_number?: number | null;
+  event_span?: StoryEventSpan | null;
+}
+
+export interface StoryClueUse {
+  clue_id: string;
+  roles: string[];
+  presentation: string;
+  mode: string;
+  speaker_id: string;
+  expected_interpretation: string;
+}
+
+export interface StoryKnowledgeChange {
+  subject_id: string;
+  claim: string;
+  stance: "knows" | "believes";
+  source_kind: "observation" | "inference";
+  source_node_ids: string[];
+  effective_event_node_id: string;
+}
+
+/** 节点完整字段：编辑时整份提交，不丢掉详情面板没有显示的用途与知情。 */
+export interface StoryNodeFull extends StoryNode {
+  clue_uses: StoryClueUse[];
+  knowledge_changes: StoryKnowledgeChange[];
 }
 
 export interface StoryEdge {
@@ -76,6 +108,7 @@ export interface StoryGraph {
   variant_id: string;
   name: string;
   revision: string;
+  time_origin_label?: string;
   stages: StoryStage[];
   nodes: StoryNode[];
   edges: StoryEdge[];
@@ -91,160 +124,89 @@ export interface StoryGraph {
   collapsed: string[];
 }
 
-export interface StoryKnowledgeChange {
-  subject_id: string;
-  claim: string;
-  stance: "knows" | "believes";
-  source_kind: "observation" | "inference";
-  source_node_ids: string[];
-  effective_event_node_id: string;
-}
+/** 三状态：就绪、草稿、需核对。原因单独返回。 */
+export type StoryStatus = "ready" | "draft" | "attention";
 
-export interface StoryMysteryUse {
-  clue_id: string;
-  title: string;
-  roles: string[];
-  presentation: string;
-  mode: string;
-  speaker_id: string;
-  expected_interpretation: string;
-  node_id: string;
-  node_title: string;
-}
+export type StoryReason =
+  | "review_finding"
+  | "anchor_missing"
+  | "anchor_ambiguous"
+  | "anchor_unavailable"
+  | "not_checked"
+  | "plan_changed"
+  | "prose_changed";
 
-export interface StoryMysteryClue {
-  clue_id: string;
-  title: string;
-  roles: string[];
-  author_truth: string | null;
-  intention: string;
-  resolution_intent: "explain" | "leave_open" | "undecided";
-  has_identity: boolean;
-  uses: StoryMysteryUse[];
-}
-
-export interface StoryMysteryNode {
-  id: string;
-  time_status: "registered" | "unregistered";
-  before_ids: string[];
-  after_ids: string[];
-  clue_uses: StoryMysteryUse[];
-  knowledge_changes: StoryKnowledgeChange[];
-}
-
-export interface StoryMysteryDiagnostic {
-  code: string;
-  object_id: string;
-  related_ids: string[];
-  message: string;
-  suggestion: string;
-}
-
-export interface StoryMystery {
-  variant_id: string;
-  revision: string;
-  order: string[];
-  time_status: {
-    state: "complete" | "partial" | "unregistered";
-    registered: number;
-    unregistered: number;
-    total: number;
-  };
-  nodes: StoryMysteryNode[];
-  clues: StoryMysteryClue[];
-  subjects: {
-    subject_id: string;
-    claims: number;
-    stances: string[];
-    node_ids: string[];
-  }[];
-  diagnostics: StoryMysteryDiagnostic[];
-  counts: {
-    nodes: number;
-    clues: number;
-    event_times: number;
-    knowledge_changes: number;
-    subjects: number;
-  };
-}
-
-export interface StorySyncCounts {
-  aligned: number;
-  outline_ahead: number;
-  prose_ahead: number;
-  diverged: number;
-  unchecked: number;
-  waived: number;
-  outline_only: number;
-  unlinked: number;
-  unbound_prose: number;
-  partial_prose: number;
-}
-
-export type StorySyncNodeState =
-  | "aligned"
-  | "outline_ahead"
-  | "prose_ahead"
-  | "diverged"
-  | "unchecked"
-  | "waived"
-  | "outline_only"
-  | "unlinked";
-
-export type StorySyncChapterState =
-  | "aligned"
-  | "outline_ahead"
-  | "prose_ahead"
-  | "diverged"
-  | "unchecked"
-  | "waived"
-  | "unbound"
-  | "partial";
-
-export interface StorySyncNode {
+export interface StoryAttentionNode {
   node_id: string;
   title: string;
-  state: StorySyncNodeState;
-  chapter_paths: string[];
+  status: StoryStatus;
+  reasons: StoryReason[];
+  fingerprint: string;
+  reminder_visible: boolean;
+  deferred_at: string;
   binding_ids: string[];
-  contract_digest: string;
-  bound_quote: string;
-  bound_chapter: string;
+  chapter_paths: string[];
 }
 
-export interface StorySyncChapter {
-  path: string;
-  chapter: number;
-  title: string;
-  state: StorySyncChapterState;
-  node_ids: string[];
-  prose_digest: string;
-  checked_digest: string;
-}
-
-export interface StorySyncConflict {
-  conflict_id: string;
-  kind:
-    | "outline_ahead"
-    | "prose_ahead"
-    | "diverged"
-    | "unchecked"
-    | "missing_presentation"
-    | "unbound_prose";
-  node_id: string;
-  binding_id?: string;
-  path: string;
-  message: string;
-  options: string[];
-}
-
-export interface StorySync {
+export interface StoryAttention {
   variant_id: string;
-  revision: string;
-  counts: StorySyncCounts;
-  nodes: StorySyncNode[];
-  chapters: StorySyncChapter[];
-  conflicts: StorySyncConflict[];
+  variant_revision: string;
+  ledger_revision: string;
+  view_revision: string;
+  counts: { ready: number; draft: number; attention: number; deferred: number };
+  nodes: StoryAttentionNode[];
+}
+
+export interface TimelineNode {
+  node_id: string;
+  title: string;
+  time_note: string;
+  start_minute: number | null;
+  end_minute: number | null;
+  approximate: boolean;
+  status: StoryStatus;
+  reasons: string[];
+  binding_ids: string[];
+  chapter_paths: string[];
+}
+
+export interface TimelineGroup {
+  chapter_number: number | null;
+  chapter_kind: "actual" | "planned" | "unassigned";
+  title: string;
+  nodes: TimelineNode[];
+}
+
+export interface StoryTimeline {
+  variant_id: string;
+  variant_revision: string;
+  ledger_revision: string;
+  view_revision: string;
+  time_origin_label: string;
+  domain: { min: number; max: number } | null;
+  groups: TimelineGroup[];
+}
+
+export type ClueKind = "truth" | "mislead";
+export type ClueRelationKind = "supports" | "contradicts" | "co_misdirects";
+
+export interface ClueRelationEdge {
+  relation_id: string;
+  kind: ClueRelationKind;
+  from_clue_id: string;
+  to_clue_id: string;
+  reason: string;
+  basis_source_ids: string[];
+}
+
+export interface ClueRelations {
+  variant_id: string;
+  variant_revision: string;
+  view_revision: string;
+  focus_clue_id: string | null;
+  nodes: { clue_id: string; title: string; kind: ClueKind | null; relations: number }[];
+  edges: ClueRelationEdge[];
+  remaining_count: number;
 }
 
 export interface ProseMark {
@@ -253,7 +215,7 @@ export interface ProseMark {
   start: number;
   end: number;
   quote: string;
-  state: StorySyncNodeState;
+  state: StoryStatus | "unchecked" | string;
   source: "candidate" | "outline_from_prose" | "manual" | "inferred";
 }
 
@@ -282,12 +244,6 @@ export interface StoryChangeRecord {
   operations: Record<string, unknown>[];
   changed: string[];
   undone_by: string | null;
-  sync?: {
-    conflict_digest: string;
-    choice: "follow_outline" | "follow_prose" | "defer";
-    question_id?: string;
-    note?: string;
-  } | null;
 }
 
 export function listStoryVariants(workspaceId: string): Promise<StoryVariantList> {
@@ -303,24 +259,44 @@ export function readStoryVariant(
   );
 }
 
-export function readStoryMystery(
+export function readStoryNode(
   workspaceId: string,
   variantId: string,
-): Promise<StoryMystery> {
-  return request<StoryMystery>(
-    `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/mystery`,
+  nodeId: string,
+): Promise<StoryNodeFull> {
+  return request<StoryNodeFull>(
+    `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/nodes/${encodeURIComponent(nodeId)}`,
   );
 }
 
-export function readStorySync(
+export function readStoryTimeline(
+  workspaceId: string,
+  variantId: string,
+): Promise<StoryTimeline> {
+  return request<StoryTimeline>(
+    `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/timeline`,
+  );
+}
+
+export function readStoryAttention(
   workspaceId: string,
   variantId: string,
   chapterPath?: string,
-): Promise<StorySync> {
+): Promise<StoryAttention> {
   const query = chapterPath ? `?chapter_path=${encodeURIComponent(chapterPath)}` : "";
-  return request<StorySync>(
+  return request<StoryAttention>(
     `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/sync${query}`,
   );
+}
+
+export function readClueRelations(
+  workspaceId: string,
+  variantId: string,
+  focusClueId?: string | null,
+): Promise<ClueRelations> {
+  const params = new URLSearchParams({ variant_id: variantId });
+  if (focusClueId) params.set("focus_clue_id", focusClueId);
+  return request<ClueRelations>(`/${workspaceId}/clue-relations?${params}`);
 }
 
 export function readStoryProseMarks(
@@ -333,7 +309,7 @@ export function readStoryProseMarks(
   );
 }
 
-/** 界面发起的确定性结构变更：修订不符返回 409，同键同负载只应用一次。 */
+/** 界面发起的确定性变更：修订不符返回 409，同键同负载只应用一次。 */
 export function submitStoryChange(
   workspaceId: string,
   body: {
@@ -344,12 +320,6 @@ export function submitStoryChange(
     prose_patches?: { path: string; base_digest: string; start: number; end: number; expected: string; replacement: string; delete?: boolean }[];
     read_dependencies?: { kind: "variant" | "prose" | "constraint" | "module" | "conversation"; id: string; revision: string }[];
     note?: string;
-    sync?: {
-      conflict_digest: string;
-      choice: "follow_outline" | "follow_prose" | "defer";
-      question_id?: string;
-      note?: string;
-    };
   },
 ): Promise<StoryReceipt> {
   return request<StoryReceipt>(`/${workspaceId}/story/changes`, {

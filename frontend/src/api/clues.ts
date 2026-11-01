@@ -10,7 +10,12 @@ export interface ClueCoverage {
   at: string;
   note: string;
 }
+export type ClueKind = "truth" | "mislead";
+export type ClueRelationKind = "supports" | "contradicts" | "co_misdirects";
+
 export interface CluePlanView {
+  /** 作者希望的用途；null 表示还没决定。 */
+  kind: ClueKind | null;
   author_truth: string | null;
   intention: string;
   resolution_intent: "explain" | "leave_open" | "undecided";
@@ -38,12 +43,34 @@ export interface ClueSummary {
   scope: "chapter" | "story";
   plan: CluePlanView | null;
 }
+export interface ClueOccurrence {
+  path: string;
+  chapter: number;
+  start: number | null;
+  end: number | null;
+  quote: string;
+  state: "exact" | "relocated" | "missing" | "ambiguous" | "unavailable";
+  origins: ("binding" | "ledger")[];
+  binding_ids: string[];
+  evidence_ids: string[];
+}
+export interface ClueRelationView {
+  relation_id: string;
+  kind: ClueRelationKind;
+  from_clue_id: string;
+  to_clue_id: string;
+  reason: string;
+  direction: "outgoing" | "incoming" | "symmetric";
+  basis_source_ids: string[];
+}
 export interface ClueDetail extends ClueSummary {
   workspace_lineage: string;
   ledger_revision: string;
   story_revision: string;
   view_revision: string;
   uses: ClueUsePosition[];
+  occurrences: ClueOccurrence[];
+  relations: ClueRelationView[];
   observations: { observation_id: string; chapter: number; kind: "plant" | "mention" | "resolve"; mode: ClueMode; text: string; evidence_ids: string[] }[];
   reader_seen: { text: string; mode: ClueMode; basis_ids: string[] }[];
   evidence: { evidence_id: string; path: string; digest: string; current_digest: string | null; chapter: number; start: number; end: number; quote: string; freshness: ClueFreshness }[];

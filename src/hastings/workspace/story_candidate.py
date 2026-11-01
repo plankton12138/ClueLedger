@@ -39,7 +39,7 @@ from hastings.workspace.story_models import (
 )
 from hastings.workspace.story_review import StoryCheck, StoryReview, build_story_review
 from hastings.workspace.story_store import StoryStore, new_id
-from hastings.workspace.story_sync import contract_digest, require_sync_decision
+from hastings.workspace.story_sync import contract_digest
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult
 
@@ -240,7 +240,6 @@ class StoryCandidate:
             apply_change_set(variant, change)
         except ValueError as exc:
             raise conflict(f"结构变更无法应用：{exc}") from exc
-        change = require_sync_decision(self.workspace, self.state_root, variant, change)
         authorize_change(variant, self.frozen, self.author_text, change)
         validate_model_change(variant, change, self.author_text)
         self.operations = list(change.operations)

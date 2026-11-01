@@ -398,6 +398,17 @@ class IdeaReference:
 
 
 @dataclass(frozen=True, slots=True)
+class StoryReconcileRequest:
+    """作者主动开启核对讨论时冻结的提醒目标；只表达对象，不构成写权限。"""
+
+    variant_id: str
+    variant_revision: str
+    node_id: str
+    binding_ids: tuple[str, ...]
+    warning_fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
 class ContextRequest:
     """客户端提交的当前阅读位置与显式参考；顺序即作者选择顺序。"""
 
@@ -410,6 +421,8 @@ class ContextRequest:
     clue_references: tuple[ClueReferenceInput, ...] = ()
     #: 这一轮要看的方案与位置；为空表示不使用构思结构。
     story: StoryRequest | None = None
+    #: 作者点击「讨论调整」时带上的提醒目标；服务端核对后冻结。
+    story_reconcile: StoryReconcileRequest | None = None
 
 
 @dataclass(frozen=True, slots=True)

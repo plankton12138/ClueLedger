@@ -1096,8 +1096,13 @@ class StoryStore:
             raw = json.loads(text)
             if not isinstance(raw, dict) or type(raw.get("schema_version")) is not int:
                 raise ValueError("格式头不完整")
-            if raw["schema_version"] != 1:
-                raise ValueError("格式版本不受支持")
+            if raw["schema_version"] != 2:
+                raise WorkspaceError(
+                    code="STORY_STATE_FAILED",
+                    where=f"story.read:{self.file.name}",
+                    why=(f"构思文件是版本 {raw['schema_version']} 的旧格式，本版只读取版本 2"),
+                    fix="备份后删除构思文件重新开始，或按当前格式改写后再打开",
+                )
             return StoryDocument.model_validate(raw)
         except (ValueError, ValidationError) as exc:
             raise _state_error(self.file, "构思结构损坏或格式不受支持") from exc

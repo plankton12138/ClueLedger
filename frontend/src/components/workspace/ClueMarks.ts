@@ -7,6 +7,7 @@ import { sourceRange, type SourceRange } from "../clues/SourceHighlight";
 export interface ClueRange extends SourceRange {
   clueIds: string[];
   titles: string[];
+  kinds: (string | null)[];
 }
 
 type Positioned = Root | RootContent;
@@ -31,7 +32,7 @@ export function clueRanges(text: string, marks: ClueMark[]): ClueRange[] {
     .flatMap((mark) => {
       const range = sourceRange(text, mark.start, mark.end, mark.quote);
       return range
-        ? [{ ...range, clueIds: [mark.clue_id], titles: [mark.title] }]
+        ? [{ ...range, clueIds: [mark.clue_id], titles: [mark.title], kinds: [mark.kind] }]
         : [];
     })
     .sort((left, right) => left.start - right.start || right.end - left.end);
@@ -42,8 +43,9 @@ export function clueRanges(text: string, marks: ClueMark[]): ClueRange[] {
       last.end = Math.max(last.end, range.end);
       last.clueIds = Array.from(new Set([...last.clueIds, ...range.clueIds]));
       last.titles = Array.from(new Set([...last.titles, ...range.titles]));
+      last.kinds = Array.from(new Set([...last.kinds, ...range.kinds]));
     } else {
-      merged.push({ ...range, clueIds: [...range.clueIds], titles: [...range.titles] });
+      merged.push({ ...range, clueIds: [...range.clueIds], titles: [...range.titles], kinds: [...range.kinds] });
     }
   }
   return merged;
@@ -75,8 +77,9 @@ export const clueMarksPlugin: Plugin<[Options], Root> = ({ text, marks }) => (tr
             type: "element",
             tagName: "span",
             properties: {
-              className: ["clue-mark"],
+              className: ["clue-mark", range.kinds.includes("truth") ? "truth" : range.kinds.includes("mislead") ? "mislead" : "unknown"],
               dataClueId: range.clueIds[0],
+              dataClueKind: range.kinds.filter(Boolean).join(" "),
               dataClueIds: range.clueIds.join(" "),
               dataClueTitle: range.titles.join(" · "),
               role: "button",

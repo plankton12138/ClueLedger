@@ -647,7 +647,7 @@ def test_read_is_side_effect_free_before_first_write(store: StoryStore) -> None:
 def test_json_file_is_human_readable(store: StoryStore) -> None:
     commit(store, [AddNode(node=node("n1", title="雨夜的电话"))], key="one")
     raw = json.loads(store.file.read_text(encoding="utf-8"))
-    assert raw["schema_version"] == 1
+    assert raw["schema_version"] == 2
     assert raw["variants"][MAIN_VARIANT_ID]["nodes"]["n1"]["title"] == "雨夜的电话"
     # 中文不转义、缩进固定：出问题时可以直接看文件，不用先解码。
     assert "雨夜的电话" in store.file.read_text(encoding="utf-8")

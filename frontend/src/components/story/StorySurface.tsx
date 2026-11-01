@@ -1,9 +1,8 @@
 /**
- * 构思面：悬疑视图是唯一的结构展示方式。
+ * 构思面：只读故事时间轴 + 详情区的入口。
  *
- * 时间轴按故事内实际时间排布节点，线索与知情作为泳道呈现；选中的节点只用于
- * 过滤左栏全书线索，不再展开第二份节点详情。没有节点的作品不显示假结构，
- * 只说明可以怎么开始。
+ * 节点详情、正文出处与「讨论调整」统一放在右侧共享详情区；这里只负责时间轴本身，
+ * 不再保留泳道、阶段筛选与多层信息。
  */
 
 import { useEffect, useState } from "react";
@@ -12,7 +11,7 @@ import { Undo2 } from "lucide-react";
 import StoryDraft from "./StoryDraft";
 import StoryBatches from "./StoryBatches";
 import StoryCreationDialog, { type StoryCreationTarget } from "./StoryCreationDialog";
-import StoryMysteryView from "./StoryMysteryView";
+import StoryTimeline from "./StoryTimeline";
 import { useConversationsStore } from "../../state/conversations";
 import { useStoryStore } from "../../state/story";
 import { Button } from "../ui/Button";
@@ -32,7 +31,6 @@ export default function StorySurface({
   const state = useStoryStore();
   const load = useStoryStore((store) => store.load);
   const selectNode = useStoryStore((store) => store.selectNode);
-  const selectClue = useStoryStore((store) => store.selectClue);
   const undo = useStoryStore((store) => store.undo);
   const [creationTarget, setCreationTarget] = useState<StoryCreationTarget | null>(null);
 
@@ -51,23 +49,44 @@ export default function StorySurface({
       <div className="story-surface story-surface-empty">
         <StoryDraft key={workspaceId} workspaceId={workspaceId} />
         {state.error ? (
-          <StatusMessage tone="error" action={<Button onClick={() => void load(workspaceId)}>重新读取</Button>}>
+          <StatusMessage
+            tone="error"
+            action={<Button onClick={() => void load(workspaceId)}>重新读取</Button>}
+          >
             {state.error}
           </StatusMessage>
         ) : (
-          <EmptyState action={<Button variant="primary" onClick={() => setCreationTarget({
-            workspaceId,
-            conversationId: useConversationsStore.getState().selectedId,
-            variantId: state.variantId ?? "",
-            revision: graph?.revision ?? "",
-            name: "构思",
-          })}>创建构思</Button>}>
+          <EmptyState
+            action={
+              <Button
+                variant="primary"
+                onClick={() =>
+                  setCreationTarget({
+                    workspaceId,
+                    conversationId: useConversationsStore.getState().selectedId,
+                    variantId: state.variantId ?? "",
+                    revision: graph?.revision ?? "",
+                    name: "构思",
+                  })
+                }
+              >
+                创建构思
+              </Button>
+            }
+          >
             还没有构思。根据创作要求或已有对话，建立节点、线索与连接。
           </EmptyState>
         )}
-        {creationTarget && <StoryCreationDialog target={creationTarget}
-          onClose={() => setCreationTarget(null)}
-          onAccepted={() => { setCreationTarget(null); onStart(); }} />}
+        {creationTarget && (
+          <StoryCreationDialog
+            target={creationTarget}
+            onClose={() => setCreationTarget(null)}
+            onAccepted={() => {
+              setCreationTarget(null);
+              onStart();
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -76,8 +95,8 @@ export default function StorySurface({
     <div className="story-surface">
       <header className="story-toolbar">
         <div className="story-overview-title">
-          <h1>构思总览</h1>
-          <p>全书大纲、实际时间与正文覆盖；节点状态来自已经提交的正文。</p>
+          <h1>故事时间轴</h1>
+          <p>横轴是发生时间，纵向按披露章节分组；选中节点在右侧查看与修改。</p>
         </div>
         <div className="story-actions">
           {state.lastChange && (
@@ -104,14 +123,9 @@ export default function StorySurface({
       )}
 
       <div className="story-body">
-        <StoryMysteryView
-          workspaceId={workspaceId}
-          variantId={graph.variant_id}
-          revision={graph.revision}
-          graph={graph}
-          sync={state.sync}
-          selectedClueId={state.clueId}
-          onSelectClue={selectClue}
+        <StoryTimeline
+          timeline={state.timeline}
+          selectedNodeId={state.nodeId}
           onSelectNode={selectNode}
         />
       </div>

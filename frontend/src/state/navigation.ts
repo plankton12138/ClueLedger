@@ -15,10 +15,12 @@ export type WorkspacePage =
   | {
       kind: "writing";
       workspaceId: string;
-      /** 同一个写作页的两种工作模式；只有构思需要显式写入 URL。 */
-      mode?: "story";
+      /** 同一个写作页的三种工作模式；正文不写 mode，构思与线索显式写入 URL。 */
+      mode?: "story" | "clues";
       sourceId?: string;
       clueId?: string;
+      /** 构思页恢复选中的节点。 */
+      nodeId?: string;
       asOfChapter?: number;
       taskChapter?: number;
     }
@@ -56,14 +58,17 @@ export function parseHash(hash: string): AppPage | null {
     const sourceId = params.get("source"), clueId = params.get("clue");
     const asOf = params.get("as_of"), task = params.get("task_chapter");
     const mode = params.get("mode");
-    if (mode !== null && mode !== "story") return null;
+    if (mode !== null && mode !== "story" && mode !== "clues") return null;
+    const nodeId = params.get("node");
+    if (nodeId !== null && !ENTRY_ID.test(nodeId)) return null;
     if (sourceId !== null && !/^ev_[a-f0-9]{20}_[a-f0-9]{32}$/.test(sourceId)) return null;
     if (clueId !== null && !ENTRY_ID.test(clueId)) return null;
     for (const value of [asOf, task]) if (value !== null && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return null;
     const page: WorkspacePage = { kind: "writing", workspaceId };
-    if (mode === "story") page.mode = "story";
+    if (mode) page.mode = mode;
     if (sourceId) page.sourceId = sourceId;
     if (clueId) page.clueId = clueId;
+    if (nodeId) page.nodeId = nodeId;
     if (asOf !== null) page.asOfChapter = Number(asOf);
     if (task !== null) page.taskChapter = Number(task);
     return page;
@@ -89,9 +94,10 @@ export function pageHash(page: AppPage): string {
   }
   if (page.kind === "writing") {
     const params = new URLSearchParams();
-    if (page.mode === "story") params.set("mode", "story");
+    if (page.mode) params.set("mode", page.mode);
     if (page.sourceId) params.set("source", page.sourceId);
     if (page.clueId) params.set("clue", page.clueId);
+    if (page.nodeId) params.set("node", page.nodeId);
     if (page.asOfChapter !== undefined) params.set("as_of", String(page.asOfChapter));
     if (page.taskChapter !== undefined) params.set("task_chapter", String(page.taskChapter));
     return `#/workspaces/${page.workspaceId}/writing${params.size ? `?${params}` : ""}`;

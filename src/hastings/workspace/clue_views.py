@@ -71,9 +71,36 @@ class ReaderSeen(BaseModel):
 
 
 class CluePlanView(BaseModel):
+    #: 作者希望的用途；``None`` 表示还没决定，不是第三种分类。
+    kind: Literal["truth", "mislead"] | None = None
     author_truth: str | None = None
     intention: str = ""
     resolution_intent: Literal["explain", "leave_open", "undecided"] = "undecided"
+
+
+class ClueOccurrence(BaseModel):
+    """一处正文出处；作者关联与账本观察按当前位置合并成一条。"""
+
+    path: str
+    chapter: int
+    start: int | None = None
+    end: int | None = None
+    quote: str
+    state: Literal["exact", "relocated", "missing", "ambiguous", "unavailable"] = "exact"
+    origins: list[Literal["binding", "ledger"]] = Field(default_factory=list)
+    binding_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ClueRelationView(BaseModel):
+    relation_id: str
+    kind: Literal["supports", "contradicts", "co_misdirects"]
+    from_clue_id: str
+    to_clue_id: str
+    reason: str
+    #: 相对当前线索的方向：支撑有方向，另两类是对称的。
+    direction: Literal["outgoing", "incoming", "symmetric"] = "symmetric"
+    basis_source_ids: list[str] = Field(default_factory=list)
 
 
 class ClueUsePosition(BaseModel):
@@ -107,6 +134,8 @@ class ClueDetail(ClueSummary):
     story_revision: str = ""
     view_revision: str = ""
     uses: list[ClueUsePosition] = Field(default_factory=list)
+    occurrences: list[ClueOccurrence] = Field(default_factory=list)
+    relations: list[ClueRelationView] = Field(default_factory=list)
     observations: list[ClueObservation]
     reader_seen: list[ReaderSeen]
     evidence: list[ClueBasis]

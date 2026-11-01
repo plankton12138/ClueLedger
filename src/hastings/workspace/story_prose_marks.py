@@ -49,7 +49,7 @@ def build_prose_marks(
     file = workspace.read(chapter_path)
     marks: list[ProseMark] = []
     for binding in variant.bindings.values():
-        if binding.path != chapter_path:
+        if binding.path != chapter_path or binding.node_id is None:
             continue
         node = variant.nodes.get(binding.node_id)
         if node is None:

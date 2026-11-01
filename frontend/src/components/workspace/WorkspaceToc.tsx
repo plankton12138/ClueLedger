@@ -9,15 +9,10 @@ import { useWorkspaceModulesStore } from "../../state/workspaceModules";
 
 function syncStatusLabel(state: string): string {
   return {
-    aligned: "此章与构思已对齐",
-    outline_ahead: "构思已改，正文待同步",
-    prose_ahead: "正文已改，构思待核对",
-    diverged: "构思与正文都需要重新对齐",
-    unchecked: "这一章还没有同步核对",
-    waived: "已确认差异",
-    unbound: "这一章有正文，还没有归属到构思节点",
-    partial: "这一章还有部分正文没有归属到构思节点",
-  }[state] ?? "同步状态";
+    ready: "这一章的构思关联与基准一致",
+    draft: "这一章的节点还没有正文关联",
+    attention: "这一章有需要核对的构思或正文变化",
+  }[state] ?? "构思状态";
 }
 
 function TocLine({
@@ -60,8 +55,15 @@ function TocLine({
 
 export default function WorkspaceToc({ onChoose }: { onChoose?: () => void }) {
   const { currentId, catalog, selectedPath, search, openPath, runSearch, clearSearch, upload } = useWorkspaceStore();
-  const storySync = useStoryStore(state => state.workspaceId === currentId ? state.sync : null);
-  const chapterSync = new Map((storySync?.chapters ?? []).map(chapter => [chapter.path, chapter.state]));
+  const attention = useStoryStore(state => state.workspaceId === currentId ? state.attention : null);
+  const chapterSync = new Map<string, string>();
+  const rank = { ready: 0, draft: 1, attention: 2 } as const;
+  for (const node of attention?.nodes ?? []) {
+    for (const path of node.chapter_paths) {
+      const current = chapterSync.get(path);
+      if (!current || rank[node.status] > rank[current as keyof typeof rank]) chapterSync.set(path, node.status);
+    }
+  }
   useEffect(() => {
     if (!currentId) return;
     const story = useStoryStore.getState();

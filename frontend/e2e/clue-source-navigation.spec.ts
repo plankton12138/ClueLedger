@@ -21,9 +21,9 @@ async function evidenceId(request: import("@playwright/test").APIRequestContext,
   return detail.evidence[index].evidence_id as string;
 }
 
-async function openCluePanel(page: import("@playwright/test").Page) {
-  await page.getByRole("tab", { name: "全书线索", exact: true }).click();
-  return page.getByRole("region", { name: "全书线索", exact: true });
+async function openCluePanel(page: import("@playwright/test").Page, book: { id: string }) {
+  await page.goto(`/#/workspaces/${book.id}/writing?mode=clues`);
+  return page.getByRole("region", { name: "线索列表" });
 }
 
 test("刷新后从服务端恢复章节与滚动位置", async ({ page, book, request }) => {
@@ -48,9 +48,10 @@ test("真实依据定位第二处重复引文，返回后保留草稿、阅读�
   const draft = "检查遗书背面内容，保留这段尚未发送的作者要求。";
   await page.locator(".chat-input").fill(draft);
   // 在第二章的范围里定位第一章的线索：阅读位置变了，任务截止章不跟着变。
-  const pane = await openCluePanel(page);
-  await pane.getByRole("button", { name: /遗书背面内容/ }).click();
-  // 这条线索有两处依据：第一处是埋设，第二处是后章回收。
+  const list = await openCluePanel(page, book);
+  await list.getByRole("button", { name: /遗书背面内容/ }).click();
+  const pane = page.getByRole("region", { name: "详情" });
+  // 这条线索有两处依据：定位第一处时，阅读范围仍按当前读到的第 2 章。
   const action = pane.getByRole("button", { name: "定位原文", exact: true }).first();
   await action.click();
   const marks = page.locator(".writing-paper mark[data-source-target]");
@@ -90,8 +91,9 @@ test("从构思定位正文依据后返回构思面", async ({ page, book }) => 
   await expect(paper).toContainText("第二处");
   await paper.evaluate(node => { node.scrollTop = 432; });
   await expect.poll(() => paper.evaluate(node => node.scrollTop)).toBe(432);
-  const pane = await openCluePanel(page);
-  await pane.getByRole("button", { name: /遗书背面内容/ }).click();
+  const list = await openCluePanel(page, book);
+  await list.getByRole("button", { name: /遗书背面内容/ }).click();
+  const pane = page.getByRole("region", { name: "详情" });
   await pane.getByRole("button", { name: "定位原文", exact: true }).first().click();
   await expect(page.locator(".writing-paper mark[data-source-target]")).toBeInViewport();
   // 从构思定位时返回构思面；正文阅读位置由服务端在下次打开时恢复。

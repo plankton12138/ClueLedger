@@ -25,6 +25,8 @@ import { useSourceLocationStore } from "../../state/sourceLocation";
 import { useStoryStore } from "../../state/story";
 import { RawSourceHighlight, sourceHighlightPlugin, sourceRange, type SourceRange } from "../clues/SourceHighlight";
 import { clueMarksPlugin } from "./ClueMarks";
+import { sourceAnchorsPlugin } from "./SourceAnchors";
+import type { MarkSelection } from "./SelectionToChat";
 
 interface Props {
   file: FileView | null;
@@ -94,6 +96,9 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
   const [showMarks, setShowMarks] = useState(true);
   const [proseMarks, setProseMarks] = useState<ProseMarks | null>(null);
   const [originRange, setOriginRange] = useState<SourceRange | null>(null);
+  const [pendingMark, setPendingMark] = useState<{ range: { start: number; end: number; quote: string }; title: string; kind: "truth" | "mislead" } | null>(null);
+  const [markError, setMarkError] = useState<string | null>(null);
+  const [marksEpoch, setMarksEpoch] = useState(0);
   const storyVariantId = useStoryStore(state => state.workspaceId === workspaceId ? state.variantId : null);
   useEffect(() => {
     if (!workspaceId || !file || file.kind !== "chapter" || waiting) {
@@ -103,7 +108,7 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
     }
     let cancelled = false;
     setMarksError(null);
-    void fetchClueMarks(workspaceId, file.path, file.chapter_number)
+    void fetchClueMarks(workspaceId, file.path, file.chapter_number, storyVariantId)
       .then(data => { if (!cancelled) setClueMarks(data); })
       .catch(cause => {
         if (!cancelled) {
@@ -112,7 +117,7 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
         }
       });
     return () => { cancelled = true; };
-  }, [workspaceId, file?.path, file?.digest, file?.kind, file?.chapter_number, waiting]);
+  }, [workspaceId, file?.path, file?.digest, file?.kind, file?.chapter_number, waiting, storyVariantId, marksEpoch]);
   useEffect(() => {
     setOriginRange(null);
   }, [file?.path, file?.digest]);
@@ -215,6 +220,40 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
   const highlightRange = originRange ?? range;
   const rawHighlight = (matched || originRange !== null) && file.text !== file.display_text;
 
+  function startMark(selection: MarkSelection) {
+    if (!selection.range) {
+      setMarkError("这段选区的源坐标无法确认，请改选连续原文");
+      return;
+    }
+    setMarkError(null);
+    setPendingMark({
+      range: selection.range,
+      title: selection.range.quote.slice(0, 24),
+      kind: "truth",
+    });
+  }
+
+  async function saveMark() {
+    if (!pendingMark || !file) return;
+    const story = useStoryStore.getState();
+    if (story.workspaceId !== workspaceId) await story.load(workspaceId ?? "");
+    const ok = await useStoryStore.getState().markSelection({
+      path: file.path,
+      digest: file.digest,
+      quote: pendingMark.range.quote,
+      start: pendingMark.range.start,
+      end: pendingMark.range.end,
+      kind: pendingMark.kind,
+      title: pendingMark.title.trim() || pendingMark.range.quote.slice(0, 12),
+    });
+    if (!ok) {
+      setMarkError(useStoryStore.getState().error ?? "标记失败");
+      return;
+    }
+    setPendingMark(null);
+    setMarksEpoch(value => value + 1);
+  }
+
   function openClueFromTarget(target: EventTarget | null) {
     if (!(target instanceof Element)) return;
     const clue = target.closest<HTMLElement>("[data-clue-id]");
@@ -290,6 +329,30 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
         <p className="paper-clue-state" role="status">正文已修改，线索标注暂不可用。</p>
       )}
       {!waiting && marksError && <p className="paper-clue-state" role="status">{marksError}</p>}
+      {pendingMark && (
+        <div className="paper-mark-panel" role="dialog" aria-label="登记线索">
+          <label className="paper-mark-field">
+            线索名称
+            <input value={pendingMark.title} onChange={event => setPendingMark({ ...pendingMark, title: event.target.value })} />
+          </label>
+          <div className="paper-mark-kinds" role="group" aria-label="线索用途">
+            <Button size="compact" variant={pendingMark.kind === "truth" ? "primary" : "secondary"} onClick={() => setPendingMark({ ...pendingMark, kind: "truth" })}>真相线索</Button>
+            <Button size="compact" variant={pendingMark.kind === "mislead" ? "primary" : "secondary"} onClick={() => setPendingMark({ ...pendingMark, kind: "mislead" })}>误导线索</Button>
+          </div>
+          <p className="paper-mark-quote">{pendingMark.range.quote}</p>
+          {markError && <p className="paper-mark-error" role="alert">{markError}</p>}
+          <div className="paper-mark-actions">
+            <Button size="compact" variant="primary" onClick={() => void saveMark()}>登记</Button>
+            <Button size="compact" onClick={() => { setPendingMark(null); setMarkError(null); }}>取消</Button>
+          </div>
+        </div>
+      )}
+      {!waiting && markError && !pendingMark && <p className="paper-clue-state" role="alert">{markError}</p>}
+      {!waiting && currentMarks && currentMarks.invalid.length > 0 && (
+        <p className="paper-clue-state" role="status">
+          有 {currentMarks.invalid.length} 处线索原句在正文里找不到了，已停止标注。
+        </p>
+      )}
       {!waiting && matched && paragraphLocation && <p className="mb-2 text-xs text-sub" role="status">已定位至所在段落。</p>}
       {!waiting && positionError && <p role="status" className="text-xs text-amber">{positionError}</p>}
       {waiting ? (
@@ -300,7 +363,11 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
         <div ref={scroll} className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm" onScroll={event => { if (event.currentTarget.clientHeight) usePagePositions.getState().offset(positionKey, event.currentTarget.scrollTop); }}>
           <div className="paper-lined min-h-full px-8 py-6">
             {file.display_text.trim() || (matched && file.text.trim()) ? (
-              <SelectionToChat source={{ title: file.display_title, source: file.path, version: file.digest }}>
+              <SelectionToChat
+                source={{ title: file.display_title, source: file.path, version: file.digest }}
+                sourceText={file.display_text}
+                onMark={startMark}
+              >
                 <div
                   className="prose-paper"
                   onClick={event => {
@@ -315,11 +382,14 @@ export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue
                     openClueFromTarget(event.target);
                   }}
                 >
-                  {rawHighlight ? <RawSourceHighlight text={file.text} range={highlightRange} /> : <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={originRange
-                    ? [[sourceHighlightPlugin, { text: file.display_text, range: originRange }]]
-                    : activeMarks.length > 0
-                      ? [[clueMarksPlugin, { text: file.display_text, marks: activeMarks }]]
-                      : [[sourceHighlightPlugin, { text: file.display_text, range }]]} skipHtml>
+                  {rawHighlight ? <RawSourceHighlight text={file.text} range={highlightRange} /> : <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[
+                    [sourceAnchorsPlugin, { text: file.display_text }],
+                    originRange
+                      ? [sourceHighlightPlugin, { text: file.display_text, range: originRange }]
+                      : activeMarks.length > 0
+                        ? [clueMarksPlugin, { text: file.display_text, marks: activeMarks }]
+                        : [sourceHighlightPlugin, { text: file.display_text, range }],
+                  ]} skipHtml>
                     {file.display_text}
                   </ReactMarkdown>}
                 </div>

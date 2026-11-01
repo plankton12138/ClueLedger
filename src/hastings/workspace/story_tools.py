@@ -55,14 +55,12 @@ from hastings.workspace.story_drafts import (
 from hastings.workspace.story_models import (
     StoryChangeSet,
     StoryVariant,
-    SyncDecision,
 )
 from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, StoryStore, new_id
 from hastings.workspace.story_structure import structure_diagnostics
 from hastings.workspace.story_sync import (
-    build_sync_view,
+    build_attention_view,
     contract_digest,
-    require_sync_decision,
 )
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult
@@ -186,8 +184,7 @@ def _expand_bindings(
             )
         binding.update(
             id=binding.get("id")
-            or "binding_"
-            + hashlib.sha256(f"{node_id}:{path}:{quote}".encode()).hexdigest()[:24],
+            or "binding_" + hashlib.sha256(f"{node_id}:{path}:{quote}".encode()).hexdigest()[:24],
             document_id=binding.get("document_id")
             or "doc_" + hashlib.sha256(path.encode()).hexdigest()[:24],
             digest=view.digest,
@@ -509,29 +506,27 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 fix="从作品工作区重新发起这一轮",
             )
         variant = _variant(scope)
-        view = build_sync_view(scope.workspace, variant)
+        view = build_attention_view(scope.workspace, variant)
         raw_nodes = arguments.get("node_ids")
         raw_paths = arguments.get("chapter_paths")
         node_ids = {str(value) for value in raw_nodes} if isinstance(raw_nodes, list) else set()
         paths = {str(value) for value in raw_paths} if isinstance(raw_paths, list) else set()
-        nodes = [row for row in view.nodes if not node_ids or row.node_id in node_ids]
-        chapters = [row for row in view.chapters if not paths or row.path in paths]
-        conflicts = [
+        nodes = [
             row
-            for row in view.conflicts
-            if (not node_ids or row.node_id in node_ids) and (not paths or row.path in paths)
+            for row in view.nodes
+            if (not node_ids or row.node_id in node_ids)
+            and (not paths or any(path in paths for path in row.chapter_paths))
         ]
         payload = {
             "variant_id": view.variant_id,
-            "revision": view.revision,
+            "revision": view.variant_revision,
+            "time_origin_label": variant.time_origin_label,
             "counts": view.counts.model_dump(mode="json"),
             "nodes": [row.model_dump(mode="json") for row in nodes[:40]],
-            "chapters": [row.model_dump(mode="json") for row in chapters[:40]],
-            "conflicts": [row.model_dump(mode="json") for row in conflicts[:40]],
-            "truncated": len(nodes) > 40 or len(chapters) > 40 or len(conflicts) > 40,
+            "truncated": len(nodes) > 40,
             "note": (
-                "绑定状态是应用计算的机械结果；语义是否真的冲突，需要读取相关正文后判断。"
-                "改结构前先看受影响节点；没有绑定正文时不需要同步确认。"
+                "状态与原因是应用按关联算出的机械结果；具体差异是否成立，需要读取相关正文后判断。"
+                "作者暂缓过的提醒仍显示 attention，但 reminder_visible 为 false。"
             ),
         }
         return _json(payload)
@@ -931,19 +926,6 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                     "outline_from_prose" if scope.frozen.purpose == "design" else "manual"
                 ),
             )
-        raw_sync = arguments.get("sync")
-        sync = None
-        if raw_sync is not None:
-            try:
-                sync = SyncDecision.model_validate(raw_sync)
-            except ValidationError as exc:
-                raise WorkspaceError(
-                    code="STORY_CHANGE_INVALID",
-                    where="story.update.sync",
-                    why="同步决定字段无效",
-                    fix="提供 conflict_digest、choice 与作者确认依据后重试",
-                    details={"issues": validation_issues(exc, [raw_sync])},
-                ) from exc
         try:
             change = StoryChangeSet(
                 id=draft["change_id"] if use_draft and draft else new_id("agent"),
@@ -952,7 +934,6 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 requested_scope=(scope.author_text or "")[:500],
                 operation_id=scope.operation_id,
                 generation=scope.generation,
-                sync=sync,
             )
         except ValidationError as exc:
             issues = validation_issues(exc, raw_operations)
@@ -974,13 +955,6 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 why=issues[0]["message"],
                 fix=issues[0]["suggestion"],
                 details={"issues": issues},
-            )
-        if scope.workspace is not None:
-            change = require_sync_decision(
-                scope.workspace,
-                scope.state_root,
-                variant,
-                change,
             )
 
         # 先按作者本轮的对象范围收口，再检查真相、约定与裁决这些不能由模型自行扩大的部分。
@@ -1224,24 +1198,6 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                         "note": {
                             "type": "string",
                             "description": prompt_tools.UPDATE_STORY_NOTE_PARAM_DESCRIPTION,
-                        },
-                        "sync": {
-                            "type": "object",
-                            "description": (
-                                "构思改动影响已有正文时，作者确认后的同步选择；"
-                                "先按 STORY_SYNC_CONFIRM_REQUIRED 的冲突摘要询问作者。"
-                            ),
-                            "properties": {
-                                "conflict_digest": {"type": "string"},
-                                "choice": {
-                                    "type": "string",
-                                    "enum": ["follow_outline", "follow_prose", "defer"],
-                                },
-                                "question_id": {"type": "string"},
-                                "note": {"type": "string"},
-                            },
-                            "required": ["conflict_digest", "choice"],
-                            "additionalProperties": False,
                         },
                     },
                     "additionalProperties": False,

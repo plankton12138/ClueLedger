@@ -3276,24 +3276,6 @@ def prepare_request_inputs(
                                 prompt_tools.PROPOSE_STORY_STRUCTURE_OPERATIONS_PARAM_DESCRIPTION
                             ),
                         },
-                        "sync": {
-                            "type": "object",
-                            "description": (
-                                "结构变更影响已有正文时，作者确认后的同步选择；"
-                                "先按 STORY_SYNC_CONFIRM_REQUIRED 的冲突摘要询问作者。"
-                            ),
-                            "properties": {
-                                "conflict_digest": {"type": "string"},
-                                "choice": {
-                                    "type": "string",
-                                    "enum": ["follow_outline", "follow_prose", "defer"],
-                                },
-                                "question_id": {"type": "string"},
-                                "note": {"type": "string"},
-                            },
-                            "required": ["conflict_digest", "choice"],
-                            "additionalProperties": False,
-                        },
                     },
                     "required": ["operations"],
                     "additionalProperties": False,
@@ -3311,23 +3293,6 @@ def prepare_request_inputs(
                     "type": "object",
                     "properties": {
                         **{name: {"type": "string"} for name in ("path", "base_digest", "text")},
-                        "sync": {
-                            "type": "object",
-                            "description": (
-                                "正文冲突需要作者确认时，随候选提交的同步选择；没有冲突时不要填写。"
-                            ),
-                            "properties": {
-                                "conflict_digest": {"type": "string"},
-                                "choice": {
-                                    "type": "string",
-                                    "enum": ["follow_outline", "follow_prose", "defer"],
-                                },
-                                "question_id": {"type": "string"},
-                                "note": {"type": "string"},
-                            },
-                            "required": ["conflict_digest", "choice"],
-                            "additionalProperties": False,
-                        },
                     },
                     "required": ["path", "base_digest", "text"],
                     "additionalProperties": False,

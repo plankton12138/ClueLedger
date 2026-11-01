@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query
 from hastings.library.modules import ModuleLibrary
 from hastings.workspace.clue_api_models import CreateClueRequest
 from hastings.workspace.clue_marks import ClueMarksView, build_clue_marks
+from hastings.workspace.clue_relations import ClueRelationsView, build_relations
 from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.clue_views import (
     ClueDetail,
@@ -98,12 +99,17 @@ def create_clue_router(
     def clue_marks(
         workspace_id: str,
         chapter_path: str = Query(min_length=1, max_length=512),
+        variant_id: str | None = Query(default=None, max_length=64),
         as_of_chapter: int | None = Query(default=None, ge=0),
     ) -> ClueMarksView:
-        """本章正文里的线索下划线；优先用账本证据，缺失时回退到正文锚点。"""
+        """本章正文里的线索标记：作者登记的精确出处与账本观察合并，不做词项猜测。"""
         root = conversation_root(workspaces.root, workspace_id)
         snapshot = StoryStore(root).read()
-        variant = snapshot.variant(MAIN_VARIANT_ID) if snapshot.document is not None else None
+        variant = (
+            snapshot.variant(variant_id or MAIN_VARIANT_ID)
+            if snapshot.document is not None
+            else None
+        )
         return build_clue_marks(
             workspaces.workspace(workspace_id),
             root,
@@ -111,6 +117,34 @@ def create_clue_router(
             as_of_chapter=as_of_chapter,
             variant=variant,
         )
+
+    @router.get("/{workspace_id}/clue-relations", response_model=ClueRelationsView)
+    def clue_relations(
+        workspace_id: str,
+        variant_id: str | None = Query(default=None, max_length=64),
+        focus_clue_id: str | None = Query(default=None, max_length=64),
+    ) -> ClueRelationsView:
+        """当前线索关系的受控投影；打开页面不推断新关系。"""
+        root = conversation_root(workspaces.root, workspace_id)
+        snapshot = StoryStore(root, workspaces.workspace(workspace_id)).read()
+        variant = snapshot.variant(story_variant_id(workspace_id, variant_id))
+        if variant is None:
+            raise WorkspaceError(
+                code="STORY_VARIANT_NOT_FOUND",
+                where="clues.relations",
+                why="当前作品没有这个构思",
+                fix="刷新构思后重新选择",
+            )
+        try:
+            return build_relations(root, variant, focus_clue_id=focus_clue_id)
+        except KeyError as exc:
+            raise WorkspaceError(
+                code="CLUE_NOT_FOUND",
+                where="clues.relations",
+                why="当前构思里没有这条线索",
+                fix="重新读取线索列表后选择",
+                details={"clue_id": focus_clue_id or ""},
+            ) from exc
 
     @router.get("/{workspace_id}/clues/{clue_id}", response_model=ClueDetail)
     def get_clue(

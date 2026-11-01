@@ -22,11 +22,14 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.story_clue_catalog import StoryClueCatalog
 from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_models import (
+    AcknowledgeAttention,
     AddConstraint,
     AddNode,
     AddStage,
     AddThread,
     BindProse,
+    ClearAttentionReceipt,
+    ConfirmAlignment,
     Connect,
     CreateClueIdentity,
     Disconnect,
@@ -34,12 +37,14 @@ from hastings.workspace.story_models import (
     RemoveAssessment,
     RemoveClueIdentity,
     RemoveCluePlan,
+    RemoveClueRelation,
     RemoveConstraint,
     RemoveNode,
     RemoveStage,
     RemoveThread,
     RenameClueIdentity,
     SetEventTime,
+    SetTimeOrigin,
     StoryChangeSet,
     StoryOperation,
     StoryVariant,
@@ -50,6 +55,7 @@ from hastings.workspace.story_models import (
     UpdateStage,
     UpdateThread,
     UpsertCluePlan,
+    UpsertClueRelation,
 )
 from hastings.workspace.story_store import new_id
 
@@ -62,6 +68,7 @@ _LABEL = {
     "thread": "故事线",
     "constraint": "约定",
     "edge": "关系",
+    "clue_relation": "线索关系",
     "binding": "正文关联",
     "assessment": "核对记录",
 }
@@ -268,6 +275,22 @@ class StoryAuthority:
             return [("binding", operation.binding_id)]
         if isinstance(operation, RemoveAssessment):
             return [("assessment", operation.assessment_id)]
+        if isinstance(
+            operation,
+            (AcknowledgeAttention, ClearAttentionReceipt, ConfirmAlignment),
+        ):
+            return [("node", operation.node_id)]
+        if isinstance(operation, UpsertClueRelation):
+            # 新建关系时另一端可能也在本次变更里新建；任一端在范围内即可提交。
+            relation = operation.relation
+            ends = (relation.from_clue_id, relation.to_clue_id)
+            if any(self.covers("clue", clue_id) for clue_id in ends):
+                return []
+            return [("clue", clue_id) for clue_id in ends]
+        if isinstance(operation, RemoveClueRelation):
+            return [("clue_relation", operation.relation_id)]
+        if isinstance(operation, SetTimeOrigin):
+            return []
         if isinstance(operation, (SetEventTime, UnsetEventTime)):
             # 实际时间表述的是两个节点之间的先后，至少要有一个节点在本轮范围内。
             if isinstance(operation, SetEventTime):
@@ -282,6 +305,9 @@ class StoryAuthority:
     def _creation_targets(self, operation: BindProse | Connect) -> list[tuple[str, str]]:
         """新建关系或正文关联：锚点必须是范围内的既有对象。"""
         if isinstance(operation, BindProse):
+            if operation.binding.node_id is None:
+                # 只登记线索出处的正文关联不涉及构思节点范围；线索另有授权检查。
+                return []
             ends: tuple[str, ...] = (operation.binding.node_id,)
             kind = "node"
         else:

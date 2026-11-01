@@ -15,9 +15,10 @@ function mark(text: string, clueId: string, title: string, quote: string): ClueM
     start,
     end: start + Array.from(quote).length,
     quote,
-    role: "plant",
+    kind: "truth",
     mode: "action",
     chapter: 1,
+    sources: ["binding"],
   };
 }
 
@@ -58,7 +59,7 @@ describe("clue mark ranges", () => {
       mark(text, "shoe", "鞋底", "灰色鞋底"),
     ];
     const html = markup(text, marks);
-    expect(html.match(/class="clue-mark"/g)).toHaveLength(2);
+    expect(html.match(/class="clue-mark[^"]*"/g)).toHaveLength(2);
     expect(html).toContain('data-clue-id="back"');
     expect(html).toContain('data-clue-id="shoe"');
   });
@@ -71,9 +72,10 @@ describe("clue mark ranges", () => {
       start: 0,
       end: 3,
       quote: "另一个句子",
-      role: "plant",
+      kind: "truth",
       mode: "action",
       chapter: 1,
+      sources: ["binding"],
     };
     expect(clueRanges(text, [wrong])).toEqual([]);
     expect(markup(text, [wrong])).not.toContain("clue-mark");
