@@ -104,9 +104,9 @@
 class StoryNode(StrictRecord):
     # 原有 id/title/action/change/stage_id 等字段保留。
     thread_ids: list[StoryId] = Field(default_factory=list)  # 涉及的线
-    primary_thread_id: StoryId | None = None               # 主要推进的线
-    is_convergence: bool = False                          # 多线成果在此共同作用
-    reveal_order: int | None = None                       # 可选的阶段内展示顺序
+    primary_thread_id: StoryId | None = None  # 主要推进的线
+    is_convergence: bool = False  # 多线成果在此共同作用
+    reveal_order: int | None = None  # 可选的阶段内展示顺序
 ```
 
 以上是拟议字段，不是当前接口。主线必须属于 `thread_ids`；汇合不能只由“成员数大于一”推断。`reveal_order` 允许相同值，未定允许 null；它不产生因果边。`next` 表达推进依赖或跨线影响，单纯“先发生后发生”使用展示顺序或现有实际时间关系。

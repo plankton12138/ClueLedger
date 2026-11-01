@@ -240,6 +240,7 @@ from typing import Literal
 
 CharacterRole = Literal["detective", "assistant", "culprit", "suspect", "victim"]
 
+
 @dataclass(frozen=True)
 class FileMetadata:
     title: str
@@ -249,6 +250,7 @@ class FileMetadata:
     roles: tuple[CharacterRole, ...]
     display_text: str  # 人物元信息从阅读正文中分离，原始 text 仍完整保留
     warnings: tuple[str, ...]
+
 
 def regular_chapter_display(title: str, chinese_number: str) -> str:
     # chinese_number 来自唯一的编号格式化函数，不由模型或前端生成。
@@ -265,10 +267,12 @@ def regular_chapter_display(title: str, chinese_number: str) -> str:
 ```python
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class SourceRef:
     path: str
     digest: str
+
 
 @dataclass(frozen=True)
 class TurnContext:
@@ -281,6 +285,7 @@ class TurnContext:
             "selected": None if self.selected is None else vars(self.selected),
             "references": [vars(item) for item in self.references],
         }
+
 
 def verify_sources(workspace, sources: tuple[SourceRef, ...]) -> tuple[str, ...]:
     changed = []
@@ -302,6 +307,7 @@ from typing import Literal
 
 IndexState = Literal["valid", "stale", "source_missing", "unavailable"]
 
+
 @dataclass(frozen=True)
 class ChapterIndex:
     source_path: str
@@ -309,8 +315,10 @@ class ChapterIndex:
     recipe_version: int
     summary: str
 
+
 def freshness(workspace, entry: ChapterIndex, recipe_version: int) -> IndexState:
     from hastings.workspace.errors import WorkspaceError
+
     try:
         current = workspace.read(entry.source_path)
     except WorkspaceError as exc:
@@ -319,11 +327,12 @@ def freshness(workspace, entry: ChapterIndex, recipe_version: int) -> IndexState
         return "stale"
     return "valid"
 
+
 def quote_matches(text: str, start_line: int, end_line: int, quote: str) -> bool:
     lines = text.split("\n")
     if not quote.strip() or not 1 <= start_line <= end_line <= len(lines):
         return False
-    return quote in "\n".join(lines[start_line - 1:end_line])
+    return quote in "\n".join(lines[start_line - 1 : end_line])
 ```
 
 完整结构另包含带证据的事件、人物、时间地点和线索。默认每章摘要最多 500 字符、最多 12 个事件条目、每段引文最多 160 字符；人物等分类复用证据编号而非复制引文，结构上限通过共同模型约束，模型超限返回可修正错误。
@@ -346,8 +355,7 @@ async def save_chapter_index(arguments, *, workspace, ledger, store, allowed_pat
         raise source_stale_error(draft.source_path)
     ledger.require_complete(draft.source_path, current.digest)
     for evidence in draft.evidence:
-        if not quote_matches(current.text, evidence.start_line,
-                             evidence.end_line, evidence.quote):
+        if not quote_matches(current.text, evidence.start_line, evidence.end_line, evidence.quote):
             raise invalid_evidence_error(evidence.id)
     # publish 内在真正替换前复核来源；未完成记录不能覆盖有效旧记录。
     store.publish(draft, expected_source=SourceRef(current.path, current.digest))

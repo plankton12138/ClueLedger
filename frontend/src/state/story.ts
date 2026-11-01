@@ -10,11 +10,13 @@ import { create } from "zustand";
 import {
   listStoryVariants,
   readStoryChange,
+  readStorySync,
   readStoryVariant,
   submitStoryChange,
   undoStoryChange,
   type StoryChangeRecord,
   type StoryGraph,
+  type StorySync,
   type StoryVariantSummary,
 } from "../api/story";
 import { errorMessage } from "../api/errors";
@@ -31,6 +33,7 @@ interface StoryState {
   primaryId: string;
   variantId: string | null;
   graph: StoryGraph | null;
+  sync: StorySync | null;
   nodeId: string | null;
   clueId: string | null;
   lastChange: StoryChangeRecord | null;
@@ -65,6 +68,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
   primaryId: "",
   variantId: null,
   graph: null,
+  sync: null,
   nodeId: null,
   clueId: null,
   lastChange: null,
@@ -82,6 +86,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
       primaryId: "",
       variantId: null,
       graph: null,
+      sync: null,
       nodeId: null,
       clueId: null,
 
@@ -100,13 +105,16 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     const epoch = ++loadEpoch;
     ++refreshEpoch;
     if (get().workspaceId !== workspaceId) {
-      set({ workspaceId, variants: [], variantId: null, graph: null, nodeId: null, clueId: null });
+      set({ workspaceId, variants: [], variantId: null, graph: null, sync: null, nodeId: null, clueId: null });
     }
     set({ loading: true, error: null });
     try {
       const list = await listStoryVariants(workspaceId);
       const variantId = list.primary_variant_id || null;
-      const initial = variantId ? await initialGraph(workspaceId, variantId) : null;
+      const [initial, sync] = await Promise.all([
+        variantId ? initialGraph(workspaceId, variantId) : Promise.resolve(null),
+        variantId ? readStorySync(workspaceId, variantId).catch(() => null) : Promise.resolve(null),
+      ]);
       const lastChange = initial?.latest_change_id ? await readStoryChange(workspaceId, initial.latest_change_id) : null;
       // 迟到的响应不能覆盖已经切走的作品。
       if (get().workspaceId !== workspaceId || epoch !== loadEpoch) return;
@@ -116,6 +124,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
         lastChange,
         variantId,
         graph: initial ?? null,
+        sync,
         nodeId: null,
         clueId: null,
         loading: false,
@@ -134,7 +143,10 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     try {
       const list = await listStoryVariants(workspaceId);
       const variantId = list.primary_variant_id || null;
-      const graph = variantId ? await readStoryVariant(workspaceId, variantId) : null;
+      const [graph, sync] = await Promise.all([
+        variantId ? readStoryVariant(workspaceId, variantId) : Promise.resolve(null),
+        variantId ? readStorySync(workspaceId, variantId).catch(() => null) : Promise.resolve(null),
+      ]);
       const lastChange = graph?.latest_change_id ? await readStoryChange(workspaceId, graph.latest_change_id) : null;
       if (epoch !== refreshEpoch) return;
       const current = get();
@@ -143,7 +155,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
       // 期间已有别的写入（提交、撤销、切换）落地：旧刷新结果不再覆盖它。
       const currentRevision = current.graph?.revision ?? "";
       if (currentRevision !== beforeRevision && currentRevision !== (graph?.revision ?? "")) return;
-      set({ variants: list.variants, primaryId: list.primary_variant_id, variantId, graph, lastChange,
+      set({ variants: list.variants, primaryId: list.primary_variant_id, variantId, graph, sync, lastChange,
         nodeId: before.nodeId && graph?.nodes.some(node => node.id === before.nodeId) ? before.nodeId : null,
         error: null });
     } catch (cause) {
@@ -172,11 +184,15 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
         operations,
         note,
       });
-      const nextGraph = await readStoryVariant(workspaceId, variantId);
-      const list = await listStoryVariants(workspaceId);
+      const [nextGraph, list, nextSync] = await Promise.all([
+        readStoryVariant(workspaceId, variantId),
+        listStoryVariants(workspaceId),
+        readStorySync(workspaceId, variantId).catch(() => null),
+      ]);
       if (get().workspaceId !== workspaceId) return false;
       set({
         graph: nextGraph,
+        sync: nextSync,
         variants: list.variants,
         lastChange: {
           change_id: receipt.change_id,
@@ -204,11 +220,15 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     set({ busy: true, error: null });
     try {
       await undoStoryChange(workspaceId, target, storyRequestKey("story-undo"));
-      const graph = await readStoryVariant(workspaceId, variantId);
-      const list = await listStoryVariants(workspaceId);
+      const [graph, list, nextSync] = await Promise.all([
+        readStoryVariant(workspaceId, variantId),
+        listStoryVariants(workspaceId),
+        readStorySync(workspaceId, variantId).catch(() => null),
+      ]);
       if (get().workspaceId !== workspaceId) return false;
       set({
         graph,
+        sync: nextSync,
         variants: list.variants,
         lastChange: null,
 

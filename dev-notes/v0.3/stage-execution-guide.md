@@ -220,13 +220,13 @@ async def execute_once(
 class ExecutionGrant:
     grant_id: str
     source: Literal["author_message", "author_button"]
-    source_message_id: str | None      # source=author_button 时可空，但按钮事件必须可回查
+    source_message_id: str | None  # source=author_button 时可空，但按钮事件必须可回查
     function: Literal["draft", "revision", "summary", "suggestion", "holistic_revision"]
-    analysis_scope: tuple[str, ...]    # 只读分析范围
+    analysis_scope: tuple[str, ...]  # 只读分析范围
     write_scope: tuple[str, ...] | None  # None 表示本功能无写权限
     call_budget: int
     grant_version: int
-    connection: ConnectionSnapshot     # 只含 connection_id/revision/provider/model，绝不含 Key
+    connection: ConnectionSnapshot  # 只含 connection_id/revision/provider/model，绝不含 Key
 ```
 
 派发前统一检查：凭据存在、功能匹配、范围匹配、预算未耗尽、连接快照仍可解析。任何一条不满足返回 `EXECUTION_NOT_AUTHORIZED` / `TASK_BUDGET_EXHAUSTED`，**不运行、不部分运行**。
@@ -239,8 +239,11 @@ class ExecutionGrant:
 class ExecutionLog(Protocol):
     async def append_once(self, source_event_id: str, event: ExecutionEvent) -> bool:
         """按源事件 ID 幂等追加；重复投递返回 False，不产生第二条。"""
+
     async def page(self, project_id: str, after_sequence: int, limit: int) -> LogPage: ...
-    async def subscribe(self, project_id: str, after_sequence: int) -> AsyncIterator[ExecutionEvent]: ...
+    async def subscribe(
+        self, project_id: str, after_sequence: int
+    ) -> AsyncIterator[ExecutionEvent]: ...
 ```
 
 手法要点：同一源内保持因果序；跨源排序只用持久入日志序号，不比较两个流的 sequence；历史分页、实时 SSE、断线补齐共用同一事件 ID 空间；序列化走白名单字段并脱敏（排除 Key、认证头、配置原文、私有凭据路径）。
@@ -258,20 +261,21 @@ class ExecutionLog(Protocol):
 ```python
 # 目标骨架：检查点式迁移。每步幂等，失败可从中断处重跑。
 MIGRATIONS: dict[int, Callable[[MigrationCtx], None]] = {
-    4: create_edit_session_tables,      # 版本号独立于产品版本，当前 schema v3 之后递增
+    4: create_edit_session_tables,  # 版本号独立于产品版本，当前 schema v3 之后递增
     5: create_operation_receipts,
     6: create_execution_log_table,
 }
+
 
 def run_migrations(db: Database, to_version: int) -> MigrationReport:
     current = db.schema_version()
     for version in sorted(MIGRATIONS):
         if version <= current or version > to_version:
             continue
-        with db.transaction() as txn:          # 每步一个事务，失败回滚到上一步检查点
+        with db.transaction() as txn:  # 每步一个事务，失败回滚到上一步检查点
             MIGRATIONS[version](MigrationCtx(txn))
             txn.set_schema_version(version)
-    return verify_schema(db, to_version)       # 向前兼容读：旧程序写新库必须被拒绝
+    return verify_schema(db, to_version)  # 向前兼容读：旧程序写新库必须被拒绝
 ```
 
 ## 4. V03-0 契约基线与升级准备
@@ -314,10 +318,10 @@ def run_migrations(db: Database, to_version: int) -> MigrationReport:
 
 ```python
 async def test_no_implicit_model_call_on_reopen_and_save(model_recorder, app):
-    await app.open_project("winter-manor")       # 打开作品
+    await app.open_project("winter-manor")  # 打开作品
     await app.save_edit_draft("chapter_1", "新文本")  # 手改自动保存
-    await app.restart_server()                    # 重启恢复
-    assert model_recorder.calls == []            # 零模型调用；当前实现会因旧自动队列失败
+    await app.restart_server()  # 重启恢复
+    assert model_recorder.calls == []  # 零模型调用；当前实现会因旧自动队列失败
 ```
 
 **实现要点**：
@@ -615,13 +619,14 @@ async def test_no_implicit_model_call_on_reopen_and_save(model_recorder, app):
 @dataclass(frozen=True, slots=True)
 class SnowInnFixture:
     project_id: str
-    chapters: tuple[str, ...]          # 三章以上正文（TextUnit 稳定 ID）
-    characters: tuple[str, ...]        # 姐妹、侦探
-    clues: tuple[str, ...]             # 三条关键线索
-    misdirections: tuple[str, ...]     # 两条误导解释
-    testimonies: tuple[str, ...]       # 真实/证词事件
-    late_reveal_ref: VersionedRef      # 后文揭示（第 5 章）
-    stale_source_ref: VersionedRef     # 一个旧正文来源（供需核对场景）
+    chapters: tuple[str, ...]  # 三章以上正文（TextUnit 稳定 ID）
+    characters: tuple[str, ...]  # 姐妹、侦探
+    clues: tuple[str, ...]  # 三条关键线索
+    misdirections: tuple[str, ...]  # 两条误导解释
+    testimonies: tuple[str, ...]  # 真实/证词事件
+    late_reveal_ref: VersionedRef  # 后文揭示（第 5 章）
+    stale_source_ref: VersionedRef  # 一个旧正文来源（供需核对场景）
+
 
 def build_snow_inn(commits: CommitService, project_id: ProjectId) -> SnowInnFixture:
     """按 计划 §9.4 前提构建：三章正文 + 账本对象，一次或分批真实提交。"""

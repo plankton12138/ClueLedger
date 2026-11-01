@@ -100,7 +100,6 @@ __all__ = [
 SETTINGS_BUDGET = _SETTINGS_BUDGET
 
 
-
 def settings_section(
     workspace: Workspace,
     *,
@@ -167,13 +166,9 @@ def _render_settings(sources: list[_SettingSource], caps: list[int]) -> str:
             blocks.append(f"{header}\n{source.text}")
         elif cap > 0:
             remaining = len(source.text) - cap
-            blocks.append(
-                f"{header}\n{source.text[:cap]}\n{settings_truncated_note(remaining)}"
-            )
+            blocks.append(f"{header}\n{source.text[:cap]}\n{settings_truncated_note(remaining)}")
         else:
-            blocks.append(
-                f"{header}\n{settings_not_loaded_note(len(source.text))}"
-            )
+            blocks.append(f"{header}\n{settings_not_loaded_note(len(source.text))}")
     return "\n\n".join(blocks)
 
 

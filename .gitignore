@@ -17,6 +17,7 @@ config.yaml
 .trae/
 .vscode/
 .workbuddy/
+.wbapp_*.genie
 .workbuddy-ai/
 
 # 类型检查 / 测试缓存

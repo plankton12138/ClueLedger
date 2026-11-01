@@ -112,7 +112,7 @@ def build_story_review(
                 findings.append(
                     {
                         "requirement_id": requirement_id,
-                        "severity": "advisory",
+                        "severity": "blocking",
                         "note": missing_presentation_finding(use.presentation),
                         "decision_source": "app",
                     }

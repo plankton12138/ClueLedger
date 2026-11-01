@@ -14,6 +14,7 @@ import pytest
 from hastings.prompts.reading import READER_QUESTION
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import digest_bytes
+from hastings.workspace.story_clue_catalog import StoryClueCatalog, StoryClueFact
 from hastings.workspace.story_context import (
     StoryContextSnapshot,
     StoryRequest,
@@ -26,7 +27,6 @@ from hastings.workspace.story_context import (
     story_required_chars,
     verify_story_context,
 )
-from hastings.workspace.story_clue_catalog import StoryClueCatalog, StoryClueFact
 from hastings.workspace.story_models import (
     AddNode,
     BindProse,
@@ -187,9 +187,7 @@ def assemble(store: StoryStore, node_ids: list[str], **kwargs: Any) -> Any:
 def test_blank_plan_still_sends_a_usable_context() -> None:
     """空白方案也要实际告诉模型现在能建立什么，不能只靠界面提示。"""
     variant = StoryVariant(id=MAIN_VARIANT_ID, name="主方案", revision="empty")
-    frozen = StoryContextSnapshot(
-        variant_id=MAIN_VARIANT_ID, revision="empty", purpose="design"
-    )
+    frozen = StoryContextSnapshot(variant_id=MAIN_VARIANT_ID, revision="empty", purpose="design")
 
     story = assemble_story_input(variant, frozen)
 
@@ -211,7 +209,7 @@ def test_long_distance_clue_reaches_required_content(store: StoryStore) -> None:
     assert "前台的手套还在滴水" in text
     assert "对质" in text
     keys = [section.key for section in result.sections]
-    assert keys[:4] == ["macro", "truth", "plan", "prerequisites"]
+    assert keys[:5] == ["macro", "truth", "plan", "disclosure", "prerequisites"]
     # 所有必需项都在，没有被容量逻辑悄悄丢掉。
     assert result.omitted == ()
 
@@ -314,7 +312,9 @@ def test_capacity_refuses_to_truncate_required_content(store: StoryStore) -> Non
     assert excinfo.value.details["required"] == required
 
     # 容量只够必需项时，可裁的创作目标被省略，并说明原因。
-    roomy = assemble_story_input(variant, frozen, capacity=required + 10, catalog=catalog_for(variant))
+    roomy = assemble_story_input(
+        variant, frozen, capacity=required + 10, catalog=catalog_for(variant)
+    )
     assert any(item["key"] == "judgement" for item in roomy.omitted)
     assert "管家在雪地里搬过尸体" in roomy.render()
 
@@ -852,9 +852,7 @@ def test_reader_allows_truth_already_published_in_verified_prose(store: StorySto
                     "n1",
                     "揭示",
                     "侦探公开结论",
-                    clue_uses=[
-                        ClueUse(clue_id="glove", presentation=text, mode="narration")
-                    ],
+                    clue_uses=[ClueUse(clue_id="glove", presentation=text, mode="narration")],
                 )
             ),
             BindProse(

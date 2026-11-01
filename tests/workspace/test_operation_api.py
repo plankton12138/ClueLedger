@@ -165,14 +165,10 @@ def test_pause_and_continue_through_the_api(
             break
         time.sleep(0.05)
 
-    paused = client.post(
-        f"/api/operations/{operation_id}/pause", json={"request_key": "p1"}
-    ).json()
+    paused = client.post(f"/api/operations/{operation_id}/pause", json={"request_key": "p1"}).json()
     assert paused["status"] == "paused"
     assert paused["capabilities"]["continue"] is True
-    again = client.post(
-        f"/api/operations/{operation_id}/pause", json={"request_key": "p1"}
-    ).json()
+    again = client.post(f"/api/operations/{operation_id}/pause", json={"request_key": "p1"}).json()
     assert (again["id"], again["status"], again["generation"]) == (
         paused["id"],
         "paused",
@@ -263,9 +259,7 @@ def test_events_are_annotated_and_stream_closes_after_completion(
     assert all(event["operation_id"] == accepted["operation_id"] for event in replay["events"])
     assert all(event["generation"] == 1 for event in replay["events"])
 
-    stream = client.get(
-        f"/api/operations/{accepted['operation_id']}/stream?after=0&follow=false"
-    )
+    stream = client.get(f"/api/operations/{accepted['operation_id']}/stream?after=0&follow=false")
     assert stream.status_code == 200
     assert "turn_started" in stream.text
 
@@ -313,9 +307,7 @@ def test_latest_operation_by_conversation(
             [
                 AssistantDoneEvent(
                     reason="stop",
-                    message=AssistantMessage(
-                        content=[TextContent(text="好")], stop_reason="stop"
-                    ),
+                    message=AssistantMessage(content=[TextContent(text="好")], stop_reason="stop"),
                 )
             ]
         ]
@@ -333,9 +325,7 @@ def test_latest_operation_by_conversation(
     ).json()
 
     assert [item["id"] for item in items] == [accepted["operation_id"]]
-    assert client.get(
-        "/api/operations", params={"conversation_id": "c_missing"}
-    ).json() == []
+    assert client.get("/api/operations", params={"conversation_id": "c_missing"}).json() == []
 
 
 def test_unknown_operation_is_404(
@@ -395,9 +385,7 @@ class SummaryProvider:
                     await asyncio.sleep(0.02)
             yield AssistantDoneEvent(
                 reason="stop",
-                message=AssistantMessage(
-                    content=[TextContent(text=SUMMARY)], stop_reason="stop"
-                ),
+                message=AssistantMessage(content=[TextContent(text=SUMMARY)], stop_reason="stop"),
             )
 
         return generator()
@@ -427,15 +415,11 @@ def test_compaction_joins_the_unified_operation_api(
     assert running["model"] == "fake-model"
     assert running["capabilities"] == {"pause": True, "continue": False, "interject": True}
 
-    paused = client.post(
-        f"/api/operations/{operation_id}/pause", json={"request_key": "p1"}
-    ).json()
+    paused = client.post(f"/api/operations/{operation_id}/pause", json={"request_key": "p1"}).json()
     assert paused["status"] == "paused"
     assert paused["capabilities"]["continue"] is True
     # 同一个键重复暂停返回同一结果，不产生第二次取消。
-    again = client.post(
-        f"/api/operations/{operation_id}/pause", json={"request_key": "p1"}
-    ).json()
+    again = client.post(f"/api/operations/{operation_id}/pause", json={"request_key": "p1"}).json()
     assert (again["status"], again["generation"]) == ("paused", 1)
 
     # 事件按操作归属：压缩没有轮次，读取时不会混入会话里的写作轮次。

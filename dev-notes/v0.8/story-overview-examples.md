@@ -33,7 +33,7 @@ class ModuleSource:
 class ModuleEvidence:
     source: ModuleSource
     start: int  # Unicode 码点，含头部的原始记录文本
-    end: int    # 半开区间 [start, end)
+    end: int  # 半开区间 [start, end)
     quote: str
 
 
@@ -44,13 +44,20 @@ class FacetRef:
 
 
 def make_facet_ref(
-    kind: Literal["character", "clue"], evidence: ModuleEvidence,
+    kind: Literal["character", "clue"],
+    evidence: ModuleEvidence,
 ) -> FacetRef:
     source = evidence.source
     identity = [
-        source.binding_id, source.library_id, source.module_id,
-        source.revision_id, source.entry_id, source.digest,
-        kind, evidence.start, evidence.end,
+        source.binding_id,
+        source.library_id,
+        source.module_id,
+        source.revision_id,
+        source.entry_id,
+        source.digest,
+        kind,
+        evidence.start,
+        evidence.end,
     ]
     raw = json.dumps(identity, ensure_ascii=False, separators=(",", ":"))
     return FacetRef(source, "facet_" + sha256(raw.encode("utf-8")).hexdigest()[:24])
@@ -119,19 +126,25 @@ def check_module_evidence(raw_text: str, evidence: ModuleEvidence) -> None:
     current_digest = sha256(raw_text.encode("utf-8")).hexdigest()
     if current_digest != evidence.source.digest:
         raise WorkspaceError(
-            code="OVERVIEW_SOURCE_CHANGED", where="overview.publish",
-            why="模块记录版本已改变", fix="重新读取当前绑定后更新总览",
+            code="OVERVIEW_SOURCE_CHANGED",
+            where="overview.publish",
+            why="模块记录版本已改变",
+            fix="重新读取当前绑定后更新总览",
         )
     if not 0 <= evidence.start < evidence.end <= len(raw_text):
         raise WorkspaceError(
-            code="OVERVIEW_EVIDENCE_INVALID", where="overview.publish",
-            why="依据区间超出原文", fix="按本次实际读取的区间重新提交",
+            code="OVERVIEW_EVIDENCE_INVALID",
+            where="overview.publish",
+            why="依据区间超出原文",
+            fix="按本次实际读取的区间重新提交",
         )
     # 此方案每处短依据最多 160 码点；复杂关系可提供多处依据。
-    if len(evidence.quote) > 160 or raw_text[evidence.start:evidence.end] != evidence.quote:
+    if len(evidence.quote) > 160 or raw_text[evidence.start : evidence.end] != evidence.quote:
         raise WorkspaceError(
-            code="OVERVIEW_EVIDENCE_INVALID", where="overview.publish",
-            why="引文与指定区间不一致", fix="提交准确原文，不先去空白或改写",
+            code="OVERVIEW_EVIDENCE_INVALID",
+            where="overview.publish",
+            why="引文与指定区间不一致",
+            fix="提交准确原文，不先去空白或改写",
         )
 ```
 
@@ -230,8 +243,12 @@ if purpose == "organize_overview":
 # 拟加入 agent 工具构建的分支；发布工具只能写本轮派生目标。
 if mode == "overview":
     allowed_readonly = {
-        "list_files", "read_file", "search_text",
-        "list_modules", "query_records", "read_record",
+        "list_files",
+        "read_file",
+        "search_text",
+        "list_modules",
+        "query_records",
+        "read_record",
     }
     return [
         *[tool for tool in tools if tool.name in allowed_readonly],

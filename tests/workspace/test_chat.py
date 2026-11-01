@@ -644,9 +644,9 @@ def test_second_turn_is_rejected_while_one_is_running(
     assert second.json()["error"]["details"]["conversation"] == conversation_id
 
     stopped = client.post(
-            f"/api/operations/{first['operation_id']}/pause",
-            json={"request_key": "pause-1"},
-        )
+        f"/api/operations/{first['operation_id']}/pause",
+        json={"request_key": "pause-1"},
+    )
     assert stopped.status_code == 200
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     assert events[-1]["status"] == "stopped"
@@ -673,9 +673,9 @@ def test_busy_workspace_rejects_a_new_conversation_without_creating_it(
     assert [item["id"] for item in listed["items"]] == [first["conversation_id"]]
     assert listed["active_turn"]["conversation_id"] == first["conversation_id"]
     client.post(
-            f"/api/operations/{first['operation_id']}/pause",
-            json={"request_key": "pause-1"},
-        )
+        f"/api/operations/{first['operation_id']}/pause",
+        json={"request_key": "pause-1"},
+    )
 
 
 def test_stop_marks_partial_commit(
@@ -715,9 +715,9 @@ def test_stop_marks_partial_commit(
         lambda events: any(event["type"] == "tool_finished" for event in events),
     )
     client.post(
-            f"/api/operations/{turn['operation_id']}/pause",
-            json={"request_key": "pause-1"},
-        )
+        f"/api/operations/{turn['operation_id']}/pause",
+        json={"request_key": "pause-1"},
+    )
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     assert events[-1]["status"] == "stopped"

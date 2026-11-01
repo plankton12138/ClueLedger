@@ -44,10 +44,7 @@ def setup(tmp_path):
         "clue_store": ClueStore(tmp_path / "state"),
         "glossary_store": GlossaryStore(tmp_path / "state"),
     }
-    tools = {
-        t.name: t
-        for t in build_tools(workspace, run, mode="state", **stores)
-    }
+    tools = {t.name: t for t in build_tools(workspace, run, mode="state", **stores)}
     return workspace, run, stores, tools
 
 

@@ -102,6 +102,10 @@ SECTION_LABELS: dict[str, tuple[str, str]] = {
         "创作计划",
         "作者打算怎么安排；这是计划，不是已经写出来的正文。",
     ),
+    "disclosure": (
+        "本轮必须披露",
+        "候选正文必须原样包含这些呈现句；线索标题只能用于辨认，不能写进正文。",
+    ),
     "prerequisites": (
         "必需前提",
         "这些内容在前面已经出现，回收或回应时要与之相符；不含后面的安排。",
@@ -193,6 +197,8 @@ def empty_variant_text(clue_count: int, constraint_count: int) -> str:
             f"{constraint_count} 条约定，不需要重复建立。"
         )
     return EMPTY_VARIANT_TEXT
+
+
 DEFAULT_SPEAKER = "某个角色"
 NO_OBSERVATION_TEXT = "尚未记录观察"
 PREFERENCE_NOTE = "（偏好，可权衡）"
@@ -244,9 +250,7 @@ def testimony_speech_line(node_title: str, speaker: str, presentation: str) -> s
     return f"- 在「{node_title}」里 {speaker} 说：{presentation}{TESTIMONY_SPEECH_NOTE}"
 
 
-def testimony_narration_line(
-    node_title: str, mode: str, clue_title: str, presentation: str
-) -> str:
+def testimony_narration_line(node_title: str, mode: str, clue_title: str, presentation: str) -> str:
     """以推测、回忆等方式呈现的内容：标明不等于事实。"""
     return (
         f"- 在「{node_title}」里以 {mode} 呈现「{clue_title}」：{presentation}"
@@ -259,9 +263,7 @@ def judgement_line(node_title: str, interpretation: str) -> str:
     return f"- 「{node_title}」想引导读者理解为：{interpretation}{JUDGEMENT_NOTE}"
 
 
-def prerequisite_line(
-    clue_title: str, node_title: str, presentation: str, mode: str
-) -> str:
+def prerequisite_line(clue_title: str, node_title: str, presentation: str, mode: str) -> str:
     """前面已经出现过的呈现：注明呈现方式，作为当前节点的前提。"""
     return f"- 线索「{clue_title}」在「{node_title}」里已经这样出现：{presentation}（{mode}）"
 
@@ -299,7 +301,7 @@ def missing_presentation_finding(presentation: str) -> str:
     """正文里没有找到要求呈现的原句时的程序发现。"""
     return (
         f"候选正文里没有找到这处呈现：{presentation}。"
-        "如果改用别的写法，请在报告里说明对应的原句。"
+        "请补回原句，或先修改构思里的呈现句再重新提交；不能只靠核对说明绕过。"
     )
 
 
@@ -308,9 +310,7 @@ def truth_boundary_requirement(truth: str) -> str:
     return f"作者真相不能被写成已经发生的事实：{truth}"
 
 
-def knowledge_boundary_requirement(
-    subject: str, node_title: str, knows: bool, claim: str
-) -> str:
+def knowledge_boundary_requirement(subject: str, node_title: str, knows: bool, claim: str) -> str:
     """角色在这一位置知道或相信什么，交给语义核对判断是否越界。"""
     stance = "知道" if knows else "相信"
     return f"{subject} 在「{node_title}」时{stance}：{claim}{KNOWLEDGE_JUDGE_NOTE}"
@@ -361,8 +361,7 @@ def describe_story_operation(operation: StoryOperation) -> str:
     if op == "set_event_time":
         assert isinstance(operation, SetEventTime)
         return (
-            f"实际时间 {operation.relation.before_node_id} 先于 "
-            f"{operation.relation.after_node_id}"
+            f"实际时间 {operation.relation.before_node_id} 先于 {operation.relation.after_node_id}"
         )
     if op == "unset_event_time":
         assert isinstance(operation, UnsetEventTime)

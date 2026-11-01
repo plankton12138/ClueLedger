@@ -402,9 +402,7 @@ def test_refresh_error_is_reported(tmp_path: Path) -> None:
 
 def test_refresh_retries_after_connection_failure(tmp_path: Path, monkeypatch: Any) -> None:
     # 代理握手失败是间歇性的；连接没建立时服务端没收到请求，重发不会多花刷新令牌。
-    monkeypatch.setattr(
-        "hastings.server.model_auth_chatgpt.TOKEN_CONNECT_RETRY_DELAYS", (0.0, 0.0)
-    )
+    monkeypatch.setattr("hastings.server.model_auth_chatgpt.TOKEN_CONNECT_RETRY_DELAYS", (0.0, 0.0))
     server = _FlakyServer(failures=1)
     provider, _listener, _identity = _provider(tmp_path, server)
 
@@ -417,9 +415,7 @@ def test_refresh_retries_after_connection_failure(tmp_path: Path, monkeypatch: A
 def test_refresh_reports_attempts_when_connection_never_opens(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    monkeypatch.setattr(
-        "hastings.server.model_auth_chatgpt.TOKEN_CONNECT_RETRY_DELAYS", (0.0, 0.0)
-    )
+    monkeypatch.setattr("hastings.server.model_auth_chatgpt.TOKEN_CONNECT_RETRY_DELAYS", (0.0, 0.0))
     server = _FlakyServer(failures=10)
     provider, _listener, _identity = _provider(tmp_path, server)
 
@@ -513,7 +509,6 @@ def test_service_completes_chatgpt_login(tmp_path: Path) -> None:
     credential = auth.peek(session.id, provider_id="chatgpt")
     assert credential.refresh_token == "refresh-token-1"
     assert credential.metadata["client_id"] == ISSUED_CLIENT_ID
-
 
 
 def test_loopback_listener_never_shares_a_bound_port() -> None:

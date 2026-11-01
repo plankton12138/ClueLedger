@@ -62,7 +62,6 @@ Certainty = Literal["supported", "suspected"]
 ReportFreshness = Literal["valid", "stale", "source_missing"]
 
 
-
 @dataclass(frozen=True, slots=True)
 class ReviewEvidence:
     """一处原文依据：路径、版本、字符区间与引文。"""

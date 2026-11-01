@@ -335,6 +335,7 @@ class SaveIdea:
 ```python
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True, slots=True)
 class DraftRequest:
     project_id: str
@@ -343,6 +344,7 @@ class DraftRequest:
     ledger_refs: tuple[VersionedRef, ...]
     target: NewChapterTarget | ExistingRangeTarget
     narrative_boundary: NarrativeBoundary
+
 
 def validate_draft(request: DraftRequest) -> None:
     if not request.instruction.strip():
@@ -371,11 +373,10 @@ def validate_draft(request: DraftRequest) -> None:
 
 ```python
 # 目标示例：完成一轮，不在循环内逐章commit。
-async def finish_edit(command: FinishEdit, drafts: EditSessionStore,
-                      publisher: ManuscriptPublisher) -> OperationResult:
-    frozen = await drafts.freeze_saved_revision(
-        command.session_id, command.expected_save_sequences
-    )
+async def finish_edit(
+    command: FinishEdit, drafts: EditSessionStore, publisher: ManuscriptPublisher
+) -> OperationResult:
+    frozen = await drafts.freeze_saved_revision(command.session_id, command.expected_save_sequences)
     change = prepare_manual_change(frozen, command.conflict_resolutions)
     result = await publisher.publish(change, operation_id=command.operation_id)
     if result.status in {"committed", "no_change"}:
@@ -407,6 +408,7 @@ def evidence_after_change(link: EvidenceLink, diff: SourceDiff) -> EvidenceLink:
     if mapping is not None:
         return link.reanchor(mapping, status="valid")
     return link.require_check(reason="来源已改变或无法可靠定位")
+
 
 def prepare_publish(change: PreparedTextChange, snapshot: StorySnapshot) -> CommitPlan:
     return CommitPlan.combine(
@@ -452,8 +454,12 @@ def prepare_publish(change: PreparedTextChange, snapshot: StorySnapshot) -> Comm
 9. 恢复后的运行中模型任务一律中断待作者继续；凭据重新绑定后也不自动调用。为同ID碰撞定义拒绝/显式恢复到新作品的映射，不静默合并。
 
 ```python
-def validate_import(preview: ImportPreview, selection: ImportSelection,
-                    current: StorySnapshot, draft: EditSession | None) -> None:
+def validate_import(
+    preview: ImportPreview,
+    selection: ImportSelection,
+    current: StorySnapshot,
+    draft: EditSession | None,
+) -> None:
     preview.require_content_hash(selection.preview_hash)
     selection.require_unique_replacement_targets()
     preview.check_target_revisions(current, selection)
@@ -490,6 +496,7 @@ class NarrativeBoundary:
     reader_disclosures: tuple[VerifiedDisclosure, ...]
     planned_reveals: tuple[VersionedRef, ...]
     disclosure_change_allowed: bool = False
+
 
 async def context_for_task(task: TaskSnapshot, sources: ContextSources) -> ContextPackage:
     background = await sources.confirmed_background(task.project_id, task.base_commit_id)
@@ -549,8 +556,9 @@ def publish_summary(result: SummaryProposal, current: SummarySources) -> Summary
 - 正文与账本分歧只在新任务确实依赖时澄清；“暂不更新”不阻止继续创作，未入账正文仍可读。
 
 ```python
-def prepare_accept(group: SuggestionGroup, selected_ids: frozenset[str],
-                   snapshot: StorySnapshot) -> LedgerCommitPlan:
+def prepare_accept(
+    group: SuggestionGroup, selected_ids: frozenset[str], snapshot: StorySnapshot
+) -> LedgerCommitPlan:
     selected = group.select_pending(selected_ids)
     assert_sources_current(selected, snapshot)
     require_dependency_closure(selected, existing_ids=snapshot.artifact_ids)
@@ -615,8 +623,9 @@ async def run_revision(task: RevisionTask, runtime: RevisionRuntime) -> Revision
 - 原结果记录增加撤销结果引用，新恢复本身有独立操作ID/版本；重复同次撤销复用回执，新的修改后再撤销是新操作意图。
 
 ```python
-def inverse_field(before: JsonValue, after: JsonValue,
-                  current: JsonValue) -> RestoreValue | RestoreConflict:
+def inverse_field(
+    before: JsonValue, after: JsonValue, current: JsonValue
+) -> RestoreValue | RestoreConflict:
     if current == after:
         return RestoreValue(before)
     if before == after:
@@ -700,6 +709,7 @@ class ExecutionEvent:
     summary: str
     source_event_id: str
     version_refs: tuple[VersionedRef, ...]
+
 
 async def project_event(source: SourceEvent, log: ExecutionLog) -> None:
     await log.append_once(source.id, public_event_payload(source))

@@ -123,16 +123,13 @@ def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
         event_times[:] = [
             row
             for row in event_times
-            if operation.node_id
-            not in (row["before_node_id"], row["after_node_id"])
+            if operation.node_id not in (row["before_node_id"], row["after_node_id"])
         ]
     elif isinstance(operation, (CreateClueIdentity, RenameClueIdentity, RemoveClueIdentity)):
         # 身份由账本保存；故事侧只负责引用解析和最终一致性检查。
         pass
     elif isinstance(operation, UpsertCluePlan):
-        plan = StoryCluePlan(
-            clue_id=operation.clue_id, **operation.plan.model_dump(mode="json")
-        )
+        plan = StoryCluePlan(clue_id=operation.clue_id, **operation.plan.model_dump(mode="json"))
         clue_plans[operation.clue_id] = plan.model_dump(mode="json")
     elif isinstance(operation, RemoveCluePlan):
         _require_existing(clue_plans, operation.clue_id, "线索计划")
@@ -206,13 +203,9 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
     """
     added_stages, updated_stages, removed_stages = _partition(source.stages, target.stages)
     added_nodes, updated_nodes, removed_nodes = _partition(source.nodes, target.nodes)
-    added_plans, updated_plans, removed_plans = _partition(
-        source.clue_plans, target.clue_plans
-    )
+    added_plans, updated_plans, removed_plans = _partition(source.clue_plans, target.clue_plans)
     added_threads, updated_threads, removed_threads = _partition(source.threads, target.threads)
-    added_rules, updated_rules, removed_rules = _partition(
-        source.constraints, target.constraints
-    )
+    added_rules, updated_rules, removed_rules = _partition(source.constraints, target.constraints)
     added_edges, updated_edges, removed_edges = _partition(source.edges, target.edges)
     added_binds, updated_binds, removed_binds = _partition(source.bindings, target.bindings)
     added_checks, updated_checks, removed_checks = _partition(
@@ -244,9 +237,7 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
         for key in added_plans
     )
     operations.extend(AddNode(node=target.nodes[key]) for key in added_nodes)
-    operations.extend(
-        UpdateNode(node_id=key, node=target.nodes[key]) for key in updated_nodes
-    )
+    operations.extend(UpdateNode(node_id=key, node=target.nodes[key]) for key in updated_nodes)
     operations.extend(
         UpsertCluePlan(
             clue_id=key,
@@ -258,9 +249,7 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
         )
         for key in updated_plans
     )
-    operations.extend(
-        UpdateStage(stage_id=key, stage=target.stages[key]) for key in updated_stages
-    )
+    operations.extend(UpdateStage(stage_id=key, stage=target.stages[key]) for key in updated_stages)
     operations.extend(
         UpdateThread(thread_id=key, thread=target.threads[key]) for key in updated_threads
     )
@@ -275,9 +264,7 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
     for key in updated_checks:
         operations.append(RemoveAssessment(assessment_id=key))
         operations.append(RecordAssessment(assessment=target.assessments[key]))
-    operations.extend(
-        RecordAssessment(assessment=target.assessments[key]) for key in added_checks
-    )
+    operations.extend(RecordAssessment(assessment=target.assessments[key]) for key in added_checks)
     for key in updated_edges:
         operations.append(Disconnect(edge_id=key))
         operations.append(Connect(edge=target.edges[key]))
@@ -346,9 +333,7 @@ def touched_objects(before: StoryVariant, after: StoryVariant) -> dict[str, str]
     """本次改动涉及的对象及提交后的摘要；撤销只保护这些对象。"""
     prior = variant_digests(before)
     current = variant_digests(after)
-    changed = {
-        key: digest for key, digest in current.items() if prior.get(key) != digest
-    }
+    changed = {key: digest for key, digest in current.items() if prior.get(key) != digest}
     for key in prior:
         if key not in current:
             # 被删除的对象也要保护：撤销时若它已经被重新建出来，说明后来又有编辑。

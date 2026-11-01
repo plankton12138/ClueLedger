@@ -1,20 +1,35 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { useWorkspaceStore } from "../../state/workspace";
 import { useConversationsStore } from "../../state/conversations";
 import { usePagePositions } from "../../state/pagePositions";
+import { useStoryStore } from "../../state/story";
 import CharacterBadges from "./CharacterBadges";
 import WorkspaceModules from "./WorkspaceModules";
 import { useWorkspaceModulesStore } from "../../state/workspaceModules";
 
+function syncStatusLabel(state: string): string {
+  return {
+    aligned: "此章与构思已对齐",
+    outline_ahead: "构思已改，正文待同步",
+    prose_ahead: "正文已改，构思待核对",
+    diverged: "构思与正文都需要重新对齐",
+    unchecked: "这一章还没有同步核对",
+    waived: "已确认差异",
+    unbound: "这一章尚未纳入构思",
+  }[state] ?? "同步状态";
+}
+
 function TocLine({
   path,
   active,
+  status,
   onOpen,
   onReference,
   children,
 }: {
   path: string;
   active: boolean;
+  status?: string;
   onOpen: () => void;
   onReference: () => void;
   children: ReactNode;
@@ -27,6 +42,7 @@ function TocLine({
         onClick={onOpen}
       >
         {children}
+        {status && <i className={`toc-sync-dot ${status}`} title={syncStatusLabel(status)} aria-label={syncStatusLabel(status)} />}
       </button>
       <button
         type="button"
@@ -43,6 +59,13 @@ function TocLine({
 
 export default function WorkspaceToc({ onChoose }: { onChoose?: () => void }) {
   const { currentId, catalog, selectedPath, search, openPath, runSearch, clearSearch, upload } = useWorkspaceStore();
+  const storySync = useStoryStore(state => state.workspaceId === currentId ? state.sync : null);
+  const chapterSync = new Map((storySync?.chapters ?? []).map(chapter => [chapter.path, chapter.state]));
+  useEffect(() => {
+    if (!currentId) return;
+    const story = useStoryStore.getState();
+    if (story.workspaceId !== currentId || !story.graph) void story.load(currentId);
+  }, [currentId]);
   const moduleSelection = useWorkspaceModulesStore(state => state.selected);
   const fileActive = moduleSelection?.workspaceId !== currentId;
   const positionKey = `${currentId}:toc`;
@@ -151,6 +174,7 @@ export default function WorkspaceToc({ onChoose }: { onChoose?: () => void }) {
                         key={entry.path}
                         path={entry.path}
                         active={fileActive && selectedPath === entry.path}
+                        status={chapterSync.get(entry.path)}
                         onOpen={() => choose(entry.path)}
                         onReference={() => addReference(entry.path)}
                       >

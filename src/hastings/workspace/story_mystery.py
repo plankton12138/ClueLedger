@@ -27,7 +27,7 @@ def _order_key(
     node: StoryNode,
 ) -> tuple[int, bool, int, str]:
     return (
-        stage_order.get(node.stage_id, len(stage_order) + 1),
+        stage_order.get(node.stage_id or "", len(stage_order) + 1),
         node.reveal_order is None,
         node.reveal_order or 0,
         node.id,

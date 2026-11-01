@@ -17,7 +17,7 @@ from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.materials import ContextRequest
-from hastings.workspace.service import TurnService
+from hastings.workspace.service import TurnService, _explicit_prose_request
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 from hastings.workspace.story_context import StoryRequest
 from hastings.workspace.story_models import StoryChangeSet
@@ -165,6 +165,125 @@ def test_explicit_prose_request_switches_design_turn_to_candidate_flow(
     assert started["context"]["story"]["purpose"] == "write"
     operation = service.operations.read(info.operation_id)
     assert operation is not None
+
+
+@pytest.mark.parametrize(
+    ("text", "selected_path", "expected"),
+    [
+        ("根据构思，重写前两章", None, True),
+        ("关闭构思页，我直接重写这两个文件", "正文/0001 渠边的第一具尸体.md", True),
+        ("已关闭构思页，现在直接重写这两个文件", "正文/0001 渠边的第一具尸体.md", True),
+        ("写第一章", None, True),
+        ("根据构思写第一章", None, True),
+        ("重写第一章的正文", None, True),
+        ("写一段线索说明", None, False),
+        ("把这一段线索说明写进构思", None, False),
+        ("写第一章的构思", None, False),
+        ("写第一章的结构", None, False),
+        ("重写这两个文件", "设定集/角色小传/舒尔茨.md", False),
+        ("重写这两个文件", None, False),
+        ("把结构改一下", None, False),
+    ],
+)
+def test_explicit_prose_request_recognizes_page_qualifiers(
+    text: str, selected_path: str | None, expected: bool
+) -> None:
+    assert _explicit_prose_request(text, selected_path=selected_path) is expected
+
+
+def test_rewrite_first_two_chapters_from_design_page_enters_candidate_flow(
+    tmp_path: Path,
+) -> None:
+    provider = RoutingProvider([_text_turn("我先重写这两章。")])
+    service, _ = _service(tmp_path, provider)
+    _seed_node(service.store.root)
+
+    async def scenario() -> tuple[Any, list[dict[str, Any]]]:
+        info = await service.accept(
+            "根据构思，重写前两章",
+            "k-rewrite-two",
+            context=_story_context(),
+        )
+        await service.wait(info.turn_id)
+        return info, list(service.store.events(info.conversation_id))
+
+    _, events = asyncio.run(scenario())
+    request = provider.requests[0]
+    assert "propose_story_scene" in request["tools"]
+    assert "write_file" not in request["tools"]
+    started = next(event for event in events if event["type"] == "turn_started")
+    assert started["context"]["story"]["purpose"] == "write"
+
+
+def test_closed_page_file_rewrite_still_enters_candidate_flow(tmp_path: Path) -> None:
+    provider = RoutingProvider([_text_turn("我现在重写这两个文件。")])
+    service, _ = _service(tmp_path, provider)
+    _seed_node(service.store.root)
+    context = ContextRequest(
+        story=StoryRequest(variant_id=MAIN_VARIANT_ID, purpose="design"),
+        selected_path="正文/0001 渠边的第一具尸体.md",
+    )
+
+    async def scenario() -> tuple[Any, list[dict[str, Any]]]:
+        info = await service.accept(
+            "已关闭构思页，现在直接重写这两个文件",
+            "k-rewrite-files",
+            context=context,
+        )
+        await service.wait(info.turn_id)
+        return info, list(service.store.events(info.conversation_id))
+
+    _, events = asyncio.run(scenario())
+    request = provider.requests[0]
+    assert "propose_story_scene" in request["tools"]
+    started = next(event for event in events if event["type"] == "turn_started")
+    assert started["context"]["story"]["purpose"] == "write"
+
+
+def test_write_context_with_构思_qualifier_is_not_switched_to_design(
+    tmp_path: Path,
+) -> None:
+    provider = RoutingProvider([_text_turn("我开始重写。")])
+    service, _ = _service(tmp_path, provider)
+    _seed_node(service.store.root)
+    context = ContextRequest(
+        story=StoryRequest(variant_id=MAIN_VARIANT_ID, purpose="write"),
+        selected_path="正文/0001 渠边的第一具尸体.md",
+    )
+
+    async def scenario() -> list[dict[str, Any]]:
+        info = await service.accept(
+            "根据构思，重写前两章",
+            "k-write-qualified",
+            context=context,
+        )
+        await service.wait(info.turn_id)
+        return list(service.store.events(info.conversation_id))
+
+    events = asyncio.run(scenario())
+    started = next(event for event in events if event["type"] == "turn_started")
+    assert started["context"]["story"]["purpose"] == "write"
+    assert "propose_story_scene" in provider.requests[0]["tools"]
+
+
+def test_ambiguous_clue_note_does_not_become_prose_request(tmp_path: Path) -> None:
+    provider = RoutingProvider([_text_turn("我先整理这条线索。")])
+    service, _ = _service(tmp_path, provider)
+    _seed_node(service.store.root)
+
+    async def scenario() -> list[dict[str, Any]]:
+        info = await service.accept(
+            "把这段线索说明写进构思",
+            "k-clue-note",
+            context=_story_context(),
+        )
+        await service.wait(info.turn_id)
+        return list(service.store.events(info.conversation_id))
+
+    events = asyncio.run(scenario())
+    started = next(event for event in events if event["type"] == "turn_started")
+    assert started["context"]["story"]["purpose"] == "design"
+    assert "propose_story_scene" not in provider.requests[0]["tools"]
 
 
 def test_structure_task_hides_module_writes_and_sends_empty_plan(tmp_path: Path) -> None:

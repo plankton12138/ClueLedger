@@ -29,7 +29,10 @@ for path, text in [
 
 second = str(
     create_clue_identity(
-        store, title="公开的照片", request_key="seed-second", expected_revision=store.read().revision
+        store,
+        title="公开的照片",
+        request_key="seed-second",
+        expected_revision=store.read().revision,
     )["clue_id"]
 )
 file = workspace.read(SECOND)

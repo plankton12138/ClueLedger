@@ -1031,6 +1031,22 @@ it("构思面普通消息冻结当前备选和节点，浏览不会改到主方�
   });
 });
 
+it("构思面明确要求重写正文时按 write 发送，保留当前节点", async () => {
+  await useConversationsStore.getState().load("w1");
+  useConversationsStore.getState().newConversation();
+  useStoryStore.setState({ open: true, variantId: "alt", nodeId: "n2", graph: {
+    variant_id: "alt", name: "备选", revision: "alt-r1", stages: [], nodes: [], edges: [], threads: [],
+    event_times: [], constraints: [], collapsed: [],
+  } });
+  await useConversationsStore.getState().send("根据构思，重写前两章", {
+    ...EMPTY_CONTEXT,
+    selected_path: "正文/0001 雨夜.md",
+  });
+  expect(api.createConversationWithText.mock.calls[0][1].context.story).toEqual({
+    variant_id: "alt", revision: "alt-r1", node_ids: ["n2"], purpose: "write",
+  });
+});
+
 it("构思表单受理后即显示任务，不等待模型结束且保留普通草稿", async () => {
   await useConversationsStore.getState().load("w1");
   const text = "创建构思：\n湿手套的发现与对质";

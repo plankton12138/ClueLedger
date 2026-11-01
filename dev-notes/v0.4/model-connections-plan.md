@@ -110,9 +110,12 @@ from dataclasses import dataclass
 from typing import Literal
 
 ProviderApi = Literal[
-    "openai-completions", "openai-responses",
-    "anthropic-messages", "google-generative-ai",
+    "openai-completions",
+    "openai-responses",
+    "anthropic-messages",
+    "google-generative-ai",
 ]
+
 
 @dataclass(frozen=True)
 class ProviderPreset:
@@ -134,16 +137,16 @@ class ProviderPreset:
 
 ```python
 class ProviderProfile(BaseModel):
-    name: str                         # 不因改显示名而变化
-    display_name: str = ""             # 旧档案回退到 name
-    catalog_id: str = ""               # 旧档案可为空
+    name: str  # 不因改显示名而变化
+    display_name: str = ""  # 旧档案回退到 name
+    catalog_id: str = ""  # 旧档案可为空
     base_url: str
     api: ProviderApi = "openai-completions"
     models: list[str] = Field(default_factory=list)
     default_model: str = ""
     api_key: SecretStr = SecretStr("")
     credential_ref: str = ""
-    no_auth: bool = False              # 仅兼容已有档案
+    no_auth: bool = False  # 仅兼容已有档案
 ```
 
 旧档案没有 `models` 时，读取视图把非空 `default_model` 作为首个可选模型，不在启动时批量改写。新保存的连接要求模型 ID 非空、去重，默认模型属于可选列表。供应商分类不从连接名称或模型 ID 猜测；作者可以在编辑时补选预设。
@@ -182,6 +185,7 @@ async with self.write_lock:
 class ManagedModelProvider(ModelProvider, Protocol):
     async def aclose(self) -> None: ...
 
+
 def build_provider(profile: ProviderProfile) -> ManagedModelProvider:
     if profile.api == "anthropic-messages":
         return AnthropicProvider(anthropic_config(profile))
@@ -200,8 +204,11 @@ def build_provider(profile: ProviderProfile) -> ManagedModelProvider:
 # start() 在创建后台任务之前固定 snapshot；此处是 _run() 内部。
 async with runtime.open(snapshot) as provider:
     harness = build_harness(
-        provider=provider, model=snapshot.model,
-        workspace=self.workspace, run=run, max_turns=self.max_turns,
+        provider=provider,
+        model=snapshot.model,
+        workspace=self.workspace,
+        run=run,
+        max_turns=self.max_turns,
     )
     await self._consume(harness, info, text)
 ```

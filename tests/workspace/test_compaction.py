@@ -295,17 +295,13 @@ def test_parse_summary_rejects_unknown_sources() -> None:
 
 
 def test_parse_summary_rejects_items_without_sources() -> None:
-    text = _summary_json(
-        items=[{"kind": "goal", "text": "写完第三章", "sources": []}]
-    )
+    text = _summary_json(items=[{"kind": "goal", "text": "写完第三章", "sources": []}])
 
     assert parse_summary(text, allowed_sources=frozenset({"t1"})) is None
 
 
 def test_parse_summary_tolerates_a_code_fence() -> None:
-    parsed = parse_summary(
-        f"```json\n{_summary_json()}\n```", allowed_sources=frozenset({"t1"})
-    )
+    parsed = parse_summary(f"```json\n{_summary_json()}\n```", allowed_sources=frozenset({"t1"}))
 
     assert parsed is not None
 
@@ -331,9 +327,7 @@ def _candidate(events: list[dict[str, Any]] | None = None):
 def test_valid_candidate_passes() -> None:
     candidate = _candidate()
 
-    validate_candidate(
-        candidate, allowed_sources=frozenset({"t1", "t2", "t3"}), input_limit=None
-    )
+    validate_candidate(candidate, allowed_sources=frozenset({"t1", "t2", "t3"}), input_limit=None)
 
     assert candidate.estimated_after < candidate.estimated_before
 
@@ -344,9 +338,7 @@ def test_summary_that_does_not_shrink_is_rejected() -> None:
     grown = replace(candidate, estimated_after=candidate.estimated_before + 1)
 
     with pytest.raises(WorkspaceError) as caught:
-        validate_candidate(
-            grown, allowed_sources=frozenset({"t1", "t2", "t3"}), input_limit=None
-        )
+        validate_candidate(grown, allowed_sources=frozenset({"t1", "t2", "t3"}), input_limit=None)
 
     assert caught.value.code == "COMPACTION_NOT_EFFECTIVE"
 

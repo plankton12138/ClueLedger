@@ -326,7 +326,10 @@ await createIdea(workspaceId, {
 # 示意：operation_id 在调用日志首次登记后保持稳定，重放时复用。
 request_key = f"{run.turn_id}:idea:{operation_id}"
 created = idea_store.create(
-    title="", body=body, tags=[], request_key=request_key,
+    title="",
+    body=body,
+    tags=[],
+    request_key=request_key,
 )
 ```
 

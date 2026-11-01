@@ -186,8 +186,9 @@ def create_operation_router(
                     text=text,
                 )
             else:
-                await probe_runner.continue_operation(operation_id, request_key,
-                    expected_generation=expected_generation, text=text)
+                await probe_runner.continue_operation(
+                    operation_id, request_key, expected_generation=expected_generation, text=text
+                )
         else:
             service = service_for(operation_id)
             if action == "pause":
@@ -228,9 +229,7 @@ def create_operation_router(
         return view(read(operation_id))
 
     @router.post("/{operation_id}/pause", response_model=OperationView)
-    async def pause_operation(
-        operation_id: str, body: PauseOperationRequest
-    ) -> OperationView:
+    async def pause_operation(operation_id: str, body: PauseOperationRequest) -> OperationView:
         return await control(operation_id, "pause", body.request_key)
 
     @router.post("/{operation_id}/continue", response_model=OperationView)
@@ -258,21 +257,20 @@ def create_operation_router(
         )
 
     @router.get("/{operation_id}/events", response_model=OperationEventsView)
-    def read_events(
-        operation_id: str, after: int = Query(default=0, ge=0)
-    ) -> OperationEventsView:
+    def read_events(operation_id: str, after: int = Query(default=0, ge=0)) -> OperationEventsView:
         """按游标回放这一操作的事件；每一条带它所属的代次。"""
         operation = read(operation_id)
         store = store_for(operation_id)
         events = () if store is None else store.events(operation.conversation_id, after=after)
         records, last_seq = _annotate(operation, events)
         if operation.purpose == "probe":
-            records = [event for event in operation.recovery_request.get("events", [])
-                       if event["seq"] > after]
+            records = [
+                event
+                for event in operation.recovery_request.get("events", [])
+                if event["seq"] > after
+            ]
             last_seq = records[-1]["seq"] if records else after
-        return OperationEventsView(
-            events=records, last_seq=last_seq, operation=view(operation)
-        )
+        return OperationEventsView(events=records, last_seq=last_seq, operation=view(operation))
 
     @router.get("/{operation_id}/stream")
     async def stream_events(
@@ -356,8 +354,7 @@ def create_operation_router(
                     "summary": {
                         key: value
                         for key, value in event.items()
-                        if key
-                        not in ("seq", "at", "event_version", "event_id", "conversation_id")
+                        if key not in ("seq", "at", "event_version", "event_id", "conversation_id")
                     },
                 }
             )

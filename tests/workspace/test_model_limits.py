@@ -192,9 +192,7 @@ def test_known_input_limit_without_window_keeps_window_unknown() -> None:
 
 def test_project_budget_binds_when_model_capacity_is_larger() -> None:
     """模型能装一百万，项目只开 128K：有效上限是项目值，窗口仍是模型值。"""
-    limits = resolve_model_limits(
-        profile(catalog_id="deepseek"), "deepseek-flash"
-    )
+    limits = resolve_model_limits(profile(catalog_id="deepseek"), "deepseek-flash")
 
     assert limits.context_window_tokens == 1_048_576
     assert limits.project_input_limit_tokens == DEFAULT_PROJECT_INPUT_TOKENS

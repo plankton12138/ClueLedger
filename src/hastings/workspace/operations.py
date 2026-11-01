@@ -132,8 +132,15 @@ class Operation:
         return self.controls.get(request_key) if request_key else None
 
     def record_control(
-        self, request_key: str, kind: str, *, generation: int, note: str = "",
-        request_action: str = "", expected_generation: int | None = None, text: str = "",
+        self,
+        request_key: str,
+        kind: str,
+        *,
+        generation: int,
+        note: str = "",
+        request_action: str = "",
+        expected_generation: int | None = None,
+        text: str = "",
     ) -> dict[str, Any]:
         receipt = {
             "kind": kind,
@@ -444,12 +451,10 @@ class OperationStore:
             operation.resumable = bool(operation.recovery_request) and operation.purpose != "probe"
             operation.note = (
                 "服务重启时这次操作没有正常结束；可检查结果后继续"
-                if operation.resumable else
-                "服务重启时这次操作没有正常结束；已写出的内容保留，可查看结果后重新发起"
+                if operation.resumable
+                else "服务重启时这次操作没有正常结束；已写出的内容保留，可查看结果后重新发起"
             )
-            operation.checkpoint(
-                "interrupted", generation=operation.generation, note="服务重启"
-            )
+            operation.checkpoint("interrupted", generation=operation.generation, note="服务重启")
             # 重启后旧代次一律作废：即使有进程外的旧任务，也不能再写入。
             operation.generation += 1
             self.save(operation)

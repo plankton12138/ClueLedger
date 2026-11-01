@@ -58,12 +58,14 @@ from typing import Literal
 
 ModuleKind = Literal["characters", "world", "clues", "truth", "timeline", "plot", "reference"]
 
+
 @dataclass(frozen=True)
 class ModuleSpec:
     kind: ModuleKind
     label: str
     source_kinds: tuple[str, ...]
     organize_domain: str | None
+
 
 PRESETS = (
     ModuleSpec("characters", "人物", ("character",), "characters"),
@@ -162,8 +164,12 @@ def restore_idea(store, idea_id, target_revision, expected_digest, request_key):
         current = store.read_checked(idea_id, expected_digest)
         old = current.require_revision(target_revision)
         new = current.append_revision(
-            operation="restore", title=old.title, body=old.body,
-            tags=old.tags, deleted=old.deleted, restored_from=old.id,
+            operation="restore",
+            title=old.title,
+            body=old.body,
+            tags=old.tags,
+            deleted=old.deleted,
+            restored_from=old.id,
         )
         return store.atomic_replace(new, request_key=request_key)
 ```
@@ -187,6 +193,7 @@ def restore_idea(store, idea_id, target_revision, expected_digest, request_key):
 from dataclasses import dataclass
 from typing import Literal
 
+
 @dataclass(frozen=True)
 class Evidence:
     path: str
@@ -195,14 +202,17 @@ class Evidence:
     end: int
     quote: str
 
+
 @dataclass(frozen=True)
 class StoryTime:
-    label: str                    # 原文时间描述；未知可为空
-    normalized: str | None        # 仅显式可解析日期，保存原始 label
+    label: str  # 原文时间描述；未知可为空
+    normalized: str | None  # 仅显式可解析日期，保存原始 label
     before_ids: tuple[str, ...] = ()
     after_ids: tuple[str, ...] = ()
 
+
 RecordIdentity = tuple[str, str, str, str]  # 库、模块、修订、条目
+
 
 @dataclass(frozen=True)
 class EventObservation:
@@ -215,6 +225,7 @@ class EventObservation:
     evidence: tuple[Evidence, ...]
     related_entity_refs: tuple[RecordIdentity, ...]
     author_event_ref: RecordIdentity | None  # 关联不等于把证词认定为真相
+
 
 @dataclass(frozen=True)
 class ChapterProjection:

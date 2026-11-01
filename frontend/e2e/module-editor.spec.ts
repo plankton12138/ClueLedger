@@ -71,7 +71,7 @@ test("高级字段异常保留输入并阻止发布，标量列表可在修正�
     await openFields();
     await fields.fill(text); await expect(save).toBeDisabled();
     await expect(library.locator(".ui-field-error").last()).toBeVisible();
-    await page.getByRole("link", { name: "写作", exact: true }).click();
+    await page.getByRole("link", { name: "正文", exact: true }).click();
     await expect(page.getByRole("region", { name: "正文阅读", exact: true })).toBeVisible();
     await page.goBack();
     const resume = library.getByRole("button", { name: "继续编辑", exact: true });

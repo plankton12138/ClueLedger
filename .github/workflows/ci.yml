@@ -126,9 +126,10 @@ jobs:
       - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium
 
-      # CI 模式下 webServer 自动 npm run build + 起 tests.e2e_server（端口 8931）
+      # CI 只跑不依赖模型连接的 workspace 项目；在线用例（project=online）需真实模型连接，
+      # 留在本地用 npm run test:e2e:online 手动验收。
       - name: Run Playwright tests
-        run: npx playwright test
+        run: npm run test:e2e:local
 
       - name: Upload traces on failure
         if: failure()

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpen, Clock3, LibraryBig, Network, Settings } from "lucide-react";
+import { BookOpenText, Clock3, LayoutGrid, Settings, Sparkles } from "lucide-react";
 import { pageHash, navigate, type AppPage, type WorkspacePage } from "../../state/navigation";
 import { usePagePositions } from "../../state/pagePositions";
 import { useLayoutStore } from "../../state/layout";
@@ -20,14 +20,14 @@ function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; work
   return <nav className="workspace-navigation" aria-label="作品页面">
     {writing
       ? <a className="ui-nav-link" href={pageHash(writing)} aria-current={writingActive ? "page" : undefined}>
-        <BookOpen size={16} strokeWidth={2} aria-hidden="true" />正文</a>
-      : <span aria-disabled="true"><BookOpen size={16} strokeWidth={2} aria-hidden="true" />正文</span>}
+        <BookOpenText size={15} strokeWidth={1.8} aria-hidden="true" />正文</a>
+      : <span aria-disabled="true"><BookOpenText size={15} strokeWidth={1.8} aria-hidden="true" />正文</span>}
     {story
       ? <a className="ui-nav-link" href={pageHash(story)} aria-current={storyActive ? "page" : undefined}>
-        <Network size={16} strokeWidth={2} aria-hidden="true" />构思</a>
-      : <span aria-disabled="true"><Network size={16} strokeWidth={2} aria-hidden="true" />构思</span>}
+        <Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />构思</a>
+      : <span aria-disabled="true"><Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />构思</span>}
     <a className="ui-nav-link" href={pageHash({ kind: "library", workspaceContextId: workspaceId ?? undefined })} aria-current={page?.kind === "library" ? "page" : undefined}>
-      <LibraryBig size={16} aria-hidden="true" />模块库</a>
+      <LayoutGrid size={15} strokeWidth={1.8} aria-hidden="true" />模块库</a>
   </nav>;
 }
 

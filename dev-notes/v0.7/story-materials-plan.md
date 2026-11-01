@@ -174,9 +174,7 @@ type Coverage = {
 ```python
 # 拟新增 workspace/material_tasks.py；最终使用项目既有错误格式。
 class MaterialTaskScope(BaseModel):
-    domain: Literal[
-        "chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"
-    ]
+    domain: Literal["chapter_index", "disclosure", "roster", "timeline", "clues", "glossary"]
     chapter_paths: list[str] = Field(min_length=1, max_length=10)
     entity_paths: list[str] = Field(default_factory=list, max_length=10)
     as_of_chapter: int = Field(ge=0)
@@ -209,9 +207,7 @@ class MaterialTaskScope(BaseModel):
 def publish_target(run, scope, target, result):
     require_allowed_domain(scope.domain, result.domain)
     require_allowed_target(scope, target)
-    run.materials.require_target_read(
-        run.workspace, ReadRequirement.full(target.path)
-    )
+    run.materials.require_target_read(run.workspace, ReadRequirement.full(target.path))
     check_current_source_versions(run.workspace, target, result.evidence)
     check_all_evidence_in_supplied_ranges(run.materials, result.evidence)
     # 空结果也经过同样的完整读取和版本检查。

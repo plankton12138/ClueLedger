@@ -34,10 +34,12 @@ from hastings.workspace.story_models import (
     RemoveNode,
     StoryChangeSet,
     StoryOperation,
+    SyncDecision,
     UnbindProse,
 )
 from hastings.workspace.story_review import StoryCheck, StoryReview, build_story_review
 from hastings.workspace.story_store import StoryStore, new_id
+from hastings.workspace.story_sync import contract_digest, require_sync_decision
 from tau_agent.messages import TextContent
 from tau_agent.tools import AgentTool, AgentToolResult
 
@@ -66,6 +68,8 @@ class StoryCandidate:
     originals: dict[str, tuple[str, str]] = field(default_factory=dict)
     #: 与正文一起提交的结构变更；核对与发布时成组生效，不单独落盘。
     operations: list[StoryOperation] = field(default_factory=list)
+    #: 结构变更影响已有正文时，作者确认后的同步选择。
+    sync: SyncDecision | None = None
     repaired: bool = False
     approved: bool = False
     status: str = "draft"
@@ -95,6 +99,7 @@ class StoryCandidate:
                 "documents": self.documents,
                 "originals": self.originals,
                 "operations": [item.model_dump(mode="json") for item in self.operations],
+                "sync": self.sync.model_dump(mode="json") if self.sync else None,
                 "status": self.status,
                 "repaired": self.repaired,
                 "report": self.report,
@@ -176,7 +181,13 @@ class StoryCandidate:
             "author_text": raw.get("author_text", ""),
         }
 
-    def propose(self, path: str, base_digest: str, text: str) -> None:
+    def propose(
+        self,
+        path: str,
+        base_digest: str,
+        text: str,
+        sync: SyncDecision | Mapping[str, Any] | None = None,
+    ) -> None:
         self.guard()
         if any(
             word in self.author_text
@@ -197,13 +208,19 @@ class StoryCandidate:
             raise conflict("同一候选的正文基础版本发生变化")
         self.originals[path] = (digest, original_text)
         self.documents[path] = normalize_newlines(text)
+        if sync is not None:
+            self.sync = SyncDecision.model_validate(sync)
         self.approved = False
         self.save()
         self.record(
             "story_candidate_saved", {"candidate_id": self.id, "path": path, "status": self.status}
         )
 
-    def propose_structure(self, operations: list[dict[str, Any]]) -> dict[str, Any]:
+    def propose_structure(
+        self,
+        operations: list[dict[str, Any]],
+        sync: SyncDecision | Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """登记与正文一起提交的结构变更；先做对象授权、图结构与标识校验。"""
         self.guard()
         if self.status != "draft":
@@ -212,18 +229,22 @@ class StoryCandidate:
         variant = store.require_variant(self.frozen.variant_id)
         if variant.revision != self.frozen.revision:
             raise conflict("构思结构在候选生成后发生变化")
+        decision = SyncDecision.model_validate(sync) if sync is not None else None
         try:
             change = StoryChangeSet(
                 id=new_id("candidate_structure"),
                 base_revision=self.frozen.revision,
                 operations=operations,  # type: ignore[arg-type]
+                sync=decision,
             )
             apply_change_set(variant, change)
         except ValueError as exc:
             raise conflict(f"结构变更无法应用：{exc}") from exc
+        change = require_sync_decision(self.workspace, self.state_root, variant, change)
         authorize_change(variant, self.frozen, self.author_text, change)
         validate_model_change(variant, change, self.author_text)
         self.operations = list(change.operations)
+        self.sync = change.sync
         self.approved = False
         self.report = None
         self.save()
@@ -316,10 +337,16 @@ class StoryCandidate:
                     raise conflict("场景核对引用了其他文件")
                 if row["status"] != "pass":
                     approved = False
-                elif key.startswith("scene:"):
-                    text = self.documents.get(str(row.get("path") or ""), "")
+                elif key.startswith(("scene:", "present:")):
+                    path = str(row.get("path") or "")
+                    text = self.documents.get(path, "")
                     quote = row.get("quote")
-                    if not isinstance(quote, str) or not quote.strip() or quote not in text:
+                    if (
+                        not path
+                        or not isinstance(quote, str)
+                        or not quote.strip()
+                        or quote not in text
+                    ):
                         raise conflict("通过结论没有对应的候选原文")
             if seen != wanted:
                 raise conflict("核对报告未覆盖全部要求")
@@ -457,7 +484,19 @@ class StoryCandidate:
                 self.frozen.variant_id
             )
             path, text = next(iter(self.documents.items()))
-            node = variant.nodes.get(node_id)
+            after = (
+                apply_change_set(
+                    variant,
+                    StoryChangeSet(
+                        id=self.id,
+                        base_revision=self.frozen.revision,
+                        operations=operations,
+                    ),
+                )
+                if operations
+                else variant
+            )
+            node = after.nodes.get(node_id)
             quote = (
                 next((use.presentation for use in node.clue_uses if use.presentation in text), "")
                 if node
@@ -472,7 +511,7 @@ class StoryCandidate:
             if node is not None and quote:
                 operations.extend(
                     UnbindProse(binding_id=binding.id)
-                    for binding in variant.bindings.values()
+                    for binding in after.bindings.values()
                     if binding.node_id == node_id and binding.path == path
                 )
                 operations.append(
@@ -487,6 +526,7 @@ class StoryCandidate:
                             end=start + len(quote),
                             quote=quote,
                             observation="本轮核对通过的场景原文。",
+                            contract_digest=contract_digest(after, node),
                         )
                     )
                 )
@@ -494,6 +534,7 @@ class StoryCandidate:
             id=self.id,
             base_revision=self.frozen.revision,
             operations=operations,
+            sync=self.sync,
             prose_patches=[
                 ProsePatch(
                     path=path,

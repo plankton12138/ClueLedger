@@ -20,9 +20,7 @@ def _events(*rows: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _candidate(text: str, *, multiple: bool = False) -> CandidateSource:
-    return CandidateSource(
-        turn_id="t1", seq=4, digest="digest", text=text, multiple=multiple
-    )
+    return CandidateSource(turn_id="t1", seq=4, digest="digest", text=text, multiple=multiple)
 
 
 def test_discussion_and_explicit_stop_do_not_target_structure() -> None:
@@ -98,9 +96,7 @@ def test_creation_action_with_read_only_request_requires_clarification() -> None
 
 def test_both_goals_are_recorded_together() -> None:
     candidate = _candidate("建议新增线索「木板」。")
-    intent = classify_design_intent(
-        "写入构思，再把补充资料保存为模块", candidate=candidate
-    )
+    intent = classify_design_intent("写入构思，再把补充资料保存为模块", candidate=candidate)
     assert intent.kind == "mixed"
     assert intent.requires_structure and intent.requires_module
 
@@ -292,13 +288,9 @@ def test_discussion_has_no_write_goal() -> None:
 
 def test_structure_readonly_does_not_require_commit() -> None:
     intent = classify_design_intent("修改线索「手套」的呈现")
-    assert assess_story_goal(
-        intent, variant=None, receipts=[], structure_readonly=True
-    ).complete
+    assert assess_story_goal(intent, variant=None, receipts=[], structure_readonly=True).complete
 
 
 def test_snapshot_identity_is_not_changed_by_intent() -> None:
-    frozen = StoryContextSnapshot(
-        variant_id=MAIN_VARIANT_ID, revision="empty", purpose="design"
-    )
+    frozen = StoryContextSnapshot(variant_id=MAIN_VARIANT_ID, revision="empty", purpose="design")
     assert frozen.revision == "empty"

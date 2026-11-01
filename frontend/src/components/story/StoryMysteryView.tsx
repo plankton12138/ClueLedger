@@ -7,9 +7,12 @@ import {
   type StoryGraph,
   type StoryMystery,
   type StoryMysteryDiagnostic,
+  type StorySync,
+  type StorySyncNodeState,
 } from "../../api/story";
 import { Button } from "../ui/Button";
 import { StatusMessage } from "../ui/StatusMessage";
+import StorySyncStrip, { type StorySyncFocus } from "./StorySyncStrip";
 import {
   clueUseNodes,
   knowledgeSubjects,
@@ -25,6 +28,7 @@ interface Props {
   variantId: string;
   revision: string;
   graph: StoryGraph;
+  sync: StorySync | null;
   selectedClueId: string | null;
   onSelectClue: (clueId: string | null) => void;
   onSelectNode: (nodeId: string) => void;
@@ -35,11 +39,24 @@ function stanceLabel(stances: string[]): string {
   return stances.includes("knows") ? "知道" : "相信";
 }
 
+function syncLabel(state: StorySyncNodeState): string {
+  return {
+    aligned: "已对齐",
+    outline_ahead: "构思已改",
+    prose_ahead: "正文已改",
+    diverged: "冲突",
+    unchecked: "未核对",
+    waived: "已确认差异",
+    outline_only: "未写",
+  }[state];
+}
+
 export default function StoryMysteryView({
   workspaceId,
   variantId,
   revision,
   graph,
+  sync,
   selectedClueId,
   onSelectClue,
   onSelectNode,
@@ -49,6 +66,7 @@ export default function StoryMysteryView({
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [collapsedLanes, setCollapsedLanes] = useState<Set<"detective" | "reader" | "clue">>(new Set());
+  const [syncFocus, setSyncFocus] = useState<StorySyncFocus | null>(null);
   const selectedClueRef = useRef(selectedClueId);
   selectedClueRef.current = selectedClueId;
 
@@ -92,6 +110,34 @@ export default function StoryMysteryView({
   const relatedNodeIds = useMemo(
     () => new Set(selectedClue ? clueUseNodes(selectedClue) : []),
     [selectedClue],
+  );
+  const syncNodes = useMemo(
+    () => new Map((sync?.nodes ?? []).map((node) => [node.node_id, node])),
+    [sync],
+  );
+  const syncFocusNodes = useMemo(() => {
+    if (!syncFocus) return new Set<string>();
+    if (syncFocus === "conflict") {
+      const ids = new Set(
+        (sync?.nodes ?? [])
+          .filter((node) => node.state === "diverged")
+          .map((node) => node.node_id),
+      );
+      for (const conflict of sync?.conflicts ?? []) {
+        if (conflict.kind === "missing_presentation" && conflict.node_id) ids.add(conflict.node_id);
+      }
+      return ids;
+    }
+    const wanted = syncFocus === "pending"
+      ? new Set(["outline_ahead", "prose_ahead", "unchecked"])
+      : syncFocus === "outline_only"
+        ? new Set(["outline_only"])
+        : new Set([syncFocus]);
+    return new Set((sync?.nodes ?? []).filter((node) => wanted.has(node.state)).map((node) => node.node_id));
+  }, [sync, syncFocus]);
+  const unboundChapters = useMemo(
+    () => (sync?.chapters ?? []).filter((chapter) => chapter.state === "unbound"),
+    [sync],
   );
   const stageGroups = useMemo(() => {
     const groups: { title: string; count: number }[] = [];
@@ -168,6 +214,13 @@ export default function StoryMysteryView({
         </div>
       </header>
 
+      {sync && <StorySyncStrip sync={sync} focus={syncFocus} onFocus={setSyncFocus} />}
+      {syncFocus === "unbound" && unboundChapters.length > 0 && (
+        <p className="story-sync-focus-note">
+          未纳入构思：{unboundChapters.map((chapter) => chapter.title).join("、")}
+        </p>
+      )}
+
       {error && (
         <StatusMessage
           tone="error"
@@ -225,27 +278,44 @@ export default function StoryMysteryView({
             ))}
 
             <div className="story-mystery-label">实际发生</div>
-            {ordered.map((item) => (
-              <div
-                className="story-mystery-cell"
-                data-lane="actual"
-                data-related={relatedNodeIds.has(item.node.id) ? "true" : undefined}
-                key={`actual-${item.node.id}`}
-              >
-                <button
-                  type="button"
-                  className="story-mystery-node-link"
-                  onClick={() => {
-                    if (selectedClue && !relatedNodeIds.has(item.node.id)) onSelectClue(null);
-                    onSelectNode(item.node.id);
-                  }}
-                  title="只看与此节点相关的线索"
+            {ordered.map((item) => {
+              const syncNode = syncNodes.get(item.node.id);
+              return (
+                <div
+                  className="story-mystery-cell"
+                  data-lane="actual"
+                  data-node={item.node.id}
+                  data-related={relatedNodeIds.has(item.node.id) ? "true" : undefined}
+                  data-sync-focus={syncFocusNodes.has(item.node.id) ? "true" : undefined}
+                  data-sync-state={syncNode?.state}
+                  key={`actual-${item.node.id}`}
                 >
-                  {item.node.title}
-                </button>
-                <p className="story-mystery-action">{item.node.action}</p>
-              </div>
-            ))}
+                  <div className="story-node-card" data-state={syncNode?.state}>
+                    <button
+                      type="button"
+                      className="story-mystery-node-link"
+                      onClick={() => {
+                        if (selectedClue && !relatedNodeIds.has(item.node.id)) onSelectClue(null);
+                        onSelectNode(item.node.id);
+                      }}
+                      title="只看与此节点相关的线索"
+                    >
+                      {item.node.title}
+                    </button>
+                    <p className="story-mystery-action">{item.node.action}</p>
+                    {syncNode && (
+                      <div className="story-node-sync-line" title={syncNode.bound_quote}>
+                        {syncNode.bound_chapter && <span className="story-node-chapter">{syncNode.bound_chapter}</span>}
+                        <span className={`story-node-sync ${syncNode.state}`}>
+                          <i aria-hidden="true" />
+                          {syncLabel(syncNode.state)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
 
             <LaneLabel
               label="侦探 / 助手"
@@ -259,6 +329,8 @@ export default function StoryMysteryView({
                 <div
                   className="story-mystery-cell story-mystery-compact"
                   data-lane="detective"
+                  data-node={item.node.id}
+                  data-sync-focus={syncFocusNodes.has(item.node.id) ? "true" : undefined}
                   data-related={relatedNodeIds.has(item.node.id) ? "true" : undefined}
                   key={`detective-compact-${item.node.id}`}
                 >
@@ -268,6 +340,8 @@ export default function StoryMysteryView({
                 <div
                   className="story-mystery-cell"
                   data-lane="detective"
+                  data-node={item.node.id}
+                  data-sync-focus={syncFocusNodes.has(item.node.id) ? "true" : undefined}
                   data-related={relatedNodeIds.has(item.node.id) ? "true" : undefined}
                   key={`detective-${item.node.id}`}
                 >
@@ -300,6 +374,8 @@ export default function StoryMysteryView({
                 <div
                   className="story-mystery-cell story-mystery-compact"
                   data-lane="reader"
+                  data-node={item.node.id}
+                  data-sync-focus={syncFocusNodes.has(item.node.id) ? "true" : undefined}
                   data-related={relatedNodeIds.has(item.node.id) ? "true" : undefined}
                   key={`reader-compact-${item.node.id}`}
                 >
@@ -309,6 +385,8 @@ export default function StoryMysteryView({
                 <div
                   className="story-mystery-cell"
                   data-lane="reader"
+                  data-node={item.node.id}
+                  data-sync-focus={syncFocusNodes.has(item.node.id) ? "true" : undefined}
                   data-related={relatedNodeIds.has(item.node.id) ? "true" : undefined}
                   key={`reader-${item.node.id}`}
                 >
@@ -345,6 +423,8 @@ export default function StoryMysteryView({
                 <div
                   className="story-mystery-cell story-mystery-compact"
                   data-lane="clue"
+                  data-node={item.node.id}
+                  data-sync-focus={syncFocusNodes.has(item.node.id) ? "true" : undefined}
                   data-related={relatedNodeIds.has(item.node.id) ? "true" : undefined}
                   key={`clue-compact-${item.node.id}`}
                 >
@@ -354,6 +434,8 @@ export default function StoryMysteryView({
                 <div
                   className="story-mystery-cell"
                   data-lane="clue"
+                  data-node={item.node.id}
+                  data-sync-focus={syncFocusNodes.has(item.node.id) ? "true" : undefined}
                   data-related={relatedNodeIds.has(item.node.id) ? "true" : undefined}
                   key={`clue-${item.node.id}`}
                 >

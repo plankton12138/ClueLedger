@@ -16,14 +16,12 @@ import { useModuleLibraryStore } from "../../state/moduleLibrary";
 import { useSourceLocationStore } from "../../state/sourceLocation";
 import { SourceNotice, ModuleSourceReader } from "../clues/SourceReader";
 import { navigate, useWorkspacePage } from "../../state/navigation";
-import { useCluesStore } from "../../state/clues";
-import ChapterClues from "../clues/ChapterClues";
 import StoryClues from "../story/StoryClues";
 import StorySurface from "../story/StorySurface";
 import { useStoryStore } from "../../state/story";
 import { sourceTaskChapter } from "../../state/sourceLocation";
 
-type SidebarTab = "directory" | "chapter" | "story";
+type SidebarTab = "directory" | "story";
 
 export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const prefs = useLayoutStore();
@@ -33,12 +31,8 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const selectedModule = useWorkspaceModulesStore(state => state.selected);
   const source = useSourceLocationStore(state => state.workspaceId === currentId ? state.location : null);
   const sourceId = useSourceLocationStore(state => state.workspaceId === currentId ? state.evidenceId : null);
-  const chapterContext = useCluesStore(state => currentId ? state.chapterPaths[currentId] : undefined);
-  const catalog = useWorkspaceStore(state => state.catalog);
   const moduleAssembly = useModuleLibraryStore(state => state.workspaceId===currentId ? state.assembly : null);
   const moduleBinding = selectedModule?.workspaceId===currentId ? moduleAssembly?.bindings.find(binding => binding.id===selectedModule.bindingId) : undefined;
-  const chapterPath = !moduleBinding && (sourceId || file?.kind === "chapter") ? chapterContext ?? (file?.kind === "chapter" ? file.path : null) : null;
-  const chapterNumber = catalog.chapters.find(item => item.path === chapterPath)?.chapter_number ?? null;
   const [width, setWidth] = useState(0);
   const storyView = page?.kind === "writing" && page.workspaceId === currentId && page.mode === "story";
   const storyGraph = useStoryStore(state => state.graph);
@@ -62,9 +56,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   // 线索详情比目录需要更宽的阅读栏；不改写用户保存的目录宽度，只在本模式下临时加宽。
   const sidebarPreferred = sidebarTab === "story"
     ? Math.max(prefs.sidebarWidth, 320 * Math.max(1, prefs.fontScale / 100))
-    : sidebarTab === "chapter"
-      ? Math.max(prefs.sidebarWidth, 280 * Math.max(1, prefs.fontScale / 100))
-      : prefs.sidebarWidth;
+    : prefs.sidebarWidth;
   const capacity = writingLayout(width, { ...prefs, sidebarWidth: sidebarPreferred, sidebarVisible: true, chatVisible: true });
   const canDockDirectory = capacity.sidebar > 0;
   const compact = capacity.kind === "single";
@@ -105,10 +97,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   }, [storyView]);
   useEffect(() => { if (prefs.chatReveal > 0) setCompactChat(true); }, [prefs.chatReveal]);
   useEffect(() => { if (sourceId) setCompactChat(false); }, [sourceId]);
-  useEffect(() => {
-    const restore = useSourceLocationStore.getState().restorePosition;
-    if (currentId && !sourceId && !moduleBinding && file?.kind === "chapter" && !(restore && restore.key.startsWith(`${currentId}:paper:`))) useCluesStore.getState().setChapter(currentId, file.path);
-  }, [currentId, sourceId, file?.path, Boolean(moduleBinding)]);
   function toggleSidebar() {
     if (canDockDirectory) prefs.toggleSidebar(); else setDirectory((value) => !value);
   }
@@ -127,11 +115,14 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   function openStoryConversation() {
     openChat();
   }
-  function locate(evidenceId: string, asOf: number) {
+  async function openClueFromProse(clueId: string) {
     if (!currentId) return;
-    const taskChapter = sourceTaskChapter(currentId) ?? file?.chapter_number ?? 0;
-    useSourceLocationStore.getState().capture({ kind: "writing", workspaceId: currentId }, taskChapter);
-    navigate({ kind: "writing", workspaceId: currentId, sourceId: evidenceId, asOfChapter: asOf, taskChapter });
+    const story = useStoryStore.getState();
+    if (story.workspaceId !== currentId || !story.graph) await story.load(currentId);
+    useStoryStore.getState().selectNode(null);
+    useStoryStore.getState().selectClue(clueId);
+    setSidebarTab("story");
+    setDirectory(true);
   }
   async function locateStoryEvidence(evidenceId: string, asOf: number) {
     if (!currentId) return;
@@ -173,9 +164,10 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       { purpose: "chat", preserveDraft: true },
     );
   }
-  const tabs: { id: SidebarTab; label: string }[] = storyView
-    ? [{ id: "directory", label: "目录" }, { id: "story", label: "全书线索" }]
-    : [{ id: "directory", label: "目录" }, { id: "chapter", label: "本章线索" }, { id: "story", label: "全书线索" }];
+  const tabs: { id: SidebarTab; label: string }[] = [
+    { id: "directory", label: "目录" },
+    { id: "story", label: "全书线索" },
+  ];
   const chatLabel = running ? "对话 · 进行中" : "对话";
   return <div className="writing-layout" ref={container} data-layout={plan.kind}>
     <div className="writing-tools">
@@ -189,7 +181,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       </Button>
     </div>
     <div className="writing-panes workbench">
-      <aside id="writing-sidebar" role="region" aria-label={sidebarTab === "directory" ? "目录" : sidebarTab === "chapter" ? "本章线索" : "全书线索"} className="writing-toc module" data-overlay={!canDockDirectory} hidden={!directoryVisible}
+      <aside id="writing-sidebar" role="region" aria-label={sidebarTab === "directory" ? "目录" : "全书线索"} className="writing-toc module" data-overlay={!canDockDirectory} hidden={!directoryVisible}
         style={{ width: sidebar ? plan.sidebar : Math.max(sidebarPreferred, SIDEBAR.min * Math.max(1, prefs.fontScale / 100)) }}
         onKeyDown={event => { if (!canDockDirectory && event.key === "Escape") { event.stopPropagation(); setDirectory(false); } }}>
         <div className="writing-side-tabs" role="tablist" aria-label="侧栏内容" onKeyDown={event => {
@@ -212,10 +204,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             if (sourceState.evidenceId || sourceState.storyReturn || (page?.kind === "writing" && page.sourceId)) sourceState.clear();
             if (storyView && currentId) navigate({ kind: "writing", workspaceId: currentId });
             if (!canDockDirectory) { setDirectory(false); setCompactChat(false); }
-          }} /> : sidebarTab === "chapter" ? (
-            <ChapterClues workspaceId={currentId ?? ""} chapterPath={chapterPath} asOf={chapterNumber} active={directoryVisible}
-              onLocate={locate} onReference={referenceClue} />
-          ) : storyVariantId ? (
+          }} /> : storyVariantId ? (
             <StoryClues
               workspaceId={currentId ?? ""}
               variantId={storyVariantId}
@@ -247,7 +236,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             onStart={openStoryConversation}
             onCalibrate={() => void calibrateStoryFromProse()}
           />
-        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} /> : !ready ? <div className="ui-empty" role="status"><p>正在载入作品…</p></div> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
+        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} onOpenClue={clueId => void openClueFromProse(clueId)} /> : !ready ? <div className="ui-empty" role="status"><p>正在载入作品…</p></div> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
         </div></div>
       </section>
       {currentId && <>

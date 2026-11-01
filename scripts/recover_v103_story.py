@@ -87,9 +87,7 @@ def _convert_variant(raw: dict[str, Any]) -> dict[str, Any]:
         resolution = clue.get("resolution") or {}
         intent = resolution.get("intent") or "undecided"
         resolve_nodes = [str(item) for item in resolution.get("node_ids", [])]
-        has_resolve_use = any(
-            node_id in resolve_nodes for node_id, _ in uses.get(clue_id, [])
-        )
+        has_resolve_use = any(node_id in resolve_nodes for node_id, _ in uses.get(clue_id, []))
         if intent == "explain" and not has_resolve_use:
             # 旧主方案只有回收节点、没有任何线索使用；没有使用就没有可推导的回收位置。
             intent = "undecided"
@@ -138,15 +136,18 @@ def _convert_variant(raw: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def convert(story: dict[str, Any], ledger: dict[str, Any]) -> tuple[dict[str, Any], ClueLedger, dict[str, str]]:
+def convert(
+    story: dict[str, Any], ledger: dict[str, Any]
+) -> tuple[dict[str, Any], ClueLedger, dict[str, str]]:
     variants = story.get("variants", {}) or {}
     titles: dict[str, str] = {}
     converted: dict[str, Any] = {}
     for variant_id, raw in variants.items():
         converted_variant = _convert_variant(raw)
         converted[str(variant_id)] = converted_variant
-        for clue_id, plan in converted_variant["clue_plans"].items():
-            titles.setdefault(str(clue_id), str(raw.get("clues", {}).get(clue_id, {}).get("title") or clue_id))
+        for clue_id in converted_variant["clue_plans"]:
+            title = str(raw.get("clues", {}).get(clue_id, {}).get("title") or clue_id)
+            titles.setdefault(str(clue_id), title)
     story_doc = {
         "schema_version": 1,
         "workspace_lineage": story.get("workspace_lineage") or _new_id("ws"),
@@ -168,7 +169,12 @@ def convert(story: dict[str, Any], ledger: dict[str, Any]) -> tuple[dict[str, An
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="转换 1.0.3 之前的构思状态")
-    parser.add_argument("--workspace", type=Path, required=True, help="状态工作区目录，例如 ~/.hastings/workspaces/<id>")
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        required=True,
+        help="状态工作区目录，例如 ~/.hastings/workspaces/<id>",
+    )
     parser.add_argument("--apply", action="store_true", help="实际写入转换结果；缺省只预览")
     args = parser.parse_args()
     workspace = args.workspace.expanduser().resolve()
@@ -186,7 +192,10 @@ def main() -> int:
             f"nodes={len(variant['nodes'])} threads={len(variant['threads'])} "
             f"plans={len(variant['clue_plans'])} edges={len(variant['edges'])}"
         )
-    print(f"ledger: identities={len(converted_ledger.clues)} contributions={len(converted_ledger.contributions)}")
+    print(
+        f"ledger: identities={len(converted_ledger.clues)} "
+        f"contributions={len(converted_ledger.contributions)}"
+    )
     print(f"clue identities added for plans: {len(titles)}")
     if not args.apply:
         print("preview only; add --apply to back up and write")

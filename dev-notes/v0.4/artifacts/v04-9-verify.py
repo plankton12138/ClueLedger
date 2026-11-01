@@ -38,9 +38,7 @@ def _stored_key(ref: str) -> str:
 
 
 def _events(client: httpx.Client, workspace: str, conversation: str) -> list[dict[str, object]]:
-    response = client.get(
-        f"/api/file-workspaces/{workspace}/conversations/{conversation}/messages"
-    )
+    response = client.get(f"/api/file-workspaces/{workspace}/conversations/{conversation}/messages")
     response.raise_for_status()
     return list(response.json()["events"])
 
@@ -69,9 +67,10 @@ def main() -> int:
 
     if args.phase == "restart":
         expected = json.loads((args.workspace / "expected-selection.json").read_text("utf-8"))
-        assert config["selection"]["connection_id"] == expected["connection_id"], config["selection"]
-        assert config["selection"]["model"] == expected["model"], config["selection"]
-        print("重启后选择一致：", config["selection"]["connection_id"], config["selection"]["model"])
+        selection = config["selection"]
+        assert selection["connection_id"] == expected["connection_id"], selection
+        assert selection["model"] == expected["model"], selection
+        print("重启后选择一致：", selection["connection_id"], selection["model"])
         return 0
 
     original = next(item for item in config["connections"] if item["has_key"])
@@ -110,7 +109,10 @@ def main() -> int:
                 "model": model,
             },
         ).json()
-        print(f"{kind}: response={probe['response']} tool_call={probe['tool_call']} {probe['message']}")
+        print(
+            f"{kind}: response={probe['response']} "
+            f"tool_call={probe['tool_call']} {probe['message']}"
+        )
         assert probe["code"] is None, probe
     # 两条测试是独立事实：响应测试不该把工具测试也说成通过。
     assert probe["tool_call"] in {"passed", "failed", "untested"}
@@ -134,7 +136,8 @@ def main() -> int:
     temporary = next(
         item for item in created_body["connections"] if item["display_name"] == "验证用连接"
     )
-    print(f"新建 {temporary['name']} key={temporary['masked_key']} 选择未变：{created_body['selection']['source']}")
+    source = created_body["selection"]["source"]
+    print(f"新建 {temporary['name']} key={temporary['masked_key']} 选择未变：{source}")
 
     selected = client.put(
         "/api/model-selection",
@@ -166,10 +169,13 @@ def main() -> int:
             break
         time.sleep(1)
     started_at = next(event for event in events if event["type"] == "turn_started")
-    print("轮次快照：", json.dumps(
-        {key: started_at.get(key) for key in ("connection_id", "connection_name", "model")},
-        ensure_ascii=False,
-    ))
+    print(
+        "轮次快照：",
+        json.dumps(
+            {key: started_at.get(key) for key in ("connection_id", "connection_name", "model")},
+            ensure_ascii=False,
+        ),
+    )
     tools = [event["tool"] for event in events if event["type"] == "tool_finished"]
     print("工具过程：", tools)
     finished = next(event for event in events if event["type"] == "run_finished")

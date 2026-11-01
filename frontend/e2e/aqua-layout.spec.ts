@@ -43,8 +43,8 @@ test("Aqua 写作布局、翻页和字号操作保留复古气泡及可达的发
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("button", { name: "第一章 雨夜", exact: true }).click();
   await expect(page.locator(".writing-layout")).toHaveAttribute("data-layout", "three");
-  // 顶栏只剩写作与模块库：故事资料入口已移除。
-  await expect(page.getByRole("navigation", { name: "作品页面" }).getByRole("link")).toHaveCount(2);
+  // 顶栏是正文、构思与模块库：故事资料入口已移除。
+  await expect(page.getByRole("navigation", { name: "作品页面" }).getByRole("link")).toHaveCount(3);
   await expect(page.locator(".chat-msg.mine .chat-bubble")).toContainText("让林岚");
   expect(await page.locator(".chat-msg.mine .chat-bubble").evaluate(el => getComputedStyle(el).backgroundColor)).toBe("rgb(150, 221, 65)");
   expect(await page.locator(".chat-reply").evaluate(el => getComputedStyle(el).backgroundColor)).toBe("rgb(214, 214, 216)");

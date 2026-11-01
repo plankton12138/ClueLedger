@@ -329,6 +329,11 @@ class ProseBinding(StrictRecord):
     quote: str = Field(min_length=1)
     observation: str = Field(default="", max_length=2000)
     assessment_id: str | None = None
+    #: 最近一次核对通过的节点正文契约；空串表示旧记录或尚未核对。
+    contract_digest: str = Field(default="", max_length=128)
+    #: 作者明确选择暂不处理的冲突摘要；任一侧再变化即失效。
+    waived_digest: str = Field(default="", max_length=128)
+    waived_note: str = Field(default="", max_length=1000)
 
     @model_validator(mode="after")
     def check_range(self) -> ProseBinding:
@@ -759,6 +764,15 @@ StoryOperation = Annotated[
 ]
 
 
+class SyncDecision(StrictRecord):
+    """作者对一次构思／正文冲突的选择；随变更一起记录，不能事后伪造。"""
+
+    conflict_digest: str = Field(min_length=1, max_length=128)
+    choice: Literal["follow_outline", "follow_prose", "defer"]
+    question_id: str = Field(default="", max_length=64)
+    note: str = Field(default="", max_length=1000)
+
+
 class StoryChangeSet(StrictRecord):
     """一次完整变更单元：模型或界面只描述改什么，元数据由应用补齐。"""
 
@@ -771,6 +785,7 @@ class StoryChangeSet(StrictRecord):
     requested_scope: str = Field(default="", max_length=500)
     operation_id: str = Field(default="", max_length=64)
     generation: int = Field(default=0, ge=0)
+    sync: SyncDecision | None = None
 
     @model_validator(mode="after")
     def check_unique(self) -> StoryChangeSet:
@@ -812,6 +827,8 @@ class StoryChangeRecord(StrictRecord):
     inverse_operations: list[StoryOperation] = Field(default_factory=list)
     inverse_ledger: list[dict[str, JsonValue]] = Field(default_factory=list)
     inverse_prose_patches: list[ProsePatch] = Field(default_factory=list)
+    #: 本次改动对应的作者同步选择；旧记录没有这一项。
+    sync: SyncDecision | None = None
     #: 本次改动的对象 → 提交后的内容摘要；撤销前重查，变了就冲突。
     touched: dict[str, str] = Field(default_factory=dict)
     undone_by: str | None = None

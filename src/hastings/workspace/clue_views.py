@@ -22,9 +22,6 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import FileView, Workspace, has_chapter_content
 from hastings.workspace.source_locations import file_evidence_id
 from hastings.workspace.state_store import current_chapter
-from hastings.workspace.story_clue_catalog import StoryClueCatalog
-from hastings.workspace.story_models import StoryVariant
-from hastings.workspace.story_store import StoryStore
 
 Freshness = Literal["valid", "stale", "source_missing", "unavailable", "none"]
 Outcome = Literal["found", "empty", "insufficient", "unrecorded"]
@@ -241,9 +238,7 @@ class ClueReader:
             if row.content.planted_chapter <= self.as_of
             and row.content.source_chapter <= self.as_of
         ]
-        if not visible and all_rows and (
-            identity.first_chapter or self.latest
-        ) > self.as_of:
+        if not visible and all_rows and (identity.first_chapter or self.latest) > self.as_of:
             return None
         visible.sort(key=lambda row: row.content.source_chapter or row.content.planted_chapter)
         latest = visible[-1].content if visible else None

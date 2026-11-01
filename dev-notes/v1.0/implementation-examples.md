@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+
 @dataclass(frozen=True)
 class Anchor:
     evidence_id: str
@@ -25,6 +26,7 @@ class Anchor:
     end: int
     quote: str
 
+
 @dataclass(frozen=True)
 class Observation:
     observation_id: str
@@ -33,6 +35,7 @@ class Observation:
     mode: Literal["narration", "testimony", "recollection", "hypothesis", "dream", "unknown"]
     text: str
     anchor: Anchor
+
 
 @dataclass(frozen=True)
 class ClueReference:
@@ -55,14 +58,20 @@ class ClueReference:
 from copy import deepcopy
 from collections.abc import Callable, Mapping, Sequence
 
+
 def initialize_ledger(create_id: Callable[[str], str]) -> dict[str, object]:
     return {
         "schema_version": 2,
         "recipe_version": 1,
         "workspace_lineage": create_id("ws"),
         "ledger_revision": create_id("rev"),
-        "clues": {}, "contributions": {}, "coverage": {},
-        "design_links": {}, "inferences": {}, "reviews": {}, "requests": {},
+        "clues": {},
+        "contributions": {},
+        "coverage": {},
+        "design_links": {},
+        "inferences": {},
+        "reviews": {},
+        "requests": {},
     }
 ```
 
@@ -78,6 +87,7 @@ evidence_id 必须先从本作品已登记记录解析出 Anchor；本函数不�
 from hashlib import sha256
 from hastings.workspace.errors import WorkspaceError
 
+
 @dataclass(frozen=True)
 class Location:
     freshness: Literal["valid", "stale"]
@@ -85,17 +95,24 @@ class Location:
     start: int | None
     end: int | None
 
+
 def normalized_text(raw: bytes) -> str:
     return raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+
 
 def resolve_anchor(raw: bytes, anchor: Anchor) -> Location:
     if sha256(raw).hexdigest() != anchor.digest:
         return Location("stale", anchor.quote, None, None)
     text = normalized_text(raw)
-    if not (0 <= anchor.start < anchor.end <= len(text)) or text[anchor.start:anchor.end] != anchor.quote:
+    if (
+        not (0 <= anchor.start < anchor.end <= len(text))
+        or text[anchor.start : anchor.end] != anchor.quote
+    ):
         raise WorkspaceError(
-            code="CLUE_SCOPE_INVALID", where="线索依据",
-            why="引文与原文区间不符", fix="重新读取实际原文并核对引用",
+            code="CLUE_SCOPE_INVALID",
+            where="线索依据",
+            why="引文与原文区间不符",
+            fix="重新读取实际原文并核对引用",
         )
     return Location("valid", anchor.quote, anchor.start, anchor.end)
 ```
@@ -117,37 +134,69 @@ from pathlib import Path
 from typing import Any, ContextManager
 from uuid import uuid4
 
+
 class ClueFileStore:
-    def __init__(self, path: Path, locked: Callable[[], ContextManager[None]], validate: Callable[[dict[str, Any]], None]):
+    def __init__(
+        self,
+        path: Path,
+        locked: Callable[[], ContextManager[None]],
+        validate: Callable[[dict[str, Any]], None],
+    ):
         self.path, self.locked, self.validate = path, locked, validate
 
-    def mutate(self, *, expected_revision: str, request_key: str, kind: str,
-               payload: dict[str, Any], update: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, Any]:
-        identity = json.dumps({"kind": kind, "payload": payload, "expected_revision": expected_revision}, sort_keys=True, ensure_ascii=False, allow_nan=False)
+    def mutate(
+        self,
+        *,
+        expected_revision: str,
+        request_key: str,
+        kind: str,
+        payload: dict[str, Any],
+        update: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> dict[str, Any]:
+        identity = json.dumps(
+            {"kind": kind, "payload": payload, "expected_revision": expected_revision},
+            sort_keys=True,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
         fingerprint = sha256(identity.encode("utf-8")).hexdigest()
         with self.locked():
             try:
                 current = json.loads(self.path.read_text(encoding="utf-8"))
                 self.validate(current)
             except (OSError, ValueError, TypeError) as exc:
-                raise WorkspaceError(code="CLUE_LEDGER_READ_FAILED", where="线索记录",
-                                     why="现有记录无法读取或校验", fix="保留原文件并检查备份后重试") from exc
+                raise WorkspaceError(
+                    code="CLUE_LEDGER_READ_FAILED",
+                    where="线索记录",
+                    why="现有记录无法读取或校验",
+                    fix="保留原文件并检查备份后重试",
+                ) from exc
             previous = current["requests"].get(request_key)
             if previous is not None:
                 if previous["fingerprint"] != fingerprint:
-                    raise WorkspaceError(code="CLUE_REVISION_CONFLICT", where="线索操作",
-                                         why="同一请求键对应不同内容", fix="重新读取记录并为新操作创建请求键")
+                    raise WorkspaceError(
+                        code="CLUE_REVISION_CONFLICT",
+                        where="线索操作",
+                        why="同一请求键对应不同内容",
+                        fix="重新读取记录并为新操作创建请求键",
+                    )
                 return deepcopy(previous["result"])
             if current["ledger_revision"] != expected_revision:
-                raise WorkspaceError(code="CLUE_REVISION_CONFLICT", where="线索记录",
-                                     why="记录版本已变化", fix="重新读取后继续，保留当前草稿")
+                raise WorkspaceError(
+                    code="CLUE_REVISION_CONFLICT",
+                    where="线索记录",
+                    why="记录版本已变化",
+                    fix="重新读取后继续，保留当前草稿",
+                )
             candidate = deepcopy(current)
             result = update(candidate)
             candidate["ledger_revision"] = "rev_" + uuid4().hex
             result = {**result, "ledger_revision": candidate["ledger_revision"]}
             candidate["requests"][request_key] = {"fingerprint": fingerprint, "result": result}
             self.validate(candidate)
-            handle, temporary = tempfile.mkstemp(dir=self.path.parent, prefix=".clues-", suffix=".tmp")
+            handle, temporary = tempfile.mkstemp(
+                dir=self.path.parent, prefix=".clues-", suffix=".tmp"
+            )
             try:
                 with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
                     json.dump(candidate, stream, ensure_ascii=False, allow_nan=False)
@@ -155,8 +204,12 @@ class ClueFileStore:
                     os.fsync(stream.fileno())
                 os.replace(temporary, self.path)
             except OSError as exc:
-                raise WorkspaceError(code="CLUE_LEDGER_WRITE_FAILED", where="线索记录",
-                                     why="本次记录未发布", fix="检查目录权限与磁盘后使用原请求重试") from exc
+                raise WorkspaceError(
+                    code="CLUE_LEDGER_WRITE_FAILED",
+                    where="线索记录",
+                    why="本次记录未发布",
+                    fix="检查目录权限与磁盘后使用原请求重试",
+                ) from exc
             finally:
                 Path(temporary).unlink(missing_ok=True)
             return deepcopy(result)
@@ -174,17 +227,28 @@ request_key、目标和版本由业务服务登记；HTTP与模型工具共用 m
 ```python
 # example: clue_views.py
 def visible_observations(
-    observations: Sequence[Observation], *, as_of_chapter: int,
+    observations: Sequence[Observation],
+    *,
+    as_of_chapter: int,
     source_is_current: Callable[[Anchor], bool],
 ) -> tuple[Observation, ...]:
-    return tuple(sorted(
-        (item for item in observations
-         if item.anchor.chapter <= as_of_chapter and source_is_current(item.anchor)),
-        key=lambda item: (item.anchor.chapter, item.anchor.start, item.observation_id),
-    ))
+    return tuple(
+        sorted(
+            (
+                item
+                for item in observations
+                if item.anchor.chapter <= as_of_chapter and source_is_current(item.anchor)
+            ),
+            key=lambda item: (item.anchor.chapter, item.anchor.start, item.observation_id),
+        )
+    )
+
 
 def chapter_clue_ids(observations: Sequence[Observation], chapter_path: str) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(item.clue_id for item in observations if item.anchor.path == chapter_path))
+    return tuple(
+        dict.fromkeys(item.clue_id for item in observations if item.anchor.path == chapter_path)
+    )
+
 
 def observed_status(observations: Sequence[Observation]) -> Literal["open", "resolved"]:
     return "resolved" if any(item.kind == "resolve" for item in observations) else "open"
@@ -206,12 +270,14 @@ class ReadSource:
     chapter: int
     ranges: tuple[tuple[int, int], ...]
 
+
 @dataclass(frozen=True)
 class Finding:
     kind: Literal["inference_gap", "alternative_open", "premise_undisclosed", "counter_evidence"]
     certainty: Literal["supported", "suspected"]
     description: str
     evidence: tuple[Anchor, ...]
+
 
 def covered(ranges: Sequence[tuple[int, int]], start: int, end: int) -> bool:
     cursor = start
@@ -225,18 +291,26 @@ def covered(ranges: Sequence[tuple[int, int]], start: int, end: int) -> bool:
             return True
     return cursor >= end
 
+
 def validate_clue_report(
-    *, status: Literal["findings", "no_findings", "incomplete"], findings: Sequence[Finding],
-    targets: Mapping[str, str], as_of_chapter: int, reader_sources: Mapping[str, ReadSource],
+    *,
+    status: Literal["findings", "no_findings", "incomplete"],
+    findings: Sequence[Finding],
+    targets: Mapping[str, str],
+    as_of_chapter: int,
+    reader_sources: Mapping[str, ReadSource],
 ) -> tuple[str, ...]:
     if not targets:
         raise ValueError("正文核对目标不能为空")
     uncovered: list[str] = []
     for path, expected_digest in targets.items():
         source = reader_sources.get(path)
-        if (source is None or source.chapter > as_of_chapter
-                or sha256(source.raw).hexdigest() != expected_digest
-                or not covered(source.ranges, 0, len(normalized_text(source.raw)))):
+        if (
+            source is None
+            or source.chapter > as_of_chapter
+            or sha256(source.raw).hexdigest() != expected_digest
+            or not covered(source.ranges, 0, len(normalized_text(source.raw)))
+        ):
             uncovered.append(path)
     if (status == "no_findings" and findings) or (status == "findings" and not findings):
         raise ValueError("报告状态与问题清单不符")
@@ -247,9 +321,13 @@ def validate_clue_report(
             raise ValueError("每条问题需要可核对依据")
         for anchor in finding.evidence:
             source = reader_sources.get(anchor.path)
-            if (source is None or source.chapter != anchor.chapter or anchor.chapter > as_of_chapter
-                    or not covered(source.ranges, anchor.start, anchor.end)
-                    or resolve_anchor(source.raw, anchor).freshness != "valid"):
+            if (
+                source is None
+                or source.chapter != anchor.chapter
+                or anchor.chapter > as_of_chapter
+                or not covered(source.ranges, anchor.start, anchor.end)
+                or resolve_anchor(source.raw, anchor).freshness != "valid"
+            ):
                 raise ValueError("报告引用不属于本次实际提供的有效范围")
     return tuple(uncovered)
 ```
@@ -264,23 +342,45 @@ def validate_clue_report(
 
 ```python
 # example: clue_context.py
-def freeze_reference(reference: ClueReference, *, lineage: str, clue_id: str,
-                     revision: str, writer_cutoff: int, observations: Sequence[Observation]) -> dict[str, object]:
+def freeze_reference(
+    reference: ClueReference,
+    *,
+    lineage: str,
+    clue_id: str,
+    revision: str,
+    writer_cutoff: int,
+    observations: Sequence[Observation],
+) -> dict[str, object]:
     if reference.workspace_lineage != lineage or reference.clue_id != clue_id:
-        raise WorkspaceError(code="CLUE_ACCESS_DENIED", where="线索引用",
-                             why="引用不属于当前作品", fix="从当前作品重新选择线索")
+        raise WorkspaceError(
+            code="CLUE_ACCESS_DENIED",
+            where="线索引用",
+            why="引用不属于当前作品",
+            fix="从当前作品重新选择线索",
+        )
     if reference.clue_revision != revision:
-        raise WorkspaceError(code="CLUE_REFERENCE_STALE_CONFLICT", where="线索引用",
-                             why="引用版本已变化", fix="保留草稿并重新读取引用")
+        raise WorkspaceError(
+            code="CLUE_REFERENCE_STALE_CONFLICT",
+            where="线索引用",
+            why="引用版本已变化",
+            fix="保留草稿并重新读取引用",
+        )
     cutoff = min(reference.browse_as_of_chapter, writer_cutoff)
     if cutoff < 0:
         raise ValueError("截止章不能小于零")
     visible = [item for item in observations if item.anchor.chapter <= cutoff]
-    return {"clue_id": clue_id, "clue_revision": revision, "reader_cutoff": cutoff,
-            "reader_observation_ids": [item.observation_id for item in visible]}
+    return {
+        "clue_id": clue_id,
+        "clue_revision": revision,
+        "reader_cutoff": cutoff,
+        "reader_observation_ids": [item.observation_id for item in visible],
+    }
+
 
 def request_fingerprint(payload: Mapping[str, object]) -> str:
-    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    canonical = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+    )
     return sha256(canonical.encode("utf-8")).hexdigest()
 ```
 

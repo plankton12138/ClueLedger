@@ -108,9 +108,7 @@ def reader_revealed_truth(probes: Any) -> dict[str, object]:
     )
     actual = "\n".join(section.text for section in assembled.sections)
     try:
-        probes.assert_reader_isolated(
-            actual, variant, "n1", published=assembled.published
-        )
+        probes.assert_reader_isolated(actual, variant, "n1", published=assembled.published)
         return {
             "error": None,
             "prefix": actual,
@@ -137,9 +135,7 @@ def main() -> None:
     try:
         results["F2_quoted_truth_command"] = quoted_command(probes)
     except Exception as error:  # noqa: BLE001
-        results["F2_quoted_truth_command"] = {
-            "probe_error": f"{type(error).__name__}: {error}"
-        }
+        results["F2_quoted_truth_command"] = {"probe_error": f"{type(error).__name__}: {error}"}
 
     inspected = [
         "src/hastings/workspace/story_tools.py",

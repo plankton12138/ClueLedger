@@ -57,9 +57,11 @@ def only_clue_id(store) -> str:
 
 
 def source_id(workspace, store, as_of=2):
-    return clue_detail(
-        workspace, store.root, only_clue_id(store), as_of_chapter=as_of
-    ).evidence[0].evidence_id
+    return (
+        clue_detail(workspace, store.root, only_clue_id(store), as_of_chapter=as_of)
+        .evidence[0]
+        .evidence_id
+    )
 
 
 def test_raw_byte_digest_and_normalized_codepoints_target_second_quote(book):
@@ -96,9 +98,7 @@ def test_future_resolution_not_exposed_even_with_known_identifier(book):
     assert len(late.evidence) == 2
     assert len(early.evidence) == 1
     # 后章才有的回收依据不能出现在前面的详情里。
-    assert "公开照片也是来源" not in json.dumps(
-        early.model_dump(mode="json"), ensure_ascii=False
-    )
+    assert "公开照片也是来源" not in json.dumps(early.model_dump(mode="json"), ensure_ascii=False)
     identifier = late.evidence[1].evidence_id
     with pytest.raises(WorkspaceError, match="CLUE_SOURCE_NOT_FOUND"):
         resolve_source_location(workspace, store.root, identifier, as_of_chapter=1)

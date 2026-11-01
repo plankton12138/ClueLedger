@@ -168,6 +168,81 @@ export interface StoryMystery {
   };
 }
 
+export interface StorySyncCounts {
+  aligned: number;
+  outline_ahead: number;
+  prose_ahead: number;
+  diverged: number;
+  unchecked: number;
+  waived: number;
+  outline_only: number;
+  unbound_prose: number;
+}
+
+export type StorySyncNodeState =
+  | "aligned"
+  | "outline_ahead"
+  | "prose_ahead"
+  | "diverged"
+  | "unchecked"
+  | "waived"
+  | "outline_only";
+
+export type StorySyncChapterState =
+  | "aligned"
+  | "outline_ahead"
+  | "prose_ahead"
+  | "diverged"
+  | "unchecked"
+  | "waived"
+  | "unbound";
+
+export interface StorySyncNode {
+  node_id: string;
+  title: string;
+  state: StorySyncNodeState;
+  chapter_paths: string[];
+  binding_ids: string[];
+  contract_digest: string;
+  bound_quote: string;
+  bound_chapter: string;
+}
+
+export interface StorySyncChapter {
+  path: string;
+  chapter: number;
+  title: string;
+  state: StorySyncChapterState;
+  node_ids: string[];
+  prose_digest: string;
+  checked_digest: string;
+}
+
+export interface StorySyncConflict {
+  conflict_id: string;
+  kind:
+    | "outline_ahead"
+    | "prose_ahead"
+    | "diverged"
+    | "unchecked"
+    | "missing_presentation"
+    | "unbound_prose";
+  node_id: string;
+  binding_id?: string;
+  path: string;
+  message: string;
+  options: string[];
+}
+
+export interface StorySync {
+  variant_id: string;
+  revision: string;
+  counts: StorySyncCounts;
+  nodes: StorySyncNode[];
+  chapters: StorySyncChapter[];
+  conflicts: StorySyncConflict[];
+}
+
 export interface StoryReceipt {
   variant_id: string;
   base_revision: string;
@@ -187,6 +262,12 @@ export interface StoryChangeRecord {
   operations: Record<string, unknown>[];
   changed: string[];
   undone_by: string | null;
+  sync?: {
+    conflict_digest: string;
+    choice: "follow_outline" | "follow_prose" | "defer";
+    question_id?: string;
+    note?: string;
+  } | null;
 }
 
 export function listStoryVariants(workspaceId: string): Promise<StoryVariantList> {
@@ -211,6 +292,17 @@ export function readStoryMystery(
   );
 }
 
+export function readStorySync(
+  workspaceId: string,
+  variantId: string,
+  chapterPath?: string,
+): Promise<StorySync> {
+  const query = chapterPath ? `?chapter_path=${encodeURIComponent(chapterPath)}` : "";
+  return request<StorySync>(
+    `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/sync${query}`,
+  );
+}
+
 /** 界面发起的确定性结构变更：修订不符返回 409，同键同负载只应用一次。 */
 export function submitStoryChange(
   workspaceId: string,
@@ -222,6 +314,12 @@ export function submitStoryChange(
     prose_patches?: { path: string; base_digest: string; start: number; end: number; expected: string; replacement: string; delete?: boolean }[];
     read_dependencies?: { kind: "variant" | "prose" | "constraint" | "module" | "conversation"; id: string; revision: string }[];
     note?: string;
+    sync?: {
+      conflict_digest: string;
+      choice: "follow_outline" | "follow_prose" | "defer";
+      question_id?: string;
+      note?: string;
+    };
   },
 ): Promise<StoryReceipt> {
   return request<StoryReceipt>(`/${workspaceId}/story/changes`, {

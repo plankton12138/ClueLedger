@@ -19,11 +19,13 @@ DEEPSEEK_ENTRIES = {
 
 ```python
 def test_deepseek_metadata_fields():
-    capacity = _reported_capacity({
-        "id": "deepseek-flash",
-        "context_window": 1_048_576,
-        "max_output_tokens": 393_216,
-    })
+    capacity = _reported_capacity(
+        {
+            "id": "deepseek-flash",
+            "context_window": 1_048_576,
+            "max_output_tokens": 393_216,
+        }
+    )
     assert capacity == ModelCapacity(
         context_window_tokens=1_048_576,
         max_output_tokens=393_216,
@@ -45,6 +47,7 @@ context_policy:
 from dataclasses import dataclass
 from typing import Literal
 
+
 @dataclass(frozen=True)
 class InputBudget:
     project_limit: int
@@ -52,9 +55,13 @@ class InputBudget:
     effective_limit: int
     source: Literal["project", "model", "both"]
 
+
 def resolve_input_budget(
-    *, project_limit: int, window: int | None,
-    max_input: int | None, output_reserve: int,
+    *,
+    project_limit: int,
+    window: int | None,
+    max_input: int | None,
+    output_reserve: int,
 ) -> InputBudget:
     model_limits = []
     if max_input is not None:
@@ -64,7 +71,8 @@ def resolve_input_budget(
         remaining = window - output_reserve - safety
         if remaining <= 0:
             raise WorkspaceError(
-                code="CONTEXT_POLICY_INVALID", where="model.context",
+                code="CONTEXT_POLICY_INVALID",
+                where="model.context",
                 why="回复预留与安全余量超过已知窗口",
                 fix="核对模型容量与输出额度后重试",
             )
@@ -73,8 +81,10 @@ def resolve_input_budget(
     effective = min(project_limit, model_limit) if model_limit is not None else project_limit
     source = "project"
     if model_limit is not None:
-        source = "both" if model_limit == project_limit else (
-            "model" if model_limit < project_limit else "project"
+        source = (
+            "both"
+            if model_limit == project_limit
+            else ("model" if model_limit < project_limit else "project")
         )
     return InputBudget(project_limit, model_limit, effective, source)
 ```

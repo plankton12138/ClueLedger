@@ -15,7 +15,6 @@ import time
 from pathlib import Path
 
 from hastings.workspace.clue_designs import create_clue_identity, save_clue_inference
-from hastings.workspace.clue_models import ClueCoverage, ClueEntry, FileSource
 from hastings.workspace.clue_reviews import (
     ClueReviewDraft,
     ClueReviewFinding,
@@ -23,6 +22,8 @@ from hastings.workspace.clue_reviews import (
     freeze_clue_review,
     publish_clue_review,
 )
+
+from hastings.workspace.clue_models import ClueCoverage, ClueEntry
 from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.clue_views import clue_detail, clue_list
 from hastings.workspace.disclosure import ObservedEvidence
@@ -71,7 +72,11 @@ def build(root: Path) -> tuple[Workspace, ClueLedgerStore, list[str], list[str]]
                     "open",
                     f"第 {chapter} 章的观察 {offset + 1}",
                     ObservedEvidence(
-                        path, view.digest, view.text.index(quote), view.text.index(quote) + len(quote), quote
+                        path,
+                        view.digest,
+                        view.text.index(quote),
+                        view.text.index(quote) + len(quote),
+                        quote,
                     ),
                     source_chapter=chapter,
                     clue_id=clue_id,
@@ -116,9 +121,7 @@ def build(root: Path) -> tuple[Workspace, ClueLedgerStore, list[str], list[str]]
             store,
             inference_id=str(inference["inference_id"]),
             inference_revision=str(inference["inference_revision"]),
-            clue_ids=[
-                str(item) for item in inference["clue_ids"]
-            ],
+            clue_ids=[str(item) for item in inference["clue_ids"]],
             as_of_chapter=chapter,
             chapter_paths=[path],
         )
@@ -196,15 +199,19 @@ def main() -> int:
             },
             "catalog": timed(lambda: workspace.catalog()),
             "clue_list_chapter": timed(
-                lambda: clue_list(workspace, store.root, chapter_path=chapter_path, as_of_chapter=50)
+                lambda: clue_list(
+                    workspace, store.root, chapter_path=chapter_path, as_of_chapter=50
+                )
             ),
             "clue_list_search": timed(
-                lambda: clue_list(workspace, store.root, as_of_chapter=100, query="线索 0", limit=20)
+                lambda: clue_list(
+                    workspace, store.root, as_of_chapter=100, query="线索 0", limit=20
+                )
             ),
-            "clue_detail": timed(lambda: clue_detail(workspace, store.root, target, as_of_chapter=100)),
-            "review_report": timed(
-                lambda: clue_review_report(workspace, store, report_ids[0])
+            "clue_detail": timed(
+                lambda: clue_detail(workspace, store.root, target, as_of_chapter=100)
             ),
+            "review_report": timed(lambda: clue_review_report(workspace, store, report_ids[0])),
         }
     text = json.dumps(measurements, ensure_ascii=False, indent=2) + "\n"
     if out is None:

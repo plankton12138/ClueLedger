@@ -104,9 +104,7 @@ def test_delete_removes_clue_state_and_read_does_not_recreate(
     assert client.get(f"/api/file-workspaces/{workspace_id}/conversations").status_code == 404
 
 
-def test_rename_and_delete_reject_running_turn(
-    registry: RecentWorkspaces, tmp_path: Path
-) -> None:
+def test_rename_and_delete_reject_running_turn(registry: RecentWorkspaces, tmp_path: Path) -> None:
     client = TestClient(
         create_workspace_app(workspaces=registry, provider_factory=_no_model)  # type: ignore[arg-type]
     )

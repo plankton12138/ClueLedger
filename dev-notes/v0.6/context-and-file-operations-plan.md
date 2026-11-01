@@ -113,10 +113,12 @@
 ```python
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class SourceRef:
     path: str
     digest: str  # 磁盘字节指纹，不对规范化文本重新散列
+
 
 def merge_spans(spans: list[tuple[int, int]]) -> tuple[tuple[int, int], ...]:
     merged: list[tuple[int, int]] = []
@@ -224,11 +226,13 @@ def publish_index(draft, *, workspace, ledger, store, allowed_paths):
 from dataclasses import dataclass
 from typing import Literal
 
+
 @dataclass(frozen=True)
 class Mutation:
     action: Literal["create", "update", "delete", "move"]
     path: str
     target: str | None = None
+
 
 @dataclass(frozen=True)
 class WriteScope:
@@ -318,6 +322,7 @@ class RunContext:
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
+
 class Evidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
     path: str
@@ -325,6 +330,7 @@ class Evidence(BaseModel):
     start_char: int = Field(ge=0)
     end_char: int = Field(ge=0)
     quote: str = Field(min_length=1, max_length=160)
+
 
 class Finding(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -357,11 +363,13 @@ class Finding(BaseModel):
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
+
 class ContextInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     selected_path: str | None = None
     reference_paths: list[str] = Field(default_factory=list, max_length=20)
     observed_digests: dict[str, str] = Field(default_factory=dict)
+
 
 class TurnInput(BaseModel):
     model_config = ConfigDict(extra="forbid")

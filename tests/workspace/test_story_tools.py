@@ -274,10 +274,7 @@ def test_candidate_text_extends_objects_but_not_truth_authority(
                 ]
             },
         )
-    assert (
-        store.require_variant(MAIN_VARIANT_ID).clue_plans["glove"].author_truth
-        == "管家所留"
-    )
+    assert store.require_variant(MAIN_VARIANT_ID).clue_plans["glove"].author_truth == "管家所留"
 
 
 def test_read_only_scope_has_no_update_tool(tmp_path: Path) -> None:
@@ -775,5 +772,3 @@ def test_direct_command_with_quoted_value_still_authorizes_truth(
     )
 
     assert store.require_variant(MAIN_VARIANT_ID).clue_plans["glove"].author_truth == "客人所留"
-
-

@@ -159,9 +159,7 @@ class LoopbackCallbackListener:
             except OSError:
                 continue
             self._server = server
-            self._redirect_uri = (
-                f"http://127.0.0.1:{server.server_address[1]}{self._path}"
-            )
+            self._redirect_uri = f"http://127.0.0.1:{server.server_address[1]}{self._path}"
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             self._thread = thread
@@ -169,7 +167,7 @@ class LoopbackCallbackListener:
         raise ChatGPTAuthError(
             "CHATGPT_AUTH_CALLBACK_UNAVAILABLE",
             "无法在本机启动授权回调监听（127.0.0.1 上没有可用端口）。"
-            "建议：检查是否有别的程序占用了这个端口后重试。"
+            "建议：检查是否有别的程序占用了这个端口后重试。",
         )
 
     def take(self) -> CallbackResult | None:
@@ -528,9 +526,7 @@ class ChatGPTCodexAuthProvider:
                 "CHATGPT_AUTH_INVALID_RESPONSE", f"{action}的响应不是 JSON，登录没有完成。"
             ) from exc
         if not isinstance(payload, dict):
-            raise _error(
-                "CHATGPT_AUTH_INVALID_RESPONSE", f"{action}的响应格式不对，登录没有完成。"
-            )
+            raise _error("CHATGPT_AUTH_INVALID_RESPONSE", f"{action}的响应格式不对，登录没有完成。")
         return payload
 
 
@@ -549,9 +545,7 @@ def _error(code: str, message: str) -> ChatGPTAuthError:
 def _required(payload: Mapping[str, Any], name: str, action: str) -> str:
     value = payload.get(name)
     if not isinstance(value, str) or not value.strip():
-        raise _error(
-            "CHATGPT_AUTH_INVALID_RESPONSE", f"{action}的响应缺少 {name}，登录没有完成。"
-        )
+        raise _error("CHATGPT_AUTH_INVALID_RESPONSE", f"{action}的响应缺少 {name}，登录没有完成。")
     return value.strip()
 
 

@@ -192,9 +192,7 @@ def story_clue_list(
             row.clue_id,
         )
     )
-    view_revision = _view_revision(
-        variant, reader.snapshot.revision, as_of_chapter, node_id, rows
-    )
+    view_revision = _view_revision(variant, reader.snapshot.revision, as_of_chapter, node_id, rows)
     rows = [row.model_copy(update={"view_revision": view_revision}) for row in rows]
     size = min(50, max(1, limit))
     offset = 0
@@ -265,7 +263,5 @@ def story_clue_detail(
     uses = _uses(variant, clue_id, None)
     row = _detail(reader, catalog, variant, clue_id, uses, "")
     assert row is not None
-    revision = _view_revision(
-        variant, reader.snapshot.revision, as_of_chapter, None, [row]
-    )
+    revision = _view_revision(variant, reader.snapshot.revision, as_of_chapter, None, [row])
     return row.model_copy(update={"view_revision": revision})

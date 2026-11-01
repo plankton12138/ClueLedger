@@ -8,8 +8,8 @@ from fastapi import APIRouter, Query
 
 from hastings.library.modules import ModuleLibrary
 from hastings.workspace.clue_api_models import CreateClueRequest
+from hastings.workspace.clue_marks import ClueMarksView, build_clue_marks
 from hastings.workspace.clue_store import ClueLedgerStore
-from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.clue_views import (
     ClueDetail,
     ClueList,
@@ -17,6 +17,7 @@ from hastings.workspace.clue_views import (
     clue_list,
 )
 from hastings.workspace.clues import create_clue_identity
+from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.source_locations import SourceLocation, resolve_source_location
 from hastings.workspace.state import RecentWorkspaces, conversation_root
 from hastings.workspace.story_clue_views import story_clue_detail, story_clue_list
@@ -91,6 +92,20 @@ def create_clue_router(
             query=q,
             limit=limit,
             cursor=cursor,
+        )
+
+    @router.get("/{workspace_id}/clue-marks", response_model=ClueMarksView)
+    def clue_marks(
+        workspace_id: str,
+        chapter_path: str = Query(min_length=1, max_length=512),
+        as_of_chapter: int | None = Query(default=None, ge=0),
+    ) -> ClueMarksView:
+        """本章正文里的线索下划线；只从已提交的账本证据生成。"""
+        return build_clue_marks(
+            workspaces.workspace(workspace_id),
+            conversation_root(workspaces.root, workspace_id),
+            chapter_path=chapter_path,
+            as_of_chapter=as_of_chapter,
         )
 
     @router.get("/{workspace_id}/clues/{clue_id}", response_model=ClueDetail)

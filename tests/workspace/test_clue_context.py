@@ -82,11 +82,15 @@ def book(tmp_path: Path) -> tuple[Workspace, ClueLedgerStore, dict[str, Any]]:
     )
     ledger = store.read().ledger
     assert ledger is not None
-    return workspace, store, {
-        "clue_id": clue_id,
-        "clue_revision": ledger.clues[clue_id].clue_revision,
-        "lineage": ledger.workspace_lineage,
-    }
+    return (
+        workspace,
+        store,
+        {
+            "clue_id": clue_id,
+            "clue_revision": ledger.clues[clue_id].clue_revision,
+            "lineage": ledger.workspace_lineage,
+        },
+    )
 
 
 def _reference(book: tuple[Workspace, ClueLedgerStore, dict[str, Any]], **overrides: Any):
@@ -195,9 +199,7 @@ def test_compaction_record_keeps_reference_identity(book):
         previous_id="",
         summary="讨论照片时间",
         items=(
-            SummaryItem(
-                item_id="i1", kind="goal", text="确认照片时间", source_event_ids=("t1",)
-            ),
+            SummaryItem(item_id="i1", kind="goal", text="确认照片时间", source_event_ids=("t1",)),
         ),
         clue_references=(
             {

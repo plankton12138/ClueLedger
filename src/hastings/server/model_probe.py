@@ -465,9 +465,7 @@ async def probe_response(
     provider = (factory or _build)(profile)
     try:
         text = await asyncio.wait_for(
-            _collect_text(
-                provider, model, PROBE_PROMPT, tools=[], on_text=on_text, limits=limits
-            ),
+            _collect_text(provider, model, PROBE_PROMPT, tools=[], on_text=on_text, limits=limits),
             timeout=timeout,
         )
     except TimeoutError:
@@ -616,14 +614,10 @@ async def _collect_text(
     return _text_of(message)
 
 
-def _probe_limits(
-    profile: ProfileLike, model: str, project_limit: int
-) -> ModelLimits | None:
+def _probe_limits(profile: ProfileLike, model: str, project_limit: int) -> ModelLimits | None:
     """探针的输入预算：与写作轮次同一套解析，不另立一套口径。"""
     try:
-        return resolve_model_limits(
-            cast(LimitProfile, profile), model, project_limit=project_limit
-        )
+        return resolve_model_limits(cast(LimitProfile, profile), model, project_limit=project_limit)
     except ValueError:
         # 容量配置本身矛盾时，由发送路径给出统一报错；探针不抢先解释。
         return None

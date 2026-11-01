@@ -637,6 +637,16 @@ def assemble_story_input(
         for constraint in constraints
     ]
 
+    disclosure_lines: list[str] = []
+    if frozen.purpose in ("write", "revise"):
+        for node in nodes:
+            for use in node.clue_uses:
+                roles = "、".join(use.roles) if use.roles else "呈现"
+                disclosure_lines.append(
+                    f"- 「{catalog.title(use.clue_id)}」（{roles}，{use.mode}）："
+                    f"候选正文必须原样包含：{use.presentation}"
+                )
+
     sections: list[StorySection] = []
     macro = _macro_lines(variant)
     if macro:
@@ -644,6 +654,8 @@ def assemble_story_input(
     if truth_lines:
         sections.append(_section("truth", "\n".join(truth_lines)))
     sections.append(_section("plan", "\n".join(plan_lines) or EMPTY_PLAN_TEXT))
+    if disclosure_lines:
+        sections.append(_section("disclosure", "\n".join(disclosure_lines), required=False))
     if prerequisite_lines:
         sections.append(_section("prerequisites", "\n".join(prerequisite_lines)))
     if constraint_lines:

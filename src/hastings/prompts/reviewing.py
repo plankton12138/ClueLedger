@@ -32,7 +32,4 @@ REVIEW_INSTRUCTIONS = """\
 
 def review_task_prompt(requirement: str, targets: str) -> str:
     """检查这一轮改动时发给模型的任务提示；目标是本轮允许检查的文件。"""
-    return (
-        f"请按作者要求检查这一轮的改动：{requirement}\n"
-        f"检查目标：{targets}"
-    )
+    return f"请按作者要求检查这一轮的改动：{requirement}\n检查目标：{targets}"

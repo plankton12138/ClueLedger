@@ -99,12 +99,7 @@ class ContextEstimate:
 
     @property
     def total(self) -> int:
-        return (
-            self.system_tokens
-            + self.tool_tokens
-            + self.message_tokens
-            + self.protocol_tokens
-        )
+        return self.system_tokens + self.tool_tokens + self.message_tokens + self.protocol_tokens
 
 
 def estimate_request(

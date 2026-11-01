@@ -48,6 +48,7 @@ flowchart TD
 from dataclasses import dataclass
 from typing import Literal
 
+
 @dataclass(frozen=True)
 class MaterialQuery:
     kinds: tuple[str, ...] = ()
@@ -59,6 +60,7 @@ class MaterialQuery:
     include_plans: bool = True
     cursor: str | None = None
     limit: int = 20
+
 
 @dataclass(frozen=True)
 class MaterialHit:

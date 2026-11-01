@@ -96,9 +96,14 @@ src/hastings/workspace/
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
-SETTING_PATHS = frozenset({
-    "设定集/角色小传.md", "设定集/线索.md", "设定集/真相.md",
-})
+SETTING_PATHS = frozenset(
+    {
+        "设定集/角色小传.md",
+        "设定集/线索.md",
+        "设定集/真相.md",
+    }
+)
+
 
 def is_managed_path(path: str) -> bool:
     p = PurePosixPath(path)
@@ -107,6 +112,7 @@ def is_managed_path(path: str) -> bool:
     return path in SETTING_PATHS or (
         len(p.parts) == 2 and p.parts[0] == "正文" and p.suffix == ".md"
     )
+
 
 @dataclass(frozen=True)
 class FileView:
@@ -129,14 +135,19 @@ class FileView:
 import subprocess
 from pathlib import Path
 
+
 def run_git(root: Path, *args: str) -> bytes:
     result = subprocess.run(
         ["git", "--literal-pathspecs", "-C", str(root), *args],
-        shell=False, capture_output=True, timeout=30, check=False,
+        shell=False,
+        capture_output=True,
+        timeout=30,
+        check=False,
     )
     if result.returncode:
         raise GitFailure(result.stderr.decode("utf-8", errors="replace"))
     return result.stdout
+
 
 def stage_changed_files(root: Path, paths: list[str]) -> None:
     # paths 已经逐个通过受管路径校验，包括被删除文件的旧路径。
@@ -162,13 +173,15 @@ def stage_changed_files(root: Path, paths: list[str]) -> None:
 用途：让模型围绕文章完成任务，首版使用一个 Agent 和一组通用文件工具，不设规划者、写作者、审阅者的固定多角色流程。
 
 ```python
-harness = AgentHarness(AgentHarnessConfig(
-    provider=provider,
-    model=selection.model,
-    system=build_writing_instructions(context),
-    tools=make_file_tools(workspace, run),
-    max_turns=24,
-))
+harness = AgentHarness(
+    AgentHarnessConfig(
+        provider=provider,
+        model=selection.model,
+        system=build_writing_instructions(context),
+        tools=make_file_tools(workspace, run),
+        max_turns=24,
+    )
+)
 async for event in harness.prompt(instruction):
     await session.append_event(event)
 ```

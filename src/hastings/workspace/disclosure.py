@@ -508,9 +508,7 @@ def state_section(state: DisclosureState) -> str:
             parts.append(f"（{'、'.join(entity.aliases)}）")
         if entity.surface:
             parts.append(f"{STATE_SURFACE_PREFIX}{entity.surface}")
-        facts = "、".join(
-            state_revealed_note(item.fact, item.chapter) for item in entity.revealed
-        )
+        facts = "、".join(state_revealed_note(item.fact, item.chapter) for item in entity.revealed)
         parts.append(f"{STATE_KNOWN_PREFIX}{facts}")
         lines.append("".join(parts))
     lines.append(STATE_TAIL)

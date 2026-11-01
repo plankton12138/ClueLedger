@@ -237,4 +237,3 @@ class ClueLedger(StrictRecord):
         if any(key != value.path for key, value in self.coverage.items()):
             raise ValueError("覆盖目标与索引不一致")
         return self
-

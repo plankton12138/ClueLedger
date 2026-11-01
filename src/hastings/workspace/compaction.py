@@ -242,9 +242,7 @@ def active_compaction(
 
 def summary_message(record: CompactionRecord) -> UserMessage:
     """摘要作为一条带明确标识的应用历史消息，不提升为系统指令。"""
-    return UserMessage(
-        content=summary_text(record.summary, record.items, record.clue_references)
-    )
+    return UserMessage(content=summary_text(record.summary, record.items, record.clue_references))
 
 
 def summary_text(
@@ -510,7 +508,6 @@ def _invalid(code: str, why: str, fix: str) -> WorkspaceError:
 
 #: 摘要提示词版本；改提示词要加一，旧记录的摘要不能当成同一种东西比较。
 PROMPT_VERSION = 1
-
 
 
 def build_summary_prompt(

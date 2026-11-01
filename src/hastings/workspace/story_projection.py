@@ -73,9 +73,7 @@ def assessment_state(
     read: Callable[[str], bytes | None],
 ) -> AssessmentState:
     if assessment.structure_revision != variant.revision:
-        return AssessmentState(
-            assessment.id, "stale", "结构在这次核对之后有变化，需要重新核对"
-        )
+        return AssessmentState(assessment.id, "stale", "结构在这次核对之后有变化，需要重新核对")
     for path, digest in assessment.prose_digests.items():
         raw = read(path)
         if raw is None:
@@ -92,9 +90,7 @@ def variant_summary(
     bindings = [binding_state(item, read(item.path)) for item in variant.bindings.values()]
     checks = [assessment_state(item, variant, read) for item in variant.assessments.values()]
     unresolved = [
-        plan.clue_id
-        for plan in variant.clue_plans.values()
-        if plan.resolution_intent != "explain"
+        plan.clue_id for plan in variant.clue_plans.values() if plan.resolution_intent != "explain"
     ]
     return {
         "revision": variant.revision,

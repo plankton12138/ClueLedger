@@ -6,14 +6,19 @@ import { join, resolve } from "node:path";
 test.beforeEach(async ({ book }) => {
   const root = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e");
   execFileSync("uv", ["run", "--directory", "..", "python", resolve("e2e/fixtures/clue_seed.py"), book.path, resolve(root, "state", "workspaces", book.id)], { windowsHide: true, stdio: "pipe" });
+  execFileSync("uv", ["run", "--directory", "..", "python", resolve("e2e/fixtures/story_variant_seed.py"), resolve(root, "state"), book.id], { windowsHide: true, stdio: "pipe" });
 });
+
+async function openClueDetail(page: import("@playwright/test").Page) {
+  await page.getByRole("tab", { name: "全书线索", exact: true }).click();
+  const pane = page.getByRole("region", { name: "全书线索", exact: true });
+  await pane.getByRole("button", { name: /公开的照片/ }).click();
+  return pane;
+}
 
 test("把线索带进对话只写草稿，刷新后仍在，可移除", async ({ page, book }) => {
   await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: "第二章 照片", exact: true, includeHidden: true }).click();
-  await page.getByRole("button", { name: "本章线索", exact: true }).click();
-  const pane = page.getByRole("tabpanel", { name: "本章线索" });
-  await pane.getByRole("button", { name: /公开的照片/ }).click();
+  const pane = await openClueDetail(page);
   await pane.getByRole("button", { name: "带入对话", exact: true }).click();
 
   const clues = page.locator('[aria-label="引用线索"]');
@@ -32,10 +37,7 @@ test("把线索带进对话只写草稿，刷新后仍在，可移除", async ({
 
 test("草稿里的线索引用只保存标识与阅读版本", async ({ page, book, request }) => {
   await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: "第二章 照片", exact: true, includeHidden: true }).click();
-  await page.getByRole("button", { name: "本章线索", exact: true }).click();
-  const pane = page.getByRole("tabpanel", { name: "本章线索" });
-  await pane.getByRole("button", { name: /公开的照片/ }).click();
+  const pane = await openClueDetail(page);
   await pane.getByRole("button", { name: "带入对话", exact: true }).click();
   await expect(page.locator('[aria-label="引用线索"]')).toContainText("公开的照片");
   await expect

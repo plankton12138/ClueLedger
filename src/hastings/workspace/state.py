@@ -130,7 +130,6 @@ class RecentWorkspaces:
         StoryStore(conversation_root(self.root, workspace_id), workspace).read()
         return workspace
 
-
     # -- 登记 ---------------------------------------------------------------
 
     def bind(self, root: Path) -> WorkspaceBinding:

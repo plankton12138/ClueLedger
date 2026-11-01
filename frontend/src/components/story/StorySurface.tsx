@@ -75,6 +75,10 @@ export default function StorySurface({
   return (
     <div className="story-surface">
       <header className="story-toolbar">
+        <div className="story-overview-title">
+          <h1>构思总览</h1>
+          <p>全书大纲、实际时间与正文覆盖；节点状态来自已经提交的正文。</p>
+        </div>
         <div className="story-actions">
           {state.lastChange && (
             <Button size="compact" disabled={state.busy} onClick={() => void undo()}>
@@ -105,6 +109,7 @@ export default function StorySurface({
           variantId={graph.variant_id}
           revision={graph.revision}
           graph={graph}
+          sync={state.sync}
           selectedClueId={state.clueId}
           onSelectClue={selectClue}
           onSelectNode={selectNode}

@@ -116,9 +116,7 @@ def seed(store: StoryStore) -> None:
 
 
 def review(store: StoryStore, *, documents: dict[str, str]) -> object:
-    frozen = freeze_story_context(
-        store, StoryRequest(variant_id=MAIN_VARIANT_ID, node_ids=("n1",))
-    )
+    frozen = freeze_story_context(store, StoryRequest(variant_id=MAIN_VARIANT_ID, node_ids=("n1",)))
     variant = verify_story_context(store, frozen)
     return build_story_review(variant, frozen, documents=documents)
 
@@ -135,8 +133,8 @@ def test_requirements_are_generated_from_structure(store: StoryStore) -> None:
     # 要求写进了核对提示，并声明不能改。
     assert "不能改写或跳过" in result.text
     assert "present:n1:wet-gloves" in result.text
-    # 呈现没有原样出现：给一条可说明的提示，而不是直接判失败。
-    assert any(item["severity"] == "advisory" for item in result.findings)
+    # 呈现没有原样出现：阻断候选提交，模型必须补齐或先改构思。
+    assert any(item["severity"] == "blocking" for item in result.findings)
 
 
 def test_written_truth_is_a_blocking_finding_with_position(store: StoryStore) -> None:
@@ -147,7 +145,11 @@ def test_written_truth_is_a_blocking_finding_with_position(store: StoryStore) ->
     result = review(store, documents={path: text})
 
     assert any(item["severity"] == "blocking" for item in result.findings)
-    finding = next(item for item in result.findings if item["severity"] == "blocking")
+    finding = next(
+        item
+        for item in result.findings
+        if item["severity"] == "blocking" and item.get("path") == path
+    )
     assert finding["path"] == path
     assert text[finding["start"] : finding["end"]] == TRUTH
     assert finding["quote"] == TRUTH
@@ -200,9 +202,7 @@ def test_service_review_block_is_built_from_the_frozen_structure(tmp_path: Path)
     (workspace.root / "正文").mkdir(parents=True, exist_ok=True)
     (workspace.root / chapter).write_text(f"雪停了。\n{TRUTH}。\n", encoding="utf-8")
 
-    frozen = freeze_story_context(
-        store, StoryRequest(variant_id=MAIN_VARIANT_ID, node_ids=("n1",))
-    )
+    frozen = freeze_story_context(store, StoryRequest(variant_id=MAIN_VARIANT_ID, node_ids=("n1",)))
     info = TurnInfo(
         turn_id="t1",
         conversation_id="c1",

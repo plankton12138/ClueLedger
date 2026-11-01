@@ -173,9 +173,7 @@ def test_alternative_keeps_primary_structure_untouched(store: StoryStore) -> Non
 
     store.commit_change(
         variant_id=alternative_id,
-        change=change(
-            [AddNode(node=node("n2", title="只出现在备选"))], alternative.revision
-        ),
+        change=change([AddNode(node=node("n2", title="只出现在备选"))], alternative.revision),
         request_key="alt-node",
     )
     main_after = store.require_variant(MAIN_VARIANT_ID)
@@ -285,13 +283,17 @@ def test_decided_variant_creation_recovers_after_head_write_failure(
     monkeypatch.setattr("hastings.workspace.story_store.atomic_write_json", fail_head)
     with pytest.raises(WorkspaceError):
         store.create_variant(
-            name="备选", source_variant_id=MAIN_VARIANT_ID,
-            source_revision=base, request_key="create-after-crash",
+            name="备选",
+            source_variant_id=MAIN_VARIANT_ID,
+            source_revision=base,
+            request_key="create-after-crash",
         )
     monkeypatch.undo()
     receipt = store.create_variant(
-        name="备选", source_variant_id=MAIN_VARIANT_ID,
-        source_revision=base, request_key="create-after-crash",
+        name="备选",
+        source_variant_id=MAIN_VARIANT_ID,
+        source_revision=base,
+        request_key="create-after-crash",
     )
     assert store.require_variant(str(receipt.result["variant_id"])).name == "备选"
     assert not store.decision.exists()
@@ -356,8 +358,18 @@ def test_unimplemented_joint_change_does_not_report_success(store: StoryStore) -
     before = store.file.read_bytes()
     revision = store.require_variant(MAIN_VARIANT_ID).revision
     for extra in (
-        {"prose_patches": [ProsePatch(path="正文/a.md", base_digest="abc", start=0, end=1,
-                                      expected="甲", replacement="乙")]},
+        {
+            "prose_patches": [
+                ProsePatch(
+                    path="正文/a.md",
+                    base_digest="abc",
+                    start=0,
+                    end=1,
+                    expected="甲",
+                    replacement="乙",
+                )
+            ]
+        },
         {"read_dependencies": [ReadDependency(kind="prose", id="正文/a.md", revision="abc")]},
     ):
         with pytest.raises(WorkspaceError) as caught:
@@ -376,10 +388,17 @@ def test_pause_and_structure_decision_share_a_lock(
     commit(store, [AddNode(node=node("n1"))], key="one")
     revision = store.require_variant(MAIN_VARIANT_ID).revision
     operations = OperationStore(tmp_path / "operation-state")
-    operations.create(Operation(
-        id="op_test", owner="workspace:one", workspace_id="one", conversation_id="c",
-        turn_id="t", purpose="chat", status="running",
-    ))
+    operations.create(
+        Operation(
+            id="op_test",
+            owner="workspace:one",
+            workspace_id="one",
+            conversation_id="c",
+            turn_id="t",
+            purpose="chat",
+            status="running",
+        )
+    )
     real_write = __import__("hastings.workspace.story_store", fromlist=["x"]).atomic_write_bytes
     at_decision = threading.Event()
     allow_decision = threading.Event()
@@ -397,8 +416,9 @@ def test_pause_and_structure_decision_share_a_lock(
         try:
             store.commit_change(
                 variant_id=MAIN_VARIANT_ID,
-                change=change([AddNode(node=node("n2"))], revision,
-                              operation_id="op_test", generation=1),
+                change=change(
+                    [AddNode(node=node("n2"))], revision, operation_id="op_test", generation=1
+                ),
                 request_key="protected-commit",
                 decision_guard=lambda: operations.eligible_generation("op_test", 1),
             )
@@ -435,15 +455,23 @@ def test_pause_before_structure_decision_prevents_commit(store: StoryStore, tmp_
     commit(store, [AddNode(node=node("n1"))], key="one")
     revision = store.require_variant(MAIN_VARIANT_ID).revision
     operations = OperationStore(tmp_path / "operation-state")
-    operations.create(Operation(
-        id="op_test", owner="workspace:one", workspace_id="one", conversation_id="c",
-        turn_id="t", purpose="chat", status="paused",
-    ))
+    operations.create(
+        Operation(
+            id="op_test",
+            owner="workspace:one",
+            workspace_id="one",
+            conversation_id="c",
+            turn_id="t",
+            purpose="chat",
+            status="paused",
+        )
+    )
     with pytest.raises(WorkspaceError) as caught:
         store.commit_change(
             variant_id=MAIN_VARIANT_ID,
-            change=change([AddNode(node=node("n2"))], revision,
-                          operation_id="op_test", generation=1),
+            change=change(
+                [AddNode(node=node("n2"))], revision, operation_id="op_test", generation=1
+            ),
             request_key="revoked-commit",
             decision_guard=lambda: operations.eligible_generation("op_test", 1),
         )

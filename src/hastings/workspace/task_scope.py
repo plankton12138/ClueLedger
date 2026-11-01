@@ -579,9 +579,7 @@ def _validate_draft(draft: ScopeDraft, author_texts: Sequence[tuple[int, str]]) 
         and not draft.module_content_grants
         and not draft.library_publish
     ):
-        raise _evidence_error(
-            "修改任务至少要登记一个确切的路径、装配操作、内容保存或库发布"
-        )
+        raise _evidence_error("修改任务至少要登记一个确切的路径、装配操作、内容保存或库发布")
     for grant in draft.grants:
         _validate_mutation(grant, where="task_scope.set")
     for module_grant in draft.module_grants:

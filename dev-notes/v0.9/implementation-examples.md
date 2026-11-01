@@ -31,16 +31,16 @@ class ModelLimits:
             ceilings.append(self.max_input_tokens)
         if self.context_window_tokens is not None:
             ceilings.append(
-                self.context_window_tokens
-                - self.output_reserve_tokens
-                - self.safety_tokens
+                self.context_window_tokens - self.output_reserve_tokens - self.safety_tokens
             )
         return min(ceilings) if ceilings else None
 
     def validate(self) -> None:
         configured = (
-            self.context_window_tokens, self.max_input_tokens,
-            self.max_output_tokens, self.output_reserve_tokens,
+            self.context_window_tokens,
+            self.max_input_tokens,
+            self.max_output_tokens,
+            self.output_reserve_tokens,
         )
         if any(value is not None and value <= 0 for value in configured):
             raise ValueError(
@@ -86,10 +86,7 @@ class ContextEstimate:
 
     @property
     def total(self) -> int:
-        return (
-            self.system_tokens + self.tool_tokens
-            + self.message_tokens + self.protocol_tokens
-        )
+        return self.system_tokens + self.tool_tokens + self.message_tokens + self.protocol_tokens
 
 
 def estimate_request(
@@ -106,7 +103,9 @@ def estimate_request(
     # 输入来自同一份实际装配结果；不含 key、认证头或与上下文无关的 Usage。
     identity = json.dumps(
         [model_identity, system, tool_wire, message_wire, source_revisions, method],
-        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
     return ContextEstimate(
         system_tokens=count(system),
@@ -134,8 +133,8 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class ReportedUsage:
     total_tokens: int | None
-    input_tokens: int | None       # 已含缓存读写
-    output_tokens: int | None      # 已含协议归入输出的推理
+    input_tokens: int | None  # 已含缓存读写
+    output_tokens: int | None  # 已含协议归入输出的推理
     cache_read_tokens: int | None  # input 的子项
 
 
@@ -167,8 +166,7 @@ def aggregate_request_ends(rows: list[RequestEnd]) -> dict[str, int | None]:
         "finished_requests": len(unique),
         "requests_without_usage": sum(row.usage is None for row in unique.values()),
         "requests_without_total": sum(
-            row.usage is None or row.usage.total_tokens is None
-            for row in unique.values()
+            row.usage is None or row.usage.total_tokens is None for row in unique.values()
         ),
         "total_tokens": sum_known("total_tokens"),
         "input_tokens": sum_known("input_tokens"),
@@ -215,8 +213,11 @@ class ContextManagedProvider:
         session_id: str | None = None,
     ) -> AsyncIterator[AssistantMessageEvent]:
         prepared = await self.coordinator.prepare_next_request(
-            model=model, system=system, messages=tuple(messages),
-            tools=tuple(tools), signal=signal,
+            model=model,
+            system=system,
+            messages=tuple(messages),
+            tools=tuple(tools),
+            signal=signal,
         )
         # prepared 已完成必要整理的持久发布；原 messages 没有被原地改写。
         async for event in self.recorded.stream_response(
@@ -253,7 +254,9 @@ class ContextUnit:
 
 
 def first_kept_unit(
-    units: tuple[ContextUnit, ...], *, keep_recent_tokens: int,
+    units: tuple[ContextUnit, ...],
+    *,
+    keep_recent_tokens: int,
 ) -> int | None:
     if len(units) < 2 or keep_recent_tokens <= 0:
         return None
@@ -312,8 +315,10 @@ class SummaryCandidate:
 
 
 def validate_candidate(
-    candidate: SummaryCandidate, *,
-    allowed_sources: frozenset[str], input_limit: int | None,
+    candidate: SummaryCandidate,
+    *,
+    allowed_sources: frozenset[str],
+    input_limit: int | None,
 ) -> None:
     if not candidate.items or candidate.tokens_after >= candidate.tokens_before:
         raise ValueError(
@@ -373,15 +378,19 @@ def compaction_router(service_for) -> APIRouter:
 
     @router.post(
         "/{workspace_id}/conversations/{conversation_id}/compact",
-        status_code=202, response_model=CompactAccepted,
+        status_code=202,
+        response_model=CompactAccepted,
     )
     async def compact(
-        workspace_id: str, conversation_id: str, body: CompactRequest,
+        workspace_id: str,
+        conversation_id: str,
+        body: CompactRequest,
     ) -> CompactAccepted:
         service = service_for(workspace_id)
         service.store.get(conversation_id)
         operation = await service.accept_compaction(
-            conversation_id=conversation_id, request_key=body.request_key,
+            conversation_id=conversation_id,
+            request_key=body.request_key,
         )
         return CompactAccepted(**operation.view())
 

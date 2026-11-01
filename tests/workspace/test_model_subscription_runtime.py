@@ -157,9 +157,7 @@ def _completed(text: str = "写完了。") -> tuple[dict[str, Any], ...]:
 def _drain(provider: Any, model: str = "gpt-5-codex") -> list[Any]:
     async def run() -> list[Any]:
         events = []
-        async for event in provider.stream_response(
-            model=model, system="", messages=[], tools=[]
-        ):
+        async for event in provider.stream_response(model=model, system="", messages=[], tools=[]):
             events.append(event)
         return events
 
@@ -242,9 +240,7 @@ def test_valid_credential_is_used_without_refreshing(tmp_path: Path) -> None:
 
 
 def test_expired_credential_is_refreshed_and_persisted(tmp_path: Path) -> None:
-    book, store, provider, ref = _book(
-        tmp_path, credential=_credential(expires_at=1_600_000_000.0)
-    )
+    book, store, provider, ref = _book(tmp_path, credential=_credential(expires_at=1_600_000_000.0))
     resolver = book.subscription_resolver(_profile(book))
     assert resolver is not None
 
@@ -341,9 +337,7 @@ def test_discovery_reads_models_array_with_subscription_token(tmp_path: Path) ->
 
 
 def test_discovery_refreshes_before_listing(tmp_path: Path) -> None:
-    book, store, provider, ref = _book(
-        tmp_path, credential=_credential(expires_at=1_600_000_000.0)
-    )
+    book, store, provider, ref = _book(tmp_path, credential=_credential(expires_at=1_600_000_000.0))
     auth = ModelAuthService(providers={provider.id: provider})
     seen: dict[str, str] = {}
 

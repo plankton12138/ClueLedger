@@ -3173,6 +3173,14 @@ def prepare_request_inputs(
             path = _text_argument(arguments, "path")
             digest = _text_argument(arguments, "base_digest")
             text = _text_argument(arguments, "text", allow_empty=True)
+            sync = arguments.get("sync")
+            if sync is not None and not isinstance(sync, Mapping):
+                raise WorkspaceError(
+                    code="STORY_CHANGE_INVALID",
+                    where="story.candidate.sync",
+                    why="同步决定不是对象",
+                    fix="提供 conflict_digest、choice 与作者确认依据",
+                )
             run.before_mutation(
                 Mutation(action="create" if digest == "absent" else "update", path=path),
                 required_read=None if digest == "absent" else ReadRequirement.full(path),
@@ -3181,7 +3189,7 @@ def prepare_request_inputs(
                     path, expected_digest=None if digest == "absent" else digest
                 ),
             )
-            candidate.propose(path, digest, text)
+            candidate.propose(path, digest, text, sync)
             return _json(
                 {
                     "candidate_id": candidate.id,
@@ -3243,7 +3251,15 @@ def prepare_request_inputs(
                     why="结构变更需要非空的 operations 列表",
                     fix="按 update_story 的操作格式提交；只改作者本轮点到的对象",
                 )
-            return _json(candidate.propose_structure(rows))
+            sync = arguments.get("sync")
+            if sync is not None and not isinstance(sync, Mapping):
+                raise WorkspaceError(
+                    code="STORY_CHANGE_INVALID",
+                    where="story.candidate.sync",
+                    why="同步决定不是对象",
+                    fix="提供 conflict_digest、choice 与作者确认依据",
+                )
+            return _json(candidate.propose_structure(rows, sync))
 
         tools.append(
             AgentTool(
@@ -3259,7 +3275,25 @@ def prepare_request_inputs(
                             "description": (
                                 prompt_tools.PROPOSE_STORY_STRUCTURE_OPERATIONS_PARAM_DESCRIPTION
                             ),
-                        }
+                        },
+                        "sync": {
+                            "type": "object",
+                            "description": (
+                                "结构变更影响已有正文时，作者确认后的同步选择；"
+                                "先按 STORY_SYNC_CONFIRM_REQUIRED 的冲突摘要询问作者。"
+                            ),
+                            "properties": {
+                                "conflict_digest": {"type": "string"},
+                                "choice": {
+                                    "type": "string",
+                                    "enum": ["follow_outline", "follow_prose", "defer"],
+                                },
+                                "question_id": {"type": "string"},
+                                "note": {"type": "string"},
+                            },
+                            "required": ["conflict_digest", "choice"],
+                            "additionalProperties": False,
+                        },
                     },
                     "required": ["operations"],
                     "additionalProperties": False,
@@ -3276,7 +3310,24 @@ def prepare_request_inputs(
                 parameters={
                     "type": "object",
                     "properties": {
-                        name: {"type": "string"} for name in ("path", "base_digest", "text")
+                        **{name: {"type": "string"} for name in ("path", "base_digest", "text")},
+                        "sync": {
+                            "type": "object",
+                            "description": (
+                                "正文冲突需要作者确认时，随候选提交的同步选择；没有冲突时不要填写。"
+                            ),
+                            "properties": {
+                                "conflict_digest": {"type": "string"},
+                                "choice": {
+                                    "type": "string",
+                                    "enum": ["follow_outline", "follow_prose", "defer"],
+                                },
+                                "question_id": {"type": "string"},
+                                "note": {"type": "string"},
+                            },
+                            "required": ["conflict_digest", "choice"],
+                            "additionalProperties": False,
+                        },
                     },
                     "required": ["path", "base_digest", "text"],
                     "additionalProperties": False,
@@ -3428,8 +3479,10 @@ def build_harness(
                 payload = json.loads(result.text)
                 payload["next_step"] = "草稿已保留，继续同一任务补齐安排并提交"
                 result.content = [TextContent(text=json.dumps(payload, ensure_ascii=False))]
-            if is_error and isinstance(result.details, dict) and (
-                result.details.get("code") == "STORY_AUTHORIZATION_CONFLICT"
+            if (
+                is_error
+                and isinstance(result.details, dict)
+                and (result.details.get("code") == "STORY_AUTHORIZATION_CONFLICT")
             ):
                 paused[0] = "STORY_APPROVAL_PENDING"
             return result, is_error

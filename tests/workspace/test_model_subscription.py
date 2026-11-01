@@ -74,9 +74,7 @@ class _FakeAuthProvider:
 
     def begin(self) -> AuthStart:
         self.started += 1
-        return AuthStart(
-            url="https://auth.example.com/authorize?state=abc", flow=_Flow()
-        )
+        return AuthStart(url="https://auth.example.com/authorize?state=abc", flow=_Flow())
 
     async def poll(self, flow: Any) -> AuthOutcome:
         return self._outcome
@@ -120,9 +118,7 @@ def _service(
     book = ProviderBook(
         load_server_config(path), boot_name="", boot_model="", config_path=path, credentials=store
     )
-    service = ModelConnectionService(
-        book=book, config_path=path, credentials=store, auth=auth
-    )
+    service = ModelConnectionService(book=book, config_path=path, credentials=store, auth=auth)
     return service, book, store, path
 
 
@@ -509,7 +505,6 @@ def test_provider_failure_to_start_is_reported() -> None:
 
     assert caught.value.code == "MODEL_AUTH_UNAVAILABLE"
     assert "端口" in caught.value.why
-
 
 
 # -- 接口 -------------------------------------------------------------------

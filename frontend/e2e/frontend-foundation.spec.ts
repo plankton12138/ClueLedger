@@ -38,7 +38,7 @@ async function shot(page: Page, name: string) {
   mkdirSync(path, { recursive: true }); await page.screenshot({ path: `${path}/H2-${name}.png` });
 }
 async function chooseChapter(page: Page) {
-  const directory = page.getByRole("button", { name: "目录", exact: true });
+  const directory = page.getByRole("button", { name: "侧栏", exact: true });
   if (await directory.getAttribute("aria-pressed") === "false") await directory.click();
   await page.getByRole("button", { name: "第一章 雨夜", exact: true }).click();
   await expect(page.getByRole("region", { name: "正文阅读", exact: true })).toContainText("侦探抵达港口");
@@ -68,12 +68,12 @@ test("窗口与字体矩阵：正文、目录、聊天与草稿都可到达，�
     if (width === 1024 && scale === 100) expect(layout).toBe("two");
     if (width === 640 || width === 760) expect(layout).toBe("single");
     if (layout !== "three" && layout !== "reading") {
-      await expect(page.getByRole("separator", { name: "目录栏宽度", exact: true })).toHaveCount(0);
-      const trigger = page.getByRole("button", { name: "目录", exact: true });
+      await expect(page.getByRole("separator", { name: "侧栏宽度", exact: true })).toHaveCount(0);
+      const trigger = page.getByRole("button", { name: "侧栏", exact: true });
       await trigger.click();
       const directory = page.getByRole("region", { name: "目录", exact: true });
-      await expect(directory.getByRole("navigation", { name: "作品目录", exact: true })).toBeVisible();
-      await page.keyboard.press("Escape"); await expect(directory).toBeHidden(); await expect(trigger).toBeFocused();
+      await page.getByRole("navigation", { name: "作品目录", exact: true }).getByLabel("搜索正文与设定").focus();
+      await page.keyboard.press("Escape"); await expect(directory).toBeHidden();
     }
     if (layout === "single") {
       await page.getByRole("button", { name: "对话", exact: true }).click();
@@ -89,7 +89,7 @@ test("窗口与字体矩阵：正文、目录、聊天与草稿都可到达，�
       await page.getByRole("button", { name: "对话", exact: true }).click();
     }
     const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem("hastings.workspace.layout")!));
-    expect(prefs).toMatchObject({ sidebarWidth: 240, chatWidth: 420, chatVisible: true, sidebarVisible: true });
+    expect(prefs).toMatchObject({ sidebarWidth: 260, chatWidth: 420, chatVisible: true, sidebarVisible: true });
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await shot(page, "writing-390-150-observation");
@@ -97,7 +97,7 @@ test("窗口与字体矩阵：正文、目录、聊天与草稿都可到达，�
 
 test("目录和对话是固定位置的独立开关，关闭对话不展开目录", async ({ page, book }) => {
   await page.goto(`/#/workspaces/${book.id}/writing`);
-  const directory = page.getByRole("button", { name: "目录", exact: true });
+  const directory = page.getByRole("button", { name: "侧栏", exact: true });
   const chat = page.getByRole("button", { name: "对话", exact: true });
   const pane = page.getByRole("region", { name: "目录", exact: true });
   for (const width of [1440, 1024, 640]) for (const scale of [100, 150]) {
@@ -148,7 +148,7 @@ test("模块库精确链接、前进后退、作品内同一入口与未登记�
   await expect(page).toHaveURL(/\/revisions\//);
   await library.getByRole("button", { name: "编辑", exact: true }).click();
   await library.getByLabel("模块正文").last().fill("前进后退保留的模块草稿");
-  await page.getByRole("link", { name: "写作", exact: true }).click();
+  await page.getByRole("link", { name: "正文", exact: true }).click();
   await expect(page.locator(".paper-sheet")).toContainText("侦探抵达港口");
   expect(await page.locator(".paper-sheet").evaluate(el => el.scrollTop)).toBe(scroll);
   await page.goBack();

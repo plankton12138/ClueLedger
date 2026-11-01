@@ -109,6 +109,7 @@ class JointTarget:
     after: str
     payload: dict[str, Any]
 
+
 class StoryStore:
     def __init__(
         self,
@@ -369,9 +370,7 @@ class StoryStore:
                 raise _variant_missing(record.variant_id)
             current = variant_digests(variant)
             stale = [
-                key
-                for key, digest in record.touched.items()
-                if current.get(key, "") != digest
+                key for key, digest in record.touched.items() if current.get(key, "") != digest
             ]
             if stale:
                 raise WorkspaceError(
@@ -432,7 +431,7 @@ class StoryStore:
         fingerprint: str,
         expected_head_digest: str | None,
         undone_by: str | None = None,
-        result_extra: dict[str, JsonValue] | None = None,
+        result_extra: dict[str, Any] | None = None,
         require_eligible: Callable[[str, int], None] | None = None,
         decision_guard: Callable[[], AbstractContextManager[None]] | None = None,
         prose_shift: bool = False,
@@ -463,10 +462,9 @@ class StoryStore:
             created_at=_now(),
             operations=change.operations,
             inverse_operations=diff_variant(updated, variant),
-            inverse_ledger=[
-                dict(row) for row in (result_extra or {}).get("inverse_ledger", [])
-            ],
+            inverse_ledger=[dict(row) for row in (result_extra or {}).get("inverse_ledger", [])],
             inverse_prose_patches=inverse,
+            sync=change.sync,
             touched=touched_objects(variant, updated),
         )
         document.variants[variant_id] = updated
@@ -508,8 +506,11 @@ class StoryStore:
         return receipt
 
     def _persist_locked(
-        self, document: StoryDocument, record: StoryChangeRecord | None,
-        *, expected_head_digest: str | None,
+        self,
+        document: StoryDocument,
+        record: StoryChangeRecord | None,
+        *,
+        expected_head_digest: str | None,
         prose: list[dict[str, str]] | None = None,
         joint_target: JointTarget | None = None,
         pre_decision: Callable[[], None] | None = None,
@@ -537,10 +538,14 @@ class StoryStore:
             ).encode()
             atomic_write_json(
                 self.pending,
-                {"change_id": decision_id, "document": payload,
-                 "previous_digest": expected_head_digest,
-                 "target_digest": hashlib.sha256(encoded).hexdigest(), "prose": prose,
-                 "joint": joint},
+                {
+                    "change_id": decision_id,
+                    "document": payload,
+                    "previous_digest": expected_head_digest,
+                    "target_digest": hashlib.sha256(encoded).hexdigest(),
+                    "prose": prose,
+                    "joint": joint,
+                },
                 prefix=".story-pending-",
             )
             with decision_guard() if decision_guard else nullcontext():
@@ -552,10 +557,14 @@ class StoryStore:
                     pre_decision()
                 atomic_write_bytes(
                     self.decision,
-                    json.dumps({"change_id": decision_id,
-                                "target_digest": hashlib.sha256(encoded).hexdigest(),
-                                "prose_digest": _fingerprint(prose),
-                                "joint_digest": _fingerprint(joint)}).encode(),
+                    json.dumps(
+                        {
+                            "change_id": decision_id,
+                            "target_digest": hashlib.sha256(encoded).hexdigest(),
+                            "prose_digest": _fingerprint(prose),
+                            "joint_digest": _fingerprint(joint),
+                        }
+                    ).encode(),
                     prefix=".story-decision-",
                 )
             if self._head_digest() != expected_head_digest:
@@ -621,8 +630,10 @@ class StoryStore:
                 )
             document = StoryDocument.model_validate(raw["document"])
             encoded = (
-                json.dumps(document.model_dump(mode="json"), ensure_ascii=False,
-                           indent=2, allow_nan=False) + "\n"
+                json.dumps(
+                    document.model_dump(mode="json"), ensure_ascii=False, indent=2, allow_nan=False
+                )
+                + "\n"
             ).encode()
             digest = hashlib.sha256(encoded).hexdigest()
             if raw["target_digest"] != digest or decision.get("target_digest") != digest:
@@ -670,8 +681,10 @@ class StoryStore:
                 variant = document.variants.get(dep.id)
                 actual = variant.revision if variant else None
             elif dep.kind == "constraint" and document:
-                variant = next((v for v in document.variants.values()
-                                if v.revision == change.base_revision), None)
+                variant = next(
+                    (v for v in document.variants.values() if v.revision == change.base_revision),
+                    None,
+                )
                 constraint = variant.constraints.get(dep.id) if variant else None
                 actual = constraint.revision if constraint else None
             elif dep.kind == "module":
@@ -688,11 +701,16 @@ class StoryStore:
             if supported and actual == dep.revision:
                 continue
             raise WorkspaceError(
-                code="STORY_DEPENDENCY_CONFLICT", where="story.commit",
-                why=(f"读取依赖已变化或缺失：{dep.kind}/{dep.id}" if supported
-                     else f"这类读取依赖无法核对：{dep.kind}/{dep.id}"),
-                fix=("重新读取依赖并生成变更" if supported
-                     else "提供对应的模块库或会话入口后再提交"),
+                code="STORY_DEPENDENCY_CONFLICT",
+                where="story.commit",
+                why=(
+                    f"读取依赖已变化或缺失：{dep.kind}/{dep.id}"
+                    if supported
+                    else f"这类读取依赖无法核对：{dep.kind}/{dep.id}"
+                ),
+                fix=(
+                    "重新读取依赖并生成变更" if supported else "提供对应的模块库或会话入口后再提交"
+                ),
             )
 
     def read_prose(self, path: str, variant_id: str = MAIN_VARIANT_ID) -> tuple[str, str]:
@@ -701,7 +719,9 @@ class StoryStore:
         return digest, text
 
     def prose_state(
-        self, path: str, variant_id: str = MAIN_VARIANT_ID,
+        self,
+        path: str,
+        variant_id: str = MAIN_VARIANT_ID,
     ) -> tuple[str, str, bool]:
         """摘要、文本与是否沿用主方案正文：备选还没写入自己的副本时为 ``True``。"""
         digest, text, copy = self._prose_snapshot(path, variant_id)
@@ -710,18 +730,15 @@ class StoryStore:
     def _prose_copy(self, variant_id: str, path: str) -> Path:
         if managed_kind(path) != "chapter":
             raise WorkspaceError(
-                code="STORY_PROSE_CONFLICT", where="story.commit",
+                code="STORY_PROSE_CONFLICT",
+                where="story.commit",
                 why=f"正文路径不受支持：{path}",
                 fix="只提交 正文/ 下的 Markdown 文件",
             )
-        if (
-            not variant_id
-            or variant_id in (".", "..")
-            or "/" in variant_id
-            or "\\" in variant_id
-        ):
+        if not variant_id or variant_id in (".", "..") or "/" in variant_id or "\\" in variant_id:
             raise WorkspaceError(
-                code="STORY_VARIANT_INVALID", where="story.commit",
+                code="STORY_VARIANT_INVALID",
+                where="story.commit",
                 why="方案标识不能用作目录名",
                 fix="使用服务端返回的方案标识",
             )
@@ -735,9 +752,7 @@ class StoryStore:
         """来源方案此刻可能可见的章节：主方案文件加上备选自己的副本与删除标记。"""
         paths: set[str] = set()
         if self.workspace is not None:
-            paths.update(
-                entry.path for entry in self.workspace.catalog().chapters if entry.exists
-            )
+            paths.update(entry.path for entry in self.workspace.catalog().chapters if entry.exists)
         if variant_id != MAIN_VARIANT_ID:
             root = self.dir / "variants" / variant_id / "prose"
             if root.exists():
@@ -772,13 +787,17 @@ class StoryStore:
                 marker.unlink()
 
     def _prose_state(
-        self, path: str, variant_id: str = MAIN_VARIANT_ID,
+        self,
+        path: str,
+        variant_id: str = MAIN_VARIANT_ID,
     ) -> tuple[str, str]:
         digest, text, _ = self._prose_snapshot(path, variant_id)
         return digest, text
 
     def _prose_snapshot(
-        self, path: str, variant_id: str,
+        self,
+        path: str,
+        variant_id: str,
     ) -> tuple[str, str, Path | None]:
         """返回正文摘要、文本与实际承载文件；备选副本不存在时沿用主方案正文。"""
         if variant_id == MAIN_VARIANT_ID:
@@ -808,7 +827,11 @@ class StoryStore:
             return "absent", "", None
 
     def _relocate(
-        self, group: list[ProsePatch], original: str, path: str, digest: str,
+        self,
+        group: list[ProsePatch],
+        original: str,
+        path: str,
+        digest: str,
     ) -> tuple[list[ProsePatch], str]:
         """撤销时按唯一原文重新定位；其他段落的后续编辑不影响本次恢复。"""
         relocated: list[ProsePatch] = []
@@ -821,14 +844,21 @@ class StoryStore:
             if not patch.expected or original.count(patch.expected) != 1:
                 raise self._prose_conflict(path, "要撤销的原文已被改动或不再唯一")
             start = original.find(patch.expected)
-            relocated.append(patch.model_copy(update={
-                "base_digest": digest, "start": start, "end": start + len(patch.expected),
-            }))
+            relocated.append(
+                patch.model_copy(
+                    update={
+                        "base_digest": digest,
+                        "start": start,
+                        "end": start + len(patch.expected),
+                    }
+                )
+            )
         return relocated, digest
 
     def _prose_conflict(self, path: str, why: str) -> WorkspaceError:
         return WorkspaceError(
-            code="STORY_PROSE_CONFLICT", where="story.commit",
+            code="STORY_PROSE_CONFLICT",
+            where="story.commit",
             why=f"{why}：{path}",
             fix="检查当前正文后再决定是否撤销",
         )
@@ -854,27 +884,40 @@ class StoryStore:
                 group, digest = self._relocate(group, original, path, digest)
             deleting = any(p.delete for p in group)
             for index, patch in enumerate(group):
-                if (patch.base_digest != digest or patch.end > len(original)
-                    or original[patch.start:patch.end] != patch.expected
+                if (
+                    patch.base_digest != digest
+                    or patch.end > len(original)
+                    or original[patch.start : patch.end] != patch.expected
                     or (index and group[index - 1].end >= patch.start)
-                    or (deleting and (len(group) != 1 or patch.start != 0
-                        or patch.end != len(original) or patch.replacement or digest == "absent"))):
+                    or (
+                        deleting
+                        and (
+                            len(group) != 1
+                            or patch.start != 0
+                            or patch.end != len(original)
+                            or patch.replacement
+                            or digest == "absent"
+                        )
+                    )
+                ):
                     raise self._prose_conflict(path, "正文版本、区间或原文不一致")
             text = original
             for patch in reversed(group):
-                text = text[:patch.start] + patch.replacement + text[patch.end:]
+                text = text[: patch.start] + patch.replacement + text[patch.end :]
             text = normalize_newlines(text)
             if not deleting:
                 self.workspace._reject_invalid_metadata(path, text)
             target = "absent" if deleting else digest_bytes(text.encode("utf-8"))
-            rows.append({
-                "path": path,
-                "target": str(copy) if copy is not None else "",
-                "variant_id": variant_id,
-                "before": digest,
-                "after": target,
-                "text": text,
-            })
+            rows.append(
+                {
+                    "path": path,
+                    "target": str(copy) if copy is not None else "",
+                    "variant_id": variant_id,
+                    "before": digest,
+                    "after": target,
+                    "text": text,
+                }
+            )
             inverse.extend(self._inverse_patches(path, group, original, digest, target, text))
         return rows, inverse
 
@@ -889,18 +932,43 @@ class StoryStore:
     ) -> list[ProsePatch]:
         """反向补丁尽量只覆盖本次改动的段落，其他后续编辑得以保留。"""
         if target == "absent":
-            return [ProsePatch(path=path, base_digest="absent", start=0, end=0,
-                               expected="", replacement=original)]
+            return [
+                ProsePatch(
+                    path=path,
+                    base_digest="absent",
+                    start=0,
+                    end=0,
+                    expected="",
+                    replacement=original,
+                )
+            ]
         if digest == "absent":
-            return [ProsePatch(path=path, base_digest=target, start=0, end=len(text),
-                               expected=text, replacement="", delete=True)]
+            return [
+                ProsePatch(
+                    path=path,
+                    base_digest=target,
+                    start=0,
+                    end=len(text),
+                    expected=text,
+                    replacement="",
+                    delete=True,
+                )
+            ]
         rows: list[ProsePatch] = []
         offset = 0
         for patch in group:
             start = patch.start + offset
             end = start + len(patch.replacement)
-            rows.append(ProsePatch(path=path, base_digest=target, start=start, end=end,
-                                   expected=patch.replacement, replacement=patch.expected))
+            rows.append(
+                ProsePatch(
+                    path=path,
+                    base_digest=target,
+                    start=start,
+                    end=end,
+                    expected=patch.replacement,
+                    replacement=patch.expected,
+                )
+            )
             offset += len(patch.replacement) - len(patch.expected)
         return rows
 
@@ -943,7 +1011,10 @@ class StoryStore:
             atomic_write_json(target.path, target.payload, prefix=".story-joint-")
 
     def _check_prose(
-        self, rows: list[dict[str, Any]], *, allow_applied: bool = True,
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        allow_applied: bool = True,
     ) -> None:
         if rows and self.workspace is None:
             raise self._external_change()
@@ -951,10 +1022,14 @@ class StoryStore:
             assert self.workspace is not None
             variant_id = str(row.get("variant_id") or MAIN_VARIANT_ID)
             accepted = (row["before"], row["after"]) if allow_applied else (row["before"],)
-            target = ("absent" if row["after"] == "absent"
-                      else digest_bytes(row["text"].encode("utf-8")))
-            if (target != row["after"] or (target == "absent" and row["text"])
-                or self._prose_state(row["path"], variant_id)[0] not in accepted):
+            target = (
+                "absent" if row["after"] == "absent" else digest_bytes(row["text"].encode("utf-8"))
+            )
+            if (
+                target != row["after"]
+                or (target == "absent" and row["text"])
+                or self._prose_state(row["path"], variant_id)[0] not in accepted
+            ):
                 raise self._external_change()
             if row["after"] != "absent":
                 self.workspace._reject_invalid_metadata(row["path"], row["text"])
@@ -972,8 +1047,11 @@ class StoryStore:
                 if row["after"] == "absent":
                     self.workspace.delete(row["path"], expected_digest=row["before"])
                 else:
-                    self.workspace.write(row["path"], row["text"],
-                        expected_digest=None if row["before"] == "absent" else row["before"])
+                    self.workspace.write(
+                        row["path"],
+                        row["text"],
+                        expected_digest=None if row["before"] == "absent" else row["before"],
+                    )
                 continue
             copy = self._prose_copy(variant_id, row["path"])
             marker = self._prose_marker(copy)

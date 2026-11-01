@@ -57,7 +57,6 @@ class WorkspaceServices:
             return None
         return self._limits_factory()
 
-
     # -- 读写服务 -----------------------------------------------------------
 
     def activity_for(self, workspace_id: str) -> ActivityStore:

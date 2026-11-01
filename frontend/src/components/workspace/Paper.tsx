@@ -8,7 +8,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Info } from "lucide-react";
+import { ChevronLeft, ChevronRight, Highlighter, Info } from "lucide-react";
 import { useWorkspaceStore } from "../../state/workspace";
 import { usePagePositions } from "../../state/pagePositions";
 import { FONT_SCALE, useLayoutStore } from "../../state/layout";
@@ -16,11 +16,13 @@ import { navigate, parseHash } from "../../state/navigation";
 import { Button } from "../ui/Button";
 
 import { saveReadingPosition, type FileView } from "../../api/workspace";
+import { fetchClueMarks, type ClueMarks } from "../../api/clueMarks";
 import { errorMessage } from "../../api/errors";
 import CharacterBadges from "./CharacterBadges";
 import SelectionToChat from "./SelectionToChat";
 import { useSourceLocationStore } from "../../state/sourceLocation";
 import { RawSourceHighlight, sourceHighlightPlugin, sourceRange } from "../clues/SourceHighlight";
+import { clueMarksPlugin } from "./ClueMarks";
 
 interface Props {
   file: FileView | null;
@@ -30,9 +32,10 @@ interface Props {
   fileLoading: boolean;
   /** 作品级操作进行中：翻章按钮在此期间禁用。 */
   busy: boolean;
+  onOpenClue?: (clueId: string) => void;
 }
 
-export default function Paper({ file, openingPath, fileLoading, busy }: Props) {
+export default function Paper({ file, openingPath, fileLoading, busy, onOpenClue }: Props) {
   const workspaceId = useWorkspaceStore(state => state.currentId);
   const catalog = useWorkspaceStore(state => state.catalog);
   const chapters = catalog.chapters;
@@ -84,10 +87,33 @@ export default function Paper({ file, openingPath, fileLoading, busy }: Props) {
     return () => { active = false; clearTimeout(timer); save(); unsubscribe(); window.removeEventListener("pagehide", save); };
   }, [workspaceId, file?.path, file?.digest, positionKey]);
   const [paragraphLocation, setParagraphLocation] = useState(false);
+  const [clueMarks, setClueMarks] = useState<ClueMarks | null>(null);
+  const [marksError, setMarksError] = useState<string | null>(null);
+  const [showMarks, setShowMarks] = useState(true);
+  useEffect(() => {
+    if (!workspaceId || !file || file.kind !== "chapter" || waiting) {
+      setClueMarks(null);
+      setMarksError(null);
+      return;
+    }
+    let cancelled = false;
+    setMarksError(null);
+    void fetchClueMarks(workspaceId, file.path, file.chapter_number)
+      .then(data => { if (!cancelled) setClueMarks(data); })
+      .catch(cause => {
+        if (!cancelled) {
+          setClueMarks(null);
+          setMarksError(errorMessage(cause, "读取线索标注"));
+        }
+      });
+    return () => { cancelled = true; };
+  }, [workspaceId, file?.path, file?.digest, file?.kind, file?.chapter_number, waiting]);
   const restoreEpoch = useSourceLocationStore(state => state.restoreEpoch);
   const location = useSourceLocationStore(state => state.workspaceId === workspaceId ? state.location : null);
   const matched = location?.source.kind === "file" && location.source.path === file?.path && location.freshness === "valid" && file.digest === location.current_digest && file.digest === location.source.digest;
   const range = matched ? sourceRange(file.text, location.start, location.end, location.quote) : null;
+  const currentMarks = clueMarks && clueMarks.path === file?.path && clueMarks.digest === file?.digest ? clueMarks : null;
+  const activeMarks = showMarks && !range && currentMarks?.state === "ready" ? currentMarks.marks : [];
   useLayoutEffect(() => {
     const node = scroll.current;
     if (!node || range) return;
@@ -145,6 +171,13 @@ export default function Paper({ file, openingPath, fileLoading, busy }: Props) {
   const title = waiting && openingEntry ? openingEntry.display_title : file.display_title;
   const roles = waiting && openingEntry ? openingEntry.roles : file.roles;
 
+  function openClueFromTarget(target: EventTarget | null) {
+    if (!(target instanceof Element)) return;
+    const clue = target.closest<HTMLElement>("[data-clue-id]");
+    const clueId = clue?.dataset.clueId;
+    if (clueId) onOpenClue?.(clueId);
+  }
+
   return (
     <article className="reader-document" aria-busy={waiting}>
       <header className="paper-toolbar">
@@ -157,6 +190,17 @@ export default function Paper({ file, openingPath, fileLoading, busy }: Props) {
         <div className="paper-reading-tools" aria-label="阅读设置">
           <Button size="compact" aria-label="减小字号" title="减小字号" disabled={fontScale <= FONT_SCALE.min} onClick={() => setFontScale(fontScale - 10)}>A−</Button>
           <Button size="compact" aria-label="增大字号" title="增大字号" disabled={fontScale >= FONT_SCALE.max} onClick={() => setFontScale(fontScale + 10)}>A+</Button>
+          {!waiting && currentMarks?.state === "ready" && currentMarks.marks.length > 0 && (
+            <Button
+              size="compact"
+              aria-label="线索标注"
+              title={showMarks ? "隐藏正文线索下划线" : "显示正文线索下划线"}
+              aria-pressed={showMarks}
+              onClick={() => setShowMarks(value => !value)}
+            >
+              <Highlighter aria-hidden="true" size={15} />{currentMarks.marks.length}
+            </Button>
+          )}
           {!waiting && <details className="paper-file-info"><summary aria-label="文件信息" title="文件信息"><Info aria-hidden="true" size={17} /></summary><div>{file.path}<br />{file.size} 字节</div></details>}
         </div>
         {busy && <span className="text-[11px]">读取中…</span>}
@@ -166,6 +210,10 @@ export default function Paper({ file, openingPath, fileLoading, busy }: Props) {
           </p>
         )}
       </header>
+      {!waiting && currentMarks?.state === "stale" && (
+        <p className="paper-clue-state" role="status">正文已修改，线索标注暂不可用。</p>
+      )}
+      {!waiting && marksError && <p className="paper-clue-state" role="status">{marksError}</p>}
       {!waiting && matched && paragraphLocation && <p className="mb-2 text-xs text-sub" role="status">已定位至所在段落。</p>}
       {!waiting && positionError && <p role="status" className="text-xs text-amber">{positionError}</p>}
       {waiting ? (
@@ -177,8 +225,23 @@ export default function Paper({ file, openingPath, fileLoading, busy }: Props) {
           <div className="paper-lined min-h-full px-8 py-6">
             {file.display_text.trim() || (matched && file.text.trim()) ? (
               <SelectionToChat source={{ title: file.display_title, source: file.path, version: file.digest }}>
-                <div className="prose-paper">
-                  {matched && file.text !== file.display_text ? <RawSourceHighlight text={file.text} range={range} /> : <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[sourceHighlightPlugin, { text: file.display_text, range }]]} skipHtml>
+                <div
+                  className="prose-paper"
+                  onClick={event => {
+                    const selection = window.getSelection();
+                    if (selection && !selection.isCollapsed) return;
+                    openClueFromTarget(event.target);
+                  }}
+                  onKeyDown={event => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    if (!(event.target instanceof Element) || !event.target.closest("[data-clue-id]")) return;
+                    event.preventDefault();
+                    openClueFromTarget(event.target);
+                  }}
+                >
+                  {matched && file.text !== file.display_text ? <RawSourceHighlight text={file.text} range={range} /> : <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={activeMarks.length > 0
+                    ? [[clueMarksPlugin, { text: file.display_text, marks: activeMarks }]]
+                    : [[sourceHighlightPlugin, { text: file.display_text, range }]]} skipHtml>
                     {file.display_text}
                   </ReactMarkdown>}
                 </div>

@@ -28,9 +28,11 @@ from hastings.workspace.story_models import (
     StoryChangeSet,
     StoryNode,
     StoryVariant,
+    SyncDecision,
 )
 from hastings.workspace.story_mystery import build_mystery_view
 from hastings.workspace.story_store import StoryStore, new_id
+from hastings.workspace.story_sync import StorySyncView, build_sync_view, require_sync_decision
 
 __all__ = ["create_story_router"]
 
@@ -126,6 +128,7 @@ class StoryChangeRequest(BaseModel):
     prose_patches: list[ProsePatch] = Field(default_factory=list)
     read_dependencies: list[ReadDependency] = Field(default_factory=list)
     note: str = Field(default="", max_length=500)
+    sync: SyncDecision | None = None
 
     @model_validator(mode="after")
     def require_changes(self) -> StoryChangeRequest:
@@ -155,6 +158,7 @@ class StoryChangeRecordView(BaseModel):
     operations: list[dict[str, Any]]
     changed: list[str]
     undone_by: str | None = None
+    sync: dict[str, Any] | None = None
 
 
 def _counts(variant: StoryVariant) -> StoryCountsView:
@@ -477,12 +481,36 @@ def create_story_router(
         )
         return StoryMysteryView(**build_mystery_view(variant, catalog))
 
+    @router.get(
+        "/{workspace_id}/story/variants/{variant_id}/sync",
+        response_model=StorySyncView,
+    )
+    def read_sync(
+        workspace_id: str,
+        variant_id: str,
+        chapter_path: str | None = Query(default=None, max_length=512),
+    ) -> StorySyncView:
+        """构思与正文的机械同步状态；语义冲突留给模型核对。"""
+        store = store_for(workspace_id)
+        variant = require_variant(store, variant_id)
+        workspace = store.workspace
+        if workspace is None:
+            raise WorkspaceError(
+                code="STORY_SYNC_UNAVAILABLE",
+                where="story.sync",
+                why="当前读取没有作品目录，无法核对正文",
+                fix="从作品工作区重新打开构思",
+            )
+        return build_sync_view(workspace, variant, chapter_path=chapter_path)
+
     @router.post("/{workspace_id}/story/changes", response_model=StoryReceiptView, status_code=201)
     def submit_change(workspace_id: str, body: StoryChangeRequest) -> StoryReceiptView:
         """界面发起的确定性结构变更；不接受伪造的授权字段。"""
         store = store_for(workspace_id)
-        if store.read().document is not None:
-            require_variant(store, body.variant_id)
+        root = conversation_root(workspaces.root, workspace_id)
+        variant = (
+            require_variant(store, body.variant_id) if store.read().document is not None else None
+        )
         change = StoryChangeSet(
             id=new_id("ui"),
             base_revision=body.expected_revision,
@@ -490,13 +518,21 @@ def create_story_router(
             requested_scope=body.note,
             prose_patches=body.prose_patches,
             read_dependencies=body.read_dependencies,
+            sync=body.sync,
         )
+        if variant is not None:
+            change = require_sync_decision(
+                workspaces.workspace(workspace_id),
+                root,
+                variant,
+                change,
+            )
         receipt = store.commit_change(
             variant_id=body.variant_id,
             change=change,
             request_key=body.request_key,
             prepare_joint=prepare_clue_joint(
-                conversation_root(workspaces.root, workspace_id),
+                root,
                 variant_id=body.variant_id,
                 change=change,
                 expected_ledger_revision=body.expected_ledger_revision,
@@ -528,6 +564,7 @@ def create_story_router(
                 [*record.touched, *(f"prose:{p.path}" for p in record.inverse_prose_patches)]
             ),
             undone_by=record.undone_by,
+            sync=record.sync.model_dump(mode="json") if record.sync else None,
         )
 
     @router.post(

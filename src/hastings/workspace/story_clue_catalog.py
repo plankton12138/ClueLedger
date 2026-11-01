@@ -33,7 +33,7 @@ class StoryClueCatalog:
     @classmethod
     def from_variant(
         cls, variant: StoryVariant, snapshot: ClueSnapshot | None = None
-    ) -> "StoryClueCatalog":
+    ) -> StoryClueCatalog:
         identities = snapshot.ledger.clues if snapshot and snapshot.ledger else {}
         ids = set(variant.clue_plans)
         ids.update(identity_id for identity_id in identities)
@@ -55,9 +55,7 @@ class StoryClueCatalog:
         )
 
     @classmethod
-    def from_root(
-        cls, variant: StoryVariant, root: Path
-    ) -> "StoryClueCatalog":
+    def from_root(cls, variant: StoryVariant, root: Path) -> StoryClueCatalog:
         from hastings.workspace.clue_store import ClueLedgerStore
 
         return cls.from_variant(variant, ClueLedgerStore(root).read())

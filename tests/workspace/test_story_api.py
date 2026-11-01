@@ -245,9 +245,7 @@ def test_variants_graph_and_node_detail(client: TestClient, tmp_path: Path) -> N
     assert graph["collapsed"] == []
 
 
-def test_mystery_projection_returns_timeline_and_clues(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_mystery_projection_returns_timeline_and_clues(client: TestClient, tmp_path: Path) -> None:
     workspace_id = open_workspace(client, tmp_path)
     seed(tmp_path, workspace_id)
 
@@ -375,13 +373,22 @@ def test_create_identity_is_joint_and_undo_restores_ledger(
             "request_key": "identity-create",
             "operations": [
                 {"op": "create_clue_identity", "temp_id": "board", "title": "没有响的木板"},
-                {"op": "upsert_clue_plan", "clue_id": "board",
-                 "plan": {"author_truth": None, "resolution_intent": "undecided"}},
-                {"op": "add_node", "node": {
-                    "id": "observe", "title": "发现异样", "action": "木板没有响",
-                    "clue_uses": [{"clue_id": "board", "presentation": "木板没有响",
-                                   "mode": "narration"}],
-                }},
+                {
+                    "op": "upsert_clue_plan",
+                    "clue_id": "board",
+                    "plan": {"author_truth": None, "resolution_intent": "undecided"},
+                },
+                {
+                    "op": "add_node",
+                    "node": {
+                        "id": "observe",
+                        "title": "发现异样",
+                        "action": "木板没有响",
+                        "clue_uses": [
+                            {"clue_id": "board", "presentation": "木板没有响", "mode": "narration"}
+                        ],
+                    },
+                },
             ],
         },
     )
@@ -391,9 +398,7 @@ def test_create_identity_is_joint_and_undo_restores_ledger(
     assert stable.startswith("clue_")
     assert receipt["ledger_revision"]
 
-    listing = client.get(
-        f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
-    )
+    listing = client.get(f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"})
     assert [row["title"] for row in listing.json()["items"]] == ["没有响的木板"]
     store = StoryStore(conversation_root(tmp_path / "state", workspace_id))
     variant = store.require_variant(MAIN_VARIANT_ID)
@@ -408,15 +413,11 @@ def test_create_identity_is_joint_and_undo_restores_ledger(
     variant = store.require_variant(MAIN_VARIANT_ID)
     assert "observe" not in variant.nodes
     assert stable not in variant.clue_plans
-    listing = client.get(
-        f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
-    )
+    listing = client.get(f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"})
     assert listing.json()["items"] == []
 
 
-def test_story_clue_views_accept_action_presentation(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_story_clue_views_accept_action_presentation(client: TestClient, tmp_path: Path) -> None:
     workspace_id = open_workspace(client, tmp_path)
     created = client.post(
         f"/api/file-workspaces/{workspace_id}/story/changes",
@@ -426,24 +427,34 @@ def test_story_clue_views_accept_action_presentation(
             "request_key": "action-clue",
             "operations": [
                 {"op": "create_clue_identity", "temp_id": "smoke", "title": "灯下的烟"},
-                {"op": "upsert_clue_plan", "clue_id": "smoke",
-                 "plan": {"intention": "让读者先当成雾"}},
-                {"op": "add_node", "node": {
-                    "id": "n1", "title": "灯下", "action": "有人点烟",
-                    "clue_uses": [{
-                        "clue_id": "smoke", "roles": ["plant"],
-                        "presentation": "灯下多出一缕烟", "mode": "action",
-                    }],
-                }},
+                {
+                    "op": "upsert_clue_plan",
+                    "clue_id": "smoke",
+                    "plan": {"intention": "让读者先当成雾"},
+                },
+                {
+                    "op": "add_node",
+                    "node": {
+                        "id": "n1",
+                        "title": "灯下",
+                        "action": "有人点烟",
+                        "clue_uses": [
+                            {
+                                "clue_id": "smoke",
+                                "roles": ["plant"],
+                                "presentation": "灯下多出一缕烟",
+                                "mode": "action",
+                            }
+                        ],
+                    },
+                },
             ],
         },
     )
     assert created.status_code == 201, created.text
     stable = created.json()["id_map"]["smoke"]
 
-    listing = client.get(
-        f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
-    )
+    listing = client.get(f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"})
     assert listing.status_code == 200, listing.text
     assert [row["title"] for row in listing.json()["items"]] == ["灯下的烟"]
 
@@ -455,9 +466,7 @@ def test_story_clue_views_accept_action_presentation(
     assert detail.json()["uses"][0]["presentation"] == "灯下多出一缕烟"
 
 
-def test_stale_expected_ledger_revision_writes_nothing(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_stale_expected_ledger_revision_writes_nothing(client: TestClient, tmp_path: Path) -> None:
     workspace_id = open_workspace(client, tmp_path)
     seed(tmp_path, workspace_id)
     revision = revision_of(client, workspace_id)
@@ -481,9 +490,7 @@ def test_stale_expected_ledger_revision_writes_nothing(
     assert "n9" not in variant.nodes
 
 
-def test_story_clue_cursor_conflicts_after_view_changes(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_story_clue_cursor_conflicts_after_view_changes(client: TestClient, tmp_path: Path) -> None:
     workspace_id = open_workspace(client, tmp_path)
     revision = "empty"
     seeded = client.post(
@@ -595,9 +602,7 @@ def test_undo_creation_conflicts_when_identity_is_used_later(
     )
     assert "n2" in variant.nodes
     assert stable in variant.clue_plans
-    listing = client.get(
-        f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
-    )
+    listing = client.get(f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"})
     assert [row["clue_id"] for row in listing.json()["items"]] == [stable]
 
 
@@ -633,7 +638,5 @@ def test_removing_identity_with_plan_is_blocked(client: TestClient, tmp_path: Pa
         MAIN_VARIANT_ID
     )
     assert stable in variant.clue_plans
-    listing = client.get(
-        f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
-    )
+    listing = client.get(f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"})
     assert [row["clue_id"] for row in listing.json()["items"]] == [stable]

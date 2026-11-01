@@ -28,16 +28,13 @@ from hastings.workspace.story_store import (
     EMPTY_REVISION,
     MAIN_VARIANT_ID,
     JointTarget,
-    StoryStore,
 )
 
 __all__ = ["prepare_clue_joint", "prepare_clue_undo"]
 
 
 def _encoded(payload: dict[str, Any]) -> bytes:
-    return (
-        json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
-    ).encode()
+    return (json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode()
 
 
 def _digest_file(path: Path) -> str:
@@ -47,9 +44,7 @@ def _digest_file(path: Path) -> str:
         return ""
 
 
-def _resolve_change(
-    change: StoryChangeSet, mapping: dict[str, str]
-) -> StoryChangeSet:
+def _resolve_change(change: StoryChangeSet, mapping: dict[str, str]) -> StoryChangeSet:
     operations: list[StoryOperation] = []
     for operation in change.operations:
         if isinstance(operation, UpsertCluePlan):
@@ -112,10 +107,7 @@ def _apply_identity_operations(
             identity = ledger.clues.get(operation.clue_id)
             if identity is None:
                 raise _reference_error(operation.clue_id)
-            if any(
-                row.clue_id == operation.clue_id
-                for row in ledger.contributions.values()
-            ):
+            if any(row.clue_id == operation.clue_id for row in ledger.contributions.values()):
                 raise WorkspaceError(
                     code="STORY_CLUE_REFERENCE_INVALID",
                     where="story.clue",
@@ -186,10 +178,7 @@ def prepare_clue_joint(
         ledger_store = ClueLedgerStore(state_root)
         with locked(ledger_store.lock_file):
             snapshot = ledger_store.read()
-            if (
-                expected_ledger_revision
-                and snapshot.revision != expected_ledger_revision
-            ):
+            if expected_ledger_revision and snapshot.revision != expected_ledger_revision:
                 raise WorkspaceError(
                     code="STORY_CLUE_REVISION_CONFLICT",
                     where="story.commit",
@@ -200,11 +189,7 @@ def prepare_clue_joint(
                         "current_ledger_revision": snapshot.revision,
                     },
                 )
-            ledger = (
-                snapshot.ledger.model_copy(deep=True)
-                if snapshot.ledger is not None
-                else None
-            )
+            ledger = snapshot.ledger.model_copy(deep=True) if snapshot.ledger is not None else None
             mapping: dict[str, str] = {}
             for operation in change.operations:
                 if isinstance(operation, CreateClueIdentity):
@@ -218,17 +203,13 @@ def prepare_clue_joint(
                     mapping[operation.temp_id] = new_id("clue")
             resolved = _resolve_change(change, mapping)
             has_identity_ops = any(
-                isinstance(operation, CreateClueIdentity)
-                for operation in change.operations
+                isinstance(operation, CreateClueIdentity) for operation in change.operations
             ) or any(
-                isinstance(operation, RemoveClueIdentity)
-                or isinstance(operation, RenameClueIdentity)
+                isinstance(operation, RemoveClueIdentity | RenameClueIdentity)
                 for operation in change.operations
             )
             if has_identity_ops and ledger is None:
-                ledger = ClueLedger(
-                    workspace_lineage=new_id("ws"), ledger_revision=new_id("rev")
-                )
+                ledger = ClueLedger(workspace_lineage=new_id("ws"), ledger_revision=new_id("rev"))
             inverse_ledger: list[dict[str, Any]] = []
             if ledger is not None:
                 inverse_ledger = _apply_identity_operations(
@@ -274,18 +255,20 @@ def prepare_clue_joint(
                 after=hashlib.sha256(_encoded(payload)).hexdigest(),
                 payload=payload,
             )
-            return resolved, target, {
-                "ledger_revision": ledger.ledger_revision,
-                "id_map": mapping,
-                "inverse_ledger": inverse_ledger,
-            }
+            return (
+                resolved,
+                target,
+                {
+                    "ledger_revision": ledger.ledger_revision,
+                    "id_map": mapping,
+                    "inverse_ledger": inverse_ledger,
+                },
+            )
 
     return prepare
 
 
-def _apply_inverse_ledger(
-    ledger: ClueLedger, inverse: list[dict[str, Any]]
-) -> bool:
+def _apply_inverse_ledger(ledger: ClueLedger, inverse: list[dict[str, Any]]) -> bool:
     changed = False
     for row in inverse:
         op = str(row.get("op") or "")
@@ -365,11 +348,7 @@ def prepare_clue_undo(
         ledger_store = ClueLedgerStore(state_root)
         with locked(ledger_store.lock_file):
             snapshot = ledger_store.read()
-            ledger = (
-                snapshot.ledger.model_copy(deep=True)
-                if snapshot.ledger is not None
-                else None
-            )
+            ledger = snapshot.ledger.model_copy(deep=True) if snapshot.ledger is not None else None
             if inverse_ledger and ledger is None:
                 raise WorkspaceError(
                     code="STORY_CLUE_REFERENCE_INVALID",
@@ -412,12 +391,16 @@ def prepare_clue_undo(
                 return change, None, {"ledger_revision": snapshot.revision}
             ledger.ledger_revision = new_id("rev")
             payload = ledger.model_dump(mode="json")
-            return change, JointTarget(
-                path=ledger_store.file,
-                lock_path=ledger_store.lock_file,
-                before=_digest_file(ledger_store.file),
-                after=hashlib.sha256(_encoded(payload)).hexdigest(),
-                payload=payload,
-            ), {"ledger_revision": ledger.ledger_revision}
+            return (
+                change,
+                JointTarget(
+                    path=ledger_store.file,
+                    lock_path=ledger_store.lock_file,
+                    before=_digest_file(ledger_store.file),
+                    after=hashlib.sha256(_encoded(payload)).hexdigest(),
+                    payload=payload,
+                ),
+                {"ledger_revision": ledger.ledger_revision},
+            )
 
     return prepare

@@ -289,8 +289,7 @@ def align(before: str, after: str) -> list[dict[str, object]]:
     left, right = paragraphs(before), paragraphs(after)
     if len(left) + len(right) > 2000:
         return [{"kind": "coarse", "before": before, "after": after}]
-    matcher = SequenceMatcher(None, [p.text for p in left], [p.text for p in right],
-                              autojunk=False)
+    matcher = SequenceMatcher(None, [p.text for p in left], [p.text for p in right], autojunk=False)
     return [
         {"kind": tag, "before": left[i:j], "after": right[k:l]}
         for tag, i, j, k, l in matcher.get_opcodes()
@@ -303,9 +302,7 @@ def inline(before: str, after: str) -> list[tuple[str, str, str]]:
         return [("coarse", before, after)]
     return [
         (tag, before[i:j], after[k:l])
-        for tag, i, j, k, l in SequenceMatcher(
-            None, before, after, autojunk=False
-        ).get_opcodes()
+        for tag, i, j, k, l in SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
     ]
 ```
 
@@ -386,7 +383,7 @@ def validate_analysis(raw: str, sources: dict[str, str]) -> Analysis:
             source = sources.get(cite.source_id)
             if source is None or not 0 <= cite.start < cite.end <= len(source):
                 raise ValueError("EVIDENCE_RANGE_INVALID")
-            if source[cite.start:cite.end] != cite.quote:
+            if source[cite.start : cite.end] != cite.quote:
                 raise ValueError("EVIDENCE_QUOTE_INVALID")
     return output
 ```
@@ -522,12 +519,15 @@ def apply_decision(
         raise ValueError("PREFERENCE_REVISION_CONFLICT")
     con.execute("UPDATE meta SET preference_epoch=preference_epoch+1")
     decision_id = "decision_" + uuid4().hex
-    receipt = {"decision_id": decision_id, "preference_id": preference_id,
-               "revision": expected_revision + 1, "status_at_commit": next_status}
+    receipt = {
+        "decision_id": decision_id,
+        "preference_id": preference_id,
+        "revision": expected_revision + 1,
+        "status_at_commit": next_status,
+    }
     con.execute(
         "INSERT INTO outbox(kind, payload) VALUES(?, ?)",
-        ("preference_cleanup" if action == "forget" else "preference_changed",
-         json.dumps(receipt)),
+        ("preference_cleanup" if action == "forget" else "preference_changed", json.dumps(receipt)),
     )
     return receipt
 ```
@@ -630,11 +630,13 @@ def compile_preferences(
         return kept
     text = "写作偏好（适用于正文；当前任务、事实与范围要求优先）\n"
     text += "".join("- " + body + "\n" for _, _, body in selected)
-    return kept + (Partition(
-        key="writing_preferences",
-        text=text,
-        refs=tuple((identity, revision) for identity, revision, _ in selected),
-    ),)
+    return kept + (
+        Partition(
+            key="writing_preferences",
+            text=text,
+            refs=tuple((identity, revision) for identity, revision, _ in selected),
+        ),
+    )
 ```
 
 同一编译结果同时产生 provider 输入和 request_id 回执；重复编译只保留一个偏好分区。
@@ -899,7 +901,8 @@ def retain_allowed_style_blocks(
         return ()
     current_versions = {(block.identity, block.fingerprint) for block in current}
     return tuple(
-        block for block in accepted
+        block
+        for block in accepted
         if block.identity not in excluded_ids
         and (block.identity, block.fingerprint) in current_versions
     )

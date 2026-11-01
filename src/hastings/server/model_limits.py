@@ -281,9 +281,7 @@ class LimitProfile(Protocol):
 
 def policy_revision(project_limit: int) -> str:
     """策略版本：项目上限、压缩阈值与预算规则一起压成短标识。"""
-    identity = "|".join(
-        [str(project_limit), f"{AUTO_COMPACTION_THRESHOLD:.4f}", _POLICY_RULES]
-    )
+    identity = "|".join([str(project_limit), f"{AUTO_COMPACTION_THRESHOLD:.4f}", _POLICY_RULES])
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
 
 

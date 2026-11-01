@@ -53,7 +53,7 @@ const NODES = [
 test("无模块来源的草稿约定可由作者确认，不自动调用模型", async ({ page, book }) => {
   const state = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "state");
   execFileSync("uv", ["run", "--directory", "..", "python", resolve("e2e/fixtures/story_draft_review.py"), state, book.id], { windowsHide: true });
-  await page.route("**/api/operations/op-review/continue", route => route.fulfill({
+  await page.route(`**/api/operations/op-review-${book.id}/continue`, route => route.fulfill({
     status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "TEST_STOP", message: "测试在作者确认后停止" } }),
   }));
   await page.goto(`/#/workspaces/${book.id}/writing`);
@@ -85,11 +85,16 @@ for (const width of [1440, 390]) {
       } } });
     });
 
+    // 先等作品与会话读回，再输入草稿：加载复位会把此前的临时草稿一并清掉。
+    const uiLoaded = page.waitForResponse(r => r.url().includes("/conversation-ui") && r.request().method() === "GET");
     await page.goto(`/#/workspaces/${book.id}/writing`);
+    await uiLoaded;
     if (!(await page.locator(".chat-input").isVisible())) await page.getByRole("button", { name: "对话", exact: true }).click();
     await page.locator(".chat-input").fill("普通对话还没发送的草稿");
     if (width < 600) await page.getByRole("button", { name: "对话", exact: true }).click();
     await page.getByRole("link", { name: "构思", exact: true }).click();
+    // 切到构思面后普通对话草稿仍在；后面创建表单即使失败也不能把它擦掉。
+    if (width >= 600) await expect(page.locator(".chat-input")).toHaveValue("普通对话还没发送的草稿");
     const surface = page.getByRole("region", { name: "构思结构" });
     const start = surface.getByRole("button", { name: "创建构思", exact: true });
     await expect(start).toBeVisible();
@@ -272,6 +277,10 @@ test("全书线索与时间轴节点联动：节点筛选线索，使用位置�
 
   await surface.getByRole("button", { name: "发现异样", exact: true }).click();
   await expect(clues.getByText("与「发现异样」相关")).toBeVisible();
+  // 悬疑视图读取完成后会自动选中第一条可用线索；读到之前先手动打开列表项。
+  if (!(await clues.getByRole("heading", { name: "没有响的木板" }).isVisible())) {
+    await clues.getByRole("button", { name: /没有响的木板/ }).click();
+  }
   await expect(clues.getByRole("heading", { name: "没有响的木板" })).toBeVisible();
   await expect(clues.getByRole("button", { name: "核对路线", exact: true })).toBeVisible();
   await clues.getByRole("button", { name: "核对路线", exact: true }).click();

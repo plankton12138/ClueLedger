@@ -62,7 +62,7 @@ test("正文与装载模块的选段独立保存，刷新后可查看和移除",
 test("窄屏添加选段打开对话，跨阅读区的选择不显示入口", async ({ page, book }) => {
   await page.setViewportSize({ width: 640, height: 900 });
   await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: "目录", exact: true }).click();
+  await page.getByRole("button", { name: "侧栏", exact: true }).click();
   await page.getByRole("button", { name: "第一章 雨夜", exact: true }).click();
   const body = page.locator(".paper-sheet [data-text-selection-source]");
   await expect(body).toBeVisible();

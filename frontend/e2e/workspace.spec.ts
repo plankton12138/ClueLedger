@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -238,6 +238,8 @@ test("切回文章时恢复上次的阅读位置", async ({ page }) => {
   await page.locator(".toc-row").filter({ hasText: "雪夜长卷" }).click();
   await expect(page.getByText("第 1 段")).toBeVisible();
   await expect.poll(() => sheet.evaluate(element => element.scrollTop)).toBeGreaterThan(800);
+  // 这篇长文只服务本用例；留着会让后面的「撤销」被未跟踪文件挡住。
+  rmSync(join(workspaceRoot, "正文", "0009 雪夜长卷.md"), { force: true });
 });
 
 test("后台刷新不覆盖正在切换的文章", async ({ page }) => {
@@ -409,7 +411,7 @@ test("拖拽把手改栏宽，刷新后保持，双击恢复默认", async ({ pa
   const nav = page.locator(".writing-toc");
   const before = (await nav.boundingBox())!.width;
 
-  await dragHandle(page, "目录栏宽度", 60);
+  await dragHandle(page, "侧栏宽度", 60);
   await expect
     .poll(async () => Math.round((await nav.boundingBox())!.width))
     .toBe(Math.round(before) + 60);
@@ -421,7 +423,7 @@ test("拖拽把手改栏宽，刷新后保持，双击恢复默认", async ({ pa
     .poll(async () => Math.round((await nav.boundingBox())!.width))
     .toBe(Math.round(before) + 60);
 
-  await page.getByRole("separator", { name: "目录栏宽度" }).dblclick();
+  await page.getByRole("separator", { name: "侧栏宽度" }).dblclick();
   await expect
     .poll(async () => Math.round((await nav.boundingBox())!.width))
     .toBe(Math.round(before));

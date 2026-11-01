@@ -69,7 +69,11 @@ def test_next_edge_cannot_return_to_an_earlier_stage() -> None:
     raw["stages"]["s2"] = {"id": "s2", "title": "第二幕", "order": 1}
     raw["nodes"]["n2"]["stage_id"] = "s2"
     raw["edges"]["e3"] = {
-        "id": "e3", "from_id": "n2", "to_id": "n1", "kind": "next", "reason": "回退"
+        "id": "e3",
+        "from_id": "n2",
+        "to_id": "n1",
+        "kind": "next",
+        "reason": "回退",
     }
     item = StoryVariant.model_validate(raw)
     with pytest.raises(ValueError, match="较后阶段"):
@@ -193,17 +197,17 @@ def test_change_set_applies_to_the_blank_fixture() -> None:
     assert "n4" in updated.nodes
     assert updated.clue_plans["c1"].resolution_intent == "explain"
     assert any(
-        use.clue_id == "c1" and "resolve" in use.roles
-        for use in updated.nodes["n4"].clue_uses
+        use.clue_id == "c1" and "resolve" in use.roles for use in updated.nodes["n4"].clue_uses
     )
     assert updated.constraints["k2"].strength == "preference"
     assert updated.edges["e3"].kind == "next"
     # 原样例不被修改：应用是纯函数。
     assert "n4" not in base.nodes
     inverse = diff_variant(updated, base)
-    restored = apply_change_set(updated, StoryChangeSet(
-        id="change_undo", base_revision=updated.revision, operations=inverse
-    ))
+    restored = apply_change_set(
+        updated,
+        StoryChangeSet(id="change_undo", base_revision=updated.revision, operations=inverse),
+    )
     assert set(restored.nodes) == set(base.nodes)
     assert restored.clue_plans["c1"].resolution_intent == "undecided"
 

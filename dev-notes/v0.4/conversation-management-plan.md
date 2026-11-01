@@ -124,6 +124,7 @@ class AcceptedTurn:
     request_key: str
     last_seq: int
 
+
 # create_with_first_turn() 内部验证和持久化；不是公开空会话工厂。
 accepted = store.create_with_first_turn(
     text=text,
@@ -149,6 +150,7 @@ def replay_public_messages(events: Sequence[dict[str, Any]]) -> list[AgentMessag
         elif event["type"] == "assistant_message":
             messages.append(AssistantMessage(content=event["text"]))
     return messages
+
 
 history = replay_public_messages(previous_events)
 harness = build_harness(..., messages=history)

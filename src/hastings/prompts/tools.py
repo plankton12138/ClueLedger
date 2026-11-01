@@ -204,8 +204,7 @@ SET_TASK_SCOPE_GUIDELINES = (
     "grants、denied_paths、required_references 只写确切文件路径，不要填模块名称。",
     "模块必读参考用 required_module_references，按模块、版本与条目 ID 登记。",
     "本轮成功新建的章节可继续校订，无需追加 update；已有章节仍需登记 update。",
-    "普通资料创作登记 module_content_grants；"
-    "旧设定文件须有作者明确指定文件或沿用旧目录的要求。",
+    "普通资料创作登记 module_content_grants；旧设定文件须有作者明确指定文件或沿用旧目录的要求。",
 )
 
 EXTEND_TASK_SCOPE_DESCRIPTION = (
@@ -213,13 +212,10 @@ EXTEND_TASK_SCOPE_DESCRIPTION = (
     "原文本身，并带上当前范围版本。"
 )
 
-EXTEND_TASK_SCOPE_GUIDELINES = (
-    "只在登记时标记了 extendable 的任务里使用；固定范围会被拒绝。",
-)
+EXTEND_TASK_SCOPE_GUIDELINES = ("只在登记时标记了 extendable 的任务里使用；固定范围会被拒绝。",)
 
 REQUEST_REVIEW_DESCRIPTION = (
-    "作者明确说「改完检查」时登记检查要求；修改完成后会进入只读检查阶段。"
-    "没有这句话就不要调用。"
+    "作者明确说「改完检查」时登记检查要求；修改完成后会进入只读检查阶段。没有这句话就不要调用。"
 )
 
 REQUEST_REVIEW_GUIDELINES = ("只在作者明确要求检查时使用；普通修改不隐含开启检查。",)
@@ -275,8 +271,7 @@ QUERY_RECORDS_GUIDELINES = (
 READ_RECORD_DESCRIPTION = "按本轮装配的完整引用读取模块条目原文与区间；未装版本会被拒绝。"
 
 READ_RECORD_GUIDELINES = (
-    "module_ref 四段必须来自 list_modules/query_records；"
-    "不要用库 head 代替精确版本。",
+    "module_ref 四段必须来自 list_modules/query_records；不要用库 head 代替精确版本。",
     "truncated 为真时按 next_cursor 用 start 继续读。",
 )
 
@@ -291,8 +286,7 @@ SEARCH_MODULE_LIBRARY_GUIDELINES = (
 )
 
 READ_LIBRARY_RECORD_DESCRIPTION = (
-    "作者明确要求参考库内容时，只读一个精确版本的目录或条目原文；"
-    "不自动装入，也不开放其他模块。"
+    "作者明确要求参考库内容时，只读一个精确版本的目录或条目原文；不自动装入，也不开放其他模块。"
 )
 
 READ_LIBRARY_RECORD_GUIDELINES = (
@@ -301,8 +295,7 @@ READ_LIBRARY_RECORD_GUIDELINES = (
 )
 
 ATTACH_MODULE_DESCRIPTION = (
-    "把本轮范围登记过的精确模块版本装入本作品；只改装配清单，不改库与正文。"
-    "提交后本轮结束。"
+    "把本轮范围登记过的精确模块版本装入本作品；只改装配清单，不改库与正文。提交后本轮结束。"
 )
 
 ATTACH_MODULE_GUIDELINES = (
@@ -346,8 +339,7 @@ PREPARE_MODULE_CHANGES_GUIDELINES = (
 )
 
 APPLY_MODULE_CHANGES_DESCRIPTION = (
-    "保存已准备的内容并一次性更新当前作品装配。成功后本轮进入收尾："
-    "只读取结果并回复，不再继续写入。"
+    "保存已准备的内容并一次性更新当前作品装配。成功后本轮进入收尾：只读取结果并回复，不再继续写入。"
 )
 
 APPLY_MODULE_CHANGES_GUIDELINES = (
@@ -395,9 +387,7 @@ ASK_AUTHOR_GUIDELINES = (
     "调用后本轮结束，不要再写入或假装已经继续。",
 )
 
-READ_PREVIOUS_STORY_CANDIDATE_DESCRIPTION = (
-    "读取本操作先前代次或作者回答对应的候选，核对基础版本。"
-)
+READ_PREVIOUS_STORY_CANDIDATE_DESCRIPTION = "读取本操作先前代次或作者回答对应的候选，核对基础版本。"
 
 PROPOSE_STORY_STRUCTURE_DESCRIPTION = (
     "登记与候选正文一起提交的结构变更；操作格式与 update_story 相同。"
@@ -462,17 +452,14 @@ UPDATE_STORY_DESCRIPTION = (
 
 UPDATE_STORY_GUIDELINES = (
     "作者明确要求改结构时用；只改他要求的对象，不顺手重组整份方案。",
+    "改已绑定正文的节点前先读 read_story_sync；有冲突先问作者，带 sync 决定提交。",
     "确认作者要求已经满足、确实无需改动时，用 no_change 列出本轮读过的对象与理由；"
     "不能只回复「已经存在」。",
 )
 
-SUBMIT_STORY_CANDIDATE_REVIEW_DESCRIPTION = (
-    "逐项提交候选核对；所有通过结论都必须引用候选原文。"
-)
+SUBMIT_STORY_CANDIDATE_REVIEW_DESCRIPTION = "逐项提交候选核对；所有通过结论都必须引用候选原文。"
 
-REPAIR_STORY_CANDIDATE_DESCRIPTION = (
-    "只修改报告指出的候选问题；一次调用，不修改约定或正式正文。"
-)
+REPAIR_STORY_CANDIDATE_DESCRIPTION = "只修改报告指出的候选问题；一次调用，不修改约定或正式正文。"
 
 PROBE_TOOL_DESCRIPTION = "连接测试用的固定工具：无论收到什么参数，都返回 pong。"
 
@@ -509,9 +496,7 @@ TASK_REQUIRED_MODULE_REFERENCES_PARAM_DESCRIPTION = (
     "必读的已装模块条目，引用来自 query_records；写入前须读完精确版本"
 )
 LIBRARY_SEARCH_PARAM_DESCRIPTION = "作者明确要求从全局模块库查找时才设 true；只开搜索"
-MODULE_GRANTS_PARAM_DESCRIPTION = (
-    "作者明确要求装卸时才登记；装入给模块与精确版本，卸下给绑定 ID"
-)
+MODULE_GRANTS_PARAM_DESCRIPTION = "作者明确要求装卸时才登记；装入给模块与精确版本，卸下给绑定 ID"
 MODULE_CONTENT_GRANTS_PARAM_DESCRIPTION = (
     "本轮要保存到当前作品的内容操作：新建用稳定槽位，修改用绑定、模块与基础版本"
 )

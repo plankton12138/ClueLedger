@@ -135,7 +135,12 @@ def main() -> int:
     print("B 会话回复：", _reply(b_events)[:300])
 
     listing = client.get(f"/api/file-workspaces/{workspace_id}/conversations").json()
-    print("会话数：", len(listing["items"]), "｜标题：", [item["title"] for item in listing["items"]])
+    print(
+        "会话数：",
+        len(listing["items"]),
+        "｜标题：",
+        [item["title"] for item in listing["items"]],
+    )
     return 0
 
 

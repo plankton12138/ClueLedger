@@ -39,7 +39,9 @@ accepted = store.create_with_first_turn(
 )
 conversation_id = accepted.conversation_id
 
-library = ModuleLibrary(state_root.parent / "library", cache_file=state_root / "library-catalog.json")
+library = ModuleLibrary(
+    state_root.parent / "library", cache_file=state_root / "library-catalog.json"
+)
 service = ModuleChangeService(library, Workspace(workspace_root))
 
 if mode == "create_applied":
@@ -97,9 +99,7 @@ else:
 store.append(conversation_id, {"type": "module_changes_prepared", "turn_id": turn_id, **prepared})
 if result is not None:
     for saved in result.get("saved_events") or []:
-        store.append(
-            conversation_id, {"type": "module_content_saved", "turn_id": turn_id, **saved}
-        )
+        store.append(conversation_id, {"type": "module_content_saved", "turn_id": turn_id, **saved})
     store.append(
         conversation_id,
         {

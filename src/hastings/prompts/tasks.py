@@ -49,8 +49,7 @@ PROBE_SYSTEM = "你是一个简洁的连接测试助手，只回答被要求的�
 def probe_tool_prompt(tool_name: str) -> str:
     """工具测试的指令：必须调用指定探针工具，再据结果作答。"""
     return (
-        f"调用 {tool_name} 工具，参数 echo 传「ping」，"
-        "然后根据工具结果用一句话说明你收到了什么。"
+        f"调用 {tool_name} 工具，参数 echo 传「ping」，然后根据工具结果用一句话说明你收到了什么。"
     )
 
 

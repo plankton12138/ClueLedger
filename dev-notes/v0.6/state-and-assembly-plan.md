@@ -162,10 +162,11 @@ disclosures:
 ```python
 @dataclass(frozen=True, slots=True)
 class DisclosureDraft:
-    entity: str            # 角色 id，来自小传元信息
+    entity: str  # 角色 id，来自小传元信息
     fact: str
     first_chapter: int
     evidence: IndexEvidence  # 路径、版本、区间、引文，复用索引的证据类型
+
 
 def publish_disclosure(
     store: DisclosureStore,
@@ -174,7 +175,7 @@ def publish_disclosure(
 ) -> DisclosureRecord:
     """整域发布：全部条目先核对，任一条不过就不写文件。"""
     for draft in drafts:
-        check_evidence(workspace, draft.evidence)   # 版本、区间、引文
+        check_evidence(workspace, draft.evidence)  # 版本、区间、引文
     return store.replace(workspace, drafts)
 ```
 
@@ -244,7 +245,7 @@ def allocate(budget: int, items: Sequence[StateItem]) -> tuple[list[StateItem], 
     taken: list[StateItem] = []
     skipped: list[Skip] = []
     left = budget
-    for item in items:                      # 调用方按优先级排好
+    for item in items:  # 调用方按优先级排好
         cost = len(item.render())
         if cost > left:
             skipped.append(Skip(item.key, "budget"))

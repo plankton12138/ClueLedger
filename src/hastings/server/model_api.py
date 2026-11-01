@@ -354,9 +354,7 @@ def create_model_router(
             message=result.message,
         )
 
-    @router.post(
-        "/model-connections/probe", response_model=ProbeAcceptedView, status_code=202
-    )
+    @router.post("/model-connections/probe", response_model=ProbeAcceptedView, status_code=202)
     async def probe(body: ProbeRequest) -> ProbeAcceptedView:
         if probe_runner is None:
             raise WorkspaceError(

@@ -42,7 +42,7 @@ from hastings.workspace.clues import ClueStore
 from hastings.workspace.context import ideas_section, materials_section
 from hastings.workspace.disclosure import DisclosureStore
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.files import Workspace
+from hastings.workspace.files import Workspace, managed_kind
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import GlossaryStore
 from hastings.workspace.materials import (
@@ -404,23 +404,44 @@ def _context_is_empty(request: ContextRequest) -> bool:
 
 
 _PROSE_TARGET = re.compile(
-    r"(正文|章节|第[一二三四五六七八九十百\d]+章|一章|下一章|这一章|开头|场景)"
+    r"(正文|章节|第[一二三四五六七八九十百两\d]+章|前[一二三四五六七八九十两\d]+章|"
+    r"下一章|这一章|这两章|开头|结尾|场景|这一段|这两段)"
 )
-_PROSE_STOP = ("构思", "结构", "设定", "大纲", "人物小传")
+_PROSE_FILE_TARGETS = (
+    "这个文件",
+    "这两个文件",
+    "这份文件",
+    "这两份文件",
+    "这些文件",
+    "该文件",
+)
+_PROSE_VERBS = ("写", "重写", "改写", "续写", "起草", "落笔", "补写", "改稿", "润色")
+#: “第一章的构思 / 结构”是结构目标；不能因为句首出现“根据构思”就误伤正文请求。
+_STRUCTURE_PHRASE = re.compile(
+    r"(?:的\s*(构思|结构|设定|大纲|人物小传)|"
+    r"(?:写进|写入|整理进|归入|放进)\s*(构思|结构|设定|大纲))"
+)
+_WRITE_STRUCTURE = re.compile(
+    r"(写|重写|改写|修改|调整|整理|建立|创建|补写|补)\s*"
+    r"(?:一个|一份|一段|一下)?\s*(构思|结构|设定|大纲|人物小传)"
+)
 
 
-def _explicit_prose_request(text: str) -> bool:
+def _explicit_prose_request(text: str, *, selected_path: str | None = None) -> bool:
     """作者明确要写正文，而不是在讨论结构。
 
-    构思页的普通消息默认按 design 发送；只有明确出现「写正文 / 写第几章」这类
-    动作和目标时才升级为写作轮，避免把「写一段线索说明」误当成正文。
+    “根据构思 / 按构思”是限定语，不是写作目标；判断以正文目标为准。
+    “这两个文件”只有在当前阅读位置是正文时才算正文目标，避免把设定文件误当正文。
     """
     clean = text.strip()
-    if not clean or not any(word in clean for word in ("写", "续写", "起草", "落笔")):
+    if not clean or not any(word in clean for word in _PROSE_VERBS):
         return False
-    if not _PROSE_TARGET.search(clean):
+    target = bool(_PROSE_TARGET.search(clean))
+    if not target and selected_path and managed_kind(selected_path) == "chapter":
+        target = any(phrase in clean for phrase in _PROSE_FILE_TARGETS)
+    if not target:
         return False
-    return not any(word in clean for word in _PROSE_STOP)
+    return not (_STRUCTURE_PHRASE.search(clean) or _WRITE_STRUCTURE.search(clean))
 
 
 def _context_from_question(snapshot: Mapping[str, Any]) -> ContextRequest:
@@ -789,23 +810,25 @@ class TurnService:
             from hastings.workspace.story_context import StoryRequest
 
             requested_goal = classify_design_intent(text)
+            prose_request = _explicit_prose_request(
+                text,
+                selected_path=(context.selected_path if context else None),
+            )
             if (
                 story_action is None
                 and purpose == "chat"
                 and context is not None
                 and context.story is not None
                 and context.story.purpose == "design"
-                and not requested_goal.requires_structure
-                and _explicit_prose_request(text)
+                and prose_request
             ):
-                # 作者在构思页直接说「写第一章」：这一轮明确要正文，不能继续按设计轮
-                # 只开放结构工具，否则写入会被候选校验拦下且没有候选入口。
-                context = replace(
-                    context, story=replace(context.story, purpose="write")
-                )
+                # 作者明确说「写/重写第几章、这两个文件」：页面是否还停在构思，
+                # 不能成为只开放结构工具的理由。
+                context = replace(context, story=replace(context.story, purpose="write"))
             if (
                 story_action is None
                 and purpose == "chat"
+                and not prose_request
                 and "构思" in text
                 and requested_goal.requires_structure
             ):

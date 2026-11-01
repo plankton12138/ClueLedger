@@ -346,8 +346,12 @@ def test_variant_prose_written_to_managed_copy(tmp_path: Path) -> None:
         base_revision=revision,
         prose_patches=[
             ProsePatch(
-                path=path, base_digest=digest, start=6, end=8,
-                expected="甲😀", replacement="丙😀",
+                path=path,
+                base_digest=digest,
+                start=6,
+                end=8,
+                expected="甲😀",
+                replacement="丙😀",
             )
         ],
     )
@@ -372,8 +376,13 @@ def test_variant_prose_delete_leaves_main_file(tmp_path: Path) -> None:
         base_revision=revision,
         prose_patches=[
             ProsePatch(
-                path=path, base_digest=digest, start=0, end=len(MAIN_TEXT),
-                expected=MAIN_TEXT, replacement="", delete=True,
+                path=path,
+                base_digest=digest,
+                start=0,
+                end=len(MAIN_TEXT),
+                expected=MAIN_TEXT,
+                replacement="",
+                delete=True,
             )
         ],
     )
@@ -389,9 +398,7 @@ def test_variant_prose_delete_leaves_main_file(tmp_path: Path) -> None:
 ALTERNATIVE_TEXT = "# 雨夜\n\n备选甲的不同原文。"
 
 
-def write_variant_prose(
-    store: StoryStore, variant_id: str, path: str, text: str, key: str
-) -> None:
+def write_variant_prose(store: StoryStore, variant_id: str, path: str, text: str, key: str) -> None:
     digest, current, _ = store.prose_state(path, variant_id)
     revision = store.require_variant(variant_id).revision
     store.commit_change(
@@ -487,8 +494,12 @@ def test_undo_preserves_later_edit_in_same_file(tmp_path: Path) -> None:
             base_revision="empty",
             prose_patches=[
                 ProsePatch(
-                    path=path, base_digest=view.digest, start=6, end=8,
-                    expected="甲😀", replacement="丙😀",
+                    path=path,
+                    base_digest=view.digest,
+                    start=6,
+                    end=8,
+                    expected="甲😀",
+                    replacement="丙😀",
                 )
             ],
         ),
@@ -512,8 +523,12 @@ def test_undo_conflicts_when_changed_segment_moved(tmp_path: Path) -> None:
             base_revision="empty",
             prose_patches=[
                 ProsePatch(
-                    path=path, base_digest=view.digest, start=6, end=8,
-                    expected="甲😀", replacement="丙😀",
+                    path=path,
+                    base_digest=view.digest,
+                    start=6,
+                    end=8,
+                    expected="甲😀",
+                    replacement="丙😀",
                 )
             ],
         ),
@@ -568,8 +583,11 @@ def test_module_and_conversation_dependencies(tmp_path: Path) -> None:
             change=StoryChangeSet(
                 id=f"dep-{kind}-{dependency_id}-{revision_text}",
                 base_revision=store.require_variant("main").revision,
-                operations=[AddNode(node=StoryNode(id=f"n-{kind}-{revision_text}",
-                                                   title="检查", action="检查"))],
+                operations=[
+                    AddNode(
+                        node=StoryNode(id=f"n-{kind}-{revision_text}", title="检查", action="检查")
+                    )
+                ],
                 read_dependencies=[
                     ReadDependency(kind=kind, id=dependency_id, revision=revision_text)
                 ],
@@ -606,6 +624,7 @@ def test_unavailable_dependency_entry_is_reported(tmp_path: Path) -> None:
 def test_ledger_target_recovers_after_write_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import hastings.workspace.story_store as story_store_module
     from hastings.workspace.clue_store import ClueLedgerStore
     from hastings.workspace.story_clue_commit import prepare_clue_joint
     from hastings.workspace.story_models import (
@@ -614,7 +633,6 @@ def test_ledger_target_recovers_after_write_failure(
         CreateClueIdentity,
         UpsertCluePlan,
     )
-    import hastings.workspace.story_store as story_store_module
 
     store = StoryStore(tmp_path / "state")
     change = StoryChangeSet(
@@ -646,9 +664,7 @@ def test_ledger_target_recovers_after_write_failure(
             variant_id="main",
             change=change,
             request_key="ledger-recovery",
-            prepare_joint=prepare_clue_joint(
-                tmp_path / "state", variant_id="main", change=change
-            ),
+            prepare_joint=prepare_clue_joint(tmp_path / "state", variant_id="main", change=change),
         )
     assert caught.value.code == "STORY_WRITE_FAILED"
     assert store.pending.exists()

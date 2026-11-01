@@ -52,22 +52,26 @@
 ```python
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class ModuleRef:
     library_id: str
     module_id: str
     revision_id: str
 
+
 @dataclass(frozen=True)
 class RecordRef:
     module_id: str
     entry_id: str
+
 
 @dataclass(frozen=True)
 class ModuleBinding:
     id: str
     module: ModuleRef
     label: str
+
 
 @dataclass(frozen=True)
 class Assembly:

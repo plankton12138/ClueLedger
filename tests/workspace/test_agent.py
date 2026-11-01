@@ -153,14 +153,21 @@ async def test_revoked_generation_cannot_write_after_baseline_is_prepared(tmp_pa
 
     def revoked() -> None:
         raise WorkspaceError(
-            code="OPERATION_PAUSED_CONFLICT", where="turn.write", why="操作已暂停",
+            code="OPERATION_PAUSED_CONFLICT",
+            where="turn.write",
+            why="操作已暂停",
             fix="继续后再写",
         )
 
     session.guard = revoked
     with pytest.raises(WorkspaceError) as caught:
-        await _call(tools["edit_file"], path=path, old_text="初稿。", new_text="迟到的改动。",
-                    digest=created["digest"])
+        await _call(
+            tools["edit_file"],
+            path=path,
+            old_text="初稿。",
+            new_text="迟到的改动。",
+            digest=created["digest"],
+        )
     assert caught.value.code == "OPERATION_PAUSED_CONFLICT"
     assert workspace.read(path).text == "# 雨夜\n\n初稿。\n"
 

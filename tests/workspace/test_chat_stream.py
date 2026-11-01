@@ -538,9 +538,9 @@ def test_stop_keeps_partial_text_and_closes_blocks(
     conversation_id = turn["conversation_id"]
     _wait_until(client, workspace_id, conversation_id, _has_delta)
     client.post(
-            f"/api/operations/{turn['operation_id']}/pause",
-            json={"request_key": "pause-1"},
-        )
+        f"/api/operations/{turn['operation_id']}/pause",
+        json={"request_key": "pause-1"},
+    )
 
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     # 这一块确实收到了结束事件，所以块本身是完整的；未完整的是整次响应。

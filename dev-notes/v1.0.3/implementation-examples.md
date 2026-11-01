@@ -237,10 +237,7 @@ def check_resolution_consistency(variant: "StoryVariant") -> None:
         resolve_nodes = [
             node
             for node in variant.nodes.values()
-            if any(
-                use.clue_id == plan.clue_id and "resolve" in use.roles
-                for use in node.clue_uses
-            )
+            if any(use.clue_id == plan.clue_id and "resolve" in use.roles for use in node.clue_uses)
         ]
         if plan.resolution_intent == "explain" and not resolve_nodes:
             raise StoryInvalid("明确解释的线索需要有安排为回收的节点")
@@ -251,24 +248,22 @@ def check_resolution_consistency(variant: "StoryVariant") -> None:
 删除身份与删除计划的边界不同。删除计划只去掉作者安排，身份和正文贡献继续存在；删除身份要求最终状态里没有计划、没有节点使用、没有正文贡献，撤销创建身份也执行同一检查。冲突要指出具体仍被谁引用，不能只回一句「删除失败」。
 
 ```python
-def assert_identity_removable(
-    clue_id: str, variant: "StoryVariant", ledger: "ClueLedger"
-) -> None:
+def assert_identity_removable(clue_id: str, variant: "StoryVariant", ledger: "ClueLedger") -> None:
     plan = clue_id in variant.clue_plans
-    uses = any(
-        use.clue_id == clue_id for node in variant.nodes.values() for use in node.clue_uses
-    )
-    contributions = any(
-        row.clue_id == clue_id for row in ledger.contributions.values()
-    )
+    uses = any(use.clue_id == clue_id for node in variant.nodes.values() for use in node.clue_uses)
+    contributions = any(row.clue_id == clue_id for row in ledger.contributions.values())
     if plan or uses or contributions:
         raise WorkspaceError(
             code="STORY_CLUE_REFERENCE_INVALID",
             where="story.clue",
             why="这条线索仍被计划、节点使用或正文贡献引用",
             fix="先处理这些引用，再删除身份",
-            details={"clue_id": clue_id, "plan": plan, "uses": uses,
-                     "contributions": contributions},
+            details={
+                "clue_id": clue_id,
+                "plan": plan,
+                "uses": uses,
+                "contributions": contributions,
+            },
         )
 ```
 
@@ -430,13 +425,17 @@ def build_story_clue_views(
     variant = story.variant(variant_id)
     if variant is None:
         raise WorkspaceError(
-            code="STORY_VARIANT_NOT_FOUND", where="clues.story",
-            why="当前作品没有这个构思", fix="刷新构思后重新选择",
+            code="STORY_VARIANT_NOT_FOUND",
+            where="clues.story",
+            why="当前作品没有这个构思",
+            fix="刷新构思后重新选择",
         )
     if node_id is not None and node_id not in variant.nodes:
         raise WorkspaceError(
-            code="STORY_CONTEXT_INCOMPLETE", where="clues.story",
-            why="筛选的节点不在当前构思里", fix="重新选择节点",
+            code="STORY_CONTEXT_INCOMPLETE",
+            where="clues.story",
+            why="筛选的节点不在当前构思里",
+            fix="重新选择节点",
         )
 
     ledger = ClueLedgerStore(root).read()
@@ -488,9 +487,7 @@ def _view_revision(
                     "identity": row.clue_revision,
                     "plan": row.plan.model_dump(mode="json") if row.plan else None,
                     "uses": [use.model_dump(mode="json") for use in row.uses],
-                    "evidence": [
-                        [item.evidence_id, item.freshness] for item in row.evidence
-                    ],
+                    "evidence": [[item.evidence_id, item.freshness] for item in row.evidence],
                 }
                 for row in views
             ],
