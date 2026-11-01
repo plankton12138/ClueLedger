@@ -282,7 +282,11 @@ class RunContext:
                 code="STORY_CANDIDATE_REQUIRED",
                 where="story.write",
                 why="本轮正文必须先提交候选并通过核对，尚未修改正式文件",
-                fix="使用 propose_story_scene 提交候选正文",
+                fix=(
+                    "本轮在构思页只能改结构；请从节点详情使用「写正文」，或关闭构思后直接写正文"
+                    if self.story is not None and self.story.purpose == "design"
+                    else "使用 propose_story_scene 提交候选正文"
+                ),
             )
         self.require_writable(f"task_scope:{operation.path}")
         self.scope.require(

@@ -13,11 +13,20 @@ import { collapseStages } from "./storyLayout";
 import StoryDraft from "./StoryDraft";
 import StoryBatches from "./StoryBatches";
 import StoryCreationDialog, { type StoryCreationTarget } from "./StoryCreationDialog";
+import StoryMysteryView from "./StoryMysteryView";
+import ErrorBoundary from "../ErrorBoundary";
 import { useConversationsStore } from "../../state/conversations";
 import { useStoryStore } from "../../state/story";
 import { Button } from "../ui/Button";
 import { EmptyState, StatusMessage } from "../ui/StatusMessage";
-const StoryCanvas = lazy(() => import("./StoryCanvas"));
+const StoryCanvas = lazy(() =>
+  import("./StoryCanvas").catch(async (error) => {
+    // 旧构建或开发服务器重载后，首次动态加载可能命中已失效的资源；给一次重试再交给边界。
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    if (import.meta.env.DEV) console.warn("[StoryCanvas] 首次加载失败，正在重试", error);
+    return import("./StoryCanvas");
+  }),
+);
 
 export interface StoryBindingLocator {
   variantId: string;
@@ -32,6 +41,8 @@ export default function StorySurface({
   onStart,
   onReference,
   onLocate,
+  onWriteScene,
+  onCalibrate,
 }: {
   workspaceId: string;
   /** 创建请求受理后打开对话，显示实际任务进度。 */
@@ -40,13 +51,19 @@ export default function StorySurface({
   onReference: () => void;
   /** 在正文里打开这条关联的区间；返回由来源提示负责。 */
   onLocate: (binding: StoryBindingLocator) => void;
+  /** 从节点直接发起写作轮；节点就是这一轮的正文依据。 */
+  onWriteScene: (nodeId: string) => void;
+  /** 根据已有正文校准当前构思；不会直接替换正式结构。 */
+  onCalibrate: () => void;
 }) {
   const state = useStoryStore();
   const load = useStoryStore((store) => store.load);
   const selectNode = useStoryStore((store) => store.selectNode);
+  const selectClue = useStoryStore((store) => store.selectClue);
   const undo = useStoryStore((store) => store.undo);
   const referenceNode = useStoryStore((store) => store.referenceNode);
   const [stageId, setStageId] = useState<string | null>(null);
+  const [surface, setSurface] = useState<"mystery" | "structure">("mystery");
   const [detailHeight, setDetailHeight] = useState(260);
   const detailDrag = useRef<{ y: number; height: number } | null>(null);
   const [creationTarget, setCreationTarget] = useState<StoryCreationTarget | null>(null);
@@ -54,6 +71,7 @@ export default function StorySurface({
   useEffect(() => {
     setCreationTarget(null);
     setStageId(null);
+    setSurface("mystery");
     void load(workspaceId);
   }, [load, workspaceId]);
 
@@ -106,18 +124,39 @@ export default function StorySurface({
   const detail = state.detail;
   return (
     <div className="story-surface">
-      {state.lastChange && <header className="story-toolbar">
+      <header className="story-toolbar">
         <div className="story-actions">
           {state.lastChange && (
             <Button size="compact" disabled={state.busy} onClick={() => void undo()}>
               <Undo2 size={16} strokeWidth={2} aria-hidden="true" />撤销上一次
             </Button>
           )}
+          <Button size="compact" variant="quiet" disabled={state.busy} onClick={onCalibrate}>
+            从正文校准
+          </Button>
         </div>
-      </header>}
+      </header>
 
-      <StoryDraft key={workspaceId} workspaceId={workspaceId} />
-      <StoryBatches key={workspaceId} workspaceId={workspaceId} />
+      <StoryDraft key={`story-draft-${workspaceId}`} workspaceId={workspaceId} />
+      <StoryBatches key={`story-batches-${workspaceId}`} workspaceId={workspaceId} />
+      <div className="story-view-switch" role="group" aria-label="构思视图">
+        <button
+          type="button"
+          className="ui-button"
+          aria-pressed={surface === "mystery"}
+          onClick={() => setSurface("mystery")}
+        >
+          悬疑视图
+        </button>
+        <button
+          type="button"
+          className="ui-button"
+          aria-pressed={surface === "structure"}
+          onClick={() => setSurface("structure")}
+        >
+          结构视图
+        </button>
+      </div>
       {stages.length > 0 && (
         <div className="story-groups" role="group" aria-label="阶段">
           <button type="button" className="ui-button" aria-pressed={!activeStage} onClick={() => setStageId(null)}>全部</button>
@@ -143,6 +182,25 @@ export default function StorySurface({
       )}
 
       <div className="story-body">
+        {surface === "mystery" ? (
+          <StoryMysteryView
+            workspaceId={workspaceId}
+            variantId={graph.variant_id}
+            revision={graph.revision}
+            graph={graph}
+            stageId={activeStage?.id ?? null}
+            selectedClueId={state.clueId}
+            onSelectClue={selectClue}
+            onOpenNode={(nodeId) => {
+              const node = graph.nodes.find((item) => item.id === nodeId);
+              setStageId(node?.stage_id ?? null);
+              setSurface("structure");
+              void selectNode(nodeId);
+            }}
+          />
+        ) : (
+          <ErrorBoundary label="结构视图" showReload>
+          <>
         <Suspense fallback={<div className="story-canvas">正在打开构思画布…</div>}><StoryCanvas graph={visibleGraph ?? graph} nodeId={state.nodeId} onSelect={selectNode}
           viewKey={`${workspaceId}:${graph.variant_id}:${stageId ?? "all"}`} /></Suspense>
 
@@ -226,6 +284,13 @@ export default function StorySurface({
               <div className="story-detail-actions">
                 <Button
                   size="compact"
+                  variant="primary"
+                  onClick={() => onWriteScene(detail.node.id)}
+                >
+                  写这一段
+                </Button>
+                <Button
+                  size="compact"
                   onClick={() => {
                     referenceNode(detail.node.id);
                     onReference();
@@ -247,6 +312,9 @@ export default function StorySurface({
             </>
           )}
         </aside>
+          </>
+          </ErrorBoundary>
+        )}
       </div>
     </div>
   );

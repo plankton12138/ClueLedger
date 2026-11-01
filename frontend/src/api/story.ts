@@ -91,6 +91,83 @@ export interface StoryGraph {
   collapsed: string[];
 }
 
+export interface StoryKnowledgeChange {
+  subject_id: string;
+  claim: string;
+  stance: "knows" | "believes";
+  source_kind: "observation" | "inference";
+  source_node_ids: string[];
+  effective_event_node_id: string;
+}
+
+export interface StoryMysteryUse {
+  clue_id: string;
+  title: string;
+  roles: string[];
+  presentation: string;
+  mode: string;
+  speaker_id: string;
+  expected_interpretation: string;
+  node_id: string;
+  node_title: string;
+}
+
+export interface StoryMysteryClue {
+  clue_id: string;
+  title: string;
+  roles: string[];
+  author_truth: string | null;
+  intention: string;
+  resolution_intent: "explain" | "leave_open" | "undecided";
+  has_identity: boolean;
+  uses: StoryMysteryUse[];
+}
+
+export interface StoryMysteryNode {
+  id: string;
+  time_status: "registered" | "unregistered";
+  before_ids: string[];
+  after_ids: string[];
+  clue_uses: StoryMysteryUse[];
+  knowledge_changes: StoryKnowledgeChange[];
+}
+
+export interface StoryMysteryDiagnostic {
+  code: string;
+  object_id: string;
+  related_ids: string[];
+  message: string;
+  suggestion: string;
+}
+
+export interface StoryMystery {
+  variant_id: string;
+  revision: string;
+  order: string[];
+  time_status: {
+    state: "complete" | "partial" | "unregistered";
+    registered: number;
+    unregistered: number;
+    total: number;
+  };
+  nodes: StoryMysteryNode[];
+  clues: StoryMysteryClue[];
+  subjects: {
+    subject_id: string;
+    claims: number;
+    stances: string[];
+    node_ids: string[];
+  }[];
+  diagnostics: StoryMysteryDiagnostic[];
+  counts: {
+    nodes: number;
+    clues: number;
+    event_times: number;
+    knowledge_changes: number;
+    subjects: number;
+  };
+}
+
 export interface StoryClueUse {
   clue_id: string;
   title: string;
@@ -151,6 +228,15 @@ export function readStoryVariant(
 ): Promise<StoryGraph> {
   return request<StoryGraph>(
     `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}`,
+  );
+}
+
+export function readStoryMystery(
+  workspaceId: string,
+  variantId: string,
+): Promise<StoryMystery> {
+  return request<StoryMystery>(
+    `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/mystery`,
   );
 }
 

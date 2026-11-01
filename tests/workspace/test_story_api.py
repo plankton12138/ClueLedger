@@ -254,6 +254,34 @@ def test_variants_graph_and_node_detail(client: TestClient, tmp_path: Path) -> N
     assert detail["incoming"] == []
 
 
+def test_mystery_projection_returns_timeline_and_clues(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    seed(tmp_path, workspace_id)
+
+    response = client.get(
+        f"/api/file-workspaces/{workspace_id}/story/variants/{MAIN_VARIANT_ID}/mystery"
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["variant_id"] == MAIN_VARIANT_ID
+    assert body["order"] == ["n1", "n2"]
+    assert body["time_status"] == {
+        "state": "unregistered",
+        "registered": 0,
+        "unregistered": 2,
+        "total": 2,
+    }
+    assert body["clues"][0]["title"] == "手套"
+    assert body["clues"][0]["roles"] == ["resolve"]
+    assert body["clues"][0]["uses"][0]["node_title"] == "抵达"
+    assert body["nodes"][0]["knowledge_changes"] == []
+    assert "STORY_TIMELINE_EMPTY" in {item["code"] for item in body["diagnostics"]}
+    assert body["counts"]["nodes"] == 2
+
+
 def test_change_commit_is_idempotent_and_revision_checked(
     client: TestClient, tmp_path: Path
 ) -> None:
@@ -294,6 +322,12 @@ def test_missing_variant_and_node_are_reported(client: TestClient, tmp_path: Pat
     missing = client.get(f"/api/file-workspaces/{workspace_id}/story/variants/variant_missing")
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "STORY_VARIANT_NOT_FOUND"
+
+    missing_mystery = client.get(
+        f"/api/file-workspaces/{workspace_id}/story/variants/variant_missing/mystery"
+    )
+    assert missing_mystery.status_code == 404
+    assert missing_mystery.json()["error"]["code"] == "STORY_VARIANT_NOT_FOUND"
 
     node = client.get(
         f"/api/file-workspaces/{workspace_id}/story/nodes/n99",
@@ -394,6 +428,47 @@ def test_create_identity_is_joint_and_undo_restores_ledger(
         f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
     )
     assert listing.json()["items"] == []
+
+
+def test_story_clue_views_accept_action_presentation(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_id = open_workspace(client, tmp_path)
+    created = client.post(
+        f"/api/file-workspaces/{workspace_id}/story/changes",
+        json={
+            "variant_id": MAIN_VARIANT_ID,
+            "expected_revision": "empty",
+            "request_key": "action-clue",
+            "operations": [
+                {"op": "create_clue_identity", "temp_id": "smoke", "title": "灯下的烟"},
+                {"op": "upsert_clue_plan", "clue_id": "smoke",
+                 "plan": {"intention": "让读者先当成雾"}},
+                {"op": "add_node", "node": {
+                    "id": "n1", "title": "灯下", "action": "有人点烟",
+                    "clue_uses": [{
+                        "clue_id": "smoke", "roles": ["plant"],
+                        "presentation": "灯下多出一缕烟", "mode": "action",
+                    }],
+                }},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    stable = created.json()["id_map"]["smoke"]
+
+    listing = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues", params={"scope": "story"}
+    )
+    assert listing.status_code == 200, listing.text
+    assert [row["title"] for row in listing.json()["items"]] == ["灯下的烟"]
+
+    detail = client.get(
+        f"/api/file-workspaces/{workspace_id}/clues/{stable}",
+        params={"scope": "story"},
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["uses"][0]["presentation"] == "灯下多出一缕烟"
 
 
 def test_stale_expected_ledger_revision_writes_nothing(

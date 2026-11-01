@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { getNodesBounds, useReactFlow, useViewport, type Node } from "@xyflow/react";
+import { useReactFlow, useViewport, type Node } from "@xyflow/react";
 
 /** 原生滚动条与画布视口共用坐标；拖图、缩放和滚动条不会各自保留一份位置。 */
 export default function CanvasScrollbars({ nodes }: { nodes: Node[] }) {
@@ -8,7 +8,7 @@ export default function CanvasScrollbars({ nodes }: { nodes: Node[] }) {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const viewport = useViewport();
   const flow = useReactFlow();
-  const bounds = getNodesBounds(nodes);
+  const bounds = flow.getNodesBounds(nodes);
   const limits = useRef({ key: "", left: 0, top: 0, right: 0, bottom: 0 });
 
   useLayoutEffect(() => {

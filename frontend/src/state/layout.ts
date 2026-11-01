@@ -17,7 +17,7 @@ export interface WidthRange {
   max: number;
 }
 
-export const SIDEBAR: WidthRange = { default: 240, min: 180, max: 400 };
+export const SIDEBAR: WidthRange = { default: 260, min: 200, max: 520 };
 export const CHAT: WidthRange = { default: 420, min: 320, max: 640 };
 export const FONT_SCALE: WidthRange = { default: 100, min: 80, max: 150 };
 

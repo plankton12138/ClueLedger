@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import { useSourceLocationStore } from "../../state/sourceLocation";
-import { useStoryStore } from "../../state/story";
+import { navigate } from "../../state/navigation";
 import { useWorkspaceStore } from "../../state/workspace";
 import { Button } from "../ui/Button";
 import { RawSourceHighlight, sourceRange } from "./SourceHighlight";
@@ -17,7 +17,7 @@ export function SourceNotice() {
   const storyReturn = useSourceLocationStore(state => state.storyReturn);
   const backToStory = () => {
     useSourceLocationStore.getState().clear();
-    useStoryStore.getState().setOpen(true);
+    if (currentId) navigate({ kind: "writing", workspaceId: currentId, mode: "story" });
   };
   // 线索依据与构思里的正文关联都用这条提示；来源不同，返回目标也不同。
   if ((!state.evidenceId && !storyReturn) || state.workspaceId !== currentId) return null;

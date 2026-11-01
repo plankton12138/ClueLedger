@@ -1,7 +1,7 @@
 import { WorkspaceApiError } from "./workspace";
 
 export type ClueFreshness = "valid" | "stale" | "source_missing" | "unavailable" | "none";
-export type ClueMode = "narration" | "testimony" | "recollection" | "hypothesis" | "dream" | "unknown";
+export type ClueMode = "narration" | "action" | "testimony" | "recollection" | "hypothesis" | "dream" | "unknown";
 export interface ClueCoverage {
   outcome: "found" | "empty" | "insufficient" | "unrecorded";
   freshness: ClueFreshness;

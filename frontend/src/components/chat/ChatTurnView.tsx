@@ -80,20 +80,36 @@ function ChatTurnView({
       <TaskCard turn={turn} />
       <ModuleChangeCard turn={turn} workspaceId={workspaceId} conversationId={conversationId} />
 
-      {turn.items.map((item, index) =>
-        item.kind === "message" ? (
-          <AssistantMessageView
-            key={item.key}
-            message={item.message}
-            turnId={turn.id}
-            turnIndex={turnIndex}
-            onExpand={onExpand}
-            onCopyFailed={onCopyFailed}
-          />
-        ) : (
+      {turn.items.map((item, index) => {
+        if (item.kind === "message") {
+          return (
+            <AssistantMessageView
+              key={item.key}
+              message={item.message}
+              turnId={turn.id}
+              turnIndex={turnIndex}
+              onExpand={onExpand}
+              onCopyFailed={onCopyFailed}
+            />
+          );
+        }
+        if (item.kind === "user") {
+          return (
+            <div
+              className="chat-msg mine"
+              key={item.key}
+              data-role="user"
+              data-turn-id={turn.id}
+              data-turn-index={turnIndex}
+            >
+              <div className="chat-bubble">{item.text}</div>
+            </div>
+          );
+        }
+        return (
           <ToolActivity key={item.key} tool={item.tool} submittedLater={hasLaterStorySubmission(turn, index)} />
-        ),
-      )}
+        );
+      })}
 
       {turn.incomplete && (
         <p className="chat-note">这段记录不完整：部分内容没有保存下来，以上的文字就是全部。</p>

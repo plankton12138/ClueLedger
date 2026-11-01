@@ -11,6 +11,8 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 interface ErrorBoundaryProps {
   /** 面板名，显示在错误卡标题里。 */
   label: string;
+  /** 渲染错误多为旧页面或资源加载失败：提供刷新入口，避免重试一直命中同一份失败状态。 */
+  showReload?: boolean;
   children: ReactNode;
 }
 
@@ -38,13 +40,28 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
       <div className="flex flex-1 items-center justify-center p-6">
         <div className="max-w-md rounded border border-red-edge bg-red-bg px-4 py-3">
           <p role="alert" className="text-sm text-red">[PANEL_RENDER_FAILED] {this.props.label}：面板暂时无法显示。建议：重试；持续失败时查看活动记录或刷新页面。</p>
-          <button
-            type="button"
-            className="btn btn-gray mt-3 px-3 py-1 text-xs"
-            onClick={() => this.setState({ error: null })}
-          >
-            重试
-          </button>
+          <details className="mt-2 text-xs text-red">
+            <summary className="cursor-pointer">错误信息</summary>
+            <pre className="mt-1 whitespace-pre-wrap break-words">{this.state.error.message}</pre>
+          </details>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn btn-gray px-3 py-1 text-xs"
+              onClick={() => this.setState({ error: null })}
+            >
+              重试
+            </button>
+            {this.props.showReload && (
+              <button
+                type="button"
+                className="btn btn-gray px-3 py-1 text-xs"
+                onClick={() => window.location.reload()}
+              >
+                刷新页面
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );

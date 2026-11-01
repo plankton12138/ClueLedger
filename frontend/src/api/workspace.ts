@@ -308,6 +308,13 @@ export type WorkspaceEvent =
         idea_revisions?: { idea_id: string; revision_id: string; title?: string; preview?: string }[];
       };
     })
+  | (EventBase & {
+      type: "author_interjected";
+      turn_id: string;
+      text: string;
+      operation_id?: string;
+      generation?: number;
+    })
   | (EventBase & { type: "run_phase"; turn_id: string; phase: RunPhase })
   | (EventBase & { type: "assistant_started"; turn_id: string; message_id: string })
   | (EventBase & {

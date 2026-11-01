@@ -5,7 +5,7 @@ import { Button } from "../ui/Button";
 import { StatusMessage } from "../ui/StatusMessage";
 import type { ClueReferenceInput } from "../../api/workspace";
 
-const MODE: Record<ClueMode, string> = { narration: "叙述", testimony: "证词", recollection: "回忆", hypothesis: "推测", dream: "梦境", unknown: "性质未标注" };
+const MODE: Record<ClueMode, string> = { narration: "叙述", action: "动作", testimony: "证词", recollection: "回忆", hypothesis: "推测", dream: "梦境", unknown: "性质未标注" };
 
 export function clueStatus(item: Pick<ClueSummary, "lifecycle" | "freshness">): string {
   if (item.lifecycle.status === "resolved" && item.freshness !== "valid") return "回收待复核";

@@ -44,8 +44,13 @@ export default function WorkspaceShell() {
     if (target && target !== currentId && bindings.some(item => item.id === target && item.exists)) {
       void selectWorkspace(target); return;
     }
-    if (currentId && (!page || target !== currentId)) navigate({ kind: "writing", workspaceId: currentId }, true);
-    else if (page?.kind === "writing") navigate(page, true);
+    if (currentId && (!page || target !== currentId)) {
+      const initial = parseHash(window.location.hash);
+      const next: WorkspacePage = initial && initial.kind !== "library" && initial.workspaceId === currentId
+        ? initial
+        : { kind: "writing", workspaceId: currentId };
+      navigate(next, true);
+    } else if (page?.kind === "writing") navigate(page, true);
   }, [page, bindings, currentId, ready, library, contextId, selectWorkspace]);
   useEffect(() => {
     if (page && page.kind !== "library" && page.workspaceId === currentId) {
@@ -59,7 +64,11 @@ export default function WorkspaceShell() {
   const showIdeas = useIdeasSurfaceStore(state => state.show);
   useEffect(() => {
     if (!ready || !currentId || page?.kind !== "writing" || page.workspaceId !== currentId) return;
-    if (!page.sourceId) { useSourceLocationStore.getState().clear(); return; }
+    if (!page.sourceId) {
+      // 构思里的正文关联用本地区间定位，没有服务端 evidence id；保留它并显示「返回构思」。
+      if (!useSourceLocationStore.getState().storyReturn) useSourceLocationStore.getState().clear();
+      return;
+    }
     const taskChapter = page.taskChapter ?? sourceTaskChapter(currentId) ?? useWorkspaceStore.getState().file?.chapter_number ?? 0;
     void useSourceLocationStore.getState().load(currentId, page.sourceId, page.asOfChapter ?? null, taskChapter);
   }, [ready, currentId, page]);
@@ -82,7 +91,11 @@ export default function WorkspaceShell() {
     if (!surfaceWasOpen.current) return;
     surfaceWasOpen.current = false;
     if (page?.kind === "ideas" && currentId) {
-      navigate({ kind: "writing", workspaceId: currentId }, true);
+      const last = usePagePositions.getState().pages[currentId]?.writing;
+      const target: WorkspacePage = last?.kind === "writing" && last.mode === "story"
+        ? { kind: "writing", workspaceId: currentId, mode: "story" }
+        : { kind: "writing", workspaceId: currentId };
+      navigate(target, true);
     }
   }, [surfaceOpen, page, currentId]);
   useEffect(() => {

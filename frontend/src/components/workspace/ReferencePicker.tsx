@@ -7,9 +7,10 @@
  * 没有选择时不显示标签区；发送不要求先选文件。
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { Catalog, FileEntry } from "../../api/workspace";
+import { useWorkspaceStore } from "../../state/workspace";
 
 interface Props {
   catalog: Catalog;
@@ -23,15 +24,24 @@ function entryLabel(entry: FileEntry): string {
   return entry.display_title || entry.title || entry.path;
 }
 
+/** 引用选择器只列真实存在、当前可以参考的文件：缺失的固定设定不占位置。 */
+export function referenceGroups(catalog: Catalog): { label: string; entries: FileEntry[] }[] {
+  return [
+    { label: "正文", entries: catalog.chapters.filter((entry) => entry.exists) },
+    { label: "角色小传", entries: catalog.characters.filter((entry) => entry.exists) },
+    { label: "固定设定", entries: catalog.settings.filter((entry) => entry.exists) },
+  ].filter((group) => group.entries.length > 0);
+}
+
 export default function ReferencePicker({ catalog, selected, onToggle, onClear }: Props) {
   const [open, setOpen] = useState(false);
-  const groups = useMemo(
-    () =>
-      [
-        { label: "正文", entries: catalog.chapters },
-        { label: "角色小传", entries: catalog.characters },
-        { label: "固定设定", entries: catalog.settings },
-      ].filter((group) => group.entries.length > 0),
+  const groups = useMemo(() => referenceGroups(catalog), [catalog]);
+  const missingPaths = useMemo(
+    () => new Set(
+      [...catalog.chapters, ...catalog.characters, ...catalog.settings]
+        .filter((entry) => !entry.exists)
+        .map((entry) => entry.path),
+    ),
     [catalog],
   );
   const titles = useMemo(() => {
@@ -41,6 +51,10 @@ export default function ReferencePicker({ catalog, selected, onToggle, onClear }
     }
     return map;
   }, [catalog]);
+
+  useEffect(() => {
+    if (open) void useWorkspaceStore.getState().refreshCatalog();
+  }, [open]);
 
   return (
     <div className="flex flex-col gap-1">
@@ -53,6 +67,7 @@ export default function ReferencePicker({ catalog, selected, onToggle, onClear }
               className="flex items-center gap-1 rounded border border-panel-edge px-1.5 py-0.5 text-[10px] text-sub"
             >
               {titles.get(path) ?? path}
+              {missingPaths.has(path) && <span className="text-[10px] text-amber">缺失</span>}
               <button
                 type="button"
                 aria-label={`移除参考 ${path}`}
@@ -97,11 +112,9 @@ export default function ReferencePicker({ catalog, selected, onToggle, onClear }
                   <input
                     type="checkbox"
                     checked={selected.includes(entry.path)}
-                    disabled={!entry.exists}
                     onChange={() => onToggle(entry.path)}
                   />
                   <span className="min-w-0 flex-1 truncate">{entryLabel(entry)}</span>
-                  {!entry.exists && <span className="text-[10px] text-amber">缺失</span>}
                 </label>
               ))}
             </div>

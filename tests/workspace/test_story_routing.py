@@ -144,6 +144,29 @@ def test_discussion_offers_read_only_and_records_intent(tmp_path: Path) -> None:
     assert operation.intent["kind"] == "discussion"
 
 
+def test_explicit_prose_request_switches_design_turn_to_candidate_flow(
+    tmp_path: Path,
+) -> None:
+    provider = RoutingProvider([_text_turn("我先写第一章。")])
+    service, _ = _service(tmp_path, provider)
+    _seed_node(service.store.root)
+
+    async def scenario() -> tuple[Any, list[dict[str, Any]]]:
+        info = await service.accept("写第一章", "k-prose", context=_story_context())
+        await service.wait(info.turn_id)
+        return info, list(service.store.events(info.conversation_id))
+
+    info, events = asyncio.run(scenario())
+    request = provider.requests[0]
+    assert "propose_story_scene" in request["tools"]
+    assert "write_file" not in request["tools"]
+    assert "候选正文流程" in request["system"]
+    started = next(event for event in events if event["type"] == "turn_started")
+    assert started["context"]["story"]["purpose"] == "write"
+    operation = service.operations.read(info.operation_id)
+    assert operation is not None
+
+
 def test_structure_task_hides_module_writes_and_sends_empty_plan(tmp_path: Path) -> None:
     provider = RoutingProvider([_text_turn("我先把线索和节点整理出来。")])
     service, _ = _service(tmp_path, provider)

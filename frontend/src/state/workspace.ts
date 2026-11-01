@@ -80,6 +80,8 @@ interface WorkspaceStore {
   refreshBindings(): Promise<void>;
   pruneMissing(): Promise<void>;
   refreshAll(): Promise<void>;
+  /** 只重读目录；引用选择器展开时用它让列表与当前磁盘一致。 */
+  refreshCatalog(): Promise<void>;
   refreshGit(): Promise<void>;
   openPath(path: string, preserveModule?: boolean): Promise<void>;
   runSearch(query: string): Promise<void>;
@@ -301,6 +303,19 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       set({ notice: `已清理 ${result.removed.length} 个目录已不存在的作品。` });
     } catch (error) {
       set({ error: describe(error) });
+    }
+  },
+
+  async refreshCatalog() {
+    const id = get().currentId;
+    if (!id) return;
+    const epoch = get().workspaceEpoch;
+    try {
+      const catalog = await listFiles(id);
+      if (get().currentId !== id || get().workspaceEpoch !== epoch) return;
+      set({ catalog });
+    } catch (error) {
+      if (get().currentId === id && get().workspaceEpoch === epoch) set({ error: describe(error) });
     }
   },
 

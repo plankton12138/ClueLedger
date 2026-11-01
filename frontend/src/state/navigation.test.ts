@@ -15,6 +15,12 @@ describe("parseHash", () => {
       kind: "writing",
       workspaceId: "ws1",
     });
+    expect(parseHash("#/workspaces/ws1/writing?mode=story")).toEqual({
+      kind: "writing",
+      workspaceId: "ws1",
+      mode: "story",
+    });
+    expect(parseHash("#/workspaces/ws1/writing?mode=design")).toBeNull();
     expect(parseHash("#/workspaces/ws1/ideas?entry=idea_123")).toEqual({
       kind: "ideas",
       workspaceId: "ws1",
@@ -58,6 +64,7 @@ describe("pageHash", () => {
   it("往返一致", () => {
     const pages = [
       { kind: "writing" as const, workspaceId: "ws1" },
+      { kind: "writing" as const, workspaceId: "ws1", mode: "story" as const },
       { kind: "ideas" as const, workspaceId: "ws1" },
       { kind: "ideas" as const, workspaceId: "ws1", ideaId: "idea_123" },
     ];

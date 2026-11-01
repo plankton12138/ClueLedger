@@ -29,6 +29,7 @@ from hastings.workspace.story_models import (
     StoryNode,
     StoryVariant,
 )
+from hastings.workspace.story_mystery import build_mystery_view
 from hastings.workspace.story_store import StoryStore, new_id
 
 __all__ = ["create_story_router"]
@@ -100,6 +101,18 @@ class StoryGraphView(BaseModel):
     event_times: list[dict[str, str]]
     constraints: list[dict[str, Any]]
     collapsed: list[str] = Field(default_factory=list)
+
+
+class StoryMysteryView(BaseModel):
+    variant_id: str
+    revision: str
+    order: list[str]
+    time_status: dict[str, Any]
+    nodes: list[dict[str, Any]]
+    clues: list[dict[str, Any]]
+    subjects: list[dict[str, Any]]
+    diagnostics: list[dict[str, Any]]
+    counts: dict[str, int]
 
 
 class StoryClueUseView(BaseModel):
@@ -472,6 +485,19 @@ def create_story_router(
             ],
             collapsed=[],
         )
+
+    @router.get(
+        "/{workspace_id}/story/variants/{variant_id}/mystery",
+        response_model=StoryMysteryView,
+    )
+    def read_mystery(workspace_id: str, variant_id: str) -> StoryMysteryView:
+        """悬疑投影：实际时间、线索生命周期、知情与诊断；只读。"""
+        store = store_for(workspace_id)
+        variant = require_variant(store, variant_id)
+        catalog = StoryClueCatalog.from_root(
+            variant, conversation_root(workspaces.root, workspace_id)
+        )
+        return StoryMysteryView(**build_mystery_view(variant, catalog))
 
     @router.get("/{workspace_id}/story/nodes/{node_id}", response_model=StoryNodeDetailView)
     def read_node(

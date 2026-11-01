@@ -11,7 +11,9 @@ from hastings.workspace.disclosure import ObservedEvidence
 
 ClueStatus = Literal["open", "resolved", "dropped"]
 CoverageOutcome = Literal["found", "empty", "insufficient"]
-ClueMode = Literal["narration", "testimony", "recollection", "hypothesis", "dream", "unknown"]
+ClueMode = Literal[
+    "narration", "action", "testimony", "recollection", "hypothesis", "dream", "unknown"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,9 +182,7 @@ class ClueContribution(StrictRecord):
     source_digest: str = Field(min_length=1)
     task_id: str
     # 未明确登记的说法性质不能从标题猜成 narration。
-    mode: Literal["narration", "testimony", "recollection", "hypothesis", "dream", "unknown"] = (
-        "unknown"
-    )
+    mode: ClueMode = "unknown"
     content: ClueContent
 
 

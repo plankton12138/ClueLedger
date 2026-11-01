@@ -69,6 +69,33 @@ it("提交前校验保留原失败，后续正式保存完成后才可折叠原�
   expect(hasLaterStorySubmission({ ...turn, items: [turn.items[1], turn.items[0]] }, 1)).toBe(false);
 });
 
+it("插话作为作者消息回到原轮次，重复事件不重复显示", () => {
+  reset();
+  const rows: WorkspaceEvent[] = [
+    turnStarted("t1", "写第一章"),
+    started("m1"),
+    blockStarted("b1"),
+    blockFinished("b1", "先写到这里。", 0),
+    next({
+      type: "author_interjected",
+      turn_id: "t1",
+      text: "再加一个雨夜来客。",
+      operation_id: "op-1",
+      generation: 2,
+    }),
+    started("m2"),
+    blockFinished("b2", "收到，继续。", 0, "m2"),
+  ];
+
+  const turn = buildTurns(rows)[0];
+  expect(turn.prompt).toBe("写第一章");
+  expect(turn.items.map((item) => item.kind)).toEqual(["message", "user", "message"]);
+  expect(turn.items[1]).toMatchObject({ kind: "user", text: "再加一个雨夜来客。" });
+
+  const replayed = appendEvent(buildTurns(rows.slice(0, 5)), rows[4]);
+  expect(replayed[0].items.filter((item) => item.kind === "user")).toHaveLength(1);
+});
+
 function turnStarted(id = "t1", text = "写第一章"): WorkspaceEvent {
   return next({ type: "turn_started", turn_id: id, text });
 }

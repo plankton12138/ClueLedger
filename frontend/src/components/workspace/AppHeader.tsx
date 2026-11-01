@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { BookOpen, LibraryBig, Settings } from "lucide-react";
-import { pageHash, type AppPage, type WorkspacePage } from "../../state/navigation";
-import { useWorkspaceStore } from "../../state/workspace";
-import { useModelsStore } from "../../state/models";
+import { BookOpen, Clock3, LibraryBig, Network, Settings } from "lucide-react";
+import { pageHash, navigate, type AppPage, type WorkspacePage } from "../../state/navigation";
 import { usePagePositions } from "../../state/pagePositions";
+import { useLayoutStore } from "../../state/layout";
+import { useWorkspaceStore } from "../../state/workspace";
+import { runningConversation, useConversationsStore } from "../../state/conversations";
+import { useModelsStore } from "../../state/models";
 import { Button } from "../ui/Button";
 import { AppDialog } from "../ui/AppDialog";
 import FontSizeControl from "./FontSizeControl";
@@ -11,13 +13,19 @@ import RemoveWorkspaceDialog from "./RemoveWorkspaceDialog";
 import RenameWorkspaceDialog from "./RenameWorkspaceDialog";
 
 function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; workspaceId: string | null }) {
-  const positions = usePagePositions(state => workspaceId ? state.pages[workspaceId] : undefined);
   const writing: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId } : null;
+  const story: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId, mode: "story" } : null;
+  const storyActive = page?.kind === "writing" && page.mode === "story";
+  const writingActive = page?.kind === "writing" && page.mode !== "story" || page?.kind === "ideas";
   return <nav className="workspace-navigation" aria-label="作品页面">
     {writing
-      ? <a className="ui-nav-link" href={pageHash(positions?.writing ?? writing)} aria-current={page?.kind === "writing" ? "page" : undefined}>
-        <BookOpen size={16} strokeWidth={2} aria-hidden="true" />写作</a>
-      : <span aria-disabled="true"><BookOpen size={16} strokeWidth={2} aria-hidden="true" />写作</span>}
+      ? <a className="ui-nav-link" href={pageHash(writing)} aria-current={writingActive ? "page" : undefined}>
+        <BookOpen size={16} strokeWidth={2} aria-hidden="true" />正文</a>
+      : <span aria-disabled="true"><BookOpen size={16} strokeWidth={2} aria-hidden="true" />正文</span>}
+    {story
+      ? <a className="ui-nav-link" href={pageHash(story)} aria-current={storyActive ? "page" : undefined}>
+        <Network size={16} strokeWidth={2} aria-hidden="true" />构思</a>
+      : <span aria-disabled="true"><Network size={16} strokeWidth={2} aria-hidden="true" />构思</span>}
     <a className="ui-nav-link" href={pageHash({ kind: "library", workspaceContextId: workspaceId ?? undefined })} aria-current={page?.kind === "library" ? "page" : undefined}>
       <LibraryBig size={16} aria-hidden="true" />模块库</a>
   </nav>;
@@ -47,9 +55,19 @@ function WorkspaceMenu({ onOpen }: { onOpen: () => void }) {
 }
 
 export default function AppHeader({ page, onOpen, onSelect }: { page: AppPage | null; onOpen: () => void; onSelect: (id: string) => void }) {
-  const { bindings, currentId } = useWorkspaceStore();
+  const { bindings, currentId, openDrawer } = useWorkspaceStore();
+  const running = useConversationsStore(runningConversation);
   const [settings, setSettings] = useState(false);
   const openModels = useModelsStore(state => state.openSettings);
+  function returnToRunning() {
+    if (!currentId) return;
+    const last = usePagePositions.getState().pages[currentId]?.writing;
+    const target: WorkspacePage = last?.kind === "writing" && last.mode === "story"
+      ? { kind: "writing", workspaceId: currentId, mode: "story" }
+      : { kind: "writing", workspaceId: currentId };
+    navigate(target);
+    useLayoutStore.getState().revealChat();
+  }
   return <header className="app-header">
     <div className="workspace-picker"><span className="app-name" title="ClueLedger">线簿</span>
       <select className="ui-input" aria-label="选择作品目录" value={currentId ?? ""} onChange={event => event.target.value && onSelect(event.target.value)}>
@@ -58,6 +76,10 @@ export default function AppHeader({ page, onOpen, onSelect }: { page: AppPage | 
     </div>
     <WorkspaceNavigation page={page} workspaceId={currentId} />
     <div className="app-tools">
+      {running && <Button size="compact" variant="primary" onClick={returnToRunning}>生成中</Button>}
+      <Button size="compact" disabled={!currentId} disabledReason="先打开作品目录" onClick={() => void openDrawer()}>
+        <Clock3 size={16} strokeWidth={2} aria-hidden="true" />活动记录
+      </Button>
       <AppDialog title="设置" open={settings} onOpenChange={setSettings} trigger={<Button size="compact" data-dialog-return="settings">
         <Settings size={16} strokeWidth={2} aria-hidden="true" />设置</Button>}>
         <div className="ui-action-list"><Button onClick={() => { setSettings(false); openModels(); }}>模型设置</Button><FontSizeControl /></div>

@@ -221,6 +221,14 @@ describe("构思状态", () => {
     expect(useStoryStore.getState().nodeId).toBe("n1");
   });
 
+  it("线索选择是构思页共用状态，切换作品后清空", async () => {
+    await useStoryStore.getState().load("w1");
+    useStoryStore.getState().selectClue("c1");
+    expect(useStoryStore.getState().clueId).toBe("c1");
+    await useStoryStore.getState().load("w2");
+    expect(useStoryStore.getState().clueId).toBeNull();
+  });
+
 });
 
 describe("构思刷新并发", () => {

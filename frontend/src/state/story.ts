@@ -36,6 +36,7 @@ interface StoryState {
   variantId: string | null;
   graph: StoryGraph | null;
   nodeId: string | null;
+  clueId: string | null;
   detail: StoryNodeDetail | null;
   lastChange: StoryChangeRecord | null;
   loading: boolean;
@@ -49,6 +50,7 @@ interface StoryState {
   referenceNode(nodeId: string): void;
   clearReference(): void;
   selectNode(nodeId: string | null): Promise<void>;
+  selectClue(clueId: string | null): void;
   submit(operations: Record<string, unknown>[], note?: string): Promise<boolean>;
   undo(changeId?: string): Promise<boolean>;
   dismissError(): void;
@@ -82,6 +84,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
   variantId: null,
   graph: null,
   nodeId: null,
+  clueId: null,
   detail: null,
   lastChange: null,
   loading: false,
@@ -100,6 +103,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
       variantId: null,
       graph: null,
       nodeId: null,
+      clueId: null,
       detail: null,
 
       lastChange: null,
@@ -136,7 +140,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     const epoch = ++loadEpoch;
     ++refreshEpoch;
     if (get().workspaceId !== workspaceId) {
-      set({ workspaceId, variants: [], variantId: null, graph: null, detail: null, nodeId: null });
+      set({ workspaceId, variants: [], variantId: null, graph: null, detail: null, nodeId: null, clueId: null });
     }
     set({ loading: true, error: null });
     try {
@@ -154,6 +158,7 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
         graph: initial ?? null,
         detail: null,
         nodeId: null,
+        clueId: null,
         loading: false,
       });
     } catch (error) {
@@ -205,6 +210,10 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
       if (get().workspaceId !== workspaceId || get().variantId !== variantId || get().nodeId !== nodeId) return;
       set({ error: errorMessage(error, "读取节点") });
     }
+  },
+
+  selectClue(clueId) {
+    set({ clueId });
   },
 
   async submit(operations, note = "") {

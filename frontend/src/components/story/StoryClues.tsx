@@ -10,22 +10,33 @@ interface Props {
   nodeId: string | null;
   asOf: number | null;
   active: boolean;
+  selectedClueId: string | null;
+  onSelectClue: (clueId: string | null) => void;
   nodeTitle: (nodeId: string) => string;
   onLocateNode: (nodeId: string) => void;
   onLocateEvidence: (evidenceId: string, asOf: number) => void;
   onReference: (reference: ClueReferenceInput, title: string) => void;
+  onClearNodeFilter: () => void;
 }
 
 const RESOLUTION = { explain: "计划解释", leave_open: "计划保留开放", undecided: "回收未定" };
 
+function clueStage(item: { freshness: string; coverage: { outcome: string } }): string {
+  if (item.freshness === "none" && item.coverage.outcome === "unrecorded") return "仅构思";
+  if (item.freshness === "none") return "正文未登记";
+  if (item.freshness !== "valid") return "正文待复核";
+  return "已入正文";
+}
+
 export default function StoryClues({
-  workspaceId, variantId, nodeId, asOf, active, nodeTitle, onLocateNode, onLocateEvidence, onReference,
+  workspaceId, variantId, nodeId, asOf, active, selectedClueId, onSelectClue,
+  nodeTitle, onLocateNode, onLocateEvidence, onReference, onClearNodeFilter,
 }: Props) {
   const clues = useCluesStore();
   const listKey = storyListKey(variantId, nodeId, asOf);
   const data = clues.workspaceId === workspaceId ? clues.lists[listKey] : undefined;
   const error = clues.workspaceId === workspaceId ? clues.errors[listKey] : undefined;
-  const selectedId = clues.selected[listKey] ?? null;
+  const selectedId = selectedClueId;
   const detailKey = selectedId ? storyDetailKey(variantId, selectedId, asOf) : "";
   const detail = selectedId && clues.workspaceId === workspaceId ? clues.details[detailKey] : undefined;
   const detailError = selectedId && clues.workspaceId === workspaceId ? clues.errors[detailKey] : undefined;
@@ -45,10 +56,15 @@ export default function StoryClues({
         <h2 className="break-words font-serif font-bold">{detail?.title ?? "线索"}</h2>
         <p className="mt-1 text-xs text-sub">{nodeId ? `与「${nodeTitle(nodeId)}」相关` : "全书线索"}</p>
       </div>
-      <Button size="compact" variant="quiet" onClick={() => clues.select(listKey, null)}>返回列表</Button>
+      <Button size="compact" variant="quiet" onClick={() => onSelectClue(null)}>返回列表</Button>
     </header>
     {detailError && <StatusMessage tone="error">{detailError}</StatusMessage>}
     {!detail ? <p className="p-3 text-sm text-sub">读取线索…</p> : <div className="min-h-0 flex-1 space-y-4 overflow-auto p-3 text-sm">
+      {detail.observations.length === 0 && (
+        <p className="rounded border border-amber-edge bg-amber-bg px-3 py-2 text-xs leading-5 text-amber">
+          这条线索还只在构思里。写完相关章节后，正文依据会出现在这里。
+        </p>
+      )}
       <section className="space-y-2">
         <h3 className="font-bold">作者计划</h3>
         {detail.plan ? <>
@@ -98,19 +114,27 @@ export default function StoryClues({
   return <section className="flex h-full min-h-0 flex-col" aria-label="全书线索">
     <header className="flex flex-none flex-wrap items-center gap-2 border-b border-panel-edge p-3">
       <h2 className="min-w-0 flex-1 truncate font-bold">{nodeId ? `与「${nodeTitle(nodeId)}」相关` : "全书线索"}</h2>
+      {nodeId && <Button size="compact" variant="quiet" onClick={onClearNodeFilter}>查看全部线索</Button>}
       <p className="basis-full text-xs text-sub">作者计划与正文观察分开显示。</p>
     </header>
     {error && <StatusMessage tone="error" action={<Button size="compact" onClick={() => void clues.loadStoryList(workspaceId, variantId, nodeId, asOf)}>重新读取</Button>}>{error}</StatusMessage>}
     <div className="min-h-0 flex-1 overflow-auto">
       {!data ? <p className="p-3 text-sm text-sub">读取全书线索…</p> : <>
         <ul className="divide-y divide-row-edge">{data.items.map(item => <li key={item.clue_id}>
-          <button className="w-full px-3 py-3 text-left hover:bg-ui-selected" onClick={() => clues.select(listKey, item.clue_id)}>
-            <span className="block break-words text-sm font-bold">{item.title}</span>
+          <button className="w-full px-3 py-3 text-left hover:bg-ui-selected" onClick={() => onSelectClue(item.clue_id)}>
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="break-words text-sm font-bold">{item.title}</span>
+              <span className="rounded border border-row-edge px-1.5 py-0.5 text-[11px] text-sub">{clueStage(item)}</span>
+            </span>
             <span className="mt-1 block text-xs text-sub">{item.plan ? RESOLUTION[item.plan.resolution_intent] : "尚无计划"}
               {item.plan?.intention && ` · ${item.plan.intention}`}</span>
           </button>
         </li>)}</ul>
-        {data.items.length === 0 && <p className="p-3 text-sm text-sub">{nodeId ? "这个节点还没有使用线索。" : "构思里还没有线索。"}</p>}
+        {data.items.length === 0 && <p className="p-3 text-sm leading-6 text-sub">
+          {nodeId
+            ? "这个节点还没有使用线索。切到「查看全部线索」可以看完整构思。"
+            : "构思里还没有线索。先在悬疑视图登记线索，或让我根据当前故事补一组。"}
+        </p>}
         {data.next_cursor && <Button className="m-3" size="compact" disabled={clues.loading[listKey]}
           onClick={() => void clues.loadStoryList(workspaceId, variantId, nodeId, asOf, true)}>更多线索</Button>}
       </>}

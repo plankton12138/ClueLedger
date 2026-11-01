@@ -12,7 +12,16 @@
 import { useMemo, useSyncExternalStore } from "react";
 
 export type WorkspacePage =
-  | { kind: "writing"; workspaceId: string; sourceId?: string; clueId?: string; asOfChapter?: number; taskChapter?: number }
+  | {
+      kind: "writing";
+      workspaceId: string;
+      /** 同一个写作页的两种工作模式；只有构思需要显式写入 URL。 */
+      mode?: "story";
+      sourceId?: string;
+      clueId?: string;
+      asOfChapter?: number;
+      taskChapter?: number;
+    }
   | { kind: "ideas"; workspaceId: string; ideaId?: string };
 
 export type LibraryPage = { kind: "library"; moduleId?: string; revisionId?: string; workspaceContextId?: string };
@@ -46,10 +55,13 @@ export function parseHash(hash: string): AppPage | null {
     const params = new URLSearchParams(query);
     const sourceId = params.get("source"), clueId = params.get("clue");
     const asOf = params.get("as_of"), task = params.get("task_chapter");
+    const mode = params.get("mode");
+    if (mode !== null && mode !== "story") return null;
     if (sourceId !== null && !/^ev_[a-f0-9]{20}_[a-f0-9]{32}$/.test(sourceId)) return null;
     if (clueId !== null && !ENTRY_ID.test(clueId)) return null;
     for (const value of [asOf, task]) if (value !== null && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return null;
     const page: WorkspacePage = { kind: "writing", workspaceId };
+    if (mode === "story") page.mode = "story";
     if (sourceId) page.sourceId = sourceId;
     if (clueId) page.clueId = clueId;
     if (asOf !== null) page.asOfChapter = Number(asOf);
@@ -77,6 +89,7 @@ export function pageHash(page: AppPage): string {
   }
   if (page.kind === "writing") {
     const params = new URLSearchParams();
+    if (page.mode === "story") params.set("mode", "story");
     if (page.sourceId) params.set("source", page.sourceId);
     if (page.clueId) params.set("clue", page.clueId);
     if (page.asOfChapter !== undefined) params.set("as_of", String(page.asOfChapter));

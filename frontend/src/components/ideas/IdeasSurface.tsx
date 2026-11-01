@@ -1,7 +1,8 @@
 /** 唯一的灵感入口：可拖动的小按钮与短内容面板，页面切换不重建业务草稿。 */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { GripVertical, Lightbulb, Minus, MoreHorizontal, Search } from "lucide-react";
-import { navigate } from "../../state/navigation";
+import { navigate, type WorkspacePage } from "../../state/navigation";
+import { usePagePositions } from "../../state/pagePositions";
 import { useConversationsStore } from "../../state/conversations";
 import { referencePreview, useIdeasStore, useIdeaScope, type SavedIdea } from "../../state/ideas";
 import { useIdeasSurfaceStore } from "../../state/ideasSurface";
@@ -29,6 +30,12 @@ export default function IdeasSurface() {
   const launcher = useRef<HTMLButtonElement>(null);
   const capture = useRef<IdeaCaptureHandle>(null);
   const floating = useIdeasPosition(frame, open, workspaceId);
+  const writingTarget = (id: string): WorkspacePage => {
+    const last = usePagePositions.getState().pages[id]?.writing;
+    return last?.kind === "writing" && last.mode === "story"
+      ? { kind: "writing", workspaceId: id, mode: "story" }
+      : { kind: "writing", workspaceId: id };
+  };
 
   const close = useCallback(() => {
     setActionError(null);
@@ -99,7 +106,7 @@ export default function IdeasSurface() {
     chat.addIdeaReference({ ideaId: saved.ideaId, revisionId: saved.revisionId, preview: referencePreview(saved.body), chars: Array.from(saved.body).length });
     useIdeasStore.setState({ notice: "已加入对话。" });
     useLayoutStore.getState().revealChat();
-    navigate({ kind: "writing", workspaceId: saved.workspaceId });
+    navigate(writingTarget(saved.workspaceId));
   }
 
   async function takeToChat(ideaId?: string) {
@@ -124,7 +131,7 @@ export default function IdeasSurface() {
     if (useConversationsStore.getState().selectedId !== conversationId) {
       setActionError("[IDEA_DISCUSSION_UNAVAILABLE] 打开讨论：会话无法读取。建议：核对会话是否已删除。"); return;
     }
-    close(); useLayoutStore.getState().revealChat(); navigate({ kind: "writing", workspaceId: id });
+    close(); useLayoutStore.getState().revealChat(); navigate(writingTarget(id));
   };
 
   const openSource = async (path: string) => {
@@ -134,7 +141,7 @@ export default function IdeasSurface() {
     if (useWorkspaceStore.getState().selectedPath !== path) {
       setActionError(`[IDEA_SOURCE_UNAVAILABLE] ${path}：来源文件无法打开。建议：核对文件是否已移动或删除。`); return;
     }
-    close(); navigate({ kind: "writing", workspaceId: id });
+    close(); navigate(writingTarget(id));
   };
 
   if (!workspaceId) return null;

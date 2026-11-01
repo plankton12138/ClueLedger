@@ -68,7 +68,8 @@ export interface ChatTool {
 
 export type TurnItem =
   | { kind: "message"; key: string; message: ChatMessage }
-  | { kind: "tool"; key: string; tool: ChatTool };
+  | { kind: "tool"; key: string; tool: ChatTool }
+  | { kind: "user"; key: string; text: string; generation: number | null };
 
 export interface TurnError {
   key: string;
@@ -453,6 +454,30 @@ export function appendEvent(turns: ChatTurn[], event: WorkspaceEvent): ChatTurn[
         ...turns,
         { ...EMPTY_TURN(event.turn_id, event.at), prompt: event.text, ideas },
       ];
+    }
+    case "author_interjected": {
+      // 插话是作者在同一轮里补说的话：按事件顺序排在已经写出的回复之后。
+      const key = `user:${event.event_id ?? event.seq}`;
+      return withTurn(
+        turns,
+        event.turn_id,
+        (turn) => {
+          if (turn.items.some((item) => item.kind === "user" && item.key === key)) return turn;
+          return {
+            ...turn,
+            items: [
+              ...turn.items,
+              {
+                kind: "user",
+                key,
+                text: event.text,
+                generation: event.generation ?? null,
+              },
+            ],
+          };
+        },
+        event.at,
+      );
     }
     case "run_phase":
       // 阶段只用于状态行，不进入消息结构。

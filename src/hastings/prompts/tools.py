@@ -433,7 +433,10 @@ UPDATE_STORY_DESCRIPTION = (
     "字段名与 read_story 返回完全一致，不要发明 description、summary 等额外字段；"
     "创建完整构思时先 mode=prepare 分批保存任务草稿（骨架、线索与知情细节），"
     "按输出长度和对象完整性分批，简单身份可以合并；不要逐个节点调用。"
-    "先准备阶段、故事线、事件节点与真实依赖，再细化线索计划。"
+    "先准备阶段、故事线、事件节点与真实依赖，再细化线索计划；"
+    "实际时间用 set_event_time 登记，未登记节点会在悬疑视图按阶段与叙述顺序追加；"
+    "每条线索至少安排一次 plant 和一次 resolve 或 reinterpret，"
+    "误导/重新解释线索填写 expected_interpretation，explain 线索填写 author_truth。"
     "后续 prepare 携带返回的 draft_revision；它是参数，不是工具名。"
     '最小追加样例：update_story({"mode":"prepare","draft_revision":"读取到的版本",'
     '"operations":[{"op":"add_node","node":{"id":"n1","title":"发现","action":"发现异常",'

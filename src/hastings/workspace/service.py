@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import aclosing, suppress
@@ -402,6 +403,26 @@ def _context_is_empty(request: ContextRequest) -> bool:
     )
 
 
+_PROSE_TARGET = re.compile(
+    r"(正文|章节|第[一二三四五六七八九十百\d]+章|一章|下一章|这一章|开头|场景)"
+)
+_PROSE_STOP = ("构思", "结构", "设定", "大纲", "人物小传")
+
+
+def _explicit_prose_request(text: str) -> bool:
+    """作者明确要写正文，而不是在讨论结构。
+
+    构思页的普通消息默认按 design 发送；只有明确出现「写正文 / 写第几章」这类
+    动作和目标时才升级为写作轮，避免把「写一段线索说明」误当成正文。
+    """
+    clean = text.strip()
+    if not clean or not any(word in clean for word in ("写", "续写", "起草", "落笔")):
+        return False
+    if not _PROSE_TARGET.search(clean):
+        return False
+    return not any(word in clean for word in _PROSE_STOP)
+
+
 def _context_from_question(snapshot: Mapping[str, Any]) -> ContextRequest:
     """承接原请求的路径与灵感修订；客户端当时看到的版本不跨轮沿用。"""
     raw_pairs = snapshot.get("idea_references")
@@ -768,6 +789,20 @@ class TurnService:
             from hastings.workspace.story_context import StoryRequest
 
             requested_goal = classify_design_intent(text)
+            if (
+                story_action is None
+                and purpose == "chat"
+                and context is not None
+                and context.story is not None
+                and context.story.purpose == "design"
+                and not requested_goal.requires_structure
+                and _explicit_prose_request(text)
+            ):
+                # 作者在构思页直接说「写第一章」：这一轮明确要正文，不能继续按设计轮
+                # 只开放结构工具，否则写入会被候选校验拦下且没有候选入口。
+                context = replace(
+                    context, story=replace(context.story, purpose="write")
+                )
             if (
                 story_action is None
                 and purpose == "chat"
@@ -3106,6 +3141,26 @@ class TurnService:
                         "paths": list(candidate.documents),
                     },
                 )
+                if candidate.documents and candidate.frozen.node_ids:
+                    from hastings.workspace.story_clue_observations import (
+                        record_scene_observations,
+                    )
+
+                    try:
+                        observed = record_scene_observations(
+                            self.workspace,
+                            self.store.root,
+                            variant_id=candidate.frozen.variant_id,
+                            node_ids=candidate.frozen.node_ids,
+                            documents=dict(candidate.documents),
+                            task_id=candidate.id,
+                        )
+                        run.record("story_clue_observations", observed)
+                    except Exception as exc:  # noqa: BLE001 - 正文已提交，补记失败不能回滚
+                        run.record(
+                            "story_clue_observations_failed",
+                            {"candidate_id": candidate.id, "error": str(exc)},
+                        )
                 return True
             if attempt == 0:
                 await stage(

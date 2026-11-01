@@ -69,6 +69,7 @@ OBSERVATION_MODES: tuple[str, ...] = (
 )
 MODE_LABEL: dict[str, str] = {
     "narration": "叙述",
+    "action": "动作",
     "testimony": "证词",
     "recollection": "回忆",
     "hypothesis": "推测",
@@ -81,7 +82,7 @@ RecordRef = tuple[str, str, str, str]
 _REF_PREFIX = ("lib_", "mod_", "rev_", "ent_")
 
 ObservationMode = Literal[
-    "narration", "testimony", "recollection", "hypothesis", "dream", "unknown"
+    "narration", "action", "testimony", "recollection", "hypothesis", "dream", "unknown"
 ]
 StoryViewConflict = dict[str, object]
 
