@@ -58,8 +58,9 @@ async def run_harness_case(case: dict[str, Any], args: argparse.Namespace, model
     from hastings.bible.store import StoryWorkspace
     from hastings.cli import PlainRenderer, build_harness, create_writing_tools
     from hastings.context_manager import compact_context
-    from hastings.prompts import refresh_system_prompt
     from hastings.session_persist import restore_and_attach
+
+    from hastings.prompts import refresh_system_prompt
     from tau_ai.env import openai_compatible_config_from_env
     from tau_ai.openai_compatible import OpenAICompatibleProvider
 
