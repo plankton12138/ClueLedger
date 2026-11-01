@@ -235,7 +235,10 @@ export default function StoryMysteryView({
                 <button
                   type="button"
                   className="story-mystery-node-link"
-                  onClick={() => onSelectNode(item.node.id)}
+                  onClick={() => {
+                    if (selectedClue && !relatedNodeIds.has(item.node.id)) onSelectClue(null);
+                    onSelectNode(item.node.id);
+                  }}
                   title="只看与此节点相关的线索"
                 >
                   {item.node.title}

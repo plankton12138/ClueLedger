@@ -16,7 +16,13 @@ const NODES = [
   {
     op: "upsert_clue_plan",
     clue_id: "gloves",
-    plan: { author_truth: "管家在雪地里搬过尸体", resolution_intent: "explain" },
+    plan: { author_truth: "管家在雪地里搬过尸体", resolution_intent: "undecided" },
+  },
+  { op: "create_clue_identity", temp_id: "key", title: "钥匙" },
+  {
+    op: "upsert_clue_plan",
+    clue_id: "key",
+    plan: { resolution_intent: "explain" },
   },
   {
     op: "add_node",
@@ -34,8 +40,8 @@ const NODES = [
     node: {
       id: "n2",
       title: "对质",
-      action: "他把手套放在桌上",
-      clue_uses: [{ clue_id: "gloves", roles: ["resolve"], presentation: "他说出手套的来历", mode: "narration" }],
+      action: "他掏出钥匙放在桌上",
+      clue_uses: [{ clue_id: "key", roles: ["resolve"], presentation: "钥匙上没有雪", mode: "narration" }],
     },
   },
   {
@@ -155,10 +161,17 @@ test("构思面只保留悬疑视图，时间轴节点用于过滤左栏线索",
   await expect(surface.getByRole("button", { name: /备选|试读|候选正文|采用|比较/ })).toHaveCount(0);
   await expect(surface.getByRole("tablist", { name: "方案" })).toHaveCount(0);
 
-  await surface.getByRole("button", { name: "抵达" }).click();
   const clues = page.getByRole("region", { name: "全书线索" });
+  await surface.getByRole("button", { name: /^手套/ }).click();
+  await expect(clues.getByRole("heading", { name: "手套" })).toBeVisible();
+  await surface.getByRole("button", { name: "抵达" }).click();
   await expect(clues.getByText("与「抵达」相关")).toBeVisible();
   await expect(clues.getByRole("heading", { name: "手套" })).toBeVisible();
+
+  await surface.getByRole("button", { name: "对质" }).click();
+  await expect(clues.getByText("与「对质」相关")).toBeVisible();
+  await expect(clues.getByRole("heading", { name: "手套" })).toHaveCount(0);
+  await expect(clues.getByText("钥匙")).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/workspaces/${book.id}/writing`));
 });
 

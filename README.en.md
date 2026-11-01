@@ -4,7 +4,7 @@
 
 **Keep ideas, characters, and clues connected to their sources throughout your novel.**
 
-ClueLedger is an AI writing workspace for mystery fiction. Capture ideas, discuss your plot, read and revise chapters, save character profiles and worldbuilding notes, and review story development through a structure map and book-wide clues—all in one place.
+ClueLedger is an AI writing workspace for mystery fiction. Capture ideas, discuss your plot, read and revise chapters, save character profiles and worldbuilding notes, and review story development through a mystery timeline and book-wide clues—all in one place.
 
 You decide where the story goes. ClueLedger brings your writing goals, existing material, and source passages together.
 
@@ -12,7 +12,7 @@ ClueLedger is built on [Tau Agent](https://github.com/huggingface/tau), with a w
 
 ![ClueLedger writing workspace: chapters and modules on the left, the manuscript in the center, and a story discussion on the right](docs/screenshots/readme/writing.png)
 
-*Screenshots were captured on 2026-10-31 using the current Chinese-language interface and the sample novel Letters on a Snowy Night (《雪夜来信》). English feature names below describe the corresponding Chinese controls.*
+*Screenshots were captured on 2026-11-01 using the current Chinese-language interface and the sample novel Letters on a Snowy Night (《雪夜来信》). English feature names below describe the corresponding Chinese controls.*
 
 [Capture ideas](#capture-ideas) · [Write through conversation](#write-through-conversation) · [Save and reuse story material](#save-and-reuse-story-material) · [Review the whole story](#review-the-whole-story) · [Get started](#get-started)
 
@@ -60,23 +60,25 @@ Everyday edits affect only the current project. Choose **Save a copy to Module L
 
 ## Review the whole story
 
-Open **Story Structure (构思)** in the writing workspace to review how the story develops across stages and storylines. Start from a blank structure, or ask the conversation to create one from your existing modules, organizing the material into event nodes, clues, and connections.
+Open **Story Structure (构思)** in the writing workspace to review how the story develops along its actual in-story timeline. Start from a blank structure, or ask the conversation to create one from your existing modules, organizing the material into event nodes, clues, and where they are used.
 
-### Follow parallel storylines and their convergence
+### Follow the story along its actual timeline
 
-Storylines appear in columns, with stages progressing downward. Each card shows a key action or change, while connections explain how developments affect one another. A shared convergence appears once across the participating columns. Select a node to read its full arrangement below and open related clues.
+The horizontal axis is the actual time within the story. Stage headings appear above the timeline; nodes without a registered time are appended by stage and narrative order. Each node shows a key action or change, and you scroll horizontally to see what happens before and after.
 
-Column headings stay at the top of the canvas as you scroll down. They follow horizontal movement and zoom to stay aligned with their cards. Expand **Goals and obstacles (目标与阻力)**, focus on a stage, or use **Focus on Structure (专注构思)** for more space. Cards are arranged automatically; pan, scroll, and zoom the whole canvas to navigate.
+Below the timeline are four lanes: **What happens (实际发生)**, **Detective / assistant (侦探 / 助手)**, **Reader (读者)**, and **Clues (线索)**. The detective and assistant lane lists who knows or believes what at each point, the reader lane lists the interpretation you want to guide, and the clue lane marks each use. Collapse the detective, reader, or clue lane to focus on the others.
 
-![Multiple storylines, stages, a shared convergence, and book-wide clues in the current structure view](docs/screenshots/readme/story-structure.png)
+Click a node title to filter **Book-wide clues (全书线索)** in the left sidebar to that node; choose **View all clues (查看全部线索)** to restore the full list. If the open clue is unrelated to the selected node, the sidebar returns to the filtered list. Expand **Structure diagnostics (结构诊断)** to review issues such as missing times or clues without a use.
+
+![Mystery timeline with stages, what happens, knowledge, reader, and clue lanes](docs/screenshots/readme/story-structure.png)
 
 ### Connect plans to clues and manuscript evidence
 
-After selecting a node, open **Book-wide clues (全书线索)** to see its arrangements on the right. With no node selected, browse book-wide clues. Follow a clue to another planned use or an existing manuscript passage, then return to your place in the structure.
+Select a clue on the timeline, or from the list filtered by a node, to open its details in the left sidebar: the author's plan, every planned use, and manuscript evidence. Follow a planned use to another node, or locate an existing passage in the manuscript.
 
 Author truth, future plans, and material already written in the manuscript are presented separately. You can plan clues before drafting prose; planned introductions and resolutions do not become manuscript facts automatically.
 
-![A selected structure node alongside its clue plan and book-wide uses](docs/screenshots/readme/story-clues.png)
+![A selected clue's author plan and book-wide uses in the left sidebar](docs/screenshots/readme/story-clues.png)
 
 Larger creation tasks can prepare a draft in batches before committing the complete structure. If a task needs attention, its draft remains with the original task. Review required constraints and their strength before confirming and continuing. Whether a setting or style preference becomes a requirement remains your decision.
 
@@ -86,7 +88,7 @@ Larger creation tasks can prepare a draft in batches before committing the compl
 2. **Choose a model.** Connect and select your model in **Settings → Model Settings (设置 → 模型设置)**. You can still record ideas, edit modules, and read existing material before connecting.
 3. **Capture your first idea.** Open Ideas and write down a story concept. Add it to a conversation when you want to discuss it.
 4. **Set the goal for this request.** Ask for discussion, new writing, revisions to specific chapters, or a review. Add reference material when needed.
-5. **Build a structure and check clues.** Keep reusable material in modules, organize story development in Story Structure, and inspect plans and manuscript evidence through book-wide clues.
+5. **Build a structure and check clues.** Keep reusable material in modules, organize story development on the mystery timeline in Story Structure, and inspect plans and manuscript evidence through book-wide clues.
 
 ## A few things to know
 
