@@ -18,7 +18,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO, cast
 
 __all__ = ["atomic_write_bytes", "atomic_write_json", "locked"]
 
@@ -91,12 +91,12 @@ def _file_lock(stream: BinaryIO, *, unlock: bool) -> None:
     if os.name == "nt":
         import msvcrt
 
+        # msvcrt / fcntl 的符号只存在于对应平台的 typeshed 里，按 Any 访问才能在两处都通过检查。
+        api = cast(Any, msvcrt)
         stream.seek(0)
-        msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK if unlock else msvcrt.LK_LOCK, 1)
+        api.locking(stream.fileno(), api.LK_UNLCK if unlock else api.LK_LOCK, 1)
     else:
         import fcntl
 
-        fcntl.flock(  # type: ignore[attr-defined]
-            stream.fileno(),
-            fcntl.LOCK_UN if unlock else fcntl.LOCK_EX,  # type: ignore[attr-defined]
-        )
+        api = cast(Any, fcntl)
+        api.flock(stream.fileno(), api.LOCK_UN if unlock else api.LOCK_EX)

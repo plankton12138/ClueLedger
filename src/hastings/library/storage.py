@@ -22,7 +22,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from hastings.library.ids import is_id, new_id
 from hastings.workspace.errors import WorkspaceError
@@ -426,8 +426,9 @@ def _lock_file(handle: Any) -> None:
     if os.name == "nt":
         import msvcrt
 
+        api = cast(Any, msvcrt)
         handle.seek(0)
-        msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        api.locking(handle.fileno(), api.LK_LOCK, 1)
     else:
         import importlib
 
@@ -439,8 +440,9 @@ def _unlock_file(handle: Any) -> None:
     if os.name == "nt":
         import msvcrt
 
+        api = cast(Any, msvcrt)
         handle.seek(0)
-        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        api.locking(handle.fileno(), api.LK_UNLCK, 1)
     else:
         import importlib
 

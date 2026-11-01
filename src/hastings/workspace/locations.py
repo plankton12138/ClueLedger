@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 __all__ = ["default_data_root", "default_workspace_root", "documents_dir"]
 
@@ -32,7 +33,8 @@ def _windows_documents() -> Path | None:
     import ctypes
 
     buffer = ctypes.create_unicode_buffer(260)
-    result = ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buffer)
+    # windll 只存在于 Windows 的 typeshed；按 Any 访问，其他平台才不会在读代码时报错。
+    result = cast(Any, ctypes).windll.shell32.SHGetFolderPathW(None, 5, None, 0, buffer)
     if result != 0 or not buffer.value:
         return None
     path = Path(buffer.value)
