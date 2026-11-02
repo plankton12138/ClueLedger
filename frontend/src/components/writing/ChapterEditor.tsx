@@ -1,13 +1,14 @@
 /**
- * 正文编辑器（1.0.9 P4）。
+ * 正文编辑器（1.0.9 P4；P6 取消章节构思门槛）。
  *
- * 用原生 textarea 提供 Markdown 源码编辑、浏览器撤销与中文输入法组合保护；保存走
- * 整章摘要校验，冲突时保留本地文字并提供对比、载入服务端或覆盖。编辑器不接管模型
- * 候选：采用后只是本地草稿，仍由自动保存写入正式正文。
+ * 章节建立即可写：空正文只有三个入口——自己写第一段、由模型起草、看看方向建议。
+ * 方向建议只是旁置参考文字，不进入正式数据。页边索引显示已写入信息、正文新增候选与
+ * 需要对齐项；作者确认候选后由服务端联合提交信息线、信息变化与绑定。
+ * 保存只以正文摘要为前提，不再携带章节修订。
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { PanelRight, PenLine, Save } from "lucide-react";
+import { PenLine, Save } from "lucide-react";
 
 import type {
   ChapterView,
@@ -42,17 +43,13 @@ function savedLabel(value: string | null): string {
 export default function ChapterEditor({
   workspaceId,
   chapter,
-  planRevision,
   support,
   informationId,
-  onEditPlan,
 }: {
   workspaceId: string;
   chapter: ChapterView;
-  planRevision: string | null;
   support: ModelSupportView;
   informationId?: string | null;
-  onEditPlan: () => void;
 }) {
   const plan = chapter.plan;
   const prose = chapter.prose;
@@ -64,12 +61,18 @@ export default function ChapterEditor({
   const adoptServer = useWritingStore(state => state.adoptServer);
   const overrideWithLocal = useWritingStore(state => state.overrideWithLocal);
   const assistStart = useWritingStore(state => state.assistStart);
+  const confirmCandidate = useWritingStore(state => state.confirmCandidate);
+  const reviewIndex = useWritingStore(state => state.reviewIndex);
   const assist = useWritingStore(state => state.assists[`prose:${chapterId}`]);
+  const direction = useWritingStore(state => state.assists[`direction:${chapterId}`]);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
   const pendingSelection = useRef<{ start: number; end: number } | null>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [showServerText, setShowServerText] = useState(false);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [emptyNoticeDismissed, setEmptyNoticeDismissed] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const text = draft?.text ?? prose?.text ?? "";
   const parts = useMemo(() => proseParts(text), [text]);
   const editorText = parts.body;
@@ -77,7 +80,10 @@ export default function ChapterEditor({
   const saving = Boolean(draft?.saving);
   const conflict = draft?.conflict ?? null;
   const assistKey = `prose:${chapterId}`;
-  const supported = support.available && (support.supported_assists.length === 0 || support.supported_assists.includes("prose_draft") || support.supported_assists.includes("prose_continue"));
+  const directionKey = `direction:${chapterId}`;
+  const supports = (kind: string) => support.supported_assists.length === 0 || support.supported_assists.includes(kind);
+  const supported = support.available && (supports("prose_draft") || supports("prose_continue"));
+  const directionSupported = support.available && supports("chapter_direction");
   const assisted = assist && assist.status !== "idle" ? assist.text : "";
   const emptyBody = editorText.trim().length === 0;
   const assistKind = emptyBody ? "prose_draft" : "prose_continue";
@@ -86,10 +92,19 @@ export default function ChapterEditor({
     ? support.disabled_reason ?? "当前没有可用模型"
     : !supported ? "当前模型没有开放这类辅助"
     : dirty || saving ? "先保存当前修改，再让模型续写" : undefined;
+  const directionDisabledReason = !support.available
+    ? support.disabled_reason ?? "当前没有可用模型"
+    : !directionSupported ? "当前模型没有开放这类辅助" : undefined;
+  const indexItems = chapter.index?.items ?? [];
+  // 空章提示看的是「已核对的信息」，不等语义分析跑完：分析可能还在排队，
+  // 而作者此刻需要的是可以忽略的反馈，不是等到候选回来才出现的提醒。
+  const emptyChapterNotice = !emptyBody && !dirty && !saving && !conflict
+    && indexItems.length === 0 && !emptyNoticeDismissed;
 
   useEffect(() => {
     setActiveItemId(null);
     setShowServerText(false);
+    setEmptyNoticeDismissed(false);
   }, [chapterId]);
 
   useEffect(() => {
@@ -167,13 +182,41 @@ export default function ChapterEditor({
       kind: assistKind,
       target: { kind: "prose", workspace_id: workspaceId, chapter_id: chapterId },
       base: {
-        plan_revision: planRevision ?? undefined,
-        chapter_revision: plan.revision,
+        plan_revision: chapter.index?.plan_revision,
         prose_path: prose.path,
         prose_digest: prose.digest,
       },
       request_key: writingKey(`assist-${assistKind}-${chapterId}`),
     });
+  }
+
+  function startDirection() {
+    if (!plan) return;
+    void assistStart(workspaceId, directionKey, {
+      kind: "chapter_direction",
+      target: { kind: "chapter_direction", workspace_id: workspaceId, chapter_id: chapterId },
+      base: { plan_revision: chapter.index?.plan_revision },
+      request_key: writingKey(`assist-direction-${chapterId}`),
+    });
+  }
+
+  async function review() {
+    setReviewing(true);
+    try {
+      await reviewIndex(workspaceId, chapterId);
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  async function confirm(item: InformationIndexItem) {
+    if (!item.candidate_id) return;
+    setConfirmingId(item.item_id);
+    try {
+      await confirmCandidate(workspaceId, chapterId, item.candidate_id);
+    } finally {
+      setConfirmingId(null);
+    }
   }
 
   if (!plan || !prose) return <StatusMessage tone="error">这一章的正文不存在。刷新工作台后重新选择章节。</StatusMessage>;
@@ -199,9 +242,6 @@ export default function ChapterEditor({
           <div className="chapter-editor-actions">
             <Button size="compact" onClick={() => void save(workspaceId, chapterId)} disabled={!dirty || saving || Boolean(conflict)}>
               <Save size={15} strokeWidth={1.8} aria-hidden="true" />保存
-            </Button>
-            <Button size="compact" variant="quiet" onClick={onEditPlan}>
-              <PanelRight size={15} strokeWidth={1.8} aria-hidden="true" />更新构思
             </Button>
           </div>
         </header>
@@ -230,14 +270,13 @@ export default function ChapterEditor({
             extraAdopt={value => insertAtCursor(value)}
             extraAdoptLabel="插入光标"
           />
-          {assisted && <p className="ui-field-hint">候选保留在旁置区；采用后先成为本地草稿，自动保存成功才进入索引。</p>}
+          {assisted && <p className="ui-field-hint">候选保留在旁置区；采用后先成为本地草稿，保存成功才进入索引。</p>}
         </div>}
 
         {emptyBody && !conflict && <section className="chapter-empty-start" aria-label="开始正文">
           <div>
-            <span className="chapter-empty-kicker">本章构思已确认 · 正文现已开放</span>
             <h2>正文还没有内容</h2>
-            <p>{plan.summary || plan.intent}</p>
+            <p>直接写第一段；也可以让模型起草或先看几个推进方向。</p>
           </div>
           <div className="chapter-empty-actions">
             <Button variant="primary" onClick={() => textarea.current?.focus()}>
@@ -252,16 +291,35 @@ export default function ChapterEditor({
               onAdopt={value => replaceAll(value)}
               adoptLabel="采用为正文草稿"
             />
+            <ModelCandidate
+              assistKey={directionKey}
+              support={{ ...support, available: directionSupported }}
+              label="看看方向建议"
+              disabledReason={directionDisabledReason}
+              onStart={startDirection}
+              onAdopt={() => undefined}
+              readOnly
+            />
           </div>
           {assisted && <p className="ui-field-hint">候选采用后先进入下方稿纸，保存成功才会更新正文与信息索引。</p>}
+          {direction && direction.status !== "idle" && direction.text && <p className="ui-field-hint">方向建议只是参考文字，不进入信息线，也不会自动写入正文。</p>}
         </section>}
+
+        {emptyChapterNotice && <StatusMessage tone="warning" action={
+          <div className="chapter-empty-feedback-actions">
+            <Button size="compact" busy={reviewing} onClick={() => void review()}>让模型看看本章</Button>
+            <Button size="compact" variant="quiet" onClick={() => setEmptyNoticeDismissed(true)}>暂时忽略</Button>
+          </div>
+        }>
+          本章还没有可核对的信息变化。可以继续写，也可以让模型复看是否有遗漏的线索或伏笔。
+        </StatusMessage>}
 
         <textarea
           ref={textarea}
           className="chapter-editor-textarea"
           aria-label="正文编辑"
           data-empty={emptyBody || undefined}
-          placeholder="从本章构思写第一段。正文会自动保存。"
+          placeholder="直接写第一段。正文会自动保存。"
           value={editorText}
           spellCheck={false}
           onChange={event => changeBody(event.target.value)}
@@ -279,7 +337,13 @@ export default function ChapterEditor({
       </div>
 
       {chapter.index && <div className="chapter-margin-inline">
-        <ChapterMarginIndex index={chapter.index} activeItemId={activeItemId} onLocate={locate} />
+        <ChapterMarginIndex
+          index={chapter.index}
+          activeItemId={activeItemId}
+          onLocate={locate}
+          onConfirm={item => void confirm(item)}
+          confirmingId={confirmingId}
+        />
       </div>}
     </div>
   </div>;

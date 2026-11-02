@@ -1,13 +1,15 @@
 /**
- * 页边索引（1.0.9 P4）。
+ * 页边索引（1.0.9 P4；P6 改为正文投影）。
  *
- * 只显示当前正文能证明的出处：计划项有原句就归入正文，没有原句就留在开头清单。
- * 语义整理只作为候选标记，不合并计数、不替代出处。点击原句在编辑器里选中同一段文字。
+ * 只显示当前正文能证明的出处：已写入的信息线带准确原句；语义分析给出的「正文新增」
+ * 只是候选，作者确认后才成为正式信息线；正文与已入账信息矛盾时进入「需要对齐」。
+ * 点击原句在编辑器里选中同一段文字。
  */
 
 import { FileText, LocateFixed } from "lucide-react";
 
 import type { ChapterInformationIndex, InformationOccurrence, InformationIndexItem } from "../../api/writing";
+import { Button } from "../ui/Button";
 
 const OCCURRENCE_LABEL: Record<string, string> = {
   exact: "",
@@ -30,14 +32,17 @@ export default function ChapterMarginIndex({
   index,
   activeItemId,
   onLocate,
+  onConfirm,
+  confirmingId,
   variant = "margin",
 }: {
   index: ChapterInformationIndex;
   activeItemId?: string | null;
   onLocate: (item: InformationIndexItem, occurrence: InformationOccurrence) => void;
+  onConfirm?: (item: InformationIndexItem) => void;
+  confirmingId?: string | null;
   variant?: "margin" | "panel";
 }) {
-  const prepared = index.items.filter(item => item.placement === "prepared");
   const written = index.items.filter(item => item.placement === "written");
   const candidates = index.items.filter(item => item.placement === "observed_candidate");
   const alignment = index.items.filter(item => item.placement === "alignment");
@@ -47,14 +52,6 @@ export default function ChapterMarginIndex({
       <h2>本章信息</h2>
       {analysisNote && <p>{analysisNote}</p>}
     </header>
-    {prepared.length > 0 && <section>
-      <h3>准备写入</h3>
-      <ul>
-        {prepared.map(item => <li key={item.item_id} className={activeItemId === item.item_id ? "active" : ""}>
-          <span className="chapter-margin-label">{item.label}</span>
-        </li>)}
-      </ul>
-    </section>}
     {written.length > 0 && <section>
       <h3>已经写入</h3>
       <ul>
@@ -82,6 +79,15 @@ export default function ChapterMarginIndex({
         {candidates.map(item => <li key={item.item_id} className={activeItemId === item.item_id ? "active" : ""}>
           <span className="chapter-margin-label">{item.label}</span>
           {item.explanation && <p>{item.explanation}</p>}
+          {item.occurrences[0]?.quote && <p className="chapter-margin-quote">“{item.occurrences[0].quote}”</p>}
+          {onConfirm && item.candidate_id && <Button
+            size="compact"
+            variant="primary"
+            busy={confirmingId === item.item_id}
+            disabled={item.occurrences[0]?.state !== "exact"}
+            disabledReason="原句不唯一或不在正文中，不能确认"
+            onClick={() => onConfirm(item)}
+          >确认入账</Button>}
         </li>)}
       </ul>
     </section>}
@@ -95,7 +101,7 @@ export default function ChapterMarginIndex({
       </ul>
     </section>}
     {index.items.length === 0 && <p className="chapter-margin-empty">
-      <FileText size={14} strokeWidth={1.8} aria-hidden="true" />构思中还没有明确的信息变化。返回构思，补充读者或角色在本章知道了什么。
+      <FileText size={14} strokeWidth={1.8} aria-hidden="true" />这一章还没有可核对的信息变化。
     </p>}
   </aside>;
 }

@@ -119,45 +119,15 @@ def _setup_chapter(client: TestClient, tmp_path: Path) -> dict[str, Any]:
         },
     )
     assert created.status_code == 201, created.text
-    chapter_id = created.json()["chapter_id"]
-    chapter = client.get(f"{base}/workbench", params={"chapter_id": chapter_id}).json()
-    chapter_revision = chapter["chapter"]["plan"]["revision"]
-    plan_revision = chapter["plan_revision"]
-    plan = client.put(
-        f"{base}/chapters/{chapter_id}/plan",
-        json={
-            "title": "第一章",
-            "intent": "封山、入住、管家说谎，湿手套最后出现。",
-            "information_moves": None,
-            "expected_chapter_revision": chapter_revision,
-            "expected_plan_revision": plan_revision,
-            "request_key": "plan",
-        },
-    )
-    assert plan.status_code == 200, plan.text
-    body = plan.json()
-    chapter_revision = body["chapter_revision"]
-    plan_revision = body["plan_revision"]
-    started = client.post(
-        f"{base}/chapters/{chapter_id}/start",
-        json={
-            "expected_story_revision": plan_revision,
-            "expected_chapter_revision": chapter_revision,
-            "attach_path": None,
-            "attach_digest": None,
-            "request_key": "start",
-        },
-    )
-    assert started.status_code == 200, started.text
-    started_body = started.json()
+    created_body = created.json()
     return {
         "workspace_id": workspace_id,
         "root": root,
         "base": base,
-        "chapter_id": chapter_id,
-        "chapter_revision": chapter_revision,
-        "plan_revision": started_body["plan_revision"],
-        "started": started_body,
+        "chapter_id": created_body["chapter_id"],
+        "plan_revision": created_body["plan_revision"],
+        "prose_digest": created_body["prose_digest"],
+        "path": created_body["path"],
     }
 
 
@@ -180,15 +150,15 @@ def test_assist_streams_and_is_idempotent(
     setup = _setup_chapter(client, tmp_path)
     holder.text = "封山、入住，章末出现湿手套。"
     payload = {
-        "kind": "chapter_plan",
+        "kind": "chapter_direction",
         "target": {
-            "kind": "chapter_plan",
+            "kind": "chapter_direction",
             "workspace_id": setup["workspace_id"],
             "chapter_id": setup["chapter_id"],
         },
         "base": {
             "plan_revision": setup["plan_revision"],
-            "chapter_revision": setup["chapter_revision"],
+
         },
         "author_note": "不要写凶手",
         "request_key": "assist:1",
@@ -218,9 +188,9 @@ def test_assist_stale_base_and_unavailable_model(
 ) -> None:
     setup = _setup_chapter(client, tmp_path)
     payload = {
-        "kind": "chapter_plan",
+        "kind": "chapter_direction",
         "target": {
-            "kind": "chapter_plan",
+            "kind": "chapter_direction",
             "workspace_id": setup["workspace_id"],
             "chapter_id": setup["chapter_id"],
         },
@@ -250,15 +220,15 @@ def test_stop_preserves_candidate_state(
     holder.text = "这是一段足够长的候选正文，用来观察停止行为。"
     holder.delay = 0.2
     payload = {
-        "kind": "chapter_plan",
+        "kind": "chapter_direction",
         "target": {
-            "kind": "chapter_plan",
+            "kind": "chapter_direction",
             "workspace_id": setup["workspace_id"],
             "chapter_id": setup["chapter_id"],
         },
         "base": {
             "plan_revision": setup["plan_revision"],
-            "chapter_revision": setup["chapter_revision"],
+
         },
         "request_key": "assist:stop",
     }
@@ -286,8 +256,7 @@ def test_index_job_merges_candidates(client: TestClient, tmp_path: Path, holder:
         f"{setup['base']}/chapters/{setup['chapter_id']}/prose",
         json={
             "text": "# 第一章\n\n林砚走进旅馆，壁炉火钳上有一小块蓝蜡。\n",
-            "expected_digest": setup["started"]["prose_digest"],
-            "expected_chapter_revision": setup["chapter_revision"],
+            "expected_digest": setup["prose_digest"],
             "draft_revision": "local_1",
             "candidate_id": None,
             "request_key": "save:index",
@@ -318,8 +287,7 @@ def test_index_failure_keeps_prose_saved(
         f"{setup['base']}/chapters/{setup['chapter_id']}/prose",
         json={
             "text": "# 第一章\n\n正文先保存。\n",
-            "expected_digest": setup["started"]["prose_digest"],
-            "expected_chapter_revision": setup["chapter_revision"],
+            "expected_digest": setup["prose_digest"],
             "draft_revision": "local_1",
             "candidate_id": None,
             "request_key": "save:fail-index",
@@ -416,8 +384,7 @@ def test_prose_candidate_adoption_and_stale_rejection(
         },
         "base": {
             "plan_revision": setup["plan_revision"],
-            "chapter_revision": setup["chapter_revision"],
-            "prose_digest": setup["started"]["prose_digest"],
+            "prose_digest": setup["prose_digest"],
         },
         "request_key": "assist:prose",
     }
@@ -437,8 +404,7 @@ def test_prose_candidate_adoption_and_stale_rejection(
         f"{setup['base']}/chapters/{setup['chapter_id']}/prose",
         json={
             "text": ready["text"],
-            "expected_digest": setup["started"]["prose_digest"],
-            "expected_chapter_revision": setup["chapter_revision"],
+            "expected_digest": setup["prose_digest"],
             "draft_revision": "local_candidate",
             "candidate_id": candidate_id,
             "request_key": "save:candidate",
@@ -447,29 +413,24 @@ def test_prose_candidate_adoption_and_stale_rejection(
     assert saved.status_code == 200, saved.text
     saved_body = saved.json()
 
-    chapter = client.get(
-        f"{setup['base']}/workbench", params={"chapter_id": setup["chapter_id"]}
-    ).json()
-    plan_revision = chapter["plan_revision"]
-    plan = client.put(
-        f"{setup['base']}/chapters/{setup['chapter_id']}/plan",
+    # 作者在采用之后又改了正文：候选依据的摘要已经过期，不能直接再采用。
+    updated = client.put(
+        f"{setup['base']}/chapters/{setup['chapter_id']}/prose",
         json={
-            "title": "第一章",
-            "intent": "封山、入住、管家说谎，湿手套最后出现。",
-            "information_moves": None,
-            "expected_chapter_revision": saved_body["chapter_revision"],
-            "expected_plan_revision": plan_revision,
-            "request_key": "plan:change-after-candidate",
+            "text": "# 第一章\n\n林砚走进旅馆，门外的雪更大了。\n",
+            "expected_digest": saved_body["prose_digest"],
+            "draft_revision": "local_after",
+            "candidate_id": None,
+            "request_key": "save:after-candidate",
         },
     )
-    assert plan.status_code == 200, plan.text
+    assert updated.status_code == 200, updated.text
 
     with_stale = client.put(
         f"{setup['base']}/chapters/{setup['chapter_id']}/prose",
         json={
             "text": ready["text"],
-            "expected_digest": saved_body["prose_digest"],
-            "expected_chapter_revision": plan.json()["chapter_revision"],
+            "expected_digest": updated.json()["prose_digest"],
             "draft_revision": "local_stale",
             "candidate_id": candidate_id,
             "request_key": "save:stale-candidate",
@@ -477,3 +438,18 @@ def test_prose_candidate_adoption_and_stale_rejection(
     )
     assert with_stale.status_code == 409, with_stale.text
     assert with_stale.json()["error"]["code"] == "ASSIST_TARGET_STALE"
+
+
+def test_index_review_runs_on_demand(client: TestClient, tmp_path: Path, holder: _Holder) -> None:
+    setup = _setup_chapter(client, tmp_path)
+    holder.text = "没有新增信息"
+    reviewed = client.post(f"{setup['base']}/chapters/{setup['chapter_id']}/index-review")
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["analysis_job_id"] is not None
+
+    chapter = _wait_for(
+        client,
+        f"{setup['base']}/workbench?chapter_id={setup['chapter_id']}",
+        lambda row: row["chapter"]["index"]["analysis"]["state"] == "ready",
+    )
+    assert chapter["chapter"]["index"]["items"] == []

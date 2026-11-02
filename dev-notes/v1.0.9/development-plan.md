@@ -1,6 +1,6 @@
 # v1.0.9 详细开发计划
 
-日期：2026-11-02。状态：**P0—P5 已按章节门槛设计实施；同日产品方案修订为“正文为主”，P6 拆门槛改造待实施，P7 验收发布待实施**。[产品方案](../../product-design/v1.0.9/README.md)、[数据与接口](data-and-api.md)、[视觉规范](style-document.md)和[验收计划](acceptance.md)共同约束实现；接口与格式已在 P0 冻结，见 [契约冻结](notes/p0-contract-freeze.md)，P1—P3 修订见同文件第 7—9 节，P4—P5 记录见 `notes/`。正文为主修订不回改历史记录。
+日期：2026-11-02。状态：**P0—P6 已实施；P7 验收与 1.0.9 交付待实施**。[产品方案](../../product-design/v1.0.9/README.md)、[数据与接口](data-and-api.md)、[视觉规范](style-document.md)和[验收计划](acceptance.md)共同约束实现；接口与格式已在 P0 冻结，见 [契约冻结](notes/p0-contract-freeze.md)，P1—P3 修订见同文件第 7—9 节，P4—P6 记录见 `notes/`。正文为主修订不回改历史记录。
 
 ## 1. 交付目标
 
@@ -82,7 +82,7 @@ P0—P5 按先前“每章最小构思门槛”设计实施，实施记录见 `n
 - Agent 的 `write_file / edit_file` 不能凭模型文字绕过策略；作品无全书构思时返回结构化错误。
 - 新增确认入账：作者确认索引候选时，服务端重新核对候选依据的正文摘要与原句，在同一联合提交中创建信息线（若候选未指向已有信息线）、信息变化与绑定，返回可整体撤销的回执。入账不修改正文。
 - 外部编辑器直接创建的正文不能从文件系统层阻止。重新读取时保留文件，不删除内容；作品已有全书构思则正常更新锚点，作品尚无意图时以“先补一句全书意图”只读打开，补齐后恢复应用内写入。
-- 错误显示为：`[BOOK_INTENT_REQUIRED] 正文/作品：作品尚无全书构思。建议：先写一句全书意图，或选择“交给模型构思”。` 已实施的 `CHAPTER_PLAN_REQUIRED`、`CHAPTER_PLAN_STALE`、`CHAPTER_START_PARTIAL` 在改造中移除。
+- 错误显示为：`[BOOK_INTENT_REQUIRED] 正文/作品：作品尚无全书构思。建议：先写一句全书意图，或选择“交给模型构思”。` 原 `CHAPTER_PLAN_REQUIRED`、`CHAPTER_PLAN_STALE`、`CHAPTER_START_PARTIAL` 已在 P6 移除。
 
 **主要落点**
 

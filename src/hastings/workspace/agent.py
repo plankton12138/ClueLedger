@@ -259,17 +259,6 @@ class RunContext:
         if self.emit is not None:
             self.emit(event_type, dict(payload))
 
-    def chapter_revision_for(self, path: str) -> str | None:
-        """当前写作格式下这一章的构思修订；旧格式或未挂计划时返回 ``None``。"""
-        if self.state_root is None:
-            return None
-        snapshot = StoryStore(self.state_root, self.workspace).read()
-        variant = snapshot.variant(MAIN_VARIANT_ID)
-        if variant is None or variant.format_version < 3:
-            return None
-        plan = variant.chapter_for_path(path)
-        return plan.revision if plan is not None else None
-
     def before_mutation(
         self,
         operation: Mutation,
@@ -870,20 +859,15 @@ def build_tools(
         text = _text_argument(arguments, "text", allow_empty=True)
         digest = _digest_argument(arguments)
         action: MutationAction = "update" if digest is not None else "create"
-        chapter_revision = run.chapter_revision_for(path)
         # 存在性与提交意图冲突时由文件层拒绝；这里只按实际存在性给出读取前提。
         requirement = ReadRequirement.full(path) if action == "update" else None
         run.before_mutation(
             Mutation(action=action, path=path),
             required_read=requirement,
             # 无副作用预检：意图与现状冲突时不能先准备 Git 基线再报错。
-            preflight=lambda: workspace.check_write_intent(
-                path, expected_digest=digest, expected_chapter_revision=chapter_revision
-            ),
+            preflight=lambda: workspace.check_write_intent(path, expected_digest=digest),
         )
-        view = workspace.write(
-            path, text, expected_digest=digest, expected_chapter_revision=chapter_revision
-        )
+        view = workspace.write(path, text, expected_digest=digest)
         if action == "create":
             run.scope.record_created_chapter(view.path)
         run.record(
@@ -932,24 +916,16 @@ def build_tools(
             )
         start = view.text.find(old_text)
         end = start + len(old_text)
-        chapter_revision = run.chapter_revision_for(path)
         # 局部替换的前提是被替换区间已提供，不是「整章读过」。
         run.before_mutation(
             Mutation(action="update", path=path),
             required_read=ReadRequirement.span(path, start, end),
-            # 与整文件写入共用同一章节门槛；检查在 Git 基线之前完成，
+            # 与整文件写入共用同一全书构思门禁；检查在 Git 基线之前完成，
             # 但指纹冲突仍按原有材料核对顺序报告。
-            preflight=lambda: workspace.check_chapter_intent(
-                path, expected_chapter_revision=chapter_revision
-            ),
+            preflight=lambda: workspace.check_chapter_intent(path),
         )
         updated = view.text.replace(old_text, new_text, 1)
-        written = workspace.write(
-            path,
-            updated,
-            expected_digest=digest,
-            expected_chapter_revision=chapter_revision,
-        )
+        written = workspace.write(path, updated, expected_digest=digest)
         run.record(
             "file_changed",
             {

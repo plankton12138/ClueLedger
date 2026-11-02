@@ -1,12 +1,12 @@
-"""构思结构的持久化契约（1.0.1 P1，1.0.9 起增加当前格式 3）。
+"""构思结构的持久化契约（1.0.1 P1，1.0.9 起为当前格式 4）。
 
 这一层只回答两个问题：一份构思里有什么，以及哪些写法不能存进去。它不读正文、
 不调模型、不做提交协调——那些分别属于 ``story_changes``、``story_context`` 和
 ``operations``。
 
-1.0.9 的当前格式只保存作品意图、章节构思、信息线、信息变化、绑定与约定；旧格式 2 的
-阶段、节点、线索计划、关系与时间字段只为过渡期读取保留，P5 删除。两种格式共享修订根、
-提交与撤销，但操作集合互斥。
+1.0.9 的当前格式只保存作品意图、章节、信息线、信息变化、绑定与约定；章节只有顺序、
+可选标题和正文路径，没有章节构思、确认状态或章节修订。旧格式 2 的阶段、节点、线索计划、
+关系与时间字段只为过渡期读取保留。两种格式共享修订根、提交与撤销，但操作集合互斥。
 
 以下旧格式注意事项仍约束其校验：
 
@@ -23,9 +23,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-from collections.abc import Iterable
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
@@ -49,7 +46,6 @@ __all__ = [
     "ClueRelationKind",
     "ClueUse",
     "ConfirmAlignment",
-    "ConfirmChapterPlan",
     "Constraint",
     "ConstraintScope",
     "CreateClueIdentity",
@@ -88,15 +84,15 @@ __all__ = [
     "UpdateInformationThread",
     "UpsertCluePlan",
     "UpsertClueRelation",
-    "chapter_content_revision",
     "validate_story_variant",
 ]
 
 StoryId = Annotated[str, Field(min_length=1, max_length=64)]
 ShortText = Annotated[str, Field(min_length=1, max_length=200)]
 LongText = Annotated[str, Field(min_length=1, max_length=4000)]
-#: 当前写作格式；新作品写入 3，v2 仅用于过渡期旧作品，P5 删除。
-FORMAT_VERSION = 3
+#: 当前写作格式；新作品写入 4。全书构思是唯一门禁，章节只有顺序、标题与正文路径。
+#: 旧格式 2 仍可读取，格式 3 的数据直接放弃（项目规则：不做旧数据迁移）。
+FORMAT_VERSION = 4
 
 #: 线索在正文里的呈现方式；未登记性质的记录只能是 ``unknown``，不能从标题猜成叙述。
 PresentationMode = Literal[
@@ -400,29 +396,21 @@ class BookIntent(StrictRecord):
 
 
 class ChapterPlan(StrictRecord):
-    """一章的最小构思：本章要改变什么，以及需要读者或角色理解到什么。
+    """一章的位置信息：顺序、可选标题与正文路径。
 
-    ``revision`` 只由意图与信息变化计算；``confirmed_revision`` 与 ``prose_path`` 属于
-    提交状态，不参与本章内容修订，避免确认动作改变自身的比较值。
+    章节没有构思输入，也没有确认状态；创建章节时同一事务分配正文路径并建立文件。
+    章节本身不携带修订号，正文并发由正文摘要控制。
     """
 
     id: StoryId
     order: int = Field(ge=0)
     title: str | None = Field(default=None, max_length=200)
-    intent: str = Field(default="", max_length=4000)
-    information_move_ids: list[str] = Field(default_factory=list)
-    revision: str = Field(min_length=1, max_length=64)
-    confirmed_revision: str | None = Field(default=None, max_length=64)
     prose_path: str | None = Field(default=None, max_length=512)
 
     @model_validator(mode="after")
     def check_plan(self) -> ChapterPlan:
         if self.title is not None and not self.title.strip():
             raise ValueError("章节标题要么留空，要么写明内容")
-        if self.intent and not self.intent.strip():
-            raise ValueError("章节意图要么留空表示尚未构思，要么写明内容")
-        if len(set(self.information_move_ids)) != len(self.information_move_ids):
-            raise ValueError("同一信息变化不能在一章里重复登记")
         if self.prose_path is not None and not self.prose_path.strip():
             raise ValueError("正文路径不能是空字符串")
         return self
@@ -460,26 +448,6 @@ class InformationMove(StrictRecord):
         if not self.statement.strip():
             raise ValueError("信息变化不能为空")
         return self
-
-
-def chapter_content_revision(intent: str, moves: Iterable[InformationMove]) -> str:
-    """按本章意图与信息变化计算内容修订；标题、顺序、确认状态与正文路径不参与。"""
-    payload = {
-        "intent": intent.strip(),
-        "moves": [
-            {
-                "id": move.id,
-                "thread_id": move.thread_id,
-                "statement": move.statement.strip(),
-                "effect": move.effect,
-            }
-            for move in sorted(moves, key=lambda row: row.id)
-        ],
-    }
-    digest = hashlib.sha256(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    return f"ch_{digest[:32]}"
 
 
 class ProseBinding(StrictRecord):
@@ -626,17 +594,17 @@ class Assessment(StrictRecord):
 class StoryVariant(StrictRecord):
     """一个完整方案：主方案或备选，各自持有可解析的结构。
 
-    ``format_version`` 决定当前格式；新作品为 3，过渡期仍可读取 2。两种格式共享修订根、
+    ``format_version`` 决定当前格式；新作品为 4，过渡期仍可读取 2。两种格式共享修订根、
     提交、撤销与正文绑定服务，但操作集合互不通用。
     """
 
     id: StoryId
     name: ShortText
-    format_version: Literal[2, 3] = 2
+    format_version: Literal[2, 4] = 2
     base_variant_id: str | None = None
     base_revision: str | None = None
     revision: str = Field(min_length=1, max_length=64)
-    # -- 当前格式 3 -------------------------------------------------------
+    # -- 当前格式 4 -------------------------------------------------------
     book_intent: BookIntent | None = None
     chapter_plans: dict[str, ChapterPlan] = Field(default_factory=dict)
     information_threads: dict[str, InformationThread] = Field(default_factory=dict)
@@ -690,7 +658,7 @@ class StoryVariant(StrictRecord):
         return self
 
     def _check_current_format(self) -> None:
-        """当前格式只允许作品意图、章节构思、信息线与信息变化及新绑定。"""
+        """当前格式只允许作品意图、章节、信息线、信息变化及新绑定。"""
         if (
             self.stages
             or self.nodes
@@ -707,30 +675,12 @@ class StoryVariant(StrictRecord):
         orders = [plan.order for plan in self.chapter_plans.values()]
         if len(set(orders)) != len(orders):
             raise ValueError("章节顺序不能重复")
-        for plan in self.chapter_plans.values():
-            for move_id in plan.information_move_ids:
-                move = self.information_moves.get(move_id)
-                if move is None:
-                    raise ValueError(f"章节引用了不存在的信息变化：{move_id}")
-                if move.chapter_id != plan.id:
-                    raise ValueError(f"信息变化不属于该章节：{move_id}")
-            if plan.prose_path is not None:
-                for other in self.chapter_plans.values():
-                    if other.id != plan.id and other.prose_path == plan.prose_path:
-                        raise ValueError(f"同一正文路径被两章占用：{plan.prose_path}")
-            moves = [
-                self.information_moves[move_id]
-                for move_id in plan.information_move_ids
-                if move_id in self.information_moves
-            ]
-            if plan.revision != chapter_content_revision(plan.intent, moves):
-                raise ValueError(f"章节修订与本章意图或信息变化不一致：{plan.id}")
+        paths = [plan.prose_path for plan in self.chapter_plans.values() if plan.prose_path]
+        if len(set(paths)) != len(paths):
+            raise ValueError("同一正文路径被两章占用")
         for move in self.information_moves.values():
             if move.chapter_id not in self.chapter_plans:
                 raise ValueError(f"信息变化指向不存在的章节：{move.chapter_id}")
-            plan = self.chapter_plans[move.chapter_id]
-            if move.id not in plan.information_move_ids:
-                raise ValueError(f"章节没有登记这条信息变化：{move.id}")
             if move.thread_id not in self.information_threads:
                 raise ValueError(f"信息变化指向不存在的信息线：{move.thread_id}")
         for binding in self.bindings.values():
@@ -813,35 +763,17 @@ class StoryVariant(StrictRecord):
         return next((plan for plan in self.chapter_plans.values() if plan.prose_path == path), None)
 
     def information_moves_for_chapter(self, chapter_id: str) -> tuple[InformationMove, ...]:
-        plan = self.chapter_plans.get(chapter_id)
-        if plan is None:
-            return ()
+        """某章已入账的信息变化；按信息变化自身归属导出，章节不再维护列表。"""
         return tuple(
-            self.information_moves[move_id]
-            for move_id in plan.information_move_ids
-            if move_id in self.information_moves
+            sorted(
+                (
+                    move
+                    for move in self.information_moves.values()
+                    if move.chapter_id == chapter_id
+                ),
+                key=lambda row: row.id,
+            )
         )
-
-    def chapter_plan_problem(self, chapter_id: str) -> str | None:
-        """返回最小构思内容是否完整；不检查是否已经确认。"""
-        plan = self.chapter_plans.get(chapter_id)
-        if plan is None:
-            return "章节构思不存在"
-        if not plan.intent.strip():
-            return "还没有说明本章要改变什么"
-        if not plan.information_move_ids:
-            return "还没有说明本章的信息变化"
-        return None
-
-    def chapter_start_problem(self, chapter_id: str) -> str | None:
-        """返回不能开始或继续写作的原因；``None`` 表示内容完整且已确认。"""
-        problem = self.chapter_plan_problem(chapter_id)
-        if problem is not None:
-            return problem
-        plan = self.chapter_plans[chapter_id]
-        if plan.confirmed_revision != plan.revision:
-            return "章节构思尚未按当前修订确认"
-        return None
 
     def node_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self.nodes))
@@ -1230,16 +1162,8 @@ class RemoveInformationMove(StrictRecord):
     move_id: StoryId
 
 
-class ConfirmChapterPlan(StrictRecord):
-    """服务端在开始写作事务中确认当前章节构思修订；客户端不能伪造。"""
-
-    op: Literal["confirm_chapter_plan"] = "confirm_chapter_plan"
-    chapter_id: StoryId
-    revision: str = Field(min_length=1, max_length=64)
-
-
 class SetChapterProsePath(StrictRecord):
-    """开始写作事务中为章节分配正文路径；不创建文件，由同一联合提交写入。"""
+    """建章事务中为章节分配正文路径；文件由同一联合提交创建。"""
 
     op: Literal["set_chapter_prose_path"] = "set_chapter_prose_path"
     chapter_id: StoryId
@@ -1288,7 +1212,6 @@ StoryOperation = Annotated[
     | AddInformationMove
     | UpdateInformationMove
     | RemoveInformationMove
-    | ConfirmChapterPlan
     | SetChapterProsePath,
     Field(discriminator="op"),
 ]

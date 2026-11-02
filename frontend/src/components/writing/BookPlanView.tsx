@@ -1,12 +1,12 @@
 /**
- * 全书构思（1.0.9 P4）。
+ * 全书构思（1.0.9 P4；P6 改为正文为主）。
  *
- * 空白作品从这里开始：写一句起点，建立第一章，再进入章节构思。模型只提供候选文字，
- * 采用后仍由作者保存，保存成功才创建正式构思格式。
+ * 空白作品从这里开始：写一句起点即可建立章节并直接写正文。这里同时给出信息线总览，
+ * 作者看到的是跨章积累下来的信息，而不是需要预先填写的章节任务。
  */
 
 import { useEffect, useState } from "react";
-import { ArrowRight, BookOpenText, Check, Circle, PenLine } from "lucide-react";
+import { ArrowRight, BookOpenText, PenLine } from "lucide-react";
 
 import { errorMessage } from "../../api/errors";
 import { saveBookIntent, writingKey, type ModelSupportView, type WritingBookView } from "../../api/writing";
@@ -44,10 +44,7 @@ export default function BookPlanView({
     ? support.disabled_reason ?? "当前没有可用模型"
     : !supported ? "当前模型没有开放这类辅助" : undefined;
   const hasIntent = Boolean(book.intent?.trim());
-  const hasChapters = book.chapters.length > 0;
-  const hasProse = book.chapters.some(chapter => Boolean(chapter.prose_path));
-  const nextChapter = book.chapters.find(chapter => !chapter.prose_path) ?? book.chapters[book.chapters.length - 1] ?? null;
-  const currentStep = !hasIntent ? 0 : !hasProse ? 1 : 2;
+  const nextChapter = book.chapters[book.chapters.length - 1] ?? null;
 
   useEffect(() => {
     if (!touched) setIntent(book.intent ?? "");
@@ -110,23 +107,8 @@ export default function BookPlanView({
   return <article className="plan-view" aria-label="全书构思">
     <header className="plan-view-header">
       <h1><BookOpenText size={20} strokeWidth={1.8} aria-hidden="true" />全书构思</h1>
-      <p>这里不需要完整大纲。先确定作品从哪里开始，再为第一章写一句可执行的构思。</p>
+      <p>全书构思是唯一的写作前提。写清作品从哪里开始，章节建立后就可以直接写正文。</p>
     </header>
-    <ol className="plan-progress" aria-label="开始写作的三个步骤">
-      {[{
-        title: "作品起点",
-        note: "一句核心处境",
-      }, {
-        title: "章节构思",
-        note: "本章改变什么",
-      }, {
-        title: "开始正文",
-        note: "手写或模型起草",
-      }].map((step, index) => <li key={step.title} data-state={index < currentStep ? "done" : index === currentStep ? "current" : "later"}>
-        <span className="plan-progress-mark" aria-hidden="true">{index < currentStep ? <Check size={13} /> : <Circle size={11} fill="currentColor" />}</span>
-        <span><strong>{step.title}</strong><small>{step.note}</small></span>
-      </li>)}
-    </ol>
     <label className="plan-field">
       <span>作品从什么处境开始</span>
       <textarea
@@ -152,43 +134,45 @@ export default function BookPlanView({
       />
     </div>
 
-    {!hasProse && <section className="plan-next-step" aria-label="下一步">
+    <section className="plan-next-step" aria-label="下一步">
       <div>
-        <strong>{!hasIntent ? "第一步：先完成全书构思" : hasChapters ? "下一步：完成章节构思" : "下一步：建立第一章"}</strong>
+        <strong>{!hasIntent ? "先写一句作品起点" : nextChapter ? "继续写正文" : "建立第一章"}</strong>
         <p>{!hasIntent
-          ? "先写并保存一句作品起点。完成这一步前不能建立章节，也不会出现正文入口。"
-          : hasChapters
-          ? "先为第一章确定“发生什么变化”和“读者或角色知道什么”，确认后才会打开正文。"
-          : "建立章节后，只需再写一句本章构思，不用先规划整本书。"}</p>
+          ? "保存全书构思之前不能建立章节；写完这一句就可以直接开写。"
+          : nextChapter
+          ? `第${nextChapter.order + 1}章的稿纸已经可以写；新建章节会直接带上空白正文。`
+          : "建立第一章后直接进入稿纸，没有章节构思或确认步骤。"}</p>
       </div>
-      {hasIntent && hasChapters && nextChapter
+      {hasIntent && nextChapter
         ? <Button variant="primary" onClick={() => onSelectChapter(nextChapter.id)}>
-          继续构思第{nextChapter.order + 1}章<ArrowRight size={15} aria-hidden="true" />
+          继续写第{nextChapter.order + 1}章<ArrowRight size={15} aria-hidden="true" />
         </Button>
         : hasIntent ? <Button variant="primary" onClick={() => void createFirst()} busy={creating} disabled={saving || !intent.trim()}>
           <PenLine size={16} strokeWidth={1.8} aria-hidden="true" />建立第一章
         </Button> : null}
-    </section>}
+    </section>
 
-    {book.information_threads.length > 0 && <section className="plan-section">
+    <section className="plan-section">
       <h2>信息线</h2>
-      <ul className="plan-thread-list">
-        {book.information_threads.map(thread => <li key={thread.id}>{thread.summary}</li>)}
-      </ul>
-    </section>}
+      {book.information_threads.length === 0
+        ? <div className="plan-empty"><p>信息线从正文里长出来：保存正文后，索引给出候选，确认后才会出现在这里。</p></div>
+        : <ul className="plan-thread-list">
+          {book.information_threads.map(thread => <li key={thread.id}>{thread.summary}</li>)}
+        </ul>}
+    </section>
 
     <section className="plan-section">
       <h2>章节</h2>
       {book.chapters.length === 0
         ? <div className="plan-empty">
-          <p>建立第一章后，它会先进入章节构思，不会直接生成空白正文。</p>
+          <p>建立章节后会直接得到空白稿纸，可以自己写，也可以让模型起草。</p>
         </div>
         : <ul className="plan-chapter-list">
           {book.chapters.map(chapter => <li key={chapter.id}>
             <button className="plan-chapter-row" onClick={() => onSelectChapter(chapter.id)}>
               <span className="writing-nav-order">第{chapter.order + 1}章</span>
-              <span className="writing-nav-title">{chapter.title || chapter.summary || "尚未构思"}</span>
-              <span className="writing-nav-order">{chapter.prose_path ? "已开始" : chapter.confirmed ? "已确认" : "待确认"}</span>
+              <span className="writing-nav-title">{chapter.title || chapter.summary || "未命名"}</span>
+              <span className="writing-nav-order">{chapter.prose_path ? "正文" : "缺正文"}</span>
             </button>
           </li>)}
         </ul>}

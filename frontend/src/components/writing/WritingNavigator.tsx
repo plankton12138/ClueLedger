@@ -1,9 +1,9 @@
 /**
  * 写作页左侧导航（1.0.9 P4）。
  *
- * 只有一项是「全书构思」，其后是按顺序排列的章节。没有挂构思的正文与设定文件仍可阅读，
- * 但不混进章节写作流程。新建章节先建立无标题的构思壳，正文路径与确认状态由服务端
- * 在开始事务里生成；这样左栏不再放一个缺少模型入口的标题输入框。
+ * 只有一项是「全书构思」，其后是按顺序排列的章节。未挂章节的正文与设定文件仍可阅读，
+ * 但不混进章节写作流程。新建章节由服务端在同一事务里建立正文文件；左栏不放缺少
+ * 模型入口的标题输入框。
  */
 
 import { useRef, useState } from "react";
@@ -85,12 +85,12 @@ export default function WritingNavigator({
               >
                 <span className="writing-nav-chapter-copy">
                   <span>第{chapter.order + 1}章{chapter.title ? ` · ${chapter.title}` : ""}</span>
-                  <small>{chapter.summary || chapter.intent || "尚未构思"}</small>
+                  <small>{chapter.summary || "还没有信息变化"}</small>
                 </span>
                 <i
-                  className={`writing-nav-state ${chapter.prose_path ? "started" : chapter.confirmed ? "confirmed" : "draft"}`}
-                  title={chapter.prose_path ? "已开始写作" : chapter.confirmed ? "构思已确认" : "构思待确认"}
-                  aria-label={chapter.prose_path ? "已开始写作" : chapter.confirmed ? "构思已确认" : "构思待确认"}
+                  className={`writing-nav-state ${chapter.prose_path ? "started" : "draft"}`}
+                  title={chapter.prose_path ? "有正文文件" : "缺少正文文件"}
+                  aria-label={chapter.prose_path ? "有正文文件" : "缺少正文文件"}
                 />
               </button>
             </li>
@@ -110,7 +110,7 @@ export default function WritingNavigator({
       </section>
 
       {unplanned.length > 0 && <section>
-        <h2 className="toc-head">未挂构思的正文</h2>
+        <h2 className="toc-head">未挂章节的正文</h2>
         <ul className="toc-group">
           {unplanned.map(entry => <li className="toc-line" key={entry.path}>
             <button

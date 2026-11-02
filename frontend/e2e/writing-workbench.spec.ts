@@ -19,8 +19,7 @@ test("从空作品到第一章写作不离开写作页，刷新后正文仍在",
 
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await expect(page.getByRole("heading", { name: "全书构思", exact: true })).toBeVisible();
-  await expect(page.getByRole("list", { name: "开始写作的三个步骤" })).toContainText("作品起点");
-  await expect(page.getByRole("region", { name: "下一步" })).toContainText("先完成全书构思");
+  await expect(page.getByRole("region", { name: "下一步" })).toContainText("先写一句作品起点");
   await expect(page.locator(".writing-navigator").getByRole("button", { name: "先完成全书构思" })).toBeDisabled();
   await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "写作", exact: true })).toBeVisible();
@@ -35,32 +34,36 @@ test("从空作品到第一章写作不离开写作页，刷新后正文仍在",
   await expect(page.getByRole("button", { name: /建立第一章/ })).toBeEnabled();
   await page.getByRole("button", { name: /建立第一章/ }).click();
 
+  // 建章即建正文：没有章节构思页，直接进入可编辑稿纸。
   await expect(page).toHaveURL(new RegExp(`/workspaces/${book.id}/writing\\?chapter=ch_`));
-  await expect(page.getByRole("textbox", { name: "章节构思" })).toBeVisible();
-  await expect(page.getByRole("article", { name: "章节构思" })).toContainText("用一句话说明这一章会改变什么");
-  await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
-  await shot(page, "07-chapter-plan-gate-1440");
-  await page.getByRole("textbox", { name: "章节构思" }).fill("主角发现死者房间里的钥匙不见了，开始怀疑管家。");
-  await page.getByRole("button", { name: "整理构思" }).click();
-  await expect(page.getByRole("region", { name: "本章构思" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "本章构思" })).toContainText("主角发现死者房间里的钥匙不见了");
-  await page.getByRole("button", { name: "开始写作", exact: true }).click();
-
   const editor = page.getByRole("textbox", { name: "正文编辑" });
   await expect(editor).toBeVisible();
-  await expect(page.getByRole("region", { name: "开始正文" })).toContainText("正文还没有内容");
-  await expect(page.getByRole("region", { name: "开始正文" })).toContainText("本章构思已确认");
+  const emptyStart = page.getByRole("region", { name: "开始正文" });
+  await expect(emptyStart).toContainText("正文还没有内容");
+  await expect(emptyStart.getByRole("button", { name: "自己写第一段" })).toBeVisible();
+  await expect(emptyStart.getByRole("button", { name: "由模型起草" })).toBeVisible();
+  await expect(emptyStart.getByRole("button", { name: "看看方向建议" })).toBeVisible();
   await expect(editor).toHaveValue("");
   await shot(page, "06-empty-prose-1440");
+
   await editor.fill("侦探抵达港口。");
   const status = page.locator(".chapter-editor-status");
   await expect(status).toContainText("未保存");
+  await expect(status).toContainText("已保存", { timeout: 15_000 });
+
+  // 本章没有可核对的信息变化：温和提示出现，可忽略，不阻断继续输入。
+  await expect(page.getByText("本章还没有可核对的信息变化")).toBeVisible();
+  await shot(page, "07-empty-chapter-feedback-1440");
+  await page.getByRole("button", { name: "暂时忽略" }).click();
+  await expect(page.getByText("本章还没有可核对的信息变化")).toHaveCount(0);
+  await editor.fill("侦探抵达港口。海面上没有灯。");
   await expect(status).toContainText("已保存", { timeout: 15_000 });
 
   await page.reload();
   await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveValue(/侦探抵达港口/);
   await page.locator(".writing-navigator").getByRole("button", { name: "全书构思" }).click();
   await expect(page.getByRole("heading", { name: "全书构思", exact: true })).toBeVisible();
+  await expect(page.getByText("信息线从正文里长出来")).toBeVisible();
   await page.locator(".writing-navigator").getByRole("button", { name: /第1章/ }).click();
   await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveValue(/侦探抵达港口/);
 
@@ -69,7 +72,7 @@ test("从空作品到第一章写作不离开写作页，刷新后正文仍在",
   const chatButton = page.getByRole("button", { name: "对话", exact: true });
   await expect(chatButton).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator(".chapter-margin-inline")).toBeVisible();
-  await expect(page.locator(".chapter-margin-inline")).toContainText("钥匙");
+  await expect(page.locator(".chapter-margin-inline")).toContainText("还没有可核对的信息变化");
   await expect(page.getByRole("button", { name: "本章信息", exact: true })).toHaveCount(0);
   await chatButton.click();
   await expect(page.locator(".chapter-margin-inline")).toBeHidden();

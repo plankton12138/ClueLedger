@@ -1,6 +1,6 @@
 # v1.0.9 数据、接口与同步契约
 
-日期：2026-11-02。状态：**P1—P5 已按章节门槛设计实施；同日修订为“正文为主”，P6 拆门槛改造待实施**。本文描述修订后的目标契约；已实施部分的记录见 [P0 契约冻结](notes/p0-contract-freeze.md)与 `notes/`，历史记录不回改。当前格式 3 为已实施的中间格式，改造升为当前格式 4。
+日期：2026-11-02。状态：**P1—P6 已实施，当前格式 4**。本文描述修订后的契约；已实施部分的记录见 [P0 契约冻结](notes/p0-contract-freeze.md)、`notes/` 与 [P6 记录](notes/p6-gate-removal.md)，历史记录不回改。格式 3 是 P1—P5 的中间格式，P6 已升为格式 4 并放弃旧数据。
 
 ## 1. 设计原则
 
@@ -160,7 +160,7 @@ HTTP 正文保存 / 章节创建 / Agent write_file / Agent edit_file
 2. 分配章节顺序与唯一正文路径，创建只含章节标题的初始文件。
 3. 提交章节登记与文件创建，记录可撤销回执。
 
-重复 `request_key` 返回同一结果。任何步骤失败都整体回滚，不留下章节登记或正文文件其中之一。已实施的 `POST /story/chapters/{chapter_id}/start`（确认构思并开始写作）在改造中移除：不存在章节确认环节。
+重复 `request_key` 返回同一结果。任何步骤失败都整体回滚，不留下章节登记或正文文件其中之一。原 `POST /story/chapters/{chapter_id}/start`（确认构思并开始写作）已在 P6 移除：不存在章节确认环节。
 
 ### 3.3 正文保存
 
@@ -433,18 +433,19 @@ interface CreativeAssistInput {
 |---|---|---|
 | 打开全书构思 | `GET /story/workbench` | `BookPlanView`、workbench store |
 | 打开章节 | `GET /story/workbench?chapter_id=...` | `ChapterEditor` / `ChapterMarginIndex` |
-| 新建章节（创建即建正文文件） | `POST /story/chapters` | `WritingNavigator` |
+| 新建章节（创建即建正文文件） | `POST /story/chapters`（响应含 `path` 与 `prose_digest`） | `WritingNavigator` |
 | 保存全书构思 | 薄 REST 适配 → `StoryChangeService` | 创作输入与意图摘要 |
 | 保存正文 | `PUT /story/chapters/{id}/prose` → 写入策略 | `ChapterEditor` |
 | 确认索引候选入账 | `POST /story/index-candidates/{id}/confirm` → 联合提交 | `InformationItem`、页边索引 |
 | 请求模型候选 | 作品内或全局 `/creative-assists` 薄路由 + 同一操作事件 | `ModelAssistAction`、`ModelCandidate` |
 | 采用候选文字 | 先写本地草稿，再调用目标原保存接口 | 各创作输入 / 正文编辑器 |
 | 查看语义分析进度 | 现有操作事件或有界状态读取 | workbench store |
+| 空章反馈中让模型复看整章 | `POST /story/chapters/{id}/index-review` → 同一增量分析任务 | 页边索引 / 空章提示 |
 | 处理需要对齐差异 | `StoryChangeService` / 联合提交 | `InformationItem`、对话回执 |
 | 定位原句 | 既有精确来源与正文位置能力 | 正文编辑器 / 页边索引 |
 | 撤销正式变更 | 既有 change undo 与依赖检查 | 对话或活动回执 |
 
-已实施并将在 P6 移除的端点：`POST /story/chapters/{id}/start`（确认构思并开始写作）。
+已移除的端点：`POST /story/chapters/{id}/start`（确认构思并开始写作）与 `PUT /story/chapters/{id}/plan`（保存章节构思），见 [P6 记录](notes/p6-gate-removal.md)。
 
 ### 9.1 旧接口的 P5 处理结果
 
@@ -476,7 +477,7 @@ P0 的消费者清单与 P5 实施记录见 [P0 基线](notes/p0-baseline.md)、
 
 示例：`[BOOK_INTENT_REQUIRED] 正文/作品：作品尚无全书构思。建议：先写一句全书意图，或选择“交给模型构思”。`
 
-已实施并将在 P6 移除的错误码：`CHAPTER_PLAN_REQUIRED`、`CHAPTER_PLAN_STALE`、`CHAPTER_START_PARTIAL`。
+已移除的错误码：`CHAPTER_PLAN_REQUIRED`、`CHAPTER_PLAN_STALE`、`CHAPTER_START_PARTIAL`；写作门禁只保留 `BOOK_INTENT_REQUIRED`。
 
 界面文案统一为 `[错误码] 位置：现象。建议：…`。操作状态使用明确事实：正在保存、正文已保存 / 索引更新中、索引不可用、候选已过期。不要用“同步良好”之类无法核对的笼统标签。
 

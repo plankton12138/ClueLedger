@@ -24,7 +24,7 @@ from hastings.workspace.creative_candidates import (
 )
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
-from hastings.workspace.story_models import StoryVariant
+from hastings.workspace.story_models import FORMAT_VERSION, StoryVariant
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 from tau_agent.messages import UserMessage, message_text
 from tau_agent.provider_events import AssistantDoneEvent, AssistantErrorEvent, TextDeltaEvent
@@ -33,7 +33,7 @@ __all__ = ["AssistKind", "CreativeAssistInput", "CreativeAssistService"]
 
 AssistKind = Literal[
     "book_intent",
-    "chapter_plan",
+    "chapter_direction",
     "title",
     "prose_draft",
     "prose_continue",
@@ -46,7 +46,7 @@ AssistKind = Literal[
 _KINDS = frozenset(
     {
         "book_intent",
-        "chapter_plan",
+        "chapter_direction",
         "title",
         "prose_draft",
         "prose_continue",
@@ -241,7 +241,7 @@ class CreativeAssistService:
             request.kind
             in {
                 "book_intent",
-                "chapter_plan",
+                "chapter_direction",
                 "prose_draft",
                 "prose_continue",
                 "alignment_resolution",
@@ -252,7 +252,7 @@ class CreativeAssistService:
             if self.workspace is None:
                 raise _target_error("这类辅助需要当前作品上下文")
             variant = (
-                StoryStore(self.state_root, self.workspace, format_version=3)
+                StoryStore(self.state_root, self.workspace, format_version=FORMAT_VERSION)
                 .read()
                 .variant(MAIN_VARIANT_ID)
             )
@@ -263,7 +263,7 @@ class CreativeAssistService:
                 why="当前作品没有当前格式的写作构思",
                 fix="先建立作品意图与章节构思，再请求模型辅助",
             )
-        if variant is not None and variant.format_version < 3:
+        if variant is not None and variant.format_version < FORMAT_VERSION:
             raise WorkspaceError(
                 code="STORY_FORMAT_UNSUPPORTED",
                 where="creative-assist",
@@ -285,24 +285,17 @@ class CreativeAssistService:
             raise _target_error("这类辅助需要作者提供当前草稿或指令")
         if request.kind in {"prose_draft", "prose_continue"}:
             assert variant is not None and plan is not None
-            problem = variant.chapter_start_problem(plan.id)
-            if problem is not None:
+            if variant.book_intent is None or not variant.book_intent.text.strip():
                 raise WorkspaceError(
-                    code="CHAPTER_PLAN_REQUIRED",
+                    code="BOOK_INTENT_REQUIRED",
                     where=f"章节/{plan.id}",
-                    why=problem,
-                    fix="先确认本章最小构思，再请求模型起草或续写",
+                    why="作品尚无全书构思",
+                    fix="先写一句作品意图，或选择「交给模型构思」",
                 )
         expected = request.base
         if variant is not None:
             if expected.plan_revision and expected.plan_revision != variant.revision:
                 raise _stale_error("作品构思已经变化")
-            if (
-                plan is not None
-                and expected.chapter_revision
-                and expected.chapter_revision != plan.revision
-            ):
-                raise _stale_error("章节构思已经变化")
             if expected.prose_digest and digest and expected.prose_digest != digest:
                 raise _stale_error("正文已经变化")
         return variant, plan, path, digest
@@ -324,10 +317,6 @@ class CreativeAssistService:
             actual = variant.revision if variant is not None else "empty"
             if actual != candidate.base.plan_revision:
                 return False
-        if candidate.base.chapter_revision and (
-            plan is None or plan.revision != candidate.base.chapter_revision
-        ):
-            return False
         return not (candidate.base.prose_digest and digest != candidate.base.prose_digest)
 
     def _prompt(
@@ -345,14 +334,23 @@ class CreativeAssistService:
                 f"当前作品意图：{intent or '（空白）'}\n作者补充：{note or '（无）'}\n"
                 "请给出 3 个可继续发展的悬疑起点；不确定凶手、真相或结局。每行一个。",
             )
-        if request.kind == "chapter_plan":
+        if request.kind == "chapter_direction":
             title = plan.title if plan is not None else (request.target.draft_id or "本章")
+            done = ""
+            if variant is not None and plan is not None:
+                done = "\n".join(
+                    f"- 第{row.order + 1}章："
+                    f"{_chapter_moves_text(variant, row) or '（无已入账信息）'}"
+                    for row in sorted(variant.chapter_plans.values(), key=lambda item: item.order)
+                    if row.order < plan.order
+                )
             return (
-                "你是悬疑小说创作助手。只输出最小章节构思，不列属性表。",
+                "你是悬疑小说创作助手。只给可以往下写的方向参考，不写正文，不列属性表。",
                 f"全书意图：{intent or '（未写）'}\n章节：{title}\n"
-                f"已有构思：{plan.intent if plan is not None else '（空白）'}\n"
+                f"已完成章节：\n{done or '（无）'}\n"
                 f"作者补充：{note or '（无）'}\n"
-                "用一句话写清本章让事件或关系发生什么变化，以及读者或角色理解到什么。",
+                "给出 2—3 个本章可以推进的方向，每个方向用一句话说明会发生什么变化；"
+                "不替作者决定真相或结局，也不要求作者填写任何字段。",
             )
         if request.kind in {"prose_draft", "prose_continue"}:
             text = ""
@@ -362,18 +360,13 @@ class CreativeAssistService:
                     text = self.workspace.read(plan.prose_path).text
                 except WorkspaceError:
                     text = ""
-            moves = ""
-            if variant is not None and plan is not None:
-                moves = "\n".join(
-                    move.statement for move in variant.information_moves_for_chapter(plan.id)
-                )
+            moves = _chapter_moves_text(variant, plan)
             selection = request.selection or {}
             quote = str(selection.get("quote") or "")
             return (
                 "你是悬疑小说写作助手。只输出正文，不写解释或标题。保持人物知情边界。",
                 f"全书意图：{intent or '（未写）'}\n"
-                f"本章构思：{plan.intent if plan else '（未写）'}\n"
-                f"本章信息变化：{moves or '（未写）'}\n"
+                f"本章已入账信息：{moves or '（无）'}\n"
                 f"当前正文：\n{text[-4000:] if text else '（空白）'}\n"
                 f"作者选段：{quote or '（无）'}\n作者补充：{note or '（无）'}\n"
                 + (
@@ -391,9 +384,10 @@ class CreativeAssistService:
             return (
                 "你是悬疑小说编辑助手。只给处理建议，不替作者决定真相，也不直接改写。",
                 f"全书意图：{intent or '（未写）'}\n"
-                f"本章构思：{plan.intent if plan else '（未写）'}\n"
+                f"本章已入账信息：{_chapter_moves_text(variant, plan) or '（无）'}\n"
                 f"作者补充：{note or '（无）'}\n"
-                "列出正文与构思的具体差异，并给出 2—3 种处理方向；保留作者隐藏真相与角色谎言。",
+                "列出正文与已入账信息的具体差异，并给出 2—3 种处理方向；"
+                "保留作者隐藏真相与角色谎言。",
             )
         if request.kind == "idea":
             return (
@@ -408,9 +402,17 @@ class CreativeAssistService:
         return (
             "你是写作助手。只给具体可执行的下一步建议，每行一条，不自动执行。",
             f"当前章节：{plan.title if plan is not None else '（未选）'}\n"
-            f"当前构思：{plan.intent if plan is not None else '（未写）'}\n"
+            f"当前已入账信息：{_chapter_moves_text(variant, plan) or '（无）'}\n"
             f"作者指令草稿：{draft or note or '（空白）'}",
         )
+
+
+def _chapter_moves_text(variant: StoryVariant | None, plan: Any) -> str:
+    if variant is None or plan is None:
+        return ""
+    return "\n".join(
+        f"- {move.statement}" for move in variant.information_moves_for_chapter(plan.id)
+    )
 
 
 def _target_error(why: str) -> WorkspaceError:

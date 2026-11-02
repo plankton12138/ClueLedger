@@ -29,6 +29,7 @@ export default function ModelCandidate({
   adoptLabel = "采用到输入",
   extraAdopt,
   extraAdoptLabel,
+  readOnly = false,
 }: {
   assistKey: string;
   support: ModelSupportView;
@@ -39,6 +40,8 @@ export default function ModelCandidate({
   adoptLabel?: string;
   extraAdopt?: (text: string) => void;
   extraAdoptLabel?: string;
+  /** 方向建议只是一段参考文字：可以阅读与复制，不进入正式数据。 */
+  readOnly?: boolean;
 }) {
   const state = useWritingStore(value => value.assists[assistKey]);
   const stop = useWritingStore(value => value.assistStop);
@@ -57,8 +60,9 @@ export default function ModelCandidate({
       {state.error && <p className="ui-field-error" role="alert">{state.error}</p>}
       <div className="model-candidate-actions">
         {streaming && <Button size="compact" onClick={() => { if (workspaceId && state.candidateId) void stop(workspaceId, assistKey); }} disabled={!state.candidateId || state.stopping}>停止</Button>}
-        {state.text.trim() && <Button size="compact" variant="primary" onClick={() => onAdopt(state.text.trim())}>{adoptLabel}</Button>}
-        {state.text.trim() && extraAdopt && extraAdoptLabel && <Button size="compact" onClick={() => extraAdopt(state.text.trim())}>{extraAdoptLabel}</Button>}
+        {state.text.trim() && !readOnly && <Button size="compact" variant="primary" onClick={() => onAdopt(state.text.trim())}>{adoptLabel}</Button>}
+        {state.text.trim() && !readOnly && extraAdopt && extraAdoptLabel && <Button size="compact" onClick={() => extraAdopt(state.text.trim())}>{extraAdoptLabel}</Button>}
+        {state.text.trim() && readOnly && <Button size="compact" onClick={() => { void navigator.clipboard?.writeText(state.text.trim()); }}>复制建议</Button>}
         {!streaming && <Button size="compact" variant="quiet" onClick={() => clear(assistKey)}>放弃候选</Button>}
       </div>
     </div>}

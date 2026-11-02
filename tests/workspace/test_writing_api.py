@@ -1,4 +1,4 @@
-"""1.0.9 P2：工作台投影、开始写作与正文保存接口。"""
+"""1.0.9 P6：工作台投影、建章即建正文与正文保存接口。"""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def test_chapter_cannot_be_created_before_book_intent(
         },
     )
 
-    assert response.status_code == 400, response.text
+    assert response.status_code == 409, response.text
     assert response.json()["error"]["code"] == "BOOK_INTENT_REQUIRED"
 
 
@@ -90,61 +90,23 @@ def test_writing_flow_through_http(client: TestClient, tmp_path: Path) -> None:
         },
     )
     assert created.status_code == 201, created.text
-    chapter_id = created.json()["chapter_id"]
+    created_body = created.json()
+    chapter_id = created_body["chapter_id"]
+    assert (root / created_body["path"]).exists()
 
     chapter = client.get(f"{base}/workbench", params={"chapter_id": chapter_id}).json()
-    assert chapter["chapter"]["plan"]["intent"] == ""
-    assert chapter["chapter"]["can_start"] is False
-    chapter_revision = chapter["chapter"]["plan"]["revision"]
-    plan_revision = chapter["plan_revision"]
-
-    saved_plan = client.put(
-        f"{base}/chapters/{chapter_id}/plan",
-        json={
-            "title": "第一章",
-            "intent": "封山、入住、管家说谎，湿手套最后出现。",
-            "information_moves": None,
-            "expected_chapter_revision": chapter_revision,
-            "expected_plan_revision": plan_revision,
-            "request_key": "plan:1",
-        },
-    )
-    assert saved_plan.status_code == 200, saved_plan.text
-    body = saved_plan.json()
-    assert body["chapter_revision"].startswith("ch_")
-    assert len(body["moves"]) == 1
-    assert len(body["threads"]) == 1
-    chapter_revision = body["chapter_revision"]
-    plan_revision = body["plan_revision"]
-
-    chapter = client.get(f"{base}/workbench", params={"chapter_id": chapter_id}).json()
-    assert chapter["chapter"]["can_start"] is True
-    assert chapter["chapter"]["prose"] is None
-    assert chapter["chapter"]["index"]["items"][0]["placement"] == "prepared"
-
-    started = client.post(
-        f"{base}/chapters/{chapter_id}/start",
-        json={
-            "expected_story_revision": plan_revision,
-            "expected_chapter_revision": chapter_revision,
-            "attach_path": None,
-            "attach_digest": None,
-            "request_key": "start:1",
-        },
-    )
-    assert started.status_code == 200, started.text
-    started_body = started.json()
-
-    chapter = client.get(f"{base}/workbench", params={"chapter_id": chapter_id}).json()
+    assert chapter["chapter"]["plan"]["moves"] == []
+    assert "can_start" not in chapter["chapter"]
     assert chapter["chapter"]["prose"]["editable"] is True
-    assert chapter["chapter"]["prose"]["path"] == started_body["path"]
+    assert chapter["chapter"]["prose"]["blocked_reason"] is None
+    assert chapter["chapter"]["index"]["items"] == []
+    assert chapter["chapter"]["index"]["analysis"]["state"] == "unavailable"
 
     saved = client.put(
         f"{base}/chapters/{chapter_id}/prose",
         json={
             "text": "# 第一章\n\n林砚走进旅馆，柜台上有一双仍在滴水的手套。\n",
-            "expected_digest": started_body["prose_digest"],
-            "expected_chapter_revision": chapter_revision,
+            "expected_digest": created_body["prose_digest"],
             "draft_revision": "local_1",
             "candidate_id": None,
             "request_key": "save:1",
@@ -153,15 +115,14 @@ def test_writing_flow_through_http(client: TestClient, tmp_path: Path) -> None:
     assert saved.status_code == 200, saved.text
     saved_body = saved.json()
     assert saved_body["index_revision"].startswith("idx_")
-    assert saved_body["index"]["items"][0]["placement"] == "prepared"
+    assert "chapter_revision" not in saved_body
     assert (root / saved_body["path"]).exists()
 
     conflict = client.put(
         f"{base}/chapters/{chapter_id}/prose",
         json={
             "text": "# 第一章\n\n另一版正文。\n",
-            "expected_digest": started_body["prose_digest"],
-            "expected_chapter_revision": chapter_revision,
+            "expected_digest": created_body["prose_digest"],
             "draft_revision": "local_2",
             "candidate_id": None,
             "request_key": "save:2",
@@ -170,19 +131,16 @@ def test_writing_flow_through_http(client: TestClient, tmp_path: Path) -> None:
     assert conflict.status_code == 409, conflict.text
     assert conflict.json()["error"]["code"] == "PROSE_DIGEST_MISMATCH"
 
-    stale = client.put(
-        f"{base}/chapters/{chapter_id}/prose",
-        json={
-            "text": "# 第一章\n\n另一版正文。\n",
-            "expected_digest": saved_body["prose_digest"],
-            "expected_chapter_revision": "ch_stale",
-            "draft_revision": "local_3",
-            "candidate_id": None,
-            "request_key": "save:3",
-        },
+    started = client.post(
+        f"{base}/chapters/{chapter_id}/start",
+        json={"request_key": "start:gone"},
     )
-    assert stale.status_code == 409, stale.text
-    assert stale.json()["error"]["code"] == "CHAPTER_PLAN_STALE"
+    assert started.status_code in (404, 405), started.text
+    plan_route = client.put(
+        f"{base}/chapters/{chapter_id}/plan",
+        json={"request_key": "plan:gone"},
+    )
+    assert plan_route.status_code in (404, 405), plan_route.text
 
 
 def test_unplanned_prose_is_readonly_in_workbench(client: TestClient, tmp_path: Path) -> None:
@@ -201,5 +159,5 @@ def test_unplanned_prose_is_readonly_in_workbench(client: TestClient, tmp_path: 
     body = chapter.json()
     assert body["chapter"]["plan"] is None
     assert body["chapter"]["prose"]["editable"] is False
-    assert body["chapter"]["prose"]["blocked_reason"] == "chapter_plan_required"
+    assert body["chapter"]["prose"]["blocked_reason"] == "book_intent_required"
     assert body["chapter"]["index"] is None

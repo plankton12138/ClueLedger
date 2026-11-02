@@ -25,7 +25,6 @@ import { SourceNotice, ModuleSourceReader } from "../clues/SourceReader";
 import { navigate, useWorkspacePage } from "../../state/navigation";
 import WritingNavigator from "../writing/WritingNavigator";
 import BookPlanView from "../writing/BookPlanView";
-import ChapterPlanGate from "../writing/ChapterPlanGate";
 import ChapterEditor from "../writing/ChapterEditor";
 import ChapterMarginIndex from "../writing/ChapterMarginIndex";
 import { useWritingStore } from "../../state/writing";
@@ -60,7 +59,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const [directory, setDirectory] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
-  const [editingPlan, setEditingPlan] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const previousWorkspace = useRef<string | null>(null);
   useLayoutEffect(() => {
@@ -90,10 +88,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   useEffect(() => {
     if (prosePath) void useWorkspaceStore.getState().openPath(prosePath, true);
   }, [prosePath]);
-  useEffect(() => {
-    setIndexOpen(false);
-    setEditingPlan(false);
-  }, [chapterId]);
+  useEffect(() => { setIndexOpen(false); }, [chapterId]);
   useEffect(() => {
     if (inlineIndexAvailable) setIndexOpen(false);
   }, [inlineIndexAvailable]);
@@ -107,7 +102,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       setDirectory(false);
       setCompactChat(false);
       setIndexOpen(false);
-      setEditingPlan(false);
     }
     previousWorkspace.current = currentId;
   }, [currentId]);
@@ -194,9 +188,12 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     if (writingPage?.sourceId) return <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} />;
     if (chapterId) {
       if (chapter) {
-        if (!chapter.prose || !chapter.prose.editable) return <ChapterPlanGate workspaceId={currentId} chapter={chapter} planRevision={workbench?.plan_revision ?? null} support={workbench?.model_support ?? { available: false, disabled_reason: "当前没有可用模型", supported_assists: [] }} onChanged={() => refreshWorkbench(currentId, { chapterId })} />;
-        if (editingPlan) return <ChapterPlanGate workspaceId={currentId} chapter={chapter} planRevision={workbench?.plan_revision ?? null} support={workbench?.model_support ?? { available: false, disabled_reason: "当前没有可用模型", supported_assists: [] }} onChanged={() => refreshWorkbench(currentId, { chapterId })} onCancel={() => setEditingPlan(false)} onStarted={() => setEditingPlan(false)} />;
-        return <ChapterEditor workspaceId={currentId} chapter={chapter} planRevision={workbench?.plan_revision ?? null} support={workbench?.model_support ?? { available: false, disabled_reason: "当前没有可用模型", supported_assists: [] }} informationId={writingPage?.informationId ?? null} onEditPlan={() => setEditingPlan(true)} />;
+        if (!chapter.prose) return <div className="ui-empty" role="status"><p>这一章的正文文件缺失；刷新工作台后重新选择章节。</p></div>;
+        if (chapter.prose.blocked_reason === "book_intent_required") return <div className="writing-load-error"><StatusMessage tone="warning" action={<Button size="compact" onClick={() => navigate({ kind: "writing", workspaceId: currentId })}>去写全书构思</Button>}>
+          [BOOK_INTENT_REQUIRED] 正文/作品：作品尚无全书构思。建议：先写一句作品意图，再回到这一章。
+        </StatusMessage></div>;
+        if (!chapter.prose.editable) return <div className="ui-empty" role="status"><p>这一章的正文暂不可编辑。</p></div>;
+        return <ChapterEditor workspaceId={currentId} chapter={chapter} support={workbench?.model_support ?? { available: false, disabled_reason: "当前没有可用模型", supported_assists: [] }} informationId={writingPage?.informationId ?? null} />;
       }
       if (writingError) return <div className="writing-load-error"><StatusMessage tone="error" action={<Button size="compact" onClick={() => void refreshWorkbench(currentId, { chapterId })}>重试</Button>}>{writingError}</StatusMessage></div>;
       return <div className="ui-empty" role="status"><p>正在读取章节…</p></div>;
@@ -204,8 +201,8 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     if (prosePath) {
       const blocked = proseChapter?.prose?.blocked_reason;
       return <>
-        {selectedProseEntry?.kind === "chapter" && blocked && <StatusMessage tone="warning">
-          {blocked === "chapter_plan_required" ? "这篇正文还没有挂章节构思，只能阅读。" : "本章构思已变化，正文暂时只读；在章节构思里重新确认后再写。"}
+        {selectedProseEntry?.kind === "chapter" && blocked === "book_intent_required" && <StatusMessage tone="warning">
+          作品还没有全书构思，这篇正文暂时只读；先写一句作品意图再继续。
         </StatusMessage>}
         <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} />
       </>;
@@ -271,6 +268,11 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             variant="panel"
             activeItemId={writingPage?.informationId ?? null}
             onLocate={(item) => selectInformation(item.item_id)}
+            onConfirm={(item) => {
+              if (currentId && chapterId && item.candidate_id) {
+                void useWritingStore.getState().confirmCandidate(currentId, chapterId, item.candidate_id);
+              }
+            }}
           /> : null}
         </aside>
       )}

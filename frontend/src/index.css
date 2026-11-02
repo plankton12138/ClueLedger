@@ -1065,6 +1065,8 @@
   .chapter-empty-start h2 { margin-top: 2px; color: #244f74; font-size: 19px; font-weight: 700; }
   .chapter-empty-start p { margin-top: 5px; color: theme("colors.ui.secondaryText"); font-size: 14px; line-height: 1.65; }
   .chapter-empty-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+  .chapter-empty-feedback-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chapter-margin-quote { margin-top: 4px; color: theme("colors.ui.secondaryText"); font-size: 13px; line-height: 1.6; }
   .chapter-editor-assist { display: grid; justify-items: start; gap: 6px; margin: 12px 18px 4px; }
   .chapter-editor-assist .model-assist { justify-items: start; width: 100%; }
   .chapter-conflict-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

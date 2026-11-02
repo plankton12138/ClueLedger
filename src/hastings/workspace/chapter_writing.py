@@ -1,48 +1,34 @@
-"""章节开始事务与整章正文保存（1.0.9 P1）。
+"""整章正文保存（1.0.9 P1；P6 移除章节构思前提）。
 
-开始写作不是「先确认构思，再调用文件写入」两个顺序动作。这里把确认修订、分配正文路径、
-创建初始文件放进同一次 ``StoryStore`` 联合提交：故事状态与正文一起成功或一起失败。
-普通保存复用同一提交通道，只按当前摘要整章替换，不另建正文状态文件。
+正文保存只以「作品已有全书构思」为前提，章节没有确认状态，也没有章节修订。并发由
+正文摘要控制：``expected_digest`` 与磁盘不一致时保留作者草稿并返回当前版本，不自动
+选择任一方。保存与绑定重定位在同一次联合提交内完成，索引随后按新正文重建。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from hastings.workspace.chapter_write_policy import ChapterWritePolicy
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.files import Workspace, digest_bytes, managed_kind, normalize_newlines
+from hastings.workspace.files import Workspace, digest_bytes, normalize_newlines
 from hastings.workspace.story_bindings import anchor_state
 from hastings.workspace.story_index_jobs import changed_text
 from hastings.workspace.story_models import (
+    FORMAT_VERSION,
     BindProse,
-    ConfirmChapterPlan,
     ProsePatch,
-    SetChapterProsePath,
     StoryChangeSet,
     StoryDocument,
     StoryOperation,
+    StoryVariant,
     UnbindProse,
 )
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore, new_id
 from hastings.workspace.writing_view import ChapterInformationIndex, build_chapter_index
 
-__all__ = [
-    "ChapterStartResult",
-    "ProseSaveResult",
-    "save_chapter_prose",
-    "start_chapter",
-]
-
-
-@dataclass(frozen=True)
-class ChapterStartResult:
-    chapter_id: str
-    path: str
-    prose_digest: str
-    plan_revision: str
-    chapter_revision: str
-    committed_change_id: str
+__all__ = ["ProseSaveResult", "save_chapter_prose"]
 
 
 @dataclass(frozen=True)
@@ -50,127 +36,12 @@ class ProseSaveResult:
     path: str
     prose_digest: str
     plan_revision: str
-    chapter_revision: str
     context_revision: str
     index_revision: str
     index: ChapterInformationIndex
     analysis_job_id: str | None
     committed_change_id: str
     changed_text: str = ""
-
-
-def start_chapter(
-    store: StoryStore,
-    workspace: Workspace,
-    *,
-    chapter_id: str,
-    expected_story_revision: str,
-    expected_chapter_revision: str,
-    request_key: str,
-    attach_path: str | None = None,
-    attach_digest: str | None = None,
-) -> ChapterStartResult:
-    """确认章节构思并创建或附加首个正文文件；重复请求键返回同一结果。"""
-    policy = ChapterWritePolicy(store)
-    # 仅用于请求指纹与重复键查重；真正提交的内容由 prepare 在锁内生成。
-    initial = StoryChangeSet.model_construct(
-        id=new_id("change"),
-        base_revision=expected_story_revision,
-        operations=[],
-        prose_patches=[],
-        read_dependencies=[],
-        requested_scope=f"chapter-start:{chapter_id}",
-        operation_id="",
-        generation=0,
-        sync=None,
-    )
-
-    def prepare(document: StoryDocument | None) -> tuple[StoryChangeSet, None, dict[str, object]]:
-        if document is None:
-            raise _required(chapter_id, "章节构思不存在")
-        variant = document.variants.get(MAIN_VARIANT_ID)
-        if variant is None:
-            raise _required(chapter_id, "章节构思不存在")
-        policy.require_start(
-            variant,
-            chapter_id,
-            expected_story_revision=expected_story_revision,
-            expected_chapter_revision=expected_chapter_revision,
-        )
-        plan = variant.chapter(chapter_id)
-        assert plan is not None
-        if attach_path is not None:
-            path = attach_path
-            if managed_kind(path) != "chapter":
-                raise _path_conflict(path, "只能附加正文目录下的 Markdown 文件")
-            if attach_digest is None:
-                raise WorkspaceError(
-                    code="PROSE_DIGEST_MISMATCH",
-                    where=path,
-                    why="附加正文必须同时给出读取时的摘要",
-                    fix="重新读取这一章，再用返回的摘要附加",
-                    details={"path": path},
-                )
-            owner = variant.chapter_for_path(path)
-            if owner is not None and owner.id != chapter_id:
-                raise _path_conflict(path, f"该正文已属于章节 {owner.id}")
-            view = workspace.read(path)
-            if attach_digest is not None and view.digest != attach_digest:
-                raise _digest_mismatch(path, view.digest, view.text)
-            patches: list[ProsePatch] = []
-            title = plan.title or f"第{plan.order + 1}章"
-        else:
-            title = plan.title or f"第{plan.order + 1}章"
-            path = workspace.reserve_chapter_path(title)
-            owner = variant.chapter_for_path(path)
-            if owner is not None and owner.id != chapter_id:
-                raise _path_conflict(path, f"该正文已属于章节 {owner.id}")
-            patches = [
-                ProsePatch(
-                    path=path,
-                    base_digest="absent",
-                    start=0,
-                    end=0,
-                    expected="",
-                    replacement=f"# {title}\n",
-                )
-            ]
-        operations = [
-            ConfirmChapterPlan(chapter_id=chapter_id, revision=expected_chapter_revision),
-            SetChapterProsePath(chapter_id=chapter_id, path=path),
-        ]
-        prepared = StoryChangeSet(
-            id=new_id("change"),
-            base_revision=variant.revision,
-            operations=operations,
-            prose_patches=patches,
-            requested_scope=f"chapter-start:{chapter_id}",
-        )
-        return prepared, None, {"path": path}
-
-    receipt = store.commit_change(
-        variant_id=MAIN_VARIANT_ID,
-        change=initial,
-        request_key=request_key,
-        kind="chapter_start",
-        prepare_joint=prepare,
-    )
-    path = str(receipt.result.get("path", ""))
-    if not path:
-        raise _state_error("开始写作的回执没有正文路径")
-    view = workspace.read(path)
-    variant = store.require_variant(MAIN_VARIANT_ID)
-    plan = variant.chapter(chapter_id)
-    if plan is None:
-        raise _state_error("开始写作后章节构思不存在")
-    return ChapterStartResult(
-        chapter_id=chapter_id,
-        path=path,
-        prose_digest=view.digest,
-        plan_revision=variant.revision,
-        chapter_revision=plan.revision,
-        committed_change_id=receipt.change_id,
-    )
 
 
 def save_chapter_prose(
@@ -180,29 +51,26 @@ def save_chapter_prose(
     chapter_id: str,
     text: str,
     expected_digest: str,
-    expected_chapter_revision: str,
     request_key: str,
     draft_revision: str = "",
 ) -> ProseSaveResult:
-    """整章保存；摘要冲突时保留服务端版本，不自动覆盖。"""
+    """整章保存；只校验全书构思与正文摘要。"""
     policy = ChapterWritePolicy(store)
     variant = store.require_variant(MAIN_VARIANT_ID)
-    if variant.format_version < 3:
-        raise _required(chapter_id, "旧格式章节不使用这条保存路径")
+    if variant.format_version < FORMAT_VERSION:
+        raise _format_error(chapter_id)
+    policy.require_book_intent(variant, where=f"章节/{chapter_id}")
     plan = variant.chapter(chapter_id)
     if plan is None:
-        raise _required(chapter_id, "章节构思不存在")
+        raise _chapter_missing(chapter_id)
     path = plan.prose_path
     if path is None:
-        raise _required(chapter_id, "这一章还没有开始写作")
+        raise _prose_missing(chapter_id)
     prior = store.receipt_for(request_key)
     if prior is not None and prior.kind == "prose_save":
-        paths = prior.result.get("prose_paths") or []
+        paths = cast(list[object], prior.result.get("prose_paths") or [])
         if paths:
             return _prose_result(store, workspace, chapter_id, str(paths[0]), prior.change_id)
-    policy.require_current_plan(
-        variant, chapter_id, expected_chapter_revision=expected_chapter_revision
-    )
     view = workspace.read(path)
     if view.digest != expected_digest:
         raise _digest_mismatch(path, view.digest, view.text)
@@ -229,13 +97,13 @@ def save_chapter_prose(
 
     def prepare(document: StoryDocument | None) -> tuple[StoryChangeSet, None, dict[str, object]]:
         if document is None:
-            raise _required(chapter_id, "章节构思不存在")
+            raise _chapter_missing(chapter_id)
         current = document.variants.get(MAIN_VARIANT_ID)
         if current is None:
-            raise _required(chapter_id, "章节构思不存在")
-        policy.require_current_plan(
-            current, chapter_id, expected_chapter_revision=expected_chapter_revision
-        )
+            raise _chapter_missing(chapter_id)
+        policy.require_book_intent(current, where=f"章节/{chapter_id}")
+        if current.chapter(chapter_id) is None:
+            raise _chapter_missing(chapter_id)
         return change, None, {}
 
     receipt = store.commit_change(
@@ -248,7 +116,9 @@ def save_chapter_prose(
     return _prose_result(store, workspace, chapter_id, path, receipt.change_id, change_text)
 
 
-def _refresh_binding_operations(variant, path: str, text: str, digest: str) -> list[StoryOperation]:
+def _refresh_binding_operations(
+    variant: StoryVariant, path: str, text: str, digest: str
+) -> list[StoryOperation]:
     """正文保存时按唯一引文重定位已有绑定；缺失或歧义保留原引用，由索引显示状态。"""
     operations: list[StoryOperation] = []
     for binding in variant.bindings.values():
@@ -277,14 +147,13 @@ def _prose_result(
     variant = store.require_variant(MAIN_VARIANT_ID)
     plan = variant.chapter(chapter_id)
     if plan is None:
-        raise _state_error("保存正文后章节构思不存在")
+        raise _state_error("保存正文后章节不存在")
     view = workspace.read(path)
     index = build_chapter_index(variant, plan, path=path, text=view.text, digest=view.digest)
     return ProseSaveResult(
         path=path,
         prose_digest=view.digest,
         plan_revision=variant.revision,
-        chapter_revision=plan.revision,
         context_revision=index.context_revision,
         index_revision=index.index_revision,
         index=index,
@@ -294,23 +163,33 @@ def _prose_result(
     )
 
 
-def _required(chapter_id: str, why: str) -> WorkspaceError:
+def _chapter_missing(chapter_id: str) -> WorkspaceError:
     return WorkspaceError(
-        code="CHAPTER_PLAN_REQUIRED",
+        code="CHAPTER_NOT_FOUND",
         where=f"章节/{chapter_id}",
-        why=why,
-        fix="先写一句本章变化，或选择「交给模型构思」",
+        why="章节不存在",
+        fix="刷新工作台后重新选择章节",
         details={"chapter_id": chapter_id},
     )
 
 
-def _path_conflict(path: str, why: str) -> WorkspaceError:
+def _prose_missing(chapter_id: str) -> WorkspaceError:
     return WorkspaceError(
-        code="PROSE_PATH_CONFLICT",
-        where=path,
-        why=why,
-        fix="选择空闲的正文路径，或先解除原章节的正文关联",
-        details={"path": path},
+        code="CHAPTER_PROSE_NOT_FOUND",
+        where=f"章节/{chapter_id}",
+        why="这一章还没有正文文件",
+        fix="重新新建章节；正文文件由建章事务一起创建",
+        details={"chapter_id": chapter_id},
+    )
+
+
+def _format_error(chapter_id: str) -> WorkspaceError:
+    return WorkspaceError(
+        code="STORY_FORMAT_UNSUPPORTED",
+        where=f"章节/{chapter_id}",
+        why="这份作品仍使用旧构思格式",
+        fix="新建作品后使用写作工作台；本版不迁移旧数据",
+        details={"chapter_id": chapter_id},
     )
 
 

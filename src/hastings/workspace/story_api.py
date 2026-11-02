@@ -14,29 +14,26 @@ from typing import Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
-from hastings.workspace.chapter_writing import save_chapter_prose, start_chapter
+from hastings.workspace.chapter_writing import save_chapter_prose
 from hastings.workspace.creative_candidates import CreativeCandidateStore
 from hastings.workspace.errors import WorkspaceError
+from hastings.workspace.index_confirmation import confirm_index_candidate
 from hastings.workspace.service_hub import WorkspaceServices
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 from hastings.workspace.story_clue_commit import prepare_clue_undo
 from hastings.workspace.story_index_jobs import IndexAnalysisService, IndexJobStore
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
-from hastings.workspace.writing_actions import (
-    create_chapter_plan,
-    save_book_intent,
-    save_chapter_plan,
-)
+from hastings.workspace.writing_actions import create_chapter, save_book_intent
 from hastings.workspace.writing_api_models import (
     BookIntentRequest,
     ChapterCreateRequest,
-    ChapterPlanRequest,
-    ChapterStartRequest,
+    IndexConfirmRequest,
     ProseSaveRequest,
 )
 from hastings.workspace.writing_view import (
     ModelSupportView,
     WritingWorkbenchView,
+    build_chapter_index,
     build_workbench,
 )
 
@@ -172,8 +169,8 @@ def create_story_router(
         return _receipt_view(receipt, _changed_ids(store, receipt.change_id))
 
     def writing_store_for(workspace_id: str) -> StoryStore:
-        """当前写作格式的存储入口；新作品第一次提交会写入格式 3。"""
-        return store_for(workspace_id, format_version=3)
+        """当前写作格式的存储入口；新作品第一次提交会写入格式 4。"""
+        return store_for(workspace_id, format_version=4)
 
     @router.get("/{workspace_id}/story/workbench", response_model=WritingWorkbenchView)
     async def read_workbench(
@@ -200,7 +197,7 @@ def create_story_router(
                     disabled_reason=None,
                     supported_assists=[
                         "book_intent",
-                        "chapter_plan",
+                        "chapter_direction",
                         "title",
                         "prose_draft",
                         "prose_continue",
@@ -238,8 +235,10 @@ def create_story_router(
     @router.post("/{workspace_id}/story/chapters", status_code=201)
     def post_chapter(workspace_id: str, body: ChapterCreateRequest) -> dict[str, Any]:
         store = writing_store_for(workspace_id)
-        result = create_chapter_plan(
+        workspace = workspaces.workspace(workspace_id)
+        result = create_chapter(
             store,
+            workspace,
             title=body.title,
             after_chapter_id=body.after_chapter_id,
             expected_plan_revision=body.expected_plan_revision,
@@ -248,57 +247,10 @@ def create_story_router(
         return {
             "chapter_id": result.chapter_id,
             "order": result.order,
-            "plan_revision": result.plan_revision,
-            "change_id": result.receipt.change_id,
-        }
-
-    @router.put("/{workspace_id}/story/chapters/{chapter_id}/plan")
-    def put_chapter_plan(
-        workspace_id: str, chapter_id: str, body: ChapterPlanRequest
-    ) -> dict[str, Any]:
-        store = writing_store_for(workspace_id)
-        result = save_chapter_plan(
-            store,
-            chapter_id=chapter_id,
-            intent=body.intent,
-            title=body.title,
-            information_moves=body.information_moves,
-            expected_chapter_revision=body.expected_chapter_revision,
-            expected_plan_revision=body.expected_plan_revision,
-            request_key=body.request_key,
-        )
-        return {
-            "chapter_id": result.chapter_id,
-            "chapter_revision": result.chapter_revision,
-            "plan_revision": result.plan_revision,
-            "moves": [move.model_dump(mode="json") for move in result.moves],
-            "threads": [thread.model_dump(mode="json") for thread in result.threads],
-            "change_id": result.receipt.change_id,
-        }
-
-    @router.post("/{workspace_id}/story/chapters/{chapter_id}/start")
-    def post_chapter_start(
-        workspace_id: str, chapter_id: str, body: ChapterStartRequest
-    ) -> dict[str, Any]:
-        store = writing_store_for(workspace_id)
-        workspace = workspaces.workspace(workspace_id)
-        result = start_chapter(
-            store,
-            workspace,
-            chapter_id=chapter_id,
-            expected_story_revision=body.expected_story_revision,
-            expected_chapter_revision=body.expected_chapter_revision,
-            request_key=body.request_key,
-            attach_path=body.attach_path,
-            attach_digest=body.attach_digest,
-        )
-        return {
-            "chapter_id": result.chapter_id,
             "path": result.path,
             "prose_digest": result.prose_digest,
             "plan_revision": result.plan_revision,
-            "chapter_revision": result.chapter_revision,
-            "change_id": result.committed_change_id,
+            "change_id": result.receipt.change_id,
         }
 
     @router.put("/{workspace_id}/story/chapters/{chapter_id}/prose")
@@ -323,10 +275,6 @@ def create_story_router(
                 candidate.target.kind != "prose"
                 or candidate.target.chapter_id != chapter_id
                 or (
-                    candidate.base.chapter_revision is not None
-                    and candidate.base.chapter_revision != body.expected_chapter_revision
-                )
-                or (
                     candidate.base.prose_digest is not None
                     and candidate.base.prose_digest != body.expected_digest
                 )
@@ -345,7 +293,6 @@ def create_story_router(
                 chapter_id=chapter_id,
                 text=body.text,
                 expected_digest=body.expected_digest,
-                expected_chapter_revision=body.expected_chapter_revision,
                 request_key=body.request_key,
                 draft_revision=body.draft_revision,
             )
@@ -378,12 +325,77 @@ def create_story_router(
             "path": result.path,
             "prose_digest": result.prose_digest,
             "plan_revision": result.plan_revision,
-            "chapter_revision": result.chapter_revision,
             "context_revision": result.context_revision,
             "index_revision": result.index_revision,
             "index": index,
             "analysis_job_id": job_id,
             "committed_change_id": result.committed_change_id,
+        }
+
+    @router.post("/{workspace_id}/story/chapters/{chapter_id}/index-review")
+    async def post_index_review(workspace_id: str, chapter_id: str) -> dict[str, Any]:
+        """空章反馈里的「让模型看看本章」：重新提交整章做一次增量语义分析。"""
+        store = writing_store_for(workspace_id)
+        workspace = workspaces.workspace(workspace_id)
+        variant = store.require_variant(MAIN_VARIANT_ID)
+        plan = variant.chapter(chapter_id)
+        if plan is None or plan.prose_path is None:
+            raise WorkspaceError(
+                code="CHAPTER_NOT_FOUND",
+                where=f"章节/{chapter_id}",
+                why="章节或正文不存在",
+                fix="刷新工作台后重新选择章节",
+                details={"chapter_id": chapter_id},
+            )
+        if hub is None:
+            raise WorkspaceError(
+                code="MODEL_UNAVAILABLE",
+                where=f"章节/{chapter_id}",
+                why="没有可用模型",
+                fix="先在设置中完成模型连接与选择",
+            )
+        view = workspace.read(plan.prose_path)
+        index = build_chapter_index(
+            variant, plan, path=plan.prose_path, text=view.text, digest=view.digest
+        )
+        service = IndexAnalysisService(
+            state_root=conversation_root(workspaces.root, workspace_id),
+            workspace=workspace,
+            provider_factory=hub.provider_factory,
+        )
+        job_id = await service.enqueue(
+            variant=variant,
+            plan=plan,
+            prose_digest=view.digest,
+            context_revision=index.context_revision,
+            changed=view.text,
+        )
+        return {"analysis_job_id": job_id}
+
+    @router.post("/{workspace_id}/story/index-candidates/{candidate_id}/confirm")
+    def post_index_confirm(
+        workspace_id: str, candidate_id: str, body: IndexConfirmRequest
+    ) -> dict[str, Any]:
+        """确认一条索引候选入账；联合提交创建信息线、信息变化与绑定。"""
+        store = writing_store_for(workspace_id)
+        workspace = workspaces.workspace(workspace_id)
+        jobs = IndexJobStore(conversation_root(workspaces.root, workspace_id))
+        result = confirm_index_candidate(
+            store,
+            workspace,
+            jobs,
+            chapter_id=body.chapter_id,
+            candidate_id=candidate_id,
+            expected_prose_digest=body.expected_prose_digest,
+            request_key=body.request_key,
+        )
+        return {
+            "chapter_id": result.chapter_id,
+            "thread": result.thread.model_dump(mode="json"),
+            "move": result.move.model_dump(mode="json"),
+            "binding": result.binding.model_dump(mode="json"),
+            "plan_revision": result.plan_revision,
+            "change_id": result.receipt.change_id,
         }
 
     return router

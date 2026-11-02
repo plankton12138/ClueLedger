@@ -9,7 +9,7 @@
 import { request } from "./workspace";
 
 export type AnchorState = "exact" | "relocated" | "missing" | "ambiguous" | "unavailable";
-export type Placement = "prepared" | "written" | "observed_candidate" | "alignment";
+export type Placement = "written" | "observed_candidate" | "alignment";
 export type AnalysisState = "not_needed" | "queued" | "running" | "ready" | "unavailable" | "failed" | "stale";
 
 export interface InformationOccurrence {
@@ -41,7 +41,6 @@ export interface IndexAnalysis {
 export interface ChapterInformationIndex {
   index_revision: string;
   plan_revision: string;
-  chapter_revision: string;
   context_revision: string;
   prose_digest: string | null;
   analysis: IndexAnalysis;
@@ -60,25 +59,16 @@ export interface ChapterPlanView {
   id: string;
   order: number;
   title: string | null;
-  intent: string;
-  summary: string;
-  information_move_ids: string[];
-  moves: ChapterMoveView[];
-  revision: string;
-  confirmed_revision: string | null;
   prose_path: string | null;
+  moves: ChapterMoveView[];
 }
 
 export interface ChapterSummary {
   id: string;
   order: number;
   title: string | null;
-  intent: string;
   summary: string;
-  revision: string;
-  confirmed: boolean;
   prose_path: string | null;
-  can_start: boolean;
 }
 
 export interface InformationThreadSummary {
@@ -105,12 +95,11 @@ export interface WritingProseView {
   digest: string;
   text: string;
   editable: boolean;
-  blocked_reason: "chapter_plan_required" | "chapter_plan_stale" | null;
+  blocked_reason: "book_intent_required" | null;
 }
 
 export interface ChapterView {
   plan: ChapterPlanView | null;
-  can_start: boolean;
   prose: WritingProseView | null;
   index: ChapterInformationIndex | null;
 }
@@ -140,7 +129,6 @@ export interface ProseSaveResult {
   path: string;
   prose_digest: string;
   plan_revision: string;
-  chapter_revision: string;
   context_revision: string;
   index_revision: string;
   index: ChapterInformationIndex;
@@ -151,7 +139,7 @@ export interface ProseSaveResult {
 export type CandidateStatus = "streaming" | "ready" | "stale" | "failed" | "discarded";
 export type AssistKind =
   | "book_intent"
-  | "chapter_plan"
+  | "chapter_direction"
   | "title"
   | "prose_draft"
   | "prose_continue"
@@ -169,7 +157,6 @@ export interface CreativeTarget {
 
 export interface CandidateBase {
   plan_revision?: string | null;
-  chapter_revision?: string | null;
   context_revision?: string | null;
   prose_path?: string | null;
   prose_digest?: string | null;
@@ -233,61 +220,8 @@ export function saveBookIntent(
 export function createChapter(
   workspaceId: string,
   input: { title?: string | null; after_chapter_id?: string | null; expected_plan_revision: string; request_key: string },
-): Promise<{ chapter_id: string; order: number; plan_revision: string; change_id: string }> {
+): Promise<{ chapter_id: string; order: number; path: string; prose_digest: string; plan_revision: string; change_id: string }> {
   return request(`/${workspaceId}/story/chapters`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export interface ChapterPlanResult {
-  chapter_id: string;
-  chapter_revision: string;
-  plan_revision: string;
-  moves: { id: string; thread_id: string; chapter_id: string; statement: string; effect: string | null }[];
-  threads: { id: string; summary: string }[];
-  change_id: string;
-}
-
-export function saveChapterPlan(
-  workspaceId: string,
-  chapterId: string,
-  input: {
-    intent: string;
-    title?: string | null;
-    information_moves?: { id?: string; thread_id?: string; statement: string; effect?: string | null }[] | null;
-    expected_chapter_revision: string;
-    expected_plan_revision: string;
-    request_key: string;
-  },
-): Promise<ChapterPlanResult> {
-  return request(`/${workspaceId}/story/chapters/${chapterId}/plan`, {
-    method: "PUT",
-    body: JSON.stringify(input),
-  });
-}
-
-export interface ChapterStartResult {
-  chapter_id: string;
-  path: string;
-  prose_digest: string;
-  plan_revision: string;
-  chapter_revision: string;
-  change_id: string;
-}
-
-export function startChapter(
-  workspaceId: string,
-  chapterId: string,
-  input: {
-    expected_story_revision: string;
-    expected_chapter_revision: string;
-    attach_path?: string | null;
-    attach_digest?: string | null;
-    request_key: string;
-  },
-): Promise<ChapterStartResult> {
-  return request(`/${workspaceId}/story/chapters/${chapterId}/start`, {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -299,7 +233,6 @@ export function saveChapterProse(
   input: {
     text: string;
     expected_digest: string;
-    expected_chapter_revision: string;
     draft_revision: string;
     candidate_id?: string | null;
     request_key: string;
@@ -309,6 +242,33 @@ export function saveChapterProse(
     method: "PUT",
     body: JSON.stringify(input),
   });
+}
+
+export interface IndexConfirmResult {
+  chapter_id: string;
+  thread: { id: string; summary: string };
+  move: { id: string; thread_id: string; chapter_id: string; statement: string };
+  binding: { id: string; move_id: string; path: string; quote: string; start: number; end: number };
+  plan_revision: string;
+  change_id: string;
+}
+
+export function confirmIndexCandidate(
+  workspaceId: string,
+  candidateId: string,
+  input: { chapter_id: string; expected_prose_digest: string; request_key: string },
+): Promise<IndexConfirmResult> {
+  return request(`/${workspaceId}/story/index-candidates/${encodeURIComponent(candidateId)}/confirm`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function reviewChapterIndex(
+  workspaceId: string,
+  chapterId: string,
+): Promise<{ analysis_job_id: string | null }> {
+  return request(`/${workspaceId}/story/chapters/${chapterId}/index-review`, { method: "POST" });
 }
 
 export function startAssist(workspaceId: string, input: AssistInput): Promise<CreativeCandidate> {

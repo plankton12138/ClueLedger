@@ -29,18 +29,6 @@ async function seed(request: APIRequestContext, root: string) {
     expected_plan_revision: intent.plan_revision,
     request_key: "aqua-chapter",
   });
-  const view = await (await request.get(`${base}/story/workbench?chapter_id=${chapter.chapter_id}`)).json();
-  const saved = await send("PUT", `/story/chapters/${chapter.chapter_id}/plan`, {
-    intent: "封山、入住、管家说谎，湿手套最后出现。",
-    expected_chapter_revision: view.chapter.plan.revision,
-    expected_plan_revision: view.plan_revision,
-    request_key: "aqua-plan",
-  });
-  const started = await send("POST", `/story/chapters/${chapter.chapter_id}/start`, {
-    expected_story_revision: saved.plan_revision,
-    expected_chapter_revision: saved.chapter_revision,
-    request_key: "aqua-start",
-  });
   await send("PUT", `/story/chapters/${chapter.chapter_id}/prose`, {
     text: "# 雨夜\n\n" + [
       "雪把山路封死的时候，林砚刚走进旅馆。前台的人说，今晚只剩一间房。",
@@ -48,8 +36,7 @@ async function seed(request: APIRequestContext, root: string) {
       "管家站在楼梯口，重复说自己整晚都在房间里。没有人问他，为什么要先解释。",
       "林砚看见他袖口的水迹，顺着指尖滴在木地板上。",
     ].join("\n\n"),
-    expected_digest: started.prose_digest,
-    expected_chapter_revision: started.chapter_revision,
+    expected_digest: chapter.prose_digest,
     draft_revision: "aqua-draft",
     request_key: "aqua-prose",
   });

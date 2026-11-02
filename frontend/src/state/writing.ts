@@ -10,9 +10,12 @@ import { create } from "zustand";
 
 import { errorMessage } from "../api/errors";
 import { WorkspaceApiError } from "../api/workspace";
+import { useWorkspaceStore } from "./workspace";
 import {
+  confirmIndexCandidate,
   readAssist,
   readWorkbench,
+  reviewChapterIndex,
   saveChapterProse,
   startAssist,
   stopAssist,
@@ -37,7 +40,6 @@ export interface WritingDraft {
   /** 最后一次服务端确认的文字与摘要；保存前用它比较。 */
   baseText: string;
   baseDigest: string;
-  chapterRevision: string;
   dirty: boolean;
   saving: boolean;
   error: string | null;
@@ -60,7 +62,6 @@ interface PersistedDraft {
   text: string;
   baseText: string;
   baseDigest: string;
-  chapterRevision: string;
 }
 
 interface WritingStore {
@@ -80,6 +81,9 @@ interface WritingStore {
   overrideWithLocal(workspaceId: string, chapterId: string): Promise<boolean>;
   discardLocal(workspaceId: string, chapterId: string): Promise<void>;
   flush(workspaceId: string): void;
+
+  confirmCandidate(workspaceId: string, chapterId: string, candidateId: string): Promise<boolean>;
+  reviewIndex(workspaceId: string, chapterId: string): Promise<boolean>;
 
   assistStart(workspaceId: string, key: string, input: AssistInput): Promise<void>;
   assistStop(workspaceId: string, key: string): Promise<void>;
@@ -119,7 +123,6 @@ function readPersisted(workspaceId: string, chapterId: string): PersistedDraft |
       text: parsed.text,
       baseText: typeof parsed.baseText === "string" ? parsed.baseText : "",
       baseDigest: parsed.baseDigest,
-      chapterRevision: typeof parsed.chapterRevision === "string" ? parsed.chapterRevision : "",
     };
   } catch {
     return null;
@@ -136,7 +139,6 @@ function writePersisted(workspaceId: string, chapterId: string, draft: WritingDr
         text: draft.text,
         baseText: draft.baseText,
         baseDigest: draft.baseDigest,
-        chapterRevision: draft.chapterRevision,
       } satisfies PersistedDraft),
     );
   } catch {
@@ -160,7 +162,6 @@ function seedDraft(
   chapterId: string,
   serverText: string,
   serverDigest: string,
-  chapterRevision: string,
 ): WritingDraft {
   const key = writingDraftKey(workspaceId, chapterId);
   const local = previous[key];
@@ -168,7 +169,6 @@ function seedDraft(
   if (local?.conflict) {
     return {
       ...local,
-      chapterRevision,
       baseText: serverText,
       baseDigest: serverDigest,
       conflict: { serverText, serverDigest },
@@ -176,7 +176,7 @@ function seedDraft(
   }
   if (local?.dirty) {
     // 本地有未提交文字：服务端正文未变就继续自动保存；正文变了才进入冲突。
-    if (local.baseDigest === serverDigest) return { ...local, chapterRevision };
+    if (local.baseDigest === serverDigest) return local;
     return {
       ...local,
       conflict: { serverText, serverDigest },
@@ -191,7 +191,6 @@ function seedDraft(
       text: persisted.text,
       baseText: conflict ? serverText : persisted.baseText,
       baseDigest: persisted.baseDigest || serverDigest,
-      chapterRevision,
       dirty: conflict === null,
       saving: false,
       error: null,
@@ -206,7 +205,6 @@ function seedDraft(
     text: serverText,
     baseText: serverText,
     baseDigest: serverDigest,
-    chapterRevision,
     dirty: false,
     saving: false,
     error: null,
@@ -273,7 +271,6 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
           chapter.plan.id,
           chapter.prose.text,
           chapter.prose.digest,
-          chapter.plan.revision,
         );
       }
       set({
@@ -329,11 +326,6 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
     const key = writingDraftKey(workspaceId, chapterId);
     const draft = get().drafts[key];
     if (!draft || draft.saving || !draft.dirty || draft.conflict) return false;
-    const view = get().workbench;
-    const chapter = view?.workspace_id === workspaceId ? view.chapter : null;
-    const expectedRevision = draft.chapterRevision || (chapter?.plan?.id === chapterId ? chapter.plan.revision : "");
-    // 切到别的章节后，旧草稿仍按自己的修订保存；正文路径由服务端按章节维护。
-    if (!expectedRevision) return false;
     const requestKey = draft.pendingKey && draft.pendingText === draft.text
       ? draft.pendingKey
       : writingKey(`prose-${chapterId}`);
@@ -354,7 +346,6 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
       const result = await saveChapterProse(workspaceId, chapterId, {
         text: sent,
         expected_digest: draft.baseDigest,
-        expected_chapter_revision: expectedRevision,
         draft_revision: requestKey,
         request_key: requestKey,
       });
@@ -368,7 +359,6 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
           ...current,
           baseText: sent,
           baseDigest: result.prose_digest,
-          chapterRevision: result.chapter_revision,
           dirty: typedMore,
           saving: false,
           error: null,
@@ -386,7 +376,7 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
                 ? {
                     ...currentView.chapter,
                     plan: currentView.chapter.plan
-                      ? { ...currentView.chapter.plan, revision: result.chapter_revision, prose_path: result.path }
+                      ? { ...currentView.chapter.plan, prose_path: result.path }
                       : null,
                     prose: {
                       ...currentView.chapter.prose!,
@@ -440,7 +430,7 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
           },
         },
       }));
-      if (error instanceof WorkspaceApiError && (error.code === "CHAPTER_PLAN_STALE" || error.code === "CHAPTER_PLAN_REQUIRED")) {
+      if (error instanceof WorkspaceApiError && error.code === "BOOK_INTENT_REQUIRED") {
         void get().refresh(workspaceId, { chapterId });
       }
       return false;
@@ -451,8 +441,6 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
     const key = writingDraftKey(workspaceId, chapterId);
     const draft = get().drafts[key];
     if (!draft?.conflict) return;
-    const view = get().workbench;
-    const chapter = view?.workspace_id === workspaceId && view.chapter?.plan?.id === chapterId ? view.chapter : null;
     set(state => ({
       drafts: {
         ...state.drafts,
@@ -461,7 +449,6 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
           text: draft.conflict!.serverText,
           baseText: draft.conflict!.serverText,
           baseDigest: draft.conflict!.serverDigest,
-          chapterRevision: chapter?.plan?.revision ?? state.drafts[key]!.chapterRevision,
           dirty: false,
           saving: false,
           error: null,
@@ -479,8 +466,6 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
     const key = writingDraftKey(workspaceId, chapterId);
     const draft = get().drafts[key];
     if (!draft?.conflict) return false;
-    const view = get().workbench;
-    const chapter = view?.workspace_id === workspaceId && view.chapter?.plan?.id === chapterId ? view.chapter : null;
     set(state => ({
       drafts: {
         ...state.drafts,
@@ -488,7 +473,6 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
           ...state.drafts[key]!,
           baseText: draft.conflict!.serverText,
           baseDigest: draft.conflict!.serverDigest,
-          chapterRevision: chapter?.plan?.revision ?? state.drafts[key]!.chapterRevision,
           dirty: true,
           error: null,
           conflict: null,
@@ -513,6 +497,35 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
       return { drafts };
     });
     await get().refresh(workspaceId, { chapterId });
+  },
+
+  async confirmCandidate(workspaceId, chapterId, candidateId) {
+    const view = get().workbench;
+    const chapter = view?.workspace_id === workspaceId && view.chapter?.plan?.id === chapterId ? view.chapter : null;
+    if (!chapter?.prose) return false;
+    try {
+      await confirmIndexCandidate(workspaceId, candidateId, {
+        chapter_id: chapterId,
+        expected_prose_digest: chapter.prose.digest,
+        request_key: writingKey(`index-confirm-${candidateId}`),
+      });
+      await get().refresh(workspaceId, { chapterId });
+      return true;
+    } catch (error) {
+      useWorkspaceStore.getState().reportError(errorMessage(error, "确认入账"));
+      return false;
+    }
+  },
+
+  async reviewIndex(workspaceId, chapterId) {
+    try {
+      await reviewChapterIndex(workspaceId, chapterId);
+      await get().refresh(workspaceId, { chapterId });
+      return true;
+    } catch (error) {
+      useWorkspaceStore.getState().reportError(errorMessage(error, "让模型看看本章"));
+      return false;
+    }
   },
 
   flush(workspaceId) {

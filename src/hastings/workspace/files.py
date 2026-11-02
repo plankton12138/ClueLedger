@@ -223,11 +223,11 @@ class SearchResult:
 class ChapterWriteGuard(Protocol):
     """章节正文写入的统一前置检查；由写作策略实现，文件层只调用。"""
 
-    def require_write(self, path: str, *, expected_chapter_revision: str | None) -> None:
-        """没有已确认构思或修订不匹配时抛出 ``WorkspaceError``。"""
+    def require_write(self, path: str) -> None:
+        """作品还没有全书构思时抛出 ``WorkspaceError``。"""
 
     def require_move(self, source: str, target: str) -> None:
-        """已开始的章节不能直接改文件名。"""
+        """章节正文路径不能直接改文件名。"""
 
 
 class Workspace:
@@ -371,7 +371,6 @@ class Workspace:
         path: str,
         *,
         expected_digest: str | None,
-        expected_chapter_revision: str | None = None,
         allow_unplanned: bool = False,
     ) -> None:
         """只核对「这次写入的意图与磁盘现状是否一致」，不写文件、不建目录。
@@ -379,22 +378,12 @@ class Workspace:
         给上层在准备 Git 基线之前做一次无副作用预检：意图与现状冲突时直接失败，
         不会先创建文件或提交基线，再回头报告「其实没写成」。
         """
-        self._require_chapter_policy(
-            path,
-            expected_chapter_revision=expected_chapter_revision,
-            allow_unplanned=allow_unplanned,
-        )
+        self._require_chapter_policy(path, allow_unplanned=allow_unplanned)
         self._check_expected(self._target(path), path, expected_digest)
 
-    def check_chapter_intent(
-        self, path: str, *, expected_chapter_revision: str | None = None
-    ) -> None:
-        """只检查章节构思门槛；用于不改变原有指纹错误顺序的写前预检。"""
-        self._require_chapter_policy(
-            path,
-            expected_chapter_revision=expected_chapter_revision,
-            allow_unplanned=False,
-        )
+    def check_chapter_intent(self, path: str) -> None:
+        """只检查全书构思门槛；用于不改变原有指纹错误顺序的写前预检。"""
+        self._require_chapter_policy(path, allow_unplanned=False)
 
     def check_move_intent(self, source: str, target: str, *, expected_digest: str) -> None:
         """移动的预检：两端都检查，源指纹必须匹配，目标必须不存在。"""
@@ -422,7 +411,7 @@ class Workspace:
     def check_delete_intent(self, path: str, *, expected_digest: str) -> None:
         """删除的预检：固定设定不可删除，指纹必须匹配。"""
         self._reject_setting_path(path, "files.delete")
-        self._require_chapter_policy(path, expected_chapter_revision=None, allow_unplanned=False)
+        self._require_chapter_policy(path, allow_unplanned=False)
         self._check_expected(self._target(path), path, expected_digest)
 
     def write(
@@ -431,17 +420,12 @@ class Workspace:
         text: str,
         *,
         expected_digest: str | None,
-        expected_chapter_revision: str | None = None,
         allow_unplanned: bool = False,
     ) -> FileView:
         """按指纹前提写入；``expected_digest=None`` 只用于创建新文件。"""
         target = self._target(path)
         self._writable_directory(PurePosixPath(path).parent.as_posix())
-        self._require_chapter_policy(
-            path,
-            expected_chapter_revision=expected_chapter_revision,
-            allow_unplanned=allow_unplanned,
-        )
+        self._require_chapter_policy(path, allow_unplanned=allow_unplanned)
         self._check_expected(target, path, expected_digest)
         normalized = normalize_newlines(text)
         self._reject_invalid_metadata(path, normalized)
@@ -469,19 +453,11 @@ class Workspace:
         clean = _safe_title(title or "未命名章节")
         return self._next_chapter_path(clean)
 
-    def _require_chapter_policy(
-        self,
-        path: str,
-        *,
-        expected_chapter_revision: str | None,
-        allow_unplanned: bool,
-    ) -> None:
+    def _require_chapter_policy(self, path: str, *, allow_unplanned: bool) -> None:
         if allow_unplanned or managed_kind(path) != "chapter":
             return
         if self.chapter_policy is not None:
-            self.chapter_policy.require_write(
-                path, expected_chapter_revision=expected_chapter_revision
-            )
+            self.chapter_policy.require_write(path)
 
     def move(self, source: str, target: str, *, expected_digest: str) -> FileView:
         """在同类目录内重命名章节或角色；线索与真相路径固定。"""

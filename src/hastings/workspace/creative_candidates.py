@@ -36,7 +36,7 @@ TargetKind = Literal[
     "workspace_title",
     "book_intent",
     "chapter_title",
-    "chapter_plan",
+    "chapter_direction",
     "prose",
     "idea",
     "module",
@@ -61,7 +61,6 @@ class CandidateBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     plan_revision: str | None = Field(default=None, max_length=64)
-    chapter_revision: str | None = Field(default=None, max_length=64)
     context_revision: str | None = Field(default=None, max_length=64)
     prose_path: str | None = Field(default=None, max_length=512)
     prose_digest: str | None = Field(default=None, max_length=128)

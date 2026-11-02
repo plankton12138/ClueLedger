@@ -1,8 +1,8 @@
-"""写作工作台只读投影（1.0.9 P2）。
+"""写作工作台只读投影（1.0.9 P2；P6 改为正文为主）。
 
-一次读取返回全书、当前章节、正文与确定性索引，页面不需要再拼多个旧接口。这里的索引
-只做当前正文能证明的事：计划项有出处就是 ``written``，没有出处就是 ``prepared``；
-原句移动、缺失或歧义由既有锚点算法计算。语义分析和候选留给 P3，不能伪装成已完成。
+一次读取返回全书、当前章节、正文与确定性索引，页面不需要再拼多个旧接口。章节只有顺序、
+标题和正文路径：正文能证明的出处归入 ``written``，未确认的语义结果只作为候选，冲突作为
+``alignment``。章节没有信息变化时返回空列表，由前端给出空章反馈，服务端不造占位项。
 
 投影不是新的可编辑账本：它不保存任何内容，也不修改正式构思或正文。
 """
@@ -20,6 +20,7 @@ from hastings.workspace.files import Workspace
 from hastings.workspace.story_bindings import anchor_state
 from hastings.workspace.story_index_jobs import IndexJob, IndexJobStore
 from hastings.workspace.story_models import (
+    FORMAT_VERSION,
     ChapterPlan,
     InformationMove,
     InformationThread,
@@ -38,8 +39,11 @@ __all__ = [
 ]
 
 AnchorState = Literal["exact", "relocated", "missing", "ambiguous", "unavailable"]
-Placement = Literal["prepared", "written", "observed_candidate", "alignment"]
-AnalysisState = Literal["not_needed", "queued", "running", "ready", "unavailable", "failed"]
+Placement = Literal["written", "observed_candidate", "alignment"]
+AnalysisState = Literal[
+    "not_needed", "queued", "running", "ready", "unavailable", "failed", "stale"
+]
+BlockedReason = Literal["book_intent_required"]
 
 
 class InformationOccurrence(BaseModel):
@@ -71,7 +75,6 @@ class IndexAnalysis(BaseModel):
 class ChapterInformationIndex(BaseModel):
     index_revision: str
     plan_revision: str
-    chapter_revision: str
     context_revision: str
     prose_digest: str | None
     analysis: IndexAnalysis
@@ -90,25 +93,16 @@ class ChapterPlanView(BaseModel):
     id: str
     order: int
     title: str | None
-    intent: str
-    summary: str
-    information_move_ids: list[str]
-    moves: list[ChapterMoveView]
-    revision: str
-    confirmed_revision: str | None
     prose_path: str | None
+    moves: list[ChapterMoveView]
 
 
 class ChapterSummary(BaseModel):
     id: str
     order: int
     title: str | None
-    intent: str
     summary: str
-    revision: str
-    confirmed: bool
     prose_path: str | None
-    can_start: bool
 
 
 class InformationThreadSummary(BaseModel):
@@ -135,12 +129,11 @@ class WritingProseView(BaseModel):
     digest: str
     text: str
     editable: bool
-    blocked_reason: Literal["chapter_plan_required", "chapter_plan_stale"] | None
+    blocked_reason: BlockedReason | None
 
 
 class ChapterView(BaseModel):
     plan: ChapterPlanView | None
-    can_start: bool
     prose: WritingProseView | None
     index: ChapterInformationIndex | None
 
@@ -172,7 +165,7 @@ def build_workbench(
     index_jobs: IndexJobStore | None = None,
 ) -> WritingWorkbenchView:
     """生成全书或章节投影；选择不改变任何正式内容。"""
-    if variant is not None and variant.format_version < 3:
+    if variant is not None and variant.format_version < FORMAT_VERSION:
         raise WorkspaceError(
             code="STORY_FORMAT_UNSUPPORTED",
             where="story.workbench",
@@ -200,7 +193,7 @@ def build_workbench(
             index_revision = chapter.index.index_revision if chapter.index is not None else None
         else:
             selection = {"kind": "prose", "prose_path": prose_path}
-            chapter = _unplanned_chapter(workspace, prose_path)
+            chapter = _unplanned_chapter(workspace, prose_path, variant)
             if chapter.prose is not None:
                 prose_digest = chapter.prose.digest
     elif chapter_id is not None:
@@ -235,16 +228,14 @@ def build_chapter_index(
     digest: str | None,
     job: IndexJob | None = None,
 ) -> ChapterInformationIndex:
-    """按当前计划、正文与最新语义任务生成索引；语义结果只作为候选。"""
+    """按当前正文与最新语义任务生成索引；语义结果只作为候选。"""
     items: list[InformationIndexItem] = []
-    for move_id in plan.information_move_ids:
-        move = variant.information_moves.get(move_id)
-        if move is None:
-            continue
+    moves = variant.information_moves_for_chapter(plan.id)
+    for move in moves:
         thread = variant.information_threads.get(move.thread_id)
         occurrences: list[InformationOccurrence] = []
         for binding in variant.bindings.values():
-            if binding.move_id != move_id or path is None or binding.path != path:
+            if binding.move_id != move.id or path is None or binding.path != path:
                 continue
             anchor = anchor_state(binding, text, digest or "")
             span = anchor.span
@@ -258,13 +249,15 @@ def build_chapter_index(
                     state=anchor.state,
                 )
             )
+        if not occurrences:
+            continue
         items.append(
             InformationIndexItem(
                 item_id=move.id,
                 thread_id=move.thread_id,
                 move_id=move.id,
                 label=_label(thread, move),
-                placement="written" if occurrences else "prepared",
+                placement="written",
                 occurrences=occurrences,
             )
         )
@@ -276,8 +269,11 @@ def build_chapter_index(
         job_id = job.job_id
         analysis_state = "stale" if job.based_on_digest != digest else _analysis_state(job.status)
         if job.status == "ready" and job.based_on_digest == digest:
+            confirmed = {move.statement for move in moves}
             for candidate in job.candidates:
-                occurrences: list[InformationOccurrence] = []
+                if candidate.statement in confirmed:
+                    continue
+                occurrences = []
                 if candidate.quote and path is not None:
                     first = text.find(candidate.quote)
                     state: AnchorState
@@ -309,7 +305,7 @@ def build_chapter_index(
                             "alignment" if candidate.kind == "alignment" else "observed_candidate"
                         ),
                         occurrences=occurrences,
-                        candidate_id=job.job_id,
+                        candidate_id=candidate.item_id,
                         explanation=candidate.explanation,
                     )
                 )
@@ -321,7 +317,7 @@ def build_chapter_index(
     context_revision = context_revision_for(variant, plan)
     index_revision = _digest(
         {
-            "chapter_revision": plan.revision,
+            "chapter_id": plan.id,
             "prose_digest": digest,
             "items": [item.model_dump(mode="json") for item in items],
             "analysis": analysis.model_dump(mode="json"),
@@ -330,7 +326,6 @@ def build_chapter_index(
     return ChapterInformationIndex(
         index_revision=f"idx_{index_revision[:32]}",
         plan_revision=variant.revision,
-        chapter_revision=plan.revision,
         context_revision=context_revision,
         prose_digest=digest,
         analysis=analysis,
@@ -345,14 +340,22 @@ def _analysis_state(status: str) -> AnalysisState:
 
 
 def context_revision_for(variant: StoryVariant, plan: ChapterPlan) -> str:
+    """当前章与直接相关信息线的组合修订；无关章节变化不影响它。"""
     threads = {
         (thread.id, thread.summary)
-        for move_id in plan.information_move_ids
-        if (move := variant.information_moves.get(move_id)) is not None
+        for move in variant.information_moves_for_chapter(plan.id)
         if (thread := variant.information_threads.get(move.thread_id)) is not None
     }
     payload = {
-        "chapter_revision": plan.revision,
+        "chapter_id": plan.id,
+        "moves": [
+            {
+                "id": move.id,
+                "thread_id": move.thread_id,
+                "statement": move.statement,
+            }
+            for move in variant.information_moves_for_chapter(plan.id)
+        ],
         "threads": [
             {"id": thread_id, "summary": summary} for thread_id, summary in sorted(threads)
         ],
@@ -387,14 +390,8 @@ def _book_view(workspace: Workspace, variant: StoryVariant | None) -> WritingBoo
                 id=plan.id,
                 order=plan.order,
                 title=plan.title,
-                intent=plan.intent,
-                summary=_plan_summary(variant, plan),
-                revision=plan.revision,
-                confirmed=plan.confirmed_revision == plan.revision,
+                summary=_plan_summary(variant, plan) if variant is not None else "",
                 prose_path=plan.prose_path,
-                can_start=(
-                    variant.chapter_plan_problem(plan.id) is None and plan.prose_path is None
-                ),
             )
             for plan in chapters
         ],
@@ -419,13 +416,19 @@ def _chapter_view(
     plan = variant.chapter(chapter_id) if variant is not None else None
     if plan is None:
         raise WorkspaceError(
-            code="CHAPTER_PLAN_REQUIRED",
+            code="CHAPTER_NOT_FOUND",
             where=f"章节/{chapter_id}",
-            why="章节构思不存在",
+            why="章节不存在",
             fix="刷新工作台后重新选择章节",
+            details={"chapter_id": chapter_id},
         )
     prose: WritingProseView | None = None
-    blocked: Literal["chapter_plan_required", "chapter_plan_stale"] | None = None
+    intent_missing = (
+        variant is not None
+        and variant.format_version >= FORMAT_VERSION
+        and (variant.book_intent is None or not variant.book_intent.text.strip())
+    )
+    blocked: BlockedReason | None = "book_intent_required" if intent_missing else None
     text = ""
     digest: str | None = None
     if plan.prose_path is not None:
@@ -436,8 +439,6 @@ def _chapter_view(
         if view is not None:
             text = view.text
             digest = view.digest
-            if plan.confirmed_revision != plan.revision:
-                blocked = "chapter_plan_stale"
             prose = WritingProseView(
                 path=view.path,
                 digest=view.digest,
@@ -453,35 +454,35 @@ def _chapter_view(
     )
     return ChapterView(
         plan=_plan_view(variant, plan) if variant is not None else None,
-        can_start=(
-            variant is not None
-            and variant.chapter_plan_problem(plan.id) is None
-            and plan.prose_path is None
-        ),
         prose=prose,
         index=index,
     )
 
 
-def _unplanned_chapter(workspace: Workspace, prose_path: str) -> ChapterView:
+def _unplanned_chapter(
+    workspace: Workspace, prose_path: str, variant: StoryVariant | None
+) -> ChapterView:
     try:
         view = workspace.read(prose_path)
     except WorkspaceError as exc:
         raise WorkspaceError(
             code="FILE_NOT_FOUND" if exc.code == "FILE_NOT_FOUND" else exc.code,
             where=prose_path,
-            why="未挂章节计划的正文不可读",
+            why="未挂章节的正文不可读",
             fix="刷新目录后重新选择正文",
         ) from exc
+    intent_missing = variant is None or (
+        variant.format_version >= FORMAT_VERSION
+        and (variant.book_intent is None or not variant.book_intent.text.strip())
+    )
     return ChapterView(
         plan=None,
-        can_start=False,
         prose=WritingProseView(
             path=view.path,
             digest=view.digest,
             text=view.text,
             editable=False,
-            blocked_reason="chapter_plan_required",
+            blocked_reason="book_intent_required" if intent_missing else None,
         ),
         index=None,
     )
@@ -489,10 +490,7 @@ def _unplanned_chapter(workspace: Workspace, prose_path: str) -> ChapterView:
 
 def _plan_view(variant: StoryVariant, plan: ChapterPlan) -> ChapterPlanView:
     moves: list[ChapterMoveView] = []
-    for move_id in plan.information_move_ids:
-        move = variant.information_moves.get(move_id)
-        if move is None:
-            continue
+    for move in variant.information_moves_for_chapter(plan.id):
         thread = variant.information_threads.get(move.thread_id)
         moves.append(
             ChapterMoveView(
@@ -507,22 +505,15 @@ def _plan_view(variant: StoryVariant, plan: ChapterPlan) -> ChapterPlanView:
         id=plan.id,
         order=plan.order,
         title=plan.title,
-        intent=plan.intent,
-        summary=_plan_summary(variant, plan),
-        information_move_ids=list(plan.information_move_ids),
-        moves=moves,
-        revision=plan.revision,
-        confirmed_revision=plan.confirmed_revision,
         prose_path=plan.prose_path,
+        moves=moves,
     )
 
 
 def _plan_summary(variant: StoryVariant, plan: ChapterPlan) -> str:
-    for move_id in plan.information_move_ids:
-        move = variant.information_moves.get(move_id)
-        if move is not None:
-            return _short(move.statement)
-    return _short(plan.intent)
+    for move in variant.information_moves_for_chapter(plan.id):
+        return _short(move.statement)
+    return ""
 
 
 def _label(thread: InformationThread | None, move: InformationMove) -> str:

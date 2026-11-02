@@ -67,8 +67,8 @@ MAIN_VARIANT_ID = "main"
 
 
 def _validate_format_version(value: int) -> int:
-    if value not in (2, 3):
-        raise ValueError("构思格式版本只能是 2 或 3")
+    if value not in (2, 4):
+        raise ValueError("构思格式版本只能是 2 或 4")
     return value
 
 

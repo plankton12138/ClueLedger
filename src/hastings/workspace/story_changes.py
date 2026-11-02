@@ -22,6 +22,7 @@ from typing import Any, cast
 from pydantic import BaseModel, ValidationError
 
 from hastings.workspace.story_models import (
+    FORMAT_VERSION,
     AcknowledgeAttention,
     AddChapterPlan,
     AddConstraint,
@@ -35,7 +36,6 @@ from hastings.workspace.story_models import (
     ClearAttentionReceipt,
     CluePlanInput,
     ConfirmAlignment,
-    ConfirmChapterPlan,
     Connect,
     CreateClueIdentity,
     Disconnect,
@@ -91,7 +91,7 @@ class StoryInvalid(ValueError):
     """
 
 
-#: 只服务旧格式 2 的操作；当前格式 3 写入时拒绝，避免同一文档出现两份结构真相。
+#: 只服务旧格式 2 的操作；当前格式 4 写入时拒绝，避免同一文档出现两份结构真相。
 _LEGACY_OPERATIONS = (
     AddNode,
     UpdateNode,
@@ -133,7 +133,6 @@ _CURRENT_OPERATIONS = (
     AddInformationMove,
     UpdateInformationMove,
     RemoveInformationMove,
-    ConfirmChapterPlan,
     SetChapterProsePath,
 )
 
@@ -167,7 +166,7 @@ def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
     information_threads = cast(dict[str, Any], data["information_threads"])
     information_moves = cast(dict[str, Any], data["information_moves"])
 
-    current_format = data.get("format_version") == 3
+    current_format = data.get("format_version") == FORMAT_VERSION
     if current_format and isinstance(operation, _LEGACY_OPERATIONS):
         raise StoryInvalid("旧格式操作不能写入当前格式；请使用章节构思与信息变化")
     if not current_format and isinstance(operation, _CURRENT_OPERATIONS):
@@ -178,10 +177,10 @@ def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
             operation.intent.model_dump(mode="json") if operation.intent is not None else None
         )
     elif isinstance(operation, AddChapterPlan):
-        _require_new(chapter_plans, operation.plan.id, "章节构思")
+        _require_new(chapter_plans, operation.plan.id, "章节")
         chapter_plans[operation.plan.id] = operation.plan.model_dump(mode="json")
     elif isinstance(operation, UpdateChapterPlan):
-        _require_existing(chapter_plans, operation.chapter_id, "章节构思")
+        _require_existing(chapter_plans, operation.chapter_id, "章节")
         payload = operation.plan.model_dump(mode="json")
         for other_id, other in chapter_plans.items():
             if other_id != operation.chapter_id and other.get("prose_path") == payload.get(
@@ -190,7 +189,7 @@ def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
                 raise StoryInvalid(f"同一正文路径被两章占用：{payload['prose_path']}")
         chapter_plans[operation.chapter_id] = payload
     elif isinstance(operation, RemoveChapterPlan):
-        _require_existing(chapter_plans, operation.chapter_id, "章节构思")
+        _require_existing(chapter_plans, operation.chapter_id, "章节")
         used_moves = [
             move["id"]
             for move in information_moves.values()
@@ -227,44 +226,20 @@ def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
         if operation.move.thread_id not in information_threads:
             raise StoryInvalid(f"信息变化指向不存在的信息线：{operation.move.thread_id}")
         information_moves[operation.move.id] = operation.move.model_dump(mode="json")
-        plan = chapter_plans[operation.move.chapter_id]
-        ids = cast(list[str], plan["information_move_ids"])
-        if operation.move.id not in ids:
-            ids.append(operation.move.id)
     elif isinstance(operation, UpdateInformationMove):
         _require_existing(information_moves, operation.move_id, "信息变化")
         if operation.move.chapter_id not in chapter_plans:
             raise StoryInvalid(f"信息变化指向不存在的章节：{operation.move.chapter_id}")
         if operation.move.thread_id not in information_threads:
             raise StoryInvalid(f"信息变化指向不存在的信息线：{operation.move.thread_id}")
-        old = information_moves[operation.move_id]
-        old_chapter = old["chapter_id"]
         information_moves[operation.move_id] = operation.move.model_dump(mode="json")
-        if old_chapter != operation.move.chapter_id:
-            old_ids = cast(list[str], chapter_plans[old_chapter]["information_move_ids"])
-            old_ids[:] = [value for value in old_ids if value != operation.move_id]
-            new_ids = cast(
-                list[str], chapter_plans[operation.move.chapter_id]["information_move_ids"]
-            )
-            if operation.move_id not in new_ids:
-                new_ids.append(operation.move_id)
     elif isinstance(operation, RemoveInformationMove):
         _require_existing(information_moves, operation.move_id, "信息变化")
         if any(binding.get("move_id") == operation.move_id for binding in bindings.values()):
             raise StoryInvalid("删除信息变化前，先在同一变更中移除它的正文关联")
-        move = information_moves.pop(operation.move_id)
-        plan = chapter_plans.get(move["chapter_id"])
-        if plan is not None:
-            ids = cast(list[str], plan["information_move_ids"])
-            ids[:] = [value for value in ids if value != operation.move_id]
-    elif isinstance(operation, ConfirmChapterPlan):
-        _require_existing(chapter_plans, operation.chapter_id, "章节构思")
-        plan = chapter_plans[operation.chapter_id]
-        if plan.get("revision") != operation.revision:
-            raise StoryInvalid("章节构思在确认前已经变化")
-        plan["confirmed_revision"] = operation.revision
+        information_moves.pop(operation.move_id)
     elif isinstance(operation, SetChapterProsePath):
-        _require_existing(chapter_plans, operation.chapter_id, "章节构思")
+        _require_existing(chapter_plans, operation.chapter_id, "章节")
         for other_id, other in chapter_plans.items():
             if other_id != operation.chapter_id and other.get("prose_path") == operation.path:
                 raise StoryInvalid(f"同一正文路径被两章占用：{operation.path}")
@@ -420,7 +395,7 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
 
     只比较内容，不比较修订号：修订号由提交生成，不属于对象内容。
     """
-    if source.format_version == 3 and target.format_version == 3:
+    if source.format_version == FORMAT_VERSION and target.format_version == FORMAT_VERSION:
         return _diff_current(source, target)
     if source.format_version != target.format_version:
         raise StoryInvalid("不能在两种格式之间生成反向操作")
@@ -622,10 +597,10 @@ def variant_digests(variant: StoryVariant) -> dict[str, str]:
         digests[f"stage:{key}"] = object_digest(stage.model_dump(mode="json"))
     for key, node in variant.nodes.items():
         digests[f"node:{key}"] = object_digest(node.model_dump(mode="json"))
-    for key, plan in variant.clue_plans.items():
-        digests[f"clue_plan:{key}"] = object_digest(plan.model_dump(mode="json"))
-    for key, thread in variant.threads.items():
-        digests[f"thread:{key}"] = object_digest(thread.model_dump(mode="json"))
+    for key, clue_plan in variant.clue_plans.items():
+        digests[f"clue_plan:{key}"] = object_digest(clue_plan.model_dump(mode="json"))
+    for key, story_thread in variant.threads.items():
+        digests[f"thread:{key}"] = object_digest(story_thread.model_dump(mode="json"))
     for key, constraint in variant.constraints.items():
         digests[f"constraint:{key}"] = object_digest(constraint.model_dump(mode="json"))
     for key, edge in variant.edges.items():

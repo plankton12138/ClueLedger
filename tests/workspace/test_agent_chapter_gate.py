@@ -1,4 +1,4 @@
-"""1.0.9 P2：Agent 正文写入必须使用服务端的章修订与构思门槛。"""
+"""1.0.9 P6：Agent 正文写入只受全书构思门禁约束。"""
 
 from __future__ import annotations
 
@@ -10,17 +10,12 @@ import pytest
 
 from hastings.workspace.agent import RunContext, build_tools
 from hastings.workspace.chapter_write_policy import ChapterWritePolicy
-from hastings.workspace.chapter_writing import start_chapter
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
 from hastings.workspace.service import WriteSession
-from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, StoryStore
-from hastings.workspace.writing_actions import (
-    create_chapter_plan,
-    save_book_intent,
-    save_chapter_plan,
-)
+from hastings.workspace.story_store import EMPTY_REVISION, StoryStore
+from hastings.workspace.writing_actions import save_book_intent
 from tau_agent.tools import AgentTool
 
 
@@ -43,46 +38,12 @@ async def _grant(tools: dict[str, AgentTool], *paths: str) -> None:
     )
 
 
-def _setup(tmp_path: Path) -> tuple[Workspace, StoryStore, dict[str, AgentTool], str]:
+def _setup(tmp_path: Path) -> tuple[Workspace, StoryStore, dict[str, AgentTool]]:
     workspace = Workspace.create(tmp_path / "雪山旅馆")
     GitRepo(workspace.root).init()
     state_root = str(tmp_path / "state")
-    store = StoryStore(Path(state_root), workspace, format_version=3)
+    store = StoryStore(Path(state_root), workspace, format_version=4)
     workspace.chapter_policy = ChapterWritePolicy(store)
-    save_book_intent(
-        store,
-        text="暴雪封山的旅馆发生命案。",
-        expected_plan_revision=EMPTY_REVISION,
-        request_key="book",
-    )
-    variant = store.require_variant(MAIN_VARIANT_ID)
-    shell = create_chapter_plan(
-        store,
-        title="第一章",
-        after_chapter_id=None,
-        expected_plan_revision=variant.revision,
-        request_key="chapter",
-    )
-    variant = store.require_variant(MAIN_VARIANT_ID)
-    plan = save_chapter_plan(
-        store,
-        chapter_id=shell.chapter_id,
-        intent="入住并起疑，湿手套最后出现。",
-        title="第一章",
-        information_moves=None,
-        expected_chapter_revision=variant.chapter(shell.chapter_id).revision,
-        expected_plan_revision=variant.revision,
-        request_key="plan",
-    )
-    variant = store.require_variant(MAIN_VARIANT_ID)
-    start_chapter(
-        store,
-        workspace,
-        chapter_id=shell.chapter_id,
-        expected_story_revision=variant.revision,
-        expected_chapter_revision=plan.chapter_revision,
-        request_key="start",
-    )
     session = WriteSession(workspace, instruction="改写第一章")
     run = RunContext(
         workspace,
@@ -91,57 +52,37 @@ def _setup(tmp_path: Path) -> tuple[Workspace, StoryStore, dict[str, AgentTool],
         state_root=Path(state_root),
     )
     tools = {tool.name: tool for tool in build_tools(workspace, run)}
-    return workspace, store, tools, shell.chapter_id
+    return workspace, store, tools
 
 
 @pytest.mark.anyio
-async def test_agent_write_uses_current_chapter_revision(tmp_path: Path) -> None:
-    workspace, store, tools, chapter_id = _setup(tmp_path)
-    path = store.require_variant(MAIN_VARIANT_ID).chapter_plans[chapter_id].prose_path
-    assert path is not None
-    view = workspace.read(path)
+async def test_agent_write_requires_book_intent(tmp_path: Path) -> None:
+    workspace, store, tools = _setup(tmp_path)
+    path = "正文/0001 第一章.md"
+    await _grant(tools, path)
+    with pytest.raises(WorkspaceError) as exc:
+        await _call(tools["write_file"], path=path, text="# 第一章\n\n林砚走进旅馆。\n")
+    assert exc.value.code == "BOOK_INTENT_REQUIRED"
+    assert not (workspace.root / path).exists()
 
+    save_book_intent(
+        store,
+        text="暴雪封山的旅馆发生命案。",
+        expected_plan_revision=EMPTY_REVISION,
+        request_key="book",
+    )
+    await _call(tools["write_file"], path=path, text="# 第一章\n\n林砚走进旅馆。\n")
+    assert (workspace.root / path).exists()
+
+    view = workspace.read(path)
     await _grant(tools, path)
     await _call(tools["read_file"], path=path)
-    result = await _call(
-        tools["write_file"],
+    edited = await _call(
+        tools["edit_file"],
         path=path,
-        text=view.text + "\n林砚走进旅馆。\n",
+        old_text="林砚走进旅馆。",
+        new_text="林砚走进旅馆，看见湿手套。",
         digest=view.digest,
     )
-    assert result["digest"] != view.digest
-
-    variant = store.require_variant(MAIN_VARIANT_ID)
-    plan = variant.chapter(chapter_id)
-    assert plan is not None
-    save_chapter_plan(
-        store,
-        chapter_id=chapter_id,
-        intent="入住、封山并起疑。",
-        title="第一章",
-        information_moves=None,
-        expected_chapter_revision=plan.revision,
-        expected_plan_revision=variant.revision,
-        request_key="plan:change",
-    )
-    new_view = workspace.read(path)
-    with pytest.raises(WorkspaceError) as exc:
-        await _call(
-            tools["edit_file"],
-            path=path,
-            old_text="林砚走进旅馆。",
-            new_text="林砚走进旅馆，看见湿手套。",
-            digest=new_view.digest,
-        )
-    assert exc.value.code == "CHAPTER_PLAN_STALE"
-    assert "林砚走进旅馆" in workspace.read(path).text
-
-
-@pytest.mark.anyio
-async def test_agent_cannot_create_unplanned_chapter(tmp_path: Path) -> None:
-    workspace, _, tools, _ = _setup(tmp_path)
-    await _grant(tools, "正文/0002 未构思.md")
-    with pytest.raises(WorkspaceError) as exc:
-        await _call(tools["write_file"], path="正文/0002 未构思.md", text="# 未构思\n\n正文\n")
-    assert exc.value.code == "CHAPTER_PLAN_REQUIRED"
-    assert not (workspace.root / "正文" / "0002 未构思.md").exists()
+    assert edited["digest"] != view.digest
+    assert "湿手套" in workspace.read(path).text

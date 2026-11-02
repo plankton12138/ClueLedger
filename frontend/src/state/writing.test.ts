@@ -21,7 +21,6 @@ import { useWritingStore, writingDraftKey } from "./writing";
 const INDEX = {
   index_revision: "idx_1",
   plan_revision: "plan_1",
-  chapter_revision: "chrev_1",
   context_revision: "ctx_1",
   prose_digest: "d1",
   analysis: { state: "not_needed" as const, based_on_digest: null, operation_id: null },
@@ -36,19 +35,15 @@ function workbench(text = "初始正文", digest = "d1"): WritingWorkbenchView {
     book: {
       intent: "起点",
       chapters: [{
-        id: "ch1", order: 0, title: "第一章", intent: "发现钥匙", summary: "发现钥匙",
-        revision: "chrev_1", confirmed: true, prose_path: "正文/0001.md", can_start: false,
+        id: "ch1", order: 0, title: "第一章", summary: "发现钥匙", prose_path: "正文/0001.md",
       }],
       information_threads: [],
       unplanned_prose: [],
     },
     chapter: {
       plan: {
-        id: "ch1", order: 0, title: "第一章", intent: "发现钥匙", summary: "发现钥匙",
-        information_move_ids: [], moves: [], revision: "chrev_1", confirmed_revision: "chrev_1",
-        prose_path: "正文/0001.md",
+        id: "ch1", order: 0, title: "第一章", moves: [], prose_path: "正文/0001.md",
       },
-      can_start: false,
       prose: { path: "正文/0001.md", digest, text, editable: true, blocked_reason: null },
       index: INDEX,
     },
@@ -87,7 +82,7 @@ describe("草稿与保存", () => {
     expect(useWritingStore.getState().drafts[key]).toMatchObject({ text: "本地修改", dirty: true });
 
     api.saveChapterProse.mockResolvedValue({
-      path: "正文/0001.md", prose_digest: "d2", plan_revision: "plan_2", chapter_revision: "chrev_1",
+      path: "正文/0001.md", prose_digest: "d2", plan_revision: "plan_2",
       context_revision: "ctx_2", index_revision: "idx_2", index: { ...INDEX, prose_digest: "d2" },
       analysis_job_id: null, committed_change_id: "change_1",
     });
@@ -97,7 +92,6 @@ describe("草稿与保存", () => {
     expect(call?.[2]).toMatchObject({
       text: "本地修改",
       expected_digest: "d1",
-      expected_chapter_revision: "chrev_1",
     });
     expect(useWritingStore.getState().drafts[key]).toMatchObject({
       text: "本地修改",
@@ -139,7 +133,7 @@ describe("刷新恢复", () => {
   it("恢复本地存储里的未保存文字；服务端摘要不同则进入冲突", async () => {
     const key = writingDraftKey("ws1", "ch1");
     storage.set(`hastings.writing.draft.ws1.ch1`, JSON.stringify({
-      text: "刷新前的草稿", baseText: "初始正文", baseDigest: "d1", chapterRevision: "chrev_1",
+      text: "刷新前的草稿", baseText: "初始正文", baseDigest: "d1",
     }));
     await useWritingStore.getState().load("ws1", { chapterId: "ch1" });
     expect(useWritingStore.getState().drafts[key]).toMatchObject({
@@ -150,7 +144,7 @@ describe("刷新恢复", () => {
 
     useWritingStore.getState().reset();
     storage.set(`hastings.writing.draft.ws1.ch1`, JSON.stringify({
-      text: "旧设备草稿", baseText: "旧正文", baseDigest: "old_digest", chapterRevision: "chrev_1",
+      text: "旧设备草稿", baseText: "旧正文", baseDigest: "old_digest",
     }));
     await useWritingStore.getState().load("ws1", { chapterId: "ch1" });
     expect(useWritingStore.getState().drafts[key]).toMatchObject({

@@ -22,7 +22,7 @@ from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.atomic_io import atomic_write_json, locked
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
-from hastings.workspace.story_models import ChapterPlan, StoryVariant
+from hastings.workspace.story_models import FORMAT_VERSION, ChapterPlan, StoryVariant
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore, new_id
 from tau_agent.messages import UserMessage, message_text
 from tau_agent.provider_events import AssistantDoneEvent, AssistantErrorEvent, TextDeltaEvent
@@ -185,10 +185,11 @@ class IndexAnalysisService:
                 f"- {move.id}｜{move.statement}"
                 for move in variant.information_moves_for_chapter(plan.id)
             )
+            intent = variant.book_intent.text if variant.book_intent else ""
             prompt = (
-                f"本章构思：{plan.intent}\n信息变化：\n{moves or '（无）'}\n"
+                f"全书构思：{intent or '（未写）'}\n已入账信息：\n{moves or '（无）'}\n"
                 f"本次变化段落：\n{job.changed_text}\n"
-                "只提出正文新增或需要对齐的候选；不要修改正式构思，不要推测作者真相。"
+                "只提出正文新增或需要对齐的候选；不要修改正式内容，不要推测作者真相。"
             )
             async with aclosing(
                 snapshot.provider.stream_response(
@@ -221,7 +222,7 @@ class IndexAnalysisService:
             if final:
                 text = final
             current = (
-                StoryStore(self.state_root, self.workspace, format_version=3)
+                StoryStore(self.state_root, self.workspace, format_version=FORMAT_VERSION)
                 .read()
                 .variant(MAIN_VARIANT_ID)
             )
