@@ -176,6 +176,8 @@ def test_explicit_prose_request_switches_design_turn_to_candidate_flow(
         ("写第一章", None, True),
         ("根据构思写第一章", None, True),
         ("重写第一章的正文", None, True),
+        ("从空白构思建立线索结构，只保存构思，不写正文", None, False),
+        ("不要写正文，只把结构保存到构思", None, False),
         ("写一段线索说明", None, False),
         ("把这一段线索说明写进构思", None, False),
         ("写第一章的构思", None, False),

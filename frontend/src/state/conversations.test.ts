@@ -148,6 +148,20 @@ describe("加载与恢复", () => {
     expect(api.conversationMessages).toHaveBeenCalledWith("w1", "c1", 0);
   });
 
+  it("加载时新对话已有文字就不自动切到最近会话", async () => {
+    api.fetchConversationUi.mockResolvedValue({
+      recent_id: "c1",
+      drafts: { new: "作者已经输入的要求" },
+      revision: "r1",
+    });
+
+    await useConversationsStore.getState().load("w1");
+
+    const state = useConversationsStore.getState();
+    expect(state.selectedId).toBeNull();
+    expect(state.drafts.new).toBe("作者已经输入的要求");
+  });
+
   it("服务器上还有一轮在跑时，恢复运行状态", async () => {
     const active = {
       conversation_id: "c1",
@@ -950,32 +964,7 @@ describe("正文与装载模块的选段引用", () => {
 });
 
 
-  it("线索引用只进草稿：同版本去重，新版本不静默替换", async () => {
-    await useConversationsStore.getState().load("w1");
-    const store = useConversationsStore.getState();
-    const key = store.selectedId ?? "new";
-    const reference = {
-      workspace_lineage: "ws",
-      clue_id: "clue_1",
-      clue_revision: "rev_1",
-      browse_as_of_chapter: 2,
-    };
-    expect(store.addClueReference(reference, "照片里的时间")).toBe(true);
-    expect(useConversationsStore.getState().draftContexts[key]?.clue_references).toEqual([
-      { ...reference, title: "照片里的时间" },
-    ]);
-    expect(useConversationsStore.getState().addClueReference(reference, "照片里的时间")).toBe(true);
-    expect(useConversationsStore.getState().draftContexts[key]?.clue_references).toHaveLength(1);
-    expect(
-      useConversationsStore.getState().addClueReference({ ...reference, clue_revision: "rev_2" }, "照片里的时间"),
-    ).toBe(false);
-    expect(useConversationsStore.getState().draftContexts[key]?.clue_references?.[0].clue_revision).toBe("rev_1");
-    expect(useConversationsStore.getState().error).toContain("已经有更新的版本");
-    useConversationsStore.getState().removeClueReference("clue_1", "rev_1");
-    expect(useConversationsStore.getState().draftContexts[key]?.clue_references).toEqual([]);
-  });
-
-  it("发送普通消息时带上草稿里的线索引用，明确用途不夹带", async () => {
+  it("发送普通消息时带上已经恢复的线索引用，明确用途不夹带", async () => {
     await useConversationsStore.getState().load("w1");
     useConversationsStore.getState().newConversation();
     const key = "new";

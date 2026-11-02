@@ -21,6 +21,13 @@ describe("parseHash", () => {
       mode: "story",
     });
     expect(parseHash("#/workspaces/ws1/writing?mode=design")).toBeNull();
+    expect(parseHash("#/workspaces/ws1/writing?mode=chapter")).toEqual({
+      kind: "writing",
+      workspaceId: "ws1",
+      mode: "chapter",
+    });
+    // 同一辅助区只允许一种对象。
+    expect(parseHash("#/workspaces/ws1/writing?node=n1&clue=c1")).toBeNull();
     expect(parseHash("#/workspaces/ws1/ideas?entry=idea_123")).toEqual({
       kind: "ideas",
       workspaceId: "ws1",

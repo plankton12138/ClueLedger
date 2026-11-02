@@ -888,6 +888,8 @@
   .app-content { display: flex; flex: 1; min-height: 0; min-width: 0; }
   .workspace-page { display: flex; flex: 1; min-height: 0; min-width: 0; }
   .writing-layout { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+  /* 单栏模式里对话是唯一可见内容：占满剩余高度，输入区不能被内容顶出视口。 */
+  .writing-layout[data-layout="single"] .writing-chat { flex: 1 1 auto; min-height: 0; overflow: hidden; }
   .writing-tools { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid theme("colors.panelEdge"); background: linear-gradient(theme("colors.chromeHigh"), theme("colors.chromeMid")); }
   .writing-tools .writing-activity { margin-left: auto; }
   .writing-side-body { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -1247,17 +1249,9 @@ mark[data-source-target], .source-highlight-block { background: #f6d87680; color
   .workspace-detail-status { margin: 2px 0 0; font-size: 12px; color: theme("colors.ui.secondaryText"); }
   .workspace-detail-status.attention { color: #9a5a12; }
   .workspace-detail-status.ready { color: #2f6b3a; }
-  .workspace-detail-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: theme("colors.ui.secondaryText"); }
-  .workspace-detail-field input, .workspace-detail-field textarea, .workspace-detail-field select {
-    @apply rounded border border-panel-edge bg-page px-2 py-1 text-fg-strong;
-    font-size: 13px; line-height: 1.5;
-  }
-  .workspace-detail-row { display: flex; gap: 8px; }
-  .workspace-detail-row .workspace-detail-field { flex: 1 1 0; min-width: 0; }
   .workspace-detail-hint { margin: 0; font-size: 12px; color: theme("colors.ui.secondaryText"); }
   .workspace-detail-error { margin: 0; font-size: 12px; color: #a33; }
   .workspace-detail-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-  .workspace-detail-kinds { display: flex; gap: 6px; }
   .workspace-detail-section { border-top: 1px solid theme("colors.panelEdge"); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
   .workspace-detail-section h3 { margin: 0; font-size: 12px; font-weight: 700; color: theme("colors.ui.secondaryText"); letter-spacing: .04em; }
   .workspace-detail-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -1265,7 +1259,44 @@ mark[data-source-target], .source-highlight-block { background: #f6d87680; color
   .workspace-detail-quote { flex: 1 1 100%; font-family: theme("fontFamily.serif"); color: theme("colors.fgStrong"); }
   .workspace-detail-meta { font-size: 12px; color: theme("colors.ui.secondaryText"); }
   .workspace-detail-relation { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
-  .workspace-detail-relation-form { display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px dashed theme("colors.panelEdge"); border-radius: 4px; }
+  .workspace-detail-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: theme("colors.fgStrong"); }
+
+  /* ===== 情节安排列表（v1.0.8 默认视图） ===== */
+  .story-overview { display: flex; flex-direction: column; gap: 10px; padding: 4px 8px 24px; overflow: auto; }
+  .story-overview-group { border: 1px solid theme("colors.panelEdge"); border-radius: 5px; background: theme("colors.ui.surface"); }
+  .story-overview-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-bottom: 1px solid theme("colors.panelEdge"); background: linear-gradient(theme("colors.ui.surfaceLow"), #f6f9fb); }
+  .story-overview-group-head h2 { margin: 0; font-size: 12px; font-weight: 700; color: #445b6d; }
+  .story-overview-group-head span { font-size: 11px; color: theme("colors.ui.secondaryText"); }
+  .story-overview-row { display: grid; grid-template-columns: auto minmax(90px, 160px) minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-top: 1px solid rgba(0,0,0,.05); background: transparent; text-align: left; cursor: pointer; }
+  .story-overview-row:first-of-type { border-top: 0; }
+  .story-overview-row:hover { background: #f1f6fa; }
+  .story-overview-row[aria-pressed="true"] { background: #e3eef7; box-shadow: inset 3px 0 0 #2d6ca4; }
+  .story-overview-status { font-size: 11px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: #ece7da; color: #6d6552; white-space: nowrap; }
+  .story-overview-status.ready { background: #e3f0e5; color: #2f6b3a; }
+  .story-overview-status.attention { background: #f6ead4; color: #9a5a12; }
+  .story-overview-title { min-width: 0; font-weight: 600; color: theme("colors.fgStrong"); overflow-wrap: anywhere; }
+  .story-overview-action { min-width: 0; font-size: 12px; color: theme("colors.ui.secondaryText"); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .story-overview-time { font-size: 11px; color: theme("colors.ui.secondaryText"); white-space: nowrap; }
+
+  /* ===== 本章相关 ===== */
+  .chapter-context { display: flex; flex-direction: column; gap: 10px; padding: 14px; height: 100%; overflow: auto; }
+  .chapter-context-groups { display: flex; flex-direction: column; gap: 12px; }
+  .chapter-context-group { display: flex; flex-direction: column; gap: 6px; }
+  .chapter-context-group h3 { margin: 0; font-size: 12px; font-weight: 700; color: theme("colors.ui.secondaryText"); letter-spacing: .04em; }
+  .chapter-context-item { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 8px; border: 1px solid theme("colors.panelEdge"); border-radius: 4px; background: theme("colors.ui.surface"); text-align: left; cursor: pointer; }
+  .chapter-context-item:hover { background: #f1f6fa; }
+  .chapter-context-item-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .chapter-context-kind { flex: none; font-size: 10px; padding: 1px 5px; border-radius: 3px; background: #ece7da; color: #6d6552; }
+  .chapter-context-title { min-width: 0; font-weight: 600; color: theme("colors.fgStrong"); overflow-wrap: anywhere; }
+  .chapter-context-quotes { display: flex; flex-direction: column; gap: 2px; }
+  .chapter-context-quote { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-family: theme("fontFamily.serif"); font-size: 12px; color: theme("colors.ui.secondaryText"); }
+  .chapter-context-state { flex: none; font-family: var(--font-sans, sans-serif); font-size: 10px; color: #a33; }
+  .chapter-context-hint { font-size: 11px; color: theme("colors.ui.secondaryText"); }
+
+  /* ===== 对话里的构思提交回执 ===== */
+  .chat-story-commit { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border-left: 3px solid #2d6ca4; background: #f1f6fa; font-size: 11px; color: theme("colors.ui.secondaryText"); }
+  .chat-story-commit-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: theme("colors.fgStrong"); }
+  .chat-story-commit-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding-left: 16px; font-family: theme("fontFamily.mono"); font-size: 10px; }
 
   /* ===== 故事时间轴 ===== */
   .story-timeline { display: flex; flex-direction: column; gap: 10px; padding: 4px 8px 24px; overflow: auto; }
@@ -1297,6 +1328,7 @@ mark[data-source-target], .source-highlight-block { background: #f6d87680; color
   .clue-toolbar p { margin: 2px 0 0; font-size: 12px; color: theme("colors.ui.secondaryText"); }
   .clue-error { margin: 0; font-size: 12px; color: #a33; }
   .clue-body { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 12px; min-height: 0; }
+  .clue-body[data-graph="off"] { grid-template-columns: minmax(0, 1fr); }
   .clue-list { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
   .clue-search { @apply rounded border border-panel-edge bg-page px-2 py-1; font-size: 13px; }
   .clue-list ul { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; overflow: auto; }
@@ -1328,12 +1360,6 @@ mark[data-source-target], .source-highlight-block { background: #f6d87680; color
   /* ===== 正文选段登记 ===== */
   .selection-actions { position: fixed; display: flex; gap: 6px; z-index: 120; }
   .selection-actions .selection-to-chat { position: static; }
-  .paper-mark-panel { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid theme("colors.panelEdge"); border-radius: 5px; background: theme("colors.ui.surface"); box-shadow: 0 6px 18px rgba(20, 35, 48, .12); }
-  .paper-mark-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: theme("colors.ui.secondaryText"); }
-  .paper-mark-field input { @apply rounded border border-panel-edge bg-page px-2 py-1; font-size: 13px; }
-  .paper-mark-kinds, .paper-mark-actions { display: flex; gap: 6px; }
-  .paper-mark-quote { margin: 0; padding-left: 8px; border-left: 2px solid #c9d6e0; font-family: theme("fontFamily.serif"); font-size: 13px; color: theme("colors.fgStrong"); }
-  .paper-mark-error { margin: 0; font-size: 12px; color: #a33; }
   .prose-paper .clue-mark.truth { text-decoration-color: rgba(47, 107, 58, .65); }
   .prose-paper .clue-mark.mislead { text-decoration-color: rgba(176, 106, 18, .65); text-decoration-style: dashed; }
   .prose-paper .clue-mark.unknown { text-decoration-color: rgba(90, 109, 124, .55); }

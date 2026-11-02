@@ -20,7 +20,7 @@ async function selectText(root: Locator, text: string) {
   }, text);
 }
 
-test("正文与装载模块的选段独立保存，刷新后可查看和移除", async ({ page, request, book }) => {
+test("正文选段进入讨论焦点，装载模块的选段仍按草稿引用保存", async ({ page, request, book }) => {
   const detail = await request.get(`/api/module-library/modules/${book.moduleId}/revisions/${book.revisionId}`).then(r => r.json());
   const mounted = await request.put(`/api/file-workspaces/${book.id}/assembly`, { data: {
     bindings: [{ label: "港口资料", module: { library_id: detail.library_id, module_id: book.moduleId, revision_id: book.revisionId } }],
@@ -33,9 +33,8 @@ test("正文与装载模块的选段独立保存，刷新后可查看和移除",
   await expect(body).toContainText("侦探抵达港口，雨仍未停。");
   await expect(page.getByRole("button", { name: "添加到对话", exact: true })).toHaveCount(0);
   await selectText(body, "侦探抵达港口，雨仍未停。");
-  await page.getByRole("button", { name: "添加到对话", exact: true }).click();
-  const quotes = page.locator(".text-reference-list");
-  await expect(quotes).toContainText("侦探抵达港口，雨仍未停。");
+  await page.getByRole("button", { name: "讨论此段", exact: true }).click();
+  await expect(page.locator('[aria-label="本轮讨论焦点"]')).toContainText("选段：侦探抵达港口");
   await expect(page.locator(".chat-input")).toBeFocused();
   await page.locator(".chat-input").fill("帮我核对这两段");
   await page.getByRole("button", { name: "港口", exact: true }).click();
@@ -43,23 +42,25 @@ test("正文与装载模块的选段独立保存，刷新后可查看和移除",
   await expect(module).toContainText("潮汐表。");
   await selectText(module.locator("[data-text-selection-source]"), "潮汐表。");
   await page.getByRole("button", { name: "添加到对话", exact: true }).click();
-  await expect(quotes.locator(".text-reference-chip")).toHaveCount(2);
+  const quotes = page.locator(".text-reference-list");
+  await expect(quotes.locator(".text-reference-chip")).toHaveCount(1);
+  await expect(quotes).toContainText("潮汐表。");
   await expect.poll(async () => {
     const ui = await request.get(`/api/file-workspaces/${book.id}/conversation-ui`).then(r => r.json());
     return Object.values(ui.draft_contexts).flatMap((item: any) => item.text_references ?? []).length;
-  }).toBe(2);
+  }).toBe(1);
   await page.reload();
-  await expect(quotes.locator(".text-reference-chip")).toHaveCount(2);
+  await expect(quotes.locator(".text-reference-chip")).toHaveCount(1);
   await expect(page.locator(".chat-input")).toHaveValue("帮我核对这两段");
   await quotes.locator("summary").last().click();
   await expect(quotes.locator("blockquote").last()).toHaveText("潮汐表。");
   const output = resolve("../data/test-tmp/text-selection"); mkdirSync(output, { recursive: true });
   await page.screenshot({ path: resolve(output, "references-1440.png") });
   await quotes.getByRole("button", { name: /移除选段/ }).last().click();
-  await expect(quotes.locator(".text-reference-chip")).toHaveCount(1);
+  await expect(quotes.locator(".text-reference-chip")).toHaveCount(0);
 });
 
-test("窄屏添加选段打开对话，跨阅读区的选择不显示入口", async ({ page, book }) => {
+test("窄屏讨论选段打开对话，跨阅读区的选择不显示入口", async ({ page, book }) => {
   await page.setViewportSize({ width: 640, height: 900 });
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("button", { name: "侧栏", exact: true }).click();
@@ -67,7 +68,7 @@ test("窄屏添加选段打开对话，跨阅读区的选择不显示入口", as
   const body = page.locator(".paper-sheet [data-text-selection-source]");
   await expect(body).toBeVisible();
   await selectText(body, "侦探抵达港口");
-  const action = page.getByRole("button", { name: "添加到对话", exact: true });
+  const action = page.getByRole("button", { name: "讨论此段", exact: true });
   await expect(action).toBeInViewport();
   await page.keyboard.press("Escape"); await expect(action).toHaveCount(0);
   await body.evaluate(node => {
@@ -80,5 +81,6 @@ test("窄屏添加选段打开对话，跨阅读区的选择不显示入口", as
   await action.focus(); await page.keyboard.press("Enter");
   await expect(page.locator(".chat-input")).toBeVisible();
   await expect(page.locator(".chat-input")).toBeFocused();
-  await expect(page.locator(".text-reference-chip")).toContainText("侦探抵达港口");
+  await expect(page.locator('[aria-label="本轮讨论焦点"]')).toContainText("选段：侦探抵达港口");
+  await expect(page.locator(".text-reference-chip")).toHaveCount(0);
 });

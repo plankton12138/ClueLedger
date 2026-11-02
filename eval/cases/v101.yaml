@@ -20,15 +20,14 @@ cases:
   family: O02
   fixture: v101.json
   story_operations: &id001
-  - op: add_clue
-    clue:
-      id: glove
-      title: 湿手套
+  - op: create_clue_identity
+    temp_id: glove
+    title: 湿手套
+  - op: upsert_clue_plan
+    clue_id: glove
+    plan:
       author_truth: 管家在雪停后搬过尸体
-      resolution:
-        intent: explain
-        node_ids:
-        - n24
+      resolution_intent: explain
   - op: add_node
     node:
       id: n1
@@ -287,6 +286,8 @@ cases:
       action: 林砚根据时间证据指出管家搬过尸体
       clue_uses:
       - clue_id: glove
+        roles:
+        - resolve
         presentation: 雪停之后还有人穿过庭院
         mode: narration
   - op: connect
@@ -364,41 +365,6 @@ cases:
     - id: goal
       kind: manual
       rubric: 两条调查均提供不可省略的证据和发现过程，汇合结论依据充分，不能直接读到作者真相。
-- id: v101_o06
-  title: 备选隔离与局部采用
-  family: O06
-  fixture: v101.json
-  story_operations: *id001
-  steps:
-  - text: 创建名为另一结局的备选方案，不改主方案，不写正文。
-    story:
-      variant_id: main
-      purpose: design
-      node_ids: []
-    checks:
-    - id: goal
-      kind: manual
-      rubric: 备选修改不影响主方案，选定节点采用须真实提交且保留范围外对象及真相，说明正文尚未调整。
-  - text: 把对质节点的行动改成林砚展示证据后，管家沉默不解释；保留作者真相与其他节点，不写正文。
-    story:
-      variant_id: 另一结局
-      purpose: design
-      node_ids:
-      - n24
-    checks:
-    - id: goal
-      kind: manual
-      rubric: 备选修改不影响主方案，选定节点采用须真实提交且保留范围外对象及真相，说明正文尚未调整。
-  - text: 采用备选方案另一结局中的对质节点到主方案，只采用这个节点及必要前提，不改正文。
-    story:
-      variant_id: main
-      purpose: design
-      node_ids:
-      - n24
-    checks:
-    - id: goal
-      kind: manual
-      rubric: 备选修改不影响主方案，选定节点采用须真实提交且保留范围外对象及真相，说明正文尚未调整。
 - id: v101_o07
   title: 长距离回收与两次压缩
   family: O07

@@ -131,7 +131,6 @@ def _relations(variant: StoryVariant, clue_id: str) -> list[ClueRelationView]:
     return sorted(rows, key=lambda row: (row.kind, row.relation_id))
 
 
-
 def _uses(variant: StoryVariant, clue_id: str, node_id: str | None) -> list[ClueUsePosition]:
     result: list[ClueUsePosition] = []
     for node in variant.nodes.values():

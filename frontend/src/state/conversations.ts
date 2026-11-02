@@ -48,7 +48,6 @@ import {
   NeedsConversationReload,
   type ChatTurn,
 } from "./chatMessages";
-import type { ClueReferenceInput } from "../api/workspace";
 import { useStoryStore } from "./story";
 import { looksLikeProseRequest } from "./taskPurpose";
 import { createStreamBatcher } from "./streamBatcher";
@@ -133,8 +132,7 @@ export interface ConversationsStore {
   setDraftContext(selectedPath: string | null, referencePaths: string[]): void;
   /** 目录里「加入对话」：把一份文件追加到当前草稿的参考，重复点击不重复登记。 */
   addReference(path: string): void;
-  /** 把线索引用登记到当前草稿；只保存标识，发送时才由服务端核对版本。 */
-  addClueReference(input: ClueReferenceInput, title: string): boolean;
+  /** 移除草稿里一条已经恢复的线索引用；新引用由讨论焦点在发送时提交。 */
   removeClueReference(clueId: string, clueRevision: string): void;
   addTextReference(input: TextReference): boolean;
   removeTextReference(id: string): void;
@@ -287,9 +285,10 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     if (needsReload) void reloadLog(conversationId);
     const story = useStoryStore.getState();
     const workspaceId = get().workspaceId;
-    if (workspaceId && story.workspaceId === workspaceId && story.open
-      && events.some(event => ["story_changes_committed", "story_candidate_committed", "run_finished"].includes(event.type))) {
-      void story.refresh(workspaceId);
+    if (workspaceId && events.some(event => ["story_changes_committed", "story_candidate_committed", "run_finished"].includes(event.type))) {
+      // 结构写入后所有打开着的读模型一起失效；构思页在时再重读整份投影。
+      story.invalidate();
+      if (story.workspaceId === workspaceId && story.open) void story.refresh(workspaceId);
     }
   }
 
@@ -538,9 +537,12 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
           const cid = list.active_turn.conversation_id;
           patchEntry(cid, { running: true, activeTurn: list.active_turn });
         }
-        // 加载期间作者可能已经自己选了会话：恢复只填空，不抢回选择。
+        // 加载期间作者可能已经自己选了会话或开始输入：恢复只填空，不抢回选择。
+        // 新对话槽位已有文字时保持「新对话」，否则那次输入会随自动选会话一起消失。
         const target = list.recent_id ?? list.items[0]?.id ?? null;
-        if (target && get().selectedId === null) await get().select(target);
+        if (target && get().selectedId === null && !(get().drafts[NEW_DRAFT] ?? "").trim()) {
+          await get().select(target);
+        }
       } catch (error) {
         if (workspaceLoadEpoch === loadEpoch && get().workspaceId === workspaceId) set({ error: describe(error) });
       }
@@ -962,39 +964,6 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       // 目录入口只是追加：已经选过的路径不重复登记，也不打乱作者的选择顺序。
       if (current.includes(path)) return;
       get().setDraftContext(context?.selected_path ?? null, [...current, path]);
-    },
-
-    addClueReference(input, title) {
-      const key = entryKey(get().selectedId);
-      if (!get().workspaceId) return false;
-      const current = get().draftContexts[key]?.clue_references ?? [];
-      const same = current.find(item => item.clue_id === input.clue_id);
-      if (same && same.clue_revision === input.clue_revision) {
-        // 同一版本重复点击不叠加；只补上这次带来的标题。
-        const merged = { ...same, ...input, ...(title ? { title } : {}) };
-        if (JSON.stringify(merged) === JSON.stringify(same)) return true;
-        set(state => ({ draftContexts: { ...state.draftContexts, [key]: {
-          ...(state.draftContexts[key] ?? { selected_path: null, reference_paths: [] }),
-          clue_references: current.map(item => item.clue_id === same.clue_id ? merged : item),
-        } } }));
-        void persistDraft(key);
-        return true;
-      }
-      if (same) {
-        set({ error: `「${title}」已经有更新的版本：草稿里保留旧版本，确认后移除再引用新版本。` });
-        return false;
-      }
-      if (current.length >= 10) {
-        set({ error: "一次最多引用 10 条线索。建议：先移除部分引用再添加。" });
-        return false;
-      }
-      set(state => ({ draftContexts: { ...state.draftContexts, [key]: {
-        ...(state.draftContexts[key] ?? { selected_path: null, reference_paths: [] }),
-        clue_references: [...current, { ...input, ...(title ? { title } : {}) }],
-      } } }));
-      // 明确加入/移除引用立即落盘：作者可能马上刷新或换页，不依赖输入防抖。
-      void persistDraft(key);
-      return true;
     },
 
     removeClueReference(clueId, clueRevision) {

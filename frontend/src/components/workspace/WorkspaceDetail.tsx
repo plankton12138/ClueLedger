@@ -1,34 +1,34 @@
 /**
- * 共享详情区：构思节点、线索与「讨论调整」共用同一块辅助区域。
+ * 共享只读详情区：构思节点、线索与「讨论调整」共用同一块辅助区域。
  *
- * 同一时刻只显示一个对象；页面选择与辅助区模式分开，所以打开讨论不会丢掉所选线索。
- * 所有写入按当前修订整份提交，失败时保留输入。
+ * 页面只负责查看：没有字段输入、保存、分类切换或关系表单。调整统一通过对话完成，
+ * 点击「讨论调整」只准备本轮焦点并打开输入区，不发送固定核对文本，也不调用模型。
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, Locate, MessageSquare, X } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight } from "lucide-react";
 
 import {
   readStoryNode,
+  readStoryProseMarks,
   type ClueKind,
   type ClueRelationKind,
   type StoryAttentionNode,
   type StoryNodeFull,
 } from "../../api/story";
 import {
+  fetchClueDetail,
   fetchStoryClueDetail,
   fetchStoryClues,
   type ClueDetail,
-  type ClueSummary,
 } from "../../api/clues";
-import { createConversationWithText } from "../../api/workspace";
 import { errorMessage } from "../../api/errors";
+import { useDiscussionFocusStore } from "../../state/discussionContext";
 import { useStoryStore } from "../../state/story";
-import { useWorkspaceStore } from "../../state/workspace";
-import { useConversationsStore } from "../../state/conversations";
-import { useLayoutStore } from "../../state/layout";
-import { navigate } from "../../state/navigation";
-import { Button } from "../ui/Button";
+import ObjectReadDetail, {
+  type ReadDetailOccurrence,
+  type ReadDetailSection,
+} from "./ObjectReadDetail";
 
 const KIND_LABEL: Record<ClueKind, string> = { truth: "真相线索", mislead: "误导线索" };
 const RELATION_LABEL: Record<ClueRelationKind, string> = {
@@ -45,9 +45,14 @@ const REASON_LABEL: Record<string, string> = {
   plan_changed: "构思在上次核对后改过",
   prose_changed: "正文在上次核对后改过",
 };
+const STATUS_LABEL: Record<string, string> = {
+  ready: "就绪",
+  draft: "草稿",
+  attention: "需核对",
+};
 
-function requestKey(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+function statusReasons(attention: StoryAttentionNode | undefined): string[] {
+  return (attention?.reasons ?? []).map(reason => REASON_LABEL[reason] ?? reason);
 }
 
 function NodeDetail({
@@ -55,255 +60,140 @@ function NodeDetail({
   node,
   attention,
   onClose,
+  onLocateProse,
 }: {
   workspaceId: string;
   node: StoryNodeFull;
   attention: StoryAttentionNode | undefined;
   onClose: () => void;
+  onLocateProse: (target: { path: string; chapter?: number }) => void;
 }) {
-  const submit = useStoryStore(state => state.submit);
-  const acknowledge = useStoryStore(state => state.acknowledge);
-  const busy = useStoryStore(state => state.busy);
   const variantId = useStoryStore(state => state.variantId);
-  const [title, setTitle] = useState(node.title);
-  const [action, setAction] = useState(node.action);
-  const [timeNote, setTimeNote] = useState(node.time_note);
-  const [planned, setPlanned] = useState(node.planned_chapter_number?.toString() ?? "");
-  const [start, setStart] = useState(node.event_span?.start_minute?.toString() ?? "");
-  const [end, setEnd] = useState(node.event_span?.end_minute?.toString() ?? "");
-  const [error, setError] = useState<string | null>(null);
+  const graphRevision = useStoryStore(state => state.graph?.revision ?? "");
+  const invalidation = useStoryStore(state => state.invalidation);
+  const [occurrences, setOccurrences] = useState<ReadDetailOccurrence[]>([]);
+  const [clueTitles, setClueTitles] = useState<Map<string, string>>(new Map());
+  const [warning, setWarning] = useState<string | null>(null);
+  const prepare = useDiscussionFocusStore(state => state.prepare);
+  const paths = useMemo(
+    () => [...new Set(attention?.chapter_paths ?? [])].slice(0, 8),
+    [attention?.chapter_paths],
+  );
 
   useEffect(() => {
-    setTitle(node.title);
-    setAction(node.action);
-    setTimeNote(node.time_note);
-    setPlanned(node.planned_chapter_number?.toString() ?? "");
-    setStart(node.event_span?.start_minute?.toString() ?? "");
-    setEnd(node.event_span?.end_minute?.toString() ?? "");
-    setError(null);
-  }, [node.id, node.title, node.action, node.time_note]);
-
-  async function save() {
-    setError(null);
-    // clue_uses 等字段必须原样带回；clue_ids 是图投影，不进入写入模型。
-    const { clue_ids: _clueIds, ...rest } = node;
-    const payload = {
-      ...rest,
-      title: title.trim(),
-      action: action.trim(),
-      time_note: timeNote,
-      planned_chapter_number: planned.trim() ? Number(planned) : null,
-      event_span: start.trim() && end.trim()
-        ? { start_minute: Number(start), end_minute: Number(end), approximate: node.event_span?.approximate ?? false }
-        : null,
-    };
-    if (!payload.title || !payload.action) {
-      setError("标题和构思内容不能为空");
-      return;
-    }
-    const ok = await submit([{ op: "update_node", node_id: node.id, node: payload }], "详情区修改节点");
-    if (!ok) setError(useStoryStore.getState().error ?? "保存失败");
-  }
-
-  async function discuss() {
-    if (!variantId || !attention) return;
-    setError(null);
-    const paths = attention.chapter_paths;
-    const conversation = useConversationsStore.getState();
-    if (conversation.workspaceId !== workspaceId) await conversation.load(workspaceId);
-    try {
-      await createConversationWithText(workspaceId, {
-        text: "请核对当前构思与关联正文，说明差异和依据，并提出调整建议。先进行讨论。",
-        request_key: `reconcile:${attention.fingerprint}`,
-        purpose: "review",
-        review_paths: paths,
-        context: {
-          selected_path: paths[0] ?? null,
-          reference_paths: paths,
-          observed_digests: {},
-          story: {
-            variant_id: variantId,
-            revision: useStoryStore.getState().graph?.revision ?? "",
-            node_ids: [node.id],
-            purpose: "review",
-          },
-          story_reconcile: {
-            variant_id: variantId,
-            variant_revision: useStoryStore.getState().graph?.revision ?? "",
-            node_id: node.id,
-            binding_ids: attention.binding_ids,
-            warning_fingerprint: attention.fingerprint,
-          },
-        },
+    let active = true;
+    setOccurrences([]);
+    setWarning(null);
+    if (!variantId) return;
+    void Promise.all([
+      paths.length > 0
+        ? Promise.all(
+            paths.map(path =>
+              readStoryProseMarks(workspaceId, variantId, path)
+                .then(view => ({ path, view }))
+                .catch(() => ({ path, view: null })),
+            ),
+          )
+        : Promise.resolve([]),
+      fetchStoryClues(workspaceId, variantId, null, null, "", 50)
+        .then(list => new Map(list.items.map(row => [row.clue_id, row.title])))
+        .catch(() => new Map<string, string>()),
+    ])
+      .then(([views, titles]) => {
+        if (!active) return;
+        setClueTitles(titles);
+        const rows: ReadDetailOccurrence[] = [];
+        const failed: string[] = [];
+        for (const item of views) {
+          if (!item.view) {
+            failed.push(item.path);
+            continue;
+          }
+          for (const mark of item.view.marks.filter(mark => mark.node_id === node.id)) {
+            rows.push({
+              key: `${item.path}:${mark.start}:${mark.end}`,
+              path: item.path,
+              quote: mark.quote,
+              state: mark.state,
+            });
+          }
+        }
+        setOccurrences(rows);
+        if (failed.length > 0) {
+          setWarning(`有 ${failed.length} 章的出处暂时读不到，未显示引文。`);
+        }
+      })
+      .catch(cause => {
+        if (active) setWarning(errorMessage(cause, "读取出处"));
       });
-      await useConversationsStore.getState().load(workspaceId);
-      useLayoutStore.getState().revealChat();
-    } catch (cause) {
-      setError(errorMessage(cause, "开启核对讨论"));
-    }
+    return () => {
+      active = false;
+    };
+  }, [workspaceId, variantId, node.id, paths, invalidation]);
+
+  const sections: ReadDetailSection[] = [
+    { key: "action", title: "构思内容", text: node.action },
+    { key: "change", title: "关键变化", text: node.change ?? "" },
+    {
+      key: "time",
+      title: "时间",
+      text: [
+        node.time_note,
+        node.event_span
+          ? `相对分钟 ${node.event_span.start_minute}—${node.event_span.end_minute}${node.event_span.approximate ? "（约）" : ""}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("；"),
+    },
+    {
+      key: "planned",
+      title: "计划章节",
+      text: node.planned_chapter_number ? `第 ${node.planned_chapter_number} 章` : "",
+    },
+    {
+      key: "clues",
+      title: "用到的线索",
+      text: node.clue_uses
+        .map(use => {
+          const title = clueTitles.get(use.clue_id) ?? use.clue_id;
+          return `${title}：${use.presentation}`;
+        })
+        .join("\n"),
+    },
+  ];
+
+  function discuss() {
+    if (!variantId) return;
+    prepare({
+      focus: {
+        kind: "object",
+        object_kind: "node",
+        object_id: node.id,
+        variant_id: variantId,
+        story_revision: graphRevision || null,
+      },
+      label: `构思：${node.title}`,
+    });
   }
 
-  function locate() {
-    const path = attention?.chapter_paths[0];
-    if (!path) return;
-    navigate({ kind: "writing", workspaceId });
-    void useWorkspaceStore.getState().openPath(path);
-  }
-
-  return (
-    <div className="workspace-detail" aria-label="构思节点详情">
-      <header className="workspace-detail-head">
-        <div>
-          <h2>{node.title}</h2>
-          <p className={`workspace-detail-status ${attention?.status ?? "draft"}`}>
-            {attention?.status === "ready" ? "就绪" : attention?.status === "attention" ? "需核对" : "草稿"}
-            {attention?.reasons.length ? ` · ${attention.reasons.map(reason => REASON_LABEL[reason] ?? reason).join("、")}` : ""}
-          </p>
-        </div>
-        <Button size="compact" aria-label="关闭详情" onClick={onClose}>
-          <X size={15} aria-hidden="true" />
-        </Button>
-      </header>
-
-      <label className="workspace-detail-field">
-        标题
-        <input value={title} onChange={event => setTitle(event.target.value)} />
-      </label>
-      <label className="workspace-detail-field">
-        构思内容
-        <textarea rows={4} value={action} onChange={event => setAction(event.target.value)} />
-      </label>
-      <label className="workspace-detail-field">
-        时间说明
-        <input value={timeNote} onChange={event => setTimeNote(event.target.value)} placeholder="例如：案发前两天、晚餐后" />
-      </label>
-      <div className="workspace-detail-row">
-        <label className="workspace-detail-field">
-          计划章节
-          <input inputMode="numeric" value={planned} onChange={event => setPlanned(event.target.value)} />
-        </label>
-        <label className="workspace-detail-field">
-          开始（相对分钟）
-          <input inputMode="numeric" value={start} onChange={event => setStart(event.target.value)} />
-        </label>
-        <label className="workspace-detail-field">
-          结束
-          <input inputMode="numeric" value={end} onChange={event => setEnd(event.target.value)} />
-        </label>
-      </div>
-      <p className="workspace-detail-hint">相对分钟以故事时间基准为零点；只有文字说明时留空。</p>
-      {error && <p className="workspace-detail-error" role="alert">{error}</p>}
-
-      <div className="workspace-detail-actions">
-        <Button size="compact" variant="primary" disabled={busy} onClick={() => void save()}>
-          保存修改
-        </Button>
-        {attention?.chapter_paths.length ? (
-          <Button size="compact" onClick={locate}>
-            <Locate size={15} aria-hidden="true" />定位正文
-          </Button>
-        ) : null}
-        {attention?.status === "attention" && attention.reminder_visible ? (
-          <Button
-            size="compact"
-            disabled={busy}
-            onClick={() => void acknowledge(node.id, attention.fingerprint)}
-          >
-            稍后处理
-          </Button>
-        ) : null}
-        <Button
-          size="compact"
-          variant="quiet"
-          disabled={busy || !attention || attention.chapter_paths.length === 0}
-          disabledReason="先给节点关联正文"
-          onClick={() => void discuss()}
-        >
-          <MessageSquare size={15} aria-hidden="true" />讨论调整
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function RelationForm({
-  clue,
-  clues,
-  onDone,
-}: {
-  clue: ClueDetail;
-  clues: ClueSummary[];
-  onDone: () => void;
-}) {
-  const submit = useStoryStore(state => state.submit);
-  const busy = useStoryStore(state => state.busy);
-  const [target, setTarget] = useState("");
-  const [kind, setKind] = useState<ClueRelationKind>("supports");
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const options = clues.filter(row => row.clue_id !== clue.clue_id);
-
-  async function save() {
-    setError(null);
-    if (!target || !reason.trim()) {
-      setError("选择另一条线索并写明依据");
-      return;
-    }
-    const ok = await submit(
-      [
-        {
-          op: "upsert_clue_relation",
-          relation: {
-            id: requestKey("relation"),
-            from_clue_id: kind === "supports" ? clue.clue_id : target,
-            to_clue_id: kind === "supports" ? target : clue.clue_id,
-            kind,
-            reason: reason.trim(),
-            basis_source_ids: [],
-          },
-        },
-      ],
-      "详情区登记线索关系",
-    );
-    if (!ok) {
-      setError(useStoryStore.getState().error ?? "保存失败");
-      return;
-    }
-    setReason("");
-    setTarget("");
-    onDone();
+  function locate(row: ReadDetailOccurrence) {
+    onLocateProse({ path: row.path });
   }
 
   return (
-    <div className="workspace-detail-relation-form">
-      <label className="workspace-detail-field">
-        关系类型
-        <select value={kind} onChange={event => setKind(event.target.value as ClueRelationKind)}>
-          <option value="supports">支撑（当前线索 → 目标线索）</option>
-          <option value="contradicts">矛盾（不能同时成立）</option>
-          <option value="co_misdirects">共同误导（强化同一个误解）</option>
-        </select>
-      </label>
-      <label className="workspace-detail-field">
-        目标线索
-        <select value={target} onChange={event => setTarget(event.target.value)}>
-          <option value="">选择一条线索</option>
-          {options.map(row => (
-            <option key={row.clue_id} value={row.clue_id}>
-              {row.title}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="workspace-detail-field">
-        说明与必要前提
-        <textarea rows={2} value={reason} onChange={event => setReason(event.target.value)} />
-      </label>
-      {error && <p className="workspace-detail-error" role="alert">{error}</p>}
-      <Button size="compact" variant="primary" disabled={busy} onClick={() => void save()}>
-        登记关系
-      </Button>
-    </div>
+    <ObjectReadDetail
+      title={node.title}
+      kindLabel="构思节点"
+      statusLabel={attention ? STATUS_LABEL[attention.status] : undefined}
+      reasons={statusReasons(attention)}
+      sections={sections}
+      occurrences={occurrences}
+      notice={warning ?? (occurrences.length === 0 ? "还没有登记正文出处；正文里的关联才会列在这里。" : undefined)}
+      onLocate={locate}
+      onDiscuss={discuss}
+      onClose={onClose}
+    />
   );
 }
 
@@ -319,30 +209,35 @@ function ClueDetailPanel({
   onLocate: (occurrence: { path: string; evidence_id?: string; chapter?: number }) => void;
 }) {
   const variantId = useStoryStore(state => state.variantId);
-  const submit = useStoryStore(state => state.submit);
-  const busy = useStoryStore(state => state.busy);
+  const graphRevision = useStoryStore(state => state.graph?.revision ?? "");
+  const invalidation = useStoryStore(state => state.invalidation);
   const [detail, setDetail] = useState<ClueDetail | null>(null);
-  const [clues, setClues] = useState<ClueSummary[]>([]);
+  const [titles, setTitles] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
-  const [showRelation, setShowRelation] = useState(false);
-  const [truth, setTruth] = useState("");
-  const [intention, setIntention] = useState("");
+  const prepare = useDiscussionFocusStore(state => state.prepare);
 
   useEffect(() => {
     let active = true;
     setDetail(null);
     setError(null);
-    if (!variantId) return;
-    void Promise.all([
-      fetchStoryClueDetail(workspaceId, variantId, clueId, null),
-      fetchStoryClues(workspaceId, variantId, null, null, "", 50),
-    ])
-      .then(([row, list]) => {
+    const load = variantId
+      ? Promise.all([
+          fetchStoryClueDetail(workspaceId, variantId, clueId, null),
+          fetchStoryClues(workspaceId, variantId, null, null, "", 50).catch(() => null),
+        ]).then(([row, list]) => ({
+          row,
+          titles: new Map(list?.items.map(item => [item.clue_id, item.title]) ?? []),
+        }))
+      : // 没有构思时仍可阅读账本线索；不自动建立主方案。
+        fetchClueDetail(workspaceId, clueId, null).then(row => ({
+          row,
+          titles: new Map<string, string>(),
+        }));
+    void load
+      .then(({ row, titles: next }) => {
         if (!active) return;
         setDetail(row);
-        setClues(list.items);
-        setTruth(row.plan?.author_truth ?? "");
-        setIntention(row.plan?.intention ?? "");
+        setTitles(next);
       })
       .catch(cause => {
         if (active) setError(errorMessage(cause, "读取线索"));
@@ -350,193 +245,110 @@ function ClueDetailPanel({
     return () => {
       active = false;
     };
-  }, [workspaceId, variantId, clueId]);
+  }, [workspaceId, variantId, clueId, invalidation]);
 
-  const titleOf = useMemo(() => {
-    const map = new Map(clues.map(row => [row.clue_id, row.title]));
-    return (id: string) => map.get(id) ?? id;
-  }, [clues]);
-
-  async function savePlan(kind: ClueKind | null) {
+  function discuss() {
     if (!detail) return;
-    setError(null);
-    const ok = await submit(
-      [
-        {
-          op: "upsert_clue_plan",
-          clue_id: detail.clue_id,
-          plan: {
-            kind,
-            author_truth: truth.trim() ? truth : null,
-            intention,
-            resolution_intent: detail.plan?.resolution_intent ?? "undecided",
-          },
-        },
-      ],
-      "详情区修改线索用途",
-    );
-    if (!ok) {
-      setError(useStoryStore.getState().error ?? "保存失败");
-      return;
-    }
-    const next = await fetchStoryClueDetail(workspaceId, variantId ?? "", clueId, null).catch(() => null);
-    if (next) setDetail(next);
-  }
-
-  async function referenceClue(row: ClueDetail) {
-    const store = useConversationsStore.getState();
-    if (store.workspaceId !== workspaceId) await store.load(workspaceId);
-    const added = useConversationsStore.getState().addClueReference(
-      {
-        workspace_lineage: row.workspace_lineage,
-        clue_id: row.clue_id,
-        clue_revision: row.clue_revision,
-        browse_as_of_chapter: row.as_of_chapter,
+    prepare({
+      focus: {
+        kind: "object",
+        object_kind: "clue",
+        object_id: detail.clue_id,
+        variant_id: variantId,
+        story_revision: variantId ? graphRevision || detail.story_revision || null : null,
+        clue_revision: detail.clue_revision,
+        view_revision: detail.view_revision,
       },
-      row.title,
-    );
-    if (added) useLayoutStore.getState().revealChat();
+      label: `线索：${detail.title}`,
+    });
   }
 
-  async function removeRelation(relationId: string) {
-    const ok = await submit(
-      [{ op: "remove_clue_relation", relation_id: relationId }],
-      "详情区删除线索关系",
+  if (error) {
+    return (
+      <div className="workspace-detail">
+        <p className="workspace-detail-error" role="alert">{error}</p>
+      </div>
     );
-    if (!ok) {
-      setError(useStoryStore.getState().error ?? "删除失败");
-      return;
-    }
-    const next = await fetchStoryClueDetail(workspaceId, variantId ?? "", clueId, null).catch(() => null);
-    if (next) setDetail(next);
   }
+  if (!detail) {
+    return (
+      <div className="workspace-detail">
+        <p className="workspace-detail-hint">正在读取线索…</p>
+      </div>
+    );
+  }
+
+  const sections: ReadDetailSection[] = [
+    { key: "intention", title: "作者意图", text: detail.plan?.intention ?? "" },
+    { key: "truth", title: "作者真相", text: detail.plan?.author_truth ?? "" },
+  ];
+  const FRESHNESS_STATE: Record<string, string> = {
+    valid: "exact",
+    stale: "missing",
+    source_missing: "missing",
+    unavailable: "unavailable",
+    none: "unavailable",
+  };
+  const occurrences: ReadDetailOccurrence[] = detail.occurrences.length > 0
+    ? detail.occurrences.map((row, index) => ({
+        key: `${row.path}:${row.start ?? "x"}:${row.end ?? "x"}:${index}`,
+        path: row.path,
+        quote: row.quote,
+        chapter: row.chapter,
+        state: row.state,
+        evidenceId: row.evidence_ids[0],
+      }))
+    : detail.evidence.map((row, index) => ({
+        key: `${row.path}:${row.start}:${row.end}:${index}`,
+        path: row.path,
+        quote: row.quote,
+        chapter: row.chapter,
+        state: FRESHNESS_STATE[row.freshness] ?? "unavailable",
+        evidenceId: row.evidence_id,
+      }));
+  const relations = detail.relations;
 
   return (
-    <div className="workspace-detail" aria-label="线索详情">
-      <header className="workspace-detail-head">
-        <div>
-          <h2>{detail?.title ?? "线索"}</h2>
-          <p className="workspace-detail-status">{detail?.plan?.kind ? KIND_LABEL[detail.plan.kind] : "用途未定"}</p>
-        </div>
-        <Button size="compact" aria-label="关闭详情" onClick={onClose}>
-          <X size={15} aria-hidden="true" />
-        </Button>
-      </header>
-      {error && <p className="workspace-detail-error" role="alert">{error}</p>}
-      {!detail ? (
-        <p className="workspace-detail-hint">正在读取线索…</p>
-      ) : (
-        <>
-          <div className="workspace-detail-kinds" role="group" aria-label="线索用途">
-            {(["truth", "mislead"] as ClueKind[]).map(kind => (
-              <Button
-                key={kind}
-                size="compact"
-                variant={detail.plan?.kind === kind ? "primary" : "secondary"}
-                aria-pressed={detail.plan?.kind === kind}
-                disabled={busy}
-                onClick={() => void savePlan(kind)}
-              >
-                {KIND_LABEL[kind]}
-              </Button>
-            ))}
-          </div>
-          <label className="workspace-detail-field">
-            作者事实
-            <textarea rows={2} value={truth} onChange={event => setTruth(event.target.value)} />
-          </label>
-          <label className="workspace-detail-field">
-            读者可能的理解
-            <textarea rows={2} value={intention} onChange={event => setIntention(event.target.value)} />
-          </label>
-          <div className="workspace-detail-actions">
-            <Button size="compact" disabled={busy} onClick={() => void savePlan(detail.plan?.kind ?? null)}>
-              保存说明
-            </Button>
-            <Button size="compact" variant="quiet" onClick={() => void referenceClue(detail)}>
-              带入对话
-            </Button>
-          </div>
-
-          <section className="workspace-detail-section">
-            <h3>正文出处</h3>
-            {detail.occurrences.length === 0 ? (
-              <p className="workspace-detail-hint">还没有正文出处。可以在正文里选段标记。</p>
-            ) : (
-              <ul className="workspace-detail-list">
-                {detail.occurrences.map(row => (
-                  <li key={`${row.path}:${row.start ?? "x"}:${row.end ?? "x"}`}>
-                    <span className="workspace-detail-quote">{row.quote}</span>
-                    <span className="workspace-detail-meta">
-                      第 {row.chapter} 章 · {row.state === "exact" || row.state === "relocated" ? "可定位" : row.state === "missing" ? "原句已不在正文" : row.state === "ambiguous" ? "原句有多处匹配" : "暂不可读"}
-                    </span>
-                    {row.state === "exact" || row.state === "relocated" ? (
-                      <Button
-                        size="compact"
-                        variant="quiet"
-                        onClick={() =>
-                          onLocate({
-                            path: row.path,
-                            chapter: row.chapter,
-                            evidence_id: row.evidence_ids[0],
-                          })
-                        }
-                      >
-                        <Locate size={14} aria-hidden="true" />定位原文
-                      </Button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="workspace-detail-section">
+    <ObjectReadDetail
+      title={detail.title}
+      kindLabel={detail.plan?.kind ? KIND_LABEL[detail.plan.kind] : "用途未定"}
+      sections={sections}
+      occurrences={occurrences}
+      notice={detail.warnings.length > 0 ? detail.warnings.join("；") : undefined}
+      extra={
+        relations.length > 0 ? (
+          <section className="workspace-detail-section" aria-label="相关线索">
             <h3>相关线索</h3>
-            {detail.relations.length === 0 ? (
-              <p className="workspace-detail-hint">还没有登记关系。</p>
-            ) : (
-              <ul className="workspace-detail-list">
-                {detail.relations.map(row => {
-                  const other = row.from_clue_id === detail.clue_id ? row.to_clue_id : row.from_clue_id;
-                  const Icon = row.direction === "outgoing" ? ArrowUpRight : row.direction === "incoming" ? ArrowDownLeft : ArrowRight;
-                  return (
-                    <li key={row.relation_id}>
-                      <span className="workspace-detail-relation">
-                        <Icon size={14} aria-hidden="true" />
-                        {RELATION_LABEL[row.kind]}
-                        {row.kind === "supports" && row.direction === "outgoing" ? " → " : " ↔ "}
-                        {titleOf(other)}
-                      </span>
-                      <span className="workspace-detail-meta">{row.reason}</span>
-                      <Button size="compact" variant="quiet" disabled={busy} onClick={() => void removeRelation(row.relation_id)}>
-                        删除
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {showRelation ? (
-              <RelationForm
-                clue={detail}
-                clues={clues}
-                onDone={() => {
-                  setShowRelation(false);
-                  void fetchStoryClueDetail(workspaceId, variantId ?? "", clueId, null)
-                    .then(next => setDetail(next))
-                    .catch(() => undefined);
-                }}
-              />
-            ) : (
-              <Button size="compact" onClick={() => setShowRelation(true)}>
-                添加关系
-              </Button>
-            )}
+            <ul className="workspace-detail-list">
+              {relations.map(row => {
+                const other = row.from_clue_id === detail.clue_id ? row.to_clue_id : row.from_clue_id;
+                const Icon =
+                  row.direction === "outgoing"
+                    ? ArrowUpRight
+                    : row.direction === "incoming"
+                      ? ArrowDownLeft
+                      : ArrowRight;
+                return (
+                  <li key={row.relation_id}>
+                    <span className="workspace-detail-relation">
+                      <Icon size={14} aria-hidden="true" />
+                      {RELATION_LABEL[row.kind]}
+                      {row.kind === "supports" && row.direction === "outgoing" ? " → " : " ↔ "}
+                      {titles.get(other) ?? other}
+                    </span>
+                    <span className="workspace-detail-meta">{row.reason}</span>
+                  </li>
+                );
+              })}
+            </ul>
           </section>
-        </>
-      )}
-    </div>
+        ) : undefined
+      }
+      onLocate={row =>
+        onLocate({ path: row.path, evidence_id: row.evidenceId, chapter: row.chapter ?? undefined })}
+      onDiscuss={discuss}
+      onClose={onClose}
+    />
   );
 }
 
@@ -556,6 +368,7 @@ export default function WorkspaceDetail({
   onLocateProse: (target: { path: string; evidence_id?: string; chapter?: number }) => void;
 }) {
   const variantId = useStoryStore(state => state.variantId);
+  const invalidation = useStoryStore(state => state.invalidation);
   const attention = useStoryStore(state =>
     state.attention?.nodes.find(node => node.node_id === nodeId),
   );
@@ -566,7 +379,7 @@ export default function WorkspaceDetail({
     let active = true;
     setNode(null);
     setError(null);
-    if (mode !== "story" || !variantId || !nodeId) return;
+    if (mode === "clues" || !variantId || !nodeId) return;
     void readStoryNode(workspaceId, variantId, nodeId)
       .then(row => {
         if (active) setNode(row);
@@ -577,7 +390,7 @@ export default function WorkspaceDetail({
     return () => {
       active = false;
     };
-  }, [workspaceId, variantId, nodeId, mode]);
+  }, [workspaceId, variantId, nodeId, mode, invalidation]);
 
   if (clueId && (mode === "clues" || mode === "prose")) {
     return (
@@ -589,15 +402,22 @@ export default function WorkspaceDetail({
       />
     );
   }
-  if (mode === "story" && nodeId) {
+  if (nodeId && (mode === "story" || mode === "prose")) {
     if (error) return <div className="workspace-detail"><p className="workspace-detail-error">{error}</p></div>;
     if (!node) return <div className="workspace-detail"><p className="workspace-detail-hint">正在读取节点…</p></div>;
-    return <NodeDetail workspaceId={workspaceId} node={node} attention={attention} onClose={onClose} />;
+    return (
+      <NodeDetail
+        workspaceId={workspaceId}
+        node={node}
+        attention={attention}
+        onClose={onClose}
+        onLocateProse={onLocateProse}
+      />
+    );
   }
   return (
     <div className="workspace-detail workspace-detail-empty">
-      <p>选择时间轴上的节点或正文里的线索，在这里查看详情。</p>
-      {mode === "clues" ? null : <p className="workspace-detail-hint">也可以从正文选段登记线索。</p>}
+      <p>选择本章相关项或正文里的标记，在这里查看详情。</p>
     </div>
   );
 }

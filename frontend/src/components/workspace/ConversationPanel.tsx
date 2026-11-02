@@ -18,11 +18,13 @@ import { createIdea, requestKey } from "../../api/ideas";
 import { findMessage, type ChatMessage, type ChatTurn } from "../../state/chatMessages";
 import {
   draftKeyOf,
+  NEW_DRAFT,
   runningConversation,
   selectedEntry,
   useConversationsStore,
   type DraftIdea,
 } from "../../state/conversations";
+import { useDiscussionFocusStore } from "../../state/discussionContext";
 import { referencePreview, useIdeasStore } from "../../state/ideas";
 import { useIdeasSurfaceStore } from "../../state/ideasSurface";
 import { useModelsStore } from "../../state/models";
@@ -54,7 +56,7 @@ interface CaptureTarget {
   y: number;
 }
 
-export default function ConversationPanel() {
+export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?: () => void }) {
   const items = useConversationsStore((state) => state.items);
   const selectedId = useConversationsStore((state) => state.selectedId);
   const entry = useConversationsStore(selectedEntry);
@@ -76,6 +78,9 @@ export default function ConversationPanel() {
   const setDraft = useConversationsStore((state) => state.setDraft);
   const setDraftContext = useConversationsStore((state) => state.setDraftContext);
   const draftContext = useConversationsStore((state) => state.draftContexts[draftKeyOf(state)]);
+  const focusKey = selectedId ?? NEW_DRAFT;
+  const focus = useDiscussionFocusStore((state) => state.entries[focusKey] ?? null);
+  const clearFocus = useDiscussionFocusStore((state) => state.clear);
   const draftIdeas = useConversationsStore(
     (state) => state.draftIdeas[draftKeyOf(state)] ?? NO_IDEAS,
   );
@@ -237,14 +242,31 @@ export default function ConversationPanel() {
 
   const submit = async () => {
     if (!canSend) return;
-    // 组件生成快照：当前阅读位置与参考、以及客户端看到的版本，一起交给受理。
+    // 焦点是这一轮的材料引用：发送时冻结，发送成功后清空；失败时保留在原槽位。
+    const focusPath = focus && focus.focus.kind !== "object" ? focus.focus.path : null;
+    const selectedPath = focusPath ?? openPath;
+    const selectedDigest = focusPath
+      ? focus?.focus.kind === "chapter" || focus?.focus.kind === "selection"
+        ? focus.focus.digest
+        : undefined
+      : openFile && openFile.path === openPath
+        ? openFile.digest
+        : undefined;
     const context: ContextInput = {
-      selected_path: openPath,
+      selected_path: selectedPath,
       ...(sourceTaskChapter(workspaceId) !== undefined ? { state_chapter: sourceTaskChapter(workspaceId) } : {}),
       reference_paths: references,
-      observed_digests: openFile && openFile.path === openPath ? { [openPath]: openFile.digest } : {},
+      ...(focus ? { discussion_focus: focus.focus } : {}),
+      observed_digests: selectedPath && selectedDigest ? { [selectedPath]: selectedDigest } : {},
     };
-    await send(draft, context.selected_path || context.reference_paths.length || context.state_chapter !== undefined ? context : EMPTY_CONTEXT);
+    const submittedKey = focusKey;
+    const result = await send(
+      draft,
+      context.selected_path || context.reference_paths.length || context.discussion_focus || context.state_chapter !== undefined
+        ? context
+        : EMPTY_CONTEXT,
+    );
+    if (result && focus) clearFocus(submittedKey);
   };
 
   // 插话只在受理成功后清空输入：失败时作者的这段文字还在，可以直接重试。
@@ -277,6 +299,11 @@ export default function ConversationPanel() {
             </option>
           ))}
         </select>
+        {onBackToDetail && (
+          <button className="btn btn-gray px-2 py-1 text-[11px]" onClick={onBackToDetail}>
+            返回详情
+          </button>
+        )}
         <button className="btn btn-gray px-2 py-1 text-[11px]" onClick={startNew}>
           新对话
         </button>
@@ -420,6 +447,22 @@ export default function ConversationPanel() {
             {draftIdeas.map((item) => (
               <IdeaReferenceChip key={item.idea_id} reference={item} />
             ))}
+          </div>
+        )}
+        {focus && (
+          <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px]" aria-label="本轮讨论焦点">
+            <span className="text-mute">本轮焦点：</span>
+            <span className="inline-flex max-w-[18rem] items-center gap-1 rounded border border-row-edge px-1 py-0.5">
+              <span className="truncate" title={focus.label}>{focus.label}</span>
+              <button
+                type="button"
+                className="text-mute hover:text-fg"
+                aria-label="移除焦点"
+                onClick={() => clearFocus(focusKey)}
+              >
+                ×
+              </button>
+            </span>
           </div>
         )}
         {clueReferences.length > 0 && <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px]" aria-label="引用线索">

@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -51,6 +51,7 @@ __all__ = [
     "ReadCoverage",
     "ReadRequirement",
     "ReadSlice",
+    "DiscussionFocus",
     "Reference",
     "SourceKind",
     "SourceRef",
@@ -398,6 +399,74 @@ class IdeaReference:
 
 
 @dataclass(frozen=True, slots=True)
+class DiscussionFocus:
+    """作者从详情或正文发起的讨论焦点；只用于定位材料，不构成写权限。
+
+    ``object`` 指向一个构思节点或线索；``chapter`` 只指向当前章；``selection``
+    额外带一段 Unicode 码点区间。发送时冻结，续聊与重启沿用同一份身份。
+    """
+
+    kind: Literal["object", "chapter", "selection"]
+    object_kind: Literal["node", "clue"] | None = None
+    object_id: str = ""
+    variant_id: str | None = None
+    story_revision: str | None = None
+    clue_revision: str = ""
+    view_revision: str = ""
+    path: str = ""
+    digest: str = ""
+    start: int | None = None
+    end: int | None = None
+    quote: str = ""
+
+    def identity(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "object_kind": self.object_kind,
+            "object_id": self.object_id,
+            "variant_id": self.variant_id,
+            "story_revision": self.story_revision,
+            "clue_revision": self.clue_revision,
+            "view_revision": self.view_revision,
+            "path": self.path,
+            "digest": self.digest,
+            "start": self.start,
+            "end": self.end,
+            "quote": self.quote,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, object]) -> DiscussionFocus | None:
+        kind = str(raw.get("kind") or "")
+        if kind not in ("object", "chapter", "selection"):
+            return None
+        object_kind = raw.get("object_kind")
+        start = raw.get("start")
+        end = raw.get("end")
+        return cls(
+            kind=kind,  # type: ignore[arg-type]
+            object_kind=(
+                str(object_kind)  # type: ignore[arg-type]
+                if object_kind in ("node", "clue")
+                else None
+            ),
+            object_id=str(raw.get("object_id") or ""),
+            variant_id=str(raw["variant_id"]) if raw.get("variant_id") else None,
+            story_revision=(str(raw["story_revision"]) if raw.get("story_revision") else None),
+            clue_revision=str(raw.get("clue_revision") or ""),
+            view_revision=str(raw.get("view_revision") or ""),
+            path=str(raw.get("path") or ""),
+            digest=str(raw.get("digest") or ""),
+            start=start if isinstance(start, int) else None,
+            end=end if isinstance(end, int) else None,
+            quote=str(raw.get("quote") or ""),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return self.identity()
+
+
+@dataclass(frozen=True, slots=True)
 class StoryReconcileRequest:
     """作者主动开启核对讨论时冻结的提醒目标；只表达对象，不构成写权限。"""
 
@@ -423,6 +492,8 @@ class ContextRequest:
     story: StoryRequest | None = None
     #: 作者点击「讨论调整」时带上的提醒目标；服务端核对后冻结。
     story_reconcile: StoryReconcileRequest | None = None
+    #: 这一轮从详情或正文带入的对象、章节或选段焦点；只用于找材料。
+    discussion_focus: DiscussionFocus | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -441,6 +512,8 @@ class ContextSnapshot:
     clues: tuple[ClueReferenceSnapshot, ...] = ()
     #: 受理时冻结的方案与修订；执行时修订已变则这一轮失败。
     story: StoryContextSnapshot | None = None
+    #: 受理时冻结的讨论焦点；执行前复核对象版本与章节摘要。
+    discussion_focus: DiscussionFocus | None = None
 
     @property
     def reference_paths(self) -> tuple[str, ...]:
@@ -456,6 +529,11 @@ class ContextSnapshot:
             "clue_references": [item.identity() for item in self.clues],
             "observed_digests": dict(sorted(self.observed_digests.items())),
             **({"story": self.story.to_dict()} if self.story is not None else {}),
+            **(
+                {"discussion_focus": self.discussion_focus.identity()}
+                if self.discussion_focus is not None
+                else {}
+            ),
         }
 
     def to_dict(self) -> dict[str, object]:
@@ -465,6 +543,293 @@ class ContextSnapshot:
             "idea_revisions": [item.view() for item in self.ideas],
             "clues": [item.to_dict() for item in self.clues],
         }
+
+
+def _focus_chapter(workspace: Workspace, path: str) -> FileView:
+    entry = next(
+        (row for row in workspace.catalog().chapters if row.path == path and row.exists),
+        None,
+    )
+    if entry is None or entry.chapter_number is None:
+        raise WorkspaceError(
+            code="PROSE_CHAPTER_NOT_FOUND",
+            where="materials.focus",
+            why=f"焦点路径不是当前正文章节：{path}",
+            fix="刷新正文目录后重新选择章节或选段",
+            details={"path": path},
+        )
+    return workspace.read(path)
+
+
+def freeze_discussion_focus(
+    workspace: Workspace,
+    state_root: Path,
+    focus: DiscussionFocus,
+) -> DiscussionFocus:
+    """受理时核对焦点对象与版本；客户端给的摘要只用于发现过期，不覆盖服务端读数。"""
+    if focus.kind == "object":
+        from hastings.workspace.story_clue_catalog import StoryClueCatalog
+        from hastings.workspace.story_store import StoryStore
+
+        if focus.object_kind not in ("node", "clue") or not focus.object_id:
+            raise WorkspaceError(
+                code="CONTEXT_INPUT_INVALID",
+                where="materials.focus",
+                why="对象焦点缺少对象类型或标识",
+                fix="重新从详情或正文选择讨论对象",
+            )
+        snapshot = StoryStore(state_root, workspace).read()
+        document = snapshot.document
+        if document is None and focus.object_kind == "clue":
+            # 没有构思时，账本线索仍可作为讨论对象；这一轮不自动建立主方案。
+            from hastings.workspace.clue_store import ClueLedgerStore
+
+            ledger = ClueLedgerStore(state_root).read().ledger
+            identity = ledger.clues.get(focus.object_id) if ledger is not None else None
+            if identity is None:
+                raise WorkspaceError(
+                    code="CLUE_NOT_FOUND",
+                    where="materials.focus",
+                    why=f"找不到讨论焦点线索：{focus.object_id}",
+                    fix="刷新线索详情后重新选择",
+                    details={"clue_id": focus.object_id},
+                )
+            if focus.clue_revision and focus.clue_revision != identity.clue_revision:
+                raise WorkspaceError(
+                    code="CLUE_REFERENCE_STALE_CONFLICT",
+                    where="materials.focus",
+                    why="线索在选点后已经变化",
+                    fix="刷新线索详情，确认后重新打开讨论",
+                    details={
+                        "clue_id": focus.object_id,
+                        "expected": focus.clue_revision,
+                        "current": identity.clue_revision,
+                    },
+                )
+            return replace(
+                focus,
+                variant_id=None,
+                story_revision=None,
+                clue_revision=identity.clue_revision,
+            )
+        target = focus.variant_id or (document.primary_variant_id if document else "")
+        variant = snapshot.variant(target) if document is not None else None
+        if variant is None:
+            raise WorkspaceError(
+                code="STORY_VARIANT_NOT_FOUND",
+                where="materials.focus",
+                why=f"讨论焦点对应的方案不存在：{target or '当前主方案'}",
+                fix="刷新构思后重新选择对象",
+                details={"variant_id": target},
+            )
+        if focus.story_revision and focus.story_revision != variant.revision:
+            raise WorkspaceError(
+                code="STORY_REVISION_CONFLICT",
+                where="materials.focus",
+                why=f"方案在选对象后已经更新：{focus.story_revision} → {variant.revision}",
+                fix="刷新详情后重新选择对象",
+                details={"variant_id": variant.id, "revision": variant.revision},
+            )
+        if focus.object_kind == "node":
+            if focus.object_id not in variant.nodes:
+                raise WorkspaceError(
+                    code="STORY_NODE_NOT_FOUND",
+                    where="materials.focus",
+                    why=f"找不到讨论焦点节点：{focus.object_id}",
+                    fix="刷新详情后重新选择节点",
+                    details={"node_id": focus.object_id},
+                )
+            clue_revision = focus.clue_revision
+        else:
+            catalog = StoryClueCatalog.from_root(variant, state_root)
+            fact = catalog.get(focus.object_id)
+            if fact is None:
+                raise WorkspaceError(
+                    code="CLUE_NOT_FOUND",
+                    where="materials.focus",
+                    why=f"找不到讨论焦点线索：{focus.object_id}",
+                    fix="刷新线索详情后重新选择",
+                    details={"clue_id": focus.object_id},
+                )
+            clue_revision = fact.identity_revision or ""
+            if focus.clue_revision and focus.clue_revision != clue_revision:
+                raise WorkspaceError(
+                    code="CLUE_REFERENCE_STALE_CONFLICT",
+                    where="materials.focus",
+                    why="线索在选点后已经变化",
+                    fix="刷新线索详情，确认后重新打开讨论",
+                    details={
+                        "clue_id": focus.object_id,
+                        "expected": focus.clue_revision,
+                        "current": clue_revision,
+                    },
+                )
+        return replace(
+            focus,
+            variant_id=variant.id,
+            story_revision=variant.revision,
+            clue_revision=clue_revision,
+        )
+    if not focus.path:
+        raise WorkspaceError(
+            code="CONTEXT_INPUT_INVALID",
+            where="materials.focus",
+            why="章节或选段焦点缺少正文路径",
+            fix="从当前正文重新选择",
+        )
+    file = _focus_chapter(workspace, focus.path)
+    if focus.digest and focus.digest != file.digest:
+        raise WorkspaceError(
+            code="PROSE_SOURCE_STALE",
+            where="materials.focus",
+            why="正文在选段或打开本章后已经修改",
+            fix="刷新这一章后重新选择",
+            details={"path": focus.path},
+        )
+    if focus.kind == "selection":
+        if focus.start is None or focus.end is None or not focus.quote:
+            raise WorkspaceError(
+                code="CONTEXT_INPUT_INVALID",
+                where="materials.focus",
+                why="选段焦点缺少区间或引文",
+                fix="重新选择连续原文",
+            )
+        if (
+            focus.start < 0
+            or focus.end <= focus.start
+            or focus.end > len(file.text)
+            or file.text[focus.start : focus.end] != focus.quote
+        ):
+            raise WorkspaceError(
+                code="PROSE_ANCHOR_MISMATCH",
+                where="materials.focus",
+                why="选段区间与当前正文不一致",
+                fix="重新选择连续原文",
+                details={"path": focus.path},
+            )
+    return replace(focus, digest=file.digest)
+
+
+def verify_discussion_focus(
+    workspace: Workspace,
+    state_root: Path,
+    focus: DiscussionFocus,
+) -> None:
+    """执行前复核：对象版本或正文摘要变化时整轮失败，不按旧焦点继续。"""
+    if focus.kind == "object":
+        from hastings.workspace.clue_store import ClueLedgerStore
+        from hastings.workspace.story_store import StoryStore
+
+        snapshot = StoryStore(state_root, workspace).read()
+        if snapshot.document is None and focus.object_kind == "clue":
+            ledger = ClueLedgerStore(state_root).read().ledger
+            identity = ledger.clues.get(focus.object_id) if ledger is not None else None
+            if identity is None:
+                raise WorkspaceError(
+                    code="CLUE_NOT_FOUND",
+                    where="materials.verify_focus",
+                    why="讨论焦点线索已经不存在",
+                    fix="刷新线索详情后重新发起",
+                )
+            if focus.clue_revision and identity.clue_revision != focus.clue_revision:
+                raise WorkspaceError(
+                    code="CLUE_REFERENCE_STALE_CONFLICT",
+                    where="materials.verify_focus",
+                    why="受理之后线索版本已经变化",
+                    fix="刷新线索详情后重新发送这一轮",
+                    details={"clue_id": focus.object_id},
+                )
+            return
+        variant = snapshot.variant(focus.variant_id or "") if snapshot.document else None
+        if variant is None:
+            raise WorkspaceError(
+                code="STORY_VARIANT_NOT_FOUND",
+                where="materials.verify_focus",
+                why="讨论焦点对应的方案已经不存在",
+                fix="刷新后重新发起这一轮",
+            )
+        if focus.story_revision and variant.revision != focus.story_revision:
+            raise WorkspaceError(
+                code="STORY_REVISION_CONFLICT",
+                where="materials.verify_focus",
+                why=f"受理之后方案已经更新：{focus.story_revision} → {variant.revision}",
+                fix="按当前结构重新发起这一轮",
+                details={"variant_id": variant.id},
+            )
+        if focus.object_kind == "node":
+            if focus.object_id not in variant.nodes:
+                raise WorkspaceError(
+                    code="STORY_NODE_NOT_FOUND",
+                    where="materials.verify_focus",
+                    why="讨论焦点节点已经不存在",
+                    fix="刷新后重新选择节点",
+                )
+            return
+        ledger = ClueLedgerStore(state_root).read().ledger
+        identity = ledger.clues.get(focus.object_id) if ledger is not None else None
+        if identity is None:
+            raise WorkspaceError(
+                code="CLUE_NOT_FOUND",
+                where="materials.verify_focus",
+                why="讨论焦点线索已经不存在",
+                fix="刷新线索详情后重新发起",
+            )
+        if focus.clue_revision and identity.clue_revision != focus.clue_revision:
+            raise WorkspaceError(
+                code="CLUE_REFERENCE_STALE_CONFLICT",
+                where="materials.verify_focus",
+                why="受理之后线索版本已经变化",
+                fix="刷新线索详情后重新发送这一轮",
+                details={"clue_id": focus.object_id},
+            )
+        return
+    file = _focus_chapter(workspace, focus.path)
+    if focus.digest and file.digest != focus.digest:
+        raise WorkspaceError(
+            code="PROSE_SOURCE_STALE",
+            where="materials.verify_focus",
+            why="受理之后这一章已经被修改",
+            fix="刷新正文后重新发送这一轮",
+            details={"path": focus.path},
+        )
+    if focus.kind == "selection" and (
+        focus.start is None
+        or focus.end is None
+        or focus.end > len(file.text)
+        or file.text[focus.start : focus.end] != focus.quote
+    ):
+        raise WorkspaceError(
+            code="PROSE_ANCHOR_MISMATCH",
+            where="materials.verify_focus",
+            why="受理之后选段原文已经变化",
+            fix="刷新正文后重新选择这一段",
+            details={"path": focus.path},
+        )
+
+
+def _implicit_focus_clue(
+    state_root: Path,
+    focus: DiscussionFocus,
+    writer_cutoff: int,
+) -> tuple[ClueReferenceInput, ...]:
+    """线索焦点自动补一份引用：作者没有手动引用时也要读到当前版本与正文观察。"""
+    if focus.kind != "object" or focus.object_kind != "clue" or not focus.object_id:
+        return ()
+    from hastings.workspace.clue_context import ClueReferenceInput
+    from hastings.workspace.clue_store import ClueLedgerStore
+
+    ledger = ClueLedgerStore(state_root).read().ledger
+    if ledger is None or focus.object_id not in ledger.clues:
+        return ()
+    identity = ledger.clues[focus.object_id]
+    return (
+        ClueReferenceInput(
+            workspace_lineage=ledger.workspace_lineage,
+            clue_id=focus.object_id,
+            clue_revision=identity.clue_revision,
+            browse_as_of_chapter=max(0, writer_cutoff),
+        ),
+    )
 
 
 def freeze_context(
@@ -508,6 +873,44 @@ def freeze_context(
             fix="只提交这次真正带上来的路径；不要附带其他文件的指纹",
             details={"path": unknown[0]},
         )
+    focus: DiscussionFocus | None = None
+    story_request = request.story
+    if request.discussion_focus is not None:
+        if state_root is None:
+            raise WorkspaceError(
+                code="CONTEXT_INPUT_INVALID",
+                where="materials.accept",
+                why="没有应用状态目录，无法核对讨论焦点",
+                fix="通过应用接口发起这一轮；直接调用需要给出 state_root",
+            )
+        focus = freeze_discussion_focus(workspace, state_root, request.discussion_focus)
+        if focus.kind == "object" and focus.object_kind == "node":
+            if story_request is None:
+                story_request = StoryRequest(
+                    variant_id=focus.variant_id or "",
+                    revision=focus.story_revision or "",
+                    node_ids=(focus.object_id,),
+                    purpose="design",
+                )
+            else:
+                story_request = replace(
+                    story_request,
+                    node_ids=tuple(dict.fromkeys((*story_request.node_ids, focus.object_id))),
+                    purpose=(
+                        "design" if story_request.purpose == "discuss" else story_request.purpose
+                    ),
+                )
+        elif focus.kind == "object":
+            # 线索焦点不追加节点；仍需要结构能力以便作者明确要求时修改用途或关系。
+            if story_request is None:
+                story_request = StoryRequest(
+                    variant_id=focus.variant_id or "",
+                    revision=focus.story_revision or "",
+                    node_ids=(),
+                    purpose="design",
+                )
+            elif story_request.purpose == "discuss":
+                story_request = replace(story_request, purpose="design")
     references: list[SourceRef] = []
     for path in paths:
         try:
@@ -547,7 +950,27 @@ def freeze_context(
                 )
             )
     clues: tuple[ClueReferenceSnapshot, ...] = ()
-    if request.clue_references:
+    clue_inputs = tuple(request.clue_references)
+    if focus is not None:
+        from hastings.workspace.state_store import current_chapter
+
+        writer_cutoff = (
+            request.state_chapter
+            if request.state_chapter is not None
+            else current_chapter(workspace)
+        )
+        assert state_root is not None
+        extra = _implicit_focus_clue(state_root, focus, writer_cutoff)
+        seen: set[tuple[str, str]] = set()
+        merged: list[ClueReferenceInput] = []
+        for item in (*clue_inputs, *extra):
+            key = (item.clue_id, item.clue_revision)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+        clue_inputs = tuple(merged)
+    if clue_inputs:
         from hastings.workspace.clue_context import freeze_clue_references
         from hastings.workspace.state_store import current_chapter
 
@@ -559,12 +982,12 @@ def freeze_context(
         clues = freeze_clue_references(
             workspace,
             state_root,
-            request.clue_references,
+            clue_inputs,
             writer_cutoff=writer_cutoff,
             library=library,
         )
     story: StoryContextSnapshot | None = None
-    if request.story is not None:
+    if story_request is not None:
         if state_root is None:
             raise WorkspaceError(
                 code="STORY_SCOPE_INVALID",
@@ -575,7 +998,7 @@ def freeze_context(
         from hastings.workspace.story_context import freeze_story_context
         from hastings.workspace.story_store import StoryStore
 
-        story = freeze_story_context(StoryStore(state_root, workspace), request.story)
+        story = freeze_story_context(StoryStore(state_root, workspace), story_request)
     return ContextSnapshot(
         state_chapter=request.state_chapter,
         selected_path=request.selected_path,
@@ -584,11 +1007,26 @@ def freeze_context(
         ideas=tuple(ideas),
         clues=clues,
         story=story,
+        discussion_focus=focus,
     )
 
 
-def verify_context(workspace: Workspace, snapshot: ContextSnapshot) -> None:
+def verify_context(
+    workspace: Workspace,
+    snapshot: ContextSnapshot,
+    *,
+    state_root: Path | None = None,
+) -> None:
     """执行开始前复核受理快照；版本变化按整轮失败处理，不替换引用版本。"""
+    if snapshot.discussion_focus is not None:
+        if state_root is None:
+            raise WorkspaceError(
+                code="CONTEXT_INPUT_INVALID",
+                where="materials.verify_context",
+                why="讨论焦点没有可复核的应用状态目录",
+                fix="通过应用接口发起这一轮",
+            )
+        verify_discussion_focus(workspace, state_root, snapshot.discussion_focus)
     stale: list[dict[str, str]] = []
     for ref in snapshot.references:
         try:

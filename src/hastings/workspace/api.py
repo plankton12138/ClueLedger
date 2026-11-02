@@ -52,6 +52,7 @@ from hastings.workspace.locations import default_data_root, default_workspace_ro
 from hastings.workspace.materials import (
     MAX_REFERENCES,
     ContextRequest,
+    DiscussionFocus,
     StoryReconcileRequest,
 )
 from hastings.workspace.reading_position import ReadingPosition, read_position, save_position
@@ -315,6 +316,55 @@ class StoryReconcileInput(BaseModel):
     warning_fingerprint: str = Field(min_length=1, max_length=128)
 
 
+class DiscussionFocusInput(BaseModel):
+    """作者从详情或正文发起的讨论焦点；只定位材料，不授予写权限。"""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["object", "chapter", "selection"]
+    object_kind: Literal["node", "clue"] | None = None
+    object_id: str = Field(default="", max_length=64)
+    variant_id: str | None = Field(default=None, max_length=64)
+    story_revision: str | None = Field(default=None, max_length=64)
+    clue_revision: str = Field(default="", max_length=128)
+    view_revision: str = Field(default="", max_length=128)
+    path: str = Field(default="", max_length=512)
+    digest: str = Field(default="", max_length=128)
+    start: int | None = Field(default=None, ge=0)
+    end: int | None = Field(default=None, ge=0)
+    quote: str = Field(default="", max_length=2000)
+
+    @model_validator(mode="after")
+    def check_shape(self) -> Self:
+        if self.kind == "object":
+            if self.object_kind is None or not self.object_id:
+                raise ValueError("对象焦点需要 object_kind 与 object_id")
+            return self
+        if not self.path or not is_managed_path(self.path):
+            raise ValueError("章节与选段焦点需要作品内的正文路径")
+        if self.kind == "selection":
+            if self.start is None or self.end is None or self.end <= self.start:
+                raise ValueError("选段焦点需要有效的开始与结束位置")
+            if not self.quote:
+                raise ValueError("选段焦点需要引文")
+        return self
+
+    def to_request(self) -> DiscussionFocus:
+        return DiscussionFocus(
+            kind=self.kind,
+            object_kind=self.object_kind,
+            object_id=self.object_id,
+            variant_id=self.variant_id,
+            story_revision=self.story_revision,
+            clue_revision=self.clue_revision,
+            view_revision=self.view_revision,
+            path=self.path,
+            digest=self.digest,
+            start=self.start,
+            end=self.end,
+            quote=self.quote,
+        )
+
+
 class ContextInput(BaseModel):
     """本轮带上来的材料：当前阅读位置、显式参考与客户端看到的版本。
 
@@ -330,6 +380,7 @@ class ContextInput(BaseModel):
     clue_references: list[ClueReferenceInput] = Field(default_factory=list, max_length=10)
     story: StoryContextInput | None = None
     story_reconcile: StoryReconcileInput | None = None
+    discussion_focus: DiscussionFocusInput | None = None
 
     @field_validator("selected_path")
     @classmethod
@@ -367,6 +418,9 @@ class ContextInput(BaseModel):
                 )
                 if self.story_reconcile
                 else None
+            ),
+            discussion_focus=(
+                self.discussion_focus.to_request() if self.discussion_focus else None
             ),
         )
 
@@ -884,9 +938,7 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
                 details={"id": workspace_id},
             )
 
-    def require_current_attention(
-        workspace_id: str, target: StoryReconcileInput | None
-    ) -> None:
+    def require_current_attention(workspace_id: str, target: StoryReconcileInput | None) -> None:
         """核对讨论的目标必须仍然存在且提醒没有变化；点击前不创建任何东西。"""
         if target is None:
             return
@@ -1759,4 +1811,3 @@ def _entry(entry: FileEntry) -> FileEntryView:
         size=entry.size,
         metadata_warnings=list(entry.metadata_warnings),
     )
-

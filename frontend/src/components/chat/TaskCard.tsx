@@ -144,17 +144,6 @@ export default function TaskCard({ turn }: { turn: ChatTurn }) {
             {facts.changedPaths.length > 0 && `｜改动 ${facts.changedPaths.length} 个文件`}
           </li>
         )}
-        {facts.storyCommits.map((commit) => (
-          <li key={commit.changeId} className="min-w-0 truncate">
-            {commit.noChange
-              ? "构思结构：已核对，无需改动"
-              : `构思结构：已保存 ${commit.operations} 项`}
-            {commit.labels.length > 0 && `｜${commit.labels.join("、")}`}
-            {commit.noChange && commit.reason && (
-              <span className="text-mute" title={commit.reason}>（{commit.reason}）</span>
-            )}
-          </li>
-        ))}
         {facts.note && <li className="text-mute">{facts.note}</li>}
         {facts.changedPaths.map((path) => (
           <li key={path} className="pl-3 text-mute">

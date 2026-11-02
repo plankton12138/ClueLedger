@@ -506,11 +506,7 @@ class StoryCandidate:
                 )
                 if not quote and len(node_ids) == 1:
                     # 单节点候选保留粗锚点；多节点必须由模型用实际引文分别提交。
-                    start = (
-                        text.find("\n\n") + 2
-                        if text.startswith("#") and "\n\n" in text
-                        else 0
-                    )
+                    start = text.find("\n\n") + 2 if text.startswith("#") and "\n\n" in text else 0
                     quote = text[start : start + 200].rstrip()
                 if not quote or quote in used_quotes:
                     continue

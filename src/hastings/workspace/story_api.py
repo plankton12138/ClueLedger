@@ -19,6 +19,7 @@ from hastings.workspace.module_assembly import AssemblyStore, ModuleRef
 from hastings.workspace.service_hub import WorkspaceServices
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 from hastings.workspace.story_bindings import normalize_bindings
+from hastings.workspace.story_chapter_view import ChapterContextView, chapter_context
 from hastings.workspace.story_clue_catalog import StoryClueCatalog
 from hastings.workspace.story_clue_commit import prepare_clue_joint, prepare_clue_undo
 from hastings.workspace.story_constraint_sources import ConstraintSources, source_key
@@ -514,9 +515,7 @@ def create_story_router(
         )
 
     @router.get("/{workspace_id}/story/variants/{variant_id}/nodes/{node_id}")
-    def read_node(
-        workspace_id: str, variant_id: str, node_id: str
-    ) -> dict[str, Any]:
+    def read_node(workspace_id: str, variant_id: str, node_id: str) -> dict[str, Any]:
         """单个节点的完整字段；详情面板编辑时整份提交，不能丢掉没显示的线索用途。"""
         variant = require_variant(store_for(workspace_id), variant_id)
         node = variant.nodes.get(node_id)
@@ -570,6 +569,27 @@ def create_story_router(
                 fix="从作品工作区重新打开构思",
             )
         return build_prose_marks(workspace, variant, chapter_path=chapter_path)
+
+    @router.get(
+        "/{workspace_id}/story/chapter-context",
+        response_model=ChapterContextView,
+    )
+    def read_chapter_context(
+        workspace_id: str,
+        chapter_path: str = Query(min_length=1, max_length=512),
+        variant_id: str | None = Query(default=None, max_length=64),
+        cursor: str = Query(default="", max_length=4096),
+        limit: int = Query(default=20, ge=1, le=50),
+    ) -> ChapterContextView:
+        """正文随章视图：本章实际出现、明确计划与失效引用；只读，不调用模型。"""
+        return chapter_context(
+            workspaces.workspace(workspace_id),
+            conversation_root(workspaces.root, workspace_id),
+            chapter_path=chapter_path,
+            variant_id=variant_id,
+            cursor=cursor,
+            limit=limit,
+        )
 
     @router.post("/{workspace_id}/story/changes", response_model=StoryReceiptView, status_code=201)
     def submit_change(workspace_id: str, body: StoryChangeRequest) -> StoryReceiptView:

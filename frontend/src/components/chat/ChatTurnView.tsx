@@ -14,6 +14,7 @@ import AuthorQuestionCard from "./AuthorQuestionCard";
 import ModuleChangeCard from "./ModuleChangeCard";
 import ReviewReportView from "./ReviewReport";
 import TaskCard from "./TaskCard";
+import StoryCommitCard from "./StoryCommitCard";
 import ToolActivity from "./ToolActivity";
 import TurnContextSummary from "./TurnContextSummary";
 import TurnIdeas from "./TurnIdeas";
@@ -78,6 +79,7 @@ function ChatTurnView({
       <TurnIdeas ideas={turn.ideas} />
       {turn.injection && <TurnContextSummary injection={turn.injection} />}
       <TaskCard turn={turn} />
+      <StoryCommitCard commits={turn.storyCommits} workspaceId={workspaceId} />
       <ModuleChangeCard turn={turn} workspaceId={workspaceId} conversationId={conversationId} />
 
       {turn.items.map((item, index) => {

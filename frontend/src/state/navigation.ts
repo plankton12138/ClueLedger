@@ -15,8 +15,8 @@ export type WorkspacePage =
   | {
       kind: "writing";
       workspaceId: string;
-      /** 同一个写作页的三种工作模式；正文不写 mode，构思与线索显式写入 URL。 */
-      mode?: "story" | "clues";
+      /** 同一个写作页的三种工作模式；正文不写 mode，构思、线索与本章相关显式写入 URL。 */
+      mode?: "story" | "clues" | "chapter";
       sourceId?: string;
       clueId?: string;
       /** 构思页恢复选中的节点。 */
@@ -58,9 +58,11 @@ export function parseHash(hash: string): AppPage | null {
     const sourceId = params.get("source"), clueId = params.get("clue");
     const asOf = params.get("as_of"), task = params.get("task_chapter");
     const mode = params.get("mode");
-    if (mode !== null && mode !== "story" && mode !== "clues") return null;
+    if (mode !== null && mode !== "story" && mode !== "clues" && mode !== "chapter") return null;
     const nodeId = params.get("node");
     if (nodeId !== null && !ENTRY_ID.test(nodeId)) return null;
+    // 同一个辅助区一次只选一种对象：节点与线索不能同时出现。
+    if (nodeId && clueId) return null;
     if (sourceId !== null && !/^ev_[a-f0-9]{20}_[a-f0-9]{32}$/.test(sourceId)) return null;
     if (clueId !== null && !ENTRY_ID.test(clueId)) return null;
     for (const value of [asOf, task]) if (value !== null && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return null;

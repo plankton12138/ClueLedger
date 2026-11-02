@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDownLeft, ArrowRight, ArrowUpRight, RefreshCw } from "lucide-react";
 
-import { fetchStoryClues, type ClueSummary } from "../../api/clues";
+import { fetchClues, fetchStoryClues, type ClueSummary } from "../../api/clues";
 import type { ClueKind, ClueRelationKind, ClueRelations } from "../../api/story";
 import { errorMessage } from "../../api/errors";
 import { useStoryStore } from "../../state/story";
@@ -118,15 +118,21 @@ export default function ClueSurface({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
+  const [showGraph, setShowGraph] = useState(false);
 
   async function load() {
-    if (!variantId) return;
     setLoading(true);
     setError(null);
     try {
-      const list = await fetchStoryClues(workspaceId, variantId, null, null, "", 50);
-      setClues(list.items);
-      await loadRelations(workspaceId, selectedClueId);
+      if (variantId) {
+        const list = await fetchStoryClues(workspaceId, variantId, null, null, "", 50);
+        setClues(list.items);
+        await loadRelations(workspaceId, selectedClueId);
+      } else {
+        // 没有构思时读取账本线索，不为了展示而建立主方案。
+        const list = await fetchClues(workspaceId, null, null, "", 50);
+        setClues(list.items);
+      }
     } catch (cause) {
       setError(errorMessage(cause, "读取线索"));
     } finally {
@@ -149,27 +155,38 @@ export default function ClueSurface({
     query.trim() ? row.title.toLowerCase().includes(query.trim().toLowerCase()) : true,
   );
 
-  if (!variantId) {
-    return <div className="clue-surface clue-surface-empty">还没有构思。先在构思页建立节点与线索。</div>;
-  }
-
   return (
     <div className="clue-surface" data-mode="clues">
       <header className="clue-toolbar">
         <div>
           <h1>全书线索</h1>
-          <p>用途、正文出处与相关线索在同一页；点选线索看一跳关系。</p>
+          <p>
+            {variantId
+              ? "名称、用途与正文出处在这里查看；关系图按需打开。"
+              : "还没有构思；这里显示正文里已经登记的线索，不自动建立方案。"}
+          </p>
         </div>
-        <Button size="compact" disabled={loading} onClick={() => void load()}>
-          <RefreshCw size={15} aria-hidden="true" />重新读取
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="compact"
+            aria-pressed={showGraph}
+            disabled={!selectedClueId || !variantId}
+            disabledReason="先建立构思并选择一条线索"
+            onClick={() => setShowGraph(value => !value)}
+          >
+            {showGraph ? "返回线索列表" : "查看关系图"}
+          </Button>
+          <Button size="compact" disabled={loading} onClick={() => void load()}>
+            <RefreshCw size={15} aria-hidden="true" />重新读取
+          </Button>
+        </div>
       </header>
       {error && (
         <p className="clue-error" role="alert">
           {error}
         </p>
       )}
-      <div className="clue-body">
+      <div className="clue-body" data-graph={showGraph ? "on" : "off"}>
         <section className="clue-list" aria-label="线索列表">
           <input
             className="clue-search"
@@ -200,10 +217,10 @@ export default function ClueSurface({
             </ul>
           )}
         </section>
-        <section className="clue-relations" aria-label="线索关系">
+        {showGraph && <section className="clue-relations" aria-label="线索关系">
           {selectedClueId ? (
             <>
-              <Graph relations={relations ?? emptyRelations(variantId)} onSelect={id => onSelectClue(id)} />
+              <Graph relations={relations ?? emptyRelations(variantId ?? "")} onSelect={id => onSelectClue(id)} />
               {relations && relations.remaining_count > 0 && (
                 <p className="clue-graph-note">还有 {relations.remaining_count} 条相连线索没有画在图上，仍可在左侧列表选择。</p>
               )}
@@ -239,7 +256,7 @@ export default function ClueSurface({
           ) : (
             <p className="clue-empty">选择一条线索，查看它与其他线索的关系。</p>
           )}
-        </section>
+        </section>}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { List, MessageSquare } from "lucide-react";
+import { List, MessageSquare, PanelRight } from "lucide-react";
 import { CHAT, SIDEBAR, useLayoutStore, writingLayout } from "../../state/layout";
 import { useWorkspaceStore } from "../../state/workspace";
 import { runningConversation, useConversationsStore } from "../../state/conversations";
@@ -19,7 +19,9 @@ import { navigate, useWorkspacePage } from "../../state/navigation";
 import StorySurface from "../story/StorySurface";
 import ClueSurface from "../clues/ClueSurface";
 import WorkspaceDetail from "./WorkspaceDetail";
+import ChapterContext from "./ChapterContext";
 import { useStoryStore } from "../../state/story";
+import { useDiscussionFocusStore } from "../../state/discussionContext";
 
 export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const prefs = useLayoutStore();
@@ -35,8 +37,10 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const mode = page?.kind === "writing" && page.workspaceId === currentId ? page.mode ?? "prose" : "prose";
   const storyView = mode === "story";
   const cluesView = mode === "clues";
+  const chapterView = mode === "chapter";
   const storyNodeId = useStoryStore(state => state.nodeId);
   const storyClueId = useStoryStore(state => state.clueId);
+  const storyVariantId = useStoryStore(state => state.variantId);
   const [directory, setDirectory] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const container = useRef<HTMLDivElement>(null);
@@ -60,8 +64,12 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const paper = !compact || !chat;
   const detailOpen = Boolean(currentId) && (
     (storyView && Boolean(storyNodeId)) ||
-    Boolean(storyClueId && (cluesView || !storyView))
+    Boolean(storyClueId && (cluesView || !storyView)) ||
+    Boolean(storyNodeId && !cluesView && !storyView)
   );
+  const chapterPanel = Boolean(currentId && chapterView && !storyNodeId && !storyClueId);
+  // 宽屏辅助区一次只放一种内容：打开对话替换详情或本章相关，关闭对话再返回。
+  const auxiliaryOpen = Boolean(currentId) && !chat && (detailOpen || chapterPanel);
   useEffect(() => {
     // 会话受理仍按构思页判断用途；路由模式是唯一来源。
     useStoryStore.getState().setOpen(storyView);
@@ -80,7 +88,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   useEffect(() => {
     if (!page || page.kind !== "writing" || page.workspaceId !== currentId) return;
     const store = useStoryStore.getState();
-    const nextNode = page.mode === "story" ? page.nodeId ?? null : null;
+    const nextNode = page.nodeId ?? null;
     const nextClue = page.clueId ?? null;
     if (store.nodeId !== nextNode) store.selectNode(nextNode);
     if (store.clueId !== nextClue) store.selectClue(nextClue);
@@ -113,23 +121,64 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   function openStoryConversation() {
     openChat();
   }
+  function hideChat() {
+    if (compact) setCompactChat(false);
+    else if (prefs.chatVisible) prefs.toggleChat();
+  }
   function selectNode(nodeId: string | null) {
     if (!currentId) return;
+    // 选中对象后辅助区显示详情；对话仍可从「讨论调整」重新打开。
+    if (nodeId) hideChat();
     useStoryStore.getState().selectNode(nodeId);
-    navigate({ kind: "writing", workspaceId: currentId, mode: "story", nodeId: nodeId ?? undefined }, true);
-  }
-  function selectClue(clueId: string | null) {
-    if (!currentId) return;
-    useStoryStore.getState().selectClue(clueId);
+    useStoryStore.getState().selectClue(null);
     navigate(
       {
         kind: "writing",
         workspaceId: currentId,
-        mode: cluesView ? "clues" : undefined,
+        mode: storyView ? "story" : chapterView ? "chapter" : undefined,
+        nodeId: nodeId ?? undefined,
+      },
+      true,
+    );
+  }
+  function selectClue(clueId: string | null) {
+    if (!currentId) return;
+    if (clueId) hideChat();
+    useStoryStore.getState().selectClue(clueId);
+    useStoryStore.getState().selectNode(null);
+    navigate(
+      {
+        kind: "writing",
+        workspaceId: currentId,
+        mode: cluesView ? "clues" : chapterView ? "chapter" : undefined,
         clueId: clueId ?? undefined,
       },
       true,
     );
+  }
+  function openChapterContext() {
+    if (!currentId) return;
+    hideChat();
+    useStoryStore.getState().selectNode(null);
+    useStoryStore.getState().selectClue(null);
+    navigate({ kind: "writing", workspaceId: currentId, mode: "chapter" }, true);
+  }
+  function closeAuxiliary() {
+    if (!currentId) return;
+    if (storyView) {
+      selectNode(null);
+      return;
+    }
+    useStoryStore.getState().selectNode(null);
+    useStoryStore.getState().selectClue(null);
+    navigate(
+      { kind: "writing", workspaceId: currentId, ...(chapterView ? { mode: "chapter" } : {}) },
+      true,
+    );
+  }
+  function backToDetail() {
+    if (compact) setCompactChat(false);
+    else if (prefs.chatVisible) prefs.toggleChat();
   }
   async function calibrateStoryFromProse() {
     if (!currentId) return;
@@ -180,6 +229,18 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
         onClick={toggleSidebar} disabled={!currentId} disabledReason="先打开作品目录">
         <List size={16} strokeWidth={2} aria-hidden="true" />侧栏
       </Button>
+      {!storyView && !cluesView && file?.kind === "chapter" && (
+        <Button
+          size="compact"
+          variant={chapterView ? "primary" : "secondary"}
+          aria-pressed={chapterView}
+          onClick={() => (chapterView ? navigate({ kind: "writing", workspaceId: currentId ?? "" }, true) : openChapterContext())}
+          disabled={!currentId}
+          disabledReason="先打开一章正文"
+        >
+          <PanelRight size={16} strokeWidth={2} aria-hidden="true" />本章
+        </Button>
+      )}
       <Button size="compact" variant={chat ? "primary" : "secondary"} aria-pressed={chat} aria-controls="writing-chat"
         onClick={toggleChat} disabled={!currentId} disabledReason="先打开作品目录">
         <MessageSquare size={16} strokeWidth={2} aria-hidden="true" />{chatLabel}
@@ -209,6 +270,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             workspaceId={currentId}
             onStart={openStoryConversation}
             onCalibrate={() => void calibrateStoryFromProse()}
+            onSelectNode={selectNode}
           />
         ) : cluesView ? (
           <ClueSurface
@@ -216,29 +278,44 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             selectedClueId={storyClueId}
             onSelectClue={selectClue}
           />
-        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} onOpenClue={openClueFromProse} /> : !ready ? <div className="ui-empty" role="status"><p>正在载入作品…</p></div> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
+        ) : source?.source.kind === "module" ? <ModuleSourceReader /> : moduleBinding ? <WorkspaceModulePaper key={`${currentId}:${moduleBinding.id}`} workspaceId={currentId} binding={moduleBinding} /> : <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} onOpenClue={openClueFromProse} onOpenNode={id => selectNode(id)} /> : !ready ? <div className="ui-empty" role="status"><p>正在载入作品…</p></div> : <EmptyState action={<Button variant="primary" onClick={onOpen}>打开 / 新建</Button>}>打开一个作品目录</EmptyState>}
         </div></div>
       </section>
-      {detailOpen && currentId && (
-        <aside className="writing-detail module" role="region" aria-label="详情">
-          <WorkspaceDetail
-            workspaceId={currentId}
-            mode={storyView ? "story" : cluesView ? "clues" : "prose"}
-            nodeId={storyNodeId}
-            clueId={storyClueId}
-            onClose={() => {
-              if (storyView) selectNode(null);
-              else selectClue(null);
-            }}
-            onLocateProse={locateProse}
-          />
+      {auxiliaryOpen && currentId && (
+        <aside className="writing-detail module" role="region" aria-label={chapterPanel ? "本章相关" : "详情"}>
+          {chapterPanel && file?.kind === "chapter" ? (
+            <ChapterContext
+              workspaceId={currentId}
+              chapterPath={file.path}
+              variantId={storyVariantId}
+              onSelectNode={id => selectNode(id)}
+              onSelectClue={id => selectClue(id)}
+              onDiscussChapter={() => {
+                if (!file) return;
+                useDiscussionFocusStore.getState().prepare({
+                  focus: { kind: "chapter", path: file.path, digest: file.digest },
+                  label: `本章：${file.display_title}`,
+                });
+              }}
+              onClose={() => navigate({ kind: "writing", workspaceId: currentId }, true)}
+            />
+          ) : (
+            <WorkspaceDetail
+              workspaceId={currentId}
+              mode={storyView ? "story" : cluesView ? "clues" : "prose"}
+              nodeId={storyNodeId}
+              clueId={storyClueId}
+              onClose={closeAuxiliary}
+              onLocateProse={locateProse}
+            />
+          )}
         </aside>
       )}
       {currentId && <>
         {chat && !compact && <ResizeHandle value={plan.chat} min={CHAT.min} max={Math.min(CHAT.max, width - plan.sidebar - plan.paperMin - (sidebar ? 12 : 6))}
           invert label="对话栏宽度" onChange={prefs.setChatWidth} onReset={() => prefs.setChatWidth(CHAT.default)} />}
         <div id="writing-chat" className="writing-chat module flex min-h-0 flex-col" hidden={!chat} style={{ width: compact ? "100%" : plan.chat }}>
-          <ConversationPanel />
+          <ConversationPanel onBackToDetail={detailOpen || chapterPanel ? backToDetail : undefined} />
         </div>
       </>}
     </div>

@@ -88,20 +88,31 @@ export function parseLayout(raw: string | null): LayoutPrefs {
   }
 }
 
-function readLayout(): LayoutPrefs {
-  if (typeof localStorage === "undefined") return DEFAULT_LAYOUT;
+/** 存储访问在 about:blank、隐私模式或受沙箱限制的页面里可能直接抛出 SecurityError。 */
+function localStore(): Storage | null {
   try {
-    return parseLayout(localStorage.getItem(STORAGE_KEY));
+    return globalThis.localStorage ? globalThis.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+function readLayout(): LayoutPrefs {
+  const storage = localStore();
+  if (!storage) return DEFAULT_LAYOUT;
+  try {
+    return parseLayout(storage.getItem(STORAGE_KEY));
   } catch {
     return DEFAULT_LAYOUT;
   }
 }
 
 function writeLayout(prefs: LayoutPrefs): void {
-  if (typeof localStorage === "undefined") return;
+  const storage = localStore();
+  if (!storage) return;
   try {
     const { sidebarWidth, chatWidth, sidebarVisible, chatVisible, fontScale } = prefs;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sidebarWidth, chatWidth, sidebarVisible, chatVisible, fontScale }));
+    storage.setItem(STORAGE_KEY, JSON.stringify({ sidebarWidth, chatWidth, sidebarVisible, chatVisible, fontScale }));
   } catch {
     // 存储不可写（隐私模式、配额满）时只丢偏好，不影响本次使用
   }

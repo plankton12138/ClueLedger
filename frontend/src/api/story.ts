@@ -225,6 +225,43 @@ export interface ProseMarks {
   marks: ProseMark[];
 }
 
+export type ChapterOccurrenceState =
+  | "exact"
+  | "relocated"
+  | "missing"
+  | "ambiguous"
+  | "unavailable";
+
+export interface ChapterOccurrence {
+  path: string;
+  quote: string;
+  start: number | null;
+  end: number | null;
+  state: ChapterOccurrenceState;
+  binding_ids: string[];
+  evidence_ids: string[];
+}
+
+/** 当前章的一条相关对象：实际出现、明确计划或失效引用。 */
+export interface ChapterContextItem {
+  object: { kind: "node" | "clue"; id: string };
+  title: string;
+  placement: "observed" | "planned" | "unresolved";
+  occurrences: ChapterOccurrence[];
+}
+
+export interface ChapterContextView {
+  chapter_path: string;
+  chapter_digest: string;
+  variant_id: string | null;
+  story_revision: string | null;
+  ledger_revision: string;
+  view_revision: string;
+  items: ChapterContextItem[];
+  next_cursor: string;
+  truncated: boolean;
+}
+
 export interface StoryReceipt {
   variant_id: string;
   base_revision: string;
@@ -299,6 +336,22 @@ export function readClueRelations(
   return request<ClueRelations>(`/${workspaceId}/clue-relations?${params}`);
 }
 
+/** 当前章的相关构思与线索；首屏一次聚合请求，翻页使用服务端游标。 */
+export function readChapterContext(
+  workspaceId: string,
+  chapterPath: string,
+  options: { variantId?: string | null; cursor?: string; limit?: number; signal?: AbortSignal } = {},
+): Promise<ChapterContextView> {
+  const params = new URLSearchParams({ chapter_path: chapterPath });
+  if (options.variantId) params.set("variant_id", options.variantId);
+  if (options.cursor) params.set("cursor", options.cursor);
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  return request<ChapterContextView>(
+    `/${workspaceId}/story/chapter-context?${params}`,
+    { signal: options.signal },
+  );
+}
+
 export function readStoryProseMarks(
   workspaceId: string,
   variantId: string,
@@ -307,25 +360,6 @@ export function readStoryProseMarks(
   return request<ProseMarks>(
     `/${workspaceId}/story/variants/${encodeURIComponent(variantId)}/prose-marks?chapter_path=${encodeURIComponent(chapterPath)}`,
   );
-}
-
-/** 界面发起的确定性变更：修订不符返回 409，同键同负载只应用一次。 */
-export function submitStoryChange(
-  workspaceId: string,
-  body: {
-    variant_id: string;
-    expected_revision: string;
-    request_key: string;
-    operations: Record<string, unknown>[];
-    prose_patches?: { path: string; base_digest: string; start: number; end: number; expected: string; replacement: string; delete?: boolean }[];
-    read_dependencies?: { kind: "variant" | "prose" | "constraint" | "module" | "conversation"; id: string; revision: string }[];
-    note?: string;
-  },
-): Promise<StoryReceipt> {
-  return request<StoryReceipt>(`/${workspaceId}/story/changes`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
 }
 
 export function readStoryChange(

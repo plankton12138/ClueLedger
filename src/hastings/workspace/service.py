@@ -48,6 +48,7 @@ from hastings.workspace.glossary import GlossaryStore
 from hastings.workspace.materials import (
     ContextRequest,
     ContextSnapshot,
+    DiscussionFocus,
     IdeaReference,
     MaterialLedger,
     PreparedReference,
@@ -416,6 +417,12 @@ _PROSE_FILE_TARGETS = (
     "该文件",
 )
 _PROSE_VERBS = ("写", "重写", "改写", "续写", "起草", "落笔", "补写", "改稿", "润色")
+#: “不写正文”“不要写这一段”是否定写作要求，不能据此切到候选正文流程。
+_PROSE_NEGATION = re.compile(
+    r"(?:不|不要|不用|无需|不必|别)\s*"
+    r"(?:写|重写|改写|续写|补写|润色|改稿)\s*"
+    r"(?:正文|章节|这一章|这一段|这两段|任何正文)"
+)
 #: “第一章的构思 / 结构”是结构目标；不能因为句首出现“根据构思”就误伤正文请求。
 _STRUCTURE_PHRASE = re.compile(
     r"(?:的\s*(构思|结构|设定|大纲|人物小传)|"
@@ -435,6 +442,8 @@ def _explicit_prose_request(text: str, *, selected_path: str | None = None) -> b
     """
     clean = text.strip()
     if not clean or not any(word in clean for word in _PROSE_VERBS):
+        return False
+    if _PROSE_NEGATION.search(clean):
         return False
     target = bool(_PROSE_TARGET.search(clean))
     if not target and selected_path and managed_kind(selected_path) == "chapter":
@@ -487,8 +496,11 @@ def _context_from_question(snapshot: Mapping[str, Any]) -> ContextRequest:
 
     story_raw = snapshot.get("story")
     story = StoryRequest.from_mapping(story_raw) if isinstance(story_raw, dict) else None
+    focus_raw = snapshot.get("discussion_focus")
+    focus = DiscussionFocus.from_dict(focus_raw) if isinstance(focus_raw, dict) else None
     return ContextRequest(
         story=story,
+        discussion_focus=focus,
         selected_path=str(snapshot.get("selected_path") or "") or None,
         reference_paths=(
             tuple(str(path) for path in raw_paths) if isinstance(raw_paths, list) else ()
@@ -2629,7 +2641,7 @@ class TurnService:
                 )
                 # 受理之后参考文件被改动：这一轮直接失败，不按旧版本继续，也不偷偷换引用。
                 if info.context is not None:
-                    verify_context(self.workspace, info.context)
+                    verify_context(self.workspace, info.context, state_root=self.store.root)
                 story_text, info = self._prepare_story(info)
                 ledger, prepared = self._prepare_materials(info)
                 # RunContext 是工具层能看到的运行上下文；

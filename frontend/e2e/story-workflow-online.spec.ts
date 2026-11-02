@@ -151,19 +151,15 @@ test("创建表单实际保存节点线索并在刷新后显示", async ({ page,
   expect(["localhost", "127.0.0.1", "0.0.0.0"]).not.toContain(new URL(model.base_url).hostname);
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("link", { name: "构思", exact: true }).click();
-  await page.getByRole("region", { name: "构思结构" }).getByRole("button", { name: "创建构思", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "创建构思", exact: true });
-  await expect(dialog).toBeVisible();
-  await dialog.getByLabel("创作要求").fill(
-    "建立一个很小的构思：只有「发现」和「对质」两个事件节点，一条「湿手套」线索。发现时侦探在前台看见滴水的手套，对质时询问管家；两个节点以前后推进连接。真相尚未确定，保持未定。只保存这些节点、线索和连接。",
+  await page.getByRole("region", { name: "构思结构" }).getByRole("button", { name: "在对话里创建构思", exact: true }).click();
+  await page.locator(".chat-input").fill(
+    "创建构思：\n建立一个很小的构思：只有「发现」和「对质」两个事件节点，一条「湿手套」线索。发现时侦探在前台看见滴水的手套，对质时询问管家；两个节点以前后推进连接。真相尚未确定，保持未定。只保存这些节点、线索和连接。",
   );
   await page.screenshot({ path: info.outputPath("creation-form.png") });
-  const accepted = await accept(page, () => dialog.getByRole("button", { name: "创建构思", exact: true }).click());
-  await expect(dialog).not.toBeVisible();
+  const accepted = await accept(page, () => page.getByRole("button", { name: "发送", exact: true }).click());
   const rows = await finish(request, book.id, accepted);
   const turn = rows.filter(row => row.turn_id === accepted.turn_id);
   expect(turn.find(row => row.type === "task_intent")?.kind).toBe("structure");
-  expect(turn.find(row => row.type === "task_intent")?.action).toBe("create");
   expect(turn.some(row => row.type === "module_changes_applied")).toBe(false);
   expect(turn.some(row => row.type === "story_changes_committed")).toBe(true);
   const graph = await request.get(`${base}/story/variants/main`).then(r => r.json());
@@ -274,12 +270,11 @@ test("已有正文归纳结构，并在局部修改中只动选中节点", async
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("link", { name: "构思", exact: true }).click();
   const surface = page.getByRole("region", { name: "构思结构" });
-  await surface.getByRole("button", { name: "创建构思", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "创建构思", exact: true });
-  await dialog.getByLabel("创作要求").fill(
-    `先读取 ${chapterPath} 的实际内容，再建立一份很小的构思：两个节点「抵达」和「对质」，一条线索「湿手套」。只归纳正文已经发生的事实，计划部分另写；作者真相未定。不要补造没有写到的章节，也不要写正文。`,
+  await surface.getByRole("button", { name: "在对话里创建构思", exact: true }).click();
+  await page.locator(".chat-input").fill(
+    `创建构思：\n先读取 ${chapterPath} 的实际内容，再建立一份很小的构思：两个节点「抵达」和「对质」，一条线索「湿手套」。只归纳正文已经发生的事实，计划部分另写；作者真相未定。不要补造没有写到的章节，也不要写正文。`,
   );
-  const accepted = await accept(page, () => dialog.getByRole("button", { name: "创建构思", exact: true }).click());
+  const accepted = await accept(page, () => page.getByRole("button", { name: "发送", exact: true }).click());
   await finish(request, book.id, accepted);
   const graph = await request.get(`${base}/story/variants/main`).then(r => r.json());
   expect(graph.nodes.length).toBeGreaterThanOrEqual(2);
@@ -331,12 +326,11 @@ test("暂停、继续并在重载后恢复构思", async ({ page, request }, inf
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("link", { name: "构思", exact: true }).click();
   const surface = page.getByRole("region", { name: "构思结构" });
-  await surface.getByRole("button", { name: "创建构思", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "创建构思", exact: true });
-  await dialog.getByLabel("创作要求").fill(
-    "建立一个包含 2 个阶段、3 条故事线、8 个关键事件节点的构思；每条线写清目标与阻力，节点写清关键变化，并让三条线在最后一个节点汇合。只保存结构，不写正文，不要询问。",
+  await surface.getByRole("button", { name: "在对话里创建构思", exact: true }).click();
+  await page.locator(".chat-input").fill(
+    "创建构思：\n建立一个包含 2 个阶段、3 条故事线、8 个关键事件节点的构思；每条线写清目标与阻力，节点写清关键变化，并让三条线在最后一个节点汇合。只保存结构，不写正文，不要询问。",
   );
-  const accepted = await accept(page, () => dialog.getByRole("button", { name: "创建构思", exact: true }).click());
+  const accepted = await accept(page, () => page.getByRole("button", { name: "发送", exact: true }).click());
   expect(accepted.operation_id).toBeTruthy();
 
   await request.post(`/api/operations/${accepted.operation_id}/pause`, {

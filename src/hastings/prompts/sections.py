@@ -51,6 +51,9 @@ __all__ = [
     "clues_head",
     "glossary_hidden_note",
     "history_facts_text",
+    "materials_focus_chapter_note",
+    "materials_focus_object_note",
+    "materials_focus_selection_note",
     "materials_full_note",
     "materials_partial_note",
     "materials_selected_note",
@@ -165,6 +168,22 @@ def materials_selected_note(path: str) -> str:
         f"- 当前阅读：`{path}`（只用于解析「这一章」「这里」，"
         "不代表已经读过，也不限制可以改哪些文件）"
     )
+
+
+def materials_focus_object_note(kind: str, object_id: str) -> str:
+    """作者从详情打开讨论时指向的对象；只说明目标，不表示已经读过全文。"""
+    label = "构思节点" if kind == "node" else "线索"
+    return f"- 本轮讨论对象：{label} `{object_id}`（先用读取工具核对当前内容）"
+
+
+def materials_focus_chapter_note(path: str) -> str:
+    """讨论范围是某一章；具体内容仍要按需读取。"""
+    return f"- 本轮讨论范围：本章 `{path}`（范围只用于定位，不代表已经读过）"
+
+
+def materials_focus_selection_note(path: str, start: int, end: int, quote: str) -> str:
+    """作者选中的正文片段：给出码点区间和引文，模型不必自己计算偏移。"""
+    return f"- 本轮讨论选段：`{path}` [{start}, {end})（Unicode 码点，左闭右开）：{quote}"
 
 
 def materials_full_note(length: int) -> str:

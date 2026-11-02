@@ -170,6 +170,27 @@ export interface IdeaReferenceInput {
   revision_id: string;
 }
 
+/** 从详情或正文带入的讨论焦点；只定位材料，写权限仍由本轮文字决定。 */
+export type DiscussionFocusInput =
+  | {
+      kind: "object";
+      object_kind: "node" | "clue";
+      object_id: string;
+      variant_id: string | null;
+      story_revision: string | null;
+      clue_revision?: string;
+      view_revision?: string;
+    }
+  | { kind: "chapter"; path: string; digest: string }
+  | {
+      kind: "selection";
+      path: string;
+      digest: string;
+      start: number;
+      end: number;
+      quote: string;
+    };
+
 /** 本轮带上来的材料：当前阅读位置、显式参考与客户端看到的版本。 */
 export interface ContextInput {
   state_chapter?: number | null;
@@ -188,6 +209,8 @@ export interface ContextInput {
     binding_ids: string[];
     warning_fingerprint: string;
   };
+  /** 作者从详情或正文带入的对象、章节或选段；发送时冻结。 */
+  discussion_focus?: DiscussionFocusInput;
   /** 客户端看到的版本，只对应本次当前路径与参考；不是服务端内容依据。 */
   observed_digests: Record<string, string>;
 }

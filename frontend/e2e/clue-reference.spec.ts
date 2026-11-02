@@ -17,28 +17,34 @@ async function openClueDetail(page: import("@playwright/test").Page, book: { id:
   return page.getByRole("region", { name: "详情" });
 }
 
-test("把线索带进对话只写草稿，刷新后仍在，可移除", async ({ page, book }) => {
+test("线索详情的讨论调整只准备焦点，不写草稿引用", async ({ page, book }) => {
   const pane = await openClueDetail(page, book);
-  await pane.getByRole("button", { name: "带入对话", exact: true }).click();
+  const posts: string[] = [];
+  page.on("request", request => {
+    if (request.method() === "POST" && request.url().includes("/conversations")) {
+      posts.push(request.url());
+    }
+  });
+  await pane.getByRole("button", { name: "讨论调整", exact: true }).click();
 
-  const clues = page.locator('[aria-label="引用线索"]');
-  await expect(clues).toContainText("公开的照片");
-  await expect(page.locator(".chat-input")).toHaveValue("");
-  const shots = resolve("../dev-notes/v1.0/artifacts/s6");
+  await expect(page.locator('[aria-label="本轮讨论焦点"]')).toContainText("线索：公开的照片");
+  await expect(page.locator('.chat-input')).toHaveValue("");
+  expect(posts).toEqual([]);
+  const shots = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v1.0/artifacts/s6");
   mkdirSync(shots, { recursive: true });
   await page.screenshot({ path: join(shots, "clue-reference-1440.png") });
 
+  // 焦点是未发送的引用：刷新后不保留；线索本体不受影响。
   await page.reload();
-  await expect(page.locator('[aria-label="引用线索"]')).toContainText("公开的照片");
-
-  await page.getByRole("button", { name: "移除引用 公开的照片", exact: true }).click();
-  await expect(page.locator('[aria-label="引用线索"]')).toHaveCount(0);
+  await expect(page.locator('[aria-label="本轮讨论焦点"]')).toHaveCount(0);
+  const list = page.getByRole("region", { name: "线索列表" });
+  await expect(list.getByRole("button", { name: /公开的照片/ })).toBeVisible();
 });
 
-test("草稿里的线索引用只保存标识与阅读版本", async ({ page, book, request }) => {
+test("焦点不会被写成本地草稿引用", async ({ page, book, request }) => {
   const pane = await openClueDetail(page, book);
-  await pane.getByRole("button", { name: "带入对话", exact: true }).click();
-  await expect(page.locator('[aria-label="引用线索"]')).toContainText("公开的照片");
+  await pane.getByRole("button", { name: "讨论调整", exact: true }).click();
+  await expect(page.locator('[aria-label="本轮讨论焦点"]')).toContainText("公开的照片");
   await expect
     .poll(async () => {
       const ui = await request
@@ -47,7 +53,7 @@ test("草稿里的线索引用只保存标识与阅读版本", async ({ page, bo
       const references = Object.values(
         ui.draft_contexts as Record<string, { clue_references?: Record<string, unknown>[] }>,
       ).flatMap(context => context.clue_references ?? []);
-      return references[0] ? Object.keys(references[0]).sort() : [];
+      return references.length;
     })
-    .toEqual(["browse_as_of_chapter", "clue_id", "clue_revision", "title", "workspace_lineage"]);
+    .toBe(0);
 });

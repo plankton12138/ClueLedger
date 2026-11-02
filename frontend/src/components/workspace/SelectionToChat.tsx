@@ -7,7 +7,7 @@ import { selectionSourceRange } from "./SourceAnchors";
 
 type Source = Omit<TextReference, "id" | "text">;
 
-export interface MarkSelection {
+export interface ProseSelection {
   text: string;
   range: { start: number; end: number; quote: string } | null;
 }
@@ -16,13 +16,13 @@ export interface MarkSelection {
 export default function SelectionToChat({
   source,
   children,
-  onMark,
+  onDiscuss,
   sourceText = "",
 }: {
   source: Source;
   children: ReactNode;
-  /** 有源码坐标时才提供「标记线索」；没有锚点时只保留加入对话。 */
-  onMark?: (selection: MarkSelection) => void;
+  /** 正文里选中一段后，把它作为本轮讨论焦点；不弹属性表单。 */
+  onDiscuss?: (selection: ProseSelection) => void;
   /** 规范化后的 Markdown 源文本，用于把选区换算成码点区间。 */
   sourceText?: string;
 }) {
@@ -46,7 +46,7 @@ export default function SelectionToChat({
       const text = selected.toString();
       if (!text.trim()) { setSelection(null); return; }
       const rect = range.getBoundingClientRect();
-      const mapped = onMark
+      const mapped = onDiscuss
         ? selectionSourceRange(root.current.querySelector<HTMLElement>(".prose-paper") ?? root.current, sourceText)
         : null;
       setSelection({ text, x: Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 260)),
@@ -69,29 +69,30 @@ export default function SelectionToChat({
       window.removeEventListener("resize", dismiss);
       window.removeEventListener("scroll", dismiss, true);
     };
-  }, [identity, onMark, sourceText]);
+  }, [identity, onDiscuss, sourceText]);
 
   return <div ref={root} data-text-selection-source={source.source}>
     {children}
     {selection && createPortal(<div ref={action} className="selection-actions" role="group" aria-label="选段操作"
       style={{ left: selection.x, top: selection.y }} onMouseDown={event => event.preventDefault()}>
-      <button type="button" className="selection-to-chat"
-        onClick={() => {
-          const added = useConversationsStore.getState().addTextReference({ ...source, id: crypto.randomUUID(), text: selection.text });
-          if (added) {
-            window.getSelection()?.removeAllRanges();
-            setSelection(null);
-          }
-          useLayoutStore.getState().revealChat();
-        }}>添加到对话</button>
-      {onMark && selection.range ? (
+      {onDiscuss && selection.range ? (
         <button type="button" className="selection-to-chat"
           onClick={() => {
-            onMark({ text: selection.text, range: selection.range });
+            onDiscuss({ text: selection.text, range: selection.range });
             window.getSelection()?.removeAllRanges();
             setSelection(null);
-          }}>标记线索</button>
-      ) : null}
+          }}>讨论此段</button>
+      ) : (
+        <button type="button" className="selection-to-chat"
+          onClick={() => {
+            const added = useConversationsStore.getState().addTextReference({ ...source, id: crypto.randomUUID(), text: selection.text });
+            if (added) {
+              window.getSelection()?.removeAllRanges();
+              setSelection(null);
+            }
+            useLayoutStore.getState().revealChat();
+          }}>添加到对话</button>
+      )}
     </div>, document.body)}
   </div>;
 }

@@ -7,7 +7,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   listStoryVariants: vi.fn(),
   readStoryVariant: vi.fn(),
-  submitStoryChange: vi.fn(),
   undoStoryChange: vi.fn(),
 }));
 
@@ -17,7 +16,6 @@ vi.mock("../api/story", async () => {
 });
 
 import { useStoryStore } from "./story";
-import { WorkspaceApiError } from "../api/workspace";
 
 const VARIANT = {
   id: "main",
@@ -99,44 +97,13 @@ describe("构思状态", () => {
     expect(useStoryStore.getState().nodeId).toBeNull();
   });
 
-  it("提交变更用当前修订，成功后按服务端结果重读", async () => {
+  it("结构写入后的失效序号递增，详情按它重读", async () => {
     await useStoryStore.getState().load("w1");
-    api.submitStoryChange.mockResolvedValue({
-      variant_id: "main",
-      base_revision: "rev_1",
-      revision: "rev_2",
-      change_id: "ui_1",
-      request_key: "k1",
-      result: {},
-      changed: ["node:n3"],
-    });
-    api.readStoryVariant.mockResolvedValue({ ...GRAPH, revision: "rev_2" });
+    const before = useStoryStore.getState().invalidation;
 
-    const ok = await useStoryStore.getState().submit(
-      [{ op: "add_node", node: { id: "n3", title: "雪停", action: "雪停了" } }],
-      "加一个节点",
-    );
+    useStoryStore.getState().invalidate();
 
-    expect(ok).toBe(true);
-    expect(api.submitStoryChange).toHaveBeenCalledWith(
-      "w1",
-      expect.objectContaining({ variant_id: "main", expected_revision: "rev_1", note: "加一个节点" }),
-    );
-    expect(useStoryStore.getState().graph?.revision).toBe("rev_2");
-    expect(useStoryStore.getState().lastChange?.change_id).toBe("ui_1");
-  });
-
-  it("修订冲突时保留原图并给出错误", async () => {
-    await useStoryStore.getState().load("w1");
-    api.submitStoryChange.mockRejectedValue(
-      new WorkspaceApiError("STORY_REVISION_CONFLICT", "方案已经更新", "刷新后重试", 409, "story"),
-    );
-
-    const ok = await useStoryStore.getState().submit([{ op: "add_node" }]);
-
-    expect(ok).toBe(false);
-    expect(useStoryStore.getState().graph?.revision).toBe("rev_1");
-    expect(useStoryStore.getState().error).toContain("方案已经更新");
+    expect(useStoryStore.getState().invalidation).toBe(before + 1);
   });
 
   it("撤销上一次改动后清掉可撤销标记", async () => {

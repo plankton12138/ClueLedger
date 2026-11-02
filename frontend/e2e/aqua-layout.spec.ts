@@ -56,7 +56,8 @@ test("Aqua 写作布局、翻页和字号操作保留复古气泡及可达的发
   await expect.poll(() => page.locator(".prose-paper").evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeCloseTo(23.1);
   await page.getByRole("button", { name: "减小字号", exact: true }).click();
   await shot(page, "01-writing-1440");
-  for (const [width, scale] of [[1024, 100], [640, 150], [390, 150]]) {
+  // 720 CSS px 对应 1440 窗口的 200% 浏览器缩放；320 是最窄的支持宽度。
+  for (const [width, scale] of [[1024, 100], [720, 100], [640, 150], [390, 150], [320, 100]]) {
     await page.setViewportSize({ width, height: 900 }); await font(page, scale);
     if (!await page.locator(".chat-input").isVisible()) await page.getByRole("button", { name: "对话", exact: true }).click();
     await expect(page.getByRole("button", { name: "发送", exact: true })).toBeInViewport();
@@ -82,7 +83,7 @@ test("模块列表与预览并列，缩窄和放大字号保留草稿及主操�
   await detail.getByRole("button", { name: "编辑", exact: true }).click();
   const body = detail.getByLabel("模块正文").last();
   await body.fill("缩窄窗口后仍保留这份模块草稿。");
-  for (const [width, scale] of [[1024, 100], [640, 150], [390, 150]]) {
+  for (const [width, scale] of [[1024, 100], [720, 100], [640, 150], [390, 150], [320, 100]]) {
     await page.setViewportSize({ width, height: 900 }); await font(page, scale);
     await expect(browser).toBeHidden();
     await expect(body).toHaveValue("缩窄窗口后仍保留这份模块草稿。");

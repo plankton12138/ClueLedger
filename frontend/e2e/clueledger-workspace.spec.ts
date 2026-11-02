@@ -81,59 +81,49 @@ async function seedNodeWithBinding(page: Page, workspaceId: string, action = "�
   expect(seeded.ok(), await seeded.text()).toBeTruthy();
 }
 
-test("正文选段登记真相线索，刷新后仍显示在同一区间", async ({ page, book }) => {
+test("正文选段只准备讨论焦点，不弹登记表单也不发送", async ({ page, book }) => {
+  const posts: string[] = [];
+  page.on("request", request => {
+    if (request.method() === "POST" && request.url().includes("/conversations")) {
+      posts.push(request.url());
+    }
+  });
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.getByRole("button", { name: "第一章 雨夜", exact: true }).click();
   const body = page.locator(".paper-sheet [data-text-selection-source]");
   await expect(body).toContainText(QUOTE);
   await selectText(body, QUOTE);
-  await page.getByRole("button", { name: "标记线索", exact: true }).click();
+  await page.getByRole("button", { name: "讨论此段", exact: true }).click();
 
-  const panel = page.getByRole("dialog", { name: "登记线索" });
-  await panel.getByLabel("线索名称").fill("雨夜里的抵达");
-  await panel.getByRole("button", { name: "真相线索", exact: true }).click();
-  await panel.getByRole("button", { name: "登记", exact: true }).click();
-  await expect(panel).toHaveCount(0);
-
-  const mark = page.locator(".prose-paper .clue-mark").first();
-  await expect(mark).toBeVisible();
-  await expect(mark).toHaveClass(/truth/);
-  await page.reload();
-  await page.getByRole("button", { name: "第一章 雨夜", exact: true }).click();
-  await expect(page.locator(".prose-paper .clue-mark").first()).toHaveClass(/truth/);
-
-  await page.getByRole("link", { name: "线索", exact: true }).click();
-  const list = page.getByRole("region", { name: "线索列表" });
-  await expect(list.getByRole("button", { name: /雨夜里的抵达/ })).toBeVisible();
-  await expect(list.getByText("真相线索")).toBeVisible();
-  const output = resolve("../data/test-tmp/clueledger-workspace");
-  mkdirSync(output, { recursive: true });
-  await page.screenshot({ path: resolve(output, "clue-page-1440.png") });
+  await expect(page.getByRole("dialog", { name: "登记线索" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "标记线索", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("本轮讨论焦点")).toContainText("选段：侦探抵达港口");
+  expect(posts).toEqual([]);
+  const variants = await page.request.get(`/api/file-workspaces/${book.id}/story/variants`);
+  expect((await variants.json()).variants).toEqual([]);
 });
 
-test("改构思后出现需核对，稍后处理只隐藏提醒", async ({ page, book }) => {
+test("构思详情只读，讨论调整只准备对象焦点", async ({ page, book }) => {
   await seedNodeWithBinding(page, book.id);
-  await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("link", { name: "构思", exact: true }).click();
+  const posts: string[] = [];
+  page.on("request", request => {
+    if (request.method() === "POST" && request.url().includes("/conversations")) {
+      posts.push(request.url());
+    }
+  });
+  await page.goto(`/#/workspaces/${book.id}/writing?mode=story`);
   const surface = page.getByRole("region", { name: "构思结构" });
   await surface.getByRole("button", { name: /发现异样/ }).click();
 
   const detail = page.getByRole("region", { name: "详情" });
-  await expect(detail.getByText("就绪")).toBeVisible();
-  await detail.getByLabel("构思内容").fill("侦探确认有人走过");
-  await detail.getByRole("button", { name: "保存修改", exact: true }).click();
-  await expect(detail.getByText(/需核对/)).toBeVisible();
-  await expect(detail.getByRole("button", { name: "稍后处理", exact: true })).toBeVisible();
+  await expect(detail.getByText("木板没有响")).toBeVisible();
+  await expect(detail.getByRole("textbox")).toHaveCount(0);
+  await expect(detail.getByRole("button", { name: "保存修改", exact: true })).toHaveCount(0);
+  await expect(detail.getByRole("button", { name: "添加关系", exact: true })).toHaveCount(0);
 
-  await detail.getByRole("button", { name: "稍后处理", exact: true }).click();
-  await expect(detail.getByRole("button", { name: "稍后处理", exact: true })).toHaveCount(0);
-  await expect(detail.getByText(/需核对/)).toBeVisible();
-
-  await page.reload();
-  await page.getByRole("link", { name: "构思", exact: true }).click();
-  await page.getByRole("region", { name: "构思结构" }).getByRole("button", { name: /发现异样/ }).click();
-  await expect(detail.getByText(/需核对/)).toBeVisible();
-  await expect(detail.getByRole("button", { name: "稍后处理", exact: true })).toHaveCount(0);
+  await detail.getByRole("button", { name: "讨论调整", exact: true }).click();
+  await expect(page.getByLabel("本轮讨论焦点")).toContainText("构思：发现异样");
+  expect(posts).toEqual([]);
 });
 
 test("线索关系在同一详情区打开，列表与图用同一份数据", async ({ page, book }) => {
@@ -179,11 +169,15 @@ test("线索关系在同一详情区打开，列表与图用同一份数据", as
   await page.goto(`/#/workspaces/${book.id}/writing?mode=clues`);
   const list = page.getByRole("region", { name: "线索列表" });
   await list.getByRole("button", { name: /停住的座钟/ }).click();
+  const detail = page.getByRole("region", { name: "详情" });
+  await expect(detail.getByText("停钟与船票登记时间互相印证")).toBeVisible();
+  await expect(detail.getByRole("button", { name: "添加关系", exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "查看关系图", exact: true }).click();
   const relations = page.getByRole("region", { name: "线索关系" });
   const item = relations.getByRole("button", { name: /支撑.*船票/ });
   await expect(item).toBeVisible();
   await item.click();
-  const detail = page.getByRole("region", { name: "详情" });
   await expect(detail.getByRole("heading", { name: "船票" })).toBeVisible();
-  await expect(detail.getByRole("button", { name: "误导线索" })).toHaveAttribute("aria-pressed", "true");
+  await expect(detail.getByText("误导线索", { exact: true })).toBeVisible();
 });

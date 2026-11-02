@@ -119,9 +119,7 @@ def test_read_story_returns_exact_ids(store: StoryStore, tmp_path: Path) -> None
     assert "author_truth" in payload["note"]
 
 
-def test_update_story_expands_quote_only_binding(
-    store: StoryStore, tmp_path: Path
-) -> None:
+def test_update_story_expands_quote_only_binding(store: StoryStore, tmp_path: Path) -> None:
     book = tmp_path / "book"
     (book / "正文").mkdir(parents=True)
     path = "正文/0001 抵达.md"

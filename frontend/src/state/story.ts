@@ -14,7 +14,6 @@ import {
   readStoryChange,
   readStoryTimeline,
   readStoryVariant,
-  submitStoryChange,
   undoStoryChange,
   type ClueRelations,
   type StoryAttention,
@@ -27,16 +26,6 @@ import { errorMessage } from "../api/errors";
 
 function storyRequestKey(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-}
-
-export interface SelectionMark {
-  path: string;
-  digest: string;
-  quote: string;
-  start: number;
-  end: number;
-  kind: "truth" | "mislead";
-  title: string;
 }
 
 interface StoryState {
@@ -53,20 +42,20 @@ interface StoryState {
   nodeId: string | null;
   clueId: string | null;
   lastChange: StoryChangeRecord | null;
+  /** 结构写入后的失效序号：详情与本章相关据此重读，不依赖页面是否停在构思。 */
+  invalidation: number;
   loading: boolean;
   busy: boolean;
   error: string | null;
 
   load(workspaceId: string): Promise<void>;
+  invalidate(): void;
   refresh(workspaceId: string): Promise<void>;
   reset(): void;
   setOpen(open: boolean): void;
   selectNode(nodeId: string | null): void;
   selectClue(clueId: string | null): void;
   loadRelations(workspaceId: string, focusClueId: string | null): Promise<void>;
-  markSelection(mark: SelectionMark): Promise<boolean>;
-  acknowledge(nodeId: string, fingerprint: string): Promise<boolean>;
-  submit(operations: Record<string, unknown>[], note?: string): Promise<boolean>;
   undo(changeId?: string): Promise<boolean>;
   dismissError(): void;
 }
@@ -97,9 +86,14 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
   nodeId: null,
   clueId: null,
   lastChange: null,
+  invalidation: 0,
   loading: false,
   busy: false,
   error: null,
+
+  invalidate() {
+    set(state => ({ invalidation: state.invalidation + 1 }));
+  },
 
   reset() {
     refreshEpoch += 1;
@@ -239,126 +233,6 @@ export const useStoryStore = create<StoryState>()((set, get) => ({
     } catch (cause) {
       if (get().workspaceId === workspaceId)
         set({ error: errorMessage(cause, "读取线索关系") });
-    }
-  },
-
-  async markSelection(mark) {
-    const { workspaceId, variantId, graph } = get();
-    if (!workspaceId) return false;
-    set({ busy: true, error: null });
-    try {
-      const tempId = `new-clue-${Date.now().toString(36)}`;
-      const receipt = await submitStoryChange(workspaceId, {
-        variant_id: variantId ?? "main",
-        expected_revision: graph?.revision ?? "empty",
-        request_key: storyRequestKey("mark-selection"),
-        operations: [
-          { op: "create_clue_identity", temp_id: tempId, title: mark.title },
-          {
-            op: "upsert_clue_plan",
-            clue_id: tempId,
-            plan: { kind: mark.kind, author_truth: null, intention: "", resolution_intent: "undecided" },
-          },
-          {
-            op: "bind_prose",
-            binding: {
-              id: `binding-${Date.now().toString(36)}`,
-              clue_id: tempId,
-              node_id: null,
-              document_id: "",
-              path: mark.path,
-              digest: mark.digest,
-              start: mark.start,
-              end: mark.end,
-              quote: mark.quote,
-            },
-          },
-        ],
-        note: mark.kind === "truth" ? "作者把选段标记为真相线索" : "作者把选段标记为误导线索",
-      });
-      // 首次标记会建立空主方案，重读一次拿到新修订与线索身份。
-      const nextVariantId = receipt.variant_id || variantId;
-      const list = await listStoryVariants(workspaceId);
-      const projections = nextVariantId
-        ? await readProjections(workspaceId, nextVariantId)
-        : { graph: null, attention: null, timeline: null };
-      if (get().workspaceId !== workspaceId) return false;
-      set({
-        variants: list.variants,
-        primaryId: list.primary_variant_id,
-        variantId: nextVariantId,
-        graph: projections.graph,
-        attention: projections.attention,
-        timeline: projections.timeline,
-        busy: false,
-      });
-      return true;
-    } catch (error) {
-      set({ busy: false, error: errorMessage(error, "标记选段") });
-      return false;
-    }
-  },
-
-  async acknowledge(nodeId, fingerprint) {
-    const { workspaceId, variantId, graph } = get();
-    if (!workspaceId || !variantId || !graph) return false;
-    set({ busy: true, error: null });
-    try {
-      await submitStoryChange(workspaceId, {
-        variant_id: variantId,
-        expected_revision: graph.revision,
-        request_key: storyRequestKey("acknowledge"),
-        operations: [{ op: "acknowledge_attention", node_id: nodeId, fingerprint }],
-        note: "作者选择稍后处理这条提醒",
-      });
-      const projections = await readProjections(workspaceId, variantId);
-      if (get().workspaceId !== workspaceId) return false;
-      set({ graph: projections.graph, attention: projections.attention, timeline: projections.timeline, busy: false });
-      return true;
-    } catch (error) {
-      set({ busy: false, error: errorMessage(error, "稍后处理") });
-      return false;
-    }
-  },
-
-  async submit(operations, note = "") {
-    const { workspaceId, variantId, graph } = get();
-    if (!workspaceId || !variantId || !graph) return false;
-    set({ busy: true, error: null });
-    try {
-      const receipt = await submitStoryChange(workspaceId, {
-        variant_id: variantId,
-        expected_revision: graph.revision,
-        request_key: storyRequestKey("story-change"),
-        operations,
-        note,
-      });
-      const [list, projections] = await Promise.all([
-        listStoryVariants(workspaceId),
-        readProjections(workspaceId, variantId),
-      ]);
-      if (get().workspaceId !== workspaceId) return false;
-      set({
-        graph: projections.graph,
-        attention: projections.attention,
-        timeline: projections.timeline,
-        variants: list.variants,
-        lastChange: {
-          change_id: receipt.change_id,
-          variant_id: receipt.variant_id,
-          base_revision: receipt.base_revision,
-          revision: receipt.revision,
-          created_at: "",
-          operations,
-          changed: receipt.changed,
-          undone_by: null,
-        },
-        busy: false,
-      });
-      return true;
-    } catch (error) {
-      set({ busy: false, error: errorMessage(error, "保存构思") });
-      return false;
     }
   },
 

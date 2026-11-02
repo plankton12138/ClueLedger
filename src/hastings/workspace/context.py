@@ -30,6 +30,9 @@ from hastings.prompts.sections import (
     catalog_truncated_note,
     catalog_warning_note,
     history_facts_text,
+    materials_focus_chapter_note,
+    materials_focus_object_note,
+    materials_focus_selection_note,
     materials_full_note,
     materials_partial_note,
     materials_selected_note,
@@ -258,6 +261,16 @@ def materials_section(
     lines: list[str] = []
     if snapshot is not None and snapshot.selected_path:
         lines.append(materials_selected_note(snapshot.selected_path))
+    focus = snapshot.discussion_focus if snapshot is not None else None
+    if focus is not None:
+        if focus.kind == "object" and focus.object_kind:
+            lines.append(materials_focus_object_note(focus.object_kind, focus.object_id))
+        elif focus.kind == "chapter":
+            lines.append(materials_focus_chapter_note(focus.path))
+        elif focus.kind == "selection" and focus.start is not None and focus.end is not None:
+            lines.append(
+                materials_focus_selection_note(focus.path, focus.start, focus.end, focus.quote)
+            )
     if summaries:
         lines.append(MATERIALS_LIST_HEAD)
         for item in summaries:
