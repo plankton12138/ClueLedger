@@ -10,7 +10,7 @@ import type { ModuleInfo } from "../../api/moduleLibrary";
 import { Button } from "../ui/Button";
 import { AppDialog } from "../ui/AppDialog";
 import { EmptyState, StatusMessage } from "../ui/StatusMessage";
-import WorkspaceToc from "../workspace/WorkspaceToc";
+import WorkspaceFileTree from "../workspace/WorkspaceFileTree";
 import LibraryBrowser from "./LibraryBrowser";
 import ModulePreview from "./ModulePreview";
 import ModuleEditor from "./ModuleEditor";
@@ -51,7 +51,7 @@ export default function ModuleLibraryPage({onClose}:{onClose:()=>void}) {
     if(binding){useWorkspaceModulesStore.getState().select(workspaceId,binding.id);navigate({kind:"writing",workspaceId});}
   }
   return <div className="library-page module-library-page" ref={root} data-narrow={narrow} role="region" aria-label="模块库" hidden={!store.open}>
-    {store.open&&store.workspaceId&&<aside className="library-workspace-sidebar module"><WorkspaceToc onChoose={()=>{if(store.workspaceId)navigate({kind:"writing",workspaceId:store.workspaceId});}}/></aside>}
+    {store.open&&store.workspaceId&&<aside className="library-workspace-sidebar module"><WorkspaceFileTree onChoose={()=>{if(store.workspaceId)navigate({kind:"writing",workspaceId:store.workspaceId});}}/></aside>}
     <div className="library-frame">
       <header className="library-header"><Button size="compact" onClick={onClose}><ArrowLeft size={16} aria-hidden="true" />返回写作</Button><h1>{creating?"新建模块":"模块库"}</h1><div className="library-header-actions">
         {!creating&&<Button variant="primary" size="compact" onClick={()=>setCreating(true)}>新建模块</Button>}

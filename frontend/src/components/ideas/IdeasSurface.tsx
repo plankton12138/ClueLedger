@@ -32,9 +32,7 @@ export default function IdeasSurface() {
   const floating = useIdeasPosition(frame, open, workspaceId);
   const writingTarget = (id: string): WorkspacePage => {
     const last = usePagePositions.getState().pages[id]?.writing;
-    return last?.kind === "writing" && last.mode === "story"
-      ? { kind: "writing", workspaceId: id, mode: "story" }
-      : { kind: "writing", workspaceId: id };
+    return last?.kind === "writing" ? last : { kind: "writing", workspaceId: id };
   };
 
   const close = useCallback(() => {

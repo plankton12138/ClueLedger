@@ -25,7 +25,7 @@ from contextlib import AbstractContextManager, nullcontext, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from pydantic import JsonValue, ValidationError
@@ -64,6 +64,13 @@ __all__ = [
 #: 还没写过任何结构时的修订号；只用于「新建作品第一次提交」，不写进文件。
 EMPTY_REVISION = "empty"
 MAIN_VARIANT_ID = "main"
+
+
+def _validate_format_version(value: int) -> int:
+    if value not in (2, 3):
+        raise ValueError("构思格式版本只能是 2 或 3")
+    return value
+
 
 _MAX_LOG_TAIL = 2_000_000
 
@@ -118,15 +125,20 @@ class StoryStore:
         *,
         library: ModuleLibrary | None = None,
         conversation_seq: Callable[[str], str | None] | None = None,
+        format_version: int = 2,
     ) -> None:
         """``root`` 是作品状态目录，与 ``workspace_state_root`` 一致。
 
         ``library`` 与 ``conversation_seq`` 只用于核对读取依赖：模块是否仍存在、
         会话当前事件序号。没有提供时，相应的依赖无法核对，按冲突拒绝。
+
+        ``format_version`` 只在新文档第一次创建时使用；读取已有文档时以文件里的版本为准。
+        新作品由写作服务显式传入 3，旧作品保持 2。
         """
         self.workspace = workspace
         self.library = library
         self.conversation_seq = conversation_seq
+        self.format_version = _validate_format_version(format_version)
         self.root = Path(root)
         self.dir = self.root / "story"
         self.file = self.dir / "story.json"
@@ -160,6 +172,13 @@ class StoryStore:
                 details={"variant_id": variant_id},
             )
         return variant
+
+    def receipt_for(self, request_key: str) -> StoryReceipt | None:
+        """按请求键取已提交收据；供正文保存这类「同一草稿重试」复用结果。"""
+        snapshot = self.read()
+        if snapshot.document is None:
+            return None
+        return snapshot.document.requests.get(request_key)
 
     # -- 写入 ---------------------------------------------------------------
 
@@ -219,7 +238,7 @@ class StoryStore:
             if document is None:
                 if variant_id != MAIN_VARIANT_ID:
                     raise _variant_missing(variant_id)
-                document = _new_document()
+                document = _new_document(self.format_version)
                 created = True
             elif change.id in document.changes:
                 raise WorkspaceError(
@@ -286,9 +305,14 @@ class StoryStore:
             variant = StoryVariant(
                 id=new_id("variant"),
                 name=name,
+                format_version=source.format_version,
                 base_variant_id=source.id,
                 base_revision=source.revision,
                 revision=new_id("rev"),
+                book_intent=source.book_intent,
+                chapter_plans=dict(source.chapter_plans),
+                information_threads=dict(source.information_threads),
+                information_moves=dict(source.information_moves),
                 stages=dict(source.stages),
                 nodes=dict(source.nodes),
                 clue_plans=dict(source.clue_plans),
@@ -823,7 +847,9 @@ class StoryStore:
         except WorkspaceError as exc:
             if exc.code != "FILE_NOT_FOUND":
                 raise
-            self.workspace.check_write_intent(path, expected_digest=None)
+            # 联合提交由上游的开始/保存事务授权；这里只核对文件意图，不能再次套用
+            # 章节门槛，否则「确认构思并创建首个正文」的同一笔事务会被自己拦住。
+            self.workspace.check_write_intent(path, expected_digest=None, allow_unplanned=True)
             return "absent", "", None
 
     def _relocate(
@@ -1047,10 +1073,13 @@ class StoryStore:
                 if row["after"] == "absent":
                     self.workspace.delete(row["path"], expected_digest=row["before"])
                 else:
+                    # 这笔提交已经由上游的开始/保存事务授权；文件层不能再读故事状态，
+                    # 否则会在持有故事锁时重入并死锁。
                     self.workspace.write(
                         row["path"],
                         row["text"],
                         expected_digest=None if row["before"] == "absent" else row["before"],
+                        allow_unplanned=True,
                     )
                 continue
             copy = self._prose_copy(variant_id, row["path"])
@@ -1178,10 +1207,11 @@ class StoryStore:
         return prior
 
 
-def _new_document() -> StoryDocument:
+def _new_document(format_version: int = 2) -> StoryDocument:
     variant = StoryVariant(
         id=MAIN_VARIANT_ID,
         name="主方案",
+        format_version=cast(Any, format_version),
         revision=new_id("rev"),
     )
     return StoryDocument(

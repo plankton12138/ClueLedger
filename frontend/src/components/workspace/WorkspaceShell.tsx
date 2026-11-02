@@ -65,8 +65,7 @@ export default function WorkspaceShell() {
   useEffect(() => {
     if (!ready || !currentId || page?.kind !== "writing" || page.workspaceId !== currentId) return;
     if (!page.sourceId) {
-      // 构思里的正文关联用本地区间定位，没有服务端 evidence id；保留它并显示「返回构思」。
-      if (!useSourceLocationStore.getState().storyReturn) useSourceLocationStore.getState().clear();
+      useSourceLocationStore.getState().clear();
       return;
     }
     const taskChapter = page.taskChapter ?? sourceTaskChapter(currentId) ?? useWorkspaceStore.getState().file?.chapter_number ?? 0;
@@ -92,9 +91,7 @@ export default function WorkspaceShell() {
     surfaceWasOpen.current = false;
     if (page?.kind === "ideas" && currentId) {
       const last = usePagePositions.getState().pages[currentId]?.writing;
-      const target: WorkspacePage = last?.kind === "writing" && last.mode === "story"
-        ? { kind: "writing", workspaceId: currentId, mode: "story" }
-        : { kind: "writing", workspaceId: currentId };
+      const target: WorkspacePage = last?.kind === "writing" ? last : { kind: "writing", workspaceId: currentId };
       navigate(target, true);
     }
   }, [surfaceOpen, page, currentId]);

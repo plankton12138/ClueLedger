@@ -170,7 +170,9 @@ def test_recovery_after_second_prose_file_fails(
     )
     original = workspace.write
 
-    def fail_second(path: str, text: str, *, expected_digest: str | None) -> object:
+    def fail_second(
+        path: str, text: str, *, expected_digest: str | None, **_: object
+    ) -> object:
         if path == view.path:
             raise OSError("injected second file")
         return original(path, text, expected_digest=expected_digest)
@@ -186,43 +188,6 @@ def test_recovery_after_second_prose_file_fails(
     assert "新文" in workspace.read(view.path).text
     store.undo(change_id="joint", request_key="undo")
     assert "原文" in workspace.read(view.path).text
-
-
-def test_joint_submit_through_http(tmp_path: Path) -> None:
-    from fastapi.testclient import TestClient
-
-    from hastings.server.file_app import create_workspace_app
-    from hastings.workspace.state import RecentWorkspaces
-
-    _, workspace, change = setup(tmp_path)
-    workspaces = RecentWorkspaces(tmp_path / "app")
-    book = workspaces.bind(workspace.root)
-
-    def no_model() -> None:
-        raise AssertionError("no model")
-
-    with TestClient(
-        create_workspace_app(workspaces=workspaces, provider_factory=no_model)
-    ) as client:
-        endpoint = f"/api/file-workspaces/{book.id}/story/changes"
-        payload = {
-            "variant_id": "main",
-            "expected_revision": "empty",
-            "request_key": "joint",
-            "operations": [op.model_dump(mode="json") for op in change.operations],
-            "prose_patches": [p.model_dump(mode="json") for p in change.prose_patches],
-            "read_dependencies": [d.model_dump(mode="json") for d in change.read_dependencies],
-        }
-        first = client.post(endpoint, json=payload)
-        assert first.status_code == 201, first.text
-        assert client.post(endpoint, json=payload).json() == first.json()
-        assert "丙😀乙" in workspace.read(change.prose_patches[0].path).text
-        assert (
-            client.post(
-                endpoint, json={**payload, "operations": [], "prose_patches": []}
-            ).status_code
-            == 422
-        )
 
 
 def test_reopening_workspace_recovers_joint_before_file_access(

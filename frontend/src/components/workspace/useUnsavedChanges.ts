@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useModuleEditorStore, draftDirty } from "../../state/moduleEditor";
 import { draftDirty as ideaDraftDirty, useIdeasStore } from "../../state/ideas";
 import { useWorkspaceModulesStore, workspaceModuleDirty } from "../../state/workspaceModules";
+import { useWritingStore } from "../../state/writing";
 
 /** 不持久化原文；页面卸载前提醒本次会话中尚未保存的输入。 */
 export function hasUnsavedChanges(): boolean {
@@ -16,6 +17,7 @@ export function hasUnsavedChanges(): boolean {
     Object.values(modules.drafts).some(draftDirty) ||
     Object.values(useWorkspaceModulesStore.getState().drafts).some(workspaceModuleDirty) ||
     Object.values(modules.newDrafts).some(draft => Boolean(draft.name || draft.title || draft.body)) ||
+    Object.values(useWritingStore.getState().drafts).some(draft => draft.dirty) ||
     ideaDirty
   );
 }

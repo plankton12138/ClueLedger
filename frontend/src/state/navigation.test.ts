@@ -1,4 +1,4 @@
-/** 页面位置解析：只保留写作与灵感两页；故事资料页已移除。 */
+/** 页面位置解析：写作页保存全书、章节、正文与信息项；旧页面模式只做重定向。 */
 
 import { describe, expect, it } from "vitest";
 
@@ -10,24 +10,36 @@ describe("parseHash", () => {
     for (const page of pages) expect(parseHash(pageHash(page))).toEqual(page);
     for (const hash of ["#/library/modules/%ZZ", "#/library/modules/../revisions/x", "#/library?workspace=C:/books", "#/library/modules/mod_1/extra"]) expect(parseHash(hash)).toBeNull();
   });
-  it("解析写作页与灵感页", () => {
-    expect(parseHash("#/workspaces/ws1/writing")).toEqual({
+
+  it("写作页保存全书、章节与只读正文", () => {
+    expect(parseHash("#/workspaces/ws1/writing")).toEqual({ kind: "writing", workspaceId: "ws1" });
+    expect(parseHash("#/workspaces/ws1/writing?chapter=ch_1")).toEqual({
       kind: "writing",
       workspaceId: "ws1",
+      chapterId: "ch_1",
     });
-    expect(parseHash("#/workspaces/ws1/writing?mode=story")).toEqual({
+    expect(parseHash("#/workspaces/ws1/writing?chapter=ch_1&information=move_1")).toEqual({
       kind: "writing",
       workspaceId: "ws1",
-      mode: "story",
+      chapterId: "ch_1",
+      informationId: "move_1",
     });
+    expect(parseHash(`#/workspaces/ws1/writing?prose=${encodeURIComponent("双线/0001 暴雨.md")}`)).toEqual({
+      kind: "writing",
+      workspaceId: "ws1",
+      prosePath: "双线/0001 暴雨.md",
+    });
+    expect(parseHash("#/workspaces/ws1/writing?chapter=ch_1&prose=0001.md")).toBeNull();
+    expect(parseHash("#/workspaces/ws1/writing?information=move_1")).toBeNull();
+    expect(parseHash("#/workspaces/ws1/writing?prose=..%2Fsecret.md")).toBeNull();
+    expect(parseHash("#/workspaces/ws1/writing?prose=C%3A%5Csecret.md")).toBeNull();
+  });
+
+  it("旧构思、线索与本章模式重定向到统一写作页", () => {
+    for (const mode of ["story", "clues", "chapter"]) {
+      expect(parseHash(`#/workspaces/ws1/writing?mode=${mode}`)).toEqual({ kind: "writing", workspaceId: "ws1" });
+    }
     expect(parseHash("#/workspaces/ws1/writing?mode=design")).toBeNull();
-    expect(parseHash("#/workspaces/ws1/writing?mode=chapter")).toEqual({
-      kind: "writing",
-      workspaceId: "ws1",
-      mode: "chapter",
-    });
-    // 同一辅助区只允许一种对象。
-    expect(parseHash("#/workspaces/ws1/writing?node=n1&clue=c1")).toBeNull();
     expect(parseHash("#/workspaces/ws1/ideas?entry=idea_123")).toEqual({
       kind: "ideas",
       workspaceId: "ws1",
@@ -60,23 +72,27 @@ describe("parseHash", () => {
 });
 
 describe("pageHash", () => {
-  it("source routes carry safe IDs and independent chapter values", () => {
+  it("来源定位携带安全标识与章节数值", () => {
     const sourceId = `ev_${"a".repeat(20)}_${"b".repeat(32)}`;
-    const page: AppPage = { kind: "writing", workspaceId: "ws1", sourceId, clueId: "clue_one", asOfChapter: 6, taskChapter: 4 };
+    const page: AppPage = { kind: "writing", workspaceId: "ws1", chapterId: "ch_1", informationId: "move_1", sourceId, asOfChapter: 6, taskChapter: 4 };
     expect(parseHash(pageHash(page))).toEqual(page);
-    for (const query of ["source=../secret", "source=C:/secret", "as_of=-1", "as_of=1.2", "task_chapter=Infinity", "task_chapter=9007199254740992", "clue=../../x"]) {
+    for (const query of ["source=../secret", "source=C:/secret", "as_of=-1", "as_of=1.2", "task_chapter=Infinity", "task_chapter=9007199254740992", "chapter=../../x", "information=../x"]) {
       expect(parseHash(`#/workspaces/ws1/writing?${query}`)).toBeNull();
     }
   });
-  it("往返一致", () => {
+
+  it("往返一致且不再写出旧模式", () => {
     const pages = [
       { kind: "writing" as const, workspaceId: "ws1" },
-      { kind: "writing" as const, workspaceId: "ws1", mode: "story" as const },
+      { kind: "writing" as const, workspaceId: "ws1", chapterId: "ch_1" },
+      { kind: "writing" as const, workspaceId: "ws1", chapterId: "ch_1", informationId: "move_1" },
+      { kind: "writing" as const, workspaceId: "ws1", prosePath: "正文/0001 暴雨.md" },
       { kind: "ideas" as const, workspaceId: "ws1" },
       { kind: "ideas" as const, workspaceId: "ws1", ideaId: "idea_123" },
     ];
     for (const page of pages) {
       expect(parseHash(pageHash(page))).toEqual(page);
     }
+    expect(pageHash({ kind: "writing", workspaceId: "ws1" })).not.toContain("mode=");
   });
 });

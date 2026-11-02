@@ -40,6 +40,7 @@ import { registerModuleChanges, registerRunFinished, useConversationsStore } fro
 import { useWorkspaceModulesStore } from "./workspaceModules";
 import { useModuleLibraryStore } from "./moduleLibrary";
 import { usePagePositions } from "./pagePositions";
+import { useWritingStore } from "./writing";
 
 const EMPTY_CATALOG: Catalog = { chapters: [], characters: [], settings: [] };
 
@@ -526,6 +527,9 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
 registerRunFinished(() => {
   void useWorkspaceStore.getState().refreshAll();
   void useWorkspaceStore.getState().refreshGit();
+  // 构思与正文也可能被这一轮改动；工作台按当前选择重读，不用前端拼接结果。
+  const writing = useWritingStore.getState();
+  if (writing.workspaceId) void writing.refresh();
 });
 
 registerModuleChanges((workspaceId, event) => {

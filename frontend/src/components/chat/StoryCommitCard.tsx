@@ -10,7 +10,7 @@ import { ChevronDown, Undo2 } from "lucide-react";
 
 import { readStoryChange, undoStoryChange } from "../../api/story";
 import { errorMessage } from "../../api/errors";
-import { useStoryStore } from "../../state/story";
+import { useWritingStore } from "../../state/writing";
 import type { TurnStoryCommit } from "../../state/chatMessages";
 
 function operationLabel(operation: Record<string, unknown>): string {
@@ -73,9 +73,8 @@ function CommitRow({
         `story-undo-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
       );
       setUndone(true);
-      const story = useStoryStore.getState();
-      story.invalidate();
-      if (story.workspaceId === workspaceId) await story.refresh(workspaceId);
+      const writing = useWritingStore.getState();
+      if (writing.workspaceId === workspaceId) void writing.refresh();
     } catch (cause) {
       setError(errorMessage(cause, "撤销这次调整"));
     } finally {

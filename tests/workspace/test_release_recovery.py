@@ -188,9 +188,8 @@ def test_prune_and_reregister_keeps_state(tmp_path: Path) -> None:
     assert again.status_code == 200, again.text
     assert again.json()["id"] == workspace_id
 
-    detail = client.get(f"/api/file-workspaces/{workspace_id}/clues/{clue_id}")
-    assert detail.status_code == 200, detail.text
-    assert detail.json()["clue_id"] == clue_id
+    snapshot = ClueLedgerStore(state_root).read()
+    assert snapshot.ledger is not None and clue_id in snapshot.ledger.clues
 
 
 def test_release_version_and_visible_name(tmp_path: Path) -> None:

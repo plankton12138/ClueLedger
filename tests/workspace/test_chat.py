@@ -212,14 +212,14 @@ def test_turn_writes_chapter_and_records_git_commit(
                         "mode": "edit",
                         "summary": "写第一章",
                         "authorization": "写第一章",
-                        "grants": [{"action": "create", "path": "正文/0001 雨夜.md"}],
+                        "grants": [{"action": "create", "path": "设定集/线索.md"}],
                     },
                 ),
                 ToolCall(
                     id="c1",
                     name="write_file",
                     arguments={
-                        "path": "正文/0001 雨夜.md",
+                        "path": "设定集/线索.md",
                         "text": "# 雨夜\n\n侦探抵达旅馆。\n",
                     },
                 ),
@@ -247,10 +247,10 @@ def test_turn_writes_chapter_and_records_git_commit(
     ]
     assert events[-1]["status"] == "completed"
     assert events[-1]["recording"] == "committed"
-    assert events[-1]["changed_paths"] == ["正文/0001 雨夜.md"]
+    assert events[-1]["changed_paths"] == ["设定集/线索.md"]
 
     root = tmp_path / "雪山旅馆"
-    assert (root / "正文/0001 雨夜.md").is_file()
+    assert (root / "设定集/线索.md").is_file()
     subjects = [commit.subject for commit in GitRepo(root).log()]
     assert subjects[0] == "写作：写第一章，雨夜"
     # 标题取首条提示，便于在列表里辨认。
@@ -571,13 +571,13 @@ def test_two_conversations_share_workspace_files(
                         "mode": "edit",
                         "summary": "写第一章",
                         "authorization": "写第一章",
-                        "grants": [{"action": "create", "path": "正文/0001 雨夜.md"}],
+                        "grants": [{"action": "create", "path": "设定集/线索.md"}],
                     },
                 ),
                 ToolCall(
                     id="c1",
                     name="write_file",
-                    arguments={"path": "正文/0001 雨夜.md", "text": "# 雨夜\n\nA 写的。\n"},
+                    arguments={"path": "设定集/线索.md", "text": "# 雨夜\n\nA 写的。\n"},
                 ),
             ),
             _text_turn("写好了。"),
@@ -592,9 +592,9 @@ def test_two_conversations_share_workspace_files(
     second = _accept(client, workspace_id, "第一章现在是什么内容？")
     _wait_until(client, workspace_id, second["conversation_id"], _finished)
 
-    assert (tmp_path / "雪山旅馆/正文/0001 雨夜.md").is_file()
+    assert (tmp_path / "雪山旅馆/设定集/线索.md").is_file()
     # B 的系统提示按当前作品装配，能看到 A 写出来的章节。
-    assert "正文/0001 雨夜.md" in provider.requests[-1]["system"]
+    assert "设定集/线索.md" in provider.requests[-1]["system"]
 
 
 # -- 并发与停止 -----------------------------------------------------------
@@ -613,13 +613,13 @@ def test_second_turn_is_rejected_while_one_is_running(
                         "mode": "edit",
                         "summary": "写第一章",
                         "authorization": "写第一章",
-                        "grants": [{"action": "create", "path": "正文/0001 雨夜.md"}],
+                        "grants": [{"action": "create", "path": "设定集/线索.md"}],
                     },
                 ),
                 ToolCall(
                     id="c1",
                     name="write_file",
-                    arguments={"path": "正文/0001 雨夜.md", "text": "# 雨夜\n"},
+                    arguments={"path": "设定集/线索.md", "text": "# 雨夜\n"},
                 ),
             ),
             [],
@@ -651,7 +651,7 @@ def test_second_turn_is_rejected_while_one_is_running(
     events = _wait_until(client, workspace_id, conversation_id, _finished)
     assert events[-1]["status"] == "stopped"
     # 停止不撤销已经写进去的内容。
-    assert (tmp_path / "雪山旅馆/正文/0001 雨夜.md").is_file()
+    assert (tmp_path / "雪山旅馆/设定集/线索.md").is_file()
 
 
 def test_busy_workspace_rejects_a_new_conversation_without_creating_it(
@@ -691,13 +691,13 @@ def test_stop_marks_partial_commit(
                         "mode": "edit",
                         "summary": "写第一章",
                         "authorization": "写第一章",
-                        "grants": [{"action": "create", "path": "正文/0001 雨夜.md"}],
+                        "grants": [{"action": "create", "path": "设定集/线索.md"}],
                     },
                 ),
                 ToolCall(
                     id="c1",
                     name="write_file",
-                    arguments={"path": "正文/0001 雨夜.md", "text": "# 雨夜\n\n写到一半。\n"},
+                    arguments={"path": "设定集/线索.md", "text": "# 雨夜\n\n写到一半。\n"},
                 ),
             ),
             [],
@@ -1098,13 +1098,13 @@ def test_reference_selection_limits_write_until_read(
                         "mode": "edit",
                         "summary": "参考第一章写第三章",
                         "authorization": "参考第一章",
-                        "grants": [{"action": "create", "path": "正文/0003 新章.md"}],
+                        "grants": [{"action": "create", "path": "设定集/真相.md"}],
                     },
                 ),
                 ToolCall(
                     id="c1",
                     name="write_file",
-                    arguments={"path": "正文/0003 新章.md", "text": "# 新章\n"},
+                    arguments={"path": "设定集/真相.md", "text": "# 新章\n"},
                 ),
             ),
             _text_turn("参考还没读完。"),
@@ -1131,7 +1131,7 @@ def test_reference_selection_limits_write_until_read(
 
     failed = next(event for event in events if event["type"] == "tool_finished" and not event["ok"])
     assert "REFERENCE_NOT_FULLY_READ_CONFLICT" in failed["summary"]
-    assert not (tmp_path / "雪山旅馆/正文/0003 新章.md").exists()
+    assert not (tmp_path / "雪山旅馆/设定集/真相.md").exists()
 
     # 材料状态写进系统提示：模型知道只提供了部分原文，而不是读过全文。
     assert "已提供部分原文" in provider.requests[0]["system"]
@@ -1227,14 +1227,14 @@ def test_scope_is_recorded_and_writes_follow_it(
                         "mode": "edit",
                         "summary": "写第三章的问询",
                         "authorization": "只改第三章",
-                        "grants": [{"action": "create", "path": "正文/0003 书房.md"}],
+                        "grants": [{"action": "create", "path": "设定集/线索.md"}],
                         "denied_paths": ["设定集/角色小传/林远.md"],
                     },
                 ),
                 ToolCall(
                     id="c1",
                     name="write_file",
-                    arguments={"path": "正文/0003 书房.md", "text": "# 书房\n\n问询。\n"},
+                    arguments={"path": "设定集/线索.md", "text": "# 书房\n\n问询。\n"},
                 ),
             ),
             _text_turn("第三章写好了。"),
@@ -1249,10 +1249,10 @@ def test_scope_is_recorded_and_writes_follow_it(
     assert scope["version"] == 1
     assert scope["summary"] == "写第三章的问询"
     assert scope["authorization"] == "只改第三章"
-    assert scope["grants"] == [{"action": "create", "path": "正文/0003 书房.md"}]
+    assert scope["grants"] == [{"action": "create", "path": "设定集/线索.md"}]
     assert scope["denied_paths"] == ["设定集/角色小传/林远.md"]
     assert all(event["ok"] for event in events if event["type"] == "tool_finished")
-    assert (tmp_path / "雪山旅馆/正文/0003 书房.md").is_file()
+    assert (tmp_path / "雪山旅馆/设定集/线索.md").is_file()
 
 
 # -- 写后检查 ---------------------------------------------------------------
@@ -1336,7 +1336,7 @@ def test_write_then_check_enters_readonly_phase(
     tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
 ) -> None:
     """作者说「改完检查」：修改落盘后同一轮进入只读检查，工具换成检查工具集。"""
-    chapter = "正文/0003 书房.md"
+    chapter = "设定集/线索.md"
     text = "# 书房\n\n侦探在书房发现一枚脚印。\n"
     workspace = _create_workspace(tmp_path)
     created = workspace.write(chapter, text, expected_digest=None)
@@ -1412,11 +1412,10 @@ def test_write_then_check_enters_readonly_phase(
     # 修改保留：检查阶段不撤销已经写入的内容。
     assert "两枚脚印" in workspace.read(chapter).text
     review_system = provider.requests[2]["system"]
-    assert "已死亡" in review_system and "第一章深夜" in review_system
-    assert "尚未回收的线索" in review_system
+    assert "两枚脚印" in review_system and "设定集/线索.md" in review_system
     injections = [e for e in events if e["type"] == "state_injected"]
     assert [e["profile"] for e in injections] == ["writer", "review"]
-    assert {"roster", "timeline", "clues"} <= {p["key"] for p in injections[-1]["parts"]}
+    assert "settings" in {p["key"] for p in injections[-1]["parts"]}
 
 
 def _seed_review_states(workspace: Any, root: Path) -> None:

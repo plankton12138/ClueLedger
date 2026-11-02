@@ -2,11 +2,13 @@
  * 主页面位置的 hash 路由。
  *
  * 静态资源托管与桌面入口都没有服务器页面路由，所以页面位置放在 hash 里：
- * `#/workspaces/{id}/writing`、`#/workspaces/{id}/ideas`。
- * 解析器只接受登记过的作品与整数章号；URI 解码失败按无效位置处理，
- * 不把 URL 当成读取本机任意路径的指令。
+ * `#/workspaces/{id}/writing?chapter=…`、`#/workspaces/{id}/ideas`。
+ * 写作页只有一个入口：不带选择时显示全书构思，带 `chapter` 时显示该章，
+ * 带 `prose` 时只读打开正文或设定文件。旧 `mode=story / clues / chapter`
+ * 链接解析成同一页，由上层把地址栏改写成新形式。
  *
- * 故事资料页已移除：旧的 `materials` 链接回落到写作页，不保留兼容页。
+ * 解析器只接受登记过的作品与安全标识；URI 解码失败按无效位置处理，
+ * 不把 URL 当成读取本机任意路径的指令。
  */
 
 import { useMemo, useSyncExternalStore } from "react";
@@ -15,12 +17,14 @@ export type WorkspacePage =
   | {
       kind: "writing";
       workspaceId: string;
-      /** 同一个写作页的三种工作模式；正文不写 mode，构思、线索与本章相关显式写入 URL。 */
-      mode?: "story" | "clues" | "chapter";
+      /** 章节标识；缺省且没有 `prosePath` 时是全书构思。 */
+      chapterId?: string;
+      /** 只读打开的正文或其他文件；与 `chapterId` 互斥。 */
+      prosePath?: string;
+      /** 页边索引中选中的信息项；只能跟章节一起出现。 */
+      informationId?: string;
+      /** 来源定位：账本证据打开时使用。 */
       sourceId?: string;
-      clueId?: string;
-      /** 构思页恢复选中的节点。 */
-      nodeId?: string;
       asOfChapter?: number;
       taskChapter?: number;
     }
@@ -31,6 +35,14 @@ export type AppPage = WorkspacePage | LibraryPage;
 
 const WORKSPACE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const ENTRY_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** 文件路径只允许作品内的相对路径：拒绝绝对路径、盘符与上级目录。 */
+function safePath(value: string): boolean {
+  if (!value || value.length > 512) return false;
+  if (value.startsWith("/") || value.includes("\\") || value.includes("\0")) return false;
+  if (/^[A-Za-z]:/.test(value)) return false;
+  return !value.split("/").some(segment => segment === ".." || segment === ".");
+}
 
 export function parseHash(hash: string): AppPage | null {
   const raw = hash.startsWith("#") ? hash.slice(1) : hash;
@@ -55,22 +67,27 @@ export function parseHash(hash: string): AppPage | null {
   if (!WORKSPACE_ID.test(workspaceId)) return null;
   if (parts[2] === "writing" && parts.length === 3) {
     const params = new URLSearchParams(query);
-    const sourceId = params.get("source"), clueId = params.get("clue");
+    const sourceId = params.get("source");
     const asOf = params.get("as_of"), task = params.get("task_chapter");
+    // 旧模式只用于识别旧链接；不再进入页面状态，地址栏由调用方改写。
     const mode = params.get("mode");
     if (mode !== null && mode !== "story" && mode !== "clues" && mode !== "chapter") return null;
-    const nodeId = params.get("node");
-    if (nodeId !== null && !ENTRY_ID.test(nodeId)) return null;
-    // 同一个辅助区一次只选一种对象：节点与线索不能同时出现。
-    if (nodeId && clueId) return null;
+    const chapterId = params.get("chapter");
+    const prosePath = params.get("prose");
+    const informationId = params.get("information");
+    if (chapterId !== null && !ENTRY_ID.test(chapterId)) return null;
+    if (prosePath !== null && !safePath(prosePath)) return null;
+    if (informationId !== null && !ENTRY_ID.test(informationId)) return null;
+    // 一章或一篇正文只能选一种；信息项只能跟章节一起出现。
+    if (chapterId && prosePath) return null;
+    if (informationId && !chapterId) return null;
     if (sourceId !== null && !/^ev_[a-f0-9]{20}_[a-f0-9]{32}$/.test(sourceId)) return null;
-    if (clueId !== null && !ENTRY_ID.test(clueId)) return null;
     for (const value of [asOf, task]) if (value !== null && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return null;
     const page: WorkspacePage = { kind: "writing", workspaceId };
-    if (mode) page.mode = mode;
+    if (chapterId) page.chapterId = chapterId;
+    if (prosePath) page.prosePath = prosePath;
+    if (informationId) page.informationId = informationId;
     if (sourceId) page.sourceId = sourceId;
-    if (clueId) page.clueId = clueId;
-    if (nodeId) page.nodeId = nodeId;
     if (asOf !== null) page.asOfChapter = Number(asOf);
     if (task !== null) page.taskChapter = Number(task);
     return page;
@@ -96,10 +113,10 @@ export function pageHash(page: AppPage): string {
   }
   if (page.kind === "writing") {
     const params = new URLSearchParams();
-    if (page.mode) params.set("mode", page.mode);
+    if (page.chapterId) params.set("chapter", page.chapterId);
+    else if (page.prosePath) params.set("prose", page.prosePath);
+    if (page.informationId && page.chapterId) params.set("information", page.informationId);
     if (page.sourceId) params.set("source", page.sourceId);
-    if (page.clueId) params.set("clue", page.clueId);
-    if (page.nodeId) params.set("node", page.nodeId);
     if (page.asOfChapter !== undefined) params.set("as_of", String(page.asOfChapter));
     if (page.taskChapter !== undefined) params.set("task_chapter", String(page.taskChapter));
     return `#/workspaces/${page.workspaceId}/writing${params.size ? `?${params}` : ""}`;

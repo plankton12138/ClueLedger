@@ -8,138 +8,39 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field
 
-from hastings.workspace.clue_store import ClueLedgerStore
+from hastings.workspace.chapter_writing import save_chapter_prose, start_chapter
+from hastings.workspace.creative_candidates import CreativeCandidateStore
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.module_assembly import AssemblyStore, ModuleRef
 from hastings.workspace.service_hub import WorkspaceServices
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
-from hastings.workspace.story_bindings import normalize_bindings
-from hastings.workspace.story_chapter_view import ChapterContextView, chapter_context
-from hastings.workspace.story_clue_catalog import StoryClueCatalog
-from hastings.workspace.story_clue_commit import prepare_clue_joint, prepare_clue_undo
-from hastings.workspace.story_constraint_sources import ConstraintSources, source_key
-from hastings.workspace.story_drafts import StoryDraftStore, candidate_data
-from hastings.workspace.story_models import (
-    Constraint,
-    ProsePatch,
-    ReadDependency,
-    StoryChangeSet,
-    StoryNode,
-    StoryVariant,
-    SyncDecision,
+from hastings.workspace.story_clue_commit import prepare_clue_undo
+from hastings.workspace.story_index_jobs import IndexAnalysisService, IndexJobStore
+from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
+from hastings.workspace.writing_actions import (
+    create_chapter_plan,
+    save_book_intent,
+    save_chapter_plan,
 )
-from hastings.workspace.story_mystery import build_mystery_view
-from hastings.workspace.story_prose_marks import ProseMarksView, build_prose_marks
-from hastings.workspace.story_store import StoryStore, new_id
-from hastings.workspace.story_sync import StoryAttentionView, build_attention_view
-from hastings.workspace.story_timeline import StoryTimelineView, build_timeline
+from hastings.workspace.writing_api_models import (
+    BookIntentRequest,
+    ChapterCreateRequest,
+    ChapterPlanRequest,
+    ChapterStartRequest,
+    ProseSaveRequest,
+)
+from hastings.workspace.writing_view import (
+    ModelSupportView,
+    WritingWorkbenchView,
+    build_workbench,
+)
 
 __all__ = ["create_story_router"]
-
-
-class ConfirmDraftConstraints(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    draft_revision: str
-    variant_id: str = "main"
-
-
-class StoryCountsView(BaseModel):
-    stages: int = 0
-    nodes: int = 0
-    clues: int = 0
-    threads: int = 0
-    constraints: int = 0
-    edges: int = 0
-    bindings: int = 0
-
-
-class StoryVariantSummaryView(BaseModel):
-    id: str
-    name: str
-    revision: str
-    primary: bool
-    base_variant_id: str | None = None
-    base_revision: str | None = None
-    counts: StoryCountsView
-
-
-class StoryVariantListView(BaseModel):
-    revision: str
-    primary_variant_id: str
-    variants: list[StoryVariantSummaryView]
-
-
-class StoryNodeView(BaseModel):
-    id: str
-    title: str
-    action: str
-    change: str | None = None
-    stage_id: str | None = None
-    thread_ids: list[str]
-    clue_ids: list[str]
-    primary_thread_id: str | None = None
-    is_convergence: bool = False
-    reveal_order: int | None = None
-    time_note: str
-
-
-class StoryEdgeView(BaseModel):
-    id: str
-    from_id: str
-    to_id: str
-    kind: str
-    reason: str
-
-
-class StoryGraphView(BaseModel):
-    latest_change_id: str | None = None
-    variant_id: str
-    name: str
-    revision: str
-    stages: list[dict[str, Any]]
-    nodes: list[StoryNodeView]
-    edges: list[StoryEdgeView]
-    threads: list[dict[str, Any]]
-    event_times: list[dict[str, str]]
-    constraints: list[dict[str, Any]]
-    collapsed: list[str] = Field(default_factory=list)
-
-
-class StoryMysteryView(BaseModel):
-    variant_id: str
-    revision: str
-    order: list[str]
-    time_status: dict[str, Any]
-    nodes: list[dict[str, Any]]
-    clues: list[dict[str, Any]]
-    subjects: list[dict[str, Any]]
-    diagnostics: list[dict[str, Any]]
-    counts: dict[str, int]
-
-
-class StoryChangeRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    variant_id: str = Field(min_length=1, max_length=64)
-    expected_revision: str = Field(min_length=1, max_length=64)
-    expected_ledger_revision: str = ""
-    request_key: str = Field(min_length=1, max_length=120)
-    operations: list[dict[str, Any]] = Field(default_factory=list)
-    prose_patches: list[ProsePatch] = Field(default_factory=list)
-    read_dependencies: list[ReadDependency] = Field(default_factory=list)
-    note: str = Field(default="", max_length=500)
-    sync: SyncDecision | None = None
-
-    @model_validator(mode="after")
-    def require_changes(self) -> StoryChangeRequest:
-        if not self.operations and not self.prose_patches:
-            raise ValueError("变更没有任何操作")
-        return self
 
 
 class StoryReceiptView(BaseModel):
@@ -164,40 +65,6 @@ class StoryChangeRecordView(BaseModel):
     changed: list[str]
     undone_by: str | None = None
     sync: dict[str, Any] | None = None
-
-
-def _counts(variant: StoryVariant) -> StoryCountsView:
-    return StoryCountsView(
-        stages=len(variant.stages),
-        nodes=len(variant.nodes),
-        clues=len(variant.clue_plans),
-        threads=len(variant.threads),
-        constraints=len(variant.constraints),
-        edges=len(variant.edges),
-        bindings=len(variant.bindings),
-    )
-
-
-def _node_view(variant: StoryVariant, node: StoryNode) -> StoryNodeView:
-    return StoryNodeView(
-        id=node.id,
-        title=node.title,
-        action=node.action,
-        change=node.change,
-        stage_id=node.stage_id,
-        primary_thread_id=node.primary_thread_id,
-        is_convergence=node.is_convergence,
-        reveal_order=node.reveal_order,
-        thread_ids=[item for item in node.thread_ids if item in variant.threads],
-        clue_ids=[use.clue_id for use in node.clue_uses],
-        time_note=node.time_note,
-    )
-
-
-def _edge_view(edge: Any) -> StoryEdgeView:
-    return StoryEdgeView(
-        id=edge.id, from_id=edge.from_id, to_id=edge.to_id, kind=edge.kind, reason=edge.reason
-    )
 
 
 def _receipt_view(receipt: Any, changed: list[str]) -> StoryReceiptView:
@@ -229,7 +96,7 @@ def create_story_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/api/file-workspaces", tags=["story"])
 
-    def store_for(workspace_id: str) -> StoryStore:
+    def store_for(workspace_id: str, *, format_version: int = 2) -> StoryStore:
         workspaces.get(workspace_id)
 
         def conversation_seq(conversation_id: str) -> str | None:
@@ -243,385 +110,8 @@ def create_story_router(
             workspaces.workspace(workspace_id),
             library=hub.library if hub is not None else None,
             conversation_seq=conversation_seq,
+            format_version=format_version,
         )
-
-    def require_variant(store: StoryStore, variant_id: str) -> StoryVariant:
-        snapshot = store.read()
-        variant = snapshot.variant(variant_id)
-        if variant is None or (
-            snapshot.document is not None and variant_id != snapshot.document.primary_variant_id
-        ):
-            raise WorkspaceError(
-                code="STORY_VARIANT_NOT_FOUND",
-                where="story.api",
-                why=f"没有这个方案：{variant_id}",
-                fix="刷新构思后按当前方案重试",
-                details={"variant_id": variant_id},
-            )
-        return variant
-
-    def task_draft(workspace_id: str, operation_id: str, variant_id: str) -> dict[str, Any] | None:
-        workspaces.get(workspace_id)
-        if hub is None:
-            return None
-        operation = hub.service_for(workspace_id).operations.read(operation_id)
-        if operation.workspace_id != workspace_id:
-            raise WorkspaceError(
-                code="STORY_DRAFT_NOT_FOUND",
-                where="story.draft",
-                why="本作品没有这份任务草稿",
-                fix="重新打开当前作品的任务",
-            )
-        return StoryDraftStore(
-            conversation_root(workspaces.root, workspace_id), operation_id, variant_id
-        ).read()
-
-    @router.get("/{workspace_id}/story/drafts/{operation_id}")
-    def read_draft(
-        workspace_id: str, operation_id: str, variant_id: str = "main"
-    ) -> dict[str, Any]:
-        draft = task_draft(workspace_id, operation_id, variant_id)
-        if not draft or draft.get("committed"):
-            return {"draft": None}
-        snapshot = store_for(workspace_id).read()
-        variant = (
-            snapshot.variant(variant_id)
-            if snapshot.document
-            else StoryVariant(id=variant_id, name="构思", revision="empty")
-        )
-        assert variant is not None
-        data = candidate_data(
-            variant,
-            StoryChangeSet(
-                id=draft["change_id"],
-                base_revision=draft["base_revision"],
-                operations=draft["operations"],
-            ),
-        )
-        constraints = [row for row in data["constraints"].values() if row["strength"] == "required"]
-        return {
-            "draft": {
-                "revision": draft["digest"],
-                "constraints": constraints,
-                "operations": len(draft["operations"]),
-            }
-        }
-
-    @router.post("/{workspace_id}/story/drafts/{operation_id}/confirm-constraints")
-    def confirm_draft_constraints(
-        workspace_id: str, operation_id: str, body: ConfirmDraftConstraints
-    ) -> dict[str, Any]:
-        draft = task_draft(workspace_id, operation_id, body.variant_id)
-        if not draft or draft.get("committed") or draft["digest"] != body.draft_revision:
-            raise WorkspaceError(
-                code="STORY_DRAFT_CONFLICT",
-                where="story.draft",
-                why="待确认草稿已变化",
-                fix="刷新列表后核对当前约定",
-            )
-        assert hub is not None
-        operation = hub.service_for(workspace_id).operations.read(operation_id)
-        if operation.status not in ("paused", "awaiting_answer", "needs_attention"):
-            raise WorkspaceError(
-                code="STORY_DRAFT_CONFLICT",
-                where="story.draft",
-                why="任务尚未停下供作者核对",
-                fix="等待任务需要处理后再确认",
-            )
-        root = conversation_root(workspaces.root, workspace_id)
-        store = store_for(workspace_id)
-        snapshot = store.read()
-        variant = snapshot.variant(body.variant_id) if snapshot.document else None
-        revision = variant.revision if variant else "empty"
-        if revision != draft["base_revision"]:
-            raise WorkspaceError(
-                code="STORY_DRAFT_CONFLICT",
-                where="story.draft",
-                why="正式结构已变化",
-                fix="重新核对当前结构，不能确认过期草稿",
-            )
-        current = variant or StoryVariant(id=body.variant_id, name="构思", revision="empty")
-        data = candidate_data(
-            current,
-            StoryChangeSet(
-                id=draft["change_id"],
-                base_revision=draft["base_revision"],
-                operations=draft["operations"],
-            ),
-        )
-        constraints = [
-            Constraint.model_validate(row)
-            for row in data["constraints"].values()
-            if row["strength"] == "required"
-        ]
-        modules = tuple(
-            binding.module
-            for binding in AssemblyStore(workspaces.workspace(workspace_id).root).read().bindings
-        )
-        frozen_modules = tuple(ModuleRef(**row) for row in draft.get("module_refs", []))
-        if any(m not in modules for m in frozen_modules):
-            raise WorkspaceError(
-                code="STORY_SOURCE_CONFLICT",
-                where="story.draft",
-                why="草稿采用的模块版本已不在当前装配中",
-                fix="保留草稿，核对模块变化后重新发起任务",
-            )
-        # 模块来源仍校验原文；无来源条目由作者逐项审阅当前草稿后明确采用。
-        ConstraintSources(root).confirm(
-            [c for c in constraints if c.source_ref is not None], hub.library, frozen_modules
-        )
-        StoryDraftStore(root, operation_id, body.variant_id).confirm_constraints(
-            draft["digest"], [source_key(c) for c in constraints]
-        )
-        return {"confirmed": len(constraints), "draft_revision": draft["digest"]}
-
-    @router.get("/{workspace_id}/story/variants", response_model=StoryVariantListView)
-    def list_variants(workspace_id: str) -> StoryVariantListView:
-        snapshot = store_for(workspace_id).read()
-        document = snapshot.document
-        if document is None:
-            return StoryVariantListView(revision="", primary_variant_id="", variants=[])
-        return StoryVariantListView(
-            revision=document.revision,
-            primary_variant_id=document.primary_variant_id,
-            variants=[
-                StoryVariantSummaryView(
-                    id=variant.id,
-                    name=variant.name,
-                    revision=variant.revision,
-                    primary=variant.id == document.primary_variant_id,
-                    base_variant_id=variant.base_variant_id,
-                    base_revision=variant.base_revision,
-                    counts=_counts(variant),
-                )
-                for variant in document.variants.values()
-                if variant.id == document.primary_variant_id
-            ],
-        )
-
-    @router.get("/{workspace_id}/story/variants/{variant_id}", response_model=StoryGraphView)
-    def read_variant(
-        workspace_id: str,
-        variant_id: str,
-    ) -> StoryGraphView:
-        """图数据：节点与连接；阶段折叠由前端完成，读接口返回完整结构。"""
-        store = store_for(workspace_id)
-        variant = require_variant(store, variant_id)
-        document = store.read().document
-        latest_change = (
-            next(
-                (
-                    record.change_id
-                    for record in document.changes.values()
-                    if record.variant_id == variant.id
-                    and record.revision == variant.revision
-                    and record.undone_by is None
-                ),
-                None,
-            )
-            if document
-            else None
-        )
-        nodes = list(variant.nodes.values())
-        shown = {node.id for node in nodes}
-        return StoryGraphView(
-            latest_change_id=latest_change,
-            variant_id=variant.id,
-            name=variant.name,
-            revision=variant.revision,
-            stages=[
-                {
-                    "id": stage.id,
-                    "title": stage.title,
-                    "order": stage.order,
-                    "summary": stage.summary,
-                }
-                for stage in sorted(variant.stages.values(), key=lambda item: (item.order, item.id))
-            ],
-            nodes=[_node_view(variant, node) for node in sorted(nodes, key=lambda item: item.id)],
-            edges=[
-                _edge_view(edge)
-                for edge in variant.edges.values()
-                if edge.from_id in shown and edge.to_id in shown
-            ],
-            threads=[
-                {
-                    "id": thread.id,
-                    "title": thread.title,
-                    "order": thread.order,
-                    "goal": thread.goal,
-                    "obstacle": thread.obstacle,
-                    "intended_resolution": thread.intended_resolution,
-                }
-                for thread in sorted(
-                    variant.threads.values(), key=lambda item: (item.order, item.id)
-                )
-            ],
-            event_times=[
-                {"before": row.before_node_id, "after": row.after_node_id}
-                for row in variant.event_times
-            ],
-            constraints=[
-                {
-                    "id": constraint.id,
-                    "text": constraint.text,
-                    "strength": constraint.strength,
-                    "scope": {"kind": constraint.scope.kind, "target": constraint.scope.target_id},
-                }
-                for constraint in variant.constraints.values()
-            ],
-            collapsed=[],
-        )
-
-    @router.get(
-        "/{workspace_id}/story/variants/{variant_id}/mystery",
-        response_model=StoryMysteryView,
-    )
-    def read_mystery(workspace_id: str, variant_id: str) -> StoryMysteryView:
-        """悬疑投影：实际时间、线索生命周期、知情与诊断；只读。"""
-        store = store_for(workspace_id)
-        variant = require_variant(store, variant_id)
-        catalog = StoryClueCatalog.from_root(
-            variant, conversation_root(workspaces.root, workspace_id)
-        )
-        return StoryMysteryView(**build_mystery_view(variant, catalog))
-
-    @router.get(
-        "/{workspace_id}/story/variants/{variant_id}/sync",
-        response_model=StoryAttentionView,
-    )
-    def read_sync(
-        workspace_id: str,
-        variant_id: str,
-        chapter_path: str | None = Query(default=None, max_length=512),
-    ) -> StoryAttentionView:
-        """节点的三状态与提醒；语义差异留给作者主动开启的讨论。"""
-        store = store_for(workspace_id)
-        variant = require_variant(store, variant_id)
-        workspace = store.workspace
-        if workspace is None:
-            raise WorkspaceError(
-                code="STORY_ATTENTION_UNAVAILABLE",
-                where="story.sync",
-                why="当前读取没有作品目录，无法核对正文",
-                fix="从作品工作区重新打开构思",
-            )
-        ledger = ClueLedgerStore(store.root).read()
-        return build_attention_view(
-            workspace,
-            variant,
-            chapter_path=chapter_path,
-            ledger_revision=ledger.revision,
-        )
-
-    @router.get("/{workspace_id}/story/variants/{variant_id}/nodes/{node_id}")
-    def read_node(workspace_id: str, variant_id: str, node_id: str) -> dict[str, Any]:
-        """单个节点的完整字段；详情面板编辑时整份提交，不能丢掉没显示的线索用途。"""
-        variant = require_variant(store_for(workspace_id), variant_id)
-        node = variant.nodes.get(node_id)
-        if node is None:
-            raise WorkspaceError(
-                code="STORY_NODE_NOT_FOUND",
-                where="story.node",
-                why=f"找不到节点：{node_id}",
-                fix="刷新构思后重新选择节点",
-                details={"node_id": node_id},
-            )
-        return node.model_dump(mode="json")
-
-    @router.get(
-        "/{workspace_id}/story/variants/{variant_id}/timeline",
-        response_model=StoryTimelineView,
-    )
-    def read_timeline(workspace_id: str, variant_id: str) -> StoryTimelineView:
-        """只读故事时间轴：按披露章节分组的节点与时间位置。"""
-        store = store_for(workspace_id)
-        variant = require_variant(store, variant_id)
-        workspace = store.workspace
-        if workspace is None:
-            raise WorkspaceError(
-                code="STORY_SYNC_UNAVAILABLE",
-                where="story.timeline",
-                why="当前读取没有作品目录，无法核对披露章节",
-                fix="从作品工作区重新打开构思",
-            )
-        ledger = ClueLedgerStore(store.root).read()
-        return build_timeline(workspace, variant, ledger_revision=ledger.revision)
-
-    @router.get(
-        "/{workspace_id}/story/variants/{variant_id}/prose-marks",
-        response_model=ProseMarksView,
-    )
-    def read_prose_marks(
-        workspace_id: str,
-        variant_id: str,
-        chapter_path: str = Query(min_length=1, max_length=512),
-    ) -> ProseMarksView:
-        """正文里的构思出处标记；只从当前绑定生成。"""
-        store = store_for(workspace_id)
-        variant = require_variant(store, variant_id)
-        workspace = store.workspace
-        if workspace is None:
-            raise WorkspaceError(
-                code="STORY_SYNC_UNAVAILABLE",
-                where="prose.marks",
-                why="当前读取没有作品目录，无法核对正文",
-                fix="从作品工作区重新打开构思",
-            )
-        return build_prose_marks(workspace, variant, chapter_path=chapter_path)
-
-    @router.get(
-        "/{workspace_id}/story/chapter-context",
-        response_model=ChapterContextView,
-    )
-    def read_chapter_context(
-        workspace_id: str,
-        chapter_path: str = Query(min_length=1, max_length=512),
-        variant_id: str | None = Query(default=None, max_length=64),
-        cursor: str = Query(default="", max_length=4096),
-        limit: int = Query(default=20, ge=1, le=50),
-    ) -> ChapterContextView:
-        """正文随章视图：本章实际出现、明确计划与失效引用；只读，不调用模型。"""
-        return chapter_context(
-            workspaces.workspace(workspace_id),
-            conversation_root(workspaces.root, workspace_id),
-            chapter_path=chapter_path,
-            variant_id=variant_id,
-            cursor=cursor,
-            limit=limit,
-        )
-
-    @router.post("/{workspace_id}/story/changes", response_model=StoryReceiptView, status_code=201)
-    def submit_change(workspace_id: str, body: StoryChangeRequest) -> StoryReceiptView:
-        """界面发起的确定性结构变更；不接受伪造的授权字段。"""
-        store = store_for(workspace_id)
-        root = conversation_root(workspaces.root, workspace_id)
-        variant = (
-            require_variant(store, body.variant_id) if store.read().document is not None else None
-        )
-        change = StoryChangeSet(
-            id=new_id("ui"),
-            base_revision=body.expected_revision,
-            operations=body.operations,  # type: ignore[arg-type]
-            requested_scope=body.note,
-            prose_patches=body.prose_patches,
-            read_dependencies=body.read_dependencies,
-            sync=body.sync,
-        )
-        # 界面只给引文与选区；区间、摘要与目标由服务端按当前正文重算。
-        change = normalize_bindings(workspaces.workspace(workspace_id), variant, change)
-        receipt = store.commit_change(
-            variant_id=body.variant_id,
-            change=change,
-            request_key=body.request_key,
-            prepare_joint=prepare_clue_joint(
-                root,
-                variant_id=body.variant_id,
-                change=change,
-                expected_ledger_revision=body.expected_ledger_revision,
-            ),
-        )
-        return _receipt_view(receipt, _changed_ids(store, receipt.change_id))
 
     @router.get("/{workspace_id}/story/changes/{change_id}", response_model=StoryChangeRecordView)
     def read_change(workspace_id: str, change_id: str) -> StoryChangeRecordView:
@@ -680,5 +170,220 @@ def create_story_router(
             ),
         )
         return _receipt_view(receipt, _changed_ids(store, receipt.change_id))
+
+    def writing_store_for(workspace_id: str) -> StoryStore:
+        """当前写作格式的存储入口；新作品第一次提交会写入格式 3。"""
+        return store_for(workspace_id, format_version=3)
+
+    @router.get("/{workspace_id}/story/workbench", response_model=WritingWorkbenchView)
+    async def read_workbench(
+        workspace_id: str,
+        chapter_id: str | None = Query(default=None, max_length=64),
+        prose_path: str | None = Query(default=None, max_length=512),
+    ) -> WritingWorkbenchView:
+        store = writing_store_for(workspace_id)
+        workspace = workspaces.workspace(workspace_id)
+        variant = store.read().variant(MAIN_VARIANT_ID)
+        jobs = IndexJobStore(conversation_root(workspaces.root, workspace_id))
+        support = ModelSupportView(
+            available=False, disabled_reason="当前没有可用模型", supported_assists=[]
+        )
+        if hub is not None:
+            try:
+                snapshot = hub.provider_factory()
+            except Exception:
+                snapshot = None
+            else:
+                await snapshot.aclose()
+                support = ModelSupportView(
+                    available=True,
+                    disabled_reason=None,
+                    supported_assists=[
+                        "book_intent",
+                        "chapter_plan",
+                        "title",
+                        "prose_draft",
+                        "prose_continue",
+                        "alignment_resolution",
+                        "idea",
+                        "module_content",
+                        "next_action",
+                    ],
+                )
+        return build_workbench(
+            workspace,
+            variant,
+            workspace_id=workspace_id,
+            chapter_id=chapter_id,
+            prose_path=prose_path,
+            model_support=support,
+            index_jobs=jobs,
+        )
+
+    @router.put("/{workspace_id}/story/book-intent")
+    def put_book_intent(workspace_id: str, body: BookIntentRequest) -> dict[str, Any]:
+        store = writing_store_for(workspace_id)
+        receipt = save_book_intent(
+            store,
+            text=body.text,
+            expected_plan_revision=body.expected_plan_revision,
+            request_key=body.request_key,
+        )
+        variant = store.require_variant(MAIN_VARIANT_ID)
+        return {
+            "plan_revision": variant.revision,
+            "change_id": receipt.change_id,
+        }
+
+    @router.post("/{workspace_id}/story/chapters", status_code=201)
+    def post_chapter(workspace_id: str, body: ChapterCreateRequest) -> dict[str, Any]:
+        store = writing_store_for(workspace_id)
+        result = create_chapter_plan(
+            store,
+            title=body.title,
+            after_chapter_id=body.after_chapter_id,
+            expected_plan_revision=body.expected_plan_revision,
+            request_key=body.request_key,
+        )
+        return {
+            "chapter_id": result.chapter_id,
+            "order": result.order,
+            "plan_revision": result.plan_revision,
+            "change_id": result.receipt.change_id,
+        }
+
+    @router.put("/{workspace_id}/story/chapters/{chapter_id}/plan")
+    def put_chapter_plan(
+        workspace_id: str, chapter_id: str, body: ChapterPlanRequest
+    ) -> dict[str, Any]:
+        store = writing_store_for(workspace_id)
+        result = save_chapter_plan(
+            store,
+            chapter_id=chapter_id,
+            intent=body.intent,
+            title=body.title,
+            information_moves=body.information_moves,
+            expected_chapter_revision=body.expected_chapter_revision,
+            expected_plan_revision=body.expected_plan_revision,
+            request_key=body.request_key,
+        )
+        return {
+            "chapter_id": result.chapter_id,
+            "chapter_revision": result.chapter_revision,
+            "plan_revision": result.plan_revision,
+            "moves": [move.model_dump(mode="json") for move in result.moves],
+            "threads": [thread.model_dump(mode="json") for thread in result.threads],
+            "change_id": result.receipt.change_id,
+        }
+
+    @router.post("/{workspace_id}/story/chapters/{chapter_id}/start")
+    def post_chapter_start(
+        workspace_id: str, chapter_id: str, body: ChapterStartRequest
+    ) -> dict[str, Any]:
+        store = writing_store_for(workspace_id)
+        workspace = workspaces.workspace(workspace_id)
+        result = start_chapter(
+            store,
+            workspace,
+            chapter_id=chapter_id,
+            expected_story_revision=body.expected_story_revision,
+            expected_chapter_revision=body.expected_chapter_revision,
+            request_key=body.request_key,
+            attach_path=body.attach_path,
+            attach_digest=body.attach_digest,
+        )
+        return {
+            "chapter_id": result.chapter_id,
+            "path": result.path,
+            "prose_digest": result.prose_digest,
+            "plan_revision": result.plan_revision,
+            "chapter_revision": result.chapter_revision,
+            "change_id": result.committed_change_id,
+        }
+
+    @router.put("/{workspace_id}/story/chapters/{chapter_id}/prose")
+    async def put_chapter_prose(
+        workspace_id: str, chapter_id: str, body: ProseSaveRequest
+    ) -> dict[str, Any]:
+        store = writing_store_for(workspace_id)
+        workspace = workspaces.workspace(workspace_id)
+        if body.candidate_id is not None:
+            candidate = CreativeCandidateStore(
+                conversation_root(workspaces.root, workspace_id)
+            ).read(body.candidate_id)
+            if candidate.status != "ready":
+                raise WorkspaceError(
+                    code="ASSIST_TARGET_STALE",
+                    where=f"章节/{chapter_id}",
+                    why="这条候选已过期或未完成",
+                    fix="比较候选与当前草稿，或重新生成",
+                    details={"candidate_id": body.candidate_id},
+                )
+            if (
+                candidate.target.kind != "prose"
+                or candidate.target.chapter_id != chapter_id
+                or (
+                    candidate.base.chapter_revision is not None
+                    and candidate.base.chapter_revision != body.expected_chapter_revision
+                )
+                or (
+                    candidate.base.prose_digest is not None
+                    and candidate.base.prose_digest != body.expected_digest
+                )
+            ):
+                raise WorkspaceError(
+                    code="ASSIST_TARGET_STALE",
+                    where=f"章节/{chapter_id}",
+                    why="候选依据的章节或正文已经变化",
+                    fix="重新读取当前正文后再决定是否采用",
+                    details={"candidate_id": body.candidate_id},
+                )
+        result = await asyncio.to_thread(
+            lambda: save_chapter_prose(
+                store,
+                workspace,
+                chapter_id=chapter_id,
+                text=body.text,
+                expected_digest=body.expected_digest,
+                expected_chapter_revision=body.expected_chapter_revision,
+                request_key=body.request_key,
+                draft_revision=body.draft_revision,
+            )
+        )
+        job_id: str | None = None
+        if result.changed_text and hub is not None:
+            variant = store.require_variant(MAIN_VARIANT_ID)
+            plan = variant.chapter(chapter_id)
+            if plan is not None:
+                service = IndexAnalysisService(
+                    state_root=conversation_root(workspaces.root, workspace_id),
+                    workspace=workspace,
+                    provider_factory=hub.provider_factory,
+                )
+                job_id = await service.enqueue(
+                    variant=variant,
+                    plan=plan,
+                    prose_digest=result.prose_digest,
+                    context_revision=result.context_revision,
+                    changed=result.changed_text,
+                )
+        index = result.index.model_dump(mode="json")
+        if job_id is not None:
+            index["analysis"] = {
+                "state": "queued",
+                "based_on_digest": result.prose_digest,
+                "operation_id": job_id,
+            }
+        return {
+            "path": result.path,
+            "prose_digest": result.prose_digest,
+            "plan_revision": result.plan_revision,
+            "chapter_revision": result.chapter_revision,
+            "context_revision": result.context_revision,
+            "index_revision": result.index_revision,
+            "index": index,
+            "analysis_job_id": job_id,
+            "committed_change_id": result.committed_change_id,
+        }
 
     return router

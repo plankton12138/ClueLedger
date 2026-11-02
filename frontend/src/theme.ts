@@ -5,7 +5,7 @@
 export const theme = {
   colors: {
     ui: {
-      canvas: "#E7EBEF", surface: "#FFFFFF", surfaceLow: "#F1F4F7", paper: "#FFFDF8",
+      canvas: "#E4E6E9", surface: "#FFFFFF", surfaceLow: "#F1F4F7", paper: "#FFFDF8",
       text: "#29313A", secondaryText: "#53606D", edge: "#788490",
       accent: "#2862AD", accentHover: "#1C4F96", onAccent: "#FFFFFF",
       selected: "#DCE8F8", onSelected: "#29313A", focus: "#2465B5",
@@ -14,8 +14,8 @@ export const theme = {
       overlay: "rgba(25, 40, 50, 0.38)",
     },
     // --- 页面与工作区 ---
-    page: "#E7EBEF",
-    workbench: "#DFE5EB",
+    page: "#E4E6E9",
+    workbench: "#D5D9DE",
     // --- 文字 ---
     fg: "#29313A",
     fgStrong: "#242D37",

@@ -48,8 +48,6 @@ import {
   NeedsConversationReload,
   type ChatTurn,
 } from "./chatMessages";
-import { useStoryStore } from "./story";
-import { looksLikeProseRequest } from "./taskPurpose";
 import { createStreamBatcher } from "./streamBatcher";
 import { MAX_REFERENCE_TEXT, MAX_TEXT_REFERENCES, sameTextReferences, withTextReferences, type TextReference } from "./textReferences";
 
@@ -283,13 +281,6 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
     }
     if (lastSeq !== entry.lastSeq) patchEntry(conversationId, { turns, lastSeq, phase, activeTurn });
     if (needsReload) void reloadLog(conversationId);
-    const story = useStoryStore.getState();
-    const workspaceId = get().workspaceId;
-    if (workspaceId && events.some(event => ["story_changes_committed", "story_candidate_committed", "run_finished"].includes(event.type))) {
-      // 结构写入后所有打开着的读模型一起失效；构思页在时再重读整份投影。
-      story.invalidate();
-      if (story.workspaceId === workspaceId && story.open) void story.refresh(workspaceId);
-    }
   }
 
   function appendEventsTo(conversationId: string, events: WorkspaceEvent[]): void {
@@ -661,11 +652,6 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
       const submittedTextReferences = options ? [] : [...(get().draftContexts[key]?.text_references ?? [])];
       // 引用只随作者的下一条普通消息提交；明确用途（检查、整理）不夹带草稿引用。
       const submittedClueReferences = options ? [] : [...(get().draftContexts[key]?.clue_references ?? [])];
-      // 构思面开着时默认按 design 发送；但明确要求写正文时不能被页面状态改用途。
-      const currentStory = useStoryStore.getState();
-      const storySurfaceOpen = options ? false : currentStory.open;
-      const proseRequest = looksLikeProseRequest(trimmed, context?.selected_path ?? null);
-      const storyPurpose = storySurfaceOpen ? (proseRequest ? "write" : "design") : null;
       const request: TurnInput = {
         text: withTextReferences(trimmed, submittedTextReferences),
         request_key: keyRequest,
@@ -679,9 +665,6 @@ export const useConversationsStore = create<ConversationsStore>()((set, get) => 
             idea_id,
             revision_id,
           })),
-          ...(storyPurpose && currentStory.variantId
-            ? { story: { variant_id: currentStory.variantId, revision: currentStory.graph?.revision ?? "", node_ids: currentStory.nodeId ? [currentStory.nodeId] : [], purpose: storyPurpose } }
-            : {}),
         },
         ...(options && options.purpose === "review"
           ? { purpose: options.purpose, review_paths: options.reviewPaths ?? [] }

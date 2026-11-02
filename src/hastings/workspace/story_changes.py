@@ -1,4 +1,4 @@
-"""构思变更的应用、反向操作与对象摘要（1.0.1 P1）。
+"""构思变更的应用、反向操作与对象摘要（1.0.1 P1，1.0.9 增加当前格式）。
 
 这里只处理结构，不碰正文文件，也不判断语义是否成立。三条规则值得单独记住：
 
@@ -8,6 +8,9 @@
   正文关联仍指向它时报错，要求在同一个变更里一并处理。
 * 撤销不是整本回滚。提交时记下反向操作与「改动过的对象 → 提交后摘要」，撤销前重查
   这些对象；只要其中一个后来被改过就冲突，其余无关编辑原样保留。
+
+当前格式 3 另有一条删除顺序：先解除正文关联，再删信息变化、章节与信息线；旧格式操作
+与当前格式操作按 ``format_version`` 互斥，不能写进同一份文档。
 """
 
 from __future__ import annotations
@@ -20,7 +23,10 @@ from pydantic import BaseModel, ValidationError
 
 from hastings.workspace.story_models import (
     AcknowledgeAttention,
+    AddChapterPlan,
     AddConstraint,
+    AddInformationMove,
+    AddInformationThread,
     AddNode,
     AddStage,
     AddThread,
@@ -29,20 +35,26 @@ from hastings.workspace.story_models import (
     ClearAttentionReceipt,
     CluePlanInput,
     ConfirmAlignment,
+    ConfirmChapterPlan,
     Connect,
     CreateClueIdentity,
     Disconnect,
     EventTimeRelation,
     RecordAssessment,
     RemoveAssessment,
+    RemoveChapterPlan,
     RemoveClueIdentity,
     RemoveCluePlan,
     RemoveClueRelation,
     RemoveConstraint,
+    RemoveInformationMove,
+    RemoveInformationThread,
     RemoveNode,
     RemoveStage,
     RemoveThread,
     RenameClueIdentity,
+    SetBookIntent,
+    SetChapterProsePath,
     SetEventTime,
     SetTimeOrigin,
     StoryChangeSet,
@@ -51,7 +63,10 @@ from hastings.workspace.story_models import (
     StoryVariant,
     UnbindProse,
     UnsetEventTime,
+    UpdateChapterPlan,
     UpdateConstraint,
+    UpdateInformationMove,
+    UpdateInformationThread,
     UpdateNode,
     UpdateStage,
     UpdateThread,
@@ -74,6 +89,53 @@ class StoryInvalid(ValueError):
 
     调用层把它映射成 ``STORY_GRAPH_INVALID``，不把内部异常文本直接当接口消息。
     """
+
+
+#: 只服务旧格式 2 的操作；当前格式 3 写入时拒绝，避免同一文档出现两份结构真相。
+_LEGACY_OPERATIONS = (
+    AddNode,
+    UpdateNode,
+    RemoveNode,
+    AddStage,
+    UpdateStage,
+    RemoveStage,
+    CreateClueIdentity,
+    RenameClueIdentity,
+    RemoveClueIdentity,
+    UpsertCluePlan,
+    RemoveCluePlan,
+    AddThread,
+    UpdateThread,
+    RemoveThread,
+    Connect,
+    Disconnect,
+    SetEventTime,
+    UnsetEventTime,
+    RecordAssessment,
+    RemoveAssessment,
+    UpsertClueRelation,
+    RemoveClueRelation,
+    AcknowledgeAttention,
+    ClearAttentionReceipt,
+    SetTimeOrigin,
+    ConfirmAlignment,
+)
+
+#: 当前格式 3 的章节与信息线操作；旧格式不接收。
+_CURRENT_OPERATIONS = (
+    SetBookIntent,
+    AddChapterPlan,
+    UpdateChapterPlan,
+    RemoveChapterPlan,
+    AddInformationThread,
+    UpdateInformationThread,
+    RemoveInformationThread,
+    AddInformationMove,
+    UpdateInformationMove,
+    RemoveInformationMove,
+    ConfirmChapterPlan,
+    SetChapterProsePath,
+)
 
 
 def apply_change_set(variant: StoryVariant, change: StoryChangeSet) -> StoryVariant:
@@ -101,6 +163,115 @@ def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
     attention_receipts = cast(dict[str, Any], data["attention_receipts"])
     assessments = cast(dict[str, Any], data["assessments"])
     event_times = cast(list[dict[str, Any]], data["event_times"])
+    chapter_plans = cast(dict[str, Any], data["chapter_plans"])
+    information_threads = cast(dict[str, Any], data["information_threads"])
+    information_moves = cast(dict[str, Any], data["information_moves"])
+
+    current_format = data.get("format_version") == 3
+    if current_format and isinstance(operation, _LEGACY_OPERATIONS):
+        raise StoryInvalid("旧格式操作不能写入当前格式；请使用章节构思与信息变化")
+    if not current_format and isinstance(operation, _CURRENT_OPERATIONS):
+        raise StoryInvalid("当前格式操作不能写入旧格式；旧作品不做迁移")
+
+    if isinstance(operation, SetBookIntent):
+        data["book_intent"] = (
+            operation.intent.model_dump(mode="json") if operation.intent is not None else None
+        )
+    elif isinstance(operation, AddChapterPlan):
+        _require_new(chapter_plans, operation.plan.id, "章节构思")
+        chapter_plans[operation.plan.id] = operation.plan.model_dump(mode="json")
+    elif isinstance(operation, UpdateChapterPlan):
+        _require_existing(chapter_plans, operation.chapter_id, "章节构思")
+        payload = operation.plan.model_dump(mode="json")
+        for other_id, other in chapter_plans.items():
+            if other_id != operation.chapter_id and other.get("prose_path") == payload.get(
+                "prose_path"
+            ):
+                raise StoryInvalid(f"同一正文路径被两章占用：{payload['prose_path']}")
+        chapter_plans[operation.chapter_id] = payload
+    elif isinstance(operation, RemoveChapterPlan):
+        _require_existing(chapter_plans, operation.chapter_id, "章节构思")
+        used_moves = [
+            move["id"]
+            for move in information_moves.values()
+            if move["chapter_id"] == operation.chapter_id
+        ]
+        if used_moves:
+            raise StoryInvalid(
+                "删除章节前，先在同一变更中移除这些信息变化：" + "、".join(used_moves)
+            )
+        path = chapter_plans[operation.chapter_id].get("prose_path")
+        if path and any(binding.get("path") == path for binding in bindings.values()):
+            raise StoryInvalid("删除章节前，先在同一变更中移除这一章的正文关联")
+        del chapter_plans[operation.chapter_id]
+    elif isinstance(operation, AddInformationThread):
+        _require_new(information_threads, operation.thread.id, "信息线")
+        information_threads[operation.thread.id] = operation.thread.model_dump(mode="json")
+    elif isinstance(operation, UpdateInformationThread):
+        _require_existing(information_threads, operation.thread_id, "信息线")
+        information_threads[operation.thread_id] = operation.thread.model_dump(mode="json")
+    elif isinstance(operation, RemoveInformationThread):
+        _require_existing(information_threads, operation.thread_id, "信息线")
+        used = [
+            move["id"]
+            for move in information_moves.values()
+            if move["thread_id"] == operation.thread_id
+        ]
+        if used:
+            raise StoryInvalid("删除信息线前，先在同一变更中移除这些信息变化：" + "、".join(used))
+        del information_threads[operation.thread_id]
+    elif isinstance(operation, AddInformationMove):
+        _require_new(information_moves, operation.move.id, "信息变化")
+        if operation.move.chapter_id not in chapter_plans:
+            raise StoryInvalid(f"信息变化指向不存在的章节：{operation.move.chapter_id}")
+        if operation.move.thread_id not in information_threads:
+            raise StoryInvalid(f"信息变化指向不存在的信息线：{operation.move.thread_id}")
+        information_moves[operation.move.id] = operation.move.model_dump(mode="json")
+        plan = chapter_plans[operation.move.chapter_id]
+        ids = cast(list[str], plan["information_move_ids"])
+        if operation.move.id not in ids:
+            ids.append(operation.move.id)
+    elif isinstance(operation, UpdateInformationMove):
+        _require_existing(information_moves, operation.move_id, "信息变化")
+        if operation.move.chapter_id not in chapter_plans:
+            raise StoryInvalid(f"信息变化指向不存在的章节：{operation.move.chapter_id}")
+        if operation.move.thread_id not in information_threads:
+            raise StoryInvalid(f"信息变化指向不存在的信息线：{operation.move.thread_id}")
+        old = information_moves[operation.move_id]
+        old_chapter = old["chapter_id"]
+        information_moves[operation.move_id] = operation.move.model_dump(mode="json")
+        if old_chapter != operation.move.chapter_id:
+            old_ids = cast(list[str], chapter_plans[old_chapter]["information_move_ids"])
+            old_ids[:] = [value for value in old_ids if value != operation.move_id]
+            new_ids = cast(
+                list[str], chapter_plans[operation.move.chapter_id]["information_move_ids"]
+            )
+            if operation.move_id not in new_ids:
+                new_ids.append(operation.move_id)
+    elif isinstance(operation, RemoveInformationMove):
+        _require_existing(information_moves, operation.move_id, "信息变化")
+        if any(binding.get("move_id") == operation.move_id for binding in bindings.values()):
+            raise StoryInvalid("删除信息变化前，先在同一变更中移除它的正文关联")
+        move = information_moves.pop(operation.move_id)
+        plan = chapter_plans.get(move["chapter_id"])
+        if plan is not None:
+            ids = cast(list[str], plan["information_move_ids"])
+            ids[:] = [value for value in ids if value != operation.move_id]
+    elif isinstance(operation, ConfirmChapterPlan):
+        _require_existing(chapter_plans, operation.chapter_id, "章节构思")
+        plan = chapter_plans[operation.chapter_id]
+        if plan.get("revision") != operation.revision:
+            raise StoryInvalid("章节构思在确认前已经变化")
+        plan["confirmed_revision"] = operation.revision
+    elif isinstance(operation, SetChapterProsePath):
+        _require_existing(chapter_plans, operation.chapter_id, "章节构思")
+        for other_id, other in chapter_plans.items():
+            if other_id != operation.chapter_id and other.get("prose_path") == operation.path:
+                raise StoryInvalid(f"同一正文路径被两章占用：{operation.path}")
+        chapter_plans[operation.chapter_id]["prose_path"] = operation.path
+
+    if isinstance(operation, _CURRENT_OPERATIONS):
+        return
 
     if isinstance(operation, AddStage):
         _require_new(stages, operation.stage.id, "阶段")
@@ -249,6 +420,59 @@ def diff_variant(source: StoryVariant, target: StoryVariant) -> list[StoryOperat
 
     只比较内容，不比较修订号：修订号由提交生成，不属于对象内容。
     """
+    if source.format_version == 3 and target.format_version == 3:
+        return _diff_current(source, target)
+    if source.format_version != target.format_version:
+        raise StoryInvalid("不能在两种格式之间生成反向操作")
+    return _diff_legacy(source, target)
+
+
+def _diff_current(source: StoryVariant, target: StoryVariant) -> list[StoryOperation]:
+    """当前格式的反向操作：先解除正文关联，再删信息变化、章节与信息线。"""
+    added_chapters, updated_chapters, removed_chapters = _partition(
+        source.chapter_plans, target.chapter_plans
+    )
+    added_threads, updated_threads, removed_threads = _partition(
+        source.information_threads, target.information_threads
+    )
+    added_moves, updated_moves, removed_moves = _partition(
+        source.information_moves, target.information_moves
+    )
+    added_binds, updated_binds, removed_binds = _partition(source.bindings, target.bindings)
+
+    operations: list[StoryOperation] = []
+    operations.extend(UnbindProse(binding_id=key) for key in removed_binds)
+    for key in updated_binds:
+        operations.append(UnbindProse(binding_id=key))
+    operations.extend(RemoveInformationMove(move_id=key) for key in removed_moves)
+    operations.extend(RemoveChapterPlan(chapter_id=key) for key in removed_chapters)
+    operations.extend(RemoveInformationThread(thread_id=key) for key in removed_threads)
+    operations.extend(
+        AddInformationThread(thread=target.information_threads[key]) for key in added_threads
+    )
+    operations.extend(AddChapterPlan(plan=target.chapter_plans[key]) for key in added_chapters)
+    operations.extend(AddInformationMove(move=target.information_moves[key]) for key in added_moves)
+    operations.extend(
+        UpdateInformationThread(thread_id=key, thread=target.information_threads[key])
+        for key in updated_threads
+    )
+    operations.extend(
+        UpdateInformationMove(move_id=key, move=target.information_moves[key])
+        for key in updated_moves
+    )
+    operations.extend(
+        UpdateChapterPlan(chapter_id=key, plan=target.chapter_plans[key])
+        for key in updated_chapters
+    )
+    if source.book_intent != target.book_intent:
+        operations.append(SetBookIntent(intent=target.book_intent))
+    operations.extend(BindProse(binding=target.bindings[key]) for key in added_binds)
+    for key in updated_binds:
+        operations.append(BindProse(binding=target.bindings[key]))
+    return operations
+
+
+def _diff_legacy(source: StoryVariant, target: StoryVariant) -> list[StoryOperation]:
     added_stages, updated_stages, removed_stages = _partition(source.stages, target.stages)
     added_nodes, updated_nodes, removed_nodes = _partition(source.nodes, target.nodes)
     added_plans, updated_plans, removed_plans = _partition(source.clue_plans, target.clue_plans)
@@ -386,6 +610,14 @@ def object_digest(value: object) -> str:
 def variant_digests(variant: StoryVariant) -> dict[str, str]:
     """按对象拆开的内容摘要表；撤销前与当前状态逐项比对。"""
     digests: dict[str, str] = {}
+    if variant.book_intent is not None:
+        digests["book_intent"] = object_digest(variant.book_intent.model_dump(mode="json"))
+    for key, plan in variant.chapter_plans.items():
+        digests[f"chapter_plan:{key}"] = object_digest(plan.model_dump(mode="json"))
+    for key, thread in variant.information_threads.items():
+        digests[f"information_thread:{key}"] = object_digest(thread.model_dump(mode="json"))
+    for key, move in variant.information_moves.items():
+        digests[f"information_move:{key}"] = object_digest(move.model_dump(mode="json"))
     for key, stage in variant.stages.items():
         digests[f"stage:{key}"] = object_digest(stage.model_dump(mode="json"))
     for key, node in variant.nodes.items():

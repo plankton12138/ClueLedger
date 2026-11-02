@@ -11,6 +11,8 @@
 
 写入用同目录临时文件替换，避免出现半个文件；写入前必须给出上次读取的指纹，
 ``expected_digest=None`` 只表示「创建尚不存在的文件」，不能当作无条件覆盖。
+``Workspace`` 还可以注入章节策略：应用内创建或修改正文前，必须先有已确认的最小构思；
+导入和联合提交是显式例外，前者产生只读的未挂计划正文，后者由开始事务预先授权。
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ import tempfile
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Literal
+from typing import Literal, Protocol
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.metadata import (
@@ -49,6 +51,7 @@ def has_chapter_content(text: str) -> bool:
 __all__ = [
     "BODY_DIR",
     "CHARACTERS_DIR",
+    "ChapterWriteGuard",
     "FileKind",
     "SETTINGS_DIR",
     "SETTING_FILES",
@@ -217,11 +220,22 @@ class SearchResult:
     truncated: bool
 
 
+class ChapterWriteGuard(Protocol):
+    """章节正文写入的统一前置检查；由写作策略实现，文件层只调用。"""
+
+    def require_write(self, path: str, *, expected_chapter_revision: str | None) -> None:
+        """没有已确认构思或修订不匹配时抛出 ``WorkspaceError``。"""
+
+    def require_move(self, source: str, target: str) -> None:
+        """已开始的章节不能直接改文件名。"""
+
+
 class Workspace:
     """一个作品目录。所有方法只作用于受管路径；不做跨文件事务。"""
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root).resolve()
+        self.chapter_policy: ChapterWriteGuard | None = None
 
     # -- 建立与打开 ---------------------------------------------------------
 
@@ -352,18 +366,42 @@ class Workspace:
 
     # -- 写入 ---------------------------------------------------------------
 
-    def check_write_intent(self, path: str, *, expected_digest: str | None) -> None:
+    def check_write_intent(
+        self,
+        path: str,
+        *,
+        expected_digest: str | None,
+        expected_chapter_revision: str | None = None,
+        allow_unplanned: bool = False,
+    ) -> None:
         """只核对「这次写入的意图与磁盘现状是否一致」，不写文件、不建目录。
 
         给上层在准备 Git 基线之前做一次无副作用预检：意图与现状冲突时直接失败，
         不会先创建文件或提交基线，再回头报告「其实没写成」。
         """
+        self._require_chapter_policy(
+            path,
+            expected_chapter_revision=expected_chapter_revision,
+            allow_unplanned=allow_unplanned,
+        )
         self._check_expected(self._target(path), path, expected_digest)
+
+    def check_chapter_intent(
+        self, path: str, *, expected_chapter_revision: str | None = None
+    ) -> None:
+        """只检查章节构思门槛；用于不改变原有指纹错误顺序的写前预检。"""
+        self._require_chapter_policy(
+            path,
+            expected_chapter_revision=expected_chapter_revision,
+            allow_unplanned=False,
+        )
 
     def check_move_intent(self, source: str, target: str, *, expected_digest: str) -> None:
         """移动的预检：两端都检查，源指纹必须匹配，目标必须不存在。"""
         self._reject_setting_path(source, "files.move")
         self._reject_setting_path(target, "files.move")
+        if managed_kind(source) == "chapter" and self.chapter_policy is not None:
+            self.chapter_policy.require_move(source, target)
         if managed_kind(source) != managed_kind(target):
             raise WorkspaceError(
                 code="FILE_KIND_MISMATCH",
@@ -384,12 +422,26 @@ class Workspace:
     def check_delete_intent(self, path: str, *, expected_digest: str) -> None:
         """删除的预检：固定设定不可删除，指纹必须匹配。"""
         self._reject_setting_path(path, "files.delete")
+        self._require_chapter_policy(path, expected_chapter_revision=None, allow_unplanned=False)
         self._check_expected(self._target(path), path, expected_digest)
 
-    def write(self, path: str, text: str, *, expected_digest: str | None) -> FileView:
+    def write(
+        self,
+        path: str,
+        text: str,
+        *,
+        expected_digest: str | None,
+        expected_chapter_revision: str | None = None,
+        allow_unplanned: bool = False,
+    ) -> FileView:
         """按指纹前提写入；``expected_digest=None`` 只用于创建新文件。"""
         target = self._target(path)
         self._writable_directory(PurePosixPath(path).parent.as_posix())
+        self._require_chapter_policy(
+            path,
+            expected_chapter_revision=expected_chapter_revision,
+            allow_unplanned=allow_unplanned,
+        )
         self._check_expected(target, path, expected_digest)
         normalized = normalize_newlines(text)
         self._reject_invalid_metadata(path, normalized)
@@ -403,12 +455,33 @@ class Workspace:
             display_text=_display_text(path, normalized),
         )
 
-    def create_chapter(self, title: str, text: str = "") -> FileView:
+    def create_chapter(
+        self, title: str, text: str = "", *, allow_unplanned: bool = False
+    ) -> FileView:
         """新增一章：序号取当前最大序号加一，文件名与内容都不覆盖已有文件。"""
         clean = _safe_title(title)
         path = self._next_chapter_path(clean)
         body = text if text.strip() else f"# {clean}\n"
-        return self.write(path, body, expected_digest=None)
+        return self.write(path, body, expected_digest=None, allow_unplanned=allow_unplanned)
+
+    def reserve_chapter_path(self, title: str | None) -> str:
+        """为即将创建的章节分配唯一路径；只计算，不落盘。"""
+        clean = _safe_title(title or "未命名章节")
+        return self._next_chapter_path(clean)
+
+    def _require_chapter_policy(
+        self,
+        path: str,
+        *,
+        expected_chapter_revision: str | None,
+        allow_unplanned: bool,
+    ) -> None:
+        if allow_unplanned or managed_kind(path) != "chapter":
+            return
+        if self.chapter_policy is not None:
+            self.chapter_policy.require_write(
+                path, expected_chapter_revision=expected_chapter_revision
+            )
 
     def move(self, source: str, target: str, *, expected_digest: str) -> FileView:
         """在同类目录内重命名章节或角色；线索与真相路径固定。"""
@@ -475,7 +548,7 @@ class Workspace:
             )
         if suffix in (".md", ".markdown"):
             title = _import_title(self.name, name, text)
-            return (self.create_chapter(title, text),)
+            return (self.create_chapter(title, text, allow_unplanned=True),)
         if suffix == ".txt":
             # 分章规则仍沿用 0.3 的纯函数：它只做文本切分，不写存储。
             # 局部导入，避免纯文件读写也拉起旧领域包。
@@ -490,7 +563,8 @@ class Workspace:
                     fix="确认文件不是空文件或只有标题",
                 )
             return tuple(
-                self.create_chapter(chapter.title, chapter.text) for chapter in parsed.chapters
+                self.create_chapter(chapter.title, chapter.text, allow_unplanned=True)
+                for chapter in parsed.chapters
             )
         raise WorkspaceError(
             code="IMPORT_FORMAT_INVALID",

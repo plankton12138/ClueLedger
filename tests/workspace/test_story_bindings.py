@@ -219,7 +219,7 @@ def test_binding_only_needs_a_clue_target() -> None:
 
 
 def test_binding_requires_a_target() -> None:
-    with pytest.raises(ValueError, match="正文关联缺少节点或线索目标"):
+    with pytest.raises(ValueError, match="正文关联缺少构思节点、线索或信息变化目标"):
         ProseBinding(
             id="b1",
             document_id="doc_1",

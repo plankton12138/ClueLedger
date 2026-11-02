@@ -125,9 +125,12 @@ class RecentWorkspaces:
                 details={"id": workspace_id, "path": binding.path},
             ) from exc
         # 作品重新进入读取／写入流程之前，先补完已决定的正文与结构提交。
+        from hastings.workspace.chapter_write_policy import ChapterWritePolicy
         from hastings.workspace.story_store import StoryStore
 
-        StoryStore(conversation_root(self.root, workspace_id), workspace).read()
+        store = StoryStore(conversation_root(self.root, workspace_id), workspace)
+        store.read()
+        workspace.chapter_policy = ChapterWritePolicy(store)
         return workspace
 
     # -- 登记 ---------------------------------------------------------------

@@ -1,100 +1,130 @@
-import { test, expect } from "./fixtures/frontendExperience";
-import type { Page } from "@playwright/test";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v1.0/artifacts/aqua-ui");
+const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v1.0.9/artifacts/aqua");
+
 async function shot(page: Page, name: string) {
   mkdirSync(output, { recursive: true });
   await page.screenshot({ path: join(output, `${name}.png`) });
 }
-async function font(page: Page, scale: number) {
-  await page.getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByRole("dialog", { name: "设置", exact: true }).getByLabel("调整字体大小").selectOption(String(scale));
-  await page.keyboard.press("Escape");
+
+async function seed(request: APIRequestContext, root: string) {
+  const opened = await request.post("/api/file-workspaces", { data: { path: root, create: true } });
+  expect(opened.ok(), await opened.text()).toBeTruthy();
+  const book = await opened.json();
+  const base = `/api/file-workspaces/${book.id}`;
+  async function send(method: "PUT" | "POST", path: string, data: object) {
+    const response = await request.fetch(`${base}${path}`, { method, data });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    return response.json();
+  }
+  const intent = await send("PUT", "/story/book-intent", {
+    text: "暴雪封山，旅馆里少了一名住客。",
+    expected_plan_revision: "empty",
+    request_key: "aqua-intent",
+  });
+  const chapter = await send("POST", "/story/chapters", {
+    title: "雨夜",
+    expected_plan_revision: intent.plan_revision,
+    request_key: "aqua-chapter",
+  });
+  const view = await (await request.get(`${base}/story/workbench?chapter_id=${chapter.chapter_id}`)).json();
+  const saved = await send("PUT", `/story/chapters/${chapter.chapter_id}/plan`, {
+    intent: "封山、入住、管家说谎，湿手套最后出现。",
+    expected_chapter_revision: view.chapter.plan.revision,
+    expected_plan_revision: view.plan_revision,
+    request_key: "aqua-plan",
+  });
+  const started = await send("POST", `/story/chapters/${chapter.chapter_id}/start`, {
+    expected_story_revision: saved.plan_revision,
+    expected_chapter_revision: saved.chapter_revision,
+    request_key: "aqua-start",
+  });
+  await send("PUT", `/story/chapters/${chapter.chapter_id}/prose`, {
+    text: "# 雨夜\n\n" + [
+      "雪把山路封死的时候，林砚刚走进旅馆。前台的人说，今晚只剩一间房。",
+      "壁炉里的火钳上留着一层蓝蜡，像有人在这里烧过不该烧的东西。",
+      "管家站在楼梯口，重复说自己整晚都在房间里。没有人问他，为什么要先解释。",
+      "林砚看见他袖口的水迹，顺着指尖滴在木地板上。",
+    ].join("\n\n"),
+    expected_digest: started.prose_digest,
+    expected_chapter_revision: started.chapter_revision,
+    draft_revision: "aqua-draft",
+    request_key: "aqua-prose",
+  });
+  return { id: book.id, chapterId: chapter.chapter_id as string };
 }
 
-test("Aqua 写作布局、翻页和字号操作保留复古气泡及可达的发送位置", async ({ page, book }) => {
-  writeFileSync(join(book.path, "正文", "0001 雨夜.md"), "# 雨夜\n\n" + [
-    "雨还在下，港口的雾气被风吹散，又很快聚拢起来。窗外传来潮水拍打堤岸的闷响。",
-    "林岚没有碰那封遗书。她站在桌边，忽然说：背面的最后一行，是写给我的。",
-    "沈砚抬起头，看向她。窗外的雨声更密了，他放下手中的笔，问道：你怎么知道？",
-    "林岚没有立即回答，只是望着窗外。远处的灯塔在雾中一明一暗。",
-    "沈砚把遗书翻了过来。那一行字藏在折痕里，墨迹比正面更淡。",
-    "字迹依旧是那种冷静而克制的笔触。没有署名，只有一个称呼，和一句几乎被水迹晕开的告别。",
-  ].join("\n\n"), "utf8");
-  writeFileSync(join(book.path, "正文", "0002 照片.md"), "# 照片\n\n他们找到了那张旧照片。", "utf8");
-  // 稳定消息仅用于验证气泡；文件和目录仍经真实服务读取，不调用模型。
-  const at = "2026-10-28T12:00:00+08:00", id = "aqua_preview";
-  const item = { id, title: "线索设计", created_at: at, updated_at: at };
-  await page.route(`**/api/file-workspaces/${book.id}/conversations`, route => route.fulfill({ json: { items: [item], recent_id: id, active_turn: null, revision: "r1" } }));
-  await page.route(`**/api/file-workspaces/${book.id}/conversation-ui`, route => route.fulfill({ json: { recent_id: id, drafts: {}, revision: "r1" } }));
-  await page.route(`**/api/file-workspaces/${book.id}/conversations/${id}/messages?*`, route => route.fulfill({ json: {
-    events: [
-      { seq: 1, at, type: "turn_started", turn_id: "t_aqua", text: "让林岚提前知道遗书背面的内容，但先保留其他解释。" },
-      { seq: 2, at, type: "assistant_started", turn_id: "t_aqua", message_id: "m_aqua" },
-      { seq: 3, at, type: "assistant_block_started", turn_id: "t_aqua", message_id: "m_aqua", block_id: "b_aqua", kind: "text", order: 0 },
-      { seq: 4, at, type: "assistant_block_finished", turn_id: "t_aqua", message_id: "m_aqua", block_id: "b_aqua", kind: "text", text: "可以先让她说出背面的句子，再让沈砚追问消息来源。\n\n> 她说得太快，像是早已读过。\n\n这一处只引起怀疑。照片、转述等来源仍需在后续排除。", last_part: -1, completion: "completed", duration_ms: 100 },
-      { seq: 5, at, type: "assistant_finished", turn_id: "t_aqua", message_id: "m_aqua", completion: "completed" },
-      { seq: 6, at, type: "run_finished", turn_id: "t_aqua", status: "completed", recording: "no_change", changed_paths: [], commit: null, note: "" },
-    ], last_seq: 6, active_turn: null, revision: "r1",
-  } }));
-  await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: "第一章 雨夜", exact: true }).click();
-  await expect(page.locator(".writing-layout")).toHaveAttribute("data-layout", "three");
-  // 顶栏是正文、构思与模块库：故事资料入口已移除。
-  await expect(page.getByRole("navigation", { name: "作品页面" }).getByRole("link")).toHaveCount(4);
-  await expect(page.locator(".chat-msg.mine .chat-bubble")).toContainText("让林岚");
-  expect(await page.locator(".chat-msg.mine .chat-bubble").evaluate(el => getComputedStyle(el).backgroundColor)).toBe("rgb(150, 221, 65)");
-  expect(await page.locator(".chat-reply").evaluate(el => getComputedStyle(el).backgroundColor)).toBe("rgb(214, 214, 216)");
-  expect(await page.locator(".prose-paper p").first().evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(20);
-  await page.getByRole("button", { name: "下一章", exact: true }).click();
-  await expect(page.locator(".paper-sheet")).toContainText("他们找到了那张旧照片");
-  await page.getByRole("button", { name: "上一章", exact: true }).click();
-  await page.getByRole("button", { name: "增大字号", exact: true }).click();
-  await expect.poll(() => page.locator(".prose-paper").evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeCloseTo(23.1);
-  await page.getByRole("button", { name: "减小字号", exact: true }).click();
-  await shot(page, "01-writing-1440");
-  // 720 CSS px 对应 1440 窗口的 200% 浏览器缩放；320 是最窄的支持宽度。
-  for (const [width, scale] of [[1024, 100], [720, 100], [640, 150], [390, 150], [320, 100]]) {
-    await page.setViewportSize({ width, height: 900 }); await font(page, scale);
-    if (!await page.locator(".chat-input").isVisible()) await page.getByRole("button", { name: "对话", exact: true }).click();
-    await expect(page.getByRole("button", { name: "发送", exact: true })).toBeInViewport();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await shot(page, `writing-${width}-${scale}`);
-  }
-});
+function style(locator: ReturnType<Page["locator"]>, property: string) {
+  return locator.evaluate((node, name) => getComputedStyle(node).getPropertyValue(name as string), property);
+}
 
-test("模块列表与预览并列，缩窄和放大字号保留草稿及主操作", async ({ page, book }) => {
-  await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.locator(".chat-input").fill("尚未发送的写作要求");
-  await page.getByRole("link", { name: "模块库", exact: true }).click();
-  const library = page.getByRole("region", { name: "模块库", exact: true });
-  const browser = library.getByRole("region", { name: "浏览模块库", exact: true });
-  await browser.getByRole("button", { name: `海上城市-${book.id}`, exact: true }).click();
-  await expect(browser).toBeVisible();
-  const detail = library.getByRole("region", { name: "模块详情", exact: true });
-  await expect(detail).toContainText("终年起雾。");
-  const listBox = (await browser.boundingBox())!, detailBox = (await detail.boundingBox())!;
-  expect(detailBox.x).toBeGreaterThanOrEqual(listBox.x + listBox.width - 1);
-  await expect(detail.getByRole("button", { name: "添加到作品", exact: true })).toBeInViewport();
-  await shot(page, "03-library-1440");
-  await detail.getByRole("button", { name: "编辑", exact: true }).click();
-  const body = detail.getByLabel("模块正文").last();
-  await body.fill("缩窄窗口后仍保留这份模块草稿。");
-  for (const [width, scale] of [[1024, 100], [720, 100], [640, 150], [390, 150], [320, 100]]) {
-    await page.setViewportSize({ width, height: 900 }); await font(page, scale);
-    await expect(browser).toBeHidden();
-    await expect(body).toHaveValue("缩窄窗口后仍保留这份模块草稿。");
-    await expect(detail.getByRole("button", { name: "保存", exact: true })).toBeInViewport();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await shot(page, `library-${width}-${scale}`);
+test("Aqua 材质、控件状态与响应式写作页", async ({ page, request }) => {
+  const parent = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "books");
+  mkdirSync(parent, { recursive: true });
+  const root = join(mkdtempSync(join(parent, "aqua-")), "雪夜旅馆");
+  const { id, chapterId } = await seed(request, root);
+  await page.goto(`/#/workspaces/${id}/writing?chapter=${chapterId}`);
+  const chat = page.getByRole("button", { name: "对话", exact: true });
+  if (await chat.getAttribute("aria-pressed") === "true") await chat.click();
+  await expect(page.getByRole("textbox", { name: "正文编辑" })).toBeVisible();
+  await expect(page.locator(".chapter-margin-inline")).toBeVisible();
+
+  // 银灰 chrome 与浅色稿纸分层；正文保持平整。
+  const header = page.locator(".app-header");
+  expect(await style(header, "background-image")).toContain("linear-gradient");
+  expect(await style(header, "background-image")).toContain("repeating-linear-gradient");
+  const paper = page.locator(".writing-paper");
+  expect(await style(paper, "background-color")).toBe("rgb(255, 253, 248)");
+  const editor = page.getByRole("textbox", { name: "正文编辑" });
+  expect(await style(editor, "color")).toBe("rgb(48, 52, 58)");
+
+  const button = page.getByRole("button", { name: "侧栏", exact: true });
+  expect(await style(button, "background-image")).toContain("linear-gradient");
+  expect(parseFloat(await style(button, "border-top-left-radius"))).toBeGreaterThanOrEqual(16);
+  const selectedLine = page.locator(".writing-navigator .toc-line:has(.toc-row.on)");
+  expect(await style(selectedLine, "background-color")).toBe("rgb(220, 232, 248)");
+  expect(await style(selectedLine, "background-image")).toBe("none");
+  await button.hover();
+  expect(await style(button, "border-color")).toBe("rgb(40, 98, 173)");
+  await page.keyboard.press("Tab");
+  await button.focus();
+  expect(await style(button, "outline-color")).toBe("rgb(36, 101, 181)");
+  const save = page.getByRole("button", { name: "保存", exact: true });
+  expect(await style(save, "background-color")).toBe("rgb(227, 231, 232)");
+  await page.getByRole("textbox", { name: "正文编辑" }).click();
+  await shot(page, "01-writing-1440");
+
+  // 对话框标题区使用同一 chrome token，正文区平整。
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "设置", exact: true });
+  await expect(dialog).toBeVisible();
+  expect(await style(dialog.locator(".ui-dialog-header"), "background-image")).toContain("linear-gradient");
+  await shot(page, "02-settings-dialog");
+  await page.keyboard.press("Escape");
+
+  // 减少动态效果时不保留循环动画或长过渡。
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(["0.01ms", "1e-05s"]).toContain(await style(button, "transition-duration"));
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+
+  async function font(scale: number) {
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByRole("dialog", { name: "设置", exact: true }).getByLabel("调整字体大小").selectOption(String(scale));
+    await page.keyboard.press("Escape");
   }
-  await page.setViewportSize({ width: 1440, height: 900 }); await font(page, 100);
-  await expect(browser).toBeVisible();
-  await expect(body).toHaveValue("缩窄窗口后仍保留这份模块草稿。");
-  await detail.getByRole("button", { name: "取消", exact: true }).click();
-  await library.getByRole("button", { name: "返回写作", exact: true }).click();
-  await expect(page.locator(".chat-input")).toHaveValue("尚未发送的写作要求");
+  for (const [width, scale] of [[1024, 100], [760, 100], [640, 150], [390, 150], [720, 100]] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await font(scale);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const index = page.getByRole("button", { name: "本章信息", exact: true });
+    if (await index.isVisible() && await index.isEnabled()) {
+      await index.click();
+      await expect(page.getByRole("region", { name: "本章信息" })).toBeVisible();
+      await shot(page, `03-index-${width}-${scale}`);
+      await index.click();
+    }
+    await shot(page, `04-writing-${width}-${scale}`);
+  }
 });

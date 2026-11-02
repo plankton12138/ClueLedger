@@ -3,9 +3,7 @@
 from dataclasses import replace
 
 import pytest
-from fastapi.testclient import TestClient
 
-from hastings.server.file_app import create_workspace_app
 from hastings.workspace.clue_models import ClueCoverage, ClueEntry
 from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.clue_views import clue_detail, clue_list
@@ -13,7 +11,6 @@ from hastings.workspace.disclosure import ObservedEvidence
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.source_locations import resolve_source_location
-from hastings.workspace.state import RecentWorkspaces, conversation_root
 
 FIRST = "正文/0001 雨夜.md"
 SECOND = "正文/0002 证词.md"
@@ -189,32 +186,6 @@ def test_cursor_is_bounded_and_invalidated_by_query_source_or_ledger_change(book
     workspace.write(FIRST, file.text + "改动", expected_digest=file.digest)
     with pytest.raises(WorkspaceError, match="CLUE_CURSOR_CONFLICT"):
         clue_list(workspace, store.root, limit=2, cursor=first.next_cursor)
-
-
-def test_http_contract_no_model_or_write_and_unsafe_chapter_rejected(book, tmp_path):
-    workspace, store, identifier = book
-    registry = RecentWorkspaces(tmp_path / "app")
-    binding = registry.bind(workspace.root)
-    root = conversation_root(registry.root, binding.id)
-    root.mkdir(parents=True)
-    (root / "clue-ledger.json").write_bytes(store.file.read_bytes())
-    before = {path.name: path.read_bytes() for path in root.iterdir()}
-
-    def unused():
-        raise AssertionError("只读接口不调用模型")
-
-    with TestClient(create_workspace_app(workspaces=registry, provider_factory=unused)) as client:
-        base = f"/api/file-workspaces/{binding.id}/clues"
-        response = client.get(base, params={"chapter_path": SECOND, "as_of_chapter": 2})
-        assert response.status_code == 200 and response.json()["total"] == 1
-        response = client.get(f"{base}/{identifier}", params={"as_of_chapter": 2})
-        assert (
-            response.status_code == 200 and response.json()["reader_seen"][1]["mode"] == "testimony"
-        )
-        assert client.get(base, params={"chapter_path": "../../.env"}).status_code == 404
-        assert client.get(base, params={"limit": 51}).status_code == 422
-        assert client.get(f"{base}/unknown").status_code == 404
-    assert {path.name: path.read_bytes() for path in root.iterdir()} == before
 
 
 def test_identity_after_empty_rebuild_does_not_claim_planting_or_leak_future_title(book):

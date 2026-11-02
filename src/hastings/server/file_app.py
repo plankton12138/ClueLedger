@@ -37,6 +37,7 @@ from hastings.workspace.api import (
     register_workspace_error_handlers,
 )
 from hastings.workspace.clue_api import create_clue_router
+from hastings.workspace.creative_api import create_creative_router
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.ideas_api import create_ideas_router
 from hastings.workspace.operation_api import create_operation_router
@@ -143,6 +144,7 @@ def create_workspace_app(
     app.include_router(create_ideas_router(workspaces))
     app.include_router(create_clue_router(workspaces, library))
     app.include_router(create_story_router(workspaces, hub))
+    app.include_router(create_creative_router(workspaces, hub))
     if model_service is not None:
         app.include_router(create_model_router(model_service, probe_runner=probe_runner))
     if library is not None:

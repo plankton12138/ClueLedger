@@ -46,10 +46,26 @@ class WorkspaceError(Exception):
         return self.message
 
 
+#: 不按后缀命名、但表示「当前状态与请求前提冲突」的错误码。
+_CONFLICT_CODES = frozenset(
+    {
+        "ASSIST_TARGET_STALE",
+        "CHAPTER_PLAN_REQUIRED",
+        "CHAPTER_PLAN_STALE",
+        "PROSE_DIGEST_MISMATCH",
+        "STORY_FORMAT_UNSUPPORTED",
+    }
+)
+
+
 def status_for_code(code: str) -> int:
     """错误码 → HTTP 状态；未知码按「输入写错」处理（400）。"""
     if code in _FORBIDDEN_CODES:
         return 403
+    if code == "MODEL_UNAVAILABLE":
+        return 503
+    if code in _CONFLICT_CODES:
+        return 409
     if code.endswith("_NOT_FOUND"):
         return 404
     if code.endswith("_CONFLICT"):
