@@ -1,0 +1,21 @@
+{
+  "sample": {
+    "chapters": 200,
+    "threads": 300,
+    "moves": 300,
+    "bindings": 300,
+    "runs": 5
+  },
+  "book": {
+    "median_ms": 66.0,
+    "min_ms": 63.3,
+    "max_ms": 74.9,
+    "bytes": 52634
+  },
+  "chapter": {
+    "median_ms": 82.0,
+    "min_ms": 64.1,
+    "max_ms": 87.3,
+    "bytes": 55096
+  }
+}

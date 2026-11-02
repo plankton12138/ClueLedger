@@ -49,7 +49,7 @@ export default function ModelCandidate({
   const workspaceId = useWritingStore(value => value.workspaceId);
   const streaming = state?.status === "streaming";
   const reason = disabledReason ?? (!support.available ? support.disabled_reason ?? "当前没有可用模型" : undefined);
-  return <div className="model-assist">
+  return <div className="model-assist" data-assist-key={assistKey} data-assist-status={state?.status ?? "idle"}>
     <Button size="compact" variant="secondary" busy={streaming} disabled={Boolean(reason) || streaming} disabledReason={reason} onClick={onStart}>
       <Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />{label}
     </Button>

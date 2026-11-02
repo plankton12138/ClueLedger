@@ -57,6 +57,9 @@ test("Aqua 材质、控件状态与响应式写作页", async ({ page, request }
   if (await chat.getAttribute("aria-pressed") === "true") await chat.click();
   await expect(page.getByRole("textbox", { name: "正文编辑" })).toBeVisible();
   await expect(page.locator(".chapter-margin-inline")).toBeVisible();
+  // V04：页边索引属于稿纸内的第二列，对话不在同一栅格里，不额外多出第四栏。
+  await expect(page.locator(".chapter-sheet-grid > *")).toHaveCount(2);
+  await expect(page.getByRole("complementary", { name: "本章信息" })).toHaveCount(1);
 
   // 银灰 chrome 与浅色稿纸分层；正文保持平整。
   const header = page.locator(".app-header");

@@ -63,6 +63,7 @@ export default function ChapterEditor({
   const assistStart = useWritingStore(state => state.assistStart);
   const confirmCandidate = useWritingStore(state => state.confirmCandidate);
   const reviewIndex = useWritingStore(state => state.reviewIndex);
+  const refresh = useWritingStore(state => state.refresh);
   const assist = useWritingStore(state => state.assists[`prose:${chapterId}`]);
   const direction = useWritingStore(state => state.assists[`direction:${chapterId}`]);
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -96,6 +97,8 @@ export default function ChapterEditor({
     ? support.disabled_reason ?? "当前没有可用模型"
     : !directionSupported ? "当前模型没有开放这类辅助" : undefined;
   const indexItems = chapter.index?.items ?? [];
+  const analysisState = chapter.index?.analysis.state;
+  const analysisRunning = analysisState === "queued" || analysisState === "running";
   // 空章提示看的是「已核对的信息」，不等语义分析跑完：分析可能还在排队，
   // 而作者此刻需要的是可以忽略的反馈，不是等到候选回来才出现的提醒。
   const emptyChapterNotice = !emptyBody && !dirty && !saving && !conflict
@@ -106,6 +109,22 @@ export default function ChapterEditor({
     setShowServerText(false);
     setEmptyNoticeDismissed(false);
   }, [chapterId]);
+
+  // 语义索引在保存后异步完成。工作台没有推送通道，分析未结算时按固定间隔重读，
+  // 让候选与状态自己出现；分析结算或章节切换即停止，最多重读 40 次。
+  useEffect(() => {
+    if (!analysisRunning) return;
+    let count = 0;
+    const timer = window.setInterval(() => {
+      count += 1;
+      if (count > 40) {
+        window.clearInterval(timer);
+        return;
+      }
+      void refresh(workspaceId, { chapterId });
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [analysisRunning, chapterId, refresh, workspaceId]);
 
   useEffect(() => {
     if (!informationId || !chapter.index) return;

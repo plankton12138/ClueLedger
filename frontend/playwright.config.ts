@@ -41,7 +41,7 @@ export default defineConfig({
     },
     {
       name: "online",
-      testMatch: ["model-flows.spec.ts", "activity.spec.ts", "story-workflow-online.spec.ts"],
+      testMatch: ["model-flows.spec.ts", "activity.spec.ts", "story-workflow-online.spec.ts", "writing-online.spec.ts"],
       timeout: 240_000,
     },
   ],

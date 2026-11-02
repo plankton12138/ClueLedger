@@ -14,12 +14,20 @@ from hastings.workspace.index_confirmation import confirm_index_candidate
 from hastings.workspace.story_index_jobs import IndexJob, IndexJobCandidate, IndexJobStore
 from hastings.workspace.story_models import (
     AddNode,
+    BindProse,
+    ProseBinding,
     SetBookIntent,
     StoryChangeSet,
     StoryNode,
 )
-from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, StoryStore
+from hastings.workspace.story_store import (
+    EMPTY_REVISION,
+    MAIN_VARIANT_ID,
+    StoryStore,
+    new_id,
+)
 from hastings.workspace.writing_actions import ChapterCreateResult, create_chapter, save_book_intent
+from hastings.workspace.writing_view import build_chapter_index
 
 
 @pytest.fixture
@@ -422,3 +430,139 @@ def test_save_relocates_binding_and_reports_invalidation(
     item = next(row for row in deleted.index.items if row.placement == "written")
     assert item.occurrences[0].state == "missing"
     assert store.require_variant(MAIN_VARIANT_ID).bindings[confirmed.binding.id].start == binding.start
+
+
+def test_binding_recovers_after_quote_is_restored(env: tuple[Workspace, StoryStore]) -> None:
+    """A12：删掉唯一原句后失效，恢复同一原句后重新定位，不猜相似位置。"""
+    workspace, store = env
+    chapter = setup_chapter(store, workspace)
+    first = save_chapter_prose(
+        store,
+        workspace,
+        chapter_id=chapter.chapter_id,
+        text="# 第一章\n\n林砚走进旅馆，柜台上有一双湿手套。\n",
+        expected_digest=chapter.prose_digest,
+        request_key="save:recover-1",
+    )
+    job = _seed_ready_job(
+        store,
+        chapter_id=chapter.chapter_id,
+        digest=first.prose_digest,
+        statement="湿手套首次出现",
+        quote="一双湿手套",
+    )
+    confirmed = confirm_index_candidate(
+        store,
+        workspace,
+        IndexJobStore(store.root),
+        chapter_id=chapter.chapter_id,
+        candidate_id=job.candidates[0].item_id,
+        expected_prose_digest=first.prose_digest,
+        request_key="confirm:recover",
+    )
+    original_start = confirmed.binding.start
+
+    deleted = save_chapter_prose(
+        store,
+        workspace,
+        chapter_id=chapter.chapter_id,
+        text="# 第一章\n\n林砚走进旅馆，柜台上空着。\n",
+        expected_digest=first.prose_digest,
+        request_key="save:recover-2",
+    )
+    item = next(row for row in deleted.index.items if row.placement == "written")
+    assert item.occurrences[0].state == "missing"
+    assert item.occurrences[0].start is None
+
+    restored = save_chapter_prose(
+        store,
+        workspace,
+        chapter_id=chapter.chapter_id,
+        text="# 第一章\n\n林砚走进旅馆，柜台上有一双湿手套。\n",
+        expected_digest=deleted.prose_digest,
+        request_key="save:recover-3",
+    )
+    item = next(row for row in restored.index.items if row.placement == "written")
+    assert item.occurrences[0].state == "exact"
+    assert item.occurrences[0].start == original_start
+
+
+def test_one_move_keeps_each_occurrence_span(env: tuple[Workspace, StoryStore]) -> None:
+    """A13：同一信息线在一章出现多处时，每处各自保留可定位出处。"""
+    workspace, store = env
+    chapter = setup_chapter(store, workspace)
+    text = (
+        "# 第一章\n\n林砚看见湿手套。\n\n"
+        "过了半晌，他又把湿手套放回柜台。\n"
+    )
+    saved = save_chapter_prose(
+        store,
+        workspace,
+        chapter_id=chapter.chapter_id,
+        text=text,
+        expected_digest=chapter.prose_digest,
+        request_key="save:multi-1",
+    )
+    job = _seed_ready_job(
+        store,
+        chapter_id=chapter.chapter_id,
+        digest=saved.prose_digest,
+        statement="湿手套先被看见又被放回",
+        quote="林砚看见湿手套。",
+    )
+    confirmed = confirm_index_candidate(
+        store,
+        workspace,
+        IndexJobStore(store.root),
+        chapter_id=chapter.chapter_id,
+        candidate_id=job.candidates[0].item_id,
+        expected_prose_digest=saved.prose_digest,
+        request_key="confirm:multi",
+    )
+    second_quote = "他又把湿手套放回柜台。"
+    second_start = text.find(second_quote)
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        change=StoryChangeSet(
+            id=new_id("change"),
+            base_revision=variant.revision,
+            operations=[
+                BindProse(
+                    binding=ProseBinding(
+                        id=new_id("binding"),
+                        move_id=confirmed.move.id,
+                        document_id=chapter.chapter_id,
+                        path=saved.path,
+                        digest=saved.prose_digest,
+                        start=second_start,
+                        end=second_start + len(second_quote),
+                        quote=second_quote,
+                        source="manual",
+                    )
+                )
+            ],
+            requested_scope="acceptance:a13",
+        ),
+        request_key="bind:multi-2",
+    )
+
+    current = store.require_variant(MAIN_VARIANT_ID)
+    plan = current.chapter(chapter.chapter_id)
+    assert plan is not None
+    index = build_chapter_index(
+        current,
+        plan,
+        path=saved.path,
+        text=text,
+        digest=saved.prose_digest,
+    )
+    item = next(row for row in index.items if row.move_id == confirmed.move.id)
+    assert len(item.occurrences) == 2
+    assert {row.start for row in item.occurrences} == {
+        confirmed.binding.start,
+        second_start,
+    }
+    assert all(row.state == "exact" for row in item.occurrences)
+
+

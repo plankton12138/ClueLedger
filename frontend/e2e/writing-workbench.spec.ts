@@ -43,6 +43,10 @@ test("从空作品到第一章写作不离开写作页，刷新后正文仍在",
   await expect(emptyStart.getByRole("button", { name: "自己写第一段" })).toBeVisible();
   await expect(emptyStart.getByRole("button", { name: "由模型起草" })).toBeVisible();
   await expect(emptyStart.getByRole("button", { name: "看看方向建议" })).toBeVisible();
+  // V03：空正文区只有一个主操作，模型入口不与它争夺层级。
+  await expect(emptyStart.locator('button[data-variant="primary"]')).toHaveCount(1);
+  await expect(emptyStart.getByRole("button", { name: "自己写第一段" })).toHaveAttribute("data-variant", "primary");
+  await expect(emptyStart.getByRole("button", { name: "由模型起草" })).toHaveAttribute("data-variant", "secondary");
   await expect(editor).toHaveValue("");
   await shot(page, "06-empty-prose-1440");
 

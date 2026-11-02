@@ -181,15 +181,24 @@ class IndexAnalysisService:
                 '每行格式：{"statement":"正文新增或需要对齐的信息","quote":"准确原句（可省略）",'
                 '"kind":"observed|alignment","thread_id":"已有信息线标识（可省略）"}'
             )
+            quotes = {
+                binding.move_id: binding.quote
+                for binding in variant.bindings.values()
+                if binding.move_id is not None and binding.path == plan.prose_path
+            }
             moves = "\n".join(
                 f"- {move.id}｜{move.statement}"
+                + (f"｜原句：{quotes[move.id]}" if move.id in quotes else "")
                 for move in variant.information_moves_for_chapter(plan.id)
             )
             intent = variant.book_intent.text if variant.book_intent else ""
             prompt = (
                 f"全书构思：{intent or '（未写）'}\n已入账信息：\n{moves or '（无）'}\n"
                 f"本次变化段落：\n{job.changed_text}\n"
-                "只提出正文新增或需要对齐的候选；不要修改正式内容，不要推测作者真相。"
+                "如果正文与某条已入账信息指向同一处细节但说法不一致（颜色、人物、时间、动作"
+                "等被改写），输出 kind=alignment，并在 statement 里写清两边的内容；"
+                "不要把它只当成正文新增。没有对应关系的新细节才用 observed。"
+                "不要修改正式内容，不要推测作者真相。"
             )
             async with aclosing(
                 snapshot.provider.stream_response(
