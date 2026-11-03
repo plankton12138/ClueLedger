@@ -170,6 +170,7 @@ from hastings.workspace.timeline import (
     build_timeline,
     timeline_view,
 )
+from hastings.workspace.writing_actions import create_chapter as create_chapter_transaction
 from tau_agent.harness import AgentHarness, AgentHarnessConfig
 from tau_agent.messages import AgentMessage, TextContent
 from tau_agent.provider import ModelProvider
@@ -1011,6 +1012,79 @@ def build_tools(
         run.materials.after_full_write(view)
         return _json({"path": view.path, "digest": view.digest, "size": view.size})
 
+    async def create_chapter_tool(
+        tool_call_id: str,
+        arguments: Mapping[str, Any],
+        signal: ToolCancellationToken | None = None,
+        on_update: ToolUpdateCallback | None = None,
+    ) -> AgentToolResult:
+        """建一章：走既有建章事务（章节计划 + 正文路径 + 骨架一次提交）。
+
+        建章是结构性决定（M5）：模型先在对话里提议（含可选标题），作者确认后才
+        创建。确定性门槛：作者本轮原话必须同时含建章意图与确认；同一请求键幂等；
+        失败回滚不留半登记（事务层保证）。
+        """
+        del tool_call_id, signal, on_update
+        if run.story is None or run.state_root is None:
+            raise WorkspaceError(
+                code="STORY_SCOPE_INVALID",
+                where="建章",
+                why="当前会话没有冻结的方案上下文",
+                fix="在作品会话里建章",
+            )
+        author_text = run.current_author_text or ""
+        if not _chapter_creation_confirmed(author_text):
+            raise WorkspaceError(
+                code="CHAPTER_CONFIRMATION_REQUIRED",
+                where="建章",
+                why="作者本轮原话没有明确确认建章",
+                fix="先在对话里提议建章（含可选标题），等作者确认后再创建",
+            )
+        confirmation = _text_argument(arguments, "confirmation")
+        if confirmation not in author_text:
+            raise WorkspaceError(
+                code="STORY_AUTHORIZATION_CONFLICT",
+                where="建章",
+                why="确认引文与作者本轮原话不一致",
+                fix="引用作者原话里确认建章的短句",
+            )
+        raw_title = arguments.get("title")
+        title = str(raw_title).strip() if isinstance(raw_title, str) else None
+        title = title or None
+        after = arguments.get("after_chapter_id")
+        after_id = str(after).strip() if isinstance(after, str) and after.strip() else None
+        revision = _text_argument(arguments, "expected_plan_revision")
+        request_key = _text_argument(arguments, "request_key")
+        store = StoryStore(run.state_root, workspace, format_version=4)
+        result = create_chapter_transaction(
+            store,
+            workspace,
+            title=title,
+            after_chapter_id=after_id,
+            expected_plan_revision=revision,
+            request_key=request_key,
+        )
+        run.record(
+            "chapter_created",
+            {
+                "chapter_id": result.chapter_id,
+                "path": result.path,
+                "title": title or "",
+                "order": result.order,
+            },
+        )
+        return _json(
+            {
+                "chapter_id": result.chapter_id,
+                "order": result.order,
+                "path": result.path,
+                "prose_digest": result.prose_digest,
+                "plan_revision": result.plan_revision,
+                "change_id": result.receipt.change_id,
+                "note": "章节已创建；骨架正文已入档，写正文仍要走起草或写作流程。",
+            }
+        )
+
     async def move_file(
         tool_call_id: str,
         arguments: Mapping[str, JSONValue],
@@ -1552,6 +1626,41 @@ def build_tools(
             },
             execute_fn=write_structure,
             prompt_guidelines=WRITE_STRUCTURE_GUIDELINES,
+            execution_mode="sequential",
+        ),
+        AgentTool(
+            name="create_chapter",
+            label="建一章",
+            description=prompt_tools.CREATE_CHAPTER_DESCRIPTION,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": prompt_tools.CREATE_CHAPTER_TITLE_PARAM_DESCRIPTION,
+                    },
+                    "after_chapter_id": {
+                        "type": "string",
+                        "description": prompt_tools.CREATE_CHAPTER_AFTER_PARAM_DESCRIPTION,
+                    },
+                    "expected_plan_revision": {
+                        "type": "string",
+                        "description": prompt_tools.CREATE_CHAPTER_REVISION_PARAM_DESCRIPTION,
+                    },
+                    "request_key": {
+                        "type": "string",
+                        "description": prompt_tools.CREATE_CHAPTER_REQUEST_KEY_PARAM_DESCRIPTION,
+                    },
+                    "confirmation": {
+                        "type": "string",
+                        "description": prompt_tools.CREATE_CHAPTER_CONFIRMATION_PARAM_DESCRIPTION,
+                    },
+                },
+                "required": ["expected_plan_revision", "request_key", "confirmation"],
+                "additionalProperties": False,
+            },
+            execute_fn=create_chapter_tool,
+            prompt_guidelines=prompt_tools.CREATE_CHAPTER_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(
@@ -3642,6 +3751,24 @@ def _instructions_for(mode: ToolMode) -> str:
     if mode == "review":
         return REVIEW_INSTRUCTIONS
     return ""
+
+
+#: 建章确认的原话标记：意图（章）与确认同时出现才算作者拍板（M5 建章提案契约）。
+_CHAPTER_CREATE_WORDS = (
+    "建章",
+    "建吧",
+    "新建",
+    "加一章",
+    "再加",
+    "下一章",
+    "创建章节",
+    "开新章",
+)
+
+
+def _chapter_creation_confirmed(author_text: str) -> bool:
+    """作者原话是否明确确认建章；确定性关键词判定，不从模型转述取信。"""
+    return any(word in author_text for word in _CHAPTER_CREATE_WORDS)
 
 
 def _json(payload: Mapping[str, Any], *, terminate: bool = False) -> AgentToolResult:

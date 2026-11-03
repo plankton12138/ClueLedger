@@ -153,6 +153,13 @@ __all__ = [
     "UPDATE_STORY_DESCRIPTION",
     "UPDATE_STORY_GUIDELINES",
     "UPDATE_STORY_UPDATES_PARAM_DESCRIPTION",
+    "CREATE_CHAPTER_DESCRIPTION",
+    "CREATE_CHAPTER_GUIDELINES",
+    "CREATE_CHAPTER_TITLE_PARAM_DESCRIPTION",
+    "CREATE_CHAPTER_AFTER_PARAM_DESCRIPTION",
+    "CREATE_CHAPTER_REVISION_PARAM_DESCRIPTION",
+    "CREATE_CHAPTER_REQUEST_KEY_PARAM_DESCRIPTION",
+    "CREATE_CHAPTER_CONFIRMATION_PARAM_DESCRIPTION",
     "UPDATE_STORY_NO_CHANGE_PARAM_DESCRIPTION",
     "UPDATE_STORY_NOTE_PARAM_DESCRIPTION",
     "UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION",
@@ -610,6 +617,24 @@ UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION = (
     "op 只能用 description 里列出的那几个值"
 )
 UPDATE_STORY_NOTE_PARAM_DESCRIPTION = "这次修改对作者的一句话说明（可选）"
+
+CREATE_CHAPTER_DESCRIPTION = (
+    "建一章：登记章节计划、分配正文路径并创建骨架，一次事务提交。"
+    "建章是结构性决定：先在对话里提议（含可选标题），作者确认后才能调用。"
+)
+CREATE_CHAPTER_GUIDELINES = (
+    "作者确认建章后才能调用；作者没确认就先提议，不要自作主张建章。",
+    "标题可留空（按章序默认命名）；作者给了标题就带上。",
+    "expected_plan_revision 用 read_story 读到的当前修订；request_key 用稳定键，"
+    "同一提案重试复用同一键（幂等）。",
+)
+CREATE_CHAPTER_TITLE_PARAM_DESCRIPTION = "新章标题；作者没给就省略"
+CREATE_CHAPTER_AFTER_PARAM_DESCRIPTION = "插在哪一章之后（章节 ID）；默认追加到末尾"
+CREATE_CHAPTER_REVISION_PARAM_DESCRIPTION = "read_story 读到的当前方案修订"
+CREATE_CHAPTER_REQUEST_KEY_PARAM_DESCRIPTION = "本次建章提案的稳定请求键，如 chapter:prop:1"
+CREATE_CHAPTER_CONFIRMATION_PARAM_DESCRIPTION = (
+    "作者确认建章的原话短引文，必须出现在作者本轮消息里"
+)
 UPDATE_STORY_UPDATES_PARAM_DESCRIPTION = (
     "本次各项改动的感知分类标注：label 用变更对象可读名；category 填 bookkeeping"
     "（记账，静默）或 planned（计划性变化，必须带 note 与受影响范围 affected）"
