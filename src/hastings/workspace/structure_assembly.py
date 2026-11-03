@@ -95,8 +95,9 @@ def structure_section_text(layers: StructureLayers) -> str:
 def ledger_section(ledger: ProseLedger) -> str:
     """第 5 层：正文台账注入文本；空台账返回空文本（分区按空跳过）。
 
-    只注入事实（哪些章已入档、对应哪个修订），不解释任务该写哪章——那是
-    确定性对账（``reconcile``）与改派说明的职责，两件事不混在一个小节里。
+    分区标题（「## 正文台账」）由装配层统一提供，这里只给登记行与优先级声明，
+    不重复小节头。只注入事实（哪些章已入档、对应哪个修订），不解释任务该写
+    哪章——那是确定性对账（``reconcile``）与改派说明的职责，两件事不混在一起。
     """
     if not ledger.chapters:
         return ""
@@ -104,7 +105,7 @@ def ledger_section(ledger: ProseLedger) -> str:
         f"- 第 {chapter} 章｜最近入档修订 {revision[:8]}"
         for chapter, revision in sorted(ledger.chapters.items())
     )
-    return f"### 正文台账（系统事实，只读）\n{rows}\n\n{_LEDGER_PRIORITY_NOTE}"
+    return f"{rows}\n\n{_LEDGER_PRIORITY_NOTE}"
 
 
 def reconcile_note(decision: ReconcileDecision | None) -> str:
