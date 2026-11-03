@@ -62,6 +62,7 @@ __all__ = [
     "SearchHit",
     "SearchResult",
     "Workspace",
+    "STRUCTURE_PATH",
     "digest_bytes",
     "is_managed_path",
     "managed_kind",
@@ -71,7 +72,10 @@ __all__ = [
 BODY_DIR = "正文"
 SETTINGS_DIR = "设定集"
 CHARACTERS_DIR = f"{SETTINGS_DIR}/角色小传"
-FileKind = Literal["chapter", "character", "setting"]
+#: 结构文档固定位于作品根目录（v1.1 M2）；比一般受管文件少一层目录。
+#: 与 ``structure_document.py: STRUCTURE_FILENAME`` 保持一致（两者不能互相导入）。
+STRUCTURE_PATH = "STRUCTURE.md"
+FileKind = Literal["chapter", "character", "setting", "structure"]
 
 #: 角色按文件列出；其余两份设定路径固定，顺序即界面顺序。
 SETTING_FILES: tuple[tuple[str, str], ...] = (
@@ -107,6 +111,8 @@ def managed_kind(path: str) -> FileKind | None:
     if parsed.is_absolute():
         return None
     parts = parsed.parts
+    if path == STRUCTURE_PATH:
+        return "structure"
     # "." / ".." / 空段 / 连续分隔符都会让规范化后的 parts 与原串不一致。
     if len(parts) not in (2, 3) or "/".join(parts) != path:
         return None
