@@ -14,8 +14,8 @@ from hastings.workspace.prose_ledger import ProseLedger
 from hastings.workspace.structure_assembly import (
     STYLE_PLACEHOLDER,
     ledger_section,
-    structure_section_text,
     split_structure_layers,
+    structure_section_text,
 )
 
 _STRUCTURE = "## 铁律\n不写超自然力量\n\n## 骨架\n- 第 1 章：雨夜"

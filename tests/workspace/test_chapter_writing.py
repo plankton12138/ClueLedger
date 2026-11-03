@@ -429,7 +429,8 @@ def test_save_relocates_binding_and_reports_invalidation(
     )
     item = next(row for row in deleted.index.items if row.placement == "written")
     assert item.occurrences[0].state == "missing"
-    assert store.require_variant(MAIN_VARIANT_ID).bindings[confirmed.binding.id].start == binding.start
+    saved_bindings = store.require_variant(MAIN_VARIANT_ID).bindings
+    assert saved_bindings[confirmed.binding.id].start == binding.start
 
 
 def test_binding_recovers_after_quote_is_restored(env: tuple[Workspace, StoryStore]) -> None:

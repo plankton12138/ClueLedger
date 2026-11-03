@@ -45,11 +45,14 @@ class ProseLedger:
     def to_json(self) -> dict[str, object]:
         return {
             "schema": LEDGER_SCHEMA,
-            "chapters": {str(chapter): revision for chapter, revision in sorted(self.chapters.items())},
+            "chapters": {
+                str(chapter): revision
+                for chapter, revision in sorted(self.chapters.items())
+            },
         }
 
     @classmethod
-    def from_json(cls, value: object) -> "ProseLedger":
+    def from_json(cls, value: object) -> ProseLedger:
         if not isinstance(value, dict):
             return empty_ledger()
         if value.get("schema") != LEDGER_SCHEMA:
@@ -147,7 +150,10 @@ def reconcile(
         target=target_chapter,
         target_to=earliest,
         skipped=(),
-        reason=f"第 {earliest} 章尚无正文登记，第 {target_chapter} 章不予起草，改派第 {earliest} 章",
+        reason=(
+            f"第 {earliest} 章尚无正文登记，"
+            f"第 {target_chapter} 章不予起草，改派第 {earliest} 章"
+        ),
     )
 
 
