@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -47,11 +47,13 @@ from hastings.workspace.timeline import TimelineStore
 __all__ = [
     "DEFAULT_LIMIT",
     "MAX_LIMIT",
+    "SELECTION_SCAN_LIMIT",
     "MaterialHit",
     "MaterialQuery",
     "catalog_brief",
     "module_overview",
     "query_materials",
+    "relevant_module_note",
 ]
 
 Source = Literal["author", "observed", "legacy_unverified"]
@@ -222,6 +224,108 @@ def module_overview(assembly: Assembly, library: ModuleLibrary | None, *, limit:
             "命中不等于读过。）"
         )
     return "\n".join(lines)
+
+
+#: 按需选择的扫描上限：超出即停下并如实说明没扫完，不静默漏项。
+SELECTION_SCAN_LIMIT = 300
+#: 「本轮相关」注入的条目上限；更多命中让模型用 query_records 按关键词继续找。
+SELECTION_RESULT_LIMIT = 8
+
+
+def relevant_module_note(
+    assembly: Assembly,
+    library: ModuleLibrary | None,
+    *,
+    target_chapter: int,
+    limit: int = SELECTION_RESULT_LIMIT,
+) -> tuple[str, tuple[str, ...]]:
+    """按目标章确定性选择相关模块条目（v1.1 M3 按需选择）。
+
+    判据只看条目的计划字段，不做语义猜测：线索看「埋设章 ≤ 目标 ≤ 回收章」，
+    其余类型看 ``planned_chapter`` 是否等于目标章。命中不等于读过——注入的只是
+    定位行，条目原文仍要用 ``read_record`` 读取；模块索引分区保持不变，这一段
+    只是叠加的「本轮相关」提示。返回（注入文本, 命中的模块 id）；无命中返回
+    ``("", ())``，模块分区退回纯索引（目标未知时的默认形态）。
+    """
+    if library is None or not assembly.bindings:
+        return "", ()
+    labels: dict[str, str] = {item.kind: item.label for item in PRESETS}
+    rows: list[str] = []
+    module_ids: list[str] = []
+    scanned = 0
+    limited = False
+    for binding in assembly.bindings:
+        if limited or len(rows) >= max(1, limit):
+            break
+        try:
+            revision = library.revision(
+                module_id=binding.module.module_id,
+                revision_id=binding.module.revision_id,
+            )
+        except WorkspaceError:
+            continue
+        for entry in revision.entries:
+            if scanned >= SELECTION_SCAN_LIMIT:
+                limited = True
+                break
+            scanned += 1
+            if not _entry_targets_chapter(entry, target_chapter):
+                continue
+            rows.append(
+                f"- {labels.get(revision.module_kind, revision.module_kind)}"
+                f"｜{entry.title}｜{_chapter_span(entry, target_chapter)}"
+                f"｜{revision.module_id}:{entry.entry_id}"
+            )
+            if binding.module.module_id not in module_ids:
+                module_ids.append(binding.module.module_id)
+    if not rows:
+        return "", ()
+    trailer = "- （命中不等于读过：写之前用 read_record 读取条目原文。）"
+    if limited:
+        trailer = (
+            "- （条目较多，本轮只扫描了部分；需要更全时用 query_records 按关键词查。）\n"
+            + trailer
+        )
+    note = (
+        f"### 本轮相关条目（按目标章第 {target_chapter} 章确定性选择）\n"
+        + "\n".join(rows)
+        + "\n"
+        + trailer
+    )
+    return note, tuple(module_ids)
+
+
+def _entry_targets_chapter(entry: CatalogEntry, target_chapter: int) -> bool:
+    """计划字段是否覆盖目标章；字段缺失或不是数字时不猜。"""
+    fields = entry.fields
+    plant = _int_field(fields, "planned_plant_chapter")
+    if plant is not None:
+        resolve = _int_field(fields, "planned_resolve_chapter")
+        return plant <= target_chapter and (resolve is None or target_chapter <= resolve)
+    planned = _int_field(fields, "planned_chapter")
+    return planned is not None and planned == target_chapter
+
+
+def _int_field(fields: Mapping[str, object], key: str) -> int | None:
+    value = fields.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _chapter_span(entry: CatalogEntry, target_chapter: int) -> str:
+    plant = _int_field(entry.fields, "planned_plant_chapter")
+    if plant is not None:
+        resolve = _int_field(entry.fields, "planned_resolve_chapter")
+        detail = f"埋设第 {plant} 章"
+        if resolve is not None:
+            detail += f"、计划第 {resolve} 章回收"
+        return detail
+    planned = _int_field(entry.fields, "planned_chapter")
+    return f"计划第 {planned} 章" if planned is not None else f"关联第 {target_chapter} 章"
 
 
 def query_materials(

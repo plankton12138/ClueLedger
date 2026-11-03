@@ -19,7 +19,12 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.materials import SourceRef
 from hastings.workspace.module_assembly import Assembly, AssemblyStore
-from hastings.workspace.retrieval import MaterialQuery, catalog_brief, query_materials
+from hastings.workspace.retrieval import (
+    MaterialQuery,
+    catalog_brief,
+    query_materials,
+    relevant_module_note,
+)
 from hastings.workspace.story_index import (
     ChapterProjection,
     EventObservation,
@@ -465,3 +470,109 @@ def test_catalog_brief_lists_installed_bindings_and_chapters(tmp_path: Path) -> 
     assert brief["bindings"][0]["entry_count"] == 1
     assert [item["chapter"] for item in brief["chapters"]] == [1, 8]
     assert brief["total_chapters"] == 2
+
+
+# -- 按需选择（v1.1 M3，Q2-D） -----------------------------------------------
+
+
+def test_relevant_module_note_selects_entries_covering_target_chapter(
+    tmp_path: Path,
+) -> None:
+    """线索条目按「埋设章 ≤ 目标 ≤ 回收章」选择；不相关与过回收期的条目不进。"""
+    library = _library(tmp_path)
+    workspace = _workspace(tmp_path)
+    created = _create(
+        library,
+        name="伏笔账",
+        kind="clues",
+        entries=[
+            EntryDraft(
+                "tongshao",
+                "clue_plan",
+                "铜哨",
+                "挂在陈默脖子上的铜哨。",
+                (),
+                {"planned_plant_chapter": 2, "planned_resolve_chapter": 6},
+            ),
+            EntryDraft(
+                "weituo",
+                "clue_plan",
+                "未出现的委托信",
+                "只埋不收的对照项。",
+                (),
+                {"planned_plant_chapter": 7},
+            ),
+        ],
+        key="create-clues",
+    )
+    assembly = _bind(workspace, library, created)
+
+    note, module_ids = relevant_module_note(assembly, library, target_chapter=3)
+
+    assert "铜哨" in note
+    assert "埋设第 2 章、计划第 6 章回收" in note
+    assert "未出现的委托信" not in note
+    assert "read_record" in note
+    assert module_ids == (str(created["module"]["module_id"]),)  # type: ignore[index]
+
+
+def test_relevant_module_note_matches_planned_chapter_exactly(tmp_path: Path) -> None:
+    """剧情/真相类按 planned_chapter 精确匹配目标章。"""
+    library = _library(tmp_path)
+    workspace = _workspace(tmp_path)
+    created = _create(
+        library,
+        name="剧情安排",
+        kind="plot",
+        entries=[
+            EntryDraft(
+                "duizhi",
+                "plot_plan",
+                "阁楼对峙",
+                "两人在阁楼摊牌。",
+                (),
+                {"planned_chapter": 4},
+            ),
+            EntryDraft(
+                "qita",
+                "plot_plan",
+                "另一场戏",
+                "安排在别处。",
+                (),
+                {"planned_chapter": 5},
+            ),
+        ],
+        key="create-plot",
+    )
+    assembly = _bind(workspace, library, created)
+
+    note, module_ids = relevant_module_note(assembly, library, target_chapter=4)
+
+    assert "阁楼对峙" in note
+    assert "计划第 4 章" in note
+    assert "另一场戏" not in note
+    assert module_ids == (str(created["module"]["module_id"]),)  # type: ignore[index]
+
+
+def test_relevant_module_note_empty_when_nothing_targets_the_chapter(
+    tmp_path: Path,
+) -> None:
+    library = _library(tmp_path)
+    workspace = _workspace(tmp_path)
+    created = _create(
+        library,
+        name="主角团",
+        entries=[EntryDraft("lin", "character", "林静", "法医。", (), {})],
+        key="create-1",
+    )
+    assembly = _bind(workspace, library, created)
+
+    assert relevant_module_note(assembly, library, target_chapter=3) == ("", ())
+    assert relevant_module_note(assembly, None, target_chapter=3) == ("", ())
+
+
+def test_relevant_module_note_without_library_or_bindings_is_empty(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+
+    empty_assembly = Assembly()
+    assert relevant_module_note(empty_assembly, library, target_chapter=1) == ("", ())

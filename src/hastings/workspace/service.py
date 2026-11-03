@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import os
 import re
@@ -2810,6 +2811,28 @@ class TurnService:
                 structure_text, ledger_text, structure_snapshot = self._structure_injection(
                     info
                 )
+                # 模块按需选择（M3）：目标章已知（含对账改派后的章）时叠加「本轮相关」
+                # 条目段；目标未知时模块分区保持纯索引，由模型在会话内按需检索。
+                effective_target = (
+                    structure_snapshot.reconcile_redirected_to
+                    if structure_snapshot.reconcile_action == "redirect"
+                    else (
+                        structure_snapshot.reconcile_target
+                        if structure_snapshot.reconcile_action == "write"
+                        else None
+                    )
+                )
+                modules_selected: tuple[str, ...] = ()
+                if effective_target is not None and frozen_assembly.bindings:
+                    from hastings.workspace.retrieval import relevant_module_note
+
+                    relevant_note, modules_selected = relevant_module_note(
+                        frozen_assembly, self.library, target_chapter=effective_target
+                    )
+                    if relevant_note:
+                        modules = (
+                            f"{modules}\n\n{relevant_note}" if modules.strip() else relevant_note
+                        )
                 assembly = build_turn_assembly(
                     self.workspace,
                     as_of_chapter=run.state_chapter,
@@ -2828,8 +2851,11 @@ class TurnService:
                     clue_store=clue_store,
                 )
                 injected = assembly.summary()
-                # 结构层快照：实际注入了哪些层、对账改派了哪章，作者可核对（M3 回执）。
-                injected["structure"] = structure_snapshot.to_dict()
+                # 结构层快照：实际注入了哪些层、对账改派了哪章、按需选中了哪些模块，
+                # 作者可核对（M3 回执）。
+                injected["structure"] = dataclasses.replace(
+                    structure_snapshot, modules_selected=modules_selected
+                ).to_dict()
                 # 这一轮实际用的是受理时冻结的装配，不是现在界面上的绑定。
                 injected["frozen"] = {
                     "digest": info.assembly_digest,
