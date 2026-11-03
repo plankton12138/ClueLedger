@@ -45,7 +45,13 @@ from hastings.workspace.disclosure import (
     state_view,
 )
 from hastings.workspace.errors import WorkspaceError, status_for_code
-from hastings.workspace.files import FileEntry, FileKind, Workspace, is_managed_path
+from hastings.workspace.files import (
+    STRUCTURE_PATH,
+    FileEntry,
+    FileKind,
+    Workspace,
+    is_managed_path,
+)
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import GlossaryStore, build_glossary, glossary_view
 from hastings.workspace.locations import default_data_root, default_workspace_root, documents_dir
@@ -1131,7 +1137,24 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
     @router.get("/{workspace_id}/file", response_model=FileViewResponse)
     def read_file(workspace_id: str, path: str = Query(min_length=1)) -> FileViewResponse:
         workspace = workspaces.workspace(workspace_id)
-        view_file = workspace.read(path)
+        try:
+            view_file = workspace.read(path)
+        except WorkspaceError as error:
+            if path == STRUCTURE_PATH and error.code == "FILE_NOT_FOUND":
+                # 起步前结构缺失仍可读：返回空文本，只读页据此提示「还没有结构」。
+                entry = workspace.describe(path)
+                return FileViewResponse(
+                    path=STRUCTURE_PATH,
+                    kind=entry.kind,
+                    title=entry.title,
+                    display_title=entry.display_title,
+                    text="",
+                    display_text="",
+                    digest="",
+                    size=0,
+                    metadata_warnings=[],
+                )
+            raise
         entry = workspace.describe(path)
         return FileViewResponse(
             path=view_file.path,

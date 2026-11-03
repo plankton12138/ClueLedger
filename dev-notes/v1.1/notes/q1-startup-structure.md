@@ -76,6 +76,21 @@
    完成后授权门照旧；`test_story_routing.py` 三个空作品用例改用 `_seed_started`
    （seed 节点）表达「起步完成后的旧构思流程」，并同步修订断言。
 
+### 切片六：结构只读页与目录描述（Q1-E）
+
+1. `files.py`：`describe` 对 `STRUCTURE.md` 给出独立条目（kind `structure`、
+   显示名「全书结构」）；起步前缺失也列出（`exists=False`），文件读取端点对缺失
+   结构返回空文本（不 404），只读页据此提示「还没有结构」。
+2. `story_api.py`：`GET /story/{id}/structure`——全文、体量与预算占用
+   （`within_budget`、`budget_limit`），对应计划风险表的「只读页可见体量」。
+3. 前端：`api/structure.ts`（读取 + `STRUCTURE_PATH` 常量）；新组件
+   `writing/StructureView.tsx`——只读渲染（复用 `prose-paper` 排版与 ReactMarkdown），
+   无编辑框；附「在对话里继续调整」入口；超预算时警示。侧栏「全书结构」入口
+   跟作品意图一起出现（起步对话收束前没有可看的结构），经 `prosePath` 导航，
+   复用既有只读页路由与页边风格。
+4. 测试：后端 `test_structure_io.py` 10 例、`test_api.py` 2 例；前端 tsc +
+   324 tests 全部通过。
+
 ## 基线差异登记（对照计划第 2 节）
 
 - `book_intent` 数据结构、`save_book_intent` 联合提交、撤销链路在 v1.0.9 已存在，
@@ -89,7 +104,6 @@
 
 ## 未覆盖项（Q1 剩余）
 
-- **结构只读页**（前端）与侧栏入口。
 - 在线冒烟：起步对话到首批模块入档全链路（依赖真实模型）。
 
 ## 验证
@@ -97,4 +111,4 @@
 - 切片一/二定向测试：28 passed；切片三 agent 相关 5 文件 88 passed（含活动流动词把关）。
 - 切片五：`test_agent_startup_phase.py` 7 例、`test_book_startup.py` 12 例、
   `test_story_routing.py` 33 例；ruff / mypy 通过。
-- 全量 `tests/workspace` 回归：**1508 passed / 0 failed**（2026-11-03，切片五后复跑）。
+- 全量 `tests/workspace` 回归：**1512 passed / 0 failed**（2026-11-03，切片六后复跑）。

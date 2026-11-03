@@ -327,6 +327,50 @@ def test_read_rejects_paths_outside_managed_set(path: str, tmp_path: Path) -> No
     assert response.json()["error"]["code"] == "PATH_NOT_MANAGED"
 
 
+def test_read_structure_document_via_file_endpoint(tmp_path: Path) -> None:
+    """结构文档走受管文件读取：缺失时条目仍可描述（exists=False），写入后返回全文。"""
+    client = _client(tmp_path)
+    root = tmp_path / "作品"
+    workspace_id = _created(client, root)
+
+    missing = client.get(
+        f"/api/file-workspaces/{workspace_id}/file", params={"path": "STRUCTURE.md"}
+    )
+    assert missing.status_code == 200
+    assert missing.json()["kind"] == "structure"
+    assert missing.json()["text"] == ""
+
+    (root / "STRUCTURE.md").write_text(
+        "## 铁律\n第三人称限制视角。\n\n## 路线\n暴雪之夜收束。\n", encoding="utf-8"
+    )
+    present = client.get(
+        f"/api/file-workspaces/{workspace_id}/file", params={"path": "STRUCTURE.md"}
+    )
+    assert present.status_code == 200
+    assert present.json()["kind"] == "structure"
+    assert "铁律" in present.json()["text"]
+
+
+def test_story_structure_endpoint_reports_budget(tmp_path: Path) -> None:
+    """结构只读页端点：全文、体量与预算占用；起步前 exists 为假。"""
+    client = _client(tmp_path)
+    root = tmp_path / "作品"
+    workspace_id = _created(client, root)
+
+    empty = client.get(f"/api/file-workspaces/{workspace_id}/story/structure")
+    assert empty.status_code == 200
+    assert empty.json()["exists"] is False
+    assert empty.json()["text"] == ""
+
+    (root / "STRUCTURE.md").write_text("## 铁律\n视角限制。\n", encoding="utf-8")
+    data = client.get(f"/api/file-workspaces/{workspace_id}/story/structure").json()
+    assert data["exists"] is True
+    assert "视角限制" in data["text"]
+    assert data["within_budget"] is True
+    assert data["budget_limit"] > 0
+    assert data["size"] > 0
+
+
 def test_read_missing_file_is_not_found(tmp_path: Path) -> None:
     client = _client(tmp_path)
     workspace_id = _created(client, tmp_path / "作品")

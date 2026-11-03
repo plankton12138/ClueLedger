@@ -39,6 +39,23 @@ def test_read_structure_state_missing_is_empty(workspace: Workspace) -> None:
     assert state.text == "" and state.digest is None
 
 
+def test_describe_structure_missing_lists_absent(workspace: Workspace) -> None:
+    """起步前结构缺失也给出目录条目（exists=False），只读页据此提示。"""
+    entry = workspace.describe(STRUCTURE_PATH)
+    assert entry.kind == "structure"
+    assert entry.exists is False
+    assert entry.display_title == "全书结构"
+
+
+def test_describe_structure_after_write(workspace: Workspace) -> None:
+    write_structure_document(workspace, text=GOOD, expected_digest=None, creating=True)
+    entry = workspace.describe(STRUCTURE_PATH)
+    assert entry.exists is True
+    assert entry.size > 0
+    view = workspace.read(STRUCTURE_PATH)
+    assert view.text.strip() == GOOD.strip()
+
+
 def test_write_structure_create_requires_marker(workspace: Workspace) -> None:
     with pytest.raises(WorkspaceError) as exc:
         write_structure_document(

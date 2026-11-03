@@ -321,6 +321,9 @@ class Workspace:
 
     def describe(self, path: str) -> FileEntry:
         """按目录的方式描述一个文件：显示名、章序与标签与列表完全一致。"""
+        if path == STRUCTURE_PATH:
+            # 结构文档不在两块目录里：单独描述，供只读页与文件读取端点取显示信息。
+            return self._structure_entry()
         catalog = self.catalog()
         for entry in (*catalog.chapters, *catalog.characters, *catalog.settings):
             if entry.path == path:
@@ -331,6 +334,27 @@ class Workspace:
             why="目录里没有这个文件",
             fix="刷新目录后重新选择；文件可能刚被删除或改名",
             details={"path": path},
+        )
+
+    def _structure_entry(self) -> FileEntry:
+        """``STRUCTURE.md`` 的目录条目；起步前缺失也列出（``exists=False``）。"""
+        target = self.root / STRUCTURE_PATH
+        try:
+            size = target.stat().st_size if target.is_file() else 0
+        except OSError:
+            size = 0
+        return FileEntry(
+            path=STRUCTURE_PATH,
+            kind="structure",
+            title="STRUCTURE",
+            display_title="全书结构",
+            order="0",
+            chapter_number=None,
+            chapter_type=None,
+            roles=(),
+            exists=size > 0,
+            size=size,
+            metadata_warnings=(),
         )
 
     def search(self, query: str, *, limit: int = 50) -> SearchResult:

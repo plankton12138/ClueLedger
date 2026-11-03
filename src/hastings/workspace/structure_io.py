@@ -34,6 +34,7 @@ class StructureState:
     exists: bool
     text: str
     digest: str | None
+    size: int = 0
 
 
 def read_structure_state(workspace: Workspace) -> StructureState:
@@ -42,7 +43,7 @@ def read_structure_state(workspace: Workspace) -> StructureState:
         view = workspace.read(STRUCTURE_PATH)
     except WorkspaceError:
         return StructureState(exists=False, text="", digest=None)
-    return StructureState(exists=True, text=view.text, digest=view.digest)
+    return StructureState(exists=True, text=view.text, digest=view.digest, size=view.size)
 
 
 def write_structure_document(

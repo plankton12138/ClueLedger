@@ -24,6 +24,8 @@ from hastings.workspace.state import ConversationStore, RecentWorkspaces, conver
 from hastings.workspace.story_clue_commit import prepare_clue_undo
 from hastings.workspace.story_index_jobs import IndexAnalysisService, IndexJobStore
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
+from hastings.workspace.structure_document import BUDGET_LIMIT, check_budget
+from hastings.workspace.structure_io import read_structure_state
 from hastings.workspace.writing_actions import create_chapter, save_book_intent
 from hastings.workspace.writing_api_models import (
     BookIntentRequest,
@@ -244,6 +246,21 @@ def create_story_router(
         return {
             "change_id": result.change_id,
             "plan_revision": result.plan_revision,
+        }
+
+    @router.get("/{workspace_id}/story/structure")
+    def get_structure(workspace_id: str) -> dict[str, Any]:
+        """结构文档现状（v1.1 M2 只读页）：全文、体量与预算占用；起步前缺失。"""
+        workspace = workspaces.workspace(workspace_id)
+        state = read_structure_state(workspace)
+        budget = check_budget(state.text)
+        return {
+            "exists": state.exists,
+            "text": state.text,
+            "digest": state.digest,
+            "size": state.size,
+            "within_budget": budget.ok,
+            "budget_limit": BUDGET_LIMIT,
         }
 
     @router.post("/{workspace_id}/story/chapters", status_code=201)
