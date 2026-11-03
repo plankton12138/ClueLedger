@@ -101,6 +101,7 @@ _TOOL_VERBS = {
     "edit_file": "修改",
     "read_structure": "读取全书结构",
     "write_structure": "写入全书结构",
+    "create_chapter": "建一章",
     "move_file": "移动",
     "delete_file": "删除",
     "list_files": "列出文件",
