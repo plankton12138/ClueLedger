@@ -36,6 +36,13 @@ from hastings.workspace.clue_store import ClueLedgerStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.module_assembly import ModuleRef
+from hastings.workspace.perception import (
+    UpdateNote,
+    planned_change_lines,
+    receipt_rows,
+    unannotated_labels,
+    validate_update_notes,
+)
 from hastings.workspace.story_authorization import (
     authorize_change,
     blocks_writes,
@@ -69,6 +76,39 @@ __all__ = ["StoryToolScope", "build_story_tools"]
 
 #: 一次读取返回的字符上限；超过时只给概览与继续读取的入口。
 _READ_LIMIT = 8_000
+
+
+def _parse_update_notes(raw: object) -> list[UpdateNote]:
+    """解析更新标注；缺 label、分类未知等标注不完整直接拒绝（入档前）。"""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise WorkspaceError(
+            code="STORY_CHANGE_INVALID",
+            where="story.update:updates",
+            why="updates 必须是标注数组",
+            fix="每条标注给 label 与 category（bookkeeping 或 planned）",
+        )
+    notes: list[UpdateNote] = []
+    for item in raw:
+        note = UpdateNote.from_dict(item)
+        if note is None:
+            raise WorkspaceError(
+                code="STORY_CHANGE_INVALID",
+                where="story.update:updates",
+                why="更新标注缺少 label 或分类不是 bookkeeping/planned",
+                fix="每条标注都要有 label 与 category；计划性变化还要 note 说明",
+            )
+        notes.append(note)
+    issues = validate_update_notes(notes, [])
+    if issues:
+        raise WorkspaceError(
+            code="STORY_CHANGE_INVALID",
+            where="story.update:updates",
+            why=issues[0],
+            fix="计划性变化必须带 note；同一更新只标注一次",
+        )
+    return notes
 
 
 @dataclass(frozen=True, slots=True)
@@ -916,6 +956,9 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                 why="没有给出要做的结构变更",
                 fix="用 operations 描述至少一项变更；确实无需改动时用 no_change 列出依据",
             )
+        # 感知区分（M4）：更新项分类标注在入档前校验——未知分类、计划性变化缺说明
+        # 在这里拒绝，不等到提交后才发现标了跟没标一样。
+        notes = _parse_update_notes(arguments.get("updates"))
         variant = _variant(scope)
         if scope.workspace is not None:
             raw_operations = _expand_bindings(
@@ -1050,8 +1093,23 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                     "operation_types": [operation.op for operation in change.operations],
                     "changed": changed,
                     "labels": labels,
+                    "updates": receipt_rows(notes),
                     "operation_id": scope.operation_id,
                     "generation": scope.generation,
+                },
+            )
+        base_revision = record.base_revision if record is not None else variant.revision
+        if scope.record is not None and notes:
+            # 计划性变化单独一行说明（记账静默，只在上面的提交回执里）；
+            # 没标注到的变更如实列出，不替模型补分类。
+            scope.record(
+                "structure_updates_noted",
+                {
+                    "change_id": receipt.change_id,
+                    "base_revision": base_revision,
+                    "updates": receipt_rows(notes),
+                    "unannotated": list(unannotated_labels(notes, labels)),
+                    "planned_text": planned_change_lines(notes, base_revision),
                 },
             )
         if use_draft and draft:
@@ -1198,6 +1256,24 @@ def build_story_tools(scope: StoryToolScope) -> list[AgentTool]:
                         "note": {
                             "type": "string",
                             "description": prompt_tools.UPDATE_STORY_NOTE_PARAM_DESCRIPTION,
+                        },
+                        "updates": {
+                            "type": "array",
+                            "description": prompt_tools.UPDATE_STORY_UPDATES_PARAM_DESCRIPTION,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "label": {"type": "string"},
+                                    "category": {
+                                        "type": "string",
+                                        "enum": ["bookkeeping", "planned"],
+                                    },
+                                    "note": {"type": "string"},
+                                    "affected": {"type": "string"},
+                                },
+                                "required": ["label", "category"],
+                                "additionalProperties": False,
+                            },
                         },
                     },
                     "additionalProperties": False,

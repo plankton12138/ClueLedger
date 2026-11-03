@@ -152,6 +152,7 @@ __all__ = [
     "TASK_SUMMARY_PARAM_DESCRIPTION",
     "UPDATE_STORY_DESCRIPTION",
     "UPDATE_STORY_GUIDELINES",
+    "UPDATE_STORY_UPDATES_PARAM_DESCRIPTION",
     "UPDATE_STORY_NO_CHANGE_PARAM_DESCRIPTION",
     "UPDATE_STORY_NOTE_PARAM_DESCRIPTION",
     "UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION",
@@ -482,6 +483,9 @@ UPDATE_STORY_GUIDELINES = (
     "改已绑定正文的节点前先读 read_story_sync；有冲突先问作者，带 sync 决定提交。",
     "确认作者要求已经满足、确实无需改动时，用 no_change 列出本轮读过的对象与理由；"
     "不能只回复「已经存在」。",
+    "提交时用 updates 给每项改动分类：伏笔标记、状态更新这类记账（bookkeeping）"
+    "静默入档；改回收点位、新增叙事线、改铁律、删模块这类计划性变化（planned）"
+    "必须写 note，作者会在对话里看到单独一行说明并可要求改回。",
 )
 
 SUBMIT_STORY_CANDIDATE_REVIEW_DESCRIPTION = "逐项提交候选核对；所有通过结论都必须引用候选原文。"
@@ -606,6 +610,10 @@ UPDATE_STORY_OPERATIONS_PARAM_DESCRIPTION = (
     "op 只能用 description 里列出的那几个值"
 )
 UPDATE_STORY_NOTE_PARAM_DESCRIPTION = "这次修改对作者的一句话说明（可选）"
+UPDATE_STORY_UPDATES_PARAM_DESCRIPTION = (
+    "本次各项改动的感知分类标注：label 用变更对象可读名；category 填 bookkeeping"
+    "（记账，静默）或 planned（计划性变化，必须带 note 与受影响范围 affected）"
+)
 UPDATE_STORY_NO_CHANGE_PARAM_DESCRIPTION = (
     "本轮确认无需改动时使用：objects 列出本轮实际读过的目标对象，reason 说明作者要求"
     "已经如何得到满足。与 operations 二选一；没有实际读取或对象不存在会被拒绝。"
