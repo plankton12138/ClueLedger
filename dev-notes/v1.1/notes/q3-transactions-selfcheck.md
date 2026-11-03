@@ -89,7 +89,9 @@
   （chat / story_tools / chapter_writing / creative_assist / story_store）。
 - ruff 全过；mypy 新改文件全过（`creative_assist.py` 两处既有瑕疵不动，
   stash 验证与本阶段无关）。
-- 全量 `tests/workspace`：见下方回归结果（junitxml 权威统计）。
+- 全量 `tests/workspace`：**1583 例，0 errors，1 failure**——`test_activity` 把关用例
+  发现 `create_chapter` 缺可读动词（把关测试按设计生效），补动词后 `test_activity`
+  27 passed；其余 1582 例全部通过（junitxml 权威统计，较 Q2 +36）。
 
 ## 未覆盖项（如实登记）
 
