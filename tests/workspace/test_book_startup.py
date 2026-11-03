@@ -99,6 +99,25 @@ def test_guided_reply_report_counts_questions() -> None:
     assert guided_reply_report("好的，就这样开始。")["questions"] == 0
 
 
+def test_startup_conversation_prompt_modes_differ() -> None:
+    from hastings.workspace.book_startup import STARTUP_PROMPT_VERSION, startup_conversation_prompt
+
+    assert STARTUP_PROMPT_VERSION == 1
+    guided_sys, guided_open = startup_conversation_prompt("guided")
+    free_sys, free_open = startup_conversation_prompt("freeform")
+    # 引导模式约束：一次一问、上限、可跳过、就这样开始、未知保持未知。
+    assert "一次只问一个问题" in guided_open
+    assert str(STARTUP_QUESTION_LIMIT) in guided_open
+    assert "跳过" in guided_open and "就这样开始" in guided_open
+    for prompt in (guided_sys, guided_open, free_sys, free_open):
+        assert "保持未知" in prompt
+        assert "不写结局与真相" in prompt or "真相、凶手或结局" in prompt
+    # 两种模式都以设定卡候选收束；自由发挥不追问。
+    assert "设定卡候选" in guided_sys and "设定卡候选" in free_sys
+    assert "直接说想法" in free_open
+    assert "一次只问一个问题" not in free_open
+
+
 def test_structure_draft_prompt_states_contract() -> None:
     system, prompt = structure_draft_prompt(CARD, ("伏笔账", "人物"))
     assert "## 铁律" in prompt

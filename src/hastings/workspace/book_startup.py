@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.story_models import FORMAT_VERSION
@@ -30,13 +31,16 @@ from hastings.workspace.writing_actions import save_book_intent
 __all__ = [
     "CARD_TEXT_LIMIT",
     "STARTUP_QUESTION_LIMIT",
+    "STARTUP_PROMPT_VERSION",
     "StartupConfirmResult",
+    "StartupMode",
     "StartupStructureReport",
     "STRUCTURE_PROMPT_VERSION",
     "card_report",
     "check_first_structure",
     "confirm_startup_book_intent",
     "guided_reply_report",
+    "startup_conversation_prompt",
     "structure_draft_prompt",
 ]
 
@@ -48,6 +52,12 @@ CARD_TEXT_LIMIT = 2000
 
 #: 起步结构起草提示词版本；措辞变化时递增，便于评测对照。
 STRUCTURE_PROMPT_VERSION = 1
+
+#: 起步会话提示词版本。
+STARTUP_PROMPT_VERSION = 1
+
+#: 起步会话的双模式：引导提问或自由发挥。
+StartupMode = Literal["guided", "freeform"]
 
 
 def card_report(text: str) -> list[str]:
@@ -139,6 +149,40 @@ def guided_reply_report(text: str) -> dict[str, object]:
             )
         ),
     }
+
+
+def startup_conversation_prompt(mode: StartupMode) -> tuple[str, str]:
+    """起步会话的系统提示与首条开场提示（约束在提示层，不硬编码业务规则）。
+
+    引导模式：一次一问、数量上限、每问可跳过、随时「就这样开始」、未知保持未知；
+    问题只服务于找到可写的故事起点，不追问时间线、人物关系等内部属性清单。
+    自由发挥：作者直接说想法，模型整理成可写的起点，缺什么保持未知。
+    两种模式结束时都以设定卡候选收束：把对话内容整理为一段作品意图，完整呈现在
+    对话里供作者确认（确认动作走确认端点，这里只产出候选文本）。
+    """
+    if mode == "guided":
+        opening = (
+            "这本书还没有任何设定。请用引导提问帮作者起步："
+            f"一次只问一个问题，全程不超过 {STARTUP_QUESTION_LIMIT} 个；"
+            "每个问题都允许作者跳过；作者随时说「就这样开始」就停止提问。"
+            "问题只用于找到可写的故事起点（处境、悬念、人物所处的位置），"
+            "不追问时间线、人物关系表这类内部属性；作者不知道的就保持未知，"
+            "不替作者决定真相、凶手或结局。"
+        )
+    else:
+        opening = (
+            "这本书还没有任何设定。作者会直接说想法；"
+            "你把它整理成可继续发展的故事起点，缺什么保持未知，"
+            "不替作者决定真相、凶手或结局，也不追问内部属性清单。"
+        )
+    system = (
+        "你是悬疑小说创作助手，正在陪作者为一本新书起步。"
+        + opening
+        + "当作者示意可以开始（说「就这样开始」或明确表示想看结果）时，"
+        "把对话内容整理为一段作品意图（设定卡候选）在对话中完整呈现："
+        "只描述起点与悬念，不写结局与真相；整理后等作者确认。"
+    )
+    return system, opening
 
 
 def structure_draft_prompt(card_text: str, module_names: tuple[str, ...] = ()) -> tuple[str, str]:
