@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
+from hastings.workspace.book_startup import confirm_startup_book_intent
 from hastings.workspace.chapter_writing import save_chapter_prose
 from hastings.workspace.creative_candidates import CreativeCandidateStore
 from hastings.workspace.errors import WorkspaceError
@@ -29,6 +30,7 @@ from hastings.workspace.writing_api_models import (
     ChapterCreateRequest,
     IndexConfirmRequest,
     ProseSaveRequest,
+    StartupConfirmRequest,
 )
 from hastings.workspace.writing_view import (
     ModelSupportView,
@@ -230,6 +232,18 @@ def create_story_router(
         return {
             "plan_revision": variant.revision,
             "change_id": receipt.change_id,
+        }
+
+    @router.post("/{workspace_id}/story/startup/confirm-intent", status_code=201)
+    def post_startup_confirm(workspace_id: str, body: StartupConfirmRequest) -> dict[str, Any]:
+        """起步设定卡确认（v1.1 M1）：一次性门槛，重复确认拒绝；可整体撤销。"""
+        store = writing_store_for(workspace_id)
+        result = confirm_startup_book_intent(
+            store, text=body.text, request_key=body.request_key
+        )
+        return {
+            "change_id": result.change_id,
+            "plan_revision": result.plan_revision,
         }
 
     @router.post("/{workspace_id}/story/chapters", status_code=201)
