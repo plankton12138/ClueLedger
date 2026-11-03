@@ -1,7 +1,13 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Locator } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { resolve, join } from "node:path";
+
+/** 作品目录把模块收在「模块与导入」折叠区里；要点它的条目先展开这一节。 */
+async function openModuleSection(directory: Locator): Promise<void> {
+  const extras = directory.locator(".writing-nav-extras");
+  if (!(await extras.evaluate(node => (node as HTMLDetailsElement).open))) await extras.locator("summary").click();
+}
 
 interface PreloadedChanges {
   conversation_id: string;
@@ -54,6 +60,7 @@ test("添加、侧栏目录、作品内保存与其他作品隔离，刷新和�
   await request.put(`/api/file-workspaces/${other.id}/assembly`, { data: { bindings: [{ module: ref }], expected_digest: null, request_key: crypto.randomUUID() } });
   await page.goto(`/#/workspaces/${book.id}/writing`);
   const directory = page.getByRole("navigation", { name: "作品目录", exact: true });
+  await openModuleSection(directory);
   await expect(directory.getByText("还没有模块", { exact: true })).toBeVisible();
   await expect(directory.getByText("角色小传", { exact: true })).toHaveCount(0);
   await expect(directory.getByText("真相", { exact: true })).toHaveCount(0);
@@ -78,6 +85,7 @@ test("添加、侧栏目录、作品内保存与其他作品隔离，刷新和�
   const otherAssembly = await request.get(`/api/file-workspaces/${other.id}/assembly`).then(response => response.json());
   expect(otherAssembly.bindings[0].module).toEqual(ref);
   await page.reload();
+  await openModuleSection(directory);
   await directory.getByRole("button", { name: "雾港疑案·本作品", exact: true }).click();
   await expect(paper).toContainText("船票被撕掉了一角。");
   const screenshots=resolve("../data/test-tmp/module-experience-screenshots");
@@ -101,6 +109,7 @@ test("新建只写名称与正文，小标题生成目录且不出现类型表�
   await library.getByLabel("模块正文", { exact: true }).fill("## 雨季规则\n\n连续下雨时提前停航。\n\n## 人物\n\n渡轮检修员知道这件事。");
   await library.getByRole("button", { name: "保存并添加", exact: true }).click();
   const directory = page.getByRole("navigation", { name: "作品目录", exact: true });
+  await openModuleSection(directory);
   await expect(directory.locator(".mounted-module-name").filter({hasText:"雨季规则"})).toBeVisible();
   await expect(directory.getByRole("button", { name: "人物", exact: true })).toBeVisible();
   await expect(page.getByRole("article", { name: "模块内容", exact: true })).toContainText("连续下雨时提前停航。");
@@ -116,7 +125,9 @@ test("作品内容保存响应丢失后重试不重复创建版本", async ({ pa
     else await route.continue();
   });
   await page.goto(`/#/workspaces/${book.id}/writing`);
-  await page.getByRole("button", { name: created.module.name, exact: true }).click();
+  const directory = page.getByRole("navigation", { name: "作品目录", exact: true });
+  await openModuleSection(directory);
+  await directory.getByRole("button", { name: created.module.name, exact: true }).click();
   const paper = page.getByRole("article", { name: "模块内容", exact: true });
   await paper.getByRole("button", { name: "编辑", exact: true }).click();
   await paper.getByLabel("模块正文", { exact: true }).fill("保存响应丢失时保留草稿。");
@@ -140,6 +151,7 @@ test("外部版本变化时保留草稿，重新读取后可以另存而不覆�
   const { book,ref,created }=await fixture(request);
   const bound=await request.put(`/api/file-workspaces/${book.id}/assembly`,{data:{bindings:[{module:ref}],expected_digest:null,request_key:crypto.randomUUID()}}).then(r=>r.json());
   await page.goto(`/#/workspaces/${book.id}/writing`);
+  await openModuleSection(page.getByRole("navigation", { name: "作品目录", exact: true }));
   await page.getByRole("button",{name:created.module.name,exact:true}).click();
   const paper=page.getByRole("article",{name:"模块内容",exact:true});
   await paper.getByRole("button",{name:"编辑",exact:true}).click();
@@ -166,6 +178,7 @@ test("应用后的模块变更可撤销，刷新后仍显示撤销结果且库�
   const card = page.getByTestId("module-change-card");
   const directory = page.getByRole("navigation", { name: "作品目录", exact: true });
   await expect(card).toContainText("已用于本作品");
+  await openModuleSection(directory);
   await expect(directory.getByRole("button", { name: preloaded.module_names[0], exact: true })).toBeVisible();
   await expect(directory.getByRole("button", { name: preloaded.module_names[1], exact: true })).toBeVisible();
 
@@ -213,6 +226,7 @@ test("应用前可预览修改内容；继续保存不覆盖未保存草稿", as
 
   // 作者先在本作品里写了一份未保存草稿，再让模型准备的内容落盘。
   const directory = page.getByRole("navigation", { name: "作品目录", exact: true });
+  await openModuleSection(directory);
   await directory.getByRole("button", { name: created.module.name, exact: true }).click();
   const paper = page.getByRole("article", { name: "模块内容", exact: true });
   await paper.getByRole("button", { name: "编辑", exact: true }).click();
@@ -264,4 +278,58 @@ test("模块库窄窗口和大字号下可浏览、添加和编辑", async ({ pa
     await library.getByRole("button",{name:"取消",exact:true}).click();
     await library.getByRole("button",{name:"返回列表",exact:true}).click();
   }
+});
+
+test("模块内容打开后，仍可切回全书构思与章节正文", async ({ page, request }) => {
+  const { book, ref, created } = await fixture(request);
+  await request.put(`/api/file-workspaces/${book.id}/assembly`, {
+    data: { bindings: [{ module: ref }], expected_digest: null, request_key: crypto.randomUUID() },
+  });
+  const outline = await request
+    .get(`/api/file-workspaces/${book.id}/story/workbench`)
+    .then(response => response.json());
+  // 空作品没有构思修订，与前端一致按 "empty" 提交。
+  const intentResponse = await request.put(`/api/file-workspaces/${book.id}/story/book-intent`, {
+    data: { text: "暴雨封住了出山的公路，旅馆里少了一名住客。", expected_plan_revision: outline.plan_revision ?? "empty", request_key: crypto.randomUUID() },
+  });
+  expect(intentResponse.ok(), await intentResponse.text()).toBeTruthy();
+  const intent = await intentResponse.json();
+  const chapterResponse = await request.post(`/api/file-workspaces/${book.id}/story/chapters`, {
+    data: { title: "抵达雾港", expected_plan_revision: intent.plan_revision, request_key: crypto.randomUUID() },
+  });
+  expect(chapterResponse.ok(), await chapterResponse.text()).toBeTruthy();
+
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  const directory = page.getByRole("navigation", { name: "作品目录", exact: true });
+  const paper = page.getByRole("article", { name: "模块内容", exact: true });
+  const moduleButton = directory.locator(".mounted-module-name").filter({ hasText: created.module.name });
+
+  await openModuleSection(directory);
+  await moduleButton.click();
+  await expect(paper).toContainText("陈默修理码头的钟。");
+  await expect(directory.getByRole("button", { name: "全书构思", exact: true })).not.toHaveAttribute("aria-current", "page");
+
+  // 全书构思与模块内容是同一个地址：切换不能只靠地址变化。
+  await directory.getByRole("button", { name: "全书构思", exact: true }).click();
+  await expect(paper).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "全书构思", exact: true })).toBeVisible();
+  await expect(directory.getByRole("button", { name: "全书构思", exact: true })).toHaveAttribute("aria-current", "page");
+
+  // 再进模块后点章节：正文编辑出现，模块内容让位。
+  await openModuleSection(directory);
+  await moduleButton.click();
+  await expect(paper).toContainText("陈默修理码头的钟。");
+  await directory.getByRole("button", { name: /第1章/ }).click();
+  await expect(paper).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "正文编辑" })).toBeVisible();
+
+  // 从章节页打开模块：这是作者的主动选择，模块内容仍然盖过章节。
+  await openModuleSection(directory);
+  await moduleButton.click();
+  await expect(paper).toContainText("陈默修理码头的钟。");
+
+  // 回到全书构思：模块不应重新盖住写作内容。
+  await directory.getByRole("button", { name: "全书构思", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "全书构思", exact: true })).toBeVisible();
+  await expect(paper).toHaveCount(0);
 });

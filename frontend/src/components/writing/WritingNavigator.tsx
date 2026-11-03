@@ -6,11 +6,13 @@
  * 模型入口的标题输入框。
  */
 
-import { useRef, useState } from "react";
-import { BookOpenText, Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BookOpenText, ListTree, Plus } from "lucide-react";
 
 import type { WritingBookView } from "../../api/writing";
+import { STRUCTURE_PATH } from "../../api/structure";
 import { useWorkspaceStore } from "../../state/workspace";
+import { useWorkspaceModulesStore } from "../../state/workspaceModules";
 import { Button } from "../ui/Button";
 import WorkspaceModules from "../workspace/WorkspaceModules";
 
@@ -20,6 +22,7 @@ export default function WritingNavigator({
   selectedProsePath,
   loading,
   onBook,
+  onStructure,
   onChapter,
   onProse,
   onCreateChapter,
@@ -31,6 +34,8 @@ export default function WritingNavigator({
   selectedProsePath: string | null;
   loading: boolean;
   onBook: () => void;
+  /** 全书结构只读页（STRUCTURE.md，模型自维护）；作品意图存在后展示。 */
+  onStructure: () => void;
   onChapter: (chapterId: string) => void;
   onProse: (path: string) => void;
   onCreateChapter: (title: string | null) => Promise<void>;
@@ -43,6 +48,15 @@ export default function WritingNavigator({
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const extras = useRef<HTMLDetailsElement>(null);
+  const moduleOpen = useWorkspaceModulesStore(state => state.selected?.workspaceId === currentId);
+  // 正在读哪份模块内容，左栏就展开到哪一条，不把当前阅读位置藏起来。
+  useEffect(() => { if (moduleOpen && extras.current) extras.current.open = true; }, [moduleOpen, currentId]);
+  // 阅读区显示模块内容时，「全书构思」不再标记为当前项，点了才看得出切换生效。
+  const bookActive = selectedChapterId === null && selectedProsePath === null && !moduleOpen;
+  const structureActive = selectedProsePath === STRUCTURE_PATH;
+  // 结构只读页跟作品意图一起出现：起步对话还没收束时没有可看的结构。
+  const structureAvailable = Boolean(book);
   const chapters = book?.chapters ?? [];
   const unplanned = book?.unplanned_prose ?? [];
   const canCreateChapter = Boolean(book?.intent?.trim());
@@ -63,14 +77,24 @@ export default function WritingNavigator({
       <ul className="toc-group">
         <li className="toc-line">
           <button
-            className={`toc-row px-2 py-1 ${selectedChapterId === null && selectedProsePath === null ? "on" : ""}`}
-            aria-current={selectedChapterId === null && selectedProsePath === null ? "page" : undefined}
+            className={`toc-row px-2 py-1 ${bookActive ? "on" : ""}`}
+            aria-current={bookActive ? "page" : undefined}
             onClick={onBook}
           >
             <BookOpenText size={16} strokeWidth={1.8} aria-hidden="true" />
             <span>全书构思</span>
           </button>
         </li>
+        {structureAvailable && <li className="toc-line">
+          <button
+            className={`toc-row px-2 py-1 ${structureActive ? "on" : ""}`}
+            aria-current={structureActive ? "page" : undefined}
+            onClick={onStructure}
+          >
+            <ListTree size={16} strokeWidth={1.8} aria-hidden="true" />
+            <span>全书结构</span>
+          </button>
+        </li>}
       </ul>
 
       <section>
@@ -140,7 +164,7 @@ export default function WritingNavigator({
         </ul>
       </details>}
 
-      <details className="writing-nav-extras">
+      <details className="writing-nav-extras" ref={extras}>
         <summary>模块与导入</summary>
         {currentId && <WorkspaceModules workspaceId={currentId} onChoose={onChoose} />}
         <div className="writing-nav-import">

@@ -25,10 +25,12 @@ import { SourceNotice, ModuleSourceReader } from "../clues/SourceReader";
 import { navigate, useWorkspacePage } from "../../state/navigation";
 import WritingNavigator from "../writing/WritingNavigator";
 import BookPlanView from "../writing/BookPlanView";
+import StructureView from "../writing/StructureView";
 import ChapterEditor from "../writing/ChapterEditor";
 import ChapterMarginIndex from "../writing/ChapterMarginIndex";
 import { useWritingStore } from "../../state/writing";
 import { createChapter, writingKey } from "../../api/writing";
+import { STRUCTURE_PATH } from "../../api/structure";
 import { errorMessage } from "../../api/errors";
 
 export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
@@ -40,10 +42,13 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const source = useSourceLocationStore(state => state.workspaceId === currentId ? state.location : null);
   const sourceId = useSourceLocationStore(state => state.workspaceId === currentId ? state.evidenceId : null);
   const moduleAssembly = useModuleLibraryStore(state => state.workspaceId === currentId ? state.assembly : null);
-  const moduleBinding = selectedModule?.workspaceId === currentId ? moduleAssembly?.bindings.find(binding => binding.id === selectedModule.bindingId) : undefined;
   const writingPage = page?.kind === "writing" && page.workspaceId === currentId ? page : null;
   const chapterId = writingPage?.chapterId ?? null;
   const prosePath = writingPage?.prosePath ?? null;
+  // 模块内容是全书构思页上的一种阅读态：地址栏选了章节或正文，阅读区就按章节与正文走。
+  const moduleBinding = !chapterId && !prosePath && selectedModule?.workspaceId === currentId
+    ? moduleAssembly?.bindings.find(binding => binding.id === selectedModule.bindingId)
+    : undefined;
   const workbench = useWritingStore(state => state.workspaceId === currentId ? state.workbench : null);
   const writingLoading = useWritingStore(state => state.workspaceId === currentId ? state.loading : false);
   const writingError = useWritingStore(state => state.workspaceId === currentId ? state.error : null);
@@ -86,7 +91,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     void loadWorkbench(currentId, { chapterId, prosePath });
   }, [currentId, chapterId, prosePath, loadWorkbench]);
   useEffect(() => {
-    if (prosePath) void useWorkspaceStore.getState().openPath(prosePath, true);
+    if (prosePath) void useWorkspaceStore.getState().openPath(prosePath);
   }, [prosePath]);
   useEffect(() => { setIndexOpen(false); }, [chapterId]);
   useEffect(() => {
@@ -110,17 +115,31 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   function selectBook() {
     if (!currentId) return;
     closeChat();
+    // 全书构思与模块内容共用一个地址：切换要落在状态上，不能只改地址栏。
+    leaveModule();
     navigate({ kind: "writing", workspaceId: currentId });
+  }
+  function selectStructure() {
+    if (!currentId) return;
+    closeChat();
+    leaveModule();
+    navigate({ kind: "writing", workspaceId: currentId, prosePath: STRUCTURE_PATH });
   }
   function selectChapter(id: string) {
     if (!currentId) return;
     closeChat();
+    leaveModule();
     navigate({ kind: "writing", workspaceId: currentId, chapterId: id });
   }
   function selectProse(path: string) {
     if (!currentId) return;
     closeChat();
+    leaveModule();
     navigate({ kind: "writing", workspaceId: currentId, prosePath: path });
+  }
+  /** 模块内容是全书构思页上的阅读态：作者选了章节或正文，就退出它。 */
+  function leaveModule() {
+    if (useWorkspaceModulesStore.getState().selected) useWorkspaceModulesStore.getState().close();
   }
   function closeChat() {
     if (compact) setCompactChat(false);
@@ -162,6 +181,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
         request_key: writingKey("chapter-create"),
       });
       await refreshWorkbench(currentId, { chapterId: result.chapter_id });
+      leaveModule();
       navigate({ kind: "writing", workspaceId: currentId, chapterId: result.chapter_id });
     } catch (error) {
       useWorkspaceStore.getState().reportError(errorMessage(error, "新建章节"));
@@ -199,6 +219,13 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       return <div className="ui-empty" role="status"><p>正在读取章节…</p></div>;
     }
     if (prosePath) {
+      if (prosePath === STRUCTURE_PATH) {
+        // 全书结构只读页：模型自维护，作者不编辑；调整在对话里说。
+        return <StructureView workspaceId={currentId} onOpenChat={() => {
+          if (compact) setCompactChat(true);
+          else if (!useLayoutStore.getState().chatVisible) useLayoutStore.getState().revealChat();
+        }} />;
+      }
       const blocked = proseChapter?.prose?.blocked_reason;
       return <>
         {selectedProseEntry?.kind === "chapter" && blocked === "book_intent_required" && <StatusMessage tone="warning">
@@ -246,6 +273,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             selectedProsePath={prosePath}
             loading={writingLoading}
             onBook={selectBook}
+            onStructure={selectStructure}
             onChapter={selectChapter}
             onProse={selectProse}
             onCreateChapter={addChapter}
