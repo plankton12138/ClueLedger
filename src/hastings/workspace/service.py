@@ -1273,6 +1273,46 @@ class TurnService:
             )
         return receipts
 
+    def _expected_prose_missing(self, info: TurnInfo, run: RunContext) -> bool:
+        """原子性兜底（M4）：写作回合只交了文件更新、没交正文。
+
+        触发条件全部来自任务元数据与事件收据，不解析对话原话：写作用途回合
+        （write/revise）+ 章节目标在任务元数据里（打开的正文路径或章节焦点）
+        + 本轮发生了结构或模块写入 + 没有任何正文候选文档。这正是 2026-11-03
+        试验复现的「只交文件更新不交正文」失败形态；按 ``EXPECTED_PROSE_MISSING``
+        确定性归因，正文不产出就不算完成。纯讨论回复（没有写入）不算失败。
+        """
+        if run.story is None or run.story.purpose not in ("write", "revise"):
+            return False
+        if run.pending_question is not None:
+            return False
+        if self._metadata_target_chapter(info) is None:
+            return False
+        candidate = run.story_candidate
+        if candidate is not None and candidate.documents:
+            return False
+        return self._turn_had_file_writes(info)
+
+    def _turn_had_file_writes(self, info: TurnInfo) -> bool:
+        """本轮（含继续代次）有没有结构/模块写入收据；只认事件，不猜模型意图。"""
+        write_kinds = frozenset(
+            {
+                "story_changes_committed",
+                "module_content_saved",
+                "module_changes_applied",
+                "file_changed",
+            }
+        )
+        for event in self.store.events(info.conversation_id):
+            if str(event.get("turn_id") or "") != info.turn_id:
+                continue
+            event_operation = str(event.get("operation_id") or "")
+            if info.operation_id and event_operation and event_operation != info.operation_id:
+                continue
+            if event.get("type") in write_kinds:
+                return True
+        return False
+
     def _assess_story_completion(self, info: TurnInfo, run: RunContext) -> tuple[str, str]:
         """按任务目标与实际收据判定完成；没有结构提交就不能报整体完成。"""
         intent = info.intent
@@ -2972,6 +3012,14 @@ class TurnService:
                     and not await self._finalize_story_candidate(info, run, snapshot, turns_used)
                 ):
                     status = "needs_input"
+                if status == "completed" and self._expected_prose_missing(info, run):
+                    # 原子性兜底：预期正文未产出按任务失败归因，不走部分完成。
+                    raise WorkspaceError(
+                        code="EXPECTED_PROSE_MISSING",
+                        where="写作回合",
+                        why="本轮只提交了结构或模块更新，没有产出任何正文候选",
+                        fix="重新发起写作；正文必须随任务产出，文件更新不单独算作完成",
+                    )
                 if status == "completed":
                     goal_status, goal_note = self._assess_story_completion(info, run)
                     completion_note = goal_note
