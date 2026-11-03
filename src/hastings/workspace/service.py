@@ -103,6 +103,7 @@ if TYPE_CHECKING:
     from hastings.workspace.story_context import StoryContextSnapshot, StoryInput
     from hastings.workspace.story_models import StoryVariant
     from hastings.workspace.story_store import StoryStore
+    from hastings.workspace.structure_assembly import StructureSnapshot
 
 from tau_agent.provider_events import (
     AssistantDoneEvent,
@@ -2322,6 +2323,79 @@ class TurnService:
             self._infos[info.operation_id] = updated
             return current, updated
 
+    def _structure_injection(self, info: TurnInfo) -> tuple[str, str, StructureSnapshot]:
+        """结构层注入文本与装配快照（M3：装配顺序契约第 1—3、5 层 + 确定性对账）。
+
+        目标章号只来自任务元数据（作者当前打开的正文路径、章节/选段焦点），
+        不从对话原话解析——口头说「写第 3 章」不是系统可知的目标，不在装配层
+        对账；那道保险由起草提示词的强制对账流程（M5）承担。缺章默认改派最早
+        缺章，改派说明并入台账分区文本；作者明确跳过才放行（回执记录被跳章）。
+        """
+        from hastings.workspace.prose_ledger import LEDGER_FILENAME, load_ledger, reconcile
+        from hastings.workspace.structure_assembly import (
+            StructureSnapshot,
+            ledger_section,
+            reconcile_note,
+            split_structure_layers,
+            structure_section_text,
+        )
+        from hastings.workspace.structure_io import read_structure_state
+
+        state = read_structure_state(self.workspace)
+        if not state.exists:
+            # 起步前结构不存在：第 1—3 层整体缺席（STYLE 占位也不单独注入），
+            # 对账与台账照常执行——台账与结构文件互不依赖。
+            structure_text = ""
+            layers_rules = 0
+            degraded = False
+        else:
+            layers = split_structure_layers(state.text)
+            structure_text = structure_section_text(layers)
+            layers_rules = len(layers.iron_rules)
+            degraded = layers.degraded
+        ledger = load_ledger(self.workspace.root / LEDGER_FILENAME)
+        ledger_text = ledger_section(ledger)
+        target = self._metadata_target_chapter(info)
+        decision = reconcile(ledger, target) if target is not None else None
+        note = reconcile_note(decision)
+        if note:
+            ledger_text = f"{ledger_text}\n\n{note}" if ledger_text else note
+        snapshot = StructureSnapshot(
+            structure_injected=bool(structure_text),
+            iron_rules_count=layers_rules,
+            iron_rules_degraded=degraded,
+            ledger_injected=bool(ledger.chapters),
+            ledger_chapters=tuple(sorted(ledger.chapters)),
+            reconcile_action=decision.action if decision is not None else "",
+            reconcile_target=decision.target if decision is not None else None,
+            reconcile_redirected_to=(
+                decision.target_to
+                if decision is not None and decision.action == "redirect"
+                else None
+            ),
+            skipped_chapters=decision.skipped if decision is not None else (),
+        )
+        return structure_text, ledger_text, snapshot
+
+    def _metadata_target_chapter(self, info: TurnInfo) -> int | None:
+        """任务元数据里的目标章：当前打开的正文路径或章节/选段焦点；都不是则未知。"""
+        context = info.context
+        if context is None:
+            return None
+        paths: list[str] = []
+        if context.selected_path:
+            paths.append(context.selected_path)
+        focus = context.discussion_focus
+        if focus is not None and focus.kind in ("chapter", "selection") and focus.path:
+            paths.append(focus.path)
+        from hastings.workspace.structure_assembly import chapter_number_of
+
+        for path in paths:
+            number = chapter_number_of(path)
+            if number is not None:
+                return number
+        return None
+
     def _prepare_story(self, info: TurnInfo) -> tuple[str, TurnInfo]:
         """冻结的构思结构 → 这一轮实际要装进去的文本；失败在调用模型之前发生。
 
@@ -2731,6 +2805,11 @@ class TurnService:
                 clue_store = ClueStore(self.store.root)
                 turn_materials = materials_section(info.context, ledger.summaries())
                 turn_ideas = ideas_section(info.context)
+                # 结构层注入与确定性对账（M3）：铁律/结构全文/STYLE 占位 + 台账事实；
+                # 目标章来自任务元数据时在这里对账，改派说明并入台账分区。
+                structure_text, ledger_text, structure_snapshot = self._structure_injection(
+                    info
+                )
                 assembly = build_turn_assembly(
                     self.workspace,
                     as_of_chapter=run.state_chapter,
@@ -2740,6 +2819,8 @@ class TurnService:
                     story=story_text,
                     ideas=turn_ideas,
                     modules=modules,
+                    structure=structure_text,
+                    ledger=ledger_text,
                     disclosure_store=disclosure_store,
                     glossary_store=glossary_store,
                     roster_store=roster_store,
@@ -2747,6 +2828,8 @@ class TurnService:
                     clue_store=clue_store,
                 )
                 injected = assembly.summary()
+                # 结构层快照：实际注入了哪些层、对账改派了哪章，作者可核对（M3 回执）。
+                injected["structure"] = structure_snapshot.to_dict()
                 # 这一轮实际用的是受理时冻结的装配，不是现在界面上的绑定。
                 injected["frozen"] = {
                     "digest": info.assembly_digest,
@@ -3279,6 +3362,9 @@ class TurnService:
             story_review_text = self._story_review_block(info, targets)
             from hastings.prompts.reviewing import REVIEW_INSTRUCTIONS, review_task_prompt
 
+            # 检查阶段同样注入结构层（铁律是检查依据之一）与台账事实，不做对账——
+            # 检查不改写目标章，缺章拦截只在写作装配发生。
+            structure_text, ledger_text, structure_snapshot = self._structure_injection(info)
             assembly = build_turn_assembly(
                 self.workspace,
                 mode="review",
@@ -3288,10 +3374,16 @@ class TurnService:
                     if story_review_text
                     else REVIEW_INSTRUCTIONS
                 ),
+                structure=structure_text,
+                ledger=ledger_text,
                 **stores,
             )
             _append_event(
-                self.store, info.conversation_id, info.turn_id, "state_injected", assembly.summary()
+                self.store,
+                info.conversation_id,
+                info.turn_id,
+                "state_injected",
+                {**assembly.summary(), "structure": structure_snapshot.to_dict()},
             )
             harness = build_harness(
                 provider=RecordedProvider(
