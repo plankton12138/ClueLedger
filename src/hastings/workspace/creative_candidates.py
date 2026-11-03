@@ -92,6 +92,8 @@ class CreativeCandidate(BaseModel):
     request_key: str = ""
     created_at: str
     updated_at: str
+    #: 写后自查三层（v1.1 M5）：候选生成时解析；缺失按 SELF_CHECK_MISSING_CONFLICT 失败。
+    self_check: dict[str, object] | None = None
 
 
 class CreativeCandidateStore:
@@ -170,6 +172,7 @@ class CreativeCandidateStore:
         status: CandidateStatus | None = None,
         error: str | None = None,
         proposed_bindings: list[ProposedBinding] | None = None,
+        self_check: dict[str, object] | None = None,
     ) -> CreativeCandidate:
         with locked(self.lock_file):
             current = self.read(candidate_id)
@@ -184,6 +187,8 @@ class CreativeCandidateStore:
                 updates["error"] = error
             if proposed_bindings is not None:
                 updates["proposed_bindings"] = proposed_bindings
+            if self_check is not None:
+                updates["self_check"] = self_check
             updated = current.model_copy(update=updates)
             self._write(updated)
             return updated

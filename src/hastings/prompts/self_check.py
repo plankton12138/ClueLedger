@@ -1,0 +1,186 @@
+"""写后自查三层与强制对账流程的提示词模板（v1.1 M5，版本化）。
+
+契约（q0-contracts 第 3、7 节与开发计划 M5）：
+
+- **强制对账流程（第二道保险）**：起草提示词规定，收到写作目标第一步必须核对
+  目标章与正文台账，发现更早章节缺正文不得写目标章、改为补缺。系统侧装配层
+  确定性对账仍是主防线；被动注入台账模型不对账（试验 0/3），强制流程 3/3。
+- **写后自查三层**随起草同回合产出：①必发生清单逐条定位核对；②铁律逐条检查；
+  ③读者认知提示（当前误读是否立住、有无提前起疑），必须给可执行的修改建议。
+  自查是模型自检，概率性、如实标注「自查」，不承诺无漏报。
+- 自查段缺失按 ``SELF_CHECK_MISSING_CONFLICT`` 任务失败归因，不静默跳过。
+
+模板版本 ``SELF_CHECK_TEMPLATE_VERSION``：提示词措辞变更时递增，回执可核对用的
+是哪一版。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from hastings.workspace.errors import WorkspaceError
+
+__all__ = [
+    "SELF_CHECK_MARKER",
+    "SELF_CHECK_TEMPLATE_VERSION",
+    "SelfCheckBlock",
+    "prose_draft_system_prompt",
+    "prose_draft_user_prompt",
+    "self_check_error",
+    "split_self_check",
+]
+
+#: 模板版本；提示词措辞变更时递增。
+SELF_CHECK_TEMPLATE_VERSION = 1
+
+#: 自查段标记；候选正文之后以该二级小节收尾，解析据此拆分。
+SELF_CHECK_MARKER = "### 自查"
+
+_SYSTEM_PROMPT = (
+    "你是悬疑小说写作助手。只输出正文与自查段，不写解释或属性表。保持人物知情边界。"
+    "写作流程有两条硬性规定："
+    "第一步核对目标章与正文台账，更早的章节没有正文时不得写目标章，改为补写最早的缺章；"
+    "正文写完后必须附自查段（以「### 自查」开头），逐条给出核对结论。"
+)
+
+#: 三层自查的固定要求文本；逐层给条目与结论，读者认知层必须给可执行建议。
+_SELF_CHECK_REQUIREMENT = (
+    f"{SELF_CHECK_MARKER}\n"
+    "1. 必发生核对：先列出本章必发生项，再逐条指出正文里对应的位置（短引文定位）；"
+    "自列为空时如实说明并建议补骨架或模块，不猜。\n"
+    "2. 铁律自查：逐条对照铁律，指出正文哪里遵守、哪里擦边。\n"
+    "3. 读者认知：当前读者的误读是否立住、有无提前起疑；必须给出可执行的修改建议。\n"
+    "（自查是模型自检，非系统校验；发现不立住之处如实标注。）"
+)
+
+
+def prose_draft_system_prompt() -> str:
+    """起草系统提示：强制对账流程 + 自查段要求（版本化措辞）。"""
+    return _SYSTEM_PROMPT
+
+
+def prose_draft_user_prompt(
+    *,
+    intent: str,
+    structure_text: str,
+    ledger_text: str,
+    moves: str,
+    prose: str,
+    quote: str,
+    note: str,
+    continue_mode: bool,
+    redirected_to: int | None = None,
+    target_chapter: int | None = None,
+) -> str:
+    """起草/续写用户提示：注入铁律与结构、台账与对账结论、必发生清单要求。
+
+    ``structure_text`` 为装配层准备好的第 1—3 层文本（铁律 → 结构全文 → STYLE 占位）；
+    ``ledger_text`` 为台账事实与对账说明（含改派结论时 ``redirected_to`` 同步给出，
+    提示词据此把写作目标改为补缺）。
+    """
+    target = f"第 {target_chapter} 章" if target_chapter is not None else "本章"
+    task = (
+        f"写作目标：{target}（续写选段之后的内容）。"
+        if continue_mode
+        else f"写作目标：{target}。请起草本章正文。"
+    )
+    if redirected_to is not None:
+        task += f" 注意：对账发现更早章节缺正文，本轮改为补写第 {redirected_to} 章，不写原目标章。"
+    parts = [task]
+    if intent:
+        parts.append(f"全书意图：{intent}")
+    if structure_text:
+        parts.append(f"写作规则与结构（铁律在前，必须逐条遵守）：\n{structure_text}")
+    if ledger_text:
+        parts.append(f"正文台账（系统事实，只读；对账以它为准）：\n{ledger_text}")
+    parts.append(f"本章已入账信息：{moves or '（无）'}")
+    parts.append(f"当前正文：\n{prose[-4000:] if prose else '（空白）'}")
+    if quote:
+        parts.append(f"作者选段：{quote}")
+    parts.append(f"作者补充：{note or '（无）'}")
+    parts.append(
+        "输出两部分：先正文，后自查段。自查段必须以「" + SELF_CHECK_MARKER + "」开头，"
+        "逐层给出结论。"
+    )
+    return "\n\n".join(parts)
+
+
+@dataclass(frozen=True, slots=True)
+class SelfCheckBlock:
+    """从候选文本里解析出的自查段；缺失时 ``present=False``。"""
+
+    present: bool
+    prose: str = ""
+    checklist_items: tuple[str, ...] = field(default=())
+    iron_rule_items: tuple[str, ...] = field(default=())
+    reader_note: str = ""
+
+    def to_rows(self) -> dict[str, object]:
+        return {
+            "present": self.present,
+            "checklist_items": list(self.checklist_items),
+            "iron_rule_items": list(self.iron_rule_items),
+            "reader_note": self.reader_note,
+        }
+
+
+def split_self_check(text: str) -> SelfCheckBlock:
+    """确定性拆分正文与自查段。
+
+    取**最后一个**自查标记（正文里引用该短语不至于误判）；标记缺失或三层
+    标题任一缺失都按「自查段缺失」处理（``present=False``），调用方按任务
+    失败归因，不静默跳过。
+    """
+    marker_index = text.rfind(SELF_CHECK_MARKER)
+    if marker_index < 0:
+        return SelfCheckBlock(present=False, prose=text)
+    prose = text[:marker_index].rstrip()
+    section = text[marker_index + len(SELF_CHECK_MARKER) :]
+    lines = [line.strip() for line in section.splitlines() if line.strip()]
+    checklist = _items_under(lines, "必发生")
+    iron = _items_under(lines, "铁律")
+    reader = _items_under(lines, "读者")
+    present = bool(checklist) and bool(iron) and bool(reader)
+    return SelfCheckBlock(
+        present=present,
+        prose=prose,
+        checklist_items=checklist,
+        iron_rule_items=iron,
+        reader_note="\n".join(reader),
+    )
+
+
+def _items_under(lines: list[str], keyword: str) -> tuple[str, ...]:
+    """宽松解析某一层的条目：层头是含关键词的行，其后内容行都归这一层。
+
+    自由格式下措辞不设死（序号、破折号、冒号变体都接受）；宽松匹配只影响
+    自查展示，不做对错判定。
+    """
+    layer_lines = _layer_lines(lines)
+    return tuple(layer_lines.get(keyword, ()))
+
+
+def _layer_lines(lines: list[str]) -> dict[str, list[str]]:
+    layers: dict[str, list[str]] = {"必发生": [], "铁律": [], "读者": []}
+    current: str | None = None
+    for line in lines:
+        matched = next((key for key in layers if key in line), None)
+        if matched is not None:
+            current = matched
+            rest = line.split(matched, 1)[1].strip("：:；; ，,")
+            if rest:
+                layers[current].append(rest)
+            continue
+        if current is not None:
+            layers[current].append(line)
+    return layers
+
+
+def self_check_error(where: str) -> WorkspaceError:
+    """自查段缺失的确定性失败归因（不静默跳过）。"""
+    return WorkspaceError(
+        code="SELF_CHECK_MISSING_CONFLICT",
+        where=where,
+        why="起草没有产出自查段（必发生核对 / 铁律自查 / 读者认知三层不全）",
+        fix="重新起草；正文与自查段随同产出，缺一不算完成",
+    )

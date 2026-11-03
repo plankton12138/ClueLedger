@@ -15,6 +15,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from hastings.prompts.self_check import (
+    prose_draft_system_prompt,
+    prose_draft_user_prompt,
+    self_check_error,
+    split_self_check,
+)
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.creative_candidates import (
     CandidateBase,
@@ -191,12 +197,28 @@ class CreativeAssistService:
                         final = message_text(event.message) or final
             if final:
                 text = final
+            # 写后自查（M5）：起草/续写候选必须带自查段，缺失按确定性失败归因。
+            self_check: dict[str, object] | None = None
+            if request.kind in {"prose_draft", "prose_continue"}:
+                block = split_self_check(text)
+                if not block.present:
+                    error = self_check_error("creative-assist")
+                    await asyncio.to_thread(
+                        self.candidates.update,
+                        candidate.candidate_id,
+                        text=text,
+                        status="failed",
+                        error=error.message,
+                    )
+                    return
+                self_check = block.to_rows()
             stale = not self._base_current(candidate)
             await asyncio.to_thread(
                 self.candidates.update,
                 candidate.candidate_id,
                 text=text,
                 status="stale" if stale else "ready",
+                self_check=self_check,
             )
         except asyncio.CancelledError:
             await asyncio.to_thread(
@@ -225,6 +247,43 @@ class CreativeAssistService:
             )
         finally:
             await snapshot.aclose()
+
+    def _drafting_injection(
+        self, plan: Any
+    ) -> tuple[str, str, int | None, int | None]:
+        """起草任务的确定性注入（M5）：铁律/结构全文、台账与对账结论。
+
+        装配层确定性对账是主防线：这里把对账结论写进提示词并把改派目标告诉
+        模型（第二道保险的强制流程）；两处用同一份台账事实。
+        返回 ``(结构文本, 台账文本, 改派目标章, 原目标章)``。
+        """
+        from hastings.workspace.prose_ledger import (
+            LEDGER_FILENAME,
+            load_ledger,
+            reconcile,
+        )
+        from hastings.workspace.structure_assembly import (
+            ledger_section,
+            reconcile_note,
+            split_structure_layers,
+            structure_section_text,
+        )
+        from hastings.workspace.structure_io import read_structure_state
+
+        assert self.workspace is not None and plan is not None
+        state = read_structure_state(self.workspace)
+        structure_text = (
+            structure_section_text(split_structure_layers(state.text)) if state.exists else ""
+        )
+        ledger = load_ledger(self.workspace.root / LEDGER_FILENAME)
+        target = plan.order + 1
+        decision = reconcile(ledger, target)
+        ledger_text = ledger_section(ledger)
+        note = reconcile_note(decision)
+        if note:
+            ledger_text = f"{ledger_text}\n\n{note}" if ledger_text else note
+        redirected = decision.target_to if decision.action == "redirect" else None
+        return structure_text, ledger_text, redirected, target
 
     def _resolve(
         self, request: CreativeAssistInput
@@ -363,16 +422,20 @@ class CreativeAssistService:
             moves = _chapter_moves_text(variant, plan)
             selection = request.selection or {}
             quote = str(selection.get("quote") or "")
+            structure_text, ledger_text, redirected, target = self._drafting_injection(plan)
             return (
-                "你是悬疑小说写作助手。只输出正文，不写解释或标题。保持人物知情边界。",
-                f"全书意图：{intent or '（未写）'}\n"
-                f"本章已入账信息：{moves or '（无）'}\n"
-                f"当前正文：\n{text[-4000:] if text else '（空白）'}\n"
-                f"作者选段：{quote or '（无）'}\n作者补充：{note or '（无）'}\n"
-                + (
-                    "请续写选段之后的内容。"
-                    if request.kind == "prose_continue"
-                    else "请起草本章正文。"
+                prose_draft_system_prompt(),
+                prose_draft_user_prompt(
+                    intent=intent,
+                    structure_text=structure_text,
+                    ledger_text=ledger_text,
+                    moves=moves,
+                    prose=text,
+                    quote=quote,
+                    note=note,
+                    continue_mode=request.kind == "prose_continue",
+                    redirected_to=redirected,
+                    target_chapter=target,
                 ),
             )
         if request.kind == "title":

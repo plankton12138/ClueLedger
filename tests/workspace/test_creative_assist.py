@@ -374,7 +374,13 @@ def test_prose_candidate_adoption_and_stale_rejection(
     client: TestClient, tmp_path: Path, holder: _Holder
 ) -> None:
     setup = _setup_chapter(client, tmp_path)
-    holder.text = "林砚走进旅馆，柜台上有一双湿手套。\n"
+    holder.text = (
+        "林砚走进旅馆，柜台上有一双湿手套。\n\n"
+        "### 自查\n"
+        "1. 必发生核对：湿手套出现——「柜台上有一双湿手套」。\n"
+        "2. 铁律自查：本章无违例。\n"
+        "3. 读者认知：误读立住；建议：手套特写再冷一拍。"
+    )
     payload = {
         "kind": "prose_draft",
         "target": {
@@ -453,3 +459,58 @@ def test_index_review_runs_on_demand(client: TestClient, tmp_path: Path, holder:
         lambda row: row["chapter"]["index"]["analysis"]["state"] == "ready",
     )
     assert chapter["chapter"]["index"]["items"] == []
+
+
+def test_prose_without_self_check_fails_deterministically(
+    client: TestClient, tmp_path: Path, holder: _Holder
+) -> None:
+    """v1.1 M5：起草缺自查段按 SELF_CHECK_MISSING_CONFLICT 失败归因，不静默跳过。"""
+    setup = _setup_chapter(client, tmp_path)
+    holder.text = "只有正文，没有自查段。\n"
+    payload = {
+        "kind": "prose_draft",
+        "target": {
+            "kind": "prose",
+            "workspace_id": setup["workspace_id"],
+            "chapter_id": setup["chapter_id"],
+        },
+        "base": {
+            "plan_revision": setup["plan_revision"],
+            "prose_digest": setup["prose_digest"],
+        },
+        "request_key": "assist:prose-no-check",
+    }
+    response = client.post(
+        f"/api/file-workspaces/{setup['workspace_id']}/creative-assists", json=payload
+    )
+    assert response.status_code == 202, response.text
+    candidate_id = response.json()["candidate_id"]
+    failed = _wait_for(
+        client,
+        f"/api/file-workspaces/{setup['workspace_id']}/creative-assists/{candidate_id}",
+        lambda row: row["status"] == "failed",
+    )
+    assert "SELF_CHECK_MISSING_CONFLICT" in (failed["error"] or "")
+
+
+def test_prose_prompt_requires_reconcile_first(
+    client: TestClient, tmp_path: Path, holder: _Holder
+) -> None:
+    """起草提示词第一步强制对账：台账缺章时提示词把目标改为补缺（第二道保险）。"""
+    from hastings.prompts.self_check import prose_draft_system_prompt, prose_draft_user_prompt
+
+    prompt = prose_draft_user_prompt(
+        intent="",
+        structure_text="",
+        ledger_text="第 1 章尚无正文登记，改派第 1 章",
+        moves="",
+        prose="",
+        quote="",
+        note="",
+        continue_mode=False,
+        redirected_to=1,
+        target_chapter=2,
+    )
+    assert "改为补写第 1 章" in prompt
+    assert "不写原目标章" in prompt
+    assert "核对目标章与正文台账" in prose_draft_system_prompt()
