@@ -32,6 +32,25 @@
      落盘（降级注入是装配层的事）。
 3. 测试 8 例（`tests/workspace/test_structure_io.py`）；结构写入不触发全书构思门禁。
 
+### 切片三：结构文档工具接线（7426ec70）
+
+1. `agent.py`：`read_structure` / `write_structure` 两个工具闭包与注册。
+   **授权与正文同一套任务范围**——模型须用 `set_task_scope` 登记 `STRUCTURE.md`
+   的确切路径（`is_managed_path` 已认），无特殊通道；更新前强制读取前提
+   （`ReadRequirement.full`）；直接落盘策略，随作品 Git 记录可回退。
+2. `prompts/tools.py`：工具描述与指南（含「台账不进结构文件」提示）。
+3. `activity.py`：新工具可读动词（读取/写入全书结构）——既有
+   `test_every_writing_tool_has_a_readable_verb` 自动把关。
+4. 测试 5 例（`tests/workspace/test_agent_structure_tools.py`）：缺失为空、
+   未登记范围拒绝、创建与更新往返、创建门槛、预算拒绝。
+
+### 切片四：起步会话双模式提示词（241cfcbe）
+
+- `startup_conversation_prompt(mode)`：引导模式的约束全部落在提示层
+  （一次一问、上限 `STARTUP_QUESTION_LIMIT=6`、每问可跳过、随时「就这样开始」、
+  未知保持未知、不追问内部属性清单）；自由发挥不追问；两种模式都以设定卡候选
+  收束、只描述起点与悬念。`STARTUP_PROMPT_VERSION=1`。
+
 ## 基线差异登记（对照计划第 2 节）
 
 - `book_intent` 数据结构、`save_book_intent` 联合提交、撤销链路在 v1.0.9 已存在，
@@ -42,17 +61,15 @@
 
 ## 未覆盖项（Q1 剩余）
 
-- **agent.py 工具接线**：`read_structure` / `write_structure` 挂入会话工具列表，
-  与起步任务意图的授权范围（结构写入授权）一起做——需要先读 `task_scope` 的授权
-  语义，避免把结构写授权漏给普通写作任务。
-- **起步会话链路**：起步任务意图（引导/自由发挥）进会话受理与提示装配；设定卡候选
-  由模型在对话中产出；确认后同链路起草第一版结构 + 首批模块入档（Q1-D）。
-- **结构只读页**（前端）与侧栏入口（Q1-E）。
-- 在线冒烟：起步对话到首批模块入档全链路（依赖会话链路完成）。
+- **起步会话链路接线**：起步任务意图进会话受理与材料装配（`service.py` / `materials.py`），
+  把 `startup_conversation_prompt` 接入系统提示；设定卡候选在对话中产出后由前端调
+  已有的确认端点；确认后同链路调 `structure_draft_prompt` 起草第一版结构 + 首批模块
+  （模型用已接线的 `write_structure` + 模块创建机制登记授权后落盘）。
+- **结构只读页**（前端）与侧栏入口。
+- 在线冒烟：起步对话到首批模块入档全链路。
 
 ## 验证
 
-- `uv run pytest tests/workspace/test_book_startup.py tests/workspace/test_structure_io.py
-  tests/workspace/test_structure_document.py tests/workspace/test_prose_ledger.py -q`：28 passed。
-- ruff / mypy（新模块与改动文件）：通过。
-- 全量 `tests/workspace` 回归：**1495 passed / 0 failed**（2026-11-03，切片二提交后复跑）。
+- 切片一/二定向测试：28 passed；切片三 agent 相关 5 文件 88 passed（含活动流动词把关）。
+- ruff / mypy（全部新模块与改动文件）：通过。
+- 全量 `tests/workspace` 回归：**1500 passed / 0 failed**（2026-11-03，切片三提交后复跑）。
