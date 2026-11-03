@@ -25,6 +25,7 @@ import { SourceNotice, ModuleSourceReader } from "../clues/SourceReader";
 import { navigate, useWorkspacePage } from "../../state/navigation";
 import WritingNavigator from "../writing/WritingNavigator";
 import BookPlanView from "../writing/BookPlanView";
+import StartupGateView from "../writing/StartupGateView";
 import StructureView from "../writing/StructureView";
 import ChapterEditor from "../writing/ChapterEditor";
 import ChapterMarginIndex from "../writing/ChapterMarginIndex";
@@ -234,7 +235,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
         <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} />
       </>;
     }
-    if (book && workbench) return <BookPlanView
+    if (book && workbench) return book.intent?.trim() ? <BookPlanView
       workspaceId={currentId}
       book={book}
       planRevision={workbench.plan_revision}
@@ -242,7 +243,11 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       onChanged={() => refreshWorkbench(currentId, {})}
       onCreateChapter={() => addChapter(null)}
       onSelectChapter={selectChapter}
-    />;
+    /> : <StartupGateView onOpenChat={() => {
+      // 空作品从对话起步（v1.1 M1）；窄屏时对话占满主区，宽屏则侧栏展开。
+      if (compact) setCompactChat(true);
+      else if (!useLayoutStore.getState().chatVisible) useLayoutStore.getState().revealChat();
+    }} />;
     if (writingError) return <div className="writing-load-error"><StatusMessage tone="error" action={<Button size="compact" onClick={() => void refreshWorkbench(currentId, {})}>重试</Button>}>{writingError}</StatusMessage></div>;
     return <div className="ui-empty" role="status"><p>{writingLoading || loading ? "正在读取写作页…" : "还没有写作内容。"}</p></div>;
   }

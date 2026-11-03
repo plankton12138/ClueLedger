@@ -60,6 +60,7 @@ export default function WritingNavigator({
   const chapters = book?.chapters ?? [];
   const unplanned = book?.unplanned_prose ?? [];
   const canCreateChapter = Boolean(book?.intent?.trim());
+  const started = canCreateChapter;
   const documents = [...catalog.characters, ...catalog.settings].filter(entry => entry.exists);
 
   async function create() {
@@ -82,7 +83,7 @@ export default function WritingNavigator({
             onClick={onBook}
           >
             <BookOpenText size={16} strokeWidth={1.8} aria-hidden="true" />
-            <span>全书构思</span>
+            <span>{started ? "全书构思" : "起步"}</span>
           </button>
         </li>
         {structureAvailable && <li className="toc-line">
@@ -127,9 +128,9 @@ export default function WritingNavigator({
           onClick={() => void create()}
           busy={creating}
           disabled={!canCreateChapter}
-          disabledReason="先完成并保存全书构思"
+          disabledReason="先在对话里完成起步"
         >
-          <Plus size={15} strokeWidth={2} aria-hidden="true" />{canCreateChapter ? "新建章节" : "先完成全书构思"}
+          <Plus size={15} strokeWidth={2} aria-hidden="true" />{canCreateChapter ? "新建章节" : "先在对话里起步"}
         </Button>
       </section>
 
