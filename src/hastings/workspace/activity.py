@@ -99,6 +99,8 @@ _TOOL_VERBS = {
     "read_file": "读取",
     "write_file": "写入",
     "edit_file": "修改",
+    "read_structure": "读取全书结构",
+    "write_structure": "写入全书结构",
     "move_file": "移动",
     "delete_file": "删除",
     "list_files": "列出文件",

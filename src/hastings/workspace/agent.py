@@ -69,6 +69,8 @@ from hastings.prompts.tools import (
     READ_RECORD_DESCRIPTION,
     READ_RECORD_GUIDELINES,
     READ_STATE_DESCRIPTION,
+    READ_STRUCTURE_DESCRIPTION,
+    READ_STRUCTURE_GUIDELINES,
     REGISTER_REFERENCES_DESCRIPTION,
     REGISTER_REFERENCES_GUIDELINES,
     REQUEST_REVIEW_DESCRIPTION,
@@ -86,6 +88,8 @@ from hastings.prompts.tools import (
     SET_TASK_SCOPE_GUIDELINES,
     WRITE_FILE_DESCRIPTION,
     WRITE_FILE_GUIDELINES,
+    WRITE_STRUCTURE_DESCRIPTION,
+    WRITE_STRUCTURE_GUIDELINES,
     save_review_report_description,
 )
 from hastings.workspace.assembly import AssembledContext, Profile
@@ -105,7 +109,7 @@ from hastings.workspace.disclosure import (
     build_disclosure_state,
 )
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.files import Workspace, is_managed_path, managed_kind
+from hastings.workspace.files import STRUCTURE_PATH, Workspace, is_managed_path, managed_kind
 from hastings.workspace.git import GitRepo
 from hastings.workspace.glossary import (
     GlossaryStore,
@@ -147,6 +151,7 @@ from hastings.workspace.story_candidate import StoryCandidate
 from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 from hastings.workspace.story_tools import StoryToolScope, build_story_tools
+from hastings.workspace.structure_io import read_structure_state, write_structure_document
 from hastings.workspace.task_intent import TaskIntent
 from hastings.workspace.task_scope import (
     ModuleAction,
@@ -945,6 +950,67 @@ def build_tools(
         )
         return _json({"path": written.path, "digest": written.digest, "size": written.size})
 
+    async def read_structure(
+        tool_call_id: str,
+        arguments: Mapping[str, JSONValue],
+        signal: ToolCancellationToken | None = None,
+        on_update: ToolUpdateCallback | None = None,
+    ) -> AgentToolResult:
+        """读取全书结构文档；起步前缺失视为空（digest 为 null，写入按创建处理）。"""
+        del tool_call_id, signal, on_update
+        state = read_structure_state(workspace)
+        return _json(
+            {
+                "path": STRUCTURE_PATH,
+                "exists": state.exists,
+                "text": state.text,
+                "digest": state.digest,
+                "size": len(state.text.encode("utf-8")),
+            }
+        )
+
+    async def write_structure(
+        tool_call_id: str,
+        arguments: Mapping[str, JSONValue],
+        signal: ToolCancellationToken | None = None,
+        on_update: ToolUpdateCallback | None = None,
+    ) -> AgentToolResult:
+        """写入全书结构文档：直接落盘，随作品 Git 记录可回退。
+
+        授权走与正文同一套任务范围（模型须登记 ``STRUCTURE.md`` 的确切路径）；
+        预算与铁律标记门槛在 ``structure_io`` 里。
+        """
+        del signal, on_update
+        text = _text_argument(arguments, "text", allow_empty=True)
+        digest = _digest_argument(arguments)
+        state = read_structure_state(workspace)
+        creating = not state.exists
+        action: MutationAction = "create" if creating else "update"
+        requirement = ReadRequirement.full(STRUCTURE_PATH) if not creating else None
+        run.before_mutation(
+            Mutation(action=action, path=STRUCTURE_PATH),
+            required_read=requirement,
+            # 结构文件不经全书构思门禁；指纹冲突由 workspace.write 拒绝。
+            preflight=None,
+        )
+        view = write_structure_document(
+            workspace, text=text, expected_digest=digest, creating=creating
+        )
+        run.record(
+            "file_changed",
+            {
+                "tool_call_id": tool_call_id,
+                "action": action,
+                "path": view.path,
+                "before_digest": digest,
+                "after_digest": view.digest,
+                "changed": digest != view.digest,
+                "size": view.size,
+            },
+        )
+        run.materials.after_full_write(view)
+        return _json({"path": view.path, "digest": view.digest, "size": view.size})
+
     async def move_file(
         tool_call_id: str,
         arguments: Mapping[str, JSONValue],
@@ -1449,6 +1515,43 @@ def build_tools(
             },
             execute_fn=edit_file,
             prompt_guidelines=EDIT_FILE_GUIDELINES,
+            execution_mode="sequential",
+        ),
+        AgentTool(
+            name="read_structure",
+            label="读取全书结构",
+            description=READ_STRUCTURE_DESCRIPTION,
+            parameters={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            execute_fn=read_structure,
+            prompt_guidelines=READ_STRUCTURE_GUIDELINES,
+            execution_mode="sequential",
+        ),
+        AgentTool(
+            name="write_structure",
+            label="写入全书结构",
+            description=WRITE_STRUCTURE_DESCRIPTION,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "STRUCTURE.md 的完整新内容（UTF-8 文本）",
+                    },
+                    "digest": {
+                        "type": "string",
+                        "description": "改写已有结构时必填：read_structure 得到的 digest",
+                    },
+                },
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            execute_fn=write_structure,
+            prompt_guidelines=WRITE_STRUCTURE_GUIDELINES,
             execution_mode="sequential",
         ),
         AgentTool(

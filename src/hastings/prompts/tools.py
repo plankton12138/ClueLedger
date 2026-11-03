@@ -159,6 +159,10 @@ __all__ = [
     "WRITE_FILE_DIGEST_PARAM_DESCRIPTION",
     "WRITE_FILE_GUIDELINES",
     "WRITE_FILE_TEXT_PARAM_DESCRIPTION",
+    "READ_STRUCTURE_DESCRIPTION",
+    "READ_STRUCTURE_GUIDELINES",
+    "WRITE_STRUCTURE_DESCRIPTION",
+    "WRITE_STRUCTURE_GUIDELINES",
     "save_review_report_description",
 ]
 
@@ -178,6 +182,26 @@ READ_FILE_DESCRIPTION = (
 READ_FILE_GUIDELINES = (
     "改写前必须读；读完保留返回的 digest 供写入使用。",
     "truncated 为真时按 next_cursor 继续读，不要假设已看完全文。",
+)
+
+READ_STRUCTURE_DESCRIPTION = (
+    "读取本书的 STRUCTURE.md（全书结构工作记忆：铁律、路线、骨架与模块索引）。"
+    "返回 exists、全文与 digest；起步前不存在时 exists 为假、内容为空。"
+)
+
+READ_STRUCTURE_GUIDELINES = (
+    "更新结构前必须先读；带上 digest 供 write_structure 使用。",
+)
+
+WRITE_STRUCTURE_DESCRIPTION = (
+    "整体写入 STRUCTURE.md：直接落盘（无需作者逐次确认），随作品 Git 记录可回退。"
+    "新建不带 digest；改写必须带上一次 read_structure 得到的 digest。"
+    "全文有字数预算，超限时先压缩再写；第一版必须以「## 铁律」段开头。"
+)
+
+WRITE_STRUCTURE_GUIDELINES = (
+    "适合起步起草第一版结构与后续随事务更新；细节写进模块，不在结构文件里展开。",
+    "台账（prose-ledger）不在结构文件里，也不要把「已写第几章」写进结构。",
 )
 
 SEARCH_TEXT_DESCRIPTION = "在正文与设定中逐行搜索关键词，返回路径、行号与摘录（只读）。"
