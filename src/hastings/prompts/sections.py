@@ -75,6 +75,8 @@ PARTITION_TITLES: dict[str, str] = {
     "instructions_writer": "写作约定",
     "instructions_review": "本任务要求",
     "catalog": "当前作品",
+    "structure": "全书结构",
+    "ledger": "正文台账",
     "modules": "已装模块",
     "materials": "本轮材料",
     "story": "构思结构",

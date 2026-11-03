@@ -113,11 +113,16 @@ def test_summary_reports_rendered_sizes(tmp_path: Path) -> None:
 
 
 def test_writer_limit_is_a_partition_character_budget() -> None:
-    """61,900 是分区字符预算之和；它不是整轮 token 上限，也不参与 token 统计。"""
+    """分区字符预算之和；它不是整轮 token 上限，也不参与 token 统计。
+
+    v1.1 起含结构层（STRUCTURE_INJECT_BUDGET）与台账（LEDGER_INJECT_BUDGET），
+    总预算随之扩大。
+    """
     writer = assembly.PROFILE_BUDGETS["writer"]
     assert writer == (
         assembly.INSTRUCTIONS_BUDGET
         + assembly.CATALOG_BUDGET
+        + assembly.STRUCTURE_INJECT_BUDGET
         + assembly.MODULES_BUDGET
         + assembly.MATERIALS_BUDGET
         + assembly.STORY_BUDGET
@@ -128,10 +133,11 @@ def test_writer_limit_is_a_partition_character_budget() -> None:
         + assembly.ROSTER_BUDGET
         + assembly.TIMELINE_BUDGET
         + assembly.CLUES_BUDGET
+        + assembly.LEDGER_INJECT_BUDGET
         + assembly.SETTINGS_BUDGET
         + assembly.HISTORY_BUDGET
     )
-    assert writer == 61_900
+    assert writer == 65_500
 
 
 def test_modules_partition_is_optional_and_reports_why_it_was_skipped(tmp_path: Path) -> None:

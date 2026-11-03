@@ -23,6 +23,7 @@ __all__ = [
     "HISTORY_BUDGET",
     "INDEX_BUDGET",
     "INSTRUCTIONS_BUDGET",
+    "LEDGER_INJECT_BUDGET",
     "MATERIALS_BUDGET",
     "MODULES_BUDGET",
     "IDEAS_BUDGET",
@@ -30,6 +31,7 @@ __all__ = [
     "CLUES_BUDGET",
     "GLOSSARY_BUDGET",
     "ROSTER_BUDGET",
+    "STRUCTURE_INJECT_BUDGET",
     "TIMELINE_BUDGET",
     "SETTINGS_BUDGET",
     "STATE_BUDGET",
@@ -71,15 +73,21 @@ ROSTER_BUDGET = 700
 TIMELINE_BUDGET = 400
 #: 线索台账注入：只列未回收的，超期在前。
 CLUES_BUDGET = 500
+#: 结构层注入（铁律 → 结构全文 → STYLE 占位）：结构文件本身冻结 1600 字符，
+#: 这里是渲染后分区上限（含小节标题与降级标注），超限属于装配故障而不是截断信号。
+STRUCTURE_INJECT_BUDGET = 2_400
+#: 正文台账注入：每章一行（章号 + 短修订号），章数超出预算时整块跳过并留下原因。
+LEDGER_INJECT_BUDGET = 1_200
 
 #: 每种用途的总预算：分区预算之和，超出的判断仍按分区做。
 #:
-#: 这是**字符**预算，不是 token 上限：写作用途合计 61,900 字符，只用来解释这一轮
+#: 这是**字符**预算，不是 token 上限：写作用途合计 65,500 字符，只用来解释这一轮
 #: 装进了多少材料。上游实际消耗的 token 由用量记录单独上报，两者不互相换算，也不能
 #: 拿这里的数字代替 token 统计。
 PROFILE_BUDGETS: dict[Profile, int] = {
     "writer": INSTRUCTIONS_BUDGET
     + CATALOG_BUDGET
+    + STRUCTURE_INJECT_BUDGET
     + MODULES_BUDGET
     + MATERIALS_BUDGET
     + STORY_BUDGET
@@ -90,14 +98,17 @@ PROFILE_BUDGETS: dict[Profile, int] = {
     + ROSTER_BUDGET
     + TIMELINE_BUDGET
     + CLUES_BUDGET
+    + LEDGER_INJECT_BUDGET
     + SETTINGS_BUDGET
     + HISTORY_BUDGET,
     "review": INSTRUCTIONS_BUDGET
     + CATALOG_BUDGET
+    + STRUCTURE_INJECT_BUDGET
     + MODULES_BUDGET
     + MATERIALS_BUDGET
     + STORY_BUDGET
     + IDEAS_BUDGET
+    + LEDGER_INJECT_BUDGET
     + ROSTER_BUDGET
     + TIMELINE_BUDGET
     + CLUES_BUDGET

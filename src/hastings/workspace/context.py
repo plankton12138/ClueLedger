@@ -48,11 +48,13 @@ from hastings.workspace.assembly import (
     HISTORY_BUDGET,
     IDEAS_BUDGET,
     INSTRUCTIONS_BUDGET,
+    LEDGER_INJECT_BUDGET,
     MATERIALS_BUDGET,
     MODULES_BUDGET,
     ROSTER_BUDGET,
     STATE_BUDGET,
     STORY_BUDGET,
+    STRUCTURE_INJECT_BUDGET,
     TIMELINE_BUDGET,
     AssembledContext,
     Exclusion,
@@ -315,6 +317,8 @@ def build_assembled_context(
     story: str = "",
     ideas: str = "",
     modules: str = "",
+    structure: str = "",
+    ledger: str = "",
     instructions: str = "",
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
@@ -360,6 +364,19 @@ def build_assembled_context(
             required=True,
         )
     )
+    if profile in ("writer", "review") and structure.strip():
+        # 装配顺序契约第 1—3 层（铁律 → 结构全文 → STYLE 占位），常驻且不被预算
+        # 裁掉：结构文件本身冻结 1600 字符，分区预算（2400）装得下；真装不下是
+        # 装配故障，按必需分区报缺口，不静默截断。
+        parts.append(
+            Partition(
+                key="structure",
+                title=PARTITION_TITLES["structure"],
+                text=structure,
+                budget=STRUCTURE_INJECT_BUDGET,
+                required=True,
+            )
+        )
     if profile in ("writer", "review") and modules.strip():
         # 只列已装实例与精确版本；条目正文仍要按需读取。索引任务不装这一块。
         parts.append(
@@ -388,6 +405,17 @@ def build_assembled_context(
                 text=story,
                 budget=STORY_BUDGET,
                 required=True,
+            )
+        )
+    if profile in ("writer", "review") and ledger.strip():
+        # 装配顺序契约第 5 层：正文台账（只读事实）。空台账（起步前）按空跳过；
+        # 台账只记事实，「该写哪章」由确定性对账决定，改派说明由调用方并进来。
+        parts.append(
+            Partition(
+                key="ledger",
+                title=PARTITION_TITLES["ledger"],
+                text=ledger,
+                budget=LEDGER_INJECT_BUDGET,
             )
         )
     if ideas.strip():

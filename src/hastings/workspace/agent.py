@@ -3127,6 +3127,8 @@ def build_turn_assembly(
     story: str = "",
     ideas: str = "",
     modules: str = "",
+    structure: str = "",
+    ledger: str = "",
     instructions: str = "",
     disclosure_store: DisclosureStore | None = None,
     glossary_store: GlossaryStore | None = None,
@@ -3138,7 +3140,8 @@ def build_turn_assembly(
     """这一轮的上下文装配：工具模式决定用途，用途决定装哪些分区。
 
     服务层与 harness 共用这一个入口，保证「记下来的注入内容」和「实际发给模型的内容」
-    是同一份结果，而不是两处各拼一遍。
+    是同一份结果，而不是两处各拼一遍。结构层分区（铁律 → 结构全文 → STYLE 占位 →
+    台账）按装配顺序契约插在目录之后、模块与台账之前后，见 q0-contracts 第 4 节。
     """
     return build_assembled_context(
         workspace,
@@ -3150,6 +3153,8 @@ def build_turn_assembly(
         story=story,
         ideas=ideas,
         modules=modules,
+        structure=structure,
+        ledger=ledger,
         instructions=instructions or _instructions_for(mode),
         disclosure_store=disclosure_store,
         glossary_store=glossary_store,
