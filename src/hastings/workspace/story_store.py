@@ -33,6 +33,13 @@ from pydantic import JsonValue, ValidationError
 from hastings.workspace.atomic_io import atomic_write_bytes, atomic_write_json, locked
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, digest_bytes, managed_kind, normalize_newlines
+from hastings.workspace.prose_ledger import (
+    LEDGER_FILENAME,
+    load_ledger,
+    record_chapter,
+    remove_chapter,
+    save_ledger,
+)
 from hastings.workspace.story_changes import (
     StoryInvalid,
     apply_change_set,
@@ -48,6 +55,7 @@ from hastings.workspace.story_models import (
     StoryReceipt,
     StoryVariant,
 )
+from hastings.workspace.structure_assembly import chapter_number_of
 
 if TYPE_CHECKING:
     from hastings.library.modules import ModuleLibrary
@@ -81,6 +89,13 @@ def new_id(prefix: str) -> str:
 
 def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="microseconds")
+
+
+def _has_real_prose(text: str) -> bool:
+    """标题行以外还有非空内容才算「真的有正文」；骨架 ``# 标题`` 不算。"""
+    return any(
+        bool(line.strip()) and not line.strip().startswith("#") for line in text.splitlines()
+    )
 
 
 def _fingerprint(value: object) -> str:
@@ -595,6 +610,7 @@ class StoryStore:
                 raise self._external_change()
             self._apply_prose(prose)
             self._apply_joint(joint_target)
+            self._update_ledger(prose, record.revision if record is not None else None)
             atomic_write_json(self.file, payload, prefix=".story-")
             self._write_snapshot(document.revision, payload)
             if record is not None:
@@ -675,6 +691,7 @@ class StoryStore:
             self._write_snapshot(document.revision, document.model_dump(mode="json"))
             record = document.changes.get(decided)
             if record is not None:
+                self._update_ledger(prose, record.revision)
                 self._append_log(record)
         except OSError as exc:
             raise _state_error(self.pending, "恢复提交时无法写入") from exc
@@ -1092,6 +1109,37 @@ class StoryStore:
                 atomic_write_bytes(copy, row["text"].encode("utf-8"))
                 with suppress(FileNotFoundError):
                     marker.unlink()
+
+    def _update_ledger(self, rows: list[dict[str, Any]], revision: str | None) -> None:
+        """正文台账随事务维护（v1.1 M4 事实层契约）。
+
+        三元提交成功时按正文路径章号登记最近入档修订；撤销（``after == "absent"``）
+        时回退登记。模型无写入口；恢复路径重放同一调用（登记幂等、按修订覆盖）。
+        备选方案不带正文登记——台账只回答主线上哪几章真的有正文。
+
+        「真的有正文」按文本事实判定：标题行以外还有非空内容。建章即建正文
+        （P6 起骨架 ``# 标题`` 也算正文文件），但骨架不算「已写」——否则对账的
+        缺章检测永远放行，护栏失效。章节被改回只剩骨架时同样撤除登记。
+        写失败按 ``OSError`` 上抛，与正文写入同一失败语义：保留 pending，恢复时补完。
+        """
+        if self.workspace is None or not rows or revision is None:
+            return
+        ledger_path = self.workspace.root / LEDGER_FILENAME
+        ledger = load_ledger(ledger_path)
+        changed = False
+        for row in rows:
+            if str(row.get("variant_id") or MAIN_VARIANT_ID) != MAIN_VARIANT_ID:
+                continue
+            chapter = chapter_number_of(str(row["path"]))
+            if chapter is None:
+                continue
+            if row["after"] == "absent" or not _has_real_prose(str(row.get("text", ""))):
+                ledger = remove_chapter(ledger, chapter)
+            else:
+                ledger = record_chapter(ledger, chapter, revision)
+            changed = True
+        if changed:
+            save_ledger(ledger_path, ledger)
 
     def _head_digest(self) -> str | None:
         try:
