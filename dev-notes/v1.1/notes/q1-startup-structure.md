@@ -51,6 +51,31 @@
   未知保持未知、不追问内部属性清单）；自由发挥不追问；两种模式都以设定卡候选
   收束、只描述起点与悬念。`STARTUP_PROMPT_VERSION=1`。
 
+### 切片五：起步阶段注入与起草回合授权（Q1-D 会话链路）
+
+1. `book_startup.py` 新增两个纯函数：
+   - `resolve_startup_mode(text)`：从作者原话归类引导/自由发挥（点名「引导」类才算引导）。
+   - `startup_phase(book_intent_text, structure_exists)`：按作品事实判阶段
+     （`intent` → `draft` → `done`），不读对话历史；撤销确认后自动回到 `intent`。
+   - `structure_draft_prompt` 重写为工具导向：指示模型用 `set_task_scope` 登记范围、
+     `read_structure` 确认不存在、`write_structure` 写入第一版结构、
+     `prepare_module_changes`/`apply_module_changes` 创建首批模块（不再用
+     `===MODULES===` 文本格式——那是脚本试验用的）。
+2. `agent.py`：
+   - `_startup_phase` / `_startup_phase_system`：构思回合按阶段注入系统提示——
+     `intent` 注入起步对话提示（模式按作者原话），`draft` 注入结构起草提示；
+     两阶段都**不叠加**旧构思工作台说明；`done` 走既有说明；旧格式（variant
+     `format_version < 4`）作品豁免，行为不变。
+   - **起草回合授权**：`write_structure` 与模块内容工具的开放在 draft 阶段
+     不再要求作者原话点名「结构」（设定卡已经作者确认，起草就是被确认的任务本身）；
+     起步完成后授权门照旧，不留后门。
+3. 产品规则落地：**没有方案文档的空作品进起步对话**；旧构思工作台服务于
+   已有方案的 legacy 作品（格式 2/3）与起步完成后的作品。
+4. 测试 7 例（`tests/workspace/test_agent_startup_phase.py`）：双模式注入、
+   起草提示带设定卡、完成后回落、正文用途不注入、起草回合工具开放、
+   完成后授权门照旧；`test_story_routing.py` 三个空作品用例改用 `_seed_started`
+   （seed 节点）表达「起步完成后的旧构思流程」，并同步修订断言。
+
 ## 基线差异登记（对照计划第 2 节）
 
 - `book_intent` 数据结构、`save_book_intent` 联合提交、撤销链路在 v1.0.9 已存在，
@@ -58,18 +83,18 @@
 - 根级 `STRUCTURE.md` 原不在受管路径模型内（受管路径要求两层目录），已扩展
   `managed_kind`，Q0 契约「作品根目录」不变。
 - 预算执行点从「入档事务」前移到「结构写入工具」，语义等效（见切片二第 2 条）。
+- 起步阶段的适用范围按作品格式划分：生产 API 创建的作品均为格式 4（进起步阶段）；
+  legacy 格式 2/3 作品（含测试构造的）豁免，旧构思流程不变。空作品（无方案文档）
+  一律进起步阶段。
 
 ## 未覆盖项（Q1 剩余）
 
-- **起步会话链路接线**：起步任务意图进会话受理与材料装配（`service.py` / `materials.py`），
-  把 `startup_conversation_prompt` 接入系统提示；设定卡候选在对话中产出后由前端调
-  已有的确认端点；确认后同链路调 `structure_draft_prompt` 起草第一版结构 + 首批模块
-  （模型用已接线的 `write_structure` + 模块创建机制登记授权后落盘）。
 - **结构只读页**（前端）与侧栏入口。
-- 在线冒烟：起步对话到首批模块入档全链路。
+- 在线冒烟：起步对话到首批模块入档全链路（依赖真实模型）。
 
 ## 验证
 
 - 切片一/二定向测试：28 passed；切片三 agent 相关 5 文件 88 passed（含活动流动词把关）。
-- ruff / mypy（全部新模块与改动文件）：通过。
-- 全量 `tests/workspace` 回归：**1500 passed / 0 failed**（2026-11-03，切片三提交后复跑）。
+- 切片五：`test_agent_startup_phase.py` 7 例、`test_book_startup.py` 12 例、
+  `test_story_routing.py` 33 例；ruff / mypy 通过。
+- 全量 `tests/workspace` 回归：**1508 passed / 0 failed**（2026-11-03，切片五后复跑）。

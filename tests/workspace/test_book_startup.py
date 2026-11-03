@@ -119,12 +119,13 @@ def test_startup_conversation_prompt_modes_differ() -> None:
 
 
 def test_structure_draft_prompt_states_contract() -> None:
-    system, prompt = structure_draft_prompt(CARD, ("伏笔账", "人物"))
-    assert "## 铁律" in prompt
-    assert "1600" in prompt
-    assert "===MODULES===" in prompt
-    assert "伏笔账" in prompt
-    assert CARD in prompt
+    system, instructions = structure_draft_prompt(CARD, ("伏笔账", "人物"))
+    assert "## 铁律" in instructions
+    assert "1600" in instructions
+    assert "write_structure" in instructions
+    assert "apply_module_changes" in instructions
+    assert "伏笔账" in instructions
+    assert CARD in instructions
     assert "保持未知" in system
 
 

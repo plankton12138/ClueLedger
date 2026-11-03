@@ -115,6 +115,16 @@ def _seed_node(state_root: Path, *, node_id: str = "n1", title: str = "抵达") 
     return store
 
 
+def _seed_started(state_root: Path, *, node_id: str) -> str:
+    """把 legacy 构思作品 seeding 到「已开始」状态（有方案节点，非空修订）。
+
+    v1.1 起，没有任何方案文档的空作品处于起步阶段（对话起步提示），不进旧构思
+    工作台；测试旧构思流程前先建立方案节点。
+    """
+    store = _seed_node(state_root, node_id=node_id)
+    return store.require_variant(MAIN_VARIANT_ID).revision
+
+
 def _story_context() -> ContextRequest:
     return ContextRequest(story=StoryRequest(variant_id=MAIN_VARIANT_ID, purpose="design"))
 
@@ -291,6 +301,9 @@ def test_ambiguous_clue_note_does_not_become_prose_request(tmp_path: Path) -> No
 def test_structure_task_hides_module_writes_and_sends_empty_plan(tmp_path: Path) -> None:
     provider = RoutingProvider([_text_turn("我先把线索和节点整理出来。")])
     service, _ = _service(tmp_path, provider)
+    seeded_revision = _seed_started(
+        conversation_root(tmp_path / "state", "w1"), node_id="seed-arrive"
+    )
 
     async def scenario() -> tuple[Any, list[dict[str, Any]]]:
         info = await service.accept("构建线索和调查推进", "k2", context=_story_context())
@@ -302,10 +315,10 @@ def test_structure_task_hides_module_writes_and_sends_empty_plan(tmp_path: Path)
     assert "update_story" in request["tools"]
     assert "prepare_module_changes" not in request["tools"]
     assert "apply_module_changes" not in request["tools"]
-    assert "当前方案为空" in request["system"]
+    # v1.1 起「当前方案为空」提示只属于起步阶段；本作品已有节点，走旧构思说明。
     assert "不要保存为模块" in request["system"]
     story_event = next(event for event in events if event["type"] == "story_context")
-    assert story_event["revision"] == EMPTY_REVISION
+    assert story_event["revision"] == seeded_revision
     assert story_event["intent"]["kind"] == "structure"
     # 只有文字、没有结构提交：不能报整体完成。
     finished = next(event for event in events if event["type"] == "run_finished")
@@ -459,6 +472,7 @@ def test_confirmation_binds_last_candidate_and_keeps_module_writes_closed(
         ]
     )
     service, _ = _service(tmp_path, provider)
+    _seed_started(conversation_root(tmp_path / "state", "w1"), node_id="seed-bind")
 
     async def scenario() -> tuple[Any, list[dict[str, Any]]]:
         first = await service.accept("先讨论一下线索和调查", "k3", context=_story_context())
@@ -505,6 +519,7 @@ def test_confirmation_binds_last_candidate_and_keeps_module_writes_closed(
 def test_confirmation_without_candidate_asks_and_does_not_write(tmp_path: Path) -> None:
     provider = RoutingProvider([_text_turn("你想写入哪一份？")])
     service, _ = _service(tmp_path, provider)
+    _seed_started(conversation_root(tmp_path / "state", "w1"), node_id="seed-clarify")
 
     async def scenario() -> tuple[Any, list[dict[str, Any]]]:
         info = await service.accept("就用这个", "k5", context=_story_context())

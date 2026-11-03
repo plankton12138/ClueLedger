@@ -34,13 +34,16 @@ __all__ = [
     "STARTUP_PROMPT_VERSION",
     "StartupConfirmResult",
     "StartupMode",
+    "StartupPhase",
     "StartupStructureReport",
     "STRUCTURE_PROMPT_VERSION",
     "card_report",
     "check_first_structure",
     "confirm_startup_book_intent",
     "guided_reply_report",
+    "resolve_startup_mode",
     "startup_conversation_prompt",
+    "startup_phase",
     "structure_draft_prompt",
 ]
 
@@ -58,6 +61,45 @@ STARTUP_PROMPT_VERSION = 1
 
 #: 起步会话的双模式：引导提问或自由发挥。
 StartupMode = Literal["guided", "freeform"]
+
+#: 起步的阶段：意图未确认（起步对话）→ 已确认无结构（结构起草）→ 完成。
+StartupPhase = Literal["intent", "draft", "done"]
+
+#: 作者明确要求引导式起步的说法；只有点名「引导」类意思才算，默认自由发挥。
+_GUIDED_MARKERS = (
+    "引导",
+    "带我想",
+    "帮我想想",
+    "陪我",
+    "问问我",
+    "提问",
+    "不知道写什么",
+    "没想法",
+    "没头绪",
+)
+
+
+def resolve_startup_mode(text: str) -> StartupMode:
+    """从作者原话判起步模式：点名「引导」类意思才算引导，默认自由发挥。
+
+    归类是纯函数；界面上后续如提供显式开关，以显式选择优先（传入前覆盖）。
+    """
+    return "guided" if any(marker in (text or "") for marker in _GUIDED_MARKERS) else "freeform"
+
+
+def startup_phase(
+    *,
+    book_intent_text: str | None,
+    structure_exists: bool,
+) -> StartupPhase:
+    """按作品现状判起步阶段：意图未确认 → 结构未起草 → 完成。
+
+    判定只看事实（作品意图文本、结构文件是否存在），不读对话历史；
+    撤销起步确认后阶段自动回到 ``intent``，与确认端点的一次性门槛一致。
+    """
+    if not (book_intent_text or "").strip():
+        return "intent"
+    return "done" if structure_exists else "draft"
 
 
 def card_report(text: str) -> list[str]:
@@ -186,32 +228,40 @@ def startup_conversation_prompt(mode: StartupMode) -> tuple[str, str]:
 
 
 def structure_draft_prompt(card_text: str, module_names: tuple[str, ...] = ()) -> tuple[str, str]:
-    """起步结构起草提示词：第一版 ``STRUCTURE.md`` 与首批模块清单。
+    """起步结构起草提示词：第一版 ``STRUCTURE.md`` 与首批模块，工具直接入档。
 
-    返回 ``(system, prompt)``。铁律约三行；分层判据写入提示——结构文件放全书性
-    内容（路线、骨架、模块索引），细节下沉为模块，不重复展开。
+    返回 ``(system, instructions)``。``instructions`` 由装配层并入系统提示（本回合
+    由模型用 ``write_structure`` 与模块工具直接完成，不是作者要看到的长文）。铁律约
+    三行；分层判据写入提示——结构文件放全书性内容（路线、骨架、模块索引），细节
+    下沉为模块，不重复展开。
     """
     modules = "、".join(module_names) if module_names else "（尚无模块）"
     system = (
-        "你是悬疑小说创作助手。根据设定卡为这部作品起草全书结构与首批资料模块。"
-        "只输出要求的内容，不解释过程；不确定的内容保持未知，不替作者决定真相或结局。"
+        "你是悬疑小说创作助手。设定卡已经作者确认，现在为这本书起草第一版全书结构"
+        "与首批模块，用工具直接入档（Git 可回退）；不确定的内容保持未知，"
+        "不替作者决定真相或结局。"
     )
-    prompt = (
+    instructions = (
         f"设定卡（作品意图）：{card_text.strip()}\n"
         f"既有模块：{modules}\n\n"
-        "请依次输出两部分，用一行 ===MODULES=== 分隔：\n\n"
-        "第一部分是《STRUCTURE.md》全文，要求：\n"
-        "1. 文件第一个非空行必须是「## 铁律」，其下约三行写作铁律"
+        "请用工具完成两件事：\n\n"
+        "1. 先用 `set_task_scope` 登记本轮要写的文件（含 `STRUCTURE.md`），"
+        "再用 `read_structure` 确认结构文件尚不存在，"
+        "然后用 `write_structure` 写入《STRUCTURE.md》第一版，要求：\n"
+        "   - 文件第一个非空行必须是「## 铁律」，其下约三行写作铁律"
         "（全书必须遵守的规则，如叙事视角、知情边界）。\n"
-        "2. 之后依次为「## 路线」（全书走向，一段话，不写死结局）、「## 骨架」"
-        "（章节骨架，每章一行：章号 + 一句本章发生什么，先给前 6 章）、「## 模块索引」"
-        "（列出下面的模块与各自职责）。\n"
-        f"3. 全文不超过 {BUDGET_LIMIT} 字符。只放全书性内容，人物、线索等细节写进模块，"
-        "不在结构文件里展开。\n\n"
-        "第二部分（===MODULES=== 之后）是首批模块清单，每行一个模块，格式为「名称：职责一句话」；"
-        "通常包含伏笔账（读法而非状态）与主要人物，按这本书自选，不超过 5 个。"
+        "   - 之后依次为「## 路线」（全书走向，一段话，不写死结局）、「## 骨架」"
+        "（章节骨架，每章一行：章号 + 一句本章发生什么，先给前 6 章）、"
+        "「## 模块索引」（列出下面的模块与各自职责）。\n"
+        f"   - 全文不超过 {BUDGET_LIMIT} 字符。只放全书性内容，人物、线索等细节写进模块，"
+        "不在结构文件里展开。\n"
+        "2. 用 `prepare_module_changes` 与 `apply_module_changes` 创建首批模块："
+        "通常包含伏笔账（记录伏笔的读法与回收点，不是状态清单）与主要人物小传，"
+        "按这本书自选，不超过 5 个；「## 模块索引」要与实际创建的模块一致。\n\n"
+        "完成后在对话里概述结构要点（路线一句、章数、模块清单），等作者核阅；"
+        "作者不满意直接说，你改完再入档。"
     )
-    return system, prompt
+    return system, instructions
 
 
 @dataclass(frozen=True, slots=True)

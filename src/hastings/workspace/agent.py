@@ -3171,6 +3171,57 @@ class RequestInputs:
     tools: list[AgentTool]
 
 
+def _startup_phase(run: RunContext, workspace: Workspace) -> str | None:
+    """按作品事实判起步阶段；不在起步阶段（含旧格式作品、无状态目录）返回 ``None``。
+
+    * ``intent``：``book_intent`` 未确认；
+    * ``draft``：意图已确认但 ``STRUCTURE.md`` 不存在；
+    * ``done``：两者都在——返回 ``None``。
+    """
+    from hastings.workspace.book_startup import startup_phase
+    from hastings.workspace.story_models import FORMAT_VERSION
+
+    if run.state_root is None or run.story is None:
+        return None
+    variant = StoryStore(run.state_root, workspace).read().variant(run.story.variant_id)
+    if variant is not None and variant.format_version < FORMAT_VERSION:
+        return None
+    book_intent = variant.book_intent.text if variant is not None and variant.book_intent else None
+    phase = startup_phase(
+        book_intent_text=book_intent,
+        structure_exists=(workspace.root / STRUCTURE_PATH).exists(),
+    )
+    return None if phase == "done" else phase
+
+
+def _startup_phase_system(run: RunContext, workspace: Workspace) -> str | None:
+    """起步阶段的系统提示注入；不在起步阶段返回 ``None``。
+
+    * ``intent``：注入起步对话提示（模式按作者原话归类，引导/自由发挥）；
+    * ``draft``：注入结构起草提示（设定卡 + 分层判据 + 工具步骤）；
+    * ``done``：注入 ``None``，走既有构思任务说明。
+
+    起步阶段不叠加旧构思工作台说明（``update_story`` 那套链路不服务起步）。
+    """
+    from hastings.workspace.book_startup import (
+        resolve_startup_mode,
+        startup_conversation_prompt,
+        structure_draft_prompt,
+    )
+
+    phase = _startup_phase(run, workspace)
+    if phase is None:
+        return None
+    if phase == "intent":
+        system, _ = startup_conversation_prompt(resolve_startup_mode(run.current_author_text or ""))
+        return system
+    assert run.story is not None and run.state_root is not None  # noqa: S101
+    variant = StoryStore(run.state_root, workspace).read().variant(run.story.variant_id)
+    book_intent = variant.book_intent.text if variant is not None and variant.book_intent else ""
+    draft_system, draft_instructions = structure_draft_prompt(book_intent)
+    return f"{draft_system}\n\n{draft_instructions}"
+
+
 def prepare_request_inputs(
     *,
     workspace: Workspace,
@@ -3228,7 +3279,13 @@ def prepare_request_inputs(
         writable = (
             mode == "write"
             and run.story.purpose in ("design", "revise", "write")
-            and (intent is None or intent.allows_structure_write)
+            and (
+                intent is None
+                or intent.allows_structure_write
+                # 起步起草回合：设定卡已经作者确认，结构写入就是本轮被确认的任务本身，
+                # 不再要求作者原话点名「结构」。
+                or _startup_phase(run, workspace) == "draft"
+            )
         )
         tools.extend(
             build_story_tools(
@@ -3254,8 +3311,10 @@ def prepare_request_inputs(
                 )
             )
         )
-    if run.intent is not None and not run.intent.allows_module_write:
+    startup_draft = _startup_phase(run, workspace) == "draft"
+    if run.intent is not None and not run.intent.allows_module_write and not startup_draft:
         # 结构任务与讨论轮不开放模块内容写入：模块成功不能代替结构完成。
+        # 起步起草回合例外：首批模块是设定卡确认后的既定任务的一部分。
         tools = [tool for tool in tools if tool.name not in _MODULE_CONTENT_TOOLS]
         if (
             run.story is not None
@@ -3409,14 +3468,20 @@ def prepare_request_inputs(
         )
     system = resolved.text
     if run.story is not None and run.story.purpose == "design" and run.story_candidate is None:
-        intent = run.intent
-        candidate_source = intent.candidate if intent is not None else None
-        system += story_design_instructions(
-            intent.kind if intent is not None else "discussion",
-            candidate_text=candidate_source.text if candidate_source is not None else "",
-            candidate_seq=candidate_source.seq if candidate_source is not None else 0,
-            multiple=(bool(candidate_source.multiple) if candidate_source is not None else False),
-        )
+        startup_system = _startup_phase_system(run, workspace)
+        if startup_system is not None:
+            system += startup_system
+        else:
+            intent = run.intent
+            candidate_source = intent.candidate if intent is not None else None
+            system += story_design_instructions(
+                intent.kind if intent is not None else "discussion",
+                candidate_text=candidate_source.text if candidate_source is not None else "",
+                candidate_seq=candidate_source.seq if candidate_source is not None else 0,
+                multiple=(
+                    bool(candidate_source.multiple) if candidate_source is not None else False
+                ),
+            )
     if run.story_candidate is not None:
         system += CANDIDATE_FLOW_INSTRUCTIONS
     if run.story is not None and run.state_root is not None and run.operation_id:
