@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ from hastings.workspace.chapter_writing import save_chapter_prose
 from hastings.workspace.creative_candidates import CreativeCandidateStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.index_confirmation import confirm_index_candidate
+from hastings.workspace.revision_analysis import RevisionAnalysisService, RevisionAnalysisStore
 from hastings.workspace.revision_diff import active_hunk_ids
 from hastings.workspace.revision_store import RevisionStore, sync_chapter_revisions
 from hastings.workspace.service_hub import WorkspaceServices
@@ -84,6 +86,24 @@ class StyleSaveRequest(BaseModel):
 
     text: str
     expected_digest: str | None = Field(default=None, max_length=128)
+    request_key: str = Field(default="", max_length=200)
+
+
+class AnalysisStartRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    hunk_ids: list[str] = Field(default_factory=list, max_length=50)
+    conversation_id: str = Field(default="", max_length=64)
+    operation_id: str = Field(default="", max_length=64)
+    request_key: str = Field(min_length=1, max_length=200)
+
+
+class AnalysisApplyRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    text: str
+    expected_digest: str | None = Field(default=None, max_length=128)
+    decision_indexes: list[int] = Field(default_factory=list, max_length=50)
     request_key: str = Field(default="", max_length=200)
 
 
@@ -592,6 +612,110 @@ def create_story_router(
             "text": view.text,
             "digest": view.digest,
             "replayed": False,
+        }
+
+    @router.post("/{workspace_id}/story/revisions/{revision_id}/analyses")
+    async def start_revision_analysis(
+        workspace_id: str, revision_id: str, body: AnalysisStartRequest
+    ) -> dict[str, Any]:
+        """从对话发起一次影响分析；同一请求键返回同一条分析。"""
+        if hub is None:
+            raise WorkspaceError(
+                code="MODEL_UNAVAILABLE",
+                where="修订分析",
+                why="没有可用模型",
+                fix="先在设置中完成模型连接与选择",
+            )
+        workspace = workspaces.workspace(workspace_id)
+        service = RevisionAnalysisService(
+            state_root=conversation_root(workspaces.root, workspace_id),
+            workspace=workspace,
+            provider_factory=hub.provider_factory,
+            library=hub.library,
+        )
+        analysis = await service.start(
+            revision_id=revision_id,
+            conversation_id=body.conversation_id,
+            operation_id=body.operation_id,
+            hunk_ids=body.hunk_ids,
+            request_key=body.request_key,
+        )
+        return analysis.to_dict()
+
+    @router.get("/{workspace_id}/story/revision-analyses/{analysis_id}")
+    def read_revision_analysis(workspace_id: str, analysis_id: str) -> dict[str, Any]:
+        """分析状态与判断；作者刷新后从原回执继续查看。"""
+        workspace = workspaces.workspace(workspace_id)
+        service = RevisionAnalysisService(
+            state_root=conversation_root(workspaces.root, workspace_id),
+            workspace=workspace,
+            library=hub.library if hub is not None else None,
+        )
+        return service.read(analysis_id).to_dict()
+
+    @router.post("/{workspace_id}/story/revision-analyses/{analysis_id}/applications")
+    def apply_revision_analysis(
+        workspace_id: str, analysis_id: str, body: AnalysisApplyRequest
+    ) -> dict[str, Any]:
+        """把作者确认的写作约定建议写回 `STYLE.md`；模块与结构建议继续在对话确认。"""
+        workspace = workspaces.workspace(workspace_id)
+        state_root = conversation_root(workspaces.root, workspace_id)
+        service = RevisionAnalysisService(
+            state_root=state_root,
+            workspace=workspace,
+            library=hub.library if hub is not None else None,
+        )
+        analysis = service.read(analysis_id)
+        if analysis.status != "ready":
+            raise WorkspaceError(
+                code="REVISION_ANALYSIS_NOT_READY",
+                where=f"修订分析/{analysis_id}",
+                why="这次分析还没有完成",
+                fix="等待分析结束，或从原对话重新发起",
+                details={"status": analysis.status},
+            )
+        chosen: set[int] = set()
+        for index in body.decision_indexes:
+            if 0 <= index < len(analysis.decisions):
+                chosen.add(index)
+        style_indexes = [
+            index
+            for index in chosen
+            if analysis.decisions[index].target == "style"
+        ]
+        receipts: list[dict[str, Any]] = []
+        if not style_indexes:
+            return {
+                "analysis_id": analysis_id,
+                "style": None,
+                "decision_indexes": [],
+                "message": "没有选择写入写作约定的建议",
+            }
+        previous = read_style_state(workspace)
+        expected = body.expected_digest if body.expected_digest is not None else previous.digest
+        view = write_style_document(workspace, text=body.text, expected_digest=expected)
+        updated = replace(
+            analysis,
+            decisions=[
+                replace(decision, applied=True) if index in style_indexes else decision
+                for index, decision in enumerate(analysis.decisions)
+            ],
+        )
+        RevisionAnalysisStore(state_root).save(updated)
+        receipts.append(
+            {
+                "target": "style",
+                "path": view.path,
+                "digest_before": previous.digest,
+                "digest_after": view.digest,
+                "decision_indexes": style_indexes,
+            }
+        )
+        return {
+            "analysis_id": analysis_id,
+            "style": {"path": view.path, "digest": view.digest, "text": view.text},
+            "receipts": receipts,
+            "decision_indexes": style_indexes,
         }
 
     return router

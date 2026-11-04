@@ -269,3 +269,58 @@ def test_style_document_round_trip_and_conflict(client: TestClient, tmp_path: Pa
     )
     assert stale.status_code == 409
     assert stale.json()["error"]["code"] == "STYLE_DIGEST_MISMATCH"
+
+
+def test_tool_revision_records_model_edit(tmp_path: Path) -> None:
+    from hastings.workspace.chapter_write_policy import ChapterWritePolicy
+    from hastings.workspace.chapter_writing import save_chapter_prose
+    from hastings.workspace.files import Workspace
+    from hastings.workspace.revision_store import RevisionStore, record_tool_revision
+    from hastings.workspace.story_store import EMPTY_REVISION, StoryStore
+    from hastings.workspace.writing_actions import create_chapter
+
+    workspace = Workspace.create(tmp_path / "book")
+    store = StoryStore(tmp_path / "state", workspace, format_version=5)
+    workspace.chapter_policy = ChapterWritePolicy(store)
+    created = create_chapter(
+        store,
+        workspace,
+        title="第七章",
+        after_chapter_id=None,
+        expected_plan_revision=EMPTY_REVISION,
+        request_key="chapter:tool",
+    )
+    draft = "# 第七章\n\n林岚很紧张，她害怕许砚继续追问。\n"
+    saved = save_chapter_prose(
+        store,
+        workspace,
+        chapter_id=created.chapter_id,
+        text=draft,
+        expected_digest=created.prose_digest,
+        request_key="save:draft",
+    )
+    before = workspace.read(saved.path)
+    edited = "# 第七章\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n"
+    after = workspace.write(saved.path, edited, expected_digest=before.digest)
+
+    record = record_tool_revision(
+        RevisionStore(store.root),
+        store,
+        path=after.path,
+        before_text=before.text,
+        after_text=after.text,
+        before_digest=before.digest,
+        after_digest=after.digest,
+        operation_id="op_1",
+        author_message="把这段改得更含蓄",
+        conversation_id="conv_1",
+    )
+
+    assert record is not None
+    assert record.source == "model"
+    assert record.chapter_id == created.chapter_id
+    assert record.author_message == "把这段改得更含蓄"
+    detail = RevisionStore(store.root).detail(record.id, after.text)
+    assert detail is not None
+    assert detail.analyzable is True
+    assert len(detail.hunks) == 1
