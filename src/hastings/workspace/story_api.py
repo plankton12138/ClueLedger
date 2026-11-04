@@ -26,10 +26,16 @@ from hastings.workspace.story_models import FORMAT_VERSION
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 from hastings.workspace.structure_document import BUDGET_LIMIT, check_budget
 from hastings.workspace.structure_io import read_structure_state
-from hastings.workspace.writing_actions import create_chapter
+from hastings.workspace.writing_actions import (
+    create_chapter,
+    rename_chapter,
+    rename_unplanned_prose,
+)
 from hastings.workspace.writing_api_models import (
     ChapterCreateRequest,
+    ChapterRenameRequest,
     IndexConfirmRequest,
+    ProseRenameRequest,
     ProseSaveRequest,
 )
 from hastings.workspace.writing_view import (
@@ -254,6 +260,47 @@ def create_story_router(
             "plan_revision": result.plan_revision,
             "change_id": result.receipt.change_id,
         }
+
+    @router.put("/{workspace_id}/story/chapters/{chapter_id}")
+    def put_chapter(
+        workspace_id: str, chapter_id: str, body: ChapterRenameRequest
+    ) -> dict[str, Any]:
+        store = writing_store_for(workspace_id)
+        workspace = workspaces.workspace(workspace_id)
+        result = rename_chapter(
+            store,
+            workspace,
+            chapter_id=chapter_id,
+            title=body.title,
+            expected_plan_revision=body.expected_plan_revision,
+            request_key=body.request_key,
+        )
+        return {
+            "chapter_id": result.chapter_id,
+            "title": result.title,
+            "plan_revision": result.plan_revision,
+            "change_id": result.receipt.change_id,
+        }
+
+    @router.put("/{workspace_id}/story/prose-title")
+    def put_prose_title(workspace_id: str, body: ProseRenameRequest) -> dict[str, Any]:
+        store = writing_store_for(workspace_id)
+        variant = store.read().variant(MAIN_VARIANT_ID)
+        if variant is not None and variant.chapter_for_path(body.path) is not None:
+            raise WorkspaceError(
+                code="CHAPTER_RENAME_REQUIRED",
+                where=body.path,
+                why="这一章已经登记在作品计划中",
+                fix="使用章节改名入口，让标题与正文在同一提交里更新",
+                details={"path": body.path},
+            )
+        result = rename_unplanned_prose(
+            workspaces.workspace(workspace_id),
+            path=body.path,
+            title=body.title,
+            expected_digest=body.expected_digest,
+        )
+        return {"path": result.path, "title": result.title, "digest": result.digest}
 
     @router.put("/{workspace_id}/story/chapters/{chapter_id}/prose")
     async def put_chapter_prose(

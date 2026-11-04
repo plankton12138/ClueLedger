@@ -1,4 +1,4 @@
-"""章节创建的写入动作（1.0.9 P2；1.2 移除全局摘要门槛）。
+"""章节创建与改名的写入动作（1.0.9 P2；1.2 移除全局摘要门槛）。
 
 页面只发送自然语言与插入位置；服务端补齐标识、顺序与正文路径。所有动作都走现有
 ``StoryStore`` 提交，不新建状态文件。章节没有构思输入：建章事务在同一个联合提交里
@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from hastings.workspace.errors import WorkspaceError
-from hastings.workspace.files import Workspace
+from hastings.workspace.files import Workspace, managed_kind
 from hastings.workspace.story_models import (
     FORMAT_VERSION,
     AddChapterPlan,
@@ -26,7 +26,11 @@ from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, Stor
 
 __all__ = [
     "ChapterCreateResult",
+    "ChapterRenameResult",
+    "ProseRenameResult",
     "create_chapter",
+    "rename_chapter",
+    "rename_unplanned_prose",
 ]
 
 
@@ -38,6 +42,21 @@ class ChapterCreateResult:
     prose_digest: str
     plan_revision: str
     receipt: StoryReceipt
+
+
+@dataclass(frozen=True)
+class ChapterRenameResult:
+    chapter_id: str
+    title: str | None
+    plan_revision: str
+    receipt: StoryReceipt
+
+
+@dataclass(frozen=True)
+class ProseRenameResult:
+    path: str
+    title: str
+    digest: str
 
 
 def create_chapter(
@@ -148,6 +167,159 @@ def create_chapter(
         plan_revision=updated.revision,
         receipt=receipt,
     )
+
+
+def rename_chapter(
+    store: StoryStore,
+    workspace: Workspace,
+    *,
+    chapter_id: str,
+    title: str | None,
+    expected_plan_revision: str,
+    request_key: str,
+) -> ChapterRenameResult:
+    """修改章节标题；正文首行仍是旧标题时一并替换，其余正文不动。"""
+    prior = store.receipt_for(request_key)
+    if prior is not None and prior.kind == "chapter_rename":
+        return _rename_result_from_receipt(store, prior, chapter_id)
+    variant = store.read().variant(MAIN_VARIANT_ID)
+    if variant is not None and variant.format_version != FORMAT_VERSION:
+        raise _format_error()
+    if variant is None:
+        raise _chapter_missing(chapter_id)
+    if variant.revision != expected_plan_revision:
+        raise _stale("作品构思")
+    plan = variant.chapter(chapter_id)
+    if plan is None:
+        raise _chapter_missing(chapter_id)
+
+    clean_title = (title or "").strip() or None
+    display_title = clean_title or f"第{plan.order + 1}章"
+    operations: list[StoryOperation] = [
+        UpdateChapterPlan(
+            chapter_id=chapter_id,
+            plan=ChapterPlan(
+                id=chapter_id,
+                order=plan.order,
+                title=clean_title,
+                prose_path=plan.prose_path,
+            ),
+        )
+    ]
+    patches = _heading_patch(workspace, plan, display_title)
+    change = StoryChangeSet(
+        id=new_id("change"),
+        base_revision=expected_plan_revision,
+        operations=operations,
+        prose_patches=patches,
+        requested_scope=f"chapter-rename:{chapter_id}",
+    )
+    receipt = store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        change=change,
+        request_key=request_key,
+        kind="chapter_rename",
+    )
+    updated = store.require_variant(MAIN_VARIANT_ID)
+    renamed = updated.chapter(chapter_id)
+    if renamed is None:
+        raise _state_error("修改章节名后找不到章节")
+    return ChapterRenameResult(
+        chapter_id=chapter_id,
+        title=renamed.title,
+        plan_revision=updated.revision,
+        receipt=receipt,
+    )
+
+
+def _heading_patch(workspace: Workspace, plan: ChapterPlan, display_title: str) -> list[ProsePatch]:
+    """只有正文确实以旧章节标题开头时才替换首行；作者改过的开头保持原样。"""
+    if plan.prose_path is None:
+        return []
+    try:
+        view = workspace.read(plan.prose_path)
+    except WorkspaceError:
+        return []
+    old_heading = f"# {plan.title or f'第{plan.order + 1}章'}"
+    if not view.text.startswith(old_heading):
+        return []
+    following = view.text[len(old_heading) : len(old_heading) + 1]
+    if following and following not in ("\n", "\r"):
+        return []
+    return [
+        ProsePatch(
+            path=view.path,
+            base_digest=view.digest,
+            start=0,
+            end=len(old_heading),
+            expected=old_heading,
+            replacement=f"# {display_title}",
+        )
+    ]
+
+
+def _rename_result_from_receipt(
+    store: StoryStore, receipt: StoryReceipt, chapter_id: str
+) -> ChapterRenameResult:
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    plan = variant.chapter(chapter_id)
+    if plan is None:
+        raise _state_error("重复的改名请求找不到原章节")
+    return ChapterRenameResult(
+        chapter_id=chapter_id,
+        title=plan.title,
+        plan_revision=variant.revision,
+        receipt=receipt,
+    )
+
+
+def _chapter_missing(chapter_id: str) -> WorkspaceError:
+    return WorkspaceError(
+        code="CHAPTER_NOT_FOUND",
+        where=f"章节/{chapter_id}",
+        why="章节不存在",
+        fix="刷新目录后重新选择章节",
+        details={"chapter_id": chapter_id},
+    )
+
+
+def rename_unplanned_prose(
+    workspace: Workspace, *, path: str, title: str, expected_digest: str
+) -> ProseRenameResult:
+    """只改未登记章节的正文文件首行标题；文件名与其他内容保持原样。"""
+    clean = title.strip()
+    if not clean:
+        raise WorkspaceError(
+            code="PROSE_TITLE_REQUIRED",
+            where=path,
+            why="新的章节名不能为空",
+            fix="填写一个非空的章节名后重试",
+        )
+    if managed_kind(path) != "chapter":
+        raise WorkspaceError(
+            code="FILE_KIND_MISMATCH",
+            where=path,
+            why="只有正文文件可以直接改名",
+            fix="在写作页选择正文后再改名",
+        )
+    view = workspace.read(path)
+    lines = view.text.splitlines(keepends=True)
+    index = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if index is not None and lines[index].lstrip().startswith("# "):
+        ending = ""
+        if lines[index].endswith("\r\n"):
+            ending = "\r\n"
+        elif lines[index].endswith("\n"):
+            ending = "\n"
+        replacement = f"# {clean}{ending}"
+        if lines[index] == replacement:
+            return ProseRenameResult(path=view.path, title=clean, digest=view.digest)
+        lines[index] = replacement
+        text = "".join(lines)
+    else:
+        text = f"# {clean}\n\n{view.text}" if view.text else f"# {clean}\n"
+    updated = workspace.write(path, text, expected_digest=expected_digest)
+    return ProseRenameResult(path=updated.path, title=clean, digest=updated.digest)
 
 
 def _chapter_result_from_receipt(

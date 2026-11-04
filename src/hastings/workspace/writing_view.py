@@ -113,6 +113,7 @@ class InformationThreadSummary(BaseModel):
 class UnplannedProse(BaseModel):
     path: str
     title: str
+    name: str
     digest: str
     chapter_number: int | None
 
@@ -378,6 +379,7 @@ def _book_view(workspace: Workspace, variant: StoryVariant | None) -> WritingBoo
             UnplannedProse(
                 path=entry.path,
                 title=entry.display_title or entry.title,
+                name=entry.title or entry.display_title,
                 digest=view.digest,
                 chapter_number=entry.chapter_number,
             )

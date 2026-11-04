@@ -79,6 +79,8 @@ export interface InformationThreadSummary {
 export interface UnplannedProse {
   path: string;
   title: string;
+  /** 不含章序前缀的标题名，用于改名输入。 */
+  name: string;
   digest: string;
   chapter_number: number | null;
 }
@@ -211,6 +213,27 @@ export function createChapter(
 ): Promise<{ chapter_id: string; order: number; path: string; prose_digest: string; plan_revision: string; change_id: string }> {
   return request(`/${workspaceId}/story/chapters`, {
     method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function renameChapter(
+  workspaceId: string,
+  chapterId: string,
+  input: { title?: string | null; expected_plan_revision: string; request_key: string },
+): Promise<{ chapter_id: string; title: string | null; plan_revision: string; change_id: string }> {
+  return request(`/${workspaceId}/story/chapters/${chapterId}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function renameUnplannedProse(
+  workspaceId: string,
+  input: { path: string; title: string; expected_digest: string },
+): Promise<{ path: string; title: string; digest: string }> {
+  return request(`/${workspaceId}/story/prose-title`, {
+    method: "PUT",
     body: JSON.stringify(input),
   });
 }

@@ -56,6 +56,13 @@ class WritingBookView(BaseModel):
     information_threads: list[InformationThreadSummary]
     unplanned_prose: list[UnplannedProse]
 
+class UnplannedProse(BaseModel):
+    path: str
+    title: str      # 带章序的显示名
+    name: str       # 不含章序的标题名，供改名输入
+    digest: str
+    chapter_number: int | None
+
 class WritingProseView(BaseModel):
     path: str
     digest: str
@@ -82,6 +89,8 @@ class WritingProseView(BaseModel):
 
 - 写作工作台只读投影；
 - 结构读取；
+- 章节改名：`PUT /api/file-workspaces/{id}/story/chapters/{chapter_id}`，带 `expected_plan_revision` 与 `request_key`；
+- 未挂章节正文改名：`PUT /api/file-workspaces/{id}/story/prose-title`，带 `path`、`title` 与 `expected_digest`；
 - 对话发送、暂停、恢复和回答作者问题；
 - 正文候选提出与采用；
 - 模块库浏览、版本读取、创建、发布；

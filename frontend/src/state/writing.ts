@@ -15,6 +15,8 @@ import {
   confirmIndexCandidate,
   readAssist,
   readWorkbench,
+  renameChapter as renameChapterApi,
+  renameUnplannedProse as renameUnplannedProseApi,
   reviewChapterIndex,
   saveChapterProse,
   startAssist,
@@ -76,6 +78,10 @@ interface WritingStore {
   load(workspaceId: string, selection?: WorkbenchSelection): Promise<void>;
   refresh(workspaceId?: string, selection?: WorkbenchSelection): Promise<void>;
   updateText(workspaceId: string, chapterId: string, text: string, schedule?: boolean): void;
+  /** 修改章节名；返回错误文案，成功后刷新工作台。 */
+  renameChapter(workspaceId: string, chapterId: string, title: string | null, expectedPlanRevision: string): Promise<string | null>;
+  /** 修改未挂章节正文的首行标题；返回错误文案。 */
+  renameProse(workspaceId: string, path: string, title: string, expectedDigest: string): Promise<string | null>;
   save(workspaceId: string, chapterId: string): Promise<boolean>;
   adoptServer(workspaceId: string, chapterId: string): Promise<void>;
   overrideWithLocal(workspaceId: string, chapterId: string): Promise<boolean>;
@@ -319,6 +325,48 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
       if (saveTimers[key]) clearTimeout(saveTimers[key]);
       delete saveTimers[key];
       clearPersisted(workspaceId, chapterId);
+    }
+  },
+
+  async renameChapter(workspaceId, chapterId, title, expectedPlanRevision) {
+    const key = writingDraftKey(workspaceId, chapterId);
+    const draft = get().drafts[key];
+    if (draft?.conflict) return "章节：正文有未处理的版本冲突。建议：先处理正文冲突再改名。";
+    if (draft?.dirty) {
+      const saved = await get().save(workspaceId, chapterId);
+      if (!saved) return "章节：正文还有未保存的修改。建议：先处理正文冲突再改名。";
+    }
+    try {
+      await renameChapterApi(workspaceId, chapterId, {
+        title: title?.trim() || null,
+        expected_plan_revision: expectedPlanRevision,
+        request_key: writingKey(`chapter-rename-${chapterId}`),
+      });
+      await get().refresh(workspaceId);
+      return null;
+    } catch (error) {
+      return errorMessage(error, `章节/${chapterId}`);
+    }
+  },
+
+  async renameProse(workspaceId, path, title, expectedDigest) {
+    try {
+      await renameUnplannedProseApi(workspaceId, {
+        path,
+        title: title.trim(),
+        expected_digest: expectedDigest,
+      });
+      await Promise.all([
+        get().refresh(workspaceId),
+        useWorkspaceStore.getState().refreshCatalog(),
+      ]);
+      const workspace = useWorkspaceStore.getState();
+      if (workspace.currentId === workspaceId && workspace.selectedPath === path) {
+        await workspace.openPath(path);
+      }
+      return null;
+    } catch (error) {
+      return errorMessage(error, path);
     }
   },
 

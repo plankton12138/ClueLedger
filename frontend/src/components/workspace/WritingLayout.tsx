@@ -123,12 +123,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   }, [currentId]);
   useEffect(() => { setDirectory(false); }, [canDockDirectory]);
 
-  function selectBook() {
-    if (!currentId) return;
-    // 全书页与模块内容共用一个地址：切换要落在状态上，不能只改地址栏。
-    leaveModule();
-    navigate({ kind: "writing", workspaceId: currentId });
-  }
   function selectStructure() {
     if (!currentId) return;
     leaveModule();
@@ -265,11 +259,11 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             selectedChapterId={chapterId}
             selectedProsePath={prosePath}
             loading={writingLoading}
-            onBook={selectBook}
             onStructure={selectStructure}
             onChapter={selectChapter}
             onProse={selectProse}
             onAskModules={askForModules}
+            planRevision={workbench?.plan_revision ?? null}
           />
         </div>
       </aside>

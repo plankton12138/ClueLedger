@@ -987,7 +987,11 @@
   .writing-layout .toc-add { min-width: 30px; min-height: 38px; }
   .reader-document { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
   /* ===== 1.0.9 P4 单一写作页 ===== */
-  .writing-navigator { width: 100%; }
+  .writing-navigator { display: flex; width: 100%; flex: 1; min-height: 0; flex-direction: column; }
+  .writing-nav-top { flex: none; padding: 10px 8px 0; }
+  .writing-nav-section { display: grid; gap: 4px; }
+  .writing-nav-section-title { cursor: pointer; padding: 2px 0 4px; font-size: 13px; font-weight: 700; color: theme("colors.panelHead"); text-shadow: 0 1px #fff; }
+  .writing-nav-section:not([open]) > .writing-nav-section-title { color: theme("colors.ui.secondaryText"); }
   .writing-navigator .toc-row { min-height: 48px; }
   .writing-nav-scroll { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 10px; overflow: auto; padding: 10px 8px 12px; }
   .writing-nav-scroll section { display: grid; gap: 4px; }

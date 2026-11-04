@@ -25,7 +25,12 @@ from hastings.workspace.story_store import (
     StoryStore,
     new_id,
 )
-from hastings.workspace.writing_actions import ChapterCreateResult, create_chapter
+from hastings.workspace.writing_actions import (
+    ChapterCreateResult,
+    create_chapter,
+    rename_chapter,
+    rename_unplanned_prose,
+)
 from hastings.workspace.writing_view import build_chapter_index
 
 
@@ -87,6 +92,74 @@ def test_chapter_creation_creates_prose_and_is_idempotent(
     assert files == [Path(first.path).name]
 
 
+def test_rename_chapter_updates_title_and_heading(
+    env: tuple[Workspace, StoryStore],
+) -> None:
+    workspace, store = env
+    created = setup_chapter(store, workspace, title="第一章")
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    renamed = rename_chapter(
+        store,
+        workspace,
+        chapter_id=created.chapter_id,
+        title="雨夜",
+        expected_plan_revision=variant.revision,
+        request_key="chapter:rename",
+    )
+    plan = store.require_variant(MAIN_VARIANT_ID).chapter(created.chapter_id)
+    assert renamed.title == "雨夜"
+    assert plan is not None and plan.title == "雨夜"
+    assert (workspace.root / created.path).read_text(encoding="utf-8") == "# 雨夜\n"
+
+    replayed = rename_chapter(
+        store,
+        workspace,
+        chapter_id=created.chapter_id,
+        title="雨夜",
+        expected_plan_revision=variant.revision,
+        request_key="chapter:rename",
+    )
+    assert replayed.receipt.change_id == renamed.receipt.change_id
+    assert (workspace.root / created.path).read_text(encoding="utf-8") == "# 雨夜\n"
+
+
+def test_rename_chapter_keeps_custom_prose_opening(
+    env: tuple[Workspace, StoryStore],
+) -> None:
+    workspace, store = env
+    created = setup_chapter(store, workspace, title="第一章")
+    (workspace.root / created.path).write_text(
+        "# 作者自定义的开头\n\n侦探抵达旅馆。\n", encoding="utf-8"
+    )
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    rename_chapter(
+        store,
+        workspace,
+        chapter_id=created.chapter_id,
+        title="雨夜",
+        expected_plan_revision=variant.revision,
+        request_key="chapter:rename-custom",
+    )
+    assert (workspace.root / created.path).read_text(encoding="utf-8") == (
+        "# 作者自定义的开头\n\n侦探抵达旅馆。\n"
+    )
+
+
+def test_rename_chapter_rejects_stale_revision(env: tuple[Workspace, StoryStore]) -> None:
+    workspace, store = env
+    created = setup_chapter(store, workspace, title="第一章")
+    with pytest.raises(WorkspaceError) as exc:
+        rename_chapter(
+            store,
+            workspace,
+            chapter_id=created.chapter_id,
+            title="雨夜",
+            expected_plan_revision="rev_other",
+            request_key="chapter:rename-stale",
+        )
+    assert error_code(exc) == "STORY_CHANGE_CONFLICT"
+
+
 def test_first_chapter_initializes_current_format(env: tuple[Workspace, StoryStore]) -> None:
     workspace, store = env
     created = create_chapter(
@@ -142,6 +215,31 @@ def test_imported_unplanned_prose_can_be_edited(
         imported.path, imported.text + "修改", expected_digest=imported.digest
     )
     assert updated.text.endswith("修改")
+
+
+def test_rename_unplanned_prose_updates_heading(env: tuple[Workspace, StoryStore]) -> None:
+    workspace, _ = env
+    (imported,) = workspace.import_text("旧稿.md", "# 旧稿\n\n原有正文\n".encode())
+    renamed = rename_unplanned_prose(
+        workspace,
+        path=imported.path,
+        title="新稿",
+        expected_digest=imported.digest,
+    )
+    assert renamed.title == "新稿"
+    assert workspace.read(imported.path).text == "# 新稿\n\n原有正文\n"
+
+
+def test_rename_unplanned_prose_requires_non_empty_title(
+    env: tuple[Workspace, StoryStore],
+) -> None:
+    workspace, _ = env
+    (imported,) = workspace.import_text("旧稿.md", "# 旧稿\n".encode())
+    with pytest.raises(WorkspaceError) as exc:
+        rename_unplanned_prose(
+            workspace, path=imported.path, title="  ", expected_digest=imported.digest
+        )
+    assert error_code(exc) == "PROSE_TITLE_REQUIRED"
 
 
 def test_save_checks_digest_and_retry(env: tuple[Workspace, StoryStore]) -> None:
@@ -468,10 +566,7 @@ def test_one_move_keeps_each_occurrence_span(env: tuple[Workspace, StoryStore]) 
     """A13：同一信息线在一章出现多处时，每处各自保留可定位出处。"""
     workspace, store = env
     chapter = setup_chapter(store, workspace)
-    text = (
-        "# 第一章\n\n林砚看见湿手套。\n\n"
-        "过了半晌，他又把湿手套放回柜台。\n"
-    )
+    text = "# 第一章\n\n林砚看见湿手套。\n\n过了半晌，他又把湿手套放回柜台。\n"
     saved = save_chapter_prose(
         store,
         workspace,
@@ -541,5 +636,3 @@ def test_one_move_keeps_each_occurrence_span(env: tuple[Workspace, StoryStore]) 
         second_start,
     }
     assert all(row.state == "exact" for row in item.occurrences)
-
-

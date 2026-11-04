@@ -8,8 +8,10 @@ from hastings.workspace.creative_candidates import CandidateBase, CreativeTarget
 
 __all__ = [
     "ChapterCreateRequest",
+    "ChapterRenameRequest",
     "IndexConfirmRequest",
     "CreativeAssistRequest",
+    "ProseRenameRequest",
     "ProseSaveRequest",
 ]
 
@@ -21,6 +23,22 @@ class ChapterCreateRequest(BaseModel):
     after_chapter_id: str | None = Field(default=None, max_length=64)
     expected_plan_revision: str = Field(min_length=1, max_length=64)
     request_key: str = Field(min_length=1, max_length=200)
+
+
+class ChapterRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, max_length=200)
+    expected_plan_revision: str = Field(min_length=1, max_length=64)
+    request_key: str = Field(min_length=1, max_length=200)
+
+
+class ProseRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(min_length=1, max_length=512)
+    title: str = Field(min_length=1, max_length=200)
+    expected_digest: str = Field(min_length=1, max_length=128)
 
 
 class ProseSaveRequest(BaseModel):

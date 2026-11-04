@@ -42,9 +42,7 @@ def open_workspace(client: TestClient, tmp_path: Path) -> tuple[str, Path]:
     return body["id"], Path(body["path"])
 
 
-def test_first_chapter_can_initialize_story(
-    client: TestClient, tmp_path: Path
-) -> None:
+def test_first_chapter_can_initialize_story(client: TestClient, tmp_path: Path) -> None:
     workspace_id, _ = open_workspace(client, tmp_path)
     response = client.post(
         f"/api/file-workspaces/{workspace_id}/story/chapters",
@@ -130,6 +128,61 @@ def test_writing_flow_through_http(client: TestClient, tmp_path: Path) -> None:
         json={"request_key": "plan:gone"},
     )
     assert plan_route.status_code in (404, 405), plan_route.text
+
+
+def test_rename_chapter_through_http(client: TestClient, tmp_path: Path) -> None:
+    workspace_id, root = open_workspace(client, tmp_path)
+    base = f"/api/file-workspaces/{workspace_id}/story"
+    created = client.post(
+        f"{base}/chapters",
+        json={
+            "title": "第一章",
+            "after_chapter_id": None,
+            "expected_plan_revision": "empty",
+            "request_key": "chapter:rename-seed",
+        },
+    )
+    assert created.status_code == 201, created.text
+    created_body = created.json()
+
+    renamed = client.put(
+        f"{base}/chapters/{created_body['chapter_id']}",
+        json={
+            "title": "雨夜",
+            "expected_plan_revision": created_body["plan_revision"],
+            "request_key": "chapter:rename",
+        },
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["title"] == "雨夜"
+
+    chapter = client.get(
+        f"{base}/workbench", params={"chapter_id": created_body["chapter_id"]}
+    ).json()
+    assert chapter["chapter"]["plan"]["title"] == "雨夜"
+    assert chapter["chapter"]["prose"]["text"].startswith("# 雨夜")
+    assert (root / created_body["path"]).read_text(encoding="utf-8").startswith("# 雨夜")
+
+
+def test_rename_unplanned_prose_through_http(client: TestClient, tmp_path: Path) -> None:
+    workspace_id, root = open_workspace(client, tmp_path)
+    (root / "正文").mkdir(exist_ok=True)
+    (root / "正文" / "0001 旧稿.md").write_text("# 旧稿\n\n原有正文。\n", encoding="utf-8")
+    base = f"/api/file-workspaces/{workspace_id}/story"
+    entry = client.get(f"{base}/workbench").json()["book"]["unplanned_prose"][0]
+    assert entry["name"] == "旧稿"
+
+    renamed = client.put(
+        f"{base}/prose-title",
+        json={"path": entry["path"], "title": "新稿", "expected_digest": entry["digest"]},
+    )
+    assert renamed.status_code == 200, renamed.text
+
+    book = client.get(f"{base}/workbench").json()["book"]
+    updated = book["unplanned_prose"][0]
+    assert updated["name"] == "新稿"
+    assert updated["title"].endswith("新稿")
+    assert (root / entry["path"]).read_text(encoding="utf-8") == "# 新稿\n\n原有正文。\n"
 
 
 def test_unplanned_prose_is_readonly_in_workbench(client: TestClient, tmp_path: Path) -> None:
