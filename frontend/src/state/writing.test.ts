@@ -154,3 +154,52 @@ describe("刷新恢复", () => {
     });
   });
 });
+
+describe("稿纸修订草稿", () => {
+  it("修订模式写入的草稿标记为等待确认，保存后清掉标记并记下修订", async () => {
+    await useWritingStore.getState().load("ws1", { chapterId: "ch1" });
+    useWritingStore.getState().updateText("ws1", "ch1", "亲手改的一段", false, true);
+    const key = writingDraftKey("ws1", "ch1");
+    expect(useWritingStore.getState().drafts[key]).toMatchObject({
+      dirty: true,
+      confirmRequired: true,
+    });
+    expect(JSON.parse(storage.get(`hastings.writing.draft.ws1.ch1`) ?? "{}")).toMatchObject({
+      confirmRequired: true,
+    });
+
+    api.saveChapterProse.mockResolvedValue({
+      path: "正文/0001.md", prose_digest: "d2", plan_revision: "plan_2",
+      context_revision: "ctx_2", index_revision: "idx_2", index: { ...INDEX, prose_digest: "d2" },
+      analysis_job_id: null, committed_change_id: "change_1", revision_id: "rev_1",
+    });
+    expect(await useWritingStore.getState().save("ws1", "ch1")).toBe(true);
+    expect(useWritingStore.getState().drafts[key]).toMatchObject({
+      dirty: false,
+      confirmRequired: false,
+      lastRevisionId: "rev_1",
+    });
+  });
+
+  it("刷新后恢复的待确认草稿不会自动入稿", async () => {
+    storage.set(`hastings.writing.draft.ws1.ch1`, JSON.stringify({
+      text: "刷新前没确认的修订",
+      baseText: "初始正文",
+      baseDigest: "d1",
+      confirmRequired: true,
+    }));
+    vi.useFakeTimers();
+    try {
+      await useWritingStore.getState().load("ws1", { chapterId: "ch1" });
+      vi.advanceTimersByTime(2000);
+      expect(api.saveChapterProse).not.toHaveBeenCalled();
+      expect(useWritingStore.getState().drafts[writingDraftKey("ws1", "ch1")]).toMatchObject({
+        text: "刷新前没确认的修订",
+        dirty: true,
+        confirmRequired: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

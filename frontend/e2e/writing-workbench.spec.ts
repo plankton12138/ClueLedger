@@ -220,3 +220,79 @@ test("修订面板显示段落差异，写作约定可编辑保存", async ({ pa
     "- 写环境先写人物能感知的细节。\n",
   );
 });
+
+test("稿纸修订模式：编辑、看差异、确认入稿，取消保留原文", async ({ page, request }) => {
+  const parent = resolve(process.env.HASTINGS_E2E_DATA_DIR ?? "../data/test-tmp/e2e", "books");
+  mkdirSync(parent, { recursive: true });
+  const root = join(mkdtempSync(join(parent, "writing-revise-mode-")), "作品");
+  const opened = await request.post("/api/file-workspaces", {
+    data: { path: root, create: true },
+  });
+  expect(opened.ok(), await opened.text()).toBeTruthy();
+  const book = await opened.json();
+  const base = `/api/file-workspaces/${book.id}`;
+  const created = await request.post(`${base}/story/chapters`, {
+    data: { title: "夜航", expected_plan_revision: "empty", request_key: "e2e-mode-chapter" },
+  });
+  const chapter = await created.json();
+  const seed = "林岚很紧张，她害怕许砚继续追问。\n\n窗外的雨没有停。\n";
+  const draft = await request.put(`${base}/story/chapters/${chapter.chapter_id}/prose`, {
+    data: {
+      text: `# 夜航\n\n${seed}`,
+      expected_digest: chapter.prose_digest,
+      draft_revision: "e2e-mode-draft",
+      request_key: "e2e-mode-draft",
+    },
+  });
+  expect(draft.ok(), await draft.text()).toBeTruthy();
+
+  await page.goto(`/#/workspaces/${book.id}/writing`);
+  await page.locator(".writing-navigator").getByRole("button", { name: "第1章 · 夜航", exact: true }).click();
+  await expect(page.getByText("林岚很紧张，她害怕许砚继续追问。")).toBeVisible();
+
+  await page.getByRole("button", { name: "修订", exact: true }).click();
+  const editor = page.getByRole("textbox", { name: "正文编辑" });
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveValue(`# 夜航\n\n${seed}`);
+  await shot(page, "11-revision-mode-edit");
+
+  const rewritten = "# 夜航\n\n林岚把杯沿转了半圈。「你刚才说到哪儿了？」\n\n窗外的雨没有停。\n";
+  await editor.fill(rewritten);
+  await page.getByRole("button", { name: /看差异/ }).click();
+  const diff = page.locator(".revision-diff");
+  await expect(diff).toBeVisible();
+  await expect(diff.locator("del").filter({ hasText: "林岚很紧张" })).toBeVisible();
+  await expect(diff.locator("ins").filter({ hasText: "杯沿转了半圈" })).toBeVisible();
+  await shot(page, "12-revision-mode-diff");
+
+  await page.getByRole("button", { name: "确认修改", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
+  await expect(page.getByText("林岚把杯沿转了半圈。「你刚才说到哪儿了？」")).toBeVisible();
+  const viewRevision = page.getByRole("button", { name: "查看修订", exact: true });
+  await expect(viewRevision).toBeVisible();
+  await shot(page, "13-revision-saved");
+
+  const revisions = await request.get(`${base}/story/chapters/${chapter.chapter_id}/revisions`).then(r => r.json());
+  expect(revisions.items.length).toBeGreaterThan(0);
+  expect(revisions.items[0].source).toBe("author");
+
+  await viewRevision.click();
+  const drawer = page.getByRole("dialog", { name: "修订与写作约定" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText("作者修订", { exact: true })).toBeVisible();
+  await expect(drawer.getByText(/林岚把杯沿转了半圈/)).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭", exact: true }).click();
+
+  // 取消保护：未确认的文字留在草稿里，取消需要二次确认；丢弃后正文保持确认过的版本。
+  await page.getByRole("button", { name: "修订", exact: true }).click();
+  await page.getByRole("textbox", { name: "正文编辑" }).fill(`${rewritten}\n又加了一段。\n`);
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(page.getByText("这次修改还没有入稿。取消会丢弃它。", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "继续编辑", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "正文编辑" })).toBeVisible();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "丢弃修改", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
+  await expect(page.getByText("林岚把杯沿转了半圈。「你刚才说到哪儿了？」")).toBeVisible();
+  await expect(page.getByText("又加了一段。")).toHaveCount(0);
+});

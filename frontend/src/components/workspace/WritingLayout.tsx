@@ -209,7 +209,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     if (chapterId) {
       if (chapter) {
         if (!chapter.prose) return <div className="ui-empty" role="status"><p>这一章的正文文件缺失；刷新工作台后重新选择章节。</p></div>;
-        return <Paper file={file} openingPath={chapter.prose.path} fileLoading={fileLoading} busy={loading} />;
+        return <Paper file={file} openingPath={chapter.prose.path} fileLoading={fileLoading} busy={loading} chapterId={file?.path === chapter.prose.path ? chapterId : null} />;
       }
       if (writingError) return <div className="writing-load-error"><StatusMessage tone="error" action={<Button size="compact" onClick={() => void refreshWorkbench(currentId, { chapterId })}>重试</Button>}>{writingError}</StatusMessage></div>;
       return <div className="ui-empty" role="status"><p>正在读取章节…</p></div>;

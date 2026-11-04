@@ -613,6 +613,128 @@
     box-shadow: 0 0 0 2px rgba(71, 127, 164, .25);
   }
 
+  /* ===== 稿纸修订模式（v1.2）=====
+     编辑与差异共用纸面；差异按段落纵向展示，段内用删除/新增色区分。 */
+  .revision-bar {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--aqua-border);
+    background: var(--aqua-chrome-gradient);
+  }
+  .revision-modes {
+    display: inline-flex;
+    flex: none;
+    border: 1px solid var(--aqua-border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .revision-modes button {
+    padding: 4px 10px;
+    font-size: 13px;
+    color: theme("colors.ui.secondaryText");
+    background: transparent;
+  }
+  .revision-modes button + button {
+    border-left: 1px solid var(--aqua-border);
+  }
+  .revision-modes button.active {
+    background: #fffdf6;
+    color: theme("colors.sheetInk");
+    font-weight: 600;
+  }
+  .revision-state {
+    font-size: 12px;
+    color: theme("colors.ui.secondaryText");
+  }
+  .revision-conflict {
+    display: grid;
+    flex: none;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #e4cfae;
+    background: #fbf0dc;
+    color: #6b5426;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .revision-conflict-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .revision-error {
+    flex: none;
+    padding: 8px 14px;
+    background: #f8e4de;
+    color: #8d3a2a;
+    font-size: 12px;
+  }
+  .revision-textarea {
+    display: block;
+    width: 100%;
+    min-height: 320px;
+    padding: 0;
+    border: 0;
+    outline: none;
+    resize: none;
+    overflow: hidden;
+    background: transparent;
+    color: theme("colors.sheetInk");
+    font-family: theme("fontFamily.serif");
+    font-size: calc(17px * var(--font-scale, 1));
+    line-height: calc(32px * var(--font-scale, 1));
+  }
+  .revision-diff {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: calc(16px * var(--font-scale, 1));
+    line-height: calc(32px * var(--font-scale, 1));
+    color: theme("colors.sheetInk");
+  }
+  .revision-diff-block {
+    padding: 6px 10px;
+    border: 1px solid #e2dbc6;
+    border-radius: 3px;
+    background: #fffdf6;
+  }
+  .revision-diff-tag {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #8a8267;
+  }
+  .revision-diff-line {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .revision-diff-equal {
+    padding: 0 10px;
+    color: #6d6857;
+  }
+  .revision-del {
+    background: #f6dcd7;
+    color: #8d3a2a;
+    text-decoration-color: #b4553f;
+  }
+  .revision-ins {
+    background: #e3eed6;
+    color: #3e6231;
+    text-decoration: none;
+  }
+  .revision-diff-empty {
+    color: #8a8267;
+    font-size: 13px;
+  }
+
   /* ===== 对话回复（V05-2）=====
      回复是阅读主体：段落不缩进、行距略紧，宽表与代码块在栏内横向滚动。
      过程（思考、工具）默认折叠，展开才占版面。 */
@@ -1117,6 +1239,8 @@
   .paper-toolbar { position: relative; display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 53px; padding: 8px 14px; border-bottom: 1px solid var(--aqua-border); background: var(--aqua-chrome-gradient); }
   .paper-toolbar h2 { flex: 1; min-width: 4em; font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .paper-navigation, .paper-reading-tools { display: flex; flex: none; align-items: center; gap: 0; }
+  .paper-revise-actions { display: flex; flex: none; align-items: center; gap: 6px; }
+  .revision-pending { color: #8a7451; font-size: 11px; white-space: nowrap; }
   .paper-navigation .ui-button, .paper-reading-tools > .ui-button { border-radius: 0; min-width: 34px; padding-inline: 7px; }
   .paper-navigation > :first-child, .paper-reading-tools > .ui-button:first-child { border-radius: 4px 0 0 4px; }
   .paper-navigation > :last-child, .paper-reading-tools > .ui-button:nth-child(2) { border-radius: 0 4px 4px 0; margin-left: -1px; }

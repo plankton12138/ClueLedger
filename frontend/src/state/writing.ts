@@ -50,6 +50,10 @@ export interface WritingDraft {
   /** 同一内容的网络重试复用同一个请求键。 */
   pendingKey: string | null;
   pendingText: string | null;
+  /** 最近一次保存产生的修订；首次起草或内容未变时为空。 */
+  lastRevisionId: string | null;
+  /** 稿纸修订产生的草稿：只由「确认修改」入稿，不在加载或输入后自动保存。 */
+  confirmRequired: boolean;
 }
 
 export interface AssistState {
@@ -64,6 +68,7 @@ interface PersistedDraft {
   text: string;
   baseText: string;
   baseDigest: string;
+  confirmRequired?: boolean;
 }
 
 interface WritingStore {
@@ -77,7 +82,7 @@ interface WritingStore {
 
   load(workspaceId: string, selection?: WorkbenchSelection): Promise<void>;
   refresh(workspaceId?: string, selection?: WorkbenchSelection): Promise<void>;
-  updateText(workspaceId: string, chapterId: string, text: string, schedule?: boolean): void;
+  updateText(workspaceId: string, chapterId: string, text: string, schedule?: boolean, confirmRequired?: boolean): void;
   /** 修改章节名；返回错误文案，成功后刷新工作台。 */
   renameChapter(workspaceId: string, chapterId: string, title: string | null, expectedPlanRevision: string): Promise<string | null>;
   /** 修改未挂章节正文的首行标题；返回错误文案。 */
@@ -129,6 +134,7 @@ function readPersisted(workspaceId: string, chapterId: string): PersistedDraft |
       text: parsed.text,
       baseText: typeof parsed.baseText === "string" ? parsed.baseText : "",
       baseDigest: parsed.baseDigest,
+      confirmRequired: parsed.confirmRequired === true,
     };
   } catch {
     return null;
@@ -145,6 +151,7 @@ function writePersisted(workspaceId: string, chapterId: string, draft: WritingDr
         text: draft.text,
         baseText: draft.baseText,
         baseDigest: draft.baseDigest,
+        confirmRequired: draft.confirmRequired,
       } satisfies PersistedDraft),
     );
   } catch {
@@ -189,6 +196,7 @@ function seedDraft(
       error: null,
       pendingKey: null,
       pendingText: null,
+      lastRevisionId: local.lastRevisionId,
     };
   }
   if (persisted && persisted.text !== serverText) {
@@ -204,6 +212,8 @@ function seedDraft(
       savedAt: null,
       pendingKey: null,
       pendingText: null,
+      lastRevisionId: local?.lastRevisionId ?? null,
+      confirmRequired: persisted.confirmRequired === true,
     };
   }
   clearPersisted(workspaceId, chapterId);
@@ -218,6 +228,8 @@ function seedDraft(
     savedAt: null,
     pendingKey: null,
     pendingText: null,
+    lastRevisionId: null,
+    confirmRequired: false,
   };
 }
 
@@ -288,7 +300,8 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
       // 从本地存储恢复的未保存文字继续自动保存；冲突草稿等作者决定。
       const prefix = `${workspaceId}::`;
       for (const [key, draft] of Object.entries(get().drafts)) {
-        if (key.startsWith(prefix) && draft.dirty && !draft.conflict) {
+        // 稿纸修订只由作者点「确认修改」入稿；其余未保存草稿继续自动保存。
+        if (key.startsWith(prefix) && draft.dirty && !draft.conflict && !draft.confirmRequired) {
           scheduleSave(workspaceId, key.slice(prefix.length));
         }
       }
@@ -304,15 +317,17 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
     await get().load(id, selection ?? get().selection);
   },
 
-  updateText(workspaceId, chapterId, text, schedule = true) {
+  updateText(workspaceId, chapterId, text, schedule = true, confirmRequired = false) {
     const key = writingDraftKey(workspaceId, chapterId);
     const current = get().drafts[key];
     if (!current) return;
+    const dirty = text !== current.baseText;
     const next: WritingDraft = {
       ...current,
       text,
-      dirty: text !== current.baseText,
+      dirty,
       error: null,
+      confirmRequired: dirty && (current.confirmRequired || confirmRequired),
       // 新文字必须重新取请求键；同一文字的失败重试才复用旧键。
       ...(text === current.pendingText ? {} : { pendingKey: null, pendingText: null }),
     };
@@ -414,6 +429,8 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
           savedAt: new Date().toISOString(),
           pendingKey: null,
           pendingText: null,
+          lastRevisionId: result.revision_id ?? current.lastRevisionId,
+          confirmRequired: false,
         };
         const currentView = state.workbench;
         const workbench = currentView?.workspace_id === workspaceId
@@ -504,6 +521,7 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
           conflict: null,
           pendingKey: null,
           pendingText: null,
+          confirmRequired: false,
         },
       },
     }));
@@ -527,6 +545,7 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
           conflict: null,
           pendingKey: null,
           pendingText: null,
+          confirmRequired: true,
         },
       },
     }));
