@@ -295,4 +295,25 @@ test("稿纸修订模式：编辑、看差异、确认入稿，取消保留原�
   await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
   await expect(page.getByText("林岚把杯沿转了半圈。「你刚才说到哪儿了？」")).toBeVisible();
   await expect(page.getByText("又加了一段。")).toHaveCount(0);
+
+  // 编辑期间正文被别处更新：确认时进入冲突，保留草稿，覆盖后仍是一次作者修订。
+  await page.getByRole("button", { name: "修订", exact: true }).click();
+  const mine = "# 夜航\n\n林岚没有回答，只把杯子放下。\n\n窗外的雨没有停。\n";
+  await page.getByRole("textbox", { name: "正文编辑" }).fill(mine);
+  const current = await request.get(`${base}/story/workbench?chapter_id=${chapter.chapter_id}`).then(r => r.json());
+  const external = await request.put(`${base}/story/chapters/${chapter.chapter_id}/prose`, {
+    data: {
+      text: "# 夜航\n\n林岚把杯子放下，没有回答。\n\n窗外的雨没有停。\n",
+      expected_digest: current.chapter.prose.digest,
+      draft_revision: "e2e-mode-external",
+      request_key: "e2e-mode-external",
+    },
+  });
+  expect(external.ok(), await external.text()).toBeTruthy();
+  await page.getByRole("button", { name: "确认修改", exact: true }).click();
+  await expect(page.getByText("这一章在你编辑期间被更新了。你的文字仍保留在这里，请选择保留哪一份。", { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveValue(mine);
+  await page.getByRole("button", { name: "保留我的文字并覆盖", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
+  await expect(page.getByText("林岚没有回答，只把杯子放下。")).toBeVisible();
 });
