@@ -13,6 +13,8 @@ from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.state import RecentWorkspaces
 
+from .chapter_seed import seed_chapter
+
 
 class _NoModel:
     def stream_response(self, **_: Any) -> Any:
@@ -42,7 +44,7 @@ def open_workspace(client: TestClient, tmp_path: Path) -> tuple[str, Path]:
     return body["id"], Path(body["path"])
 
 
-def test_first_chapter_can_initialize_story(client: TestClient, tmp_path: Path) -> None:
+def test_author_chapter_create_route_is_removed(client: TestClient, tmp_path: Path) -> None:
     workspace_id, _ = open_workspace(client, tmp_path)
     response = client.post(
         f"/api/file-workspaces/{workspace_id}/story/chapters",
@@ -54,8 +56,7 @@ def test_first_chapter_can_initialize_story(client: TestClient, tmp_path: Path) 
         },
     )
 
-    assert response.status_code == 201, response.text
-    assert response.json()["chapter_id"]
+    assert response.status_code in (404, 405), response.text
 
 
 def test_writing_flow_through_http(client: TestClient, tmp_path: Path) -> None:
@@ -67,17 +68,9 @@ def test_writing_flow_through_http(client: TestClient, tmp_path: Path) -> None:
     assert book.json()["plan_revision"] is None
     assert book.json()["book"]["chapters"] == []
 
-    created = client.post(
-        f"{base}/chapters",
-        json={
-            "title": "第一章",
-            "after_chapter_id": None,
-            "expected_plan_revision": "empty",
-            "request_key": "chapter:1",
-        },
+    created_body = seed_chapter(
+        tmp_path / "state", workspace_id, root, title="第一章", request_key="chapter:1"
     )
-    assert created.status_code == 201, created.text
-    created_body = created.json()
     chapter_id = created_body["chapter_id"]
     assert (root / created_body["path"]).exists()
 
@@ -133,17 +126,13 @@ def test_writing_flow_through_http(client: TestClient, tmp_path: Path) -> None:
 def test_rename_chapter_through_http(client: TestClient, tmp_path: Path) -> None:
     workspace_id, root = open_workspace(client, tmp_path)
     base = f"/api/file-workspaces/{workspace_id}/story"
-    created = client.post(
-        f"{base}/chapters",
-        json={
-            "title": "第一章",
-            "after_chapter_id": None,
-            "expected_plan_revision": "empty",
-            "request_key": "chapter:rename-seed",
-        },
+    created_body = seed_chapter(
+        tmp_path / "state",
+        workspace_id,
+        root,
+        title="第一章",
+        request_key="chapter:rename-seed",
     )
-    assert created.status_code == 201, created.text
-    created_body = created.json()
 
     renamed = client.put(
         f"{base}/chapters/{created_body['chapter_id']}",
@@ -205,113 +194,22 @@ def test_unplanned_prose_is_readonly_in_workbench(client: TestClient, tmp_path: 
     assert body["chapter"]["index"] is None
 
 
-def test_adopt_unplanned_prose_through_http(client: TestClient, tmp_path: Path) -> None:
-    """未登记的正文可以并入章节，正文内容原样保留，之后能直接保存修订。"""
-    workspace_id, root = open_workspace(client, tmp_path)
-    (root / "正文").mkdir(exist_ok=True)
-    (root / "正文" / "0001 手稿.md").write_text(
-        "# 第一章　手稿\n\n原有正文。\n", encoding="utf-8"
-    )
-    base = f"/api/file-workspaces/{workspace_id}/story"
-    entry = client.get(f"{base}/workbench").json()["book"]["unplanned_prose"][0]
-
-    adopted = client.post(
-        f"{base}/chapters/adopt",
-        json={
-            "path": entry["path"],
-            "expected_plan_revision": "empty",
-            "request_key": "adopt:1",
-        },
-    )
-    assert adopted.status_code == 201, adopted.text
-    body = adopted.json()
-    assert body["order"] == 0
-    assert body["path"] == entry["path"]
-
-    book = client.get(f"{base}/workbench").json()["book"]
-    assert [row["prose_path"] for row in book["chapters"]] == [entry["path"]]
-    assert book["unplanned_prose"] == []
-
-    chapter = client.get(f"{base}/workbench", params={"chapter_id": body["chapter_id"]}).json()
-    assert chapter["chapter"]["prose"]["text"] == "# 第一章　手稿\n\n原有正文。\n"
-
-    saved = client.put(
-        f"{base}/chapters/{body['chapter_id']}/prose",
-        json={
-            "text": "# 第一章　手稿\n\n改过的正文。\n",
-            "expected_digest": body["prose_digest"],
-            "draft_revision": "local_1",
-            "candidate_id": None,
-            "request_key": "save:after-adopt",
-        },
-    )
-    assert saved.status_code == 200, saved.text
-    assert (root / entry["path"]).read_text(encoding="utf-8") == "# 第一章　手稿\n\n改过的正文。\n"
-
-
-def test_adopt_rejects_prose_already_in_plan(client: TestClient, tmp_path: Path) -> None:
+def test_author_adopt_route_is_removed(client: TestClient, tmp_path: Path) -> None:
     workspace_id, root = open_workspace(client, tmp_path)
     (root / "正文").mkdir(exist_ok=True)
     (root / "正文" / "0001 手稿.md").write_text("# 手稿\n\n原有正文。\n", encoding="utf-8")
     base = f"/api/file-workspaces/{workspace_id}/story"
-    entry = client.get(f"{base}/workbench").json()["book"]["unplanned_prose"][0]
-    adopted = client.post(
+
+    response = client.post(
         f"{base}/chapters/adopt",
         json={
-            "path": entry["path"],
+            "path": "正文/0001 手稿.md",
             "expected_plan_revision": "empty",
-            "request_key": "adopt:again-seed",
+            "request_key": "adopt:removed",
         },
     )
-    assert adopted.status_code == 201, adopted.text
 
-    again = client.post(
-        f"{base}/chapters/adopt",
-        json={
-            "path": entry["path"],
-            "expected_plan_revision": adopted.json()["plan_revision"],
-            "request_key": "adopt:again",
-        },
-    )
-    assert again.status_code == 400, again.text
-    assert again.json()["error"]["code"] == "PROSE_ALREADY_ADOPTED"
-
-
-def test_adopt_uses_file_chapter_number_for_order(client: TestClient, tmp_path: Path) -> None:
-    """文件名里的章序决定登记位置，不把新并入的正文一律排到末尾。"""
-    workspace_id, root = open_workspace(client, tmp_path)
-    base = f"/api/file-workspaces/{workspace_id}/story"
-    created = client.post(
-        f"{base}/chapters",
-        json={
-            "title": "先建的第一章",
-            "after_chapter_id": None,
-            "expected_plan_revision": "empty",
-            "request_key": "chapter:seed",
-        },
-    )
-    assert created.status_code == 201, created.text
-    seed = created.json()
-
-    (root / "正文" / "0002 手稿.md").write_text("# 手稿\n\n原有正文。\n", encoding="utf-8")
-    entry = next(
-        row
-        for row in client.get(f"{base}/workbench").json()["book"]["unplanned_prose"]
-        if row["path"] == "正文/0002 手稿.md"
-    )
-    adopted = client.post(
-        f"{base}/chapters/adopt",
-        json={
-            "path": entry["path"],
-            "expected_plan_revision": seed["plan_revision"],
-            "request_key": "adopt:numbered",
-        },
-    )
-    assert adopted.status_code == 201, adopted.text
-    assert adopted.json()["order"] == 1
-
-    chapters = client.get(f"{base}/workbench").json()["book"]["chapters"]
-    assert [(row["order"], row["title"]) for row in chapters] == [
-        (0, "先建的第一章"),
-        (1, "手稿"),
-    ]
+    assert response.status_code in (404, 405), response.text
+    book = client.get(f"{base}/workbench").json()["book"]
+    assert book["chapters"] == []
+    assert [row["path"] for row in book["unplanned_prose"]] == ["正文/0001 手稿.md"]

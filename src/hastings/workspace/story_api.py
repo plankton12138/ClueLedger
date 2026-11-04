@@ -40,16 +40,12 @@ from hastings.workspace.structure_document import BUDGET_LIMIT, check_budget
 from hastings.workspace.structure_io import read_structure_state
 from hastings.workspace.style_io import read_style_state, write_style_document
 from hastings.workspace.writing_actions import (
-    adopt_prose,
-    create_chapter,
     rename_chapter,
     rename_unplanned_prose,
 )
 from hastings.workspace.writing_api_models import (
-    ChapterCreateRequest,
     ChapterRenameRequest,
     IndexConfirmRequest,
-    ProseAdoptRequest,
     ProseRenameRequest,
     ProseSaveRequest,
 )
@@ -287,48 +283,6 @@ def create_story_router(
             "size": state.size,
             "within_budget": budget.ok,
             "budget_limit": BUDGET_LIMIT,
-        }
-
-    @router.post("/{workspace_id}/story/chapters", status_code=201)
-    def post_chapter(workspace_id: str, body: ChapterCreateRequest) -> dict[str, Any]:
-        store = writing_store_for(workspace_id)
-        workspace = workspaces.workspace(workspace_id)
-        result = create_chapter(
-            store,
-            workspace,
-            title=body.title,
-            after_chapter_id=body.after_chapter_id,
-            expected_plan_revision=body.expected_plan_revision,
-            request_key=body.request_key,
-        )
-        return {
-            "chapter_id": result.chapter_id,
-            "order": result.order,
-            "path": result.path,
-            "prose_digest": result.prose_digest,
-            "plan_revision": result.plan_revision,
-            "change_id": result.receipt.change_id,
-        }
-
-    @router.post("/{workspace_id}/story/chapters/adopt", status_code=201)
-    def post_chapter_adopt(workspace_id: str, body: ProseAdoptRequest) -> dict[str, Any]:
-        """把未登记的正文并入章节计划；正文不改，只补章节条目。"""
-        store = writing_store_for(workspace_id)
-        workspace = workspaces.workspace(workspace_id)
-        result = adopt_prose(
-            store,
-            workspace,
-            path=body.path,
-            expected_plan_revision=body.expected_plan_revision,
-            request_key=body.request_key,
-        )
-        return {
-            "chapter_id": result.chapter_id,
-            "order": result.order,
-            "path": result.path,
-            "prose_digest": result.prose_digest,
-            "plan_revision": result.plan_revision,
-            "change_id": result.receipt.change_id,
         }
 
     @router.put("/{workspace_id}/story/chapters/{chapter_id}")

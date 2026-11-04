@@ -205,39 +205,39 @@ def test_write_policy_has_no_semantic_gate(env: tuple[Workspace, StoryStore]) ->
     assert "林砚走进旅馆" in workspace.read(chapter.path).text
 
 
-def test_imported_unplanned_prose_can_be_edited(
+def test_unplanned_prose_can_be_edited(
     env: tuple[Workspace, StoryStore],
 ) -> None:
     workspace, store = env
-    (imported,) = workspace.import_text("旧稿.md", "# 旧稿\n\n原有正文\n".encode())
-    assert imported.path.startswith("正文/")
+    unplanned = workspace.create_chapter("旧稿", "# 旧稿\n\n原有正文\n")
+    assert unplanned.path.startswith("正文/")
     updated = workspace.write(
-        imported.path, imported.text + "修改", expected_digest=imported.digest
+        unplanned.path, unplanned.text + "修改", expected_digest=unplanned.digest
     )
     assert updated.text.endswith("修改")
 
 
 def test_rename_unplanned_prose_updates_heading(env: tuple[Workspace, StoryStore]) -> None:
     workspace, _ = env
-    (imported,) = workspace.import_text("旧稿.md", "# 旧稿\n\n原有正文\n".encode())
+    unplanned = workspace.create_chapter("旧稿", "# 旧稿\n\n原有正文\n")
     renamed = rename_unplanned_prose(
         workspace,
-        path=imported.path,
+        path=unplanned.path,
         title="新稿",
-        expected_digest=imported.digest,
+        expected_digest=unplanned.digest,
     )
     assert renamed.title == "新稿"
-    assert workspace.read(imported.path).text == "# 新稿\n\n原有正文\n"
+    assert workspace.read(unplanned.path).text == "# 新稿\n\n原有正文\n"
 
 
 def test_rename_unplanned_prose_requires_non_empty_title(
     env: tuple[Workspace, StoryStore],
 ) -> None:
     workspace, _ = env
-    (imported,) = workspace.import_text("旧稿.md", "# 旧稿\n".encode())
+    unplanned = workspace.create_chapter("旧稿", "# 旧稿\n")
     with pytest.raises(WorkspaceError) as exc:
         rename_unplanned_prose(
-            workspace, path=imported.path, title="  ", expected_digest=imported.digest
+            workspace, path=unplanned.path, title="  ", expected_digest=unplanned.digest
         )
     assert error_code(exc) == "PROSE_TITLE_REQUIRED"
 

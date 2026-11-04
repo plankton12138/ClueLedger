@@ -1111,6 +1111,14 @@
   /* ===== 1.0.9 P4 单一写作页 ===== */
   .writing-navigator { display: flex; width: 100%; flex: 1; min-height: 0; flex-direction: column; }
   .writing-nav-top { flex: none; padding: 10px 8px 0; }
+  .writing-structure { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid theme("colors.ui.edge"); }
+  .writing-structure-row { display: flex; width: 100%; align-items: center; gap: 8px; }
+  .writing-structure-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+  .writing-structure-state { flex: none; color: theme("colors.ui.secondaryText"); font-size: 11px; font-weight: 500; }
+  .writing-structure-state.ready { color: #4f7f4e; }
+  .writing-structure-row.on .writing-structure-state { color: color-mix(in srgb, currentColor 80%, transparent); }
+  .writing-structure-hint { padding: 4px 10px 0; color: theme("colors.ui.secondaryText"); font-size: 12px; line-height: 1.55; }
+  .writing-structure-action { justify-self: start; margin: 2px 10px 0; padding: 0; border: 0; background: none; color: theme("colors.ui.accentHover"); font-size: 12px; text-decoration: underline; cursor: pointer; }
   .writing-nav-section { display: grid; gap: 4px; }
   .writing-nav-section-title { cursor: pointer; padding: 2px 0 4px; font-size: 13px; font-weight: 700; color: theme("colors.panelHead"); text-shadow: 0 1px #fff; }
   .writing-nav-section:not([open]) > .writing-nav-section-title { color: theme("colors.ui.secondaryText"); }

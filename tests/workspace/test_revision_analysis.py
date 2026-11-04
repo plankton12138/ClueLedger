@@ -20,6 +20,8 @@ from hastings.workspace.state import RecentWorkspaces
 from tau_agent.messages import AssistantMessage
 from tau_agent.provider_events import AssistantDoneEvent, TextDeltaEvent
 
+from .chapter_seed import seed_chapter
+
 
 class _FakeProvider:
     def __init__(self, text: str, gate: Event | None = None) -> None:
@@ -72,15 +74,9 @@ def _setup_edited_chapter(client: TestClient, tmp_path: Path) -> dict[str, Any]:
     ).json()
     workspace_id = opened["id"]
     base = f"/api/file-workspaces/{workspace_id}/story"
-    created = client.post(
-        f"{base}/chapters",
-        json={
-            "title": "第七章",
-            "after_chapter_id": None,
-            "expected_plan_revision": "empty",
-            "request_key": "chapter:7",
-        },
-    ).json()
+    created = seed_chapter(
+        tmp_path / "state", workspace_id, root, title="第七章", request_key="chapter:7"
+    )
     chapter_id = created["chapter_id"]
     draft = "# 第七章\n\n林岚很紧张，她害怕许砚继续追问。\n\n窗外的雨没有停。\n"
     saved = client.put(

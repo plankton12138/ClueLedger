@@ -2,6 +2,8 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 
+import { seedChapter } from "./fixtures/chapter";
+
 const screenshotDir = resolve(
   process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v1.2/artifacts/writing",
 );
@@ -28,9 +30,16 @@ test("空作品只有对话可创作，章节正文以只读稿纸呈现", async
   await expect(chat).toBeFocused();
   await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "作品意图" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /新建章节|导入正文|添加模块/ })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "从一句话开始" })).toBeVisible();
-  await expect(page.getByText("说说你想写什么。结构、章节和辅助资料由模型整理。", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /新建章节|导入正文|登记为章节|添加模块/ })).toHaveCount(0);
+  const structure = page.getByRole("region", { name: "全书结构", exact: true });
+  await expect(structure.getByText("尚未建立")).toBeVisible();
+  await expect(structure.getByText("写正文前，要先有这本书的结构。")).toBeVisible();
+  await expect(structure.getByRole("button", { name: "在对话里建立结构" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "先定结构，再写正文" })).toBeVisible();
+  await expect(page.getByText(
+    "全书结构是模型写正文前读取的全局依据。说一句你想写什么，模型会先整理结构，再开始第一章。",
+    { exact: true },
+  )).toBeVisible();
   const starter = page.getByRole("button", { name: "“我还没想好，带我一步步想。”" });
   await starter.click();
   await expect(chat).toHaveValue("我还没想好，带我一步步想。");
@@ -41,16 +50,8 @@ test("空作品只有对话可创作，章节正文以只读稿纸呈现", async
   expect(conversations.items).toEqual([]);
   await shot(page, "01-empty-paper-and-chat");
 
-  // 章节接口仍供对话执行链复用，但写作页不暴露第二个创建或编辑入口。
-  const created = await request.post(`${base}/story/chapters`, {
-    data: {
-      title: "雨夜",
-      expected_plan_revision: "empty",
-      request_key: "e2e-create-chapter",
-    },
-  });
-  expect(created.ok(), await created.text()).toBeTruthy();
-  const chapter = await created.json();
+  // 测试夹具直接走内部建章事务；写作页不暴露创建或编辑入口。
+  const chapter = seedChapter(book, "雨夜", "e2e-create-chapter");
   const saved = await request.put(`${base}/story/chapters/${chapter.chapter_id}/prose`, {
     data: {
       text: "# 雨夜\n\n侦探抵达旅馆。海面上没有灯。\n",
@@ -62,6 +63,8 @@ test("空作品只有对话可创作，章节正文以只读稿纸呈现", async
   expect(saved.ok(), await saved.text()).toBeTruthy();
 
   await page.reload();
+  await expect(structure.getByText("已就绪")).toBeVisible();
+  await expect(structure.getByText("写正文的依据，模型每轮都会读取。")).toBeVisible();
   const chapterButton = page.locator(".writing-navigator").getByRole("button", { name: "第1章 · 雨夜", exact: true });
   await expect(chapterButton).toBeVisible();
   await chapterButton.click();
@@ -134,11 +137,7 @@ test("章节较多时写作侧栏可以滚动，全书结构保持可见", async
   writeFileSync(join(root, "STRUCTURE.md"), "## 铁律\n\n测试用结构。\n", "utf-8");
   let planRevision = "empty";
   for (let index = 1; index <= 18; index += 1) {
-    const created = await request.post(`/api/file-workspaces/${book.id}/story/chapters`, {
-      data: { title: `章节${index}`, expected_plan_revision: planRevision, request_key: `seed-chapter-${index}` },
-    });
-    expect(created.ok(), await created.text()).toBeTruthy();
-    planRevision = (await created.json()).plan_revision;
+    planRevision = seedChapter(book, `章节${index}`, `seed-chapter-${index}`, planRevision).plan_revision;
   }
 
   await page.goto(`/#/workspaces/${book.id}/writing`);
@@ -165,14 +164,7 @@ test("修订面板显示段落差异，写作约定可编辑保存", async ({ pa
   expect(opened.ok(), await opened.text()).toBeTruthy();
   const book = await opened.json();
   const base = `/api/file-workspaces/${book.id}`;
-  const created = await request.post(`${base}/story/chapters`, {
-    data: {
-      title: "雨夜",
-      expected_plan_revision: "empty",
-      request_key: "e2e-revision-chapter",
-    },
-  });
-  const chapter = await created.json();
+  const chapter = seedChapter(book, "雨夜", "e2e-revision-chapter");
   const draft = await request.put(`${base}/story/chapters/${chapter.chapter_id}/prose`, {
     data: {
       text: "# 雨夜\n\n林岚很紧张，她害怕许砚继续追问。\n\n窗外的雨没有停。\n",
@@ -265,10 +257,7 @@ test("稿纸修订模式：编辑、看差异、确认入稿，取消保留原�
   expect(opened.ok(), await opened.text()).toBeTruthy();
   const book = await opened.json();
   const base = `/api/file-workspaces/${book.id}`;
-  const created = await request.post(`${base}/story/chapters`, {
-    data: { title: "夜航", expected_plan_revision: "empty", request_key: "e2e-mode-chapter" },
-  });
-  const chapter = await created.json();
+  const chapter = seedChapter(book, "夜航", "e2e-mode-chapter");
   const seed = "林岚很紧张，她害怕许砚继续追问。\n\n窗外的雨没有停。\n";
   const draft = await request.put(`${base}/story/chapters/${chapter.chapter_id}/prose`, {
     data: {

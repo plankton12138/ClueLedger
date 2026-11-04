@@ -21,6 +21,7 @@ export default function WritingNavigator({
   onChapter,
   onProse,
   onAskModules,
+  onAskStructure,
   planRevision,
 }: {
   book: WritingBookView | null;
@@ -32,6 +33,8 @@ export default function WritingNavigator({
   onProse: (path: string) => void;
   /** 把“让模型补充资料”的请求填进对话草稿，不直接发送。 */
   onAskModules: () => void;
+  /** 结构尚未建立时，把作者带到对话建立第一版结构。 */
+  onAskStructure: () => void;
   /** 当前作品修订；修改章节名时作为并发前提。 */
   planRevision: string | null;
 }) {
@@ -52,6 +55,8 @@ export default function WritingNavigator({
   // 正在读哪份模块内容，左栏就展开到哪一条，不把当前阅读位置藏起来。
   useEffect(() => { if (moduleOpen && extras.current) extras.current.open = true; }, [moduleOpen, currentId]);
   const structureActive = selectedProsePath === STRUCTURE_PATH;
+  const structureExists = Boolean(book?.structure_exists);
+  const structureLoading = loading && !book;
   const chapters = book?.chapters ?? [];
   const unplanned = book?.unplanned_prose ?? [];
   // 章节与正文文件共用一格目录：作者看到的是"有几章"，而不是内部是否登记过计划。
@@ -110,21 +115,38 @@ export default function WritingNavigator({
   }
 
   return <nav className="toc-pane writing-navigator" aria-label="作品目录">
-    {/* 全书结构固定在滚动区上方：展开模块或滚动章节时始终可见。 */}
-    {book?.structure_exists && <div className="writing-nav-top">
-      <ul className="toc-group">
-        <li className="toc-line">
-          <button
-            className={`toc-row px-2 py-1 ${structureActive ? "on" : ""}`}
-            aria-current={structureActive ? "page" : undefined}
-            onClick={onStructure}
-          >
-            <ListTree size={16} strokeWidth={1.8} aria-hidden="true" />
-            <span>全书结构</span>
+    {/* 全书结构固定在滚动区上方：展开模块或滚动章节时始终可见。
+        结构是写正文的依据与前提，所以没有建立时也保留入口并说明原因。 */}
+    <div className="writing-nav-top">
+      <section className="writing-structure" aria-label="全书结构">
+        <button
+          className={`toc-row writing-structure-row ${structureActive ? "on" : ""}`}
+          aria-label="全书结构"
+          aria-describedby="writing-structure-hint"
+          aria-current={structureActive ? "page" : undefined}
+          title={structureExists ? "打开全书结构全文" : "打开全书结构说明"}
+          onClick={onStructure}
+        >
+          <ListTree size={16} strokeWidth={1.8} aria-hidden="true" />
+          <span className="writing-structure-name">全书结构</span>
+          <span className={`writing-structure-state ${structureExists ? "ready" : ""}`}>
+            {structureLoading ? "读取中" : structureExists ? "已就绪" : "尚未建立"}
+          </span>
+        </button>
+        <p className="writing-structure-hint" id="writing-structure-hint">
+          {structureLoading
+            ? "正在读取全书结构…"
+            : structureExists
+              ? "写正文的依据，模型每轮都会读取。"
+              : "写正文前，要先有这本书的结构。"}
+        </p>
+        {!structureLoading && !structureExists && currentId && (
+          <button type="button" className="writing-structure-action" onClick={onAskStructure}>
+            在对话里建立结构
           </button>
-        </li>
-      </ul>
-    </div>}
+        )}
+      </section>
+    </div>
     <div className="writing-nav-scroll">
       <details className="writing-nav-section" open>
         <summary className="writing-nav-section-title">章节</summary>

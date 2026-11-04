@@ -7,33 +7,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from hastings.workspace.creative_candidates import CandidateBase, CreativeTarget
 
 __all__ = [
-    "ChapterCreateRequest",
     "ChapterRenameRequest",
     "IndexConfirmRequest",
     "CreativeAssistRequest",
-    "ProseAdoptRequest",
     "ProseRenameRequest",
     "ProseSaveRequest",
 ]
-
-
-class ChapterCreateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    title: str | None = Field(default=None, max_length=200)
-    after_chapter_id: str | None = Field(default=None, max_length=64)
-    expected_plan_revision: str = Field(min_length=1, max_length=64)
-    request_key: str = Field(min_length=1, max_length=200)
-
-
-class ProseAdoptRequest(BaseModel):
-    """把一份未登记的正文并入章节计划；正文内容不改，只补章节条目。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    path: str = Field(min_length=1, max_length=512)
-    expected_plan_revision: str = Field(min_length=1, max_length=64)
-    request_key: str = Field(min_length=1, max_length=200)
 
 
 class ChapterRenameRequest(BaseModel):

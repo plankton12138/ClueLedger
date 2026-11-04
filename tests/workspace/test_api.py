@@ -240,9 +240,8 @@ def test_files_lists_chapters_characters_and_fixed_settings(tmp_path: Path) -> N
     ]
     assert not any(item["exists"] for item in empty["settings"])
 
-    client.post(
-        f"/api/file-workspaces/{workspace_id}/imports",
-        files={"file": ("雨夜.md", "# 雨夜\n\n侦探抵达旅馆。\n".encode(), "text/markdown")},
+    Workspace.open(root).write(
+        "正文/0001 雨夜.md", "# 雨夜\n\n侦探抵达旅馆。\n", expected_digest=None
     )
     listed = client.get(f"/api/file-workspaces/{workspace_id}/files").json()
     assert [(item["path"], item["title"], item["order"]) for item in listed["chapters"]] == [
@@ -291,9 +290,8 @@ def test_read_file_returns_text_digest_and_kind(tmp_path: Path) -> None:
     client = _client(tmp_path)
     root = tmp_path / "作品"
     workspace_id = _created(client, root)
-    client.post(
-        f"/api/file-workspaces/{workspace_id}/imports",
-        files={"file": ("雨夜.md", "# 雨夜\n\n侦探抵达旅馆。\n".encode(), "text/markdown")},
+    Workspace.open(root).write(
+        "正文/0001 雨夜.md", "# 雨夜\n\n侦探抵达旅馆。\n", expected_digest=None
     )
 
     chapter = client.get(
@@ -386,9 +384,8 @@ def test_read_missing_file_is_not_found(tmp_path: Path) -> None:
 def test_search_returns_hits_and_requires_query(tmp_path: Path) -> None:
     client = _client(tmp_path)
     workspace_id = _created(client, tmp_path / "作品")
-    client.post(
-        f"/api/file-workspaces/{workspace_id}/imports",
-        files={"file": ("雨夜.md", "# 雨夜\n\n侦探抵达旅馆。\n".encode(), "text/markdown")},
+    Workspace.open(tmp_path / "作品").write(
+        "正文/0001 雨夜.md", "# 雨夜\n\n侦探抵达旅馆。\n", expected_digest=None
     )
 
     found = client.get(f"/api/file-workspaces/{workspace_id}/search", params={"q": "旅馆"})
@@ -401,19 +398,6 @@ def test_search_returns_hits_and_requires_query(tmp_path: Path) -> None:
 
     blank = client.get(f"/api/file-workspaces/{workspace_id}/search", params={"q": ""})
     assert blank.status_code == 422
-
-
-def test_import_rejects_unsupported_file(tmp_path: Path) -> None:
-    client = _client(tmp_path)
-    workspace_id = _created(client, tmp_path / "作品")
-
-    response = client.post(
-        f"/api/file-workspaces/{workspace_id}/imports",
-        files={"file": ("稿件.docx", b"whatever", "application/octet-stream")},
-    )
-
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "IMPORT_FORMAT_INVALID"
 
 
 def test_unknown_workspace_returns_not_found(tmp_path: Path) -> None:

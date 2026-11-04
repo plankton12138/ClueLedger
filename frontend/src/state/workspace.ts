@@ -18,7 +18,6 @@ import {
   gitRecord,
   gitRevert,
   gitStatus,
-  importManuscript,
   listFiles,
   fetchReadingPosition,
   listWorkspaces,
@@ -57,7 +56,7 @@ interface WorkspaceStore {
   fileCache: Record<string, FileView>;
   selectedPath: string | null;
   search: SearchResult | null;
-  /** 作品级操作（打开、导入、删除）进行中；阅读区不看它。 */
+  /** 作品级操作（打开、删除）进行中；阅读区不看它。 */
   loading: boolean;
   /** 当前选择还没有可显示的正文（缓存未命中）；后台回读校验不算载入。 */
   fileLoading: boolean;
@@ -89,7 +88,6 @@ interface WorkspaceStore {
   openPath(path: string, preserveModule?: boolean): Promise<void>;
   runSearch(query: string): Promise<void>;
   clearSearch(): void;
-  upload(file: File): Promise<void>;
 
   openDrawer(): Promise<void>;
   closeDrawer(): void;
@@ -432,21 +430,6 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
 
   clearSearch() {
     set({ search: null });
-  },
-
-  async upload(file) {
-    const id = get().currentId;
-    if (!id) return;
-    set({ loading: true, error: null });
-    try {
-      const catalog = await importManuscript(id, file);
-      set({ catalog, notice: `已导入 ${file.name}` });
-      await get().refreshAll();
-    } catch (error) {
-      set({ error: describe(error) });
-    } finally {
-      set({ loading: false });
-    }
   },
 
   async openDrawer() {

@@ -14,7 +14,7 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 |---|---|---|
 | 作品活动索引、持续订阅、模型请求诊断、详情保留与导出 | `workspace/activity.py`、`workspace/model_activity.py`、`workspace/api.py` | [活动记录](../../dev-notes/v0.6/modules/activity-log.md) |
 | 服务入口、静态目录与退出码 | `server/__main__.py`、`server/file_app.py` | [运行与验收](../../dev-notes/v0.5/release.md) |
-| 文件规则、读写指纹、搜索、导入 | `workspace/files.py` | [文件工作区](../../dev-notes/v0.5/modules/file-workspace.md) |
+| 文件规则、读写指纹与搜索 | `workspace/files.py` | [文件工作区](../../dev-notes/v0.5/modules/file-workspace.md) |
 | 新作品的默认位置与位置选择 | `workspace/locations.py`、`workspace/directory_dialog.py` | [文件工作区](../../dev-notes/v0.5/modules/file-workspace.md) |
 | 最近目录、会话索引、事件、追尾读取与界面草稿 | `workspace/state.py` | [会话与草稿](../../dev-notes/v0.4/modules/conversations.md) |
 | 会话上下文回放与执行事实 | `workspace/conversation_context.py` | [会话与草稿](../../dev-notes/v0.4/modules/conversations.md) |
@@ -40,21 +40,19 @@ Hastings 提供悬疑小说写作工作台。默认启动是 0.7 工作区：作
 | 连接增删改、凭据提交与选择 | `server/model_connections.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
 | 模型发现与连接测试 | `server/model_probe.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
 | 模型设置接口 | `server/model_api.py` | [模型连接](../../dev-notes/v0.4/modules/model-connections.md) |
-| 正文导入解析（遗留，仍在使用） | `interfaces/importers/manuscript_text.py` | [文件工作区](../../dev-notes/v0.5/modules/file-workspace.md) |
-
 前端壳层在 `frontend/src/components/workspace/`，构思页面在 `frontend/src/components/story/`，对话展示在 `frontend/src/components/chat/`。构思状态在 `frontend/src/state/story.ts`，会话与草稿在 `conversations.ts`，事件归并在 `chatMessages.ts`；客户端入口为 `frontend/src/api/story.ts` 与 `workspace.ts`。当前接口见[接口与页面契约](../../dev-notes/v1.0.1/api-and-frontend.md)。
 
 ## 包职责
 
 | 包 | 职责 |
 |---|---|
-| `workspace/` | 文件工作区与资料层：章节与人物文件、读写指纹、搜索、导入、最近目录、Git 历史、写作 Agent、对话与事件、故事资料作者视图与资料任务 |
+| `workspace/` | 文件工作区与资料层：章节与人物文件、读写指纹、搜索、最近目录、Git 历史、写作 Agent、对话与事件、故事资料作者视图与资料任务 |
 | `prompts/` | 进入模型请求的固定文本：系统提示、试读与核对说明、摘要与连接测试提示、工具用途与使用时机、结构分栏说明 |
 | `server/` | 启动入口、文件应用装配、供应商预设与连接配置、模型设置接口、协议构造与连接测试 |
 | `infrastructure/` | 凭据存储（系统凭据存储优先，回落内存） |
-| `domain/` | 仍在使用的遗留文件：`manuscript/diff.py`（导入切段）、`repository/serialization.py`（内容散列） |
+| `domain/` | 仍在使用的遗留文件：`repository/serialization.py`（内容散列） |
 | `application/` | 错误基元与凭据端口 |
-| `interfaces/` | 正文导入解析 |
+| `interfaces/` | 接口层基础包 |
 
 `packaging/` 是 sidecar 打包规格，入口 `sidecar_entry.py` 仍有效。
 

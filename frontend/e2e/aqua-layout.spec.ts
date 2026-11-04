@@ -2,6 +2,8 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { seedChapter } from "./fixtures/chapter";
+
 const output = resolve(process.env.HASTINGS_E2E_SCREENSHOT_DIR ?? "../dev-notes/v1.0.9/artifacts/aqua");
 
 async function shot(page: Page, name: string) {
@@ -19,11 +21,7 @@ async function seed(request: APIRequestContext, root: string) {
     expect(response.ok(), await response.text()).toBeTruthy();
     return response.json();
   }
-  const chapter = await send("POST", "/story/chapters", {
-    title: "雨夜",
-    expected_plan_revision: "empty",
-    request_key: "aqua-chapter",
-  });
+  const chapter = seedChapter(book, "雨夜", "aqua-chapter");
   await send("PUT", `/story/chapters/${chapter.chapter_id}/prose`, {
     text: "# 雨夜\n\n" + [
       "雪把山路封死的时候，林砚刚走进旅馆。前台的人说，今晚只剩一间房。",

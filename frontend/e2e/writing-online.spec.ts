@@ -30,7 +30,7 @@ test("自然语言从对话建立全书结构，页面没有平行创作入口",
 
   await expect(page.getByRole("textbox", { name: "作品意图" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /新建章节|导入正文|添加模块/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /新建章节|导入正文|登记为章节|添加模块/ })).toHaveCount(0);
 
   const input = page.locator(".chat-input");
   await input.fill(

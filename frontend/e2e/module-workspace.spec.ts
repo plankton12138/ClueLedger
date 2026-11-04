@@ -3,6 +3,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { resolve, join } from "node:path";
 
+import { seedChapter } from "./fixtures/chapter";
+
 /** 作品目录把模块收在「作品模块」折叠区里；要点它的条目先展开这一节。 */
 async function openModuleSection(directory: Locator): Promise<void> {
   const extras = directory.locator(".writing-nav-extras");
@@ -285,10 +287,7 @@ test("模块内容打开后，仍可切回全书构思与章节正文", async ({
   await request.put(`/api/file-workspaces/${book.id}/assembly`, {
     data: { bindings: [{ module: ref }], expected_digest: null, request_key: crypto.randomUUID() },
   });
-  const chapterResponse = await request.post(`/api/file-workspaces/${book.id}/story/chapters`, {
-    data: { title: "抵达雾港", expected_plan_revision: "empty", request_key: crypto.randomUUID() },
-  });
-  expect(chapterResponse.ok(), await chapterResponse.text()).toBeTruthy();
+  seedChapter(book, "抵达雾港", crypto.randomUUID());
 
   await page.goto(`/#/workspaces/${book.id}/writing`);
   const directory = page.getByRole("navigation", { name: "作品目录", exact: true });

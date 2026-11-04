@@ -13,6 +13,8 @@ from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.state import RecentWorkspaces
 
+from .chapter_seed import seed_chapter
+
 
 class _NoModel:
     def stream_response(self, **_: Any) -> Any:
@@ -39,16 +41,9 @@ def _seed(client: TestClient, tmp_path: Path) -> tuple[str, str, str, dict[str, 
     )
     workspace_id = opened.json()["id"]
     base = f"/api/file-workspaces/{workspace_id}/story"
-    created = client.post(
-        f"{base}/chapters",
-        json={
-            "title": "第七章",
-            "after_chapter_id": None,
-            "expected_plan_revision": "empty",
-            "request_key": "chapter:seed",
-        },
+    body = seed_chapter(
+        tmp_path / "state", workspace_id, root, title="第七章", request_key="chapter:seed"
     )
-    body = created.json()
     draft = "# 第七章\n\n林岚很紧张，她害怕许砚继续追问。\n\n窗外的雨没有停。\n"
     saved = client.put(
         f"{base}/chapters/{body['chapter_id']}/prose",
@@ -88,16 +83,15 @@ def _save(
 
 
 def test_first_draft_is_not_a_revision(client: TestClient, tmp_path: Path) -> None:
-    _, base, _, saved = _seed(client, tmp_path)
-    created = client.post(
-        f"{base}/chapters",
-        json={
-            "title": "第八章",
-            "after_chapter_id": None,
-            "expected_plan_revision": saved["plan_revision"],
-            "request_key": "chapter:8",
-        },
-    ).json()
+    workspace_id, base, _, saved = _seed(client, tmp_path)
+    created = seed_chapter(
+        tmp_path / "state",
+        workspace_id,
+        tmp_path / "book",
+        title="第八章",
+        expected_plan_revision=saved["plan_revision"],
+        request_key="chapter:8",
+    )
     revisions = client.get(f"{base}/chapters/{created['chapter_id']}/revisions")
 
     assert revisions.status_code == 200, revisions.text

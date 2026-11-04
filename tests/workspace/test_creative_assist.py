@@ -24,6 +24,8 @@ from hastings.workspace.story_index_jobs import IndexJob, IndexJobStore
 from tau_agent.messages import AssistantMessage
 from tau_agent.provider_events import AssistantDoneEvent, TextDeltaEvent
 
+from .chapter_seed import seed_chapter
+
 
 class _FakeProvider:
     def __init__(self, text: str, *, delay: float = 0.0, prompts: list[str]) -> None:
@@ -105,17 +107,9 @@ def _open(client: TestClient, tmp_path: Path) -> tuple[str, Path]:
 def _setup_chapter(client: TestClient, tmp_path: Path) -> dict[str, Any]:
     workspace_id, root = _open(client, tmp_path)
     base = f"/api/file-workspaces/{workspace_id}/story"
-    created = client.post(
-        f"{base}/chapters",
-        json={
-            "title": "第一章",
-            "after_chapter_id": None,
-            "expected_plan_revision": "empty",
-            "request_key": "chapter",
-        },
+    created_body = seed_chapter(
+        tmp_path / "state", workspace_id, root, title="第一章", request_key="chapter"
     )
-    assert created.status_code == 201, created.text
-    created_body = created.json()
     return {
         "workspace_id": workspace_id,
         "root": root,

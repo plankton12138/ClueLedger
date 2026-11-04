@@ -63,7 +63,7 @@ export default function StructureView({
     return <article className="plan-view" aria-label="全书结构">
       <header className="plan-view-header">
         <h1><ListTree size={20} strokeWidth={1.8} aria-hidden="true" />全书结构</h1>
-        <p>结构还没有建立。在对话里说出你的想法，模型会整理并写入第一版结构。</p>
+        <p>全书结构是模型每轮写正文前读取的全局依据，也是开始写正文的前提。结构还没有建立；在对话里说出你的想法，模型会整理并写入第一版结构。</p>
       </header>
       <div className="plan-field">
         <Button size="compact" variant="primary" onClick={onOpenChat}>
@@ -76,7 +76,7 @@ export default function StructureView({
   return <article className="plan-view" aria-label="全书结构">
     <header className="plan-view-header">
       <h1><ListTree size={20} strokeWidth={1.8} aria-hidden="true" />全书结构</h1>
-      <p>由模型维护，这里只读；想调整就在对话里说，模型改完入档，Git 历史可回退。</p>
+      <p>模型每轮写正文前都会读取这份结构，作为方向、铁律和章节的依据。这里只读；想调整就在对话里说，模型改完入档，Git 历史可回退。</p>
     </header>
     {!within && <StatusMessage tone="warning">
       体量 {structure.size} 字符已超预算上限 {structure.budget_limit}；下次入档前模型会先压缩结构。

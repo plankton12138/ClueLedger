@@ -29,12 +29,9 @@ from typing import Literal, Protocol
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.metadata import (
-    PLACEHOLDER_TITLE,
     ChapterType,
     Role,
     check_character_metadata,
-    filename_without_order,
-    parse_chapter,
     parse_chapters,
     parse_character,
 )
@@ -538,47 +535,6 @@ class Workspace:
                 fix="确认文件未被其他程序占用",
             ) from exc
 
-    # -- 导入 ---------------------------------------------------------------
-
-    def import_text(self, filename: str, data: bytes) -> tuple[FileView, ...]:
-        """把上传的正文直接写成章文件：``.md`` 一个文件一章，``.txt`` 按分章规则切分。"""
-        name = PurePosixPath(filename.replace("\\", "/")).name or "导入正文.md"
-        suffix = PurePosixPath(name).suffix.lower()
-        text = decode_text(data, where=f"imports:{name}")
-        if not text.strip():
-            raise WorkspaceError(
-                code="IMPORT_EMPTY",
-                where=f"imports:{name}",
-                why="文件里没有可导入的正文",
-                fix="确认文件不是空文件或只有标题",
-            )
-        if suffix in (".md", ".markdown"):
-            title = _import_title(self.name, name, text)
-            return (self.create_chapter(title, text, allow_unplanned=True),)
-        if suffix == ".txt":
-            # 分章规则仍沿用 0.3 的纯函数：它只做文本切分，不写存储。
-            # 局部导入，避免纯文件读写也拉起旧领域包。
-            from hastings.interfaces.importers.manuscript_text import parse_manuscript_text
-
-            parsed = parse_manuscript_text(text, filename=name)
-            if not parsed.chapters:
-                raise WorkspaceError(
-                    code="IMPORT_EMPTY",
-                    where=f"imports:{name}",
-                    why="文件里没有可导入的正文",
-                    fix="确认文件不是空文件或只有标题",
-                )
-            return tuple(
-                self.create_chapter(chapter.title, chapter.text, allow_unplanned=True)
-                for chapter in parsed.chapters
-            )
-        raise WorkspaceError(
-            code="IMPORT_FORMAT_INVALID",
-            where=f"imports:{name}",
-            why=f"不支持的文件类型：{suffix or '无扩展名'}",
-            fix="只导入 .md 或 .txt 文件",
-        )
-
     # -- 内部：路径 ---------------------------------------------------------
 
     def _directory(self, name: str) -> Path:
@@ -836,21 +792,6 @@ def _decode_warning(text: str | None) -> tuple[str, ...]:
     if text is not None:
         return ()
     return ("文件不是 UTF-8，无法读取标题与标签。",)
-
-
-def _import_title(work_name: str, filename: str, text: str) -> str:
-    """导入 Markdown 时的章名：一级标题若是书名，退回上传文件名里的章名。
-
-    回退用的是去掉四位编号的文件名，不是整条文件名：``0001`` 是存储编号，
-    带进新文件名会变成 ``0001 0001 暴雪来客.md``，界面也会把它读成章名的一部分。
-    """
-    meta = parse_chapter(f"{BODY_DIR}/{filename}", text)
-    if meta.title == PLACEHOLDER_TITLE:
-        return "导入正文"
-    title = (
-        filename_without_order(filename) if meta.title.strip() == work_name.strip() else meta.title
-    )
-    return title.strip() or "导入正文"
 
 
 def _escaped(path: str) -> WorkspaceError:

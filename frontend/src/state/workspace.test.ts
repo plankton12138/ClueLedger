@@ -17,7 +17,6 @@ const api = vi.hoisted(() => ({
   fetchReadingPosition: vi.fn(),
   readFile: vi.fn(),
   searchText: vi.fn(),
-  importManuscript: vi.fn(),
   gitStatus: vi.fn(),
   gitDiff: vi.fn(),
   gitLog: vi.fn(),

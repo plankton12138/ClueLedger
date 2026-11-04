@@ -1,8 +1,8 @@
 """文件工作区接口（0.4 M06）。
 
-契约按「界面直接反映目录」设计：目录列表、两块内容目录、单文件原文与指纹、搜索、
-导入，以及对话、轮次与事件流。这里**没有**写文件端点——正文修改只能来自对话里的
-Agent 或应用之外的编辑器，界面因此不会出现「先保存再发布」的第二条写入路径。
+契约按「界面直接反映目录」设计：目录列表、两块内容目录、单文件原文与指纹、搜索，
+以及对话、轮次与事件流。这里**没有**写文件端点——正文创建与修改只能来自对话里的
+Agent；界面因此不会出现「先保存再发布」的第二条写入路径。
 
 错误信封与 0.3 保持一致（``{"error": {code, where, why, fix, details}}``），
 状态码由错误码尾缀决定，前端按 code 分支而不是解析文本。
@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 
-from fastapi import APIRouter, FastAPI, File, Header, Query, Request, UploadFile
+from fastapi import APIRouter, FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -1184,28 +1184,6 @@ def create_file_workspace_router(hub: WorkspaceServices) -> APIRouter:
             ],
             unreadable=list(result.unreadable),
             truncated=result.truncated,
-        )
-
-    @router.post("/{workspace_id}/imports", response_model=CatalogView)
-    async def import_manuscript(
-        workspace_id: str,
-        file: Annotated[UploadFile, File(description="待导入的 .md 或 .txt 正文")],
-    ) -> CatalogView:
-        workspace = workspaces.workspace(workspace_id)
-        data = await file.read()
-        with activity_for(workspace_id).operation("导入正文", filename=file.filename) as operation:
-            imported = workspace.import_text(file.filename or "导入正文.md", data)
-            operation.result = {
-                "files": [
-                    {"path": item.path, "digest": item.digest, "size": item.size}
-                    for item in imported
-                ]
-            }
-        catalog = workspace.catalog()
-        return CatalogView(
-            chapters=[_entry(entry) for entry in catalog.chapters],
-            characters=[_entry(entry) for entry in catalog.characters],
-            settings=[_entry(entry) for entry in catalog.settings],
         )
 
     @router.get("/{workspace_id}/chapter-index", response_model=ChapterIndexView)

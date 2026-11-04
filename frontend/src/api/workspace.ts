@@ -2,7 +2,7 @@
  * 文件工作区客户端（0.4 V04-4）。
  *
  * 对应后端 `hastings/workspace/api.py` 的 `/api/file-workspaces`：目录、文件、搜索、
- * 导入、Git、会话与轮次。错误统一是 `{"error": {code, where, why, fix, details}}`，
+ * Git、会话与轮次。错误统一是 `{"error": {code, where, why, fix, details}}`，
  * 这里把它转成带 code 的异常，界面按 code 分支，不解析文本。
  *
  * 事件流用 fetch 读 `text/event-stream`，不依赖 EventSource：这样浏览器与 node 测试
@@ -897,27 +897,6 @@ export function searchText(workspaceId: string, query: string): Promise<SearchRe
   return request<SearchResult>(
     `/${workspaceId}/search?q=${encodeURIComponent(query)}`,
   );
-}
-
-export async function importManuscript(workspaceId: string, file: File): Promise<Catalog> {
-  const form = new FormData();
-  form.append("file", file);
-  const response = await fetch(`${BASE}/${workspaceId}/imports`, {
-    method: "POST",
-    body: form,
-  });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: { code?: string; why?: string; fix?: string };
-    } | null;
-    throw new WorkspaceApiError(
-      body?.error?.code ?? `HTTP_${response.status}`,
-      body?.error?.why ?? "导入没有成功",
-      body?.error?.fix ?? "确认文件是 UTF-8 的 .md 或 .txt",
-      response.status,
-    );
-  }
-  return (await response.json()) as Catalog;
 }
 
 export function gitStatus(workspaceId: string): Promise<GitStatus> {

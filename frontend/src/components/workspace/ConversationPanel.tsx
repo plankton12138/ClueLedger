@@ -37,9 +37,8 @@ import ExpandedReplyDialog from "../chat/ExpandedReplyDialog";
 import { useChatScroll } from "../chat/useChatScroll";
 import ConversationUsageBar from "./ConversationUsageBar";
 import { sourceTaskChapter } from "../../state/sourceLocation";
-import { navigate, useWorkspacePage } from "../../state/navigation";
+import { useWorkspacePage } from "../../state/navigation";
 import { useRevisionPanelStore } from "../../state/revisions";
-import { useWritingStore } from "../../state/writing";
 import RevisionReceipt from "../chat/RevisionReceipt";
 import RevisionDrawer from "../writing/RevisionDrawer";
 import { Button } from "../ui/Button";
@@ -68,16 +67,6 @@ export default function ConversationPanel({ onBackToDetail, onRevise }: {
   const currentWorkspaceId = useWorkspaceStore(state => state.currentId);
   const chapterId = page?.kind === "writing" && page.workspaceId === currentWorkspaceId
     ? page.chapterId ?? null
-    : null;
-  const prosePath = page?.kind === "writing" && page.workspaceId === currentWorkspaceId
-    ? page.prosePath ?? null
-    : null;
-  // 未登记章节的正文只能读；在这里给出并入章节的入口，之后才能修订。
-  const unplanned = useWritingStore(state =>
-    state.workspaceId === currentWorkspaceId ? state.workbench?.book.unplanned_prose ?? null : null,
-  );
-  const adoptable = !chapterId && prosePath
-    ? unplanned?.find(row => row.path === prosePath) ?? null
     : null;
   const items = useConversationsStore((state) => state.items);
   const selectedId = useConversationsStore((state) => state.selectedId);
@@ -172,15 +161,6 @@ export default function ConversationPanel({ onBackToDetail, onRevise }: {
   // 未配置模型时给入口而不是拦死输入：草稿要保留，配好之后作者自己点发送。
   const selectionAvailable = useModelsStore((state) => state.selection.available);
   const openModelSettings = useModelsStore((state) => state.openSettings);
-  const [adopting, setAdopting] = useState(false);
-
-  async function adoptProse() {
-    if (!currentWorkspaceId || !adoptable || adopting) return;
-    setAdopting(true);
-    const created = await useWritingStore.getState().adoptProse(currentWorkspaceId, adoptable.path);
-    setAdopting(false);
-    if (created) navigate({ kind: "writing", workspaceId: currentWorkspaceId, chapterId: created });
-  }
 
   const running = entry.running;
   const stopping = entry.activeTurn?.state === "stop_requested";
@@ -465,7 +445,7 @@ export default function ConversationPanel({ onBackToDetail, onRevise }: {
           {entry.loading && <p className="text-[11px] text-mute">正在读取这段讨论…</p>}
           {!entry.loading && entry.turns.length === 0 && (
             <p className="text-xs leading-6 text-sub">
-              直接说你想写什么，也可以说「带我想一想」。需要时模型会整理结构、章节和辅助资料。
+              直接说你想写什么。写正文前，模型会先确保全书结构已经建立；需要时也会建议辅助资料。
             </p>
           )}
           {entry.turns.map((turn, index) => (
@@ -529,13 +509,6 @@ export default function ConversationPanel({ onBackToDetail, onRevise }: {
       )}
 
       {writingView === "chat" && <div className="chat-composer">
-        {adoptable && (
-          <div className="flex flex-wrap gap-1.5">
-            <Button size="compact" busy={adopting} title="这份正文还没有登记为章节；登记后才能在这里修订" onClick={() => void adoptProse()}>
-              登记为章节
-            </Button>
-          </div>
-        )}
         {error && (
           <div className="chat-error flex items-start gap-2">
             <span className="min-w-0 flex-1">{error}</span>
