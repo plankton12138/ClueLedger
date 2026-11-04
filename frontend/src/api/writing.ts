@@ -219,6 +219,17 @@ export function createChapter(
   });
 }
 
+/** 把未登记的正文并入章节计划；正文内容不改，只补章节条目。 */
+export function adoptChapter(
+  workspaceId: string,
+  input: { path: string; expected_plan_revision: string; request_key: string },
+): Promise<{ chapter_id: string; order: number; path: string; prose_digest: string; plan_revision: string; change_id: string }> {
+  return request(`/${workspaceId}/story/chapters/adopt`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function renameChapter(
   workspaceId: string,
   chapterId: string,

@@ -37,8 +37,9 @@ import ExpandedReplyDialog from "../chat/ExpandedReplyDialog";
 import { useChatScroll } from "../chat/useChatScroll";
 import ConversationUsageBar from "./ConversationUsageBar";
 import { sourceTaskChapter } from "../../state/sourceLocation";
-import { useWorkspacePage } from "../../state/navigation";
+import { navigate, useWorkspacePage } from "../../state/navigation";
 import { useRevisionPanelStore } from "../../state/revisions";
+import { useWritingStore } from "../../state/writing";
 import RevisionReceipt from "../chat/RevisionReceipt";
 import RevisionDrawer from "../writing/RevisionDrawer";
 import { Button } from "../ui/Button";
@@ -68,6 +69,16 @@ export default function ConversationPanel({ onBackToDetail, onRevise, chapterTit
   const currentWorkspaceId = useWorkspaceStore(state => state.currentId);
   const chapterId = page?.kind === "writing" && page.workspaceId === currentWorkspaceId
     ? page.chapterId ?? null
+    : null;
+  const prosePath = page?.kind === "writing" && page.workspaceId === currentWorkspaceId
+    ? page.prosePath ?? null
+    : null;
+  // 未登记章节的正文只能读；在这里给出并入章节的入口，之后才能修订。
+  const unplanned = useWritingStore(state =>
+    state.workspaceId === currentWorkspaceId ? state.workbench?.book.unplanned_prose ?? null : null,
+  );
+  const adoptable = !chapterId && prosePath
+    ? unplanned?.find(row => row.path === prosePath) ?? null
     : null;
   const items = useConversationsStore((state) => state.items);
   const selectedId = useConversationsStore((state) => state.selectedId);
@@ -127,6 +138,15 @@ export default function ConversationPanel({ onBackToDetail, onRevise, chapterTit
   // 未配置模型时给入口而不是拦死输入：草稿要保留，配好之后作者自己点发送。
   const selectionAvailable = useModelsStore((state) => state.selection.available);
   const openModelSettings = useModelsStore((state) => state.openSettings);
+  const [adopting, setAdopting] = useState(false);
+
+  async function adoptProse() {
+    if (!currentWorkspaceId || !adoptable || adopting) return;
+    setAdopting(true);
+    const created = await useWritingStore.getState().adoptProse(currentWorkspaceId, adoptable.path);
+    setAdopting(false);
+    if (created) navigate({ kind: "writing", workspaceId: currentWorkspaceId, chapterId: created });
+  }
 
   const running = entry.running;
   const stopping = entry.activeTurn?.state === "stop_requested";
@@ -430,11 +450,16 @@ export default function ConversationPanel({ onBackToDetail, onRevise, chapterTit
         {currentWorkspaceId && page?.kind === "writing" && (
           <div className="flex flex-wrap gap-1.5" aria-label="修订操作">
             {chapterId && <>
-              <Button size="compact" disabled={!onRevise} onClick={onRevise}>修订本章</Button>
+              <Button size="compact" disabled={!onRevise} disabledReason="正文还在读取，或这一页不是章节正文" onClick={onRevise}>修订本章</Button>
               <Button size="compact" onClick={() => openRevisionPanel({
                 workspaceId: currentWorkspaceId, chapterId, revisionId: null, tab: "revisions", conversationId: selectedId,
               })}>改动</Button>
             </>}
+            {adoptable && (
+              <Button size="compact" busy={adopting} title="这份正文还没有登记为章节；登记后才能在这里修订" onClick={() => void adoptProse()}>
+                登记为章节
+              </Button>
+            )}
             <Button size="compact" onClick={() => openRevisionPanel({
               workspaceId: currentWorkspaceId, chapterId: null, revisionId: null, tab: "style", conversationId: selectedId,
             })}>写作约定</Button>

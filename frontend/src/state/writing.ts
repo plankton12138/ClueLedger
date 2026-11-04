@@ -12,6 +12,7 @@ import { errorMessage } from "../api/errors";
 import { WorkspaceApiError } from "../api/workspace";
 import { useWorkspaceStore } from "./workspace";
 import {
+  adoptChapter as adoptChapterApi,
   confirmIndexCandidate,
   readAssist,
   readWorkbench,
@@ -87,6 +88,8 @@ interface WritingStore {
   renameChapter(workspaceId: string, chapterId: string, title: string | null, expectedPlanRevision: string): Promise<string | null>;
   /** 修改未挂章节正文的首行标题；返回错误文案。 */
   renameProse(workspaceId: string, path: string, title: string, expectedDigest: string): Promise<string | null>;
+  /** 把未登记的正文并入章节计划；成功返回新章节标识，失败返回 null 并留下错误文案。 */
+  adoptProse(workspaceId: string, path: string): Promise<string | null>;
   save(workspaceId: string, chapterId: string): Promise<boolean>;
   adoptServer(workspaceId: string, chapterId: string): Promise<void>;
   overrideWithLocal(workspaceId: string, chapterId: string): Promise<boolean>;
@@ -382,6 +385,25 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
       return null;
     } catch (error) {
       return errorMessage(error, path);
+    }
+  },
+
+  async adoptProse(workspaceId, path) {
+    const revision = get().workbench?.plan_revision ?? "empty";
+    try {
+      const result = await adoptChapterApi(workspaceId, {
+        path,
+        expected_plan_revision: revision,
+        request_key: writingKey(`chapter-adopt-${path}`),
+      });
+      await Promise.all([
+        get().refresh(workspaceId, { chapterId: result.chapter_id }),
+        useWorkspaceStore.getState().refreshCatalog(),
+      ]);
+      return result.chapter_id;
+    } catch (error) {
+      set({ error: errorMessage(error, path) });
+      return null;
     }
   },
 

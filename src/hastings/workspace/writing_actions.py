@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from hastings.workspace.errors import WorkspaceError
@@ -28,6 +29,7 @@ __all__ = [
     "ChapterCreateResult",
     "ChapterRenameResult",
     "ProseRenameResult",
+    "adopt_prose",
     "create_chapter",
     "rename_chapter",
     "rename_unplanned_prose",
@@ -163,6 +165,98 @@ def create_chapter(
         chapter_id=chapter_id,
         order=created.order,
         path=created.prose_path,
+        prose_digest=view.digest,
+        plan_revision=updated.revision,
+        receipt=receipt,
+    )
+
+
+def adopt_prose(
+    store: StoryStore,
+    workspace: Workspace,
+    *,
+    path: str,
+    expected_plan_revision: str,
+    request_key: str,
+) -> ChapterCreateResult:
+    """把未登记的正文并入章节计划；正文原样保留，只补一条章节条目。
+
+    模型直接写进 ``正文/`` 的文件、或作者从别处拷入的稿件，不会自动出现在计划里，
+    因此不能修订、建索引或参与分析。登记用文件名里的章序定位；该位置已被占用时
+    排到末尾，不改动已有章节的先后关系。
+    """
+    prior = store.receipt_for(request_key)
+    if prior is not None and prior.kind == "chapter_adopt":
+        return _chapter_result_from_receipt(store, workspace, prior)
+    variant = store.read().variant(MAIN_VARIANT_ID)
+    if variant is not None and variant.format_version != FORMAT_VERSION:
+        raise _format_error()
+    current_revision = variant.revision if variant is not None else EMPTY_REVISION
+    if current_revision != expected_plan_revision:
+        raise _stale("作品构思")
+    if variant is not None and variant.chapter_for_path(path) is not None:
+        raise _already_adopted(path)
+    entry = next((item for item in workspace.catalog().chapters if item.path == path), None)
+    if entry is None or not entry.exists:
+        raise WorkspaceError(
+            code="PROSE_NOT_FOUND",
+            where=path,
+            why="这份正文不在作品目录里",
+            fix="刷新目录后重新选择正文",
+            details={"path": path},
+        )
+
+    plans = list(variant.chapter_plans.values()) if variant is not None else []
+    taken = {plan.order for plan in plans}
+    preferred = (entry.chapter_number or 0) - 1
+    order = preferred if preferred >= 0 and preferred not in taken else max(taken, default=-1) + 1
+    chapter_id = new_id("ch")
+    plan = ChapterPlan(
+        id=chapter_id,
+        order=order,
+        title=_clean_chapter_title(entry.title),
+        prose_path=path,
+    )
+    change = StoryChangeSet(
+        id=new_id("change"),
+        base_revision=expected_plan_revision,
+        operations=[AddChapterPlan(plan=plan)],
+        requested_scope=f"chapter-adopt:{path}",
+    )
+    meta = {"path": path, "chapter_id": chapter_id, "order": order}
+
+    def prepare(document: StoryDocument | None) -> tuple[StoryChangeSet, None, dict[str, object]]:
+        if document is None:
+            if expected_plan_revision != EMPTY_REVISION:
+                raise _stale("作品构思")
+            return change, None, meta
+        current = document.variants.get(MAIN_VARIANT_ID)
+        if current is None:
+            raise _state_error("作品状态存在但缺少主方案")
+        if current.format_version != FORMAT_VERSION:
+            raise _format_error()
+        if current.revision != expected_plan_revision:
+            raise _stale("作品构思")
+        if current.chapter_for_path(path) is not None:
+            raise _already_adopted(path)
+        return change, None, meta
+
+    receipt = store.commit_change(
+        variant_id=MAIN_VARIANT_ID,
+        change=change,
+        request_key=request_key,
+        kind="chapter_adopt",
+        prepare_joint=prepare,
+    )
+    updated = store.require_variant(MAIN_VARIANT_ID)
+    created = updated.chapter(chapter_id)
+    if created is None:
+        raise _state_error("登记正文后找不到章节")
+    view = workspace.read(path)
+    return ChapterCreateResult(
+        chapter_id=chapter_id,
+        order=created.order,
+        path=path,
         prose_digest=view.digest,
         plan_revision=updated.revision,
         receipt=receipt,
@@ -358,6 +452,28 @@ def _stale(where: str) -> WorkspaceError:
         why="作品构思在保存前已经变化",
         fix="重新读取当前作品后再保存",
     )
+
+
+def _already_adopted(path: str) -> WorkspaceError:
+    return WorkspaceError(
+        code="PROSE_ALREADY_ADOPTED",
+        where=path,
+        why="这份正文已经登记为章节",
+        fix="刷新目录后直接从章节进入修订",
+        details={"path": path},
+    )
+
+
+#: 首行里的章序前缀；目录已经按顺序显示，标题里不必再重复一次。
+_CHAPTER_NUMBER_PREFIX = re.compile(
+    r"^第\s*(?:[0-9０-９]+|[一二三四五六七八九十百千零〇两]+)\s*[章回节篇]\s*"
+)
+
+
+def _clean_chapter_title(value: str) -> str | None:
+    """去掉「第X章」前缀，避免目录显示成「第1章 · 第一章 拔牙人进镇」。"""
+    cleaned = _CHAPTER_NUMBER_PREFIX.sub("", value or "").strip()
+    return cleaned or None
 
 
 def _state_error(why: str) -> WorkspaceError:
