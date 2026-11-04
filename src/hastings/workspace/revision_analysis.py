@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from hastings.library.modules import ModuleLibrary
+from hastings.library.records import parse_entry
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.atomic_io import atomic_write_json, locked
 from hastings.workspace.errors import WorkspaceError
@@ -49,6 +50,10 @@ Target = Literal["style", "structure", "module_entry", "chapter_only"]
 
 _TARGETS = frozenset({"style", "structure", "module_entry", "chapter_only"})
 _RUNNING: dict[str, asyncio.Task[None]] = {}
+#: 相关条目正文的总字符预算；只给与本次改动同名的条目，避免整库搬进提示词。
+_MODULE_BODY_BUDGET = 24_000
+#: 单条条目正文的截断长度；截断的条目仍可给出补丁，但只能引用这段正文。
+_MODULE_BODY_CHARS = 1_200
 
 _SYSTEM = (
     "你是小说写作应用的修订分析器。作者刚改过一段正文，你要判断这次改动该写回哪里。\n"
@@ -62,7 +67,9 @@ _SYSTEM = (
     "6. 每条 decision 的 reason 必须引用具体改动或现有资料；不要泛泛而谈。\n"
     "7. target=structure 时必须给出 patch_find 与 patch_replace：patch_find 从 "
     "current_structure 逐字复制，在当前结构中只出现一次；不要改动无关段落。\n"
-    "8. module_entry 目前只给 proposal，不生成补丁；模块版本由作者在对话中确认。\n"
+    "8. target=module_entry 时必须给出 module_id、revision_id、entry_id、entry_digest，"
+    "以及 patch_find 与 patch_replace；patch_find 只能从该条目的 body 逐字复制，且只出现一次。"
+    "没有提供 body 的条目不要提出修改。\n"
 )
 
 
@@ -77,6 +84,8 @@ class AnalysisDecision:
     module_id: str = ""
     revision_id: str = ""
     entry_id: str = ""
+    #: 模块条目在分析时的文件指纹；应用前用它确认条目没有变过。
+    entry_digest: str = ""
     #: 结构建议的可执行补丁：从分析时的 STRUCTURE.md 原样复制一段并替换。
     patch_find: str = ""
     patch_replace: str = ""
@@ -95,6 +104,7 @@ class AnalysisDecision:
             "module_id": self.module_id,
             "revision_id": self.revision_id,
             "entry_id": self.entry_id,
+            "entry_digest": self.entry_digest,
             "patch_find": self.patch_find,
             "patch_replace": self.patch_replace,
             "patch_error": self.patch_error,
@@ -117,6 +127,7 @@ class AnalysisDecision:
             module_id=str(raw.get("module_id") or ""),
             revision_id=str(raw.get("revision_id") or ""),
             entry_id=str(raw.get("entry_id") or ""),
+            entry_digest=str(raw.get("entry_digest") or ""),
             patch_find=str(raw.get("patch_find") or ""),
             patch_replace=str(raw.get("patch_replace") or ""),
             patch_error=str(raw.get("patch_error") or ""),
@@ -138,6 +149,7 @@ class RevisionAnalysis:
     decisions: list[AnalysisDecision] = field(default_factory=list)
     style_digest: str = ""
     structure_digest: str = ""
+    assembly_digest: str = ""
     proposed_style_text: str = ""
     error: str = ""
     #: 这次分析实际读了什么、模型请求何时开始与结束；供界面展开查看。
@@ -157,6 +169,7 @@ class RevisionAnalysis:
             "decisions": [item.to_dict() for item in self.decisions],
             "style_digest": self.style_digest,
             "structure_digest": self.structure_digest,
+            "assembly_digest": self.assembly_digest,
             "proposed_style_text": self.proposed_style_text,
             "error": self.error,
             "trace": dict(self.trace),
@@ -187,6 +200,7 @@ class RevisionAnalysis:
             decisions=decisions,
             style_digest=str(raw.get("style_digest") or ""),
             structure_digest=str(raw.get("structure_digest") or ""),
+            assembly_digest=str(raw.get("assembly_digest") or ""),
             proposed_style_text=str(raw.get("proposed_style_text") or ""),
             error=str(raw.get("error") or ""),
             trace=trace,
@@ -365,7 +379,7 @@ class RevisionAnalysisService:
 
         save(status="running", updated_at=_now())
         try:
-            system, prompt, reads = self._prompt(detail, hunk_ids)
+            system, prompt, reads, modules = self._prompt(detail, hunk_ids)
             trace["reads"] = reads
             step("准备材料", detail_text=f"{len(reads)} 项")
             step("模型请求开始", status="running")
@@ -406,7 +420,7 @@ class RevisionAnalysisService:
             payload = _parse_payload(final or text)
             structure_state = read_structure_state(self.workspace)
             decisions = _validate_decisions(
-                payload, set(detail.active_hunk_ids), structure_state.text
+                payload, set(detail.active_hunk_ids), structure_state.text, modules
             )
             step("解析判断", detail_text=f"{len(decisions)} 条")
             style_state = read_style_state(self.workspace)
@@ -419,6 +433,7 @@ class RevisionAnalysisService:
                 decisions=decisions,
                 style_digest=style_state.digest or "",
                 structure_digest=structure_state.digest or "",
+                assembly_digest=AssemblyStore(self.workspace.root).digest(),
                 proposed_style_text=style_text,
             )
         except asyncio.CancelledError:
@@ -438,7 +453,7 @@ class RevisionAnalysisService:
 
     def _prompt(
         self, detail: RevisionDetail, hunk_ids: list[str]
-    ) -> tuple[str, str, list[dict[str, str]]]:
+    ) -> tuple[str, str, list[dict[str, str]], list[dict[str, Any]]]:
         record = detail.record
         selected = [hunk for hunk in detail.hunks if hunk.id in set(hunk_ids)]
         hunks = [
@@ -453,7 +468,16 @@ class RevisionAnalysisService:
         ]
         style = read_style_state(self.workspace)
         structure = read_structure_state(self.workspace)
-        modules = self._module_catalog()
+        focus = "\n".join(
+            [
+                record.author_message,
+                *(hunk.before for hunk in selected),
+                *(hunk.after for hunk in selected),
+                *(hunk.before_context for hunk in selected),
+                *(hunk.after_context for hunk in selected),
+            ]
+        )
+        modules = self._module_catalog(focus)
         reads = [
             {
                 "label": "正文修订",
@@ -471,7 +495,8 @@ class RevisionAnalysisService:
                 "label": "已装模块",
                 "detail": (
                     f"{len(modules)} 个模块 · "
-                    f"{sum(len(row['entries']) for row in modules)} 个条目"
+                    f"{sum(len(row['entries']) for row in modules)} 个条目 · "
+                    f"{sum(len(row.get('bodies', [])) for row in modules)} 条含正文"
                     if modules
                     else "无"
                 ),
@@ -499,8 +524,12 @@ class RevisionAnalysisService:
                         "module_id": "",
                         "revision_id": "",
                         "entry_id": "",
-                        "patch_find": "仅 structure：从 current_structure 原样复制的待替换片段",
-                        "patch_replace": "仅 structure：替换后的片段",
+                        "entry_digest": "仅 module_entry：installed_modules 里该条目的 body_digest",
+                        "patch_find": (
+                            "structure 从 current_structure 复制；"
+                            "module_entry 从条目 body 复制"
+                        ),
+                        "patch_replace": "替换后的片段",
                     }
                 ],
             },
@@ -511,37 +540,60 @@ class RevisionAnalysisService:
             + "\n\n请按 output_schema 输出 JSON。没有可复用的写作习惯时，decisions 可以只有一条 "
             "chapter_only，并说明这次改动的局部性。"
         )
-        return _SYSTEM, prompt, reads
+        return _SYSTEM, prompt, reads, modules
 
-    def _module_catalog(self) -> list[dict[str, Any]]:
+    def _module_catalog(self, focus: str = "") -> list[dict[str, Any]]:
+        """列出已装模块；与本次改动相关的条目附上正文与指纹，供模型提出补丁。"""
         assembly = AssemblyStore(self.workspace.root).read()
         if not assembly.bindings:
             return []
         rows: list[dict[str, Any]] = []
-        for binding in assembly.bindings[:20]:
+        body_budget = _MODULE_BODY_BUDGET
+        for binding in assembly.bindings[:12]:
             row: dict[str, Any] = {
                 "module_id": binding.module.module_id,
                 "revision_id": binding.module.revision_id,
                 "label": binding.label or binding.module.module_id,
                 "entries": [],
+                "bodies": [],
             }
-            if self.library is not None:
-                try:
-                    revision = self.library.revision(
-                        module_id=binding.module.module_id,
-                        revision_id=binding.module.revision_id,
-                    )
-                except WorkspaceError:
-                    rows.append(row)
+            if self.library is None:
+                rows.append(row)
+                continue
+            try:
+                revision = self.library.revision(
+                    module_id=binding.module.module_id,
+                    revision_id=binding.module.revision_id,
+                )
+            except WorkspaceError:
+                rows.append(row)
+                continue
+            for entry in revision.entries[:12]:
+                base: dict[str, Any] = {
+                    "entry_id": entry.entry_id,
+                    "title": entry.title,
+                    "fields": json.dumps(entry.fields, ensure_ascii=False)[:240],
+                }
+                row["entries"].append(base)
+                if not _entry_relevant(entry.title, entry.aliases, focus):
                     continue
-                row["entries"] = [
-                    {
-                        "entry_id": entry.entry_id,
-                        "title": entry.title,
-                        "fields": json.dumps(entry.fields, ensure_ascii=False)[:400],
-                    }
-                    for entry in revision.entries[:20]
-                ]
+                if body_budget <= 0:
+                    continue
+                try:
+                    raw, digest = self.library.storage.read_entry(
+                        binding.module.module_id,
+                        binding.module.revision_id,
+                        entry.entry_id,
+                    )
+                    draft = parse_entry(raw, module_kind=revision.module_kind)
+                except WorkspaceError:
+                    continue
+                body = draft.body[:_MODULE_BODY_CHARS]
+                body_budget -= len(body)
+                row["bodies"].append(entry.entry_id)
+                base["body"] = body
+                base["body_digest"] = digest
+                base["body_truncated"] = len(draft.body) > len(body)
             rows.append(row)
         return rows
 
@@ -580,7 +632,10 @@ def _parse_payload(text: str) -> dict[str, Any]:
 
 
 def _validate_decisions(
-    payload: dict[str, Any], active: set[str], structure_text: str
+    payload: dict[str, Any],
+    active: set[str],
+    structure_text: str,
+    modules: list[dict[str, Any]],
 ) -> list[AnalysisDecision]:
     raw_rows = payload.get("decisions")
     if not isinstance(raw_rows, list) or not raw_rows:
@@ -603,6 +658,8 @@ def _validate_decisions(
             decision = replace(decision, target="chapter_only")
         if decision.target == "structure":
             decision = _checked_structure_patch(decision, structure_text)
+        elif decision.target == "module_entry":
+            decision = _checked_module_patch(decision, modules)
         decisions.append(decision)
     if not decisions:
         raise WorkspaceError(
@@ -612,6 +669,54 @@ def _validate_decisions(
             fix="重新发起分析",
         )
     return decisions
+
+
+def _checked_module_patch(
+    decision: AnalysisDecision, modules: list[dict[str, Any]]
+) -> AnalysisDecision:
+    """模块补丁必须指向已装版本里附了正文的条目，且定位唯一。"""
+    if not decision.module_id or not decision.revision_id or not decision.entry_id:
+        return replace(decision, patch_error="模型没有指明要修改的模块条目")
+    if not decision.entry_digest:
+        return replace(decision, patch_error="模型没有给出条目的读取指纹")
+    entry = _find_module_entry(
+        modules, decision.module_id, decision.revision_id, decision.entry_id
+    )
+    if entry is None:
+        return replace(decision, patch_error="建议指向的条目不在当前作品装配里")
+    body = entry.get("body")
+    if not isinstance(body, str) or not body:
+        return replace(decision, patch_error="分析材料没有包含这个条目的正文")
+    if entry.get("body_digest") != decision.entry_digest:
+        return replace(decision, patch_error="条目的读取指纹与分析材料不一致")
+    find = decision.patch_find
+    replace_text = decision.patch_replace
+    if not find or not replace_text:
+        return replace(decision, patch_error="模型没有给出可直接应用的条目补丁")
+    if find == replace_text:
+        return replace(decision, patch_error="补丁没有产生变化")
+    if body.count(find) != 1:
+        return replace(decision, patch_error="补丁定位文本在条目正文中不唯一")
+    return decision
+
+
+def _find_module_entry(
+    modules: list[dict[str, Any]], module_id: str, revision_id: str, entry_id: str
+) -> dict[str, Any] | None:
+    for module in modules:
+        if module.get("module_id") != module_id or module.get("revision_id") != revision_id:
+            continue
+        for entry in module.get("entries") or []:
+            if isinstance(entry, dict) and entry.get("entry_id") == entry_id:
+                return entry
+    return None
+
+
+def _entry_relevant(title: str, aliases: tuple[str, ...], focus: str) -> bool:
+    if not focus.strip():
+        return True
+    names = [title, *aliases]
+    return any(len(name.strip()) >= 2 and name.strip() in focus for name in names)
 
 
 def _checked_structure_patch(

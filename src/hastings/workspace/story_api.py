@@ -24,7 +24,10 @@ from hastings.workspace.creative_candidates import CreativeCandidateStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.index_confirmation import confirm_index_candidate
 from hastings.workspace.revision_analysis import RevisionAnalysisService, RevisionAnalysisStore
-from hastings.workspace.revision_apply import apply_structure_decisions
+from hastings.workspace.revision_apply import (
+    apply_module_decisions,
+    apply_structure_decisions,
+)
 from hastings.workspace.revision_diff import active_hunk_ids
 from hastings.workspace.revision_store import RevisionStore, sync_chapter_revisions
 from hastings.workspace.service_hub import WorkspaceServices
@@ -108,7 +111,7 @@ class AnalysisApplyRequest(BaseModel):
     request_key: str = Field(default="", max_length=200)
 
 
-class StructureApplyRequest(BaseModel):
+class SuggestionApplyRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     decision_indexes: list[int] = Field(default_factory=list, max_length=50)
@@ -731,7 +734,7 @@ def create_story_router(
         "/{workspace_id}/story/revision-analyses/{analysis_id}/structure-applications"
     )
     def apply_structure_analysis(
-        workspace_id: str, analysis_id: str, body: StructureApplyRequest
+        workspace_id: str, analysis_id: str, body: SuggestionApplyRequest
     ) -> dict[str, Any]:
         """把作者勾选的结构建议写入 `STRUCTURE.md`；应用前再核对一次结构指纹。"""
         workspace = workspaces.workspace(workspace_id)
@@ -750,6 +753,37 @@ def create_story_router(
                 "digest": result.view.digest,
                 "text": result.view.text,
             },
+            "decision_indexes": result.applied_indexes,
+        }
+
+    @router.post(
+        "/{workspace_id}/story/revision-analyses/{analysis_id}/module-applications"
+    )
+    def apply_module_analysis(
+        workspace_id: str, analysis_id: str, body: SuggestionApplyRequest
+    ) -> dict[str, Any]:
+        """把作者勾选的模块条目建议写成作品专用版本；不改模块库头版本。"""
+        if hub is None or hub.library is None:
+            raise WorkspaceError(
+                code="MODULE_CHANGE_TARGET_INVALID",
+                where="修订分析",
+                why="当前会话没有可用的模块库",
+                fix="在设置中检查模块库位置后重试",
+            )
+        workspace = workspaces.workspace(workspace_id)
+        state_root = conversation_root(workspaces.root, workspace_id)
+        result = apply_module_decisions(
+            RevisionAnalysisStore(state_root),
+            workspace,
+            hub.library,
+            analysis_id=analysis_id,
+            decision_indexes=body.decision_indexes,
+            expected_digest=body.expected_digest,
+        )
+        return {
+            "analysis": result.analysis.to_dict(),
+            "change_set_id": result.change_set_id,
+            "assembly": result.assembly,
             "decision_indexes": result.applied_indexes,
         }
 

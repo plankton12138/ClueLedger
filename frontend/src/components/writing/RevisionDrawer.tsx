@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 import {
+  applyModuleDecisions,
   applyRevisionAnalysis,
   applyStructureDecisions,
   listRevisions,
@@ -25,6 +26,7 @@ import {
   type StyleDocument,
 } from "../../api/revisions";
 import { writingKey } from "../../api/writing";
+import { useModuleLibraryStore } from "../../state/moduleLibrary";
 import { errorMessage } from "../../api/errors";
 import { Button } from "../ui/Button";
 
@@ -175,6 +177,7 @@ export default function RevisionDrawer({
   const [styleDirty, setStyleDirty] = useState(false);
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [chosenStructure, setChosenStructure] = useState<Set<number>>(new Set());
+  const [chosenModules, setChosenModules] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -231,6 +234,7 @@ export default function RevisionDrawer({
           setAnalysis(null);
           setChosen(new Set());
           setChosenStructure(new Set());
+          setChosenModules(new Set());
           setNotice(null);
         }
       } catch (exc) {
@@ -344,6 +348,29 @@ export default function RevisionDrawer({
     }
   }
 
+  async function applyModules() {
+    if (!analysis) return;
+    const indexes = [...chosenModules].sort((a, b) => a - b);
+    if (indexes.length === 0) return;
+    setBusy("写入模块");
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await applyModuleDecisions(workspaceId, analysis.id, {
+        decision_indexes: indexes,
+        expected_digest: analysis.assembly_digest || null,
+      });
+      setAnalysis(result.analysis);
+      setChosenModules(new Set());
+      setNotice("已写入作品模块；后续写作使用新版本。");
+      void useModuleLibraryStore.getState().trackAssembly(workspaceId);
+    } catch (exc) {
+      setError(errorMessage(exc, "修订"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function saveStyleDraft() {
     setBusy("保存写作约定");
     setError(null);
@@ -377,9 +404,17 @@ export default function RevisionDrawer({
   const structureDecisions = analysis?.decisions
     .map((decision, index) => ({ decision, index }))
     .filter(row => row.decision.target === "structure") ?? [];
+  const moduleDecisions = analysis?.decisions
+    .map((decision, index) => ({ decision, index }))
+    .filter(row => row.decision.target === "module_entry") ?? [];
   const otherDecisions = analysis?.decisions
     .map((decision, index) => ({ decision, index }))
-    .filter(row => row.decision.target !== "style" && row.decision.target !== "structure") ?? [];
+    .filter(
+      row =>
+        row.decision.target !== "style"
+        && row.decision.target !== "structure"
+        && row.decision.target !== "module_entry",
+    ) ?? [];
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30" role="dialog" aria-modal="true" aria-label="修订与写作约定">
@@ -623,6 +658,78 @@ export default function RevisionDrawer({
                               </div>
                             </div>
                           )}
+                          {moduleDecisions.length > 0 && (
+                            <div className="mt-3">
+                              <h4 className="text-[11px] font-semibold text-[#6b5d3e]">模块资料建议</h4>
+                              <ul className="mt-1 space-y-2">
+                                {moduleDecisions.map(({ decision, index }) => {
+                                  const appliable = Boolean(
+                                    decision.patch_find
+                                    && decision.patch_replace
+                                    && !decision.patch_error,
+                                  );
+                                  return (
+                                    <li key={index} className="rounded-sm border border-[#e2dbc6] p-2">
+                                      <label className="flex items-start gap-2">
+                                        <input
+                                          type="checkbox"
+                                          className="mt-1"
+                                          checked={chosenModules.has(index)}
+                                          disabled={!appliable || decision.applied}
+                                          onChange={event => {
+                                            setChosenModules(current => {
+                                              const next = new Set(current);
+                                              if (event.target.checked) next.add(index);
+                                              else next.delete(index);
+                                              return next;
+                                            });
+                                          }}
+                                        />
+                                        <span className="min-w-0">
+                                          <span className="block text-[11px] font-semibold text-[#6b5d3e]">
+                                            {decision.target_label || "模块条目"}
+                                          </span>
+                                          <span className="mt-1 block whitespace-pre-wrap leading-6">{decision.proposal}</span>
+                                          <span className="mt-1 block text-[11px] text-[#8a8267]">
+                                            依据：{decision.reason}
+                                          </span>
+                                          {appliable && (
+                                            <span className="mt-2 block rounded-sm bg-[#fbf8ef] p-2 text-[12px] leading-6">
+                                              <del className="bg-[#f6dcd7] text-[#8d3a2a]">{decision.patch_find}</del>
+                                              <span className="mx-1 text-[#8a8267]">→</span>
+                                              <ins className="bg-[#e3eed6] text-[#3e6231] no-underline">{decision.patch_replace}</ins>
+                                            </span>
+                                          )}
+                                          {decision.patch_error ? (
+                                            <span className="mt-1 block text-[11px] text-[#8d3a2a]">
+                                              {decision.patch_error}；可在对话中继续说明。
+                                            </span>
+                                          ) : !appliable && !decision.applied ? (
+                                            <span className="mt-1 block text-[11px] text-[#8a8267]">
+                                              这条建议没有可直接应用的补丁；可在对话中继续说明。
+                                            </span>
+                                          ) : null}
+                                          {decision.applied && (
+                                            <span className="mt-1 block text-[11px] text-[#3e6231]">已写入</span>
+                                          )}
+                                        </span>
+                                      </label>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                              <div className="mt-2 flex gap-2">
+                                <Button
+                                  size="compact"
+                                  onClick={() => void applyModules()}
+                                  disabled={chosenModules.size === 0 || busy !== null}
+                                  disabledReason="先选一条模块建议"
+                                >
+                                  写入作品模块
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                           {otherDecisions.length > 0 && (
                             <div className="mt-3">
                               <h4 className="text-[11px] font-semibold text-[#6b5d3e]">其它去向</h4>
@@ -644,7 +751,7 @@ export default function RevisionDrawer({
                                 ))}
                               </ul>
                               <p className="mt-2 text-[11px] leading-5 text-[#8a8267]">
-                                模块条目的改动需要连同具体版本一起确认；在对话里继续说明即可。
+                                其余改动需要连同具体场景一起确认；在对话里继续说明即可。
                               </p>
                             </div>
                           )}

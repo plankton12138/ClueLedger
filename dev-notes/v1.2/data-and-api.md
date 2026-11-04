@@ -97,6 +97,7 @@ class WritingProseView(BaseModel):
   `GET /{id}/story/revision-analyses/{analysis_id}` 读取判断与建议；
   `POST /{id}/story/revision-analyses/{analysis_id}/applications` 确认写入写作约定；
   `POST /{id}/story/revision-analyses/{analysis_id}/structure-applications` 根据已校验的补丁写入全书结构；
+  `POST /{id}/story/revision-analyses/{analysis_id}/module-applications` 把条目补丁写成作品专用版本并切换绑定；
 - 写作约定：`GET /{id}/story/style` 返回全文与指纹，`PUT /{id}/story/style` 带全文、基线指纹与请求键；
 - 对话发送、暂停、恢复和回答作者问题；
 - 正文候选提出与采用；
