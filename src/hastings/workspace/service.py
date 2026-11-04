@@ -72,9 +72,11 @@ from hastings.workspace.operations import (
 from hastings.workspace.questions import AuthorQuestion, QuestionStore
 from hastings.workspace.retrieval import module_overview
 from hastings.workspace.review import ReviewStore, target_digests
+from hastings.workspace.revision_store import RevisionStore, record_change_revision
 from hastings.workspace.run_registry import RunRegistry
 from hastings.workspace.state import ConversationStore
 from hastings.workspace.state_store import state_chapter
+from hastings.workspace.style_io import read_style_state
 from hastings.workspace.task_intent import (
     TaskIntent,
     assess_story_goal,
@@ -2968,9 +2970,16 @@ class TurnService:
                 clue_store = ClueStore(self.store.root)
                 turn_materials = materials_section(info.context, ledger.summaries())
                 turn_ideas = ideas_section(info.context)
-                # 结构层注入与确定性对账（M3）：铁律/结构全文/STYLE 占位 + 台账事实；
+                # 结构层注入与确定性对账（M3）：铁律/结构全文/写作约定 + 台账事实；
                 # 目标章来自任务元数据时在这里对账，改派说明并入台账分区。
                 structure_text, ledger_text, structure_snapshot = self._structure_injection(info)
+                # 写作约定只在会生成或改写正文的一轮注入；普通讨论与结构设计不装。
+                style_text = ""
+                style_digest = ""
+                if mode == "write" and (run.story is None or run.story.purpose == "write"):
+                    style_state = read_style_state(self.workspace)
+                    style_text = style_state.text
+                    style_digest = style_state.digest or ""
                 # 模块按需选择（M3）：目标章已知（含对账改派后的章）时叠加「本轮相关」
                 # 条目段；目标未知时模块分区保持纯索引，由模型在会话内按需检索。
                 effective_target = (
@@ -3003,6 +3012,7 @@ class TurnService:
                     ideas=turn_ideas,
                     modules=modules,
                     structure=structure_text,
+                    style=style_text,
                     ledger=ledger_text,
                     disclosure_store=disclosure_store,
                     glossary_store=glossary_store,
@@ -3011,6 +3021,8 @@ class TurnService:
                     clue_store=clue_store,
                 )
                 injected = assembly.summary()
+                if style_digest:
+                    injected["style"] = {"digest": style_digest, "chars": len(style_text)}
                 # 结构层快照：实际注入了哪些层、对账改派了哪章、按需选中了哪些模块，
                 # 作者可核对（M3 回执）。
                 injected["structure"] = dataclasses.replace(
@@ -3437,13 +3449,39 @@ class TurnService:
             )
             if reviewed and candidate.approved:
                 run.materials.verify_current(self.workspace)
-                receipt = StoryStore(self.store.root, self.workspace).commit_change(
+                story_store = StoryStore(self.store.root, self.workspace)
+                receipt = story_store.commit_change(
                     variant_id=candidate.frozen.variant_id,
                     change=candidate.change(),
                     request_key=f"candidate:{candidate.id}",
                     require_eligible=lambda operation, generation: self._write_guard(info)(),
                     decision_guard=run.story_decision_guard,
+                    result_extra={
+                        "revision_source": "candidate",
+                        "revision_candidate_ref": candidate.id,
+                        "revision_operation_id": info.operation_id,
+                        "revision_conversation_id": info.conversation_id,
+                        "revision_author_message": "\n\n".join(
+                            text for _, text in run.author_messages
+                        )[:4000],
+                    },
                 )
+                revisions = RevisionStore(self.store.root)
+                for path in candidate.documents:
+                    plan = (
+                        story_store.require_variant(candidate.frozen.variant_id).chapter_for_path(
+                            path
+                        )
+                    )
+                    if plan is None:
+                        continue
+                    record_change_revision(
+                        story_store,
+                        change_id=receipt.change_id,
+                        chapter_id=plan.id,
+                        path=path,
+                        revisions=revisions,
+                    )
                 candidate.status = "committed"
                 candidate.save(check_guard=False)
                 run.record(

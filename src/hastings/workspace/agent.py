@@ -145,6 +145,7 @@ from hastings.workspace.review import (
     target_digests,
     validate_review_targets,
 )
+from hastings.workspace.revision_store import RevisionStore, record_tool_revision
 from hastings.workspace.service import WriteSession
 from hastings.workspace.story_candidate import StoryCandidate
 from hastings.workspace.story_context import StoryContextSnapshot
@@ -874,6 +875,7 @@ def build_tools(
             # 无副作用预检：意图与现状冲突时不能先准备 Git 基线再报错。
             preflight=lambda: workspace.check_write_intent(path, expected_digest=digest),
         )
+        previous = workspace.read(path).text if action == "update" else ""
         view = workspace.write(path, text, expected_digest=digest)
         if action == "create":
             run.scope.record_created_chapter(view.path)
@@ -890,6 +892,15 @@ def build_tools(
             },
         )
         run.materials.after_full_write(view)
+        _record_prose_revision(
+            run,
+            workspace=workspace,
+            path=view.path,
+            before=previous,
+            after=view.text,
+            before_digest=digest or "",
+            after_digest=view.digest,
+        )
         return _json({"path": view.path, "digest": view.digest, "size": view.size})
 
     async def edit_file(
@@ -949,6 +960,15 @@ def build_tools(
         )
         run.materials.after_edit(
             before=SourceRef(view.path, view.digest), view=written, start=start, end=end
+        )
+        _record_prose_revision(
+            run,
+            workspace=workspace,
+            path=written.path,
+            before=view.text,
+            after=written.text,
+            before_digest=view.digest,
+            after_digest=written.digest,
         )
         return _json({"path": written.path, "digest": written.digest, "size": written.size})
 
@@ -3444,6 +3464,7 @@ def build_turn_assembly(
     ideas: str = "",
     modules: str = "",
     structure: str = "",
+    style: str = "",
     ledger: str = "",
     instructions: str = "",
     disclosure_store: DisclosureStore | None = None,
@@ -3470,6 +3491,7 @@ def build_turn_assembly(
         ideas=ideas,
         modules=modules,
         structure=structure,
+        style=style,
         ledger=ledger,
         instructions=instructions or _instructions_for(mode),
         disclosure_store=disclosure_store,
@@ -4475,6 +4497,42 @@ def _entry_drafts_argument(value: JSONValue) -> list[EntryDraft]:
             )
         )
     return drafts
+
+
+def _record_prose_revision(
+    run: RunContext,
+    *,
+    workspace: Workspace,
+    path: str,
+    before: str,
+    after: str,
+    before_digest: str,
+    after_digest: str,
+) -> None:
+    """模型改稿后登记一次修订；登记失败不影响已经落盘的正文。
+
+    新建章节与首次起草不算修订：没有「改前」内容可比较。作者在本轮明确说过什么
+    作为原话一起保存，分析时用来区分作者要求与模型自行选择的措辞。
+    """
+    if run.state_root is None or managed_kind(path) != "chapter":
+        return
+    if not before.strip() or not before_digest or before_digest == after_digest:
+        return
+    try:
+        record_tool_revision(
+            RevisionStore(run.state_root),
+            StoryStore(run.state_root, workspace),
+            path=path,
+            before_text=before,
+            after_text=after,
+            before_digest=before_digest,
+            after_digest=after_digest,
+            operation_id=run.operation_id,
+            author_message="\n\n".join(text for _, text in run.author_messages),
+            conversation_id=run.conversation_id,
+        )
+    except (OSError, WorkspaceError):
+        return
 
 
 def _input_error(name: str, why: str) -> WorkspaceError:

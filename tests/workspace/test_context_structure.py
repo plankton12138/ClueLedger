@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from hastings.workspace.context import build_assembled_context
+from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.prose_ledger import ProseLedger
 from hastings.workspace.structure_assembly import (
@@ -69,3 +72,34 @@ def test_ledger_partition_lists_registered_chapters(tmp_path: Path) -> None:
     part = next(part for part in assembled.parts if part.key == "ledger")
     assert "第 1 章｜最近入档修订 rev-aaaa" in part.text
     assert "以本台账为准" in part.text
+
+
+def test_style_partition_sits_between_structure_and_modules(tmp_path: Path) -> None:
+    assembled = _assembled(
+        tmp_path,
+        structure=structure_section_text(split_structure_layers(_STRUCTURE)),
+        modules="- 模块索引",
+    )
+    with_style = build_assembled_context(
+        Workspace.create(tmp_path / "作品二"),
+        structure=structure_section_text(split_structure_layers(_STRUCTURE)),
+        modules="- 模块索引",
+        style="- 写环境先写人物能感知的细节。",
+    )
+
+    keys = _part_keys(with_style)
+    assert keys.index("structure") < keys.index("style") < keys.index("modules")
+    part = next(part for part in with_style.parts if part.key == "style")
+    assert part.title == "作者写作约定"
+    assert "人物能感知的细节" in part.text
+    assert "style" not in [skip.key for skip in with_style.skipped]
+    assert "style" not in _part_keys(assembled)
+
+
+def test_oversized_style_fails_instead_of_truncating(tmp_path: Path) -> None:
+    workspace = Workspace.create(tmp_path / "作品")
+
+    with pytest.raises(WorkspaceError) as caught:
+        build_assembled_context(workspace, style="规" * 7000)
+
+    assert caught.value.code == "STYLE_CONTEXT_TOO_LARGE"

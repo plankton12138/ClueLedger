@@ -9,15 +9,21 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
+from hastings.workspace.atomic_io import atomic_write_json, locked
 from hastings.workspace.chapter_writing import save_chapter_prose
 from hastings.workspace.creative_candidates import CreativeCandidateStore
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.index_confirmation import confirm_index_candidate
+from hastings.workspace.revision_diff import active_hunk_ids
+from hastings.workspace.revision_store import RevisionStore, sync_chapter_revisions
 from hastings.workspace.service_hub import WorkspaceServices
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 from hastings.workspace.story_clue_commit import prepare_clue_undo
@@ -26,6 +32,7 @@ from hastings.workspace.story_models import FORMAT_VERSION
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 from hastings.workspace.structure_document import BUDGET_LIMIT, check_budget
 from hastings.workspace.structure_io import read_structure_state
+from hastings.workspace.style_io import read_style_state, write_style_document
 from hastings.workspace.writing_actions import (
     create_chapter,
     rename_chapter,
@@ -70,6 +77,14 @@ class StoryChangeRecordView(BaseModel):
     changed: list[str]
     undone_by: str | None = None
     sync: dict[str, Any] | None = None
+
+
+class StyleSaveRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    text: str
+    expected_digest: str | None = Field(default=None, max_length=128)
+    request_key: str = Field(default="", max_length=200)
 
 
 def _receipt_view(receipt: Any, changed: list[str]) -> StoryReceiptView:
@@ -344,6 +359,8 @@ def create_story_router(
                 expected_digest=body.expected_digest,
                 request_key=body.request_key,
                 draft_revision=body.draft_revision,
+                source="candidate" if body.candidate_id is not None else "author",
+                candidate_ref=body.candidate_id or "",
             )
         )
         job_id: str | None = None
@@ -379,6 +396,7 @@ def create_story_router(
             "index": index,
             "analysis_job_id": job_id,
             "committed_change_id": result.committed_change_id,
+            "revision_id": result.revision_id or None,
         }
 
     @router.post("/{workspace_id}/story/chapters/{chapter_id}/index-review")
@@ -447,4 +465,141 @@ def create_story_router(
             "change_id": result.receipt.change_id,
         }
 
+    # -- 修订与写作约定（1.2 修订学习） -------------------------------------
+
+    @router.get("/{workspace_id}/story/chapters/{chapter_id}/revisions")
+    def list_chapter_revisions(workspace_id: str, chapter_id: str) -> dict[str, Any]:
+        """按章列出修订；已确认入稿的正文改动才在列表里。"""
+        store = writing_store_for(workspace_id)
+        workspace = workspaces.workspace(workspace_id)
+        variant = store.require_variant(MAIN_VARIANT_ID)
+        plan = variant.chapter(chapter_id)
+        if plan is None or plan.prose_path is None:
+            raise WorkspaceError(
+                code="CHAPTER_NOT_FOUND",
+                where=f"章节/{chapter_id}",
+                why="章节或正文不存在",
+                fix="刷新工作台后重新选择章节",
+                details={"chapter_id": chapter_id},
+            )
+        revisions = RevisionStore(store.root)
+        records = sync_chapter_revisions(
+            store,
+            workspace,
+            chapter_id=chapter_id,
+            path=plan.prose_path,
+            revisions=revisions,
+        )
+        try:
+            current = workspace.read(plan.prose_path).text
+        except WorkspaceError:
+            current = ""
+        items: list[dict[str, Any]] = []
+        for record in records:
+            live = active_hunk_ids(record.hunks, current) if current else set()
+            items.append(
+                {
+                    **record.summary(),
+                    "active_hunk_count": len(live),
+                    "analyzable": bool(live),
+                }
+            )
+        return {"chapter_id": chapter_id, "path": plan.prose_path, "items": items}
+
+    @router.get("/{workspace_id}/story/revisions/{revision_id}")
+    def read_revision(workspace_id: str, revision_id: str) -> dict[str, Any]:
+        """一次修订的完整差异；每个片段标明现在是否仍能在稿内确认。"""
+        store = writing_store_for(workspace_id)
+        workspace = workspaces.workspace(workspace_id)
+        revisions = RevisionStore(store.root)
+        record = revisions.get(revision_id)
+        if record is None:
+            raise WorkspaceError(
+                code="REVISION_NOT_FOUND",
+                where=f"修订/{revision_id}",
+                why="没有这次修订记录",
+                fix="刷新改动列表后重新选择",
+                details={"revision_id": revision_id},
+            )
+        try:
+            current_text = workspace.read(record.path).text
+        except WorkspaceError:
+            current_text = ""
+        detail = revisions.detail(revision_id, current_text)
+        assert detail is not None
+        hunks = [
+            {**hunk.to_dict(), "active": hunk.id in detail.active_hunk_ids}
+            for hunk in detail.hunks
+        ]
+        return {
+            "revision": record.summary(),
+            "hunks": hunks,
+            "active_hunk_ids": sorted(detail.active_hunk_ids),
+            "analyzable": detail.analyzable,
+            "current_text_available": bool(current_text),
+        }
+
+    @router.get("/{workspace_id}/story/style")
+    def read_style(workspace_id: str) -> dict[str, Any]:
+        workspace = workspaces.workspace(workspace_id)
+        state = read_style_state(workspace)
+        return {
+            "path": "STYLE.md",
+            "exists": state.exists,
+            "text": state.text,
+            "digest": state.digest,
+            "size": state.size,
+        }
+
+    @router.put("/{workspace_id}/story/style")
+    def put_style(workspace_id: str, body: StyleSaveRequest) -> dict[str, Any]:
+        """作者直接保存整份写作约定；同键同内容返回原回执。"""
+        workspace = workspaces.workspace(workspace_id)
+        state_root = conversation_root(workspaces.root, workspace_id)
+        request_log = state_root / "story" / "style-requests.json"
+        text_digest = hashlib.sha256(body.text.encode("utf-8")).hexdigest()
+        if body.request_key:
+            with locked(request_log.with_suffix(".lock")):
+                prior = _read_request_log(request_log).get(body.request_key)
+                if isinstance(prior, dict):
+                    if prior.get("text_digest") == text_digest:
+                        return {
+                            "path": "STYLE.md",
+                            "text": body.text,
+                            "digest": prior.get("digest", ""),
+                            "replayed": True,
+                        }
+                    raise WorkspaceError(
+                        code="STYLE_REQUEST_CONFLICT",
+                        where="STYLE.md",
+                        why="同一个请求键已经保存过另一份内容",
+                        fix="换一个请求键重新保存，避免把两次编辑合成一次",
+                        details={"request_key": body.request_key},
+                    )
+        view = write_style_document(
+            workspace, text=body.text, expected_digest=body.expected_digest
+        )
+        if body.request_key:
+            with locked(request_log.with_suffix(".lock")):
+                log = _read_request_log(request_log)
+                log[body.request_key] = {
+                    "text_digest": text_digest,
+                    "digest": view.digest,
+                }
+                atomic_write_json(request_log, log, prefix=".style-requests-")
+        return {
+            "path": view.path,
+            "text": view.text,
+            "digest": view.digest,
+            "replayed": False,
+        }
+
     return router
+
+
+def _read_request_log(path: Path) -> dict[str, Any]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return raw if isinstance(raw, dict) else {}

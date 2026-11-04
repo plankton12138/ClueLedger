@@ -32,6 +32,7 @@ __all__ = [
     "GLOSSARY_BUDGET",
     "ROSTER_BUDGET",
     "STRUCTURE_INJECT_BUDGET",
+    "STYLE_INJECT_BUDGET",
     "TIMELINE_BUDGET",
     "SETTINGS_BUDGET",
     "STATE_BUDGET",
@@ -79,6 +80,8 @@ CLUES_BUDGET = 500
 #: ``STRUCTURE.md`` 唯一全局语义分区：文件本身限制 6000 字符，
 #: 这里是渲染后分区上限（含小节标题与降级标注），超限属于装配故障而不是截断信号。
 STRUCTURE_INJECT_BUDGET = 6_800
+#: 作者写作约定（``STYLE.md``）的渲染上限：整份装入、不截断，超限在发送前明确报错。
+STYLE_INJECT_BUDGET = 6_400
 #: 正文台账注入：每章一行（章号 + 短修订号），章数超出预算时整块跳过并留下原因。
 LEDGER_INJECT_BUDGET = 1_200
 
@@ -91,6 +94,7 @@ PROFILE_BUDGETS: dict[Profile, int] = {
     "writer": INSTRUCTIONS_BUDGET
     + CATALOG_BUDGET
     + STRUCTURE_INJECT_BUDGET
+    + STYLE_INJECT_BUDGET
     + MODULES_BUDGET
     + MATERIALS_BUDGET
     + STORY_BUDGET

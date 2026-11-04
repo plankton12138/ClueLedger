@@ -116,13 +116,14 @@ def test_writer_limit_is_a_partition_character_budget() -> None:
     """分区字符预算之和；它不是整轮 token 上限，也不参与 token 统计。
 
     v1.1 起含结构层（STRUCTURE_INJECT_BUDGET）与台账（LEDGER_INJECT_BUDGET），
-    总预算随之扩大。
+    v1.2 起含作者写作约定（STYLE_INJECT_BUDGET），总预算随之扩大。
     """
     writer = assembly.PROFILE_BUDGETS["writer"]
     assert writer == (
         assembly.INSTRUCTIONS_BUDGET
         + assembly.CATALOG_BUDGET
         + assembly.STRUCTURE_INJECT_BUDGET
+        + assembly.STYLE_INJECT_BUDGET
         + assembly.MODULES_BUDGET
         + assembly.MATERIALS_BUDGET
         + assembly.STORY_BUDGET
@@ -137,7 +138,7 @@ def test_writer_limit_is_a_partition_character_budget() -> None:
         + assembly.SETTINGS_BUDGET
         + assembly.HISTORY_BUDGET
     )
-    assert writer == 76_900
+    assert writer == 83_300
 
 
 def test_modules_partition_is_optional_and_reports_why_it_was_skipped(tmp_path: Path) -> None:

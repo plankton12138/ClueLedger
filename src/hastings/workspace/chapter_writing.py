@@ -12,6 +12,7 @@ from typing import cast
 
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, digest_bytes, normalize_newlines
+from hastings.workspace.revision_store import RevisionStore, record_change_revision
 from hastings.workspace.story_bindings import anchor_state
 from hastings.workspace.story_index_jobs import changed_text
 from hastings.workspace.story_models import (
@@ -41,6 +42,7 @@ class ProseSaveResult:
     analysis_job_id: str | None
     committed_change_id: str
     changed_text: str = ""
+    revision_id: str = ""
 
 
 def save_chapter_prose(
@@ -52,8 +54,14 @@ def save_chapter_prose(
     expected_digest: str,
     request_key: str,
     draft_revision: str = "",
+    source: str = "author",
+    candidate_ref: str = "",
 ) -> ProseSaveResult:
-    """整章保存；只校验章节登记与正文摘要。"""
+    """整章保存；只校验章节登记与正文摘要。
+
+    ``source`` 区分作者亲手保存与采用模型候选：修订记录据此显示来源，学习范围
+    仍由作者后续的「让模型分析」决定。
+    """
     variant = store.require_variant(MAIN_VARIANT_ID)
     if variant.format_version != FORMAT_VERSION:
         raise _format_error(chapter_id)
@@ -67,7 +75,21 @@ def save_chapter_prose(
     if prior is not None and prior.kind == "prose_save":
         paths = cast(list[object], prior.result.get("prose_paths") or [])
         if paths:
-            return _prose_result(store, workspace, chapter_id, str(paths[0]), prior.change_id)
+            revision = record_change_revision(
+                store,
+                change_id=prior.change_id,
+                chapter_id=chapter_id,
+                path=str(paths[0]),
+                revisions=RevisionStore(store.root),
+            )
+            return _prose_result(
+                store,
+                workspace,
+                chapter_id,
+                str(paths[0]),
+                prior.change_id,
+                revision_id=revision.id if revision is not None else "",
+            )
     view = workspace.read(path)
     if view.digest != expected_digest:
         raise _digest_mismatch(path, view.digest, view.text)
@@ -104,14 +126,33 @@ def save_chapter_prose(
             raise _chapter_missing(chapter_id)
         return change, None, {}
 
+    revision_extra: dict[str, object] = {"revision_source": source}
+    if candidate_ref:
+        revision_extra["revision_candidate_ref"] = candidate_ref
     receipt = store.commit_change(
         variant_id=MAIN_VARIANT_ID,
         change=change,
         request_key=request_key,
         kind="prose_save",
+        result_extra=revision_extra,
         prepare_joint=prepare,
     )
-    return _prose_result(store, workspace, chapter_id, path, receipt.change_id, change_text)
+    revision = record_change_revision(
+        store,
+        change_id=receipt.change_id,
+        chapter_id=chapter_id,
+        path=path,
+        revisions=RevisionStore(store.root),
+    )
+    return _prose_result(
+        store,
+        workspace,
+        chapter_id,
+        path,
+        receipt.change_id,
+        change_text,
+        revision_id=revision.id if revision is not None else "",
+    )
 
 
 def _refresh_binding_operations(
@@ -141,6 +182,8 @@ def _prose_result(
     path: str,
     change_id: str,
     change_text: str = "",
+    *,
+    revision_id: str = "",
 ) -> ProseSaveResult:
     variant = store.require_variant(MAIN_VARIANT_ID)
     plan = variant.chapter(chapter_id)
@@ -158,6 +201,7 @@ def _prose_result(
         analysis_job_id=None,
         committed_change_id=change_id,
         changed_text=change_text,
+        revision_id=revision_id,
     )
 
 

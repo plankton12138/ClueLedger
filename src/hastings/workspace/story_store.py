@@ -207,6 +207,7 @@ class StoryStore:
         require_eligible: Callable[[str, int], None] | None = None,
         decision_guard: Callable[[], AbstractContextManager[None]] | None = None,
         prose_shift: bool = False,
+        result_extra: dict[str, Any] | None = None,
         prepare_joint: (
             Callable[
                 [StoryDocument | None],
@@ -220,8 +221,10 @@ class StoryStore:
         ``require_eligible`` 由服务层给：带上操作与代次时，提交决定必须由仍在运行
         的那一代做出。放在查重之后——已经提交过的同一请求返回收据，不因暂停而消失。
         ``prose_shift`` 供撤销使用：正文其他段落有后续编辑时，按唯一原文重新定位，
-        不要求整份文件摘要不变。
+        不要求整份文件摘要不变。``result_extra`` 随收据持久化，用于记录本次正文改动
+        的来源，后续可按变更记录补齐修订。
         """
+        extra: dict[str, Any] = dict(result_extra or {})
         fingerprint = _fingerprint(
             {
                 "kind": kind,
@@ -237,9 +240,9 @@ class StoryStore:
             if prior is not None:
                 return prior
             joint_target: JointTarget | None = None
-            result_extra: dict[str, Any] = {}
             if prepare_joint is not None:
-                change, joint_target, result_extra = prepare_joint(document)
+                change, joint_target, prepared_extra = prepare_joint(document)
+                extra = {**extra, **prepared_extra}
             if (change.prose_patches or change.read_dependencies) and self.workspace is None:
                 raise WorkspaceError(
                     code="STORY_CHANGE_UNAVAILABLE",
@@ -283,7 +286,7 @@ class StoryStore:
                 decision_guard=decision_guard,
                 prose_shift=prose_shift,
                 joint_target=joint_target,
-                result_extra=result_extra,
+                result_extra=extra,
             )
 
     def create_variant(

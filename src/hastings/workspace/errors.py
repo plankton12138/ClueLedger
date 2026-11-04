@@ -52,6 +52,7 @@ _CONFLICT_CODES = frozenset(
         "ASSIST_TARGET_STALE",
         "INDEX_RESULT_STALE",
         "PROSE_DIGEST_MISMATCH",
+        "STYLE_DIGEST_MISMATCH",
         "STORY_FORMAT_UNSUPPORTED",
     }
 )
