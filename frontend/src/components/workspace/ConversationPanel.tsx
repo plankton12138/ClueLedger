@@ -9,7 +9,7 @@
  * （已记录/没有改动/历史未记录）。「文件已改但历史没记上」不能显示成全部成功。
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { EMPTY_CONTEXT, type ContextInput, type Conversation } from "../../api/workspace";
@@ -60,10 +60,9 @@ interface CaptureTarget {
   y: number;
 }
 
-export default function ConversationPanel({ onBackToDetail, onRevise, chapterTitle = "" }: {
+export default function ConversationPanel({ onBackToDetail, onRevise }: {
   onBackToDetail?: () => void;
   onRevise?: () => void;
-  chapterTitle?: string;
 }) {
   const page = useWorkspacePage();
   const currentWorkspaceId = useWorkspaceStore(state => state.currentId);
@@ -87,6 +86,7 @@ export default function ConversationPanel({ onBackToDetail, onRevise, chapterTit
   const closeRevisionPanel = useRevisionPanelStore(state => state.close);
   const revisionPanel = revisionTarget?.workspaceId === currentWorkspaceId
     && revisionTarget?.conversationId === selectedId ? revisionTarget : null;
+  const [writingView, setWritingView] = useState<"chat" | "revisions" | "style">("chat");
   const entry = useConversationsStore(selectedEntry);
   const runningIds = useConversationsStore(useShallow((state) =>
     Object.keys(state.entries).filter((id) => state.entries[id]?.running),
@@ -134,6 +134,40 @@ export default function ConversationPanel({ onBackToDetail, onRevise, chapterTit
   const captureCommand = useRef<{ signature: string; requestKey: string } | null>(null);
   const workspaceId = useWorkspaceStore((state) => state.currentId);
   const scroll = useChatScroll(entry.lastSeq, selectedId);
+  const writingPage = Boolean(currentWorkspaceId) && page?.kind === "writing";
+
+  useEffect(() => {
+    if (!revisionPanel) {
+      setWritingView("chat");
+      return;
+    }
+    setWritingView(revisionPanel.tab);
+  }, [revisionPanel]);
+
+  useEffect(() => {
+    setWritingView("chat");
+    closeRevisionPanel();
+  }, [currentWorkspaceId, selectedId, chapterId, page?.kind, closeRevisionPanel]);
+
+  function showWritingView(next: "chat" | "revisions" | "style") {
+    if (next === "chat") {
+      setWritingView("chat");
+      return;
+    }
+    if (!writingPage || !currentWorkspaceId) return;
+    if (next === "revisions" && !chapterId) return;
+    setWritingView(next);
+    const reusable = revisionPanel && (next === "style" || revisionPanel.chapterId === chapterId);
+    if (!reusable) {
+      openRevisionPanel({
+        workspaceId: currentWorkspaceId,
+        chapterId: next === "revisions" ? chapterId : null,
+        revisionId: null,
+        tab: next,
+        conversationId: selectedId,
+      });
+    }
+  }
 
   // 未配置模型时给入口而不是拦死输入：草稿要保留，配好之后作者自己点发送。
   const selectionAvailable = useModelsStore((state) => state.selection.available);
@@ -372,7 +406,53 @@ export default function ConversationPanel({ onBackToDetail, onRevise, chapterTit
         <ModelSelector />
       </div>
 
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      {writingPage && (
+        <div className="flex flex-none items-center gap-2 border-b border-panel-edge bg-panel px-3 py-1.5">
+          <div className="grid min-w-0 flex-1 grid-cols-3 gap-1 text-xs" role="tablist" aria-label="写作工作区">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={writingView === "chat"}
+              className={`rounded-sm px-2 py-1.5 ${writingView === "chat" ? "bg-[#e6ddc4] font-semibold text-[#4b4737]" : "text-[#7a6f52] hover:bg-[#f1ead7]"}`}
+              onClick={() => showWritingView("chat")}
+            >
+              对话
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={writingView === "revisions"}
+              className={`rounded-sm px-2 py-1.5 disabled:cursor-not-allowed disabled:opacity-50 ${writingView === "revisions" ? "bg-[#e6ddc4] font-semibold text-[#4b4737]" : "text-[#7a6f52] hover:bg-[#f1ead7]"}`}
+              disabled={!chapterId}
+              title={chapterId ? undefined : "先在左侧选择章节"}
+              onClick={() => showWritingView("revisions")}
+            >
+              本章修订
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={writingView === "style"}
+              className={`rounded-sm px-2 py-1.5 ${writingView === "style" ? "bg-[#e6ddc4] font-semibold text-[#4b4737]" : "text-[#7a6f52] hover:bg-[#f1ead7]"}`}
+              onClick={() => showWritingView("style")}
+            >
+              写作约定
+            </button>
+          </div>
+          <Button
+            size="compact"
+            variant="primary"
+            className="shrink-0 whitespace-nowrap px-2 py-1.5 text-xs"
+            disabled={!onRevise}
+            disabledReason="正文还在读取，或这一页不是章节正文"
+            onClick={onRevise}
+          >
+            修改正文
+          </Button>
+        </div>
+      )}
+
+      <div className={writingView === "chat" ? "relative flex min-h-0 flex-1 flex-col" : "hidden"}>
         <div
           ref={scroll.ref}
           className="chat-scroll"
@@ -415,19 +495,6 @@ export default function ConversationPanel({ onBackToDetail, onRevise, chapterTit
               )}
             </div>
           )}
-          {revisionPanel && currentWorkspaceId && (
-            <RevisionDrawer
-              key={`${currentWorkspaceId}:${selectedId}:${revisionPanel.chapterId}:${revisionPanel.revisionId}:${revisionPanel.tab}`}
-              workspaceId={currentWorkspaceId}
-              chapterId={revisionPanel.chapterId}
-              chapterTitle={chapterTitle}
-              initialTab={revisionPanel.tab}
-              initialRevisionId={revisionPanel.revisionId}
-              autoAnalyze={revisionPanel.autoAnalyze}
-              conversationId={selectedId}
-              onClose={closeRevisionPanel}
-            />
-          )}
         </div>
 
         {scroll.hasNew && (
@@ -437,7 +504,22 @@ export default function ConversationPanel({ onBackToDetail, onRevise, chapterTit
         )}
       </div>
 
-      {currentWorkspaceId && chapterId && (
+      {revisionPanel && currentWorkspaceId && (
+        <div className={writingView === "chat" ? "hidden" : "flex min-h-0 flex-1 flex-col"}>
+          <RevisionDrawer
+            key={`${currentWorkspaceId}:${selectedId}:${revisionPanel.chapterId}`}
+            workspaceId={currentWorkspaceId}
+            chapterId={revisionPanel.chapterId}
+            initialRevisionId={revisionPanel.revisionId}
+            autoAnalyze={revisionPanel.autoAnalyze}
+            conversationId={selectedId}
+            view={writingView === "style" ? "style" : "revisions"}
+            onShowStyle={() => showWritingView("style")}
+          />
+        </div>
+      )}
+
+      {writingView === "chat" && currentWorkspaceId && chapterId && (
         <RevisionReceipt
           workspaceId={currentWorkspaceId}
           chapterId={chapterId}
@@ -446,23 +528,12 @@ export default function ConversationPanel({ onBackToDetail, onRevise, chapterTit
         />
       )}
 
-      <div className="chat-composer">
-        {currentWorkspaceId && page?.kind === "writing" && (
-          <div className="flex flex-wrap gap-1.5" aria-label="修订操作">
-            {chapterId && <>
-              <Button size="compact" disabled={!onRevise} disabledReason="正文还在读取，或这一页不是章节正文" onClick={onRevise}>修订本章</Button>
-              <Button size="compact" onClick={() => openRevisionPanel({
-                workspaceId: currentWorkspaceId, chapterId, revisionId: null, tab: "revisions", conversationId: selectedId,
-              })}>改动</Button>
-            </>}
-            {adoptable && (
-              <Button size="compact" busy={adopting} title="这份正文还没有登记为章节；登记后才能在这里修订" onClick={() => void adoptProse()}>
-                登记为章节
-              </Button>
-            )}
-            <Button size="compact" onClick={() => openRevisionPanel({
-              workspaceId: currentWorkspaceId, chapterId: null, revisionId: null, tab: "style", conversationId: selectedId,
-            })}>写作约定</Button>
+      {writingView === "chat" && <div className="chat-composer">
+        {adoptable && (
+          <div className="flex flex-wrap gap-1.5">
+            <Button size="compact" busy={adopting} title="这份正文还没有登记为章节；登记后才能在这里修订" onClick={() => void adoptProse()}>
+              登记为章节
+            </Button>
           </div>
         )}
         {error && (
@@ -602,7 +673,7 @@ export default function ConversationPanel({ onBackToDetail, onRevise, chapterTit
             </>
           )}
         </div>
-      </div>
+      </div>}
 
       {capture && (
         <button

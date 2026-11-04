@@ -306,7 +306,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
           invert label="对话栏宽度" onChange={prefs.setChatWidth} onReset={() => prefs.setChatWidth(CHAT.default)} />}
         <div id="writing-chat" className="writing-chat module flex min-h-0 flex-col" hidden={!chat} style={{ width: compact ? "100%" : plan.chat }}>
           <ConversationPanel
-            chapterTitle={chapter?.plan?.title ?? `第${(chapter?.plan?.order ?? 0) + 1}章`}
             onRevise={chapterId && chapter?.prose && file?.path === chapter.prose.path && editingChapter !== chapterId ? () => {
               setEditingChapter(chapterId);
               if (compact) setCompactChat(false);

@@ -1,13 +1,12 @@
 /**
- * 修订与写作约定抽屉（v1.2）。
+ * 「本章修订」与「写作约定」的内容区（v1.2）。
  *
- * 左边是这一章已入稿的正文改动，右边是所选改动的段落差异。分析、采纳与写作约定
- * 编辑都在同一个面板里完成：分析结论按「写作约定 / 全书结构 / 模块 / 本章」分组，
- * 作者可以只选其中几条写回 STYLE.md，也可以直接编辑整份约定。
+ * 状态切换由对话栏统一承担，这里只负责读取与呈现。正文修订按次选择，分析、采纳与
+ * 写作约定编辑都在同一个工作区完成：分析结论按「写作约定 / 全书结构 / 模块 / 本章」
+ * 分组，作者可以只选其中几条写回 STYLE.md，也可以直接编辑整份约定。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
 
 import {
   applyModuleDecisions,
@@ -149,25 +148,20 @@ function Hunk({ hunk }: { hunk: RevisionHunk }) {
 export default function RevisionDrawer({
   workspaceId,
   chapterId,
-  chapterTitle,
-  initialTab = "revisions",
   initialRevisionId = null,
   autoAnalyze = false,
   conversationId = null,
-  onClose,
+  view,
+  onShowStyle,
 }: {
   workspaceId: string;
   chapterId: string | null;
-  chapterTitle: string;
-  initialTab?: "revisions" | "style";
   initialRevisionId?: string | null;
   autoAnalyze?: boolean;
   conversationId?: string | null;
-  onClose: () => void;
+  view: "revisions" | "style";
+  onShowStyle: () => void;
 }) {
-  const [tab, setTab] = useState<"revisions" | "style">(
-    chapterId ? initialTab : "style",
-  );
   const [items, setItems] = useState<RevisionSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<RevisionDetail | null>(null);
@@ -182,11 +176,6 @@ export default function RevisionDrawer({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const autoStarted = useRef(false);
-  const panel = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    panel.current?.scrollIntoView({ block: "nearest" });
-  }, []);
 
   const loadStyle = useCallback(async () => {
     const document = await readStyle(workspaceId);
@@ -407,7 +396,7 @@ export default function RevisionDrawer({
     if (!analysis) return;
     setStyleDraft(analysis.proposed_style_text);
     setStyleDirty(true);
-    setTab("style");
+    onShowStyle();
   }
 
   const styleDecisions = analysis?.decisions
@@ -429,102 +418,61 @@ export default function RevisionDrawer({
     ) ?? [];
 
   return (
-    <section ref={panel} className="rounded-sm border border-[#cfc7ae] bg-[#fbf8ef]" aria-label="修订与写作约定">
-      <div className="flex min-w-0 flex-col">
-        <div className="flex flex-wrap items-center gap-2 border-b border-[#e2dbc6] px-3 py-2">
-          <h2 className="font-serif text-base font-bold text-sheetInk">
-            {chapterId ? `修订 · ${chapterTitle}` : "写作约定"}
-          </h2>
-          <div className="flex items-center gap-1 text-xs">
-            {chapterId && (
-              <button
-                type="button"
-                className={`rounded-sm px-2 py-1 ${tab === "revisions" ? "bg-[#e6ddc4] font-semibold" : "text-[#7a6f52]"}`}
-                onClick={() => setTab("revisions")}
-              >
-                正文修订
-              </button>
-            )}
-            <button
-              type="button"
-              className={`rounded-sm px-2 py-1 ${tab === "style" ? "bg-[#e6ddc4] font-semibold" : "text-[#7a6f52]"}`}
-              onClick={() => setTab("style")}
-            >
-              写作约定
-            </button>
-          </div>
-          <div className="flex-1" />
-          <Button className="px-2 py-1 text-sm" onClick={onClose} aria-label="关闭">
-            <X size={15} aria-hidden="true" />
-          </Button>
+    <section className="flex min-h-0 flex-1 flex-col bg-[#fbf8ef]" aria-label="修订与写作约定">
+      {(error || notice) && (
+        <div className={`flex-none px-4 py-2 text-xs ${error ? "bg-[#f8e4de] text-[#8d3a2a]" : "bg-[#edf3e2] text-[#3e6231]"}`}>
+          {error ?? notice}
         </div>
+      )}
 
-        {(error || notice) && (
-          <div className={`flex-none px-4 py-2 text-xs ${error ? "bg-[#f8e4de] text-[#8d3a2a]" : "bg-[#edf3e2] text-[#3e6231]"}`}>
-            {error ?? notice}
-          </div>
-        )}
-
-        {tab === "revisions" ? (
-          <div>
-            <aside className="max-h-32 overflow-auto border-b border-[#e2dbc6] px-2 py-2">
-              {items.length === 0 ? (
-                <p className="px-2 text-xs leading-6 text-[#8a8267]">
-                  这一章还没有可分析的改稿。亲手改一段正文，或用对话让模型改完并保存后，这里会出现记录。
-                </p>
-              ) : (
-                <ul className="space-y-1">
+      {view === "revisions" ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {items.length === 0 ? (
+            <p className="px-4 py-4 text-xs leading-6 text-[#8a8267]">
+              {busy ?? "这一章还没有可分析的改稿。亲手改一段正文，或用对话让模型改完并保存后，这里会出现记录。"}
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-none flex-wrap items-center gap-2 border-b border-[#e2dbc6] px-3 py-2">
+                <select
+                  aria-label="选择修订记录"
+                  className="well-input min-w-0 flex-1 px-2 py-1 text-xs"
+                  value={selected ?? ""}
+                  disabled={busy !== null}
+                  onChange={event => {
+                    const next = event.target.value;
+                    if (next === selected) return;
+                    setDetail(null);
+                    setAnalysis(null);
+                    setSelected(next);
+                  }}
+                >
                   {items.map(item => (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        disabled={busy !== null}
-                        onClick={() => {
-                          if (item.id === selected) return;
-                          setDetail(null);
-                          setAnalysis(null);
-                          setSelected(item.id);
-                        }}
-                        className={`w-full rounded-sm px-2 py-2 text-left text-xs ${
-                          selected === item.id ? "bg-[#e6ddc4]" : "hover:bg-[#f1ead7]"
-                        }`}
-                      >
-                        <span className="block font-semibold text-[#4b4737]">
-                          {SOURCE_LABEL[item.source] ?? item.source}
-                        </span>
-                        <span className="mt-0.5 block text-[11px] text-[#8a8267]">
-                          {timeLabel(item.confirmed_at)} · {item.hunk_count} 处
-                          {item.analyzable ? "" : " · 已失效"}
-                        </span>
-                      </button>
-                    </li>
+                    <option key={item.id} value={item.id}>
+                      {SOURCE_LABEL[item.source] ?? item.source} · {timeLabel(item.confirmed_at)} · {item.hunk_count} 处
+                      {item.analyzable ? "" : " · 已失效"}
+                    </option>
                   ))}
-                </ul>
-              )}
-            </aside>
+                </select>
+                {detail && (
+                  <Button
+                    size="compact"
+                    variant="primary"
+                    onClick={() => void analyze()}
+                    disabled={!detail.analyzable || busy !== null || analysis?.status === "queued" || analysis?.status === "running"}
+                    disabledReason="这次改动已不在当前正文里"
+                  >
+                    让模型分析
+                  </Button>
+                )}
+              </div>
 
-            <div className="min-w-0 px-3 py-3 text-xs text-[#4b4737]">
-              {!detail ? (
-                <p className="text-[#8a8267]">{busy ?? "选择一次修订查看差异。"}</p>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-[#8a8267]">
-                      {SOURCE_LABEL[detail.revision.source] ?? detail.revision.source} ·{" "}
-                      {timeLabel(detail.revision.confirmed_at)}
-                    </span>
-                    <div className="flex-1" />
-                    <Button
-                      size="compact"
-                      variant="primary"
-                      onClick={() => void analyze()}
-                      disabled={!detail.analyzable || busy !== null || analysis?.status === "queued" || analysis?.status === "running"}
-                      disabledReason="这次改动已不在当前正文里"
-                    >
-                      让模型分析
-                    </Button>
-                  </div>
-                  {detail.revision.author_message && (
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 text-xs text-[#4b4737]">
+                {!detail ? (
+                  <p className="text-[#8a8267]">{busy ?? "选择一次修订查看差异。"}</p>
+                ) : (
+                  <>
+                    {detail.revision.author_message && (
                     <details className="mt-2 rounded-sm border border-[#e2dbc6] bg-[#fffdf6] p-2">
                       <summary className="cursor-pointer text-[11px] text-[#6b5d3e]">展开作者原请求</summary>
                       <p className="mt-1 whitespace-pre-wrap leading-6 text-[#4b4737]">
@@ -780,14 +728,17 @@ export default function RevisionDrawer({
                 </>
               )}
             </div>
-          </div>
+            </>
+          )}
+        </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col px-4 py-3">
             <p className="text-[11px] leading-5 text-[#8a8267]">
               整份写作约定都会进入每次正文生成。只写可执行的规则；一次换景或单处改句通常不足以成为全书规则。
             </p>
             <textarea
-              className="mt-2 min-h-44 resize-y rounded-sm border border-[#d8cfb2] bg-[#fffdf6] p-3 font-mono text-[13px] leading-7 text-[#4b4737] outline-none"
+              aria-label="写作约定"
+              className="mt-2 min-h-44 flex-1 resize-none rounded-sm border border-[#d8cfb2] bg-[#fffdf6] p-3 font-mono text-[13px] leading-7 text-[#4b4737] outline-none"
               value={styleDraft}
               onChange={event => {
                 setStyleDraft(event.target.value);
@@ -820,7 +771,6 @@ export default function RevisionDrawer({
             </div>
           </div>
         )}
-      </div>
     </section>
   );
 }

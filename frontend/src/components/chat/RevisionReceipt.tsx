@@ -1,9 +1,8 @@
 /**
  * 对话里的修订回执（v1.2）。
  *
- * 作者保存过正文、或让模型改过稿后，对话输入框上方显示最近一次修订：来源、时间、
- * 改动处数，以及「查看差异」「让模型分析」。它不是临时提示——刷新后仍按当前章节
- * 重新读取，分析的运行日志与建议显示在对话里。
+ * 作者保存过正文、或让模型改过稿后，对话输入框上方显示最近一次修订：来源、时间与
+ * 改动处数。回执只负责带回「本章修订」状态；分析与建议都在那里完成。
  */
 
 import { useEffect, useState } from "react";
@@ -11,7 +10,6 @@ import { useEffect, useState } from "react";
 import { errorMessage } from "../../api/errors";
 import { listRevisions, type RevisionSummary } from "../../api/revisions";
 import { useRevisionPanelStore } from "../../state/revisions";
-import { Button } from "../ui/Button";
 
 const SOURCE_LABEL: Record<string, string> = {
   author: "作者修订",
@@ -74,50 +72,26 @@ export default function RevisionReceipt({
   }
 
   return (
-    <div className="mx-3 mb-2 rounded-sm border border-[#d8cfb2] bg-[#fffdf6] px-2.5 py-2 text-[11px]">
-      <div className="flex items-center gap-2">
-        <span className="font-semibold text-sheetInk">
-          {SOURCE_LABEL[latest.source] ?? latest.source}
-        </span>
-        <span className="text-mute">
-          {timeLabel(latest.confirmed_at)} · {latest.hunk_count} 处
-          {latest.analyzable ? "" : " · 已不在当前稿"}
-        </span>
-      </div>
-      <div className="mt-1.5 flex items-center gap-1.5">
-        <Button
-          size="compact"
-          onClick={() =>
-            open({
-              workspaceId,
-              chapterId,
-              revisionId: latest.id,
-              tab: "revisions",
-              conversationId,
-            })
-          }
-        >
-          查看差异
-        </Button>
-        <Button
-          size="compact"
-          variant="primary"
-          disabled={!latest.analyzable}
-          disabledReason="这次改动已经不在当前正文里，只保留历史"
-          onClick={() =>
-            open({
-              workspaceId,
-              chapterId,
-              revisionId: latest.id,
-              tab: "revisions",
-              autoAnalyze: true,
-              conversationId,
-            })
-          }
-        >
-          让模型分析
-        </Button>
-      </div>
-    </div>
+    <button
+      type="button"
+      aria-label="查看差异"
+      className="mx-3 mb-2 flex w-[calc(100%-1.5rem)] items-center gap-2 rounded-sm border border-[#d8cfb2] bg-[#fffdf6] px-2.5 py-2 text-left text-[11px] hover:bg-[#f1ead7]"
+      onClick={() =>
+        open({
+          workspaceId,
+          chapterId,
+          revisionId: latest.id,
+          tab: "revisions",
+          conversationId,
+        })
+      }
+    >
+      <span className="font-semibold text-sheetInk">最近修订</span>
+      <span className="min-w-0 flex-1 truncate text-mute">
+        {SOURCE_LABEL[latest.source] ?? latest.source} · {timeLabel(latest.confirmed_at)} · {latest.hunk_count} 处
+        {latest.analyzable ? "" : " · 已不在当前稿"}
+      </span>
+      <span className="shrink-0 text-[#6b5d3e]">查看 →</span>
+    </button>
   );
 }
