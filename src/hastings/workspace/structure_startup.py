@@ -29,6 +29,7 @@ __all__ = [
     "resolve_startup_mode",
     "startup_conversation_prompt",
     "structure_draft_prompt",
+    "structure_gate_prompt",
 ]
 
 STARTUP_QUESTION_LIMIT = 6
@@ -108,6 +109,19 @@ def structure_draft_prompt(author_request: str) -> tuple[str, str]:
         "人物小传、故事背景等详细资料不在本步骤自动创建；需要时通过模块建议请求一次作者决定。"
     )
     return system, instructions
+
+
+def structure_gate_prompt(author_request: str) -> str:
+    """作品还没有结构却收到写正文的请求：同轮先建立结构，再继续正文候选。"""
+    return (
+        "## 本轮必须先建立全书结构\n"
+        "当前作品还没有 STRUCTURE.md。作者要求写正文时，不能先提交正文候选。"
+        "先用 set_task_scope 登记本轮范围，同时包含 STRUCTURE.md 与要写的正文，"
+        "再调用 write_structure 建立第一版；"
+        "第一版可以保留待定项，不需要作者另开一轮确认。"
+        "结构写入成功后，在同一轮继续原请求并提交正文候选。\n"
+        f"作者当前请求：{author_request.strip() or '（未提供明确创作内容）'}"
+    )
 
 
 @dataclass(frozen=True, slots=True)

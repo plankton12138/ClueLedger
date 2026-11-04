@@ -19,6 +19,7 @@ from hastings.workspace.story_candidate import StoryCandidate
 from hastings.workspace.story_context import StoryContextSnapshot, StoryRequest
 from hastings.workspace.story_models import AddNode, StoryChangeSet, StoryNode
 from hastings.workspace.story_store import StoryStore
+from hastings.workspace.structure_io import write_structure_document
 from tau_agent.messages import AssistantMessage, TextContent, ToolCall
 from tau_agent.provider_events import AssistantDoneEvent, AssistantStartEvent
 
@@ -30,6 +31,13 @@ NEW = "# 雨夜\n\n雨已经停了。"
 def setup(tmp_path: Path) -> tuple[Workspace, StoryStore, StoryContextSnapshot]:
     workspace = Workspace.create(tmp_path / "book")
     workspace.write(PATH, TEXT, expected_digest=None)
+    # 正文候选要求作品已有结构（v1.2 结构先行）；这里不是结构起步用例。
+    write_structure_document(
+        workspace,
+        text="## 铁律\n第三人称限制视角。\n",
+        expected_digest=None,
+        creating=True,
+    )
     store = StoryStore(tmp_path / "state", workspace)
     receipt = store.commit_change(
         variant_id="main",
