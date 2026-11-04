@@ -230,7 +230,9 @@ class RevisionAnalysisStore:
             atomic_write_json(target, analysis.to_dict(), prefix=".analysis-")
         return analysis
 
-    def list_for_revision(self, revision_id: str, limit: int = 20) -> list[RevisionAnalysis]:
+    def list_for_revision(
+        self, revision_id: str, limit: int = 20, *, conversation_id: str | None = None
+    ) -> list[RevisionAnalysis]:
         if not self.root.is_dir():
             return []
         rows: list[RevisionAnalysis] = []
@@ -240,6 +242,8 @@ class RevisionAnalysisStore:
             except (OSError, ValueError):
                 continue
             if not isinstance(raw, dict) or raw.get("revision_id") != revision_id:
+                continue
+            if conversation_id is not None and raw.get("conversation_id", "") != conversation_id:
                 continue
             rows.append(RevisionAnalysis.from_dict(raw))
         rows.sort(key=lambda item: (item.created_at, item.id), reverse=True)
@@ -276,6 +280,18 @@ class RevisionAnalysisService:
                 fix="刷新对话后重新发起分析",
                 details={"analysis_id": analysis_id},
             )
+        if analysis.status in ("queued", "running") and analysis_id not in _RUNNING:
+            interrupted_at = _now()
+            trace = dict(analysis.trace)
+            trace["finished_at"] = interrupted_at
+            trace["steps"] = [
+                *trace.get("steps", []),
+                {"label": "分析中断", "status": "failed", "detail": "", "at": interrupted_at},
+            ]
+            error = "[REVISION_ANALYSIS_INTERRUPTED] 修订分析：分析已中断。建议：在对话里重新分析。"
+            return self.store.save(replace(
+                analysis, status="failed", updated_at=interrupted_at, trace=trace, error=error,
+            ))
         return analysis
 
     async def start(
@@ -320,7 +336,6 @@ class RevisionAnalysisService:
             created_at=_now(),
             updated_at=_now(),
         )
-        self.store.save(analysis)
         if self.provider_factory is None:
             raise WorkspaceError(
                 code="MODEL_UNAVAILABLE",
@@ -329,6 +344,7 @@ class RevisionAnalysisService:
                 fix="先在设置中完成模型连接与选择",
             )
         snapshot = self.provider_factory()
+        self.store.save(analysis)
         task = asyncio.create_task(
             self._run(analysis, detail, selected or sorted(detail.active_hunk_ids), snapshot)
         )
@@ -383,6 +399,7 @@ class RevisionAnalysisService:
             trace["reads"] = reads
             step("准备材料", detail_text=f"{len(reads)} 项")
             step("模型请求开始", status="running")
+            save(status="running", updated_at=_now())
             text = ""
             final: str | None = None
             async with aclosing(
@@ -478,6 +495,18 @@ class RevisionAnalysisService:
             ]
         )
         modules = self._module_catalog(focus)
+        module_entries = [
+            f"{module['label']} / {entry['title']}"
+            for module in modules
+            for entry in module["entries"]
+            if "body" in entry
+        ]
+        module_detail = (
+            f"{len(modules)} 个模块 · {sum(len(row['entries']) for row in modules)} 个条目"
+            if modules else "无"
+        )
+        if module_entries:
+            module_detail += f" · 已读取正文：{'、'.join(module_entries)}"
         reads = [
             {
                 "label": "正文修订",
@@ -493,13 +522,7 @@ class RevisionAnalysisService:
             },
             {
                 "label": "已装模块",
-                "detail": (
-                    f"{len(modules)} 个模块 · "
-                    f"{sum(len(row['entries']) for row in modules)} 个条目 · "
-                    f"{sum(len(row.get('bodies', [])) for row in modules)} 条含正文"
-                    if modules
-                    else "无"
-                ),
+                "detail": module_detail,
             },
         ]
         payload = {

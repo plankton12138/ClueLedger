@@ -68,6 +68,7 @@ def prose_draft_user_prompt(
     quote: str,
     note: str,
     continue_mode: bool,
+    style_section: str = "",
     redirected_to: int | None = None,
     target_chapter: int | None = None,
 ) -> str:
@@ -88,6 +89,8 @@ def prose_draft_user_prompt(
     parts = [task]
     if structure_text:
         parts.append(f"写作规则与结构（铁律在前，必须逐条遵守）：\n{structure_text}")
+    if style_section:
+        parts.append(style_section)
     if ledger_text:
         parts.append(f"正文台账（系统事实，只读；对账以它为准）：\n{ledger_text}")
     parts.append(f"本章已入账信息：{moves or '（无）'}")

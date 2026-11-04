@@ -3,7 +3,7 @@
  *
  * 作者保存过正文、或让模型改过稿后，对话输入框上方显示最近一次修订：来源、时间、
  * 改动处数，以及「查看差异」「让模型分析」。它不是临时提示——刷新后仍按当前章节
- * 重新读取，分析的运行日志与建议都在同一个抽屉里。
+ * 重新读取，分析的运行日志与建议显示在对话里。
  */
 
 import { useEffect, useState } from "react";
@@ -117,22 +117,6 @@ export default function RevisionReceipt({
         >
           让模型分析
         </Button>
-        <span className="flex-1" />
-        <button
-          type="button"
-          className="text-[10px] text-mute underline-offset-2 hover:underline"
-          onClick={() =>
-            open({
-              workspaceId,
-              chapterId: null,
-              revisionId: null,
-              tab: "style",
-              conversationId,
-            })
-          }
-        >
-          写作约定
-        </button>
       </div>
     </div>
   );

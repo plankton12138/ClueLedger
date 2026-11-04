@@ -38,7 +38,9 @@ import { useChatScroll } from "../chat/useChatScroll";
 import ConversationUsageBar from "./ConversationUsageBar";
 import { sourceTaskChapter } from "../../state/sourceLocation";
 import { useWorkspacePage } from "../../state/navigation";
+import { useRevisionPanelStore } from "../../state/revisions";
 import RevisionReceipt from "../chat/RevisionReceipt";
+import RevisionDrawer from "../writing/RevisionDrawer";
 import { Button } from "../ui/Button";
 
 function conversationLabel(item: Conversation, running: boolean): string {
@@ -57,7 +59,11 @@ interface CaptureTarget {
   y: number;
 }
 
-export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?: () => void }) {
+export default function ConversationPanel({ onBackToDetail, onRevise, chapterTitle = "" }: {
+  onBackToDetail?: () => void;
+  onRevise?: () => void;
+  chapterTitle?: string;
+}) {
   const page = useWorkspacePage();
   const currentWorkspaceId = useWorkspaceStore(state => state.currentId);
   const chapterId = page?.kind === "writing" && page.workspaceId === currentWorkspaceId
@@ -65,6 +71,11 @@ export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?:
     : null;
   const items = useConversationsStore((state) => state.items);
   const selectedId = useConversationsStore((state) => state.selectedId);
+  const revisionTarget = useRevisionPanelStore(state => state.target);
+  const openRevisionPanel = useRevisionPanelStore(state => state.open);
+  const closeRevisionPanel = useRevisionPanelStore(state => state.close);
+  const revisionPanel = revisionTarget?.workspaceId === currentWorkspaceId
+    && revisionTarget?.conversationId === selectedId ? revisionTarget : null;
   const entry = useConversationsStore(selectedEntry);
   const runningIds = useConversationsStore(useShallow((state) =>
     Object.keys(state.entries).filter((id) => state.entries[id]?.running),
@@ -384,6 +395,19 @@ export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?:
               )}
             </div>
           )}
+          {revisionPanel && currentWorkspaceId && (
+            <RevisionDrawer
+              key={`${currentWorkspaceId}:${selectedId}:${revisionPanel.chapterId}:${revisionPanel.revisionId}:${revisionPanel.tab}`}
+              workspaceId={currentWorkspaceId}
+              chapterId={revisionPanel.chapterId}
+              chapterTitle={chapterTitle}
+              initialTab={revisionPanel.tab}
+              initialRevisionId={revisionPanel.revisionId}
+              autoAnalyze={revisionPanel.autoAnalyze}
+              conversationId={selectedId}
+              onClose={closeRevisionPanel}
+            />
+          )}
         </div>
 
         {scroll.hasNew && (
@@ -403,6 +427,19 @@ export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?:
       )}
 
       <div className="chat-composer">
+        {currentWorkspaceId && page?.kind === "writing" && (
+          <div className="flex flex-wrap gap-1.5" aria-label="修订操作">
+            {chapterId && <>
+              <Button size="compact" disabled={!onRevise} onClick={onRevise}>修订本章</Button>
+              <Button size="compact" onClick={() => openRevisionPanel({
+                workspaceId: currentWorkspaceId, chapterId, revisionId: null, tab: "revisions", conversationId: selectedId,
+              })}>改动</Button>
+            </>}
+            <Button size="compact" onClick={() => openRevisionPanel({
+              workspaceId: currentWorkspaceId, chapterId: null, revisionId: null, tab: "style", conversationId: selectedId,
+            })}>写作约定</Button>
+          </div>
+        )}
         {error && (
           <div className="chat-error flex items-start gap-2">
             <span className="min-w-0 flex-1">{error}</span>

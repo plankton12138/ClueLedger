@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { History, List, MessageSquare, PanelRight, PenLine } from "lucide-react";
+import { List, MessageSquare, PanelRight } from "lucide-react";
 
 import { CHAT, SIDEBAR, useLayoutStore, writingLayout } from "../../state/layout";
 import { useWorkspaceStore } from "../../state/workspace";
@@ -28,7 +28,6 @@ import ChapterMarginIndex from "../writing/ChapterMarginIndex";
 import { useWritingStore } from "../../state/writing";
 import { STRUCTURE_PATH } from "../../api/structure";
 import EmptyWritingGuide from "../writing/EmptyWritingGuide";
-import RevisionDrawer from "../writing/RevisionDrawer";
 import { useRevisionPanelStore } from "../../state/revisions";
 
 const MODULE_REQUEST = "帮我判断这个故事还需要哪些长期资料，比如人物小传、故事背景；需要的话请创建并装入。";
@@ -60,8 +59,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const [directory, setDirectory] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
-  const revisionPanel = useRevisionPanelStore(state => state.target);
-  const openRevisionPanel = useRevisionPanelStore(state => state.open);
+  const [editingChapter, setEditingChapter] = useState<string | null>(null);
   const closeRevisionPanel = useRevisionPanelStore(state => state.close);
   const container = useRef<HTMLDivElement>(null);
   const previousWorkspace = useRef<string | null>(null);
@@ -101,7 +99,11 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       setCompactChat(true);
     }
   }, [book, compact, currentId]);
-  useEffect(() => { setIndexOpen(false); closeRevisionPanel(); }, [chapterId, closeRevisionPanel]);
+  useEffect(() => {
+    setIndexOpen(false);
+    setEditingChapter(null);
+    closeRevisionPanel();
+  }, [currentId, chapterId, closeRevisionPanel]);
   useEffect(() => {
     if (inlineIndexAvailable) setIndexOpen(false);
   }, [inlineIndexAvailable]);
@@ -209,7 +211,12 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     if (chapterId) {
       if (chapter) {
         if (!chapter.prose) return <div className="ui-empty" role="status"><p>这一章的正文文件缺失；刷新工作台后重新选择章节。</p></div>;
-        return <Paper file={file} openingPath={chapter.prose.path} fileLoading={fileLoading} busy={loading} chapterId={file?.path === chapter.prose.path ? chapterId : null} />;
+        return <Paper file={file} openingPath={chapter.prose.path} fileLoading={fileLoading} busy={loading}
+          chapterId={file?.path === chapter.prose.path ? chapterId : null}
+          onRevisionExit={editingChapter === chapterId ? () => {
+            setEditingChapter(null);
+            if (compact) setCompactChat(true);
+          } : undefined} />;
       }
       if (writingError) return <div className="writing-load-error"><StatusMessage tone="error" action={<Button size="compact" onClick={() => void refreshWorkbench(currentId, { chapterId })}>重试</Button>}>{writingError}</StatusMessage></div>;
       return <div className="ui-empty" role="status"><p>正在读取章节…</p></div>;
@@ -248,16 +255,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       {chapterId && hasIndex && !inlineIndexAvailable && <Button size="compact" variant={indexAuxiliary ? "primary" : "secondary"} aria-pressed={indexAuxiliary}
         onClick={toggleIndex} disabled={!hasIndex} disabledReason="这一章还没有索引">
         <PanelRight size={16} strokeWidth={2} aria-hidden="true" />本章信息
-      </Button>}
-      {chapterId && <Button size="compact" variant={revisionPanel?.tab === "revisions" ? "primary" : "secondary"}
-        aria-pressed={revisionPanel?.tab === "revisions"}
-        onClick={() => currentId && openRevisionPanel({ workspaceId: currentId, chapterId, revisionId: null, tab: "revisions" })}>
-        <History size={16} strokeWidth={2} aria-hidden="true" />改动
-      </Button>}
-      {currentId && <Button size="compact" variant={revisionPanel?.tab === "style" ? "primary" : "secondary"}
-        aria-pressed={revisionPanel?.tab === "style"}
-        onClick={() => openRevisionPanel({ workspaceId: currentId, chapterId: null, revisionId: null, tab: "style" })}>
-        <PenLine size={16} strokeWidth={2} aria-hidden="true" />写作约定
       </Button>}
       {compact && <Button size="compact" variant={chat ? "primary" : "secondary"} aria-pressed={chat} aria-controls="writing-chat"
         onClick={toggleChat} disabled={!currentId} disabledReason="先打开作品目录">
@@ -308,22 +305,15 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
         {chat && !compact && <ResizeHandle value={plan.chat} min={CHAT.min} max={Math.min(CHAT.max, width - plan.sidebar - plan.paperMin - (sidebar ? 12 : 6))}
           invert label="对话栏宽度" onChange={prefs.setChatWidth} onReset={() => prefs.setChatWidth(CHAT.default)} />}
         <div id="writing-chat" className="writing-chat module flex min-h-0 flex-col" hidden={!chat} style={{ width: compact ? "100%" : plan.chat }}>
-          <ConversationPanel onBackToDetail={undefined} />
+          <ConversationPanel
+            chapterTitle={chapter?.plan?.title ?? `第${(chapter?.plan?.order ?? 0) + 1}章`}
+            onRevise={chapterId && chapter?.prose && file?.path === chapter.prose.path && editingChapter !== chapterId ? () => {
+              setEditingChapter(chapterId);
+              if (compact) setCompactChat(false);
+            } : undefined}
+          />
         </div>
       </>}
     </div>
-    {revisionPanel && currentId && revisionPanel.workspaceId === currentId && (
-      <RevisionDrawer
-        key={`${revisionPanel.chapterId ?? "style"}:${revisionPanel.revisionId ?? "latest"}:${revisionPanel.tab}`}
-        workspaceId={currentId}
-        chapterId={revisionPanel.chapterId}
-        chapterTitle={chapter?.plan?.title ?? `第${(chapter?.plan?.order ?? 0) + 1}章`}
-        initialTab={revisionPanel.tab}
-        initialRevisionId={revisionPanel.revisionId}
-        autoAnalyze={revisionPanel.autoAnalyze}
-        conversationId={revisionPanel.conversationId}
-        onClose={closeRevisionPanel}
-      />
-    )}
   </div>;
 }

@@ -194,13 +194,13 @@ test("修订面板显示段落差异，写作约定可编辑保存", async ({ pa
 
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.locator(".writing-navigator").getByRole("button", { name: "第1章 · 雨夜", exact: true }).click();
-  // 对话输入框上方先出现修订回执；从回执打开同一个抽屉。
+  // 修订回执与差异都在同一条对话里。
   const receipt = page.locator(".chat-shell");
   await expect(receipt.getByRole("button", { name: "查看差异", exact: true })).toBeVisible();
   await expect(receipt.getByRole("button", { name: "让模型分析", exact: true })).toBeVisible();
   await shot(page, "10-revision-receipt");
   await receipt.getByRole("button", { name: "查看差异", exact: true }).click();
-  const drawer = page.getByRole("dialog", { name: "修订与写作约定" });
+  const drawer = receipt.getByRole("log", { name: "讨论内容" }).getByRole("region", { name: "修订与写作约定" });
   await expect(drawer).toBeVisible();
   await expect(drawer.getByText("作者修订", { exact: true })).toBeVisible();
   await expect(drawer.getByText(/林岚把杯沿转了半圈/)).toBeVisible();
@@ -216,9 +216,43 @@ test("修订面板显示段落差异，写作约定可编辑保存", async ({ pa
   await shot(page, "09-style-document");
   await page.reload();
   await page.getByRole("button", { name: "写作约定", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "修订与写作约定" }).getByRole("textbox")).toHaveValue(
+  await expect(drawer.getByRole("textbox")).toHaveValue(
     "- 写环境先写人物能感知的细节。\n",
   );
+
+  // 用确定性的分析结果验证前端跟随真实任务状态，刷新后通过修订详情恢复日志。
+  const analysis = {
+    id: "analysis-e2e",
+    status: "running",
+    summary: "这句台词暂时只影响当前场景。",
+    decisions: [],
+    trace: { reads: [{ label: "正文修订", detail: "读取 1 处差异" }], steps: [] },
+  };
+  let started = 0;
+  await page.route("**/story/revisions/*/analyses", async route => {
+    started += 1;
+    await route.fulfill({ json: analysis });
+  });
+  await page.route("**/story/revision-analyses/analysis-e2e", async route => {
+    await route.fulfill({ json: { ...analysis, status: "ready" } });
+  });
+  await page.route("**/story/revisions/*?conversation_id=*", async route => {
+    const response = await route.fetch();
+    const detail = await response.json();
+    await route.fulfill({ response, json: {
+      ...detail, latest_analysis: started ? { ...analysis, status: "ready" } : null,
+    } });
+  });
+  const analyze = receipt.getByRole("button", { name: "让模型分析", exact: true });
+  await analyze.click();
+  await expect(drawer.getByText("分析中…", { exact: true })).toBeVisible();
+  await expect(drawer.getByText(analysis.summary)).toBeVisible();
+  await drawer.getByText("查看运行日志", { exact: true }).click();
+  await expect(drawer.getByText("读取 1 处差异")).toBeVisible();
+  await page.reload();
+  await analyze.click();
+  await expect(drawer.getByText(analysis.summary)).toBeVisible();
+  expect(started).toBe(1);
 });
 
 test("稿纸修订模式：编辑、看差异、确认入稿，取消保留原文", async ({ page, request }) => {
@@ -250,7 +284,9 @@ test("稿纸修订模式：编辑、看差异、确认入稿，取消保留原�
   await page.locator(".writing-navigator").getByRole("button", { name: "第1章 · 夜航", exact: true }).click();
   await expect(page.getByText("林岚很紧张，她害怕许砚继续追问。")).toBeVisible();
 
-  await page.getByRole("button", { name: "修订", exact: true }).click();
+  const chat = page.locator(".chat-shell");
+  const revise = chat.getByRole("button", { name: "修订本章", exact: true });
+  await revise.click();
   const editor = page.getByRole("textbox", { name: "正文编辑" });
   await expect(editor).toBeVisible();
   await expect(editor).toHaveValue(`# 夜航\n\n${seed}`);
@@ -268,7 +304,7 @@ test("稿纸修订模式：编辑、看差异、确认入稿，取消保留原�
   await page.getByRole("button", { name: "确认修改", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
   await expect(page.getByText("林岚把杯沿转了半圈。「你刚才说到哪儿了？」")).toBeVisible();
-  const viewRevision = page.getByRole("button", { name: "查看修订", exact: true });
+  const viewRevision = chat.getByRole("button", { name: "查看差异", exact: true });
   await expect(viewRevision).toBeVisible();
   await shot(page, "13-revision-saved");
 
@@ -277,14 +313,14 @@ test("稿纸修订模式：编辑、看差异、确认入稿，取消保留原�
   expect(revisions.items[0].source).toBe("author");
 
   await viewRevision.click();
-  const drawer = page.getByRole("dialog", { name: "修订与写作约定" });
+  const drawer = chat.getByRole("log", { name: "讨论内容" }).getByRole("region", { name: "修订与写作约定" });
   await expect(drawer).toBeVisible();
   await expect(drawer.getByText("作者修订", { exact: true })).toBeVisible();
   await expect(drawer.getByText(/林岚把杯沿转了半圈/)).toBeVisible();
   await drawer.getByRole("button", { name: "关闭", exact: true }).click();
 
   // 取消保护：未确认的文字留在草稿里，取消需要二次确认；丢弃后正文保持确认过的版本。
-  await page.getByRole("button", { name: "修订", exact: true }).click();
+  await revise.click();
   await page.getByRole("textbox", { name: "正文编辑" }).fill(`${rewritten}\n又加了一段。\n`);
   await page.getByRole("button", { name: "取消", exact: true }).click();
   await expect(page.getByText("这次修改还没有入稿。取消会丢弃它。", { exact: true })).toBeVisible();
@@ -297,7 +333,7 @@ test("稿纸修订模式：编辑、看差异、确认入稿，取消保留原�
   await expect(page.getByText("又加了一段。")).toHaveCount(0);
 
   // 编辑期间正文被别处更新：确认时进入冲突，保留草稿，覆盖后仍是一次作者修订。
-  await page.getByRole("button", { name: "修订", exact: true }).click();
+  await revise.click();
   const mine = "# 夜航\n\n林岚没有回答，只把杯子放下。\n\n窗外的雨没有停。\n";
   await page.getByRole("textbox", { name: "正文编辑" }).fill(mine);
   const current = await request.get(`${base}/story/workbench?chapter_id=${chapter.chapter_id}`).then(r => r.json());

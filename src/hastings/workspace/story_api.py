@@ -539,7 +539,9 @@ def create_story_router(
         return {"chapter_id": chapter_id, "path": plan.prose_path, "items": items}
 
     @router.get("/{workspace_id}/story/revisions/{revision_id}")
-    def read_revision(workspace_id: str, revision_id: str) -> dict[str, Any]:
+    def read_revision(
+        workspace_id: str, revision_id: str, conversation_id: str | None = None
+    ) -> dict[str, Any]:
         """一次修订的完整差异；每个片段标明现在是否仍能在稿内确认。"""
         store = writing_store_for(workspace_id)
         workspace = workspaces.workspace(workspace_id)
@@ -563,12 +565,16 @@ def create_story_router(
             {**hunk.to_dict(), "active": hunk.id in detail.active_hunk_ids}
             for hunk in detail.hunks
         ]
+        analyses = RevisionAnalysisStore(store.root).list_for_revision(
+            revision_id, limit=1, conversation_id=conversation_id
+        )
         return {
             "revision": record.summary(),
             "hunks": hunks,
             "active_hunk_ids": sorted(detail.active_hunk_ids),
             "analyzable": detail.analyzable,
             "current_text_available": bool(current_text),
+            "latest_analysis": analyses[0].to_dict() if analyses else None,
         }
 
     @router.get("/{workspace_id}/story/style")

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 import pytest
@@ -19,10 +21,13 @@ from tau_agent.provider_events import AssistantDoneEvent, TextDeltaEvent
 
 
 class _FakeProvider:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, gate: Event | None = None) -> None:
         self.text = text
+        self.gate = gate
 
     async def stream_response(self, **_: Any) -> AsyncIterator[Any]:
+        if self.gate is not None:
+            await asyncio.to_thread(self.gate.wait, 5.0)
         yield TextDeltaEvent(
             content_index=0, delta=self.text, partial=AssistantMessage(content="")
         )
@@ -35,13 +40,14 @@ class _FakeProvider:
 class _Holder:
     def __init__(self) -> None:
         self.text = ""
+        self.gate: Event | None = None
 
     def __call__(self) -> ModelSnapshot:
         return ModelSnapshot(
             connection_id="test",
             display_name="测试连接",
             model="fake",
-            provider=_FakeProvider(self.text),
+            provider=_FakeProvider(self.text, self.gate),
         )
 
 
@@ -151,6 +157,7 @@ def test_analysis_returns_decisions_and_style_proposal(
     detail = client.get(f"{setup['base']}/revisions/{setup['revision_id']}").json()
     hunk_id = detail["hunks"][0]["id"]
     holder.text = _analysis_payload(hunk_id)
+    holder.gate = Event()
 
     started = client.post(
         f"{setup['base']}/revisions/{setup['revision_id']}/analyses",
@@ -163,9 +170,16 @@ def test_analysis_returns_decisions_and_style_proposal(
     )
     assert started.status_code == 200, started.text
     analysis_id = started.json()["id"]
+    analysis_url = f"{setup['base']}/revision-analyses/{analysis_id}"
+    try:
+        running = _wait(client, analysis_url, lambda row: bool(row["trace"].get("steps")))
+        assert running["status"] == "running"
+        assert running["trace"]["steps"][-1]["label"] == "模型请求开始"
+    finally:
+        holder.gate.set()
     ready = _wait(
         client,
-        f"{setup['base']}/revision-analyses/{analysis_id}",
+        analysis_url,
         lambda row: row["status"] in ("ready", "failed"),
     )
 
@@ -188,6 +202,11 @@ def test_analysis_returns_decisions_and_style_proposal(
         "解析判断",
     ]
     assert ready["trace"]["model"].startswith("测试连接")
+    url = f"{setup['base']}/revisions/{setup['revision_id']}"
+    restored = client.get(url, params={"conversation_id": "conv_1"}).json()
+    assert restored["latest_analysis"] == ready
+    other = client.get(url, params={"conversation_id": "conv_other"}).json()
+    assert other["latest_analysis"] is None
 
 
 def test_analysis_is_idempotent_for_same_request_key(

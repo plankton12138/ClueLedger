@@ -33,6 +33,7 @@ from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.story_models import FORMAT_VERSION, StoryVariant
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
+from hastings.workspace.style_io import read_style_state, style_partition
 from tau_agent.messages import UserMessage, message_text
 from tau_agent.provider_events import (
     AssistantDoneEvent,
@@ -126,7 +127,13 @@ class CreativeAssistService:
         )
         if candidate.status != "streaming" or candidate.candidate_id in _RUNNING:
             return candidate
-        system, prompt = self._prompt(request, variant, plan)
+        try:
+            system, prompt = self._prompt(request, variant, plan)
+        except WorkspaceError as exc:
+            await snapshot.aclose()
+            return self.candidates.update(
+                candidate.candidate_id, status="failed", error=exc.message
+            )
         task = asyncio.create_task(self._run(candidate, snapshot, system, prompt, request))
         _RUNNING[candidate.candidate_id] = task
         task.add_done_callback(lambda _: _RUNNING.pop(candidate.candidate_id, None))
@@ -401,10 +408,11 @@ class CreativeAssistService:
                 "不替作者决定真相或结局，也不要求作者填写任何字段。",
             )
         if request.kind in {"prose_draft", "prose_continue"}:
+            assert self.workspace is not None
+            style_section = style_partition(read_style_state(self.workspace).text).render()
             text = ""
             if plan is not None and plan.prose_path:
                 try:
-                    assert self.workspace is not None
                     text = self.workspace.read(plan.prose_path).text
                 except WorkspaceError:
                     text = ""
@@ -422,6 +430,7 @@ class CreativeAssistService:
                     quote=quote,
                     note=note,
                     continue_mode=request.kind == "prose_continue",
+                    style_section=style_section,
                     redirected_to=redirected,
                     target_chapter=target,
                 ),

@@ -182,6 +182,11 @@ export default function RevisionDrawer({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const autoStarted = useRef(false);
+  const panel = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    panel.current?.scrollIntoView({ block: "nearest" });
+  }, []);
 
   const loadStyle = useCallback(async () => {
     const document = await readStyle(workspaceId);
@@ -228,11 +233,13 @@ export default function RevisionDrawer({
     let cancelled = false;
     void (async () => {
       try {
-        const next = await readRevision(workspaceId, selected);
+        const next = await readRevision(workspaceId, selected, conversationId);
         if (!cancelled) {
           setDetail(next);
-          setAnalysis(null);
-          setChosen(new Set());
+          setAnalysis(next.latest_analysis);
+          setChosen(new Set(next.latest_analysis?.decisions.flatMap((decision, index) =>
+            decision.target === "style" && !decision.applied ? [index] : [],
+          )));
           setChosenStructure(new Set());
           setChosenModules(new Set());
           setNotice(null);
@@ -244,32 +251,37 @@ export default function RevisionDrawer({
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, selected]);
+  }, [workspaceId, selected, conversationId]);
 
   useEffect(() => {
     if (!analysis || (analysis.status !== "queued" && analysis.status !== "running")) return;
-    const timer = window.setTimeout(() => {
+    let active = true;
+    let timer: number;
+    function poll() {
+      if (!analysis) return;
       void readRevisionAnalysis(workspaceId, analysis.id)
         .then(next => {
+          if (!active) return;
           setAnalysis(next);
+          setError(null);
           if (next.status === "ready") {
             setChosen(new Set(next.decisions.map((_, index) => index).filter(
               index => next.decisions[index].target === "style",
             )));
           }
         })
-        .catch(exc => setError(errorMessage(exc, "修订")));
-    }, 900);
-    return () => window.clearTimeout(timer);
-  }, [analysis, workspaceId]);
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+        .catch(exc => {
+          if (!active) return;
+          setError(errorMessage(exc, "修订"));
+          timer = window.setTimeout(poll, 3000);
+        });
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    timer = window.setTimeout(poll, 900);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [analysis, workspaceId]);
 
   const activeHunks = useMemo(
     () => detail?.hunks.filter(hunk => hunk.active) ?? [],
@@ -417,9 +429,9 @@ export default function RevisionDrawer({
     ) ?? [];
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/30" role="dialog" aria-modal="true" aria-label="修订与写作约定">
-      <div className="flex h-full w-full max-w-3xl flex-col border-l border-[#cfc7ae] bg-[#fbf8ef] shadow-2xl">
-        <div className="flex flex-none items-center gap-3 border-b border-[#e2dbc6] px-4 py-3">
+    <section ref={panel} className="rounded-sm border border-[#cfc7ae] bg-[#fbf8ef]" aria-label="修订与写作约定">
+      <div className="flex min-w-0 flex-col">
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#e2dbc6] px-3 py-2">
           <h2 className="font-serif text-base font-bold text-sheetInk">
             {chapterId ? `修订 · ${chapterTitle}` : "写作约定"}
           </h2>
@@ -454,8 +466,8 @@ export default function RevisionDrawer({
         )}
 
         {tab === "revisions" ? (
-          <div className="flex min-h-0 flex-1">
-            <aside className="w-56 flex-none overflow-auto border-r border-[#e2dbc6] px-2 py-3">
+          <div>
+            <aside className="max-h-32 overflow-auto border-b border-[#e2dbc6] px-2 py-2">
               {items.length === 0 ? (
                 <p className="px-2 text-xs leading-6 text-[#8a8267]">
                   这一章还没有可分析的改稿。亲手改一段正文，或用对话让模型改完并保存后，这里会出现记录。
@@ -466,7 +478,13 @@ export default function RevisionDrawer({
                     <li key={item.id}>
                       <button
                         type="button"
-                        onClick={() => setSelected(item.id)}
+                        disabled={busy !== null}
+                        onClick={() => {
+                          if (item.id === selected) return;
+                          setDetail(null);
+                          setAnalysis(null);
+                          setSelected(item.id);
+                        }}
                         className={`w-full rounded-sm px-2 py-2 text-left text-xs ${
                           selected === item.id ? "bg-[#e6ddc4]" : "hover:bg-[#f1ead7]"
                         }`}
@@ -485,7 +503,7 @@ export default function RevisionDrawer({
               )}
             </aside>
 
-            <div className="min-w-0 flex-1 overflow-auto px-4 py-4 text-xs text-[#4b4737]">
+            <div className="min-w-0 px-3 py-3 text-xs text-[#4b4737]">
               {!detail ? (
                 <p className="text-[#8a8267]">{busy ?? "选择一次修订查看差异。"}</p>
               ) : (
@@ -500,7 +518,7 @@ export default function RevisionDrawer({
                       size="compact"
                       variant="primary"
                       onClick={() => void analyze()}
-                      disabled={!detail.analyzable || busy !== null}
+                      disabled={!detail.analyzable || busy !== null || analysis?.status === "queued" || analysis?.status === "running"}
                       disabledReason="这次改动已不在当前正文里"
                     >
                       让模型分析
@@ -522,7 +540,7 @@ export default function RevisionDrawer({
                     <section className="mt-5 rounded-sm border border-[#d8cfb2] bg-[#fffdf6] p-3">
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold text-[#4b4737]">模型判断</h3>
-                        <span className="text-[11px] text-[#8a8267]">
+                        <span role="status" className="text-[11px] text-[#8a8267]">
                           {analysis.status === "ready"
                             ? "已完成"
                             : analysis.status === "failed"
@@ -769,7 +787,7 @@ export default function RevisionDrawer({
               整份写作约定都会进入每次正文生成。只写可执行的规则；一次换景或单处改句通常不足以成为全书规则。
             </p>
             <textarea
-              className="mt-2 min-h-0 flex-1 resize-none rounded-sm border border-[#d8cfb2] bg-[#fffdf6] p-3 font-mono text-[13px] leading-7 text-[#4b4737] outline-none"
+              className="mt-2 min-h-44 resize-y rounded-sm border border-[#d8cfb2] bg-[#fffdf6] p-3 font-mono text-[13px] leading-7 text-[#4b4737] outline-none"
               value={styleDraft}
               onChange={event => {
                 setStyleDraft(event.target.value);
@@ -803,6 +821,6 @@ export default function RevisionDrawer({
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }

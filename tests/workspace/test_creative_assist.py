@@ -26,11 +26,13 @@ from tau_agent.provider_events import AssistantDoneEvent, TextDeltaEvent
 
 
 class _FakeProvider:
-    def __init__(self, text: str, *, delay: float = 0.0) -> None:
+    def __init__(self, text: str, *, delay: float = 0.0, prompts: list[str]) -> None:
         self.text = text
         self.delay = delay
+        self.prompts = prompts
 
-    async def stream_response(self, **_: Any) -> AsyncIterator[Any]:
+    async def stream_response(self, **request: Any) -> AsyncIterator[Any]:
+        self.prompts.append(request["messages"][0].content)
         for char in self.text:
             if self.delay:
                 await asyncio.sleep(self.delay)
@@ -60,11 +62,15 @@ class _Holder:
         self.delay = 0.0
         self.fail = False
         self.raise_factory = False
+        self.prompts: list[str] = []
 
     def __call__(self) -> ModelSnapshot:
         if self.raise_factory:
             raise RuntimeError("没有可用模型")
-        provider = _FailingProvider() if self.fail else _FakeProvider(self.text, delay=self.delay)
+        provider = (
+            _FailingProvider() if self.fail
+            else _FakeProvider(self.text, delay=self.delay, prompts=self.prompts)
+        )
         return ModelSnapshot(
             connection_id="test",
             display_name="测试连接",
@@ -171,6 +177,41 @@ def test_assist_streams_and_is_idempotent(
     assert again.status_code == 202, again.text
     assert again.json()["candidate_id"] == candidate["candidate_id"]
     assert again.json()["status"] == "ready"
+
+
+@pytest.mark.parametrize("kind", ["prose_draft", "prose_continue"])
+def test_prose_assist_sends_full_style_document(
+    client: TestClient, tmp_path: Path, holder: _Holder, kind: str
+) -> None:
+    setup = _setup_chapter(client, tmp_path)
+    style = "- 用动作呈现紧张。\n- 保留人物说话的停顿。"
+    (setup["root"] / "STYLE.md").write_text(style, encoding="utf-8")
+    holder.text = (
+        "她搁下杯子。\n\n### 自查\n"
+        "1. 必发生核对：她搁下杯子。\n"
+        "2. 铁律自查：符合。\n"
+        "3. 读者认知：可以补一处停顿。"
+    )
+    url = f"/api/file-workspaces/{setup['workspace_id']}/creative-assists"
+    payload = {
+        "kind": kind,
+        "target": {"kind": "prose", "chapter_id": setup["chapter_id"]},
+        "base": {"plan_revision": setup["plan_revision"], "prose_digest": setup["prose_digest"]},
+        "request_key": "assist-style",
+    }
+    started = client.post(url, json=payload)
+    assert started.status_code == 202, started.text
+    candidate = started.json()
+    _wait_for(client, f"{url}/{candidate['candidate_id']}", lambda row: row["status"] == "ready")
+    assert len(holder.prompts) == 1
+    assert style in holder.prompts[0]
+
+    (setup["root"] / "STYLE.md").write_text("长" * 6500, encoding="utf-8")
+    failed = client.post(url, json={**payload, "request_key": "assist-style-overflow"})
+    assert failed.status_code == 202, failed.text
+    assert failed.json()["status"] == "failed"
+    assert "STYLE_CONTEXT_TOO_LARGE" in failed.json()["error"]
+    assert len(holder.prompts) == 1
 
 
 def test_assist_stale_base_and_unavailable_model(
@@ -326,7 +367,7 @@ def test_recovery_marks_interrupted_generation_and_index(tmp_path: Path) -> None
         workspace=None,
         candidates=candidates,
         provider_factory=lambda: ModelSnapshot(
-            connection_id="", display_name="", model="", provider=_FakeProvider("")
+            connection_id="", display_name="", model="", provider=_FakeProvider("", prompts=[])
         ),
         workspace_id="",
     )

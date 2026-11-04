@@ -8,10 +8,9 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, History, Info, PenLine } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 
 import { saveReadingPosition, type FileView } from "../../api/workspace";
-import { listRevisions } from "../../api/revisions";
 import { errorMessage } from "../../api/errors";
 import { FONT_SCALE, useLayoutStore } from "../../state/layout";
 import { navigate } from "../../state/navigation";
@@ -20,7 +19,6 @@ import { useSourceLocationStore } from "../../state/sourceLocation";
 import { useDiscussionFocusStore } from "../../state/discussionContext";
 import { useWorkspaceStore } from "../../state/workspace";
 import { useWritingStore, writingDraftKey } from "../../state/writing";
-import { useRevisionPanelStore } from "../../state/revisions";
 import RevisionEditor from "../writing/RevisionEditor";
 import { Button } from "../ui/Button";
 import { RawSourceHighlight, sourceHighlightPlugin, sourceRange } from "../clues/SourceHighlight";
@@ -38,9 +36,10 @@ interface Props {
   busy: boolean;
   /** 当前正文对应的章节；只有章节正文可以进入修订模式。 */
   chapterId?: string | null;
+  onRevisionExit?: () => void;
 }
 
-export default function Paper({ file, openingPath, fileLoading, busy, chapterId = null }: Props) {
+export default function Paper({ file, openingPath, fileLoading, busy, chapterId = null, onRevisionExit }: Props) {
   const workspaceId = useWorkspaceStore(state => state.currentId);
   const chapters = useWorkspaceStore(state => state.catalog.chapters);
   const openPath = useWorkspaceStore(state => state.openPath);
@@ -66,23 +65,6 @@ export default function Paper({ file, openingPath, fileLoading, busy, chapterId 
   const draft = useWritingStore(state =>
     workspaceId && chapterId ? state.drafts[writingDraftKey(workspaceId, chapterId)] : undefined,
   );
-  const openRevisionPanel = useRevisionPanelStore(state => state.open);
-  const [editing, setEditing] = useState(false);
-  const [latestRevision, setLatestRevision] = useState<string | null>(null);
-
-  useEffect(() => {
-    setEditing(false);
-    setLatestRevision(null);
-  }, [file?.path]);
-
-  useEffect(() => {
-    if (!workspaceId || !chapterId) return;
-    let cancelled = false;
-    void listRevisions(workspaceId, chapterId)
-      .then(page => { if (!cancelled) setLatestRevision(page.items[0]?.id ?? null); })
-      .catch(() => { if (!cancelled) setLatestRevision(null); });
-    return () => { cancelled = true; };
-  }, [workspaceId, chapterId, file?.digest]);
 
   function readChapter(path: string) {
     const source = useSourceLocationStore.getState();
@@ -192,35 +174,8 @@ export default function Paper({ file, openingPath, fileLoading, busy, chapterId 
         <Button size="compact" aria-label="下一章" title={next?.display_title ?? "没有下一章"} disabled={!next || busy || waiting} onClick={() => next && readChapter(next.path)}><ChevronRight aria-hidden="true" size={18} /></Button>
       </div>
       <h2 title={title}>{title}</h2>
-      {chapterId && !waiting && (
-        <div className="paper-revise-actions">
-          {!editing && (
-            <Button
-              size="compact"
-              onClick={() => setEditing(true)}
-              disabled={!draft}
-              disabledReason="正文还在读取"
-            >
-              <PenLine size={15} strokeWidth={2} aria-hidden="true" />修订
-            </Button>
-          )}
-          {!editing && latestRevision && (
-            <Button
-              size="compact"
-              onClick={() => workspaceId && openRevisionPanel({
-                workspaceId,
-                chapterId,
-                revisionId: latestRevision,
-                tab: "revisions",
-              })}
-            >
-              <History size={15} strokeWidth={2} aria-hidden="true" />查看修订
-            </Button>
-          )}
-          {!editing && draft?.dirty && draft.confirmRequired && (
-            <span className="revision-pending" role="status">有未入稿的修订</span>
-          )}
-        </div>
+      {chapterId && !waiting && !onRevisionExit && draft?.dirty && draft.confirmRequired && (
+        <span className="revision-pending" role="status">有未入稿的修订</span>
       )}
       <CharacterBadges roles={roles} />
       <div className="paper-reading-tools" aria-label="阅读设置">
@@ -235,13 +190,12 @@ export default function Paper({ file, openingPath, fileLoading, busy, chapterId 
     {!waiting && positionError && <p role="status" className="text-xs text-amber">{positionError}</p>}
     {waiting ? <div className="paper-sheet grid min-h-0 flex-1 place-items-center rounded-sm" role="status">
       <p className="text-sm text-[#8a8371]">正在读取文章…</p>
-    </div> : editing && chapterId && workspaceId ? <RevisionEditor
+    </div> : onRevisionExit && chapterId && workspaceId ? <RevisionEditor
       workspaceId={workspaceId}
       chapterId={chapterId}
-      onExit={() => setEditing(false)}
-      onSaved={revisionId => {
-        if (revisionId) setLatestRevision(revisionId);
-        setEditing(false);
+      onExit={onRevisionExit}
+      onSaved={() => {
+        onRevisionExit();
         // 入稿后重新读取正文，阅读态立即显示确认后的文字。
         if (file) void useWorkspaceStore.getState().openPath(file.path);
       }}

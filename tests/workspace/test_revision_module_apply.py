@@ -201,6 +201,8 @@ def test_module_decision_applies_as_workspace_revision(
     ready = _ready_analysis(setup, holder)
 
     assert ready.status == "ready", ready.error
+    module_read = next(row for row in ready.trace["reads"] if row["label"] == "已装模块")
+    assert "主角团 / 林岚" in module_read["detail"]
     decision = ready.decisions[0]
     assert decision.target == "module_entry"
     assert decision.patch_error == ""

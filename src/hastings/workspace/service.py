@@ -2976,7 +2976,9 @@ class TurnService:
                 # 写作约定只在会生成或改写正文的一轮注入；普通讨论与结构设计不装。
                 style_text = ""
                 style_digest = ""
-                if mode == "write" and (run.story is None or run.story.purpose == "write"):
+                if mode == "write" and (
+                    run.story is None or run.story.purpose in ("write", "revise")
+                ):
                     style_state = read_style_state(self.workspace)
                     style_text = style_state.text
                     style_digest = style_state.digest or ""

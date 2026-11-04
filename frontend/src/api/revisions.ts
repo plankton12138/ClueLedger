@@ -55,6 +55,7 @@ export interface RevisionDetail {
   active_hunk_ids: string[];
   analyzable: boolean;
   current_text_available: boolean;
+  latest_analysis: RevisionAnalysis | null;
 }
 
 export interface AnalysisDecision {
@@ -129,8 +130,11 @@ export function listRevisions(
   return request(`/${workspaceId}/story/chapters/${chapterId}/revisions`);
 }
 
-export function readRevision(workspaceId: string, revisionId: string): Promise<RevisionDetail> {
-  return request(`/${workspaceId}/story/revisions/${revisionId}`);
+export function readRevision(
+  workspaceId: string, revisionId: string, conversationId: string | null,
+): Promise<RevisionDetail> {
+  const query = new URLSearchParams({ conversation_id: conversationId ?? "" });
+  return request(`/${workspaceId}/story/revisions/${revisionId}?${query}`);
 }
 
 export function startRevisionAnalysis(

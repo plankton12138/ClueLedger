@@ -177,6 +177,22 @@ def test_explicit_prose_request_switches_design_turn_to_candidate_flow(
     assert operation is not None
 
 
+def test_explicit_revision_sends_full_style_document(tmp_path: Path) -> None:
+    provider = RoutingProvider([_text_turn("我来改写这段。")])
+    service, workspace = _service(tmp_path, provider)
+    (workspace.root / "STRUCTURE.md").write_text("## 铁律\n不写超自然力量", encoding="utf-8")
+    style = "- 优先用动作呈现紧张。\n- 保留人物说话的停顿。"
+    (workspace.root / "STYLE.md").write_text(style, encoding="utf-8")
+
+    async def scenario() -> None:
+        context = ContextRequest(story=StoryRequest(variant_id=MAIN_VARIANT_ID, purpose="revise"))
+        info = await service.accept("改写第一章的对白", "k-revise-style", context=context)
+        await service.wait(info.turn_id)
+
+    asyncio.run(scenario())
+    assert style in provider.requests[0]["system"]
+
+
 @pytest.mark.parametrize(
     ("text", "selected_path", "expected"),
     [
@@ -316,7 +332,7 @@ def test_structure_task_hides_module_writes_and_sends_empty_plan(tmp_path: Path)
     assert "prepare_module_changes" not in request["tools"]
     assert "apply_module_changes" not in request["tools"]
     # v1.2 起只以 STRUCTURE.md 判定是否已起步；旧构思节点不能替代全局结构文件。
-    assert "STRUCTURE.md 是唯一全局语义提示" in request["system"]
+    assert "STRUCTURE.md 记录全书结构和叙事约束" in request["system"]
     story_event = next(event for event in events if event["type"] == "story_context")
     assert story_event["revision"] == seeded_revision
     assert story_event["intent"]["kind"] == "structure"

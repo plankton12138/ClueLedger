@@ -88,7 +88,7 @@ from hastings.workspace.materials import (
 )
 from hastings.workspace.metadata import ROLE_LABELS
 from hastings.workspace.state_store import state_chapter
-from hastings.workspace.style_io import STYLE_INJECT_BUDGET
+from hastings.workspace.style_io import style_partition
 from hastings.workspace.timeline import TimelineStore, build_timeline, timeline_section
 
 __all__ = [
@@ -381,25 +381,7 @@ def build_assembled_context(
         )
     if profile == "writer" and style.strip():
         # 作者的写作约定紧跟全书结构，整份装入：规则不截断，装不下时在发送前报错。
-        style_part = Partition(
-            key="style",
-            title=PARTITION_TITLES["style"],
-            text=style,
-            budget=STYLE_INJECT_BUDGET,
-            required=True,
-        )
-        if style_part.size > STYLE_INJECT_BUDGET:
-            raise WorkspaceError(
-                code="STYLE_CONTEXT_TOO_LARGE",
-                where="context.style",
-                why=(
-                    f"写作约定渲染后需要 {style_part.size} 字符，"
-                    f"超出本轮可用预算 {STYLE_INJECT_BUDGET}"
-                ),
-                fix="缩短写作约定或减少本轮引用材料后重试；规则不会被静默截断",
-                details={"chars": style_part.size, "budget": STYLE_INJECT_BUDGET},
-            )
-        parts.append(style_part)
+        parts.append(style_partition(style))
     if profile in ("writer", "review") and modules.strip():
         # 只列已装实例与精确版本；条目正文仍要按需读取。索引任务不装这一块。
         parts.append(

@@ -85,7 +85,7 @@ def startup_conversation_prompt(mode: StartupMode) -> tuple[str, str]:
             "STRUCTURE.md；不要要求作者填写结构字段或进行额外确认。"
         )
     system = (
-        "你是线簿的写作模型。对话是唯一创作入口，STRUCTURE.md 是唯一全局语义提示。"
+        "你是线簿的写作模型。STRUCTURE.md 记录全书结构和叙事约束，STYLE.md 记录作者的写作约定。"
         + opening
         + "不确定的内容保持未知，不替作者决定其明确保留的真相或结局。"
     )

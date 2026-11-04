@@ -13,7 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from hastings.workspace.assembly import STYLE_INJECT_BUDGET
+from hastings.prompts.sections import PARTITION_TITLES
+from hastings.workspace.assembly import STYLE_INJECT_BUDGET, Partition
 from hastings.workspace.atomic_io import atomic_write_bytes
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import (
@@ -30,6 +31,7 @@ __all__ = [
     "STYLE_PATH",
     "StyleState",
     "read_style_state",
+    "style_partition",
     "write_style_document",
 ]
 
@@ -48,6 +50,26 @@ class StyleState:
 
 def _target(workspace: Workspace) -> Path:
     return Path(workspace.root) / STYLE_PATH
+
+
+def style_partition(text: str) -> Partition:
+    """为正文生成保留完整的写作约定，并按渲染后的大小校验。"""
+    part = Partition(
+        key="style",
+        title=PARTITION_TITLES["style"],
+        text=text,
+        budget=STYLE_INJECT_BUDGET,
+        required=True,
+    )
+    if part.size > part.budget:
+        raise WorkspaceError(
+            code="STYLE_CONTEXT_TOO_LARGE",
+            where="context.style",
+            why=f"写作约定渲染后需要 {part.size} 字符，超出预算 {part.budget}",
+            fix="缩短写作约定后重试",
+            details={"chars": part.size, "budget": part.budget},
+        )
+    return part
 
 
 def read_style_state(workspace: Workspace) -> StyleState:
