@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
+from hastings.workspace.revision_analysis import AnalysisDecision, _style_after
 from hastings.workspace.state import RecentWorkspaces
 from tau_agent.messages import AssistantMessage
 from tau_agent.provider_events import AssistantDoneEvent, TextDeltaEvent
@@ -448,6 +449,59 @@ def test_structure_patch_with_ambiguous_anchor_is_disabled(
     )
     assert rejected.status_code == 400, rejected.text
     assert rejected.json()["error"]["code"] == "REVISION_APPLICATION_INVALID"
+
+
+def _style_decision(proposal: str) -> AnalysisDecision:
+    return AnalysisDecision(
+        hunk_ids=["hunk_1"],
+        target="style",
+        reason="作者调整了可复用的表达方式。",
+        proposal=proposal,
+    )
+
+
+def test_style_rules_merge_into_one_generated_section() -> None:
+    current = (
+        "# 写作约定\n\n"
+        "## 从改稿归纳\n\n"
+        "- 1. 对白收尾不用格言式比喻。\n"
+        "- 已有的规则。\n\n"
+        "## 视角\n"
+        "- 只写人物能感知的细节。\n\n"
+        "## 从改稿归纳\n\n"
+        "- 2. 同一章只点题一次。\n"
+    )
+
+    merged = _style_after(
+        current,
+        [
+            _style_decision(
+                "## 从改稿归纳\n已有的规则。\n对白收尾不用格言式比喻\n对白保留口语的停顿与语气。"
+            )
+        ],
+    )
+
+    assert merged.count("## 从改稿归纳") == 1
+    assert merged.count("已有的规则。") == 1
+    assert merged.count("对白收尾不用格言式比喻") == 1
+    assert "- 2. 同一章只点题一次。" in merged
+    assert "- 对白保留口语的停顿与语气。" in merged
+    assert merged.index("- 2. 同一章只点题一次。") < merged.index("- 对白保留口语的停顿与语气。")
+    assert "## 视角\n- 只写人物能感知的细节。" in merged
+
+
+def test_style_rules_append_to_existing_section_without_changing_author_sections() -> None:
+    current = "# 写作约定\n\n## 视角\n- 只写人物能感知的细节。\n"
+
+    merged = _style_after(current, [_style_decision("人物回避追问时，先用动作再开口。")])
+
+    assert merged == (
+        "# 写作约定\n\n"
+        "## 视角\n"
+        "- 只写人物能感知的细节。\n\n"
+        "## 从改稿归纳\n\n"
+        "- 人物回避追问时，先用动作再开口。\n"
+    )
 
 
 def test_structure_apply_rejects_changed_baseline(

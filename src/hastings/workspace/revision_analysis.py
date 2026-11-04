@@ -70,6 +70,8 @@ _SYSTEM = (
     "8. target=module_entry 时必须给出 module_id、revision_id、entry_id、entry_digest，"
     "以及 patch_find 与 patch_replace；patch_find 只能从该条目的 body 逐字复制，且只出现一次。"
     "没有提供 body 的条目不要提出修改。\n"
+    "9. target=style 时，proposal 只写可执行规则，不要带章节标题；先对照 current_style，"
+    "已有规则覆盖这次改动时不要重复提出。\n"
 )
 
 
@@ -542,7 +544,10 @@ class RevisionAnalysisService:
                         "target": "style | structure | module_entry | chapter_only",
                         "reason": "依据必须引用具体改动或现有资料",
                         "evidence": "引用的现有规则或条目原文，可为空",
-                        "proposal": "建议写入的一到三条规则；chapter_only 留空",
+                        "proposal": (
+                            "建议写入的一到三条可执行规则；不要重复 current_style，"
+                            "不要带章节标题；chapter_only 留空"
+                        ),
                         "target_label": "可读目标名，例如「林岚」或「第七章计划」",
                         "module_id": "",
                         "revision_id": "",
@@ -759,24 +764,92 @@ def _checked_structure_patch(
     return decision
 
 
-def _style_after(current: str, decisions: list[AnalysisDecision]) -> str:
-    """把 style 建议追加到现有约定之后；已有同一条规则时不重复。"""
-    base = current.rstrip("\n")
-    lines = [line.strip() for line in base.splitlines() if line.strip()]
-    added: list[str] = []
-    for decision in decisions:
-        if decision.target != "style":
+_STYLE_SECTION = "## 从改稿归纳"
+_HEADING = re.compile(r"^#{1,6}\s")
+_RULE_PREFIX = re.compile(r"^(?:(?:[-*+]\s+|\d+[.、)]\s*|[（(]\d+[）)]\s*))+")
+
+
+def _rule_key(line: str) -> str:
+    """比较规则是否重复时忽略列表符号、编号和句末标点。"""
+    return _RULE_PREFIX.sub("", line.strip()).strip().rstrip("。；;，,")
+
+
+def _merge_style_section(base: str, additions: list[str]) -> str:
+    """把多次归纳收进同一个区块，保留作者自己的其它章节。"""
+    lines = base.splitlines()
+    blocks: list[tuple[int, int]] = []
+    index = 0
+    while index < len(lines):
+        if lines[index].strip() != _STYLE_SECTION:
+            index += 1
             continue
+        start = index
+        index += 1
+        while index < len(lines) and not _HEADING.match(lines[index].strip()):
+            index += 1
+        blocks.append((start, index))
+
+    if not blocks:
+        body_text = "\n".join(additions)
+        return (
+            f"{base}\n\n{_STYLE_SECTION}\n\n{body_text}"
+            if base
+            else f"{_STYLE_SECTION}\n\n{body_text}"
+        )
+
+    merged: list[str] = []
+    for start, block_end in blocks:
+        body_lines = lines[start + 1 : block_end]
+        while body_lines and not body_lines[0].strip():
+            body_lines = body_lines[1:]
+        while body_lines and not body_lines[-1].strip():
+            body_lines = body_lines[:-1]
+        if body_lines and merged:
+            merged.append("")
+        merged.extend(body_lines)
+    if merged and additions:
+        merged.append("")
+    merged.extend(additions)
+
+    block_ends = dict(blocks)
+    rebuilt: list[str] = []
+    index = 0
+    inserted = False
+    while index < len(lines):
+        skip_to = block_ends.get(index)
+        if skip_to is None:
+            rebuilt.append(lines[index])
+            index += 1
+            continue
+        if not inserted:
+            rebuilt.extend([_STYLE_SECTION, "", *merged, ""])
+            inserted = True
+        index = skip_to
+    return "\n".join(rebuilt).rstrip("\n")
+
+
+def _style_after(current: str, decisions: list[AnalysisDecision]) -> str:
+    """把已选规则合并进唯一的改稿归纳区块，保留原有组织与不同规则。"""
+    base = current.rstrip("\n")
+    style_decisions = [decision for decision in decisions if decision.target == "style"]
+    if not style_decisions:
+        return base
+    seen = {
+        _rule_key(line)
+        for line in base.splitlines()
+        if line.strip() and not _HEADING.match(line.strip())
+    }
+    added: list[str] = []
+    for decision in style_decisions:
         for line in decision.proposal.splitlines():
             clean = line.strip()
-            if not clean:
+            if not clean or _HEADING.match(clean):
                 continue
-            clean = clean if clean.startswith(("-", "*")) else f"- {clean}"
-            if clean.lstrip("-* ").strip() in {item.lstrip("-* ").strip() for item in lines}:
+            clean = clean if clean.startswith(("-", "*", "+")) else f"- {clean}"
+            key = _rule_key(clean)
+            if not key or key in seen:
                 continue
-            if clean in added:
-                continue
-            added.append(clean)
-    if not added:
-        return base
-    return "\n".join([base, "", "## 从改稿归纳", *added]).strip() + "\n"
+            seen.add(key)
+            added.append("- " + clean.lstrip("-*+ ").strip())
+    merged = _merge_style_section(base, added)
+    return f"{merged}\n" if merged else ""
