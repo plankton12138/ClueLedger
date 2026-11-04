@@ -800,8 +800,7 @@ async def test_new_chapter_can_be_corrected_in_same_turn(tmp_path: Path) -> None
     edited = await _call(
         tools["edit_file"],
         path=_CHAPTER,
-        old_text="十三个人",
-        new_text="十四个人",
+        edits=[{"old_text": "十三个人", "new_text": "十四个人"}],
         digest=written["digest"],
     )
     rewritten = await _call(

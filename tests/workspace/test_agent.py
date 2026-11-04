@@ -164,8 +164,7 @@ async def test_revoked_generation_cannot_write_after_baseline_is_prepared(tmp_pa
         await _call(
             tools["edit_file"],
             path=path,
-            old_text="初稿。",
-            new_text="迟到的改动。",
+            edits=[{"old_text": "初稿。", "new_text": "迟到的改动。"}],
             digest=created["digest"],
         )
     assert caught.value.code == "OPERATION_PAUSED_CONFLICT"
@@ -183,8 +182,7 @@ async def test_edit_file_replaces_unique_text(tmp_path: Path) -> None:
     edited = await _call(
         tools["edit_file"],
         path="正文/0001 雨夜.md",
-        old_text="侦探抵达旅馆。",
-        new_text="侦探在深夜抵达旅馆。",
+        edits=[{"old_text": "侦探抵达旅馆。", "new_text": "侦探在深夜抵达旅馆。"}],
         digest=created["digest"],
     )
 
@@ -204,8 +202,7 @@ async def test_edit_file_rejects_missing_or_ambiguous_text(tmp_path: Path) -> No
         await _call(
             tools["edit_file"],
             path="正文/0001 雨夜.md",
-            old_text="他来了。",
-            new_text="她来了。",
+            edits=[{"old_text": "他来了。", "new_text": "她来了。"}],
             digest=created["digest"],
         )
     assert _code(ambiguous) == "EDIT_MATCH_AMBIGUOUS"
@@ -215,8 +212,7 @@ async def test_edit_file_rejects_missing_or_ambiguous_text(tmp_path: Path) -> No
         await _call(
             tools["edit_file"],
             path="正文/0001 雨夜.md",
-            old_text="从未出现的句子。",
-            new_text="改。",
+            edits=[{"old_text": "从未出现的句子。", "new_text": "改。"}],
             digest=created["digest"],
         )
     assert _code(missing) == "EDIT_MATCH_NOT_FOUND"
@@ -236,12 +232,93 @@ async def test_edit_file_rejects_stale_digest(tmp_path: Path) -> None:
         await _call(
             tools["edit_file"],
             path="正文/0001 雨夜.md",
-            old_text="原稿。",
-            new_text="改写。",
+            edits=[{"old_text": "原稿。", "new_text": "改写。"}],
             digest=created["digest"],
         )
     assert _code(stale) == "CONTEXT_SOURCE_STALE_CONFLICT"
     assert "外部新增" in (workspace.root / "正文/0001 雨夜.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.anyio
+async def test_edit_file_applies_batch_in_one_call(tmp_path: Path) -> None:
+    """同一批校订就是一次调用：多处替换一起提交，不按每处一次请求模型。"""
+    workspace, tools, _ = _setup(tmp_path)
+    await _grant(tools, "正文/0001 雨夜.md")
+    created = await _call(
+        tools["write_file"],
+        path="正文/0001 雨夜.md",
+        text="# 雨夜\n\n你认识?\n\n几点开回去?\n\n他来了。\n",
+    )
+
+    edited = await _call(
+        tools["edit_file"],
+        path="正文/0001 雨夜.md",
+        edits=[
+            {"old_text": "你认识?", "new_text": "你认识？"},
+            {"old_text": "几点开回去?", "new_text": "几点开回去？"},
+            {"old_text": "他来了。", "new_text": "他走了。"},
+        ],
+        digest=created["digest"],
+    )
+
+    assert edited["edits"] == 3
+    assert edited["digest"] != created["digest"]
+    text = workspace.read("正文/0001 雨夜.md").text
+    assert "你认识？" in text and "几点开回去？" in text and "他走了。" in text
+    assert "?" not in text
+
+
+@pytest.mark.anyio
+async def test_edit_file_batch_is_atomic_when_one_edit_fails(tmp_path: Path) -> None:
+    """一条对不上就整批不生效：前一条不能先落盘，文件与指纹保持原样。"""
+    workspace, tools, _ = _setup(tmp_path)
+    await _grant(tools, "正文/0001 雨夜.md")
+    original = "# 雨夜\n\n你认识?\n\n他来了。\n\n他来了。\n"
+    created = await _call(tools["write_file"], path="正文/0001 雨夜.md", text=original)
+
+    with pytest.raises(WorkspaceError) as missing:
+        await _call(
+            tools["edit_file"],
+            path="正文/0001 雨夜.md",
+            edits=[
+                {"old_text": "你认识?", "new_text": "你认识？"},
+                {"old_text": "从未出现的句子。", "new_text": "改。"},
+            ],
+            digest=created["digest"],
+        )
+    assert _code(missing) == "EDIT_MATCH_NOT_FOUND"
+    assert missing.value.details["edit_index"] == 1
+    assert workspace.read("正文/0001 雨夜.md").text == original
+    assert workspace.read("正文/0001 雨夜.md").digest == created["digest"]
+
+    with pytest.raises(WorkspaceError) as ambiguous:
+        await _call(
+            tools["edit_file"],
+            path="正文/0001 雨夜.md",
+            edits=[
+                {"old_text": "你认识?", "new_text": "你认识？"},
+                {"old_text": "他来了。", "new_text": "他走了。"},
+            ],
+            digest=created["digest"],
+        )
+    assert _code(ambiguous) == "EDIT_MATCH_AMBIGUOUS"
+    assert ambiguous.value.details["edit_index"] == 1
+    assert ambiguous.value.details["occurrences"] == 2
+    assert workspace.read("正文/0001 雨夜.md").text == original
+
+
+@pytest.mark.anyio
+async def test_edit_file_rejects_empty_batch(tmp_path: Path) -> None:
+    """空批次不是「无事可做」，按参数错误拒绝，避免模型以为改过了。"""
+    _, tools, _ = _setup(tmp_path)
+    await _grant(tools, "正文/0001 雨夜.md")
+    created = await _call(tools["write_file"], path="正文/0001 雨夜.md", text="# 雨夜\n")
+
+    with pytest.raises(WorkspaceError) as empty:
+        await _call(
+            tools["edit_file"], path="正文/0001 雨夜.md", edits=[], digest=created["digest"]
+        )
+    assert _code(empty) == "TOOL_INPUT_INVALID"
 
 
 @pytest.mark.anyio

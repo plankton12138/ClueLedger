@@ -258,8 +258,7 @@ async def test_explicit_legacy_file_update_still_writes_with_module_tools_availa
     await _call(
         tools["edit_file"],
         path=TRUTH,
-        old_text="管家是真凶。",
-        new_text="凶手未定。",
+        edits=[{"old_text": "管家是真凶。", "new_text": "凶手未定。"}],
         digest=read["digest"],
     )
     assert "凶手未定。" in run.workspace.read(TRUTH).text

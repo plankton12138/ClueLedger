@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from hastings.workspace.agent import RunContext, build_tools
+from hastings.workspace.agent import RunContext, build_tools, prepare_request_inputs
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
@@ -138,3 +138,21 @@ def store_has_no_chapters(workspace: Workspace) -> bool:
     return not (workspace.root / "正文").exists() or not any(
         (workspace.root / "正文").glob("*.md")
     )
+
+
+def test_create_chapter_is_not_offered_without_frozen_plan(tmp_path: Path) -> None:
+    """没有冻结方案时该工具必然报错：不注册，省掉模型试错的那一个回合。"""
+    workspace = Workspace.create(tmp_path / "雪山旅馆")
+    GitRepo(workspace.root).init()
+    session = WriteSession(workspace, instruction="写第一章")
+    run = RunContext(
+        workspace,
+        session,
+        author_messages=((1, "开始写第一章"),),
+        current_author_text="开始写第一章",
+    )
+
+    names = {tool.name for tool in prepare_request_inputs(workspace=workspace, run=run).tools}
+
+    assert "create_chapter" not in names
+    assert "write_file" in names

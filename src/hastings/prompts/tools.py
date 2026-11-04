@@ -34,6 +34,7 @@ __all__ = [
     "EDIT_BODY_PARAM_DESCRIPTION",
     "EDIT_FILE_DESCRIPTION",
     "EDIT_FILE_DIGEST_PARAM_DESCRIPTION",
+    "EDIT_FILE_EDITS_PARAM_DESCRIPTION",
     "EDIT_FILE_GUIDELINES",
     "EDIT_FILE_NEW_TEXT_PARAM_DESCRIPTION",
     "EDIT_FILE_OLD_TEXT_PARAM_DESCRIPTION",
@@ -260,12 +261,15 @@ WRITE_FILE_DESCRIPTION = (
 WRITE_FILE_GUIDELINES = ("适合新建章节或整章重写；局部修改优先 edit_file。",)
 
 EDIT_FILE_DESCRIPTION = (
-    "局部修改章节或作者明确要求使用的旧设定文件，返回新的 digest。"
-    "原文出现 0 次或多次都会失败。模块条目的局部修改用 prepare_module_changes。"
+    "局部修改章节或作者明确要求使用的旧设定文件，一次提交同一文件的若干处替换，"
+    "按数组顺序依次应用，返回新的 digest。任一处原文出现 0 次或多次都整批不生效。"
+    "模块条目的局部修改用 prepare_module_changes。"
 )
 
 EDIT_FILE_GUIDELINES = (
     "只对本轮获准修改的文件使用；不要为小改动重写整章。",
+    "同一批校订放在一次调用里提交（例如统一标点、同时修正几处事实）；"
+    "逐个修改要各花一个模型回合，批次越碎越容易在收尾前用完预算。",
     "已有模块可承接的资料修改在原模块内完成，不改同名旧文件或相关章节代替。",
 )
 
@@ -556,8 +560,11 @@ REVIEW_PATHS_PARAM_DESCRIPTION = "可选：要检查的文件；不填按本轮�
 
 WRITE_FILE_TEXT_PARAM_DESCRIPTION = "完整的新内容（UTF-8 文本）"
 WRITE_FILE_DIGEST_PARAM_DESCRIPTION = "改写已有文件时必填"
+EDIT_FILE_EDITS_PARAM_DESCRIPTION = (
+    "要替换的若干处；按数组顺序应用，每处 old_text 在应用前的当前内容里必须唯一"
+)
 EDIT_FILE_OLD_TEXT_PARAM_DESCRIPTION = "要被替换的原文，必须唯一"
-EDIT_FILE_NEW_TEXT_PARAM_DESCRIPTION = "替换后的文字"
+EDIT_FILE_NEW_TEXT_PARAM_DESCRIPTION = "替换后的文字；空字符串表示删除"
 EDIT_FILE_DIGEST_PARAM_DESCRIPTION = "read_file 得到的 digest"
 
 READ_STATE_ENTITY_PARAM_DESCRIPTION = (

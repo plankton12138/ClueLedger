@@ -67,8 +67,7 @@ async def test_agent_can_write_without_global_summary(tmp_path: Path) -> None:
     edited = await _call(
         tools["edit_file"],
         path=path,
-        old_text="林砚走进旅馆。",
-        new_text="林砚走进旅馆，看见湿手套。",
+        edits=[{"old_text": "林砚走进旅馆。", "new_text": "林砚走进旅馆，看见湿手套。"}],
         digest=view.digest,
     )
     assert edited["digest"] != view.digest

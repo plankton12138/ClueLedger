@@ -223,8 +223,7 @@ async def test_edit_requires_only_the_replaced_range(tmp_path: Path) -> None:
         await _call(
             tools["edit_file"],
             path=_CHAPTER,
-            old_text="结尾一句。",
-            new_text="新的结尾。",
+            edits=[{"old_text": "结尾一句。", "new_text": "新的结尾。"}],
             digest=view.digest,
         )
     assert _code(unread) == "REFERENCE_NOT_FULLY_READ_CONFLICT"
@@ -232,8 +231,7 @@ async def test_edit_requires_only_the_replaced_range(tmp_path: Path) -> None:
     edited = await _call(
         tools["edit_file"],
         path=_CHAPTER,
-        old_text="# 雨夜",
-        new_text="# 雨夜（改）",
+        edits=[{"old_text": "# 雨夜", "new_text": "# 雨夜（改）"}],
         digest=view.digest,
     )
     assert edited["digest"] != view.digest

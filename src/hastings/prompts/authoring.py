@@ -71,8 +71,12 @@ AUTHORING_INSTRUCTIONS = """\
   `read_file` 返回的 `digest` 是写入凭据；新建不需要 `digest`，已存在的文件不能当新文件写。
 - `read_file` 的 `truncated` 为真表示还有没读到的部分，按返回的 `next_cursor` 继续；
   单次最多 16000 字符。目录、搜索摘录、界面上打开文件都不算读过原文。
-- 章节与获准修改的旧文件内，局部替换优先用 `edit_file`（原文必须唯一匹配）；
-  模块条目的局部替换仍用 `prepare_module_changes` / `apply_module_changes`。
+- 章节与获准修改的旧文件内，局部替换用 `edit_file`：一次调用提交同一文件的若干处替换
+  （`edits` 数组按顺序应用，任一处原文不唯一或找不到就整批不生效）。同一批校订放在一次
+  调用里，不要一处一个回合；模块条目的局部替换仍用 `prepare_module_changes` /
+  `apply_module_changes`。
+- 工具返回里的 `execution_budget.remaining_model_rounds` 是本轮还剩几个模型回合；
+  出现收尾提示时先落定已改的内容并回复作者，未完成的部分留给下一轮。
 - 有 `update_story` 工具时，章节写入后为对应节点提交 `bind_prose`：
   `node_id`、`path`、`quote`（正文实际句子）、`observation`。
   一章多节点时分别提交；没有对应正文的节点不要绑定，也不要用整章开头代替。

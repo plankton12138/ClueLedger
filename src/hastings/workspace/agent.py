@@ -199,6 +199,18 @@ _MODULE_CONTENT_TOOLS = frozenset(
 #: 单轮最多的模型回合数；到顶就结束并如实记录，不无限循环。
 MAX_TURNS = 24
 
+
+@dataclass(slots=True)
+class TurnBudget:
+    """本轮可用的模型回合：一次请求算一轮，工具执行后的那次响应也占一轮。"""
+
+    total: int
+    used: int = 0
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.total - self.used)
+
 #: 单次工具输出上限，避免把整本书塞回模型。
 _MAX_DIFF_CHARS = 20_000
 _READ_DEFAULT_LINES = 200
@@ -954,41 +966,55 @@ def build_tools(
         signal: ToolCancellationToken | None = None,
         on_update: ToolUpdateCallback | None = None,
     ) -> AgentToolResult:
+        """同一文件的若干处替换作为一次事务提交。
+
+        每条按数组顺序在上一处替换后的内容上定位，因此后一条看到的是前一条改过的
+        文本。任何一条找不到或不唯一都整批拒绝，不写文件、不准备版本基线。
+        """
         del signal, on_update
         path = _text_argument(arguments, "path")
-        old_text = _text_argument(arguments, "old_text")
-        new_text = _text_argument(arguments, "new_text", allow_empty=True)
+        edits = _edit_arguments(arguments.get("edits"))
         digest = _digest_argument(arguments)
         view = workspace.read(path)
-        occurrences = view.text.count(old_text)
-        if occurrences == 0:
-            raise WorkspaceError(
-                code="EDIT_MATCH_NOT_FOUND",
-                where=f"tools.edit_file:{path}",
-                why="要替换的原文没有出现在当前文件里",
-                fix="重新 read_file 确认当前内容，再复制一段完全一致的原文",
-                details={"path": path},
-            )
-        if occurrences > 1:
-            raise WorkspaceError(
-                code="EDIT_MATCH_AMBIGUOUS",
-                where=f"tools.edit_file:{path}",
-                why=f"要替换的原文出现了 {occurrences} 次，无法确定改哪一处",
-                fix="多带一些上下文让原文唯一，或改用 write_file 重写整章",
-                details={"path": path, "occurrences": occurrences},
-            )
-        start = view.text.find(old_text)
-        end = start + len(old_text)
-        # 局部替换的前提是被替换区间已提供，不是「整章读过」。
+        working = view.text
+        spans: list[tuple[int, int]] = []
+        for index, (old_text, new_text) in enumerate(edits):
+            occurrences = working.count(old_text)
+            if occurrences == 0:
+                raise WorkspaceError(
+                    code="EDIT_MATCH_NOT_FOUND",
+                    where=f"tools.edit_file:{path}",
+                    why=f"第 {index + 1} 处要替换的原文没有出现在当前内容里",
+                    fix=(
+                        "重新 read_file 确认当前内容；同一批次按顺序应用，"
+                        "前面几条改动会影响后面几条的位置"
+                    ),
+                    details={"path": path, "edit_index": index},
+                )
+            if occurrences > 1:
+                raise WorkspaceError(
+                    code="EDIT_MATCH_AMBIGUOUS",
+                    where=f"tools.edit_file:{path}",
+                    why=f"第 {index + 1} 处要替换的原文出现了 {occurrences} 次，无法确定改哪一处",
+                    fix="多带一些上下文让原文唯一，或改用 write_file 重写整章",
+                    details={"path": path, "edit_index": index, "occurrences": occurrences},
+                )
+            start = working.find(old_text)
+            end = start + len(old_text)
+            spans.append((start, end))
+            working = f"{working[:start]}{new_text}{working[end:]}"
+        # 读取前提按整批覆盖的区间核对：取最小起点到最大终点，意味着跨段批改
+        # 也要求中间内容读过；只读过零散片段时先重读，不能凭片段改整章。
+        span_start = min(start for start, _ in spans)
+        span_end = max(end for _, end in spans)
         run.before_mutation(
             Mutation(action="update", path=path),
-            required_read=ReadRequirement.span(path, start, end),
+            required_read=ReadRequirement.span(path, span_start, span_end),
             # 与整文件写入共用章节预检；检查在 Git 基线之前完成，
             # 指纹冲突仍按原有材料核对顺序报告。
             preflight=lambda: workspace.check_chapter_intent(path),
         )
-        updated = view.text.replace(old_text, new_text, 1)
-        written = workspace.write(path, updated, expected_digest=digest)
+        written = workspace.write(path, working, expected_digest=digest)
         run.record(
             "file_changed",
             {
@@ -998,13 +1024,17 @@ def build_tools(
                 "before_digest": view.digest,
                 "after_digest": written.digest,
                 "changed": view.digest != written.digest,
-                "start": start,
-                "end": end,
+                "start": span_start,
+                "end": span_end,
+                "edits": len(edits),
                 "size": written.size,
             },
         )
         run.materials.after_edit(
-            before=SourceRef(view.path, view.digest), view=written, start=start, end=end
+            before=SourceRef(view.path, view.digest),
+            view=written,
+            start=span_start,
+            end=span_end,
         )
         _record_prose_revision(
             run,
@@ -1015,7 +1045,14 @@ def build_tools(
             before_digest=view.digest,
             after_digest=written.digest,
         )
-        return _json({"path": written.path, "digest": written.digest, "size": written.size})
+        return _json(
+            {
+                "path": written.path,
+                "digest": written.digest,
+                "size": written.size,
+                "edits": len(edits),
+            }
+        )
 
     async def read_structure(
         tool_call_id: str,
@@ -1641,20 +1678,37 @@ def build_tools(
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
-                    "old_text": {
-                        "type": "string",
-                        "description": prompt_tools.EDIT_FILE_OLD_TEXT_PARAM_DESCRIPTION,
-                    },
-                    "new_text": {
-                        "type": "string",
-                        "description": prompt_tools.EDIT_FILE_NEW_TEXT_PARAM_DESCRIPTION,
+                    "edits": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "old_text": {
+                                    "type": "string",
+                                    "description": (
+                                        prompt_tools.EDIT_FILE_OLD_TEXT_PARAM_DESCRIPTION
+                                    ),
+                                },
+                                "new_text": {
+                                    "type": "string",
+                                    "description": (
+                                        prompt_tools.EDIT_FILE_NEW_TEXT_PARAM_DESCRIPTION
+                                    ),
+                                },
+                            },
+                            "required": ["old_text", "new_text"],
+                            "additionalProperties": False,
+                        },
+                        "description": prompt_tools.EDIT_FILE_EDITS_PARAM_DESCRIPTION,
                     },
                     "digest": {
                         "type": "string",
                         "description": prompt_tools.EDIT_FILE_DIGEST_PARAM_DESCRIPTION,
                     },
                 },
-                "required": ["path", "old_text", "new_text", "digest"],
+                "required": ["path", "edits", "digest"],
                 "additionalProperties": False,
             },
             execute_fn=edit_file,
@@ -3702,6 +3756,10 @@ def prepare_request_inputs(
         tools = [tool for tool in tools if tool.name not in ("set_task_scope", "extend_task_scope")]
     if run.guidance.get("kind") == "context_modules_resumed":
         tools = [tool for tool in tools if tool.name != "propose_context_modules"]
+    if run.story is None or run.state_root is None:
+        # 建章要写章节计划与骨架，都需要冻结的方案上下文；没有时这个工具必然报错，
+        # 不交给模型试错——试一次就白耗一个回合，之后它只能改写普通正文文件。
+        tools = [tool for tool in tools if tool.name != "create_chapter"]
 
     if run.story_candidate is not None:
         candidate = run.story_candidate
@@ -4012,39 +4070,41 @@ def build_harness(
         messages=history,
     )
 
+    # 每次模型请求计一个回合：工具执行后还要再请求一次模型，那一次才消耗预算。
+    budget = TurnBudget(total=max_turns)
+    # 结构任务在预算或约定卡住时暂停；其他任务不需要这个开关。
+    paused = [""]
+
+    class BudgetProvider:
+        def stream_response(self, **kwargs: Any) -> Any:
+            if paused[0]:
+                raise WorkspaceError(
+                    code=paused[0],
+                    where="story.task",
+                    why=(
+                        "草稿中的必需约定尚待作者确认，草稿已保留"
+                        if paused[0] == "STORY_APPROVAL_PENDING"
+                        else "本代准备预算已用完，草稿已保留"
+                    ),
+                    fix=(
+                        "在草稿中确认来源约定后继续同一任务"
+                        if paused[0] == "STORY_APPROVAL_PENDING"
+                        else "继续同一任务补齐安排并提交"
+                    ),
+                )
+            budget.used += 1
+            return provider.stream_response(**kwargs)
+
+    harness.config.provider = BudgetProvider()
+
     if run.story is not None and run.intent is not None and run.intent.requires_structure:
         from hastings.workspace.tool_feedback import structure_feedback
-
-        rounds = [0]
-        paused = [""]
-
-        class BudgetProvider:
-            def stream_response(self, **kwargs: Any) -> Any:
-                if paused[0]:
-                    raise WorkspaceError(
-                        code=paused[0],
-                        where="story.task",
-                        why=(
-                            "草稿中的必需约定尚待作者确认，草稿已保留"
-                            if paused[0] == "STORY_APPROVAL_PENDING"
-                            else "本代准备预算已用完，草稿已保留"
-                        ),
-                        fix=(
-                            "在草稿中确认来源约定后继续同一任务"
-                            if paused[0] == "STORY_APPROVAL_PENDING"
-                            else "继续同一任务补齐安排并提交"
-                        ),
-                    )
-                rounds[0] += 1
-                return provider.stream_response(**kwargs)
-
-        harness.config.provider = BudgetProvider()
 
         async def budget_after_tool(
             call: Any, result: AgentToolResult, is_error: bool
         ) -> tuple[AgentToolResult, bool]:
-            remaining = max(0, max_turns - rounds[0])
-            budget = {"remaining_model_rounds": remaining, "reserved_for_commit_and_reply": 3}
+            remaining = budget.remaining
+            feedback = {"remaining_model_rounds": remaining, "reserved_for_commit_and_reply": 3}
             if (
                 isinstance(result.details, dict)
                 and result.details.get("prepared")
@@ -4052,7 +4112,7 @@ def build_harness(
             ):
                 paused[0] = "STORY_BUDGET_PAUSED"
             result = structure_feedback(
-                call.name, result, is_error, {tool.name for tool in inputs.tools}, budget
+                call.name, result, is_error, {tool.name for tool in inputs.tools}, feedback
             )
             if paused[0] == "STORY_BUDGET_PAUSED":
                 payload = json.loads(result.text)
@@ -4067,6 +4127,16 @@ def build_harness(
             return result, is_error
 
         harness.config.after_tool_call = budget_after_tool
+    else:
+        from hastings.workspace.tool_feedback import budget_feedback
+
+        async def report_budget(
+            call: Any, result: AgentToolResult, is_error: bool
+        ) -> tuple[AgentToolResult, bool]:
+            del call
+            return budget_feedback(result, remaining=budget.remaining), is_error
+
+        harness.config.after_tool_call = report_budget
     return harness
 
 
@@ -4130,6 +4200,30 @@ def _int_argument(
     if value < minimum:
         raise _input_error(name, f"必须 ≥ {minimum}")
     return value
+
+
+#: 一次局部修改最多几条：批次过大会让单条输出过长，也超出校对时能核对的量。
+_MAX_EDITS = 50
+
+
+def _edit_arguments(value: JSONValue) -> tuple[tuple[str, str], ...]:
+    """把 edit_file 的批次整理成 (原文, 替换) 序列；结构不对时在写文件前拒绝。"""
+    if not isinstance(value, list) or not value:
+        raise _input_error("edits", "必须是非空数组")
+    if len(value) > _MAX_EDITS:
+        raise _input_error("edits", f"一次最多 {_MAX_EDITS} 处")
+    edits: list[tuple[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise _input_error("edits", "每一项必须是对象")
+        old_text = item.get("old_text")
+        new_text = item.get("new_text")
+        if not isinstance(old_text, str) or not old_text:
+            raise _input_error("edits", "每一项的 old_text 必须是非空字符串")
+        if not isinstance(new_text, str):
+            raise _input_error("edits", "每一项的 new_text 必须是字符串")
+        edits.append((old_text, new_text))
+    return tuple(edits)
 
 
 def _evidence_items(value: JSONValue, *, field: str) -> tuple[ReviewEvidence, ...]:
