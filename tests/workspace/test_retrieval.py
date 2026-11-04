@@ -22,6 +22,7 @@ from hastings.workspace.module_assembly import Assembly, AssemblyStore
 from hastings.workspace.retrieval import (
     MaterialQuery,
     catalog_brief,
+    module_overview,
     query_materials,
     relevant_module_note,
 )
@@ -83,6 +84,24 @@ def _evidence(workspace: Workspace, path: str, quote: str) -> ObservedEvidence:
         end=start + len(quote),
         quote=quote,
     )
+
+
+def test_module_overview_discloses_uninstalled_library_summaries(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    library.create_module(
+        kind="reference",
+        name="故事背景：冷铁镇，1859",
+        summary="记录冷铁镇的矿业、族群关系与案件背景。",
+        entries=[EntryDraft("town", "reference", "冷铁镇", "边境银矿小镇。")],
+        request_key="create-background",
+    )
+
+    text = module_overview(Assembly(), library)
+
+    assert "故事背景：冷铁镇，1859" in text
+    assert "记录冷铁镇的矿业、族群关系与案件背景" in text
+    assert "未装入" in text
+    assert "边境银矿小镇" not in text
 
 
 def _projection(

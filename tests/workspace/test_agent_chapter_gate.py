@@ -1,4 +1,4 @@
-"""1.0.9 P6：Agent 正文写入只受全书构思门禁约束。"""
+"""1.2 P1：Agent 正文文件写入没有额外全书摘要门槛。"""
 
 from __future__ import annotations
 
@@ -10,12 +10,10 @@ import pytest
 
 from hastings.workspace.agent import RunContext, build_tools
 from hastings.workspace.chapter_write_policy import ChapterWritePolicy
-from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.git import GitRepo
 from hastings.workspace.service import WriteSession
-from hastings.workspace.story_store import EMPTY_REVISION, StoryStore
-from hastings.workspace.writing_actions import save_book_intent
+from hastings.workspace.story_store import StoryStore
 from tau_agent.tools import AgentTool
 
 
@@ -42,7 +40,7 @@ def _setup(tmp_path: Path) -> tuple[Workspace, StoryStore, dict[str, AgentTool]]
     workspace = Workspace.create(tmp_path / "雪山旅馆")
     GitRepo(workspace.root).init()
     state_root = str(tmp_path / "state")
-    store = StoryStore(Path(state_root), workspace, format_version=4)
+    store = StoryStore(Path(state_root), workspace, format_version=5)
     workspace.chapter_policy = ChapterWritePolicy(store)
     session = WriteSession(workspace, instruction="改写第一章")
     run = RunContext(
@@ -56,21 +54,10 @@ def _setup(tmp_path: Path) -> tuple[Workspace, StoryStore, dict[str, AgentTool]]
 
 
 @pytest.mark.anyio
-async def test_agent_write_requires_book_intent(tmp_path: Path) -> None:
-    workspace, store, tools = _setup(tmp_path)
+async def test_agent_can_write_without_global_summary(tmp_path: Path) -> None:
+    workspace, _, tools = _setup(tmp_path)
     path = "正文/0001 第一章.md"
     await _grant(tools, path)
-    with pytest.raises(WorkspaceError) as exc:
-        await _call(tools["write_file"], path=path, text="# 第一章\n\n林砚走进旅馆。\n")
-    assert exc.value.code == "BOOK_INTENT_REQUIRED"
-    assert not (workspace.root / path).exists()
-
-    save_book_intent(
-        store,
-        text="暴雪封山的旅馆发生命案。",
-        expected_plan_revision=EMPTY_REVISION,
-        request_key="book",
-    )
     await _call(tools["write_file"], path=path, text="# 第一章\n\n林砚走进旅馆。\n")
     assert (workspace.root / path).exists()
 

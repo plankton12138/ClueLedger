@@ -25,6 +25,7 @@ export default function AuthorQuestionCard({ turn, running }: Props) {
 
   if (!question) return null;
   const disabled = running || pendingKey !== null || question.answer !== "";
+  const moduleSuggestion = question.kind === "context_modules";
 
   const submit = (text: string) => {
     const trimmed = text.trim();
@@ -43,7 +44,13 @@ export default function AuthorQuestionCard({ turn, running }: Props) {
       data-testid="author-question"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-bold">{question.answer ? "已收到你的回答" : "需要你决定"}</span>
+        <span className="font-bold">
+          {question.answer
+            ? "已收到你的回答"
+            : moduleSuggestion
+              ? "可选的上下文补充"
+              : "需要你决定"}
+        </span>
         {question.createdAt && <span className="text-mute">{question.createdAt}</span>}
       </div>
       <p className="mt-1 whitespace-pre-wrap">{question.question}</p>

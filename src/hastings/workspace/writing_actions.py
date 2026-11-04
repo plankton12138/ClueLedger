@@ -1,4 +1,4 @@
-"""作品意图与章节创建的写入动作（1.0.9 P2；P6 建章即建正文）。
+"""章节创建的写入动作（1.0.9 P2；1.2 移除全局摘要门槛）。
 
 页面只发送自然语言与插入位置；服务端补齐标识、顺序与正文路径。所有动作都走现有
 ``StoryStore`` 提交，不新建状态文件。章节没有构思输入：建章事务在同一个联合提交里
@@ -9,16 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from hastings.workspace.chapter_write_policy import ChapterWritePolicy
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.story_models import (
     FORMAT_VERSION,
     AddChapterPlan,
-    BookIntent,
     ChapterPlan,
     ProsePatch,
-    SetBookIntent,
     StoryChangeSet,
     StoryDocument,
     StoryOperation,
@@ -30,7 +27,6 @@ from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, Stor
 __all__ = [
     "ChapterCreateResult",
     "create_chapter",
-    "save_book_intent",
 ]
 
 
@@ -42,47 +38,6 @@ class ChapterCreateResult:
     prose_digest: str
     plan_revision: str
     receipt: StoryReceipt
-
-
-def save_book_intent(
-    store: StoryStore,
-    *,
-    text: str,
-    expected_plan_revision: str,
-    request_key: str,
-) -> StoryReceipt:
-    """写入全书起点；首次提交允许 `expected_plan_revision="empty"`。"""
-    if not text.strip():
-        raise WorkspaceError(
-            code="BOOK_INTENT_REQUIRED",
-            where="作品意图",
-            why="作品意图不能为空",
-            fix="写一句核心处境或起点，或选择「交给模型构思」",
-        )
-    variant = store.read().variant(MAIN_VARIANT_ID)
-    if variant is not None and variant.format_version < FORMAT_VERSION:
-        raise _format_error()
-    base = variant.revision if variant is not None else EMPTY_REVISION
-    if expected_plan_revision != base:
-        raise WorkspaceError(
-            code="STORY_CHANGE_CONFLICT",
-            where="作品意图",
-            why="作品构思在保存前已经变化",
-            fix="重新读取当前作品意图后再保存",
-            details={"expected": expected_plan_revision, "current": base},
-        )
-    change = StoryChangeSet(
-        id=new_id("change"),
-        base_revision=expected_plan_revision,
-        operations=[SetBookIntent(intent=BookIntent(text=text.strip()))],
-        requested_scope="book-intent",
-    )
-    return store.commit_change(
-        variant_id=MAIN_VARIANT_ID,
-        change=change,
-        request_key=request_key,
-        kind="book_intent",
-    )
 
 
 def create_chapter(
@@ -98,18 +53,23 @@ def create_chapter(
     prior = store.receipt_for(request_key)
     if prior is not None and prior.kind == "chapter_create":
         return _chapter_result_from_receipt(store, workspace, prior)
-    policy = ChapterWritePolicy(store)
     variant = store.read().variant(MAIN_VARIANT_ID)
-    if variant is None:
-        raise _book_intent_required()
-    if variant.format_version < FORMAT_VERSION:
+    if variant is not None and variant.format_version != FORMAT_VERSION:
         raise _format_error()
-    policy.require_book_intent(variant, where="作品意图")
-    if variant.revision != expected_plan_revision:
+    current_revision = variant.revision if variant is not None else EMPTY_REVISION
+    if current_revision != expected_plan_revision:
         raise _stale("作品构思")
 
-    plans = list(variant.chapter_plans.values())
+    plans = list(variant.chapter_plans.values()) if variant is not None else []
     if after_chapter_id is not None:
+        if variant is None:
+            raise WorkspaceError(
+                code="CHAPTER_NOT_FOUND",
+                where=f"章节/{after_chapter_id}",
+                why="用于定位的章节不存在",
+                fix="刷新目录后重新选择插入位置",
+                details={"chapter_id": after_chapter_id},
+            )
         anchor = variant.chapter(after_chapter_id)
         if anchor is None:
             raise WorkspaceError(
@@ -156,11 +116,14 @@ def create_chapter(
 
     def prepare(document: StoryDocument | None) -> tuple[StoryChangeSet, None, dict[str, object]]:
         if document is None:
-            raise _book_intent_required()
+            if expected_plan_revision != EMPTY_REVISION:
+                raise _stale("作品构思")
+            return change, None, {"path": path, "chapter_id": chapter_id, "order": order}
         current = document.variants.get(MAIN_VARIANT_ID)
         if current is None:
-            raise _book_intent_required()
-        policy.require_book_intent(current, where="作品意图")
+            raise _state_error("作品状态存在但缺少主方案")
+        if current.format_version != FORMAT_VERSION:
+            raise _format_error()
         if current.revision != expected_plan_revision:
             raise _stale("作品构思")
         return change, None, {"path": path, "chapter_id": chapter_id, "order": order}
@@ -207,21 +170,12 @@ def _chapter_result_from_receipt(
     )
 
 
-def _book_intent_required() -> WorkspaceError:
-    return WorkspaceError(
-        code="BOOK_INTENT_REQUIRED",
-        where="作品意图",
-        why="还没有全书起点，不能先建章节",
-        fix="先写一句作品意图，或选择「交给模型构思」",
-    )
-
-
 def _format_error() -> WorkspaceError:
     return WorkspaceError(
         code="STORY_FORMAT_UNSUPPORTED",
         where="写作工作台",
-        why="这份作品仍使用旧构思格式",
-        fix="新建作品后使用写作工作台；本版不迁移旧数据",
+        why="这份作品使用已退出的旧格式",
+        fix="新建作品后使用当前写作流程；本版不迁移旧数据",
     )
 
 

@@ -84,7 +84,7 @@ export interface UnplannedProse {
 }
 
 export interface WritingBookView {
-  intent: string | null;
+  structure_exists: boolean;
   chapters: ChapterSummary[];
   information_threads: InformationThreadSummary[];
   unplanned_prose: UnplannedProse[];
@@ -94,8 +94,7 @@ export interface WritingProseView {
   path: string;
   digest: string;
   text: string;
-  editable: boolean;
-  blocked_reason: "book_intent_required" | null;
+  editable: false;
 }
 
 export interface ChapterView {
@@ -138,7 +137,6 @@ export interface ProseSaveResult {
 
 export type CandidateStatus = "streaming" | "ready" | "stale" | "failed" | "discarded";
 export type AssistKind =
-  | "book_intent"
   | "chapter_direction"
   | "title"
   | "prose_draft"
@@ -205,16 +203,6 @@ export function readWorkbench(
   else if (selection.prosePath) params.set("prose_path", selection.prosePath);
   const query = params.size ? `?${params}` : "";
   return request<WritingWorkbenchView>(`/${workspaceId}/story/workbench${query}`, { signal });
-}
-
-export function saveBookIntent(
-  workspaceId: string,
-  input: { text: string; expected_plan_revision: string; request_key: string },
-): Promise<{ plan_revision: string; change_id: string }> {
-  return request(`/${workspaceId}/story/book-intent`, {
-    method: "PUT",
-    body: JSON.stringify(input),
-  });
 }
 
 export function createChapter(

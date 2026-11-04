@@ -118,6 +118,8 @@ _TOOL_VERBS = {
     "search_ideas": "查找灵感",
     "save_idea": "保存灵感",
     "ask_author": "询问作者",
+    "inspect_module_catalog": "查看可用模块",
+    "propose_context_modules": "建议辅助模块",
 }
 _FILE_VERBS = {
     "create": "新建文件",

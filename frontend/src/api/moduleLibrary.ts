@@ -36,6 +36,8 @@ export interface ModuleInfo {
   updated_at: string;
   forked_from: { module_id: string; revision_id: string } | null;
   revision_count?: number;
+  summary?: string;
+  entry_titles?: string[];
   preview?: string;
 }
 
@@ -49,6 +51,7 @@ export interface RevisionSummary {
   revision_id: string;
   parent: string | null;
   created_at: string;
+  summary?: string;
   entry_ids: string[];
 }
 
@@ -74,6 +77,7 @@ export interface RevisionDetail {
   revision_id: string;
   kind: ModuleKind;
   name: string;
+  summary?: string;
   entries: CatalogEntry[];
 }
 
@@ -236,6 +240,7 @@ export function listModules(options: {
 export function createModule(input: {
   kind: ModuleKind;
   name: string;
+  summary?: string;
   entries: EntryInput[];
   request_key: string;
 }): Promise<{ module: ModuleInfo; revision: RevisionSummary }> {
@@ -324,6 +329,7 @@ export function publishRevision(
   input: {
     base_revision: string | null;
     expected_head: string | null;
+    summary?: string;
     entries: EntryInput[];
     request_key: string;
   },
@@ -396,6 +402,7 @@ export interface ChangeOperationInput {
   operation_id: string;
   action: "create" | "update";
   name?: string;
+  summary?: string;
   body?: string;
   binding_id?: string;
   module_id?: string;
@@ -417,6 +424,7 @@ export interface ModuleChangeOperation {
   action: "create" | "update";
   status?: "pending" | "saved";
   name?: string;
+  summary?: string;
   /** 只在读取变更集详情时返回；新建操作的内容正文。 */
   body?: string;
   chars?: number;

@@ -63,11 +63,11 @@ export default function StructureView({
     return <article className="plan-view" aria-label="全书结构">
       <header className="plan-view-header">
         <h1><ListTree size={20} strokeWidth={1.8} aria-hidden="true" />全书结构</h1>
-        <p>结构还没有起草：确认设定卡后，模型会起草第一版结构（铁律、路线、骨架、模块索引）。</p>
+        <p>结构还没有建立。在对话里说出你的想法，模型会整理并写入第一版结构。</p>
       </header>
       <div className="plan-field">
         <Button size="compact" variant="primary" onClick={onOpenChat}>
-          <MessageSquare size={15} strokeWidth={2} aria-hidden="true" />回到对话继续起步
+          <MessageSquare size={15} strokeWidth={2} aria-hidden="true" />回到对话
         </Button>
       </div>
     </article>;

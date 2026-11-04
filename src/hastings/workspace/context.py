@@ -365,8 +365,8 @@ def build_assembled_context(
         )
     )
     if profile in ("writer", "review") and structure.strip():
-        # 装配顺序契约第 1—3 层（铁律 → 结构全文 → STYLE 占位），常驻且不被预算
-        # 裁掉：结构文件本身冻结 1600 字符，分区预算（2400）装得下；真装不下是
+        # STRUCTURE.md 是唯一全局语义分区，常驻且不被预算裁掉。文件本身限制
+        # 6000 字符，分区预算包含渲染标题；真装不下是
         # 装配故障，按必需分区报缺口，不静默截断。
         parts.append(
             Partition(

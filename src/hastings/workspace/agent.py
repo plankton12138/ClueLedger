@@ -25,6 +25,7 @@ from hastings.library.changes import ChangeEdit, ChangeOperation, ModuleChangeSe
 from hastings.library.ids import source_path
 from hastings.library.imports import imported_paths
 from hastings.library.modules import ModuleLibrary
+from hastings.library.presets import spec
 from hastings.library.records import EntryDraft
 from hastings.prompts import tools as prompt_tools
 from hastings.prompts.authoring import CANDIDATE_FLOW_INSTRUCTIONS, story_design_instructions
@@ -80,8 +81,6 @@ from hastings.prompts.tools import (
     SAVE_REVIEW_REPORT_GUIDELINES,
     SEARCH_IDEAS_DESCRIPTION,
     SEARCH_IDEAS_GUIDELINES,
-    SEARCH_MODULE_LIBRARY_DESCRIPTION,
-    SEARCH_MODULE_LIBRARY_GUIDELINES,
     SEARCH_TEXT_DESCRIPTION,
     SEARCH_TEXT_GUIDELINES,
     SET_TASK_SCOPE_DESCRIPTION,
@@ -251,6 +250,8 @@ class RunContext:
     story: StoryContextSnapshot | None = None
     #: 受理时确定的任务目标：只用于阅读指引与完成判定，不授予写权限。
     intent: TaskIntent | None = None
+    #: 作者对应用内结构化建议的决定；用于恢复原任务并约束精确操作。
+    guidance: Mapping[str, Any] = field(default_factory=dict)
     story_candidate: StoryCandidate | None = None
     #: 结构提交前的代次资格检查；由服务层注入。
     story_guard: Callable[[], None] | None = None
@@ -926,8 +927,8 @@ def build_tools(
         run.before_mutation(
             Mutation(action="update", path=path),
             required_read=ReadRequirement.span(path, start, end),
-            # 与整文件写入共用同一全书构思门禁；检查在 Git 基线之前完成，
-            # 但指纹冲突仍按原有材料核对顺序报告。
+            # 与整文件写入共用章节预检；检查在 Git 基线之前完成，
+            # 指纹冲突仍按原有材料核对顺序报告。
             preflight=lambda: workspace.check_chapter_intent(path),
         )
         updated = view.text.replace(old_text, new_text, 1)
@@ -991,7 +992,7 @@ def build_tools(
         run.before_mutation(
             Mutation(action=action, path=STRUCTURE_PATH),
             required_read=requirement,
-            # 结构文件不经全书构思门禁；指纹冲突由 workspace.write 拒绝。
+            # 结构文件的指纹冲突由 workspace.write 拒绝。
             preflight=None,
         )
         view = write_structure_document(
@@ -1055,7 +1056,9 @@ def build_tools(
         after_id = str(after).strip() if isinstance(after, str) and after.strip() else None
         revision = _text_argument(arguments, "expected_plan_revision")
         request_key = _text_argument(arguments, "request_key")
-        store = StoryStore(run.state_root, workspace, format_version=4)
+        from hastings.workspace.story_models import FORMAT_VERSION
+
+        store = StoryStore(run.state_root, workspace, format_version=FORMAT_VERSION)
         result = create_chapter_transaction(
             store,
             workspace,
@@ -1878,6 +1881,52 @@ def build_tools(
     )
 
     if run.library is not None and mode in ("write", "review"):
+        library = run.library
+
+        async def inspect_module_catalog(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            """只看模块实例元数据；不读取条目正文，也不产生装入权限。"""
+            del tool_call_id, signal, on_update
+            query = _optional_text_argument(arguments, "query")
+            page = library.modules(
+                q=query,
+                limit=min(_int_argument(arguments, "limit", default=20, minimum=1), 20),
+                include_deleted=False,
+                include_preview=False,
+            )
+            library_total = int(
+                str(library.modules(limit=1, include_deleted=False).get("total") or 0)
+            )
+            matched_total = int(str(page.get("total") or 0))
+            status = (
+                "library_empty"
+                if library_total == 0
+                else "matches"
+                if matched_total > 0
+                else "no_match"
+            )
+            run.record(
+                "module_catalog_inspected",
+                {
+                    "query": query,
+                    "library_total": library_total,
+                    "matched_total": matched_total,
+                    "returned": len(cast(list[object], page.get("items") or [])),
+                },
+            )
+            return _json(
+                {
+                    "items": page.get("items") or [],
+                    "library_total": library_total,
+                    "matched_total": matched_total,
+                    "next_cursor": page.get("next_cursor"),
+                    "status": status,
+                }
+            )
 
         async def list_modules(
             tool_call_id: str,
@@ -2061,16 +2110,8 @@ def build_tools(
             signal: ToolCancellationToken | None = None,
             on_update: ToolUpdateCallback | None = None,
         ) -> AgentToolResult:
-            """作者明确要求时，单轮只读一个未装版本；不装入、不开放其他模块。"""
+            """按任务相关性只读一个未装版本；不装入、不产生修改权限。"""
             del tool_call_id, signal, on_update
-            scope = run.scope.current
-            if scope is None or not scope.draft.library_search:
-                raise WorkspaceError(
-                    code="MODULE_ACCESS_DENIED",
-                    where="tools.read_library_record",
-                    why="作者还没有明确要求引用模块库里的内容",
-                    fix="先按作者原话登记 library_search；单轮引用不等于装入",
-                )
             if run.library is None:
                 raise WorkspaceError(
                     code="MODULE_ACCESS_DENIED",
@@ -2089,7 +2130,7 @@ def build_tools(
                         code="MODULE_ACCESS_DENIED",
                         where="tools.read_library_record",
                         why=f"模块不可用：{exc.why}",
-                        fix="先用 search_module_library 取得存在的模块与版本",
+                        fix="先用 inspect_module_catalog 取得存在的模块与版本",
                         details={"module_id": module_id},
                     ) from exc
                 if not head:
@@ -2111,6 +2152,7 @@ def build_tools(
                         "revision_id": revision_id,
                         "kind": revision.module_kind,
                         "name": revision.module_name,
+                        "summary": revision.summary,
                         "entries": [
                             {"entry_id": item.entry_id, "kind": item.kind, "title": item.title}
                             for item in revision.entries
@@ -2310,6 +2352,7 @@ def build_tools(
                 )
             _require_library_publish()
             entries = _entry_drafts_argument(arguments.get("entries"))
+            summary = _optional_text_argument(arguments, "summary")
             module_id = _optional_text_argument(arguments, "module_id")
             library = run.library
             if module_id:
@@ -2321,6 +2364,7 @@ def build_tools(
                     module_id=module_id,
                     base_revision=base_revision,
                     expected_head=expected_head,
+                    summary=summary,
                     entries=entries,
                     request_key=f"{run.turn_id}:publish:{module_id}",
                 )
@@ -2335,6 +2379,7 @@ def build_tools(
                 created = library.create_module(
                     kind=kind,
                     name=name,
+                    summary=summary,
                     entries=entries,
                     request_key=_hashed_key("publish-new", run.turn_id, kind, name),
                 )
@@ -2553,37 +2598,26 @@ def build_tools(
         if mode == "write":
             tools.append(
                 AgentTool(
-                    name="search_module_library",
-                    label="搜索全局模块库",
-                    description=SEARCH_MODULE_LIBRARY_DESCRIPTION,
+                    name="inspect_module_catalog",
+                    label="查看模块目录",
+                    description=(
+                        "按名称、摘要、条目标题和别名查看全局模块库；返回精确版本但不读取正文、"
+                        "不装入，也不产生修改权限。"
+                    ),
                     parameters={
                         "type": "object",
                         "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": (
-                                    prompt_tools.SEARCH_MODULE_LIBRARY_QUERY_PARAM_DESCRIPTION
-                                ),
-                            },
-                            "kind": {
-                                "type": "string",
-                                "enum": [
-                                    "characters",
-                                    "world",
-                                    "clues",
-                                    "truth",
-                                    "timeline",
-                                    "plot",
-                                    "reference",
-                                ],
-                            },
-                            "cursor": {"type": "string"},
-                            "limit": {"type": "integer", "minimum": 1},
+                            "query": {"type": "string"},
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 20},
                         },
                         "additionalProperties": False,
                     },
-                    execute_fn=search_module_library,
-                    prompt_guidelines=SEARCH_MODULE_LIBRARY_GUIDELINES,
+                    execute_fn=inspect_module_catalog,
+                    prompt_guidelines=(
+                        "先看名称、摘要与条目标题；目录命中不等于读过正文。",
+                        "no_match 只表示当前查询无匹配；只有 library_empty 才表示整个库为空。",
+                        "没有合适模块时可以建议新建；不得自行装入或创建。",
+                    ),
                     execution_mode="sequential",
                 )
             )
@@ -2684,6 +2718,7 @@ def build_tools(
                                 ],
                             },
                             "name": {"type": "string"},
+                            "summary": {"type": "string", "maxLength": 240},
                             "base_revision": {"type": "string"},
                             "expected_head": {"type": "string"},
                             "entries": {
@@ -2743,6 +2778,11 @@ def build_tools(
                                             "description": (
                                                 prompt_tools.PREPARE_NAME_PARAM_DESCRIPTION
                                             ),
+                                        },
+                                        "summary": {
+                                            "type": "string",
+                                            "maxLength": 240,
+                                            "description": "模块实际内容及其用途的简短摘要。",
                                         },
                                         "body": {
                                             "type": "string",
@@ -3139,6 +3179,173 @@ def build_tools(
         ]
     if mode == "write":
 
+        async def propose_context_modules(
+            tool_call_id: str,
+            arguments: Mapping[str, JSONValue],
+            signal: ToolCancellationToken | None = None,
+            on_update: ToolUpdateCallback | None = None,
+        ) -> AgentToolResult:
+            """把辅助模块建议变成可确认事务；本轮不执行任何模块变更。"""
+            del tool_call_id, signal, on_update
+            run.require_writable("tools.propose_context_modules")
+            if run.guidance.get("kind") == "context_modules_resumed":
+                raise WorkspaceError(
+                    code="CONTEXT_MODULE_PROPOSAL_ALREADY_HANDLED",
+                    where="tools.propose_context_modules",
+                    why="这个原任务已经处理过一次模块建议",
+                    fix="使用当前新装配继续原任务，不要再次提出模块建议",
+                )
+            if run.state_root is None or not run.conversation_id or run.library is None:
+                raise WorkspaceError(
+                    code="AUTHOR_QUESTION_UNAVAILABLE",
+                    where="tools.propose_context_modules",
+                    why="这一轮没有可记录建议的作品状态或模块库",
+                    fix="直接继续原任务，不要把模块缺失当成阻断条件",
+                )
+            if run.pending_question is not None:
+                return _json(
+                    {**run.pending_question, "note": "本轮已有待答问题，不再增加模块建议。"},
+                    terminate=True,
+                )
+            raw_items = arguments.get("items")
+            if not isinstance(raw_items, list) or not 1 <= len(raw_items) <= 3:
+                raise _input_error("items", "必须包含 1 到 3 个模块建议")
+            items: list[dict[str, str]] = []
+            for index, raw in enumerate(raw_items):
+                if not isinstance(raw, Mapping):
+                    raise _input_error("items", f"第 {index + 1} 项必须是对象")
+                action = str(raw.get("action") or "")
+                label = str(raw.get("label") or "").strip()[:80]
+                reason = str(raw.get("reason") or "").strip()[:160]
+                if not label or not reason:
+                    raise _input_error("items", "每项都要给出 label 与具体用途 reason")
+                if action == "create":
+                    slot = str(raw.get("slot") or "").strip()
+                    if (
+                        not slot
+                        or len(slot) > 64
+                        or not all(char.isalnum() or char in "-_" for char in slot)
+                    ):
+                        raise _input_error(
+                            "items", "create 的 slot 只能含字母、数字、连字符与下划线"
+                        )
+                    items.append(
+                        {
+                            "action": "create",
+                            "slot": slot,
+                            "kind": "reference",
+                            "label": label,
+                            "reason": reason,
+                        }
+                    )
+                    continue
+                if action == "attach":
+                    module_id = str(raw.get("module_id") or "").strip()
+                    revision_id = str(raw.get("revision_id") or "").strip()
+                    module = run.library.module(module_id)
+                    if module.deleted or not revision_id or module.head != revision_id:
+                        raise WorkspaceError(
+                            code="MODULE_REVISION_NOT_FOUND",
+                            where=f"tools.propose_context_modules:{module_id}",
+                            why="建议装入的模块不是当前可用精确版本",
+                            fix="重新查看模块目录，使用返回的 module_id 与 head",
+                        )
+                    items.append(
+                        {
+                            "action": "attach",
+                            "module_id": module_id,
+                            "revision_id": revision_id,
+                            "label": label,
+                            "reason": reason,
+                        }
+                    )
+                    continue
+                raise _input_error("items", "action 只能是 create 或 attach")
+            actions = {item["action"] for item in items}
+            if len(actions) != 1:
+                raise _input_error("items", "一次建议只能统一创建或统一装入；两类操作请分开建议")
+            accept_option = (
+                "装入建议的模块并继续原任务"
+                if "attach" in actions
+                else "创建建议的模块并继续原任务"
+            )
+            labels = "、".join(f"“{item['label']}”" for item in items)
+            proposal = {
+                "items": items,
+                "reason": _text_argument(arguments, "reason")[:240],
+            }
+            context = {
+                **dict(run.request_context),
+                "resume_author_text": run.current_author_text or "",
+                "resume_intent": run.intent.to_dict() if run.intent is not None else None,
+                "proposal_accept_option": accept_option,
+            }
+            record = QuestionStore(run.state_root).create(
+                conversation_id=run.conversation_id,
+                turn_id=run.turn_id,
+                question=f"为了更好地完成当前任务，建议使用 {labels}。是否采用？",
+                kind="context_modules",
+                options=(accept_option, "暂不调整模块，直接继续原任务"),
+                assembly_digest=run.assembly_digest,
+                context=context,
+                proposal=proposal,
+            )
+            view = record.view()
+            run.pending_question = view
+            run.record("author_input_requested", view)
+            return _json(
+                {
+                    **view,
+                    "note": "建议已交给作者决定；本轮没有创建或装入模块。",
+                },
+                terminate=True,
+            )
+
+        tools.append(
+            AgentTool(
+                name="propose_context_modules",
+                label="建议辅助模块",
+                description=(
+                    "当补充一份可独立维护的人物、背景或时间线资料能明显改善当前任务时，"
+                    "向作者提出一组精确的创建或装入建议。本工具只提问，不执行变更。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "reason": {"type": "string"},
+                        "items": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 3,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "action": {"type": "string", "enum": ["create", "attach"]},
+                                    "slot": {"type": "string"},
+                                    "module_id": {"type": "string"},
+                                    "revision_id": {"type": "string"},
+                                    "label": {"type": "string"},
+                                    "reason": {"type": "string"},
+                                },
+                                "required": ["action", "label", "reason"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": ["reason", "items"],
+                    "additionalProperties": False,
+                },
+                execute_fn=propose_context_modules,
+                prompt_guidelines=(
+                    "先查看已装模块；需要复用库中既有模块时再查看模块目录。",
+                    "只有辅助资料会反复影响当前任务时才建议；正文能直接完成时不要打断作者。",
+                    "模块库为空时也可建议 create，例如人物小传或故事背景。",
+                    "作者拒绝后必须继续原任务，不得反复建议或降低完成度。",
+                ),
+                execution_mode="sequential",
+            )
+        )
+
         async def ask_author(
             tool_call_id: str,
             arguments: Mapping[str, JSONValue],
@@ -3286,38 +3493,20 @@ class RequestInputs:
 
 
 def _startup_phase(run: RunContext, workspace: Workspace) -> str | None:
-    """按作品事实判起步阶段；不在起步阶段（含旧格式作品、无状态目录）返回 ``None``。
-
-    * ``intent``：``book_intent`` 未确认；
-    * ``draft``：意图已确认但 ``STRUCTURE.md`` 不存在；
-    * ``done``：两者都在——返回 ``None``。
-    """
-    from hastings.workspace.book_startup import startup_phase
-    from hastings.workspace.story_models import FORMAT_VERSION
-
+    """没有 ``STRUCTURE.md`` 时进入结构起步；不存在其他确认阶段。"""
     if run.state_root is None or run.story is None:
         return None
-    variant = StoryStore(run.state_root, workspace).read().variant(run.story.variant_id)
-    if variant is not None and variant.format_version < FORMAT_VERSION:
-        return None
-    book_intent = variant.book_intent.text if variant is not None and variant.book_intent else None
-    phase = startup_phase(
-        book_intent_text=book_intent,
-        structure_exists=(workspace.root / STRUCTURE_PATH).exists(),
-    )
-    return None if phase == "done" else phase
+    return None if (workspace.root / STRUCTURE_PATH).exists() else "draft"
 
 
 def _startup_phase_system(run: RunContext, workspace: Workspace) -> str | None:
     """起步阶段的系统提示注入；不在起步阶段返回 ``None``。
 
-    * ``intent``：注入起步对话提示（模式按作者原话归类，引导/自由发挥）；
-    * ``draft``：注入结构起草提示（设定卡 + 分层判据 + 工具步骤）；
-    * ``done``：注入 ``None``，走既有构思任务说明。
+    缺少结构时同时注入起步模式与结构起草规则；已有结构时返回 ``None``。
 
     起步阶段不叠加旧构思工作台说明（``update_story`` 那套链路不服务起步）。
     """
-    from hastings.workspace.book_startup import (
+    from hastings.workspace.structure_startup import (
         resolve_startup_mode,
         startup_conversation_prompt,
         structure_draft_prompt,
@@ -3326,14 +3515,10 @@ def _startup_phase_system(run: RunContext, workspace: Workspace) -> str | None:
     phase = _startup_phase(run, workspace)
     if phase is None:
         return None
-    if phase == "intent":
-        system, _ = startup_conversation_prompt(resolve_startup_mode(run.current_author_text or ""))
-        return system
-    assert run.story is not None and run.state_root is not None  # noqa: S101
-    variant = StoryStore(run.state_root, workspace).read().variant(run.story.variant_id)
-    book_intent = variant.book_intent.text if variant is not None and variant.book_intent else ""
-    draft_system, draft_instructions = structure_draft_prompt(book_intent)
-    return f"{draft_system}\n\n{draft_instructions}"
+    author_text = run.current_author_text or ""
+    conversation_system, _ = startup_conversation_prompt(resolve_startup_mode(author_text))
+    draft_system, draft_instructions = structure_draft_prompt(author_text)
+    return f"{conversation_system}\n\n{draft_system}\n\n{draft_instructions}"
 
 
 def prepare_request_inputs(
@@ -3396,9 +3581,8 @@ def prepare_request_inputs(
             and (
                 intent is None
                 or intent.allows_structure_write
-                # 起步起草回合：设定卡已经作者确认，结构写入就是本轮被确认的任务本身，
-                # 不再要求作者原话点名「结构」。
-                or _startup_phase(run, workspace) == "draft"
+                # 空作品的明确创作请求直接建立结构，不要求作者使用内部术语。
+                or (_startup_phase(run, workspace) == "draft" and intent.kind == "structure")
             )
         )
         tools.extend(
@@ -3426,18 +3610,29 @@ def prepare_request_inputs(
             )
         )
     startup_draft = _startup_phase(run, workspace) == "draft"
-    if run.intent is not None and not run.intent.allows_module_write and not startup_draft:
-        # 结构任务与讨论轮不开放模块内容写入：模块成功不能代替结构完成。
-        # 起步起草回合例外：首批模块是设定卡确认后的既定任务的一部分。
+    accepted_context_modules = run.guidance.get("kind") == "context_modules" and bool(
+        run.guidance.get("accepted")
+    )
+    if (
+        startup_draft
+        and not accepted_context_modules
+        and (run.intent is None or not run.intent.allows_module_write)
+    ):
+        # 空作品先建立唯一全局结构；模块需要另行建议和确认。
         tools = [tool for tool in tools if tool.name not in _MODULE_CONTENT_TOOLS]
-        if (
-            run.story is not None
-            and run.story.revision == "empty"
-            and "正文" not in (run.current_author_text or "")
-        ):
-            tools = [
-                tool for tool in tools if tool.name not in ("set_task_scope", "extend_task_scope")
-            ]
+    elif run.intent is not None and not run.intent.allows_module_write:
+        # 结构任务与讨论轮不开放模块内容写入：模块成功不能代替结构完成。
+        tools = [tool for tool in tools if tool.name not in _MODULE_CONTENT_TOOLS]
+    if (
+        not accepted_context_modules
+        and not startup_draft
+        and run.story is not None
+        and run.story.revision == "empty"
+        and "正文" not in (run.current_author_text or "")
+    ):
+        tools = [tool for tool in tools if tool.name not in ("set_task_scope", "extend_task_scope")]
+    if run.guidance.get("kind") == "context_modules_resumed":
+        tools = [tool for tool in tools if tool.name != "propose_context_modules"]
 
     if run.story_candidate is not None:
         candidate = run.story_candidate
@@ -3477,11 +3672,23 @@ def prepare_request_inputs(
                 }
             )
 
+        accepted_module_tools = (
+            {"prepare_module_changes", "apply_module_changes", "attach_module"}
+            if accepted_context_modules
+            else set()
+        )
         tools = [
             tool
             for tool in tools
-            if tool.name.startswith(("read_", "search_", "list_"))
-            or tool.name in ("set_task_scope", "extend_task_scope", "ask_author")
+            if tool.name.startswith(("read_", "search_", "list_", "inspect_"))
+            or tool.name
+            in (
+                "set_task_scope",
+                "extend_task_scope",
+                "ask_author",
+                "propose_context_modules",
+            )
+            or tool.name in accepted_module_tools
         ]
 
         async def read_previous_candidate(
@@ -3581,12 +3788,54 @@ def prepare_request_inputs(
             )
         )
     system = resolved.text
+    if run.guidance.get("kind") == "context_modules":
+        accepted = bool(run.guidance.get("accepted"))
+        system += "\n\n## 本轮承接的模块建议\n"
+        system += (
+            "这是上一轮暂停任务后的作者决定。必须继续完成 original_request，"
+            "不能把回答选项当成一项孤立的新任务。\n"
+        )
+        system += json.dumps(dict(run.guidance), ensure_ascii=False)
+        if accepted:
+            system += (
+                "\n作者只授权 proposal.items 中列出的精确操作。create 按给定 slot 登记"
+                " module_content_grants；attach 按给定 module_id 与 revision_id 登记"
+                " module_grants。"
+                "不要增加提案外模块。本轮只履行模块建议，不执行 original_request 的正文或结构工作。"
+                "模块应用或装配提交会结束本轮；应用会用新装配自动继续 original_request。"
+            )
+        else:
+            system += (
+                "\n作者没有采用这次模块建议。不要创建、装入或搜索提案模块；"
+                "直接使用现有上下文继续 original_request，模块缺失不得阻断任务。"
+            )
+    elif run.guidance.get("kind") == "context_modules_resumed":
+        system += "\n\n## 模块建议后的自动续接\n"
+        system += json.dumps(dict(run.guidance), ensure_ascii=False)
+        system += (
+            "\n建议中的模块操作已经提交，本轮冻结的是提交后的新装配。"
+            "继续完成 original_request；不要再次提出模块建议，也不要要求作者重输原要求。"
+        )
     if run.story is not None and run.story.purpose == "design" and run.story_candidate is None:
-        startup_system = _startup_phase_system(run, workspace)
+        intent = run.intent
+        # 明确的模块任务与待澄清确认不应被“作品尚未起步”覆盖；它们按本轮目标
+        # 开放最小工具集。其余空作品请求进入 STRUCTURE.md 起步流程。
+        startup_system = (
+            None
+            if intent is not None and intent.kind in ("module", "clarify")
+            else _startup_phase_system(run, workspace)
+        )
         if startup_system is not None:
             system += startup_system
+            candidate_source = intent.candidate if intent is not None else None
+            if intent is not None and candidate_source is not None:
+                system += story_design_instructions(
+                    intent.kind,
+                    candidate_text=candidate_source.text,
+                    candidate_seq=candidate_source.seq,
+                    multiple=bool(candidate_source.multiple),
+                )
         else:
-            intent = run.intent
             candidate_source = intent.candidate if intent is not None else None
             system += story_design_instructions(
                 intent.kind if intent is not None else "discussion",
@@ -4069,16 +4318,21 @@ def _change_operations_argument(value: JSONValue) -> tuple[ChangeOperation, ...]
         if action not in ("create", "update"):
             raise _input_error("operations", f"包含不支持的操作：{action}")
         name = item.get("name", "")
+        summary = item.get("summary", "")
         body = item.get("body", "")
-        if not isinstance(name, str) or not isinstance(body, str):
-            raise _input_error("operations", "name 与 body 必须是字符串")
+        kind = item.get("kind", "reference")
+        if not all(isinstance(value, str) for value in (name, summary, body, kind)):
+            raise _input_error("operations", "name、summary、body 与 kind 必须是字符串")
         if action == "create":
+            spec(kind)
             operations.append(
                 ChangeOperation(
                     operation_id=operation_id,
                     action="create",
                     name=name,
+                    summary=summary,
                     body=body,
+                    kind=kind,
                 )
             )
             continue
@@ -4130,6 +4384,7 @@ def _change_operations_argument(value: JSONValue) -> tuple[ChangeOperation, ...]
                 operation_id=operation_id,
                 action="update",
                 name=name,
+                summary=summary,
                 binding_id=binding_id,
                 module_id=module_id,
                 base_revision=base_revision,

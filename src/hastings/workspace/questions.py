@@ -55,11 +55,15 @@ class AuthorQuestion:
     conversation_id: str
     turn_id: str
     question: str
+    #: 问题用途；普通澄清保持 decision，模块建议用 context_modules。
+    kind: str = "decision"
     options: tuple[str, ...] = ()
     related: tuple[str, ...] = ()
     created_at: str = ""
     assembly_digest: str = ""
     context: Mapping[str, Any] = field(default_factory=dict)
+    #: 机器可读的建议内容；公开给界面用于解释，但不作为授权本身。
+    proposal: Mapping[str, Any] = field(default_factory=dict)
     answer: str = ""
     answered_at: str = ""
     answered_turn_id: str = ""
@@ -75,9 +79,11 @@ class AuthorQuestion:
             "conversation_id": self.conversation_id,
             "turn_id": self.turn_id,
             "question": self.question,
+            "kind": self.kind,
             "options": list(self.options),
             "related": list(self.related),
             "created_at": self.created_at,
+            "proposal": dict(self.proposal),
             "answered": self.answered,
             "answer": self.answer,
             "answered_at": self.answered_at,
@@ -89,11 +95,13 @@ class AuthorQuestion:
             "conversation_id": self.conversation_id,
             "turn_id": self.turn_id,
             "question": self.question,
+            "kind": self.kind,
             "options": list(self.options),
             "related": list(self.related),
             "created_at": self.created_at,
             "assembly_digest": self.assembly_digest,
             "context": dict(self.context),
+            "proposal": dict(self.proposal),
             "answer": self.answer,
             "answered_at": self.answered_at,
             "answered_turn_id": self.answered_turn_id,
@@ -106,16 +114,19 @@ class AuthorQuestion:
         if not question_id or not conversation_id:
             return None
         context = item.get("context")
+        proposal = item.get("proposal")
         return cls(
             question_id=question_id,
             conversation_id=conversation_id,
             turn_id=_text(item.get("turn_id")),
             question=_text(item.get("question")),
+            kind=_text(item.get("kind")) or "decision",
             options=_texts(item.get("options")),
             related=_texts(item.get("related")),
             created_at=_text(item.get("created_at")),
             assembly_digest=_text(item.get("assembly_digest")),
             context=dict(context) if isinstance(context, dict) else {},
+            proposal=dict(proposal) if isinstance(proposal, Mapping) else {},
             answer=_text(item.get("answer")),
             answered_at=_text(item.get("answered_at")),
             answered_turn_id=_text(item.get("answered_turn_id")),
@@ -161,10 +172,12 @@ class QuestionStore:
         conversation_id: str,
         turn_id: str,
         question: str,
+        kind: str = "decision",
         options: tuple[str, ...] = (),
         related: tuple[str, ...] = (),
         assembly_digest: str = "",
         context: Mapping[str, Any] | None = None,
+        proposal: Mapping[str, Any] | None = None,
     ) -> AuthorQuestion:
         clean = _text(question)
         if not clean:
@@ -188,11 +201,13 @@ class QuestionStore:
             conversation_id=conversation_id,
             turn_id=turn_id,
             question=clean,
+            kind=_text(kind) or "decision",
             options=tuple(item for item in clean_options if item),
             related=tuple(item for item in related if item),
             created_at=_now(),
             assembly_digest=assembly_digest,
             context=dict(context or {}),
+            proposal=dict(proposal or {}),
         )
         self._write((*self.records(), created))
         return created

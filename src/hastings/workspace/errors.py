@@ -50,7 +50,6 @@ class WorkspaceError(Exception):
 _CONFLICT_CODES = frozenset(
     {
         "ASSIST_TARGET_STALE",
-        "BOOK_INTENT_REQUIRED",
         "INDEX_RESULT_STALE",
         "PROSE_DIGEST_MISMATCH",
         "STORY_FORMAT_UNSUPPORTED",

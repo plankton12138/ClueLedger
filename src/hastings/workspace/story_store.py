@@ -75,8 +75,8 @@ MAIN_VARIANT_ID = "main"
 
 
 def _validate_format_version(value: int) -> int:
-    if value not in (2, 4):
-        raise ValueError("构思格式版本只能是 2 或 4")
+    if value not in (2, 4, 5):
+        raise ValueError("构思格式版本只能是 2、4 或 5")
     return value
 
 
@@ -148,7 +148,7 @@ class StoryStore:
         会话当前事件序号。没有提供时，相应的依赖无法核对，按冲突拒绝。
 
         ``format_version`` 只在新文档第一次创建时使用；读取已有文档时以文件里的版本为准。
-        新作品由写作服务显式传入 3，旧作品保持 2。
+        新作品由写作服务显式传入当前格式，旧构思服务保持 2。
         """
         self.workspace = workspace
         self.library = library
@@ -324,7 +324,6 @@ class StoryStore:
                 base_variant_id=source.id,
                 base_revision=source.revision,
                 revision=new_id("rev"),
-                book_intent=source.book_intent,
                 chapter_plans=dict(source.chapter_plans),
                 information_threads=dict(source.information_threads),
                 information_moves=dict(source.information_moves),
@@ -1179,6 +1178,17 @@ class StoryStore:
                     where=f"story.read:{self.file.name}",
                     why=(f"构思文件是版本 {raw['schema_version']} 的旧格式，本版只读取版本 2"),
                     fix="备份后删除构思文件重新开始，或按当前格式改写后再打开",
+                )
+            variants = raw.get("variants")
+            if isinstance(variants, dict) and any(
+                isinstance(value, dict) and value.get("format_version") == 4
+                for value in variants.values()
+            ):
+                raise WorkspaceError(
+                    code="STORY_FORMAT_UNSUPPORTED",
+                    where="写作工作台",
+                    why="这份作品使用已退出的旧格式",
+                    fix="新建作品后使用当前写作流程；本版不迁移旧数据",
                 )
             return StoryDocument.model_validate(raw)
         except (ValueError, ValidationError) as exc:

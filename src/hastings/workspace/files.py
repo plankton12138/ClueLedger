@@ -227,10 +227,10 @@ class SearchResult:
 
 
 class ChapterWriteGuard(Protocol):
-    """章节正文写入的统一前置检查；由写作策略实现，文件层只调用。"""
+    """章节正文的确定性路径检查；由写作策略实现，文件层只调用。"""
 
     def require_write(self, path: str) -> None:
-        """作品还没有全书构思时抛出 ``WorkspaceError``。"""
+        """检查正文内容写入；当前流程没有额外语义门槛。"""
 
     def require_move(self, source: str, target: str) -> None:
         """章节正文路径不能直接改文件名。"""
@@ -412,7 +412,7 @@ class Workspace:
         self._check_expected(self._target(path), path, expected_digest)
 
     def check_chapter_intent(self, path: str) -> None:
-        """只检查全书构思门槛；用于不改变原有指纹错误顺序的写前预检。"""
+        """执行章节内容写入预检；保留名称以兼容工具调用。"""
         self._require_chapter_policy(path, allow_unplanned=False)
 
     def check_move_intent(self, source: str, target: str, *, expected_digest: str) -> None:

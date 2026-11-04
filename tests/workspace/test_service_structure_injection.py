@@ -79,7 +79,7 @@ def test_structure_partition_text_and_snapshot(tmp_path: Path) -> None:
     structure_text, _, snapshot = service._structure_injection(_info())
 
     assert "- 不写超自然力量" in structure_text
-    assert "STYLE.md" in structure_text
+    assert "STYLE.md" not in structure_text
     assert snapshot.structure_injected is True
     assert snapshot.iron_rules_count == 1
     assert snapshot.iron_rules_degraded is False

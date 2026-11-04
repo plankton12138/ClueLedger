@@ -83,6 +83,39 @@ def test_create_multiple_modules_apply_in_one_assembly_commit(tmp_path: Path) ->
         assert library.module(binding.module.module_id).kind == "reference"
 
 
+def test_create_uses_the_requested_module_kind(tmp_path: Path) -> None:
+    library, workspace, service = _setup(tmp_path)
+    prepared = service.prepare(
+        turn_id="turn-kind",
+        operations=(
+            ChangeOperation(
+                "cast",
+                "create",
+                name="人物小传",
+                body="林静是法医。",
+                kind="characters",
+            ),
+        ),
+        base_digest=None,
+    )
+
+    result = service.apply(
+        change_set_id=str(prepared["change_set_id"]),
+        turn_id="turn-kind",
+        expected_digest=None,
+    )
+
+    binding = AssemblyStore(workspace.root).read().bindings[0]
+    assert result["operations"][0]["kind"] == "characters"  # type: ignore[index]
+    assert library.module(binding.module.module_id).kind == "characters"
+    record = library.read_entry(
+        module_id=binding.module.module_id,
+        revision_id=binding.module.revision_id,
+        entry_id="cast",
+    )
+    assert record["kind"] == "character"
+
+
 def test_apply_is_idempotent_and_does_not_create_duplicate_modules(tmp_path: Path) -> None:
     library, _, service, result = _create_two(tmp_path)
 

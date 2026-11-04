@@ -26,6 +26,7 @@ from hastings.workspace.story_models import (
     InformationThread,
     StoryVariant,
 )
+from hastings.workspace.structure_io import read_structure_state
 
 __all__ = [
     "ChapterInformationIndex",
@@ -43,7 +44,6 @@ Placement = Literal["written", "observed_candidate", "alignment"]
 AnalysisState = Literal[
     "not_needed", "queued", "running", "ready", "unavailable", "failed", "stale"
 ]
-BlockedReason = Literal["book_intent_required"]
 
 
 class InformationOccurrence(BaseModel):
@@ -118,7 +118,7 @@ class UnplannedProse(BaseModel):
 
 
 class WritingBookView(BaseModel):
-    intent: str | None
+    structure_exists: bool
     chapters: list[ChapterSummary]
     information_threads: list[InformationThreadSummary]
     unplanned_prose: list[UnplannedProse]
@@ -128,8 +128,7 @@ class WritingProseView(BaseModel):
     path: str
     digest: str
     text: str
-    editable: bool
-    blocked_reason: BlockedReason | None
+    editable: Literal[False] = False
 
 
 class ChapterView(BaseModel):
@@ -165,12 +164,12 @@ def build_workbench(
     index_jobs: IndexJobStore | None = None,
 ) -> WritingWorkbenchView:
     """生成全书或章节投影；选择不改变任何正式内容。"""
-    if variant is not None and variant.format_version < FORMAT_VERSION:
+    if variant is not None and variant.format_version != FORMAT_VERSION:
         raise WorkspaceError(
             code="STORY_FORMAT_UNSUPPORTED",
             where="story.workbench",
-            why="这份作品仍使用旧构思格式",
-            fix="新建作品后使用写作工作台；本版不迁移旧数据",
+            why="这份作品使用已退出的旧格式",
+            fix="新建作品后使用当前写作流程；本版不迁移旧数据",
         )
     if chapter_id is not None and prose_path is not None:
         raise WorkspaceError(
@@ -384,7 +383,7 @@ def _book_view(workspace: Workspace, variant: StoryVariant | None) -> WritingBoo
             )
         )
     return WritingBookView(
-        intent=variant.book_intent.text if variant is not None and variant.book_intent else None,
+        structure_exists=read_structure_state(workspace).exists,
         chapters=[
             ChapterSummary(
                 id=plan.id,
@@ -423,12 +422,6 @@ def _chapter_view(
             details={"chapter_id": chapter_id},
         )
     prose: WritingProseView | None = None
-    intent_missing = (
-        variant is not None
-        and variant.format_version >= FORMAT_VERSION
-        and (variant.book_intent is None or not variant.book_intent.text.strip())
-    )
-    blocked: BlockedReason | None = "book_intent_required" if intent_missing else None
     text = ""
     digest: str | None = None
     if plan.prose_path is not None:
@@ -443,8 +436,6 @@ def _chapter_view(
                 path=view.path,
                 digest=view.digest,
                 text=view.text,
-                editable=blocked is None,
-                blocked_reason=blocked,
             )
     job = index_jobs.read(plan.id) if index_jobs is not None else None
     index = (
@@ -471,18 +462,12 @@ def _unplanned_chapter(
             why="未挂章节的正文不可读",
             fix="刷新目录后重新选择正文",
         ) from exc
-    intent_missing = variant is None or (
-        variant.format_version >= FORMAT_VERSION
-        and (variant.book_intent is None or not variant.book_intent.text.strip())
-    )
     return ChapterView(
         plan=None,
         prose=WritingProseView(
             path=view.path,
             digest=view.digest,
             text=view.text,
-            editable=False,
-            blocked_reason="book_intent_required" if intent_missing else None,
         ),
         index=None,
     )

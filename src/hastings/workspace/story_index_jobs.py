@@ -11,10 +11,10 @@ import asyncio
 import json
 import re
 import time
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,7 +25,12 @@ from hastings.workspace.files import Workspace
 from hastings.workspace.story_models import FORMAT_VERSION, ChapterPlan, StoryVariant
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore, new_id
 from tau_agent.messages import UserMessage, message_text
-from tau_agent.provider_events import AssistantDoneEvent, AssistantErrorEvent, TextDeltaEvent
+from tau_agent.provider_events import (
+    AssistantDoneEvent,
+    AssistantErrorEvent,
+    AssistantMessageEvent,
+    TextDeltaEvent,
+)
 
 __all__ = [
     "IndexAnalysisService",
@@ -191,9 +196,12 @@ class IndexAnalysisService:
                 + (f"｜原句：{quotes[move.id]}" if move.id in quotes else "")
                 for move in variant.information_moves_for_chapter(plan.id)
             )
-            intent = variant.book_intent.text if variant.book_intent else ""
+            from hastings.workspace.structure_io import read_structure_state
+
+            structure = read_structure_state(self.workspace)
             prompt = (
-                f"全书构思：{intent or '（未写）'}\n已入账信息：\n{moves or '（无）'}\n"
+                f"全书结构：\n{structure.text if structure.exists else '（未建立）'}\n"
+                f"已入账信息：\n{moves or '（无）'}\n"
                 f"本次变化段落：\n{job.changed_text}\n"
                 "如果正文与某条已入账信息指向同一处细节但说法不一致（颜色、人物、时间、动作"
                 "等被改写），输出 kind=alignment，并在 statement 里写清两边的内容；"
@@ -201,12 +209,15 @@ class IndexAnalysisService:
                 "不要修改正式内容，不要推测作者真相。"
             )
             async with aclosing(
-                snapshot.provider.stream_response(
-                    model=snapshot.model,
-                    system=system,
-                    messages=[UserMessage(content=prompt)],
-                    tools=[],
-                    signal=None,
+                cast(
+                    AsyncGenerator[AssistantMessageEvent, None],
+                    snapshot.provider.stream_response(
+                        model=snapshot.model,
+                        system=system,
+                        messages=[UserMessage(content=prompt)],
+                        tools=[],
+                        signal=None,
+                    ),
                 )
             ) as stream:
                 async for event in stream:

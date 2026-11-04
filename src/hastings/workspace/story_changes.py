@@ -1,4 +1,4 @@
-"""构思变更的应用、反向操作与对象摘要（1.0.1 P1，1.0.9 增加当前格式）。
+"""构思变更的应用、反向操作与对象摘要（1.0.1 P1，1.2 更新当前格式）。
 
 这里只处理结构，不碰正文文件，也不判断语义是否成立。三条规则值得单独记住：
 
@@ -9,7 +9,7 @@
 * 撤销不是整本回滚。提交时记下反向操作与「改动过的对象 → 提交后摘要」，撤销前重查
   这些对象；只要其中一个后来被改过就冲突，其余无关编辑原样保留。
 
-当前格式 3 另有一条删除顺序：先解除正文关联，再删信息变化、章节与信息线；旧格式操作
+当前格式另有一条删除顺序：先解除正文关联，再删信息变化、章节与信息线；旧格式操作
 与当前格式操作按 ``format_version`` 互斥，不能写进同一份文档。
 """
 
@@ -53,7 +53,6 @@ from hastings.workspace.story_models import (
     RemoveStage,
     RemoveThread,
     RenameClueIdentity,
-    SetBookIntent,
     SetChapterProsePath,
     SetEventTime,
     SetTimeOrigin,
@@ -91,7 +90,7 @@ class StoryInvalid(ValueError):
     """
 
 
-#: 只服务旧格式 2 的操作；当前格式 4 写入时拒绝，避免同一文档出现两份结构真相。
+#: 只服务旧格式 2 的操作；当前格式 5 写入时拒绝，避免同一文档出现两份结构真相。
 _LEGACY_OPERATIONS = (
     AddNode,
     UpdateNode,
@@ -121,9 +120,8 @@ _LEGACY_OPERATIONS = (
     ConfirmAlignment,
 )
 
-#: 当前格式 3 的章节与信息线操作；旧格式不接收。
+#: 当前格式 5 的章节与信息线操作；旧格式不接收。
 _CURRENT_OPERATIONS = (
-    SetBookIntent,
     AddChapterPlan,
     UpdateChapterPlan,
     RemoveChapterPlan,
@@ -172,11 +170,7 @@ def _apply(data: dict[str, Any], operation: StoryOperation) -> None:
     if not current_format and isinstance(operation, _CURRENT_OPERATIONS):
         raise StoryInvalid("当前格式操作不能写入旧格式；旧作品不做迁移")
 
-    if isinstance(operation, SetBookIntent):
-        data["book_intent"] = (
-            operation.intent.model_dump(mode="json") if operation.intent is not None else None
-        )
-    elif isinstance(operation, AddChapterPlan):
+    if isinstance(operation, AddChapterPlan):
         _require_new(chapter_plans, operation.plan.id, "章节")
         chapter_plans[operation.plan.id] = operation.plan.model_dump(mode="json")
     elif isinstance(operation, UpdateChapterPlan):
@@ -439,8 +433,6 @@ def _diff_current(source: StoryVariant, target: StoryVariant) -> list[StoryOpera
         UpdateChapterPlan(chapter_id=key, plan=target.chapter_plans[key])
         for key in updated_chapters
     )
-    if source.book_intent != target.book_intent:
-        operations.append(SetBookIntent(intent=target.book_intent))
     operations.extend(BindProse(binding=target.bindings[key]) for key in added_binds)
     for key in updated_binds:
         operations.append(BindProse(binding=target.bindings[key]))
@@ -585,8 +577,6 @@ def object_digest(value: object) -> str:
 def variant_digests(variant: StoryVariant) -> dict[str, str]:
     """按对象拆开的内容摘要表；撤销前与当前状态逐项比对。"""
     digests: dict[str, str] = {}
-    if variant.book_intent is not None:
-        digests["book_intent"] = object_digest(variant.book_intent.model_dump(mode="json"))
     for key, plan in variant.chapter_plans.items():
         digests[f"chapter_plan:{key}"] = object_digest(plan.model_dump(mode="json"))
     for key, thread in variant.information_threads.items():

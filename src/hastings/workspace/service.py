@@ -26,7 +26,7 @@ import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import aclosing, suppress
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -608,6 +608,8 @@ class TurnInfo:
     operation_id: str = ""
     generation: int = 1
     source_candidate_id: str = ""
+    #: 回答结构化建议时恢复的原任务与作者决定；只用于本轮执行提示。
+    guidance: Mapping[str, Any] = field(default_factory=dict)
 
 
 ActiveState = Literal["accepted", "running", "stop_requested"]
@@ -729,6 +731,7 @@ class TurnService:
         review_paths: Sequence[str] = (),
         reply_to_question: str = "",
         story_action: Literal["create"] | None = None,
+        guidance_override: Mapping[str, Any] | None = None,
     ) -> TurnInfo:
         """受理一轮并立即返回；``conversation_id`` 为空表示「首次发送即建会话」。
 
@@ -877,6 +880,42 @@ class TurnService:
                 prompt = text
             # 任务目标在受理时固定：后面工具是否开放、结束时是否算完成，都读这一份。
             intent = self._task_intent(prompt, frozen, conversation_id, story_action=story_action)
+            guidance: dict[str, Any] = {}
+            if question is not None and question.kind == "context_modules":
+                accept_option = str(question.context.get("proposal_accept_option") or "")
+                accepted_proposal = bool(accept_option and prompt.strip() == accept_option)
+                original_intent_raw = question.context.get("resume_intent")
+                original_intent = (
+                    TaskIntent.from_dict(original_intent_raw)
+                    if isinstance(original_intent_raw, Mapping)
+                    else None
+                )
+                # 建议的回答不是一条新创作任务：无论接受还是跳过，都恢复被暂停的原任务。
+                creates_module = any(
+                    isinstance(item, Mapping) and item.get("action") == "create"
+                    for item in question.proposal.get("items", [])
+                )
+                if accepted_proposal:
+                    # 接受轮只履行模块建议；原创作目标由提交后的新装配轮自动承接。
+                    intent = TaskIntent(
+                        kind="module" if creates_module else "discussion",
+                        structure=False,
+                        module=creates_module,
+                        reason="履行作者已接受的辅助模块建议",
+                        author_text=prompt.strip(),
+                    )
+                elif original_intent is not None:
+                    intent = original_intent
+                guidance = {
+                    "kind": "context_modules",
+                    "question_id": question.question_id,
+                    "accepted": accepted_proposal,
+                    "answer": prompt.strip(),
+                    "original_request": str(question.context.get("resume_author_text") or ""),
+                    "proposal": dict(question.proposal),
+                }
+            if guidance_override is not None:
+                guidance = dict(guidance_override)
             if intent is not None and frozen.story is not None and frozen.story.purpose == "design":
                 from hastings.workspace.story_clue_catalog import StoryClueCatalog
                 from hastings.workspace.story_store import StoryStore
@@ -1000,6 +1039,7 @@ class TurnService:
                     "source_candidate_id": (
                         str(question.context.get("candidate_id") or "") if question else ""
                     ),
+                    "guidance": guidance,
                 }
                 if snapshot is not None and (not frozen.selected_path or selected_digest)
                 else {},
@@ -1040,6 +1080,7 @@ class TurnService:
                 source_candidate_id=(
                     str(question.context.get("candidate_id") or "") if question else ""
                 ),
+                guidance=guidance,
                 purpose=purpose,
                 review_paths=review_targets,
                 assembly=assembly_snapshot,
@@ -1282,6 +1323,8 @@ class TurnService:
         试验复现的「只交文件更新不交正文」失败形态；按 ``EXPECTED_PROSE_MISSING``
         确定性归因，正文不产出就不算完成。纯讨论回复（没有写入）不算失败。
         """
+        if info.guidance.get("kind") == "context_modules" and info.guidance.get("accepted"):
+            return False
         if run.story is None or run.story.purpose not in ("write", "revise"):
             return False
         if run.pending_question is not None:
@@ -1312,6 +1355,75 @@ class TurnService:
             if event.get("type") in write_kinds:
                 return True
         return False
+
+    def _context_modules_fulfilled(self, info: TurnInfo) -> bool:
+        """结构化模块建议是否按提案类型产生了最终提交收据。"""
+        guidance = info.guidance
+        if guidance.get("kind") != "context_modules" or not guidance.get("accepted"):
+            return False
+        proposal = guidance.get("proposal")
+        items = proposal.get("items") if isinstance(proposal, Mapping) else None
+        if not isinstance(items, list) or not items:
+            return False
+        actions = {str(item.get("action") or "") for item in items if isinstance(item, Mapping)}
+        if actions == {"create"}:
+            receipt = "module_changes_applied"
+        elif actions == {"attach"}:
+            receipt = "assembly_attached"
+        else:
+            return False
+        return any(
+            event.get("type") == receipt and str(event.get("turn_id") or "") == info.turn_id
+            for event in self.store.events(info.conversation_id)
+        )
+
+    async def _resume_after_context_modules(self, info: TurnInfo) -> None:
+        """模块履行提交后，以新装配自动开启原任务；确定性请求键防止重复续接。"""
+        original = str(info.guidance.get("original_request") or "").strip()
+        question_id = str(info.guidance.get("question_id") or "").strip()
+        if not original or not question_id:
+            return
+        request = _context_from_question(info.context.to_dict() if info.context else {})
+        if request.story is not None:
+            # 模块履行轮结束后重新冻结当前方案，不沿用回答前的修订号。
+            request = replace(request, story=replace(request.story, revision=""))
+        guidance = {
+            "kind": "context_modules_resumed",
+            "question_id": question_id,
+            "accepted": True,
+            "original_request": original,
+            "proposal": dict(info.guidance.get("proposal") or {}),
+        }
+        try:
+            resumed = await self.accept(
+                original,
+                f"context-modules-resume:{question_id}",
+                conversation_id=info.conversation_id,
+                context=request,
+                purpose=info.purpose,
+                guidance_override=guidance,
+            )
+        except Exception as exc:  # 模块已经提交；续接失败要留下可重放的明确事实。
+            self.store.append(
+                info.conversation_id,
+                {
+                    "type": "context_resume_failed",
+                    "turn_id": info.turn_id,
+                    "question_id": question_id,
+                    "code": getattr(exc, "code", None) or "CONTEXT_RESUME_FAILED",
+                    "message": getattr(exc, "message", None) or str(exc),
+                },
+            )
+            return
+        self.store.append(
+            info.conversation_id,
+            {
+                "type": "context_task_resumed",
+                "turn_id": info.turn_id,
+                "question_id": question_id,
+                "resumed_turn_id": resumed.turn_id,
+            },
+        )
 
     def _assess_story_completion(self, info: TurnInfo, run: RunContext) -> tuple[str, str]:
         """按任务目标与实际收据判定完成；没有结构提交就不能报整体完成。"""
@@ -1593,6 +1705,7 @@ class TurnService:
                 why="原请求的模块装配已经变化",
                 fix="检查当前装配后重新发起任务",
             )
+        guidance = raw.get("guidance")
         info = TurnInfo(
             turn_id=operation.turn_id,
             conversation_id=operation.conversation_id,
@@ -1607,6 +1720,7 @@ class TurnService:
             operation_id=operation.id,
             generation=operation.generation,
             source_candidate_id=str(raw.get("source_candidate_id") or ""),
+            guidance=dict(guidance) if isinstance(guidance, dict) else {},
         )
         return info
 
@@ -2797,6 +2911,7 @@ class TurnService:
                     request_context=info.context.to_dict() if info.context else {},
                     story=info.context.story if info.context else None,
                     intent=info.intent,
+                    guidance=info.guidance,
                     story_guard=self._write_guard(info),
                     story_decision_guard=(
                         lambda: self.operations.eligible_generation(
@@ -2808,7 +2923,14 @@ class TurnService:
                     operation_id=info.operation_id,
                     generation=info.generation,
                 )
-                if run.story is not None and run.story.purpose in ("write", "revise"):
+                if (
+                    run.story is not None
+                    and run.story.purpose in ("write", "revise")
+                    and not (
+                        run.guidance.get("kind") == "context_modules"
+                        and bool(run.guidance.get("accepted"))
+                    )
+                ):
                     from hastings.workspace.story_candidate import StoryCandidate
 
                     run.story_candidate = StoryCandidate(
@@ -2848,9 +2970,7 @@ class TurnService:
                 turn_ideas = ideas_section(info.context)
                 # 结构层注入与确定性对账（M3）：铁律/结构全文/STYLE 占位 + 台账事实；
                 # 目标章来自任务元数据时在这里对账，改派说明并入台账分区。
-                structure_text, ledger_text, structure_snapshot = self._structure_injection(
-                    info
-                )
+                structure_text, ledger_text, structure_snapshot = self._structure_injection(info)
                 # 模块按需选择（M3）：目标章已知（含对账改派后的章）时叠加「本轮相关」
                 # 条目段；目标未知时模块分区保持纯索引，由模型在会话内按需检索。
                 effective_target = (
@@ -3168,6 +3288,8 @@ class TurnService:
             # 只释放自己占用的那一轮：后面受理的新轮次不能被前一轮的收尾清掉。
             if not superseded and self._active is not None and self._active.turn_id == info.turn_id:
                 self._active = None
+            if not superseded and status == "completed" and self._context_modules_fulfilled(info):
+                await self._resume_after_context_modules(info)
 
     def _record_idea_applications(self, info: TurnInfo, result: RunResult) -> None:
         """把「灵感原文确实出现在改动后的正文里」登记为已采用。

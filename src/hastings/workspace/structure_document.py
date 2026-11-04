@@ -35,7 +35,7 @@ STRUCTURE_FILENAME = "STRUCTURE.md"
 IRON_RULES_MARKER = "## 铁律"
 
 #: 结构全文的字数预算（字符数）。超限时入档事务要求先提交压缩版，不静默截断。
-BUDGET_LIMIT = 1600
+BUDGET_LIMIT = 6000
 
 
 @dataclass(frozen=True)

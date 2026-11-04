@@ -99,22 +99,12 @@ def _open(client: TestClient, tmp_path: Path) -> tuple[str, Path]:
 def _setup_chapter(client: TestClient, tmp_path: Path) -> dict[str, Any]:
     workspace_id, root = _open(client, tmp_path)
     base = f"/api/file-workspaces/{workspace_id}/story"
-    intent = client.put(
-        f"{base}/book-intent",
-        json={
-            "text": "暴雪封山的旅馆发生命案，林砚从湿手套开始怀疑管家。",
-            "expected_plan_revision": "empty",
-            "request_key": "book",
-        },
-    )
-    assert intent.status_code == 200, intent.text
-    plan_revision = intent.json()["plan_revision"]
     created = client.post(
         f"{base}/chapters",
         json={
             "title": "第一章",
             "after_chapter_id": None,
-            "expected_plan_revision": plan_revision,
+            "expected_plan_revision": "empty",
             "request_key": "chapter",
         },
     )
@@ -500,7 +490,6 @@ def test_prose_prompt_requires_reconcile_first(
     from hastings.prompts.self_check import prose_draft_system_prompt, prose_draft_user_prompt
 
     prompt = prose_draft_user_prompt(
-        intent="",
         structure_text="",
         ledger_text="第 1 章尚无正文登记，改派第 1 章",
         moves="",

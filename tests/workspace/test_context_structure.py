@@ -1,6 +1,6 @@
 """结构层分区装配测试（v1.1 M3，Q2-B）。
 
-装配顺序契约（q0-contracts 第 4 节）：铁律 → 结构全文 → STYLE 占位 → 模块 →
+装配顺序契约：STRUCTURE.md 唯一全局语义分区 → 模块 →
 台账。这里验证分区在装配结果里的相对顺序、常驻不裁与空台账跳过。
 """
 
@@ -12,7 +12,6 @@ from hastings.workspace.context import build_assembled_context
 from hastings.workspace.files import Workspace
 from hastings.workspace.prose_ledger import ProseLedger
 from hastings.workspace.structure_assembly import (
-    STYLE_PLACEHOLDER,
     ledger_section,
     split_structure_layers,
     structure_section_text,
@@ -53,7 +52,7 @@ def test_structure_partition_is_required_never_skipped(tmp_path: Path) -> None:
     assert "structure" not in [skip.key for skip in assembled.skipped]
     part = next(part for part in assembled.parts if part.key == "structure")
     assert "- 不写超自然力量" in part.text
-    assert STYLE_PLACEHOLDER in part.text
+    assert "STYLE.md" not in part.text
 
 
 def test_empty_structure_and_ledger_are_skipped_as_empty(tmp_path: Path) -> None:

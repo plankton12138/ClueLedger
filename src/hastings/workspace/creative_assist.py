@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,12 +34,16 @@ from hastings.workspace.files import Workspace
 from hastings.workspace.story_models import FORMAT_VERSION, StoryVariant
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 from tau_agent.messages import UserMessage, message_text
-from tau_agent.provider_events import AssistantDoneEvent, AssistantErrorEvent, TextDeltaEvent
+from tau_agent.provider_events import (
+    AssistantDoneEvent,
+    AssistantErrorEvent,
+    AssistantMessageEvent,
+    TextDeltaEvent,
+)
 
 __all__ = ["AssistKind", "CreativeAssistInput", "CreativeAssistService"]
 
 AssistKind = Literal[
-    "book_intent",
     "chapter_direction",
     "title",
     "prose_draft",
@@ -51,7 +56,6 @@ AssistKind = Literal[
 
 _KINDS = frozenset(
     {
-        "book_intent",
         "chapter_direction",
         "title",
         "prose_draft",
@@ -82,7 +86,7 @@ class CreativeAssistService:
     def __init__(
         self,
         *,
-        state_root,
+        state_root: Path,
         workspace: Workspace | None,
         candidates: CreativeCandidateStore,
         provider_factory: Callable[[], ModelSnapshot],
@@ -162,12 +166,15 @@ class CreativeAssistService:
         final: str | None = None
         try:
             async with aclosing(
-                snapshot.provider.stream_response(
-                    model=snapshot.model,
-                    system=system,
-                    messages=[UserMessage(content=prompt)],
-                    tools=[],
-                    signal=None,
+                cast(
+                    AsyncGenerator[AssistantMessageEvent, None],
+                    snapshot.provider.stream_response(
+                        model=snapshot.model,
+                        system=system,
+                        messages=[UserMessage(content=prompt)],
+                        tools=[],
+                        signal=None,
+                    ),
                 )
             ) as stream:
                 async for event in stream:
@@ -248,9 +255,7 @@ class CreativeAssistService:
         finally:
             await snapshot.aclose()
 
-    def _drafting_injection(
-        self, plan: Any
-    ) -> tuple[str, str, int | None, int | None]:
+    def _drafting_injection(self, plan: Any) -> tuple[str, str, int | None, int | None]:
         """起草任务的确定性注入（M5）：铁律/结构全文、台账与对账结论。
 
         装配层确定性对账是主防线：这里把对账结论写进提示词并把改派目标告诉
@@ -299,7 +304,6 @@ class CreativeAssistService:
         needs_story = (
             request.kind
             in {
-                "book_intent",
                 "chapter_direction",
                 "prose_draft",
                 "prose_continue",
@@ -315,14 +319,14 @@ class CreativeAssistService:
                 .read()
                 .variant(MAIN_VARIANT_ID)
             )
-        if variant is None and needs_story and request.kind != "book_intent":
+        if variant is None and needs_story:
             raise WorkspaceError(
                 code="STORY_FORMAT_UNSUPPORTED",
                 where="creative-assist",
-                why="当前作品没有当前格式的写作构思",
-                fix="先建立作品意图与章节构思，再请求模型辅助",
+                why="当前作品还没有章节事实层",
+                fix="先在对话中开始作品或建立章节，再请求章节辅助",
             )
-        if variant is not None and variant.format_version < FORMAT_VERSION:
+        if variant is not None and variant.format_version != FORMAT_VERSION:
             raise WorkspaceError(
                 code="STORY_FORMAT_UNSUPPORTED",
                 where="creative-assist",
@@ -342,15 +346,6 @@ class CreativeAssistService:
                     path, digest = None, None
         if request.kind in {"idea", "module_content", "next_action"} and not request.draft_text:
             raise _target_error("这类辅助需要作者提供当前草稿或指令")
-        if request.kind in {"prose_draft", "prose_continue"}:
-            assert variant is not None and plan is not None
-            if variant.book_intent is None or not variant.book_intent.text.strip():
-                raise WorkspaceError(
-                    code="BOOK_INTENT_REQUIRED",
-                    where=f"章节/{plan.id}",
-                    why="作品尚无全书构思",
-                    fix="先写一句作品意图，或选择「交给模型构思」",
-                )
         expected = request.base
         if variant is not None:
             if expected.plan_revision and expected.plan_revision != variant.revision:
@@ -386,13 +381,7 @@ class CreativeAssistService:
     ) -> tuple[str, str]:
         note = (request.author_note or "").strip()
         draft = (request.draft_text or "").strip()
-        intent = variant.book_intent.text if variant is not None and variant.book_intent else ""
-        if request.kind == "book_intent":
-            return (
-                "你是悬疑小说创作助手。只输出候选文字，不解释过程。",
-                f"当前作品意图：{intent or '（空白）'}\n作者补充：{note or '（无）'}\n"
-                "请给出 3 个可继续发展的悬疑起点；不确定凶手、真相或结局。每行一个。",
-            )
+        structure = self._structure_text()
         if request.kind == "chapter_direction":
             title = plan.title if plan is not None else (request.target.draft_id or "本章")
             done = ""
@@ -405,7 +394,7 @@ class CreativeAssistService:
                 )
             return (
                 "你是悬疑小说创作助手。只给可以往下写的方向参考，不写正文，不列属性表。",
-                f"全书意图：{intent or '（未写）'}\n章节：{title}\n"
+                f"全书结构：\n{structure or '（未建立）'}\n章节：{title}\n"
                 f"已完成章节：\n{done or '（无）'}\n"
                 f"作者补充：{note or '（无）'}\n"
                 "给出 2—3 个本章可以推进的方向，每个方向用一句话说明会发生什么变化；"
@@ -426,7 +415,6 @@ class CreativeAssistService:
             return (
                 prose_draft_system_prompt(),
                 prose_draft_user_prompt(
-                    intent=intent,
                     structure_text=structure_text,
                     ledger_text=ledger_text,
                     moves=moves,
@@ -441,12 +429,12 @@ class CreativeAssistService:
         if request.kind == "title":
             return (
                 "你是悬疑小说命名助手。只输出候选标题，每行一个，不解释。",
-                f"内容参考：{draft or intent or note or '（空白）'}\n请给出 5 个简洁标题。",
+                f"内容参考：{draft or note or '（空白）'}\n请给出 5 个简洁标题。",
             )
         if request.kind == "alignment_resolution":
             return (
                 "你是悬疑小说编辑助手。只给处理建议，不替作者决定真相，也不直接改写。",
-                f"全书意图：{intent or '（未写）'}\n"
+                f"全书结构：\n{structure or '（未建立）'}\n"
                 f"本章已入账信息：{_chapter_moves_text(variant, plan) or '（无）'}\n"
                 f"作者补充：{note or '（无）'}\n"
                 "列出正文与已入账信息的具体差异，并给出 2—3 种处理方向；"
@@ -468,6 +456,14 @@ class CreativeAssistService:
             f"当前已入账信息：{_chapter_moves_text(variant, plan) or '（无）'}\n"
             f"作者指令草稿：{draft or note or '（空白）'}",
         )
+
+    def _structure_text(self) -> str:
+        if self.workspace is None:
+            return ""
+        from hastings.workspace.structure_io import read_structure_state
+
+        state = read_structure_state(self.workspace)
+        return state.text if state.exists else ""
 
 
 def _chapter_moves_text(variant: StoryVariant | None, plan: Any) -> str:

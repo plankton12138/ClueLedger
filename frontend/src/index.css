@@ -963,6 +963,15 @@
   .writing-layout .prose-paper p { line-height: 1.95; margin-block: 1em; }
   .writing-layout .prose-paper h1 { font-size: 30px; line-height: 1.5; margin-bottom: 1em; }
   .writing-layout .paper-lined { background: none; padding: 28px clamp(24px, 3vw, 60px) 48px; }
+  .writing-empty-guide { display: grid; min-height: 100%; place-items: center; padding: 32px 12px 52px; }
+  .writing-empty-guide-copy { width: min(100%, 560px); text-align: center; }
+  .writing-empty-guide-icon { margin-inline: auto; color: theme("colors.ui.accent"); }
+  .writing-empty-guide h1 { margin-top: 12px; font-family: theme("fontFamily.serif"); font-size: 28px; font-weight: 600; line-height: 1.45; }
+  .writing-empty-guide-copy > p { margin-top: 8px; color: theme("colors.ui.secondaryText"); font-size: 15px; line-height: 1.7; }
+  .writing-empty-examples { display: grid; gap: 6px; margin-top: 24px; text-align: left; }
+  .writing-empty-examples button { border-left: 2px solid transparent; padding: 8px 10px; color: theme("colors.ui.text"); font-size: 15px; line-height: 1.55; text-align: left; }
+  .writing-empty-examples button:hover, .writing-empty-examples button:focus-visible { border-left-color: theme("colors.ui.accent"); background: theme("colors.ui.selected"); color: theme("colors.ui.accentHover"); }
+  .writing-empty-guide-copy .writing-empty-guide-hint { display: inline-flex; align-items: center; gap: 5px; margin-top: 20px; font-size: 13px; }
   .writing-layout .chat-input { font-size: 16px; min-height: 104px; }
   .writing-layout .chat-bubble { font-size: 16px; line-height: 1.75; }
   .writing-layout .chat-shell { border-left: 0; background: theme("colors.ui.surfaceLow"); }

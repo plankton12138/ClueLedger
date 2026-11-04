@@ -1,4 +1,4 @@
-"""1.0.9 P6：工作台投影、建章即建正文与正文保存接口。"""
+"""1.2 P1：格式 5 工作台、建章即建正文与只读正文投影。"""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def open_workspace(client: TestClient, tmp_path: Path) -> tuple[str, Path]:
     return body["id"], Path(body["path"])
 
 
-def test_chapter_cannot_be_created_before_book_intent(
+def test_first_chapter_can_initialize_story(
     client: TestClient, tmp_path: Path
 ) -> None:
     workspace_id, _ = open_workspace(client, tmp_path)
@@ -56,8 +56,8 @@ def test_chapter_cannot_be_created_before_book_intent(
         },
     )
 
-    assert response.status_code == 409, response.text
-    assert response.json()["error"]["code"] == "BOOK_INTENT_REQUIRED"
+    assert response.status_code == 201, response.text
+    assert response.json()["chapter_id"]
 
 
 def test_writing_flow_through_http(client: TestClient, tmp_path: Path) -> None:
@@ -69,23 +69,12 @@ def test_writing_flow_through_http(client: TestClient, tmp_path: Path) -> None:
     assert book.json()["plan_revision"] is None
     assert book.json()["book"]["chapters"] == []
 
-    intent = client.put(
-        f"{base}/book-intent",
-        json={
-            "text": "暴雪封山的旅馆发生命案，林砚从湿手套开始怀疑管家。",
-            "expected_plan_revision": "empty",
-            "request_key": "book:1",
-        },
-    )
-    assert intent.status_code == 200, intent.text
-    plan_revision = intent.json()["plan_revision"]
-
     created = client.post(
         f"{base}/chapters",
         json={
             "title": "第一章",
             "after_chapter_id": None,
-            "expected_plan_revision": plan_revision,
+            "expected_plan_revision": "empty",
             "request_key": "chapter:1",
         },
     )
@@ -97,8 +86,8 @@ def test_writing_flow_through_http(client: TestClient, tmp_path: Path) -> None:
     chapter = client.get(f"{base}/workbench", params={"chapter_id": chapter_id}).json()
     assert chapter["chapter"]["plan"]["moves"] == []
     assert "can_start" not in chapter["chapter"]
-    assert chapter["chapter"]["prose"]["editable"] is True
-    assert chapter["chapter"]["prose"]["blocked_reason"] is None
+    assert chapter["chapter"]["prose"]["editable"] is False
+    assert "blocked_reason" not in chapter["chapter"]["prose"]
     assert chapter["chapter"]["index"]["items"] == []
     assert chapter["chapter"]["index"]["analysis"]["state"] == "unavailable"
 
@@ -159,5 +148,5 @@ def test_unplanned_prose_is_readonly_in_workbench(client: TestClient, tmp_path: 
     body = chapter.json()
     assert body["chapter"]["plan"] is None
     assert body["chapter"]["prose"]["editable"] is False
-    assert body["chapter"]["prose"]["blocked_reason"] == "book_intent_required"
+    assert "blocked_reason" not in body["chapter"]["prose"]
     assert body["chapter"]["index"] is None

@@ -96,6 +96,7 @@ class ChangeOperationPayload(BaseModel):
     operation_id: str
     action: Literal["create", "update"]
     name: str = ""
+    summary: str = ""
     body: str = ""
     binding_id: str = ""
     module_id: str = ""
@@ -390,6 +391,7 @@ def _change_operations(
             operation_id=item.operation_id,
             action=item.action,
             name=item.name,
+            summary=item.summary,
             body=item.body,
             binding_id=item.binding_id,
             module_id=item.module_id,

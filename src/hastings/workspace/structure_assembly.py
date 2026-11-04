@@ -2,12 +2,10 @@
 
 装配顺序契约（冻结，见 ``dev-notes/v1.1/notes/q0-contracts.md`` 第 4 节）：
 
-1. 铁律（常驻；标记丢失时降级全文注入并如实标注）；
-2. 结构全文（常驻，文件本身冻结 1600 字符预算）；
-3. ``STYLE.md``（本版空占位）；
-4. 当次涉及挂载模块（按写作目标按需选择，目标未知时注入模块索引）；
-5. 正文台账（只读事实）；
-6. 必发生清单（模型起草同回合自列，不落盘，进装配回执展示）。
+1. ``STRUCTURE.md`` 全文（铁律在前；标记丢失时降级全文注入并如实标注）；
+2. 当次涉及的已装模块；
+3. 正文台账（只读事实）；
+4. 必发生清单（模型起草同回合自列，不落盘，进装配回执展示）。
 
 本模块只回答「注入什么文本、快照记什么」，不触模型、不写文件：分区文本交给
 ``context.py`` 的分区装配，快照随 ``state_injected`` 事件进请求回执，作者可核对
@@ -22,7 +20,6 @@ from hastings.workspace.prose_ledger import ProseLedger, ReconcileDecision
 from hastings.workspace.structure_document import split_iron_rules
 
 __all__ = [
-    "STYLE_PLACEHOLDER",
     "LooseCheckRow",
     "StructureSnapshot",
     "StructureLayers",
@@ -33,10 +30,6 @@ __all__ = [
     "split_structure_layers",
     "structure_section_text",
 ]
-
-#: 第 3 层：``STYLE.md`` 空占位。本版不启用独立风格文件，占位如实说明这一点，
-#: 不假装装入了风格内容。
-STYLE_PLACEHOLDER = "（占位：本版未启用独立风格文件；上面的铁律即当前全部写作规则。）"
 
 #: 台账与结构文件冲突时的优先级声明，随台账一起注入。
 _LEDGER_PRIORITY_NOTE = (
@@ -69,7 +62,7 @@ def split_structure_layers(text: str) -> StructureLayers:
 
 
 def structure_section_text(layers: StructureLayers) -> str:
-    """第 1—3 层的分区文本：铁律 → 结构全文 → STYLE 空占位。
+    """唯一全局语义分区：``STRUCTURE.md`` 的铁律与其余全文。
 
     降级时铁律小节如实标注丢失原因，并全文注入——常驻规则不能因为标记丢失
     就整块消失，但也不能假装知道边界在哪。
@@ -88,7 +81,6 @@ def structure_section_text(layers: StructureLayers) -> str:
             blocks.append(f"### 铁律（写作规则，逐条遵守）\n{rules}")
         if layers.body:
             blocks.append(f"### 全书结构（STRUCTURE.md，模型自维护）\n{layers.body}")
-    blocks.append(f"### 风格（STYLE.md）\n{STYLE_PLACEHOLDER}")
     return "\n\n".join(blocks)
 
 

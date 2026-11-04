@@ -57,6 +57,7 @@ class CatalogRevision:
     revision_id: str
     module_kind: str
     module_name: str
+    summary: str
     entries: tuple[CatalogEntry, ...]
 
     def view(self) -> dict[str, object]:
@@ -66,6 +67,7 @@ class CatalogRevision:
             "revision_id": self.revision_id,
             "kind": self.module_kind,
             "name": self.module_name,
+            "summary": self.summary,
             "entries": [item.view() for item in self.entries],
         }
 
@@ -88,6 +90,8 @@ class LibraryCatalog:
     ) -> CatalogRevision:
         manifest_path = storage.revision_dir(module_id, revision_id) / "manifest.json"
         manifest_digest = _file_digest(manifest_path)
+        manifest = storage.read_manifest(module_id, revision_id)
+        summary = str(manifest.get("summary") or "").strip()
         cached = self._read_cache().get((library_id, module_id, revision_id))
         if cached is not None and cached[0] == manifest_digest:
             return CatalogRevision(
@@ -96,9 +100,18 @@ class LibraryCatalog:
                 revision_id=revision_id,
                 module_kind=module_kind,
                 module_name=module_name,
+                summary=summary,
                 entries=tuple(_entry_from(row) for row in cached[1]),
             )
-        result = self._build(storage, library_id, module_id, revision_id, module_kind, module_name)
+        result = self._build(
+            storage,
+            library_id,
+            module_id,
+            revision_id,
+            module_kind,
+            module_name,
+            summary,
+        )
         self._write_cache(library_id, module_id, revision_id, manifest_digest, result.entries)
         return result
 
@@ -135,6 +148,7 @@ class LibraryCatalog:
         revision_id: str,
         module_kind: str,
         module_name: str,
+        summary: str,
     ) -> CatalogRevision:
         manifest = storage.read_manifest(module_id, revision_id)
         entries: list[CatalogEntry] = []
@@ -172,6 +186,7 @@ class LibraryCatalog:
             revision_id=revision_id,
             module_kind=module_kind,
             module_name=module_name,
+            summary=summary,
             entries=tuple(entries),
         )
 

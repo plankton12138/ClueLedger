@@ -7,30 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from hastings.workspace.creative_candidates import CandidateBase, CreativeTarget
 
 __all__ = [
-    "BookIntentRequest",
-    "StartupConfirmRequest",
     "ChapterCreateRequest",
     "IndexConfirmRequest",
     "CreativeAssistRequest",
     "ProseSaveRequest",
 ]
-
-
-class StartupConfirmRequest(BaseModel):
-    """起步设定卡确认（v1.1 M1）：不带 expected 修订，由服务端按当前状态核对。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    text: str = Field(min_length=1, max_length=4000)
-    request_key: str = Field(min_length=1, max_length=200)
-
-
-class BookIntentRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    text: str = Field(min_length=1, max_length=4000)
-    expected_plan_revision: str = Field(min_length=1, max_length=64)
-    request_key: str = Field(min_length=1, max_length=200)
 
 
 class ChapterCreateRequest(BaseModel):

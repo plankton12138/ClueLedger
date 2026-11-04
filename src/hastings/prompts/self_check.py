@@ -61,7 +61,6 @@ def prose_draft_system_prompt() -> str:
 
 def prose_draft_user_prompt(
     *,
-    intent: str,
     structure_text: str,
     ledger_text: str,
     moves: str,
@@ -74,7 +73,7 @@ def prose_draft_user_prompt(
 ) -> str:
     """起草/续写用户提示：注入铁律与结构、台账与对账结论、必发生清单要求。
 
-    ``structure_text`` 为装配层准备好的第 1—3 层文本（铁律 → 结构全文 → STYLE 占位）；
+    ``structure_text`` 为装配层准备好的 ``STRUCTURE.md`` 全文（铁律在前）；
     ``ledger_text`` 为台账事实与对账说明（含改派结论时 ``redirected_to`` 同步给出，
     提示词据此把写作目标改为补缺）。
     """
@@ -87,8 +86,6 @@ def prose_draft_user_prompt(
     if redirected_to is not None:
         task += f" 注意：对账发现更早章节缺正文，本轮改为补写第 {redirected_to} 章，不写原目标章。"
     parts = [task]
-    if intent:
-        parts.append(f"全书意图：{intent}")
     if structure_text:
         parts.append(f"写作规则与结构（铁律在前，必须逐条遵守）：\n{structure_text}")
     if ledger_text:

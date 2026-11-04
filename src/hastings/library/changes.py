@@ -28,6 +28,7 @@ from typing import Any, Literal
 from hastings.library.bindings import AssemblyService
 from hastings.library.ids import new_id, source_path
 from hastings.library.modules import ModuleLibrary, RevisionInfo
+from hastings.library.presets import spec
 from hastings.library.records import EntryDraft, parse_entry, validate_entries
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
@@ -46,7 +47,6 @@ CHANGE_SET_SCHEMA = 1
 _CHANGE_ROOT = ".clueledger/module-change-sets"
 _MAX_OPERATIONS = 20
 _DEFAULT_MODULE_KIND = "reference"
-_DEFAULT_ENTRY_KIND = "reference"
 
 ChangeAction = Literal["create", "update"]
 
@@ -72,7 +72,9 @@ class ChangeOperation:
     operation_id: str
     action: ChangeAction
     name: str = ""
+    summary: str = ""
     body: str = ""
+    kind: str = _DEFAULT_MODULE_KIND
     binding_id: str = ""
     module_id: str = ""
     base_revision: str = ""
@@ -572,16 +574,19 @@ class ModuleChangeService:
         if operation.get("action") == "create":
             name = _checked_name(str(operation.get("name") or ""))
             body = _checked_body(str(operation.get("body") or ""))
+            module_kind = str(operation.get("kind") or _DEFAULT_MODULE_KIND)
+            module_spec = spec(module_kind)
             entry = EntryDraft(
                 entry_id=_checked_entry_id(str(operation.get("operation_id") or "")),
-                kind=_DEFAULT_ENTRY_KIND,
+                kind=module_spec.source_kinds[0],
                 title=name,
                 body=body,
             )
-            validate_entries([entry], module_kind=_DEFAULT_MODULE_KIND)
+            validate_entries([entry], module_kind=module_kind)
             created = self.library.create_module(
-                kind=_DEFAULT_MODULE_KIND,
+                kind=module_kind,
                 name=name,
+                summary=str(operation.get("summary") or ""),
                 entries=[entry],
                 request_key=_request_key(
                     "content",
@@ -672,6 +677,7 @@ class ModuleChangeService:
         revision = self.library.save_workspace_revision(
             module_id=module_id,
             base_revision=base_revision,
+            summary=str(operation.get("summary") or ""),
             entries=validate_entries(drafts, module_kind=module.kind),
             request_key=_request_key(
                 "content",
@@ -791,12 +797,15 @@ def _checked_operations(operations: Sequence[ChangeOperation]) -> tuple[ChangeOp
         if operation.action == "create":
             _checked_name(operation.name)
             _checked_body(operation.body)
+            spec(operation.kind)
             checked.append(
                 ChangeOperation(
                     operation_id=operation_id,
                     action="create",
                     name=operation.name.strip(),
+                    summary=operation.summary.strip(),
                     body=operation.body,
+                    kind=operation.kind,
                 )
             )
             continue
@@ -815,6 +824,7 @@ def _checked_operations(operations: Sequence[ChangeOperation]) -> tuple[ChangeOp
                 operation_id=operation_id,
                 action="update",
                 name=operation.name.strip(),
+                summary=operation.summary.strip(),
                 binding_id=operation.binding_id,
                 module_id=operation.module_id,
                 base_revision=operation.base_revision,
@@ -974,8 +984,11 @@ def _operation_payload(operation: ChangeOperation) -> dict[str, object]:
     }
     if operation.name:
         payload["name"] = operation.name
+    if operation.summary:
+        payload["summary"] = operation.summary
     if operation.action == "create":
         payload["body"] = operation.body
+        payload["kind"] = operation.kind
         payload["slot"] = operation.operation_id
     else:
         payload["binding_id"] = operation.binding_id
@@ -1052,6 +1065,7 @@ def _operation_view(operation: Mapping[str, Any]) -> dict[str, object]:
     if operation.get("name"):
         view["name"] = operation["name"]
     if operation.get("action") == "create":
+        view["kind"] = operation.get("kind") or _DEFAULT_MODULE_KIND
         view["chars"] = len(str(operation.get("body") or ""))
     else:
         view["binding_id"] = operation.get("binding_id")

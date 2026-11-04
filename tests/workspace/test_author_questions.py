@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from hastings.library import EntryDraft, ModuleLibrary
 from hastings.server.file_app import create_workspace_app
 from hastings.server.provider_runtime import ModelSnapshot
 from hastings.workspace.agent import RunContext
@@ -86,7 +87,12 @@ def client_factory(tmp_path: Path) -> Iterator[Callable[[ProviderFactory], TestC
 
     def build(factory: ProviderFactory) -> TestClient:
         book = RecentWorkspaces(tmp_path / "state")
-        client = TestClient(create_workspace_app(workspaces=book, provider_factory=factory))
+        library = ModuleLibrary(
+            tmp_path / "module-library", cache_file=tmp_path / "module-cache.json"
+        )
+        client = TestClient(
+            create_workspace_app(workspaces=book, provider_factory=factory, library=library)
+        )
         client.__enter__()
         opened.append(client)
         return client
@@ -364,3 +370,166 @@ def test_unanswered_question_survives_a_restart(
     # 等待期间不占用运行锁。
     listed = client.get(f"/api/file-workspaces/{workspace_id}/conversations").json()
     assert listed["active_turn"] is None
+
+
+@pytest.mark.parametrize(
+    ("answer", "accepted"),
+    [
+        ("创建建议的模块并继续原任务", True),
+        ("暂不调整模块，直接继续原任务", False),
+    ],
+)
+def test_context_module_answer_resumes_original_task(
+    tmp_path: Path,
+    client_factory: Callable[[ProviderFactory], TestClient],
+    answer: str,
+    accepted: bool,
+) -> None:
+    """模块建议是原任务中的暂停点；接受与跳过都不能丢失原请求。"""
+    provider = ScriptedProvider(
+        [
+            _tool_turn(
+                ToolCall(
+                    id="context-q",
+                    name="propose_context_modules",
+                    arguments={
+                        "reason": "人物关系会持续影响后续章节",
+                        "items": [
+                            {
+                                "action": "create",
+                                "slot": "cast",
+                                "kind": "characters",
+                                "label": "人物小传",
+                                "reason": "集中维护人物身份、关系与动机",
+                            }
+                        ],
+                    },
+                )
+            ),
+            _text_turn("等你决定是否补充人物小传。"),
+            _text_turn("继续完成旅馆嫌疑人设计。"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    original = "设计雪山旅馆中的七名嫌疑人及其关系"
+    first = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={"text": original, "request_key": f"k_context_{accepted}"},
+    )
+    assert first.status_code == 202, first.text
+    conversation_id = first.json()["conversation_id"]
+    events = _wait_finished(client, workspace_id, conversation_id)
+    asked = next(event for event in events if event["type"] == "author_input_requested")
+    assert asked["kind"] == "context_modules"
+    assert asked["proposal"]["items"][0]["slot"] == "cast"
+
+    replied = _reply(client, workspace_id, conversation_id, answer, asked["question_id"])
+    assert replied.status_code == 202, replied.text
+    _wait_finished(client, workspace_id, conversation_id, finished=2)
+
+    resumed = next(
+        request
+        for request in reversed(provider.requests)
+        if "本轮承接的模块建议" in request["system"]
+    )
+    assert original in resumed["system"]
+    assert f'"accepted": {str(accepted).lower()}' in resumed["system"]
+    if accepted:
+        assert '"slot": "cast"' in resumed["system"]
+    else:
+        assert "模块缺失不得阻断任务" in resumed["system"]
+
+
+def test_accepted_attach_automatically_resumes_with_new_assembly(
+    tmp_path: Path, client_factory: Callable[[ProviderFactory], TestClient]
+) -> None:
+    """装入轮提交后结束；服务层自动用新装配开启原任务，不要求作者再次发送。"""
+    library = ModuleLibrary(tmp_path / "module-library", cache_file=tmp_path / "module-cache.json")
+    created = library.create_module(
+        kind="characters",
+        name="旅馆人物",
+        entries=[EntryDraft("cast", "character", "人物关系", "林静与管家互不信任。")],
+        request_key="seed-context-module",
+    )
+    module = created["module"]  # type: ignore[index]
+    module_id = str(module["module_id"])
+    revision_id = str(module["head"])
+    accept_label = "装入建议的模块并继续原任务"
+    provider = ScriptedProvider(
+        [
+            _tool_turn(
+                ToolCall(
+                    id="proposal",
+                    name="propose_context_modules",
+                    arguments={
+                        "reason": "现有人物资料与当前任务直接相关",
+                        "items": [
+                            {
+                                "action": "attach",
+                                "module_id": module_id,
+                                "revision_id": revision_id,
+                                "label": "旅馆人物",
+                                "reason": "用于保持人物关系一致",
+                            }
+                        ],
+                    },
+                )
+            ),
+            _text_turn("等你决定。"),
+            _tool_turn(
+                ToolCall(
+                    id="scope",
+                    name="set_task_scope",
+                    arguments={
+                        "mode": "edit",
+                        "summary": "装入已确认的人物模块",
+                        "authorization": accept_label,
+                        "module_grants": [
+                            {
+                                "action": "attach",
+                                "module_id": module_id,
+                                "revision_id": revision_id,
+                            }
+                        ],
+                    },
+                )
+            ),
+            _tool_turn(
+                ToolCall(
+                    id="attach",
+                    name="attach_module",
+                    arguments={
+                        "module_id": module_id,
+                        "revision_id": revision_id,
+                        "label": "旅馆人物",
+                    },
+                )
+            ),
+            _text_turn("模块已装入。"),
+            _text_turn("我会使用新装配继续原任务。"),
+        ]
+    )
+    client = client_factory(lambda: _snapshot(provider))
+    workspace_id = _workspace(client, tmp_path)
+    original = "根据旅馆人物关系设计第一章的冲突"
+    first = client.post(
+        f"/api/file-workspaces/{workspace_id}/conversations",
+        json={"text": original, "request_key": "k_auto_resume"},
+    )
+    conversation_id = first.json()["conversation_id"]
+    first_events = _wait_finished(client, workspace_id, conversation_id)
+    asked = next(event for event in first_events if event["type"] == "author_input_requested")
+
+    reply = _reply(client, workspace_id, conversation_id, accept_label, asked["question_id"])
+    assert reply.status_code == 202, reply.text
+    events = _wait_finished(client, workspace_id, conversation_id, finished=3)
+
+    resumed = next(event for event in events if event["type"] == "context_task_resumed")
+    assert resumed["question_id"] == asked["question_id"]
+    injected = [event for event in events if event["type"] == "state_injected"][-1]
+    assert injected["frozen"]["bindings"][0]["module"]["module_id"] == module_id
+    assert any(
+        "模块建议后的自动续接" in request["system"] and original in request["system"]
+        for request in provider.requests
+    )

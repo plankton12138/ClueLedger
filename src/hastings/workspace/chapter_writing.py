@@ -1,6 +1,6 @@
-"""整章正文保存（1.0.9 P1；P6 移除章节构思前提）。
+"""整章正文保存（1.0.9 P1；1.2 移除全局语义门槛）。
 
-正文保存只以「作品已有全书构思」为前提，章节没有确认状态，也没有章节修订。并发由
+正文保存只依赖章节登记与正文摘要，章节没有确认状态，也没有章节修订。并发由
 正文摘要控制：``expected_digest`` 与磁盘不一致时保留作者草稿并返回当前版本，不自动
 选择任一方。保存与绑定重定位在同一次联合提交内完成，索引随后按新正文重建。
 """
@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from hastings.workspace.chapter_write_policy import ChapterWritePolicy
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace, digest_bytes, normalize_newlines
 from hastings.workspace.story_bindings import anchor_state
@@ -54,12 +53,10 @@ def save_chapter_prose(
     request_key: str,
     draft_revision: str = "",
 ) -> ProseSaveResult:
-    """整章保存；只校验全书构思与正文摘要。"""
-    policy = ChapterWritePolicy(store)
+    """整章保存；只校验章节登记与正文摘要。"""
     variant = store.require_variant(MAIN_VARIANT_ID)
-    if variant.format_version < FORMAT_VERSION:
+    if variant.format_version != FORMAT_VERSION:
         raise _format_error(chapter_id)
-    policy.require_book_intent(variant, where=f"章节/{chapter_id}")
     plan = variant.chapter(chapter_id)
     if plan is None:
         raise _chapter_missing(chapter_id)
@@ -101,7 +98,8 @@ def save_chapter_prose(
         current = document.variants.get(MAIN_VARIANT_ID)
         if current is None:
             raise _chapter_missing(chapter_id)
-        policy.require_book_intent(current, where=f"章节/{chapter_id}")
+        if current.format_version != FORMAT_VERSION:
+            raise _format_error(chapter_id)
         if current.chapter(chapter_id) is None:
             raise _chapter_missing(chapter_id)
         return change, None, {}

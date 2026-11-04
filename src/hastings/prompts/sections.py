@@ -77,7 +77,7 @@ PARTITION_TITLES: dict[str, str] = {
     "catalog": "当前作品",
     "structure": "全书结构",
     "ledger": "正文台账",
-    "modules": "已装模块",
+    "modules": "模块资料索引",
     "materials": "本轮材料",
     "story": "构思结构",
     "ideas": "本轮灵感",

@@ -51,6 +51,30 @@ def test_same_kind_allows_multiple_instances(tmp_path: Path) -> None:
     assert len(page["items"]) == 2
 
 
+def test_revision_summary_is_generated_and_searchable_without_kind_filter(tmp_path: Path) -> None:
+    lib = _library(tmp_path)
+    created = lib.create_module(
+        kind="reference",
+        name="人物小传：金·舒尔茨与姜戈",
+        entries=[
+            EntryDraft(
+                entry_id="partners",
+                kind="reference",
+                title="搭档关系",
+                body="两人以赏金猎人搭档身份穿越西部边境。",
+            )
+        ],
+        request_key="req-summary-1",
+    )
+    revision = created["revision"]  # type: ignore[index]
+
+    assert "赏金猎人搭档" in revision["summary"]
+    found = lib.modules(q="赏金猎人搭档")
+    assert found["total"] == 1
+    assert found["items"][0]["kind"] == "reference"  # type: ignore[index]
+    assert found["items"][0]["entry_titles"] == ["搭档关系"]  # type: ignore[index]
+
+
 def test_publishing_appends_an_immutable_revision(tmp_path: Path) -> None:
     lib = _library(tmp_path)
     created = _create(lib)

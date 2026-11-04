@@ -18,6 +18,7 @@ from hastings.workspace.agent import RunContext, build_tools
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.module_assembly import AssemblyStore
+from hastings.workspace.questions import QuestionStore
 from hastings.workspace.service import WriteSession
 from tau_agent.tools import AgentTool
 
@@ -65,6 +66,59 @@ async def _call(tool: AgentTool, **arguments: Any) -> dict[str, Any]:
     return body
 
 
+@pytest.mark.anyio
+async def test_empty_catalog_can_propose_creating_context_modules(tmp_path: Path) -> None:
+    """空模块库不是盲区：模型能看到合法空结果，并把创建建议交给作者确认。"""
+    library = ModuleLibrary(tmp_path / "空模块库", cache_file=tmp_path / "cache" / "catalog.json")
+    workspace = Workspace.create(tmp_path / "空白作品")
+    state_root = tmp_path / "state"
+    run = RunContext(
+        workspace,
+        WriteSession(workspace, instruction="设计旅馆中的七名嫌疑人"),
+        author_messages=((1, "设计旅馆中的七名嫌疑人"),),
+        current_author_text="设计旅馆中的七名嫌疑人",
+        library=library,
+        state_root=state_root,
+        conversation_id="c_context",
+        turn_id="t_context",
+        assembly_digest=AssemblyStore(workspace.root).digest(),
+    )
+    tools = {tool.name: tool for tool in build_tools(workspace, run)}
+
+    catalog = await _call(tools["inspect_module_catalog"])
+    assert catalog == {
+        "items": [],
+        "library_total": 0,
+        "matched_total": 0,
+        "next_cursor": None,
+        "status": "library_empty",
+    }
+
+    proposed = await _call(
+        tools["propose_context_modules"],
+        reason="人物关系会持续影响后续结构与正文",
+        items=[
+            {
+                "action": "create",
+                "slot": "cast",
+                "label": "人物小传",
+                "reason": "集中维护七名嫌疑人的身份、关系与动机",
+            }
+        ],
+    )
+
+    assert proposed["kind"] == "context_modules"
+    assert proposed["options"] == [
+        "创建建议的模块并继续原任务",
+        "暂不调整模块，直接继续原任务",
+    ]
+    assert proposed["_terminated"] is True
+    stored = QuestionStore(state_root).get(proposed["question_id"])
+    assert stored is not None
+    assert stored.proposal["items"][0]["slot"] == "cast"  # type: ignore[index]
+    assert AssemblyStore(workspace.root).read().bindings == ()
+
+
 def _binding_id(workspace: Workspace) -> str:
     return AssemblyStore(workspace.root).read().bindings[0].id
 
@@ -101,17 +155,17 @@ async def test_single_turn_reference_reads_uninstalled_record_without_binding(
 
 
 @pytest.mark.anyio
-async def test_single_turn_reference_requires_library_search_scope(tmp_path: Path) -> None:
+async def test_relevant_library_record_can_be_read_without_search_scope(tmp_path: Path) -> None:
     _, tools, _, facts = _setup(tmp_path, author_text="写第一章。")
 
-    with pytest.raises(WorkspaceError) as blocked:
-        await _call(
-            tools["read_library_record"],
-            module_id=facts["module_id"],
-            revision_id=facts["revision_id"],
-            entry_id="lin",
-        )
-    assert blocked.value.code == "MODULE_ACCESS_DENIED"
+    record = await _call(
+        tools["read_library_record"],
+        module_id=facts["module_id"],
+        revision_id=facts["revision_id"],
+        entry_id="lin",
+    )
+    assert record["text"].endswith("法医，旧识。")
+    assert record["installed"] is False
 
 
 @pytest.mark.anyio

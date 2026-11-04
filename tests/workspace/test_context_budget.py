@@ -137,7 +137,7 @@ def test_writer_limit_is_a_partition_character_budget() -> None:
         + assembly.SETTINGS_BUDGET
         + assembly.HISTORY_BUDGET
     )
-    assert writer == 65_500
+    assert writer == 76_900
 
 
 def test_modules_partition_is_optional_and_reports_why_it_was_skipped(tmp_path: Path) -> None:

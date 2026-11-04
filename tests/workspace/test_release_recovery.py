@@ -193,17 +193,17 @@ def test_prune_and_reregister_keeps_state(tmp_path: Path) -> None:
 
 
 def test_release_version_and_visible_name(tmp_path: Path) -> None:
-    """主包、前端与锁文件同为 1.1.0；对外名称是线簿 / ClueLedger。"""
-    assert hastings.__version__ == "1.1.0"
+    """主包、前端与锁文件同为 1.2.0；对外名称是线簿 / ClueLedger。"""
+    assert hastings.__version__ == "1.2.0"
 
     def declares(path: Path, pattern: str) -> None:
         text = path.read_text(encoding="utf-8")
         assert pattern in text, f"{path} 缺少 {pattern}"
 
-    declares(ROOT / "pyproject.toml", 'version = "1.1.0"')
-    declares(ROOT / "frontend/package.json", '"version": "1.1.0"')
-    declares(ROOT / "frontend/package-lock.json", '"version": "1.1.0"')
-    assert 'name = "hastings-ai"\nversion = "1.1.0"' in (ROOT / "uv.lock").read_text(
+    declares(ROOT / "pyproject.toml", 'version = "1.2.0"')
+    declares(ROOT / "frontend/package.json", '"version": "1.2.0"')
+    declares(ROOT / "frontend/package-lock.json", '"version": "1.2.0"')
+    assert 'name = "hastings-ai"\nversion = "1.2.0"' in (ROOT / "uv.lock").read_text(
         encoding="utf-8"
     )
 
@@ -214,5 +214,5 @@ def test_release_version_and_visible_name(tmp_path: Path) -> None:
         )
     )
     app = client.app  # type: ignore[attr-defined]
-    assert app.version == "1.1.0"
+    assert app.version == "1.2.0"
     assert app.title == "线簿 ClueLedger"

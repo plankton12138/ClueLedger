@@ -285,17 +285,8 @@ test("模块内容打开后，仍可切回全书构思与章节正文", async ({
   await request.put(`/api/file-workspaces/${book.id}/assembly`, {
     data: { bindings: [{ module: ref }], expected_digest: null, request_key: crypto.randomUUID() },
   });
-  const outline = await request
-    .get(`/api/file-workspaces/${book.id}/story/workbench`)
-    .then(response => response.json());
-  // 空作品没有构思修订，与前端一致按 "empty" 提交。
-  const intentResponse = await request.put(`/api/file-workspaces/${book.id}/story/book-intent`, {
-    data: { text: "暴雨封住了出山的公路，旅馆里少了一名住客。", expected_plan_revision: outline.plan_revision ?? "empty", request_key: crypto.randomUUID() },
-  });
-  expect(intentResponse.ok(), await intentResponse.text()).toBeTruthy();
-  const intent = await intentResponse.json();
   const chapterResponse = await request.post(`/api/file-workspaces/${book.id}/story/chapters`, {
-    data: { title: "抵达雾港", expected_plan_revision: intent.plan_revision, request_key: crypto.randomUUID() },
+    data: { title: "抵达雾港", expected_plan_revision: "empty", request_key: crypto.randomUUID() },
   });
   expect(chapterResponse.ok(), await chapterResponse.text()).toBeTruthy();
 
@@ -307,29 +298,29 @@ test("模块内容打开后，仍可切回全书构思与章节正文", async ({
   await openModuleSection(directory);
   await moduleButton.click();
   await expect(paper).toContainText("陈默修理码头的钟。");
-  await expect(directory.getByRole("button", { name: "全书构思", exact: true })).not.toHaveAttribute("aria-current", "page");
+  await expect(directory.getByRole("button", { name: "全书结构", exact: true })).not.toHaveAttribute("aria-current", "page");
 
-  // 全书构思与模块内容是同一个地址：切换不能只靠地址变化。
-  await directory.getByRole("button", { name: "全书构思", exact: true }).click();
+  // 全书结构与模块内容是同一个地址：切换不能只靠地址变化。
+  await directory.getByRole("button", { name: "全书结构", exact: true }).click();
   await expect(paper).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "全书构思", exact: true })).toBeVisible();
-  await expect(directory.getByRole("button", { name: "全书构思", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "全书结构", exact: true })).toBeVisible();
+  await expect(directory.getByRole("button", { name: "全书结构", exact: true })).toHaveAttribute("aria-current", "page");
 
-  // 再进模块后点章节：正文编辑出现，模块内容让位。
+  // 再进模块后点章节：只读正文出现，模块内容让位。
   await openModuleSection(directory);
   await moduleButton.click();
   await expect(paper).toContainText("陈默修理码头的钟。");
   await directory.getByRole("button", { name: /第1章/ }).click();
   await expect(paper).toHaveCount(0);
-  await expect(page.getByRole("textbox", { name: "正文编辑" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "稿纸" })).toBeVisible();
 
   // 从章节页打开模块：这是作者的主动选择，模块内容仍然盖过章节。
   await openModuleSection(directory);
   await moduleButton.click();
   await expect(paper).toContainText("陈默修理码头的钟。");
 
-  // 回到全书构思：模块不应重新盖住写作内容。
-  await directory.getByRole("button", { name: "全书构思", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "全书构思", exact: true })).toBeVisible();
+  // 回到全书结构：模块不应重新盖住写作内容。
+  await directory.getByRole("button", { name: "全书结构", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "全书结构", exact: true })).toBeVisible();
   await expect(paper).toHaveCount(0);
 });

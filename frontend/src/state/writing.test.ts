@@ -33,7 +33,7 @@ function workbench(text = "初始正文", digest = "d1"): WritingWorkbenchView {
     selection: { kind: "chapter", chapter_id: "ch1" },
     plan_revision: "plan_1",
     book: {
-      intent: "起点",
+      structure_exists: true,
       chapters: [{
         id: "ch1", order: 0, title: "第一章", summary: "发现钥匙", prose_path: "正文/0001.md",
       }],
@@ -44,7 +44,7 @@ function workbench(text = "初始正文", digest = "d1"): WritingWorkbenchView {
       plan: {
         id: "ch1", order: 0, title: "第一章", moves: [], prose_path: "正文/0001.md",
       },
-      prose: { path: "正文/0001.md", digest, text, editable: true, blocked_reason: null },
+      prose: { path: "正文/0001.md", digest, text, editable: false },
       index: INDEX,
     },
     model_support: { available: false, disabled_reason: "没有模型", supported_assists: [] },

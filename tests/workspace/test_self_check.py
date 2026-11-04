@@ -36,7 +36,6 @@ def test_template_version_is_registered() -> None:
 
 def test_prose_prompt_injects_layers_and_reconcile() -> None:
     user = prose_draft_user_prompt(
-        intent="雪山旅馆命案",
         structure_text="### 铁律\n不写超自然力量",
         ledger_text="### 正文台账（系统事实，只读）",
         moves="- 铜哨交给林砚",
@@ -55,7 +54,6 @@ def test_prose_prompt_injects_layers_and_reconcile() -> None:
 
 def test_redirect_rewrites_target_in_prompt() -> None:
     user = prose_draft_user_prompt(
-        intent="",
         structure_text="",
         ledger_text="改派第 1 章",
         moves="",

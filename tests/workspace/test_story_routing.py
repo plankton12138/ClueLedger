@@ -315,8 +315,8 @@ def test_structure_task_hides_module_writes_and_sends_empty_plan(tmp_path: Path)
     assert "update_story" in request["tools"]
     assert "prepare_module_changes" not in request["tools"]
     assert "apply_module_changes" not in request["tools"]
-    # v1.1 起「当前方案为空」提示只属于起步阶段；本作品已有节点，走旧构思说明。
-    assert "不要保存为模块" in request["system"]
+    # v1.2 起只以 STRUCTURE.md 判定是否已起步；旧构思节点不能替代全局结构文件。
+    assert "STRUCTURE.md 是唯一全局语义提示" in request["system"]
     story_event = next(event for event in events if event["type"] == "story_context")
     assert story_event["revision"] == seeded_revision
     assert story_event["intent"]["kind"] == "structure"
@@ -898,7 +898,8 @@ def test_plain_chat_resolves_story_and_stops_with_recoverable_draft(tmp_path: Pa
     info = asyncio.run(scenario())
     tools = provider.requests[0]["tools"]
     assert "update_story" in tools and "prepare_module_changes" not in tools
-    assert "set_task_scope" not in tools
+    # STRUCTURE.md 起步需要先登记确切写入范围；这不是另一个作者输入入口。
+    assert "set_task_scope" in tools
     operation = service.operations.read(info.operation_id)
     assert operation.status == "needs_attention"
     assert operation.as_view()["capabilities"]["continue"]

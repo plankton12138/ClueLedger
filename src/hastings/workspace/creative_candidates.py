@@ -34,7 +34,6 @@ CandidateStatus = Literal["streaming", "ready", "stale", "failed", "discarded"]
 TargetKind = Literal[
     "new_workspace",
     "workspace_title",
-    "book_intent",
     "chapter_title",
     "chapter_direction",
     "prose",

@@ -50,6 +50,7 @@ __all__ = [
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 50
 MAX_NAME_CHARS = 80
+MAX_SUMMARY_CHARS = 240
 #: 每个模块保留的幂等键数量；超过后丢最早的，不让库状态无限增长。
 MAX_REQUEST_KEYS = 100
 MODULE_SCHEMA = 1
@@ -85,6 +86,7 @@ class RevisionInfo:
     revision_id: str
     parent: str | None
     created_at: str
+    summary: str
     entry_ids: tuple[str, ...]
 
     def view(self) -> dict[str, object]:
@@ -93,6 +95,7 @@ class RevisionInfo:
             "revision_id": self.revision_id,
             "parent": self.parent,
             "created_at": self.created_at,
+            "summary": self.summary,
             "entry_ids": list(self.entry_ids),
         }
 
@@ -126,13 +129,21 @@ class ModuleLibrary:
         name: str,
         entries: Sequence[EntryDraft | Mapping[str, object]],
         request_key: str,
+        summary: str = "",
     ) -> dict[str, object]:
         """新建一个实例并发布第一版；类型与名称先校验，再落到磁盘。"""
         spec(kind)
         checked_name = _check_name(name)
         drafts = _drafts(kind, entries)
+        checked_summary = _module_summary(checked_name, drafts, summary)
         request = _request_digest(
-            {"op": "create", "kind": kind, "name": checked_name, "entries": _rows(drafts)}
+            {
+                "op": "create",
+                "kind": kind,
+                "name": checked_name,
+                "summary": checked_summary,
+                "entries": _rows(drafts),
+            }
         )
         key = _check_request_key(request_key)
         with self.storage.root_lock():
@@ -173,7 +184,9 @@ class ModuleLibrary:
                 document["requests"] = _trim(requests)
                 self.storage.write_document(document)
 
-            revision = self._first_revision(module_id, drafts, request_key=key)
+            revision = self._first_revision(
+                module_id, drafts, request_key=key, summary=checked_summary
+            )
             module = self.storage.read_module(module_id)
             result: dict[str, object] = {
                 "module": _info(module).view(),
@@ -192,6 +205,7 @@ class ModuleLibrary:
         expected_head: str | None,
         entries: Sequence[EntryDraft | Mapping[str, object]],
         request_key: str,
+        summary: str = "",
     ) -> RevisionInfo:
         """发布新版本：head 没按预期变化就冲突；发布不改任何作品的绑定。"""
         key = _check_request_key(request_key)
@@ -199,11 +213,13 @@ class ModuleLibrary:
             module = self.storage.read_module(module_id)
             _require_active(module)
             drafts = _drafts(str(module.get("kind") or ""), entries)
+            checked_summary = _module_summary(str(module.get("name") or ""), drafts, summary)
             request = _request_digest(
                 {
                     "op": "publish",
                     "module_id": module_id,
                     "base": base_revision,
+                    "summary": checked_summary,
                     "entries": _rows(drafts),
                 }
             )
@@ -215,7 +231,9 @@ class ModuleLibrary:
                     return self._revision_info(module_id, revision_id)
             _check_head(module, expected_head)
             _check_base(module, base_revision)
-            revision = self._publish_unlocked(module, drafts, key=key, request=request)
+            revision = self._publish_unlocked(
+                module, drafts, key=key, request=request, summary=checked_summary
+            )
             module["head"] = revision.revision_id
             module["updated_at"] = revision.created_at
             self.storage.write_module(module_id, module)
@@ -228,6 +246,7 @@ class ModuleLibrary:
         base_revision: str,
         entries: Sequence[EntryDraft | Mapping[str, object]],
         request_key: str,
+        summary: str = "",
     ) -> RevisionInfo:
         """保存作品自己的内容版本；库的 head 保持不变，其他作品也不跟随。
 
@@ -239,17 +258,24 @@ class ModuleLibrary:
             module = self.storage.read_module(module_id)
             self.revision(module_id=module_id, revision_id=base_revision)
             drafts = _drafts(str(module.get("kind") or ""), entries)
+            checked_summary = _module_summary(str(module.get("name") or ""), drafts, summary)
             request = _request_digest(
                 {
                     "op": "workspace-revision",
                     "module_id": module_id,
                     "base": base_revision,
+                    "summary": checked_summary,
                     "entries": _rows(drafts),
                 }
             )
             updated_at = module.get("updated_at")
             revision = self._publish_unlocked(
-                module, drafts, key=key, request=request, parent_revision=base_revision
+                module,
+                drafts,
+                key=key,
+                request=request,
+                parent_revision=base_revision,
+                summary=checked_summary,
             )
             module["updated_at"] = updated_at
             self.storage.write_module(module_id, module)
@@ -308,7 +334,11 @@ class ModuleLibrary:
                 parse_entry(text, module_kind=str(forked["kind"])) for text in texts.values()
             )
             revision = self._publish_unlocked(
-                forked, drafts, key=f"{key}:fork", request=_request_digest({"texts": texts})
+                forked,
+                drafts,
+                key=f"{key}:fork",
+                request=_request_digest({"texts": texts}),
+                summary=_module_summary(checked_name, drafts),
             )
             forked["head"] = revision.revision_id
             forked["updated_at"] = revision.created_at
@@ -380,6 +410,14 @@ class ModuleLibrary:
                 continue
             row = info.view()
             row["revision_count"] = len(self.storage.revision_ids(module_id))
+            if info.head:
+                try:
+                    revision = self.revision(module_id=module_id, revision_id=info.head)
+                    row["summary"] = revision.summary or _catalog_fallback_summary(revision)
+                    row["entry_titles"] = [entry.title for entry in revision.entries]
+                except WorkspaceError:
+                    row["summary"] = ""
+                    row["entry_titles"] = []
             rows.append(row)
         rows.sort(key=lambda item: (str(item["updated_at"]), str(item["module_id"])), reverse=True)
         page = rows[offset : offset + size]
@@ -512,7 +550,12 @@ class ModuleLibrary:
     # -- 内部：发布 ---------------------------------------------------------
 
     def _first_revision(
-        self, module_id: str, drafts: tuple[EntryDraft, ...], *, request_key: str
+        self,
+        module_id: str,
+        drafts: tuple[EntryDraft, ...],
+        *,
+        request_key: str,
+        summary: str,
     ) -> RevisionInfo:
         with self.storage.lock(module_id):
             current = self.storage.read_module(module_id)
@@ -524,9 +567,16 @@ class ModuleLibrary:
                     revision_id = str(current["head"])
                 return self._revision_info(module_id, revision_id)
             request = _request_digest(
-                {"op": "first", "module_id": module_id, "entries": _rows(drafts)}
+                {
+                    "op": "first",
+                    "module_id": module_id,
+                    "summary": summary,
+                    "entries": _rows(drafts),
+                }
             )
-            revision = self._publish_unlocked(current, drafts, key=request_key, request=request)
+            revision = self._publish_unlocked(
+                current, drafts, key=request_key, request=request, summary=summary
+            )
             current["head"] = revision.revision_id
             current["updated_at"] = revision.created_at
             self.storage.write_module(module_id, current)
@@ -540,6 +590,7 @@ class ModuleLibrary:
         key: str,
         request: str,
         parent_revision: str | None = None,
+        summary: str,
     ) -> RevisionInfo:
         """写入版本目录并登记请求结果；调用方负责持有模块锁与推进 head。"""
         module_id = str(module["module_id"])
@@ -579,6 +630,7 @@ class ModuleLibrary:
                 created_at=created,
                 request_key=key,
                 request_digest=request,
+                summary=summary,
                 entries=entries,
             )
             self.storage.write_revision(module_id, revision_id, manifest, entries)
@@ -597,6 +649,7 @@ class ModuleLibrary:
             revision_id=revision_id,
             parent=manifest.get("parent") if isinstance(manifest.get("parent"), str) else None,
             created_at=str(manifest.get("created_at") or ""),
+            summary=str(manifest.get("summary") or ""),
             entry_ids=tuple(
                 str(item.get("entry_id"))
                 for item in manifest.get("entries") or []
@@ -677,6 +730,8 @@ class ModuleLibrary:
             revision = self.revision(module_id=info.module_id, revision_id=info.head)
         except WorkspaceError:
             return False
+        if needle in revision.summary.lower():
+            return True
         return any(
             needle in entry.title.lower() or any(needle in alias.lower() for alias in entry.aliases)
             for entry in revision.entries
@@ -694,6 +749,7 @@ def _manifest(
     created_at: str,
     request_key: str,
     request_digest: str,
+    summary: str,
     entries: Mapping[str, str],
 ) -> dict[str, object]:
     return {
@@ -704,6 +760,7 @@ def _manifest(
         "created_at": created_at,
         "request_key": request_key,
         "request_digest": request_digest,
+        "summary": summary,
         "entries": [
             {
                 "entry_id": entry_id,
@@ -714,6 +771,40 @@ def _manifest(
             for entry_id, text in sorted(entries.items())
         ],
     }
+
+
+def _module_summary(
+    name: str, drafts: Sequence[EntryDraft], supplied: str = ""
+) -> str:
+    """生成版本级短摘要；调用方给出的摘要优先，缺省时从实际条目稳定派生。"""
+    explicit = " ".join(supplied.split()).strip()
+    if explicit:
+        if len(explicit) > MAX_SUMMARY_CHARS:
+            raise WorkspaceError(
+                code="MODULE_SUMMARY_INVALID",
+                where="library.summary",
+                why=f"模块摘要超过 {MAX_SUMMARY_CHARS} 个字符",
+                fix="保留模块包含的内容与用途，缩短摘要后重试",
+                details={"chars": len(explicit), "limit": MAX_SUMMARY_CHARS},
+            )
+        return explicit
+    pieces: list[str] = []
+    for draft in drafts[:3]:
+        body = " ".join(draft.body.split())
+        excerpt = body[:72].rstrip("，。；：,. ;:")
+        pieces.append(f"{draft.title}：{excerpt}" if excerpt else draft.title)
+    if not pieces:
+        return f"{name}的辅助资料。"[:MAX_SUMMARY_CHARS]
+    suffix = f"；另有 {len(drafts) - 3} 条资料" if len(drafts) > 3 else ""
+    return ("；".join(pieces) + suffix)[:MAX_SUMMARY_CHARS]
+
+
+def _catalog_fallback_summary(revision: CatalogRevision) -> str:
+    titles = "、".join(entry.title for entry in revision.entries[:5])
+    if not titles:
+        return f"{revision.module_name}的辅助资料。"
+    more = f"等 {len(revision.entries)} 条资料" if len(revision.entries) > 5 else ""
+    return f"包含{titles}{more}。"
 
 
 def _info(module: Mapping[str, Any]) -> ModuleInfo:

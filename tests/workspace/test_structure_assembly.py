@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from hastings.workspace.prose_ledger import ProseLedger, reconcile
 from hastings.workspace.structure_assembly import (
-    STYLE_PLACEHOLDER,
     LooseCheckRow,
     StructureLayers,
     StructureSnapshot,
@@ -61,15 +60,14 @@ def test_empty_text_is_an_empty_layer_not_degraded() -> None:
     assert layers == StructureLayers(iron_rules=(), body="", degraded=False)
 
 
-def test_section_text_includes_all_three_layers() -> None:
+def test_section_text_contains_only_structure_layers() -> None:
     text = structure_section_text(split_structure_layers(_STRUCTURE))
 
     assert "### 铁律" in text
     assert "- 凶手必须在结局前出现三次" in text
     assert "### 全书结构" in text
     assert "雨夜发现尸体" in text
-    assert "### 风格（STYLE.md）" in text
-    assert STYLE_PLACEHOLDER in text
+    assert "STYLE.md" not in text
 
 
 def test_degraded_section_states_the_loss_and_injects_full_text() -> None:
@@ -77,19 +75,17 @@ def test_degraded_section_states_the_loss_and_injects_full_text() -> None:
 
     assert "标记「## 铁律」丢失" in text
     assert "三幕结构" in text
-    assert STYLE_PLACEHOLDER in text
+    assert "STYLE.md" not in text
 
 
 def structure_section_layers_text(text: str) -> str:
     return structure_section_text(split_structure_layers(text))
 
 
-def test_empty_structure_still_keeps_style_placeholder() -> None:
+def test_empty_structure_returns_empty_text() -> None:
     text = structure_section_text(split_structure_layers(""))
 
-    assert "### 铁律" not in text
-    assert "### 全书结构" not in text
-    assert STYLE_PLACEHOLDER in text
+    assert text == ""
 
 
 def test_ledger_section_empty_ledger_is_empty_text() -> None:

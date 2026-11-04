@@ -19,10 +19,10 @@ def workspace(tmp_path: Path) -> Workspace:
     ws = Workspace.create(tmp_path / "书")
 
     class NoPolicy:
-        """结构文件不经全书构思门禁；若被调用即测试失败。"""
+        """结构文件不经章节路径策略；若被调用即测试失败。"""
 
         def require_write(self, path: str) -> None:  # pragma: no cover - 不应被调用
-            raise AssertionError(f"结构写入不应触发构思门禁：{path}")
+            raise AssertionError(f"结构写入不应触发章节路径策略：{path}")
 
     ws.chapter_policy = NoPolicy()  # type: ignore[assignment]
     return ws
@@ -92,7 +92,7 @@ def test_write_structure_budget_conflict(workspace: Workspace) -> None:
     with pytest.raises(WorkspaceError) as exc:
         write_structure_document(
             workspace,
-            text="## 铁律\n规则\n" + "x" * 1700,
+            text="## 铁律\n规则\n" + "x" * 7000,
             expected_digest=first.digest,
             creating=False,
         )

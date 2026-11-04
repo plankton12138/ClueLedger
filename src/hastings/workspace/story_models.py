@@ -1,10 +1,10 @@
-"""构思结构的持久化契约（1.0.1 P1，1.0.9 起为当前格式 4）。
+"""构思结构的持久化契约（1.0.1 P1，1.2 起为当前格式 5）。
 
 这一层只回答两个问题：一份构思里有什么，以及哪些写法不能存进去。它不读正文、
 不调模型、不做提交协调——那些分别属于 ``story_changes``、``story_context`` 和
 ``operations``。
 
-1.0.9 的当前格式只保存作品意图、章节、信息线、信息变化、绑定与约定；章节只有顺序、
+1.2 的当前格式只保存章节、信息线、信息变化、绑定与约定；章节只有顺序、
 可选标题和正文路径，没有章节构思、确认状态或章节修订。旧格式 2 的阶段、节点、线索计划、
 关系与时间字段只为过渡期读取保留。两种格式共享修订根、提交与撤销，但操作集合互斥。
 
@@ -37,7 +37,6 @@ __all__ = [
     "AttentionReceipt",
     "AcknowledgeAttention",
     "BindingAlignment",
-    "BookIntent",
     "ChapterPlan",
     "ClearAttentionReceipt",
     "ClueKind",
@@ -64,7 +63,6 @@ __all__ = [
     "RemoveInformationMove",
     "RemoveInformationThread",
     "RenameClueIdentity",
-    "SetBookIntent",
     "SetChapterProsePath",
     "SetTimeOrigin",
     "StoryChangeRecord",
@@ -90,9 +88,9 @@ __all__ = [
 StoryId = Annotated[str, Field(min_length=1, max_length=64)]
 ShortText = Annotated[str, Field(min_length=1, max_length=200)]
 LongText = Annotated[str, Field(min_length=1, max_length=4000)]
-#: 当前写作格式；新作品写入 4。全书构思是唯一门禁，章节只有顺序、标题与正文路径。
-#: 旧格式 2 仍可读取，格式 3 的数据直接放弃（项目规则：不做旧数据迁移）。
-FORMAT_VERSION = 4
+#: 当前写作格式；新作品写入 5。全书语义只由工作区 ``STRUCTURE.md`` 保存，
+#: 这一事实层只登记章节、信息线、信息变化与正文绑定。旧格式不迁移。
+FORMAT_VERSION = 5
 
 #: 线索在正文里的呈现方式；未登记性质的记录只能是 ``unknown``，不能从标题猜成叙述。
 PresentationMode = Literal[
@@ -382,19 +380,6 @@ class Constraint(StrictRecord):
         return self
 
 
-class BookIntent(StrictRecord):
-    """全书起始构思：一段可继续发展的自然语言，不要求结局或真相已定。"""
-
-    text: LongText
-    source: Literal["author", "model_adopted"] = "author"
-
-    @model_validator(mode="after")
-    def check_text(self) -> BookIntent:
-        if not self.text.strip():
-            raise ValueError("作品意图不能为空")
-        return self
-
-
 class ChapterPlan(StrictRecord):
     """一章的位置信息：顺序、可选标题与正文路径。
 
@@ -594,18 +579,17 @@ class Assessment(StrictRecord):
 class StoryVariant(StrictRecord):
     """一个完整方案：主方案或备选，各自持有可解析的结构。
 
-    ``format_version`` 决定当前格式；新作品为 4，过渡期仍可读取 2。两种格式共享修订根、
+    ``format_version`` 决定当前格式；新作品为 5，旧格式 2 只供旧构思服务读取。两种格式共享修订根、
     提交、撤销与正文绑定服务，但操作集合互不通用。
     """
 
     id: StoryId
     name: ShortText
-    format_version: Literal[2, 4] = 2
+    format_version: Literal[2, 4, 5] = 2
     base_variant_id: str | None = None
     base_revision: str | None = None
     revision: str = Field(min_length=1, max_length=64)
-    # -- 当前格式 4 -------------------------------------------------------
-    book_intent: BookIntent | None = None
+    # -- 当前格式 5 -------------------------------------------------------
     chapter_plans: dict[str, ChapterPlan] = Field(default_factory=dict)
     information_threads: dict[str, InformationThread] = Field(default_factory=dict)
     information_moves: dict[str, InformationMove] = Field(default_factory=dict)
@@ -658,7 +642,7 @@ class StoryVariant(StrictRecord):
         return self
 
     def _check_current_format(self) -> None:
-        """当前格式只允许作品意图、章节、信息线、信息变化及新绑定。"""
+        """当前格式只允许章节、信息线、信息变化及新绑定。"""
         if (
             self.stages
             or self.nodes
@@ -691,12 +675,11 @@ class StoryVariant(StrictRecord):
 
     def _check_legacy_format(self) -> None:
         if (
-            self.book_intent is not None
-            or self.chapter_plans
+            self.chapter_plans
             or self.information_threads
             or self.information_moves
         ):
-            raise ValueError("旧格式不能同时包含作品意图、章节构思或信息线")
+            raise ValueError("旧格式不能同时包含章节构思或信息线")
         for node in self.nodes.values():
             if node.stage_id is not None and node.stage_id not in self.stages:
                 raise ValueError(f"节点引用了不存在的阶段：{node.stage_id}")
@@ -1089,13 +1072,6 @@ class ConfirmAlignment(StrictRecord):
         return self
 
 
-class SetBookIntent(StrictRecord):
-    """写入或清除全书起点；模型候选被采用后也通过同一操作提交。"""
-
-    op: Literal["set_book_intent"] = "set_book_intent"
-    intent: BookIntent | None = None
-
-
 class AddChapterPlan(StrictRecord):
     op: Literal["add_chapter_plan"] = "add_chapter_plan"
     plan: ChapterPlan
@@ -1202,7 +1178,6 @@ StoryOperation = Annotated[
     | ClearAttentionReceipt
     | SetTimeOrigin
     | ConfirmAlignment
-    | SetBookIntent
     | AddChapterPlan
     | UpdateChapterPlan
     | RemoveChapterPlan

@@ -14,7 +14,6 @@ from typing import Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
-from hastings.workspace.book_startup import confirm_startup_book_intent
 from hastings.workspace.chapter_writing import save_chapter_prose
 from hastings.workspace.creative_candidates import CreativeCandidateStore
 from hastings.workspace.errors import WorkspaceError
@@ -23,16 +22,15 @@ from hastings.workspace.service_hub import WorkspaceServices
 from hastings.workspace.state import ConversationStore, RecentWorkspaces, conversation_root
 from hastings.workspace.story_clue_commit import prepare_clue_undo
 from hastings.workspace.story_index_jobs import IndexAnalysisService, IndexJobStore
+from hastings.workspace.story_models import FORMAT_VERSION
 from hastings.workspace.story_store import MAIN_VARIANT_ID, StoryStore
 from hastings.workspace.structure_document import BUDGET_LIMIT, check_budget
 from hastings.workspace.structure_io import read_structure_state
-from hastings.workspace.writing_actions import create_chapter, save_book_intent
+from hastings.workspace.writing_actions import create_chapter
 from hastings.workspace.writing_api_models import (
-    BookIntentRequest,
     ChapterCreateRequest,
     IndexConfirmRequest,
     ProseSaveRequest,
-    StartupConfirmRequest,
 )
 from hastings.workspace.writing_view import (
     ModelSupportView,
@@ -173,8 +171,8 @@ def create_story_router(
         return _receipt_view(receipt, _changed_ids(store, receipt.change_id))
 
     def writing_store_for(workspace_id: str) -> StoryStore:
-        """当前写作格式的存储入口；新作品第一次提交会写入格式 4。"""
-        return store_for(workspace_id, format_version=4)
+        """当前写作格式的存储入口；新作品第一次提交会写入格式 5。"""
+        return store_for(workspace_id, format_version=FORMAT_VERSION)
 
     @router.get("/{workspace_id}/story/workbench", response_model=WritingWorkbenchView)
     async def read_workbench(
@@ -195,12 +193,12 @@ def create_story_router(
             except Exception:
                 snapshot = None
             else:
+                assert snapshot is not None
                 await snapshot.aclose()
                 support = ModelSupportView(
                     available=True,
                     disabled_reason=None,
                     supported_assists=[
-                        "book_intent",
                         "chapter_direction",
                         "title",
                         "prose_draft",
@@ -220,33 +218,6 @@ def create_story_router(
             model_support=support,
             index_jobs=jobs,
         )
-
-    @router.put("/{workspace_id}/story/book-intent")
-    def put_book_intent(workspace_id: str, body: BookIntentRequest) -> dict[str, Any]:
-        store = writing_store_for(workspace_id)
-        receipt = save_book_intent(
-            store,
-            text=body.text,
-            expected_plan_revision=body.expected_plan_revision,
-            request_key=body.request_key,
-        )
-        variant = store.require_variant(MAIN_VARIANT_ID)
-        return {
-            "plan_revision": variant.revision,
-            "change_id": receipt.change_id,
-        }
-
-    @router.post("/{workspace_id}/story/startup/confirm-intent", status_code=201)
-    def post_startup_confirm(workspace_id: str, body: StartupConfirmRequest) -> dict[str, Any]:
-        """起步设定卡确认（v1.1 M1）：一次性门槛，重复确认拒绝；可整体撤销。"""
-        store = writing_store_for(workspace_id)
-        result = confirm_startup_book_intent(
-            store, text=body.text, request_key=body.request_key
-        )
-        return {
-            "change_id": result.change_id,
-            "plan_revision": result.plan_revision,
-        }
 
     @router.get("/{workspace_id}/story/structure")
     def get_structure(workspace_id: str) -> dict[str, Any]:

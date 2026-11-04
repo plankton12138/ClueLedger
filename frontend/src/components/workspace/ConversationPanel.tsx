@@ -35,7 +35,6 @@ import IdeaReferenceChip from "../chat/IdeaReferenceChip";
 import TextReferenceChip from "../chat/TextReferenceChip";
 import ExpandedReplyDialog from "../chat/ExpandedReplyDialog";
 import { useChatScroll } from "../chat/useChatScroll";
-import ReferencePicker from "./ReferencePicker";
 import ConversationUsageBar from "./ConversationUsageBar";
 import { sourceTaskChapter } from "../../state/sourceLocation";
 import { Button } from "../ui/Button";
@@ -76,7 +75,6 @@ export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?:
   const interject = useConversationsStore((state) => state.interject);
   const reconnect = useConversationsStore((state) => state.reconnect);
   const setDraft = useConversationsStore((state) => state.setDraft);
-  const setDraftContext = useConversationsStore((state) => state.setDraftContext);
   const draftContext = useConversationsStore((state) => state.draftContexts[draftKeyOf(state)]);
   const focusKey = selectedId ?? NEW_DRAFT;
   const focus = useDiscussionFocusStore((state) => state.entries[focusKey] ?? null);
@@ -233,12 +231,6 @@ export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?:
   const references = draftContext?.reference_paths ?? [];
   const textReferences = draftContext?.text_references ?? [];
   const clueReferences = draftContext?.clue_references ?? [];
-  const toggleReference = (path: string) => {
-    const next = references.includes(path)
-      ? references.filter((item) => item !== path)
-      : [...references, path];
-    setDraftContext(openPath, next);
-  };
 
   const submit = async () => {
     if (!canSend) return;
@@ -355,7 +347,7 @@ export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?:
           {entry.loading && <p className="text-[11px] text-mute">正在读取这段讨论…</p>}
           {!entry.loading && entry.turns.length === 0 && (
             <p className="text-xs leading-6 text-sub">
-              直接说要求，例如「写第一章，雨夜，侦探刚到旅馆」。普通讨论不会改动文件。
+              直接说你想写什么，也可以说「带我想一想」。需要时模型会整理结构、章节和辅助资料。
             </p>
           )}
           {entry.turns.map((turn, index) => (
@@ -480,12 +472,6 @@ export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?:
           {textReferences.map(reference => <TextReferenceChip key={reference.id} reference={reference}
             onRemove={() => useConversationsStore.getState().removeTextReference(reference.id)} />)}
         </div>}
-        <ReferencePicker
-          catalog={catalog}
-          selected={references}
-          onToggle={toggleReference}
-          onClear={() => setDraftContext(openPath, [])}
-        />
         <textarea
           className="chat-input"
           placeholder={

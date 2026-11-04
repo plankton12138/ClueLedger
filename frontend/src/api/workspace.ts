@@ -596,11 +596,13 @@ export type WorkspaceEvent =
       question_id: string;
       conversation_id: string;
       question: string;
+      kind?: "decision" | "context_modules" | string;
       options?: string[];
       related?: string[];
       created_at?: string;
       answered?: boolean;
       answer?: string;
+      proposal?: Record<string, unknown>;
     })
   | (EventBase & {
       type: "author_replied";
@@ -627,6 +629,8 @@ export interface ModuleChangeOperation {
   action: "create" | "update";
   status?: "pending" | "saved";
   name?: string;
+  summary?: string;
+  kind?: "characters" | "world" | "clues" | "truth" | "timeline" | "plot" | "reference";
   chars?: number;
   binding_id?: string;
   module_id?: string;

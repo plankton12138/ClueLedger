@@ -19,14 +19,9 @@ async function seed(request: APIRequestContext, root: string) {
     expect(response.ok(), await response.text()).toBeTruthy();
     return response.json();
   }
-  const intent = await send("PUT", "/story/book-intent", {
-    text: "暴雪封山，旅馆里少了一名住客。",
-    expected_plan_revision: "empty",
-    request_key: "aqua-intent",
-  });
   const chapter = await send("POST", "/story/chapters", {
     title: "雨夜",
-    expected_plan_revision: intent.plan_revision,
+    expected_plan_revision: "empty",
     request_key: "aqua-chapter",
   });
   await send("PUT", `/story/chapters/${chapter.chapter_id}/prose`, {
@@ -53,13 +48,8 @@ test("Aqua 材质、控件状态与响应式写作页", async ({ page, request }
   const root = join(mkdtempSync(join(parent, "aqua-")), "雪夜旅馆");
   const { id, chapterId } = await seed(request, root);
   await page.goto(`/#/workspaces/${id}/writing?chapter=${chapterId}`);
-  const chat = page.getByRole("button", { name: "对话", exact: true });
-  if (await chat.getAttribute("aria-pressed") === "true") await chat.click();
-  await expect(page.getByRole("textbox", { name: "正文编辑" })).toBeVisible();
-  await expect(page.locator(".chapter-margin-inline")).toBeVisible();
-  // V04：页边索引属于稿纸内的第二列，对话不在同一栅格里，不额外多出第四栏。
-  await expect(page.locator(".chapter-sheet-grid > *")).toHaveCount(2);
-  await expect(page.getByRole("complementary", { name: "本章信息" })).toHaveCount(1);
+  await expect(page.getByText("雪把山路封死的时候")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "正文编辑" })).toHaveCount(0);
 
   // 银灰 chrome 与浅色稿纸分层；正文保持平整。
   const header = page.locator(".app-header");
@@ -67,8 +57,8 @@ test("Aqua 材质、控件状态与响应式写作页", async ({ page, request }
   expect(await style(header, "background-image")).toContain("repeating-linear-gradient");
   const paper = page.locator(".writing-paper");
   expect(await style(paper, "background-color")).toBe("rgb(255, 253, 248)");
-  const editor = page.getByRole("textbox", { name: "正文编辑" });
-  expect(await style(editor, "color")).toBe("rgb(48, 52, 58)");
+  const reader = page.locator(".reader-document");
+  expect(await style(reader, "color")).toBe("rgb(48, 52, 58)");
 
   const button = page.getByRole("button", { name: "侧栏", exact: true });
   expect(await style(button, "background-image")).toContain("linear-gradient");
@@ -81,9 +71,8 @@ test("Aqua 材质、控件状态与响应式写作页", async ({ page, request }
   await page.keyboard.press("Tab");
   await button.focus();
   expect(await style(button, "outline-color")).toBe("rgb(36, 101, 181)");
-  const save = page.getByRole("button", { name: "保存", exact: true });
-  expect(await style(save, "background-color")).toBe("rgb(227, 231, 232)");
-  await page.getByRole("textbox", { name: "正文编辑" }).click();
+  await expect(page.getByRole("button", { name: "保存", exact: true })).toHaveCount(0);
+  await reader.click();
   await shot(page, "01-writing-1440");
 
   // 对话框标题区使用同一 chrome token，正文区平整。

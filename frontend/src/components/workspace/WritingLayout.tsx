@@ -1,9 +1,8 @@
 /**
- * 单一写作工作区（1.0.9 P4）。
+ * 单一写作工作区（v1.2）。
  *
- * 左侧是全书构思与章节，中部按当前选择切换全书、章节前置区或正文编辑，
- * 辅助区在对话与页边索引之间切换。旧构思页、线索页与本章相关不再作为日常入口渲染；
- * 来源阅读与模块阅读保持原有能力。
+ * 左侧是全书结构与章节，中部只读展示结构、正文或模块；对话是唯一创作修改入口。
+ * 窄屏时对话与稿纸切换显示，宽屏时对话持续可见。
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -11,7 +10,7 @@ import { List, MessageSquare, PanelRight } from "lucide-react";
 
 import { CHAT, SIDEBAR, useLayoutStore, writingLayout } from "../../state/layout";
 import { useWorkspaceStore } from "../../state/workspace";
-import { runningConversation, useConversationsStore } from "../../state/conversations";
+import { draftKeyOf, runningConversation, useConversationsStore } from "../../state/conversations";
 import { Button } from "../ui/Button";
 import { EmptyState, StatusMessage } from "../ui/StatusMessage";
 import ConversationPanel from "./ConversationPanel";
@@ -24,19 +23,15 @@ import { useSourceLocationStore } from "../../state/sourceLocation";
 import { SourceNotice, ModuleSourceReader } from "../clues/SourceReader";
 import { navigate, useWorkspacePage } from "../../state/navigation";
 import WritingNavigator from "../writing/WritingNavigator";
-import BookPlanView from "../writing/BookPlanView";
-import StartupGateView from "../writing/StartupGateView";
 import StructureView from "../writing/StructureView";
-import ChapterEditor from "../writing/ChapterEditor";
 import ChapterMarginIndex from "../writing/ChapterMarginIndex";
 import { useWritingStore } from "../../state/writing";
-import { createChapter, writingKey } from "../../api/writing";
 import { STRUCTURE_PATH } from "../../api/structure";
-import { errorMessage } from "../../api/errors";
+import EmptyWritingGuide from "../writing/EmptyWritingGuide";
 
 export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const prefs = useLayoutStore();
-  const { file, loading, currentId, fileLoading, openingPath, ready, catalog } = useWorkspaceStore();
+  const { file, loading, currentId, fileLoading, openingPath, ready } = useWorkspaceStore();
   const page = useWorkspacePage();
   const running = useConversationsStore(runningConversation);
   const selectedModule = useWorkspaceModulesStore(state => state.selected);
@@ -46,7 +41,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const writingPage = page?.kind === "writing" && page.workspaceId === currentId ? page : null;
   const chapterId = writingPage?.chapterId ?? null;
   const prosePath = writingPage?.prosePath ?? null;
-  // 模块内容是全书构思页上的一种阅读态：地址栏选了章节或正文，阅读区就按章节与正文走。
+  // 模块内容是全书页的一种阅读态：地址栏选了章节或正文，阅读区就按章节与正文走。
   const moduleBinding = !chapterId && !prosePath && selectedModule?.workspaceId === currentId
     ? moduleAssembly?.bindings.find(binding => binding.id === selectedModule.bindingId)
     : undefined;
@@ -56,17 +51,14 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const loadWorkbench = useWritingStore(state => state.load);
   const refreshWorkbench = useWritingStore(state => state.refresh);
   const chapter = chapterId && workbench?.chapter?.plan?.id === chapterId ? workbench.chapter : null;
-  const proseChapter = !chapterId && prosePath && workbench?.chapter?.prose?.path === prosePath ? workbench.chapter : null;
   const book = workbench?.book ?? null;
-  const selectedProseEntry = prosePath
-    ? [...catalog.chapters, ...catalog.characters, ...catalog.settings].find(entry => entry.path === prosePath)
-    : undefined;
   const [width, setWidth] = useState(0);
   const [directory, setDirectory] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const previousWorkspace = useRef<string | null>(null);
+  const focusedEmptyWorkspace = useRef<string | null>(null);
   useLayoutEffect(() => {
     const node = container.current;
     if (!node) return;
@@ -76,7 +68,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const capacity = writingLayout(width, { ...prefs, sidebarVisible: true, chatVisible: true });
   const canDockDirectory = capacity.sidebar > 0;
   const compact = capacity.kind === "single";
-  const chat = Boolean(currentId && (compact ? compactChat : prefs.chatVisible));
+  const chat = Boolean(currentId && (compact ? compactChat : true));
   const plan = writingLayout(width, { ...prefs, chatVisible: chat });
   const sidebar = plan.sidebar > 0;
   const directoryVisible = canDockDirectory ? sidebar : directory;
@@ -94,6 +86,14 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   useEffect(() => {
     if (prosePath) void useWorkspaceStore.getState().openPath(prosePath);
   }, [prosePath]);
+  useEffect(() => {
+    if (chapter?.prose?.path) void useWorkspaceStore.getState().openPath(chapter.prose.path);
+  }, [chapter?.prose?.path]);
+  useEffect(() => {
+    if (compact && currentId && book && book.chapters.length === 0 && !book.structure_exists) {
+      setCompactChat(true);
+    }
+  }, [book, compact, currentId]);
   useEffect(() => { setIndexOpen(false); }, [chapterId]);
   useEffect(() => {
     if (inlineIndexAvailable) setIndexOpen(false);
@@ -103,6 +103,14 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   useLayoutEffect(() => {
     if (chat && !indexAuxiliary && prefs.chatReveal > 0) container.current?.querySelector<HTMLTextAreaElement>(".chat-input")?.focus();
   }, [chat, indexAuxiliary, prefs.chatReveal]);
+  useLayoutEffect(() => {
+    if (
+      !chat || !currentId || !book || book.chapters.length > 0 || book.structure_exists
+      || focusedEmptyWorkspace.current === currentId
+    ) return;
+    focusedEmptyWorkspace.current = currentId;
+    container.current?.querySelector<HTMLTextAreaElement>(".chat-input")?.focus();
+  }, [book, chat, currentId]);
   useLayoutEffect(() => {
     if (previousWorkspace.current && previousWorkspace.current !== currentId) {
       setDirectory(false);
@@ -115,49 +123,38 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
 
   function selectBook() {
     if (!currentId) return;
-    closeChat();
-    // 全书构思与模块内容共用一个地址：切换要落在状态上，不能只改地址栏。
+    // 全书页与模块内容共用一个地址：切换要落在状态上，不能只改地址栏。
     leaveModule();
     navigate({ kind: "writing", workspaceId: currentId });
   }
   function selectStructure() {
     if (!currentId) return;
-    closeChat();
     leaveModule();
     navigate({ kind: "writing", workspaceId: currentId, prosePath: STRUCTURE_PATH });
   }
   function selectChapter(id: string) {
     if (!currentId) return;
-    closeChat();
     leaveModule();
     navigate({ kind: "writing", workspaceId: currentId, chapterId: id });
   }
   function selectProse(path: string) {
     if (!currentId) return;
-    closeChat();
     leaveModule();
     navigate({ kind: "writing", workspaceId: currentId, prosePath: path });
   }
-  /** 模块内容是全书构思页上的阅读态：作者选了章节或正文，就退出它。 */
+  /** 模块内容是全书页上的阅读态：作者选了章节或正文，就退出它。 */
   function leaveModule() {
     if (useWorkspaceModulesStore.getState().selected) useWorkspaceModulesStore.getState().close();
   }
   function closeChat() {
     if (compact) setCompactChat(false);
-    else if (useLayoutStore.getState().chatVisible) useLayoutStore.getState().toggleChat();
   }
   function toggleChat() {
-    if (compact) {
-      setCompactChat(value => {
-        if (!value) setIndexOpen(false);
-        return !value;
-      });
-      return;
-    }
-    const store = useLayoutStore.getState();
-    if (store.chatVisible) store.toggleChat();
-    else store.revealChat();
-    setIndexOpen(false);
+    if (!compact) return;
+    setCompactChat(value => {
+      if (!value) setIndexOpen(false);
+      return !value;
+    });
   }
   function toggleIndex() {
     if (inlineIndexAvailable) {
@@ -172,22 +169,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   function toggleSidebar() {
     if (canDockDirectory) prefs.toggleSidebar(); else setDirectory(value => !value);
   }
-  async function addChapter(title: string | null): Promise<void> {
-    if (!currentId) return;
-    try {
-      const latest = useWritingStore.getState().workbench;
-      const result = await createChapter(currentId, {
-        title,
-        expected_plan_revision: latest?.plan_revision ?? "empty",
-        request_key: writingKey("chapter-create"),
-      });
-      await refreshWorkbench(currentId, { chapterId: result.chapter_id });
-      leaveModule();
-      navigate({ kind: "writing", workspaceId: currentId, chapterId: result.chapter_id });
-    } catch (error) {
-      useWorkspaceStore.getState().reportError(errorMessage(error, "新建章节"));
-    }
-  }
   function selectInformation(itemId: string) {
     if (!currentId || !chapterId) return;
     if (compact) setIndexOpen(false);
@@ -195,6 +176,15 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       { kind: "writing", workspaceId: currentId, chapterId, informationId: itemId },
       true,
     );
+  }
+  function chooseStarter(text: string) {
+    const conversations = useConversationsStore.getState();
+    const currentDraft = conversations.drafts[draftKeyOf(conversations)] ?? "";
+    if (!currentDraft.trim()) conversations.setDraft(text);
+    if (compact) setCompactChat(true);
+    requestAnimationFrame(() => {
+      container.current?.querySelector<HTMLTextAreaElement>(".chat-input")?.focus();
+    });
   }
   const chatLabel = running ? "对话 · 进行中" : "对话";
 
@@ -210,11 +200,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
     if (chapterId) {
       if (chapter) {
         if (!chapter.prose) return <div className="ui-empty" role="status"><p>这一章的正文文件缺失；刷新工作台后重新选择章节。</p></div>;
-        if (chapter.prose.blocked_reason === "book_intent_required") return <div className="writing-load-error"><StatusMessage tone="warning" action={<Button size="compact" onClick={() => navigate({ kind: "writing", workspaceId: currentId })}>去写全书构思</Button>}>
-          [BOOK_INTENT_REQUIRED] 正文/作品：作品尚无全书构思。建议：先写一句作品意图，再回到这一章。
-        </StatusMessage></div>;
-        if (!chapter.prose.editable) return <div className="ui-empty" role="status"><p>这一章的正文暂不可编辑。</p></div>;
-        return <ChapterEditor workspaceId={currentId} chapter={chapter} support={workbench?.model_support ?? { available: false, disabled_reason: "当前没有可用模型", supported_assists: [] }} informationId={writingPage?.informationId ?? null} />;
+        return <Paper file={file} openingPath={chapter.prose.path} fileLoading={fileLoading} busy={loading} />;
       }
       if (writingError) return <div className="writing-load-error"><StatusMessage tone="error" action={<Button size="compact" onClick={() => void refreshWorkbench(currentId, { chapterId })}>重试</Button>}>{writingError}</StatusMessage></div>;
       return <div className="ui-empty" role="status"><p>正在读取章节…</p></div>;
@@ -227,27 +213,19 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
           else if (!useLayoutStore.getState().chatVisible) useLayoutStore.getState().revealChat();
         }} />;
       }
-      const blocked = proseChapter?.prose?.blocked_reason;
-      return <>
-        {selectedProseEntry?.kind === "chapter" && blocked === "book_intent_required" && <StatusMessage tone="warning">
-          作品还没有全书构思，这篇正文暂时只读；先写一句作品意图再继续。
-        </StatusMessage>}
-        <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} />
-      </>;
+      return <Paper file={file} openingPath={openingPath} fileLoading={fileLoading} busy={loading} />;
     }
-    if (book && workbench) return book.intent?.trim() ? <BookPlanView
-      workspaceId={currentId}
-      book={book}
-      planRevision={workbench.plan_revision}
-      support={workbench.model_support}
-      onChanged={() => refreshWorkbench(currentId, {})}
-      onCreateChapter={() => addChapter(null)}
-      onSelectChapter={selectChapter}
-    /> : <StartupGateView onOpenChat={() => {
-      // 空作品从对话起步（v1.1 M1）；窄屏时对话占满主区，宽屏则侧栏展开。
-      if (compact) setCompactChat(true);
-      else if (!useLayoutStore.getState().chatVisible) useLayoutStore.getState().revealChat();
-    }} />;
+    if (book && workbench) return <article className="reader-document" aria-label="稿纸">
+      <div className="paper-sheet min-h-0 flex-1 overflow-auto rounded-sm">
+        <div className="paper-lined min-h-full">
+          {book.chapters.length === 0 && !book.structure_exists
+            ? <EmptyWritingGuide onChoose={chooseStarter} />
+            : <p className="mx-auto max-w-2xl text-center text-sm text-mute">
+                {book.chapters.length > 0 ? "选择一章阅读" : "在对话中继续建立第一章"}
+              </p>}
+        </div>
+      </div>
+    </article>;
     if (writingError) return <div className="writing-load-error"><StatusMessage tone="error" action={<Button size="compact" onClick={() => void refreshWorkbench(currentId, {})}>重试</Button>}>{writingError}</StatusMessage></div>;
     return <div className="ui-empty" role="status"><p>{writingLoading || loading ? "正在读取写作页…" : "还没有写作内容。"}</p></div>;
   }
@@ -262,10 +240,10 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
         onClick={toggleIndex} disabled={!hasIndex} disabledReason="这一章还没有索引">
         <PanelRight size={16} strokeWidth={2} aria-hidden="true" />本章信息
       </Button>}
-      <Button size="compact" variant={chat ? "primary" : "secondary"} aria-pressed={chat} aria-controls="writing-chat"
+      {compact && <Button size="compact" variant={chat ? "primary" : "secondary"} aria-pressed={chat} aria-controls="writing-chat"
         onClick={toggleChat} disabled={!currentId} disabledReason="先打开作品目录">
         <MessageSquare size={16} strokeWidth={2} aria-hidden="true" />{chatLabel}
-      </Button>
+      </Button>}
     </div>
     <div className="writing-panes workbench">
       <aside id="writing-sidebar" role="region" aria-label="写作目录" className="writing-toc module" data-overlay={!canDockDirectory} hidden={!directoryVisible}
@@ -281,9 +259,6 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
             onStructure={selectStructure}
             onChapter={selectChapter}
             onProse={selectProse}
-            onCreateChapter={addChapter}
-            onImported={() => { if (currentId) void refreshWorkbench(currentId, { chapterId, prosePath }); }}
-            onChoose={() => { if (!canDockDirectory) { setDirectory(false); setCompactChat(false); } }}
           />
         </div>
       </aside>

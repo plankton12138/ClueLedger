@@ -383,8 +383,7 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
                       path: result.path,
                       text: sent,
                       digest: result.prose_digest,
-                      editable: true,
-                      blocked_reason: null,
+                      editable: false as const,
                     },
                     index: result.index,
                   }
@@ -430,9 +429,6 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
           },
         },
       }));
-      if (error instanceof WorkspaceApiError && error.code === "BOOK_INTENT_REQUIRED") {
-        void get().refresh(workspaceId, { chapterId });
-      }
       return false;
     }
   },

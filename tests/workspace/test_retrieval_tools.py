@@ -202,28 +202,22 @@ async def test_record_read_does_not_satisfy_a_required_file_reference(tmp_path: 
 
 
 @pytest.mark.anyio
-async def test_library_search_requires_explicit_author_permission(tmp_path: Path) -> None:
+async def test_unified_catalog_search_needs_no_author_permission(tmp_path: Path) -> None:
     workspace, tools, _, _ = _setup(tmp_path, author_text="写第一章，从模块库再找一份人物。")
 
-    denied = None
-    try:
-        await _call(tools["search_module_library"], query="另一组")
-    except WorkspaceError as exc:
-        denied = exc
-    assert denied is not None
-    assert denied.code == "MODULE_ACCESS_DENIED"
-
-    await _call(
-        tools["set_task_scope"],
-        mode="read_only",
-        summary="从模块库找一份人物",
-        authorization="从模块库再找一份人物",
-        library_search=True,
-    )
-    found = await _call(tools["search_module_library"], query="另一组")
+    assert "search_module_library" not in tools
+    found = await _call(tools["inspect_module_catalog"], query="另一组")
     assert [item["name"] for item in found["items"]] == ["另一组"]
+    assert found["library_total"] == 2
+    assert found["matched_total"] == 1
+    assert found["status"] == "matches"
     # 搜索不自动装入；本轮装配保持一个绑定。
     assert len(AssemblyStore(workspace.root).read().bindings) == 1
+
+    missing = await _call(tools["inspect_module_catalog"], query="不存在的资料")
+    assert missing["library_total"] == 2
+    assert missing["matched_total"] == 0
+    assert missing["status"] == "no_match"
 
 
 @pytest.mark.anyio

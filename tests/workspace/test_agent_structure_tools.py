@@ -106,7 +106,7 @@ async def test_write_structure_budget_conflict(tmp_path: Path) -> None:
     with pytest.raises(WorkspaceError) as exc:
         await _call(
             tools["write_structure"],
-            text="## 铁律\n规则\n" + "x" * 1700,
+            text="## 铁律\n规则\n" + "x" * 7000,
             digest=created["digest"],
         )
     assert exc.value.code == "STRUCTURE_BUDGET_CONFLICT"

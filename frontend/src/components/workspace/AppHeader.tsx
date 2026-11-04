@@ -14,7 +14,7 @@ import RenameWorkspaceDialog from "./RenameWorkspaceDialog";
 
 function WorkspaceNavigation({ page, workspaceId }: { page: AppPage | null; workspaceId: string | null }) {
   const writing: WorkspacePage | null = workspaceId ? { kind: "writing", workspaceId } : null;
-  // 1.0.9 起只有一个写作入口：全书构思、章节与正文都在同一个页面里。
+  // 写作区只负责阅读结构与正文；创作修改统一从对话进入。
   const writingActive = page?.kind === "writing" || page?.kind === "ideas";
   return <nav className="workspace-navigation" aria-label="作品页面">
     {writing

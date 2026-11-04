@@ -1,4 +1,4 @@
-"""1.0.9 P6：格式 4、全书构思门禁与建章事务的领域测试。"""
+"""1.2 P1：格式 5、无全局摘要门槛与建章事务的领域测试。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from hastings.workspace.story_models import (
     AddNode,
     BindProse,
     ProseBinding,
-    SetBookIntent,
     StoryChangeSet,
     StoryNode,
 )
@@ -26,29 +25,20 @@ from hastings.workspace.story_store import (
     StoryStore,
     new_id,
 )
-from hastings.workspace.writing_actions import ChapterCreateResult, create_chapter, save_book_intent
+from hastings.workspace.writing_actions import ChapterCreateResult, create_chapter
 from hastings.workspace.writing_view import build_chapter_index
 
 
 @pytest.fixture
 def env(tmp_path: Path) -> tuple[Workspace, StoryStore]:
     workspace = Workspace.create(tmp_path / "书")
-    store = StoryStore(tmp_path / "state", workspace, format_version=4)
+    store = StoryStore(tmp_path / "state", workspace, format_version=5)
     workspace.chapter_policy = ChapterWritePolicy(store)
     return workspace, store
 
 
 def error_code(exc: pytest.ExceptionInfo[WorkspaceError]) -> str:
     return exc.value.code
-
-
-def setup_intent(store: StoryStore) -> None:
-    save_book_intent(
-        store,
-        text="暴雪封山的旅馆发生命案，湿手套先让林砚怀疑管家。",
-        expected_plan_revision=EMPTY_REVISION,
-        request_key="intent",
-    )
 
 
 def setup_chapter(
@@ -58,14 +48,13 @@ def setup_chapter(
     title: str = "第一章",
     request_key: str = "chapter:1",
 ) -> ChapterCreateResult:
-    setup_intent(store)
-    variant = store.require_variant(MAIN_VARIANT_ID)
+    variant = store.read().variant(MAIN_VARIANT_ID)
     return create_chapter(
         store,
         workspace,
         title=title,
         after_chapter_id=None,
-        expected_plan_revision=variant.revision,
+        expected_plan_revision=variant.revision if variant is not None else EMPTY_REVISION,
         request_key=request_key,
     )
 
@@ -76,7 +65,7 @@ def test_chapter_creation_creates_prose_and_is_idempotent(
     workspace, store = env
     first = setup_chapter(store, workspace)
     variant = store.require_variant(MAIN_VARIANT_ID)
-    assert variant.format_version == 4
+    assert variant.format_version == 5
     plan = variant.chapter(first.chapter_id)
     assert plan is not None
     assert plan.prose_path == first.path
@@ -98,19 +87,20 @@ def test_chapter_creation_creates_prose_and_is_idempotent(
     assert files == [Path(first.path).name]
 
 
-def test_chapter_requires_book_intent(env: tuple[Workspace, StoryStore]) -> None:
+def test_first_chapter_initializes_current_format(env: tuple[Workspace, StoryStore]) -> None:
     workspace, store = env
-    with pytest.raises(WorkspaceError) as exc:
-        create_chapter(
-            store,
-            workspace,
-            title=None,
-            after_chapter_id=None,
-            expected_plan_revision=EMPTY_REVISION,
-            request_key="chapter:no-intent",
-        )
-    assert error_code(exc) == "BOOK_INTENT_REQUIRED"
-    assert not list((workspace.root / BODY_DIR).glob("*.md"))
+    created = create_chapter(
+        store,
+        workspace,
+        title=None,
+        after_chapter_id=None,
+        expected_plan_revision=EMPTY_REVISION,
+        request_key="chapter:first",
+    )
+    variant = store.require_variant(MAIN_VARIANT_ID)
+    assert variant.format_version == 5
+    assert variant.chapter(created.chapter_id) is not None
+    assert list((workspace.root / BODY_DIR).glob("*.md"))
 
 
 def test_legacy_operation_is_rejected_in_current_format(
@@ -131,11 +121,10 @@ def test_legacy_operation_is_rejected_in_current_format(
     assert "旧格式" in exc.value.why
 
 
-def test_write_policy_requires_book_intent(env: tuple[Workspace, StoryStore]) -> None:
+def test_write_policy_has_no_semantic_gate(env: tuple[Workspace, StoryStore]) -> None:
     workspace, store = env
-    with pytest.raises(WorkspaceError) as exc:
-        workspace.write("正文/0001 未构思.md", "# 未构思\n", expected_digest=None)
-    assert error_code(exc) == "BOOK_INTENT_REQUIRED"
+    standalone = workspace.write("正文/0001 未构思.md", "# 未构思\n", expected_digest=None)
+    assert standalone.path == "正文/0001 未构思.md"
 
     chapter = setup_chapter(store, workspace)
     view = workspace.read(chapter.path)
@@ -143,18 +132,16 @@ def test_write_policy_requires_book_intent(env: tuple[Workspace, StoryStore]) ->
     assert "林砚走进旅馆" in workspace.read(chapter.path).text
 
 
-def test_import_can_create_unplanned_but_edit_is_blocked(
+def test_imported_unplanned_prose_can_be_edited(
     env: tuple[Workspace, StoryStore],
 ) -> None:
     workspace, store = env
     (imported,) = workspace.import_text("旧稿.md", "# 旧稿\n\n原有正文\n".encode())
     assert imported.path.startswith("正文/")
-    with pytest.raises(WorkspaceError) as exc:
-        workspace.write(imported.path, imported.text + "修改", expected_digest=imported.digest)
-    assert error_code(exc) == "BOOK_INTENT_REQUIRED"
-
-    setup_intent(store)
-    workspace.write(imported.path, imported.text + "修改", expected_digest=imported.digest)
+    updated = workspace.write(
+        imported.path, imported.text + "修改", expected_digest=imported.digest
+    )
+    assert updated.text.endswith("修改")
 
 
 def test_save_checks_digest_and_retry(env: tuple[Workspace, StoryStore]) -> None:
@@ -196,29 +183,18 @@ def test_save_checks_digest_and_retry(env: tuple[Workspace, StoryStore]) -> None
     assert workspace.read(saved.path).text == "# 第一章\n\n林砚走进旅馆。\n"
 
 
-def test_save_requires_book_intent(env: tuple[Workspace, StoryStore]) -> None:
+def test_save_does_not_require_structure_file(env: tuple[Workspace, StoryStore]) -> None:
     workspace, store = env
     chapter = setup_chapter(store, workspace)
-    variant = store.require_variant(MAIN_VARIANT_ID)
-    store.commit_change(
-        variant_id=MAIN_VARIANT_ID,
-        request_key="clear-intent",
-        change=StoryChangeSet(
-            id="clear_intent",
-            base_revision=variant.revision,
-            operations=[SetBookIntent(intent=None)],
-        ),
+    saved = save_chapter_prose(
+        store,
+        workspace,
+        chapter_id=chapter.chapter_id,
+        text="# 第一章\n\n正文\n",
+        expected_digest=chapter.prose_digest,
+        request_key="save:no-structure",
     )
-    with pytest.raises(WorkspaceError) as exc:
-        save_chapter_prose(
-            store,
-            workspace,
-            chapter_id=chapter.chapter_id,
-            text="# 第一章\n\n正文\n",
-            expected_digest=chapter.prose_digest,
-            request_key="save:no-intent",
-        )
-    assert error_code(exc) == "BOOK_INTENT_REQUIRED"
+    assert saved.prose_digest == workspace.read(chapter.path).digest
 
 
 def test_undo_chapter_creation_removes_file(env: tuple[Workspace, StoryStore]) -> None:

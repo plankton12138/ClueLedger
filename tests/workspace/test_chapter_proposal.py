@@ -21,7 +21,6 @@ from hastings.workspace.prose_ledger import LEDGER_FILENAME, load_ledger
 from hastings.workspace.service import WriteSession
 from hastings.workspace.story_context import StoryContextSnapshot
 from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, StoryStore
-from hastings.workspace.writing_actions import save_book_intent
 from tau_agent.tools import AgentTool
 
 _AUTHOR_CONFIRMED = "好，建吧，标题叫阁楼对峙"
@@ -39,14 +38,8 @@ def _setup(
     workspace = Workspace.create(tmp_path / "雪山旅馆")
     GitRepo(workspace.root).init()
     state_root = tmp_path / "state"
-    store = StoryStore(state_root, workspace, format_version=4)
-    save_book_intent(
-        store,
-        text="暴雪封山的旅馆发生命案，湿手套先让林砚怀疑管家。",
-        expected_plan_revision=EMPTY_REVISION,
-        request_key="intent",
-    )
-    revision = store.require_variant(MAIN_VARIANT_ID).revision
+    store = StoryStore(state_root, workspace, format_version=5)
+    revision = EMPTY_REVISION
     session = WriteSession(workspace, instruction="建章")
     run = RunContext(
         workspace,

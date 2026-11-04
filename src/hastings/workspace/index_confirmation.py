@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from hastings.workspace.chapter_write_policy import ChapterWritePolicy
 from hastings.workspace.errors import WorkspaceError
 from hastings.workspace.files import Workspace
 from hastings.workspace.story_index_jobs import IndexJob, IndexJobStore
@@ -53,11 +52,9 @@ def confirm_index_candidate(
     prior = store.receipt_for(request_key)
     if prior is not None and prior.kind == "index_confirm":
         return _result_from_receipt(store, prior)
-    policy = ChapterWritePolicy(store)
     variant = store.require_variant(MAIN_VARIANT_ID)
-    if variant.format_version < FORMAT_VERSION:
+    if variant.format_version != FORMAT_VERSION:
         raise _format_error(chapter_id)
-    policy.require_book_intent(variant, where=f"章节/{chapter_id}")
     plan = variant.chapter(chapter_id)
     if plan is None or plan.prose_path is None:
         raise _chapter_missing(chapter_id)
@@ -129,7 +126,8 @@ def confirm_index_candidate(
         current = document.variants.get(MAIN_VARIANT_ID)
         if current is None:
             raise _chapter_missing(chapter_id)
-        policy.require_book_intent(current, where=f"章节/{chapter_id}")
+        if current.format_version != FORMAT_VERSION:
+            raise _format_error(chapter_id)
         # 入账前重新核对正文摘要；提交与确认必须基于同一份正文。
         latest = workspace.read(path)
         if latest.digest != expected_prose_digest:

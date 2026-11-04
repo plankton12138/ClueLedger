@@ -31,6 +31,7 @@ class EntryPayload(BaseModel):
 class CreateModuleRequest(BaseModel):
     kind: str
     name: str
+    summary: str = ""
     entries: list[EntryPayload] = Field(default_factory=list)
     request_key: str
 
@@ -38,6 +39,7 @@ class CreateModuleRequest(BaseModel):
 class PublishRequest(BaseModel):
     base_revision: str | None = None
     expected_head: str | None = None
+    summary: str = ""
     entries: list[EntryPayload]
     request_key: str
 
@@ -86,6 +88,7 @@ def create_library_router(library: ModuleLibrary) -> APIRouter:
         return library.create_module(
             kind=payload.kind,
             name=payload.name,
+            summary=payload.summary,
             entries=_rows(payload.entries),
             request_key=payload.request_key,
         )
@@ -122,6 +125,7 @@ def create_library_router(library: ModuleLibrary) -> APIRouter:
             module_id=module_id,
             base_revision=payload.base_revision,
             expected_head=payload.expected_head,
+            summary=payload.summary,
             entries=_rows(payload.entries),
             request_key=payload.request_key,
         ).view()

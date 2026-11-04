@@ -19,14 +19,14 @@ from hastings.workspace.prose_ledger import (
     record_chapter,
     save_ledger,
 )
-from hastings.workspace.story_store import EMPTY_REVISION, MAIN_VARIANT_ID, StoryStore
-from hastings.workspace.writing_actions import ChapterCreateResult, create_chapter, save_book_intent
+from hastings.workspace.story_store import EMPTY_REVISION, StoryStore
+from hastings.workspace.writing_actions import ChapterCreateResult, create_chapter
 
 
 @pytest.fixture
 def env(tmp_path: Path) -> tuple[Workspace, StoryStore]:
     workspace = Workspace.create(tmp_path / "书")
-    store = StoryStore(tmp_path / "state", workspace, format_version=4)
+    store = StoryStore(tmp_path / "state", workspace, format_version=5)
     workspace.chapter_policy = ChapterWritePolicy(store)
     return workspace, store
 
@@ -34,20 +34,13 @@ def env(tmp_path: Path) -> tuple[Workspace, StoryStore]:
 def _seed_chapter(
     store: StoryStore, workspace: Workspace, *, key: str
 ) -> ChapterCreateResult:
-    """建意图 + 一章（只有骨架正文），返回建章结果。"""
-    save_book_intent(
-        store,
-        text="暴雪封山的旅馆发生命案，湿手套先让林砚怀疑管家。",
-        expected_plan_revision=EMPTY_REVISION,
-        request_key=f"intent:{key}",
-    )
-    variant = store.require_variant(MAIN_VARIANT_ID)
+    """建一章（只有骨架正文），返回建章结果。"""
     return create_chapter(
         store,
         workspace,
         title="第一章",
         after_chapter_id=None,
-        expected_plan_revision=variant.revision,
+        expected_plan_revision=EMPTY_REVISION,
         request_key=f"chapter:{key}",
     )
 
