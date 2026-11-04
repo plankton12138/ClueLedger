@@ -70,6 +70,27 @@ export interface AnalysisDecision {
   applied: boolean;
 }
 
+export interface AnalysisTraceStep {
+  label: string;
+  status: "done" | "running" | "failed";
+  detail: string;
+  at: string;
+}
+
+export interface AnalysisTraceRead {
+  label: string;
+  detail: string;
+}
+
+export interface AnalysisTrace {
+  model: string;
+  connection: string;
+  started_at: string;
+  finished_at?: string;
+  reads: AnalysisTraceRead[];
+  steps: AnalysisTraceStep[];
+}
+
 export interface RevisionAnalysis {
   id: string;
   revision_id: string;
@@ -85,6 +106,7 @@ export interface RevisionAnalysis {
   structure_digest: string;
   proposed_style_text: string;
   error: string;
+  trace: AnalysisTrace;
 }
 
 export interface StyleDocument {

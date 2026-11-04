@@ -175,6 +175,19 @@ def test_analysis_returns_decisions_and_style_proposal(
     assert ready["decisions"][1]["target"] == "chapter_only"
     assert "先用动作再开口" in ready["proposed_style_text"]
     assert ready["conversation_id"] == "conv_1"
+    assert [row["label"] for row in ready["trace"]["reads"]] == [
+        "正文修订",
+        "写作约定",
+        "全书结构",
+        "已装模块",
+    ]
+    assert [row["label"] for row in ready["trace"]["steps"]] == [
+        "准备材料",
+        "模型请求开始",
+        "模型请求完成",
+        "解析判断",
+    ]
+    assert ready["trace"]["model"].startswith("测试连接")
 
 
 def test_analysis_is_idempotent_for_same_request_key(

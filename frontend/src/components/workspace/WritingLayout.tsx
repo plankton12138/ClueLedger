@@ -29,6 +29,7 @@ import { useWritingStore } from "../../state/writing";
 import { STRUCTURE_PATH } from "../../api/structure";
 import EmptyWritingGuide from "../writing/EmptyWritingGuide";
 import RevisionDrawer from "../writing/RevisionDrawer";
+import { useRevisionPanelStore } from "../../state/revisions";
 
 const MODULE_REQUEST = "帮我判断这个故事还需要哪些长期资料，比如人物小传、故事背景；需要的话请创建并装入。";
 
@@ -59,7 +60,9 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
   const [directory, setDirectory] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
-  const [revisionTab, setRevisionTab] = useState<"revisions" | "style" | null>(null);
+  const revisionPanel = useRevisionPanelStore(state => state.target);
+  const openRevisionPanel = useRevisionPanelStore(state => state.open);
+  const closeRevisionPanel = useRevisionPanelStore(state => state.close);
   const container = useRef<HTMLDivElement>(null);
   const previousWorkspace = useRef<string | null>(null);
   const focusedEmptyWorkspace = useRef<string | null>(null);
@@ -98,7 +101,7 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
       setCompactChat(true);
     }
   }, [book, compact, currentId]);
-  useEffect(() => { setIndexOpen(false); setRevisionTab(null); }, [chapterId]);
+  useEffect(() => { setIndexOpen(false); closeRevisionPanel(); }, [chapterId, closeRevisionPanel]);
   useEffect(() => {
     if (inlineIndexAvailable) setIndexOpen(false);
   }, [inlineIndexAvailable]);
@@ -246,12 +249,14 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
         onClick={toggleIndex} disabled={!hasIndex} disabledReason="这一章还没有索引">
         <PanelRight size={16} strokeWidth={2} aria-hidden="true" />本章信息
       </Button>}
-      {chapterId && <Button size="compact" variant={revisionTab === "revisions" ? "primary" : "secondary"}
-        aria-pressed={revisionTab === "revisions"} onClick={() => setRevisionTab("revisions")}>
+      {chapterId && <Button size="compact" variant={revisionPanel?.tab === "revisions" ? "primary" : "secondary"}
+        aria-pressed={revisionPanel?.tab === "revisions"}
+        onClick={() => currentId && openRevisionPanel({ workspaceId: currentId, chapterId, revisionId: null, tab: "revisions" })}>
         <History size={16} strokeWidth={2} aria-hidden="true" />改动
       </Button>}
-      {currentId && <Button size="compact" variant={revisionTab === "style" ? "primary" : "secondary"}
-        aria-pressed={revisionTab === "style"} onClick={() => setRevisionTab("style")}>
+      {currentId && <Button size="compact" variant={revisionPanel?.tab === "style" ? "primary" : "secondary"}
+        aria-pressed={revisionPanel?.tab === "style"}
+        onClick={() => openRevisionPanel({ workspaceId: currentId, chapterId: null, revisionId: null, tab: "style" })}>
         <PenLine size={16} strokeWidth={2} aria-hidden="true" />写作约定
       </Button>}
       {compact && <Button size="compact" variant={chat ? "primary" : "secondary"} aria-pressed={chat} aria-controls="writing-chat"
@@ -307,13 +312,17 @@ export default function WritingLayout({ onOpen }: { onOpen: () => void }) {
         </div>
       </>}
     </div>
-    {revisionTab && currentId && (
+    {revisionPanel && currentId && revisionPanel.workspaceId === currentId && (
       <RevisionDrawer
+        key={`${revisionPanel.chapterId ?? "style"}:${revisionPanel.revisionId ?? "latest"}:${revisionPanel.tab}`}
         workspaceId={currentId}
-        chapterId={chapterId}
+        chapterId={revisionPanel.chapterId}
         chapterTitle={chapter?.plan?.title ?? `第${(chapter?.plan?.order ?? 0) + 1}章`}
-        initialTab={revisionTab}
-        onClose={() => setRevisionTab(null)}
+        initialTab={revisionPanel.tab}
+        initialRevisionId={revisionPanel.revisionId}
+        autoAnalyze={revisionPanel.autoAnalyze}
+        conversationId={revisionPanel.conversationId}
+        onClose={closeRevisionPanel}
       />
     )}
   </div>;

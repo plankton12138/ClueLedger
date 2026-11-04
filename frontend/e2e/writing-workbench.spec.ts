@@ -194,7 +194,12 @@ test("修订面板显示段落差异，写作约定可编辑保存", async ({ pa
 
   await page.goto(`/#/workspaces/${book.id}/writing`);
   await page.locator(".writing-navigator").getByRole("button", { name: "第1章 · 雨夜", exact: true }).click();
-  await page.getByRole("button", { name: "改动", exact: true }).click();
+  // 对话输入框上方先出现修订回执；从回执打开同一个抽屉。
+  const receipt = page.locator(".chat-shell");
+  await expect(receipt.getByRole("button", { name: "查看差异", exact: true })).toBeVisible();
+  await expect(receipt.getByRole("button", { name: "让模型分析", exact: true })).toBeVisible();
+  await shot(page, "10-revision-receipt");
+  await receipt.getByRole("button", { name: "查看差异", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "修订与写作约定" });
   await expect(drawer).toBeVisible();
   await expect(drawer.getByText("作者修订", { exact: true })).toBeVisible();

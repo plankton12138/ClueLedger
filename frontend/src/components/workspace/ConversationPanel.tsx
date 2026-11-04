@@ -37,6 +37,8 @@ import ExpandedReplyDialog from "../chat/ExpandedReplyDialog";
 import { useChatScroll } from "../chat/useChatScroll";
 import ConversationUsageBar from "./ConversationUsageBar";
 import { sourceTaskChapter } from "../../state/sourceLocation";
+import { useWorkspacePage } from "../../state/navigation";
+import RevisionReceipt from "../chat/RevisionReceipt";
 import { Button } from "../ui/Button";
 
 function conversationLabel(item: Conversation, running: boolean): string {
@@ -56,6 +58,11 @@ interface CaptureTarget {
 }
 
 export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?: () => void }) {
+  const page = useWorkspacePage();
+  const currentWorkspaceId = useWorkspaceStore(state => state.currentId);
+  const chapterId = page?.kind === "writing" && page.workspaceId === currentWorkspaceId
+    ? page.chapterId ?? null
+    : null;
   const items = useConversationsStore((state) => state.items);
   const selectedId = useConversationsStore((state) => state.selectedId);
   const entry = useConversationsStore(selectedEntry);
@@ -385,6 +392,15 @@ export default function ConversationPanel({ onBackToDetail }: { onBackToDetail?:
           </button>
         )}
       </div>
+
+      {currentWorkspaceId && chapterId && (
+        <RevisionReceipt
+          workspaceId={currentWorkspaceId}
+          chapterId={chapterId}
+          conversationId={selectedId}
+          refreshToken={entry?.lastSeq ?? 0}
+        />
+      )}
 
       <div className="chat-composer">
         {error && (

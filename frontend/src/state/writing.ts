@@ -440,6 +440,11 @@ export const useWritingStore = create<WritingStore>()((set, get) => ({
           : currentView;
         return { drafts: { ...state.drafts, [key]: nextDraft }, workbench };
       });
+      if (result.revision_id && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("hastings:revision-changed", { detail: { chapterId } }),
+        );
+      }
       const latest = get().drafts[key];
       if (latest?.dirty) {
         writePersisted(workspaceId, chapterId, latest);

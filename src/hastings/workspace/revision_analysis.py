@@ -126,6 +126,8 @@ class RevisionAnalysis:
     structure_digest: str = ""
     proposed_style_text: str = ""
     error: str = ""
+    #: 这次分析实际读了什么、模型请求何时开始与结束；供界面展开查看。
+    trace: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -143,11 +145,14 @@ class RevisionAnalysis:
             "structure_digest": self.structure_digest,
             "proposed_style_text": self.proposed_style_text,
             "error": self.error,
+            "trace": dict(self.trace),
         }
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> RevisionAnalysis:
         status = str(raw.get("status") or "queued")
+        trace_raw = raw.get("trace")
+        trace: dict[str, Any] = dict(trace_raw) if isinstance(trace_raw, dict) else {}
         if status not in ("queued", "running", "ready", "failed"):
             status = "failed"
         decisions = [
@@ -170,6 +175,7 @@ class RevisionAnalysis:
             structure_digest=str(raw.get("structure_digest") or ""),
             proposed_style_text=str(raw.get("proposed_style_text") or ""),
             error=str(raw.get("error") or ""),
+            trace=trace,
         )
 
 
@@ -327,9 +333,28 @@ class RevisionAnalysisService:
         hunk_ids: list[str],
         snapshot: ModelSnapshot,
     ) -> None:
-        self.store.save(replace(analysis, status="running", updated_at=_now()))
+        trace: dict[str, Any] = {
+            "model": f"{snapshot.display_name} · {snapshot.model}",
+            "connection": snapshot.connection_id,
+            "started_at": _now(),
+            "reads": [],
+            "steps": [],
+        }
+
+        def step(label: str, *, status: str = "done", detail_text: str = "") -> None:
+            trace["steps"].append(
+                {"label": label, "status": status, "detail": detail_text, "at": _now()}
+            )
+
+        def save(**changes: Any) -> None:
+            self.store.save(replace(analysis, trace=dict(trace), **changes))
+
+        save(status="running", updated_at=_now())
         try:
-            system, prompt = self._prompt(detail, hunk_ids)
+            system, prompt, reads = self._prompt(detail, hunk_ids)
+            trace["reads"] = reads
+            step("准备材料", detail_text=f"{len(reads)} 项")
+            step("模型请求开始", status="running")
             text = ""
             final: str | None = None
             async with aclosing(
@@ -363,45 +388,40 @@ class RevisionAnalysisService:
                                 fix="从原对话重新发起分析",
                             )
                         final = message_text(event.message) or final
+            step("模型请求完成", detail_text=f"{len(final or text)} 字")
             payload = _parse_payload(final or text)
             decisions = _validate_decisions(payload, set(detail.active_hunk_ids))
+            step("解析判断", detail_text=f"{len(decisions)} 条")
             style_text = _style_after(read_style_state(self.workspace).text, decisions)
             style_state = read_style_state(self.workspace)
-            self.store.save(
-                replace(
-                    analysis,
-                    status="ready",
-                    updated_at=_now(),
-                    summary=str(payload.get("summary") or "")[:1000],
-                    decisions=decisions,
-                    style_digest=style_state.digest or "",
-                    structure_digest=read_structure_state(self.workspace).digest or "",
-                    proposed_style_text=style_text,
-                )
+            trace["finished_at"] = _now()
+            save(
+                status="ready",
+                updated_at=_now(),
+                summary=str(payload.get("summary") or "")[:1000],
+                decisions=decisions,
+                style_digest=style_state.digest or "",
+                structure_digest=read_structure_state(self.workspace).digest or "",
+                proposed_style_text=style_text,
             )
         except asyncio.CancelledError:
-            self.store.save(
-                replace(analysis, status="failed", updated_at=_now(), error="分析已停止")
-            )
+            step("已停止", status="failed")
+            trace["finished_at"] = _now()
+            save(status="failed", updated_at=_now(), error="分析已停止")
         except WorkspaceError as exc:
-            self.store.save(
-                replace(
-                    analysis,
-                    status="failed",
-                    updated_at=_now(),
-                    error=f"[{exc.code}] {exc.why}",
-                )
-            )
+            step("失败", status="failed", detail_text=exc.code)
+            trace["finished_at"] = _now()
+            save(status="failed", updated_at=_now(), error=f"[{exc.code}] {exc.why}")
         except Exception as exc:  # 网络或供应方异常：保留失败原因，供作者重试
-            self.store.save(
-                replace(
-                    analysis, status="failed", updated_at=_now(), error=f"分析失败：{exc}"
-                )
-            )
+            step("失败", status="failed", detail_text=str(exc)[:200])
+            trace["finished_at"] = _now()
+            save(status="failed", updated_at=_now(), error=f"分析失败：{exc}")
         finally:
             await snapshot.aclose()
 
-    def _prompt(self, detail: RevisionDetail, hunk_ids: list[str]) -> tuple[str, str]:
+    def _prompt(
+        self, detail: RevisionDetail, hunk_ids: list[str]
+    ) -> tuple[str, str, list[dict[str, str]]]:
         record = detail.record
         selected = [hunk for hunk in detail.hunks if hunk.id in set(hunk_ids)]
         hunks = [
@@ -416,6 +436,30 @@ class RevisionAnalysisService:
         ]
         style = read_style_state(self.workspace)
         structure = read_structure_state(self.workspace)
+        modules = self._module_catalog()
+        reads = [
+            {
+                "label": "正文修订",
+                "detail": f"{len(selected)} 个片段 · {record.source}",
+            },
+            {
+                "label": "写作约定",
+                "detail": f"{len(style.text)} 字" if style.exists else "未创建",
+            },
+            {
+                "label": "全书结构",
+                "detail": f"{len(structure.text)} 字" if structure.exists else "未创建",
+            },
+            {
+                "label": "已装模块",
+                "detail": (
+                    f"{len(modules)} 个模块 · "
+                    f"{sum(len(row['entries']) for row in modules)} 个条目"
+                    if modules
+                    else "无"
+                ),
+            },
+        ]
         payload = {
             "revision": {
                 "source": record.source,
@@ -424,7 +468,7 @@ class RevisionAnalysisService:
             "hunks": hunks,
             "current_style": style.text,
             "current_structure": structure.text,
-            "installed_modules": self._module_catalog(),
+            "installed_modules": modules,
             "output_schema": {
                 "summary": "一句话说明这次改动影响了什么",
                 "decisions": [
@@ -448,7 +492,7 @@ class RevisionAnalysisService:
             + "\n\n请按 output_schema 输出 JSON。没有可复用的写作习惯时，decisions 可以只有一条 "
             "chapter_only，并说明这次改动的局部性。"
         )
-        return _SYSTEM, prompt
+        return _SYSTEM, prompt, reads
 
     def _module_catalog(self) -> list[dict[str, Any]]:
         assembly = AssemblyStore(self.workspace.root).read()

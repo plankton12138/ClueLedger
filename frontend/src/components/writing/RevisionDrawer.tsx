@@ -6,7 +6,7 @@
  * 作者可以只选其中几条写回 STYLE.md，也可以直接编辑整份约定。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 import {
@@ -46,6 +46,46 @@ function timeLabel(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function AnalysisLog({ analysis }: { analysis: RevisionAnalysis }) {
+  const trace = analysis.trace;
+  if (!trace || (!trace.reads?.length && !trace.steps?.length)) return null;
+  return (
+    <details className="mt-3 rounded-sm border border-[#e2dbc6] p-2 text-[11px] text-[#6b5d3e]">
+      <summary className="cursor-pointer select-none">查看运行日志</summary>
+      {trace.model && <p className="mt-1 text-[#8a8267]">模型：{trace.model}</p>}
+      {trace.reads?.length > 0 && (
+        <div className="mt-2">
+          <h5 className="font-semibold">读取的资料</h5>
+          <ul className="mt-0.5 space-y-0.5">
+            {trace.reads.map(read => (
+              <li key={read.label} className="flex gap-2">
+                <span className="w-20 shrink-0 text-[#8a8267]">{read.label}</span>
+                <span>{read.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {trace.steps?.length > 0 && (
+        <div className="mt-2">
+          <h5 className="font-semibold">执行步骤</h5>
+          <ol className="mt-0.5 space-y-0.5">
+            {trace.steps.map((step, index) => (
+              <li key={`${step.label}-${index}`} className="flex gap-2">
+                <span className="w-20 shrink-0 text-[#8a8267]">{timeLabel(step.at)}</span>
+                <span className={step.status === "failed" ? "text-[#8d3a2a]" : ""}>
+                  {step.label}
+                  {step.detail ? ` · ${step.detail}` : ""}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </details>
+  );
 }
 
 function Hunk({ hunk }: { hunk: RevisionHunk }) {
@@ -108,12 +148,18 @@ export default function RevisionDrawer({
   chapterId,
   chapterTitle,
   initialTab = "revisions",
+  initialRevisionId = null,
+  autoAnalyze = false,
+  conversationId = null,
   onClose,
 }: {
   workspaceId: string;
   chapterId: string | null;
   chapterTitle: string;
   initialTab?: "revisions" | "style";
+  initialRevisionId?: string | null;
+  autoAnalyze?: boolean;
+  conversationId?: string | null;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"revisions" | "style">(
@@ -130,6 +176,7 @@ export default function RevisionDrawer({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const autoStarted = useRef(false);
 
   const loadStyle = useCallback(async () => {
     const document = await readStyle(workspaceId);
@@ -147,7 +194,10 @@ export default function RevisionDrawer({
           const page = await listRevisions(workspaceId, chapterId);
           if (cancelled) return;
           setItems(page.items);
-          setSelected(page.items[0]?.id ?? null);
+          const preferred = initialRevisionId
+            ? page.items.find(item => item.id === initialRevisionId)
+            : undefined;
+          setSelected(preferred?.id ?? page.items[0]?.id ?? null);
         } else {
           setItems([]);
           setSelected(null);
@@ -162,7 +212,7 @@ export default function RevisionDrawer({
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, chapterId, loadStyle]);
+  }, [workspaceId, chapterId, initialRevisionId, loadStyle]);
 
   useEffect(() => {
     if (!selected) {
@@ -219,6 +269,15 @@ export default function RevisionDrawer({
     [detail],
   );
 
+  useEffect(() => {
+    if (!autoAnalyze || autoStarted.current || !detail || !detail.analyzable) return;
+    if (analysis) return;
+    autoStarted.current = true;
+    void analyze();
+    // analyze 只依赖当前详情；自动发起一次后由 autoStarted 挡住重复。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAnalyze, detail, analysis]);
+
   async function analyze() {
     if (!detail || !detail.analyzable) return;
     setBusy("分析中");
@@ -227,6 +286,7 @@ export default function RevisionDrawer({
     try {
       const result = await startRevisionAnalysis(workspaceId, detail.revision.id, {
         hunk_ids: activeHunks.map(hunk => hunk.id),
+        conversation_id: conversationId ?? "",
         request_key: writingKey("analysis"),
       });
       setAnalysis(result);
@@ -410,6 +470,7 @@ export default function RevisionDrawer({
                       {analysis.status === "failed" && (
                         <p className="mt-2 text-[#8d3a2a]">{analysis.error}</p>
                       )}
+                      <AnalysisLog analysis={analysis} />
                       {analysis.status === "ready" && (
                         <>
                           <p className="mt-2 leading-6">{analysis.summary}</p>
